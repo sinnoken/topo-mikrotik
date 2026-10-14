@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>網路基準｜MikroTik</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='5' cy='5' r='3' fill='%230b6bcb'/%3E%3Ccircle cx='19' cy='5' r='3' fill='%230b6bcb'/%3E%3Ccircle cx='12' cy='19' r='3' fill='%2322a338'/%3E%3Cpath d='M5 5L19 5M5 5L12 19M19 5L12 19' stroke='%230b6bcb' stroke-width='1.5'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/app.css">
+<!-- 全部資源都在本機：可直接雙擊開啟，不需要網路，也不會把資料送到任何地方 -->
+<script src="src/core/ns.js"></script>
+<script src="src/core/ip.js"></script>
+<script src="src/core/keys.js"></script>
+<script src="src/readers/common.js"></script>
+<script src="src/readers/bundle-v1.js"></script>
+<script src="src/readers/files-v1.js"></script>
+<script src="src/readers/index.js"></script>
+<script src="src/adapters/index.js"></script>
+<script src="src/adapters/mikrotik.js"></script>
+<script src="src/data/oui-data.js"></script>
+<script src="src/data/oui.js"></script>
+<script src="src/profile/profile.js"></script>
+<script src="src/model/build.js"></script>
+<script src="src/model/infer.js"></script>
+<script src="src/check/checks.js"></script>
+<script src="src/pipeline.js"></script>
+<script src="src/query/query.js"></script>
+<script src="src/query/trace.js"></script>
+<script src="src/compare/compare.js"></script>
+<script src="profiles/cht-naming.js"></script>
+<script src="samples/sample-bundle.js"></script>
+<script src="src/view/dom.js"></script>
+<script src="src/view/store.js"></script>
+<script src="src/view/graph/layout.js"></script>
+<script src="src/view/graph/canvas.js"></script>
+<script src="src/view/panels/details.js"></script>
+<script src="src/view/panels/lists.js"></script>
+<script src="src/view/app.js"></script>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">
+      <svg viewBox="0 0 24 24"><circle cx="5" cy="5" r="3" fill="#0b6bcb"/><circle cx="19" cy="5" r="3" fill="#0b6bcb"/><circle cx="12" cy="19" r="3" fill="#22a338"/><path d="M5 5L19 5M5 5L12 19M19 5L12 19" stroke="#0b6bcb" stroke-width="1.5"/></svg>
+      網路基準
+    </div>
+    <button class="primary" id="btn-input">建立基準…</button>
+    <div class="search">
+      <span class="icon">⌕</span>
+      <input id="search" type="search" placeholder="搜尋設備、MAC、IP、VLAN、介面描述（按 / 開始）" autocomplete="off">
+      <div id="search-dd" class="dropdown hidden"></div>
+    </div>
+    <div style="position:relative">
+      <button id="btn-trace">路由追蹤</button>
+      <div id="trace-pop" class="popover hidden">
+        <div class="form-row"><label>來源 IP</label><input id="trace-src" type="text" placeholder="10.1.30.15"></div>
+        <div class="form-row"><label>目的 IP</label><input id="trace-dst" type="text" placeholder="10.1.20.11"></div>
+        <div class="form-row" style="margin:0"><span class="muted" style="flex:1;font-size:12px">依各設備路由表逐跳追蹤（含 ECMP）</span><button class="primary" id="trace-run">追蹤</button></div>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <button class="ghost" id="btn-clear" title="清除這個工具保存的基準與輸入">清除</button>
+  </header>
+
+  <div id="main">
+    <aside id="left">
+      <div class="tabs">
+        <button class="on" data-pane="pane-findings">檢查結果</button>
+        <button data-pane="pane-coverage">覆蓋率</button>
+        <button data-pane="pane-compare">比對</button>
+      </div>
+      <div id="pane-findings" class="pane"></div>
+      <div id="pane-coverage" class="pane hidden"></div>
+      <div id="pane-compare" class="pane hidden"></div>
+    </aside>
+
+    <section id="center">
+      <canvas id="graph"></canvas>
+      <div id="toolbar" class="toolbar hidden">
+        <div class="grp"><button id="btn-fit" title="整張圖放進畫面">全部</button><button id="btn-relayout" title="依分群與層級重新排列">重新排列</button><button id="btn-force" title="用力導向微調位置（再按一次停止）">自動排開</button></div>
+        <div class="grp"><button id="btn-hosts" title="顯示只由 LLDP 看到的主機">主機</button><button id="btn-unknown" class="on" title="顯示沒有 LLDP 鄰居、只由 MAC 推論出來的末端">未知對端</button><button id="btn-groups" class="on" title="顯示分群底框">分群</button></div>
+        <div class="grp"><button id="btn-png" title="把目前畫面存成圖片">存成圖片</button></div>
+      </div>
+      <div id="legend" class="legend hidden"></div>
+      <div id="hint" class="hint hidden">滾輪縮放・拖曳移動・點選看詳細・雙擊聚焦</div>
+      <div id="banner" class="banner hidden"></div>
+      <div id="tooltip" class="tooltip hidden"></div>
+      <div id="welcome" class="welcome">
+        <div class="card">
+          <h1>建立網路基準</h1>
+          <div class="muted">把設備的 CLI 輸出一次貼上，產生一份可追溯、可檢查的網路現況基準。</div>
+          <ol>
+            <li>依「收集清單」在每台 RouterOS 下指令（<code>/export terse</code>、<code>/ip neighbor print detail</code> 等），合併成一個收集檔（設備名 (IP): 開頭，以 _____ 分隔）</li>
+            <li>按「建立基準」，貼上內容或選擇檔案</li>
+            <li>左側看資料之間的矛盾與缺漏，點選後在圖上定位，右側看詳細資料與原文</li>
+          </ol>
+          <div class="row" style="display:flex;gap:8px">
+            <button class="primary" onclick="App.openInput()">建立基準…</button>
+            <button onclick="App.loadSample()">用範例資料試試看</button>
+          </div>
+          <p class="muted" style="margin-bottom:0;font-size:12px">目前只支援 MikroTik RouterOS（7.x 為主）。資料只在這個瀏覽器處理，不會上傳。</p>
+        </div>
+      </div>
+    </section>
+
+    <aside id="right"><div id="detail" class="pane"></div></aside>
+  </div>
+  <footer id="footer"></footer>
+</div>
+
+<dialog id="dlg-input">
+  <div class="dlg" style="width:min(1000px,94vw)">
+    <div class="dh">建立基準<button class="ghost x" id="input-close">✕</button></div>
+    <div class="db">
+      <div class="form-row">
+        <button id="input-pick">選擇檔案…</button>
+        <input id="input-file" type="file" multiple class="hidden" accept=".txt,.log,.cfg,.conf,.out,text/plain">
+        <button id="input-sample">載入範例資料</button>
+        <span class="muted">可以貼上、選擇檔案，或兩者都用（一次全部讀入）</span>
+      </div>
+      <textarea id="input-text" spellcheck="false" placeholder="TPE_CORE_RT_01 (10.1.10.2):&#10;[admin@TPE_CORE_RT_01] > /export terse&#10;…輸出…&#10;[admin@TPE_CORE_RT_01] > /ip neighbor print detail without-paging&#10;…輸出…&#10;_____&#10;TPE_ACC_SW_01 (10.1.10.21):&#10;### /interface bridge host print detail without-paging&#10;…輸出…"></textarea>
+      <div id="input-files" class="files"></div>
+      <div id="input-drop" class="drop">也可以把檔案拖到這裡（沒有設備標頭的檔案，會以檔名當設備名）</div>
+      <div class="form-row" style="margin-top:12px">
+        <label for="input-profile">命名規則</label>
+        <select id="input-profile"></select>
+        <span class="muted" style="font-size:12px">只用來加上站點、角色等註解，不會改變事實；可不套用</span>
+      </div>
+    </div>
+    <div class="df">
+      <div id="input-progress" class="progress hidden"><div></div></div>
+      <span id="input-status" class="muted"></span>
+      <span style="flex:1"></span>
+      <button class="primary" id="input-build">建立基準</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="dlg-raw">
+  <div class="dlg" style="width:min(1100px,94vw)">
+    <div class="dh"><span id="raw-title">原文</span><button class="ghost x" onclick="document.getElementById('dlg-raw').close()">✕</button></div>
+    <div class="db" id="raw-body" style="max-height:70vh"></div>
+  </div>
+</dialog>
+</body>
+</html>

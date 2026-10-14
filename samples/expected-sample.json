@@ -1,0 +1,22 @@
+{
+  "schema": "ssot-expected/1",
+  "_說明": "比對用的預期資料範例：格式獨立於基準，只用「設備名」與「設備名 介面名」指向基準中的實體。",
+  "devices": [
+    "TPE_CORE_RT_01", "TPE_CORE_RT_02",
+    { "name": "TPE_ACC_SW_01", "kind": "switch" },
+    { "name": "TPE_ACC_SW_02", "kind": "router" },
+    "TPE_ACC_SW_13"
+  ],
+  "links": [
+    { "a": "TPE_CORE_RT_01 sfp-sfpplus1", "b": "TPE_ACC_SW_01 sfp-sfpplus1" },
+    { "a": "TPE_CORE_RT_02 ether1", "b": "TPE_ACC_SW_01 ether24" },
+    { "a": "TPE_CORE_RT_02 ether2", "b": "TPE_ACC_SW_02 ether24" },
+    { "a": "TPE_CORE_RT_02 ether3", "b": "TPE_ACC_SW_03 ether23" },
+    { "a": "TPE_CORE_RT_01 sfp-sfpplus40", "b": "TPE_ACC_SW_15 sfp-sfpplus1" }
+  ],
+  "vlans": [
+    { "device": "TPE_ACC_SW_01", "id": 20 },
+    { "device": "TPE_ACC_SW_08", "id": 30 },
+    { "device": "TPE_ACC_SW_01", "id": 99 }
+  ]
+}

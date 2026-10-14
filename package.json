@@ -1,0 +1,13 @@
+{
+  "name": "topo-mikrotik",
+  "version": "1.0.0",
+  "description": "由 MikroTik RouterOS CLI 輸出建立網路現況基準（SSOT）：拓樸、VLAN、MAC/IP、路由與一致性檢查。純前端、可離線、零相依套件。",
+  "private": true,
+  "scripts": {
+    "test": "node tests/run.js && node tests/ui-smoke.js",
+    "test:large": "node tests/run.js --large",
+    "sample": "node tools/gen-bundle.js --sites 1 --access 12 --faults > samples/sample-bundle.txt && node tools/embed-sample.js",
+    "gen:large": "node tools/gen-bundle.js --sites 40 --access 24 > samples/large-1000.txt",
+    "oui": "node tools/build-oui.js"
+  }
+}

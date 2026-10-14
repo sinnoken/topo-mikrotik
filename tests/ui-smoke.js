@@ -1,0 +1,154 @@
+/*
+ * 畫面冒煙測試（不需要瀏覽器）：用極簡 DOM 模擬載入 index.html 的所有腳本，
+ * 走過「載入範例 → 建立基準 → 點每一筆檢查結果 → 各種選取 → 搜尋 → 路由追蹤 → 比對 → 縮放繪圖」，
+ * 確認沒有執行期錯誤。真正的視覺檢查仍需在瀏覽器開啟 index.html。
+ *   node tests/ui-smoke.js
+ */
+'use strict';
+const fs = require('fs'); const path = require('path'); const vm = require('vm');
+const ROOT = path.join(__dirname, '..');
+
+// ------------------------------------------------------------ 極簡 DOM
+class ClassList { constructor(el) { this.el = el; } get set() { return new Set((this.el.attrs.class || '').split(/\s+/).filter(Boolean)); }
+  _w(s) { this.el.attrs.class = Array.from(s).join(' '); } add(...c) { const s = this.set; c.forEach((x) => s.add(x)); this._w(s); } remove(...c) { const s = this.set; c.forEach((x) => s.delete(x)); this._w(s); }
+  toggle(c, f) { const s = this.set; const on = f === undefined ? !s.has(c) : f; on ? s.add(c) : s.delete(c); this._w(s); return on; } contains(c) { return this.set.has(c); } }
+class Node_ { constructor() { this.childNodes = []; this.parentNode = null; }
+  appendChild(c) { if (c.parentNode) c.parentNode.removeChild(c); c.parentNode = this; this.childNodes.push(c); return c; }
+  removeChild(c) { this.childNodes = this.childNodes.filter((x) => x !== c); c.parentNode = null; return c; }
+  get firstChild() { return this.childNodes[0] || null; } get firstElementChild() { return this.childNodes.find((c) => c instanceof El) || null; }
+  get textContent() { return this.childNodes.map((c) => c.textContent).join(''); }
+  set textContent(t) { this.childNodes = []; if (t !== '') this.appendChild(new Text_(String(t))); } }
+class Text_ extends Node_ { constructor(t) { super(); this.t = t; } get textContent() { return this.t; } }
+class El extends Node_ {
+  constructor(tag) { super(); this.tagName = tag.toUpperCase(); this.attrs = {}; this.style = {}; this.listeners = {}; this.classList = new ClassList(this); this.value = ''; this.dataset = {}; this.disabled = false; this.files = []; }
+  setAttribute(k, v) { this.attrs[k] = String(v); if (k.startsWith('data-')) this.dataset[k.slice(5)] = String(v); if (k === 'value') this.value = String(v); }
+  getAttribute(k) { return this.attrs[k] ?? null; } get id() { return this.attrs.id; } get className() { return this.attrs.class || ''; } set className(v) { this.attrs.class = v; }
+  addEventListener(t, f) { (this.listeners[t] = this.listeners[t] || []).push(f); } removeEventListener() {}
+  set onclick(f) { this.listeners.click = [f]; } set onchange(f) { this.listeners.change = [f]; }
+  dispatch(t, ev) { (this.listeners[t] || []).forEach((f) => f(Object.assign({ target: this, preventDefault() {}, stopPropagation() {} }, ev || {}))); }
+  click() { this.dispatch('click'); }
+  focus() { document.activeElement = this; this.dispatch('focus'); } blur() { this.dispatch('blur'); }
+  showModal() { this.open = true; } close() { this.open = false; }
+  scrollIntoView() {} getBoundingClientRect() { return { left: 0, top: 0, width: 1200, height: 800 }; }
+  all() { const out = []; const walk = (n) => n.childNodes.forEach((c) => { if (c instanceof El) { out.push(c); walk(c); } }); walk(this); return out; }
+  matches(sel) { if (sel.startsWith('#')) return this.id === sel.slice(1); if (sel.startsWith('.')) return this.classList.contains(sel.slice(1)); return this.tagName === sel.toUpperCase(); }
+  querySelectorAll(sel) { const parts = sel.trim().split(/\s+/); let set = [this];
+    parts.forEach((p) => { const next = []; set.forEach((r) => r.all().forEach((e) => { if (e.matches(p) && !next.includes(e)) next.push(e); })); set = next; }); return set; }
+  querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
+  getContext() { return new Proxy({}, { get: (t, k) => (k === 'measureText' ? (s) => ({ width: String(s).length * 7 }) : k in t ? t[k] : () => {}), set: (t, k, v) => { t[k] = v; return true; } }); }
+  toDataURL() { return 'data:,'; }
+}
+const VOID = new Set(['meta', 'link', 'input', 'br', 'img']);
+function parseHtml(html, root) {
+  html = html.replace(/<!--[\s\S]*?-->/g, '').replace(/<script[\s\S]*?<\/script>/g, '');
+  const re = /<\/?([a-zA-Z0-9]+)([^>]*)>|([^<]+)/g; const stack = [root]; let m;
+  while ((m = re.exec(html))) {
+    if (m[3]) { if (m[3].trim()) stack[stack.length - 1].appendChild(new Text_(m[3])); continue; }
+    if (m[0].startsWith('</')) { stack.pop(); continue; }
+    const el = new El(m[1]); (m[2].match(/[\w-]+(="[^"]*")?/g) || []).forEach((a) => { const [k, v] = a.split(/=(.*)/s); el.setAttribute(k, v ? v.slice(1, -1) : ''); });
+    stack[stack.length - 1].appendChild(el); if (!VOID.has(m[1].toLowerCase()) && !m[0].endsWith('/>')) stack.push(el);
+  }
+}
+const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+const body = new El('body'); parseHtml(html.split('<body>')[1], body);
+const docListeners = {};
+const document = { body, activeElement: body, createElement: (t) => new El(t), createTextNode: (t) => new Text_(t),
+  getElementById: (id) => body.querySelector('#' + id), querySelector: (s) => body.querySelector(s), querySelectorAll: (s) => body.querySelectorAll(s),
+  addEventListener: (t, f) => (docListeners[t] = docListeners[t] || []).push(f) };
+let rafQ = [];
+const ctx = Object.assign(globalThis, {
+  document, window: globalThis, devicePixelRatio: 1, ResizeObserver: class { observe() {} },
+  requestAnimationFrame: (f) => { rafQ.push(f); return rafQ.length; }, cancelAnimationFrame: () => {},
+  alert: (m) => { throw new Error('alert: ' + m); }, confirm: () => true, indexedDB: undefined, addEventListener: () => {},
+});
+void ctx;
+delete globalThis.SSOT;
+const scripts = Array.from(html.matchAll(/<script src="([^"]+)"/g)).map((m) => m[1]);
+scripts.forEach((s) => vm.runInThisContext(fs.readFileSync(path.join(ROOT, s), 'utf8'), { filename: s }));
+const S = globalThis.SSOT; const $ = (s) => document.querySelector(s);
+const flushRaf = (n) => { for (let i = 0; i < (n || 3); i++) { const q = rafQ; rafQ = []; q.forEach((f) => f(0)); } };
+const text = (sel) => $(sel).textContent;
+const steps = [];
+const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name); } catch (e) { steps.push('  ✗ ' + name + '\n      ' + (e.stack || e).toString().split('\n').slice(0, 4).join('\n      ')); process.exitCode = 1; } };
+
+(async () => {
+  await step('啟動、顯示歡迎畫面', async () => { (docListeners.DOMContentLoaded || []).forEach((f) => f()); await new Promise((r) => setTimeout(r, 20)); if ($('#welcome').classList.contains('hidden')) throw new Error('應顯示歡迎畫面'); });
+  await step('載入範例並建立基準', async () => {
+    await App.loadSample(); if (!$('#input-text').value.includes('TPE_CORE_RT_01')) throw new Error('範例未載入');
+    if (process.env.SMOKE_INPUT) $('#input-text').value = fs.readFileSync(process.env.SMOKE_INPUT, 'utf8');
+    const t0 = Date.now();
+    $('#input-build').click(); for (let i = 0; i < 4000 && !App.snap; i++) await new Promise((r) => setTimeout(r, 5));
+    if (process.env.SMOKE_INPUT) console.log('      建立＋繪製：' + (Date.now() - t0) + ' ms，節點 ' + App.graph.nodes.length);
+    if (!App.snap) throw new Error('基準未建立：' + text('#input-status'));
+    await new Promise((r) => setTimeout(r, 20));
+    if (!process.env.SMOKE_INPUT && !text('#pane-findings').includes('LLDP 單向')) throw new Error('檢查結果未顯示');
+    if (!$('#welcome').classList.contains('hidden')) throw new Error('歡迎畫面未隱藏');
+  });
+  await step('繪圖：不同縮放程度、分群、主機切換', () => {
+    const g = App.graph; [0.05, 0.3, 0.8, 1.6, 3].forEach((s) => { g.s = s; g.draw(); });
+    $('#btn-hosts').click(); g.draw(); $('#btn-groups').click(); g.draw(); $('#btn-groups').click(); $('#btn-relayout').click(); g.draw();
+    $('#btn-force').click(); flushRaf(5); $('#btn-force').click();
+  });
+  await step('未知對端：畫在圖上、可點選、收合與展開', () => {
+    const g = App.graph; const v = g.nodes.filter((n) => n.virtual);
+    if (!v.length) throw new Error('圖上沒有未知對端節點');
+    if (process.env.SMOKE_INPUT) { // 大型網路：全網超過上限，全部收合成群組
+      if (!v.every((n) => n.kind === 'cluster')) throw new Error('超過全網上限時應全部收合');
+      g.emit('click', { type: 'node', id: v[0].id }); if (App.sel.type !== 'endpoints') throw new Error('點群組應顯示末端清單'); return;
+    }
+    if (!v.some((n) => n.kind === 'endpoint')) throw new Error('應有單一 MAC 的未知對端');
+    if (!v.every((n) => g.pos.has(n.id) && g.edgesByNode.has(n.id))) throw new Error('未知對端缺少位置或連線');
+    const one = v.find((n) => n.kind === 'endpoint'); g.hover = { type: 'node', id: one.id }; g.draw(); g.hover = null;
+    g.emit('click', { type: 'node', id: one.id }); if (App.sel.type !== 'interface') throw new Error('點選單一未知對端應顯示該介面');
+    // 收合：上限降到 3 → 每台設備的末端合併成一個群組
+    App.UNKNOWN_EXPAND_MAX = 3; App.expanded = new Set(); App.toggleExpand('TPE_ACC_SW_01'); App.toggleExpand('TPE_ACC_SW_01');
+    const cl = g.nodes.filter((n) => n.kind === 'cluster'); if (!cl.length) throw new Error('超過上限時應收合成群組');
+    g.draw(); g.emit('click', { type: 'node', id: cl[0].id }); if (App.sel.type !== 'endpoints' || !text('#detail').includes('個埠')) throw new Error('點群組應顯示末端清單');
+    g.emit('dblclick', { type: 'node', id: cl[0].id });
+    if (g.nodes.some((n) => n.id === cl[0].id)) throw new Error('雙擊群組應展開');
+    if (g.nodes.filter((n) => n.virtual && n.parent === cl[0].parent && n.kind !== 'cluster').length !== 8) throw new Error('展開後應有 8 個末端');
+    App.UNKNOWN_EXPAND_MAX = 8; App.expanded = new Set();
+    $('#btn-unknown').click(); g.draw(); if (g.nodes.filter((n) => g.visible(n) && n.virtual).length) throw new Error('關閉開關後不應顯示未知對端');
+    $('#btn-unknown').click();
+    // 搜尋 MAC → 高亮未知對端節點
+    const m = App.snap.model.macs.find((x) => x.edge.length === 1 && App.vOfEp.has(x.edge[0]));
+    if (m) { App.select({ type: 'mac', key: m.mac }, { focus: true }); if (!g.hl.nodes.has(App.vOfEp.get(m.edge[0]))) throw new Error('MAC 搜尋應標出未知對端'); }
+    // 檢查結果 A03 → 顯示末端清單
+    const i = App.snap.findings.findIndex((f) => f.id === 'A03'); if (i >= 0) { App.selectFinding(i); if (App.sel.type !== 'endpoints') throw new Error('A03 應顯示末端清單'); }
+  });
+  await step('點選每一筆檢查結果', () => { App.snap.findings.forEach((f, i) => { App.selectFinding(i); App.graph.draw(); }); });
+  await step('點選每台設備、每條連結、部分介面', () => {
+    App.snap.model.devices.slice(0, 300).forEach((d) => App.select({ type: 'device', key: d.key }, { focus: true }));
+    App.snap.model.links.slice(0, 300).forEach((l) => App.select({ type: 'link', key: l.key }));
+    App.snap.model.interfaces.slice(0, 120).forEach((i) => App.select({ type: 'interface', key: i.key }));
+    const p = Array.from(App.pairs.values()).find((x) => x.links.length > 1); App.select({ type: 'pair', id: p.id, links: p.links, devs: [p.a, p.b] });
+    if (!text('#detail').includes('條連結')) throw new Error('多連結明細未顯示');
+  });
+  await step('MAC、IP、VLAN 查詢與圖上標示', () => {
+    App.snap.model.macs.slice(0, 40).forEach((m) => App.select({ type: 'mac', key: m.mac }));
+    ['10.1.20.11', '10.1.30.11', '10.255.1.1', '9.9.9.9'].forEach((ip) => App.select({ type: 'ip', key: ip }));
+    App.select({ type: 'vlan', key: '30' }); App.graph.draw();
+    if (!process.env.SMOKE_INPUT && !text('#detail').includes('只有一端有此 VLAN 的連結')) throw new Error('VLAN 不一致未顯示');
+  });
+  await step('搜尋框', async () => {
+    const inp = $('#search'); inp.value = 'acc_sw_0'; inp.dispatch('input'); await new Promise((r) => setTimeout(r, 150));
+    if (!text('#search-dd').includes('_ACC_SW_0')) throw new Error('搜尋結果不正確');
+    inp.dispatch('keydown', { key: 'Enter' });
+    if (App.sel.type !== 'device') throw new Error('Enter 應選取設備');
+  });
+  await step('路由追蹤', () => {
+    $('#btn-trace').click(); $('#trace-src').value = '10.1.30.15'; $('#trace-dst').value = '8.8.8.8'; $('#trace-run').click();
+    if (!text('#detail').includes('下一跳不在基準內') && !text('#detail').includes('逐跳')) throw new Error('追蹤結果未顯示');
+    App.graph.draw();
+  });
+  await step('原文檢視', () => { App.openRaw(S.readers.PASTE, 10); if (!$('#dlg-raw').open || !text('#raw-body').includes('/export')) throw new Error('原文未顯示'); });
+  await step('覆蓋率分頁', () => { document.querySelectorAll('#left .tabs button')[1].click(); if (!text('#pane-coverage').includes(process.env.SMOKE_INPUT ? '有缺漏 0' : '有缺漏 1')) throw new Error('覆蓋率摘要不正確'); });
+  await step('比對分頁', async () => {
+    const inp = $('#pane-compare').querySelector('input'); inp.files = [{ name: 'expected-sample.json', text: async () => fs.readFileSync(path.join(ROOT, 'samples/expected-sample.json'), 'utf8') }];
+    inp.dispatch('change', { target: inp }); await new Promise((r) => setTimeout(r, 20));
+    if (!text('#pane-compare').includes('有差異')) throw new Error('比對結果未顯示');
+  });
+  await step('清除基準', async () => { $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20)); if (App.snap) throw new Error('未清除'); });
+  console.log(steps.join('\n'));
+  setTimeout(() => process.exit(process.exitCode || 0), 10);
+})();

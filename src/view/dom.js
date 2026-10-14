@@ -32,6 +32,8 @@
   V.SEV = { error: '錯誤', warn: '警告', info: '提醒' };
   V.CLS = { lag: '聚合', '40g': '40G 以上', '10g': '10G', '1g': '1G', oob: '管理', l3: 'L3（OSPF）', other: '其他' };
   V.STATUS = { up: '連線', down: '中斷', unknown: '不明' };
+  // 鄰居發現協定（LLDP／MNDP／CDP）；L3 連結沒有發現協定時退回 via（如 OSPF）
+  V.protoText = (l) => ((l.protocols && l.protocols.length ? l.protocols : l.via) || []).map((p) => p.toUpperCase()).join('、');
 
   V.chip = (text, cls, attrs) => V.h('span', Object.assign({ class: 'chip ' + (cls || '') }, attrs || {}), text);
   V.kindChip = (k) => V.chip(V.KIND[k] || k, 'kind-' + k);

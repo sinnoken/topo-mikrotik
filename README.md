@@ -52,11 +52,13 @@ npm run test:large     # 加上約 1000 台的壓力測試
 npm run sample         # 重新產生範例收集檔
 npm run gen:large      # 產生約 1000 台的收集檔（samples/large-1000.txt）
 npm run oui -- <oui-data.json>   # 更新 OUI 廠商資料
+npm run collect -- devices.csv --output collection.txt  # 透過 SSH 批次收集
 ```
 
 - 新增廠牌：在 `src/adapters/` 新增檔案並 `S.adapters.register()`，加到 `tools/core-files.js` 與 `index.html`。
 - 新增輸入格式：在 `src/readers/` 新增 reader 並放進 `readers/index.js` 的 `ORDER`。
 - 新增檢查：在 `src/check/checks.js` 的 `CATALOG` 加一筆並實作；在範例資料放一個對應的問題並加測試。
+- SSH 收集器是 WSL/Linux 可執行的本機 Node CLI，不是瀏覽器功能；使用既有 SSH key/agent，將多台設備的唯讀輸出包成一個 `bundle-v1` 檔。
 
 設計與取捨見 [docs/design-ssot.md](docs/design-ssot.md)。
 

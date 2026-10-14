@@ -18,6 +18,43 @@
 
 基準會保存在這個瀏覽器（IndexedDB），下次開啟自動還原；按「清除」只清除本工具的資料。
 
+### SSH 批次收集（選用）
+
+在 WSL／Linux 可用 [`tools/collect.sh`](tools/collect.sh) 透過 SSH 收集多台設備。先複製
+[`tools/devices.csv`](tools/devices.csv) 為自己的設備清單，並把範例的文件保留 IP
+（`192.0.2.0/24`）改為實際位址：
+
+```bash
+cp tools/devices.csv devices.csv
+```
+
+設備清單第一列必須是 `name,address,user,port`；`name` 應唯一，且建議與設備的
+`/system identity` 相同。`port` 可留空，預設為 `22`。
+
+先驗證設備清單與將執行的唯讀命令，不建立連線：
+
+```bash
+./tools/collect.sh devices.csv --dry-run
+```
+
+收集全部支援資料並產生可直接載入的 `bundle-v1` 檔：
+
+```bash
+./tools/collect.sh devices.csv --output collection.txt
+```
+
+若只需要基本 L2 拓樸，可限縮為設定、鄰居、MAC 表與系統資訊：
+
+```bash
+./tools/collect.sh devices.csv \
+  --commands config,neighbor,bridgehost,system \
+  --output topology.txt
+```
+
+收集器使用既有 SSH key 或 ssh-agent，並保留系統的 host-key 驗證；不要略過 host-key
+檢查，也不要在 CSV 或收集檔放入密碼、私鑰或 `show-sensitive` 輸出。完整收集清單、輸入
+格式與所有可用的命令 ID 見 [`docs/collection.md`](docs/collection.md)。
+
 ## 專案結構
 
 ```

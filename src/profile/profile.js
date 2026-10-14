@@ -4,7 +4,7 @@
  * 它不能新增、刪除或改變任何事實（介面、連結、VLAN、位址）。
  *
  * {
- *   "schema": "ssot-profile/1", "id": "cht-naming", "version": "1",
+ *   "schema": "ssot-profile/1", "id": "site-naming", "version": "1",
  *   "stripDomain": true,
  *   "alias": { "OLD-NAME": "NEW_NAME" },
  *   "classify": [ { "match": "_FW_", "flags": "i", "kind": "firewall", "role": "fw" } ],

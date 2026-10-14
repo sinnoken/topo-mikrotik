@@ -4,8 +4,8 @@
  */
 (function (S) {
   S.profiles = S.profiles || {};
-  S.profiles['cht-naming'] = {
-    schema: 'ssot-profile/1', id: 'cht-naming', version: '1', label: '站點_角色_編號（例：TPE_CORE_SW_01）',
+  S.profiles['site-naming'] = {
+    schema: 'ssot-profile/1', id: 'site-naming', version: '1', label: '站點_角色_編號（例：TPE_CORE_SW_01）',
     stripDomain: true,
     alias: {},
     classify: [

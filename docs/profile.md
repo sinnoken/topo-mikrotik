@@ -14,7 +14,7 @@
 ```json
 {
   "schema": "ssot-profile/1",
-  "id": "cht-naming",
+  "id": "site-naming",
   "version": "1",
   "label": "站點_角色_編號",
   "stripDomain": true,
@@ -37,4 +37,4 @@
 ## 使用方式
 
 - 在「建立基準」對話框的「命名規則」選單選擇，或選「載入命名規則檔（JSON）…」。載入過的規則會保存在這個瀏覽器。
-- 專案附帶 `profiles/cht-naming.js`（舊版 `GROUP_RULES` 搬過來的範例）。要新增內建規則，照同樣方式放在 `profiles/` 並在 `index.html` 加一行 `<script>`。
+- 專案附帶 `profiles/site-naming.js`（舊版 `GROUP_RULES` 搬過來的範例）。要新增內建規則，照同樣方式放在 `profiles/` 並在 `index.html` 加一行 `<script>`。

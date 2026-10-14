@@ -233,8 +233,8 @@ test('命名規則有錯時明確報錯', () => {
 });
 test('附帶的命名規則檔可載入', () => {
   const vm = require('vm');
-  vm.runInThisContext(read('profiles/cht-naming.js'));
-  const p = S.profiles['cht-naming'];
+  vm.runInThisContext(read('profiles/site-naming.js'));
+  const p = S.profiles['site-naming'];
   assert.ok(p && S.profile.compile(p));
   const s = build(read('samples/sample-bundle.txt'), { profile: p });
   assert.ok(s.model.devices.filter((d) => d.group === 'TPE').length >= 14);

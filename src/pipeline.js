@@ -104,7 +104,7 @@
     })).sort((a, b) => nat(a.key, b.key));
 
     const links = Array.from(M.links.values()).map((l) => ({
-      key: l.key, a: l.a, b: l.b, layer: l.layer, via: Array.from(l.via).sort(), verified: !!(l.verified || l.ospfBoth), hearsay: l.hearsay,
+      key: l.key, a: l.a, b: l.b, layer: l.layer, via: Array.from(l.via).sort(), protocols: Array.from(l.protocols || []).sort(), verified: !!(l.verified || l.ospfBoth), hearsay: l.hearsay,
       cls: l.cls, vlansA: l.vlansA || [], vlansB: l.vlansB || [], vlansCommon: l.vlansCommon || [], vlanMismatch: !!l.vlanMismatch, src: l.src,
     })).sort((a, b) => nat(a.key, b.key));
 

@@ -115,7 +115,7 @@ _____
 | 項目 | 說明 |
 |---|---|
 | 對端埠名 | 鄰居列的 `interface-name`（來自 LLDP）才是對端的埠名。沒有時，單一連結仍可配對；**平行連結（例如 LACP）會依本機介面名稱排序後一一配對**，這是推測，不保證正確 |
-| 同一鄰居多列 | 同一台鄰居可能同時從連接埠與 `bridge` 出現，或被多個協定各列一次；系統優先採用連接埠，重複的丟掉 |
+| 同一鄰居多列 | 同一台鄰居可能同時從連接埠與 `bridge` 出現，或被多個協定各列一次；系統優先採用連接埠，重複的丟掉。同一本機介面上 MAC 或 identity 相同的列（例如 LLDP 與 MNDP／CDP）會合併為一筆：`discovered-by` 取聯集（連結的 `protocols`），欄位取非空值，對端埠名優先採 LLDP；同一介面回報不同埠名時保留在 claim 的 `peerIfcAlt` |
 | Bridge VLAN | 只有 bridge 開了 `vlan-filtering=yes` 才計入 VLAN 成員；每個 bridge 連接埠的 `pvid`（預設 1）算是該 VLAN 的未標記成員 |
 | VLAN 名稱 | RouterOS 的 bridge VLAN 沒有名稱，所以沒有「同一 VLAN 名稱不同」這類檢查 |
 | 聚合 | `/interface bonding` 的 `slaves` 視為聚合成員，兩端成員數不同會列為 K03 |

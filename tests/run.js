@@ -78,6 +78,23 @@ test('鄰居：兩邊都沒有對端埠名（RouterOS 6）：單一連結可配�
   assert.strictEqual(lag.model.links.length, 2); assert.strictEqual(count(lag, 'K02'), 0);
 });
 
+test('鄰居：同一介面的 LLDP 與 MNDP/CDP 列合併為一筆，保留協定聯集；缺埠名或只有 MAC／identity 也能對上', () => {
+  const claims = (t) => build(t).model.links;
+  const a = 'A (10.0.0.1):\n### /ip neighbor print detail\n'
+    + ' 0 interface=ether1 mac-address=AA:00:00:00:00:02 identity=B interface-name=ether9 discovered-by=lldp\n'
+    + ' 1 interface=ether1 mac-address=AA:00:00:00:00:02 identity=B discovered-by=mndp\n'
+    + ' 2 interface=ether1 mac-address=aa:00:00:00:00:02 discovered-by=cdp\n'
+    + ' 3 interface=ether2 mac-address=AA:00:00:00:00:03 identity=C interface-name=p1 discovered-by=lldp\n'
+    + ' 4 interface=ether2 identity=c discovered-by=mndp\n'
+    + ' 5 interface=bridge1 mac-address=AA:00:00:00:00:02 identity=B discovered-by=mndp\n';
+  const s = build(a);
+  assert.strictEqual(s.model.links.length, 2);
+  const l1 = s.model.links.find((l) => l.key.includes('A') && l.a.includes('ether1') || l.b.includes('ether1'));
+  assert.deepStrictEqual(l1.protocols, ['cdp', 'lldp', 'mndp']);
+  assert.ok(!s.model.interfaces.some((i) => /bridge1/.test(i.key)), 'bridge 觀察不應多出介面');
+  assert.ok(claims(a).every((l) => !/\?\(/.test(l.a + l.b)), '合併後不應有未知埠名的重複連結');
+});
+
 // ------------------------------------------------------------------ 設定（export）
 const EXPORT_TERSE = ['SW_A (10.0.0.1):', '### /export terse', '# 2026-10-13 10:00:00 by RouterOS 7.12.1', '# model = CRS326-24G-2S+',
   '/interface bridge add name=bridge1 vlan-filtering=yes', '/interface bonding add mode=802.3ad name=bond1 slaves=ether1,ether2',

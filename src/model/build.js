@@ -78,7 +78,7 @@
           if (f.board && !pd.board) pd.board = f.board;
           if (f.platform && !pd.platform) pd.platform = f.platform;
           if (f.caps && !pd.caps) pd.caps = f.caps;
-          M.claims.push({ dev: f.dev, ifc: K.ifc(f.ifc), peer: peerKey, peerIfc: f.peerIfc || '?', chassis: f.chassis, block: f.block, line: f.line });
+          M.claims.push({ dev: f.dev, ifc: K.ifc(f.ifc), peer: peerKey, peerIfc: f.peerIfc || '?', chassis: f.chassis, protocols: f.protocols || [], peerIfcAlt: f.peerIfcAlt || null, block: f.block, line: f.line });
           break;
         }
         case 'sys': if (f.board) d.board = f.board; if (f.version) d.version = f.version; break;
@@ -176,12 +176,14 @@
     const key = K.link(a, b);
     const l = getOr(M.links, key, () => {
       const [x, y] = a < b ? [a, b] : [b, a];
-      return { key, a: x, b: y, layer, via: new Set(), verified: false, hearsay: false, src: [] };
+      return { key, a: x, b: y, layer, via: new Set(), verified: false, hearsay: false, protocols: new Set(), src: [] };
     });
     if (layer === 'l2') l.layer = 'l2';
     l.via.add(via);
+    ((extra && extra.protocols) || []).forEach((p) => l.protocols.add(p));
     if (src && l.src.length < MAX_SRC) l.src.push(src);
-    Object.assign(l, extra || {});
+    const { protocols, ...rest } = extra || {};
+    Object.assign(l, rest);
     return l;
   }
 
@@ -213,7 +215,7 @@
         }
         if (rev) {
           const remote = K.ep(c.peer, rev.ifc);
-          const l = addLink(M, local, remote, 'l2', 'lldp', src, { verified: true });
+          const l = addLink(M, local, remote, 'l2', 'lldp', src, { verified: true, protocols: c.protocols });
           if (!unknownPort && said !== rev.ifc) M.notes.k04.push({ link: l.key, dev: c.dev, said: c.peerIfc, actual: rev.ifc, block: c.block, line: c.line });
           return;
         }
@@ -221,7 +223,7 @@
         const remote = K.ep(c.peer, rname);
         const existed = M.ifcs.has(remote);
         const ri = iface(M, c.peer, rname); if (!existed) ri.hearsay = true;
-        const l = addLink(M, local, remote, 'l2', 'lldp', src);
+        const l = addLink(M, local, remote, 'l2', 'lldp', src, { protocols: c.protocols });
         M.notes.k01.push({ link: l.key, dev: c.dev, peer: c.peer, ifc: c.ifc, peerIfc: c.peerIfc, block: c.block, line: c.line });
         return;
       }
@@ -229,7 +231,7 @@
       const remote = K.ep(c.peer, rname);
       const existed = M.ifcs.has(remote);
       const ri = iface(M, c.peer, rname); if (!existed) ri.hearsay = true;
-      addLink(M, local, ri.key, 'l2', 'lldp', src, { hearsay: true });
+      addLink(M, local, ri.key, 'l2', 'lldp', src, { hearsay: true, protocols: c.protocols });
     });
     // 被權威端改寫過的「聽說」介面，若沒有任何連結參考就移除
     const used = new Set(); M.links.forEach((l) => { used.add(l.a); used.add(l.b); });

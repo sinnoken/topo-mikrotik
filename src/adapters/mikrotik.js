@@ -90,18 +90,36 @@
         const addr = [kv.address4, kv.address].find((a) => a && IPRE.test(a)) || null;
         rows.push({
           local: locals.find((x) => !isBridgeName(x)) || locals[0], viaBridge: locals.every(isBridgeName),
-          peer, peerIfc: kv['interface-name'] || null, mac: kv['mac-address'] || null, addr,
+          peer, ident: kv.identity || null, discoveredBy: kv['discovered-by'] || '', peerIfc: kv['interface-name'] || null, mac: kv['mac-address'] || null, addr,
           board: kv.board || null, platform: kv.platform || null, caps: kv['system-caps-enabled'] || kv['system-caps'] || null, line: r.line,
         });
       });
-      // 同一台鄰居可能被多個協定、或同時從連接埠與 bridge 看到：連接埠優先，重複的丟掉
-      const seen = new Set(); const hasPort = new Set();
-      rows.forEach((r) => { if (!r.viaBridge) hasPort.add(r.peer + '|' + (r.peerIfc || '') + '|' + (r.mac || '')); });
+      // 同一台鄰居可能被多個協定（LLDP／MNDP／CDP）、或同時從連接埠與 bridge 看到：
+      // 同一個本機介面上，MAC 或 identity 相同的列視為同一個遠端，合併協定與非空欄位；連接埠優先於 bridge
+      const norm = (v) => (v ? String(v).toLowerCase() : null);
+      const same = (x, y) => (x.macK && x.macK === y.macK) || (x.idK && x.idK === y.idK);
       rows.forEach((r) => {
-        const gk = r.peer + '|' + (r.peerIfc || '') + '|' + (r.mac || '');
-        if (r.viaBridge && hasPort.has(gk)) return;
-        const k = gk + '|' + r.local; if (seen.has(k)) return; seen.add(k);
-        emit({ t: 'lldp', ifc: r.local, peer: r.peer, peerIfc: r.peerIfc, chassis: r.mac, peerAddr: r.addr, board: r.board, platform: r.platform, caps: r.caps, line: r.line });
+        r.macK = norm(r.mac); r.idK = norm(r.ident);
+        r.protos = list(String(r.discoveredBy || '').toLowerCase());
+      });
+      const physical = rows.filter((r) => !r.viaBridge);
+      const groups = [];
+      physical.concat(rows.filter((r) => r.viaBridge && !physical.some((p) => same(p, r)))).forEach((r) => {
+        const g = groups.find((x) => x.local === r.local && x.rows.some((y) => same(y, r)));
+        if (g) g.rows.push(r); else groups.push({ local: r.local, rows: [r] });
+      });
+      groups.forEach((g) => {
+        const first = (f, rs) => { const r = rs.find((x) => x[f]); return r ? r[f] : null; };
+        const lldp = g.rows.filter((r) => r.protos.includes('lldp'));
+        const prefer = lldp.concat(g.rows.filter((r) => !lldp.includes(r)));
+        const peerIfcs = Array.from(new Set(g.rows.map((r) => r.peerIfc).filter(Boolean)));
+        const protocols = Array.from(new Set([].concat(...g.rows.map((r) => r.protos)))).sort();
+        emit({
+          t: 'lldp', ifc: g.local, peer: first('ident', g.rows) || first('mac', g.rows) || first('addr', g.rows),
+          peerIfc: first('peerIfc', prefer), peerIfcAlt: peerIfcs.length > 1 ? peerIfcs : null, protocols,
+          chassis: first('mac', prefer), peerAddr: first('addr', g.rows), board: first('board', g.rows),
+          platform: first('platform', g.rows), caps: first('caps', g.rows), line: g.rows[0].line,
+        });
       });
     },
   });

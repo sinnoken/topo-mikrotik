@@ -38,7 +38,12 @@ TPE_ACC_SW_01,10.1.10.21,admin,22
 ./tools/collect.sh devices.csv --dry-run
 ./tools/collect.sh devices.csv --device TPE_CORE_RT_01 --commands config,neighbor
 ./tools/collect.sh devices.csv --timeout 60 --retry 1 --output collection.txt
+./tools/collect.sh devices.csv --ask-password
 ```
+
+`--ask-password` 供沒有設定 SSH key 的設備：每台設備先互動式連線一次（可輸入密碼、
+確認 host key），其餘命令共用該連線，不會重複詢問；密碼不會寫入檔案或參數。
+未使用此選項時，host key 需先用 `ssh user@address` 手動確認一次。
 
 收集器預設使用 `BatchMode=yes`、逐台執行，失敗時會保留成功區塊並以非零
 exit code 結束。請查看終端的設備/指令失敗摘要，不要把部分成功的檔案當成

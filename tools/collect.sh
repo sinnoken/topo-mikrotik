@@ -15,6 +15,7 @@ usage() {
   --commands ID,...       只執行指定命令 ID
   --timeout SECONDS       單一 SSH 指令 timeout（預設 30）
   --retry COUNT           失敗後重試次數（預設 0）
+  --ask-password          每台設備連線一次並手動輸入密碼／確認 host key
   --dry-run               只驗證清單並列出命令，不連線
   -h, --help              顯示說明
 EOF
@@ -93,7 +94,7 @@ run_command() {
   while :; do
     : > "$stdout_file"; : > "$stderr_file"
     timeout --signal=TERM --kill-after=5 "$TIMEOUT" \
-      ssh -o BatchMode=yes -p "$port" "$user@$address" "$command" \
+      ssh -o BatchMode=yes ${SSH_CONTROL_OPTS[@]+"${SSH_CONTROL_OPTS[@]}"} -p "$port" "$user@$address" "$command" \
       >"$stdout_file" 2>"$stderr_file"
     code=$?
     (( code == 0 )) && return 0
@@ -109,6 +110,8 @@ RETRY=0
 DEVICE_FILTER=
 COMMAND_FILTER=
 DRY_RUN=0
+ASK_PASSWORD=0
+SSH_CONTROL_OPTS=()
 DEVICE_NAMES=(); DEVICE_ADDRESSES=(); DEVICE_USERS=(); DEVICE_PORTS=(); COMMAND_IDS=()
 INVENTORY=
 
@@ -119,6 +122,7 @@ while (($#)); do
     --commands) (($# >= 2)) || die "$1 需要值"; COMMAND_FILTER=$2; shift 2 ;;
     --timeout) (($# >= 2)) || die "$1 需要值"; TIMEOUT=$2; shift 2 ;;
     --retry) (($# >= 2)) || die "$1 需要值"; RETRY=$2; shift 2 ;;
+    --ask-password) ASK_PASSWORD=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage; exit 0 ;;
     -*) die "未知選項：$1" ;;
@@ -155,6 +159,19 @@ for ((i = 0; i < ${#DEVICE_NAMES[@]}; i++)); do
   selected_device "$name" || continue
   printf '收集 %s (%s)\n' "$name" "$address"
   printf '%s (%s):\n' "$name" "$address" >> "$OUTPUT"
+  SSH_CONTROL_OPTS=()
+  if (( ASK_PASSWORD )); then
+    control_path="$TMP_DIR/cm-$i"
+    # 互動式建立共用連線；ControlPersist 讓 ssh 認證後轉入背景，後續命令不再詢問
+    if ssh -o ControlMaster=yes -o ControlPath="$control_path" -o ControlPersist=120 -p "$port" "$user@$address" true; then
+      SSH_CONTROL_OPTS=(-o ControlPath="$control_path")
+    else
+      printf '  FAIL 無法建立連線（密碼或 host key 錯誤）\n' >&2
+      printf '# collection failed: connection\n_____\n' >> "$OUTPUT"
+      failures=$((failures + 1))
+      continue
+    fi
+  fi
   for id in "${COMMAND_IDS[@]}"; do
     command=$(command_for_id "$id")
     printf '### %s\n' "$command" >> "$OUTPUT"
@@ -176,6 +193,7 @@ for ((i = 0; i < ${#DEVICE_NAMES[@]}; i++)); do
       if [[ -s "$stderr_file" ]]; then sed 's/^/    /' "$stderr_file" >&2; fi
     fi
   done
+  if ((${#SSH_CONTROL_OPTS[@]})); then ssh "${SSH_CONTROL_OPTS[@]}" -O exit -p "$port" "$user@$address" 2>/dev/null; fi
   printf '_____\n' >> "$OUTPUT"
 done
 

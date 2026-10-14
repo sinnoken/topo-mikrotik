@@ -163,7 +163,8 @@ for ((i = 0; i < ${#DEVICE_NAMES[@]}; i++)); do
   if (( ASK_PASSWORD )); then
     control_path="$TMP_DIR/cm-$i"
     # 互動式建立共用連線；ControlPersist 讓 ssh 認證後轉入背景，後續命令不再詢問
-    if ssh -o ControlMaster=yes -o ControlPath="$control_path" -o ControlPersist=120 -p "$port" "$user@$address" true; then
+    # -fN 認證後轉入背景且不執行遠端命令（RouterOS 沒有 true 等 shell 指令）
+    if ssh -fN -o ControlMaster=yes -o ControlPath="$control_path" -o ControlPersist=120 -p "$port" "$user@$address"; then
       SSH_CONTROL_OPTS=(-o ControlPath="$control_path")
     else
       printf '  FAIL 無法建立連線（密碼或 host key 錯誤）\n' >&2

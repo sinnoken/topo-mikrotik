@@ -8,13 +8,13 @@
 
 ## 0. 批次 SSH 收集器（WSL/Linux）
 
-專案提供輕量 Node.js CLI，使用作業系統的 `ssh` 逐台執行以下唯讀指令，
+專案提供輕量 Bash CLI，使用作業系統的 `ssh` 逐台執行以下唯讀指令，
 最後產生一個可直接上傳網站的 `bundle-v1` 檔。它不在瀏覽器內執行，也不保存
 密碼或引入 SSH library。
 
 前置條件：
 
-- WSL/Linux（macOS 也可）、Node.js 與 OpenSSH client
+- WSL/Linux、Bash、GNU `timeout` 與 OpenSSH client
 - 已設定 SSH key/agent 與 known_hosts；不要把密碼寫進設備清單
 - 先用 `ssh admin@<address>` 確認可免互動登入
 
@@ -29,15 +29,15 @@ TPE_ACC_SW_01,10.1.10.21,admin,22
 執行：
 
 ```bash
-npm run collect -- devices.csv --output collection.txt
+./tools/collect.sh devices.csv --output collection.txt
 ```
 
 常用選項：
 
 ```bash
-npm run collect -- devices.csv --dry-run
-npm run collect -- devices.csv --device TPE_CORE_RT_01 --command config,neighbor
-npm run collect -- devices.csv --timeout 60000 --retry 1 --output collection.txt
+./tools/collect.sh devices.csv --dry-run
+./tools/collect.sh devices.csv --device TPE_CORE_RT_01 --commands config,neighbor
+./tools/collect.sh devices.csv --timeout 60 --retry 1 --output collection.txt
 ```
 
 收集器預設使用 `BatchMode=yes`、逐台執行，失敗時會保留成功區塊並以非零
@@ -45,7 +45,8 @@ exit code 結束。請查看終端的設備/指令失敗摘要，不要把部分
 完整基準。SSH stderr 不會混入 RouterOS stdout，也不會寫入輸出檔；設備 host
 key 驗證交由系統 SSH，禁止用 `StrictHostKeyChecking=no`。
 
-CLI 只執行本節列出的唯讀收集指令，不執行設定變更。輸出檔仍由網站正常走
+CLI 只執行本節列出的唯讀收集指令，不執行設定變更。設備清單採用簡單 CSV
+（每欄不可含逗號或引號）；輸出檔仍由網站正常走
 reader、adapter、model 與 check pipeline；收集器不解析或修改 RouterOS 內容。
 
 ## 1. 每台設備要收集的指令

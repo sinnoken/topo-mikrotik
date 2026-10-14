@@ -60,9 +60,9 @@ CLI 輸入轉成可追溯的純 JSON Snapshot，畫面只是 Snapshot 的檢視�
     產生器後重新生成，並檢查產物與測試。
 
 13. **SSH 收集器與網站分離**
-    `tools/collect.js` 是 WSL/Linux 可執行的本機 CLI；它只能使用系統 SSH
-    與既有 key/agent，產生 `bundle-v1`。不要把 SSH、credential 或
-    `child_process` 引入瀏覽器核心。
+    `tools/collect.sh` 是 WSL/Linux 可執行的本機 Bash CLI；它只能使用系統
+    SSH 與既有 key/agent，產生 `bundle-v1`。不要把 SSH、credential 或
+    shell subprocess 邏輯引入瀏覽器核心。
 
 ## 修改時的工作習慣
 

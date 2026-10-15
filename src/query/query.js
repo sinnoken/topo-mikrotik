@@ -38,6 +38,25 @@
     let inv = null;
     const unkByDev = new Map();
     m.interfaces.forEach((i) => { if (i.unknownPeer) U.getOr(unkByDev, i.dev, () => []).push(i); });
+    const wifiByDev = new Map();
+    const toCollectedInfra = (ep) => (linksByEp.get(ep) || []).some((l) => {
+      if (l.evidenceScope === S.LINK_SCOPE.BROADCAST_DOMAIN) return false;
+      const peer = dev.get(K.splitEp(l.a === ep ? l.b : l.a)[0]);
+      return peer && peer.collected && peer.kind !== 'host';
+    });
+    m.interfaces.forEach((i) => {
+      const owner = dev.get(i.dev);
+      if (i.type !== 'wifi' || !i.macs.length || i.status === 'down' || i.admin === 'down' || !owner || !owner.collected) return;
+      if (/^(irb|vlan|lo\d)/.test(i.name)) return;
+      const group = [i.key];
+      if (i.parent) {
+        const p = ifc.get(K.ep(i.dev, i.parent));
+        if (p) group.push(p.key, ...(p.members || []));
+      }
+      if (i.members && i.members.length) group.push(...i.members);
+      if (group.some(toCollectedInfra)) return;
+      U.getOr(wifiByDev, i.dev, () => []).push(i);
+    });
     const findingsBy = new Map();
     snap.findings.forEach((f, idx) => f.entities.forEach((e) => U.getOr(findingsBy, e.type + ':' + e.key, () => []).push(idx)));
     // 介面也會繼承其連結、設備的檢查結果：在查詢時合併
@@ -117,6 +136,18 @@
           ep: i.key, name: i.name, desc: i.desc, status: i.status, type: i.type, vlans: i.vlans,
           macs: i.macs.map((mk) => { const x = mac.get(mk); return { mac: mk, vendor: x ? x.vendor : null, ips: x ? x.ips : [] }; }),
         }));
+      },
+      /** 圖面投影：真末端加上非末端分類的 Wi-Fi MAC 觀察；後者不進清單或 A02。 */
+      visualUnknownDevices() {
+        return U.uniq(Q.unknownDevices().concat(Array.from(wifiByDev.keys()))).sort(U.natural);
+      },
+      visualUnknownPeers(devKey) {
+        const actual = Q.unknownPeers(devKey);
+        const wireless = (wifiByDev.get(devKey) || []).map((i) => ({
+          ep: i.key, name: i.name, desc: i.desc, status: i.status, type: i.type, vlans: i.vlans, visualOnly: true,
+          macs: i.macs.map((mk) => { const x = mac.get(mk); return { mac: mk, vendor: x ? x.vendor : null, ips: x ? x.ips : [] }; }),
+        }));
+        return actual.concat(wireless).sort((a, b) => U.natural(a.name, b.name));
       },
 
       findMac(text) {

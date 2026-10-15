@@ -374,14 +374,19 @@ test('未知對端：學到多個 MAC 的介面不列為末端', () => {
 });
 test('未知對端：Wi-Fi 即使只學到一個 MAC 也不列為末端', () => {
   const s = build('SW_A (10.0.0.1):\n### /interface print detail\n'
-    + 'Flags: D - DYNAMIC; R - RUNNING\n 0 R name="wifi1" type="wifi"\n'
+    + 'Flags: D - DYNAMIC; R - RUNNING\n 0 R name="wifi1" type="wifi"\n 1 R name="wifi2" type="wifi"\n'
     + '### /interface bridge host print detail\n'
     + ' 0 D mac-address=AA:BB:CC:00:00:01 on-interface=wifi1 bridge=bridge1 vid=10\n'
-    + ' 1 D mac-address=AA:BB:CC:00:00:02 on-interface=ether1 bridge=bridge1 vid=10\n');
+    + ' 1 D mac-address=AA:BB:CC:00:00:01 on-interface=wifi2 bridge=bridge1 vid=10\n'
+    + ' 2 D mac-address=AA:BB:CC:00:00:02 on-interface=ether1 bridge=bridge1 vid=10\n');
   assert.strictEqual(iface(s, 'SW_A|wifi1').macs.length, 1);
   assert.strictEqual(iface(s, 'SW_A|wifi1').edge, false);
   assert.strictEqual(iface(s, 'SW_A|ether1').edge, true, '一般單 MAC 介面仍列為末端');
   assert.deepStrictEqual(S.query(s).unknownPeers('SW_A').map((p) => p.name), ['ether1']);
+  assert.strictEqual(count(s, 'A02'), 0, '重複出現在 Wi-Fi 介面的 MAC 不觸發 A02');
+  const Q = S.query(s);
+  assert.deepStrictEqual(Q.visualUnknownPeers('SW_A').filter((p) => p.visualOnly).map((p) => p.name), ['wifi1', 'wifi2']);
+  assert.strictEqual(Q.inventory().rows.endpoints.some((p) => p.ifc === 'wifi1' || p.ifc === 'wifi2'), false, 'Wi-Fi 圖面提示不算末端清單');
 });
 test('A02：不同 VLAN 的末端埠不視為同一 MAC 重複位置', () => {
   const mac = 'AA:BB:CC:00:00:01';

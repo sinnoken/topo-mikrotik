@@ -63,7 +63,7 @@
   }
 
   // ---------------------------------------------------------------- 未知對端（沒有 LLDP／CDP 介面鄰接的末端埠）
-  function unknownTable(App, rows) {
+  function unknownTable(App, rows, bad) {
     return V.table([
       { t: '介面', f: (r) => h('span', { class: 'mono' }, r.name) },
       { t: 'MAC', f: (r) => (r.macs.length === 1 ? macLink(App, r.macs[0].mac) : `${r.macs.length} 個 MAC`) },
@@ -71,19 +71,22 @@
       { t: '廠商', f: (r) => S.util.uniq(r.macs.map((m) => m.vendor).filter(Boolean)).slice(0, 2).join(' / ') },
       { t: 'VLAN', f: (r) => h('span', { class: 'vlanlist' }, vlanText(r.vlans)) },
       { t: '描述', f: (r) => r.desc || '' },
-    ], rows, { onRow: (r) => App.select({ type: 'interface', key: r.ep }, { focus: true }), limit: 300, bad: (r) => r.macs.length > 1 });
+    ], rows, { onRow: (r) => App.select({ type: 'interface', key: r.ep }, { focus: true }), limit: 300, bad: bad || ((r) => r.macs.length > 1) });
   }
   function endpoints(App, sel) {
-    const Q = App.Q; const rows = Q.unknownPeers(sel.dev); const d = Q.getDevice(sel.dev);
+    const Q = App.Q; const rows = Q.unknownPeers(sel.dev); const wifi = Q.visualUnknownPeers(sel.dev).filter((r) => r.visualOnly); const d = Q.getDevice(sel.dev);
     if (!d) return h('div', { class: 'empty-detail' }, '基準中沒有這台設備');
     const macs = rows.reduce((n, r) => n + r.macs.length, 0); const multi = rows.filter((r) => r.macs.length > 1).length;
     const collapsed = App.virtual.has('?c|' + sel.dev);
     return h('div', { class: 'detail' }, [
-      h('h2', null, [devLink(App, sel.dev), ' 的未知對端']),
-      h('div', { class: 'row' }, [V.chip(`${rows.length} 個埠`), V.chip(`${macs} 個 MAC`), multi ? V.chip(`${multi} 個埠有多個 MAC`, 'warn') : null,
-        rows.length > 1 ? h('button', { onclick: () => App.toggleExpand(sel.dev) }, collapsed ? '在圖上展開' : (App.expanded.has(sel.dev) ? '在圖上收合' : '（已全部展開）')) : null]),
-      h('p', { class: 'muted' }, '這些埠只學到一個 MAC，且沒有 LLDP／CDP 介面鄰接，所以基準裡沒有已確認的埠對埠鄰居；MNDP 只代表同一 L2 網域可達，不算直連鄰接。多 MAC 埠與 Wi-Fi 介面不列為末端。'),
-      unknownTable(App, rows),
+      h('h2', null, [devLink(App, sel.dev), ' 的末端與 Wi-Fi 圖面提示']),
+      h('div', { class: 'row' }, [V.chip(`${rows.length} 個末端埠`), V.chip(`${macs} 個末端 MAC`),
+        wifi.length ? V.chip(`${wifi.length} 個 Wi-Fi 圖面提示`, 'info') : null,
+        multi ? V.chip(`${multi} 個末端埠有多個 MAC`, 'warn') : null,
+        rows.length + wifi.length > 1 ? h('button', { onclick: () => App.toggleExpand(sel.dev) }, collapsed ? '在圖上展開' : (App.expanded.has(sel.dev) ? '在圖上收合' : '（已全部展開）')) : null]),
+      h('p', { class: 'muted' }, '末端埠只學到一個 MAC，且沒有 LLDP／CDP 介面鄰接；Wi-Fi MAC 僅作圖面提示，不計入末端清單或 A02。MNDP 只代表同一 L2 網域可達，不算直連鄰接。'),
+      rows.length ? h('div', null, [sec('末端埠'), unknownTable(App, rows)]) : null,
+      wifi.length ? h('div', null, [sec('Wi-Fi（僅圖面提示，不計入末端或 A02）'), unknownTable(App, wifi, () => false)]) : null,
     ]);
   }
 

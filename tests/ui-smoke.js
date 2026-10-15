@@ -104,7 +104,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     // 收合：上限降到 3 → 每台設備的末端合併成一個群組
     App.UNKNOWN_EXPAND_MAX = 3; App.expanded = new Set(); App.toggleExpand('TPE_ACC_SW_01'); App.toggleExpand('TPE_ACC_SW_01');
     const cl = g.nodes.filter((n) => n.kind === 'cluster'); if (!cl.length) throw new Error('超過上限時應收合成群組');
-    g.draw(); g.emit('click', { type: 'node', id: cl[0].id }); if (App.sel.type !== 'endpoints' || !text('#detail').includes('個埠')) throw new Error('點群組應顯示末端清單');
+    g.draw(); g.emit('click', { type: 'node', id: cl[0].id }); if (App.sel.type !== 'endpoints' || !text('#detail').includes('末端埠')) throw new Error('點群組應顯示末端清單');
     g.emit('dblclick', { type: 'node', id: cl[0].id });
     if (g.nodes.some((n) => n.id === cl[0].id)) throw new Error('雙擊群組應展開');
     if (g.nodes.filter((n) => n.virtual && n.parent === cl[0].parent && n.kind !== 'cluster').length !== 8) throw new Error('展開後應有 8 個末端');
@@ -320,7 +320,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (!text('#detail').includes('OSPF L3 鄰接（非實體直連）')) throw new Error('設備細節沒有顯示獨立 OSPF 鄰接');
     if (!text('#detail').includes('第 5 行')) throw new Error('OSPF 細節沒有來源行連結');
   });
-  await step('CAPsMAN Wi-Fi 多 MAC 不列為拓樸末端', async () => {
+  await step('CAPsMAN Wi-Fi 多 MAC 保留菱形提示但不列末端', async () => {
     const input = 'SW_A (10.0.0.1):\n### /interface print detail\n'
       + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
       + ' 7    RS ;;; managed by CAPsMAN, traffic processing on\n'
@@ -340,8 +340,9 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (App.snap.meta.inputHash !== hash) throw new Error('Wi-Fi 基準未建立');
     const wifis = App.snap.model.interfaces.filter((i) => ['wifi1', 'wifi8'].includes(i.name));
     if (!wifis.every((i) => i.status === 'up' && !i.unknownPeer && !i.edge && i.macs.length === 2)) throw new Error('Wi-Fi 不應列為末端介面');
-    const endpoints = App.graph.nodes.filter((n) => n.virtual && n.parent === 'SW_A');
-    if (endpoints.length) throw new Error('Wi-Fi 不應建立末端節點');
+    const diamonds = App.graph.nodes.filter((n) => n.kind === 'downstream' && n.parent === 'SW_A');
+    if (diamonds.length !== 2 || !diamonds.every((n) => n.id === '?p|SW_A|wifi1' || n.id === '?p|SW_A|wifi8')) throw new Error('Wi-Fi 多 MAC 應保留菱形圖面提示');
+    if (App.Q.inventory().rows.endpoints.some((r) => r.ifc === 'wifi1' || r.ifc === 'wifi8')) throw new Error('Wi-Fi 圖面提示不可列入末端清單');
   });
   await step('veth 連線以專用顏色識別', async () => {
     const input = 'SW_A (10.0.0.1):\n### /interface print detail\n'
@@ -383,7 +384,10 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     const endpoints = App.graph.nodes.filter((n) => n.virtual && n.parent === 'SW_A');
     if (!wifis.every((i) => !i.edge && !i.unknownPeer)) throw new Error('Wi-Fi 介面不應列為末端');
     if (!ethernet || !ethernet.edge || !ethernet.unknownPeer) throw new Error('單 MAC 有線介面應列為末端');
-    if (endpoints.length !== 1 || endpoints[0].id !== '?p|SW_A|ether5') throw new Error('只有單 MAC 有線介面應畫出末端節點');
+    if (endpoints.length !== 3 || !endpoints.some((n) => n.id === '?p|SW_A|ether5')
+      || !endpoints.filter((n) => n.kind === 'downstream').every((n) => n.id === '?p|SW_A|wifi1' || n.id === '?p|SW_A|wlan1')) {
+      throw new Error('Wi-Fi 多 MAC 應保留菱形提示，並與單 MAC 有線末端分別呈現');
+    }
   });
   await step('左右欄可拖曳調整寬度，且有下限與上限', async () => {
     const grip = document.querySelector('#left .grip-left'); const rgrip = document.querySelector('#right .grip-right');

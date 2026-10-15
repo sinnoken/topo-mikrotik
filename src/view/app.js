@@ -111,14 +111,14 @@
   const vendorIni = (v) => (v ? v.replace(/[^A-Za-z0-9\u4e00-\u9fff]/g, '').slice(0, 2).toUpperCase() : '?');
 
   /**
-   * 符合未知對端條件的末端埠 → 畫成「未知對端」節點。
-   * 單一 MAC：圓形，標示 IP（ARP）或廠商，顏色依廠商。
+   * 末端埠與 Wi-Fi MAC 觀察 → 畫成「未知對端」節點。
+   * 單一 MAC：圓形；多 MAC 的 Wi-Fi：菱形（僅為圖面提示，不視為末端或參與 A02）。
    *  - 一台設備上超過 UNKNOWN_EXPAND_MAX 個（或全網超過上限）：收合成一個群組節點，雙擊展開
    */
   function addUnknownPeers(Q, nodes, pairs) {
     App.virtual = new Map(); App.vOfEp = new Map(); App.virtualByDev = new Map();
-    const devs = Q.unknownDevices();
-    const total = devs.reduce((n, d) => n + Q.unknownPeers(d).length, 0);
+    const devs = Q.visualUnknownDevices();
+    const total = devs.reduce((n, d) => n + Q.visualUnknownPeers(d).length, 0);
     const forceCollapse = total > App.UNKNOWN_TOTAL_CAP;
     const link = (dk, vid, labelA, extra) => {
       const id = 'v~' + vid;
@@ -126,7 +126,7 @@
       S.util.getOr(App.virtualByDev, dk, () => []).push(vid);
     };
     devs.forEach((dk) => {
-      const dev = Q.getDevice(dk); const rows = Q.unknownPeers(dk);
+      const dev = Q.getDevice(dk); const rows = Q.visualUnknownPeers(dk);
       const expand = App.expanded.has(dk) || (!forceCollapse && rows.length <= App.UNKNOWN_EXPAND_MAX);
       if (!expand) {
         const vid = '?c|' + dk; const macs = rows.reduce((n, r) => n + r.macs.length, 0);
@@ -138,10 +138,11 @@
       }
       rows.forEach((r) => {
         const vid = '?p|' + r.ep; const m0 = r.macs[0]; const ip = m0.ips[0];
+        const multiWifi = r.visualOnly && r.type === 'wifi' && r.macs.length > 1;
         const label = r.desc || ip || m0.vendor || K.macPretty(m0.mac).slice(-8);
-        nodes.push({ id: vid, label, kind: 'endpoint', collected: false, virtual: true, parent: dk, group: dev.group,
-          count: 1, color: vendorColor(m0.vendor), ini: vendorIni(m0.vendor),
-          tip: `${Q.devName(dk)} ${r.name}${EP.byType[r.type] ? '（' + EP.byType[r.type].label + '）' : ''}：${K.macPretty(m0.mac)}${ip ? '・' + ip : ''}${m0.vendor ? '・' + m0.vendor : ''}${r.vlans.length ? '・VLAN ' + r.vlans.join(',') : ''}` });
+        nodes.push({ id: vid, label: multiWifi ? `${r.macs.length} 個 MAC` : label, kind: multiWifi ? 'downstream' : 'endpoint', collected: false, virtual: true, parent: dk, group: dev.group,
+          count: r.macs.length, color: vendorColor(m0.vendor), ini: vendorIni(m0.vendor),
+          tip: `${Q.devName(dk)} ${r.name}${multiWifi ? '（Wi-Fi・多個 MAC）' : ''}${EP.byType[r.type] ? '（' + EP.byType[r.type].label + '）' : ''}：${multiWifi ? `${r.macs.length} 個 MAC` : K.macPretty(m0.mac)}${ip ? '・' + ip : ''}${m0.vendor ? '・' + m0.vendor : ''}${r.vlans.length ? '・VLAN ' + r.vlans.join(',') : ''}` });
         App.virtual.set(vid, { type: 'interface', ep: r.ep }); App.vOfEp.set(r.ep, vid);
         link(dk, vid, r.name, { ifStyle: EP.byType[r.type] || null });
       });
@@ -398,6 +399,7 @@
     item([dot(Object.assign({ background: CV.uncollectedFill, border: '2px dashed ' + V.KIND_COLOR.unknown }, SHAPE_CSS.circle))], '未收集', '基準裡沒有收集檔的設備（虛線外框）');
     group('末端');
     item([dot({ background: EP.vendorFallback, border: '1.5px solid ' + CV.outline })], '單一 MAC', '未知對端：一個埠一個 MAC，依廠商上色');
+    item([dot({ background: EP.downstream.fill, border: '2px dashed ' + EP.downstream.stroke, transform: 'rotate(45deg)', borderRadius: '0' })], 'Wi-Fi 多 MAC', 'Wi-Fi 的多 MAC 菱形只作圖面提示，不計為末端埠或 A02');
     item([dot({ background: EP.cluster.fill, border: '1.5px solid ' + EP.cluster.stroke, width: Math.round(LEG * 1.3) + 'px', height: Math.round(LEG * 0.8) + 'px', borderRadius: '3px' })], '群組 ×N', '同一台設備末端過多時收合，雙擊展開');
     item([h('span', { class: 'sev error' })], '錯誤／警告');
     group('連線');

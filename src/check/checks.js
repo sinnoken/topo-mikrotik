@@ -20,7 +20,7 @@
     V01: { severity: 'warn', cat: 'VLAN', title: '連結兩端 VLAN 不一致' },
     A01: { severity: 'warn', cat: '位址', title: '同一 IP 對應多個 MAC' },
     A02: { severity: 'warn', cat: '位址', title: '同一 MAC 出現在多個末端埠' },
-    A03: { severity: 'info', cat: '位址', title: '介面有學到 MAC 但沒有 LLDP 鄰居（未知對端）' },
+    A03: { severity: 'info', cat: '位址', title: '介面有學到 MAC 但沒有 LLDP／CDP 鄰接（未知對端）' },
     R01: { severity: 'info', cat: '路由', title: '路由下一跳不屬於任何已知設備' },
     R02: { severity: 'info', cat: '路由', title: 'OSPF 鄰居無法對應到已收集的設備' },
   };
@@ -139,7 +139,7 @@
         Array.from(macs.values()).map((a) => ({ block: a.block, line: a.line })));
     });
 
-    const edge = edgePorts(M, linksByEp);
+    const edge = edgePorts(M, interfaceLinksByEp);
     M.edge = edge;
     M.macs.forEach((m) => {
       m.edge = Array.from(m.seen.keys()).filter((ep) => edge.has(ep)).sort();
@@ -179,15 +179,16 @@
   /**
    * 末端埠：已收集設備上、有學到 MAC、狀態不是 down 的介面，且沒有連到其他「已收集的網路設備」
    * （連到主機或未收集設備的埠仍算末端，MAC 的位置就是這些埠）。
-   * 回傳 Map(ep → { linked: 是否有任何 LLDP 鄰居 })
+   * linksByEp 僅包含介面鄰接證據；廣播網域（MNDP）可達不代表該埠有 LLDP／CDP 鄰接。
+   * 回傳 Map(ep → { linked: 是否有任何 LLDP／CDP 鄰接 })
    */
-  function edgePorts(M, linksByEp) {
+  function edgePorts(M, adjacencyLinksByEp) {
     const out = new Map();
-    const toInfra = (ep) => (linksByEp.get(ep) || []).some((l) => {
+    const toInfra = (ep) => (adjacencyLinksByEp.get(ep) || []).some((l) => {
       const peer = M.devices.get(K.splitEp(l.a === ep ? l.b : l.a)[0]);
       return peer && peer.collected;
     });
-    const anyLink = (ep) => linksByEp.has(ep);
+    const hasAdjacency = (ep) => adjacencyLinksByEp.has(ep);
     M.ifcs.forEach((i, ep) => {
       if (!i.macs.size || i.status === 'down' || i.admin === 'down' || /^(irb|vlan|lo\d)/.test(i.name)) return;
       if (!M.devices.get(i.dev).collected) return;
@@ -195,7 +196,7 @@
       if (i.parent) { const p = M.ifcs.get(K.ep(i.dev, i.parent)); if (p) group.push(p.key, ...Array.from(p.members || [])); }
       if (i.members) group.push(...Array.from(i.members));
       if (group.some(toInfra)) return;
-      out.set(ep, { linked: group.some(anyLink) });
+      out.set(ep, { linked: group.some(hasAdjacency) });
     });
     return out;
   }

@@ -267,7 +267,7 @@
     else if (n.kind === 'firewall') { c.moveTo(p.x - r * 0.45, p.y - r * 0.15); c.lineTo(p.x + r * 0.45, p.y - r * 0.15); c.moveTo(p.x - r * 0.45, p.y + r * 0.25); c.lineTo(p.x + r * 0.45, p.y + r * 0.25); c.moveTo(p.x, p.y - r * 0.15); c.lineTo(p.x, p.y + r * 0.25); }
     c.stroke();
   }
-  /** 未知對端（由 MAC 推論出來、基準裡沒有 LLDP 鄰居的東西）：外觀刻意和已知設備不同 */
+  /** 未知對端（由 MAC 推論出來、基準裡沒有 LLDP／CDP 介面鄰接的東西）：外觀刻意和已知設備不同 */
   function drawVirtual(c, n, p, r, s) {
     if (n.kind === 'endpoint') { // 單一 MAC：圓形，顏色依廠商，近看顯示廠商縮寫
       c.fillStyle = n.color || EP.vendorFallback; c.strokeStyle = CV.outline; c.lineWidth = 1.5;

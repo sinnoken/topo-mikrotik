@@ -7,7 +7,7 @@
   const V = S.view; const h = V.h; const $ = V.$; const K = S.keys; const LINK_SCOPE = S.LINK_SCOPE;
   const App = {
     snap: null, Q: null, sources: [], profileJson: null, graph: null, pairOfLink: new Map(), pairs: new Map(), sel: null, showHosts: true,
-    // 未知對端（沒有 LLDP 鄰居、只由 MAC 推論出來的末端）：只存在於畫面，不寫進基準
+    // 未知對端（沒有 LLDP／CDP 介面鄰接、只由 MAC 推論出來的末端）：只存在於畫面，不寫進基準
     showUnknown: true, expanded: new Set(), virtual: new Map(), vOfEp: new Map(), virtualByDev: new Map(),
     UNKNOWN_EXPAND_MAX: 8, UNKNOWN_TOTAL_CAP: 800,
   };
@@ -111,7 +111,7 @@
   const vendorIni = (v) => (v ? v.replace(/[^A-Za-z0-9\u4e00-\u9fff]/g, '').slice(0, 2).toUpperCase() : '?');
 
   /**
-   * 沒有 LLDP 鄰居、但學到 MAC 的末端埠 → 畫成「未知對端」節點。
+   * 沒有 LLDP／CDP 介面鄰接、但學到 MAC 的末端埠 → 畫成「未知對端」節點。
    *  - 單一 MAC：圓形，標示 IP（ARP）或廠商，顏色依廠商
    *  - 多個 MAC：菱形，疑似下游還有交換器、AP 或虛擬化主機
    *  - 一台設備上超過 UNKNOWN_EXPAND_MAX 個（或全網超過上限）：收合成一個群組節點，雙擊展開
@@ -132,7 +132,7 @@
       if (!expand) {
         const vid = '?c|' + dk; const macs = rows.reduce((n, r) => n + r.macs.length, 0);
         nodes.push({ id: vid, label: `末端 ×${rows.length}`, kind: 'cluster', collected: false, virtual: true, parent: dk, group: dev.group, count: rows.length,
-          tip: `${Q.devName(dk)}：${rows.length} 個埠沒有 LLDP 鄰居（${macs} 個 MAC）・雙擊展開` });
+          tip: `${Q.devName(dk)}：${rows.length} 個埠沒有 LLDP／CDP 介面鄰接（${macs} 個 MAC）・雙擊展開` });
         App.virtual.set(vid, { type: 'endpoints', dev: dk }); rows.forEach((r) => App.vOfEp.set(r.ep, vid));
         link(dk, vid, `${rows.length} 埠`);
         return;

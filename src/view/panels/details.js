@@ -53,7 +53,7 @@
         ['來源', m.sources.map((s) => `${s.name}（${V.num(s.bytes)} 字元）`).join('、')]]),
       sec('內容'),
       kv([['設備', `${V.num(st.devices)}（已收集 ${V.num(st.collected)}）`], ['介面', V.num(st.interfaces)], ['連結', V.num(st.links)], ['VLAN 定義', V.num(st.vlans)],
-        ['MAC', V.num(st.macs)], ['末端（無 LLDP 鄰居的埠後方 MAC）', V.num(C.endpoints)], ['IP（ARP）', V.num(C.arpIps)], ['路由', V.num(st.routes)]]),
+        ['MAC', V.num(st.macs)], ['末端（無 LLDP／CDP 鄰接的埠後方 MAC）', V.num(C.endpoints)], ['IP（ARP）', V.num(C.arpIps)], ['路由', V.num(st.routes)]]),
       sec('檢查結果'),
       h('div', { class: 'row' }, [V.chip(`錯誤 ${st.findings.error}`, 'err'), V.chip(`警告 ${st.findings.warn}`, 'warn'), V.chip(`提醒 ${st.findings.info}`, 'info')]),
       sec('解析器使用量'),
@@ -62,7 +62,7 @@
     ]);
   }
 
-  // ---------------------------------------------------------------- 未知對端（沒有 LLDP 鄰居的末端埠）
+  // ---------------------------------------------------------------- 未知對端（沒有 LLDP／CDP 介面鄰接的末端埠）
   function unknownTable(App, rows) {
     return V.table([
       { t: '介面', f: (r) => h('span', { class: 'mono' }, r.name) },
@@ -82,7 +82,7 @@
       h('h2', null, [devLink(App, sel.dev), ' 的未知對端']),
       h('div', { class: 'row' }, [V.chip(`${rows.length} 個埠`), V.chip(`${macs} 個 MAC`), multi ? V.chip(`${multi} 個埠有多個 MAC`, 'warn') : null,
         rows.length > 1 ? h('button', { onclick: () => App.toggleExpand(sel.dev) }, collapsed ? '在圖上展開' : (App.expanded.has(sel.dev) ? '在圖上收合' : '（已全部展開）')) : null]),
-      h('p', { class: 'muted' }, '這些埠有學到 MAC，但設備沒有回報任何 LLDP 鄰居，所以基準裡沒有對端設備。圖上以 MAC、ARP 與廠商資料推論；一個埠有多個 MAC，通常表示後面還接著交換器、AP 或虛擬化主機。'),
+      h('p', { class: 'muted' }, '這些埠有學到 MAC，但沒有 LLDP／CDP 介面鄰接，所以基準裡沒有已確認的埠對埠鄰居；MNDP 只代表同一 L2 網域可達，不算直連鄰接。圖上以 MAC、ARP 與廠商資料推論；一個埠有多個 MAC，通常表示後面還接著交換器、AP 或虛擬化主機。'),
       unknownTable(App, rows),
     ]);
   }
@@ -138,7 +138,7 @@
           } },
         ], ospfAdjacencies),
       ]) : null,
-      unk.length ? h('div', null, [sec('沒有 LLDP 鄰居的埠', [V.chip(String(unk.length)), h('a', { class: 'link', style: { marginLeft: '8px', fontWeight: 400 }, onclick: () => App.select({ type: 'endpoints', dev: d.key }, { focus: true }) }, '在圖上看')]), unknownTable(App, unk)]) : null,
+      unk.length ? h('div', null, [sec('沒有 LLDP／CDP 鄰接的埠', [V.chip(String(unk.length)), h('a', { class: 'link', style: { marginLeft: '8px', fontWeight: 400 }, onclick: () => App.select({ type: 'endpoints', dev: d.key }, { focus: true }) }, '在圖上看')]), unknownTable(App, unk)]) : null,
       sec('介面', [V.chip(String(ifs.length))]),
       V.table([
         { t: '介面', f: (i) => h('span', { class: 'mono' }, i.name + (i.parent ? ` → ${i.parent}` : '')) },
@@ -228,7 +228,7 @@
     const macs = i.macs.map((m) => Q.findMac(m));
     return h('div', { class: 'detail' }, [
       h('h2', null, [devLink(App, i.dev), ' ', h('span', { class: 'mono' }, i.name)]),
-      h('div', { class: 'row' }, [V.chip(i.admin === 'down' ? '停用' : V.STATUS[i.status], i.status === 'up' ? 'ok' : ''), V.chip(i.type === 'aggregate' ? '聚合介面' : V.theme.endpoint.byType[i.type] ? V.theme.endpoint.byType[i.type].label : '實體／邏輯介面'), i.hearsay ? V.chip('僅由對端回報', 'info') : null, i.unknownPeer ? V.chip('沒有 LLDP 鄰居（未知對端）', 'warn') : i.edge ? V.chip('末端埠') : null]),
+      h('div', { class: 'row' }, [V.chip(i.admin === 'down' ? '停用' : V.STATUS[i.status], i.status === 'up' ? 'ok' : ''), V.chip(i.type === 'aggregate' ? '聚合介面' : V.theme.endpoint.byType[i.type] ? V.theme.endpoint.byType[i.type].label : '實體／邏輯介面'), i.hearsay ? V.chip('僅由對端回報', 'info') : null, i.unknownPeer ? V.chip('沒有 LLDP／CDP 鄰接（未知對端）', 'warn') : i.edge ? V.chip('末端埠') : null]),
       kv([['描述', i.desc], ['IP', i.ips.join('、')], ['模式', i.mode], ['所屬聚合', i.parent ? epLink(App, K.ep(i.dev, i.parent)) : null],
         ['成員', i.members.length ? h('span', null, i.members.flatMap((m, n) => [n ? '、' : '', epLink(App, m)])) : null],
         ['VLAN', i.vlans.length ? h('span', { class: 'vlanlist' }, vlanText(i.vlans)) : null], ['未對應的 VLAN 名稱', i.vlanNames.join('、')],

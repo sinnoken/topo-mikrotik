@@ -146,6 +146,18 @@ test('MNDP：多個鄰居代表共享 L2 網域可達，不推論直連埠、雙
   assert.strictEqual(reciprocal.model.links[0].verified, false, '雙向 MNDP 回報仍不等於確認實體直連');
   assert.strictEqual(count(reciprocal, 'K01'), 0);
 });
+test('MNDP 觀察不應把有 MAC 的介面誤當成已確認 LLDP 鄰接而排除末端清單', () => {
+  const s = build('A (10.0.0.1):\n### /ip neighbor print detail\n'
+    + ' 0 interface=ether1 mac-address=AA:00:00:00:00:02 identity=B interface-name=ether9 discovered-by=mndp\n'
+    + '### /interface bridge host print detail\n'
+    + ' 0 D mac-address=AA:BB:CC:00:00:01 on-interface=ether1 bridge=bridge1 vid=10\n'
+    + 'B (10.0.0.2):\n### /export terse\n/system identity set name=B\n');
+  assert.strictEqual(iface(s, 'A|ether1').unknownPeer, true, 'MNDP 是網域可達證據，不可代替 LLDP／CDP 埠鄰接');
+  assert.ok(S.query(s).unknownPeers('A').some((r) => r.name === 'ether1'), '介面應保留在未知對端／末端清單');
+  const a03 = s.findings.find((f) => f.id === 'A03');
+  assert.ok(a03 && /ether1/.test(a03.message), '沒有 LLDP／CDP 鄰接的介面應出現在 A03');
+  assert.strictEqual(s.model.links.find((l) => l.via.includes('mndp')).evidenceScope, 'broadcast-domain', 'MNDP edge 仍保留為網域可達資訊');
+});
 
 // ------------------------------------------------------------------ 設定（export）
 const EXPORT_TERSE = ['SW_A (10.0.0.1):', '### /export terse', '# 2026-10-13 10:00:00 by RouterOS 7.12.1', '# model = CRS326-24G-2S+',

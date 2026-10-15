@@ -192,6 +192,8 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     });
     const legend = Array.from(document.querySelectorAll('#legend .li'));
     if (document.querySelectorAll('#legend .lg-group').length !== 4) throw new Error('圖例應分為四類');
+    const groupTitles = document.querySelectorAll('#legend .lg-title').map((el) => el.textContent);
+    if (groupTitles.join('|') !== '設備|末端|連線|連線註記') throw new Error('圖例分類順序應為設備、末端、連線、連線註記');
     if (!document.querySelector('#legend .legend-body').classList.contains('hidden')) throw new Error('圖例預設應收合');
     document.querySelector('#legend .legend-head').click();
     if (document.querySelector('#legend .legend-body').classList.contains('hidden')) throw new Error('點圖例標題應展開');
@@ -200,13 +202,22 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     const sw = (li) => li.childNodes.filter((c) => c.style && c.attrs.class);
     const kinds = Object.keys(S.view.KIND);
     kinds.forEach((k, i) => { const d = sw(legend[i])[0]; if (d.style.background !== T.kind[k]) throw new Error('圖例設備色與 theme 不一致：' + k); });
-    Object.entries(T.edge).forEach(([k, st], i) => {
-      const l = sw(legend[kinds.length + 1 + i])[0];
+    Object.entries(T.edge).forEach(([k, st]) => {
+      const row = legend.find((li) => li.textContent === S.view.CLS[k]); const l = row && sw(row)[0];
+      if (!l) throw new Error('圖例缺少連線類別：' + k);
       if (!l.style.background.includes(st.c) || l.style.height !== Math.max(2, Math.round(st.w)) + 'px') throw new Error('圖例連線色或線寬與 theme 不一致：' + k);
       if (!!st.dash !== l.style.background.includes('repeating-linear-gradient')) throw new Error('圖例連線虛線與 theme 不一致：' + k);
     });
-    const weak = legend.filter((li) => /MNDP|聽說/.test(li.textContent)).map((li) => sw(li)[0].style.opacity);
-    if (weak.join() !== [T.weakEdge.hearsay.alpha, T.weakEdge.domainOnly.alpha].join()) throw new Error('圖例弱證據連線透明度與 theme 不一致');
+    const edgeLegend = (k) => legend.find((li) => li.textContent === S.view.CLS[k]);
+    const oneG = edgeLegend('1g'); const other = edgeLegend('other');
+    if (!oneG || !other || !oneG.getAttribute('title').includes('不代表實際協商速率')) throw new Error('1G 圖例需說明其為介面名稱推估，而非實際協商速率');
+    if (T.edge['1g'].c === T.edge.other.c || T.edge['1g'].w <= T.edge.other.w) throw new Error('1G 連線樣式應明顯區別於其他連線');
+    const hearsay = legend.find((li) => li.textContent === '聽說'); const domain = legend.find((li) => li.textContent === 'MNDP 同網域');
+    if (!hearsay || !domain) throw new Error('圖例缺少聽說或 MNDP 註記');
+    const hs = sw(hearsay)[0]; const ds = sw(domain)[0];
+    if (hs.style.opacity !== String(T.weakEdge.hearsay.alpha) || !hs.style.background.includes(T.weakEdge.hearsay.c)) throw new Error('聽說圖例顏色或透明度與 theme 不一致');
+    if (ds.style.opacity !== String(T.weakEdge.domainOnly.alpha) || !ds.style.background.includes(T.weakEdge.domainOnly.c)) throw new Error('MNDP 圖例顏色或透明度與 theme 不一致');
+    if (hs.style.background === ds.style.background) throw new Error('聽說與 MNDP 圖例線型應可區分');
   });
   await step('MNDP 圖例、提示與細節不暗示實體直連', async () => {
     const input = 'A (10.0.0.1):\n### /ip neighbor print detail\n'
@@ -227,8 +238,8 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     App.select({ type: 'interface', key: remoteEp });
     if (!text('#detail').includes('MNDP：L2 網域可達，非直連')) throw new Error('MNDP 回報介面的細節不應呈現為直連線');
   });
-  await step('純 MNDP 邊半透明 50%，高亮不淡化', () => {
-    const graph = App.graph; const ctx = graph.ctx;
+  await step('純 MNDP 邊以專用點劃線呈現，高亮不淡化', () => {
+    const graph = App.graph; const ctx = graph.ctx; const weak = S.view.theme.weakEdge;
     const old = {
       nodes: graph.nodes, edges: graph.edges, pos: graph.pos, sel: graph.sel, hl: graph.hl, hover: graph.hover,
       s: graph.s, tx: graph.tx, ty: graph.ty, stroke: ctx.stroke, setLineDash: ctx.setLineDash,
@@ -254,7 +265,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
       ctx.stroke = () => { strokes.push({ alpha: ctx.globalAlpha, dash: dash.slice(), from, to }); };
       graph.setData(nodes, edges, pos); graph.hl = null; graph.hover = null; graph.setSelection([], []); graph.fit(); graph.draw();
       const pure = segmentStrokes('mndp-a', 'mndp-b');
-      if (!pure.some((s) => s.alpha === 0.5 && s.dash.length)) throw new Error('純 MNDP 虛線應以 50% 不透明度繪製');
+      if (!pure.some((s) => s.alpha === weak.domainOnly.alpha && s.dash.join() === weak.domainOnly.dash.join())) throw new Error('純 MNDP 應使用 theme 指定的高辨識點劃線與透明度');
       const mixed = segmentStrokes('mixed-a', 'mixed-b');
       if (!mixed.length || mixed.some((s) => s.alpha === 0.5)) throw new Error('混合證據邊不應套用 MNDP-only 透明度');
       graph.setSelection([], ['pure-mndp']); strokes.length = 0; graph.draw();

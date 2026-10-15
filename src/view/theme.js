@@ -16,14 +16,13 @@
     // 設備節點外形；Canvas 繪圖與圖例共用
     shape: { firewall: 'shield', switch: 'wide', router: 'circle', host: 'square', unknown: 'circle' },
     edge: {
-      lag: { c: '#3b82f6', w: 3.2 }, '40g': { c: '#ef4444', w: 2.8 }, '10g': { c: '#f59e0b', w: 2.1 }, '1g': { c: '#9aa5b1', w: 1.4 },
+      lag: { c: '#3b82f6', w: 3.2 }, '40g': { c: '#ef4444', w: 2.8 }, '10g': { c: '#f59e0b', w: 2.1 }, '1g': { c: '#0f766e', w: 2.4 },
       oob: { c: '#22c55e', w: 1.2, dash: [4, 3] }, l3: { c: '#6366f1', w: 1.4, dash: [6, 4] }, other: { c: '#b0b8c1', w: 1.3 },
     },
     // 證據強度較弱的邊：純 MNDP（網域可達）與聽說（對端無 LLDP）
     weakEdge: {
-      domainOnly: { alpha: 0.5, dash: [6, 4] },
-      hearsay: { alpha: 0.55, dash: [3, 3] },
-      color: '#9aa5b1',
+      domainOnly: { c: '#0f766e', alpha: 0.85, dash: [8, 3, 2, 3] },
+      hearsay: { c: '#7c3aed', alpha: 0.85, dash: [2, 3] },
     },
     sev: { error: '#d93025', warn: '#f29900' },
     // 選取、追蹤與檢查結果的標示色

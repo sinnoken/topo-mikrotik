@@ -391,22 +391,26 @@
     const dot = (style) => h('span', { class: 'sev', style: Object.assign({ width: LEG + 'px', height: LEG + 'px' }, style) });
     const line = (color, w, dash, alpha) => h('span', { class: 'ln', style: {
       borderTopWidth: '0', height: Math.max(2, Math.round(w)) + 'px', opacity: String(alpha == null ? 1 : alpha),
-      background: dash ? `repeating-linear-gradient(90deg, ${color} 0 ${dash[0]}px, transparent ${dash[0]}px ${dash[0] + dash[1]}px)` : color,
+      background: dash ? `repeating-linear-gradient(90deg, ${dash.reduce((stops, n, i) => {
+        const next = (stops.pos || 0) + n; const shade = i % 2 ? 'transparent' : color;
+        stops.parts.push(`${shade} ${stops.pos || 0}px`, `${shade} ${next}px`); stops.pos = next; return stops;
+      }, { parts: [], pos: 0 }).parts.join(', ')})` : color,
     } });
     group('設備');
     Object.entries(V.KIND).forEach(([k, label]) => item([dot(Object.assign({ background: V.KIND_COLOR[k] }, SHAPE_CSS[V.theme.shape[k]]))], label));
     item([dot(Object.assign({ background: CV.uncollectedFill, border: '2px dashed ' + V.KIND_COLOR.unknown }, SHAPE_CSS.circle))], '未收集', '基準裡沒有收集檔的設備（虛線外框）');
-    group('連線');
-    Object.entries(V.EDGE_STYLE).forEach(([k, st]) => item([line(st.c, st.w, st.dash)], V.CLS[k]));
-    group('連線註記');
-    item([line(WEAK.color, V.EDGE_STYLE.other.w, WEAK.hearsay.dash, WEAK.hearsay.alpha)], '聽說', '對端無 LLDP 鄰居資料');
-    item([line(WEAK.color, V.EDGE_STYLE.other.w, WEAK.domainOnly.dash, WEAK.domainOnly.alpha)], 'MNDP 同網域', 'MNDP：同一 L2 網域可達，非直連確認');
-    Object.values(EP.byType).forEach((t) => item([line(t.c, V.EDGE_STYLE.other.w, WEAK.hearsay.dash, WEAK.hearsay.alpha)], t.label, '連到 ' + t.label + ' 介面末端的連線'));
     group('末端');
     item([dot({ background: EP.vendorFallback, border: '1.5px solid ' + CV.outline })], '單一 MAC', '未知對端：一個埠一個 MAC，依廠商上色');
     item([dot({ background: EP.downstream.fill, border: '2px dashed ' + EP.downstream.stroke, transform: 'rotate(45deg)', borderRadius: '0' })], '多 MAC', '未知對端：一個埠多個 MAC，疑似下游還有設備');
     item([dot({ background: EP.cluster.fill, border: '1.5px solid ' + EP.cluster.stroke, width: Math.round(LEG * 1.3) + 'px', height: Math.round(LEG * 0.8) + 'px', borderRadius: '3px' })], '群組 ×N', '同一台設備末端過多時收合，雙擊展開');
     item([h('span', { class: 'sev error' })], '錯誤／警告');
+    group('連線');
+    Object.entries(V.EDGE_STYLE).forEach(([k, st]) => item([line(st.c, st.w, st.dash)], V.CLS[k],
+      k === '1g' ? '推論分類：ether、sfp1、combo 等介面名稱歸為 1G；不代表實際協商速率，ether 也可能是 2.5G 或 10G。' : null));
+    group('連線註記');
+    item([line(WEAK.hearsay.c, V.EDGE_STYLE.other.w, WEAK.hearsay.dash, WEAK.hearsay.alpha)], '聽說', '紫色點線：對端沒有提供 LLDP 鄰居資料，屬單向觀察');
+    item([line(WEAK.domainOnly.c, V.EDGE_STYLE.other.w, WEAK.domainOnly.dash, WEAK.domainOnly.alpha)], 'MNDP 同網域', '青色點劃線：MNDP 表示同一 L2 網域可達，不代表兩台設備直連');
+    Object.values(EP.byType).forEach((t) => item([line(t.c, V.EDGE_STYLE.other.w, WEAK.hearsay.dash, WEAK.hearsay.alpha)], t.label, '連到 ' + t.label + ' 介面末端的連線'));
   }
   // 左右欄寬度是檢視狀態：存在獨立的 'layout' 鍵，清除基準時不受影響
   const PANE = { min: 240, centerMin: 320, def: { left: 330, right: 400 } };

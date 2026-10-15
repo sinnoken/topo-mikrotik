@@ -89,6 +89,7 @@
     const root = V.clear(V.$('#pane-inventory'));
     if (!App.snap) return root.appendChild(h('div', { class: 'empty-detail' }, '建立基準後，所有設備、介面、IP、MAC 與 VLAN 會列在這裡。'));
     const Q = App.Q; const m = App.snap.model; const ipRows = Q.ipEntries(); const macRows = Q.macEntries();
+    const nMac = new Set(macRows.map((r) => r.mac)).size; // 清單一個 MAC 可能有多列（每個觀察到它的介面一列）
     const dn = (d) => (d ? Q.devName(d) : '—'); const mono = (t) => h('span', { class: 'mono' }, t || '—');
     const T = {
       device: ['設備', m.devices, [
@@ -112,26 +113,34 @@
         { t: '成員', f: (r) => String(r.members.length), s: (r) => r.members.length }],
       (r) => (r.id == null ? { type: 'device', key: r.dev } : { type: 'vlan', key: String(r.id) }), (r) => [dn(r.dev), r.id, r.name, r.desc]],
     };
-    root.appendChild(h('div', { class: 'summary' }, Object.entries(T).map(([k, [label, rows]]) => V.chip(`${label} ${rows.length}`, `btn ${inv.kind === k ? 'on' : ''}`, {
+    root.appendChild(h('div', { class: 'summary' }, Object.entries(T).map(([k, [label, rows]]) => V.chip(`${label} ${k === 'mac' ? nMac : rows.length}`, `btn ${inv.kind === k ? 'on' : ''}`, {
       onclick: () => { inv.kind = k; inv.filter = 'all'; inv.sortBy = -1; inv.sortDir = 1; inventory(App); }, title: label + '清單' }))));
     const [, rows0, cols, sel, text] = T[inv.kind];
-    if (inv.kind === 'mac') {
-      const n = macRows.filter((r) => r.noIp).length;
-      root.appendChild(h('div', { class: 'summary' }, [['all', '全部', macRows.length], ['noip', '缺 IP', n]].map(([k, label, c]) => V.chip(`${label} ${c}`, `btn ${k === 'noip' && n ? 'warn' : ''} ${inv.filter === k ? 'on' : ''}`, {
-        onclick: () => { inv.filter = k; inventory(App); }, title: '點一下切換篩選' }))));
+    const FILTERS = {
+      ip: [['all', '全部', () => true], ['arp', 'ARP', (r) => r.from.includes('ARP')], ['own', '設備自有', (r) => r.from.some((x) => x === '介面' || x === '管理')], ['heard', '鄰居宣告', (r) => r.from.includes('鄰居宣告')]],
+      mac: [['all', '全部', () => true], ['noip', '缺 IP', (r) => r.noIp]],
+    };
+    const flt = FILTERS[inv.kind];
+    if (flt) {
+      const uniq = (k, rows) => (k === 'mac' ? new Set(rows.map((r) => r.mac)).size : rows.length);
+      const base = inv.kind === 'mac' ? macRows : ipRows;
+      root.appendChild(h('div', { class: 'summary' }, flt.map(([k, label, f]) => { const c = uniq(inv.kind, base.filter(f));
+        return V.chip(`${label} ${c}`, `btn ${k === 'noip' && c ? 'warn' : ''} ${inv.filter === k ? 'on' : ''}`, { onclick: () => { inv.filter = k; inventory(App); }, title: '點一下切換篩選' }); })));
     }
     const box = h('input', { type: 'search', placeholder: '篩選：名稱、IP、MAC、VLAN…', value: inv.q, class: 'pane-filter' });
     const body = h('div');
     const draw = () => {
       const t = inv.q.trim().toLowerCase();
-      const rows = rows0.filter((r) => (inv.kind !== 'mac' || inv.filter === 'all' || r.noIp) && (!t || text(r).filter((x) => x != null).join(' ').toLowerCase().includes(t)));
+      const rows = rows0.filter((r) => (!flt || flt.find((x) => x[0] === inv.filter)[2](r)) && (!t || text(r).filter((x) => x != null).join(' ').toLowerCase().includes(t)));
       const sc = cols[inv.sortBy] && cols[inv.sortBy].s ? cols[inv.sortBy] : null;
       if (sc) { // 空值固定排最後；字串用 natural 排序，因此 IP 依數值順序
         const val = (r) => { const v = sc.s(r); return v == null || v === '' ? null : v; };
         rows.sort((a, b) => { const x = val(a); const y = val(b); if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
           return (typeof x === 'number' && typeof y === 'number' ? x - y : S.util.natural(String(x), String(y))) * inv.sortDir; });
       }
-      V.clear(body).appendChild(V.table(cols, rows, { onRow: (r) => App.select(sel(r), { focus: true }), limit: 500, sortBy: sc ? inv.sortBy : -1, sortDir: inv.sortDir,
+      const note = inv.kind === 'mac' ? `共 ${rows.length} 列（同一個 MAC 在每個觀察到的介面各一列，不重複的 MAC ${new Set(rows.map((r) => r.mac)).size} 個）` : inv.kind === 'vlan' ? `共 ${rows.length} 筆（每台設備的每個 VLAN 定義一筆，不重複的 VLAN ID ${new Set(rows.map((r) => r.id)).size} 個）` : '';
+      V.clear(body); if (note) body.appendChild(h('div', { class: 'muted', style: { padding: '4px 8px' } }, note));
+      body.appendChild(V.table(cols, rows, { onRow: (r) => App.select(sel(r), { focus: true }), limit: 500, sortBy: sc ? inv.sortBy : -1, sortDir: inv.sortDir,
         onSort: (n) => { inv.sortDir = inv.sortBy === n ? -inv.sortDir : 1; inv.sortBy = n; draw(); } }));
     };
     box.addEventListener('input', () => { inv.q = box.value; draw(); });

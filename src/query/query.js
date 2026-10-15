@@ -71,9 +71,11 @@
       // 每個不重複的 IP 一列：介面位址、設備管理 IP 與 ARP 出現的 IP 合併，來源保留在 from
       ipEntries() {
         const all = new Set(ipOwner.keys()); arpsByIp.forEach((_, ip) => all.add(ip));
+        const heard = new Map(); // 鄰居宣告（hearsay）的介面位址：事實但非設備自有，單獨標示來源
+        m.interfaces.forEach((i) => { if (i.hearsay) i.ips.forEach((c) => { const p = S.ip.parseCidr(c); if (p) { all.add(p.ip); U.getOr(heard, p.ip, () => []).push(i.key); } }); });
         return Array.from(all).sort(U.natural).map((ip) => {
           const owner = ipOwner.get(ip) || null; const macs = U.uniq((arpsByIp.get(ip) || []).map((a) => a.mac));
-          const from = [owner ? (owner.endsWith('|') ? '管理' : '介面') : null, macs.length ? 'ARP' : null].filter(Boolean);
+          const from = [owner ? (owner.endsWith('|') ? '管理' : '介面') : null, macs.length ? 'ARP' : null, !owner && heard.has(ip) ? '鄰居宣告' : null].filter(Boolean);
           const ownerDev = owner ? K.splitEp(owner)[0] : null;
           return { ip, owner, dev: ownerDev, ifc: owner && !owner.endsWith('|') ? Q.epName(owner).slice(Q.devName(ownerDev).length + 1) : null, macs, from };
         });

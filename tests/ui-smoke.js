@@ -150,9 +150,10 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     document.querySelectorAll('#left .tabs button')[2].click();
     const m = App.snap.model; const ips = App.Q.ipEntries();
     const t = text('#pane-inventory');
-    [`設備 ${m.devices.length}`, `介面 ${m.interfaces.length}`, `IP ${ips.length}`, `MAC ${rows.length}`, `VLAN ${m.vlans.length}`].forEach((x) => { if (!t.includes(x)) throw new Error('清單缺少分類：' + x); });
+    [`設備 ${m.devices.length}`, `介面 ${m.interfaces.length}`, `IP ${ips.length}`, `MAC ${new Set(rows.map((r) => r.mac)).size}`, `VLAN ${m.vlans.length}`].forEach((x) => { if (!t.includes(x)) throw new Error('清單缺少分類：' + x); });
     if (new Set(ips.map((r) => r.ip)).size !== ips.length) throw new Error('IP 清單應去重複');
     const macChip = document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('MAC'));
+    if (new Set(rows.map((r) => r.mac)).size !== App.snap.meta.stats.macs) throw new Error('清單的不重複 MAC 數應等於總覽');
     const ipChip = document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('IP')); ipChip.click();
     document.querySelectorAll('#pane-inventory th')[0].dispatch('click');
     const col = () => document.querySelectorAll('#pane-inventory tbody tr').map((tr) => tr.querySelectorAll('td')[0].textContent);
@@ -161,7 +162,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     document.querySelectorAll('#pane-inventory th')[0].dispatch('click');
     const desc = col(); if (asc.length > 1 && desc[0] === asc[0]) throw new Error('再點一次應反向排序');
     document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('MAC')).click();
-    macChip.click(); const t2 = text('#pane-inventory'); if (!t2.includes('缺 IP ' + rows.filter((r) => r.noIp).length)) throw new Error('缺 IP 摘要不正確');
+    macChip.click(); const t2 = text('#pane-inventory'); if (!t2.includes('缺 IP ' + new Set(rows.filter((r) => r.noIp).map((r) => r.mac)).size) || !t2.includes('全部 ' + App.snap.meta.stats.macs)) throw new Error('缺 IP 摘要不正確');
     App.select(null); const ov = text('#right'); const uniq = new Set(App.snap.model.arps.map((x) => x.ip)).size;
     if (!ov.includes('IP（ARP）' + uniq.toLocaleString()) && !ov.includes('IP（ARP）')) throw new Error('總覽缺少 IP（ARP）');
   });

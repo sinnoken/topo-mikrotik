@@ -155,12 +155,16 @@
     });
 
     // ---- 路由
-    const known = new Set();
-    M.ifcs.forEach((i) => { if (!i.hearsay) i.ips.forEach((c) => known.add(c.split('/')[0])); });
-    M.devices.forEach((d) => { if (d.mgmtIp) known.add(d.mgmtIp); });
+    const owner = new Map();
+    M.ifcs.forEach((i) => { if (!i.hearsay) i.ips.forEach((c) => owner.set(c.split('/')[0], i.dev)); });
+    M.devices.forEach((d) => { if (d.mgmtIp && !owner.has(d.mgmtIp)) owner.set(d.mgmtIp, d.key); });
+    const routesByDev = new Map(); M.routes.forEach((r) => S.util.getOr(routesByDev, r.dev, () => []).push(r));
+    // 遞迴解析後仍到不了已知設備的下一跳才提醒；經由其他路由最終落在已知設備上的不算
     const unknownNh = new Map();
     M.routes.forEach((r) => r.nh.forEach((n) => {
-      if (n.ip && !known.has(n.ip)) S.util.getOr(unknownNh, r.dev, () => new Map()).set(n.ip, r);
+      if (!n.ip) return;
+      const res = resolveNextHop(routesByDev.get(r.dev) || [], n.ip, (ip) => owner.get(ip) || null);
+      if (res.every((x) => x.status !== 'known')) S.util.getOr(unknownNh, r.dev, () => new Map()).set(n.ip, r);
     }));
     unknownNh.forEach((ips, dev) => add('R01', `${name(dev)}：${Array.from(ips.keys()).join('、')}`, [{ type: 'device', key: dev }],
       Array.from(ips.values()).map((r) => ({ block: r.block, line: r.line }))));
@@ -214,5 +218,36 @@
     })).sort((a, b) => S.util.natural(a.dev, b.dev));
   }
 
-  S.check = { run, coverage, CATALOG, EXPECTED, DATA_LABEL, fmtVlans };
+  /**
+   * 遞迴下一跳解析（RouterOS 的 gateway 可以是要再查路由才能到的位址，例如對端的 loopback）。
+   * 先看 ip 是否為已知設備位址；否則在同一台設備的路由表以最長前綴找出它的下一跳，再往下解析。
+   * routes：該設備的路由（{ prefix, len, nh }）；ownerOf(ip)：回傳擁有該 IP 的設備 key 或 null。
+   * 回傳（ECMP 可有多筆）：{ status: 'known', owner, ip, chain } | { status: 'connected', ip, ifc, chain }
+   *   | { status: 'unresolved', ip, chain }（沒有路由可到）| { status: 'loop', ip, chain }；chain 是經過的位址。
+   */
+  function resolveNextHop(routes, ip, ownerOf) {
+    const MAX_DEPTH = 8; // RouterOS 遞迴路由的實務深度遠小於此；超過視為迴圈
+    const walk = (cur, chain, used) => {
+      const owner = ownerOf(cur);
+      if (owner) return [{ status: 'known', owner, ip: cur, chain }];
+      if (chain.length > MAX_DEPTH) return [{ status: 'loop', ip: cur, chain }];
+      let best = -1; let cands = [];
+      routes.forEach((r) => {
+        if (used.has(r) || !S.ip.inNet(cur, r.prefix, r.len)) return;
+        if (r.len > best) { best = r.len; cands = [r]; } else if (r.len === best) cands.push(r);
+      });
+      if (!cands.length) return [{ status: 'unresolved', ip: cur, chain }];
+      const out = [];
+      cands.forEach((r) => r.nh.forEach((n) => {
+        const nextUsed = new Set(used).add(r);
+        if (!n.ip) out.push({ status: 'connected', ip: cur, ifc: n.ifc, chain });
+        else if (n.ip === cur || chain.includes(n.ip)) out.push({ status: 'loop', ip: n.ip, chain });
+        else out.push(...walk(n.ip, chain.concat(n.ip), nextUsed));
+      }));
+      return out;
+    };
+    return walk(ip, [ip], new Set());
+  }
+
+  S.check = { run, coverage, CATALOG, EXPECTED, DATA_LABEL, fmtVlans, resolveNextHop };
 })(globalThis.SSOT = globalThis.SSOT || {});

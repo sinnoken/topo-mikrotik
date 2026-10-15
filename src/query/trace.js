@@ -2,7 +2,7 @@
  * 路由追蹤（純函式）：在基準的路由表上，從來源 IP 逐跳走到目的 IP。
  *  - 起點：介面網段包含來源 IP 的設備（最長遮罩優先），即來源的閘道
  *  - 每一跳：目的在直連網段 → 抵達；否則最長前綴比對，同遮罩多條即 ECMP 分支
- *  - 下一跳 IP → 擁有該 IP 的設備；找不到、沒有路由資料、迴圈、TTL 用盡都會停下並註明原因
+ *  - 下一跳 IP → 擁有該 IP 的設備；下一跳本身不屬於任何設備時，沿本機路由表遞迴解析（S.check.resolveNextHop）；找不到、沒有路由資料、迴圈、TTL 用盡都會停下並註明原因
  */
 (function (S) {
   'use strict';
@@ -43,6 +43,19 @@
       hops.push(hop);
       nhs.forEach(({ r, n }) => {
         if (!n.ip) { hop.next.push({ ip: null, ifc: n.ifc, status: 'connected', note: `經 ${n.ifc} 直接送出（${r.proto}）` }); ends.push({ dev, status: 'reached', note: `目的在 ${n.ifc} 直連`, path }); return; }
+        const devOf = (ip) => { const o = Q.ipOwner(ip); return o ? o.split('|')[0] : null; };
+        // 下一跳本身不是已知位址時，沿本機路由表遞迴解析（例如 gateway 是對端 loopback）
+        const rec = S.check.resolveNextHop(routes, n.ip, devOf);
+        const hit = rec.filter((x) => x.status === 'known');
+        if (!Q.ipOwner(n.ip) && hit.length) {
+          hit.forEach((x) => {
+            if (path.includes(x.owner)) { hop.next.push({ ip: n.ip, ifc: n.ifc, dev: x.owner, status: 'loop', note: '路由迴圈' }); ends.push({ dev: x.owner, status: 'loop', note: `回到 ${Q.devName(x.owner)}，路由迴圈`, path: path.concat(x.owner) }); return; }
+            hop.next.push({ ip: n.ip, ifc: n.ifc, dev: x.owner, status: 'ok', note: `遞迴解析：${x.chain.join(' → ')}` });
+            edges.add(dev + '>' + x.owner);
+            queue.push({ dev: x.owner, ttl: ttl - 1, path: path.concat(x.owner) });
+          });
+          return;
+        }
         const owner = Q.ipOwner(n.ip);
         if (!owner) { hop.next.push({ ip: n.ip, ifc: n.ifc, status: 'unknown', note: '下一跳不屬於任何已知設備' }); ends.push({ dev, status: 'unknown-nh', note: `下一跳 ${n.ip} 不在基準內`, path }); return; }
         const nd = owner.split('|')[0];

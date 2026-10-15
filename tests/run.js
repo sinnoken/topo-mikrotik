@@ -408,6 +408,31 @@ test('路由追蹤：直連抵達、下一跳不在基準內、跨站點 ECMP', 
   assert.ok(t3.reached, JSON.stringify(t3.ends));
   assert.ok(t3.hops.some((h) => h.ecmp));
 });
+test('遞迴路由：gateway 是對端 loopback 時沿路由表解析；R01 只提醒解析後仍到不了已知設備的下一跳', () => {
+  const a = 'R_A (10.0.0.1):\n### /export terse\n/ip address add address=10.254.0.1/30 interface=ether48\n/ip address add address=10.9.9.1/32 interface=lo\n'
+    + '### /ip route print detail\nFlags: A - ACTIVE; s - STATIC\n'
+    + ' 0 As dst-address=172.16.0.0/16 gateway=10.99.0.2 immediate-gw=10.254.0.2%ether48 distance=1\n'
+    + ' 1 As dst-address=10.99.0.0/24 gateway=10.254.0.2 distance=1\n'
+    + ' 2 As dst-address=172.17.0.0/16 gateway=10.77.0.2 distance=1\n'
+    + ' 3 As dst-address=172.18.0.0/16 gateway=10.88.0.2 distance=1\n'
+    + ' 4 As dst-address=10.88.0.0/24 gateway=10.88.0.5 distance=1\n'
+    + ' 5 As dst-address=10.254.0.0/30 gateway=ether48 distance=0\n';
+  const b = 'R_B (10.0.0.2):\n### /export terse\n/ip address add address=10.254.0.2/30 interface=ether1\n';
+  const s = build(a + b); const m = s.model;
+  const r01 = s.findings.filter((f) => f.id === 'R01');
+  const text = r01.map((f) => f.message).join(' ');
+  assert.ok(!text.includes('10.99.0.2'), '10.99.0.2 經 10.99.0.0/24 → 10.254.0.2 解析到 R_B，不應提醒');
+  assert.ok(text.includes('10.77.0.2'), '沒有任何路由可解析的下一跳要提醒');
+  assert.ok(text.includes('10.88.0.2'), '遞迴迴圈或落在未知位址的下一跳要提醒');
+  const rs = (ip, routes) => S.check.resolveNextHop(routes, ip, (x) => (x === '10.254.0.2' ? 'R_B' : null));
+  const rt = m.routes.filter((r) => r.dev === 'R_A');
+  const ok = rs('10.99.0.2', rt); assert.ok(ok.some((x) => x.status === 'known' && x.owner === 'R_B'), JSON.stringify(ok));
+  assert.deepStrictEqual(rs('10.99.0.2', rt), rs('10.99.0.2', rt), '相同輸入結果相同');
+  const loop = [{ prefix: '10.0.0.0', len: 8, nh: [{ ip: '10.0.0.9', ifc: null }] }];
+  assert.strictEqual(rs('10.0.0.9', loop)[0].status, 'loop', '自己解析到自己要判為迴圈');
+  const Q = S.query(s); const t = S.trace(Q, '10.254.0.1', '172.16.1.1');
+  assert.ok(t.hops.some((h) => h.next.some((n) => n.dev === 'R_B' && /遞迴解析/.test(n.note || ''))), JSON.stringify(t.hops));
+});
 test('OSPF 鄰接與 LLDP edge 分開保存；OSPF 不新增拓樸 edge 或升格為直連', () => {
   const a = 'R_A (10.0.0.1):\n### /export terse\n/ip address add address=10.254.0.1/30 interface=ether48\n/routing id add id=1.1.1.1 name=main\n/routing ospf instance add name=default router-id=main\n'
     + '### /routing ospf neighbor print detail\n 0 instance=default area=backbone address=10.254.0.2 priority=1 router-id=2.2.2.2 state=Full state-changes=5\n'

@@ -283,6 +283,19 @@ test('LLDP interface-name 為 bridge/port：取實體埠配對，雙向確認且
   assert.ok(!s.model.interfaces.some((i) => i.name.includes('/')));
   assert.strictEqual(count(s, 'K01'), 0);
 });
+test('LLDP 配對：只有 LLDP 才算回報，MNDP 不算；bridge 成員與 bridge 本身兩端名稱視為同一介面', () => {
+  const nb = (ifc, ip, mac, id, name, proto) => ` 0 interface=${ifc} address=${ip} mac-address=${mac} identity="${id}" platform="MikroTik" interface-name="${name}" discovered-by=${proto}\n`;
+  const head = (n, ip) => `${n} (${ip}):\n### /ip neighbor print detail without-paging\n`;
+  const c = (dev) => head(dev, '10.0.0.3') + nb('ether1', '10.0.0.9', 'AA:00:00:00:00:09', 'Z', 'ether1', 'lldp');
+  const mndpBack = build(head('A', '10.0.0.1') + nb('ether1', '10.0.0.2', 'AA:00:00:00:00:02', 'B', 'ether2', 'lldp,mndp')
+    + head('B', '10.0.0.2') + nb('ether2', '10.0.0.1', 'AA:00:00:00:00:01', 'A', 'ether1', 'mndp') + nb('ether5', '10.0.0.3', 'AA:00:00:00:00:03', 'C', 'ether1', 'lldp') + c('C'));
+  assert.ok(mndpBack.model.links.some((l) => !l.verified && l.protocols.includes('lldp')));
+  assert.ok(count(mndpBack, 'K01') >= 1);
+  const bridges = build(head('A', '10.0.0.1') + nb('bridge', '10.0.0.2', 'AA:00:00:00:00:02', 'B', 'bridge', 'lldp')
+    + head('B', '10.0.0.2') + nb('bridge', '10.0.0.1', 'AA:00:00:00:00:01', 'A', 'bridge/ether1', 'lldp'));
+  assert.deepStrictEqual(bridges.model.links.map((l) => [l.a, l.b, l.verified]), [['A|bridge', 'B|bridge', true]]);
+  assert.strictEqual(count(bridges, 'K01'), 0);
+});
 test('鄰居表：同一對設備的 MNDP（多介面、雙向）併成一列，仍保留各 link 來源', () => {
   const nb = (ifc, ip, mac, id) => ` 0 interface=${ifc} address=${ip} mac-address=${mac} identity="${id}" platform=MikroTik discovered-by=mndp\n`;
   const s = build('A (10.0.0.1):\n### /ip neighbor print detail without-paging\n'

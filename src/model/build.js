@@ -206,6 +206,12 @@
    * LLDP/CDP interface-adjacency claims: the local interface is authoritative;
    * MNDP-only observations are handled separately as broadcast-domain reachability.
    */
+  const BRIDGE_NAME = /^bridge/i;
+  const isBridgeIfc = (M, dev, name) => {
+    const i = M.ifcs.get(K.ep(dev, name));
+    return i && i.rawType ? i.rawType === 'bridge' : BRIDGE_NAME.test(name);
+  };
+
   function buildInterfaceAdjacencyLinks(M) {
     const byDev = new Map();
     const isMndpOnly = (c) => c.protocols.length > 0 && c.protocols.every((p) => p === 'mndp');
@@ -219,7 +225,9 @@
         const unknownPort = c.peerIfc === '?';
         const said = K.ifc(c.peerIfc);
         const theirs = (byDev.get(c.peer) || []).filter((r) => r.peer === c.dev);
-        let rev = theirs.find((r) => K.ifc(r.peerIfc) === c.ifc) || (unknownPort ? null : theirs.find((r) => r.ifc === said));
+        // bridge 本身（如 bridge、bridge1）在兩端可能分別以 bridge 或 bridge/成員回報；兩邊都落在 bridge 視為同一個介面
+        const sameIfc = (x, y) => x === y || (isBridgeIfc(M, c.dev, x) && isBridgeIfc(M, c.peer, y)) || (isBridgeIfc(M, c.peer, x) && isBridgeIfc(M, c.dev, y));
+        let rev = theirs.find((r) => sameIfc(K.ifc(r.peerIfc), c.ifc)) || (unknownPort ? null : theirs.find((r) => sameIfc(r.ifc, said)));
         // 兩邊都沒有連接埠名稱：兩邊數量相同時，依本機介面名稱排序後一一配對（單一連結一定正確；平行連結是合理推測）
         if (!rev && unknownPort) {
           const byIfc = (x, y) => S.util.natural(x.ifc, y.ifc);

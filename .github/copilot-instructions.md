@@ -78,6 +78,23 @@ CLI 輸入轉成可追溯的純 JSON Snapshot，畫面只是 Snapshot 的檢視�
 - 只加入必要的註解；註解說明「為什麼」而不是重述程式碼。
 - 不覆蓋、還原或清理使用者未要求處理的既有變更與未追蹤檔案。
 
+## 針對性守則
+
+- **離線 UI 驗證**：`tests/ui-smoke.js` 使用簡化的模擬 DOM，`querySelector` 能力有限；
+  讀詳情文字用 `text('#detail')`。測試避免硬編碼筆數與內部形狀，改斷言關係與
+  可觀察行為。新增核心檔案時，`index.html` 與 `tools/core-files.js` 的載入順序
+  必須一致；不引入外部資源或執行期網路請求。
+- **檢查（finding）設計**：新增或調整檢查（如 K01、A02）時，先寫出判斷依據與
+  證據來源（事實），推論要標示為推論；保留來源區塊與行號；訊息、id 與排序保持
+  穩定，並同步 `docs/design-ssot.md` 的檢查代碼表。MNDP 只證明 L2 可達，不可當作
+  LLDP／CDP 鄰接證據。
+- **文件同步對照**：使用方式、畫面行為 → `README.md`；資料模型、檢查代碼、規則
+  → `docs/design-ssot.md`；收集指令與格式 → `docs/collection.md`；命名 profile →
+  `docs/profile.md`。程式與文件一起改，不另寫一份與程式脫節的規格。
+- **專用 skill**：改 adapter／解析使用 `routeros-parser-fixtures`；改 Snapshot 欄位、
+  檢查代碼或版本使用 `snapshot-contract-change`；改鄰居與拓樸使用
+  `mikrotik-neighbor-topology`。
+
 ## 驗證底線
 
 完成程式修改後，至少執行與變更相符的最小驗證；核心或 UI 變更通常執行：

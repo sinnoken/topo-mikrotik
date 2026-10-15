@@ -37,4 +37,4 @@
 ## 使用方式
 
 - 在「建立基準」對話框的「命名規則」選單選擇，或選「載入命名規則檔（JSON）…」。載入過的規則會保存在這個瀏覽器。
-- 專案附帶 `profiles/site-naming.js`（舊版 `GROUP_RULES` 搬過來的範例）。要新增內建規則，照同樣方式放在 `profiles/` 並在 `index.html` 加一行 `<script>`。
+- 專案附帶 `profiles/site-naming.js`（舊版 `GROUP_RULES` 搬過來的範例）及 `profiles/floor-device-naming.json`（可從介面載入的 JSON 範例）。要新增內建規則，照同樣方式放在 `profiles/` 並在 `index.html` 加一行 `<script>`。

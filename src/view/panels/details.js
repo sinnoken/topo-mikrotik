@@ -113,11 +113,11 @@
       findingsBlock(App, fl),
       sec('介面', [V.chip(String(ifs.length))]),
       V.table([
-        { t: '介面', f: (i) => h('span', { class: 'mono' }, i.name + (i.parent ? ` → ${i.parent}` : '')) },
-        { t: '狀態', f: (i) => (i.admin === 'down' ? '停用' : V.STATUS[i.status]) },
-        { t: '描述／IP', f: (i) => [i.desc, ...i.ips].filter(Boolean).join('  ') },
-        { t: 'VLAN', f: (i) => h('span', { class: 'vlanlist' }, vlanText(i.vlans)) },
-        { t: 'MAC', f: (i) => (i.macs.length ? String(i.macs.length) : '') },
+        { t: '介面', f: (i) => h('span', { class: 'mono' }, i.name + (i.parent ? ` → ${i.parent}` : '')), s: (i) => i.name },
+        { t: '狀態', f: (i) => (i.admin === 'down' ? '停用' : V.STATUS[i.status]), s: (i) => (i.admin === 'down' ? '停用' : V.STATUS[i.status]) },
+        { t: '描述／IP', f: (i) => [i.desc, ...i.ips].filter(Boolean).join('  '), s: (i) => i.ips[0] || i.desc },
+        { t: 'VLAN', f: (i) => h('span', { class: 'vlanlist' }, vlanText(i.vlans)), s: (i) => vlanText(i.vlans) },
+        { t: 'MAC', f: (i) => (i.macs.length ? String(i.macs.length) : ''), s: (i) => i.macs.length || null },
       ], ifs.sort((a, b) => S.util.natural(a.name, b.name)), { onRow: (i) => App.select({ type: 'interface', key: i.key }), limit: 300 }),
       vlans.length ? h('div', null, [sec('VLAN 定義', [V.chip(String(vlans.length))]), V.table([
         { t: 'ID', f: (v) => (v.id == null ? '?' : String(v.id)) }, { t: '名稱', f: (v) => v.name || '' }, { t: '描述', f: (v) => v.desc || '' }, { t: '成員', f: (v) => String(v.members.length) },
@@ -127,24 +127,28 @@
       peerRows.length ? V.table([
         { t: '本機介面／觀察位置', f: (r) => r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN
           ? h('span', { class: 'mono' }, r.observations.length ? r.observations.map((o) => o.ifc).join('、') : '對端回報')
-          : h('span', { class: 'mono' }, ifName(Q, r.mine)) },
+          : h('span', { class: 'mono' }, ifName(Q, r.mine)),
+        s: (r) => (r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? (r.observations[0] ? r.observations[0].ifc : '') : ifName(Q, r.mine)) },
         { t: '對端', f: (r) => r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN
           ? Q.devName(K.splitEp(r.other)[0])
-          : h('span', null, [Q.devName(K.splitEp(r.other)[0]), h('span', { class: 'mono muted' }, ' ' + ifName(Q, r.other))]) },
+          : h('span', null, [Q.devName(K.splitEp(r.other)[0]), h('span', { class: 'mono muted' }, ' ' + ifName(Q, r.other))]),
+        s: (r) => Q.devName(K.splitEp(r.other)[0]) },
         { t: '類別', f: (r) => r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN
           ? 'MNDP・同一 L2 網域可達（非直連確認）'
-          : V.CLS[r.l.cls] + (r.l.hearsay ? '・聽說' : '') + (!r.l.verified && !r.l.hearsay ? '・單向' : '') },
-        { t: '協定', f: (r) => V.protoText(r.l) },
+          : V.CLS[r.l.cls] + (r.l.hearsay ? '・聽說' : '') + (!r.l.verified && !r.l.hearsay ? '・單向' : ''),
+        s: (r) => (r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? 'MNDP' : V.CLS[r.l.cls]) },
+        { t: '協定', f: (r) => V.protoText(r.l), s: (r) => V.protoText(r.l) },
         { t: 'VLAN', f: (r) => r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? '—'
-          : (r.l.vlanMismatch ? h('span', { class: 'diffA' }, '不一致') : h('span', { class: 'vlanlist' }, vlanText(r.l.vlansCommon))) },
+          : (r.l.vlanMismatch ? h('span', { class: 'diffA' }, '不一致') : h('span', { class: 'vlanlist' }, vlanText(r.l.vlansCommon))),
+        s: (r) => (r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? null : r.l.vlanMismatch ? '不一致' : vlanText(r.l.vlansCommon)) },
       ], peerRows, { onRow: (r) => App.select({ type: 'link', key: r.l.key }, { focus: true }), bad: (r) => r.links.some((x) => x.vlanMismatch || Q.findingsFor('link', x.key).some((f) => f.severity !== 'info')) }) : h('div', { class: 'muted' }, '沒有連結'),
       ospfAdjacencies.length ? h('div', null, [
         sec('OSPF L3 鄰接（非實體直連）', [V.chip(String(ospfAdjacencies.length))]),
         V.table([
-          { t: '本機介面', f: (a) => epLink(App, a.localEp) },
-          { t: '鄰居', f: (a) => devLink(App, a.peerDev) },
-          { t: '鄰居位址／Router ID', f: (a) => [a.peerIp, a.peerId].filter(Boolean).join('／') },
-          { t: '回報', f: (a) => a.reciprocal ? '雙向 OSPF 鄰接' : '單向 OSPF 觀察' },
+          { t: '本機介面', f: (a) => epLink(App, a.localEp), s: (a) => K.splitEp(a.localEp)[1] },
+          { t: '鄰居', f: (a) => devLink(App, a.peerDev), s: (a) => Q.devName(a.peerDev) },
+          { t: '鄰居位址／Router ID', f: (a) => [a.peerIp, a.peerId].filter(Boolean).join('／'), s: (a) => a.peerIp || a.peerId },
+          { t: '回報', f: (a) => a.reciprocal ? '雙向 OSPF 鄰接' : '單向 OSPF 觀察', s: (a) => (a.reciprocal ? '雙向' : '單向') },
           { t: '來源', f: (a) => {
             const [block, line] = a.src[0]; const b = Q.block(block);
             return b ? h('a', { class: 'link mono', onclick: () => App.openRaw(b.file, line) }, `${b.file} 第 ${line} 行`) : '';
@@ -152,8 +156,8 @@
         ], ospfAdjacencies),
       ]) : null,
       routes.length ? h('div', null, [sec('路由表', [V.chip(String(routes.length))]), V.table([
-        { t: '網段', f: (r) => h('span', { class: 'mono' }, `${r.prefix}/${r.len}`) }, { t: '協定', f: (r) => r.proto },
-        { t: '下一跳', f: (r) => h('span', { class: 'mono' }, r.nh.map((n) => (n.ip ? n.ip + ' ' : '') + (n.ifc || '')).join('\n')) },
+        { t: '網段', f: (r) => h('span', { class: 'mono' }, `${r.prefix}/${r.len}`), s: (r) => `${r.prefix}/${r.len}` }, { t: '協定', f: (r) => r.proto, s: (r) => r.proto },
+        { t: '下一跳', f: (r) => h('span', { class: 'mono' }, r.nh.map((n) => (n.ip ? n.ip + ' ' : '') + (n.ifc || '')).join('\n')), s: (r) => (r.nh[0] ? r.nh[0].ip || r.nh[0].ifc : '') },
       ], routes, { limit: 200 })]) : null,
       blocksOf(App, d.key),
     ]);
@@ -162,9 +166,10 @@
     const bs = App.snap.blocks.filter((b) => b.devKey === devKey);
     if (!bs.length) return null;
     return h('div', null, [sec('收集到的原始輸出'), V.table([
-      { t: '指令', f: (b) => b.command || '（未標記）' },
-      { t: '解析器', f: (b) => (b.adapters.length && !b.empty ? b.adapters.map((a) => S.adapters[a].label).join('、') : h('span', { class: 'diffA' }, '無法辨識')) },
-      { t: '行', f: (b) => `${b.start}–${b.end}` },
+      { t: '指令', f: (b) => b.command || '（未標記）', s: (b) => b.command || '（未標記）' },
+      { t: '解析器', f: (b) => (b.adapters.length && !b.empty ? b.adapters.map((a) => S.adapters[a].label).join('、') : h('span', { class: 'diffA' }, '無法辨識')),
+        s: (b) => (b.adapters.length && !b.empty ? b.adapters.map((a) => S.adapters[a].label).join('、') : '無法辨識') },
+      { t: '行', f: (b) => `${b.start}–${b.end}`, s: (b) => b.start },
     ], bs, { onRow: (b) => App.openRaw(b.file, b.start) })]);
   }
   const ifName = (Q, ep) => { const i = Q.getInterface(ep); return i ? i.name : K.splitEp(ep)[1]; };

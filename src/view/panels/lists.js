@@ -101,7 +101,7 @@
     const TAB_COUNT = { device: C.devices + C.endpoints, interface: C.interfaces, ip: C.ips, mac: C.macs, vlan: C.vlans };
     const T = {
       device: ['設備', devRows, [
-        { t: '設備', f: (r) => nameOf(r), s: nameOf }, { t: '類型', f: (r) => (r.wifi ? V.chip('Wi-Fi MAC', 'info') : r.end ? V.chip('末端', 'kind-unknown') : V.kindChip(r.kind)), s: (r) => (r.wifi ? 'Wi-Fi MAC' : r.end ? '末端' : V.KIND[r.kind] || r.kind) },
+        { t: '設備', f: (r) => nameOf(r), s: nameOf }, { t: '類型', f: (r) => (r.wifi ? V.chip('Wi-Fi', 'info') : r.end ? V.chip('末端', 'kind-unknown') : V.kindChip(r.kind)), s: (r) => (r.wifi ? 'Wi-Fi' : r.end ? '末端' : V.KIND[r.kind] || r.kind) },
         { t: '管理 IP', f: (r) => mono(ipOf(r)), s: ipOf }, { t: '廠商', f: (r) => vendorOf(r) || '', s: vendorOf },
         { t: '連接於', f: (r) => (r.end ? `${dn(r.dev)} ${r.ifc}` : ''), s: (r) => (r.end ? dn(r.dev) + ' ' + r.ifc : null) },
         { t: '收集', f: (r) => (r.end ? '' : r.collected ? '是' : '否'), s: (r) => (r.end ? null : r.collected ? '是' : '否') }],
@@ -142,14 +142,10 @@
       const t = inv.q.trim().toLowerCase();
       const rows = rows0.filter((r) => (!flt || flt.find((x) => x[0] === inv.filter)[2](r)) && (!t || text(r).filter((x) => x != null).join(' ').toLowerCase().includes(t)));
       const sc = cols[inv.sortBy] && cols[inv.sortBy].s ? cols[inv.sortBy] : null;
-      if (sc) { // 空值固定排最後；字串用 natural 排序，因此 IP 依數值順序
-        const val = (r) => { const v = sc.s(r); return v == null || v === '' ? null : v; };
-        rows.sort((a, b) => { const x = val(a); const y = val(b); if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
-          return (typeof x === 'number' && typeof y === 'number' ? x - y : S.util.natural(String(x), String(y))) * inv.sortDir; });
-      }
+      const view = sc ? V.sortRows(rows, sc, inv.sortDir) : rows;
       const note = inv.kind === 'mac' ? `共 ${C.macRows} 列（同一個 MAC 在每個觀察到的介面各一列，不重複的 MAC ${C.macs} 個）` : inv.kind === 'vlan' ? `共 ${C.vlans} 筆（每台設備的每個 VLAN 定義一筆，不重複的 VLAN ID ${C.vlanIds} 個）` : '';
       V.clear(body); if (note) body.appendChild(h('div', { class: 'muted', style: { padding: '4px 8px' } }, note));
-      body.appendChild(V.table(cols, rows, { onRow: (r) => App.select(sel(r), { focus: true }), limit: 500, sortBy: sc ? inv.sortBy : -1, sortDir: inv.sortDir,
+      body.appendChild(V.table(cols, view, { onRow: (r) => App.select(sel(r), { focus: true }), limit: 500, sortBy: sc ? inv.sortBy : -1, sortDir: inv.sortDir,
         onSort: (n) => { inv.sortDir = inv.sortBy === n ? -inv.sortDir : 1; inv.sortBy = n; draw(); } }));
     };
     box.addEventListener('input', () => { inv.q = box.value; draw(); });

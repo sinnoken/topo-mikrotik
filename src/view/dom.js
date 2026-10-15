@@ -47,9 +47,38 @@
   V.fmtTime = (iso) => { const d = new Date(iso); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
   V.num = (n) => Number(n).toLocaleString('zh-TW');
 
-  /** 簡易表格：cols [{t:'標題', f:(row)=>內容}]，onRow(row) 可點擊 */
+  /** 依欄位的 s(row) 排序：空值固定排最後；字串用 natural（IP 依數值順序），數字比大小。回傳新陣列。 */
+  V.sortRows = function (rows, col, dir) {
+    const val = (r) => { const v = col.s(r); return v == null || v === '' ? null : v; };
+    return rows.slice().sort((a, b) => {
+      const x = val(a); const y = val(b);
+      if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
+      return (typeof x === 'number' && typeof y === 'number' ? x - y : SSOT.util.natural(String(x), String(y))) * dir;
+    });
+  };
+
+  /**
+   * 簡易表格：cols [{t:'標題', f:(row)=>內容, s?:(row)=>排序值}]，onRow(row) 可點擊。
+   * 有 s 的欄位可點標頭排序；呼叫端不傳 onSort 時由表格自己保存排序狀態（詳情表用），
+   * 傳入 onSort／sortBy／sortDir 時由呼叫端管理（清單分頁需跨重繪保留）。
+   */
   V.table = function (cols, rows, opt) {
     const o = opt || {};
+    if (o.onSort || !cols.some((c) => c.s)) return renderTable(cols, rows, o);
+    const box = V.h('div');
+    const st = { by: -1, dir: 1 };
+    const draw = () => {
+      V.clear(box);
+      const sorted = st.by >= 0 ? V.sortRows(rows, cols[st.by], st.dir) : rows;
+      box.appendChild(renderTable(cols, sorted, Object.assign({}, o, {
+        sortBy: st.by, sortDir: st.dir, onSort: (n) => { st.dir = st.by === n ? -st.dir : 1; st.by = n; draw(); },
+      })));
+    };
+    draw();
+    return box;
+  };
+
+  function renderTable(cols, rows, o) {
     const tb = V.h('tbody');
     rows.slice(0, o.limit || rows.length).forEach((r) => {
       const activate = o.onRow ? () => o.onRow(r) : null;
@@ -64,5 +93,5 @@
     const t = V.h('table', { class: 't' }, [V.h('thead', null, V.h('tr', null, cols.map((c, n) => V.h('th', c.s && o.onSort ? { class: 'sortable', title: '點一下排序', onclick: () => o.onSort(n) } : null, c.t + (o.sortBy === n ? (o.sortDir < 0 ? ' ▼' : ' ▲') : ''))))), tb]);
     if (o.limit && rows.length > o.limit) return V.h('div', null, [t, V.h('div', { class: 'muted', style: { padding: '6px 8px' } }, `只顯示前 ${o.limit} 筆，共 ${V.num(rows.length)} 筆`)]);
     return t;
-  };
+  }
 })(globalThis.SSOT = globalThis.SSOT || {});

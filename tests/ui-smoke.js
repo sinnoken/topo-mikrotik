@@ -212,11 +212,12 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     const oneG = edgeLegend('1g'); const other = edgeLegend('other');
     if (!oneG || !other || !oneG.getAttribute('title').includes('不代表實際協商速率')) throw new Error('1G 圖例需說明其為介面名稱推估，而非實際協商速率');
     if (T.edge['1g'].c === T.edge.other.c || T.edge['1g'].w <= T.edge.other.w) throw new Error('1G 連線樣式應明顯區別於其他連線');
-    const hearsay = legend.find((li) => li.textContent === '聽說'); const domain = legend.find((li) => li.textContent === 'MNDP 同網域');
+    const hearsay = legend.find((li) => li.textContent === '聽說'); const domain = legend.find((li) => li.textContent === 'MNDP');
     if (!hearsay || !domain) throw new Error('圖例缺少聽說或 MNDP 註記');
     const hs = sw(hearsay)[0]; const ds = sw(domain)[0];
     if (hs.style.opacity !== String(T.weakEdge.hearsay.alpha) || !hs.style.background.includes(T.weakEdge.hearsay.c)) throw new Error('聽說圖例顏色或透明度與 theme 不一致');
     if (ds.style.opacity !== String(T.weakEdge.domainOnly.alpha) || !ds.style.background.includes(T.weakEdge.domainOnly.c)) throw new Error('MNDP 圖例顏色或透明度與 theme 不一致');
+    if (T.weakEdge.domainOnly.alpha !== 0.66) throw new Error('MNDP 邊透明度應為 66%');
     if (hs.style.background === ds.style.background) throw new Error('聽說與 MNDP 圖例線型應可區分');
   });
   await step('MNDP 圖例、提示與細節不暗示實體直連', async () => {
@@ -226,7 +227,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     const hash = S.util.hash(S.readers.PASTE + '\n' + input);
     for (let i = 0; i < 4000 && (!App.snap || App.snap.meta.inputHash !== hash); i++) await new Promise((r) => setTimeout(r, 5));
     if (App.snap.meta.inputHash !== hash) throw new Error('MNDP 基準未建立');
-    if (!text('#legend').includes('MNDP 同網域')) throw new Error('MNDP 圖例未顯示');
+    if (!Array.from(document.querySelectorAll('#legend .li')).some((li) => li.textContent === 'MNDP')) throw new Error('MNDP 圖例標籤應簡化為 MNDP');
     const p = Array.from(App.pairs.values()).find((x) => x.domainOnly);
     if (!p) throw new Error('MNDP device edge 未標記為 domain-only');
     App.graph.emit('hover', { item: { type: 'edge', id: p.id }, x: 0, y: 0 });
@@ -265,7 +266,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
       ctx.stroke = () => { strokes.push({ alpha: ctx.globalAlpha, dash: dash.slice(), from, to }); };
       graph.setData(nodes, edges, pos); graph.hl = null; graph.hover = null; graph.setSelection([], []); graph.fit(); graph.draw();
       const pure = segmentStrokes('mndp-a', 'mndp-b');
-      if (!pure.some((s) => s.alpha === weak.domainOnly.alpha && s.dash.join() === weak.domainOnly.dash.join())) throw new Error('純 MNDP 應使用 theme 指定的高辨識點劃線與透明度');
+      if (!pure.some((s) => s.alpha === 0.66 && s.dash.join() === weak.domainOnly.dash.join())) throw new Error('純 MNDP 邊應以 66% 不透明度使用 theme 指定的高辨識點劃線');
       const mixed = segmentStrokes('mixed-a', 'mixed-b');
       if (!mixed.length || mixed.some((s) => s.alpha === 0.5)) throw new Error('混合證據邊不應套用 MNDP-only 透明度');
       graph.setSelection([], ['pure-mndp']); strokes.length = 0; graph.draw();

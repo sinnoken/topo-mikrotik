@@ -409,7 +409,7 @@
       k === '1g' ? '推論分類：ether、sfp1、combo 等介面名稱歸為 1G；不代表實際協商速率，ether 也可能是 2.5G 或 10G。' : null));
     group('連線註記');
     item([line(WEAK.hearsay.c, V.EDGE_STYLE.other.w, WEAK.hearsay.dash, WEAK.hearsay.alpha)], '聽說', '紫色點線：對端沒有提供 LLDP 鄰居資料，屬單向觀察');
-    item([line(WEAK.domainOnly.c, V.EDGE_STYLE.other.w, WEAK.domainOnly.dash, WEAK.domainOnly.alpha)], 'MNDP 同網域', '青色點劃線：MNDP 表示同一 L2 網域可達，不代表兩台設備直連');
+    item([line(WEAK.domainOnly.c, V.EDGE_STYLE.other.w, WEAK.domainOnly.dash, WEAK.domainOnly.alpha)], 'MNDP', '青色點劃線：MNDP 表示同一 L2 網域可達，不代表兩台設備直連');
     Object.values(EP.byType).forEach((t) => item([line(t.c, V.EDGE_STYLE.other.w, WEAK.hearsay.dash, WEAK.hearsay.alpha)], t.label, '連到 ' + t.label + ' 介面末端的連線'));
   }
   // 左右欄寬度是檢視狀態：存在獨立的 'layout' 鍵，清除基準時不受影響

@@ -220,17 +220,19 @@
         c.fillStyle = n.collected ? CV.label.text : CV.label.textUncollected; c.fillText(n.label, p.x, box.y1 - fs * 0.32);
       }
       c.textAlign = 'left'; c.globalAlpha = 1;
-      // 埠名
-      if (portLabels) {
-        c.font = '10px Consolas, monospace';
-        const order = this.edges.filter((e) => this._edgeVisible(e)).sort((x, y) => (this.sel.edges.has(y.id) ? 1 : 0) - (this.sel.edges.has(x.id) ? 1 : 0));
-        for (const e of order) {
-          const a = this.pos.get(e.a); const b = this.pos.get(e.b);
-          if (!a || !b || (!inView(a) && !inView(b))) continue;
-          if (e.labelA) portLabel(c, a, b, e.labelA, this.radius(this.nodeById.get(e.a)) + 26, placed);
-          if (e.labelB) portLabel(c, b, a, e.labelB, this.radius(this.nodeById.get(e.b)) + 26, placed);
-        }
-      }
+      // 埠名：一般只在放大時畫，且與已畫標籤重疊就略過；滑過、選取的連線（及滑過節點的連線）強制顯示，不受縮放與重疊限制
+      const isForced = (e) => this.sel.edges.has(e.id) || e.id === hoverE || hoverAdj.has(e.id);
+      const edgesToLabel = this.edges.filter((e) => this._edgeVisible(e) && (portLabels || isForced(e)));
+      const drawPort = (e, force) => {
+        const a = this.pos.get(e.a); const b = this.pos.get(e.b);
+        if (!a || !b || (!inView(a) && !inView(b))) return;
+        const k = force ? Math.max(1, 1.25 / s) : 1; // 縮小時放大字級，保持螢幕上可讀
+        c.font = `${10 * k}px Consolas, monospace`;
+        if (e.labelA) portLabel(c, a, b, e.labelA, this.radius(this.nodeById.get(e.a)) + 26 * k, placed, force ? k : 0);
+        if (e.labelB) portLabel(c, b, a, e.labelB, this.radius(this.nodeById.get(e.b)) + 26 * k, placed, force ? k : 0);
+      };
+      edgesToLabel.filter((e) => !isForced(e)).forEach((e) => drawPort(e, false));
+      edgesToLabel.filter(isForced).forEach((e) => drawPort(e, true));
       c.restore();
     }
     computeGroups() {
@@ -283,16 +285,19 @@
       if (s > 0.35) { c.fillStyle = EP.cluster.text; c.font = 'bold 9px sans-serif'; c.textAlign = 'center'; c.fillText('×' + (n.count || ''), p.x, p.y + 3.2); c.textAlign = 'left'; }
     }
   }
-  function portLabel(c, from, to, text, dist, placed) {
-    const len = Math.hypot(to.x - from.x, to.y - from.y); if (len < dist * 2.2) return;
+  /** force（縮放倍率 k）不做重疊檢查，且兩端太近時把標籤往線中間收，確保一定看得到。 */
+  function portLabel(c, from, to, text, dist, placed, force) {
+    const len = Math.hypot(to.x - from.x, to.y - from.y);
+    if (force) dist = Math.min(dist, len * 0.3); else if (len < dist * 2.2) return;
+    const k = force || 1;
     const x = from.x + ((to.x - from.x) / len) * dist; const y = from.y + ((to.y - from.y) / len) * dist;
     const tw = c.measureText(text).width;
-    const box = { x0: x - tw / 2 - 3, x1: x + tw / 2 + 3, y0: y - 7, y1: y + 6 };
-    if (placed.some((b) => b.x0 < box.x1 && box.x0 < b.x1 && b.y0 < box.y1 && box.y0 < b.y1)) return;
+    const box = { x0: x - tw / 2 - 3 * k, x1: x + tw / 2 + 3 * k, y0: y - 7 * k, y1: y + 6 * k };
+    if (!force && placed.some((b) => b.x0 < box.x1 && box.x0 < b.x1 && b.y0 < box.y1 && box.y0 < b.y1)) return;
     placed.push(box);
-    c.fillStyle = CV.port.bg; c.strokeStyle = CV.port.border; c.lineWidth = 0.6;
-    roundRect(c, x - tw / 2 - 3, y - 7, tw + 6, 13, 3); c.fill(); c.stroke();
-    c.fillStyle = CV.port.text; c.textAlign = 'center'; c.fillText(text, x, y + 3.5); c.textAlign = 'left';
+    c.fillStyle = CV.port.bg; c.strokeStyle = CV.port.border; c.lineWidth = 0.6 * k;
+    roundRect(c, box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0, 3 * k); c.fill(); c.stroke();
+    c.fillStyle = CV.port.text; c.textAlign = 'center'; c.fillText(text, x, y + 3.5 * k); c.textAlign = 'left';
   }
   function arrow(c, a, b, size, col) {
     const ang = Math.atan2(b.y - a.y, b.x - a.x); const mx = a.x + (b.x - a.x) * 0.6; const my = a.y + (b.y - a.y) * 0.6;

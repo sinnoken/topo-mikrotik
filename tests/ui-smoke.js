@@ -267,6 +267,25 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     App.select({ type: 'interface', key: remoteEp });
     if (!text('#detail').includes('MNDP：L2 網域可達，非直連')) throw new Error('MNDP 回報介面的細節不應呈現為直連線');
   });
+  await step('連線埠名：縮小時隱藏，滑過連線或節點時強制顯示', () => {
+    const graph = App.graph; const ctx = graph.ctx;
+    const old = { nodes: graph.nodes, edges: graph.edges, pos: graph.pos, sel: graph.sel, hl: graph.hl, hover: graph.hover, fillText: ctx.fillText };
+    const nodes = ['pa', 'pb'].map((id) => ({ id, label: id, kind: 'switch', collected: true, group: 'test' }));
+    const edges = [{ id: 'pe', a: 'pa', b: 'pb', cls: 'other', count: 1, hearsay: false, labelA: 'etherA1', labelB: 'etherB1' }];
+    const texts = [];
+    try {
+      ctx.fillText = (s) => { texts.push(String(s)); };
+      graph.setData(nodes, edges, new Map([['pa', { x: 0, y: 0 }], ['pb', { x: 400, y: 0 }]])); graph.hl = null; graph.setSelection([], []); graph.fit();
+      graph.s = 0.5; graph.hover = null; texts.length = 0; graph.draw();
+      if (texts.some((s) => s.startsWith('ether'))) throw new Error('縮小且未滑過時不應顯示埠名');
+      graph.hover = { type: 'edge', id: 'pe' }; texts.length = 0; graph.draw();
+      if (!texts.includes('etherA1') || !texts.includes('etherB1')) throw new Error('滑過連線時應顯示兩端埠名');
+      graph.hover = { type: 'node', id: 'pa' }; texts.length = 0; graph.draw();
+      if (!texts.includes('etherA1')) throw new Error('滑過節點時應顯示相鄰連線的埠名');
+    } finally {
+      Object.assign(graph, { nodes: old.nodes, edges: old.edges, pos: old.pos, sel: old.sel, hl: old.hl, hover: old.hover }); ctx.fillText = old.fillText;
+    }
+  });
   await step('純 MNDP 邊以專用點劃線呈現，高亮不淡化', () => {
     const graph = App.graph; const ctx = graph.ctx; const weak = S.view.theme.weakEdge;
     const old = {

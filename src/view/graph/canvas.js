@@ -161,7 +161,8 @@
         if (hc) { col = hc; w = Math.max(w, 3.5, 2.5 / s); }
         if (override) { col = override; w = Math.max(w, 3.5, 2.5 / s); alpha = 1; }
         c.globalAlpha = alpha; c.strokeStyle = col; c.lineWidth = Math.max(w, 0.8 / s);
-        c.setLineDash(st.dash ? st.dash.map((d) => d / Math.min(s, 1)) : e.hearsay ? [3 / Math.min(s, 1), 3 / Math.min(s, 1)] : []);
+        c.setLineDash(e.domainOnly ? [6 / Math.min(s, 1), 4 / Math.min(s, 1)]
+          : st.dash ? st.dash.map((d) => d / Math.min(s, 1)) : e.hearsay ? [3 / Math.min(s, 1), 3 / Math.min(s, 1)] : []);
         c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke(); c.setLineDash([]);
         if (e.sev && !dim && !override) { // 有問題的連線：中點標記
           const mx = (a.x + b.x) / 2; const my = (a.y + b.y) / 2;

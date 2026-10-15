@@ -4,7 +4,7 @@
  */
 (function (S) {
   'use strict';
-  const V = S.view; const h = V.h; const K = S.keys;
+  const V = S.view; const h = V.h; const K = S.keys; const LINK_SCOPE = S.LINK_SCOPE;
 
   function render(App, sel) {
     const root = V.clear(V.$('#detail'));
@@ -97,7 +97,8 @@
     const fl = Q.findingsFor('device', d.key).concat(...links.map((l) => Q.findingsFor('link', l.key)), ...ifs.map((i) => Q.findingsFor('interface', i.key)));
     const peerRows = links.map((l) => {
       const mine = K.splitEp(l.a)[0] === d.key ? l.a : l.b; const other = Q.peerOf(l, mine);
-      return { l, mine, other };
+      const observations = (l.observations || []).filter((o) => o.dev === d.key);
+      return { l, mine, other, observations };
     }).sort((x, y) => S.util.natural(x.mine, y.mine));
     const vlans = Q.vlansOf(d.key); const routes = Q.routesOf(d.key); const unk = Q.unknownPeers(d.key);
     return h('div', { class: 'detail' }, [
@@ -110,11 +111,18 @@
       findingsBlock(App, fl),
       sec('鄰居', [V.chip(String(peerRows.length))]),
       peerRows.length ? V.table([
-        { t: '本機介面', f: (r) => h('span', { class: 'mono' }, ifName(Q, r.mine)) },
-        { t: '對端', f: (r) => h('span', null, [Q.devName(K.splitEp(r.other)[0]), h('span', { class: 'mono muted' }, ' ' + ifName(Q, r.other))]) },
-        { t: '類別', f: (r) => V.CLS[r.l.cls] + (r.l.hearsay ? '・聽說' : '') + (!r.l.verified && !r.l.hearsay ? '・單向' : '') },
+        { t: '本機介面／觀察位置', f: (r) => r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN
+          ? h('span', { class: 'mono' }, r.observations.length ? r.observations.map((o) => o.ifc).join('、') : '對端回報')
+          : h('span', { class: 'mono' }, ifName(Q, r.mine)) },
+        { t: '對端', f: (r) => r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN
+          ? Q.devName(K.splitEp(r.other)[0])
+          : h('span', null, [Q.devName(K.splitEp(r.other)[0]), h('span', { class: 'mono muted' }, ' ' + ifName(Q, r.other))]) },
+        { t: '類別', f: (r) => r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN
+          ? 'MNDP・同一 L2 網域可達（非直連確認）'
+          : V.CLS[r.l.cls] + (r.l.hearsay ? '・聽說' : '') + (!r.l.verified && !r.l.hearsay ? '・單向' : '') },
         { t: '協定', f: (r) => V.protoText(r.l) },
-        { t: 'VLAN', f: (r) => (r.l.vlanMismatch ? h('span', { class: 'diffA' }, '不一致') : h('span', { class: 'vlanlist' }, vlanText(r.l.vlansCommon))) },
+        { t: 'VLAN', f: (r) => r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? '—'
+          : (r.l.vlanMismatch ? h('span', { class: 'diffA' }, '不一致') : h('span', { class: 'vlanlist' }, vlanText(r.l.vlansCommon))) },
       ], peerRows, { onRow: (r) => App.select({ type: 'link', key: r.l.key }, { focus: true }), bad: (r) => r.l.vlanMismatch || Q.findingsFor('link', r.l.key).some((f) => f.severity !== 'info') }) : h('div', { class: 'muted' }, '沒有連結'),
       unk.length ? h('div', null, [sec('沒有 LLDP 鄰居的埠', [V.chip(String(unk.length)), h('a', { class: 'link', style: { marginLeft: '8px', fontWeight: 400 }, onclick: () => App.select({ type: 'endpoints', dev: d.key }, { focus: true }) }, '在圖上看')]), unknownTable(App, unk)]) : null,
       sec('介面', [V.chip(String(ifs.length))]),
@@ -153,11 +161,21 @@
     const sa = new Set(l.vlansA); const sb = new Set(l.vlansB);
     const onlyA = l.vlansA.filter((v) => !sb.has(v)); const onlyB = l.vlansB.filter((v) => !sa.has(v));
     const fl = Q.findingsFor('link', l.key).concat(Q.findingsFor('interface', l.a), Q.findingsFor('interface', l.b));
+    const domain = l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN;
+    const observedAt = (l.observations || []).map((o) => {
+      const b = Q.block(o.block);
+      return `${Q.devName(o.dev)} ${o.ifc}${o.peerIfc ? `（對端回報埠 ${o.peerIfc}）` : ''}${b ? `・${b.file} 第 ${o.line} 行` : ''}`;
+    });
     return h('div', { class: 'detail' }, [
       h('h2', null, [Q.devName(K.splitEp(l.a)[0]), ' ⇄ ', Q.devName(K.splitEp(l.b)[0])]),
-      h('div', { class: 'row' }, [V.chip(V.CLS[l.cls]), l.verified ? V.chip('雙向確認', 'ok') : l.hearsay ? V.chip('聽說（對端未提供 LLDP）', 'info') : V.chip('單向', 'warn'), ...l.via.map((v) => V.chip(v.toUpperCase()))]),
-      kv([['A 端', epLink(App, l.a)], ['B 端', epLink(App, l.b)], ['層級', l.layer === 'l2' ? 'L2（實體鄰接）' : 'L3（路由鄰接）']]),
-      l.layer === 'l2' ? h('div', null, [sec('VLAN'), kv([
+      h('div', { class: 'row' }, domain
+        ? [V.chip('同一 L2 broadcast domain 可達（MNDP；非直連確認）', 'info'), ...l.via.map((v) => V.chip(v.toUpperCase()))]
+        : [V.chip(V.CLS[l.cls]), l.verified ? V.chip('雙向確認', 'ok') : l.hearsay ? V.chip('聽說（對端未提供 LLDP）', 'info') : V.chip('單向', 'warn'), ...l.via.map((v) => V.chip(v.toUpperCase()))]),
+      domain
+        ? kv([['關係', 'MNDP 觀察到的 L2 網域可達性；不代表兩台設備之間存在直連線路。'],
+          ['觀察位置', observedAt.length ? observedAt.join('；') : '詳見原始輸出']])
+        : kv([['A 端', epLink(App, l.a)], ['B 端', epLink(App, l.b)], ['層級', l.layer === 'l2' ? 'L2（介面鄰接）' : 'L3（路由鄰接）']]),
+      l.layer === 'l2' && !domain ? h('div', null, [sec('VLAN'), kv([
         ['兩端都有', h('span', { class: 'vlanlist' }, vlanText(l.vlansCommon))],
         ['只在 A 端', onlyA.length ? h('span', { class: 'vlanlist diffA' }, vlanText(onlyA)) : '—'],
         ['只在 B 端', onlyB.length ? h('span', { class: 'vlanlist diffA' }, vlanText(onlyB)) : '—'],
@@ -173,11 +191,16 @@
       h('h2', null, [Q.devName(a), ' ⇄ ', Q.devName(b)]),
       h('div', { class: 'row' }, [V.chip(`${links.length} 條連結`)]),
       V.table([
-        { t: Q.devName(a), f: (l) => h('span', { class: 'mono' }, ifName(Q, K.splitEp(l.a)[0] === a ? l.a : l.b)) },
-        { t: Q.devName(b), f: (l) => h('span', { class: 'mono' }, ifName(Q, K.splitEp(l.a)[0] === a ? l.b : l.a)) },
-        { t: '類別', f: (l) => V.CLS[l.cls] + (l.verified ? '' : l.hearsay ? '・聽說' : '・單向') },
+        { t: Q.devName(a), f: (l) => l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? 'MNDP 觀察'
+          : h('span', { class: 'mono' }, ifName(Q, K.splitEp(l.a)[0] === a ? l.a : l.b)) },
+        { t: Q.devName(b), f: (l) => l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? 'L2 網域可達'
+          : h('span', { class: 'mono' }, ifName(Q, K.splitEp(l.a)[0] === a ? l.b : l.a)) },
+        { t: '類別', f: (l) => l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN
+          ? 'MNDP・同一 L2 網域可達（非直連確認）'
+          : V.CLS[l.cls] + (l.verified ? '' : l.hearsay ? '・聽說' : '・單向') },
         { t: '協定', f: (l) => V.protoText(l) },
-        { t: 'VLAN', f: (l) => (l.vlanMismatch ? h('span', { class: 'diffA' }, '不一致') : h('span', { class: 'vlanlist' }, vlanText(l.vlansCommon))) },
+        { t: 'VLAN', f: (l) => l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? '—'
+          : (l.vlanMismatch ? h('span', { class: 'diffA' }, '不一致') : h('span', { class: 'vlanlist' }, vlanText(l.vlansCommon))) },
       ], links, { onRow: (l) => App.select({ type: 'link', key: l.key }) }),
       findingsBlock(App, [].concat(...links.map((l) => Q.findingsFor('link', l.key)))),
     ]);
@@ -196,7 +219,11 @@
         ['成員', i.members.length ? h('span', null, i.members.flatMap((m, n) => [n ? '、' : '', epLink(App, m)])) : null],
         ['VLAN', i.vlans.length ? h('span', { class: 'vlanlist' }, vlanText(i.vlans)) : null], ['未對應的 VLAN 名稱', i.vlanNames.join('、')],
         ['VLAN 子介面', i.sub ? `${i.sub.of} 上的 VLAN ${i.sub.vlan}` : null]]),
-      links.length ? h('div', null, [sec('連結'), ...links.map((l) => h('div', null, L(App, `${Q.epName(l.a)} ⇄ ${Q.epName(l.b)}`, { type: 'link', key: l.key })))]) : null,
+      links.length ? h('div', null, [sec('連結'), ...links.map((l) => h('div', null, L(App,
+        l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN
+          ? `${Q.devName(K.splitEp(l.a)[0] === i.dev ? K.splitEp(l.b)[0] : K.splitEp(l.a)[0])}（MNDP：L2 網域可達，非直連）`
+          : `${Q.epName(l.a)} ⇄ ${Q.epName(l.b)}`,
+        { type: 'link', key: l.key })))]) : null,
       findingsBlock(App, Q.findingsFor('interface', i.key)),
       macs.length ? h('div', null, [sec('學到的 MAC', [V.chip(String(macs.length))]), V.table([
         { t: 'MAC', f: (m) => macLink(App, m.mac) }, { t: '廠商', f: (m) => m.vendor || '' }, { t: 'IP', f: (m) => m.ips.join(', ') },

@@ -59,7 +59,7 @@ reader、adapter、model 與 check pipeline；收集器不解析或修改 Router
 | 資料類別 | 指令 | 用途 | 交換器 | 路由器 |
 |---|---|---|:-:|:-:|
 | 設定 | `/export terse`（`compact` 也可） | 介面註解、bridge、bridge VLAN、bonding、IP、router-id、主機名 | 必要 | 必要 |
-| 鄰居 | `/ip neighbor print detail without-paging` | 實體連結（LLDP／MNDP／CDP） | 必要 | 必要 |
+| 鄰居 | `/ip neighbor print detail without-paging` | L2 鄰居證據（LLDP／CDP 介面鄰接；MNDP 同一 broadcast domain 可達） | 必要 | 必要 |
 | MAC 表 | `/interface bridge host print detail without-paging` | MAC 位置 | 必要 | — |
 | 路由表 | `/ip route print detail without-paging` | 路由追蹤 | 有 L3 時 | 必要 |
 | ARP | `/ip arp print detail without-paging` | MAC↔IP | 建議 | 建議 |
@@ -119,8 +119,9 @@ _____
 
 | 項目 | 說明 |
 |---|---|
-| 對端埠名 | 鄰居列的 `interface-name`（來自 LLDP）才是對端的埠名。沒有時，單一連結仍可配對；**平行連結（例如 LACP）會依本機介面名稱排序後一一配對**，這是推測，不保證正確 |
-| 同一鄰居多列 | 同一台鄰居可能同時從連接埠與 `bridge` 出現，或被多個協定各列一次；系統優先採用連接埠，重複的丟掉。同一本機介面上 MAC 或 identity 相同的列（例如 LLDP 與 MNDP／CDP）會合併為一筆：`discovered-by` 取聯集（連結的 `protocols`），欄位取非空值，對端埠名優先採 LLDP；同一介面回報不同埠名時保留在 claim 的 `peerIfcAlt` |
+| 對端埠名 | LLDP 的 `interface-name` 可作為對端埠名證據。沒有時，單一鄰接仍可配對；**平行連結（例如 LACP）會依本機介面名稱排序後一一配對**，這是推測，不保證正確。MNDP 回報的 `interface-name` 只保留為鄰居回報值，不據此推論直連埠對 |
+| MNDP 範圍 | 只有 MNDP 證據時，edge 表示兩台設備透過同一 L2 broadcast domain 可達，不代表兩台設備之間有直連實體線路（參見 [RouterOS Neighbor Discovery 手冊](https://manual.mikrotik.com/docs/system-information-and-utilities/neighbor-discovery.md)）。由此不檢查 K01 單向直連、K02 同介面多個直連鄰居、聚合成員配對或對端埠 VLAN 差異；來源介面與回報資料仍可追溯。資料沒有可識別的 broadcast-domain ID，因此不推論該網域的完整成員清單 |
+| 同一鄰居多列 | 同一台鄰居可能同時從連接埠與 `bridge` 出現，或被多個協定各列一次；系統優先採用連接埠，重複的丟掉。同一本機介面上 MAC 或 identity 相同的列（例如 LLDP 與 MNDP／CDP）會合併為一筆：`discovered-by` 取聯集（連結的 `protocols`），欄位取非空值，對端埠名優先採 LLDP；同一介面回報不同埠名時保留在 claim 的 `peerIfcAlt`。若合併列含 LLDP／CDP，保留介面鄰接推論；只有 MNDP 時按上列處理 |
 | Bridge VLAN | 只有 bridge 開了 `vlan-filtering=yes` 才計入 VLAN 成員；每個 bridge 連接埠的 `pvid`（預設 1）算是該 VLAN 的未標記成員 |
 | VLAN 名稱 | RouterOS 的 bridge VLAN 沒有名稱，所以沒有「同一 VLAN 名稱不同」這類檢查 |
 | 聚合 | `/interface bonding` 的 `slaves` 視為聚合成員，兩端成員數不同會列為 K03 |

@@ -4,7 +4,7 @@
  */
 (function (S) {
   'use strict';
-  const V = S.view; const h = V.h; const $ = V.$; const K = S.keys;
+  const V = S.view; const h = V.h; const $ = V.$; const K = S.keys; const LINK_SCOPE = S.LINK_SCOPE;
   const App = {
     snap: null, Q: null, sources: [], profileJson: null, graph: null, pairOfLink: new Map(), pairs: new Map(), sel: null, showHosts: true,
     // 未知對端（沒有 LLDP 鄰居、只由 MAC 推論出來的末端）：只存在於畫面，不寫進基準
@@ -75,19 +75,24 @@
       const da = K.splitEp(l.a)[0]; const db = K.splitEp(l.b)[0];
       if (da === db) return;
       const [a, b] = da < db ? [da, db] : [db, da]; const id = a + '~' + b;
-      const p = S.util.getOr(pairs, id, () => ({ id, a, b, links: [], cls: 'l3', count: 0, hearsay: true, sev: null }));
+      const p = S.util.getOr(pairs, id, () => ({ id, a, b, links: [], cls: 'l3', count: 0, hearsay: true, sev: null, domainOnly: true, hasDomain: false }));
       p.links.push(l.key); App.pairOfLink.set(l.key, id);
       if (CLS_RANK.indexOf(l.cls) < CLS_RANK.indexOf(p.cls)) p.cls = l.cls;
       if (l.layer === 'l2') p.count++;
       if (!l.hearsay) p.hearsay = false;
+      if (l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN) p.hasDomain = true;
+      else p.domainOnly = false;
       const s = linkSev.get(l.key); if (s && (!p.sev || sevRank[s] > sevRank[p.sev])) p.sev = s;
     });
     pairs.forEach((p) => {
       const ls = p.links.map((k) => Q.getLink(k));
+      const interfaceLinks = ls.filter((l) => l.evidenceScope !== LINK_SCOPE.BROADCAST_DOMAIN);
       const side = (dev) => {
-        const eps = ls.map((l) => (K.splitEp(l.a)[0] === dev ? l.a : l.b)).map((ep) => Q.getInterface(ep));
+        if (!interfaceLinks.length) return 'MNDP・L2 網域可達';
+        const eps = interfaceLinks.map((l) => (K.splitEp(l.a)[0] === dev ? l.a : l.b)).map((ep) => Q.getInterface(ep));
         const parents = S.util.uniq(eps.map((i) => (i ? i.parent || i.name : '?')));
-        return parents.length === 1 ? parents[0] + (eps.length > 1 ? ` ×${eps.length}` : '') : `${eps.length} 條`;
+        const labels = parents.length === 1 ? parents[0] + (eps.length > 1 ? ` ×${eps.length}` : '') : `${eps.length} 條`;
+        return labels + (p.hasDomain ? ' + MNDP L2 網域' : '');
       };
       p.labelA = side(p.a); p.labelB = side(p.b);
     });
@@ -270,7 +275,9 @@
       if (vn && vn.virtual) text = vn.tip; else { const d = App.Q.getDevice(ev.item.id); text = `${d.label || d.name}・${V.KIND[d.kind]}${d.collected ? '' : '・未收集'}`; }
     } else {
       const p = App.pairs.get(ev.item.id);
-      if (p.virtual) text = App.graph.nodeById.get(p.b).tip; else text = `${App.Q.devName(p.a)} ${p.labelA} ⇄ ${App.Q.devName(p.b)} ${p.labelB}`;
+      if (p.virtual) text = App.graph.nodeById.get(p.b).tip;
+      else if (p.domainOnly) text = `${App.Q.devName(p.a)} ⇄ ${App.Q.devName(p.b)}・MNDP 觀察到同一 L2 broadcast domain 可達；不代表兩台設備直連`;
+      else text = `${App.Q.devName(p.a)} ${p.labelA} ⇄ ${App.Q.devName(p.b)} ${p.labelB}${p.hasDomain ? '・另有 MNDP L2 網域可達證據' : ''}`;
     }
     tip.textContent = text; tip.classList.remove('hidden');
     tip.style.left = (ev.x + 14) + 'px'; tip.style.top = (ev.y + 12) + 'px';
@@ -368,6 +375,7 @@
     Object.entries(V.KIND).forEach(([k, label]) => lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'sev', style: { background: V.KIND_COLOR[k], width: '10px', height: '10px' } }), label])));
     Object.entries(V.EDGE_STYLE).forEach(([k, st]) => lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'ln', style: { borderTopColor: st.c, borderTopStyle: st.dash ? 'dashed' : 'solid' } }), V.CLS[k]])));
     lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'ln', style: { borderTopColor: '#9aa5b1', borderTopStyle: 'dotted' } }), '聽說（對端無 LLDP）']));
+    lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'ln', style: { borderTopColor: '#9aa5b1', borderTopStyle: 'dashed' } }), 'MNDP：同一 L2 網域可達，非直連確認']));
     lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'sev', style: { background: '#3498db', width: '10px', height: '10px' } }), '未知對端（單一 MAC）']));
     lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'sev', style: { background: '#fff8e8', border: '2px dashed #f29900', width: '10px', height: '10px', transform: 'rotate(45deg)', borderRadius: '0' } }), '未知對端（多個 MAC）']));
     lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'sev error' }), '有錯誤／警告']));

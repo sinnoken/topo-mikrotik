@@ -13,6 +13,7 @@
 (function (S) {
   'use strict';
   const K = S.keys;
+  const LINK_SCOPE = S.LINK_SCOPE;
 
   function parseEp(s) {
     const m = String(s).trim().match(/^(\S+)\s+(\S+)$/);
@@ -46,8 +47,14 @@
       if (!a || !b) { errors.push(`連結格式錯誤：${JSON.stringify(l)}（應為 "設備 介面"）`); return; }
       const key = K.link(a, b); expLinks.add(key);
       const got = Q.getLink(key);
+      const devA = K.splitEp(a)[0]; const devB = K.splitEp(b)[0];
+      const domainReachability = !!((got && got.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN)
+        || Q.linksOf(devA).some((x) => x.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN
+          && [K.splitEp(x.a)[0], K.splitEp(x.b)[0]].includes(devB)));
+      if (domainReachability) return push('different', 'link', key, `${l.a} ⇄ ${l.b} 只有 MNDP 的 L2 網域可達證據，不能確認這組介面直連`);
       if (got) return push(got.verified ? 'ok' : 'different', 'link', key, got.verified ? `${l.a} ⇄ ${l.b}` : `${l.a} ⇄ ${l.b} 存在但未經雙向確認`);
-      const ga = Q.linksOfEp(a); const gb = Q.linksOfEp(b);
+      const ga = Q.linksOfEp(a).filter((x) => x.evidenceScope !== LINK_SCOPE.BROADCAST_DOMAIN);
+      const gb = Q.linksOfEp(b).filter((x) => x.evidenceScope !== LINK_SCOPE.BROADCAST_DOMAIN);
       if (ga.length || gb.length) {
         const where = ga.concat(gb).map((x) => Q.epName(x.a) + ' ⇄ ' + Q.epName(x.b)).join('；');
         return push('different', 'link', key, `${l.a} ⇄ ${l.b} 不存在，實際為：${where}`);
@@ -55,7 +62,7 @@
       push('missing', 'link', key, `基準中沒有 ${l.a} ⇄ ${l.b}`);
     });
     if (expected.links && expected.strictLinks) {
-      Q.links().forEach((l) => { if (l.layer === 'l2' && !expLinks.has(l.key)) push('unexpected', 'link', l.key, `基準多出 ${Q.epName(l.a)} ⇄ ${Q.epName(l.b)}`); });
+      Q.links().forEach((l) => { if (l.layer === 'l2' && l.evidenceScope !== LINK_SCOPE.BROADCAST_DOMAIN && !expLinks.has(l.key)) push('unexpected', 'link', l.key, `基準多出 ${Q.epName(l.a)} ⇄ ${Q.epName(l.b)}`); });
     }
 
     (expected.vlans || []).forEach((v) => {

@@ -9,6 +9,7 @@
 (function (S) {
   'use strict';
   const K = S.keys;
+  const LINK_SCOPE = S.LINK_SCOPE;
   const HOST_PORT = /^(eth\d|ens\d|eno\d|enp\d|bond\d|em\d+$|nic|vmnic|team|ethernet\s?\d|local area connection)/i;
   const VLAN_DATA = ['config', 'vlans'];
 
@@ -72,6 +73,7 @@
   }
   function linkClasses(M) {
     M.links.forEach((l) => {
+      if (l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN) { l.cls = 'other'; return; }
       const ia = M.ifcs.get(l.a); const ib = M.ifcs.get(l.b);
       const names = [ia, ib].map((i) => (i ? i.name.toLowerCase() : ''));
       if (l.layer === 'l3') l.cls = 'l3';
@@ -95,6 +97,10 @@
   function linkVlans(M) {
     M.links.forEach((l) => {
       if (l.layer !== 'l2') return;
+      if (l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN) {
+        l.vlansA = []; l.vlansB = []; l.vlansCommon = []; l.vlanComparable = false;
+        return;
+      }
       l.vlansA = effVlans(M, l.a); l.vlansB = effVlans(M, l.b);
       const sb = new Set(l.vlansB);
       l.vlansCommon = l.vlansA.filter((v) => sb.has(v));

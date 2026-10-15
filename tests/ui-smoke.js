@@ -148,6 +148,25 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     inp.dispatch('change', { target: inp }); await new Promise((r) => setTimeout(r, 20));
     if (!text('#pane-compare').includes('有差異')) throw new Error('比對結果未顯示');
   });
+  await step('MNDP 圖例、提示與細節不暗示實體直連', async () => {
+    const input = 'A (10.0.0.1):\n### /ip neighbor print detail\n'
+      + ' 0 interface=ether1 mac-address=AA:00:00:00:00:02 identity=B interface-name=ether9 discovered-by=mndp\n';
+    $('#input-text').value = input; $('#input-build').click();
+    const hash = S.util.hash(S.readers.PASTE + '\n' + input);
+    for (let i = 0; i < 4000 && (!App.snap || App.snap.meta.inputHash !== hash); i++) await new Promise((r) => setTimeout(r, 5));
+    if (App.snap.meta.inputHash !== hash) throw new Error('MNDP 基準未建立');
+    if (!text('#legend').includes('MNDP：同一 L2 網域可達')) throw new Error('MNDP 圖例未顯示');
+    const p = Array.from(App.pairs.values()).find((x) => x.domainOnly);
+    if (!p) throw new Error('MNDP device edge 未標記為 domain-only');
+    App.graph.emit('hover', { item: { type: 'edge', id: p.id }, x: 0, y: 0 });
+    if (!text('#tooltip').includes('不代表兩台設備直連')) throw new Error('圖上提示未明示 MNDP 的非直連語意');
+    App.graph.emit('click', { type: 'edge', id: p.id });
+    if (!text('#detail').includes('非直連確認')) throw new Error('MNDP 細節未明示非直連語意');
+    const domainLink = App.snap.model.links.find((l) => l.evidenceScope === 'broadcast-domain');
+    const remoteEp = S.keys.splitEp(domainLink.a)[0] === 'A' ? domainLink.b : domainLink.a;
+    App.select({ type: 'interface', key: remoteEp });
+    if (!text('#detail').includes('MNDP：L2 網域可達，非直連')) throw new Error('MNDP 回報介面的細節不應呈現為直連線');
+  });
   await step('清除基準', async () => { $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20)); if (App.snap) throw new Error('未清除'); });
   console.log(steps.join('\n'));
   setTimeout(() => process.exit(process.exitCode || 0), 10);

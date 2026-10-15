@@ -99,14 +99,15 @@
 |---|---|
 | devices | key、name、names、mgmtIp、vendor、kind、kindBasis、collected、data、group、role、seenBy |
 | interfaces | key、dev、name、desc、admin、status、type、parent、members、mode、ips、vlans、macs、hearsay、edge |
-| links | key、a、b、layer（l2/l3）、via（lldp/ospf）、verified、hearsay、cls、vlansA／B／Common、vlanMismatch |
+| links | key、a、b、layer（l2/l3）、via（lldp/mndp/ospf）、protocols、evidenceScope、observations、verified、hearsay、cls、vlansA／B／Common、vlanMismatch |
 | vlans | dev、id、name、desc、l3、members |
 | macs | mac、vendor（OUI）、ips、seen（介面、VLAN）、edge（位置） |
 | arps、routes | 原始對應與路由（含下一跳） |
 
 ### 5.3 關鍵推論
 
-- **鄰居配對**：本機介面名稱是權威，對端回報的 `interface-name` 只是「聽說」。對端沒有回報埠名時，兩邊數量相同就依介面名稱排序一一配對。對端也有鄰居資料時雙向配對（verified）；對端沒有回報為單向（K01）；對端沒提供資料為聽說（hearsay，只計入覆蓋率）。鄰居的 identity 對不上收集檔的設備名時，用管理 IP 對回同一台。
+- **鄰居邊語意**：LLDP／CDP 的觀察走介面鄰接推論；本機介面名稱是本機端依據，對端回報的 `interface-name` 是對端埠證據，無法配對時的平行埠排序配對仍屬推測。只有 MNDP 證據時，edge 表示兩台設備在同一 L2 broadcast domain 可達，不表示兩者直連，也不將回報的對端埠名視為實際配對埠；不套用直連專用的 K01／K02／K03／V01 檢查。`evidenceScope` 使用 `interface-adjacency`、`broadcast-domain` 或 `routing-adjacency`；`observations` 保留觀察介面及來源行。MNDP 沒有 domain ID，因此模型不宣稱完整網域成員清單。
+- **鄰居配對**：LLDP／CDP 對端也有可配對的鄰居資料時雙向配對（`verified`）；對端有鄰居輸出但未回報此介面鄰接為單向（K01）；對端沒提供鄰居資料則為聽說（hearsay，只計入覆蓋率）。鄰居 identity 對不上收集檔設備名時，用管理 IP 對回同一台。
 - **OSPF 鄰接**：鄰居位址 → 擁有該 IP 的介面；找不到再用 router-id、管理 IP；都找不到建立以鄰居 ID 命名的未知設備（R02）。
 - **設備類型**：型號（CRS／CSS→交換器；CCR／RB／hAP／hEX／CHR→路由器）→ 已收集設備依資料（有 OSPF→路由器；有 MAC 表且無路由→交換器）→ 未收集設備依鄰居回報的功能（router／bridge／station）→ 對端埠名像網卡→主機。命名規則可覆寫並標示依據。
 - **末端埠**：有學到 MAC、沒有連到其他已收集網路設備的介面；MAC 的「位置」即其末端埠。

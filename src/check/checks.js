@@ -6,6 +6,7 @@
 (function (S) {
   'use strict';
   const K = S.keys;
+  const LINK_SCOPE = S.LINK_SCOPE;
 
   const CATALOG = {
     I01: { severity: 'error', cat: '輸入', title: '無法辨識的內容' },
@@ -76,9 +77,15 @@
     M.notes.k04.forEach((n) => add('K04', `${name(n.dev)} 說對端是「${n.said}」，對端自己的介面是「${n.actual}」`,
       [{ type: 'link', key: n.link }], [{ block: n.block, line: n.line }]));
 
-    const linksByEp = new Map();
-    M.links.forEach((l) => { if (l.layer !== 'l2') return; [l.a, l.b].forEach((ep) => S.util.getOr(linksByEp, ep, () => []).push(l)); });
-    linksByEp.forEach((ls, ep) => {
+    const linksByEp = new Map(); const interfaceLinksByEp = new Map();
+    M.links.forEach((l) => {
+      if (l.layer !== 'l2') return;
+      [l.a, l.b].forEach((ep) => {
+        S.util.getOr(linksByEp, ep, () => []).push(l);
+        if (l.evidenceScope !== LINK_SCOPE.BROADCAST_DOMAIN) S.util.getOr(interfaceLinksByEp, ep, () => []).push(l);
+      });
+    });
+    interfaceLinksByEp.forEach((ls, ep) => {
       if (ls.length < 2) return;
       const peers = ls.map((l) => epName(l.a === ep ? l.b : l.a));
       add('K02', `${epName(ep)} 同時對到：${peers.join('、')}`,
@@ -88,7 +95,7 @@
     // 聚合：依成員連結推出 (A:ae, B:ae) 配對
     const lagPairs = new Map();
     M.links.forEach((l) => {
-      if (l.layer !== 'l2') return;
+      if (l.layer !== 'l2' || l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN) return;
       const ia = M.ifcs.get(l.a); const ib = M.ifcs.get(l.b);
       if (!ia || !ib || (!ia.parent && !ib.parent)) return;
       const pa = ia.parent ? K.ep(ia.dev, ia.parent) : null; const pb = ib.parent ? K.ep(ib.dev, ib.parent) : null;

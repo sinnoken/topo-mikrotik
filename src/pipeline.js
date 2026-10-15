@@ -105,6 +105,7 @@
 
     const links = Array.from(M.links.values()).map((l) => ({
       key: l.key, a: l.a, b: l.b, layer: l.layer, via: Array.from(l.via).sort(), protocols: Array.from(l.protocols || []).sort(), verified: !!(l.verified || l.ospfBoth), hearsay: l.hearsay,
+      evidenceScope: l.evidenceScope, observations: (l.observations || []).slice().sort((a, b) => nat(a.dev, b.dev) || nat(a.ifc, b.ifc) || nat(a.peerIfc || '', b.peerIfc || '') || nat(a.block, b.block) || a.line - b.line),
       cls: l.cls, vlansA: l.vlansA || [], vlansB: l.vlansB || [], vlansCommon: l.vlansCommon || [], vlanMismatch: !!l.vlanMismatch, src: l.src,
     })).sort((a, b) => nat(a.key, b.key));
 

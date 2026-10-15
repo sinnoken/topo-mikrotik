@@ -6,8 +6,13 @@
  */
 (function (S) {
   'use strict';
-  S.VERSION = '1.0.0';
+  S.VERSION = '1.1.0';
   S.SCHEMA = 'ssot-snapshot/1';
+  S.LINK_SCOPE = Object.freeze({
+    INTERFACE_ADJACENCY: 'interface-adjacency',
+    BROADCAST_DOMAIN: 'broadcast-domain',
+    ROUTING_ADJACENCY: 'routing-adjacency',
+  });
   S.readers = S.readers || {};
   S.adapters = S.adapters || {};
   S.data = S.data || {};

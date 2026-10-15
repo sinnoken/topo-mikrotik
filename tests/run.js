@@ -91,8 +91,60 @@ test('鄰居：同一介面的 LLDP 與 MNDP/CDP 列合併為一筆，保留協�
   assert.strictEqual(s.model.links.length, 2);
   const l1 = s.model.links.find((l) => l.key.includes('A') && l.a.includes('ether1') || l.b.includes('ether1'));
   assert.deepStrictEqual(l1.protocols, ['cdp', 'lldp', 'mndp']);
+  assert.strictEqual(l1.evidenceScope, 'interface-adjacency', 'LLDP/CDP 證據仍可支援介面鄰接推論');
   assert.ok(!s.model.interfaces.some((i) => /bridge1/.test(i.key)), 'bridge 觀察不應多出介面');
   assert.ok(claims(a).every((l) => !/\?\(/.test(l.a + l.b)), '合併後不應有未知埠名的重複連結');
+});
+test('MNDP：多個鄰居代表共享 L2 網域可達，不推論直連埠、雙向確認或 VLAN／聚合差異', () => {
+  const s = build('A (10.0.0.1):\n### /ip neighbor print detail\n'
+    + ' 0 interface=ether1 mac-address=AA:00:00:00:00:02 identity=B interface-name=ether9 discovered-by=mndp\n'
+    + ' 1 interface=ether1 mac-address=AA:00:00:00:00:03 identity=C interface-name=ether8 discovered-by=mndp\n');
+  assert.strictEqual(s.model.links.length, 2);
+  assert.ok(s.model.links.every((l) => l.evidenceScope === 'broadcast-domain' && l.via.includes('mndp')));
+  assert.ok(s.model.links.every((l) => !l.verified && !l.hearsay));
+  assert.ok(s.model.links.every((l) => l.observations.length === 1 && l.observations[0].ifc === 'ether1'));
+  assert.ok(s.model.interfaces.filter((i) => i.dev !== 'A').every((i) => i.hearsay), 'MNDP 回報的對端介面只能保留為聽說，不能當成設備本機收集的事實');
+  assert.ok(s.model.links.every((l) => !l.vlanComparable && !l.vlansA.length && !l.vlansB.length));
+  assert.strictEqual(count(s, 'K01'), 0);
+  assert.strictEqual(count(s, 'K02'), 0, '一個廣播網域介面看到多個鄰居不是介面直連衝突');
+  assert.strictEqual(count(s, 'K03'), 0);
+  assert.strictEqual(count(s, 'V01'), 0, 'MNDP 域可達證據不能當作對端埠 VLAN 比對');
+  const diff = S.compare(S.query(s), {
+    schema: 'ssot-expected/1', links: [{ a: 'A ether1', b: 'B ether9' }], strictLinks: true,
+  });
+  assert.strictEqual(diff.items[0].status, 'different', 'MNDP 網域可達不能滿足預期的直連介面連結');
+  assert.ok(!diff.items.some((i) => i.status === 'unexpected'), 'strictLinks 不應把 MNDP 網域可達列為額外直連');
+  const noReportedPort = S.compare(S.query(s), {
+    schema: 'ssot-expected/1', links: [{ a: 'A ether1', b: 'B ether7' }],
+  });
+  assert.strictEqual(noReportedPort.items[0].status, 'different', '遠端回報埠不同也應辨識到只有 MNDP 網域可達');
+
+  const aggregates = build('A (10.0.0.1):\n### /ip neighbor print detail\n'
+    + ' 0 interface=ether1 mac-address=AA:00:00:00:00:02 identity=B interface-name=ether9 discovered-by=mndp\n'
+    + '### /export terse\n/interface bridge add name=bridgeA vlan-filtering=yes\n'
+    + '/interface bonding add mode=802.3ad name=bondA slaves=ether1,ether2\n'
+    + '/interface bridge port add bridge=bridgeA interface=bondA\n'
+    + '/interface bridge vlan add bridge=bridgeA tagged=bondA vlan-ids=10\n'
+    + 'B (10.0.0.2):\n### /ip neighbor print detail\n'
+    + ' 0 interface=ether9 mac-address=AA:00:00:00:00:01 identity=A interface-name=ether1 discovered-by=mndp\n'
+    + '### /export terse\n/interface bridge add name=bridgeB vlan-filtering=yes\n'
+    + '/interface bonding add mode=802.3ad name=bondB slaves=ether9,ether10\n'
+    + '/interface bridge port add bridge=bridgeB interface=bondB\n'
+    + '/interface bridge vlan add bridge=bridgeB tagged=bondB vlan-ids=20\n');
+  assert.strictEqual(iface(aggregates, 'A|ether1').parent, 'bonda');
+  assert.strictEqual(iface(aggregates, 'B|ether9').parent, 'bondb');
+  assert.strictEqual(count(aggregates, 'K03'), 0, 'MNDP 網域可達不檢查兩端聚合成員');
+  assert.strictEqual(count(aggregates, 'V01'), 0, 'MNDP 網域可達不比較對端埠 VLAN');
+
+  const reciprocal = build('A (10.0.0.1):\n### /ip neighbor print detail\n'
+    + ' 0 interface=ether1 mac-address=AA:00:00:00:00:02 identity=B interface-name=ether9 discovered-by=mndp\n'
+    + 'B (10.0.0.2):\n### /ip neighbor print detail\n'
+    + ' 0 interface=ether9 mac-address=AA:00:00:00:00:01 identity=A interface-name=ether1 discovered-by=mndp\n');
+  assert.strictEqual(reciprocal.model.links.length, 1);
+  assert.strictEqual(reciprocal.model.links[0].evidenceScope, 'broadcast-domain');
+  assert.strictEqual(reciprocal.model.links[0].observations.length, 2);
+  assert.strictEqual(reciprocal.model.links[0].verified, false, '雙向 MNDP 回報仍不等於確認實體直連');
+  assert.strictEqual(count(reciprocal, 'K01'), 0);
 });
 
 // ------------------------------------------------------------------ 設定（export）

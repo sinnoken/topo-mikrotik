@@ -5,6 +5,7 @@
 (function (S) {
   'use strict';
   const K = S.keys;
+  const LINK_SCOPE = S.LINK_SCOPE;
   const getOr = S.util.getOr;
   const MAX_SRC = 4;
 
@@ -108,7 +109,8 @@
 
     resolveVlanMembers(M);
     buildAggregates(M);
-    buildLldpLinks(M);
+    buildInterfaceAdjacencyLinks(M);
+    buildMndpLinks(M);
     buildOspfLinks(M, canon);
     return M;
   }
@@ -176,31 +178,40 @@
     const key = K.link(a, b);
     const l = getOr(M.links, key, () => {
       const [x, y] = a < b ? [a, b] : [b, a];
-      return { key, a: x, b: y, layer, via: new Set(), verified: false, hearsay: false, protocols: new Set(), src: [] };
+      return { key, a: x, b: y, layer, via: new Set(), verified: false, hearsay: false, protocols: new Set(), evidenceScope: null, observations: [], src: [] };
     });
     if (layer === 'l2') l.layer = 'l2';
     l.via.add(via);
     ((extra && extra.protocols) || []).forEach((p) => l.protocols.add(p));
     if (src && l.src.length < MAX_SRC) l.src.push(src);
-    const { protocols, ...rest } = extra || {};
+    const { protocols, evidenceScope, observations, ...rest } = extra || {};
+    if (layer === 'l2') {
+      const scope = evidenceScope || (via === 'mndp' ? LINK_SCOPE.BROADCAST_DOMAIN : LINK_SCOPE.INTERFACE_ADJACENCY);
+      if (scope === LINK_SCOPE.INTERFACE_ADJACENCY || !l.evidenceScope || l.evidenceScope === LINK_SCOPE.ROUTING_ADJACENCY) l.evidenceScope = scope;
+    } else if (!l.evidenceScope) l.evidenceScope = LINK_SCOPE.ROUTING_ADJACENCY;
+    if (observations) {
+      observations.forEach((observation) => {
+        const key = [observation.dev, observation.ifc, observation.peerIfc || '', observation.block, observation.line].join('\u0000');
+        if (!l.observations.some((x) => [x.dev, x.ifc, x.peerIfc || '', x.block, x.line].join('\u0000') === key)) l.observations.push(observation);
+      });
+    }
     Object.assign(l, rest);
     return l;
   }
 
   /**
-   * LLDP 連結配對：本機介面名稱是權威，對端回報的埠名稱只是「聽說」。
-   *  - 對端也有 LLDP 資料且反向找得到 → verified；兩邊埠名稱不同記 K04
-   *  - 對端有 LLDP 資料但反向找不到 → K01（單向）
-   *  - 對端沒有 LLDP 資料 → hearsay（只列入覆蓋率，不算錯誤）
+   * LLDP/CDP interface-adjacency claims: the local interface is authoritative;
+   * MNDP-only observations are handled separately as broadcast-domain reachability.
    */
-  function buildLldpLinks(M) {
+  function buildInterfaceAdjacencyLinks(M) {
     const byDev = new Map();
-    M.claims.forEach((c) => getOr(byDev, c.dev, () => []).push(c));
+    const isMndpOnly = (c) => c.protocols.length > 0 && c.protocols.every((p) => p === 'mndp');
+    M.claims.forEach((c) => { if (!isMndpOnly(c)) getOr(byDev, c.dev, () => []).push(c); });
     M.claims.forEach((c) => {
+      if (isMndpOnly(c)) return;
       const local = K.ep(c.dev, c.ifc);
-      const peer = M.devices.get(c.peer);
       const src = [c.block, c.line];
-      if (peer && peer.data.has('lldp')) {
+      if (byDev.has(c.peer)) {
         // 反向：對端的 LLDP 指向本機這個介面；或對端「本機介面」正是我們聽到的埠名（對端的 Port info 可能是描述）
         const unknownPort = c.peerIfc === '?';
         const said = K.ifc(c.peerIfc);
@@ -236,6 +247,27 @@
     // 被權威端改寫過的「聽說」介面，若沒有任何連結參考就移除
     const used = new Set(); M.links.forEach((l) => { used.add(l.a); used.add(l.b); });
     M.ifcs.forEach((i, k) => { if (i.hearsay && !used.has(k) && M.devices.get(i.dev).collected) M.ifcs.delete(k); });
+  }
+
+  /** MNDP observes devices in a shared L2 broadcast domain; it does not prove a direct port-to-port link. */
+  function buildMndpLinks(M) {
+    M.claims.forEach((c) => {
+      if (!c.protocols.length || !c.protocols.every((p) => p === 'mndp')) return;
+      const local = K.ep(c.dev, c.ifc);
+      const rname = c.peerIfc || `?(mndp ${c.dev}:${c.ifc})`;
+      const remote = K.ep(c.peer, rname);
+      const existed = M.ifcs.has(remote);
+      const ri = iface(M, c.peer, rname);
+      if (!existed) ri.hearsay = true;
+      const src = [c.block, c.line];
+      addLink(M, local, remote, 'l2', 'mndp', src, {
+        evidenceScope: LINK_SCOPE.BROADCAST_DOMAIN,
+        protocols: c.protocols,
+        observations: [{
+          dev: c.dev, ifc: c.ifc, peerIfc: c.peerIfc || null, block: c.block, line: c.line,
+        }],
+      });
+    });
   }
 
   /** OSPF 鄰接：用位址找對端介面，再用 router-id、管理 IP 找對端設備；都找不到就建立以鄰居 ID 命名的未知設備。 */

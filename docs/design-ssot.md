@@ -102,10 +102,10 @@
 | links | key、a、b、layer（L2）、via（lldp/mndp）、protocols、evidenceScope、observations、verified、hearsay、cls、vlansA／B／Common、vlanMismatch |
 | ospfAdjacencies | dev、localEp、peerDev、peerEp、peerIp、peerId、reciprocal、src |
 | vlans | dev、id、name、desc、l3、members |
-| macs | mac、vendor（OUI）、ips、seen（介面、VLAN）、edge（位置）、src |
+| macs | mac、vendor（OUI）、ips、seen（`{ ep, vlan }` 清單）、edge（位置）、src |
 | arps、routes | 原始對應與路由（含下一跳）、src |
 
-每個由輸入事實產生的實體都帶 `src`（`[區塊, 行號]` 清單）。`src` 為空只會出現在沒有輸出可指的實體：未收集設備、聽說（hearsay）介面與預設 VLAN；已收集設備上的介面（含由 MAC 表隱式建立的）一定有來源，有測試把關。
+每個由輸入事實產生的實體都帶 `src`（`[區塊, 行號]` 清單）。`src` 為空時，設備、介面、VLAN 另帶 `srcNone` 說明原因：`seen-only`（只由鄰居看到的設備）、`hearsay`（聽說的介面）、`implicit`（預設 VLAN）；有來源時為 `null`。`unrecorded` 代表應有來源卻漏記，測試禁止出現；已收集設備上的介面（含由 MAC 表隱式建立的）一定有來源。
 
 ### 5.3 關鍵推論
 

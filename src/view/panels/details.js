@@ -256,7 +256,7 @@
         ['位置（末端埠）', m.edge.length ? h('span', null, m.edge.flatMap((ep, n) => [n ? '、' : '', epLink(App, ep)])) : '—']]),
       findingsBlock(App, Q.findingsFor('mac', m.mac)),
       m.seen.length ? h('div', null, [sec('在哪些介面學到', [V.chip(String(m.seen.length))]), V.table([
-        { t: '設備介面', f: (r) => epLink(App, r[0]) }, { t: 'VLAN', f: (r) => r[1] || '' }, { t: '', f: (r) => (m.edge.includes(r[0]) ? V.chip('末端', 'ok') : V.chip('上行')) },
+        { t: '設備介面', f: (r) => epLink(App, r.ep) }, { t: 'VLAN', f: (r) => r.vlan || '' }, { t: '', f: (r) => (m.edge.includes(r.ep) ? V.chip('末端', 'ok') : V.chip('上行')) },
       ], m.seen)]) : null,
     ]);
   }

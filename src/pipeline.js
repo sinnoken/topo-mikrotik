@@ -93,14 +93,14 @@
       collected: d.collected, data: Array.from(d.data).sort(), hostname: d.hostname, routerId: d.routerId,
       group: d.group, component: d.component, role: d.role || null, site: d.site || null, label: d.label || null,
       board: d.board, version: d.version, platform: d.platform,
-      seenBy: Array.from(d.seenBy).sort(), src: d.src,
+      seenBy: Array.from(d.seenBy).sort(), src: d.src, srcNone: d.src.length ? null : 'seen-only',
     })).sort((a, b) => nat(a.key, b.key));
 
     const interfaces = Array.from(M.ifcs.values()).map((i) => ({
       key: i.key, dev: i.dev, name: i.name, desc: i.desc, admin: i.admin, status: i.status || 'unknown', type: i.type || 'physical',
       parent: i.parent, members: i.members ? Array.from(i.members).sort(nat) : [], mode: i.mode, ips: Array.from(i.ips).sort(nat),
       vlans: U.numSort(Array.from(i.vlans)), vlanNames: Array.from(i.vlanNames).sort(nat), macs: Array.from(i.macs).sort(),
-      hearsay: i.hearsay, sub: i.sub, edge: M.edge.has(i.key), unknownPeer: M.edge.has(i.key) && !M.edge.get(i.key).linked, src: i.src,
+      hearsay: i.hearsay, sub: i.sub, edge: M.edge.has(i.key), unknownPeer: M.edge.has(i.key) && !M.edge.get(i.key).linked, src: i.src, srcNone: i.src.length ? null : i.hearsay ? 'hearsay' : 'unrecorded',
     })).sort((a, b) => nat(a.key, b.key));
 
     const links = Array.from(M.links.values()).map((l) => ({
@@ -110,12 +110,12 @@
     })).sort((a, b) => nat(a.key, b.key));
 
     const vlans = Array.from(M.vlans.values()).map((v) => ({
-      dev: v.dev, id: v.id, name: v.name, desc: v.desc, l3: v.l3, members: Array.from(v.members).sort(nat), src: v.src,
+      dev: v.dev, id: v.id, name: v.name, desc: v.desc, l3: v.l3, members: Array.from(v.members).sort(nat), src: v.src, srcNone: v.src.length ? null : 'implicit',
     })).sort((a, b) => nat(a.dev, b.dev) || (a.id || 0) - (b.id || 0) || nat(a.name || '', b.name || ''));
 
     const macs = Array.from(M.macs.values()).map((m) => ({
       mac: m.mac, vendor: S.oui ? S.oui.lookup(m.mac) : null, ips: Array.from(m.ips).sort(nat),
-      seen: Array.from(m.seen.entries()).sort((x, y) => nat(x[0], y[0])), edge: m.edge || [], src: m.src,
+      seen: Array.from(m.seen.entries()).sort((x, y) => nat(x[0], y[0])).map(([ep, vlan]) => ({ ep, vlan })), edge: m.edge || [], src: m.src,
     })).sort((a, b) => U.cmp(a.mac, b.mac));
 
     const arps = M.arps.map((a) => ({ ip: a.ip, mac: a.mac, dev: a.dev, ifc: a.ifc, phys: a.phys, src: [[a.block, a.line]] }))

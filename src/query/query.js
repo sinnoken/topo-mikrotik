@@ -82,7 +82,7 @@
         m.macs.forEach((x) => {
           const base = { mac: x.mac, vendor: x.vendor, ips: x.ips, noIp: !x.ips.length };
           if (!x.seen.length) rows.push(Object.assign({ ep: null, dev: null, ifc: null, vlan: null }, base));
-          x.seen.forEach(([ep, vlan]) => { const [d, i] = K.splitEp(ep); const f = ifc.get(ep); rows.push(Object.assign({ ep, dev: d, ifc: f ? f.name : i, vlan }, base)); });
+          x.seen.forEach(({ ep, vlan }) => { const [d, i] = K.splitEp(ep); const f = ifc.get(ep); rows.push(Object.assign({ ep, dev: d, ifc: f ? f.name : i, vlan }, base)); });
         });
         return rows;
       },

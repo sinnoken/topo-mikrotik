@@ -186,7 +186,7 @@ test('export：bridge 沒有開 vlan-filtering 時，不產生 VLAN 成員', () 
 test('bridge host：略過 bridge 自己的 MAC（L），VLAN 取自 vid', () => {
   const s = build('SW_A (10.0.0.1):\n### /interface bridge host print detail\nFlags: D - dynamic, L - local\n 0 DL mac-address=E4:8D:8C:00:00:02 on-interface=bridge1 bridge=bridge1 vid=0 age=3s\n 1 D  mac-address=24:6E:96:00:00:05 on-interface=ether1 bridge=bridge1 vid=20 age=3s\n');
   assert.strictEqual(s.model.macs.length, 1);
-  assert.deepStrictEqual(s.model.macs[0].seen, [['SW_A|ether1', '20']]);
+  assert.deepStrictEqual(s.model.macs[0].seen, [{ ep: 'SW_A|ether1', vlan: '20' }]);
 });
 test('bridge vlan print：用實際成員（current-*），動態項目也算', () => {
   const s = build('SW_A (10.0.0.1):\n### /interface bridge vlan print detail\n 0   ;;; prod\n     bridge=bridge1 vlan-ids=10 tagged=ether1 untagged=ether2 current-tagged=ether1,bond1 current-untagged=ether2\n 1 D bridge=bridge1 vlan-ids=1 tagged="" untagged="" current-tagged="" current-untagged=ether3,ether4\n');
@@ -336,6 +336,10 @@ test('可追溯：MAC、ARP 與已收集設備的介面都帶來源', () => {
   const collected = new Set(m.devices.filter((d) => d.collected).map((d) => d.key));
   const lost = m.interfaces.filter((i) => collected.has(i.dev) && !i.hearsay && !i.src.length).map((i) => i.key);
   assert.deepStrictEqual(lost, [], '已收集設備的介面不可沒有來源');
+  [['devices', m.devices], ['interfaces', m.interfaces], ['vlans', m.vlans]].forEach(([name, list]) => list.forEach((x) => {
+    assert.ok(x.src.length ? x.srcNone === null : typeof x.srcNone === 'string', `${name} 沒有來源時必須說明原因：${x.key || x.dev}`);
+  }));
+  assert.ok(!m.interfaces.some((i) => i.srcNone === 'unrecorded'), '不可有「應有來源卻沒記錄」的介面');
 });
 test('未知對端：一個埠學到多個 MAC 時回報多筆（疑似下游還有設備）', () => {
   const mac = (n) => ` ${n} D mac-address=AA:BB:CC:00:00:0${n} on-interface=ether5 bridge=bridge1 vid=30 age=3s`;

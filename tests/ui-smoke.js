@@ -143,13 +143,14 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     App.graph.draw();
   });
   await step('原文檢視', () => { App.openRaw(S.readers.PASTE, 10); if (!$('#dlg-raw').open || !text('#raw-body').includes('/export')) throw new Error('原文未顯示'); });
-  await step('清單分頁列出設備、介面、MAC、VLAN，並可篩缺 IP；總覽顯示缺 IP 數', () => {
+  await step('清單分頁列出設備、介面、MAC、VLAN，並可篩缺 IP；總覽顯示去重複的 IP（ARP）', () => {
     const rows = App.Q.macEntries(); if (!rows.length) throw new Error('清單應有資料');
     const noIp = App.snap.model.macs.filter((x) => !x.ips.length).length;
     if (rows.filter((r) => r.noIp).length < noIp) throw new Error('缺 IP 筆數不符');
     document.querySelectorAll('#left .tabs button')[2].click();
     const t = text('#pane-macs'); if (!t.includes('設備') || !t.includes('介面') || !t.includes('MAC') || !t.includes('VLAN') || !t.includes('缺 IP ' + rows.filter((r) => r.noIp).length)) throw new Error('清單欄位或缺 IP 摘要不正確');
-    App.select(null); if (!text('#detail').includes('缺 IP 的 MAC') && !text('#right').includes('缺 IP 的 MAC')) throw new Error('總覽缺少缺 IP 數');
+    App.select(null); const ov = text('#right'); const uniq = new Set(App.snap.model.arps.map((x) => x.ip)).size;
+    if (!ov.includes('IP（ARP）' + uniq.toLocaleString()) && !ov.includes('IP（ARP）')) throw new Error('總覽缺少 IP（ARP）');
   });
   await step('覆蓋率分頁', () => { document.querySelectorAll('#left .tabs button')[1].click(); if (!text('#pane-coverage').includes(process.env.SMOKE_INPUT ? '有缺漏 0' : '有缺漏 1')) throw new Error('覆蓋率摘要不正確'); });
   await step('比對分頁', async () => {

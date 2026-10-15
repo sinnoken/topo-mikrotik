@@ -53,7 +53,7 @@
         ['來源', m.sources.map((s) => `${s.name}（${V.num(s.bytes)} 字元）`).join('、')]]),
       sec('內容'),
       kv([['設備', `${V.num(st.devices)}（已收集 ${V.num(st.collected)}）`], ['介面', V.num(st.interfaces)], ['連結', V.num(st.links)], ['VLAN 定義', V.num(st.vlans)],
-        ['MAC', V.num(st.macs)], ['缺 IP 的 MAC', V.num(App.snap.model.macs.filter((x) => !x.ips.length).length)], ['ARP', V.num(st.arps)], ['路由', V.num(st.routes)]]),
+        ['MAC', V.num(st.macs)], ['IP（ARP）', V.num(new Set(App.snap.model.arps.map((x) => x.ip)).size)], ['路由', V.num(st.routes)]]),
       sec('檢查結果'),
       h('div', { class: 'row' }, [V.chip(`錯誤 ${st.findings.error}`, 'err'), V.chip(`警告 ${st.findings.warn}`, 'warn'), V.chip(`提醒 ${st.findings.info}`, 'info')]),
       sec('解析器使用量'),

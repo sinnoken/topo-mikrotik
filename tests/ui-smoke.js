@@ -263,7 +263,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     const diamonds = App.graph.nodes.filter((n) => n.kind === 'downstream' && n.parent === 'SW_A');
     if (diamonds.length !== 2) throw new Error('wifi1 與 wifi8 都應畫成多 MAC 菱形');
   });
-  await step('veth 末端以專用顏色識別', async () => {
+  await step('veth 連線以專用顏色識別', async () => {
     const input = 'SW_A (10.0.0.1):\n### /interface print detail\n'
       + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
       + ' 0  R  name="veth1" type="veth" mtu=1500\n'
@@ -277,14 +277,13 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (App.snap.meta.inputHash !== hash) throw new Error('veth 基準未建立');
     const v = App.graph.nodes.find((n) => n.id === '?p|SW_A|veth1'); const e = App.graph.nodes.find((n) => n.id === '?p|SW_A|ether5');
     if (!v || !e) throw new Error('veth1 與 ether5 末端都應畫出');
-    if (!v.ifStyle || v.color !== '#d81b60') throw new Error('veth 節點應使用專用色');
-    if (e.ifStyle || e.color === '#d81b60') throw new Error('非 veth 節點不應使用 veth 色');
+    if (v.ifStyle || v.color === '#d81b60') throw new Error('veth 節點外觀不應改變，只識別連線');
     const ve = App.graph.edges.find((x) => x.b === v.id); const ee = App.graph.edges.find((x) => x.b === e.id);
     if (!ve || !ve.ifStyle || ve.ifStyle.c !== '#d81b60' || ee.ifStyle) throw new Error('veth 連線應帶專用色，其他連線不變');
     if (!/容器 veth/.test(v.tip)) throw new Error('提示應標示容器 veth');
     if (!Array.from(document.querySelectorAll('#legend .li')).some((el) => /容器 veth/.test(el.textContent))) throw new Error('圖例缺少 veth');
   });
-  await step('Wi-Fi 末端以專用顏色識別', async () => {
+  await step('Wi-Fi 連線以專用顏色識別', async () => {
     const input = 'SW_A (10.0.0.1):\n### /interface print detail\n'
       + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
       + ' 0  R  name="wifi1" type="wifi" mtu=1500\n'
@@ -302,8 +301,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     const w = App.graph.nodes.find((n) => n.id === '?p|SW_A|wifi1'); const l = App.graph.nodes.find((n) => n.id === '?p|SW_A|wlan1'); const e = App.graph.nodes.find((n) => n.id === '?p|SW_A|ether5');
     const wc = S.view.theme.endpoint.byType.wifi.c;
     if (!w || !l || !e) throw new Error('wifi1、wlan1、ether5 末端都應畫出');
-    if (w.kind !== 'downstream' || w.color !== wc || l.color !== wc) throw new Error('Wi-Fi 節點（含多 MAC 菱形）應使用 Wi-Fi 色');
-    if (e.color === wc) throw new Error('非 Wi-Fi 節點不應使用 Wi-Fi 色');
+    if (w.kind !== 'downstream' || w.color === wc || l.color === wc || w.ifStyle || l.ifStyle) throw new Error('Wi-Fi 節點外觀不應改變，只識別連線');
     const we = App.graph.edges.find((x) => x.b === w.id); const le = App.graph.edges.find((x) => x.b === l.id); const ee = App.graph.edges.find((x) => x.b === e.id);
     if (!we || !le || we.ifStyle.c !== wc || le.ifStyle.c !== wc || ee.ifStyle) throw new Error('Wi-Fi 連線應帶專用色，其他連線不變');
     if (!/Wi-Fi/.test(w.tip)) throw new Error('提示應標示 Wi-Fi');

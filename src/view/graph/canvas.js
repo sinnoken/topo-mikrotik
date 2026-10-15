@@ -272,9 +272,9 @@
       c.beginPath(); c.arc(p.x, p.y, r, 0, Math.PI * 2); c.fill(); c.stroke();
       if (s > 1.3 && n.ini) { c.fillStyle = CV.outline; c.font = 'bold 7px sans-serif'; c.textAlign = 'center'; c.fillText(n.ini, p.x, p.y + 2.6); c.textAlign = 'left'; }
     } else if (n.kind === 'downstream') { // 一個埠學到多個 MAC：菱形，疑似下游還有設備
-      c.fillStyle = n.ifStyle ? n.ifStyle.fill : EP.downstream.fill; c.strokeStyle = n.ifStyle ? n.ifStyle.c : EP.downstream.stroke; c.lineWidth = 2; c.setLineDash(EP.dash);
+      c.fillStyle = EP.downstream.fill; c.strokeStyle = EP.downstream.stroke; c.lineWidth = 2; c.setLineDash(EP.dash);
       c.beginPath(); c.moveTo(p.x, p.y - r); c.lineTo(p.x + r, p.y); c.lineTo(p.x, p.y + r); c.lineTo(p.x - r, p.y); c.closePath(); c.fill(); c.stroke(); c.setLineDash([]);
-      if (s > 0.9) { c.fillStyle = n.ifStyle ? n.ifStyle.c : EP.downstream.text; c.font = 'bold 8px sans-serif'; c.textAlign = 'center'; c.fillText(String(n.count || ''), p.x, p.y + 3); c.textAlign = 'left'; }
+      if (s > 0.9) { c.fillStyle = EP.downstream.text; c.font = 'bold 8px sans-serif'; c.textAlign = 'center'; c.fillText(String(n.count || ''), p.x, p.y + 3); c.textAlign = 'left'; }
     } else { // cluster：同一台設備上很多末端，收合成一個
       c.fillStyle = EP.cluster.fill; c.strokeStyle = EP.cluster.stroke; c.lineWidth = 1.5;
       roundRect(c, p.x - r * 1.3, p.y - r * 0.8, r * 2.6, r * 1.6, 5); c.fill(); c.stroke();

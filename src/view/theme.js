@@ -40,10 +40,10 @@
       // 不用紅、橘、黃：避免和「錯誤／警告」標記混淆
       vendor: ['#26a69a', '#42a5f5', '#7e57c2', '#5c6bc0', '#8d6e63', '#546e7a', '#66bb6a', '#00897b', '#ab47bc', '#78909c'],
       vendorFallback: '#b0bec5',
-      // 依介面 type 的末端識別：固定顏色，不隨廠商變動
+      // 依介面 type 識別連到末端的連線（只標連線，節點外觀不變）
       byType: {
-        veth: { c: '#d81b60', fill: '#fce4ec', label: '容器 veth' },
-        wifi: { c: '#00b8d4', fill: '#e0f7fa', label: 'Wi-Fi' },
+        veth: { c: '#d81b60', label: '容器 veth' },
+        wifi: { c: '#00b8d4', label: 'Wi-Fi' },
       },
       downstream: { fill: '#fff8e8', stroke: '#f29900', text: '#9a5b00' },
       cluster: { fill: '#eceff1', stroke: '#78909c', text: '#37474f' },

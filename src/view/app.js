@@ -143,7 +143,7 @@
         const ip = !multi && m0 && m0.ips[0];
         const label = multi ? `${r.macs.length} 個 MAC` : (r.desc || ip || (m0 && m0.vendor) || (m0 ? K.macPretty(m0.mac).slice(-8) : '?'));
         nodes.push({ id: vid, label, kind: multi ? 'downstream' : 'endpoint', collected: false, virtual: true, parent: dk, group: dev.group,
-          count: r.macs.length, ifStyle: EP.byType[r.type] || null, color: EP.byType[r.type] ? EP.byType[r.type].c : vendorColor(vendors[0]), ini: vendorIni(vendors[0]),
+          count: r.macs.length, color: vendorColor(vendors[0]), ini: vendorIni(vendors[0]),
           tip: `${Q.devName(dk)} ${r.name}${EP.byType[r.type] ? '（' + EP.byType[r.type].label + '）' : ''}：${multi ? r.macs.length + ' 個 MAC（疑似下游還有設備）' : K.macPretty(m0.mac)}${ip ? '・' + ip : ''}${vendors.length ? '・' + vendors.join('/') : ''}${r.vlans.length ? '・VLAN ' + r.vlans.join(',') : ''}` });
         App.virtual.set(vid, { type: 'interface', ep: r.ep }); App.vOfEp.set(r.ep, vid);
         link(dk, vid, r.name, { ifStyle: EP.byType[r.type] || null });
@@ -394,7 +394,7 @@
     item([dot({ background: EP.vendorFallback, border: '1.5px solid ' + CV.outline })], '未知對端（單一 MAC，依廠商上色）');
     item([dot({ background: EP.downstream.fill, border: '2px dashed ' + EP.downstream.stroke, transform: 'rotate(45deg)', borderRadius: '0' })], '未知對端（多個 MAC）');
     item([dot({ background: EP.cluster.fill, border: '1.5px solid ' + EP.cluster.stroke, width: Math.round(LEG * 1.3) + 'px', height: Math.round(LEG * 0.8) + 'px', borderRadius: '3px' })], '末端群組（×N，雙擊展開）');
-    Object.values(EP.byType).forEach((t) => item([dot({ background: t.c }), line(t.c, V.EDGE_STYLE.other.w, WEAK.hearsay.dash, WEAK.hearsay.alpha)], t.label + ' 末端'));
+    Object.values(EP.byType).forEach((t) => item([line(t.c, V.EDGE_STYLE.other.w, WEAK.hearsay.dash, WEAK.hearsay.alpha)], t.label + ' 末端連線'));
     item([h('span', { class: 'sev error' })], '有錯誤／警告');
   }
   function bindTabs() {

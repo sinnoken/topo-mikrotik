@@ -257,6 +257,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (!Array.from(document.querySelectorAll('#legend .li')).some((li) => li.textContent === 'MNDP')) throw new Error('MNDP 圖例標籤應簡化為 MNDP');
     const p = Array.from(App.pairs.values()).find((x) => x.domainOnly);
     if (!p) throw new Error('MNDP device edge 未標記為 domain-only');
+    if (p.labelA !== 'MNDP' || p.labelB !== 'MNDP') throw new Error('純 MNDP edge label 應只顯示 MNDP');
     App.graph.emit('hover', { item: { type: 'edge', id: p.id }, x: 0, y: 0 });
     if (!text('#tooltip').includes('不代表兩台設備直連')) throw new Error('圖上提示未明示 MNDP 的非直連語意');
     App.graph.emit('click', { type: 'edge', id: p.id });

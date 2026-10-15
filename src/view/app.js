@@ -89,11 +89,11 @@
       const ls = p.links.map((k) => Q.getLink(k));
       const interfaceLinks = ls.filter((l) => l.evidenceScope !== LINK_SCOPE.BROADCAST_DOMAIN);
       const side = (dev) => {
-        if (!interfaceLinks.length) return 'MNDP・L2 網域可達';
+        if (!interfaceLinks.length) return 'MNDP';
         const eps = interfaceLinks.map((l) => (K.splitEp(l.a)[0] === dev ? l.a : l.b)).map((ep) => Q.getInterface(ep));
         const parents = S.util.uniq(eps.map((i) => (i ? i.parent || i.name : '?')));
         const labels = parents.length === 1 ? parents[0] + (eps.length > 1 ? ` ×${eps.length}` : '') : `${eps.length} 條`;
-        return labels + (p.hasDomain ? ' + MNDP L2 網域' : '');
+        return labels + (p.hasDomain ? ' + MNDP' : '');
       };
       p.labelA = side(p.a); p.labelB = side(p.b);
     });

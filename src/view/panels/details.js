@@ -255,7 +255,7 @@
       kv([['IP（ARP）', m.ips.length ? h('span', null, m.ips.flatMap((x, n) => [n ? '、' : '', ipLink(App, x)])) : '—'],
         ['位置（末端埠）', m.edge.length ? h('span', null, m.edge.flatMap((ep, n) => [n ? '、' : '', epLink(App, ep)])) : '—']]),
       findingsBlock(App, Q.findingsFor('mac', m.mac)),
-      m.seen.length ? h('div', null, [sec('在哪些介面學到', [V.chip(String(m.seen.length))]), V.table([
+      m.seen.length ? h('div', null, [sec('在哪些介面／VLAN 學到', [V.chip(String(m.seen.length))]), V.table([
         { t: '設備介面', f: (r) => epLink(App, r.ep) }, { t: 'VLAN', f: (r) => r.vlan || '' }, { t: '', f: (r) => (m.edge.includes(r.ep) ? V.chip('末端', 'ok') : V.chip('上行')) },
       ], m.seen)]) : null,
     ]);

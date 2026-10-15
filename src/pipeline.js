@@ -115,7 +115,8 @@
 
     const macs = Array.from(M.macs.values()).map((m) => ({
       mac: m.mac, vendor: S.oui ? S.oui.lookup(m.mac) : null, ips: Array.from(m.ips).sort(nat),
-      seen: Array.from(m.seen.entries()).sort((x, y) => nat(x[0], y[0])).map(([ep, vlan]) => ({ ep, vlan })), edge: m.edge || [], src: m.src,
+      seen: Array.from(m.seen.entries()).flatMap(([ep, vlans]) => Array.from(vlans, (vlan) => ({ ep, vlan })))
+        .sort((x, y) => nat(x.ep, y.ep) || nat(x.vlan || '', y.vlan || '')), edge: m.edge || [], src: m.src,
     })).sort((a, b) => U.cmp(a.mac, b.mac));
 
     const arps = M.arps.map((a) => ({ ip: a.ip, mac: a.mac, dev: a.dev, ifc: a.ifc, phys: a.phys, src: [[a.block, a.line]] }))

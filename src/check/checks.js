@@ -19,7 +19,7 @@
     K04: { severity: 'info', cat: '連結', title: '對端回報的埠名稱與本機不同' },
     V01: { severity: 'warn', cat: 'VLAN', title: '連結兩端 VLAN 不一致' },
     A01: { severity: 'warn', cat: '位址', title: '同一 IP 對應多個 MAC' },
-    A02: { severity: 'warn', cat: '位址', title: '同一 MAC 出現在多個末端埠' },
+    A02: { severity: 'warn', cat: '位址', title: '同一 MAC 在同一 VLAN 出現在多個末端埠' },
     A03: { severity: 'info', cat: '位址', title: '介面有學到 MAC 但沒有 LLDP／CDP 鄰接（未知對端）' },
     R01: { severity: 'info', cat: '路由', title: '路由下一跳不屬於任何已知設備' },
     R02: { severity: 'info', cat: '路由', title: 'OSPF 鄰居無法對應到已收集的設備' },
@@ -143,8 +143,17 @@
     M.edge = edge;
     M.macs.forEach((m) => {
       m.edge = Array.from(m.seen.keys()).filter((ep) => edge.has(ep)).sort();
-      if (m.edge.length > 1) add('A02', `${K.macPretty(m.mac)} 出現在 ${m.edge.map(epName).join('、')}`,
-        [{ type: 'mac', key: m.mac }].concat(m.edge.map((ep) => ({ type: 'interface', key: ep }))));
+      const edgeByVlan = new Map();
+      m.seen.forEach((vlans, ep) => {
+        if (!edge.has(ep)) return;
+        vlans.forEach((vlan) => S.util.getOr(edgeByVlan, vlan, () => new Set()).add(ep));
+      });
+      edgeByVlan.forEach((eps, vlan) => {
+        if (eps.size < 2) return;
+        const locations = Array.from(eps).sort(S.util.natural);
+        add('A02', `${K.macPretty(m.mac)} 在 ${vlan ? `VLAN ${vlan}` : 'VLAN 不明'} 的多個末端埠出現：${locations.map(epName).join('、')}`,
+          [{ type: 'mac', key: m.mac }].concat(locations.map((ep) => ({ type: 'interface', key: ep }))));
+      });
     });
     const edgeByDev = new Map();
     edge.forEach((v, ep) => { if (!v.linked) S.util.getOr(edgeByDev, K.splitEp(ep)[0], () => []).push(ep); });
@@ -186,7 +195,7 @@
     const out = new Map();
     const toInfra = (ep) => (adjacencyLinksByEp.get(ep) || []).some((l) => {
       const peer = M.devices.get(K.splitEp(l.a === ep ? l.b : l.a)[0]);
-      return peer && peer.collected;
+      return peer && peer.collected && peer.kind !== 'host';
     });
     const hasAdjacency = (ep) => adjacencyLinksByEp.has(ep);
     M.ifcs.forEach((i, ep) => {

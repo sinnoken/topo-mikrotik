@@ -90,7 +90,8 @@
           const mk = K.mac(f.mac); if (!mk) break;
           const i = iface(M, f.dev, f.ifc); i.macs.add(mk); if (!i.status) i.status = 'up'; addSrc(i, f);
           const m = getOr(M.macs, mk, () => ({ mac: mk, seen: new Map(), ips: new Set(), src: [] }));
-          m.seen.set(i.key, f.vlan || null); addSrc(m, f);
+          const vlans = getOr(m.seen, i.key, () => new Set());
+          vlans.add(f.vlan || null); addSrc(m, f);
           break;
         }
         case 'arp': {

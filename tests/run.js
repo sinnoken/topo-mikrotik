@@ -330,6 +330,17 @@ test('未知對端：有 MAC、沒有 LLDP 鄰居的末端埠才會標記；有�
   assert.ok(rows.every((r) => r.macs.length === 1 && /^10\.1\.30\./.test(r.macs[0].ips[0]) && r.macs[0].vendor), '應帶有 ARP 的 IP 與 OUI 廠商');
   assert.ok(!Q.unknownDevices().includes('TPE_ACC_SW_09'), '沒有 MAC 表的設備不會有未知對端');
 });
+test('未知對端：連到已收集主機的介面仍是末端位置，不當作網路設備上行埠排除', () => {
+  const mac = 'AA:BB:CC:00:00:01';
+  const text = 'SW_A (10.0.0.1):\n### /ip neighbor print detail\n'
+    + ' 0 interface=ether1 mac-address=AA:BB:CC:00:00:02 identity=HOST_B platform=Linux interface-name=eth0 system-caps=station-only system-caps-enabled=station-only\n'
+    + '### /interface bridge host print detail\n'
+    + ` 0 D mac-address=${mac} on-interface=ether1 bridge=bridge1 vid=10\n`
+    + 'HOST_B (10.0.0.2):\n### /interface print detail\n 0 R name=eth0 type=ether\n';
+  const s = build(text, { profile: { id: 'test-host', classify: [{ match: '^HOST_B$', kind: 'host' }] } });
+  assert.strictEqual(s.model.devices.find((d) => d.key === 'HOST_B').kind, 'host');
+  assert.strictEqual(iface(s, 'SW_A|ether1').edge, true);
+});
 test('清單：Q.inventory 的列與計數一致，且與基準統計對得上', () => {
   const s = build(read('samples/sample-bundle.txt')); const { rows, counts: C } = S.query(s).inventory();
   const st = s.meta.stats;
@@ -358,6 +369,29 @@ test('未知對端：一個埠學到多個 MAC 時回報多筆（疑似下游還
   const s = build(['SW_A (10.0.0.1):', '### /interface bridge host print detail', mac(1), mac(2), mac(3)].join('\n'));
   const rows = S.query(s).unknownPeers('SW_A');
   assert.strictEqual(rows.length, 1); assert.strictEqual(rows[0].macs.length, 3);
+});
+test('A02：不同 VLAN 的末端埠不視為同一 MAC 重複位置', () => {
+  const mac = 'AA:BB:CC:00:00:01';
+  const s = build('SW_A (10.0.0.1):\n### /interface bridge host print detail\n'
+    + ` 0 D mac-address=${mac} on-interface=ether1 bridge=bridge1 vid=10\n`
+    + ` 1 D mac-address=${mac} on-interface=ether2 bridge=bridge1 vid=20\n`);
+  assert.strictEqual(count(s, 'A02'), 0);
+  assert.deepStrictEqual(s.model.macs[0].seen, [
+    { ep: 'SW_A|ether1', vlan: '10' }, { ep: 'SW_A|ether2', vlan: '20' },
+  ]);
+});
+test('A02：同介面多 VLAN 觀察完整保留，並只比較相同 VLAN 的末端埠', () => {
+  const mac = 'AA:BB:CC:00:00:01';
+  const s = build('SW_A (10.0.0.1):\n### /interface bridge host print detail\n'
+    + ` 0 D mac-address=${mac} on-interface=ether1 bridge=bridge1 vid=10\n`
+    + ` 1 D mac-address=${mac} on-interface=ether1 bridge=bridge1 vid=20\n`
+    + ` 2 D mac-address=${mac} on-interface=ether2 bridge=bridge1 vid=20\n`);
+  assert.deepStrictEqual(s.model.macs[0].seen, [
+    { ep: 'SW_A|ether1', vlan: '10' }, { ep: 'SW_A|ether1', vlan: '20' }, { ep: 'SW_A|ether2', vlan: '20' },
+  ]);
+  const finding = s.findings.find((f) => f.id === 'A02');
+  assert.ok(finding && finding.message.includes('VLAN 20'), finding && finding.message);
+  assert.deepStrictEqual(finding.entities.filter((e) => e.type === 'interface').map((e) => e.key), ['SW_A|ether1', 'SW_A|ether2']);
 });
 test('未知對端不進基準的設備、連結（只是檢視）', () => {
   const s = build(read('samples/sample-bundle.txt'));

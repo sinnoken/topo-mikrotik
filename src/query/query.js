@@ -76,7 +76,7 @@
         };
         return inv;
       },
-      // 每個 (MAC, 觀察到的介面) 一列；沒有任何介面觀察的 MAC（只出現在 ARP）設備與介面為 null
+      // 每個 (MAC, 介面, VLAN) 一列；沒有任何介面觀察的 MAC（只出現在 ARP）設備與介面為 null
       macEntries() {
         const rows = [];
         m.macs.forEach((x) => {

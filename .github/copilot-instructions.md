@@ -1,4 +1,4 @@
-# topo-mikrotik — 開發大原則
+# topo-mikrotik — 開發原則
 
 這是一個可離線執行的 MikroTik RouterOS 網路基準工具。核心流程將
 CLI 輸入轉成可追溯的純 JSON Snapshot，畫面只是 Snapshot 的檢視方式。

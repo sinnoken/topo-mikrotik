@@ -155,7 +155,7 @@
       const drawEdge = (e, override) => {
         const a = this.pos.get(e.a); const b = this.pos.get(e.b); if (!a || !b) return;
         if (!inView(a) && !inView(b) && !segInView(a, b, view)) return;
-        const st = EDGE[e.cls] || EDGE.other; let col = st.c; let w = st.w * (e.count > 1 ? 1.25 : 1); let alpha = e.hearsay ? 0.55 : 1;
+        const st = EDGE[e.cls] || EDGE.other; let col = st.c; let w = st.w * (e.count > 1 ? 1.25 : 1); let alpha = e.domainOnly ? 0.5 : e.hearsay ? 0.55 : 1;
         const hc = hl && hl.edges.get(e.id);
         if (dim && !hc && !override) alpha = 0.12;
         if (hc) { col = hc; w = Math.max(w, 3.5, 2.5 / s); }

@@ -167,6 +167,46 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     App.select({ type: 'interface', key: remoteEp });
     if (!text('#detail').includes('MNDP：L2 網域可達，非直連')) throw new Error('MNDP 回報介面的細節不應呈現為直連線');
   });
+  await step('純 MNDP 邊半透明 50%，高亮不淡化', () => {
+    const graph = App.graph; const ctx = graph.ctx;
+    const old = {
+      nodes: graph.nodes, edges: graph.edges, pos: graph.pos, sel: graph.sel, hl: graph.hl, hover: graph.hover,
+      s: graph.s, tx: graph.tx, ty: graph.ty, stroke: ctx.stroke, setLineDash: ctx.setLineDash,
+      moveTo: ctx.moveTo, lineTo: ctx.lineTo,
+    };
+    const nodes = ['mndp-a', 'mndp-b', 'mixed-a', 'mixed-b'].map((id) => ({
+      id, label: id, kind: 'switch', collected: true, group: 'test',
+    }));
+    const edges = [
+      { id: 'pure-mndp', a: 'mndp-a', b: 'mndp-b', cls: 'other', count: 1, hearsay: false, domainOnly: true },
+      { id: 'mixed-evidence', a: 'mixed-a', b: 'mixed-b', cls: 'other', count: 1, hearsay: false, domainOnly: false, hasDomain: true },
+    ];
+    const pos = new Map([['mndp-a', { x: 0, y: 0 }], ['mndp-b', { x: 180, y: 0 }], ['mixed-a', { x: 0, y: 180 }], ['mixed-b', { x: 180, y: 180 }]]);
+    const strokes = []; let dash = []; let from = null; let to = null;
+    const samePoint = (a, b) => a && b && Math.abs(a.x - b.x) < 0.01 && Math.abs(a.y - b.y) < 0.01;
+    const segmentStrokes = (aId, bId) => strokes.filter((s) =>
+      (samePoint(s.from, pos.get(aId)) && samePoint(s.to, pos.get(bId))) ||
+      (samePoint(s.from, pos.get(bId)) && samePoint(s.to, pos.get(aId))));
+    try {
+      ctx.setLineDash = (pattern) => { dash = pattern.slice(); };
+      ctx.moveTo = (x, y) => { from = { x, y }; to = null; };
+      ctx.lineTo = (x, y) => { to = { x, y }; };
+      ctx.stroke = () => { strokes.push({ alpha: ctx.globalAlpha, dash: dash.slice(), from, to }); };
+      graph.setData(nodes, edges, pos); graph.hl = null; graph.hover = null; graph.setSelection([], []); graph.fit(); graph.draw();
+      const pure = segmentStrokes('mndp-a', 'mndp-b');
+      if (!pure.some((s) => s.alpha === 0.5 && s.dash.length)) throw new Error('純 MNDP 虛線應以 50% 不透明度繪製');
+      const mixed = segmentStrokes('mixed-a', 'mixed-b');
+      if (!mixed.length || mixed.some((s) => s.alpha === 0.5)) throw new Error('混合證據邊不應套用 MNDP-only 透明度');
+      graph.setSelection([], ['pure-mndp']); strokes.length = 0; graph.draw();
+      if (!segmentStrokes('mndp-a', 'mndp-b').some((s) => s.alpha === 1)) throw new Error('選取高亮應維持完整不透明度');
+      graph.setSelection([], []); graph.hover = { type: 'edge', id: 'pure-mndp' }; strokes.length = 0; graph.draw();
+      if (!segmentStrokes('mndp-a', 'mndp-b').some((s) => s.alpha === 1)) throw new Error('hover 高亮應維持完整不透明度');
+    } finally {
+      ctx.stroke = old.stroke; ctx.setLineDash = old.setLineDash; ctx.moveTo = old.moveTo; ctx.lineTo = old.lineTo;
+      graph.setData(old.nodes, old.edges, old.pos); graph.setSelection(old.sel.nodes, old.sel.edges);
+      graph.setHighlight(old.hl); graph.hover = old.hover; graph.s = old.s; graph.tx = old.tx; graph.ty = old.ty; graph.redraw();
+    }
+  });
   await step('OSPF-only 鄰接不畫拓樸 edge，仍保留 L3 設備細節與來源', async () => {
     const input = 'R_A (10.0.0.1):\n### /export terse\n/ip address add address=10.254.0.1/30 interface=ether48\n'
       + '### /routing ospf neighbor print detail\n 0 instance=default address=10.254.0.2 router-id=2.2.2.2 interface=ether48 state=Full\n';

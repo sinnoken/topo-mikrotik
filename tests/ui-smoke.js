@@ -153,6 +153,14 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     [`設備 ${m.devices.length}`, `介面 ${m.interfaces.length}`, `IP ${ips.length}`, `MAC ${rows.length}`, `VLAN ${m.vlans.length}`].forEach((x) => { if (!t.includes(x)) throw new Error('清單缺少分類：' + x); });
     if (new Set(ips.map((r) => r.ip)).size !== ips.length) throw new Error('IP 清單應去重複');
     const macChip = document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('MAC'));
+    const ipChip = document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('IP')); ipChip.click();
+    document.querySelectorAll('#pane-inventory th')[0].dispatch('click');
+    const col = () => document.querySelectorAll('#pane-inventory tbody tr').map((tr) => tr.querySelectorAll('td')[0].textContent);
+    const asc = col(); const num = (x) => x.split('.').reduce((n, p) => n * 256 + +p, 0);
+    if (!asc.length || asc.some((x, i) => i && num(asc[i - 1]) > num(x))) throw new Error('IP 清單應依 IP 數值升冪');
+    document.querySelectorAll('#pane-inventory th')[0].dispatch('click');
+    const desc = col(); if (asc.length > 1 && desc[0] === asc[0]) throw new Error('再點一次應反向排序');
+    document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('MAC')).click();
     macChip.click(); const t2 = text('#pane-inventory'); if (!t2.includes('缺 IP ' + rows.filter((r) => r.noIp).length)) throw new Error('缺 IP 摘要不正確');
     App.select(null); const ov = text('#right'); const uniq = new Set(App.snap.model.arps.map((x) => x.ip)).size;
     if (!ov.includes('IP（ARP）' + uniq.toLocaleString()) && !ov.includes('IP（ARP）')) throw new Error('總覽缺少 IP（ARP）');

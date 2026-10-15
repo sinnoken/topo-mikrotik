@@ -84,7 +84,7 @@
   compare.reset = () => { cmp.report = null; cmp.name = ''; };
 
   // ---------------------------------------------------------------- 清單：設備、介面、IP、MAC、VLAN
-  const inv = { kind: 'device', filter: 'all', q: '' };
+  const inv = { kind: 'device', filter: 'all', q: '', sortBy: -1, sortDir: 1 };
   function inventory(App) {
     const root = V.clear(V.$('#pane-inventory'));
     if (!App.snap) return root.appendChild(h('div', { class: 'empty-detail' }, '建立基準後，所有設備、介面、IP、MAC 與 VLAN 會列在這裡。'));
@@ -92,28 +92,28 @@
     const dn = (d) => (d ? Q.devName(d) : '—'); const mono = (t) => h('span', { class: 'mono' }, t || '—');
     const T = {
       device: ['設備', m.devices, [
-        { t: '設備', f: (r) => Q.devName(r.key) }, { t: '類型', f: (r) => V.kindChip(r.kind) }, { t: '管理 IP', f: (r) => mono(r.mgmtIp) },
-        { t: '廠商', f: (r) => r.vendor || '' }, { t: '收集', f: (r) => (r.collected ? '是' : '否') }],
+        { t: '設備', f: (r) => Q.devName(r.key), s: (r) => Q.devName(r.key) }, { t: '類型', f: (r) => V.kindChip(r.kind), s: (r) => V.KIND[r.kind] || r.kind }, { t: '管理 IP', f: (r) => mono(r.mgmtIp), s: (r) => r.mgmtIp },
+        { t: '廠商', f: (r) => r.vendor || '', s: (r) => r.vendor }, { t: '收集', f: (r) => (r.collected ? '是' : '否'), s: (r) => (r.collected ? '是' : '否') }],
       (r) => ({ type: 'device', key: r.key }), (r) => [Q.devName(r.key), r.mgmtIp, r.vendor, r.kind]],
       interface: ['介面', m.interfaces, [
-        { t: '設備', f: (r) => dn(r.dev) }, { t: '介面', f: (r) => mono(r.name) }, { t: '狀態', f: (r) => r.status },
-        { t: 'IP', f: (r) => mono(r.ips.slice(0, 2).join(' ')) }, { t: 'VLAN', f: (r) => h('span', { class: 'vlanlist' }, r.vlans.length ? S.check.fmtVlans(r.vlans) : '—') }],
+        { t: '設備', f: (r) => dn(r.dev), s: (r) => dn(r.dev) }, { t: '介面', f: (r) => mono(r.name), s: (r) => r.name }, { t: '狀態', f: (r) => r.status, s: (r) => r.status },
+        { t: 'IP', f: (r) => mono(r.ips.slice(0, 2).join(' ')), s: (r) => r.ips[0] }, { t: 'VLAN', f: (r) => h('span', { class: 'vlanlist' }, r.vlans.length ? S.check.fmtVlans(r.vlans) : '—'), s: (r) => r.vlans.join(' ') }],
       (r) => ({ type: 'interface', key: r.key }), (r) => [dn(r.dev), r.name, r.desc, r.ips.join(' '), r.vlans.join(' ')]],
       ip: ['IP', ipRows, [
-        { t: 'IP', f: (r) => mono(r.ip) }, { t: '設備', f: (r) => dn(r.dev) }, { t: '介面', f: (r) => mono(r.ifc) },
-        { t: 'MAC', f: (r) => mono(r.macs.slice(0, 2).map(K.macPretty).join(' ')) }, { t: '來源', f: (r) => r.from.join('、') }],
+        { t: 'IP', f: (r) => mono(r.ip), s: (r) => r.ip }, { t: '設備', f: (r) => dn(r.dev), s: (r) => r.dev && dn(r.dev) }, { t: '介面', f: (r) => mono(r.ifc), s: (r) => r.ifc },
+        { t: 'MAC', f: (r) => mono(r.macs.slice(0, 2).map(K.macPretty).join(' ')), s: (r) => r.macs[0] }, { t: '來源', f: (r) => r.from.join('、'), s: (r) => r.from.join('、') }],
       (r) => ({ type: 'ip', key: r.ip }), (r) => [r.ip, dn(r.dev), r.ifc, r.macs.map(K.macPretty).join(' ')]],
       mac: ['MAC', macRows, [
-        { t: '設備', f: (r) => dn(r.dev) }, { t: '介面', f: (r) => mono(r.ifc) }, { t: 'MAC', f: (r) => mono(K.macPretty(r.mac)) },
-        { t: 'VLAN', f: (r) => r.vlan || '—' }, { t: 'IP', f: (r) => (r.ips.length ? r.ips.slice(0, 2).join(' ') : V.chip('缺 IP', 'warn')) }],
+        { t: '設備', f: (r) => dn(r.dev), s: (r) => r.dev && dn(r.dev) }, { t: '介面', f: (r) => mono(r.ifc), s: (r) => r.ifc }, { t: 'MAC', f: (r) => mono(K.macPretty(r.mac)), s: (r) => r.mac },
+        { t: 'VLAN', f: (r) => r.vlan || '—', s: (r) => r.vlan }, { t: 'IP', f: (r) => (r.ips.length ? r.ips.slice(0, 2).join(' ') : V.chip('缺 IP', 'warn')), s: (r) => r.ips[0] }],
       (r) => ({ type: 'mac', key: r.mac }), (r) => [dn(r.dev), r.ifc, K.macPretty(r.mac), r.vlan, r.ips.join(' ')]],
       vlan: ['VLAN', m.vlans, [
-        { t: '設備', f: (r) => dn(r.dev) }, { t: 'VLAN', f: (r) => (r.id == null ? '—' : String(r.id)) }, { t: '名稱', f: (r) => r.name || r.desc || '' },
-        { t: '成員', f: (r) => String(r.members.length) }],
+        { t: '設備', f: (r) => dn(r.dev), s: (r) => dn(r.dev) }, { t: 'VLAN', f: (r) => (r.id == null ? '—' : String(r.id)), s: (r) => r.id }, { t: '名稱', f: (r) => r.name || r.desc || '', s: (r) => r.name || r.desc },
+        { t: '成員', f: (r) => String(r.members.length), s: (r) => r.members.length }],
       (r) => (r.id == null ? { type: 'device', key: r.dev } : { type: 'vlan', key: String(r.id) }), (r) => [dn(r.dev), r.id, r.name, r.desc]],
     };
     root.appendChild(h('div', { class: 'summary' }, Object.entries(T).map(([k, [label, rows]]) => V.chip(`${label} ${rows.length}`, `btn ${inv.kind === k ? 'on' : ''}`, {
-      onclick: () => { inv.kind = k; inv.filter = 'all'; inventory(App); }, title: label + '清單' }))));
+      onclick: () => { inv.kind = k; inv.filter = 'all'; inv.sortBy = -1; inv.sortDir = 1; inventory(App); }, title: label + '清單' }))));
     const [, rows0, cols, sel, text] = T[inv.kind];
     if (inv.kind === 'mac') {
       const n = macRows.filter((r) => r.noIp).length;
@@ -125,7 +125,14 @@
     const draw = () => {
       const t = inv.q.trim().toLowerCase();
       const rows = rows0.filter((r) => (inv.kind !== 'mac' || inv.filter === 'all' || r.noIp) && (!t || text(r).filter((x) => x != null).join(' ').toLowerCase().includes(t)));
-      V.clear(body).appendChild(V.table(cols, rows, { onRow: (r) => App.select(sel(r), { focus: true }), limit: 500 }));
+      const sc = cols[inv.sortBy] && cols[inv.sortBy].s ? cols[inv.sortBy] : null;
+      if (sc) { // 空值固定排最後；字串用 natural 排序，因此 IP 依數值順序
+        const val = (r) => { const v = sc.s(r); return v == null || v === '' ? null : v; };
+        rows.sort((a, b) => { const x = val(a); const y = val(b); if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
+          return (typeof x === 'number' && typeof y === 'number' ? x - y : S.util.natural(String(x), String(y))) * inv.sortDir; });
+      }
+      V.clear(body).appendChild(V.table(cols, rows, { onRow: (r) => App.select(sel(r), { focus: true }), limit: 500, sortBy: sc ? inv.sortBy : -1, sortDir: inv.sortDir,
+        onSort: (n) => { inv.sortDir = inv.sortBy === n ? -inv.sortDir : 1; inv.sortBy = n; draw(); } }));
     };
     box.addEventListener('input', () => { inv.q = box.value; draw(); });
     root.appendChild(box); root.appendChild(body); draw();

@@ -120,6 +120,14 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
   await step('點選每一筆檢查結果', () => { App.snap.findings.forEach((f, i) => { App.selectFinding(i); App.graph.draw(); }); });
   await step('點選每台設備、每條連結、部分介面', () => {
     App.snap.model.devices.slice(0, 300).forEach((d) => App.select({ type: 'device', key: d.key }, { focus: true }));
+    const endpointDev = App.snap.model.interfaces.find((i) => i.unknownPeer);
+    if (endpointDev) {
+      App.select({ type: 'device', key: endpointDev.dev });
+      const headings = $('#detail').querySelectorAll('h3').map((el) => el.textContent.replace(/\d+$/, ''));
+      const ordered = ['檢查結果', '介面', '沒有 LLDP／CDP 鄰接的埠', '鄰居', '路由表', '收集到的原始輸出']
+        .map((title) => headings.indexOf(title)).filter((i) => i >= 0);
+      if (ordered.some((i, n) => n && ordered[n - 1] >= i)) throw new Error('設備詳細區塊順序不符');
+    }
     App.snap.model.links.slice(0, 300).forEach((l) => App.select({ type: 'link', key: l.key }));
     App.snap.model.interfaces.slice(0, 120).forEach((i) => App.select({ type: 'interface', key: i.key }));
     const p = Array.from(App.pairs.values()).find((x) => x.links.length > 1); App.select({ type: 'pair', id: p.id, links: p.links, devs: [p.a, p.b] });

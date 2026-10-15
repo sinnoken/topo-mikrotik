@@ -110,6 +110,18 @@
         ['看到它的設備', d.seenBy.length ? h('span', null, d.seenBy.flatMap((k, i) => [i ? '、' : '', devLink(App, k)])) : null],
         ['收集的資料', d.collected ? h('span', null, [...(cov ? cov.data : []).map((t) => V.chip(S.check.DATA_LABEL[t] || t, 'ok')), ...(cov ? cov.missing : []).map((t) => V.chip('缺 ' + (S.check.DATA_LABEL[t] || t), 'err'))]) : null]]),
       findingsBlock(App, fl),
+      sec('介面', [V.chip(String(ifs.length))]),
+      V.table([
+        { t: '介面', f: (i) => h('span', { class: 'mono' }, i.name + (i.parent ? ` → ${i.parent}` : '')) },
+        { t: '狀態', f: (i) => (i.admin === 'down' ? '停用' : V.STATUS[i.status]) },
+        { t: '描述／IP', f: (i) => [i.desc, ...i.ips].filter(Boolean).join('  ') },
+        { t: 'VLAN', f: (i) => h('span', { class: 'vlanlist' }, vlanText(i.vlans)) },
+        { t: 'MAC', f: (i) => (i.macs.length ? String(i.macs.length) : '') },
+      ], ifs.sort((a, b) => S.util.natural(a.name, b.name)), { onRow: (i) => App.select({ type: 'interface', key: i.key }), limit: 300 }),
+      vlans.length ? h('div', null, [sec('VLAN 定義', [V.chip(String(vlans.length))]), V.table([
+        { t: 'ID', f: (v) => (v.id == null ? '?' : String(v.id)) }, { t: '名稱', f: (v) => v.name || '' }, { t: '描述', f: (v) => v.desc || '' }, { t: '成員', f: (v) => String(v.members.length) },
+      ], vlans, { onRow: (v) => v.id != null && App.select({ type: 'vlan', key: String(v.id) }) })]) : null,
+      unk.length ? h('div', null, [sec('沒有 LLDP／CDP 鄰接的埠', [V.chip(String(unk.length)), h('a', { class: 'link', style: { marginLeft: '8px', fontWeight: 400 }, onclick: () => App.select({ type: 'endpoints', dev: d.key }, { focus: true }) }, '在圖上看')]), unknownTable(App, unk)]) : null,
       sec('鄰居', [V.chip(String(peerRows.length))]),
       peerRows.length ? V.table([
         { t: '本機介面／觀察位置', f: (r) => r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN
@@ -138,18 +150,6 @@
           } },
         ], ospfAdjacencies),
       ]) : null,
-      unk.length ? h('div', null, [sec('沒有 LLDP／CDP 鄰接的埠', [V.chip(String(unk.length)), h('a', { class: 'link', style: { marginLeft: '8px', fontWeight: 400 }, onclick: () => App.select({ type: 'endpoints', dev: d.key }, { focus: true }) }, '在圖上看')]), unknownTable(App, unk)]) : null,
-      sec('介面', [V.chip(String(ifs.length))]),
-      V.table([
-        { t: '介面', f: (i) => h('span', { class: 'mono' }, i.name + (i.parent ? ` → ${i.parent}` : '')) },
-        { t: '狀態', f: (i) => (i.admin === 'down' ? '停用' : V.STATUS[i.status]) },
-        { t: '描述／IP', f: (i) => [i.desc, ...i.ips].filter(Boolean).join('  ') },
-        { t: 'VLAN', f: (i) => h('span', { class: 'vlanlist' }, vlanText(i.vlans)) },
-        { t: 'MAC', f: (i) => (i.macs.length ? String(i.macs.length) : '') },
-      ], ifs.sort((a, b) => S.util.natural(a.name, b.name)), { onRow: (i) => App.select({ type: 'interface', key: i.key }), limit: 300 }),
-      vlans.length ? h('div', null, [sec('VLAN 定義', [V.chip(String(vlans.length))]), V.table([
-        { t: 'ID', f: (v) => (v.id == null ? '?' : String(v.id)) }, { t: '名稱', f: (v) => v.name || '' }, { t: '描述', f: (v) => v.desc || '' }, { t: '成員', f: (v) => String(v.members.length) },
-      ], vlans, { onRow: (v) => v.id != null && App.select({ type: 'vlan', key: String(v.id) }) })]) : null,
       routes.length ? h('div', null, [sec('路由表', [V.chip(String(routes.length))]), V.table([
         { t: '網段', f: (r) => h('span', { class: 'mono' }, `${r.prefix}/${r.len}`) }, { t: '協定', f: (r) => r.proto },
         { t: '下一跳', f: (r) => h('span', { class: 'mono' }, r.nh.map((n) => (n.ip ? n.ip + ' ' : '') + (n.ifc || '')).join('\n')) },

@@ -14,6 +14,7 @@
     const link = new Map(m.links.map((l) => [l.key, l]));
     const mac = new Map(m.macs.map((x) => [x.mac, x]));
     const ifcsByDev = new Map(); const linksByDev = new Map(); const linksByEp = new Map();
+    const ospfByDev = new Map();
     m.interfaces.forEach((i) => U.getOr(ifcsByDev, i.dev, () => []).push(i));
     m.links.forEach((l) => {
       [l.a, l.b].forEach((ep) => {
@@ -22,6 +23,7 @@
         const arr = U.getOr(linksByDev, d, () => []); if (!arr.includes(l)) arr.push(l);
       });
     });
+    (m.ospfAdjacencies || []).forEach((a) => U.getOr(ospfByDev, a.dev, () => []).push(a));
     const ipOwner = new Map(); const subnets = [];
     m.interfaces.forEach((i) => i.ips.forEach((c) => {
       const p = S.ip.parseCidr(c); if (!p) return;
@@ -48,6 +50,7 @@
       interfacesOf: (d) => ifcsByDev.get(d) || [],
       linksOf: (d) => linksByDev.get(d) || [],
       linksOfEp: (ep) => linksByEp.get(ep) || [],
+      ospfAdjacenciesOf: (d) => ospfByDev.get(d) || [],
       linkBetween(epA, epB) { return link.get(K.link(epA, epB)) || null; },
       peerOf(l, ep) { return l.a === ep ? l.b : l.a; },
       vlansOf: (d) => vlansByDev.get(d) || [],

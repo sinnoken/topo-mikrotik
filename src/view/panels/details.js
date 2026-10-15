@@ -92,6 +92,7 @@
     const Q = App.Q; const d = Q.getDevice(sel.key);
     if (!d) return h('div', { class: 'empty-detail' }, '基準中沒有這台設備');
     const links = Q.linksOf(d.key);
+    const ospfAdjacencies = Q.ospfAdjacenciesOf(d.key);
     const cov = App.snap.coverage.find((c) => c.dev === d.key);
     const ifs = Q.interfacesOf(d.key).filter((i) => !i.hearsay || !d.collected);
     const fl = Q.findingsFor('device', d.key).concat(...links.map((l) => Q.findingsFor('link', l.key)), ...ifs.map((i) => Q.findingsFor('interface', i.key)));
@@ -124,6 +125,19 @@
         { t: 'VLAN', f: (r) => r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? '—'
           : (r.l.vlanMismatch ? h('span', { class: 'diffA' }, '不一致') : h('span', { class: 'vlanlist' }, vlanText(r.l.vlansCommon))) },
       ], peerRows, { onRow: (r) => App.select({ type: 'link', key: r.l.key }, { focus: true }), bad: (r) => r.l.vlanMismatch || Q.findingsFor('link', r.l.key).some((f) => f.severity !== 'info') }) : h('div', { class: 'muted' }, '沒有連結'),
+      ospfAdjacencies.length ? h('div', null, [
+        sec('OSPF L3 鄰接（非實體直連）', [V.chip(String(ospfAdjacencies.length))]),
+        V.table([
+          { t: '本機介面', f: (a) => epLink(App, a.localEp) },
+          { t: '鄰居', f: (a) => devLink(App, a.peerDev) },
+          { t: '鄰居位址／Router ID', f: (a) => [a.peerIp, a.peerId].filter(Boolean).join('／') },
+          { t: '回報', f: (a) => a.reciprocal ? '雙向 OSPF 鄰接' : '單向 OSPF 觀察' },
+          { t: '來源', f: (a) => {
+            const [block, line] = a.src[0]; const b = Q.block(block);
+            return b ? h('a', { class: 'link mono', onclick: () => App.openRaw(b.file, line) }, `${b.file} 第 ${line} 行`) : '';
+          } },
+        ], ospfAdjacencies),
+      ]) : null,
       unk.length ? h('div', null, [sec('沒有 LLDP 鄰居的埠', [V.chip(String(unk.length)), h('a', { class: 'link', style: { marginLeft: '8px', fontWeight: 400 }, onclick: () => App.select({ type: 'endpoints', dev: d.key }, { focus: true }) }, '在圖上看')]), unknownTable(App, unk)]) : null,
       sec('介面', [V.chip(String(ifs.length))]),
       V.table([

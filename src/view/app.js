@@ -72,6 +72,7 @@
     const pairs = new Map(); App.pairOfLink = new Map();
     const CLS_RANK = ['lag', '40g', '10g', '1g', 'oob', 'other', 'l3'];
     snap.model.links.forEach((l) => {
+      if (l.layer !== 'l2') return;
       const da = K.splitEp(l.a)[0]; const db = K.splitEp(l.b)[0];
       if (da === db) return;
       const [a, b] = da < db ? [da, db] : [db, da]; const id = a + '~' + b;

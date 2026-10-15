@@ -167,6 +167,19 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     App.select({ type: 'interface', key: remoteEp });
     if (!text('#detail').includes('MNDP：L2 網域可達，非直連')) throw new Error('MNDP 回報介面的細節不應呈現為直連線');
   });
+  await step('OSPF-only 鄰接不畫拓樸 edge，仍保留 L3 設備細節與來源', async () => {
+    const input = 'R_A (10.0.0.1):\n### /export terse\n/ip address add address=10.254.0.1/30 interface=ether48\n'
+      + '### /routing ospf neighbor print detail\n 0 instance=default address=10.254.0.2 router-id=2.2.2.2 interface=ether48 state=Full\n';
+    $('#input-text').value = input; $('#input-build').click();
+    const hash = S.util.hash(S.readers.PASTE + '\n' + input);
+    for (let i = 0; i < 4000 && (!App.snap || App.snap.meta.inputHash !== hash); i++) await new Promise((r) => setTimeout(r, 5));
+    if (App.snap.meta.inputHash !== hash) throw new Error('OSPF 基準未建立');
+    if (App.snap.model.links.length || App.graph.edges.length) throw new Error('OSPF-only adjacency 不應形成拓樸 edge');
+    if (!App.snap.model.ospfAdjacencies.length) throw new Error('OSPF L3 鄰接資訊遺失');
+    App.select({ type: 'device', key: 'R_A' });
+    if (!text('#detail').includes('OSPF L3 鄰接（非實體直連）')) throw new Error('設備細節沒有顯示獨立 OSPF 鄰接');
+    if (!text('#detail').includes('第 5 行')) throw new Error('OSPF 細節沒有來源行連結');
+  });
   await step('清除基準', async () => { $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20)); if (App.snap) throw new Error('未清除'); });
   console.log(steps.join('\n'));
   setTimeout(() => process.exit(process.exitCode || 0), 10);

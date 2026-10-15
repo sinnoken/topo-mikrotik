@@ -104,7 +104,7 @@
     })).sort((a, b) => nat(a.key, b.key));
 
     const links = Array.from(M.links.values()).map((l) => ({
-      key: l.key, a: l.a, b: l.b, layer: l.layer, via: Array.from(l.via).sort(), protocols: Array.from(l.protocols || []).sort(), verified: !!(l.verified || l.ospfBoth), hearsay: l.hearsay,
+      key: l.key, a: l.a, b: l.b, layer: l.layer, via: Array.from(l.via).sort(), protocols: Array.from(l.protocols || []).sort(), verified: !!l.verified, hearsay: l.hearsay,
       evidenceScope: l.evidenceScope, observations: (l.observations || []).slice().sort((a, b) => nat(a.dev, b.dev) || nat(a.ifc, b.ifc) || nat(a.peerIfc || '', b.peerIfc || '') || nat(a.block, b.block) || a.line - b.line),
       cls: l.cls, vlansA: l.vlansA || [], vlansB: l.vlansB || [], vlansCommon: l.vlansCommon || [], vlanMismatch: !!l.vlanMismatch, src: l.src,
     })).sort((a, b) => nat(a.key, b.key));
@@ -122,6 +122,10 @@
       .sort((a, b) => nat(a.ip, b.ip) || nat(a.dev, b.dev) || U.cmp(a.mac, b.mac));
     const routes = M.routes.map((r) => ({ dev: r.dev, prefix: r.prefix, len: r.len, proto: r.proto, nh: r.nh, src: [[r.block, r.line]] }))
       .sort((a, b) => nat(a.dev, b.dev) || nat(a.prefix, b.prefix) || a.len - b.len);
+    const ospfAdjacencies = M.ospfAdjacencies.map((a) => ({
+      dev: a.dev, localEp: a.localEp, peerDev: a.peerDev, peerEp: a.peerEp,
+      peerIp: a.peerIp, peerId: a.peerId, reciprocal: a.reciprocal, src: [[a.block, a.line]],
+    })).sort((a, b) => nat(a.dev, b.dev) || nat(a.localEp, b.localEp) || nat(a.peerDev, b.peerDev) || nat(a.peerIp, b.peerIp) || a.src[0][1] - b.src[0][1]);
 
     c.findings.forEach((f) => f.evidence.forEach((e) => { e.text = lineText(c.blocks, e); e.file = (c.blocks[e.block] || { origin: {} }).origin.file; }));
 
@@ -143,12 +147,12 @@
         profile: c.profile ? { id: c.profile.id, version: c.profile.version } : null,
         stats: {
           devices: devices.length, collected: devices.filter((d) => d.collected).length, interfaces: interfaces.length,
-          links: links.length, vlans: vlans.length, macs: macs.length, arps: arps.length, routes: routes.length,
+          links: links.length, ospfAdjacencies: ospfAdjacencies.length, vlans: vlans.length, macs: macs.length, arps: arps.length, routes: routes.length,
           findings: sev,
         },
         timing: { ms: Date.now() - c.t0 },
       },
-      model: { devices, interfaces, links, vlans, macs, arps, routes },
+      model: { devices, interfaces, links, ospfAdjacencies, vlans, macs, arps, routes },
       findings: c.findings,
       coverage: c.coverage,
       blocks,

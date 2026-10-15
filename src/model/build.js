@@ -14,7 +14,7 @@
   function newModel() {
     return {
       devices: new Map(), ifcs: new Map(), links: new Map(), vlans: new Map(), macs: new Map(),
-      arps: [], routes: [], claims: [], ospf: [], vmems: [],
+      arps: [], routes: [], claims: [], ospf: [], ospfAdjacencies: [], vmems: [],
       notes: { k01: [], k04: [], r02: [] },
     };
   }
@@ -111,7 +111,7 @@
     buildAggregates(M);
     buildInterfaceAdjacencyLinks(M);
     buildMndpLinks(M);
-    buildOspfLinks(M, canon);
+    resolveOspfAdjacencies(M, canon);
     return M;
   }
 
@@ -271,7 +271,7 @@
   }
 
   /** OSPF 鄰接：用位址找對端介面，再用 router-id、管理 IP 找對端設備；都找不到就建立以鄰居 ID 命名的未知設備。 */
-  function buildOspfLinks(M, canon) {
+  function resolveOspfAdjacencies(M, canon) {
     const ipOwner = new Map(); const ridOwner = new Map(); const mgmtOwner = new Map();
     M.ifcs.forEach((i) => i.ips.forEach((c) => ipOwner.set(c.split('/')[0], i.key)));
     M.devices.forEach((d) => { if (d.routerId) ridOwner.set(d.routerId, d.key); if (d.mgmtIp) mgmtOwner.set(d.mgmtIp, d.key); });
@@ -294,8 +294,14 @@
         M.notes.r02.push({ dev: f.dev, ifc: K.splitEp(f.localEp)[1], nbrId: f.nbrId, nbrAddr: f.nbrAddr, block: f.block, line: f.line });
       }
       if (!remote) { const ri = iface(M, peerDev, f.nbrAddr); ri.hearsay = true; ri.ips.add(f.nbrAddr + '/32'); remote = ri.key; }
-      const l = addLink(M, local, remote, 'l3', 'ospf', [f.block, f.line]);
-      if (M.ospf.some((g) => g.dev === peerDev && g.localEp === remote)) l.ospfBoth = true;
+      M.ospfAdjacencies.push({
+        dev: f.dev, localEp: local, peerDev, peerEp: remote,
+        peerIp: f.nbrAddr, peerId: f.nbrId, block: f.block, line: f.line,
+      });
+    });
+    M.ospfAdjacencies.forEach((a) => {
+      a.reciprocal = M.ospfAdjacencies.some((b) =>
+        b.dev === a.peerDev && b.peerDev === a.dev && b.localEp === a.peerEp && b.peerEp === a.localEp);
     });
   }
 

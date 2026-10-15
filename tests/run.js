@@ -228,8 +228,12 @@ test('OSPF：鄰居列沒有 interface 時，用鄰居位址落在哪個本機�
   const b = 'R_B (10.0.0.2):\n### /export terse\n/ip address add address=10.254.0.2/30 interface=ether1\n/routing ospf instance add name=default router-id=2.2.2.2\n'
     + '### /routing ospf neighbor print detail\n 0 instance=default address=10.254.0.1 router-id=1.1.1.1 interface=ether1 state=Full\n';
   const s = build(a + b);
-  const l = s.model.links.find((x) => x.via.includes('ospf'));
-  assert.ok(l && l.key === 'R_A|ether48~R_B|ether1' && l.verified, JSON.stringify(s.model.links));
+  assert.strictEqual(s.model.links.length, 0, 'OSPF-only adjacency must not create a direct topology edge');
+  assert.strictEqual(s.model.ospfAdjacencies.length, 2);
+  const adj = s.model.ospfAdjacencies.find((x) => x.dev === 'R_A');
+  assert.ok(adj && adj.localEp === 'R_A|ether48' && adj.peerEp === 'R_B|ether1' && adj.reciprocal, JSON.stringify(adj));
+  assert.deepStrictEqual(adj.src, [[1, 7]], 'OSPF adjacency retains source block and line');
+  assert.strictEqual(S.query(s).ospfAdjacenciesOf('R_A').length, 1);
   assert.strictEqual(count(s, 'R02'), 0);
 });
 test('system resource：型號決定交換器／路由器', () => {
@@ -255,7 +259,7 @@ test('連結配對：聚合成員雙向確認、沒有 LLDP 的鄰居為聽說',
   const s = build(read('samples/sample-bundle.txt'));
   const l = s.model.links.find((x) => x.key === 'TPE_ACC_SW_01|sfp-sfpplus1~TPE_CORE_RT_01|sfp-sfpplus1');
   assert.ok(l && l.verified && l.cls === 'lag', JSON.stringify(l));
-  assert.strictEqual(s.model.links.length, 78);
+  assert.strictEqual(s.model.links.length, 77, 'OSPF adjacencies no longer count as direct topology links');
   const ap = s.model.links.find((x) => x.key.includes('TPE_AP_01'));
   assert.ok(ap && ap.hearsay);
 });
@@ -332,11 +336,21 @@ test('路由追蹤：直連抵達、下一跳不在基準內、跨站點 ECMP', 
   assert.ok(t3.reached, JSON.stringify(t3.ends));
   assert.ok(t3.hops.some((h) => h.ecmp));
 });
-test('OSPF 鄰接和 LLDP 連結合併成同一條連結（兩者佐證）', () => {
-  const s = build(gen(['--sites', '2', '--access', '2']));
-  const l = s.model.links.find((x) => x.key.includes('WAN_RT_01|ether1~') || x.key.endsWith('~WAN_RT_01|ether1'));
-  assert.ok(l && l.via.includes('lldp') && l.via.includes('ospf') && l.verified, JSON.stringify(l));
-  assert.strictEqual(s.findings.filter((f) => f.severity !== 'info').length, 0);
+test('OSPF 鄰接與 LLDP edge 分開保存；OSPF 不新增拓樸 edge 或升格為直連', () => {
+  const a = 'R_A (10.0.0.1):\n### /export terse\n/ip address add address=10.254.0.1/30 interface=ether48\n/routing id add id=1.1.1.1 name=main\n/routing ospf instance add name=default router-id=main\n'
+    + '### /routing ospf neighbor print detail\n 0 instance=default area=backbone address=10.254.0.2 priority=1 router-id=2.2.2.2 state=Full state-changes=5\n'
+    + '### /ip neighbor print detail\n 0 interface=ether48 identity=R_B address=10.254.0.2 mac-address=AA:BB:CC:00:00:02 interface-name=ether1 discovered-by=lldp\n';
+  const b = 'R_B (10.0.0.2):\n### /export terse\n/ip address add address=10.254.0.2/30 interface=ether1\n/routing ospf instance add name=default router-id=2.2.2.2\n'
+    + '### /routing ospf neighbor print detail\n 0 instance=default address=10.254.0.1 router-id=1.1.1.1 interface=ether1 state=Full\n'
+    + '### /ip neighbor print detail\n 0 interface=ether1 identity=R_A address=10.254.0.1 mac-address=AA:BB:CC:00:00:01 interface-name=ether48 discovered-by=lldp\n';
+  const s = build(a + b);
+  assert.strictEqual(s.model.links.length, 1);
+  const l = s.model.links[0];
+  assert.strictEqual(l.key, 'R_A|ether48~R_B|ether1');
+  assert.deepStrictEqual(l.via, ['lldp']);
+  assert.strictEqual(s.model.ospfAdjacencies.length, 2);
+  assert.ok(s.model.ospfAdjacencies.every((x) => x.reciprocal));
+  assert.strictEqual(s.meta.stats.links, 1, '拓樸 edge 數量只計入 L2 direct link');
 });
 test('比對：獨立格式，結果分 ok／missing／different，且不修改基準', () => {
   const s = build(read('samples/sample-bundle.txt')); const before = JSON.stringify(s);

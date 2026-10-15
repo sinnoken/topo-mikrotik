@@ -91,7 +91,7 @@
     const Q = App.Q; const m = App.snap.model; const ipRows = Q.ipEntries(); const macRows = Q.macEntries();
     const ends = Q.endpointEntries(); const devRows = m.devices.concat(ends.map((e) => Object.assign({ end: true }, e)));
     const nMac = new Set(macRows.map((r) => r.mac)).size; // 清單一個 MAC 可能有多列（每個觀察到它的介面一列）
-    const nameOf = (r) => (r.end ? r.desc || r.vendors[0] || (r.macs.length === 1 ? K.macPretty(r.macs[0].mac) : `${r.macs.length} 個 MAC`) : Q.devName(r.key));
+    const nameOf = (r) => (r.end ? (r.portMacs < 2 && r.desc) || r.vendors[0] || (r.mac ? K.macPretty(r.mac) : '?') : Q.devName(r.key));
     const ipOf = (r) => (r.end ? r.ips[0] : r.mgmtIp); const vendorOf = (r) => (r.end ? r.vendors.join(' / ') : r.vendor);
     const dn = (d) => (d ? Q.devName(d) : '—'); const mono = (t) => h('span', { class: 'mono' }, t || '—');
     const T = {
@@ -118,13 +118,13 @@
         { t: '成員', f: (r) => String(r.members.length), s: (r) => r.members.length }],
       (r) => (r.id == null ? { type: 'device', key: r.dev } : { type: 'vlan', key: String(r.id) }), (r) => [dn(r.dev), r.id, r.name, r.desc]],
     };
-    root.appendChild(h('div', { class: 'summary' }, Object.entries(T).map(([k, [label, rows]]) => V.chip(`${label} ${k === 'mac' ? nMac : k === 'device' ? m.devices.length : rows.length}`, `btn ${inv.kind === k ? 'on' : ''}`, {
+    root.appendChild(h('div', { class: 'summary' }, Object.entries(T).map(([k, [label, rows]]) => V.chip(`${label} ${k === 'mac' ? nMac : rows.length}`, `btn ${inv.kind === k ? 'on' : ''}`, {
       onclick: () => { inv.kind = k; inv.filter = 'all'; inv.sortBy = -1; inv.sortDir = 1; inventory(App); }, title: label + '清單' }))));
     const [, rows0, cols, sel, text] = T[inv.kind];
     const FILTERS = {
       ip: [['all', '全部', () => true], ['arp', 'ARP', (r) => r.from.includes('ARP')], ['own', '設備自有', (r) => r.from.some((x) => x === '介面' || x === '管理')], ['heard', '鄰居宣告', (r) => r.from.includes('鄰居宣告')]],
       mac: [['all', '全部', () => true], ['noip', '缺 IP', (r) => r.noIp]],
-      device: [['all', '全部設備', (r) => !r.end], ['net', '網路設備', (r) => !r.end && r.kind !== 'host'], ['host', '主機', (r) => !r.end && r.kind === 'host'], ['end', '末端', (r) => r.end]],
+      device: [['all', '全部', () => true], ['net', '網路設備', (r) => !r.end && r.kind !== 'host'], ['host', '主機', (r) => !r.end && r.kind === 'host'], ['end', '末端', (r) => r.end]],
     };
     const flt = FILTERS[inv.kind];
     if (flt) {

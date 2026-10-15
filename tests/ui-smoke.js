@@ -150,14 +150,14 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     document.querySelectorAll('#left .tabs button')[2].click();
     const m = App.snap.model; const ips = App.Q.ipEntries();
     const t = text('#pane-inventory');
-    [`設備 ${m.devices.length}`, `介面 ${m.interfaces.length}`, `IP ${ips.length}`, `MAC ${new Set(rows.map((r) => r.mac)).size}`, `VLAN ${m.vlans.length}`].forEach((x) => { if (!t.includes(x)) throw new Error('清單缺少分類：' + x); });
+    [`設備 ${m.devices.length + App.Q.endpointEntries().length}`, `介面 ${m.interfaces.length}`, `IP ${ips.length}`, `MAC ${new Set(rows.map((r) => r.mac)).size}`, `VLAN ${m.vlans.length}`].forEach((x) => { if (!t.includes(x)) throw new Error('清單缺少分類：' + x); });
     if (new Set(ips.map((r) => r.ip)).size !== ips.length) throw new Error('IP 清單應去重複');
     const macChip = document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('MAC'));
     if (new Set(rows.map((r) => r.mac)).size !== App.snap.meta.stats.macs) throw new Error('清單的不重複 MAC 數應等於總覽');
     const nEnd = App.Q.endpointEntries().length; const unk = App.snap.model.interfaces.filter((i) => i.unknownPeer).length;
-    if (nEnd !== unk) throw new Error('末端筆數應等於未知對端介面數');
+    if (nEnd < unk || new Set(App.Q.endpointEntries().map((e) => e.key)).size !== unk) throw new Error('末端的不重複介面數應等於未知對端介面數，且不可少於它');
     document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('設備')).click();
-    const t0 = text('#pane-inventory'); ['全部設備 ' + m.devices.length, '末端 ' + nEnd].forEach((x) => { if (!t0.includes(x)) throw new Error('設備清單缺少分類：' + x); });
+    const t0 = text('#pane-inventory'); ['全部 ' + (m.devices.length + nEnd), '末端 ' + nEnd].forEach((x) => { if (!t0.includes(x)) throw new Error('設備清單缺少分類：' + x); });
     document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('末端')).click();
     if (document.querySelectorAll('#pane-inventory tbody tr').length !== Math.min(nEnd, 500)) throw new Error('末端篩選列數不符');
     const ipChip = document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('IP')); ipChip.click();

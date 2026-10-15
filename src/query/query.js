@@ -85,12 +85,12 @@
       findingIndexesFor(type, key) { return findingsBy.get(type + ':' + key) || []; },
       block: (id) => snap.blocks[id] || null,
       /** 有學到 MAC、但沒有任何 LLDP 鄰居的末端埠所屬設備 */
-      // 末端：沒有 LLDP 鄰居的末端埠（未知對端），每個介面一列；不是設備，不計入設備數
+      // 末端：沒有 LLDP 鄰居的末端埠（未知對端）後面看到的每個 MAC 一列（一個埠後有多個 MAC 就有多列）；沒有 MAC 的埠仍保留一列
       endpointEntries() {
-        return Q.unknownDevices().flatMap((d) => Q.unknownPeers(d).map((u) => ({
-          key: u.ep, dev: d, ifc: u.name, desc: u.desc, type: u.type, status: u.status, vlans: u.vlans, macs: u.macs,
-          ips: U.uniq([].concat(...u.macs.map((x) => x.ips))), vendors: U.uniq(u.macs.map((x) => x.vendor).filter(Boolean)),
-        })));
+        return Q.unknownDevices().flatMap((d) => Q.unknownPeers(d).flatMap((u) => {
+          const base = { key: u.ep, dev: d, ifc: u.name, desc: u.desc, type: u.type, status: u.status, vlans: u.vlans, portMacs: u.macs.length };
+          return (u.macs.length ? u.macs : [null]).map((x) => Object.assign({ mac: x ? x.mac : null, ips: x ? x.ips : [], vendors: x && x.vendor ? [x.vendor] : [] }, base));
+        }));
       },
       unknownDevices: () => Array.from(unkByDev.keys()).sort(U.natural),
       /** 某設備上「沒有 LLDP 鄰居」的末端埠，附 MAC、IP、廠商 */

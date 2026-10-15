@@ -154,6 +154,12 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (new Set(ips.map((r) => r.ip)).size !== ips.length) throw new Error('IP 清單應去重複');
     const macChip = document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('MAC'));
     if (new Set(rows.map((r) => r.mac)).size !== App.snap.meta.stats.macs) throw new Error('清單的不重複 MAC 數應等於總覽');
+    const nEnd = App.Q.endpointEntries().length; const unk = App.snap.model.interfaces.filter((i) => i.unknownPeer).length;
+    if (nEnd !== unk) throw new Error('末端筆數應等於未知對端介面數');
+    document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('設備')).click();
+    const t0 = text('#pane-inventory'); ['全部設備 ' + m.devices.length, '末端 ' + nEnd].forEach((x) => { if (!t0.includes(x)) throw new Error('設備清單缺少分類：' + x); });
+    document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('末端')).click();
+    if (document.querySelectorAll('#pane-inventory tbody tr').length !== Math.min(nEnd, 500)) throw new Error('末端篩選列數不符');
     const ipChip = document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('IP')); ipChip.click();
     document.querySelectorAll('#pane-inventory th')[0].dispatch('click');
     const col = () => document.querySelectorAll('#pane-inventory tbody tr').map((tr) => tr.querySelectorAll('td')[0].textContent);

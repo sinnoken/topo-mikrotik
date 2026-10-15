@@ -201,6 +201,27 @@ test('interface print：running／停用／註解（含獨立一行的 ;;;）', 
   assert.strictEqual(iface(s, 'SW_A|ether3').admin, 'down');
   assert.strictEqual(iface(s, 'SW_A|bond1').type, 'aggregate');
 });
+test('interface print：CAPsMAN 說明續行保留 Wi-Fi running 旗標及多 MAC 末端', () => {
+  const s = build('SW_A (10.0.0.1):\n### /interface print detail\n'
+    + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
+    + ' 7    RS ;;; managed by CAPsMAN, traffic processing on\n'
+    + '              CAP         ;;; mode: AP, SSID: test, channel: 2412/n\n'
+    + '         name="wifi1" default-name="wifi1" type="wifi" actual-mtu=1500\n'
+    + ' 9  D RS ;;; managed by CAPsMAN, traffic processing on\n'
+    + '              CAP         ;;; mode: AP, SSID: test-5g, channel: 5660/ac/Ceee\n'
+    + '         name="wifi8" type="wifi" actual-mtu=1500\n'
+    + '### /interface bridge host print detail\n'
+    + ' 0 D mac-address=14:63:93:C4:13:24 on-interface=wifi1 bridge=bridge\n'
+    + ' 1 D mac-address=3C:64:CF:0C:C4:63 on-interface=wifi1 bridge=bridge\n'
+    + ' 2 D mac-address=06:89:53:94:06:0F on-interface=wifi8 bridge=bridge\n'
+    + ' 3 D mac-address=18:F0:E4:FF:EF:35 on-interface=wifi8 bridge=bridge\n');
+  ['wifi1', 'wifi8'].forEach((name) => {
+    const i = iface(s, `SW_A|${name}`);
+    assert.strictEqual(i.status, 'up', `${name} 的 R 旗標不可被 CAPsMAN 說明覆蓋`);
+    assert.strictEqual(i.macs.length, 2);
+    assert.strictEqual(i.unknownPeer, true, `${name} 的多 MAC 末端應可畫成菱形`);
+  });
+});
 test('ARP 與 IP 位址：略過 invalid／disabled、多播、APIPA', () => {
   const s = build('R_A (10.0.0.1):\n### /ip arp print detail\n 0 DC address=10.0.0.2 mac-address=AA:BB:CC:00:00:01 interface=bridge1 complete=yes\n 1 I  address=10.0.0.3 mac-address=AA:BB:CC:00:00:02 interface=bridge1 complete=yes\n 2 DC address=169.254.1.1 mac-address=AA:BB:CC:00:00:03 interface=bridge1 complete=yes\n'
     + '### /ip address print detail\n 0   address=10.0.0.1/24 network=10.0.0.0 interface=bridge1 actual-interface=bridge1\n 1 X address=10.9.9.1/24 network=10.9.9.0 interface=ether9 actual-interface=ether9\n');

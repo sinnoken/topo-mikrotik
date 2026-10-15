@@ -44,9 +44,17 @@
    *  - 列首：`序號 旗標 key=value …`（序號、旗標都可能省略）
    *  - 續行：沒有序號與旗標、直接以 key=value 開頭（終端機換行）→ 併入上一列
    *  - `;;; 註解` 屬於它所在或下一個列
+   *  - 旗標說明可區分列首旗標與 CAPsMAN 等續行說明
    *  - `Flags:`、`Columns:` 說明行略過
    */
   function parseRows(b) {
+    const flagChars = new Set();
+    b.lines.forEach((raw) => {
+      const legend = raw.match(/^\s*Flags:\s*(.*)$/i);
+      if (!legend) return;
+      const re = /(?:^|[;,\s])([A-Za-z])\s*-/g; let m;
+      while ((m = re.exec(legend[1]))) flagChars.add(m[1]);
+    });
     const rows = []; let cur = null; let pending = null;
     b.lines.forEach((raw, i) => {
       const line = raw.replace(/\r$/, ''); const t = line.trim();
@@ -58,7 +66,13 @@
       if (!km) {
         if (ci >= 0) {
           const toks = body.trim().split(/\s+/).filter(Boolean);
-          if (toks.length) { cur = newRow(toks, at(b, i)); cur.comment = comment; rows.push(cur); } else pending = comment;
+          const indexed = /^\d+$/.test(toks[0] || '');
+          const flagTokens = indexed ? toks.slice(1) : toks;
+          const rowPrefix = indexed || !flagChars.size || (flagTokens.length && flagTokens.every((token) =>
+            Array.from(token).every((ch) => flagChars.has(ch))));
+          if (toks.length && rowPrefix) { cur = newRow(toks, at(b, i)); cur.comment = comment; rows.push(cur); }
+          else if (toks.length && cur) cur.comment = [cur.comment, comment].filter(Boolean).join('; ');
+          else pending = comment;
         }
         return;
       }

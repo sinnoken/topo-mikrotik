@@ -180,6 +180,29 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (!text('#detail').includes('OSPF L3 鄰接（非實體直連）')) throw new Error('設備細節沒有顯示獨立 OSPF 鄰接');
     if (!text('#detail').includes('第 5 行')) throw new Error('OSPF 細節沒有來源行連結');
   });
+  await step('CAPsMAN Wi-Fi 多 MAC 在拓樸顯示菱形', async () => {
+    const input = 'SW_A (10.0.0.1):\n### /interface print detail\n'
+      + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
+      + ' 7    RS ;;; managed by CAPsMAN, traffic processing on\n'
+      + '              CAP         ;;; mode: AP, SSID: test, channel: 2412/n\n'
+      + '         name="wifi1" default-name="wifi1" type="wifi" actual-mtu=1500\n'
+      + ' 9  D RS ;;; managed by CAPsMAN, traffic processing on\n'
+      + '              CAP         ;;; mode: AP, SSID: test-5g, channel: 5660/ac/Ceee\n'
+      + '         name="wifi8" type="wifi" actual-mtu=1500\n'
+      + '### /interface bridge host print detail\n'
+      + ' 0 D mac-address=14:63:93:C4:13:24 on-interface=wifi1 bridge=bridge\n'
+      + ' 1 D mac-address=3C:64:CF:0C:C4:63 on-interface=wifi1 bridge=bridge\n'
+      + ' 2 D mac-address=06:89:53:94:06:0F on-interface=wifi8 bridge=bridge\n'
+      + ' 3 D mac-address=18:F0:E4:FF:EF:35 on-interface=wifi8 bridge=bridge\n';
+    $('#input-text').value = input; $('#input-build').click();
+    const hash = S.util.hash(S.readers.PASTE + '\n' + input);
+    for (let i = 0; i < 4000 && (!App.snap || App.snap.meta.inputHash !== hash); i++) await new Promise((r) => setTimeout(r, 5));
+    if (App.snap.meta.inputHash !== hash) throw new Error('Wi-Fi 基準未建立');
+    const wifis = App.snap.model.interfaces.filter((i) => ['wifi1', 'wifi8'].includes(i.name));
+    if (!wifis.every((i) => i.status === 'up' && i.unknownPeer && i.macs.length === 2)) throw new Error('Wi-Fi running 狀態或多 MAC 末端遺失');
+    const diamonds = App.graph.nodes.filter((n) => n.kind === 'downstream' && n.parent === 'SW_A');
+    if (diamonds.length !== 2) throw new Error('wifi1 與 wifi8 都應畫成多 MAC 菱形');
+  });
   await step('清除基準', async () => { $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20)); if (App.snap) throw new Error('未清除'); });
   console.log(steps.join('\n'));
   setTimeout(() => process.exit(process.exitCode || 0), 10);

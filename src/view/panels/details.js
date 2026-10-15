@@ -101,11 +101,7 @@
     const cov = App.snap.coverage.find((c) => c.dev === d.key);
     const ifs = Q.interfacesOf(d.key).filter((i) => !i.hearsay || !d.collected);
     const fl = Q.findingsFor('device', d.key).concat(...links.map((l) => Q.findingsFor('link', l.key)), ...ifs.map((i) => Q.findingsFor('interface', i.key)));
-    const peerRows = links.map((l) => {
-      const mine = K.splitEp(l.a)[0] === d.key ? l.a : l.b; const other = Q.peerOf(l, mine);
-      const observations = (l.observations || []).filter((o) => o.dev === d.key);
-      return { l, mine, other, observations };
-    }).sort((x, y) => S.util.natural(x.mine, y.mine));
+    const peerRows = Q.neighborRows(d.key).sort((x, y) => S.util.natural(x.mine, y.mine));
     const vlans = Q.vlansOf(d.key); const routes = Q.routesOf(d.key); const unk = Q.unknownPeers(d.key);
     return h('div', { class: 'detail' }, [
       h('h2', null, d.label || d.name),
@@ -141,7 +137,7 @@
         { t: '協定', f: (r) => V.protoText(r.l) },
         { t: 'VLAN', f: (r) => r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? '—'
           : (r.l.vlanMismatch ? h('span', { class: 'diffA' }, '不一致') : h('span', { class: 'vlanlist' }, vlanText(r.l.vlansCommon))) },
-      ], peerRows, { onRow: (r) => App.select({ type: 'link', key: r.l.key }, { focus: true }), bad: (r) => r.l.vlanMismatch || Q.findingsFor('link', r.l.key).some((f) => f.severity !== 'info') }) : h('div', { class: 'muted' }, '沒有連結'),
+      ], peerRows, { onRow: (r) => App.select({ type: 'link', key: r.l.key }, { focus: true }), bad: (r) => r.links.some((x) => x.vlanMismatch || Q.findingsFor('link', x.key).some((f) => f.severity !== 'info')) }) : h('div', { class: 'muted' }, '沒有連結'),
       ospfAdjacencies.length ? h('div', null, [
         sec('OSPF L3 鄰接（非實體直連）', [V.chip(String(ospfAdjacencies.length))]),
         V.table([

@@ -109,7 +109,7 @@
 
 ### 5.3 關鍵推論
 
-- **鄰居邊語意**：LLDP／CDP 的觀察走介面鄰接推論；本機介面名稱是本機端依據，對端回報的 `interface-name` 是對端埠證據，無法配對時的平行埠排序配對仍屬推測。只有 MNDP 證據時，edge 表示兩台設備在同一 L2 broadcast domain 可達，不表示兩者直連，也不將回報的對端埠名視為實際配對埠；不套用直連專用的 K01／K02／K03／V01 檢查。`evidenceScope` 使用 `interface-adjacency`、`broadcast-domain` 或 `routing-adjacency`；`observations` 保留觀察介面及來源行。MNDP 沒有 domain ID，因此模型不宣稱完整網域成員清單。
+- **鄰居邊語意**：LLDP／CDP 的觀察走介面鄰接推論；本機介面名稱是本機端依據，對端回報的 `interface-name` 是對端埠證據，無法配對時的平行埠排序配對仍屬推測。只有 MNDP 證據時，edge 表示兩台設備在同一 L2 broadcast domain 可達，不表示兩者直連，也不將回報的對端埠名視為實際配對埠；不套用直連專用的 K01／K02／K03／V01 檢查。`evidenceScope` 使用 `interface-adjacency`、`broadcast-domain` 或 `routing-adjacency`；`observations` 保留觀察介面及來源行。MNDP 沒有 domain ID，因此模型不宣稱完整網域成員清單。同一對設備可因多個本機介面或雙向回報各有一條 MNDP link（Snapshot 保留全部以便追溯）；設備詳情的「鄰居」表由 `Q.neighborRows()` 併成每個對端設備一列，觀察介面合併列出。
 - **自動群組名稱**：未套用 profile 分群的設備依拓樸連結分成連通元件，標為「自動群組 N」。這是版面分群提示，不是依 IP prefix 推導的子網名稱，也不表示群內設備都以實體線路直接相連；純 MNDP 證據同樣可能使設備位於同一群組。
 - **鄰居配對**：LLDP／CDP 對端也有可配對的鄰居資料時雙向配對（`verified`）；對端有鄰居輸出但未回報此介面鄰接為單向（K01）；對端沒提供鄰居資料則為聽說（hearsay，只計入覆蓋率）。鄰居 identity 對不上收集檔設備名時，用管理 IP 對回同一台。
 - **OSPF 鄰接**：OSPF 是 IP 層鄰接證據，不加入 `links`，不作為拓樸直連 edge，也不與相同端點的 L2 edge 合併。單獨存於 `ospfAdjacencies`，設備詳細資料列出本機介面、鄰居、雙向回報狀態與來源。鄰居位址 → 擁有該 IP 的介面；找不到再用 router-id、管理 IP；都找不到建立以鄰居 ID 命名的未知設備（R02）。

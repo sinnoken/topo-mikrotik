@@ -275,6 +275,19 @@ test('interface print 缺漏：改用 export 的 bridge／vlan 定義判斷，�
   assert.deepStrictEqual(['br-mgmt', 'v-10', 'irb9'].map((n) => iface(s, 'SW_A|' + n).edge), [false, false, false]);
   assert.strictEqual(iface(s, 'SW_A|ether1').edge, true);
 });
+test('鄰居表：同一對設備的 MNDP（多介面、雙向）併成一列，仍保留各 link 來源', () => {
+  const nb = (ifc, ip, mac, id) => ` 0 interface=${ifc} address=${ip} mac-address=${mac} identity="${id}" platform=MikroTik discovered-by=mndp\n`;
+  const s = build('A (10.0.0.1):\n### /ip neighbor print detail without-paging\n'
+    + nb('ether1', '10.0.0.2', 'AA:00:00:00:00:02', 'B') + nb('ether2', '10.0.0.2', 'AA:00:00:00:00:02', 'B')
+    + 'B (10.0.0.2):\n### /ip neighbor print detail without-paging\n' + nb('ether5', '10.0.0.1', 'AA:00:00:00:00:01', 'A'));
+  const Q = S.query(s);
+  assert.strictEqual(Q.linksOf('A').length, 3);
+  const rows = Q.neighborRows('A');
+  assert.strictEqual(rows.length, 1);
+  assert.strictEqual(rows[0].links.length, 3);
+  assert.deepStrictEqual(rows[0].observations.map((o) => o.ifc), ['ether1', 'ether2']);
+  assert.deepStrictEqual(Q.neighborRows('B')[0].observations.map((o) => o.ifc), ['ether5']);
+});
 test('interface print：type=wifi／wlan 標為 wifi', () => {
   const s = build('SW_A (10.0.0.1):\n### /interface print detail\n'
     + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'

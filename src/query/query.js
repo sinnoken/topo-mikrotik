@@ -70,6 +70,27 @@
       interfacesOf: (d) => ifcsByDev.get(d) || [],
       linksOf: (d) => linksByDev.get(d) || [],
       linksOfEp: (ep) => linksByEp.get(ep) || [],
+      /**
+       * 設備的鄰居列。MNDP 只證明同一 L2 網域可達，同一對設備可因多個本機介面或雙向回報
+       * 各有一條 link；這裡併成每個對端設備一列（links 保留全部來源），其他連結一條一列。
+       */
+      neighborRows(d) {
+        const rows = []; const mndp = new Map();
+        (linksByDev.get(d) || []).forEach((l) => {
+          const mine = K.splitEp(l.a)[0] === d ? l.a : l.b; const other = l.a === mine ? l.b : l.a;
+          const own = (l.observations || []).filter((o) => o.dev === d);
+          if (l.evidenceScope !== S.LINK_SCOPE.BROADCAST_DOMAIN) { rows.push({ l, links: [l], mine, other, observations: own }); return; }
+          const pk = K.splitEp(other)[0];
+          const row = mndp.get(pk);
+          if (row) { row.links.push(l); row.observations.push(...own); return; }
+          const r = { l, links: [l], mine, other, observations: own.slice() }; mndp.set(pk, r); rows.push(r);
+        });
+        rows.forEach((r) => {
+          const seen = new Set();
+          r.observations = r.observations.filter((o) => !seen.has(o.ifc) && seen.add(o.ifc)).sort((x, y) => U.natural(x.ifc, y.ifc));
+        });
+        return rows;
+      },
       ospfAdjacenciesOf: (d) => ospfByDev.get(d) || [],
       linkBetween(epA, epB) { return link.get(K.link(epA, epB)) || null; },
       peerOf(l, ep) { return l.a === ep ? l.b : l.a; },

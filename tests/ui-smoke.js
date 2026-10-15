@@ -163,6 +163,10 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (nEnd < unk || new Set(App.Q.endpointEntries().map((e) => e.key)).size !== unk) throw new Error('末端的不重複介面數應等於未知對端介面數，且不可少於它');
     document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('設備')).click();
     const t0 = text('#pane-inventory'); ['全部 ' + (m.devices.length + nEnd), '末端 ' + nEnd].forEach((x) => { if (!t0.includes(x)) throw new Error('設備清單缺少分類：' + x); });
+    const firstRow = document.querySelector('#pane-inventory tbody tr');
+    if (!firstRow || firstRow.getAttribute('tabindex') !== '0') throw new Error('可點選清單列應可透過鍵盤聚焦');
+    firstRow.dispatch('keydown', { key: 'Enter' });
+    if (App.sel.type !== 'device') throw new Error('清單列按 Enter 應選取設備');
     document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('末端')).click();
     if (document.querySelectorAll('#pane-inventory tbody tr').length !== Math.min(nEnd, 500)) throw new Error('末端篩選列數不符');
     const ipChip = document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('IP')); ipChip.click();
@@ -185,6 +189,16 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
   });
   await step('樣式單一來源：CSS 設備類型變數與 theme 一致，圖例取自 theme', async () => {
     const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8'); const T = S.view.theme;
+    [
+      ['共用控制項高度', /--control-h:\s*34px/],
+      ['鍵盤焦點樣式', /button:focus-visible/],
+      ['清除操作風險提示', /#btn-clear:hover/],
+      ['表格交錯列', /table\.t tbody tr:nth-child\(even\) td/],
+      ['表格互動高亮', /table\.t tbody tr\.click:hover td/],
+      ['檢查結果卡片樣式', /\.finding\s*\{[^}]*border:/],
+      ['狀態標籤層次', /\.chip\.err\s*\{[^}]*border-color:/],
+      ['減少動態效果偏好', /prefers-reduced-motion:\s*reduce/],
+    ].forEach(([label, pattern]) => { if (!pattern.test(css)) throw new Error('缺少 ' + label); });
     const vars = { firewall: 'fw', switch: 'sw', router: 'rt', host: 'host', unknown: 'unk' };
     Object.entries(vars).forEach(([k, v]) => {
       const m = css.match(new RegExp('--' + v + ':\\s*(#[0-9a-fA-F]{6})'));
@@ -212,6 +226,11 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     const oneG = edgeLegend('1g'); const other = edgeLegend('other');
     if (!oneG || !other || !oneG.getAttribute('title').includes('不代表實際協商速率')) throw new Error('1G 圖例需說明其為介面名稱推估，而非實際協商速率');
     if (T.edge['1g'].c === T.edge.other.c || T.edge['1g'].w <= T.edge.other.w) throw new Error('1G 連線樣式應明顯區別於其他連線');
+    let keyboardLinkActivated = false;
+    const keyboardLink = S.view.h('a', { class: 'link', onclick: () => { keyboardLinkActivated = true; } }, '鍵盤連結');
+    if (keyboardLink.getAttribute('tabindex') !== '0' || keyboardLink.getAttribute('role') !== 'link') throw new Error('動態連結需具備鍵盤焦點與連結語意');
+    keyboardLink.dispatch('keydown', { key: 'Enter' });
+    if (!keyboardLinkActivated) throw new Error('動態連結按 Enter 應觸發操作');
     const hearsay = legend.find((li) => li.textContent === '聽說'); const domain = legend.find((li) => li.textContent === 'MNDP');
     if (!hearsay || !domain) throw new Error('圖例缺少聽說或 MNDP 註記');
     const hs = sw(hearsay)[0]; const ds = sw(domain)[0];

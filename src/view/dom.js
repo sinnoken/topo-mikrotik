@@ -18,6 +18,12 @@
         else el.setAttribute(k, v === true ? '' : v);
       });
     }
+    if (tag === 'a' && attrs && String(attrs.class || '').split(/\s+/).includes('link') && !Object.prototype.hasOwnProperty.call(attrs, 'href')) {
+      el.setAttribute('role', 'link'); el.setAttribute('tabindex', '0');
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); }
+      });
+    }
     (Array.isArray(children) ? children : children === undefined ? [] : [children]).forEach((c) => {
       if (c === null || c === undefined || c === false) return;
       el.appendChild(typeof c === 'string' || typeof c === 'number' ? document.createTextNode(String(c)) : c);
@@ -46,7 +52,13 @@
     const o = opt || {};
     const tb = V.h('tbody');
     rows.slice(0, o.limit || rows.length).forEach((r) => {
-      tb.appendChild(V.h('tr', { class: [o.onRow ? 'click' : '', o.bad && o.bad(r) ? 'bad' : ''].join(' '), onclick: o.onRow ? () => o.onRow(r) : null },
+      const activate = o.onRow ? () => o.onRow(r) : null;
+      tb.appendChild(V.h('tr', {
+        class: [activate ? 'click' : '', o.bad && o.bad(r) ? 'bad' : ''].join(' '),
+        onclick: activate,
+        tabindex: activate ? '0' : null,
+        onkeydown: activate ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } } : null,
+      },
         cols.map((c) => V.h('td', { class: c.cls || null }, c.f(r)))));
     });
     const t = V.h('table', { class: 't' }, [V.h('thead', null, V.h('tr', null, cols.map((c, n) => V.h('th', c.s && o.onSort ? { class: 'sortable', title: '點一下排序', onclick: () => o.onSort(n) } : null, c.t + (o.sortBy === n ? (o.sortDir < 0 ? ' ▼' : ' ▲') : ''))))), tb]);

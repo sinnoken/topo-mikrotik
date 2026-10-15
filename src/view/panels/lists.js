@@ -7,6 +7,7 @@
 
   // ---------------------------------------------------------------- 檢查結果
   const state = { sev: { error: true, warn: true, info: true }, open: new Set(), shown: new Map(), selected: -1 };
+  const activateByKey = (fn) => (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); } };
   function findings(App) {
     const root = V.clear(V.$('#pane-findings'));
     if (!App.snap) return root.appendChild(h('div', { class: 'empty-detail' }, '建立基準後，資料之間的矛盾與缺漏會列在這裡。'));
@@ -19,12 +20,16 @@
     all.forEach((f, idx) => { if (state.sev[f.severity]) S.util.getOr(groups, f.id, () => []).push(idx); });
     groups.forEach((idxs, id) => {
       const c = S.check.CATALOG[id]; const open = state.open.has(id);
-      const g = h('div', { class: 'fgroup' }, [h('div', { class: 'head', onclick: () => { open ? state.open.delete(id) : state.open.add(id); findings(App); } }, [
+      const toggle = () => { open ? state.open.delete(id) : state.open.add(id); findings(App); };
+      const g = h('div', { class: 'fgroup' }, [h('div', { class: 'head', role: 'button', tabindex: '0', onclick: toggle, onkeydown: activateByKey(toggle) }, [
         h('span', null, open ? '▾' : '▸'), V.sevDot(c.severity), h('span', { class: 'title' }, c.title), h('span', { class: 'id' }, id), V.chip(String(idxs.length)),
       ])]);
       if (open) {
         const n = state.shown.get(id) || 100;
-        g.appendChild(h('div', { class: 'items' }, idxs.slice(0, n).map((i) => h('div', { class: 'fitem' + (state.selected === i ? ' sel' : ''), onclick: () => { state.selected = i; App.selectFinding(i); findings(App); } }, all[i].message))));
+        g.appendChild(h('div', { class: 'items' }, idxs.slice(0, n).map((i) => {
+          const select = () => { state.selected = i; App.selectFinding(i); findings(App); };
+          return h('div', { class: 'fitem' + (state.selected === i ? ' sel' : ''), role: 'button', tabindex: '0', onclick: select, onkeydown: activateByKey(select) }, all[i].message);
+        })));
         if (idxs.length > n) g.appendChild(h('a', { class: 'link more', onclick: () => { state.shown.set(id, n + 200); findings(App); } }, `再顯示 200 筆（共 ${idxs.length} 筆）`));
       }
       root.appendChild(g);

@@ -373,7 +373,14 @@
     // 圖例
     const lg = $('#legend');
     // 圖例的外形、顏色、線寬、虛線與透明度全部取自 theme，與 Canvas 繪圖同一來源
-    const item = (swatches, label) => lg.appendChild(h('div', { class: 'li' }, swatches.concat(label)));
+    // 分四類，預設收合只顯示標題列；細節說明放 title，避免圖例太長
+    const head = h('button', { class: 'legend-head', title: '展開／收合圖例' }, '圖例 ▸');
+    const body = h('div', { class: 'legend-body hidden' });
+    head.onclick = () => { const open = body.classList.contains('hidden'); body.classList.toggle('hidden', !open); head.textContent = open ? '圖例 ▾' : '圖例 ▸'; };
+    lg.appendChild(head); lg.appendChild(body);
+    let grp = null;
+    const group = (title) => { grp = h('div', { class: 'lg-group' }, [h('div', { class: 'lg-title' }, title)]); body.appendChild(grp); };
+    const item = (swatches, label, tip) => grp.appendChild(h('div', { class: 'li', title: tip || null }, swatches.concat(label)));
     const LEG = 12;
     const SHAPE_CSS = {
       shield: { clipPath: 'polygon(50% 0, 100% 22%, 90% 70%, 50% 100%, 10% 70%, 0 22%)' },
@@ -386,16 +393,20 @@
       borderTopWidth: '0', height: Math.max(2, Math.round(w)) + 'px', opacity: String(alpha == null ? 1 : alpha),
       background: dash ? `repeating-linear-gradient(90deg, ${color} 0 ${dash[0]}px, transparent ${dash[0]}px ${dash[0] + dash[1]}px)` : color,
     } });
+    group('設備');
     Object.entries(V.KIND).forEach(([k, label]) => item([dot(Object.assign({ background: V.KIND_COLOR[k] }, SHAPE_CSS[V.theme.shape[k]]))], label));
-    item([dot(Object.assign({ background: CV.uncollectedFill, border: '2px dashed ' + V.KIND_COLOR.unknown }, SHAPE_CSS.circle))], '未收集設備（虛線外框）');
+    item([dot(Object.assign({ background: CV.uncollectedFill, border: '2px dashed ' + V.KIND_COLOR.unknown }, SHAPE_CSS.circle))], '未收集', '基準裡沒有收集檔的設備（虛線外框）');
+    group('連線');
     Object.entries(V.EDGE_STYLE).forEach(([k, st]) => item([line(st.c, st.w, st.dash)], V.CLS[k]));
-    item([line(WEAK.color, V.EDGE_STYLE.other.w, WEAK.hearsay.dash, WEAK.hearsay.alpha)], '聽說（對端無 LLDP）');
-    item([line(WEAK.color, V.EDGE_STYLE.other.w, WEAK.domainOnly.dash, WEAK.domainOnly.alpha)], 'MNDP：同一 L2 網域可達，非直連確認');
-    item([dot({ background: EP.vendorFallback, border: '1.5px solid ' + CV.outline })], '未知對端（單一 MAC，依廠商上色）');
-    item([dot({ background: EP.downstream.fill, border: '2px dashed ' + EP.downstream.stroke, transform: 'rotate(45deg)', borderRadius: '0' })], '未知對端（多個 MAC）');
-    item([dot({ background: EP.cluster.fill, border: '1.5px solid ' + EP.cluster.stroke, width: Math.round(LEG * 1.3) + 'px', height: Math.round(LEG * 0.8) + 'px', borderRadius: '3px' })], '末端群組（×N，雙擊展開）');
-    Object.values(EP.byType).forEach((t) => item([line(t.c, V.EDGE_STYLE.other.w, WEAK.hearsay.dash, WEAK.hearsay.alpha)], t.label + ' 末端連線'));
-    item([h('span', { class: 'sev error' })], '有錯誤／警告');
+    group('連線註記');
+    item([line(WEAK.color, V.EDGE_STYLE.other.w, WEAK.hearsay.dash, WEAK.hearsay.alpha)], '聽說', '對端無 LLDP 鄰居資料');
+    item([line(WEAK.color, V.EDGE_STYLE.other.w, WEAK.domainOnly.dash, WEAK.domainOnly.alpha)], 'MNDP 同網域', 'MNDP：同一 L2 網域可達，非直連確認');
+    Object.values(EP.byType).forEach((t) => item([line(t.c, V.EDGE_STYLE.other.w, WEAK.hearsay.dash, WEAK.hearsay.alpha)], t.label, '連到 ' + t.label + ' 介面末端的連線'));
+    group('末端');
+    item([dot({ background: EP.vendorFallback, border: '1.5px solid ' + CV.outline })], '單一 MAC', '未知對端：一個埠一個 MAC，依廠商上色');
+    item([dot({ background: EP.downstream.fill, border: '2px dashed ' + EP.downstream.stroke, transform: 'rotate(45deg)', borderRadius: '0' })], '多 MAC', '未知對端：一個埠多個 MAC，疑似下游還有設備');
+    item([dot({ background: EP.cluster.fill, border: '1.5px solid ' + EP.cluster.stroke, width: Math.round(LEG * 1.3) + 'px', height: Math.round(LEG * 0.8) + 'px', borderRadius: '3px' })], '群組 ×N', '同一台設備末端過多時收合，雙擊展開');
+    item([h('span', { class: 'sev error' })], '錯誤／警告');
   }
   function bindTabs() {
     document.querySelectorAll('#left .tabs button').forEach((b) => b.addEventListener('click', () => {

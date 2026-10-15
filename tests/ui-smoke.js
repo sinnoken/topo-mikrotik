@@ -156,6 +156,11 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
       if (!m || m[1].toLowerCase() !== T.kind[k].toLowerCase()) throw new Error('--' + v + ' 與 theme.kind.' + k + ' 不一致');
     });
     const legend = Array.from(document.querySelectorAll('#legend .li'));
+    if (document.querySelectorAll('#legend .lg-group').length !== 4) throw new Error('圖例應分為四類');
+    if (!document.querySelector('#legend .legend-body').classList.contains('hidden')) throw new Error('圖例預設應收合');
+    document.querySelector('#legend .legend-head').click();
+    if (document.querySelector('#legend .legend-body').classList.contains('hidden')) throw new Error('點圖例標題應展開');
+    document.querySelector('#legend .legend-head').click();
     if (legend.length < Object.keys(T.edge).length + Object.keys(S.view.KIND).length) throw new Error('圖例缺項');
     const sw = (li) => li.childNodes.filter((c) => c.style && c.attrs.class);
     const kinds = Object.keys(S.view.KIND);
@@ -165,7 +170,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
       if (!l.style.background.includes(st.c) || l.style.height !== Math.max(2, Math.round(st.w)) + 'px') throw new Error('圖例連線色或線寬與 theme 不一致：' + k);
       if (!!st.dash !== l.style.background.includes('repeating-linear-gradient')) throw new Error('圖例連線虛線與 theme 不一致：' + k);
     });
-    const weak = legend.filter((li) => /MNDP：|聽說/.test(li.textContent)).map((li) => sw(li)[0].style.opacity);
+    const weak = legend.filter((li) => /MNDP|聽說/.test(li.textContent)).map((li) => sw(li)[0].style.opacity);
     if (weak.join() !== [T.weakEdge.hearsay.alpha, T.weakEdge.domainOnly.alpha].join()) throw new Error('圖例弱證據連線透明度與 theme 不一致');
   });
   await step('MNDP 圖例、提示與細節不暗示實體直連', async () => {
@@ -175,7 +180,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     const hash = S.util.hash(S.readers.PASTE + '\n' + input);
     for (let i = 0; i < 4000 && (!App.snap || App.snap.meta.inputHash !== hash); i++) await new Promise((r) => setTimeout(r, 5));
     if (App.snap.meta.inputHash !== hash) throw new Error('MNDP 基準未建立');
-    if (!text('#legend').includes('MNDP：同一 L2 網域可達')) throw new Error('MNDP 圖例未顯示');
+    if (!text('#legend').includes('MNDP 同網域')) throw new Error('MNDP 圖例未顯示');
     const p = Array.from(App.pairs.values()).find((x) => x.domainOnly);
     if (!p) throw new Error('MNDP device edge 未標記為 domain-only');
     App.graph.emit('hover', { item: { type: 'edge', id: p.id }, x: 0, y: 0 });

@@ -35,6 +35,7 @@
     const vlansById = new Map(); const vlansByDev = new Map();
     m.vlans.forEach((v) => { if (v.id != null) U.getOr(vlansById, v.id, () => []).push(v); U.getOr(vlansByDev, v.dev, () => []).push(v); });
     const routesByDev = new Map(); m.routes.forEach((r) => U.getOr(routesByDev, r.dev, () => []).push(r));
+    let inv = null;
     const unkByDev = new Map();
     m.interfaces.forEach((i) => { if (i.unknownPeer) U.getOr(unkByDev, i.dev, () => []).push(i); });
     const findingsBy = new Map();
@@ -58,6 +59,23 @@
       ipOwner: (ip) => ipOwner.get(ip) || null,
       subnets: () => subnets,
       devName(k) { const d = dev.get(k); return d ? (d.label || d.name) : k; },
+      // 清單與總覽的唯一數字來源：列資料與計數一起算，畫面不得自行重算
+      inventory() {
+        if (inv) return inv;
+        const macs = Q.macEntries(); const ips = Q.ipEntries(); const endpoints = Q.endpointEntries();
+        const macSet = (f) => new Set(macs.filter(f).map((r) => r.mac)).size;
+        inv = {
+          rows: { devices: m.devices, endpoints, interfaces: m.interfaces, ips, macs, vlans: m.vlans },
+          counts: {
+            devices: m.devices.length, collected: m.devices.filter((d) => d.collected).length, hosts: m.devices.filter((d) => d.kind === 'host').length,
+            endpoints: endpoints.length, endpointPorts: new Set(endpoints.map((e) => e.key)).size, interfaces: m.interfaces.length,
+            ips: ips.length, arpIps: ips.filter((r) => r.from.includes('ARP')).length, ownIps: ips.filter((r) => r.from.includes('介面') || r.from.includes('管理')).length,
+            heardIps: ips.filter((r) => r.from.includes('鄰居宣告')).length,
+            macs: macSet(() => true), macRows: macs.length, noIpMacs: macSet((r) => r.noIp), vlans: m.vlans.length, vlanIds: new Set(m.vlans.map((v) => v.id)).size,
+          },
+        };
+        return inv;
+      },
       // 每個 (MAC, 觀察到的介面) 一列；沒有任何介面觀察的 MAC（只出現在 ARP）設備與介面為 null
       macEntries() {
         const rows = [];
@@ -88,7 +106,7 @@
       // 末端：沒有 LLDP 鄰居的末端埠（未知對端）後面看到的每個 MAC 一列（一個埠後有多個 MAC 就有多列）；沒有 MAC 的埠仍保留一列
       endpointEntries() {
         return Q.unknownDevices().flatMap((d) => Q.unknownPeers(d).flatMap((u) => {
-          const base = { key: u.ep, dev: d, ifc: u.name, desc: u.desc, type: u.type, status: u.status, vlans: u.vlans, portMacs: u.macs.length };
+          const base = { end: true, key: u.ep, dev: d, ifc: u.name, desc: u.desc, type: u.type, status: u.status, vlans: u.vlans, portMacs: u.macs.length };
           return (u.macs.length ? u.macs : [null]).map((x) => Object.assign({ mac: x ? x.mac : null, ips: x ? x.ips : [], vendors: x && x.vendor ? [x.vendor] : [] }, base));
         }));
       },

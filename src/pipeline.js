@@ -115,10 +115,10 @@
 
     const macs = Array.from(M.macs.values()).map((m) => ({
       mac: m.mac, vendor: S.oui ? S.oui.lookup(m.mac) : null, ips: Array.from(m.ips).sort(nat),
-      seen: Array.from(m.seen.entries()).sort((x, y) => nat(x[0], y[0])), edge: m.edge || [],
+      seen: Array.from(m.seen.entries()).sort((x, y) => nat(x[0], y[0])), edge: m.edge || [], src: m.src,
     })).sort((a, b) => U.cmp(a.mac, b.mac));
 
-    const arps = M.arps.map((a) => ({ ip: a.ip, mac: a.mac, dev: a.dev, ifc: a.ifc, phys: a.phys }))
+    const arps = M.arps.map((a) => ({ ip: a.ip, mac: a.mac, dev: a.dev, ifc: a.ifc, phys: a.phys, src: [[a.block, a.line]] }))
       .sort((a, b) => nat(a.ip, b.ip) || nat(a.dev, b.dev) || U.cmp(a.mac, b.mac));
     const routes = M.routes.map((r) => ({ dev: r.dev, prefix: r.prefix, len: r.len, proto: r.proto, nh: r.nh, src: [[r.block, r.line]] }))
       .sort((a, b) => nat(a.dev, b.dev) || nat(a.prefix, b.prefix) || a.len - b.len);

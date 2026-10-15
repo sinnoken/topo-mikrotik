@@ -318,6 +318,25 @@ test('未知對端：有 MAC、沒有 LLDP 鄰居的末端埠才會標記；有�
   assert.ok(rows.every((r) => r.macs.length === 1 && /^10\.1\.30\./.test(r.macs[0].ips[0]) && r.macs[0].vendor), '應帶有 ARP 的 IP 與 OUI 廠商');
   assert.ok(!Q.unknownDevices().includes('TPE_ACC_SW_09'), '沒有 MAC 表的設備不會有未知對端');
 });
+test('清單：Q.inventory 的列與計數一致，且與基準統計對得上', () => {
+  const s = build(read('samples/sample-bundle.txt')); const { rows, counts: C } = S.query(s).inventory();
+  const st = s.meta.stats;
+  assert.deepStrictEqual([C.devices, C.interfaces, C.macs, C.vlans], [st.devices, st.interfaces, st.macs, st.vlans]);
+  assert.strictEqual(new Set(rows.ips.map((r) => r.ip)).size, rows.ips.length, 'IP 清單必須去重複');
+  assert.strictEqual(C.arpIps, new Set(s.model.arps.map((a) => a.ip)).size);
+  assert.strictEqual(new Set(rows.macs.map((r) => r.mac)).size, C.macs);
+  assert.strictEqual(C.endpointPorts, s.model.interfaces.filter((i) => i.unknownPeer).length, '每個未知對端介面至少一列');
+  assert.ok(rows.endpoints.every((e) => e.end === true) && rows.devices.every((d) => !d.end));
+  assert.deepStrictEqual(S.query(s).inventory().counts, C, '相同輸入結果相同');
+});
+test('可追溯：MAC、ARP 與已收集設備的介面都帶來源', () => {
+  const s = build(read('samples/sample-bundle.txt')); const m = s.model;
+  assert.ok(m.macs.every((x) => x.src.length && x.src.every(([b, l]) => b != null && l > 0)), '每個 MAC 都要有來源');
+  assert.ok(m.arps.every((a) => a.src.length === 1 && a.src[0][1] > 0), '每筆 ARP 都要有來源');
+  const collected = new Set(m.devices.filter((d) => d.collected).map((d) => d.key));
+  const lost = m.interfaces.filter((i) => collected.has(i.dev) && !i.hearsay && !i.src.length).map((i) => i.key);
+  assert.deepStrictEqual(lost, [], '已收集設備的介面不可沒有來源');
+});
 test('未知對端：一個埠學到多個 MAC 時回報多筆（疑似下游還有設備）', () => {
   const mac = (n) => ` ${n} D mac-address=AA:BB:CC:00:00:0${n} on-interface=ether5 bridge=bridge1 vid=30 age=3s`;
   const s = build(['SW_A (10.0.0.1):', '### /interface bridge host print detail', mac(1), mac(2), mac(3)].join('\n'));

@@ -88,15 +88,15 @@
         case 'vmem': M.vmems.push(f); break;
         case 'mac': {
           const mk = K.mac(f.mac); if (!mk) break;
-          const i = iface(M, f.dev, f.ifc); i.macs.add(mk); if (!i.status) i.status = 'up';
-          const m = getOr(M.macs, mk, () => ({ mac: mk, seen: new Map(), ips: new Set() }));
-          m.seen.set(i.key, f.vlan || null);
+          const i = iface(M, f.dev, f.ifc); i.macs.add(mk); if (!i.status) i.status = 'up'; addSrc(i, f);
+          const m = getOr(M.macs, mk, () => ({ mac: mk, seen: new Map(), ips: new Set(), src: [] }));
+          m.seen.set(i.key, f.vlan || null); addSrc(m, f);
           break;
         }
         case 'arp': {
           const mk = K.mac(f.mac); if (!mk) break;
           M.arps.push({ ip: f.ip, mac: mk, dev: f.dev, ifc: K.ifc(f.ifc), phys: f.phys ? K.ifc(f.phys) : null, block: f.block, line: f.line });
-          getOr(M.macs, mk, () => ({ mac: mk, seen: new Map(), ips: new Set() })).ips.add(f.ip);
+          const am = getOr(M.macs, mk, () => ({ mac: mk, seen: new Map(), ips: new Set(), src: [] })); am.ips.add(f.ip); addSrc(am, f);
           break;
         }
         case 'route':

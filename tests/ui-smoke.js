@@ -144,6 +144,11 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
   });
   await step('原文檢視', () => { App.openRaw(S.readers.PASTE, 10); if (!$('#dlg-raw').open || !text('#raw-body').includes('/export')) throw new Error('原文未顯示'); });
   await step('清單分頁列出設備、介面、MAC、VLAN，並可篩缺 IP；總覽顯示去重複的 IP（ARP）', () => {
+    const C = App.Q.inventory().counts; const st = App.snap.meta.stats;
+    const same = [['devices', st.devices], ['interfaces', st.interfaces], ['macs', st.macs], ['vlans', st.vlans]];
+    same.forEach(([k, v]) => { if (C[k] !== v) throw new Error(`清單與總覽的 ${k} 不一致：${C[k]} vs ${v}`); });
+    if (C.arpIps !== new Set(App.snap.model.arps.map((x) => x.ip)).size) throw new Error('IP（ARP）應為去重複的 ARP IP 數');
+    if (C.ips < C.arpIps || C.ips !== new Set(App.Q.inventory().rows.ips.map((r) => r.ip)).size) throw new Error('IP 清單應去重複且涵蓋 ARP');
     const rows = App.Q.macEntries(); if (!rows.length) throw new Error('清單應有資料');
     const noIp = App.snap.model.macs.filter((x) => !x.ips.length).length;
     if (rows.filter((r) => r.noIp).length < noIp) throw new Error('缺 IP 筆數不符');

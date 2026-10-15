@@ -88,12 +88,12 @@
   function inventory(App) {
     const root = V.clear(V.$('#pane-inventory'));
     if (!App.snap) return root.appendChild(h('div', { class: 'empty-detail' }, '建立基準後，所有設備、介面、IP、MAC 與 VLAN 會列在這裡。'));
-    const Q = App.Q; const m = App.snap.model; const ipRows = Q.ipEntries(); const macRows = Q.macEntries();
-    const ends = Q.endpointEntries(); const devRows = m.devices.concat(ends.map((e) => Object.assign({ end: true }, e)));
-    const nMac = new Set(macRows.map((r) => r.mac)).size; // 清單一個 MAC 可能有多列（每個觀察到它的介面一列）
+    const Q = App.Q; const { rows: R, counts: C } = Q.inventory(); // 列與數字都來自 Q.inventory()，這裡不重算
+    const devRows = R.devices.concat(R.endpoints);
     const nameOf = (r) => (r.end ? (r.portMacs < 2 && r.desc) || r.vendors[0] || (r.mac ? K.macPretty(r.mac) : '?') : Q.devName(r.key));
     const ipOf = (r) => (r.end ? r.ips[0] : r.mgmtIp); const vendorOf = (r) => (r.end ? r.vendors.join(' / ') : r.vendor);
     const dn = (d) => (d ? Q.devName(d) : '—'); const mono = (t) => h('span', { class: 'mono' }, t || '—');
+    const TAB_COUNT = { device: C.devices + C.endpoints, interface: C.interfaces, ip: C.ips, mac: C.macs, vlan: C.vlans };
     const T = {
       device: ['設備', devRows, [
         { t: '設備', f: (r) => nameOf(r), s: nameOf }, { t: '類型', f: (r) => (r.end ? V.chip('末端', 'kind-unknown') : V.kindChip(r.kind)), s: (r) => (r.end ? '末端' : V.KIND[r.kind] || r.kind) },
@@ -101,36 +101,34 @@
         { t: '連接於', f: (r) => (r.end ? `${dn(r.dev)} ${r.ifc}` : ''), s: (r) => (r.end ? dn(r.dev) + ' ' + r.ifc : null) },
         { t: '收集', f: (r) => (r.end ? '' : r.collected ? '是' : '否'), s: (r) => (r.end ? null : r.collected ? '是' : '否') }],
       (r) => (r.end ? { type: 'interface', key: r.key } : { type: 'device', key: r.key }), (r) => [nameOf(r), ipOf(r), vendorOf(r), r.kind, r.end ? dn(r.dev) + ' ' + r.ifc : null]],
-      interface: ['介面', m.interfaces, [
+      interface: ['介面', R.interfaces, [
         { t: '設備', f: (r) => dn(r.dev), s: (r) => dn(r.dev) }, { t: '介面', f: (r) => mono(r.name), s: (r) => r.name }, { t: '狀態', f: (r) => r.status, s: (r) => r.status },
         { t: 'IP', f: (r) => mono(r.ips.slice(0, 2).join(' ')), s: (r) => r.ips[0] }, { t: 'VLAN', f: (r) => h('span', { class: 'vlanlist' }, r.vlans.length ? S.check.fmtVlans(r.vlans) : '—'), s: (r) => r.vlans.join(' ') }],
       (r) => ({ type: 'interface', key: r.key }), (r) => [dn(r.dev), r.name, r.desc, r.ips.join(' '), r.vlans.join(' ')]],
-      ip: ['IP', ipRows, [
+      ip: ['IP', R.ips, [
         { t: 'IP', f: (r) => mono(r.ip), s: (r) => r.ip }, { t: '設備', f: (r) => dn(r.dev), s: (r) => r.dev && dn(r.dev) }, { t: '介面', f: (r) => mono(r.ifc), s: (r) => r.ifc },
         { t: 'MAC', f: (r) => mono(r.macs.slice(0, 2).map(K.macPretty).join(' ')), s: (r) => r.macs[0] }, { t: '來源', f: (r) => r.from.join('、'), s: (r) => r.from.join('、') }],
       (r) => ({ type: 'ip', key: r.ip }), (r) => [r.ip, dn(r.dev), r.ifc, r.macs.map(K.macPretty).join(' ')]],
-      mac: ['MAC', macRows, [
+      mac: ['MAC', R.macs, [
         { t: '設備', f: (r) => dn(r.dev), s: (r) => r.dev && dn(r.dev) }, { t: '介面', f: (r) => mono(r.ifc), s: (r) => r.ifc }, { t: 'MAC', f: (r) => mono(K.macPretty(r.mac)), s: (r) => r.mac },
         { t: 'VLAN', f: (r) => r.vlan || '—', s: (r) => r.vlan }, { t: 'IP', f: (r) => (r.ips.length ? r.ips.slice(0, 2).join(' ') : V.chip('缺 IP', 'warn')), s: (r) => r.ips[0] }],
       (r) => ({ type: 'mac', key: r.mac }), (r) => [dn(r.dev), r.ifc, K.macPretty(r.mac), r.vlan, r.ips.join(' ')]],
-      vlan: ['VLAN', m.vlans, [
+      vlan: ['VLAN', R.vlans, [
         { t: '設備', f: (r) => dn(r.dev), s: (r) => dn(r.dev) }, { t: 'VLAN', f: (r) => (r.id == null ? '—' : String(r.id)), s: (r) => r.id }, { t: '名稱', f: (r) => r.name || r.desc || '', s: (r) => r.name || r.desc },
         { t: '成員', f: (r) => String(r.members.length), s: (r) => r.members.length }],
       (r) => (r.id == null ? { type: 'device', key: r.dev } : { type: 'vlan', key: String(r.id) }), (r) => [dn(r.dev), r.id, r.name, r.desc]],
     };
-    root.appendChild(h('div', { class: 'summary' }, Object.entries(T).map(([k, [label, rows]]) => V.chip(`${label} ${k === 'mac' ? nMac : rows.length}`, `btn ${inv.kind === k ? 'on' : ''}`, {
+    root.appendChild(h('div', { class: 'summary' }, Object.entries(T).map(([k, [label]]) => V.chip(`${label} ${TAB_COUNT[k]}`, `btn ${inv.kind === k ? 'on' : ''}`, {
       onclick: () => { inv.kind = k; inv.filter = 'all'; inv.sortBy = -1; inv.sortDir = 1; inventory(App); }, title: label + '清單' }))));
     const [, rows0, cols, sel, text] = T[inv.kind];
     const FILTERS = {
-      ip: [['all', '全部', () => true], ['arp', 'ARP', (r) => r.from.includes('ARP')], ['own', '設備自有', (r) => r.from.some((x) => x === '介面' || x === '管理')], ['heard', '鄰居宣告', (r) => r.from.includes('鄰居宣告')]],
-      mac: [['all', '全部', () => true], ['noip', '缺 IP', (r) => r.noIp]],
-      device: [['all', '全部', () => true], ['net', '網路設備', (r) => !r.end && r.kind !== 'host'], ['host', '主機', (r) => !r.end && r.kind === 'host'], ['end', '末端', (r) => r.end]],
+      ip: [['all', '全部', () => true, C.ips], ['arp', 'ARP', (r) => r.from.includes('ARP'), C.arpIps], ['own', '設備自有', (r) => r.from.some((x) => x === '介面' || x === '管理'), C.ownIps], ['heard', '鄰居宣告', (r) => r.from.includes('鄰居宣告'), C.heardIps]],
+      mac: [['all', '全部', () => true, C.macs], ['noip', '缺 IP', (r) => r.noIp, C.noIpMacs]],
+      device: [['all', '全部', () => true, C.devices + C.endpoints], ['net', '網路設備', (r) => !r.end && r.kind !== 'host', C.devices - C.hosts], ['host', '主機', (r) => !r.end && r.kind === 'host', C.hosts], ['end', '末端', (r) => r.end, C.endpoints]],
     };
     const flt = FILTERS[inv.kind];
     if (flt) {
-      const uniq = (k, rows) => (k === 'mac' ? new Set(rows.map((r) => r.mac)).size : rows.length);
-      const base = { mac: macRows, ip: ipRows, device: devRows }[inv.kind];
-      root.appendChild(h('div', { class: 'summary' }, flt.map(([k, label, f]) => { const c = uniq(inv.kind, base.filter(f));
+      root.appendChild(h('div', { class: 'summary' }, flt.map(([k, label, , c]) => {
         return V.chip(`${label} ${c}`, `btn ${k === 'noip' && c ? 'warn' : ''} ${inv.filter === k ? 'on' : ''}`, { onclick: () => { inv.filter = k; inventory(App); }, title: '點一下切換篩選' }); })));
     }
     const box = h('input', { type: 'search', placeholder: '篩選：名稱、IP、MAC、VLAN…', value: inv.q, class: 'pane-filter' });
@@ -144,7 +142,7 @@
         rows.sort((a, b) => { const x = val(a); const y = val(b); if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
           return (typeof x === 'number' && typeof y === 'number' ? x - y : S.util.natural(String(x), String(y))) * inv.sortDir; });
       }
-      const note = inv.kind === 'mac' ? `共 ${rows.length} 列（同一個 MAC 在每個觀察到的介面各一列，不重複的 MAC ${new Set(rows.map((r) => r.mac)).size} 個）` : inv.kind === 'vlan' ? `共 ${rows.length} 筆（每台設備的每個 VLAN 定義一筆，不重複的 VLAN ID ${new Set(rows.map((r) => r.id)).size} 個）` : '';
+      const note = inv.kind === 'mac' ? `共 ${C.macRows} 列（同一個 MAC 在每個觀察到的介面各一列，不重複的 MAC ${C.macs} 個）` : inv.kind === 'vlan' ? `共 ${C.vlans} 筆（每台設備的每個 VLAN 定義一筆，不重複的 VLAN ID ${C.vlanIds} 個）` : '';
       V.clear(body); if (note) body.appendChild(h('div', { class: 'muted', style: { padding: '4px 8px' } }, note));
       body.appendChild(V.table(cols, rows, { onRow: (r) => App.select(sel(r), { focus: true }), limit: 500, sortBy: sc ? inv.sortBy : -1, sortDir: inv.sortDir,
         onSort: (n) => { inv.sortDir = inv.sortBy === n ? -inv.sortDir : 1; inv.sortBy = n; draw(); } }));

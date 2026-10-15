@@ -58,6 +58,16 @@
       ipOwner: (ip) => ipOwner.get(ip) || null,
       subnets: () => subnets,
       devName(k) { const d = dev.get(k); return d ? (d.label || d.name) : k; },
+      // 每個 (MAC, 觀察到的介面) 一列；沒有任何介面觀察的 MAC（只出現在 ARP）設備與介面為 null
+      macEntries() {
+        const rows = [];
+        m.macs.forEach((x) => {
+          const base = { mac: x.mac, vendor: x.vendor, ips: x.ips, noIp: !x.ips.length };
+          if (!x.seen.length) rows.push(Object.assign({ ep: null, dev: null, ifc: null, vlan: null }, base));
+          x.seen.forEach(([ep, vlan]) => { const [d, i] = K.splitEp(ep); const f = ifc.get(ep); rows.push(Object.assign({ ep, dev: d, ifc: f ? f.name : i, vlan }, base)); });
+        });
+        return rows;
+      },
       epName(ep) { const [d, i] = K.splitEp(ep); const x = ifc.get(ep); return Q.devName(d) + ' ' + (x ? x.name : i); },
       findingsFor(type, key) { return (findingsBy.get(type + ':' + key) || []).map((i) => snap.findings[i]); },
       findingIndexesFor(type, key) { return findingsBy.get(type + ':' + key) || []; },

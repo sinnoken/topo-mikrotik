@@ -3,7 +3,7 @@
  */
 (function (S) {
   'use strict';
-  const V = S.view; const h = V.h;
+  const V = S.view; const h = V.h; const K = S.keys;
 
   // ---------------------------------------------------------------- 檢查結果
   const state = { sev: { error: true, warn: true, info: true }, open: new Set(), shown: new Map(), selected: -1 };
@@ -83,5 +83,30 @@
   }
   compare.reset = () => { cmp.report = null; cmp.name = ''; };
 
-  V.lists = { findings, coverage, compare };
+  // ---------------------------------------------------------------- 清單：每個 (設備, 介面, MAC, VLAN) 一列
+  const mac = { filter: 'all', q: '' };
+  function macs(App) {
+    const root = V.clear(V.$('#pane-macs'));
+    if (!App.snap) return root.appendChild(h('div', { class: 'empty-detail' }, '建立基準後，所有 MAC 與其設備、介面、VLAN 會列在這裡。'));
+    const Q = App.Q; const all = Q.macEntries(); const noIp = all.filter((r) => r.noIp);
+    const F = { all: ['全部', all], noip: ['缺 IP', noIp] };
+    root.appendChild(h('div', { class: 'summary' }, Object.entries(F).map(([k, [label, list]]) => V.chip(`${label} ${list.length}`, `btn ${k === 'noip' && list.length ? 'warn' : ''} ${mac.filter === k ? 'on' : ''}`, {
+      onclick: () => { mac.filter = k; macs(App); }, title: '點一下切換篩選' }))));
+    const box = h('input', { type: 'search', placeholder: '篩選：設備、介面、MAC、VLAN、IP', value: mac.q, class: 'pane-filter' });
+    const body = h('div');
+    const draw = () => {
+      const t = mac.q.trim().toLowerCase();
+      const rows = F[mac.filter][1].filter((r) => !t || [r.dev ? Q.devName(r.dev) : '', r.ifc || '', K.macPretty(r.mac), r.vlan || '', r.ips.join(' ')].join(' ').toLowerCase().includes(t));
+      V.clear(body).appendChild(V.table([
+        { t: '設備', f: (r) => (r.dev ? Q.devName(r.dev) : '—') },
+        { t: '介面', f: (r) => h('span', { class: 'mono' }, r.ifc || '—') },
+        { t: 'MAC', f: (r) => h('span', { class: 'mono' }, K.macPretty(r.mac)) },
+        { t: 'VLAN', f: (r) => r.vlan || '—' },
+        { t: 'IP', f: (r) => (r.ips.length ? r.ips.slice(0, 2).join(' ') : V.chip('缺 IP', 'warn')) },
+      ], rows, { onRow: (r) => App.select({ type: 'mac', key: r.mac }, { focus: true }), limit: 500 }));
+    };
+    box.addEventListener('input', () => { mac.q = box.value; draw(); });
+    root.appendChild(box); root.appendChild(body); draw();
+  }
+  V.lists = { findings, coverage, compare, macs };
 })(globalThis.SSOT = globalThis.SSOT || {});

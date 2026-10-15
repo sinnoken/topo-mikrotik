@@ -21,7 +21,7 @@
     App.graph.on('hover', onHover);
     let saveT = null;
     App.graph.on('moved', () => { clearTimeout(saveT); saveT = setTimeout(savePositions, 600); App.graph.computeGroups(); });
-    bindHeader(); bindToolbar(); bindInputDialog(); bindTabs();
+    bindHeader(); bindToolbar(); bindInputDialog(); bindTabs(); await bindResizers();
     if (!(await S.store.available())) banner('這個瀏覽器無法使用本機儲存，關閉頁面後基準不會保留。');
     const last = await S.store.get('last').catch(() => null);
     if (last && last.snapshot && last.snapshot.meta && last.snapshot.meta.schema === S.SCHEMA) {
@@ -408,6 +408,32 @@
     item([dot({ background: EP.cluster.fill, border: '1.5px solid ' + EP.cluster.stroke, width: Math.round(LEG * 1.3) + 'px', height: Math.round(LEG * 0.8) + 'px', borderRadius: '3px' })], '群組 ×N', '同一台設備末端過多時收合，雙擊展開');
     item([h('span', { class: 'sev error' })], '錯誤／警告');
   }
+  // 左右欄寬度是檢視狀態：存在獨立的 'layout' 鍵，清除基準時不受影響
+  const PANE = { min: 240, centerMin: 320, def: { left: 330, right: 400 } };
+  async function bindResizers() {
+    const main = $('#main'); const sides = { left: $('#left'), right: $('#right') };
+    const saved = (await S.store.get('layout').catch(() => null)) || {};
+    App.layout = { left: PANE.def.left, right: PANE.def.right };
+    const clamp = (side, w) => {
+      const other = App.layout[side === 'left' ? 'right' : 'left']; const total = window.innerWidth || Infinity;
+      return Math.round(Math.max(PANE.min, Math.min(w, total - other - PANE.centerMin)));
+    };
+    const apply = () => { main.style.gridTemplateColumns = `${App.layout.left}px 1fr ${App.layout.right}px`; };
+    ['left', 'right'].forEach((side) => { if (Number.isFinite(saved[side])) App.layout[side] = clamp(side, saved[side]); });
+    apply();
+    const persist = () => S.store.set('layout', Object.assign({}, App.layout)).catch(() => {});
+    ['left', 'right'].forEach((side) => {
+      const grip = h('div', { class: 'grip grip-' + side, title: '拖曳調整寬度，雙擊還原' });
+      sides[side].appendChild(grip);
+      grip.addEventListener('mousedown', (e) => {
+        e.preventDefault(); const x0 = e.clientX; const w0 = App.layout[side];
+        const move = (ev) => { App.layout[side] = clamp(side, w0 + (side === 'left' ? 1 : -1) * (ev.clientX - x0)); apply(); };
+        const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); grip.classList.remove('on'); persist(); };
+        grip.classList.add('on'); document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+      });
+      grip.addEventListener('dblclick', () => { App.layout[side] = clamp(side, PANE.def[side]); apply(); persist(); });
+    });
+  }
   function bindTabs() {
     document.querySelectorAll('#left .tabs button').forEach((b) => b.addEventListener('click', () => {
       document.querySelectorAll('#left .tabs button').forEach((x) => x.classList.toggle('on', x === b));
@@ -507,7 +533,7 @@
       f.appendChild(h('span', { class: 'mono' }, `輸入指紋 ${m.inputHash}`));
       f.appendChild(h('span', null, `版本 ${m.version}`));
     } else f.appendChild(h('span', null, `網路基準 ${S.VERSION}・資料只在這個瀏覽器處理，不會傳到任何地方`));
-    V.lists.findings(App); V.lists.coverage(App); V.lists.compare(App);
+    V.lists.findings(App); V.lists.coverage(App); V.lists.compare(App); V.lists.macs(App);
     V.details.render(App, App.sel);
   }
   App.openInput = openInput;

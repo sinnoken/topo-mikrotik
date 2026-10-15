@@ -54,7 +54,8 @@ const body = new El('body'); parseHtml(html.split('<body>')[1], body);
 const docListeners = {};
 const document = { body, activeElement: body, createElement: (t) => new El(t), createTextNode: (t) => new Text_(t),
   getElementById: (id) => body.querySelector('#' + id), querySelector: (s) => body.querySelector(s), querySelectorAll: (s) => body.querySelectorAll(s),
-  addEventListener: (t, f) => (docListeners[t] = docListeners[t] || []).push(f) };
+  addEventListener: (t, f) => (docListeners[t] = docListeners[t] || []).push(f),
+  removeEventListener: (t, f) => { docListeners[t] = (docListeners[t] || []).filter((x) => x !== f); } };
 let rafQ = [];
 const ctx = Object.assign(globalThis, {
   document, window: globalThis, devicePixelRatio: 1, ResizeObserver: class { observe() {} },
@@ -142,6 +143,14 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     App.graph.draw();
   });
   await step('原文檢視', () => { App.openRaw(S.readers.PASTE, 10); if (!$('#dlg-raw').open || !text('#raw-body').includes('/export')) throw new Error('原文未顯示'); });
+  await step('清單分頁列出設備、介面、MAC、VLAN，並可篩缺 IP；總覽顯示缺 IP 數', () => {
+    const rows = App.Q.macEntries(); if (!rows.length) throw new Error('清單應有資料');
+    const noIp = App.snap.model.macs.filter((x) => !x.ips.length).length;
+    if (rows.filter((r) => r.noIp).length < noIp) throw new Error('缺 IP 筆數不符');
+    document.querySelectorAll('#left .tabs button')[2].click();
+    const t = text('#pane-macs'); if (!t.includes('設備') || !t.includes('介面') || !t.includes('MAC') || !t.includes('VLAN') || !t.includes('缺 IP ' + rows.filter((r) => r.noIp).length)) throw new Error('清單欄位或缺 IP 摘要不正確');
+    App.select(null); if (!text('#detail').includes('缺 IP 的 MAC') && !text('#right').includes('缺 IP 的 MAC')) throw new Error('總覽缺少缺 IP 數');
+  });
   await step('覆蓋率分頁', () => { document.querySelectorAll('#left .tabs button')[1].click(); if (!text('#pane-coverage').includes(process.env.SMOKE_INPUT ? '有缺漏 0' : '有缺漏 1')) throw new Error('覆蓋率摘要不正確'); });
   await step('比對分頁', async () => {
     const inp = $('#pane-compare').querySelector('input'); inp.files = [{ name: 'expected-sample.json', text: async () => fs.readFileSync(path.join(ROOT, 'samples/expected-sample.json'), 'utf8') }];
@@ -311,6 +320,19 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (!we || !le || we.ifStyle.c !== wc || le.ifStyle.c !== wc || ee.ifStyle) throw new Error('Wi-Fi 連線應帶專用色，其他連線不變');
     if (!/Wi-Fi/.test(w.tip)) throw new Error('提示應標示 Wi-Fi');
     if (!Array.from(document.querySelectorAll('#legend .li')).some((el) => /Wi-Fi/.test(el.textContent))) throw new Error('圖例缺少 Wi-Fi');
+  });
+  await step('左右欄可拖曳調整寬度，且有下限與上限', async () => {
+    const grip = document.querySelector('#left .grip-left'); const rgrip = document.querySelector('#right .grip-right');
+    if (!grip || !rgrip) throw new Error('缺少拖曳把手');
+    const fire = (t, ev) => (docListeners[t] || []).slice().forEach((f) => f(ev));
+    const drag = (g, x0, x1) => { g.dispatch('mousedown', { clientX: x0 }); fire('mousemove', { clientX: x1 }); fire('mouseup', {}); };
+    const w0 = App.layout.left; drag(grip, 330, 330 + 100);
+    if (App.layout.left !== w0 + 100 || !$('#main').style.gridTemplateColumns.startsWith((w0 + 100) + 'px')) throw new Error('左欄應加寬 100px');
+    drag(grip, 500, -5000); if (App.layout.left !== 240) throw new Error('左欄不應小於下限');
+    const r0 = App.layout.right; drag(rgrip, 1000, 900);
+    if (App.layout.right !== r0 + 100) throw new Error('右欄往左拖應加寬');
+    rgrip.dispatch('dblclick'); if (App.layout.right !== 400) throw new Error('雙擊應還原預設寬度');
+    grip.dispatch('dblclick');
   });
   await step('清除基準', async () => { $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20)); if (App.snap) throw new Error('未清除'); });
   console.log(steps.join('\n'));

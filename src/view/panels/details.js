@@ -48,12 +48,12 @@
   function overview(App) {
     const m = App.snap.meta; const st = m.stats;
     return h('div', { class: 'detail' }, [
-      h('h2', null, '基準總覽'),
+      h('h2', null, '總覽'),
       kv([['建立時間', V.fmtTime(m.createdAt)], ['輸入指紋', h('span', { class: 'mono' }, m.inputHash)], ['命名規則', m.profile ? `${m.profile.id} v${m.profile.version}` : '未套用'],
         ['來源', m.sources.map((s) => `${s.name}（${V.num(s.bytes)} 字元）`).join('、')]]),
       sec('內容'),
       kv([['設備', `${V.num(st.devices)}（已收集 ${V.num(st.collected)}）`], ['介面', V.num(st.interfaces)], ['連結', V.num(st.links)], ['VLAN 定義', V.num(st.vlans)],
-        ['MAC', V.num(st.macs)], ['ARP', V.num(st.arps)], ['路由', V.num(st.routes)]]),
+        ['MAC', V.num(st.macs)], ['缺 IP 的 MAC', V.num(App.snap.model.macs.filter((x) => !x.ips.length).length)], ['ARP', V.num(st.arps)], ['路由', V.num(st.routes)]]),
       sec('檢查結果'),
       h('div', { class: 'row' }, [V.chip(`錯誤 ${st.findings.error}`, 'err'), V.chip(`警告 ${st.findings.warn}`, 'warn'), V.chip(`提醒 ${st.findings.info}`, 'info')]),
       sec('解析器使用量'),

@@ -320,7 +320,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (!text('#detail').includes('OSPF L3 鄰接（非實體直連）')) throw new Error('設備細節沒有顯示獨立 OSPF 鄰接');
     if (!text('#detail').includes('第 5 行')) throw new Error('OSPF 細節沒有來源行連結');
   });
-  await step('CAPsMAN Wi-Fi 多 MAC 保留菱形提示但不列末端', async () => {
+  await step('CAPsMAN Wi-Fi 多 MAC 保留菱形提示，MAC 位置列入末端清單', async () => {
     const input = 'SW_A (10.0.0.1):\n### /interface print detail\n'
       + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
       + ' 7    RS ;;; managed by CAPsMAN, traffic processing on\n'
@@ -342,7 +342,12 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (!wifis.every((i) => i.status === 'up' && !i.unknownPeer && !i.edge && i.macs.length === 2)) throw new Error('Wi-Fi 不應列為末端介面');
     const diamonds = App.graph.nodes.filter((n) => n.kind === 'downstream' && n.parent === 'SW_A');
     if (diamonds.length !== 2 || !diamonds.every((n) => n.id === '?p|SW_A|wifi1' || n.id === '?p|SW_A|wifi8')) throw new Error('Wi-Fi 多 MAC 應保留菱形圖面提示');
-    if (App.Q.inventory().rows.endpoints.some((r) => r.ifc === 'wifi1' || r.ifc === 'wifi8')) throw new Error('Wi-Fi 圖面提示不可列入末端清單');
+    const wifiRows = App.Q.inventory().rows.endpoints.filter((r) => r.wifi);
+    if (wifiRows.length !== 4 || !wifiRows.every((r) => ['wifi1', 'wifi8'].includes(r.ifc))) throw new Error('每個 Wi-Fi MAC 觀察位置都應列入末端清單');
+    if (App.snap.findings.some((f) => f.id === 'A02')) throw new Error('Wi-Fi 漫遊 MAC 位置不應觸發 A02');
+    App.select({ type: 'endpoints', dev: 'SW_A' });
+    const detail = text('#detail');
+    if (!detail.includes('14:63:93:c4:13:24') || !detail.includes('18:f0:e4:ff:ef:35')) throw new Error('設備詳情應逐筆顯示 Wi-Fi MAC 位置');
   });
   await step('veth 連線以專用顏色識別', async () => {
     const input = 'SW_A (10.0.0.1):\n### /interface print detail\n'
@@ -364,7 +369,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (!/容器 veth/.test(v.tip)) throw new Error('提示應標示容器 veth');
     if (!Array.from(document.querySelectorAll('#legend .li')).some((el) => /容器 veth/.test(el.textContent))) throw new Error('圖例缺少 veth');
   });
-  await step('Wi-Fi 不列為末端；單 MAC 有線埠仍列入', async () => {
+  await step('Wi-Fi 介面不列為末端；MAC 位置與單 MAC 有線埠均列入清單', async () => {
     const input = 'SW_A (10.0.0.1):\n### /interface print detail\n'
       + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
       + ' 0  R  name="wifi1" type="wifi" mtu=1500\n'
@@ -388,6 +393,8 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
       || !endpoints.filter((n) => n.kind === 'downstream').every((n) => n.id === '?p|SW_A|wifi1' || n.id === '?p|SW_A|wlan1')) {
       throw new Error('Wi-Fi 多 MAC 應保留菱形提示，並與單 MAC 有線末端分別呈現');
     }
+    const wifiRows = App.Q.inventory().rows.endpoints.filter((r) => r.wifi);
+    if (wifiRows.length !== 3 || !wifiRows.every((r) => ['wifi1', 'wlan1'].includes(r.ifc))) throw new Error('Wi-Fi 清單應逐一列出每個 MAC 觀察位置');
   });
   await step('左右欄可拖曳調整寬度，且有下限與上限', async () => {
     const grip = document.querySelector('#left .grip-left'); const rgrip = document.querySelector('#right .grip-right');

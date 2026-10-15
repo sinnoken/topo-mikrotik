@@ -399,7 +399,7 @@
     item([dot(Object.assign({ background: CV.uncollectedFill, border: '2px dashed ' + V.KIND_COLOR.unknown }, SHAPE_CSS.circle))], '未收集', '基準裡沒有收集檔的設備（虛線外框）');
     group('末端');
     item([dot({ background: EP.vendorFallback, border: '1.5px solid ' + CV.outline })], '單一 MAC', '未知對端：一個埠一個 MAC，依廠商上色');
-    item([dot({ background: EP.downstream.fill, border: '2px dashed ' + EP.downstream.stroke, transform: 'rotate(45deg)', borderRadius: '0' })], 'Wi-Fi 多 MAC', 'Wi-Fi 的多 MAC 菱形只作圖面提示，不計為末端埠或 A02');
+    item([dot({ background: EP.downstream.fill, border: '2px dashed ' + EP.downstream.stroke, transform: 'rotate(45deg)', borderRadius: '0' })], 'Wi-Fi 多 MAC', 'Wi-Fi MAC 觀察位置列入末端清單；Wi-Fi 介面不算末端埠，且不參與 A02');
     item([dot({ background: EP.cluster.fill, border: '1.5px solid ' + EP.cluster.stroke, width: Math.round(LEG * 1.3) + 'px', height: Math.round(LEG * 0.8) + 'px', borderRadius: '3px' })], '群組 ×N', '同一台設備末端過多時收合，雙擊展開');
     item([h('span', { class: 'sev error' })], '錯誤／警告');
     group('連線');

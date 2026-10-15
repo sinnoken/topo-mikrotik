@@ -95,13 +95,13 @@
     if (!App.snap) return root.appendChild(h('div', { class: 'empty-detail' }, '建立基準後，所有設備、介面、IP、MAC 與 VLAN 會列在這裡。'));
     const Q = App.Q; const { rows: R, counts: C } = Q.inventory(); // 列與數字都來自 Q.inventory()，這裡不重算
     const devRows = R.devices.concat(R.endpoints);
-    const nameOf = (r) => (r.end ? (r.portMacs < 2 && r.desc) || r.vendors[0] || (r.mac ? K.macPretty(r.mac) : '?') : Q.devName(r.key));
+    const nameOf = (r) => (r.end ? (r.wifi && r.mac ? K.macPretty(r.mac) : (!r.wifi && r.portMacs < 2 && r.desc) || r.vendors[0] || (r.mac ? K.macPretty(r.mac) : '?')) : Q.devName(r.key));
     const ipOf = (r) => (r.end ? r.ips[0] : r.mgmtIp); const vendorOf = (r) => (r.end ? r.vendors.join(' / ') : r.vendor);
     const dn = (d) => (d ? Q.devName(d) : '—'); const mono = (t) => h('span', { class: 'mono' }, t || '—');
     const TAB_COUNT = { device: C.devices + C.endpoints, interface: C.interfaces, ip: C.ips, mac: C.macs, vlan: C.vlans };
     const T = {
       device: ['設備', devRows, [
-        { t: '設備', f: (r) => nameOf(r), s: nameOf }, { t: '類型', f: (r) => (r.end ? V.chip('末端', 'kind-unknown') : V.kindChip(r.kind)), s: (r) => (r.end ? '末端' : V.KIND[r.kind] || r.kind) },
+        { t: '設備', f: (r) => nameOf(r), s: nameOf }, { t: '類型', f: (r) => (r.wifi ? V.chip('Wi-Fi MAC', 'info') : r.end ? V.chip('末端', 'kind-unknown') : V.kindChip(r.kind)), s: (r) => (r.wifi ? 'Wi-Fi MAC' : r.end ? '末端' : V.KIND[r.kind] || r.kind) },
         { t: '管理 IP', f: (r) => mono(ipOf(r)), s: ipOf }, { t: '廠商', f: (r) => vendorOf(r) || '', s: vendorOf },
         { t: '連接於', f: (r) => (r.end ? `${dn(r.dev)} ${r.ifc}` : ''), s: (r) => (r.end ? dn(r.dev) + ' ' + r.ifc : null) },
         { t: '收集', f: (r) => (r.end ? '' : r.collected ? '是' : '否'), s: (r) => (r.end ? null : r.collected ? '是' : '否') }],

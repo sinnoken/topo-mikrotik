@@ -122,12 +122,20 @@
       findingIndexesFor(type, key) { return findingsBy.get(type + ':' + key) || []; },
       block: (id) => snap.blocks[id] || null,
       /** 有且僅有一個 MAC、非 Wi-Fi，且沒有 LLDP／CDP 介面鄰接的末端埠所屬設備（MNDP 網域可達不算直連鄰接） */
-      // 末端：符合未知對端條件的埠後面看到的 MAC 一列
+      // 末端清單列：有線未知對端每筆 MAC 一列；Wi-Fi 每個 MAC／介面觀察位置一列。
       endpointEntries() {
-        return Q.unknownDevices().flatMap((d) => Q.unknownPeers(d).flatMap((u) => {
-          const base = { end: true, key: u.ep, dev: d, ifc: u.name, desc: u.desc, type: u.type, status: u.status, vlans: u.vlans, portMacs: u.macs.length };
+        const rows = Q.unknownDevices().flatMap((d) => Q.unknownPeers(d).flatMap((u) => {
+          const base = { end: true, key: u.ep, dev: d, ifc: u.name, desc: u.desc, type: u.type, status: u.status, vlans: u.vlans, portMacs: u.macs.length, wifi: false };
           return (u.macs.length ? u.macs : [null]).map((x) => Object.assign({ mac: x ? x.mac : null, ips: x ? x.ips : [], vendors: x && x.vendor ? [x.vendor] : [] }, base));
         }));
+        wifiByDev.forEach((interfaces, d) => interfaces.forEach((i) => i.macs.forEach((mk) => {
+          const x = mac.get(mk);
+          rows.push({
+            end: true, wifi: true, key: i.key, dev: d, ifc: i.name, desc: i.desc, type: i.type, status: i.status, vlans: i.vlans,
+            portMacs: i.macs.length, mac: mk, ips: x ? x.ips : [], vendors: x && x.vendor ? [x.vendor] : [],
+          });
+        })));
+        return rows.sort((a, b) => U.natural(a.dev, b.dev) || U.natural(a.ifc, b.ifc) || U.natural(a.mac || '', b.mac || ''));
       },
       unknownDevices: () => Array.from(unkByDev.keys()).sort(U.natural),
       /** 某設備上「沒有 LLDP／CDP 介面鄰接」的末端埠，附 MAC、IP、廠商 */
@@ -137,7 +145,7 @@
           macs: i.macs.map((mk) => { const x = mac.get(mk); return { mac: mk, vendor: x ? x.vendor : null, ips: x ? x.ips : [] }; }),
         }));
       },
-      /** 圖面投影：真末端加上非末端分類的 Wi-Fi MAC 觀察；後者不進清單或 A02。 */
+      /** 圖面投影：真正末端加上 Wi-Fi MAC 觀察；Wi-Fi 介面不屬末端介面，也不參與 A02。 */
       visualUnknownDevices() {
         return U.uniq(Q.unknownDevices().concat(Array.from(wifiByDev.keys()))).sort(U.natural);
       },

@@ -213,7 +213,7 @@ test('interface print：running／停用／註解（含獨立一行的 ;;;）', 
   assert.strictEqual(iface(s, 'SW_A|ether3').admin, 'down');
   assert.strictEqual(iface(s, 'SW_A|bond1').type, 'aggregate');
 });
-test('interface print：CAPsMAN 說明續行保留 Wi-Fi running 旗標；多 MAC Wi-Fi 不列為末端', () => {
+test('interface print：CAPsMAN 說明續行保留 Wi-Fi running 旗標；Wi-Fi 介面本身不列為末端', () => {
   const s = build('SW_A (10.0.0.1):\n### /interface print detail\n'
     + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
     + ' 7    RS ;;; managed by CAPsMAN, traffic processing on\n'
@@ -349,7 +349,7 @@ test('清單：Q.inventory 的列與計數一致，且與基準統計對得上',
   assert.strictEqual(new Set(rows.ips.map((r) => r.ip)).size, rows.ips.length, 'IP 清單必須去重複');
   assert.strictEqual(C.arpIps, new Set(s.model.arps.map((a) => a.ip)).size);
   assert.strictEqual(new Set(rows.macs.map((r) => r.mac)).size, C.macs);
-  assert.strictEqual(C.endpointPorts, s.model.interfaces.filter((i) => i.unknownPeer).length, '每個未知對端介面至少一列');
+  assert.strictEqual(C.endpointPorts, new Set(rows.endpoints.map((e) => e.key)).size, '末端位置數應依清單中的介面位置計算，包含 Wi-Fi MAC 觀察位置');
   assert.ok(rows.endpoints.every((e) => e.end === true) && rows.devices.every((d) => !d.end));
   assert.deepStrictEqual(S.query(s).inventory().counts, C, '相同輸入結果相同');
 });
@@ -372,7 +372,7 @@ test('未知對端：學到多個 MAC 的介面不列為末端', () => {
   assert.strictEqual(rows.length, 0, '學到多個 MAC 的介面不列為末端');
   assert.strictEqual(iface(s, 'SW_A|ether5').edge, false);
 });
-test('未知對端：Wi-Fi 即使只學到一個 MAC 也不列為末端', () => {
+test('未知對端：Wi-Fi 介面不列為末端，但每個 MAC 觀察位置列入末端清單且不觸發 A02', () => {
   const s = build('SW_A (10.0.0.1):\n### /interface print detail\n'
     + 'Flags: D - DYNAMIC; R - RUNNING\n 0 R name="wifi1" type="wifi"\n 1 R name="wifi2" type="wifi"\n'
     + '### /interface bridge host print detail\n'
@@ -386,7 +386,10 @@ test('未知對端：Wi-Fi 即使只學到一個 MAC 也不列為末端', () => 
   assert.strictEqual(count(s, 'A02'), 0, '重複出現在 Wi-Fi 介面的 MAC 不觸發 A02');
   const Q = S.query(s);
   assert.deepStrictEqual(Q.visualUnknownPeers('SW_A').filter((p) => p.visualOnly).map((p) => p.name), ['wifi1', 'wifi2']);
-  assert.strictEqual(Q.inventory().rows.endpoints.some((p) => p.ifc === 'wifi1' || p.ifc === 'wifi2'), false, 'Wi-Fi 圖面提示不算末端清單');
+  const wifiEndpoints = Q.inventory().rows.endpoints.filter((p) => p.wifi);
+  assert.deepStrictEqual(wifiEndpoints.map((p) => [p.ifc, p.mac]), [
+    ['wifi1', 'AABBCC000001'], ['wifi2', 'AABBCC000001'],
+  ], 'Wi-Fi 每個 MAC 觀察位置都應列入末端清單');
 });
 test('A02：不同 VLAN 的末端埠不視為同一 MAC 重複位置', () => {
   const mac = 'AA:BB:CC:00:00:01';

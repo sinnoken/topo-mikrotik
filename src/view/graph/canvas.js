@@ -7,14 +7,8 @@
 (function (S) {
   'use strict';
   const V = (S.view = S.view || {});
-  const KIND_COLOR = { firewall: '#22a338', switch: '#f29900', router: '#2563eb', host: '#8b5cf6', unknown: '#90a4ae' };
-  const EDGE = {
-    lag: { c: '#3b82f6', w: 3.2 }, '40g': { c: '#ef4444', w: 2.8 }, '10g': { c: '#f59e0b', w: 2.1 }, '1g': { c: '#9aa5b1', w: 1.4 },
-    oob: { c: '#22c55e', w: 1.2, dash: [4, 3] }, l3: { c: '#6366f1', w: 1.4, dash: [6, 4] }, other: { c: '#b0b8c1', w: 1.3 },
-  };
-  const SEV_COLOR = { error: '#d93025', warn: '#f29900' };
-  V.EDGE_STYLE = EDGE; V.KIND_COLOR = KIND_COLOR;
-  KIND_COLOR.endpoint = '#78909c'; KIND_COLOR.downstream = '#f29900'; KIND_COLOR.cluster = '#90a4ae';
+  const T = V.theme; const KIND_COLOR = T.kind; const EDGE = T.edge; const SEV_COLOR = T.sev; const MARK = T.mark; const ALPHA = T.alpha;
+  const EP = T.endpoint; const WEAK = T.weakEdge; const CV = T.canvas;
 
   class GraphView {
     constructor(canvas) {
@@ -145,9 +139,9 @@
       // 分群底色
       if (this.showGroups && this.groupBoxes) {
         this.groupBoxes.forEach((g) => {
-          c.fillStyle = 'rgba(11,107,203,0.035)'; c.strokeStyle = 'rgba(11,107,203,0.18)'; c.lineWidth = 1 / s;
+          c.fillStyle = CV.group.fill; c.strokeStyle = CV.group.stroke; c.lineWidth = 1 / s;
           roundRect(c, g.x0, g.y0, g.x1 - g.x0, g.y1 - g.y0, 18); c.fill(); c.stroke();
-          if (s > 0.04) { const gf = 13 / s; c.fillStyle = 'rgba(11,107,203,0.75)'; c.font = `600 ${gf}px "Microsoft JhengHei", sans-serif`; c.fillText(g.name, g.x0 + 4 / s, g.y0 - 5 / s); }
+          if (s > 0.04) { const gf = 13 / s; c.fillStyle = CV.group.text; c.font = `600 ${gf}px "Microsoft JhengHei", sans-serif`; c.fillText(g.name, g.x0 + 4 / s, g.y0 - 5 / s); }
         });
       }
 
@@ -155,18 +149,18 @@
       const drawEdge = (e, override) => {
         const a = this.pos.get(e.a); const b = this.pos.get(e.b); if (!a || !b) return;
         if (!inView(a) && !inView(b) && !segInView(a, b, view)) return;
-        const st = EDGE[e.cls] || EDGE.other; let col = st.c; let w = st.w * (e.count > 1 ? 1.25 : 1); let alpha = e.domainOnly ? 0.5 : e.hearsay ? 0.55 : 1;
+        const st = EDGE[e.cls] || EDGE.other; let col = st.c; let w = st.w * (e.count > 1 ? 1.25 : 1); let alpha = e.domainOnly ? WEAK.domainOnly.alpha : e.hearsay ? WEAK.hearsay.alpha : 1;
         const hc = hl && hl.edges.get(e.id);
-        if (dim && !hc && !override) alpha = 0.12;
+        if (dim && !hc && !override) alpha = ALPHA.dimEdge;
         if (hc) { col = hc; w = Math.max(w, 3.5, 2.5 / s); }
         if (override) { col = override; w = Math.max(w, 3.5, 2.5 / s); alpha = 1; }
         c.globalAlpha = alpha; c.strokeStyle = col; c.lineWidth = Math.max(w, 0.8 / s);
-        c.setLineDash(e.domainOnly ? [6 / Math.min(s, 1), 4 / Math.min(s, 1)]
-          : st.dash ? st.dash.map((d) => d / Math.min(s, 1)) : e.hearsay ? [3 / Math.min(s, 1), 3 / Math.min(s, 1)] : []);
+        const dash = e.domainOnly ? WEAK.domainOnly.dash : st.dash || (e.hearsay ? WEAK.hearsay.dash : null);
+        c.setLineDash(dash ? dash.map((d) => d / Math.min(s, 1)) : []);
         c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke(); c.setLineDash([]);
         if (e.sev && !dim && !override) { // 有問題的連線：中點標記
           const mx = (a.x + b.x) / 2; const my = (a.y + b.y) / 2;
-          c.fillStyle = SEV_COLOR[e.sev] || '#999'; c.beginPath(); c.arc(mx, my, Math.max(4, 3 / s), 0, Math.PI * 2); c.fill();
+          c.fillStyle = SEV_COLOR[e.sev] || CV.sevFallback; c.beginPath(); c.arc(mx, my, Math.max(4, 3 / s), 0, Math.PI * 2); c.fill();
         }
         c.globalAlpha = 1;
       };
@@ -174,14 +168,14 @@
       // 選取／滑過的連線最後畫，蓋在上面
       for (const e of this.edges) {
         if (!this._edgeVisible(e)) continue;
-        if (this.sel.edges.has(e.id)) drawEdge(e, '#0b6bcb');
-        else if (e.id === hoverE || hoverAdj.has(e.id)) drawEdge(e, '#ff5722');
+        if (this.sel.edges.has(e.id)) drawEdge(e, MARK.select);
+        else if (e.id === hoverE || hoverAdj.has(e.id)) drawEdge(e, MARK.hover);
       }
       // 疊加路徑（路由追蹤）
       this.overlay.forEach((o) => {
         const a = this.pos.get(o.a); const b = this.pos.get(o.b); if (!a || !b) return;
-        c.strokeStyle = o.color || '#0b6bcb'; c.lineWidth = Math.max(6, 4 / s); c.globalAlpha = 0.9;
-        c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke(); arrow(c, a, b, Math.max(14, 10 / s), o.color || '#0b6bcb'); c.globalAlpha = 1;
+        c.strokeStyle = o.color || MARK.trace; c.lineWidth = Math.max(6, 4 / s); c.globalAlpha = ALPHA.overlay;
+        c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke(); arrow(c, a, b, Math.max(14, 10 / s), o.color || MARK.trace); c.globalAlpha = 1;
       });
 
       // 節點
@@ -190,11 +184,11 @@
         if (!this.visible(n)) continue; const p = this.pos.get(n.id); if (!inView(p)) continue;
         const r = this.radius(n); const col = KIND_COLOR[n.kind] || KIND_COLOR.unknown;
         const hcol = hl && hl.nodes.get(n.id);
-        c.globalAlpha = dim && !hcol && !this.sel.nodes.has(n.id) ? 0.15 : 1;
+        c.globalAlpha = dim && !hcol && !this.sel.nodes.has(n.id) ? ALPHA.dimNode : 1;
         drawShape(c, n, p, r, col, s);
         if (hcol) { c.strokeStyle = hcol; c.lineWidth = 3.5; c.beginPath(); c.arc(p.x, p.y, r + 5, 0, Math.PI * 2); c.stroke(); }
-        if (this.sel.nodes.has(n.id)) { c.strokeStyle = '#0b6bcb'; c.lineWidth = 3; c.beginPath(); c.arc(p.x, p.y, r + 6, 0, Math.PI * 2); c.stroke(); }
-        if (n.sev && r > 7) { c.fillStyle = SEV_COLOR[n.sev]; c.strokeStyle = '#fff'; c.lineWidth = 1.5; c.beginPath(); c.arc(p.x + r * 0.8, p.y - r * 0.8, 4.5, 0, Math.PI * 2); c.fill(); c.stroke(); }
+        if (this.sel.nodes.has(n.id)) { c.strokeStyle = MARK.select; c.lineWidth = 3; c.beginPath(); c.arc(p.x, p.y, r + 6, 0, Math.PI * 2); c.stroke(); }
+        if (n.sev && r > 7) { c.fillStyle = SEV_COLOR[n.sev]; c.strokeStyle = CV.outline; c.lineWidth = 1.5; c.beginPath(); c.arc(p.x + r * 0.8, p.y - r * 0.8, 4.5, 0, Math.PI * 2); c.fill(); c.stroke(); }
         c.globalAlpha = 1;
       }
       // 標籤：依重要性排序，與已畫的標籤重疊就略過（避免縮小時糊成一片）
@@ -218,9 +212,9 @@
         const box = { x0: p.x - tw / 2 - fs * 0.3, x1: p.x + tw / 2 + fs * 0.3, y0: p.y + r + fs * 0.2, y1: p.y + r + fs * 1.5 };
         if (pri >= 0 && placed.some((b) => b.x0 < box.x1 && box.x0 < b.x1 && b.y0 < box.y1 && box.y0 < b.y1)) continue;
         placed.push(box);
-        c.globalAlpha = dim && pri >= 10 ? 0.25 : 1;
-        c.fillStyle = 'rgba(255,255,255,0.88)'; c.fillRect(box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
-        c.fillStyle = n.collected ? '#1f2933' : '#6b7785'; c.fillText(n.label, p.x, box.y1 - fs * 0.32);
+        c.globalAlpha = dim && pri >= 10 ? ALPHA.dimLabel : 1;
+        c.fillStyle = CV.label.bg; c.fillRect(box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
+        c.fillStyle = n.collected ? CV.label.text : CV.label.textUncollected; c.fillText(n.label, p.x, box.y1 - fs * 0.32);
       }
       c.textAlign = 'left'; c.globalAlpha = 1;
       // 埠名
@@ -251,9 +245,9 @@
   function drawShape(c, n, p, r, col, s) {
     if (n.virtual) return drawVirtual(c, n, p, r, s);
     c.lineWidth = 2;
-    const fill = n.collected ? col : '#ffffff';
+    const fill = n.collected ? col : CV.uncollectedFill;
     c.fillStyle = fill; c.strokeStyle = n.collected ? shade(col) : col;
-    if (!n.collected) c.setLineDash([3, 2]);
+    if (!n.collected) c.setLineDash(EP.dash);
     c.beginPath();
     if (n.kind === 'firewall') { // 盾牌
       c.moveTo(p.x, p.y - r); c.lineTo(p.x + r, p.y - r * 0.55); c.quadraticCurveTo(p.x + r * 0.9, p.y + r * 0.6, p.x, p.y + r);
@@ -264,7 +258,7 @@
     else c.arc(p.x, p.y, r, 0, Math.PI * 2);
     c.fill(); c.stroke(); c.setLineDash([]);
     if (!n.collected || r < 9) return;
-    c.strokeStyle = '#fff'; c.lineWidth = 1.6; c.beginPath();
+    c.strokeStyle = CV.outline; c.lineWidth = 1.6; c.beginPath();
     if (n.kind === 'switch') { for (let i = -2; i <= 2; i++) { c.moveTo(p.x + i * r * 0.38, p.y - r * 0.2); c.lineTo(p.x + i * r * 0.38, p.y + r * 0.3); } }
     else if (n.kind === 'router') { c.moveTo(p.x - r * 0.5, p.y); c.lineTo(p.x + r * 0.5, p.y); c.moveTo(p.x, p.y - r * 0.5); c.lineTo(p.x, p.y + r * 0.5); }
     else if (n.kind === 'firewall') { c.moveTo(p.x - r * 0.45, p.y - r * 0.15); c.lineTo(p.x + r * 0.45, p.y - r * 0.15); c.moveTo(p.x - r * 0.45, p.y + r * 0.25); c.lineTo(p.x + r * 0.45, p.y + r * 0.25); c.moveTo(p.x, p.y - r * 0.15); c.lineTo(p.x, p.y + r * 0.25); }
@@ -273,17 +267,17 @@
   /** 未知對端（由 MAC 推論出來、基準裡沒有 LLDP 鄰居的東西）：外觀刻意和已知設備不同 */
   function drawVirtual(c, n, p, r, s) {
     if (n.kind === 'endpoint') { // 單一 MAC：圓形，顏色依廠商，近看顯示廠商縮寫
-      c.fillStyle = n.color || '#b0bec5'; c.strokeStyle = '#ffffff'; c.lineWidth = 1.5;
+      c.fillStyle = n.color || EP.vendorFallback; c.strokeStyle = CV.outline; c.lineWidth = 1.5;
       c.beginPath(); c.arc(p.x, p.y, r, 0, Math.PI * 2); c.fill(); c.stroke();
-      if (s > 1.3 && n.ini) { c.fillStyle = '#fff'; c.font = 'bold 7px sans-serif'; c.textAlign = 'center'; c.fillText(n.ini, p.x, p.y + 2.6); c.textAlign = 'left'; }
+      if (s > 1.3 && n.ini) { c.fillStyle = CV.outline; c.font = 'bold 7px sans-serif'; c.textAlign = 'center'; c.fillText(n.ini, p.x, p.y + 2.6); c.textAlign = 'left'; }
     } else if (n.kind === 'downstream') { // 一個埠學到多個 MAC：菱形，疑似下游還有設備
-      c.fillStyle = '#fff8e8'; c.strokeStyle = '#f29900'; c.lineWidth = 2; c.setLineDash([3, 2]);
+      c.fillStyle = n.veth ? EP.veth.fill : EP.downstream.fill; c.strokeStyle = n.veth ? n.color : EP.downstream.stroke; c.lineWidth = 2; c.setLineDash(EP.dash);
       c.beginPath(); c.moveTo(p.x, p.y - r); c.lineTo(p.x + r, p.y); c.lineTo(p.x, p.y + r); c.lineTo(p.x - r, p.y); c.closePath(); c.fill(); c.stroke(); c.setLineDash([]);
-      if (s > 0.9) { c.fillStyle = '#9a5b00'; c.font = 'bold 8px sans-serif'; c.textAlign = 'center'; c.fillText(String(n.count || ''), p.x, p.y + 3); c.textAlign = 'left'; }
+      if (s > 0.9) { c.fillStyle = n.veth ? n.color : EP.downstream.text; c.font = 'bold 8px sans-serif'; c.textAlign = 'center'; c.fillText(String(n.count || ''), p.x, p.y + 3); c.textAlign = 'left'; }
     } else { // cluster：同一台設備上很多末端，收合成一個
-      c.fillStyle = '#eceff1'; c.strokeStyle = '#78909c'; c.lineWidth = 1.5;
+      c.fillStyle = EP.cluster.fill; c.strokeStyle = EP.cluster.stroke; c.lineWidth = 1.5;
       roundRect(c, p.x - r * 1.3, p.y - r * 0.8, r * 2.6, r * 1.6, 5); c.fill(); c.stroke();
-      if (s > 0.35) { c.fillStyle = '#37474f'; c.font = 'bold 9px sans-serif'; c.textAlign = 'center'; c.fillText('×' + (n.count || ''), p.x, p.y + 3.2); c.textAlign = 'left'; }
+      if (s > 0.35) { c.fillStyle = EP.cluster.text; c.font = 'bold 9px sans-serif'; c.textAlign = 'center'; c.fillText('×' + (n.count || ''), p.x, p.y + 3.2); c.textAlign = 'left'; }
     }
   }
   function portLabel(c, from, to, text, dist, placed) {
@@ -293,9 +287,9 @@
     const box = { x0: x - tw / 2 - 3, x1: x + tw / 2 + 3, y0: y - 7, y1: y + 6 };
     if (placed.some((b) => b.x0 < box.x1 && box.x0 < b.x1 && b.y0 < box.y1 && box.y0 < b.y1)) return;
     placed.push(box);
-    c.fillStyle = 'rgba(255,255,255,0.95)'; c.strokeStyle = 'rgba(120,130,140,0.5)'; c.lineWidth = 0.6;
+    c.fillStyle = CV.port.bg; c.strokeStyle = CV.port.border; c.lineWidth = 0.6;
     roundRect(c, x - tw / 2 - 3, y - 7, tw + 6, 13, 3); c.fill(); c.stroke();
-    c.fillStyle = '#4a5560'; c.textAlign = 'center'; c.fillText(text, x, y + 3.5); c.textAlign = 'left';
+    c.fillStyle = CV.port.text; c.textAlign = 'center'; c.fillText(text, x, y + 3.5); c.textAlign = 'left';
   }
   function arrow(c, a, b, size, col) {
     const ang = Math.atan2(b.y - a.y, b.x - a.x); const mx = a.x + (b.x - a.x) * 0.6; const my = a.y + (b.y - a.y) * 0.6;

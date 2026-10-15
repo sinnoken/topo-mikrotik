@@ -228,7 +228,7 @@
     const macs = i.macs.map((m) => Q.findMac(m));
     return h('div', { class: 'detail' }, [
       h('h2', null, [devLink(App, i.dev), ' ', h('span', { class: 'mono' }, i.name)]),
-      h('div', { class: 'row' }, [V.chip(i.admin === 'down' ? '停用' : V.STATUS[i.status], i.status === 'up' ? 'ok' : ''), V.chip(i.type === 'aggregate' ? '聚合介面' : '實體／邏輯介面'), i.hearsay ? V.chip('僅由對端回報', 'info') : null, i.unknownPeer ? V.chip('沒有 LLDP 鄰居（未知對端）', 'warn') : i.edge ? V.chip('末端埠') : null]),
+      h('div', { class: 'row' }, [V.chip(i.admin === 'down' ? '停用' : V.STATUS[i.status], i.status === 'up' ? 'ok' : ''), V.chip(i.type === 'aggregate' ? '聚合介面' : i.type === 'veth' ? '容器 veth' : '實體／邏輯介面'), i.hearsay ? V.chip('僅由對端回報', 'info') : null, i.unknownPeer ? V.chip('沒有 LLDP 鄰居（未知對端）', 'warn') : i.edge ? V.chip('末端埠') : null]),
       kv([['描述', i.desc], ['IP', i.ips.join('、')], ['模式', i.mode], ['所屬聚合', i.parent ? epLink(App, K.ep(i.dev, i.parent)) : null],
         ['成員', i.members.length ? h('span', null, i.members.flatMap((m, n) => [n ? '、' : '', epLink(App, m)])) : null],
         ['VLAN', i.vlans.length ? h('span', { class: 'vlanlist' }, vlanText(i.vlans)) : null], ['未對應的 VLAN 名稱', i.vlanNames.join('、')],

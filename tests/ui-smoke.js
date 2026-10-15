@@ -148,6 +148,16 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     inp.dispatch('change', { target: inp }); await new Promise((r) => setTimeout(r, 20));
     if (!text('#pane-compare').includes('有差異')) throw new Error('比對結果未顯示');
   });
+  await step('樣式單一來源：CSS 設備類型變數與 theme 一致，圖例取自 theme', async () => {
+    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8'); const T = S.view.theme;
+    const vars = { firewall: 'fw', switch: 'sw', router: 'rt', host: 'host', unknown: 'unk' };
+    Object.entries(vars).forEach(([k, v]) => {
+      const m = css.match(new RegExp('--' + v + ':\\s*(#[0-9a-fA-F]{6})'));
+      if (!m || m[1].toLowerCase() !== T.kind[k].toLowerCase()) throw new Error('--' + v + ' 與 theme.kind.' + k + ' 不一致');
+    });
+    const legend = Array.from(document.querySelectorAll('#legend .li'));
+    if (legend.length < Object.keys(T.edge).length + Object.keys(S.view.KIND).length) throw new Error('圖例缺項');
+  });
   await step('MNDP 圖例、提示與細節不暗示實體直連', async () => {
     const input = 'A (10.0.0.1):\n### /ip neighbor print detail\n'
       + ' 0 interface=ether1 mac-address=AA:00:00:00:00:02 identity=B interface-name=ether9 discovered-by=mndp\n';
@@ -242,6 +252,25 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (!wifis.every((i) => i.status === 'up' && i.unknownPeer && i.macs.length === 2)) throw new Error('Wi-Fi running 狀態或多 MAC 末端遺失');
     const diamonds = App.graph.nodes.filter((n) => n.kind === 'downstream' && n.parent === 'SW_A');
     if (diamonds.length !== 2) throw new Error('wifi1 與 wifi8 都應畫成多 MAC 菱形');
+  });
+  await step('veth 末端以專用顏色識別', async () => {
+    const input = 'SW_A (10.0.0.1):\n### /interface print detail\n'
+      + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
+      + ' 0  R  name="veth1" type="veth" mtu=1500\n'
+      + ' 1  R  name="ether5" type="ether" mtu=1500\n'
+      + '### /interface bridge host print detail\n'
+      + ' 0 D mac-address=02:AA:BB:00:00:01 on-interface=veth1 bridge=bridge1\n'
+      + ' 1 D mac-address=AA:BB:CC:00:00:02 on-interface=ether5 bridge=bridge1\n';
+    $('#input-text').value = input; $('#input-build').click();
+    const hash = S.util.hash(S.readers.PASTE + '\n' + input);
+    for (let i = 0; i < 4000 && (!App.snap || App.snap.meta.inputHash !== hash); i++) await new Promise((r) => setTimeout(r, 5));
+    if (App.snap.meta.inputHash !== hash) throw new Error('veth 基準未建立');
+    const v = App.graph.nodes.find((n) => n.id === '?p|SW_A|veth1'); const e = App.graph.nodes.find((n) => n.id === '?p|SW_A|ether5');
+    if (!v || !e) throw new Error('veth1 與 ether5 末端都應畫出');
+    if (!v.veth || v.color !== '#d81b60') throw new Error('veth 節點應使用專用色');
+    if (e.veth || e.color === '#d81b60') throw new Error('非 veth 節點不應使用 veth 色');
+    if (!/容器 veth/.test(v.tip)) throw new Error('提示應標示容器 veth');
+    if (!Array.from(document.querySelectorAll('#legend .li')).some((el) => /容器 veth/.test(el.textContent))) throw new Error('圖例缺少 veth');
   });
   await step('清除基準', async () => { $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20)); if (App.snap) throw new Error('未清除'); });
   console.log(steps.join('\n'));

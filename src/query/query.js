@@ -67,7 +67,7 @@
       /** 某設備上「沒有 LLDP 鄰居」的末端埠，附 MAC、IP、廠商 */
       unknownPeers(devKey) {
         return (unkByDev.get(devKey) || []).slice().sort((a, b) => U.natural(a.name, b.name)).map((i) => ({
-          ep: i.key, name: i.name, desc: i.desc, status: i.status, vlans: i.vlans,
+          ep: i.key, name: i.name, desc: i.desc, status: i.status, type: i.type, vlans: i.vlans,
           macs: i.macs.map((mk) => { const x = mac.get(mk); return { mac: mk, vendor: x ? x.vendor : null, ips: x ? x.ips : [] }; }),
         }));
       },

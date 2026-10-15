@@ -222,6 +222,20 @@ test('interface print：CAPsMAN 說明續行保留 Wi-Fi running 旗標及多 MA
     assert.strictEqual(i.unknownPeer, true, `${name} 的多 MAC 末端應可畫成菱形`);
   });
 });
+test('interface print：type=veth 標為 veth，unknownPeers 帶型別；其他介面不受影響', () => {
+  const s = build('SW_A (10.0.0.1):\n### /interface print detail\n'
+    + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
+    + ' 0  R  name="veth1" type="veth" mtu=1500\n'
+    + ' 1  R  name="ether5" type="ether" mtu=1500\n'
+    + '### /interface bridge host print detail\n'
+    + ' 0 D mac-address=02:AA:BB:00:00:01 on-interface=veth1 bridge=bridge1\n'
+    + ' 1 D mac-address=AA:BB:CC:00:00:02 on-interface=ether5 bridge=bridge1\n');
+  assert.strictEqual(iface(s, 'SW_A|veth1').type, 'veth');
+  assert.strictEqual(iface(s, 'SW_A|ether5').type, 'physical');
+  const rows = S.query(s).unknownPeers('SW_A');
+  assert.strictEqual(rows.find((r) => r.name === 'veth1').type, 'veth');
+  assert.notStrictEqual(rows.find((r) => r.name === 'ether5').type, 'veth');
+});
 test('ARP 與 IP 位址：略過 invalid／disabled、多播、APIPA', () => {
   const s = build('R_A (10.0.0.1):\n### /ip arp print detail\n 0 DC address=10.0.0.2 mac-address=AA:BB:CC:00:00:01 interface=bridge1 complete=yes\n 1 I  address=10.0.0.3 mac-address=AA:BB:CC:00:00:02 interface=bridge1 complete=yes\n 2 DC address=169.254.1.1 mac-address=AA:BB:CC:00:00:03 interface=bridge1 complete=yes\n'
     + '### /ip address print detail\n 0   address=10.0.0.1/24 network=10.0.0.0 interface=bridge1 actual-interface=bridge1\n 1 X address=10.9.9.1/24 network=10.9.9.0 interface=ether9 actual-interface=ether9\n');

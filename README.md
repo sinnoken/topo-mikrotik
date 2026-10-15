@@ -71,7 +71,7 @@ src/
   query/              唯讀查詢、路由追蹤
   compare/            預期資料比對（獨立格式）
   data/               OUI 廠商資料（離線）
-  view/               畫面：dom、store（IndexedDB）、graph（版面＋Canvas）、panels、app
+  view/               畫面：dom、theme（顏色／線型／透明度的唯一來源）、store（IndexedDB）、graph（版面＋Canvas）、panels、app
 profiles/             命名規則範例（可不套用）
 samples/              範例收集檔（含刻意放入的問題）、預期資料範例、舊版 lldp.txt
 tools/                產生測試資料、更新 OUI、嵌入範例

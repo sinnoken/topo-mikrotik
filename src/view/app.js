@@ -106,9 +106,8 @@
   }
 
   // ---------------------------------------------------------------- 未知對端
-  // 不用紅、橘、黃：避免和「錯誤／警告」標記混淆
-  const VENDOR_COLORS = ['#26a69a', '#42a5f5', '#7e57c2', '#5c6bc0', '#8d6e63', '#546e7a', '#66bb6a', '#00897b', '#ab47bc', '#78909c'];
-  const vendorColor = (v) => (v ? VENDOR_COLORS[Array.from(v).reduce((a, ch) => a + ch.charCodeAt(0), 0) % VENDOR_COLORS.length] : '#b0bec5');
+  const EP = V.theme.endpoint; const MARK = V.theme.mark; const WEAK = V.theme.weakEdge;
+  const vendorColor = (v) => (v ? EP.vendor[Array.from(v).reduce((a, ch) => a + ch.charCodeAt(0), 0) % EP.vendor.length] : EP.vendorFallback);
   const vendorIni = (v) => (v ? v.replace(/[^A-Za-z0-9\u4e00-\u9fff]/g, '').slice(0, 2).toUpperCase() : '?');
 
   /**
@@ -144,8 +143,8 @@
         const ip = !multi && m0 && m0.ips[0];
         const label = multi ? `${r.macs.length} 個 MAC` : (r.desc || ip || (m0 && m0.vendor) || (m0 ? K.macPretty(m0.mac).slice(-8) : '?'));
         nodes.push({ id: vid, label, kind: multi ? 'downstream' : 'endpoint', collected: false, virtual: true, parent: dk, group: dev.group,
-          count: r.macs.length, color: vendorColor(vendors[0]), ini: vendorIni(vendors[0]),
-          tip: `${Q.devName(dk)} ${r.name}：${multi ? r.macs.length + ' 個 MAC（疑似下游還有設備）' : K.macPretty(m0.mac)}${ip ? '・' + ip : ''}${vendors.length ? '・' + vendors.join('/') : ''}${r.vlans.length ? '・VLAN ' + r.vlans.join(',') : ''}` });
+          count: r.macs.length, veth: r.type === 'veth', color: r.type === 'veth' ? EP.veth.c : vendorColor(vendors[0]), ini: vendorIni(vendors[0]),
+          tip: `${Q.devName(dk)} ${r.name}${r.type === 'veth' ? '（容器 veth）' : ''}：${multi ? r.macs.length + ' 個 MAC（疑似下游還有設備）' : K.macPretty(m0.mac)}${ip ? '・' + ip : ''}${vendors.length ? '・' + vendors.join('/') : ''}${r.vlans.length ? '・VLAN ' + r.vlans.join(',') : ''}` });
         App.virtual.set(vid, { type: 'interface', ep: r.ep }); App.vOfEp.set(r.ep, vid);
         link(dk, vid, r.name);
       });
@@ -211,19 +210,19 @@
       case 'pair': edges = [sel.id]; focus = sel.devs; break;
       case 'interface': { const i = Q.getInterface(sel.key); if (i) { const v = App.vOfEp.get(i.key); nodes = [i.dev].concat(v ? [v] : []); edges = pairsOf(Q.linksOfEp(i.key).map((l) => l.key)); focus = v ? [i.dev, v] : [i.dev]; } break; }
       case 'endpoints': { const vs = App.virtualByDev.get(sel.dev) || []; nodes = [sel.dev].concat(vs); focus = [sel.dev].concat(vs); break; }
-      case 'mac': { const m = Q.findMac(sel.key); const ds = S.util.uniq(m.edge.map(devOf).concat(m.edge.map((ep) => App.vOfEp.get(ep)).filter(Boolean))); g.setHighlight({ nodes: new Map(ds.map((d) => [d, '#ff5722'])), edges: new Map() }); focus = ds; break; }
-      case 'ip': { const r = Q.findIp(sel.key); const ds = S.util.uniq([...(r.owner ? [r.owner.split('|')[0]] : []), ...r.locations.map((x) => devOf(x.ep)), ...r.locations.map((x) => App.vOfEp.get(x.ep)).filter(Boolean)]); g.setHighlight({ nodes: new Map(ds.map((d) => [d, '#ff5722'])), edges: new Map() }); focus = ds; break; }
+      case 'mac': { const m = Q.findMac(sel.key); const ds = S.util.uniq(m.edge.map(devOf).concat(m.edge.map((ep) => App.vOfEp.get(ep)).filter(Boolean))); g.setHighlight({ nodes: new Map(ds.map((d) => [d, MARK.find])), edges: new Map() }); focus = ds; break; }
+      case 'ip': { const r = Q.findIp(sel.key); const ds = S.util.uniq([...(r.owner ? [r.owner.split('|')[0]] : []), ...r.locations.map((x) => devOf(x.ep)), ...r.locations.map((x) => App.vOfEp.get(x.ep)).filter(Boolean)]); g.setHighlight({ nodes: new Map(ds.map((d) => [d, MARK.find])), edges: new Map() }); focus = ds; break; }
       case 'vlan': {
         const v = Q.vlan(sel.key); const em = new Map();
-        pairsOf(v.carry.map((l) => l.key)).forEach((p) => em.set(p, '#1e8e3e'));
-        pairsOf(v.partial.map((l) => l.key)).forEach((p) => em.set(p, '#d93025'));
-        g.setHighlight({ nodes: new Map(v.devices.map((d) => [d, '#1e8e3e'])), edges: em }); focus = v.devices; break;
+        pairsOf(v.carry.map((l) => l.key)).forEach((p) => em.set(p, MARK.good));
+        pairsOf(v.partial.map((l) => l.key)).forEach((p) => em.set(p, MARK.bad));
+        g.setHighlight({ nodes: new Map(v.devices.map((d) => [d, MARK.good])), edges: em }); focus = v.devices; break;
       }
       case 'trace': {
         const t = sel.result; if (t.ok) {
-          g.setOverlay(t.edges.map(([a, b]) => ({ a, b, color: '#0b6bcb' })));
+          g.setOverlay(t.edges.map(([a, b]) => ({ a, b, color: MARK.trace })));
           const ds = S.util.uniq([t.start, ...t.hops.map((x) => x.dev), ...t.ends.map((e) => e.dev)]);
-          g.setHighlight({ nodes: new Map(ds.map((d) => [d, t.ends.some((e) => e.dev === d && e.status !== 'reached') ? '#d93025' : '#0b6bcb'])), edges: new Map() }); focus = ds;
+          g.setHighlight({ nodes: new Map(ds.map((d) => [d, t.ends.some((e) => e.dev === d && e.status !== 'reached') ? MARK.bad : MARK.trace])), edges: new Map() }); focus = ds;
         }
         break;
       }
@@ -232,9 +231,9 @@
     if (o.findingEntities) {
       const nm = new Map(); const em = new Map();
       o.findingEntities.forEach((e) => {
-        if (e.type === 'device') nm.set(e.key, '#d93025');
-        if (e.type === 'interface') nm.set(devOf(e.key), '#d93025');
-        if (e.type === 'link') { const l = Q.getLink(e.key); if (l) { em.set(App.pairOfLink.get(l.key), '#d93025'); nm.set(devOf(l.a), '#d93025'); nm.set(devOf(l.b), '#d93025'); } }
+        if (e.type === 'device') nm.set(e.key, MARK.bad);
+        if (e.type === 'interface') nm.set(devOf(e.key), MARK.bad);
+        if (e.type === 'link') { const l = Q.getLink(e.key); if (l) { em.set(App.pairOfLink.get(l.key), MARK.bad); nm.set(devOf(l.a), MARK.bad); nm.set(devOf(l.b), MARK.bad); } }
       });
       if (nm.size || em.size) { g.setHighlight({ nodes: nm, edges: em }); focus = Array.from(nm.keys()); }
     }
@@ -375,10 +374,11 @@
     const lg = $('#legend');
     Object.entries(V.KIND).forEach(([k, label]) => lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'sev', style: { background: V.KIND_COLOR[k], width: '10px', height: '10px' } }), label])));
     Object.entries(V.EDGE_STYLE).forEach(([k, st]) => lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'ln', style: { borderTopColor: st.c, borderTopStyle: st.dash ? 'dashed' : 'solid' } }), V.CLS[k]])));
-    lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'ln', style: { borderTopColor: '#9aa5b1', borderTopStyle: 'dotted' } }), '聽說（對端無 LLDP）']));
-    lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'ln', style: { borderTopColor: '#9aa5b1', borderTopStyle: 'dashed' } }), 'MNDP：同一 L2 網域可達，非直連確認']));
-    lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'sev', style: { background: '#3498db', width: '10px', height: '10px' } }), '未知對端（單一 MAC）']));
-    lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'sev', style: { background: '#fff8e8', border: '2px dashed #f29900', width: '10px', height: '10px', transform: 'rotate(45deg)', borderRadius: '0' } }), '未知對端（多個 MAC）']));
+    lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'ln', style: { borderTopColor: WEAK.color, borderTopStyle: 'dotted' } }), '聽說（對端無 LLDP）']));
+    lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'ln', style: { borderTopColor: WEAK.color, borderTopStyle: 'dashed' } }), 'MNDP：同一 L2 網域可達，非直連確認']));
+    lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'sev', style: { background: EP.vendor[0], width: '10px', height: '10px' } }), '未知對端（單一 MAC）']));
+    lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'sev', style: { background: EP.veth.c, width: '10px', height: '10px' } }), '容器 veth 末端']));
+    lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'sev', style: { background: EP.downstream.fill, border: '2px dashed ' + EP.downstream.stroke, width: '10px', height: '10px', transform: 'rotate(45deg)', borderRadius: '0' } }), '未知對端（多個 MAC）']));
     lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'sev error' }), '有錯誤／警告']));
   }
   function bindTabs() {

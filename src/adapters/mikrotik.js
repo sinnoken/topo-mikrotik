@@ -287,6 +287,7 @@
         if (r.flags.includes('X')) f.admin = 'down';
         const desc = kv.comment || r.comment; if (desc) f.desc = desc;
         if (/^(bond|bonding)$/i.test(kv.type || '')) f.type = 'aggregate';
+        else if (/^veth$/i.test(kv.type || '')) f.type = 'veth';
         emit(f);
       });
     },

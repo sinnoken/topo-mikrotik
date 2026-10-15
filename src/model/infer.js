@@ -3,7 +3,7 @@
  *   - 設備類型（依廠牌與資料內容；沒有資料時依對端埠名稱判斷是否為主機）
  *   - 連結類別（聚合、管理、速率、L3）
  *   - 連結兩端 VLAN（含聚合成員繼承）
- *   - 分群（profile 有 group 用 profile，否則依連通元件）
+ *   - 分群（profile 有 group 用 profile，否則依拓樸連結連通元件）
  *   - 套用 profile 註解
  */
 (function (S) {
@@ -122,7 +122,7 @@
     });
   }
 
-  /** 未指定分群的設備依連通元件分群（L2、L3 連結都算）。 */
+  /** 未指定分群的設備依拓樸連結連通元件分群；名稱不代表 IP 子網或物理區域。 */
   function groups(M) {
     const parent = new Map();
     const find = (x) => { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; };
@@ -135,7 +135,7 @@
     const comps = new Map();
     M.devices.forEach((d) => S.util.getOr(comps, find(d.key), () => []).push(d));
     const sorted = Array.from(comps.values()).sort((x, y) => y.length - x.length || S.util.natural(x[0].key, y[0].key));
-    sorted.forEach((members, idx) => members.forEach((d) => { d.component = idx + 1; if (!d.group) d.group = '網段 ' + (idx + 1); }));
+    sorted.forEach((members, idx) => members.forEach((d) => { d.component = idx + 1; if (!d.group) d.group = '自動群組 ' + (idx + 1); }));
   }
 
   function displayName(d) {

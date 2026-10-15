@@ -313,6 +313,12 @@ test('不套用命名規則時，設備類型只看資料，不看名稱', () =>
   assert.strictEqual(s.model.devices[0].kind, 'switch');
   assert.strictEqual(s.meta.profile, null);
 });
+test('自動連通元件群組使用不誤稱 IP 子網的名稱', () => {
+  const s = build('SW_A (10.0.0.1):\n### /interface bridge host print detail\n'
+    + ' 0 D mac-address=AA:BB:CC:00:00:01 on-interface=ether1 bridge=bridge1 vid=10\n');
+  assert.strictEqual(s.model.devices[0].component, 1);
+  assert.strictEqual(s.model.devices[0].group, '自動群組 1');
+});
 test('命名規則：別名合併、去網域、分類、分群；只加註解不改事實', () => {
   const prof = { id: 't', classify: [{ match: '_FW_', kind: 'firewall', role: 'fw' }], group: { match: '^([A-Z]+)_', value: '$1' }, alias: { 'OLD-SW': 'SW_A' }, stripDomain: true };
   const text = 'SW_A (10.0.0.1):\n### /ip neighbor print detail\n 0 interface=ether1 mac-address=AA:00:00:00:00:01 identity=TPE_FW_01.corp.local interface-name=port1\n 1 interface=ether2 mac-address=AA:00:00:00:00:02 identity=old-sw interface-name=x\n';

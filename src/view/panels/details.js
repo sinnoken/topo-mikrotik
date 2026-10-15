@@ -235,7 +235,9 @@
     return h('div', { class: 'detail' }, [
       h('h2', null, [devLink(App, i.dev), ' ', h('span', { class: 'mono' }, i.name)]),
       h('div', { class: 'row' }, [V.chip(i.admin === 'down' ? '停用' : V.STATUS[i.status], i.status === 'up' ? 'ok' : ''), V.chip(i.type === 'aggregate' ? '聚合介面' : V.theme.endpoint.byType[i.type] ? V.theme.endpoint.byType[i.type].label : '實體／邏輯介面'), i.hearsay ? V.chip('僅由對端回報', 'info') : null, i.unknownPeer ? V.chip('沒有 LLDP／CDP 鄰接（未知對端）', 'warn') : i.edge ? V.chip('末端埠') : null]),
-      kv([['描述', i.desc], ['IP', i.ips.join('、')], ['模式', i.mode], ['所屬聚合', i.parent ? epLink(App, K.ep(i.dev, i.parent)) : null],
+      kv([['描述', i.desc], ['RouterOS 類型', i.rawType], ['介面 MAC', i.hwMac ? K.macPretty(K.mac(i.hwMac) || i.hwMac) : null], ['預設名稱', i.defaultName && i.defaultName !== i.name ? i.defaultName : null],
+        ['MTU', [['mtu', i.mtu], ['actual', i.actualMtu], ['l2mtu', i.l2mtu]].filter((x) => x[1] != null).map((x) => `${x[0]} ${x[1]}`).join('、') || null],
+        ['IP', i.ips.join('、')], ['模式', i.mode], ['所屬聚合', i.parent ? epLink(App, K.ep(i.dev, i.parent)) : null],
         ['成員', i.members.length ? h('span', null, i.members.flatMap((m, n) => [n ? '、' : '', epLink(App, m)])) : null],
         ['VLAN', i.vlans.length ? h('span', { class: 'vlanlist' }, vlanText(i.vlans)) : null], ['未對應的 VLAN 名稱', i.vlanNames.join('、')],
         ['VLAN 子介面', i.sub ? `${i.sub.of} 上的 VLAN ${i.sub.vlan}` : null]]),

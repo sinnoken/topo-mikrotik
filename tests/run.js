@@ -263,6 +263,17 @@ test('interface print：保留 rawType／介面 MAC／MTU，並依 rawType 排�
   assert.deepStrictEqual([b.rawType, b.actualMtu, b.edge], ['bridge', 1500, false]);
   assert.strictEqual(e.edge, true);
 });
+test('介面自身的 mac-address 出現在轉發表時不算外部末端', () => {
+  const s = build('SW_A (10.0.0.1):\n### /interface print detail\n'
+    + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
+    + ' 0  R  name="ether1" type="ether" mac-address=AA:BB:CC:00:00:01\n'
+    + ' 1  R  name="ether2" type="ether" mac-address=AA:BB:CC:00:00:02\n'
+    + '### /interface bridge host print detail\n'
+    + ' 0 D mac-address=AA:BB:CC:00:00:02 on-interface=ether1 bridge=br\n'
+    + ' 1 D mac-address=02:AA:BB:00:00:09 on-interface=ether2 bridge=br\n');
+  assert.strictEqual(iface(s, 'SW_A|ether1').edge, false);
+  assert.strictEqual(iface(s, 'SW_A|ether2').edge, true);
+});
 test('interface print 缺漏：改用 export 的 bridge／vlan 定義判斷，再退回名稱規則', () => {
   const s = build('SW_A (10.0.0.1):\n### /export terse\n'
     + '/interface bridge add name=br-mgmt\n/interface vlan add name=v-10 interface=ether1 vlan-id=10\n'

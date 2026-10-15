@@ -71,7 +71,7 @@
 | mikrotik.config | /export terse／compact | 主機名、介面註解／停用、bridge＋pvid、bridge VLAN、VLAN 子介面、bonding、IP、router-id（含 `/routing id` 名稱解析） |
 | mikrotik.bridgehost | /interface bridge host print detail | MAC 位置（略過 bridge 自己的 MAC） |
 | mikrotik.vlans | /interface bridge vlan print detail | 實際 VLAN 成員（`current-*`，含動態） |
-| mikrotik.interface | /interface print detail | running／停用／註解／聚合；保留 rawType、mac-address、default-name、mtu、actual-mtu、l2mtu（rawType 供末端判定排除 bridge／vlan／loopback／vrrp，缺 `/interface print` 時改取 export 的 bridge／vlan／bonding 定義，仍無才退回名稱規則） |
+| mikrotik.interface | /interface print detail | running／停用／註解／聚合；保留 rawType、mac-address、default-name、mtu、actual-mtu、l2mtu（rawType 供末端判定排除 bridge／vlan／loopback／vrrp，缺 `/interface print` 時改取 export 的 bridge／vlan／bonding 定義，仍無才退回名稱規則）；介面詳情顯示這些欄位，且設備自身的 mac-address 出現在轉發表時不列為外部末端 |
 | mikrotik.ipaddr | /ip address print detail | 介面 IP（略過 disabled、invalid） |
 | mikrotik.arp | /ip arp print detail | MAC↔IP（略過 invalid、多播、APIPA） |
 | mikrotik.route | /ip route print detail | 作用中路由、ECMP（`gateway=a,b`）；RouterOS 6／7 旗標差異已處理 |

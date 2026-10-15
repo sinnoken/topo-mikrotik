@@ -199,11 +199,16 @@
       return peer && peer.collected && peer.kind !== 'host';
     });
     const hasAdjacency = (ep) => adjacencyLinksByEp.has(ep);
+    // 設備自己的介面 MAC（/interface print 的 mac-address）出現在轉發表時不是外部末端
+    const ownMacs = new Map();
+    M.ifcs.forEach((i) => { const m = i.hwMac && K.mac(i.hwMac); if (m) { if (!ownMacs.has(i.dev)) ownMacs.set(i.dev, new Set()); ownMacs.get(i.dev).add(m); } });
     M.ifcs.forEach((i, ep) => {
       // 有 RouterOS 原始 type 時依事實排除虛擬介面；無介面資料才退回名稱推論
       const virtual = i.rawType ? NON_EDGE_TYPES.has(i.rawType) : /^(irb|vlan|lo\d)/.test(i.name);
       if (i.macs.size !== 1 || i.type === 'wifi' || i.status === 'down' || i.admin === 'down' || virtual) return;
       if (!M.devices.get(i.dev).collected) return;
+      const own = ownMacs.get(i.dev);
+      if (own && own.has(Array.from(i.macs)[0])) return;
       const group = [ep];
       if (i.parent) { const p = M.ifcs.get(K.ep(i.dev, i.parent)); if (p) group.push(p.key, ...Array.from(p.members || [])); }
       if (i.members) group.push(...Array.from(i.members));

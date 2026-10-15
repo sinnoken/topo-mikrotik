@@ -109,6 +109,7 @@
 
 ### 5.3 關鍵推論
 
+- **LLDP 對端埠名**：RouterOS bridge 成員的 `interface-name` 形如 `bridge/ether2`，adapter 取最後一段（`ether2`）作為對端實體埠，與本機 `interface=ether3,bridge` 取非 bridge 成員的規則對稱；原文保留在來源行。
 - **鄰居邊語意**：LLDP／CDP 的觀察走介面鄰接推論；本機介面名稱是本機端依據，對端回報的 `interface-name` 是對端埠證據，無法配對時的平行埠排序配對仍屬推測。只有 MNDP 證據時，edge 表示兩台設備在同一 L2 broadcast domain 可達，不表示兩者直連，也不將回報的對端埠名視為實際配對埠；不套用直連專用的 K01／K02／K03／V01 檢查。`evidenceScope` 使用 `interface-adjacency`、`broadcast-domain` 或 `routing-adjacency`；`observations` 保留觀察介面及來源行。MNDP 沒有 domain ID，因此模型不宣稱完整網域成員清單。同一對設備可因多個本機介面或雙向回報各有一條 MNDP link（Snapshot 保留全部以便追溯）；設備詳情的「鄰居」表由 `Q.neighborRows()` 併成每個對端設備一列，觀察介面合併列出。
 - **自動群組名稱**：未套用 profile 分群的設備依拓樸連結分成連通元件，標為「自動群組 N」。這是版面分群提示，不是依 IP prefix 推導的子網名稱，也不表示群內設備都以實體線路直接相連；純 MNDP 證據同樣可能使設備位於同一群組。
 - **鄰居配對**：LLDP／CDP 對端也有可配對的鄰居資料時雙向配對（`verified`）；對端有鄰居輸出但未回報此介面鄰接為單向（K01）；對端沒提供鄰居資料則為聽說（hearsay，只計入覆蓋率）。鄰居 identity 對不上收集檔設備名時，用管理 IP 對回同一台。

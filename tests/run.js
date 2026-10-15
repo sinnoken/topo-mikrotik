@@ -275,6 +275,14 @@ test('interface print 缺漏：改用 export 的 bridge／vlan 定義判斷，�
   assert.deepStrictEqual(['br-mgmt', 'v-10', 'irb9'].map((n) => iface(s, 'SW_A|' + n).edge), [false, false, false]);
   assert.strictEqual(iface(s, 'SW_A|ether1').edge, true);
 });
+test('LLDP interface-name 為 bridge/port：取實體埠配對，雙向確認且不產生 bridge/ 假介面', () => {
+  const nb = (local, ip, mac, id, name) => ` 0 interface=${local} address=${ip} mac-address=${mac} identity="${id}" platform="MikroTik" interface-name="${name}" discovered-by=lldp,mndp\n`;
+  const s = build('A (192.168.77.1):\n### /ip neighbor print detail without-paging\n' + nb('ether3,bridge', '192.168.77.9', 'D4:01:C3:4E:2D:04', 'B', 'bridge/ether2')
+    + 'B (192.168.77.9):\n### /ip neighbor print detail without-paging\n' + nb('ether2,bridge', '192.168.77.1', 'AA:00:00:00:00:01', 'A', 'bridge/ether3'));
+  assert.deepStrictEqual(s.model.links.map((l) => [l.a, l.b, l.verified]), [['A|ether3', 'B|ether2', true]]);
+  assert.ok(!s.model.interfaces.some((i) => i.name.includes('/')));
+  assert.strictEqual(count(s, 'K01'), 0);
+});
 test('鄰居表：同一對設備的 MNDP（多介面、雙向）併成一列，仍保留各 link 來源', () => {
   const nb = (ifc, ip, mac, id) => ` 0 interface=${ifc} address=${ip} mac-address=${mac} identity="${id}" platform=MikroTik discovered-by=mndp\n`;
   const s = build('A (10.0.0.1):\n### /ip neighbor print detail without-paging\n'

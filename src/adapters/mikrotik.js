@@ -89,6 +89,8 @@
 
   // ================================================================ 鄰居
   const isBridgeName = (n) => /^bridge/i.test(n);
+  // LLDP 的 interface-name 在 bridge 成員上為 "bridge/ether2"：前段是對端 bridge，最後一段才是對端實體埠；原文仍留在來源行
+  const peerPort = (v) => { const parts = String(v || '').split('/').map((x) => x.trim()).filter(Boolean); return parts.length ? parts[parts.length - 1] : null; };
   reg({
     id: 'mikrotik.neighbor', vendor: VENDOR, dataType: 'lldp', label: 'RouterOS 鄰居（LLDP／MNDP／CDP）',
     command: /^\/?ip\s+neighbou?r\b/i,
@@ -104,7 +106,7 @@
         const addr = [kv.address4, kv.address].find((a) => a && IPRE.test(a)) || null;
         rows.push({
           local: locals.find((x) => !isBridgeName(x)) || locals[0], viaBridge: locals.every(isBridgeName),
-          peer, ident: kv.identity || null, discoveredBy: kv['discovered-by'] || '', peerIfc: kv['interface-name'] || null, mac: kv['mac-address'] || null, addr,
+          peer, ident: kv.identity || null, discoveredBy: kv['discovered-by'] || '', peerIfc: peerPort(kv['interface-name']), mac: kv['mac-address'] || null, addr,
           board: kv.board || null, platform: kv.platform || null, caps: kv['system-caps-enabled'] || kv['system-caps'] || null, line: r.line,
         });
       });

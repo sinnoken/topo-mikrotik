@@ -236,6 +236,14 @@ test('interface print：type=veth 標為 veth，unknownPeers 帶型別；其他�
   assert.strictEqual(rows.find((r) => r.name === 'veth1').type, 'veth');
   assert.notStrictEqual(rows.find((r) => r.name === 'ether5').type, 'veth');
 });
+test('interface print：type=wifi／wlan 標為 wifi', () => {
+  const s = build('SW_A (10.0.0.1):\n### /interface print detail\n'
+    + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
+    + ' 0  R  name="wifi1" type="wifi" mtu=1500\n 1  R  name="wlan1" type="wlan" mtu=1500\n 2  R  name="ether5" type="ether" mtu=1500\n');
+  assert.strictEqual(iface(s, 'SW_A|wifi1').type, 'wifi');
+  assert.strictEqual(iface(s, 'SW_A|wlan1').type, 'wifi');
+  assert.strictEqual(iface(s, 'SW_A|ether5').type, 'physical');
+});
 test('ARP 與 IP 位址：略過 invalid／disabled、多播、APIPA', () => {
   const s = build('R_A (10.0.0.1):\n### /ip arp print detail\n 0 DC address=10.0.0.2 mac-address=AA:BB:CC:00:00:01 interface=bridge1 complete=yes\n 1 I  address=10.0.0.3 mac-address=AA:BB:CC:00:00:02 interface=bridge1 complete=yes\n 2 DC address=169.254.1.1 mac-address=AA:BB:CC:00:00:03 interface=bridge1 complete=yes\n'
     + '### /ip address print detail\n 0   address=10.0.0.1/24 network=10.0.0.0 interface=bridge1 actual-interface=bridge1\n 1 X address=10.9.9.1/24 network=10.9.9.0 interface=ether9 actual-interface=ether9\n');

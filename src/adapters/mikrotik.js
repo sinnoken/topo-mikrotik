@@ -288,6 +288,7 @@
         const desc = kv.comment || r.comment; if (desc) f.desc = desc;
         if (/^(bond|bonding)$/i.test(kv.type || '')) f.type = 'aggregate';
         else if (/^veth$/i.test(kv.type || '')) f.type = 'veth';
+        else if (/^(wifi|wlan)$/i.test(kv.type || '')) f.type = 'wifi';
         emit(f);
       });
     },

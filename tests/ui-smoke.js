@@ -267,10 +267,33 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (App.snap.meta.inputHash !== hash) throw new Error('veth 基準未建立');
     const v = App.graph.nodes.find((n) => n.id === '?p|SW_A|veth1'); const e = App.graph.nodes.find((n) => n.id === '?p|SW_A|ether5');
     if (!v || !e) throw new Error('veth1 與 ether5 末端都應畫出');
-    if (!v.veth || v.color !== '#d81b60') throw new Error('veth 節點應使用專用色');
-    if (e.veth || e.color === '#d81b60') throw new Error('非 veth 節點不應使用 veth 色');
+    if (!v.ifStyle || v.color !== '#d81b60') throw new Error('veth 節點應使用專用色');
+    if (e.ifStyle || e.color === '#d81b60') throw new Error('非 veth 節點不應使用 veth 色');
     if (!/容器 veth/.test(v.tip)) throw new Error('提示應標示容器 veth');
     if (!Array.from(document.querySelectorAll('#legend .li')).some((el) => /容器 veth/.test(el.textContent))) throw new Error('圖例缺少 veth');
+  });
+  await step('Wi-Fi 末端以專用顏色識別', async () => {
+    const input = 'SW_A (10.0.0.1):\n### /interface print detail\n'
+      + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
+      + ' 0  R  name="wifi1" type="wifi" mtu=1500\n'
+      + ' 1  R  name="wlan1" type="wlan" mtu=1500\n'
+      + ' 2  R  name="ether5" type="ether" mtu=1500\n'
+      + '### /interface bridge host print detail\n'
+      + ' 0 D mac-address=14:63:93:C4:13:24 on-interface=wifi1 bridge=bridge1\n'
+      + ' 1 D mac-address=3C:64:CF:0C:C4:63 on-interface=wifi1 bridge=bridge1\n'
+      + ' 2 D mac-address=06:89:53:94:06:0F on-interface=wlan1 bridge=bridge1\n'
+      + ' 3 D mac-address=AA:BB:CC:00:00:02 on-interface=ether5 bridge=bridge1\n';
+    $('#input-text').value = input; $('#input-build').click();
+    const hash = S.util.hash(S.readers.PASTE + '\n' + input);
+    for (let i = 0; i < 4000 && (!App.snap || App.snap.meta.inputHash !== hash); i++) await new Promise((r) => setTimeout(r, 5));
+    if (App.snap.meta.inputHash !== hash) throw new Error('Wi-Fi 基準未建立');
+    const w = App.graph.nodes.find((n) => n.id === '?p|SW_A|wifi1'); const l = App.graph.nodes.find((n) => n.id === '?p|SW_A|wlan1'); const e = App.graph.nodes.find((n) => n.id === '?p|SW_A|ether5');
+    const wc = S.view.theme.endpoint.byType.wifi.c;
+    if (!w || !l || !e) throw new Error('wifi1、wlan1、ether5 末端都應畫出');
+    if (w.kind !== 'downstream' || w.color !== wc || l.color !== wc) throw new Error('Wi-Fi 節點（含多 MAC 菱形）應使用 Wi-Fi 色');
+    if (e.color === wc) throw new Error('非 Wi-Fi 節點不應使用 Wi-Fi 色');
+    if (!/Wi-Fi/.test(w.tip)) throw new Error('提示應標示 Wi-Fi');
+    if (!Array.from(document.querySelectorAll('#legend .li')).some((el) => /Wi-Fi/.test(el.textContent))) throw new Error('圖例缺少 Wi-Fi');
   });
   await step('清除基準', async () => { $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20)); if (App.snap) throw new Error('未清除'); });
   console.log(steps.join('\n'));

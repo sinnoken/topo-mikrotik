@@ -143,8 +143,8 @@
         const ip = !multi && m0 && m0.ips[0];
         const label = multi ? `${r.macs.length} 個 MAC` : (r.desc || ip || (m0 && m0.vendor) || (m0 ? K.macPretty(m0.mac).slice(-8) : '?'));
         nodes.push({ id: vid, label, kind: multi ? 'downstream' : 'endpoint', collected: false, virtual: true, parent: dk, group: dev.group,
-          count: r.macs.length, veth: r.type === 'veth', color: r.type === 'veth' ? EP.veth.c : vendorColor(vendors[0]), ini: vendorIni(vendors[0]),
-          tip: `${Q.devName(dk)} ${r.name}${r.type === 'veth' ? '（容器 veth）' : ''}：${multi ? r.macs.length + ' 個 MAC（疑似下游還有設備）' : K.macPretty(m0.mac)}${ip ? '・' + ip : ''}${vendors.length ? '・' + vendors.join('/') : ''}${r.vlans.length ? '・VLAN ' + r.vlans.join(',') : ''}` });
+          count: r.macs.length, ifStyle: EP.byType[r.type] || null, color: EP.byType[r.type] ? EP.byType[r.type].c : vendorColor(vendors[0]), ini: vendorIni(vendors[0]),
+          tip: `${Q.devName(dk)} ${r.name}${EP.byType[r.type] ? '（' + EP.byType[r.type].label + '）' : ''}：${multi ? r.macs.length + ' 個 MAC（疑似下游還有設備）' : K.macPretty(m0.mac)}${ip ? '・' + ip : ''}${vendors.length ? '・' + vendors.join('/') : ''}${r.vlans.length ? '・VLAN ' + r.vlans.join(',') : ''}` });
         App.virtual.set(vid, { type: 'interface', ep: r.ep }); App.vOfEp.set(r.ep, vid);
         link(dk, vid, r.name);
       });
@@ -377,7 +377,7 @@
     lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'ln', style: { borderTopColor: WEAK.color, borderTopStyle: 'dotted' } }), '聽說（對端無 LLDP）']));
     lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'ln', style: { borderTopColor: WEAK.color, borderTopStyle: 'dashed' } }), 'MNDP：同一 L2 網域可達，非直連確認']));
     lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'sev', style: { background: EP.vendor[0], width: '10px', height: '10px' } }), '未知對端（單一 MAC）']));
-    lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'sev', style: { background: EP.veth.c, width: '10px', height: '10px' } }), '容器 veth 末端']));
+    Object.values(EP.byType).forEach((t) => lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'sev', style: { background: t.c, width: '10px', height: '10px' } }), t.label + ' 末端'])));
     lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'sev', style: { background: EP.downstream.fill, border: '2px dashed ' + EP.downstream.stroke, width: '10px', height: '10px', transform: 'rotate(45deg)', borderRadius: '0' } }), '未知對端（多個 MAC）']));
     lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'sev error' }), '有錯誤／警告']));
   }

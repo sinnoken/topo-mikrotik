@@ -148,7 +148,12 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     const noIp = App.snap.model.macs.filter((x) => !x.ips.length).length;
     if (rows.filter((r) => r.noIp).length < noIp) throw new Error('缺 IP 筆數不符');
     document.querySelectorAll('#left .tabs button')[2].click();
-    const t = text('#pane-macs'); if (!t.includes('設備') || !t.includes('介面') || !t.includes('MAC') || !t.includes('VLAN') || !t.includes('缺 IP ' + rows.filter((r) => r.noIp).length)) throw new Error('清單欄位或缺 IP 摘要不正確');
+    const m = App.snap.model; const ips = App.Q.ipEntries();
+    const t = text('#pane-inventory');
+    [`設備 ${m.devices.length}`, `介面 ${m.interfaces.length}`, `IP ${ips.length}`, `MAC ${rows.length}`, `VLAN ${m.vlans.length}`].forEach((x) => { if (!t.includes(x)) throw new Error('清單缺少分類：' + x); });
+    if (new Set(ips.map((r) => r.ip)).size !== ips.length) throw new Error('IP 清單應去重複');
+    const macChip = document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('MAC'));
+    macChip.click(); const t2 = text('#pane-inventory'); if (!t2.includes('缺 IP ' + rows.filter((r) => r.noIp).length)) throw new Error('缺 IP 摘要不正確');
     App.select(null); const ov = text('#right'); const uniq = new Set(App.snap.model.arps.map((x) => x.ip)).size;
     if (!ov.includes('IP（ARP）' + uniq.toLocaleString()) && !ov.includes('IP（ARP）')) throw new Error('總覽缺少 IP（ARP）');
   });

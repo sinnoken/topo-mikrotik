@@ -32,7 +32,8 @@
     const key = K.ep(devKey, name);
     return getOr(M.ifcs, key, () => ({
       key, dev: devKey, name: String(name).trim().replace(/\.0$/, ''), desc: null, admin: null, status: null,
-      type: null, parent: null, mode: null, ips: new Set(), vlans: new Set(), vlanNames: new Set(),
+      type: null, rawType: null, hwMac: null, defaultName: null, mtu: null, actualMtu: null, l2mtu: null,
+      parent: null, mode: null, ips: new Set(), vlans: new Set(), vlanNames: new Set(),
       macs: new Set(), hearsay: false, sub: null, src: [],
     }));
   }
@@ -124,6 +125,7 @@
     if (f.type) i.type = f.type;
     if (f.parent) i.parent = K.ifc(f.parent);
     if (f.mode) i.mode = f.mode;
+    ['rawType', 'hwMac', 'defaultName', 'mtu', 'actualMtu', 'l2mtu'].forEach((k) => { if (f[k] != null) i[k] = f[k]; });
     if (f.ip) i.ips.add(f.ip);
     if (f.sub) i.sub = { of: K.ifc(f.sub.of), vlan: f.sub.vlan };
     if (/^ae\d+$|^reth\d+$/i.test(i.name) && !i.type) i.type = 'aggregate';

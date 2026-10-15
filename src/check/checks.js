@@ -191,6 +191,7 @@
    * linksByEp 僅包含介面鄰接證據；廣播網域（MNDP）可達不代表該埠有 LLDP／CDP 鄰接。
    * 回傳 Map(ep → { linked: 是否有任何 LLDP／CDP 鄰接 })
    */
+  const NON_EDGE_TYPES = new Set(['bridge', 'vlan', 'loopback', 'vrrp']);
   function edgePorts(M, adjacencyLinksByEp) {
     const out = new Map();
     const toInfra = (ep) => (adjacencyLinksByEp.get(ep) || []).some((l) => {
@@ -199,7 +200,9 @@
     });
     const hasAdjacency = (ep) => adjacencyLinksByEp.has(ep);
     M.ifcs.forEach((i, ep) => {
-      if (i.macs.size !== 1 || i.type === 'wifi' || i.status === 'down' || i.admin === 'down' || /^(irb|vlan|lo\d)/.test(i.name)) return;
+      // 有 RouterOS 原始 type 時依事實排除虛擬介面；無介面資料才退回名稱推論
+      const virtual = i.rawType ? NON_EDGE_TYPES.has(i.rawType) : /^(irb|vlan|lo\d)/.test(i.name);
+      if (i.macs.size !== 1 || i.type === 'wifi' || i.status === 'down' || i.admin === 'down' || virtual) return;
       if (!M.devices.get(i.dev).collected) return;
       const group = [ep];
       if (i.parent) { const p = M.ifcs.get(K.ep(i.dev, i.parent)); if (p) group.push(p.key, ...Array.from(p.members || [])); }

@@ -249,6 +249,32 @@ test('interface print：type=veth 標為 veth，unknownPeers 帶型別；其他�
   assert.strictEqual(rows.find((r) => r.name === 'veth1').type, 'veth');
   assert.notStrictEqual(rows.find((r) => r.name === 'ether5').type, 'veth');
 });
+test('interface print：保留 rawType／介面 MAC／MTU，並依 rawType 排除 bridge 末端', () => {
+  const s = build('SW_A (10.0.0.1):\n### /interface print detail\n'
+    + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
+    + ' 0  R  name="ether1" default-name="ether1" type="ether" mtu=1500 l2mtu=1598 mac-address=AA:BB:CC:00:00:01\n'
+    + ' 1  R  name="br-mgmt" type="bridge" mtu=1500 actual-mtu=1500\n'
+    + '### /interface bridge host print detail\n'
+    + ' 0 D mac-address=02:AA:BB:00:00:01 on-interface=ether1 bridge=br-mgmt\n'
+    + ' 1 D mac-address=02:AA:BB:00:00:02 on-interface=br-mgmt bridge=br-mgmt\n');
+  const e = iface(s, 'SW_A|ether1');
+  assert.deepStrictEqual([e.rawType, e.hwMac, e.defaultName, e.mtu, e.l2mtu], ['ether', 'AA:BB:CC:00:00:01', 'ether1', 1500, 1598]);
+  const b = iface(s, 'SW_A|br-mgmt');
+  assert.deepStrictEqual([b.rawType, b.actualMtu, b.edge], ['bridge', 1500, false]);
+  assert.strictEqual(e.edge, true);
+});
+test('interface print 缺漏：改用 export 的 bridge／vlan 定義判斷，再退回名稱規則', () => {
+  const s = build('SW_A (10.0.0.1):\n### /export terse\n'
+    + '/interface bridge add name=br-mgmt\n/interface vlan add name=v-10 interface=ether1 vlan-id=10\n'
+    + '### /interface bridge host print detail\n'
+    + ' 0 D mac-address=02:AA:BB:00:00:01 on-interface=br-mgmt bridge=br-mgmt\n'
+    + ' 1 D mac-address=02:AA:BB:00:00:02 on-interface=v-10 bridge=br-mgmt\n'
+    + ' 2 D mac-address=02:AA:BB:00:00:03 on-interface=ether1 bridge=br-mgmt\n'
+    + ' 3 D mac-address=02:AA:BB:00:00:04 on-interface=irb9 bridge=br-mgmt\n');
+  assert.deepStrictEqual(['br-mgmt', 'v-10'].map((n) => iface(s, 'SW_A|' + n).rawType), ['bridge', 'vlan']);
+  assert.deepStrictEqual(['br-mgmt', 'v-10', 'irb9'].map((n) => iface(s, 'SW_A|' + n).edge), [false, false, false]);
+  assert.strictEqual(iface(s, 'SW_A|ether1').edge, true);
+});
 test('interface print：type=wifi／wlan 標為 wifi', () => {
   const s = build('SW_A (10.0.0.1):\n### /interface print detail\n'
     + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'

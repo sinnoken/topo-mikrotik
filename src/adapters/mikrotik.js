@@ -177,7 +177,7 @@
             const name = kv.name || (sel && sel.name); if (!name) break;
             const br = bridges.get(name) || { filtering: false }; bridges.set(name, br);
             if (kv['vlan-filtering']) br.filtering = kv['vlan-filtering'] === 'yes';
-            const f = { t: 'ifc', ifc: name, line }; if (kv.comment) f.desc = kv.comment; emit(f); break;
+            const f = { t: 'ifc', ifc: name, rawType: 'bridge', line }; if (kv.comment) f.desc = kv.comment; emit(f); break;
           }
           case '/interface bridge port':
             if (cmd === 'add' && kv.interface) {
@@ -190,14 +190,14 @@
             break;
           case '/interface vlan':
             if (cmd === 'add' && kv.name && kv['vlan-id']) {
-              const f = { t: 'ifc', ifc: kv.name, sub: { of: kv.interface, vlan: +kv['vlan-id'] }, line }; if (kv.comment) f.desc = kv.comment; emit(f);
+              const f = { t: 'ifc', ifc: kv.name, rawType: 'vlan', sub: { of: kv.interface, vlan: +kv['vlan-id'] }, line }; if (kv.comment) f.desc = kv.comment; emit(f);
               emit({ t: 'vlan', id: +kv['vlan-id'], name: null, line });
               emit({ t: 'vmem', vlan: String(kv['vlan-id']), ifc: kv.interface, tagged: true, src: 'config', line });
             }
             break;
           case '/interface bonding':
             if (cmd === 'add' && kv.name) {
-              const f = { t: 'ifc', ifc: kv.name, type: 'aggregate', line }; if (kv.comment) f.desc = kv.comment; emit(f);
+              const f = { t: 'ifc', ifc: kv.name, type: 'aggregate', rawType: 'bond', line }; if (kv.comment) f.desc = kv.comment; emit(f);
               list(kv.slaves).forEach((s) => emit({ t: 'ifc', ifc: s, parent: kv.name, line }));
             }
             break;
@@ -289,6 +289,10 @@
         if (/^(bond|bonding)$/i.test(kv.type || '')) f.type = 'aggregate';
         else if (/^veth$/i.test(kv.type || '')) f.type = 'veth';
         else if (/^(wifi|wlan)$/i.test(kv.type || '')) f.type = 'wifi';
+        if (kv.type) f.rawType = kv.type.toLowerCase();
+        if (kv['mac-address']) f.hwMac = kv['mac-address'];
+        if (kv['default-name']) f.defaultName = kv['default-name'];
+        ['mtu', 'actual-mtu', 'l2mtu'].forEach((k) => { if (/^\d+$/.test(kv[k] || '')) f[k.replace(/-(\w)/, (_, c) => c.toUpperCase())] = +kv[k]; });
         emit(f);
       });
     },

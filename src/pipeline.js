@@ -98,6 +98,7 @@
 
     const interfaces = Array.from(M.ifcs.values()).map((i) => ({
       key: i.key, dev: i.dev, name: i.name, desc: i.desc, admin: i.admin, status: i.status || 'unknown', type: i.type || 'physical',
+      rawType: i.rawType, hwMac: i.hwMac, defaultName: i.defaultName, mtu: i.mtu, actualMtu: i.actualMtu, l2mtu: i.l2mtu,
       parent: i.parent, members: i.members ? Array.from(i.members).sort(nat) : [], mode: i.mode, ips: Array.from(i.ips).sort(nat),
       vlans: U.numSort(Array.from(i.vlans)), vlanNames: Array.from(i.vlanNames).sort(nat), macs: Array.from(i.macs).sort(),
       hearsay: i.hearsay, sub: i.sub, edge: M.edge.has(i.key), unknownPeer: M.edge.has(i.key) && !M.edge.get(i.key).linked, src: i.src, srcNone: i.src.length ? null : i.hearsay ? 'hearsay' : 'unrecorded',

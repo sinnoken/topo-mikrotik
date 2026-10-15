@@ -65,7 +65,7 @@ reader、adapter、model 與 check pipeline；收集器不解析或修改 Router
 | ARP | `/ip arp print detail without-paging` | MAC↔IP | 建議 | 建議 |
 | 系統資訊 | `/system resource print` | 型號（決定交換器／路由器）、版本 | 建議 | 建議 |
 | Bridge VLAN 實際成員 | `/interface bridge vlan print detail without-paging` | 含動態成員（pvid 自動產生的項目） | 選用 | — |
-| 介面狀態 | `/interface print detail without-paging` | running／停用／註解 | 選用 | 選用 |
+| 介面狀態 | `/interface print detail without-paging` | running／停用／註解／原始 type／介面 MAC／MTU | 選用 | 選用 |
 | IP 位址 | `/ip address print detail without-paging` | 含動態位址（DHCP client 等）；靜態的 export 已有 | 選用 | 選用 |
 | OSPF 鄰居 | `/routing ospf neighbor print detail without-paging` | IP 層 L3 鄰接（不作為直連拓樸 edge） | 有跑 OSPF 時 | 有跑 OSPF 時 |
 

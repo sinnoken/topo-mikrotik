@@ -13,6 +13,8 @@
   };
   V.theme = {
     kind,
+    // 設備節點外形；Canvas 繪圖與圖例共用
+    shape: { firewall: 'shield', switch: 'wide', router: 'circle', host: 'square', unknown: 'circle' },
     edge: {
       lag: { c: '#3b82f6', w: 3.2 }, '40g': { c: '#ef4444', w: 2.8 }, '10g': { c: '#f59e0b', w: 2.1 }, '1g': { c: '#9aa5b1', w: 1.4 },
       oob: { c: '#22c55e', w: 1.2, dash: [4, 3] }, l3: { c: '#6366f1', w: 1.4, dash: [6, 4] }, other: { c: '#b0b8c1', w: 1.3 },

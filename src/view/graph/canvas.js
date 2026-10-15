@@ -150,6 +150,7 @@
         const a = this.pos.get(e.a); const b = this.pos.get(e.b); if (!a || !b) return;
         if (!inView(a) && !inView(b) && !segInView(a, b, view)) return;
         const st = EDGE[e.cls] || EDGE.other; let col = st.c; let w = st.w * (e.count > 1 ? 1.25 : 1); let alpha = e.domainOnly ? WEAK.domainOnly.alpha : e.hearsay ? WEAK.hearsay.alpha : 1;
+        if (e.ifStyle) col = e.ifStyle.c;
         const hc = hl && hl.edges.get(e.id);
         if (dim && !hc && !override) alpha = ALPHA.dimEdge;
         if (hc) { col = hc; w = Math.max(w, 3.5, 2.5 / s); }
@@ -249,12 +250,12 @@
     c.fillStyle = fill; c.strokeStyle = n.collected ? shade(col) : col;
     if (!n.collected) c.setLineDash(EP.dash);
     c.beginPath();
-    if (n.kind === 'firewall') { // 盾牌
+    const shape = T.shape[n.kind] || 'circle';
+    if (shape === 'shield') { // 盾牌
       c.moveTo(p.x, p.y - r); c.lineTo(p.x + r, p.y - r * 0.55); c.quadraticCurveTo(p.x + r * 0.9, p.y + r * 0.6, p.x, p.y + r);
       c.quadraticCurveTo(p.x - r * 0.9, p.y + r * 0.6, p.x - r, p.y - r * 0.55); c.closePath();
-    } else if (n.kind === 'switch') roundRect(c, p.x - r * 1.25, p.y - r * 0.75, r * 2.5, r * 1.5, 4);
-    else if (n.kind === 'router') c.arc(p.x, p.y, r, 0, Math.PI * 2);
-    else if (n.kind === 'host') roundRect(c, p.x - r, p.y - r, r * 2, r * 2, 2);
+    } else if (shape === 'wide') roundRect(c, p.x - r * 1.25, p.y - r * 0.75, r * 2.5, r * 1.5, 4);
+    else if (shape === 'square') roundRect(c, p.x - r, p.y - r, r * 2, r * 2, 2);
     else c.arc(p.x, p.y, r, 0, Math.PI * 2);
     c.fill(); c.stroke(); c.setLineDash([]);
     if (!n.collected || r < 9) return;

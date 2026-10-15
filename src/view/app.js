@@ -106,7 +106,7 @@
   }
 
   // ---------------------------------------------------------------- 未知對端
-  const EP = V.theme.endpoint; const MARK = V.theme.mark; const WEAK = V.theme.weakEdge;
+  const EP = V.theme.endpoint; const MARK = V.theme.mark; const WEAK = V.theme.weakEdge; const CV = V.theme.canvas;
   const vendorColor = (v) => (v ? EP.vendor[Array.from(v).reduce((a, ch) => a + ch.charCodeAt(0), 0) % EP.vendor.length] : EP.vendorFallback);
   const vendorIni = (v) => (v ? v.replace(/[^A-Za-z0-9\u4e00-\u9fff]/g, '').slice(0, 2).toUpperCase() : '?');
 
@@ -146,7 +146,7 @@
           count: r.macs.length, ifStyle: EP.byType[r.type] || null, color: EP.byType[r.type] ? EP.byType[r.type].c : vendorColor(vendors[0]), ini: vendorIni(vendors[0]),
           tip: `${Q.devName(dk)} ${r.name}${EP.byType[r.type] ? '（' + EP.byType[r.type].label + '）' : ''}：${multi ? r.macs.length + ' 個 MAC（疑似下游還有設備）' : K.macPretty(m0.mac)}${ip ? '・' + ip : ''}${vendors.length ? '・' + vendors.join('/') : ''}${r.vlans.length ? '・VLAN ' + r.vlans.join(',') : ''}` });
         App.virtual.set(vid, { type: 'interface', ep: r.ep }); App.vOfEp.set(r.ep, vid);
-        link(dk, vid, r.name);
+        link(dk, vid, r.name, { ifStyle: EP.byType[r.type] || null });
       });
     });
   }
@@ -372,14 +372,30 @@
     $('#btn-png').onclick = () => { const a = document.createElement('a'); a.download = 'topology.png'; a.href = $('#graph').toDataURL('image/png'); a.click(); };
     // 圖例
     const lg = $('#legend');
-    Object.entries(V.KIND).forEach(([k, label]) => lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'sev', style: { background: V.KIND_COLOR[k], width: '10px', height: '10px' } }), label])));
-    Object.entries(V.EDGE_STYLE).forEach(([k, st]) => lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'ln', style: { borderTopColor: st.c, borderTopStyle: st.dash ? 'dashed' : 'solid' } }), V.CLS[k]])));
-    lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'ln', style: { borderTopColor: WEAK.color, borderTopStyle: 'dotted' } }), '聽說（對端無 LLDP）']));
-    lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'ln', style: { borderTopColor: WEAK.color, borderTopStyle: 'dashed' } }), 'MNDP：同一 L2 網域可達，非直連確認']));
-    lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'sev', style: { background: EP.vendor[0], width: '10px', height: '10px' } }), '未知對端（單一 MAC）']));
-    Object.values(EP.byType).forEach((t) => lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'sev', style: { background: t.c, width: '10px', height: '10px' } }), t.label + ' 末端'])));
-    lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'sev', style: { background: EP.downstream.fill, border: '2px dashed ' + EP.downstream.stroke, width: '10px', height: '10px', transform: 'rotate(45deg)', borderRadius: '0' } }), '未知對端（多個 MAC）']));
-    lg.appendChild(h('div', { class: 'li' }, [h('span', { class: 'sev error' }), '有錯誤／警告']));
+    // 圖例的外形、顏色、線寬、虛線與透明度全部取自 theme，與 Canvas 繪圖同一來源
+    const item = (swatches, label) => lg.appendChild(h('div', { class: 'li' }, swatches.concat(label)));
+    const LEG = 12;
+    const SHAPE_CSS = {
+      shield: { clipPath: 'polygon(50% 0, 100% 22%, 90% 70%, 50% 100%, 10% 70%, 0 22%)' },
+      wide: { width: Math.round(LEG * 1.4) + 'px', height: Math.round(LEG * 0.85) + 'px', borderRadius: '2px' },
+      square: { borderRadius: '2px' },
+      circle: {},
+    };
+    const dot = (style) => h('span', { class: 'sev', style: Object.assign({ width: LEG + 'px', height: LEG + 'px' }, style) });
+    const line = (color, w, dash, alpha) => h('span', { class: 'ln', style: {
+      borderTopWidth: '0', height: Math.max(2, Math.round(w)) + 'px', opacity: String(alpha == null ? 1 : alpha),
+      background: dash ? `repeating-linear-gradient(90deg, ${color} 0 ${dash[0]}px, transparent ${dash[0]}px ${dash[0] + dash[1]}px)` : color,
+    } });
+    Object.entries(V.KIND).forEach(([k, label]) => item([dot(Object.assign({ background: V.KIND_COLOR[k] }, SHAPE_CSS[V.theme.shape[k]]))], label));
+    item([dot(Object.assign({ background: CV.uncollectedFill, border: '2px dashed ' + V.KIND_COLOR.unknown }, SHAPE_CSS.circle))], '未收集設備（虛線外框）');
+    Object.entries(V.EDGE_STYLE).forEach(([k, st]) => item([line(st.c, st.w, st.dash)], V.CLS[k]));
+    item([line(WEAK.color, V.EDGE_STYLE.other.w, WEAK.hearsay.dash, WEAK.hearsay.alpha)], '聽說（對端無 LLDP）');
+    item([line(WEAK.color, V.EDGE_STYLE.other.w, WEAK.domainOnly.dash, WEAK.domainOnly.alpha)], 'MNDP：同一 L2 網域可達，非直連確認');
+    item([dot({ background: EP.vendorFallback, border: '1.5px solid ' + CV.outline })], '未知對端（單一 MAC，依廠商上色）');
+    item([dot({ background: EP.downstream.fill, border: '2px dashed ' + EP.downstream.stroke, transform: 'rotate(45deg)', borderRadius: '0' })], '未知對端（多個 MAC）');
+    item([dot({ background: EP.cluster.fill, border: '1.5px solid ' + EP.cluster.stroke, width: Math.round(LEG * 1.3) + 'px', height: Math.round(LEG * 0.8) + 'px', borderRadius: '3px' })], '末端群組（×N，雙擊展開）');
+    Object.values(EP.byType).forEach((t) => item([dot({ background: t.c }), line(t.c, V.EDGE_STYLE.other.w, WEAK.hearsay.dash, WEAK.hearsay.alpha)], t.label + ' 末端'));
+    item([h('span', { class: 'sev error' })], '有錯誤／警告');
   }
   function bindTabs() {
     document.querySelectorAll('#left .tabs button').forEach((b) => b.addEventListener('click', () => {

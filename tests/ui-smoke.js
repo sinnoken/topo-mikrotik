@@ -217,7 +217,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     const hs = sw(hearsay)[0]; const ds = sw(domain)[0];
     if (hs.style.opacity !== String(T.weakEdge.hearsay.alpha) || !hs.style.background.includes(T.weakEdge.hearsay.c)) throw new Error('聽說圖例顏色或透明度與 theme 不一致');
     if (ds.style.opacity !== String(T.weakEdge.domainOnly.alpha) || !ds.style.background.includes(T.weakEdge.domainOnly.c)) throw new Error('MNDP 圖例顏色或透明度與 theme 不一致');
-    if (T.weakEdge.domainOnly.alpha !== 0.66) throw new Error('MNDP 邊透明度應為 66%');
+    if (T.weakEdge.domainOnly.alpha !== 0.7) throw new Error('MNDP 邊透明度應為 70%');
     if (hs.style.background === ds.style.background) throw new Error('聽說與 MNDP 圖例線型應可區分');
   });
   await step('MNDP 圖例、提示與細節不暗示實體直連', async () => {
@@ -263,10 +263,10 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
       ctx.setLineDash = (pattern) => { dash = pattern.slice(); };
       ctx.moveTo = (x, y) => { from = { x, y }; to = null; };
       ctx.lineTo = (x, y) => { to = { x, y }; };
-      ctx.stroke = () => { strokes.push({ alpha: ctx.globalAlpha, dash: dash.slice(), from, to }); };
+      ctx.stroke = () => { strokes.push({ alpha: ctx.globalAlpha, color: ctx.strokeStyle, dash: dash.slice(), from, to }); };
       graph.setData(nodes, edges, pos); graph.hl = null; graph.hover = null; graph.setSelection([], []); graph.fit(); graph.draw();
       const pure = segmentStrokes('mndp-a', 'mndp-b');
-      if (!pure.some((s) => s.alpha === 0.66 && s.dash.join() === weak.domainOnly.dash.join())) throw new Error('純 MNDP 邊應以 66% 不透明度使用 theme 指定的高辨識點劃線');
+      if (!pure.some((s) => s.alpha === 0.7 && s.color === weak.domainOnly.c && s.dash.join() === weak.domainOnly.dash.join())) throw new Error('純 MNDP 邊應以灰色、70% 不透明度使用 theme 指定的高辨識點劃線');
       const mixed = segmentStrokes('mixed-a', 'mixed-b');
       if (!mixed.length || mixed.some((s) => s.alpha === 0.5)) throw new Error('混合證據邊不應套用 MNDP-only 透明度');
       graph.setSelection([], ['pure-mndp']); strokes.length = 0; graph.draw();

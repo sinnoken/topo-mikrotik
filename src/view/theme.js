@@ -21,7 +21,7 @@
     },
     // 證據強度較弱的邊：純 MNDP（網域可達）與聽說（對端無 LLDP）
     weakEdge: {
-      domainOnly: { c: '#0f766e', alpha: 0.66, dash: [8, 3, 2, 3] },
+      domainOnly: { c: '#9aa5b1', alpha: 0.7, dash: [8, 3, 2, 3] },
       hearsay: { c: '#7c3aed', alpha: 0.85, dash: [2, 3] },
     },
     sev: { error: '#d93025', warn: '#f29900' },

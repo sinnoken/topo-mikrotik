@@ -82,7 +82,7 @@
       h('h2', null, [devLink(App, sel.dev), ' 的未知對端']),
       h('div', { class: 'row' }, [V.chip(`${rows.length} 個埠`), V.chip(`${macs} 個 MAC`), multi ? V.chip(`${multi} 個埠有多個 MAC`, 'warn') : null,
         rows.length > 1 ? h('button', { onclick: () => App.toggleExpand(sel.dev) }, collapsed ? '在圖上展開' : (App.expanded.has(sel.dev) ? '在圖上收合' : '（已全部展開）')) : null]),
-      h('p', { class: 'muted' }, '這些埠有學到 MAC，但沒有 LLDP／CDP 介面鄰接，所以基準裡沒有已確認的埠對埠鄰居；MNDP 只代表同一 L2 網域可達，不算直連鄰接。圖上以 MAC、ARP 與廠商資料推論；一個埠有多個 MAC，通常表示後面還接著交換器、AP 或虛擬化主機。'),
+      h('p', { class: 'muted' }, '這些埠只學到一個 MAC，且沒有 LLDP／CDP 介面鄰接，所以基準裡沒有已確認的埠對埠鄰居；MNDP 只代表同一 L2 網域可達，不算直連鄰接。多 MAC 埠與 Wi-Fi 介面不列為末端。'),
       unknownTable(App, rows),
     ]);
   }

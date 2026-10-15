@@ -186,8 +186,8 @@
   }
 
   /**
-   * 末端埠：已收集設備上、有學到 MAC、狀態不是 down 的介面，且沒有連到其他「已收集的網路設備」
-   * （連到主機或未收集設備的埠仍算末端，MAC 的位置就是這些埠）。
+   * 末端埠：已收集設備上、恰好學到一個 MAC、非 Wi-Fi、狀態不是 down 的介面，
+   * 且沒有連到其他「已收集的網路設備」（連到主機或未收集設備的埠仍算末端）。
    * linksByEp 僅包含介面鄰接證據；廣播網域（MNDP）可達不代表該埠有 LLDP／CDP 鄰接。
    * 回傳 Map(ep → { linked: 是否有任何 LLDP／CDP 鄰接 })
    */
@@ -199,7 +199,7 @@
     });
     const hasAdjacency = (ep) => adjacencyLinksByEp.has(ep);
     M.ifcs.forEach((i, ep) => {
-      if (!i.macs.size || i.status === 'down' || i.admin === 'down' || /^(irb|vlan|lo\d)/.test(i.name)) return;
+      if (i.macs.size !== 1 || i.type === 'wifi' || i.status === 'down' || i.admin === 'down' || /^(irb|vlan|lo\d)/.test(i.name)) return;
       if (!M.devices.get(i.dev).collected) return;
       const group = [ep];
       if (i.parent) { const p = M.ifcs.get(K.ep(i.dev, i.parent)); if (p) group.push(p.key, ...Array.from(p.members || [])); }

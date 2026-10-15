@@ -320,7 +320,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (!text('#detail').includes('OSPF L3 鄰接（非實體直連）')) throw new Error('設備細節沒有顯示獨立 OSPF 鄰接');
     if (!text('#detail').includes('第 5 行')) throw new Error('OSPF 細節沒有來源行連結');
   });
-  await step('CAPsMAN Wi-Fi 多 MAC 在拓樸顯示菱形', async () => {
+  await step('CAPsMAN Wi-Fi 多 MAC 不列為拓樸末端', async () => {
     const input = 'SW_A (10.0.0.1):\n### /interface print detail\n'
       + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
       + ' 7    RS ;;; managed by CAPsMAN, traffic processing on\n'
@@ -339,9 +339,9 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     for (let i = 0; i < 4000 && (!App.snap || App.snap.meta.inputHash !== hash); i++) await new Promise((r) => setTimeout(r, 5));
     if (App.snap.meta.inputHash !== hash) throw new Error('Wi-Fi 基準未建立');
     const wifis = App.snap.model.interfaces.filter((i) => ['wifi1', 'wifi8'].includes(i.name));
-    if (!wifis.every((i) => i.status === 'up' && i.unknownPeer && i.macs.length === 2)) throw new Error('Wi-Fi running 狀態或多 MAC 末端遺失');
-    const diamonds = App.graph.nodes.filter((n) => n.kind === 'downstream' && n.parent === 'SW_A');
-    if (diamonds.length !== 2) throw new Error('wifi1 與 wifi8 都應畫成多 MAC 菱形');
+    if (!wifis.every((i) => i.status === 'up' && !i.unknownPeer && !i.edge && i.macs.length === 2)) throw new Error('Wi-Fi 不應列為末端介面');
+    const endpoints = App.graph.nodes.filter((n) => n.virtual && n.parent === 'SW_A');
+    if (endpoints.length) throw new Error('Wi-Fi 不應建立末端節點');
   });
   await step('veth 連線以專用顏色識別', async () => {
     const input = 'SW_A (10.0.0.1):\n### /interface print detail\n'
@@ -363,7 +363,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (!/容器 veth/.test(v.tip)) throw new Error('提示應標示容器 veth');
     if (!Array.from(document.querySelectorAll('#legend .li')).some((el) => /容器 veth/.test(el.textContent))) throw new Error('圖例缺少 veth');
   });
-  await step('Wi-Fi 連線以專用顏色識別', async () => {
+  await step('Wi-Fi 不列為末端；單 MAC 有線埠仍列入', async () => {
     const input = 'SW_A (10.0.0.1):\n### /interface print detail\n'
       + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
       + ' 0  R  name="wifi1" type="wifi" mtu=1500\n'
@@ -378,14 +378,12 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     const hash = S.util.hash(S.readers.PASTE + '\n' + input);
     for (let i = 0; i < 4000 && (!App.snap || App.snap.meta.inputHash !== hash); i++) await new Promise((r) => setTimeout(r, 5));
     if (App.snap.meta.inputHash !== hash) throw new Error('Wi-Fi 基準未建立');
-    const w = App.graph.nodes.find((n) => n.id === '?p|SW_A|wifi1'); const l = App.graph.nodes.find((n) => n.id === '?p|SW_A|wlan1'); const e = App.graph.nodes.find((n) => n.id === '?p|SW_A|ether5');
-    const wc = S.view.theme.endpoint.byType.wifi.c;
-    if (!w || !l || !e) throw new Error('wifi1、wlan1、ether5 末端都應畫出');
-    if (w.kind !== 'downstream' || w.color === wc || l.color === wc || w.ifStyle || l.ifStyle) throw new Error('Wi-Fi 節點外觀不應改變，只識別連線');
-    const we = App.graph.edges.find((x) => x.b === w.id); const le = App.graph.edges.find((x) => x.b === l.id); const ee = App.graph.edges.find((x) => x.b === e.id);
-    if (!we || !le || we.ifStyle.c !== wc || le.ifStyle.c !== wc || ee.ifStyle) throw new Error('Wi-Fi 連線應帶專用色，其他連線不變');
-    if (!/Wi-Fi/.test(w.tip)) throw new Error('提示應標示 Wi-Fi');
-    if (!Array.from(document.querySelectorAll('#legend .li')).some((el) => /Wi-Fi/.test(el.textContent))) throw new Error('圖例缺少 Wi-Fi');
+    const wifis = App.snap.model.interfaces.filter((i) => ['wifi1', 'wlan1'].includes(i.name));
+    const ethernet = App.snap.model.interfaces.find((i) => i.name === 'ether5');
+    const endpoints = App.graph.nodes.filter((n) => n.virtual && n.parent === 'SW_A');
+    if (!wifis.every((i) => !i.edge && !i.unknownPeer)) throw new Error('Wi-Fi 介面不應列為末端');
+    if (!ethernet || !ethernet.edge || !ethernet.unknownPeer) throw new Error('單 MAC 有線介面應列為末端');
+    if (endpoints.length !== 1 || endpoints[0].id !== '?p|SW_A|ether5') throw new Error('只有單 MAC 有線介面應畫出末端節點');
   });
   await step('左右欄可拖曳調整寬度，且有下限與上限', async () => {
     const grip = document.querySelector('#left .grip-left'); const rgrip = document.querySelector('#right .grip-right');

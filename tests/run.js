@@ -213,7 +213,7 @@ test('interface print：running／停用／註解（含獨立一行的 ;;;）', 
   assert.strictEqual(iface(s, 'SW_A|ether3').admin, 'down');
   assert.strictEqual(iface(s, 'SW_A|bond1').type, 'aggregate');
 });
-test('interface print：CAPsMAN 說明續行保留 Wi-Fi running 旗標及多 MAC 末端', () => {
+test('interface print：CAPsMAN 說明續行保留 Wi-Fi running 旗標；多 MAC Wi-Fi 不列為末端', () => {
   const s = build('SW_A (10.0.0.1):\n### /interface print detail\n'
     + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
     + ' 7    RS ;;; managed by CAPsMAN, traffic processing on\n'
@@ -231,7 +231,8 @@ test('interface print：CAPsMAN 說明續行保留 Wi-Fi running 旗標及多 MA
     const i = iface(s, `SW_A|${name}`);
     assert.strictEqual(i.status, 'up', `${name} 的 R 旗標不可被 CAPsMAN 說明覆蓋`);
     assert.strictEqual(i.macs.length, 2);
-    assert.strictEqual(i.unknownPeer, true, `${name} 的多 MAC 末端應可畫成菱形`);
+    assert.strictEqual(i.edge, false, `${name} 不應列為末端介面`);
+    assert.strictEqual(i.unknownPeer, false, `${name} 不應列為未知對端`);
   });
 });
 test('interface print：type=veth 標為 veth，unknownPeers 帶型別；其他介面不受影響', () => {
@@ -364,11 +365,23 @@ test('可追溯：MAC、ARP 與已收集設備的介面都帶來源', () => {
   }));
   assert.ok(!m.interfaces.some((i) => i.srcNone === 'unrecorded'), '不可有「應有來源卻沒記錄」的介面');
 });
-test('未知對端：一個埠學到多個 MAC 時回報多筆（疑似下游還有設備）', () => {
+test('未知對端：學到多個 MAC 的介面不列為末端', () => {
   const mac = (n) => ` ${n} D mac-address=AA:BB:CC:00:00:0${n} on-interface=ether5 bridge=bridge1 vid=30 age=3s`;
   const s = build(['SW_A (10.0.0.1):', '### /interface bridge host print detail', mac(1), mac(2), mac(3)].join('\n'));
   const rows = S.query(s).unknownPeers('SW_A');
-  assert.strictEqual(rows.length, 1); assert.strictEqual(rows[0].macs.length, 3);
+  assert.strictEqual(rows.length, 0, '學到多個 MAC 的介面不列為末端');
+  assert.strictEqual(iface(s, 'SW_A|ether5').edge, false);
+});
+test('未知對端：Wi-Fi 即使只學到一個 MAC 也不列為末端', () => {
+  const s = build('SW_A (10.0.0.1):\n### /interface print detail\n'
+    + 'Flags: D - DYNAMIC; R - RUNNING\n 0 R name="wifi1" type="wifi"\n'
+    + '### /interface bridge host print detail\n'
+    + ' 0 D mac-address=AA:BB:CC:00:00:01 on-interface=wifi1 bridge=bridge1 vid=10\n'
+    + ' 1 D mac-address=AA:BB:CC:00:00:02 on-interface=ether1 bridge=bridge1 vid=10\n');
+  assert.strictEqual(iface(s, 'SW_A|wifi1').macs.length, 1);
+  assert.strictEqual(iface(s, 'SW_A|wifi1').edge, false);
+  assert.strictEqual(iface(s, 'SW_A|ether1').edge, true, '一般單 MAC 介面仍列為末端');
+  assert.deepStrictEqual(S.query(s).unknownPeers('SW_A').map((p) => p.name), ['ether1']);
 });
 test('A02：不同 VLAN 的末端埠不視為同一 MAC 重複位置', () => {
   const mac = 'AA:BB:CC:00:00:01';

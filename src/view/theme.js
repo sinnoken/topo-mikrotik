@@ -9,7 +9,7 @@
   const V = (S.view = S.view || {});
   const kind = {
     firewall: '#22a338', switch: '#f29900', router: '#2563eb', host: '#8b5cf6', unknown: '#90a4ae',
-    endpoint: '#78909c', downstream: '#f29900', cluster: '#90a4ae',
+    endpoint: '#78909c', cluster: '#90a4ae',
   };
   V.theme = {
     kind,
@@ -42,9 +42,7 @@
       // 依介面 type 識別連到末端的連線（只標連線，節點外觀不變）
       byType: {
         veth: { c: '#d81b60', label: '容器 veth' },
-        wifi: { c: '#00b8d4', label: 'Wi-Fi' },
       },
-      downstream: { fill: '#fff8e8', stroke: '#f29900', text: '#9a5b00' },
       cluster: { fill: '#eceff1', stroke: '#78909c', text: '#37474f' },
       dash: [3, 2],
     },

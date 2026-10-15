@@ -100,7 +100,7 @@
       cv.addEventListener('mouseleave', () => { if (this.hover) { this.hover = null; this.dirty = true; this.emit('hover', { item: null }); } });
     }
     radius(n) {
-      if (n.kind === 'endpoint') return 7; if (n.kind === 'cluster') return 12; if (n.kind === 'downstream') return 9;
+      if (n.kind === 'endpoint') return 7; if (n.kind === 'cluster') return 12;
       return n.kind === 'host' ? 6 : n.collected ? 13 : 9;
     }
     hitNode(p) {
@@ -195,13 +195,13 @@
         c.globalAlpha = 1;
       }
       // 標籤：依重要性排序，與已畫的標籤重疊就略過（避免縮小時糊成一片）
-      const RANKL = { firewall: 0, router: 1, switch: 2, unknown: 3, host: 4, cluster: 5, downstream: 5, endpoint: 6 };
+      const RANKL = { firewall: 0, router: 1, switch: 2, unknown: 3, host: 4, cluster: 5, endpoint: 6 };
       const cand = [];
       for (const n of this.nodes) {
         if (!this.visible(n)) continue; const p = this.pos.get(n.id); if (!inView(p)) continue;
         const forced = this.sel.nodes.has(n.id) || n.id === hoverN;
         const marked = hl && hl.nodes.has(n.id);
-        if (!forced && !marked && (n.kind === 'host' || n.kind === 'endpoint' || n.kind === 'downstream') && s < 0.9) continue;
+        if (!forced && !marked && (n.kind === 'host' || n.kind === 'endpoint') && s < 0.9) continue;
         if (!forced && !marked && n.kind === 'cluster' && s < 0.45) continue;
         if (!forced && !marked && s < 0.18) continue;
         cand.push({ n, p, pri: forced ? -1 : (marked ? 0 : 10) + (n.collected ? 0 : 5) + (RANKL[n.kind] ?? 3) });
@@ -273,10 +273,6 @@
       c.fillStyle = n.color || EP.vendorFallback; c.strokeStyle = CV.outline; c.lineWidth = 1.5;
       c.beginPath(); c.arc(p.x, p.y, r, 0, Math.PI * 2); c.fill(); c.stroke();
       if (s > 1.3 && n.ini) { c.fillStyle = CV.outline; c.font = 'bold 7px sans-serif'; c.textAlign = 'center'; c.fillText(n.ini, p.x, p.y + 2.6); c.textAlign = 'left'; }
-    } else if (n.kind === 'downstream') { // 一個埠學到多個 MAC：菱形，疑似下游還有設備
-      c.fillStyle = EP.downstream.fill; c.strokeStyle = EP.downstream.stroke; c.lineWidth = 2; c.setLineDash(EP.dash);
-      c.beginPath(); c.moveTo(p.x, p.y - r); c.lineTo(p.x + r, p.y); c.lineTo(p.x, p.y + r); c.lineTo(p.x - r, p.y); c.closePath(); c.fill(); c.stroke(); c.setLineDash([]);
-      if (s > 0.9) { c.fillStyle = EP.downstream.text; c.font = 'bold 8px sans-serif'; c.textAlign = 'center'; c.fillText(String(n.count || ''), p.x, p.y + 3); c.textAlign = 'left'; }
     } else { // cluster：同一台設備上很多末端，收合成一個
       c.fillStyle = EP.cluster.fill; c.strokeStyle = EP.cluster.stroke; c.lineWidth = 1.5;
       roundRect(c, p.x - r * 1.3, p.y - r * 0.8, r * 2.6, r * 1.6, 5); c.fill(); c.stroke();

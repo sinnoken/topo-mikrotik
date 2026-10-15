@@ -102,8 +102,8 @@
       findingsFor(type, key) { return (findingsBy.get(type + ':' + key) || []).map((i) => snap.findings[i]); },
       findingIndexesFor(type, key) { return findingsBy.get(type + ':' + key) || []; },
       block: (id) => snap.blocks[id] || null,
-      /** 有學到 MAC、但沒有 LLDP／CDP 介面鄰接的末端埠所屬設備（MNDP 網域可達不算直連鄰接） */
-      // 末端：沒有 LLDP／CDP 介面鄰接的埠後面看到的每個 MAC 一列（一個埠後有多個 MAC 就有多列）；沒有 MAC 的埠仍保留一列
+      /** 有且僅有一個 MAC、非 Wi-Fi，且沒有 LLDP／CDP 介面鄰接的末端埠所屬設備（MNDP 網域可達不算直連鄰接） */
+      // 末端：符合未知對端條件的埠後面看到的 MAC 一列
       endpointEntries() {
         return Q.unknownDevices().flatMap((d) => Q.unknownPeers(d).flatMap((u) => {
           const base = { end: true, key: u.ep, dev: d, ifc: u.name, desc: u.desc, type: u.type, status: u.status, vlans: u.vlans, portMacs: u.macs.length };

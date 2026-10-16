@@ -31,6 +31,11 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 
 /* ---------- 版面 ---------- */
 #app { display: grid; grid-template-rows: 48px auto auto minmax(0, 1fr) 26px; height: 100vh; }
+#app > header { grid-row: 1; }
+#baseline-summary { grid-row: 2; }
+#mobile-workspaces { grid-row: 3; }
+#main { grid-row: 4; }
+#app > footer { grid-row: 5; }
 header { display: flex; align-items: center; gap: 10px; padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--line); box-shadow: 0 1px 4px rgba(22, 37, 54, .035); z-index: 7; }
 header .brand { font-weight: 700; font-size: 15px; letter-spacing: .01em; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 header .brand svg { width: 22px; height: 22px; }

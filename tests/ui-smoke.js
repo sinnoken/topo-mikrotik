@@ -236,6 +236,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
       ['狀態標籤層次', /\.chip\.err\s*\{[^}]*border-color:/],
       ['減少動態效果偏好', /prefers-reduced-motion:\s*reduce/],
       ['資料標籤間距與換行', /\.chip-list\s*\{[^}]*display:\s*flex[^}]*flex-wrap:\s*wrap[^}]*gap:\s*4px/],
+      ['首頁 Grid 明確指定主內容列', /#main\s*\{\s*grid-row:\s*4;/],
     ].forEach(([label, pattern]) => { if (!pattern.test(css)) throw new Error('缺少 ' + label); });
     const vars = { firewall: 'fw', switch: 'sw', router: 'rt', host: 'host', unknown: 'unk' };
     Object.entries(vars).forEach(([k, v]) => {

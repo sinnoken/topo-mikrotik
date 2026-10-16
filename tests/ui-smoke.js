@@ -84,6 +84,35 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     await new Promise((r) => setTimeout(r, 20));
     if (!process.env.SMOKE_INPUT && !text('#pane-findings').includes('LLDP 單向')) throw new Error('檢查結果未顯示');
     if (!$('#welcome').classList.contains('hidden')) throw new Error('歡迎畫面未隱藏');
+    const collected = App.snap.model.devices.find((device) => device.collected);
+    App.select({ type: 'device', key: collected.key });
+    if (!$('#detail .chip-list') || !$('#detail .chip-list').querySelectorAll('.chip').length) throw new Error('設備收集資料標籤應使用可間隔換行的 chip-list');
+  });
+  await step('基準摘要與行動入口', () => {
+    const summary = text('#baseline-summary');
+    if (!summary.includes('基準檢查') || !summary.includes('收集完整度')) throw new Error('缺少基準狀態與收集完整度摘要');
+    if (summary.includes('網路正常') || summary.includes('即時')) throw new Error('基準摘要不可宣稱即時網路健康');
+    const missing = $('#baseline-summary').querySelectorAll('button').find((b) => b.textContent === '查看收集缺漏');
+    if (!missing || missing.disabled) throw new Error('有缺漏時應提供可用的收集缺漏入口');
+    missing.click();
+    if (!text('#pane-coverage').includes('有缺漏')) throw new Error('缺漏入口沒有切換至覆蓋率');
+    const expectedMissing = App.snap.coverage.filter((row) => row.collected && row.missing.length).length;
+    if ($('#pane-coverage').querySelectorAll('tbody tr').length !== expectedMissing) throw new Error('缺漏入口應預先篩選有缺漏的設備');
+    const problems = $('#baseline-summary').querySelectorAll('button').find((b) => b.textContent === '查看錯誤／警告');
+    problems.click();
+    if (!text('#pane-findings').includes('LLDP 單向')) throw new Error('問題入口沒有切換至檢查結果');
+  });
+  await step('窄螢幕工作區切換與詳情漸進展開', () => {
+    window.innerWidth = 390;
+    const workspaces = document.querySelectorAll('#mobile-workspaces button');
+    workspaces.find((b) => b.dataset.workspace === 'checks').click();
+    if ($('#main').dataset.workspace !== 'checks') throw new Error('工作區切換未顯示檢查面板');
+    App.select({ type: 'device', key: App.snap.model.devices[0].key });
+    if ($('#main').dataset.workspace !== 'details') throw new Error('選取資料後應切換至詳細資料工作區');
+    const folds = $('#detail').querySelectorAll('details');
+    if (!folds.length || !folds.some((d) => d.querySelector('summary').textContent.includes('鄰居'))) throw new Error('設備詳細資訊未提供可漸進展開的區塊');
+    window.innerWidth = 1200;
+    workspaces.find((b) => b.dataset.workspace === 'graph').click();
   });
   await step('繪圖：不同縮放程度、分群、主機切換', () => {
     const g = App.graph; [0.05, 0.3, 0.8, 1.6, 3].forEach((s) => { g.s = s; g.draw(); });
@@ -206,6 +235,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
       ['檢查結果卡片樣式', /\.finding\s*\{[^}]*border:/],
       ['狀態標籤層次', /\.chip\.err\s*\{[^}]*border-color:/],
       ['減少動態效果偏好', /prefers-reduced-motion:\s*reduce/],
+      ['資料標籤間距與換行', /\.chip-list\s*\{[^}]*display:\s*flex[^}]*flex-wrap:\s*wrap[^}]*gap:\s*4px/],
     ].forEach(([label, pattern]) => { if (!pattern.test(css)) throw new Error('缺少 ' + label); });
     const vars = { firewall: 'fw', switch: 'sw', router: 'rt', host: 'host', unknown: 'unk' };
     Object.entries(vars).forEach(([k, v]) => {

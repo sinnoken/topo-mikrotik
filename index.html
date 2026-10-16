@@ -62,7 +62,14 @@
     <button class="ghost" id="btn-clear" title="清除這個工具保存的基準與輸入">清除</button>
   </header>
 
-  <div id="main">
+  <section id="baseline-summary" class="baseline-summary hidden" aria-live="polite"></section>
+  <nav id="mobile-workspaces" class="mobile-workspaces" aria-label="工作區">
+    <button class="on" data-workspace="graph" aria-pressed="true">拓樸</button>
+    <button data-workspace="checks" aria-pressed="false">檢查／清單</button>
+    <button data-workspace="details" aria-pressed="false">詳細資料</button>
+  </nav>
+
+  <div id="main" data-workspace="graph">
     <aside id="left">
       <div class="tabs">
         <button class="on" data-pane="pane-findings">檢查結果</button>

@@ -37,6 +37,12 @@
   }
   findings.reset = () => { state.open = new Set(); state.shown = new Map(); state.selected = -1; };
   findings.openFirst = (snap) => { const f = snap.findings.find((x) => x.severity !== 'info'); if (f) state.open.add(f.id); };
+  findings.showProblems = (App) => {
+    state.sev = { error: true, warn: true, info: false };
+    state.open = new Set();
+    state.selected = -1;
+    findings(App);
+  };
 
   // ---------------------------------------------------------------- 覆蓋率
   const cov = { filter: 'all' };
@@ -52,10 +58,11 @@
     root.appendChild(V.table([
       { t: '設備', f: (r) => Q.devName(r.dev) },
       { t: '類型', f: (r) => V.kindChip(r.kind) },
-      { t: '資料', f: (r) => h('span', null, [...r.data.map((t) => V.chip(S.check.DATA_LABEL[t] || t)), ...r.missing.map((t) => V.chip('缺 ' + (S.check.DATA_LABEL[t] || t), 'err'))]) },
+      { t: '資料', f: (r) => h('div', { class: 'chip-list' }, [...r.data.map((t) => V.chip(S.check.DATA_LABEL[t] || t)), ...r.missing.map((t) => V.chip('缺 ' + (S.check.DATA_LABEL[t] || t), 'err'))]) },
       { t: '連結', f: (r) => String(r.links) },
     ], list, { onRow: (r) => App.select({ type: 'device', key: r.dev }, { focus: true }), limit: 600, bad: (r) => r.missing.length > 0 }));
   }
+  coverage.showMissing = (App) => { cov.filter = 'missing'; coverage(App); };
 
   // ---------------------------------------------------------------- 比對
   const cmp = { report: null, name: '', filter: 'problem' };

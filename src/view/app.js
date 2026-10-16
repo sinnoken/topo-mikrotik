@@ -21,7 +21,7 @@
     App.graph.on('hover', onHover);
     let saveT = null;
     App.graph.on('moved', () => { clearTimeout(saveT); saveT = setTimeout(savePositions, 600); App.graph.computeGroups(); });
-    bindHeader(); bindToolbar(); bindInputDialog(); bindTabs(); await bindResizers();
+    bindHeader(); bindToolbar(); bindInputDialog(); bindTabs(); bindMobileWorkspaces(); await bindResizers();
     if (!(await S.store.available())) banner('這個瀏覽器無法使用本機儲存，關閉頁面後基準不會保留。');
     const last = await S.store.get('last').catch(() => null);
     if (last && last.snapshot && last.snapshot.meta && last.snapshot.meta.schema === S.SCHEMA) {
@@ -241,6 +241,7 @@
     g.setSelection(nodes, edges);
     if (o.focus && focus.length) g.focus(focus);
     V.details.render(App, sel);
+    if (sel && isNarrowScreen()) setWorkspace('details');
   };
 
   App.selectFinding = function (idx) {
@@ -442,6 +443,25 @@
       document.querySelectorAll('#left .pane').forEach((p) => p.classList.toggle('hidden', p.id !== b.dataset.pane));
     }));
   }
+  function isNarrowScreen() { return Number(window.innerWidth) <= 900; }
+  function setWorkspace(workspace) {
+    $('#main').dataset.workspace = workspace;
+    document.querySelectorAll('#mobile-workspaces button').forEach((button) => {
+      const active = button.dataset.workspace === workspace;
+      button.classList.toggle('on', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+  }
+  function bindMobileWorkspaces() {
+    document.querySelectorAll('#mobile-workspaces button').forEach((button) => button.addEventListener('click', () => {
+      setWorkspace(button.dataset.workspace);
+    }));
+  }
+  function activatePane(pane) {
+    const button = document.querySelectorAll('#left .tabs button').find((item) => item.dataset.pane === pane);
+    if (button) button.click();
+    setWorkspace('checks');
+  }
 
   // ================================================================ 輸入對話框
   const input = { files: [] };
@@ -525,6 +545,7 @@
     const has = !!App.snap;
     $('#welcome').classList.toggle('hidden', has);
     ['#toolbar', '#legend', '#hint'].forEach((s) => $(s).classList.toggle('hidden', !has));
+    renderBaselineSummary();
     $('#btn-trace').disabled = !has; $('#search').disabled = !has; $('#btn-clear').disabled = !has;
     const f = V.clear($('#footer'));
     if (has) {
@@ -537,6 +558,40 @@
     } else f.appendChild(h('span', null, `網路基準 ${S.VERSION}・資料只在這個瀏覽器處理，不會傳到任何地方`));
     V.lists.findings(App); V.lists.coverage(App); V.lists.compare(App); V.lists.inventory(App);
     V.details.render(App, App.sel);
+  }
+  function renderBaselineSummary() {
+    const root = V.clear($('#baseline-summary'));
+    const has = !!App.snap;
+    root.classList.toggle('hidden', !has);
+    if (!has) return;
+    const stats = App.snap.meta.stats;
+    const missing = App.snap.coverage.filter((row) => row.collected && row.missing.length).length;
+    const problems = stats.findings.error + stats.findings.warn;
+    root.appendChild(h('div', { class: 'baseline-state' }, [
+      h('strong', null, '基準檢查'),
+      h('span', { class: 'baseline-message' }, problems
+        ? `目前規則找到 ${V.num(stats.findings.error)} 項錯誤、${V.num(stats.findings.warn)} 項警告`
+        : '目前規則未發現錯誤或警告'),
+      h('span', { class: 'baseline-coverage' }, `收集完整度：${V.num(stats.collected)} / ${V.num(stats.devices)} 台設備已收集；${V.num(missing)} 台有必要資料缺漏`),
+    ]));
+    const actions = h('div', { class: 'baseline-actions' });
+    actions.appendChild(h('button', {
+      disabled: !problems,
+      onclick: () => {
+        V.lists.findings.showProblems(App);
+        activatePane('pane-findings');
+      },
+    }, '查看錯誤／警告'));
+    actions.appendChild(h('button', {
+      disabled: !missing,
+      onclick: () => {
+        V.lists.coverage.showMissing(App);
+        activatePane('pane-coverage');
+      },
+    }, '查看收集缺漏'));
+    actions.appendChild(h('button', { onclick: () => App.openTrace() }, '路由追蹤'));
+    actions.appendChild(h('button', { onclick: () => $('#search').focus() }, '搜尋定位'));
+    root.appendChild(actions);
   }
   App.openInput = openInput;
   App.loadSample = async () => { await openInput(); $('#input-text').value = S.samples['sample-bundle.txt']; input.files = []; renderFiles(); };

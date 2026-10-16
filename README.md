@@ -100,6 +100,7 @@ npm run oui -- <oui-data.json>   # 更新 OUI 廠商資料
 - 新增輸入格式：在 `src/readers/` 新增 reader 並放進 `readers/index.js` 的 `ORDER`。
 - 新增檢查：在 `src/check/checks.js` 的 `CATALOG` 加一筆並實作；在範例資料放一個對應的問題並加測試。
 - SSH 收集器是 WSL/Linux 可執行的本機 Bash CLI，不是瀏覽器功能；使用既有 SSH key/agent，將多台設備的唯讀輸出包成一個 `bundle-v1` 檔。
+- CI：[.github/workflows/ci.yml](.github/workflows/ci.yml) 在 PR 與非 main 分支 push 時以 Node 20／24 執行 `npm test`；壓力測試（`npm run test:large`）只在每週排程與手動觸發時執行。main 上的部署前仍由 `deploy-pages.yml` 跑 `npm test`。提交前仍請先在本機執行 `npm test`。
 
 設計與取捨見 [docs/design-ssot.md](docs/design-ssot.md)。
 

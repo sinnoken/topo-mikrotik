@@ -13,13 +13,22 @@ Use this skill for changes or investigations involving RouterOS neighbor discove
 and topology inference in this repository. It covers LLDP, MNDP, CDP, bridge
 interfaces, protocol-specific records, and duplicate neighbor/link handling.
 
-The official machine-readable RouterOS manual index is:
+## Finding Official RouterOS Documentation
+
+The official RouterOS manual is available in machine-readable plain-text
+formats:
 
 <https://manual.mikrotik.com/llms.txt>
 
+- `https://manual.mikrotik.com/llms.txt` indexes every manual page with a
+  description and link. Read this first to find the relevant documentation.
+- `https://manual.mikrotik.com/llms-full.txt` concatenates the entire manual
+  into one text file and is intended for bulk ingestion or a full local copy.
+
 Use the official documentation as the source of truth for RouterOS field names,
-command output, and protocol semantics. Do not copy the whole manual into the
-repository or add a runtime network dependency.
+command output, and protocol semantics. Prefer the index and relevant linked
+pages; use the full manual when broader context is needed. Do not copy the
+manual into the repository or add a runtime network dependency.
 
 ## Procedure
 

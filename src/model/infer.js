@@ -280,8 +280,41 @@
     });
     M.fdbIndex = { portsOf, macOwner }; // 供 behindLocations 使用（內部，不序列化）
 
+    // 合併：不同依據取用的埠不同（成員埠／聚合、VLAN 介面／實體埠、不明埠代號），同一條鏈路要併成一筆，且在過濾「只有 MNDP」之前做
+    const lagOf = (ep) => { const i = M.ifcs.get(ep); return i && i.lag ? i.lag : ep; };
+    const unknownPort = (ep) => K.splitEp(ep)[1].startsWith('?(');
+    const merged = new Map();
+    out.forEach((r) => {
+      let [a, b] = [r.a, r.b].map((ep) => (collected(devOf(ep)) ? lagOf(ep) : ep));
+      // 對端埠不明：依合併後的本機埠重新產生代號，同一對（本機埠、對端設備）一定得到同一個代號
+      if (unknownPort(a)) a = K.ep(devOf(a), `?(${devOf(b)}:${ifcName(b)})`);
+      if (unknownPort(b)) b = K.ep(devOf(b), `?(${devOf(a)}:${ifcName(a)})`);
+      const key = K.link(a, b);
+      const m = S.util.getOr(merged, key, () => ({ key, a: a < b ? a : b, b: a < b ? b : a, bases: new Set(), evidence: [] }));
+      r.evidence.forEach((e) => { if (!m.bases.has(e.basis)) { m.bases.add(e.basis); m.evidence.push(e); } });
+    });
+    // 已知對端埠名（例如 MNDP 有回報）時，取代同一本機埠、同一對端設備的「埠不明」那一筆
+    merged.forEach((r, key) => {
+      const ends = [r.a, r.b]; const u = ends.find(unknownPort); if (!u) return;
+      const local = ends.find((e) => e !== u);
+      const known = Array.from(merged.values()).find((x) => x !== r && [x.a, x.b].includes(local) && [x.a, x.b].some((e) => e !== local && devOf(e) === devOf(u) && !unknownPort(e)));
+      if (!known) return;
+      r.evidence.forEach((e) => { if (!known.bases.has(e.basis)) { known.bases.add(e.basis); known.evidence.push(e); } });
+      merged.delete(key);
+    });
+    // 只在 VLAN／bridge 介面上的 /30 證據：同一對設備另外剛好只有一條實體埠的推論時，併進那一條（有多條時無法確定是哪一條）
+    const physical = (ep) => { const i = M.ifcs.get(ep); return !i || !['vlan', 'bridge', 'virtual', 'loopback'].includes(i.type); };
+    merged.forEach((r, key) => {
+      if (Array.from(r.bases).some((x) => x !== 'subnet-p2p') || [r.a, r.b].every(physical)) return;
+      const pair = [devOf(r.a), devOf(r.b)].sort().join('~');
+      const others = Array.from(merged.values()).filter((x) => x !== r && [devOf(x.a), devOf(x.b)].sort().join('~') === pair && [x.a, x.b].every(physical));
+      if (others.length !== 1) return;
+      r.evidence.forEach((e) => { if (!others[0].bases.has(e.basis)) { others[0].bases.add(e.basis); others[0].evidence.push(e); } });
+      merged.delete(key);
+    });
+
     const MNDP_ONLY = new Set(['mndp-mutual', 'mndp-unique']);
-    M.inferred = Array.from(out.values()).filter((r) => Array.from(r.bases).some((b) => !MNDP_ONLY.has(b)))
+    M.inferred = Array.from(merged.values()).filter((r) => Array.from(r.bases).some((b) => !MNDP_ONLY.has(b)))
       .map((r) => ({ ...r, bases: Array.from(r.bases).sort(), confidence: r.bases.size >= 2 ? 'high' : 'medium' }));
   }
 

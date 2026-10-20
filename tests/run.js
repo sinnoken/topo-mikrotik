@@ -677,6 +677,20 @@ test('推論鏈路（RSTP）：CSS106 是上游時，RouterOS 的 root／alterna
     'SW_B (10.0.0.2):', STP(['  interface: ether2', '  role: root-port', '  designated-bridge-id: 0x8000.D4:01:C3:00:00:0A', '  designated-port-id: 0x80.5'])].join('\n'));
   assert.deepStrictEqual(inferred(pair), [['SW_A|ether5', 'SW_B|ether2', 'stp', 'medium']], 'designated-port-id 對回 SW_A 的 ether5（port-id 5）');
 });
+test('推論鏈路合併：成員埠歸到聚合、不明埠代號一致、VLAN 介面上的 /30 併到唯一的實體鏈路', () => {
+  // CSS106 接在 SW_A 的 bond1（ether1＋ether2）：MNDP 在成員埠、MAC 表與 RSTP 在 bond1 → 合併成一筆
+  const lag = build(['SW_A (10.0.0.1):', '### /export terse', '/interface bonding add name=bond1 slaves=ether1,ether2',
+    NB([' 0 interface=ether1 mac-address=CC:2D:E0:00:01:06 identity=CSS106_1 board="CSS106-1G-4P-1S" discovered-by=mndp']),
+    BH([' 0 DL mac-address=D4:01:C3:00:00:0A on-interface=bridge1', ' 1 D mac-address=CC:2D:E0:00:01:06 on-interface=bond1']),
+    STP(['  interface: bond1', '       role: root-port', '  designated-bridge-id: 0x8000.CC:2D:E0:00:01:06'])].join('\n'));
+  assert.deepStrictEqual(inferred(lag), [['CSS106_1|?(sw_a:bond1)', 'SW_A|bond1', 'fdb+mndp-unique+stp', 'high']]);
+  // 兩台已收集路由器：/30 在 vlan99 上、MAC 表在 ether3／ether4 → 併成一筆實體鏈路
+  const l3 = build(['R1 (10.0.0.1):', '### /export terse', '/interface vlan add interface=ether3 name=vlan99 vlan-id=99', '/ip address add address=10.9.9.1/30 interface=vlan99',
+    BH([' 0 DL mac-address=D4:01:C3:00:00:01 on-interface=bridge1', ' 1 D mac-address=D4:01:C3:00:00:02 on-interface=ether3']),
+    'R2 (10.0.0.2):', '### /export terse', '/interface vlan add interface=ether4 name=vlan99 vlan-id=99', '/ip address add address=10.9.9.2/30 interface=vlan99',
+    BH([' 0 DL mac-address=D4:01:C3:00:00:02 on-interface=bridge1', ' 1 D mac-address=D4:01:C3:00:00:01 on-interface=ether4'])].join('\n'));
+  assert.deepStrictEqual(inferred(l3), [['R1|ether3', 'R2|ether4', 'fdb+subnet-p2p', 'high']]);
+});
 test('推論鏈路：/30 點對點網段、MNDP 雙向；兩台設備已有 LLDP 鏈路或埠已有 LLDP 鄰接時不推論', () => {
   const p2p = build('R1 (10.0.0.1):\n### /export terse\n/ip address add address=10.9.9.1/30 interface=ether1\nR2 (10.0.0.2):\n### /export terse\n/ip address add address=10.9.9.2/30 interface=ether2\n');
   assert.deepStrictEqual(inferred(p2p), [['R1|ether1', 'R2|ether2', 'subnet-p2p', 'medium']]);

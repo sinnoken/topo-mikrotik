@@ -539,8 +539,24 @@ test('附帶的命名規則檔可載入', () => {
   vm.runInThisContext(read('profiles/site-naming.js'));
   const p = S.profiles['site-naming'];
   assert.ok(p && S.profile.compile(p));
+  const base = build(read('samples/sample-bundle.txt'));
   const s = build(read('samples/sample-bundle.txt'), { profile: p });
   assert.ok(s.model.devices.filter((d) => d.group === 'TPE').length >= 14);
+  // 範例的設備名是「站點_層級_類型_編號」：類型要依第三段判斷，不可因層級 CORE 把路由器判成交換器
+  const kind = (snap, k) => snap.model.devices.find((d) => d.key === k).kind;
+  ['TPE_CORE_RT_01', 'TPE_CORE_RT_02', 'TPE_ACC_SW_01'].forEach((k) => assert.strictEqual(kind(s, k), kind(base, k), `${k} 的類型不應被命名規則改錯`));
+  assert.deepStrictEqual([kind(s, 'TPE_CORE_RT_01'), s.model.devices.find((d) => d.key === 'TPE_CORE_RT_01').role], ['router', 'CORE']);
+  assert.deepStrictEqual(s.findings.filter((f) => f.id === 'C02').map((f) => f.message), base.findings.filter((f) => f.id === 'C02').map((f) => f.message), '套用內建規則不應改變應收集的資料');
+  const c = S.profile.compile(p);
+  assert.deepStrictEqual([c.annotate('TPE_FW_01').kind, c.annotate('TPE_RT_01').kind, c.annotate('TPE_DIST_01').kind], ['firewall', 'router', 'switch'], '相容三段名稱');
+});
+test('附帶的 JSON 命名規則範例可載入，分隔符號 _ 與 - 一致處理', () => {
+  const c = S.profile.compile(JSON.parse(read('profiles/floor-device-naming.json')));
+  const at = (n) => c.annotate(n);
+  [['3F_hAP', { role: 'AP', group: '3F', label: 'hAP' }], ['3F-hAP_02', { role: 'AP', group: '3F', label: 'hAP_02' }],
+    ['2F-RB5009', { kind: 'router', role: 'RTR', group: '2F', label: 'RB5009' }], ['2F_RB5009_02', { kind: 'router', role: 'RTR', group: '2F', label: 'RB5009_02' }],
+    ['B1F_wAP_02', { role: 'AP', group: 'B1F', label: 'wAP_02' }], ['3F_CRS326', { group: '3F', label: 'CRS326' }]]
+    .forEach(([n, want]) => assert.deepStrictEqual(at(n), want, n));
 });
 
 // ------------------------------------------------------------------ 查詢、追蹤、比對

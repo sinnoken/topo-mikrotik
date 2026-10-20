@@ -22,11 +22,22 @@
   const macLink = (App, m) => L(App, K.macPretty(m), { type: 'mac', key: m });
   const ipLink = (App, ip) => L(App, ip, { type: 'ip', key: ip });
   const kv = (pairs) => h('div', { class: 'kv' }, pairs.filter((p) => p && p[1] !== null && p[1] !== undefined && p[1] !== '').flatMap(([k, v]) => [h('div', { class: 'k' }, k), h('div', null, v)]));
-  const sec = (title, extra) => h('h3', null, [title].concat(extra || []));
-  const fold = (title, count, content, open) => h('details', { class: 'detail-fold', open: !!open }, [
-    h('summary', null, [title, count == null ? null : V.chip(String(count))]),
-    content,
-  ]);
+  /**
+   * 詳情區塊的唯一產生方式：標題與筆數只在這裡產生，內容函式只回傳內容、不自帶標題（避免標題重複）。
+   *   section(標題, 內容, { count, extra, fold, open })
+   *   - 內容為 null、false 或空陣列時，整個區塊不顯示
+   *   - count：標題旁的筆數；列表類區塊一律提供
+   *   - fold：可展開區塊（標題在展開列，open 決定預設展開）；否則為一般區塊（h3 標題）
+   */
+  function section(title, content, opt) {
+    const o = opt || {};
+    if (content == null || content === false || (Array.isArray(content) && !content.length)) return null;
+    const head = [title, o.count == null ? null : V.chip(String(o.count)), ...(o.extra || [])];
+    const body = Array.isArray(content) ? h('div', null, content) : content;
+    return o.fold
+      ? h('details', { class: 'detail-fold', open: !!o.open }, [h('summary', null, head), body])
+      : h('div', { class: 'detail-section' }, [h('h3', null, head), body]);
+  }
   const vlanText = (ids) => (ids && ids.length ? S.check.fmtVlans(ids) : '—');
 
   function findingsBlock(App, list) {
@@ -34,18 +45,18 @@
     const seen = new Set(); const uniq = list.filter((f) => (seen.has(f) ? false : seen.add(f)));
     const order = { error: 0, warn: 1, info: 2 };
     uniq.sort((a, b) => order[a.severity] - order[b.severity]);
-    return h('div', null, [sec('檢查結果', [V.chip(String(uniq.length))]), ...uniq.map((f) => h('div', { class: 'finding' }, [
+    return section('檢查結果', uniq.map((f) => h('div', { class: 'finding' }, [
       V.sevDot(f.severity),
       h('div', null, [h('div', null, [h('b', null, f.title)]), h('div', null, f.message),
         f.evidence.length ? h('div', { class: 'ev' }, f.evidence.slice(0, 3).map((e) => h('a', { class: 'link mono', onclick: () => App.openRaw(e.file, e.line) }, `原文 第 ${e.line} 行`))) : null]),
-    ]))]);
+    ])), { count: uniq.length });
   }
   function sourcesBlock(App, src, title) {
     if (!src || !src.length) return null;
-    return h('div', null, [sec(title || '來源'), h('div', null, src.map(([b, line]) => {
+    return section(title || '來源', src.map(([b, line]) => {
       const blk = App.Q.block(b);
       return h('div', null, h('a', { class: 'link mono', onclick: () => App.openRaw(blk.file, line) }, `${blk.devKey || '?'}｜${blk.command || '（未標記指令）'}｜第 ${line} 行`));
-    }))]);
+    }), { count: src.length });
   }
 
   // ---------------------------------------------------------------- 總覽
@@ -55,13 +66,11 @@
       h('h2', null, '總覽'),
       kv([['建立時間', V.fmtTime(m.createdAt)], ['輸入指紋', h('span', { class: 'mono' }, m.inputHash)], ['命名規則', m.profile ? `${m.profile.id} v${m.profile.version}` : '未套用'],
         ['來源', m.sources.map((s) => `${s.name}（${V.num(s.bytes)} 字元）`).join('、')]]),
-      sec('內容'),
-      kv([['設備', `${V.num(st.devices)}（已收集 ${V.num(st.collected)}）`], ['介面', V.num(st.interfaces)], ['鏈路', V.num(st.links)], ['VLAN 定義', V.num(st.vlans)],
-        ['MAC', V.num(st.macs)], ['終端 MAC 位置（含 Wi-Fi 漫遊觀察）', V.num(C.endpoints)], ['IP（ARP）', V.num(C.arpIps)], ['路由', V.num(st.routes)]]),
-      sec('檢查結果'),
-      h('div', { class: 'row' }, [V.chip(`錯誤 ${st.findings.error}`, 'err'), V.chip(`警告 ${st.findings.warn}`, 'warn'), V.chip(`提醒 ${st.findings.info}`, 'info')]),
-      sec('解析器使用量'),
-      V.table([{ t: '解析器', f: (r) => (S.adapters[r[0]] ? S.adapters[r[0]].label : r[0]) }, { t: '事實數', f: (r) => V.num(r[1]) }], Object.entries(m.adapters)),
+      section('內容', kv([['設備', `${V.num(st.devices)}（已收集 ${V.num(st.collected)}）`], ['介面', V.num(st.interfaces)], ['鏈路', V.num(st.links)], ['VLAN 定義', V.num(st.vlans)],
+        ['MAC', V.num(st.macs)], ['終端 MAC 位置（含 Wi-Fi 漫遊觀察）', V.num(C.endpoints)], ['IP（ARP）', V.num(C.arpIps)], ['路由', V.num(st.routes)]])),
+      section('檢查結果', h('div', { class: 'row' }, [V.chip(`錯誤 ${st.findings.error}`, 'err'), V.chip(`警告 ${st.findings.warn}`, 'warn'), V.chip(`提醒 ${st.findings.info}`, 'info')])),
+      section('解析器使用量', V.table([{ t: '解析器', f: (r) => (S.adapters[r[0]] ? S.adapters[r[0]].label : r[0]) }, { t: '事實數', f: (r) => V.num(r[1]) }], Object.entries(m.adapters)),
+        { count: Object.keys(m.adapters).length }),
       h('p', { class: 'muted' }, '點選圖上的設備或連線、左側的檢查結果，或使用上方搜尋（設備、MAC、IP、VLAN）。'),
     ]);
   }
@@ -91,8 +100,8 @@
         multi ? V.chip(`${multi} 個終端埠有多個 MAC`, 'warn') : null,
         rows.length + wifi.length > 1 ? h('button', { onclick: () => App.toggleExpand(sel.dev) }, collapsed ? '在圖上展開' : (App.expanded.has(sel.dev) ? '在圖上收合' : '（已全部展開）')) : null]),
       h('p', { class: 'muted' }, '一般終端埠只學到一個 MAC，且沒有 LLDP／CDP 介面鄰接。Wi-Fi 是一對多介面：每個觀察到的 MAC 位置會列入終端清單，但不把 Wi-Fi 介面判為終端，也不參與 A02，因為 MAC 可能隨使用者漫遊而移動。MNDP 只代表同一 L2 廣播網域可達，不算直連鄰接。'),
-      rows.length ? h('div', null, [sec('終端埠'), unknownTable(App, rows)]) : null,
-      wifi.length ? h('div', null, [sec('Wi-Fi MAC 觀察（列入終端清單，不參與 A02）'), unknownTable(App, wifi, () => false)]) : null,
+      section('終端埠', rows.length ? unknownTable(App, rows) : null, { count: rows.length }),
+      section('Wi-Fi MAC 觀察（列入終端清單，不參與 A02）', wifi.length ? unknownTable(App, wifi, () => false) : null, { count: wifi.length }),
     ]);
   }
 
@@ -107,7 +116,7 @@
     const fl = Q.findingsFor('device', d.key).concat(...links.map((l) => Q.findingsFor('link', l.key)), ...ifs.map((i) => Q.findingsFor('interface', i.key)));
     const peerRows = Q.neighborRows(d.key).sort((x, y) => S.util.natural(x.mine, y.mine));
     const vlans = Q.vlansOf(d.key); const routes = Q.routesOf(d.key); const unk = Q.unknownPeers(d.key);
-    const rawBlocks = blocksOf(App, d.key);
+    const blocks = App.snap.blocks.filter((b) => b.devKey === d.key);
     const neighborHasFinding = peerRows.some((r) => r.links.some((l) =>
       l.vlanMismatch || Q.findingsFor('link', l.key).some((f) => f.severity !== 'info')));
     return h('div', { class: 'detail' }, [
@@ -118,19 +127,19 @@
         ['看到它的設備', d.seenBy.length ? h('span', null, d.seenBy.flatMap((k, i) => [i ? '、' : '', devLink(App, k)])) : null],
         ['收集的資料', d.collected ? h('div', { class: 'chip-list' }, [...(cov ? cov.data : []).map((t) => V.chip(S.check.DATA_LABEL[t] || t, 'ok')), ...(cov ? cov.missing : []).map((t) => V.chip('缺 ' + (S.check.DATA_LABEL[t] || t), 'err'))]) : null]]),
       findingsBlock(App, fl),
-      sec('介面', [V.chip(String(ifs.length))]),
-      V.table([
+      section('介面', V.table([
         { t: '介面', f: (i) => h('span', { class: 'mono' }, i.name + (i.lag ? ` → ${Q.getInterface(i.lag).name}` : '')), s: (i) => i.name },
         { t: '狀態', f: V.ifcState, s: V.ifcState },
         { t: '描述／IP', f: (i) => [i.desc, ...Q.addressesOf(i.key)].filter(Boolean).join('  '), s: (i) => Q.addressesOf(i.key)[0] || i.desc },
         { t: 'VLAN', f: (i) => h('span', { class: 'vlanlist' }, vlanText(S.util.ifcVlans(i))), s: (i) => vlanText(S.util.ifcVlans(i)) },
         { t: 'MAC', f: (i) => (i.macs.length ? String(i.macs.length) : ''), s: (i) => i.macs.length || null },
-      ], ifs.sort((a, b) => S.util.natural(a.name, b.name)), { onRow: (i) => App.select({ type: 'interface', key: i.key }), limit: 300 }),
-      vlans.length ? fold('VLAN 定義', vlans.length, h('div', null, [V.table([
+      ], ifs.sort((a, b) => S.util.natural(a.name, b.name)), { onRow: (i) => App.select({ type: 'interface', key: i.key }), limit: 300 }), { count: ifs.length }),
+      section('VLAN 定義', vlans.length ? V.table([
         { t: 'ID', f: (v) => (v.id == null ? '?' : String(v.id)) }, { t: '名稱', f: (v) => v.name || '' }, { t: '描述', f: (v) => v.desc || '' }, { t: '成員', f: (v) => String(v.members.length) },
-      ], vlans, { onRow: (v) => v.id != null && App.select({ type: 'vlan', key: String(v.id) }) })]), false) : null,
-      unk.length ? h('div', null, [sec('沒有 LLDP／CDP 鄰接的埠', [V.chip(String(unk.length)), h('a', { class: 'link', onclick: () => App.select({ type: 'endpoints', dev: d.key }, { focus: true }) }, '在圖上看')]), unknownTable(App, unk)]) : null,
-      fold('鄰居', peerRows.length, h('div', null, [peerRows.length ? V.table([
+      ], vlans, { onRow: (v) => v.id != null && App.select({ type: 'vlan', key: String(v.id) }) }) : null, { count: vlans.length, fold: true }),
+      section('沒有 LLDP／CDP 鄰接的埠', unk.length ? unknownTable(App, unk) : null,
+        { count: unk.length, extra: [h('a', { class: 'link', onclick: () => App.select({ type: 'endpoints', dev: d.key }, { focus: true }) }, '在圖上看')] }),
+      section('鄰居', peerRows.length ? V.table([
         { t: '本機介面', f: (r) => r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN
           ? h('span', { class: 'mono' }, r.observations.length ? r.observations.map((o) => o.ifc).join('、') : '對端回報')
           : h('span', { class: 'mono' }, ifName(Q, r.mine)),
@@ -146,9 +155,9 @@
         { t: 'VLAN', f: (r) => r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? '—'
           : (r.l.vlanMismatch ? h('span', { class: 'diffA' }, '不一致') : h('span', { class: 'vlanlist' }, vlanText(r.l.vlansCommon))),
         s: (r) => (r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? null : r.l.vlanMismatch ? '不一致' : vlanText(r.l.vlansCommon)) },
-      ], peerRows, { onRow: (r) => App.select({ type: 'link', key: r.l.key }, { focus: true }), bad: (r) => r.links.some((x) => x.vlanMismatch || Q.findingsFor('link', x.key).some((f) => f.severity !== 'info')) }) : h('div', { class: 'muted' }, '沒有鏈路')]), neighborHasFinding),
-      ospfAdjacencies.length ? fold('OSPF L3 鄰接（非實體直連）', ospfAdjacencies.length, h('div', null, [
-        V.table([
+      ], peerRows, { onRow: (r) => App.select({ type: 'link', key: r.l.key }, { focus: true }), bad: (r) => r.links.some((x) => x.vlanMismatch || Q.findingsFor('link', x.key).some((f) => f.severity !== 'info')) }) : h('div', { class: 'muted' }, '沒有鏈路'),
+        { count: peerRows.length, fold: true, open: neighborHasFinding }),
+      section('OSPF L3 鄰接（非實體直連）', ospfAdjacencies.length ? V.table([
           { t: '本機介面', f: (a) => epLink(App, a.localEp), s: (a) => K.splitEp(a.localEp)[1] },
           { t: '鄰居', f: (a) => devLink(App, a.peerDev), s: (a) => Q.devName(a.peerDev) },
           { t: '鄰居位址／Router ID', f: (a) => [a.peerIp, a.peerId].filter(Boolean).join('／'), s: (a) => a.peerIp || a.peerId },
@@ -157,24 +166,21 @@
             const [block, line] = a.src[0]; const b = Q.block(block);
             return b ? h('a', { class: 'link mono', onclick: () => App.openRaw(b.file, line) }, `${b.file} 第 ${line} 行`) : '';
           } },
-        ], ospfAdjacencies),
-      ]), false) : null,
-      routes.length ? fold('路由表', routes.length, h('div', null, [V.table([
+        ], ospfAdjacencies) : null, { count: ospfAdjacencies.length, fold: true }),
+      section('路由表', routes.length ? V.table([
         { t: '網段', f: (r) => h('span', { class: 'mono' }, `${r.prefix}/${r.len}`), s: (r) => `${r.prefix}/${r.len}` }, { t: '協定', f: (r) => r.proto, s: (r) => r.proto },
         { t: '下一跳', f: (r) => h('span', { class: 'mono' }, r.nh.map((n) => (n.ip ? n.ip + ' ' : '') + (n.ifc || '')).join('\n')), s: (r) => (r.nh[0] ? r.nh[0].ip || r.nh[0].ifc : '') },
-      ], routes, { limit: 200 })]), false) : null,
-      rawBlocks ? fold('收集到的原始輸出', App.snap.blocks.filter((b) => b.devKey === d.key).length, rawBlocks, false) : null,
+      ], routes, { limit: 200 }) : null, { count: routes.length, fold: true }),
+      section('收集到的原始輸出', blocks.length ? blocksTable(App, blocks) : null, { count: blocks.length, fold: true }),
     ]);
   }
-  function blocksOf(App, devKey) {
-    const bs = App.snap.blocks.filter((b) => b.devKey === devKey);
-    if (!bs.length) return null;
-    return h('div', null, [sec('收集到的原始輸出'), V.table([
+  function blocksTable(App, bs) {
+    return V.table([
       { t: '指令', f: (b) => b.command || '（未標記）', s: (b) => b.command || '（未標記）' },
       { t: '解析器', f: (b) => (b.adapters.length && !b.empty ? b.adapters.map((a) => S.adapters[a].label).join('、') : h('span', { class: 'diffA' }, '無法辨識')),
         s: (b) => (b.adapters.length && !b.empty ? b.adapters.map((a) => S.adapters[a].label).join('、') : '無法辨識') },
       { t: '行', f: (b) => `${b.start}–${b.end}`, s: (b) => b.start },
-    ], bs, { onRow: (b) => App.openRaw(b.file, b.start) })]);
+    ], bs, { onRow: (b) => App.openRaw(b.file, b.start) });
   }
   const ifName = (Q, ep) => { const i = Q.getInterface(ep); return i ? i.name : K.splitEp(ep)[1]; };
 
@@ -199,11 +205,11 @@
         ? kv([['關係', 'MNDP 觀察到的 L2 廣播網域可達性；不代表兩台設備之間存在直連線路。'],
           ['觀察位置', observedAt.length ? observedAt.join('；') : '詳見原始輸出']])
         : kv([['A 端', epLink(App, l.a)], ['B 端', epLink(App, l.b)], ['層級', l.layer === 'l2' ? 'L2（介面鄰接）' : 'L3（路由鄰接）']]),
-      l.layer === 'l2' && !domain ? h('div', null, [sec('VLAN'), kv([
+      section('VLAN', l.layer === 'l2' && !domain ? kv([
         ['兩端都有', h('span', { class: 'vlanlist' }, vlanText(l.vlansCommon))],
         ['只在 A 端', onlyA.length ? h('span', { class: 'vlanlist diffA' }, vlanText(onlyA)) : '—'],
         ['只在 B 端', onlyB.length ? h('span', { class: 'vlanlist diffA' }, vlanText(onlyB)) : '—'],
-      ])]) : null,
+      ]) : null),
       findingsBlock(App, fl),
       sourcesBlock(App, l.src),
     ]);
@@ -246,15 +252,15 @@
         ['PVID', i.pvid == null ? null : String(i.pvid)], ['Untagged VLAN', i.untaggedVlans.length ? h('span', { class: 'vlanlist' }, vlanText(i.untaggedVlans)) : null],
         ['Tagged VLAN', i.taggedVlans.length ? h('span', { class: 'vlanlist' }, vlanText(i.taggedVlans)) : null], ['無法辨識的 VLAN', i.unresolvedVlans.join('、')],
         ['VLAN 子介面', i.parent ? h('span', null, [epLink(App, i.parent), ` 上的 VLAN ${i.encapVlan}`]) : null]]),
-      links.length ? h('div', null, [sec('鏈路'), ...links.map((l) => h('div', null, L(App,
+      section('鏈路', links.map((l) => h('div', null, L(App,
         l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN
           ? `${Q.devName(K.splitEp(l.a)[0] === i.dev ? K.splitEp(l.b)[0] : K.splitEp(l.a)[0])}（MNDP：L2 廣播網域可達，非直連）`
           : `${Q.epName(l.a)} ⇄ ${Q.epName(l.b)}`,
-        { type: 'link', key: l.key })))]) : null,
+        { type: 'link', key: l.key }))), { count: links.length }),
       findingsBlock(App, Q.findingsFor('interface', i.key)),
-      macs.length ? h('div', null, [sec('學到的 MAC', [V.chip(String(macs.length))]), V.table([
+      section('學到的 MAC', macs.length ? V.table([
         { t: 'MAC', f: (m) => macLink(App, m.mac) }, { t: '廠商', f: (m) => m.vendor || '' }, { t: 'IP', f: (m) => m.ips.join(', ') },
-      ], macs, { limit: 500 })]) : null,
+      ], macs, { limit: 500 }) : null, { count: macs.length }),
       sourcesBlock(App, i.src),
     ]);
   }
@@ -269,9 +275,9 @@
         ['位置（終端埠）', m.edge.length ? h('span', null, m.edge.flatMap((ep, n) => [n ? '、' : '', epLink(App, ep)])) : '—'],
         ...wifiRows(App, m.wifi)]),
       findingsBlock(App, Q.findingsFor('mac', m.mac)),
-      m.seen.length ? h('div', null, [sec('在哪些介面／VLAN 學到', [V.chip(String(m.seen.length))]), V.table([
+      section('在哪些介面／VLAN 學到', m.seen.length ? V.table([
         { t: '設備介面', f: (r) => epLink(App, r.ep) }, { t: 'VLAN', f: (r) => r.vlan || '' }, { t: '', f: (r) => (m.edge.includes(r.ep) ? V.chip('終端', 'ok') : V.chip('上行')) },
-      ], m.seen)]) : null,
+      ], m.seen) : null, { count: m.seen.length }),
     ]);
   }
   /** Wi-Fi 位置：依證據強度標示信心；漫遊時列出其他候選位置。 */
@@ -294,7 +300,7 @@
         ['位置（終端埠）', r.locations.length ? h('span', null, r.locations.flatMap((x, n) => [n ? '、' : '', epLink(App, x.ep)])) : '—']]),
       h('div', { class: 'row spaced' }, [h('button', { onclick: () => App.openTrace(r.ip, '') }, '從這個 IP 追蹤路由'), h('button', { onclick: () => App.openTrace('', r.ip) }, '追蹤到這個 IP')]),
       findingsBlock(App, Q.findingsFor('ip', r.ip)),
-      r.arps.length ? h('div', null, [sec('ARP 紀錄'), V.table([{ t: '設備', f: (a) => devLink(App, a.dev) }, { t: '介面', f: (a) => a.ifc }, { t: 'MAC', f: (a) => macLink(App, a.mac) }], r.arps)]) : null,
+      section('ARP 紀錄', r.arps.length ? V.table([{ t: '設備', f: (a) => devLink(App, a.dev) }, { t: '介面', f: (a) => a.ifc }, { t: 'MAC', f: (a) => macLink(App, a.mac) }], r.arps) : null, { count: r.arps.length }),
     ]);
   }
 
@@ -308,9 +314,9 @@
       kv([['名稱', v.names.length ? v.names.join('、') : '—']]),
       h('p', { class: 'muted' }, '圖上：綠色為兩端都有此 VLAN 的鏈路，紅色為只有一端有。'),
       findingsBlock(App, fl),
-      v.partial.length ? h('div', null, [sec('只有一端有此 VLAN 的鏈路'), ...v.partial.map((l) => h('div', null, L(App, `${Q.epName(l.a)} ⇄ ${Q.epName(l.b)}`, { type: 'link', key: l.key })))]) : null,
-      sec('設備'),
-      V.table([{ t: '設備', f: (d) => devLink(App, d) }, { t: '名稱', f: (d) => (v.entries.find((e) => e.dev === d) || {}).name || '' }, { t: '成員介面', f: (d) => String((v.entries.find((e) => e.dev === d) || { members: [] }).members.length) }], v.devices),
+      section('只有一端有此 VLAN 的鏈路', v.partial.map((l) => h('div', null, L(App, `${Q.epName(l.a)} ⇄ ${Q.epName(l.b)}`, { type: 'link', key: l.key }))), { count: v.partial.length }),
+      section('設備', V.table([{ t: '設備', f: (d) => devLink(App, d) }, { t: '名稱', f: (d) => (v.entries.find((e) => e.dev === d) || {}).name || '' }, { t: '成員介面', f: (d) => String((v.entries.find((e) => e.dev === d) || { members: [] }).members.length) }], v.devices),
+        { count: v.devices.length }),
     ]);
   }
 
@@ -323,13 +329,11 @@
       h('h2', { class: 'mono' }, `${t.src} → ${t.dst}`),
       h('div', { class: 'row' }, [t.reached ? V.chip('可抵達', 'ok') : V.chip('無法完整抵達', 'err'), t.hops.some((x) => x.ecmp) ? V.chip('含 ECMP', 'info') : null]),
       kv([['起點', h('span', null, [devLink(App, t.start), '（來源所在網段的閘道）'])]]),
-      sec('逐跳'),
-      ...t.hops.map((hp) => h('div', { class: 'hop' }, [
+      section('逐跳', t.hops.map((hp) => h('div', { class: 'hop' }, [
         h('div', null, [h('b', null, devLink(App, hp.dev)), h('span', { class: 'mono muted' }, `  ${hp.route}（${hp.proto}）`), hp.ecmp ? V.chip('ECMP', 'info') : null]),
         ...hp.next.map((n) => h('div', { class: 'mono' }, [`→ ${n.ip || ''} ${n.ifc || ''} `, n.dev ? devLink(App, n.dev) : null, n.note ? h('span', { class: n.status === 'ok' || n.status === 'connected' ? 'muted' : 'diffA' }, '  ' + n.note) : null])),
-      ])),
-      sec('結果'),
-      ...t.ends.map((e) => h('div', { class: 'hop ' + (e.status === 'reached' ? 'end-reached' : 'end-bad') }, [h('b', null, devLink(App, e.dev)), `：${END[e.status] || e.status}`, h('div', { class: 'muted' }, e.note)])),
+      ])), { count: t.hops.length }),
+      section('結果', t.ends.map((e) => h('div', { class: 'hop ' + (e.status === 'reached' ? 'end-reached' : 'end-bad') }, [h('b', null, devLink(App, e.dev)), `：${END[e.status] || e.status}`, h('div', { class: 'muted' }, e.note)])), { count: t.ends.length }),
     ]);
   }
 

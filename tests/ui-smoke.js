@@ -127,6 +127,26 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (App.layoutMode !== 'builtin') throw new Error('應可切換為快速版面');
     sel.value = 'elk'; sel.dispatch('change'); await App.layoutJob;
   });
+  await step('詳情區塊結構一致：標題只由 section() 產生，展開區塊內沒有額外標題', () => {
+    const m = App.snap.model; const Q = App.Q;
+    const sels = [
+      { type: 'device', key: (m.devices.find((d) => d.collected && d.data.includes('route')) || {}).key },
+      { type: 'device', key: (m.devices.find((d) => !d.collected) || {}).key },
+      { type: 'link', key: (m.links[0] || {}).key }, { type: 'interface', key: (m.interfaces.find((i) => i.macs.length) || {}).key },
+      { type: 'mac', key: (m.macs[0] || {}).mac }, { type: 'ip', key: (Q.ipEntries()[0] || {}).ip }, { type: 'vlan', key: String((m.vlans.find((v) => v.id != null) || {}).id) },
+    ];
+    if (sels.some((x) => !x.key || x.key === 'undefined')) throw new Error('範例資料應涵蓋每種詳情');
+    sels.forEach((sel) => {
+      App.select(sel);
+      $('#detail').querySelectorAll('h3').forEach((x) => {
+        if (!/\bdetail-section\b/.test(x.parentNode.className)) throw new Error(`${sel.type} 詳情的標題「${x.textContent}」不是由 section() 產生`);
+      });
+      $('#detail').querySelectorAll('details').forEach((d) => {
+        if (d.querySelectorAll('h3').length) throw new Error(`${sel.type} 詳情的展開區塊「${d.querySelector('summary').textContent}」內不應有標題`);
+      });
+    });
+    App.select(null);
+  });
   await step('基準摘要與行動入口', () => {
     const summary = text('#baseline-summary');
     if (!summary.includes('基準檢查') || !summary.includes('收集完整度')) throw new Error('缺少基準狀態與收集完整度摘要');
@@ -159,10 +179,15 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if ($('#main').dataset.workspace !== 'details') throw new Error('選取資料後應切換至詳細資料工作區');
     const folds = $('#detail').querySelectorAll('details');
     if (!folds.length || !folds.some((d) => d.querySelector('summary').textContent.includes('鄰居'))) throw new Error('設備詳細資訊未提供可漸進展開的區塊');
-    folds.forEach((d) => {
+    // 檢查兩種設備：未收集的與已收集的（已收集才有「收集到的原始輸出」等區塊）
+    const noDupTitle = () => $('#detail').querySelectorAll('details').forEach((d) => {
       const title = d.querySelector('summary').firstChild.textContent;
       if (d.querySelectorAll('h3').some((x) => x.textContent.startsWith(title))) throw new Error(`展開區塊「${title}」內不應再重複同名標題`);
     });
+    noDupTitle();
+    App.select({ type: 'device', key: App.snap.model.devices.find((x) => x.collected && x.data.includes('route')).key });
+    if (!$('#detail').querySelectorAll('summary').some((x) => x.textContent.startsWith('收集到的原始輸出'))) throw new Error('已收集設備應有原始輸出區塊');
+    noDupTitle();
     window.innerWidth = 1200;
     workspaces.find((b) => b.dataset.workspace === 'graph').click();
   });

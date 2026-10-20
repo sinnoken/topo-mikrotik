@@ -134,13 +134,13 @@ table.t tr.click { cursor: pointer; }
 /* ---------- 詳細資料 ---------- */
 .detail { padding: 16px 16px 34px; }
 .detail h2 { font-size: var(--fs-xl); line-height: 1.35; margin: 0 0 10px; word-break: break-all; letter-spacing: -.01em; }
-.detail h3 { font-size: var(--fs-md); margin: 22px 0 8px; padding-bottom: 5px; color: #405164; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 7px; letter-spacing: .015em; }
-.detail h3:first-child { margin-top: 0; }
+.detail-section { margin-top: 20px; }
+.detail h3 { font-size: var(--fs-md); margin: 0 0 8px; padding-bottom: 5px; color: #405164; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 7px; letter-spacing: .015em; }
 .detail-fold { border-bottom: 1px solid var(--line); }
+.detail-section + .detail-fold, .detail .kv + .detail-fold { margin-top: 12px; }
 .detail-fold > summary { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 2px; cursor: pointer; list-style-position: inside; font-size: var(--fs-md); font-weight: 600; color: #405164; }
 .detail-fold > summary:hover { color: var(--accent); }
 .detail-fold > div { padding: 0 2px 12px; }
-.detail-fold h3 { margin-top: 10px; }
 .row { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
 .row.spaced { margin-top: 10px; }
 .kv { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 5px 10px; font-size: var(--fs-md); }

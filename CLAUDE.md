@@ -18,11 +18,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 只需要 Node.js（CI 使用 Node 20／24），沒有 build、lint 或 format script。
 
 ```bash
-npm test                 # node tests/run.js && bash tests/collect.sh && node tests/ui-smoke.js
+npm test                 # 全部：核心、文件、收集器、畫面
+npm run test:core        # 只跑核心測試（tests/run.js）
+npm run test:docs        # 只跑文件與分工一致性（tests/docs.js）
+npm run test:collector   # 只跑 SSH 收集器測試（tests/collect.sh）
+npm run test:ui          # 只跑畫面冒煙測試（tests/ui-smoke.js，模擬 DOM）
 npm run test:large       # 核心測試＋約 1000 台壓力測試
-node tests/run.js        # 只跑核心測試
-node tests/ui-smoke.js   # 只跑畫面冒煙測試（模擬 DOM）
-bash tests/collect.sh    # 只跑 SSH 收集器測試
 npm run sample           # 重新產生 samples/sample-bundle.txt 並嵌入成 sample-bundle.js
 npm run oui -- <index.json>      # 重新產生 src/data/oui-data.js（來源：npm pack oui-data@<版本>，見 README）
 git diff --check         # 提交前檢查
@@ -76,6 +77,32 @@ git diff --check         # 提交前檢查
   <https://manual.mikrotik.com/llms.txt> 為準。
 - 大型冒煙測試（`SMOKE_INPUT=samples/large-1000.txt node tests/ui-smoke.js`）的「基準摘要與行動入口」一項本來就會失敗：
   它檢查範例資料才有的「LLDP 單向」，乾淨的大型網路沒有這個問題。
+
+## Agent 分工（`.claude/agents/`）
+
+大型任務可分給 subagent 平行處理。四個 agent 各自負責不重疊的檔案，所有權只定義在 [.claude/agents/ownership.json](.claude/agents/ownership.json)；`tests/docs.js` 會檢查每個檔案恰好屬於一個 agent。
+
+| Agent | 負責 | 驗證 |
+|---|---|---|
+| `data-model` | 解析、建模、推論、檢查、Snapshot、查詢介面、範例與 OUI 產生器 | `npm run test:core` |
+| `frontend` | 畫面、樣式、theme、`index.html`、`vendor/` | `npm run test:ui` |
+| `collector` | SSH 收集器 | `npm run test:collector` |
+| `docs` | README、`docs/`、開發原則、skills、agent 定義 | `npm run test:docs` |
+
+主對話（lead）的工作：
+- 負責分派、跨領域修改（例如新增核心檔案要同時改 `tools/core-files.js` 與 `index.html`）、`package.json`、CI，以及提交與推送。
+- 在 agent 之間轉交彼此報告中的「需要其他 agent 處理」與「文件影響」。
+
+agent 之間的介面：
+- **data-model ↔ frontend**：Snapshot 欄位（設計說明 §5.2）與 `SSOT.query()`。
+- **data-model → docs**：`CATALOG` 與 `docs/checks.md` 必須一致。
+- **collector → data-model**：`bundle-v1` 格式與 `tools/collector-commands.sh` 的指令。
+
+排程：
+- 不改介面時，可以平行執行。
+- 要改 Snapshot 或 query 時，依序執行：data-model → frontend → docs。
+- docs 最後執行，依各 agent 報告的「文件影響」更新。
+- 提交前跑一次完整的 `npm test`。
 
 ## 專用流程（skills）
 

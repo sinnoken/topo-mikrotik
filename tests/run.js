@@ -698,23 +698,6 @@ test('比對：獨立格式，結果分 ok／missing／different，且不修改�
   assert.strictEqual(JSON.stringify(s), before);
   assert.ok(S.compare(S.query(s), { schema: 'x' }).errors.length === 1);
 });
-test('docs/checks.md 與 CATALOG 一致：每項規則都有章節，總覽表的標題與嚴重度相同', () => {
-  const doc = read('docs/checks.md'); const SEV = { error: '錯誤', warn: '警告', info: '提醒' };
-  const rows = new Map(Array.from(doc.matchAll(/^\| \[(\w\d\d)\]\(#\w\d\d\) \| [^|]+ \| ([^|]+) \| ([^|]+) \|/gm), (m) => [m[1], [m[2].trim(), m[3].trim()]]));
-  assert.deepStrictEqual(Array.from(rows.keys()), Object.keys(S.check.CATALOG), '總覽表的規則與順序應與 CATALOG 相同');
-  Object.entries(S.check.CATALOG).forEach(([id, c]) => {
-    assert.deepStrictEqual(rows.get(id), [c.title, SEV[c.severity]], `${id} 的標題或嚴重度與程式不同`);
-    assert.ok(new RegExp(`^### ${id}$`, 'm').test(doc), `${id} 缺少說明章節`);
-  });
-});
-test('.claude/skills 與 .github/skills 的 skill 內容一致（Claude Code 版只多一行同步說明）', () => {
-  const names = fs.readdirSync(path.join(ROOT, '.github/skills')).sort();
-  assert.deepStrictEqual(fs.readdirSync(path.join(ROOT, '.claude/skills')).sort(), names);
-  names.forEach((n) => {
-    const claude = read(`.claude/skills/${n}/SKILL.md`).replace(/\n> Claude Code 版。[^\n]*\n/, '');
-    assert.strictEqual(claude, read(`.github/skills/${n}/SKILL.md`), `${n} 兩個版本內容不同，請同步修改`);
-  });
-});
 test('index.html 載入的核心檔案與測試相同、順序一致', () => {
   const html = read('index.html');
   const scripts = Array.from(html.matchAll(/<script src="([^"]+)"/g)).map((m) => m[1]);

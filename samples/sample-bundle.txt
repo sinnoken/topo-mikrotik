@@ -9,10 +9,10 @@ TPE_CORE_RT_01 (10.1.10.2):
 
 [admin@TPE_CORE_RT_01] > /export compact
 # 2026-10-13 10:00:00 by RouterOS 7.12.1
-# software id = AB12-4389
+# software id = EF56-0601
 #
 # model = CCR2216-1G-12XS-2XQ
-# serial number = HF477512014
+# serial number = HF174454743
 /interface bridge
 add name=bridge1 vlan-filtering=yes
 /interface bonding
@@ -46,6 +46,8 @@ add mode=802.3ad name=bond100 slaves=qsfpplus1-1,qsfpplus2-1 \
 add interface=bridge1 name=vlan10 vlan-id=10
 add interface=bridge1 name=vlan20 vlan-id=20
 add interface=bridge1 name=vlan30 vlan-id=30
+/interface vrrp
+add interface=vlan30 name=vrrp30 vrid=30
 /interface bridge port
 add bridge=bridge1 interface=bond1
 add bridge=bridge1 interface=bond2
@@ -59,7 +61,6 @@ add bridge=bridge1 interface=bond9
 add bridge=bridge1 interface=bond10
 add bridge=bridge1 interface=bond11
 add bridge=bridge1 interface=bond12
-add bridge=bridge1 interface=bond100
 /interface bridge vlan
 add bridge=bridge1 \
     tagged=bond1,bond2,bond3,bond4,bond5,bond6,bond7,bond8,bond9,bond10,bond11,bond12,bond100,bridge1 \
@@ -75,7 +76,10 @@ add address=10.1.10.2/24 interface=vlan10 network=10.1.10.0
 add address=10.1.20.2/24 interface=vlan20 network=10.1.20.0
 add address=10.1.30.2/24 interface=vlan30 network=10.1.30.0
 add address=203.0.113.2/30 interface=ether47 network=203.0.113.0
+add address=10.1.30.1/32 interface=vrrp30 network=10.1.30.1
 add address=172.31.1.1/30 interface=ether46 network=172.31.1.0
+/ip dhcp-server network
+add address=10.1.30.0/24 gateway=10.1.30.1
 /routing id
 add disabled=no id=10.1.255.1 name=main select-dynamic-id=""
 /routing ospf instance
@@ -228,25 +232,25 @@ Flags: D - DYNAMIC; R - RUNNING; S - SLAVE
 [admin@TPE_CORE_RT_01] > /interface bridge host print detail without-paging
 Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external 
  0 DL mac-address=E4:8D:8C:00:00:02 on-interface=bridge1 bridge=bridge1 vid=0
-    age=3s
+    age=12s
  1 D mac-address=24:6E:96:00:00:05 on-interface=bond1 bridge=bridge1 vid=20
-    age=3s
+    age=12s
  2 D mac-address=24:6E:96:00:00:06 on-interface=bond1 bridge=bridge1 vid=20
-    age=3s
+    age=45s
  3 D mac-address=AC:1F:6B:00:00:07 on-interface=bond1 bridge=bridge1 vid=20
-    age=3s
+    age=12s
  4 D mac-address=10:BF:48:00:00:08 on-interface=bond1 bridge=bridge1 vid=30
-    age=3s
+    age=12s
  5 D mac-address=04:42:1A:00:00:09 on-interface=bond1 bridge=bridge1 vid=30
     age=1m2s
  6 D mac-address=04:42:1A:00:00:0A on-interface=bond1 bridge=bridge1 vid=30
-    age=1m2s
+    age=45s
  7 D mac-address=04:42:1A:00:00:0B on-interface=bond1 bridge=bridge1 vid=30
-    age=3s
+    age=1m2s
  8 D mac-address=6C:FE:54:00:00:0C on-interface=bond1 bridge=bridge1 vid=30
-    age=3s
+    age=45s
  9 D mac-address=04:42:1A:00:00:0D on-interface=bond1 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
  10 D mac-address=10:BF:48:00:00:0E on-interface=bond1 bridge=bridge1 vid=30
     age=12s
  11 D mac-address=6C:FE:54:00:00:0F on-interface=bond1 bridge=bridge1 vid=30
@@ -254,243 +258,243 @@ Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external
  12 D mac-address=24:6E:96:00:00:11 on-interface=bond2 bridge=bridge1 vid=20
     age=12s
  13 D mac-address=AC:1F:6B:00:00:12 on-interface=bond2 bridge=bridge1 vid=20
-    age=12s
+    age=45s
  14 D mac-address=1C:98:EC:00:00:13 on-interface=bond2 bridge=bridge1 vid=20
     age=1m2s
  15 D mac-address=6C:FE:54:00:00:14 on-interface=bond2 bridge=bridge1 vid=30
-    age=45s
+    age=3s
  16 D mac-address=04:42:1A:00:00:15 on-interface=bond2 bridge=bridge1 vid=30
-    age=1m2s
+    age=12s
  17 D mac-address=6C:FE:54:00:00:16 on-interface=bond2 bridge=bridge1 vid=30
-    age=45s
+    age=1m2s
  18 D mac-address=04:42:1A:00:00:17 on-interface=bond2 bridge=bridge1 vid=30
     age=1m2s
  19 D mac-address=6C:FE:54:00:00:18 on-interface=bond2 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
  20 D mac-address=10:BF:48:00:00:19 on-interface=bond2 bridge=bridge1 vid=30
-    age=45s
+    age=12s
  21 D mac-address=6C:FE:54:00:00:1A on-interface=bond2 bridge=bridge1 vid=30
     age=12s
  22 D mac-address=10:BF:48:00:00:1B on-interface=bond2 bridge=bridge1 vid=30
-    age=45s
- 23 D mac-address=24:6E:96:00:00:1D on-interface=bond3 bridge=bridge1 vid=20
     age=1m2s
+ 23 D mac-address=24:6E:96:00:00:1D on-interface=bond3 bridge=bridge1 vid=20
+    age=12s
  24 D mac-address=24:6E:96:00:00:1E on-interface=bond3 bridge=bridge1 vid=20
-    age=3s
+    age=12s
  25 D mac-address=24:6E:96:00:00:1F on-interface=bond3 bridge=bridge1 vid=20
     age=12s
  26 D mac-address=6C:FE:54:00:00:20 on-interface=bond3 bridge=bridge1 vid=30
     age=1m2s
  27 D mac-address=04:42:1A:00:00:21 on-interface=bond3 bridge=bridge1 vid=30
-    age=1m2s
+    age=12s
  28 D mac-address=10:BF:48:00:00:22 on-interface=bond3 bridge=bridge1 vid=30
     age=1m2s
  29 D mac-address=6C:FE:54:00:00:23 on-interface=bond3 bridge=bridge1 vid=30
-    age=12s
+    age=45s
  30 D mac-address=10:BF:48:00:00:24 on-interface=bond3 bridge=bridge1 vid=30
     age=12s
  31 D mac-address=04:42:1A:00:00:25 on-interface=bond3 bridge=bridge1 vid=30
-    age=1m2s
- 32 D mac-address=04:42:1A:00:00:26 on-interface=bond3 bridge=bridge1 vid=30
     age=12s
+ 32 D mac-address=04:42:1A:00:00:26 on-interface=bond3 bridge=bridge1 vid=30
+    age=45s
  33 D mac-address=10:BF:48:00:00:27 on-interface=bond3 bridge=bridge1 vid=30
     age=12s
  34 D mac-address=AC:1F:6B:00:00:29 on-interface=bond4 bridge=bridge1 vid=20
-    age=12s
- 35 D mac-address=1C:98:EC:00:00:2A on-interface=bond4 bridge=bridge1 vid=20
     age=1m2s
+ 35 D mac-address=1C:98:EC:00:00:2A on-interface=bond4 bridge=bridge1 vid=20
+    age=45s
  36 D mac-address=AC:1F:6B:00:00:2B on-interface=bond4 bridge=bridge1 vid=20
-    age=12s
+    age=1m2s
  37 D mac-address=10:BF:48:00:00:2C on-interface=bond4 bridge=bridge1 vid=30
     age=1m2s
  38 D mac-address=6C:FE:54:00:00:2D on-interface=bond4 bridge=bridge1 vid=30
-    age=45s
+    age=12s
  39 D mac-address=6C:FE:54:00:00:2E on-interface=bond4 bridge=bridge1 vid=30
     age=12s
  40 D mac-address=04:42:1A:00:00:2F on-interface=bond4 bridge=bridge1 vid=30
-    age=12s
+    age=45s
  41 D mac-address=04:42:1A:00:00:30 on-interface=bond4 bridge=bridge1 vid=30
-    age=45s
+    age=1m2s
  42 D mac-address=6C:FE:54:00:00:31 on-interface=bond4 bridge=bridge1 vid=30
-    age=12s
+    age=45s
  43 D mac-address=6C:FE:54:00:00:32 on-interface=bond4 bridge=bridge1 vid=30
-    age=1m2s
+    age=45s
  44 D mac-address=10:BF:48:00:00:33 on-interface=bond4 bridge=bridge1 vid=30
-    age=45s
+    age=3s
  45 D mac-address=1C:98:EC:00:00:35 on-interface=bond5 bridge=bridge1 vid=20
-    age=1m2s
+    age=45s
  46 D mac-address=1C:98:EC:00:00:36 on-interface=bond5 bridge=bridge1 vid=20
-    age=1m2s
+    age=12s
  47 D mac-address=1C:98:EC:00:00:37 on-interface=bond5 bridge=bridge1 vid=20
-    age=12s
+    age=45s
  48 D mac-address=10:BF:48:00:00:39 on-interface=bond5 bridge=bridge1 vid=30
-    age=12s
- 49 D mac-address=10:BF:48:00:00:3A on-interface=bond5 bridge=bridge1 vid=30
-    age=45s
- 50 D mac-address=10:BF:48:00:00:3B on-interface=bond5 bridge=bridge1 vid=30
     age=1m2s
+ 49 D mac-address=10:BF:48:00:00:3A on-interface=bond5 bridge=bridge1 vid=30
+    age=12s
+ 50 D mac-address=10:BF:48:00:00:3B on-interface=bond5 bridge=bridge1 vid=30
+    age=12s
  51 D mac-address=6C:FE:54:00:00:3C on-interface=bond5 bridge=bridge1 vid=30
-    age=45s
+    age=3s
  52 D mac-address=04:42:1A:00:00:3D on-interface=bond5 bridge=bridge1 vid=30
     age=45s
  53 D mac-address=6C:FE:54:00:00:3E on-interface=bond5 bridge=bridge1 vid=30
-    age=3s
- 54 D mac-address=6C:FE:54:00:00:3F on-interface=bond5 bridge=bridge1 vid=30
     age=45s
+ 54 D mac-address=6C:FE:54:00:00:3F on-interface=bond5 bridge=bridge1 vid=30
+    age=1m2s
  55 D mac-address=10:BF:48:00:00:40 on-interface=bond5 bridge=bridge1 vid=30
     age=12s
  56 D mac-address=24:6E:96:00:00:42 on-interface=bond6 bridge=bridge1 vid=20
-    age=45s
+    age=12s
  57 D mac-address=24:6E:96:00:00:43 on-interface=bond6 bridge=bridge1 vid=20
-    age=1m2s
- 58 D mac-address=1C:98:EC:00:00:44 on-interface=bond6 bridge=bridge1 vid=20
-    age=12s
- 59 D mac-address=04:42:1A:00:00:45 on-interface=bond6 bridge=bridge1 vid=30
-    age=12s
- 60 D mac-address=6C:FE:54:00:00:46 on-interface=bond6 bridge=bridge1 vid=30
     age=3s
- 61 D mac-address=10:BF:48:00:00:47 on-interface=bond6 bridge=bridge1 vid=30
+ 58 D mac-address=1C:98:EC:00:00:44 on-interface=bond6 bridge=bridge1 vid=20
     age=45s
- 62 D mac-address=10:BF:48:00:00:48 on-interface=bond6 bridge=bridge1 vid=30
-    age=45s
- 63 D mac-address=04:42:1A:00:00:49 on-interface=bond6 bridge=bridge1 vid=30
+ 59 D mac-address=04:42:1A:00:00:45 on-interface=bond6 bridge=bridge1 vid=30
     age=1m2s
+ 60 D mac-address=6C:FE:54:00:00:46 on-interface=bond6 bridge=bridge1 vid=30
+    age=1m2s
+ 61 D mac-address=10:BF:48:00:00:47 on-interface=bond6 bridge=bridge1 vid=30
+    age=1m2s
+ 62 D mac-address=10:BF:48:00:00:48 on-interface=bond6 bridge=bridge1 vid=30
+    age=1m2s
+ 63 D mac-address=04:42:1A:00:00:49 on-interface=bond6 bridge=bridge1 vid=30
+    age=3s
  64 D mac-address=10:BF:48:00:00:4A on-interface=bond6 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
  65 D mac-address=04:42:1A:00:00:4B on-interface=bond6 bridge=bridge1 vid=30
     age=12s
  66 D mac-address=10:BF:48:00:00:4C on-interface=bond6 bridge=bridge1 vid=30
-    age=3s
- 67 D mac-address=24:6E:96:00:00:4E on-interface=bond7 bridge=bridge1 vid=20
     age=45s
+ 67 D mac-address=24:6E:96:00:00:4E on-interface=bond7 bridge=bridge1 vid=20
+    age=12s
  68 D mac-address=1C:98:EC:00:00:4F on-interface=bond7 bridge=bridge1 vid=20
-    age=1m2s
+    age=45s
  69 D mac-address=1C:98:EC:00:00:50 on-interface=bond7 bridge=bridge1 vid=20
     age=1m2s
  70 D mac-address=10:BF:48:00:00:51 on-interface=bond7 bridge=bridge1 vid=30
-    age=1m2s
+    age=45s
  71 D mac-address=10:BF:48:00:00:52 on-interface=bond7 bridge=bridge1 vid=30
-    age=1m2s
+    age=45s
  72 D mac-address=10:BF:48:00:00:53 on-interface=bond7 bridge=bridge1 vid=30
-    age=3s
+    age=45s
  73 D mac-address=04:42:1A:00:00:54 on-interface=bond7 bridge=bridge1 vid=30
-    age=1m2s
+    age=45s
  74 D mac-address=10:BF:48:00:00:55 on-interface=bond7 bridge=bridge1 vid=30
     age=12s
  75 D mac-address=10:BF:48:00:00:56 on-interface=bond7 bridge=bridge1 vid=30
-    age=45s
+    age=1m2s
  76 D mac-address=04:42:1A:00:00:57 on-interface=bond7 bridge=bridge1 vid=30
     age=12s
  77 D mac-address=10:BF:48:00:00:58 on-interface=bond7 bridge=bridge1 vid=30
-    age=45s
+    age=3s
  78 D mac-address=24:6E:96:00:00:5A on-interface=bond8 bridge=bridge1 vid=20
-    age=1m2s
- 79 D mac-address=1C:98:EC:00:00:5B on-interface=bond8 bridge=bridge1 vid=20
     age=45s
+ 79 D mac-address=1C:98:EC:00:00:5B on-interface=bond8 bridge=bridge1 vid=20
+    age=12s
  80 D mac-address=24:6E:96:00:00:5C on-interface=bond8 bridge=bridge1 vid=20
     age=45s
  81 D mac-address=10:BF:48:00:00:5D on-interface=bond8 bridge=bridge1 vid=30
     age=45s
  82 D mac-address=04:42:1A:00:00:5E on-interface=bond8 bridge=bridge1 vid=30
-    age=45s
- 83 D mac-address=10:BF:48:00:00:5F on-interface=bond8 bridge=bridge1 vid=30
-    age=12s
- 84 D mac-address=10:BF:48:00:00:60 on-interface=bond8 bridge=bridge1 vid=30
     age=1m2s
- 85 D mac-address=04:42:1A:00:00:61 on-interface=bond8 bridge=bridge1 vid=30
-    age=12s
- 86 D mac-address=10:BF:48:00:00:62 on-interface=bond8 bridge=bridge1 vid=30
+ 83 D mac-address=10:BF:48:00:00:5F on-interface=bond8 bridge=bridge1 vid=30
+    age=1m2s
+ 84 D mac-address=10:BF:48:00:00:60 on-interface=bond8 bridge=bridge1 vid=30
     age=3s
+ 85 D mac-address=04:42:1A:00:00:61 on-interface=bond8 bridge=bridge1 vid=30
+    age=3s
+ 86 D mac-address=10:BF:48:00:00:62 on-interface=bond8 bridge=bridge1 vid=30
+    age=12s
  87 D mac-address=04:42:1A:00:00:63 on-interface=bond8 bridge=bridge1 vid=30
     age=45s
  88 D mac-address=04:42:1A:00:00:64 on-interface=bond8 bridge=bridge1 vid=30
     age=12s
  89 D mac-address=AC:1F:6B:00:00:66 on-interface=bond9 bridge=bridge1 vid=20
-    age=45s
- 90 D mac-address=1C:98:EC:00:00:67 on-interface=bond9 bridge=bridge1 vid=20
-    age=45s
- 91 D mac-address=24:6E:96:00:00:68 on-interface=bond9 bridge=bridge1 vid=20
     age=1m2s
+ 90 D mac-address=1C:98:EC:00:00:67 on-interface=bond9 bridge=bridge1 vid=20
+    age=1m2s
+ 91 D mac-address=24:6E:96:00:00:68 on-interface=bond9 bridge=bridge1 vid=20
+    age=45s
  92 D mac-address=6C:FE:54:00:00:69 on-interface=bond9 bridge=bridge1 vid=30
     age=1m2s
  93 D mac-address=6C:FE:54:00:00:6A on-interface=bond9 bridge=bridge1 vid=30
-    age=3s
- 94 D mac-address=6C:FE:54:00:00:6B on-interface=bond9 bridge=bridge1 vid=30
-    age=3s
- 95 D mac-address=10:BF:48:00:00:6C on-interface=bond9 bridge=bridge1 vid=30
     age=12s
+ 94 D mac-address=6C:FE:54:00:00:6B on-interface=bond9 bridge=bridge1 vid=30
+    age=12s
+ 95 D mac-address=10:BF:48:00:00:6C on-interface=bond9 bridge=bridge1 vid=30
+    age=1m2s
  96 D mac-address=10:BF:48:00:00:6D on-interface=bond9 bridge=bridge1 vid=30
     age=45s
  97 D mac-address=04:42:1A:00:00:6E on-interface=bond9 bridge=bridge1 vid=30
-    age=12s
- 98 D mac-address=6C:FE:54:00:00:6F on-interface=bond9 bridge=bridge1 vid=30
     age=1m2s
+ 98 D mac-address=6C:FE:54:00:00:6F on-interface=bond9 bridge=bridge1 vid=30
+    age=12s
  99 D mac-address=04:42:1A:00:00:70 on-interface=bond9 bridge=bridge1 vid=30
     age=1m2s
  100 D mac-address=1C:98:EC:00:00:72 on-interface=bond10 bridge=bridge1 vid=20
-    age=45s
+    age=1m2s
  101 D mac-address=AC:1F:6B:00:00:73 on-interface=bond10 bridge=bridge1 vid=20
     age=1m2s
  102 D mac-address=AC:1F:6B:00:00:74 on-interface=bond10 bridge=bridge1 vid=20
-    age=12s
+    age=3s
  103 D mac-address=6C:FE:54:00:00:75 on-interface=bond10 bridge=bridge1 vid=30
-    age=12s
+    age=3s
  104 D mac-address=10:BF:48:00:00:76 on-interface=bond10 bridge=bridge1 vid=30
     age=1m2s
  105 D mac-address=04:42:1A:00:00:77 on-interface=bond10 bridge=bridge1 vid=30
-    age=45s
+    age=3s
  106 D mac-address=10:BF:48:00:00:78 on-interface=bond10 bridge=bridge1 vid=30
-    age=1m2s
+    age=3s
  107 D mac-address=04:42:1A:00:00:79 on-interface=bond10 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
  108 D mac-address=10:BF:48:00:00:7A on-interface=bond10 bridge=bridge1 vid=30
-    age=1m2s
+    age=12s
  109 D mac-address=6C:FE:54:00:00:7B on-interface=bond10 bridge=bridge1 vid=30
-    age=1m2s
+    age=45s
  110 D mac-address=10:BF:48:00:00:7C on-interface=bond10 bridge=bridge1 vid=30
-    age=1m2s
+    age=12s
  111 D mac-address=1C:98:EC:00:00:7E on-interface=bond11 bridge=bridge1 vid=20
-    age=3s
+    age=1m2s
  112 D mac-address=1C:98:EC:00:00:7F on-interface=bond11 bridge=bridge1 vid=20
-    age=3s
+    age=45s
  113 D mac-address=24:6E:96:00:00:80 on-interface=bond11 bridge=bridge1 vid=20
-    age=1m2s
+    age=3s
  114 D mac-address=04:42:1A:00:00:81 on-interface=bond11 bridge=bridge1 vid=30
-    age=3s
+    age=12s
  115 D mac-address=6C:FE:54:00:00:82 on-interface=bond11 bridge=bridge1 vid=30
-    age=3s
+    age=1m2s
  116 D mac-address=10:BF:48:00:00:83 on-interface=bond11 bridge=bridge1 vid=30
-    age=1m2s
+    age=3s
  117 D mac-address=10:BF:48:00:00:84 on-interface=bond11 bridge=bridge1 vid=30
-    age=12s
+    age=3s
  118 D mac-address=10:BF:48:00:00:85 on-interface=bond11 bridge=bridge1 vid=30
-    age=45s
+    age=12s
  119 D mac-address=04:42:1A:00:00:86 on-interface=bond11 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
  120 D mac-address=10:BF:48:00:00:87 on-interface=bond11 bridge=bridge1 vid=30
-    age=1m2s
- 121 D mac-address=04:42:1A:00:00:88 on-interface=bond11 bridge=bridge1 vid=30
     age=45s
+ 121 D mac-address=04:42:1A:00:00:88 on-interface=bond11 bridge=bridge1 vid=30
+    age=12s
  122 D mac-address=AC:1F:6B:00:00:8A on-interface=bond12 bridge=bridge1 vid=20
-    age=3s
+    age=12s
  123 D mac-address=AC:1F:6B:00:00:8B on-interface=bond12 bridge=bridge1 vid=20
-    age=12s
+    age=3s
  124 D mac-address=1C:98:EC:00:00:8C on-interface=bond12 bridge=bridge1 vid=20
-    age=1m2s
- 125 D mac-address=6C:FE:54:00:00:8D on-interface=bond12 bridge=bridge1 vid=30
-    age=3s
- 126 D mac-address=04:42:1A:00:00:8E on-interface=bond12 bridge=bridge1 vid=30
-    age=3s
- 127 D mac-address=10:BF:48:00:00:8F on-interface=bond12 bridge=bridge1 vid=30
     age=12s
+ 125 D mac-address=6C:FE:54:00:00:8D on-interface=bond12 bridge=bridge1 vid=30
+    age=12s
+ 126 D mac-address=04:42:1A:00:00:8E on-interface=bond12 bridge=bridge1 vid=30
+    age=45s
+ 127 D mac-address=10:BF:48:00:00:8F on-interface=bond12 bridge=bridge1 vid=30
+    age=3s
  128 D mac-address=10:BF:48:00:00:90 on-interface=bond12 bridge=bridge1 vid=30
     age=1m2s
  129 D mac-address=6C:FE:54:00:00:91 on-interface=bond12 bridge=bridge1 vid=30
-    age=45s
+    age=12s
  130 D mac-address=04:42:1A:00:00:92 on-interface=bond12 bridge=bridge1 vid=30
-    age=12s
+    age=45s
  131 D mac-address=04:42:1A:00:00:93 on-interface=bond12 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
  132 D mac-address=04:42:1A:00:00:94 on-interface=bond12 bridge=bridge1 vid=30
     age=3s
 
@@ -760,6 +764,8 @@ Flags: X - disabled, I - invalid, H - DHCP, D - dynamic, P - published, C - comp
     published=no invalid=no DHCP=no dynamic=yes complete=yes disabled=no
  131 DC address=10.1.30.106 mac-address=04:42:1A:00:00:94 interface=vlan30
     published=no invalid=no DHCP=no dynamic=yes complete=yes disabled=no
+ 132 DC address=10.1.99.5 mac-address=10:BF:48:00:00:9E interface=vlan30
+    published=no invalid=no DHCP=no dynamic=yes complete=yes disabled=no
 
 [admin@TPE_CORE_RT_01] > /ip address print detail without-paging
 Flags: X - disabled, I - invalid, D - dynamic 
@@ -771,7 +777,9 @@ Flags: X - disabled, I - invalid, D - dynamic
     actual-interface=vlan30
  3   address=203.0.113.2/30 network=203.0.113.0 interface=ether47
     actual-interface=ether47
- 4   address=172.31.1.1/30 network=172.31.1.0 interface=ether46
+ 4   address=10.1.30.1/32 network=10.1.30.1 interface=vrrp30
+    actual-interface=vrrp30
+ 5   address=172.31.1.1/30 network=172.31.1.0 interface=ether46
     actual-interface=ether46
 
 [admin@TPE_CORE_RT_01] > /ip route print detail without-paging
@@ -786,6 +794,10 @@ Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC, o - OSPF, b - BGP
     immediate-gw=ether47 distance=0 scope=10
  As  dst-address=0.0.0.0/0 routing-table=main gateway=203.0.113.1
     immediate-gw=203.0.113.1%ether47 distance=1 scope=30
+ As  dst-address=10.97.0.0/16 routing-table=main gateway=10.96.0.1
+    immediate-gw=10.96.0.1 distance=1 scope=30
+ As  dst-address=10.96.0.0/16 routing-table=main gateway=10.97.0.1
+    immediate-gw=10.97.0.1 distance=1 scope=30
  DAc dst-address=172.31.1.0/30 routing-table=main gateway=ether46
     immediate-gw=ether46 distance=0 scope=10
 
@@ -804,10 +816,10 @@ TPE_CORE_RT_02 (10.1.10.3):
 
 [admin@TPE_CORE_RT_02] > /export terse
 # 2026-10-13 10:00:00 by RouterOS 7.12.1
-# software id = CD34-4371
+# software id = AB12-7171
 #
 # model = CCR2216-1G-12XS-2XQ
-# serial number = HF544267251
+# serial number = HF892934217
 /interface bridge add name=bridge1 vlan-filtering=yes
 /interface bonding add mode=802.3ad name=bond100 slaves=qsfpplus1-1,qsfpplus2-1 comment="core interconnect"
 /interface vlan add interface=bridge1 name=vlan10 vlan-id=10
@@ -820,12 +832,11 @@ TPE_CORE_RT_02 (10.1.10.3):
 /interface bridge port add bridge=bridge1 interface=ether5
 /interface bridge port add bridge=bridge1 interface=ether6
 /interface bridge port add bridge=bridge1 interface=ether7
-/interface bridge port add bridge=bridge1 interface=ether8
+/interface bridge port add bridge=bridge1 interface=ether8 pvid=20
 /interface bridge port add bridge=bridge1 interface=ether9
 /interface bridge port add bridge=bridge1 interface=ether10
 /interface bridge port add bridge=bridge1 interface=ether11
 /interface bridge port add bridge=bridge1 interface=ether12
-/interface bridge port add bridge=bridge1 interface=bond100
 /interface bridge vlan add bridge=bridge1 tagged=ether1,ether2,ether3,ether4,ether5,ether6,ether7,ether8,ether9,ether10,ether11,ether12,bond100,bridge1 vlan-ids=10
 /interface bridge vlan add bridge=bridge1 tagged=ether1,ether2,ether3,ether4,ether5,ether6,ether7,ether8,ether9,ether10,ether11,ether12,bond100,bridge1 vlan-ids=20
 /interface bridge vlan add bridge=bridge1 tagged=ether1,ether2,ether3,ether4,ether5,ether6,ether7,ether8,ether9,ether10,ether11,ether12,bond100,bridge1 vlan-ids=30
@@ -833,6 +844,7 @@ TPE_CORE_RT_02 (10.1.10.3):
 /ip address add address=10.1.20.3/24 interface=vlan20 network=10.1.20.0
 /ip address add address=10.1.30.3/24 interface=vlan30 network=10.1.30.0
 /ip address add address=203.0.113.6/30 interface=ether47 network=203.0.113.4
+/ip dhcp-server network add address=10.1.20.0/24 gateway=10.1.21.1
 /routing ospf instance set [ find default=yes ] router-id=10.1.255.2
 /ip route add dst-address=0.0.0.0/0 gateway=203.0.113.5
 /system identity set name=TPE_CORE_RT_02
@@ -932,271 +944,271 @@ Flags: D - DYNAMIC; R - RUNNING; S - SLAVE
 [admin@TPE_CORE_RT_02] > /interface bridge host print detail without-paging
 Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external 
  0 DL mac-address=E4:8D:8C:00:00:03 on-interface=bridge1 bridge=bridge1 vid=0
-    age=3s
+    age=12s
  1 D mac-address=24:6E:96:00:00:05 on-interface=ether1 bridge=bridge1 vid=20
     age=1m2s
  2 D mac-address=24:6E:96:00:00:06 on-interface=ether1 bridge=bridge1 vid=20
-    age=12s
- 3 D mac-address=AC:1F:6B:00:00:07 on-interface=ether1 bridge=bridge1 vid=20
     age=45s
+ 3 D mac-address=AC:1F:6B:00:00:07 on-interface=ether1 bridge=bridge1 vid=20
+    age=12s
  4 D mac-address=10:BF:48:00:00:08 on-interface=ether1 bridge=bridge1 vid=30
-    age=1m2s
+    age=3s
  5 D mac-address=04:42:1A:00:00:09 on-interface=ether1 bridge=bridge1 vid=30
     age=3s
  6 D mac-address=04:42:1A:00:00:0A on-interface=ether1 bridge=bridge1 vid=30
-    age=3s
+    age=1m2s
  7 D mac-address=04:42:1A:00:00:0B on-interface=ether1 bridge=bridge1 vid=30
     age=45s
  8 D mac-address=6C:FE:54:00:00:0C on-interface=ether1 bridge=bridge1 vid=30
-    age=1m2s
- 9 D mac-address=04:42:1A:00:00:0D on-interface=ether1 bridge=bridge1 vid=30
     age=12s
+ 9 D mac-address=04:42:1A:00:00:0D on-interface=ether1 bridge=bridge1 vid=30
+    age=45s
  10 D mac-address=10:BF:48:00:00:0E on-interface=ether1 bridge=bridge1 vid=30
-    age=1m2s
+    age=3s
  11 D mac-address=6C:FE:54:00:00:0F on-interface=ether1 bridge=bridge1 vid=30
     age=45s
  12 D mac-address=24:6E:96:00:00:11 on-interface=ether2 bridge=bridge1 vid=20
     age=12s
  13 D mac-address=AC:1F:6B:00:00:12 on-interface=ether2 bridge=bridge1 vid=20
-    age=3s
+    age=1m2s
  14 D mac-address=1C:98:EC:00:00:13 on-interface=ether2 bridge=bridge1 vid=20
     age=3s
  15 D mac-address=6C:FE:54:00:00:14 on-interface=ether2 bridge=bridge1 vid=30
-    age=1m2s
+    age=45s
  16 D mac-address=04:42:1A:00:00:15 on-interface=ether2 bridge=bridge1 vid=30
-    age=45s
- 17 D mac-address=6C:FE:54:00:00:16 on-interface=ether2 bridge=bridge1 vid=30
-    age=12s
- 18 D mac-address=04:42:1A:00:00:17 on-interface=ether2 bridge=bridge1 vid=30
-    age=45s
- 19 D mac-address=6C:FE:54:00:00:18 on-interface=ether2 bridge=bridge1 vid=30
     age=3s
+ 17 D mac-address=6C:FE:54:00:00:16 on-interface=ether2 bridge=bridge1 vid=30
+    age=3s
+ 18 D mac-address=04:42:1A:00:00:17 on-interface=ether2 bridge=bridge1 vid=30
+    age=3s
+ 19 D mac-address=6C:FE:54:00:00:18 on-interface=ether2 bridge=bridge1 vid=30
+    age=1m2s
  20 D mac-address=10:BF:48:00:00:19 on-interface=ether2 bridge=bridge1 vid=30
-    age=45s
+    age=3s
  21 D mac-address=6C:FE:54:00:00:1A on-interface=ether2 bridge=bridge1 vid=30
-    age=12s
+    age=3s
  22 D mac-address=10:BF:48:00:00:1B on-interface=ether2 bridge=bridge1 vid=30
     age=1m2s
  23 D mac-address=24:6E:96:00:00:1D on-interface=ether3 bridge=bridge1 vid=20
-    age=3s
+    age=1m2s
  24 D mac-address=24:6E:96:00:00:1E on-interface=ether3 bridge=bridge1 vid=20
-    age=45s
+    age=12s
  25 D mac-address=24:6E:96:00:00:1F on-interface=ether3 bridge=bridge1 vid=20
-    age=3s
+    age=45s
  26 D mac-address=6C:FE:54:00:00:20 on-interface=ether3 bridge=bridge1 vid=30
-    age=3s
+    age=45s
  27 D mac-address=04:42:1A:00:00:21 on-interface=ether3 bridge=bridge1 vid=30
     age=3s
  28 D mac-address=10:BF:48:00:00:22 on-interface=ether3 bridge=bridge1 vid=30
-    age=1m2s
+    age=45s
  29 D mac-address=6C:FE:54:00:00:23 on-interface=ether3 bridge=bridge1 vid=30
     age=3s
  30 D mac-address=10:BF:48:00:00:24 on-interface=ether3 bridge=bridge1 vid=30
-    age=3s
+    age=45s
  31 D mac-address=04:42:1A:00:00:25 on-interface=ether3 bridge=bridge1 vid=30
-    age=1m2s
+    age=45s
  32 D mac-address=04:42:1A:00:00:26 on-interface=ether3 bridge=bridge1 vid=30
     age=1m2s
  33 D mac-address=10:BF:48:00:00:27 on-interface=ether3 bridge=bridge1 vid=30
-    age=12s
+    age=3s
  34 D mac-address=AC:1F:6B:00:00:29 on-interface=ether4 bridge=bridge1 vid=20
     age=45s
  35 D mac-address=1C:98:EC:00:00:2A on-interface=ether4 bridge=bridge1 vid=20
-    age=45s
+    age=12s
  36 D mac-address=AC:1F:6B:00:00:2B on-interface=ether4 bridge=bridge1 vid=20
     age=3s
  37 D mac-address=10:BF:48:00:00:2C on-interface=ether4 bridge=bridge1 vid=30
-    age=45s
+    age=1m2s
  38 D mac-address=6C:FE:54:00:00:2D on-interface=ether4 bridge=bridge1 vid=30
-    age=3s
+    age=12s
  39 D mac-address=6C:FE:54:00:00:2E on-interface=ether4 bridge=bridge1 vid=30
-    age=45s
+    age=3s
  40 D mac-address=04:42:1A:00:00:2F on-interface=ether4 bridge=bridge1 vid=30
-    age=45s
+    age=12s
  41 D mac-address=04:42:1A:00:00:30 on-interface=ether4 bridge=bridge1 vid=30
-    age=1m2s
+    age=12s
  42 D mac-address=6C:FE:54:00:00:31 on-interface=ether4 bridge=bridge1 vid=30
-    age=3s
+    age=1m2s
  43 D mac-address=6C:FE:54:00:00:32 on-interface=ether4 bridge=bridge1 vid=30
-    age=45s
+    age=1m2s
  44 D mac-address=10:BF:48:00:00:33 on-interface=ether4 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
  45 D mac-address=1C:98:EC:00:00:35 on-interface=ether5 bridge=bridge1 vid=20
-    age=3s
+    age=1m2s
  46 D mac-address=1C:98:EC:00:00:36 on-interface=ether5 bridge=bridge1 vid=20
-    age=1m2s
- 47 D mac-address=1C:98:EC:00:00:37 on-interface=ether5 bridge=bridge1 vid=20
-    age=12s
- 48 D mac-address=10:BF:48:00:00:39 on-interface=ether5 bridge=bridge1 vid=30
-    age=3s
- 49 D mac-address=10:BF:48:00:00:3A on-interface=ether5 bridge=bridge1 vid=30
-    age=12s
- 50 D mac-address=10:BF:48:00:00:3B on-interface=ether5 bridge=bridge1 vid=30
-    age=12s
- 51 D mac-address=6C:FE:54:00:00:3C on-interface=ether5 bridge=bridge1 vid=30
-    age=1m2s
- 52 D mac-address=04:42:1A:00:00:3D on-interface=ether5 bridge=bridge1 vid=30
-    age=1m2s
- 53 D mac-address=6C:FE:54:00:00:3E on-interface=ether5 bridge=bridge1 vid=30
-    age=1m2s
- 54 D mac-address=6C:FE:54:00:00:3F on-interface=ether5 bridge=bridge1 vid=30
-    age=1m2s
- 55 D mac-address=10:BF:48:00:00:40 on-interface=ether5 bridge=bridge1 vid=30
     age=45s
- 56 D mac-address=24:6E:96:00:00:42 on-interface=ether6 bridge=bridge1 vid=20
+ 47 D mac-address=1C:98:EC:00:00:37 on-interface=ether5 bridge=bridge1 vid=20
     age=1m2s
+ 48 D mac-address=10:BF:48:00:00:39 on-interface=ether5 bridge=bridge1 vid=30
+    age=45s
+ 49 D mac-address=10:BF:48:00:00:3A on-interface=ether5 bridge=bridge1 vid=30
+    age=45s
+ 50 D mac-address=10:BF:48:00:00:3B on-interface=ether5 bridge=bridge1 vid=30
+    age=45s
+ 51 D mac-address=6C:FE:54:00:00:3C on-interface=ether5 bridge=bridge1 vid=30
+    age=12s
+ 52 D mac-address=04:42:1A:00:00:3D on-interface=ether5 bridge=bridge1 vid=30
+    age=12s
+ 53 D mac-address=6C:FE:54:00:00:3E on-interface=ether5 bridge=bridge1 vid=30
+    age=45s
+ 54 D mac-address=6C:FE:54:00:00:3F on-interface=ether5 bridge=bridge1 vid=30
+    age=12s
+ 55 D mac-address=10:BF:48:00:00:40 on-interface=ether5 bridge=bridge1 vid=30
+    age=3s
+ 56 D mac-address=24:6E:96:00:00:42 on-interface=ether6 bridge=bridge1 vid=20
+    age=12s
  57 D mac-address=24:6E:96:00:00:43 on-interface=ether6 bridge=bridge1 vid=20
     age=45s
  58 D mac-address=1C:98:EC:00:00:44 on-interface=ether6 bridge=bridge1 vid=20
     age=45s
  59 D mac-address=04:42:1A:00:00:45 on-interface=ether6 bridge=bridge1 vid=30
-    age=45s
+    age=12s
  60 D mac-address=6C:FE:54:00:00:46 on-interface=ether6 bridge=bridge1 vid=30
-    age=12s
+    age=45s
  61 D mac-address=10:BF:48:00:00:47 on-interface=ether6 bridge=bridge1 vid=30
-    age=12s
+    age=3s
  62 D mac-address=10:BF:48:00:00:48 on-interface=ether6 bridge=bridge1 vid=30
     age=45s
  63 D mac-address=04:42:1A:00:00:49 on-interface=ether6 bridge=bridge1 vid=30
-    age=12s
+    age=45s
  64 D mac-address=10:BF:48:00:00:4A on-interface=ether6 bridge=bridge1 vid=30
-    age=3s
+    age=12s
  65 D mac-address=04:42:1A:00:00:4B on-interface=ether6 bridge=bridge1 vid=30
     age=12s
  66 D mac-address=10:BF:48:00:00:4C on-interface=ether6 bridge=bridge1 vid=30
-    age=45s
+    age=1m2s
  67 D mac-address=24:6E:96:00:00:4E on-interface=ether7 bridge=bridge1 vid=20
-    age=45s
+    age=3s
  68 D mac-address=1C:98:EC:00:00:4F on-interface=ether7 bridge=bridge1 vid=20
-    age=12s
+    age=45s
  69 D mac-address=1C:98:EC:00:00:50 on-interface=ether7 bridge=bridge1 vid=20
     age=45s
  70 D mac-address=10:BF:48:00:00:51 on-interface=ether7 bridge=bridge1 vid=30
-    age=3s
+    age=45s
  71 D mac-address=10:BF:48:00:00:52 on-interface=ether7 bridge=bridge1 vid=30
     age=45s
  72 D mac-address=10:BF:48:00:00:53 on-interface=ether7 bridge=bridge1 vid=30
-    age=45s
+    age=3s
  73 D mac-address=04:42:1A:00:00:54 on-interface=ether7 bridge=bridge1 vid=30
     age=12s
  74 D mac-address=10:BF:48:00:00:55 on-interface=ether7 bridge=bridge1 vid=30
-    age=12s
- 75 D mac-address=10:BF:48:00:00:56 on-interface=ether7 bridge=bridge1 vid=30
     age=1m2s
+ 75 D mac-address=10:BF:48:00:00:56 on-interface=ether7 bridge=bridge1 vid=30
+    age=45s
  76 D mac-address=04:42:1A:00:00:57 on-interface=ether7 bridge=bridge1 vid=30
-    age=3s
+    age=45s
  77 D mac-address=10:BF:48:00:00:58 on-interface=ether7 bridge=bridge1 vid=30
     age=45s
  78 D mac-address=24:6E:96:00:00:5A on-interface=ether8 bridge=bridge1 vid=20
-    age=45s
+    age=12s
  79 D mac-address=1C:98:EC:00:00:5B on-interface=ether8 bridge=bridge1 vid=20
-    age=45s
+    age=1m2s
  80 D mac-address=24:6E:96:00:00:5C on-interface=ether8 bridge=bridge1 vid=20
-    age=45s
- 81 D mac-address=10:BF:48:00:00:5D on-interface=ether8 bridge=bridge1 vid=30
     age=3s
+ 81 D mac-address=10:BF:48:00:00:5D on-interface=ether8 bridge=bridge1 vid=30
+    age=1m2s
  82 D mac-address=04:42:1A:00:00:5E on-interface=ether8 bridge=bridge1 vid=30
     age=12s
  83 D mac-address=10:BF:48:00:00:5F on-interface=ether8 bridge=bridge1 vid=30
-    age=1m2s
- 84 D mac-address=10:BF:48:00:00:60 on-interface=ether8 bridge=bridge1 vid=30
-    age=45s
- 85 D mac-address=04:42:1A:00:00:61 on-interface=ether8 bridge=bridge1 vid=30
-    age=45s
- 86 D mac-address=10:BF:48:00:00:62 on-interface=ether8 bridge=bridge1 vid=30
-    age=45s
- 87 D mac-address=04:42:1A:00:00:63 on-interface=ether8 bridge=bridge1 vid=30
-    age=12s
- 88 D mac-address=04:42:1A:00:00:64 on-interface=ether8 bridge=bridge1 vid=30
-    age=1m2s
- 89 D mac-address=AC:1F:6B:00:00:66 on-interface=ether9 bridge=bridge1 vid=20
     age=3s
- 90 D mac-address=1C:98:EC:00:00:67 on-interface=ether9 bridge=bridge1 vid=20
+ 84 D mac-address=10:BF:48:00:00:60 on-interface=ether8 bridge=bridge1 vid=30
+    age=12s
+ 85 D mac-address=04:42:1A:00:00:61 on-interface=ether8 bridge=bridge1 vid=30
+    age=3s
+ 86 D mac-address=10:BF:48:00:00:62 on-interface=ether8 bridge=bridge1 vid=30
     age=1m2s
+ 87 D mac-address=04:42:1A:00:00:63 on-interface=ether8 bridge=bridge1 vid=30
+    age=1m2s
+ 88 D mac-address=04:42:1A:00:00:64 on-interface=ether8 bridge=bridge1 vid=30
+    age=45s
+ 89 D mac-address=AC:1F:6B:00:00:66 on-interface=ether9 bridge=bridge1 vid=20
+    age=1m2s
+ 90 D mac-address=1C:98:EC:00:00:67 on-interface=ether9 bridge=bridge1 vid=20
+    age=3s
  91 D mac-address=24:6E:96:00:00:68 on-interface=ether9 bridge=bridge1 vid=20
     age=12s
  92 D mac-address=6C:FE:54:00:00:69 on-interface=ether9 bridge=bridge1 vid=30
     age=3s
  93 D mac-address=6C:FE:54:00:00:6A on-interface=ether9 bridge=bridge1 vid=30
-    age=12s
- 94 D mac-address=6C:FE:54:00:00:6B on-interface=ether9 bridge=bridge1 vid=30
     age=3s
+ 94 D mac-address=6C:FE:54:00:00:6B on-interface=ether9 bridge=bridge1 vid=30
+    age=45s
  95 D mac-address=10:BF:48:00:00:6C on-interface=ether9 bridge=bridge1 vid=30
     age=1m2s
  96 D mac-address=10:BF:48:00:00:6D on-interface=ether9 bridge=bridge1 vid=30
-    age=1m2s
- 97 D mac-address=04:42:1A:00:00:6E on-interface=ether9 bridge=bridge1 vid=30
-    age=45s
- 98 D mac-address=6C:FE:54:00:00:6F on-interface=ether9 bridge=bridge1 vid=30
-    age=1m2s
- 99 D mac-address=04:42:1A:00:00:70 on-interface=ether9 bridge=bridge1 vid=30
     age=3s
+ 97 D mac-address=04:42:1A:00:00:6E on-interface=ether9 bridge=bridge1 vid=30
+    age=3s
+ 98 D mac-address=6C:FE:54:00:00:6F on-interface=ether9 bridge=bridge1 vid=30
+    age=12s
+ 99 D mac-address=04:42:1A:00:00:70 on-interface=ether9 bridge=bridge1 vid=30
+    age=45s
  100 D mac-address=1C:98:EC:00:00:72 on-interface=ether10 bridge=bridge1 vid=20
     age=12s
  101 D mac-address=AC:1F:6B:00:00:73 on-interface=ether10 bridge=bridge1 vid=20
-    age=3s
- 102 D mac-address=AC:1F:6B:00:00:74 on-interface=ether10 bridge=bridge1 vid=20
-    age=3s
- 103 D mac-address=6C:FE:54:00:00:75 on-interface=ether10 bridge=bridge1 vid=30
     age=45s
- 104 D mac-address=10:BF:48:00:00:76 on-interface=ether10 bridge=bridge1 vid=30
+ 102 D mac-address=AC:1F:6B:00:00:74 on-interface=ether10 bridge=bridge1 vid=20
     age=1m2s
- 105 D mac-address=04:42:1A:00:00:77 on-interface=ether10 bridge=bridge1 vid=30
-    age=3s
- 106 D mac-address=10:BF:48:00:00:78 on-interface=ether10 bridge=bridge1 vid=30
-    age=3s
- 107 D mac-address=04:42:1A:00:00:79 on-interface=ether10 bridge=bridge1 vid=30
+ 103 D mac-address=6C:FE:54:00:00:75 on-interface=ether10 bridge=bridge1 vid=30
     age=12s
+ 104 D mac-address=10:BF:48:00:00:76 on-interface=ether10 bridge=bridge1 vid=30
+    age=45s
+ 105 D mac-address=04:42:1A:00:00:77 on-interface=ether10 bridge=bridge1 vid=30
+    age=45s
+ 106 D mac-address=10:BF:48:00:00:78 on-interface=ether10 bridge=bridge1 vid=30
+    age=12s
+ 107 D mac-address=04:42:1A:00:00:79 on-interface=ether10 bridge=bridge1 vid=30
+    age=3s
  108 D mac-address=10:BF:48:00:00:7A on-interface=ether10 bridge=bridge1 vid=30
     age=45s
  109 D mac-address=6C:FE:54:00:00:7B on-interface=ether10 bridge=bridge1 vid=30
-    age=12s
+    age=3s
  110 D mac-address=10:BF:48:00:00:7C on-interface=ether10 bridge=bridge1 vid=30
     age=45s
  111 D mac-address=1C:98:EC:00:00:7E on-interface=ether11 bridge=bridge1 vid=20
-    age=1m2s
- 112 D mac-address=1C:98:EC:00:00:7F on-interface=ether11 bridge=bridge1 vid=20
     age=12s
- 113 D mac-address=24:6E:96:00:00:80 on-interface=ether11 bridge=bridge1 vid=20
+ 112 D mac-address=1C:98:EC:00:00:7F on-interface=ether11 bridge=bridge1 vid=20
     age=45s
+ 113 D mac-address=24:6E:96:00:00:80 on-interface=ether11 bridge=bridge1 vid=20
+    age=1m2s
  114 D mac-address=04:42:1A:00:00:81 on-interface=ether11 bridge=bridge1 vid=30
     age=45s
  115 D mac-address=6C:FE:54:00:00:82 on-interface=ether11 bridge=bridge1 vid=30
-    age=12s
+    age=45s
  116 D mac-address=10:BF:48:00:00:83 on-interface=ether11 bridge=bridge1 vid=30
-    age=3s
+    age=1m2s
  117 D mac-address=10:BF:48:00:00:84 on-interface=ether11 bridge=bridge1 vid=30
     age=45s
  118 D mac-address=10:BF:48:00:00:85 on-interface=ether11 bridge=bridge1 vid=30
-    age=3s
+    age=1m2s
  119 D mac-address=04:42:1A:00:00:86 on-interface=ether11 bridge=bridge1 vid=30
     age=45s
  120 D mac-address=10:BF:48:00:00:87 on-interface=ether11 bridge=bridge1 vid=30
-    age=12s
+    age=45s
  121 D mac-address=04:42:1A:00:00:88 on-interface=ether11 bridge=bridge1 vid=30
     age=45s
  122 D mac-address=AC:1F:6B:00:00:8A on-interface=ether12 bridge=bridge1 vid=20
-    age=1m2s
- 123 D mac-address=AC:1F:6B:00:00:8B on-interface=ether12 bridge=bridge1 vid=20
     age=45s
+ 123 D mac-address=AC:1F:6B:00:00:8B on-interface=ether12 bridge=bridge1 vid=20
+    age=1m2s
  124 D mac-address=1C:98:EC:00:00:8C on-interface=ether12 bridge=bridge1 vid=20
     age=45s
  125 D mac-address=6C:FE:54:00:00:8D on-interface=ether12 bridge=bridge1 vid=30
     age=1m2s
  126 D mac-address=04:42:1A:00:00:8E on-interface=ether12 bridge=bridge1 vid=30
-    age=45s
- 127 D mac-address=10:BF:48:00:00:8F on-interface=ether12 bridge=bridge1 vid=30
     age=1m2s
+ 127 D mac-address=10:BF:48:00:00:8F on-interface=ether12 bridge=bridge1 vid=30
+    age=45s
  128 D mac-address=10:BF:48:00:00:90 on-interface=ether12 bridge=bridge1 vid=30
     age=45s
  129 D mac-address=6C:FE:54:00:00:91 on-interface=ether12 bridge=bridge1 vid=30
-    age=45s
+    age=3s
  130 D mac-address=04:42:1A:00:00:92 on-interface=ether12 bridge=bridge1 vid=30
-    age=45s
+    age=12s
  131 D mac-address=04:42:1A:00:00:93 on-interface=ether12 bridge=bridge1 vid=30
-    age=45s
- 132 D mac-address=04:42:1A:00:00:94 on-interface=ether12 bridge=bridge1 vid=30
     age=1m2s
+ 132 D mac-address=04:42:1A:00:00:94 on-interface=ether12 bridge=bridge1 vid=30
+    age=3s
 
 [admin@TPE_CORE_RT_02] > /ip arp print detail without-paging
 Flags: X - disabled, I - invalid, H - DHCP, D - dynamic, P - published, C - complete 
@@ -1206,7 +1218,7 @@ Flags: X - disabled, I - invalid, H - DHCP, D - dynamic, P - published, C - comp
     published=no invalid=no DHCP=no dynamic=yes complete=yes disabled=no
  2 DC address=10.1.20.13 mac-address=AC:1F:6B:00:00:07 interface=vlan20
     published=no invalid=no DHCP=no dynamic=yes complete=yes disabled=no
- 3 DC address=10.1.30.11 mac-address=6C:FE:54:00:00:95 interface=vlan30
+ 3 DC address=10.1.30.11 mac-address=6C:FE:54:00:00:9D interface=vlan30
     published=no invalid=no DHCP=no dynamic=yes complete=yes disabled=no
  4 DC address=10.1.30.12 mac-address=04:42:1A:00:00:09 interface=vlan30
     published=no invalid=no DHCP=no dynamic=yes complete=yes disabled=no
@@ -1488,15 +1500,18 @@ Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC, o - OSPF, b - BGP
     immediate-gw=ether47 distance=0 scope=10
  As  dst-address=0.0.0.0/0 routing-table=main gateway=203.0.113.5
     immediate-gw=203.0.113.5%ether47 distance=1 scope=30
+ As  dst-address=10.94.0.0/16 routing-table=main blackhole distance=1 scope=30
+ As  dst-address=10.95.0.0/16 routing-table=main gateway=10.94.0.1
+    immediate-gw=10.94.0.1 distance=1 scope=30
 
 _____
 TPE_ACC_SW_01 (10.1.10.21):
 [admin@TPE_ACC_SW_01] > /export terse
 # 2026-10-13 10:00:00 by RouterOS 7.12.1
-# software id = EF56-8764
+# software id = EF56-0377
 #
 # model = CRS326-24G-2S+
-# serial number = HF859299287
+# serial number = HF747140942
 /interface bridge add name=bridge1 vlan-filtering=yes
 /interface ethernet set [ find default-name=ether1 ] comment=TPE-SRV-011
 /interface ethernet set [ find default-name=ether2 ] comment=TPE-SRV-012
@@ -1566,28 +1581,28 @@ Flags:
 Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external 
  0 DL mac-address=48:A9:8A:00:00:04 on-interface=bridge1 bridge=bridge1 vid=0
     age=45s
- 1 D mac-address=24:6E:96:00:00:05 on-interface=ether1 bridge=bridge1 vid=20
-    age=45s
+ 1   mac-address=24:6E:96:00:00:05 on-interface=ether1 bridge=bridge1 vid=20
+    age=1m2s
  2 D mac-address=24:6E:96:00:00:06 on-interface=ether2 bridge=bridge1 vid=20
-    age=3s
- 3 D mac-address=AC:1F:6B:00:00:07 on-interface=ether3 bridge=bridge1 vid=20
     age=12s
+ 3 D mac-address=AC:1F:6B:00:00:07 on-interface=ether3 bridge=bridge1 vid=20
+    age=3s
  4 D mac-address=10:BF:48:00:00:08 on-interface=ether9 bridge=bridge1 vid=30
-    age=1m2s
+    age=12s
  5 D mac-address=04:42:1A:00:00:09 on-interface=ether10 bridge=bridge1 vid=30
-    age=3s
+    age=45s
  6 D mac-address=04:42:1A:00:00:0A on-interface=ether11 bridge=bridge1 vid=30
-    age=1m2s
+    age=45s
  7 D mac-address=04:42:1A:00:00:0B on-interface=ether12 bridge=bridge1 vid=30
-    age=3s
+    age=12s
  8 D mac-address=6C:FE:54:00:00:0C on-interface=ether13 bridge=bridge1 vid=30
-    age=45s
+    age=3s
  9 D mac-address=04:42:1A:00:00:0D on-interface=ether14 bridge=bridge1 vid=30
-    age=45s
+    age=12s
  10 D mac-address=10:BF:48:00:00:0E on-interface=ether15 bridge=bridge1 vid=30
     age=1m2s
  11 D mac-address=6C:FE:54:00:00:0F on-interface=ether16 bridge=bridge1 vid=30
-    age=12s
+    age=3s
  12 D mac-address=24:6E:96:00:00:11 on-interface=bond1 bridge=bridge1 vid=20
     age=3s
  13 D mac-address=AC:1F:6B:00:00:12 on-interface=bond1 bridge=bridge1 vid=20
@@ -1595,68 +1610,68 @@ Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external
  14 D mac-address=1C:98:EC:00:00:13 on-interface=bond1 bridge=bridge1 vid=20
     age=45s
  15 D mac-address=6C:FE:54:00:00:14 on-interface=bond1 bridge=bridge1 vid=30
-    age=45s
+    age=3s
  16 D mac-address=04:42:1A:00:00:15 on-interface=bond1 bridge=bridge1 vid=30
-    age=12s
+    age=45s
  17 D mac-address=6C:FE:54:00:00:16 on-interface=bond1 bridge=bridge1 vid=30
     age=3s
  18 D mac-address=04:42:1A:00:00:17 on-interface=bond1 bridge=bridge1 vid=30
-    age=12s
- 19 D mac-address=6C:FE:54:00:00:18 on-interface=bond1 bridge=bridge1 vid=30
     age=1m2s
+ 19 D mac-address=6C:FE:54:00:00:18 on-interface=bond1 bridge=bridge1 vid=30
+    age=45s
  20 D mac-address=10:BF:48:00:00:19 on-interface=bond1 bridge=bridge1 vid=30
-    age=3s
+    age=1m2s
  21 D mac-address=6C:FE:54:00:00:1A on-interface=bond1 bridge=bridge1 vid=30
-    age=3s
+    age=45s
  22 D mac-address=10:BF:48:00:00:1B on-interface=bond1 bridge=bridge1 vid=30
     age=12s
  23 D mac-address=24:6E:96:00:00:1D on-interface=bond1 bridge=bridge1 vid=20
-    age=45s
+    age=1m2s
  24 D mac-address=24:6E:96:00:00:1E on-interface=bond1 bridge=bridge1 vid=20
-    age=3s
+    age=12s
  25 D mac-address=24:6E:96:00:00:1F on-interface=bond1 bridge=bridge1 vid=20
-    age=45s
+    age=12s
  26 D mac-address=6C:FE:54:00:00:20 on-interface=bond1 bridge=bridge1 vid=30
-    age=3s
+    age=45s
  27 D mac-address=04:42:1A:00:00:21 on-interface=bond1 bridge=bridge1 vid=30
     age=1m2s
  28 D mac-address=10:BF:48:00:00:22 on-interface=bond1 bridge=bridge1 vid=30
     age=45s
  29 D mac-address=6C:FE:54:00:00:23 on-interface=bond1 bridge=bridge1 vid=30
-    age=1m2s
- 30 D mac-address=10:BF:48:00:00:24 on-interface=bond1 bridge=bridge1 vid=30
     age=45s
+ 30 D mac-address=10:BF:48:00:00:24 on-interface=bond1 bridge=bridge1 vid=30
+    age=12s
  31 D mac-address=04:42:1A:00:00:25 on-interface=bond1 bridge=bridge1 vid=30
-    age=12s
+    age=45s
  32 D mac-address=04:42:1A:00:00:26 on-interface=bond1 bridge=bridge1 vid=30
-    age=1m2s
+    age=3s
  33 D mac-address=10:BF:48:00:00:27 on-interface=bond1 bridge=bridge1 vid=30
-    age=12s
+    age=3s
  34 D mac-address=AC:1F:6B:00:00:29 on-interface=bond1 bridge=bridge1 vid=20
     age=12s
  35 D mac-address=1C:98:EC:00:00:2A on-interface=bond1 bridge=bridge1 vid=20
-    age=45s
+    age=3s
  36 D mac-address=AC:1F:6B:00:00:2B on-interface=bond1 bridge=bridge1 vid=20
     age=1m2s
  37 D mac-address=10:BF:48:00:00:2C on-interface=bond1 bridge=bridge1 vid=30
-    age=45s
- 38 D mac-address=6C:FE:54:00:00:2D on-interface=bond1 bridge=bridge1 vid=30
-    age=45s
- 39 D mac-address=6C:FE:54:00:00:2E on-interface=bond1 bridge=bridge1 vid=30
-    age=12s
- 40 D mac-address=04:42:1A:00:00:2F on-interface=bond1 bridge=bridge1 vid=30
-    age=45s
- 41 D mac-address=04:42:1A:00:00:30 on-interface=bond1 bridge=bridge1 vid=30
     age=3s
+ 38 D mac-address=6C:FE:54:00:00:2D on-interface=bond1 bridge=bridge1 vid=30
+    age=12s
+ 39 D mac-address=6C:FE:54:00:00:2E on-interface=bond1 bridge=bridge1 vid=30
+    age=3s
+ 40 D mac-address=04:42:1A:00:00:2F on-interface=bond1 bridge=bridge1 vid=30
+    age=12s
+ 41 D mac-address=04:42:1A:00:00:30 on-interface=bond1 bridge=bridge1 vid=30
+    age=1m2s
 
 _____
 TPE_ACC_SW_02 (10.1.10.22):
 [admin@TPE_ACC_SW_02] > /export terse
 # 2026-10-13 10:00:00 by RouterOS 7.12.1
-# software id = AB12-3986
+# software id = EF56-5837
 #
 # model = CRS326-24G-2S+
-# serial number = HF225123641
+# serial number = HF729793748
 /interface bridge add name=bridge1 vlan-filtering=yes
 /interface ethernet set [ find default-name=ether1 ] comment=TPE-SRV-021
 /interface ethernet set [ find default-name=ether2 ] comment=TPE-SRV-022
@@ -1724,51 +1739,51 @@ Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external
  1 D mac-address=24:6E:96:00:00:11 on-interface=ether1 bridge=bridge1 vid=20
     age=3s
  2 D mac-address=AC:1F:6B:00:00:12 on-interface=ether2 bridge=bridge1 vid=20
-    age=12s
+    age=3s
  3 D mac-address=1C:98:EC:00:00:13 on-interface=ether3 bridge=bridge1 vid=20
     age=3s
  4 D mac-address=6C:FE:54:00:00:14 on-interface=ether9 bridge=bridge1 vid=30
     age=12s
  5 D mac-address=04:42:1A:00:00:15 on-interface=ether10 bridge=bridge1 vid=30
-    age=1m2s
+    age=12s
  6 D mac-address=6C:FE:54:00:00:16 on-interface=ether11 bridge=bridge1 vid=30
-    age=1m2s
+    age=3s
  7 D mac-address=04:42:1A:00:00:17 on-interface=ether12 bridge=bridge1 vid=30
-    age=45s
+    age=12s
  8 D mac-address=6C:FE:54:00:00:18 on-interface=ether13 bridge=bridge1 vid=30
-    age=45s
+    age=12s
  9 D mac-address=10:BF:48:00:00:19 on-interface=ether14 bridge=bridge1 vid=30
-    age=1m2s
+    age=3s
  10 D mac-address=6C:FE:54:00:00:1A on-interface=ether15 bridge=bridge1 vid=30
     age=3s
  11 D mac-address=10:BF:48:00:00:1B on-interface=ether16 bridge=bridge1 vid=30
-    age=3s
+    age=45s
  12 D mac-address=10:BF:48:00:00:08 on-interface=ether23 bridge=bridge1 vid=30
-    age=3s
+    age=12s
  13 D mac-address=24:6E:96:00:00:05 on-interface=bond2 bridge=bridge1 vid=20
     age=12s
  14 D mac-address=24:6E:96:00:00:06 on-interface=bond2 bridge=bridge1 vid=20
-    age=12s
+    age=3s
  15 D mac-address=AC:1F:6B:00:00:07 on-interface=bond2 bridge=bridge1 vid=20
-    age=3s
+    age=12s
  16 D mac-address=04:42:1A:00:00:09 on-interface=bond2 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
  17 D mac-address=04:42:1A:00:00:0A on-interface=bond2 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
  18 D mac-address=04:42:1A:00:00:0B on-interface=bond2 bridge=bridge1 vid=30
-    age=3s
- 19 D mac-address=6C:FE:54:00:00:0C on-interface=bond2 bridge=bridge1 vid=30
-    age=3s
- 20 D mac-address=04:42:1A:00:00:0D on-interface=bond2 bridge=bridge1 vid=30
     age=45s
+ 19 D mac-address=6C:FE:54:00:00:0C on-interface=bond2 bridge=bridge1 vid=30
+    age=45s
+ 20 D mac-address=04:42:1A:00:00:0D on-interface=bond2 bridge=bridge1 vid=30
+    age=1m2s
  21 D mac-address=10:BF:48:00:00:0E on-interface=bond2 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
  22 D mac-address=6C:FE:54:00:00:0F on-interface=bond2 bridge=bridge1 vid=30
     age=12s
  23 D mac-address=24:6E:96:00:00:1D on-interface=bond2 bridge=bridge1 vid=20
-    age=3s
+    age=1m2s
  24 D mac-address=24:6E:96:00:00:1E on-interface=bond2 bridge=bridge1 vid=20
-    age=12s
+    age=1m2s
  25 D mac-address=24:6E:96:00:00:1F on-interface=bond2 bridge=bridge1 vid=20
     age=1m2s
  26 D mac-address=6C:FE:54:00:00:20 on-interface=bond2 bridge=bridge1 vid=30
@@ -1778,42 +1793,42 @@ Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external
  28 D mac-address=10:BF:48:00:00:22 on-interface=bond2 bridge=bridge1 vid=30
     age=45s
  29 D mac-address=6C:FE:54:00:00:23 on-interface=bond2 bridge=bridge1 vid=30
-    age=1m2s
- 30 D mac-address=10:BF:48:00:00:24 on-interface=bond2 bridge=bridge1 vid=30
-    age=1m2s
- 31 D mac-address=04:42:1A:00:00:25 on-interface=bond2 bridge=bridge1 vid=30
     age=12s
- 32 D mac-address=04:42:1A:00:00:26 on-interface=bond2 bridge=bridge1 vid=30
+ 30 D mac-address=10:BF:48:00:00:24 on-interface=bond2 bridge=bridge1 vid=30
+    age=12s
+ 31 D mac-address=04:42:1A:00:00:25 on-interface=bond2 bridge=bridge1 vid=30
     age=1m2s
+ 32 D mac-address=04:42:1A:00:00:26 on-interface=bond2 bridge=bridge1 vid=30
+    age=12s
  33 D mac-address=10:BF:48:00:00:27 on-interface=bond2 bridge=bridge1 vid=30
     age=1m2s
  34 D mac-address=AC:1F:6B:00:00:29 on-interface=bond2 bridge=bridge1 vid=20
-    age=1m2s
+    age=3s
  35 D mac-address=1C:98:EC:00:00:2A on-interface=bond2 bridge=bridge1 vid=20
-    age=1m2s
+    age=45s
  36 D mac-address=AC:1F:6B:00:00:2B on-interface=bond2 bridge=bridge1 vid=20
     age=45s
  37 D mac-address=10:BF:48:00:00:2C on-interface=bond2 bridge=bridge1 vid=30
-    age=45s
+    age=3s
  38 D mac-address=6C:FE:54:00:00:2D on-interface=bond2 bridge=bridge1 vid=30
     age=12s
  39 D mac-address=6C:FE:54:00:00:2E on-interface=bond2 bridge=bridge1 vid=30
-    age=12s
+    age=45s
  40 D mac-address=04:42:1A:00:00:2F on-interface=bond2 bridge=bridge1 vid=30
     age=1m2s
  41 D mac-address=04:42:1A:00:00:30 on-interface=bond2 bridge=bridge1 vid=30
     age=12s
  42 D mac-address=6C:FE:54:00:00:31 on-interface=bond2 bridge=bridge1 vid=30
-    age=1m2s
+    age=3s
 
 _____
 TPE_ACC_SW_03 (10.1.10.23):
 [admin@TPE_ACC_SW_03] > /export terse
 # 2026-10-13 10:00:00 by RouterOS 7.12.1
-# software id = AB12-5755
+# software id = CD34-4805
 #
 # model = CRS326-24G-2S+
-# serial number = HF578183540
+# serial number = HF43856624
 /interface bridge add name=bridge1 vlan-filtering=yes
 /interface ethernet set [ find default-name=ether1 ] comment=TPE-SRV-031
 /interface ethernet set [ find default-name=ether2 ] comment=TPE-SRV-032
@@ -1886,94 +1901,94 @@ Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external
  1 D mac-address=24:6E:96:00:00:1D on-interface=ether1 bridge=bridge1 vid=20
     age=12s
  2 D mac-address=24:6E:96:00:00:1E on-interface=ether2 bridge=bridge1 vid=20
-    age=45s
+    age=3s
  3 D mac-address=24:6E:96:00:00:1F on-interface=ether3 bridge=bridge1 vid=20
-    age=1m2s
+    age=45s
  4 D mac-address=6C:FE:54:00:00:20 on-interface=ether9 bridge=bridge1 vid=30
-    age=12s
+    age=45s
  5 D mac-address=04:42:1A:00:00:21 on-interface=ether10 bridge=bridge1 vid=30
-    age=3s
- 6 D mac-address=10:BF:48:00:00:22 on-interface=ether11 bridge=bridge1 vid=30
-    age=45s
- 7 D mac-address=6C:FE:54:00:00:23 on-interface=ether12 bridge=bridge1 vid=30
-    age=12s
- 8 D mac-address=10:BF:48:00:00:24 on-interface=ether13 bridge=bridge1 vid=30
-    age=3s
- 9 D mac-address=04:42:1A:00:00:25 on-interface=ether14 bridge=bridge1 vid=30
-    age=3s
- 10 D mac-address=04:42:1A:00:00:26 on-interface=ether15 bridge=bridge1 vid=30
-    age=12s
- 11 D mac-address=10:BF:48:00:00:27 on-interface=ether16 bridge=bridge1 vid=30
-    age=3s
- 12 D mac-address=24:6E:96:00:00:05 on-interface=bond3 bridge=bridge1 vid=20
-    age=45s
- 13 D mac-address=24:6E:96:00:00:06 on-interface=bond3 bridge=bridge1 vid=20
-    age=45s
- 14 D mac-address=AC:1F:6B:00:00:07 on-interface=bond3 bridge=bridge1 vid=20
     age=1m2s
+ 6 D mac-address=10:BF:48:00:00:22 on-interface=ether11 bridge=bridge1 vid=30
+    age=1m2s
+ 7 D mac-address=6C:FE:54:00:00:23 on-interface=ether12 bridge=bridge1 vid=30
+    age=1m2s
+ 8 D mac-address=10:BF:48:00:00:24 on-interface=ether13 bridge=bridge1 vid=30
+    age=45s
+ 9 D mac-address=04:42:1A:00:00:25 on-interface=ether14 bridge=bridge1 vid=30
+    age=1m2s
+ 10 D mac-address=04:42:1A:00:00:26 on-interface=ether15 bridge=bridge1 vid=30
+    age=1m2s
+ 11 D mac-address=10:BF:48:00:00:27 on-interface=ether16 bridge=bridge1 vid=30
+    age=45s
+ 12 D mac-address=24:6E:96:00:00:05 on-interface=bond3 bridge=bridge1 vid=20
+    age=1m2s
+ 13 D mac-address=24:6E:96:00:00:06 on-interface=bond3 bridge=bridge1 vid=20
+    age=1m2s
+ 14 D mac-address=AC:1F:6B:00:00:07 on-interface=bond3 bridge=bridge1 vid=20
+    age=12s
  15 D mac-address=10:BF:48:00:00:08 on-interface=bond3 bridge=bridge1 vid=30
     age=1m2s
  16 D mac-address=04:42:1A:00:00:09 on-interface=bond3 bridge=bridge1 vid=30
     age=1m2s
  17 D mac-address=04:42:1A:00:00:0A on-interface=bond3 bridge=bridge1 vid=30
-    age=45s
+    age=12s
  18 D mac-address=04:42:1A:00:00:0B on-interface=bond3 bridge=bridge1 vid=30
-    age=1m2s
+    age=12s
  19 D mac-address=6C:FE:54:00:00:0C on-interface=bond3 bridge=bridge1 vid=30
-    age=1m2s
+    age=12s
  20 D mac-address=04:42:1A:00:00:0D on-interface=bond3 bridge=bridge1 vid=30
-    age=45s
+    age=12s
  21 D mac-address=10:BF:48:00:00:0E on-interface=bond3 bridge=bridge1 vid=30
     age=1m2s
  22 D mac-address=6C:FE:54:00:00:0F on-interface=bond3 bridge=bridge1 vid=30
-    age=1m2s
+    age=45s
  23 D mac-address=24:6E:96:00:00:11 on-interface=bond3 bridge=bridge1 vid=20
     age=12s
  24 D mac-address=AC:1F:6B:00:00:12 on-interface=bond3 bridge=bridge1 vid=20
     age=1m2s
  25 D mac-address=1C:98:EC:00:00:13 on-interface=bond3 bridge=bridge1 vid=20
-    age=1m2s
+    age=45s
  26 D mac-address=6C:FE:54:00:00:14 on-interface=bond3 bridge=bridge1 vid=30
-    age=12s
+    age=45s
  27 D mac-address=04:42:1A:00:00:15 on-interface=bond3 bridge=bridge1 vid=30
-    age=12s
+    age=45s
  28 D mac-address=6C:FE:54:00:00:16 on-interface=bond3 bridge=bridge1 vid=30
-    age=12s
+    age=45s
  29 D mac-address=04:42:1A:00:00:17 on-interface=bond3 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
  30 D mac-address=6C:FE:54:00:00:18 on-interface=bond3 bridge=bridge1 vid=30
-    age=1m2s
+    age=3s
  31 D mac-address=10:BF:48:00:00:19 on-interface=bond3 bridge=bridge1 vid=30
-    age=45s
- 32 D mac-address=6C:FE:54:00:00:1A on-interface=bond3 bridge=bridge1 vid=30
-    age=12s
- 33 D mac-address=10:BF:48:00:00:1B on-interface=bond3 bridge=bridge1 vid=30
     age=1m2s
+ 32 D mac-address=6C:FE:54:00:00:1A on-interface=bond3 bridge=bridge1 vid=30
+    age=1m2s
+ 33 D mac-address=10:BF:48:00:00:1B on-interface=bond3 bridge=bridge1 vid=30
+    age=3s
  34 D mac-address=AC:1F:6B:00:00:29 on-interface=bond3 bridge=bridge1 vid=20
-    age=45s
+    age=12s
  35 D mac-address=1C:98:EC:00:00:2A on-interface=bond3 bridge=bridge1 vid=20
     age=45s
  36 D mac-address=AC:1F:6B:00:00:2B on-interface=bond3 bridge=bridge1 vid=20
-    age=45s
+    age=1m2s
  37 D mac-address=10:BF:48:00:00:2C on-interface=bond3 bridge=bridge1 vid=30
     age=45s
  38 D mac-address=6C:FE:54:00:00:2D on-interface=bond3 bridge=bridge1 vid=30
-    age=1m2s
+    age=12s
  39 D mac-address=6C:FE:54:00:00:2E on-interface=bond3 bridge=bridge1 vid=30
-    age=3s
+    age=1m2s
  40 D mac-address=04:42:1A:00:00:2F on-interface=bond3 bridge=bridge1 vid=30
     age=1m2s
  41 D mac-address=04:42:1A:00:00:30 on-interface=bond3 bridge=bridge1 vid=30
-    age=1m2s
+    age=3s
 
 _____
 TPE_ACC_SW_04 (10.1.10.24):
 [admin@TPE_ACC_SW_04] > /export terse
 # 2026-10-13 10:00:00 by RouterOS 7.12.1
-# software id = AB12-4054
+# software id = CD34-2349
 #
 # model = CRS326-24G-2S+
-# serial number = HF739071897
+# serial number = HF570122655
 /interface bridge add name=bridge1 vlan-filtering=yes
 /interface ethernet set [ find default-name=ether1 ] comment=TPE-SRV-041
 /interface ethernet set [ find default-name=ether2 ] comment=TPE-SRV-042
@@ -2042,33 +2057,33 @@ Flags:
 [admin@TPE_ACC_SW_04] > /interface bridge host print detail without-paging
 Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external 
  0 DL mac-address=48:A9:8A:00:00:28 on-interface=bridge1 bridge=bridge1 vid=0
-    age=1m2s
+    age=12s
  1 D mac-address=AC:1F:6B:00:00:29 on-interface=ether1 bridge=bridge1 vid=20
     age=45s
  2 D mac-address=1C:98:EC:00:00:2A on-interface=ether2 bridge=bridge1 vid=20
     age=12s
  3 D mac-address=AC:1F:6B:00:00:2B on-interface=ether3 bridge=bridge1 vid=20
-    age=1m2s
- 4 D mac-address=10:BF:48:00:00:2C on-interface=ether9 bridge=bridge1 vid=30
-    age=1m2s
- 5 D mac-address=6C:FE:54:00:00:2D on-interface=ether10 bridge=bridge1 vid=30
-    age=3s
- 6 D mac-address=6C:FE:54:00:00:2E on-interface=ether11 bridge=bridge1 vid=30
     age=45s
+ 4 D mac-address=10:BF:48:00:00:2C on-interface=ether9 bridge=bridge1 vid=30
+    age=45s
+ 5 D mac-address=6C:FE:54:00:00:2D on-interface=ether10 bridge=bridge1 vid=30
+    age=1m2s
+ 6 D mac-address=6C:FE:54:00:00:2E on-interface=ether11 bridge=bridge1 vid=30
+    age=3s
  7 D mac-address=04:42:1A:00:00:2F on-interface=ether12 bridge=bridge1 vid=30
     age=3s
  8 D mac-address=04:42:1A:00:00:30 on-interface=ether13 bridge=bridge1 vid=30
-    age=45s
+    age=1m2s
  9 D mac-address=6C:FE:54:00:00:31 on-interface=ether14 bridge=bridge1 vid=30
-    age=12s
+    age=3s
  10 D mac-address=6C:FE:54:00:00:32 on-interface=ether15 bridge=bridge1 vid=30
-    age=45s
+    age=1m2s
  11 D mac-address=10:BF:48:00:00:33 on-interface=ether16 bridge=bridge1 vid=30
     age=12s
  12 D mac-address=24:6E:96:00:00:05 on-interface=bond4 bridge=bridge1 vid=20
     age=45s
  13 D mac-address=24:6E:96:00:00:06 on-interface=bond4 bridge=bridge1 vid=20
-    age=45s
+    age=12s
  14 D mac-address=AC:1F:6B:00:00:07 on-interface=bond4 bridge=bridge1 vid=20
     age=1m2s
  15 D mac-address=10:BF:48:00:00:08 on-interface=bond4 bridge=bridge1 vid=30
@@ -2076,53 +2091,53 @@ Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external
  16 D mac-address=04:42:1A:00:00:09 on-interface=bond4 bridge=bridge1 vid=30
     age=3s
  17 D mac-address=04:42:1A:00:00:0A on-interface=bond4 bridge=bridge1 vid=30
-    age=1m2s
+    age=12s
  18 D mac-address=04:42:1A:00:00:0B on-interface=bond4 bridge=bridge1 vid=30
-    age=3s
- 19 D mac-address=6C:FE:54:00:00:0C on-interface=bond4 bridge=bridge1 vid=30
-    age=1m2s
- 20 D mac-address=04:42:1A:00:00:0D on-interface=bond4 bridge=bridge1 vid=30
-    age=12s
- 21 D mac-address=10:BF:48:00:00:0E on-interface=bond4 bridge=bridge1 vid=30
     age=45s
- 22 D mac-address=6C:FE:54:00:00:0F on-interface=bond4 bridge=bridge1 vid=30
-    age=12s
- 23 D mac-address=24:6E:96:00:00:11 on-interface=bond4 bridge=bridge1 vid=20
+ 19 D mac-address=6C:FE:54:00:00:0C on-interface=bond4 bridge=bridge1 vid=30
+    age=3s
+ 20 D mac-address=04:42:1A:00:00:0D on-interface=bond4 bridge=bridge1 vid=30
     age=1m2s
+ 21 D mac-address=10:BF:48:00:00:0E on-interface=bond4 bridge=bridge1 vid=30
+    age=3s
+ 22 D mac-address=6C:FE:54:00:00:0F on-interface=bond4 bridge=bridge1 vid=30
+    age=45s
+ 23 D mac-address=24:6E:96:00:00:11 on-interface=bond4 bridge=bridge1 vid=20
+    age=45s
  24 D mac-address=AC:1F:6B:00:00:12 on-interface=bond4 bridge=bridge1 vid=20
     age=3s
  25 D mac-address=1C:98:EC:00:00:13 on-interface=bond4 bridge=bridge1 vid=20
-    age=3s
+    age=1m2s
  26 D mac-address=6C:FE:54:00:00:14 on-interface=bond4 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
  27 D mac-address=04:42:1A:00:00:15 on-interface=bond4 bridge=bridge1 vid=30
     age=45s
  28 D mac-address=6C:FE:54:00:00:16 on-interface=bond4 bridge=bridge1 vid=30
     age=3s
  29 D mac-address=04:42:1A:00:00:17 on-interface=bond4 bridge=bridge1 vid=30
-    age=1m2s
+    age=3s
  30 D mac-address=6C:FE:54:00:00:18 on-interface=bond4 bridge=bridge1 vid=30
-    age=3s
+    age=45s
  31 D mac-address=10:BF:48:00:00:19 on-interface=bond4 bridge=bridge1 vid=30
-    age=45s
+    age=3s
  32 D mac-address=6C:FE:54:00:00:1A on-interface=bond4 bridge=bridge1 vid=30
-    age=45s
+    age=12s
  33 D mac-address=10:BF:48:00:00:1B on-interface=bond4 bridge=bridge1 vid=30
-    age=3s
+    age=12s
  34 D mac-address=24:6E:96:00:00:1D on-interface=bond4 bridge=bridge1 vid=20
-    age=1m2s
+    age=3s
  35 D mac-address=24:6E:96:00:00:1E on-interface=bond4 bridge=bridge1 vid=20
-    age=1m2s
+    age=3s
  36 D mac-address=24:6E:96:00:00:1F on-interface=bond4 bridge=bridge1 vid=20
-    age=45s
+    age=12s
  37 D mac-address=6C:FE:54:00:00:20 on-interface=bond4 bridge=bridge1 vid=30
-    age=3s
+    age=45s
  38 D mac-address=04:42:1A:00:00:21 on-interface=bond4 bridge=bridge1 vid=30
-    age=3s
+    age=1m2s
  39 D mac-address=10:BF:48:00:00:22 on-interface=bond4 bridge=bridge1 vid=30
     age=45s
  40 D mac-address=6C:FE:54:00:00:23 on-interface=bond4 bridge=bridge1 vid=30
-    age=3s
+    age=45s
  41 D mac-address=10:BF:48:00:00:24 on-interface=bond4 bridge=bridge1 vid=30
     age=12s
 
@@ -2130,10 +2145,10 @@ _____
 TPE_ACC_SW_05 (10.1.10.25):
 [admin@TPE_ACC_SW_05] > /export terse
 # 2026-10-13 10:00:00 by RouterOS 7.12.1
-# software id = CD34-1691
+# software id = CD34-0864
 #
 # model = CRS326-24G-2S+
-# serial number = HF104238092
+# serial number = HF322311977
 /interface bridge add name=bridge1 vlan-filtering=yes
 /interface ethernet set [ find default-name=ether1 ] comment=TPE-SRV-051
 /interface ethernet set [ find default-name=ether2 ] comment=TPE-SRV-052
@@ -2207,98 +2222,98 @@ Flags:
 [admin@TPE_ACC_SW_05] > /interface bridge host print detail without-paging
 Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external 
  0 DL mac-address=48:A9:8A:00:00:34 on-interface=bridge1 bridge=bridge1 vid=0
-    age=12s
+    age=45s
  1 D mac-address=1C:98:EC:00:00:35 on-interface=ether1 bridge=bridge1 vid=20
     age=45s
  2 D mac-address=1C:98:EC:00:00:36 on-interface=ether2 bridge=bridge1 vid=20
     age=1m2s
  3 D mac-address=1C:98:EC:00:00:37 on-interface=ether3 bridge=bridge1 vid=20
-    age=45s
+    age=3s
  4 D mac-address=10:BF:48:00:00:39 on-interface=ether9 bridge=bridge1 vid=30
-    age=45s
- 5 D mac-address=10:BF:48:00:00:3A on-interface=ether10 bridge=bridge1 vid=30
     age=12s
+ 5 D mac-address=10:BF:48:00:00:3A on-interface=ether10 bridge=bridge1 vid=30
+    age=3s
  6 D mac-address=10:BF:48:00:00:3B on-interface=ether11 bridge=bridge1 vid=30
     age=12s
  7 D mac-address=6C:FE:54:00:00:3C on-interface=ether12 bridge=bridge1 vid=30
-    age=3s
+    age=45s
  8 D mac-address=04:42:1A:00:00:3D on-interface=ether13 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
  9 D mac-address=6C:FE:54:00:00:3E on-interface=ether14 bridge=bridge1 vid=30
-    age=45s
+    age=3s
  10 D mac-address=6C:FE:54:00:00:3F on-interface=ether15 bridge=bridge1 vid=30
-    age=45s
+    age=1m2s
  11 D mac-address=10:BF:48:00:00:40 on-interface=ether16 bridge=bridge1 vid=30
     age=1m2s
  12 D mac-address=24:6E:96:00:00:05 on-interface=bond5 bridge=bridge1 vid=20
-    age=3s
- 13 D mac-address=24:6E:96:00:00:06 on-interface=bond5 bridge=bridge1 vid=20
     age=12s
+ 13 D mac-address=24:6E:96:00:00:06 on-interface=bond5 bridge=bridge1 vid=20
+    age=1m2s
  14 D mac-address=AC:1F:6B:00:00:07 on-interface=bond5 bridge=bridge1 vid=20
-    age=3s
+    age=1m2s
  15 D mac-address=10:BF:48:00:00:08 on-interface=bond5 bridge=bridge1 vid=30
     age=12s
  16 D mac-address=04:42:1A:00:00:09 on-interface=bond5 bridge=bridge1 vid=30
-    age=45s
+    age=3s
  17 D mac-address=04:42:1A:00:00:0A on-interface=bond5 bridge=bridge1 vid=30
-    age=1m2s
+    age=3s
  18 D mac-address=04:42:1A:00:00:0B on-interface=bond5 bridge=bridge1 vid=30
-    age=3s
+    age=1m2s
  19 D mac-address=6C:FE:54:00:00:0C on-interface=bond5 bridge=bridge1 vid=30
-    age=1m2s
+    age=3s
  20 D mac-address=04:42:1A:00:00:0D on-interface=bond5 bridge=bridge1 vid=30
-    age=1m2s
+    age=12s
  21 D mac-address=10:BF:48:00:00:0E on-interface=bond5 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
  22 D mac-address=6C:FE:54:00:00:0F on-interface=bond5 bridge=bridge1 vid=30
-    age=1m2s
+    age=45s
  23 D mac-address=24:6E:96:00:00:11 on-interface=bond5 bridge=bridge1 vid=20
-    age=1m2s
+    age=12s
  24 D mac-address=AC:1F:6B:00:00:12 on-interface=bond5 bridge=bridge1 vid=20
-    age=12s
+    age=45s
  25 D mac-address=1C:98:EC:00:00:13 on-interface=bond5 bridge=bridge1 vid=20
-    age=3s
- 26 D mac-address=6C:FE:54:00:00:14 on-interface=bond5 bridge=bridge1 vid=30
-    age=3s
- 27 D mac-address=04:42:1A:00:00:15 on-interface=bond5 bridge=bridge1 vid=30
     age=1m2s
+ 26 D mac-address=6C:FE:54:00:00:14 on-interface=bond5 bridge=bridge1 vid=30
+    age=45s
+ 27 D mac-address=04:42:1A:00:00:15 on-interface=bond5 bridge=bridge1 vid=30
+    age=45s
  28 D mac-address=6C:FE:54:00:00:16 on-interface=bond5 bridge=bridge1 vid=30
-    age=3s
- 29 D mac-address=04:42:1A:00:00:17 on-interface=bond5 bridge=bridge1 vid=30
     age=12s
+ 29 D mac-address=04:42:1A:00:00:17 on-interface=bond5 bridge=bridge1 vid=30
+    age=3s
  30 D mac-address=6C:FE:54:00:00:18 on-interface=bond5 bridge=bridge1 vid=30
     age=1m2s
  31 D mac-address=10:BF:48:00:00:19 on-interface=bond5 bridge=bridge1 vid=30
-    age=45s
+    age=1m2s
  32 D mac-address=6C:FE:54:00:00:1A on-interface=bond5 bridge=bridge1 vid=30
     age=12s
  33 D mac-address=10:BF:48:00:00:1B on-interface=bond5 bridge=bridge1 vid=30
-    age=45s
- 34 D mac-address=24:6E:96:00:00:1D on-interface=bond5 bridge=bridge1 vid=20
-    age=1m2s
- 35 D mac-address=24:6E:96:00:00:1E on-interface=bond5 bridge=bridge1 vid=20
-    age=45s
- 36 D mac-address=24:6E:96:00:00:1F on-interface=bond5 bridge=bridge1 vid=20
-    age=45s
- 37 D mac-address=6C:FE:54:00:00:20 on-interface=bond5 bridge=bridge1 vid=30
     age=12s
- 38 D mac-address=04:42:1A:00:00:21 on-interface=bond5 bridge=bridge1 vid=30
+ 34 D mac-address=24:6E:96:00:00:1D on-interface=bond5 bridge=bridge1 vid=20
+    age=45s
+ 35 D mac-address=24:6E:96:00:00:1E on-interface=bond5 bridge=bridge1 vid=20
+    age=1m2s
+ 36 D mac-address=24:6E:96:00:00:1F on-interface=bond5 bridge=bridge1 vid=20
     age=3s
+ 37 D mac-address=6C:FE:54:00:00:20 on-interface=bond5 bridge=bridge1 vid=30
+    age=3s
+ 38 D mac-address=04:42:1A:00:00:21 on-interface=bond5 bridge=bridge1 vid=30
+    age=12s
  39 D mac-address=10:BF:48:00:00:22 on-interface=bond5 bridge=bridge1 vid=30
     age=1m2s
  40 D mac-address=6C:FE:54:00:00:23 on-interface=bond5 bridge=bridge1 vid=30
     age=1m2s
  41 D mac-address=10:BF:48:00:00:24 on-interface=bond5 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
 
 _____
 TPE_ACC_SW_06 (10.1.10.26):
 [admin@TPE_ACC_SW_06] > /export terse
 # 2026-10-13 10:00:00 by RouterOS 7.12.1
-# software id = CD34-6204
+# software id = EF56-4552
 #
 # model = CRS326-24G-2S+
-# serial number = HF833571206
+# serial number = HF327884508
 /interface bridge add name=bridge1 vlan-filtering=yes
 /interface ethernet set [ find default-name=ether1 ] comment=TPE-SRV-061
 /interface ethernet set [ find default-name=ether2 ] comment=TPE-SRV-062
@@ -2371,98 +2386,98 @@ Flags:
 [admin@TPE_ACC_SW_06] > /interface bridge host print detail without-paging
 Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external 
  0 DL mac-address=48:A9:8A:00:00:41 on-interface=bridge1 bridge=bridge1 vid=0
-    age=3s
+    age=12s
  1 D mac-address=24:6E:96:00:00:42 on-interface=ether1 bridge=bridge1 vid=20
     age=3s
  2 D mac-address=24:6E:96:00:00:43 on-interface=ether2 bridge=bridge1 vid=20
     age=12s
  3 D mac-address=1C:98:EC:00:00:44 on-interface=ether3 bridge=bridge1 vid=20
-    age=1m2s
+    age=3s
  4 D mac-address=04:42:1A:00:00:45 on-interface=ether9 bridge=bridge1 vid=30
-    age=1m2s
+    age=3s
  5 D mac-address=6C:FE:54:00:00:46 on-interface=ether10 bridge=bridge1 vid=30
-    age=1m2s
+    age=12s
  6 D mac-address=10:BF:48:00:00:47 on-interface=ether11 bridge=bridge1 vid=30
-    age=1m2s
+    age=45s
  7 D mac-address=10:BF:48:00:00:48 on-interface=ether12 bridge=bridge1 vid=30
     age=12s
  8 D mac-address=04:42:1A:00:00:49 on-interface=ether13 bridge=bridge1 vid=30
-    age=12s
- 9 D mac-address=10:BF:48:00:00:4A on-interface=ether14 bridge=bridge1 vid=30
-    age=12s
- 10 D mac-address=04:42:1A:00:00:4B on-interface=ether15 bridge=bridge1 vid=30
-    age=3s
- 11 D mac-address=10:BF:48:00:00:4C on-interface=ether16 bridge=bridge1 vid=30
-    age=12s
- 12 D mac-address=24:6E:96:00:00:05 on-interface=bond6 bridge=bridge1 vid=20
-    age=3s
- 13 D mac-address=24:6E:96:00:00:06 on-interface=bond6 bridge=bridge1 vid=20
-    age=3s
- 14 D mac-address=AC:1F:6B:00:00:07 on-interface=bond6 bridge=bridge1 vid=20
-    age=12s
- 15 D mac-address=10:BF:48:00:00:08 on-interface=bond6 bridge=bridge1 vid=30
     age=45s
+ 9 D mac-address=10:BF:48:00:00:4A on-interface=ether14 bridge=bridge1 vid=30
+    age=1m2s
+ 10 D mac-address=04:42:1A:00:00:4B on-interface=ether15 bridge=bridge1 vid=30
+    age=1m2s
+ 11 D mac-address=10:BF:48:00:00:4C on-interface=ether16 bridge=bridge1 vid=30
+    age=3s
+ 12 D mac-address=24:6E:96:00:00:05 on-interface=bond6 bridge=bridge1 vid=20
+    age=1m2s
+ 13 D mac-address=24:6E:96:00:00:06 on-interface=bond6 bridge=bridge1 vid=20
+    age=1m2s
+ 14 D mac-address=AC:1F:6B:00:00:07 on-interface=bond6 bridge=bridge1 vid=20
+    age=45s
+ 15 D mac-address=10:BF:48:00:00:08 on-interface=bond6 bridge=bridge1 vid=30
+    age=1m2s
  16 D mac-address=04:42:1A:00:00:09 on-interface=bond6 bridge=bridge1 vid=30
     age=12s
  17 D mac-address=04:42:1A:00:00:0A on-interface=bond6 bridge=bridge1 vid=30
-    age=45s
+    age=1m2s
  18 D mac-address=04:42:1A:00:00:0B on-interface=bond6 bridge=bridge1 vid=30
     age=1m2s
  19 D mac-address=6C:FE:54:00:00:0C on-interface=bond6 bridge=bridge1 vid=30
     age=1m2s
  20 D mac-address=04:42:1A:00:00:0D on-interface=bond6 bridge=bridge1 vid=30
-    age=3s
+    age=12s
  21 D mac-address=10:BF:48:00:00:0E on-interface=bond6 bridge=bridge1 vid=30
-    age=1m2s
+    age=3s
  22 D mac-address=6C:FE:54:00:00:0F on-interface=bond6 bridge=bridge1 vid=30
-    age=1m2s
+    age=12s
  23 D mac-address=24:6E:96:00:00:11 on-interface=bond6 bridge=bridge1 vid=20
-    age=45s
+    age=3s
  24 D mac-address=AC:1F:6B:00:00:12 on-interface=bond6 bridge=bridge1 vid=20
-    age=1m2s
+    age=3s
  25 D mac-address=1C:98:EC:00:00:13 on-interface=bond6 bridge=bridge1 vid=20
-    age=12s
+    age=1m2s
  26 D mac-address=6C:FE:54:00:00:14 on-interface=bond6 bridge=bridge1 vid=30
-    age=1m2s
+    age=3s
  27 D mac-address=04:42:1A:00:00:15 on-interface=bond6 bridge=bridge1 vid=30
-    age=1m2s
+    age=3s
  28 D mac-address=6C:FE:54:00:00:16 on-interface=bond6 bridge=bridge1 vid=30
-    age=1m2s
+    age=12s
  29 D mac-address=04:42:1A:00:00:17 on-interface=bond6 bridge=bridge1 vid=30
-    age=12s
+    age=3s
  30 D mac-address=6C:FE:54:00:00:18 on-interface=bond6 bridge=bridge1 vid=30
-    age=3s
- 31 D mac-address=10:BF:48:00:00:19 on-interface=bond6 bridge=bridge1 vid=30
-    age=12s
- 32 D mac-address=6C:FE:54:00:00:1A on-interface=bond6 bridge=bridge1 vid=30
-    age=3s
- 33 D mac-address=10:BF:48:00:00:1B on-interface=bond6 bridge=bridge1 vid=30
-    age=3s
- 34 D mac-address=24:6E:96:00:00:1D on-interface=bond6 bridge=bridge1 vid=20
     age=1m2s
- 35 D mac-address=24:6E:96:00:00:1E on-interface=bond6 bridge=bridge1 vid=20
-    age=3s
- 36 D mac-address=24:6E:96:00:00:1F on-interface=bond6 bridge=bridge1 vid=20
-    age=3s
- 37 D mac-address=6C:FE:54:00:00:20 on-interface=bond6 bridge=bridge1 vid=30
+ 31 D mac-address=10:BF:48:00:00:19 on-interface=bond6 bridge=bridge1 vid=30
+    age=45s
+ 32 D mac-address=6C:FE:54:00:00:1A on-interface=bond6 bridge=bridge1 vid=30
     age=12s
+ 33 D mac-address=10:BF:48:00:00:1B on-interface=bond6 bridge=bridge1 vid=30
+    age=1m2s
+ 34 D mac-address=24:6E:96:00:00:1D on-interface=bond6 bridge=bridge1 vid=20
+    age=12s
+ 35 D mac-address=24:6E:96:00:00:1E on-interface=bond6 bridge=bridge1 vid=20
+    age=12s
+ 36 D mac-address=24:6E:96:00:00:1F on-interface=bond6 bridge=bridge1 vid=20
+    age=45s
+ 37 D mac-address=6C:FE:54:00:00:20 on-interface=bond6 bridge=bridge1 vid=30
+    age=45s
  38 D mac-address=04:42:1A:00:00:21 on-interface=bond6 bridge=bridge1 vid=30
-    age=3s
+    age=1m2s
  39 D mac-address=10:BF:48:00:00:22 on-interface=bond6 bridge=bridge1 vid=30
     age=1m2s
  40 D mac-address=6C:FE:54:00:00:23 on-interface=bond6 bridge=bridge1 vid=30
-    age=45s
+    age=3s
  41 D mac-address=10:BF:48:00:00:24 on-interface=bond6 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
 
 _____
 TPE_ACC_SW_07 (10.1.10.27):
 [admin@TPE_ACC_SW_07] > /export terse
 # 2026-10-13 10:00:00 by RouterOS 7.12.1
-# software id = EF56-3204
+# software id = EF56-7974
 #
 # model = CRS326-24G-2S+
-# serial number = HF252663711
+# serial number = HF10805558
 /interface bridge add name=bridge1 vlan-filtering=yes
 /interface ethernet set [ find default-name=ether1 ] comment=TPE-SRV-071
 /interface ethernet set [ find default-name=ether2 ] comment=TPE-SRV-072
@@ -2535,98 +2550,98 @@ Flags:
 [admin@TPE_ACC_SW_07] > /interface bridge host print detail without-paging
 Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external 
  0 DL mac-address=48:A9:8A:00:00:4D on-interface=bridge1 bridge=bridge1 vid=0
-    age=45s
+    age=12s
  1 D mac-address=24:6E:96:00:00:4E on-interface=ether1 bridge=bridge1 vid=20
-    age=45s
+    age=3s
  2 D mac-address=1C:98:EC:00:00:4F on-interface=ether2 bridge=bridge1 vid=20
-    age=1m2s
+    age=45s
  3 D mac-address=1C:98:EC:00:00:50 on-interface=ether3 bridge=bridge1 vid=20
-    age=1m2s
+    age=3s
  4 D mac-address=10:BF:48:00:00:51 on-interface=ether9 bridge=bridge1 vid=30
     age=3s
  5 D mac-address=10:BF:48:00:00:52 on-interface=ether10 bridge=bridge1 vid=30
     age=1m2s
  6 D mac-address=10:BF:48:00:00:53 on-interface=ether11 bridge=bridge1 vid=30
-    age=1m2s
+    age=3s
  7 D mac-address=04:42:1A:00:00:54 on-interface=ether12 bridge=bridge1 vid=30
-    age=1m2s
+    age=3s
  8 D mac-address=10:BF:48:00:00:55 on-interface=ether13 bridge=bridge1 vid=30
-    age=3s
- 9 D mac-address=10:BF:48:00:00:56 on-interface=ether14 bridge=bridge1 vid=30
-    age=12s
- 10 D mac-address=04:42:1A:00:00:57 on-interface=ether15 bridge=bridge1 vid=30
-    age=3s
- 11 D mac-address=10:BF:48:00:00:58 on-interface=ether16 bridge=bridge1 vid=30
     age=45s
- 12 D mac-address=24:6E:96:00:00:05 on-interface=bond7 bridge=bridge1 vid=20
-    age=3s
- 13 D mac-address=24:6E:96:00:00:06 on-interface=bond7 bridge=bridge1 vid=20
-    age=3s
- 14 D mac-address=AC:1F:6B:00:00:07 on-interface=bond7 bridge=bridge1 vid=20
+ 9 D mac-address=10:BF:48:00:00:56 on-interface=ether14 bridge=bridge1 vid=30
     age=1m2s
+ 10 D mac-address=04:42:1A:00:00:57 on-interface=ether15 bridge=bridge1 vid=30
+    age=12s
+ 11 D mac-address=10:BF:48:00:00:58 on-interface=ether16 bridge=bridge1 vid=30
+    age=1m2s
+ 12 D mac-address=24:6E:96:00:00:05 on-interface=bond7 bridge=bridge1 vid=20
+    age=1m2s
+ 13 D mac-address=24:6E:96:00:00:06 on-interface=bond7 bridge=bridge1 vid=20
+    age=12s
+ 14 D mac-address=AC:1F:6B:00:00:07 on-interface=bond7 bridge=bridge1 vid=20
+    age=3s
  15 D mac-address=10:BF:48:00:00:08 on-interface=bond7 bridge=bridge1 vid=30
     age=3s
  16 D mac-address=04:42:1A:00:00:09 on-interface=bond7 bridge=bridge1 vid=30
-    age=3s
+    age=12s
  17 D mac-address=04:42:1A:00:00:0A on-interface=bond7 bridge=bridge1 vid=30
-    age=45s
+    age=1m2s
  18 D mac-address=04:42:1A:00:00:0B on-interface=bond7 bridge=bridge1 vid=30
     age=1m2s
  19 D mac-address=6C:FE:54:00:00:0C on-interface=bond7 bridge=bridge1 vid=30
     age=12s
  20 D mac-address=04:42:1A:00:00:0D on-interface=bond7 bridge=bridge1 vid=30
-    age=1m2s
+    age=45s
  21 D mac-address=10:BF:48:00:00:0E on-interface=bond7 bridge=bridge1 vid=30
-    age=1m2s
+    age=45s
  22 D mac-address=6C:FE:54:00:00:0F on-interface=bond7 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
  23 D mac-address=24:6E:96:00:00:11 on-interface=bond7 bridge=bridge1 vid=20
-    age=3s
+    age=12s
  24 D mac-address=AC:1F:6B:00:00:12 on-interface=bond7 bridge=bridge1 vid=20
     age=3s
  25 D mac-address=1C:98:EC:00:00:13 on-interface=bond7 bridge=bridge1 vid=20
-    age=12s
+    age=45s
  26 D mac-address=6C:FE:54:00:00:14 on-interface=bond7 bridge=bridge1 vid=30
-    age=1m2s
+    age=3s
  27 D mac-address=04:42:1A:00:00:15 on-interface=bond7 bridge=bridge1 vid=30
-    age=1m2s
+    age=3s
  28 D mac-address=6C:FE:54:00:00:16 on-interface=bond7 bridge=bridge1 vid=30
     age=12s
  29 D mac-address=04:42:1A:00:00:17 on-interface=bond7 bridge=bridge1 vid=30
     age=45s
  30 D mac-address=6C:FE:54:00:00:18 on-interface=bond7 bridge=bridge1 vid=30
-    age=45s
+    age=3s
  31 D mac-address=10:BF:48:00:00:19 on-interface=bond7 bridge=bridge1 vid=30
-    age=1m2s
- 32 D mac-address=6C:FE:54:00:00:1A on-interface=bond7 bridge=bridge1 vid=30
     age=12s
+ 32 D mac-address=6C:FE:54:00:00:1A on-interface=bond7 bridge=bridge1 vid=30
+    age=1m2s
  33 D mac-address=10:BF:48:00:00:1B on-interface=bond7 bridge=bridge1 vid=30
-    age=3s
- 34 D mac-address=24:6E:96:00:00:1D on-interface=bond7 bridge=bridge1 vid=20
     age=45s
+ 34 D mac-address=24:6E:96:00:00:1D on-interface=bond7 bridge=bridge1 vid=20
+    age=1m2s
  35 D mac-address=24:6E:96:00:00:1E on-interface=bond7 bridge=bridge1 vid=20
-    age=3s
+    age=1m2s
  36 D mac-address=24:6E:96:00:00:1F on-interface=bond7 bridge=bridge1 vid=20
-    age=3s
+    age=45s
  37 D mac-address=6C:FE:54:00:00:20 on-interface=bond7 bridge=bridge1 vid=30
     age=12s
  38 D mac-address=04:42:1A:00:00:21 on-interface=bond7 bridge=bridge1 vid=30
-    age=45s
- 39 D mac-address=10:BF:48:00:00:22 on-interface=bond7 bridge=bridge1 vid=30
-    age=3s
- 40 D mac-address=6C:FE:54:00:00:23 on-interface=bond7 bridge=bridge1 vid=30
-    age=12s
- 41 D mac-address=10:BF:48:00:00:24 on-interface=bond7 bridge=bridge1 vid=30
     age=1m2s
+ 39 D mac-address=10:BF:48:00:00:22 on-interface=bond7 bridge=bridge1 vid=30
+    age=12s
+ 40 D mac-address=6C:FE:54:00:00:23 on-interface=bond7 bridge=bridge1 vid=30
+    age=1m2s
+ 41 D mac-address=10:BF:48:00:00:24 on-interface=bond7 bridge=bridge1 vid=30
+    age=12s
 
 _____
 TPE_ACC_SW_08 (10.1.10.28):
 [admin@TPE_ACC_SW_08] > /export terse
 # 2026-10-13 10:00:00 by RouterOS 7.12.1
-# software id = CD34-7846
+# software id = AB12-8257
 #
 # model = CRS326-24G-2S+
-# serial number = HF881322223
+# serial number = HF146056046
 /interface bridge add name=bridge1 vlan-filtering=yes
 /interface ethernet set [ find default-name=ether1 ] comment=TPE-SRV-081
 /interface ethernet set [ find default-name=ether2 ] comment=TPE-SRV-082
@@ -2634,7 +2649,7 @@ TPE_ACC_SW_08 (10.1.10.28):
 /interface bonding add mode=802.3ad name=bond8 slaves=sfp-sfpplus1,sfp-sfpplus2 transmit-hash-policy=layer-2-and-3 comment="to TPE_CORE_RT_01"
 /interface vlan add interface=bridge1 name=vlan10 vlan-id=10
 /interface bridge port add bridge=bridge1 interface=bond8
-/interface bridge port add bridge=bridge1 interface=ether24 comment="to TPE_CORE_RT_02"
+/interface bridge port add bridge=bridge1 interface=ether24 pvid=10 comment="to TPE_CORE_RT_02"
 /interface bridge port add bridge=bridge1 interface=ether1 pvid=20
 /interface bridge port add bridge=bridge1 interface=ether2 pvid=20
 /interface bridge port add bridge=bridge1 interface=ether3 pvid=20
@@ -2695,21 +2710,21 @@ Flags:
 [admin@TPE_ACC_SW_08] > /interface bridge host print detail without-paging
 Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external 
  0 DL mac-address=48:A9:8A:00:00:59 on-interface=bridge1 bridge=bridge1 vid=0
-    age=45s
- 1 D mac-address=24:6E:96:00:00:5A on-interface=ether1 bridge=bridge1 vid=20
-    age=12s
- 2 D mac-address=1C:98:EC:00:00:5B on-interface=ether2 bridge=bridge1 vid=20
-    age=1m2s
- 3 D mac-address=24:6E:96:00:00:5C on-interface=ether3 bridge=bridge1 vid=20
-    age=12s
- 4 D mac-address=10:BF:48:00:00:5D on-interface=ether9 bridge=bridge1 vid=30
-    age=1m2s
- 5 D mac-address=04:42:1A:00:00:5E on-interface=ether10 bridge=bridge1 vid=30
-    age=12s
- 6 D mac-address=10:BF:48:00:00:5F on-interface=ether11 bridge=bridge1 vid=30
     age=3s
- 7 D mac-address=10:BF:48:00:00:60 on-interface=ether12 bridge=bridge1 vid=30
+ 1 D mac-address=24:6E:96:00:00:5A on-interface=ether1 bridge=bridge1 vid=20
+    age=3s
+ 2 D mac-address=1C:98:EC:00:00:5B on-interface=ether2 bridge=bridge1 vid=20
+    age=3s
+ 3 D mac-address=24:6E:96:00:00:5C on-interface=ether3 bridge=bridge1 vid=20
     age=1m2s
+ 4 D mac-address=10:BF:48:00:00:5D on-interface=ether9 bridge=bridge1 vid=30
+    age=3s
+ 5 D mac-address=04:42:1A:00:00:5E on-interface=ether10 bridge=bridge1 vid=30
+    age=45s
+ 6 D mac-address=10:BF:48:00:00:5F on-interface=ether11 bridge=bridge1 vid=30
+    age=12s
+ 7 D mac-address=10:BF:48:00:00:60 on-interface=ether12 bridge=bridge1 vid=30
+    age=45s
  8 D mac-address=04:42:1A:00:00:61 on-interface=ether13 bridge=bridge1 vid=30
     age=3s
  9 D mac-address=10:BF:48:00:00:62 on-interface=ether14 bridge=bridge1 vid=30
@@ -2717,76 +2732,76 @@ Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external
  10 D mac-address=04:42:1A:00:00:63 on-interface=ether15 bridge=bridge1 vid=30
     age=3s
  11 D mac-address=04:42:1A:00:00:64 on-interface=ether16 bridge=bridge1 vid=30
-    age=3s
+    age=45s
  12 D mac-address=24:6E:96:00:00:05 on-interface=bond8 bridge=bridge1 vid=20
-    age=1m2s
+    age=12s
  13 D mac-address=24:6E:96:00:00:06 on-interface=bond8 bridge=bridge1 vid=20
-    age=3s
+    age=12s
  14 D mac-address=AC:1F:6B:00:00:07 on-interface=bond8 bridge=bridge1 vid=20
     age=45s
  15 D mac-address=10:BF:48:00:00:08 on-interface=bond8 bridge=bridge1 vid=30
-    age=12s
- 16 D mac-address=04:42:1A:00:00:09 on-interface=bond8 bridge=bridge1 vid=30
     age=45s
+ 16 D mac-address=04:42:1A:00:00:09 on-interface=bond8 bridge=bridge1 vid=30
+    age=12s
  17 D mac-address=04:42:1A:00:00:0A on-interface=bond8 bridge=bridge1 vid=30
-    age=3s
+    age=12s
  18 D mac-address=04:42:1A:00:00:0B on-interface=bond8 bridge=bridge1 vid=30
-    age=3s
+    age=12s
  19 D mac-address=6C:FE:54:00:00:0C on-interface=bond8 bridge=bridge1 vid=30
     age=3s
  20 D mac-address=04:42:1A:00:00:0D on-interface=bond8 bridge=bridge1 vid=30
-    age=45s
+    age=1m2s
  21 D mac-address=10:BF:48:00:00:0E on-interface=bond8 bridge=bridge1 vid=30
     age=12s
  22 D mac-address=6C:FE:54:00:00:0F on-interface=bond8 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
  23 D mac-address=24:6E:96:00:00:11 on-interface=bond8 bridge=bridge1 vid=20
-    age=45s
+    age=12s
  24 D mac-address=AC:1F:6B:00:00:12 on-interface=bond8 bridge=bridge1 vid=20
     age=45s
  25 D mac-address=1C:98:EC:00:00:13 on-interface=bond8 bridge=bridge1 vid=20
-    age=12s
+    age=1m2s
  26 D mac-address=6C:FE:54:00:00:14 on-interface=bond8 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
  27 D mac-address=04:42:1A:00:00:15 on-interface=bond8 bridge=bridge1 vid=30
     age=12s
  28 D mac-address=6C:FE:54:00:00:16 on-interface=bond8 bridge=bridge1 vid=30
-    age=3s
- 29 D mac-address=04:42:1A:00:00:17 on-interface=bond8 bridge=bridge1 vid=30
     age=1m2s
+ 29 D mac-address=04:42:1A:00:00:17 on-interface=bond8 bridge=bridge1 vid=30
+    age=45s
  30 D mac-address=6C:FE:54:00:00:18 on-interface=bond8 bridge=bridge1 vid=30
-    age=12s
+    age=45s
  31 D mac-address=10:BF:48:00:00:19 on-interface=bond8 bridge=bridge1 vid=30
     age=1m2s
  32 D mac-address=6C:FE:54:00:00:1A on-interface=bond8 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
  33 D mac-address=10:BF:48:00:00:1B on-interface=bond8 bridge=bridge1 vid=30
     age=45s
  34 D mac-address=24:6E:96:00:00:1D on-interface=bond8 bridge=bridge1 vid=20
-    age=1m2s
- 35 D mac-address=24:6E:96:00:00:1E on-interface=bond8 bridge=bridge1 vid=20
-    age=1m2s
- 36 D mac-address=24:6E:96:00:00:1F on-interface=bond8 bridge=bridge1 vid=20
     age=12s
+ 35 D mac-address=24:6E:96:00:00:1E on-interface=bond8 bridge=bridge1 vid=20
+    age=3s
+ 36 D mac-address=24:6E:96:00:00:1F on-interface=bond8 bridge=bridge1 vid=20
+    age=1m2s
  37 D mac-address=6C:FE:54:00:00:20 on-interface=bond8 bridge=bridge1 vid=30
     age=1m2s
  38 D mac-address=04:42:1A:00:00:21 on-interface=bond8 bridge=bridge1 vid=30
-    age=45s
+    age=1m2s
  39 D mac-address=10:BF:48:00:00:22 on-interface=bond8 bridge=bridge1 vid=30
-    age=45s
+    age=12s
  40 D mac-address=6C:FE:54:00:00:23 on-interface=bond8 bridge=bridge1 vid=30
-    age=1m2s
+    age=45s
  41 D mac-address=10:BF:48:00:00:24 on-interface=bond8 bridge=bridge1 vid=30
-    age=1m2s
+    age=45s
 
 _____
 TPE_ACC_SW_09 (10.1.10.29):
 [admin@TPE_ACC_SW_09] > /export terse
 # 2026-10-13 10:00:00 by RouterOS 7.12.1
-# software id = CD34-3735
+# software id = AB12-3577
 #
 # model = CRS326-24G-2S+
-# serial number = HF1114579
+# serial number = HF414040394
 /interface bridge add name=bridge1 vlan-filtering=yes
 /interface ethernet set [ find default-name=ether1 ] comment=TPE-SRV-091
 /interface ethernet set [ find default-name=ether2 ] comment=TPE-SRV-092
@@ -2856,10 +2871,10 @@ _____
 TPE_ACC_SW_10 (10.1.10.30):
 [admin@TPE_ACC_SW_10] > /export terse
 # 2026-10-13 10:00:00 by RouterOS 7.12.1
-# software id = EF56-8872
+# software id = EF56-9250
 #
 # model = CRS326-24G-2S+
-# serial number = HF818569548
+# serial number = HF549935833
 /interface bridge add name=bridge1 vlan-filtering=yes
 /interface ethernet set [ find default-name=ether1 ] comment=TPE-SRV-101
 /interface ethernet set [ find default-name=ether2 ] comment=TPE-SRV-102
@@ -2928,89 +2943,89 @@ Flags:
 [admin@TPE_ACC_SW_10] > /interface bridge host print detail without-paging
 Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external 
  0 DL mac-address=48:A9:8A:00:00:71 on-interface=bridge1 bridge=bridge1 vid=0
-    age=12s
- 1 D mac-address=1C:98:EC:00:00:72 on-interface=ether1 bridge=bridge1 vid=20
     age=45s
+ 1 D mac-address=1C:98:EC:00:00:72 on-interface=ether1 bridge=bridge1 vid=20
+    age=12s
  2 D mac-address=AC:1F:6B:00:00:73 on-interface=ether2 bridge=bridge1 vid=20
     age=45s
  3 D mac-address=AC:1F:6B:00:00:74 on-interface=ether3 bridge=bridge1 vid=20
-    age=12s
+    age=3s
  4 D mac-address=6C:FE:54:00:00:75 on-interface=ether9 bridge=bridge1 vid=30
-    age=12s
+    age=3s
  5 D mac-address=10:BF:48:00:00:76 on-interface=ether10 bridge=bridge1 vid=30
-    age=12s
+    age=45s
  6 D mac-address=04:42:1A:00:00:77 on-interface=ether11 bridge=bridge1 vid=30
-    age=1m2s
+    age=12s
  7 D mac-address=10:BF:48:00:00:78 on-interface=ether12 bridge=bridge1 vid=30
-    age=1m2s
+    age=45s
  8 D mac-address=04:42:1A:00:00:79 on-interface=ether13 bridge=bridge1 vid=30
     age=45s
  9 D mac-address=10:BF:48:00:00:7A on-interface=ether14 bridge=bridge1 vid=30
-    age=45s
+    age=3s
  10 D mac-address=6C:FE:54:00:00:7B on-interface=ether15 bridge=bridge1 vid=30
-    age=12s
+    age=45s
  11 D mac-address=10:BF:48:00:00:7C on-interface=ether16 bridge=bridge1 vid=30
-    age=45s
+    age=3s
  12 D mac-address=24:6E:96:00:00:05 on-interface=bond10 bridge=bridge1 vid=20
-    age=3s
+    age=1m2s
  13 D mac-address=24:6E:96:00:00:06 on-interface=bond10 bridge=bridge1 vid=20
-    age=3s
- 14 D mac-address=AC:1F:6B:00:00:07 on-interface=bond10 bridge=bridge1 vid=20
     age=45s
- 15 D mac-address=10:BF:48:00:00:08 on-interface=bond10 bridge=bridge1 vid=30
+ 14 D mac-address=AC:1F:6B:00:00:07 on-interface=bond10 bridge=bridge1 vid=20
     age=12s
+ 15 D mac-address=10:BF:48:00:00:08 on-interface=bond10 bridge=bridge1 vid=30
+    age=45s
  16 D mac-address=04:42:1A:00:00:09 on-interface=bond10 bridge=bridge1 vid=30
     age=45s
  17 D mac-address=04:42:1A:00:00:0A on-interface=bond10 bridge=bridge1 vid=30
-    age=45s
+    age=12s
  18 D mac-address=04:42:1A:00:00:0B on-interface=bond10 bridge=bridge1 vid=30
-    age=3s
- 19 D mac-address=6C:FE:54:00:00:0C on-interface=bond10 bridge=bridge1 vid=30
     age=45s
+ 19 D mac-address=6C:FE:54:00:00:0C on-interface=bond10 bridge=bridge1 vid=30
+    age=12s
  20 D mac-address=04:42:1A:00:00:0D on-interface=bond10 bridge=bridge1 vid=30
     age=3s
  21 D mac-address=10:BF:48:00:00:0E on-interface=bond10 bridge=bridge1 vid=30
-    age=1m2s
- 22 D mac-address=6C:FE:54:00:00:0F on-interface=bond10 bridge=bridge1 vid=30
-    age=45s
- 23 D mac-address=24:6E:96:00:00:11 on-interface=bond10 bridge=bridge1 vid=20
     age=12s
+ 22 D mac-address=6C:FE:54:00:00:0F on-interface=bond10 bridge=bridge1 vid=30
+    age=12s
+ 23 D mac-address=24:6E:96:00:00:11 on-interface=bond10 bridge=bridge1 vid=20
+    age=3s
  24 D mac-address=AC:1F:6B:00:00:12 on-interface=bond10 bridge=bridge1 vid=20
-    age=45s
+    age=3s
  25 D mac-address=1C:98:EC:00:00:13 on-interface=bond10 bridge=bridge1 vid=20
     age=45s
  26 D mac-address=6C:FE:54:00:00:14 on-interface=bond10 bridge=bridge1 vid=30
-    age=12s
- 27 D mac-address=04:42:1A:00:00:15 on-interface=bond10 bridge=bridge1 vid=30
     age=45s
+ 27 D mac-address=04:42:1A:00:00:15 on-interface=bond10 bridge=bridge1 vid=30
+    age=12s
  28 D mac-address=6C:FE:54:00:00:16 on-interface=bond10 bridge=bridge1 vid=30
-    age=12s
+    age=3s
  29 D mac-address=04:42:1A:00:00:17 on-interface=bond10 bridge=bridge1 vid=30
-    age=3s
+    age=1m2s
  30 D mac-address=6C:FE:54:00:00:18 on-interface=bond10 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
  31 D mac-address=10:BF:48:00:00:19 on-interface=bond10 bridge=bridge1 vid=30
-    age=12s
- 32 D mac-address=6C:FE:54:00:00:1A on-interface=bond10 bridge=bridge1 vid=30
     age=3s
+ 32 D mac-address=6C:FE:54:00:00:1A on-interface=bond10 bridge=bridge1 vid=30
+    age=45s
  33 D mac-address=10:BF:48:00:00:1B on-interface=bond10 bridge=bridge1 vid=30
     age=3s
  34 D mac-address=24:6E:96:00:00:1D on-interface=bond10 bridge=bridge1 vid=20
-    age=45s
+    age=1m2s
  35 D mac-address=24:6E:96:00:00:1E on-interface=bond10 bridge=bridge1 vid=20
-    age=45s
- 36 D mac-address=24:6E:96:00:00:1F on-interface=bond10 bridge=bridge1 vid=20
-    age=12s
- 37 D mac-address=6C:FE:54:00:00:20 on-interface=bond10 bridge=bridge1 vid=30
     age=3s
+ 36 D mac-address=24:6E:96:00:00:1F on-interface=bond10 bridge=bridge1 vid=20
+    age=1m2s
+ 37 D mac-address=6C:FE:54:00:00:20 on-interface=bond10 bridge=bridge1 vid=30
+    age=12s
  38 D mac-address=04:42:1A:00:00:21 on-interface=bond10 bridge=bridge1 vid=30
     age=1m2s
  39 D mac-address=10:BF:48:00:00:22 on-interface=bond10 bridge=bridge1 vid=30
-    age=1m2s
+    age=12s
  40 D mac-address=6C:FE:54:00:00:23 on-interface=bond10 bridge=bridge1 vid=30
-    age=3s
- 41 D mac-address=10:BF:48:00:00:24 on-interface=bond10 bridge=bridge1 vid=30
     age=45s
+ 41 D mac-address=10:BF:48:00:00:24 on-interface=bond10 bridge=bridge1 vid=30
+    age=12s
 
 [admin@TPE_ACC_SW_10] > /system routerboard print
 routerboard: yes
@@ -3021,10 +3036,10 @@ _____
 TPE_ACC_SW_11 (10.1.10.31):
 [admin@TPE_ACC_SW_11] > /export terse
 # 2026-10-13 10:00:00 by RouterOS 7.12.1
-# software id = AB12-7506
+# software id = CD34-6406
 #
 # model = CRS326-24G-2S+
-# serial number = HF168541628
+# serial number = HF549618921
 /interface bridge add name=bridge1 vlan-filtering=yes
 /interface ethernet set [ find default-name=ether1 ] comment=TPE-SRV-111
 /interface ethernet set [ find default-name=ether2 ] comment=TPE-SRV-112
@@ -3095,49 +3110,49 @@ Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external
  0 DL mac-address=48:A9:8A:00:00:7D on-interface=bridge1 bridge=bridge1 vid=0
     age=1m2s
  1 D mac-address=1C:98:EC:00:00:7E on-interface=ether1 bridge=bridge1 vid=20
-    age=12s
+    age=3s
  2 D mac-address=1C:98:EC:00:00:7F on-interface=ether2 bridge=bridge1 vid=20
-    age=1m2s
+    age=3s
  3 D mac-address=24:6E:96:00:00:80 on-interface=ether3 bridge=bridge1 vid=20
     age=12s
  4 D mac-address=04:42:1A:00:00:81 on-interface=ether9 bridge=bridge1 vid=30
-    age=45s
+    age=3s
  5 D mac-address=6C:FE:54:00:00:82 on-interface=ether10 bridge=bridge1 vid=30
-    age=12s
+    age=3s
  6 D mac-address=10:BF:48:00:00:83 on-interface=ether11 bridge=bridge1 vid=30
     age=12s
  7 D mac-address=10:BF:48:00:00:84 on-interface=ether12 bridge=bridge1 vid=30
-    age=45s
+    age=3s
  8 D mac-address=10:BF:48:00:00:85 on-interface=ether13 bridge=bridge1 vid=30
     age=45s
  9 D mac-address=04:42:1A:00:00:86 on-interface=ether14 bridge=bridge1 vid=30
     age=1m2s
  10 D mac-address=10:BF:48:00:00:87 on-interface=ether15 bridge=bridge1 vid=30
-    age=3s
+    age=45s
  11 D mac-address=04:42:1A:00:00:88 on-interface=ether16 bridge=bridge1 vid=30
-    age=3s
- 12 D mac-address=24:6E:96:00:00:05 on-interface=bond11 bridge=bridge1 vid=20
-    age=12s
- 13 D mac-address=24:6E:96:00:00:06 on-interface=bond11 bridge=bridge1 vid=20
-    age=3s
- 14 D mac-address=AC:1F:6B:00:00:07 on-interface=bond11 bridge=bridge1 vid=20
-    age=3s
- 15 D mac-address=10:BF:48:00:00:08 on-interface=bond11 bridge=bridge1 vid=30
-    age=12s
- 16 D mac-address=04:42:1A:00:00:09 on-interface=bond11 bridge=bridge1 vid=30
-    age=3s
- 17 D mac-address=04:42:1A:00:00:0A on-interface=bond11 bridge=bridge1 vid=30
-    age=45s
- 18 D mac-address=04:42:1A:00:00:0B on-interface=bond11 bridge=bridge1 vid=30
     age=1m2s
- 19 D mac-address=6C:FE:54:00:00:0C on-interface=bond11 bridge=bridge1 vid=30
+ 12 D mac-address=24:6E:96:00:00:05 on-interface=bond11 bridge=bridge1 vid=20
+    age=3s
+ 13 D mac-address=24:6E:96:00:00:06 on-interface=bond11 bridge=bridge1 vid=20
     age=45s
+ 14 D mac-address=AC:1F:6B:00:00:07 on-interface=bond11 bridge=bridge1 vid=20
+    age=12s
+ 15 D mac-address=10:BF:48:00:00:08 on-interface=bond11 bridge=bridge1 vid=30
+    age=1m2s
+ 16 D mac-address=04:42:1A:00:00:09 on-interface=bond11 bridge=bridge1 vid=30
+    age=45s
+ 17 D mac-address=04:42:1A:00:00:0A on-interface=bond11 bridge=bridge1 vid=30
+    age=3s
+ 18 D mac-address=04:42:1A:00:00:0B on-interface=bond11 bridge=bridge1 vid=30
+    age=3s
+ 19 D mac-address=6C:FE:54:00:00:0C on-interface=bond11 bridge=bridge1 vid=30
+    age=1m2s
  20 D mac-address=04:42:1A:00:00:0D on-interface=bond11 bridge=bridge1 vid=30
     age=1m2s
  21 D mac-address=10:BF:48:00:00:0E on-interface=bond11 bridge=bridge1 vid=30
-    age=3s
- 22 D mac-address=6C:FE:54:00:00:0F on-interface=bond11 bridge=bridge1 vid=30
     age=45s
+ 22 D mac-address=6C:FE:54:00:00:0F on-interface=bond11 bridge=bridge1 vid=30
+    age=1m2s
  23 D mac-address=24:6E:96:00:00:11 on-interface=bond11 bridge=bridge1 vid=20
     age=12s
  24 D mac-address=AC:1F:6B:00:00:12 on-interface=bond11 bridge=bridge1 vid=20
@@ -3145,139 +3160,140 @@ Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external
  25 D mac-address=1C:98:EC:00:00:13 on-interface=bond11 bridge=bridge1 vid=20
     age=45s
  26 D mac-address=6C:FE:54:00:00:14 on-interface=bond11 bridge=bridge1 vid=30
-    age=3s
+    age=12s
  27 D mac-address=04:42:1A:00:00:15 on-interface=bond11 bridge=bridge1 vid=30
-    age=3s
- 28 D mac-address=6C:FE:54:00:00:16 on-interface=bond11 bridge=bridge1 vid=30
-    age=1m2s
- 29 D mac-address=04:42:1A:00:00:17 on-interface=bond11 bridge=bridge1 vid=30
-    age=1m2s
- 30 D mac-address=6C:FE:54:00:00:18 on-interface=bond11 bridge=bridge1 vid=30
     age=45s
+ 28 D mac-address=6C:FE:54:00:00:16 on-interface=bond11 bridge=bridge1 vid=30
+    age=45s
+ 29 D mac-address=04:42:1A:00:00:17 on-interface=bond11 bridge=bridge1 vid=30
+    age=45s
+ 30 D mac-address=6C:FE:54:00:00:18 on-interface=bond11 bridge=bridge1 vid=30
+    age=3s
  31 D mac-address=10:BF:48:00:00:19 on-interface=bond11 bridge=bridge1 vid=30
     age=1m2s
  32 D mac-address=6C:FE:54:00:00:1A on-interface=bond11 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
  33 D mac-address=10:BF:48:00:00:1B on-interface=bond11 bridge=bridge1 vid=30
     age=1m2s
  34 D mac-address=24:6E:96:00:00:1D on-interface=bond11 bridge=bridge1 vid=20
-    age=45s
- 35 D mac-address=24:6E:96:00:00:1E on-interface=bond11 bridge=bridge1 vid=20
     age=12s
+ 35 D mac-address=24:6E:96:00:00:1E on-interface=bond11 bridge=bridge1 vid=20
+    age=45s
  36 D mac-address=24:6E:96:00:00:1F on-interface=bond11 bridge=bridge1 vid=20
-    age=45s
+    age=1m2s
  37 D mac-address=6C:FE:54:00:00:20 on-interface=bond11 bridge=bridge1 vid=30
-    age=45s
+    age=12s
  38 D mac-address=04:42:1A:00:00:21 on-interface=bond11 bridge=bridge1 vid=30
-    age=45s
+    age=12s
  39 D mac-address=10:BF:48:00:00:22 on-interface=bond11 bridge=bridge1 vid=30
-    age=3s
+    age=12s
  40 D mac-address=6C:FE:54:00:00:23 on-interface=bond11 bridge=bridge1 vid=30
-    age=1m2s
+    age=12s
  41 D mac-address=10:BF:48:00:00:24 on-interface=bond11 bridge=bridge1 vid=30
-    age=1m2s
+    age=45s
 
 [admin@TPE_ACC_SW_11] > /interface bridge host print detail without-paging
 Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external 
  0 DL mac-address=48:A9:8A:00:00:7D on-interface=bridge1 bridge=bridge1 vid=0
-    age=1m2s
+    age=12s
  1 D mac-address=1C:98:EC:00:00:7E on-interface=ether1 bridge=bridge1 vid=20
-    age=12s
- 2 D mac-address=1C:98:EC:00:00:7F on-interface=ether2 bridge=bridge1 vid=20
     age=45s
- 3 D mac-address=24:6E:96:00:00:80 on-interface=ether3 bridge=bridge1 vid=20
+ 2 D mac-address=1C:98:EC:00:00:7F on-interface=ether2 bridge=bridge1 vid=20
     age=1m2s
+ 3 D mac-address=24:6E:96:00:00:80 on-interface=ether3 bridge=bridge1 vid=20
+    age=3s
  4 D mac-address=04:42:1A:00:00:81 on-interface=ether9 bridge=bridge1 vid=30
-    age=12s
+    age=45s
  5 D mac-address=6C:FE:54:00:00:82 on-interface=ether10 bridge=bridge1 vid=30
-    age=12s
+    age=3s
  6 D mac-address=10:BF:48:00:00:83 on-interface=ether11 bridge=bridge1 vid=30
     age=12s
  7 D mac-address=10:BF:48:00:00:84 on-interface=ether12 bridge=bridge1 vid=30
-    age=12s
+    age=45s
  8 D mac-address=10:BF:48:00:00:85 on-interface=ether13 bridge=bridge1 vid=30
     age=45s
  9 D mac-address=04:42:1A:00:00:86 on-interface=ether14 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
  10 D mac-address=10:BF:48:00:00:87 on-interface=ether15 bridge=bridge1 vid=30
-    age=45s
+    age=1m2s
  11 D mac-address=04:42:1A:00:00:88 on-interface=ether16 bridge=bridge1 vid=30
     age=1m2s
  12 D mac-address=24:6E:96:00:00:05 on-interface=bond11 bridge=bridge1 vid=20
-    age=3s
+    age=45s
  13 D mac-address=24:6E:96:00:00:06 on-interface=bond11 bridge=bridge1 vid=20
-    age=45s
- 14 D mac-address=AC:1F:6B:00:00:07 on-interface=bond11 bridge=bridge1 vid=20
-    age=3s
- 15 D mac-address=10:BF:48:00:00:08 on-interface=bond11 bridge=bridge1 vid=30
     age=12s
- 16 D mac-address=04:42:1A:00:00:09 on-interface=bond11 bridge=bridge1 vid=30
-    age=45s
- 17 D mac-address=04:42:1A:00:00:0A on-interface=bond11 bridge=bridge1 vid=30
-    age=45s
- 18 D mac-address=04:42:1A:00:00:0B on-interface=bond11 bridge=bridge1 vid=30
+ 14 D mac-address=AC:1F:6B:00:00:07 on-interface=bond11 bridge=bridge1 vid=20
     age=1m2s
+ 15 D mac-address=10:BF:48:00:00:08 on-interface=bond11 bridge=bridge1 vid=30
+    age=1m2s
+ 16 D mac-address=04:42:1A:00:00:09 on-interface=bond11 bridge=bridge1 vid=30
+    age=12s
+ 17 D mac-address=04:42:1A:00:00:0A on-interface=bond11 bridge=bridge1 vid=30
+    age=3s
+ 18 D mac-address=04:42:1A:00:00:0B on-interface=bond11 bridge=bridge1 vid=30
+    age=12s
  19 D mac-address=6C:FE:54:00:00:0C on-interface=bond11 bridge=bridge1 vid=30
     age=1m2s
  20 D mac-address=04:42:1A:00:00:0D on-interface=bond11 bridge=bridge1 vid=30
-    age=1m2s
- 21 D mac-address=10:BF:48:00:00:0E on-interface=bond11 bridge=bridge1 vid=30
     age=45s
+ 21 D mac-address=10:BF:48:00:00:0E on-interface=bond11 bridge=bridge1 vid=30
+    age=1m2s
  22 D mac-address=6C:FE:54:00:00:0F on-interface=bond11 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
  23 D mac-address=24:6E:96:00:00:11 on-interface=bond11 bridge=bridge1 vid=20
-    age=1m2s
+    age=12s
  24 D mac-address=AC:1F:6B:00:00:12 on-interface=bond11 bridge=bridge1 vid=20
-    age=1m2s
+    age=12s
  25 D mac-address=1C:98:EC:00:00:13 on-interface=bond11 bridge=bridge1 vid=20
     age=12s
  26 D mac-address=6C:FE:54:00:00:14 on-interface=bond11 bridge=bridge1 vid=30
-    age=3s
+    age=45s
  27 D mac-address=04:42:1A:00:00:15 on-interface=bond11 bridge=bridge1 vid=30
-    age=12s
+    age=3s
  28 D mac-address=6C:FE:54:00:00:16 on-interface=bond11 bridge=bridge1 vid=30
-    age=1m2s
+    age=12s
  29 D mac-address=04:42:1A:00:00:17 on-interface=bond11 bridge=bridge1 vid=30
     age=45s
  30 D mac-address=6C:FE:54:00:00:18 on-interface=bond11 bridge=bridge1 vid=30
-    age=1m2s
+    age=3s
  31 D mac-address=10:BF:48:00:00:19 on-interface=bond11 bridge=bridge1 vid=30
-    age=1m2s
+    age=12s
  32 D mac-address=6C:FE:54:00:00:1A on-interface=bond11 bridge=bridge1 vid=30
-    age=12s
+    age=45s
  33 D mac-address=10:BF:48:00:00:1B on-interface=bond11 bridge=bridge1 vid=30
-    age=12s
+    age=3s
  34 D mac-address=24:6E:96:00:00:1D on-interface=bond11 bridge=bridge1 vid=20
-    age=12s
+    age=45s
  35 D mac-address=24:6E:96:00:00:1E on-interface=bond11 bridge=bridge1 vid=20
     age=45s
  36 D mac-address=24:6E:96:00:00:1F on-interface=bond11 bridge=bridge1 vid=20
     age=3s
  37 D mac-address=6C:FE:54:00:00:20 on-interface=bond11 bridge=bridge1 vid=30
-    age=12s
+    age=3s
  38 D mac-address=04:42:1A:00:00:21 on-interface=bond11 bridge=bridge1 vid=30
     age=45s
  39 D mac-address=10:BF:48:00:00:22 on-interface=bond11 bridge=bridge1 vid=30
-    age=3s
+    age=45s
  40 D mac-address=6C:FE:54:00:00:23 on-interface=bond11 bridge=bridge1 vid=30
     age=12s
  41 D mac-address=10:BF:48:00:00:24 on-interface=bond11 bridge=bridge1 vid=30
-    age=45s
+    age=12s
 
 _____
 TPE_ACC_SW_12 (10.1.10.32):
 [admin@TPE_ACC_SW_12] > /export terse
 # 2026-10-13 10:00:00 by RouterOS 7.12.1
-# software id = AB12-5478
+# software id = EF56-0987
 #
 # model = CRS326-24G-2S+
-# serial number = HF546737354
+# serial number = HF374709655
 /interface bridge add name=bridge1 vlan-filtering=yes
 /interface ethernet set [ find default-name=ether1 ] comment=TPE-SRV-121
 /interface ethernet set [ find default-name=ether2 ] comment=TPE-SRV-122
 /interface ethernet set [ find default-name=ether3 ] comment=TPE-SRV-123
 /interface bonding add mode=802.3ad name=bond12 slaves=sfp-sfpplus1,sfp-sfpplus2 transmit-hash-policy=layer-2-and-3 comment="to TPE_CORE_RT_01"
 /interface vlan add interface=bridge1 name=vlan10 vlan-id=10
+/interface vlan add interface=bridge1 name=vlan99 vlan-id=99
 /interface bridge port add bridge=bridge1 interface=bond12
 /interface bridge port add bridge=bridge1 interface=ether24 comment="to TPE_CORE_RT_02"
 /interface bridge port add bridge=bridge1 interface=ether1 pvid=20
@@ -3340,88 +3356,104 @@ Flags:
 [admin@TPE_ACC_SW_12] > /interface bridge host print detail without-paging
 Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external 
  0 DL mac-address=48:A9:8A:00:00:89 on-interface=bridge1 bridge=bridge1 vid=0
-    age=3s
+    age=12s
  1 D mac-address=AC:1F:6B:00:00:8A on-interface=ether1 bridge=bridge1 vid=20
-    age=3s
- 2 D mac-address=AC:1F:6B:00:00:8B on-interface=ether2 bridge=bridge1 vid=20
     age=45s
+ 2 D mac-address=AC:1F:6B:00:00:8B on-interface=ether2 bridge=bridge1 vid=20
+    age=1m2s
  3 D mac-address=1C:98:EC:00:00:8C on-interface=ether3 bridge=bridge1 vid=20
     age=45s
  4 D mac-address=6C:FE:54:00:00:8D on-interface=ether9 bridge=bridge1 vid=30
-    age=12s
+    age=45s
  5 D mac-address=04:42:1A:00:00:8E on-interface=ether10 bridge=bridge1 vid=30
-    age=12s
+    age=3s
  6 D mac-address=10:BF:48:00:00:8F on-interface=ether11 bridge=bridge1 vid=30
     age=45s
  7 D mac-address=10:BF:48:00:00:90 on-interface=ether12 bridge=bridge1 vid=30
-    age=3s
+    age=1m2s
  8 D mac-address=6C:FE:54:00:00:91 on-interface=ether13 bridge=bridge1 vid=30
     age=12s
  9 D mac-address=04:42:1A:00:00:92 on-interface=ether14 bridge=bridge1 vid=30
-    age=12s
+    age=1m2s
  10 D mac-address=04:42:1A:00:00:93 on-interface=ether15 bridge=bridge1 vid=30
     age=45s
  11 D mac-address=04:42:1A:00:00:94 on-interface=ether16 bridge=bridge1 vid=30
-    age=1m2s
- 12 D mac-address=24:6E:96:00:00:05 on-interface=bond12 bridge=bridge1 vid=20
-    age=45s
- 13 D mac-address=24:6E:96:00:00:06 on-interface=bond12 bridge=bridge1 vid=20
-    age=45s
- 14 D mac-address=AC:1F:6B:00:00:07 on-interface=bond12 bridge=bridge1 vid=20
-    age=3s
- 15 D mac-address=10:BF:48:00:00:08 on-interface=bond12 bridge=bridge1 vid=30
-    age=45s
- 16 D mac-address=04:42:1A:00:00:09 on-interface=bond12 bridge=bridge1 vid=30
-    age=1m2s
- 17 D mac-address=04:42:1A:00:00:0A on-interface=bond12 bridge=bridge1 vid=30
     age=12s
- 18 D mac-address=04:42:1A:00:00:0B on-interface=bond12 bridge=bridge1 vid=30
-    age=1m2s
- 19 D mac-address=6C:FE:54:00:00:0C on-interface=bond12 bridge=bridge1 vid=30
+ 12 D mac-address=6C:FE:54:00:00:95 on-interface=ether23 bridge=bridge1 vid=30
     age=45s
- 20 D mac-address=04:42:1A:00:00:0D on-interface=bond12 bridge=bridge1 vid=30
+ 13 D mac-address=6C:FE:54:00:00:96 on-interface=ether23 bridge=bridge1 vid=30
+    age=1m2s
+ 14 D mac-address=04:42:1A:00:00:97 on-interface=ether23 bridge=bridge1 vid=30
+    age=1m2s
+ 15 D mac-address=04:42:1A:00:00:98 on-interface=ether23 bridge=bridge1 vid=30
+    age=1m2s
+ 16 D mac-address=6C:FE:54:00:00:99 on-interface=ether23 bridge=bridge1 vid=30
+    age=1m2s
+ 17 D mac-address=6C:FE:54:00:00:9A on-interface=ether23 bridge=bridge1 vid=30
+    age=3s
+ 18 D mac-address=6C:FE:54:00:00:9B on-interface=ether23 bridge=bridge1 vid=30
     age=12s
- 21 D mac-address=10:BF:48:00:00:0E on-interface=bond12 bridge=bridge1 vid=30
+ 19 D mac-address=6C:FE:54:00:00:9C on-interface=ether23 bridge=bridge1 vid=30
     age=45s
- 22 D mac-address=6C:FE:54:00:00:0F on-interface=bond12 bridge=bridge1 vid=30
+ 20 D mac-address=24:6E:96:00:00:05 on-interface=bond12 bridge=bridge1 vid=20
     age=1m2s
- 23 D mac-address=24:6E:96:00:00:11 on-interface=bond12 bridge=bridge1 vid=20
-    age=1m2s
- 24 D mac-address=AC:1F:6B:00:00:12 on-interface=bond12 bridge=bridge1 vid=20
-    age=1m2s
- 25 D mac-address=1C:98:EC:00:00:13 on-interface=bond12 bridge=bridge1 vid=20
-    age=1m2s
- 26 D mac-address=6C:FE:54:00:00:14 on-interface=bond12 bridge=bridge1 vid=30
+ 21 D mac-address=24:6E:96:00:00:06 on-interface=bond12 bridge=bridge1 vid=20
     age=3s
- 27 D mac-address=04:42:1A:00:00:15 on-interface=bond12 bridge=bridge1 vid=30
+ 22 D mac-address=AC:1F:6B:00:00:07 on-interface=bond12 bridge=bridge1 vid=20
+    age=3s
+ 23 D mac-address=10:BF:48:00:00:08 on-interface=bond12 bridge=bridge1 vid=30
+    age=1m2s
+ 24 D mac-address=04:42:1A:00:00:09 on-interface=bond12 bridge=bridge1 vid=30
     age=12s
- 28 D mac-address=6C:FE:54:00:00:16 on-interface=bond12 bridge=bridge1 vid=30
+ 25 D mac-address=04:42:1A:00:00:0A on-interface=bond12 bridge=bridge1 vid=30
+    age=3s
+ 26 D mac-address=04:42:1A:00:00:0B on-interface=bond12 bridge=bridge1 vid=30
     age=45s
- 29 D mac-address=04:42:1A:00:00:17 on-interface=bond12 bridge=bridge1 vid=30
-    age=1m2s
- 30 D mac-address=6C:FE:54:00:00:18 on-interface=bond12 bridge=bridge1 vid=30
+ 27 D mac-address=6C:FE:54:00:00:0C on-interface=bond12 bridge=bridge1 vid=30
     age=3s
- 31 D mac-address=10:BF:48:00:00:19 on-interface=bond12 bridge=bridge1 vid=30
-    age=3s
- 32 D mac-address=6C:FE:54:00:00:1A on-interface=bond12 bridge=bridge1 vid=30
+ 28 D mac-address=04:42:1A:00:00:0D on-interface=bond12 bridge=bridge1 vid=30
     age=1m2s
- 33 D mac-address=10:BF:48:00:00:1B on-interface=bond12 bridge=bridge1 vid=30
+ 29 D mac-address=10:BF:48:00:00:0E on-interface=bond12 bridge=bridge1 vid=30
     age=12s
- 34 D mac-address=24:6E:96:00:00:1D on-interface=bond12 bridge=bridge1 vid=20
-    age=3s
- 35 D mac-address=24:6E:96:00:00:1E on-interface=bond12 bridge=bridge1 vid=20
+ 30 D mac-address=6C:FE:54:00:00:0F on-interface=bond12 bridge=bridge1 vid=30
     age=45s
- 36 D mac-address=24:6E:96:00:00:1F on-interface=bond12 bridge=bridge1 vid=20
-    age=3s
- 37 D mac-address=6C:FE:54:00:00:20 on-interface=bond12 bridge=bridge1 vid=30
+ 31 D mac-address=24:6E:96:00:00:11 on-interface=bond12 bridge=bridge1 vid=20
     age=1m2s
- 38 D mac-address=04:42:1A:00:00:21 on-interface=bond12 bridge=bridge1 vid=30
+ 32 D mac-address=AC:1F:6B:00:00:12 on-interface=bond12 bridge=bridge1 vid=20
+    age=45s
+ 33 D mac-address=1C:98:EC:00:00:13 on-interface=bond12 bridge=bridge1 vid=20
+    age=45s
+ 34 D mac-address=6C:FE:54:00:00:14 on-interface=bond12 bridge=bridge1 vid=30
+    age=3s
+ 35 D mac-address=04:42:1A:00:00:15 on-interface=bond12 bridge=bridge1 vid=30
     age=12s
- 39 D mac-address=10:BF:48:00:00:22 on-interface=bond12 bridge=bridge1 vid=30
-    age=45s
- 40 D mac-address=6C:FE:54:00:00:23 on-interface=bond12 bridge=bridge1 vid=30
+ 36 D mac-address=6C:FE:54:00:00:16 on-interface=bond12 bridge=bridge1 vid=30
     age=1m2s
- 41 D mac-address=10:BF:48:00:00:24 on-interface=bond12 bridge=bridge1 vid=30
+ 37 D mac-address=04:42:1A:00:00:17 on-interface=bond12 bridge=bridge1 vid=30
+    age=1m2s
+ 38 D mac-address=6C:FE:54:00:00:18 on-interface=bond12 bridge=bridge1 vid=30
+    age=12s
+ 39 D mac-address=10:BF:48:00:00:19 on-interface=bond12 bridge=bridge1 vid=30
+    age=12s
+ 40 D mac-address=6C:FE:54:00:00:1A on-interface=bond12 bridge=bridge1 vid=30
     age=45s
+ 41 D mac-address=10:BF:48:00:00:1B on-interface=bond12 bridge=bridge1 vid=30
+    age=3s
+ 42 D mac-address=24:6E:96:00:00:1D on-interface=bond12 bridge=bridge1 vid=20
+    age=45s
+ 43 D mac-address=24:6E:96:00:00:1E on-interface=bond12 bridge=bridge1 vid=20
+    age=1m2s
+ 44 D mac-address=24:6E:96:00:00:1F on-interface=bond12 bridge=bridge1 vid=20
+    age=12s
+ 45 D mac-address=6C:FE:54:00:00:20 on-interface=bond12 bridge=bridge1 vid=30
+    age=45s
+ 46 D mac-address=04:42:1A:00:00:21 on-interface=bond12 bridge=bridge1 vid=30
+    age=3s
+ 47 D mac-address=10:BF:48:00:00:22 on-interface=bond12 bridge=bridge1 vid=30
+    age=1m2s
+ 48 D mac-address=6C:FE:54:00:00:23 on-interface=bond12 bridge=bridge1 vid=30
+    age=12s
+ 49 D mac-address=10:BF:48:00:00:24 on-interface=bond12 bridge=bridge1 vid=30
+    age=3s
 
 _____

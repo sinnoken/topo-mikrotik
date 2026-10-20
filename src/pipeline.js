@@ -91,7 +91,7 @@
     const name = (d) => S.infer.displayName(d);
     const devices = Array.from(M.devices.values()).map((d) => ({
       key: d.key, name: name(d), names: Array.from(d.names), mgmtIp: d.mgmtIp, manufacturer: d.manufacturer, kind: d.kind, kindBasis: d.kindBasis,
-      collected: d.collected, data: Array.from(d.data).sort(), hostname: d.hostname, routerId: d.routerId,
+      collected: d.collected, collectedAt: d.collectedAt, data: Array.from(d.data).sort(), hostname: d.hostname, routerId: d.routerId,
       group: d.group, component: d.component, role: d.role || null, site: d.site || null, label: d.label || null,
       deviceType: d.deviceType, softwareVersion: d.softwareVersion, platform: d.platform, caps: d.caps,
       seenBy: Array.from(d.seenBy).sort(), src: d.src, srcNone: d.src.length ? null : 'seen-only',
@@ -101,7 +101,7 @@
       key: i.key, dev: i.dev, name: i.name, desc: i.desc, enabled: i.enabled, status: i.status || 'unknown', type: i.type, typeBasis: i.typeBasis,
       rawType: i.rawType, hwMac: i.hwMac, defaultName: i.defaultName, mtu: i.mtu, actualMtu: i.actualMtu, l2mtu: i.l2mtu,
       lag: i.lag, lagMembers: Array.from(i.lagMembers).sort(nat), bridge: i.bridge, parent: i.parent, encapVlan: i.encapVlan,
-      mode: i.mode, pvid: i.pvid, untaggedVlans: U.numSort(Array.from(i.untaggedVlans)), taggedVlans: U.numSort(Array.from(i.taggedVlans)),
+      mode: i.mode, pvid: i.pvid, frameTypes: i.frameTypes, ingressFiltering: i.ingressFiltering, untaggedVlans: U.numSort(Array.from(i.untaggedVlans)), taggedVlans: U.numSort(Array.from(i.taggedVlans)),
       unresolvedVlans: Array.from(i.unresolvedVlans).sort(nat), macs: Array.from(i.macs).sort(),
       hearsay: i.hearsay, edge: M.edge.has(i.key), unknownPeer: M.edge.has(i.key) && !M.edge.get(i.key).linked, src: i.src, srcNone: i.src.length ? null : i.hearsay ? 'hearsay' : 'unrecorded',
     })).sort((a, b) => nat(a.key, b.key));
@@ -119,21 +119,22 @@
 
     const macs = Array.from(M.macs.values()).map((m) => ({
       mac: m.mac, vendor: S.oui ? S.oui.lookup(m.mac) : null, ips: Array.from(m.ips).sort(nat),
-      seen: Array.from(m.seen.entries()).flatMap(([ep, vlans]) => Array.from(vlans, (vlan) => ({ ep, vlan })))
+      seen: Array.from(m.seen.entries()).flatMap(([ep, vlans]) => Array.from(vlans, (vlan) => ({ ep, vlan, static: !!(m.staticOn && m.staticOn.has(ep)) })))
         .sort((x, y) => nat(x.ep, y.ep) || nat(x.vlan || '', y.vlan || '')), edge: m.edge || [], wifi: m.wifi || null, src: m.src,
     })).sort((a, b) => U.cmp(a.mac, b.mac));
 
     // IP 位址（參考 NetBox IPAddress）：每個介面上的每個位址一筆；VRF 尚未收集，固定為 null
     const ipAddresses = Array.from(M.ifcs.values()).flatMap((i) => Array.from(i.ips, ([address, src]) => {
       const p = S.ip.parseCidr(address);
-      return { address, ip: p ? p.ip : null, len: p ? p.len : null, family: 4, vrf: null, dev: i.dev, ep: i.key, hearsay: i.hearsay, src: [src] };
+      return { address, ip: p ? p.ip : null, len: p ? p.len : null, family: 4, vrf: null, role: i.rawType === 'vrrp' ? 'vrrp' : null, dev: i.dev, ep: i.key, hearsay: i.hearsay, src: [src] };
     })).sort((a, b) => nat(a.ip || a.address, b.ip || b.address) || nat(a.ep, b.ep));
     // 前綴（參考 NetBox Prefix）：由設備自有的位址推導的直連網段，屬於推論
     const prefixMap = new Map();
     ipAddresses.forEach((a) => {
       if (a.hearsay || a.ip === null || a.len >= 32) return;
       const net = S.ip.parseCidr(a.address).net; const prefix = net + '/' + a.len;
-      const p = U.getOr(prefixMap, prefix, () => ({ prefix, net, len: a.len, family: 4, vrf: null, basis: 'connected', eps: [] }));
+      const p = U.getOr(prefixMap, prefix, () => ({ prefix, net, len: a.len, family: 4, vrf: null, basis: 'connected', vlan: null, eps: [] }));
+      const enc = M.ifcs.get(a.ep).encapVlan; if (enc != null && p.vlan == null) p.vlan = enc; // 網段設在 VLAN 介面上：所屬 VLAN
       if (!p.eps.includes(a.ep)) p.eps.push(a.ep);
     });
     const prefixes = Array.from(prefixMap.values()).map((p) => Object.assign(p, { eps: p.eps.sort(nat) }))
@@ -144,9 +145,11 @@
       dev: a.dev, ep: a.ep, mac: a.mac, ssid: a.ssid, band: a.band, vlan: a.vlan, uptime: a.uptime, lastActivity: a.lastActivity,
       signal: a.signal, ip: a.ip, hostname: a.hostname, src: [[a.block, a.line]],
     })).sort((a, b) => U.cmp(a.mac, b.mac) || nat(a.ep, b.ep));
+    const dhcpNetworks = M.dhcpNets.map((n) => ({ dev: n.dev, network: n.network, gateways: n.gateways, src: [[n.block, n.line]] }))
+      .sort((a, b) => nat(a.dev, b.dev) || nat(a.network, b.network));
     const arps = M.arps.map((a) => ({ ip: a.ip, mac: a.mac, dev: a.dev, ifc: a.ifc, src: [[a.block, a.line]] }))
       .sort((a, b) => nat(a.ip, b.ip) || nat(a.dev, b.dev) || U.cmp(a.mac, b.mac));
-    const routes = M.routes.map((r) => ({ dev: r.dev, prefix: r.prefix, len: r.len, proto: r.proto, nh: r.nh, src: [[r.block, r.line]] }))
+    const routes = M.routes.map((r) => ({ dev: r.dev, prefix: r.prefix, len: r.len, proto: r.proto, distance: r.distance, blackhole: r.blackhole, nh: r.nh, src: [[r.block, r.line]] }))
       .sort((a, b) => nat(a.dev, b.dev) || nat(a.prefix, b.prefix) || a.len - b.len);
     const ospfAdjacencies = M.ospfAdjacencies.map((a) => ({
       dev: a.dev, localEp: a.localEp, peerDev: a.peerDev, peerEp: a.peerEp,
@@ -178,7 +181,7 @@
         },
         timing: { ms: Date.now() - c.t0 },
       },
-      model: { devices, interfaces, links, ospfAdjacencies, vlans, ipAddresses, prefixes, macs, wifiAssociations, arps, routes },
+      model: { devices, interfaces, links, ospfAdjacencies, vlans, ipAddresses, prefixes, macs, wifiAssociations, dhcpNetworks, arps, routes },
       findings: c.findings,
       coverage: c.coverage,
       blocks,

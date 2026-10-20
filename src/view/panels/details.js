@@ -123,6 +123,7 @@
       h('h2', null, d.label || d.name),
       h('div', { class: 'row' }, [V.kindChip(d.kind), d.collected ? V.chip('已收集', 'ok') : V.chip('未收集（僅由鄰居發現）', 'warn'), d.group ? V.chip(d.group) : null, d.role ? V.chip('角色：' + d.role) : null]),
       kv([['管理 IP', d.mgmtIp], ['型號', d.deviceType], ['RouterOS', d.softwareVersion], ['平台', d.manufacturer === 'mikrotik' ? null : d.platform], ['鄰居回報的功能', d.caps], ['類型依據', V.KIND_BASIS[d.kindBasis]],
+        ['收集時間', d.collectedAt ? `${d.collectedAt.replace('T', ' ')}（設備時間，取自 export）` : null],
         ['其他名稱', d.names.length > 1 ? d.names.join('、') : null], ['Router ID', d.routerId],
         ['看到它的設備', d.seenBy.length ? h('span', null, d.seenBy.flatMap((k, i) => [i ? '、' : '', devLink(App, k)])) : null],
         ['收集的資料', d.collected ? h('div', { class: 'chip-list' }, [...(cov ? cov.data : []).map((t) => V.chip(S.check.DATA_LABEL[t] || t, 'ok')), ...(cov ? cov.missing : []).map((t) => V.chip('缺 ' + (S.check.DATA_LABEL[t] || t), 'err'))]) : null]]),
@@ -168,7 +169,7 @@
           } },
         ], ospfAdjacencies) : null, { count: ospfAdjacencies.length, fold: true }),
       section('路由表', routes.length ? V.table([
-        { t: '網段', f: (r) => h('span', { class: 'mono' }, `${r.prefix}/${r.len}`), s: (r) => `${r.prefix}/${r.len}` }, { t: '協定', f: (r) => r.proto, s: (r) => r.proto },
+        { t: '網段', f: (r) => h('span', { class: 'mono' }, `${r.prefix}/${r.len}`), s: (r) => `${r.prefix}/${r.len}` }, { t: '協定', f: (r) => (r.blackhole ? h('span', { class: 'diffA' }, '黑洞路由') : r.proto), s: (r) => r.proto }, { t: '距離', f: (r) => (r.distance == null ? '' : String(r.distance)), s: (r) => r.distance },
         { t: '下一跳', f: (r) => h('span', { class: 'mono' }, r.nh.map((n) => (n.ip ? n.ip + ' ' : '') + (n.ifc || '')).join('\n')), s: (r) => (r.nh[0] ? r.nh[0].ip || r.nh[0].ifc : '') },
       ], routes, { limit: 200 }) : null, { count: routes.length, fold: true }),
       section('收集到的原始輸出', blocks.length ? blocksTable(App, blocks) : null, { count: blocks.length, fold: true }),
@@ -249,7 +250,7 @@
         ['MTU', [['mtu', i.mtu], ['actual', i.actualMtu], ['l2mtu', i.l2mtu]].filter((x) => x[1] != null).map((x) => `${x[0]} ${x[1]}`).join('、') || null],
         ['IP', Q.addressesOf(i.key).join('、')], ['埠模式', V.MODE[i.mode]], ['所屬聚合', i.lag ? epLink(App, i.lag) : null], ['所屬 Bridge', i.bridge ? epLink(App, i.bridge) : null],
         ['聚合成員', i.lagMembers.length ? h('span', null, i.lagMembers.flatMap((m, n) => [n ? '、' : '', epLink(App, m)])) : null],
-        ['PVID', i.pvid == null ? null : String(i.pvid)], ['Untagged VLAN', i.untaggedVlans.length ? h('span', { class: 'vlanlist' }, vlanText(i.untaggedVlans)) : null],
+        ['PVID', i.pvid == null ? null : String(i.pvid)], ['frame-types', i.frameTypes], ['ingress-filtering', i.ingressFiltering == null ? null : i.ingressFiltering ? '開' : '關'], ['Untagged VLAN', i.untaggedVlans.length ? h('span', { class: 'vlanlist' }, vlanText(i.untaggedVlans)) : null],
         ['Tagged VLAN', i.taggedVlans.length ? h('span', { class: 'vlanlist' }, vlanText(i.taggedVlans)) : null], ['無法辨識的 VLAN', i.unresolvedVlans.join('、')],
         ['VLAN 子介面', i.parent ? h('span', null, [epLink(App, i.parent), ` 上的 VLAN ${i.encapVlan}`]) : null]]),
       section('鏈路', links.map((l) => h('div', null, L(App,
@@ -276,7 +277,7 @@
         ...wifiRows(App, m.wifi)]),
       findingsBlock(App, Q.findingsFor('mac', m.mac)),
       section('在哪些介面／VLAN 學到', m.seen.length ? V.table([
-        { t: '設備介面', f: (r) => epLink(App, r.ep) }, { t: 'VLAN', f: (r) => r.vlan || '' }, { t: '', f: (r) => (m.edge.includes(r.ep) ? V.chip('終端', 'ok') : V.chip('上行')) },
+        { t: '設備介面', f: (r) => epLink(App, r.ep) }, { t: 'VLAN', f: (r) => r.vlan || '' }, { t: '類型', f: (r) => (r.static ? '靜態' : '動態') }, { t: '', f: (r) => (m.edge.includes(r.ep) ? V.chip('終端', 'ok') : V.chip('上行')) },
       ], m.seen) : null, { count: m.seen.length }),
     ]);
   }
@@ -321,19 +322,31 @@
   }
 
   // ---------------------------------------------------------------- 路由追蹤
-  function trace(App, sel) {
-    const Q = App.Q; const t = sel.result;
-    if (!t.ok) return h('div', { class: 'detail' }, [h('h2', null, '路由追蹤'), h('p', { class: 'diffA' }, t.error)]);
-    const END = { reached: '抵達', noroute: '沒有路由', 'unknown-nh': '下一跳不在基準內', loop: '路由迴圈', ttl: 'TTL 用盡' };
-    return h('div', { class: 'detail' }, [
-      h('h2', { class: 'mono' }, `${t.src} → ${t.dst}`),
-      h('div', { class: 'row' }, [t.reached ? V.chip('可抵達', 'ok') : V.chip('無法完整抵達', 'err'), t.hops.some((x) => x.ecmp) ? V.chip('含 ECMP', 'info') : null]),
-      kv([['起點', h('span', null, [devLink(App, t.start), '（來源所在網段的閘道）'])]]),
-      section('逐跳', t.hops.map((hp) => h('div', { class: 'hop' }, [
+  const TRACE_END = { reached: '抵達', noroute: '沒有路由', 'unknown-nh': '下一跳不在基準內', loop: '路由迴圈', ttl: 'TTL 用盡', blackhole: '黑洞路由' };
+  /** 一個方向的逐跳與結果（去程、回程共用；prefix 區分標題）。 */
+  function tracePath(App, t, prefix) {
+    return [
+      section(`${prefix || ''}逐跳`, t.hops.map((hp) => h('div', { class: 'hop' }, [
         h('div', null, [h('b', null, devLink(App, hp.dev)), h('span', { class: 'mono muted' }, `  ${hp.route}（${hp.proto}）`), hp.ecmp ? V.chip('ECMP', 'info') : null]),
         ...hp.next.map((n) => h('div', { class: 'mono' }, [`→ ${n.ip || ''} ${n.ifc || ''} `, n.dev ? devLink(App, n.dev) : null, n.note ? h('span', { class: n.status === 'ok' || n.status === 'connected' ? 'muted' : 'diffA' }, '  ' + n.note) : null])),
       ])), { count: t.hops.length }),
-      section('結果', t.ends.map((e) => h('div', { class: 'hop ' + (e.status === 'reached' ? 'end-reached' : 'end-bad') }, [h('b', null, devLink(App, e.dev)), `：${END[e.status] || e.status}`, h('div', { class: 'muted' }, e.note)])), { count: t.ends.length }),
+      section(`${prefix || ''}結果`, t.ends.map((e) => h('div', { class: 'hop ' + (e.status === 'reached' ? 'end-reached' : 'end-bad') }, [h('b', null, devLink(App, e.dev)), `：${TRACE_END[e.status] || e.status}`, h('div', { class: 'muted' }, e.note)])), { count: t.ends.length }),
+    ];
+  }
+  function trace(App, sel) {
+    const t = sel.result; const back = sel.reverse;
+    if (!t.ok) return h('div', { class: 'detail' }, [h('h2', null, '路由追蹤'), h('p', { class: 'diffA' }, t.error)]);
+    // 非對稱：回程經過的設備順序和去程反過來不同
+    const devs = (x) => x.hops.map((hp) => hp.dev);
+    const asym = back && back.ok && devs(back).join('>') !== devs(t).slice().reverse().join('>');
+    return h('div', { class: 'detail' }, [
+      h('h2', { class: 'mono' }, `${t.src} → ${t.dst}`),
+      h('div', { class: 'row' }, [t.reached ? V.chip('可抵達', 'ok') : V.chip('無法完整抵達', 'err'), t.hops.some((x) => x.ecmp) ? V.chip('含 ECMP', 'info') : null,
+        back ? (back.ok && back.reached ? V.chip('回程可抵達', 'ok') : V.chip('回程無法完整抵達', 'err')) : null, asym ? V.chip('非對稱路徑', 'warn') : null]),
+      kv([['起點', h('span', null, [devLink(App, t.start), '（來源所在網段的閘道）'])]]),
+      ...tracePath(App, t),
+      back ? section(`回程（${t.dst} → ${t.src}）`, back.ok ? kv([['起點', devLink(App, back.start)], ['說明', '無狀態的 ACL 需要確認回程也能通過']]) : h('p', { class: 'diffA' }, back.error)) : null,
+      ...(back && back.ok ? tracePath(App, back, '回程') : []),
     ]);
   }
 

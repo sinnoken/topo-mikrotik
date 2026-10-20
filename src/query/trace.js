@@ -2,7 +2,7 @@
  * 路由追蹤（純函式）：在基準的路由表上，從來源 IP 逐跳走到目的 IP。
  *  - 起點：介面網段包含來源 IP 的設備（最長遮罩優先），即來源的閘道
  *  - 每一跳：目的在直連網段 → 抵達；否則最長前綴比對，同遮罩多條即 ECMP 分支
- *  - 下一跳 IP → 擁有該 IP 的設備；下一跳本身不屬於任何設備時，沿本機路由表遞迴解析（S.check.resolveNextHop）；找不到、沒有路由資料、迴圈、TTL 用盡都會停下並註明原因
+ *  - 下一跳 IP → 擁有該 IP 的設備；下一跳本身不屬於任何設備時，沿本機路由表遞迴解析（S.check.resolveNextHop）；找不到、沒有路由資料、黑洞路由、迴圈、TTL 用盡都會停下並註明原因
  */
 (function (S) {
   'use strict';
@@ -36,6 +36,11 @@
         if (r.len > best) { best = r.len; cands = [r]; } else if (r.len === best) cands.push(r);
       });
       if (!cands.length) { ends.push({ dev, status: 'noroute', note: `沒有符合 ${dst} 的路由`, path }); continue; }
+      if (cands.every((r) => r.blackhole)) {
+        const route = `${cands[0].prefix}/${cands[0].len}`;
+        hops.push({ dev, route, proto: '黑洞路由', ecmp: false, next: [] });
+        ends.push({ dev, status: 'blackhole', note: `${route} 是黑洞路由，封包在此被丟棄`, path }); continue;
+      }
       const nhs = [];
       cands.forEach((r) => r.nh.forEach((n) => nhs.push({ r, n })));
       const hop = { dev, route: `${cands[0].prefix}/${cands[0].len}`, proto: cands[0].proto, ecmp: nhs.length > 1, next: [] };

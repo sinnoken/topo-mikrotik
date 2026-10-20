@@ -264,7 +264,9 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
   });
   await step('路由追蹤', () => {
     $('#btn-trace').click(); $('#trace-src').value = '10.1.30.15'; $('#trace-dst').value = '8.8.8.8'; $('#trace-run').click();
-    if (!text('#detail').includes('下一跳不在基準內') && !text('#detail').includes('逐跳')) throw new Error('追蹤結果未顯示');
+    if (App.sel.result.ok && (!App.sel.reverse || !text('#detail').includes('回程（8.8.8.8 → 10.1.30.15）'))) throw new Error('去程成功時應同時顯示回程');
+    const r = App.sel.result; // 沒有任何逐跳時「逐跳」區塊不顯示，但一定有「結果」或錯誤說明
+    if (r.ok ? !text('#detail').includes('結果') : !text('#detail').includes(r.error)) throw new Error('追蹤結果未顯示');
     App.graph.draw();
   });
   await step('原文檢視', () => { App.openRaw(S.readers.PASTE, 10); if (!$('#dlg-raw').open || !text('#raw-body').includes('/export')) throw new Error('原文未顯示'); });

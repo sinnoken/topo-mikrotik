@@ -141,6 +141,14 @@
     },
   });
 
+  /** export 開頭的日期：RouterOS 7 為 2026-10-13，RouterOS 6 為 oct/13/2026 → 2026-10-13T10:00:00（不含時區）。 */
+  const MON = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+  function exportTime(date, time) {
+    if (/^\d{4}-/.test(date)) return `${date}T${time}`;
+    const m = date.match(/^([a-z]{3})\/(\d{2})\/(\d{4})$/i); const mon = m && MON[m[1].toLowerCase()];
+    return mon ? `${m[3]}-${String(mon).padStart(2, '0')}-${m[2]}T${time}` : null;
+  }
+
   // ================================================================ 設定（/export）
   reg({
     id: 'mikrotik.config', vendor: VENDOR, dataType: 'config', label: 'RouterOS 設定',
@@ -185,7 +193,10 @@
           case '/interface bridge port':
             if (cmd === 'add' && kv.interface) {
               ports.push({ bridge: kv.bridge, ifc: kv.interface, pvid: kv.pvid || '1', line });
-              const f = { t: 'ifc', ifc: kv.interface, line }; if (kv.bridge) f.bridge = kv.bridge; if (kv.comment) f.desc = kv.comment; emit(f);
+              const f = { t: 'ifc', ifc: kv.interface, line }; if (kv.bridge) f.bridge = kv.bridge; if (kv.comment) f.desc = kv.comment;
+              if (kv['frame-types']) f.frameTypes = kv['frame-types'];
+              if (kv['ingress-filtering']) f.ingressFiltering = kv['ingress-filtering'] === 'yes';
+              emit(f);
             }
             break;
           case '/interface bridge vlan':
@@ -207,6 +218,12 @@
           case '/ip address':
             if (cmd === 'add' && kv.address && kv.interface && kv.disabled !== 'yes') emit({ t: 'ifc', ifc: kv.interface, ip: kv.address, line });
             break;
+          case '/interface vrrp':
+            if (cmd === 'add' && kv.name) { const f = { t: 'ifc', ifc: kv.name, rawType: 'vrrp', line }; if (kv.comment) f.desc = kv.comment; emit(f); }
+            break;
+          case '/ip dhcp-server network':
+            if (cmd === 'add' && kv.address) emit({ t: 'dhcpNet', network: kv.address, gateways: list(kv.gateway), line });
+            break;
           case '/routing id':
             if (cmd === 'add' && kv.name && kv.id) ridNames.set(kv.name, kv.id);
             break;
@@ -217,6 +234,9 @@
         }
       };
       lines.forEach(({ text, line }) => {
+        // export 開頭的「# 日期 時間 by RouterOS 版本」：設備自己記錄的收集時間（設備本地時間）
+        const hdr = text && text.match(/^#\s*(\d{4}-\d{2}-\d{2}|[a-z]{3}\/\d{2}\/\d{4})\s+(\d{2}:\d{2}:\d{2})\s+by RouterOS\b/i);
+        if (hdr) { const at = exportTime(hdr[1], hdr[2]); if (at) emit({ t: 'collectedAt', at, line }); }
         if (!text || text.startsWith('#')) return;
         if (text[0] === '/') {
           const m = text.match(/^(\/[\w\-]+(?:\s+[\w\-]+)*?)(?:\s+(add|set)\b\s*(.*))?$/);
@@ -254,7 +274,8 @@
       parseRows(b).forEach((r) => {
         const kv = r.kv;
         if (!kv['mac-address'] || !kv['on-interface'] || r.flags.includes('L')) return; // L：bridge 自己的 MAC
-        emit({ t: 'mac', vlan: kv.vid && kv.vid !== '0' ? kv.vid : null, mac: kv['mac-address'], ifc: kv['on-interface'], line: r.line });
+        // 沒有 D（dynamic）旗標的是手動設定的靜態項目
+        emit({ t: 'mac', vlan: kv.vid && kv.vid !== '0' ? kv.vid : null, mac: kv['mac-address'], ifc: kv['on-interface'], static: !r.flags.includes('D'), line: r.line });
       });
     },
   });
@@ -333,10 +354,18 @@
     command: /^\/?ip\s+route\b/i,
     detect: (lines) => has(lines, 'dst-address') && (has(lines, 'gateway') || has(lines, 'immediate-gw')),
     parse(b, emit) {
-      parseRows(b).forEach((r) => {
+      const rows = parseRows(b);
+      rows.forEach((r, ri) => {
         const kv = r.kv; const m = String(kv['dst-address'] || '').match(/^(\d+\.\d+\.\d+\.\d+)\/(\d+)$/);
-        if (!m || !r.flags.includes('A') || /[BUP]/.test(r.flags)) return;      // 只要作用中；排除黑洞、不可達
+        if (!m || !r.flags.includes('A')) return;                                 // 只要作用中的路由
         if (kv['routing-table'] && kv['routing-table'] !== 'main') return;
+        const distance = /^\d+$/.test(kv.distance || '') ? +kv.distance : null;
+        // 黑洞／不可達／禁止：RouterOS 6 為 B／U／P 旗標或 type=；RouterOS 7 是列中單獨的 blackhole 字（不是 key=value）
+        const raw = b.lines.slice(r.line - b.origin.startLine, ri + 1 < rows.length ? rows[ri + 1].line - b.origin.startLine : undefined).join(' ');
+        if (/[BUP]/.test(r.flags) || /(^|\s)blackhole(\s|$)/.test(raw) || /^(blackhole|unreachable|prohibit)$/i.test(kv.type || kv.gateway || '')) {
+          emit({ t: 'route', prefix: m[1], len: +m[2], proto: 'Blackhole', nh: [], blackhole: true, distance, line: r.line });
+          return;
+        }
         const f = r.flags;
         const proto = /[cC]/.test(f) ? 'Direct' : f.includes('o') ? 'OSPF' : f.includes('b') ? 'BGP' : /[sS]/.test(f) ? 'Static' : f.includes('d') ? 'DHCP' : f.includes('r') ? 'RIP' : f.includes('v') ? 'VPN' : 'Other';
         const gws = list(kv.gateway); const igws = list(kv['immediate-gw']); const nh = [];
@@ -349,7 +378,7 @@
           } else if (gip && !/^(blackhole|unreachable|prohibit)$/i.test(gip)) nh.push({ ip: null, ifc: gip });
         });
         if (!nh.length) return;
-        emit({ t: 'route', prefix: m[1], len: +m[2], proto, nh, line: r.line });
+        emit({ t: 'route', prefix: m[1], len: +m[2], proto, nh, distance, line: r.line });
       });
     },
   });

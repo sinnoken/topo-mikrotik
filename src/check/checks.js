@@ -18,11 +18,18 @@
     K03: { severity: 'warn', cat: '鏈路', title: '聚合鏈路兩端成員不一致' },
     K04: { severity: 'info', cat: '鏈路', title: '對端回報的埠名稱與本機不同' },
     V01: { severity: 'warn', cat: 'VLAN', title: '鏈路兩端 VLAN 不一致' },
+    V04: { severity: 'warn', cat: 'VLAN', title: '鏈路兩端 native VLAN（PVID）不一致' },
+    V05: { severity: 'info', cat: 'VLAN', title: 'VLAN 介面沒有任何成員埠（孤立 VLAN）' },
     A01: { severity: 'warn', cat: '位址', title: '同一 IP 對應多個 MAC' },
     A02: { severity: 'warn', cat: '位址', title: '同一 MAC 在同一 VLAN 出現在多個終端埠' },
     A03: { severity: 'info', cat: '位址', title: '介面有學到 MAC 但沒有 LLDP／CDP 鄰接（未知對端）' },
+    A04: { severity: 'info', cat: '位址', title: '單一埠學到過多 MAC（可能下掛未管理交換器或 hypervisor）' },
+    A05: { severity: 'info', cat: '位址', title: 'ARP 位址不屬於該設備任何直連網段' },
     R01: { severity: 'info', cat: '路由', title: '路由下一跳不屬於任何已知設備' },
     R02: { severity: 'info', cat: '路由', title: 'OSPF 鄰居無法對應到已收集的設備' },
+    R03: { severity: 'warn', cat: '路由', title: '路由下一跳形成迴圈' },
+    R04: { severity: 'warn', cat: '路由', title: '路由下一跳落入黑洞路由' },
+    R05: { severity: 'warn', cat: '路由', title: 'DHCP 網路的閘道不在該網段內' },
   };
 
   /** 各類設備預期要有的資料（C02），可由 build 選項 expectedData 覆寫。 */
@@ -129,6 +136,28 @@
       if (onlyB.length) parts.push(`只在 ${epName(l.b)}：${fmtVlans(onlyB)}`);
       add('V01', parts.join('；'), [{ type: 'link', key: l.key }], [{ block: l.src[0][0], line: l.src[0][1] }]);
     });
+    // native VLAN：兩端都有 PVID（聚合成員取所屬聚合介面的）且不同
+    const pvidOf = (ep) => { const i = M.ifcs.get(ep); if (!i) return null; if (i.pvid != null) return i.pvid; const p = i.lag && M.ifcs.get(i.lag); return p ? p.pvid : null; };
+    const nativeSeen = new Set();
+    M.links.forEach((l) => {
+      if (l.layer !== 'l2' || !l.vlanComparable) return;
+      const pa = pvidOf(l.a); const pb = pvidOf(l.b);
+      if (pa == null || pb == null || pa === pb) return;
+      const key = [M.ifcs.get(l.a).lag || l.a, M.ifcs.get(l.b).lag || l.b].sort().join('~'); // 聚合的多條成員鏈路只報一次
+      if (nativeSeen.has(key)) return; nativeSeen.add(key);
+      add('V04', `${epName(l.a)} PVID ${pa}；${epName(l.b)} PVID ${pb}`, [{ type: 'link', key: l.key }], [{ block: l.src[0][0], line: l.src[0][1] }]);
+    });
+    // 孤立 VLAN：bridge 上的 VLAN 介面，除了 bridge 本身沒有任何成員埠（只在 bridge 有 VLAN 成員資料時判斷，避免 vlan-filtering 關閉時誤報）
+    const vlanOf = new Map(); M.vlans.forEach((v) => { if (v.id != null) vlanOf.set(v.dev + '|' + v.id, v); });
+    const filtering = new Set(); M.vlans.forEach((v) => v.members.forEach((_, ep) => { const i = M.ifcs.get(ep); if (i && i.type !== 'bridge') filtering.add(v.dev); }));
+    M.ifcs.forEach((i) => {
+      if (i.type !== 'vlan' || i.encapVlan == null || !i.parent || !filtering.has(i.dev)) return;
+      const parent = M.ifcs.get(i.parent); if (!parent || parent.type !== 'bridge') return;
+      const v = vlanOf.get(i.dev + '|' + i.encapVlan);
+      const ports = v ? Array.from(v.members.keys()).filter((ep) => ep !== i.parent && ep !== i.key) : [];
+      if (ports.length) return;
+      add('V05', `${epName(i.key)}（VLAN ${i.encapVlan}）在 ${M.ifcs.get(i.parent).name} 上沒有任何成員埠`, [{ type: 'interface', key: i.key }], i.src.slice(0, 1).map(([block, line]) => ({ block, line })));
+    });
     // ---- 位址
     const ipMacs = new Map();
     M.arps.forEach((a) => S.util.getOr(ipMacs, a.ip, () => new Map()).set(a.mac, a));
@@ -162,6 +191,17 @@
       const desc = eps.slice(0, 8).map((ep) => `${M.ifcs.get(ep).name}（${M.ifcs.get(ep).macs.size}）`).join('、');
       add('A03', `${name(dev)}：${eps.length} 個介面，${desc}${eps.length > 8 ? '…' : ''}`, [{ type: 'device', key: dev }]);
     });
+    manyMacPorts(M, interfaceLinksByEp).forEach(({ ep, n }) => add('A04', `${epName(ep)}：${n} 個 MAC，且沒有 LLDP／CDP 鄰接`, [{ type: 'interface', key: ep }]));
+    // ARP 位址不在該設備任何直連網段（只看有介面位址資料的設備）
+    const netsOf = new Map();
+    M.ifcs.forEach((i) => { if (!i.hearsay) i.ips.forEach((_, c) => { const p = S.ip.parseCidr(c); if (p && p.len < 32) S.util.getOr(netsOf, i.dev, () => []).push(p); }); });
+    const strayByDev = new Map();
+    M.arps.forEach((a) => {
+      const nets = netsOf.get(a.dev); if (!nets) return;
+      if (!nets.some((p) => S.ip.inNet(a.ip, p.net, p.len))) S.util.getOr(strayByDev, a.dev, () => []).push(a);
+    });
+    strayByDev.forEach((list, dev) => add('A05', `${name(dev)}：${list.map((a) => `${a.ip}（${a.ifc}）`).join('、')}`,
+      [{ type: 'device', key: dev }].concat(list.map((a) => ({ type: 'ip', key: a.ip }))), list.map((a) => ({ block: a.block, line: a.line }))));
 
     // ---- 路由
     const owner = new Map();
@@ -169,14 +209,23 @@
     M.devices.forEach((d) => { if (d.mgmtIp && !owner.has(d.mgmtIp)) owner.set(d.mgmtIp, d.key); });
     const routesByDev = new Map(); M.routes.forEach((r) => S.util.getOr(routesByDev, r.dev, () => []).push(r));
     // 遞迴解析後仍到不了已知設備的下一跳才提醒；經由其他路由最終落在已知設備上的不算
-    const unknownNh = new Map();
+    // 解析不到已知設備時依原因分開回報：迴圈（R03）、落入黑洞（R04）、其他（R01），同一個下一跳只報一種
+    const badNh = { R01: new Map(), R03: new Map(), R04: new Map() };
     M.routes.forEach((r) => r.nh.forEach((n) => {
       if (!n.ip) return;
       const res = resolveNextHop(routesByDev.get(r.dev) || [], n.ip, (ip) => owner.get(ip) || null);
-      if (res.every((x) => x.status !== 'known')) S.util.getOr(unknownNh, r.dev, () => new Map()).set(n.ip, r);
+      if (res.some((x) => x.status === 'known')) return;
+      const id = res.some((x) => x.status === 'loop') ? 'R03' : res.some((x) => x.status === 'blackhole') ? 'R04' : 'R01';
+      S.util.getOr(badNh[id], r.dev, () => new Map()).set(n.ip, r);
     }));
-    unknownNh.forEach((ips, dev) => add('R01', `${name(dev)}：${Array.from(ips.keys()).join('、')}`, [{ type: 'device', key: dev }],
-      Array.from(ips.values()).map((r) => ({ block: r.block, line: r.line }))));
+    Object.entries(badNh).forEach(([id, byDev]) => byDev.forEach((ips, dev) => add(id, `${name(dev)}：${Array.from(ips.keys()).join('、')}`, [{ type: 'device', key: dev }],
+      Array.from(ips.values()).map((r) => ({ block: r.block, line: r.line })))));
+    // DHCP 網路的閘道必須在該網段內
+    M.dhcpNets.forEach((n) => {
+      const p = S.ip.parseCidr(n.network); if (!p) return;
+      const bad = n.gateways.filter((g) => S.ip.isIp(g) && !S.ip.inNet(g, p.net, p.len));
+      if (bad.length) add('R05', `${name(n.dev)}：${n.network} 的閘道 ${bad.join('、')} 不在網段內`, [{ type: 'device', key: n.dev }], [{ block: n.block, line: n.line }]);
+    });
     M.notes.r02.forEach((n) => add('R02', `${name(n.dev)} ${n.ifc} 的鄰居 ${n.nbrId}（${n.nbrAddr}）`,
       [{ type: 'device', key: n.dev }, { type: 'device', key: K.dev(n.nbrId) }], [{ block: n.block, line: n.line }]));
 
@@ -218,6 +267,30 @@
     return out;
   }
 
+  /**
+   * 單一埠學到過多 MAC：已收集設備上的有線、非虛擬、非中斷介面，學到超過 MANY_MACS 個外部 MAC，
+   * 且本身（含所屬聚合與成員）沒有任何 LLDP／CDP 介面鄰接，通常是下掛未管理交換器或 hypervisor。
+   */
+  const MANY_MACS = 5; // 規格書建議的門檻
+  function manyMacPorts(M, adjacencyLinksByEp) {
+    const ownMacs = new Map();
+    M.ifcs.forEach((i) => { const m = i.hwMac && K.mac(i.hwMac); if (m) S.util.getOr(ownMacs, i.dev, () => new Set()).add(m); });
+    const out = [];
+    M.ifcs.forEach((i, ep) => {
+      const virtual = i.rawType ? NON_EDGE_TYPES.has(i.rawType) : /^(irb|vlan|lo\d|bridge)/.test(i.name);
+      if (virtual || i.type === 'wireless' || i.type === 'bridge' || i.type === 'lag' || i.status === 'down' || i.enabled === false) return;
+      if (!M.devices.get(i.dev).collected) return;
+      const own = ownMacs.get(i.dev) || new Set();
+      const n = Array.from(i.macs).filter((m) => !own.has(m)).length;
+      if (n <= MANY_MACS) return;
+      const group = [ep];
+      if (i.lag) { const p = M.ifcs.get(i.lag); if (p) group.push(p.key, ...p.lagMembers); }
+      if (group.some((x) => adjacencyLinksByEp.has(x))) return;
+      out.push({ ep, n });
+    });
+    return out.sort((a, b) => S.util.natural(a.ep, b.ep));
+  }
+
   function fmtVlans(ids) {
     const out = []; let s = null; let p = null;
     ids.forEach((v) => { if (s === null) { s = p = v; } else if (v === p + 1) { p = v; } else { out.push(s === p ? s : s + '-' + p); s = p = v; } });
@@ -241,7 +314,7 @@
    * 先看 ip 是否為已知設備位址；否則在同一台設備的路由表以最長前綴找出它的下一跳，再往下解析。
    * routes：該設備的路由（{ prefix, len, nh }）；ownerOf(ip)：回傳擁有該 IP 的設備 key 或 null。
    * 回傳（ECMP 可有多筆）：{ status: 'known', owner, ip, chain } | { status: 'connected', ip, ifc, chain }
-   *   | { status: 'unresolved', ip, chain }（沒有路由可到）| { status: 'loop', ip, chain }；chain 是經過的位址。
+   *   | { status: 'unresolved', ip, chain }（沒有路由可到）| { status: 'loop', ip, chain } | { status: 'blackhole', ip, chain, route }；chain 是經過的位址。
    */
   function resolveNextHop(routes, ip, ownerOf) {
     const MAX_DEPTH = 8; // RouterOS 遞迴路由的實務深度遠小於此；超過視為迴圈
@@ -255,11 +328,14 @@
         if (r.len > best) { best = r.len; cands = [r]; } else if (r.len === best) cands.push(r);
       });
       if (!cands.length) return [{ status: 'unresolved', ip: cur, chain }];
+      if (cands.every((r) => r.blackhole)) return [{ status: 'blackhole', ip: cur, chain, route: `${cands[0].prefix}/${cands[0].len}` }];
       const out = [];
       cands.forEach((r) => r.nh.forEach((n) => {
         const nextUsed = new Set(used).add(r);
         if (!n.ip) out.push({ status: 'connected', ip: cur, ifc: n.ifc, chain });
-        else if (n.ip === cur || chain.includes(n.ip)) out.push({ status: 'loop', ip: n.ip, chain });
+        // 閘道只能靠涵蓋它自己的這條路由解析（例如預設路由的閘道不在任何直連網段）：無法到達，不是迴圈
+        else if (n.ip === cur) out.push({ status: 'unresolved', ip: cur, chain });
+        else if (chain.includes(n.ip)) out.push({ status: 'loop', ip: n.ip, chain });
         else out.push(...walk(n.ip, chain.concat(n.ip), nextUsed));
       }));
       return out;

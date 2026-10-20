@@ -340,9 +340,12 @@
   };
   function runTrace() {
     if (!App.Q) return;
-    const r = S.trace(App.Q, $('#trace-src').value.trim(), $('#trace-dst').value.trim());
+    const src = $('#trace-src').value.trim(); const dst = $('#trace-dst').value.trim();
+    const r = S.trace(App.Q, src, dst);
+    // 回程：無狀態的 ACL 需要確認反向路徑；起點找不到時一樣明確顯示原因
+    const reverse = r.ok ? S.trace(App.Q, dst, src) : null;
     $('#trace-pop').classList.add('hidden');
-    App.select({ type: 'trace', result: r }, { focus: true });
+    App.select({ type: 'trace', result: r, reverse }, { focus: true });
   }
 
   // ================================================================ 頁首、工具列、分頁

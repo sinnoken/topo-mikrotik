@@ -17,13 +17,20 @@
 | [K03](#k03) | 鏈路 | 聚合鏈路兩端成員不一致 | 警告 | `/ip neighbor`、export 的 `/interface bonding` |
 | [K04](#k04) | 鏈路 | 對端回報的埠名稱與本機不同 | 提醒 | `/ip neighbor` |
 | [V01](#v01) | VLAN | 鏈路兩端 VLAN 不一致 | 警告 | `/ip neighbor`、export 的 bridge VLAN、`/interface bridge vlan` |
+| [V04](#v04) | VLAN | 鏈路兩端 native VLAN（PVID）不一致 | 警告 | `/ip neighbor`、export 的 bridge port `pvid` |
+| [V05](#v05) | VLAN | VLAN 介面沒有任何成員埠（孤立 VLAN） | 提醒 | export 的 `/interface vlan`、bridge VLAN |
 | [A01](#a01) | 位址 | 同一 IP 對應多個 MAC | 警告 | `/ip arp` |
 | [A02](#a02) | 位址 | 同一 MAC 在同一 VLAN 出現在多個終端埠 | 警告 | `/interface bridge host` |
 | [A03](#a03) | 位址 | 介面有學到 MAC 但沒有 LLDP／CDP 鄰接（未知對端） | 提醒 | `/interface bridge host`、`/ip neighbor` |
+| [A04](#a04) | 位址 | 單一埠學到過多 MAC（可能下掛未管理交換器或 hypervisor） | 提醒 | `/interface bridge host`、`/ip neighbor` |
+| [A05](#a05) | 位址 | ARP 位址不屬於該設備任何直連網段 | 提醒 | `/ip arp`、介面位址 |
 | [R01](#r01) | 路由 | 路由下一跳不屬於任何已知設備 | 提醒 | `/ip route`、介面位址 |
 | [R02](#r02) | 路由 | OSPF 鄰居無法對應到已收集的設備 | 提醒 | `/routing ospf neighbor` |
+| [R03](#r03) | 路由 | 路由下一跳形成迴圈 | 警告 | `/ip route` |
+| [R04](#r04) | 路由 | 路由下一跳落入黑洞路由 | 警告 | `/ip route` |
+| [R05](#r05) | 路由 | DHCP 網路的閘道不在該網段內 | 警告 | export 的 `/ip dhcp-server network` |
 
-VLAN 名稱相關的兩項檢查（多廠牌版的 V02、V03）已移除，因為 RouterOS 的 bridge VLAN 沒有名稱。
+VLAN 名稱相關的兩項檢查（多廠牌版的 V02、V03）已移除，因為 RouterOS 的 bridge VLAN 沒有名稱；為避免和多廠牌版混淆，這兩個代碼不再使用，之後新增的 VLAN 檢查從 V04 起編。
 
 ## 共通說明
 
@@ -164,6 +171,30 @@ VLAN 名稱相關的兩項檢查（多廠牌版的 V02、V03）已移除，因�
 - **證據**：鏈路的來源行。
 - **處理**：比對兩端的 `/interface bridge vlan` 與 bridge port `pvid`。
 
+### V04
+
+**鏈路兩端 native VLAN（PVID）不一致**（警告）
+
+- **條件**：介面鄰接鏈路的兩端都有 PVID，而且不同。聚合成員取所屬聚合介面的 PVID；同一組聚合的多條成員鏈路只報一次。
+- **和 V01 的關係**：V01 比較兩端承載的 VLAN 集合，V04 只比較 native VLAN。兩端集合相同、但 native VLAN 不同時，只有 V04 會列出；未標記的流量會進到不同 VLAN。
+- **不檢查**：
+  - 只有 MNDP 證據的鏈路、單側觀察的鏈路。
+  - 任一端沒有 VLAN 資料。
+  - 任一端沒有 PVID，例如不是 bridge port 的路由器介面。
+- **證據**：鏈路的來源行。
+- **處理**：比對兩端 `/interface bridge port` 的 `pvid`。
+
+### V05
+
+**VLAN 介面沒有任何成員埠（孤立 VLAN）**（提醒）
+
+- **條件**：bridge 上建立了 VLAN 介面（`/interface vlan`，例如 SVI），但這個 VLAN 除了 bridge 本身，沒有任何成員埠：沒有 tagged、untagged，也沒有任何埠的 PVID 是它。這個 VLAN 介面接不到任何設備。
+- **和規格書的差異**：規格書寫「有 SVI 但沒有 access port」。但管理 VLAN 只走 trunk 是常見的正常設計，照字面判斷會大量誤報，所以改成「沒有任何成員埠」。
+- **不檢查**：
+  - 設備上沒有 bridge VLAN 成員資料，例如 `vlan-filtering` 未開啟，無從判斷。
+  - VLAN 介面直接建在實體埠上，例如 router-on-a-stick，這時實體埠本身就是成員。
+- **處理**：確認 VLAN 是否已停用但沒有刪除，或漏設 bridge VLAN 成員。
+
 ## 位址
 
 ### A01
@@ -200,16 +231,38 @@ VLAN 名稱相關的兩項檢查（多廠牌版的 V02、V03）已移除，因�
 - **說明**：這些位置會在拓樸圖上畫成「未知對端」節點，並列入清單的終端分類。只有 MNDP 廣播網域可達不算介面鄰接。完整設計見[設計說明 §12](design-ssot.md#12-未知對端210-新增)。
 - **處理**：多半是 PC、印表機、IoT 等不送 LLDP 的設備，屬於正常情況。若該埠應該接網路設備，請在對端開啟 LLDP。
 
+### A04
+
+**單一埠學到過多 MAC（可能下掛未管理交換器或 hypervisor）**（提醒）
+
+- **條件**：已收集設備上的有線介面學到超過 5 個外部 MAC（不含設備自己的介面 MAC），而且這個介面（含所屬聚合與成員）沒有任何 LLDP／CDP 介面鄰接。門檻 5 依規格書建議。
+- **不檢查**：
+  - Wi-Fi 介面，因為一對多是常態。
+  - bridge、VLAN、loopback、VRRP 等虛擬介面。
+  - 聚合介面本身。
+  - 停用或中斷的介面。
+- **說明**：這類埠不是終端埠，所以這些 MAC 不會畫成未知對端。A04 提醒這裡可能有看不見的下游設備。
+- **處理**：到現場確認是否接了未管理交換器、AP 或虛擬化主機；若是網路設備，開啟它的 LLDP 並納入收集。
+
+### A05
+
+**ARP 位址不屬於該設備任何直連網段**（提醒）
+
+- **條件**：設備的 ARP 表有某個 IP，但它不在這台設備任何介面位址的直連網段內。只檢查有介面位址資料的設備。
+- **常見原因**：主機設錯網段或遮罩、IP 漂移，或 proxy ARP。
+- **證據**：每一筆 ARP 的來源行。
+- **處理**：用 ARP 的 MAC 找出主機，確認它的位址設定。
+
 ## 路由
 
 ### R01
 
 **路由下一跳不屬於任何已知設備**（提醒）
 
-- **條件**：路由的下一跳 IP 經遞迴解析後，仍然到不了任何已知設備的位址。
+- **條件**：路由的下一跳 IP 經遞迴解析後，仍然到不了任何已知設備的位址；但形成迴圈的列為 [R03](#r03)，落入黑洞路由的列為 [R04](#r04)，同一個下一跳只報一種。
 - **遞迴解析**：下一跳若不是已知位址，就在同一台設備的路由表用最長前綴找它的下一跳，再往下查，最多 8 層，超過視為迴圈。
 - **已知位址**：設備自有的介面位址（不含鄰居宣告的位址）與管理 IP。
-- **路由的範圍**：只採用 `main` 路由表中作用中的 IPv4 路由，黑洞與不可達路由不列入。
+- **路由的範圍**：只採用 `main` 路由表中作用中的 IPv4 路由。黑洞、不可達、禁止路由會保留（`blackhole: true`），供 R04 與路徑追蹤使用。
 - **訊息**：每台設備一筆，列出到不了的下一跳。
 - **常見原因**：下一跳是 ISP、未收集的設備，或缺少對方設備的位址資料。
 - **處理**：若下一跳應該是管理範圍內的設備，把它加入收集清單，或補收它的 `/ip address`。
@@ -226,6 +279,30 @@ VLAN 名稱相關的兩項檢查（多廠牌版的 V02、V03）已移除，因�
   找不到時，系統會建立一個以鄰居 router-id 命名的未知設備。
 - **證據**：OSPF 鄰居那一列。
 - **處理**：把該鄰居設備加入收集清單，或確認它的 router-id 與介面位址是否已收集。OSPF 鄰接只作為 L3 證據，不會畫成拓樸圖的直連鏈路。
+
+### R03
+
+**路由下一跳形成迴圈**（警告）
+
+- **條件**：下一跳在同一台設備的路由表遞迴解析時，又回到已經走過的位址。例如 A 網段的閘道要靠 B 網段的路由，B 網段的閘道又要靠 A 網段。
+- **訊息**：每台設備一筆，列出形成迴圈的下一跳。
+- **處理**：檢查相關的靜態路由；常見於互相指向的兩條靜態路由，或遞迴路由少了一條。
+
+### R04
+
+**路由下一跳落入黑洞路由**（警告）
+
+- **條件**：下一跳遞迴解析時，最長符合的路由是黑洞、不可達或禁止路由，封包會在這台設備被丟棄。
+- **說明**：黑洞路由本身不算錯誤，常用來吸收未使用的位址；有路由的下一跳落進黑洞才需要注意。路徑追蹤遇到黑洞路由也會在該處停下並註明。
+- **處理**：確認黑洞路由的範圍是否太大，或下一跳是否設錯。
+
+### R05
+
+**DHCP 網路的閘道不在該網段內**（警告）
+
+- **條件**：export 的 `/ip dhcp-server network` 設定的 `gateway` 不在它的 `address` 網段內。客戶端會拿到無法直接到達的預設閘道。
+- **證據**：該設定的來源行。
+- **處理**：修正 DHCP 網路的閘道。閘道是 VRRP 虛擬位址時，確認它和網段一致。
 
 ## 維護
 
@@ -250,9 +327,11 @@ VLAN 名稱相關的兩項檢查（多廠牌版的 V02、V03）已移除，因�
 
 - [Neighbor discovery](https://manual.mikrotik.com/docs/system-information-and-utilities/neighbor-discovery.md)、[`/ip neighbor`](https://manual.mikrotik.com/docs/cli-reference/ip/neighbor.md)：K01–K04、A03
 - [Bonding](https://manual.mikrotik.com/docs/high-availability-solutions/bonding.md)：K03
-- [Bridge VLAN Table](https://manual.mikrotik.com/docs/bridging-and-switching/user-guides/bridge-vlan-table.md)、[`/interface bridge vlan`](https://manual.mikrotik.com/docs/cli-reference/interface/bridge/vlan.md)：V01
-- [`/interface bridge host`](https://manual.mikrotik.com/docs/cli-reference/interface/bridge/host.md)：A02、A03
+- [Bridge VLAN Table](https://manual.mikrotik.com/docs/bridging-and-switching/user-guides/bridge-vlan-table.md)、[`/interface bridge vlan`](https://manual.mikrotik.com/docs/cli-reference/interface/bridge/vlan.md)：V01、V05
+- [`/interface bridge host`](https://manual.mikrotik.com/docs/cli-reference/interface/bridge/host.md)：A02、A03、A04
 - [`/ip arp`](https://manual.mikrotik.com/docs/cli-reference/ip/arp.md)：A01
-- [`/ip route`](https://manual.mikrotik.com/docs/cli-reference/ip/route.md)、[Routing Decision](https://manual.mikrotik.com/docs/user-guides/routing-and-networking-protocols/routing-decision.md)、[`/ip address`](https://manual.mikrotik.com/docs/cli-reference/ip/address.md)：R01
+- [`/ip route`](https://manual.mikrotik.com/docs/cli-reference/ip/route.md)、[Routing Decision](https://manual.mikrotik.com/docs/user-guides/routing-and-networking-protocols/routing-decision.md)、[`/ip address`](https://manual.mikrotik.com/docs/cli-reference/ip/address.md)：R01、R03、R04、A05
+- [`/interface bridge port`](https://manual.mikrotik.com/docs/cli-reference/interface/bridge/port.md)：V04（`pvid`、`frame-types`、`ingress-filtering`）
+- [`/ip dhcp-server network`](https://manual.mikrotik.com/docs/cli-reference/ip/dhcp-server/network.md)、[`/interface vrrp`](https://manual.mikrotik.com/docs/cli-reference/interface/vrrp.md)：R05
 - [OSPF](https://manual.mikrotik.com/docs/user-guides/routing-and-networking-protocols/unicast/ospf.md)、[`/routing ospf neighbor`](https://manual.mikrotik.com/docs/cli-reference/routing/ospf/neighbor.md)：R02
 - [`/system resource`](https://manual.mikrotik.com/docs/cli-reference/system/resource.md)：C02 的設備類型（型號）

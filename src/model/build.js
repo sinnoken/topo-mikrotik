@@ -14,7 +14,7 @@
   function newModel() {
     return {
       devices: new Map(), ifcs: new Map(), links: new Map(), vlans: new Map(), macs: new Map(),
-      arps: [], routes: [], claims: [], ospf: [], ospfAdjacencies: [], vmems: [], assocs: [],
+      arps: [], routes: [], claims: [], ospf: [], ospfAdjacencies: [], vmems: [], assocs: [], dhcpNets: [],
       notes: { k01: [], k04: [], r02: [] },
     };
   }
@@ -22,7 +22,7 @@
   function device(M, key, name) {
     const d = getOr(M.devices, key, () => ({
       key, names: new Set(), mgmtIp: null, vendors: new Set(), collected: false, data: new Set(),
-      hostname: null, routerId: null, seenBy: new Set(), src: [], deviceType: null, softwareVersion: null, platform: null, caps: null,
+      hostname: null, routerId: null, collectedAt: null, seenBy: new Set(), src: [], deviceType: null, softwareVersion: null, platform: null, caps: null,
     }));
     if (name) d.names.add(name);
     return d;
@@ -34,7 +34,7 @@
       key, dev: devKey, name: String(name).trim().replace(/\.0$/, ''), desc: null, enabled: null, status: null,
       type: null, typeBasis: null, rawType: null, hwMac: null, defaultName: null, mtu: null, actualMtu: null, l2mtu: null,
       lag: null, lagMembers: new Set(), bridge: null, parent: null, encapVlan: null,
-      mode: null, pvid: null, untaggedVlans: new Set(), taggedVlans: new Set(), unresolvedVlans: new Set(),
+      mode: null, pvid: null, untaggedVlans: new Set(), taggedVlans: new Set(), unresolvedVlans: new Set(), frameTypes: null, ingressFiltering: null,
       ips: new Map(), macs: new Set(), hearsay: false, src: [], // ips：CIDR → 來源 [區塊, 行號]
     }));
   }
@@ -68,6 +68,8 @@
       switch (f.t) {
         case 'hostname': d.hostname = f.name; d.names.add(f.name); break;
         case 'rid': d.routerId = f.id; break;
+        case 'collectedAt': if (!d.collectedAt || f.at > d.collectedAt) d.collectedAt = f.at; break; // 多份 export 取最新
+        case 'dhcpNet': M.dhcpNets.push({ dev: f.dev, network: f.network, gateways: f.gateways, block: f.block, line: f.line }); break;
         case 'ifc': onIfc(M, f); break;
         case 'lldp': {
           const i = iface(M, f.dev, f.ifc); addSrc(i, f);
@@ -94,6 +96,7 @@
           const m = getOr(M.macs, mk, () => ({ mac: mk, seen: new Map(), ips: new Set(), src: [] }));
           const vlans = getOr(m.seen, i.key, () => new Set());
           vlans.add(f.vlan || null); addSrc(m, f);
+          if (f.static) (m.staticOn || (m.staticOn = new Set())).add(i.key);
           break;
         }
         case 'arp': {
@@ -111,7 +114,7 @@
           break;
         }
         case 'route':
-          M.routes.push({ dev: f.dev, prefix: f.prefix, len: f.len, proto: f.proto,
+          M.routes.push({ dev: f.dev, prefix: f.prefix, len: f.len, proto: f.proto, distance: f.distance ?? null, blackhole: !!f.blackhole,
             nh: f.nh.map((n) => ({ ip: n.ip, ifc: n.ifc ? K.ifc(n.ifc) : null })), block: f.block, line: f.line });
           break;
         default: break;
@@ -137,6 +140,8 @@
     if (f.bridge) i.bridge = K.ep(f.dev, f.bridge);
     if (f.parent) i.parent = K.ep(f.dev, f.parent);
     if (f.encapVlan != null) i.encapVlan = f.encapVlan;
+    if (f.frameTypes) i.frameTypes = f.frameTypes;
+    if (f.ingressFiltering != null) i.ingressFiltering = f.ingressFiltering;
     ['rawType', 'hwMac', 'defaultName', 'mtu', 'actualMtu', 'l2mtu'].forEach((k) => { if (f[k] != null) i[k] = f[k]; });
     if (f.ip && !i.ips.has(f.ip)) i.ips.set(f.ip, [f.block, f.line]);
   }

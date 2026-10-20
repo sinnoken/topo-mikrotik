@@ -68,13 +68,13 @@
 | ID | 指令 | 事實 |
 |---|---|---|
 | mikrotik.neighbor | /ip neighbor print detail | 鄰居（identity、對端埠、型號、功能）；續行、bridge 重複列、多協定重複列已處理 |
-| mikrotik.config | /export terse／compact | 主機名、介面註解／停用、bridge port（所屬 bridge＋pvid）、bridge VLAN（tagged／untagged 分開）、VLAN 子介面（parent＋vlan-id）、bonding（成員）、IP、router-id（含 `/routing id` 名稱解析） |
-| mikrotik.bridgehost | /interface bridge host print detail | MAC 位置（略過 bridge 自己的 MAC） |
+| mikrotik.config | /export terse／compact | 收集時間（抬頭的「# 日期 時間 by RouterOS」）、主機名、介面註解／停用、bridge port（所屬 bridge＋pvid）、bridge VLAN（tagged／untagged 分開）、VLAN 子介面（parent＋vlan-id）、bonding（成員）、VRRP 介面、IP、DHCP 網路（`/ip dhcp-server network`）、bridge port 的 frame-types／ingress-filtering、router-id（含 `/routing id` 名稱解析） |
+| mikrotik.bridgehost | /interface bridge host print detail | MAC 位置（略過 bridge 自己的 MAC；沒有 D 旗標的記為靜態項目） |
 | mikrotik.vlans | /interface bridge vlan print detail | 實際 VLAN 成員（`current-tagged`／`current-untagged` 分開，含動態） |
 | mikrotik.interface | /interface print detail | running／停用／註解／聚合；保留 rawType、mac-address、default-name、mtu、actual-mtu、l2mtu（rawType 供終端判定排除 bridge／vlan／loopback／vrrp，缺 `/interface print` 時改取 export 的 bridge／vlan／bonding 定義，仍無才退回名稱規則）；介面詳情顯示這些欄位，且設備自身的 mac-address 出現在轉發表時不列為外部終端 |
 | mikrotik.ipaddr | /ip address print detail | 介面 IP（略過 disabled、invalid） |
 | mikrotik.arp | /ip arp print detail | MAC↔IP（略過 invalid、多播、APIPA） |
-| mikrotik.route | /ip route print detail | 作用中路由、ECMP（`gateway=a,b`）；RouterOS 6／7 旗標差異已處理 |
+| mikrotik.route | /ip route print detail | 作用中路由、ECMP（`gateway=a,b`）、`distance`；黑洞／不可達／禁止路由保留為 `blackhole`（RouterOS 6 的 B／U／P 旗標、RouterOS 7 列中單獨的 `blackhole` 字）；RouterOS 6／7 旗標差異已處理 |
 | mikrotik.ospf | /routing ospf neighbor print detail | OSPF 鄰居（沒有 interface 時，用鄰居位址落在哪個本機網段決定） |
 | mikrotik.system | /system resource print | 型號、版本 |
 | mikrotik.wifireg | /interface wifi｜wireless registration-table、/caps-man registration-table print detail（選用） | Wi-Fi 關聯：客戶端 MAC、無線介面、SSID、頻段、VLAN、uptime、last-activity、訊號、DHCP 位址與主機名；略過 `eap-*` 帳號欄位與 `ap=yes` 的對端 AP；空表記為已收集、0 筆 |
@@ -100,16 +100,17 @@
 
 | 實體 | 主要欄位 |
 |---|---|
-| devices | key、name、names、mgmtIp、manufacturer、deviceType（型號）、softwareVersion、platform、caps、kind、kindBasis、collected、data、group、role、seenBy |
-| interfaces | key、dev、name、desc、enabled、status、type、typeBasis、rawType、lag、lagMembers、bridge、parent、encapVlan、mode、pvid、untaggedVlans、taggedVlans、unresolvedVlans、macs、hearsay、edge、unknownPeer |
+| devices | key、name、names、mgmtIp、manufacturer、deviceType（型號）、softwareVersion、platform、caps、kind、kindBasis、collected、collectedAt（export 抬頭的設備時間）、data、group、role、seenBy |
+| interfaces | key、dev、name、desc、enabled、status、type、typeBasis、rawType、lag、lagMembers、bridge、parent、encapVlan、mode、pvid、frameTypes、ingressFiltering、untaggedVlans、taggedVlans、unresolvedVlans、macs、hearsay、edge、unknownPeer |
 | links | key、a、b、layer（L2）、via（lldp/mndp）、protocols、evidenceScope、observations、verified、hearsay、cls、vlansA／B／Common、vlanComparable、vlanMismatch |
 | ospfAdjacencies | dev、localEp、peerDev、peerEp、peerIp、peerId、reciprocal、src |
 | vlans | dev、id、name、desc、members（`{ ep, tagged }` 清單） |
-| ipAddresses | address（CIDR）、ip、len、family、vrf（尚未收集，固定 null）、dev、ep、hearsay、src |
-| prefixes | prefix、net、len、family、vrf、basis（`connected`）、eps |
-| macs | mac、vendor（OUI）、ips、seen（`{ ep, vlan }` 清單）、edge（位置）、wifi（Wi-Fi 位置推論，見 §5.3）、src |
+| ipAddresses | address（CIDR）、ip、len、family、vrf（尚未收集，固定 null）、role（VRRP 介面上的位址為 `vrrp`）、dev、ep、hearsay、src |
+| prefixes | prefix、net、len、family、vrf、basis（`connected`）、vlan（網段設在 VLAN 介面上時的 VLAN ID）、eps |
+| macs | mac、vendor（OUI）、ips、seen（`{ ep, vlan, static }` 清單）、edge（位置）、wifi（Wi-Fi 位置推論，見 §5.3）、src |
 | wifiAssociations | dev、ep、mac、ssid、band、vlan、uptime、lastActivity（秒）、signal（dBm）、ip、hostname、src（關聯表的事實） |
-| arps、routes | 原始對應與路由（含下一跳）、src |
+| dhcpNetworks | dev、network、gateways、src（export 的 `/ip dhcp-server network`） |
+| arps、routes | 原始對應與路由（含下一跳；路由另有 distance、blackhole）、src |
 
 **設備身分**
 
@@ -169,7 +170,7 @@
 
 ## 7. 一致性檢查
 
-共 14 項規則，分成輸入（I）、覆蓋（C）、鏈路（K）、VLAN（V）、位址（A）、路由（R）六類。每項規則的判斷條件、使用的資料、不檢查的情況與處理建議，集中在 **[docs/checks.md](checks.md)**，本文件不再另列一份規則表，以免兩份內容不一致。
+共 21 項規則，分成輸入（I）、覆蓋（C）、鏈路（K）、VLAN（V）、位址（A）、路由（R）六類。每項規則的判斷條件、使用的資料、不檢查的情況與處理建議，集中在 **[docs/checks.md](checks.md)**，本文件不再另列一份規則表，以免兩份內容不一致。
 
 每筆：`{ id, severity, title, message, entities:[{type,key}], evidence:[{block,line,text,file}] }`。
 
@@ -281,6 +282,10 @@
     - 設備身分欄位
   - 舊基準以儲存的輸入重建。
   - 拓樸圖預設改用 ELK 分層版面。
+- **2.2.0**：規格書 P1。
+  - 新增欄位：設備收集時間、MAC 靜態／動態、bridge port 的 frame-types／ingress-filtering、路由 distance 與黑洞路由、VRRP 位址角色、網段所屬 VLAN、DHCP 網路。
+  - 新增檢查：V04、V05、A04、A05、R03、R04、R05。R01 不再重複列出迴圈與黑洞。
+  - 路由追蹤加上回程（反向路徑）與非對稱提示，遇到黑洞路由會停下。
 - **2.1.0**：
   - 新增 Wi-Fi 關聯表解析（`mikrotik.wifireg`）與 Snapshot 的 `wifiAssociations`、`macs[].wifi`（Wi-Fi 位置依證據強度推定，標示依據與候選位置）。
   - 收集器新增選用命令 `wifi`／`wireless`／`capsman`，設備清單可用第五欄 `extra` 只對 AP 加收。

@@ -29,7 +29,8 @@ const mac = (oui) => { const n = macSeq++; return `${oui}:${hex2((n >> 16) & 255
 const needQ = (v) => /[\s()]/.test(v);
 /** key=value 列，超過 width 在 key=value 之間換行（續行縮排 4 格），不會切到引號內 */
 function detailRow(prefix, kvs, width = 80) {
-  const toks = kvs.filter(([, v]) => v !== undefined && v !== null && v !== '').map(([k, v]) => `${k}=${needQ(String(v)) ? '"' + v + '"' : v}`);
+  // v === true：RouterOS 7 的單獨旗標字（例如路由的 blackhole），不是 key=value
+  const toks = kvs.filter(([, v]) => v !== undefined && v !== null && v !== '').map(([k, v]) => (v === true ? k : `${k}=${needQ(String(v)) ? '"' + v + '"' : v}`));
   const out = []; let line = prefix; let n = 0;
   toks.forEach((t) => {
     if (n > 0 && line.length + 1 + t.length > width) { out.push(line); line = '    ' + t; n = 1; } else { line += (line.endsWith(' ') ? '' : ' ') + t; n++; }
@@ -63,12 +64,14 @@ function exportText(name, board, entries, compact) {
   else { let ctx = null; entries.forEach(([p, c, a]) => { if (p !== ctx) { lines.push(p); ctx = p; } lines.push(...wrapCmd(`${c} ${a}`)); }); }
   return lines.join('\n');
 }
-const sort = (entries) => { const order = ['/interface bridge', '/interface ethernet', '/interface bonding', '/interface vlan', '/interface bridge port', '/interface bridge vlan', '/ip address', '/routing id', '/routing ospf instance', '/ip route']; return entries.sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])); };
+const sort = (entries) => { const order = ['/interface bridge', '/interface ethernet', '/interface bonding', '/interface vlan', '/interface vrrp', '/interface bridge port', '/interface bridge vlan', '/ip address', '/ip dhcp-server network', '/routing id', '/routing ospf instance', '/ip route']; return entries.sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])); };
 
-const bridgeHostText = (rows) => table(rows.map((m) => ({ flags: m.local ? 'DL' : 'D', kvs: [['mac-address', m.mac], ['on-interface', m.ifc], ['bridge', 'bridge1'], ['vid', m.vid], ['age', pick(['3s', '12s', '45s', '1m2s'])]] })), 'Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external ');
+const bridgeHostText = (rows) => table(rows.map((m) => ({ flags: m.local ? 'DL' : m.static ? '' : 'D', kvs: [['mac-address', m.mac], ['on-interface', m.ifc], ['bridge', 'bridge1'], ['vid', m.vid], ['age', pick(['3s', '12s', '45s', '1m2s'])]] })), 'Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external ');
 const arpText = (rows) => table(rows.map((r) => ({ flags: 'DC', kvs: [['address', r.ip], ['mac-address', r.mac], ['interface', r.ifc], ['published', 'no'], ['invalid', 'no'], ['DHCP', 'no'], ['dynamic', 'yes'], ['complete', 'yes'], ['disabled', 'no']] })), FLAGS_ARP);
 const addrText = (rows) => table(rows.map((r) => ({ flags: '', kvs: [['address', r.cidr], ['network', r.net], ['interface', r.ifc], ['actual-interface', r.ifc]] })), 'Flags: X - disabled, I - invalid, D - dynamic ');
-const routeText = (rows) => table(rows.map((r) => ({ flags: r.flags, kvs: [['dst-address', r.dst], ['routing-table', 'main'], ['gateway', r.gw], ['immediate-gw', r.igw || r.gw], ['distance', r.dist], ['scope', r.scope || 10]] })), 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC, o - OSPF, b - BGP', false);
+const routeText = (rows) => table(rows.map((r) => ({ flags: r.flags, kvs: r.blackhole
+  ? [['dst-address', r.dst], ['routing-table', 'main'], ['blackhole', true], ['distance', r.dist], ['scope', r.scope || 30]]
+  : [['dst-address', r.dst], ['routing-table', 'main'], ['gateway', r.gw], ['immediate-gw', r.igw || r.gw], ['distance', r.dist], ['scope', r.scope || 10]] })), 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC, o - OSPF, b - BGP', false);
 const ospfText = (rows) => table(rows.map((r) => ({ flags: '', kvs: [['instance', 'default'], ['area', 'backbone'], ['address', r.addr], r.ifc ? ['interface', r.ifc] : null, ['priority', 1], ['router-id', r.id], ['state', 'Full'], ['state-changes', 5], ['adjacency', '1d2h']].filter(Boolean) })), 'Flags: ');
 const ifaceText = (rows) => ['Flags: D - DYNAMIC; R - RUNNING; S - SLAVE', ...rows.map((r, i) => [` ${i}  ${r.flags}  ;;; ${r.comment || ''}`.replace(/ ;;; $/, ''), detailRow('       ', [['name', `"${r.name}"`.replace(/^"|"$/g, '')], ['type', r.type], ['mtu', 1500]])].join('\n').replace(/name=(\S+)/, 'name="$1"').replace(/type=(\S+)/, 'type="$1"'))].join('\n');
 const sysText = (board, name) => `             uptime: 2w1d4h\n            version: 7.12.1 (stable)\n         board-name: ${board}\n           platform: MikroTik\n`;
@@ -106,7 +109,8 @@ for (let s = 1; s <= SITES; s++) {
     e.push(['/interface bonding', 'add', `mode=802.3ad name=${bond} slaves=${slaves.join(',')} transmit-hash-policy=layer-2-and-3 comment="to ${core[0].name}"`]);
     e.push(['/interface vlan', 'add', 'interface=bridge1 name=vlan10 vlan-id=10']);
     e.push(['/interface bridge port', 'add', `bridge=bridge1 interface=${bond}`]);
-    e.push(['/interface bridge port', 'add', `bridge=bridge1 interface=ether24 comment="to ${core[1].name}"`]);
+    e.push(['/interface bridge port', 'add', `bridge=bridge1 interface=ether24${F && a === 8 ? ' pvid=10' : ''} comment="to ${core[1].name}"`]);   // V04：ACC_08 與 CORE_02 的 native VLAN 不同
+    if (F && a === 12) e.push(['/interface vlan', 'add', 'interface=bridge1 name=vlan99 vlan-id=99']);                                       // V05：VLAN 99 沒有任何成員埠
     const srvPorts = []; const userPorts = [];
     for (let k = 1; k <= SRV; k++) {
       const port = `ether${k}`; const m = mac(pick(OUI_SRV)); const ip = `10.${s}.20.${(a - 1) * SRV + k + 10}`; const nm = `${C}-SRV-${pad(a)}${k}`;
@@ -121,6 +125,8 @@ for (let s = 1; s <= SITES; s++) {
       e.push(['/interface bridge port', 'add', `bridge=bridge1 interface=${port} pvid=30`]); userPorts.push(port); sw.macs.push({ vid: 30, mac: m, ifc: port }); siteMacs.push({ vlan: 30, mac: m, ip });
     }
     if (F && a === 2) sw.macs.push({ vid: 30, mac: acc[0].macs.find((x) => x.vid === 30).mac, ifc: 'ether23' });                // A02
+    if (F && a === 12) for (let k = 0; k < 8; k++) sw.macs.push({ vid: 30, mac: mac(pick(OUI_PC)), ifc: 'ether23' });            // A04：ether23 下掛未管理交換器
+    if (F && a === 1) sw.macs[0].static = true;                                                                                  // 靜態 MAC 項目
     e.push(['/interface bridge vlan', 'add', 'bridge=bridge1 tagged=bond1,ether24,bridge1 vlan-ids=10'.replace('bond1', bond)]);
     e.push(['/interface bridge vlan', 'add', `bridge=bridge1 tagged=${bond},ether24 untagged=${srvPorts.join(',')} vlan-ids=20`]);
     e.push(['/interface bridge vlan', 'add', `bridge=bridge1 tagged=${bond}${F && a === 3 ? '' : ',ether24'} untagged=${userPorts.join(',')} vlan-ids=30`]); // V01：ACC_03 的 ether24 少了 VLAN 30
@@ -138,6 +144,7 @@ for (let s = 1; s <= SITES; s++) {
   });
   core[1].arps = core[0].arps.map((x) => ({ ...x }));
   if (F) { const x = core[1].arps.find((r) => r.ifc === 'vlan30'); x.mac = mac(pick(OUI_PC)); }                                 // A01
+  if (F) core[0].arps.push({ ip: `10.${s}.99.5`, mac: mac(pick(OUI_PC)), ifc: 'vlan30' });                                         // A05：ARP 位址不在任何直連網段
 
   // 核心：互連、WAN／ISP
   ['qsfpplus1-1', 'qsfpplus2-1'].forEach((p) => {
@@ -151,7 +158,7 @@ for (let s = 1; s <= SITES; s++) {
     e.push(['/interface bonding', 'add', 'mode=802.3ad name=bond100 slaves=qsfpplus1-1,qsfpplus2-1 comment="core interconnect"']);
     VL.forEach((v) => e.push(['/interface vlan', 'add', `interface=bridge1 name=vlan${v.id} vlan-id=${v.id}`]));
     const trunk = acc.map((_, i) => (ci === 0 ? `bond${i + 1}` : `ether${i + 1}`));
-    trunk.forEach((p) => e.push(['/interface bridge port', 'add', `bridge=bridge1 interface=${p}`])); e.push(['/interface bridge port', 'add', 'bridge=bridge1 interface=bond100']);
+    trunk.forEach((p) => e.push(['/interface bridge port', 'add', `bridge=bridge1 interface=${p}${F && ci === 1 && p === 'ether8' ? ' pvid=20' : ''}`])); // V04 e.push(['/interface bridge port', 'add', 'bridge=bridge1 interface=bond100']);
     VL.forEach((v) => e.push(['/interface bridge vlan', 'add', `bridge=bridge1 tagged=${trunk.join(',')},bond100,bridge1 vlan-ids=${v.id}`]));
     VL.forEach((v) => e.push(['/ip address', 'add', `address=10.${s}.${v.id}.${ci + 2}/24 interface=vlan${v.id} network=10.${s}.${v.id}.0`]));
     VL.forEach((v) => rt.push({ flags: 'DAc', dst: `10.${s}.${v.id}.0/24`, gw: `vlan${v.id}`, igw: `vlan${v.id}`, dist: 0 }));
@@ -174,6 +181,16 @@ for (let s = 1; s <= SITES; s++) {
       rt.push({ flags: 'DAc', dst: `203.0.113.${ci * 4}/30`, gw: 'ether47', igw: 'ether47', dist: 0 });
       rt.push({ flags: 'As', dst: '0.0.0.0/0', gw, igw: `${gw}%ether47`, dist: 1, scope: 30 });
       c.ospf = [];
+    }
+    if (F && ci === 0) {                                                                                                // VRRP 閘道與正常的 DHCP 網路；R03：互相指向的兩條靜態路由
+      e.push(['/interface vrrp', 'add', 'interface=vlan30 name=vrrp30 vrid=30']);
+      e.push(['/ip address', 'add', `address=10.${s}.30.1/32 interface=vrrp30 network=10.${s}.30.1`]);
+      e.push(['/ip dhcp-server network', 'add', `address=10.${s}.30.0/24 gateway=10.${s}.30.1`]);
+      rt.push({ flags: 'As', dst: '10.97.0.0/16', gw: '10.96.0.1', dist: 1, scope: 30 }, { flags: 'As', dst: '10.96.0.0/16', gw: '10.97.0.1', dist: 1, scope: 30 });
+    }
+    if (F && ci === 1) {                                                                                                // R04：下一跳落入黑洞路由；R05：DHCP 閘道不在網段內
+      rt.push({ flags: 'As', dst: '10.94.0.0/16', blackhole: true, dist: 1 }, { flags: 'As', dst: '10.95.0.0/16', gw: '10.94.0.1', dist: 1, scope: 30 });
+      e.push(['/ip dhcp-server network', 'add', `address=10.${s}.20.0/24 gateway=10.${s}.21.1`]);
     }
     if (F && ci === 0) {                                                                                                // R02：核心 01 有一個無法對應的 OSPF 鄰居
       e.push(['/ip address', 'add', `address=172.31.1.1/30 interface=ether46 network=172.31.1.0`]);

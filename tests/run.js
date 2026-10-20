@@ -216,7 +216,7 @@ test('export：bridge 沒有開 vlan-filtering 時，不產生 VLAN 成員', () 
 test('bridge host：略過 bridge 自己的 MAC（L），VLAN 取自 vid', () => {
   const s = build('SW_A (10.0.0.1):\n### /interface bridge host print detail\nFlags: D - dynamic, L - local\n 0 DL mac-address=E4:8D:8C:00:00:02 on-interface=bridge1 bridge=bridge1 vid=0 age=3s\n 1 D  mac-address=24:6E:96:00:00:05 on-interface=ether1 bridge=bridge1 vid=20 age=3s\n');
   assert.strictEqual(s.model.macs.length, 1);
-  assert.deepStrictEqual(s.model.macs[0].seen, [{ ep: 'SW_A|ether1', vlan: '20' }]);
+  assert.deepStrictEqual(s.model.macs[0].seen, [{ ep: 'SW_A|ether1', vlan: '20', static: false }]);
 });
 test('bridge vlan print：用實際成員（current-*），動態項目也算', () => {
   const s = build('SW_A (10.0.0.1):\n### /interface bridge vlan print detail\n 0   ;;; prod\n     bridge=bridge1 vlan-ids=10 tagged=ether1 untagged=ether2 current-tagged=ether1,bond1 current-untagged=ether2\n 1 D bridge=bridge1 vlan-ids=1 tagged="" untagged="" current-tagged="" current-untagged=ether3,ether4\n');
@@ -389,7 +389,7 @@ test('system resource：型號決定交換器／路由器', () => {
 // ------------------------------------------------------------------ 範例資料：每個刻意放入的問題都要被找到
 test('範例資料：每項刻意放入的問題都被找到，且沒有多餘的錯誤', () => {
   const s = build(read('samples/sample-bundle.txt'));
-  const expect = { I01: 1, I02: 1, C02: 1, K01: 1, K02: 1, K03: 1, K04: 1, V01: 1, A01: 1, A02: 1, R01: 2, R02: 1, C01: 2 };
+  const expect = { I01: 1, I02: 1, C02: 1, K01: 1, K02: 1, K03: 1, K04: 1, V01: 1, V04: 1, V05: 1, A01: 1, A02: 1, A04: 1, A05: 1, R01: 2, R02: 1, R03: 1, R04: 1, R05: 1, C01: 2 };
   Object.entries(expect).forEach(([id, n]) => assert.strictEqual(count(s, id), n, `${id} 應有 ${n} 筆，實際 ${count(s, id)}`));
   assert.strictEqual(s.meta.stats.collected, 14);
   assert.deepStrictEqual(s.findings.filter((f) => f.severity === 'error').map((f) => f.id).sort(), ['I01', 'K02']);
@@ -489,7 +489,7 @@ test('A02：不同 VLAN 的終端埠不視為同一 MAC 重複位置', () => {
     + ` 1 D mac-address=${mac} on-interface=ether2 bridge=bridge1 vid=20\n`);
   assert.strictEqual(count(s, 'A02'), 0);
   assert.deepStrictEqual(s.model.macs[0].seen, [
-    { ep: 'SW_A|ether1', vlan: '10' }, { ep: 'SW_A|ether2', vlan: '20' },
+    { ep: 'SW_A|ether1', vlan: '10', static: false }, { ep: 'SW_A|ether2', vlan: '20', static: false },
   ]);
 });
 test('A02：同介面多 VLAN 觀察完整保留，並只比較相同 VLAN 的終端埠', () => {
@@ -499,7 +499,7 @@ test('A02：同介面多 VLAN 觀察完整保留，並只比較相同 VLAN 的�
     + ` 1 D mac-address=${mac} on-interface=ether1 bridge=bridge1 vid=20\n`
     + ` 2 D mac-address=${mac} on-interface=ether2 bridge=bridge1 vid=20\n`);
   assert.deepStrictEqual(s.model.macs[0].seen, [
-    { ep: 'SW_A|ether1', vlan: '10' }, { ep: 'SW_A|ether1', vlan: '20' }, { ep: 'SW_A|ether2', vlan: '20' },
+    { ep: 'SW_A|ether1', vlan: '10', static: false }, { ep: 'SW_A|ether1', vlan: '20', static: false }, { ep: 'SW_A|ether2', vlan: '20', static: false },
   ]);
   const finding = s.findings.find((f) => f.id === 'A02');
   assert.ok(finding && finding.message.includes('VLAN 20'), finding && finding.message);
@@ -557,6 +557,44 @@ test('附帶的 JSON 命名規則範例可載入，分隔符號 _ 與 - 一致�
     ['2F-RB5009', { kind: 'router', role: 'RTR', group: '2F', label: 'RB5009' }], ['2F_RB5009_02', { kind: 'router', role: 'RTR', group: '2F', label: 'RB5009_02' }],
     ['B1F_wAP_02', { role: 'AP', group: 'B1F', label: 'wAP_02' }], ['3F_CRS326', { group: '3F', label: 'CRS326' }]]
     .forEach(([n, want]) => assert.deepStrictEqual(at(n), want, n));
+});
+
+// ------------------------------------------------------------------ 規格書 P1：收集時間、MAC 類型、路由距離與黑洞、VRRP、DHCP 網路
+test('export 抬頭的收集時間（RouterOS 6／7 格式）；其他 # 行仍是註解', () => {
+  const s = build(['SW (10.0.0.1):', '### /export terse', '# 2026-10-13 10:00:00 by RouterOS 7.12.1', '# model = CRS326', '/system identity set name=SW',
+    'R6 (10.0.0.2):', '### /export', '# oct/13/2026 09:05:01 by RouterOS 6.49.7', '/system identity set name=R6'].join('\n'));
+  assert.deepStrictEqual(s.model.devices.map((d) => [d.key, d.collectedAt]), [['R6', '2026-10-13T09:05:01'], ['SW', '2026-10-13T10:00:00']]);
+});
+test('路由：distance、黑洞路由（RouterOS 7 單獨的 blackhole 字、RouterOS 6 的 B 旗標）；MAC 表的靜態項目', () => {
+  const s = build(['R (10.0.0.1):', '### /ip route print detail without-paging', 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC',
+    ' 0  As dst-address=10.94.0.0/16 routing-table=main blackhole distance=1', ' 1  As dst-address=0.0.0.0/0 routing-table=main gateway=192.0.2.1 distance=5',
+    ' 2  AB dst-address=10.93.0.0/16 type=blackhole distance=1',
+    '### /interface bridge host print detail without-paging', ' 0    mac-address=AA:BB:CC:00:00:01 on-interface=ether1 bridge=bridge1 vid=10'].join('\n'));
+  const r = (p) => s.model.routes.find((x) => x.prefix === p);
+  assert.deepStrictEqual([r('10.94.0.0').blackhole, r('10.94.0.0').nh, r('10.93.0.0').blackhole, r('0.0.0.0').distance, r('0.0.0.0').blackhole], [true, [], true, 5, false]);
+  assert.strictEqual(s.model.macs[0].seen[0].static, true);
+});
+test('R03／R04：下一跳迴圈與落入黑洞分開回報，不重複列為 R01；路徑追蹤在黑洞路由停下', () => {
+  const s = build(['R (10.0.0.1):', '### /export terse', '/ip address add address=10.0.0.1/24 interface=ether1',
+    '### /ip route print detail without-paging', 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC',
+    ' 0  Ac dst-address=10.0.0.0/24 routing-table=main gateway=ether1', ' 1  As dst-address=10.97.0.0/16 routing-table=main gateway=10.96.0.1',
+    ' 2  As dst-address=10.96.0.0/16 routing-table=main gateway=10.97.0.1', ' 3  As dst-address=10.94.0.0/16 routing-table=main blackhole',
+    ' 4  As dst-address=10.95.0.0/16 routing-table=main gateway=10.94.0.1'].join('\n'));
+  assert.deepStrictEqual(['R01', 'R03', 'R04'].map((id) => count(s, id)), [0, 1, 1]);
+  // 閘道只能靠自己這條路由解析（不在任何直連網段）是無法到達（R01），不是迴圈
+  const self = build('W (10.0.0.9):\n### /ip route print detail without-paging\nFlags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC\n 0  As dst-address=0.0.0.0/0 routing-table=main gateway=203.0.113.1\n');
+  assert.deepStrictEqual([count(self, 'R01'), count(self, 'R03')], [1, 0]);
+  const t = S.trace(S.query(s), '10.0.0.9', '10.94.1.1');
+  assert.deepStrictEqual(t.ends.map((e) => e.status), ['blackhole']);
+});
+test('VRRP 位址標示角色、網段帶出所屬 VLAN；R05 只在閘道不在網段內時回報', () => {
+  const s = build(['R (10.0.0.1):', '### /export terse', '/interface vlan add interface=bridge1 name=vlan30 vlan-id=30', '/interface vrrp add interface=vlan30 name=vrrp30 vrid=30',
+    '/ip address add address=10.1.30.2/24 interface=vlan30', '/ip address add address=10.1.30.1/32 interface=vrrp30',
+    '/ip dhcp-server network add address=10.1.30.0/24 gateway=10.1.30.1', '/ip dhcp-server network add address=10.1.20.0/24 gateway=10.1.21.1'].join('\n'));
+  assert.deepStrictEqual(s.model.ipAddresses.map((a) => [a.address, a.role]), [['10.1.30.1/32', 'vrrp'], ['10.1.30.2/24', null]]);
+  assert.deepStrictEqual(s.model.prefixes.map((p) => [p.prefix, p.vlan]), [['10.1.30.0/24', 30]]);
+  assert.strictEqual(iface(s, 'R|vrrp30').type, 'virtual');
+  assert.deepStrictEqual(s.findings.filter((f) => f.id === 'R05').map((f) => f.message), ['R：10.1.20.0/24 的閘道 10.1.21.1 不在網段內']);
 });
 
 // ------------------------------------------------------------------ OUI 廠商
@@ -670,7 +708,9 @@ test('遞迴路由：gateway 是對端 loopback 時沿路由表解析；R01 只�
   const ok = rs('10.99.0.2', rt); assert.ok(ok.some((x) => x.status === 'known' && x.owner === 'R_B'), JSON.stringify(ok));
   assert.deepStrictEqual(rs('10.99.0.2', rt), rs('10.99.0.2', rt), '相同輸入結果相同');
   const loop = [{ prefix: '10.0.0.0', len: 8, nh: [{ ip: '10.0.0.9', ifc: null }] }];
-  assert.strictEqual(rs('10.0.0.9', loop)[0].status, 'loop', '自己解析到自己要判為迴圈');
+  assert.strictEqual(rs('10.0.0.9', loop)[0].status, 'unresolved', '閘道只能靠涵蓋自己的路由解析：無法到達（R01），不是多條路由的迴圈（R03）');
+  const pair = [{ prefix: '10.97.0.0', len: 16, nh: [{ ip: '10.96.0.1', ifc: null }] }, { prefix: '10.96.0.0', len: 16, nh: [{ ip: '10.97.0.1', ifc: null }] }];
+  assert.strictEqual(rs('10.96.0.1', pair)[0].status, 'loop', '兩條路由互相指向才是迴圈');
   const Q = S.query(s); const t = S.trace(Q, '10.254.0.1', '172.16.1.1');
   assert.ok(t.hops.some((h) => h.next.some((n) => n.dev === 'R_B' && /遞迴解析/.test(n.note || ''))), JSON.stringify(t.hops));
 });

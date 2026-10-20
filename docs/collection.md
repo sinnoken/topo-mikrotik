@@ -78,7 +78,7 @@ reader、adapter、model 與 check pipeline；收集器不解析或修改 Router
 
 選用的 Wi-Fi 關聯表只在 AP 或 CAPsMAN 控制器上執行（設備清單的 `extra` 欄）：在沒有該選單的設備上執行會得到錯誤回應，列為 I01。關聯表沒有客戶端時（只有說明行）視為已收集、0 筆。
 
-**個資**：關聯表含 `eap-identity`、`eap-username`（802.1X 使用者帳號）。解析時刻意略過，不寫進基準；但收集檔保留原始輸出，畫面開啟原文時也看得到。收集檔請依個資規範保管，需要時可在交付前刪除這兩個欄位。
+**個資**：關聯表含 `eap-identity`、`eap-username`（802.1X 使用者帳號）。解析時刻意略過，不寫進基準；但收集檔保留原始輸出，畫面開啟原文時也看得到。收集檔請依個資規範保管。要分享或當測試資料時，用 `tools/anonymize.js` 去識別化（帳號、密碼、序號遮蔽，設備名、SSID、IP、MAC 換成代號但保留彼此關係），說明見 [tests/fixtures/real/README.md](../tests/fixtures/real/README.md)。
 
 「必要」項目缺少時，檢查結果會出現 **C02 缺少應收集的資料**（判斷條件見[基準檢查規則 C02](checks.md#c02)）。
 

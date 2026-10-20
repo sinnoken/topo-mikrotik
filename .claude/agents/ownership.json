@@ -3,10 +3,10 @@
   "data-model": [
     "src/core/", "src/readers/", "src/adapters/", "src/model/", "src/check/", "src/profile/", "src/query/", "src/compare/", "src/data/",
     "src/pipeline.js", "profiles/", "samples/", "tools/core-files.js", "tools/gen-bundle.js", "tools/embed-sample.js", "tools/build-oui.js",
-    "tests/run.js", "tests/load.js", "tests/golden.js", "tests/golden/", "tools/update-golden.js"
+    "tests/run.js", "tests/load.js", "tests/golden.js", "tests/golden/", "tools/update-golden.js", "tools/anonymize.js", "tests/fixtures/"
   ],
   "frontend": ["src/view/", "assets/", "index.html", "vendor/", "tests/ui-smoke.js"],
   "collector": ["tools/collect.sh", "tools/collector-commands.sh", "tools/devices.csv", "tests/collect.sh"],
   "docs": ["README.md", "CLAUDE.md", "docs/", ".github/copilot-instructions.md", ".github/skills/", ".claude/skills/", ".claude/agents/", "tests/docs.js"],
-  "lead": ["package.json", "package-lock.json", ".gitattributes", ".github/workflows/"]
+  "lead": ["package.json", "package-lock.json", ".gitattributes", ".gitignore", ".github/workflows/"]
 }

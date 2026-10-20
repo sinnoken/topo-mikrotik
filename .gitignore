@@ -1,0 +1,4 @@
+# 去識別化對照表（tools/anonymize.js 產生）：含原始設備名與位址，不可提交
+*.map.json
+# 產生的大型測試資料
+samples/large-1000.txt

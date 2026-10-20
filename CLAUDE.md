@@ -25,6 +25,7 @@ npm run test:collector   # 只跑 SSH 收集器測試（tests/collect.sh）
 npm run test:ui          # 只跑畫面冒煙測試（tests/ui-smoke.js，模擬 DOM）
 npm run test:large       # 核心測試＋約 1000 台壓力測試
 npm run golden:update    # 刻意改變 Snapshot 後更新黃金基準（tests/golden/），提交前用 git diff 檢視
+node tools/anonymize.js 收集檔.txt -o tests/fixtures/real/<版本>-<型號>.txt   # 真實輸出去識別化後當測試資料
 npm run sample           # 重新產生 samples/sample-bundle.txt 並嵌入成 sample-bundle.js
 npm run oui -- <index.json>      # 重新產生 src/data/oui-data.js（來源：npm pack oui-data@<版本>，見 README）
 git diff --check         # 提交前檢查

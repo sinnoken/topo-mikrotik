@@ -15,7 +15,8 @@ parser change that only fits one sample tends to break another. Work fixture-fir
 ## Procedure
 
 1. **Get the real shape first.** Ask for or locate a real excerpt (user-pasted output,
-   `samples/`). Note continuation lines, quoting, flags legends, `a,b` lists, and
+   `tests/fixtures/real/`, `samples/`). Anonymize real output with `tools/anonymize.js`
+   before adding it to `tests/fixtures/real/`; never commit the `.map.json` table. Note continuation lines, quoting, flags legends, `a,b` lists, and
    `x/y` compound names. Test fixtures are hand-written from docs, not captured, so say
    so when the shape is a guess. Consult <https://manual.mikrotik.com/llms.txt> for
    field semantics.

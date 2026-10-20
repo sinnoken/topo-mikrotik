@@ -698,6 +698,31 @@ test('比對：獨立格式，結果分 ok／missing／different，且不修改�
   assert.strictEqual(JSON.stringify(s), before);
   assert.ok(S.compare(S.query(s), { schema: 'x' }).errors.length === 1);
 });
+test('去識別化：關係與檢查結果不變，設備名與 IP 不殘留，機密欄位遮蔽，結果可重現', () => {
+  const { anonymize } = require('../tools/anonymize.js');
+  const raw = read('samples/sample-bundle.txt'); const a = anonymize(raw);
+  const shape = (snap) => JSON.stringify({ st: snap.meta.stats, f: ids(snap).sort(), k: snap.model.devices.map((d) => d.kind).sort(),
+    v: snap.model.macs.map((m) => m.vendor).sort(), l: snap.model.links.map((l) => [l.verified, l.hearsay, l.cls].join()).sort() });
+  const s0 = build(raw); const s1 = build(a.text);
+  assert.strictEqual(shape(s1), shape(s0), '去識別化不可改變網路結構、廠商判斷與檢查結果');
+  s0.model.devices.forEach((d) => assert.ok(!a.text.toUpperCase().includes(d.key), `設備名 ${d.key} 不應殘留`));
+  assert.ok(!/(?<![\d.])10\.1\.10\.2(?![\d.])/.test(a.text), '原始 IP 不應殘留');
+  assert.strictEqual(anonymize(raw).text, a.text, '同一份輸入應得到同一份輸出');
+  const w = anonymize('AP_1 (192.168.5.11):\n### /interface wifi registration-table print detail\n 0 A interface=wifi1 ssid="Corp" mac-address=AA:BB:CC:00:10:01 uptime=1h last-activity=1s\n     eap-identity="alice@corp" eap-username="alice" dhcp-hostname="alice-nb"\n### /export terse\n# serial number = HE0123\n/interface wireless security-profiles add name=p1 wpa2-pre-shared-key=topsecret\n').text;
+  ['alice', 'Corp"', 'HE0123', 'topsecret', 'AP_1', '192.168'].forEach((x) => assert.ok(!w.includes(x), `${x} 應被去識別化`));
+  assert.ok(w.includes('AA:BB:CC:'), '保留 OUI，廠商判斷不受影響');
+});
+test('真實設備輸出（tests/fixtures/real/）：每份都完整解析，沒有 I01', () => {
+  const dir = path.join(ROOT, 'tests/fixtures/real');
+  const files = fs.readdirSync(dir).filter((f) => f.endsWith('.txt')).sort();
+  if (!files.length) console.log('      （尚無真實設備輸出；新增方式見 tests/fixtures/real/README.md）');
+  files.forEach((f) => {
+    const s = S.build([{ name: f, text: fs.readFileSync(path.join(dir, f), 'utf8') }], { now: '2026-01-01T00:00:00Z' });
+    const i01 = s.findings.filter((x) => x.id === 'I01').map((x) => x.message);
+    assert.deepStrictEqual(i01, [], `${f} 有無法解析的內容`);
+    s.blocks.filter((b) => b.device !== null).forEach((b) => assert.ok(b.adapters.length && !b.empty, `${f} 第 ${b.start} 行的 ${b.command || '區塊'} 沒有解析出內容`));
+  });
+});
 test('黃金基準：範例資料建出的 Snapshot 與 tests/golden/sample-snapshot.json 完全相同', () => {
   const G = require('./golden.js');
   const want = JSON.parse(read('tests/golden/sample-snapshot.json'));

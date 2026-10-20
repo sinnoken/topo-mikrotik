@@ -33,7 +33,7 @@
       const k = K.dev(o.name); expDevs.add(k);
       const got = Q.getDevice(k);
       if (!got) return push('missing', 'device', k, `基準中沒有 ${o.name}`);
-      if (!got.collected) return push('different', 'device', k, `${o.name} 只被其他設備看到，沒有收集資料`);
+      if (!got.collected) return push('different', 'device', k, `${o.name} 僅由鄰居發現，沒有收集資料`);
       if (o.kind && got.kind !== o.kind) return push('different', 'device', k, `${o.name} 類型預期 ${o.kind}，基準為 ${got.kind}`);
       push('ok', 'device', k, o.name);
     });
@@ -44,14 +44,14 @@
     const expLinks = new Set();
     (expected.links || []).forEach((l) => {
       const a = parseEp(l.a); const b = parseEp(l.b);
-      if (!a || !b) { errors.push(`連結格式錯誤：${JSON.stringify(l)}（應為 "設備 介面"）`); return; }
+      if (!a || !b) { errors.push(`鏈路格式錯誤：${JSON.stringify(l)}（應為 "設備 介面"）`); return; }
       const key = K.link(a, b); expLinks.add(key);
       const got = Q.getLink(key);
       const devA = K.splitEp(a)[0]; const devB = K.splitEp(b)[0];
       const domainReachability = !!((got && got.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN)
         || Q.linksOf(devA).some((x) => x.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN
           && [K.splitEp(x.a)[0], K.splitEp(x.b)[0]].includes(devB)));
-      if (domainReachability) return push('different', 'link', key, `${l.a} ⇄ ${l.b} 只有 MNDP 的 L2 網域可達證據，不能確認這組介面直連`);
+      if (domainReachability) return push('different', 'link', key, `${l.a} ⇄ ${l.b} 只有 MNDP 的 L2 廣播網域可達證據，不能確認這組介面直連`);
       if (got) return push(got.verified ? 'ok' : 'different', 'link', key, got.verified ? `${l.a} ⇄ ${l.b}` : `${l.a} ⇄ ${l.b} 存在但未經雙向確認`);
       const ga = Q.linksOfEp(a).filter((x) => x.evidenceScope !== LINK_SCOPE.BROADCAST_DOMAIN);
       const gb = Q.linksOfEp(b).filter((x) => x.evidenceScope !== LINK_SCOPE.BROADCAST_DOMAIN);

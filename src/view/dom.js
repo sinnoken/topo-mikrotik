@@ -42,7 +42,7 @@
   V.IFC_TYPE_BASIS = { rawType: '依 RouterOS 類型', member: '依聚合成員', name: '依介面名稱推測', default: '缺類型資料，預設為實體埠' };
   V.MODE = { access: 'Access（untagged）', tagged: 'Tagged（trunk）' };
   V.ifcState = (i) => (i.enabled === false ? '停用' : V.STATUS[i.status]);
-  // 鄰居發現協定（LLDP／MNDP／CDP）；L3 連結沒有發現協定時退回 via（如 OSPF）
+  // 鄰居發現協定（LLDP／MNDP／CDP）；L3 鏈路沒有發現協定時退回 via（如 OSPF）
   V.protoText = (l) => ((l.protocols && l.protocols.length ? l.protocols : l.via) || []).map((p) => p.toUpperCase()).join('、');
 
   V.chip = (text, cls, attrs) => V.h('span', Object.assign({ class: 'chip ' + (cls || '') }, attrs || {}), text);
@@ -63,7 +63,7 @@
 
   /**
    * 簡易表格：cols [{t:'標題', f:(row)=>內容, s?:(row)=>排序值}]，onRow(row) 可點擊。
-   * 有 s 的欄位可點標頭排序；呼叫端不傳 onSort 時由表格自己保存排序狀態（詳情表用），
+   * 有 s 的欄位可點標頭排序；呼叫端不傳 onSort 時由表格自己儲存排序狀態（詳情表用），
    * 傳入 onSort／sortBy／sortDir 時由呼叫端管理（清單分頁需跨重繪保留）。
    */
   V.table = function (cols, rows, opt) {

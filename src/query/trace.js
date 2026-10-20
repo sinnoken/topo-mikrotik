@@ -22,7 +22,7 @@
     while (queue.length) {
       const { dev, ttl, path } = queue.shift();
       const stepKey = dev + '>' + path.length;
-      if (expanded.has(dev)) continue; // 同一設備只展開一次（ECMP 匯流時避免重複）
+      if (expanded.has(dev)) continue; // 同一設備只展開一次（ECMP 匯合時避免重複）
       expanded.add(dev);
       if (ttl <= 0) { ends.push({ dev, status: 'ttl', note: 'TTL 用盡' }); continue; }
       // 直連

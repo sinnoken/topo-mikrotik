@@ -61,7 +61,7 @@
     });
     const findingsBy = new Map();
     snap.findings.forEach((f, idx) => f.entities.forEach((e) => U.getOr(findingsBy, e.type + ':' + e.key, () => []).push(idx)));
-    // 介面也會繼承其連結、設備的檢查結果：在查詢時合併
+    // 介面也會繼承其鏈路、設備的檢查結果：在查詢時合併
     const Q = {
       snapshot: snap,
       devices: () => m.devices,
@@ -73,8 +73,8 @@
       linksOf: (d) => linksByDev.get(d) || [],
       linksOfEp: (ep) => linksByEp.get(ep) || [],
       /**
-       * 設備的鄰居列。MNDP 只證明同一 L2 網域可達，同一對設備可因多個本機介面或雙向回報
-       * 各有一條 link；這裡併成每個對端設備一列（links 保留全部來源），其他連結一條一列。
+       * 設備的鄰居列。MNDP 只證明同一 L2 廣播網域可達，同一對設備可因多個本機介面或雙向回報
+       * 各有一條 link；這裡併成每個對端設備一列（links 保留全部來源），其他鏈路一條一列。
        */
       neighborRows(d) {
         const rows = []; const mndp = new Map();
@@ -155,8 +155,8 @@
       findingsFor(type, key) { return (findingsBy.get(type + ':' + key) || []).map((i) => snap.findings[i]); },
       findingIndexesFor(type, key) { return findingsBy.get(type + ':' + key) || []; },
       block: (id) => snap.blocks[id] || null,
-      /** 有且僅有一個 MAC、非 Wi-Fi，且沒有 LLDP／CDP 介面鄰接的末端埠所屬設備（MNDP 網域可達不算直連鄰接） */
-      // 末端清單列：有線未知對端每筆 MAC 一列；Wi-Fi 每個 MAC／介面觀察位置一列。
+      /** 有且僅有一個 MAC、非 Wi-Fi，且沒有 LLDP／CDP 介面鄰接的終端埠所屬設備（MNDP 廣播網域可達不算直連鄰接） */
+      // 終端清單列：有線未知對端每筆 MAC 一列；Wi-Fi 每個 MAC／介面觀察位置一列。
       endpointEntries() {
         const rows = Q.unknownDevices().flatMap((d) => Q.unknownPeers(d).flatMap((u) => {
           const base = { end: true, key: u.ep, dev: d, ifc: u.name, desc: u.desc, type: u.type, rawType: u.rawType, status: u.status, vlans: u.vlans, portMacs: u.macs.length, wifi: false };
@@ -172,14 +172,14 @@
         return rows.sort((a, b) => U.natural(a.dev, b.dev) || U.natural(a.ifc, b.ifc) || U.natural(a.mac || '', b.mac || ''));
       },
       unknownDevices: () => Array.from(unkByDev.keys()).sort(U.natural),
-      /** 某設備上「沒有 LLDP／CDP 介面鄰接」的末端埠，附 MAC、IP、廠商 */
+      /** 某設備上「沒有 LLDP／CDP 介面鄰接」的終端埠，附 MAC、IP、廠商 */
       unknownPeers(devKey) {
         return (unkByDev.get(devKey) || []).slice().sort((a, b) => U.natural(a.name, b.name)).map((i) => ({
           ep: i.key, name: i.name, desc: i.desc, status: i.status, type: i.type, rawType: i.rawType, vlans: U.ifcVlans(i),
           macs: i.macs.map((mk) => { const x = mac.get(mk); return { mac: mk, vendor: x ? x.vendor : null, ips: x ? x.ips : [] }; }),
         }));
       },
-      /** 圖面投影：真正末端加上 Wi-Fi MAC 觀察；Wi-Fi 介面不屬末端介面，也不參與 A02。 */
+      /** 圖面投影：真正終端加上 Wi-Fi MAC 觀察；Wi-Fi 介面不屬終端介面，也不參與 A02。 */
       visualUnknownDevices() {
         return U.uniq(Q.unknownDevices().concat(Array.from(wifiByDev.keys()))).sort(U.natural);
       },

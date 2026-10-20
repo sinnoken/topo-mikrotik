@@ -1,5 +1,5 @@
 /*
- * 瀏覽器儲存：用 IndexedDB 保存最後一次的輸入、基準與節點位置（不再用 localStorage，也不會自動過期）。
+ * 瀏覽器儲存：用 IndexedDB 儲存最後一次的輸入、基準與節點位置（不再用 localStorage，也不會自動過期）。
  * 無法使用 IndexedDB 時（例如隱私模式）退回記憶體，畫面會提示。
  */
 (function (S) {

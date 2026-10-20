@@ -71,7 +71,7 @@ test('鄰居：identity 和收集檔的設備名不同時，用管理 IP 對回�
   assert.ok(!s.model.devices.some((d) => d.key === 'MIKROTIK'), '不應多出一台叫 MikroTik 的設備');
   assert.strictEqual(s.model.links.length, 1); assert.ok(s.model.links[0].verified);
 });
-test('鄰居：兩邊都沒有對端埠名（RouterOS 6）：單一連結可配對；多條平行連結不會被誤判為同一個介面對到多個鄰居', () => {
+test('鄰居：兩邊都沒有對端埠名（RouterOS 6）：單一鏈路可配對；多條平行鏈路不會被誤判為同一個介面對應到多個鄰居', () => {
   const one = build('A (10.0.0.1):\n### /ip neighbor print detail\n 0 interface=ether1 mac-address=AA:00:00:00:00:01 identity=B\n'
     + 'B (10.0.0.2):\n### /ip neighbor print detail\n 0 interface=ether2 mac-address=AA:00:00:00:00:02 identity=A\n');
   assert.strictEqual(one.model.links.length, 1); assert.ok(one.model.links[0].verified); assert.strictEqual(count(one, 'K01'), 0);
@@ -95,9 +95,9 @@ test('鄰居：同一介面的 LLDP 與 MNDP/CDP 列合併為一筆，保留協�
   assert.deepStrictEqual(l1.protocols, ['cdp', 'lldp', 'mndp']);
   assert.strictEqual(l1.evidenceScope, 'interface-adjacency', 'LLDP/CDP 證據仍可支援介面鄰接推論');
   assert.ok(!s.model.interfaces.some((i) => /bridge1/.test(i.key)), 'bridge 觀察不應多出介面');
-  assert.ok(claims(a).every((l) => !/\?\(/.test(l.a + l.b)), '合併後不應有未知埠名的重複連結');
+  assert.ok(claims(a).every((l) => !/\?\(/.test(l.a + l.b)), '合併後不應有未知埠名的重複鏈路');
 });
-test('MNDP：多個鄰居代表共享 L2 網域可達，不推論直連埠、雙向確認或 VLAN／聚合差異', () => {
+test('MNDP：多個鄰居代表共享 L2 廣播網域可達，不推論直連埠、雙向確認或 VLAN／聚合差異', () => {
   const s = build('A (10.0.0.1):\n### /ip neighbor print detail\n'
     + ' 0 interface=ether1 mac-address=AA:00:00:00:00:02 identity=B interface-name=ether9 discovered-by=mndp\n'
     + ' 1 interface=ether1 mac-address=AA:00:00:00:00:03 identity=C interface-name=ether8 discovered-by=mndp\n');
@@ -105,7 +105,7 @@ test('MNDP：多個鄰居代表共享 L2 網域可達，不推論直連埠、雙
   assert.ok(s.model.links.every((l) => l.evidenceScope === 'broadcast-domain' && l.via.includes('mndp')));
   assert.ok(s.model.links.every((l) => !l.verified && !l.hearsay));
   assert.ok(s.model.links.every((l) => l.observations.length === 1 && l.observations[0].ifc === 'ether1'));
-  assert.ok(s.model.interfaces.filter((i) => i.dev !== 'A').every((i) => i.hearsay), 'MNDP 回報的對端介面只能保留為聽說，不能當成設備本機收集的事實');
+  assert.ok(s.model.interfaces.filter((i) => i.dev !== 'A').every((i) => i.hearsay), 'MNDP 回報的對端介面只能保留為單側觀察，不能當成設備本機收集的事實');
   assert.ok(s.model.links.every((l) => !l.vlanComparable && !l.vlansA.length && !l.vlansB.length));
   assert.strictEqual(count(s, 'K01'), 0);
   assert.strictEqual(count(s, 'K02'), 0, '一個廣播網域介面看到多個鄰居不是介面直連衝突');
@@ -114,12 +114,12 @@ test('MNDP：多個鄰居代表共享 L2 網域可達，不推論直連埠、雙
   const diff = S.compare(S.query(s), {
     schema: 'ssot-expected/1', links: [{ a: 'A ether1', b: 'B ether9' }], strictLinks: true,
   });
-  assert.strictEqual(diff.items[0].status, 'different', 'MNDP 網域可達不能滿足預期的直連介面連結');
-  assert.ok(!diff.items.some((i) => i.status === 'unexpected'), 'strictLinks 不應把 MNDP 網域可達列為額外直連');
+  assert.strictEqual(diff.items[0].status, 'different', 'MNDP 廣播網域可達不能滿足預期的直連介面鏈路');
+  assert.ok(!diff.items.some((i) => i.status === 'unexpected'), 'strictLinks 不應把 MNDP 廣播網域可達列為額外直連');
   const noReportedPort = S.compare(S.query(s), {
     schema: 'ssot-expected/1', links: [{ a: 'A ether1', b: 'B ether7' }],
   });
-  assert.strictEqual(noReportedPort.items[0].status, 'different', '遠端回報埠不同也應辨識到只有 MNDP 網域可達');
+  assert.strictEqual(noReportedPort.items[0].status, 'different', '遠端回報埠不同也應辨識到只有 MNDP 廣播網域可達');
 
   const aggregates = build('A (10.0.0.1):\n### /ip neighbor print detail\n'
     + ' 0 interface=ether1 mac-address=AA:00:00:00:00:02 identity=B interface-name=ether9 discovered-by=mndp\n'
@@ -135,8 +135,8 @@ test('MNDP：多個鄰居代表共享 L2 網域可達，不推論直連埠、雙
     + '/interface bridge vlan add bridge=bridgeB tagged=bondB vlan-ids=20\n');
   assert.strictEqual(iface(aggregates, 'A|ether1').lag, 'A|bonda');
   assert.strictEqual(iface(aggregates, 'B|ether9').lag, 'B|bondb');
-  assert.strictEqual(count(aggregates, 'K03'), 0, 'MNDP 網域可達不檢查兩端聚合成員');
-  assert.strictEqual(count(aggregates, 'V01'), 0, 'MNDP 網域可達不比較對端埠 VLAN');
+  assert.strictEqual(count(aggregates, 'K03'), 0, 'MNDP 廣播網域可達不檢查兩端聚合成員');
+  assert.strictEqual(count(aggregates, 'V01'), 0, 'MNDP 廣播網域可達不比較對端埠 VLAN');
 
   const reciprocal = build('A (10.0.0.1):\n### /ip neighbor print detail\n'
     + ' 0 interface=ether1 mac-address=AA:00:00:00:00:02 identity=B interface-name=ether9 discovered-by=mndp\n'
@@ -148,17 +148,17 @@ test('MNDP：多個鄰居代表共享 L2 網域可達，不推論直連埠、雙
   assert.strictEqual(reciprocal.model.links[0].verified, false, '雙向 MNDP 回報仍不等於確認實體直連');
   assert.strictEqual(count(reciprocal, 'K01'), 0);
 });
-test('MNDP 觀察不應把有 MAC 的介面誤當成已確認 LLDP 鄰接而排除末端清單', () => {
+test('MNDP 觀察不應把有 MAC 的介面誤當成已確認 LLDP 鄰接而排除終端清單', () => {
   const s = build('A (10.0.0.1):\n### /ip neighbor print detail\n'
     + ' 0 interface=ether1 mac-address=AA:00:00:00:00:02 identity=B interface-name=ether9 discovered-by=mndp\n'
     + '### /interface bridge host print detail\n'
     + ' 0 D mac-address=AA:BB:CC:00:00:01 on-interface=ether1 bridge=bridge1 vid=10\n'
     + 'B (10.0.0.2):\n### /export terse\n/system identity set name=B\n');
-  assert.strictEqual(iface(s, 'A|ether1').unknownPeer, true, 'MNDP 是網域可達證據，不可代替 LLDP／CDP 埠鄰接');
-  assert.ok(S.query(s).unknownPeers('A').some((r) => r.name === 'ether1'), '介面應保留在未知對端／末端清單');
+  assert.strictEqual(iface(s, 'A|ether1').unknownPeer, true, 'MNDP 是廣播網域可達證據，不可代替 LLDP／CDP 埠鄰接');
+  assert.ok(S.query(s).unknownPeers('A').some((r) => r.name === 'ether1'), '介面應保留在未知對端／終端清單');
   const a03 = s.findings.find((f) => f.id === 'A03');
   assert.ok(a03 && /ether1/.test(a03.message), '沒有 LLDP／CDP 鄰接的介面應出現在 A03');
-  assert.strictEqual(s.model.links.find((l) => l.via.includes('mndp')).evidenceScope, 'broadcast-domain', 'MNDP edge 仍保留為網域可達資訊');
+  assert.strictEqual(s.model.links.find((l) => l.via.includes('mndp')).evidenceScope, 'broadcast-domain', 'MNDP edge 仍保留為廣播網域可達資訊');
 });
 
 // ------------------------------------------------------------------ 設定（export）
@@ -175,7 +175,7 @@ test('export（terse）：聚合成員、改名與註解、VLAN 子介面、brid
   assert.deepStrictEqual([iface(s, 'SW_A|ether1').lag, iface(s, 'SW_A|bond1').type, iface(s, 'SW_A|bond1').typeBasis], ['SW_A|bond1', 'lag', 'rawType']);
   assert.strictEqual(iface(s, 'SW_A|srv3').desc, 'server 3');
   const bond = iface(s, 'SW_A|bond1'); const srv = iface(s, 'SW_A|srv3');
-  assert.deepStrictEqual([bond.mode, bond.pvid, bond.untaggedVlans, bond.taggedVlans, bond.bridge], ['tagged', 1, [], [10, 20, 21], 'SW_A|bridge1'], 'pvid 1（預設）與 tagged VLAN 分開保存');
+  assert.deepStrictEqual([bond.mode, bond.pvid, bond.untaggedVlans, bond.taggedVlans, bond.bridge], ['tagged', 1, [], [10, 20, 21], 'SW_A|bridge1'], 'pvid 1（預設）與 tagged VLAN 分開儲存');
   assert.deepStrictEqual([srv.mode, srv.pvid, srv.untaggedVlans, srv.taggedVlans], ['access', 20, [10, 20, 21], []]);
   assert.deepStrictEqual(S.util.ifcVlans(bond), [1, 10, 20, 21]);
   assert.deepStrictEqual([iface(s, 'SW_A|vlan10').type, iface(s, 'SW_A|vlan10').parent, iface(s, 'SW_A|vlan10').encapVlan], ['vlan', 'SW_A|bridge1', 10]);
@@ -231,7 +231,7 @@ test('interface print：running／停用／註解（含獨立一行的 ;;;）', 
   assert.deepStrictEqual([iface(s, 'SW_A|ether3').enabled, iface(s, 'SW_A|ether2').enabled], [false, true]);
   assert.strictEqual(iface(s, 'SW_A|bond1').type, 'lag');
 });
-test('interface print：CAPsMAN 說明續行保留 Wi-Fi running 旗標；Wi-Fi 介面本身不列為末端', () => {
+test('interface print：CAPsMAN 說明續行保留 Wi-Fi running 旗標；Wi-Fi 介面本身不列為終端', () => {
   const s = build('SW_A (10.0.0.1):\n### /interface print detail\n'
     + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
     + ' 7    RS ;;; managed by CAPsMAN, traffic processing on\n'
@@ -249,7 +249,7 @@ test('interface print：CAPsMAN 說明續行保留 Wi-Fi running 旗標；Wi-Fi 
     const i = iface(s, `SW_A|${name}`);
     assert.strictEqual(i.status, 'up', `${name} 的 R 旗標不可被 CAPsMAN 說明覆蓋`);
     assert.strictEqual(i.macs.length, 2);
-    assert.strictEqual(i.edge, false, `${name} 不應列為末端介面`);
+    assert.strictEqual(i.edge, false, `${name} 不應列為終端介面`);
     assert.strictEqual(i.unknownPeer, false, `${name} 不應列為未知對端`);
   });
 });
@@ -267,7 +267,7 @@ test('interface print：type=veth 歸類為 virtual（rawType 保留 veth），u
   assert.strictEqual(rows.find((r) => r.name === 'veth1').rawType, 'veth');
   assert.notStrictEqual(rows.find((r) => r.name === 'ether5').rawType, 'veth');
 });
-test('interface print：保留 rawType／介面 MAC／MTU，並依 rawType 排除 bridge 末端', () => {
+test('interface print：保留 rawType／介面 MAC／MTU，並依 rawType 排除 bridge 終端', () => {
   const s = build('SW_A (10.0.0.1):\n### /interface print detail\n'
     + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
     + ' 0  R  name="ether1" default-name="ether1" type="ether" mtu=1500 l2mtu=1598 mac-address=AA:BB:CC:00:00:01\n'
@@ -281,7 +281,7 @@ test('interface print：保留 rawType／介面 MAC／MTU，並依 rawType 排�
   assert.deepStrictEqual([b.rawType, b.actualMtu, b.edge], ['bridge', 1500, false]);
   assert.strictEqual(e.edge, true);
 });
-test('介面自身的 mac-address 出現在轉發表時不算外部末端', () => {
+test('介面自身的 mac-address 出現在轉發表時不算外部終端', () => {
   const s = build('SW_A (10.0.0.1):\n### /interface print detail\n'
     + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
     + ' 0  R  name="ether1" type="ether" mac-address=AA:BB:CC:00:00:01\n'
@@ -402,7 +402,7 @@ test('同樣輸入建立兩次，結果完全相同（建立時間除外）', ()
   delete a.meta.timing; delete b.meta.timing;
   assert.deepStrictEqual(a, b);
 });
-test('連結配對：聚合成員雙向確認、沒有 LLDP 的鄰居為聽說', () => {
+test('鏈路配對：聚合成員雙向確認、沒有 LLDP 的鄰居為單側觀察', () => {
   const s = build(read('samples/sample-bundle.txt'));
   const l = s.model.links.find((x) => x.key === 'TPE_ACC_SW_01|sfp-sfpplus1~TPE_CORE_RT_01|sfp-sfpplus1');
   assert.ok(l && l.verified && l.cls === 'lag', JSON.stringify(l));
@@ -412,7 +412,7 @@ test('連結配對：聚合成員雙向確認、沒有 LLDP 的鄰居為聽說',
 });
 
 // ------------------------------------------------------------------ 未知對端
-test('未知對端：有 MAC、沒有 LLDP 鄰居的末端埠才會標記；有鄰居的主機埠與上行聚合埠不標', () => {
+test('未知對端：有 MAC、沒有 LLDP 鄰居的終端埠才會標記；有鄰居的主機埠與上行聚合埠不標', () => {
   const s = build(read('samples/sample-bundle.txt')); const Q = S.query(s);
   assert.strictEqual(iface(s, 'TPE_ACC_SW_01|bond1').unknownPeer, false, '上行聚合埠不是未知對端');
   assert.strictEqual(iface(s, 'TPE_ACC_SW_01|ether1').unknownPeer, false, '伺服器埠有 LLDP 鄰居');
@@ -422,7 +422,7 @@ test('未知對端：有 MAC、沒有 LLDP 鄰居的末端埠才會標記；有�
   assert.ok(rows.every((r) => r.macs.length === 1 && /^10\.1\.30\./.test(r.macs[0].ips[0]) && r.macs[0].vendor), '應帶有 ARP 的 IP 與 OUI 廠商');
   assert.ok(!Q.unknownDevices().includes('TPE_ACC_SW_09'), '沒有 MAC 表的設備不會有未知對端');
 });
-test('未知對端：連到已收集主機的介面仍是末端位置，不當作網路設備上行埠排除', () => {
+test('未知對端：連到已收集主機的介面仍是終端位置，不當作網路設備上行埠排除', () => {
   const mac = 'AA:BB:CC:00:00:01';
   const text = 'SW_A (10.0.0.1):\n### /ip neighbor print detail\n'
     + ' 0 interface=ether1 mac-address=AA:BB:CC:00:00:02 identity=HOST_B platform=Linux interface-name=eth0 system-caps=station-only system-caps-enabled=station-only\n'
@@ -440,7 +440,7 @@ test('清單：Q.inventory 的列與計數一致，且與基準統計對得上',
   assert.strictEqual(new Set(rows.ips.map((r) => r.ip)).size, rows.ips.length, 'IP 清單必須去重複');
   assert.strictEqual(C.arpIps, new Set(s.model.arps.map((a) => a.ip)).size);
   assert.strictEqual(new Set(rows.macs.map((r) => r.mac)).size, C.macs);
-  assert.strictEqual(C.endpointPorts, new Set(rows.endpoints.map((e) => e.key)).size, '末端位置數應依清單中的介面位置計算，包含 Wi-Fi MAC 觀察位置');
+  assert.strictEqual(C.endpointPorts, new Set(rows.endpoints.map((e) => e.key)).size, '終端位置數應依清單中的介面位置計算，包含 Wi-Fi MAC 觀察位置');
   assert.ok(rows.endpoints.every((e) => e.end === true) && rows.devices.every((d) => !d.end));
   assert.deepStrictEqual(S.query(s).inventory().counts, C, '相同輸入結果相同');
 });
@@ -456,14 +456,14 @@ test('可追溯：MAC、ARP 與已收集設備的介面都帶來源', () => {
   }));
   assert.ok(!m.interfaces.some((i) => i.srcNone === 'unrecorded'), '不可有「應有來源卻沒記錄」的介面');
 });
-test('未知對端：學到多個 MAC 的介面不列為末端', () => {
+test('未知對端：學到多個 MAC 的介面不列為終端', () => {
   const mac = (n) => ` ${n} D mac-address=AA:BB:CC:00:00:0${n} on-interface=ether5 bridge=bridge1 vid=30 age=3s`;
   const s = build(['SW_A (10.0.0.1):', '### /interface bridge host print detail', mac(1), mac(2), mac(3)].join('\n'));
   const rows = S.query(s).unknownPeers('SW_A');
-  assert.strictEqual(rows.length, 0, '學到多個 MAC 的介面不列為末端');
+  assert.strictEqual(rows.length, 0, '學到多個 MAC 的介面不列為終端');
   assert.strictEqual(iface(s, 'SW_A|ether5').edge, false);
 });
-test('未知對端：Wi-Fi 介面不列為末端，但每個 MAC 觀察位置列入末端清單且不觸發 A02', () => {
+test('未知對端：Wi-Fi 介面不列為終端，但每個 MAC 觀察位置列入終端清單且不觸發 A02', () => {
   const s = build('SW_A (10.0.0.1):\n### /interface print detail\n'
     + 'Flags: D - DYNAMIC; R - RUNNING\n 0 R name="wifi1" type="wifi"\n 1 R name="wifi2" type="wifi"\n'
     + '### /interface bridge host print detail\n'
@@ -472,7 +472,7 @@ test('未知對端：Wi-Fi 介面不列為末端，但每個 MAC 觀察位置列
     + ' 2 D mac-address=AA:BB:CC:00:00:02 on-interface=ether1 bridge=bridge1 vid=10\n');
   assert.strictEqual(iface(s, 'SW_A|wifi1').macs.length, 1);
   assert.strictEqual(iface(s, 'SW_A|wifi1').edge, false);
-  assert.strictEqual(iface(s, 'SW_A|ether1').edge, true, '一般單 MAC 介面仍列為末端');
+  assert.strictEqual(iface(s, 'SW_A|ether1').edge, true, '一般單 MAC 介面仍列為終端');
   assert.deepStrictEqual(S.query(s).unknownPeers('SW_A').map((p) => p.name), ['ether1']);
   assert.strictEqual(count(s, 'A02'), 0, '重複出現在 Wi-Fi 介面的 MAC 不觸發 A02');
   const Q = S.query(s);
@@ -480,9 +480,9 @@ test('未知對端：Wi-Fi 介面不列為末端，但每個 MAC 觀察位置列
   const wifiEndpoints = Q.inventory().rows.endpoints.filter((p) => p.wifi);
   assert.deepStrictEqual(wifiEndpoints.map((p) => [p.ifc, p.mac]), [
     ['wifi1', 'AABBCC000001'], ['wifi2', 'AABBCC000001'],
-  ], 'Wi-Fi 每個 MAC 觀察位置都應列入末端清單');
+  ], 'Wi-Fi 每個 MAC 觀察位置都應列入終端清單');
 });
-test('A02：不同 VLAN 的末端埠不視為同一 MAC 重複位置', () => {
+test('A02：不同 VLAN 的終端埠不視為同一 MAC 重複位置', () => {
   const mac = 'AA:BB:CC:00:00:01';
   const s = build('SW_A (10.0.0.1):\n### /interface bridge host print detail\n'
     + ` 0 D mac-address=${mac} on-interface=ether1 bridge=bridge1 vid=10\n`
@@ -492,7 +492,7 @@ test('A02：不同 VLAN 的末端埠不視為同一 MAC 重複位置', () => {
     { ep: 'SW_A|ether1', vlan: '10' }, { ep: 'SW_A|ether2', vlan: '20' },
   ]);
 });
-test('A02：同介面多 VLAN 觀察完整保留，並只比較相同 VLAN 的末端埠', () => {
+test('A02：同介面多 VLAN 觀察完整保留，並只比較相同 VLAN 的終端埠', () => {
   const mac = 'AA:BB:CC:00:00:01';
   const s = build('SW_A (10.0.0.1):\n### /interface bridge host print detail\n'
     + ` 0 D mac-address=${mac} on-interface=ether1 bridge=bridge1 vid=10\n`
@@ -505,7 +505,7 @@ test('A02：同介面多 VLAN 觀察完整保留，並只比較相同 VLAN 的�
   assert.ok(finding && finding.message.includes('VLAN 20'), finding && finding.message);
   assert.deepStrictEqual(finding.entities.filter((e) => e.type === 'interface').map((e) => e.key), ['SW_A|ether1', 'SW_A|ether2']);
 });
-test('未知對端不進基準的設備、連結（只是檢視）', () => {
+test('未知對端不進基準的設備、鏈路（只是檢視）', () => {
   const s = build(read('samples/sample-bundle.txt'));
   assert.ok(!s.model.devices.some((d) => d.key.startsWith('?')));
 });
@@ -531,7 +531,7 @@ test('命名規則：別名合併、去網域、分類、分群；只加註解�
   assert.strictEqual(a.model.devices.length, 3);
   assert.deepStrictEqual(b.meta.profile, { id: 't', version: '1' });
 });
-test('命名規則有錯時明確報錯', () => {
+test('命名規則有錯時明確回報錯誤', () => {
   assert.throws(() => S.profile.compile({ id: 'x', classify: [{ match: '(' }] }), /正規表示式/);
 });
 test('附帶的命名規則檔可載入', () => {
@@ -591,7 +591,7 @@ test('遞迴路由：gateway 是對端 loopback 時沿路由表解析；R01 只�
   const Q = S.query(s); const t = S.trace(Q, '10.254.0.1', '172.16.1.1');
   assert.ok(t.hops.some((h) => h.next.some((n) => n.dev === 'R_B' && /遞迴解析/.test(n.note || ''))), JSON.stringify(t.hops));
 });
-test('OSPF 鄰接與 LLDP edge 分開保存；OSPF 不新增拓樸 edge 或升格為直連', () => {
+test('OSPF 鄰接與 LLDP edge 分開儲存；OSPF 不新增拓樸 edge 或升格為直連', () => {
   const a = 'R_A (10.0.0.1):\n### /export terse\n/ip address add address=10.254.0.1/30 interface=ether48\n/routing id add id=1.1.1.1 name=main\n/routing ospf instance add name=default router-id=main\n'
     + '### /routing ospf neighbor print detail\n 0 instance=default area=backbone address=10.254.0.2 priority=1 router-id=2.2.2.2 state=Full state-changes=5\n'
     + '### /ip neighbor print detail\n 0 interface=ether48 identity=R_B address=10.254.0.2 mac-address=AA:BB:CC:00:00:02 interface-name=ether1 discovered-by=lldp\n';
@@ -634,7 +634,7 @@ if (process.argv.includes('--large')) {
   test('壓力：約 1000 台設備在時間內完成，且乾淨網路沒有誤報', () => {
     const text = gen(['--sites', '40', '--access', '24']);
     const t = Date.now(); const s = build(text); const ms = Date.now() - t;
-    console.log(`      ${s.meta.stats.collected} 台已收集、${s.meta.stats.devices} 個節點、${s.meta.stats.links} 條連結、${s.meta.stats.macs} 個 MAC：${ms} ms`);
+    console.log(`      ${s.meta.stats.collected} 台已收集、${s.meta.stats.devices} 個節點、${s.meta.stats.links} 條鏈路、${s.meta.stats.macs} 個 MAC：${ms} ms`);
     assert.ok(s.meta.stats.collected >= 1000);
     assert.ok(ms < 20000);
     assert.strictEqual(s.meta.stats.findings.error + s.meta.stats.findings.warn, 0);

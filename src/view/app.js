@@ -7,7 +7,7 @@
   const V = S.view; const h = V.h; const $ = V.$; const K = S.keys; const LINK_SCOPE = S.LINK_SCOPE;
   const App = {
     snap: null, Q: null, sources: [], profileJson: null, graph: null, pairOfLink: new Map(), pairs: new Map(), sel: null, showHosts: true,
-    // 未知對端（沒有 LLDP／CDP 介面鄰接、只由 MAC 推論出來的末端）：只存在於畫面，不寫進基準
+    // 未知對端（沒有 LLDP／CDP 介面鄰接、只由 MAC 推論出來的終端）：只存在於畫面，不寫進基準
     showUnknown: true, expanded: new Set(), virtual: new Map(), vOfEp: new Map(), virtualByDev: new Map(),
     UNKNOWN_EXPAND_MAX: 8, UNKNOWN_TOTAL_CAP: 800,
     // 版面模式：elk（分層，預設）或 builtin（快速）；網路設備超過 ELK_MAX 台時分層版面不執行
@@ -29,7 +29,7 @@
     await App.restore();
   }
 
-  /** 還原上次的基準：schema 或版本不同時用保存的輸入重建；無法還原時明確告知，不靜默略過。 */
+  /** 還原上次的基準：schema 或版本不同時用儲存的輸入重建；無法還原時明確告知，不靜默略過。 */
   App.restore = async function () {
     const last = await S.store.get('last').catch(() => null);
     const saved = last && last.snapshot && last.snapshot.meta ? last.snapshot : null;
@@ -37,12 +37,12 @@
       App.sources = last.sources || []; App.profileJson = last.profile || null;
       const sameSchema = saved.meta.schema === S.SCHEMA;
       let snap = sameSchema ? saved : null; let msg = `已還原上次建立的基準（${V.fmtTime(saved.meta.createdAt)}）`;
-      if ((!sameSchema || saved.meta.version !== S.VERSION) && App.sources.length) { // 程式更新過：用保存的輸入重建，欄位才會完整
-        try { snap = await S.buildAsync(App.sources, { profile: App.profileJson }); msg = '程式已更新，已用保存的輸入重新建立基準'; } catch (e) {
+      if ((!sameSchema || saved.meta.version !== S.VERSION) && App.sources.length) { // 程式更新過：用儲存的輸入重建，欄位才會完整
+        try { snap = await S.buildAsync(App.sources, { profile: App.profileJson }); msg = '程式已更新，已用儲存的輸入重新建立基準'; } catch (e) {
           console.error(e);
           if (!sameSchema) msg = `上次的基準格式（${saved.meta.schema}）已不相容，重新建立失敗：${e.message}。請重新建立基準。`;
         }
-      } else if (!sameSchema) msg = `上次的基準格式（${saved.meta.schema}）已不相容，且沒有保存輸入，請重新建立基準。`;
+      } else if (!sameSchema) msg = `上次的基準格式（${saved.meta.schema}）已不相容，且沒有儲存輸入，請重新建立基準。`;
       if (snap) load(snap, last.positions); else renderAll();
       banner(msg, 6000);
     } else renderAll();
@@ -69,7 +69,7 @@
     applyVisibility();
     App.graph.fit();
     renderAll();
-    // 先以內建版面立即出圖；沒有保存位置時再於背景套用分層版面
+    // 先以內建版面立即出圖；沒有儲存位置時再於背景套用分層版面
     App.layoutJob = App.layoutMode === 'elk' && !(positions && Object.keys(positions).length) ? applyElk(g) : Promise.resolve();
   }
 
@@ -92,7 +92,7 @@
     }
   }
 
-  /** 基準 → 圖：同兩台設備之間的多條連結合併成一條線 */
+  /** 基準 → 圖：同兩台設備之間的多條鏈路合併成一條線 */
   function graphData(Q, snap) {
     const sevRank = { error: 2, warn: 1 };
     const devSev = new Map(); const linkSev = new Map();
@@ -145,8 +145,8 @@
   const vendorIni = (v) => (v ? v.replace(/[^A-Za-z0-9\u4e00-\u9fff]/g, '').slice(0, 2).toUpperCase() : '?');
 
   /**
-   * 末端埠與 Wi-Fi MAC 觀察 → 畫成「未知對端」節點。
-   * 單一 MAC：圓形；多 MAC 的 Wi-Fi：菱形（僅為圖面提示，不視為末端或參與 A02）。
+   * 終端埠與 Wi-Fi MAC 觀察 → 畫成「未知對端」節點。
+   * 單一 MAC：圓形；多 MAC 的 Wi-Fi：菱形（僅為圖面提示，不視為終端或參與 A02）。
    *  - 一台設備上超過 UNKNOWN_EXPAND_MAX 個（或全網超過上限）：收合成一個群組節點，雙擊展開
    */
   function addUnknownPeers(Q, nodes, pairs) {
@@ -164,7 +164,7 @@
       const expand = App.expanded.has(dk) || (!forceCollapse && rows.length <= App.UNKNOWN_EXPAND_MAX);
       if (!expand) {
         const vid = '?c|' + dk; const macs = rows.reduce((n, r) => n + r.macs.length, 0);
-        nodes.push({ id: vid, label: `末端 ×${rows.length}`, kind: 'cluster', collected: false, virtual: true, parent: dk, group: dev.group, count: rows.length,
+        nodes.push({ id: vid, label: `終端 ×${rows.length}`, kind: 'cluster', collected: false, virtual: true, parent: dk, group: dev.group, count: rows.length,
           tip: `${Q.devName(dk)}：${rows.length} 個埠沒有 LLDP／CDP 介面鄰接（${macs} 個 MAC）・雙擊展開` });
         App.virtual.set(vid, { type: 'endpoints', dev: dk }); rows.forEach((r) => App.vOfEp.set(r.ep, vid));
         link(dk, vid, `${rows.length} 埠`);
@@ -310,7 +310,7 @@
       const p = App.pairs.get(ev.item.id);
       if (p.virtual) text = App.graph.nodeById.get(p.b).tip;
       else if (p.domainOnly) text = `${App.Q.devName(p.a)} ⇄ ${App.Q.devName(p.b)}・MNDP 觀察到同一 L2 broadcast domain 可達；不代表兩台設備直連`;
-      else text = `${App.Q.devName(p.a)} ${p.labelA} ⇄ ${App.Q.devName(p.b)} ${p.labelB}${p.hasDomain ? '・另有 MNDP L2 網域可達證據' : ''}`;
+      else text = `${App.Q.devName(p.a)} ${p.labelA} ⇄ ${App.Q.devName(p.b)} ${p.labelB}${p.hasDomain ? '・另有 MNDP L2 廣播網域可達證據' : ''}`;
     }
     tip.textContent = text; tip.classList.remove('hidden');
     tip.style.left = (ev.x + 14) + 'px'; tip.style.top = (ev.y + 12) + 'px';
@@ -441,18 +441,18 @@
     group('設備');
     Object.entries(V.KIND).forEach(([k, label]) => item([dot(Object.assign({ background: V.KIND_COLOR[k] }, SHAPE_CSS[V.theme.shape[k]]))], label));
     item([dot(Object.assign({ background: CV.uncollectedFill, border: '2px dashed ' + V.KIND_COLOR.unknown }, SHAPE_CSS.circle))], '未收集', '基準裡沒有收集檔的設備（虛線外框）');
-    group('末端');
+    group('終端');
     item([dot({ background: EP.vendorFallback, border: '1.5px solid ' + CV.outline })], '單一 MAC', '未知對端：一個埠一個 MAC，依廠商上色');
-    item([dot({ background: EP.downstream.fill, border: '2px dashed ' + EP.downstream.stroke, transform: 'rotate(45deg)', borderRadius: '0' })], 'Wi-Fi 多 MAC', 'Wi-Fi MAC 觀察位置列入末端清單；Wi-Fi 介面不算末端埠，且不參與 A02');
-    item([dot({ background: EP.cluster.fill, border: '1.5px solid ' + EP.cluster.stroke, width: Math.round(LEG * 1.3) + 'px', height: Math.round(LEG * 0.8) + 'px', borderRadius: '3px' })], '群組 ×N', '同一台設備末端過多時收合，雙擊展開');
+    item([dot({ background: EP.downstream.fill, border: '2px dashed ' + EP.downstream.stroke, transform: 'rotate(45deg)', borderRadius: '0' })], 'Wi-Fi 多 MAC', 'Wi-Fi MAC 觀察位置列入終端清單；Wi-Fi 介面不算終端埠，且不參與 A02');
+    item([dot({ background: EP.cluster.fill, border: '1.5px solid ' + EP.cluster.stroke, width: Math.round(LEG * 1.3) + 'px', height: Math.round(LEG * 0.8) + 'px', borderRadius: '3px' })], '群組 ×N', '同一台設備終端過多時收合，雙擊展開');
     item([h('span', { class: 'sev error' })], '錯誤／警告');
     group('連線');
     Object.entries(V.EDGE_STYLE).forEach(([k, st]) => item([line(st.c, st.w, st.dash)], V.CLS[k],
       k === '1g' ? '推論分類：ether、sfp1、combo 等介面名稱歸為 1G；不代表實際協商速率，ether 也可能是 2.5G 或 10G。' : null));
     group('連線註記');
-    item([line(WEAK.hearsay.c, V.EDGE_STYLE.other.w, WEAK.hearsay.dash, WEAK.hearsay.alpha)], '聽說', '紫色點線：對端沒有提供 LLDP 鄰居資料，屬單向觀察');
-    item([line(WEAK.domainOnly.c, V.EDGE_STYLE.other.w, WEAK.domainOnly.dash, WEAK.domainOnly.alpha)], 'MNDP', '灰色點劃線：MNDP 表示同一 L2 網域可達，不代表兩台設備直連');
-    Object.values(EP.byType).forEach((t) => item([line(t.c, V.EDGE_STYLE.other.w, WEAK.hearsay.dash, WEAK.hearsay.alpha)], t.label, '連到 ' + t.label + ' 介面末端的連線'));
+    item([line(WEAK.hearsay.c, V.EDGE_STYLE.other.w, WEAK.hearsay.dash, WEAK.hearsay.alpha)], '單側觀察', '紫色點線：對端沒有提供 LLDP 鄰居資料，屬單向觀察');
+    item([line(WEAK.domainOnly.c, V.EDGE_STYLE.other.w, WEAK.domainOnly.dash, WEAK.domainOnly.alpha)], 'MNDP', '灰色點劃線：MNDP 表示同一 L2 廣播網域可達，不代表兩台設備直連');
+    Object.values(EP.byType).forEach((t) => item([line(t.c, V.EDGE_STYLE.other.w, WEAK.hearsay.dash, WEAK.hearsay.alpha)], t.label, '連到 ' + t.label + ' 介面終端的連線'));
   }
   // 左右欄寬度是檢視狀態：存在獨立的 'layout' 鍵，清除基準時不受影響
   const PANE = { min: 240, centerMin: 320, def: { left: 330, right: 400 } };
@@ -573,7 +573,7 @@
       await S.store.set('last', { snapshot: snap, sources, profile, positions: Object.fromEntries(App.graph.pos) }).catch(() => banner('基準太大，無法存入瀏覽器；關閉頁面後需要重新建立。'));
       $('#dlg-input').close();
       const st = snap.meta.stats;
-      banner(`已建立基準：${V.num(st.collected)} 台已收集設備、${V.num(st.links)} 條連結；錯誤 ${st.findings.error}、警告 ${st.findings.warn}（${(snap.meta.timing.ms / 1000).toFixed(1)} 秒）`, 8000);
+      banner(`已建立基準：${V.num(st.collected)} 台已收集設備、${V.num(st.links)} 條鏈路；錯誤 ${st.findings.error}、警告 ${st.findings.warn}（${(snap.meta.timing.ms / 1000).toFixed(1)} 秒）`, 8000);
     } catch (e) {
       $('#input-status').textContent = '建立失敗：' + e.message; console.error(e);
     } finally { btn.disabled = false; }
@@ -594,7 +594,7 @@
     if (has) {
       const m = App.snap.meta;
       f.appendChild(h('span', null, `建立：${V.fmtTime(m.createdAt)}`));
-      f.appendChild(h('span', null, `設備 ${V.num(m.stats.devices)}（已收集 ${V.num(m.stats.collected)}）・連結 ${V.num(m.stats.links)}・MAC ${V.num(m.stats.macs)}`));
+      f.appendChild(h('span', null, `設備 ${V.num(m.stats.devices)}（已收集 ${V.num(m.stats.collected)}）・鏈路 ${V.num(m.stats.links)}・MAC ${V.num(m.stats.macs)}`));
       f.appendChild(h('span', null, `命名規則：${m.profile ? m.profile.id : '未套用'}`));
       f.appendChild(h('span', { class: 'mono' }, `輸入指紋 ${m.inputHash}`));
       f.appendChild(h('span', null, `版本 ${m.version}`));

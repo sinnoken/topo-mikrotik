@@ -280,7 +280,7 @@
       c.fillStyle = EP.downstream.fill; c.strokeStyle = EP.downstream.stroke; c.lineWidth = 2; c.setLineDash(EP.dash);
       c.beginPath(); c.moveTo(p.x, p.y - r); c.lineTo(p.x + r, p.y); c.lineTo(p.x, p.y + r); c.lineTo(p.x - r, p.y); c.closePath(); c.fill(); c.stroke(); c.setLineDash([]);
       if (s > 0.9) { c.fillStyle = EP.downstream.text; c.font = 'bold 8px sans-serif'; c.textAlign = 'center'; c.fillText(String(n.count || ''), p.x, p.y + 3); c.textAlign = 'left'; }
-    } else { // cluster：同一台設備上很多末端，收合成一個
+    } else { // cluster：同一台設備上很多終端，收合成一個
       c.fillStyle = EP.cluster.fill; c.strokeStyle = EP.cluster.stroke; c.lineWidth = 1.5;
       roundRect(c, p.x - r * 1.3, p.y - r * 0.8, r * 2.6, r * 1.6, 5); c.fill(); c.stroke();
       if (s > 0.35) { c.fillStyle = EP.cluster.text; c.font = 'bold 9px sans-serif'; c.textAlign = 'center'; c.fillText('×' + (n.count || ''), p.x, p.y + 3.2); c.textAlign = 'left'; }

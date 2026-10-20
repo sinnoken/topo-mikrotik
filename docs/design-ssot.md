@@ -71,7 +71,7 @@
 | mikrotik.config | /export terse／compact | 主機名、介面註解／停用、bridge port（所屬 bridge＋pvid）、bridge VLAN（tagged／untagged 分開）、VLAN 子介面（parent＋vlan-id）、bonding（成員）、IP、router-id（含 `/routing id` 名稱解析） |
 | mikrotik.bridgehost | /interface bridge host print detail | MAC 位置（略過 bridge 自己的 MAC） |
 | mikrotik.vlans | /interface bridge vlan print detail | 實際 VLAN 成員（`current-tagged`／`current-untagged` 分開，含動態） |
-| mikrotik.interface | /interface print detail | running／停用／註解／聚合；保留 rawType、mac-address、default-name、mtu、actual-mtu、l2mtu（rawType 供末端判定排除 bridge／vlan／loopback／vrrp，缺 `/interface print` 時改取 export 的 bridge／vlan／bonding 定義，仍無才退回名稱規則）；介面詳情顯示這些欄位，且設備自身的 mac-address 出現在轉發表時不列為外部末端 |
+| mikrotik.interface | /interface print detail | running／停用／註解／聚合；保留 rawType、mac-address、default-name、mtu、actual-mtu、l2mtu（rawType 供終端判定排除 bridge／vlan／loopback／vrrp，缺 `/interface print` 時改取 export 的 bridge／vlan／bonding 定義，仍無才退回名稱規則）；介面詳情顯示這些欄位，且設備自身的 mac-address 出現在轉發表時不列為外部終端 |
 | mikrotik.ipaddr | /ip address print detail | 介面 IP（略過 disabled、invalid） |
 | mikrotik.arp | /ip arp print detail | MAC↔IP（略過 invalid、多播、APIPA） |
 | mikrotik.route | /ip route print detail | 作用中路由、ECMP（`gateway=a,b`）；RouterOS 6／7 旗標差異已處理 |
@@ -91,11 +91,11 @@
 | 介面 `ifc` | 去空白、轉小寫 |
 | 端點 `ep` | `DEV|ifc` |
 | MAC | 12 碼大寫 |
-| 連結 | 兩端 ep 排序後以 `~` 串接 |
+| 鏈路 | 兩端 ep 排序後以 `~` 串接 |
 
 ### 5.2 實體（Snapshot.model，schema `ssot-snapshot/2`）
 
-欄位命名參考 NetBox 的 DCIM／IPAM 模型（Device、Interface、VLAN、IPAddress、Prefix），但不照搬：只保存能從 RouterOS 輸出取得或明確推論的內容。
+欄位命名參考 NetBox 的 DCIM／IPAM 模型（Device、Interface、VLAN、IPAddress、Prefix），但不照搬：只儲存能從 RouterOS 輸出取得或明確推論的內容。
 
 | 實體 | 主要欄位 |
 |---|---|
@@ -126,7 +126,7 @@
   - bridge port：`bridge`
   - VLAN 子介面：`parent`＋`encapVlan`
 - VLAN 成員：
-  - 欄位：`pvid`（bridge port 的 ingress 預設 VLAN）、`untaggedVlans`、`taggedVlans`，三者分開保存。
+  - 欄位：`pvid`（bridge port 的 ingress 預設 VLAN）、`untaggedVlans`、`taggedVlans`，三者分開儲存。
   - 介面承載的全部 VLAN 用 `S.util.ifcVlans(i)` 取得；V01 以這個聯集（含所屬聚合）比較。
   - 不是數字的 VLAN 記在 `unresolvedVlans`，不丟棄。
 - `mode` 是推論：有 tagged VLAN 為 `tagged`（trunk），只有 PVID／untagged 為 `access`，都沒有則為 `null`。
@@ -134,7 +134,7 @@
 **IP 位址與前綴**
 
 - 每個介面上的每個位址是一筆 `ipAddresses`，帶來源行。
-- OSPF 鄰居位址以 `/32`、`hearsay: true` 保存。
+- OSPF 鄰居位址以 `/32`、`hearsay: true` 儲存。
 - `prefixes` 是推論，由設備自有、長度小於 32 的位址推導出直連網段。鄰居宣告的位址不產生前綴。
 - 查詢介面：
   - `Q.ipOwner(ip)`
@@ -145,20 +145,20 @@
 
 **相容性**
 
-- 讀取 `ssot-snapshot/1` 的舊基準時：有保存輸入就重新建立；沒有輸入就提示格式不相容，不會靜默略過。
+- 讀取 `ssot-snapshot/1` 的舊基準時：有儲存輸入就重新建立；沒有輸入就提示格式不相容，不會靜默略過。
 
-每個由輸入事實產生的實體都帶 `src`（`[區塊, 行號]` 清單）。`src` 為空時，設備、介面、VLAN 另帶 `srcNone` 說明原因：`seen-only`（只由鄰居看到的設備）、`hearsay`（聽說的介面）、`implicit`（預設 VLAN）；有來源時為 `null`。`unrecorded` 代表應有來源卻漏記，測試禁止出現；已收集設備上的介面（含由 MAC 表隱式建立的）一定有來源。
+每個由輸入事實產生的實體都帶 `src`（`[區塊, 行號]` 清單）。`src` 為空時，設備、介面、VLAN 另帶 `srcNone` 說明原因：`seen-only`（只由鄰居看到的設備）、`hearsay`（單側觀察的介面）、`implicit`（預設 VLAN）；有來源時為 `null`。`unrecorded` 代表應有來源卻漏記，測試禁止出現；已收集設備上的介面（含由 MAC 表隱式建立的）一定有來源。
 
 ### 5.3 關鍵推論
 
 - **LLDP 配對與 bridge**：反向配對只採用對端的 LLDP／CDP 證據，MNDP 不算回報（對端只有 MNDP 仍是 K01）。兩端介面名稱比對時，bridge 本身（依 `rawType=bridge`，缺資料時依 `bridge*` 名稱）在兩端分別以 `bridge` 或 `bridge/成員` 回報，視為同一介面。
 - **LLDP 對端埠名**：RouterOS bridge 成員的 `interface-name` 形如 `bridge/ether2`，adapter 取最後一段（`ether2`）作為對端實體埠，與本機 `interface=ether3,bridge` 取非 bridge 成員的規則對稱；原文保留在來源行。
-- **鄰居邊語意**：LLDP／CDP 的觀察走介面鄰接推論；本機介面名稱是本機端依據，對端回報的 `interface-name` 是對端埠證據，無法配對時的平行埠排序配對仍屬推測。只有 MNDP 證據時，edge 表示兩台設備在同一 L2 broadcast domain 可達，不表示兩者直連，也不將回報的對端埠名視為實際配對埠；不套用直連專用的 K01／K02／K03／V01 檢查。`evidenceScope` 使用 `interface-adjacency`、`broadcast-domain` 或 `routing-adjacency`；`observations` 保留觀察介面及來源行。MNDP 沒有 domain ID，因此模型不宣稱完整網域成員清單。同一對設備可因多個本機介面或雙向回報各有一條 MNDP link（Snapshot 保留全部以便追溯）；設備詳情的「鄰居」表由 `Q.neighborRows()` 併成每個對端設備一列，觀察介面合併列出。
-- **自動群組名稱**：未套用 profile 分群的設備依拓樸連結分成連通元件，標為「自動群組 N」。這是版面分群提示，不是依 IP prefix 推導的子網名稱，也不表示群內設備都以實體線路直接相連；純 MNDP 證據同樣可能使設備位於同一群組。
-- **鄰居配對**：LLDP／CDP 對端也有可配對的鄰居資料時雙向配對（`verified`）；對端有 LLDP／CDP 鄰居輸出但未回報此介面鄰接為單向（K01；只看雙方的 LLDP／CDP 證據，MNDP 不算回報）；對端沒提供鄰居資料則為聽說（hearsay，只計入覆蓋率）。鄰居 identity 對不上收集檔設備名時，用管理 IP 對回同一台。
+- **鄰居邊語意**：LLDP／CDP 的觀察走介面鄰接推論；本機介面名稱是本機端依據，對端回報的 `interface-name` 是對端埠證據，無法配對時的平行埠排序配對仍屬推測。只有 MNDP 證據時，edge 表示兩台設備在同一 L2 broadcast domain 可達，不表示兩者直連，也不將回報的對端埠名視為實際配對埠；不套用直連專用的 K01／K02／K03／V01 檢查。`evidenceScope` 使用 `interface-adjacency`、`broadcast-domain` 或 `routing-adjacency`；`observations` 保留觀察介面及來源行。MNDP 沒有 domain ID，因此模型不宣稱完整廣播網域成員清單。同一對設備可因多個本機介面或雙向回報各有一條 MNDP link（Snapshot 保留全部以便追溯）；設備詳情的「鄰居」表由 `Q.neighborRows()` 併成每個對端設備一列，觀察介面合併列出。
+- **自動群組名稱**：未套用 profile 分群的設備依拓樸鏈路分成連通元件，標為「自動群組 N」。這是版面分群提示，不是依 IP prefix 推導的子網名稱，也不表示群內設備都以實體線路直接相連；純 MNDP 證據同樣可能使設備位於同一群組。
+- **鄰居配對**：LLDP／CDP 對端也有可配對的鄰居資料時雙向配對（`verified`）；對端有 LLDP／CDP 鄰居輸出但未回報此介面鄰接為單向（K01；只看雙方的 LLDP／CDP 證據，MNDP 不算回報）；對端沒提供鄰居資料則為單側觀察（hearsay，只計入覆蓋率）。鄰居 identity 對不上收集檔設備名時，用管理 IP 對回同一台。
 - **OSPF 鄰接**：OSPF 是 IP 層鄰接證據，不加入 `links`，不作為拓樸直連 edge，也不與相同端點的 L2 edge 合併。單獨存於 `ospfAdjacencies`，設備詳細資料列出本機介面、鄰居、雙向回報狀態與來源。鄰居位址 → 擁有該 IP 的介面；找不到再用 router-id、管理 IP；都找不到建立以鄰居 ID 命名的未知設備（R02）。
-- **設備類型**：型號（CRS／CSS→交換器；CCR／RB／hAP／hEX／CHR→路由器）→ 已收集設備依資料（有 OSPF→路由器；有 MAC 表且無路由→交換器）→ 未收集設備依鄰居回報的功能（router／bridge／station）→ 對端埠名像網卡→主機。命名規則可覆寫並標示依據。
-- **末端位置**：這是依已收集證據推定的「未知對端」位置，不代表已證明對端是終端主機。核心 `unknownPeer` 介面必須恰好學到一個 MAC、不是 Wi-Fi、狀態非 down、不是 irb／vlan／lo，且沒有 LLDP／CDP 介面鄰接連到其他已收集網路設備；學到多個 MAC 的有線介面不符合此條件。Wi-Fi 介面本身不視為末端介面，但清單會將每個 Wi-Fi MAC／介面觀察位置列為末端位置；同一 MAC 出現在多個 Wi-Fi 介面可能是漫遊，因此 Wi-Fi 觀察不參與 A02。純 MNDP 只證明同一 L2 broadcast domain 可達，不會當作直連鄰接排除末端埠。若 bridge host 有多個 VLAN 觀察，MAC 的 `seen` 會各自保留 `{ep,vlan}`，不會互相覆蓋。
+- **設備類型**：型號（CRS／CSS→交換器；CCR／RB／hAP／hEX／CHR→路由器）→ 已收集設備依資料（有 OSPF→路由器；有 MAC 表且無路由→交換器）→ 未收集設備依鄰居回報的功能（router／bridge／station）→ 對端埠名像網路卡→主機。命名規則可覆寫並標示依據。
+- **終端位置**：這是依已收集證據推定的「未知對端」位置，不代表已證明對端是終端主機。核心 `unknownPeer` 介面必須恰好學到一個 MAC、不是 Wi-Fi、狀態非 down、不是 irb／vlan／lo，且沒有 LLDP／CDP 介面鄰接連到其他已收集網路設備；學到多個 MAC 的有線介面不符合此條件。Wi-Fi 介面本身不視為終端介面，但清單會將每個 Wi-Fi MAC／介面觀察位置列為終端位置；同一 MAC 出現在多個 Wi-Fi 介面可能是漫遊，因此 Wi-Fi 觀察不參與 A02。純 MNDP 只證明同一 L2 broadcast domain 可達，不會當作直連鄰接排除終端埠。若 bridge host 有多個 VLAN 觀察，MAC 的 `seen` 會各自保留 `{ep,vlan}`，不會互相覆蓋。
 
 ## 6. 命名規則（profile）
 
@@ -170,16 +170,16 @@
 |---|---|---|---|
 | I01 | 輸入 | 無法辨識的內容（含辨識成功卻解析不出內容，例如沒加 detail） | 錯誤 |
 | I02 | 輸入 | 同一設備重複提供同類資料（採用最後一次） | 警告 |
-| C01 | 覆蓋 | 網路設備只被其他設備看到、沒有收集資料（主機不列） | 提醒 |
+| C01 | 覆蓋 | 網路設備僅由鄰居發現、沒有收集資料（主機不列） | 提醒 |
 | C02 | 覆蓋 | 缺少應收集的資料（依類型：交換器要 鄰居＋export＋MAC 表，路由器要 鄰居＋export＋路由表） | 警告 |
-| K01 | 連結 | LLDP 單向 | 警告 |
-| K02 | 連結 | 同一介面對到多個鄰居 | 錯誤 |
-| K03 | 連結 | 聚合兩端成員數不同，或成員連到非聚合埠 | 警告 |
-| K04 | 連結 | 對端回報的埠名稱與本機不同 | 提醒 |
-| V01 | VLAN | 連結兩端 VLAN 不一致（含聚合繼承） | 警告 |
+| K01 | 鏈路 | LLDP 單向 | 警告 |
+| K02 | 鏈路 | 同一介面對應到多個鄰居 | 錯誤 |
+| K03 | 鏈路 | 聚合兩端成員數不同，或成員連到非聚合埠 | 警告 |
+| K04 | 鏈路 | 對端回報的埠名稱與本機不同 | 提醒 |
+| V01 | VLAN | 鏈路兩端 VLAN 不一致（含聚合繼承） | 警告 |
 | A01 | 位址 | 同一 IP 對應多個 MAC | 警告 |
-| A02 | 位址 | 同一 MAC 在同一 VLAN 出現在多個末端埠（VLAN 不明時只與其他 VLAN 不明的位置比較）；VLAN ID 相同不證明跨設備屬於同一 L2 網域，因此是待核實的警告 | 警告 |
-| A03 | 位址 | 介面有 MAC 但沒有 LLDP／CDP 介面鄰接（未知對端，依設備彙總；同時畫在圖上，見第 12 節）；MNDP 網域可達不算介面鄰接 | 提醒 |
+| A02 | 位址 | 同一 MAC 在同一 VLAN 出現在多個終端埠（VLAN 不明時只與其他 VLAN 不明的位置比較）；VLAN ID 相同不證明跨設備屬於同一 L2 廣播網域，因此是待核實的警告 | 警告 |
+| A03 | 位址 | 介面有 MAC 但沒有 LLDP／CDP 介面鄰接（未知對端，依設備彙總；同時畫在圖上，見第 12 節）；MNDP 廣播網域可達不算介面鄰接 | 提醒 |
 | R01 | 路由 | 下一跳不屬於任何已知設備（先沿該設備路由表遞迴解析，最終仍到不了已知設備才提醒） | 提醒 |
 | R02 | 路由 | OSPF 鄰居無法對應到已收集設備 | 提醒 |
 
@@ -191,20 +191,20 @@
 
 `SSOT.compare(SSOT.query(snapshot), expected) → DiffReport`
 
-- 預期資料格式 `ssot-expected/1`（設備、連結、VLAN），用「設備名」「設備名 介面名」指向實體，不共用 Snapshot 結構。
+- 預期資料格式 `ssot-expected/1`（設備、鏈路、VLAN），用「設備名」「設備名 介面名」指向實體，不共用 Snapshot 結構。
 - 只透過查詢介面讀取；測試確認比對前後 Snapshot 完全相同。
 - 結果分 ok／missing／different／unexpected（`strictDevices`、`strictLinks` 開啟時才列多出）。
 
 ## 9. 規模
 
-實測（Node，產生的 1041 台已收集設備、3921 個節點、5920 條連結、約 1 萬個 MAC、約 1400 萬字元輸入）：建立約 3.7 秒、乾淨網路零誤報。
+實測（Node，產生的 1041 台已收集設備、3921 個節點、5920 條鏈路、約 1 萬個 MAC、約 1400 萬字元輸入）：建立約 3.7 秒、乾淨網路零誤報。
 
 | 問題 | 做法 |
 |---|---|
 | 解析卡畫面 | 分段執行並顯示進度（`buildAsync`）；`file://` 不能用 Web Worker，故不採用 |
-| 物理模擬太慢 | 預設不跑。先以分群＋分層的快速版面一次算完出圖，再於背景套用 ELK 分層版面（約 1000 台網路設備約 2.4 秒；超過 1500 台不執行）。「自動排開」為選用的格網加速力導向 |
+| 物理模擬太慢 | 預設不跑。先以分群＋分層的快速版面一次算完出圖，再於背景套用 ELK 分層版面（約 1000 台網路設備約 2.4 秒；超過 1500 台不執行）。「力導向排列」為選用的格網加速力導向 |
 | 整張網路連成一片 | 沒有命名規則時，以標籤傳播依連線密度自動切出「區域」分區排列（只影響畫面，不寫回基準） |
-| 主機把層拉得很寬 | 只連到一台設備的未收集末端，排在該設備正下方的小方陣 |
+| 主機把層拉得很寬 | 只連到一台設備的未收集終端，排在該設備正下方的小方陣 |
 | 節點太多 | 主機超過 300 個時預設隱藏；只畫畫面內物件；縮小時不畫標籤與埠名 |
 | 儲存空間 | IndexedDB，不用 localStorage，不自動過期 |
 
@@ -221,52 +221,52 @@
 
 ## 11. 尚未做
 
-- 匯出（JSON、CSV、Excel）：Snapshot 已是純 JSON，日後只是轉換。目前只有「存成圖片」。
+- 匯出（JSON、CSV、Excel）：Snapshot 已是純 JSON，日後只是轉換。目前只有「匯出 PNG」。
 - 其他廠牌（Cisco、Arista、Juniper、Fortinet：見多廠牌版 topo-ssot）。
 - RouterOS 的防火牆規則、無線、CAPsMAN、VPN、`/interface bridge port` 的 STP／邊緣埠資訊。
 - 多份基準之間的變更比對（diff）。
 
 ## 12. 未知對端（2.1.0 新增）
 
-**要解決的問題**：接取交換器下面接了幾十台沒有 LLDP 的設備（PC、印表機、IoT），只看 LLDP 的拓樸會顯示成「這台交換器只有上行」，實際上它下面有一大片沒被看見的東西。MNDP 只提供同一 L2 網域可達線索，並不能指出直接鄰居埠，因此不會將有 MAC 的埠排除在未知對端之外。舊版工具會在這種埠畫出虛擬節點；這一版保留這個意圖，但改成不污染基準。
+**要解決的問題**：接取交換器下面接了幾十台沒有 LLDP 的設備（PC、印表機、IoT），只看 LLDP 的拓樸會顯示成「這台交換器只有上行」，實際上它下面有一大片沒被看見的東西。MNDP 只提供同一 L2 廣播網域可達線索，並不能指出直接鄰居埠，因此不會將有 MAC 的埠排除在未知對端之外。舊版工具會在這種埠畫出虛擬節點；這一版保留這個意圖，但改成不污染基準。
 
 **判定（核心，寫進基準）**：`interfaces[].unknownPeer = true`，條件是同時成立
 1. 設備是已收集的；介面恰好學到一個 MAC、不是 Wi-Fi，狀態不是 down，也不是 irb／vlan／lo
-2. 該介面（含所屬聚合與聚合成員）沒有任何 LLDP／CDP 介面鄰接連結；純 MNDP 網域可達邊不作為鄰接排除條件
+2. 該介面（含所屬聚合與聚合成員）沒有任何 LLDP／CDP 介面鄰接鏈路；純 MNDP 廣播網域可達邊不作為鄰接排除條件
 
-有 LLDP／CDP 介面鄰接至已收集網路設備的伺服器埠、上行聚合埠都不算；學到多個 MAC 的有線介面可能連著下游交換器或 AP，因此不列為核心末端介面。Wi-Fi 介面是一對多的 MAC 觀察位置，`Q.inventory().rows.endpoints` 會逐一列出其 MAC／介面位置，但不會將 Wi-Fi 標為 `unknownPeer`／`edge`，也不會把 Wi-Fi 觀察送入 A02。純 MNDP 網域可達不算直連鄰接，不會因此排除一般末端埠。查詢介面：`Q.unknownDevices()`、`Q.unknownPeers(設備)`（一般末端埠附 MAC、ARP 的 IP、OUI 廠商、VLAN）與 `Q.inventory()`（列及數字的單一來源）。
+有 LLDP／CDP 介面鄰接至已收集網路設備的伺服器埠、上行聚合埠都不算；學到多個 MAC 的有線介面可能連著下游交換器或 AP，因此不列為核心終端介面。Wi-Fi 介面是一對多的 MAC 觀察位置，`Q.inventory().rows.endpoints` 會逐一列出其 MAC／介面位置，但不會將 Wi-Fi 標為 `unknownPeer`／`edge`，也不會把 Wi-Fi 觀察送入 A02。純 MNDP 廣播網域可達不算直連鄰接，不會因此排除一般終端埠。查詢介面：`Q.unknownDevices()`、`Q.unknownPeers(設備)`（一般終端埠附 MAC、ARP 的 IP、OUI 廠商、VLAN）與 `Q.inventory()`（列及數字的單一來源）。
 
-**畫面（檢視層，不寫進基準）**：基準的設備、連結、檢查結果完全不變（有測試），虛擬節點只存在於畫面。所有顏色、線型與透明度集中在 `src/view/theme.js`，Canvas 繪圖與圖例都讀它（圖例分「設備／末端／連線／連線註記」四類，預設收合，說明文字放提示；外形、連線色、線寬、虛線與弱證據透明度由 theme 產生，有測試比對）；CSS 的設備類型變數與它的一致性也有測試。1G 連線以較粗的深青色實線區別於「其他」的細灰線；1G 是由介面名稱推估的分類，不代表實際協商速率，圖例提示會說明此限制。「聽說」使用紫色點線，「MNDP」使用灰色點劃線並以 70% 不透明度呈現，兩者以線型區分；純 MNDP 仍只表示同一 L2 網域可達，不代表實體直連。選取或 hover 高亮時維持完整不透明度。一般 UI 採冷白背景與一致的圓角、控制項高度及陰影層級；操作按鈕依優先級呈現，狀態 chip 使用對應色彩及邊框，清單表格使用斑馬列與 hover 高亮，互動元件提供鍵盤焦點樣式，並尊重減少動態效果的系統偏好。
+**畫面（檢視層，不寫進基準）**：基準的設備、鏈路、檢查結果完全不變（有測試），虛擬節點只存在於畫面。所有顏色、線型與透明度集中在 `src/view/theme.js`，Canvas 繪圖與圖例都讀它（圖例分「設備／終端／連線／連線註記」四類，預設收合，說明文字放提示；外形、連線色、線寬、虛線與弱證據透明度由 theme 產生，有測試比對）；CSS 的設備類型變數與它的一致性也有測試。1G 連線以較粗的深青色實線區別於「其他」的細灰線；1G 是由介面名稱推估的分類，不代表實際協商速率，圖例提示會說明此限制。「單側觀察」使用紫色點線，「MNDP」使用灰色點劃線並以 70% 不透明度呈現，兩者以線型區分；純 MNDP 仍只表示同一 L2 廣播網域可達，不代表實體直連。選取或 hover 高亮時維持完整不透明度。一般 UI 採冷白背景與一致的圓角、控制項高度及陰影層級；操作按鈕依優先級呈現，狀態 chip 使用對應色彩及邊框，清單表格使用斑馬列與 hover 高亮，互動元件提供鍵盤焦點樣式，並尊重減少動態效果的系統偏好。
 
 | 情況 | 畫法 |
 |---|---|
 | 一個埠一個 MAC，且非 Wi-Fi | 圓點，顏色依廠商（避開紅橘黃，以免和錯誤標記混淆），標 IP；近看顯示廠商縮寫 |
-| 有線介面一埠多個 MAC，或任一 Wi-Fi 介面 | 有線多 MAC 不列為末端埠；Wi-Fi 介面不列為末端埠，但每個 Wi-Fi MAC 觀察位置列入末端清單並可作圖面提示（多 MAC 為菱形），Wi-Fi 位置不參與 A02 |
-| 介面 `rawType=veth`（容器虛擬網卡，`type=virtual`） | 連到該末端的連線用固定洋紅色（`#d81b60`），節點外觀不變；提示與介面詳細標「容器 veth」 |
+| 有線介面一埠多個 MAC，或任一 Wi-Fi 介面 | 有線多 MAC 不列為終端埠；Wi-Fi 介面不列為終端埠，但每個 Wi-Fi MAC 觀察位置列入終端清單並可作圖面提示（多 MAC 為菱形），Wi-Fi 位置不參與 A02 |
+| 介面 `rawType=veth`（容器虛擬網路卡，`type=virtual`） | 連到該終端的連線用固定洋紅色（`#d81b60`），節點外觀不變；提示與介面詳細標「容器 veth」 |
 | 介面 `type=wireless` | 連線用青色（`#00b8d4`），標「Wi-Fi」 |
 
 **版面**
 
 - 共用步驟在 `src/view/graph/layout.js`：
-  - `prepare()`：分群、末端（排在所屬設備下方）與 BFS 分層
+  - `prepare()`：分群、終端（排在所屬設備下方）與 BFS 分層
   - `shelf()`：各群以書架方式排列
 - 兩種版面：
   - **快速（內建）**：同步計算，用一輪重心排序並對太寬的層折行。
-  - **分層（ELK，預設）**：`src/view/graph/elk-layout.js` 對每群的核心設備執行 ELK layered，依 `prepare()` 的層級決定邊的方向，再做多輪交叉最小化與 network-simplex 節點擺放。節點框會預留末端方陣與標籤的空間。
+  - **分層（ELK，預設）**：`src/view/graph/elk-layout.js` 對每群的核心設備執行 ELK layered，依 `prepare()` 的層級決定邊的方向，再做多輪交叉最小化與 network-simplex 節點擺放。節點框會預留終端方陣與標籤的空間。
 - 載入流程：
   - 載入基準時先以快速版面出圖。
-  - 沒有保存位置時，再於背景套用分層版面。
+  - 沒有儲存位置時，再於背景套用分層版面。
   - 網路設備超過 `App.ELK_MAX`（1500）、逾時或失敗時，維持快速版面，並以 banner 說明原因。
 - ELK 在 `file://` 下沒有 Worker，會在主執行緒計算，所以每群之間會讓出主執行緒。約 1000 台網路設備時約 2.4 秒。
 - 使用的版本是 `vendor/elkjs-0.11.1/`（EPL-2.0，未修改），不屬於核心載入順序。檔案約 1.6 MB，不放在 `index.html`；第一次需要分層版面時才由 `elk-layout.js` 以 `<script>` 載入。選擇「快速（內建）」或網路設備超過上限時不會載入。
 
-依介面類型的識別色定義於 `theme.js` 的 `endpoint.byType`（鍵為 `rawType` 或 `type`，以 `endpoint.styleOf(介面)` 查詢），只識別連線（收合成「末端 ×N」群組時連線維持預設色），僅視覺識別，不改變判定與檢查。
-| 同一台設備超過 8 個，或全網超過 800 個 | 收合成一個「末端 ×N」群組；雙擊或在右側按「在圖上展開」 |
+依介面類型的識別色定義於 `theme.js` 的 `endpoint.byType`（鍵為 `rawType` 或 `type`，以 `endpoint.styleOf(介面)` 查詢），只識別連線（收合成「終端 ×N」群組時連線維持預設色），僅視覺識別，不改變判定與檢查。
+| 同一台設備超過 8 個，或全網超過 800 個 | 收合成一個「終端 ×N」群組；雙擊或在右側按「在圖上展開」 |
 
 - 點節點或群組：右側顯示每個埠的 MAC、IP、廠商、VLAN；點一列跳到該介面。設備頁也有同樣的清單。
-- 搜尋 MAC／IP 時，圖上會標出它所在的那個末端；點檢查結果 A03 會顯示該設備的末端清單。
+- 搜尋 MAC／IP 時，圖上會標出它所在的那個終端；點檢查結果 A03 會顯示該設備的終端清單。
 - 左右欄邊緣可拖曳調整寬度（最小 240px，中間圖面至少 320px；雙擊還原），寬度存在獨立的 `layout` 鍵，只屬檢視狀態，不進基準。
-- 工具列「未知對端」可整個關閉。位置會跟著其他節點一起保存。
+- 工具列「未知對端」可整個關閉。位置會跟著其他節點一起儲存。
 - 1000 台實測：880 台設備各收成一個群組（全網超過上限），展開一台約 0.4 秒。
 
 **刻意沒做**：「介面 up 但沒有學到任何 MAC」（閒置埠）。要可靠判斷需要 `show interfaces terse` 的狀態，不在必要收集清單內。
@@ -282,7 +282,7 @@
 | VLAN | 名稱＋ID | 只有 ID（無名稱）；只在 `vlan-filtering=yes` 的 bridge 才有意義 |
 | 檢查 | 16 項 | 14 項（移除 V02、V03） |
 | 設備類型 | 廠牌＋資料 | 型號＋資料＋鄰居回報的功能 |
-| 新增的處理 | — | 鄰居 identity 對不上收集檔設備名時用管理 IP；OSPF 沒有 interface 時用網段解析；未知埠名時的連結配對 |
+| 新增的處理 | — | 鄰居 identity 對不上收集檔設備名時用管理 IP；OSPF 沒有 interface 時用網段解析；未知埠名時的鏈路配對 |
 | 瀏覽器儲存 | `topo-ssot` | `topo-mikrotik`（兩版可並存） |
 
 ## 版本紀錄
@@ -293,5 +293,5 @@
     - 介面 L2 埠語意：PVID、untagged／tagged、mode，以及 lag／bridge／VLAN 子介面的關係
     - `ipAddresses`／`prefixes` 實體
     - 設備身分欄位
-  - 舊基準以保存的輸入重建。
+  - 舊基準以儲存的輸入重建。
   - 拓樸圖預設改用 ELK 分層版面。

@@ -25,7 +25,7 @@
   keys.macPretty = (k) => (k ? k.toLowerCase().match(/.{2}/g).join(':') : '');
   keys.isMacText = (s) => /^([0-9a-f]{2}[:-]){5}[0-9a-f]{2}$|^([0-9a-f]{4}\.){2}[0-9a-f]{4}$|^[0-9a-f]{12}$/i.test(String(s).trim());
 
-  /** 連結：兩端 ep 排序後以 "~" 串接，方向無關。 */
+  /** 鏈路：兩端 ep 排序後以 "~" 串接，方向無關。 */
   keys.link = (a, b) => (a < b ? a + '~' + b : b + '~' + a);
 
   S.keys = keys;

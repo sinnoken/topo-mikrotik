@@ -146,8 +146,8 @@
 
   /**
    * VLAN 成員掛到介面（參考 NetBox Interface 的 untagged／tagged VLAN）：
-   * PVID（ingress 預設 VLAN）、untagged、tagged 分開保存；不是數字的 VLAN 記在 unresolvedVlans，不丟棄。
-   * VLAN 實體的 members 以 ep → tagged 保存，同一介面有任一 tagged 觀察即為 tagged。
+   * PVID（ingress 預設 VLAN）、untagged、tagged 分開儲存；不是數字的 VLAN 記在 unresolvedVlans，不丟棄。
+   * VLAN 實體的 members 以 ep → tagged 儲存，同一介面有任一 tagged 觀察即為 tagged。
    */
   function resolveVlanMembers(M) {
     M.vmems.forEach((f) => {
@@ -243,7 +243,7 @@
         // bridge 本身（如 bridge、bridge1）在兩端可能分別以 bridge 或 bridge/成員回報；兩邊都落在 bridge 視為同一個介面
         const sameIfc = (x, y) => x === y || (isBridgeIfc(M, c.dev, x) && isBridgeIfc(M, c.peer, y)) || (isBridgeIfc(M, c.peer, x) && isBridgeIfc(M, c.dev, y));
         let rev = theirs.find((r) => sameIfc(K.ifc(r.peerIfc), c.ifc)) || (unknownPort ? null : theirs.find((r) => sameIfc(r.ifc, said)));
-        // 兩邊都沒有連接埠名稱：兩邊數量相同時，依本機介面名稱排序後一一配對（單一連結一定正確；平行連結是合理推測）
+        // 兩邊都沒有連接埠名稱：兩邊數量相同時，依本機介面名稱排序後一一配對（單一鏈路一定正確；平行鏈路是合理推測）
         if (!rev && unknownPort) {
           const byIfc = (x, y) => S.util.natural(x.ifc, y.ifc);
           const mine = (byDev.get(c.dev) || []).filter((r) => r.peer === c.peer && r.peerIfc === '?').sort(byIfc);
@@ -270,7 +270,7 @@
       const ri = iface(M, c.peer, rname); if (!existed) ri.hearsay = true;
       addLink(M, local, ri.key, 'l2', 'lldp', src, { hearsay: true, protocols: c.protocols });
     });
-    // 被權威端改寫過的「聽說」介面，若沒有任何連結參考就移除
+    // 被權威端改寫過的「單側觀察」介面，若沒有任何鏈路參考就移除
     const used = new Set(); M.links.forEach((l) => { used.add(l.a); used.add(l.b); });
     M.ifcs.forEach((i, k) => { if (i.hearsay && !used.has(k) && M.devices.get(i.dev).collected) M.ifcs.delete(k); });
   }

@@ -8,7 +8,7 @@
 
 目前專案是以 MikroTik RouterOS 為主的離線網路基準工具，已具備可沿用的資料流與來源追溯機制，並涵蓋部分 L1/L2 與 IPv4 L3 資料。但目標規格進一步要求多廠牌與多來源收集、VRF-aware L3，以及 ACL、NAT、SLB、Service、Workload 等 L4 資料與分析；這些能力目前大多尚未實作。L4 尤其是完成整份規格的主要阻礙。
 
-若先把範圍限縮為 **MikroTik L2 與有限 IPv4 L3**，現有專案可作為基礎；仍須補足 L2 埠/VLAN 語意、L3 路由資訊與對應視圖。
+若先把範圍限縮為 **MikroTik L2 與有限 IPv4 L3**，現有專案可作為基礎；仍須補足 L2 埠/VLAN 語意、L3 路由資訊與對應檢視。
 
 ## 評估範圍與依據
 
@@ -28,11 +28,11 @@
 |---|---|---|---|
 | 資料基礎與追溯 | Reader → Adapter facts → Model → 純 JSON Snapshot；可保留來源區塊與行號，畫面和比對透過 Query 讀取。 | **可沿用** | 擴充實體或欄位時，仍需同步 Snapshot 版本、序列化、查詢、UI、測試及文件。 |
 | L1 鄰居與鏈路 | RouterOS 鄰居資料涵蓋 LLDP、MNDP、CDP；模型區分介面鄰接與 MNDP 的 broadcast-domain 可達證據。Bonding slaves 也有部分建模。 | **部分支援** | 收集僅限 RouterOS CLI/SSH；沒有 SNMP、gNMI、控制器等來源或通用 `last_seen`。LAG 成員狀態及多來源邏輯鏈路收斂未達規格要求。 |
-| L2 VLAN 與 MAC | 收集 bridge VLAN 成員、PVID、bridge host MAC 位置及 ARP。介面保存 `pvid`、`untaggedVlans`、`taggedVlans` 與推論的 `mode`（access／tagged）；VLAN 成員帶 tagged 標記。有 VLAN／鏈路檢視與末端 MAC 觀察。 | **部分支援** | 沒有明確的 L2 domain 模型；`mode` 是由成員推論，尚未收集 `frame-types`、`ingress-filtering` 等決定 allowed VLAN 的設定。MAC 表未保存 dynamic/static 類型與 `last_seen`。 |
-| L3 IP 與路由 | 收集 IPv4 介面位址、ARP、主路由表與 ECMP 下一跳。位址為獨立的 `ipAddresses` 實體，另由位址推導出 `prefixes`（直連網段）。路徑追蹤支援最長前綴及遞迴下一跳解析。 | **部分支援** | 位址與前綴已預留 `vrf` 欄位，但尚未收集 VRF，固定為 null；ARP 與路由沒有 VRF 維度；路由解析只保留作用中主表 IPv4 路由，排除黑洞/不可達項。AD、metric、ECMP group、HSRP/VRRP VIP 等未形成資料模型；沒有規格所述的 VRF 子網視圖與完整路由檢查。 |
+| L2 VLAN 與 MAC | 收集 bridge VLAN 成員、PVID、bridge host MAC 位置及 ARP。介面儲存 `pvid`、`untaggedVlans`、`taggedVlans` 與推論的 `mode`（access／tagged）；VLAN 成員帶 tagged 標記。有 VLAN／鏈路檢視與終端 MAC 觀察。 | **部分支援** | 沒有明確的 L2 domain 模型；`mode` 是由成員推論，尚未收集 `frame-types`、`ingress-filtering` 等決定 allowed VLAN 的設定。MAC 表未儲存 dynamic/static 類型與 `last_seen`。 |
+| L3 IP 與路由 | 收集 IPv4 介面位址、ARP、主路由表與 ECMP 下一跳。位址為獨立的 `ipAddresses` 實體，另由位址推導出 `prefixes`（直連網段）。路徑追蹤支援最長前綴及遞迴下一跳解析。 | **部分支援** | 位址與前綴已預留 `vrf` 欄位，但尚未收集 VRF，固定為 null；ARP 與路由沒有 VRF 維度；路由解析只保留作用中主表 IPv4 路由，排除黑洞/不可達項。AD、metric、ECMP group、HSRP/VRRP VIP 等未形成資料模型；沒有規格所述的 VRF 子網檢視與完整路由檢查。 |
 | L4 ACL／NAT／SLB／Service | 無相應收集器、正規化實體或分析 API。 | **未支援** | 缺少 ACL/object-group/binding、zone、NAT 次序、SLB VIP/pool、主機規則、監聽 Service、規則命中/影響分析與 reachability 計算。 |
 | Workload 與其他平台 | 收集器僅透過本機 SSH 執行 RouterOS 命令；可辨識少數介面類型，例如 veth。 | **未支援規格中的對應能力** | 沒有 namespace/container/VM 到宿主的關聯模型，也沒有 Linux、Windows、Kubernetes 或雲端安全規則來源。 |
-| Query API 與視圖 | 有 MAC/IP/VLAN 查詢、L2 拓樸圖及 IPv4 路徑追蹤。 | **部分支援** | 缺少 VRF-aware L3 path、完整 L2 locate 契約、L3 獨立圖，以及 L4 reach/matrix/rule-impact API 和 zone 矩陣。現有拓樸圖以 L2 鄰接為主。 |
+| Query API 與檢視 | 有 MAC/IP/VLAN 查詢、L2 拓樸圖及 IPv4 路徑追蹤。 | **部分支援** | 缺少 VRF-aware L3 path、完整 L2 locate 契約、L3 獨立圖，以及 L4 reach/matrix/rule-impact API 和 zone 矩陣。現有拓樸圖以 L2 鄰接為主。 |
 
 ## 詳細差距
 
@@ -42,11 +42,11 @@
 
 1. Reader 將輸入切成帶來源資訊的區塊。
 2. Adapter 將廠牌輸出解析成 facts。
-3. Model 將 facts 建立為設備、介面、連結、VLAN、MAC、ARP 與路由等實體。
+3. Model 將 facts 建立為設備、介面、鏈路、VLAN、MAC、ARP 與路由等實體。
 4. Pipeline 將結果序列化為純 JSON Snapshot。
 5. Query 提供唯讀資料存取，View 只負責呈現。
 
-目前 Snapshot 已保存設備、介面、連結、VLAN、MAC、ARP、Route、OSPF adjacency 等資料，來源行號也會隨資料保存。這些模式可供新資料來源和實體參考，但本身不代表新增資料已經有來源或 parser。
+目前 Snapshot 已儲存設備、介面、鏈路、VLAN、MAC、ARP、Route、OSPF adjacency 等資料，來源行號也會隨資料儲存。這些模式可供新資料來源和實體參考，但本身不代表新增資料已經有來源或 parser。
 
 參考：[設計說明](./design-ssot.md#3-模組)、[Pipeline Snapshot 序列化](../src/pipeline.js)、[Query API](../src/query/query.js)。
 
@@ -61,7 +61,7 @@
 - MAC 表的 dynamic/static 類型、時間資訊與排除 uplink/trunk 的端點定位依據。
 - LAG 成員狀態，以及將實體成員收斂為邏輯鏈路的完整規則。成員關係（`lag`／`lagMembers`）已建模。
 
-目前模型已把 PVID、untagged、tagged 分開保存在介面上，VLAN 實體的成員也帶有 tagged 標記，各自可追溯到來源行。不過還沒有跨設備的 L2 domain，也沒有 allowed VLAN 判定。MAC 表解析也還沒有輸出規格所需的類型與觀測時間欄位。
+目前模型已把 PVID、untagged、tagged 分開儲存在介面上，VLAN 實體的成員也帶有 tagged 標記，各自可追溯到來源行。不過還沒有跨設備的 L2 domain，也沒有 allowed VLAN 判定。MAC 表解析也還沒有輸出規格所需的類型與觀測時間欄位。
 
 參考：[RouterOS Adapter](../src/adapters/mikrotik.js)、[Model 建立與 VLAN 成員解析](../src/model/build.js)、[收集指令清單](./collection.md#1-每台設備要收集的指令)。
 
@@ -69,13 +69,13 @@
 
 現有路由追蹤可作為 L3 計算的起點：會從來源網段定位起點，依最長前綴選路，處理多個下一跳及遞迴解析。
 
-但規格要求地址與路由以 VRF 為命名空間，並保留更多路由語意。現況中：
+但規格要求位址與路由以 VRF 為命名空間，並保留更多路由語意。現況中：
 
 - `ipAddresses`／`prefixes` 已預留 `vrf` 欄位，但尚未收集 VRF；ARP、Route 沒有 VRF 欄位，也沒有 `(VRF, IP/prefix)` 唯一識別。
 - Route Adapter 限於 IPv4，且只留下作用中的 `main` routing table 路由。
 - 黑洞/不可達路由被排除，無法據此檢查黑洞路由。
 - Route 沒有保留 AD、metric、明確 ECMP group 等規格欄位。
-- 沒有 HSRP/VRRP VIP、VRF zone 對應或獨立 L3 拓樸視圖。
+- 沒有 HSRP/VRRP VIP、VRF zone 對應或獨立 L3 拓樸檢視。
 - 現有路徑追蹤不包含規格所述的完整反向路徑、next-hop 可達性和黑洞檢查流程。
 
 因此不能把目前路由追蹤等同於規格所要求的 L3 層完成度。
@@ -137,7 +137,7 @@
 ### 階段五：串接檢視、查詢與驗證
 
 - 由 SSOT Query 提供 L2 locate、L3 path、L4 reach/matrix/rule-impact 等查詢。
-- 增加 L3 視圖與 L4 zone 矩陣，檢視層不回寫 Snapshot。
+- 增加 L3 檢視與 L4 zone 矩陣，檢視層不回寫 Snapshot。
 - 各層新增 fixture-first 測試、來源行追溯測試、確定性 Snapshot 測試及相關文件。
 
 ## 最終判定

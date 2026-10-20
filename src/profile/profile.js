@@ -1,7 +1,7 @@
 /*
  * 命名規則（profile）引擎。profile 是一份獨立的 JSON，可以不套用。
  * 它只能：①建模前把名稱對應到正式名稱（alias / stripDomain）②建模後加註解（kind、role、group、label）。
- * 它不能新增、刪除或改變任何事實（介面、連結、VLAN、位址）。
+ * 它不能新增、刪除或改變任何事實（介面、鏈路、VLAN、位址）。
  *
  * {
  *   "schema": "ssot-profile/1", "id": "site-naming", "version": "1",

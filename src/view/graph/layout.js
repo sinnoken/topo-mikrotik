@@ -9,11 +9,11 @@
   'use strict';
   const V = (S.view = S.view || {});
   const DX = 185; const DY = 130; const ROW = 24; const WRAP_DY = 80; const GAP = 220;
-  const LCOLS = 4; const LDX = 44; const LDY = 40; const LEAF_DY = 64; // 末端（主機）排列
+  const LCOLS = 4; const LDX = 44; const LDY = 40; const LEAF_DY = 64; // 終端（主機）排列
   const RANK = { firewall: 0, router: 1, switch: 2, unknown: 3, host: 4 };
 
   /**
-   * 分群與末端：每群拆成「核心」與「末端」（只連到一台已收集設備、本身沒有收集資料，之後排在該設備下方），
+   * 分群與終端：每群拆成「核心」與「終端」（只連到一台已收集設備、本身沒有收集資料，之後排在該設備下方），
    * 並依層級規則替核心節點分層。內建版面與 ELK 版面共用這一步，結果一致。
    */
   function prepare(nodes, edges) {
@@ -41,7 +41,7 @@
         const comp = []; const stack = [remaining.values().next().value]; const seen = new Set(stack);
         while (stack.length) { const x = stack.pop(); comp.push(x); adj.get(x).forEach((y) => { if (inCore.has(y) && !seen.has(y)) { seen.add(y); stack.push(y); } }); }
         comp.forEach((x) => remaining.delete(x));
-        // 第 0 層：防火牆／路由器；第 1 層：樞紐（連線數接近最大者，例如核心交換器）；其餘依距離往下
+        // 第 0 層：防火牆／路由器；第 1 層：核心節點（連線數接近最大者，例如核心交換器）；其餘依距離往下
         const deg = (x) => Array.from(adj.get(x)).filter((y) => inCore.has(y)).length;
         const maxDeg = Math.max(...comp.map(deg));
         const tops = comp.filter((x) => (RANK[byId.get(x).kind] ?? 3) <= 1);
@@ -63,12 +63,12 @@
     });
   }
 
-  // 每個節點佔的寬度＝自己或其末端群的寬度
+  // 每個節點佔的寬度＝自己或其終端群的寬度
   const leafCols = (g, id) => Math.min(LCOLS, (g.leaves.get(id) || []).length);
   const leafRows = (g, id) => Math.ceil((g.leaves.get(id) || []).length / LCOLS);
   const slotW = (g, id) => Math.max(DX, leafCols(g, id) * LDX + 40);
 
-  /** 末端排在所屬設備下方的小方陣。 */
+  /** 終端排在所屬設備下方的小方陣。 */
   function placeLeaves(g, pos) {
     g.leaves.forEach((ids, p) => {
       const pp = pos.get(p); if (!pp) return;
@@ -188,7 +188,7 @@
       });
       if (!changed) break;
     }
-    // 未收集的末端跟著鄰居
+    // 未收集的終端跟著鄰居
     ids.forEach((id) => { if (!byId.get(id).collected) { const nb = Array.from(w.get(id).keys()).find((x) => byId.get(x).collected); if (nb) label.set(id, label.get(nb)); } });
     // 依大小命名：以群內層級最高的設備當名稱
     const RANK = { firewall: 0, router: 1, switch: 2, unknown: 3, host: 4 };

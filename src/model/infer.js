@@ -1,9 +1,9 @@
 /*
  * 推論：在模型上計算衍生屬性。
  *   - 設備類型（依廠牌與資料內容；沒有資料時依對端埠名稱判斷是否為主機）
- *   - 連結類別（聚合、管理、速率、L3）
- *   - 連結兩端 VLAN（含聚合成員繼承）
- *   - 分群（profile 有 group 用 profile，否則依拓樸連結連通元件）
+ *   - 鏈路類別（聚合、管理、速率、L3）
+ *   - 鏈路兩端 VLAN（含聚合成員繼承）
+ *   - 分群（profile 有 group 用 profile，否則依拓樸鏈路連通元件）
  *   - 套用 profile 註解
  */
 (function (S) {
@@ -63,7 +63,7 @@
     });
   }
 
-  /** RouterOS 介面命名：ether＝1G（也可能是 2.5G、10G 電口，名稱看不出來）、sfp-sfpplus／qsfpplus 看名稱。 */
+  /** RouterOS 介面命名：ether＝1G（也可能是 2.5G、10G 銅纜埠，名稱看不出來）、sfp-sfpplus／qsfpplus 看名稱。 */
   function speedOf(name) {
     if (/^qsfp28|^qsfp28-/.test(name)) return 5;
     if (/^qsfpplus/.test(name)) return 4;
@@ -122,7 +122,7 @@
     });
   }
 
-  /** 未指定分群的設備依拓樸連結連通元件分群；名稱不代表 IP 子網或物理區域。 */
+  /** 未指定分群的設備依拓樸鏈路連通元件分群；名稱不代表 IP 子網或物理區域。 */
   function groups(M) {
     const parent = new Map();
     const find = (x) => { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; };

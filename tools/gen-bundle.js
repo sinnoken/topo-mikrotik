@@ -95,7 +95,7 @@ for (let s = 1; s <= SITES; s++) {
     const bond = `bond${a}`; const c0 = `sfp-sfpplus${2 * a - 1}`; const c1 = `sfp-sfpplus${2 * a}`; const c2 = `ether${a}`;
     const peer = (c, port) => ({ name: c.name, ip: c.ip, mac: c.mac, board: c.board, port, caps: 'bridge,router' });
     const me = (port) => ({ name: sw.name, ip: sw.ip, mac: sw.mac, board: sw.board, port, caps: 'bridge' });
-    // 鄰居（含 LAG 兩條成員連結；每條同時從 bridge 看到一次，用來測試去重）
+    // 鄰居（含 LAG 兩條成員鏈路；每條同時從 bridge 看到一次，用來測試去重）
     sw.neighbors.push(...nrow('sfp-sfpplus1', peer(core[0], c0), true), ...nrow('sfp-sfpplus2', peer(core[0], c1), true));
     if (!(F && a === 2)) sw.neighbors.push(...nrow('ether24', peer(core[1], c2)));                                      // K01：ACC_02 不回報 CORE_02
     core[0].neighbors.push(...nrow(c0, me(F && a === 1 ? 'Uplink-to-CORE' : 'sfp-sfpplus1')), ...nrow(c1, me('sfp-sfpplus2')));   // K04

@@ -60,7 +60,7 @@
       </div>
     </div>
     <div class="spacer"></div>
-    <button class="ghost" id="btn-clear" title="清除這個工具保存的基準與輸入">清除</button>
+    <button class="ghost" id="btn-clear" title="清除這個工具儲存的基準與輸入">清除</button>
   </header>
 
   <section id="baseline-summary" class="baseline-summary hidden" aria-live="polite"></section>
@@ -87,9 +87,9 @@
     <section id="center">
       <canvas id="graph"></canvas>
       <div id="toolbar" class="toolbar hidden">
-        <div class="grp"><button id="btn-fit" title="整張圖放進畫面">全部</button><button id="btn-relayout" title="依分群與層級重新排列">重新排列</button><select id="layout-mode" title="重新排列使用的版面"><option value="elk">分層（ELK）</option><option value="builtin">快速（內建）</option></select><button id="btn-force" title="用力導向微調位置（再按一次停止）">自動排開</button></div>
-        <div class="grp"><button id="btn-hosts" title="顯示只由 LLDP 看到的主機">主機</button><button id="btn-unknown" class="on" title="顯示沒有 LLDP 鄰居、只由 MAC 推論出來的末端">未知對端</button><button id="btn-groups" class="on" title="顯示分群底框">分群</button></div>
-        <div class="grp"><button id="btn-png" title="把目前畫面存成圖片">存成圖片</button></div>
+        <div class="grp"><button id="btn-fit" title="整張圖放進畫面">全圖</button><button id="btn-relayout" title="依分群與層級重新排列">重新排列</button><select id="layout-mode" title="重新排列使用的版面"><option value="elk">分層（ELK）</option><option value="builtin">快速（內建）</option></select><button id="btn-force" title="用力導向微調位置（再按一次停止）">力導向排列</button></div>
+        <div class="grp"><button id="btn-hosts" title="顯示只由 LLDP 看到的主機">主機</button><button id="btn-unknown" class="on" title="顯示沒有 LLDP 鄰居、只由 MAC 推論出來的終端">未知對端</button><button id="btn-groups" class="on" title="顯示分群底框">分群</button></div>
+        <div class="grp"><button id="btn-png" title="把目前畫面匯出 PNG">匯出 PNG</button></div>
       </div>
       <div id="legend" class="legend hidden"></div>
       <div id="hint" class="hint hidden">滾輪縮放・拖曳移動・點選看詳細・雙擊聚焦</div>

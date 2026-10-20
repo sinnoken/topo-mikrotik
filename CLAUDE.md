@@ -48,9 +48,9 @@ git diff --check         # 提交前檢查
 - **單向依賴**：核心（core/readers/adapters/model/check/profile/query/compare/pipeline）不得碰 DOM、Canvas、IndexedDB。
   View 與 compare 只透過 `SSOT.query(snapshot)`（[src/query/query.js](src/query/query.js)）讀取，不讀原始 model、不改寫 Snapshot。
   `src/view/theme.js` 是顏色／線型／透明度的唯一來源；持久化集中在 `src/view/store.js`。
-- **事實 vs 推論**：收集到的設備、介面、連結、VLAN、位址、路由是事實；推論需標示。命名 profile（`src/profile/`）
+- **事實 vs 推論**：收集到的設備、介面、鏈路、VLAN、位址、路由是事實；推論需標示。命名 profile（`src/profile/`）
   只能 canonicalize 或加註解，不能新增／刪除／改寫事實。
-- **連結語意**：`S.LINK_SCOPE` 區分 interface-adjacency（LLDP／CDP）、broadcast-domain（純 MNDP，只證明 L2 可達，
+- **鏈路語意**：`S.LINK_SCOPE` 區分 interface-adjacency（LLDP／CDP）、broadcast-domain（純 MNDP，只證明 L2 可達，
   不可當直連證據）、routing-adjacency（OSPF，不作為拓樸 edge）。
 - **Snapshot 模型（`ssot-snapshot/2`）**：欄位命名參考 NetBox。完整欄位表見 [docs/design-ssot.md](docs/design-ssot.md) §5.2，以下是容易用錯的地方：
   - 介面的 VLAN 分成 `pvid`／`untaggedVlans`／`taggedVlans`，取聯集用 `S.util.ifcVlans(i)`。
@@ -60,9 +60,9 @@ git diff --check         # 提交前檢查
   - 設備身分欄位是 `manufacturer`／`deviceType`／`softwareVersion`。
   - 內部模型 M 用 Map/Set，只在 `pipeline.js` 的 `serialize` 轉成陣列。
 - **拓樸版面**：
-  - [layout.js](src/view/graph/layout.js) 的 `prepare()` 負責分群、末端與分層，`shelf()` 負責書架排列，內建版面與分層版面共用。
+  - [layout.js](src/view/graph/layout.js) 的 `prepare()` 負責分群、終端與分層，`shelf()` 負責書架排列，內建版面與分層版面共用。
   - 分層版面在 [elk-layout.js](src/view/graph/elk-layout.js)，使用 vendor 的 ELK.js（`vendor/elkjs-0.11.1/`，EPL-2.0）。ELK 約 1.6 MB，第一次需要時才以 `<script>` 載入（路徑定義在 `ENGINE_SRC`）；冒煙測試的模擬 DOM 會模擬這個動態載入。
-  - 流程是先用內建版面同步出圖，沒有保存位置時再於背景套用 ELK。超過 `App.ELK_MAX` 台或逾時就維持內建版面，並以 banner 說明原因。
+  - 流程是先用內建版面同步出圖，沒有儲存位置時再於背景套用 ELK。超過 `App.ELK_MAX` 台或逾時就維持內建版面，並以 banner 說明原因。
 - **可重現**：相同輸入與選項必得相同 Snapshot（`meta.createdAt`、`meta.timing` 除外）；不可用時間、隨機值或環境影響核心結果。
   `S.VERSION` 與 `S.SCHEMA` 定義於 [src/core/ns.js](src/core/ns.js)。
 

@@ -172,30 +172,30 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (!v.length) throw new Error('圖上沒有未知對端節點');
     if (process.env.SMOKE_INPUT) { // 大型網路：全網超過上限，全部收合成群組
       if (!v.every((n) => n.kind === 'cluster')) throw new Error('超過全網上限時應全部收合');
-      g.emit('click', { type: 'node', id: v[0].id }); if (App.sel.type !== 'endpoints') throw new Error('點群組應顯示末端清單'); return;
+      g.emit('click', { type: 'node', id: v[0].id }); if (App.sel.type !== 'endpoints') throw new Error('點群組應顯示終端清單'); return;
     }
     if (!v.some((n) => n.kind === 'endpoint')) throw new Error('應有單一 MAC 的未知對端');
     if (!v.every((n) => g.pos.has(n.id) && g.edgesByNode.has(n.id))) throw new Error('未知對端缺少位置或連線');
     const one = v.find((n) => n.kind === 'endpoint'); g.hover = { type: 'node', id: one.id }; g.draw(); g.hover = null;
     g.emit('click', { type: 'node', id: one.id }); if (App.sel.type !== 'interface') throw new Error('點選單一未知對端應顯示該介面');
-    // 收合：上限降到 3 → 每台設備的末端合併成一個群組
+    // 收合：上限降到 3 → 每台設備的終端合併成一個群組
     App.UNKNOWN_EXPAND_MAX = 3; App.expanded = new Set(); App.toggleExpand('TPE_ACC_SW_01'); App.toggleExpand('TPE_ACC_SW_01');
     const cl = g.nodes.filter((n) => n.kind === 'cluster'); if (!cl.length) throw new Error('超過上限時應收合成群組');
-    g.draw(); g.emit('click', { type: 'node', id: cl[0].id }); if (App.sel.type !== 'endpoints' || !text('#detail').includes('末端埠')) throw new Error('點群組應顯示末端清單');
+    g.draw(); g.emit('click', { type: 'node', id: cl[0].id }); if (App.sel.type !== 'endpoints' || !text('#detail').includes('終端埠')) throw new Error('點群組應顯示終端清單');
     g.emit('dblclick', { type: 'node', id: cl[0].id });
     if (g.nodes.some((n) => n.id === cl[0].id)) throw new Error('雙擊群組應展開');
-    if (g.nodes.filter((n) => n.virtual && n.parent === cl[0].parent && n.kind !== 'cluster').length !== 8) throw new Error('展開後應有 8 個末端');
+    if (g.nodes.filter((n) => n.virtual && n.parent === cl[0].parent && n.kind !== 'cluster').length !== 8) throw new Error('展開後應有 8 個終端');
     App.UNKNOWN_EXPAND_MAX = 8; App.expanded = new Set();
     $('#btn-unknown').click(); g.draw(); if (g.nodes.filter((n) => g.visible(n) && n.virtual).length) throw new Error('關閉開關後不應顯示未知對端');
     $('#btn-unknown').click();
     // 搜尋 MAC → 高亮未知對端節點
     const m = App.snap.model.macs.find((x) => x.edge.length === 1 && App.vOfEp.has(x.edge[0]));
     if (m) { App.select({ type: 'mac', key: m.mac }, { focus: true }); if (!g.hl.nodes.has(App.vOfEp.get(m.edge[0]))) throw new Error('MAC 搜尋應標出未知對端'); }
-    // 檢查結果 A03 → 顯示末端清單
-    const i = App.snap.findings.findIndex((f) => f.id === 'A03'); if (i >= 0) { App.selectFinding(i); if (App.sel.type !== 'endpoints') throw new Error('A03 應顯示末端清單'); }
+    // 檢查結果 A03 → 顯示終端清單
+    const i = App.snap.findings.findIndex((f) => f.id === 'A03'); if (i >= 0) { App.selectFinding(i); if (App.sel.type !== 'endpoints') throw new Error('A03 應顯示終端清單'); }
   });
   await step('點選每一筆檢查結果', () => { App.snap.findings.forEach((f, i) => { App.selectFinding(i); App.graph.draw(); }); });
-  await step('點選每台設備、每條連結、部分介面', () => {
+  await step('點選每台設備、每條鏈路、部分介面', () => {
     App.snap.model.devices.slice(0, 300).forEach((d) => App.select({ type: 'device', key: d.key }, { focus: true }));
     const endpointDev = App.snap.model.interfaces.find((i) => i.unknownPeer);
     if (endpointDev) {
@@ -208,13 +208,13 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     App.snap.model.links.slice(0, 300).forEach((l) => App.select({ type: 'link', key: l.key }));
     App.snap.model.interfaces.slice(0, 120).forEach((i) => App.select({ type: 'interface', key: i.key }));
     const p = Array.from(App.pairs.values()).find((x) => x.links.length > 1); App.select({ type: 'pair', id: p.id, links: p.links, devs: [p.a, p.b] });
-    if (!text('#detail').includes('條連結')) throw new Error('多連結明細未顯示');
+    if (!text('#detail').includes('條鏈路')) throw new Error('多鏈路明細未顯示');
   });
   await step('MAC、IP、VLAN 查詢與圖上標示', () => {
     App.snap.model.macs.slice(0, 40).forEach((m) => App.select({ type: 'mac', key: m.mac }));
     ['10.1.20.11', '10.1.30.11', '10.255.1.1', '9.9.9.9'].forEach((ip) => App.select({ type: 'ip', key: ip }));
     App.select({ type: 'vlan', key: '30' }); App.graph.draw();
-    if (!process.env.SMOKE_INPUT && !text('#detail').includes('只有一端有此 VLAN 的連結')) throw new Error('VLAN 不一致未顯示');
+    if (!process.env.SMOKE_INPUT && !text('#detail').includes('只有一端有此 VLAN 的鏈路')) throw new Error('VLAN 不一致未顯示');
   });
   await step('搜尋框', async () => {
     const inp = $('#search'); inp.value = 'acc_sw_0'; inp.dispatch('input'); await new Promise((r) => setTimeout(r, 150));
@@ -251,15 +251,15 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     const macChip = document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('MAC'));
     if (new Set(rows.map((r) => r.mac)).size !== App.snap.meta.stats.macs) throw new Error('清單的不重複 MAC 數應等於總覽');
     const nEnd = App.Q.endpointEntries().length; const unk = App.snap.model.interfaces.filter((i) => i.unknownPeer).length;
-    if (nEnd < unk || new Set(App.Q.endpointEntries().map((e) => e.key)).size !== unk) throw new Error('末端的不重複介面數應等於未知對端介面數，且不可少於它');
+    if (nEnd < unk || new Set(App.Q.endpointEntries().map((e) => e.key)).size !== unk) throw new Error('終端的不重複介面數應等於未知對端介面數，且不可少於它');
     document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('設備')).click();
-    const t0 = text('#pane-inventory'); ['全部 ' + (m.devices.length + nEnd), '末端 ' + nEnd].forEach((x) => { if (!t0.includes(x)) throw new Error('設備清單缺少分類：' + x); });
+    const t0 = text('#pane-inventory'); ['全部 ' + (m.devices.length + nEnd), '終端 ' + nEnd].forEach((x) => { if (!t0.includes(x)) throw new Error('設備清單缺少分類：' + x); });
     const firstRow = document.querySelector('#pane-inventory tbody tr');
     if (!firstRow || firstRow.getAttribute('tabindex') !== '0') throw new Error('可點選清單列應可透過鍵盤聚焦');
     firstRow.dispatch('keydown', { key: 'Enter' });
     if (App.sel.type !== 'device') throw new Error('清單列按 Enter 應選取設備');
-    document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('末端')).click();
-    if (document.querySelectorAll('#pane-inventory tbody tr').length !== Math.min(nEnd, 500)) throw new Error('末端篩選列數不符');
+    document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('終端')).click();
+    if (document.querySelectorAll('#pane-inventory tbody tr').length !== Math.min(nEnd, 500)) throw new Error('終端篩選列數不符');
     const ipChip = document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('IP')); ipChip.click();
     document.querySelectorAll('#pane-inventory th')[0].dispatch('click');
     const col = () => document.querySelectorAll('#pane-inventory tbody tr').map((tr) => tr.querySelectorAll('td')[0].textContent);
@@ -300,7 +300,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     const legend = Array.from(document.querySelectorAll('#legend .li'));
     if (document.querySelectorAll('#legend .lg-group').length !== 4) throw new Error('圖例應分為四類');
     const groupTitles = document.querySelectorAll('#legend .lg-title').map((el) => el.textContent);
-    if (groupTitles.join('|') !== '設備|末端|連線|連線註記') throw new Error('圖例分類順序應為設備、末端、連線、連線註記');
+    if (groupTitles.join('|') !== '設備|終端|連線|連線註記') throw new Error('圖例分類順序應為設備、終端、連線、連線註記');
     if (!document.querySelector('#legend .legend-body').classList.contains('hidden')) throw new Error('圖例預設應收合');
     document.querySelector('#legend .legend-head').click();
     if (document.querySelector('#legend .legend-body').classList.contains('hidden')) throw new Error('點圖例標題應展開');
@@ -324,13 +324,13 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (keyboardLink.getAttribute('tabindex') !== '0' || keyboardLink.getAttribute('role') !== 'link') throw new Error('動態連結需具備鍵盤焦點與連結語意');
     keyboardLink.dispatch('keydown', { key: 'Enter' });
     if (!keyboardLinkActivated) throw new Error('動態連結按 Enter 應觸發操作');
-    const hearsay = legend.find((li) => li.textContent === '聽說'); const domain = legend.find((li) => li.textContent === 'MNDP');
-    if (!hearsay || !domain) throw new Error('圖例缺少聽說或 MNDP 註記');
+    const hearsay = legend.find((li) => li.textContent === '單側觀察'); const domain = legend.find((li) => li.textContent === 'MNDP');
+    if (!hearsay || !domain) throw new Error('圖例缺少單側觀察或 MNDP 註記');
     const hs = sw(hearsay)[0]; const ds = sw(domain)[0];
-    if (hs.style.opacity !== String(T.weakEdge.hearsay.alpha) || !hs.style.background.includes(T.weakEdge.hearsay.c)) throw new Error('聽說圖例顏色或透明度與 theme 不一致');
+    if (hs.style.opacity !== String(T.weakEdge.hearsay.alpha) || !hs.style.background.includes(T.weakEdge.hearsay.c)) throw new Error('單側觀察圖例顏色或透明度與 theme 不一致');
     if (ds.style.opacity !== String(T.weakEdge.domainOnly.alpha) || !ds.style.background.includes(T.weakEdge.domainOnly.c)) throw new Error('MNDP 圖例顏色或透明度與 theme 不一致');
     if (T.weakEdge.domainOnly.alpha !== 0.7) throw new Error('MNDP 邊透明度應為 70%');
-    if (hs.style.background === ds.style.background) throw new Error('聽說與 MNDP 圖例線型應可區分');
+    if (hs.style.background === ds.style.background) throw new Error('單側觀察與 MNDP 圖例線型應可區分');
   });
   await step('MNDP 圖例、提示與細節不暗示實體直連', async () => {
     const input = 'A (10.0.0.1):\n### /ip neighbor print detail\n'
@@ -350,7 +350,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     const domainLink = App.snap.model.links.find((l) => l.evidenceScope === 'broadcast-domain');
     const remoteEp = S.keys.splitEp(domainLink.a)[0] === 'A' ? domainLink.b : domainLink.a;
     App.select({ type: 'interface', key: remoteEp });
-    if (!text('#detail').includes('MNDP：L2 網域可達，非直連')) throw new Error('MNDP 回報介面的細節不應呈現為直連線');
+    if (!text('#detail').includes('MNDP：L2 廣播網域可達，非直連')) throw new Error('MNDP 回報介面的細節不應呈現為直連線');
   });
   await step('連線埠名：縮小時隱藏，滑過連線或節點時強制顯示', () => {
     const graph = App.graph; const ctx = graph.ctx;
@@ -442,7 +442,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     $('#detail').querySelectorAll('th').find((el) => el.textContent.startsWith('網段')).dispatch('click');
     if (order().join() !== '10.100.0.0,10.10.0.0,10.9.0.0') throw new Error('再點一次應降冪：' + order());
   });
-  await step('CAPsMAN Wi-Fi 多 MAC 保留菱形提示，MAC 位置列入末端清單', async () => {
+  await step('CAPsMAN Wi-Fi 多 MAC 保留菱形提示，MAC 位置列入終端清單', async () => {
     const input = 'SW_A (10.0.0.1):\n### /interface print detail\n'
       + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
       + ' 7    RS ;;; managed by CAPsMAN, traffic processing on\n'
@@ -461,11 +461,11 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     for (let i = 0; i < 4000 && (!App.snap || App.snap.meta.inputHash !== hash); i++) await new Promise((r) => setTimeout(r, 5));
     if (App.snap.meta.inputHash !== hash) throw new Error('Wi-Fi 基準未建立');
     const wifis = App.snap.model.interfaces.filter((i) => ['wifi1', 'wifi8'].includes(i.name));
-    if (!wifis.every((i) => i.status === 'up' && !i.unknownPeer && !i.edge && i.macs.length === 2)) throw new Error('Wi-Fi 不應列為末端介面');
+    if (!wifis.every((i) => i.status === 'up' && !i.unknownPeer && !i.edge && i.macs.length === 2)) throw new Error('Wi-Fi 不應列為終端介面');
     const diamonds = App.graph.nodes.filter((n) => n.kind === 'downstream' && n.parent === 'SW_A');
     if (diamonds.length !== 2 || !diamonds.every((n) => n.id === '?p|SW_A|wifi1' || n.id === '?p|SW_A|wifi8')) throw new Error('Wi-Fi 多 MAC 應保留菱形圖面提示');
     const wifiRows = App.Q.inventory().rows.endpoints.filter((r) => r.wifi);
-    if (wifiRows.length !== 4 || !wifiRows.every((r) => ['wifi1', 'wifi8'].includes(r.ifc))) throw new Error('每個 Wi-Fi MAC 觀察位置都應列入末端清單');
+    if (wifiRows.length !== 4 || !wifiRows.every((r) => ['wifi1', 'wifi8'].includes(r.ifc))) throw new Error('每個 Wi-Fi MAC 觀察位置都應列入終端清單');
     if (App.snap.findings.some((f) => f.id === 'A02')) throw new Error('Wi-Fi 漫遊 MAC 位置不應觸發 A02');
     App.select({ type: 'endpoints', dev: 'SW_A' });
     const detail = text('#detail');
@@ -484,14 +484,14 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     for (let i = 0; i < 4000 && (!App.snap || App.snap.meta.inputHash !== hash); i++) await new Promise((r) => setTimeout(r, 5));
     if (App.snap.meta.inputHash !== hash) throw new Error('veth 基準未建立');
     const v = App.graph.nodes.find((n) => n.id === '?p|SW_A|veth1'); const e = App.graph.nodes.find((n) => n.id === '?p|SW_A|ether5');
-    if (!v || !e) throw new Error('veth1 與 ether5 末端都應畫出');
+    if (!v || !e) throw new Error('veth1 與 ether5 終端都應畫出');
     if (v.ifStyle || v.color === '#d81b60') throw new Error('veth 節點外觀不應改變，只識別連線');
     const ve = App.graph.edges.find((x) => x.b === v.id); const ee = App.graph.edges.find((x) => x.b === e.id);
     if (!ve || !ve.ifStyle || ve.ifStyle.c !== '#d81b60' || ee.ifStyle) throw new Error('veth 連線應帶專用色，其他連線不變');
     if (!/容器 veth/.test(v.tip)) throw new Error('提示應標示容器 veth');
     if (!Array.from(document.querySelectorAll('#legend .li')).some((el) => /容器 veth/.test(el.textContent))) throw new Error('圖例缺少 veth');
   });
-  await step('Wi-Fi 介面不列為末端；MAC 位置與單 MAC 有線埠均列入清單', async () => {
+  await step('Wi-Fi 介面不列為終端；MAC 位置與單 MAC 有線埠均列入清單', async () => {
     const input = 'SW_A (10.0.0.1):\n### /interface print detail\n'
       + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
       + ' 0  R  name="wifi1" type="wifi" mtu=1500\n'
@@ -509,11 +509,11 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     const wifis = App.snap.model.interfaces.filter((i) => ['wifi1', 'wlan1'].includes(i.name));
     const ethernet = App.snap.model.interfaces.find((i) => i.name === 'ether5');
     const endpoints = App.graph.nodes.filter((n) => n.virtual && n.parent === 'SW_A');
-    if (!wifis.every((i) => !i.edge && !i.unknownPeer)) throw new Error('Wi-Fi 介面不應列為末端');
-    if (!ethernet || !ethernet.edge || !ethernet.unknownPeer) throw new Error('單 MAC 有線介面應列為末端');
+    if (!wifis.every((i) => !i.edge && !i.unknownPeer)) throw new Error('Wi-Fi 介面不應列為終端');
+    if (!ethernet || !ethernet.edge || !ethernet.unknownPeer) throw new Error('單 MAC 有線介面應列為終端');
     if (endpoints.length !== 3 || !endpoints.some((n) => n.id === '?p|SW_A|ether5')
       || !endpoints.filter((n) => n.kind === 'downstream').every((n) => n.id === '?p|SW_A|wifi1' || n.id === '?p|SW_A|wlan1')) {
-      throw new Error('Wi-Fi 多 MAC 應保留菱形提示，並與單 MAC 有線末端分別呈現');
+      throw new Error('Wi-Fi 多 MAC 應保留菱形提示，並與單 MAC 有線終端分別呈現');
     }
     const wifiRows = App.Q.inventory().rows.endpoints.filter((r) => r.wifi);
     if (wifiRows.length !== 3 || !wifiRows.every((r) => ['wifi1', 'wlan1'].includes(r.ifc))) throw new Error('Wi-Fi 清單應逐一列出每個 MAC 觀察位置');
@@ -543,12 +543,12 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     });
   });
   await step('清除基準', async () => { $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20)); if (App.snap) throw new Error('未清除'); });
-  await step('還原舊 schema 的基準：有保存輸入時重建，沒有時明確告知', async () => {
+  await step('還原舊 schema 的基準：有儲存輸入時重建，沒有時明確告知', async () => {
     const sources = [{ name: 'sample-bundle.txt', text: S.samples['sample-bundle.txt'] }];
     const old = { meta: { schema: 'ssot-snapshot/1', version: '1.3.2', createdAt: '2026-01-01T00:00:00Z' }, model: {} };
     await S.store.set('last', { snapshot: old, sources, profile: null });
     await App.restore();
-    if (!App.snap || App.snap.meta.schema !== S.SCHEMA) throw new Error('舊 schema 應以保存的輸入重建');
+    if (!App.snap || App.snap.meta.schema !== S.SCHEMA) throw new Error('舊 schema 應以儲存的輸入重建');
     $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20));
     await S.store.set('last', { snapshot: old, sources: [], profile: null });
     await App.restore();

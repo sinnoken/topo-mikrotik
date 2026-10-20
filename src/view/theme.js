@@ -19,7 +19,7 @@
       lag: { c: '#3b82f6', w: 3.2 }, '40g': { c: '#ef4444', w: 2.8 }, '10g': { c: '#f59e0b', w: 2.1 }, '1g': { c: '#0f766e', w: 2.4 },
       oob: { c: '#22c55e', w: 1.2, dash: [4, 3] }, l3: { c: '#6366f1', w: 1.4, dash: [6, 4] }, other: { c: '#b0b8c1', w: 1.3 },
     },
-    // 證據強度較弱的邊：純 MNDP（網域可達）與聽說（對端無 LLDP）
+    // 證據強度較弱的邊：純 MNDP（廣播網域可達）與單側觀察（對端無 LLDP）
     weakEdge: {
       domainOnly: { c: '#9aa5b1', alpha: 0.7, dash: [8, 3, 2, 3] },
       hearsay: { c: '#7c3aed', alpha: 0.85, dash: [2, 3] },
@@ -39,7 +39,7 @@
       // 不用紅、橘、黃：避免和「錯誤／警告」標記混淆
       vendor: ['#26a69a', '#42a5f5', '#7e57c2', '#5c6bc0', '#8d6e63', '#546e7a', '#66bb6a', '#00897b', '#ab47bc', '#78909c'],
       vendorFallback: '#b0bec5',
-      // 依介面類型識別連到末端的連線（只標連線，節點外觀不變）；鍵為 rawType（veth）或 type（wireless），用 styleOf 查
+      // 依介面類型識別連到終端的連線（只標連線，節點外觀不變）；鍵為 rawType（veth）或 type（wireless），用 styleOf 查
       byType: {
         veth: { c: '#d81b60', label: '容器 veth' },
         wireless: { c: '#00b8d4', label: 'Wi-Fi' },

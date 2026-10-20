@@ -59,7 +59,7 @@
       { t: '設備', f: (r) => Q.devName(r.dev) },
       { t: '類型', f: (r) => V.kindChip(r.kind) },
       { t: '資料', f: (r) => h('div', { class: 'chip-list' }, [...r.data.map((t) => V.chip(S.check.DATA_LABEL[t] || t)), ...r.missing.map((t) => V.chip('缺 ' + (S.check.DATA_LABEL[t] || t), 'err'))]) },
-      { t: '連結', f: (r) => String(r.links) },
+      { t: '鏈路', f: (r) => String(r.links) },
     ], list, { onRow: (r) => App.select({ type: 'device', key: r.dev }, { focus: true }), limit: 600, bad: (r) => r.missing.length > 0 }));
   }
   coverage.showMissing = (App) => { cov.filter = 'missing'; coverage(App); };
@@ -108,7 +108,7 @@
     const TAB_COUNT = { device: C.devices + C.endpoints, interface: C.interfaces, ip: C.ips, prefix: C.prefixes, mac: C.macs, vlan: C.vlans };
     const T = {
       device: ['設備', devRows, [
-        { t: '設備', f: (r) => nameOf(r), s: nameOf }, { t: '類型', f: (r) => (r.wifi ? V.chip('Wi-Fi', 'info') : r.end ? V.chip('末端', 'kind-unknown') : V.kindChip(r.kind)), s: (r) => (r.wifi ? 'Wi-Fi' : r.end ? '末端' : V.KIND[r.kind] || r.kind) },
+        { t: '設備', f: (r) => nameOf(r), s: nameOf }, { t: '類型', f: (r) => (r.wifi ? V.chip('Wi-Fi', 'info') : r.end ? V.chip('終端', 'kind-unknown') : V.kindChip(r.kind)), s: (r) => (r.wifi ? 'Wi-Fi' : r.end ? '終端' : V.KIND[r.kind] || r.kind) },
         { t: '管理 IP', f: (r) => mono(ipOf(r)), s: ipOf }, { t: '廠商', f: (r) => vendorOf(r) || '', s: vendorOf },
         { t: '連接於', f: (r) => (r.end ? `${dn(r.dev)} ${r.ifc}` : ''), s: (r) => (r.end ? dn(r.dev) + ' ' + r.ifc : null) },
         { t: '收集', f: (r) => (r.end ? '' : r.collected ? '是' : '否'), s: (r) => (r.end ? null : r.collected ? '是' : '否') }],
@@ -140,7 +140,7 @@
     const FILTERS = {
       ip: [['all', '全部', () => true, C.ips], ['arp', 'ARP', (r) => r.from.includes('ARP'), C.arpIps], ['own', '設備自有', (r) => r.from.some((x) => x === '介面' || x === '管理'), C.ownIps], ['heard', '鄰居宣告', (r) => r.from.includes('鄰居宣告'), C.heardIps]],
       mac: [['all', '全部', () => true, C.macs], ['noip', '缺 IP', (r) => r.noIp, C.noIpMacs]],
-      device: [['all', '全部', () => true, C.devices + C.endpoints], ['net', '網路設備', (r) => !r.end && r.kind !== 'host', C.devices - C.hosts], ['host', '主機', (r) => !r.end && r.kind === 'host', C.hosts], ['end', '末端', (r) => r.end, C.endpoints]],
+      device: [['all', '全部', () => true, C.devices + C.endpoints], ['net', '網路設備', (r) => !r.end && r.kind !== 'host', C.devices - C.hosts], ['host', '主機', (r) => !r.end && r.kind === 'host', C.hosts], ['end', '終端', (r) => r.end, C.endpoints]],
     };
     const flt = FILTERS[inv.kind];
     if (flt) {

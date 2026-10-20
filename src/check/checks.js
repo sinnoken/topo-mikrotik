@@ -11,15 +11,15 @@
   const CATALOG = {
     I01: { severity: 'error', cat: '輸入', title: '無法辨識的內容' },
     I02: { severity: 'warn', cat: '輸入', title: '同一設備重複提供同類資料（以後者為準）' },
-    C01: { severity: 'info', cat: '覆蓋', title: '網路設備只被其他設備看到、沒有收集資料' },
+    C01: { severity: 'info', cat: '覆蓋', title: '網路設備僅由鄰居發現、沒有收集資料' },
     C02: { severity: 'warn', cat: '覆蓋', title: '缺少應收集的資料' },
-    K01: { severity: 'warn', cat: '連結', title: 'LLDP 單向（對端沒有回報這條連結）' },
-    K02: { severity: 'error', cat: '連結', title: '同一介面對到多個鄰居' },
-    K03: { severity: 'warn', cat: '連結', title: '聚合鏈路兩端成員不一致' },
-    K04: { severity: 'info', cat: '連結', title: '對端回報的埠名稱與本機不同' },
-    V01: { severity: 'warn', cat: 'VLAN', title: '連結兩端 VLAN 不一致' },
+    K01: { severity: 'warn', cat: '鏈路', title: 'LLDP 單向（對端沒有回報這條鏈路）' },
+    K02: { severity: 'error', cat: '鏈路', title: '同一介面對應到多個鄰居' },
+    K03: { severity: 'warn', cat: '鏈路', title: '聚合鏈路兩端成員不一致' },
+    K04: { severity: 'info', cat: '鏈路', title: '對端回報的埠名稱與本機不同' },
+    V01: { severity: 'warn', cat: 'VLAN', title: '鏈路兩端 VLAN 不一致' },
     A01: { severity: 'warn', cat: '位址', title: '同一 IP 對應多個 MAC' },
-    A02: { severity: 'warn', cat: '位址', title: '同一 MAC 在同一 VLAN 出現在多個末端埠' },
+    A02: { severity: 'warn', cat: '位址', title: '同一 MAC 在同一 VLAN 出現在多個終端埠' },
     A03: { severity: 'info', cat: '位址', title: '介面有學到 MAC 但沒有 LLDP／CDP 鄰接（未知對端）' },
     R01: { severity: 'info', cat: '路由', title: '路由下一跳不屬於任何已知設備' },
     R02: { severity: 'info', cat: '路由', title: 'OSPF 鄰居無法對應到已收集的設備' },
@@ -62,7 +62,7 @@
     M.devices.forEach((d) => {
       if (!d.collected) {
         if (d.kind === 'host') return; // 主機本來就不在收集範圍
-        add('C01', `${name(d.key)}：由 ${Array.from(d.seenBy).map(name).join('、')} 看到`, [{ type: 'device', key: d.key }]);
+        add('C01', `${name(d.key)}：由 ${Array.from(d.seenBy).map(name).join('、')} 發現`, [{ type: 'device', key: d.key }]);
         return;
       }
       const miss = (expected[d.kind] || []).filter((t) => !d.data.has(t));
@@ -70,7 +70,7 @@
       if (miss.length) add('C02', `${name(d.key)}（${d.kind}）缺少：${miss.map((t) => DATA_LABEL[t] || t).join('、')}`, [{ type: 'device', key: d.key }]);
     });
 
-    // ---- 連結
+    // ---- 鏈路
     M.notes.k01.forEach((n) => add('K01',
       `${name(n.dev)} ${M.ifcs.get(K.ep(n.dev, n.ifc)).name} 看到 ${name(n.peer)} ${n.peerIfc}，但 ${name(n.peer)} 的 LLDP 沒有回報 ${name(n.dev)}`,
       [{ type: 'link', key: n.link }], [{ block: n.block, line: n.line }]));
@@ -88,11 +88,11 @@
     interfaceLinksByEp.forEach((ls, ep) => {
       if (ls.length < 2) return;
       const peers = ls.map((l) => epName(l.a === ep ? l.b : l.a));
-      add('K02', `${epName(ep)} 同時對到：${peers.join('、')}`,
+      add('K02', `${epName(ep)} 同時對應到：${peers.join('、')}`,
         [{ type: 'interface', key: ep }].concat(ls.map((l) => ({ type: 'link', key: l.key }))), ls.map((l) => ({ block: l.src[0][0], line: l.src[0][1] })));
     });
 
-    // 聚合：依成員連結推出 (A:ae, B:ae) 配對
+    // 聚合：依成員鏈路推出 (A:ae, B:ae) 配對
     const lagPairs = new Map();
     M.links.forEach((l) => {
       if (l.layer !== 'l2' || l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN) return;
@@ -151,7 +151,7 @@
       edgeByVlan.forEach((eps, vlan) => {
         if (eps.size < 2) return;
         const locations = Array.from(eps).sort(S.util.natural);
-        add('A02', `${K.macPretty(m.mac)} 在 ${vlan ? `VLAN ${vlan}` : 'VLAN 不明'} 的多個末端埠出現：${locations.map(epName).join('、')}`,
+        add('A02', `${K.macPretty(m.mac)} 在 ${vlan ? `VLAN ${vlan}` : 'VLAN 不明'} 的多個終端埠出現：${locations.map(epName).join('、')}`,
           [{ type: 'mac', key: m.mac }].concat(locations.map((ep) => ({ type: 'interface', key: ep }))));
       });
     });
@@ -186,8 +186,8 @@
   }
 
   /**
-   * 末端埠：已收集設備上、恰好學到一個 MAC、非 Wi-Fi、狀態不是 down 的介面，
-   * 且沒有連到其他「已收集的網路設備」（連到主機或未收集設備的埠仍算末端）。
+   * 終端埠：已收集設備上、恰好學到一個 MAC、非 Wi-Fi、狀態不是 down 的介面，
+   * 且沒有連到其他「已收集的網路設備」（連到主機或未收集設備的埠仍算終端）。
    * linksByEp 僅包含介面鄰接證據；廣播網域（MNDP）可達不代表該埠有 LLDP／CDP 鄰接。
    * 回傳 Map(ep → { linked: 是否有任何 LLDP／CDP 鄰接 })
    */
@@ -199,7 +199,7 @@
       return peer && peer.collected && peer.kind !== 'host';
     });
     const hasAdjacency = (ep) => adjacencyLinksByEp.has(ep);
-    // 設備自己的介面 MAC（/interface print 的 mac-address）出現在轉發表時不是外部末端
+    // 設備自己的介面 MAC（/interface print 的 mac-address）出現在轉發表時不是外部終端
     const ownMacs = new Map();
     M.ifcs.forEach((i) => { const m = i.hwMac && K.mac(i.hwMac); if (m) { if (!ownMacs.has(i.dev)) ownMacs.set(i.dev, new Set()); ownMacs.get(i.dev).add(m); } });
     M.ifcs.forEach((i, ep) => {

@@ -108,7 +108,7 @@
       if (!p.pa || !p.pb) {
         const lagSide = p.pa || p.pb; const other = p.pa ? p.lb : p.la;
         const od = M.devices.get(K.splitEp(other)[0]);
-        if (od && od.collected && (od.data.has('config') || od.data.has('interface')))
+        if (od && od.collected && od.data.has('config')) // 聚合成員關係只來自 export（/interface bonding）
           add('K03', `${epName(lagSide)} 的成員連到 ${epName(other)}，但對端不是聚合介面成員`, ents, ev);
         return;
       }

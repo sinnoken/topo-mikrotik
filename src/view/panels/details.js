@@ -285,7 +285,7 @@
         ['位置（末端埠）', r.locations.length ? h('span', null, r.locations.flatMap((x, n) => [n ? '、' : '', epLink(App, x.ep)])) : '—']]),
       h('div', { class: 'row', style: { marginTop: '10px' } }, [h('button', { onclick: () => App.openTrace(r.ip, '') }, '從這個 IP 追蹤路由'), h('button', { onclick: () => App.openTrace('', r.ip) }, '追蹤到這個 IP')]),
       findingsBlock(App, Q.findingsFor('ip', r.ip)),
-      r.arps.length ? h('div', null, [sec('ARP 紀錄'), V.table([{ t: '設備', f: (a) => devLink(App, a.dev) }, { t: '介面', f: (a) => a.ifc + (a.phys ? ` [${a.phys}]` : '') }, { t: 'MAC', f: (a) => macLink(App, a.mac) }], r.arps)]) : null,
+      r.arps.length ? h('div', null, [sec('ARP 紀錄'), V.table([{ t: '設備', f: (a) => devLink(App, a.dev) }, { t: '介面', f: (a) => a.ifc }, { t: 'MAC', f: (a) => macLink(App, a.mac) }], r.arps)]) : null,
     ]);
   }
 

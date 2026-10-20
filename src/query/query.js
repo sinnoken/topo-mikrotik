@@ -109,16 +109,16 @@
       // 清單與總覽的唯一數字來源：列資料與計數一起算，畫面不得自行重算
       inventory() {
         if (inv) return inv;
-        const macs = Q.macEntries(); const ips = Q.ipEntries(); const endpoints = Q.endpointEntries();
+        const macs = Q.macEntries(); const ips = Q.ipEntries(); const endpoints = Q.endpointEntries(); const prefixes = Q.prefixEntries(ips);
         const macSet = (f) => new Set(macs.filter(f).map((r) => r.mac)).size;
         inv = {
-          rows: { devices: m.devices, endpoints, interfaces: m.interfaces, ips, macs, vlans: m.vlans },
+          rows: { devices: m.devices, endpoints, interfaces: m.interfaces, ips, macs, vlans: m.vlans, prefixes },
           counts: {
             devices: m.devices.length, collected: m.devices.filter((d) => d.collected).length, hosts: m.devices.filter((d) => d.kind === 'host').length,
             endpoints: endpoints.length, endpointPorts: new Set(endpoints.map((e) => e.key)).size, interfaces: m.interfaces.length,
             ips: ips.length, arpIps: ips.filter((r) => r.from.includes('ARP')).length, ownIps: ips.filter((r) => r.from.includes('介面') || r.from.includes('管理')).length,
             heardIps: ips.filter((r) => r.from.includes('鄰居宣告')).length,
-            macs: macSet(() => true), macRows: macs.length, noIpMacs: macSet((r) => r.noIp), vlans: m.vlans.length, vlanIds: new Set(m.vlans.map((v) => v.id)).size,
+            macs: macSet(() => true), macRows: macs.length, noIpMacs: macSet((r) => r.noIp), vlans: m.vlans.length, vlanIds: new Set(m.vlans.map((v) => v.id)).size, prefixes: prefixes.length,
           },
         };
         return inv;
@@ -142,6 +142,14 @@
           const ownerDev = owner ? K.splitEp(owner)[0] : null;
           return { ip, owner, dev: ownerDev, ifc: owner && !owner.endsWith('|') ? Q.epName(owner).slice(Q.devName(ownerDev).length + 1) : null, macs, from };
         });
+      },
+      /** 每個直連網段一列：設定在哪些介面／設備，以及清單中落在網段內的 IP 數（介面位址、管理 IP、ARP 合計）。 */
+      prefixEntries(ips) {
+        return m.prefixes.map((p) => ({
+          prefix: p.prefix, net: p.net, len: p.len, basis: p.basis, eps: p.eps,
+          devs: U.uniq(p.eps.map((ep) => K.splitEp(ep)[0])).sort(U.natural),
+          ipCount: (ips || Q.ipEntries()).filter((r) => S.ip.inNet(r.ip, p.net, p.len)).length,
+        }));
       },
       epName(ep) { const [d, i] = K.splitEp(ep); const x = ifc.get(ep); return Q.devName(d) + ' ' + (x ? x.name : i); },
       findingsFor(type, key) { return (findingsBy.get(type + ':' + key) || []).map((i) => snap.findings[i]); },

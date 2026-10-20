@@ -52,7 +52,17 @@ function parseHtml(html, root) {
 const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const body = new El('body'); parseHtml(html.split('<body>')[1], body);
 const docListeners = {}; const winListeners = {};
-const document = { body, activeElement: body, createElement: (t) => new El(t), createTextNode: (t) => new Text_(t),
+// <script src> 動態載入：模擬瀏覽器在下一個事件循環執行檔案並觸發 onload／onerror
+const head = new El('head'); const headAppend = head.appendChild.bind(head); const loadedScripts = [];
+head.appendChild = (c) => {
+  headAppend(c);
+  if (c.tagName === 'SCRIPT') setTimeout(() => {
+    try { vm.runInThisContext(fs.readFileSync(path.join(ROOT, c.src), 'utf8'), { filename: c.src }); loadedScripts.push(c.src); } catch (e) { return c.onerror && c.onerror(e); }
+    if (c.onload) c.onload();
+  }, 0);
+  return c;
+};
+const document = { body, head, activeElement: body, createElement: (t) => new El(t), createTextNode: (t) => new Text_(t),
   getElementById: (id) => body.querySelector('#' + id), querySelector: (s) => body.querySelector(s), querySelectorAll: (s) => body.querySelectorAll(s),
   addEventListener: (t, f) => (docListeners[t] = docListeners[t] || []).push(f),
   removeEventListener: (t, f) => { docListeners[t] = (docListeners[t] || []).filter((x) => x !== f); } };
@@ -74,6 +84,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
 
 (async () => {
   await step('啟動、顯示歡迎畫面', async () => { (docListeners.DOMContentLoaded || []).forEach((f) => f()); await new Promise((r) => setTimeout(r, 20)); if ($('#welcome').classList.contains('hidden')) throw new Error('應顯示歡迎畫面'); });
+  await step('ELK 不在啟動時載入', () => { if (globalThis.ELK || loadedScripts.length) throw new Error('ELK 應在第一次需要分層版面時才載入'); });
   await step('載入範例並建立基準', async () => {
     await App.loadSample(); if (!$('#input-text').value.includes('TPE_CORE_RT_01')) throw new Error('範例未載入');
     if (process.env.SMOKE_INPUT) $('#input-text').value = fs.readFileSync(process.env.SMOKE_INPUT, 'utf8');
@@ -91,6 +102,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
   });
   await step('分層版面（ELK）：所有節點都有座標、各群外框不重疊、完成後有提示', async () => {
     if (App.layoutMode !== 'elk') throw new Error('預設應為分層版面');
+    if (loadedScripts.join() !== S.view.layout.ELK_SRC) throw new Error('需要分層版面時應載入一次 ELK：' + loadedScripts.join());
     if (process.env.SMOKE_INPUT) console.log('      ' + text('#banner'));
     else if (!text('#banner').includes('已套用分層版面')) throw new Error('分層版面完成後應提示：' + text('#banner'));
     const g = App.graph; const box = new Map();
@@ -119,15 +131,24 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     const summary = text('#baseline-summary');
     if (!summary.includes('基準檢查') || !summary.includes('收集完整度')) throw new Error('缺少基準狀態與收集完整度摘要');
     if (summary.includes('網路正常') || summary.includes('即時')) throw new Error('基準摘要不可宣稱即時網路健康');
-    const missing = $('#baseline-summary').querySelectorAll('button').find((b) => b.textContent === '查看收集缺漏');
-    if (!missing || missing.disabled) throw new Error('有缺漏時應提供可用的收集缺漏入口');
-    missing.click();
-    if (!text('#pane-coverage').includes('有缺漏')) throw new Error('缺漏入口沒有切換至覆蓋率');
+    // 斷言入口與資料的關係，而非範例才有的特定問題：大型乾淨網路（SMOKE_INPUT）可能沒有缺漏或錯誤
+    const button = (t) => $('#baseline-summary').querySelectorAll('button').find((b) => b.textContent === t);
+    const off = (b) => b.getAttribute('disabled') !== null; // 模擬 DOM 的 setAttribute 不會同步 .disabled
+    const missing = button('查看收集缺漏');
     const expectedMissing = App.snap.coverage.filter((row) => row.collected && row.missing.length).length;
-    if ($('#pane-coverage').querySelectorAll('tbody tr').length !== expectedMissing) throw new Error('缺漏入口應預先篩選有缺漏的設備');
-    const problems = $('#baseline-summary').querySelectorAll('button').find((b) => b.textContent === '查看錯誤／警告');
-    problems.click();
-    if (!text('#pane-findings').includes('LLDP 單向')) throw new Error('問題入口沒有切換至檢查結果');
+    if (!missing || off(missing) !== !expectedMissing) throw new Error('收集缺漏入口應在有缺漏時才可用');
+    if (expectedMissing) {
+      missing.click();
+      if (!text('#pane-coverage').includes('有缺漏')) throw new Error('缺漏入口沒有切換至覆蓋率');
+      if ($('#pane-coverage').querySelectorAll('tbody tr').length !== expectedMissing) throw new Error('缺漏入口應預先篩選有缺漏的設備');
+    }
+    const problems = button('查看錯誤／警告');
+    const firstProblem = App.snap.findings.find((f) => f.severity !== 'info');
+    if (!problems || off(problems) !== !firstProblem) throw new Error('問題入口應在有錯誤／警告時才可用');
+    if (firstProblem) {
+      problems.click();
+      if (!text('#pane-findings').includes(firstProblem.title)) throw new Error('問題入口沒有切換至檢查結果');
+    }
   });
   await step('窄螢幕工作區切換與詳情漸進展開', () => {
     window.innerWidth = 390;
@@ -219,8 +240,14 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     document.querySelectorAll('#left .tabs button')[2].click();
     const m = App.snap.model; const ips = App.Q.ipEntries();
     const t = text('#pane-inventory');
-    [`設備 ${m.devices.length + App.Q.endpointEntries().length}`, `介面 ${m.interfaces.length}`, `IP ${ips.length}`, `MAC ${new Set(rows.map((r) => r.mac)).size}`, `VLAN ${m.vlans.length}`].forEach((x) => { if (!t.includes(x)) throw new Error('清單缺少分類：' + x); });
+    [`設備 ${m.devices.length + App.Q.endpointEntries().length}`, `介面 ${m.interfaces.length}`, `IP ${ips.length}`, `網段 ${m.prefixes.length}`, `MAC ${new Set(rows.map((r) => r.mac)).size}`, `VLAN ${m.vlans.length}`].forEach((x) => { if (!t.includes(x)) throw new Error('清單缺少分類：' + x); });
     if (new Set(ips.map((r) => r.ip)).size !== ips.length) throw new Error('IP 清單應去重複');
+    document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('網段')).click();
+    const pre = App.Q.inventory().rows.prefixes;
+    if (!pre.length || document.querySelectorAll('#pane-inventory tbody tr').length !== pre.length) throw new Error('網段清單列數應等於推導出的網段數');
+    pre.forEach((p) => { if (p.ipCount !== ips.filter((r) => S.ip.inNet(r.ip, p.net, p.len)).length) throw new Error('網段的 IP 數應等於清單中落在網段內的 IP'); });
+    document.querySelector('#pane-inventory tbody tr').dispatch('keydown', { key: 'Enter' });
+    if (App.sel.type !== 'interface' || !pre[0].eps.includes(App.sel.key)) throw new Error('點網段應選取設定該網段的介面');
     const macChip = document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('MAC'));
     if (new Set(rows.map((r) => r.mac)).size !== App.snap.meta.stats.macs) throw new Error('清單的不重複 MAC 數應等於總覽');
     const nEnd = App.Q.endpointEntries().length; const unk = App.snap.model.interfaces.filter((i) => i.unknownPeer).length;

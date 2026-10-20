@@ -98,7 +98,7 @@
         }
         case 'arp': {
           const mk = K.mac(f.mac); if (!mk) break;
-          M.arps.push({ ip: f.ip, mac: mk, dev: f.dev, ifc: K.ifc(f.ifc), phys: f.phys ? K.ifc(f.phys) : null, block: f.block, line: f.line });
+          M.arps.push({ ip: f.ip, mac: mk, dev: f.dev, ifc: K.ifc(f.ifc), block: f.block, line: f.line });
           const am = getOr(M.macs, mk, () => ({ mac: mk, seen: new Map(), ips: new Set(), src: [] })); am.ips.add(f.ip); addSrc(am, f);
           break;
         }

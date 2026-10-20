@@ -4,12 +4,14 @@
  *  - 每群各自用 ELK layered 做多輪交叉最小化與節點擺放，再沿用內建的書架排列
  *  - 節點框預留末端方陣與標籤的空間，ELK 擺放時就不會和其他設備重疊
  * ELK 在 file:// 下沒有 Worker 可用，會在主執行緒計算；群與群之間讓出主執行緒，超過上限或逾時就停止並回報原因。
+ * ELK 檔案約 1.6 MB，第一次需要分層版面時才以 <script> 載入（file:// 下一般 script 可正常載入）。
  */
 (function (S) {
   'use strict';
   const V = S.view;
   const L = V.layout;
   const LABEL_H = 18; const LEAF_R = 10;
+  const ENGINE_SRC = 'vendor/elkjs-0.11.1/elk.bundled.js';
   const OPTIONS = {
     'elk.algorithm': 'layered',
     'elk.direction': 'DOWN',
@@ -26,6 +28,20 @@
     constructor(code, message) { super(message); this.code = code; }
   }
 
+  let loading = null;
+  function loadEngine() {
+    if (typeof globalThis.ELK === 'function') return Promise.resolve();
+    if (!loading) {
+      loading = new Promise((resolve, reject) => {
+        const s = document.createElement('script'); s.src = ENGINE_SRC;
+        s.onload = () => (typeof globalThis.ELK === 'function' ? resolve() : reject(new ElkLayoutError('unavailable', `${ENGINE_SRC} 載入後找不到 ELK`)));
+        s.onerror = () => reject(new ElkLayoutError('unavailable', `無法載入 ${ENGINE_SRC}`));
+        (document.head || document.body).appendChild(s);
+      }).catch((e) => { loading = null; throw e; }); // 失敗後下次可重試
+    }
+    return loading;
+  }
+
   /**
    * @param nodes, edges 與 layout() 相同的圖資料
    * @param opt { radius(node) → 半徑, maxNodes, deadlineMs, isStale() → true 時中止 }
@@ -33,10 +49,10 @@
    */
   async function elk(nodes, edges, opt) {
     const o = Object.assign({ maxNodes: 1500, deadlineMs: 20000, isStale: () => false }, opt);
-    if (typeof globalThis.ELK !== 'function') throw new ElkLayoutError('unavailable', '找不到 ELK 版面引擎（vendor/elkjs 未載入）');
     const groups = L.prepare(nodes, edges);
     const coreNodes = groups.reduce((n, g) => n + g.core.length, 0);
     if (coreNodes > o.maxNodes) throw new ElkLayoutError('too-large', `網路設備 ${coreNodes} 台，超過分層版面上限 ${o.maxNodes} 台`);
+    await loadEngine();
     const engine = new globalThis.ELK();
     const t0 = Date.now(); const boxes = [];
     for (const g of groups) {
@@ -74,5 +90,6 @@
   }
 
   L.elk = elk;
+  L.ELK_SRC = ENGINE_SRC;
   L.ElkLayoutError = ElkLayoutError;
 })(globalThis.SSOT = globalThis.SSOT || {});

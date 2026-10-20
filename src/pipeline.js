@@ -138,7 +138,7 @@
     const prefixes = Array.from(prefixMap.values()).map((p) => Object.assign(p, { eps: p.eps.sort(nat) }))
       .sort((a, b) => nat(a.net, b.net) || a.len - b.len);
 
-    const arps = M.arps.map((a) => ({ ip: a.ip, mac: a.mac, dev: a.dev, ifc: a.ifc, phys: a.phys, src: [[a.block, a.line]] }))
+    const arps = M.arps.map((a) => ({ ip: a.ip, mac: a.mac, dev: a.dev, ifc: a.ifc, src: [[a.block, a.line]] }))
       .sort((a, b) => nat(a.ip, b.ip) || nat(a.dev, b.dev) || U.cmp(a.mac, b.mac));
     const routes = M.routes.map((r) => ({ dev: r.dev, prefix: r.prefix, len: r.len, proto: r.proto, nh: r.nh, src: [[r.block, r.line]] }))
       .sort((a, b) => nat(a.dev, b.dev) || nat(a.prefix, b.prefix) || a.len - b.len);

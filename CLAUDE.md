@@ -38,7 +38,7 @@ git diff --check         # 提交前檢查
   以 IIFE `(function (S) { ... })(globalThis.SSOT)` 撰寫。這是為了 `file://` 可直接開啟，不要改成 import/bundler。
 - **載入順序是契約**：[tools/core-files.js](tools/core-files.js) 定義核心檔案順序，`tests/load.js` 用 `vm` 依此在 Node 載入
   與瀏覽器相同的檔案；`index.html` 的前段 `<script>` 必須與它完全一致（有測試檢查）。新增核心檔案要兩邊同步加。
-  `index.html` 之後再載入 profiles、嵌入的範例、`vendor/` 與 `src/view/*`；`vendor/` 只屬於畫面層，不列入核心載入順序。
+  `index.html` 之後再載入 profiles、嵌入的範例與 `src/view/*`。`vendor/` 不在 `index.html` 裡，由畫面層需要時動態載入，也不列入核心載入順序。
 - **管線**（[src/pipeline.js](src/pipeline.js)，`S.build(sources, options) → Snapshot`）：
   ① `readers/`（bundle-v1、files-v1，依 `readers/index.js` 的 `ORDER` 選擇）切成區塊，保留檔案與行號
   → ② `adapters/` 辨識指令 → ③ `adapters/mikrotik.js` 解析為帶 `block`/`line` 的事實
@@ -61,7 +61,7 @@ git diff --check         # 提交前檢查
   - 內部模型 M 用 Map/Set，只在 `pipeline.js` 的 `serialize` 轉成陣列。
 - **拓樸版面**：
   - [layout.js](src/view/graph/layout.js) 的 `prepare()` 負責分群、末端與分層，`shelf()` 負責書架排列，內建版面與分層版面共用。
-  - 分層版面在 [elk-layout.js](src/view/graph/elk-layout.js)，使用 vendor 的 ELK.js（`vendor/elkjs-0.11.1/`，EPL-2.0）。
+  - 分層版面在 [elk-layout.js](src/view/graph/elk-layout.js)，使用 vendor 的 ELK.js（`vendor/elkjs-0.11.1/`，EPL-2.0）。ELK 約 1.6 MB，第一次需要時才以 `<script>` 載入（路徑定義在 `ENGINE_SRC`）；冒煙測試的模擬 DOM 會模擬這個動態載入。
   - 流程是先用內建版面同步出圖，沒有保存位置時再於背景套用 ELK。超過 `App.ELK_MAX` 台或逾時就維持內建版面，並以 banner 說明原因。
 - **可重現**：相同輸入與選項必得相同 Snapshot（`meta.createdAt`、`meta.timing` 除外）；不可用時間、隨機值或環境影響核心結果。
   `S.VERSION` 與 `S.SCHEMA` 定義於 [src/core/ns.js](src/core/ns.js)。

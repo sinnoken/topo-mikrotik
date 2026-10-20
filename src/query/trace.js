@@ -32,7 +32,6 @@
       if (!routes.length) { ends.push({ dev, status: 'noroute', note: '這台設備沒有路由表資料', path }); continue; }
       let best = -1; let cands = [];
       routes.forEach((r) => {
-        if (r.proto === 'Local') return;
         if (!IP.inNet(dst, r.prefix, r.len)) return;
         if (r.len > best) { best = r.len; cands = [r]; } else if (r.len === best) cands.push(r);
       });

@@ -1,5 +1,7 @@
 # 多層網路架構圖規格可行性評估
 
+> 2026-10-20 更新：Snapshot 升為 `ssot-snapshot/2`。參考 NetBox 補上介面 L2 埠語意（PVID、untagged／tagged VLAN、access／trunk 推論、lag／bridge／VLAN 子介面關係）與 IP 位址／前綴實體（含預留的 `vrf` 欄位）。本文件的差距描述已依此調整，其餘評估不變。欄位定義見[設計說明 §5.2](./design-ssot.md#52-實體snapshotmodelschema-ssot-snapshot2)。
+
 ## 結論摘要
 
 **目前資料擷取、Snapshot 資料結構、查詢 API 與畫面，不足以直接完成整份「多層網路架構圖」v0.1 規格。**
@@ -26,8 +28,8 @@
 |---|---|---|---|
 | 資料基礎與追溯 | Reader → Adapter facts → Model → 純 JSON Snapshot；可保留來源區塊與行號，畫面和比對透過 Query 讀取。 | **可沿用** | 擴充實體或欄位時，仍需同步 Snapshot 版本、序列化、查詢、UI、測試及文件。 |
 | L1 鄰居與鏈路 | RouterOS 鄰居資料涵蓋 LLDP、MNDP、CDP；模型區分介面鄰接與 MNDP 的 broadcast-domain 可達證據。Bonding slaves 也有部分建模。 | **部分支援** | 收集僅限 RouterOS CLI/SSH；沒有 SNMP、gNMI、控制器等來源或通用 `last_seen`。LAG 成員狀態及多來源邏輯鏈路收斂未達規格要求。 |
-| L2 VLAN 與 MAC | 收集 bridge VLAN 成員、PVID、bridge host MAC 位置及 ARP；有 VLAN/鏈路檢視與末端 MAC 觀察。 | **部分支援** | 沒有明確的 L2 domain 模型；tagged/untagged 資訊沒有完整保留成可查詢的 PortVlan 合約，亦未形成 access/trunk、native VLAN、allowed VLAN 清單。MAC 表未保存 dynamic/static 類型與 `last_seen`。 |
-| L3 IP 與路由 | 收集 IPv4 介面位址、ARP、主路由表與 ECMP 下一跳；路徑追蹤支援最長前綴及遞迴下一跳解析。 | **部分支援** | 沒有 VRF 維度；路由解析只保留作用中主表 IPv4 路由，排除黑洞/不可達項。AD、metric、ECMP group、HSRP/VRRP VIP 等未形成資料模型；沒有規格所述的 VRF 子網視圖與完整路由檢查。 |
+| L2 VLAN 與 MAC | 收集 bridge VLAN 成員、PVID、bridge host MAC 位置及 ARP。介面保存 `pvid`、`untaggedVlans`、`taggedVlans` 與推論的 `mode`（access／tagged）；VLAN 成員帶 tagged 標記。有 VLAN／鏈路檢視與末端 MAC 觀察。 | **部分支援** | 沒有明確的 L2 domain 模型；`mode` 是由成員推論，尚未收集 `frame-types`、`ingress-filtering` 等決定 allowed VLAN 的設定。MAC 表未保存 dynamic/static 類型與 `last_seen`。 |
+| L3 IP 與路由 | 收集 IPv4 介面位址、ARP、主路由表與 ECMP 下一跳。位址為獨立的 `ipAddresses` 實體，另由位址推導出 `prefixes`（直連網段）。路徑追蹤支援最長前綴及遞迴下一跳解析。 | **部分支援** | 位址與前綴已預留 `vrf` 欄位，但尚未收集 VRF，固定為 null；ARP 與路由沒有 VRF 維度；路由解析只保留作用中主表 IPv4 路由，排除黑洞/不可達項。AD、metric、ECMP group、HSRP/VRRP VIP 等未形成資料模型；沒有規格所述的 VRF 子網視圖與完整路由檢查。 |
 | L4 ACL／NAT／SLB／Service | 無相應收集器、正規化實體或分析 API。 | **未支援** | 缺少 ACL/object-group/binding、zone、NAT 次序、SLB VIP/pool、主機規則、監聽 Service、規則命中/影響分析與 reachability 計算。 |
 | Workload 與其他平台 | 收集器僅透過本機 SSH 執行 RouterOS 命令；可辨識少數介面類型，例如 veth。 | **未支援規格中的對應能力** | 沒有 namespace/container/VM 到宿主的關聯模型，也沒有 Linux、Windows、Kubernetes 或雲端安全規則來源。 |
 | Query API 與視圖 | 有 MAC/IP/VLAN 查詢、L2 拓樸圖及 IPv4 路徑追蹤。 | **部分支援** | 缺少 VRF-aware L3 path、完整 L2 locate 契約、L3 獨立圖，以及 L4 reach/matrix/rule-impact API 和 zone 矩陣。現有拓樸圖以 L2 鄰接為主。 |
@@ -54,13 +56,12 @@
 
 不過規格中的 L2 圖不只有鄰居鏈路，還需要完整的埠與 VLAN 事實：
 
-- 埠的 access/trunk mode、native VLAN、allowed VLAN 清單。
-- Tagged/untagged VLAN 成員的可追溯表示。
+- 埠的 allowed VLAN 判定所需設定（`frame-types`、`ingress-filtering`）。access／trunk（`mode`）、native VLAN（`pvid`）與 tagged／untagged 成員已建模。
 - 跨設備一致的 L2 domain 識別；目前 VLAN 多為設備內部定義，不能單靠相同 VLAN ID 證明屬於同一廣播域。
 - MAC 表的 dynamic/static 類型、時間資訊與排除 uplink/trunk 的端點定位依據。
-- LAG 成員、成員狀態及將實體成員收斂為邏輯鏈路的完整規則。
+- LAG 成員狀態，以及將實體成員收斂為邏輯鏈路的完整規則。成員關係（`lag`／`lagMembers`）已建模。
 
-目前 RouterOS adapter 雖會解析部分 PVID、bridge VLAN、tagged/untagged 設定，但模型主要保存介面與 VLAN 的關聯，未保留規格所需的完整 PortVlan 屬性。MAC 表解析也沒有輸出規格所需的類型與觀測時間欄位。
+目前模型已把 PVID、untagged、tagged 分開保存在介面上，VLAN 實體的成員也帶有 tagged 標記，各自可追溯到來源行。不過還沒有跨設備的 L2 domain，也沒有 allowed VLAN 判定。MAC 表解析也還沒有輸出規格所需的類型與觀測時間欄位。
 
 參考：[RouterOS Adapter](../src/adapters/mikrotik.js)、[Model 建立與 VLAN 成員解析](../src/model/build.js)、[收集指令清單](./collection.md#1-每台設備要收集的指令)。
 
@@ -70,7 +71,7 @@
 
 但規格要求地址與路由以 VRF 為命名空間，並保留更多路由語意。現況中：
 
-- 介面 IP、ARP、Route 沒有 VRF 欄位或 `(VRF, IP/prefix)` 唯一識別。
+- `ipAddresses`／`prefixes` 已預留 `vrf` 欄位，但尚未收集 VRF；ARP、Route 沒有 VRF 欄位，也沒有 `(VRF, IP/prefix)` 唯一識別。
 - Route Adapter 限於 IPv4，且只留下作用中的 `main` routing table 路由。
 - 黑洞/不可達路由被排除，無法據此檢查黑洞路由。
 - Route 沒有保留 AD、metric、明確 ECMP group 等規格欄位。
@@ -115,7 +116,7 @@
 
 ### 階段二：補足 L2
 
-- 保留可查詢的 tagged/untagged、access/trunk、native/allowed VLAN 屬性。
+- ~~保留可查詢的 tagged/untagged、access/trunk、native VLAN 屬性~~（已完成，`ssot-snapshot/2`）；allowed VLAN 尚待收集 `frame-types`／`ingress-filtering`。
 - 明確處理跨設備 L2 domain，不以相同 VLAN ID 自動推斷同一 domain。
 - 加入 MAC 類型/觀測時間，以及端點定位與 uplink 排除所需的事實。
 - 定義 LAG 邏輯鏈路與成員狀態的歸併方式。
@@ -142,5 +143,5 @@
 ## 最終判定
 
 - **整份規格：目前不夠。** L4 資料模型與功能、多來源收集及 Workload 對應均缺失，且 L3 尚未具備 VRF-aware 路由模型。
-- **RouterOS L2/有限 IPv4 L3 子集：可沿用現有基礎，但尚未完成。** 至少需補齊 L2 埠/VLAN 資料契約、L3 VRF/路由語意及對應檢視。
+- **RouterOS L2/有限 IPv4 L3 子集：可沿用現有基礎，但尚未完成。** L2 埠／VLAN 的主要資料契約與 IP／前綴實體已補上；仍需處理 L2 domain、allowed VLAN、L3 VRF／路由語意及對應檢視。
 - **架構方向：可延伸。** 現有 facts → model → Snapshot → query → view 與來源追溯模式適合作為擴充基礎；功能缺口需從資料來源和事實模型開始補，不宜只先做矩陣 UI。

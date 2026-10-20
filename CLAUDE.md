@@ -50,6 +50,13 @@ git diff --check         # 提交前檢查
   只能 canonicalize 或加註解，不能新增／刪除／改寫事實。
 - **連結語意**：`S.LINK_SCOPE` 區分 interface-adjacency（LLDP／CDP）、broadcast-domain（純 MNDP，只證明 L2 可達，
   不可當直連證據）、routing-adjacency（OSPF，不作為拓樸 edge）。
+- **Snapshot 模型（`ssot-snapshot/2`）**：欄位命名參考 NetBox。完整欄位表見 [docs/design-ssot.md](docs/design-ssot.md) §5.2，以下是容易用錯的地方：
+  - 介面的 VLAN 分成 `pvid`／`untaggedVlans`／`taggedVlans`，取聯集用 `S.util.ifcVlans(i)`。
+  - 介面之間的關係都存 ep 鍵，不共用欄位：聚合用 `lag`／`lagMembers`，bridge port 用 `bridge`，VLAN 子介面用 `parent`＋`encapVlan`。
+  - `type` 是封閉列舉 `S.IFC_TYPES`，原值在 `rawType`。
+  - IP 是獨立的 `ipAddresses` 實體，另有推導出的 `prefixes`；介面上沒有 `ips`。畫面用 `Q.addressesOf(ep)`／`Q.ipsOf(ep)` 取得。
+  - 設備身分欄位是 `manufacturer`／`deviceType`／`softwareVersion`。
+  - 內部模型 M 用 Map/Set，只在 `pipeline.js` 的 `serialize` 轉成陣列。
 - **可重現**：相同輸入與選項必得相同 Snapshot（`meta.createdAt`、`meta.timing` 除外）；不可用時間、隨機值或環境影響核心結果。
   `S.VERSION` 與 `S.SCHEMA` 定義於 [src/core/ns.js](src/core/ns.js)。
 

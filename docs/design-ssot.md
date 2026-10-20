@@ -68,9 +68,9 @@
 | ID | 指令 | 事實 |
 |---|---|---|
 | mikrotik.neighbor | /ip neighbor print detail | 鄰居（identity、對端埠、型號、功能）；續行、bridge 重複列、多協定重複列已處理 |
-| mikrotik.config | /export terse／compact | 主機名、介面註解／停用、bridge＋pvid、bridge VLAN、VLAN 子介面、bonding、IP、router-id（含 `/routing id` 名稱解析） |
+| mikrotik.config | /export terse／compact | 主機名、介面註解／停用、bridge port（所屬 bridge＋pvid）、bridge VLAN（tagged／untagged 分開）、VLAN 子介面（parent＋vlan-id）、bonding（成員）、IP、router-id（含 `/routing id` 名稱解析） |
 | mikrotik.bridgehost | /interface bridge host print detail | MAC 位置（略過 bridge 自己的 MAC） |
-| mikrotik.vlans | /interface bridge vlan print detail | 實際 VLAN 成員（`current-*`，含動態） |
+| mikrotik.vlans | /interface bridge vlan print detail | 實際 VLAN 成員（`current-tagged`／`current-untagged` 分開，含動態） |
 | mikrotik.interface | /interface print detail | running／停用／註解／聚合；保留 rawType、mac-address、default-name、mtu、actual-mtu、l2mtu（rawType 供末端判定排除 bridge／vlan／loopback／vrrp，缺 `/interface print` 時改取 export 的 bridge／vlan／bonding 定義，仍無才退回名稱規則）；介面詳情顯示這些欄位，且設備自身的 mac-address 出現在轉發表時不列為外部末端 |
 | mikrotik.ipaddr | /ip address print detail | 介面 IP（略過 disabled、invalid） |
 | mikrotik.arp | /ip arp print detail | MAC↔IP（略過 invalid、多播、APIPA） |
@@ -242,9 +242,10 @@
 |---|---|
 | 一個埠一個 MAC，且非 Wi-Fi | 圓點，顏色依廠商（避開紅橘黃，以免和錯誤標記混淆），標 IP；近看顯示廠商縮寫 |
 | 有線介面一埠多個 MAC，或任一 Wi-Fi 介面 | 有線多 MAC 不列為末端埠；Wi-Fi 介面不列為末端埠，但每個 Wi-Fi MAC 觀察位置列入末端清單並可作圖面提示（多 MAC 為菱形），Wi-Fi 位置不參與 A02 |
-| 介面 `type=veth`（容器虛擬網卡） | 連到該末端的連線用固定洋紅色（`#d81b60`），節點外觀不變；提示與介面詳細標「容器 veth」 |
+| 介面 `rawType=veth`（容器虛擬網卡，`type=virtual`） | 連到該末端的連線用固定洋紅色（`#d81b60`），節點外觀不變；提示與介面詳細標「容器 veth」 |
+| 介面 `type=wireless` | 連線用青色（`#00b8d4`），標「Wi-Fi」 |
 
-依介面 type 的識別色定義於 `theme.js` 的 `endpoint.byType`，只識別連線（收合成「末端 ×N」群組時連線維持預設色），僅視覺識別，不改變判定與檢查。
+依介面類型的識別色定義於 `theme.js` 的 `endpoint.byType`（鍵為 `rawType` 或 `type`，以 `endpoint.styleOf(介面)` 查詢），只識別連線（收合成「末端 ×N」群組時連線維持預設色），僅視覺識別，不改變判定與檢查。
 | 同一台設備超過 8 個，或全網超過 800 個 | 收合成一個「末端 ×N」群組；雙擊或在右側按「在圖上展開」 |
 
 - 點節點或群組：右側顯示每個埠的 MAC、IP、廠商、VLAN；點一列跳到該介面。設備頁也有同樣的清單。

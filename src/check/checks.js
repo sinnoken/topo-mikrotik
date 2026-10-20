@@ -8,28 +8,32 @@
   const K = S.keys;
   const LINK_SCOPE = S.LINK_SCOPE;
 
+  /*
+   * data：規則需要的資料類別（設備的 data）。外層每一組都要有，組內任一種即可；沒有 data 的規則（輸入、覆蓋）一律會檢查。
+   * 只用來區分「通過」與「沒有資料可檢查」，不影響檢查本身。
+   */
   const CATALOG = {
     I01: { severity: 'error', cat: '輸入', title: '無法辨識的內容' },
     I02: { severity: 'warn', cat: '輸入', title: '同一設備重複提供同類資料（以後者為準）' },
     C01: { severity: 'info', cat: '覆蓋', title: '網路設備僅由鄰居發現、沒有收集資料' },
     C02: { severity: 'warn', cat: '覆蓋', title: '缺少應收集的資料' },
-    K01: { severity: 'warn', cat: '鏈路', title: 'LLDP 單向（對端沒有回報這條鏈路）' },
-    K02: { severity: 'error', cat: '鏈路', title: '同一介面對應到多個鄰居' },
-    K03: { severity: 'warn', cat: '鏈路', title: '聚合鏈路兩端成員不一致' },
-    K04: { severity: 'info', cat: '鏈路', title: '對端回報的埠名稱與本機不同' },
-    V01: { severity: 'warn', cat: 'VLAN', title: '鏈路兩端 VLAN 不一致' },
-    V04: { severity: 'warn', cat: 'VLAN', title: '鏈路兩端 native VLAN（PVID）不一致' },
-    V05: { severity: 'info', cat: 'VLAN', title: 'VLAN 介面沒有任何成員埠（孤立 VLAN）' },
-    A01: { severity: 'warn', cat: '位址', title: '同一 IP 對應多個 MAC' },
-    A02: { severity: 'warn', cat: '位址', title: '同一 MAC 在同一 VLAN 出現在多個終端埠' },
-    A03: { severity: 'info', cat: '位址', title: '介面有學到 MAC 但沒有 LLDP／CDP 鄰接（未知對端）' },
-    A04: { severity: 'info', cat: '位址', title: '單一埠學到過多 MAC（可能下掛未管理交換器或 hypervisor）' },
-    A05: { severity: 'info', cat: '位址', title: 'ARP 位址不屬於該設備任何直連網段' },
-    R01: { severity: 'info', cat: '路由', title: '路由下一跳不屬於任何已知設備' },
-    R02: { severity: 'info', cat: '路由', title: 'OSPF 鄰居無法對應到已收集的設備' },
-    R03: { severity: 'warn', cat: '路由', title: '路由下一跳形成迴圈' },
-    R04: { severity: 'warn', cat: '路由', title: '路由下一跳落入黑洞路由' },
-    R05: { severity: 'warn', cat: '路由', title: 'DHCP 網路的閘道不在該網段內' },
+    K01: { severity: 'warn', cat: '鏈路', title: 'LLDP 單向（對端沒有回報這條鏈路）', data: [['lldp']] },
+    K02: { severity: 'error', cat: '鏈路', title: '同一介面對應到多個鄰居', data: [['lldp']] },
+    K03: { severity: 'warn', cat: '鏈路', title: '聚合鏈路兩端成員不一致', data: [['lldp'], ['config']] },
+    K04: { severity: 'info', cat: '鏈路', title: '對端回報的埠名稱與本機不同', data: [['lldp']] },
+    V01: { severity: 'warn', cat: 'VLAN', title: '鏈路兩端 VLAN 不一致', data: [['lldp'], ['config', 'vlans']] },
+    V04: { severity: 'warn', cat: 'VLAN', title: '鏈路兩端 native VLAN（PVID）不一致', data: [['lldp'], ['config']] },
+    V05: { severity: 'info', cat: 'VLAN', title: 'VLAN 介面沒有任何成員埠（孤立 VLAN）', data: [['config', 'vlans']] },
+    A01: { severity: 'warn', cat: '位址', title: '同一 IP 對應多個 MAC', data: [['arp']] },
+    A02: { severity: 'warn', cat: '位址', title: '同一 MAC 在同一 VLAN 出現在多個終端埠', data: [['mac']] },
+    A03: { severity: 'info', cat: '位址', title: '介面有學到 MAC 但沒有 LLDP／CDP 鄰接（未知對端）', data: [['mac']] },
+    A04: { severity: 'info', cat: '位址', title: '單一埠學到過多 MAC（可能下掛未管理交換器或 hypervisor）', data: [['mac']] },
+    A05: { severity: 'info', cat: '位址', title: 'ARP 位址不屬於該設備任何直連網段', data: [['arp'], ['config', 'ipaddr']] },
+    R01: { severity: 'info', cat: '路由', title: '路由下一跳不屬於任何已知設備', data: [['route']] },
+    R02: { severity: 'info', cat: '路由', title: 'OSPF 鄰居無法對應到已收集的設備', data: [['ospf']] },
+    R03: { severity: 'warn', cat: '路由', title: '路由下一跳形成迴圈', data: [['route']] },
+    R04: { severity: 'warn', cat: '路由', title: '路由下一跳落入黑洞路由', data: [['route']] },
+    R05: { severity: 'warn', cat: '路由', title: 'DHCP 網路的閘道不在該網段內', data: [['config']] },
   };
 
   /** 各類設備預期要有的資料（C02），可由 build 選項 expectedData 覆寫。 */

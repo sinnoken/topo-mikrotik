@@ -276,6 +276,15 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     // 檢查結果 A03 → 顯示終端清單
     const i = App.snap.findings.findIndex((f) => f.id === 'A03'); if (i >= 0) { App.selectFinding(i); if (App.sel.type !== 'endpoints') throw new Error('A03 應顯示終端清單'); }
   });
+  await step('檢查結果：沒有發現的規則分成「通過」與「沒有資料可檢查」，預設收合', () => {
+    const pass = App.Q.ruleStatus().filter((r) => r.status === 'pass'); if (!pass.length) return;
+    const head = () => document.querySelectorAll('#pane-findings .fgroup').find((g) => g.className.split(' ').includes('pass'));
+    if (!head()) throw new Error('應有「通過」區塊');
+    if (head().querySelectorAll('.rule').length) throw new Error('「通過」區塊預設應收合');
+    head().querySelector('.head').click();
+    if (head().querySelectorAll('.rule').length !== pass.length || !text('#pane-findings').includes(pass[0].title)) throw new Error('展開後應列出每一條通過的規則');
+    head().querySelector('.head').click();
+  });
   await step('點選每一筆檢查結果', () => { App.snap.findings.forEach((f, i) => { App.selectFinding(i); App.graph.draw(); }); });
   await step('點選每台設備、每條鏈路、部分介面', () => {
     App.snap.model.devices.slice(0, 300).forEach((d) => App.select({ type: 'device', key: d.key }, { focus: true }));

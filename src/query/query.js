@@ -130,6 +130,19 @@
         return out;
       },
       inferredLinksOf: (d) => inferredByDev.get(d) || [],
+      /**
+       * 每條檢查規則的結果：found（有發現）、pass（需要的資料有收到且沒有發現）、nodata（需要的資料沒有任何已收集設備提供）。
+       * missing 是缺少的資料組，每組列出可提供的資料類別。
+       */
+      ruleStatus() {
+        const have = new Set(m.devices.filter((d) => d.collected).flatMap((d) => d.data));
+        const count = new Map(); snap.findings.forEach((f) => count.set(f.id, (count.get(f.id) || 0) + 1));
+        return Object.entries(S.check.CATALOG).map(([id, c]) => {
+          const missing = (c.data || []).filter((g) => !g.some((t) => have.has(t)));
+          const n = count.get(id) || 0;
+          return { id, severity: c.severity, cat: c.cat, title: c.title, count: n, missing, status: n ? 'found' : missing.length ? 'nodata' : 'pass' };
+        });
+      },
       inferredLinksOfEp: inferredOfEp,
       getInferredLink: (k) => inferredByKey.get(k) || null,
       /** 推定位置經由的推論鏈路（錨點埠到未收集交換器）；沒有對應的推論鏈路時為空。 */

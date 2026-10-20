@@ -714,6 +714,19 @@ test('推定位置與推論鏈路對回同一段路徑：終端經由哪條推�
   });
   assert.deepStrictEqual(Q.behindVia('000000000000'), []);
 });
+test('檢查規則狀態：有發現、通過（需要的資料有收到）、沒有資料可檢查（列出缺少的資料）', () => {
+  Object.entries(S.check.CATALOG).forEach(([id, c]) => (c.data || []).flat().forEach((t) => assert.ok(S.check.DATA_LABEL[t], `${id} 需要的資料類別 ${t} 沒有名稱`)));
+  const Q = S.query(build('SW_A (10.0.0.1):\n' + NB([' 0 interface=ether1 mac-address=D4:01:C3:00:00:0B identity=SW_B interface-name=ether2 discovered-by=lldp'])));
+  const st = new Map(Q.ruleStatus().map((r) => [r.id, r]));
+  assert.strictEqual(st.size, Object.keys(S.check.CATALOG).length);
+  assert.strictEqual(st.get('K02').status, 'pass', '有鄰居資料、沒有發現 → 通過');
+  assert.strictEqual(st.get('R03').status, 'nodata', '沒有路由表 → 沒有資料可檢查');
+  assert.deepStrictEqual(st.get('R03').missing, [['route']]);
+  assert.strictEqual(st.get('I01').status, 'pass', '輸入類規則一律會檢查');
+  Q.ruleStatus().forEach((r) => assert.strictEqual(r.status === 'found', r.count > 0, r.id));
+  const sample = S.query(build(read('samples/sample-bundle.txt'))).ruleStatus();
+  assert.ok(sample.some((r) => r.status === 'found') && !sample.some((r) => r.status === 'nodata'), '範例資料每類資料都有收集');
+});
 test('推論鏈路合併：成員埠歸到聚合、不明埠代號一致、VLAN 介面上的 /30 併到唯一的實體鏈路', () => {
   // CSS106 接在 SW_A 的 bond1（ether1＋ether2）：MNDP 在成員埠、MAC 表與 RSTP 在 bond1 → 合併成一筆
   const lag = build(['SW_A (10.0.0.1):', '### /export terse', '/interface bonding add name=bond1 slaves=ether1,ether2',

@@ -24,7 +24,7 @@
     root.appendChild(h('div', { class: 'summary' }, ['error', 'warn', 'info'].map((s) => filterChip(V.SEV[s], st[s], { cls: s === 'error' ? 'err' : s, on: state.sev[s],
       onclick: () => { state.sev[s] = !state.sev[s]; findings(App); }, title: '點一下切換顯示',
     }))));
-    if (!all.length) return root.appendChild(h('div', { class: 'empty-detail' }, [h('div', { class: 'big' }, '沒有發現問題'), '所有資料彼此一致。']));
+    if (!all.length) root.appendChild(h('div', { class: 'empty-detail' }, [h('div', { class: 'big' }, '沒有發現問題'), '所有資料彼此一致。']));
     const groups = new Map();
     all.forEach((f, idx) => { if (state.sev[f.severity]) S.util.getOr(groups, f.id, () => []).push(idx); });
     groups.forEach((idxs, id) => {
@@ -41,6 +41,22 @@
         })));
         if (idxs.length > n) g.appendChild(h('a', { class: 'link more', onclick: () => { state.shown.set(id, n + 200); findings(App); } }, `再顯示 200 筆（共 ${idxs.length} 筆）`));
       }
+      root.appendChild(g);
+    });
+    // 沒有發現的規則：分成「通過」與「沒有資料可檢查」，預設收合（不受上方嚴重度篩選影響）
+    const rules = App.Q.ruleStatus();
+    const DL = S.check.DATA_LABEL;
+    [['pass', '通過', '✓', (r) => '需要的資料都有收到，沒有發現問題'],
+      ['nodata', '沒有資料可檢查', '–', (r) => '缺少：' + r.missing.map((g) => g.map((t) => DL[t] || t).join(' 或 ')).join('、')]].forEach(([st, label, mark, note]) => {
+      const list = rules.filter((r) => r.status === st); if (!list.length) return;
+      const key = '#' + st; const open = state.open.has(key);
+      const toggle = () => { open ? state.open.delete(key) : state.open.add(key); findings(App); };
+      const g = h('div', { class: 'fgroup rules ' + st }, [h('div', { class: 'head', role: 'button', tabindex: '0', 'aria-expanded': String(open), onclick: toggle, onkeydown: activateByKey(toggle) }, [
+        h('span', null, open ? '▾' : '▸'), h('span', { class: 'title' }, label), V.chip(String(list.length), st === 'pass' ? 'ok' : ''),
+      ])]);
+      if (open) g.appendChild(h('div', { class: 'items' }, list.map((r) => h('div', { class: 'rule', title: note(r) }, [
+        h('span', { class: 'mark' }, mark), h('span', { class: 'title' }, [r.title, st === 'nodata' ? h('div', { class: 'muted note' }, note(r)) : null]), h('span', { class: 'id' }, r.id),
+      ]))));
       root.appendChild(g);
     });
   }

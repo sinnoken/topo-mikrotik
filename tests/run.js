@@ -559,6 +559,20 @@ test('附帶的 JSON 命名規則範例可載入，分隔符號 _ 與 - 一致�
     .forEach(([n, want]) => assert.deepStrictEqual(at(n), want, n));
 });
 
+// ------------------------------------------------------------------ OUI 廠商
+test('OUI：取最長符合的前綴（MA-S 9 碼 → MA-M 7 碼 → MA-L 6 碼），並記錄資料來源', () => {
+  const p = S.data.ouiPacked; const vendors = p.vendors.split('|');
+  const v6 = new Map(p.entries.split(',').map((e) => [e.slice(0, 6), vendors[parseInt(e.slice(6), 36)]]));
+  [[7, p.entries7], [9, p.entries9]].forEach(([len, packed]) => {
+    const e = packed.split(',')[0]; const prefix = e.slice(0, len); const want = vendors[parseInt(e.slice(len), 36)];
+    assert.strictEqual(S.oui.lookup((prefix + '000000').slice(0, 12)), want, `${len} 碼前綴 ${prefix} 應查到 ${want}`);
+    assert.strictEqual(v6.get(prefix.slice(0, 6)), 'IEEE Registration Authority', '細分區塊的 6 碼前綴登記為 IEEE，不能拿來當廠商');
+  });
+  assert.strictEqual(S.oui.lookup('3C5AB4000001'), 'Google');
+  assert.strictEqual(S.oui.lookup('020000000001'), '本機管理位址');
+  assert.ok(/^oui-data@\d+\.\d+\.\d+/.test(S.oui.source()), S.oui.source());
+});
+
 // ------------------------------------------------------------------ Wi-Fi 關聯表與位置
 // 測試資料依 RouterOS 手冊的欄位撰寫（/interface wifi｜wireless registration-table、/caps-man registration-table），不是實機擷取
 const WIFI7 = ['AP_1 (10.0.0.11):', '### /interface wifi registration-table print detail without-paging', 'Flags: A - AUTHORIZED',

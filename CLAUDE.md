@@ -24,7 +24,7 @@ node tests/run.js        # 只跑核心測試
 node tests/ui-smoke.js   # 只跑畫面冒煙測試（模擬 DOM）
 bash tests/collect.sh    # 只跑 SSH 收集器測試
 npm run sample           # 重新產生 samples/sample-bundle.txt 並嵌入成 sample-bundle.js
-npm run oui -- <oui-data.json>   # 重新產生 src/data/oui-data.js
+npm run oui -- <index.json>      # 重新產生 src/data/oui-data.js（來源：npm pack oui-data@<版本>，見 README）
 git diff --check         # 提交前檢查
 ```
 

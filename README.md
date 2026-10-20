@@ -94,13 +94,14 @@ npm test               # 核心測試＋SSH 收集器測試＋畫面冒煙測試
 npm run test:large     # 加上約 1000 台的壓力測試
 npm run sample         # 重新產生範例收集檔
 npm run gen:large      # 產生約 1000 台的收集檔（samples/large-1000.txt）
-npm run oui -- <oui-data.json>   # 更新 OUI 廠商資料
+npm run oui -- <index.json>      # 更新 OUI 廠商資料（步驟見下方）
 ./tools/collect.sh devices.csv --output collection.txt  # WSL 透過 SSH 批次收集
 ```
 
 - 新增廠牌：在 `src/adapters/` 新增檔案並 `S.adapters.register()`，加到 `tools/core-files.js` 與 `index.html`。
 - 新增輸入格式：在 `src/readers/` 新增 reader 並放進 `readers/index.js` 的 `ORDER`。
 - 新增檢查：在 `src/check/checks.js` 的 `CATALOG` 加一筆並實作；在範例資料放一個對應的問題並加測試。
+- 更新 OUI 廠商資料（MAC 前綴 → 廠商）：來源是 npm 套件 [`oui-data`](https://www.npmjs.com/package/oui-data)（BSD-2-Clause，資料取自 IEEE）。在暫存目錄執行 `npm pack oui-data@<版本>` 並解開，再執行 `npm run oui -- <解開目錄>/package/index.json`。產生器會從同目錄的 `package.json` 讀出版本，寫進 `src/data/oui-data.js` 的檔頭與 `S.oui.source()`；收錄 6／7／9 碼前綴，查詢時取最長符合者。這是開發時的步驟，網頁執行時不連網。
 - SSH 收集器是 WSL/Linux 可執行的本機 Bash CLI，不是瀏覽器功能；使用既有 SSH key/agent，將多台設備的唯讀輸出包成一個 `bundle-v1` 檔。
 - CI：[.github/workflows/ci.yml](.github/workflows/ci.yml) 在 PR 與非 main 分支 push 時以 Node 20／24 執行 `npm test`；壓力測試（`npm run test:large`）只在每週排程與手動觸發時執行。main 上的部署前仍由 `deploy-pages.yml` 跑 `npm test`。提交前仍請先在本機執行 `npm test`。
 

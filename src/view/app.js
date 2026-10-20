@@ -257,7 +257,16 @@
       case 'pair': edges = [sel.id]; focus = sel.devs; break;
       case 'interface': { const i = Q.getInterface(sel.key); if (i) { const v = App.vOfEp.get(i.key); nodes = [i.dev].concat(v ? [v] : []); edges = pairsOf(Q.linksOfEp(i.key).concat(Q.inferredLinksOfEp(i.key)).map((l) => l.key)); focus = v ? [i.dev, v] : [i.dev]; } break; }
       case 'endpoints': { const vs = App.virtualByDev.get(sel.dev) || []; nodes = [sel.dev].concat(vs); focus = [sel.dev].concat(vs); break; }
-      case 'mac': { const m = Q.findMac(sel.key); const ds = S.util.uniq(m.edge.map(devOf).concat(m.edge.map((ep) => App.vOfEp.get(ep)).filter(Boolean))); g.setHighlight({ nodes: new Map(ds.map((d) => [d, MARK.find])), edges: new Map() }); focus = ds; break; }
+      case 'mac': {
+        const m = Q.findMac(sel.key); const ds = S.util.uniq(m.edge.map(devOf).concat(m.edge.map((ep) => App.vOfEp.get(ep)).filter(Boolean)));
+        const em = new Map();
+        if (m.behind) { // 推定位置：錨點設備 → 推論鏈路 → 未收集交換器 → 終端（或其群組）
+          const vid = ['?b|' + m.mac, '?bc|' + (m.behind.dev || devOf(m.behind.anchor))].find((v) => App.virtual.has(v));
+          ds.push(devOf(m.behind.anchor), ...(m.behind.dev ? [m.behind.dev] : m.behind.via), ...(vid ? [vid] : []));
+          pairsOf(Q.behindVia(m.mac).map((l) => l.key)).concat(vid ? ['v~' + vid] : []).forEach((p) => em.set(p, MARK.find));
+        }
+        g.setHighlight({ nodes: new Map(S.util.uniq(ds).map((d) => [d, MARK.find])), edges: em }); focus = S.util.uniq(ds); break;
+      }
       case 'ip': { const r = Q.findIp(sel.key); const ds = S.util.uniq([...(r.owner ? [r.owner.split('|')[0]] : []), ...r.locations.map((x) => devOf(x.ep)), ...r.locations.map((x) => App.vOfEp.get(x.ep)).filter(Boolean)]); g.setHighlight({ nodes: new Map(ds.map((d) => [d, MARK.find])), edges: new Map() }); focus = ds; break; }
       case 'vlan': {
         const v = Q.vlan(sel.key); const em = new Map();

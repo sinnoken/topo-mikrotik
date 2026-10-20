@@ -185,6 +185,12 @@
     ], bs, { onRow: (b) => App.openRaw(b.file, b.start) });
   }
   const ifName = (Q, ep) => { const i = Q.getInterface(ep); const n = K.splitEp(ep)[1]; return i ? i.name : n.startsWith('?(') ? '埠不明' : n; };
+  /** 推論鏈路的文字連結：點選開啟所在的設備對 */
+  const inferredLink = (App, l) => {
+    const Q = App.Q; const p = App.pairs.get(App.pairOfLink.get(l.key));
+    const text = [l.a, l.b].map((ep) => `${Q.devName(K.splitEp(ep)[0])} ${ifName(Q, ep)}`).join(' ⇄ ') + '（推論鏈路）';
+    return p ? L(App, text, { type: 'pair', id: p.id, links: p.links, devs: [p.a, p.b] }) : text;
+  };
   /** 推論鏈路清單：每條列出兩端、依據與信心，展開可看每項證據並開啟原文。 */
   function inferredTable(App, list, from) {
     const Q = App.Q;
@@ -233,10 +239,15 @@
     const Q = App.Q; const links = sel.links.map((k) => Q.getLink(k)).filter(Boolean);
     const [a, b] = sel.devs;
     const inferredList = Q.inferredLinksBetween(a, b);
+    const behind = S.util.uniq(inferredList.flatMap((l) => Q.behindUnder(l.key)));
     return h('div', { class: 'detail' }, [
       h('h2', null, [Q.devName(a), ' ⇄ ', Q.devName(b)]),
       h('div', { class: 'row' }, [links.length ? V.chip(`${links.length} 條鏈路`) : null, inferredList.length ? V.chip(`${inferredList.length} 條推論鏈路`, 'info') : null]),
       section('推論鏈路（沒有 LLDP 時的替代證據）', inferredList.length ? [h('p', { class: 'muted' }, '依 MAC 表、MNDP 或點對點網段推定相鄰：是直接相連，或中間只有未管理設備。不影響任何檢查。'), inferredTable(App, inferredList, a)] : null, { count: inferredList.length }),
+      section('推定在這條推論鏈路後面的終端', behind.length ? V.table([
+        { t: 'MAC', f: (x) => macLink(App, x.mac), s: (x) => x.mac }, { t: '廠商', f: (x) => x.vendor || '' }, { t: 'IP', f: (x) => x.ips.join(', ') },
+        { t: '推定位置', f: (x) => (x.behind.dev ? `在 ${Q.devName(x.behind.dev)} 底下` : `在 ${x.behind.via.map((v) => Q.devName(v)).join('、')} 或其下游`) },
+      ], behind, { limit: 500 }) : null, { count: behind.length, fold: true }),
       !links.length ? null : V.table([
         { t: Q.devName(a), f: (l) => l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? 'MNDP 觀察'
           : h('span', { class: 'mono' }, ifName(Q, K.splitEp(l.a)[0] === a ? l.a : l.b)) },
@@ -292,7 +303,7 @@
       h('div', { class: 'row' }, [m.found ? null : V.chip('基準中沒有這個 MAC', 'warn'), m.vendor ? V.chip(m.vendor) : V.chip('廠商不明')]),
       kv([['IP（ARP）', m.ips.length ? h('span', null, m.ips.flatMap((x, n) => [n ? '、' : '', ipLink(App, x)])) : '—'],
         ['位置（終端埠）', m.edge.length ? h('span', null, m.edge.flatMap((ep, n) => [n ? '、' : '', epLink(App, ep)])) : '—'],
-        ...wifiRows(App, m.wifi), ...behindRows(App, m.behind)]),
+        ...wifiRows(App, m.wifi), ...behindRows(App, m.behind, m.mac)]),
       findingsBlock(App, Q.findingsFor('mac', m.mac)),
       section('在哪些介面／VLAN 學到', m.seen.length ? V.table([
         { t: '設備介面', f: (r) => epLink(App, r.ep) }, { t: 'VLAN', f: (r) => r.vlan || '' }, { t: '類型', f: (r) => (r.static ? '靜態' : '動態') }, { t: '', f: (r) => (m.edge.includes(r.ep) ? V.chip('終端', 'ok') : V.chip('上行')) },
@@ -300,11 +311,13 @@
     ]);
   }
   /** 推定位置：在未收集交換器（例如 SwOS 的 CSS106）底下，精確到設備、埠不明。 */
-  function behindRows(App, b) {
+  function behindRows(App, b, mk) {
     if (!b) return [];
     const where = b.dev ? h('span', null, ['在 ', devLink(App, b.dev), ' 底下（埠不明）']) : h('span', null, ['在 ', ...b.via.flatMap((v, n) => [n ? '、' : '', devLink(App, v)]), ' 或其下游（無法確定是哪一台）']);
+    const via = App.Q.behindVia(mk);
     return [['推定位置', h('span', null, [where, ' ', V.chip('推定', 'info')])],
-      ['推定依據', h('span', null, [epLink(App, b.anchor), ' 的 MAC 表學到它，且沒有在其他已收集交換器更下游出現；該交換器沒有收集資料，所以埠不明'])]];
+      ['推定依據', h('span', null, [epLink(App, b.anchor), ' 的 MAC 表學到它，且沒有在其他已收集交換器更下游出現；該交換器沒有收集資料，所以埠不明'])],
+      ['經由', via.length ? h('span', null, via.flatMap((l, n) => [n ? '、' : '', inferredLink(App, l)])) : null]];
   }
   /** Wi-Fi 位置：依證據強度標示信心；漫遊時列出其他候選位置。 */
   function wifiRows(App, w) {

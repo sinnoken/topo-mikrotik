@@ -185,6 +185,12 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (!e || e.evidence !== 'inferred') throw new Error('推定終端的連線應使用推論樣式');
     App.graph.emit('click', { type: 'node', id: n.id });
     if (App.sel.type !== 'mac' || !text('#detail').includes('推定位置') || !text('#detail').includes('埠不明')) throw new Error('點選推定終端應顯示 MAC 詳情與推定位置');
+    const via = App.Q.behindVia(rows[0].mac)[0];
+    if (!via || !text('#detail').includes('經由') || !text('#detail').includes('（推論鏈路）')) throw new Error('推定位置應列出經由的推論鏈路');
+    const pid = App.pairOfLink.get(via.key);
+    if (!App.graph.hl || !App.graph.hl.edges.has(pid) || !App.graph.hl.edges.has(e.id)) throw new Error('選取推定終端應標示整段路徑：推論鏈路與終端連線');
+    const p = App.pairs.get(pid); App.select({ type: 'pair', id: p.id, links: p.links, devs: [p.a, p.b] });
+    if (!text('#detail').includes('推定在這條推論鏈路後面的終端')) throw new Error('推論鏈路詳情應列出後面推定的終端');
     App.select(null);
   });
   await step('基準摘要與行動入口', () => {

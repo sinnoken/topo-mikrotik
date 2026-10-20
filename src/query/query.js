@@ -47,6 +47,15 @@
     });
     // 推論鏈路在已收集設備端記在聚合介面上：查成員埠時一併找所屬聚合
     const inferredOfEp = (ep) => { const i = ifc.get(ep); return U.uniq([ep].concat(i && i.lag ? [i.lag] : []).flatMap((e) => inferredByEp.get(e) || [])); };
+    // 推定位置與推論鏈路是同一段路徑的兩個推論（錨點埠 → 未收集交換器 → 終端），以錨點埠與設備對回
+    const behindVia = new Map(); const behindUnder = new Map();
+    m.macs.forEach((x) => {
+      if (!x.behind) return;
+      const peers = x.behind.dev ? [x.behind.dev] : x.behind.via;
+      const ls = inferredOfEp(x.behind.anchor).filter((l) => [l.a, l.b].some((ep) => peers.includes(K.splitEp(ep)[0])));
+      behindVia.set(x.mac, ls);
+      ls.forEach((l) => U.getOr(behindUnder, l.key, () => []).push(x));
+    });
     let inv = null;
     const unkByDev = new Map();
     m.interfaces.forEach((i) => { if (i.unknownPeer) U.getOr(unkByDev, i.dev, () => []).push(i); });
@@ -123,6 +132,10 @@
       inferredLinksOf: (d) => inferredByDev.get(d) || [],
       inferredLinksOfEp: inferredOfEp,
       getInferredLink: (k) => inferredByKey.get(k) || null,
+      /** 推定位置經由的推論鏈路（錨點埠到未收集交換器）；沒有對應的推論鏈路時為空。 */
+      behindVia: (mk) => behindVia.get(mk) || [],
+      /** 推定在這條推論鏈路後面的終端。 */
+      behindUnder: (k) => behindUnder.get(k) || [],
       /**
        * 圖上的設備對：同一對設備的鏈路與推論鏈路併成一筆。evidence 是這對設備最強的證據，決定線型：
        *   adjacency（有 LLDP／CDP 介面鄰接）> hearsay（介面鄰接都是單側觀察）> inferred（推論鏈路）> domainOnly（只有 MNDP）。

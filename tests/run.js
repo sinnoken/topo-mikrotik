@@ -703,6 +703,17 @@ test('設備對：證據強度依序為介面鄰接、單側觀察、推論、�
   assert.strictEqual(v.inferredLinks().length, 1);
   assert.deepStrictEqual(v.vlan(20).inferred, v.inferredLinks()); assert.deepStrictEqual(v.vlan(30).inferred, []);
 });
+test('推定位置與推論鏈路對回同一段路徑：終端經由哪條推論鏈路、推論鏈路後面有哪些終端', () => {
+  const Q = S.query(build(read('samples/sample-bundle.txt')));
+  const behind = Q.snapshot.model.macs.filter((x) => x.behind); assert.ok(behind.length);
+  behind.forEach((x) => {
+    const via = Q.behindVia(x.mac); assert.strictEqual(via.length, 1, x.mac);
+    assert.ok([via[0].a, via[0].b].includes(x.behind.anchor), '推論鏈路的本端就是錨點埠');
+    assert.ok([via[0].a, via[0].b].some((ep) => S.keys.splitEp(ep)[0] === x.behind.dev), '推論鏈路的對端就是推定所在的設備');
+    assert.ok(Q.behindUnder(via[0].key).includes(x));
+  });
+  assert.deepStrictEqual(Q.behindVia('000000000000'), []);
+});
 test('推論鏈路合併：成員埠歸到聚合、不明埠代號一致、VLAN 介面上的 /30 併到唯一的實體鏈路', () => {
   // CSS106 接在 SW_A 的 bond1（ether1＋ether2）：MNDP 在成員埠、MAC 表與 RSTP 在 bond1 → 合併成一筆
   const lag = build(['SW_A (10.0.0.1):', '### /export terse', '/interface bonding add name=bond1 slaves=ether1,ether2',

@@ -196,6 +196,7 @@
   - **位置**：p 這側只有一台未收集設備時，`dev` 為它；有多台（例如 CSS106 再串 CSS610）時 `dev` 為 null，`via` 列出全部，畫面顯示「在 X、Y 或其下游」。
   - **多個錨點**：同一 MAC 有多個錨點時，取那一側已收集交換器最少者（最靠近終端）。
   - **畫面**：主機畫在該交換器節點下，連線用推論樣式。
+  - **與推論鏈路的對應**：推定位置與「錨點埠 ⇄ 該交換器」的推論鏈路是同一段路徑，基準不另存關聯，查詢時以錨點埠（含所屬聚合）與設備對回（`Q.behindVia(mac)`、`Q.behindUnder(推論鏈路 key)`）。MAC 詳情列出經由的推論鏈路，推論鏈路詳情列出後面推定的終端，選取終端時圖上標示整段路徑。
   - **A04**：錨點埠不報 A04，因為下面接的是已知設備。
 - **Wi-Fi 客戶端位置**（`macs[].wifi`，推論）：MAC 表無法說明 Wi-Fi 客戶端連在哪台 AP，因為同一個 MAC 會出現在 AP 的無線介面、AP 上行與沿途 trunk，且會漫遊。依證據強度取位置，`basis` 標示依據：`registration`（關聯表，最強；多台 AP 時取 `last-activity` 最近者，其餘為 `candidates`，`roaming` 為真）→ `bridge-wifi`（已收集設備的 MAC 表在 `type=wireless` 介面學到）→ `via-ap-port`（交換器埠的鄰居是沒有收集資料的 AP，無法區分有線或無線）。已判定為有線終端埠的 MAC、AP 自己的 MAC 不套用 `via-ap-port`。因為用到終端埠判定，在檢查之後由 `S.infer.wifiLocations()` 計算。沒有 Wi-Fi 證據的 MAC，`wifi` 為 null。
 - **終端位置**：這是依已收集證據推定的「未知對端」位置，不代表已證明對端是終端主機。核心 `unknownPeer` 介面必須恰好學到一個 MAC、不是 Wi-Fi、狀態非 down、不是 irb／vlan／lo，且沒有 LLDP／CDP 介面鄰接連到其他已收集網路設備；學到多個 MAC 的有線介面不符合此條件。Wi-Fi 介面本身不視為終端介面，但清單會將每個 Wi-Fi MAC／介面觀察位置列為終端位置；同一 MAC 出現在多個 Wi-Fi 介面可能是漫遊，因此 Wi-Fi 觀察不參與 A02。純 MNDP 只證明同一 L2 broadcast domain 可達，不會當作直連鄰接排除終端埠。若 bridge host 有多個 VLAN 觀察，MAC 的 `seen` 會各自保留 `{ep,vlan}`，不會互相覆蓋。

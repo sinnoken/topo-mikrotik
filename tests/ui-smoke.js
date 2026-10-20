@@ -168,6 +168,10 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (!text('#tooltip').includes('推論鏈路')) throw new Error('提示應說明是推論鏈路');
     App.graph.emit('click', { type: 'edge', id: p.id });
     if (!text('#detail').includes('MAC 表') || !text('#detail').includes('信心高')) throw new Error('詳情應列出推論依據與信心');
+    if (p.links.length) { // 事實在前、推論在後，鏈路表格有自己的標題，不接在推論鏈路下面
+      const t = text('#detail'); const iL = t.indexOf('鏈路（LLDP／CDP／MNDP）'); const iI = t.indexOf('推論鏈路（沒有 LLDP）');
+      if (iL < 0 || iI < 0 || iL > iI) throw new Error('設備對詳情應先列鏈路（有標題），再列推論鏈路');
+    }
     const l = App.Q.getInferredLink(p.inferred[0]); const ep = [l.a, l.b].find((e) => App.Q.getInterface(e));
     App.select({ type: 'interface', key: ep });
     if (!App.graph.sel.edges.has(p.id)) throw new Error('選取介面時應一併標示它的推論鏈路');

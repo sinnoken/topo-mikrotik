@@ -40,6 +40,16 @@
   }
   const vlanText = (ids) => (ids && ids.length ? S.check.fmtVlans(ids) : '—');
 
+  /*
+   * 每個詳情頁的區塊順序一致：
+   *   標題 → 標籤 → 屬性 → 說明 → 檢查結果 → 主題區塊（同一主題先事實、後推論，例如鏈路 → 推論鏈路）→ 來源
+   * 推論的區塊一律用 inferredSection 等共用元件，標題與說明只寫一次。
+   */
+  /** 推論鏈路區塊：說明推論的意義，列出兩端、依據與信心 */
+  function inferredSection(App, list, from, opt) {
+    return section('推論鏈路（沒有 LLDP）', list.length ? [h('p', { class: 'muted' }, '依 MAC 表、MNDP、RSTP 或點對點網段推定相鄰：是直接相連，或中間只有未管理設備。不影響任何檢查。'),
+      inferredTable(App, list, from)] : null, Object.assign({ count: list.length }, opt || {}));
+  }
   function findingsBlock(App, list) {
     if (!list.length) return null;
     const seen = new Set(); const uniq = list.filter((f) => (seen.has(f) ? false : seen.add(f)));
@@ -158,7 +168,7 @@
         s: (r) => (r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? null : r.l.vlanMismatch ? '不一致' : vlanText(r.l.vlansCommon)) },
       ], peerRows, { onRow: (r) => App.select({ type: 'link', key: r.l.key }, { focus: true }), bad: (r) => r.links.some((x) => x.vlanMismatch || Q.findingsFor('link', x.key).some((f) => f.severity !== 'info')) }) : h('div', { class: 'muted' }, '沒有鏈路'),
         { count: peerRows.length, fold: true, open: neighborHasFinding }),
-      section('推論鏈路（沒有 LLDP）', Q.inferredLinksOf(d.key).length ? inferredTable(App, Q.inferredLinksOf(d.key), d.key) : null, { count: Q.inferredLinksOf(d.key).length, fold: true }),
+      inferredSection(App, Q.inferredLinksOf(d.key), d.key, { fold: true }),
       section('OSPF L3 鄰接（非實體直連）', ospfAdjacencies.length ? V.table([
           { t: '本機介面', f: (a) => epLink(App, a.localEp), s: (a) => K.splitEp(a.localEp)[1] },
           { t: '鄰居', f: (a) => devLink(App, a.peerDev), s: (a) => Q.devName(a.peerDev) },
@@ -226,12 +236,12 @@
         ? kv([['關係', 'MNDP 觀察到的 L2 廣播網域可達性；不代表兩台設備之間存在直連線路。'],
           ['觀察位置', observedAt.length ? observedAt.join('；') : '詳見原始輸出']])
         : kv([['A 端', epLink(App, l.a)], ['B 端', epLink(App, l.b)], ['層級', 'L2（介面鄰接）']]),
+      findingsBlock(App, fl),
       section('VLAN', !domain ? kv([
         ['兩端都有', h('span', { class: 'vlanlist' }, vlanText(l.vlansCommon))],
         ['只在 A 端', onlyA.length ? h('span', { class: 'vlanlist diffA' }, vlanText(onlyA)) : '—'],
         ['只在 B 端', onlyB.length ? h('span', { class: 'vlanlist diffA' }, vlanText(onlyB)) : '—'],
       ]) : null),
-      findingsBlock(App, fl),
       sourcesBlock(App, l.src),
     ]);
   }
@@ -243,12 +253,8 @@
     return h('div', { class: 'detail' }, [
       h('h2', null, [Q.devName(a), ' ⇄ ', Q.devName(b)]),
       h('div', { class: 'row' }, [links.length ? V.chip(`${links.length} 條鏈路`) : null, inferredList.length ? V.chip(`${inferredList.length} 條推論鏈路`, 'info') : null]),
-      section('推論鏈路（沒有 LLDP 時的替代證據）', inferredList.length ? [h('p', { class: 'muted' }, '依 MAC 表、MNDP 或點對點網段推定相鄰：是直接相連，或中間只有未管理設備。不影響任何檢查。'), inferredTable(App, inferredList, a)] : null, { count: inferredList.length }),
-      section('推定在這條推論鏈路後面的終端', behind.length ? V.table([
-        { t: 'MAC', f: (x) => macLink(App, x.mac), s: (x) => x.mac }, { t: '廠商', f: (x) => x.vendor || '' }, { t: 'IP', f: (x) => x.ips.join(', ') },
-        { t: '推定位置', f: (x) => (x.behind.dev ? `在 ${Q.devName(x.behind.dev)} 底下` : `在 ${x.behind.via.map((v) => Q.devName(v)).join('、')} 或其下游`) },
-      ], behind, { limit: 500 }) : null, { count: behind.length, fold: true }),
-      !links.length ? null : V.table([
+      findingsBlock(App, [].concat(...links.map((l) => Q.findingsFor('link', l.key)))),
+      section('鏈路（LLDP／CDP／MNDP）', links.length ? V.table([
         { t: Q.devName(a), f: (l) => l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? 'MNDP 觀察'
           : h('span', { class: 'mono' }, ifName(Q, K.splitEp(l.a)[0] === a ? l.a : l.b)) },
         { t: Q.devName(b), f: (l) => l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? 'L2 廣播網域可達'
@@ -259,8 +265,12 @@
         { t: '協定', f: (l) => V.protoText(l) },
         { t: 'VLAN', f: (l) => l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? '—'
           : (l.vlanMismatch ? h('span', { class: 'diffA' }, '不一致') : h('span', { class: 'vlanlist' }, vlanText(l.vlansCommon))) },
-      ], links, { onRow: (l) => App.select({ type: 'link', key: l.key }) }),
-      findingsBlock(App, [].concat(...links.map((l) => Q.findingsFor('link', l.key)))),
+      ], links, { onRow: (l) => App.select({ type: 'link', key: l.key }) }) : null, { count: links.length }),
+      inferredSection(App, inferredList, a),
+      section('推定在這條推論鏈路後面的終端', behind.length ? V.table([
+        { t: 'MAC', f: (x) => macLink(App, x.mac), s: (x) => x.mac }, { t: '廠商', f: (x) => x.vendor || '' }, { t: 'IP', f: (x) => x.ips.join(', ') },
+        { t: '推定位置', f: (x) => (x.behind.dev ? `在 ${Q.devName(x.behind.dev)} 底下` : `在 ${x.behind.via.map((v) => Q.devName(v)).join('、')} 或其下游`) },
+      ], behind, { limit: 500 }) : null, { count: behind.length, fold: true }),
     ]);
   }
 
@@ -281,13 +291,13 @@
         ['PVID', i.pvid == null ? null : String(i.pvid)], ['frame-types', i.frameTypes], ['ingress-filtering', i.ingressFiltering == null ? null : i.ingressFiltering ? '開' : '關'], ['Untagged VLAN', i.untaggedVlans.length ? h('span', { class: 'vlanlist' }, vlanText(i.untaggedVlans)) : null],
         ['Tagged VLAN', i.taggedVlans.length ? h('span', { class: 'vlanlist' }, vlanText(i.taggedVlans)) : null], ['無法辨識的 VLAN', i.unresolvedVlans.join('、')],
         ['VLAN 子介面', i.parent ? h('span', null, [epLink(App, i.parent), ` 上的 VLAN ${i.encapVlan}`]) : null]]),
+      findingsBlock(App, Q.findingsFor('interface', i.key)),
       section('鏈路', links.map((l) => h('div', null, L(App,
         l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN
           ? `${Q.devName(K.splitEp(l.a)[0] === i.dev ? K.splitEp(l.b)[0] : K.splitEp(l.a)[0])}（MNDP：L2 廣播網域可達，非直連）`
           : `${Q.epName(l.a)} ⇄ ${Q.epName(l.b)}`,
         { type: 'link', key: l.key }))), { count: links.length }),
-      section('推論鏈路（沒有 LLDP）', inferred.length ? inferredTable(App, inferred, i.dev) : null, { count: inferred.length }),
-      findingsBlock(App, Q.findingsFor('interface', i.key)),
+      inferredSection(App, inferred, i.dev),
       section('學到的 MAC', macs.length ? V.table([
         { t: 'MAC', f: (m) => macLink(App, m.mac) }, { t: '廠商', f: (m) => m.vendor || '' }, { t: 'IP', f: (m) => m.ips.join(', ') },
       ], macs, { limit: 500 }) : null, { count: macs.length }),

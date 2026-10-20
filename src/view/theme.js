@@ -19,9 +19,8 @@
       lag: { c: '#3b82f6', w: 3.2 }, '40g': { c: '#ef4444', w: 2.8 }, '10g': { c: '#f59e0b', w: 2.1 }, '1g': { c: '#0f766e', w: 2.4 },
       oob: { c: '#22c55e', w: 1.2, dash: [4, 3] }, other: { c: '#b0b8c1', w: 1.3 },
     },
-    // 證據強度較弱的邊，鍵與 query devicePairs 的 evidence 相同：純 MNDP（廣播網域可達）、單側觀察（對端無 LLDP）、推論
+    // 證據強度較弱的邊，鍵與 query devicePairs 的 evidence 相同：單側觀察（對端無 LLDP）、推論。只有 MNDP 的設備對不畫
     weakEdge: {
-      domainOnly: { c: '#9aa5b1', alpha: 0.7, dash: [8, 3, 2, 3] },
       hearsay: { c: '#7c3aed', alpha: 0.85, dash: [2, 3] },
       // 推論鏈路：沒有 LLDP 時由 MAC 表、MNDP、點對點網段推定相鄰（證據強於純 MNDP，弱於 LLDP）
       inferred: { c: '#4d7c0f', alpha: 0.9, dash: [10, 3] },

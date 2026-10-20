@@ -417,30 +417,28 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (keyboardLink.getAttribute('tabindex') !== '0' || keyboardLink.getAttribute('role') !== 'link') throw new Error('動態連結需具備鍵盤焦點與連結語意');
     keyboardLink.dispatch('keydown', { key: 'Enter' });
     if (!keyboardLinkActivated) throw new Error('動態連結按 Enter 應觸發操作');
-    const hearsay = legend.find((li) => li.textContent === '單側觀察'); const domain = legend.find((li) => li.textContent === 'MNDP');
-    if (!hearsay || !domain) throw new Error('圖例缺少單側觀察或 MNDP 註記');
-    const hs = sw(hearsay)[0]; const ds = sw(domain)[0];
+    const hearsay = legend.find((li) => li.textContent === '單側觀察'); const inferred = legend.find((li) => li.textContent === '推論鏈路');
+    if (!hearsay || !inferred) throw new Error('圖例缺少單側觀察或推論鏈路註記');
+    if (legend.some((li) => li.textContent === 'MNDP')) throw new Error('MNDP 不畫在圖上，圖例不應列出');
+    const hs = sw(hearsay)[0]; const is = sw(inferred)[0];
     if (hs.style.opacity !== String(T.weakEdge.hearsay.alpha) || !hs.style.background.includes(T.weakEdge.hearsay.c)) throw new Error('單側觀察圖例顏色或透明度與 theme 不一致');
-    if (ds.style.opacity !== String(T.weakEdge.domainOnly.alpha) || !ds.style.background.includes(T.weakEdge.domainOnly.c)) throw new Error('MNDP 圖例顏色或透明度與 theme 不一致');
-    if (T.weakEdge.domainOnly.alpha !== 0.7) throw new Error('MNDP 邊透明度應為 70%');
-    if (hs.style.background === ds.style.background) throw new Error('單側觀察與 MNDP 圖例線型應可區分');
+    if (is.style.opacity !== String(T.weakEdge.inferred.alpha) || !is.style.background.includes(T.weakEdge.inferred.c)) throw new Error('推論鏈路圖例顏色或透明度與 theme 不一致');
+    if (hs.style.background === is.style.background) throw new Error('單側觀察與推論鏈路圖例線型應可區分');
   });
-  await step('MNDP 圖例、提示與細節不暗示實體直連', async () => {
+  await step('只有 MNDP 的設備對不畫線；詳情仍說明是廣播網域可達、非直連', async () => {
     const input = 'A (10.0.0.1):\n### /ip neighbor print detail\n'
       + ' 0 interface=ether1 mac-address=AA:00:00:00:00:02 identity=B interface-name=ether9 discovered-by=mndp\n';
     $('#input-text').value = input; $('#input-build').click();
     const hash = S.util.hash(S.readers.PASTE + '\n' + input);
     for (let i = 0; i < 4000 && (!App.snap || App.snap.meta.inputHash !== hash); i++) await new Promise((r) => setTimeout(r, 5));
     if (App.snap.meta.inputHash !== hash) throw new Error('MNDP 基準未建立');
-    if (!Array.from(document.querySelectorAll('#legend .li')).some((li) => li.textContent === 'MNDP')) throw new Error('MNDP 圖例標籤應簡化為 MNDP');
-    const p = Array.from(App.pairs.values()).find((x) => x.evidence === 'domainOnly');
-    if (!p) throw new Error('MNDP device edge 未標記為 domain-only');
-    if (p.labelA !== 'MNDP' || p.labelB !== 'MNDP') throw new Error('純 MNDP edge label 應只顯示 MNDP');
-    App.graph.emit('hover', { item: { type: 'edge', id: p.id }, x: 0, y: 0 });
-    if (!text('#tooltip').includes('不代表兩台設備直連')) throw new Error('圖上提示未明示 MNDP 的非直連語意');
-    App.graph.emit('click', { type: 'edge', id: p.id });
-    if (!text('#detail').includes('非直連確認')) throw new Error('MNDP 細節未明示非直連語意');
     const domainLink = App.snap.model.links.find((l) => l.evidenceScope === 'broadcast-domain');
+    if (!domainLink) throw new Error('MNDP 仍應保留在基準的鏈路中');
+    if (Array.from(App.pairs.values()).some((x) => !x.virtual)) throw new Error('只有 MNDP 的設備對不應畫線');
+    App.select({ type: 'device', key: 'A' });
+    if (!text('#detail').includes('非直連確認')) throw new Error('設備鄰居表仍應列出 MNDP，並說明非直連');
+    App.select({ type: 'link', key: domainLink.key });
+    if (!text('#detail').includes('非直連確認')) throw new Error('MNDP 細節未明示非直連語意');
     const remoteEp = S.keys.splitEp(domainLink.a)[0] === 'A' ? domainLink.b : domainLink.a;
     App.select({ type: 'interface', key: remoteEp });
     if (!text('#detail').includes('MNDP：L2 廣播網域可達，非直連')) throw new Error('MNDP 回報介面的細節不應呈現為直連線');
@@ -464,21 +462,21 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
       Object.assign(graph, { nodes: old.nodes, edges: old.edges, pos: old.pos, sel: old.sel, hl: old.hl, hover: old.hover }); ctx.fillText = old.fillText;
     }
   });
-  await step('純 MNDP 邊以專用點劃線呈現，高亮不淡化', () => {
+  await step('推論鏈路以 theme 的弱邊樣式呈現，高亮不淡化', () => {
     const graph = App.graph; const ctx = graph.ctx; const weak = S.view.theme.weakEdge;
     const old = {
       nodes: graph.nodes, edges: graph.edges, pos: graph.pos, sel: graph.sel, hl: graph.hl, hover: graph.hover,
       s: graph.s, tx: graph.tx, ty: graph.ty, stroke: ctx.stroke, setLineDash: ctx.setLineDash,
       moveTo: ctx.moveTo, lineTo: ctx.lineTo,
     };
-    const nodes = ['mndp-a', 'mndp-b', 'mixed-a', 'mixed-b'].map((id) => ({
+    const nodes = ['weak-a', 'weak-b', 'mixed-a', 'mixed-b'].map((id) => ({
       id, label: id, kind: 'switch', collected: true, group: 'test',
     }));
     const edges = [
-      { id: 'pure-mndp', a: 'mndp-a', b: 'mndp-b', cls: 'other', count: 1, evidence: 'domainOnly' },
+      { id: 'weak-edge', a: 'weak-a', b: 'weak-b', cls: 'other', count: 1, evidence: 'inferred' },
       { id: 'mixed-evidence', a: 'mixed-a', b: 'mixed-b', cls: 'other', count: 1, evidence: 'adjacency', hasDomain: true },
     ];
-    const pos = new Map([['mndp-a', { x: 0, y: 0 }], ['mndp-b', { x: 180, y: 0 }], ['mixed-a', { x: 0, y: 180 }], ['mixed-b', { x: 180, y: 180 }]]);
+    const pos = new Map([['weak-a', { x: 0, y: 0 }], ['weak-b', { x: 180, y: 0 }], ['mixed-a', { x: 0, y: 180 }], ['mixed-b', { x: 180, y: 180 }]]);
     const strokes = []; let dash = []; let from = null; let to = null;
     const samePoint = (a, b) => a && b && Math.abs(a.x - b.x) < 0.01 && Math.abs(a.y - b.y) < 0.01;
     const segmentStrokes = (aId, bId) => strokes.filter((s) =>
@@ -490,14 +488,14 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
       ctx.lineTo = (x, y) => { to = { x, y }; };
       ctx.stroke = () => { strokes.push({ alpha: ctx.globalAlpha, color: ctx.strokeStyle, dash: dash.slice(), from, to }); };
       graph.setData(nodes, edges, pos); graph.hl = null; graph.hover = null; graph.setSelection([], []); graph.fit(); graph.draw();
-      const pure = segmentStrokes('mndp-a', 'mndp-b');
-      if (!pure.some((s) => s.alpha === 0.7 && s.color === weak.domainOnly.c && s.dash.join() === weak.domainOnly.dash.join())) throw new Error('純 MNDP 邊應以灰色、70% 不透明度使用 theme 指定的高辨識點劃線');
+      const pure = segmentStrokes('weak-a', 'weak-b');
+      if (!pure.some((s) => s.alpha === weak.inferred.alpha && s.color === weak.inferred.c && s.dash.join() === weak.inferred.dash.join())) throw new Error('推論鏈路應使用 theme 指定的顏色、透明度與虛線');
       const mixed = segmentStrokes('mixed-a', 'mixed-b');
-      if (!mixed.length || mixed.some((s) => s.alpha === 0.5)) throw new Error('混合證據邊不應套用 MNDP-only 透明度');
-      graph.setSelection([], ['pure-mndp']); strokes.length = 0; graph.draw();
-      if (!segmentStrokes('mndp-a', 'mndp-b').some((s) => s.alpha === 1)) throw new Error('選取高亮應維持完整不透明度');
-      graph.setSelection([], []); graph.hover = { type: 'edge', id: 'pure-mndp' }; strokes.length = 0; graph.draw();
-      if (!segmentStrokes('mndp-a', 'mndp-b').some((s) => s.alpha === 1)) throw new Error('hover 高亮應維持完整不透明度');
+      if (!mixed.length || mixed.some((s) => s.alpha !== 1)) throw new Error('有介面鄰接的邊不應套用弱邊透明度');
+      graph.setSelection([], ['weak-edge']); strokes.length = 0; graph.draw();
+      if (!segmentStrokes('weak-a', 'weak-b').some((s) => s.alpha === 1)) throw new Error('選取高亮應維持完整不透明度');
+      graph.setSelection([], []); graph.hover = { type: 'edge', id: 'weak-edge' }; strokes.length = 0; graph.draw();
+      if (!segmentStrokes('weak-a', 'weak-b').some((s) => s.alpha === 1)) throw new Error('hover 高亮應維持完整不透明度');
     } finally {
       ctx.stroke = old.stroke; ctx.setLineDash = old.setLineDash; ctx.moveTo = old.moveTo; ctx.lineTo = old.lineTo;
       graph.setData(old.nodes, old.edges, old.pos); graph.setSelection(old.sel.nodes, old.sel.edges);

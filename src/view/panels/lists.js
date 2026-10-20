@@ -1,5 +1,5 @@
 /*
- * 左側三個分頁：檢查結果、覆蓋率、比對。
+ * 左側四個分頁：檢查結果、覆蓋率、清單、比對。
  */
 (function (S) {
   'use strict';
@@ -8,11 +8,20 @@
   // ---------------------------------------------------------------- 檢查結果
   const state = { sev: { error: true, warn: true, info: true }, open: new Set(), shown: new Map(), selected: -1 };
   const activateByKey = (fn) => (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); } };
+  /**
+   * 篩選列的選項（所有分頁共用）：「標籤 筆數」，選取時以強調色填滿；筆數為 0 且未選取時停用。
+   * cls 是狀態色（err／warn…），只在有內容時使用。
+   */
+  const filterChip = (label, n, opt) => {
+    const o = opt || {}; const off = !n && !o.on;
+    return V.chip([label + ' ', h('span', { class: 'n' }, String(n))], `btn ${n ? o.cls || '' : ''} ${o.on ? 'on' : ''} ${off ? 'off' : ''}`,
+      { onclick: off ? null : o.onclick, title: o.title || null, 'aria-pressed': String(!!o.on), 'aria-disabled': off ? 'true' : null });
+  };
   function findings(App) {
     const root = V.clear(V.$('#pane-findings'));
     if (!App.snap) return root.appendChild(h('div', { class: 'empty-detail' }, '建立基準後，資料之間的矛盾與缺漏會列在這裡。'));
     const all = App.snap.findings; const st = App.snap.meta.stats.findings;
-    root.appendChild(h('div', { class: 'summary' }, ['error', 'warn', 'info'].map((s) => V.chip(`${V.SEV[s]} ${st[s]}`, `btn ${s === 'error' ? 'err' : s} ${state.sev[s] ? 'on' : ''}`, {
+    root.appendChild(h('div', { class: 'summary' }, ['error', 'warn', 'info'].map((s) => filterChip(V.SEV[s], st[s], { cls: s === 'error' ? 'err' : s, on: state.sev[s],
       onclick: () => { state.sev[s] = !state.sev[s]; findings(App); }, title: '點一下切換顯示',
     }))));
     if (!all.length) return root.appendChild(h('div', { class: 'empty-detail' }, [h('div', { class: 'big' }, '沒有發現問題'), '所有資料彼此一致。']));
@@ -53,7 +62,7 @@
     const collected = rows.filter((r) => r.collected); const missing = collected.filter((r) => r.missing.length);
     const seenOnly = rows.filter((r) => !r.collected && r.kind !== 'host'); const hosts = rows.filter((r) => !r.collected && r.kind === 'host');
     const F = { all: ['全部已收集', collected], missing: ['有缺漏', missing], seen: ['未收集的網路設備', seenOnly], hosts: ['主機（只由 LLDP 看到）', hosts] };
-    root.appendChild(h('div', { class: 'summary' }, Object.entries(F).map(([k, [label, list]]) => V.chip(`${label} ${list.length}`, `btn ${k === 'missing' && list.length ? 'err' : ''} ${cov.filter === k ? 'on' : ''}`, { onclick: () => { cov.filter = k; coverage(App); } }))));
+    root.appendChild(h('div', { class: 'summary' }, Object.entries(F).map(([k, [label, list]]) => filterChip(label, list.length, { cls: k === 'missing' ? 'err' : '', on: cov.filter === k, onclick: () => { cov.filter = k; coverage(App); } }))));
     const list = F[cov.filter][1];
     root.appendChild(V.table([
       { t: '設備', f: (r) => Q.devName(r.dev) },
@@ -82,8 +91,8 @@
     const r = cmp.report; if (!r) return;
     if (r.errors.length) root.appendChild(h('div', { class: 'pane-section' }, r.errors.map((e) => h('div', { class: 'finding' }, [V.sevDot('error'), e]))));
     const ST = { ok: ['一致', 'ok'], missing: ['基準缺少', 'err'], different: ['不同', 'warn'], unexpected: ['基準多出', 'info'] };
-    root.appendChild(h('div', { class: 'summary' }, [V.chip(`有差異 ${r.items.filter((i) => i.status !== 'ok').length}`, `btn ${cmp.filter === 'problem' ? 'on' : ''}`, { onclick: () => { cmp.filter = 'problem'; compare(App); } }),
-      ...Object.entries(ST).map(([k, [label, cls]]) => V.chip(`${label} ${r.summary[k] || 0}`, `btn ${cls} ${cmp.filter === k ? 'on' : ''}`, { onclick: () => { cmp.filter = k; compare(App); } }))]));
+    root.appendChild(h('div', { class: 'summary' }, [filterChip('有差異', r.items.filter((i) => i.status !== 'ok').length, { on: cmp.filter === 'problem', onclick: () => { cmp.filter = 'problem'; compare(App); } }),
+      ...Object.entries(ST).map(([k, [label, cls]]) => filterChip(label, r.summary[k] || 0, { cls, on: cmp.filter === k, onclick: () => { cmp.filter = k; compare(App); } }))]));
     const items = r.items.filter((i) => (cmp.filter === 'problem' ? i.status !== 'ok' : i.status === cmp.filter));
     root.appendChild(V.table([{ t: '', f: (i) => V.chip(ST[i.status][0], ST[i.status][1]) }, { t: '項目', f: (i) => i.message }], items, {
       onRow: (i) => {
@@ -134,8 +143,10 @@
         { t: '成員', f: (r) => String(r.members.length), s: (r) => r.members.length }],
       (r) => (r.id == null ? { type: 'device', key: r.dev } : { type: 'vlan', key: String(r.id) }), (r) => [dn(r.dev), r.id, r.name, r.desc]],
     };
-    root.appendChild(h('div', { class: 'summary' }, Object.entries(T).map(([k, [label]]) => V.chip(`${label} ${TAB_COUNT[k]}`, `btn ${inv.kind === k ? 'on' : ''}`, {
-      onclick: () => { inv.kind = k; inv.filter = 'all'; inv.sortBy = -1; inv.sortDir = 1; inventory(App); }, title: label + '清單' }))));
+    // 兩層：清單種類用分段按鈕，種類內的篩選用篩選選項，避免兩排看起來是同一層
+    root.appendChild(h('div', { class: 'summary' }, h('div', { class: 'seg', role: 'tablist' }, Object.entries(T).map(([k, [label]]) => h('button', {
+      class: `btn ${inv.kind === k ? 'on' : ''}`, role: 'tab', 'aria-selected': String(inv.kind === k), title: label + '清單',
+      onclick: () => { inv.kind = k; inv.filter = 'all'; inv.sortBy = -1; inv.sortDir = 1; inventory(App); } }, [label + ' ', h('span', { class: 'n' }, String(TAB_COUNT[k]))])))));
     const [, rows0, cols, sel, text] = T[inv.kind];
     const FILTERS = {
       ip: [['all', '全部', () => true, C.ips], ['arp', 'ARP', (r) => r.from.includes('ARP'), C.arpIps], ['own', '設備自有', (r) => r.from.some((x) => x === '介面' || x === '管理'), C.ownIps], ['heard', '鄰居宣告', (r) => r.from.includes('鄰居宣告'), C.heardIps]],
@@ -144,8 +155,7 @@
     };
     const flt = FILTERS[inv.kind];
     if (flt) {
-      root.appendChild(h('div', { class: 'summary' }, flt.map(([k, label, , c]) => {
-        return V.chip(`${label} ${c}`, `btn ${k === 'noip' && c ? 'warn' : ''} ${inv.filter === k ? 'on' : ''}`, { onclick: () => { inv.filter = k; inventory(App); }, title: '點一下切換篩選' }); })));
+      root.appendChild(h('div', { class: 'summary sub' }, flt.map(([k, label, , c]) => filterChip(label, c, { cls: k === 'noip' ? 'warn' : '', on: inv.filter === k, onclick: () => { inv.filter = k; inventory(App); }, title: '點一下切換篩選' }))));
     }
     const box = h('input', { type: 'search', placeholder: '篩選：名稱、IP、MAC、VLAN…', value: inv.q, class: 'pane-filter' });
     const body = h('div');

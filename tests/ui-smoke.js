@@ -338,6 +338,12 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (nEnd < unk || new Set(App.Q.endpointEntries().map((e) => e.key)).size !== unk) throw new Error('終端的不重複介面數應等於未知對端介面數，且不可少於它');
     document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('設備')).click();
     const t0 = text('#pane-inventory'); ['全部 ' + (m.devices.length + nEnd), '終端 ' + nEnd].forEach((x) => { if (!t0.includes(x)) throw new Error('設備清單缺少分類：' + x); });
+    // 兩層選項：清單種類是分段按鈕，種類內是篩選選項；0 筆的篩選停用
+    const seg = $('#pane-inventory .seg'); if (!seg || seg.querySelectorAll('button').length !== 6) throw new Error('清單種類應為分段按鈕');
+    const sub = document.querySelectorAll('#pane-inventory .summary').find((x) => x.className.split(' ').includes('sub'));
+    if (!sub) throw new Error('種類內的篩選應是第二層');
+    const zero = sub.querySelectorAll('.chip').find((c) => / 0$/.test(c.textContent));
+    if (zero && (!zero.className.includes('off') || zero.getAttribute('aria-disabled') !== 'true')) throw new Error('0 筆的篩選應停用');
     const firstRow = document.querySelector('#pane-inventory tbody tr');
     if (!firstRow || firstRow.getAttribute('tabindex') !== '0') throw new Error('可點選清單列應可透過鍵盤聚焦');
     firstRow.dispatch('keydown', { key: 'Enter' });

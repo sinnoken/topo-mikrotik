@@ -36,7 +36,7 @@
   V.KIND = S.KIND_LABEL;
   V.KIND_BASIS = { board: '依設備型號', data: '依收集的資料', caps: '依鄰居回報的功能', vendor: '依廠牌推測', heuristic: '依對端埠名推測', profile: '依命名規則', none: '無法判斷' };
   V.SEV = { error: '錯誤', warn: '警告', info: '提醒' };
-  V.CLS = { lag: '聚合', '40g': '40G 以上', '10g': '10G', '1g': '1G', oob: '管理', l3: 'L3（OSPF）', other: '其他' };
+  V.CLS = { lag: '聚合', '40g': '40G 以上', '10g': '10G', '1g': '1G', oob: '管理', other: '其他' };
   V.STATUS = { up: '連線', down: '中斷', unknown: '不明' };
   V.IFC_TYPE = { physical: '實體埠', lag: '聚合介面', bridge: 'Bridge', vlan: 'VLAN 介面', wireless: 'Wi-Fi', virtual: '虛擬介面', loopback: 'Loopback', other: '其他介面' };
   V.IFC_TYPE_BASIS = { rawType: '依 RouterOS 類型', member: '依聚合成員', name: '依介面名稱推測', default: '缺類型資料，預設為實體埠', assoc: '依 Wi-Fi 關聯表' };

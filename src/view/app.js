@@ -103,35 +103,19 @@
       else if (e.type === 'interface') bump(devSev, K.splitEp(e.key)[0], f.severity);
     }));
     const nodes = snap.model.devices.map((d) => ({ id: d.key, label: d.label || d.name, kind: d.kind, collected: d.collected, group: d.group, sev: devSev.get(d.key) || null }));
+    // 設備對與證據強度由 query 決定；這裡只加上檢視用的嚴重度與兩端標籤
     const pairs = new Map(); App.pairOfLink = new Map();
-    const CLS_RANK = ['lag', '40g', '10g', '1g', 'oob', 'other', 'l3'];
-    snap.model.links.forEach((l) => {
-      if (l.layer !== 'l2') return;
-      const da = K.splitEp(l.a)[0]; const db = K.splitEp(l.b)[0];
-      if (da === db) return;
-      const [a, b] = da < db ? [da, db] : [db, da]; const id = a + '~' + b;
-      const p = S.util.getOr(pairs, id, () => ({ id, a, b, links: [], inferred: [], cls: 'l3', count: 0, hearsay: true, sev: null, domainOnly: true, hasDomain: false }));
-      p.links.push(l.key); App.pairOfLink.set(l.key, id);
-      if (CLS_RANK.indexOf(l.cls) < CLS_RANK.indexOf(p.cls)) p.cls = l.cls;
-      if (l.layer === 'l2') p.count++;
-      if (!l.hearsay) p.hearsay = false;
-      if (l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN) p.hasDomain = true;
-      else p.domainOnly = false;
-      const s = linkSev.get(l.key); if (s && (!p.sev || sevRank[s] > sevRank[p.sev])) p.sev = s;
+    Q.devicePairs().forEach((p) => {
+      pairs.set(p.id, p);
+      p.links.concat(p.inferred).forEach((k) => App.pairOfLink.set(k, p.id));
+      p.sev = p.links.reduce((s, k) => { const x = linkSev.get(k); return x && (!s || sevRank[x] > sevRank[s]) ? x : s; }, null);
     });
-    // 推論鏈路：設備對之間沒有線就新增；只有 MNDP 時改以推論樣式顯示（證據較強）。已有 LLDP／CDP 的設備對不會有推論鏈路
-    Q.inferredLinks().forEach((l) => {
-      const da = K.splitEp(l.a)[0]; const db = K.splitEp(l.b)[0]; const [a, b] = da < db ? [da, db] : [db, da]; const id = a + '~' + b;
-      const p = S.util.getOr(pairs, id, () => ({ id, a, b, links: [], inferred: [], cls: 'other', count: 0, hearsay: false, sev: null, domainOnly: false, hasDomain: false }));
-      p.inferred.push(l.key); p.inferredOnly = p.domainOnly || !p.links.length; p.domainOnly = false; p.hearsay = false;
-    });
-    const inferredPort = (dev, keys) => S.util.uniq(keys.map((k) => Q.inferredLinks().find((l) => l.key === k)).flatMap((l) => [l.a, l.b])
+    const inferredPort = (dev, keys) => S.util.uniq(keys.map((k) => Q.getInferredLink(k)).flatMap((l) => [l.a, l.b])
       .filter((ep) => K.splitEp(ep)[0] === dev).map((ep) => (K.splitEp(ep)[1].startsWith('?(') ? '?' : (Q.getInterface(ep) || { name: K.splitEp(ep)[1] }).name)));
     pairs.forEach((p) => {
-      const ls = p.links.map((k) => Q.getLink(k));
-      const interfaceLinks = ls.filter((l) => l.evidenceScope !== LINK_SCOPE.BROADCAST_DOMAIN);
+      const interfaceLinks = p.links.map((k) => Q.getLink(k)).filter((l) => l.evidenceScope !== LINK_SCOPE.BROADCAST_DOMAIN);
       const side = (dev) => {
-        if (p.inferredOnly) { const ports = inferredPort(dev, p.inferred); return (ports.length === 1 ? ports[0] : `${ports.length} 埠`) + '（推論）'; }
+        if (p.evidence === 'inferred') { const ports = inferredPort(dev, p.inferred); return (ports.length === 1 ? ports[0] : `${ports.length} 埠`) + '（推論）'; }
         if (!interfaceLinks.length) return 'MNDP';
         const eps = interfaceLinks.map((l) => (K.splitEp(l.a)[0] === dev ? l.a : l.b)).map((ep) => Q.getInterface(ep));
         const parents = S.util.uniq(eps.map((i) => (i ? (i.lag ? Q.getInterface(i.lag).name : i.name) : '?')));
@@ -165,7 +149,7 @@
     const forceCollapse = total > App.UNKNOWN_TOTAL_CAP;
     const link = (dk, vid, labelA, extra) => {
       const id = 'v~' + vid;
-      pairs.set(id, Object.assign({ id, a: dk, b: vid, links: [], cls: 'other', count: 1, hearsay: true, virtual: true, sev: null, labelA, labelB: '' }, extra || {}));
+      pairs.set(id, Object.assign({ id, a: dk, b: vid, links: [], inferred: [], cls: 'other', count: 1, evidence: 'hearsay', virtual: true, sev: null, labelA, labelB: '' }, extra || {}));
       S.util.getOr(App.virtualByDev, dk, () => []).push(vid);
     };
     devs.forEach((dk) => {
@@ -200,7 +184,7 @@
         nodes.push({ id: vid, label: `推定終端 ×${rows.length}`, kind: 'cluster', collected: false, virtual: true, parent: dk, group: dev.group, count: rows.length,
           tip: `${rows.length} 個終端${where(rows[0])}・${via(rows[0])}・雙擊展開` });
         App.virtual.set(vid, { type: 'behind', dev: dk });
-        link(dk, vid, '埠不明', { inferredOnly: true, hearsay: false });
+        link(dk, vid, '埠不明', { evidence: 'inferred' });
         return;
       }
       rows.forEach((x) => {
@@ -209,7 +193,7 @@
           color: vendorColor(x.vendor), ini: vendorIni(x.vendor),
           tip: `推定位置：${K.macPretty(x.mac)}${ip ? '・' + ip : ''}${x.vendor ? '・' + x.vendor : ''} ${where(x)}・${via(x)}` });
         App.virtual.set(vid, { type: 'mac', mac: x.mac });
-        link(dk, vid, '埠不明', { inferredOnly: true, hearsay: false });
+        link(dk, vid, '埠不明', { evidence: 'inferred' });
       });
     });
   }
@@ -271,13 +255,13 @@
       case 'device': nodes = [sel.key]; focus = [sel.key]; break;
       case 'link': { const l = Q.getLink(sel.key); if (l) { edges = pairsOf([l.key]); focus = [devOf(l.a), devOf(l.b)]; } break; }
       case 'pair': edges = [sel.id]; focus = sel.devs; break;
-      case 'interface': { const i = Q.getInterface(sel.key); if (i) { const v = App.vOfEp.get(i.key); nodes = [i.dev].concat(v ? [v] : []); edges = pairsOf(Q.linksOfEp(i.key).map((l) => l.key)); focus = v ? [i.dev, v] : [i.dev]; } break; }
+      case 'interface': { const i = Q.getInterface(sel.key); if (i) { const v = App.vOfEp.get(i.key); nodes = [i.dev].concat(v ? [v] : []); edges = pairsOf(Q.linksOfEp(i.key).concat(Q.inferredLinksOfEp(i.key)).map((l) => l.key)); focus = v ? [i.dev, v] : [i.dev]; } break; }
       case 'endpoints': { const vs = App.virtualByDev.get(sel.dev) || []; nodes = [sel.dev].concat(vs); focus = [sel.dev].concat(vs); break; }
       case 'mac': { const m = Q.findMac(sel.key); const ds = S.util.uniq(m.edge.map(devOf).concat(m.edge.map((ep) => App.vOfEp.get(ep)).filter(Boolean))); g.setHighlight({ nodes: new Map(ds.map((d) => [d, MARK.find])), edges: new Map() }); focus = ds; break; }
       case 'ip': { const r = Q.findIp(sel.key); const ds = S.util.uniq([...(r.owner ? [r.owner.split('|')[0]] : []), ...r.locations.map((x) => devOf(x.ep)), ...r.locations.map((x) => App.vOfEp.get(x.ep)).filter(Boolean)]); g.setHighlight({ nodes: new Map(ds.map((d) => [d, MARK.find])), edges: new Map() }); focus = ds; break; }
       case 'vlan': {
         const v = Q.vlan(sel.key); const em = new Map();
-        pairsOf(v.carry.map((l) => l.key)).forEach((p) => em.set(p, MARK.good));
+        pairsOf(v.carry.concat(v.inferred).map((l) => l.key)).forEach((p) => em.set(p, MARK.good));
         pairsOf(v.partial.map((l) => l.key)).forEach((p) => em.set(p, MARK.bad));
         g.setHighlight({ nodes: new Map(v.devices.map((d) => [d, MARK.good])), edges: em }); focus = v.devices; break;
       }
@@ -346,8 +330,8 @@
     } else {
       const p = App.pairs.get(ev.item.id);
       if (p.virtual) text = App.graph.nodeById.get(p.b).tip;
-      else if (p.inferredOnly) text = `${App.Q.devName(p.a)} ${p.labelA} ⇄ ${App.Q.devName(p.b)} ${p.labelB}・推論鏈路：沒有 LLDP，依 ${S.util.uniq(App.Q.inferredLinksBetween(p.a, p.b).flatMap((l) => l.bases)).map((x) => V.INFER_BASIS[x]).join('、')} 推定相鄰`;
-      else if (p.domainOnly) text = `${App.Q.devName(p.a)} ⇄ ${App.Q.devName(p.b)}・MNDP 觀察到同一 L2 broadcast domain 可達；不代表兩台設備直連`;
+      else if (p.evidence === 'inferred') text = `${App.Q.devName(p.a)} ${p.labelA} ⇄ ${App.Q.devName(p.b)} ${p.labelB}・推論鏈路：沒有 LLDP，依 ${S.util.uniq(App.Q.inferredLinksBetween(p.a, p.b).flatMap((l) => l.bases)).map((x) => V.INFER_BASIS[x]).join('、')} 推定相鄰`;
+      else if (p.evidence === 'domainOnly') text = `${App.Q.devName(p.a)} ⇄ ${App.Q.devName(p.b)}・MNDP 觀察到同一 L2 broadcast domain 可達；不代表兩台設備直連`;
       else text = `${App.Q.devName(p.a)} ${p.labelA} ⇄ ${App.Q.devName(p.b)} ${p.labelB}${p.hasDomain ? '・另有 MNDP L2 廣播網域可達證據' : ''}`;
     }
     tip.textContent = text; tip.classList.remove('hidden');

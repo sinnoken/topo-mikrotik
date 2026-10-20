@@ -161,13 +161,18 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
   await step('推論鏈路：沒有 LLDP 的 CSS610 以推論樣式畫出，提示與詳情說明依據', () => {
     const il = App.Q.inferredLinks(); if (process.env.SMOKE_INPUT && !il.length) return; // 大型乾淨網路沒有 CSS610
     if (!il.length) throw new Error('範例資料應有推論鏈路');
-    const p = Array.from(App.pairs.values()).find((x) => x.inferredOnly);
+    const p = Array.from(App.pairs.values()).find((x) => x.evidence === 'inferred');
     if (!p) throw new Error('推論鏈路應以推論樣式畫在圖上');
     if (!Array.from(document.querySelectorAll('#legend .li')).some((li) => li.textContent === '推論鏈路')) throw new Error('圖例應有推論鏈路');
     App.graph.emit('hover', { item: { type: 'edge', id: p.id }, x: 0, y: 0 });
     if (!text('#tooltip').includes('推論鏈路')) throw new Error('提示應說明是推論鏈路');
     App.graph.emit('click', { type: 'edge', id: p.id });
     if (!text('#detail').includes('MAC 表') || !text('#detail').includes('信心高')) throw new Error('詳情應列出推論依據與信心');
+    const l = App.Q.getInferredLink(p.inferred[0]); const ep = [l.a, l.b].find((e) => App.Q.getInterface(e));
+    App.select({ type: 'interface', key: ep });
+    if (!App.graph.sel.edges.has(p.id)) throw new Error('選取介面時應一併標示它的推論鏈路');
+    if (!text('#detail').includes('推論鏈路')) throw new Error('介面詳情應列出推論鏈路');
+    if (Array.from(document.querySelectorAll('#legend .li')).some((li) => li.textContent.includes('L3'))) throw new Error('圖上沒有 L3 連線，圖例不應列出');
     App.select(null);
   });
   await step('推定位置：CSS610 底下的主機畫回圖上，點選顯示推定位置', () => {
@@ -177,7 +182,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     const n = App.graph.nodes.find((x) => x.id === '?b|' + rows[0].mac);
     if (!n || n.parent !== dk) throw new Error('推定終端應畫在所屬交換器底下');
     const e = Array.from(App.pairs.values()).find((p) => p.b === n.id);
-    if (!e || !e.inferredOnly) throw new Error('推定終端的連線應使用推論樣式');
+    if (!e || e.evidence !== 'inferred') throw new Error('推定終端的連線應使用推論樣式');
     App.graph.emit('click', { type: 'node', id: n.id });
     if (App.sel.type !== 'mac' || !text('#detail').includes('推定位置') || !text('#detail').includes('埠不明')) throw new Error('點選推定終端應顯示 MAC 詳情與推定位置');
     App.select(null);
@@ -415,7 +420,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     for (let i = 0; i < 4000 && (!App.snap || App.snap.meta.inputHash !== hash); i++) await new Promise((r) => setTimeout(r, 5));
     if (App.snap.meta.inputHash !== hash) throw new Error('MNDP 基準未建立');
     if (!Array.from(document.querySelectorAll('#legend .li')).some((li) => li.textContent === 'MNDP')) throw new Error('MNDP 圖例標籤應簡化為 MNDP');
-    const p = Array.from(App.pairs.values()).find((x) => x.domainOnly);
+    const p = Array.from(App.pairs.values()).find((x) => x.evidence === 'domainOnly');
     if (!p) throw new Error('MNDP device edge 未標記為 domain-only');
     if (p.labelA !== 'MNDP' || p.labelB !== 'MNDP') throw new Error('純 MNDP edge label 應只顯示 MNDP');
     App.graph.emit('hover', { item: { type: 'edge', id: p.id }, x: 0, y: 0 });
@@ -431,7 +436,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     const graph = App.graph; const ctx = graph.ctx;
     const old = { nodes: graph.nodes, edges: graph.edges, pos: graph.pos, sel: graph.sel, hl: graph.hl, hover: graph.hover, fillText: ctx.fillText };
     const nodes = ['pa', 'pb'].map((id) => ({ id, label: id, kind: 'switch', collected: true, group: 'test' }));
-    const edges = [{ id: 'pe', a: 'pa', b: 'pb', cls: 'other', count: 1, hearsay: false, labelA: 'etherA1', labelB: 'etherB1' }];
+    const edges = [{ id: 'pe', a: 'pa', b: 'pb', cls: 'other', count: 1, evidence: 'adjacency', labelA: 'etherA1', labelB: 'etherB1' }];
     const texts = [];
     try {
       ctx.fillText = (s) => { texts.push(String(s)); };
@@ -457,8 +462,8 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
       id, label: id, kind: 'switch', collected: true, group: 'test',
     }));
     const edges = [
-      { id: 'pure-mndp', a: 'mndp-a', b: 'mndp-b', cls: 'other', count: 1, hearsay: false, domainOnly: true },
-      { id: 'mixed-evidence', a: 'mixed-a', b: 'mixed-b', cls: 'other', count: 1, hearsay: false, domainOnly: false, hasDomain: true },
+      { id: 'pure-mndp', a: 'mndp-a', b: 'mndp-b', cls: 'other', count: 1, evidence: 'domainOnly' },
+      { id: 'mixed-evidence', a: 'mixed-a', b: 'mixed-b', cls: 'other', count: 1, evidence: 'adjacency', hasDomain: true },
     ];
     const pos = new Map([['mndp-a', { x: 0, y: 0 }], ['mndp-b', { x: 180, y: 0 }], ['mixed-a', { x: 0, y: 180 }], ['mixed-b', { x: 180, y: 180 }]]);
     const strokes = []; let dash = []; let from = null; let to = null;

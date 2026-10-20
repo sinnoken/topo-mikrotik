@@ -79,8 +79,7 @@
       if (l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN) { l.cls = 'other'; return; }
       const ia = M.ifcs.get(l.a); const ib = M.ifcs.get(l.b);
       const names = [ia, ib].map((i) => (i ? i.name.toLowerCase() : ''));
-      if (l.layer === 'l3') l.cls = 'l3';
-      else if ((ia && (ia.lag || ia.type === 'lag')) || (ib && (ib.lag || ib.type === 'lag'))) l.cls = 'lag';
+      if ((ia && (ia.lag || ia.type === 'lag')) || (ib && (ib.lag || ib.type === 'lag'))) l.cls = 'lag';
       else if (names.some((n) => /^(mgmt|oob|management)/.test(n))) l.cls = 'oob';
       else {
         const s = Math.max(speedOf(names[0]), speedOf(names[1]));

@@ -151,16 +151,16 @@
         const a = this.pos.get(e.a); const b = this.pos.get(e.b); if (!a || !b) return;
         if (!inView(a) && !inView(b) && !segInView(a, b, view)) return;
         const st = EDGE[e.cls] || EDGE.other; let col = st.c; let w = st.w * (e.count > 1 ? 1.25 : 1); let alpha = 1;
-        if (e.inferredOnly) { col = WEAK.inferred.c; alpha = WEAK.inferred.alpha; }
-        else if (e.domainOnly) { col = WEAK.domainOnly.c; alpha = WEAK.domainOnly.alpha; }
-        else if (e.hearsay) { col = e.ifStyle ? e.ifStyle.c : WEAK.hearsay.c; alpha = WEAK.hearsay.alpha; }
+        // 證據強度（query 的 devicePairs 決定）對應 theme 的弱邊樣式；終端連線保留介面類型顏色
+        const weak = WEAK[e.evidence];
+        if (weak) { col = e.evidence === 'hearsay' && e.ifStyle ? e.ifStyle.c : weak.c; alpha = weak.alpha; }
         else if (e.ifStyle) col = e.ifStyle.c;
         const hc = hl && hl.edges.get(e.id);
         if (dim && !hc && !override) alpha = ALPHA.dimEdge;
         if (hc) { col = hc; w = Math.max(w, 3.5, 2.5 / s); }
         if (override) { col = override; w = Math.max(w, 3.5, 2.5 / s); alpha = 1; }
         c.globalAlpha = alpha; c.strokeStyle = col; c.lineWidth = Math.max(w, 0.8 / s);
-        const dash = e.inferredOnly ? WEAK.inferred.dash : e.domainOnly ? WEAK.domainOnly.dash : e.hearsay ? WEAK.hearsay.dash : st.dash;
+        const dash = weak ? weak.dash : st.dash;
         c.setLineDash(dash ? dash.map((d) => d / Math.min(s, 1)) : []);
         c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke(); c.setLineDash([]);
         if (e.sev && !dim && !override) { // 有問題的連線：中點標記

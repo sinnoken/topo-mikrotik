@@ -37,7 +37,16 @@
     const vlansById = new Map(); const vlansByDev = new Map();
     m.vlans.forEach((v) => { if (v.id != null) U.getOr(vlansById, v.id, () => []).push(v); U.getOr(vlansByDev, v.dev, () => []).push(v); });
     const routesByDev = new Map(); m.routes.forEach((r) => U.getOr(routesByDev, r.dev, () => []).push(r));
-    const inferredByDev = new Map(); (m.inferredLinks || []).forEach((l) => [l.a, l.b].forEach((ep) => { const arr = U.getOr(inferredByDev, K.splitEp(ep)[0], () => []); if (!arr.includes(l)) arr.push(l); }));
+    const inferredByDev = new Map(); const inferredByEp = new Map(); const inferredByKey = new Map();
+    (m.inferredLinks || []).forEach((l) => {
+      inferredByKey.set(l.key, l);
+      [l.a, l.b].forEach((ep) => {
+        U.getOr(inferredByEp, ep, () => []).push(l);
+        const arr = U.getOr(inferredByDev, K.splitEp(ep)[0], () => []); if (!arr.includes(l)) arr.push(l);
+      });
+    });
+    // 推論鏈路在已收集設備端記在聚合介面上：查成員埠時一併找所屬聚合
+    const inferredOfEp = (ep) => { const i = ifc.get(ep); return U.uniq([ep].concat(i && i.lag ? [i.lag] : []).flatMap((e) => inferredByEp.get(e) || [])); };
     let inv = null;
     const unkByDev = new Map();
     m.interfaces.forEach((i) => { if (i.unknownPeer) U.getOr(unkByDev, i.dev, () => []).push(i); });
@@ -112,6 +121,35 @@
         return out;
       },
       inferredLinksOf: (d) => inferredByDev.get(d) || [],
+      inferredLinksOfEp: inferredOfEp,
+      getInferredLink: (k) => inferredByKey.get(k) || null,
+      /**
+       * 圖上的設備對：同一對設備的鏈路與推論鏈路併成一筆。evidence 是這對設備最強的證據，決定線型：
+       *   adjacency（有 LLDP／CDP 介面鄰接）> hearsay（介面鄰接都是單側觀察）> inferred（推論鏈路）> domainOnly（只有 MNDP）。
+       * 推論鏈路只在沒有 LLDP／CDP 的設備對之間產生，所以 inferred 只會與 MNDP 並存。
+       */
+      devicePairs() {
+        const pairs = new Map();
+        const CLS_RANK = ['lag', '40g', '10g', '1g', 'oob', 'other'];
+        const pairOf = (epA, epB) => {
+          const da = K.splitEp(epA)[0]; const db = K.splitEp(epB)[0]; if (da === db) return null;
+          const [a, b] = da < db ? [da, db] : [db, da]; const id = a + '~' + b;
+          return U.getOr(pairs, id, () => ({ id, a, b, links: [], inferred: [], cls: null, count: 0, adjacency: 0, hearsay: 0, hasDomain: false }));
+        };
+        m.links.forEach((l) => {
+          const p = pairOf(l.a, l.b); if (!p) return;
+          p.links.push(l.key); p.count++;
+          if (!p.cls || CLS_RANK.indexOf(l.cls) < CLS_RANK.indexOf(p.cls)) p.cls = l.cls;
+          if (l.evidenceScope === S.LINK_SCOPE.BROADCAST_DOMAIN) p.hasDomain = true;
+          else if (l.hearsay) p.hearsay++;
+          else p.adjacency++;
+        });
+        (m.inferredLinks || []).forEach((l) => { const p = pairOf(l.a, l.b); if (p) p.inferred.push(l.key); });
+        return Array.from(pairs.values()).map(({ adjacency, hearsay, ...p }) => Object.assign(p, {
+          cls: p.cls || 'other',
+          evidence: adjacency ? 'adjacency' : hearsay ? 'hearsay' : p.inferred.length ? 'inferred' : 'domainOnly',
+        }));
+      },
       inferredLinksBetween: (a, b) => (inferredByDev.get(a) || []).filter((l) => [l.a, l.b].some((ep) => K.splitEp(ep)[0] === b)),
       ipOwner: (ip) => ipOwner.get(ip) || null,
       /** 介面上的 IP 位址實體（含鄰居宣告）。 */
@@ -232,7 +270,13 @@
         });
         const devs = U.uniq(entries.map((v) => v.dev));
         m.interfaces.forEach((i) => { if (U.ifcVlans(i).includes(id) && !devs.includes(i.dev)) devs.push(i.dev); });
-        return { id, entries, devices: devs.sort(U.natural), carry, partial, names: U.uniq(entries.map((e) => e.name).filter(Boolean)) };
+        // 推論鏈路：已收集的每一端（或其所屬聚合）都帶這個 VLAN；未收集的一端無從得知，屬推論
+        const hasVlan = (ep) => { const i = ifc.get(ep); return !!i && U.ifcVlans(i).includes(id); };
+        const inferred = (m.inferredLinks || []).filter((l) => {
+          const known = [l.a, l.b].filter((ep) => ifc.has(ep) && (dev.get(K.splitEp(ep)[0]) || {}).collected);
+          return known.length && known.every((ep) => hasVlan(ep) || (ifc.get(ep).lagMembers || []).some(hasVlan));
+        });
+        return { id, entries, devices: devs.sort(U.natural), carry, partial, inferred, names: U.uniq(entries.map((e) => e.name).filter(Boolean)) };
       },
 
       /** 一個搜尋框搜所有東西：MAC、IP、VLAN、設備、介面描述。 */

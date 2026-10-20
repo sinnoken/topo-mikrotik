@@ -219,8 +219,8 @@
       domain
         ? kv([['關係', 'MNDP 觀察到的 L2 廣播網域可達性；不代表兩台設備之間存在直連線路。'],
           ['觀察位置', observedAt.length ? observedAt.join('；') : '詳見原始輸出']])
-        : kv([['A 端', epLink(App, l.a)], ['B 端', epLink(App, l.b)], ['層級', l.layer === 'l2' ? 'L2（介面鄰接）' : 'L3（路由鄰接）']]),
-      section('VLAN', l.layer === 'l2' && !domain ? kv([
+        : kv([['A 端', epLink(App, l.a)], ['B 端', epLink(App, l.b)], ['層級', 'L2（介面鄰接）']]),
+      section('VLAN', !domain ? kv([
         ['兩端都有', h('span', { class: 'vlanlist' }, vlanText(l.vlansCommon))],
         ['只在 A 端', onlyA.length ? h('span', { class: 'vlanlist diffA' }, vlanText(onlyA)) : '—'],
         ['只在 B 端', onlyB.length ? h('span', { class: 'vlanlist diffA' }, vlanText(onlyB)) : '—'],
@@ -257,7 +257,7 @@
   function iface(App, sel) {
     const Q = App.Q; const i = Q.getInterface(sel.key);
     if (!i) return h('div', { class: 'empty-detail' }, '基準中沒有這個介面');
-    const links = Q.linksOfEp(i.key);
+    const links = Q.linksOfEp(i.key); const inferred = Q.inferredLinksOfEp(i.key);
     const macs = i.macs.map((m) => Q.findMac(m));
     return h('div', { class: 'detail' }, [
       h('h2', null, [devLink(App, i.dev), ' ', h('span', { class: 'mono' }, i.name)]),
@@ -275,6 +275,7 @@
           ? `${Q.devName(K.splitEp(l.a)[0] === i.dev ? K.splitEp(l.b)[0] : K.splitEp(l.a)[0])}（MNDP：L2 廣播網域可達，非直連）`
           : `${Q.epName(l.a)} ⇄ ${Q.epName(l.b)}`,
         { type: 'link', key: l.key }))), { count: links.length }),
+      section('推論鏈路（沒有 LLDP）', inferred.length ? inferredTable(App, inferred, i.dev) : null, { count: inferred.length }),
       findingsBlock(App, Q.findingsFor('interface', i.key)),
       section('學到的 MAC', macs.length ? V.table([
         { t: 'MAC', f: (m) => macLink(App, m.mac) }, { t: '廠商', f: (m) => m.vendor || '' }, { t: 'IP', f: (m) => m.ips.join(', ') },
@@ -335,9 +336,9 @@
     const fl = Q.findingsFor('vlan', String(v.id)).concat(...v.partial.map((l) => Q.findingsFor('link', l.key)));
     return h('div', { class: 'detail' }, [
       h('h2', null, 'VLAN ' + v.id),
-      h('div', { class: 'row' }, [V.chip(`${v.devices.length} 台設備`), V.chip(`通過 ${v.carry.length} 條鏈路`, 'ok'), v.partial.length ? V.chip(`${v.partial.length} 條只有一端`, 'err') : null]),
+      h('div', { class: 'row' }, [V.chip(`${v.devices.length} 台設備`), V.chip(`通過 ${v.carry.length} 條鏈路`, 'ok'), v.inferred.length ? V.chip(`${v.inferred.length} 條推論鏈路`, 'info') : null, v.partial.length ? V.chip(`${v.partial.length} 條只有一端`, 'err') : null]),
       kv([['名稱', v.names.length ? v.names.join('、') : '—']]),
-      h('p', { class: 'muted' }, '圖上：綠色為兩端都有此 VLAN 的鏈路，紅色為只有一端有。'),
+      h('p', { class: 'muted' }, '圖上：綠色為兩端都有此 VLAN 的鏈路，紅色為只有一端有；推論鏈路在已收集的各端都有此 VLAN 時也標綠色（屬推論）。'),
       findingsBlock(App, fl),
       section('只有一端有此 VLAN 的鏈路', v.partial.map((l) => h('div', null, L(App, `${Q.epName(l.a)} ⇄ ${Q.epName(l.b)}`, { type: 'link', key: l.key }))), { count: v.partial.length }),
       section('設備', V.table([{ t: '設備', f: (d) => devLink(App, d) }, { t: '名稱', f: (d) => (v.entries.find((e) => e.dev === d) || {}).name || '' }, { t: '成員介面', f: (d) => String((v.entries.find((e) => e.dev === d) || { members: [] }).members.length) }], v.devices),

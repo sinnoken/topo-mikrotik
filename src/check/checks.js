@@ -236,7 +236,7 @@
 
   /**
    * 終端埠：已收集設備上、恰好學到一個 MAC、非 Wi-Fi、狀態不是 down 的介面，
-   * 且沒有連到其他「已收集的網路設備」（連到主機或未收集設備的埠仍算終端）。
+   * 且沒有連到其他「已收集的網路設備」（連到主機或未收集設備的埠仍算終端），也沒有推論鏈路。
    * linksByEp 僅包含介面鄰接證據；廣播網域（MNDP）可達不代表該埠有 LLDP／CDP 鄰接。
    * 回傳 Map(ep → { linked: 是否有任何 LLDP／CDP 鄰接 })
    */
@@ -248,6 +248,8 @@
       return peer && peer.collected && peer.kind !== 'host';
     });
     const hasAdjacency = (ep) => adjacencyLinksByEp.has(ep);
+    // 已推論接到網路設備（例如底下沒有其他終端的 CSS106，MAC 表只剩它自己）的埠不是終端埠
+    const inferredEps = new Set((M.inferred || []).flatMap((r) => [r.a, r.b]));
     // 設備自己的介面 MAC（/interface print 的 mac-address）出現在轉發表時不是外部終端
     const ownMacs = new Map();
     M.ifcs.forEach((i) => { const m = i.hwMac && K.mac(i.hwMac); if (m) { if (!ownMacs.has(i.dev)) ownMacs.set(i.dev, new Set()); ownMacs.get(i.dev).add(m); } });
@@ -261,7 +263,7 @@
       const group = [ep];
       if (i.lag) { const p = M.ifcs.get(i.lag); if (p) group.push(p.key, ...p.lagMembers); }
       group.push(...i.lagMembers);
-      if (group.some(toInfra)) return;
+      if (group.some((g) => toInfra(g) || inferredEps.has(g))) return;
       out.set(ep, { linked: group.some(hasAdjacency) });
     });
     return out;

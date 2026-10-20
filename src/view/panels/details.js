@@ -35,9 +35,9 @@
     const order = { error: 0, warn: 1, info: 2 };
     uniq.sort((a, b) => order[a.severity] - order[b.severity]);
     return h('div', null, [sec('檢查結果', [V.chip(String(uniq.length))]), ...uniq.map((f) => h('div', { class: 'finding' }, [
-      h('span', { style: { marginTop: '4px' } }, V.sevDot(f.severity)),
+      V.sevDot(f.severity),
       h('div', null, [h('div', null, [h('b', null, f.title)]), h('div', null, f.message),
-        f.evidence.length ? h('div', { class: 'ev' }, f.evidence.slice(0, 3).map((e) => h('a', { class: 'link mono', style: { marginRight: '10px' }, onclick: () => App.openRaw(e.file, e.line) }, `原文 第 ${e.line} 行`))) : null]),
+        f.evidence.length ? h('div', { class: 'ev' }, f.evidence.slice(0, 3).map((e) => h('a', { class: 'link mono', onclick: () => App.openRaw(e.file, e.line) }, `原文 第 ${e.line} 行`))) : null]),
     ]))]);
   }
   function sourcesBlock(App, src, title) {
@@ -129,7 +129,7 @@
       vlans.length ? fold('VLAN 定義', vlans.length, h('div', null, [sec('VLAN 定義'), V.table([
         { t: 'ID', f: (v) => (v.id == null ? '?' : String(v.id)) }, { t: '名稱', f: (v) => v.name || '' }, { t: '描述', f: (v) => v.desc || '' }, { t: '成員', f: (v) => String(v.members.length) },
       ], vlans, { onRow: (v) => v.id != null && App.select({ type: 'vlan', key: String(v.id) }) })]), false) : null,
-      unk.length ? h('div', null, [sec('沒有 LLDP／CDP 鄰接的埠', [V.chip(String(unk.length)), h('a', { class: 'link', style: { marginLeft: '8px', fontWeight: 400 }, onclick: () => App.select({ type: 'endpoints', dev: d.key }, { focus: true }) }, '在圖上看')]), unknownTable(App, unk)]) : null,
+      unk.length ? h('div', null, [sec('沒有 LLDP／CDP 鄰接的埠', [V.chip(String(unk.length)), h('a', { class: 'link', onclick: () => App.select({ type: 'endpoints', dev: d.key }, { focus: true }) }, '在圖上看')]), unknownTable(App, unk)]) : null,
       fold('鄰居', peerRows.length, h('div', null, [sec('鄰居'), peerRows.length ? V.table([
         { t: '本機介面', f: (r) => r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN
           ? h('span', { class: 'mono' }, r.observations.length ? r.observations.map((o) => o.ifc).join('、') : '對端回報')
@@ -293,7 +293,7 @@
         ['所屬網段', r.subnets.length ? h('span', null, r.subnets.slice(0, 4).flatMap((s, n) => [n ? '、' : '', `${s.net}/${s.len} @ `, epLink(App, s.ep)])) : '—'],
         ['MAC（ARP）', r.macs.length ? h('span', null, r.macs.flatMap((m, n) => [n ? '、' : '', macLink(App, m)])) : '—'],
         ['位置（終端埠）', r.locations.length ? h('span', null, r.locations.flatMap((x, n) => [n ? '、' : '', epLink(App, x.ep)])) : '—']]),
-      h('div', { class: 'row', style: { marginTop: '10px' } }, [h('button', { onclick: () => App.openTrace(r.ip, '') }, '從這個 IP 追蹤路由'), h('button', { onclick: () => App.openTrace('', r.ip) }, '追蹤到這個 IP')]),
+      h('div', { class: 'row spaced' }, [h('button', { onclick: () => App.openTrace(r.ip, '') }, '從這個 IP 追蹤路由'), h('button', { onclick: () => App.openTrace('', r.ip) }, '追蹤到這個 IP')]),
       findingsBlock(App, Q.findingsFor('ip', r.ip)),
       r.arps.length ? h('div', null, [sec('ARP 紀錄'), V.table([{ t: '設備', f: (a) => devLink(App, a.dev) }, { t: '介面', f: (a) => a.ifc }, { t: 'MAC', f: (a) => macLink(App, a.mac) }], r.arps)]) : null,
     ]);
@@ -327,7 +327,7 @@
       sec('逐跳'),
       ...t.hops.map((hp) => h('div', { class: 'hop' }, [
         h('div', null, [h('b', null, devLink(App, hp.dev)), h('span', { class: 'mono muted' }, `  ${hp.route}（${hp.proto}）`), hp.ecmp ? V.chip('ECMP', 'info') : null]),
-        ...hp.next.map((n) => h('div', { class: 'mono', style: { fontSize: '12px' } }, [`→ ${n.ip || ''} ${n.ifc || ''} `, n.dev ? devLink(App, n.dev) : null, n.note ? h('span', { class: n.status === 'ok' || n.status === 'connected' ? 'muted' : 'diffA' }, '  ' + n.note) : null])),
+        ...hp.next.map((n) => h('div', { class: 'mono' }, [`→ ${n.ip || ''} ${n.ifc || ''} `, n.dev ? devLink(App, n.dev) : null, n.note ? h('span', { class: n.status === 'ok' || n.status === 'connected' ? 'muted' : 'diffA' }, '  ' + n.note) : null])),
       ])),
       sec('結果'),
       ...t.ends.map((e) => h('div', { class: 'hop ' + (e.status === 'reached' ? 'end-reached' : 'end-bad') }, [h('b', null, devLink(App, e.dev)), `：${END[e.status] || e.status}`, h('div', { class: 'muted' }, e.note)])),

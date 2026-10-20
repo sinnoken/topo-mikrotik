@@ -297,6 +297,15 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
       const m = css.match(new RegExp('--' + v + ':\\s*(#[0-9a-fA-F]{6})'));
       if (!m || m[1].toLowerCase() !== T.kind[k].toLowerCase()) throw new Error('--' + v + ' 與 theme.kind.' + k + ' 不一致');
     });
+    ['error', 'warn'].forEach((k) => {
+      const m = css.match(new RegExp('--sev-' + k + ':\\s*(#[0-9a-fA-F]{6})'));
+      if (!m || m[1].toLowerCase() !== T.sev[k].toLowerCase()) throw new Error('--sev-' + k + ' 與 theme.sev.' + k + ' 不一致');
+    });
+    // 樣式一致性：畫面用到的 class 都要有定義；字重只用 400／600／700（中文字型沒有 550／650）
+    ['pane-filter', 'pane-body', 'pane-section', 'pane-note', 'note-box', 'table-more', 'row'].forEach((c) => {
+      if (!new RegExp('\\.' + c + '\\b[^{]*\\{').test(css)) throw new Error('缺少 .' + c + ' 樣式');
+    });
+    if (/font-weight:\s*(550|650)/.test(css)) throw new Error('字重只用 400／600／700');
     const legend = Array.from(document.querySelectorAll('#legend .li'));
     if (document.querySelectorAll('#legend .lg-group').length !== 4) throw new Error('圖例應分為四類');
     const groupTitles = document.querySelectorAll('#legend .lg-title').map((el) => el.textContent);

@@ -533,7 +533,7 @@
   }
   function renderFiles() {
     const box = V.clear($('#input-files'));
-    input.files.forEach((f, i) => box.appendChild(V.chip(`${f.name}（${V.num(f.text.length)} 字元）  ✕`, '', { title: '點一下移除', style: { cursor: 'pointer' }, onclick: () => { input.files.splice(i, 1); renderFiles(); } })));
+    input.files.forEach((f, i) => box.appendChild(V.chip(`${f.name}（${V.num(f.text.length)} 字元）  ✕`, '', { title: '點一下移除', onclick: () => { input.files.splice(i, 1); renderFiles(); } })));
   }
   async function fillProfiles(selected) {
     const saved = (await S.store.get('profiles').catch(() => null)) || {};

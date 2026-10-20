@@ -73,14 +73,14 @@
       try { const exp = JSON.parse(await f.text()); cmp.report = S.compare(App.Q, exp); cmp.name = f.name; } catch (e) { cmp.report = { errors: ['無法讀取：' + e.message], items: [], summary: {} }; cmp.name = f.name; }
       compare(App);
     } });
-    root.appendChild(h('div', { style: { padding: '10px' } }, [
-      h('p', { class: 'muted', style: { marginTop: 0 } }, '把「預期應該長怎樣」的資料（格式 ssot-expected/1，獨立於基準）和目前基準比對。比對只讀取基準，不會修改它。'),
+    root.appendChild(h('div', { class: 'pane-body' }, [
+      h('p', { class: 'muted' }, '把「預期應該長怎樣」的資料（格式 ssot-expected/1，獨立於基準）和目前基準比對。比對只讀取基準，不會修改它。'),
       h('div', { class: 'row' }, [file, h('button', { disabled: !App.Q || null, onclick: () => file.click() }, '載入預期資料（JSON）…'), cmp.name ? h('span', { class: 'muted' }, cmp.name) : null]),
-      h('details', null, [h('summary', { class: 'muted' }, '格式說明'), h('pre', { class: 'raw', style: { whiteSpace: 'pre-wrap', background: '#f7f9fb', padding: '8px', borderRadius: '6px' } },
+      h('details', null, [h('summary', { class: 'muted' }, '格式說明'), h('pre', { class: 'raw note-box' },
         '{\n  "schema": "ssot-expected/1",\n  "devices": ["TPE_CORE_SW_01", {"name": "TPE_FW_01", "kind": "firewall"}],\n  "links": [{"a": "TPE_CORE_SW_01 xe-0/0/0", "b": "TPE_FW_01 port1"}],\n  "vlans": [{"device": "TPE_ACC_SW_01", "id": 20, "name": "SRV"}],\n  "strictDevices": false,\n  "strictLinks": false\n}')]),
     ]));
     const r = cmp.report; if (!r) return;
-    if (r.errors.length) root.appendChild(h('div', { style: { padding: '0 10px' } }, r.errors.map((e) => h('div', { class: 'finding' }, [V.sevDot('error'), e]))));
+    if (r.errors.length) root.appendChild(h('div', { class: 'pane-section' }, r.errors.map((e) => h('div', { class: 'finding' }, [V.sevDot('error'), e]))));
     const ST = { ok: ['一致', 'ok'], missing: ['基準缺少', 'err'], different: ['不同', 'warn'], unexpected: ['基準多出', 'info'] };
     root.appendChild(h('div', { class: 'summary' }, [V.chip(`有差異 ${r.items.filter((i) => i.status !== 'ok').length}`, `btn ${cmp.filter === 'problem' ? 'on' : ''}`, { onclick: () => { cmp.filter = 'problem'; compare(App); } }),
       ...Object.entries(ST).map(([k, [label, cls]]) => V.chip(`${label} ${r.summary[k] || 0}`, `btn ${cls} ${cmp.filter === k ? 'on' : ''}`, { onclick: () => { cmp.filter = k; compare(App); } }))]));
@@ -156,7 +156,7 @@
       const view = sc ? V.sortRows(rows, sc, inv.sortDir) : rows;
       const note = inv.kind === 'mac' ? `共 ${C.macRows} 列（同一個 MAC 在每個觀察到的介面各一列，不重複的 MAC ${C.macs} 個）` : inv.kind === 'vlan' ? `共 ${C.vlans} 筆（每台設備的每個 VLAN 定義一筆，不重複的 VLAN ID ${C.vlanIds} 個）`
         : inv.kind === 'prefix' ? '由設備自有的介面位址推導的直連網段（推論）；VRF 尚未收集' : '';
-      V.clear(body); if (note) body.appendChild(h('div', { class: 'muted', style: { padding: '4px 8px' } }, note));
+      V.clear(body); if (note) body.appendChild(h('div', { class: 'muted pane-note' }, note));
       body.appendChild(V.table(cols, view, { onRow: (r) => App.select(sel(r), { focus: true }), limit: 500, sortBy: sc ? inv.sortBy : -1, sortDir: inv.sortDir,
         onSort: (n) => { inv.sortDir = inv.sortBy === n ? -inv.sortDir : 1; inv.sortBy = n; draw(); } }));
     };

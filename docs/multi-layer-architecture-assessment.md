@@ -1,5 +1,7 @@
 # 多層網路架構圖規格可行性評估
 
+> 逐項的實作狀態與分階段計畫，已整合進[規格書 v0.2](./多層網路架構圖_實作規格書.md)（§0、§10、§11 與各表的「狀態」欄），以規格書為準。本文件保留為評估的背景說明。
+
 > 2026-10-20 更新：Snapshot 升為 `ssot-snapshot/2`。參考 NetBox 補上介面 L2 埠語意（PVID、untagged／tagged VLAN、access／trunk 推論、lag／bridge／VLAN 子介面關係）與 IP 位址／前綴實體（含預留的 `vrf` 欄位）。本文件的差距描述已依此調整，其餘評估不變。欄位定義見[設計說明 §5.2](./design-ssot.md#52-實體snapshotmodelschema-ssot-snapshot2)。
 
 ## 結論摘要

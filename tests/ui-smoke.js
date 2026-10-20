@@ -478,6 +478,19 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     grip.dispatch('dblclick');
   });
   await step('清除基準', async () => { $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20)); if (App.snap) throw new Error('未清除'); });
+  await step('還原舊 schema 的基準：有保存輸入時重建，沒有時明確告知', async () => {
+    const sources = [{ name: 'sample-bundle.txt', text: S.samples['sample-bundle.txt'] }];
+    const old = { meta: { schema: 'ssot-snapshot/1', version: '1.3.2', createdAt: '2026-01-01T00:00:00Z' }, model: {} };
+    await S.store.set('last', { snapshot: old, sources, profile: null });
+    await App.restore();
+    if (!App.snap || App.snap.meta.schema !== S.SCHEMA) throw new Error('舊 schema 應以保存的輸入重建');
+    $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20));
+    await S.store.set('last', { snapshot: old, sources: [], profile: null });
+    await App.restore();
+    if (App.snap) throw new Error('沒有輸入時不應載入不相容的基準');
+    if (!document.body.textContent.includes('已不相容')) throw new Error('應提示上次的基準格式不相容');
+    $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20));
+  });
   console.log(steps.join('\n'));
   setTimeout(() => process.exit(process.exitCode || 0), 10);
 })();

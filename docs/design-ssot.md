@@ -93,17 +93,59 @@
 | MAC | 12 碼大寫 |
 | 連結 | 兩端 ep 排序後以 `~` 串接 |
 
-### 5.2 實體（Snapshot.model）
+### 5.2 實體（Snapshot.model，schema `ssot-snapshot/2`）
+
+欄位命名參考 NetBox 的 DCIM／IPAM 模型（Device、Interface、VLAN、IPAddress、Prefix），但不照搬：只保存能從 RouterOS 輸出取得或明確推論的內容。
 
 | 實體 | 主要欄位 |
 |---|---|
-| devices | key、name、names、mgmtIp、vendor、kind、kindBasis、collected、data、group、role、seenBy |
-| interfaces | key、dev、name、desc、admin、status、type、parent、members、mode、ips、vlans、macs、hearsay、edge |
-| links | key、a、b、layer（L2）、via（lldp/mndp）、protocols、evidenceScope、observations、verified、hearsay、cls、vlansA／B／Common、vlanMismatch |
+| devices | key、name、names、mgmtIp、manufacturer、deviceType（型號）、softwareVersion、platform、caps、kind、kindBasis、collected、data、group、role、seenBy |
+| interfaces | key、dev、name、desc、enabled、status、type、typeBasis、rawType、lag、lagMembers、bridge、parent、encapVlan、mode、pvid、untaggedVlans、taggedVlans、unresolvedVlans、macs、hearsay、edge、unknownPeer |
+| links | key、a、b、layer（L2）、via（lldp/mndp）、protocols、evidenceScope、observations、verified、hearsay、cls、vlansA／B／Common、vlanComparable、vlanMismatch |
 | ospfAdjacencies | dev、localEp、peerDev、peerEp、peerIp、peerId、reciprocal、src |
-| vlans | dev、id、name、desc、l3、members |
+| vlans | dev、id、name、desc、members（`{ ep, tagged }` 清單） |
+| ipAddresses | address（CIDR）、ip、len、family、vrf（尚未收集，固定 null）、dev、ep、hearsay、src |
+| prefixes | prefix、net、len、family、vrf、basis（`connected`）、eps |
 | macs | mac、vendor（OUI）、ips、seen（`{ ep, vlan }` 清單）、edge（位置）、src |
 | arps、routes | 原始對應與路由（含下一跳）、src |
+
+**設備身分**
+
+- `deviceType`（型號）、`softwareVersion`、`platform`、`caps` 是事實。來源依序是設備自己的 `/system resource`，其次是鄰居回報；設備自報優先。
+- `manufacturer` 是推論：資料來自 MikroTik adapter，或 platform 為 MikroTik／RouterOS 時為 `mikrotik`。
+- `kind` 是設備類型推論。不使用 NetBox 的 `role`，因為 `role` 保留給命名規則的註解。
+
+**介面**
+
+- 欄位：
+  - `type` 是封閉列舉 `S.IFC_TYPES`：`physical`、`lag`、`bridge`、`vlan`、`wireless`、`virtual`、`loopback`、`other`。原始 RouterOS 類型保留在 `rawType`，例如 veth 屬於 `virtual`，但 `rawType` 仍是 `veth`。
+  - `typeBasis` 說明類型的依據：`rawType`、`member`（有聚合成員）、`name`（名稱慣例）或 `default`（缺資料，預設為實體埠）。
+  - `enabled` 為 `false` 表示任一來源停用；為 `null` 表示沒有資料。
+- 介面之間的關係都存 ep 鍵，分為三種，不共用欄位：
+  - 聚合：`lag`／`lagMembers`
+  - bridge port：`bridge`
+  - VLAN 子介面：`parent`＋`encapVlan`
+- VLAN 成員：
+  - 欄位：`pvid`（bridge port 的 ingress 預設 VLAN）、`untaggedVlans`、`taggedVlans`，三者分開保存。
+  - 介面承載的全部 VLAN 用 `S.util.ifcVlans(i)` 取得；V01 以這個聯集（含所屬聚合）比較。
+  - 不是數字的 VLAN 記在 `unresolvedVlans`，不丟棄。
+- `mode` 是推論：有 tagged VLAN 為 `tagged`（trunk），只有 PVID／untagged 為 `access`，都沒有則為 `null`。
+
+**IP 位址與前綴**
+
+- 每個介面上的每個位址是一筆 `ipAddresses`，帶來源行。
+- OSPF 鄰居位址以 `/32`、`hearsay: true` 保存。
+- `prefixes` 是推論，由設備自有、長度小於 32 的位址推導出直連網段。鄰居宣告的位址不產生前綴。
+- 查詢介面：
+  - `Q.ipOwner(ip)`
+  - `Q.ipsOf(ep)`
+  - `Q.addressesOf(ep)`
+  - `Q.subnets()`
+  - `Q.prefixes()`
+
+**相容性**
+
+- 讀取 `ssot-snapshot/1` 的舊基準時：有保存輸入就重新建立；沒有輸入就提示格式不相容，不會靜默略過。
 
 每個由輸入事實產生的實體都帶 `src`（`[區塊, 行號]` 清單）。`src` 為空時，設備、介面、VLAN 另帶 `srcNone` 說明原因：`seen-only`（只由鄰居看到的設備）、`hearsay`（聽說的介面）、`implicit`（預設 VLAN）；有來源時為 `null`。`unrecorded` 代表應有來源卻漏記，測試禁止出現；已收集設備上的介面（含由 MAC 表隱式建立的）一定有來源。
 

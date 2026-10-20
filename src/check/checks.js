@@ -97,8 +97,8 @@
     M.links.forEach((l) => {
       if (l.layer !== 'l2' || l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN) return;
       const ia = M.ifcs.get(l.a); const ib = M.ifcs.get(l.b);
-      if (!ia || !ib || (!ia.parent && !ib.parent)) return;
-      const pa = ia.parent ? K.ep(ia.dev, ia.parent) : null; const pb = ib.parent ? K.ep(ib.dev, ib.parent) : null;
+      if (!ia || !ib || (!ia.lag && !ib.lag)) return;
+      const pa = ia.lag; const pb = ib.lag;
       const key = (pa || l.a + '(單埠)') + '⇄' + (pb || l.b + '(單埠)');
       S.util.getOr(lagPairs, key, () => ({ pa, pb, la: l.a, lb: l.b, links: [] })).links.push(l);
     });
@@ -112,7 +112,7 @@
           add('K03', `${epName(lagSide)} 的成員連到 ${epName(other)}，但對端不是聚合介面成員`, ents, ev);
         return;
       }
-      const ma = (M.ifcs.get(p.pa).members || new Set()).size; const mb = (M.ifcs.get(p.pb).members || new Set()).size;
+      const ma = M.ifcs.get(p.pa).lagMembers.size; const mb = M.ifcs.get(p.pb).lagMembers.size;
       if (ma !== mb) add('K03', `${epName(p.pa)} 有 ${ma} 個成員，${epName(p.pb)} 有 ${mb} 個成員（實際連到對方的有 ${p.links.length} 條）`, ents.concat([{ type: 'interface', key: p.pa }, { type: 'interface', key: p.pb }]), ev);
     });
 
@@ -165,7 +165,7 @@
 
     // ---- 路由
     const owner = new Map();
-    M.ifcs.forEach((i) => { if (!i.hearsay) i.ips.forEach((c) => owner.set(c.split('/')[0], i.dev)); });
+    M.ifcs.forEach((i) => { if (!i.hearsay) i.ips.forEach((_, c) => owner.set(c.split('/')[0], i.dev)); });
     M.devices.forEach((d) => { if (d.mgmtIp && !owner.has(d.mgmtIp)) owner.set(d.mgmtIp, d.key); });
     const routesByDev = new Map(); M.routes.forEach((r) => S.util.getOr(routesByDev, r.dev, () => []).push(r));
     // 遞迴解析後仍到不了已知設備的下一跳才提醒；經由其他路由最終落在已知設備上的不算
@@ -205,13 +205,13 @@
     M.ifcs.forEach((i, ep) => {
       // 有 RouterOS 原始 type 時依事實排除虛擬介面；無介面資料才退回名稱推論
       const virtual = i.rawType ? NON_EDGE_TYPES.has(i.rawType) : /^(irb|vlan|lo\d)/.test(i.name);
-      if (i.macs.size !== 1 || i.type === 'wifi' || i.status === 'down' || i.admin === 'down' || virtual) return;
+      if (i.macs.size !== 1 || i.type === 'wireless' || i.status === 'down' || i.enabled === false || virtual) return;
       if (!M.devices.get(i.dev).collected) return;
       const own = ownMacs.get(i.dev);
       if (own && own.has(Array.from(i.macs)[0])) return;
       const group = [ep];
-      if (i.parent) { const p = M.ifcs.get(K.ep(i.dev, i.parent)); if (p) group.push(p.key, ...Array.from(p.members || [])); }
-      if (i.members) group.push(...Array.from(i.members));
+      if (i.lag) { const p = M.ifcs.get(i.lag); if (p) group.push(p.key, ...p.lagMembers); }
+      group.push(...i.lagMembers);
       if (group.some(toInfra)) return;
       out.set(ep, { linked: group.some(hasAdjacency) });
     });

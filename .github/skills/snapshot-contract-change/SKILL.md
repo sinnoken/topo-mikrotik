@@ -41,8 +41,9 @@ Work through each layer in order and record which ones the change touches:
   bumping the version is what makes old browsers pick up parsing changes.
   - Bump it only when the user wants stored baselines rebuilt, and say so. Do not bump
     it as a reflex, and revert if the user declines.
-  - Change `S.SCHEMA` only for a breaking shape change; the restore path ignores a
-    baseline with a different schema.
+  - Change `S.SCHEMA` only for a breaking shape change. The restore path (`App.restore`)
+    rebuilds a baseline with a different schema from its saved inputs. If there are no
+    inputs, it tells the user the baseline is incompatible.
 - Never add time, randomness or environment state to core results. Tests compare
   Snapshots with a fixed `now`.
 

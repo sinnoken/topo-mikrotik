@@ -103,7 +103,7 @@
     const Q = App.Q; const { rows: R, counts: C } = Q.inventory(); // 列與數字都來自 Q.inventory()，這裡不重算
     const devRows = R.devices.concat(R.endpoints);
     const nameOf = (r) => (r.end ? (r.wifi && r.mac ? K.macPretty(r.mac) : (!r.wifi && r.portMacs < 2 && r.desc) || r.vendors[0] || (r.mac ? K.macPretty(r.mac) : '?')) : Q.devName(r.key));
-    const ipOf = (r) => (r.end ? r.ips[0] : r.mgmtIp); const vendorOf = (r) => (r.end ? r.vendors.join(' / ') : r.vendor);
+    const ipOf = (r) => (r.end ? r.ips[0] : r.mgmtIp); const vendorOf = (r) => (r.end ? r.vendors.join(' / ') : r.manufacturer);
     const dn = (d) => (d ? Q.devName(d) : '—'); const mono = (t) => h('span', { class: 'mono' }, t || '—');
     const TAB_COUNT = { device: C.devices + C.endpoints, interface: C.interfaces, ip: C.ips, mac: C.macs, vlan: C.vlans };
     const T = {
@@ -115,8 +115,8 @@
       (r) => (r.end ? { type: 'interface', key: r.key } : { type: 'device', key: r.key }), (r) => [nameOf(r), ipOf(r), vendorOf(r), r.kind, r.end ? dn(r.dev) + ' ' + r.ifc : null]],
       interface: ['介面', R.interfaces, [
         { t: '設備', f: (r) => dn(r.dev), s: (r) => dn(r.dev) }, { t: '介面', f: (r) => mono(r.name), s: (r) => r.name }, { t: '狀態', f: (r) => r.status, s: (r) => r.status },
-        { t: 'IP', f: (r) => mono(r.ips.slice(0, 2).join(' ')), s: (r) => r.ips[0] }, { t: 'VLAN', f: (r) => h('span', { class: 'vlanlist' }, r.vlans.length ? S.check.fmtVlans(r.vlans) : '—'), s: (r) => r.vlans.join(' ') }],
-      (r) => ({ type: 'interface', key: r.key }), (r) => [dn(r.dev), r.name, r.desc, r.ips.join(' '), r.vlans.join(' ')]],
+        { t: 'IP', f: (r) => mono(App.Q.addressesOf(r.key).slice(0, 2).join(' ')), s: (r) => App.Q.addressesOf(r.key)[0] }, { t: 'VLAN', f: (r) => h('span', { class: 'vlanlist' }, S.util.ifcVlans(r).length ? S.check.fmtVlans(S.util.ifcVlans(r)) : '—'), s: (r) => S.util.ifcVlans(r).join(' ') }],
+      (r) => ({ type: 'interface', key: r.key }), (r) => [dn(r.dev), r.name, r.desc, App.Q.addressesOf(r.key).join(' '), S.util.ifcVlans(r).join(' ')]],
       ip: ['IP', R.ips, [
         { t: 'IP', f: (r) => mono(r.ip), s: (r) => r.ip }, { t: '設備', f: (r) => dn(r.dev), s: (r) => r.dev && dn(r.dev) }, { t: '介面', f: (r) => mono(r.ifc), s: (r) => r.ifc },
         { t: 'MAC', f: (r) => mono(r.macs.slice(0, 2).map(K.macPretty).join(' ')), s: (r) => r.macs[0] }, { t: '來源', f: (r) => r.from.join('、'), s: (r) => r.from.join('、') }],

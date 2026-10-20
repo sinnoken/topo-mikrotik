@@ -23,17 +23,27 @@
     App.graph.on('moved', () => { clearTimeout(saveT); saveT = setTimeout(savePositions, 600); App.graph.computeGroups(); });
     bindHeader(); bindToolbar(); bindInputDialog(); bindTabs(); bindMobileWorkspaces(); await bindResizers();
     if (!(await S.store.available())) banner('這個瀏覽器無法使用本機儲存，關閉頁面後基準不會保留。');
+    await App.restore();
+  }
+
+  /** 還原上次的基準：schema 或版本不同時用保存的輸入重建；無法還原時明確告知，不靜默略過。 */
+  App.restore = async function () {
     const last = await S.store.get('last').catch(() => null);
-    if (last && last.snapshot && last.snapshot.meta && last.snapshot.meta.schema === S.SCHEMA) {
+    const saved = last && last.snapshot && last.snapshot.meta ? last.snapshot : null;
+    if (saved) {
       App.sources = last.sources || []; App.profileJson = last.profile || null;
-      let snap = last.snapshot; let msg = `已還原上次建立的基準（${V.fmtTime(snap.meta.createdAt)}）`;
-      if (snap.meta.version !== S.VERSION && App.sources.length) { // 程式更新過：用保存的輸入重建，欄位才會完整
-        try { snap = await S.buildAsync(App.sources, { profile: App.profileJson }); msg = '程式已更新，已用保存的輸入重新建立基準'; } catch (e) { console.error(e); }
-      }
-      load(snap, last.positions);
+      const sameSchema = saved.meta.schema === S.SCHEMA;
+      let snap = sameSchema ? saved : null; let msg = `已還原上次建立的基準（${V.fmtTime(saved.meta.createdAt)}）`;
+      if ((!sameSchema || saved.meta.version !== S.VERSION) && App.sources.length) { // 程式更新過：用保存的輸入重建，欄位才會完整
+        try { snap = await S.buildAsync(App.sources, { profile: App.profileJson }); msg = '程式已更新，已用保存的輸入重新建立基準'; } catch (e) {
+          console.error(e);
+          if (!sameSchema) msg = `上次的基準格式（${saved.meta.schema}）已不相容，重新建立失敗：${e.message}。請重新建立基準。`;
+        }
+      } else if (!sameSchema) msg = `上次的基準格式（${saved.meta.schema}）已不相容，且沒有保存輸入，請重新建立基準。`;
+      if (snap) load(snap, last.positions); else renderAll();
       banner(msg, 6000);
     } else renderAll();
-  }
+  };
 
   // ================================================================ 載入基準
   function load(snap, positions) {
@@ -91,7 +101,7 @@
       const side = (dev) => {
         if (!interfaceLinks.length) return 'MNDP';
         const eps = interfaceLinks.map((l) => (K.splitEp(l.a)[0] === dev ? l.a : l.b)).map((ep) => Q.getInterface(ep));
-        const parents = S.util.uniq(eps.map((i) => (i ? i.parent || i.name : '?')));
+        const parents = S.util.uniq(eps.map((i) => (i ? (i.lag ? Q.getInterface(i.lag).name : i.name) : '?')));
         const labels = parents.length === 1 ? parents[0] + (eps.length > 1 ? ` ×${eps.length}` : '') : `${eps.length} 條`;
         return labels + (p.hasDomain ? ' + MNDP' : '');
       };
@@ -138,13 +148,13 @@
       }
       rows.forEach((r) => {
         const vid = '?p|' + r.ep; const m0 = r.macs[0]; const ip = m0.ips[0];
-        const multiWifi = r.visualOnly && r.type === 'wifi' && r.macs.length > 1;
+        const multiWifi = r.visualOnly && r.type === 'wireless' && r.macs.length > 1; const ifStyle = EP.styleOf(r);
         const label = r.desc || ip || m0.vendor || K.macPretty(m0.mac).slice(-8);
         nodes.push({ id: vid, label: multiWifi ? `${r.macs.length} 個 MAC` : label, kind: multiWifi ? 'downstream' : 'endpoint', collected: false, virtual: true, parent: dk, group: dev.group,
           count: r.macs.length, color: vendorColor(m0.vendor), ini: vendorIni(m0.vendor),
-          tip: `${Q.devName(dk)} ${r.name}${multiWifi ? '（Wi-Fi・多個 MAC）' : ''}${EP.byType[r.type] ? '（' + EP.byType[r.type].label + '）' : ''}：${multiWifi ? `${r.macs.length} 個 MAC` : K.macPretty(m0.mac)}${ip ? '・' + ip : ''}${m0.vendor ? '・' + m0.vendor : ''}${r.vlans.length ? '・VLAN ' + r.vlans.join(',') : ''}` });
+          tip: `${Q.devName(dk)} ${r.name}${multiWifi ? '（Wi-Fi・多個 MAC）' : ''}${ifStyle ? '（' + ifStyle.label + '）' : ''}：${multiWifi ? `${r.macs.length} 個 MAC` : K.macPretty(m0.mac)}${ip ? '・' + ip : ''}${m0.vendor ? '・' + m0.vendor : ''}${r.vlans.length ? '・VLAN ' + r.vlans.join(',') : ''}` });
         App.virtual.set(vid, { type: 'interface', ep: r.ep }); App.vOfEp.set(r.ep, vid);
-        link(dk, vid, r.name, { ifStyle: EP.byType[r.type] || null });
+        link(dk, vid, r.name, { ifStyle });
       });
     });
   }

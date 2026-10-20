@@ -22,7 +22,7 @@
   function device(M, key, name) {
     const d = getOr(M.devices, key, () => ({
       key, names: new Set(), mgmtIp: null, vendors: new Set(), collected: false, data: new Set(),
-      hostname: null, routerId: null, seenBy: new Set(), src: [], board: null, version: null, platform: null, caps: null,
+      hostname: null, routerId: null, seenBy: new Set(), src: [], deviceType: null, softwareVersion: null, platform: null, caps: null,
     }));
     if (name) d.names.add(name);
     return d;
@@ -31,10 +31,11 @@
   function iface(M, devKey, name) {
     const key = K.ep(devKey, name);
     return getOr(M.ifcs, key, () => ({
-      key, dev: devKey, name: String(name).trim().replace(/\.0$/, ''), desc: null, admin: null, status: null,
-      type: null, rawType: null, hwMac: null, defaultName: null, mtu: null, actualMtu: null, l2mtu: null,
-      parent: null, mode: null, ips: new Set(), vlans: new Set(), vlanNames: new Set(),
-      macs: new Set(), hearsay: false, sub: null, src: [],
+      key, dev: devKey, name: String(name).trim().replace(/\.0$/, ''), desc: null, enabled: null, status: null,
+      type: null, typeBasis: null, rawType: null, hwMac: null, defaultName: null, mtu: null, actualMtu: null, l2mtu: null,
+      lag: null, lagMembers: new Set(), bridge: null, parent: null, encapVlan: null,
+      mode: null, pvid: null, untaggedVlans: new Set(), taggedVlans: new Set(), unresolvedVlans: new Set(),
+      ips: new Map(), macs: new Set(), hearsay: false, src: [], // ips：CIDR → 來源 [區塊, 行號]
     }));
   }
 
@@ -71,19 +72,19 @@
         case 'lldp': {
           const i = iface(M, f.dev, f.ifc); addSrc(i, f);
           if (!i.status) i.status = 'up';
-          if (f.parent) i.parent = K.ifc(f.parent);
           const peerName = canon(f.peer);
           let peerKey = K.dev(peerName);
           if (!M.devices.has(peerKey) && f.peerAddr && mgmtDev.has(f.peerAddr)) peerKey = mgmtDev.get(f.peerAddr);
           const pd = device(M, peerKey, peerName); pd.seenBy.add(f.dev);
           if (f.peerAddr && !pd.mgmtIp) pd.mgmtIp = f.peerAddr;
-          if (f.board && !pd.board) pd.board = f.board;
+          if (f.board && !pd.deviceType) pd.deviceType = f.board;
+          if (f.version && !pd.softwareVersion) pd.softwareVersion = f.version;
           if (f.platform && !pd.platform) pd.platform = f.platform;
           if (f.caps && !pd.caps) pd.caps = f.caps;
           M.claims.push({ dev: f.dev, ifc: K.ifc(f.ifc), peer: peerKey, peerIfc: f.peerIfc || '?', chassis: f.chassis, protocols: f.protocols || [], peerIfcAlt: f.peerIfcAlt || null, block: f.block, line: f.line });
           break;
         }
-        case 'sys': if (f.board) d.board = f.board; if (f.version) d.version = f.version; break;
+        case 'sys': if (f.board) d.deviceType = f.board; if (f.version) d.softwareVersion = f.version; break; // 設備自報優先於鄰居回報
         case 'ospf': M.ospf.push(f); if (f.ifc) iface(M, f.dev, f.ifc); break;
         case 'vlan': onVlan(M, f); break;
         case 'vmem': M.vmems.push(f); break;
@@ -111,6 +112,7 @@
 
     resolveVlanMembers(M);
     buildAggregates(M);
+    classifyInterfaces(M);
     buildInterfaceAdjacencyLinks(M);
     buildMndpLinks(M);
     resolveOspfAdjacencies(M, canon);
@@ -120,60 +122,73 @@
   function onIfc(M, f) {
     const i = iface(M, f.dev, f.ifc); addSrc(i, f);
     if (f.desc != null) i.desc = f.desc;
-    if (f.admin) i.admin = f.admin;
+    if (f.enabled === false) i.enabled = false; // 任一來源停用即為停用
+    else if (f.enabled === true && i.enabled === null) i.enabled = true;
     if (f.status) i.status = f.status;
-    if (f.type) i.type = f.type;
-    if (f.parent) i.parent = K.ifc(f.parent);
-    if (f.mode) i.mode = f.mode;
+    if (f.lag) i.lag = K.ep(f.dev, f.lag);
+    if (f.bridge) i.bridge = K.ep(f.dev, f.bridge);
+    if (f.parent) i.parent = K.ep(f.dev, f.parent);
+    if (f.encapVlan != null) i.encapVlan = f.encapVlan;
     ['rawType', 'hwMac', 'defaultName', 'mtu', 'actualMtu', 'l2mtu'].forEach((k) => { if (f[k] != null) i[k] = f[k]; });
-    if (f.ip) i.ips.add(f.ip);
-    if (f.sub) i.sub = { of: K.ifc(f.sub.of), vlan: f.sub.vlan };
-    if (/^ae\d+$|^reth\d+$/i.test(i.name) && !i.type) i.type = 'aggregate';
+    if (f.ip && !i.ips.has(f.ip)) i.ips.set(f.ip, [f.block, f.line]);
   }
 
+  /** VLAN 以設備內的 ID 為鍵（RouterOS 的 bridge VLAN 只有 ID）。 */
+  const VID = /^\d{1,4}$/;
+  const newVlan = (dev, id) => ({ dev, id, name: null, desc: null, members: new Map(), src: [] });
   function onVlan(M, f) {
-    // 有名稱以名稱為鍵；只有 ID 的（RouterOS 的 bridge VLAN 沒有名稱）以 #ID 為鍵
-    const vk = f.dev + '|' + (f.name ? 'n:' + f.name.toUpperCase() : 'i:' + f.id);
-    const v = getOr(M.vlans, vk, () => ({ dev: f.dev, id: null, name: f.name || null, desc: null, l3: null, members: new Set(), src: [] }));
-    if (f.id != null) v.id = f.id;
+    if (!VID.test(String(f.id))) return;
+    const v = getOr(M.vlans, f.dev + '|' + f.id, () => newVlan(f.dev, +f.id));
+    if (f.name) v.name = f.name;
     if (f.desc) v.desc = f.desc;
-    if (f.l3) v.l3 = K.ifc(f.l3);
     addSrc(v, f);
   }
 
-  /** VLAN 成員：名稱 → ID（同一設備內查），掛到介面上。 */
+  /**
+   * VLAN 成員掛到介面（參考 NetBox Interface 的 untagged／tagged VLAN）：
+   * PVID（ingress 預設 VLAN）、untagged、tagged 分開保存；不是數字的 VLAN 記在 unresolvedVlans，不丟棄。
+   * VLAN 實體的 members 以 ep → tagged 保存，同一介面有任一 tagged 觀察即為 tagged。
+   */
   function resolveVlanMembers(M) {
-    const byName = new Map(); const byId = new Map();
-    M.vlans.forEach((v, vk) => {
-      if (v.name) byName.set(v.dev + '|' + v.name.toUpperCase(), vk);
-      if (v.id != null) byId.set(v.dev + '|' + v.id, vk);
-    });
     M.vmems.forEach((f) => {
-      const tok = String(f.vlan);
-      let vk = byName.get(f.dev + '|' + tok.toUpperCase());
-      if (!vk && /^\d+$/.test(tok)) {
-        vk = byId.get(f.dev + '|' + tok);
-        if (!vk) { // 只有數字、沒有定義：建立僅 ID 的 VLAN
-          vk = f.dev + '|i:' + tok;
-          if (!M.vlans.has(vk)) M.vlans.set(vk, { dev: f.dev, id: +tok, name: null, desc: null, l3: null, members: new Set(), src: [] });
-          byId.set(f.dev + '|' + tok, vk);
-        }
-      }
+      const tok = String(f.vlan).trim();
       const i = iface(M, f.dev, f.ifc); addSrc(i, f);
       if (f.active && !i.status) i.status = 'up';
-      if (!vk) { i.vlanNames.add(tok); return; }
-      const v = M.vlans.get(vk);
-      v.members.add(i.key);
-      if (v.id != null) i.vlans.add(v.id); else i.vlanNames.add(v.name);
+      if (!VID.test(tok)) { i.unresolvedVlans.add(tok); return; }
+      const id = +tok;
+      const v = getOr(M.vlans, f.dev + '|' + id, () => newVlan(f.dev, id)); // 只有成員、沒有定義：建立僅 ID 的 VLAN
+      v.members.set(i.key, !!f.tagged || !!v.members.get(i.key));
+      if (f.pvid) i.pvid = id;
+      else if (f.tagged) i.taggedVlans.add(id);
+      else i.untaggedVlans.add(id);
+    });
+    // 埠模式是推論：有 tagged 成員為 tagged（trunk），只有 PVID／untagged 為 access
+    M.ifcs.forEach((i) => {
+      if (i.taggedVlans.size) i.mode = 'tagged';
+      else if (i.untaggedVlans.size || i.pvid != null) i.mode = 'access';
     });
   }
 
   function buildAggregates(M) {
+    M.ifcs.forEach((i) => { if (i.lag) iface(M, i.dev, K.splitEp(i.lag)[1]).lagMembers.add(i.key); });
+  }
+
+  /** RouterOS 介面類型 → 封閉列舉（S.IFC_TYPES）。 */
+  const RAW_TYPE = [
+    [/^ether$/, 'physical'], [/^bridge$/, 'bridge'], [/^vlan$/, 'vlan'], [/^bond(ing)?$/, 'lag'],
+    [/^(wifi|wlan|wifiwave2)$/, 'wireless'], [/^loopback$/, 'loopback'],
+    [/^(veth|vrrp|eoip|eoipv6|gre|gre6|ipip|ipipv6|vxlan|wg|wireguard|vpls|mesh|ovpn-.*|l2tp-.*|pptp-.*|sstp-.*|pppoe-.*|ppp-.*)$/, 'virtual'],
+  ];
+  /** 介面類型與依據：rawType（/interface print 或 export 的定義）→ 有聚合成員 → 名稱慣例 → 預設實體埠。 */
+  function classifyInterfaces(M) {
     M.ifcs.forEach((i) => {
-      if (!i.parent) return;
-      const p = iface(M, i.dev, i.parent);
-      p.type = 'aggregate';
-      (p.members || (p.members = new Set())).add(i.key);
+      if (i.rawType) {
+        const hit = RAW_TYPE.find(([re]) => re.test(i.rawType));
+        i.type = hit ? hit[1] : 'other'; i.typeBasis = 'rawType';
+      } else if (i.lagMembers.size) { i.type = 'lag'; i.typeBasis = 'member'; }
+      else if (/^(ae|reth)\d+$/i.test(i.name)) { i.type = 'lag'; i.typeBasis = 'name'; }
+      else if (/^bridge/i.test(i.name)) { i.type = 'bridge'; i.typeBasis = 'name'; }
+      else { i.type = 'physical'; i.typeBasis = 'default'; }
     });
   }
 
@@ -284,10 +299,10 @@
   /** OSPF 鄰接：用位址找對端介面，再用 router-id、管理 IP 找對端設備；都找不到就建立以鄰居 ID 命名的未知設備。 */
   function resolveOspfAdjacencies(M, canon) {
     const ipOwner = new Map(); const ridOwner = new Map(); const mgmtOwner = new Map();
-    M.ifcs.forEach((i) => i.ips.forEach((c) => ipOwner.set(c.split('/')[0], i.key)));
+    M.ifcs.forEach((i) => i.ips.forEach((_, c) => ipOwner.set(c.split('/')[0], i.key)));
     M.devices.forEach((d) => { if (d.routerId) ridOwner.set(d.routerId, d.key); if (d.mgmtIp) mgmtOwner.set(d.mgmtIp, d.key); });
     const subnetsOf = new Map();
-    M.ifcs.forEach((i) => i.ips.forEach((c) => { const p = S.ip.parseCidr(c); if (p && p.len < 32) getOr(subnetsOf, i.dev, () => []).push({ ep: i.key, net: p.net, len: p.len }); }));
+    M.ifcs.forEach((i) => i.ips.forEach((_, c) => { const p = S.ip.parseCidr(c); if (p && p.len < 32) getOr(subnetsOf, i.dev, () => []).push({ ep: i.key, net: p.net, len: p.len }); }));
     M.ospf.forEach((f) => {
       if (f.ifc) f.localEp = K.ep(f.dev, f.ifc);
       else {
@@ -304,7 +319,7 @@
         device(M, peerDev, name).seenBy.add(f.dev);
         M.notes.r02.push({ dev: f.dev, ifc: K.splitEp(f.localEp)[1], nbrId: f.nbrId, nbrAddr: f.nbrAddr, block: f.block, line: f.line });
       }
-      if (!remote) { const ri = iface(M, peerDev, f.nbrAddr); ri.hearsay = true; ri.ips.add(f.nbrAddr + '/32'); remote = ri.key; }
+      if (!remote) { const ri = iface(M, peerDev, f.nbrAddr); ri.hearsay = true; ri.ips.set(f.nbrAddr + '/32', [f.block, f.line]); remote = ri.key; }
       M.ospfAdjacencies.push({
         dev: f.dev, localEp: local, peerDev, peerEp: remote,
         peerIp: f.nbrAddr, peerId: f.nbrId, block: f.block, line: f.line,

@@ -17,6 +17,7 @@ const ids = (snap) => snap.findings.map((f) => f.id);
 const count = (snap, id) => snap.findings.filter((f) => f.id === id).length;
 const gen = (args) => execFileSync('node', [path.join(ROOT, 'tools/gen-bundle.js'), ...args], { encoding: 'utf8', maxBuffer: 5e8 });
 const iface = (s, k) => s.model.interfaces.find((i) => i.key === k);
+const addrs = (s, ep) => s.model.ipAddresses.filter((a) => a.ep === ep).map((a) => a.address);
 
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -57,7 +58,8 @@ test('鄰居：續行、引號內空白、bridge 重複列去除、型號與功�
   const s = build(t);
   assert.strictEqual(s.model.links.length, 3);
   const k = (key) => s.model.devices.find((d) => d.key === key);
-  assert.deepStrictEqual([k('SW_B').kind, k('SW_B').kindBasis, k('SW_B').board], ['switch', 'board', 'CRS326-24G-2S+']);
+  assert.deepStrictEqual([k('SW_B').kind, k('SW_B').kindBasis, k('SW_B').deviceType], ['switch', 'board', 'CRS326-24G-2S+']);
+  assert.deepStrictEqual([k('SW_B').manufacturer, k('SW_B').softwareVersion, k('SW_B').caps], ['mikrotik', '7.12 (stable)', 'bridge'], '鄰居回報的版本與功能保留為設備欄位');
   assert.deepStrictEqual([k('PC 1').kind, k('PC 1').kindBasis], ['host', 'caps']);
   assert.strictEqual(k('AP_1').kind, 'switch');
   assert.strictEqual(k('SW_B').mgmtIp, '10.0.0.2');
@@ -131,8 +133,8 @@ test('MNDP：多個鄰居代表共享 L2 網域可達，不推論直連埠、雙
     + '/interface bonding add mode=802.3ad name=bondB slaves=ether9,ether10\n'
     + '/interface bridge port add bridge=bridgeB interface=bondB\n'
     + '/interface bridge vlan add bridge=bridgeB tagged=bondB vlan-ids=20\n');
-  assert.strictEqual(iface(aggregates, 'A|ether1').parent, 'bonda');
-  assert.strictEqual(iface(aggregates, 'B|ether9').parent, 'bondb');
+  assert.strictEqual(iface(aggregates, 'A|ether1').lag, 'A|bonda');
+  assert.strictEqual(iface(aggregates, 'B|ether9').lag, 'B|bondb');
   assert.strictEqual(count(aggregates, 'K03'), 0, 'MNDP 網域可達不檢查兩端聚合成員');
   assert.strictEqual(count(aggregates, 'V01'), 0, 'MNDP 網域可達不比較對端埠 VLAN');
 
@@ -169,29 +171,45 @@ const EXPORT_TERSE = ['SW_A (10.0.0.1):', '### /export terse', '# 2026-10-13 10:
   '/routing id add disabled=no id=1.1.1.1 name=main select-dynamic-id=""', '/routing ospf instance add disabled=no name=default router-id=main', '/system identity set name=SW_A'].join('\n');
 test('export（terse）：聚合成員、改名與註解、VLAN 子介面、bridge VLAN（含範圍與 pvid）、IP、router-id、主機名', () => {
   const s = build(EXPORT_TERSE);
-  assert.deepStrictEqual(iface(s, 'SW_A|bond1').members, ['SW_A|ether1', 'SW_A|ether2']);
-  assert.strictEqual(iface(s, 'SW_A|bond1').type, 'aggregate');
+  assert.deepStrictEqual(iface(s, 'SW_A|bond1').lagMembers, ['SW_A|ether1', 'SW_A|ether2']);
+  assert.deepStrictEqual([iface(s, 'SW_A|ether1').lag, iface(s, 'SW_A|bond1').type, iface(s, 'SW_A|bond1').typeBasis], ['SW_A|bond1', 'lag', 'rawType']);
   assert.strictEqual(iface(s, 'SW_A|srv3').desc, 'server 3');
-  assert.deepStrictEqual(iface(s, 'SW_A|bond1').vlans, [1, 10, 20, 21], 'pvid 1（預設）＋ 標記 VLAN');
-  assert.deepStrictEqual(iface(s, 'SW_A|srv3').vlans, [10, 20, 21]);
-  assert.deepStrictEqual(iface(s, 'SW_A|vlan10').sub, { of: 'bridge1', vlan: 10 });
-  assert.deepStrictEqual(iface(s, 'SW_A|vlan10').ips, ['10.0.0.2/24']);
+  const bond = iface(s, 'SW_A|bond1'); const srv = iface(s, 'SW_A|srv3');
+  assert.deepStrictEqual([bond.mode, bond.pvid, bond.untaggedVlans, bond.taggedVlans, bond.bridge], ['tagged', 1, [], [10, 20, 21], 'SW_A|bridge1'], 'pvid 1（預設）與 tagged VLAN 分開保存');
+  assert.deepStrictEqual([srv.mode, srv.pvid, srv.untaggedVlans, srv.taggedVlans], ['access', 20, [10, 20, 21], []]);
+  assert.deepStrictEqual(S.util.ifcVlans(bond), [1, 10, 20, 21]);
+  assert.deepStrictEqual([iface(s, 'SW_A|vlan10').type, iface(s, 'SW_A|vlan10').parent, iface(s, 'SW_A|vlan10').encapVlan], ['vlan', 'SW_A|bridge1', 10]);
+  const v20 = s.model.vlans.find((v) => v.id === 20);
+  assert.deepStrictEqual(v20.members.filter((x) => x.ep !== 'SW_A|bridge1'), [{ ep: 'SW_A|bond1', tagged: true }, { ep: 'SW_A|srv3', tagged: false }]);
+  assert.deepStrictEqual(addrs(s, 'SW_A|vlan10'), ['10.0.0.2/24']);
   assert.strictEqual(iface(s, 'SW_A|ether9'), undefined, 'disabled 的位址不採用');
   assert.strictEqual(s.model.devices[0].routerId, '1.1.1.1', '/routing id 名稱要解析成位址');
   assert.strictEqual(s.model.devices[0].hostname, 'SW_A');
   assert.ok(s.model.vlans.some((v) => v.id === 20 && v.desc === 'prod'));
+});
+test('IP 位址與前綴實體：位址帶來源行、前綴由設備自有位址推導、鄰居宣告不產生前綴', () => {
+  const s = build(['R_A (10.0.0.1):', '### /export terse', '/ip address add address=10.0.0.1/24 interface=ether1', '/ip address add address=10.0.0.9/24 interface=ether2',
+    '/ip address add address=192.0.2.1/32 interface=lo', '### /routing ospf neighbor print detail', ' 0 instance=default area=backbone address=10.9.9.2 router-id=9.9.9.9 state="Full"'].join('\n'));
+  const a = s.model.ipAddresses.find((x) => x.address === '10.0.0.1/24');
+  assert.deepStrictEqual([a.ip, a.len, a.family, a.vrf, a.dev, a.ep, a.hearsay, a.src[0][1]], ['10.0.0.1', 24, 4, null, 'R_A', 'R_A|ether1', false, 3]);
+  assert.deepStrictEqual(s.model.prefixes.map((p) => [p.prefix, p.basis, p.eps]), [['10.0.0.0/24', 'connected', ['R_A|ether1', 'R_A|ether2']]], '/32 與鄰居宣告的位址不產生前綴');
+  assert.ok(s.model.ipAddresses.some((x) => x.address === '10.9.9.2/32' && x.hearsay), 'OSPF 鄰居位址保留為鄰居宣告');
+  const Q = S.query(s);
+  assert.deepStrictEqual([Q.ipOwner('10.0.0.9'), Q.addressesOf('R_A|ether1'), Q.prefixes().length], ['R_A|ether2', ['10.0.0.1/24'], 1]);
+  assert.strictEqual(s.meta.stats.prefixes, 1);
 });
 test('export（compact）：路徑標題、\\ 斷行、引號內斷行', () => {
   const t = ['R_A (10.0.0.1):', '### /export compact', '/interface bonding', 'add mode=802.3ad name=bond1 slaves=ether1,ether2 \\', '    comment="to the core \\', '    switch"',
     '/ip address', 'add address=10.1.1.1/24 interface=bridge1', '/routing ospf instance', 'set [ find default=yes ] router-id=2.2.2.2'].join('\n');
   const s = build(t);
   assert.strictEqual(iface(s, 'R_A|bond1').desc, 'to the core switch');
-  assert.deepStrictEqual(iface(s, 'R_A|bridge1').ips, ['10.1.1.1/24']);
+  assert.deepStrictEqual(addrs(s, 'R_A|bridge1'), ['10.1.1.1/24']);
   assert.strictEqual(s.model.devices[0].routerId, '2.2.2.2');
 });
 test('export：bridge 沒有開 vlan-filtering 時，不產生 VLAN 成員', () => {
   const s = build('SW_A (10.0.0.1):\n### /export terse\n/interface bridge add name=bridge1\n/interface bridge port add bridge=bridge1 interface=ether1 pvid=20\n/interface bridge vlan add bridge=bridge1 tagged=ether1 vlan-ids=10\n');
-  assert.deepStrictEqual(iface(s, 'SW_A|ether1').vlans, []);
+  const e1 = iface(s, 'SW_A|ether1');
+  assert.deepStrictEqual([e1.pvid, e1.untaggedVlans, e1.taggedVlans, e1.mode, e1.bridge], [null, [], [], null, 'SW_A|bridge1']);
 });
 
 // ------------------------------------------------------------------ 其他 print
@@ -202,16 +220,16 @@ test('bridge host：略過 bridge 自己的 MAC（L），VLAN 取自 vid', () =>
 });
 test('bridge vlan print：用實際成員（current-*），動態項目也算', () => {
   const s = build('SW_A (10.0.0.1):\n### /interface bridge vlan print detail\n 0   ;;; prod\n     bridge=bridge1 vlan-ids=10 tagged=ether1 untagged=ether2 current-tagged=ether1,bond1 current-untagged=ether2\n 1 D bridge=bridge1 vlan-ids=1 tagged="" untagged="" current-tagged="" current-untagged=ether3,ether4\n');
-  assert.deepStrictEqual(iface(s, 'SW_A|bond1').vlans, [10]);
-  assert.deepStrictEqual(iface(s, 'SW_A|ether4').vlans, [1]);
+  assert.deepStrictEqual([iface(s, 'SW_A|bond1').taggedVlans, iface(s, 'SW_A|bond1').untaggedVlans], [[10], []]);
+  assert.deepStrictEqual([iface(s, 'SW_A|ether4').untaggedVlans, iface(s, 'SW_A|ether4').mode], [[1], 'access']);
   assert.ok(s.model.vlans.some((v) => v.id === 10 && v.desc === 'prod'));
 });
 test('interface print：running／停用／註解（含獨立一行的 ;;;）', () => {
   const s = build('SW_A (10.0.0.1):\n### /interface print detail\nFlags: D - DYNAMIC; R - RUNNING; S - SLAVE\n 0  R  ;;; uplink\n       name="ether1" default-name="ether1" type="ether" mtu=1500\n 1     name="ether2" type="ether" mtu=1500\n 2 X   name="ether3" type="ether" mtu=1500\n 3  RS name="bond1" type="bond" mtu=1500\n');
   assert.deepStrictEqual([iface(s, 'SW_A|ether1').status, iface(s, 'SW_A|ether1').desc], ['up', 'uplink']);
   assert.strictEqual(iface(s, 'SW_A|ether2').status, 'down');
-  assert.strictEqual(iface(s, 'SW_A|ether3').admin, 'down');
-  assert.strictEqual(iface(s, 'SW_A|bond1').type, 'aggregate');
+  assert.deepStrictEqual([iface(s, 'SW_A|ether3').enabled, iface(s, 'SW_A|ether2').enabled], [false, true]);
+  assert.strictEqual(iface(s, 'SW_A|bond1').type, 'lag');
 });
 test('interface print：CAPsMAN 說明續行保留 Wi-Fi running 旗標；Wi-Fi 介面本身不列為末端', () => {
   const s = build('SW_A (10.0.0.1):\n### /interface print detail\n'
@@ -235,7 +253,7 @@ test('interface print：CAPsMAN 說明續行保留 Wi-Fi running 旗標；Wi-Fi 
     assert.strictEqual(i.unknownPeer, false, `${name} 不應列為未知對端`);
   });
 });
-test('interface print：type=veth 標為 veth，unknownPeers 帶型別；其他介面不受影響', () => {
+test('interface print：type=veth 歸類為 virtual（rawType 保留 veth），unknownPeers 帶型別；其他介面不受影響', () => {
   const s = build('SW_A (10.0.0.1):\n### /interface print detail\n'
     + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
     + ' 0  R  name="veth1" type="veth" mtu=1500\n'
@@ -243,11 +261,11 @@ test('interface print：type=veth 標為 veth，unknownPeers 帶型別；其他�
     + '### /interface bridge host print detail\n'
     + ' 0 D mac-address=02:AA:BB:00:00:01 on-interface=veth1 bridge=bridge1\n'
     + ' 1 D mac-address=AA:BB:CC:00:00:02 on-interface=ether5 bridge=bridge1\n');
-  assert.strictEqual(iface(s, 'SW_A|veth1').type, 'veth');
+  assert.deepStrictEqual([iface(s, 'SW_A|veth1').type, iface(s, 'SW_A|veth1').rawType], ['virtual', 'veth']);
   assert.strictEqual(iface(s, 'SW_A|ether5').type, 'physical');
   const rows = S.query(s).unknownPeers('SW_A');
-  assert.strictEqual(rows.find((r) => r.name === 'veth1').type, 'veth');
-  assert.notStrictEqual(rows.find((r) => r.name === 'ether5').type, 'veth');
+  assert.strictEqual(rows.find((r) => r.name === 'veth1').rawType, 'veth');
+  assert.notStrictEqual(rows.find((r) => r.name === 'ether5').rawType, 'veth');
 });
 test('interface print：保留 rawType／介面 MAC／MTU，並依 rawType 排除 bridge 末端', () => {
   const s = build('SW_A (10.0.0.1):\n### /interface print detail\n'
@@ -320,19 +338,19 @@ test('鄰居表：同一對設備的 MNDP（多介面、雙向）併成一列，
   assert.deepStrictEqual(rows[0].observations.map((o) => o.ifc), ['ether1', 'ether2']);
   assert.deepStrictEqual(Q.neighborRows('B')[0].observations.map((o) => o.ifc), ['ether5']);
 });
-test('interface print：type=wifi／wlan 標為 wifi', () => {
+test('interface print：type=wifi／wlan 歸類為 wireless', () => {
   const s = build('SW_A (10.0.0.1):\n### /interface print detail\n'
     + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
     + ' 0  R  name="wifi1" type="wifi" mtu=1500\n 1  R  name="wlan1" type="wlan" mtu=1500\n 2  R  name="ether5" type="ether" mtu=1500\n');
-  assert.strictEqual(iface(s, 'SW_A|wifi1').type, 'wifi');
-  assert.strictEqual(iface(s, 'SW_A|wlan1').type, 'wifi');
+  assert.strictEqual(iface(s, 'SW_A|wifi1').type, 'wireless');
+  assert.strictEqual(iface(s, 'SW_A|wlan1').type, 'wireless');
   assert.strictEqual(iface(s, 'SW_A|ether5').type, 'physical');
 });
 test('ARP 與 IP 位址：略過 invalid／disabled、多播、APIPA', () => {
   const s = build('R_A (10.0.0.1):\n### /ip arp print detail\n 0 DC address=10.0.0.2 mac-address=AA:BB:CC:00:00:01 interface=bridge1 complete=yes\n 1 I  address=10.0.0.3 mac-address=AA:BB:CC:00:00:02 interface=bridge1 complete=yes\n 2 DC address=169.254.1.1 mac-address=AA:BB:CC:00:00:03 interface=bridge1 complete=yes\n'
     + '### /ip address print detail\n 0   address=10.0.0.1/24 network=10.0.0.0 interface=bridge1 actual-interface=bridge1\n 1 X address=10.9.9.1/24 network=10.9.9.0 interface=ether9 actual-interface=ether9\n');
   assert.strictEqual(s.model.arps.length, 1);
-  assert.deepStrictEqual(iface(s, 'R_A|bridge1').ips, ['10.0.0.1/24']);
+  assert.deepStrictEqual(addrs(s, 'R_A|bridge1'), ['10.0.0.1/24']);
 });
 test('路由：RouterOS 7（無序號）、ECMP（gateway=a,b）、連接路由、非作用中與其他路由表略過；RouterOS 6（序號、大寫旗標、pref-src）', () => {
   const v7 = ['Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC, o - OSPF',
@@ -365,7 +383,7 @@ test('OSPF：鄰居列沒有 interface 時，用鄰居位址落在哪個本機�
 });
 test('system resource：型號決定交換器／路由器', () => {
   const s = build('X (10.0.0.1):\n### /system resource print\n  uptime: 1d\n  version: 7.12.1 (stable)\n  board-name: CRS326-24G-2S+\n');
-  assert.deepStrictEqual([s.model.devices[0].kind, s.model.devices[0].board, s.model.devices[0].version], ['switch', 'CRS326-24G-2S+', '7.12.1 (stable)']);
+  assert.deepStrictEqual([s.model.devices[0].kind, s.model.devices[0].deviceType, s.model.devices[0].softwareVersion], ['switch', 'CRS326-24G-2S+', '7.12.1 (stable)']);
 });
 
 // ------------------------------------------------------------------ 範例資料：每個刻意放入的問題都要被找到
@@ -376,6 +394,8 @@ test('範例資料：每項刻意放入的問題都被找到，且沒有多餘�
   assert.strictEqual(s.meta.stats.collected, 14);
   assert.deepStrictEqual(s.findings.filter((f) => f.severity === 'error').map((f) => f.id).sort(), ['I01', 'K02']);
   s.findings.forEach((f) => f.evidence.forEach((e) => assert.ok(typeof e.text === 'string')));
+  const v01 = s.findings.find((f) => f.id === 'V01').entities.find((e) => e.type === 'link');
+  assert.strictEqual(s.model.links.find((l) => l.key === v01.key).vlanComparable, true, 'vlanComparable 必須序列化，查詢層才能判斷是否可比對');
 });
 test('同樣輸入建立兩次，結果完全相同（建立時間除外）', () => {
   const a = build(read('samples/sample-bundle.txt')); const b = build(read('samples/sample-bundle.txt'));

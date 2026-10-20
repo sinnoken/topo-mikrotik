@@ -6,13 +6,15 @@
  */
 (function (S) {
   'use strict';
-  S.VERSION = '1.3.2';
-  S.SCHEMA = 'ssot-snapshot/1';
+  S.VERSION = '2.0.0';
+  S.SCHEMA = 'ssot-snapshot/2';
   S.LINK_SCOPE = Object.freeze({
     INTERFACE_ADJACENCY: 'interface-adjacency',
     BROADCAST_DOMAIN: 'broadcast-domain',
     ROUTING_ADJACENCY: 'routing-adjacency',
   });
+  /** 介面類型（封閉列舉，參考 NetBox Interface type 的分類層級）；原始 RouterOS 類型另存於 rawType。 */
+  S.IFC_TYPES = Object.freeze(['physical', 'lag', 'bridge', 'vlan', 'wireless', 'virtual', 'loopback', 'other']);
   S.readers = S.readers || {};
   S.adapters = S.adapters || {};
   S.data = S.data || {};
@@ -39,6 +41,8 @@
   util.sortBy = (arr, fn) => arr.sort((x, y) => util.natural(fn(x), fn(y)));
   util.uniq = (arr) => Array.from(new Set(arr));
   util.numSort = (arr) => arr.slice().sort((a, b) => a - b);
+  /** 介面承載的所有 VLAN（PVID ∪ untagged ∪ tagged），由小到大；模型（Set）與 Snapshot（陣列）皆可用。 */
+  util.ifcVlans = (i) => util.numSort(util.uniq([i.pvid, ...i.untaggedVlans, ...i.taggedVlans].filter((v) => v != null)));
 
   /** 以 Map 取得或建立。 */
   util.getOr = function (map, key, make) {

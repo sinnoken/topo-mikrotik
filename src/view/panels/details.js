@@ -113,17 +113,17 @@
     return h('div', { class: 'detail' }, [
       h('h2', null, d.label || d.name),
       h('div', { class: 'row' }, [V.kindChip(d.kind), d.collected ? V.chip('已收集', 'ok') : V.chip('未收集（只被其他設備看到）', 'warn'), d.group ? V.chip(d.group) : null, d.role ? V.chip('角色：' + d.role) : null]),
-      kv([['管理 IP', d.mgmtIp], ['型號', d.board], ['RouterOS', d.version], ['平台', d.vendor === 'mikrotik' ? null : d.platform], ['類型依據', V.KIND_BASIS[d.kindBasis]],
+      kv([['管理 IP', d.mgmtIp], ['型號', d.deviceType], ['RouterOS', d.softwareVersion], ['平台', d.manufacturer === 'mikrotik' ? null : d.platform], ['鄰居回報的功能', d.caps], ['類型依據', V.KIND_BASIS[d.kindBasis]],
         ['其他名稱', d.names.length > 1 ? d.names.join('、') : null], ['Router ID', d.routerId],
         ['看到它的設備', d.seenBy.length ? h('span', null, d.seenBy.flatMap((k, i) => [i ? '、' : '', devLink(App, k)])) : null],
         ['收集的資料', d.collected ? h('div', { class: 'chip-list' }, [...(cov ? cov.data : []).map((t) => V.chip(S.check.DATA_LABEL[t] || t, 'ok')), ...(cov ? cov.missing : []).map((t) => V.chip('缺 ' + (S.check.DATA_LABEL[t] || t), 'err'))]) : null]]),
       findingsBlock(App, fl),
       sec('介面', [V.chip(String(ifs.length))]),
       V.table([
-        { t: '介面', f: (i) => h('span', { class: 'mono' }, i.name + (i.parent ? ` → ${i.parent}` : '')), s: (i) => i.name },
-        { t: '狀態', f: (i) => (i.admin === 'down' ? '停用' : V.STATUS[i.status]), s: (i) => (i.admin === 'down' ? '停用' : V.STATUS[i.status]) },
-        { t: '描述／IP', f: (i) => [i.desc, ...i.ips].filter(Boolean).join('  '), s: (i) => i.ips[0] || i.desc },
-        { t: 'VLAN', f: (i) => h('span', { class: 'vlanlist' }, vlanText(i.vlans)), s: (i) => vlanText(i.vlans) },
+        { t: '介面', f: (i) => h('span', { class: 'mono' }, i.name + (i.lag ? ` → ${Q.getInterface(i.lag).name}` : '')), s: (i) => i.name },
+        { t: '狀態', f: V.ifcState, s: V.ifcState },
+        { t: '描述／IP', f: (i) => [i.desc, ...Q.addressesOf(i.key)].filter(Boolean).join('  '), s: (i) => Q.addressesOf(i.key)[0] || i.desc },
+        { t: 'VLAN', f: (i) => h('span', { class: 'vlanlist' }, vlanText(S.util.ifcVlans(i))), s: (i) => vlanText(S.util.ifcVlans(i)) },
         { t: 'MAC', f: (i) => (i.macs.length ? String(i.macs.length) : ''), s: (i) => i.macs.length || null },
       ], ifs.sort((a, b) => S.util.natural(a.name, b.name)), { onRow: (i) => App.select({ type: 'interface', key: i.key }), limit: 300 }),
       vlans.length ? fold('VLAN 定義', vlans.length, h('div', null, [sec('VLAN 定義'), V.table([
@@ -239,13 +239,14 @@
     const macs = i.macs.map((m) => Q.findMac(m));
     return h('div', { class: 'detail' }, [
       h('h2', null, [devLink(App, i.dev), ' ', h('span', { class: 'mono' }, i.name)]),
-      h('div', { class: 'row' }, [V.chip(i.admin === 'down' ? '停用' : V.STATUS[i.status], i.status === 'up' ? 'ok' : ''), V.chip(i.type === 'aggregate' ? '聚合介面' : V.theme.endpoint.byType[i.type] ? V.theme.endpoint.byType[i.type].label : '實體／邏輯介面'), i.hearsay ? V.chip('僅由對端回報', 'info') : null, i.unknownPeer ? V.chip('沒有 LLDP／CDP 鄰接（未知對端）', 'warn') : i.edge ? V.chip('末端埠') : null]),
+      h('div', { class: 'row' }, [V.chip(V.ifcState(i), i.status === 'up' ? 'ok' : ''), V.chip((V.theme.endpoint.styleOf(i) || {}).label || V.IFC_TYPE[i.type], '', { title: V.IFC_TYPE_BASIS[i.typeBasis] }), i.hearsay ? V.chip('僅由對端回報', 'info') : null, i.unknownPeer ? V.chip('沒有 LLDP／CDP 鄰接（未知對端）', 'warn') : i.edge ? V.chip('末端埠') : null]),
       kv([['描述', i.desc], ['RouterOS 類型', i.rawType], ['介面 MAC', i.hwMac ? K.macPretty(K.mac(i.hwMac) || i.hwMac) : null], ['預設名稱', i.defaultName && i.defaultName !== i.name ? i.defaultName : null],
         ['MTU', [['mtu', i.mtu], ['actual', i.actualMtu], ['l2mtu', i.l2mtu]].filter((x) => x[1] != null).map((x) => `${x[0]} ${x[1]}`).join('、') || null],
-        ['IP', i.ips.join('、')], ['模式', i.mode], ['所屬聚合', i.parent ? epLink(App, K.ep(i.dev, i.parent)) : null],
-        ['成員', i.members.length ? h('span', null, i.members.flatMap((m, n) => [n ? '、' : '', epLink(App, m)])) : null],
-        ['VLAN', i.vlans.length ? h('span', { class: 'vlanlist' }, vlanText(i.vlans)) : null], ['未對應的 VLAN 名稱', i.vlanNames.join('、')],
-        ['VLAN 子介面', i.sub ? `${i.sub.of} 上的 VLAN ${i.sub.vlan}` : null]]),
+        ['IP', Q.addressesOf(i.key).join('、')], ['埠模式', V.MODE[i.mode]], ['所屬聚合', i.lag ? epLink(App, i.lag) : null], ['所屬 Bridge', i.bridge ? epLink(App, i.bridge) : null],
+        ['聚合成員', i.lagMembers.length ? h('span', null, i.lagMembers.flatMap((m, n) => [n ? '、' : '', epLink(App, m)])) : null],
+        ['PVID', i.pvid == null ? null : String(i.pvid)], ['Untagged VLAN', i.untaggedVlans.length ? h('span', { class: 'vlanlist' }, vlanText(i.untaggedVlans)) : null],
+        ['Tagged VLAN', i.taggedVlans.length ? h('span', { class: 'vlanlist' }, vlanText(i.taggedVlans)) : null], ['無法辨識的 VLAN', i.unresolvedVlans.join('、')],
+        ['VLAN 子介面', i.parent ? h('span', null, [epLink(App, i.parent), ` 上的 VLAN ${i.encapVlan}`]) : null]]),
       links.length ? h('div', null, [sec('連結'), ...links.map((l) => h('div', null, L(App,
         l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN
           ? `${Q.devName(K.splitEp(l.a)[0] === i.dev ? K.splitEp(l.b)[0] : K.splitEp(l.a)[0])}（MNDP：L2 網域可達，非直連）`

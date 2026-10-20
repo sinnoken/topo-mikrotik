@@ -107,7 +107,7 @@
         rows.push({
           local: locals.find((x) => !isBridgeName(x)) || locals[0], viaBridge: locals.every(isBridgeName),
           peer, ident: kv.identity || null, discoveredBy: kv['discovered-by'] || '', peerIfc: peerPort(kv['interface-name']), mac: kv['mac-address'] || null, addr,
-          board: kv.board || null, platform: kv.platform || null, caps: kv['system-caps-enabled'] || kv['system-caps'] || null, line: r.line,
+          board: kv.board || null, platform: kv.platform || null, version: kv.version || null, caps: kv['system-caps-enabled'] || kv['system-caps'] || null, line: r.line,
         });
       });
       // 同一台鄰居可能被多個協定（LLDP／MNDP／CDP）、或同時從連接埠與 bridge 看到：
@@ -134,7 +134,7 @@
           t: 'lldp', ifc: g.local, peer: first('ident', g.rows) || first('mac', g.rows) || first('addr', g.rows),
           peerIfc: first('peerIfc', prefer), peerIfcAlt: peerIfcs.length > 1 ? peerIfcs : null, protocols,
           chassis: first('mac', prefer), peerAddr: first('addr', g.rows), board: first('board', g.rows),
-          platform: first('platform', g.rows), caps: first('caps', g.rows), line: g.rows[0].line,
+          platform: first('platform', g.rows), version: first('version', g.rows), caps: first('caps', g.rows), line: g.rows[0].line,
         });
       });
     },
@@ -172,7 +172,7 @@
             const name = kv.name || sel['default-name'] || sel.name; if (!name) break;
             const f = { t: 'ifc', ifc: name, line };
             if (kv.comment) f.desc = kv.comment;
-            if (kv.disabled === 'yes') f.admin = 'down';
+            if (kv.disabled === 'yes') f.enabled = false;
             emit(f); break;
           }
           case '/interface bridge': {
@@ -184,7 +184,7 @@
           case '/interface bridge port':
             if (cmd === 'add' && kv.interface) {
               ports.push({ bridge: kv.bridge, ifc: kv.interface, pvid: kv.pvid || '1', line });
-              const f = { t: 'ifc', ifc: kv.interface, line }; if (kv.comment) f.desc = kv.comment; emit(f);
+              const f = { t: 'ifc', ifc: kv.interface, line }; if (kv.bridge) f.bridge = kv.bridge; if (kv.comment) f.desc = kv.comment; emit(f);
             }
             break;
           case '/interface bridge vlan':
@@ -192,15 +192,15 @@
             break;
           case '/interface vlan':
             if (cmd === 'add' && kv.name && kv['vlan-id']) {
-              const f = { t: 'ifc', ifc: kv.name, rawType: 'vlan', sub: { of: kv.interface, vlan: +kv['vlan-id'] }, line }; if (kv.comment) f.desc = kv.comment; emit(f);
+              const f = { t: 'ifc', ifc: kv.name, rawType: 'vlan', parent: kv.interface, encapVlan: +kv['vlan-id'], line }; if (kv.comment) f.desc = kv.comment; emit(f);
               emit({ t: 'vlan', id: +kv['vlan-id'], name: null, line });
               emit({ t: 'vmem', vlan: String(kv['vlan-id']), ifc: kv.interface, tagged: true, src: 'config', line });
             }
             break;
           case '/interface bonding':
             if (cmd === 'add' && kv.name) {
-              const f = { t: 'ifc', ifc: kv.name, type: 'aggregate', rawType: 'bond', line }; if (kv.comment) f.desc = kv.comment; emit(f);
-              list(kv.slaves).forEach((s) => emit({ t: 'ifc', ifc: s, parent: kv.name, line }));
+              const f = { t: 'ifc', ifc: kv.name, rawType: 'bond', line }; if (kv.comment) f.desc = kv.comment; emit(f);
+              list(kv.slaves).forEach((s) => emit({ t: 'ifc', ifc: s, lag: kv.name, line }));
             }
             break;
           case '/ip address':
@@ -238,7 +238,7 @@
           v.untagged.forEach((ifc) => emit({ t: 'vmem', vlan: String(id), ifc, src: 'config', line: v.line }));
         });
       });
-      ports.forEach((p) => { if (filtering(p.bridge)) emit({ t: 'vmem', vlan: String(p.pvid), ifc: p.ifc, src: 'config', line: p.line }); });
+      ports.forEach((p) => { if (filtering(p.bridge)) emit({ t: 'vmem', vlan: String(p.pvid), ifc: p.ifc, pvid: true, src: 'config', line: p.line }); });
       const rid = IPRE.test(ospfRid || '') ? ospfRid : ridNames.get(ospfRid);
       if (rid && IPRE.test(rid)) emit({ t: 'rid', id: rid, line: ospfLine });
     },
@@ -286,11 +286,8 @@
       parseRows(b).forEach((r) => {
         const kv = r.kv; if (!kv.name) return;
         const f = { t: 'ifc', ifc: kv.name, status: r.flags.includes('R') ? 'up' : 'down', line: r.line };
-        if (r.flags.includes('X')) f.admin = 'down';
+        f.enabled = !r.flags.includes('X');
         const desc = kv.comment || r.comment; if (desc) f.desc = desc;
-        if (/^(bond|bonding)$/i.test(kv.type || '')) f.type = 'aggregate';
-        else if (/^veth$/i.test(kv.type || '')) f.type = 'veth';
-        else if (/^(wifi|wlan)$/i.test(kv.type || '')) f.type = 'wifi';
         if (kv.type) f.rawType = kv.type.toLowerCase();
         if (kv['mac-address']) f.hwMac = kv['mac-address'];
         if (kv['default-name']) f.defaultName = kv['default-name'];

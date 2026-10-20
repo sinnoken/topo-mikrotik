@@ -42,8 +42,8 @@
     const peerPortsOf = new Map();
     M.claims.forEach((c) => S.util.getOr(peerPortsOf, c.peer, () => []).push(c.peerIfc));
     M.devices.forEach((d) => {
-      d.vendor = d.vendors.has('mikrotik') ? 'mikrotik' : (d.platform && /mikrotik|routeros/i.test(d.platform) ? 'mikrotik' : null);
-      const byBoard = kindFromBoard(d.board);
+      d.manufacturer = d.vendors.has('mikrotik') ? 'mikrotik' : (d.platform && /mikrotik|routeros/i.test(d.platform) ? 'mikrotik' : null);
+      const byBoard = kindFromBoard(d.deviceType);
       if (d.collected) {
         if (byBoard) { d.kind = byBoard; d.kindBasis = 'board'; return; }
         d.kindBasis = 'data';
@@ -58,7 +58,7 @@
       if (byCaps) { d.kind = byCaps; d.kindBasis = 'caps'; return; }
       const ports = peerPortsOf.get(d.key) || [];
       if (ports.length && ports.every((p) => HOST_PORT.test(String(p).trim()))) { d.kind = 'host'; d.kindBasis = 'heuristic'; return; }
-      if (d.vendor === 'mikrotik') { d.kind = 'router'; d.kindBasis = 'vendor'; return; }
+      if (d.manufacturer === 'mikrotik') { d.kind = 'router'; d.kindBasis = 'vendor'; return; }
       d.kind = 'unknown'; d.kindBasis = 'none';
     });
   }
@@ -77,7 +77,7 @@
       const ia = M.ifcs.get(l.a); const ib = M.ifcs.get(l.b);
       const names = [ia, ib].map((i) => (i ? i.name.toLowerCase() : ''));
       if (l.layer === 'l3') l.cls = 'l3';
-      else if ((ia && (ia.parent || ia.type === 'aggregate')) || (ib && (ib.parent || ib.type === 'aggregate'))) l.cls = 'lag';
+      else if ((ia && (ia.lag || ia.type === 'lag')) || (ib && (ib.lag || ib.type === 'lag'))) l.cls = 'lag';
       else if (names.some((n) => /^(mgmt|oob|management)/.test(n))) l.cls = 'oob';
       else {
         const s = Math.max(speedOf(names[0]), speedOf(names[1]));
@@ -90,8 +90,8 @@
   function effVlans(M, ep) {
     const i = M.ifcs.get(ep);
     if (!i) return [];
-    const set = new Set(i.vlans);
-    if (i.parent) { const p = M.ifcs.get(K.ep(i.dev, i.parent)); if (p) p.vlans.forEach((v) => set.add(v)); }
+    const set = new Set(S.util.ifcVlans(i));
+    if (i.lag) { const p = M.ifcs.get(i.lag); if (p) S.util.ifcVlans(p).forEach((v) => set.add(v)); }
     return S.util.numSort(Array.from(set));
   }
   function linkVlans(M) {

@@ -24,12 +24,14 @@
       });
     });
     (m.ospfAdjacencies || []).forEach((a) => U.getOr(ospfByDev, a.dev, () => []).push(a));
-    const ipOwner = new Map(); const subnets = [];
-    m.interfaces.forEach((i) => i.ips.forEach((c) => {
-      const p = S.ip.parseCidr(c); if (!p) return;
-      if (!i.hearsay) ipOwner.set(p.ip, i.key);
-      if (!i.hearsay && p.len < 32) subnets.push({ ep: i.key, dev: i.dev, net: p.net, len: p.len, ip: p.ip });
-    }));
+    const ipOwner = new Map(); const subnets = []; const ipsByEp = new Map(); const heard = new Map();
+    m.ipAddresses.forEach((a) => {
+      U.getOr(ipsByEp, a.ep, () => []).push(a);
+      if (a.ip === null) return;
+      if (a.hearsay) { U.getOr(heard, a.ip, () => []).push(a.ep); return; } // 鄰居宣告的位址：事實但非設備自有
+      ipOwner.set(a.ip, a.ep);
+      if (a.len < 32) subnets.push({ ep: a.ep, dev: a.dev, net: S.ip.parseCidr(a.address).net, len: a.len, ip: a.ip });
+    });
     m.devices.forEach((d) => { if (d.mgmtIp && !ipOwner.has(d.mgmtIp)) ipOwner.set(d.mgmtIp, d.key + '|'); });
     const arpsByIp = new Map(); m.arps.forEach((a) => U.getOr(arpsByIp, a.ip, () => []).push(a));
     const vlansById = new Map(); const vlansByDev = new Map();
@@ -46,14 +48,14 @@
     });
     m.interfaces.forEach((i) => {
       const owner = dev.get(i.dev);
-      if (i.type !== 'wifi' || !i.macs.length || i.status === 'down' || i.admin === 'down' || !owner || !owner.collected) return;
+      if (i.type !== 'wireless' || !i.macs.length || i.status === 'down' || i.enabled === false || !owner || !owner.collected) return;
       if (/^(irb|vlan|lo\d)/.test(i.name)) return;
       const group = [i.key];
-      if (i.parent) {
-        const p = ifc.get(K.ep(i.dev, i.parent));
-        if (p) group.push(p.key, ...(p.members || []));
+      if (i.lag) {
+        const p = ifc.get(i.lag);
+        if (p) group.push(p.key, ...p.lagMembers);
       }
-      if (i.members && i.members.length) group.push(...i.members);
+      group.push(...i.lagMembers);
       if (group.some(toCollectedInfra)) return;
       U.getOr(wifiByDev, i.dev, () => []).push(i);
     });
@@ -97,6 +99,11 @@
       vlansOf: (d) => vlansByDev.get(d) || [],
       routesOf: (d) => routesByDev.get(d) || [],
       ipOwner: (ip) => ipOwner.get(ip) || null,
+      /** 介面上的 IP 位址實體（含鄰居宣告）。 */
+      ipsOf: (ep) => ipsByEp.get(ep) || [],
+      /** 介面位址文字（CIDR），畫面顯示用。 */
+      addressesOf: (ep) => (ipsByEp.get(ep) || []).map((a) => a.address),
+      prefixes: () => m.prefixes,
       subnets: () => subnets,
       devName(k) { const d = dev.get(k); return d ? (d.label || d.name) : k; },
       // 清單與總覽的唯一數字來源：列資料與計數一起算，畫面不得自行重算
@@ -128,9 +135,7 @@
       },
       // 每個不重複的 IP 一列：介面位址、設備管理 IP 與 ARP 出現的 IP 合併，來源保留在 from
       ipEntries() {
-        const all = new Set(ipOwner.keys()); arpsByIp.forEach((_, ip) => all.add(ip));
-        const heard = new Map(); // 鄰居宣告（hearsay）的介面位址：事實但非設備自有，單獨標示來源
-        m.interfaces.forEach((i) => { if (i.hearsay) i.ips.forEach((c) => { const p = S.ip.parseCidr(c); if (p) { all.add(p.ip); U.getOr(heard, p.ip, () => []).push(i.key); } }); });
+        const all = new Set(ipOwner.keys()); arpsByIp.forEach((_, ip) => all.add(ip)); heard.forEach((_, ip) => all.add(ip));
         return Array.from(all).sort(U.natural).map((ip) => {
           const owner = ipOwner.get(ip) || null; const macs = U.uniq((arpsByIp.get(ip) || []).map((a) => a.mac));
           const from = [owner ? (owner.endsWith('|') ? '管理' : '介面') : null, macs.length ? 'ARP' : null, !owner && heard.has(ip) ? '鄰居宣告' : null].filter(Boolean);
@@ -146,13 +151,13 @@
       // 末端清單列：有線未知對端每筆 MAC 一列；Wi-Fi 每個 MAC／介面觀察位置一列。
       endpointEntries() {
         const rows = Q.unknownDevices().flatMap((d) => Q.unknownPeers(d).flatMap((u) => {
-          const base = { end: true, key: u.ep, dev: d, ifc: u.name, desc: u.desc, type: u.type, status: u.status, vlans: u.vlans, portMacs: u.macs.length, wifi: false };
+          const base = { end: true, key: u.ep, dev: d, ifc: u.name, desc: u.desc, type: u.type, rawType: u.rawType, status: u.status, vlans: u.vlans, portMacs: u.macs.length, wifi: false };
           return (u.macs.length ? u.macs : [null]).map((x) => Object.assign({ mac: x ? x.mac : null, ips: x ? x.ips : [], vendors: x && x.vendor ? [x.vendor] : [] }, base));
         }));
         wifiByDev.forEach((interfaces, d) => interfaces.forEach((i) => i.macs.forEach((mk) => {
           const x = mac.get(mk);
           rows.push({
-            end: true, wifi: true, key: i.key, dev: d, ifc: i.name, desc: i.desc, type: i.type, status: i.status, vlans: i.vlans,
+            end: true, wifi: true, key: i.key, dev: d, ifc: i.name, desc: i.desc, type: i.type, rawType: i.rawType, status: i.status, vlans: U.ifcVlans(i),
             portMacs: i.macs.length, mac: mk, ips: x ? x.ips : [], vendors: x && x.vendor ? [x.vendor] : [],
           });
         })));
@@ -162,7 +167,7 @@
       /** 某設備上「沒有 LLDP／CDP 介面鄰接」的末端埠，附 MAC、IP、廠商 */
       unknownPeers(devKey) {
         return (unkByDev.get(devKey) || []).slice().sort((a, b) => U.natural(a.name, b.name)).map((i) => ({
-          ep: i.key, name: i.name, desc: i.desc, status: i.status, type: i.type, vlans: i.vlans,
+          ep: i.key, name: i.name, desc: i.desc, status: i.status, type: i.type, rawType: i.rawType, vlans: U.ifcVlans(i),
           macs: i.macs.map((mk) => { const x = mac.get(mk); return { mac: mk, vendor: x ? x.vendor : null, ips: x ? x.ips : [] }; }),
         }));
       },
@@ -173,7 +178,7 @@
       visualUnknownPeers(devKey) {
         const actual = Q.unknownPeers(devKey);
         const wireless = (wifiByDev.get(devKey) || []).map((i) => ({
-          ep: i.key, name: i.name, desc: i.desc, status: i.status, type: i.type, vlans: i.vlans, visualOnly: true,
+          ep: i.key, name: i.name, desc: i.desc, status: i.status, type: i.type, rawType: i.rawType, vlans: U.ifcVlans(i), visualOnly: true,
           macs: i.macs.map((mk) => { const x = mac.get(mk); return { mac: mk, vendor: x ? x.vendor : null, ips: x ? x.ips : [] }; }),
         }));
         return actual.concat(wireless).sort((a, b) => U.natural(a.name, b.name));
@@ -203,7 +208,7 @@
           if (inA && inB) carry.push(l); else if ((inA || inB) && l.vlanComparable !== false && l.vlanMismatch) partial.push(l);
         });
         const devs = U.uniq(entries.map((v) => v.dev));
-        m.interfaces.forEach((i) => { if (i.vlans.includes(id) && !devs.includes(i.dev)) devs.push(i.dev); });
+        m.interfaces.forEach((i) => { if (U.ifcVlans(i).includes(id) && !devs.includes(i.dev)) devs.push(i.dev); });
         return { id, entries, devices: devs.sort(U.natural), carry, partial, names: U.uniq(entries.map((e) => e.name).filter(Boolean)) };
       },
 

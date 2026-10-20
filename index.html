@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- 離線契約：禁止所有執行期網路連線（fetch／XHR／WebSocket／beacon）、表單送出、外嵌物件與 Worker。
+     不限制 script-src／style-src：file:// 下 'self' 的行為在各瀏覽器不一致，且頁面使用內嵌事件與樣式屬性 -->
+<meta http-equiv="Content-Security-Policy" content="connect-src 'none'; form-action 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'">
 <title>網路基準｜MikroTik</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='5' cy='5' r='3' fill='%230b6bcb'/%3E%3Ccircle cx='19' cy='5' r='3' fill='%230b6bcb'/%3E%3Ccircle cx='12' cy='19' r='3' fill='%2322a338'/%3E%3Cpath d='M5 5L19 5M5 5L12 19M19 5L12 19' stroke='%230b6bcb' stroke-width='1.5'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="assets/app.css">

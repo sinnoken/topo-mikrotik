@@ -54,6 +54,8 @@ CLI 輸入轉成可追溯的純 JSON Snapshot，畫面只是 Snapshot 的檢視�
 11. **離線契約不可被破壞**
     `index.html` 必須能直接開啟。不要任意加入必需的後端、bundler、外部
     runtime 資產、執行期網路請求或只在真實瀏覽器存在的 API。
+    `index.html` 的 Content-Security-Policy 以 `connect-src 'none'` 等指令
+    強制禁止執行期網路連線；不可放寬，`tests/ui-smoke.js` 會檢查。
 
 12. **生成資料走生成流程**
     由工具產生的 sample、嵌入檔與 OUI 資料，不手動逐字修改；修改來源或

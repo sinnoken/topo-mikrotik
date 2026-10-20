@@ -724,6 +724,7 @@ test('檢查規則狀態：有發現、通過（需要的資料有收到）、�
   assert.deepStrictEqual(st.get('R03').missing, [['route']]);
   assert.strictEqual(st.get('I01').status, 'pass', '輸入類規則一律會檢查');
   Q.ruleStatus().forEach((r) => assert.strictEqual(r.status === 'found', r.count > 0, r.id));
+  const ids = Q.ruleStatus().map((r) => r.id); assert.deepStrictEqual(ids, ids.slice().sort(S.util.natural), '依規則編號排序');
   const sample = S.query(build(read('samples/sample-bundle.txt'))).ruleStatus();
   assert.ok(sample.some((r) => r.status === 'found') && !sample.some((r) => r.status === 'nodata'), '範例資料每類資料都有收集');
 });

@@ -132,7 +132,7 @@
       inferredLinksOf: (d) => inferredByDev.get(d) || [],
       /**
        * 每條檢查規則的結果：found（有發現）、pass（需要的資料有收到且沒有發現）、nodata（需要的資料沒有任何已收集設備提供）。
-       * missing 是缺少的資料組，每組列出可提供的資料類別。
+       * missing 是缺少的資料組，每組列出可提供的資料類別。依規則編號排序。
        */
       ruleStatus() {
         const have = new Set(m.devices.filter((d) => d.collected).flatMap((d) => d.data));
@@ -141,7 +141,7 @@
           const missing = (c.data || []).filter((g) => !g.some((t) => have.has(t)));
           const n = count.get(id) || 0;
           return { id, severity: c.severity, cat: c.cat, title: c.title, count: n, missing, status: n ? 'found' : missing.length ? 'nodata' : 'pass' };
-        });
+        }).sort((a, b) => U.natural(a.id, b.id)); // 依編號排序，與檢查結果群組一致
       },
       inferredLinksOfEp: inferredOfEp,
       getInferredLink: (k) => inferredByKey.get(k) || null,

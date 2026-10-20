@@ -108,7 +108,7 @@
 | vlans | dev、id、name、desc、members（`{ ep, tagged }` 清單） |
 | ipAddresses | address（CIDR）、ip、len、family、vrf（尚未收集，固定 null）、role（VRRP 介面上的位址為 `vrrp`）、dev、ep、hearsay、src |
 | prefixes | prefix、net、len、family、vrf、basis（`connected`）、vlan（網段設在 VLAN 介面上時的 VLAN ID）、eps |
-| macs | mac、vendor（OUI）、ips、seen（`{ ep, vlan, static }` 清單）、edge（位置）、wifi（Wi-Fi 位置推論，見 §5.3）、src |
+| macs | mac、vendor（OUI）、ips、seen（`{ ep, vlan, static }` 清單）、edge（位置）、wifi（Wi-Fi 位置推論，見 §5.3）、behind（推定在未收集交換器底下，見 §5.3）、src |
 | wifiAssociations | dev、ep、mac、ssid、band、vlan、uptime、lastActivity（秒）、signal（dBm）、ip、hostname、src（關聯表的事實） |
 | dhcpNetworks | dev、network、gateways、src（export 的 `/ip dhcp-server network`） |
 | arps、routes | 原始對應與路由（含下一跳；路由另有 distance、blackhole）、src |
@@ -176,6 +176,19 @@
   - **不推論的情況**：已有 LLDP／CDP 鏈路的設備對；埠（含所屬聚合）已有 LLDP／CDP 鄰接到已收集設備時，該埠後面的設備。
   - **對端埠**：未收集設備的埠用它在 MNDP 回報的埠名，沒有就標為不明。
   - **圖面**：以推論樣式（綠色長虛線）畫出；原本只有 MNDP 的線，有推論時改用推論樣式。
+- **未收集交換器底下的終端**（`macs[].behind`，推論，精確到設備、埠不明）：終端接在收不到資料的交換器（例如 SwOS 的 CSS106）時，只有上一跳 RouterOS 的 MAC 表看得到它。
+  - **錨點**：已收集、有 MAC 表的設備 A 的埠 p，需同時符合：
+    - p 沒有 LLDP 鄰接到已收集設備。
+    - p 學到未收集的交換器或路由器的 MAC。
+    - 那台設備沒有被證明在別台已收集交換器後面。
+  - **哪些 MAC 算在它底下**：p 學到的其他 MAC，但排除下列幾種：
+    - 已知設備自己的 MAC。
+    - 已有確切位置的 MAC（終端埠、Wi-Fi）。
+    - 在 p 這側其他已收集交換器「不朝向 A」的埠上出現的 MAC。
+  - **位置**：p 這側只有一台未收集設備時，`dev` 為它；有多台（例如 CSS106 再串 CSS610）時 `dev` 為 null，`via` 列出全部，畫面顯示「在 X、Y 或其下游」。
+  - **多個錨點**：同一 MAC 有多個錨點時，取那一側已收集交換器最少者（最靠近終端）。
+  - **畫面**：主機畫在該交換器節點下，連線用推論樣式。
+  - **A04**：錨點埠不報 A04，因為下面接的是已知設備。
 - **Wi-Fi 客戶端位置**（`macs[].wifi`，推論）：MAC 表無法說明 Wi-Fi 客戶端連在哪台 AP，因為同一個 MAC 會出現在 AP 的無線介面、AP 上行與沿途 trunk，且會漫遊。依證據強度取位置，`basis` 標示依據：`registration`（關聯表，最強；多台 AP 時取 `last-activity` 最近者，其餘為 `candidates`，`roaming` 為真）→ `bridge-wifi`（已收集設備的 MAC 表在 `type=wireless` 介面學到）→ `via-ap-port`（交換器埠的鄰居是沒有收集資料的 AP，無法區分有線或無線）。已判定為有線終端埠的 MAC、AP 自己的 MAC 不套用 `via-ap-port`。因為用到終端埠判定，在檢查之後由 `S.infer.wifiLocations()` 計算。沒有 Wi-Fi 證據的 MAC，`wifi` 為 null。
 - **終端位置**：這是依已收集證據推定的「未知對端」位置，不代表已證明對端是終端主機。核心 `unknownPeer` 介面必須恰好學到一個 MAC、不是 Wi-Fi、狀態非 down、不是 irb／vlan／lo，且沒有 LLDP／CDP 介面鄰接連到其他已收集網路設備；學到多個 MAC 的有線介面不符合此條件。Wi-Fi 介面本身不視為終端介面，但清單會將每個 Wi-Fi MAC／介面觀察位置列為終端位置；同一 MAC 出現在多個 Wi-Fi 介面可能是漫遊，因此 Wi-Fi 觀察不參與 A02。純 MNDP 只證明同一 L2 broadcast domain 可達，不會當作直連鄰接排除終端埠。若 bridge host 有多個 VLAN 觀察，MAC 的 `seen` 會各自保留 `{ep,vlan}`，不會互相覆蓋。
 
@@ -297,6 +310,7 @@
     - 設備身分欄位
   - 舊基準以儲存的輸入重建。
   - 拓樸圖預設改用 ELK 分層版面。
+- **2.4.0**：未收集交換器底下的終端推定位置（`macs[].behind`），畫回圖上；A04 不再對已知下游交換器誤報。
 - **2.3.0**：推論鏈路（`inferredLinks`），給沒有 LLDP 的設備（例如 SwOS 交換器）；MAC 表的 `L` 項目保留為設備自己的 MAC（`ownMacs`）。
 - **2.2.0**：規格書 P1。
   - 新增欄位：設備收集時間、MAC 靜態／動態、bridge port 的 frame-types／ingress-filtering、路由 distance 與黑洞路由、VRRP 位址角色、網段所屬 VLAN、DHCP 網路。

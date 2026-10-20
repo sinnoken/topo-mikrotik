@@ -190,6 +190,28 @@
         link(dk, vid, r.name, { ifStyle });
       });
     });
+    // 推定在未收集交換器（例如 SwOS 的 CSS106）底下的終端：掛在該交換器下，連線用推論樣式，埠不明
+    Q.behindGroups().forEach((rows, dk) => {
+      const dev = Q.getDevice(dk); if (!dev) return;
+      const where = (x) => (x.behind.dev ? `在 ${Q.devName(x.behind.dev)} 底下（埠不明）` : `在 ${x.behind.via.map((v) => Q.devName(v)).join('、')} 或其下游`);
+      const via = (x) => `依 ${Q.epName(x.behind.anchor)} 的 MAC 表推定`;
+      if (!App.expanded.has(dk) && (forceCollapse || rows.length > App.UNKNOWN_EXPAND_MAX)) {
+        const vid = '?bc|' + dk;
+        nodes.push({ id: vid, label: `推定終端 ×${rows.length}`, kind: 'cluster', collected: false, virtual: true, parent: dk, group: dev.group, count: rows.length,
+          tip: `${rows.length} 個終端${where(rows[0])}・${via(rows[0])}・雙擊展開` });
+        App.virtual.set(vid, { type: 'behind', dev: dk });
+        link(dk, vid, '埠不明', { inferredOnly: true, hearsay: false });
+        return;
+      }
+      rows.forEach((x) => {
+        const vid = '?b|' + x.mac; const ip = x.ips[0];
+        nodes.push({ id: vid, label: ip || x.vendor || K.macPretty(x.mac).slice(-8), kind: 'endpoint', collected: false, virtual: true, parent: dk, group: dev.group, count: 1,
+          color: vendorColor(x.vendor), ini: vendorIni(x.vendor),
+          tip: `推定位置：${K.macPretty(x.mac)}${ip ? '・' + ip : ''}${x.vendor ? '・' + x.vendor : ''} ${where(x)}・${via(x)}` });
+        App.virtual.set(vid, { type: 'mac', mac: x.mac });
+        link(dk, vid, '埠不明', { inferredOnly: true, hearsay: false });
+      });
+    });
   }
 
   /** 新出現的葉節點，排在所屬設備下方的小方陣（避開該設備已有的葉節點） */
@@ -293,7 +315,13 @@
     App.select(sel, { focus: true, findingEntities: f.id === 'A03' ? null : f.entities });
   };
 
-  const selOfVirtual = (vid) => { const v = App.virtual.get(vid); return v ? (v.type === 'endpoints' ? { type: 'endpoints', dev: v.dev } : { type: 'interface', key: v.ep }) : null; };
+  const selOfVirtual = (vid) => {
+    const v = App.virtual.get(vid); if (!v) return null;
+    if (v.type === 'endpoints') return { type: 'endpoints', dev: v.dev };
+    if (v.type === 'behind') return { type: 'device', key: v.dev };
+    if (v.type === 'mac') return { type: 'mac', key: v.mac };
+    return { type: 'interface', key: v.ep };
+  };
   function onGraphClick(it) {
     if (!it) return App.select(null);
     if (it.type === 'node') return App.select(String(it.id).startsWith('?') ? selOfVirtual(it.id) : { type: 'device', key: it.id });
@@ -304,7 +332,7 @@
   }
   function onGraphDblClick(it) {
     const v = App.virtual.get(it.id);
-    if (v && v.type === 'endpoints') return App.toggleExpand(v.dev);         // 群組：展開
+    if (v && (v.type === 'endpoints' || v.type === 'behind')) return App.toggleExpand(v.dev);         // 群組：展開
     if (v) return App.select(selOfVirtual(it.id), { focus: true });
     App.select({ type: 'device', key: it.id }, { focus: true });
   }

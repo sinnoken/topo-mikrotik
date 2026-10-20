@@ -290,12 +290,19 @@
       h('div', { class: 'row' }, [m.found ? null : V.chip('基準中沒有這個 MAC', 'warn'), m.vendor ? V.chip(m.vendor) : V.chip('廠商不明')]),
       kv([['IP（ARP）', m.ips.length ? h('span', null, m.ips.flatMap((x, n) => [n ? '、' : '', ipLink(App, x)])) : '—'],
         ['位置（終端埠）', m.edge.length ? h('span', null, m.edge.flatMap((ep, n) => [n ? '、' : '', epLink(App, ep)])) : '—'],
-        ...wifiRows(App, m.wifi)]),
+        ...wifiRows(App, m.wifi), ...behindRows(App, m.behind)]),
       findingsBlock(App, Q.findingsFor('mac', m.mac)),
       section('在哪些介面／VLAN 學到', m.seen.length ? V.table([
         { t: '設備介面', f: (r) => epLink(App, r.ep) }, { t: 'VLAN', f: (r) => r.vlan || '' }, { t: '類型', f: (r) => (r.static ? '靜態' : '動態') }, { t: '', f: (r) => (m.edge.includes(r.ep) ? V.chip('終端', 'ok') : V.chip('上行')) },
       ], m.seen) : null, { count: m.seen.length }),
     ]);
+  }
+  /** 推定位置：在未收集交換器（例如 SwOS 的 CSS106）底下，精確到設備、埠不明。 */
+  function behindRows(App, b) {
+    if (!b) return [];
+    const where = b.dev ? h('span', null, ['在 ', devLink(App, b.dev), ' 底下（埠不明）']) : h('span', null, ['在 ', ...b.via.flatMap((v, n) => [n ? '、' : '', devLink(App, v)]), ' 或其下游（無法確定是哪一台）']);
+    return [['推定位置', h('span', null, [where, ' ', V.chip('推定', 'info')])],
+      ['推定依據', h('span', null, [epLink(App, b.anchor), ' 的 MAC 表學到它，且沒有在其他已收集交換器更下游出現；該交換器沒有收集資料，所以埠不明'])]];
   }
   /** Wi-Fi 位置：依證據強度標示信心；漫遊時列出其他候選位置。 */
   function wifiRows(App, w) {

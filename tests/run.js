@@ -636,6 +636,21 @@ test('推論鏈路：CSS106 在中間、下面接兩台 RouterOS 交換器與一
     ['CSS_9|?(r_c:ether2)', 'R_C|ether2', 'fdb', 'medium'], ['CSS_9|?(sw_a:ether5)', 'SW_A|ether5', 'fdb', 'medium'], ['CSS_9|?(sw_b:ether1)', 'SW_B|ether1', 'fdb', 'medium'],
   ], '每台都推論接到 CSS_9，兩台交換器之間、交換器與路由器之間都不誤判直連');
 });
+test('推定位置：CSS106 底下的終端（埠不明）；串接兩台未收集交換器時不指定哪一台；在已收集交換器後面的不算；A04 不再誤報', () => {
+  const css106 = ' 0 interface=ether5 mac-address=CC:2D:E0:00:01:06 identity=CSS106_1 board="CSS106-1G-4P-1S" discovered-by=mndp';
+  const hosts = (ifc, n, base) => Array.from({ length: n }, (_, k) => ` ${k + 1} D mac-address=24:6E:96:00:${base}:${String(k + 1).padStart(2, '0')} on-interface=${ifc}`);
+  const one = build(['SW_A (10.0.0.1):', NB([css106]), BH([' 0 DL mac-address=D4:01:C3:00:00:0A on-interface=bridge1', ' 9 D mac-address=CC:2D:E0:00:01:06 on-interface=ether5', ...hosts('ether5', 7, '01')])].join('\n'));
+  const b = (mk) => one.model.macs.find((m) => m.mac === mk).behind;
+  assert.deepStrictEqual(b('246E96000101'), { anchor: 'SW_A|ether5', via: ['CSS106_1'], dev: 'CSS106_1', basis: 'fdb' });
+  assert.strictEqual(b('CC2DE0000106'), null, '交換器自己的 MAC 不是終端');
+  assert.strictEqual(count(one, 'A04'), 0, '埠後面是已知的 CSS106，不報 A04');
+  const chain = build(['SW_A (10.0.0.1):', NB([css106, ' 1 interface=ether5 mac-address=CC:2D:E0:00:06:10 identity=CSS610_1 board="CSS610-8P-2S+" discovered-by=mndp']),
+    BH([' 9 D mac-address=CC:2D:E0:00:01:06 on-interface=ether5', ' 8 D mac-address=CC:2D:E0:00:06:10 on-interface=ether5', ...hosts('ether5', 2, '02')])].join('\n'));
+  assert.deepStrictEqual(chain.model.macs.find((m) => m.mac === '246E96000201').behind, { anchor: 'SW_A|ether5', via: ['CSS106_1', 'CSS610_1'], dev: null, basis: 'fdb' });
+  const behindB = build(['SW_A (10.0.0.1):', NB([css106]), BH([' 9 D mac-address=CC:2D:E0:00:01:06 on-interface=ether5', ' 8 D mac-address=D4:01:C3:00:00:0B on-interface=ether5', ...hosts('ether5', 2, '03')]),
+    'SW_B (10.0.0.2):', BH([' 0 DL mac-address=D4:01:C3:00:00:0B on-interface=bridge1', ' 9 D mac-address=D4:01:C3:00:00:0A on-interface=ether1', ...hosts('ether3', 2, '03')])].join('\n'));
+  assert.strictEqual(behindB.model.macs.find((m) => m.mac === '246E96000301').behind, null, 'SW_B 在非朝向 SW_A 的埠學到 → 在 SW_B 後面，不是 CSS106 底下');
+});
 test('推論鏈路：/30 點對點網段、MNDP 雙向；兩台設備已有 LLDP 鏈路或埠已有 LLDP 鄰接時不推論', () => {
   const p2p = build('R1 (10.0.0.1):\n### /export terse\n/ip address add address=10.9.9.1/30 interface=ether1\nR2 (10.0.0.2):\n### /export terse\n/ip address add address=10.9.9.2/30 interface=ether2\n');
   assert.deepStrictEqual(inferred(p2p), [['R1|ether1', 'R2|ether2', 'subnet-p2p', 'medium']]);

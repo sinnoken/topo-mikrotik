@@ -159,7 +159,8 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     App.select(null);
   });
   await step('推論鏈路：沒有 LLDP 的 CSS610 以推論樣式畫出，提示與詳情說明依據', () => {
-    const il = App.Q.inferredLinks(); if (!il.length) throw new Error('範例資料應有推論鏈路');
+    const il = App.Q.inferredLinks(); if (process.env.SMOKE_INPUT && !il.length) return; // 大型乾淨網路沒有 CSS610
+    if (!il.length) throw new Error('範例資料應有推論鏈路');
     const p = Array.from(App.pairs.values()).find((x) => x.inferredOnly);
     if (!p) throw new Error('推論鏈路應以推論樣式畫在圖上');
     if (!Array.from(document.querySelectorAll('#legend .li')).some((li) => li.textContent === '推論鏈路')) throw new Error('圖例應有推論鏈路');
@@ -167,6 +168,18 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (!text('#tooltip').includes('推論鏈路')) throw new Error('提示應說明是推論鏈路');
     App.graph.emit('click', { type: 'edge', id: p.id });
     if (!text('#detail').includes('MAC 表') || !text('#detail').includes('信心高')) throw new Error('詳情應列出推論依據與信心');
+    App.select(null);
+  });
+  await step('推定位置：CSS610 底下的主機畫回圖上，點選顯示推定位置', () => {
+    const groups = App.Q.behindGroups(); if (process.env.SMOKE_INPUT && !groups.size) return; // 大型乾淨網路沒有 CSS610
+    if (!groups.size) throw new Error('範例資料應有推定在 CSS610 底下的終端');
+    const [dk, rows] = Array.from(groups.entries())[0];
+    const n = App.graph.nodes.find((x) => x.id === '?b|' + rows[0].mac);
+    if (!n || n.parent !== dk) throw new Error('推定終端應畫在所屬交換器底下');
+    const e = Array.from(App.pairs.values()).find((p) => p.b === n.id);
+    if (!e || !e.inferredOnly) throw new Error('推定終端的連線應使用推論樣式');
+    App.graph.emit('click', { type: 'node', id: n.id });
+    if (App.sel.type !== 'mac' || !text('#detail').includes('推定位置') || !text('#detail').includes('埠不明')) throw new Error('點選推定終端應顯示 MAC 詳情與推定位置');
     App.select(null);
   });
   await step('基準摘要與行動入口', () => {

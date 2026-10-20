@@ -73,6 +73,7 @@
     yield { stage: '一致性檢查', done: 0, total: 1 };
     const findings = S.check.run(M, { blocks, unrecognized, duplicates, expectedData: opt.expectedData });
     S.infer.wifiLocations(M); // 用到檢查算出的終端埠
+    S.infer.behindLocations(M);
     const coverage = S.check.coverage(M);
 
     const snap = serialize(M, { blocks, findings, coverage, facts, usage, readersUsed, sources, profile, opt, t0 });
@@ -120,7 +121,7 @@
     const macs = Array.from(M.macs.values()).map((m) => ({
       mac: m.mac, vendor: S.oui ? S.oui.lookup(m.mac) : null, ips: Array.from(m.ips).sort(nat),
       seen: Array.from(m.seen.entries()).flatMap(([ep, vlans]) => Array.from(vlans, (vlan) => ({ ep, vlan, static: !!(m.staticOn && m.staticOn.has(ep)) })))
-        .sort((x, y) => nat(x.ep, y.ep) || nat(x.vlan || '', y.vlan || '')), edge: m.edge || [], wifi: m.wifi || null, src: m.src,
+        .sort((x, y) => nat(x.ep, y.ep) || nat(x.vlan || '', y.vlan || '')), edge: m.edge || [], wifi: m.wifi || null, behind: m.behind || null, src: m.src,
     })).sort((a, b) => U.cmp(a.mac, b.mac));
 
     // IP 位址（參考 NetBox IPAddress）：每個介面上的每個位址一筆；VRF 尚未收集，固定為 null

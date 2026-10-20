@@ -6,7 +6,7 @@
  *   - 分群（profile 有 group 用 profile，否則依拓樸鏈路連通元件）
  *   - 套用 profile 註解
  *   - 推論鏈路（inferLinks：沒有 LLDP／CDP 時的替代證據）
- *   - Wi-Fi 客戶端位置（wifiLocations，須在 check.run 之後呼叫）
+ *   - Wi-Fi 客戶端位置（wifiLocations）與未收集交換器底下的終端（behindLocations），須在 check.run 之後呼叫
  */
 (function (S) {
   'use strict';
@@ -259,6 +259,17 @@
       });
     });
 
+    // 推定位置的錨點：已收集、有 MAC 表的設備 a 的埠 p，沒有 LLDP 鄰接到已收集設備，且 p 這側有未收集的交換器或路由器
+    // （例如 SwOS 的 CSS106），而且沒有被證明在別台已收集交換器後面。這個埠學到的終端推定在這些設備底下（behindLocations）。
+    M.behindAnchors = new Map();
+    seenOn.forEach((set, ep) => {
+      const a = devOf(ep); if (!hasFdb(a) || lldpToCollected(ep)) return;
+      const side = Array.from(set);
+      const via = side.filter((v) => { const d = M.devices.get(v); return d && !d.collected && (d.kind === 'switch' || d.kind === 'router') && !behindSwitch(v, a, side); });
+      if (via.length) M.behindAnchors.set(ep, { dev: a, via: via.sort(S.util.natural), side: side.filter(hasFdb) });
+    });
+    M.fdbIndex = { portsOf, macOwner }; // 供 behindLocations 使用（內部，不序列化）
+
     const MNDP_ONLY = new Set(['mndp-mutual', 'mndp-unique']);
     M.inferred = Array.from(out.values()).filter((r) => Array.from(r.bases).some((b) => !MNDP_ONLY.has(b)))
       .map((r) => ({ ...r, bases: Array.from(r.bases).sort(), confidence: r.bases.size >= 2 ? 'high' : 'medium' }));
@@ -306,10 +317,32 @@
     });
   }
 
+  /**
+   * 未收集交換器底下的終端（推論，位置精確到設備、埠不明）：MAC 在推定錨點的埠上學到，且
+   *   - 不是已知設備自己的 MAC、沒有已確定的位置（終端埠、Wi-Fi）
+   *   - 沒有在錨點那一側其他已收集交換器「不朝向錨點設備」的埠出現（否則在那台交換器後面）
+   * 錨點那一側只有一台未收集設備時 dev 為該設備；有多台（例如 CSS106 再串 CSS610）時 dev 為 null，via 列出全部。
+   * 同一 MAC 有多個錨點時，取那一側已收集交換器最少者（最靠近終端）。使用 check.run 算出的 m.edge。
+   */
+  function behindLocations(M) {
+    const { portsOf, macOwner } = M.fdbIndex || {};
+    M.macs.forEach((m) => {
+      m.behind = null;
+      if (!portsOf || m.wifi || (m.edge && m.edge.length) || macOwner.has(m.mac)) return;
+      const hits = Array.from(m.seen.keys()).filter((ep) => M.behindAnchors.has(ep)).filter((ep) => {
+        const an = M.behindAnchors.get(ep);
+        return !an.side.some((y) => { const toward = portsOf.get(y + '>' + an.dev) || []; return Array.from(m.seen.keys()).some((q) => K.splitEp(q)[0] === y && !toward.includes(q)); });
+      }).sort((x, y) => M.behindAnchors.get(x).side.length - M.behindAnchors.get(y).side.length || S.util.natural(x, y));
+      if (!hits.length) return;
+      const an = M.behindAnchors.get(hits[0]);
+      m.behind = { anchor: hits[0], via: an.via, dev: an.via.length === 1 ? an.via[0] : null, basis: 'fdb' };
+    });
+  }
+
   function displayName(d) {
     if (d.names.size) return Array.from(d.names)[0];
     return d.key;
   }
 
-  S.infer = { infer, displayName, effVlans, wifiLocations };
+  S.infer = { infer, displayName, effVlans, wifiLocations, behindLocations };
 })(globalThis.SSOT = globalThis.SSOT || {});

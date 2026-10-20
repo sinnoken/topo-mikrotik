@@ -104,6 +104,13 @@
       routesOf: (d) => routesByDev.get(d) || [],
       /** 推論鏈路（沒有 LLDP／CDP 時的替代證據，見設計說明 §5.3）。 */
       inferredLinks: () => m.inferredLinks || [],
+      /** 推定在未收集交換器底下的終端，依掛在圖上的設備分組（單一設備時為該設備，否則為錨點所在的已收集設備）。 */
+      behindGroups() {
+        const out = new Map();
+        m.macs.forEach((x) => { if (x.behind) U.getOr(out, x.behind.dev || K.splitEp(x.behind.anchor)[0], () => []).push(x); });
+        out.forEach((list) => list.sort((p, q) => U.cmp(p.mac, q.mac)));
+        return out;
+      },
       inferredLinksOf: (d) => inferredByDev.get(d) || [],
       inferredLinksBetween: (a, b) => (inferredByDev.get(a) || []).filter((l) => [l.a, l.b].some((ep) => K.splitEp(ep)[0] === b)),
       ipOwner: (ip) => ipOwner.get(ip) || null,

@@ -286,6 +286,7 @@
       const group = [ep];
       if (i.lag) { const p = M.ifcs.get(i.lag); if (p) group.push(p.key, ...p.lagMembers); }
       if (group.some((x) => adjacencyLinksByEp.has(x))) return;
+      if (group.some((x) => M.behindAnchors && M.behindAnchors.has(x))) return; // 下面接的是已知的未收集交換器（例如 SwOS），不是不明設備
       out.push({ ep, n });
     });
     return out.sort((a, b) => S.util.natural(a.ep, b.ep));

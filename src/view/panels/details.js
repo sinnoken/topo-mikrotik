@@ -158,6 +158,7 @@
         s: (r) => (r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? null : r.l.vlanMismatch ? '不一致' : vlanText(r.l.vlansCommon)) },
       ], peerRows, { onRow: (r) => App.select({ type: 'link', key: r.l.key }, { focus: true }), bad: (r) => r.links.some((x) => x.vlanMismatch || Q.findingsFor('link', x.key).some((f) => f.severity !== 'info')) }) : h('div', { class: 'muted' }, '沒有鏈路'),
         { count: peerRows.length, fold: true, open: neighborHasFinding }),
+      section('推論鏈路（沒有 LLDP）', Q.inferredLinksOf(d.key).length ? inferredTable(App, Q.inferredLinksOf(d.key), d.key) : null, { count: Q.inferredLinksOf(d.key).length, fold: true }),
       section('OSPF L3 鄰接（非實體直連）', ospfAdjacencies.length ? V.table([
           { t: '本機介面', f: (a) => epLink(App, a.localEp), s: (a) => K.splitEp(a.localEp)[1] },
           { t: '鄰居', f: (a) => devLink(App, a.peerDev), s: (a) => Q.devName(a.peerDev) },
@@ -183,7 +184,20 @@
       { t: '行', f: (b) => `${b.start}–${b.end}`, s: (b) => b.start },
     ], bs, { onRow: (b) => App.openRaw(b.file, b.start) });
   }
-  const ifName = (Q, ep) => { const i = Q.getInterface(ep); return i ? i.name : K.splitEp(ep)[1]; };
+  const ifName = (Q, ep) => { const i = Q.getInterface(ep); const n = K.splitEp(ep)[1]; return i ? i.name : n.startsWith('?(') ? '埠不明' : n; };
+  /** 推論鏈路清單：每條列出兩端、依據與信心，展開可看每項證據並開啟原文。 */
+  function inferredTable(App, list, from) {
+    const Q = App.Q;
+    const ends = (l) => (from && K.splitEp(l.b)[0] === from ? [l.b, l.a] : [l.a, l.b]);
+    return V.table([
+      { t: '本端', f: (l) => h('span', null, [Q.devName(K.splitEp(ends(l)[0])[0]), h('span', { class: 'mono muted' }, ' ' + ifName(Q, ends(l)[0]))]) },
+      { t: '對端', f: (l) => h('span', null, [devLink(App, K.splitEp(ends(l)[1])[0]), h('span', { class: 'mono muted' }, ' ' + ifName(Q, ends(l)[1]))]) },
+      { t: '依據', f: (l) => h('div', null, l.evidence.map((e) => h('div', null, [h('b', null, V.INFER_BASIS[e.basis] + '：'), e.text, ...e.src.map(([b, line]) => {
+        const blk = Q.block(b); return blk ? h('a', { class: 'link mono', onclick: () => App.openRaw(blk.file, line) }, ` 第 ${line} 行`) : null;
+      })]))) },
+      { t: '信心', f: (l) => V.chip(V.CONFIDENCE[l.confidence], l.confidence === 'high' ? 'ok' : 'info') },
+    ], list);
+  }
 
   // ---------------------------------------------------------------- 鏈路
   function link(App, sel) {
@@ -218,10 +232,12 @@
   function pair(App, sel) {
     const Q = App.Q; const links = sel.links.map((k) => Q.getLink(k)).filter(Boolean);
     const [a, b] = sel.devs;
+    const inferredList = Q.inferredLinksBetween(a, b);
     return h('div', { class: 'detail' }, [
       h('h2', null, [Q.devName(a), ' ⇄ ', Q.devName(b)]),
-      h('div', { class: 'row' }, [V.chip(`${links.length} 條鏈路`)]),
-      V.table([
+      h('div', { class: 'row' }, [links.length ? V.chip(`${links.length} 條鏈路`) : null, inferredList.length ? V.chip(`${inferredList.length} 條推論鏈路`, 'info') : null]),
+      section('推論鏈路（沒有 LLDP 時的替代證據）', inferredList.length ? [h('p', { class: 'muted' }, '依 MAC 表、MNDP 或點對點網段推定相鄰：是直接相連，或中間只有未管理設備。不影響任何檢查。'), inferredTable(App, inferredList, a)] : null, { count: inferredList.length }),
+      !links.length ? null : V.table([
         { t: Q.devName(a), f: (l) => l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? 'MNDP 觀察'
           : h('span', { class: 'mono' }, ifName(Q, K.splitEp(l.a)[0] === a ? l.a : l.b)) },
         { t: Q.devName(b), f: (l) => l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? 'L2 廣播網域可達'

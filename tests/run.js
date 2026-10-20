@@ -389,9 +389,11 @@ test('system resource：型號決定交換器／路由器', () => {
 // ------------------------------------------------------------------ 範例資料：每個刻意放入的問題都要被找到
 test('範例資料：每項刻意放入的問題都被找到，且沒有多餘的錯誤', () => {
   const s = build(read('samples/sample-bundle.txt'));
-  const expect = { I01: 1, I02: 1, C02: 1, K01: 1, K02: 1, K03: 1, K04: 1, V01: 1, V04: 1, V05: 1, A01: 1, A02: 1, A04: 1, A05: 1, R01: 2, R02: 1, R03: 1, R04: 1, R05: 1, C01: 2 };
+  const expect = { I01: 1, I02: 1, C02: 1, K01: 1, K02: 1, K03: 1, K04: 1, V01: 1, V04: 1, V05: 1, A01: 1, A02: 1, A04: 1, A05: 1, R01: 2, R02: 1, R03: 1, R04: 1, R05: 1, C01: 3 };
   Object.entries(expect).forEach(([id, n]) => assert.strictEqual(count(s, id), n, `${id} 應有 ${n} 筆，實際 ${count(s, id)}`));
   assert.strictEqual(s.meta.stats.collected, 14);
+  const css = s.model.inferredLinks.find((l) => l.a.startsWith('TPE_CSS_01|') || l.b.startsWith('TPE_CSS_01|'));
+  assert.ok(css && css.confidence === 'high' && css.bases.join('+') === 'fdb+mndp-unique', '範例的 CSS610 應以 MAC 表＋MNDP 推論到 ACC_06 ether21');
   assert.deepStrictEqual(s.findings.filter((f) => f.severity === 'error').map((f) => f.id).sort(), ['I01', 'K02']);
   s.findings.forEach((f) => f.evidence.forEach((e) => assert.ok(typeof e.text === 'string')));
   const v01 = s.findings.find((f) => f.id === 'V01').entities.find((e) => e.type === 'link');
@@ -406,7 +408,7 @@ test('鏈路配對：聚合成員雙向確認、沒有 LLDP 的鄰居為單側�
   const s = build(read('samples/sample-bundle.txt'));
   const l = s.model.links.find((x) => x.key === 'TPE_ACC_SW_01|sfp-sfpplus1~TPE_CORE_RT_01|sfp-sfpplus1');
   assert.ok(l && l.verified && l.cls === 'lag', JSON.stringify(l));
-  assert.strictEqual(s.model.links.length, 77, 'OSPF adjacencies no longer count as direct topology links');
+  assert.strictEqual(s.model.links.length, 78, 'OSPF adjacencies no longer count as direct topology links（78 含範例中 CSS610 的 MNDP 鏈路）');
   const ap = s.model.links.find((x) => x.key.includes('TPE_AP_01'));
   assert.ok(ap && ap.hearsay);
 });
@@ -595,6 +597,63 @@ test('VRRP 位址標示角色、網段帶出所屬 VLAN；R05 只在閘道不在
   assert.deepStrictEqual(s.model.prefixes.map((p) => [p.prefix, p.vlan]), [['10.1.30.0/24', 30]]);
   assert.strictEqual(iface(s, 'R|vrrp30').type, 'virtual');
   assert.deepStrictEqual(s.findings.filter((f) => f.id === 'R05').map((f) => f.message), ['R：10.1.20.0/24 的閘道 10.1.21.1 不在網段內']);
+});
+
+// ------------------------------------------------------------------ 推論鏈路（沒有 LLDP 時）
+// CSS610 等 SwOS 交換器不支援 LLDP、也無法用 SSH 收集，只送 MNDP；測試資料依 RouterOS 鄰居表與 MAC 表格式撰寫
+const NB = (rows) => ['### /ip neighbor print detail without-paging', ...rows].join('\n');
+const BH = (rows) => ['### /interface bridge host print detail without-paging', 'Flags: D - dynamic, L - local', ...rows].join('\n');
+const inferred = (s) => s.model.inferredLinks.map((l) => [l.a, l.b, l.bases.join('+'), l.confidence]);
+test('推論鏈路：CSS610（只送 MNDP、未收集）接在 RouterOS 交換器下 → MNDP 唯一＋MAC 表，信心高', () => {
+  const s = build(['SW_A (10.0.0.1):',
+    NB([' 0 interface=ether5,bridge1 mac-address=CC:2D:E0:00:00:01 identity=CSS_1 platform=MikroTik board="CSS610-8P-2S+" discovered-by=mndp']),
+    BH([' 0 DL mac-address=D4:01:C3:00:00:0A on-interface=bridge1 bridge=bridge1', ' 1 D mac-address=CC:2D:E0:00:00:01 on-interface=ether5 bridge=bridge1',
+      ' 2 D mac-address=24:6E:96:00:00:01 on-interface=ether5 bridge=bridge1', ' 3 D mac-address=24:6E:96:00:00:02 on-interface=ether5 bridge=bridge1'])].join('\n'));
+  assert.deepStrictEqual(s.model.devices.find((d) => d.key === 'SW_A').ownMacs, ['D401C300000A'], 'MAC 表的 L 項目保留為設備自己的 MAC');
+  assert.deepStrictEqual(inferred(s), [['CSS_1|?(sw_a:ether5)', 'SW_A|ether5', 'fdb+mndp-unique', 'high']]);
+  assert.strictEqual(s.model.links.length, 1, '推論鏈路不寫進 links');
+});
+test('推論鏈路：CSS610 夾在兩台 RouterOS 之間 → 各自推論到 CSS610，不誤判兩台直連', () => {
+  const s = build(['SW_A (10.0.0.1):',
+    NB([' 0 interface=ether5 mac-address=CC:2D:E0:00:00:01 identity=CSS_1 board="CSS610-8P-2S+" discovered-by=mndp', ' 1 interface=ether5 mac-address=D4:01:C3:00:00:0B identity=SW_B discovered-by=mndp interface-name=ether1']),
+    BH([' 0 DL mac-address=D4:01:C3:00:00:0A on-interface=bridge1', ' 1 D mac-address=CC:2D:E0:00:00:01 on-interface=ether5', ' 2 D mac-address=D4:01:C3:00:00:0B on-interface=ether5']),
+    'SW_B (10.0.0.2):',
+    NB([' 0 interface=ether1 mac-address=CC:2D:E0:00:00:01 identity=CSS_1 board="CSS610-8P-2S+" discovered-by=mndp', ' 1 interface=ether1 mac-address=D4:01:C3:00:00:0A identity=SW_A discovered-by=mndp interface-name=ether5']),
+    BH([' 0 DL mac-address=D4:01:C3:00:00:0B on-interface=bridge1', ' 1 D mac-address=CC:2D:E0:00:00:01 on-interface=ether1', ' 2 D mac-address=D4:01:C3:00:00:0A on-interface=ether1'])].join('\n'));
+  assert.deepStrictEqual(inferred(s), [['CSS_1|?(sw_a:ether5)', 'SW_A|ether5', 'fdb', 'medium'], ['CSS_1|?(sw_b:ether1)', 'SW_B|ether1', 'fdb', 'medium']]);
+});
+test('推論鏈路：CSS106 在中間、下面接兩台 RouterOS 交換器與一台沒有 bridge 的路由器（同一個 /24）', () => {
+  // MNDP 會被 CSS106 轉送，所以每台都看到全部鄰居（MNDP 唯一不成立），只能靠 MAC 表
+  const mn = (ifc, rows) => NB(rows.map(([id, m], k) => ` ${k} interface=${ifc} mac-address=${m} identity=${id} discovered-by=mndp`));
+  const CSS = ['CSS_9', 'CC:2D:E0:00:00:09']; const A = ['SW_A', 'D4:01:C3:00:00:0A']; const B = ['SW_B', 'D4:01:C3:00:00:0B']; const R = ['R_C', 'D4:01:C3:00:00:0C'];
+  const s = build(['SW_A (10.0.0.1):', mn('ether5', [CSS, B, R]), '### /export terse', '/interface bridge add name=bridge1',
+    BH([' 0 DL mac-address=D4:01:C3:00:00:0A on-interface=bridge1', ' 1 D mac-address=CC:2D:E0:00:00:09 on-interface=ether5', ' 2 D mac-address=D4:01:C3:00:00:0B on-interface=ether5', ' 3 D mac-address=D4:01:C3:00:00:0C on-interface=ether5']),
+    'SW_B (10.0.0.2):', mn('ether1', [CSS, A, R]), '### /export terse', '/interface bridge add name=bridge1',
+    BH([' 0 DL mac-address=D4:01:C3:00:00:0B on-interface=bridge1', ' 1 D mac-address=CC:2D:E0:00:00:09 on-interface=ether1', ' 2 D mac-address=D4:01:C3:00:00:0A on-interface=ether1', ' 3 D mac-address=D4:01:C3:00:00:0C on-interface=ether1']),
+    'R_C (10.0.0.3):', mn('ether2', [CSS, A, B]), '### /interface print detail without-paging', ' 0 R name="ether2" type="ether" mac-address=D4:01:C3:00:00:0C mtu=1500',
+    '### /export terse', '/ip address add address=10.0.0.3/24 interface=ether2'].join('\n'));
+  assert.deepStrictEqual(inferred(s), [
+    ['CSS_9|?(r_c:ether2)', 'R_C|ether2', 'fdb', 'medium'], ['CSS_9|?(sw_a:ether5)', 'SW_A|ether5', 'fdb', 'medium'], ['CSS_9|?(sw_b:ether1)', 'SW_B|ether1', 'fdb', 'medium'],
+  ], '每台都推論接到 CSS_9，兩台交換器之間、交換器與路由器之間都不誤判直連');
+});
+test('推論鏈路：/30 點對點網段、MNDP 雙向；兩台設備已有 LLDP 鏈路或埠已有 LLDP 鄰接時不推論', () => {
+  const p2p = build('R1 (10.0.0.1):\n### /export terse\n/ip address add address=10.9.9.1/30 interface=ether1\nR2 (10.0.0.2):\n### /export terse\n/ip address add address=10.9.9.2/30 interface=ether2\n');
+  assert.deepStrictEqual(inferred(p2p), [['R1|ether1', 'R2|ether2', 'subnet-p2p', 'medium']]);
+  const mutual = build(['SW_A (10.0.0.1):', NB([' 0 interface=ether3 mac-address=D4:01:C3:00:00:0B identity=SW_B discovered-by=mndp interface-name=ether4']),
+    'SW_B (10.0.0.2):', NB([' 0 interface=ether4 mac-address=D4:01:C3:00:00:0A identity=SW_A discovered-by=mndp interface-name=ether3'])].join('\n'));
+  assert.deepStrictEqual(inferred(mutual), [], 'MNDP 只證明 L2 可達，只有 MNDP 證據時不成立推論鏈路');
+  const corroborated = build(['SW_A (10.0.0.1):', '### /export terse', '/ip address add address=10.9.9.1/31 interface=ether3',
+    NB([' 0 interface=ether3 mac-address=D4:01:C3:00:00:0B identity=SW_B discovered-by=mndp interface-name=ether4']),
+    'SW_B (10.0.0.2):', '### /export terse', '/ip address add address=10.9.9.0/31 interface=ether4',
+    NB([' 0 interface=ether4 mac-address=D4:01:C3:00:00:0A identity=SW_A discovered-by=mndp interface-name=ether3'])].join('\n'));
+  assert.deepStrictEqual(inferred(corroborated), [['SW_A|ether3', 'SW_B|ether4', 'mndp-mutual+subnet-p2p', 'high']], 'MNDP 雙向可佐證其他證據，提高信心');
+  const lldp = build(['R1 (10.0.0.1):', '### /export terse', '/ip address add address=10.9.9.1/30 interface=ether1',
+    NB([' 0 interface=ether1 mac-address=D4:01:C3:00:00:0B identity=R2 discovered-by=lldp interface-name=ether2']),
+    BH([' 0 D mac-address=CC:2D:E0:00:00:01 on-interface=ether1']),
+    'R2 (10.0.0.2):', '### /export terse', '/ip address add address=10.9.9.2/30 interface=ether2',
+    NB([' 0 interface=ether2 mac-address=D4:01:C3:00:00:0A identity=R1 discovered-by=lldp interface-name=ether1', ' 1 interface=ether3 mac-address=CC:2D:E0:00:00:01 identity=CSS_1 discovered-by=mndp'])].join('\n'));
+  assert.deepStrictEqual(inferred(lldp).filter((l) => l[0].startsWith('R')), [], '已有 LLDP 鏈路的設備對不推論');
+  assert.ok(!inferred(lldp).some((l) => l[1] === 'R1|ether1'), 'R1 ether1 已有 LLDP 鄰接到已收集設備，後面的 CSS_1 不推論為直接相連');
 });
 
 // ------------------------------------------------------------------ OUI 廠商

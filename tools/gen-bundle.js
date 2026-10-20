@@ -44,7 +44,8 @@ const neighborText = (rows) => table(rows.map((r) => ({ flags: '', kvs: r })), '
 function nrow(local, p, dupViaBridge) {
   const base = (iface) => [['interface', iface], p.ip ? ['address', p.ip] : null, p.ip && p.platform === 'MikroTik' ? ['address4', p.ip] : null, ['mac-address', p.mac], ['identity', p.name],
     ['platform', p.platform || 'MikroTik'], ['version', p.version || '7.12.1 (stable)'], ['unpack', 'none'], ['age', '3m25s'], ['uptime', '2w1d4h'],
-    p.board ? ['board', p.board] : null, ['ipv6', 'no'], p.port ? ['interface-name', p.port] : null, p.caps ? ['system-caps', p.caps] : null, p.caps ? ['system-caps-enabled', p.caps] : null].filter(Boolean);
+    p.board ? ['board', p.board] : null, ['ipv6', 'no'], p.port ? ['interface-name', p.port] : null, p.caps ? ['system-caps', p.caps] : null, p.caps ? ['system-caps-enabled', p.caps] : null,
+    p.proto ? ['discovered-by', p.proto] : null].filter(Boolean);
   return dupViaBridge ? [base(local), base('bridge1')] : [base(local)];
 }
 
@@ -119,6 +120,12 @@ for (let s = 1; s <= SITES; s++) {
       srvPorts.push(port); sw.macs.push({ vid: 20, mac: m, ifc: port }); siteMacs.push({ vlan: 20, mac: m, ip });
     }
     if (F && (a === 6 || a === 7)) sw.neighbors.push(...nrow('ether22', { name: `${C}-SRV-SHARED`, mac: 'AA:BB:CC:00:00:40', platform: 'Linux', port: 'eth0', caps: 'station-only' })); // K02
+    if (F && a === 6) {                                                                                                // CSS610（SwOS Lite）：不支援 LLDP、無法用 SSH 收集，只送 MNDP；由 MAC 表＋MNDP 推論鏈路
+      const css = { name: `${C}_CSS_01`, ip: `10.${s}.10.210`, mac: mac(OUI_MT[0]), platform: 'MikroTik', version: '2.17', board: 'CSS610-8P-2S+', caps: 'bridge', proto: 'mndp' };
+      sw.neighbors.push(...nrow('ether21', css));
+      sw.macs.push({ vid: 30, mac: css.mac, ifc: 'ether21' });
+      for (let k = 0; k < 3; k++) sw.macs.push({ vid: 30, mac: mac(pick(OUI_PC)), ifc: 'ether21' });
+    }
     if (F && a === 5) sw.neighbors.push(...nrow('ether17', { name: `${C}_AP_01`, ip: `10.${s}.10.200`, mac: mac(OUI_MT[0]), platform: 'MikroTik', version: '7.12.1 (stable)', board: 'cAP ac', port: 'ether1', caps: 'bridge,wlan-ap' })); // C01
     for (let k = 1; k <= USERS; k++) {
       const port = `ether${8 + k}`; const m = mac(pick(OUI_PC)); const ip = `10.${s}.30.${(a - 1) * USERS + k + 10}`;

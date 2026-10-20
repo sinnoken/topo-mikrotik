@@ -126,6 +126,15 @@ _____
 - 若兩者不同，系統會用**管理 IP**對回同一台（標頭的 IP 要等於該設備在鄰居列中的 `address`）；都對不上就會被當成兩台不同的設備。
 - 鄰居的 identity 若帶網域，可在命名規則加上 `"stripDomain": true`；其他對不上的用 `alias`。
 
+## 3.1 沒有 LLDP 的設備（SwOS 交換器等）
+
+CSS106、CSS610 等 SwOS／SwOS Lite 交換器**不支援 LLDP，也沒有 SSH／CLI**，收集器無法收集它們。它們在基準裡會是「僅由鄰居發現」的設備，和相鄰 RouterOS 的鏈路由「推論鏈路」推定（規則見[設計說明 §5.3](design-ssot.md#53-關鍵推論)）。要讓推論成立：
+
+1. **在 SwOS 開啟 MNDP**：System 頁的「Mikrotik Discovery Protocol」。相鄰的 RouterOS 才會在鄰居表看到它，並知道它的 MAC。
+2. **每台 SwOS 交換器設定不重複的 identity**：用型號當名稱（例如都叫 CSS610-8P-2S+）會分不出是哪一台。
+3. **相鄰的 RouterOS 要收 MAC 表**（`/interface bridge host`，本來就是交換器的必要資料）和介面狀態（`/interface print`，提供介面 MAC）。MAC 表要有足夠流量才完整，建議在業務時段收集。
+4. 同一個 /24 管理網段**無法**證明誰接誰；介面描述只寫型號也無法分辨。要用描述輔助時，請寫成能唯一識別的格式，例如 `to:CSS-3F-01 port1`。
+
 ## 4. RouterOS 特有的行為與限制
 
 | 項目 | 說明 |

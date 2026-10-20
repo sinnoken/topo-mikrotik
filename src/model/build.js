@@ -22,7 +22,7 @@
   function device(M, key, name) {
     const d = getOr(M.devices, key, () => ({
       key, names: new Set(), mgmtIp: null, vendors: new Set(), collected: false, data: new Set(),
-      hostname: null, routerId: null, collectedAt: null, seenBy: new Set(), src: [], deviceType: null, softwareVersion: null, platform: null, caps: null,
+      hostname: null, routerId: null, collectedAt: null, ownMacs: new Set(), seenBy: new Set(), src: [], deviceType: null, softwareVersion: null, platform: null, caps: null,
     }));
     if (name) d.names.add(name);
     return d;
@@ -68,6 +68,7 @@
       switch (f.t) {
         case 'hostname': d.hostname = f.name; d.names.add(f.name); break;
         case 'rid': d.routerId = f.id; break;
+        case 'ownMac': { const mk = K.mac(f.mac); if (mk) d.ownMacs.add(mk); break; }
         case 'collectedAt': if (!d.collectedAt || f.at > d.collectedAt) d.collectedAt = f.at; break; // 多份 export 取最新
         case 'dhcpNet': M.dhcpNets.push({ dev: f.dev, network: f.network, gateways: f.gateways, block: f.block, line: f.line }); break;
         case 'ifc': onIfc(M, f); break;
@@ -96,6 +97,8 @@
           const m = getOr(M.macs, mk, () => ({ mac: mk, seen: new Map(), ips: new Set(), src: [] }));
           const vlans = getOr(m.seen, i.key, () => new Set());
           vlans.add(f.vlan || null); addSrc(m, f);
+          if (!m.seenSrc) m.seenSrc = new Map();
+          if (!m.seenSrc.has(i.key)) m.seenSrc.set(i.key, [f.block, f.line]);
           if (f.static) (m.staticOn || (m.staticOn = new Set())).add(i.key);
           break;
         }

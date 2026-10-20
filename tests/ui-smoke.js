@@ -158,6 +158,17 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     });
     App.select(null);
   });
+  await step('推論鏈路：沒有 LLDP 的 CSS610 以推論樣式畫出，提示與詳情說明依據', () => {
+    const il = App.Q.inferredLinks(); if (!il.length) throw new Error('範例資料應有推論鏈路');
+    const p = Array.from(App.pairs.values()).find((x) => x.inferredOnly);
+    if (!p) throw new Error('推論鏈路應以推論樣式畫在圖上');
+    if (!Array.from(document.querySelectorAll('#legend .li')).some((li) => li.textContent === '推論鏈路')) throw new Error('圖例應有推論鏈路');
+    App.graph.emit('hover', { item: { type: 'edge', id: p.id }, x: 0, y: 0 });
+    if (!text('#tooltip').includes('推論鏈路')) throw new Error('提示應說明是推論鏈路');
+    App.graph.emit('click', { type: 'edge', id: p.id });
+    if (!text('#detail').includes('MAC 表') || !text('#detail').includes('信心高')) throw new Error('詳情應列出推論依據與信心');
+    App.select(null);
+  });
   await step('基準摘要與行動入口', () => {
     const summary = text('#baseline-summary');
     if (!summary.includes('基準檢查') || !summary.includes('收集完整度')) throw new Error('缺少基準狀態與收集完整度摘要');

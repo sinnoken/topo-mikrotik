@@ -273,7 +273,8 @@
     parse(b, emit) {
       parseRows(b).forEach((r) => {
         const kv = r.kv;
-        if (!kv['mac-address'] || !kv['on-interface'] || r.flags.includes('L')) return; // L：bridge 自己的 MAC
+        if (!kv['mac-address'] || !kv['on-interface']) return;
+        if (r.flags.includes('L')) { emit({ t: 'ownMac', mac: kv['mac-address'], ifc: kv['on-interface'], line: r.line }); return; } // L：設備自己的 MAC，不是學到的位置
         // 沒有 D（dynamic）旗標的是手動設定的靜態項目
         emit({ t: 'mac', vlan: kv.vid && kv.vid !== '0' ? kv.vid : null, mac: kv['mac-address'], ifc: kv['on-interface'], static: !r.flags.includes('D'), line: r.line });
       });

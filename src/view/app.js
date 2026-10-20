@@ -110,7 +110,7 @@
       const da = K.splitEp(l.a)[0]; const db = K.splitEp(l.b)[0];
       if (da === db) return;
       const [a, b] = da < db ? [da, db] : [db, da]; const id = a + '~' + b;
-      const p = S.util.getOr(pairs, id, () => ({ id, a, b, links: [], cls: 'l3', count: 0, hearsay: true, sev: null, domainOnly: true, hasDomain: false }));
+      const p = S.util.getOr(pairs, id, () => ({ id, a, b, links: [], inferred: [], cls: 'l3', count: 0, hearsay: true, sev: null, domainOnly: true, hasDomain: false }));
       p.links.push(l.key); App.pairOfLink.set(l.key, id);
       if (CLS_RANK.indexOf(l.cls) < CLS_RANK.indexOf(p.cls)) p.cls = l.cls;
       if (l.layer === 'l2') p.count++;
@@ -119,10 +119,19 @@
       else p.domainOnly = false;
       const s = linkSev.get(l.key); if (s && (!p.sev || sevRank[s] > sevRank[p.sev])) p.sev = s;
     });
+    // 推論鏈路：設備對之間沒有線就新增；只有 MNDP 時改以推論樣式顯示（證據較強）。已有 LLDP／CDP 的設備對不會有推論鏈路
+    Q.inferredLinks().forEach((l) => {
+      const da = K.splitEp(l.a)[0]; const db = K.splitEp(l.b)[0]; const [a, b] = da < db ? [da, db] : [db, da]; const id = a + '~' + b;
+      const p = S.util.getOr(pairs, id, () => ({ id, a, b, links: [], inferred: [], cls: 'other', count: 0, hearsay: false, sev: null, domainOnly: false, hasDomain: false }));
+      p.inferred.push(l.key); p.inferredOnly = p.domainOnly || !p.links.length; p.domainOnly = false; p.hearsay = false;
+    });
+    const inferredPort = (dev, keys) => S.util.uniq(keys.map((k) => Q.inferredLinks().find((l) => l.key === k)).flatMap((l) => [l.a, l.b])
+      .filter((ep) => K.splitEp(ep)[0] === dev).map((ep) => (K.splitEp(ep)[1].startsWith('?(') ? '?' : (Q.getInterface(ep) || { name: K.splitEp(ep)[1] }).name)));
     pairs.forEach((p) => {
       const ls = p.links.map((k) => Q.getLink(k));
       const interfaceLinks = ls.filter((l) => l.evidenceScope !== LINK_SCOPE.BROADCAST_DOMAIN);
       const side = (dev) => {
+        if (p.inferredOnly) { const ports = inferredPort(dev, p.inferred); return (ports.length === 1 ? ports[0] : `${ports.length} 埠`) + '（推論）'; }
         if (!interfaceLinks.length) return 'MNDP';
         const eps = interfaceLinks.map((l) => (K.splitEp(l.a)[0] === dev ? l.a : l.b)).map((ep) => Q.getInterface(ep));
         const parents = S.util.uniq(eps.map((i) => (i ? (i.lag ? Q.getInterface(i.lag).name : i.name) : '?')));
@@ -290,7 +299,7 @@
     if (it.type === 'node') return App.select(String(it.id).startsWith('?') ? selOfVirtual(it.id) : { type: 'device', key: it.id });
     const p = App.pairs.get(it.id); if (!p) return;
     if (p.virtual) return App.select(selOfVirtual(p.b));
-    if (p.links.length === 1) App.select({ type: 'link', key: p.links[0] });
+    if (p.links.length === 1 && !p.inferred.length) App.select({ type: 'link', key: p.links[0] });
     else App.select({ type: 'pair', id: p.id, links: p.links, devs: [p.a, p.b] });
   }
   function onGraphDblClick(it) {
@@ -309,6 +318,7 @@
     } else {
       const p = App.pairs.get(ev.item.id);
       if (p.virtual) text = App.graph.nodeById.get(p.b).tip;
+      else if (p.inferredOnly) text = `${App.Q.devName(p.a)} ${p.labelA} ⇄ ${App.Q.devName(p.b)} ${p.labelB}・推論鏈路：沒有 LLDP，依 ${S.util.uniq(App.Q.inferredLinksBetween(p.a, p.b).flatMap((l) => l.bases)).map((x) => V.INFER_BASIS[x]).join('、')} 推定相鄰`;
       else if (p.domainOnly) text = `${App.Q.devName(p.a)} ⇄ ${App.Q.devName(p.b)}・MNDP 觀察到同一 L2 broadcast domain 可達；不代表兩台設備直連`;
       else text = `${App.Q.devName(p.a)} ${p.labelA} ⇄ ${App.Q.devName(p.b)} ${p.labelB}${p.hasDomain ? '・另有 MNDP L2 廣播網域可達證據' : ''}`;
     }
@@ -454,6 +464,7 @@
       k === '1g' ? '推論分類：ether、sfp1、combo 等介面名稱歸為 1G；不代表實際協商速率，ether 也可能是 2.5G 或 10G。' : null));
     group('連線註記');
     item([line(WEAK.hearsay.c, V.EDGE_STYLE.other.w, WEAK.hearsay.dash, WEAK.hearsay.alpha)], '單側觀察', '紫色點線：對端沒有提供 LLDP 鄰居資料，屬單向觀察');
+    item([line(WEAK.inferred.c, V.EDGE_STYLE.other.w, WEAK.inferred.dash, WEAK.inferred.alpha)], '推論鏈路', '綠色長虛線：沒有 LLDP 的設備（例如只支援 MNDP 的 SwOS 交換器），依 MAC 表、MNDP、點對點網段推定相鄰；是直接相連或中間只有未管理設備');
     item([line(WEAK.domainOnly.c, V.EDGE_STYLE.other.w, WEAK.domainOnly.dash, WEAK.domainOnly.alpha)], 'MNDP', '灰色點劃線：MNDP 表示同一 L2 廣播網域可達，不代表兩台設備直連');
     Object.values(EP.byType).forEach((t) => item([line(t.c, V.EDGE_STYLE.other.w, WEAK.hearsay.dash, WEAK.hearsay.alpha)], t.label, '連到 ' + t.label + ' 介面終端的連線'));
   }

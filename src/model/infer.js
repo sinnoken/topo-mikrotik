@@ -5,6 +5,7 @@
  *   - 鏈路兩端 VLAN（含聚合成員繼承）
  *   - 分群（profile 有 group 用 profile，否則依拓樸鏈路連通元件）
  *   - 套用 profile 註解
+ *   - 推論鏈路（inferLinks：沒有 LLDP／CDP 時的替代證據）
  *   - Wi-Fi 客戶端位置（wifiLocations，須在 check.run 之後呼叫）
  */
 (function (S) {
@@ -18,6 +19,7 @@
     inferKinds(M);
     linkClasses(M);
     linkVlans(M);
+    inferLinks(M);
     if (profile) applyProfile(M, profile);
     groups(M);
   }
@@ -137,6 +139,129 @@
     M.devices.forEach((d) => S.util.getOr(comps, find(d.key), () => []).push(d));
     const sorted = Array.from(comps.values()).sort((x, y) => y.length - x.length || S.util.natural(x[0].key, y[0].key));
     sorted.forEach((members, idx) => members.forEach((d) => { d.component = idx + 1; if (!d.group) d.group = '自動群組 ' + (idx + 1); }));
+  }
+
+  /**
+   * 推論鏈路（推論，不寫進 links，不影響任何檢查）：沒有 LLDP／CDP 的設備（例如只支援 MNDP 的 SwOS 交換器）用其他證據推定相鄰。
+   *   subnet-p2p ：兩台已收集設備的介面位址在同一個 /30 或 /31，且該網段只有這兩台
+   *   mndp-mutual：兩台已收集設備的 MNDP 互相回報對方的埠，且兩個埠都只看到對方
+   *   mndp-unique：已收集設備的某埠只看到一台 MNDP 鄰居 X（X 未收集），X 也只出現在這個埠
+   *   fdb        ：MAC 表。A 的 p 埠學到 X 的 MAC，且 p 這側其他已知設備都可由已收集交換器的 MAC 表證明在 X 後面或兩者之間
+   * MNDP 會穿過未管理交換器，只證明 L2 可達，所以 MNDP 只當佐證：至少要有一項非 MNDP 的證據（fdb、subnet-p2p）才成立推論；
+   * MNDP 同時成立時提高信心。推論的意義都是「直接相連，或中間只有未管理設備」。
+   * 已有 LLDP／CDP 鏈路的設備對不推論；埠（含所屬聚合）已有 LLDP／CDP 鄰接到已收集設備時，不推論該埠後面的設備直接相連。
+   */
+  function inferLinks(M) {
+    const devOf = (ep) => K.splitEp(ep)[0];
+    const collected = (k) => { const d = M.devices.get(k); return !!(d && d.collected); };
+    const pairKey = (x, y) => (x < y ? x + '~' + y : y + '~' + x);
+    const adjByEp = new Map(); const lldpPairs = new Set();
+    M.links.forEach((l) => {
+      if (l.layer !== 'l2' || l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN) return;
+      S.util.getOr(adjByEp, l.a, () => []).push(devOf(l.b)); S.util.getOr(adjByEp, l.b, () => []).push(devOf(l.a));
+      lldpPairs.add(pairKey(devOf(l.a), devOf(l.b)));
+    });
+    const group = (ep) => { const i = M.ifcs.get(ep); if (!i) return [ep]; const p = i.lag && M.ifcs.get(i.lag); return [ep, ...i.lagMembers, ...(p ? [p.key, ...p.lagMembers] : [])]; };
+    const lldpToCollected = (ep) => group(ep).some((e) => (adjByEp.get(e) || []).some(collected));
+    const ifcName = (ep) => { const i = M.ifcs.get(ep); return i ? i.name : K.splitEp(ep)[1]; };
+    const mndpOnly = (c) => c.protocols.length > 0 && c.protocols.every((p) => p === 'mndp');
+    // 對端沒有收集資料時，對端埠用它在 MNDP 回報的埠名；沒有就標為不明
+    const peerEp = (a, x) => {
+      const c = M.claims.find((k) => k.dev === devOf(a) && k.peer === x && group(a).includes(K.ep(k.dev, k.ifc)) && k.peerIfc && k.peerIfc !== '?');
+      return K.ep(x, c ? c.peerIfc : `?(${devOf(a)}:${ifcName(a)})`);
+    };
+    const out = new Map();
+    const add = (a, b, basis, text, src) => {
+      if (devOf(a) === devOf(b) || lldpPairs.has(pairKey(devOf(a), devOf(b)))) return;
+      const key = K.link(a, b);
+      const r = S.util.getOr(out, key, () => ({ key, a: a < b ? a : b, b: a < b ? b : a, bases: new Set(), evidence: [] }));
+      if (r.bases.has(basis)) return;
+      r.bases.add(basis); r.evidence.push({ basis, text, src: src.filter(Boolean).slice(0, 4) });
+    };
+
+    // subnet-p2p
+    const byNet = new Map();
+    M.ifcs.forEach((i) => {
+      if (i.hearsay || !collected(i.dev)) return;
+      i.ips.forEach((src, cidr) => { const p = S.ip.parseCidr(cidr); if (p && (p.len === 30 || p.len === 31)) S.util.getOr(byNet, `${p.net}/${p.len}`, () => []).push({ ep: i.key, dev: i.dev, ip: p.ip, src }); });
+    });
+    byNet.forEach((xs, net) => {
+      if (xs.length !== 2 || xs[0].dev === xs[1].dev) return;
+      add(xs[0].ep, xs[1].ep, 'subnet-p2p', `${xs[0].ip} 與 ${xs[1].ip} 在同一個點對點網段 ${net}`, [xs[0].src, xs[1].src]);
+    });
+
+    // mndp-mutual／mndp-unique
+    const mndpByPort = new Map();
+    M.claims.filter(mndpOnly).forEach((c) => S.util.getOr(mndpByPort, K.ep(c.dev, c.ifc), () => []).push(c));
+    const peersOn = (ep) => S.util.uniq((mndpByPort.get(ep) || []).map((c) => c.peer));
+    const portsSeeing = (a, x) => S.util.uniq(M.claims.filter((c) => mndpOnly(c) && c.dev === a && c.peer === x).map((c) => K.ep(c.dev, c.ifc)));
+    mndpByPort.forEach((cs, ep) => {
+      const a = devOf(ep); const peers = peersOn(ep);
+      if (!collected(a) || lldpToCollected(ep) || peers.length !== 1 || portsSeeing(a, peers[0]).length !== 1) return;
+      const x = peers[0]; const c = cs[0];
+      if (collected(x)) {
+        if (!c.peerIfc || c.peerIfc === '?') return;
+        const q = K.ep(x, c.peerIfc); const back = mndpByPort.get(q) || [];
+        if (peersOn(q).length !== 1 || peersOn(q)[0] !== a || !back.some((b) => b.peerIfc && K.ifc(b.peerIfc) === K.splitEp(ep)[1])) return;
+        add(ep, q, 'mndp-mutual', `${a} ${ifcName(ep)} 與 ${x} ${ifcName(q)} 的 MNDP 互相回報對方的埠，兩個埠都只看到對方`, [[c.block, c.line], [back[0].block, back[0].line]]);
+      } else {
+        add(ep, peerEp(ep, x), 'mndp-unique', `${a} ${ifcName(ep)} 只看到 ${x} 一台 MNDP 鄰居，${x} 也只出現在這個埠（${x} 沒有收集資料）`, [[c.block, c.line]]);
+      }
+    });
+
+    // fdb：已知 MAC 的設備＝已收集設備自己的 MAC（MAC 表的 L 項目、介面 MAC）＋鄰居表回報的 MAC
+    const macOwner = new Map();
+    M.devices.forEach((d) => d.ownMacs.forEach((m) => macOwner.set(m, d.key)));
+    M.ifcs.forEach((i) => { const m = i.hwMac && K.mac(i.hwMac); if (m && collected(i.dev)) macOwner.set(m, i.dev); });
+    M.claims.forEach((c) => { const m = c.chassis && K.mac(c.chassis); if (m && !macOwner.has(m)) macOwner.set(m, c.peer); });
+    const seenOn = new Map(); const seenSrc = new Map(); const portsOf = new Map();
+    M.macs.forEach((m) => {
+      const owner = macOwner.get(m.mac); if (!owner) return;
+      m.seen.forEach((_, ep) => {
+        if (devOf(ep) === owner) return;
+        S.util.getOr(seenOn, ep, () => new Set()).add(owner);
+        if (!seenSrc.has(ep + '>' + owner)) seenSrc.set(ep + '>' + owner, m.seenSrc && m.seenSrc.get(ep));
+        const ports = S.util.getOr(portsOf, devOf(ep) + '>' + owner, () => []); if (!ports.includes(ep)) ports.push(ep);
+      });
+    });
+    const hasFdb = (k) => { const d = M.devices.get(k); return !!(d && d.collected && d.data.has('mac')); };
+    // 會轉送二層的設備：有 MAC 表或有 bridge 介面；未收集的設備不知道，視為可能轉送
+    const bridgeDevs = new Set(); M.ifcs.forEach((i) => { if (i.type === 'bridge') bridgeDevs.add(i.dev); });
+    const bridging = (k) => !collected(k) || hasFdb(k) || bridgeDevs.has(k);
+    const behindSwitch = (v, a, side) => side.some((y) => y !== v && hasFdb(y) && (portsOf.get(y + '>' + a) || []).length
+      && (portsOf.get(y + '>' + v) || []).some((q) => !(portsOf.get(y + '>' + a) || []).includes(q)));
+    seenOn.forEach((set, ep) => {
+      const a = devOf(ep); if (lldpToCollected(ep)) return;
+      const side = Array.from(set);
+      const cands = side.filter((v) => {
+        if (behindSwitch(v, a, side)) return false;                                  // v 在已收集交換器 y 後面（y 在不朝向 a 的埠看到 v）
+        if (side.length > 1 && !bridging(v)) return false;                           // 不轉送二層的設備不可能夾在中間，其他設備的 MAC 不會經過它
+        if (hasFdb(v)) { const qs = portsOf.get(v + '>' + a) || []; return qs.length === 1 && !side.some((w) => w !== v && (seenOn.get(qs[0]) || new Set()).has(w)); } // 兩側看到同一台：中間還有設備
+        return true;
+      });
+      if (cands.length !== 1) return;
+      const x = cands[0];
+      if (collected(x) && !hasFdb(x)) return; // 已收集但沒有 MAC 表：只能單向，不推論
+      const b = hasFdb(x) ? portsOf.get(x + '>' + a)[0] : peerEp(ep, x);
+      add(ep, b, 'fdb', hasFdb(x)
+        ? `${a} ${ifcName(ep)} 學到 ${x} 的 MAC，${x} ${ifcName(b)} 學到 ${a} 的 MAC，兩側沒有共同的其他已知設備`
+        : `${a} ${ifcName(ep)} 學到 ${x} 的 MAC，同一埠的其他已知設備都可證明在 ${x} 後面或之間（${x} 沒有收集資料）`,
+      [seenSrc.get(ep + '>' + x), hasFdb(x) ? seenSrc.get(b + '>' + a) : null]);
+      if (collected(x)) return;
+      // x 是 a 經 p 直接相連的未收集交換器：同一埠學到、沒有 MAC 表的已收集設備（例如沒有 bridge 的路由器）推定接在 x 後面。
+      // p 這側若還有其他未收集的設備，無法確定接在哪一台，不推論。
+      if (side.some((w) => w !== x && !collected(w) && !behindSwitch(w, a, side))) return;
+      side.filter((z) => z !== x && collected(z) && !hasFdb(z) && !behindSwitch(z, a, side)).forEach((z) => {
+        const zp = portsSeeing(z, x);
+        const zEp = K.ep(z, zp.length === 1 ? K.splitEp(zp[0])[1] : `?(${x})`);
+        add(zEp, K.ep(x, `?(${z}:${ifcName(zEp)})`), 'fdb', `${a} ${ifcName(ep)} 已推定直接接到 ${x}，同一埠也學到 ${z} 的 MAC；${z} 沒有 MAC 表，推定接在 ${x} 後面${zp.length === 1 ? `（${z} 在 ${ifcName(zEp)} 以 MNDP 看到 ${x}）` : ''}`,
+          [seenSrc.get(ep + '>' + z)]);
+      });
+    });
+
+    const MNDP_ONLY = new Set(['mndp-mutual', 'mndp-unique']);
+    M.inferred = Array.from(out.values()).filter((r) => Array.from(r.bases).some((b) => !MNDP_ONLY.has(b)))
+      .map((r) => ({ ...r, bases: Array.from(r.bases).sort(), confidence: r.bases.size >= 2 ? 'high' : 'medium' }));
   }
 
   /**

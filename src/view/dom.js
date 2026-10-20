@@ -40,6 +40,8 @@
   V.STATUS = { up: '連線', down: '中斷', unknown: '不明' };
   V.IFC_TYPE = { physical: '實體埠', lag: '聚合介面', bridge: 'Bridge', vlan: 'VLAN 介面', wireless: 'Wi-Fi', virtual: '虛擬介面', loopback: 'Loopback', other: '其他介面' };
   V.IFC_TYPE_BASIS = { rawType: '依 RouterOS 類型', member: '依聚合成員', name: '依介面名稱推測', default: '缺類型資料，預設為實體埠', assoc: '依 Wi-Fi 關聯表' };
+  V.INFER_BASIS = { 'subnet-p2p': '/30／31 點對點網段', 'mndp-mutual': 'MNDP 雙向回報', 'mndp-unique': 'MNDP 唯一鄰居', fdb: 'MAC 表' };
+  V.CONFIDENCE = { high: '信心高（多重證據）', medium: '信心中（單一證據）' };
   V.WIFI_BASIS = { registration: '依關聯表（已確認）', 'bridge-wifi': '依 MAC 表的無線介面（推定）', 'via-ap-port': '經由 AP 所接的交換器埠（推定，無法區分有線或無線）' };
   V.MODE = { access: 'Access（untagged）', tagged: 'Tagged（trunk）' };
   V.ifcState = (i) => (i.enabled === false ? '停用' : V.STATUS[i.status]);

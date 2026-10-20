@@ -91,7 +91,7 @@
     const name = (d) => S.infer.displayName(d);
     const devices = Array.from(M.devices.values()).map((d) => ({
       key: d.key, name: name(d), names: Array.from(d.names), mgmtIp: d.mgmtIp, manufacturer: d.manufacturer, kind: d.kind, kindBasis: d.kindBasis,
-      collected: d.collected, collectedAt: d.collectedAt, data: Array.from(d.data).sort(), hostname: d.hostname, routerId: d.routerId,
+      collected: d.collected, collectedAt: d.collectedAt, ownMacs: Array.from(d.ownMacs).sort(), data: Array.from(d.data).sort(), hostname: d.hostname, routerId: d.routerId,
       group: d.group, component: d.component, role: d.role || null, site: d.site || null, label: d.label || null,
       deviceType: d.deviceType, softwareVersion: d.softwareVersion, platform: d.platform, caps: d.caps,
       seenBy: Array.from(d.seenBy).sort(), src: d.src, srcNone: d.src.length ? null : 'seen-only',
@@ -145,6 +145,8 @@
       dev: a.dev, ep: a.ep, mac: a.mac, ssid: a.ssid, band: a.band, vlan: a.vlan, uptime: a.uptime, lastActivity: a.lastActivity,
       signal: a.signal, ip: a.ip, hostname: a.hostname, src: [[a.block, a.line]],
     })).sort((a, b) => U.cmp(a.mac, b.mac) || nat(a.ep, b.ep));
+    const inferredLinks = (M.inferred || []).map((r) => ({ key: r.key, a: r.a, b: r.b, bases: r.bases, confidence: r.confidence, evidence: r.evidence }))
+      .sort((a, b) => nat(a.key, b.key));
     const dhcpNetworks = M.dhcpNets.map((n) => ({ dev: n.dev, network: n.network, gateways: n.gateways, src: [[n.block, n.line]] }))
       .sort((a, b) => nat(a.dev, b.dev) || nat(a.network, b.network));
     const arps = M.arps.map((a) => ({ ip: a.ip, mac: a.mac, dev: a.dev, ifc: a.ifc, src: [[a.block, a.line]] }))
@@ -176,12 +178,12 @@
         profile: c.profile ? { id: c.profile.id, version: c.profile.version } : null,
         stats: {
           devices: devices.length, collected: devices.filter((d) => d.collected).length, interfaces: interfaces.length,
-          links: links.length, ipAddresses: ipAddresses.length, prefixes: prefixes.length, wifiAssociations: wifiAssociations.length, ospfAdjacencies: ospfAdjacencies.length, vlans: vlans.length, macs: macs.length, arps: arps.length, routes: routes.length,
+          links: links.length, inferredLinks: inferredLinks.length, ipAddresses: ipAddresses.length, prefixes: prefixes.length, wifiAssociations: wifiAssociations.length, ospfAdjacencies: ospfAdjacencies.length, vlans: vlans.length, macs: macs.length, arps: arps.length, routes: routes.length,
           findings: sev,
         },
         timing: { ms: Date.now() - c.t0 },
       },
-      model: { devices, interfaces, links, ospfAdjacencies, vlans, ipAddresses, prefixes, macs, wifiAssociations, dhcpNetworks, arps, routes },
+      model: { devices, interfaces, links, inferredLinks, ospfAdjacencies, vlans, ipAddresses, prefixes, macs, wifiAssociations, dhcpNetworks, arps, routes },
       findings: c.findings,
       coverage: c.coverage,
       blocks,

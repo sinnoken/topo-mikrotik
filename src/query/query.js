@@ -37,6 +37,7 @@
     const vlansById = new Map(); const vlansByDev = new Map();
     m.vlans.forEach((v) => { if (v.id != null) U.getOr(vlansById, v.id, () => []).push(v); U.getOr(vlansByDev, v.dev, () => []).push(v); });
     const routesByDev = new Map(); m.routes.forEach((r) => U.getOr(routesByDev, r.dev, () => []).push(r));
+    const inferredByDev = new Map(); (m.inferredLinks || []).forEach((l) => [l.a, l.b].forEach((ep) => { const arr = U.getOr(inferredByDev, K.splitEp(ep)[0], () => []); if (!arr.includes(l)) arr.push(l); }));
     let inv = null;
     const unkByDev = new Map();
     m.interfaces.forEach((i) => { if (i.unknownPeer) U.getOr(unkByDev, i.dev, () => []).push(i); });
@@ -101,6 +102,10 @@
       peerOf(l, ep) { return l.a === ep ? l.b : l.a; },
       vlansOf: (d) => vlansByDev.get(d) || [],
       routesOf: (d) => routesByDev.get(d) || [],
+      /** 推論鏈路（沒有 LLDP／CDP 時的替代證據，見設計說明 §5.3）。 */
+      inferredLinks: () => m.inferredLinks || [],
+      inferredLinksOf: (d) => inferredByDev.get(d) || [],
+      inferredLinksBetween: (a, b) => (inferredByDev.get(a) || []).filter((l) => [l.a, l.b].some((ep) => K.splitEp(ep)[0] === b)),
       ipOwner: (ip) => ipOwner.get(ip) || null,
       /** 介面上的 IP 位址實體（含鄰居宣告）。 */
       ipsOf: (ep) => ipsByEp.get(ep) || [],

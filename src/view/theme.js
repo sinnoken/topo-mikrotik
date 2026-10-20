@@ -23,6 +23,8 @@
     weakEdge: {
       domainOnly: { c: '#9aa5b1', alpha: 0.7, dash: [8, 3, 2, 3] },
       hearsay: { c: '#7c3aed', alpha: 0.85, dash: [2, 3] },
+      // 推論鏈路：沒有 LLDP 時由 MAC 表、MNDP、點對點網段推定相鄰（證據強於純 MNDP，弱於 LLDP）
+      inferred: { c: '#4d7c0f', alpha: 0.9, dash: [10, 3] },
     },
     sev: { error: '#d93025', warn: '#f29900' },
     // 選取、追蹤與檢查結果的標示色

@@ -72,6 +72,8 @@ reader、adapter、model 與 check pipeline；收集器不解析或修改 Router
 | 介面狀態 | `/interface print detail without-paging` | running／停用／註解／原始 type／介面 MAC／MTU | 選用 | 選用 |
 | IP 位址 | `/ip address print detail without-paging` | 含動態位址（DHCP client 等）；靜態的 export 已有 | 選用 | 選用 |
 | OSPF 鄰居 | `/routing ospf neighbor print detail without-paging` | IP 層 L3 鄰接（不作為直連拓樸 edge） | 有跑 OSPF 時 | 有跑 OSPF 時 |
+| RSTP 埠狀態 | `/interface bridge port monitor [find] once` | 每個埠的 STP 角色與指定橋接器；推論沒有 LLDP 的交換器（例如 CSS106、CSS610）接在哪個埠 | 建議 | 有 bridge 時 |
+| RSTP bridge 狀態 | `/interface bridge monitor [find] once` | bridge 自己的 MAC、根橋接器 | 建議 | 有 bridge 時 |
 | Wi-Fi 關聯表（選用 `wifi`） | `/interface wifi registration-table print detail without-paging` | Wi-Fi 客戶端關聯在哪個無線介面（RouterOS 7 wifi 套件） | — | — |
 | Wi-Fi 關聯表（選用 `wireless`） | `/interface wireless registration-table print detail without-paging` | 同上（舊版 wireless 套件） | — | — |
 | CAPsMAN 關聯表（選用 `capsman`） | `/caps-man registration-table print detail without-paging` | 同上，在舊版 CAPsMAN 控制器上一次取得所有 CAP 的客戶端 | — | — |
@@ -132,7 +134,7 @@ CSS106、CSS610 等 SwOS／SwOS Lite 交換器**不支援 LLDP，也沒有 SSH�
 
 1. **在 SwOS 開啟 MNDP**：System 頁的「Mikrotik Discovery Protocol」。相鄰的 RouterOS 才會在鄰居表看到它，並知道它的 MAC。
 2. **每台 SwOS 交換器設定不重複的 identity**：用型號當名稱（例如都叫 CSS610-8P-2S+）會分不出是哪一台。
-3. **相鄰的 RouterOS 要收 MAC 表**（`/interface bridge host`，本來就是交換器的必要資料）和介面狀態（`/interface print`，提供介面 MAC）。MAC 表要有足夠流量才完整，建議在業務時段收集。
+3. **相鄰的 RouterOS 要收 MAC 表**（`/interface bridge host`，本來就是交換器的必要資料）、介面狀態（`/interface print`，提供介面 MAC），以及 RSTP 狀態（`/interface bridge port monitor`、`/interface bridge monitor`）。SwOS 交換器也要啟用 RSTP：它在上游時，RouterOS 埠的指定橋接器會直接指出它，而且不受 MAC 表老化影響。MAC 表要有足夠流量才完整，建議在業務時段收集。
 4. 終端接在 SwOS 交換器上時，只能由上一跳 RouterOS 的 MAC 表推定「在哪台 SwOS 交換器底下」，**埠不明**。兩台以上 SwOS 串接時，只能推定「在其中某一台或其下游」。
 5. 同一個 /24 管理網段**無法**證明誰接誰；介面描述只寫型號也無法分辨。要用描述輔助時，請寫成能唯一識別的格式，例如 `to:CSS-3F-01 port1`。
 

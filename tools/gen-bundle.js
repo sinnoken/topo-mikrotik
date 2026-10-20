@@ -228,6 +228,12 @@ for (let s = 1; s <= SITES; s++) {
   });
   acc.forEach((sw, i) => {
     const cmds = [[`/export terse`, exportText(sw.name, sw.board, sort(sw.entries), false)], [`/ip neighbor print ${D}`, neighborText(sw.neighbors)]];
+    // RSTP（依手冊欄位撰寫的欄式 monitor 輸出）：上行聚合是 root port、往 CORE_02 是 alternate；ACC_06 往 CSS610 的埠是 designated
+    const stpPorts = [[`bond${i + 1}`, 'root-port', core[0].mac, 1 + i], ['ether24', 'alternate-port', core[1].mac, 1 + i]].concat(F && i === 5 ? [['ether21', 'designated-port', sw.mac, 21]] : []);
+    const col = (vals) => vals.map((v) => String(v).padEnd(28)).join('').trimEnd();
+    cmds.push(['/interface bridge port monitor [find] once', [`              interface: ${col(stpPorts.map((p) => p[0]))}`, `                   role: ${col(stpPorts.map((p) => p[1]))}`,
+      `              edge-port: ${col(stpPorts.map(() => 'no'))}`, `   designated-bridge-id: ${col(stpPorts.map((p) => '0x8000.' + p[2]))}`, `     designated-port-id: ${col(stpPorts.map((p) => '0x80.' + p[3]))}`].join('\n')]);
+    cmds.push(['/interface bridge monitor [find] once', `                   name: bridge1\n    current-mac-address: ${sw.mac}\n         root-bridge-id: 0x8000.${core[0].mac}`]);
     if (!(F && i === 8)) cmds.push([`/interface bridge host print ${D}`, bridgeHostText([{ local: true, vid: 0, mac: sw.mac, ifc: 'bridge1' }, ...sw.macs])]);       // C02：ACC_09 沒有 MAC 表
     if (F && i === 9) cmds.push(['/system routerboard print', 'routerboard: yes\n        model: CRS326-24G-2S+\n serial-number: HF1234567890']);                  // I01
     if (F && i === 10) cmds.push([`/interface bridge host print ${D}`, bridgeHostText([{ local: true, vid: 0, mac: sw.mac, ifc: 'bridge1' }, ...sw.macs])]);      // I02

@@ -63,7 +63,7 @@
 - **指令標記**：`### 指令`、RouterOS 提示字元 `[user@id] > /指令`（須為絕對路徑）。有標記時依指令選 adapter，否則依內容判斷。
 - 所有 `print` 指令都要用 `detail without-paging`（key=value 格式）。詳見 `docs/collection.md`。
 
-### Adapter（11 個，`src/adapters/mikrotik.js`）
+### Adapter（13 個，`src/adapters/mikrotik.js`）
 
 | ID | 指令 | 事實 |
 |---|---|---|
@@ -77,6 +77,8 @@
 | mikrotik.route | /ip route print detail | 作用中路由、ECMP（`gateway=a,b`）、`distance`；黑洞／不可達／禁止路由保留為 `blackhole`（RouterOS 6 的 B／U／P 旗標、RouterOS 7 列中單獨的 `blackhole` 字）；RouterOS 6／7 旗標差異已處理 |
 | mikrotik.ospf | /routing ospf neighbor print detail | OSPF 鄰居（沒有 interface 時，用鄰居位址落在哪個本機網段決定） |
 | mikrotik.system | /system resource print | 型號、版本 |
+| mikrotik.stp | /interface bridge port monitor [find] once | 每個埠的 RSTP 角色、`designated-bridge-id`（指定橋接器的 MAC）、`designated-port-id`、`port-id`、edge；欄式輸出（每行 key: 值1 值2…），RouterOS 6／7 欄位名稱皆可 |
+| mikrotik.stpbridge | /interface bridge monitor [find] once | bridge 自己的 MAC（`current-mac-address`，加入 `ownMacs`）、根橋接器 |
 | mikrotik.wifireg | /interface wifi｜wireless registration-table、/caps-man registration-table print detail（選用） | Wi-Fi 關聯：客戶端 MAC、無線介面、SSID、頻段、VLAN、uptime、last-activity、訊號、DHCP 位址與主機名；略過 `eap-*` 帳號欄位與 `ap=yes` 的對端 AP；空表記為已收集、0 筆 |
 
 **detail 輸出的解析**：以「列」為單位。列首是 `序號 旗標 key=value…`（序號、旗標可省略）；直接以 key=value 開頭的行是終端機換行的續行，併入上一列；`;;; 註解` 屬於它所在或下一列。
@@ -100,8 +102,8 @@
 
 | 實體 | 主要欄位 |
 |---|---|
-| devices | key、name、names、mgmtIp、manufacturer、deviceType（型號）、softwareVersion、platform、caps、kind、kindBasis、collected、collectedAt（export 抬頭的設備時間）、ownMacs（MAC 表的 L 項目）、data、group、role、seenBy |
-| interfaces | key、dev、name、desc、enabled、status、type、typeBasis、rawType、lag、lagMembers、bridge、parent、encapVlan、mode、pvid、frameTypes、ingressFiltering、untaggedVlans、taggedVlans、unresolvedVlans、macs、hearsay、edge、unknownPeer |
+| devices | key、name、names、mgmtIp、manufacturer、deviceType（型號）、softwareVersion、platform、caps、kind、kindBasis、collected、collectedAt（export 抬頭的設備時間）、ownMacs（MAC 表的 L 項目、bridge 的 current-mac-address）、stp（root bridge）、data、group、role、seenBy |
+| interfaces | key、dev、name、desc、enabled、status、type、typeBasis、rawType、lag、lagMembers、bridge、parent、encapVlan、mode、pvid、frameTypes、ingressFiltering、stp（role、portNumber、designatedBridge、designatedPort、edge、sendingRstp）、untaggedVlans、taggedVlans、unresolvedVlans、macs、hearsay、edge、unknownPeer |
 | links | key、a、b、layer（L2）、via（lldp/mndp）、protocols、evidenceScope、observations、verified、hearsay、cls、vlansA／B／Common、vlanComparable、vlanMismatch |
 | inferredLinks | key、a、b、bases（依據）、confidence（`high`／`medium`）、evidence（每項依據的說明與來源行）；推論，見 §5.3 |
 | ospfAdjacencies | dev、localEp、peerDev、peerEp、peerIp、peerId、reciprocal、src |
@@ -170,8 +172,9 @@
       - X 有 MAC 表時，X 朝向 A 的埠不能和 A 這側看到同一台設備，否則兩者之間還有設備。
 
       X 是未收集的交換器時，同一埠學到、沒有 MAC 表的已收集設備（例如沒有 bridge 的路由器）推定接在 X 後面；p 這側還有其他未收集設備時不推論。已知 MAC 包括已收集設備的 `ownMacs`、介面 MAC，以及鄰居表回報的 MAC。
+    - `stp`：埠的 RSTP 角色是 root／alternate／backup 時，`designated-bridge-id` 是這段網路上的上游橋接器。那個 MAC 屬於已知設備（例如以 MNDP 發現的 CSS106）時，推論這個埠接到它。對方也有 RSTP 資料時，用 `designated-port-id` 對回確切的埠。BPDU 會穿過不跑 STP 的未管理交換器，所以意義同樣是「直接相連，或中間只有未管理設備」。
     - `subnet-p2p`：兩台已收集設備的介面位址在同一個 /30 或 /31。/24 這類共用網段只證明在同一廣播網域，不採用。
-    - `mndp-mutual`／`mndp-unique`：MNDP 雙向回報對方的埠，或某埠只看到一台 MNDP 鄰居。MNDP 會穿過未管理交換器，所以**只當佐證**：至少要有一項 `fdb` 或 `subnet-p2p` 才成立，MNDP 同時成立時信心為 `high`。
+    - `mndp-mutual`／`mndp-unique`：MNDP 雙向回報對方的埠，或某埠只看到一台 MNDP 鄰居。MNDP 會穿過未管理交換器，所以**只當佐證**：至少要有一項 `fdb`、`stp` 或 `subnet-p2p` 才成立，MNDP 同時成立時信心為 `high`。
   - **意義**：推論的是「直接相連，或中間只有未管理設備」。
   - **不推論的情況**：已有 LLDP／CDP 鏈路的設備對；埠（含所屬聚合）已有 LLDP／CDP 鄰接到已收集設備時，該埠後面的設備。
   - **對端埠**：未收集設備的埠用它在 MNDP 回報的埠名，沒有就標為不明。
@@ -229,7 +232,7 @@
 |---|---|---|---|
 | 背景執行 | Web Worker | 主執行緒分段＋進度 | `file://` 不允許 Worker；實測 1000 台約 3 秒可接受 |
 | 圖形函式庫 | vis-network | 自寫 Canvas＋vendor 的 ELK.js（只負責分層版面） | 繪圖不依賴外部函式庫、可離線，1000 台以上效能可控；版面品質交給 ELK 的分層演算法，檔案放在 `vendor/`，不需執行期網路 |
-| Adapter | 7 個 | 11 個（RouterOS；多廠牌版 12 個，見第 13 節） | 補上路由、ARP、介面狀態、IP 位址，路由追蹤與 OSPF 對應才有資料 |
+| Adapter | 7 個 | 13 個（RouterOS；多廠牌版 12 個，見第 13 節） | 補上路由、ARP、介面狀態、IP 位址，路由追蹤與 OSPF 對應才有資料 |
 | 檢查 | 13 項 | 14 項（多廠牌版 16 項，見第 13 節） | 新增 K04、R02 等；RouterOS 的 bridge VLAN 沒有名稱，移除 VLAN 名稱相關的 V02、V03 |
 | 比對 | 第 7 階段 | 最小可用版 | 先把邊界（獨立格式、唯讀）做實 |
 | C01 | 所有未收集設備 | 排除主機 | 1000 台時主機數千個，會淹沒真正的覆蓋缺口 |
@@ -290,7 +293,7 @@
 
 | 項目 | 多廠牌版 | MikroTik 版 |
 |---|---|---|
-| 解析器 | 12 個（Junos 8、FortiOS 4） | 11 個（RouterOS） |
+| 解析器 | 12 個（Junos 8、FortiOS 4） | 13 個（RouterOS） |
 | 輸出格式 | 各廠牌不同（表格、display set、config 區塊） | 一律 `detail`（key=value）＋ export |
 | 介面名稱 | 去掉 Junos 的 `.0` | 不處理（RouterOS 沒有這個慣例） |
 | 鄰居對端埠 | LLDP 表格的 Port info | `interface-name`；沒有時用順序配對 |
@@ -310,6 +313,7 @@
     - 設備身分欄位
   - 舊基準以儲存的輸入重建。
   - 拓樸圖預設改用 ELK 分層版面。
+- **2.5.0**：收集並解析 RSTP 狀態（`/interface bridge port monitor`、`/interface bridge monitor`），推論鏈路新增 `stp` 依據；bridge 的 MAC 加入 `ownMacs`。收集器預設加收這兩項。
 - **2.4.0**：未收集交換器底下的終端推定位置（`macs[].behind`），畫回圖上；A04 不再對已知下游交換器誤報。
 - **2.3.0**：推論鏈路（`inferredLinks`），給沒有 LLDP 的設備（例如 SwOS 交換器）；MAC 表的 `L` 項目保留為設備自己的 MAC（`ownMacs`）。
 - **2.2.0**：規格書 P1。

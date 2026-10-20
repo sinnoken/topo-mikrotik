@@ -92,7 +92,7 @@
     const name = (d) => S.infer.displayName(d);
     const devices = Array.from(M.devices.values()).map((d) => ({
       key: d.key, name: name(d), names: Array.from(d.names), mgmtIp: d.mgmtIp, manufacturer: d.manufacturer, kind: d.kind, kindBasis: d.kindBasis,
-      collected: d.collected, collectedAt: d.collectedAt, ownMacs: Array.from(d.ownMacs).sort(), data: Array.from(d.data).sort(), hostname: d.hostname, routerId: d.routerId,
+      collected: d.collected, collectedAt: d.collectedAt, ownMacs: Array.from(d.ownMacs).sort(), stp: d.stp, data: Array.from(d.data).sort(), hostname: d.hostname, routerId: d.routerId,
       group: d.group, component: d.component, role: d.role || null, site: d.site || null, label: d.label || null,
       deviceType: d.deviceType, softwareVersion: d.softwareVersion, platform: d.platform, caps: d.caps,
       seenBy: Array.from(d.seenBy).sort(), src: d.src, srcNone: d.src.length ? null : 'seen-only',
@@ -102,7 +102,8 @@
       key: i.key, dev: i.dev, name: i.name, desc: i.desc, enabled: i.enabled, status: i.status || 'unknown', type: i.type, typeBasis: i.typeBasis,
       rawType: i.rawType, hwMac: i.hwMac, defaultName: i.defaultName, mtu: i.mtu, actualMtu: i.actualMtu, l2mtu: i.l2mtu,
       lag: i.lag, lagMembers: Array.from(i.lagMembers).sort(nat), bridge: i.bridge, parent: i.parent, encapVlan: i.encapVlan,
-      mode: i.mode, pvid: i.pvid, frameTypes: i.frameTypes, ingressFiltering: i.ingressFiltering, untaggedVlans: U.numSort(Array.from(i.untaggedVlans)), taggedVlans: U.numSort(Array.from(i.taggedVlans)),
+      mode: i.mode, pvid: i.pvid, frameTypes: i.frameTypes, ingressFiltering: i.ingressFiltering,
+      stp: i.stp ? { role: i.stp.role, portNumber: i.stp.portNumber, designatedBridge: i.stp.designatedBridge, designatedPort: i.stp.designatedPort, edge: i.stp.edge, sendingRstp: i.stp.sendingRstp } : null, untaggedVlans: U.numSort(Array.from(i.untaggedVlans)), taggedVlans: U.numSort(Array.from(i.taggedVlans)),
       unresolvedVlans: Array.from(i.unresolvedVlans).sort(nat), macs: Array.from(i.macs).sort(),
       hearsay: i.hearsay, edge: M.edge.has(i.key), unknownPeer: M.edge.has(i.key) && !M.edge.get(i.key).linked, src: i.src, srcNone: i.src.length ? null : i.hearsay ? 'hearsay' : 'unrecorded',
     })).sort((a, b) => nat(a.key, b.key));

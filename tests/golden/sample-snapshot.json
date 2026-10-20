@@ -1,15 +1,15 @@
 {
  "meta": {
   "schema": "ssot-snapshot/2",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "createdAt": "2026-01-01T00:00:00Z",
-  "inputHash": "8aa8260191da7d0a",
+  "inputHash": "6ba0dc6fea924c60",
   "sources": [
    {
     "name": "sample-bundle.txt",
     "reader": "bundle-v1",
-    "bytes": 189541,
-    "hash": "b4aeac64de5c02d4"
+    "bytes": 196646,
+    "hash": "45de7c881918cf84"
    }
   ],
   "adapters": {
@@ -21,10 +21,12 @@
    "mikrotik.arp": 265,
    "mikrotik.ipaddr": 10,
    "mikrotik.route": 15,
-   "mikrotik.ospf": 1
+   "mikrotik.ospf": 1,
+   "mikrotik.stp": 25,
+   "mikrotik.stpbridge": 12
   },
-  "blockCount": 54,
-  "factCount": 2119,
+  "blockCount": 78,
+  "factCount": 2156,
   "profile": null,
   "stats": {
    "devices": 54,
@@ -62,6 +64,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -95,10 +98,16 @@
     "ownMacs": [
      "48A98A000004"
     ],
+    "stp": {
+     "bridge": "bridge1",
+     "rootBridge": "E48D8C000002",
+     "isRoot": null
+    },
     "data": [
      "config",
      "lldp",
-     "mac"
+     "mac",
+     "stp"
     ],
     "hostname": "TPE_ACC_SW_01",
     "routerId": null,
@@ -150,10 +159,16 @@
     "ownMacs": [
      "48A98A000010"
     ],
+    "stp": {
+     "bridge": "bridge1",
+     "rootBridge": "E48D8C000002",
+     "isRoot": null
+    },
     "data": [
      "config",
      "lldp",
-     "mac"
+     "mac",
+     "stp"
     ],
     "hostname": "TPE_ACC_SW_02",
     "routerId": null,
@@ -172,20 +187,20 @@
     ],
     "src": [
      [
-      20,
-      1670
+      22,
+      1682
      ],
      [
-      20,
-      1675
+      22,
+      1687
      ],
      [
-      20,
-      1676
+      22,
+      1688
      ],
      [
-      20,
-      1677
+      22,
+      1689
      ]
     ],
     "srcNone": null
@@ -205,10 +220,16 @@
     "ownMacs": [
      "48A98A00001C"
     ],
+    "stp": {
+     "bridge": "bridge1",
+     "rootBridge": "E48D8C000002",
+     "isRoot": null
+    },
     "data": [
      "config",
      "lldp",
-     "mac"
+     "mac",
+     "stp"
     ],
     "hostname": "TPE_ACC_SW_03",
     "routerId": null,
@@ -227,20 +248,20 @@
     ],
     "src": [
      [
-      23,
-      1827
+      27,
+      1851
      ],
      [
-      23,
-      1832
+      27,
+      1856
      ],
      [
-      23,
-      1833
+      27,
+      1857
      ],
      [
-      23,
-      1834
+      27,
+      1858
      ]
     ],
     "srcNone": null
@@ -260,10 +281,16 @@
     "ownMacs": [
      "48A98A000028"
     ],
+    "stp": {
+     "bridge": "bridge1",
+     "rootBridge": "E48D8C000002",
+     "isRoot": null
+    },
     "data": [
      "config",
      "lldp",
-     "mac"
+     "mac",
+     "stp"
     ],
     "hostname": "TPE_ACC_SW_04",
     "routerId": null,
@@ -282,20 +309,20 @@
     ],
     "src": [
      [
-      26,
-      1987
+      32,
+      2023
      ],
      [
-      26,
-      1992
+      32,
+      2028
      ],
      [
-      26,
-      1993
+      32,
+      2029
      ],
      [
-      26,
-      1994
+      32,
+      2030
      ]
     ],
     "srcNone": null
@@ -315,10 +342,16 @@
     "ownMacs": [
      "48A98A000034"
     ],
+    "stp": {
+     "bridge": "bridge1",
+     "rootBridge": "E48D8C000002",
+     "isRoot": null
+    },
     "data": [
      "config",
      "lldp",
-     "mac"
+     "mac",
+     "stp"
     ],
     "hostname": "TPE_ACC_SW_05",
     "routerId": null,
@@ -337,20 +370,20 @@
     ],
     "src": [
      [
-      29,
-      2147
+      37,
+      2195
      ],
      [
-      29,
-      2152
+      37,
+      2200
      ],
      [
-      29,
-      2153
+      37,
+      2201
      ],
      [
-      29,
-      2154
+      37,
+      2202
      ]
     ],
     "srcNone": null
@@ -370,10 +403,16 @@
     "ownMacs": [
      "48A98A000041"
     ],
+    "stp": {
+     "bridge": "bridge1",
+     "rootBridge": "E48D8C000002",
+     "isRoot": null
+    },
     "data": [
      "config",
      "lldp",
-     "mac"
+     "mac",
+     "stp"
     ],
     "hostname": "TPE_ACC_SW_06",
     "routerId": null,
@@ -392,20 +431,20 @@
     ],
     "src": [
      [
-      32,
-      2312
+      42,
+      2372
      ],
      [
-      32,
-      2317
+      42,
+      2377
      ],
      [
-      32,
-      2318
+      42,
+      2378
      ],
      [
-      32,
-      2319
+      42,
+      2379
      ]
     ],
     "srcNone": null
@@ -425,10 +464,16 @@
     "ownMacs": [
      "48A98A000051"
     ],
+    "stp": {
+     "bridge": "bridge1",
+     "rootBridge": "E48D8C000002",
+     "isRoot": null
+    },
     "data": [
      "config",
      "lldp",
-     "mac"
+     "mac",
+     "stp"
     ],
     "hostname": "TPE_ACC_SW_07",
     "routerId": null,
@@ -447,20 +492,20 @@
     ],
     "src": [
      [
-      35,
-      2488
+      47,
+      2560
      ],
      [
-      35,
-      2493
+      47,
+      2565
      ],
      [
-      35,
-      2494
+      47,
+      2566
      ],
      [
-      35,
-      2495
+      47,
+      2567
      ]
     ],
     "srcNone": null
@@ -480,10 +525,16 @@
     "ownMacs": [
      "48A98A00005D"
     ],
+    "stp": {
+     "bridge": "bridge1",
+     "rootBridge": "E48D8C000002",
+     "isRoot": null
+    },
     "data": [
      "config",
      "lldp",
-     "mac"
+     "mac",
+     "stp"
     ],
     "hostname": "TPE_ACC_SW_08",
     "routerId": null,
@@ -502,20 +553,20 @@
     ],
     "src": [
      [
-      38,
-      2652
+      52,
+      2736
      ],
      [
-      38,
-      2657
+      52,
+      2741
      ],
      [
-      38,
-      2658
+      52,
+      2742
      ],
      [
-      38,
-      2659
+      52,
+      2743
      ]
     ],
     "srcNone": null
@@ -532,10 +583,18 @@
     "kindBasis": "board",
     "collected": true,
     "collectedAt": "2026-10-13T10:00:00",
-    "ownMacs": [],
+    "ownMacs": [
+     "48A98A000069"
+    ],
+    "stp": {
+     "bridge": "bridge1",
+     "rootBridge": "E48D8C000002",
+     "isRoot": null
+    },
     "data": [
      "config",
-     "lldp"
+     "lldp",
+     "stp"
     ],
     "hostname": "TPE_ACC_SW_09",
     "routerId": null,
@@ -554,20 +613,20 @@
     ],
     "src": [
      [
-      41,
-      2812
+      57,
+      2908
      ],
      [
-      41,
-      2817
+      57,
+      2913
      ],
      [
-      41,
-      2818
+      57,
+      2914
      ],
      [
-      41,
-      2819
+      57,
+      2915
      ]
     ],
     "srcNone": null
@@ -587,10 +646,16 @@
     "ownMacs": [
      "48A98A000075"
     ],
+    "stp": {
+     "bridge": "bridge1",
+     "rootBridge": "E48D8C000002",
+     "isRoot": null
+    },
     "data": [
      "config",
      "lldp",
-     "mac"
+     "mac",
+     "stp"
     ],
     "hostname": "TPE_ACC_SW_10",
     "routerId": null,
@@ -609,20 +674,20 @@
     ],
     "src": [
      [
-      43,
-      2885
+      61,
+      2993
      ],
      [
-      43,
-      2890
+      61,
+      2998
      ],
      [
-      43,
-      2891
+      61,
+      2999
      ],
      [
-      43,
-      2892
+      61,
+      3000
      ]
     ],
     "srcNone": null
@@ -642,10 +707,16 @@
     "ownMacs": [
      "48A98A000081"
     ],
+    "stp": {
+     "bridge": "bridge1",
+     "rootBridge": "E48D8C000002",
+     "isRoot": null
+    },
     "data": [
      "config",
      "lldp",
-     "mac"
+     "mac",
+     "stp"
     ],
     "hostname": "TPE_ACC_SW_11",
     "routerId": null,
@@ -664,20 +735,20 @@
     ],
     "src": [
      [
-      47,
-      3050
+      67,
+      3170
      ],
      [
-      47,
-      3055
+      67,
+      3175
      ],
      [
-      47,
-      3056
+      67,
+      3176
      ],
      [
-      47,
-      3057
+      67,
+      3177
      ]
     ],
     "srcNone": null
@@ -697,10 +768,16 @@
     "ownMacs": [
      "48A98A00008D"
     ],
+    "stp": {
+     "bridge": "bridge1",
+     "rootBridge": "E48D8C000002",
+     "isRoot": null
+    },
     "data": [
      "config",
      "lldp",
-     "mac"
+     "mac",
+     "stp"
     ],
     "hostname": "TPE_ACC_SW_12",
     "routerId": null,
@@ -719,20 +796,20 @@
     ],
     "src": [
      [
-      51,
-      3297
+      73,
+      3429
      ],
      [
-      51,
-      3302
+      73,
+      3434
      ],
      [
-      51,
-      3303
+      73,
+      3435
      ],
      [
-      51,
-      3304
+      73,
+      3436
      ]
     ],
     "srcNone": null
@@ -750,6 +827,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -783,6 +861,7 @@
     "ownMacs": [
      "E48D8C000002"
     ],
+    "stp": null,
     "data": [
      "arp",
      "config",
@@ -855,6 +934,7 @@
     "ownMacs": [
      "E48D8C000003"
     ],
+    "stp": null,
     "data": [
      "arp",
      "config",
@@ -923,6 +1003,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -954,6 +1035,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -985,6 +1067,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1016,6 +1099,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1047,6 +1131,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1078,6 +1163,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1109,6 +1195,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1140,6 +1227,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1171,6 +1259,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1202,6 +1291,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1233,6 +1323,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1264,6 +1355,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1295,6 +1387,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1326,6 +1419,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1357,6 +1451,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1388,6 +1483,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1419,6 +1515,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1450,6 +1547,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1481,6 +1579,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1512,6 +1611,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1543,6 +1643,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1574,6 +1675,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1605,6 +1707,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1636,6 +1739,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1667,6 +1771,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1698,6 +1803,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1729,6 +1835,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1760,6 +1867,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1791,6 +1899,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1822,6 +1931,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1853,6 +1963,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1884,6 +1995,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1915,6 +2027,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1946,6 +2059,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -1977,6 +2091,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -2008,6 +2123,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -2039,6 +2155,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -2070,6 +2187,7 @@
     "collected": false,
     "collectedAt": null,
     "ownMacs": [],
+    "stp": null,
     "data": [],
     "hostname": null,
     "routerId": null,
@@ -2115,6 +2233,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -2152,6 +2271,14 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "root-port",
+     "portNumber": null,
+     "designatedBridge": "E48D8C000002",
+     "designatedPort": 1,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -2205,11 +2332,11 @@
      ],
      [
       19,
-      1606
+      1581
      ],
      [
-      19,
-      1608
+      21,
+      1618
      ]
     ],
     "srcNone": null
@@ -2238,6 +2365,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10
@@ -2287,6 +2415,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -2312,8 +2441,8 @@
       1567
      ],
      [
-      19,
-      1584
+      21,
+      1596
      ]
     ],
     "srcNone": null
@@ -2342,6 +2471,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -2367,8 +2497,8 @@
       1571
      ],
      [
-      19,
-      1586
+      21,
+      1598
      ]
     ],
     "srcNone": null
@@ -2397,6 +2527,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -2422,8 +2553,8 @@
       1575
      ],
      [
-      19,
-      1588
+      21,
+      1600
      ]
     ],
     "srcNone": null
@@ -2452,6 +2583,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -2469,8 +2601,8 @@
       1526
      ],
      [
-      19,
-      1590
+      21,
+      1602
      ],
      [
       17,
@@ -2507,6 +2639,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -2524,8 +2657,8 @@
       1527
      ],
      [
-      19,
-      1592
+      21,
+      1604
      ],
      [
       17,
@@ -2562,6 +2695,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -2579,8 +2713,8 @@
       1528
      ],
      [
-      19,
-      1594
+      21,
+      1606
      ],
      [
       17,
@@ -2617,6 +2751,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -2634,8 +2769,8 @@
       1529
      ],
      [
-      19,
-      1596
+      21,
+      1608
      ],
      [
       17,
@@ -2672,6 +2807,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -2689,8 +2825,8 @@
       1530
      ],
      [
-      19,
-      1598
+      21,
+      1610
      ],
      [
       17,
@@ -2727,6 +2863,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -2744,8 +2881,8 @@
       1531
      ],
      [
-      19,
-      1600
+      21,
+      1612
      ],
      [
       17,
@@ -2782,6 +2919,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -2799,8 +2937,8 @@
       1532
      ],
      [
-      19,
-      1602
+      21,
+      1614
      ],
      [
       17,
@@ -2837,6 +2975,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -2854,8 +2993,8 @@
       1533
      ],
      [
-      19,
-      1604
+      21,
+      1616
      ],
      [
       17,
@@ -2892,6 +3031,14 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "alternate-port",
+     "portNumber": null,
+     "designatedBridge": "E48D8C000003",
+     "designatedPort": 1,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -2913,12 +3060,12 @@
       1562
      ],
      [
-      17,
-      1534
+      19,
+      1581
      ],
      [
       17,
-      1535
+      1534
      ]
     ],
     "srcNone": null
@@ -2947,6 +3094,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -2990,6 +3138,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -3033,6 +3182,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -3079,6 +3229,14 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "root-port",
+     "portNumber": null,
+     "designatedBridge": "E48D8C000002",
+     "designatedPort": 2,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -3123,20 +3281,20 @@
     "unknownPeer": false,
     "src": [
      [
-      20,
-      1679
-     ],
-     [
-      20,
-      1681
+      22,
+      1691
      ],
      [
       22,
-      1763
+      1693
      ],
      [
-      22,
-      1765
+      24,
+      1748
+     ],
+     [
+      26,
+      1787
      ]
     ],
     "srcNone": null
@@ -3165,6 +3323,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10
@@ -3176,16 +3335,16 @@
     "unknownPeer": false,
     "src": [
      [
-      20,
-      1675
+      22,
+      1687
      ],
      [
-      20,
-      1680
+      22,
+      1692
      ],
      [
-      20,
-      1694
+      22,
+      1706
      ]
     ],
     "srcNone": null
@@ -3214,6 +3373,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -3227,20 +3387,20 @@
     "unknownPeer": false,
     "src": [
      [
-      20,
-      1676
-     ],
-     [
-      20,
-      1683
-     ],
-     [
-      21,
-      1722
+      22,
+      1688
      ],
      [
       22,
-      1739
+      1695
+     ],
+     [
+      23,
+      1734
+     ],
+     [
+      26,
+      1763
      ]
     ],
     "srcNone": null
@@ -3269,6 +3429,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -3282,20 +3443,20 @@
     "unknownPeer": false,
     "src": [
      [
-      20,
-      1677
-     ],
-     [
-      20,
-      1684
-     ],
-     [
-      21,
-      1726
+      22,
+      1689
      ],
      [
       22,
-      1741
+      1696
+     ],
+     [
+      23,
+      1738
+     ],
+     [
+      26,
+      1765
      ]
     ],
     "srcNone": null
@@ -3324,6 +3485,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -3337,20 +3499,20 @@
     "unknownPeer": false,
     "src": [
      [
-      20,
-      1678
-     ],
-     [
-      20,
-      1685
-     ],
-     [
-      21,
-      1730
+      22,
+      1690
      ],
      [
       22,
-      1743
+      1697
+     ],
+     [
+      23,
+      1742
+     ],
+     [
+      26,
+      1767
      ]
     ],
     "srcNone": null
@@ -3379,6 +3541,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -3392,20 +3555,20 @@
     "unknownPeer": true,
     "src": [
      [
-      20,
-      1686
+      22,
+      1698
+     ],
+     [
+      26,
+      1769
      ],
      [
       22,
-      1745
+      1708
      ],
      [
-      20,
-      1696
-     ],
-     [
-      20,
-      1686
+      22,
+      1698
      ]
     ],
     "srcNone": null
@@ -3434,6 +3597,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -3447,20 +3611,20 @@
     "unknownPeer": true,
     "src": [
      [
-      20,
-      1687
+      22,
+      1699
+     ],
+     [
+      26,
+      1771
      ],
      [
       22,
-      1747
+      1708
      ],
      [
-      20,
-      1696
-     ],
-     [
-      20,
-      1687
+      22,
+      1699
      ]
     ],
     "srcNone": null
@@ -3489,6 +3653,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -3502,20 +3667,20 @@
     "unknownPeer": true,
     "src": [
      [
-      20,
-      1688
+      22,
+      1700
+     ],
+     [
+      26,
+      1773
      ],
      [
       22,
-      1749
+      1708
      ],
      [
-      20,
-      1696
-     ],
-     [
-      20,
-      1688
+      22,
+      1700
      ]
     ],
     "srcNone": null
@@ -3544,6 +3709,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -3557,20 +3723,20 @@
     "unknownPeer": true,
     "src": [
      [
-      20,
-      1689
+      22,
+      1701
+     ],
+     [
+      26,
+      1775
      ],
      [
       22,
-      1751
+      1708
      ],
      [
-      20,
-      1696
-     ],
-     [
-      20,
-      1689
+      22,
+      1701
      ]
     ],
     "srcNone": null
@@ -3599,6 +3765,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -3612,20 +3779,20 @@
     "unknownPeer": true,
     "src": [
      [
-      20,
-      1690
+      22,
+      1702
+     ],
+     [
+      26,
+      1777
      ],
      [
       22,
-      1753
+      1708
      ],
      [
-      20,
-      1696
-     ],
-     [
-      20,
-      1690
+      22,
+      1702
      ]
     ],
     "srcNone": null
@@ -3654,6 +3821,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -3667,20 +3835,20 @@
     "unknownPeer": true,
     "src": [
      [
-      20,
-      1691
+      22,
+      1703
+     ],
+     [
+      26,
+      1779
      ],
      [
       22,
-      1755
+      1708
      ],
      [
-      20,
-      1696
-     ],
-     [
-      20,
-      1691
+      22,
+      1703
      ]
     ],
     "srcNone": null
@@ -3709,6 +3877,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -3722,20 +3891,20 @@
     "unknownPeer": true,
     "src": [
      [
-      20,
-      1692
+      22,
+      1704
+     ],
+     [
+      26,
+      1781
      ],
      [
       22,
-      1757
+      1708
      ],
      [
-      20,
-      1696
-     ],
-     [
-      20,
-      1692
+      22,
+      1704
      ]
     ],
     "srcNone": null
@@ -3764,6 +3933,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -3777,20 +3947,20 @@
     "unknownPeer": true,
     "src": [
      [
-      20,
-      1693
+      22,
+      1705
+     ],
+     [
+      26,
+      1783
      ],
      [
       22,
-      1759
+      1708
      ],
      [
-      20,
-      1696
-     ],
-     [
-      20,
-      1693
+      22,
+      1705
      ]
     ],
     "srcNone": null
@@ -3819,6 +3989,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -3830,8 +4001,8 @@
     "unknownPeer": true,
     "src": [
      [
-      22,
-      1761
+      26,
+      1785
      ]
     ],
     "srcNone": null
@@ -3860,6 +4031,14 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "alternate-port",
+     "portNumber": null,
+     "designatedBridge": "E48D8C000003",
+     "designatedPort": 2,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -3873,20 +4052,20 @@
     "unknownPeer": false,
     "src": [
      [
-      20,
-      1682
-     ],
-     [
-      20,
+      22,
       1694
      ],
      [
-      20,
-      1695
+      24,
+      1748
      ],
      [
-      20,
-      1696
+      22,
+      1706
+     ],
+     [
+      22,
+      1707
      ]
     ],
     "srcNone": null
@@ -3915,6 +4094,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -3924,12 +4104,12 @@
     "unknownPeer": false,
     "src": [
      [
-      20,
-      1679
+      22,
+      1691
      ],
      [
-      21,
-      1702
+      23,
+      1714
      ]
     ],
     "srcNone": null
@@ -3958,6 +4138,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -3967,12 +4148,12 @@
     "unknownPeer": false,
     "src": [
      [
-      20,
-      1679
+      22,
+      1691
      ],
      [
-      21,
-      1712
+      23,
+      1724
      ]
     ],
     "srcNone": null
@@ -4001,6 +4182,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -4010,12 +4192,12 @@
     "unknownPeer": false,
     "src": [
      [
-      20,
-      1680
+      22,
+      1692
      ],
      [
-      20,
-      1697
+      22,
+      1709
      ]
     ],
     "srcNone": null
@@ -4047,6 +4229,14 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "root-port",
+     "portNumber": null,
+     "designatedBridge": "E48D8C000002",
+     "designatedPort": 3,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -4091,20 +4281,20 @@
     "unknownPeer": false,
     "src": [
      [
-      23,
-      1836
+      27,
+      1860
      ],
      [
-      23,
-      1838
+      27,
+      1862
      ],
      [
-      25,
-      1923
+      29,
+      1922
      ],
      [
-      25,
-      1925
+      31,
+      1959
      ]
     ],
     "srcNone": null
@@ -4133,6 +4323,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10
@@ -4144,16 +4335,16 @@
     "unknownPeer": false,
     "src": [
      [
-      23,
-      1832
+      27,
+      1856
      ],
      [
-      23,
-      1837
+      27,
+      1861
      ],
      [
-      23,
-      1851
+      27,
+      1875
      ]
     ],
     "srcNone": null
@@ -4182,6 +4373,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -4195,20 +4387,20 @@
     "unknownPeer": false,
     "src": [
      [
-      23,
-      1833
+      27,
+      1857
      ],
      [
-      23,
-      1840
+      27,
+      1864
      ],
      [
-      24,
-      1884
+      28,
+      1908
      ],
      [
-      25,
-      1901
+      31,
+      1937
      ]
     ],
     "srcNone": null
@@ -4237,6 +4429,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -4250,20 +4443,20 @@
     "unknownPeer": false,
     "src": [
      [
-      23,
-      1834
+      27,
+      1858
      ],
      [
-      23,
-      1841
+      27,
+      1865
      ],
      [
-      24,
-      1888
+      28,
+      1912
      ],
      [
-      25,
-      1903
+      31,
+      1939
      ]
     ],
     "srcNone": null
@@ -4292,6 +4485,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -4305,20 +4499,20 @@
     "unknownPeer": false,
     "src": [
      [
-      23,
-      1835
+      27,
+      1859
      ],
      [
-      23,
-      1842
+      27,
+      1866
      ],
      [
-      24,
-      1892
+      28,
+      1916
      ],
      [
-      25,
-      1905
+      31,
+      1941
      ]
     ],
     "srcNone": null
@@ -4347,6 +4541,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -4360,20 +4555,20 @@
     "unknownPeer": true,
     "src": [
      [
-      23,
-      1843
+      27,
+      1867
      ],
      [
-      25,
-      1907
+      31,
+      1943
      ],
      [
-      23,
-      1853
+      27,
+      1877
      ],
      [
-      23,
-      1843
+      27,
+      1867
      ]
     ],
     "srcNone": null
@@ -4402,6 +4597,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -4415,20 +4611,20 @@
     "unknownPeer": true,
     "src": [
      [
-      23,
-      1844
+      27,
+      1868
      ],
      [
-      25,
-      1909
+      31,
+      1945
      ],
      [
-      23,
-      1853
+      27,
+      1877
      ],
      [
-      23,
-      1844
+      27,
+      1868
      ]
     ],
     "srcNone": null
@@ -4457,6 +4653,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -4470,20 +4667,20 @@
     "unknownPeer": true,
     "src": [
      [
-      23,
-      1845
+      27,
+      1869
      ],
      [
-      25,
-      1911
+      31,
+      1947
      ],
      [
-      23,
-      1853
+      27,
+      1877
      ],
      [
-      23,
-      1845
+      27,
+      1869
      ]
     ],
     "srcNone": null
@@ -4512,6 +4709,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -4525,20 +4723,20 @@
     "unknownPeer": true,
     "src": [
      [
-      23,
-      1846
+      27,
+      1870
      ],
      [
-      25,
-      1913
+      31,
+      1949
      ],
      [
-      23,
-      1853
+      27,
+      1877
      ],
      [
-      23,
-      1846
+      27,
+      1870
      ]
     ],
     "srcNone": null
@@ -4567,6 +4765,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -4580,20 +4779,20 @@
     "unknownPeer": true,
     "src": [
      [
-      23,
-      1847
+      27,
+      1871
      ],
      [
-      25,
-      1915
+      31,
+      1951
      ],
      [
-      23,
-      1853
+      27,
+      1877
      ],
      [
-      23,
-      1847
+      27,
+      1871
      ]
     ],
     "srcNone": null
@@ -4622,6 +4821,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -4635,20 +4835,20 @@
     "unknownPeer": true,
     "src": [
      [
-      23,
-      1848
+      27,
+      1872
      ],
      [
-      25,
-      1917
+      31,
+      1953
      ],
      [
-      23,
-      1853
+      27,
+      1877
      ],
      [
-      23,
-      1848
+      27,
+      1872
      ]
     ],
     "srcNone": null
@@ -4677,6 +4877,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -4690,20 +4891,20 @@
     "unknownPeer": true,
     "src": [
      [
-      23,
-      1849
+      27,
+      1873
      ],
      [
-      25,
-      1919
+      31,
+      1955
      ],
      [
-      23,
-      1853
+      27,
+      1877
      ],
      [
-      23,
-      1849
+      27,
+      1873
      ]
     ],
     "srcNone": null
@@ -4732,6 +4933,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -4745,20 +4947,20 @@
     "unknownPeer": true,
     "src": [
      [
-      23,
-      1850
+      27,
+      1874
      ],
      [
-      25,
-      1921
+      31,
+      1957
      ],
      [
-      23,
-      1853
+      27,
+      1877
      ],
      [
-      23,
-      1850
+      27,
+      1874
      ]
     ],
     "srcNone": null
@@ -4787,6 +4989,14 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "alternate-port",
+     "portNumber": null,
+     "designatedBridge": "E48D8C000003",
+     "designatedPort": 3,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -4799,20 +5009,20 @@
     "unknownPeer": false,
     "src": [
      [
-      23,
-      1839
+      27,
+      1863
      ],
      [
-      24,
-      1879
+      28,
+      1903
      ],
      [
-      23,
-      1851
+      29,
+      1922
      ],
      [
-      23,
-      1852
+      27,
+      1875
      ]
     ],
     "srcNone": null
@@ -4841,6 +5051,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -4850,12 +5061,12 @@
     "unknownPeer": false,
     "src": [
      [
-      23,
-      1836
+      27,
+      1860
      ],
      [
-      24,
-      1859
+      28,
+      1883
      ]
     ],
     "srcNone": null
@@ -4884,6 +5095,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -4893,12 +5105,12 @@
     "unknownPeer": false,
     "src": [
      [
-      23,
-      1836
+      27,
+      1860
      ],
      [
-      24,
-      1869
+      28,
+      1893
      ]
     ],
     "srcNone": null
@@ -4927,6 +5139,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -4936,12 +5149,12 @@
     "unknownPeer": false,
     "src": [
      [
-      23,
-      1837
+      27,
+      1861
      ],
      [
-      23,
-      1854
+      27,
+      1878
      ]
     ],
     "srcNone": null
@@ -4974,6 +5187,14 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "root-port",
+     "portNumber": null,
+     "designatedBridge": "E48D8C000002",
+     "designatedPort": 4,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -5018,20 +5239,20 @@
     "unknownPeer": false,
     "src": [
      [
-      26,
-      1996
+      32,
+      2032
      ],
      [
-      26,
-      1998
+      32,
+      2034
      ],
      [
-      28,
-      2083
+      34,
+      2094
      ],
      [
-      28,
-      2085
+      36,
+      2131
      ]
     ],
     "srcNone": null
@@ -5060,6 +5281,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10
@@ -5071,16 +5293,16 @@
     "unknownPeer": false,
     "src": [
      [
-      26,
-      1992
+      32,
+      2028
      ],
      [
-      26,
-      1997
+      32,
+      2033
      ],
      [
-      26,
-      2011
+      32,
+      2047
      ]
     ],
     "srcNone": null
@@ -5109,6 +5331,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -5122,20 +5345,20 @@
     "unknownPeer": false,
     "src": [
      [
-      26,
-      1993
+      32,
+      2029
      ],
      [
-      26,
-      2000
+      32,
+      2036
      ],
      [
-      27,
-      2044
+      33,
+      2080
      ],
      [
-      28,
-      2061
+      36,
+      2109
      ]
     ],
     "srcNone": null
@@ -5164,6 +5387,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -5177,20 +5401,20 @@
     "unknownPeer": false,
     "src": [
      [
-      26,
-      1994
+      32,
+      2030
      ],
      [
-      26,
-      2001
+      32,
+      2037
      ],
      [
-      27,
-      2048
+      33,
+      2084
      ],
      [
-      28,
-      2063
+      36,
+      2111
      ]
     ],
     "srcNone": null
@@ -5219,6 +5443,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -5232,20 +5457,20 @@
     "unknownPeer": false,
     "src": [
      [
-      26,
-      1995
+      32,
+      2031
      ],
      [
-      26,
-      2002
+      32,
+      2038
      ],
      [
-      27,
-      2052
+      33,
+      2088
      ],
      [
-      28,
-      2065
+      36,
+      2113
      ]
     ],
     "srcNone": null
@@ -5274,6 +5499,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -5287,20 +5513,20 @@
     "unknownPeer": true,
     "src": [
      [
-      26,
-      2003
+      32,
+      2039
      ],
      [
-      28,
-      2067
+      36,
+      2115
      ],
      [
-      26,
-      2013
+      32,
+      2049
      ],
      [
-      26,
-      2003
+      32,
+      2039
      ]
     ],
     "srcNone": null
@@ -5329,6 +5555,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -5342,20 +5569,20 @@
     "unknownPeer": true,
     "src": [
      [
-      26,
-      2004
+      32,
+      2040
      ],
      [
-      28,
-      2069
+      36,
+      2117
      ],
      [
-      26,
-      2013
+      32,
+      2049
      ],
      [
-      26,
-      2004
+      32,
+      2040
      ]
     ],
     "srcNone": null
@@ -5384,6 +5611,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -5397,20 +5625,20 @@
     "unknownPeer": true,
     "src": [
      [
-      26,
-      2005
+      32,
+      2041
      ],
      [
-      28,
-      2071
+      36,
+      2119
      ],
      [
-      26,
-      2013
+      32,
+      2049
      ],
      [
-      26,
-      2005
+      32,
+      2041
      ]
     ],
     "srcNone": null
@@ -5439,6 +5667,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -5452,20 +5681,20 @@
     "unknownPeer": true,
     "src": [
      [
-      26,
-      2006
+      32,
+      2042
      ],
      [
-      28,
-      2073
+      36,
+      2121
      ],
      [
-      26,
-      2013
+      32,
+      2049
      ],
      [
-      26,
-      2006
+      32,
+      2042
      ]
     ],
     "srcNone": null
@@ -5494,6 +5723,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -5507,20 +5737,20 @@
     "unknownPeer": true,
     "src": [
      [
-      26,
-      2007
+      32,
+      2043
      ],
      [
-      28,
-      2075
+      36,
+      2123
      ],
      [
-      26,
-      2013
+      32,
+      2049
      ],
      [
-      26,
-      2007
+      32,
+      2043
      ]
     ],
     "srcNone": null
@@ -5549,6 +5779,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -5562,20 +5793,20 @@
     "unknownPeer": true,
     "src": [
      [
-      26,
-      2008
+      32,
+      2044
      ],
      [
-      28,
-      2077
+      36,
+      2125
      ],
      [
-      26,
-      2013
+      32,
+      2049
      ],
      [
-      26,
-      2008
+      32,
+      2044
      ]
     ],
     "srcNone": null
@@ -5604,6 +5835,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -5617,20 +5849,20 @@
     "unknownPeer": true,
     "src": [
      [
-      26,
-      2009
+      32,
+      2045
      ],
      [
-      28,
-      2079
+      36,
+      2127
      ],
      [
-      26,
-      2013
+      32,
+      2049
      ],
      [
-      26,
-      2009
+      32,
+      2045
      ]
     ],
     "srcNone": null
@@ -5659,6 +5891,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -5672,20 +5905,20 @@
     "unknownPeer": true,
     "src": [
      [
-      26,
-      2010
+      32,
+      2046
      ],
      [
-      28,
-      2081
+      36,
+      2129
      ],
      [
-      26,
-      2013
+      32,
+      2049
      ],
      [
-      26,
-      2010
+      32,
+      2046
      ]
     ],
     "srcNone": null
@@ -5714,6 +5947,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -5723,8 +5957,8 @@
     "unknownPeer": false,
     "src": [
      [
-      26,
-      1996
+      32,
+      2032
      ]
     ],
     "srcNone": null
@@ -5753,6 +5987,14 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "alternate-port",
+     "portNumber": null,
+     "designatedBridge": "E48D8C000003",
+     "designatedPort": 4,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -5766,20 +6008,20 @@
     "unknownPeer": false,
     "src": [
      [
-      26,
-      1999
+      32,
+      2035
      ],
      [
-      27,
-      2039
+      33,
+      2075
      ],
      [
-      26,
-      2011
+      34,
+      2094
      ],
      [
-      26,
-      2012
+      32,
+      2047
      ]
     ],
     "srcNone": null
@@ -5808,6 +6050,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -5817,12 +6060,12 @@
     "unknownPeer": false,
     "src": [
      [
-      26,
-      1996
+      32,
+      2032
      ],
      [
-      27,
-      2019
+      33,
+      2055
      ]
     ],
     "srcNone": null
@@ -5851,6 +6094,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -5860,12 +6104,12 @@
     "unknownPeer": false,
     "src": [
      [
-      26,
-      1996
+      32,
+      2032
      ],
      [
-      27,
-      2029
+      33,
+      2065
      ]
     ],
     "srcNone": null
@@ -5894,6 +6138,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -5903,12 +6148,12 @@
     "unknownPeer": false,
     "src": [
      [
-      26,
-      1997
+      32,
+      2033
      ],
      [
-      26,
-      2014
+      32,
+      2050
      ]
     ],
     "srcNone": null
@@ -5940,6 +6185,14 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "root-port",
+     "portNumber": null,
+     "designatedBridge": "E48D8C000002",
+     "designatedPort": 5,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -5984,20 +6237,20 @@
     "unknownPeer": false,
     "src": [
      [
-      29,
-      2156
+      37,
+      2204
      ],
      [
-      29,
-      2158
+      37,
+      2206
      ],
      [
-      31,
-      2248
+      39,
+      2271
      ],
      [
-      31,
-      2250
+      41,
+      2308
      ]
     ],
     "srcNone": null
@@ -6026,6 +6279,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10
@@ -6037,16 +6291,16 @@
     "unknownPeer": false,
     "src": [
      [
-      29,
-      2152
+      37,
+      2200
      ],
      [
-      29,
-      2157
+      37,
+      2205
      ],
      [
-      29,
-      2171
+      37,
+      2219
      ]
     ],
     "srcNone": null
@@ -6075,6 +6329,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -6088,20 +6343,20 @@
     "unknownPeer": false,
     "src": [
      [
-      29,
-      2153
+      37,
+      2201
      ],
      [
-      29,
-      2160
+      37,
+      2208
      ],
      [
-      30,
-      2204
+      38,
+      2252
      ],
      [
-      31,
-      2226
+      41,
+      2286
      ]
     ],
     "srcNone": null
@@ -6130,6 +6385,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -6143,20 +6399,20 @@
     "unknownPeer": false,
     "src": [
      [
-      29,
-      2154
+      37,
+      2202
      ],
      [
-      29,
-      2161
+      37,
+      2209
      ],
      [
-      30,
-      2208
+      38,
+      2256
      ],
      [
-      31,
-      2228
+      41,
+      2288
      ]
     ],
     "srcNone": null
@@ -6185,6 +6441,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -6198,20 +6455,20 @@
     "unknownPeer": false,
     "src": [
      [
-      29,
-      2155
+      37,
+      2203
      ],
      [
-      29,
-      2162
+      37,
+      2210
      ],
      [
-      30,
-      2212
+      38,
+      2260
      ],
      [
-      31,
-      2230
+      41,
+      2290
      ]
     ],
     "srcNone": null
@@ -6240,6 +6497,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -6253,20 +6511,20 @@
     "unknownPeer": true,
     "src": [
      [
-      29,
-      2163
+      37,
+      2211
      ],
      [
-      31,
-      2232
+      41,
+      2292
      ],
      [
-      29,
-      2173
+      37,
+      2221
      ],
      [
-      29,
-      2163
+      37,
+      2211
      ]
     ],
     "srcNone": null
@@ -6295,6 +6553,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -6308,20 +6567,20 @@
     "unknownPeer": true,
     "src": [
      [
-      29,
-      2164
+      37,
+      2212
      ],
      [
-      31,
-      2234
+      41,
+      2294
      ],
      [
-      29,
-      2173
+      37,
+      2221
      ],
      [
-      29,
-      2164
+      37,
+      2212
      ]
     ],
     "srcNone": null
@@ -6350,6 +6609,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -6363,20 +6623,20 @@
     "unknownPeer": true,
     "src": [
      [
-      29,
-      2165
+      37,
+      2213
      ],
      [
-      31,
-      2236
+      41,
+      2296
      ],
      [
-      29,
-      2173
+      37,
+      2221
      ],
      [
-      29,
-      2165
+      37,
+      2213
      ]
     ],
     "srcNone": null
@@ -6405,6 +6665,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -6418,20 +6679,20 @@
     "unknownPeer": true,
     "src": [
      [
-      29,
-      2166
+      37,
+      2214
      ],
      [
-      31,
-      2238
+      41,
+      2298
      ],
      [
-      29,
-      2173
+      37,
+      2221
      ],
      [
-      29,
-      2166
+      37,
+      2214
      ]
     ],
     "srcNone": null
@@ -6460,6 +6721,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -6473,20 +6735,20 @@
     "unknownPeer": true,
     "src": [
      [
-      29,
-      2167
+      37,
+      2215
      ],
      [
-      31,
-      2240
+      41,
+      2300
      ],
      [
-      29,
-      2173
+      37,
+      2221
      ],
      [
-      29,
-      2167
+      37,
+      2215
      ]
     ],
     "srcNone": null
@@ -6515,6 +6777,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -6528,20 +6791,20 @@
     "unknownPeer": true,
     "src": [
      [
-      29,
-      2168
+      37,
+      2216
      ],
      [
-      31,
-      2242
+      41,
+      2302
      ],
      [
-      29,
-      2173
+      37,
+      2221
      ],
      [
-      29,
-      2168
+      37,
+      2216
      ]
     ],
     "srcNone": null
@@ -6570,6 +6833,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -6583,20 +6847,20 @@
     "unknownPeer": true,
     "src": [
      [
-      29,
-      2169
+      37,
+      2217
      ],
      [
-      31,
-      2244
+      41,
+      2304
      ],
      [
-      29,
-      2173
+      37,
+      2221
      ],
      [
-      29,
-      2169
+      37,
+      2217
      ]
     ],
     "srcNone": null
@@ -6625,6 +6889,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -6638,20 +6903,20 @@
     "unknownPeer": true,
     "src": [
      [
-      29,
-      2170
+      37,
+      2218
      ],
      [
-      31,
-      2246
+      41,
+      2306
      ],
      [
-      29,
-      2173
+      37,
+      2221
      ],
      [
-      29,
-      2170
+      37,
+      2218
      ]
     ],
     "srcNone": null
@@ -6680,6 +6945,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -6689,8 +6955,8 @@
     "unknownPeer": false,
     "src": [
      [
-      30,
-      2216
+      38,
+      2264
      ]
     ],
     "srcNone": null
@@ -6719,6 +6985,14 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "alternate-port",
+     "portNumber": null,
+     "designatedBridge": "E48D8C000003",
+     "designatedPort": 5,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -6732,20 +7006,20 @@
     "unknownPeer": false,
     "src": [
      [
-      29,
-      2159
+      37,
+      2207
      ],
      [
-      30,
-      2199
+      38,
+      2247
      ],
      [
-      29,
-      2171
+      39,
+      2271
      ],
      [
-      29,
-      2172
+      37,
+      2219
      ]
     ],
     "srcNone": null
@@ -6774,6 +7048,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -6783,12 +7058,12 @@
     "unknownPeer": false,
     "src": [
      [
-      29,
-      2156
+      37,
+      2204
      ],
      [
-      30,
-      2179
+      38,
+      2227
      ]
     ],
     "srcNone": null
@@ -6817,6 +7092,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -6826,12 +7102,12 @@
     "unknownPeer": false,
     "src": [
      [
-      29,
-      2156
+      37,
+      2204
      ],
      [
-      30,
-      2189
+      38,
+      2237
      ]
     ],
     "srcNone": null
@@ -6860,6 +7136,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -6869,12 +7146,12 @@
     "unknownPeer": false,
     "src": [
      [
-      29,
-      2157
+      37,
+      2205
      ],
      [
-      29,
-      2174
+      37,
+      2222
      ]
     ],
     "srcNone": null
@@ -6906,6 +7183,14 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "root-port",
+     "portNumber": null,
+     "designatedBridge": "E48D8C000002",
+     "designatedPort": 6,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -6950,20 +7235,20 @@
     "unknownPeer": false,
     "src": [
      [
-      32,
-      2321
+      42,
+      2381
      ],
      [
-      32,
-      2323
+      42,
+      2383
      ],
      [
-      34,
-      2424
+      44,
+      2451
      ],
      [
-      34,
-      2426
+      46,
+      2496
      ]
     ],
     "srcNone": null
@@ -6992,6 +7277,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10
@@ -7003,16 +7289,16 @@
     "unknownPeer": false,
     "src": [
      [
-      32,
-      2317
+      42,
+      2377
      ],
      [
-      32,
-      2322
+      42,
+      2382
      ],
      [
-      32,
-      2336
+      42,
+      2396
      ]
     ],
     "srcNone": null
@@ -7041,6 +7327,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -7054,20 +7341,20 @@
     "unknownPeer": false,
     "src": [
      [
-      32,
-      2318
+      42,
+      2378
      ],
      [
-      32,
-      2325
+      42,
+      2385
      ],
      [
-      33,
-      2369
+      43,
+      2429
      ],
      [
-      34,
-      2394
+      46,
+      2466
      ]
     ],
     "srcNone": null
@@ -7096,6 +7383,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -7109,20 +7397,20 @@
     "unknownPeer": false,
     "src": [
      [
-      32,
-      2319
+      42,
+      2379
      ],
      [
-      32,
-      2326
+      42,
+      2386
      ],
      [
-      33,
-      2373
+      43,
+      2433
      ],
      [
-      34,
-      2396
+      46,
+      2468
      ]
     ],
     "srcNone": null
@@ -7151,6 +7439,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -7164,20 +7453,20 @@
     "unknownPeer": false,
     "src": [
      [
-      32,
-      2320
+      42,
+      2380
      ],
      [
-      32,
-      2327
+      42,
+      2387
      ],
      [
-      33,
-      2377
+      43,
+      2437
      ],
      [
-      34,
-      2398
+      46,
+      2470
      ]
     ],
     "srcNone": null
@@ -7206,6 +7495,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -7219,20 +7509,20 @@
     "unknownPeer": true,
     "src": [
      [
-      32,
-      2328
+      42,
+      2388
      ],
      [
-      34,
-      2408
+      46,
+      2480
      ],
      [
-      32,
-      2338
+      42,
+      2398
      ],
      [
-      32,
-      2328
+      42,
+      2388
      ]
     ],
     "srcNone": null
@@ -7261,6 +7551,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -7274,20 +7565,20 @@
     "unknownPeer": true,
     "src": [
      [
-      32,
-      2329
+      42,
+      2389
      ],
      [
-      34,
-      2410
+      46,
+      2482
      ],
      [
-      32,
-      2338
+      42,
+      2398
      ],
      [
-      32,
-      2329
+      42,
+      2389
      ]
     ],
     "srcNone": null
@@ -7316,6 +7607,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -7329,20 +7621,20 @@
     "unknownPeer": true,
     "src": [
      [
-      32,
-      2330
+      42,
+      2390
      ],
      [
-      34,
-      2412
+      46,
+      2484
      ],
      [
-      32,
-      2338
+      42,
+      2398
      ],
      [
-      32,
-      2330
+      42,
+      2390
      ]
     ],
     "srcNone": null
@@ -7371,6 +7663,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -7384,20 +7677,20 @@
     "unknownPeer": true,
     "src": [
      [
-      32,
-      2331
+      42,
+      2391
      ],
      [
-      34,
-      2414
+      46,
+      2486
      ],
      [
-      32,
-      2338
+      42,
+      2398
      ],
      [
-      32,
-      2331
+      42,
+      2391
      ]
     ],
     "srcNone": null
@@ -7426,6 +7719,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -7439,20 +7733,20 @@
     "unknownPeer": true,
     "src": [
      [
-      32,
-      2332
+      42,
+      2392
      ],
      [
-      34,
-      2416
+      46,
+      2488
      ],
      [
-      32,
-      2338
+      42,
+      2398
      ],
      [
-      32,
-      2332
+      42,
+      2392
      ]
     ],
     "srcNone": null
@@ -7481,6 +7775,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -7494,20 +7789,20 @@
     "unknownPeer": true,
     "src": [
      [
-      32,
-      2333
+      42,
+      2393
      ],
      [
-      34,
-      2418
+      46,
+      2490
      ],
      [
-      32,
-      2338
+      42,
+      2398
      ],
      [
-      32,
-      2333
+      42,
+      2393
      ]
     ],
     "srcNone": null
@@ -7536,6 +7831,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -7549,20 +7845,20 @@
     "unknownPeer": true,
     "src": [
      [
-      32,
-      2334
+      42,
+      2394
      ],
      [
-      34,
-      2420
+      46,
+      2492
      ],
      [
-      32,
-      2338
+      42,
+      2398
      ],
      [
-      32,
-      2334
+      42,
+      2394
      ]
     ],
     "srcNone": null
@@ -7591,6 +7887,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -7604,20 +7901,20 @@
     "unknownPeer": true,
     "src": [
      [
-      32,
-      2335
+      42,
+      2395
      ],
      [
-      34,
-      2422
+      46,
+      2494
      ],
      [
-      32,
-      2338
+      42,
+      2398
      ],
      [
-      32,
-      2335
+      42,
+      2395
      ]
     ],
     "srcNone": null
@@ -7646,6 +7943,14 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "designated-port",
+     "portNumber": null,
+     "designatedBridge": "48A98A000041",
+     "designatedPort": 21,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -7660,20 +7965,20 @@
     "unknownPeer": false,
     "src": [
      [
-      33,
-      2385
+      43,
+      2445
      ],
      [
-      34,
-      2400
+      44,
+      2451
      ],
      [
-      34,
-      2402
+      46,
+      2472
      ],
      [
-      34,
-      2404
+      46,
+      2474
      ]
     ],
     "srcNone": null
@@ -7702,6 +8007,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -7711,8 +8017,8 @@
     "unknownPeer": false,
     "src": [
      [
-      33,
-      2381
+      43,
+      2441
      ]
     ],
     "srcNone": null
@@ -7741,6 +8047,14 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "alternate-port",
+     "portNumber": null,
+     "designatedBridge": "E48D8C000003",
+     "designatedPort": 6,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -7754,20 +8068,20 @@
     "unknownPeer": false,
     "src": [
      [
-      32,
-      2324
+      42,
+      2384
      ],
      [
-      33,
-      2364
+      43,
+      2424
      ],
      [
-      32,
-      2336
+      44,
+      2451
      ],
      [
-      32,
-      2337
+      42,
+      2396
      ]
     ],
     "srcNone": null
@@ -7796,6 +8110,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -7805,12 +8120,12 @@
     "unknownPeer": false,
     "src": [
      [
-      32,
-      2321
+      42,
+      2381
      ],
      [
-      33,
-      2344
+      43,
+      2404
      ]
     ],
     "srcNone": null
@@ -7839,6 +8154,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -7848,12 +8164,12 @@
     "unknownPeer": false,
     "src": [
      [
-      32,
-      2321
+      42,
+      2381
      ],
      [
-      33,
-      2354
+      43,
+      2414
      ]
     ],
     "srcNone": null
@@ -7882,6 +8198,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -7891,12 +8208,12 @@
     "unknownPeer": false,
     "src": [
      [
-      32,
-      2322
+      42,
+      2382
      ],
      [
-      32,
-      2339
+      42,
+      2399
      ]
     ],
     "srcNone": null
@@ -7928,6 +8245,14 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "root-port",
+     "portNumber": null,
+     "designatedBridge": "E48D8C000002",
+     "designatedPort": 7,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -7972,20 +8297,20 @@
     "unknownPeer": false,
     "src": [
      [
-      35,
-      2497
+      47,
+      2569
      ],
      [
-      35,
-      2499
+      47,
+      2571
      ],
      [
-      37,
-      2588
+      49,
+      2635
      ],
      [
-      37,
-      2590
+      51,
+      2672
      ]
     ],
     "srcNone": null
@@ -8014,6 +8339,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10
@@ -8025,16 +8351,16 @@
     "unknownPeer": false,
     "src": [
      [
-      35,
-      2493
+      47,
+      2565
      ],
      [
-      35,
-      2498
+      47,
+      2570
      ],
      [
-      35,
-      2512
+      47,
+      2584
      ]
     ],
     "srcNone": null
@@ -8063,6 +8389,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -8076,20 +8403,20 @@
     "unknownPeer": false,
     "src": [
      [
-      35,
-      2494
-     ],
-     [
-      35,
-      2501
-     ],
-     [
-      36,
-      2545
-     ],
-     [
-      37,
+      47,
       2566
+     ],
+     [
+      47,
+      2573
+     ],
+     [
+      48,
+      2617
+     ],
+     [
+      51,
+      2650
      ]
     ],
     "srcNone": null
@@ -8118,6 +8445,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -8131,20 +8459,20 @@
     "unknownPeer": false,
     "src": [
      [
-      35,
-      2495
+      47,
+      2567
      ],
      [
-      35,
-      2502
+      47,
+      2574
      ],
      [
-      36,
-      2549
+      48,
+      2621
      ],
      [
-      37,
-      2568
+      51,
+      2652
      ]
     ],
     "srcNone": null
@@ -8173,6 +8501,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -8186,20 +8515,20 @@
     "unknownPeer": false,
     "src": [
      [
-      35,
-      2496
+      47,
+      2568
      ],
      [
-      35,
-      2503
+      47,
+      2575
      ],
      [
-      36,
-      2553
+      48,
+      2625
      ],
      [
-      37,
-      2570
+      51,
+      2654
      ]
     ],
     "srcNone": null
@@ -8228,6 +8557,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -8241,20 +8571,20 @@
     "unknownPeer": true,
     "src": [
      [
-      35,
-      2504
+      47,
+      2576
      ],
      [
-      37,
-      2572
+      51,
+      2656
      ],
      [
-      35,
-      2514
+      47,
+      2586
      ],
      [
-      35,
-      2504
+      47,
+      2576
      ]
     ],
     "srcNone": null
@@ -8283,6 +8613,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -8296,20 +8627,20 @@
     "unknownPeer": true,
     "src": [
      [
-      35,
-      2505
+      47,
+      2577
      ],
      [
-      37,
-      2574
+      51,
+      2658
      ],
      [
-      35,
-      2514
+      47,
+      2586
      ],
      [
-      35,
-      2505
+      47,
+      2577
      ]
     ],
     "srcNone": null
@@ -8338,6 +8669,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -8351,20 +8683,20 @@
     "unknownPeer": true,
     "src": [
      [
-      35,
-      2506
+      47,
+      2578
      ],
      [
-      37,
-      2576
+      51,
+      2660
      ],
      [
-      35,
-      2514
+      47,
+      2586
      ],
      [
-      35,
-      2506
+      47,
+      2578
      ]
     ],
     "srcNone": null
@@ -8393,6 +8725,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -8406,20 +8739,20 @@
     "unknownPeer": true,
     "src": [
      [
-      35,
-      2507
+      47,
+      2579
      ],
      [
-      37,
-      2578
+      51,
+      2662
      ],
      [
-      35,
-      2514
+      47,
+      2586
      ],
      [
-      35,
-      2507
+      47,
+      2579
      ]
     ],
     "srcNone": null
@@ -8448,6 +8781,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -8461,20 +8795,20 @@
     "unknownPeer": true,
     "src": [
      [
-      35,
-      2508
-     ],
-     [
-      37,
+      47,
       2580
      ],
      [
-      35,
-      2514
+      51,
+      2664
      ],
      [
-      35,
-      2508
+      47,
+      2586
+     ],
+     [
+      47,
+      2580
      ]
     ],
     "srcNone": null
@@ -8503,6 +8837,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -8516,20 +8851,20 @@
     "unknownPeer": true,
     "src": [
      [
-      35,
-      2509
+      47,
+      2581
      ],
      [
-      37,
-      2582
+      51,
+      2666
      ],
      [
-      35,
-      2514
+      47,
+      2586
      ],
      [
-      35,
-      2509
+      47,
+      2581
      ]
     ],
     "srcNone": null
@@ -8558,6 +8893,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -8571,20 +8907,20 @@
     "unknownPeer": true,
     "src": [
      [
-      35,
-      2510
+      47,
+      2582
      ],
      [
-      37,
-      2584
+      51,
+      2668
      ],
      [
-      35,
-      2514
+      47,
+      2586
      ],
      [
-      35,
-      2510
+      47,
+      2582
      ]
     ],
     "srcNone": null
@@ -8613,6 +8949,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -8626,20 +8963,20 @@
     "unknownPeer": true,
     "src": [
      [
-      35,
-      2511
+      47,
+      2583
      ],
      [
-      37,
+      51,
+      2670
+     ],
+     [
+      47,
       2586
      ],
      [
-      35,
-      2514
-     ],
-     [
-      35,
-      2511
+      47,
+      2583
      ]
     ],
     "srcNone": null
@@ -8668,6 +9005,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -8677,8 +9015,8 @@
     "unknownPeer": false,
     "src": [
      [
-      36,
-      2557
+      48,
+      2629
      ]
     ],
     "srcNone": null
@@ -8707,6 +9045,14 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "alternate-port",
+     "portNumber": null,
+     "designatedBridge": "E48D8C000003",
+     "designatedPort": 7,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -8720,20 +9066,20 @@
     "unknownPeer": false,
     "src": [
      [
-      35,
-      2500
+      47,
+      2572
      ],
      [
-      36,
-      2540
+      48,
+      2612
      ],
      [
-      35,
-      2512
+      49,
+      2635
      ],
      [
-      35,
-      2513
+      47,
+      2584
      ]
     ],
     "srcNone": null
@@ -8762,6 +9108,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -8771,12 +9118,12 @@
     "unknownPeer": false,
     "src": [
      [
-      35,
-      2497
+      47,
+      2569
      ],
      [
-      36,
-      2520
+      48,
+      2592
      ]
     ],
     "srcNone": null
@@ -8805,6 +9152,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -8814,12 +9162,12 @@
     "unknownPeer": false,
     "src": [
      [
-      35,
-      2497
+      47,
+      2569
      ],
      [
-      36,
-      2530
+      48,
+      2602
      ]
     ],
     "srcNone": null
@@ -8848,6 +9196,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -8857,12 +9206,12 @@
     "unknownPeer": false,
     "src": [
      [
-      35,
-      2498
+      47,
+      2570
      ],
      [
-      35,
-      2515
+      47,
+      2587
      ]
     ],
     "srcNone": null
@@ -8894,6 +9243,14 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "root-port",
+     "portNumber": null,
+     "designatedBridge": "E48D8C000002",
+     "designatedPort": 8,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -8938,20 +9295,20 @@
     "unknownPeer": false,
     "src": [
      [
-      38,
-      2661
+      52,
+      2745
      ],
      [
-      38,
-      2663
+      52,
+      2747
      ],
      [
-      40,
-      2748
+      54,
+      2807
      ],
      [
-      40,
-      2750
+      56,
+      2844
      ]
     ],
     "srcNone": null
@@ -8980,6 +9337,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10
@@ -8991,16 +9349,16 @@
     "unknownPeer": false,
     "src": [
      [
-      38,
-      2657
+      52,
+      2741
      ],
      [
-      38,
-      2662
+      52,
+      2746
      ],
      [
-      38,
-      2676
+      52,
+      2760
      ]
     ],
     "srcNone": null
@@ -9029,6 +9387,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -9042,20 +9401,20 @@
     "unknownPeer": false,
     "src": [
      [
-      38,
-      2658
+      52,
+      2742
      ],
      [
-      38,
-      2665
+      52,
+      2749
      ],
      [
-      39,
-      2709
+      53,
+      2793
      ],
      [
-      40,
-      2726
+      56,
+      2822
      ]
     ],
     "srcNone": null
@@ -9084,6 +9443,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -9097,20 +9457,20 @@
     "unknownPeer": false,
     "src": [
      [
-      38,
-      2659
+      52,
+      2743
      ],
      [
-      38,
-      2666
+      52,
+      2750
      ],
      [
-      39,
-      2713
+      53,
+      2797
      ],
      [
-      40,
-      2728
+      56,
+      2824
      ]
     ],
     "srcNone": null
@@ -9139,6 +9499,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -9152,20 +9513,20 @@
     "unknownPeer": false,
     "src": [
      [
-      38,
-      2660
+      52,
+      2744
      ],
      [
-      38,
-      2667
+      52,
+      2751
      ],
      [
-      39,
-      2717
+      53,
+      2801
      ],
      [
-      40,
-      2730
+      56,
+      2826
      ]
     ],
     "srcNone": null
@@ -9194,6 +9555,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -9207,20 +9569,20 @@
     "unknownPeer": true,
     "src": [
      [
-      38,
-      2668
+      52,
+      2752
      ],
      [
-      40,
-      2732
+      56,
+      2828
      ],
      [
-      38,
-      2678
+      52,
+      2762
      ],
      [
-      38,
-      2668
+      52,
+      2752
      ]
     ],
     "srcNone": null
@@ -9249,6 +9611,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -9262,20 +9625,20 @@
     "unknownPeer": true,
     "src": [
      [
-      38,
-      2669
+      52,
+      2753
      ],
      [
-      40,
-      2734
+      56,
+      2830
      ],
      [
-      38,
-      2678
+      52,
+      2762
      ],
      [
-      38,
-      2669
+      52,
+      2753
      ]
     ],
     "srcNone": null
@@ -9304,6 +9667,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -9317,20 +9681,20 @@
     "unknownPeer": true,
     "src": [
      [
-      38,
-      2670
+      52,
+      2754
      ],
      [
-      40,
-      2736
+      56,
+      2832
      ],
      [
-      38,
-      2678
+      52,
+      2762
      ],
      [
-      38,
-      2670
+      52,
+      2754
      ]
     ],
     "srcNone": null
@@ -9359,6 +9723,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -9372,20 +9737,20 @@
     "unknownPeer": true,
     "src": [
      [
-      38,
-      2671
+      52,
+      2755
      ],
      [
-      40,
-      2738
+      56,
+      2834
      ],
      [
-      38,
-      2678
+      52,
+      2762
      ],
      [
-      38,
-      2671
+      52,
+      2755
      ]
     ],
     "srcNone": null
@@ -9414,6 +9779,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -9427,20 +9793,20 @@
     "unknownPeer": true,
     "src": [
      [
-      38,
-      2672
+      52,
+      2756
      ],
      [
-      40,
-      2740
+      56,
+      2836
      ],
      [
-      38,
-      2678
+      52,
+      2762
      ],
      [
-      38,
-      2672
+      52,
+      2756
      ]
     ],
     "srcNone": null
@@ -9469,6 +9835,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -9482,20 +9849,20 @@
     "unknownPeer": true,
     "src": [
      [
-      38,
-      2673
+      52,
+      2757
      ],
      [
-      40,
-      2742
+      56,
+      2838
      ],
      [
-      38,
-      2678
+      52,
+      2762
      ],
      [
-      38,
-      2673
+      52,
+      2757
      ]
     ],
     "srcNone": null
@@ -9524,6 +9891,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -9537,20 +9905,20 @@
     "unknownPeer": true,
     "src": [
      [
-      38,
-      2674
+      52,
+      2758
      ],
      [
-      40,
-      2744
+      56,
+      2840
      ],
      [
-      38,
-      2678
+      52,
+      2762
      ],
      [
-      38,
-      2674
+      52,
+      2758
      ]
     ],
     "srcNone": null
@@ -9579,6 +9947,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -9592,20 +9961,20 @@
     "unknownPeer": true,
     "src": [
      [
-      38,
-      2675
+      52,
+      2759
      ],
      [
-      40,
-      2746
+      56,
+      2842
      ],
      [
-      38,
-      2678
+      52,
+      2762
      ],
      [
-      38,
-      2675
+      52,
+      2759
      ]
     ],
     "srcNone": null
@@ -9634,6 +10003,14 @@
     "pvid": 10,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "alternate-port",
+     "portNumber": null,
+     "designatedBridge": "E48D8C000003",
+     "designatedPort": 8,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -9647,20 +10024,20 @@
     "unknownPeer": false,
     "src": [
      [
-      38,
-      2664
+      52,
+      2748
      ],
      [
-      39,
-      2704
+      53,
+      2788
      ],
      [
-      38,
-      2676
+      54,
+      2807
      ],
      [
-      38,
-      2677
+      52,
+      2760
      ]
     ],
     "srcNone": null
@@ -9689,6 +10066,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -9698,12 +10076,12 @@
     "unknownPeer": false,
     "src": [
      [
-      38,
-      2661
+      52,
+      2745
      ],
      [
-      39,
-      2684
+      53,
+      2768
      ]
     ],
     "srcNone": null
@@ -9732,6 +10110,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -9741,12 +10120,12 @@
     "unknownPeer": false,
     "src": [
      [
-      38,
-      2661
+      52,
+      2745
      ],
      [
-      39,
-      2694
+      53,
+      2778
      ]
     ],
     "srcNone": null
@@ -9775,6 +10154,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -9784,12 +10164,12 @@
     "unknownPeer": false,
     "src": [
      [
-      38,
-      2662
+      52,
+      2746
      ],
      [
-      38,
-      2679
+      52,
+      2763
      ]
     ],
     "srcNone": null
@@ -9821,6 +10201,14 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "root-port",
+     "portNumber": null,
+     "designatedBridge": "E48D8C000002",
+     "designatedPort": 9,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -9834,20 +10222,20 @@
     "unknownPeer": false,
     "src": [
      [
-      41,
-      2821
+      57,
+      2917
      ],
      [
-      41,
-      2823
+      57,
+      2919
      ],
      [
-      41,
-      2836
+      59,
+      2979
      ],
      [
-      41,
-      2837
+      57,
+      2932
      ]
     ],
     "srcNone": null
@@ -9876,6 +10264,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10
@@ -9887,16 +10276,16 @@
     "unknownPeer": false,
     "src": [
      [
-      41,
-      2817
+      57,
+      2913
      ],
      [
-      41,
-      2822
+      57,
+      2918
      ],
      [
-      41,
-      2836
+      57,
+      2932
      ]
     ],
     "srcNone": null
@@ -9925,6 +10314,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -9936,20 +10326,20 @@
     "unknownPeer": false,
     "src": [
      [
-      41,
-      2818
+      57,
+      2914
      ],
      [
-      41,
-      2825
+      57,
+      2921
      ],
      [
-      42,
-      2869
+      58,
+      2965
      ],
      [
-      41,
-      2837
+      57,
+      2933
      ]
     ],
     "srcNone": null
@@ -9978,6 +10368,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -9989,20 +10380,20 @@
     "unknownPeer": false,
     "src": [
      [
-      41,
-      2819
+      57,
+      2915
      ],
      [
-      41,
-      2826
+      57,
+      2922
      ],
      [
-      42,
-      2873
+      58,
+      2969
      ],
      [
-      41,
-      2837
+      57,
+      2933
      ]
     ],
     "srcNone": null
@@ -10031,6 +10422,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -10042,20 +10434,20 @@
     "unknownPeer": false,
     "src": [
      [
-      41,
-      2820
+      57,
+      2916
      ],
      [
-      41,
-      2827
+      57,
+      2923
      ],
      [
-      42,
-      2877
+      58,
+      2973
      ],
      [
-      41,
-      2837
+      57,
+      2933
      ]
     ],
     "srcNone": null
@@ -10084,6 +10476,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -10095,16 +10488,16 @@
     "unknownPeer": false,
     "src": [
      [
-      41,
-      2828
+      57,
+      2924
      ],
      [
-      41,
-      2838
+      57,
+      2934
      ],
      [
-      41,
-      2828
+      57,
+      2924
      ]
     ],
     "srcNone": null
@@ -10133,6 +10526,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -10144,16 +10538,16 @@
     "unknownPeer": false,
     "src": [
      [
-      41,
-      2829
+      57,
+      2925
      ],
      [
-      41,
-      2838
+      57,
+      2934
      ],
      [
-      41,
-      2829
+      57,
+      2925
      ]
     ],
     "srcNone": null
@@ -10182,6 +10576,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -10193,16 +10588,16 @@
     "unknownPeer": false,
     "src": [
      [
-      41,
-      2830
+      57,
+      2926
      ],
      [
-      41,
-      2838
+      57,
+      2934
      ],
      [
-      41,
-      2830
+      57,
+      2926
      ]
     ],
     "srcNone": null
@@ -10231,6 +10626,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -10242,16 +10638,16 @@
     "unknownPeer": false,
     "src": [
      [
-      41,
-      2831
+      57,
+      2927
      ],
      [
-      41,
-      2838
+      57,
+      2934
      ],
      [
-      41,
-      2831
+      57,
+      2927
      ]
     ],
     "srcNone": null
@@ -10280,6 +10676,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -10291,16 +10688,16 @@
     "unknownPeer": false,
     "src": [
      [
-      41,
-      2832
+      57,
+      2928
      ],
      [
-      41,
-      2838
+      57,
+      2934
      ],
      [
-      41,
-      2832
+      57,
+      2928
      ]
     ],
     "srcNone": null
@@ -10329,6 +10726,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -10340,16 +10738,16 @@
     "unknownPeer": false,
     "src": [
      [
-      41,
-      2833
+      57,
+      2929
      ],
      [
-      41,
-      2838
+      57,
+      2934
      ],
      [
-      41,
-      2833
+      57,
+      2929
      ]
     ],
     "srcNone": null
@@ -10378,6 +10776,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -10389,16 +10788,16 @@
     "unknownPeer": false,
     "src": [
      [
-      41,
-      2834
+      57,
+      2930
      ],
      [
-      41,
-      2838
+      57,
+      2934
      ],
      [
-      41,
-      2834
+      57,
+      2930
      ]
     ],
     "srcNone": null
@@ -10427,6 +10826,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -10438,16 +10838,16 @@
     "unknownPeer": false,
     "src": [
      [
-      41,
-      2835
+      57,
+      2931
      ],
      [
-      41,
-      2838
+      57,
+      2934
      ],
      [
-      41,
-      2835
+      57,
+      2931
      ]
     ],
     "srcNone": null
@@ -10476,6 +10876,14 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "alternate-port",
+     "portNumber": null,
+     "designatedBridge": "E48D8C000003",
+     "designatedPort": 9,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -10489,20 +10897,20 @@
     "unknownPeer": false,
     "src": [
      [
-      41,
-      2824
+      57,
+      2920
      ],
      [
-      42,
-      2864
+      58,
+      2960
      ],
      [
-      41,
-      2836
+      59,
+      2979
      ],
      [
-      41,
-      2837
+      57,
+      2932
      ]
     ],
     "srcNone": null
@@ -10531,6 +10939,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -10540,12 +10949,12 @@
     "unknownPeer": false,
     "src": [
      [
-      41,
-      2821
+      57,
+      2917
      ],
      [
-      42,
-      2844
+      58,
+      2940
      ]
     ],
     "srcNone": null
@@ -10574,6 +10983,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -10583,12 +10993,12 @@
     "unknownPeer": false,
     "src": [
      [
-      41,
-      2821
+      57,
+      2917
      ],
      [
-      42,
-      2854
+      58,
+      2950
      ]
     ],
     "srcNone": null
@@ -10617,6 +11027,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -10626,12 +11037,12 @@
     "unknownPeer": false,
     "src": [
      [
-      41,
-      2822
+      57,
+      2918
      ],
      [
-      41,
-      2839
+      57,
+      2935
      ]
     ],
     "srcNone": null
@@ -10663,6 +11074,14 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "root-port",
+     "portNumber": null,
+     "designatedBridge": "E48D8C000002",
+     "designatedPort": 10,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -10707,20 +11126,20 @@
     "unknownPeer": false,
     "src": [
      [
-      43,
-      2894
+      61,
+      3002
      ],
      [
-      43,
-      2896
+      61,
+      3004
      ],
      [
-      45,
-      2981
+      63,
+      3064
      ],
      [
-      45,
-      2983
+      65,
+      3101
      ]
     ],
     "srcNone": null
@@ -10749,6 +11168,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10
@@ -10760,16 +11180,16 @@
     "unknownPeer": false,
     "src": [
      [
-      43,
-      2890
+      61,
+      2998
      ],
      [
-      43,
-      2895
+      61,
+      3003
      ],
      [
-      43,
-      2909
+      61,
+      3017
      ]
     ],
     "srcNone": null
@@ -10798,6 +11218,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -10811,20 +11232,20 @@
     "unknownPeer": false,
     "src": [
      [
-      43,
-      2891
+      61,
+      2999
      ],
      [
-      43,
-      2898
+      61,
+      3006
      ],
      [
-      44,
-      2942
+      62,
+      3050
      ],
      [
-      45,
-      2959
+      65,
+      3079
      ]
     ],
     "srcNone": null
@@ -10853,6 +11274,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -10866,20 +11288,20 @@
     "unknownPeer": false,
     "src": [
      [
-      43,
-      2892
+      61,
+      3000
      ],
      [
-      43,
-      2899
+      61,
+      3007
      ],
      [
-      44,
-      2946
+      62,
+      3054
      ],
      [
-      45,
-      2961
+      65,
+      3081
      ]
     ],
     "srcNone": null
@@ -10908,6 +11330,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -10921,20 +11344,20 @@
     "unknownPeer": false,
     "src": [
      [
-      43,
-      2893
+      61,
+      3001
      ],
      [
-      43,
-      2900
+      61,
+      3008
      ],
      [
-      44,
-      2950
+      62,
+      3058
      ],
      [
-      45,
-      2963
+      65,
+      3083
      ]
     ],
     "srcNone": null
@@ -10963,6 +11386,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -10976,20 +11400,20 @@
     "unknownPeer": true,
     "src": [
      [
-      43,
-      2901
+      61,
+      3009
      ],
      [
-      45,
-      2965
+      65,
+      3085
      ],
      [
-      43,
-      2911
+      61,
+      3019
      ],
      [
-      43,
-      2901
+      61,
+      3009
      ]
     ],
     "srcNone": null
@@ -11018,6 +11442,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -11031,20 +11456,20 @@
     "unknownPeer": true,
     "src": [
      [
-      43,
-      2902
+      61,
+      3010
      ],
      [
-      45,
-      2967
+      65,
+      3087
      ],
      [
-      43,
-      2911
+      61,
+      3019
      ],
      [
-      43,
-      2902
+      61,
+      3010
      ]
     ],
     "srcNone": null
@@ -11073,6 +11498,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -11086,20 +11512,20 @@
     "unknownPeer": true,
     "src": [
      [
-      43,
-      2903
+      61,
+      3011
      ],
      [
-      45,
-      2969
+      65,
+      3089
      ],
      [
-      43,
-      2911
+      61,
+      3019
      ],
      [
-      43,
-      2903
+      61,
+      3011
      ]
     ],
     "srcNone": null
@@ -11128,6 +11554,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -11141,20 +11568,20 @@
     "unknownPeer": true,
     "src": [
      [
-      43,
-      2904
+      61,
+      3012
      ],
      [
-      45,
-      2971
+      65,
+      3091
      ],
      [
-      43,
-      2911
+      61,
+      3019
      ],
      [
-      43,
-      2904
+      61,
+      3012
      ]
     ],
     "srcNone": null
@@ -11183,6 +11610,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -11196,20 +11624,20 @@
     "unknownPeer": true,
     "src": [
      [
-      43,
-      2905
+      61,
+      3013
      ],
      [
-      45,
-      2973
+      65,
+      3093
      ],
      [
-      43,
-      2911
+      61,
+      3019
      ],
      [
-      43,
-      2905
+      61,
+      3013
      ]
     ],
     "srcNone": null
@@ -11238,6 +11666,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -11251,20 +11680,20 @@
     "unknownPeer": true,
     "src": [
      [
-      43,
-      2906
+      61,
+      3014
      ],
      [
-      45,
-      2975
+      65,
+      3095
      ],
      [
-      43,
-      2911
+      61,
+      3019
      ],
      [
-      43,
-      2906
+      61,
+      3014
      ]
     ],
     "srcNone": null
@@ -11293,6 +11722,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -11306,20 +11736,20 @@
     "unknownPeer": true,
     "src": [
      [
-      43,
-      2907
+      61,
+      3015
      ],
      [
-      45,
-      2977
+      65,
+      3097
      ],
      [
-      43,
-      2911
+      61,
+      3019
      ],
      [
-      43,
-      2907
+      61,
+      3015
      ]
     ],
     "srcNone": null
@@ -11348,6 +11778,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -11361,20 +11792,20 @@
     "unknownPeer": true,
     "src": [
      [
-      43,
-      2908
+      61,
+      3016
      ],
      [
-      45,
-      2979
+      65,
+      3099
      ],
      [
-      43,
-      2911
+      61,
+      3019
      ],
      [
-      43,
-      2908
+      61,
+      3016
      ]
     ],
     "srcNone": null
@@ -11403,6 +11834,14 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "alternate-port",
+     "portNumber": null,
+     "designatedBridge": "E48D8C000003",
+     "designatedPort": 10,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -11416,20 +11855,20 @@
     "unknownPeer": false,
     "src": [
      [
-      43,
-      2897
+      61,
+      3005
      ],
      [
-      44,
-      2937
+      62,
+      3045
      ],
      [
-      43,
-      2909
+      63,
+      3064
      ],
      [
-      43,
-      2910
+      61,
+      3017
      ]
     ],
     "srcNone": null
@@ -11458,6 +11897,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -11467,12 +11907,12 @@
     "unknownPeer": false,
     "src": [
      [
-      43,
-      2894
+      61,
+      3002
      ],
      [
-      44,
-      2917
+      62,
+      3025
      ]
     ],
     "srcNone": null
@@ -11501,6 +11941,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -11510,12 +11951,12 @@
     "unknownPeer": false,
     "src": [
      [
-      43,
-      2894
+      61,
+      3002
      ],
      [
-      44,
-      2927
+      62,
+      3035
      ]
     ],
     "srcNone": null
@@ -11544,6 +11985,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -11553,12 +11995,12 @@
     "unknownPeer": false,
     "src": [
      [
-      43,
-      2895
+      61,
+      3003
      ],
      [
-      43,
-      2912
+      61,
+      3020
      ]
     ],
     "srcNone": null
@@ -11590,6 +12032,14 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "root-port",
+     "portNumber": null,
+     "designatedBridge": "E48D8C000002",
+     "designatedPort": 11,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -11634,20 +12084,20 @@
     "unknownPeer": false,
     "src": [
      [
-      47,
-      3059
+      67,
+      3179
      ],
      [
-      47,
-      3061
+      67,
+      3181
      ],
      [
-      50,
-      3233
+      69,
+      3241
      ],
      [
-      50,
-      3235
+      72,
+      3365
      ]
     ],
     "srcNone": null
@@ -11676,6 +12126,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10
@@ -11687,16 +12138,16 @@
     "unknownPeer": false,
     "src": [
      [
-      47,
-      3055
+      67,
+      3175
      ],
      [
-      47,
-      3060
+      67,
+      3180
      ],
      [
-      47,
-      3074
+      67,
+      3194
      ]
     ],
     "srcNone": null
@@ -11725,6 +12176,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -11738,20 +12190,20 @@
     "unknownPeer": false,
     "src": [
      [
-      47,
-      3056
+      67,
+      3176
      ],
      [
-      47,
-      3063
+      67,
+      3183
      ],
      [
-      48,
-      3107
+      68,
+      3227
      ],
      [
-      50,
-      3211
+      72,
+      3343
      ]
     ],
     "srcNone": null
@@ -11780,6 +12232,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -11793,20 +12246,20 @@
     "unknownPeer": false,
     "src": [
      [
-      47,
-      3057
+      67,
+      3177
      ],
      [
-      47,
-      3064
+      67,
+      3184
      ],
      [
-      48,
-      3111
+      68,
+      3231
      ],
      [
-      50,
-      3213
+      72,
+      3345
      ]
     ],
     "srcNone": null
@@ -11835,6 +12288,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -11848,20 +12302,20 @@
     "unknownPeer": false,
     "src": [
      [
-      47,
-      3058
+      67,
+      3178
      ],
      [
-      47,
-      3065
+      67,
+      3185
      ],
      [
-      48,
-      3115
+      68,
+      3235
      ],
      [
-      50,
-      3215
+      72,
+      3347
      ]
     ],
     "srcNone": null
@@ -11890,6 +12344,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -11903,20 +12358,20 @@
     "unknownPeer": true,
     "src": [
      [
-      47,
-      3066
+      67,
+      3186
      ],
      [
-      50,
-      3217
+      72,
+      3349
      ],
      [
-      47,
-      3076
+      67,
+      3196
      ],
      [
-      47,
-      3066
+      67,
+      3186
      ]
     ],
     "srcNone": null
@@ -11945,6 +12400,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -11958,20 +12414,20 @@
     "unknownPeer": true,
     "src": [
      [
-      47,
-      3067
+      67,
+      3187
      ],
      [
-      50,
-      3219
+      72,
+      3351
      ],
      [
-      47,
-      3076
+      67,
+      3196
      ],
      [
-      47,
-      3067
+      67,
+      3187
      ]
     ],
     "srcNone": null
@@ -12000,6 +12456,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -12013,20 +12470,20 @@
     "unknownPeer": true,
     "src": [
      [
-      47,
-      3068
+      67,
+      3188
      ],
      [
-      50,
-      3221
+      72,
+      3353
      ],
      [
-      47,
-      3076
+      67,
+      3196
      ],
      [
-      47,
-      3068
+      67,
+      3188
      ]
     ],
     "srcNone": null
@@ -12055,6 +12512,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -12068,20 +12526,20 @@
     "unknownPeer": true,
     "src": [
      [
-      47,
-      3069
+      67,
+      3189
      ],
      [
-      50,
-      3223
+      72,
+      3355
      ],
      [
-      47,
-      3076
+      67,
+      3196
      ],
      [
-      47,
-      3069
+      67,
+      3189
      ]
     ],
     "srcNone": null
@@ -12110,6 +12568,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -12123,20 +12582,20 @@
     "unknownPeer": true,
     "src": [
      [
-      47,
-      3070
+      67,
+      3190
      ],
      [
-      50,
-      3225
+      72,
+      3357
      ],
      [
-      47,
-      3076
+      67,
+      3196
      ],
      [
-      47,
-      3070
+      67,
+      3190
      ]
     ],
     "srcNone": null
@@ -12165,6 +12624,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -12178,20 +12638,20 @@
     "unknownPeer": true,
     "src": [
      [
-      47,
-      3071
+      67,
+      3191
      ],
      [
-      50,
-      3227
+      72,
+      3359
      ],
      [
-      47,
-      3076
+      67,
+      3196
      ],
      [
-      47,
-      3071
+      67,
+      3191
      ]
     ],
     "srcNone": null
@@ -12220,6 +12680,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -12233,20 +12694,20 @@
     "unknownPeer": true,
     "src": [
      [
-      47,
-      3072
+      67,
+      3192
      ],
      [
-      50,
-      3229
+      72,
+      3361
      ],
      [
-      47,
-      3076
+      67,
+      3196
      ],
      [
-      47,
-      3072
+      67,
+      3192
      ]
     ],
     "srcNone": null
@@ -12275,6 +12736,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -12288,20 +12750,20 @@
     "unknownPeer": true,
     "src": [
      [
-      47,
-      3073
+      67,
+      3193
      ],
      [
-      50,
-      3231
+      72,
+      3363
      ],
      [
-      47,
-      3076
+      67,
+      3196
      ],
      [
-      47,
-      3073
+      67,
+      3193
      ]
     ],
     "srcNone": null
@@ -12330,6 +12792,14 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "alternate-port",
+     "portNumber": null,
+     "designatedBridge": "E48D8C000003",
+     "designatedPort": 11,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -12343,20 +12813,20 @@
     "unknownPeer": false,
     "src": [
      [
-      47,
-      3062
+      67,
+      3182
      ],
      [
-      48,
-      3102
+      68,
+      3222
      ],
      [
-      47,
-      3074
+      69,
+      3241
      ],
      [
-      47,
-      3075
+      67,
+      3194
      ]
     ],
     "srcNone": null
@@ -12385,6 +12855,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -12394,12 +12865,12 @@
     "unknownPeer": false,
     "src": [
      [
-      47,
-      3059
+      67,
+      3179
      ],
      [
-      48,
-      3082
+      68,
+      3202
      ]
     ],
     "srcNone": null
@@ -12428,6 +12899,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -12437,12 +12909,12 @@
     "unknownPeer": false,
     "src": [
      [
-      47,
-      3059
+      67,
+      3179
      ],
      [
-      48,
-      3092
+      68,
+      3212
      ]
     ],
     "srcNone": null
@@ -12471,6 +12943,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -12480,12 +12953,12 @@
     "unknownPeer": false,
     "src": [
      [
-      47,
-      3060
+      67,
+      3180
      ],
      [
-      47,
-      3077
+      67,
+      3197
      ]
     ],
     "srcNone": null
@@ -12517,6 +12990,14 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "root-port",
+     "portNumber": null,
+     "designatedBridge": "E48D8C000002",
+     "designatedPort": 12,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -12561,20 +13042,20 @@
     "unknownPeer": false,
     "src": [
      [
-      51,
-      3306
+      73,
+      3438
      ],
      [
-      51,
-      3309
+      73,
+      3441
      ],
      [
-      53,
-      3410
+      75,
+      3501
      ],
      [
-      53,
-      3412
+      77,
+      3554
      ]
     ],
     "srcNone": null
@@ -12603,6 +13084,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -12615,20 +13097,20 @@
     "unknownPeer": false,
     "src": [
      [
-      51,
-      3302
+      73,
+      3434
      ],
      [
-      51,
-      3307
+      73,
+      3439
      ],
      [
-      51,
-      3308
+      73,
+      3440
      ],
      [
-      51,
-      3322
+      73,
+      3454
      ]
     ],
     "srcNone": null
@@ -12657,6 +13139,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -12670,20 +13153,20 @@
     "unknownPeer": false,
     "src": [
      [
-      51,
-      3303
+      73,
+      3435
      ],
      [
-      51,
-      3311
+      73,
+      3443
      ],
      [
-      52,
-      3355
+      74,
+      3487
      ],
      [
-      53,
-      3372
+      77,
+      3516
      ]
     ],
     "srcNone": null
@@ -12712,6 +13195,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -12725,20 +13209,20 @@
     "unknownPeer": false,
     "src": [
      [
-      51,
-      3304
+      73,
+      3436
      ],
      [
-      51,
-      3312
+      73,
+      3444
      ],
      [
-      52,
-      3359
+      74,
+      3491
      ],
      [
-      53,
-      3374
+      77,
+      3518
      ]
     ],
     "srcNone": null
@@ -12767,6 +13251,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      20
     ],
@@ -12780,20 +13265,20 @@
     "unknownPeer": false,
     "src": [
      [
-      51,
-      3305
+      73,
+      3437
      ],
      [
-      51,
-      3313
+      73,
+      3445
      ],
      [
-      52,
-      3363
+      74,
+      3495
      ],
      [
-      53,
-      3376
+      77,
+      3520
      ]
     ],
     "srcNone": null
@@ -12822,6 +13307,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -12835,20 +13321,20 @@
     "unknownPeer": true,
     "src": [
      [
-      51,
-      3314
+      73,
+      3446
      ],
      [
-      53,
-      3378
+      77,
+      3522
      ],
      [
-      51,
-      3324
+      73,
+      3456
      ],
      [
-      51,
-      3314
+      73,
+      3446
      ]
     ],
     "srcNone": null
@@ -12877,6 +13363,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -12890,20 +13377,20 @@
     "unknownPeer": true,
     "src": [
      [
-      51,
-      3315
+      73,
+      3447
      ],
      [
-      53,
-      3380
+      77,
+      3524
      ],
      [
-      51,
-      3324
+      73,
+      3456
      ],
      [
-      51,
-      3315
+      73,
+      3447
      ]
     ],
     "srcNone": null
@@ -12932,6 +13419,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -12945,20 +13433,20 @@
     "unknownPeer": true,
     "src": [
      [
-      51,
-      3316
+      73,
+      3448
      ],
      [
-      53,
-      3382
+      77,
+      3526
      ],
      [
-      51,
-      3324
+      73,
+      3456
      ],
      [
-      51,
-      3316
+      73,
+      3448
      ]
     ],
     "srcNone": null
@@ -12987,6 +13475,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -13000,20 +13489,20 @@
     "unknownPeer": true,
     "src": [
      [
-      51,
-      3317
+      73,
+      3449
      ],
      [
-      53,
-      3384
+      77,
+      3528
      ],
      [
-      51,
-      3324
+      73,
+      3456
      ],
      [
-      51,
-      3317
+      73,
+      3449
      ]
     ],
     "srcNone": null
@@ -13042,6 +13531,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -13055,20 +13545,20 @@
     "unknownPeer": true,
     "src": [
      [
-      51,
-      3318
+      73,
+      3450
      ],
      [
-      53,
-      3386
+      77,
+      3530
      ],
      [
-      51,
-      3324
+      73,
+      3456
      ],
      [
-      51,
-      3318
+      73,
+      3450
      ]
     ],
     "srcNone": null
@@ -13097,6 +13587,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -13110,20 +13601,20 @@
     "unknownPeer": true,
     "src": [
      [
-      51,
-      3319
+      73,
+      3451
      ],
      [
-      53,
-      3388
+      77,
+      3532
      ],
      [
-      51,
-      3324
+      73,
+      3456
      ],
      [
-      51,
-      3319
+      73,
+      3451
      ]
     ],
     "srcNone": null
@@ -13152,6 +13643,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -13165,20 +13657,20 @@
     "unknownPeer": true,
     "src": [
      [
-      51,
-      3320
+      73,
+      3452
      ],
      [
-      53,
-      3390
+      77,
+      3534
      ],
      [
-      51,
-      3324
+      73,
+      3456
      ],
      [
-      51,
-      3320
+      73,
+      3452
      ]
     ],
     "srcNone": null
@@ -13207,6 +13699,7 @@
     "pvid": 30,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [
      30
     ],
@@ -13220,20 +13713,20 @@
     "unknownPeer": true,
     "src": [
      [
-      51,
-      3321
+      73,
+      3453
      ],
      [
-      53,
-      3392
+      77,
+      3536
      ],
      [
-      51,
-      3324
+      73,
+      3456
      ],
      [
-      51,
-      3321
+      73,
+      3453
      ]
     ],
     "srcNone": null
@@ -13262,6 +13755,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -13280,20 +13774,20 @@
     "unknownPeer": false,
     "src": [
      [
-      53,
-      3394
+      77,
+      3538
      ],
      [
-      53,
-      3396
+      77,
+      3540
      ],
      [
-      53,
-      3398
+      77,
+      3542
      ],
      [
-      53,
-      3400
+      77,
+      3544
      ]
     ],
     "srcNone": null
@@ -13322,6 +13816,14 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": {
+     "role": "alternate-port",
+     "portNumber": null,
+     "designatedBridge": "E48D8C000003",
+     "designatedPort": 12,
+     "edge": false,
+     "sendingRstp": null
+    },
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -13335,20 +13837,20 @@
     "unknownPeer": false,
     "src": [
      [
-      51,
-      3310
+      73,
+      3442
      ],
      [
-      52,
-      3350
+      74,
+      3482
      ],
      [
-      51,
-      3322
+      75,
+      3501
      ],
      [
-      51,
-      3323
+      73,
+      3454
      ]
     ],
     "srcNone": null
@@ -13377,6 +13879,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -13386,12 +13889,12 @@
     "unknownPeer": false,
     "src": [
      [
-      51,
-      3306
+      73,
+      3438
      ],
      [
-      52,
-      3330
+      74,
+      3462
      ]
     ],
     "srcNone": null
@@ -13420,6 +13923,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -13429,12 +13933,12 @@
     "unknownPeer": false,
     "src": [
      [
-      51,
-      3306
+      73,
+      3438
      ],
      [
-      52,
-      3340
+      74,
+      3472
      ]
     ],
     "srcNone": null
@@ -13463,6 +13967,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -13472,12 +13977,12 @@
     "unknownPeer": false,
     "src": [
      [
-      51,
-      3307
+      73,
+      3439
      ],
      [
-      51,
-      3325
+      73,
+      3457
      ]
     ],
     "srcNone": null
@@ -13506,6 +14011,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -13515,8 +14021,8 @@
     "unknownPeer": false,
     "src": [
      [
-      51,
-      3308
+      73,
+      3440
      ]
     ],
     "srcNone": null
@@ -13545,6 +14051,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -13582,6 +14089,7 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -13652,6 +14160,7 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -13722,6 +14231,7 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -13792,6 +14302,7 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -13862,6 +14373,7 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -13932,6 +14444,7 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -14002,6 +14515,7 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -14072,6 +14586,7 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -14142,6 +14657,7 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -14212,6 +14728,7 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -14282,6 +14799,7 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -14352,6 +14870,7 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -14422,6 +14941,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -14477,6 +14997,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -14532,6 +15053,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -14575,6 +15097,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -14618,6 +15141,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -14661,6 +15185,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -14704,6 +15229,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -14747,6 +15273,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -14790,6 +15317,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -14833,6 +15361,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -14876,6 +15405,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -14919,6 +15449,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -14962,6 +15493,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -15005,6 +15537,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -15048,6 +15581,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -15091,6 +15625,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -15134,6 +15669,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -15177,6 +15713,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -15220,6 +15757,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -15263,6 +15801,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -15306,6 +15845,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -15349,6 +15889,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -15392,6 +15933,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -15435,6 +15977,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -15478,6 +16021,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -15521,6 +16065,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -15564,6 +16109,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -15607,6 +16153,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -15650,6 +16197,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -15693,6 +16241,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -15736,6 +16285,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -15783,6 +16333,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -15830,6 +16381,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -15877,6 +16429,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -15927,6 +16480,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -15982,6 +16536,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -16037,6 +16592,7 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -16104,6 +16660,7 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -16171,6 +16728,7 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -16238,6 +16796,7 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -16305,6 +16864,7 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -16372,6 +16932,7 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -16439,6 +17000,7 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -16506,6 +17068,7 @@
     "pvid": 20,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -16573,6 +17136,7 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -16640,6 +17204,7 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -16707,6 +17272,7 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -16774,6 +17340,7 @@
     "pvid": 1,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
      10,
@@ -16841,6 +17408,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -16884,6 +17452,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -16927,6 +17496,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -16970,6 +17540,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17017,6 +17588,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17064,6 +17636,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17111,6 +17684,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17145,6 +17719,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17179,6 +17754,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17213,6 +17789,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17247,6 +17824,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17281,6 +17859,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17315,6 +17894,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17349,6 +17929,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17383,6 +17964,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17417,6 +17999,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17451,6 +18034,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17485,6 +18069,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17519,6 +18104,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17553,6 +18139,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17587,6 +18174,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17621,6 +18209,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17655,6 +18244,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17689,6 +18279,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17723,6 +18314,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17757,6 +18349,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17791,6 +18384,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17825,6 +18419,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17859,6 +18454,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17893,6 +18489,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17927,6 +18524,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17961,6 +18559,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -17995,6 +18594,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -18029,6 +18629,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -18063,6 +18664,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -18097,6 +18699,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -18131,6 +18734,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -18165,6 +18769,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -18199,6 +18804,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -18233,6 +18839,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -18267,6 +18874,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -18301,6 +18909,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -18335,6 +18944,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -18369,6 +18979,7 @@
     "pvid": null,
     "frameTypes": null,
     "ingressFiltering": null,
+    "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
     "unresolvedVlans": [],
@@ -18597,8 +19208,8 @@
       102
      ],
      [
-      21,
-      1702
+      23,
+      1714
      ]
     ]
    },
@@ -18642,8 +19253,8 @@
       106
      ],
      [
-      21,
-      1712
+      23,
+      1724
      ]
     ]
    },
@@ -18685,8 +19296,8 @@
       862
      ],
      [
-      24,
-      1879
+      28,
+      1903
      ]
     ]
    },
@@ -18730,8 +19341,8 @@
       110
      ],
      [
-      24,
-      1859
+      28,
+      1883
      ]
     ]
    },
@@ -18775,8 +19386,8 @@
       114
      ],
      [
-      24,
-      1869
+      28,
+      1893
      ]
     ]
    },
@@ -18820,8 +19431,8 @@
       866
      ],
      [
-      27,
-      2039
+      33,
+      2075
      ]
     ]
    },
@@ -18865,8 +19476,8 @@
       118
      ],
      [
-      27,
-      2019
+      33,
+      2055
      ]
     ]
    },
@@ -18910,8 +19521,8 @@
       122
      ],
      [
-      27,
-      2029
+      33,
+      2065
      ]
     ]
    },
@@ -18936,8 +19547,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      30,
-      2216
+      38,
+      2264
      ]
     ]
    },
@@ -18981,8 +19592,8 @@
       870
      ],
      [
-      30,
-      2199
+      38,
+      2247
      ]
     ]
    },
@@ -19026,8 +19637,8 @@
       126
      ],
      [
-      30,
-      2179
+      38,
+      2227
      ]
     ]
    },
@@ -19071,8 +19682,8 @@
       130
      ],
      [
-      30,
-      2189
+      38,
+      2237
      ]
     ]
    },
@@ -19095,8 +19706,8 @@
       "dev": "TPE_ACC_SW_06",
       "ifc": "ether21",
       "peerIfc": "?",
-      "block": 33,
-      "line": 2385
+      "block": 43,
+      "line": 2445
      }
     ],
     "cls": "other",
@@ -19107,8 +19718,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      33,
-      2385
+      43,
+      2445
      ]
     ]
    },
@@ -19152,8 +19763,8 @@
       874
      ],
      [
-      33,
-      2364
+      43,
+      2424
      ]
     ]
    },
@@ -19197,8 +19808,8 @@
       134
      ],
      [
-      33,
-      2344
+      43,
+      2404
      ]
     ]
    },
@@ -19242,8 +19853,8 @@
       138
      ],
      [
-      33,
-      2354
+      43,
+      2414
      ]
     ]
    },
@@ -19287,8 +19898,8 @@
       878
      ],
      [
-      36,
-      2540
+      48,
+      2612
      ]
     ]
    },
@@ -19332,8 +19943,8 @@
       142
      ],
      [
-      36,
-      2520
+      48,
+      2592
      ]
     ]
    },
@@ -19377,8 +19988,8 @@
       146
      ],
      [
-      36,
-      2530
+      48,
+      2602
      ]
     ]
    },
@@ -19419,8 +20030,8 @@
       882
      ],
      [
-      39,
-      2704
+      53,
+      2788
      ]
     ]
    },
@@ -19464,8 +20075,8 @@
       150
      ],
      [
-      39,
-      2684
+      53,
+      2768
      ]
     ]
    },
@@ -19509,8 +20120,8 @@
       154
      ],
      [
-      39,
-      2694
+      53,
+      2778
      ]
     ]
    },
@@ -19554,8 +20165,8 @@
       886
      ],
      [
-      42,
-      2864
+      58,
+      2960
      ]
     ]
    },
@@ -19599,8 +20210,8 @@
       158
      ],
      [
-      42,
-      2844
+      58,
+      2940
      ]
     ]
    },
@@ -19644,8 +20255,8 @@
       162
      ],
      [
-      42,
-      2854
+      58,
+      2950
      ]
     ]
    },
@@ -19689,8 +20300,8 @@
       890
      ],
      [
-      44,
-      2937
+      62,
+      3045
      ]
     ]
    },
@@ -19734,8 +20345,8 @@
       166
      ],
      [
-      44,
-      2917
+      62,
+      3025
      ]
     ]
    },
@@ -19779,8 +20390,8 @@
       170
      ],
      [
-      44,
-      2927
+      62,
+      3035
      ]
     ]
    },
@@ -19824,8 +20435,8 @@
       894
      ],
      [
-      48,
-      3102
+      68,
+      3222
      ]
     ]
    },
@@ -19869,8 +20480,8 @@
       174
      ],
      [
-      48,
-      3082
+      68,
+      3202
      ]
     ]
    },
@@ -19914,8 +20525,8 @@
       178
      ],
      [
-      48,
-      3092
+      68,
+      3212
      ]
     ]
    },
@@ -19959,8 +20570,8 @@
       898
      ],
      [
-      52,
-      3350
+      74,
+      3482
      ]
     ]
    },
@@ -20004,8 +20615,8 @@
       182
      ],
      [
-      52,
-      3330
+      74,
+      3462
      ]
     ]
    },
@@ -20049,8 +20660,8 @@
       186
      ],
      [
-      52,
-      3340
+      74,
+      3472
      ]
     ]
    },
@@ -20245,8 +20856,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      21,
-      1722
+      23,
+      1734
      ]
     ]
    },
@@ -20273,8 +20884,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      21,
-      1726
+      23,
+      1738
      ]
     ]
    },
@@ -20301,8 +20912,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      21,
-      1730
+      23,
+      1742
      ]
     ]
    },
@@ -20329,8 +20940,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      24,
-      1884
+      28,
+      1908
      ]
     ]
    },
@@ -20357,8 +20968,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      24,
-      1888
+      28,
+      1912
      ]
     ]
    },
@@ -20385,8 +20996,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      24,
-      1892
+      28,
+      1916
      ]
     ]
    },
@@ -20413,8 +21024,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      27,
-      2044
+      33,
+      2080
      ]
     ]
    },
@@ -20441,8 +21052,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      27,
-      2048
+      33,
+      2084
      ]
     ]
    },
@@ -20469,8 +21080,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      27,
-      2052
+      33,
+      2088
      ]
     ]
    },
@@ -20497,8 +21108,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      30,
-      2204
+      38,
+      2252
      ]
     ]
    },
@@ -20525,8 +21136,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      30,
-      2208
+      38,
+      2256
      ]
     ]
    },
@@ -20553,8 +21164,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      30,
-      2212
+      38,
+      2260
      ]
     ]
    },
@@ -20581,8 +21192,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      33,
-      2369
+      43,
+      2429
      ]
     ]
    },
@@ -20609,8 +21220,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      33,
-      2373
+      43,
+      2433
      ]
     ]
    },
@@ -20637,8 +21248,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      33,
-      2377
+      43,
+      2437
      ]
     ]
    },
@@ -20665,8 +21276,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      36,
-      2545
+      48,
+      2617
      ]
     ]
    },
@@ -20693,8 +21304,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      36,
-      2549
+      48,
+      2621
      ]
     ]
    },
@@ -20721,8 +21332,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      36,
-      2553
+      48,
+      2625
      ]
     ]
    },
@@ -20749,8 +21360,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      39,
-      2709
+      53,
+      2793
      ]
     ]
    },
@@ -20777,8 +21388,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      39,
-      2713
+      53,
+      2797
      ]
     ]
    },
@@ -20805,8 +21416,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      39,
-      2717
+      53,
+      2801
      ]
     ]
    },
@@ -20833,8 +21444,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      42,
-      2869
+      58,
+      2965
      ]
     ]
    },
@@ -20861,8 +21472,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      42,
-      2873
+      58,
+      2969
      ]
     ]
    },
@@ -20889,8 +21500,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      42,
-      2877
+      58,
+      2973
      ]
     ]
    },
@@ -20917,8 +21528,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      44,
-      2942
+      62,
+      3050
      ]
     ]
    },
@@ -20945,8 +21556,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      44,
-      2946
+      62,
+      3054
      ]
     ]
    },
@@ -20973,8 +21584,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      44,
-      2950
+      62,
+      3058
      ]
     ]
    },
@@ -21001,8 +21612,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      48,
-      3107
+      68,
+      3227
      ]
     ]
    },
@@ -21029,8 +21640,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      48,
-      3111
+      68,
+      3231
      ]
     ]
    },
@@ -21057,8 +21668,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      48,
-      3115
+      68,
+      3235
      ]
     ]
    },
@@ -21085,8 +21696,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      52,
-      3355
+      74,
+      3487
      ]
     ]
    },
@@ -21113,8 +21724,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      52,
-      3359
+      74,
+      3491
      ]
     ]
    },
@@ -21141,8 +21752,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      52,
-      3363
+      74,
+      3495
      ]
     ]
    },
@@ -21167,8 +21778,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      33,
-      2381
+      43,
+      2441
      ]
     ]
    },
@@ -21193,8 +21804,8 @@
     "vlanMismatch": false,
     "src": [
      [
-      36,
-      2557
+      48,
+      2629
      ]
     ]
    }
@@ -21215,8 +21826,8 @@
       "text": "TPE_ACC_SW_06 ether21 只看到 TPE_CSS_01 一台 MNDP 鄰居，TPE_CSS_01 也只出現在這個埠（TPE_CSS_01 沒有收集資料）",
       "src": [
        [
-        33,
-        2385
+        43,
+        2445
        ]
       ]
      },
@@ -21225,8 +21836,8 @@
       "text": "TPE_ACC_SW_06 ether21 學到 TPE_CSS_01 的 MAC，同一埠的其他已知設備都可證明在 TPE_CSS_01 後面或之間（TPE_CSS_01 沒有收集資料）",
       "src": [
        [
-        34,
-        2400
+        46,
+        2472
        ]
       ]
      }
@@ -21415,12 +22026,12 @@
     "desc": null,
     "src": [
      [
-      20,
-      1680
+      22,
+      1692
      ],
      [
-      20,
-      1694
+      22,
+      1706
      ]
     ],
     "srcNone": null,
@@ -21446,8 +22057,8 @@
     "desc": null,
     "src": [
      [
-      20,
-      1695
+      22,
+      1707
      ]
     ],
     "srcNone": null,
@@ -21481,8 +22092,8 @@
     "desc": null,
     "src": [
      [
-      20,
-      1696
+      22,
+      1708
      ]
     ],
     "srcNone": null,
@@ -21554,12 +22165,12 @@
     "desc": null,
     "src": [
      [
-      23,
-      1837
+      27,
+      1861
      ],
      [
-      23,
-      1851
+      27,
+      1875
      ]
     ],
     "srcNone": null,
@@ -21585,8 +22196,8 @@
     "desc": null,
     "src": [
      [
-      23,
-      1852
+      27,
+      1876
      ]
     ],
     "srcNone": null,
@@ -21620,8 +22231,8 @@
     "desc": null,
     "src": [
      [
-      23,
-      1853
+      27,
+      1877
      ]
     ],
     "srcNone": null,
@@ -21689,12 +22300,12 @@
     "desc": null,
     "src": [
      [
-      26,
-      1997
+      32,
+      2033
      ],
      [
-      26,
-      2011
+      32,
+      2047
      ]
     ],
     "srcNone": null,
@@ -21720,8 +22331,8 @@
     "desc": null,
     "src": [
      [
-      26,
-      2012
+      32,
+      2048
      ]
     ],
     "srcNone": null,
@@ -21755,8 +22366,8 @@
     "desc": null,
     "src": [
      [
-      26,
-      2013
+      32,
+      2049
      ]
     ],
     "srcNone": null,
@@ -21828,12 +22439,12 @@
     "desc": null,
     "src": [
      [
-      29,
-      2157
+      37,
+      2205
      ],
      [
-      29,
-      2171
+      37,
+      2219
      ]
     ],
     "srcNone": null,
@@ -21859,8 +22470,8 @@
     "desc": null,
     "src": [
      [
-      29,
-      2172
+      37,
+      2220
      ]
     ],
     "srcNone": null,
@@ -21894,8 +22505,8 @@
     "desc": null,
     "src": [
      [
-      29,
-      2173
+      37,
+      2221
      ]
     ],
     "srcNone": null,
@@ -21967,12 +22578,12 @@
     "desc": null,
     "src": [
      [
-      32,
-      2322
+      42,
+      2382
      ],
      [
-      32,
-      2336
+      42,
+      2396
      ]
     ],
     "srcNone": null,
@@ -21998,8 +22609,8 @@
     "desc": null,
     "src": [
      [
-      32,
-      2337
+      42,
+      2397
      ]
     ],
     "srcNone": null,
@@ -22033,8 +22644,8 @@
     "desc": null,
     "src": [
      [
-      32,
-      2338
+      42,
+      2398
      ]
     ],
     "srcNone": null,
@@ -22106,12 +22717,12 @@
     "desc": null,
     "src": [
      [
-      35,
-      2498
+      47,
+      2570
      ],
      [
-      35,
-      2512
+      47,
+      2584
      ]
     ],
     "srcNone": null,
@@ -22137,8 +22748,8 @@
     "desc": null,
     "src": [
      [
-      35,
-      2513
+      47,
+      2585
      ]
     ],
     "srcNone": null,
@@ -22172,8 +22783,8 @@
     "desc": null,
     "src": [
      [
-      35,
-      2514
+      47,
+      2586
      ]
     ],
     "srcNone": null,
@@ -22241,12 +22852,12 @@
     "desc": null,
     "src": [
      [
-      38,
-      2662
+      52,
+      2746
      ],
      [
-      38,
-      2676
+      52,
+      2760
      ]
     ],
     "srcNone": null,
@@ -22272,8 +22883,8 @@
     "desc": null,
     "src": [
      [
-      38,
-      2677
+      52,
+      2761
      ]
     ],
     "srcNone": null,
@@ -22307,8 +22918,8 @@
     "desc": null,
     "src": [
      [
-      38,
-      2678
+      52,
+      2762
      ]
     ],
     "srcNone": null,
@@ -22380,12 +22991,12 @@
     "desc": null,
     "src": [
      [
-      41,
-      2822
+      57,
+      2918
      ],
      [
-      41,
-      2836
+      57,
+      2932
      ]
     ],
     "srcNone": null,
@@ -22411,8 +23022,8 @@
     "desc": null,
     "src": [
      [
-      41,
-      2837
+      57,
+      2933
      ]
     ],
     "srcNone": null,
@@ -22446,8 +23057,8 @@
     "desc": null,
     "src": [
      [
-      41,
-      2838
+      57,
+      2934
      ]
     ],
     "srcNone": null,
@@ -22519,12 +23130,12 @@
     "desc": null,
     "src": [
      [
-      43,
-      2895
+      61,
+      3003
      ],
      [
-      43,
-      2909
+      61,
+      3017
      ]
     ],
     "srcNone": null,
@@ -22550,8 +23161,8 @@
     "desc": null,
     "src": [
      [
-      43,
-      2910
+      61,
+      3018
      ]
     ],
     "srcNone": null,
@@ -22585,8 +23196,8 @@
     "desc": null,
     "src": [
      [
-      43,
-      2911
+      61,
+      3019
      ]
     ],
     "srcNone": null,
@@ -22658,12 +23269,12 @@
     "desc": null,
     "src": [
      [
-      47,
-      3060
+      67,
+      3180
      ],
      [
-      47,
-      3074
+      67,
+      3194
      ]
     ],
     "srcNone": null,
@@ -22689,8 +23300,8 @@
     "desc": null,
     "src": [
      [
-      47,
-      3075
+      67,
+      3195
      ]
     ],
     "srcNone": null,
@@ -22724,8 +23335,8 @@
     "desc": null,
     "src": [
      [
-      47,
-      3076
+      67,
+      3196
      ]
     ],
     "srcNone": null,
@@ -22797,12 +23408,12 @@
     "desc": null,
     "src": [
      [
-      51,
-      3307
+      73,
+      3439
      ],
      [
-      51,
-      3322
+      73,
+      3454
      ]
     ],
     "srcNone": null,
@@ -22828,8 +23439,8 @@
     "desc": null,
     "src": [
      [
-      51,
-      3323
+      73,
+      3455
      ]
     ],
     "srcNone": null,
@@ -22863,8 +23474,8 @@
     "desc": null,
     "src": [
      [
-      51,
-      3324
+      73,
+      3456
      ]
     ],
     "srcNone": null,
@@ -22918,8 +23529,8 @@
     "desc": null,
     "src": [
      [
-      51,
-      3308
+      73,
+      3440
      ]
     ],
     "srcNone": null,
@@ -23557,8 +24168,8 @@
     "hearsay": false,
     "src": [
      [
-      20,
-      1697
+      22,
+      1709
      ]
     ]
    },
@@ -23574,8 +24185,8 @@
     "hearsay": false,
     "src": [
      [
-      23,
-      1854
+      27,
+      1878
      ]
     ]
    },
@@ -23591,8 +24202,8 @@
     "hearsay": false,
     "src": [
      [
-      26,
-      2014
+      32,
+      2050
      ]
     ]
    },
@@ -23608,8 +24219,8 @@
     "hearsay": false,
     "src": [
      [
-      29,
-      2174
+      37,
+      2222
      ]
     ]
    },
@@ -23625,8 +24236,8 @@
     "hearsay": false,
     "src": [
      [
-      32,
-      2339
+      42,
+      2399
      ]
     ]
    },
@@ -23642,8 +24253,8 @@
     "hearsay": false,
     "src": [
      [
-      35,
-      2515
+      47,
+      2587
      ]
     ]
    },
@@ -23659,8 +24270,8 @@
     "hearsay": false,
     "src": [
      [
-      38,
-      2679
+      52,
+      2763
      ]
     ]
    },
@@ -23676,8 +24287,8 @@
     "hearsay": false,
     "src": [
      [
-      41,
-      2839
+      57,
+      2935
      ]
     ]
    },
@@ -23693,8 +24304,8 @@
     "hearsay": false,
     "src": [
      [
-      43,
-      2912
+      61,
+      3020
      ]
     ]
    },
@@ -23710,8 +24321,8 @@
     "hearsay": false,
     "src": [
      [
-      47,
-      3077
+      67,
+      3197
      ]
     ]
    },
@@ -23727,8 +24338,8 @@
     "hearsay": false,
     "src": [
      [
-      51,
-      3325
+      73,
+      3457
      ]
     ]
    },
@@ -24963,8 +25574,8 @@
     },
     "src": [
      [
-      34,
-      2402
+      46,
+      2474
      ]
     ]
    },
@@ -26091,8 +26702,8 @@
     "behind": null,
     "src": [
      [
-      53,
-      3394
+      77,
+      3538
      ]
     ]
    },
@@ -26189,8 +26800,8 @@
       954
      ],
      [
-      19,
-      1590
+      21,
+      1602
      ]
     ]
    },
@@ -27056,8 +27667,8 @@
     },
     "src": [
      [
-      34,
-      2406
+      46,
+      2478
      ]
     ]
    },
@@ -28083,8 +28694,8 @@
     "behind": null,
     "src": [
      [
-      53,
-      3406
+      77,
+      3550
      ]
     ]
    },
@@ -28104,8 +28715,8 @@
     "behind": null,
     "src": [
      [
-      53,
-      3408
+      77,
+      3552
      ]
     ]
    },
@@ -30744,8 +31355,8 @@
     },
     "src": [
      [
-      34,
-      2404
+      46,
+      2476
      ]
     ]
    },
@@ -31228,8 +31839,8 @@
     "behind": null,
     "src": [
      [
-      53,
-      3396
+      77,
+      3540
      ]
     ]
    },
@@ -31249,8 +31860,8 @@
     "behind": null,
     "src": [
      [
-      53,
-      3398
+      77,
+      3542
      ]
     ]
    },
@@ -31270,8 +31881,8 @@
     "behind": null,
     "src": [
      [
-      53,
-      3400
+      77,
+      3544
      ]
     ]
    },
@@ -31291,8 +31902,8 @@
     "behind": null,
     "src": [
      [
-      53,
-      3402
+      77,
+      3546
      ]
     ]
    },
@@ -31312,8 +31923,8 @@
     "behind": null,
     "src": [
      [
-      53,
-      3404
+      77,
+      3548
      ]
     ]
    },
@@ -32061,8 +32672,8 @@
     "behind": null,
     "src": [
      [
-      34,
-      2400
+      46,
+      2472
      ]
     ]
    }
@@ -35582,7 +36193,7 @@
    "severity": "error",
    "cat": "輸入",
    "title": "無法辨識的內容",
-   "message": "sample-bundle.txt 第 3043–3046 行：沒有任何解析器認得這段內容（指令：/system routerboard print）",
+   "message": "sample-bundle.txt 第 3163–3166 行：沒有任何解析器認得這段內容（指令：/system routerboard print）",
    "entities": [
     {
      "type": "device",
@@ -35591,8 +36202,8 @@
    ],
    "evidence": [
     {
-     "block": 46,
-     "line": 3043,
+     "block": 66,
+     "line": 3163,
      "text": "routerboard: yes",
      "file": "sample-bundle.txt"
     }
@@ -35620,14 +36231,14 @@
    ],
    "evidence": [
     {
-     "block": 33,
-     "line": 2381,
+     "block": 43,
+     "line": 2441,
      "text": "8   interface=ether22 mac-address=AA:BB:CC:00:00:40 identity=TPE-SRV-SHARED",
      "file": "sample-bundle.txt"
     },
     {
-     "block": 36,
-     "line": 2557,
+     "block": 48,
+     "line": 2629,
      "text": "8   interface=ether22 mac-address=AA:BB:CC:00:00:40 identity=TPE-SRV-SHARED",
      "file": "sample-bundle.txt"
     }
@@ -35718,14 +36329,14 @@
    ],
    "evidence": [
     {
-     "block": 49,
-     "line": 3121,
+     "block": 71,
+     "line": 3253,
      "text": "Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external",
      "file": "sample-bundle.txt"
     },
     {
-     "block": 50,
-     "line": 3208,
+     "block": 72,
+     "line": 3340,
      "text": "Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external",
      "file": "sample-bundle.txt"
     }
@@ -36239,8 +36850,8 @@
    ],
    "evidence": [
     {
-     "block": 51,
-     "line": 3308,
+     "block": 73,
+     "line": 3440,
      "text": "/interface vlan add interface=bridge1 name=vlan99 vlan-id=99",
      "file": "sample-bundle.txt"
     }
@@ -36265,7 +36876,8 @@
    "data": [
     "config",
     "lldp",
-    "mac"
+    "mac",
+    "stp"
    ],
    "missing": [],
    "interfaces": 17,
@@ -36279,7 +36891,8 @@
    "data": [
     "config",
     "lldp",
-    "mac"
+    "mac",
+    "stp"
    ],
    "missing": [],
    "interfaces": 18,
@@ -36293,7 +36906,8 @@
    "data": [
     "config",
     "lldp",
-    "mac"
+    "mac",
+    "stp"
    ],
    "missing": [],
    "interfaces": 17,
@@ -36307,7 +36921,8 @@
    "data": [
     "config",
     "lldp",
-    "mac"
+    "mac",
+    "stp"
    ],
    "missing": [],
    "interfaces": 18,
@@ -36321,7 +36936,8 @@
    "data": [
     "config",
     "lldp",
-    "mac"
+    "mac",
+    "stp"
    ],
    "missing": [],
    "interfaces": 18,
@@ -36335,7 +36951,8 @@
    "data": [
     "config",
     "lldp",
-    "mac"
+    "mac",
+    "stp"
    ],
    "missing": [],
    "interfaces": 19,
@@ -36349,7 +36966,8 @@
    "data": [
     "config",
     "lldp",
-    "mac"
+    "mac",
+    "stp"
    ],
    "missing": [],
    "interfaces": 18,
@@ -36363,7 +36981,8 @@
    "data": [
     "config",
     "lldp",
-    "mac"
+    "mac",
+    "stp"
    ],
    "missing": [],
    "interfaces": 17,
@@ -36376,7 +36995,8 @@
    "kind": "switch",
    "data": [
     "config",
-    "lldp"
+    "lldp",
+    "stp"
    ],
    "missing": [
     "mac"
@@ -36392,7 +37012,8 @@
    "data": [
     "config",
     "lldp",
-    "mac"
+    "mac",
+    "stp"
    ],
    "missing": [],
    "interfaces": 17,
@@ -36406,7 +37027,8 @@
    "data": [
     "config",
     "lldp",
-    "mac"
+    "mac",
+    "stp"
    ],
    "missing": [],
    "interfaces": 17,
@@ -36420,7 +37042,8 @@
    "data": [
     "config",
     "lldp",
-    "mac"
+    "mac",
+    "stp"
    ],
    "missing": [],
    "interfaces": 19,
@@ -37147,6 +37770,36 @@
    "id": 19,
    "device": "TPE_ACC_SW_01",
    "devKey": "TPE_ACC_SW_01",
+   "command": "/interface bridge port monitor [find] once",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.stp"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 1581,
+   "end": 1586,
+   "empty": false
+  },
+  {
+   "id": 20,
+   "device": "TPE_ACC_SW_01",
+   "devKey": "TPE_ACC_SW_01",
+   "command": "/interface bridge monitor [find] once",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.stpbridge"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 1588,
+   "end": 1591,
+   "empty": false
+  },
+  {
+   "id": 21,
+   "device": "TPE_ACC_SW_01",
+   "devKey": "TPE_ACC_SW_01",
    "command": "/interface bridge host print detail without-paging",
    "reader": "bundle-v1",
    "adapters": [
@@ -37154,87 +37807,147 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 1581,
-   "end": 1666,
-   "empty": false
-  },
-  {
-   "id": 20,
-   "device": "TPE_ACC_SW_02",
-   "devKey": "TPE_ACC_SW_02",
-   "command": "/export terse",
-   "reader": "bundle-v1",
-   "adapters": [
-    "mikrotik.config"
-   ],
-   "how": "command",
-   "file": "sample-bundle.txt",
-   "start": 1670,
-   "end": 1699,
-   "empty": false
-  },
-  {
-   "id": 21,
-   "device": "TPE_ACC_SW_02",
-   "devKey": "TPE_ACC_SW_02",
-   "command": "/ip neighbor print detail without-paging",
-   "reader": "bundle-v1",
-   "adapters": [
-    "mikrotik.neighbor"
-   ],
-   "how": "command",
-   "file": "sample-bundle.txt",
-   "start": 1701,
-   "end": 1734,
+   "start": 1593,
+   "end": 1678,
    "empty": false
   },
   {
    "id": 22,
    "device": "TPE_ACC_SW_02",
    "devKey": "TPE_ACC_SW_02",
-   "command": "/interface bridge host print detail without-paging",
+   "command": "/export terse",
    "reader": "bundle-v1",
    "adapters": [
-    "mikrotik.bridgehost"
+    "mikrotik.config"
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 1736,
-   "end": 1823,
+   "start": 1682,
+   "end": 1711,
    "empty": false
   },
   {
    "id": 23,
-   "device": "TPE_ACC_SW_03",
-   "devKey": "TPE_ACC_SW_03",
-   "command": "/export terse",
+   "device": "TPE_ACC_SW_02",
+   "devKey": "TPE_ACC_SW_02",
+   "command": "/ip neighbor print detail without-paging",
    "reader": "bundle-v1",
    "adapters": [
-    "mikrotik.config"
+    "mikrotik.neighbor"
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 1827,
-   "end": 1856,
+   "start": 1713,
+   "end": 1746,
    "empty": false
   },
   {
    "id": 24,
-   "device": "TPE_ACC_SW_03",
-   "devKey": "TPE_ACC_SW_03",
-   "command": "/ip neighbor print detail without-paging",
+   "device": "TPE_ACC_SW_02",
+   "devKey": "TPE_ACC_SW_02",
+   "command": "/interface bridge port monitor [find] once",
    "reader": "bundle-v1",
    "adapters": [
-    "mikrotik.neighbor"
+    "mikrotik.stp"
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 1858,
-   "end": 1896,
+   "start": 1748,
+   "end": 1753,
    "empty": false
   },
   {
    "id": 25,
+   "device": "TPE_ACC_SW_02",
+   "devKey": "TPE_ACC_SW_02",
+   "command": "/interface bridge monitor [find] once",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.stpbridge"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 1755,
+   "end": 1758,
+   "empty": false
+  },
+  {
+   "id": 26,
+   "device": "TPE_ACC_SW_02",
+   "devKey": "TPE_ACC_SW_02",
+   "command": "/interface bridge host print detail without-paging",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.bridgehost"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 1760,
+   "end": 1847,
+   "empty": false
+  },
+  {
+   "id": 27,
+   "device": "TPE_ACC_SW_03",
+   "devKey": "TPE_ACC_SW_03",
+   "command": "/export terse",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.config"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 1851,
+   "end": 1880,
+   "empty": false
+  },
+  {
+   "id": 28,
+   "device": "TPE_ACC_SW_03",
+   "devKey": "TPE_ACC_SW_03",
+   "command": "/ip neighbor print detail without-paging",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.neighbor"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 1882,
+   "end": 1920,
+   "empty": false
+  },
+  {
+   "id": 29,
+   "device": "TPE_ACC_SW_03",
+   "devKey": "TPE_ACC_SW_03",
+   "command": "/interface bridge port monitor [find] once",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.stp"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 1922,
+   "end": 1927,
+   "empty": false
+  },
+  {
+   "id": 30,
+   "device": "TPE_ACC_SW_03",
+   "devKey": "TPE_ACC_SW_03",
+   "command": "/interface bridge monitor [find] once",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.stpbridge"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 1929,
+   "end": 1932,
+   "empty": false
+  },
+  {
+   "id": 31,
    "device": "TPE_ACC_SW_03",
    "devKey": "TPE_ACC_SW_03",
    "command": "/interface bridge host print detail without-paging",
@@ -37244,104 +37957,14 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 1898,
-   "end": 1983,
-   "empty": false
-  },
-  {
-   "id": 26,
-   "device": "TPE_ACC_SW_04",
-   "devKey": "TPE_ACC_SW_04",
-   "command": "/export terse",
-   "reader": "bundle-v1",
-   "adapters": [
-    "mikrotik.config"
-   ],
-   "how": "command",
-   "file": "sample-bundle.txt",
-   "start": 1987,
-   "end": 2016,
-   "empty": false
-  },
-  {
-   "id": 27,
-   "device": "TPE_ACC_SW_04",
-   "devKey": "TPE_ACC_SW_04",
-   "command": "/ip neighbor print detail without-paging",
-   "reader": "bundle-v1",
-   "adapters": [
-    "mikrotik.neighbor"
-   ],
-   "how": "command",
-   "file": "sample-bundle.txt",
-   "start": 2018,
-   "end": 2056,
-   "empty": false
-  },
-  {
-   "id": 28,
-   "device": "TPE_ACC_SW_04",
-   "devKey": "TPE_ACC_SW_04",
-   "command": "/interface bridge host print detail without-paging",
-   "reader": "bundle-v1",
-   "adapters": [
-    "mikrotik.bridgehost"
-   ],
-   "how": "command",
-   "file": "sample-bundle.txt",
-   "start": 2058,
-   "end": 2143,
-   "empty": false
-  },
-  {
-   "id": 29,
-   "device": "TPE_ACC_SW_05",
-   "devKey": "TPE_ACC_SW_05",
-   "command": "/export terse",
-   "reader": "bundle-v1",
-   "adapters": [
-    "mikrotik.config"
-   ],
-   "how": "command",
-   "file": "sample-bundle.txt",
-   "start": 2147,
-   "end": 2176,
-   "empty": false
-  },
-  {
-   "id": 30,
-   "device": "TPE_ACC_SW_05",
-   "devKey": "TPE_ACC_SW_05",
-   "command": "/ip neighbor print detail without-paging",
-   "reader": "bundle-v1",
-   "adapters": [
-    "mikrotik.neighbor"
-   ],
-   "how": "command",
-   "file": "sample-bundle.txt",
-   "start": 2178,
-   "end": 2221,
-   "empty": false
-  },
-  {
-   "id": 31,
-   "device": "TPE_ACC_SW_05",
-   "devKey": "TPE_ACC_SW_05",
-   "command": "/interface bridge host print detail without-paging",
-   "reader": "bundle-v1",
-   "adapters": [
-    "mikrotik.bridgehost"
-   ],
-   "how": "command",
-   "file": "sample-bundle.txt",
-   "start": 2223,
-   "end": 2308,
+   "start": 1934,
+   "end": 2019,
    "empty": false
   },
   {
    "id": 32,
-   "device": "TPE_ACC_SW_06",
-   "devKey": "TPE_ACC_SW_06",
+   "device": "TPE_ACC_SW_04",
+   "devKey": "TPE_ACC_SW_04",
    "command": "/export terse",
    "reader": "bundle-v1",
    "adapters": [
@@ -37349,14 +37972,14 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 2312,
-   "end": 2341,
+   "start": 2023,
+   "end": 2052,
    "empty": false
   },
   {
    "id": 33,
-   "device": "TPE_ACC_SW_06",
-   "devKey": "TPE_ACC_SW_06",
+   "device": "TPE_ACC_SW_04",
+   "devKey": "TPE_ACC_SW_04",
    "command": "/ip neighbor print detail without-paging",
    "reader": "bundle-v1",
    "adapters": [
@@ -37364,12 +37987,192 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 2343,
-   "end": 2389,
+   "start": 2054,
+   "end": 2092,
    "empty": false
   },
   {
    "id": 34,
+   "device": "TPE_ACC_SW_04",
+   "devKey": "TPE_ACC_SW_04",
+   "command": "/interface bridge port monitor [find] once",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.stp"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 2094,
+   "end": 2099,
+   "empty": false
+  },
+  {
+   "id": 35,
+   "device": "TPE_ACC_SW_04",
+   "devKey": "TPE_ACC_SW_04",
+   "command": "/interface bridge monitor [find] once",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.stpbridge"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 2101,
+   "end": 2104,
+   "empty": false
+  },
+  {
+   "id": 36,
+   "device": "TPE_ACC_SW_04",
+   "devKey": "TPE_ACC_SW_04",
+   "command": "/interface bridge host print detail without-paging",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.bridgehost"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 2106,
+   "end": 2191,
+   "empty": false
+  },
+  {
+   "id": 37,
+   "device": "TPE_ACC_SW_05",
+   "devKey": "TPE_ACC_SW_05",
+   "command": "/export terse",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.config"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 2195,
+   "end": 2224,
+   "empty": false
+  },
+  {
+   "id": 38,
+   "device": "TPE_ACC_SW_05",
+   "devKey": "TPE_ACC_SW_05",
+   "command": "/ip neighbor print detail without-paging",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.neighbor"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 2226,
+   "end": 2269,
+   "empty": false
+  },
+  {
+   "id": 39,
+   "device": "TPE_ACC_SW_05",
+   "devKey": "TPE_ACC_SW_05",
+   "command": "/interface bridge port monitor [find] once",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.stp"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 2271,
+   "end": 2276,
+   "empty": false
+  },
+  {
+   "id": 40,
+   "device": "TPE_ACC_SW_05",
+   "devKey": "TPE_ACC_SW_05",
+   "command": "/interface bridge monitor [find] once",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.stpbridge"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 2278,
+   "end": 2281,
+   "empty": false
+  },
+  {
+   "id": 41,
+   "device": "TPE_ACC_SW_05",
+   "devKey": "TPE_ACC_SW_05",
+   "command": "/interface bridge host print detail without-paging",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.bridgehost"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 2283,
+   "end": 2368,
+   "empty": false
+  },
+  {
+   "id": 42,
+   "device": "TPE_ACC_SW_06",
+   "devKey": "TPE_ACC_SW_06",
+   "command": "/export terse",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.config"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 2372,
+   "end": 2401,
+   "empty": false
+  },
+  {
+   "id": 43,
+   "device": "TPE_ACC_SW_06",
+   "devKey": "TPE_ACC_SW_06",
+   "command": "/ip neighbor print detail without-paging",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.neighbor"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 2403,
+   "end": 2449,
+   "empty": false
+  },
+  {
+   "id": 44,
+   "device": "TPE_ACC_SW_06",
+   "devKey": "TPE_ACC_SW_06",
+   "command": "/interface bridge port monitor [find] once",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.stp"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 2451,
+   "end": 2456,
+   "empty": false
+  },
+  {
+   "id": 45,
+   "device": "TPE_ACC_SW_06",
+   "devKey": "TPE_ACC_SW_06",
+   "command": "/interface bridge monitor [find] once",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.stpbridge"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 2458,
+   "end": 2461,
+   "empty": false
+  },
+  {
+   "id": 46,
    "device": "TPE_ACC_SW_06",
    "devKey": "TPE_ACC_SW_06",
    "command": "/interface bridge host print detail without-paging",
@@ -37379,12 +38182,12 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 2391,
-   "end": 2484,
+   "start": 2463,
+   "end": 2556,
    "empty": false
   },
   {
-   "id": 35,
+   "id": 47,
    "device": "TPE_ACC_SW_07",
    "devKey": "TPE_ACC_SW_07",
    "command": "/export terse",
@@ -37394,12 +38197,12 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 2488,
-   "end": 2517,
+   "start": 2560,
+   "end": 2589,
    "empty": false
   },
   {
-   "id": 36,
+   "id": 48,
    "device": "TPE_ACC_SW_07",
    "devKey": "TPE_ACC_SW_07",
    "command": "/ip neighbor print detail without-paging",
@@ -37409,12 +38212,42 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 2519,
-   "end": 2561,
+   "start": 2591,
+   "end": 2633,
    "empty": false
   },
   {
-   "id": 37,
+   "id": 49,
+   "device": "TPE_ACC_SW_07",
+   "devKey": "TPE_ACC_SW_07",
+   "command": "/interface bridge port monitor [find] once",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.stp"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 2635,
+   "end": 2640,
+   "empty": false
+  },
+  {
+   "id": 50,
+   "device": "TPE_ACC_SW_07",
+   "devKey": "TPE_ACC_SW_07",
+   "command": "/interface bridge monitor [find] once",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.stpbridge"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 2642,
+   "end": 2645,
+   "empty": false
+  },
+  {
+   "id": 51,
    "device": "TPE_ACC_SW_07",
    "devKey": "TPE_ACC_SW_07",
    "command": "/interface bridge host print detail without-paging",
@@ -37424,12 +38257,12 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 2563,
-   "end": 2648,
+   "start": 2647,
+   "end": 2732,
    "empty": false
   },
   {
-   "id": 38,
+   "id": 52,
    "device": "TPE_ACC_SW_08",
    "devKey": "TPE_ACC_SW_08",
    "command": "/export terse",
@@ -37439,12 +38272,12 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 2652,
-   "end": 2681,
+   "start": 2736,
+   "end": 2765,
    "empty": false
   },
   {
-   "id": 39,
+   "id": 53,
    "device": "TPE_ACC_SW_08",
    "devKey": "TPE_ACC_SW_08",
    "command": "/ip neighbor print detail without-paging",
@@ -37454,12 +38287,42 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 2683,
-   "end": 2721,
+   "start": 2767,
+   "end": 2805,
    "empty": false
   },
   {
-   "id": 40,
+   "id": 54,
+   "device": "TPE_ACC_SW_08",
+   "devKey": "TPE_ACC_SW_08",
+   "command": "/interface bridge port monitor [find] once",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.stp"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 2807,
+   "end": 2812,
+   "empty": false
+  },
+  {
+   "id": 55,
+   "device": "TPE_ACC_SW_08",
+   "devKey": "TPE_ACC_SW_08",
+   "command": "/interface bridge monitor [find] once",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.stpbridge"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 2814,
+   "end": 2817,
+   "empty": false
+  },
+  {
+   "id": 56,
    "device": "TPE_ACC_SW_08",
    "devKey": "TPE_ACC_SW_08",
    "command": "/interface bridge host print detail without-paging",
@@ -37469,12 +38332,12 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 2723,
-   "end": 2808,
+   "start": 2819,
+   "end": 2904,
    "empty": false
   },
   {
-   "id": 41,
+   "id": 57,
    "device": "TPE_ACC_SW_09",
    "devKey": "TPE_ACC_SW_09",
    "command": "/export terse",
@@ -37484,12 +38347,12 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 2812,
-   "end": 2841,
+   "start": 2908,
+   "end": 2937,
    "empty": false
   },
   {
-   "id": 42,
+   "id": 58,
    "device": "TPE_ACC_SW_09",
    "devKey": "TPE_ACC_SW_09",
    "command": "/ip neighbor print detail without-paging",
@@ -37499,12 +38362,42 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 2843,
-   "end": 2881,
+   "start": 2939,
+   "end": 2977,
    "empty": false
   },
   {
-   "id": 43,
+   "id": 59,
+   "device": "TPE_ACC_SW_09",
+   "devKey": "TPE_ACC_SW_09",
+   "command": "/interface bridge port monitor [find] once",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.stp"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 2979,
+   "end": 2984,
+   "empty": false
+  },
+  {
+   "id": 60,
+   "device": "TPE_ACC_SW_09",
+   "devKey": "TPE_ACC_SW_09",
+   "command": "/interface bridge monitor [find] once",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.stpbridge"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 2986,
+   "end": 2989,
+   "empty": false
+  },
+  {
+   "id": 61,
    "device": "TPE_ACC_SW_10",
    "devKey": "TPE_ACC_SW_10",
    "command": "/export terse",
@@ -37514,12 +38407,12 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 2885,
-   "end": 2914,
+   "start": 2993,
+   "end": 3022,
    "empty": false
   },
   {
-   "id": 44,
+   "id": 62,
    "device": "TPE_ACC_SW_10",
    "devKey": "TPE_ACC_SW_10",
    "command": "/ip neighbor print detail without-paging",
@@ -37529,12 +38422,42 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 2916,
-   "end": 2954,
+   "start": 3024,
+   "end": 3062,
    "empty": false
   },
   {
-   "id": 45,
+   "id": 63,
+   "device": "TPE_ACC_SW_10",
+   "devKey": "TPE_ACC_SW_10",
+   "command": "/interface bridge port monitor [find] once",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.stp"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 3064,
+   "end": 3069,
+   "empty": false
+  },
+  {
+   "id": 64,
+   "device": "TPE_ACC_SW_10",
+   "devKey": "TPE_ACC_SW_10",
+   "command": "/interface bridge monitor [find] once",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.stpbridge"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 3071,
+   "end": 3074,
+   "empty": false
+  },
+  {
+   "id": 65,
    "device": "TPE_ACC_SW_10",
    "devKey": "TPE_ACC_SW_10",
    "command": "/interface bridge host print detail without-paging",
@@ -37544,12 +38467,12 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 2956,
-   "end": 3041,
+   "start": 3076,
+   "end": 3161,
    "empty": false
   },
   {
-   "id": 46,
+   "id": 66,
    "device": "TPE_ACC_SW_10",
    "devKey": "TPE_ACC_SW_10",
    "command": "/system routerboard print",
@@ -37557,12 +38480,12 @@
    "adapters": [],
    "how": "none",
    "file": "sample-bundle.txt",
-   "start": 3043,
-   "end": 3046,
+   "start": 3163,
+   "end": 3166,
    "empty": false
   },
   {
-   "id": 47,
+   "id": 67,
    "device": "TPE_ACC_SW_11",
    "devKey": "TPE_ACC_SW_11",
    "command": "/export terse",
@@ -37572,12 +38495,12 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 3050,
-   "end": 3079,
+   "start": 3170,
+   "end": 3199,
    "empty": false
   },
   {
-   "id": 48,
+   "id": 68,
    "device": "TPE_ACC_SW_11",
    "devKey": "TPE_ACC_SW_11",
    "command": "/ip neighbor print detail without-paging",
@@ -37587,12 +38510,42 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 3081,
-   "end": 3119,
+   "start": 3201,
+   "end": 3239,
    "empty": false
   },
   {
-   "id": 49,
+   "id": 69,
+   "device": "TPE_ACC_SW_11",
+   "devKey": "TPE_ACC_SW_11",
+   "command": "/interface bridge port monitor [find] once",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.stp"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 3241,
+   "end": 3246,
+   "empty": false
+  },
+  {
+   "id": 70,
+   "device": "TPE_ACC_SW_11",
+   "devKey": "TPE_ACC_SW_11",
+   "command": "/interface bridge monitor [find] once",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.stpbridge"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 3248,
+   "end": 3251,
+   "empty": false
+  },
+  {
+   "id": 71,
    "device": "TPE_ACC_SW_11",
    "devKey": "TPE_ACC_SW_11",
    "command": "/interface bridge host print detail without-paging",
@@ -37602,12 +38555,12 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 3121,
-   "end": 3206,
+   "start": 3253,
+   "end": 3338,
    "empty": false
   },
   {
-   "id": 50,
+   "id": 72,
    "device": "TPE_ACC_SW_11",
    "devKey": "TPE_ACC_SW_11",
    "command": "/interface bridge host print detail without-paging",
@@ -37617,12 +38570,12 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 3208,
-   "end": 3293,
+   "start": 3340,
+   "end": 3425,
    "empty": false
   },
   {
-   "id": 51,
+   "id": 73,
    "device": "TPE_ACC_SW_12",
    "devKey": "TPE_ACC_SW_12",
    "command": "/export terse",
@@ -37632,12 +38585,12 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 3297,
-   "end": 3327,
+   "start": 3429,
+   "end": 3459,
    "empty": false
   },
   {
-   "id": 52,
+   "id": 74,
    "device": "TPE_ACC_SW_12",
    "devKey": "TPE_ACC_SW_12",
    "command": "/ip neighbor print detail without-paging",
@@ -37647,12 +38600,42 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 3329,
-   "end": 3367,
+   "start": 3461,
+   "end": 3499,
    "empty": false
   },
   {
-   "id": 53,
+   "id": 75,
+   "device": "TPE_ACC_SW_12",
+   "devKey": "TPE_ACC_SW_12",
+   "command": "/interface bridge port monitor [find] once",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.stp"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 3501,
+   "end": 3506,
+   "empty": false
+  },
+  {
+   "id": 76,
+   "device": "TPE_ACC_SW_12",
+   "devKey": "TPE_ACC_SW_12",
+   "command": "/interface bridge monitor [find] once",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.stpbridge"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 3508,
+   "end": 3511,
+   "empty": false
+  },
+  {
+   "id": 77,
    "device": "TPE_ACC_SW_12",
    "devKey": "TPE_ACC_SW_12",
    "command": "/interface bridge host print detail without-paging",
@@ -37662,8 +38645,8 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 3369,
-   "end": 3470,
+   "start": 3513,
+   "end": 3614,
    "empty": false
   }
  ]

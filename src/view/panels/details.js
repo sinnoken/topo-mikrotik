@@ -266,6 +266,7 @@
         ['MTU', [['mtu', i.mtu], ['actual', i.actualMtu], ['l2mtu', i.l2mtu]].filter((x) => x[1] != null).map((x) => `${x[0]} ${x[1]}`).join('、') || null],
         ['IP', Q.addressesOf(i.key).join('、')], ['埠模式', V.MODE[i.mode]], ['所屬聚合', i.lag ? epLink(App, i.lag) : null], ['所屬 Bridge', i.bridge ? epLink(App, i.bridge) : null],
         ['聚合成員', i.lagMembers.length ? h('span', null, i.lagMembers.flatMap((m, n) => [n ? '、' : '', epLink(App, m)])) : null],
+        ['RSTP', i.stp ? [i.stp.role, i.stp.edge ? 'edge' : null, i.stp.designatedBridge ? `指定橋接器 ${K.macPretty(i.stp.designatedBridge)}` : null].filter(Boolean).join('・') : null],
         ['PVID', i.pvid == null ? null : String(i.pvid)], ['frame-types', i.frameTypes], ['ingress-filtering', i.ingressFiltering == null ? null : i.ingressFiltering ? '開' : '關'], ['Untagged VLAN', i.untaggedVlans.length ? h('span', { class: 'vlanlist' }, vlanText(i.untaggedVlans)) : null],
         ['Tagged VLAN', i.taggedVlans.length ? h('span', { class: 'vlanlist' }, vlanText(i.taggedVlans)) : null], ['無法辨識的 VLAN', i.unresolvedVlans.join('、')],
         ['VLAN 子介面', i.parent ? h('span', null, [epLink(App, i.parent), ` 上的 VLAN ${i.encapVlan}`]) : null]]),

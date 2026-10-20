@@ -14,6 +14,7 @@
  *   mikrotik.route      /ip route print detail
  *   mikrotik.ospf       /routing ospf neighbor print detail
  *   mikrotik.wifireg    /interface wifi｜wireless registration-table、/caps-man registration-table print detail  Wi-Fi 關聯表
+ *   mikrotik.stp        /interface bridge port monitor [find] once、/interface bridge monitor [find] once  RSTP 狀態
  *   mikrotik.system     /system resource print、/system identity print
  */
 (function (S) {
@@ -437,6 +438,51 @@
       });
       // 沒有客戶端時表格只有說明行：記為「已收集、0 筆」，避免被當成無法辨識
       if (!rows && !b.lines.some((l) => ROS_ERROR.test(l))) emit({ t: 'assocTable', rows: 0, line: b.origin.startLine });
+    },
+  });
+
+  // ================================================================ RSTP 狀態（monitor once）
+  /**
+   * monitor 一次列出多個項目時是欄式輸出：每行「key: 值1 值2 …」，第一行 interface（或 name）決定欄數。
+   * 值的數量和欄數不同的列（例如值本身含空白）略過，不硬對齊。
+   */
+  function monitorColumns(b) {
+    let cols = null; const out = [];
+    b.lines.forEach((raw, i) => {
+      const m = raw.match(/^\s*([\w-]+):\s*(.*?)\s*$/); if (!m) return;
+      const vals = m[2] ? m[2].split(/\s+/) : [];
+      if (!cols && (m[1] === 'interface' || m[1] === 'name')) { cols = vals.length; vals.forEach((v) => out.push({ [m[1]]: v, _line: at(b, i) })); return; }
+      if (cols && vals.length === cols) vals.forEach((v, k) => { out[k][m[1]] = v; });
+    });
+    return out;
+  }
+  S.adapters.mikrotikMonitorColumns = monitorColumns; // 測試用
+  const bridgeIdMac = (v) => { const m = String(v || '').match(/([0-9a-f]{2}(?::[0-9a-f]{2}){5})/i); return m ? m[1] : null; };
+  const yes = (v) => (v == null ? null : v === 'yes' || v === 'true');
+  // 埠與 bridge 的 monitor 分成兩個解析器：同一設備同一解析器出現兩次時只採用最後一次（I02）
+  reg({
+    id: 'mikrotik.stp', vendor: VENDOR, dataType: 'stp', label: 'RouterOS RSTP 埠狀態',
+    command: /^\/?interface\s+bridge\s+port\s+monitor\b/i,
+    detect: (lines) => lines.some((l) => /^\s*(role|designated-bridge(-id)?):/.test(l)),
+    parse(b, emit) {
+      monitorColumns(b).forEach((c) => {
+        if (c.role === undefined && c['designated-bridge-id'] === undefined && c['designated-bridge'] === undefined) return;
+        const portNo = c['port-number'] || (String(c['port-id'] || '').match(/(\d+)$/) || [])[1];
+        const dPort = c['designated-port-number'] || (String(c['designated-port-id'] || '').match(/(\d+)$/) || [])[1];
+        emit({ t: 'stpPort', ifc: c.interface, role: c.role || null, portNumber: portNo ? +portNo : null,
+          designatedBridge: bridgeIdMac(c['designated-bridge-id'] || c['designated-bridge']), designatedPort: dPort ? +dPort : null,
+          edge: yes(c['edge-port']), sendingRstp: yes(c['sending-rstp']), line: c._line });
+      });
+    },
+  });
+  reg({
+    id: 'mikrotik.stpbridge', vendor: VENDOR, dataType: 'stp', label: 'RouterOS RSTP bridge 狀態',
+    command: /^\/?interface\s+bridge\s+monitor\b/i,
+    detect: (lines) => lines.some((l) => /^\s*(root-bridge-id|current-mac-address):/.test(l)),
+    parse(b, emit) {
+      monitorColumns(b).forEach((c) => {
+        if (c['current-mac-address'] || c['root-bridge-id']) emit({ t: 'stpBridge', ifc: c.name || c.interface, mac: c['current-mac-address'] || null, rootBridge: bridgeIdMac(c['root-bridge-id']), isRoot: yes(c['root-bridge']), line: c._line });
+      });
     },
   });
 

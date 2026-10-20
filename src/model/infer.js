@@ -259,6 +259,16 @@
       });
     });
 
+    // stp：埠的 RSTP 角色是 root／alternate／backup 時，designated-bridge 是這段網路的上游橋接器（BPDU 不會穿過 STP 橋接器，
+    // 但會穿過不跑 STP 的未管理交換器，所以同樣是「直接相連，或中間只有未管理設備」）。對端也有 STP 資料時以 designated port 編號對回確切的埠。
+    M.ifcs.forEach((i) => {
+      const st = i.stp; if (!st || !st.designatedBridge || !/^(root|alternate|backup)/.test(st.role || '') || !collected(i.dev) || lldpToCollected(i.key)) return;
+      const x = macOwner.get(st.designatedBridge); if (!x || x === i.dev) return;
+      let b = null;
+      if (collected(x) && st.designatedPort != null) { const q = Array.from(M.ifcs.values()).find((j) => j.dev === x && j.stp && j.stp.portNumber === st.designatedPort); if (q) b = q.key; }
+      add(i.key, b || peerEp(i.key, x), 'stp', `${i.dev} ${i.name} 的 RSTP 角色是 ${st.role}，指定橋接器是 ${x}（${K.macPretty(st.designatedBridge)}）${b ? `，對方的指定埠是 ${ifcName(b)}` : ''}`, [st.src]);
+    });
+
     // 推定位置的錨點：已收集、有 MAC 表的設備 a 的埠 p，沒有 LLDP 鄰接到已收集設備，且 p 這側有未收集的交換器或路由器
     // （例如 SwOS 的 CSS106），而且沒有被證明在別台已收集交換器後面。這個埠學到的終端推定在這些設備底下（behindLocations）。
     M.behindAnchors = new Map();

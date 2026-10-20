@@ -22,7 +22,7 @@
   function device(M, key, name) {
     const d = getOr(M.devices, key, () => ({
       key, names: new Set(), mgmtIp: null, vendors: new Set(), collected: false, data: new Set(),
-      hostname: null, routerId: null, collectedAt: null, ownMacs: new Set(), seenBy: new Set(), src: [], deviceType: null, softwareVersion: null, platform: null, caps: null,
+      hostname: null, routerId: null, collectedAt: null, ownMacs: new Set(), stp: null, seenBy: new Set(), src: [], deviceType: null, softwareVersion: null, platform: null, caps: null,
     }));
     if (name) d.names.add(name);
     return d;
@@ -34,7 +34,7 @@
       key, dev: devKey, name: String(name).trim().replace(/\.0$/, ''), desc: null, enabled: null, status: null,
       type: null, typeBasis: null, rawType: null, hwMac: null, defaultName: null, mtu: null, actualMtu: null, l2mtu: null,
       lag: null, lagMembers: new Set(), bridge: null, parent: null, encapVlan: null,
-      mode: null, pvid: null, untaggedVlans: new Set(), taggedVlans: new Set(), unresolvedVlans: new Set(), frameTypes: null, ingressFiltering: null,
+      mode: null, pvid: null, untaggedVlans: new Set(), taggedVlans: new Set(), unresolvedVlans: new Set(), frameTypes: null, ingressFiltering: null, stp: null,
       ips: new Map(), macs: new Set(), hearsay: false, src: [], // ips：CIDR → 來源 [區塊, 行號]
     }));
   }
@@ -69,6 +69,16 @@
         case 'hostname': d.hostname = f.name; d.names.add(f.name); break;
         case 'rid': d.routerId = f.id; break;
         case 'ownMac': { const mk = K.mac(f.mac); if (mk) d.ownMacs.add(mk); break; }
+        case 'stpPort': {
+          const i = iface(M, f.dev, f.ifc); addSrc(i, f);
+          i.stp = { role: f.role, portNumber: f.portNumber, designatedBridge: K.mac(f.designatedBridge), designatedPort: f.designatedPort, edge: f.edge, sendingRstp: f.sendingRstp, src: [f.block, f.line] };
+          break;
+        }
+        case 'stpBridge': {
+          const mk = K.mac(f.mac); if (mk) d.ownMacs.add(mk); // bridge 自己的 MAC
+          d.stp = { bridge: f.ifc ? K.ifc(f.ifc) : null, rootBridge: K.mac(f.rootBridge), isRoot: f.isRoot };
+          break;
+        }
         case 'collectedAt': if (!d.collectedAt || f.at > d.collectedAt) d.collectedAt = f.at; break; // 多份 export 取最新
         case 'dhcpNet': M.dhcpNets.push({ dev: f.dev, network: f.network, gateways: f.gateways, block: f.block, line: f.line }); break;
         case 'ifc': onIfc(M, f); break;

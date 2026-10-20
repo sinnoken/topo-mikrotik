@@ -1577,6 +1577,18 @@ Flags:
     age=3m25s uptime=2w1d4h ipv6=no interface-name=eth0 system-caps=station-only
     system-caps-enabled=station-only
 
+[admin@TPE_ACC_SW_01] > /interface bridge port monitor [find] once
+              interface: bond1                       ether24
+                   role: root-port                   alternate-port
+              edge-port: no                          no
+   designated-bridge-id: 0x8000.E4:8D:8C:00:00:02    0x8000.E4:8D:8C:00:00:03
+     designated-port-id: 0x80.1                      0x80.1
+
+[admin@TPE_ACC_SW_01] > /interface bridge monitor [find] once
+                   name: bridge1
+    current-mac-address: 48:A9:8A:00:00:04
+         root-bridge-id: 0x8000.E4:8D:8C:00:00:02
+
 [admin@TPE_ACC_SW_01] > /interface bridge host print detail without-paging
 Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external 
  0 DL mac-address=48:A9:8A:00:00:04 on-interface=bridge1 bridge=bridge1 vid=0
@@ -1731,6 +1743,18 @@ Flags:
     identity=TPE-SRV-023 platform=Linux version="Ubuntu 22.04" unpack=none
     age=3m25s uptime=2w1d4h ipv6=no interface-name=eth0 system-caps=station-only
     system-caps-enabled=station-only
+
+[admin@TPE_ACC_SW_02] > /interface bridge port monitor [find] once
+              interface: bond2                       ether24
+                   role: root-port                   alternate-port
+              edge-port: no                          no
+   designated-bridge-id: 0x8000.E4:8D:8C:00:00:02    0x8000.E4:8D:8C:00:00:03
+     designated-port-id: 0x80.2                      0x80.2
+
+[admin@TPE_ACC_SW_02] > /interface bridge monitor [find] once
+                   name: bridge1
+    current-mac-address: 48:A9:8A:00:00:10
+         root-bridge-id: 0x8000.E4:8D:8C:00:00:02
 
 [admin@TPE_ACC_SW_02] > /interface bridge host print detail without-paging
 Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external 
@@ -1894,6 +1918,18 @@ Flags:
     age=3m25s uptime=2w1d4h ipv6=no interface-name=eth0 system-caps=station-only
     system-caps-enabled=station-only
 
+[admin@TPE_ACC_SW_03] > /interface bridge port monitor [find] once
+              interface: bond3                       ether24
+                   role: root-port                   alternate-port
+              edge-port: no                          no
+   designated-bridge-id: 0x8000.E4:8D:8C:00:00:02    0x8000.E4:8D:8C:00:00:03
+     designated-port-id: 0x80.3                      0x80.3
+
+[admin@TPE_ACC_SW_03] > /interface bridge monitor [find] once
+                   name: bridge1
+    current-mac-address: 48:A9:8A:00:00:1C
+         root-bridge-id: 0x8000.E4:8D:8C:00:00:02
+
 [admin@TPE_ACC_SW_03] > /interface bridge host print detail without-paging
 Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external 
  0 DL mac-address=48:A9:8A:00:00:1C on-interface=bridge1 bridge=bridge1 vid=0
@@ -2053,6 +2089,18 @@ Flags:
     identity=TPE-SRV-043 platform=Linux version="Ubuntu 22.04" unpack=none
     age=3m25s uptime=2w1d4h ipv6=no interface-name=eth0 system-caps=station-only
     system-caps-enabled=station-only
+
+[admin@TPE_ACC_SW_04] > /interface bridge port monitor [find] once
+              interface: bond4                       ether24
+                   role: root-port                   alternate-port
+              edge-port: no                          no
+   designated-bridge-id: 0x8000.E4:8D:8C:00:00:02    0x8000.E4:8D:8C:00:00:03
+     designated-port-id: 0x80.4                      0x80.4
+
+[admin@TPE_ACC_SW_04] > /interface bridge monitor [find] once
+                   name: bridge1
+    current-mac-address: 48:A9:8A:00:00:28
+         root-bridge-id: 0x8000.E4:8D:8C:00:00:02
 
 [admin@TPE_ACC_SW_04] > /interface bridge host print detail without-paging
 Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external 
@@ -2218,6 +2266,18 @@ Flags:
     version="7.12.1 (stable)" unpack=none age=3m25s uptime=2w1d4h board="cAP ac"
     ipv6=no interface-name=ether1 system-caps=bridge,wlan-ap
     system-caps-enabled=bridge,wlan-ap
+
+[admin@TPE_ACC_SW_05] > /interface bridge port monitor [find] once
+              interface: bond5                       ether24
+                   role: root-port                   alternate-port
+              edge-port: no                          no
+   designated-bridge-id: 0x8000.E4:8D:8C:00:00:02    0x8000.E4:8D:8C:00:00:03
+     designated-port-id: 0x80.5                      0x80.5
+
+[admin@TPE_ACC_SW_05] > /interface bridge monitor [find] once
+                   name: bridge1
+    current-mac-address: 48:A9:8A:00:00:34
+         root-bridge-id: 0x8000.E4:8D:8C:00:00:02
 
 [admin@TPE_ACC_SW_05] > /interface bridge host print detail without-paging
 Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external 
@@ -2386,6 +2446,18 @@ Flags:
     mac-address=D4:01:C3:00:00:45 identity=TPE_CSS_01 platform=MikroTik
     version=2.17 unpack=none age=3m25s uptime=2w1d4h board=CSS610-8P-2S+ ipv6=no
     system-caps=bridge system-caps-enabled=bridge discovered-by=mndp
+
+[admin@TPE_ACC_SW_06] > /interface bridge port monitor [find] once
+              interface: bond6                       ether24                     ether21
+                   role: root-port                   alternate-port              designated-port
+              edge-port: no                          no                          no
+   designated-bridge-id: 0x8000.E4:8D:8C:00:00:02    0x8000.E4:8D:8C:00:00:03    0x8000.48:A9:8A:00:00:41
+     designated-port-id: 0x80.6                      0x80.6                      0x80.21
+
+[admin@TPE_ACC_SW_06] > /interface bridge monitor [find] once
+                   name: bridge1
+    current-mac-address: 48:A9:8A:00:00:41
+         root-bridge-id: 0x8000.E4:8D:8C:00:00:02
 
 [admin@TPE_ACC_SW_06] > /interface bridge host print detail without-paging
 Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external 
@@ -2559,6 +2631,18 @@ Flags:
     ipv6=no interface-name=eth0 system-caps=station-only
     system-caps-enabled=station-only
 
+[admin@TPE_ACC_SW_07] > /interface bridge port monitor [find] once
+              interface: bond7                       ether24
+                   role: root-port                   alternate-port
+              edge-port: no                          no
+   designated-bridge-id: 0x8000.E4:8D:8C:00:00:02    0x8000.E4:8D:8C:00:00:03
+     designated-port-id: 0x80.7                      0x80.7
+
+[admin@TPE_ACC_SW_07] > /interface bridge monitor [find] once
+                   name: bridge1
+    current-mac-address: 48:A9:8A:00:00:51
+         root-bridge-id: 0x8000.E4:8D:8C:00:00:02
+
 [admin@TPE_ACC_SW_07] > /interface bridge host print detail without-paging
 Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external 
  0 DL mac-address=48:A9:8A:00:00:51 on-interface=bridge1 bridge=bridge1 vid=0
@@ -2718,6 +2802,18 @@ Flags:
     identity=TPE-SRV-083 platform=Linux version="Ubuntu 22.04" unpack=none
     age=3m25s uptime=2w1d4h ipv6=no interface-name=eth0 system-caps=station-only
     system-caps-enabled=station-only
+
+[admin@TPE_ACC_SW_08] > /interface bridge port monitor [find] once
+              interface: bond8                       ether24
+                   role: root-port                   alternate-port
+              edge-port: no                          no
+   designated-bridge-id: 0x8000.E4:8D:8C:00:00:02    0x8000.E4:8D:8C:00:00:03
+     designated-port-id: 0x80.8                      0x80.8
+
+[admin@TPE_ACC_SW_08] > /interface bridge monitor [find] once
+                   name: bridge1
+    current-mac-address: 48:A9:8A:00:00:5D
+         root-bridge-id: 0x8000.E4:8D:8C:00:00:02
 
 [admin@TPE_ACC_SW_08] > /interface bridge host print detail without-paging
 Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external 
@@ -2879,6 +2975,18 @@ Flags:
     age=3m25s uptime=2w1d4h ipv6=no interface-name=eth0 system-caps=station-only
     system-caps-enabled=station-only
 
+[admin@TPE_ACC_SW_09] > /interface bridge port monitor [find] once
+              interface: bond9                       ether24
+                   role: root-port                   alternate-port
+              edge-port: no                          no
+   designated-bridge-id: 0x8000.E4:8D:8C:00:00:02    0x8000.E4:8D:8C:00:00:03
+     designated-port-id: 0x80.9                      0x80.9
+
+[admin@TPE_ACC_SW_09] > /interface bridge monitor [find] once
+                   name: bridge1
+    current-mac-address: 48:A9:8A:00:00:69
+         root-bridge-id: 0x8000.E4:8D:8C:00:00:02
+
 _____
 TPE_ACC_SW_10 (10.1.10.30):
 [admin@TPE_ACC_SW_10] > /export terse
@@ -2951,6 +3059,18 @@ Flags:
     identity=TPE-SRV-103 platform=Linux version="Ubuntu 22.04" unpack=none
     age=3m25s uptime=2w1d4h ipv6=no interface-name=eth0 system-caps=station-only
     system-caps-enabled=station-only
+
+[admin@TPE_ACC_SW_10] > /interface bridge port monitor [find] once
+              interface: bond10                      ether24
+                   role: root-port                   alternate-port
+              edge-port: no                          no
+   designated-bridge-id: 0x8000.E4:8D:8C:00:00:02    0x8000.E4:8D:8C:00:00:03
+     designated-port-id: 0x80.10                     0x80.10
+
+[admin@TPE_ACC_SW_10] > /interface bridge monitor [find] once
+                   name: bridge1
+    current-mac-address: 48:A9:8A:00:00:75
+         root-bridge-id: 0x8000.E4:8D:8C:00:00:02
 
 [admin@TPE_ACC_SW_10] > /interface bridge host print detail without-paging
 Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external 
@@ -3116,6 +3236,18 @@ Flags:
     identity=TPE-SRV-113 platform=Linux version="Ubuntu 22.04" unpack=none
     age=3m25s uptime=2w1d4h ipv6=no interface-name=eth0 system-caps=station-only
     system-caps-enabled=station-only
+
+[admin@TPE_ACC_SW_11] > /interface bridge port monitor [find] once
+              interface: bond11                      ether24
+                   role: root-port                   alternate-port
+              edge-port: no                          no
+   designated-bridge-id: 0x8000.E4:8D:8C:00:00:02    0x8000.E4:8D:8C:00:00:03
+     designated-port-id: 0x80.11                     0x80.11
+
+[admin@TPE_ACC_SW_11] > /interface bridge monitor [find] once
+                   name: bridge1
+    current-mac-address: 48:A9:8A:00:00:81
+         root-bridge-id: 0x8000.E4:8D:8C:00:00:02
 
 [admin@TPE_ACC_SW_11] > /interface bridge host print detail without-paging
 Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external 
@@ -3364,6 +3496,18 @@ Flags:
     identity=TPE-SRV-123 platform=Linux version="Ubuntu 22.04" unpack=none
     age=3m25s uptime=2w1d4h ipv6=no interface-name=eth0 system-caps=station-only
     system-caps-enabled=station-only
+
+[admin@TPE_ACC_SW_12] > /interface bridge port monitor [find] once
+              interface: bond12                      ether24
+                   role: root-port                   alternate-port
+              edge-port: no                          no
+   designated-bridge-id: 0x8000.E4:8D:8C:00:00:02    0x8000.E4:8D:8C:00:00:03
+     designated-port-id: 0x80.12                     0x80.12
+
+[admin@TPE_ACC_SW_12] > /interface bridge monitor [find] once
+                   name: bridge1
+    current-mac-address: 48:A9:8A:00:00:8D
+         root-bridge-id: 0x8000.E4:8D:8C:00:00:02
 
 [admin@TPE_ACC_SW_12] > /interface bridge host print detail without-paging
 Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external 

@@ -651,6 +651,32 @@ test('推定位置：CSS106 底下的終端（埠不明）；串接兩台未收�
     'SW_B (10.0.0.2):', BH([' 0 DL mac-address=D4:01:C3:00:00:0B on-interface=bridge1', ' 9 D mac-address=D4:01:C3:00:00:0A on-interface=ether1', ...hosts('ether3', 2, '03')])].join('\n'));
   assert.strictEqual(behindB.model.macs.find((m) => m.mac === '246E96000301').behind, null, 'SW_B 在非朝向 SW_A 的埠學到 → 在 SW_B 後面，不是 CSS106 底下');
 });
+// RSTP 的 monitor 輸出依手冊欄位撰寫（欄式：每行 key: 值1 值2…），不是實機擷取
+const STP = (rows) => ['### /interface bridge port monitor [find] once', ...rows].join('\n');
+test('RSTP：欄式 monitor 輸出（RouterOS 7／6 欄位名稱）、bridge 自己的 MAC', () => {
+  const s = build(['SW_A (10.0.0.1):', STP(['              interface: ether1                      ether5                      ether7',
+    '                   role: root-port                   designated-port             alternate-port',
+    '              edge-port: no                          no                          no',
+    '   designated-bridge-id: 0x8000.CC:2D:E0:00:01:06    0x8000.D4:01:C3:00:00:0A    0x8000.CC:2D:E0:00:01:06',
+    '     designated-port-id: 0x80.3                      0x80.5                      0x80.4',
+    '                port-id: 0x80.1                      0x80.5                      0x80.7']),
+    '### /interface bridge monitor [find] once', '                   name: bridge1', '    current-mac-address: D4:01:C3:00:00:0A', '         root-bridge-id: 0x8000.CC:2D:E0:00:00:01',
+    'R6 (10.0.0.2):', '### /interface bridge port monitor [find] once', '      interface: ether2', '           role: root-port', '  designated-bridge: 0x8000.D4:01:C3:00:00:0A', '  designated-port-number: 5'].join('\n'));
+  assert.deepStrictEqual(['SW_A|ether1', 'SW_A|ether5', 'R6|ether2'].map((k) => { const x = iface(s, k).stp; return [x.role, x.designatedBridge, x.designatedPort]; }),
+    [['root-port', 'CC2DE0000106', 3], ['designated-port', 'D401C300000A', 5], ['root-port', 'D401C300000A', 5]]);
+  assert.ok(s.model.devices.find((d) => d.key === 'SW_A').ownMacs.includes('D401C300000A'), 'bridge 的 current-mac-address 是設備自己的 MAC');
+  assert.ok(!ids(s).includes('I01'));
+});
+test('推論鏈路（RSTP）：CSS106 是上游時，RouterOS 的 root／alternate 埠指向它；兩台都收集時對回確切的埠；指定埠、不明 MAC 不推論', () => {
+  const css = NB([' 0 interface=ether1 mac-address=CC:2D:E0:00:01:06 identity=CSS106_1 board="CSS106-1G-4P-1S" discovered-by=mndp']);
+  const up = build(['SW_A (10.0.0.1):', css, STP(['  interface: ether1      ether9', '       role: root-port   alternate-port',
+    '  designated-bridge-id: 0x8000.CC:2D:E0:00:01:06  0x8000.AA:AA:AA:00:00:99'])].join('\n'));
+  assert.deepStrictEqual(inferred(up), [['CSS106_1|?(sw_a:ether1)', 'SW_A|ether1', 'mndp-unique+stp', 'high']], 'STP 指向 CSS106、MNDP 也唯一 → 信心高；ether9 的指定橋接器不是已知設備，不推論');
+  const pair = build(['SW_A (10.0.0.1):', STP(['  interface: ether5', '  role: designated-port', '  designated-bridge-id: 0x8000.D4:01:C3:00:00:0A', '  port-id: 0x80.5']),
+    '### /interface bridge monitor [find] once', '  name: bridge1', '  current-mac-address: D4:01:C3:00:00:0A',
+    'SW_B (10.0.0.2):', STP(['  interface: ether2', '  role: root-port', '  designated-bridge-id: 0x8000.D4:01:C3:00:00:0A', '  designated-port-id: 0x80.5'])].join('\n'));
+  assert.deepStrictEqual(inferred(pair), [['SW_A|ether5', 'SW_B|ether2', 'stp', 'medium']], 'designated-port-id 對回 SW_A 的 ether5（port-id 5）');
+});
 test('推論鏈路：/30 點對點網段、MNDP 雙向；兩台設備已有 LLDP 鏈路或埠已有 LLDP 鄰接時不推論', () => {
   const p2p = build('R1 (10.0.0.1):\n### /export terse\n/ip address add address=10.9.9.1/30 interface=ether1\nR2 (10.0.0.2):\n### /export terse\n/ip address add address=10.9.9.2/30 interface=ether2\n');
   assert.deepStrictEqual(inferred(p2p), [['R1|ether1', 'R2|ether2', 'subnet-p2p', 'medium']]);
@@ -824,6 +850,8 @@ test('去識別化：關係與檢查結果不變，設備名與 IP 不殘留，�
   assert.strictEqual(anonymize(raw).text, a.text, '同一份輸入應得到同一份輸出');
   const w = anonymize('AP_1 (192.168.5.11):\n### /interface wifi registration-table print detail\n 0 A interface=wifi1 ssid="Corp" mac-address=AA:BB:CC:00:10:01 uptime=1h last-activity=1s\n     eap-identity="alice@corp" eap-username="alice" dhcp-hostname="alice-nb"\n### /export terse\n# serial number = HE0123\n/interface wireless security-profiles add name=p1 wpa2-pre-shared-key=topsecret\n').text;
   ['alice', 'Corp"', 'HE0123', 'topsecret', 'AP_1', '192.168'].forEach((x) => assert.ok(!w.includes(x), `${x} 應被去識別化`));
+  const id = anonymize('SW (10.0.0.1):\n### /system identity print\n  name: SW\n### /interface bridge monitor [find] once\n  name: bridge1\n').text;
+  assert.ok(id.includes('name: bridge1') && !/name: SW\b/.test(id), '只有 /system identity print 的 name 是設備名，bridge 名稱不換');
   assert.ok(w.includes('AA:BB:CC:'), '保留 OUI，廠商判斷不受影響');
 });
 test('真實設備輸出（tests/fixtures/real/）：每份都完整解析，沒有 I01', () => {

@@ -46,7 +46,13 @@ function anonymize(text, opt) {
   text.replace(/^(\S+) \((\d{1,3}(?:\.\d{1,3}){3})\):\s*$/gm, (_, n) => names.add(n));
   text.replace(/(?:^|\s)identity=("(?:[^"\\]|\\.)*"|\S+)/g, (_, v) => names.add(v.replace(/^"|"$/g, '')));
   text.replace(/\/system identity set name=("(?:[^"\\]|\\.)*"|\S+)/g, (_, v) => names.add(v.replace(/^"|"$/g, '')));
-  text.replace(/^\s*name:\s*(\S+)\s*$/gm, (_, v) => names.add(v)); // /system identity print
+  // /system identity print 的「name: X」才是設備名；其他 monitor 輸出（例如 bridge 的 name: bridge1）不是
+  let inIdentity = false;
+  text.split('\n').forEach((line) => {
+    if (/^\s*(###|\[[^\]]*\]\s*>)/.test(line) || /^\S+ \(\d{1,3}(?:\.\d{1,3}){3}\):\s*$/.test(line)) inIdentity = /system\s+identity\s+print/i.test(line);
+    const m = inIdentity && line.match(/^\s*name:\s*(\S+)\s*$/);
+    if (m) names.add(m[1]);
+  });
 
   let out = text;
   // 2. key=value 中的識別與機密欄位

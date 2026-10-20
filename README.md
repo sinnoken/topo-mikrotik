@@ -68,7 +68,7 @@ assets/app.css
 src/
   core/               命名空間、IP 工具、唯一鍵
   readers/            輸入格式：bundle-v1、files-v1
-  adapters/           mikrotik.js（11 個）
+  adapters/           mikrotik.js（13 個）
   model/              build.js（事實→實體）、infer.js（推論）
   check/              一致性檢查、覆蓋率
   profile/            命名規則引擎

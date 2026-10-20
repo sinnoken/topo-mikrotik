@@ -51,7 +51,7 @@ function parseHtml(html, root) {
 }
 const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const body = new El('body'); parseHtml(html.split('<body>')[1], body);
-const docListeners = {};
+const docListeners = {}; const winListeners = {};
 const document = { body, activeElement: body, createElement: (t) => new El(t), createTextNode: (t) => new Text_(t),
   getElementById: (id) => body.querySelector('#' + id), querySelector: (s) => body.querySelector(s), querySelectorAll: (s) => body.querySelectorAll(s),
   addEventListener: (t, f) => (docListeners[t] = docListeners[t] || []).push(f),
@@ -60,7 +60,7 @@ let rafQ = [];
 const ctx = Object.assign(globalThis, {
   document, window: globalThis, devicePixelRatio: 1, ResizeObserver: class { observe() {} },
   requestAnimationFrame: (f) => { rafQ.push(f); return rafQ.length; }, cancelAnimationFrame: () => {},
-  alert: (m) => { throw new Error('alert: ' + m); }, confirm: () => true, indexedDB: undefined, addEventListener: () => {},
+  alert: (m) => { throw new Error('alert: ' + m); }, confirm: () => true, indexedDB: undefined, addEventListener: (t, f) => (winListeners[t] = winListeners[t] || []).push(f),
 });
 void ctx;
 delete globalThis.SSOT;
@@ -503,6 +503,17 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (App.layout.right !== r0 + 100) throw new Error('右欄往左拖應加寬');
     rgrip.dispatch('dblclick'); if (App.layout.right !== 400) throw new Error('雙擊應還原預設寬度');
     grip.dispatch('dblclick');
+  });
+  await step('滑過左右欄與工具列時不會穿透觸發拓樸圖 hover', () => {
+    const g = App.graph; const cv = $('#graph');
+    const move = (target, p) => (winListeners.mousemove || []).forEach((f) => f({ target, clientX: p.x, clientY: p.y }));
+    const n = g.nodes.find((x) => g.visible(x)); const p = g.toScreen(g.pos.get(n.id));
+    move(cv, p); if (!g.hover || g.hover.id !== n.id) throw new Error('畫布上的節點應可 hover');
+    [$('#left'), $('#right'), $('#btn-fit')].forEach((el) => {
+      move(el, p);
+      if (g.hover) throw new Error(`指標在 #${el.id} 上時不應 hover 到底下的節點`);
+      if (!$('#tooltip').classList.contains('hidden')) throw new Error('指標離開畫布時提示應隱藏');
+    });
   });
   await step('清除基準', async () => { $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20)); if (App.snap) throw new Error('未清除'); });
   await step('還原舊 schema 的基準：有保存輸入時重建，沒有時明確告知', async () => {

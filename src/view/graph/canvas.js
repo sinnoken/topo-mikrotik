@@ -74,7 +74,8 @@
       window.addEventListener('mousemove', (ev) => {
         const p = at(ev);
         if (!drag) {
-          const n = this.hitNode(p); const e = n ? null : this.hitEdge(p);
+          // 只有指標直接在畫布上才做 hover；在左右欄、工具列、圖例等上面時不可穿透到底下（或畫面外）的節點
+          const n = ev.target === cv ? this.hitNode(p) : null; const e = n || ev.target !== cv ? null : this.hitEdge(p);
           const hv = n ? { type: 'node', id: n.id } : e ? { type: 'edge', id: e.id } : null;
           if (JSON.stringify(hv) !== JSON.stringify(this.hover)) { this.hover = hv; this.dirty = true; this.emit('hover', { item: hv, x: p.x, y: p.y }); }
           else if (hv) this.emit('hover', { item: hv, x: p.x, y: p.y });

@@ -9,20 +9,21 @@
   'use strict';
   const V = (S.view = S.view || {});
   const DX = 185; const DY = 130; const ROW = 24; const WRAP_DY = 80; const GAP = 220;
-  const LCOLS = 4; const LDX = 44; const LDY = 40; // 末端（主機）排列
+  const LCOLS = 4; const LDX = 44; const LDY = 40; const LEAF_DY = 64; // 末端（主機）排列
   const RANK = { firewall: 0, router: 1, switch: 2, unknown: 3, host: 4 };
 
-  function layout(nodes, edges) {
+  /**
+   * 分群與末端：每群拆成「核心」與「末端」（只連到一台已收集設備、本身沒有收集資料，之後排在該設備下方），
+   * 並依層級規則替核心節點分層。內建版面與 ELK 版面共用這一步，結果一致。
+   */
+  function prepare(nodes, edges) {
     const byId = new Map(nodes.map((n) => [n.id, n]));
     const adj = new Map(nodes.map((n) => [n.id, new Set()]));
     edges.forEach((e) => { if (adj.has(e.a) && adj.has(e.b) && e.a !== e.b) { adj.get(e.a).add(e.b); adj.get(e.b).add(e.a); } });
     const groups = new Map();
     nodes.forEach((n) => S.util.getOr(groups, n.group || '', () => []).push(n));
-
-    const boxes = [];
-    groups.forEach((members, gname) => {
+    return Array.from(groups, ([gname, members]) => {
       const inG = new Set(members.map((n) => n.id));
-      // 末端（只連到一台設備、本身沒有收集資料）不參與分層，之後排在上層設備下方
       const leafOf = new Map();
       members.forEach((n) => {
         if (n.collected) return;
@@ -31,6 +32,7 @@
       });
       const leaves = new Map();
       leafOf.forEach((p, id) => S.util.getOr(leaves, p, () => []).push(id));
+      leaves.forEach((ids) => ids.sort(S.util.natural));
       const core = members.filter((n) => !leafOf.has(n.id));
       const inCore = new Set(core.map((n) => n.id));
       const level = new Map();
@@ -57,6 +59,42 @@
         }
         comp.forEach((x) => { if (!level.has(x)) level.set(x, buckets.length); });
       }
+      return { name: gname, members, core, inCore, leaves, level, byId, adj };
+    });
+  }
+
+  // 每個節點佔的寬度＝自己或其末端群的寬度
+  const leafCols = (g, id) => Math.min(LCOLS, (g.leaves.get(id) || []).length);
+  const leafRows = (g, id) => Math.ceil((g.leaves.get(id) || []).length / LCOLS);
+  const slotW = (g, id) => Math.max(DX, leafCols(g, id) * LDX + 40);
+
+  /** 末端排在所屬設備下方的小方陣。 */
+  function placeLeaves(g, pos) {
+    g.leaves.forEach((ids, p) => {
+      const pp = pos.get(p); if (!pp) return;
+      const cols = Math.min(LCOLS, ids.length);
+      ids.forEach((id, i) => pos.set(id, { x: pp.x + ((i % cols) - (cols - 1) / 2) * LDX, y: pp.y + LEAF_DY + Math.floor(i / cols) * LDY }));
+    });
+  }
+
+  /** 各群以「書架」方式排成接近正方形；box：{ name, pos（群內座標，x 以 0 為中心）, w, h, n }。 */
+  function shelf(boxes) {
+    boxes.sort((a, b) => b.n - a.n || S.util.natural(a.name, b.name));
+    const area = boxes.reduce((s, b) => s + (b.w + GAP) * (b.h + GAP), 0);
+    const maxW = Math.max(Math.sqrt(area) * 1.4, ...boxes.map((b) => b.w));
+    const out = new Map(); let cx = 0; let cy = 0; let shelfH = 0;
+    boxes.forEach((b) => {
+      if (cx > 0 && cx + b.w > maxW) { cx = 0; cy += shelfH + GAP; shelfH = 0; }
+      b.pos.forEach((p, id) => out.set(id, { x: p.x + cx + b.w / 2, y: p.y + cy }));
+      cx += b.w + GAP; shelfH = Math.max(shelfH, b.h);
+    });
+    return out;
+  }
+
+  /** 內建版面：BFS 分層＋一輪重心排序＋太寬折行（同步，1000 台以上也能一次算完）。 */
+  function layout(nodes, edges) {
+    return shelf(prepare(nodes, edges).map((g) => {
+      const { core, level, byId, adj } = g;
       const layers = [];
       core.forEach((n) => { const l = level.get(n.id) || 0; (layers[l] || (layers[l] = [])).push(n.id); });
       // 重心排序
@@ -71,43 +109,22 @@
         }
         ids.forEach((id, i) => order.set(id, i));
       });
-      // 每個節點佔的寬度＝自己或其末端群的寬度
-      const leafCols = (id) => Math.min(LCOLS, (leaves.get(id) || []).length);
-      const leafRows = (id) => Math.ceil((leaves.get(id) || []).length / LCOLS);
-      const wOf = (id) => Math.max(DX, leafCols(id) * LDX + 40);
       const pos = new Map(); let y = 0; let width = 0;
       layers.forEach((ids) => {
         if (!ids || !ids.length) return;
         for (let r = 0; r * ROW < ids.length; r++) {
           const row = ids.slice(r * ROW, (r + 1) * ROW);
-          const total = row.reduce((s2, id) => s2 + wOf(id), 0); let x = -total / 2;
-          row.forEach((id) => { pos.set(id, { x: x + wOf(id) / 2, y }); x += wOf(id); });
+          const total = row.reduce((s2, id) => s2 + slotW(g, id), 0); let x = -total / 2;
+          row.forEach((id) => { pos.set(id, { x: x + slotW(g, id) / 2, y }); x += slotW(g, id); });
           width = Math.max(width, total);
-          const extra = Math.max(0, ...row.map(leafRows)) * LDY;
+          const extra = Math.max(0, ...row.map((id) => leafRows(g, id))) * LDY;
           y += WRAP_DY + extra;
         }
         y += DY - WRAP_DY;
       });
-      leaves.forEach((ids, p) => {
-        const pp = pos.get(p); if (!pp) return;
-        ids.sort(S.util.natural);
-        const cols = Math.min(LCOLS, ids.length);
-        ids.forEach((id, i) => pos.set(id, { x: pp.x + ((i % cols) - (cols - 1) / 2) * LDX, y: pp.y + 64 + Math.floor(i / cols) * LDY }));
-      });
-      boxes.push({ name: gname, pos, w: Math.max(width, DX), h: Math.max(y - (DY - WRAP_DY), DY / 2), n: members.length });
-    });
-
-    // 書架排列
-    boxes.sort((a, b) => b.n - a.n || S.util.natural(a.name, b.name));
-    const area = boxes.reduce((s, b) => s + (b.w + GAP) * (b.h + GAP), 0);
-    const maxW = Math.max(Math.sqrt(area) * 1.4, ...boxes.map((b) => b.w));
-    const out = new Map(); let cx = 0; let cy = 0; let shelfH = 0;
-    boxes.forEach((b) => {
-      if (cx > 0 && cx + b.w > maxW) { cx = 0; cy += shelfH + GAP; shelfH = 0; }
-      b.pos.forEach((p, id) => out.set(id, { x: p.x + cx + b.w / 2, y: p.y + cy }));
-      cx += b.w + GAP; shelfH = Math.max(shelfH, b.h);
-    });
-    return out;
+      placeLeaves(g, pos);
+      return { name: g.name, pos, w: Math.max(width, DX), h: Math.max(y - (DY - WRAP_DY), DY / 2), n: g.members.length };
+    }));
   }
 
   /** 力導向微調一步（格網加速的 Fruchterman–Reingold）。回傳本步最大位移。 */
@@ -138,7 +155,7 @@
     return maxMove;
   }
 
-  V.layout = { layout, forceStep };
+  V.layout = { layout, forceStep, prepare, placeLeaves, shelf, slotW, leafRows, RANK, LDY, LEAF_DY };
 })(globalThis.SSOT = globalThis.SSOT || {});
 
 /*

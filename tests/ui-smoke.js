@@ -81,12 +81,39 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     $('#input-build').click(); for (let i = 0; i < 4000 && !App.snap; i++) await new Promise((r) => setTimeout(r, 5));
     if (process.env.SMOKE_INPUT) console.log('      建立＋繪製：' + (Date.now() - t0) + ' ms，節點 ' + App.graph.nodes.length);
     if (!App.snap) throw new Error('基準未建立：' + text('#input-status'));
+    await App.layoutJob;
     await new Promise((r) => setTimeout(r, 20));
     if (!process.env.SMOKE_INPUT && !text('#pane-findings').includes('LLDP 單向')) throw new Error('檢查結果未顯示');
     if (!$('#welcome').classList.contains('hidden')) throw new Error('歡迎畫面未隱藏');
     const collected = App.snap.model.devices.find((device) => device.collected);
     App.select({ type: 'device', key: collected.key });
     if (!$('#detail .chip-list') || !$('#detail .chip-list').querySelectorAll('.chip').length) throw new Error('設備收集資料標籤應使用可間隔換行的 chip-list');
+  });
+  await step('分層版面（ELK）：所有節點都有座標、各群外框不重疊、完成後有提示', async () => {
+    if (App.layoutMode !== 'elk') throw new Error('預設應為分層版面');
+    if (process.env.SMOKE_INPUT) console.log('      ' + text('#banner'));
+    else if (!text('#banner').includes('已套用分層版面')) throw new Error('分層版面完成後應提示：' + text('#banner'));
+    const g = App.graph; const box = new Map();
+    g.nodes.forEach((n) => {
+      const p = g.pos.get(n.id);
+      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) throw new Error('節點沒有座標：' + n.id);
+      const b = S.util.getOr(box, n.group || '', () => ({ x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }));
+      b.x0 = Math.min(b.x0, p.x); b.y0 = Math.min(b.y0, p.y); b.x1 = Math.max(b.x1, p.x); b.y1 = Math.max(b.y1, p.y);
+    });
+    const bs = Array.from(box.entries());
+    bs.forEach(([na, a], i) => bs.slice(i + 1).forEach(([nb, b]) => {
+      if (a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1) throw new Error(`分群外框重疊：${na} / ${nb}`);
+    }));
+  });
+  await step('分層版面超過上限時退回現有版面並說明原因', async () => {
+    const before = JSON.stringify(Array.from(App.graph.pos));
+    const max = App.ELK_MAX; App.ELK_MAX = 1;
+    try { $('#btn-relayout').click(); await App.layoutJob; } finally { App.ELK_MAX = max; }
+    if (!text('#banner').includes('超過分層版面上限')) throw new Error('應說明分層版面未套用的原因：' + text('#banner'));
+    if (JSON.stringify(Array.from(App.graph.pos)) !== before) throw new Error('未套用時不應改動現有位置');
+    const sel = $('#layout-mode'); sel.value = 'builtin'; sel.dispatch('change'); await App.layoutJob;
+    if (App.layoutMode !== 'builtin') throw new Error('應可切換為快速版面');
+    sel.value = 'elk'; sel.dispatch('change'); await App.layoutJob;
   });
   await step('基準摘要與行動入口', () => {
     const summary = text('#baseline-summary');

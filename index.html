@@ -31,7 +31,9 @@
 <script src="src/view/dom.js"></script>
 <script src="src/view/theme.js"></script>
 <script src="src/view/store.js"></script>
+<script src="vendor/elkjs-0.11.1/elk.bundled.js"></script>
 <script src="src/view/graph/layout.js"></script>
+<script src="src/view/graph/elk-layout.js"></script>
 <script src="src/view/graph/canvas.js"></script>
 <script src="src/view/panels/details.js"></script>
 <script src="src/view/panels/lists.js"></script>
@@ -86,7 +88,7 @@
     <section id="center">
       <canvas id="graph"></canvas>
       <div id="toolbar" class="toolbar hidden">
-        <div class="grp"><button id="btn-fit" title="整張圖放進畫面">全部</button><button id="btn-relayout" title="依分群與層級重新排列">重新排列</button><button id="btn-force" title="用力導向微調位置（再按一次停止）">自動排開</button></div>
+        <div class="grp"><button id="btn-fit" title="整張圖放進畫面">全部</button><button id="btn-relayout" title="依分群與層級重新排列">重新排列</button><select id="layout-mode" title="重新排列使用的版面"><option value="elk">分層（ELK）</option><option value="builtin">快速（內建）</option></select><button id="btn-force" title="用力導向微調位置（再按一次停止）">自動排開</button></div>
         <div class="grp"><button id="btn-hosts" title="顯示只由 LLDP 看到的主機">主機</button><button id="btn-unknown" class="on" title="顯示沒有 LLDP 鄰居、只由 MAC 推論出來的末端">未知對端</button><button id="btn-groups" class="on" title="顯示分群底框">分群</button></div>
         <div class="grp"><button id="btn-png" title="把目前畫面存成圖片">存成圖片</button></div>
       </div>

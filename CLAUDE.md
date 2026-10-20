@@ -3,7 +3,9 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 本專案文件、測試名稱、finding 訊息與 commit message 皆使用繁體中文；新增內容請沿用。
-完整開發原則見 [.github/copilot-instructions.md](.github/copilot-instructions.md)（以下為重點）。
+開發原則（鐵則、工作習慣、針對性守則、驗證底線）與 GitHub Copilot 共用同一份，在此匯入：
+
+@.github/copilot-instructions.md
 
 ## 專案概要
 
@@ -36,7 +38,7 @@ git diff --check         # 提交前檢查
   以 IIFE `(function (S) { ... })(globalThis.SSOT)` 撰寫。這是為了 `file://` 可直接開啟，不要改成 import/bundler。
 - **載入順序是契約**：[tools/core-files.js](tools/core-files.js) 定義核心檔案順序，`tests/load.js` 用 `vm` 依此在 Node 載入
   與瀏覽器相同的檔案；`index.html` 的前段 `<script>` 必須與它完全一致（有測試檢查）。新增核心檔案要兩邊同步加。
-  `index.html` 之後再載入 profiles、嵌入的範例與 `src/view/*`。
+  `index.html` 之後再載入 profiles、嵌入的範例、`vendor/` 與 `src/view/*`；`vendor/` 只屬於畫面層，不列入核心載入順序。
 - **管線**（[src/pipeline.js](src/pipeline.js)，`S.build(sources, options) → Snapshot`）：
   ① `readers/`（bundle-v1、files-v1，依 `readers/index.js` 的 `ORDER` 選擇）切成區塊，保留檔案與行號
   → ② `adapters/` 辨識指令 → ③ `adapters/mikrotik.js` 解析為帶 `block`/`line` 的事實
@@ -57,28 +59,28 @@ git diff --check         # 提交前檢查
   - IP 是獨立的 `ipAddresses` 實體，另有推導出的 `prefixes`；介面上沒有 `ips`。畫面用 `Q.addressesOf(ep)`／`Q.ipsOf(ep)` 取得。
   - 設備身分欄位是 `manufacturer`／`deviceType`／`softwareVersion`。
   - 內部模型 M 用 Map/Set，只在 `pipeline.js` 的 `serialize` 轉成陣列。
+- **拓樸版面**：
+  - [layout.js](src/view/graph/layout.js) 的 `prepare()` 負責分群、末端與分層，`shelf()` 負責書架排列，內建版面與分層版面共用。
+  - 分層版面在 [elk-layout.js](src/view/graph/elk-layout.js)，使用 vendor 的 ELK.js（`vendor/elkjs-0.11.1/`，EPL-2.0）。
+  - 流程是先用內建版面同步出圖，沒有保存位置時再於背景套用 ELK。超過 `App.ELK_MAX` 台或逾時就維持內建版面，並以 banner 說明原因。
 - **可重現**：相同輸入與選項必得相同 Snapshot（`meta.createdAt`、`meta.timing` 除外）；不可用時間、隨機值或環境影響核心結果。
   `S.VERSION` 與 `S.SCHEMA` 定義於 [src/core/ns.js](src/core/ns.js)。
 
-## 修改守則
+## 修改守則（補充匯入的開發原則）
 
-- **不靜默失敗**：無法辨識或不完整的輸入要以 finding（如 I01）、錯誤或測試失敗呈現，不可丟棄。
-- **生成檔不手改**：`samples/sample-bundle.txt`／`.js`（`npm run sample`）、`src/data/oui-data.js`（`npm run oui`）改產生器後重新生成。
-  範例資料刻意含問題；新增檢查時要在產生器放對應問題並加測試。
 - **擴充點**：新廠牌 → `src/adapters/` 新檔＋`S.adapters.register()`，加入 `tools/core-files.js` 與 `index.html`；
   新輸入格式 → `src/readers/` 並加入 `ORDER`；新檢查 → `CATALOG` 加一筆並實作。
-- **UI 冒煙測試**：`tests/ui-smoke.js` 是極簡模擬 DOM，`querySelector` 能力有限；讀詳情用 `text('#detail')`；
-  斷言關係與可觀察行為，避免硬編碼筆數或內部形狀。
-- **finding id、訊息、欄位與排序保持穩定**。
-- **文件同步**：使用方式／畫面行為 → `README.md`；資料模型、檢查代碼表 → `docs/design-ssot.md`；
-  收集指令與格式 → `docs/collection.md`；命名 profile → `docs/profile.md`。
-- **SSH 收集器**只用系統 SSH 與既有 key/agent，不跳過 host-key 驗證；SSH／credential 邏輯不得進入瀏覽器核心。
+- **生成檔的指令**：`samples/sample-bundle.txt`／`.js` 用 `npm run sample`，`src/data/oui-data.js` 用 `npm run oui`。
+  範例資料刻意含問題；新增檢查時要在產生器放對應問題並加測試。
 - 解析器依 RouterOS 文件撰寫，測試資料為手寫／產生，尚未以真實設備驗證；欄位語意以官方手冊
   <https://manual.mikrotik.com/llms.txt> 為準。
+- 大型冒煙測試（`SMOKE_INPUT=samples/large-1000.txt node tests/ui-smoke.js`）的「基準摘要與行動入口」一項本來就會失敗：
+  它檢查範例資料才有的「LLDP 單向」，乾淨的大型網路沒有這個問題。
 
-## 專用流程（.github/skills/）
+## 專用流程（skills）
 
-依任務先讀對應 SKILL.md：
-- 改 adapter／解析、新收集指令 → [routeros-parser-fixtures](.github/skills/routeros-parser-fixtures/SKILL.md)（先寫失敗測試再修）
-- 改 Snapshot 欄位、finding id、query API 或版本 → [snapshot-contract-change](.github/skills/snapshot-contract-change/SKILL.md)（逐層走完 adapter→model→infer/check→pipeline→query→view→compare）
-- 改鄰居探索（LLDP／MNDP／CDP）與拓樸 → [mikrotik-neighbor-topology](.github/skills/mikrotik-neighbor-topology/SKILL.md)
+三個 skill 放在 `.claude/skills/`，Claude Code 會自動載入；`.github/skills/` 是同內容的 GitHub Copilot 版。
+修改時兩邊一起改，`tests/run.js` 會檢查兩者一致。
+- `routeros-parser-fixtures`：改 adapter／解析、新收集指令（先寫失敗測試再修）
+- `snapshot-contract-change`：改 Snapshot 欄位、finding id、query API 或版本（逐層走完 adapter→model→infer/check→pipeline→query→view→compare）
+- `mikrotik-neighbor-topology`：改鄰居探索（LLDP／MNDP／CDP）與拓樸

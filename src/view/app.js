@@ -10,6 +10,8 @@
     // 未知對端（沒有 LLDP／CDP 介面鄰接、只由 MAC 推論出來的末端）：只存在於畫面，不寫進基準
     showUnknown: true, expanded: new Set(), virtual: new Map(), vOfEp: new Map(), virtualByDev: new Map(),
     UNKNOWN_EXPAND_MAX: 8, UNKNOWN_TOTAL_CAP: 800,
+    // 版面模式：elk（分層，預設）或 builtin（快速）；網路設備超過 ELK_MAX 台時分層版面不執行
+    layoutMode: 'elk', layoutJob: Promise.resolve(), ELK_MAX: 1500,
   };
   window.App = App;
 
@@ -21,6 +23,7 @@
     App.graph.on('hover', onHover);
     let saveT = null;
     App.graph.on('moved', () => { clearTimeout(saveT); saveT = setTimeout(savePositions, 600); App.graph.computeGroups(); });
+    App.layoutMode = (await S.store.get('layoutMode').catch(() => null)) || 'elk';
     bindHeader(); bindToolbar(); bindInputDialog(); bindTabs(); bindMobileWorkspaces(); await bindResizers();
     if (!(await S.store.available())) banner('這個瀏覽器無法使用本機儲存，關閉頁面後基準不會保留。');
     await App.restore();
@@ -66,6 +69,27 @@
     applyVisibility();
     App.graph.fit();
     renderAll();
+    // 先以內建版面立即出圖；沒有保存位置時再於背景套用分層版面
+    App.layoutJob = App.layoutMode === 'elk' && !(positions && Object.keys(positions).length) ? applyElk(g) : Promise.resolve();
+  }
+
+  /** 分層版面（ELK）：在背景計算，完成後替換位置；超過上限、逾時或失敗時保留現有版面並說明原因。 */
+  async function applyElk(g) {
+    const snap = App.snap; const token = (App.layoutToken = (App.layoutToken || 0) + 1);
+    banner('分層版面計算中…');
+    try {
+      const r = await V.layout.elk(g.nodes, g.edges, {
+        radius: (n) => App.graph.radius(n), maxNodes: App.ELK_MAX, isStale: () => App.snap !== snap || App.layoutToken !== token,
+      });
+      if (App.snap !== snap || App.layoutToken !== token) return;
+      r.pos.forEach((p, id) => App.graph.pos.set(id, p));
+      App.graph.computeGroups(); App.graph.fit(); savePositions();
+      banner(`已套用分層版面（${r.stats.coreNodes} 台網路設備，${r.stats.ms} ms）`, 4000);
+    } catch (e) {
+      if (e.code === 'stale') return;
+      if (!e.code) console.error(e); // 超過上限、逾時是預期情況，只顯示提示
+      banner(`分層版面未套用：${e.message}，維持快速版面。可在工具列改用「快速（內建）」。`, 10000);
+    }
   }
 
   /** 基準 → 圖：同兩台設備之間的多條連結合併成一條線 */
@@ -358,8 +382,17 @@
     $('#btn-fit').onclick = () => App.graph.fit();
     $('#btn-relayout').onclick = () => {
       if (!App.snap) return;
-      const g = graphData(App.Q, App.snap); const auto = V.layout.layout(g.nodes, g.edges);
+      const g = graphData(App.Q, App.snap);
+      if (App.layoutMode === 'elk') { App.layoutJob = applyElk(g); return; }
+      App.layoutToken = (App.layoutToken || 0) + 1; // 取消進行中的分層版面
+      const auto = V.layout.layout(g.nodes, g.edges);
       auto.forEach((p, id) => App.graph.pos.set(id, p)); App.graph.computeGroups(); App.graph.fit(); savePositions();
+    };
+    $('#layout-mode').value = App.layoutMode;
+    $('#layout-mode').onchange = () => {
+      App.layoutMode = $('#layout-mode').value;
+      S.store.set('layoutMode', App.layoutMode).catch(() => {});
+      $('#btn-relayout').click();
     };
     let running = null;
     $('#btn-force').onclick = () => {

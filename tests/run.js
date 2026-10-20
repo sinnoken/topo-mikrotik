@@ -615,6 +615,14 @@ test('比對：獨立格式，結果分 ok／missing／different，且不修改�
   assert.strictEqual(JSON.stringify(s), before);
   assert.ok(S.compare(S.query(s), { schema: 'x' }).errors.length === 1);
 });
+test('.claude/skills 與 .github/skills 的 skill 內容一致（Claude Code 版只多一行同步說明）', () => {
+  const names = fs.readdirSync(path.join(ROOT, '.github/skills')).sort();
+  assert.deepStrictEqual(fs.readdirSync(path.join(ROOT, '.claude/skills')).sort(), names);
+  names.forEach((n) => {
+    const claude = read(`.claude/skills/${n}/SKILL.md`).replace(/\n> Claude Code 版。[^\n]*\n/, '');
+    assert.strictEqual(claude, read(`.github/skills/${n}/SKILL.md`), `${n} 兩個版本內容不同，請同步修改`);
+  });
+});
 test('index.html 載入的核心檔案與測試相同、順序一致', () => {
   const html = read('index.html');
   const scripts = Array.from(html.matchAll(/<script src="([^"]+)"/g)).map((m) => m[1]);

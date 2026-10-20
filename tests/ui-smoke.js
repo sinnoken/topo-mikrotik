@@ -187,6 +187,9 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (App.sel.type !== 'mac' || !text('#detail').includes('推定位置') || !text('#detail').includes('埠不明')) throw new Error('點選推定終端應顯示 MAC 詳情與推定位置');
     const via = App.Q.behindVia(rows[0].mac)[0];
     if (!via || !text('#detail').includes('經由') || !text('#detail').includes('（推論鏈路）')) throw new Error('推定位置應列出經由的推論鏈路');
+    const anchorName = App.Q.epName(rows[0].behind.anchor); const t = text('#detail');
+    if (t.includes('上行')) throw new Error('MAC 學到的位置沒有方向依據，不應標成上行');
+    if (!t.includes(anchorName + ' ⇄ ')) throw new Error('經由的推論鏈路應從錨點埠寫起，與圖上路徑方向一致');
     const pid = App.pairOfLink.get(via.key);
     if (!App.graph.hl || !App.graph.hl.edges.has(pid) || !App.graph.hl.edges.has(e.id)) throw new Error('選取推定終端應標示整段路徑：推論鏈路與終端連線');
     const p = App.pairs.get(pid); App.select({ type: 'pair', id: p.id, links: p.links, devs: [p.a, p.b] });

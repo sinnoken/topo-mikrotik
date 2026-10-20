@@ -186,9 +186,9 @@
   }
   const ifName = (Q, ep) => { const i = Q.getInterface(ep); const n = K.splitEp(ep)[1]; return i ? i.name : n.startsWith('?(') ? '埠不明' : n; };
   /** 推論鏈路的文字連結：點選開啟所在的設備對 */
-  const inferredLink = (App, l) => {
+  const inferredLink = (App, l, from) => {
     const Q = App.Q; const p = App.pairs.get(App.pairOfLink.get(l.key));
-    const text = [l.a, l.b].map((ep) => `${Q.devName(K.splitEp(ep)[0])} ${ifName(Q, ep)}`).join(' ⇄ ') + '（推論鏈路）';
+    const text = (from && K.splitEp(l.b)[0] === from ? [l.b, l.a] : [l.a, l.b]).map((ep) => `${Q.devName(K.splitEp(ep)[0])} ${ifName(Q, ep)}`).join(' ⇄ ') + '（推論鏈路）';
     return p ? L(App, text, { type: 'pair', id: p.id, links: p.links, devs: [p.a, p.b] }) : text;
   };
   /** 推論鏈路清單：每條列出兩端、依據與信心，展開可看每項證據並開啟原文。 */
@@ -306,18 +306,25 @@
         ...wifiRows(App, m.wifi), ...behindRows(App, m.behind, m.mac)]),
       findingsBlock(App, Q.findingsFor('mac', m.mac)),
       section('在哪些介面／VLAN 學到', m.seen.length ? V.table([
-        { t: '設備介面', f: (r) => epLink(App, r.ep) }, { t: 'VLAN', f: (r) => r.vlan || '' }, { t: '類型', f: (r) => (r.static ? '靜態' : '動態') }, { t: '', f: (r) => (m.edge.includes(r.ep) ? V.chip('終端', 'ok') : V.chip('上行')) },
+        { t: '設備介面', f: (r) => epLink(App, r.ep) }, { t: 'VLAN', f: (r) => r.vlan || '' }, { t: '類型', f: (r) => (r.static ? '靜態' : '動態') }, { t: '', f: (r) => portRole(App, m, r.ep) },
       ], m.seen) : null, { count: m.seen.length }),
     ]);
   }
   /** 推定位置：在未收集交換器（例如 SwOS 的 CSS106）底下，精確到設備、埠不明。 */
+  /** MAC 學到的位置屬於哪種埠；沒有方向依據，不標上行／下行 */
+  function portRole(App, m, ep) {
+    if (m.edge.includes(ep)) return V.chip('終端', 'ok');
+    const b = m.behind;
+    if (b && b.anchor === ep) return V.chip(`往 ${(b.dev ? [b.dev] : b.via).map((d) => App.Q.devName(d)).join('、')}（推定）`, 'info');
+    return V.chip('非終端埠', '', { title: '這個埠學到多個 MAC 或接到網路設備，所以不是終端位置；不代表方向' });
+  }
   function behindRows(App, b, mk) {
     if (!b) return [];
     const where = b.dev ? h('span', null, ['在 ', devLink(App, b.dev), ' 底下（埠不明）']) : h('span', null, ['在 ', ...b.via.flatMap((v, n) => [n ? '、' : '', devLink(App, v)]), ' 或其下游（無法確定是哪一台）']);
     const via = App.Q.behindVia(mk);
     return [['推定位置', h('span', null, [where, ' ', V.chip('推定', 'info')])],
       ['推定依據', h('span', null, [epLink(App, b.anchor), ' 的 MAC 表學到它，且沒有在其他已收集交換器更下游出現；該交換器沒有收集資料，所以埠不明'])],
-      ['經由', via.length ? h('span', null, via.flatMap((l, n) => [n ? '、' : '', inferredLink(App, l)])) : null]];
+      ['經由', via.length ? h('span', null, via.flatMap((l, n) => [n ? '、' : '', inferredLink(App, l, K.splitEp(b.anchor)[0])])) : null]];
   }
   /** Wi-Fi 位置：依證據強度標示信心；漫遊時列出其他候選位置。 */
   function wifiRows(App, w) {

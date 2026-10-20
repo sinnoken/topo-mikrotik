@@ -33,7 +33,7 @@
   V.$ = (sel, root) => (root || document).querySelector(sel);
   V.clear = (el) => { while (el.firstChild) el.removeChild(el.firstChild); return el; };
 
-  V.KIND = { firewall: '防火牆', switch: '交換器', router: '路由器', host: '主機', unknown: '未知' };
+  V.KIND = S.KIND_LABEL;
   V.KIND_BASIS = { board: '依設備型號', data: '依收集的資料', caps: '依鄰居回報的功能', vendor: '依廠牌推測', heuristic: '依對端埠名推測', profile: '依命名規則', none: '無法判斷' };
   V.SEV = { error: '錯誤', warn: '警告', info: '提醒' };
   V.CLS = { lag: '聚合', '40g': '40G 以上', '10g': '10G', '1g': '1G', oob: '管理', l3: 'L3（OSPF）', other: '其他' };

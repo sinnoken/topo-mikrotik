@@ -143,7 +143,7 @@
 
   // ================================================================ 設定（/export）
   reg({
-    id: 'mikrotik.config', vendor: VENDOR, dataType: 'config', label: 'RouterOS 設定（export）',
+    id: 'mikrotik.config', vendor: VENDOR, dataType: 'config', label: 'RouterOS 設定',
     command: /^\/?export\b/i,
     detect: (lines) => lines.some((l) => /^\s*(\/[\w\- ]+?\s+)?add\s+[\w\-]+=/.test(l)) && lines.some((l) => /^\s*\/(interface|ip|system|routing)\b/.test(l)),
     parse(b, emit) {
@@ -247,7 +247,7 @@
 
   // ================================================================ MAC 表
   reg({
-    id: 'mikrotik.bridgehost', vendor: VENDOR, dataType: 'mac', label: 'RouterOS Bridge Host（MAC 表）',
+    id: 'mikrotik.bridgehost', vendor: VENDOR, dataType: 'mac', label: 'RouterOS MAC 表',
     command: /^\/?interface\s+bridge\s+host\b/i,
     detect: (lines) => has(lines, 'mac-address') && has(lines, 'on-interface'),
     parse(b, emit) {
@@ -261,7 +261,7 @@
 
   // ================================================================ Bridge VLAN 實際成員
   reg({
-    id: 'mikrotik.vlans', vendor: VENDOR, dataType: 'vlans', label: 'RouterOS Bridge VLAN',
+    id: 'mikrotik.vlans', vendor: VENDOR, dataType: 'vlans', label: 'RouterOS VLAN 成員',
     command: /^\/?interface\s+bridge\s+vlan\b/i,
     detect: (lines) => has(lines, 'vlan-ids') && has(lines, 'bridge') && (has(lines, 'tagged') || has(lines, 'untagged') || has(lines, 'current-tagged')),
     parse(b, emit) {

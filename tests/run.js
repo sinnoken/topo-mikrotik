@@ -161,7 +161,7 @@ test('MNDP 觀察不應把有 MAC 的介面誤當成已確認 LLDP 鄰接而排�
   assert.strictEqual(s.model.links.find((l) => l.via.includes('mndp')).evidenceScope, 'broadcast-domain', 'MNDP edge 仍保留為廣播網域可達資訊');
 });
 
-// ------------------------------------------------------------------ 設定（export）
+// ------------------------------------------------------------------ 設定（/export）
 const EXPORT_TERSE = ['SW_A (10.0.0.1):', '### /export terse', '# 2026-10-13 10:00:00 by RouterOS 7.12.1', '# model = CRS326-24G-2S+',
   '/interface bridge add name=bridge1 vlan-filtering=yes', '/interface bonding add mode=802.3ad name=bond1 slaves=ether1,ether2',
   '/interface ethernet set [ find default-name=ether3 ] name=srv3 comment="server 3"', '/interface vlan add interface=bridge1 name=vlan10 vlan-id=10',

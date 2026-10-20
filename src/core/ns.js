@@ -13,6 +13,8 @@
     BROADCAST_DOMAIN: 'broadcast-domain',
     ROUTING_ADJACENCY: 'routing-adjacency',
   });
+  /** 設備類型的顯示名稱（核心訊息與畫面共用）。 */
+  S.KIND_LABEL = Object.freeze({ firewall: '防火牆', switch: '交換器', router: '路由器', host: '主機', unknown: '未知' });
   /** 介面類型（封閉列舉，參考 NetBox Interface type 的分類層級）；原始 RouterOS 類型另存於 rawType。 */
   S.IFC_TYPES = Object.freeze(['physical', 'lag', 'bridge', 'vlan', 'wireless', 'virtual', 'loopback', 'other']);
   S.readers = S.readers || {};

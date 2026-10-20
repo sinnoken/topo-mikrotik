@@ -33,7 +33,7 @@
     host: [], unknown: [],
   };
   const DATA_LABEL = {
-    lldp: '鄰居', config: '設定（export）', vlans: 'Bridge VLAN', mac: 'MAC 表（bridge host）', arp: 'ARP', route: '路由表',
+    lldp: '鄰居', config: '設定', vlans: 'VLAN 成員', mac: 'MAC 表', arp: 'ARP', route: '路由表',
     ospf: 'OSPF', ipaddr: 'IP 位址', ifstatus: '介面狀態', system: '系統資訊', wifireg: 'Wi-Fi 關聯表',
   };
 
@@ -67,7 +67,7 @@
       }
       const miss = (expected[d.kind] || []).filter((t) => !d.data.has(t));
       d.missing = miss;
-      if (miss.length) add('C02', `${name(d.key)}（${d.kind}）缺少：${miss.map((t) => DATA_LABEL[t] || t).join('、')}`, [{ type: 'device', key: d.key }]);
+      if (miss.length) add('C02', `${name(d.key)}（${S.KIND_LABEL[d.kind] || d.kind}）缺少：${miss.map((t) => DATA_LABEL[t] || t).join('、')}`, [{ type: 'device', key: d.key }]);
     });
 
     // ---- 鏈路

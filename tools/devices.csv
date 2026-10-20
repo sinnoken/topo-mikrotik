@@ -1,4 +1,5 @@
-name,address,user,port
+name,address,user,port,extra
 TPE_CORE_RT_01,192.0.2.2,admin,22
 TPE_ACC_SW_01,192.0.2.21,admin,22
 TPE_ACC_SW_02,192.0.2.22,admin,22
+TPE_AP_01,192.0.2.31,admin,22,wifi

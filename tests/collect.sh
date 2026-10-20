@@ -53,4 +53,27 @@ if FAKE_SSH_MODE=timeout run_collector "$TMP_DIR/devices.csv" --commands config 
 fi
 grep -q '^# collection failed: timeout$' "$TMP_DIR/timeout.txt"
 
+# 設備清單的 extra 欄：只對指定設備追加選用命令（Wi-Fi 關聯表）；--commands 指定時忽略 extra
+cat > "$TMP_DIR/devices-extra.csv" <<'EOF'
+name,address,user,port,extra
+TEST_SWITCH,192.0.2.1,admin,22
+TEST_AP,192.0.2.2,admin,22,wifi;capsman
+EOF
+run_collector "$TMP_DIR/devices-extra.csv" --dry-run >"$TMP_DIR/extra.txt"
+grep -q 'TEST_AP: /interface wifi registration-table print detail without-paging' "$TMP_DIR/extra.txt"
+grep -q 'TEST_AP: /caps-man registration-table print detail without-paging' "$TMP_DIR/extra.txt"
+if grep -q 'TEST_SWITCH: .*registration-table' "$TMP_DIR/extra.txt"; then
+  printf 'switch without extra must not run Wi-Fi commands\n' >&2; exit 1
+fi
+grep -q 'TEST_SWITCH: /export terse' "$TMP_DIR/extra.txt"
+run_collector "$TMP_DIR/devices-extra.csv" --dry-run --commands config >"$TMP_DIR/extra-filter.txt"
+if grep -q 'registration-table' "$TMP_DIR/extra-filter.txt"; then
+  printf '%s\n' '--commands must override extra' >&2; exit 1
+fi
+printf 'name,address,user,port\nTEST_AP,192.0.2.2,admin,22,wlan\n' > "$TMP_DIR/devices-bad.csv"
+if run_collector "$TMP_DIR/devices-bad.csv" --dry-run >/dev/null 2>"$TMP_DIR/bad.err"; then
+  printf 'unknown extra command id must fail\n' >&2; exit 1
+fi
+grep -q '未知的命令 ID：wlan' "$TMP_DIR/bad.err"
+
 printf 'collector shell tests passed\n'

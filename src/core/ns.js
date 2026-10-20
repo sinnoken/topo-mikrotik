@@ -6,7 +6,7 @@
  */
 (function (S) {
   'use strict';
-  S.VERSION = '2.0.0';
+  S.VERSION = '2.1.0';
   S.SCHEMA = 'ssot-snapshot/2';
   S.LINK_SCOPE = Object.freeze({
     INTERFACE_ADJACENCY: 'interface-adjacency',

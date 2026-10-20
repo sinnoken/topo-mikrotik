@@ -41,6 +41,9 @@
     const unkByDev = new Map();
     m.interfaces.forEach((i) => { if (i.unknownPeer) U.getOr(unkByDev, i.dev, () => []).push(i); });
     const wifiByDev = new Map();
+    // 無線介面上的客戶端：MAC 表學到的 ∪ 關聯表登記的（關聯表在沒有 bridge host 資料時也能列出客戶端）
+    const assocMacsByEp = new Map(); (m.wifiAssociations || []).forEach((a) => U.getOr(assocMacsByEp, a.ep, () => []).push(a.mac));
+    const wifiMacsOf = (i) => U.uniq(i.macs.concat(assocMacsByEp.get(i.key) || [])).sort();
     const toCollectedInfra = (ep) => (linksByEp.get(ep) || []).some((l) => {
       if (l.evidenceScope === S.LINK_SCOPE.BROADCAST_DOMAIN) return false;
       const peer = dev.get(K.splitEp(l.a === ep ? l.b : l.a)[0]);
@@ -48,7 +51,7 @@
     });
     m.interfaces.forEach((i) => {
       const owner = dev.get(i.dev);
-      if (i.type !== 'wireless' || !i.macs.length || i.status === 'down' || i.enabled === false || !owner || !owner.collected) return;
+      if (i.type !== 'wireless' || !wifiMacsOf(i).length || i.status === 'down' || i.enabled === false || !owner || !owner.collected) return;
       if (/^(irb|vlan|lo\d)/.test(i.name)) return;
       const group = [i.key];
       if (i.lag) {
@@ -162,11 +165,11 @@
           const base = { end: true, key: u.ep, dev: d, ifc: u.name, desc: u.desc, type: u.type, rawType: u.rawType, status: u.status, vlans: u.vlans, portMacs: u.macs.length, wifi: false };
           return (u.macs.length ? u.macs : [null]).map((x) => Object.assign({ mac: x ? x.mac : null, ips: x ? x.ips : [], vendors: x && x.vendor ? [x.vendor] : [] }, base));
         }));
-        wifiByDev.forEach((interfaces, d) => interfaces.forEach((i) => i.macs.forEach((mk) => {
+        wifiByDev.forEach((interfaces, d) => interfaces.forEach((i) => wifiMacsOf(i).forEach((mk) => {
           const x = mac.get(mk);
           rows.push({
             end: true, wifi: true, key: i.key, dev: d, ifc: i.name, desc: i.desc, type: i.type, rawType: i.rawType, status: i.status, vlans: U.ifcVlans(i),
-            portMacs: i.macs.length, mac: mk, ips: x ? x.ips : [], vendors: x && x.vendor ? [x.vendor] : [],
+            portMacs: wifiMacsOf(i).length, mac: mk, ips: x ? x.ips : [], vendors: x && x.vendor ? [x.vendor] : [],
           });
         })));
         return rows.sort((a, b) => U.natural(a.dev, b.dev) || U.natural(a.ifc, b.ifc) || U.natural(a.mac || '', b.mac || ''));
@@ -187,7 +190,7 @@
         const actual = Q.unknownPeers(devKey);
         const wireless = (wifiByDev.get(devKey) || []).map((i) => ({
           ep: i.key, name: i.name, desc: i.desc, status: i.status, type: i.type, rawType: i.rawType, vlans: U.ifcVlans(i), visualOnly: true,
-          macs: i.macs.map((mk) => { const x = mac.get(mk); return { mac: mk, vendor: x ? x.vendor : null, ips: x ? x.ips : [] }; }),
+          macs: wifiMacsOf(i).map((mk) => { const x = mac.get(mk); return { mac: mk, vendor: x ? x.vendor : null, ips: x ? x.ips : [] }; }),
         }));
         return actual.concat(wireless).sort((a, b) => U.natural(a.name, b.name));
       },

@@ -63,7 +63,7 @@
 - **指令標記**：`### 指令`、RouterOS 提示字元 `[user@id] > /指令`（須為絕對路徑）。有標記時依指令選 adapter，否則依內容判斷。
 - 所有 `print` 指令都要用 `detail without-paging`（key=value 格式）。詳見 `docs/collection.md`。
 
-### Adapter（10 個，`src/adapters/mikrotik.js`）
+### Adapter（11 個，`src/adapters/mikrotik.js`）
 
 | ID | 指令 | 事實 |
 |---|---|---|
@@ -77,6 +77,7 @@
 | mikrotik.route | /ip route print detail | 作用中路由、ECMP（`gateway=a,b`）；RouterOS 6／7 旗標差異已處理 |
 | mikrotik.ospf | /routing ospf neighbor print detail | OSPF 鄰居（沒有 interface 時，用鄰居位址落在哪個本機網段決定） |
 | mikrotik.system | /system resource print | 型號、版本 |
+| mikrotik.wifireg | /interface wifi｜wireless registration-table、/caps-man registration-table print detail（選用） | Wi-Fi 關聯：客戶端 MAC、無線介面、SSID、頻段、VLAN、uptime、last-activity、訊號、DHCP 位址與主機名；略過 `eap-*` 帳號欄位與 `ap=yes` 的對端 AP；空表記為已收集、0 筆 |
 
 **detail 輸出的解析**：以「列」為單位。列首是 `序號 旗標 key=value…`（序號、旗標可省略）；直接以 key=value 開頭的行是終端機換行的續行，併入上一列；`;;; 註解` 屬於它所在或下一列。
 新增廠牌：新增一支 `adapters/<vendor>.js` 呼叫 `S.adapters.register()`，其他部分不需修改。
@@ -106,7 +107,8 @@
 | vlans | dev、id、name、desc、members（`{ ep, tagged }` 清單） |
 | ipAddresses | address（CIDR）、ip、len、family、vrf（尚未收集，固定 null）、dev、ep、hearsay、src |
 | prefixes | prefix、net、len、family、vrf、basis（`connected`）、eps |
-| macs | mac、vendor（OUI）、ips、seen（`{ ep, vlan }` 清單）、edge（位置）、src |
+| macs | mac、vendor（OUI）、ips、seen（`{ ep, vlan }` 清單）、edge（位置）、wifi（Wi-Fi 位置推論，見 §5.3）、src |
+| wifiAssociations | dev、ep、mac、ssid、band、vlan、uptime、lastActivity（秒）、signal（dBm）、ip、hostname、src（關聯表的事實） |
 | arps、routes | 原始對應與路由（含下一跳）、src |
 
 **設備身分**
@@ -158,6 +160,7 @@
 - **鄰居配對**：LLDP／CDP 對端也有可配對的鄰居資料時雙向配對（`verified`）；對端有 LLDP／CDP 鄰居輸出但未回報此介面鄰接為單向（K01；只看雙方的 LLDP／CDP 證據，MNDP 不算回報）；對端沒提供鄰居資料則為單側觀察（hearsay，只計入覆蓋率）。鄰居 identity 對不上收集檔設備名時，用管理 IP 對回同一台。
 - **OSPF 鄰接**：OSPF 是 IP 層鄰接證據，不加入 `links`，不作為拓樸直連 edge，也不與相同端點的 L2 edge 合併。單獨存於 `ospfAdjacencies`，設備詳細資料列出本機介面、鄰居、雙向回報狀態與來源。鄰居位址 → 擁有該 IP 的介面；找不到再用 router-id、管理 IP；都找不到建立以鄰居 ID 命名的未知設備（R02）。
 - **設備類型**：型號（CRS／CSS→交換器；CCR／RB／hAP／hEX／CHR→路由器）→ 已收集設備依資料（有 OSPF→路由器；有 MAC 表且無路由→交換器）→ 未收集設備依鄰居回報的功能（router／bridge／station）→ 對端埠名像網路卡→主機。命名規則可覆寫並標示依據。
+- **Wi-Fi 客戶端位置**（`macs[].wifi`，推論）：MAC 表無法說明 Wi-Fi 客戶端連在哪台 AP，因為同一個 MAC 會出現在 AP 的無線介面、AP 上行與沿途 trunk，且會漫遊。依證據強度取位置，`basis` 標示依據：`registration`（關聯表，最強；多台 AP 時取 `last-activity` 最近者，其餘為 `candidates`，`roaming` 為真）→ `bridge-wifi`（已收集設備的 MAC 表在 `type=wireless` 介面學到）→ `via-ap-port`（交換器埠的鄰居是沒有收集資料的 AP，無法區分有線或無線）。已判定為有線終端埠的 MAC、AP 自己的 MAC 不套用 `via-ap-port`。因為用到終端埠判定，在檢查之後由 `S.infer.wifiLocations()` 計算。沒有 Wi-Fi 證據的 MAC，`wifi` 為 null。
 - **終端位置**：這是依已收集證據推定的「未知對端」位置，不代表已證明對端是終端主機。核心 `unknownPeer` 介面必須恰好學到一個 MAC、不是 Wi-Fi、狀態非 down、不是 irb／vlan／lo，且沒有 LLDP／CDP 介面鄰接連到其他已收集網路設備；學到多個 MAC 的有線介面不符合此條件。Wi-Fi 介面本身不視為終端介面，但清單會將每個 Wi-Fi MAC／介面觀察位置列為終端位置；同一 MAC 出現在多個 Wi-Fi 介面可能是漫遊，因此 Wi-Fi 觀察不參與 A02。純 MNDP 只證明同一 L2 broadcast domain 可達，不會當作直連鄰接排除終端埠。若 bridge host 有多個 VLAN 觀察，MAC 的 `seen` 會各自保留 `{ep,vlan}`，不會互相覆蓋。
 
 ## 6. 命名規則（profile）
@@ -197,7 +200,7 @@
 |---|---|---|---|
 | 背景執行 | Web Worker | 主執行緒分段＋進度 | `file://` 不允許 Worker；實測 1000 台約 3 秒可接受 |
 | 圖形函式庫 | vis-network | 自寫 Canvas＋vendor 的 ELK.js（只負責分層版面） | 繪圖不依賴外部函式庫、可離線，1000 台以上效能可控；版面品質交給 ELK 的分層演算法，檔案放在 `vendor/`，不需執行期網路 |
-| Adapter | 7 個 | 10 個（RouterOS；多廠牌版 12 個，見第 13 節） | 補上路由、ARP、介面狀態、IP 位址，路由追蹤與 OSPF 對應才有資料 |
+| Adapter | 7 個 | 11 個（RouterOS；多廠牌版 12 個，見第 13 節） | 補上路由、ARP、介面狀態、IP 位址，路由追蹤與 OSPF 對應才有資料 |
 | 檢查 | 13 項 | 14 項（多廠牌版 16 項，見第 13 節） | 新增 K04、R02 等；RouterOS 的 bridge VLAN 沒有名稱，移除 VLAN 名稱相關的 V02、V03 |
 | 比對 | 第 7 階段 | 最小可用版 | 先把邊界（獨立格式、唯讀）做實 |
 | C01 | 所有未收集設備 | 排除主機 | 1000 台時主機數千個，會淹沒真正的覆蓋缺口 |
@@ -206,7 +209,7 @@
 
 - 匯出（JSON、CSV、Excel）：Snapshot 已是純 JSON，日後只是轉換。目前只有「匯出 PNG」。
 - 其他廠牌（Cisco、Arista、Juniper、Fortinet：見多廠牌版 topo-ssot）。
-- RouterOS 的防火牆規則、無線、CAPsMAN、VPN、`/interface bridge port` 的 STP／邊緣埠資訊。
+- RouterOS 的防火牆規則、無線設定、CAPsMAN 的 CAP 介面與實體 AP 對應、VPN、`/interface bridge port` 的 STP／邊緣埠資訊（Wi-Fi 只解析關聯表）。
 - 多份基準之間的變更比對（diff）。
 
 ## 12. 未知對端（2.1.0 新增）
@@ -258,7 +261,7 @@
 
 | 項目 | 多廠牌版 | MikroTik 版 |
 |---|---|---|
-| 解析器 | 12 個（Junos 8、FortiOS 4） | 10 個（RouterOS） |
+| 解析器 | 12 個（Junos 8、FortiOS 4） | 11 個（RouterOS） |
 | 輸出格式 | 各廠牌不同（表格、display set、config 區塊） | 一律 `detail`（key=value）＋ export |
 | 介面名稱 | 去掉 Junos 的 `.0` | 不處理（RouterOS 沒有這個慣例） |
 | 鄰居對端埠 | LLDP 表格的 Port info | `interface-name`；沒有時用順序配對 |
@@ -278,3 +281,6 @@
     - 設備身分欄位
   - 舊基準以儲存的輸入重建。
   - 拓樸圖預設改用 ELK 分層版面。
+- **2.1.0**：
+  - 新增 Wi-Fi 關聯表解析（`mikrotik.wifireg`）與 Snapshot 的 `wifiAssociations`、`macs[].wifi`（Wi-Fi 位置依證據強度推定，標示依據與候選位置）。
+  - 收集器新增選用命令 `wifi`／`wireless`／`capsman`，設備清單可用第五欄 `extra` 只對 AP 加收。

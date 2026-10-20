@@ -12,12 +12,17 @@ usage() {
 選項：
   -o, --output FILE       輸出 bundle-v1 檔（預設 collection.txt）
   --device NAME           只收集指定設備
-  --commands ID,...       只執行指定命令 ID
+  --commands ID,...       只執行指定命令 ID（指定時忽略設備清單的 extra 欄）
   --timeout SECONDS       單一 SSH 指令 timeout（預設 30）
   --retry COUNT           失敗後重試次數（預設 0）
   --ask-password          每台設備連線一次並手動輸入密碼／確認 host key
   --dry-run               只驗證清單並列出命令，不連線
   -h, --help              顯示說明
+
+設備清單：name,address,user,port[,extra]
+  extra 為選填，列出該設備額外執行的選用命令 ID，以空白或分號分隔，例如：
+    TPE_AP_01,192.0.2.31,admin,22,wifi
+  選用命令 ID：wifi（RouterOS 7 Wi-Fi 關聯表）、wireless（舊版 wireless）、capsman（舊版 CAPsMAN 控制器）
 EOF
 }
 
@@ -38,7 +43,7 @@ csv_error() {
 }
 
 load_inventory() {
-  local file=$1 line_number=0 name address user port extra header_seen=0
+  local file=$1 line_number=0 name address user port extra header_seen=0 id ids
   [[ -r "$file" ]] || die "無法讀取設備清單：$file"
   while IFS=, read -r name address user port extra || [[ -n "$name$address$user$port$extra" ]]; do
     line_number=$((line_number + 1))
@@ -58,10 +63,17 @@ load_inventory() {
     port=${port:-22}
     [[ "$port" =~ ^[0-9]+$ && "$port" -ge 1 && "$port" -le 65535 ]] ||
       csv_error "$line_number" "port 無效：$port"
+    ids=()
+    if [[ -n "$extra" ]]; then
+      read -ra ids <<< "${extra//[,;]/ }"
+      for id in "${ids[@]}"; do
+        command_for_id "$id" >/dev/null || csv_error "$line_number" "extra 有未知的命令 ID：$id"
+      done
+    fi
     for existing in "${DEVICE_NAMES[@]-}"; do
       [[ "$existing" != "$name" ]] || csv_error "$line_number" "設備名稱重複：$name"
     done
-    DEVICE_NAMES+=("$name"); DEVICE_ADDRESSES+=("$address"); DEVICE_USERS+=("$user"); DEVICE_PORTS+=("$port")
+    DEVICE_NAMES+=("$name"); DEVICE_ADDRESSES+=("$address"); DEVICE_USERS+=("$user"); DEVICE_PORTS+=("$port"); DEVICE_EXTRAS+=("${ids[*]-}")
   done < "$file"
   (( header_seen )) || die "設備清單缺少標題列"
   ((${#DEVICE_NAMES[@]} > 0)) || die "設備清單沒有資料列"
@@ -82,6 +94,17 @@ select_commands() {
     COMMAND_IDS+=("$id")
   done
   ((${#COMMAND_IDS[@]} > 0)) || die "至少要選擇一個收集指令"
+}
+
+# 這台設備要執行的命令 ID：選定的命令＋設備清單 extra 欄（有 --commands 時只用 --commands）
+device_commands() {
+  local i=$1 id seen=" " extras=()
+  [[ -z "$COMMAND_FILTER" ]] && read -ra extras <<< "${DEVICE_EXTRAS[i]}"
+  DEVICE_COMMAND_IDS=()
+  for id in "${COMMAND_IDS[@]}" ${extras[@]+"${extras[@]}"}; do
+    [[ "$seen" == *" $id "* ]] && continue
+    seen+="$id "; DEVICE_COMMAND_IDS+=("$id")
+  done
 }
 
 selected_device() {
@@ -112,7 +135,7 @@ COMMAND_FILTER=
 DRY_RUN=0
 ASK_PASSWORD=0
 SSH_CONTROL_OPTS=()
-DEVICE_NAMES=(); DEVICE_ADDRESSES=(); DEVICE_USERS=(); DEVICE_PORTS=(); COMMAND_IDS=()
+DEVICE_NAMES=(); DEVICE_ADDRESSES=(); DEVICE_USERS=(); DEVICE_PORTS=(); DEVICE_EXTRAS=(); COMMAND_IDS=(); DEVICE_COMMAND_IDS=()
 INVENTORY=
 
 while (($#)); do
@@ -142,7 +165,8 @@ select_commands
 if (( DRY_RUN )); then
   for ((i = 0; i < ${#DEVICE_NAMES[@]}; i++)); do
     selected_device "${DEVICE_NAMES[i]}" || continue
-    for id in "${COMMAND_IDS[@]}"; do
+    device_commands "$i"
+    for id in "${DEVICE_COMMAND_IDS[@]}"; do
       printf '%s: %s\n' "${DEVICE_NAMES[i]}" "$(command_for_id "$id")"
     done
   done
@@ -173,7 +197,8 @@ for ((i = 0; i < ${#DEVICE_NAMES[@]}; i++)); do
       continue
     fi
   fi
-  for id in "${COMMAND_IDS[@]}"; do
+  device_commands "$i"
+  for id in "${DEVICE_COMMAND_IDS[@]}"; do
     command=$(command_for_id "$id")
     printf '### %s\n' "$command" >> "$OUTPUT"
     stdout_file="$TMP_DIR/stdout"; stderr_file="$TMP_DIR/stderr"

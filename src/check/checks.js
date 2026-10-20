@@ -34,7 +34,7 @@
   };
   const DATA_LABEL = {
     lldp: '鄰居', config: '設定（export）', vlans: 'Bridge VLAN', mac: 'MAC 表（bridge host）', arp: 'ARP', route: '路由表',
-    ospf: 'OSPF', ipaddr: 'IP 位址', ifstatus: '介面狀態', system: '系統資訊',
+    ospf: 'OSPF', ipaddr: 'IP 位址', ifstatus: '介面狀態', system: '系統資訊', wifireg: 'Wi-Fi 關聯表',
   };
 
   function run(M, ctx) {

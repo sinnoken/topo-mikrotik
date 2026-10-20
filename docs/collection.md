@@ -18,13 +18,17 @@
 - 已設定 SSH key/agent 與 known_hosts；不要把密碼寫進設備清單
 - 先用 `ssh admin@<address>` 確認可免互動登入
 
-設備清單使用 CSV，欄位為 `name,address,user,port`；`port` 可省略，預設 22：
+設備清單使用 CSV，欄位為 `name,address,user,port[,extra]`；`port` 可省略，預設 22。
+`extra` 選填，列出這台設備額外執行的選用命令 ID（以空白或分號分隔），用於只有部分設備才有的選單：
 
 ```csv
-name,address,user,port
+name,address,user,port,extra
 TPE_CORE_RT_01,10.1.10.2,admin,22
 TPE_ACC_SW_01,10.1.10.21,admin,22
+TPE_AP_01,10.1.10.31,admin,22,wifi
 ```
+
+選用命令 ID 見下一節表格的「選用」列。用 `--commands` 指定命令時，只執行指定的命令，忽略 `extra`。
 
 執行：
 
@@ -68,6 +72,13 @@ reader、adapter、model 與 check pipeline；收集器不解析或修改 Router
 | 介面狀態 | `/interface print detail without-paging` | running／停用／註解／原始 type／介面 MAC／MTU | 選用 | 選用 |
 | IP 位址 | `/ip address print detail without-paging` | 含動態位址（DHCP client 等）；靜態的 export 已有 | 選用 | 選用 |
 | OSPF 鄰居 | `/routing ospf neighbor print detail without-paging` | IP 層 L3 鄰接（不作為直連拓樸 edge） | 有跑 OSPF 時 | 有跑 OSPF 時 |
+| Wi-Fi 關聯表（選用 `wifi`） | `/interface wifi registration-table print detail without-paging` | Wi-Fi 客戶端關聯在哪個無線介面（RouterOS 7 wifi 套件） | — | — |
+| Wi-Fi 關聯表（選用 `wireless`） | `/interface wireless registration-table print detail without-paging` | 同上（舊版 wireless 套件） | — | — |
+| CAPsMAN 關聯表（選用 `capsman`） | `/caps-man registration-table print detail without-paging` | 同上，在舊版 CAPsMAN 控制器上一次取得所有 CAP 的客戶端 | — | — |
+
+選用的 Wi-Fi 關聯表只在 AP 或 CAPsMAN 控制器上執行（設備清單的 `extra` 欄）：在沒有該選單的設備上執行會得到錯誤回應，列為 I01。關聯表沒有客戶端時（只有說明行）視為已收集、0 筆。
+
+**個資**：關聯表含 `eap-identity`、`eap-username`（802.1X 使用者帳號）。解析時刻意略過，不寫進基準；但收集檔保留原始輸出，畫面開啟原文時也看得到。收集檔請依個資規範保管，需要時可在交付前刪除這兩個欄位。
 
 「必要」項目缺少時，檢查結果會出現 **C02 缺少應收集的資料**（判斷條件見[基準檢查規則 C02](checks.md#c02)）。
 
@@ -127,4 +138,6 @@ _____
 | 聚合 | `/interface bonding` 的 `slaves` 視為聚合成員（成員介面的 `lag`、聚合介面的 `lagMembers`），兩端成員數不同會列為 K03 |
 | 設備類型 | 依型號：CRS／CSS 為交換器、CCR／RB／hAP／hEX／CHR 為路由器；沒有型號時，已收集的設備看有哪些資料，未收集的設備看鄰居回報的功能（`system-caps-enabled`） |
 | 防火牆 | 不解析防火牆規則 |
-| 無線、CAPsMAN、VPN | 不解析 |
+| Wi-Fi 客戶端位置 | 依證據強度推定，信心由高到低：①關聯表（已確認；同一 MAC 在多台 AP 時取 `last-activity` 最近者，其餘列為候選並標示可能漫遊）②已收集 AP 的 MAC 表在無線介面學到 ③交換器埠的鄰居是 AP（回報 `wlan-ap` 功能，或型號為 cAP／wAP）而 AP 沒有收集資料，此時無法區分有線或無線。已判定為有線終端埠的 MAC、AP 自己的 MAC 不套用 ③。結果在 MAC 詳情的「Wi-Fi 位置」，並標示依據 |
+| CAPsMAN 的 CAP 對應 | 控制器的關聯表會把客戶端記在控制器上的 CAP 介面；CAP 介面對應到哪台實體 AP 尚未解析（需實機輸出驗證） |
+| 無線設定、VPN | 不解析（只解析關聯表） |

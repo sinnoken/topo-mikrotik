@@ -5,6 +5,7 @@
  *   - 鏈路兩端 VLAN（含聚合成員繼承）
  *   - 分群（profile 有 group 用 profile，否則依拓樸鏈路連通元件）
  *   - 套用 profile 註解
+ *   - Wi-Fi 客戶端位置（wifiLocations，須在 check.run 之後呼叫）
  */
 (function (S) {
   'use strict';
@@ -138,10 +139,52 @@
     sorted.forEach((members, idx) => members.forEach((d) => { d.component = idx + 1; if (!d.group) d.group = '自動群組 ' + (idx + 1); }));
   }
 
+  /**
+   * Wi-Fi 客戶端位置（推論）：依證據強度選一個位置，其餘列為候選。
+   *   registration：關聯表（最強）。多台 AP 都有時取 last-activity 最小（最近有活動）者，其餘視為可能漫遊
+   *   bridge-wifi ：已收集設備的 MAC 表在無線介面學到
+   *   via-ap-port ：交換器埠的鄰居是 AP（鄰居回報 wlan-ap 功能，或型號為 cAP／wAP）且 AP 沒有收集資料；無法區分有線或無線
+   * 只有出現 Wi-Fi 證據的 MAC 才有 wifi；已判定為有線終端埠的 MAC、AP 自己的 MAC 不套用 via-ap-port。
+   * 使用 check.run 算出的 m.edge，所以必須在檢查之後呼叫。
+   */
+  const AP_BOARD = /^(cAP|wAP)/i;
+  function wifiLocations(M) {
+    const assocByMac = new Map(); M.assocs.forEach((a) => S.util.getOr(assocByMac, a.mac, () => []).push(a));
+    const isAp = (d) => !!d && (/\bwlan-ap\b/i.test(d.caps || '') || AP_BOARD.test(d.deviceType || ''));
+    const apOfEp = new Map(); // 交換器埠 → 鄰居 AP（AP 自己沒有收集資料時才需要用到）
+    M.links.forEach((l) => [[l.a, l.b], [l.b, l.a]].forEach(([mine, other]) => {
+      const peer = M.devices.get(K.splitEp(other)[0]);
+      if (isAp(peer) && !peer.collected) apOfEp.set(mine, peer.key);
+    }));
+    const apChassis = new Set(M.claims.filter((c) => c.chassis && isAp(M.devices.get(c.peer))).map((c) => K.mac(c.chassis)));
+    const byRecency = (a, b) => (a.lastActivity ?? Infinity) - (b.lastActivity ?? Infinity) || S.util.natural(a.ep, b.ep);
+    M.macs.forEach((m) => {
+      const regs = (assocByMac.get(m.mac) || []).slice().sort(byRecency);
+      let basis = null; let picks = [];
+      if (regs.length) { basis = 'registration'; picks = regs; }
+      else {
+        const eps = Array.from(m.seen.keys()).sort(S.util.natural);
+        const wifiEps = eps.filter((ep) => { const i = M.ifcs.get(ep); return i && i.type === 'wireless' && M.devices.get(i.dev).collected; });
+        if (wifiEps.length) { basis = 'bridge-wifi'; picks = wifiEps.map((ep) => ({ ep, dev: K.splitEp(ep)[0] })); }
+        else if (!(m.edge && m.edge.length) && !apChassis.has(m.mac)) {
+          const viaAp = eps.filter((ep) => apOfEp.has(ep));
+          if (viaAp.length) { basis = 'via-ap-port'; picks = viaAp.map((ep) => ({ ep, dev: apOfEp.get(ep) })); }
+        }
+      }
+      if (!basis) { m.wifi = null; return; }
+      const cur = picks[0];
+      m.wifi = {
+        basis, dev: cur.dev, ep: cur.ep, ssid: cur.ssid || null, band: cur.band || null, vlan: cur.vlan ?? null,
+        ip: cur.ip || null, hostname: cur.hostname || null, signal: cur.signal ?? null, lastActivity: cur.lastActivity ?? null,
+        candidates: picks.slice(1).map((p) => p.ep), roaming: new Set(picks.map((p) => p.dev)).size > 1,
+      };
+    });
+  }
+
   function displayName(d) {
     if (d.names.size) return Array.from(d.names)[0];
     return d.key;
   }
 
-  S.infer = { infer, displayName, effVlans };
+  S.infer = { infer, displayName, effVlans, wifiLocations };
 })(globalThis.SSOT = globalThis.SSOT || {});

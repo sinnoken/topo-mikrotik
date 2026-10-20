@@ -14,7 +14,7 @@
   function newModel() {
     return {
       devices: new Map(), ifcs: new Map(), links: new Map(), vlans: new Map(), macs: new Map(),
-      arps: [], routes: [], claims: [], ospf: [], ospfAdjacencies: [], vmems: [],
+      arps: [], routes: [], claims: [], ospf: [], ospfAdjacencies: [], vmems: [], assocs: [],
       notes: { k01: [], k04: [], r02: [] },
     };
   }
@@ -102,6 +102,14 @@
           const am = getOr(M.macs, mk, () => ({ mac: mk, seen: new Map(), ips: new Set(), src: [] })); am.ips.add(f.ip); addSrc(am, f);
           break;
         }
+        case 'assoc': { // Wi-Fi 關聯表：客戶端關聯在這個無線介面（事實）
+          const mk = K.mac(f.mac); if (!mk) break;
+          const i = iface(M, f.dev, f.ifc); i.hasAssoc = true; addSrc(i, f);
+          const am = getOr(M.macs, mk, () => ({ mac: mk, seen: new Map(), ips: new Set(), src: [] })); addSrc(am, f);
+          M.assocs.push({ dev: f.dev, ep: i.key, mac: mk, ssid: f.ssid, band: f.band, vlan: f.vlan, uptime: f.uptime, lastActivity: f.lastActivity,
+            signal: f.signal, ip: f.ip, hostname: f.hostname, block: f.block, line: f.line });
+          break;
+        }
         case 'route':
           M.routes.push({ dev: f.dev, prefix: f.prefix, len: f.len, proto: f.proto,
             nh: f.nh.map((n) => ({ ip: n.ip, ifc: n.ifc ? K.ifc(n.ifc) : null })), block: f.block, line: f.line });
@@ -186,6 +194,7 @@
         const hit = RAW_TYPE.find(([re]) => re.test(i.rawType));
         i.type = hit ? hit[1] : 'other'; i.typeBasis = 'rawType';
       } else if (i.lagMembers.size) { i.type = 'lag'; i.typeBasis = 'member'; }
+      else if (i.hasAssoc) { i.type = 'wireless'; i.typeBasis = 'assoc'; }
       else if (/^(ae|reth)\d+$/i.test(i.name)) { i.type = 'lag'; i.typeBasis = 'name'; }
       else if (/^bridge/i.test(i.name)) { i.type = 'bridge'; i.typeBasis = 'name'; }
       else { i.type = 'physical'; i.typeBasis = 'default'; }

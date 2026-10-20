@@ -13,6 +13,7 @@
  *   mikrotik.arp        /ip arp print detail
  *   mikrotik.route      /ip route print detail
  *   mikrotik.ospf       /routing ospf neighbor print detail
+ *   mikrotik.wifireg    /interface wifi｜wireless registration-table、/caps-man registration-table print detail  Wi-Fi 關聯表
  *   mikrotik.system     /system resource print、/system identity print
  */
 (function (S) {
@@ -364,6 +365,48 @@
         if (!IPRE.test(kv.address || '') || !IPRE.test(kv['router-id'] || '')) return;
         emit({ t: 'ospf', nbrAddr: kv.address, nbrId: kv['router-id'], state: kv.state || '', ifc: kv.interface || null, line: r.line });
       });
+    },
+  });
+
+  // ================================================================ Wi-Fi 關聯表（客戶端關聯在哪個無線介面）
+  /** RouterOS 時間長度（1w2d3h4m5s120ms，或舊格式 01:02:03）→ 秒；格式不符回傳 null。 */
+  function duration(text) {
+    const t = String(text || '').trim(); if (!t) return null;
+    const hms = t.match(/^(?:(\d+)d\s*)?(\d+):(\d+):(\d+(?:\.\d+)?)$/);
+    if (hms) return (+hms[1] || 0) * 86400 + hms[2] * 3600 + hms[3] * 60 + +hms[4];
+    const UNIT = { w: 604800, d: 86400, h: 3600, m: 60, s: 1, ms: 0.001, us: 1e-6 };
+    let sec = 0; let rest = t; let m;
+    const re = /^(\d+(?:\.\d+)?)(ms|us|w|d|h|m|s)/;
+    while (rest && (m = re.exec(rest))) { sec += m[1] * UNIT[m[2]]; rest = rest.slice(m[0].length); }
+    return rest ? null : sec;
+  }
+  S.adapters.mikrotikDuration = duration; // 測試用
+  const dbm = (v) => { const m = String(v || '').match(/^(-?\d+)/); return m ? +m[1] : null; };
+  // RouterOS 對不存在的選單或語法錯誤的回應：不是空的關聯表，交由 I01 呈現
+  const ROS_ERROR = /^\s*(bad command name|syntax error|expected end of command|no such (item|command))/i;
+  reg({
+    id: 'mikrotik.wifireg', vendor: VENDOR, dataType: 'wifireg', label: 'RouterOS Wi-Fi 關聯表',
+    command: /^\/?(interface\s+(wifi|wireless)\s+registration-table|caps-man\s+registration-table)\b/i,
+    detect: (lines) => has(lines, 'mac-address') && has(lines, 'interface') && has(lines, 'uptime') && (has(lines, 'last-activity') || has(lines, 'rx-signal')),
+    parse(b, emit) {
+      // eap-identity、eap-username 是使用者帳號（個資），刻意不讀取；原文仍在收集檔，見 docs/collection.md
+      let rows = 0;
+      parseRows(b).forEach((r) => {
+        const kv = r.kv;
+        if (!kv['mac-address'] || !kv.interface) return;
+        if (kv.ap === 'yes' || kv.ap === 'true') return; // 舊版 wireless：對端是 AP（WDS／站台模式），不是客戶端
+        rows++;
+        emit({
+          t: 'assoc', ifc: kv.interface, mac: kv['mac-address'], ssid: kv.ssid || null, band: kv.band || null,
+          vlan: /^\d+$/.test(kv['vlan-id'] || '') ? +kv['vlan-id'] : null,
+          uptime: duration(kv.uptime), lastActivity: duration(kv['last-activity']),
+          signal: dbm(kv.signal ?? kv['signal-strength'] ?? kv['rx-signal']),
+          ip: [kv['dhcp-address'], kv['last-ip']].find((x) => x && IPRE.test(x)) || null, hostname: kv['dhcp-hostname'] || null,
+          line: r.line,
+        });
+      });
+      // 沒有客戶端時表格只有說明行：記為「已收集、0 筆」，避免被當成無法辨識
+      if (!rows && !b.lines.some((l) => ROS_ERROR.test(l))) emit({ t: 'assocTable', rows: 0, line: b.origin.startLine });
     },
   });
 

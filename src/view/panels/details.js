@@ -267,12 +267,22 @@
       h('h2', { class: 'mono' }, K.macPretty(m.mac)),
       h('div', { class: 'row' }, [m.found ? null : V.chip('基準中沒有這個 MAC', 'warn'), m.vendor ? V.chip(m.vendor) : V.chip('廠商不明')]),
       kv([['IP（ARP）', m.ips.length ? h('span', null, m.ips.flatMap((x, n) => [n ? '、' : '', ipLink(App, x)])) : '—'],
-        ['位置（終端埠）', m.edge.length ? h('span', null, m.edge.flatMap((ep, n) => [n ? '、' : '', epLink(App, ep)])) : '—']]),
+        ['位置（終端埠）', m.edge.length ? h('span', null, m.edge.flatMap((ep, n) => [n ? '、' : '', epLink(App, ep)])) : '—'],
+        ...wifiRows(App, m.wifi)]),
       findingsBlock(App, Q.findingsFor('mac', m.mac)),
       m.seen.length ? h('div', null, [sec('在哪些介面／VLAN 學到', [V.chip(String(m.seen.length))]), V.table([
         { t: '設備介面', f: (r) => epLink(App, r.ep) }, { t: 'VLAN', f: (r) => r.vlan || '' }, { t: '', f: (r) => (m.edge.includes(r.ep) ? V.chip('終端', 'ok') : V.chip('上行')) },
       ], m.seen)]) : null,
     ]);
+  }
+  /** Wi-Fi 位置：依證據強度標示信心；漫遊時列出其他候選位置。 */
+  function wifiRows(App, w) {
+    if (!w) return [];
+    const where = w.basis === 'via-ap-port' ? h('span', null, ['經由 ', devLink(App, w.dev), '（', epLink(App, w.ep), '）']) : epLink(App, w.ep);
+    return [['Wi-Fi 位置', where], ['位置依據', h('span', null, [V.WIFI_BASIS[w.basis], w.roaming ? V.chip('可能漫遊', 'warn') : null])],
+      ['SSID／頻段', [w.ssid, w.band].filter(Boolean).join('・') || null], ['主機名稱（DHCP）', w.hostname], ['位址（DHCP）', w.ip],
+      ['訊號', w.signal == null ? null : `${w.signal} dBm`],
+      ['其他候選位置', w.candidates.length ? h('span', null, w.candidates.flatMap((ep, n) => [n ? '、' : '', epLink(App, ep)])) : null]];
   }
   function ip(App, sel) {
     const Q = App.Q; const r = Q.findIp(sel.key);

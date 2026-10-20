@@ -30,8 +30,9 @@
 cp tools/devices.csv devices.csv
 ```
 
-設備清單第一列必須是 `name,address,user,port`；`name` 應唯一，且建議與設備的
-`/system identity` 相同。`port` 可留空，預設為 `22`。
+設備清單第一列必須是 `name,address,user,port`，可再加選填的第五欄 `extra`；`name` 應唯一，且建議與設備的
+`/system identity` 相同。`port` 可留空，預設為 `22`。Wi-Fi AP 或 CAPsMAN 控制器可在 `extra` 填 `wifi`、`wireless`
+或 `capsman`，只對這些設備加收 Wi-Fi 關聯表（判斷客戶端連在哪台 AP），見 [收集清單](docs/collection.md)。
 
 先驗證設備清單與將執行的唯讀命令，不建立連線：
 
@@ -67,7 +68,7 @@ assets/app.css
 src/
   core/               命名空間、IP 工具、唯一鍵
   readers/            輸入格式：bundle-v1、files-v1
-  adapters/           mikrotik.js（10 個）
+  adapters/           mikrotik.js（11 個）
   model/              build.js（事實→實體）、infer.js（推論）
   check/              一致性檢查、覆蓋率
   profile/            命名規則引擎

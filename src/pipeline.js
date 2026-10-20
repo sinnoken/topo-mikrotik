@@ -72,6 +72,7 @@
     S.infer.infer(M, profile);
     yield { stage: '一致性檢查', done: 0, total: 1 };
     const findings = S.check.run(M, { blocks, unrecognized, duplicates, expectedData: opt.expectedData });
+    S.infer.wifiLocations(M); // 用到檢查算出的終端埠
     const coverage = S.check.coverage(M);
 
     const snap = serialize(M, { blocks, findings, coverage, facts, usage, readersUsed, sources, profile, opt, t0 });
@@ -119,7 +120,7 @@
     const macs = Array.from(M.macs.values()).map((m) => ({
       mac: m.mac, vendor: S.oui ? S.oui.lookup(m.mac) : null, ips: Array.from(m.ips).sort(nat),
       seen: Array.from(m.seen.entries()).flatMap(([ep, vlans]) => Array.from(vlans, (vlan) => ({ ep, vlan })))
-        .sort((x, y) => nat(x.ep, y.ep) || nat(x.vlan || '', y.vlan || '')), edge: m.edge || [], src: m.src,
+        .sort((x, y) => nat(x.ep, y.ep) || nat(x.vlan || '', y.vlan || '')), edge: m.edge || [], wifi: m.wifi || null, src: m.src,
     })).sort((a, b) => U.cmp(a.mac, b.mac));
 
     // IP 位址（參考 NetBox IPAddress）：每個介面上的每個位址一筆；VRF 尚未收集，固定為 null
@@ -138,6 +139,11 @@
     const prefixes = Array.from(prefixMap.values()).map((p) => Object.assign(p, { eps: p.eps.sort(nat) }))
       .sort((a, b) => nat(a.net, b.net) || a.len - b.len);
 
+    // Wi-Fi 關聯表的原始紀錄（事實）；macs[].wifi 是依此與 MAC 表推論出的位置
+    const wifiAssociations = M.assocs.map((a) => ({
+      dev: a.dev, ep: a.ep, mac: a.mac, ssid: a.ssid, band: a.band, vlan: a.vlan, uptime: a.uptime, lastActivity: a.lastActivity,
+      signal: a.signal, ip: a.ip, hostname: a.hostname, src: [[a.block, a.line]],
+    })).sort((a, b) => U.cmp(a.mac, b.mac) || nat(a.ep, b.ep));
     const arps = M.arps.map((a) => ({ ip: a.ip, mac: a.mac, dev: a.dev, ifc: a.ifc, src: [[a.block, a.line]] }))
       .sort((a, b) => nat(a.ip, b.ip) || nat(a.dev, b.dev) || U.cmp(a.mac, b.mac));
     const routes = M.routes.map((r) => ({ dev: r.dev, prefix: r.prefix, len: r.len, proto: r.proto, nh: r.nh, src: [[r.block, r.line]] }))
@@ -167,12 +173,12 @@
         profile: c.profile ? { id: c.profile.id, version: c.profile.version } : null,
         stats: {
           devices: devices.length, collected: devices.filter((d) => d.collected).length, interfaces: interfaces.length,
-          links: links.length, ipAddresses: ipAddresses.length, prefixes: prefixes.length, ospfAdjacencies: ospfAdjacencies.length, vlans: vlans.length, macs: macs.length, arps: arps.length, routes: routes.length,
+          links: links.length, ipAddresses: ipAddresses.length, prefixes: prefixes.length, wifiAssociations: wifiAssociations.length, ospfAdjacencies: ospfAdjacencies.length, vlans: vlans.length, macs: macs.length, arps: arps.length, routes: routes.length,
           findings: sev,
         },
         timing: { ms: Date.now() - c.t0 },
       },
-      model: { devices, interfaces, links, ospfAdjacencies, vlans, ipAddresses, prefixes, macs, arps, routes },
+      model: { devices, interfaces, links, ospfAdjacencies, vlans, ipAddresses, prefixes, macs, wifiAssociations, arps, routes },
       findings: c.findings,
       coverage: c.coverage,
       blocks,

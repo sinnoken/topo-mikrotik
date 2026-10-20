@@ -126,11 +126,11 @@
         { t: 'VLAN', f: (i) => h('span', { class: 'vlanlist' }, vlanText(S.util.ifcVlans(i))), s: (i) => vlanText(S.util.ifcVlans(i)) },
         { t: 'MAC', f: (i) => (i.macs.length ? String(i.macs.length) : ''), s: (i) => i.macs.length || null },
       ], ifs.sort((a, b) => S.util.natural(a.name, b.name)), { onRow: (i) => App.select({ type: 'interface', key: i.key }), limit: 300 }),
-      vlans.length ? fold('VLAN 定義', vlans.length, h('div', null, [sec('VLAN 定義'), V.table([
+      vlans.length ? fold('VLAN 定義', vlans.length, h('div', null, [V.table([
         { t: 'ID', f: (v) => (v.id == null ? '?' : String(v.id)) }, { t: '名稱', f: (v) => v.name || '' }, { t: '描述', f: (v) => v.desc || '' }, { t: '成員', f: (v) => String(v.members.length) },
       ], vlans, { onRow: (v) => v.id != null && App.select({ type: 'vlan', key: String(v.id) }) })]), false) : null,
       unk.length ? h('div', null, [sec('沒有 LLDP／CDP 鄰接的埠', [V.chip(String(unk.length)), h('a', { class: 'link', onclick: () => App.select({ type: 'endpoints', dev: d.key }, { focus: true }) }, '在圖上看')]), unknownTable(App, unk)]) : null,
-      fold('鄰居', peerRows.length, h('div', null, [sec('鄰居'), peerRows.length ? V.table([
+      fold('鄰居', peerRows.length, h('div', null, [peerRows.length ? V.table([
         { t: '本機介面', f: (r) => r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN
           ? h('span', { class: 'mono' }, r.observations.length ? r.observations.map((o) => o.ifc).join('、') : '對端回報')
           : h('span', { class: 'mono' }, ifName(Q, r.mine)),
@@ -147,8 +147,7 @@
           : (r.l.vlanMismatch ? h('span', { class: 'diffA' }, '不一致') : h('span', { class: 'vlanlist' }, vlanText(r.l.vlansCommon))),
         s: (r) => (r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? null : r.l.vlanMismatch ? '不一致' : vlanText(r.l.vlansCommon)) },
       ], peerRows, { onRow: (r) => App.select({ type: 'link', key: r.l.key }, { focus: true }), bad: (r) => r.links.some((x) => x.vlanMismatch || Q.findingsFor('link', x.key).some((f) => f.severity !== 'info')) }) : h('div', { class: 'muted' }, '沒有鏈路')]), neighborHasFinding),
-      ospfAdjacencies.length ? fold('OSPF L3 鄰接', ospfAdjacencies.length, h('div', null, [
-        sec('OSPF L3 鄰接（非實體直連）'),
+      ospfAdjacencies.length ? fold('OSPF L3 鄰接（非實體直連）', ospfAdjacencies.length, h('div', null, [
         V.table([
           { t: '本機介面', f: (a) => epLink(App, a.localEp), s: (a) => K.splitEp(a.localEp)[1] },
           { t: '鄰居', f: (a) => devLink(App, a.peerDev), s: (a) => Q.devName(a.peerDev) },
@@ -160,7 +159,7 @@
           } },
         ], ospfAdjacencies),
       ]), false) : null,
-      routes.length ? fold('路由表', routes.length, h('div', null, [sec('路由表'), V.table([
+      routes.length ? fold('路由表', routes.length, h('div', null, [V.table([
         { t: '網段', f: (r) => h('span', { class: 'mono' }, `${r.prefix}/${r.len}`), s: (r) => `${r.prefix}/${r.len}` }, { t: '協定', f: (r) => r.proto, s: (r) => r.proto },
         { t: '下一跳', f: (r) => h('span', { class: 'mono' }, r.nh.map((n) => (n.ip ? n.ip + ' ' : '') + (n.ifc || '')).join('\n')), s: (r) => (r.nh[0] ? r.nh[0].ip || r.nh[0].ifc : '') },
       ], routes, { limit: 200 })]), false) : null,

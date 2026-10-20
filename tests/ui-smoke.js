@@ -159,6 +159,10 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if ($('#main').dataset.workspace !== 'details') throw new Error('選取資料後應切換至詳細資料工作區');
     const folds = $('#detail').querySelectorAll('details');
     if (!folds.length || !folds.some((d) => d.querySelector('summary').textContent.includes('鄰居'))) throw new Error('設備詳細資訊未提供可漸進展開的區塊');
+    folds.forEach((d) => {
+      const title = d.querySelector('summary').firstChild.textContent;
+      if (d.querySelectorAll('h3').some((x) => x.textContent.startsWith(title))) throw new Error(`展開區塊「${title}」內不應再重複同名標題`);
+    });
     window.innerWidth = 1200;
     workspaces.find((b) => b.dataset.workspace === 'graph').click();
   });

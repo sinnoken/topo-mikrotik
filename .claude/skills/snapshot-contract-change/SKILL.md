@@ -30,7 +30,7 @@ Work through each layer in order and record which ones the change touches:
 6. **View** (`src/view/`): display it only if the user needs it. View state (selection,
    zoom, positions) never goes into the Snapshot.
 7. **Compare** (`src/compare/`): decide whether the field takes part in comparison.
-8. **Docs**: `README.md`, `docs/design-ssot.md` (data model, finding table),
+8. **Docs**: `README.md`, `docs/design-ssot.md` (data model), `docs/checks.md` (finding rules),
    `docs/collection.md` if collection changes.
 9. **Tests**: a reproducible case in `tests/run.js`; UI behavior in `tests/ui-smoke.js`.
 

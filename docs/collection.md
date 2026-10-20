@@ -69,7 +69,7 @@ reader、adapter、model 與 check pipeline；收集器不解析或修改 Router
 | IP 位址 | `/ip address print detail without-paging` | 含動態位址（DHCP client 等）；靜態的 export 已有 | 選用 | 選用 |
 | OSPF 鄰居 | `/routing ospf neighbor print detail without-paging` | IP 層 L3 鄰接（不作為直連拓樸 edge） | 有跑 OSPF 時 | 有跑 OSPF 時 |
 
-「必要」項目缺少時，檢查結果會出現 **C02 缺少應收集的資料**。
+「必要」項目缺少時，檢查結果會出現 **C02 缺少應收集的資料**（判斷條件見[基準檢查規則 C02](checks.md#c02)）。
 
 **安全**：不要使用 `show-sensitive`。RouterOS 7 的 `/export` 預設不輸出密碼與金鑰（6.x 請用 `hide-sensitive`）。收集檔只應包含拓樸資訊。
 

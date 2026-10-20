@@ -18,7 +18,7 @@
 
 基準會儲存在這個瀏覽器（IndexedDB），下次開啟自動還原；程式更新後若基準格式不同，會用儲存的輸入重新建立。按「清除」只清除本工具的資料。
 
-建立基準後，頂端摘要會顯示檢查規則發現的錯誤／警告與收集缺漏，並提供直接跳到問題、覆蓋率、搜尋或路由追蹤的入口。這些是該份 Snapshot 的檢查結果與收集完整度，不代表即時網路健康狀態。窄螢幕可切換「拓樸／檢查／詳細資料」工作區；設備詳情中的 VLAN、鄰居、OSPF、路由與原始輸出可按需要展開。
+建立基準後，頂端摘要會顯示檢查規則發現的錯誤／警告與收集缺漏（每項規則的判斷條件與處理建議見[基準檢查規則](docs/checks.md)），並提供直接跳到問題、覆蓋率、搜尋或路由追蹤的入口。這些是該份 Snapshot 的檢查結果與收集完整度，不代表即時網路健康狀態。窄螢幕可切換「拓樸／檢查／詳細資料」工作區；設備詳情中的 VLAN、鄰居、OSPF、路由與原始輸出可按需要展開。
 
 ### SSH 批次收集（選用）
 
@@ -103,7 +103,7 @@ npm run oui -- <oui-data.json>   # 更新 OUI 廠商資料
 - SSH 收集器是 WSL/Linux 可執行的本機 Bash CLI，不是瀏覽器功能；使用既有 SSH key/agent，將多台設備的唯讀輸出包成一個 `bundle-v1` 檔。
 - CI：[.github/workflows/ci.yml](.github/workflows/ci.yml) 在 PR 與非 main 分支 push 時以 Node 20／24 執行 `npm test`；壓力測試（`npm run test:large`）只在每週排程與手動觸發時執行。main 上的部署前仍由 `deploy-pages.yml` 跑 `npm test`。提交前仍請先在本機執行 `npm test`。
 
-設計與取捨見 [docs/design-ssot.md](docs/design-ssot.md)。
+設計與取捨見 [docs/design-ssot.md](docs/design-ssot.md)；檢查規則見 [docs/checks.md](docs/checks.md)。
 
 ## 注意
 

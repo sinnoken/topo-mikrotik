@@ -69,7 +69,7 @@ git diff --check         # 提交前檢查
 ## 修改守則（補充匯入的開發原則）
 
 - **擴充點**：新廠牌 → `src/adapters/` 新檔＋`S.adapters.register()`，加入 `tools/core-files.js` 與 `index.html`；
-  新輸入格式 → `src/readers/` 並加入 `ORDER`；新檢查 → `CATALOG` 加一筆並實作。
+  新輸入格式 → `src/readers/` 並加入 `ORDER`；新檢查 → `CATALOG` 加一筆並實作，並更新 [docs/checks.md](docs/checks.md)（有測試檢查兩者一致）。
 - **生成檔的指令**：`samples/sample-bundle.txt`／`.js` 用 `npm run sample`，`src/data/oui-data.js` 用 `npm run oui`。
   範例資料刻意含問題；新增檢查時要在產生器放對應問題並加測試。
 - 解析器依 RouterOS 文件撰寫，測試資料為手寫／產生，尚未以真實設備驗證；欄位語意以官方手冊

@@ -10,6 +10,7 @@
     "test:collector": "bash tests/collect.sh",
     "test:ui": "node tests/ui-smoke.js",
     "test:large": "node tests/run.js --large",
+    "golden:update": "node tools/update-golden.js",
     "sample": "node tools/gen-bundle.js --sites 1 --access 12 --faults > samples/sample-bundle.txt && node tools/embed-sample.js",
     "gen:large": "node tools/gen-bundle.js --sites 40 --access 24 > samples/large-1000.txt",
     "oui": "node tools/build-oui.js"

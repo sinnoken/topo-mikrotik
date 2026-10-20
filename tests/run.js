@@ -698,6 +698,13 @@ test('比對：獨立格式，結果分 ok／missing／different，且不修改�
   assert.strictEqual(JSON.stringify(s), before);
   assert.ok(S.compare(S.query(s), { schema: 'x' }).errors.length === 1);
 });
+test('黃金基準：範例資料建出的 Snapshot 與 tests/golden/sample-snapshot.json 完全相同', () => {
+  const G = require('./golden.js');
+  const want = JSON.parse(read('tests/golden/sample-snapshot.json'));
+  const got = JSON.parse(G.serialize(G.goldenSnapshot(S)));
+  const diff = G.diffPaths(want, got, 10);
+  assert.deepStrictEqual(diff, [], 'Snapshot 與黃金基準不同。若是刻意的變更，執行 npm run golden:update 並檢視 git diff：\n' + diff.join('\n'));
+});
 test('index.html 載入的核心檔案與測試相同、順序一致', () => {
   const html = read('index.html');
   const scripts = Array.from(html.matchAll(/<script src="([^"]+)"/g)).map((m) => m[1]);

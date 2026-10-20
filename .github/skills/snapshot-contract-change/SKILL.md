@@ -49,7 +49,9 @@ Work through each layer in order and record which ones the change touches:
 
 ## Verify
 
-1. `npm test` (core tests, collector shell test, UI smoke).
+1. `npm test` (core tests, collector shell test, UI smoke). The golden test compares the
+   sample Snapshot with `tests/golden/sample-snapshot.json`; after an intended change run
+   `npm run golden:update` and review the `git diff` of that file before committing.
 2. `git diff --check`.
 3. Confirm `index.html` and `tools/core-files.js` core load order did not drift if a
    file was added.

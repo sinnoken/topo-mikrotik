@@ -12,10 +12,14 @@
   const MARKERS = [
     /^\s*###\s*(\S.*?)\s*$/,
     /^\s*\[[^\]\s@]+@[^\]]+\]\s*>\s*(\S.*?)\s*$/,
+    // 官方手冊常見「[admin@MikroTik] /interface/bridge/monitor bridge1」（省略 >）；只接受絕對路徑，子選單裡的相對寫法（/ip> print）不算
+    /^\s*\[[^\]\s@]+@[^\]]+\]\s+(\/[^\s>]+(?:\s.*?)?)\s*$/,
   ];
 
+  /** RouterOS 7 的斜線路徑（/interface/bridge/host/print）視同空白分隔（/interface bridge host print）。 */
+  const normalizePath = (cmd) => cmd.replace(/^\/[\w\-/]+/, (p) => '/' + p.slice(1).split('/').filter(Boolean).join(' '));
   function markerOf(line) {
-    for (const re of MARKERS) { const m = re.exec(line); if (m) return m[1]; }
+    for (const re of MARKERS) { const m = re.exec(line); if (m) return normalizePath(m[1]); }
     return null;
   }
 

@@ -240,6 +240,8 @@
         if (hdr) { const at = exportTime(hdr[1], hdr[2]); if (at) emit({ t: 'collectedAt', at, line }); }
         if (!text || text.startsWith('#')) return;
         if (text[0] === '/') {
+          // RouterOS 7 也可能輸出斜線分隔的選單路徑（/interface/bridge/port），視同空白分隔
+          text = text.replace(/^\/[\w\-/]+/, (p) => '/' + p.slice(1).split('/').filter(Boolean).join(' '));
           const m = text.match(/^(\/[\w\-]+(?:\s+[\w\-]+)*?)(?:\s+(add|set)\b\s*(.*))?$/);
           if (!m) return;
           const path = m[1].replace(/\s+/g, ' ');
@@ -443,16 +445,29 @@
 
   // ================================================================ RSTP 狀態（monitor once）
   /**
-   * monitor 一次列出多個項目時是欄式輸出：每行「key: 值1 值2 …」，第一行 interface（或 name）決定欄數。
-   * 值的數量和欄數不同的列（例如值本身含空白）略過，不硬對齊。
+   * monitor 一次列出多個項目時是欄式輸出：每行「key: 值1 值2 …」，冒號對齊，第一行 interface（或 name）決定欄數與每欄的起始位置。
+   * 官方手冊的範例裡，某些欄位只有部分埠有值（例如 designated-port 的 designated-bridge-id 是空白），
+   * 所以依起始位置切欄；冒號沒有對齊的行（例如手寫資料）才退回以空白切開，且數量必須等於欄數。
    */
   function monitorColumns(b) {
-    let cols = null; const out = [];
+    let starts = null; let valueAt = -1; const out = [];
     b.lines.forEach((raw, i) => {
-      const m = raw.match(/^\s*([\w-]+):\s*(.*?)\s*$/); if (!m) return;
-      const vals = m[2] ? m[2].split(/\s+/) : [];
-      if (!cols && (m[1] === 'interface' || m[1] === 'name')) { cols = vals.length; vals.forEach((v) => out.push({ [m[1]]: v, _line: at(b, i) })); return; }
-      if (cols && vals.length === cols) vals.forEach((v, k) => { out[k][m[1]] = v; });
+      const line = raw.replace(/\r$/, '');
+      const m = line.match(/^(\s*([\w-]+):\s*)(.*?)\s*$/); if (!m) return;
+      const key = m[2]; const at0 = m[1].length;
+      if (!starts && (key === 'interface' || key === 'name')) {
+        starts = []; const re = /\S+/g; let t;
+        while ((t = re.exec(m[3]))) { starts.push(at0 + t.index); out.push({ [key]: t[0], _line: at(b, i) }); }
+        valueAt = at0; return;
+      }
+      // 只監看一個項目（例如 /interface bridge monitor bridge1）時沒有 interface／name 行：整段是單一欄
+      if (!starts) { starts = [at0]; valueAt = at0; out.push({ _line: at(b, i) }); }
+      if (at0 === valueAt || !m[3]) {
+        starts.forEach((st, k) => { const v = line.slice(st, k + 1 < starts.length ? starts[k + 1] : undefined).trim(); if (v) out[k][key] = v; });
+      } else {
+        const vals = m[3].split(/\s+/);
+        if (vals.length === starts.length) vals.forEach((v, k) => { out[k][key] = v; });
+      }
     });
     return out;
   }

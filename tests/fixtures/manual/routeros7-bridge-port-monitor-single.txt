@@ -1,0 +1,30 @@
+# 來源：同上，/interface/bridge/port/monitor [find interface=ether1] 單欄範例，原文照錄
+SW_MANUAL (192.0.2.1):
+[admin@MikroTik] /interface/bridge/port/monitor [find interface=ether1] 
+                  interface: ether1                  
+                     status: in-bridge               
+                    port-id: 0x80.1                  
+                       role: root-port               
+                  edge-port: no                      
+        edge-port-discovery: yes                     
+        point-to-point-port: yes                     
+               external-fdb: no                      
+               sending-rstp: yes                     
+                   learning: yes                     
+                 forwarding: yes                     
+           actual-path-cost: 20000                   
+    internal-root-path-cost: 20000                   
+       designated-bridge-id: 0x1000.2C:C8:1B:FF:92:F4
+   designated-internal-cost: 0                       
+         designated-port-id: 0x80.1                  
+  designated-remaining-hops: 20                      
+                 tx-rx-bpdu: 3/63                    
+        discard-transitions: 0                       
+        forward-transitions: 1                       
+                   tx-rx-tc: 2/0                     
+           topology-changes: 1                       
+       last-topology-change: 2m5s                    
+           multicast-router: no                      
+           hw-offload-group: switch1                 
+          declared-vlan-ids: 1                       
+        registered-vlan-ids: 1                       

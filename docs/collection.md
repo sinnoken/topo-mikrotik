@@ -113,6 +113,7 @@ _____
 | RouterOS 提示字元 | `[admin@TPE_SW_01] > /ip neighbor print detail without-paging` |
 
 - 指令必須是**絕對路徑**（以 `/` 開頭）。`[admin@x] /ip> print` 這種相對路徑的提示字元不支援。
+- RouterOS 7 的斜線路徑（`/interface/bridge/host/print`）視同空白分隔（`/interface bridge host print`），export 的選單路徑也一樣；提示字元可省略 `>`（官方手冊常見 `[admin@MikroTik] /interface/bridge/monitor bridge1`）。
 - 沒有標記時，系統會依內容判斷是哪一種輸出；判斷不出來的段落列為 **I01 無法辨識的內容**，不會被丟掉。
 
 ### 其他規則

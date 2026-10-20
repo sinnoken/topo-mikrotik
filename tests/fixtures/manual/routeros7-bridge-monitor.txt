@@ -1,0 +1,21 @@
+# 來源：同上，/interface/bridge/monitor bridge1 範例，原文照錄
+SW_MANUAL (192.0.2.1):
+[admin@MikroTik] /interface/bridge/monitor bridge1
+                    state: enabled                         
+      current-mac-address: 2C:C8:1B:FF:92:F4               
+                bridge-id: 0x1000.2C:C8:1B:FF:92:F4        
+              root-bridge: yes                             
+           root-bridge-id: 0x1000.2C:C8:1B:FF:92:F4        
+  regional-root-bridge-id: 0x1000.2C:C8:1B:FF:92:F4        
+           root-path-cost: 0                               
+                root-port: none                            
+               port-count: 2                               
+    designated-port-count: 2                               
+        mst-config-digest: d2b171a8ad95f593c241fc33d419a88c
+             fast-forward: no                              
+         multicast-router: no                              
+             igmp-querier: none                            
+              mld-querier: none                            
+        declared-vlan-ids: 1                               
+      registered-vlan-ids: 1                               
+```

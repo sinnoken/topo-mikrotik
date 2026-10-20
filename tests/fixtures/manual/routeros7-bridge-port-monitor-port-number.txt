@@ -1,0 +1,18 @@
+# 來源：同上，/interface/bridge/port/monitor [find interface=sfp-sfpplus1] 範例（port-number 寫法），原文照錄
+SW_MANUAL (192.0.2.1):
+[admin@MikroTik] > /interface/bridge/port/monitor [find interface=sfp-sfpplus1]
+            interface: sfp-sfpplus1
+               status: in-bridge
+          port-number: 1
+                 role: designated-port
+            edge-port: no
+  edge-port-discovery: yes
+  point-to-point-port: yes
+         external-fdb: no
+         sending-rstp: yes
+             learning: yes
+           forwarding: yes
+     actual-path-cost: 2000
+     hw-offload-group: switch1
+    declared-vlan-ids: 1,10,20-21
+  registered-vlan-ids: 1,10,20,30-33

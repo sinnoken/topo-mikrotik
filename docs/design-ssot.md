@@ -77,7 +77,7 @@
 | mikrotik.route | /ip route print detail | 作用中路由、ECMP（`gateway=a,b`）、`distance`；黑洞／不可達／禁止路由保留為 `blackhole`（RouterOS 6 的 B／U／P 旗標、RouterOS 7 列中單獨的 `blackhole` 字）；RouterOS 6／7 旗標差異已處理 |
 | mikrotik.ospf | /routing ospf neighbor print detail | OSPF 鄰居（沒有 interface 時，用鄰居位址落在哪個本機網段決定） |
 | mikrotik.system | /system resource print | 型號、版本 |
-| mikrotik.stp | /interface bridge port monitor [find] once | 每個埠的 RSTP 角色、`designated-bridge-id`（指定橋接器的 MAC）、`designated-port-id`、`port-id`、edge；欄式輸出（每行 key: 值1 值2…），RouterOS 6／7 欄位名稱皆可 |
+| mikrotik.stp | /interface bridge port monitor [find] once | 每個埠的 RSTP 角色、`designated-bridge-id`（指定橋接器的 MAC）、`designated-port-id`、`port-id`、edge；欄式輸出（每行 key: 值1 值2…，冒號對齊），依第一行各欄的起始位置切欄，所以某欄空白（例如 designated port 的指定橋接器）不會錯位；RouterOS 6／7 欄位名稱皆可；格式依官方手冊範例驗證（`tests/fixtures/manual/`） |
 | mikrotik.stpbridge | /interface bridge monitor [find] once | bridge 自己的 MAC（`current-mac-address`，加入 `ownMacs`）、根橋接器 |
 | mikrotik.wifireg | /interface wifi｜wireless registration-table、/caps-man registration-table print detail（選用） | Wi-Fi 關聯：客戶端 MAC、無線介面、SSID、頻段、VLAN、uptime、last-activity、訊號、DHCP 位址與主機名；略過 `eap-*` 帳號欄位與 `ap=yes` 的對端 AP；空表記為已收集、0 筆 |
 

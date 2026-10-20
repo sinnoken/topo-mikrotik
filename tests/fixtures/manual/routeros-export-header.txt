@@ -1,0 +1,9 @@
+# 來源：RouterOS 官方手冊 Configuration Management（https://manual.mikrotik.com/docs/getting-started/configuration-management.md）的 export 範例
+# 手冊原文的提示字元在子選單（/ip/ipsec/policy> export，屬不支援的相對路徑），這裡改用 ### 標記，其餘照錄
+R_MANUAL (192.0.2.2):
+### /export
+# 1970-04-02 17:59:30 by RouterOS 6.22
+# software id = DB0D-LK67
+#
+/ip/ipsec/policy
+set 0 protocol=gre

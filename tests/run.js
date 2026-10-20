@@ -865,6 +865,33 @@ test('真實設備輸出（tests/fixtures/real/）：每份都完整解析，沒
     s.blocks.filter((b) => b.device !== null).forEach((b) => assert.ok(b.adapters.length && !b.empty, `${f} 第 ${b.start} 行的 ${b.command || '區塊'} 沒有解析出內容`));
   });
 });
+test('官方手冊的輸出範例（tests/fixtures/manual/，原文照錄）：完整解析並取得關鍵欄位', () => {
+  const load = (f) => build(read(`tests/fixtures/manual/${f}`));
+  const stp = (s, k) => { const i = iface(s, k); return i && i.stp && [i.stp.role, i.stp.designatedBridge, i.stp.designatedPort]; };
+  const two = load('routeros7-bridge-port-monitor.txt');
+  assert.ok(!ids(two).includes('I01'), JSON.stringify(two.findings.filter((f) => f.id === 'I01').map((f) => f.message)));
+  assert.deepStrictEqual([stp(two, 'SW_MANUAL|ether1'), stp(two, 'SW_MANUAL|ether2')],
+    [['alternate-port', '64D154C73A6E', 1], ['designated-port', null, 2]], '空白欄位不可讓整行被略過，也不可錯位到別的埠');
+  const one = load('routeros7-bridge-port-monitor-single.txt');
+  assert.deepStrictEqual(stp(one, 'SW_MANUAL|ether1'), ['root-port', '2CC81BFF92F4', 1]);
+  const pn = load('routeros7-bridge-port-monitor-port-number.txt');
+  assert.deepStrictEqual([iface(pn, 'SW_MANUAL|sfp-sfpplus1').stp.role, iface(pn, 'SW_MANUAL|sfp-sfpplus1').stp.portNumber], ['designated-port', 1]);
+  const br = load('routeros7-bridge-monitor.txt');
+  assert.ok(br.model.devices[0].ownMacs.includes('2CC81BFF92F4'));
+  assert.deepStrictEqual([br.model.devices[0].stp.rootBridge, br.model.devices[0].stp.isRoot], ['2CC81BFF92F4', true]);
+  const ex = load('routeros-export-header.txt');
+  assert.strictEqual(ex.model.devices[0].collectedAt, '1970-04-02T17:59:30', 'RouterOS 6 也有「年-月-日」格式的 export 抬頭');
+  ['routeros7-bridge-port-monitor-single.txt', 'routeros7-bridge-monitor.txt', 'routeros-export-header.txt'].forEach((f) => assert.ok(!ids(load(f)).includes('I01'), f));
+});
+test('RouterOS 7 的斜線路徑：指令標記與 export 選單路徑都視同空白分隔；提示字元可省略 >', () => {
+  const s = build(['SW (10.0.0.1):', '[admin@SW] > /ip/neighbor/print detail without-paging',
+    ' 0 interface=ether1 mac-address=AA:BB:CC:00:00:02 identity=R2 interface-name=ether2',
+    '[admin@SW] /interface/bridge/host/print detail without-paging', ' 0 D mac-address=AA:BB:CC:00:00:09 on-interface=ether3 bridge=bridge1',
+    '### /export terse', '/interface/bridge/port add bridge=bridge1 interface=ether3 pvid=30', '/interface/bridge add name=bridge1 vlan-filtering=yes'].join('\n'));
+  assert.deepStrictEqual(s.blocks.map((b) => b.command), ['/ip neighbor print detail without-paging', '/interface bridge host print detail without-paging', '/export terse']);
+  assert.ok(!ids(s).includes('I01'));
+  assert.deepStrictEqual([iface(s, 'SW|ether3').bridge, iface(s, 'SW|ether3').pvid], ['SW|bridge1', 30]);
+});
 test('黃金基準：範例資料建出的 Snapshot 與 tests/golden/sample-snapshot.json 完全相同', () => {
   const G = require('./golden.js');
   const want = JSON.parse(read('tests/golden/sample-snapshot.json'));

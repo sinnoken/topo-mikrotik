@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 指令
 
-只需要 Node.js（CI 使用 Node 20／24），沒有 build、lint 或 format script。
+只需要 Node.js（CI 使用 Node 22／24），沒有 build、lint 或 format script。
 
 ```bash
 npm test                 # 全部：核心、文件、收集器、畫面

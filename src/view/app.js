@@ -632,7 +632,7 @@
       f.appendChild(h('span', null, `命名規則：${m.profile ? m.profile.id : '未套用'}`));
       f.appendChild(h('span', { class: 'mono' }, `輸入指紋 ${m.inputHash}`));
       f.appendChild(h('span', null, `版本 ${m.version}`));
-    } else f.appendChild(h('span', null, `網路基準 ${S.VERSION}・資料只在這個瀏覽器處理，不會傳到任何地方`));
+    } else f.appendChild(h('span', null, `RouterOS 網路基準 ${S.VERSION}・資料只在這個瀏覽器處理，不會傳到任何地方`));
     V.lists.findings(App); V.lists.coverage(App); V.lists.compare(App); V.lists.inventory(App);
     V.details.render(App, App.sel);
   }

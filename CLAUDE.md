@@ -27,6 +27,7 @@ npm run test:large       # 核心測試＋約 1000 台壓力測試
 npm run golden:update    # 刻意改變 Snapshot 後更新黃金基準（tests/golden/），提交前用 git diff 檢視
 node tools/anonymize.js 收集檔.txt -o tests/fixtures/real/<版本>-<型號>.txt   # 真實輸出去識別化後當測試資料
 npm run sample           # 重新產生 samples/sample-bundle.txt 並嵌入成 sample-bundle.js
+npm run gen:large        # 產生 samples/large-1000.txt（已 gitignore，大型冒煙測試前需先產生）
 npm run oui -- <index.json>      # 重新產生 src/data/oui-data.js（來源：npm pack oui-data@<版本>，見 README）
 git diff --check         # 提交前檢查
 ```

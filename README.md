@@ -131,7 +131,7 @@ docs/                 設計說明、檢查規則、收集清單、命名規則�
 
 ## 開發
 
-只需要 Node.js（CI 使用 Node 20／24），不需安裝任何套件，也沒有 build 步驟：
+只需要 Node.js（CI 使用 Node 22／24），不需安裝任何套件，也沒有 build 步驟：
 
 ```bash
 npm test                 # 全部：核心、文件、SSH 收集器、畫面冒煙測試
@@ -169,7 +169,7 @@ MAC 前綴 → 廠商的資料來源是 npm 套件 [`oui-data`](https://www.npmj
 
 ### CI
 
-[.github/workflows/ci.yml](.github/workflows/ci.yml) 在 PR 與非 main 分支 push 時以 Node 20／24 執行 `npm test`；壓力測試（`npm run test:large`）只在每週排程與手動觸發時執行。main 上的部署前由 [deploy-pages.yml](.github/workflows/deploy-pages.yml) 跑 `npm test` 後部署到 GitHub Pages。提交前仍請先在本機執行 `npm test`。
+[.github/workflows/ci.yml](.github/workflows/ci.yml) 在 PR 時以 Node 22／24 執行 `npm test`（只 push 到分支不會觸發，需要時可在 Actions 頁手動執行）；壓力測試（`npm run test:large`）只在每週排程與手動觸發時執行。main 上的部署前由 [deploy-pages.yml](.github/workflows/deploy-pages.yml) 跑 `npm test` 後部署到 GitHub Pages。提交前仍請先在本機執行 `npm test`。
 
 ### 相關文件
 

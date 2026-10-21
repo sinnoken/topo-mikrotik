@@ -15,10 +15,10 @@ tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch
 
 ## 與其他 agent 的介面（契約）
 
-- **對 frontend**：Snapshot（`docs/design-ssot.md` §5.2）與 `SSOT.query(snapshot)` 的函式，是畫面唯一的資料來源。
+- **對 frontend**：Snapshot（`docs/設計說明.md` §5.2）與 `SSOT.query(snapshot)` 的函式，是畫面唯一的資料來源。
   - 新增欄位或查詢函式屬於相容修改，可以直接做，並在報告列出名稱與意義。
   - 改名、刪除或改變欄位意義屬於破壞性修改，先依 `snapshot-contract-change` skill 評估；必要時調整 `S.SCHEMA`／`S.VERSION`，並在報告中逐項列出受影響的畫面位置。
-- **對 docs**：finding 的 ID、標題、嚴重度（`CATALOG`）要和 `docs/checks.md` 一致，由 `tests/docs.js` 檢查。改了就在報告的「文件影響」寫出要怎麼改。
+- **對 docs**：finding 的 ID、標題、嚴重度（`CATALOG`）要和 `docs/基準檢查規則.md` 一致，由 `tests/docs.js` 檢查。改了就在報告的「文件影響」寫出要怎麼改。
 
 ## 規則
 

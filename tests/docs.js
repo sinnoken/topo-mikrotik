@@ -15,8 +15,8 @@ const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
 
-test('docs/checks.md 與 CATALOG 一致：每項規則都有章節，總覽表的標題與嚴重度相同', () => {
-  const doc = read('docs/checks.md'); const SEV = { error: '錯誤', warn: '警告', info: '提醒' };
+test('docs/基準檢查規則.md 與 CATALOG 一致：每項規則都有章節，總覽表的標題與嚴重度相同', () => {
+  const doc = read('docs/基準檢查規則.md'); const SEV = { error: '錯誤', warn: '警告', info: '提醒' };
   const rows = new Map(Array.from(doc.matchAll(/^\| \[(\w\d\d)\]\(#\w\d\d\) \| [^|]+ \| ([^|]+) \| ([^|]+) \|/gm), (m) => [m[1], [m[2].trim(), m[3].trim()]]));
   assert.deepStrictEqual(Array.from(rows.keys()), Object.keys(S.check.CATALOG), '總覽表的規則與順序應與 CATALOG 相同');
   Object.entries(S.check.CATALOG).forEach(([id, c]) => {

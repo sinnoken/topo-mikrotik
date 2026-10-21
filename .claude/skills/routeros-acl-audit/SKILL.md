@@ -15,7 +15,7 @@ user-invocable: true
 結果可重現、在瀏覽器離線執行。這個 skill 只講怎麼在本專案裡做 ACL 分析；
 不另外寫 Python 腳本、不產生獨立的 HTML 報表，也不接 CI 通知。
 
-**目前狀態**：核心還沒有解析防火牆（`docs/collection.md` 的限制表、`docs/design-ssot.md` 的未支援清單）。
+**目前狀態**：核心還沒有解析防火牆（`docs/收集清單與輸入格式.md` 的限制表、`docs/設計說明.md` 的未支援清單）。
 第一次使用時從「階段一」開始，每個階段完成後更新本節。
 
 ## 資料來源
@@ -63,7 +63,7 @@ user-invocable: true
 3. **infer**（`src/model/infer.js`）：「WAN 可連入」是推論，要明確標示。
    WAN 介面只從 `/interface list member` 的事實推得；沒有可辨識的 WAN 清單時，用 coverage／C 系列 finding 說明無法判斷。
    **不要寫死** `sfp1`、`lte1`、`all-ppp` 這類介面名稱。
-4. **check**（`src/check/checks.js`）：在 `CATALOG` 新增一個類別，同步 `docs/checks.md`（`tests/docs.js` 會檢查兩者一致）。
+4. **check**（`src/check/checks.js`）：在 `CATALOG` 新增一個類別，同步 `docs/基準檢查規則.md`（`tests/docs.js` 會檢查兩者一致）。
    每筆 finding 的證據指向規則所在行；遮蔽與重複類的 finding 也要附上前面那條規則的行號。
    範例資料（`npm run sample` 的產生器）要放入對應的問題，並加上測試。
 5. **query → view**：畫面只透過 `SSOT.query()` 讀取，例如依 chain 順序列出規則並標示 finding。
@@ -97,7 +97,7 @@ user-invocable: true
 
 ## 不納入本專案的部分
 
-- **修補指令與主管摘要**：這些需要人工判斷，不放進核心。各檢查的「處理」寫在 `docs/checks.md`。
+- **修補指令與主管摘要**：這些需要人工判斷，不放進核心。各檢查的「處理」寫在 `docs/基準檢查規則.md`。
   需要給 RouterOS 指令範例時，以 `disabled=yes` 為主，用 comment 或屬性 `find`（不要用編號），並附上驗證與回復方式。
 - **寫回設備**：本工具是唯讀的基準工具，收集器只執行 print／export。
 - **外部資源**：報表要遵守離線契約，不使用網路字型或 CDN。

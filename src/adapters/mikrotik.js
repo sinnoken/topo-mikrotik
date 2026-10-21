@@ -422,7 +422,7 @@
     command: /^\/?(interface\s+(wifi|wireless)\s+registration-table|caps-man\s+registration-table)\b/i,
     detect: (lines) => has(lines, 'mac-address') && has(lines, 'interface') && has(lines, 'uptime') && (has(lines, 'last-activity') || has(lines, 'rx-signal')),
     parse(b, emit) {
-      // eap-identity、eap-username 是使用者帳號（個資），刻意不讀取；原文仍在收集檔，見 docs/collection.md
+      // eap-identity、eap-username 是使用者帳號（個資），刻意不讀取；原文仍在收集檔，見 docs/收集清單與輸入格式.md
       let rows = 0;
       parseRows(b).forEach((r) => {
         const kv = r.kv;

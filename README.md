@@ -8,7 +8,7 @@
 
 ## 使用
 
-1. 依 [收集清單](docs/collection.md) 收集每台 RouterOS 的輸出（**所有 print 都要加 `detail without-paging`**），合併成一個收集檔
+1. 依 [收集清單](docs/收集清單與輸入格式.md) 收集每台 RouterOS 的輸出（**所有 print 都要加 `detail without-paging`**），合併成一個收集檔
 2. 開啟 `index.html` → **建立基準…** → 貼上或選擇檔案（可先按「載入範例資料」試用）
 3. 畫面分三塊：
    - **左：檢查結果／覆蓋率／清單／比對**：點任一筆，圖上會定位並標紅；沒有發現的規則列在下方，分成「通過」與「沒有資料可檢查」（預設收合）；「清單」分設備、介面、IP、網段、MAC、VLAN 六份完整清單（網段是由設備自有介面位址推導的直連網段，列出設定的設備／介面與落在網段內的 IP 數）（設備清單另有「終端」分類：一般非 Wi-Fi 介面須恰好學到一個 MAC 且沒有 LLDP／CDP 介面鄰接；Wi-Fi 介面本身不算終端介面，但每個 Wi-Fi MAC 觀察位置仍列入終端清單且不參與 A02，因 MAC 可能因漫遊出現在多個 AP。純 MNDP 廣播網域可達不算直連鄰接，不計入總覽的設備數。同一 MAC 的一般終端位置只在 VLAN 相同，或兩端皆未記錄 VLAN 時比較；跨設備的同 VLAN ID 不保證屬於同一 L2 廣播網域，A02 是待核實警告）（IP 已去重複），可文字篩選，MAC 清單可篩「缺 IP」
@@ -18,7 +18,7 @@
 
 基準會儲存在這個瀏覽器（IndexedDB），下次開啟自動還原；程式更新後若基準格式不同，會用儲存的輸入重新建立。按「清除」只清除本工具的資料。
 
-建立基準後，頂端摘要會顯示檢查規則發現的錯誤／警告與收集缺漏（每項規則的判斷條件與處理建議見[基準檢查規則](docs/checks.md)），並提供直接跳到問題、覆蓋率、搜尋或路由追蹤的入口。這些是該份 Snapshot 的檢查結果與收集完整度，不代表即時網路健康狀態。窄螢幕可切換「拓樸／檢查／詳細資料」工作區；設備詳情中的 VLAN、鄰居、OSPF、路由與原始輸出可按需要展開。
+建立基準後，頂端摘要會顯示檢查規則發現的錯誤／警告與收集缺漏（每項規則的判斷條件與處理建議見[基準檢查規則](docs/基準檢查規則.md)），並提供直接跳到問題、覆蓋率、搜尋或路由追蹤的入口。這些是該份 Snapshot 的檢查結果與收集完整度，不代表即時網路健康狀態。窄螢幕可切換「拓樸／檢查／詳細資料」工作區；設備詳情中的 VLAN、鄰居、OSPF、路由與原始輸出可按需要展開。
 
 ### SSH 批次收集（選用）
 
@@ -32,7 +32,7 @@ cp tools/devices.csv devices.csv
 
 設備清單第一列必須是 `name,address,user,port`，可再加選填的第五欄 `extra`；`name` 應唯一，且建議與設備的
 `/system identity` 相同。`port` 可留空，預設為 `22`。Wi-Fi AP 或 CAPsMAN 控制器可在 `extra` 填 `wifi`、`wireless`
-或 `capsman`，只對這些設備加收 Wi-Fi 關聯表（判斷客戶端連在哪台 AP），見 [收集清單](docs/collection.md)。
+或 `capsman`，只對這些設備加收 Wi-Fi 關聯表（判斷客戶端連在哪台 AP），見 [收集清單](docs/收集清單與輸入格式.md)。
 
 先驗證設備清單與將執行的唯讀命令，不建立連線：
 
@@ -58,7 +58,7 @@ cp tools/devices.csv devices.csv
 檢查，也不要在 CSV 或收集檔放入密碼、私鑰或 `show-sensitive` 輸出。沒有設定 SSH key 時，
 可加 `--ask-password`：每台設備互動連線一次（輸入密碼、確認 host key），其餘命令共用該連線；
 密碼不會寫入任何檔案。每次執行都會覆蓋輸出檔，要保留舊結果請用 `-o` 指定其他檔名。完整收集清單、輸入
-格式與所有可用的命令 ID 見 [`docs/collection.md`](docs/collection.md)。
+格式與所有可用的命令 ID 見 [`docs/收集清單與輸入格式.md`](docs/收集清單與輸入格式.md)。
 
 ## 專案結構
 
@@ -105,10 +105,10 @@ npm run oui -- <index.json>      # 更新 OUI 廠商資料（步驟見下方）
 - SSH 收集器是 WSL/Linux 可執行的本機 Bash CLI，不是瀏覽器功能；使用既有 SSH key/agent，將多台設備的唯讀輸出包成一個 `bundle-v1` 檔。
 - CI：[.github/workflows/ci.yml](.github/workflows/ci.yml) 在 PR 與非 main 分支 push 時以 Node 20／24 執行 `npm test`；壓力測試（`npm run test:large`）只在每週排程與手動觸發時執行。main 上的部署前仍由 `deploy-pages.yml` 跑 `npm test`。提交前仍請先在本機執行 `npm test`。
 
-設計與取捨見 [docs/design-ssot.md](docs/design-ssot.md)；檢查規則見 [docs/checks.md](docs/checks.md)。
+設計與取捨見 [docs/設計說明.md](docs/設計說明.md)；檢查規則見 [docs/基準檢查規則.md](docs/基準檢查規則.md)。
 
 ## 注意
 
 - 這是 topo-ssot 的 **MikroTik 專用版**，與多廠牌版並存時互不影響（瀏覽器儲存名稱不同）。
 - 解析器依 RouterOS 文件與慣例撰寫，測試資料由程式產生，**尚未用真實設備輸出驗證**。RouterOS 7 為主，6.43 以上大致可用。
-- 支援範圍與限制見 [docs/collection.md](docs/collection.md) 第 4 節。
+- 支援範圍與限制見 [docs/收集清單與輸入格式.md](docs/收集清單與輸入格式.md) 第 4 節。

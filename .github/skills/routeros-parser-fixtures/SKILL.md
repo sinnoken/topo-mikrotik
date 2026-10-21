@@ -38,8 +38,8 @@ parser change that only fits one sample tends to break another. Work fixture-fir
 5. **Check neighbors of the change.** Names can differ by protocol and by side
    (`ether3,bridge` locally, `bridge/ether2` remotely). Compare using the shared
    canonical key helpers, not ad-hoc string handling.
-6. **Sync docs.** Update `docs/collection.md` (command table; every print uses
-   `detail without-paging`) and the adapter table in `docs/design-ssot.md`.
+6. **Sync docs.** Update `docs/收集清單與輸入格式.md` (command table; every print uses
+   `detail without-paging`) and the adapter table in `docs/設計說明.md`.
 7. **Verify.** Run `npm test`, then `git diff --check`. If the change affects
    a sample, regenerate through `npm run sample` instead of editing it by hand.
 

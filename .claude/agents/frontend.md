@@ -14,7 +14,7 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 
 ## 與其他 agent 的介面（契約）
 
-- **資料**：只透過 `SSOT.query(snapshot)` 和 Snapshot 的公開欄位（`docs/design-ssot.md` §5.2）讀取。
+- **資料**：只透過 `SSOT.query(snapshot)` 和 Snapshot 的公開欄位（`docs/設計說明.md` §5.2）讀取。
 - **檢視狀態**：選取、展開、縮放、位置都是檢視狀態，不寫回 Snapshot。持久化集中在 `src/view/store.js`。
 - **樣式**：顏色、線型、透明度的唯一來源是 `src/view/theme.js`；DOM 用的 CSS 變數要和它一致（有測試）。
 - **詳情面板的區塊**：一律用 `src/view/panels/details.js` 的 `section()` 產生，內容函式不自帶標題（有結構測試）。

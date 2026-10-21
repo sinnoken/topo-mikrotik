@@ -10,7 +10,7 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 
 只改 `.claude/agents/ownership.json` 中 `collector` 列出的檔案。其他檔案只讀不改：
 - 新增收集指令後，要有對應的解析器才有用，交給 `data-model`。
-- 收集清單（`docs/collection.md`）由 `docs` 更新。
+- 收集清單（`docs/收集清單與輸入格式.md`）由 `docs` 更新。
 
 這兩項都寫進最後報告。
 

@@ -3,6 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 本專案文件、測試名稱、finding 訊息與 commit message 皆使用繁體中文；新增內容請沿用。
+`docs/` 下給人看的文件也用中文檔名（例如 `docs/基準檢查規則.md`）。
 開發原則（鐵則、工作習慣、針對性守則、驗證底線）與 GitHub Copilot 共用同一份，在此匯入：
 
 @.github/copilot-instructions.md
@@ -56,7 +57,7 @@ git diff --check         # 提交前檢查
   只能 canonicalize 或加註解，不能新增／刪除／改寫事實。
 - **鏈路語意**：`S.LINK_SCOPE` 區分 interface-adjacency（LLDP／CDP）、broadcast-domain（純 MNDP，只證明 L2 可達，
   不可當直連證據）、routing-adjacency（OSPF，不作為拓樸 edge）。
-- **Snapshot 模型（`ssot-snapshot/2`）**：欄位命名參考 NetBox。完整欄位表見 [docs/design-ssot.md](docs/design-ssot.md) §5.2，以下是容易用錯的地方：
+- **Snapshot 模型（`ssot-snapshot/2`）**：欄位命名參考 NetBox。完整欄位表見 [docs/設計說明.md](docs/設計說明.md) §5.2，以下是容易用錯的地方：
   - 介面的 VLAN 分成 `pvid`／`untaggedVlans`／`taggedVlans`，取聯集用 `S.util.ifcVlans(i)`。
   - 介面之間的關係都存 ep 鍵，不共用欄位：聚合用 `lag`／`lagMembers`，bridge port 用 `bridge`，VLAN 子介面用 `parent`＋`encapVlan`。
   - `type` 是封閉列舉 `S.IFC_TYPES`，原值在 `rawType`。
@@ -73,7 +74,7 @@ git diff --check         # 提交前檢查
 ## 修改守則（補充匯入的開發原則）
 
 - **擴充點**：新廠牌 → `src/adapters/` 新檔＋`S.adapters.register()`，加入 `tools/core-files.js` 與 `index.html`；
-  新輸入格式 → `src/readers/` 並加入 `ORDER`；新檢查 → `CATALOG` 加一筆並實作，並更新 [docs/checks.md](docs/checks.md)（有測試檢查兩者一致）。
+  新輸入格式 → `src/readers/` 並加入 `ORDER`；新檢查 → `CATALOG` 加一筆並實作，並更新 [docs/基準檢查規則.md](docs/基準檢查規則.md)（有測試檢查兩者一致）。
 - **生成檔的指令**：`samples/sample-bundle.txt`／`.js` 用 `npm run sample`，`src/data/oui-data.js` 用 `npm run oui`。
   範例資料刻意含問題；新增檢查時要在產生器放對應問題並加測試。
 - 解析器依 RouterOS 文件撰寫，測試資料為手寫／產生，尚未以真實設備驗證；欄位語意以官方手冊
@@ -98,7 +99,7 @@ git diff --check         # 提交前檢查
 
 agent 之間的介面：
 - **data-model ↔ frontend**：Snapshot 欄位（設計說明 §5.2）與 `SSOT.query()`。
-- **data-model → docs**：`CATALOG` 與 `docs/checks.md` 必須一致。
+- **data-model → docs**：`CATALOG` 與 `docs/基準檢查規則.md` 必須一致。
 - **collector → data-model**：`bundle-v1` 格式與 `tools/collector-commands.sh` 的指令。
 
 排程：

@@ -17,10 +17,10 @@ tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch
 | 變更 | 文件 |
 |---|---|
 | 使用方式、畫面行為 | `README.md` |
-| 資料模型、推論規則、版本紀錄 | `docs/design-ssot.md` |
-| 檢查規則（finding） | `docs/checks.md`（和 `CATALOG` 的一致性由 `tests/docs.js` 檢查） |
-| 收集指令、格式、收集器 | `docs/collection.md` |
-| 命名規則 | `docs/profile.md` |
+| 資料模型、推論規則、版本紀錄 | `docs/設計說明.md` |
+| 檢查規則（finding） | `docs/基準檢查規則.md`（和 `CATALOG` 的一致性由 `tests/docs.js` 檢查） |
+| 收集指令、格式、收集器 | `docs/收集清單與輸入格式.md` |
+| 命名規則 | `docs/命名規則.md` |
 | 開發原則、skills | `.github/copilot-instructions.md`；skill 的 `.github` 和 `.claude` 兩份要同步（有測試） |
 | agent 分工 | `.claude/agents/*.md`、`ownership.json`（每個檔案恰好一個負責者，有測試） |
 

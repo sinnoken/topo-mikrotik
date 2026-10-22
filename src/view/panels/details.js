@@ -362,17 +362,25 @@
 
   // ---------------------------------------------------------------- VLAN
   function vlan(App, sel) {
-    const Q = App.Q; const v = Q.vlan(sel.key);
+    const Q = App.Q; const v = Q.vlan(sel.key, sel.domain);
     const fl = Q.findingsFor('vlan', String(v.id)).concat(...v.partial.map((l) => Q.findingsFor('link', l.key)));
+    const split = v.domains.length > 1; const at = v.domains.findIndex((d) => d.key === v.domain);
+    const domainName = (d, idx) => `區塊 ${idx + 1}：${d.devices.slice(0, 3).map((k) => Q.devName(k)).join('、')}${d.devices.length > 3 ? ` 等 ${d.devices.length} 台` : ''}`;
     return h('div', { class: 'detail' }, [
-      h('h2', null, 'VLAN ' + v.id),
-      h('div', { class: 'row' }, [V.chip(`${v.devices.length} 台設備`), V.chip(`通過 ${v.carry.length} 條鏈路`, 'ok'), v.inferred.length ? V.chip(`${v.inferred.length} 條推論鏈路`, 'info') : null, v.partial.length ? V.chip(`${v.partial.length} 條只有一端`, 'err') : null]),
+      h('h2', null, 'VLAN ' + v.id + (at >= 0 ? `（區塊 ${at + 1}／${v.domains.length}）` : '')),
+      h('div', { class: 'row' }, [V.chip(`${v.devices.length} 台設備`), V.chip(`通過 ${v.carry.length} 條鏈路`, 'ok'), v.inferred.length ? V.chip(`${v.inferred.length} 條推論鏈路`, 'info') : null, v.partial.length ? V.chip(`${v.partial.length} 條只有一端`, 'err') : null,
+        split ? V.chip(`${v.domains.length} 個不相連區塊（推論）`, 'warn') : null]),
       kv([['名稱', v.names.length ? v.names.join('、') : '—']]),
       h('p', { class: 'muted' }, '圖上：綠色為兩端都有此 VLAN 的鏈路，紅色為只有一端有；推論鏈路在已收集的各端都有此 VLAN 時也標綠色（屬推論）。'),
+      split ? h('p', { class: 'muted' }, '同一個 VLAN ID 的設備之間沒有承載此 VLAN 的鏈路相連，可能是各自獨立的廣播網域（例如不同站點重用 VLAN ID），也可能只是中間有沒收集、沒有 LLDP 的設備。區塊是依鏈路證據的推論。') : null,
       findingsBlock(App, fl),
       section('只有一端有此 VLAN 的鏈路', v.partial.map((l) => h('div', null, L(App, `${Q.epName(l.a)} ⇄ ${Q.epName(l.b)}`, { type: 'link', key: l.key }))), { count: v.partial.length }),
       section('設備', V.table([{ t: '設備', f: (d) => devLink(App, d) }, { t: '名稱', f: (d) => (v.entries.find((e) => e.dev === d) || {}).name || '' }, { t: '成員介面', f: (d) => String((v.entries.find((e) => e.dev === d) || { members: [] }).members.length) }], v.devices),
         { count: v.devices.length }),
+      section('不相連區塊（推論）', split ? [
+        ...v.domains.map((d, idx) => h('div', null, d.key === v.domain ? h('b', null, domainName(d, idx)) : L(App, domainName(d, idx), { type: 'vlan', key: String(v.id), domain: d.key }))),
+        at >= 0 ? h('div', null, L(App, '顯示所有區塊', { type: 'vlan', key: String(v.id) })) : null,
+      ] : null, { count: v.domains.length }),
     ]);
   }
 

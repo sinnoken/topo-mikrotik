@@ -270,7 +270,7 @@
       }
       case 'ip': { const r = Q.findIp(sel.key); const ds = S.util.uniq([...(r.owner ? [r.owner.split('|')[0]] : []), ...r.locations.map((x) => devOf(x.ep)), ...r.locations.map((x) => App.vOfEp.get(x.ep)).filter(Boolean)]); g.setHighlight({ nodes: new Map(ds.map((d) => [d, MARK.find])), edges: new Map() }); focus = ds; break; }
       case 'vlan': {
-        const v = Q.vlan(sel.key); const em = new Map();
+        const v = Q.vlan(sel.key, sel.domain); const em = new Map();
         pairsOf(v.carry.concat(v.inferred).map((l) => l.key)).forEach((p) => em.set(p, MARK.good));
         pairsOf(v.partial.map((l) => l.key)).forEach((p) => em.set(p, MARK.bad));
         g.setHighlight({ nodes: new Map(v.devices.map((d) => [d, MARK.good])), edges: em }); focus = v.devices; break;

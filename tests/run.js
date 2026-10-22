@@ -507,6 +507,21 @@ test('A02：同介面多 VLAN 觀察完整保留，並只比較相同 VLAN 的�
   assert.ok(finding && finding.message.includes('VLAN 20'), finding && finding.message);
   assert.deepStrictEqual(finding.entities.filter((e) => e.type === 'interface').map((e) => e.key), ['SW_A|ether1', 'SW_A|ether2']);
 });
+test('A02：同一個 VLAN ID 只在同一個 VLAN 區塊內比較，不相連的區塊（例如各站點重用 VLAN ID）不報', () => {
+  const mac = 'AA:BB:CC:00:00:01';
+  const sw = (name, ip, nb) => [`${name} (${ip}):`, NB(nb), '### /export terse', '/interface bridge add name=bridge1 vlan-filtering=yes',
+    '/interface bridge port add bridge=bridge1 interface=ether1', '/interface bridge port add bridge=bridge1 interface=ether2',
+    '/interface bridge vlan add bridge=bridge1 tagged=ether1 untagged=ether2 vlan-ids=10', BH([` 0 D mac-address=${mac} on-interface=ether2 bridge=bridge1 vid=10`])].join('\n');
+  const lldp = (peer) => [` 0 interface=ether1 mac-address=AA:00:00:00:00:0${peer === 'SW_A' ? 1 : 2} identity=${peer} interface-name=ether1 discovered-by=lldp`];
+  const split = build([sw('SW_A', '10.0.0.1', []), sw('SW_C', '10.0.0.3', [])].join('\n'));
+  assert.strictEqual(S.query(split).vlan(10).domains.length, 2);
+  assert.strictEqual(count(split, 'A02'), 0, '兩台之間沒有承載 VLAN 10 的鏈路，是不同區塊');
+  const joined = build([sw('SW_A', '10.0.0.1', lldp('SW_B')), sw('SW_B', '10.0.0.2', lldp('SW_A'))].join('\n'));
+  assert.strictEqual(S.query(joined).vlan(10).domains.length, 1);
+  const f = joined.findings.find((x) => x.id === 'A02');
+  assert.ok(f, '同一個區塊內照常比較');
+  assert.deepStrictEqual(f.entities.filter((e) => e.type === 'interface').map((e) => e.key), ['SW_A|ether2', 'SW_B|ether2']);
+});
 test('未知對端不進基準的設備、鏈路（只是檢視）', () => {
   const s = build(read('samples/sample-bundle.txt'));
   assert.ok(!s.model.devices.some((d) => d.key.startsWith('?')));
@@ -844,6 +859,25 @@ test('查詢：MAC、IP、VLAN、設備、介面描述', () => {
   assert.ok(Q.vlan(30).partial.length === 1);
   assert.strictEqual(Q.search('core_rt')[0].type, 'device');
   assert.ok(Q.search('to TPE_ACC_SW_01').some((r) => r.type === 'interface'));
+});
+test('VLAN 區塊：同一個 VLAN ID 依承載此 VLAN 的鏈路分成不相連區塊，MNDP 不算相連', () => {
+  const sw = (name, ip, nb) => [`${name} (${ip}):`, NB(nb), '### /export terse', '/interface bridge add name=bridge1 vlan-filtering=yes',
+    '/interface bridge port add bridge=bridge1 interface=ether1', '/interface bridge port add bridge=bridge1 interface=ether2',
+    '/interface bridge vlan add bridge=bridge1 tagged=ether1 untagged=ether2 vlan-ids=10'].join('\n');
+  const Q = S.query(build([
+    sw('SW_A', '10.0.0.1', [' 0 interface=ether1 mac-address=AA:00:00:00:00:02 identity=SW_B interface-name=ether1 discovered-by=lldp']),
+    sw('SW_B', '10.0.0.2', [' 0 interface=ether1 mac-address=AA:00:00:00:00:01 identity=SW_A interface-name=ether1 discovered-by=lldp']),
+    sw('SW_C', '10.0.0.3', [' 0 interface=ether1 mac-address=AA:00:00:00:00:02 identity=SW_B interface-name=ether2 discovered-by=mndp']),
+  ].join('\n')));
+  const v = Q.vlan(10);
+  assert.deepStrictEqual(v.devices, ['SW_A', 'SW_B', 'SW_C'], '不指定區塊時維持整體結果');
+  assert.deepStrictEqual(v.domains.map((d) => [d.key, d.devices]), [['10@SW_A', ['SW_A', 'SW_B']], ['10@SW_C', ['SW_C']]], 'SW_C 只有 MNDP 看到 SW_B，不算承載 VLAN 10');
+  const c = Q.vlan(10, '10@SW_C');
+  assert.deepStrictEqual([c.domain, c.devices, c.carry, c.entries.map((e) => e.dev)], ['10@SW_C', ['SW_C'], [], ['SW_C']]);
+  assert.strictEqual(Q.vlan(10, '10@SW_A').carry.length, 1);
+  assert.strictEqual(Q.vlan(10, '10@NOPE').domain, null, '不存在的區塊回到整體結果');
+  assert.ok(Q.search('10').find((r) => r.type === 'vlan').sub.includes('2 個不相連區塊'));
+  assert.deepStrictEqual(Q.vlan(99).domains, []);
 });
 test('路由追蹤：直連抵達、下一跳不在基準內、跨站點 ECMP', () => {
   let Q = S.query(build(read('samples/sample-bundle.txt')));

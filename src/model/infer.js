@@ -96,6 +96,36 @@
     if (i.lag) { const p = M.ifcs.get(i.lag); if (p) S.util.ifcVlans(p).forEach((v) => set.add(v)); }
     return S.util.numSort(Array.from(set));
   }
+  /**
+   * 一個 VLAN ID 的承載情況與不相連區塊（推論，設計說明 §5.3「VLAN 區塊」）。內部模型與 Snapshot 共用：
+   *   src = { vlans, interfaces, links, inferred（推論鏈路）, ifc(ep), collected(dev) }，集合可為陣列或 Map/Set 的迭代器。
+   * domains 依承載此 VLAN 的鏈路與推論鏈路相連；只經由未收集設備相連也算同一塊，但那台設備不列入。
+   */
+  function vlanSpan(src, id) {
+    const devOf = (ep) => K.splitEp(ep)[0];
+    const entries = Array.from(src.vlans).filter((v) => v.id === id);
+    const carry = []; const partial = [];
+    for (const l of src.links) {
+      if (l.layer !== 'l2') continue;
+      const inA = l.vlansA.includes(id); const inB = l.vlansB.includes(id);
+      if (inA && inB) carry.push(l); else if ((inA || inB) && l.vlanComparable !== false && l.vlanMismatch) partial.push(l);
+    }
+    const devs = S.util.uniq(entries.map((v) => v.dev));
+    for (const i of src.interfaces) if (S.util.ifcVlans(i).includes(id) && !devs.includes(i.dev)) devs.push(i.dev);
+    // 推論鏈路：已收集的每一端（或其所屬聚合）都帶這個 VLAN；未收集的一端無從得知，屬推論
+    const hasVlan = (ep) => { const i = src.ifc(ep); return !!i && S.util.ifcVlans(i).includes(id); };
+    const inferred = Array.from(src.inferred).filter((l) => {
+      const known = [l.a, l.b].filter((ep) => src.ifc(ep) && src.collected(devOf(ep)));
+      return known.length && known.every((ep) => hasVlan(ep) || Array.from(src.ifc(ep).lagMembers || []).some(hasVlan));
+    });
+    const devices = devs.sort(S.util.natural);
+    const own = new Set(devices);
+    const bridging = S.util.uniq(inferred.flatMap((l) => [devOf(l.a), devOf(l.b)])).filter((d) => !own.has(d));
+    const domains = S.util.components(devices.concat(bridging), carry.concat(inferred).map((l) => [devOf(l.a), devOf(l.b)]))
+      .map((ks) => ks.filter((d) => own.has(d))).filter((ks) => ks.length)
+      .map((ks) => ({ key: id + '@' + ks[0], devices: ks }));
+    return { entries, devices, carry, partial, inferred, domains };
+  }
   function linkVlans(M) {
     M.links.forEach((l) => {
       if (l.layer !== 'l2') return;
@@ -126,17 +156,10 @@
 
   /** 未指定分群的設備依拓樸鏈路連通元件分群；名稱不代表 IP 子網或物理區域。 */
   function groups(M) {
-    const parent = new Map();
-    const find = (x) => { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; };
-    M.devices.forEach((d) => parent.set(d.key, d.key));
-    M.links.forEach((l) => {
-      const a = K.splitEp(l.a)[0]; const b = K.splitEp(l.b)[0];
-      if (!parent.has(a) || !parent.has(b)) return;
-      parent.set(find(a), find(b));
-    });
-    const comps = new Map();
-    M.devices.forEach((d) => S.util.getOr(comps, find(d.key), () => []).push(d));
-    const sorted = Array.from(comps.values()).sort((x, y) => y.length - x.length || S.util.natural(x[0].key, y[0].key));
+    const keys = Array.from(M.devices.keys());
+    const comps = S.util.components(keys, Array.from(M.links.values(), (l) => [K.splitEp(l.a)[0], K.splitEp(l.b)[0]]))
+      .map((ks) => ks.map((k) => M.devices.get(k)));
+    const sorted = comps.sort((x, y) => y.length - x.length || S.util.natural(x[0].key, y[0].key));
     sorted.forEach((members, idx) => members.forEach((d) => { d.component = idx + 1; if (!d.group) d.group = '自動群組 ' + (idx + 1); }));
   }
 
@@ -386,5 +409,5 @@
     return d.key;
   }
 
-  S.infer = { infer, displayName, effVlans, wifiLocations, behindLocations };
+  S.infer = { infer, displayName, effVlans, vlanSpan, wifiLocations, behindLocations };
 })(globalThis.SSOT = globalThis.SSOT || {});

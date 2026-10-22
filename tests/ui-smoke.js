@@ -306,6 +306,9 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     ['10.1.20.11', '10.1.30.11', '10.255.1.1', '9.9.9.9'].forEach((ip) => App.select({ type: 'ip', key: ip }));
     App.select({ type: 'vlan', key: '30' }); App.graph.draw();
     if (!process.env.SMOKE_INPUT && !text('#detail').includes('只有一端有此 VLAN 的鏈路')) throw new Error('VLAN 不一致未顯示');
+    const ds = App.Q.vlan(30).domains;
+    App.select({ type: 'vlan', key: '30', domain: ds[0].key }); App.graph.draw();
+    if (!text('#detail').includes(`區塊 1／${ds.length}`)) throw new Error('選取 VLAN 區塊時標題未標示區塊');
   });
   await step('搜尋框', async () => {
     const inp = $('#search'); inp.value = 'acc_sw_0'; inp.dispatch('input'); await new Promise((r) => setTimeout(r, 150));

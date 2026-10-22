@@ -174,6 +174,17 @@
 
     const edge = edgePorts(M, interfaceLinksByEp);
     M.edge = edge;
+    // 同一個 VLAN ID 只在同一個 VLAN 區塊內比較；任一位置的設備不在任何區塊時，無從區分，整組比較
+    const vlanSrc = () => ({ vlans: M.vlans.values(), interfaces: M.ifcs.values(), links: M.links.values(), inferred: M.inferred || [], ifc: (ep) => M.ifcs.get(ep), collected: (d) => !!(M.devices.get(d) || {}).collected });
+    const spans = new Map();
+    const byDomain = (vlan, locations) => {
+      if (!vlan) return [locations];
+      const domains = S.util.getOr(spans, vlan, () => S.infer.vlanSpan(vlanSrc(), +vlan)).domains;
+      const keys = locations.map((ep) => (domains.find((d) => d.devices.includes(K.splitEp(ep)[0])) || {}).key);
+      if (keys.some((k) => !k)) return [locations];
+      const parts = new Map(); locations.forEach((ep, idx) => S.util.getOr(parts, keys[idx], () => []).push(ep));
+      return Array.from(parts.values());
+    };
     M.macs.forEach((m) => {
       m.edge = Array.from(m.seen.keys()).filter((ep) => edge.has(ep)).sort();
       const edgeByVlan = new Map();
@@ -183,9 +194,11 @@
       });
       edgeByVlan.forEach((eps, vlan) => {
         if (eps.size < 2) return;
-        const locations = Array.from(eps).sort(S.util.natural);
-        add('A02', `${K.macPretty(m.mac)} 在 ${vlan ? `VLAN ${vlan}` : 'VLAN 不明'} 的多個終端埠出現：${locations.map(epName).join('、')}`,
-          [{ type: 'mac', key: m.mac }].concat(locations.map((ep) => ({ type: 'interface', key: ep }))));
+        byDomain(vlan, Array.from(eps).sort(S.util.natural)).forEach((locations) => {
+          if (locations.length < 2) return;
+          add('A02', `${K.macPretty(m.mac)} 在 ${vlan ? `VLAN ${vlan}` : 'VLAN 不明'} 的多個終端埠出現：${locations.map(epName).join('、')}`,
+            [{ type: 'mac', key: m.mac }].concat(locations.map((ep) => ({ type: 'interface', key: ep }))));
+        });
       });
     });
     const edgeByDev = new Map();

@@ -206,6 +206,57 @@ test('export（compact）：路徑標題、\\ 斷行、引號內斷行', () => {
   assert.deepStrictEqual(addrs(s, 'R_A|bridge1'), ['10.1.1.1/24']);
   assert.strictEqual(s.model.devices[0].routerId, '2.2.2.2');
 });
+// 依 RouterOS 手冊（/ip firewall address-list、/ip dns、/ip dns static、/ip pool、/ip dhcp-server lease／network、/system ntp client）手寫，非真實設備擷取
+const configFacts = (text) => {
+  const { blocks } = S.readers.readAll([{ name: 't.txt', text }]);
+  const out = [];
+  blocks.forEach((b) => S.adapters['mikrotik.config'].parse(b, (f) => out.push(f)));
+  return out;
+};
+const configModel = (text) => {
+  const { blocks } = S.readers.readAll([{ name: 't.txt', text }]);
+  blocks.forEach((b) => { b.devKey = b.device === null ? null : S.keys.dev(b.device); });
+  const facts = [];
+  blocks.forEach((b) => S.adapters['mikrotik.config'].parse(b, (f) => { Object.assign(f, { dev: b.devKey, adapter: 'mikrotik.config', dataType: 'config', vendor: 'mikrotik', block: b.id }); facts.push(f); }));
+  return S.model.build({ blocks, facts, canon: (n) => String(n || '').trim() });
+};
+const BIND_EXPORT = ['R_A (10.0.0.1):', '### /export compact', '# 2026-10-13 10:00:00 by RouterOS 7.12.1',
+  '/ip pool', 'add name=pool-user ranges=10.1.30.100-10.1.30.200,10.1.31.0/24',
+  '/ip dhcp-server lease', 'add address=10.1.30.5 mac-address=aa:bb:cc:00:00:05 server=dhcp1', 'add address=10.1.30.6 disabled=yes mac-address=AA:BB:CC:00:00:06 server=dhcp1',
+  '/ip dhcp-server network', 'add address=10.1.30.0/24 dns-server=10.1.10.53,10.1.10.54 gateway=10.1.30.1 \\', '    ntp-server=10.1.10.123',
+  '/ip dns', 'set allow-remote-requests=yes servers=1.1.1.1,8.8.8.8',
+  '/ip dns static', 'add address=10.1.10.53 name=DNS1.lan', 'add cname=dns1.lan name=ns.lan type=CNAME', 'add address=10.1.10.99 disabled=yes name=old.lan',
+  '/ip firewall address-list', 'add address=10.1.10.0/24 comment="mgmt \\', '    net" list=MGMT', 'add address=192.0.2.9 disabled=yes list=blocked',
+  '/ip/firewall/address-list add address=10.1.20.0/24 list=MGMT',
+  '/system ntp client', 'set enabled=yes servers=10.1.10.123',
+  '/system/ntp/client/servers add address=10.1.10.124', '/system ntp client servers add address=10.1.10.125 disabled=yes'].join('\n');
+test('export：名稱 ↔ IP 綁定（address-list、DNS static、pool、靜態租約）帶行號；停用與非位址項目略過；斜線路徑與續行', () => {
+  const binds = configFacts(BIND_EXPORT).filter((f) => f.t === 'ipBind').map((f) => [f.section, f.name, f.value, f.line]);
+  assert.deepStrictEqual(binds, [
+    ['/ip pool', 'pool-user', '10.1.30.100-10.1.30.200', 5], ['/ip pool', 'pool-user', '10.1.31.0/24', 5],
+    ['/ip dhcp-server lease', 'aa:bb:cc:00:00:05', '10.1.30.5', 7],
+    ['/ip dns static', 'DNS1.lan', '10.1.10.53', 15],
+    ['/ip firewall address-list', 'MGMT', '10.1.10.0/24', 19],
+    ['/ip firewall address-list', 'MGMT', '10.1.20.0/24', 22],
+  ]);
+});
+test('export：DNS／NTP 伺服器（servers=、RouterOS 7 servers 子選單、RouterOS 6 primary-ntp／secondary-ntp）、DHCP 網路的 DNS／NTP', () => {
+  const f = configFacts(BIND_EXPORT);
+  assert.deepStrictEqual(f.filter((x) => x.t === 'dnsServers').map((x) => [x.servers, x.line]), [[['1.1.1.1', '8.8.8.8'], 13]]);
+  assert.deepStrictEqual(f.filter((x) => x.t === 'ntpServers').map((x) => [x.servers, x.line]), [[['10.1.10.123'], 24], [['10.1.10.124'], 25]]);
+  assert.deepStrictEqual(f.filter((x) => x.t === 'dhcpNet').map((x) => [x.network, x.gateways, x.dns, x.ntp, x.line]),
+    [['10.1.30.0/24', ['10.1.30.1'], ['10.1.10.53', '10.1.10.54'], ['10.1.10.123'], 10]]);
+  const v6 = configFacts(['R_B (10.0.0.2):', '### /export', '/system ntp client', 'set enabled=yes primary-ntp=10.1.10.123 secondary-ntp=0.0.0.0'].join('\n'));
+  assert.deepStrictEqual(v6.filter((x) => x.t === 'ntpServers').map((x) => x.servers), [['10.1.10.123']], '0.0.0.0 代表未設定');
+  const sp = configFacts(['R_C (10.0.0.3):', '### /export', '/system ntp client', 'set enabled=yes servers="10.1.10.123 pool.ntp.org"'].join('\n'));
+  assert.deepStrictEqual(sp.filter((x) => x.t === 'ntpServers').map((x) => x.servers), [['10.1.10.123', 'pool.ntp.org']], '空白分隔也要切開');
+  const M = configModel(BIND_EXPORT); const d = M.devices.get('R_A');
+  assert.deepStrictEqual([d.dnsServers.values, d.ntpServers.values], [['1.1.1.1', '8.8.8.8'], ['10.1.10.123', '10.1.10.124']]);
+  assert.deepStrictEqual(M.ipBinds.map((b) => [b.section, b.nameKey, b.valueKey]).slice(2, 4), [['/ip dhcp-server lease', 'AABBCC000005', '10.1.30.5'], ['/ip dns static', 'dns1.lan', '10.1.10.53']]);
+  assert.deepStrictEqual([M.dhcpNets[0].dns, M.dhcpNets[0].ntp], [['10.1.10.53', '10.1.10.54'], ['10.1.10.123']]);
+  const s = build(BIND_EXPORT);
+  assert.ok(!('dns' in s.model.dhcpNetworks[0]) && !('dnsServers' in s.model.devices[0]), '新資料只在內部模型，Snapshot 欄位不變');
+});
 test('export：bridge 沒有開 vlan-filtering 時，不產生 VLAN 成員', () => {
   const s = build('SW_A (10.0.0.1):\n### /export terse\n/interface bridge add name=bridge1\n/interface bridge port add bridge=bridge1 interface=ether1 pvid=20\n/interface bridge vlan add bridge=bridge1 tagged=ether1 vlan-ids=10\n');
   const e1 = iface(s, 'SW_A|ether1');
@@ -389,7 +440,8 @@ test('system resource：型號決定交換器／路由器', () => {
 // ------------------------------------------------------------------ 範例資料：每個刻意放入的問題都要被找到
 test('範例資料：每項刻意放入的問題都被找到，且沒有多餘的錯誤', () => {
   const s = build(read('samples/sample-bundle.txt'));
-  const expect = { I01: 1, I02: 1, C02: 1, K01: 1, K02: 1, K03: 1, K04: 1, V01: 1, V04: 1, V05: 1, A01: 1, A02: 1, A04: 1, A05: 1, R01: 2, R02: 1, R03: 1, R04: 1, R05: 1, C01: 3 };
+  const expect = { I01: 1, I02: 1, C02: 1, K01: 1, K02: 1, K03: 1, K04: 1, V01: 1, V04: 1, V05: 1, V06: 1, V07: 1, A01: 1, A02: 1, A04: 1, A05: 1,
+    A06: 1, A07: 1, A08: 1, A09: 1, A10: 1, A11: 1, A12: 1, R01: 2, R02: 1, R03: 1, R04: 1, R05: 1, R06: 1, C01: 3 };
   Object.entries(expect).forEach(([id, n]) => assert.strictEqual(count(s, id), n, `${id} 應有 ${n} 筆，實際 ${count(s, id)}`));
   assert.strictEqual(s.meta.stats.collected, 14);
   const css = s.model.inferredLinks.find((l) => l.a.startsWith('TPE_CSS_01|') || l.b.startsWith('TPE_CSS_01|'));
@@ -609,9 +661,102 @@ test('VRRP 位址標示角色、網段帶出所屬 VLAN；R05 只在閘道不在
     '/ip address add address=10.1.30.2/24 interface=vlan30', '/ip address add address=10.1.30.1/32 interface=vrrp30',
     '/ip dhcp-server network add address=10.1.30.0/24 gateway=10.1.30.1', '/ip dhcp-server network add address=10.1.20.0/24 gateway=10.1.21.1'].join('\n'));
   assert.deepStrictEqual(s.model.ipAddresses.map((a) => [a.address, a.role]), [['10.1.30.1/32', 'vrrp'], ['10.1.30.2/24', null]]);
-  assert.deepStrictEqual(s.model.prefixes.map((p) => [p.prefix, p.vlan]), [['10.1.30.0/24', 30]]);
+  assert.deepStrictEqual(s.model.prefixes.map((p) => [p.prefix, p.vlan, p.vlans]), [['10.1.30.0/24', 30, [30]]]);
+  // 同一網段在不同設備設在不同 VLAN：vlan 不明確（null），vlans 列出全部
+  const two = build(['R1 (10.0.0.1):', '### /export terse', '/interface vlan add interface=bridge1 name=vlan30 vlan-id=30', '/ip address add address=10.1.30.2/24 interface=vlan30',
+    'R2 (10.0.0.2):', '### /export terse', '/interface vlan add interface=bridge1 name=vlan40 vlan-id=40', '/ip address add address=10.1.30.3/24 interface=vlan40'].join('\n'));
+  assert.deepStrictEqual(two.model.prefixes.map((p) => [p.prefix, p.vlan, p.vlans]), [['10.1.30.0/24', null, [30, 40]]]);
   assert.strictEqual(iface(s, 'R|vrrp30').type, 'virtual');
   assert.deepStrictEqual(s.findings.filter((f) => f.id === 'R05').map((f) => f.message), ['R：10.1.20.0/24 的閘道 10.1.21.1 不在網段內']);
+});
+
+// ------------------------------------------------------------------ 跨設備組態一致性（同質不同名、同名不同值）
+// 兩台交換器以 ether1 互相 LLDP，ether1 tagged VLAN 10（同一個 VLAN 區塊）；linked=false 時沒有鏈路（不同區塊）
+const cfgPair = (a, b, linked = true) => {
+  const sw = (name, ip, peer, lines) => [`${name} (${ip}):`,
+    NB(linked ? [` 0 interface=ether1 mac-address=AA:00:00:00:00:0${peer === 'SW_A' ? 1 : 2} identity=${peer} interface-name=ether1 discovered-by=lldp`] : []),
+    '### /export terse', '/interface bridge add name=bridge1 vlan-filtering=yes', '/interface bridge port add bridge=bridge1 interface=ether1',
+    '/interface bridge vlan add bridge=bridge1 tagged=ether1,bridge1 vlan-ids=10', ...lines].join('\n');
+  return build([sw('SW_A', '10.0.0.1', 'SW_B', a), sw('SW_B', '10.0.0.2', 'SW_A', b)].join('\n'));
+};
+const msgs = (s, id) => s.findings.filter((f) => f.id === id).map((f) => f.message);
+const VIF = (name, id, extra = '') => `/interface vlan add interface=bridge1 name=${name} vlan-id=${id}${extra}`;
+test('V06：同一 VLAN 區塊內，VLAN 介面名稱、說明不同才列；只比較有該屬性的設備、不分大小寫、不同區塊不比', () => {
+  const s = cfgPair([VIF('vlan10', 10, ' comment=MGMT')], [VIF('mgmt', 10, ' comment=mgmt')]);
+  assert.deepStrictEqual(msgs(s, 'V06'), ['VLAN 10 的 VLAN 介面名稱：SW_A「vlan10」；SW_B「mgmt」']);
+  const f = s.findings.find((x) => x.id === 'V06');
+  assert.deepStrictEqual(f.entities.map((e) => e.type + ':' + e.key), ['vlan:10', 'interface:SW_A|vlan10', 'interface:SW_B|mgmt']);
+  assert.ok(f.evidence.length === 2 && f.evidence.every((e) => e.line > 0));
+  assert.deepStrictEqual(msgs(cfgPair([VIF('vlan10', 10, ' comment=MGMT')], [VIF('VLAN10 ', 10)]), 'V06'), [], '名稱不分大小寫；只有一台有說明不比');
+  const bv = cfgPair(['/interface bridge vlan add bridge=bridge1 tagged=ether2 vlan-ids=10 comment=prod'], ['/interface bridge vlan add bridge=bridge1 tagged=ether2 vlan-ids=10 comment=office']);
+  assert.deepStrictEqual(msgs(bv, 'V06'), ['VLAN 10 的 bridge VLAN 說明：SW_A「prod」；SW_B「office」']);
+  assert.deepStrictEqual(msgs(cfgPair([VIF('vlan10', 10)], [VIF('mgmt', 10)], false), 'V06'), [], '不同 VLAN 區塊（例如各站點重用 VLAN ID）不比');
+});
+test('V07：同一名稱或說明在不同設備對應到不同 VLAN ID；同一 ID 不列', () => {
+  const s = cfgPair([VIF('mgmt', 10)], [VIF('MGMT', 20)], false);
+  assert.deepStrictEqual(msgs(s, 'V07'), ['VLAN 介面名稱「mgmt」：SW_A VLAN 10；SW_B VLAN 20']);
+  assert.deepStrictEqual(msgs(cfgPair([VIF('vlan10', 10, ' comment=users')], [VIF('vlan30', 30, ' comment=Users')], false), 'V07'), ['VLAN 介面說明「users」：SW_A VLAN 10；SW_B VLAN 30']);
+  assert.deepStrictEqual(msgs(cfgPair([VIF('mgmt', 10)], [VIF('mgmt', 10)]), 'V07'), []);
+});
+test('A06：同一 VLAN 區塊內各設備 VLAN 介面的網段不同；同網址不同遮罩會點明；不同區塊不比', () => {
+  const ip = (a) => `/ip address add address=${a} interface=vlan10`;
+  const s = cfgPair([VIF('vlan10', 10), ip('10.0.10.1/24')], [VIF('vlan10', 10), ip('10.0.20.2/24')]);
+  assert.deepStrictEqual(msgs(s, 'A06'), ['VLAN 10：SW_A 10.0.10.0/24；SW_B 10.0.20.0/24']);
+  assert.ok(s.findings.find((f) => f.id === 'A06').entities.some((e) => e.type === 'interface' && e.key === 'SW_B|vlan10'));
+  const m = cfgPair([VIF('vlan10', 10), ip('10.0.10.1/24')], [VIF('vlan10', 10), ip('10.0.10.2/25')]);
+  assert.deepStrictEqual(msgs(m, 'A06'), ['VLAN 10：SW_A 10.0.10.0/24；SW_B 10.0.10.0/25（網段重疊但遮罩不同）']);
+  assert.deepStrictEqual(msgs(cfgPair([VIF('vlan10', 10), ip('10.0.10.1/24')], [VIF('vlan10', 10), ip('10.0.20.2/24')], false), 'A06'), [], '不同區塊不比');
+  assert.deepStrictEqual(msgs(cfgPair([VIF('vlan10', 10), ip('10.0.10.1/24')], [VIF('vlan10', 10), ip('10.0.10.2/24')]), 'A06'), []);
+});
+test('A07：同一網段在不同設備的 VLAN 介面屬於不同 VLAN；非 VLAN 介面不比', () => {
+  const s = cfgPair([VIF('vlan10', 10), '/ip address add address=10.0.10.1/24 interface=vlan10'], [VIF('vlan20', 20), '/ip address add address=10.0.10.2/24 interface=vlan20'], false);
+  assert.deepStrictEqual(msgs(s, 'A07'), ['10.0.10.0/24：SW_A VLAN 10；SW_B VLAN 20']);
+  assert.deepStrictEqual(msgs(cfgPair([VIF('vlan10', 10), '/ip address add address=10.0.10.1/24 interface=vlan10'], ['/ip address add address=10.0.10.2/24 interface=ether5']), 'A07'), []);
+});
+test('A08：重疊網段在不同設備的遮罩不同；同一台設備內、不重疊的網段不列', () => {
+  const s = cfgPair(['/ip address add address=10.0.10.1/24 interface=ether5'], ['/ip address add address=10.0.10.2/25 interface=ether5']);
+  assert.deepStrictEqual(msgs(s, 'A08'), ['10.0.10.0/24（SW_A）與 10.0.10.0/25（SW_B）']);
+  assert.deepStrictEqual(s.findings.find((f) => f.id === 'A08').evidence.map((e) => e.line), [8, 16]);
+  assert.deepStrictEqual(msgs(cfgPair(['/ip address add address=10.0.10.1/24 interface=ether5', '/ip address add address=10.0.10.129/25 interface=ether6'], []), 'A08'), [], '同一台設備內不列');
+  assert.deepStrictEqual(msgs(cfgPair(['/ip address add address=10.0.10.1/24 interface=ether5'], ['/ip address add address=10.0.11.2/25 interface=ether5']), 'A08'), []);
+});
+test('A09：同一 IP 設定在多台設備；VRRP 虛擬位址、同一台設備重複、鄰居宣告的位址不列', () => {
+  const s = cfgPair(['/ip address add address=10.0.10.1/24 interface=ether5'], ['/ip address add address=10.0.10.1/25 interface=ether6']);
+  assert.deepStrictEqual(msgs(s, 'A09'), ['10.0.10.1：SW_A ether5、SW_B ether6']);
+  assert.ok(s.findings.find((f) => f.id === 'A09').entities.some((e) => e.type === 'ip' && e.key === '10.0.10.1'));
+  const vrrp = ['/interface vrrp add interface=ether5 name=vrrp1 vrid=1', '/ip address add address=10.0.10.254/32 interface=vrrp1'];
+  assert.deepStrictEqual(msgs(cfgPair(vrrp, vrrp), 'A09'), []);
+  assert.deepStrictEqual(msgs(cfgPair(['/ip address add address=10.0.10.1/24 interface=ether5', '/ip address add address=10.0.10.1/24 interface=ether6'], []), 'A09'), []);
+});
+test('R06：同一 DHCP 網段在不同設備的閘道、DNS、NTP 不同；只比較有設定該項的設備', () => {
+  const net = (extra) => [`/ip dhcp-server network add address=10.0.30.0/24 ${extra}`];
+  const s = cfgPair(net('gateway=10.0.30.1 dns-server=10.0.10.53'), net('gateway=10.0.30.2 dns-server=10.0.10.53 ntp-server=10.0.10.123'));
+  assert.deepStrictEqual(msgs(s, 'R06'), ['10.0.30.0/24 閘道：SW_A 10.0.30.1；SW_B 10.0.30.2']);
+  const d = cfgPair(net('gateway=10.0.30.1 dns-server=10.0.10.53,10.0.10.54'), net('gateway=10.0.30.1 dns-server=10.0.10.54,10.0.10.53 ntp-server=10.0.10.123'));
+  assert.deepStrictEqual(msgs(d, 'R06'), [], '順序不同、只有一台設定 NTP 不列');
+  assert.deepStrictEqual(msgs(cfgPair(net('gateway=10.0.30.1'), net('gateway=10.0.30.1 dns-server=10.0.10.53')), 'R06'), []);
+});
+test('A10：同一選單內同一名稱在不同設備對應到不同 IP（名稱不分大小寫）；集合相同或只有一台不列', () => {
+  const al = (list, addr) => `/ip firewall address-list add address=${addr} list=${list}`;
+  const s = cfgPair([al('MGMT', '10.0.10.0/24')], [al('mgmt', '10.0.10.0/24'), al('mgmt', '10.0.99.0/24')]);
+  assert.deepStrictEqual(msgs(s, 'A10'), ['/ip firewall address-list「MGMT」：SW_A 10.0.10.0/24；SW_B 10.0.10.0/24、10.0.99.0/24；10.0.99.0/24 只在 SW_B']);
+  const dns = cfgPair(['/ip dns static add address=10.0.0.5 name=nas.lan'], ['/ip dns static add address=10.0.0.6 name=NAS.lan']);
+  assert.deepStrictEqual(msgs(dns, 'A10'), ['/ip dns static「nas.lan」：SW_A 10.0.0.5；SW_B 10.0.0.6；10.0.0.5 只在 SW_A；10.0.0.6 只在 SW_B']);
+  assert.deepStrictEqual(msgs(cfgPair([al('MGMT', '10.0.10.0/24')], [al('MGMT', '10.0.10.0/24')]), 'A10'), []);
+  assert.deepStrictEqual(msgs(cfgPair([al('MGMT', '10.0.10.0/24')], [al('OTHER', '10.0.20.0/24')]), 'A10'), []);
+});
+test('A11：同一選單內同一 IP 在不同設備的名稱完全不同；名稱有交集不列', () => {
+  const s = cfgPair(['/ip dns static add address=10.0.0.5 name=nas.lan'], ['/ip dns static add address=10.0.0.5 name=storage.lan']);
+  assert.deepStrictEqual(msgs(s, 'A11'), ['/ip dns static 10.0.0.5：SW_A「nas.lan」；SW_B「storage.lan」']);
+  const al = (list) => `/ip firewall address-list add address=10.0.10.0/24 list=${list}`;
+  assert.deepStrictEqual(msgs(cfgPair([al('MGMT'), al('ADMIN')], [al('MGMT')]), 'A11'), [], '某台多一個清單不算');
+});
+test('A12：有設定 DNS／NTP 伺服器的設備之間不同；順序不同、只有一台設定不列', () => {
+  const s = cfgPair(['/ip dns set servers=1.1.1.1,8.8.8.8', '/system ntp client set enabled=yes servers=10.0.0.123'],
+    ['/ip dns set servers=8.8.8.8', '/system ntp client set enabled=yes primary-ntp=10.0.0.123 secondary-ntp=0.0.0.0']);
+  assert.deepStrictEqual(msgs(s, 'A12'), ['DNS 伺服器：SW_A 1.1.1.1、8.8.8.8；SW_B 8.8.8.8']);
+  assert.deepStrictEqual(msgs(cfgPair(['/ip dns set servers=1.1.1.1,8.8.8.8'], ['/ip dns set servers=8.8.8.8,1.1.1.1']), 'A12'), []);
+  assert.deepStrictEqual(msgs(cfgPair(['/ip dns set servers=1.1.1.1'], []), 'A12'), []);
 });
 
 // ------------------------------------------------------------------ 推論鏈路（沒有 LLDP 時）
@@ -855,7 +1000,9 @@ test('查詢：MAC、IP、VLAN、設備、介面描述', () => {
   assert.ok(mac.found && mac.edge.length === 1 && mac.ips.length === 1);
   assert.ok(Q.findMac('aa:aa:aa:aa:aa:aa').found === false);
   const ip = Q.findIp('10.1.20.11');
-  assert.ok(ip.locations.length >= 1 && ip.subnets.length === 2);
+  assert.ok(ip.locations.length >= 1, JSON.stringify(ip.locations));
+  // 範例另有 ACC_11 的 VLAN 40 刻意設在同一網段（A07），所以只檢查兩台核心的 VLAN 20 都在
+  assert.ok(['TPE_CORE_RT_01|vlan20', 'TPE_CORE_RT_02|vlan20'].every((ep) => ip.subnets.some((x) => x.ep === ep)), JSON.stringify(ip.subnets));
   assert.ok(Q.vlan(30).partial.length === 1);
   assert.strictEqual(Q.search('core_rt')[0].type, 'device');
   assert.ok(Q.search('to TPE_ACC_SW_01').some((r) => r.type === 'interface'));

@@ -5,7 +5,8 @@
  * detail 的 key=value 格式在各版本間最一致，也不受欄寬影響。
  *
  *   mikrotik.neighbor   /ip neighbor print detail          鄰居（LLDP／MNDP／CDP）
- *   mikrotik.config     /export terse（或 compact）          介面、bridge、bridge VLAN、bonding、IP、router-id
+ *   mikrotik.config     /export terse（或 compact）          介面、bridge、bridge VLAN、bonding、IP、router-id、
+ *                                                         DHCP 網路、DNS／NTP 伺服器、名稱 ↔ IP 設定（IP_BINDS）
  *   mikrotik.bridgehost /interface bridge host print detail  MAC 表
  *   mikrotik.vlans      /interface bridge vlan print detail  bridge VLAN 實際成員（含動態）
  *   mikrotik.interface  /interface print detail             介面狀態（running／停用）
@@ -150,6 +151,20 @@
     return mon ? `${m[3]}-${String(mon).padStart(2, '0')}-${m[2]}T${time}` : null;
   }
 
+  /*
+   * 組態中「名稱 ↔ IP」的設定（單一來源）：選單 → 名稱欄位、IP 欄位。產生 { t:'ipBind', section, name, value }，供跨設備比對。
+   * multi：值是逗號分隔的多筆（/ip pool 的 ranges）。only：只收這些 type（/ip dns static 只有 A／AAAA 紀錄帶位址，type 省略即 A）。
+   */
+  const IP_BINDS = {
+    '/ip firewall address-list': { name: 'list', value: 'address' },
+    '/ip dns static': { name: 'name', value: 'address', only: { key: 'type', values: ['', 'a', 'aaaa'] } },
+    '/ip pool': { name: 'name', value: 'ranges', multi: true },
+    '/ip dhcp-server lease': { name: 'mac-address', value: 'address' },
+  };
+  // 設備層級的 DNS／NTP 伺服器：0.0.0.0（RouterOS 6 的 primary-ntp／secondary-ntp 預設值）代表未設定
+  // 手冊寫 servers 以空白分隔，export 常見逗號；伺服器名稱不含兩者，所以都當分隔
+  const serverList = (...vals) => vals.flatMap((v) => String(v || '').split(/[\s,]+/)).filter((v) => v && v !== '0.0.0.0' && v !== '::');
+
   // ================================================================ 設定（/export）
   reg({
     id: 'mikrotik.config', vendor: VENDOR, dataType: 'config', label: 'RouterOS 設定',
@@ -223,7 +238,19 @@
             if (cmd === 'add' && kv.name) { const f = { t: 'ifc', ifc: kv.name, rawType: 'vrrp', line }; if (kv.comment) f.desc = kv.comment; emit(f); }
             break;
           case '/ip dhcp-server network':
-            if (cmd === 'add' && kv.address) emit({ t: 'dhcpNet', network: kv.address, gateways: list(kv.gateway), line });
+            if (cmd === 'add' && kv.address) emit({ t: 'dhcpNet', network: kv.address, gateways: list(kv.gateway), dns: list(kv['dns-server']), ntp: list(kv['ntp-server']), line });
+            break;
+          case '/ip dns':
+            if (cmd === 'set' && 'servers' in kv) emit({ t: 'dnsServers', servers: serverList(kv.servers), line });
+            break;
+          case '/system ntp client': { // RouterOS 7：servers=；RouterOS 6：primary-ntp／secondary-ntp
+            if (cmd !== 'set') break;
+            const servers = serverList(kv.servers, kv['primary-ntp'], kv['secondary-ntp']);
+            if (servers.length) emit({ t: 'ntpServers', servers, line });
+            break;
+          }
+          case '/system ntp client servers': // RouterOS 7 的伺服器清單子選單
+            if (cmd === 'add' && kv.address && kv.disabled !== 'yes') emit({ t: 'ntpServers', servers: serverList(kv.address), line });
             break;
           case '/routing id':
             if (cmd === 'add' && kv.name && kv.id) ridNames.set(kv.name, kv.id);
@@ -231,7 +258,15 @@
           case '/routing ospf instance':
             if (kv['router-id']) { ospfRid = kv['router-id']; ospfLine = line; }
             break;
-          default: break;
+          default: {
+            const bind = IP_BINDS[path];
+            if (!bind || cmd !== 'add' || kv.disabled === 'yes' || kv.dynamic === 'yes') break;
+            if (bind.only && !bind.only.values.includes(String(kv[bind.only.key] || '').toLowerCase())) break;
+            const name = kv[bind.name]; const raw = kv[bind.value];
+            if (!name || !raw) break;
+            (bind.multi ? list(raw) : [raw.trim()]).forEach((value) => emit({ t: 'ipBind', section: path, name, value, line }));
+            break;
+          }
         }
       };
       lines.forEach(({ text, line }) => {

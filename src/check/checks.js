@@ -60,9 +60,12 @@
 
   function run(M, ctx) {
     const out = [];
-    const add = (id, message, entities, evidence) => {
+    // extra：個別規則附加的欄位（例如跨設備一致性的 deviation），不可覆寫上列共通欄位
+    const add = (id, message, entities, evidence, extra) => {
       const c = CATALOG[id];
-      out.push({ id, severity: c.severity, cat: c.cat, title: c.title, message, entities: entities || [], evidence: (evidence || []).slice(0, 6) });
+      const f = { id, severity: c.severity, cat: c.cat, title: c.title, message, entities: entities || [], evidence: (evidence || []).slice(0, 6) };
+      Object.keys(extra || {}).forEach((k) => { if (!(k in f)) f[k] = extra[k]; });
+      out.push(f);
     };
     const name = (devKey) => { const d = M.devices.get(devKey); return d ? S.infer.displayName(d) : devKey; };
     const epName = (ep) => { const [d] = K.splitEp(ep); const i = M.ifcs.get(ep); return name(d) + ' ' + (i ? i.name : K.splitEp(ep)[1]); };
@@ -269,6 +272,7 @@
    * 只看已收集設備自己的設定（排除鄰居宣告的介面）；名稱比對 trim＋不分大小寫，值以集合比較（順序不計）。
    * 以 VLAN ID 為鍵的規則（V06、A06）只比同一個 VLAN 區塊；以名稱、網段、IP 為鍵的規則把整份基準視為同一個位址空間（尚無 VRF）。
    * 訊息依設備名稱自然排序，相同設定的設備併成一組。
+   * 除 A09（重複 IP 本身就是衝突）外，各規則以多數決推定偏離的設備（推論），寫在訊息尾端與 finding.deviation。
    */
   const MAX_SHOWN = 8; // 訊息中每台設備最多列出的值，避免大型 address-list 讓訊息過長
   function configConsistency(M, add, name, epName, byDomain) {
@@ -295,6 +299,24 @@
       return Array.from(g.values());
     };
     const devList = (devs) => (devs.length > MAX_SHOWN ? devs.slice(0, MAX_SHOWN).map(name).join('、') + `…（共 ${devs.length} 台）` : devs.map(name).join('、'));
+    /**
+     * 多數決（推論）：台數最多的一組至少 2 台且多於其他每一組時成立，其餘各組的設備推定偏離。
+     * 回傳 { main, deviating: [devKey，依名稱自然排序] }；平手或最多只有 1 台時回傳 null。
+     */
+    const majorityOf = (groups) => {
+      const sorted = groups.slice().sort((a, b) => b.devs.length - a.devs.length);
+      const main = sorted[0];
+      if (!main || main.devs.length < 2 || (sorted[1] && sorted[1].devs.length >= main.devs.length)) return null;
+      return { main, deviating: groups.filter((g) => g !== main).flatMap((g) => g.devs).sort(byName) };
+    };
+    // 附加在訊息尾端的推定結果與 finding 的 deviation 欄位（平手時 deviating 為空陣列）
+    const judge = (groups) => {
+      const m = majorityOf(groups);
+      return {
+        note: m ? `；依多數推定偏離：${devList(m.deviating)}` : '；沒有多數，無法推定',
+        extra: { deviation: { basis: 'majority', deviating: m ? m.deviating : [] } },
+      };
+    };
     const fmtGroups = (groups, fmt) => groups.map((x) => { const v = fmt(x.vals); return devList(x.devs) + (v[0] === '「' ? '' : ' ') + v; }).join('；');
     // 證據最多 6 筆（add() 截斷）：各組輪流取，確保與多數不同的那一組也有來源行
     const interleave = (lists) => { const out = []; for (let k = 0; lists.some((l) => k < l.length); k++) lists.forEach((l) => { if (k < l.length) out.push(l[k]); }); return out; };
@@ -327,7 +349,8 @@
           const perDev = new Map(); sel.forEach((x) => put(perDev, x.dev, norm(x.val), x.val));
           const groups = groupDevs(perDev);
           if (groups.length < 2) return;
-          add('V06', `VLAN ${id} 的 ${attr}：${fmtGroups(groups, quote)}`, entsOf(sel, [{ type: 'vlan', key: String(id) }]), evByGroups(groups, sel, (x) => x.dev, (x) => evsOf([x])));
+          const j = judge(groups);
+          add('V06', `VLAN ${id} 的 ${attr}：${fmtGroups(groups, quote)}${j.note}`, entsOf(sel, [{ type: 'vlan', key: String(id) }]), evByGroups(groups, sel, (x) => x.dev, (x) => evsOf([x])), j.extra);
         });
       });
     });
@@ -339,7 +362,8 @@
         const groups = groupDevs(perDev);
         if (groups.length < 2) return;
         const ids = U.uniq(sel.map((x) => x.id)).sort((a, b) => a - b);
-        add('V07', `${attr}「${sel[0].val}」：${fmtGroups(groups, fmtVlanIds)}`, entsOf(sel, ids.map((id) => ({ type: 'vlan', key: String(id) }))), evByGroups(groups, sel, (x) => x.dev, (x) => evsOf([x])));
+        const j = judge(groups);
+        add('V07', `${attr}「${sel[0].val}」：${fmtGroups(groups, fmtVlanIds)}${j.note}`, entsOf(sel, ids.map((id) => ({ type: 'vlan', key: String(id) }))), evByGroups(groups, sel, (x) => x.dev, (x) => evsOf([x])), j.extra);
       });
     });
 
@@ -355,8 +379,9 @@
         const groups = groupDevs(perDev);
         if (groups.length < 2) return;
         const mask = sel.some((a) => sel.some((b) => a.dev !== b.dev && a.p.len < b.p.len && S.ip.inNet(b.p.net, a.p.net, a.p.len)));
-        add('A06', `VLAN ${id}：${fmtGroups(groups, show)}${mask ? '（網段重疊但遮罩不同）' : ''}`,
-          [{ type: 'vlan', key: String(id) }].concat(U.uniq(sel.map((x) => x.ep)).map((key) => ({ type: 'interface', key }))), evByGroups(groups, sel, (x) => x.dev, (x) => [ev(x.src)]));
+        const j = judge(groups);
+        add('A06', `VLAN ${id}：${fmtGroups(groups, show)}${mask ? '（網段重疊但遮罩不同）' : ''}${j.note}`,
+          [{ type: 'vlan', key: String(id) }].concat(U.uniq(sel.map((x) => x.ep)).map((key) => ({ type: 'interface', key }))), evByGroups(groups, sel, (x) => x.dev, (x) => [ev(x.src)]), j.extra);
       });
     });
 
@@ -367,7 +392,8 @@
       const perDev = new Map(); sel.forEach((x) => put(perDev, x.dev, x.id, x.id));
       const groups = groupDevs(perDev);
       if (groups.length < 2) return;
-      add('A07', `${net}：${fmtGroups(groups, fmtVlanIds)}`, U.uniq(sel.map((x) => x.ep)).map((key) => ({ type: 'interface', key })), evByGroups(groups, sel, (x) => x.dev, (x) => [ev(x.src)]));
+      const j = judge(groups);
+      add('A07', `${net}：${fmtGroups(groups, fmtVlanIds)}${j.note}`, U.uniq(sel.map((x) => x.ep)).map((key) => ({ type: 'interface', key })), evByGroups(groups, sel, (x) => x.dev, (x) => [ev(x.src)]), j.extra);
     });
 
     // ---- A08／A09：所有直連位址（含非 VLAN 介面）
@@ -394,7 +420,10 @@
       const list = group.filter((x) => hit.has(x));
       const parts = list.map((x) => `${x.key}（${devList(Array.from(x.devs.keys()).sort(byName))}）`);
       const locsBy = list.map((x) => Array.from(x.devs.keys()).sort(byName).map((d) => x.devs.get(d)));
-      add('A08', parts.length === 2 ? parts.join('與 ') : parts.join('、'), locsBy.flat().map((l) => ({ type: 'interface', key: l.ep })), interleave(locsBy).map((l) => ev(l.src)));
+      // 多數決以「設備 → 它設定的這些網段」分組：同一台設定多個網段時，以網段組合當成它的設定值
+      const perDev = new Map(); list.forEach((x) => x.devs.forEach((_, d) => put(perDev, d, x.key, x.key)));
+      const jd = judge(groupDevs(perDev));
+      add('A08', (parts.length === 2 ? parts.join('與 ') : parts.join('、')) + jd.note, locsBy.flat().map((l) => ({ type: 'interface', key: l.ep })), interleave(locsBy).map((l) => ev(l.src)), jd.extra);
     }
     const byIp = new Map();
     ownIfcs.forEach((i) => {
@@ -417,7 +446,8 @@
         const perDev = new Map(); sel.forEach((n) => n[k].forEach((v) => put(perDev, n.dev, norm(v), v)));
         const groups = groupDevs(perDev);
         if (groups.length < 2) return;
-        add('R06', `${net} ${label}：${fmtGroups(groups, show)}`, U.uniq(sel.map((n) => n.dev)).sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (n) => n.dev, (n) => [{ block: n.block, line: n.line }]));
+        const j = judge(groups);
+        add('R06', `${net} ${label}：${fmtGroups(groups, show)}${j.note}`, U.uniq(sel.map((n) => n.dev)).sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (n) => n.dev, (n) => [{ block: n.block, line: n.line }]), j.extra);
       });
     });
 
@@ -439,8 +469,9 @@
       });
       const diff = Array.from(where.values()).sort((a, b) => nat(U.uniq(a.vals).sort(nat)[0], U.uniq(b.vals).sort(nat)[0]))
         .map((w) => `${show(w.vals)} 只在 ${devList(w.has)}`);
-      add('A10', `${sel[0].section}「${sel[0].name}」：${fmtGroups(groups, show)}；${diff.join('；')}`,
-        devs.sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (b) => b.dev, (b) => [{ block: b.block, line: b.line }]));
+      const j = judge(groups);
+      add('A10', `${sel[0].section}「${sel[0].name}」：${fmtGroups(groups, show)}；${diff.join('；')}${j.note}`,
+        devs.sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (b) => b.dev, (b) => [{ block: b.block, line: b.line }]), j.extra);
     });
     const byBindValue = new Map(); binds.forEach((b) => U.getOr(byBindValue, b.section + '\u0000' + b.valueKey, () => []).push(b));
     Array.from(byBindValue.keys()).sort(nat).forEach((k) => {
@@ -452,8 +483,9 @@
       const disjoint = sets.some((a, x) => sets.some((b, y) => x < y && !Array.from(a.keys()).some((n) => b.has(n))));
       if (!disjoint) return;
       const groups = groupDevs(perDev);
-      add('A11', `${sel[0].section} ${sel[0].value}：${fmtGroups(groups, quote)}`,
-        Array.from(perDev.keys()).sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (b) => b.dev, (b) => [{ block: b.block, line: b.line }]));
+      const j = judge(groups);
+      add('A11', `${sel[0].section} ${sel[0].value}：${fmtGroups(groups, quote)}${j.note}`,
+        Array.from(perDev.keys()).sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (b) => b.dev, (b) => [{ block: b.block, line: b.line }]), j.extra);
     });
 
     // ---- A12：設備層級的 DNS／NTP 伺服器
@@ -464,7 +496,8 @@
       const groups = groupDevs(perDev);
       if (groups.length < 2) return;
       sel.sort((a, b) => byName(a.key, b.key));
-      add('A12', `${label}：${fmtGroups(groups, show)}`, sel.map((d) => ({ type: 'device', key: d.key })), evByGroups(groups, sel, (d) => d.key, (d) => d[k].src.map(ev)));
+      const j = judge(groups);
+      add('A12', `${label}：${fmtGroups(groups, show)}${j.note}`, sel.map((d) => ({ type: 'device', key: d.key })), evByGroups(groups, sel, (d) => d.key, (d) => d[k].src.map(ev)), j.extra);
     });
   }
 

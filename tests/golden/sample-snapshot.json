@@ -36511,7 +36511,7 @@
    "severity": "warn",
    "cat": "位址",
    "title": "同一 VLAN 在不同設備設定不同網段",
-   "message": "VLAN 10：TPE_ACC_SW_01、TPE_ACC_SW_02、TPE_ACC_SW_03、TPE_ACC_SW_04、TPE_ACC_SW_05、TPE_ACC_SW_06、TPE_ACC_SW_07、TPE_ACC_SW_08…（共 13 台） 10.1.10.0/24；TPE_ACC_SW_10 10.1.10.0/25（網段重疊但遮罩不同）",
+   "message": "VLAN 10：TPE_ACC_SW_01、TPE_ACC_SW_02、TPE_ACC_SW_03、TPE_ACC_SW_04、TPE_ACC_SW_05、TPE_ACC_SW_06、TPE_ACC_SW_07、TPE_ACC_SW_08…（共 13 台） 10.1.10.0/24；TPE_ACC_SW_10 10.1.10.0/25（網段重疊但遮罩不同）；依多數推定偏離：TPE_ACC_SW_10",
    "entities": [
     {
      "type": "vlan",
@@ -36611,14 +36611,20 @@
      "text": "/ip address add address=10.1.10.25/24 interface=vlan10 network=10.1.10.0",
      "file": "sample-bundle.txt"
     }
-   ]
+   ],
+   "deviation": {
+    "basis": "majority",
+    "deviating": [
+     "TPE_ACC_SW_10"
+    ]
+   }
   },
   {
    "id": "A07",
    "severity": "warn",
    "cat": "位址",
    "title": "同一網段在不同設備屬於不同 VLAN",
-   "message": "10.1.20.0/24：TPE_ACC_SW_11 VLAN 40；TPE_CORE_RT_01、TPE_CORE_RT_02 VLAN 20",
+   "message": "10.1.20.0/24：TPE_ACC_SW_11 VLAN 40；TPE_CORE_RT_01、TPE_CORE_RT_02 VLAN 20；依多數推定偏離：TPE_ACC_SW_11",
    "entities": [
     {
      "type": "interface",
@@ -36652,14 +36658,20 @@
      "text": "/ip address add address=10.1.20.3/24 interface=vlan20 network=10.1.20.0",
      "file": "sample-bundle.txt"
     }
-   ]
+   ],
+   "deviation": {
+    "basis": "majority",
+    "deviating": [
+     "TPE_ACC_SW_11"
+    ]
+   }
   },
   {
    "id": "A08",
    "severity": "warn",
    "cat": "位址",
    "title": "重疊網段在不同設備的遮罩不同",
-   "message": "10.1.10.0/24（TPE_ACC_SW_01、TPE_ACC_SW_02、TPE_ACC_SW_03、TPE_ACC_SW_04、TPE_ACC_SW_05、TPE_ACC_SW_06、TPE_ACC_SW_07、TPE_ACC_SW_08…（共 13 台））與 10.1.10.0/25（TPE_ACC_SW_10）",
+   "message": "10.1.10.0/24（TPE_ACC_SW_01、TPE_ACC_SW_02、TPE_ACC_SW_03、TPE_ACC_SW_04、TPE_ACC_SW_05、TPE_ACC_SW_06、TPE_ACC_SW_07、TPE_ACC_SW_08…（共 13 台））與 10.1.10.0/25（TPE_ACC_SW_10）；依多數推定偏離：TPE_ACC_SW_10",
    "entities": [
     {
      "type": "interface",
@@ -36755,7 +36767,13 @@
      "text": "/ip address add address=10.1.10.25/24 interface=vlan10 network=10.1.10.0",
      "file": "sample-bundle.txt"
     }
-   ]
+   ],
+   "deviation": {
+    "basis": "majority",
+    "deviating": [
+     "TPE_ACC_SW_10"
+    ]
+   }
   },
   {
    "id": "A09",
@@ -36797,7 +36815,7 @@
    "severity": "warn",
    "cat": "位址",
    "title": "同一名稱在不同設備對應到不同 IP",
-   "message": "/ip firewall address-list「MGMT」：TPE_CORE_RT_01 10.1.10.0/24；TPE_CORE_RT_02 10.1.10.0/24、10.1.99.0/24；10.1.99.0/24 只在 TPE_CORE_RT_02",
+   "message": "/ip firewall address-list「MGMT」：TPE_CORE_RT_01 10.1.10.0/24；TPE_CORE_RT_02 10.1.10.0/24、10.1.99.0/24；10.1.99.0/24 只在 TPE_CORE_RT_02；沒有多數，無法推定",
    "entities": [
     {
      "type": "device",
@@ -36827,14 +36845,18 @@
      "text": "/ip firewall address-list add address=10.1.99.0/24 list=MGMT",
      "file": "sample-bundle.txt"
     }
-   ]
+   ],
+   "deviation": {
+    "basis": "majority",
+    "deviating": []
+   }
   },
   {
    "id": "A12",
    "severity": "warn",
    "cat": "位址",
    "title": "各設備的 DNS／NTP 伺服器設定不同",
-   "message": "DNS 伺服器：TPE_CORE_RT_01 1.1.1.1、8.8.8.8；TPE_CORE_RT_02 8.8.8.8",
+   "message": "DNS 伺服器：TPE_CORE_RT_01 1.1.1.1、8.8.8.8；TPE_CORE_RT_02 8.8.8.8；沒有多數，無法推定",
    "entities": [
     {
      "type": "device",
@@ -36858,7 +36880,11 @@
      "text": "/ip dns set allow-remote-requests=yes servers=8.8.8.8",
      "file": "sample-bundle.txt"
     }
-   ]
+   ],
+   "deviation": {
+    "basis": "majority",
+    "deviating": []
+   }
   },
   {
    "id": "C02",
@@ -37035,7 +37061,7 @@
    "severity": "warn",
    "cat": "路由",
    "title": "同一 DHCP 網段在不同設備的閘道、DNS 或 NTP 不同",
-   "message": "10.1.30.0/24 閘道：TPE_CORE_RT_01 10.1.30.1；TPE_CORE_RT_02 10.1.30.3",
+   "message": "10.1.30.0/24 閘道：TPE_CORE_RT_01 10.1.30.1；TPE_CORE_RT_02 10.1.30.3；沒有多數，無法推定",
    "entities": [
     {
      "type": "device",
@@ -37059,7 +37085,11 @@
      "text": "/ip dhcp-server network add address=10.1.30.0/24 dns-server=10.1.10.2 gateway=10.1.30.3",
      "file": "sample-bundle.txt"
     }
-   ]
+   ],
+   "deviation": {
+    "basis": "majority",
+    "deviating": []
+   }
   },
   {
    "id": "V01",
@@ -37108,7 +37138,7 @@
    "severity": "warn",
    "cat": "VLAN",
    "title": "同一名稱在不同設備對應到不同 VLAN",
-   "message": "VLAN 介面說明「MGMT」：TPE_ACC_SW_12 VLAN 99；TPE_CORE_RT_01、TPE_CORE_RT_02 VLAN 10",
+   "message": "VLAN 介面說明「MGMT」：TPE_ACC_SW_12 VLAN 99；TPE_CORE_RT_01、TPE_CORE_RT_02 VLAN 10；依多數推定偏離：TPE_ACC_SW_12",
    "entities": [
     {
      "type": "vlan",
@@ -37150,7 +37180,13 @@
      "text": "/interface vlan add interface=bridge1 name=vlan10 vlan-id=10 comment=MGMT",
      "file": "sample-bundle.txt"
     }
-   ]
+   ],
+   "deviation": {
+    "basis": "majority",
+    "deviating": [
+     "TPE_ACC_SW_12"
+    ]
+   }
   },
   {
    "id": "A03",
@@ -37350,7 +37386,7 @@
    "severity": "info",
    "cat": "位址",
    "title": "同一 IP 在不同設備以不同名稱設定",
-   "message": "/ip dns static 10.1.20.50：TPE_CORE_RT_01「nas.tpe.lan」；TPE_CORE_RT_02「storage.tpe.lan」",
+   "message": "/ip dns static 10.1.20.50：TPE_CORE_RT_01「nas.tpe.lan」；TPE_CORE_RT_02「storage.tpe.lan」；沒有多數，無法推定",
    "entities": [
     {
      "type": "device",
@@ -37374,7 +37410,11 @@
      "text": "/ip dns static add address=10.1.20.50 name=storage.tpe.lan",
      "file": "sample-bundle.txt"
     }
-   ]
+   ],
+   "deviation": {
+    "basis": "majority",
+    "deviating": []
+   }
   },
   {
    "id": "C01",
@@ -37532,7 +37572,7 @@
    "severity": "info",
    "cat": "VLAN",
    "title": "同一 VLAN 在不同設備的名稱或說明不同",
-   "message": "VLAN 10 的 VLAN 介面說明：TPE_ACC_SW_01「Management」；TPE_CORE_RT_01、TPE_CORE_RT_02「MGMT」",
+   "message": "VLAN 10 的 VLAN 介面說明：TPE_ACC_SW_01「Management」；TPE_CORE_RT_01、TPE_CORE_RT_02「MGMT」；依多數推定偏離：TPE_ACC_SW_01",
    "entities": [
     {
      "type": "vlan",
@@ -37570,7 +37610,13 @@
      "text": "/interface vlan add interface=bridge1 name=vlan10 vlan-id=10 comment=MGMT",
      "file": "sample-bundle.txt"
     }
-   ]
+   ],
+   "deviation": {
+    "basis": "majority",
+    "deviating": [
+     "TPE_ACC_SW_01"
+    ]
+   }
   }
  ],
  "coverage": [

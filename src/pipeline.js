@@ -135,11 +135,12 @@
     ipAddresses.forEach((a) => {
       if (a.hearsay || a.ip === null || a.len >= 32) return;
       const net = S.ip.parseCidr(a.address).net; const prefix = net + '/' + a.len;
-      const p = U.getOr(prefixMap, prefix, () => ({ prefix, net, len: a.len, family: 4, vrf: null, basis: 'connected', vlan: null, eps: [] }));
-      const enc = M.ifcs.get(a.ep).encapVlan; if (enc != null && p.vlan == null) p.vlan = enc; // 網段設在 VLAN 介面上：所屬 VLAN
+      const p = U.getOr(prefixMap, prefix, () => ({ prefix, net, len: a.len, family: 4, vrf: null, basis: 'connected', vlan: null, vlans: [], eps: [] }));
+      const enc = M.ifcs.get(a.ep).encapVlan; if (enc != null && !p.vlans.includes(enc)) p.vlans.push(enc); // 網段設在 VLAN 介面上：所屬 VLAN
       if (!p.eps.includes(a.ep)) p.eps.push(a.ep);
     });
-    const prefixes = Array.from(prefixMap.values()).map((p) => Object.assign(p, { eps: p.eps.sort(nat) }))
+    // 各設備把同一網段設在不同 VLAN（A07）時 vlan 不明確，為 null；vlans 列出全部
+    const prefixes = Array.from(prefixMap.values()).map((p) => Object.assign(p, { vlan: p.vlans.length === 1 ? p.vlans[0] : null, vlans: p.vlans.sort((x, y) => x - y), eps: p.eps.sort(nat) }))
       .sort((a, b) => nat(a.net, b.net) || a.len - b.len);
 
     // Wi-Fi 關聯表的原始紀錄（事實）；macs[].wifi 是依此與 MAC 表推論出的位置

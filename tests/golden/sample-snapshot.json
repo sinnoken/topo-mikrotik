@@ -24670,6 +24670,9 @@
     "vrf": null,
     "basis": "connected",
     "vlan": 10,
+    "vlans": [
+     10
+    ],
     "eps": [
      "TPE_ACC_SW_01|vlan10",
      "TPE_ACC_SW_02|vlan10",
@@ -24694,6 +24697,9 @@
     "vrf": null,
     "basis": "connected",
     "vlan": 10,
+    "vlans": [
+     10
+    ],
     "eps": [
      "TPE_ACC_SW_10|vlan10"
     ]
@@ -24705,7 +24711,11 @@
     "family": 4,
     "vrf": null,
     "basis": "connected",
-    "vlan": 20,
+    "vlan": null,
+    "vlans": [
+     20,
+     40
+    ],
     "eps": [
      "TPE_ACC_SW_11|vlan40",
      "TPE_CORE_RT_01|vlan20",
@@ -24720,6 +24730,9 @@
     "vrf": null,
     "basis": "connected",
     "vlan": 30,
+    "vlans": [
+     30
+    ],
     "eps": [
      "TPE_CORE_RT_01|vlan30",
      "TPE_CORE_RT_02|vlan30"
@@ -24733,6 +24746,7 @@
     "vrf": null,
     "basis": "connected",
     "vlan": null,
+    "vlans": [],
     "eps": [
      "TPE_CORE_RT_01|ether46"
     ]
@@ -24745,6 +24759,7 @@
     "vrf": null,
     "basis": "connected",
     "vlan": null,
+    "vlans": [],
     "eps": [
      "TPE_CORE_RT_01|ether47"
     ]
@@ -24757,6 +24772,7 @@
     "vrf": null,
     "basis": "connected",
     "vlan": null,
+    "vlans": [],
     "eps": [
      "TPE_CORE_RT_02|ether47"
     ]

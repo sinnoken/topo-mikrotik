@@ -661,7 +661,11 @@ test('VRRP 位址標示角色、網段帶出所屬 VLAN；R05 只在閘道不在
     '/ip address add address=10.1.30.2/24 interface=vlan30', '/ip address add address=10.1.30.1/32 interface=vrrp30',
     '/ip dhcp-server network add address=10.1.30.0/24 gateway=10.1.30.1', '/ip dhcp-server network add address=10.1.20.0/24 gateway=10.1.21.1'].join('\n'));
   assert.deepStrictEqual(s.model.ipAddresses.map((a) => [a.address, a.role]), [['10.1.30.1/32', 'vrrp'], ['10.1.30.2/24', null]]);
-  assert.deepStrictEqual(s.model.prefixes.map((p) => [p.prefix, p.vlan]), [['10.1.30.0/24', 30]]);
+  assert.deepStrictEqual(s.model.prefixes.map((p) => [p.prefix, p.vlan, p.vlans]), [['10.1.30.0/24', 30, [30]]]);
+  // 同一網段在不同設備設在不同 VLAN：vlan 不明確（null），vlans 列出全部
+  const two = build(['R1 (10.0.0.1):', '### /export terse', '/interface vlan add interface=bridge1 name=vlan30 vlan-id=30', '/ip address add address=10.1.30.2/24 interface=vlan30',
+    'R2 (10.0.0.2):', '### /export terse', '/interface vlan add interface=bridge1 name=vlan40 vlan-id=40', '/ip address add address=10.1.30.3/24 interface=vlan40'].join('\n'));
+  assert.deepStrictEqual(two.model.prefixes.map((p) => [p.prefix, p.vlan, p.vlans]), [['10.1.30.0/24', null, [30, 40]]]);
   assert.strictEqual(iface(s, 'R|vrrp30').type, 'virtual');
   assert.deepStrictEqual(s.findings.filter((f) => f.id === 'R05').map((f) => f.message), ['R：10.1.20.0/24 的閘道 10.1.21.1 不在網段內']);
 });

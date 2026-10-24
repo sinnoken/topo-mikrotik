@@ -13,6 +13,7 @@ EOF
 cat > "$TMP_DIR/ssh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+DIR=$(cd "$(dirname "$0")" && pwd)
 command_name=
 for argument in "$@"; do target=${command_name:-}; command_name=$argument; done
 # FAKE_SSH_UNREACHABLE：這個位址連不上（OpenSSH 為 255），--ask-password 的 -fN 也失敗
@@ -52,6 +53,9 @@ if [[ "$command_name" == "/interface print detail without-paging" ]]; then
   done
   exit 0
 fi
+# 有準備好的回應檔（responses/指令的英數字）時原樣輸出
+response="$DIR/responses/$(printf '%s' "$command_name" | tr -c 'A-Za-z0-9' '_')"
+if [[ -f "$response" ]]; then cat "$response"; exit 0; fi
 if [[ "${FAKE_SSH_MODE:-ok}" == "fail-route" && "$command_name" == *"/ip route "* ]]; then
   printf 'permission denied\n' >&2
   exit 7
@@ -80,6 +84,99 @@ awk '
 run_collector "$TMP_DIR/devices.csv" --dry-run --commands config,neighbor >"$TMP_DIR/dry-run.txt"
 grep -q 'TEST_ROUTER: /export terse' "$TMP_DIR/dry-run.txt"
 grep -q 'TEST_ROUTER: /ip neighbor print detail without-paging' "$TMP_DIR/dry-run.txt"
+
+# 所有收集指令都是唯讀：只有 /export terse、print 與 monitor … once，不可有 reset-counters 等會改設定或計數器的指令
+(
+  # shellcheck source=tools/collector-commands.sh
+  source "$ROOT/tools/collector-commands.sh"
+  print_re='^/[a-z0-9 -]+ print( [a-z-]+)*$'
+  monitor_re='^/interface bridge( port)? monitor \[find\] once$'
+  write_re=' (reset|reset-counters|reset-counters-all|set|add|remove|move|enable|disable|unset|edit|import|run) '
+  for id in "${COLLECT_COMMAND_IDS[@]}" "${OPTIONAL_COMMAND_IDS[@]}"; do
+    command=$(command_for_id "$id")
+    [[ "$command" == '/export terse' || "$command" =~ $print_re || "$command" =~ $monitor_re ]] ||
+      { printf '%s: not a read-only command: %s\n' "$id" "$command" >&2; exit 1; }
+    if [[ " $command " =~ $write_re ]]; then printf '%s: command must not change state: %s\n' "$id" "$command" >&2; exit 1; fi
+    [[ "$(id_for_command "$command")" == "$id" ]] || { printf '%s: id_for_command must map back\n' "$id" >&2; exit 1; }
+  done
+)
+
+# 防火牆命中次數：每個表一個指令（print stats），預設清單中緊接在 export 之後
+FW_IDS=fwfilter,fwnat,fwraw,fw6filter,fw6raw
+cat > "$TMP_DIR/fw-dry.expected" <<'EOF'
+TEST_ROUTER: /export terse
+TEST_ROUTER: /ip firewall filter print stats detail without-paging
+TEST_ROUTER: /ip firewall nat print stats detail without-paging
+TEST_ROUTER: /ip firewall raw print stats detail without-paging
+TEST_ROUTER: /ipv6 firewall filter print stats detail without-paging
+TEST_ROUTER: /ipv6 firewall raw print stats detail without-paging
+TEST_ROUTER: /ip neighbor print detail without-paging
+EOF
+run_collector "$TMP_DIR/devices.csv" --dry-run >"$TMP_DIR/dry-default.txt"
+head -n 7 "$TMP_DIR/dry-default.txt" | diff "$TMP_DIR/fw-dry.expected" - || { printf 'firewall stats must follow /export terse\n' >&2; exit 1; }
+# RouterOS 7 的 detail 輸出（手寫，格式依手冊推定）：數字以空白分千位、行尾有空白、帶 CR；
+# 動態規則（D）與停用規則（X）、沒有規則的表都原樣保留
+mkdir -p "$TMP_DIR/responses"
+fw_response() { printf '%s\r\n' "${@:2}" > "$TMP_DIR/responses/$(printf '%s' "$1" | tr -c 'A-Za-z0-9' '_')"; }
+fw_response '/ip firewall filter print stats detail without-paging' \
+  'Flags: X - disabled, I - invalid; D - dynamic ' \
+  ' 0  D ;;; special dummy rule to show fasttrack counters' \
+  '      chain=forward action=passthrough bytes=50 507 925 242 packets=50 048 246 ' '' \
+  ' 1    ;;; defconf: drop invalid' \
+  '      chain=input action=drop bytes=125 943 packets=2 434 ' '' \
+  ' 2 X  ;;; old winbox rule' \
+  '      chain=input action=accept bytes=0 packets=0 '
+fw_response '/ip firewall nat print stats detail without-paging' \
+  'Flags: X - disabled, I - invalid; D - dynamic ' \
+  ' 0    ;;; defconf: masquerade' \
+  '      chain=srcnat action=masquerade bytes=3 912 448 120 packets=4 101 733 '
+fw_response '/ip firewall raw print stats detail without-paging' 'Flags: X - disabled, I - invalid; D - dynamic '
+fw_response '/ipv6 firewall filter print stats detail without-paging' \
+  'Flags: X - disabled, I - invalid; D - dynamic ' \
+  ' 0    ;;; defconf: drop everything else not coming from LAN' \
+  '      chain=input action=drop bytes=17 512 packets=146 '
+fw_response '/ipv6 firewall raw print stats detail without-paging' 'Flags: X - disabled, I - invalid; D - dynamic '
+run_collector "$TMP_DIR/devices.csv" --commands "config,$FW_IDS" --output "$TMP_DIR/fw.txt" >"$TMP_DIR/fw.log"
+# 每個區塊：### 指令、# collected-at、RouterOS 的輸出逐位元組不變
+# （BINMODE=3：Windows 的 gawk 預設會拿掉 CR；其他 awk 把它當成一般變數）
+block_body() { awk -v BINMODE=3 -v marker="### $1" '
+  on && (/^### / || /^_____$/) { exit }
+  on && stamped { print; next }
+  on && /^# collected-at: / { stamped = 1; next }
+  $0 == marker { on = 1 }
+' "$2"; }
+for id in ${FW_IDS//,/ }; do
+  command=$(source "$ROOT/tools/collector-commands.sh"; command_for_id "$id")
+  [[ $(grep -cxF "### $command" "$TMP_DIR/fw.txt") == 1 ]] || { printf '%s: expected one block\n' "$id" >&2; exit 1; }
+  grep -A1 -xF "### $command" "$TMP_DIR/fw.txt" | grep -q '^# collected-at: ' || { printf '%s: missing collected-at\n' "$id" >&2; exit 1; }
+  cmp <(block_body "$command" "$TMP_DIR/fw.txt") "$TMP_DIR/responses/$(printf '%s' "$command" | tr -c 'A-Za-z0-9' '_')" ||
+    { printf '%s: output must be written unchanged\n' "$id" >&2; exit 1; }
+done
+grep -q '^# collection failed: ' "$TMP_DIR/fw.txt" && { printf 'firewall stats collection must succeed\n' >&2; exit 1; }
+# 網站讀入：每個指令一個區塊，都有收集時間、沒有失敗與註解問題
+node -e '
+  const S = require(process.argv[1])();
+  const text = require("fs").readFileSync(process.argv[2], "utf8");
+  const s = S.build([{ name: "fw.txt", text }], { now: "2026-01-01T00:00:00Z" });
+  const want = ["/export terse", ...["ip firewall filter", "ip firewall nat", "ip firewall raw", "ipv6 firewall filter", "ipv6 firewall raw"]
+    .map((t) => `/${t} print stats detail without-paging`)];
+  const got = s.blocks.map((b) => b.command);
+  const bad = s.blocks.filter((b) => b.failure || b.issues || !b.collectedAt).length;
+  if (JSON.stringify(got) !== JSON.stringify(want) || bad) { console.error(got, bad); process.exit(1); }
+' "$ROOT/tests/load.js" "$TMP_DIR/fw.txt" || { printf 'firewall stats blocks must read as one block per command\n' >&2; exit 1; }
+# 沒有 IPv6 選單的設備（RouterOS 6 未啟用 ipv6 套件）：IPv6 兩個指令失敗並記錄，可用 --retry-failed 只重收這兩個
+if FAKE_SSH_FAIL_ON='*@192.0.2.1 /ipv6 *' run_collector "$TMP_DIR/devices.csv" --commands "$FW_IDS" \
+  --output "$TMP_DIR/fw-v6fail.txt" >/dev/null 2>&1; then
+  printf 'failed ipv6 firewall stats must fail the collection\n' >&2; exit 1
+fi
+[[ $(grep -c '^# collection failed: exit code 7$' "$TMP_DIR/fw-v6fail.txt") == 2 ]] || { printf 'expected 2 ipv6 failures\n' >&2; exit 1; }
+run_collector "$TMP_DIR/devices.csv" --retry-failed "$TMP_DIR/fw-v6fail.txt" --dry-run >"$TMP_DIR/fw-retry-dry.txt"
+cat > "$TMP_DIR/fw-retry-dry.expected" <<'EOF'
+TEST_ROUTER: /ipv6 firewall filter print stats detail without-paging（上次失敗：exit code 7）
+TEST_ROUTER: /ipv6 firewall raw print stats detail without-paging（上次失敗：exit code 7）
+EOF
+diff "$TMP_DIR/fw-retry-dry.expected" "$TMP_DIR/fw-retry-dry.txt" || { printf 'retry must list the failed ipv6 commands\n' >&2; exit 1; }
+rm -rf "$TMP_DIR/responses"
 
 if FAKE_SSH_MODE=fail-route run_collector "$TMP_DIR/devices.csv" --commands config,route \
   --output "$TMP_DIR/partial.txt" >"$TMP_DIR/partial.log" 2>"$TMP_DIR/partial.err"; then

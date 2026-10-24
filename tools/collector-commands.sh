@@ -1,14 +1,29 @@
 #!/usr/bin/env bash
 
-COLLECT_COMMAND_IDS=(config neighbor bridgehost route arp system vlans interface ipaddr ospf stp stpbridge)
+# 防火牆命中次數（fwfilter…fw6raw）緊接在 config 之後：export 與計數器的收集時間越近，
+# 中間有人增刪規則而對不上的機會越小
+COLLECT_COMMAND_IDS=(config fwfilter fwnat fwraw fw6filter fw6raw neighbor bridgehost route arp system vlans interface ipaddr ospf stp stpbridge)
 # 選用：只有部分設備才有的選單（Wi-Fi AP、CAPsMAN 控制器），不在預設清單；
 # 用 --commands 或設備清單的 extra 欄指定，避免在交換器上執行而得到錯誤回應；
 # 確定支援的設備會依 auto_optional_commands 自動加上
 OPTIONAL_COMMAND_IDS=(wifi wireless capsman)
 
+# 防火牆規則的命中次數（bytes、packets）：只用 print stats，不用 reset-counters 等會改計數器的指令。
+# 每個表一個指令、一個區塊（ID 與指令一對一，--retry-failed 才能由 ### 標記找回 ID）；
+# 只收 export 會解析的表（/ip firewall filter|nat|raw、/ipv6 firewall filter|raw）。
+# 依據：https://manual.mikrotik.com/docs/firewall-and-quality-of-service/firewall/common-firewall-matchers-and-actions.md
+#   （print stats 的 bytes、packets；print 預設等於 print static，只列靜態規則）
+# 加 detail without-paging 的理由同其他指令：key=value 不受欄寬影響
+# （https://manual.mikrotik.com/docs/developer-guides/scripting.md 的 print parameters）。
+# stats 與 detail 並用的輸出格式手冊沒有範例，尚未以真實設備確認。
 command_for_id() {
   case "$1" in
     config) printf '%s\n' '/export terse' ;;
+    fwfilter) printf '%s\n' '/ip firewall filter print stats detail without-paging' ;;
+    fwnat) printf '%s\n' '/ip firewall nat print stats detail without-paging' ;;
+    fwraw) printf '%s\n' '/ip firewall raw print stats detail without-paging' ;;
+    fw6filter) printf '%s\n' '/ipv6 firewall filter print stats detail without-paging' ;;
+    fw6raw) printf '%s\n' '/ipv6 firewall raw print stats detail without-paging' ;;
     neighbor) printf '%s\n' '/ip neighbor print detail without-paging' ;;
     bridgehost) printf '%s\n' '/interface bridge host print detail without-paging' ;;
     route) printf '%s\n' '/ip route print detail without-paging' ;;

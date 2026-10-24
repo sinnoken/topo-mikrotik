@@ -131,6 +131,41 @@
     { code: 'ipv4-main', message: '只算 IPv4 與 main 路由表（vrf 固定為 null，VRF 在 M3）' },
     { code: 'src-port', message: '來源埠由用戶端自選，比對來源埠的條件無法判斷' },
   ]);
+  /**
+   * Q.reach 的原因代碼與結束代碼（靜態清單，S.query.reachReasonCodes() 回傳）：
+   *   kind 'end'：路徑結束的代碼（paths[].end.code；結果不是允許時也會出現在 reasons，拒絕時出現在決定結果的 route）
+   *   kind 'reason'：只出現在 reasons／notes／hops[].reasons 的代碼
+   * 新增代碼時一定要加在這裡（reason／end 遇到不在清單的代碼會丟出錯誤，tests/core/reach.js 也會掃描本檔確認）。
+   */
+  const REASON_CODES = deepFreeze([
+    { code: 'rule-condition', kind: 'reason', note: '規則的比對條件無法判斷（keys 列出條件）' },
+    { code: 'raw-notrack', kind: 'reason', note: 'raw 規則 notrack，之後依連線狀態比對的規則結果不明' },
+    { code: 'no-firewall-data', kind: 'reason', note: '設備沒有 /export，防火牆規則不明' },
+    { code: 'srcnat-ambiguous', kind: 'reason', note: 'srcnat 可能由不同的規則改寫' },
+    { code: 'srcnat-address-unknown', kind: 'reason', note: 'srcnat 改寫後的來源位址不明' },
+    { code: 'branches-differ', kind: 'reason', note: '多條路徑（ECMP、多個閘道）結果不同' },
+    { code: 'branch-limit', kind: 'reason', note: '路徑超過上限，只列出前面幾條' },
+    { code: 'nat-ambiguous', kind: 'end', note: 'dstnat 可能由不同的規則改寫；同時也是原因' },
+    { code: 'nat-target', kind: 'end', note: 'dst-nat／redirect／netmap 改寫後的位址或埠不明；同時也是原因' },
+    { code: 'loop', kind: 'end', note: '路由迴圈（拒絕）' },
+    { code: 'ttl', kind: 'end', note: 'TTL 用盡（不明）' },
+    { code: 'device-uncollected', kind: 'end', note: '路徑上的設備沒有收集（不明）' },
+    { code: 'dropped', kind: 'end', note: '被規則丟棄（拒絕）' },
+    { code: 'local', kind: 'end', note: '目的是設備自己的位址（送達）' },
+    { code: 'no-route-data', kind: 'end', note: '設備沒有路由表資料（不明）' },
+    { code: 'no-route', kind: 'end', note: '沒有符合的路由（拒絕）' },
+    { code: 'blackhole', kind: 'end', note: '黑洞路由（拒絕）' },
+    { code: 'next-hop-outside', kind: 'end', note: '下一跳不在基準內（不明）' },
+    { code: 'dst-device-uncollected', kind: 'end', note: '目的位址屬於沒有收集的設備（不明）' },
+    { code: 'host', kind: 'end', note: '送達主機（主機防火牆不在範圍內）' },
+    { code: 'segment', kind: 'end', note: '送達直連網段上的主機' },
+    { code: 'src-device-uncollected', kind: 'end', note: '來源位址屬於沒有收集的設備（不明）' },
+    { code: 'src-location-unknown', kind: 'end', note: '找不到包含來源的網段（不明）' },
+    { code: 'same-subnet', kind: 'end', note: '來源與目的在同一個網段（送達）' },
+    { code: 'no-gateway', kind: 'end', note: '來源網段沒有可當閘道的已收集設備（不明）' },
+  ]);
+  const REASON_CODE_SET = new Set(REASON_CODES.map((x) => x.code));
+  const checkCode = (code) => { if (!REASON_CODE_SET.has(code)) throw new Error(`原因代碼 ${code} 不在 REASON_CODES（src/query/trace.js）`); return code; };
   /** 無法判斷的條件鍵 → 原因。 */
   const KEY_WHY = {
     'src-address-list': 'address-list 的內容不在基準中（export 只有名稱與靜態項目，不展開，也沒有動態項目）',
@@ -251,7 +286,7 @@
       code: 'rule-condition', dev, rule: u.rule, keys: u.keys,
       message: `${where(u.rule)} 的條件 ${u.keys.join('、')} 無法判斷：${U.uniq(u.keys.map(keyWhy)).join('；')}`,
     }));
-    const reason = (code, dev, message, extra) => Object.assign({ code, dev: dev || null, message }, extra);
+    const reason = (code, dev, message, extra) => Object.assign({ code: checkCode(code), dev: dev || null, message }, extra);
 
     // ---- NAT 改寫
     const single = (text) => { if (text === undefined) return undefined; const t = String(text).trim(); if (IP.isIp(t)) return t; const r = t.match(/^(\d+\.\d+\.\d+\.\d+)-(\d+\.\d+\.\d+\.\d+)$/); return r && r[1] === r[2] && IP.isIp(r[1]) ? r[1] : null; };
@@ -300,7 +335,7 @@
     const outEpFor = (dev, ip) => { const s = Q.subnetsOf(dev).filter((x) => IP.inNet(ip, x.net, x.len)).sort((a, b) => b.len - a.len)[0]; return s ? s.ep : undefined; };
     const lookMemo = new Map();
     const look = (dev, dst) => U.getOr(level(lookMemo, dev), dst, () => lookup(Q, dev, dst));
-    const end = (status, verdict, code, dev, message, extra) => Object.assign({ status, verdict, code, dev: dev || null, message }, extra);
+    const end = (status, verdict, code, dev, message, extra) => Object.assign({ status, verdict, code: checkCode(code), dev: dev || null, message }, extra);
     const newHop = (dev, inEp, st, chain) => ({
       dev, name: name(dev), collected: devInfo(dev).collected, firewall: devInfo(dev).config ? 'export' : 'none', chain, in: inEp === undefined ? null : inEp, inKnown: inEp !== undefined,
       out: null, outKnown: true, src: st.src, dst: st.dst, proto: st.proto, port: st.port, srcOut: st.src, dstOut: st.dst, portOut: st.port,
@@ -840,12 +875,23 @@
       services.forEach((s, i) => U.getOr(out, keyOf(s), () => []).push(i));
       return Array.from(out.values());
     }
-    function matrixRaw(opts) {
+    /** 把 generator 跑完，回傳它的結果（同步版與分段版共用同一份判斷）。 */
+    const runAll = (it) => { let r = it.next(); while (!r.done) r = it.next(); return r.value; };
+    /**
+     * 分段計算（Q.zoneMatrixSteps）每一段的時間預算：一次判斷約 0.05–0.3 ms（快取冷的時候較慢），格子的大小也差很多，
+     * 用固定的次數切不出穩定的段長，所以每 SLICE_CHECK 個單位看一次經過的時間，超過 SLICE_MS 就讓出。
+     * 時間只決定在哪裡讓出（yield 的次數），不影響任何結果（可重現）；1000 台時每段約 SLICE_MS 加上一個單位的時間。
+     */
+    const SLICE_MS = 25;
+    const SLICE_CHECK = 8;
+    const slicer = () => { let t0 = Date.now(); let n = 0; return () => { if (++n < SLICE_CHECK) return false; n = 0; const t = Date.now(); if (t - t0 < SLICE_MS) return false; t0 = t; return true; }; };
+    function* matrixRawSteps(opts) {
       const o = opts || {};
       const zs = zones(o); zs.optsRaw = o;
       const services = servicesOf(o.services);
       const ck = JSON.stringify([zs.opts.profHash, zs.opts.sources, services.map(svcId)]);
       if (matrixCache.has(ck)) return matrixCache.get(ck);
+      yield { stage: 'reps', done: 0, total: 1 };
       const reps = repsOf(zs); const vips = vipsOf(zs);
       const zoneIds = zs.zones.map((z) => z.id);
       const srcReps = []; zoneIds.forEach((z) => (reps.get(z) || []).forEach((r) => srcReps.push(r)));
@@ -853,33 +899,53 @@
       const cells = new Map();
       const cellOf = (a, b) => U.getOr(cells, a + '\u0000' + b, () => ({ src: a, dst: b, recs: [] }));
       const classes = svcClasses(services);
-      srcReps.forEach((a, ai) => targets.forEach((t, ti) => {
-        if (a.ip === t.ip) return;
-        classes.forEach((sis) => {
-          const rp = services[sis[0]].port;
-          const { sum } = evaluate(a.ip, t.ip, services[sis[0]], 'atom', null, null);
-          if (t.via === 'nat' && !sum.nat) return; // dst-nat 的入口只算真的被改寫的
-          let dz = t.zone;
-          if (sum.final && sum.final.dst !== t.ip) { const z = zoneOf(sum.final.dst, o); if (z) dz = z.zone; }
-          const c = cellOf(a.zone, dz);
-          sis.forEach((si) => c.recs.push({ ai, ti, si, sum, rp }));
-        });
-      }));
+      // 判斷次數的上限（來源代表 × 目的 × service 等價類，扣掉來源與目的相同的）只用來回報進度
+      const total = srcReps.length * targets.length * classes.length;
+      let done = 0;
+      yield { stage: 'evaluate', done, total };
+      const due = slicer();
+      for (let ai = 0; ai < srcReps.length; ai++) {
+        const a = srcReps[ai];
+        for (let ti = 0; ti < targets.length; ti++) {
+          const t = targets[ti];
+          for (const sis of classes) {
+            done++;
+            if (a.ip === t.ip) continue;
+            const rp = services[sis[0]].port;
+            const { sum } = evaluate(a.ip, t.ip, services[sis[0]], 'atom', null, null);
+            if (!(t.via === 'nat' && !sum.nat)) { // dst-nat 的入口只算真的被改寫的
+              let dz = t.zone;
+              if (sum.final && sum.final.dst !== t.ip) { const z = zoneOf(sum.final.dst, o); if (z) dz = z.zone; }
+              const c = cellOf(a.zone, dz);
+              sis.forEach((si) => c.recs.push({ ai, ti, si, sum, rp }));
+            }
+            if (due() && done < total) yield { stage: 'evaluate', done, total };
+          }
+        }
+      }
+      // 跑完才寫進快取：中途放棄的 generator 不會留下不完整的結果
+      if (matrixCache.has(ck)) return matrixCache.get(ck);
       const res = { zs, services, srcReps, targets, cells, zoneIds, opts: o };
       matrixCache.set(ck, res);
       return res;
     }
-    function cellSummary(mx, c) {
+    const matrixRaw = (opts) => runAll(matrixRawSteps(opts));
+    /** 一格的摘要（L0 的格子）：逐筆累加（add），最後 finish；分段計算時可以在記錄之間讓出。 */
+    function cellAcc(mx, c) {
       const counts = { allow: 0, deny: 0, unknown: 0, total: 0 };
       const bySvc = mx.services.map(() => ({ allow: 0, deny: 0, unknown: 0, total: 0 }));
       const rules = new Map(); const reasons = new Map();
       const byDst = new Map(); const bySrc = new Map();
-      c.recs.forEach((r) => {
+      const add = (r) => {
         const v = r.sum.verdict; counts[v]++; counts.total++; bySvc[r.si][v]++; bySvc[r.si].total++;
         r.sum.decisive.forEach((x, id) => { const e = U.getOr(rules, id + '\u0000' + x.verdict, () => Object.assign({ id, count: 0 }, x)); e.count++; });
         if (v === 'unknown') r.sum.reasons.forEach((x) => reasons.set(x.code, (reasons.get(x.code) || 0) + 1));
         if (v !== 'unknown') { U.getOr(byDst, r.ti + '|' + r.si, () => new Set()).add(v); U.getOr(bySrc, r.ai + '|' + r.si, () => new Set()).add(v); }
-      });
+      };
+      return { add, finish: () => cellFinish(mx, c, { counts, bySvc, rules, reasons, byDst, bySrc }) };
+    }
+    function cellSummary(mx, c) { const acc = cellAcc(mx, c); c.recs.forEach(acc.add); return acc.finish(); }
+    function cellFinish(mx, c, { counts, bySvc, rules, reasons, byDst, bySrc }) {
       const het = Array.from(byDst.values()).some((s) => s.size > 1) || Array.from(bySrc.values()).some((s) => s.size > 1);
       const ruleList = Array.from(rules.values()).sort((a, b) => b.count - a.count || U.cmp(a.id, b.id)).map(({ id, ...x }) => Object.assign({ id }, x, x.key ? { rule: ref(Q.getFirewallRule(x.key)) } : {}));
       return {
@@ -890,16 +956,40 @@
       };
     }
     const l0Cache = new Map();
-    function matrix(opts) {
-      const mx = matrixRaw(opts);
+    /**
+     * zone 矩陣 L0 的分段計算（generator）：每一段 yield { stage: 'reps'|'evaluate'|'summary', done, total }，
+     * 最後的回傳值就是 matrix(opts) 的結果，並寫進同一份快取；已有快取時不 yield、直接回傳。
+     */
+    function* matrixSteps(opts) {
+      const mx = yield* matrixRawSteps(opts);
       const ck = JSON.stringify([mx.zs.opts.profHash, mx.zs.opts.sources, mx.services.map(svcId)]);
       if (l0Cache.has(ck)) return l0Cache.get(ck);
       const cells = [];
-      mx.zoneIds.forEach((a) => mx.zoneIds.forEach((b) => {
-        const c = mx.cells.get(a + '\u0000' + b);
-        cells.push(c ? cellSummary(mx, c) : { src: a, dst: b, diagonal: a === b, status: 'empty', counts: { allow: 0, deny: 0, unknown: 0, total: 0 }, heterogeneous: false,
-          services: mx.services.map((s) => ({ service: svcId(s), proto: s.proto, port: s.port, status: 'empty', counts: { allow: 0, deny: 0, unknown: 0, total: 0 } })), rule: null, rules: [], ruleCount: 0, reasons: [] });
-      }));
+      // 進度以記錄數計（格子大小差很多）；空格子算一個單位
+      const total = mx.zoneIds.reduce((n, a) => n + mx.zoneIds.reduce((k, b) => { const c = mx.cells.get(a + '\u0000' + b); return k + (c ? Math.max(1, c.recs.length) : 1); }, 0), 0);
+      let done = 0;
+      yield { stage: 'summary', done, total };
+      const due = slicer();
+      for (const a of mx.zoneIds) {
+        for (const b of mx.zoneIds) {
+          const c = mx.cells.get(a + '\u0000' + b);
+          if (!c) {
+            cells.push({ src: a, dst: b, diagonal: a === b, status: 'empty', counts: { allow: 0, deny: 0, unknown: 0, total: 0 }, heterogeneous: false,
+              services: mx.services.map((s) => ({ service: svcId(s), proto: s.proto, port: s.port, status: 'empty', counts: { allow: 0, deny: 0, unknown: 0, total: 0 } })), rule: null, rules: [], ruleCount: 0, reasons: [] });
+            done++;
+          } else {
+            const acc = cellAcc(mx, c);
+            for (const r of c.recs) {
+              acc.add(r); done++;
+              if (due() && done < total) yield { stage: 'summary', done, total };
+            }
+            cells.push(acc.finish());
+            if (!c.recs.length) done++;
+          }
+          if (due() && done < total) yield { stage: 'summary', done, total };
+        }
+      }
+      if (l0Cache.has(ck)) return l0Cache.get(ck); // 兩個分段計算交錯時，先完成的為準（結果相同）
       const reps = mx.srcReps.length; const evaluations = Array.from(mx.cells.values()).reduce((n, c) => n + c.recs.length, 0);
       const out = deepFreeze({
         vrf: null, zones: mx.zs.zones, services: mx.services.map((s) => ({ id: svcId(s), proto: s.proto, port: s.port })), cells,
@@ -908,6 +998,7 @@
       l0Cache.set(ck, out);
       return out;
     }
+    const matrix = (opts) => runAll(matrixSteps(opts));
     const recOut = (mx, r) => {
       const a = mx.srcReps[r.ai]; const t = mx.targets[r.ti]; const s = mx.services[r.si];
       return { src: a, dst: t, service: svcId(s), verdict: r.sum.verdict, final: r.sum.final && r.sum.final.port === r.rp ? { dst: r.sum.final.dst, port: s.port } : r.sum.final,
@@ -925,16 +1016,30 @@
         const p = U.getOr(pairs, r.ai + '|' + r.ti, () => ({ ai: r.ai, ti: r.ti, services: [] }));
         const x = recOut(mx, r); p.services.push({ service: x.service, verdict: x.verdict, final: x.final, rules: x.rules, reasons: x.reasons });
       });
+      // 造成異質的記錄（與 cellSummary 的 heterogeneous 同一個依據）：heterogeneous 是「同一個目的與 service，不同來源的結果不同」
+      // 或「同一個來源與 service，不同目的的結果不同」（unknown 不算）。在這樣一條有衝突的線上，結果是少數（平手時兩邊都算）的記錄造成差異。
+      // 所以格子異質時至少有一組 divergent，不異質時沒有。
+      const lineOf = new Map();
+      const tally = (k, v) => { const e = U.getOr(lineOf, k, () => ({ allow: 0, deny: 0 })); e[v]++; };
+      c.recs.forEach((r) => { if (r.sum.verdict !== 'unknown') { tally('d' + r.ti + '|' + r.si, r.sum.verdict); tally('s' + r.ai + '|' + r.si, r.sum.verdict); } });
+      const minority = (k, v) => { const e = lineOf.get(k); return e.allow > 0 && e.deny > 0 && e[v] <= e[v === 'allow' ? 'deny' : 'allow']; };
+      const divergentSvc = new Map(); // ai|ti → Set(service id)
+      c.recs.forEach((r) => {
+        const v = r.sum.verdict; if (v === 'unknown') return;
+        if (minority('d' + r.ti + '|' + r.si, v) || minority('s' + r.ai + '|' + r.si, v)) U.getOr(divergentSvc, r.ai + '|' + r.ti, () => new Set()).add(svcId(mx.services[r.si]));
+      });
       const rows = new Map();
       Array.from(pairs.values()).sort((p, q) => p.ti - q.ti || p.ai - q.ai).forEach((p) => {
         const sig = JSON.stringify(p.services.map((s) => [s.service, s.verdict, s.rules, s.reasons]));
-        const row = U.getOr(rows, p.ti + '|' + sig, () => ({ dst: mx.targets[p.ti], srcs: [], services: p.services }));
+        const row = U.getOr(rows, p.ti + '|' + sig, () => ({ dst: mx.targets[p.ti], srcs: [], services: p.services, div: new Set() }));
         row.srcs.push(mx.srcReps[p.ai]);
+        (divergentSvc.get(p.ai + '|' + p.ti) || []).forEach((sv) => row.div.add(sv));
       });
       const groups = Array.from(rows.values()).map((r) => {
         const c2 = { allow: 0, deny: 0, unknown: 0 }; r.services.forEach((s) => { c2[s.verdict]++; });
-        return Object.assign(r, { status: STATUS(c2), counts: c2,
-          srcDevices: U.uniq(r.srcs.flatMap((s) => { const l = srcLocation(s.ip); return l.how === 'subnet' ? l.gateways.map((g) => g.ep || g.dev) : l.dev ? [l.dev] : []; })).sort(U.natural) });
+        return { dst: r.dst, srcs: r.srcs, services: r.services, status: STATUS(c2), counts: c2,
+          srcDevices: U.uniq(r.srcs.flatMap((s) => { const l = srcLocation(s.ip); return l.how === 'subnet' ? l.gateways.map((g) => g.ep || g.dev) : l.dev ? [l.dev] : []; })).sort(U.natural),
+          divergent: r.div.size > 0, divergentServices: r.services.map((s) => s.service).filter((sv) => r.div.has(sv)) };
       });
       // L2：牽涉的規則
       const rules = new Map();
@@ -1008,7 +1113,7 @@
       })));
     }
 
-    return { reach, zones: (o) => ({ zones: zones(o).zones, subnets: zones(o).subnets }), zoneOf, matrix, cell, ruleImpact };
+    return { reach, zones: (o) => ({ zones: zones(o).zones, subnets: zones(o).subnets }), zoneOf, matrix, matrixSteps, cell, ruleImpact };
   }
 
   // 靜態資訊（不依賴 Snapshot）：預設 service、zone 來源與可達性前提，畫面經 S.query.* 讀取
@@ -1016,5 +1121,7 @@
     S.query.l4Services = () => SERVICES;
     S.query.zoneSources = () => ZONE_SOURCES;
     S.query.reachAssumptions = () => ASSUMPTIONS;
+    /** Q.reach／Q.zoneMatrix／Q.zoneCell 會出現的原因與結束代碼（凍結的陣列 [{ code, kind: 'reason'|'end', note }]），畫面用來確認中文對照涵蓋每個代碼。 */
+    S.query.reachReasonCodes = () => REASON_CODES;
   }
 })(globalThis.SSOT = globalThis.SSOT || {});

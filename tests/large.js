@@ -46,5 +46,24 @@ module.exports = function registerLarge(LARGE_MAX_MS) {
     assert.ok(mx.cells.filter((c) => c.status !== 'empty').every((c) => c.status === 'allow'), '乾淨網路的內部 VLAN 之間全通');
     [zMs, rMs, mMs, cMs, iMs].forEach((x) => assert.ok(x < LARGE_MAX_MS / 4, `L4 查詢耗時 ${x} ms`));
     assert.strictEqual(s.model.zoneMatrix, undefined, '矩陣不寫進 Snapshot');
+    // 分段計算（畫面用，不卡住主執行緒）：新的查詢介面從頭算，量每一段（兩次 next() 之間）的時間；目標每段 ≤ 50 ms
+    const Q2 = S.query(s); const it = Q2.zoneMatrixSteps();
+    const segs = []; const byStage = {};
+    let prev = '(開始)'; let t1 = Date.now(); let r = it.next();
+    for (;;) {
+      const ms = Date.now() - t1; segs.push(ms);
+      const e = byStage[prev] = byStage[prev] || { n: 0, max: 0 }; e.n++; e.max = Math.max(e.max, ms);
+      if (r.done) break;
+      prev = r.value.stage; t1 = Date.now(); r = it.next();
+    }
+    const total = segs.reduce((n, x) => n + x, 0); const max = Math.max(...segs);
+    const p95 = segs.slice().sort((a, b) => a - b)[Math.floor(segs.length * 0.95)];
+    console.log(`      zoneMatrixSteps ${segs.length} 段、共 ${total} ms；每段 p95 ${p95} ms、最長 ${max} ms（${Object.keys(byStage).map((k) => `${k} ${byStage[k].n} 段、最長 ${byStage[k].max} ms`).join('；')}）`);
+    assert.strictEqual(Q2.zoneMatrix(), r.value, '跑完分段之後 zoneMatrix 命中快取');
+    assert.strictEqual(JSON.stringify(r.value), JSON.stringify(mx), '分段與同步的結果相同');
+    // 目標是每段 ≤ 50 ms。斷言用 p95 而不是最長：機器同時跑別的行程時，偶爾一段會被搶走 CPU（量過一次 430 ms，其他段都在 35 ms 內）；
+    // 上限放寬並隨 SSOT_LARGE_MAX_MS 調整（預設 200 ms），避免慢的 CI 誤判，但能抓到沒有分段的退化
+    assert.ok(p95 <= Math.max(50, LARGE_MAX_MS / 100), `分段計算的 p95 是 ${p95} ms`);
+    assert.ok(segs.length > 10, `只有 ${segs.length} 段`);
   });
 };

@@ -372,7 +372,16 @@
        * 回傳 { zones, services, cells: [{ src, dst, diagonal, status: allow|deny|partial|unknown|empty, counts, services, heterogeneous, rule, rules, ruleCount, reasons }], stats }
        */
       zoneMatrix: (opts) => L4().matrix(opts),
-      /** 矩陣下鑽 L1／L2：一格的摘要，加上 groups（目的 × 結果相同的來源代表）與 ruleDetails（牽涉的規則）。L3 是 Q.reach(來源代表, 目的, { proto, port })。 */
+      /**
+       * zone 矩陣的分段計算（generator，像 S.steps）：每一段 yield { stage: 'reps'|'evaluate'|'summary', done, total }（total 是上限，只用來顯示進度），
+       * 跑完時的回傳值（next() 的 { done: true, value }）與 Q.zoneMatrix(opts) 是同一個物件，並寫進同一份快取；已算過時第一次 next() 就結束。
+       * 參數錯誤在第一次 next() 時丟出 TypeError。中途放棄不會留下快取。Q.zoneMatrix 就是把它跑完。
+       */
+      zoneMatrixSteps: (opts) => L4().matrixSteps(opts),
+      /**
+       * 矩陣下鑽 L1／L2：一格的摘要，加上 groups（目的 × 結果相同的來源代表）與 ruleDetails（牽涉的規則）。L3 是 Q.reach(來源代表, 目的, { proto, port })。
+       * groups[].divergent：這一組造成格子異質（heterogeneous）——有某個 service，這組的結果和同一個目的的其他來源組、或同一批來源往其他目的的結果不同（定義見 trace.js 的 cell）。
+       */
       zoneCell: (srcZone, dstZone, opts) => L4().cell(srcZone, dstZone, opts),
       /** 規則的影響：牽涉到這條規則的 zone 對與路徑，以及停用它時結果改變的路徑（ifDisabled）。沒有這條規則時為 null。 */
       ruleImpact: (key, opts) => L4().ruleImpact(key, opts),

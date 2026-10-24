@@ -1,7 +1,7 @@
 // L4（M2）：端到端可達性 Q.reach、zone、zone 矩陣、規則影響
 'use strict';
 const assert = require('assert');
-const { S, build, test, sampleSnap } = require('../lib.js');
+const { S, build, read, test, sampleSnap } = require('../lib.js');
 
 const RT = 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC';
 /**
@@ -208,6 +208,77 @@ test('zone 矩陣：L0 的格子狀態與代表規則；L1／L2 下鑽；相同�
   assert.throws(() => Q.zoneMatrix({ services: [{ proto: 'tcp' }] }), /port/);
   const one = Q.zoneMatrix({ services: [{ proto: 'tcp', port: 8443 }] });
   assert.deepStrictEqual(one.services.map((x) => x.id), ['tcp/8443']);
+});
+
+const U_uniq = (a) => a.filter((x, i) => a.indexOf(x) === i);
+test('Q.zoneMatrixSteps：分段計算的結果與 Q.zoneMatrix 相同並寫進同一份快取；中途放棄不留快取', () => {
+  const run = (it) => { const ys = []; let r = it.next(); while (!r.done) { ys.push(r.value); r = it.next(); } return { ys, value: r.value }; };
+  const Q = S.query(sampleSnap());
+  const { ys, value } = run(Q.zoneMatrixSteps());
+  assert.ok(ys.length >= 3, '至少有 reps、evaluate、summary 三段');
+  assert.deepStrictEqual(U_uniq(ys.map((y) => y.stage)), ['reps', 'evaluate', 'summary']);
+  ys.forEach((y) => assert.ok(Number.isInteger(y.done) && Number.isInteger(y.total) && y.done >= 0 && y.done <= y.total, JSON.stringify(y)));
+  assert.ok(Object.isFrozen(value));
+  assert.strictEqual(Q.zoneMatrix(), value, '跑完之後 zoneMatrix 命中同一份快取');
+  assert.deepStrictEqual(run(Q.zoneMatrixSteps()), { ys: [], value }, '已算過：不分段，直接回傳快取');
+  // 同步與分段的結果相同（各用一個新的查詢介面）
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(S.query(sampleSnap()).zoneMatrix())), JSON.parse(JSON.stringify(value)));
+  // 中途放棄：不寫進快取，之後同步計算仍然得到完整、相同的結果
+  const Q2 = S.query(sampleSnap());
+  const it = Q2.zoneMatrixSteps(); it.next(); it.next(); it.return();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(Q2.zoneMatrix())), JSON.parse(JSON.stringify(value)));
+  // 不同的 services 是不同的快取；參數錯誤在第一次 next() 時丟出
+  const one = run(Q.zoneMatrixSteps({ services: [{ proto: 'tcp', port: 8443 }] })).value;
+  assert.strictEqual(Q.zoneMatrix({ services: [{ proto: 'tcp', port: 8443 }] }), one);
+  assert.notStrictEqual(one, value);
+  const bad = Q.zoneMatrixSteps({ services: [{ proto: 'tcp' }] });
+  assert.throws(() => bad.next(), /port/);
+});
+
+test('Q.zoneCell 的 groups[].divergent：只有異質的格子有，標出結果是少數的組與 service', () => {
+  const Q = S.query(sampleSnap());
+  const d = Q.zoneCell('list:WAN', 'vlan:20');
+  assert.ok(d.heterogeneous);
+  const div = d.groups.filter((g) => g.divergent);
+  assert.ok(div.length > 0 && div.length < d.groups.length, `${div.length}／${d.groups.length} 組`);
+  // 兩個 WAN 網段往 VLAN 20 的位址：只有 tcp/8443 不同（核心 01 的 dst-nat），其他 service 都拒絕
+  div.forEach((g) => assert.deepStrictEqual(g.divergentServices, ['tcp/8443'], JSON.stringify(g.dst)));
+  assert.deepStrictEqual(U_uniq(div.flatMap((g) => g.srcs.map((s) => s.ip))).sort(), ['203.0.113.1', '203.0.113.5']);
+  assert.ok(div.every((g) => g.dst.via === 'member'));
+  d.groups.filter((g) => !g.divergent).forEach((g) => assert.deepStrictEqual(g.divergentServices, []));
+  assert.strictEqual(d.groups.find((g) => g.dst.via === 'nat').divergent, false, 'dst-nat 入口只有一個來源，同一條線上沒有不同的結果');
+  // 每一格：有 divergent 的組 ⇔ heterogeneous
+  Q.zoneMatrix().cells.forEach((c) => {
+    const g = Q.zoneCell(c.src, c.dst).groups;
+    assert.strictEqual(g.some((x) => x.divergent), c.heterogeneous, `${c.src} → ${c.dst}`);
+  });
+});
+
+test('S.query.reachReasonCodes：涵蓋 trace.js 中所有 reason／end 代碼，且每個代碼都真的用到', () => {
+  const list = S.query.reachReasonCodes();
+  assert.ok(Object.isFrozen(list) && list.every((x) => Object.isFrozen(x)));
+  assert.strictEqual(S.query.reachReasonCodes(), list);
+  list.forEach((x) => assert.ok(typeof x.code === 'string' && ['reason', 'end'].includes(x.kind) && (x.note === undefined || typeof x.note === 'string'), JSON.stringify(x)));
+  assert.strictEqual(new Set(list.map((x) => x.code)).size, list.length, '代碼不重複');
+  // 只掃引擎本身（makeEngine 之後）：清單與 ASSUMPTIONS 的 code 不算
+  const src = read('src/query/trace.js');
+  const body = src.slice(src.indexOf('function makeEngine'));
+  const found = new Set();
+  const scan = (re, kind) => { for (const m of body.matchAll(re)) m.slice(1).filter(Boolean).forEach((c) => found.add(c + '|' + kind)); };
+  scan(/\breason\('([a-z][a-z-]*)'/g, 'reason');
+  scan(/\bcode: '([a-z][a-z-]*)'/g, 'reason');
+  scan(/\bend\('[a-z-]+', '[a-z]+', '([a-z][a-z-]*)'/g, 'end');
+  scan(/\bend\('[a-z-]+', '[a-z]+', [^,'()]+\? '([a-z][a-z-]*)' : '([a-z][a-z-]*)'/g, 'end'); // 代碼是條件式（例如 host／segment）
+  assert.ok(found.size >= 20, `掃到 ${found.size} 個代碼，掃描的樣式可能失效`);
+  const byCode = new Map(list.map((x) => [x.code, x]));
+  const codes = new Set();
+  found.forEach((k) => {
+    const [code, kind] = k.split('|'); codes.add(code);
+    assert.ok(byCode.has(code), `${code}（${kind}）不在 S.query.reachReasonCodes()`);
+    if (kind === 'end') assert.strictEqual(byCode.get(code).kind, 'end', `${code} 是結束代碼`);
+  });
+  list.forEach((x) => assert.ok(codes.has(x.code), `${x.code} 在清單裡，但 trace.js 沒有用到`));
+  list.filter((x) => x.kind === 'reason').forEach((x) => assert.ok(!found.has(x.code + '|end'), `${x.code} 也是結束代碼，kind 應為 end`));
 });
 
 test('Q.ruleImpact：規則牽涉的 zone 對與路徑，停用後改變的結果；被遮蔽的規則沒有影響', () => {

@@ -9,12 +9,14 @@
   const V = S.view; const h = V.h; const K = S.keys;
   const T = V.theme.firewall;
   const FAMILY = { ip: 'IPv4', ipv6: 'IPv6' };
+  // 文字對照核心的判斷（infer.js fwContext）：已定義的 interface list 名稱含獨立的 WAN 字樣（不分大小寫，
+  // 前後不接英文字母，例如 WAN、ISP-WAN、wan2），成員含 include／exclude 展開後的結果；LAN 同理
   const ZONE_STATUS = {
-    ok: ['已分出 WAN／LAN', 'ok'],
-    'no-wan-list': ['沒有名為 WAN 的 interface list，WAN 相關檢查未執行', 'warn'],
-    'empty-wan-list': ['WAN interface list 沒有成員，WAN 相關檢查未執行', 'warn'],
+    ok: ['已找到 WAN 介面', 'ok'],
+    'no-wan-list': ['沒有名稱含 WAN 的 interface list，WAN 相關檢查未執行', 'warn'],
+    'empty-wan-list': ['名稱含 WAN 的 interface list 沒有可確定的成員，WAN 相關檢查未執行', 'warn'],
   };
-  const ZONE_BASIS = { 'interface-list': '依 interface list（WAN／LAN）' };
+  const ZONE_BASIS = { 'interface-list': '依名稱含 WAN／LAN 的 interface list' };
   // 規則不多時，內建 chain 預設展開；多時全部收合，展開時才產生表格（大型網路單台設備可能有上百條）
   const OPEN_ALL_MAX = 60;
   const P = () => V.details.parts;
@@ -129,7 +131,8 @@
           ['WAN 介面', zone.wanInterfaces.length ? h('span', null, zone.wanInterfaces.flatMap((ep, n) => [n ? '、' : '', epLink(App, ep)])) : '—'],
           ['LAN list', zone.lanLists.join('、') || '—'],
           ['LAN 介面', zone.lanInterfaces.length ? h('span', null, zone.lanInterfaces.flatMap((ep, n) => [n ? '、' : '', epLink(App, ep)])) : '—']]),
-        h('p', { class: 'muted' }, '由 interface list 的名稱推定哪些介面朝外（WAN）、哪些朝內（LAN）；F03／F04／F07 等檢查依這個判斷。'),
+        h('p', { class: 'muted' }, '名稱含獨立 WAN 字樣的 interface list（例如 WAN、ISP-WAN）的成員推定為朝外（WAN），含 LAN 字樣的推定為朝內（LAN）；'
+          + '不看介面名稱。F03／F04／F07 等檢查依這個判斷。'),
       ] : null),
       ...tables.map((t) => section(`${FAMILY[t.family] || t.family} ${t.table}`,
         t.chains.map((c) => chainSection(App, dev, c, focusRule, openAll)), { count: t.chains.reduce((n, c) => n + c.rules, 0) })),

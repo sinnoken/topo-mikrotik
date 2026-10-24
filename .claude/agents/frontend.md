@@ -30,7 +30,7 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 - `index.html` 必須能用 `file://` 直接開啟：不用 ES module 或 bundler，不在執行期連網；第三方檔案放在 `vendor/`。
 - `index.html` 前段的核心載入順序要和 `tools/core-files.js` 一致；它屬於 `data-model`，新增核心檔案由主對話協調。
 - 冒煙測試用的是極簡的模擬 DOM，斷言要寫關係與可觀察的行為，不要寫死筆數。
-- **配色要用 dataviz skill 的 validator 驗證**，不要憑肉眼判斷。在亮色、畫布底色 `#f8fafc` 下執行：
+- **配色要用 dataviz skill 的 validator 驗證**，不要憑肉眼判斷。validator 在 bundled skill 的目錄裡（`<TEMP>/claude/bundled-skills/<版本>/<hash>/dataviz/scripts/validate_palette.js`）；在 bash 中用 `ls -d "$TEMP"/claude/bundled-skills/*/*/dataviz/scripts/validate_palette.js` 找出路徑（`$TEMP` 要加引號：Windows 的 Git Bash 中它含反斜線，不加引號時萬用字元比對不到），不要用 `find /`。用法是 `node validate_palette.js "<hex,...>" --mode light`。在亮色、畫布底色 `#f8fafc` 下執行：
   ```bash
   node <dataviz skill 目錄>/scripts/validate_palette.js "#hex1,#hex2,..." --mode light --surface "#f8fafc"
   ```

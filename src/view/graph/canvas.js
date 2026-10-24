@@ -163,9 +163,8 @@
         const dash = weak ? weak.dash : st.dash;
         c.setLineDash(dash ? dash.map((d) => d / Math.min(s, 1)) : []);
         c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke(); c.setLineDash([]);
-        if (e.sev && !dim && !override) { // 有問題的連線：中點標記
-          const mx = (a.x + b.x) / 2; const my = (a.y + b.y) / 2;
-          c.fillStyle = SEV_COLOR[e.sev] || CV.sevFallback; c.beginPath(); c.arc(mx, my, Math.max(4, 3 / s), 0, Math.PI * 2); c.fill();
+        if (e.sev && !dim && !override) { // 有問題的連線：中點標記（外形同節點）
+          c.globalAlpha = 1; sevMark(c, e.sev, (a.x + b.x) / 2, (a.y + b.y) / 2, Math.max(4.5, 3.5 / s));
         }
         c.globalAlpha = 1;
       };
@@ -193,7 +192,10 @@
         drawShape(c, n, p, r, col, s);
         if (hcol) { c.strokeStyle = hcol; c.lineWidth = 3.5; c.beginPath(); c.arc(p.x, p.y, r + 5, 0, Math.PI * 2); c.stroke(); }
         if (this.sel.nodes.has(n.id)) { c.strokeStyle = MARK.select; c.lineWidth = 3; c.beginPath(); c.arc(p.x, p.y, r + 6, 0, Math.PI * 2); c.stroke(); }
-        if (n.sev && r > 7) { c.fillStyle = SEV_COLOR[n.sev]; c.strokeStyle = CV.outline; c.lineWidth = 1.5; c.beginPath(); c.arc(p.x + r * 0.8, p.y - r * 0.8, 4.5, 0, Math.PI * 2); c.fill(); c.stroke(); }
+        // 滑過：節點本身也有回饋（深色細環，與選取的藍色粗環、搜尋結果的顏色環不同）
+        if (n.id === hoverN) { c.strokeStyle = MARK.hover; c.lineWidth = 2; c.beginPath(); c.arc(p.x, p.y, r + (this.sel.nodes.has(n.id) ? 9.5 : 3.5), 0, Math.PI * 2); c.stroke(); }
+        // 嚴重度：主機與終端（較小的節點）也顯示，外形區分錯誤與警告
+        if (n.sev) sevMark(c, n.sev, p.x + r * 0.85, p.y - r * 0.85, Math.max(4, Math.min(5, r * 0.5)));
         c.globalAlpha = 1;
       }
       // 標籤：依重要性排序，與已畫的標籤重疊就略過（避免縮小時糊成一片）
@@ -271,6 +273,20 @@
     else if (n.kind === 'firewall') { c.moveTo(p.x - r * 0.45, p.y - r * 0.15); c.lineTo(p.x + r * 0.45, p.y - r * 0.15); c.moveTo(p.x - r * 0.45, p.y + r * 0.25); c.lineTo(p.x + r * 0.45, p.y + r * 0.25); c.moveTo(p.x, p.y - r * 0.15); c.lineTo(p.x, p.y + r * 0.25); }
     c.stroke();
   }
+  /**
+   * 嚴重度標記：錯誤是方形、警告是三角形（theme.sevShape），外圍一圈底色環，在線上或節點上都看得清楚。
+   * size 是外接圓半徑（世界座標）。警告色對淺底的對比較低，所以另描一圈警告文字色。
+   */
+  function sevMark(c, sev, x, y, size) {
+    const shape = T.sevShape[sev]; c.beginPath();
+    if (shape === 'triangle') { const k = size * 1.15; c.moveTo(x, y - k); c.lineTo(x + k, y + k * 0.8); c.lineTo(x - k, y + k * 0.8); c.closePath(); }
+    else if (shape === 'square') { const k = size * 0.85; c.moveTo(x - k, y - k); c.lineTo(x + k, y - k); c.lineTo(x + k, y + k); c.lineTo(x - k, y + k); c.closePath(); }
+    else c.arc(x, y, size, 0, Math.PI * 2);
+    c.setLineDash([]); c.lineJoin = 'round';
+    c.strokeStyle = CV.outline; c.lineWidth = size * 0.55; c.stroke();
+    c.fillStyle = SEV_COLOR[sev] || CV.sevFallback; c.fill();
+    if (sev === 'warn') { c.strokeStyle = T.text.warn; c.lineWidth = size * 0.18; c.stroke(); }
+  }
   /** 未知對端（由 MAC 推論出來、基準裡沒有 LLDP／CDP 介面鄰接的東西）：外觀刻意和已知設備不同 */
   function drawVirtual(c, n, p, r, s) {
     if (n.kind === 'endpoint') { // 單一 MAC：圓形，顏色依廠商，近看顯示廠商縮寫
@@ -315,5 +331,5 @@
   }
   function segInView(a, b, v) { return !(Math.max(a.x, b.x) < v.x0 || Math.min(a.x, b.x) > v.x1 || Math.max(a.y, b.y) < v.y0 || Math.min(a.y, b.y) > v.y1); }
 
-  V.GraphView = GraphView;
+  V.GraphView = GraphView; V.sevMark = sevMark;
 })(globalThis.SSOT = globalThis.SSOT || {});

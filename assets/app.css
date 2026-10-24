@@ -1,9 +1,12 @@
 /* 網路基準（topo-ssot）樣式：不依賴任何外部字型或 CSS 框架，可完全離線使用 */
 :root {
-  --bg: #f3f6fa; --panel: #ffffff; --surface: #f8fafc; --line: #e1e7ee; --line-strong: #cbd5df; --text: #1f2933; --muted: #687789; --accent: #0b6bcb; --accent-soft: #e6f0fb;
+  --bg: #f3f6fa; --panel: #ffffff; --surface: #f8fafc; --line: #e1e7ee; --line-strong: #cbd5df; --text: #1f2933; --muted: #5f6d7e; --accent: #0b6bcb; --accent-soft: #e6f0fb;
   --err: #d93025; --err-soft: #fdecea; --warn: #b26a00; --warn-soft: #fff4e0; --info: #3b6ea8; --info-soft: #e8f0fa; --ok: #1e8e3e; --ok-soft: #e6f4ea;
-  --fw: #22a338; --sw: #f29900; --rt: #2563eb; --host: #8b5cf6; --unk: #90a4ae;
-  /* 嚴重度圓點：與 theme.js 的 sev 一致（有測試比對） */
+  /* 狀態文字色：對白底、狀態淺底與表面色都 ≥ 4.5:1；與 theme.js 的 text 一致（有測試比對）。--err 等飽和色只用於圖形標記 */
+  --err-text: #b3261e; --warn-text: #8a5300; --ok-text: #17692f; --info-text: #315d8a;
+  /* 設備類型色：與 theme.js 的 kind 一致（有測試比對）；不用狀態色的色相 */
+  --fw: #7b208e; --sw: #3398b5; --rt: #335dcd; --host: #977af8; --unk: #535d62;
+  /* 嚴重度標記：與 theme.js 的 sev 一致（有測試比對）；外形與畫布相同：錯誤方形、警告三角形 */
   --sev-error: #d93025; --sev-warn: #f29900;
   /* 中性底色：表面（表頭、斑馬列、說明框）、hover、標籤底色；強調色的 hover */
   --surface-hover: #f3f6f9; --neutral-soft: #eef1f4; --accent-hover: #edf4fb; --line-hover: #aebdcb; --line-soft: #edf0f3;
@@ -25,7 +28,7 @@ button.primary:hover { background: #095aa9; border-color: #095aa9; box-shadow: 0
 button.ghost { border-color: transparent; background: transparent; box-shadow: none; }
 button.ghost:hover { background: var(--neutral-soft); }
 #btn-clear { color: #8c4a46; }
-#btn-clear:hover { color: var(--err); border-color: #f2c9c5; background: var(--err-soft); }
+#btn-clear:hover { color: var(--err-text); border-color: #f2c9c5; background: var(--err-soft); }
 button:focus-visible, a:focus-visible, summary:focus-visible, .fgroup > .head:focus-visible, .fitem:focus-visible, tr.click:focus-visible { outline: none; box-shadow: var(--focus-ring); position: relative; z-index: 2; }
 button:disabled { opacity: .48; cursor: default; transform: none; box-shadow: none; }
 input[type=text], input[type=search], select, textarea { min-height: var(--control-h); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); padding: 6px 9px; background: #fff; transition: border-color .14s ease, box-shadow .14s ease; }
@@ -90,15 +93,15 @@ footer { display: flex; align-items: center; gap: 16px; padding: 0 12px; font-si
 .table-more { padding: 6px 9px; }
 .chip { display: inline-flex; align-items: center; gap: 4px; min-height: 22px; padding: 2px 8px; border: 1px solid transparent; border-radius: 999px; font-size: var(--fs-sm); font-weight: 600; background: var(--neutral-soft); color: #3c4650; white-space: nowrap; }
 .chip-list { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
-.chip.err { background: var(--err-soft); color: #ad241d; border-color: #f8d6d2; }
-.chip.warn { background: var(--warn-soft); color: #875000; border-color: #f3dfb9; }
-.chip.info { background: var(--info-soft); color: #315d8a; border-color: #d5e3f2; }
-.chip.ok { background: var(--ok-soft); color: #176c31; border-color: #d0ead7; }
-.chip.kind-firewall { background: #e3f4e6; color: #17752a; }
-.chip.kind-switch { background: #fff1d6; color: #9a5b00; }
-.chip.kind-router { background: #e3ecfd; color: #1d4fbf; }
-.chip.kind-host { background: #efe9fe; color: #6033c9; }
-.chip.kind-unknown { background: #eceff1; color: #546e7a; }
+.chip.err { background: var(--err-soft); color: var(--err-text); border-color: #f8d6d2; }
+.chip.warn { background: var(--warn-soft); color: var(--warn-text); border-color: #f3dfb9; }
+.chip.info { background: var(--info-soft); color: var(--info-text); border-color: #d5e3f2; }
+.chip.ok { background: var(--ok-soft); color: var(--ok-text); border-color: #d0ead7; }
+.chip.kind-firewall { background: #f3e6f6; color: #6a1b7b; }
+.chip.kind-switch { background: #e2f2f7; color: #1d6177; }
+.chip.kind-router { background: #e5ebfb; color: #2849a8; }
+.chip.kind-host { background: #efeafe; color: #5a3dc0; }
+.chip.kind-unknown { background: #eceff1; color: #46505a; }
 .chip.btn { cursor: pointer; transition: box-shadow .14s ease, transform .14s ease, filter .14s ease; }
 .chip.btn:hover { filter: saturate(1.15); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
 .chip.btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
@@ -109,7 +112,10 @@ footer { display: flex; align-items: center; gap: 16px; padding: 0 12px; font-si
 .chip.btn.off { opacity: .45; cursor: default; }
 .chip.btn.off:hover { filter: none; box-shadow: none; transform: none; }
 .sev { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
-.sev.error { background: var(--sev-error); } .sev.warn { background: var(--sev-warn); } .sev.info { background: var(--info); }
+/* 嚴重度不只靠顏色：錯誤方形、警告三角形、提醒圓形（與畫布、圖例相同） */
+.sev.error { background: var(--sev-error); border-radius: 1px; }
+.sev.warn { background: var(--sev-warn); border-radius: 0; width: 10px; height: 9px; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.sev.info { background: var(--info); }
 
 /* ---------- 檢查結果 ---------- */
 .summary { display: flex; gap: 7px; padding: 11px 10px; flex-wrap: wrap; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, #fff, var(--surface)); }
@@ -135,7 +141,7 @@ footer { display: flex; align-items: center; gap: 16px; padding: 0 12px; font-si
 .fgroup .rule .id { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); }
 .fgroup .rule .note { font-size: var(--fs-sm); }
 .fgroup .rule .mark { width: 12px; color: var(--muted); }
-.fgroup.pass .rule .mark { color: #176c31; }
+.fgroup.pass .rule .mark { color: var(--ok-text); }
 .fitem { padding: 6px 10px 6px 26px; cursor: pointer; font-size: var(--fs-md); border-left: 3px solid transparent; transition: background-color .12s ease; }
 .fitem:hover { background: var(--accent-soft); }
 .fitem.sel { border-left-color: var(--accent); background: var(--accent-soft); }
@@ -171,7 +177,7 @@ footer { display: flex; align-items: center; gap: 16px; padding: 0 12px; font-si
 /* 防火牆修正範例 */
 .fw-fix { margin-bottom: 10px; }
 .fw-fix pre { margin: 4px 0; font-family: var(--mono); font-size: var(--fs-sm); overflow-x: auto; }
-.fw-fix .warn-line { color: var(--warn); font-size: var(--fs-sm); }
+.fw-fix .warn-line { color: var(--warn-text); font-size: var(--fs-sm); }
 .chip.effect { background: #fff; }
 
 /* ---------- 表格 ---------- */
@@ -223,7 +229,7 @@ table.t tr.click { cursor: pointer; }
 .empty-detail { padding: 40px 24px; color: var(--muted); text-align: center; }
 .empty-detail .big { font-size: var(--fs-lg); color: var(--text); margin-bottom: 6px; }
 .vlanlist { font-family: var(--mono); font-size: var(--fs-sm); word-break: break-all; }
-.diffA { color: var(--err); font-weight: 600; }
+.diffA { color: var(--err-text); font-weight: 600; }
 .hop { border-left: 2px solid var(--line); margin-left: 6px; padding: 2px 0 8px 12px; position: relative; }
 .hop::before { content: ""; position: absolute; left: -6px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
 .hop.end-reached::before { background: var(--ok); } .hop.end-bad::before { background: var(--err); }
@@ -272,7 +278,7 @@ dialog::backdrop { background: rgba(15,23,32,.45); }
 .progress { height: 6px; background: var(--neutral-soft); border-radius: 999px; overflow: hidden; flex: 1; }
 .progress > div { height: 100%; background: var(--accent); width: 0; transition: width .15s; }
 pre.raw { margin: 0; font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.5; }
-pre.raw .ln { color: #9aa5b1; display: inline-block; width: 56px; text-align: right; padding-right: 10px; user-select: none; }
+pre.raw .ln { color: var(--muted); display: inline-block; width: 56px; text-align: right; padding-right: 10px; user-select: none; }
 pre.raw .hl { background: #fff3c4; display: block; }
 .form-row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
 .form-row label { color: var(--muted); }

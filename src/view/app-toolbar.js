@@ -107,7 +107,11 @@
       square: { borderRadius: '2px' },
       circle: {},
     };
-    const dot = (style) => h('span', { class: 'sev', style: Object.assign({ width: LEG + 'px', height: LEG + 'px' }, style) });
+    const SEV_CSS = {
+      square: { width: Math.round(LEG * 0.8) + 'px', height: Math.round(LEG * 0.8) + 'px', borderRadius: '1px' },
+      triangle: { borderRadius: '0', clipPath: 'polygon(50% 0, 100% 100%, 0 100%)' },
+    };
+    const dot = (style, attrs) => h('span', Object.assign({ class: 'sev', style: Object.assign({ width: LEG + 'px', height: LEG + 'px' }, style) }, attrs || {}));
     const line = (color, w, dash, alpha) => h('span', { class: 'ln', style: {
       borderTopWidth: '0', height: Math.max(2, Math.round(w)) + 'px', opacity: String(alpha == null ? 1 : alpha),
       background: dash ? `repeating-linear-gradient(90deg, ${dash.reduce((stops, n, i) => {
@@ -126,7 +130,9 @@
       background: EP.cluster.fill, border: '1.5px solid ' + EP.cluster.stroke,
       width: Math.round(LEG * 1.3) + 'px', height: Math.round(LEG * 0.8) + 'px', borderRadius: '3px',
     })], '群組 ×N', '同一台設備終端過多時收合，雙擊展開');
-    item([h('span', { class: 'sev error' })], '錯誤／警告');
+    // 嚴重度：外形與畫布的 sevMark 相同（theme.sevShape），不只靠顏色
+    Object.entries(V.theme.sevShape).forEach(([k, shape]) => item([dot(Object.assign({ background: V.theme.sev[k] }, SEV_CSS[shape]), { 'data-shape': shape })],
+      V.SEV[k], `有${V.SEV[k]}的設備在右上角、連線在中點標示${shape === 'square' ? '方形' : '三角形'}`));
     group('連線');
     Object.entries(V.EDGE_STYLE).forEach(([k, st]) => item([line(st.c, st.w, st.dash)], V.CLS[k],
       k === '1g' ? '推論分類：ether、sfp1、combo 等介面名稱歸為 1G；不代表實際協商速率，ether 也可能是 2.5G 或 10G。' : null));

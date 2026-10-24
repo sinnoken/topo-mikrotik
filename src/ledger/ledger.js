@@ -6,11 +6,16 @@
  * {
  *   schema: 'ssot-ledger/1',
  *   items: { '<findingKey>': {
- *     status, id, dev, firstSeen, lastSeen,        // firstSeen／lastSeen：第一次／最後一次出現的基準 inputHash
+ *     status, id, dev, firstSeen, lastSeen,        // firstSeen／lastSeen：第一次／最後一次出現的基準鍵
  *     patch: string|null, waiver: { reason, until }|null, note,
- *     history: [{ at, from, to, by: 'user'|'advance', baseline, reason, waiver?, ack? }] } },
- *   iterations: [{ baseline: { inputHash, createdAt }, at, counts, coverage: { collected, expected }, unknownPeers }]
+ *     history: [{ at, from, to, by: 'user'|'advance', baseline, reason, waiver?, ack? }] } },   // baseline：當時最新一輪的基準鍵
+ *   iterations: [{ baseline: { inputHash, baselineKey, createdAt }, at, counts, coverage: { collected, expected }, unknownPeers }]
  * }
+ * 基準鍵：基準的 meta.baselineKey（輸入、程式 major.minor 版本、命名規則、預期資料的組合，見 pipeline.js），判斷是否同一份基準。
+ *   較早的處理紀錄沒有 baselineKey，firstSeen／lastSeen／history.baseline 記的是 inputHash；這些紀錄一律退回用 inputHash
+ *   （baseOf），不改寫舊資料。沒有 baselineKey 的舊基準同樣退回用 inputHash。
+ *   schema 維持 ssot-ledger/1：只新增選用欄位 baselineKey，舊紀錄不轉換也照常讀取，舊版程式讀到新紀錄時保留不認得的欄位
+ *   （ADR-010：新增欄位且能相容讀取時不升 schema）。
  * waiver 只在 accepted 時有值；離開 accepted 時，原本的 waiver 記在那一筆 history 的 waiver，不遺失。
  * 狀態轉換規則見 advance 與 set 的說明。
  */
@@ -54,6 +59,8 @@
     return new Date(Date.parse(v)).toISOString();
   };
   const nowOf = (opt) => isoOf((opt || {}).now, 'now');
+  /** 一輪（iterations[].baseline）或一份基準（meta）的基準鍵；舊紀錄、舊基準沒有 baselineKey 時退回用 inputHash */
+  const baseOf = (b) => (b && b.baselineKey != null ? b.baselineKey : b && b.inputHash);
   const sortItems = (items) => { const out = {}; Object.keys(items).sort(U.cmp).forEach((k) => { out[k] = items[k]; }); return out; };
 
   /** findingKey → [id, 'type:key', ...]；不是 Q.findingKey 的形式時回傳 null */
@@ -119,7 +126,7 @@
         if (h.from !== null && !STATUS.includes(h.from)) err(hp + '.from', `必須是狀態或 null，目前是 ${JSON.stringify(h.from)}`);
         if (!STATUS.includes(h.to)) err(hp + '.to', `必須是狀態，目前是 ${JSON.stringify(h.to)}`);
         if (!BY.includes(h.by)) err(hp + '.by', `必須是 ${BY.join('／')}，目前是 ${JSON.stringify(h.by)}`);
-        if (!isStrOrNull(h.baseline)) err(hp + '.baseline', '必須是字串（基準 inputHash）或 null');
+        if (!isStrOrNull(h.baseline)) err(hp + '.baseline', '必須是字串（基準鍵；舊紀錄為 inputHash）或 null');
         if (h.reason !== undefined && !isStrOrNull(h.reason)) err(hp + '.reason', '必須是字串或 null');
       });
     });
@@ -130,8 +137,12 @@
         const p = `iterations[${i}]`;
         if (!isObj(r)) { err(p, '必須是物件'); return; }
         if (!isObj(r.baseline) || typeof r.baseline.inputHash !== 'string' || !r.baseline.inputHash) err(p + '.baseline.inputHash', '必須是非空字串');
-        else if (seen.has(r.baseline.inputHash)) err(p + '.baseline.inputHash', `與前面的一輪重複（${r.baseline.inputHash}）`);
-        else seen.add(r.baseline.inputHash);
+        else if (r.baseline.baselineKey !== undefined && (typeof r.baseline.baselineKey !== 'string' || !r.baseline.baselineKey)) err(p + '.baseline.baselineKey', '必須是非空字串（舊紀錄可以沒有這個欄位）');
+        else {
+          // 各輪的基準鍵不可重複；舊紀錄沒有 baselineKey 時以 inputHash 比較
+          const f = r.baseline.baselineKey !== undefined ? 'baselineKey' : 'inputHash'; const b = baseOf(r.baseline);
+          if (seen.has(b)) err(`${p}.baseline.${f}`, `與前面的一輪重複（${b}）`); else seen.add(b);
+        }
         if (isObj(r.baseline) && !isStrOrNull(r.baseline.createdAt)) err(p + '.baseline.createdAt', '必須是字串或 null');
         if (!isIso(r.at)) err(p + '.at', `必須是 ISO 8601 時間，目前是 ${JSON.stringify(r.at)}`);
         if (!isObj(r.counts)) err(p + '.counts', '必須是物件');
@@ -183,22 +194,23 @@
    * 以新基準推進一輪，回傳 { ledger, changes, unobserved, skipped }：
    *   changes   ：[{ key, from, to, reason }]，依 key 排序；reason 為 new／disappeared／reappeared／waiver-expired
    *   unobserved：基準中沒有、但無法判斷是否已修好的待處理項目鍵（狀態不變，見 observer）
-   *   skipped   ：這份基準（inputHash）已經推進過時為 true，ledger 原樣回傳、不新增一輪
+   *   skipped   ：這份基準（基準鍵相同）已經推進過時為 true，ledger 原樣回傳、不新增一輪
    * 轉換（present＝基準中有這個 findingKey；absent＝沒有且可以判斷；unobserved＝沒有但無法判斷）：
    *   （無）        present → open（new）
    *   open／scheduled／regressed：present 不變；absent → fixed（disappeared）；unobserved 不變
    *   fixed         present → regressed（reappeared）；其餘不變
    *   accepted      waiver.until < now → open（waiver-expired，不論是否出現）；否則不變
    *   false-positive 不變（判斷的是規則本身，不是網路現況；保留以供規則品質統計）
-   * 出現在基準中的項目更新 lastSeen（第一次出現時也補 firstSeen）。
+   * 出現在基準中的項目更新 lastSeen（第一次出現時也補 firstSeen），記的是基準鍵。
    */
   L.advance = function advance(ledger, Q, opt) {
     const now = nowOf(opt);
     const out = checked(ledger);
     const meta = Q.meta();
-    const hash = meta.inputHash;
-    if (typeof hash !== 'string' || !hash) throw new Error('基準沒有 inputHash，無法推進處理紀錄');
-    if (out.iterations.some((r) => r.baseline.inputHash === hash)) return { ledger: out, changes: [], unobserved: [], skipped: true };
+    if (typeof meta.inputHash !== 'string' || !meta.inputHash) throw new Error('基準沒有 inputHash，無法推進處理紀錄');
+    if (meta.baselineKey != null && (typeof meta.baselineKey !== 'string' || !meta.baselineKey)) throw new Error('基準的 baselineKey 必須是非空字串');
+    const hash = baseOf(meta);
+    if (out.iterations.some((r) => baseOf(r.baseline) === hash)) return { ledger: out, changes: [], unobserved: [], skipped: true };
     const present = new Map();
     Q.findings().forEach((f) => { const k = Q.findingKey(f); if (!present.has(k)) present.set(k, f); });
     const canJudge = observer(Q);
@@ -235,7 +247,7 @@
     unobserved.sort(U.cmp);
     const tally = byStatus(out);
     out.iterations.push({
-      baseline: { inputHash: hash, createdAt: meta.createdAt || null }, at: now,
+      baseline: Object.assign({ inputHash: meta.inputHash }, meta.baselineKey != null ? { baselineKey: meta.baselineKey } : {}, { createdAt: meta.createdAt || null }), at: now,
       counts: { new: delta.new, fixed: delta.fixed, open: tally.open, scheduled: tally.scheduled, regressed: tally.regressed, accepted: tally.accepted,
         falsePositive: tally['false-positive'], waiverExpired: delta.waiverExpired, unobserved: unobserved.length },
       coverage: coverageOf(Q), unknownPeers: unknownPeersOf(Q),
@@ -275,7 +287,7 @@
     const last = out.iterations[out.iterations.length - 1];
     if (to !== it.status) {
       if (!USER_TO[it.status].includes(to)) throw new Error(`不能由 ${it.status} 手動改為 ${to}${to === 'regressed' ? '（regressed 只由 advance 依基準判定）' : ''}`);
-      if (to === 'fixed' && last && it.lastSeen === last.baseline.inputHash) throw new Error('這個項目仍出現在最新一輪基準中，不能手動標為 fixed（修好後重新收集，advance 會判定）');
+      if (to === 'fixed' && last && it.lastSeen === baseOf(last.baseline)) throw new Error('這個項目仍出現在最新一輪基準中，不能手動標為 fixed（修好後重新收集，advance 會判定）');
     }
     if (c.waiver !== undefined && c.waiver !== null && to !== 'accepted') throw new Error(`只有 accepted 可以有豁免，目前要設為 ${to}`);
     if (c.note !== undefined && typeof c.note !== 'string') throw new Error('note 必須是字串');
@@ -284,7 +296,7 @@
     const note = c.note === undefined ? it.note : c.note.trim();
     const patch = c.patch === undefined ? it.patch : c.patch;
     if (to === it.status && note === it.note && patch === it.patch && JSON.stringify(waiver) === JSON.stringify(it.waiver)) return out;
-    const entry = { at: now, from: it.status, to, by: 'user', baseline: last ? last.baseline.inputHash : null, reason: to === it.status ? 'edit' : null };
+    const entry = { at: now, from: it.status, to, by: 'user', baseline: last ? baseOf(last.baseline) : null, reason: to === it.status ? 'edit' : null };
     if (it.waiver && JSON.stringify(waiver) !== JSON.stringify(it.waiver)) entry.waiver = it.waiver; // 被取代或移除的豁免記在歷程
     it.history.push(entry);
     Object.assign(it, { status: to, note, patch, waiver });
@@ -326,14 +338,14 @@
   // ---- 統計
   /**
    * 趨勢圖用的時間序列與目前狀態：
-   *   series ：每一輪 { at, inputHash, createdAt, counts, pending（open＋regressed，待處理）, coverage: { collected, expected, ratio }, unknownPeers }
+   *   series ：每一輪 { at, inputHash, baselineKey（舊紀錄為 null）, createdAt, counts, pending（open＋regressed，待處理）, coverage: { collected, expected, ratio }, unknownPeers }
    *   current：{ total, byStatus: { 狀態: 筆數 }, waivers: { total, missingReason（豁免沒寫原因的筆數） } }
    * ratio 為 collected／expected（expected 為 0 時為 null）。
    */
   L.summary = function summary(ledger) {
     const lg = checked(ledger);
     const series = lg.iterations.map((r) => ({
-      at: r.at, inputHash: r.baseline.inputHash, createdAt: r.baseline.createdAt, counts: r.counts,
+      at: r.at, inputHash: r.baseline.inputHash, baselineKey: r.baseline.baselineKey ?? null, createdAt: r.baseline.createdAt, counts: r.counts,
       pending: (r.counts.open || 0) + (r.counts.regressed || 0),
       coverage: { collected: r.coverage.collected, expected: r.coverage.expected, ratio: r.coverage.expected ? r.coverage.collected / r.coverage.expected : null },
       unknownPeers: r.unknownPeers,

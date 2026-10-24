@@ -188,11 +188,13 @@
     const sev = { error: 0, warn: 0, info: 0 };
     c.findings.forEach((f) => { sev[f.severity]++; });
     const inputText = c.sources.map((s) => (s.name || '') + '\n' + s.text).join('\n\u0000\n');
+    const inputHash = U.hash(inputText);
     return {
       meta: {
         schema: S.SCHEMA, version: S.VERSION,
         createdAt: c.opt.now || new Date().toISOString(),
-        inputHash: U.hash(inputText),
+        inputHash,
+        baselineKey: baselineKey(inputHash, c.opt),
         sources: c.sources.map((s) => ({ name: s.name || S.readers.PASTE, reader: c.readersUsed[s.name || S.readers.PASTE] || null, bytes: s.text.length, hash: U.hash(s.text) })),
         adapters: c.usage, blockCount: c.blocks.length, factCount: c.facts.length,
         profile: c.profile ? { id: c.profile.id, version: c.profile.version } : null,
@@ -209,6 +211,20 @@
       coverage: c.coverage,
       blocks,
     };
+  }
+
+  /**
+   * 基準鍵：判斷「是不是同一份基準」（處理紀錄的冪等性）。inputHash 只是輸入指紋；同一份輸入以不同的
+   * 程式版本、命名規則或預期資料建立，Snapshot 可能不同，所以這三者也要納入：
+   *   hash(JSON [inputHash, 'major.minor', profileHash|null, expectedDataHash|null])
+   * 版本只取 major.minor：依版本規則（ADR-005），patch 版不改變 Snapshot。profile 與 expectedData 以鍵排序後的 JSON
+   * 計算（同一個 id 與 version、內容不同的命名規則也能區分）。不含 createdAt 等與執行環境有關的欄位。
+   * 之後加入檢查參數（ADR-009）時，也要加進這個陣列（放在最後，不影響既有欄位的意義）。
+   */
+  function baselineKey(inputHash, opt) {
+    const minor = String(S.VERSION).split('.').slice(0, 2).join('.');
+    const h = (v) => (v == null ? null : U.hash(U.canonicalJson(v)));
+    return U.hash(JSON.stringify([inputHash, minor, h(opt.profile), h(opt.expectedData)]));
   }
 
   /** 同步建立（Node、測試用）。 */

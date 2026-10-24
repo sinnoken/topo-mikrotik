@@ -94,7 +94,7 @@
 
   /**
    * 比對兩份基準（舊 → 新），只透過查詢介面讀取。
-   * 回傳 { schema: 'ssot-snapdiff/1', errors: string[], summary, items }：
+   * 回傳 { schema: 'ssot-snapdiff/1', errors: string[], warnings, summary, items }：
    *   summary = { added, removed, changed, byCategory: { device|link|vlan|ip|firewall|finding: { added, removed, changed } } }
    *   items[] = { category, change: 'added'|'removed'|'changed', key, field, before, after, message, effect }（effect 只有 firewall 類別有值，其他為 null）
    *     device ：key＝設備鍵；新增／移除，或 field 為 kind／deviceType／softwareVersion 的改變（before／after 是欄位值）
@@ -106,11 +106,15 @@
    *     finding：key＝Q.findingKey；以鍵的多重集合比對，同一個鍵兩邊都有就視為同一個問題（訊息改變不算差異）
    *   新增時 before 為 null，移除時 after 為 null。items 依類別（上列順序）、鍵、變更種類、欄位排序。
    * 兩份基準的 schema 不同（或不是本工具的 schema）時不比對：errors 說明原因，items 為空。
+   * warnings[] = { kind: 'version'|'profile', before, after, message }（依此順序，相同時不列）：schema 相同、照常比對，
+   *   但差異可能來自程式或命名規則而不是網路。version 的 before／after 是 meta.version（沒有時為 null）；
+   *   profile 的是 meta.profile（{ id, version } 或 null）。schema 不同而不比對時 warnings 為空。
    */
   S.compare.snapshots = function (qOld, qNew) {
     const errors = [];
     const byCategory = {}; CATEGORIES.forEach((c) => { byCategory[c] = { added: 0, removed: 0, changed: 0 }; });
-    const report = { schema: 'ssot-snapdiff/1', errors, summary: { added: 0, removed: 0, changed: 0, byCategory }, items: [] };
+    const warnings = [];
+    const report = { schema: 'ssot-snapdiff/1', errors, warnings, summary: { added: 0, removed: 0, changed: 0, byCategory }, items: [] };
     const metaOf = (q) => (q && typeof q.meta === 'function' ? q.meta() || {} : null);
     const mo = metaOf(qOld); const mn = metaOf(qNew);
     if (!mo || !mn) { errors.push('需要兩份基準的查詢介面（SSOT.query(snapshot)）'); return report; }
@@ -119,6 +123,18 @@
       return report;
     }
     if (mo.schema !== S.SCHEMA) { errors.push(`基準的 schema 是 ${mo.schema || '未標示'}，本工具只能比對 ${S.SCHEMA}；請從原始輸入重新建立`); return report; }
+    // 程式版本或命名規則不同：照常比對，但提示部分差異可能不是網路改變（ADR-005）
+    const vo = nil(mo.version); const vn = nil(mn.version);
+    if (vo !== vn) {
+      const t = (v) => (v == null ? '未標示' : v);
+      warnings.push({ kind: 'version', before: vo, after: vn, message: `版本不同（${t(vo)} → ${t(vn)}）：新版才有的檢查會顯示為新出現，不代表網路改變` });
+    }
+    const prof = (p) => (p ? { id: nil(p.id), version: nil(p.version) } : null);
+    const po = prof(mo.profile); const pn = prof(mn.profile);
+    if (JSON.stringify(po) !== JSON.stringify(pn)) {
+      const t = (p) => (p ? `${p.id}（版本 ${p.version == null ? '未標示' : p.version}）` : '沒有');
+      warnings.push({ kind: 'profile', before: po, after: pn, message: `命名規則不同（${t(po)} → ${t(pn)}）：設備名稱、類型與分群可能因此不同，這部分的差異不代表網路改變` });
+    }
 
     const items = report.items;
     const push = (category, change, key, field, before, after, message) => {

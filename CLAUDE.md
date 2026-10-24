@@ -59,8 +59,8 @@ git diff --check         # 提交前檢查
   產生 findings，只讀模型、不寫回；`catalog.js` 必須在 `checks.js` 之前載入。
   `steps()` 是 generator，讓 UI 可顯示進度。
 - **單向依賴**：核心分成上游與下游。上游（core/readers/adapters/model/check/profile/query/pipeline）產生並查詢 Snapshot；
-  下游（`compare/` 比對、`remediate/` 修正 patch、`ledger/` 處理紀錄）也是核心檔案，但只透過 `SSOT.query(snapshot)` 讀基準、
-  不修改基準，上游也不呼叫它們。所有核心都不得碰 DOM、Canvas、IndexedDB。View 與下游只透過 `SSOT.query(snapshot)`（[src/query/query.js](src/query/query.js)）讀取，不讀原始 model、不改寫 Snapshot。
+  下游（`compare/` 比對、`remediate/` 修正 patch、`ledger/` 處理紀錄、`workpack/` 的 `S.zip` 與工作包 `S.workpack`）也是核心檔案，
+  但只透過 `SSOT.query(snapshot)` 讀基準、不修改基準，上游也不呼叫它們；`S.workpack` 只在呼叫時使用 `S.build`、`S.ledger` 與 `S.profile`。所有核心都不得碰 DOM、Canvas、IndexedDB。View 與下游只透過 `SSOT.query(snapshot)`（[src/query/query.js](src/query/query.js)）讀取，不讀原始 model、不改寫 Snapshot。
   `src/view/theme.js` 是顏色／線型／透明度的唯一來源；持久化集中在 `src/view/store.js`。
   畫面讀 `CATALOG` 的 `causes`／`action` 只透過 `V.remediation.advice(id)`；含反引號的文字以 `V.codeText` 組成 DOM，不用 innerHTML。
 - **比對與檢視狀態**：`compare/` 有預期資料比對（`S.compare`）、由基準產生預期資料（`S.compare.expectedFrom`）與
@@ -112,7 +112,7 @@ git diff --check         # 提交前檢查
 | Agent | 負責 | 驗證 |
 |---|---|---|
 | `data-model` | 上游：解析、建模、推論、檢查、Snapshot、查詢介面、範例與 OUI 產生器 | `npm run test:core` |
-| `workflow` | 下游：比對與預期資料（`compare/`）、修正 patch（`remediate/`）、處理紀錄（`ledger/`）、patch 黃金檔、之後的 CLI | `npm run test:core` |
+| `workflow` | 下游：比對與預期資料（`compare/`）、修正 patch（`remediate/`）、處理紀錄（`ledger/`）、工作包與 ZIP（`workpack/`）、patch 黃金檔、之後的 CLI | `npm run test:core` |
 | `frontend` | 畫面、樣式、theme、`index.html`、`vendor/` | `npm run test:ui` |
 | `collector` | SSH 收集器 | `npm run test:collector` |
 | `docs` | README、`docs/`、開發原則、skills、agent 定義 | `npm run test:docs` |
@@ -124,7 +124,7 @@ git diff --check         # 提交前檢查
 agent 之間的介面：
 - **data-model ↔ frontend**：Snapshot 欄位（設計說明 §5.2）與 `SSOT.query()`。
 - **data-model ↔ workflow**：同樣是 Snapshot 欄位與 `SSOT.query()`；`src/query/` 歸 data-model。workflow 需要新的查詢函式時寫進報告，由 data-model 加入。
-- **workflow ↔ frontend**：`S.compare`、`S.remediate`、`S.ledger`。畫面的指令文字一律由 `S.remediate` 產生，處理紀錄只透過 `S.ledger` 存取。
+- **workflow ↔ frontend**：`S.compare`、`S.remediate`、`S.ledger`、`S.workpack`（含 `S.zip`）。畫面的指令文字一律由 `S.remediate` 產生，處理紀錄只透過 `S.ledger` 存取，工作包只透過 `S.workpack` 讀寫。
 - **data-model → docs**：`CATALOG`（`src/check/catalog.js`）與 `docs/基準檢查規則.md` 必須一致，包括 `causes`／`action`。
 - **collector → data-model**：`bundle-v1` 格式與 `tools/collector-commands.sh` 的指令。
 

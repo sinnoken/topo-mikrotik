@@ -17,6 +17,7 @@
 | `ssot-snapdiff/1` | `S.compare.snapshots` | 只輸出，不讀入 | 是 |
 | `ssot-diff/1` | `S.compare(Q, expected)`（預期資料與基準的比對結果） | 只輸出，不讀入 | 是 |
 | `ssot-profile/1` | 使用者手寫的命名 profile | `S.profile.compile` 不檢查 `schema` 欄位 | 否 |
+| `ssot-workpack/1` | `S.workpack.build`（`src/workpack/workpack.js`，2026-10-24 新增，[ADR-017](017-工作包ssot-workpack-1.md)） | `read` 拒絕比程式新的 major 與不認得的版本；不認得的欄位保留，不認得的角色列為警告、檔案保留。屬於使用者長期保存的格式 | 否，內含處理紀錄、命名規則與預期資料 |
 
 另外，收集檔的 `bundle-v1`、`files-v1` 是輸入格式，由 `src/readers/` 依內容辨識，不在本 ADR 範圍。
 

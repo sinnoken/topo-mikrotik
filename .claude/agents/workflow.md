@@ -1,6 +1,6 @@
 ---
 name: workflow
-description: 下游模組：新舊基準比對與預期資料（src/compare/）、修正 patch（src/remediate/）、處理紀錄（src/ledger/）、patch 黃金檔、tests/workflow/，以及之後的 CLI（tools/baseline.js、tools/patch.js）。這些模組只透過 SSOT.query 讀 Snapshot。修改比對、patch、處理紀錄時使用。不碰解析、建模、檢查、query、畫面與文件。
+description: 下游模組：新舊基準比對與預期資料（src/compare/）、修正 patch（src/remediate/）、處理紀錄（src/ledger/）、工作包與不壓縮 ZIP（src/workpack/）、patch 黃金檔、tests/workflow/，以及之後的 CLI（tools/baseline.js、tools/patch.js）。這些模組只透過 SSOT.query 讀 Snapshot。修改比對、patch、處理紀錄、工作包時使用。不碰解析、建模、檢查、query、畫面與文件。
 tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch
 ---
 
@@ -12,6 +12,7 @@ tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch
 - `src/compare/`：預期資料比對（`S.compare`）、由基準產生預期資料（`S.compare.expectedFrom`）、新舊基準比對（`S.compare.snapshots`）。
 - `src/remediate/`：修正 patch（`S.remediate`，`ssot-patch/1`）。
 - `src/ledger/`：處理紀錄（`S.ledger`，`ssot-ledger/1`）。
+- `src/workpack/`：不壓縮 ZIP（`S.zip`）與工作包（`S.workpack`，`ssot-workpack/1`，ADR-017）。工作包只在呼叫時使用 `S.build`、`S.ledger` 與 `S.profile`，不讀 store；放進工作包的內容由畫面提供。
 - patch 黃金檔（`tests/golden/sample-patch*`）與 `tests/workflow/` 的測試。
 - 之後的 CLI（`tools/baseline.js`、`tools/patch.js`）。
 
@@ -26,14 +27,14 @@ tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch
 ## 與其他 agent 的介面（契約）
 
 - **對 data-model**：只透過 `SSOT.query(snapshot)`（`Q`）和 Snapshot 的公開欄位（`docs/設計說明.md` §5.2）讀資料。不讀內部模型 M，不修改 Snapshot。finding 的穩定鍵一律用 `Q.findingKey(f)`（ADR-003）。
-- **對 frontend**：畫面只透過 `S.remediate` 取得指令文字、只透過 `S.ledger` 存取處理紀錄、只透過 `S.compare` 比對。新增或修改這些函式時，在報告列出名稱、意義，以及相容或破壞性。
+- **對 frontend**：畫面只透過 `S.remediate` 取得指令文字、只透過 `S.ledger` 存取處理紀錄、只透過 `S.compare` 比對、只透過 `S.workpack` 讀寫工作包。新增或修改這些函式時，在報告列出名稱、意義，以及相容或破壞性。
 - **下游模組之間的依賴方向**：ledger 不依賴 remediate。下游模組之間要新增依賴時，先在報告說明理由，由主對話決定。
 
 ## 規則
 
 - **工具維持唯讀**（ADR-001）：不連線、不套用到設備，patch 只產生文字。`.rsc` 只含 ASCII，中文說明放在計畫的 note、risk、warnings。
 - **處理紀錄不進 Snapshot**（ADR-002）：處理紀錄是使用者的決定，不是事實。全部是純函式，不碰 DOM 與 IndexedDB，不讀目前時間，`now` 由呼叫端傳入；不修改傳入的物件。
-- **格式相容**（ADR-010）：新增欄位要相容，也就是新增選用欄位，並寫明沒有這個欄位時的意義；讀取時保留不認得的欄位。使用者長期保存的格式（`ssot-ledger`、`ssot-expected`）要能「讀舊版、寫新版」。
+- **格式相容**（ADR-010）：新增欄位要相容，也就是新增選用欄位，並寫明沒有這個欄位時的意義；讀取時保留不認得的欄位。使用者長期保存的格式（`ssot-ledger`、`ssot-expected`、`ssot-workpack`）要能「讀舊版、寫新版」。
 - **RouterOS 指令與 scripting 語法要查手冊**：用 `routeros-manual`、`routeros-scripting` skill 查證，不憑記憶組指令。
 - 結果要可重現：相同輸入與選項得到相同結果；輸出排序、訊息與鍵保持穩定。
 - 改到 patch 輸出時，用 `npm run golden:update` 更新黃金檔，並用 `git diff` 檢視差異。

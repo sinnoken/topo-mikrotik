@@ -7,7 +7,28 @@
   const A = () => V.app; // 畫面組裝的內部函式（app.js 在本檔之後才載入）
 
   // ---------------------------------------------------------------- 檢查結果
-  const state = { sev: { error: true, warn: true, info: true }, open: new Set(), shown: new Map(), selected: -1 };
+  // groupBy：rule（依規則代碼）或 device（依設備，V.remediation.findingDevice）；onlyNew：只看與舊基準比對後新出現的；
+  // exportByDevice：匯出 CSV／Markdown 時依設備排序；editing：正在填寫確認分類與原因的那一筆（findings 的索引）
+  const state = { sev: { error: true, warn: true, info: true }, open: new Set(), shown: new Map(), selected: -1,
+    groupBy: 'rule', onlyNew: false, exportByDevice: false, editing: -1 };
+  const R = () => V.remediation;
+  /** 確認的分類與原因：確認時與修改時共用；未知的分類（較新版本寫入）保留為選項，儲存時不會被改掉 */
+  function ackEditor(App, f, ack, rerender) {
+    const KIND = R().ACK_KIND;
+    const unknown = ack && ack.kind && !KIND[ack.kind] ? ack.kind : null;
+    const kind = h('select', { class: 'ack-kind', 'aria-label': '確認的分類' }, [h('option', { value: '' }, '未分類'),
+      ...Object.entries(KIND).map(([k, label]) => h('option', { value: k }, label)),
+      unknown ? h('option', { value: unknown }, unknown) : null]);
+    kind.value = ack && ack.kind ? ack.kind : '';
+    const note = h('input', { type: 'text', class: 'ack-note-input', maxlength: '500', 'aria-label': '確認的原因',
+      placeholder: '原因（選填），例如：維護窗口 11/30 處理', value: ack ? ack.note || '' : '' });
+    const cancel = () => { state.editing = -1; rerender(); };
+    const save = () => { state.editing = -1; App.ackFinding(f, true, { kind: kind.value, note: note.value }); };
+    note.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } else if (e.key === 'Escape') cancel(); });
+    return h('div', { class: 'ack-editor' }, [kind, note,
+      h('button', { class: 'primary', 'aria-label': '儲存確認：' + f.message, onclick: save }, ack ? '儲存' : '確認'),
+      h('button', { class: 'ghost', onclick: cancel }, '取消')]);
+  }
   const activateByKey = (fn) => (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); } };
   /**
    * 篩選列的選項（所有分頁共用）：「標籤 筆數」，選取時以強調色填滿；筆數為 0 且未選取時停用。
@@ -21,52 +42,94 @@
   function findings(App) {
     const root = V.clear(V.$('#pane-findings'));
     if (!App.snap) return root.appendChild(h('div', { class: 'empty-detail' }, '建立基準後，資料之間的矛盾與缺漏會列在這裡。'));
-    const all = App.snap.findings;
+    const all = App.snap.findings; const Q = App.Q;
+    // 只看新出現的：依「比對」分頁載入的舊基準（S.compare.snapshots 的 finding added）；沒有舊基準時停用
+    const base = V.baselineDiff.loaded();
+    if (!base) state.onlyNew = false;
+    const isNew = (f) => !!base && base.addedFindingKeys.has(Q.findingKey(f));
+    const pass = (f) => !state.onlyNew || isNew(f);
     // 已確認的項目另列一組（預設收合），不算在上方各嚴重度的筆數裡
     const acked = []; const st = { error: 0, warn: 0, info: 0 };
-    all.forEach((f, idx) => { if (App.isAcked(f)) acked.push(idx); else st[f.severity]++; });
+    all.forEach((f, idx) => { if (!pass(f)) return; if (App.isAcked(f)) acked.push(idx); else st[f.severity]++; });
     const ackedSet = new Set(acked);
     root.appendChild(h('div', { class: 'summary' }, ['error', 'warn', 'info'].map((s) => filterChip(V.SEV[s], st[s], { cls: s === 'error' ? 'err' : s, on: state.sev[s],
       onclick: () => { state.sev[s] = !state.sev[s]; findings(App); }, title: '點一下切換顯示',
     }))));
-    // 匯出不受上方嚴重度篩選影響：一律輸出全部檢查結果（含已確認，另有一欄標示）
+    // 分組方式與「只看新出現的」
+    const nNew = base ? all.filter(isNew).length : 0;
+    root.appendChild(h('div', { class: 'summary sub findings-view' }, [
+      h('div', { class: 'seg', role: 'group', 'aria-label': '分組方式' }, [['rule', '依規則'], ['device', '依設備']].map(([k, label]) => h('button', {
+        class: `btn ${state.groupBy === k ? 'on' : ''}`, 'aria-pressed': String(state.groupBy === k), 'data-group-by': k,
+        onclick: () => { state.groupBy = k; findings(App); } }, label))),
+      base ? filterChip('只看新出現的', nNew, { cls: 'info', on: state.onlyNew, title: `與舊基準（${base.name}）比對後新出現的檢查結果`,
+        onclick: () => { state.onlyNew = !state.onlyNew; findings(App); } })
+        : V.chip('只看新出現的', 'btn off only-new', { 'aria-disabled': 'true', 'aria-pressed': 'false', title: '需要先在「比對」分頁載入舊基準' }),
+      base ? null : h('span', { class: 'muted note only-new-why' }, '在「比對」分頁載入舊基準後，才能只看新出現的'),
+    ]));
+    // 匯出不受上方篩選影響：一律輸出全部檢查結果（含已確認，另有欄位標示）；可選擇依設備排序
     root.appendChild(h('div', { class: 'row spaced pane-section' }, [
       h('span', { class: 'muted' }, '匯出全部檢查結果'),
-      h('button', { title: '每筆一列，含相關實體、證據行號與確認時間（Excel 可直接開啟）', onclick: () => App.exportAs('csv') }, 'CSV'),
-      h('button', { title: '依嚴重度分組的報表，含證據行號，已確認的項目會標示', onclick: () => App.exportAs('markdown') }, 'Markdown'),
+      h('button', { title: '每筆一列，含相關實體、證據行號、確認時間、分類與原因（Excel 可直接開啟）', onclick: () => App.exportAs('csv', { byDevice: state.exportByDevice }) }, 'CSV'),
+      h('button', { title: '依嚴重度（或依設備）分組的報表，含證據行號，已確認的項目會標示分類與原因', onclick: () => App.exportAs('markdown', { byDevice: state.exportByDevice }) }, 'Markdown'),
+      h('button', { class: 'ghost export-by-device' + (state.exportByDevice ? ' on' : ''), 'aria-pressed': String(state.exportByDevice),
+        title: '匯出時依設備排序（Markdown 依設備分組）；不屬於任何設備的排最後',
+        onclick: () => { state.exportByDevice = !state.exportByDevice; findings(App); } }, '依設備排序'),
     ]));
     if (!all.length) root.appendChild(h('div', { class: 'empty-detail' }, [h('div', { class: 'big' }, '沒有發現問題'), '所有資料彼此一致。']));
-    /** 一筆檢查結果：點文字定位，旁邊的按鈕標記或取消確認 */
-    const item = (i) => {
+    else if (state.onlyNew && !nNew) root.appendChild(h('div', { class: 'muted pane-note' }, `與舊基準（${base.name}）比對，沒有新出現的檢查結果。`));
+    /** 一筆檢查結果：點文字定位；旁邊的按鈕確認（選分類、填原因）、修改或取消確認 */
+    const item = (i, showId) => {
       const f = all[i]; const ack = ackedSet.has(i) ? A().ackOf(f) : null;
       const select = () => { state.selected = i; App.selectFinding(i); findings(App); };
-      return h('div', { class: 'fitem-row' }, [
+      const edit = (e) => { e.stopPropagation(); state.editing = state.editing === i ? -1 : i; findings(App); };
+      return h('div', { class: 'fitem-wrap' }, [h('div', { class: 'fitem-row' }, [
         h('div', { class: 'fitem' + (state.selected === i ? ' sel' : ''), role: 'button', tabindex: '0', onclick: select, onkeydown: activateByKey(select) }, [
-          ack ? h('span', { class: 'id' }, f.id + ' ') : null, f.message,
-          ack ? h('div', { class: 'muted note' }, `已確認：${V.fmtUtc(ack.at)}`) : null,
+          ack || showId ? h('span', { class: 'id' }, f.id + ' ') : null,
+          !state.onlyNew && isNew(f) ? V.chip('新出現', 'info', { title: `舊基準（${base.name}）沒有這筆` }) : null, f.message,
+          ack ? h('div', { class: 'muted note' }, `已確認：${V.fmtUtc(ack.at)}・${R().ackKindText(ack.kind)}`) : null,
+          ack && ack.note ? h('div', { class: 'muted note ack-reason' }, '原因：' + ack.note) : null,
         ]),
+        ack ? h('button', { class: 'ghost ack', title: '修改分類與原因', 'aria-label': '修改確認：' + f.message, onclick: edit }, '修改') : null,
         h('button', {
-          class: 'ghost ack', title: ack ? '取消確認，移回原本的分組' : '標記為已確認（只存在這個瀏覽器，不改變基準）',
+          class: 'ghost ack', title: ack ? '取消確認，移回原本的分組' : '標記為已確認，可選分類並填原因（只存在這個瀏覽器，不改變基準）',
           'aria-label': (ack ? '取消確認：' : '確認：') + f.message,
-          onclick: (e) => { e.stopPropagation(); App.ackFinding(f, !ack); },
+          onclick: ack ? (e) => { e.stopPropagation(); state.editing = -1; App.ackFinding(f, false); } : edit,
         }, ack ? '取消確認' : '確認'),
-      ]);
+      ]), state.editing === i ? ackEditor(App, f, ack, () => findings(App)) : null]);
     };
-    const groups = new Map();
-    all.forEach((f, idx) => { if (state.sev[f.severity] && !ackedSet.has(idx)) S.util.getOr(groups, f.id, () => []).push(idx); });
-    groups.forEach((idxs, id) => {
-      const c = S.check.CATALOG[id]; const open = state.open.has(id);
-      const toggle = () => { open ? state.open.delete(id) : state.open.add(id); findings(App); };
-      const g = h('div', { class: 'fgroup' }, [h('div', { class: 'head', role: 'button', tabindex: '0', onclick: toggle, onkeydown: activateByKey(toggle) }, [
-        h('span', null, open ? '▾' : '▸'), V.sevDot(c.severity), h('span', { class: 'title' }, c.title), h('span', { class: 'id' }, id), V.chip(String(idxs.length)),
+    /** 一個可展開的分組：key 是展開狀態的鍵，head 是標題列的內容 */
+    const group = (key, head, idxs, cls, showId) => {
+      const open = state.open.has(key);
+      const toggle = () => { open ? state.open.delete(key) : state.open.add(key); findings(App); };
+      const g = h('div', { class: 'fgroup' + (cls ? ' ' + cls : '') }, [h('div', { class: 'head', role: 'button', tabindex: '0', 'aria-expanded': String(open), onclick: toggle, onkeydown: activateByKey(toggle) }, [
+        h('span', null, open ? '▾' : '▸'), ...head, V.chip(String(idxs.length)),
       ])]);
       if (open) {
-        const n = state.shown.get(id) || 100;
-        g.appendChild(h('div', { class: 'items' }, idxs.slice(0, n).map(item)));
-        if (idxs.length > n) g.appendChild(h('a', { class: 'link more', onclick: () => { state.shown.set(id, n + 200); findings(App); } }, `再顯示 200 筆（共 ${idxs.length} 筆）`));
+        const n = state.shown.get(key) || 100;
+        g.appendChild(h('div', { class: 'items' }, idxs.slice(0, n).map((i) => item(i, showId))));
+        if (idxs.length > n) g.appendChild(h('a', { class: 'link more', onclick: () => { state.shown.set(key, n + 200); findings(App); } }, `再顯示 200 筆（共 ${idxs.length} 筆）`));
       }
-      root.appendChild(g);
-    });
+      return g;
+    };
+    const shown = (idx) => state.sev[all[idx].severity] && !ackedSet.has(idx) && pass(all[idx]);
+    if (state.groupBy === 'device') {
+      // 依設備：設備名稱順序，不屬於任何設備的最後一組；組內保留基準的順序，每筆標出規則代碼
+      const groups = new Map();
+      R().sortByDevice(Q, all).forEach((r) => { if (shown(r.idx)) S.util.getOr(groups, r.dev, () => []).push(r.idx); });
+      const SEVS = ['error', 'warn', 'info'];
+      groups.forEach((idxs, dev) => {
+        const worst = SEVS.find((s) => idxs.some((i) => all[i].severity === s));
+        root.appendChild(group(dev === null ? '#nodev' : 'dev:' + dev, [V.sevDot(worst), h('span', { class: 'title' }, dev === null ? '不屬於任何設備' : Q.devName(dev))],
+          idxs, 'by-device' + (dev === null ? ' no-device' : ''), true));
+      });
+    } else {
+      const groups = new Map();
+      all.forEach((f, idx) => { if (shown(idx)) S.util.getOr(groups, f.id, () => []).push(idx); });
+      groups.forEach((idxs, id) => {
+        const c = S.check.CATALOG[id];
+        root.appendChild(group(id, [V.sevDot(c.severity), h('span', { class: 'title' }, c.title), h('span', { class: 'id' }, id)], idxs, '', false));
+      });
+    }
     // 已確認：不受上方嚴重度篩選影響，預設收合
     if (acked.length) {
       const key = '#acked'; const open = state.open.has(key);
@@ -74,7 +137,7 @@
       const g = h('div', { class: 'fgroup acked' }, [h('div', { class: 'head', role: 'button', tabindex: '0', 'aria-expanded': String(open), onclick: toggle, onkeydown: activateByKey(toggle) }, [
         h('span', null, open ? '▾' : '▸'), h('span', { class: 'title' }, '已確認'), V.chip(String(acked.length)),
       ])]);
-      if (open) g.appendChild(h('div', { class: 'items' }, acked.map(item)));
+      if (open) g.appendChild(h('div', { class: 'items' }, acked.map((i) => item(i, true))));
       root.appendChild(g);
     }
     // 沒有發現的規則：分成「通過」與「沒有資料可檢查」，預設收合（不受上方嚴重度篩選影響）
@@ -94,7 +157,7 @@
       root.appendChild(g);
     });
   }
-  findings.reset = () => { state.open = new Set(); state.shown = new Map(); state.selected = -1; };
+  findings.reset = () => { state.open = new Set(); state.shown = new Map(); state.selected = -1; state.editing = -1; state.onlyNew = false; };
   findings.openFirst = (snap) => { const f = snap.findings.find((x) => x.severity !== 'info'); if (f) state.open.add(f.id); };
   findings.showProblems = (App) => {
     state.sev = { error: true, warn: true, info: false };
@@ -114,6 +177,15 @@
     const seenOnly = rows.filter((r) => !r.collected && r.kind !== 'host'); const hosts = rows.filter((r) => !r.collected && r.kind === 'host');
     const F = { all: ['全部已收集', collected], missing: ['有缺漏', missing], seen: ['未收集的網路設備', seenOnly], hosts: ['主機（只由 LLDP 看到）', hosts] };
     root.appendChild(h('div', { class: 'summary' }, Object.entries(F).map(([k, [label, list]]) => filterChip(label, list.length, { cls: k === 'missing' ? 'err' : '', on: cov.filter === k, onclick: () => { cov.filter = k; coverage(App); } }))));
+    // C01（只被鄰居發現、沒有收集資料的網路設備）→ tools/collect.sh 的設備清單草稿
+    const nC01 = App.snap.findings.filter((f) => f.id === 'C01').length;
+    root.appendChild(h('div', { class: 'row spaced pane-section devices-draft' }, [
+      h('span', { class: 'muted' }, nC01 ? `未收集的網路設備（C01）${V.num(nC01)} 台，可匯出收集器的設備清單草稿` : '沒有未收集的網路設備（C01）'),
+      h('button', {
+        disabled: !nC01 || null, onclick: () => App.exportAs('devicesCsv'),
+        title: 'tools/collect.sh 的 devices.csv（name,address,user,port[,extra]）；address 取管理 IP 或鄰居回報的位址，user 是佔位值，執行前請修改',
+      }, '匯出未收集設備的 devices.csv 草稿'),
+    ]));
     const list = F[cov.filter][1];
     root.appendChild(V.table([
       { t: '設備', f: (r) => Q.devName(r.dev) },

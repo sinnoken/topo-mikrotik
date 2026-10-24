@@ -60,6 +60,58 @@ test('files-v1：沒有標頭時以檔名為設備名', () => {
   assert.strictEqual(blocks[0].device, 'EDGE_SW_9');
   assert.strictEqual(blocks[0].reader, 'files-v1');
 });
+test('收集器註解：collected-at 與 collection failed 讀進區塊，C02／coverage 區分沒收集與收集失敗，註解不是 I01', () => {
+  const s = S.build([{ name: 'c.txt', text: read('tests/fixtures/collector/collected-at-and-failures.txt') }], { now: '2026-01-01T00:00:00Z' });
+  assert.ok(!ids(s).includes('I01'), JSON.stringify(s.findings.filter((f) => f.id === 'I01').map((f) => f.message)));
+  assert.deepStrictEqual(s.blocks.map((b) => [b.device, b.command && b.command.split(' ')[1], b.collectedAt, b.failure && b.failure.reason]), [
+    ['SW_A', 'resource', '2026-10-24T03:00:00Z', null], ['SW_A', 'neighbor', '2026-10-24T03:00:02Z', null],
+    ['SW_A', 'bridge', '2026-10-24T03:00:04Z', 'timeout'], ['SW_A', 'terse', '2026-10-24T03:00:34Z', 'exit-code'], ['R_B', null, null, 'connection']]);
+  assert.deepStrictEqual(s.blocks[3].failure, { reason: 'exit-code', exitCode: 255, text: 'exit code 255', line: 18 });
+  // 失敗前的部分輸出照常解析（export 的 bridge1）
+  assert.ok(iface(s, 'SW_A|bridge1'), '失敗區塊裡已輸出的內容仍要解析');
+  // 連線失敗的設備不會消失：列為已收集、所有資料缺少，並註明失敗原因
+  const rb = s.model.devices.find((d) => d.key === 'R_B');
+  assert.ok(rb.collected);
+  const c02 = (k) => s.findings.find((f) => f.id === 'C02' && f.entities[0].key === k);
+  assert.strictEqual(c02('R_B').message, 'R_B（路由器）缺少：鄰居、設定、路由表；收集失敗：連線（connection）');
+  assert.deepStrictEqual(c02('R_B').evidence.map((e) => [e.line, e.text]), [[21, '# collection failed: connection']]);
+  assert.strictEqual(c02('SW_A').message, 'SW_A（交換器）缺少：MAC 表；收集失敗：/interface bridge host print detail without-paging（timeout）、/export terse（exit code 255）');
+  assert.deepStrictEqual(c02('SW_A').evidence.slice(0, 2).map((e) => [e.line, e.text]), [[14, '# collection failed: timeout'], [18, '# collection failed: exit code 255']]);
+  const cov = s.coverage.find((r) => r.dev === 'SW_A');
+  assert.deepStrictEqual(cov.missing, ['mac']);
+  assert.deepStrictEqual(cov.failures.map((x) => [x.command.split(' ')[0], x.reason, x.exitCode, x.dataTypes]), [['/interface', 'timeout', null, ['mac']], ['/export', 'exit-code', 255, ['config']]]);
+  assert.deepStrictEqual(s.coverage.find((r) => r.dev === 'R_B').failures.map((x) => [x.command, x.reason]), [[null, 'connection']]);
+  // files-v1 也一樣讀得到
+  const f = S.build([{ name: 'SW_F.txt', text: '### /ip arp print detail\n# collected-at: 2026-10-24T03:00:00Z\n 0 DC address=10.0.0.9 mac-address=AA:BB:CC:00:00:09 interface=ether1\n' }], { now: '2026-01-01T00:00:00Z' });
+  assert.strictEqual(f.blocks[0].collectedAt, '2026-10-24T03:00:00Z');
+});
+test('收集器註解：時間格式或位置不對列為 I01（指回該行），不靜默丟棄；舊格式的區塊欄位為 null 且結果不變', () => {
+  const t = (lines) => build(['SW_A (10.0.0.1):', '### /ip arp print detail', ...lines, ' 0 DC address=10.0.0.9 mac-address=AA:BB:CC:00:00:09 interface=ether1'].join('\n'));
+  ['2026-10-24 03:00:00', '2026-10-24T03:00:00+08:00', '2026-10-24T03:00:00.123Z', '2026-02-30T03:00:00Z', ''].forEach((bad) => {
+    const s = t([`# collected-at: ${bad}`]);
+    const i01 = s.findings.filter((x) => x.id === 'I01');
+    assert.strictEqual(i01.length, 1, bad);
+    assert.ok(/第 3 行：收集時間「.*」不是 UTC ISO 8601/.test(i01[0].message), i01[0].message);
+    assert.deepStrictEqual(i01[0].evidence.map((e) => [e.line, e.text]), [[3, `# collected-at: ${bad}`.trim()]]);
+    assert.strictEqual(s.blocks[0].collectedAt, null);
+    assert.strictEqual(s.model.arps.length, 1, '時間格式不對不影響區塊內容的解析');
+  });
+  const misplaced = t(['', '# collected-at: 2026-10-24T03:00:00Z']);
+  assert.ok(/不在指令標記的下一行/.test(misplaced.findings.find((x) => x.id === 'I01').message));
+  assert.strictEqual(misplaced.blocks[0].collectedAt, null);
+  const dup = t(['# collection failed: timeout', '# collection failed: exit code 1']);
+  assert.ok(/第二個收集失敗註解/.test(dup.findings.find((x) => x.id === 'I01').message));
+  assert.strictEqual(dup.blocks[0].failure.reason, 'timeout');
+  const other = t(['# collection failed: 主機拒絕']);
+  assert.deepStrictEqual([other.blocks[0].failure.reason, other.blocks[0].failure.text], ['other', '主機拒絕']);
+  // 舊格式：沒有這兩行時區塊沒有額外內容，序列化為 null；有正確的註解時事實與檢查結果相同（只差行號）
+  const old = t([]); const neu = t(['# collected-at: 2026-10-24T03:00:00Z']);
+  const raw = S.readers.readAll([{ name: 'a.txt', text: 'SW_A (10.0.0.1):\n### /ip arp print detail\nX\n' }]).blocks[0];
+  assert.deepStrictEqual(Object.keys(raw).sort(), ['command', 'device', 'id', 'lines', 'mgmtIp', 'origin', 'reader']);
+  assert.deepStrictEqual([old.blocks[0].collectedAt, old.blocks[0].failure], [null, null]);
+  assert.deepStrictEqual(ids(neu), ids(old));
+  assert.deepStrictEqual(neu.model.arps.map((a) => [a.ip, a.mac]), old.model.arps.map((a) => [a.ip, a.mac]));
+});
 test('沒有設備標頭的內容列為無法辨識（不靜默丟棄）', () => {
   const s = build('隨便一段文字\nSW_A (10.0.0.1):\n### /ip neighbor print detail\n');
   assert.ok(ids(s).includes('I01'));
@@ -425,12 +477,13 @@ test('system resource：型號決定交換器／路由器', () => {
 // ------------------------------------------------------------------ 範例資料：每個刻意放入的問題都要被找到
 test('範例資料：每項刻意放入的問題都被找到，且沒有多餘的錯誤', () => {
   const s = build(read('samples/sample-bundle.txt'));
-  const expect = { I01: 1, I02: 1, C02: 1, K01: 1, K02: 1, K03: 1, K04: 1, V01: 1, V04: 1, V05: 1, A01: 1, A02: 1, A04: 1, A05: 1, R01: 2, R02: 1, R03: 1, R04: 1, R05: 1, C01: 3 };
+  const expect = { I01: 1, I02: 1, C02: 1, K01: 1, K02: 1, K03: 1, K04: 1, V01: 1, V04: 1, V05: 1, V06: 1, A01: 1, A02: 1, A04: 1, A05: 1, R01: 2, R02: 1, R03: 1, R04: 1, R05: 1, C01: 3, F01: 1, F02: 1, F03: 1, F04: 1, F05: 1, F06: 1, F07: 1, F08: 1 };
   Object.entries(expect).forEach(([id, n]) => assert.strictEqual(count(s, id), n, `${id} 應有 ${n} 筆，實際 ${count(s, id)}`));
   assert.strictEqual(s.meta.stats.collected, 14);
   const css = s.model.inferredLinks.find((l) => l.a.startsWith('TPE_CSS_01|') || l.b.startsWith('TPE_CSS_01|'));
   assert.ok(css && css.confidence === 'high' && css.bases.join('+') === 'fdb+mndp-unique', '範例的 CSS610 應以 MAC 表＋MNDP 推論到 ACC_06 ether21');
-  assert.deepStrictEqual(s.findings.filter((f) => f.severity === 'error').map((f) => f.id).sort(), ['I01', 'K02']);
+  assert.deepStrictEqual(s.findings.filter((f) => f.severity === 'error').map((f) => f.id).sort(), ['I01']);
+  assert.strictEqual(s.findings.find((f) => f.id === 'K02').severity, 'warn', 'K02 是警告：可能是鄰居表過時或中間有未管理交換器，不一定是資料矛盾');
   s.findings.forEach((f) => f.evidence.forEach((e) => assert.ok(typeof e.text === 'string')));
   const v01 = s.findings.find((f) => f.id === 'V01').entities.find((e) => e.type === 'link');
   assert.strictEqual(s.model.links.find((l) => l.key === v01.key).vlanComparable, true, 'vlanComparable 必須序列化，查詢層才能判斷是否可比對');
@@ -554,6 +607,20 @@ test('A02：同介面多 VLAN 觀察完整保留，並只比較相同 VLAN 的�
   assert.ok(finding && finding.message.includes('VLAN 20'), finding && finding.message);
   assert.deepStrictEqual(finding.entities.filter((e) => e.type === 'interface').map((e) => e.key), ['SW_A|ether1', 'SW_A|ether2']);
 });
+test('C01 的證據指回發現它的鄰居資料與 OSPF 鄰居資料（依輸入順序，最多 6 筆）', () => {
+  const nb = (dev, ports) => [`${dev} (10.0.0.${dev === 'SW_A' ? 1 : 2}):`, '### /ip neighbor print detail',
+    ...ports.map((p, k) => ` ${k} interface=${p} mac-address=AA:00:00:00:00:09 identity=X_RT interface-name=ether${k + 1}`)];
+  const s = build(nb('SW_B', ['ether1', 'ether2', 'ether3', 'ether4']).concat(nb('SW_A', ['ether5', 'ether6', 'ether7'])).join('\n'));
+  const c01 = s.findings.find((f) => f.id === 'C01' && f.entities[0].key === 'X_RT');
+  assert.ok(c01, '應有 X_RT 的 C01');
+  assert.deepStrictEqual(c01.evidence.map((e) => e.line), [3, 4, 5, 6, 9, 10], '依輸入順序（SW_B 在前），最多 6 筆');
+  assert.ok(c01.evidence.every((e) => /identity=X_RT/.test(e.text)));
+  const o = build(['R1 (10.0.0.1):', '### /ip address print detail', ' 0 address=10.9.9.1/30 network=10.9.9.0 interface=ether1',
+    '### /routing ospf neighbor print detail', ' 0 instance=default area=backbone address=10.9.9.2 router-id=10.255.0.9 state=Full'].join('\n'));
+  const oc = o.findings.find((f) => f.id === 'C01');
+  assert.ok(oc, 'OSPF 鄰居對不到設備時也應有 C01');
+  assert.deepStrictEqual(oc.evidence.map((e) => e.line), [5]);
+});
 test('A02／A03／A04／C02 的證據指回 MAC 表觀察與設備區塊（A02 取同一 VLAN 的那一行，最多 6 筆）', () => {
   const many = Array.from({ length: 7 }, (_, k) => ` ${k + 4} D mac-address=02:AA:BB:00:01:0${k} vid=10 on-interface=ether3 bridge=bridge1\n`).join('');
   const s = build('SW_A (10.0.0.1):\n### /interface bridge host print detail\n'
@@ -574,6 +641,15 @@ test('A02／A03／A04／C02 的證據指回 MAC 表觀察與設備區塊（A02 �
   assert.ok(ev('A04').every((e) => /on-interface=ether3/.test(e.text)));
   // C02：設備在輸入中的各區塊開頭
   assert.deepStrictEqual(ev('C02').map((e) => [e.block, e.line]), [[0, 3], [1, 15]]);
+});
+test('C02 的證據不限 6 筆：列出全部失敗註解與已收集區塊；其他規則仍最多 6 筆', () => {
+  const cmds = Array.from({ length: 8 }, (_, k) => `### /ip arp print detail\n\n# collection failed: exit code ${k + 1}`).join('\n');
+  const s = build(`SW (10.0.0.1):\n${cmds}\n`);
+  const c02 = s.findings.find((f) => f.id === 'C02');
+  assert.strictEqual(c02.evidence.length, 16, '8 個失敗註解＋8 個區塊');
+  assert.ok(c02.evidence.slice(0, 8).every((e) => /collection failed/.test(e.text)));
+  assert.strictEqual(S.check.CATALOG.C02.evidenceLimit, Infinity);
+  assert.ok(Object.entries(S.check.CATALOG).every(([id, c]) => id === 'C02' || c.evidenceLimit === undefined));
 });
 test('未知對端不進基準的設備、鏈路（只是檢視）', () => {
   const s = build(read('samples/sample-bundle.txt'));
@@ -656,6 +732,46 @@ test('R03／R04：下一跳迴圈與落入黑洞分開回報，不重複列為 R
   assert.deepStrictEqual([count(self, 'R01'), count(self, 'R03')], [1, 0]);
   const t = S.trace(S.query(s), '10.0.0.9', '10.94.1.1');
   assert.deepStrictEqual(t.ends.map((e) => e.status), ['blackhole']);
+});
+// 兩台交換器 A、B，ports 是兩邊互連的埠（各自 LLDP 回報對方）；cfgA／cfgB 是 export 的 bridge port／vlan 行
+const vlanPair = (cfgA, cfgB, ports = ['ether1']) => build([
+  ['A', 'B', cfgA, 1], ['B', 'A', cfgB, 2]].map(([me, peer, cfg, n]) => [`${me} (10.0.0.${n}):`, '### /ip neighbor print detail',
+  ...ports.map((p, k) => ` ${k} interface=${p} mac-address=AA:00:00:00:00:0${n === 1 ? 2 : 1} identity=${peer} interface-name=${p}`),
+  '### /export terse', '/interface bridge add name=bridge1 vlan-filtering=yes', ...cfg].join('\n')).join('\n'));
+test('V06：兩端都有同一個 VLAN，一端 tagged、另一端 untagged；V01 不受影響、PVID 不同只報 V04、聚合成員只報一次', () => {
+  const s = vlanPair(['/interface bridge port add bridge=bridge1 interface=ether1', '/interface bridge vlan add bridge=bridge1 tagged=ether1 vlan-ids=20,30'],
+    ['/interface bridge port add bridge=bridge1 interface=ether1', '/interface bridge vlan add bridge=bridge1 untagged=ether1 vlan-ids=20', '/interface bridge vlan add bridge=bridge1 tagged=ether1 vlan-ids=30']);
+  const v06 = s.findings.filter((f) => f.id === 'V06');
+  assert.strictEqual(v06.length, 1, JSON.stringify(s.findings.map((f) => f.id)));
+  assert.strictEqual(v06[0].message, 'VLAN 20 在 A ether1 為 tagged、在 B ether1 為 untagged');
+  assert.deepStrictEqual(v06[0].entities, [{ type: 'link', key: 'A|ether1~B|ether1' }]);
+  assert.strictEqual(count(s, 'V01'), 0, '兩端都有 VLAN 20、30，不是 V01');
+  assert.strictEqual(s.findings.find((f) => f.id === 'V06').severity, 'warn');
+  // PVID 不同（10 對 20）：只報 V04，PVID 那兩個 VLAN 的 tagged／untagged 差異是同一件事；其他 VLAN 仍可報 V06
+  const p = vlanPair(['/interface bridge port add bridge=bridge1 interface=ether1 pvid=10', '/interface bridge vlan add bridge=bridge1 tagged=ether1 vlan-ids=20,30'],
+    ['/interface bridge port add bridge=bridge1 interface=ether1 pvid=20', '/interface bridge vlan add bridge=bridge1 tagged=ether1 vlan-ids=10',
+      '/interface bridge vlan add bridge=bridge1 untagged=ether1 vlan-ids=30']);
+  assert.strictEqual(count(p, 'V04'), 1);
+  assert.deepStrictEqual(p.findings.filter((f) => f.id === 'V06').map((f) => f.message), ['VLAN 30 在 A ether1 為 tagged、在 B ether1 為 untagged']);
+  // 聚合：兩條成員鏈路、VLAN 設在聚合介面上（成員繼承）→ 只報一次
+  const lag = (side) => [`/interface bonding add name=bond1 slaves=ether1,ether2`, '/interface bridge port add bridge=bridge1 interface=bond1',
+    `/interface bridge vlan add bridge=bridge1 ${side}=bond1 vlan-ids=40`];
+  const g = vlanPair(lag('tagged'), lag('untagged'), ['ether1', 'ether2']);
+  assert.strictEqual(count(g, 'V06'), 1, '同一組聚合只報一次');
+  assert.ok(/bond1/.test(g.findings.find((f) => f.id === 'V06').message));
+  // 一致時沒有 V06
+  const ok = vlanPair(['/interface bridge vlan add bridge=bridge1 tagged=ether1 vlan-ids=20'], ['/interface bridge vlan add bridge=bridge1 tagged=ether1 vlan-ids=20']);
+  assert.strictEqual(count(ok, 'V06'), 0);
+});
+test('V06：只看雙邊都有 VLAN 資料的介面鄰接，MNDP 與單側觀察的鏈路不比', () => {
+  const m = build(['A (10.0.0.1):', '### /ip neighbor print detail', ' 0 interface=ether1 mac-address=AA:00:00:00:00:02 identity=B interface-name=ether1 discovered-by=mndp',
+    '### /export terse', '/interface bridge add name=bridge1 vlan-filtering=yes', '/interface bridge vlan add bridge=bridge1 tagged=ether1 vlan-ids=20',
+    'B (10.0.0.2):', '### /ip neighbor print detail', ' 0 interface=ether1 mac-address=AA:00:00:00:00:01 identity=A interface-name=ether1 discovered-by=mndp',
+    '### /export terse', '/interface bridge add name=bridge1 vlan-filtering=yes', '/interface bridge vlan add bridge=bridge1 untagged=ether1 vlan-ids=20'].join('\n'));
+  assert.strictEqual(count(m, 'V06'), 0, 'MNDP 只證明廣播網域可達');
+  const h = build(['A (10.0.0.1):', '### /ip neighbor print detail', ' 0 interface=ether1 mac-address=AA:00:00:00:00:02 identity=B interface-name=ether1',
+    '### /export terse', '/interface bridge add name=bridge1 vlan-filtering=yes', '/interface bridge vlan add bridge=bridge1 tagged=ether1 vlan-ids=20'].join('\n'));
+  assert.strictEqual(count(h, 'V06'), 0, '對端沒有收集資料');
 });
 test('VRRP 位址標示角色、網段帶出所屬 VLAN；R05 只在閘道不在網段內時回報', () => {
   const s = build(['R (10.0.0.1):', '### /export terse', '/interface vlan add interface=bridge1 name=vlan30 vlan-id=30', '/interface vrrp add interface=vlan30 name=vrrp30 vrid=30',
@@ -950,6 +1066,177 @@ test('遞迴路由：gateway 是對端 loopback 時沿路由表解析；R01 只�
   const Q = S.query(s); const t = S.trace(Q, '10.254.0.1', '172.16.1.1');
   assert.ok(t.hops.some((h) => h.next.some((n) => n.dev === 'R_B' && /遞迴解析/.test(n.note || ''))), JSON.stringify(t.hops));
 });
+
+// ------------------------------------------------------------------ 防火牆
+const edgeFw = () => S.build([{ name: 'edge.txt', text: read('tests/fixtures/firewall/edge-router.txt') }], { now: '2026-01-01T00:00:00Z' });
+// 一台 WAN＝ether1、LAN＝bridge1 的路由器，加上 export 行
+const fwBox = (lines, opt) => build(['R (10.0.0.1):', '### /export terse', '/interface bridge add name=bridge1',
+  ...(opt && opt.noLists ? [] : ['/interface list add name=WAN', '/interface list add name=LAN', '/interface list member add interface=bridge1 list=LAN',
+    ...(opt && opt.emptyWan ? [] : ['/interface list member add interface=ether1 list=WAN'])]), ...lines].join('\n'));
+const fws = (s, id) => s.findings.filter((f) => f.id === id);
+const fwLines = (s, id) => fws(s, id).map((f) => f.evidence.map((e) => e.line));
+test('防火牆解析：filter／nat／raw、IPv6、chain 內順序、否定、disabled、comment、行號；interface list、ip service、IPsec', () => {
+  const s = edgeFw();
+  assert.ok(!ids(s).includes('I01'), JSON.stringify(s.findings.filter((f) => f.id === 'I01')));
+  const rules = s.model.firewallRules;
+  const input = rules.filter((r) => r.family === 'ip' && r.table === 'filter' && r.chain === 'input');
+  assert.deepStrictEqual(input.map((r) => r.position), input.map((_, k) => k + 1), 'chain 內依出現順序編號');
+  assert.deepStrictEqual(input.map((r) => r.src[0][1]), [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 29]);
+  const est = input[0];
+  assert.deepStrictEqual([est.action, est.match['connection-state'], est.comment, est.disabled], ['accept', 'established,related,untracked', 'defconf: accept established,related,untracked', false]);
+  assert.strictEqual(input[10].match['in-interface-list'], '!LAN', '否定保留 ! 前綴');
+  assert.strictEqual(input[11].disabled, true);
+  assert.deepStrictEqual(input[9].params, { 'jump-target': 'mgmt' });
+  assert.ok(!('chain' in est.match) && !('comment' in est.match) && !('action' in est.match), 'match 只放比對條件');
+  const dnat = rules.find((r) => r.table === 'nat' && r.action === 'dst-nat');
+  assert.deepStrictEqual([dnat.chain, dnat.params['to-addresses'], dnat.params['to-ports'], dnat.order], ['dstnat', '192.168.88.10', '80', 2]);
+  assert.ok(rules.some((r) => r.table === 'raw' && r.chain === 'prerouting'));
+  assert.strictEqual(rules.filter((r) => r.family === 'ipv6').length, 2);
+  assert.deepStrictEqual(s.model.interfaceLists.map((l) => [l.name, l.members]), [['LAN', ['EDGE|bridge1']], ['WAN', ['EDGE|ether1']]]);
+  const svc = (n) => s.model.ipServices.find((x) => x.dev === 'EDGE' && x.name === n);
+  assert.deepStrictEqual([svc('telnet').enabled, svc('telnet').basis], [false, 'export']);
+  assert.deepStrictEqual([svc('ssh').addresses, svc('ssh').basis, svc('ssh').port], [['192.168.88.0/24'], 'export', 22], '[ find name=ssh ] 也認得');
+  assert.deepStrictEqual([svc('winbox').enabled, svc('winbox').addresses, svc('winbox').basis, svc('winbox').port], [true, [], 'default', 8291], '沒出現在 export 的服務是預設值，不是停用');
+  assert.deepStrictEqual([svc('www-ssl').enabled, svc('www-ssl').basis], [false, 'default']);
+  const zone = s.model.firewallZones.find((z) => z.dev === 'EDGE');
+  assert.deepStrictEqual([zone.status, zone.wanLists, zone.wanInterfaces, zone.lanInterfaces], ['ok', ['WAN'], ['EDGE|ether1'], ['EDGE|bridge1']]);
+  // 同一份輸入兩次結果相同，規則鍵不含序號：在最前面插入一條規則，其他規則的鍵不變
+  const keys = rules.map((r) => r.key);
+  const ins = S.build([{ name: 'edge.txt', text: read('tests/fixtures/firewall/edge-router.txt').replace('/ip firewall filter add action=accept chain=input comment="defconf: accept est', '/ip firewall filter add action=drop chain=input src-address=198.51.100.9\n/ip firewall filter add action=accept chain=input comment="defconf: accept est') }], { now: '2026-01-01T00:00:00Z' });
+  assert.deepStrictEqual(keys.filter((k) => !ins.model.firewallRules.some((r) => r.key === k)), [], '插入規則後既有規則的鍵不變');
+  assert.ok(new Set(keys).size === keys.length, '規則鍵唯一');
+});
+test('防火牆解析：RouterOS export 的註解編碼（\\XX 位元組）依 UTF-8、Big5 解碼；都失敗時保留原文並標示', () => {
+  const s = fwBox(['/ip firewall filter add action=accept chain=input comment="\\E4\\B8\\AD\\E6\\96\\87 ok" protocol=icmp',
+    '/ip firewall filter add action=accept chain=input comment="\\A4\\A4\\A4\\E5" protocol=icmp',
+    '/ip firewall filter add action=accept chain=input comment="bad \\FF\\FE" protocol=icmp',
+    '/ip firewall filter add action=accept chain=input comment="say \\"hi\\"" protocol=icmp']);
+  const c = s.model.firewallRules.map((r) => [r.comment, r.commentEncoding]);
+  assert.deepStrictEqual(c, [['中文 ok', 'utf-8'], ['中文', 'big5'], ['bad \\FF\\FE', 'undecodable'], ['say "hi"', 'ascii']]);
+});
+test('F01／F02：被前面規則完全遮蔽、重複規則；限速等不確定比對不算遮蔽；output chain 也檢查；證據含前一條規則', () => {
+  const s = edgeFw();
+  assert.deepStrictEqual(fwLines(s, 'F02'), [[15, 14]], '8291 的重複規則（comment 不同仍是重複）');
+  assert.deepStrictEqual(fwLines(s, 'F01'), [[17, 14], [28, 27]], 'in-interface=ether1 那條被 8291 全部放行遮蔽；output 的 10.1/16 被 10/8 遮蔽');
+  assert.ok(/第 4 條/.test(fws(s, 'F01')[0].message), fws(s, 'F01')[0].message);
+  const lim = fwBox(['/ip firewall filter add action=accept chain=input dst-port=22 limit=10,5:packet protocol=tcp', '/ip firewall filter add action=drop chain=input dst-port=22 protocol=tcp',
+    '/ip firewall filter add action=accept chain=input dst-port=80,443 protocol=tcp', '/ip firewall filter add action=drop chain=input dst-port=443 protocol=tcp',
+    '/ip firewall filter add action=drop chain=input dst-port=443,8443 protocol=tcp', '/ip firewall filter add action=drop chain=input connection-state=!established',
+    '/ip firewall filter add action=drop chain=input connection-state=new']);
+  assert.deepStrictEqual(fwLines(lim, 'F01'), [[11, 10], [14, 13]], '帶 limit 不遮蔽；dst-port 清單用子集合；!established 涵蓋 new');
+  assert.strictEqual(fws(lim, 'F01')[0].severity, 'warn');
+  assert.strictEqual(S.check.CATALOG.F02.severity, 'info');
+});
+test('F03：WAN 可主動建立新連線的 input／forward 放行；被 jump 的子 chain 也算；排除 established、ICMP、LAN、私有來源、IPsec（有 peer 時）', () => {
+  const s = edgeFw();
+  const f03 = fws(s, 'F03');
+  assert.deepStrictEqual(f03.map((f) => f.evidence.map((e) => e.line)), [[14], [19], [22, 20]], 'winbox 放行、ESP（沒有 IPsec）、mgmt 子 chain（附 jump 那一行）');
+  assert.ok(/IPsec peer／policy/.test(f03[1].message), f03[1].message);
+  assert.ok(/mgmt/.test(f03[2].message) && /jump/.test(f03[2].message), f03[2].message);
+  assert.ok(f03.every((f) => f.entities.some((e) => e.type === 'rule')));
+  const priv = fwBox(['/ip firewall filter add action=accept chain=input src-address=192.168.0.0/16 dst-port=22 protocol=tcp',
+    '/ip firewall filter add action=accept chain=input in-interface-list=LAN dst-port=23 protocol=tcp', '/ip firewall filter add action=accept chain=input protocol=icmp',
+    '/ip firewall filter add action=accept chain=input connection-state=established,related', '/ip firewall filter add action=accept chain=input ipsec-policy=in,ipsec',
+    '/ip firewall filter add action=drop chain=input in-interface-list=WAN', '/ip firewall filter add action=accept chain=input dst-port=80 protocol=tcp']);
+  assert.strictEqual(fws(priv, 'F03').length, 0, '私有來源、LAN、ICMP、established、ipsec-policy、被 drop 擋下的都不算');
+  const ipsec = (extra) => fwBox(['/ip firewall filter add action=accept chain=input protocol=ipsec-esp', '/ip firewall filter add action=accept chain=input dst-port=500,4500 protocol=udp', ...extra]);
+  assert.strictEqual(fws(ipsec([]), 'F03').length, 2);
+  assert.strictEqual(fws(ipsec(['/ip ipsec peer add address=198.51.100.1/32 name=p1']), 'F03').length, 0, '有 IPsec peer 時 IPsec 放行是需要的');
+  assert.strictEqual(fws(ipsec(['/ip ipsec policy add dst-address=10.9.0.0/16 src-address=192.168.88.0/24 tunnel=yes']), 'F03').length, 0, '有 IPsec policy 也算');
+  assert.strictEqual(fws(ipsec(['/ip ipsec peer add address=198.51.100.1/32 disabled=yes name=p1']), 'F03').length, 2, '停用的 peer 不算');
+  // 白名單之後接全部放行（forward）
+  const wl = fwBox(['/ip firewall filter add action=accept chain=forward src-address-list=office', '/ip firewall filter add action=accept chain=forward']);
+  assert.deepStrictEqual(fwLines(wl, 'F03'), [[9]]);
+});
+test('raw 表：prerouting 先丟掉的封包不算對外暴露（F03、F07）', () => {
+  const base = ['/ip firewall filter add action=accept chain=input dst-port=8291 protocol=tcp'];
+  assert.strictEqual(fws(fwBox(base), 'F03').length, 1);
+  const raw = fwBox(base.concat(['/ip firewall raw add action=drop chain=prerouting in-interface-list=WAN']));
+  assert.strictEqual(fws(raw, 'F03').length, 0);
+  assert.strictEqual(fws(raw, 'F07').length, 0);
+  const s = edgeFw();
+  assert.ok(!fws(s, 'F07').some((f) => /api（/.test(f.message)), 'api（8728）被 raw 擋下');
+});
+test('F04：WAN 可連入的 dst-nat 與對應的 forward 放行；沒有 in-interface 的 dstnat 放行附 hairpin 提醒', () => {
+  const s = edgeFw();
+  const f04 = fws(s, 'F04');
+  assert.deepStrictEqual(f04.map((f) => f.evidence.map((e) => e.line)), [[31, 25]]);
+  assert.ok(/192\.168\.88\.10/.test(f04[0].message) && /hairpin/.test(f04[0].message), f04[0].message);
+  const blocked = fwBox(['/ip firewall nat add action=dst-nat chain=dstnat dst-port=8080 in-interface-list=WAN protocol=tcp to-addresses=192.168.88.10',
+    '/ip firewall filter add action=drop chain=forward in-interface-list=WAN']);
+  assert.strictEqual(fws(blocked, 'F04').length, 0, 'forward 擋下時不是可連入點');
+  const lan = fwBox(['/ip firewall nat add action=dst-nat chain=dstnat dst-port=8080 in-interface-list=LAN protocol=tcp to-addresses=192.168.88.10']);
+  assert.strictEqual(fws(lan, 'F04').length, 0, '只從 LAN 進來的 dst-nat 不算');
+});
+test('F05：IPv6 forward 放行只限 dst-port、沒有限 dst-address；F06：以固定來源埠放行', () => {
+  const s = edgeFw();
+  assert.deepStrictEqual(fwLines(s, 'F05'), [[38]]);
+  assert.ok(!fws(s, 'F03').some((f) => f.evidence[0].line === 38), 'F05 的規則不再重複列 F03');
+  const v6 = fwBox(['/ipv6 firewall filter add action=accept chain=forward dst-address=2001:db8::10/128 dst-port=443 protocol=tcp',
+    '/ipv6 firewall filter add action=accept chain=forward dst-port=443 in-interface-list=LAN protocol=tcp']);
+  assert.strictEqual(fws(v6, 'F05').length, 0);
+  assert.deepStrictEqual(fwLines(s, 'F06'), [[18]]);
+  assert.ok(!fws(s, 'F03').some((f) => f.evidence[0].line === 18), 'F06 的規則不再重複列 F03');
+  const out = fwBox(['/ip firewall filter add action=accept chain=output protocol=udp src-port=53', '/ip firewall filter add action=accept chain=input connection-state=established protocol=udp src-port=53']);
+  assert.strictEqual(fws(out, 'F06').length, 0, 'output 是設備自己送出、established 是回應');
+});
+test('F07：管理服務啟用、沒有 available-from，且 input 放行（含預設值與沒有任何 drop 的情況）', () => {
+  const s = edgeFw();
+  assert.deepStrictEqual(fws(s, 'F07').map((f) => [f.message.split('：')[1].split('（')[0], f.evidence.map((e) => e.line)]), [['winbox', [14]]]);
+  const open = fwBox([]); // 沒有任何防火牆規則：預設全部放行
+  assert.deepStrictEqual(fws(open, 'F07').map((f) => f.message.split('：')[1].split('（')[0]).sort(), ['api', 'api-ssl', 'ftp', 'ssh', 'telnet', 'winbox', 'www'].sort());
+  const af = fwBox(['/ip service set winbox available-from=192.168.88.0/24', '/ip service set ssh disabled=yes', '/ip firewall filter add action=drop chain=input in-interface-list=!LAN']);
+  assert.strictEqual(fws(af, 'F07').length, 0, 'available-from（7.x 名稱）限制來源也算');
+});
+test('F08：有防火牆規則但無法判斷 WAN（沒有 WAN 清單或清單沒有成員）；coverage 標示 WAN 狀態', () => {
+  const rule = ['/ip firewall filter add action=accept chain=input dst-port=8291 protocol=tcp'];
+  const none = fwBox(rule, { noLists: true });
+  assert.strictEqual(fws(none, 'F08').length, 1);
+  assert.ok(/沒有名稱含 WAN 的 interface list/.test(fws(none, 'F08')[0].message), fws(none, 'F08')[0].message);
+  assert.strictEqual(fws(none, 'F03').length + fws(none, 'F07').length, 0, '無法判斷 WAN 時不猜');
+  assert.deepStrictEqual(none.coverage[0].firewall, { rules: 1, wan: 'no-wan-list' });
+  const empty = fwBox(rule, { emptyWan: true });
+  assert.ok(/沒有成員/.test(fws(empty, 'F08')[0].message));
+  assert.strictEqual(fws(fwBox([], { noLists: true }), 'F08').length, 0, '沒有任何防火牆規則時不提醒');
+  assert.deepStrictEqual(edgeFw().coverage[0].firewall, { rules: 24, wan: 'ok' });
+});
+test('防火牆查詢：依設備、位址族、表、chain 排序列出規則並附 finding；chain 清單與 jump 關係', () => {
+  const s = edgeFw(); const Q = S.query(s);
+  const chains = Q.firewallChains('EDGE');
+  assert.deepStrictEqual(chains.map((c) => [c.family, c.table, c.chain, c.rules]), [
+    ['ip', 'filter', 'input', 12], ['ip', 'filter', 'forward', 3], ['ip', 'filter', 'output', 2], ['ip', 'filter', 'mgmt', 2],
+    ['ip', 'nat', 'srcnat', 1], ['ip', 'nat', 'dstnat', 1], ['ip', 'raw', 'prerouting', 1], ['ipv6', 'filter', 'forward', 2]]);
+  assert.deepStrictEqual([chains[3].builtin, chains[3].jumpedFrom.length], [false, 1]);
+  const rows = Q.firewallRuleRows('EDGE', { family: 'ip', table: 'filter', chain: 'input' });
+  assert.deepStrictEqual(rows.map((r) => r.rule.position), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  assert.deepStrictEqual(rows[3].findings.map((f) => f.id).sort(), ['F03', 'F07']);
+  assert.deepStrictEqual(rows[4].findings.map((f) => f.id), ['F02'], '重複與遮蔽只標在後面那條（前一條的行號在證據裡）');
+  assert.strictEqual(Q.getFirewallRule(rows[0].rule.key), rows[0].rule);
+  assert.strictEqual(Q.firewallRules().length, s.model.firewallRules.length);
+  assert.strictEqual(Q.firewallZone('EDGE').status, 'ok');
+  assert.strictEqual(Q.ipServicesOf('EDGE').length, 8);
+  assert.deepStrictEqual(Q.ipsecOf('EDGE'), { peers: [], policies: [] });
+  assert.deepStrictEqual(Q.interfaceListsOf('EDGE').map((l) => l.name), ['LAN', 'WAN']);
+});
+test('基準比對（firewall）：簽章不含規則編號；插入規則只列一筆；區分新增可連入點與既有規則限制變多', () => {
+  const text = read('tests/fixtures/firewall/edge-router.txt');
+  const b = (t) => S.build([{ name: 'edge.txt', text: t }], { now: '2026-01-01T00:00:00Z' });
+  const o = b(text);
+  const fwItems = (n) => S.compare.snapshots(S.query(o), S.query(n)).items.filter((i) => i.category === 'firewall');
+  // 在最前面插入一條新的 WAN 放行
+  const opened = fwItems(b(text.replace('/ip firewall filter add action=accept chain=input comment="defconf: accept est', '/ip firewall filter add action=accept chain=input dst-port=3389 protocol=tcp\n/ip firewall filter add action=accept chain=input comment="defconf: accept est')));
+  assert.deepStrictEqual(opened.map((i) => [i.change, i.effect]), [['added', 'new-exposure']]);
+  assert.ok(/3389/.test(opened[0].message));
+  // 既有放行加上來源限制
+  const narrowed = fwItems(b(text.replace('comment="winbox from anywhere" dst-port=8291 protocol=tcp', 'comment="winbox from anywhere" dst-port=8291 protocol=tcp src-address=198.51.100.0/24')));
+  assert.deepStrictEqual(narrowed.map((i) => [i.change, i.field, i.effect]), [['changed', 'match', 'more-restrictive']]);
+  // drop 改成 accept、停用 drop
+  const loosened = fwItems(b(text.replace('action=drop chain=input comment="defconf: drop invalid"', 'action=accept chain=input comment="defconf: drop invalid"')));
+  assert.deepStrictEqual(loosened.map((i) => [i.change, i.field, i.effect, i.before, i.after]), [['changed', 'action', 'less-restrictive', 'drop', 'accept']]);
+  const disabled = fwItems(b(text.replace('action=accept chain=input comment="winbox from anywhere"', 'action=accept chain=input comment="winbox from anywhere" disabled=yes')));
+  assert.ok(disabled.some((i) => i.field === 'disabled' && i.effect === 'more-restrictive'), JSON.stringify(disabled));
+  assert.deepStrictEqual(fwItems(b(text)), [], '同一份沒有差異');
+});
 test('OSPF 鄰接與 LLDP edge 分開儲存；OSPF 不新增拓樸 edge 或升格為直連', () => {
   const a = 'R_A (10.0.0.1):\n### /export terse\n/ip address add address=10.254.0.1/30 interface=ether48\n/routing id add id=1.1.1.1 name=main\n/routing ospf instance add name=default router-id=main\n'
     + '### /routing ospf neighbor print detail\n 0 instance=default area=backbone address=10.254.0.2 priority=1 router-id=2.2.2.2 state=Full state-changes=5\n'
@@ -966,6 +1253,20 @@ test('OSPF 鄰接與 LLDP edge 分開儲存；OSPF 不新增拓樸 edge 或升�
   assert.ok(s.model.ospfAdjacencies.every((x) => x.reciprocal));
   assert.strictEqual(s.meta.stats.links, 1, '拓樸 edge 數量只計入 L2 direct link');
 });
+test('finding 穩定鍵：由 id 與排序後的 entities 組成，不受訊息、證據與 entities 順序影響；範例資料內不碰撞', () => {
+  const s = build(read('samples/sample-bundle.txt')); const Q = S.query(s);
+  const keys = s.findings.map(Q.findingKey);
+  assert.strictEqual(new Set(keys).size, keys.length, '範例資料的每筆 finding 鍵都不同');
+  const f = { id: 'K02', message: 'x', evidence: [{ block: 1, line: 2 }], entities: [{ type: 'link', key: 'B|e1~C|e2' }, { type: 'interface', key: 'B|e1' }] };
+  const g = { id: 'K02', message: '不同的訊息', evidence: [], entities: [{ type: 'interface', key: 'B|e1' }, { type: 'link', key: 'B|e1~C|e2' }] };
+  assert.strictEqual(Q.findingKey(f), Q.findingKey(g));
+  assert.strictEqual(Q.findingKey(f), '["K02","interface:B|e1","link:B|e1~C|e2"]');
+  assert.notStrictEqual(Q.findingKey(f), Q.findingKey(Object.assign({}, f, { id: 'K01' })));
+  assert.strictEqual(S.query.findingKey(f), Q.findingKey(f));
+  // 同一份輸入建兩次（行號相同）、或加了註解讓行號改變：鍵都一樣
+  const shifted = build('# 多一行\n' + read('samples/sample-bundle.txt'));
+  assert.deepStrictEqual(shifted.findings.map(Q.findingKey).sort(), keys.slice().sort());
+});
 test('比對：獨立格式，結果分 ok／missing／different，且不修改基準', () => {
   const s = build(read('samples/sample-bundle.txt')); const before = JSON.stringify(s);
   const r = S.compare(S.query(s), JSON.parse(read('samples/expected-sample.json')));
@@ -973,6 +1274,81 @@ test('比對：獨立格式，結果分 ok／missing／different，且不修改�
   assert.ok(r.summary.ok > 0 && r.summary.missing > 0 && r.summary.different > 0, JSON.stringify(r.summary));
   assert.strictEqual(JSON.stringify(s), before);
   assert.ok(S.compare(S.query(s), { schema: 'x' }).errors.length === 1);
+});
+// 兩台設備 A、B 的小網路：ver（A 的軟體版本）、port（A↔B 的埠）、vid、ipPort（A 的位址所在介面）、rev（B 是否回報 A）
+const pairNet = ({ ver = '7.12.1 (stable)', port = 'ether1', vid = 10, ipPort = 'ether1', rev = true, extra = '' } = {}) => build(['A (10.0.0.1):', '### /system resource print', `  version: ${ver}`, '  board-name: CRS326-24G-2S+',
+  '### /ip neighbor print detail', ` 0 interface=${port} mac-address=AA:00:00:00:00:02 identity=B interface-name=${port}`,
+  '### /export terse', '/interface bridge add name=bridge1 vlan-filtering=yes', `/interface bridge port add bridge=bridge1 interface=${port} pvid=${vid}`,
+  `/interface bridge vlan add bridge=bridge1 untagged=${port} vlan-ids=${vid}`, `/ip address add address=10.0.0.1/24 interface=${ipPort} network=10.0.0.0`,
+  'B (10.0.0.2):', '### /ip neighbor print detail',
+  rev ? ` 0 interface=${port} mac-address=AA:00:00:00:00:01 identity=A interface-name=${port}` : ' 0 interface=ether9 mac-address=AA:00:00:00:00:03 identity=C interface-name=ether1', extra].join('\n'));
+test('基準比對（ssot-snapdiff/1）：設備、介面鄰接鏈路、VLAN、IP、finding 的新增／移除／改變，排序穩定且不修改基準', () => {
+  const o = pairNet(); const n = pairNet({ ver: '7.13 (stable)', port: 'ether2', vid: 20, ipPort: 'ether2', rev: false });
+  const before = JSON.stringify([o, n]);
+  const r = S.compare.snapshots(S.query(o), S.query(n));
+  assert.strictEqual(r.schema, 'ssot-snapdiff/1');
+  assert.deepStrictEqual(r.errors, []);
+  assert.deepStrictEqual(r.items.map((i) => [i.category, i.change, i.key, i.field]), [
+    ['device', 'changed', 'A', 'softwareVersion'], ['device', 'added', 'C', null],
+    ['link', 'removed', 'A|ether1~B|ether1', null], ['link', 'added', 'A|ether2~B|ether2', null], ['link', 'added', 'B|ether9~C|ether1', null],
+    ['vlan', 'removed', 'A|10', null], ['vlan', 'added', 'A|20', null],
+    ['ip', 'changed', '10.0.0.1', 'interface'],
+    ['finding', 'added', '["C01","device:C"]', null], ['finding', 'added', '["K01","link:A|ether2~B|ether2"]', null]]);
+  const ver = r.items[0];
+  assert.deepStrictEqual([ver.before, ver.after, ver.message], ['7.12.1 (stable)', '7.13 (stable)', 'A 軟體版本：7.12.1 (stable) → 7.13 (stable)']);
+  assert.deepStrictEqual(r.items.find((i) => i.category === 'ip').after, [{ ep: 'A|ether2', address: '10.0.0.1/24' }]);
+  assert.deepStrictEqual([r.summary.added, r.summary.removed, r.summary.changed, r.summary.byCategory.finding.added], [6, 2, 2, 2]);
+  assert.strictEqual(JSON.stringify([o, n]), before, '比對不可修改基準');
+  // 反向比對：新增與移除互換
+  const back = S.compare.snapshots(S.query(n), S.query(o));
+  assert.deepStrictEqual([back.summary.added, back.summary.removed, back.summary.changed], [2, 6, 2]);
+  // 同一份基準：沒有差異（行號改變不算）
+  const s = build(read('samples/sample-bundle.txt'));
+  assert.deepStrictEqual(S.compare.snapshots(S.query(s), S.query(build('# 多一行\n' + read('samples/sample-bundle.txt')))).items, []);
+});
+test('基準比對：MNDP 廣播網域與鄰居宣告的位址不比；finding 以鍵的多重集合比對；schema 不同時明確回報錯誤', () => {
+  const mndp = ' 1 interface=ether7 mac-address=AA:00:00:00:00:09 identity=M interface-name=ether1 discovered-by=mndp';
+  const o = pairNet(); const n = pairNet({ extra: mndp });
+  const r = S.compare.snapshots(S.query(o), S.query(n));
+  assert.ok(!r.items.some((i) => i.category === 'link'), 'MNDP 只證明廣播網域可達，不是直連鏈路的新增');
+  assert.ok(r.items.some((i) => i.category === 'device' && i.key === 'M'), '鄰居發現的設備仍列為新增設備');
+  // 同一台設備兩段無法辨識的內容（I01 鍵相同）：舊 1 筆、新 2 筆 → 只多 1 筆
+  const junk = (k) => Array.from({ length: k }, (_, j) => `### /foo bar${j}\nxyz${j}`).join('\n');
+  const a = build(`SW (10.0.0.1):\n${junk(1)}\n`); const b = build(`SW (10.0.0.1):\n${junk(2)}\n`);
+  assert.strictEqual(count(a, 'I01') + 1, count(b, 'I01'));
+  const fd = S.compare.snapshots(S.query(a), S.query(b)).items.filter((i) => i.category === 'finding');
+  assert.deepStrictEqual(fd.map((i) => [i.change, i.after.id]), [['added', 'I01']]);
+  assert.ok(/bar1/.test(fd[0].message), '訊息相同的先配對，多出來的是第二段');
+  const hearsayIp = S.query(o).ipAddresses().filter((x) => x.hearsay);
+  assert.ok(S.compare.snapshots(S.query(o), S.query(o)).items.every((i) => i.category !== 'ip') && Array.isArray(hearsayIp));
+  // schema 不同
+  const old = JSON.parse(JSON.stringify(o)); old.meta.schema = 'ssot-snapshot/1';
+  const bad = S.compare.snapshots(S.query(old), S.query(o));
+  assert.strictEqual(bad.errors.length, 1);
+  assert.ok(/schema 不同（舊：ssot-snapshot\/1，新：ssot-snapshot\/2）/.test(bad.errors[0]), bad.errors[0]);
+  assert.deepStrictEqual(bad.items, []);
+});
+test('由基準產生預期資料（ssot-expected/1）：已收集設備、雙向確認的鏈路、VLAN；和同一份基準比對全部 ok', () => {
+  const s = build(read('samples/sample-bundle.txt')); const Q = S.query(s);
+  const e = JSON.parse(JSON.stringify(S.compare.expectedFrom(Q)));
+  assert.strictEqual(e.schema, 'ssot-expected/1');
+  assert.strictEqual(e.devices.length, s.meta.stats.collected);
+  assert.ok(e.devices.every((d) => d.kind));
+  assert.strictEqual(e.links.length, s.model.links.filter((l) => l.verified && l.evidenceScope === 'interface-adjacency').length);
+  assert.strictEqual(e.vlans.length, s.model.vlans.length);
+  const r = S.compare(Q, e);
+  assert.deepStrictEqual(r.errors, []);
+  assert.ok(r.items.length > 0 && r.items.every((i) => i.status === 'ok'), JSON.stringify(r.items.filter((i) => i.status !== 'ok').slice(0, 3)));
+  assert.deepStrictEqual(S.compare.expectedFrom(Q), S.compare.expectedFrom(S.query(build(read('samples/sample-bundle.txt')))), '可重現');
+  // 同一對設備另有 MNDP 觀察（例如在 bridge 上）時，LLDP 確認的鏈路仍是 ok；改過的設備與鏈路比得出差異
+  const p = pairNet({ extra: ' 1 interface=ether5 mac-address=AA:00:00:00:00:11 identity=A interface-name=ether5 discovered-by=mndp' });
+  assert.ok(p.model.links.some((l) => l.evidenceScope === 'broadcast-domain' && l.a.startsWith('A|') && l.b.startsWith('B|')), '同一對設備要另有 MNDP 鏈路');
+  const pe = S.compare.expectedFrom(S.query(p));
+  assert.deepStrictEqual(pe.links, [{ a: 'A ether1', b: 'B ether1' }]);
+  assert.ok(S.compare(S.query(p), pe).items.every((i) => i.status === 'ok'));
+  const moved = S.compare(S.query(pairNet({ port: 'ether2' })), pe);
+  assert.ok(moved.items.some((i) => i.type === 'link' && i.status !== 'ok'));
+  assert.deepStrictEqual(Object.keys(S.compare.expectedFrom(Q, { strict: true })).filter((k) => k.startsWith('strict')), ['strictDevices', 'strictLinks']);
 });
 test('去識別化：關係與檢查結果不變，設備名與 IP 不殘留，機密欄位遮蔽，結果可重現', () => {
   const { anonymize } = require('../tools/anonymize.js');
@@ -989,6 +1365,41 @@ test('去識別化：關係與檢查結果不變，設備名與 IP 不殘留，�
   const id = anonymize('SW (10.0.0.1):\n### /system identity print\n  name: SW\n### /interface bridge monitor [find] once\n  name: bridge1\n').text;
   assert.ok(id.includes('name: bridge1') && !/name: SW\b/.test(id), '只有 /system identity print 的 name 是設備名，bridge 名稱不換');
   assert.ok(w.includes('AA:BB:CC:'), '保留 OUI，廠商判斷不受影響');
+});
+test('去識別化：RouterOS export 的密碼、金鑰、SNMP community 都遮蔽（*-password、點號欄位、community 名稱），一般欄位保留', () => {
+  const { anonymize } = require('../tools/anonymize.js');
+  const raw = ['SW (10.0.0.1):', '### /export terse',
+    '/snmp community add addresses=10.0.0.0/8 authentication-password=authpw1 authentication-protocol=SHA1 encryption-password=encpw1 encryption-protocol=AES name=commsecret security=private',
+    '/snmp community set [ find default=yes ] name=publicsecret',
+    '/snmp set enabled=yes trap-community=trapsecret',
+    '/ppp secret add name=vpnuser password=ppppw1 profile=default',
+    '/interface wifi add configuration.ssid=CorpNet security.authentication-types=wpa2-psk security.passphrase=wifipw1 name=wifi1',
+    '/interface wifi security add name=sec1 passphrase=wifipw2',
+    '/interface wireless security-profiles add name=p1 static-key-0=wepkey0 wpa-pre-shared-key=wpapsk1 management-protection-key=mgmtkey1',
+    '/interface wireguard add name=wg1 private-key="wgpriv1="',
+    '/interface wireguard peers add interface=wg1 preshared-key="wgpsk1=" public-key="wgpub1="',
+    '/ip ipsec identity add peer=p1 secret=ipsecpw1',
+    '/radius add address=10.0.0.5 secret=radiuspw1 service=login',
+    '/routing ospf interface-template add area=backbone auth=md5 auth-key=ospfkey1 auth-id=1',
+    '/routing bgp connection add name=b1 tcp-md5-key=bgpkey1',
+    '/system ntp key add key=ntpkey1 key-id=1',
+    '/tool romon set enabled=yes secrets=romonpw1',
+    '/interface l2tp-server server set ipsec-secret=l2tppw1',
+    '/interface bridge add name=bridge1',
+    '/snmp community',
+    'add addresses=::/0 name=compactsecret',
+    '### /snmp community print detail without-paging',
+    ' 0 * name="printsecret" addresses=::/0 security=none read-access=yes',
+    '### /interface bridge print detail',
+    ' 0 name="bridge2" mtu=auto'].join('\n');
+  const a = anonymize(raw).text;
+  ['authpw1', 'encpw1', 'commsecret', 'publicsecret', 'trapsecret', 'ppppw1', 'wifipw1', 'wifipw2', 'wepkey0', 'wpapsk1', 'mgmtkey1', 'wgpriv1', 'wgpsk1',
+    'ipsecpw1', 'radiuspw1', 'ospfkey1', 'bgpkey1', 'ntpkey1', 'romonpw1', 'l2tppw1', 'compactsecret', 'printsecret', 'CorpNet']
+    .forEach((x) => assert.ok(!a.includes(x), `${x} 應被遮蔽`));
+  ['authentication-protocol=SHA1', 'encryption-protocol=AES', 'security=private', 'name=vpnuser', 'name=bridge1', 'name="bridge2"', 'name=wifi1', 'auth-id=1', 'key-id=1',
+    'security.authentication-types=wpa2-psk', 'configuration.ssid=SSID-001']
+    .forEach((x) => assert.ok(a.includes(x), `${x} 應保留`));
+  assert.strictEqual(anonymize(raw.replace(/\n/g, '\r\n')).text, a.replace(/\n/g, '\r\n'), 'CRLF 的結果相同');
 });
 test('真實設備輸出（tests/fixtures/real/）：每份都完整解析，沒有 I01', () => {
   const dir = path.join(ROOT, 'tests/fixtures/real');
@@ -1050,6 +1461,10 @@ if (ARGS.large) {
     assert.ok(s.meta.stats.collected >= 1000);
     assert.ok(ms < LARGE_MAX_MS, `耗時 ${ms} ms，超過上限 ${LARGE_MAX_MS} ms（SSOT_LARGE_MAX_MS）`);
     assert.strictEqual(s.meta.stats.findings.error + s.meta.stats.findings.warn, 0);
+    // 核心路由器都有 defconf 風格的防火牆：要真的解析到規則，且 F 類沒有任何發現
+    assert.ok(s.meta.stats.firewallRules >= 80 * 9, `防火牆規則 ${s.meta.stats.firewallRules} 條`);
+    assert.deepStrictEqual(s.findings.filter((f) => f.id.startsWith('F')).map((f) => f.id), []);
+    assert.ok(s.model.firewallZones.filter((z) => z.status === 'ok').length >= 80, '每台核心路由器都判斷得出 WAN');
   });
 }
 

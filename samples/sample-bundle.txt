@@ -86,6 +86,54 @@ add disabled=no id=10.1.255.1 name=main select-dynamic-id=""
 add disabled=no name=default router-id=main
 /ip route
 add dst-address=0.0.0.0/0 gateway=203.0.113.1
+/interface list
+add comment=defconf name=WAN
+add comment=defconf name=LAN
+/interface list member
+add comment=defconf interface=bridge1 list=LAN
+add comment=defconf interface=ether47 list=WAN
+/ip firewall filter
+add action=accept chain=input \
+    comment="defconf: accept established,related,untracked" \
+    connection-state=established,related,untracked
+add action=drop chain=input comment="defconf: drop invalid" \
+    connection-state=invalid
+add action=accept chain=input comment="defconf: accept ICMP" \
+    protocol=icmp
+add action=accept chain=input comment="defconf: accept ICMP" \
+    protocol=icmp
+add action=accept chain=input comment="winbox for vendor" dst-port=8291 \
+    protocol=tcp
+add action=accept chain=input dst-port=8291 in-interface=ether47 \
+    protocol=tcp
+add action=drop chain=input \
+    comment="\E9\98\B2\E7\81\AB\E7\89\86: drop all not coming from LAN" \
+    in-interface-list=!LAN
+add action=fasttrack-connection chain=forward \
+    comment="defconf: fasttrack" connection-state=established,related \
+    hw-offload=yes
+add action=accept chain=forward \
+    comment="defconf: accept established,related,untracked" \
+    connection-state=established,related,untracked
+add action=drop chain=forward comment="defconf: drop invalid" \
+    connection-state=invalid
+add action=drop chain=forward \
+    comment="defconf: drop all from WAN not DSTNATed" \
+    connection-nat-state=!dstnat connection-state=new \
+    in-interface-list=WAN
+/ip firewall nat
+add action=masquerade chain=srcnat comment="defconf: masquerade" \
+    ipsec-policy=out,none out-interface-list=WAN
+add action=dst-nat chain=dstnat dst-port=8443 in-interface-list=WAN \
+    protocol=tcp to-addresses=10.1.20.11 to-ports=443
+/ip service
+set telnet disabled=yes
+set ftp disabled=yes
+set www disabled=yes
+set api disabled=yes
+set api-ssl disabled=yes
+set ssh address=10.1.10.0/24
+set winbox address=10.1.10.0/24
 /system identity
 set name=TPE_CORE_RT_01
 
@@ -847,6 +895,28 @@ TPE_CORE_RT_02 (10.1.10.3):
 /ip dhcp-server network add address=10.1.20.0/24 gateway=10.1.21.1
 /routing ospf instance set [ find default=yes ] router-id=10.1.255.2
 /ip route add dst-address=0.0.0.0/0 gateway=203.0.113.5
+/interface list add comment=defconf name=WAN
+/interface list add comment=defconf name=LAN
+/interface list member add comment=defconf interface=bridge1 list=LAN
+/interface list member add comment=defconf interface=ether47 list=WAN
+/ip firewall filter add action=accept chain=input comment="defconf: accept established,related,untracked" connection-state=established,related,untracked
+/ip firewall filter add action=drop chain=input comment="defconf: drop invalid" connection-state=invalid
+/ip firewall filter add action=accept chain=input comment="defconf: accept ICMP" protocol=icmp
+/ip firewall filter add action=accept chain=input protocol=udp src-port=53
+/ip firewall filter add action=fasttrack-connection chain=forward comment="defconf: fasttrack" connection-state=established,related hw-offload=yes
+/ip firewall filter add action=accept chain=forward comment="defconf: accept established,related,untracked" connection-state=established,related,untracked
+/ip firewall filter add action=drop chain=forward comment="defconf: drop invalid" connection-state=invalid
+/ip firewall filter add action=drop chain=forward comment="defconf: drop all from WAN not DSTNATed" connection-nat-state=!dstnat connection-state=new in-interface-list=WAN
+/ip firewall nat add action=masquerade chain=srcnat comment="defconf: masquerade" ipsec-policy=out,none out-interface-list=WAN
+/ipv6 firewall filter add action=accept chain=forward dst-port=443 protocol=tcp
+/ip service set telnet disabled=yes
+/ip service set ftp disabled=yes
+/ip service set www disabled=yes
+/ip service set api disabled=yes
+/ip service set api-ssl disabled=yes
+/ip service set ssh address=10.1.10.0/24
+/ip service set winbox address=10.1.10.0/24
+/ip service set www-ssl disabled=no
 /system identity set name=TPE_CORE_RT_02
 
 [admin@TPE_CORE_RT_02] > /ip neighbor print detail without-paging
@@ -3108,6 +3178,7 @@ TPE_ACC_SW_10 (10.1.10.30):
 /interface bridge vlan add bridge=bridge1 tagged=bond10,ether24 untagged=ether1,ether2,ether3 vlan-ids=20
 /interface bridge vlan add bridge=bridge1 tagged=bond10,ether24 untagged=ether9,ether10,ether11,ether12,ether13,ether14,ether15,ether16 vlan-ids=30
 /ip address add address=10.1.10.30/24 interface=vlan10 network=10.1.10.0
+/ip firewall filter add action=drop chain=input dst-port=23 protocol=tcp
 /system identity set name=TPE_ACC_SW_10
 
 [admin@TPE_ACC_SW_10] > /ip neighbor print detail without-paging
@@ -3293,7 +3364,7 @@ TPE_ACC_SW_11 (10.1.10.31):
 /interface bridge port add bridge=bridge1 interface=ether16 pvid=30
 /interface bridge vlan add bridge=bridge1 tagged=bond11,ether24,bridge1 vlan-ids=10
 /interface bridge vlan add bridge=bridge1 tagged=bond11,ether24 untagged=ether1,ether2,ether3 vlan-ids=20
-/interface bridge vlan add bridge=bridge1 tagged=bond11,ether24 untagged=ether9,ether10,ether11,ether12,ether13,ether14,ether15,ether16 vlan-ids=30
+/interface bridge vlan add bridge=bridge1 tagged=bond11 untagged=ether9,ether10,ether11,ether12,ether13,ether14,ether15,ether16,ether24 vlan-ids=30
 /ip address add address=10.1.10.31/24 interface=vlan10 network=10.1.10.0
 /system identity set name=TPE_ACC_SW_11
 

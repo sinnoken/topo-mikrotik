@@ -1,0 +1,22 @@
+SW_A (10.0.0.1):
+### /system resource print
+# collected-at: 2026-10-24T03:00:00Z
+             uptime: 2w1d4h
+            version: 7.12.1 (stable)
+         board-name: CRS326-24G-2S+
+           platform: MikroTik
+### /ip neighbor print detail without-paging
+# collected-at: 2026-10-24T03:00:02Z
+ 0 interface=ether1 address=10.0.0.2 mac-address=AA:BB:CC:00:00:02 identity=R_B platform=MikroTik
+     interface-name=ether1 discovered-by=lldp
+### /interface bridge host print detail without-paging
+# collected-at: 2026-10-24T03:00:04Z
+# collection failed: timeout
+### /export terse
+# collected-at: 2026-10-24T03:00:34Z
+/interface bridge add name=bridge1
+# collection failed: exit code 255
+_____
+R_B (10.0.0.2):
+# collection failed: connection
+_____

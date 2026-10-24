@@ -7,13 +7,21 @@
 //            遮罩、0.0.0.0、127/8、169.254/16、多播與保留位址不換
 //   設備名   設備標頭、identity、/system identity、鄰居的 identity 換成 DEV-001…（--keep-names 時保留）
 //   其他識別 SSID、DHCP 主機名、radio-name、註解、LLDP 系統描述換成代號
-//   機密     eap-identity、eap-username、密碼、金鑰、序號一律換成 REDACTED
+//   機密     eap-identity、eap-username、密碼（password、*-password）、金鑰（key、*-key、static-key-N）、
+//            secret／*-secret／secrets、passphrase、SNMP community（/snmp community 的 name、trap-community）、序號一律換成 REDACTED；
+//            RouterOS 7 的點號欄位（security.passphrase、configuration.ssid）依最後一段判斷
 // 對照表寫到 <輸出檔>.map.json，只供自己查對，不要提交。
 'use strict';
 const fs = require('fs');
 
 const MASK_OCTET = new Set([0, 128, 192, 224, 240, 248, 252, 254, 255]);
-const SECRET_KEYS = /^(eap-identity|eap-username|password|passphrase|secret|.*-secret|.*-key|.*-passphrase|authentication-key|wpa2?-pre-shared-key|serial|serial-number|software-id)$/i;
+// 依 RouterOS export 會出現的欄位：/snmp community 的 authentication-password／encryption-password、/ppp secret 與各 VPN client 的 password、
+// /interface wireless security-profiles 的 wpa(2)-pre-shared-key／static-key-0..3、/interface wifi security 的 passphrase、/ip ipsec identity 與 /radius 的 secret、
+// /interface wireguard 的 private-key／preshared-key、OSPF／BGP 的 auth-key／tcp-md5-key、/system ntp key 的 key、/tool romon 的 secrets、/snmp 的 trap-community
+const SECRET_KEYS = /^(eap-identity|eap-username|password|.*-password|passphrase|.*-passphrase|secret|secrets|.*-secret|key|.*-key|static-key-\d+|trap-community|serial|serial-number|software-id)$/i;
+// SNMP v1/v2c 的 community 名稱本身就是密碼：/snmp community 底下的 name 也要遮蔽
+const SNMP_COMMUNITY = /^\/\s*snmp[\s/]+community\b/i;
+const MENU_MARKER = /^\s*(?:###\s*|\[[^\]]*\]\s*>?\s*)(\/\S.*)$/;
 
 function anonymize(text, opt) {
   const o = opt || {};
@@ -54,16 +62,34 @@ function anonymize(text, opt) {
     if (m) names.add(m[1]);
   });
 
-  let out = text;
-  // 2. key=value 中的識別與機密欄位
-  out = out.replace(/(^|\s)([\w-]+)=("(?:[^"\\]|\\.)*"|\S*)/gm, (all, pre, key, raw) => {
+  // 2. key=value 中的識別與機密欄位。逐行追蹤目前的選單（指令標記或 export 的 /路徑；compact export 的續行沿用上一個路徑），
+  //    在 /snmp community 底下時 name 也是機密
+  //    引號內的值可以跨行（compact export 在引號內以 \ 斷行），所以仍對全文比對，再以位置對回所在行的選單
+  const lineStarts = [0]; const community = [];
+  let menu = '';
+  text.split('\n').forEach((raw) => {
+    lineStarts.push(lineStarts[lineStarts.length - 1] + raw.length + 1);
+    const line = raw.replace(/\r$/, '');
+    const mk = MENU_MARKER.exec(line);
+    if (mk) menu = mk[1];
+    else if (/^\s*\//.test(line)) menu = line.trim();
+    else if (/^\S+ \(\d{1,3}(?:\.\d{1,3}){3}\):\s*$/.test(line)) menu = '';
+    community.push(SNMP_COMMUNITY.test(menu));
+  });
+  const inCommunity = (offset) => {
+    let lo = 0; let hi = community.length - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (lineStarts[mid] <= offset) lo = mid; else hi = mid - 1; }
+    return community[lo];
+  };
+  let out = text.replace(/(^|\s)([\w.-]+)=("(?:[^"\\]|\\.)*"|\S*)/gm, (all, pre, key, raw, offset) => {
     const v = raw.replace(/^"|"$/g, '');
     if (!v) return all;
-    if (SECRET_KEYS.test(key)) return `${pre}${key}=${quote(raw, 'REDACTED')}`;
-    if (key === 'ssid') return `${pre}${key}=${quote(raw, code('ssid', 'SSID-', v))}`;
-    if (key === 'dhcp-hostname' || key === 'host-name') return `${pre}${key}=${quote(raw, code('host', 'HOST-', v))}`;
-    if (key === 'radio-name') return `${pre}${key}=${quote(raw, code('radio', 'RADIO-', v))}`;
-    if (key === 'comment' || key === 'system-description') return `${pre}${key}=${quote(raw, code('comment', 'comment-', v))}`;
+    const k = key.replace(/^.*\./, ''); // RouterOS 7 的點號欄位（security.passphrase、configuration.ssid）依最後一段判斷
+    if (SECRET_KEYS.test(k) || (k === 'name' && inCommunity(offset + pre.length))) return `${pre}${key}=${quote(raw, 'REDACTED')}`;
+    if (k === 'ssid') return `${pre}${key}=${quote(raw, code('ssid', 'SSID-', v))}`;
+    if (k === 'dhcp-hostname' || k === 'host-name') return `${pre}${key}=${quote(raw, code('host', 'HOST-', v))}`;
+    if (k === 'radio-name') return `${pre}${key}=${quote(raw, code('radio', 'RADIO-', v))}`;
+    if (k === 'comment' || k === 'system-description') return `${pre}${key}=${quote(raw, code('comment', 'comment-', v))}`;
     return all;
   });
   out = out.replace(/;;;\s*(.+)$/gm, (_, c) => `;;; ${code('comment', 'comment-', c.trim())}`);

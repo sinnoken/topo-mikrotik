@@ -28,6 +28,8 @@
     const usage = {};
     for (let i = 0; i < blocks.length; i++) {
       const b = blocks[i];
+      // 只有收集器註解、沒有指令也沒有內容的區塊（例如連線失敗）：沒有東西可辨識，也不算無法辨識
+      if (!b.command && (b.failure || b.issues) && !b.lines.some((l) => l.trim())) { b.how = 'none'; b.adapters = []; continue; }
       const r = S.adapters.recognize(b);
       b.how = r.how;
       b.adapters = r.adapters.map((a) => a.id);
@@ -72,9 +74,7 @@
     S.infer.infer(M, profile);
     yield { stage: '一致性檢查', done: 0, total: 1 };
     const findings = S.check.run(M, { blocks, unrecognized, duplicates, expectedData: opt.expectedData });
-    S.infer.wifiLocations(M); // 用到 infer 算出的終端埠
-    S.infer.behindLocations(M);
-    const coverage = S.check.coverage(M, opt.expectedData);
+    const coverage = S.check.coverage(M, opt.expectedData, blocks);
 
     const snap = serialize(M, { blocks, findings, coverage, facts, usage, readersUsed, sources, profile, opt, t0 });
     yield { stage: '完成', done: 1, total: 1, snapshot: snap };
@@ -84,7 +84,7 @@
   function lineText(blocks, ref) {
     const b = blocks[ref.block]; if (!b) return '';
     const idx = ref.line - b.origin.startLine;
-    return (b.lines[idx] || '').trim().slice(0, 200);
+    return (b.lines[idx] || (b.notes && b.notes.get(ref.line)) || '').trim().slice(0, 200);
   }
 
   function serialize(M, c) {
@@ -160,11 +160,29 @@
       peerIp: a.peerIp, peerId: a.peerId, reciprocal: a.reciprocal, src: [[a.block, a.line]],
     })).sort((a, b) => nat(a.dev, b.dev) || nat(a.localEp, b.localEp) || nat(a.peerDev, b.peerDev) || nat(a.peerIp, b.peerIp) || a.src[0][1] - b.src[0][1]);
 
+    // 防火牆：規則（事實，依設備、位址族、表、表內順序）、interface list、/ip service（含預設值）、IPsec，以及 WAN／LAN 分類（推論）
+    const FAM = ['ip', 'ipv6']; const TABLE = ['filter', 'nat', 'raw'];
+    const firewallRules = M.fw.rules.map((r) => ({
+      key: r.key, dev: r.dev, family: r.family, table: r.table, chain: r.chain, position: r.position, order: r.order, action: r.action,
+      match: Object.fromEntries(Object.keys(r.match).sort().map((k) => [k, r.match[k]])), params: Object.fromEntries(Object.keys(r.params).sort().map((k) => [k, r.params[k]])),
+      disabled: r.disabled, comment: r.comment, commentEncoding: r.commentEncoding, signature: r.signature, src: [[r.block, r.line]],
+    })).sort((a, b) => nat(a.dev, b.dev) || FAM.indexOf(a.family) - FAM.indexOf(b.family) || TABLE.indexOf(a.table) - TABLE.indexOf(b.table) || a.order - b.order);
+    const interfaceLists = Array.from(M.fw.lists.values()).map((l) => ({
+      dev: l.dev, name: l.name, defined: l.defined, include: l.include.slice(), exclude: l.exclude.slice(), members: Array.from(l.members.keys()).sort(nat), src: l.src,
+    })).sort((a, b) => nat(a.dev, b.dev) || nat(a.name, b.name));
+    const ipServices = Array.from(M.fwServices.values()).flat().map((x) => ({ dev: x.dev, name: x.name, enabled: x.enabled, port: x.port, addresses: x.addresses.slice(), basis: x.basis, src: x.src }))
+      .sort((a, b) => nat(a.dev, b.dev) || nat(a.name, b.name));
+    const ipsecPeers = M.fw.peers.map((p) => ({ dev: p.dev, name: p.name, address: p.address, disabled: p.disabled, src: p.src })).sort((a, b) => nat(a.dev, b.dev) || a.src[0][1] - b.src[0][1]);
+    const ipsecPolicies = M.fw.policies.map((p) => ({ dev: p.dev, srcAddress: p.srcAddress, dstAddress: p.dstAddress, peer: p.peer, template: p.template, disabled: p.disabled, src: p.src }))
+      .sort((a, b) => nat(a.dev, b.dev) || a.src[0][1] - b.src[0][1]);
+    const firewallZones = Array.from(M.fwZones.values()).map((z) => Object.assign({}, z)).sort((a, b) => nat(a.dev, b.dev));
+
     c.findings.forEach((f) => f.evidence.forEach((e) => { e.text = lineText(c.blocks, e); e.file = (c.blocks[e.block] || { origin: {} }).origin.file; }));
 
     const blocks = c.blocks.map((b) => ({
       id: b.id, device: b.device, devKey: b.devKey, command: b.command, reader: b.reader, adapters: b.adapters || [], how: b.how,
       file: b.origin.file, start: b.origin.startLine, end: b.origin.endLine, empty: !!b.empty,
+      collectedAt: b.collectedAt || null, failure: b.failure || null,
     }));
 
     const sev = { error: 0, warn: 0, info: 0 };
@@ -180,12 +198,13 @@
         profile: c.profile ? { id: c.profile.id, version: c.profile.version } : null,
         stats: {
           devices: devices.length, collected: devices.filter((d) => d.collected).length, interfaces: interfaces.length,
-          links: links.length, inferredLinks: inferredLinks.length, ipAddresses: ipAddresses.length, prefixes: prefixes.length, wifiAssociations: wifiAssociations.length, ospfAdjacencies: ospfAdjacencies.length, vlans: vlans.length, macs: macs.length, arps: arps.length, routes: routes.length,
+          links: links.length, inferredLinks: inferredLinks.length, ipAddresses: ipAddresses.length, prefixes: prefixes.length, wifiAssociations: wifiAssociations.length, ospfAdjacencies: ospfAdjacencies.length, firewallRules: firewallRules.length, vlans: vlans.length, macs: macs.length, arps: arps.length, routes: routes.length,
           findings: sev,
         },
         timing: { ms: Date.now() - c.t0 },
       },
-      model: { devices, interfaces, links, inferredLinks, ospfAdjacencies, vlans, ipAddresses, prefixes, macs, wifiAssociations, dhcpNetworks, arps, routes },
+      model: { devices, interfaces, links, inferredLinks, ospfAdjacencies, vlans, ipAddresses, prefixes, macs, wifiAssociations, dhcpNetworks, arps, routes,
+        firewallRules, firewallZones, interfaceLists, ipServices, ipsecPeers, ipsecPolicies },
       findings: c.findings,
       coverage: c.coverage,
       blocks,

@@ -7,7 +7,8 @@
  *   - 套用 profile 註解
  *   - 推論鏈路（inferLinks：沒有 LLDP／CDP 時的替代證據）
  *   - 終端埠（edgeLocations：M.edge、m.edge；介面鄰接索引 M.adjacency 供 check 使用）
- *   - Wi-Fi 客戶端位置（wifiLocations）與未收集交換器底下的終端（behindLocations），使用終端埠結果，須在 infer 之後呼叫
+ *   - Wi-Fi 客戶端位置（wifiLocations）與未收集交換器底下的終端（behindLocations），使用終端埠結果，放在 edgeLocations 之後
+ * pipeline 在檢查之前呼叫 infer，檢查時所有推論都已完成。
  */
 (function (S) {
   'use strict';
@@ -23,7 +24,10 @@
     inferLinks(M);
     if (profile) applyProfile(M, profile);
     groups(M);
-    edgeLocations(M); // 用到 profile 覆寫後的設備類型與推論鏈路，放在最後
+    edgeLocations(M); // 用到 profile 覆寫後的設備類型與推論鏈路
+    wifiLocations(M); // 用到終端埠
+    behindLocations(M);
+    firewall(M);
   }
 
   /** 型號 → 類型：CRS／CSS 是交換器；CCR、RB、hAP、hEX、CHR 等是路由器。 */
@@ -97,6 +101,21 @@
     const set = new Set(S.util.ifcVlans(i));
     if (i.lag) { const p = M.ifcs.get(i.lag); if (p) S.util.ifcVlans(p).forEach((v) => set.add(v)); }
     return S.util.numSort(Array.from(set));
+  }
+  /**
+   * 介面的 VLAN 依出埠方式分開：untagged＝PVID ∪ untaggedVlans，tagged＝taggedVlans；聚合成員加上所屬聚合介面的值（同 effVlans）。
+   * 回傳 { untagged: Set, tagged: Set }（V06 使用）。
+   */
+  function effVlanModes(M, ep) {
+    const untagged = new Set(); const tagged = new Set();
+    const i = M.ifcs.get(ep);
+    const add = (x) => {
+      if (x.pvid != null) untagged.add(x.pvid);
+      x.untaggedVlans.forEach((v) => untagged.add(v));
+      x.taggedVlans.forEach((v) => tagged.add(v));
+    };
+    if (i) { add(i); const p = i.lag && M.ifcs.get(i.lag); if (p) add(p); }
+    return { untagged, tagged };
   }
   function linkVlans(M) {
     M.links.forEach((l) => {
@@ -450,10 +469,274 @@
     });
   }
 
+  // ================================================================ 防火牆
+  /*
+   * 規則比對的語意（推論與檢查共用，也供 query 對序列化後的 Snapshot 使用，所以只讀純資料：rule.match／action／disabled）。
+   *   covers(ctx, i, j)：規則 i 是否涵蓋 j（符合 j 的封包一定符合 i）。i 帶不確定的比對（limit、random…）時一律不涵蓋。
+   *   evalChain(ctx, …, pkt)：一個「來自 WAN 的新連線」封包依序走過 chain（含 jump／return），回傳決定它的規則。
+   *     每個條件為 true／false／null（無法判斷）；只有全部為 true 的規則才算命中，null 的規則略過（近似，見設計說明）。
+   * WAN／LAN 是推論：只看名稱含 WAN／LAN 的 interface list 及其成員（/interface list member 的事實），不看介面名稱。
+   */
+  const FW_NONDET = new Set(['random', 'limit', 'dst-limit', 'connection-limit', 'psd', 'nth', 'per-connection-classifier']);
+  const FW_PORT_KEYS = new Set(['dst-port', 'src-port', 'port']);
+  const FW_ADDR_KEYS = new Set(['src-address', 'dst-address']);
+  const FW_SET_KEYS = new Set(['protocol', 'connection-state', 'connection-nat-state', 'connection-type']);
+  const PROTO = { 1: 'icmp', 6: 'tcp', 17: 'udp', 47: 'gre', 50: 'ipsec-esp', 51: 'ipsec-ah', 58: 'icmpv6', 132: 'sctp' };
+  const PORT_PROTOCOLS = new Set(['tcp', 'udp', 'udp-lite', 'sctp', 'dccp']);
+  const FW_TERMINAL = new Set(['accept', 'drop', 'reject', 'tarpit', 'return', 'dst-nat', 'src-nat', 'masquerade', 'redirect', 'netmap', 'same']);
+  const FW_BUILTIN = { filter: ['input', 'forward', 'output'], nat: ['srcnat', 'dstnat'], raw: ['prerouting', 'output'] };
+  const WAN_LIST = /(^|[^a-z])wan([^a-z]|$)/i;
+  const LAN_LIST = /(^|[^a-z])lan([^a-z]|$)/i;
+  /** RouterOS 7 的出廠預設：export 沒寫的服務就是這個狀態（不是停用）。reverse-proxy 只在有規則時才監聽，不列入。 */
+  const SERVICE_DEFAULTS = [['api', 8728, true], ['api-ssl', 8729, true], ['ftp', 21, true], ['ssh', 22, true], ['telnet', 23, true],
+    ['winbox', 8291, true], ['www', 80, true], ['www-ssl', 443, false]];
+
+  const splitNeg = (v) => { const s = String(v); return s.startsWith('!') ? { neg: true, body: s.slice(1) } : { neg: false, body: s }; };
+  const tokens = (body) => body.split(',').map((x) => x.trim()).filter(Boolean);
+  /** 比對條件的正規形式：清單值排序（80,443 與 443,80 相同），否定保留在最前面。 */
+  function canonMatch(match) {
+    return Object.keys(match).sort().map((k) => { const { neg, body } = splitNeg(match[k]); return [k, (neg ? '!' : '') + tokens(body).sort().join(',')]; });
+  }
+  const protoName = (t) => { const x = String(t).toLowerCase(); return PROTO[x] || x; };
+
+  // 位址：IPv4／IPv6 以 BigInt 區間表示
+  function ip6Big(s) {
+    let [head, tail] = s.split('::');
+    const h = head ? head.split(':') : []; const t = tail !== undefined ? (tail ? tail.split(':') : []) : null;
+    if (t === null && h.length !== 8) return null;
+    const parts = t === null ? h : h.concat(Array(8 - h.length - t.length).fill('0'), t);
+    if (parts.length !== 8 || parts.some((p) => !/^[0-9a-f]{1,4}$/i.test(p))) return null;
+    return parts.reduce((acc, p) => (acc << 16n) + BigInt(parseInt(p, 16)), 0n);
+  }
+  function addrRange(text) {
+    const r = text.match(/^([^/\-]+)(?:\/(\d{1,3}))?(?:-([^/]+))?$/); if (!r) return null;
+    const v4 = S.ip.isIp(r[1]); const bits = v4 ? 32 : 128;
+    const toBig = (x) => (S.ip.isIp(x) ? BigInt(S.ip.toInt(x)) : v4 ? null : ip6Big(x));
+    const lo0 = toBig(r[1]); if (lo0 === null) return null;
+    if (r[3]) { const hi = toBig(r[3]); return hi === null ? null : [lo0, hi, bits]; }
+    const len = r[2] === undefined ? bits : +r[2]; if (len > bits) return null;
+    const span = (1n << BigInt(bits - len)) - 1n; const lo = lo0 & ~span & ((1n << BigInt(bits)) - 1n);
+    return [lo, lo + span, bits];
+  }
+  const PRIVATE = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '100.64.0.0/10', '127.0.0.0/8', '169.254.0.0/16', 'fc00::/7', 'fe80::/10', '::1/128'].map(addrRange);
+
+  /** 值的解析：{ neg, kind: 'ranges'|'set'|'raw', items, raw }。 */
+  function parseVal(key, value) {
+    const { neg, body } = splitNeg(value);
+    const raw = (neg ? '!' : '') + tokens(body).sort().join(',');
+    if (FW_PORT_KEYS.has(key)) {
+      const items = tokens(body).map((t) => { const m = t.match(/^(\d+)(?:-(\d+))?$/); return m ? [BigInt(m[1]), BigInt(m[2] || m[1])] : null; });
+      if (items.length && items.every(Boolean)) return { neg, kind: 'ranges', items, raw };
+    } else if (FW_ADDR_KEYS.has(key)) {
+      const items = tokens(body).map(addrRange);
+      if (items.length && items.every(Boolean)) return { neg, kind: 'ranges', items: items.map(([a, b]) => [a, b]), bits: items[0][2], raw };
+    } else if (FW_SET_KEYS.has(key)) {
+      return { neg, kind: 'set', items: new Set(tokens(body).map((t) => (key === 'protocol' ? protoName(t) : t.toLowerCase()))), raw };
+    }
+    return { neg, kind: 'raw', raw };
+  }
+  const inRanges = (x, rs) => rs.some(([a, b]) => x >= a && x <= b);
+  const rangesWithin = (inner, outer) => inner.every(([a, b]) => {
+    // 以 outer 的聯集涵蓋 [a, b]
+    let cur = a; const sorted = outer.slice().sort((p, q) => (p[0] < q[0] ? -1 : p[0] > q[0] ? 1 : 0));
+    for (const [c, d] of sorted) { if (c > cur) break; if (d >= cur) cur = d + 1n; if (cur > b) return true; }
+    return cur > b;
+  });
+  const rangesDisjoint = (x, y) => x.every(([a, b]) => y.every(([c, d]) => b < c || d < a));
+  /** j ⊆ i（符合 j 的值一定符合 i）。 */
+  function valSubset(j, i) {
+    if (i.kind !== j.kind || i.kind === 'raw') return i.raw === j.raw;
+    const sub = i.kind === 'ranges' ? rangesWithin : (x, y) => Array.from(x).every((t) => y.has(t));
+    const dis = i.kind === 'ranges' ? rangesDisjoint : (x, y) => Array.from(x).every((t) => !y.has(t));
+    if (!i.neg && !j.neg) return sub(j.items, i.items);
+    if (i.neg && !j.neg) return dis(j.items, i.items);
+    if (i.neg && j.neg) return sub(i.items, j.items);
+    return false;
+  }
+
+  /**
+   * 比對用的設備環境。lists：[{ name, defined, include, exclude, members: [ep] }]；ifcEps：設備的介面鍵；rules：該設備的規則。
+   * wan／lan：名稱含 WAN／LAN 的清單成員（Set），沒有可辨識的 WAN 清單時 wan 為 null。
+   */
+  function fwContext(dev, lists, ifcEps, rules) {
+    const byName = new Map(lists.map((l) => [l.name, l]));
+    const universe = new Set(ifcEps);
+    lists.forEach((l) => l.members.forEach((ep) => universe.add(ep)));
+    rules.forEach((r) => ['in-interface', 'out-interface'].forEach((k) => { if (r.match[k]) universe.add(K.ep(dev, splitNeg(r.match[k]).body)); }));
+    const resolved = new Map();
+    const resolve = (name, seen) => {
+      if (name === 'all') return universe;
+      if (name === 'none') return new Set();
+      if (resolved.has(name)) return resolved.get(name);
+      const l = byName.get(name);
+      if (!l || !l.defined || (seen && seen.has(name))) return null; // dynamic、static 等內建清單或未定義的清單：無法判斷
+      const s = new Set(seen || []); s.add(name);
+      let out = new Set(l.members);
+      for (const inc of l.include) { const r = resolve(inc, s); if (r === null) return null; r.forEach((x) => out.add(x)); }
+      for (const exc of l.exclude) { const r = resolve(exc, s); if (r === null) return null; out = new Set(Array.from(out).filter((x) => !r.has(x))); }
+      resolved.set(name, out);
+      return out;
+    };
+    const chains = new Map();
+    rules.slice().sort((a, b) => a.position - b.position).forEach((r) => S.util.getOr(chains, r.family + '|' + r.table + '|' + r.chain, () => []).push(r));
+    const pick = (re) => {
+      const names = lists.filter((l) => l.defined && re.test(l.name)).map((l) => l.name).sort(S.util.natural);
+      const eps = new Set(); names.forEach((n) => { const r = resolve(n); if (r) r.forEach((x) => eps.add(x)); });
+      return { names, eps };
+    };
+    const wan = pick(WAN_LIST); const lan = pick(LAN_LIST);
+    const status = !wan.names.length ? 'no-wan-list' : !wan.eps.size ? 'empty-wan-list' : 'ok';
+    return { dev, universe, resolve, chains, wanLists: wan.names, wan: status === 'ok' ? wan.eps : null, lanLists: lan.names, lan: lan.eps, status,
+      chain: (family, table, chain) => chains.get(family + '|' + table + '|' + chain) || [] };
+  }
+  const UNKNOWN = Symbol('unknown');
+  /** 規則在 in／out 方向允許的介面集合；沒有限制為 null，含無法判斷的清單為 UNKNOWN。 */
+  function ifcSet(ctx, rule, dir) {
+    let eff = null;
+    for (const [k, isList] of [[dir + '-interface', false], [dir + '-interface-list', true]]) {
+      const v = rule.match[k]; if (v === undefined) continue;
+      const { neg, body } = splitNeg(v);
+      const set = isList ? ctx.resolve(body) : new Set([K.ep(ctx.dev, body)]);
+      if (set === null) return UNKNOWN;
+      const base = eff || ctx.universe;
+      eff = new Set(Array.from(base).filter((x) => (neg ? !set.has(x) : set.has(x))));
+    }
+    return eff;
+  }
+  /** 規則 i 是否涵蓋 j（同一個 chain；呼叫端負責 i 在 j 之前、動作會終止比對）。 */
+  function covers(ctx, i, j) {
+    const ki = Object.keys(i.match);
+    if (ki.some((k) => FW_NONDET.has(k))) return false;
+    for (const dir of ['in', 'out']) {
+      const keys = [dir + '-interface', dir + '-interface-list'];
+      if (!keys.some((k) => i.match[k] !== undefined)) continue;
+      const ei = ifcSet(ctx, i, dir); const ej = ifcSet(ctx, j, dir);
+      if (ei === UNKNOWN || ej === UNKNOWN) { if (keys.some((k) => i.match[k] !== j.match[k])) return false; continue; }
+      if (!Array.from(ej || ctx.universe).every((x) => ei.has(x))) return false;
+    }
+    return ki.every((k) => {
+      if (/^(in|out)-interface(-list)?$/.test(k)) return true;
+      if (j.match[k] === undefined) return false;
+      return valSubset(parseVal(k, j.match[k]), parseVal(k, i.match[k]));
+    });
+  }
+  const sameMatch = (a, b) => JSON.stringify(canonMatch(a.match)) === JSON.stringify(canonMatch(b.match));
+
+  /**
+   * 一個條件對封包的結果：true／false／null（無法判斷）。
+   * pkt：{ family, chain, in: ep, out: ep|null（沒有出介面，例如 input）|undefined（不明）, protocol, dstPort: 數字|null（不是規則提到的埠）,
+   *        dst: BigInt|undefined, state: 'new', natState: null|'dstnat' }；來源是任意公網位址、來源埠由攻擊者選。
+   */
+  function condition(ctx, rule, key, pkt) {
+    const v = rule.match[key]; const { neg, body } = splitNeg(v);
+    const flip = (x) => (x === null ? null : neg ? !x : x);
+    switch (key) {
+      case 'protocol': return flip(protoName(body) === pkt.protocol);
+      case 'dst-port': { if (pkt.dstPort == null || !PORT_PROTOCOLS.has(pkt.protocol)) return neg; const p = parseVal(key, v); return p.kind === 'ranges' ? flip(inRanges(BigInt(pkt.dstPort), p.items)) : null; }
+      case 'src-port': return rule.action === 'accept' ? true : FW_TERMINAL.has(rule.action) ? false : null; // 攻擊者自選來源埠
+      case 'port': { const p = parseVal(key, v); if (p.kind === 'ranges' && pkt.dstPort != null && !neg && inRanges(BigInt(pkt.dstPort), p.items)) return true; return rule.action === 'accept' ? true : FW_TERMINAL.has(rule.action) ? false : null; }
+      case 'src-address': {
+        const p = parseVal(key, v); if (p.kind !== 'ranges') return null;
+        const bits = BigInt(p.bits); const full = rangesWithin([[0n, (1n << bits) - 1n]], p.items);
+        if (!neg) return full;
+        const priv = PRIVATE.filter((x) => x && BigInt(x[2]) === bits).map(([a, b]) => [a, b]);
+        return rangesWithin(p.items, priv) ? true : null; // 排除私有位址＝公網來源仍符合
+      }
+      case 'src-address-list': return neg; // 任意攻擊者不在名單內
+      case 'dst-address': { if (pkt.dst === undefined) return null; const p = parseVal(key, v); return p.kind === 'ranges' ? flip(inRanges(pkt.dst, p.items)) : null; }
+      case 'dst-address-type': return pkt.chain === 'input' && body === 'local' ? !neg : null;
+      case 'connection-state': return flip(tokens(body).includes(pkt.state));
+      case 'connection-nat-state': return pkt.natState ? flip(tokens(body).includes(pkt.natState)) : neg;
+      case 'ipsec-policy': return /ipsec/.test(body) ? neg : /none/.test(body) ? !neg : null;
+      default: return null;
+    }
+  }
+  function ruleMatches(ctx, rule, pkt) {
+    let res = true;
+    for (const dir of ['in', 'out']) {
+      if (rule.match[dir + '-interface'] === undefined && rule.match[dir + '-interface-list'] === undefined) continue;
+      const at = pkt[dir];
+      if (at === undefined) { res = null; continue; }
+      const e = ifcSet(ctx, rule, dir);
+      if (e === UNKNOWN) { res = null; continue; }
+      if (at === null) { // 沒有這個方向的介面（例如 input 沒有出介面）：只有否定條件會成立
+        const negOnly = [dir + '-interface', dir + '-interface-list'].every((k) => rule.match[k] === undefined || splitNeg(rule.match[k]).neg);
+        if (!negOnly) return false; continue;
+      }
+      if (!e.has(at)) return false;
+    }
+    for (const k of Object.keys(rule.match)) {
+      if (/^(in|out)-interface(-list)?$/.test(k)) continue;
+      const c = FW_NONDET.has(k) ? null : condition(ctx, rule, k, pkt);
+      if (c === false) return false;
+      if (c === null) res = null;
+    }
+    return res;
+  }
+  /** 依序走過 chain：回傳 { verdict, rule, path }；verdict 為 accept／drop／nat 動作，沒有規則決定時為 null。path 是經過的 jump 規則。 */
+  function evalChain(ctx, family, table, chain, pkt, path) {
+    const via = path || [];
+    if (via.length > 16) return { verdict: null, rule: null, path: via };
+    for (const r of ctx.chain(family, table, chain)) {
+      if (r.disabled || ruleMatches(ctx, r, Object.assign({}, pkt, { chain })) !== true) continue;
+      if (r.action === 'jump') {
+        const target = r.params['jump-target'];
+        if (!target || via.some((x) => x.params['jump-target'] === target) || target === chain) continue;
+        const sub = evalChain(ctx, family, table, target, pkt, via.concat(r));
+        if (sub.verdict) return sub;
+        continue;
+      }
+      if (r.action === 'return') return { verdict: null, rule: null, path: via };
+      if (r.action === 'drop' || r.action === 'reject' || r.action === 'tarpit') return { verdict: 'drop', rule: r, path: via };
+      if (FW_TERMINAL.has(r.action)) return { verdict: r.action, rule: r, path: via };
+    }
+    return { verdict: null, rule: null, path: via };
+  }
+  /** 從 WAN 進來的封包：先看 raw prerouting（丟掉就到不了），再走 filter 的內建 chain；沒有規則決定時內建 chain 預設放行。 */
+  function evalFilter(ctx, family, builtin, pkt) {
+    const raw = evalChain(ctx, family, 'raw', 'prerouting', Object.assign({}, pkt, { out: undefined }));
+    if (raw.verdict === 'drop') return { verdict: 'drop', rule: raw.rule, path: raw.path, raw: true };
+    const f = evalChain(ctx, family, 'filter', builtin, pkt);
+    return f.verdict ? f : { verdict: 'accept', rule: null, path: [], policy: true };
+  }
+  /** 由規則本身的條件組出「會符合它」的 WAN 封包（協定、第一個目的埠／位址、出介面）。 */
+  function packetFor(rule, inEp, chain, ctx) {
+    const first = (k) => { const v = rule.match[k]; if (v === undefined || splitNeg(v).neg) return undefined; const p = parseVal(k, v); return p.kind === 'ranges' ? p.items[0][0] : undefined; };
+    const proto = rule.match.protocol && !splitNeg(rule.match.protocol).neg ? protoName(tokens(splitNeg(rule.match.protocol).body)[0]) : 'tcp';
+    const dp = first('dst-port'); const dst = first('dst-address');
+    const out = rule.match['out-interface'] && !splitNeg(rule.match['out-interface']).neg ? K.ep(ctx.dev, rule.match['out-interface']) : chain === 'input' ? null : undefined;
+    return { family: rule.family, in: inEp, out, protocol: proto, dstPort: dp === undefined ? null : Number(dp), dst, state: 'new', natState: null };
+  }
+
+  /** 推論：每台有設定資料的設備的 WAN／LAN 分類與有效的 /ip service（含預設值）。 */
+  function firewall(M) {
+    M.fwZones = new Map(); M.fwServices = new Map(); M.fwCtx = new Map();
+    const ifcsByDev = new Map(); M.ifcs.forEach((i) => S.util.getOr(ifcsByDev, i.dev, () => []).push(i.key));
+    const listsByDev = new Map(); M.fw.lists.forEach((l) => S.util.getOr(listsByDev, l.dev, () => []).push({ name: l.name, defined: l.defined, include: l.include, exclude: l.exclude, members: Array.from(l.members.keys()) }));
+    const rulesByDev = new Map(); M.fw.rules.forEach((r) => S.util.getOr(rulesByDev, r.dev, () => []).push(r));
+    M.devices.forEach((d) => {
+      if (!d.collected || !d.data.has('config')) return;
+      const ctx = fwContext(d.key, listsByDev.get(d.key) || [], ifcsByDev.get(d.key) || [], rulesByDev.get(d.key) || []);
+      M.fwCtx.set(d.key, ctx);
+      M.fwZones.set(d.key, { dev: d.key, basis: ctx.status === 'ok' ? 'interface-list' : null, status: ctx.status, wanLists: ctx.wanLists, wanInterfaces: ctx.wan ? Array.from(ctx.wan).sort(S.util.natural) : [],
+        lanLists: ctx.lanLists, lanInterfaces: Array.from(ctx.lan).sort(S.util.natural) });
+      const svcs = new Map(SERVICE_DEFAULTS.map(([name, port, enabled]) => [name, { dev: d.key, name, enabled, port, addresses: [], basis: 'default', src: [] }]));
+      M.fw.services.forEach((sv) => {
+        if (sv.dev !== d.key) return;
+        const base = svcs.get(sv.name) || { dev: d.key, name: sv.name, enabled: true, port: null, addresses: [], basis: 'export', src: [] };
+        svcs.set(sv.name, { dev: d.key, name: sv.name, enabled: sv.disabled === null ? base.enabled : !sv.disabled, port: sv.port ?? base.port,
+          addresses: sv.addresses ?? base.addresses, basis: 'export', src: sv.src.slice() });
+      });
+      M.fwServices.set(d.key, Array.from(svcs.values()).sort((a, b) => S.util.natural(a.name, b.name)));
+    });
+  }
+
   function displayName(d) {
     if (d.names.size) return Array.from(d.names)[0];
     return d.key;
   }
 
-  S.infer = { infer, displayName, effVlans, isVirtualIfc, hwMacsByDev, wifiLocations, behindLocations };
+  S.infer = { infer, displayName, effVlans, effVlanModes, isVirtualIfc, hwMacsByDev, wifiLocations, behindLocations };
+  S.infer.fw = { canonMatch, covers, sameMatch, evalChain, evalFilter, packetFor, fwContext, parseVal, splitNeg, protoName,
+    TERMINAL: FW_TERMINAL, BUILTIN: FW_BUILTIN, NONDET: FW_NONDET, PORT_PROTOCOLS };
 })(globalThis.SSOT = globalThis.SSOT || {});

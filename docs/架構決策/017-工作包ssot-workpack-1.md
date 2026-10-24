@@ -17,7 +17,7 @@
 - 工作包是**不壓縮（stored）的 ZIP**，第一個項目是 `manifest.json`，記錄每個檔案的角色、路徑、原始名稱、大小與 SHA-256。格式名稱 `ssot-workpack/1`。
 - 實作：
   - [src/workpack/zip.js](../../src/workpack/zip.js)：`S.zip`，零相依的 stored ZIP 讀寫與 CRC-32。
-  - [src/workpack/workpack.js](../../src/workpack/workpack.js)：`S.workpack.build`／`read`／`validate`。
+  - [src/workpack/workpack.js](../../src/workpack/workpack.js)：`S.workpack.build`／`read`／`validate`，以及以 `S.buildAsync` 重建、參數與回傳都和 `validate` 相同的 `validateAsync`（32cc8f0；判斷邏輯共用，畫面重建時不會停住，可顯示進度）。
   - [src/ledger/ledger.js](../../src/ledger/ledger.js)：`S.ledger.roundOf`，和 `advance` 共用「是不是同一份基準」的判斷。
   - 兩個 workpack 檔案是核心檔案（`tools/core-files.js`），在 Snapshot 的下游，歸 workflow（[ADR-013](013-新增workflow-agent依上下游分工.md)）。
 - 角色、路徑規則、manifest 的欄位、檢查項目與錯誤代碼只寫在[設計說明 §10A](../設計說明.md#10a-工作包ssot-workpack1)，這裡不重寫。
@@ -61,5 +61,5 @@
 
 ## 待辦
 
-- frontend：資料中心畫面、工作包的下載與讀入（路線圖「版面重整 1」）。
-- docs：畫面完成後，在設計說明 §12（或之後的使用說明）、README 的功能一覽與發布前檢查表補上資料中心與工作包。
+- ~~frontend：資料中心畫面、工作包的下載與讀入（路線圖「版面重整 1」）。~~ **已完成**（8f8523e）。
+- ~~docs：畫面完成後，在設計說明 §12（或之後的使用說明）、README 的功能一覽與發布前檢查表補上資料中心與工作包。~~ **已完成**：[設計說明 §12.5](../設計說明.md#125-資料中心)、README 的功能一覽、發布前檢查表第 16–19 項。

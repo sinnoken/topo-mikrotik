@@ -7,6 +7,10 @@
  },
  "devices": [
   {
+   "key": "TPE_ACC_SW_12",
+   "name": "TPE_ACC_SW_12"
+  },
+  {
    "key": "TPE_CORE_RT_01",
    "name": "TPE_CORE_RT_01"
   },
@@ -16,6 +20,96 @@
   }
  ],
  "items": [
+  {
+   "key": "set-servers:ntp:TPE_ACC_SW_12",
+   "findingKey": "[\"A12\",\"facet:ntp\",\"device:TPE_ACC_SW_12\",\"device:TPE_CORE_RT_01\",\"device:TPE_CORE_RT_02\"]",
+   "id": "A12",
+   "dev": "TPE_ACC_SW_12",
+   "level": "choice",
+   "choice": "majority",
+   "target": {
+    "type": "servers",
+    "key": "TPE_ACC_SW_12",
+    "facet": "ntp",
+    "menu": "/system ntp client servers",
+    "param": "address"
+   },
+   "ops": [
+    {
+     "op": "set",
+     "path": "/system ntp client servers",
+     "where": {
+      "address": "10.1.10.2"
+     },
+     "expect": 1,
+     "props": {
+      "address": "time.cloudflare.com"
+     },
+     "before": {
+      "address": "10.1.10.2"
+     }
+    }
+   ],
+   "evidence": [
+    {
+     "block": 73,
+     "line": 3666,
+     "text": "/system ntp client servers add address=10.1.10.2",
+     "file": "sample-bundle.txt"
+    }
+   ],
+   "risk": {
+    "level": "low",
+    "text": "時間來源改變；新伺服器連不到時時間不再同步，依賴時間的憑證、排程與記錄會受影響。先確認這台設備連得到新伺服器"
+   },
+   "note": "TPE_ACC_SW_12 的 NTP 伺服器：10.1.10.2 → time.cloudflare.com（改成多數設備的值：time.cloudflare.com（推論：3 台中 2 台，TPE_CORE_RT_01、TPE_CORE_RT_02））",
+   "warnings": []
+  },
+  {
+   "key": "set-servers:dns:TPE_CORE_RT_01",
+   "findingKey": "[\"A12\",\"facet:dns\",\"device:TPE_CORE_RT_01\",\"device:TPE_CORE_RT_02\"]",
+   "id": "A12",
+   "dev": "TPE_CORE_RT_01",
+   "level": "choice",
+   "choice": "device:TPE_CORE_RT_02",
+   "target": {
+    "type": "servers",
+    "key": "TPE_CORE_RT_01",
+    "facet": "dns",
+    "menu": "/ip dns",
+    "param": "servers"
+   },
+   "ops": [
+    {
+     "op": "set-list",
+     "path": "/ip dns",
+     "param": "servers",
+     "value": [
+      "8.8.8.8"
+     ],
+     "before": [
+      "1.1.1.1",
+      "8.8.8.8"
+     ]
+    }
+   ],
+   "evidence": [
+    {
+     "block": 1,
+     "line": 95,
+     "text": "set allow-remote-requests=yes servers=1.1.1.1,8.8.8.8",
+     "file": "sample-bundle.txt"
+    }
+   ],
+   "risk": {
+    "level": "medium",
+    "text": "這台設備本身與以它為 DNS 的用戶端改用新的上游伺服器；新伺服器連不到時名稱解析會失敗。先確認這台設備連得到新伺服器"
+   },
+   "note": "TPE_CORE_RT_01 的 DNS 伺服器：1.1.1.1、8.8.8.8 → 8.8.8.8（改成 TPE_CORE_RT_02 的值：8.8.8.8）",
+   "warnings": [
+    "前置檢查以 :len 與 :pick／:tostr 逐項比對目前的值，手冊沒有完整範例，建議先在測試機確認"
+   ]
+  },
   {
    "key": "disable-rule:TPE_CORE_RT_01|ip|filter|input|948a221c2f615ad3",
    "findingKey": "[\"F01\",\"device:TPE_CORE_RT_01\",\"rule:TPE_CORE_RT_01|ip|filter|input|948a221c2f615ad3\"]",
@@ -133,5 +227,106 @@
    "rule": "TPE_CORE_RT_01|ip|filter|input|249c268da358d5ea#2"
   }
  ],
- "choices": []
+ "choices": [
+  {
+   "findingKey": "[\"A12\",\"facet:dns\",\"device:TPE_CORE_RT_01\",\"device:TPE_CORE_RT_02\"]",
+   "id": "A12",
+   "facet": "dns",
+   "title": "DNS 伺服器",
+   "options": [
+    {
+     "id": "device:TPE_CORE_RT_01",
+     "label": "改成 TPE_CORE_RT_01 的值：1.1.1.1、8.8.8.8",
+     "value": [
+      "1.1.1.1",
+      "8.8.8.8"
+     ],
+     "devs": [
+      "TPE_CORE_RT_01"
+     ]
+    },
+    {
+     "id": "device:TPE_CORE_RT_02",
+     "label": "改成 TPE_CORE_RT_02 的值：8.8.8.8",
+     "value": [
+      "8.8.8.8"
+     ],
+     "devs": [
+      "TPE_CORE_RT_02"
+     ]
+    },
+    {
+     "id": "accept",
+     "label": "不修改，標為可接受"
+    }
+   ],
+   "chosen": "device:TPE_CORE_RT_02",
+   "chosenBy": "user",
+   "value": [
+    "8.8.8.8"
+   ],
+   "items": [
+    "set-servers:dns:TPE_CORE_RT_01"
+   ],
+   "reason": null
+  },
+  {
+   "findingKey": "[\"A12\",\"facet:ntp\",\"device:TPE_ACC_SW_12\",\"device:TPE_CORE_RT_01\",\"device:TPE_CORE_RT_02\"]",
+   "id": "A12",
+   "facet": "ntp",
+   "title": "NTP 伺服器",
+   "options": [
+    {
+     "id": "majority",
+     "label": "改成多數設備的值：time.cloudflare.com（推論：3 台中 2 台，TPE_CORE_RT_01、TPE_CORE_RT_02）",
+     "value": [
+      "time.cloudflare.com"
+     ],
+     "basis": {
+      "agree": 2,
+      "total": 3,
+      "devs": [
+       "TPE_CORE_RT_01",
+       "TPE_CORE_RT_02"
+      ]
+     },
+     "inferred": true
+    },
+    {
+     "id": "device:TPE_ACC_SW_12",
+     "label": "改成 TPE_ACC_SW_12 的值：10.1.10.2",
+     "value": [
+      "10.1.10.2"
+     ],
+     "devs": [
+      "TPE_ACC_SW_12"
+     ]
+    },
+    {
+     "id": "device:TPE_CORE_RT_01",
+     "label": "改成 TPE_CORE_RT_01、TPE_CORE_RT_02 的值：time.cloudflare.com",
+     "value": [
+      "time.cloudflare.com"
+     ],
+     "devs": [
+      "TPE_CORE_RT_01",
+      "TPE_CORE_RT_02"
+     ]
+    },
+    {
+     "id": "accept",
+     "label": "不修改，標為可接受"
+    }
+   ],
+   "chosen": "majority",
+   "chosenBy": "default",
+   "value": [
+    "time.cloudflare.com"
+   ],
+   "items": [
+    "set-servers:ntp:TPE_ACC_SW_12"
+   ],
+   "reason": null
+  }
+ ]
 }

@@ -13,15 +13,20 @@ function goldenSnapshot(S) {
 }
 const serialize = (snap) => JSON.stringify(snap, null, 1) + '\n';
 
-// ---- 修正 patch（ssot-patch/1）的黃金檔：範例資料的 F01／F02／F06，plan 一份、每台設備三份 .rsc
+// ---- 修正 patch（ssot-patch/1）的黃金檔：範例資料的 F01／F02／F06 與 A12，plan 一份、每台設備三份 .rsc
+// A12 的選擇固定：dns（沒有多數）選 TPE_CORE_RT_02 那一組；ntp 不指定，採多數
 const PATCH_FILE = path.join(__dirname, 'golden', 'sample-patch.json');
 const PATCH_DIR = path.join(__dirname, 'golden', 'sample-patch');
-const PATCH_SELECTION = { ids: ['F01', 'F02', 'F06'] };
+const PATCH_SELECTION = { ids: ['F01', 'F02', 'F06', 'A12'] };
+const PATCH_CHOICES = { dns: 'device:TPE_CORE_RT_02' }; // facet → 選項 id（格式見 src/remediate/patch.js）
 const serializePlan = (plan) => JSON.stringify(plan, null, 1) + '\n';
 /** 回傳 { plan, files: { 檔名: 內容 } }（檔名依 S.remediate.files 的 base）。 */
 function goldenPatch(S, snap) {
-  const Q = S.query(snap || goldenSnapshot(S));
-  const plan = S.remediate.plan(Q, PATCH_SELECTION);
+  const s = snap || goldenSnapshot(S); const Q = S.query(s);
+  const choices = {};
+  s.findings.filter((f) => f.id === 'A12' && PATCH_CHOICES[f.facet]).forEach((f) => { choices[Q.findingKey(f)] = PATCH_CHOICES[f.facet]; });
+  if (Object.keys(choices).length !== Object.keys(PATCH_CHOICES).length) throw new Error('範例資料找不到 PATCH_CHOICES 指定的 A12 finding');
+  const plan = S.remediate.plan(Q, PATCH_SELECTION, { choices });
   const files = {};
   S.remediate.files(plan).forEach((f) => { files[f.base + '.rsc'] = f.apply; files[f.base + '-rollback.rsc'] = f.rollback; files[f.base + '-verify.rsc'] = f.verify; });
   return { plan, files };
@@ -47,4 +52,4 @@ function diffPaths(a, b, limit, at, out) {
   return out;
 }
 
-module.exports = { FILE, goldenSnapshot, serialize, diffPaths, PATCH_FILE, PATCH_DIR, PATCH_SELECTION, serializePlan, goldenPatch, storedPatchFiles };
+module.exports = { FILE, goldenSnapshot, serialize, diffPaths, PATCH_FILE, PATCH_DIR, PATCH_SELECTION, PATCH_CHOICES, serializePlan, goldenPatch, storedPatchFiles };

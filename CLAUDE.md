@@ -95,6 +95,8 @@ git diff --check         # 提交前檢查
   <https://manual.mikrotik.com/llms.txt> 為準。
 - 大型冒煙測試：先 `npm run gen:large`，再 `SMOKE_INPUT=samples/large-1000.txt node tests/ui-smoke.js`，應全部通過。
   依範例資料才有的問題（例如 K01「LLDP 單向」）所寫的斷言，都依 Snapshot 是否有該 finding 判斷；範例資料必須含 K01。
+- **架構決策**：影響整體的決策（唯讀、處理紀錄、findingKey、版本規則、分工方式等）記錄在 [docs/架構決策/](docs/架構決策/README.md)。
+  修改相關設計前先讀對應的 ADR；決定改變時新增一份 ADR，並把舊的標為「已取代」，不改寫已接受的 ADR。
 
 ## Agent 分工（`.claude/agents/`）
 

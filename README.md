@@ -240,6 +240,7 @@ CI 的畫面測試用模擬 DOM，測不到 Canvas、CSP、`file://` 載入、EL
 - [收集清單與輸入格式](docs/收集清單與輸入格式.md)：收集指令、`bundle-v1`／`files-v1` 格式、支援範圍
 - [命名規則](docs/命名規則.md)：命名 profile
 - [發布前檢查表](docs/發布前檢查表.md)：真實瀏覽器的手動檢查項目
+- [架構決策](docs/架構決策/README.md)：重要決策的背景、選項與取捨（ADR）
 - [CLAUDE.md](CLAUDE.md)、[.github/copilot-instructions.md](.github/copilot-instructions.md)：開發原則與 AI 協作分工
 
 ## 注意

@@ -39,7 +39,9 @@ jobs:
     name: Large dataset test
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    env:
+      # 本機約 7–14 秒；CI runner 較慢，只抓明顯退化，精細比較在本機用 A/B
+      SSOT_LARGE_MAX_MS: 40000
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -51,3 +53,8 @@ jobs:
 
       - name: Run large tests
         run: npm run test:large
+
+      - name: Run large UI smoke test
+        run: |
+          npm run gen:large
+          SMOKE_INPUT=samples/large-1000.txt node tests/ui-smoke.js

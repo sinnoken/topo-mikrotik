@@ -50,7 +50,7 @@ git diff --check         # 提交前檢查
   與瀏覽器相同的檔案；`index.html` 的前段 `<script>` 必須與它完全一致（有測試檢查）。新增核心檔案要兩邊同步加。
   `index.html` 之後再載入 profiles、嵌入的範例與 `src/view/*`。`vendor/` 不在 `index.html` 裡，由畫面層需要時動態載入，也不列入核心載入順序。
   畫面起點是 `src/view/app.js`（建立 `App` 與 `S.view.app`，程式內稱 `A`），必須在其他 `app-*.js`
-  （graph／select／panes／toolbar／input／ledger／hub）之前載入；這一輪的資料集中在 `App.round`，只經 `A.load`／`A.setRoundInputs`／`A.clearRound` 改變；這些檔案載入時只定義函式，DOMContentLoaded 後才執行。
+  （graph／select／panes／toolbar／input／ledger／hub／layers）之前載入；這一輪的資料集中在 `App.round`，只經 `A.load`／`A.setRoundInputs`／`A.clearRound` 改變；這些檔案載入時只定義函式，DOMContentLoaded 後才執行。
 - **管線**（[src/pipeline.js](src/pipeline.js)，`S.build(sources, options) → Snapshot`）：
   ① `readers/`（bundle-v1、files-v1，依 `readers/index.js` 的 `ORDER` 選擇）切成區塊，保留檔案與行號
   → ② `adapters/` 辨識指令 → ③ `adapters/mikrotik.js` 解析為帶 `block`/`line` 的事實

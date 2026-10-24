@@ -30,6 +30,21 @@
     });
     return el;
   };
+  /** SVG 元素（圖表用）：與 h 相同的寫法，但以 SVG 命名空間建立，屬性一律 setAttribute */
+  V.svg = function svg(tag, attrs, children) {
+    const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    Object.entries(attrs || {}).forEach(([k, v]) => {
+      if (v === null || v === undefined || v === false) return;
+      if (k === 'text') el.textContent = v;
+      else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, String(v));
+    });
+    (Array.isArray(children) ? children : children === undefined ? [] : [children]).forEach((c) => {
+      if (c === null || c === undefined || c === false) return;
+      el.appendChild(typeof c === 'string' || typeof c === 'number' ? document.createTextNode(String(c)) : c);
+    });
+    return el;
+  };
   V.$ = (sel, root) => (root || document).querySelector(sel);
   V.clear = (el) => { while (el.firstChild) el.removeChild(el.firstChild); return el; };
 

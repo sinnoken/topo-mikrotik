@@ -62,15 +62,18 @@
     return section('檢查結果', uniq.map((f) => h('div', { class: 'finding' }, [
       V.sevDot(f.severity),
       h('div', null, [h('div', null, [h('b', null, f.title)]), h('div', null, f.message),
-        deviationLine(App, f), ackLine(f), adviceBlock(f.id),
+        deviationLine(App, f), ledgerLine(f), adviceBlock(f.id),
         f.evidence.length ? h('div', { class: f.id === 'C02' ? 'ev stack' : 'ev' }, evidenceLinks(App, f)) : null]),
     ])), { count: uniq.length });
   }
-  /** 已確認的分類與原因（檢視狀態，見 app-acks.js）；未確認時不顯示 */
-  function ackLine(f) {
-    const ack = V.app && V.app.ackOf ? V.app.ackOf(f) : null;
-    if (!ack) return null;
-    return h('div', { class: 'muted ack-line' }, [V.chip('已確認', 'ok'), ' ', V.remediation.ackKindText(ack.kind), ack.note ? '：' + ack.note : '']);
+  /** 處理紀錄的狀態與備註（使用者的決定，不在基準裡，見 app-ledger.js）；待處理（open）且沒有備註時不顯示 */
+  function ledgerLine(f) {
+    const it = V.app && V.app.ledgerItem ? V.app.ledgerItem(f) : null;
+    if (!it || (it.status === 'open' && !it.note)) return null;
+    const R = V.remediation;
+    return h('div', { class: 'muted ack-line ledger-line' }, [V.chip(R.statusText(it.status), R.STATUS_CHIP[it.status]), ' ',
+      it.waiver ? `豁免原因：${it.waiver.reason || '（未填）'}，到期 ${V.fmtUtc(it.waiver.until)}` : '',
+      it.note ? (it.waiver ? '；' : '') + '備註：' + it.note : '']);
   }
   /**
    * 規則的常見原因與處理（V.remediation.advice，文字來自 CATALOG）：預設收合的展開列，檢查結果與規則清單共用。
@@ -125,7 +128,9 @@
     const m = App.snap.meta; const st = m.stats; const C = App.Q.inventory().counts;
     return h('div', { class: 'detail' }, [
       h('h2', null, '總覽'),
-      kv([['建立時間', V.fmtTime(m.createdAt)], ['輸入指紋', h('span', { class: 'mono' }, m.inputHash)], ['命名規則', m.profile ? `${m.profile.id} v${m.profile.version}` : '未套用'],
+      kv([['建立時間', V.fmtTime(m.createdAt)], ['輸入指紋', h('span', { class: 'mono' }, m.inputHash)],
+        // 基準鍵：輸入、程式版本、命名規則與預期資料的組合，處理紀錄以它判斷是不是同一輪（舊基準沒有）
+        ['基準鍵', m.baselineKey ? h('span', { class: 'mono baseline-key', title: '處理紀錄以基準鍵判斷是不是同一輪：輸入、程式版本、命名規則或預期資料不同時就是新的一輪' }, m.baselineKey) : null], ['命名規則', m.profile ? `${m.profile.id} v${m.profile.version}` : '未套用'],
         ['來源', m.sources.map((s) => `${s.name}（${V.num(s.bytes)} 字元）`).join('、')]]),
       section('內容', kv([['設備', `${V.num(st.devices)}（已收集 ${V.num(st.collected)}）`], ['介面', V.num(st.interfaces)], ['鏈路', V.num(st.links)], ['VLAN 定義', V.num(st.vlans)],
         ['MAC', V.num(st.macs)], ['終端 MAC 位置（含 Wi-Fi 漫遊觀察）', V.num(C.endpoints)], ['IP（ARP）', V.num(C.arpIps)], ['路由', V.num(st.routes)]])),
@@ -272,7 +277,11 @@
       { t: '指令', f: (b) => b.command || '（未標記）', s: (b) => b.command || '（未標記）' },
       { t: '收集時間', f: (b) => (b.collectedAt ? h('span', { class: 'mono' }, V.fmtUtc(b.collectedAt)) : ''), s: (b) => b.collectedAt },
       { t: '失敗', f: (b) => (b.failure ? V.chip(V.failureText(b.failure), 'err', { title: b.failure.text || null }) : ''), s: (b) => (b.failure ? b.failure.reason : null) },
-      { t: '解析器', f: (b) => (b.adapters.length && !b.empty ? b.adapters.map((a) => S.adapters[a].label).join('、') : h('span', { class: 'diffA' }, '無法辨識')),
+      // 已解析的區塊仍可能有認不得的行（I03）：標出行數，點一下開啟第一行
+      { t: '解析器', f: (b) => (b.adapters.length && !b.empty ? h('span', null, [b.adapters.map((a) => S.adapters[a].label).join('、'),
+        (b.unrecognizedLines || []).length ? h('a', { class: 'link partial-unrecognized', title: '這個區塊有認不得的行，這些行沒有進入基準；點一下開啟第一行',
+          onclick: (e) => { e.stopPropagation(); App.openRaw(b.file, b.unrecognizedLines[0]); } }, `部分無法辨識（${V.num(b.unrecognizedLines.length)} 行）`) : null])
+        : h('span', { class: 'diffA' }, '無法辨識')),
         s: (b) => (b.adapters.length && !b.empty ? b.adapters.map((a) => S.adapters[a].label).join('、') : '無法辨識') },
       { t: '行', f: (b) => `${b.start}–${b.end}`, s: (b) => b.start },
     ], bs, { onRow: (b) => App.openRaw(b.file, b.failure ? b.failure.line : b.start), bad: (b) => !!b.failure });

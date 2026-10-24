@@ -341,3 +341,57 @@ pre.raw .hl { background: #fff3c4; display: block; }
   .toolbar { max-width: calc(100% - 20px); }
   footer { min-height: 24px; padding: 3px 8px; gap: 10px; font-size: var(--fs-xs); }
 }
+
+/* ---------- 處理紀錄（app-ledger.js、panels/ledger.js） ---------- */
+.ledger-editor .ledger-note, .ledger-editor .ledger-waiver-reason { flex: 1; min-width: 140px; }
+.ledger-editor .ledger-waiver { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; flex-basis: 100%; }
+.ledger-editor input[type=date] { min-height: 28px; padding: 3px 6px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font-size: var(--fs-sm); }
+.ledger-error { flex-basis: 100%; color: var(--err-text); font-size: var(--fs-sm); }
+.fgroup.handled > .head { color: var(--muted); }
+.ledger-chip { margin-right: 2px; }
+.ledger-alert { min-height: 24px; }
+.ledger-pane .ledger-counts, .ledger-pane .ledger-round-summary { padding-left: 0; padding-right: 0; background: none; border-bottom: none; }
+.ledger-item { padding: 4px 6px; font-size: var(--fs-md); border-bottom: 1px solid var(--line-soft); }
+.ledger-item.click { cursor: pointer; }
+.ledger-item.click:hover { background: var(--accent-hover); }
+.ledger-item .id { margin-right: 4px; color: var(--muted); }
+.ledger-errors { margin: 4px 0 8px 18px; padding: 0; font-size: var(--fs-sm); max-height: 260px; overflow: auto; }
+.ledger-blocked-box, .ledger-import-result { padding: 8px 10px; margin: 8px 0; border: 1px solid #f3dfb9; border-radius: var(--radius); background: var(--warn-soft); }
+.ledger-import-confirm { border-color: #d5e3f2; background: var(--info-soft); }
+.warn-line { color: var(--warn-text); }
+/* 收斂趨勢圖：SVG 折線、外形標記與 tooltip；文字用文字色，線與標記才用資料色（theme.trend） */
+.trend-tiles { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 10px; }
+.trend-tile { min-width: 70px; padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #fff; }
+.trend-value { font-size: var(--fs-lg); font-weight: 600; }
+.trend-chart { margin-bottom: 12px; }
+.trend-title { font-size: var(--fs-sm); font-weight: 600; margin-bottom: 2px; }
+.trend-legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: var(--fs-sm); color: var(--muted); }
+.trend-legend-item, .trend-tip-row { display: inline-flex; align-items: center; gap: 4px; }
+.trend-key { display: inline-block; width: 14px; height: 2px; border-radius: 1px; }
+.trend-plot { position: relative; max-width: 100%; overflow-x: auto; }
+.trend-plot svg { display: block; font-family: inherit; }
+.trend-hit:focus { outline: none; stroke: var(--accent); stroke-width: 1; }
+.trend-tip { position: absolute; top: 4px; padding: 5px 8px; background: #fff; border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: var(--shadow-md); font-size: var(--fs-sm); pointer-events: none; white-space: nowrap; }
+.trend-tip-row { display: flex; }
+.trend-table table { font-variant-numeric: tabular-nums; }
+
+/* ---------- 修正計畫（panels/patch.js） ---------- */
+.patch-readonly { padding: 8px 10px; border: 1px solid #d5e3f2; border-radius: var(--radius); background: var(--info-soft); color: var(--info-text); }
+.patch-select .row { margin-bottom: 6px; }
+.patch-groups details { margin: 2px 0; }
+.patch-picks { padding: 4px 0 6px 18px; max-height: 260px; overflow: auto; }
+.patch-pick-row { display: block; font-size: var(--fs-md); padding: 2px 0; }
+.patch-dev { margin: 12px 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; }
+.patch-item { padding: 8px 0; border-bottom: 1px solid var(--line-soft); }
+.patch-item p { margin: 3px 0; }
+.patch-label { font-size: var(--fs-sm); font-weight: 600; color: var(--muted); margin: 6px 0 2px; }
+.patch-ev code { overflow-wrap: anywhere; }
+.patch-cmd, .patch-file { margin: 2px 0; font-family: var(--mono); font-size: var(--fs-sm); overflow-x: auto; white-space: pre; }
+.patch-file { max-height: 320px; overflow: auto; }
+.patch-files .row { margin: 8px 0 4px; }
+.patch-download, .patch-copy { min-height: 28px; padding: 3px 8px; font-size: var(--fs-sm); }
+.patch-skipped { margin-top: 12px; }
+.patch-skip { font-size: var(--fs-md); padding: 3px 0 3px 10px; }
+.diff-warnings { margin: 8px 0; }
+.diff-warning { font-size: var(--fs-md); padding: 2px 0; }
+.partial-unrecognized { margin-left: 6px; color: var(--warn-text); }

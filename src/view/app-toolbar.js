@@ -184,8 +184,8 @@
     if (!App.snap) return;
     const k = V.exporter.KINDS[kind];
     if (!k) throw new Error('未知的匯出種類：' + kind);
-    // 確認狀態與查詢介面由畫面傳入：匯出內容的組字函式本身不讀全域狀態
-    const opts = Object.assign({}, extra || {}, { acked: A.ackOf, Q: App.Q });
+    // 處理紀錄與查詢介面由畫面傳入：匯出內容的組字函式本身不讀全域狀態
+    const opts = Object.assign({}, extra || {}, { ledgerOf: A.ledgerExport, Q: App.Q });
     try { V.exporter.download(k.name(App.snap), k.text(App.snap, opts), k.type); } catch (e) {
       console.error(e); A.banner('匯出失敗：' + e.message, 10000);
     }

@@ -7,27 +7,52 @@
   const A = () => V.app; // 畫面組裝的內部函式（app.js 在本檔之後才載入）
 
   // ---------------------------------------------------------------- 檢查結果
-  // groupBy：rule（依規則代碼）或 device（依設備，V.remediation.findingDevice）；onlyNew：只看與舊基準比對後新出現的；
-  // exportByDevice：匯出 CSV／Markdown 時依設備排序；editing：正在填寫確認分類與原因的那一筆（findings 的索引）
+  // groupBy：rule（依規則代碼）或 device（依設備，Q.findingDevice）；onlyNew：只看與舊基準比對後新出現的；
+  // exportByDevice：匯出 CSV／Markdown 時依設備排序；editing：正在變更處理狀態的那一筆（findings 的索引）
   const state = { sev: { error: true, warn: true, info: true }, open: new Set(), shown: new Map(), selected: -1,
     groupBy: 'rule', onlyNew: false, exportByDevice: false, editing: -1 };
   const R = () => V.remediation;
-  /** 確認的分類與原因：確認時與修改時共用；未知的分類（較新版本寫入）保留為選項，儲存時不會被改掉 */
-  function ackEditor(App, f, ack, rerender) {
-    const KIND = R().ACK_KIND;
-    const unknown = ack && ack.kind && !KIND[ack.kind] ? ack.kind : null;
-    const kind = h('select', { class: 'ack-kind', 'aria-label': '確認的分類' }, [h('option', { value: '' }, '未分類'),
-      ...Object.entries(KIND).map(([k, label]) => h('option', { value: k }, label)),
-      unknown ? h('option', { value: unknown }, unknown) : null]);
-    kind.value = ack && ack.kind ? ack.kind : '';
-    const note = h('input', { type: 'text', class: 'ack-note-input', maxlength: '500', 'aria-label': '確認的原因',
-      placeholder: '原因（選填），例如：維護窗口 11/30 處理', value: ack ? ack.note || '' : '' });
-    const cancel = () => { state.editing = -1; rerender(); };
-    const save = () => { state.editing = -1; App.ackFinding(f, true, { kind: kind.value, note: note.value }); };
+  const DAY_MS = 86400000;
+  const dateOf = (iso) => String(iso).slice(0, 10);
+  /** 已處理的狀態依這個順序各列一組（open、regressed 是待處理，留在上方的分組） */
+  const HANDLED = ['scheduled', 'accepted', 'false-positive', 'fixed'];
+  /**
+   * 處理狀態的編輯欄位：狀態（目前的狀態＋S.ledger.USER_TO 允許的轉換）、備註；可接受另填豁免原因與到期日（預設 WAIVER_DAYS 天後）。
+   * 儲存交給 App.setLedger（S.ledger.set）；不合法時在欄位下方顯示核心的錯誤訊息，欄位保留。
+   */
+  function ledgerEditor(App, f, it, idx) {
+    const LG = S.ledger;
+    const opts = [it.status].concat(LG.USER_TO[it.status] || []);
+    const status = h('select', { class: 'ledger-status', 'aria-label': '處理狀態' }, opts.map((s) => h('option', { value: s }, R().statusText(s))));
+    status.value = it.status;
+    const note = h('input', { type: 'text', class: 'ledger-note', maxlength: '500', 'aria-label': '備註',
+      placeholder: '備註（選填），例如：維護窗口 11/30 處理', value: it.note || '' });
+    const w = it.waiver;
+    const reason = h('input', { type: 'text', class: 'ledger-waiver-reason', maxlength: '500', 'aria-label': '豁免原因', placeholder: '可接受的原因（必填）', value: w ? w.reason : '' });
+    const until = h('input', { type: 'date', class: 'ledger-waiver-until', 'aria-label': '豁免到期日',
+      value: dateOf(w ? w.until : new Date(Date.now() + LG.WAIVER_DAYS * DAY_MS).toISOString()) });
+    const waiverBox = h('div', { class: 'ledger-waiver' }, [reason, h('label', null, ['到期日 ', until])]);
+    const err = h('div', { class: 'ledger-error hidden', role: 'alert' });
+    const sync = () => waiverBox.classList.toggle('hidden', status.value !== 'accepted');
+    status.addEventListener('change', sync); sync();
+    const fail = (msg) => { err.textContent = msg; err.classList.remove('hidden'); };
+    const cancel = () => { state.editing = -1; findings(App); };
+    const save = async () => {
+      const change = { status: status.value, note: note.value };
+      if (status.value === 'accepted') {
+        if (!reason.value.trim()) { fail('可接受需要填寫原因'); return; }
+        // 到期日沒改時沿用原本的時間（含時分秒），避免只因格式不同就寫一筆歷程
+        const untilIso = w && until.value === dateOf(w.until) ? w.until : until.value ? until.value + 'T00:00:00Z' : undefined;
+        change.waiver = { reason: reason.value, until: untilIso };
+      }
+      state.editing = -1;
+      const r = await App.setLedger(f, change);
+      if (!r.ok) { state.editing = idx; fail('無法變更：' + r.error); }
+    };
     note.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } else if (e.key === 'Escape') cancel(); });
-    return h('div', { class: 'ack-editor' }, [kind, note,
-      h('button', { class: 'primary', 'aria-label': '儲存確認：' + f.message, onclick: save }, ack ? '儲存' : '確認'),
-      h('button', { class: 'ghost', onclick: cancel }, '取消')]);
+    return h('div', { class: 'ack-editor ledger-editor' }, [status, note, waiverBox,
+      h('button', { class: 'primary', 'aria-label': '儲存處理狀態：' + f.message, onclick: save }, '儲存'),
+      h('button', { class: 'ghost', onclick: cancel }, '取消'), err]);
   }
   const activateByKey = (fn) => (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); } };
   /**
@@ -48,15 +73,20 @@
     if (!base) state.onlyNew = false;
     const isNew = (f) => !!base && base.addedFindingKeys.has(Q.findingKey(f));
     const pass = (f) => !state.onlyNew || isNew(f);
-    // 已確認的項目另列一組（預設收合），不算在上方各嚴重度的筆數裡
-    const acked = []; const st = { error: 0, warn: 0, info: 0 };
-    all.forEach((f, idx) => { if (!pass(f)) return; if (App.isAcked(f)) acked.push(idx); else st[f.severity]++; });
-    const ackedSet = new Set(acked);
+    // 已處理的項目（處理紀錄的狀態不是待處理）依狀態另列分組（預設收合），不算在上方各嚴重度的筆數裡
+    const handled = new Map(); const st = { error: 0, warn: 0, info: 0 };
+    all.forEach((f, idx) => {
+      if (!pass(f)) return;
+      const s = A().ledgerStatus(f);
+      if (R().isPendingStatus(s)) st[f.severity]++; else S.util.getOr(handled, s, () => []).push(idx);
+    });
+    const handledSet = new Set(Array.from(handled.values()).flat());
     root.appendChild(h('div', { class: 'summary' }, ['error', 'warn', 'info'].map((s) => filterChip(V.SEV[s], st[s], { cls: s === 'error' ? 'err' : s, on: state.sev[s],
       onclick: () => { state.sev[s] = !state.sev[s]; findings(App); }, title: '點一下切換顯示',
     }))));
-    // 分組方式與「只看新出現的」
+    // 分組方式與「只看新出現的」；兩份基準的版本不同時提示新出現的可能只是新版才有的檢查（compare 的 warnings）
     const nNew = base ? all.filter(isNew).length : 0;
+    const versionWarn = base ? (base.report.warnings || []).find((w) => w.kind === 'version') : null;
     root.appendChild(h('div', { class: 'summary sub findings-view' }, [
       h('div', { class: 'seg', role: 'group', 'aria-label': '分組方式' }, [['rule', '依規則'], ['device', '依設備']].map(([k, label]) => h('button', {
         class: `btn ${state.groupBy === k ? 'on' : ''}`, 'aria-pressed': String(state.groupBy === k), 'data-group-by': k,
@@ -65,37 +95,43 @@
         onclick: () => { state.onlyNew = !state.onlyNew; findings(App); } })
         : V.chipButton('只看新出現的', 'btn off only-new', { 'aria-disabled': 'true', 'aria-pressed': 'false', title: '需要先在「比對」分頁載入舊基準' }),
       base ? null : h('span', { class: 'muted note only-new-why' }, '在「比對」分頁載入舊基準後，才能只看新出現的'),
+      versionWarn ? h('span', { class: 'note warn-line only-new-version', title: versionWarn.message }, '新出現的可能來自新版檢查：' + versionWarn.message) : null,
     ]));
-    // 匯出不受上方篩選影響：一律輸出全部檢查結果（含已確認，另有欄位標示）；可選擇依設備排序
+    // 匯出不受上方篩選影響：一律輸出全部檢查結果（含處理狀態）；可選擇依設備排序
     root.appendChild(h('div', { class: 'row spaced pane-section' }, [
       h('span', { class: 'muted' }, '匯出全部檢查結果'),
-      h('button', { title: '每筆一列，含相關實體、證據行號、確認時間、分類與原因（Excel 可直接開啟）', onclick: () => App.exportAs('csv', { byDevice: state.exportByDevice }) }, 'CSV'),
-      h('button', { title: '依嚴重度（或依設備）分組的報表，含證據行號，已確認的項目會標示分類與原因', onclick: () => App.exportAs('markdown', { byDevice: state.exportByDevice }) }, 'Markdown'),
+      h('button', { title: '每筆一列，含相關實體、證據行號、處理狀態、時間與備註（Excel 可直接開啟）', onclick: () => App.exportAs('csv', { byDevice: state.exportByDevice }) }, 'CSV'),
+      h('button', { title: '依嚴重度（或依設備）分組的報表，含證據行號，已處理的項目會標示狀態與備註', onclick: () => App.exportAs('markdown', { byDevice: state.exportByDevice }) }, 'Markdown'),
       h('button', { class: 'ghost export-by-device' + (state.exportByDevice ? ' on' : ''), 'aria-pressed': String(state.exportByDevice),
         title: '匯出時依設備排序（Markdown 依設備分組）；不屬於任何設備的排最後',
         onclick: () => { state.exportByDevice = !state.exportByDevice; findings(App); } }, '依設備排序'),
+      h('button', { class: 'open-patch', title: '選取檢查結果，產生每台設備的修正 .rsc（套用、回復、驗證）；只產生文字，不會連線設備', onclick: () => App.openPatch() }, '修正計畫…'),
     ]));
     if (!all.length) root.appendChild(h('div', { class: 'empty-detail' }, [h('div', { class: 'big' }, '沒有發現問題'), '所有資料彼此一致。']));
     else if (state.onlyNew && !nNew) root.appendChild(h('div', { class: 'muted pane-note' }, `與舊基準（${base.name}）比對，沒有新出現的檢查結果。`));
-    /** 一筆檢查結果：點文字定位；旁邊的按鈕確認（選分類、填原因）、修改或取消確認 */
+    const ledgerBlocked = A().ledgerState().blocked;
+    if (ledgerBlocked) root.appendChild(h('div', { class: 'pane-note warn-line ledger-blocked' }, '處理紀錄目前無法使用：' + ledgerBlocked.reason + '（見「處理紀錄」分頁）'));
+    /** 一筆檢查結果：點文字定位；旁邊的「處理」變更處理紀錄的狀態與備註 */
     const item = (i, showId) => {
-      const f = all[i]; const ack = ackedSet.has(i) ? A().ackOf(f) : null;
+      const f = all[i]; const it = A().ledgerItem(f); const s = it ? it.status : null;
+      const done = handledSet.has(i); const at = done ? A().ledgerUserAt(it) : null;
       const select = () => { state.selected = i; App.selectFinding(i); findings(App); };
       const edit = (e) => { e.stopPropagation(); state.editing = state.editing === i ? -1 : i; findings(App); };
       return h('div', { class: 'fitem-wrap' }, [h('div', { class: 'fitem-row' }, [
         h('div', { class: 'fitem' + (state.selected === i ? ' sel' : ''), role: 'button', tabindex: '0', onclick: select, onkeydown: activateByKey(select) }, [
-          ack || showId ? h('span', { class: 'id' }, f.id + ' ') : null,
+          done || showId ? h('span', { class: 'id' }, f.id + ' ') : null,
+          s && s !== 'open' ? V.chip(R().statusText(s), R().STATUS_CHIP[s] + ' ledger-chip', { 'data-status': s }) : null, s && s !== 'open' ? ' ' : null,
           !state.onlyNew && isNew(f) ? V.chip('新出現', 'info', { title: `舊基準（${base.name}）沒有這筆` }) : null, f.message,
-          ack ? h('div', { class: 'muted note' }, `已確認：${V.fmtUtc(ack.at)}・${R().ackKindText(ack.kind)}`) : null,
-          ack && ack.note ? h('div', { class: 'muted note ack-reason' }, '原因：' + ack.note) : null,
+          at ? h('div', { class: 'muted note' }, `${R().statusText(s)}：${V.fmtUtc(at)}`) : null,
+          it && it.waiver ? h('div', { class: 'muted note ledger-waiver-line' }, `豁免原因：${it.waiver.reason || '（未填）'}・到期 ${V.fmtUtc(it.waiver.until)}`) : null,
+          it && it.note ? h('div', { class: 'muted note ack-reason' }, '備註：' + it.note) : null,
         ]),
-        ack ? h('button', { class: 'ghost ack', title: '修改分類與原因', 'aria-label': '修改確認：' + f.message, onclick: edit }, '修改') : null,
         h('button', {
-          class: 'ghost ack', title: ack ? '取消確認，移回原本的分組' : '標記為已確認，可選分類並填原因（只存在這個瀏覽器，不改變基準）',
-          'aria-label': (ack ? '取消確認：' : '確認：') + f.message,
-          onclick: ack ? (e) => { e.stopPropagation(); state.editing = -1; App.ackFinding(f, false); } : edit,
-        }, ack ? '取消確認' : '確認'),
-      ]), state.editing === i ? ackEditor(App, f, ack, () => findings(App)) : null]);
+          class: 'ghost ack ledger-edit', 'aria-label': '處理：' + f.message, disabled: !it || null,
+          title: it ? '變更處理狀態（待處理、已排程修復、可接受、誤報…）與備註；只存在這個瀏覽器的處理紀錄，不改變基準' : '處理紀錄沒有這一筆（處理紀錄無法使用）',
+          onclick: edit,
+        }, '處理'),
+      ]), state.editing === i && it ? ledgerEditor(App, f, it, i) : null]);
     };
     /** 一個可展開的分組：key 是展開狀態的鍵，head 是標題列的內容 */
     const group = (key, head, idxs, cls, showId) => {
@@ -111,7 +147,7 @@
       }
       return g;
     };
-    const shown = (idx) => state.sev[all[idx].severity] && !ackedSet.has(idx) && pass(all[idx]);
+    const shown = (idx) => state.sev[all[idx].severity] && !handledSet.has(idx) && pass(all[idx]);
     if (state.groupBy === 'device') {
       // 依設備：設備名稱順序，不屬於任何設備的最後一組；組內保留基準的順序，每筆標出規則代碼
       const groups = new Map();
@@ -130,14 +166,31 @@
         root.appendChild(group(id, [V.sevDot(c.severity), h('span', { class: 'title' }, c.title), h('span', { class: 'id' }, id)], idxs, '', false));
       });
     }
-    // 已確認：不受上方嚴重度篩選影響，預設收合
-    if (acked.length) {
-      const key = '#acked'; const open = state.open.has(key);
+    // 已處理：依狀態各一組，不受上方嚴重度篩選影響，預設收合
+    HANDLED.concat(Array.from(handled.keys()).filter((s) => !HANDLED.includes(s))).forEach((s) => {
+      const idxs = handled.get(s); if (!idxs || !idxs.length) return;
+      const key = '#handled:' + s; const open = state.open.has(key);
       const toggle = () => { open ? state.open.delete(key) : state.open.add(key); findings(App); };
-      const g = h('div', { class: 'fgroup acked' }, [h('div', { class: 'head', role: 'button', tabindex: '0', 'aria-expanded': String(open), onclick: toggle, onkeydown: activateByKey(toggle) }, [
-        h('span', null, open ? '▾' : '▸'), h('span', { class: 'title' }, '已確認'), V.chip(String(acked.length)),
+      const g = h('div', { class: 'fgroup handled', 'data-status': s }, [h('div', { class: 'head', role: 'button', tabindex: '0', 'aria-expanded': String(open), onclick: toggle, onkeydown: activateByKey(toggle) }, [
+        h('span', null, open ? '▾' : '▸'), h('span', { class: 'title' }, R().statusText(s)), V.chip(String(idxs.length)),
       ])]);
-      if (open) g.appendChild(h('div', { class: 'items' }, acked.map((i) => item(i, true))));
+      if (open) g.appendChild(h('div', { class: 'items' }, idxs.map((i) => item(i, true))));
+      root.appendChild(g);
+    });
+    // 規則品質：誤報比率最高的規則（S.ledger.ruleStats），只列有誤報的，預設收合
+    const fp = ledgerBlocked ? [] : S.ledger.ruleStats(A().ledger()).filter((r) => r.falsePositive > 0)
+      .sort((a, b) => b.rate - a.rate || b.falsePositive - a.falsePositive || S.util.natural(a.id, b.id)).slice(0, 5);
+    if (fp.length) {
+      const key = '#fp'; const open = state.open.has(key);
+      const toggle = () => { open ? state.open.delete(key) : state.open.add(key); findings(App); };
+      const g = h('div', { class: 'fgroup rules fp-rules' }, [h('div', { class: 'head', role: 'button', tabindex: '0', 'aria-expanded': String(open), onclick: toggle, onkeydown: activateByKey(toggle) }, [
+        h('span', null, open ? '▾' : '▸'), h('span', { class: 'title' }, '誤報率最高的規則'), V.chip(String(fp.length)),
+      ])]);
+      if (open) g.appendChild(h('div', { class: 'items' }, fp.map((r) => h('div', { class: 'rule', 'data-rule-id': r.id, title: '依處理紀錄：標為誤報的筆數／這條規則在處理紀錄中的總筆數' }, [
+        h('span', { class: 'mark' }, '!'),
+        h('span', { class: 'title' }, [(S.check.CATALOG[r.id] || {}).title || r.id,
+          h('div', { class: 'muted note' }, `誤報 ${V.num(r.falsePositive)} / ${V.num(r.total)}（${Math.round(r.rate * 100)}%）`)]),
+        h('span', { class: 'id' }, r.id)]))));
       root.appendChild(g);
     }
     // 沒有發現的規則：分成「通過」與「沒有資料可檢查」，預設收合（不受上方嚴重度篩選影響）

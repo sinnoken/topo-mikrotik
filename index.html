@@ -46,13 +46,15 @@
 <script src="src/view/panels/firewall.js"></script>
 <script src="src/view/panels/lists.js"></script>
 <script src="src/view/panels/baseline-diff.js"></script>
+<script src="src/view/panels/ledger.js"></script>
 <script src="src/view/app.js"></script>
 <script src="src/view/app-graph.js"></script>
 <script src="src/view/app-select.js"></script>
 <script src="src/view/app-panes.js"></script>
 <script src="src/view/app-toolbar.js"></script>
 <script src="src/view/app-input.js"></script>
-<script src="src/view/app-acks.js"></script>
+<script src="src/view/app-ledger.js"></script>
+<script src="src/view/panels/patch.js"></script>
 </head>
 <body>
 <div id="app">
@@ -93,11 +95,13 @@
         <button data-pane="pane-coverage">覆蓋率</button>
         <button data-pane="pane-inventory">清單</button>
         <button data-pane="pane-compare">比對</button>
+        <button data-pane="pane-ledger">處理紀錄</button>
       </div>
       <div id="pane-findings" class="pane"></div>
       <div id="pane-coverage" class="pane hidden"></div>
       <div id="pane-inventory" class="pane hidden"></div>
       <div id="pane-compare" class="pane hidden"></div>
+      <div id="pane-ledger" class="pane hidden"></div>
     </aside>
 
     <section id="center">
@@ -160,6 +164,13 @@
       <span style="flex:1"></span>
       <button class="primary" id="input-build">建立基準</button>
     </div>
+  </div>
+</dialog>
+
+<dialog id="dlg-patch">
+  <div class="dlg" style="width:min(1200px,96vw)">
+    <div class="dh">修正計畫<button class="ghost x" id="patch-close" onclick="document.getElementById('dlg-patch').close()">✕</button></div>
+    <div class="db" id="patch-body" style="max-height:78vh"></div>
   </div>
 </dialog>
 

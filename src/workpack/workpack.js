@@ -6,6 +6,7 @@
  *   S.workpack.build(parts, { now }) → Uint8Array
  *   S.workpack.read(bytes) → pack（{ manifest, files, sources, snapshot, ledger, profile, expectedData, expected, warnings }）
  *   S.workpack.validate(pack, { now, profile, expectedData }) → { ok, errors, warnings, snapshot }（以收集檔重建基準並核對）
+ *   S.workpack.validateAsync(pack, 同上, onProgress?) → Promise<同 validate>（以 S.buildAsync 重建，畫面不會停住）
  *
  * ZIP 的內容：
  *   manifest.json                   清單（第一個項目）
@@ -359,15 +360,33 @@
    *     處理紀錄會把它當成新的一輪，這是預期的行為）；三者都相同卻不同時是 error（baseline-key），工作包的內容自相矛盾。
    */
   function validate(pack, opts) {
-    const o = optsOf(opts, ['now', 'profile', 'expectedData'], 'validate', ['now', 'profile', 'expectedData']);
-    nowOf(o.now, 'validate'); const now = o.now; // 原樣交給 S.build，和直接呼叫 S.build 得到相同的 createdAt
-    if (!isObj(pack) || !isObj(pack.manifest) || !Array.isArray(pack.sources)) throw new TypeError('S.workpack.validate：pack 必須是 S.workpack.read 的結果');
-    const errors = []; const warnings = [];
-    let snap = null;
-    try { snap = S.build(pack.sources.map((s) => ({ name: s.name, text: s.text })), { profile: o.profile, expectedData: o.expectedData, now }); } catch (e) {
-      errors.push({ code: 'rebuild', path: null, message: `以收集檔重建基準失敗：${e.message}` });
-      return { ok: false, errors, warnings, snapshot: null };
-    }
+    const job = validateStart(pack, opts, 'validate');
+    let snap;
+    try { snap = S.build(job.sources, job.options); } catch (e) { return rebuildFailed(e); }
+    return validateFinish(pack, job, snap);
+  }
+  /**
+   * 和 validate 相同，但以 S.buildAsync 重建：每個階段讓出主執行緒，onProgress 收到的格式和 S.buildAsync 相同。
+   * 參數與回傳值都和 validate 相同（回傳 Promise）；參數形狀不對時 Promise 以 TypeError 拒絕。判斷邏輯和 validate 共用。
+   */
+  async function validateAsync(pack, opts, onProgress) {
+    const job = validateStart(pack, opts, 'validateAsync');
+    if (onProgress != null && typeof onProgress !== 'function') throw new TypeError('S.workpack.validateAsync：onProgress 必須是函式或省略');
+    let snap;
+    try { snap = await S.buildAsync(job.sources, job.options, onProgress || undefined); } catch (e) { return rebuildFailed(e); }
+    return validateFinish(pack, job, snap);
+  }
+  /** validate／validateAsync 共用：檢查參數，回傳要交給 S.build 的 sources 與選項 */
+  function validateStart(pack, opts, fn) {
+    const o = optsOf(opts, ['now', 'profile', 'expectedData'], fn, ['now', 'profile', 'expectedData']);
+    nowOf(o.now, fn); // 原樣交給 S.build，和直接呼叫 S.build 得到相同的 createdAt
+    if (!isObj(pack) || !isObj(pack.manifest) || !Array.isArray(pack.sources)) throw new TypeError(`S.workpack.${fn}：pack 必須是 S.workpack.read 的結果`);
+    return { o, sources: pack.sources.map((s) => ({ name: s.name, text: s.text })), options: { profile: o.profile, expectedData: o.expectedData, now: o.now } };
+  }
+  const rebuildFailed = (e) => ({ ok: false, errors: [{ code: 'rebuild', path: null, message: `以收集檔重建基準失敗：${e.message}` }], warnings: [], snapshot: null });
+  /** validate／validateAsync 共用：核對重建的基準 */
+  function validateFinish(pack, job, snap) {
+    const o = job.o; const errors = []; const warnings = [];
     const mf = pack.manifest; const meta = snap.meta;
     if (meta.inputHash !== mf.inputHash) {
       errors.push({ code: 'input-hash', path: null, message: `收集檔重建的 inputHash（${meta.inputHash}）和工作包（${mf.inputHash}）不同，基準與處理紀錄不屬於這些收集檔` });
@@ -387,5 +406,5 @@
     return { ok: errors.length === 0, errors, warnings, snapshot: snap };
   }
 
-  S.workpack = { SCHEMA, ROLES, ERRORS, WARNINGS, MANIFEST, build, read, validate, sha256 };
+  S.workpack = { SCHEMA, ROLES, ERRORS, WARNINGS, MANIFEST, build, read, validate, validateAsync, sha256 };
 })(globalThis.SSOT = globalThis.SSOT || {});

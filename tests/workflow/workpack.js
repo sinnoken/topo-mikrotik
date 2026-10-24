@@ -384,3 +384,47 @@ test('workpack：read 不重建也以 S.inputHashOf 核對收集檔；名稱與�
   const srcs = R.parts.filter((p) => p.role === 'source');
   throwsCode(() => S.workpack.build(without(R.parts, 'source').concat([srcs[1], srcs[0]]), { now: NOW }), 'input-hash');
 });
+// tests/run.js 逐一同步執行測試，所以 validateAsync 在子行程跑完（和瀏覽器一樣以 setTimeout 讓出），把結果交回來比對
+test('workpack：validateAsync 以 S.buildAsync 重建，結果和 validate 相同，進度格式沿用 buildAsync', () => {
+  const { execFileSync } = require('child_process'); const path = require('path'); const fs = require('fs'); const os = require('os');
+  const R = ROUND();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'workpack-'));
+  try {
+    // 四種情況：相同、換了命名規則（警告）、重建失敗、收集檔被換掉（read 會拒絕，所以在子行程直接改 pack.sources）
+    const zipFile = path.join(dir, 'pack.zip'); fs.writeFileSync(zipFile, S.workpack.build(R.parts, { now: NOW }));
+    const script = `
+      const S = require(${JSON.stringify(path.join(__dirname, '..', 'load.js'))})();
+      const bytes = new Uint8Array(require('fs').readFileSync(process.argv[1]));
+      const pack = S.workpack.read(bytes);
+      const shape = (x) => ({ stage: x.stage, done: x.done, total: x.total, snapshot: !!x.snapshot });
+      const strip = (r) => { if (r.snapshot) delete r.snapshot.meta.timing; return r; };
+      const opts = [
+        { now: '2027-01-01T00:00:00Z', profile: pack.profile, expectedData: pack.expectedData },
+        { now: '2027-01-01T00:00:00Z', profile: null, expectedData: pack.expectedData },
+        { now: '2027-01-01T00:00:00Z', profile: { id: 'bad', classify: [{ match: '(' }] }, expectedData: null },
+      ];
+      const tampered = Object.assign({}, pack, { sources: pack.sources.map((x, i) => (i ? x : { name: x.name, text: x.text + '\\n' })) });
+      (async () => {
+        const out = [];
+        for (const [p, o] of [[pack, opts[0]], [pack, opts[1]], [pack, opts[2]], [tampered, opts[0]]]) {
+          const progress = [];
+          const a = strip(await S.workpack.validateAsync(p, o, (x) => progress.push(shape(x))));
+          const s = strip(S.workpack.validate(p, o));
+          out.push({ same: S.util.canonicalJson(a) === S.util.canonicalJson(s), ok: a.ok, errors: a.errors.map((e) => e.code), warnings: a.warnings.map((w) => w.code), progress });
+        }
+        let rejected = null;
+        try { await S.workpack.validateAsync(pack, { now: 'x', profile: null, expectedData: null }); } catch (e) { rejected = e.name; }
+        let badCb = null;
+        try { await S.workpack.validateAsync(pack, opts[0], 'cb'); } catch (e) { badCb = e.name; }
+        // buildAsync 的進度格式（同一組輸入）
+        const ref = []; await S.buildAsync(pack.sources, { profile: pack.profile, expectedData: pack.expectedData, now: '2027-01-01T00:00:00Z' }, (x) => ref.push(shape(x)));
+        process.stdout.write(JSON.stringify({ out, rejected, badCb, ref }));
+      })().catch((e) => { console.error(e); process.exit(1); });`;
+    const res = JSON.parse(execFileSync(process.execPath, ['-e', script, zipFile], { encoding: 'utf8', maxBuffer: 1e8 }));
+    assert.ok(res.out.every((r) => r.same), '同步與非同步的結果（含重建的 Snapshot）完全相同');
+    assert.deepStrictEqual(res.out.map((r) => [r.ok, r.errors, r.warnings]), [[true, [], []], [true, [], ['baseline-key']], [false, ['rebuild'], []], [false, ['input-hash'], []]]);
+    assert.ok(res.out[0].progress.length > 1 && res.out[0].progress.some((x) => x.stage === '完成'), JSON.stringify(res.out[0].progress.slice(0, 3)));
+    assert.deepStrictEqual(res.out[0].progress, res.ref, '進度回報和 S.buildAsync 相同');
+    assert.deepStrictEqual([res.rejected, res.badCb], ['TypeError', 'TypeError'], '參數形狀不對時 Promise 以 TypeError 拒絕');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

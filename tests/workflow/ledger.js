@@ -405,3 +405,34 @@ test('處理紀錄 facet：fromAcks 的舊確認標記（舊鍵）轉換到 dns�
   assert.ok(!r.changes.some((c) => c.key === dnsKey || c.key === ntpKey || c.key === base), '轉換的項目不算新出現或消失');
   assert.ok(L.validate(r.ledger).ok, L.validate(r.ledger).errors.join('\n'));
 });
+test('處理紀錄：diff 列出只在一份的項目與輪次、內容不同的項目與輪次；鍵順序不算差異，歷程順序算', () => {
+  const L = S.ledger; const { q1, q2, k, r1, r2 } = ledgerRounds();
+  // 相同（深複製、物件鍵順序打亂）
+  const shuffled = JSON.parse(JSON.stringify(r2.ledger, (key, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).reverse()) : v)));
+  assert.deepStrictEqual(L.diff(r2.ledger, shuffled), { onlyInCur: [], onlyInNext: [], changed: [], roundsOnlyInCur: [], roundsOnlyInNext: [], roundsChanged: [], lossIfReplaced: false, same: true });
+  // cur 比 next 多一輪、多出項目、項目內容不同：以 next 取代會遺失
+  const d = L.diff(r2.ledger, r1.ledger);
+  assert.deepStrictEqual(d.roundsOnlyInCur, [q2.meta().baselineKey]);
+  assert.deepStrictEqual(d.roundsOnlyInNext, []);
+  assert.ok(d.onlyInCur.includes(k.I01new), '第二輪新出現的項目只在 cur');
+  assert.ok(d.changed.includes(k.F06) && d.changed.includes(k.R03), '使用者改過狀態的項目內容不同');
+  assert.deepStrictEqual(d.onlyInCur, d.onlyInCur.slice().sort(), '鍵排序');
+  assert.deepStrictEqual([d.lossIfReplaced, d.same], [true, false]);
+  // 反過來：next 是 cur 的超集時，取代不會遺失（但不相同）
+  const back = L.diff(r1.ledger, r2.ledger);
+  assert.deepStrictEqual([back.onlyInCur, back.roundsOnlyInCur, back.roundsOnlyInNext, back.onlyInNext.includes(k.I01new)], [[], [], [q2.meta().baselineKey], true]);
+  assert.ok(back.changed.length > 0 && back.lossIfReplaced, '同一個項目在 next 有更多歷程，cur 的內容和它不同，仍算 changed');
+  // 同一輪、推進時間不同 → roundsChanged
+  const other = L.advance(L.empty(), q1, { now: '2026-01-05T00:00:00Z' }).ledger;
+  const dr = L.diff(r1.ledger, other);
+  assert.deepStrictEqual([dr.roundsChanged, dr.roundsOnlyInCur, dr.roundsOnlyInNext], [[q1.meta().baselineKey], [], []]);
+  // 歷程順序算差異
+  const swapped = JSON.parse(JSON.stringify(r2.ledger)); const h = swapped.items[k.F06].history; h.reverse();
+  assert.deepStrictEqual(L.diff(r2.ledger, swapped).changed, [k.F06]);
+  // 不認得的欄位也參與比較
+  const extra = JSON.parse(JSON.stringify(r2.ledger)); extra.items[k.F01].future = 1;
+  assert.deepStrictEqual(L.diff(r2.ledger, extra).changed, [k.F01]);
+  // 格式錯誤丟錯；不修改傳入的物件
+  assert.throws(() => L.diff(r2.ledger, { schema: 'ssot-ledger/1' }), /next 的格式不正確/);
+  const before = JSON.stringify(r2.ledger); L.diff(r2.ledger, r1.ledger); assert.strictEqual(JSON.stringify(r2.ledger), before);
+});

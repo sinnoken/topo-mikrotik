@@ -438,6 +438,39 @@
     return ledger.iterations.findIndex((r) => baseOf(r.baseline) === b);
   };
 
+  /**
+   * 兩份處理紀錄的差異（例如讀入工作包、匯入處理紀錄之前，判斷目前的 cur 有沒有 next 沒有的內容）。兩份都要通過 validate，否則丟錯。
+   * 回傳（鍵都排序；輪次依各自的 iterations 順序）：
+   *   onlyInCur／onlyInNext：只在其中一份的項目鍵
+   *   changed             ：兩份都有、內容不同的項目鍵
+   *   roundsOnlyInCur／roundsOnlyInNext：只在其中一份的輪次（基準鍵）
+   *   roundsChanged       ：兩份都有這一輪、內容不同（例如推進的時間或筆數不同）的基準鍵
+   *   lossIfReplaced      ：以 next 整份取代 cur 會不會遺失 cur 的內容（onlyInCur、changed、roundsOnlyInCur、roundsChanged 任一不是空的）
+   *   same                ：兩份內容完全相同
+   * 「內容相同」：以 S.util.canonicalJson 比較，物件的鍵順序不算差異；陣列的順序算差異（history 是依時間附加的歷程，
+   *   順序本身就是內容；devs 已排序）。不認得的欄位（較新版本寫入的）也參與比較，不同就算 changed。
+   * 輪次以基準鍵對應（和 advance 的冪等判斷相同：baselineKey，舊紀錄退回 inputHash）；validate 保證同一份處理紀錄內不重複。
+   */
+  L.diff = function diff(cur, next) {
+    [['cur', cur], ['next', next]].forEach(([n, lg]) => {
+      const v = L.validate(lg);
+      if (!v.ok) throw new Error(`S.ledger.diff：${n} 的格式不正確（${v.errors.length} 項）：${v.errors.slice(0, 5).join('；')}${v.errors.length > 5 ? '…' : ''}`);
+    });
+    const cj = U.canonicalJson; const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+    const ck = Object.keys(cur.items).sort(U.cmp); const nk = Object.keys(next.items).sort(U.cmp);
+    const onlyInCur = ck.filter((k) => !has(next.items, k));
+    const onlyInNext = nk.filter((k) => !has(cur.items, k));
+    const changed = ck.filter((k) => has(next.items, k) && cj(cur.items[k]) !== cj(next.items[k]));
+    const nr = new Map(next.iterations.map((r) => [baseOf(r.baseline), r]));
+    const cr = new Map(cur.iterations.map((r) => [baseOf(r.baseline), r]));
+    const roundsOnlyInCur = cur.iterations.map((r) => baseOf(r.baseline)).filter((b) => !nr.has(b));
+    const roundsOnlyInNext = next.iterations.map((r) => baseOf(r.baseline)).filter((b) => !cr.has(b));
+    const roundsChanged = cur.iterations.map((r) => baseOf(r.baseline)).filter((b) => nr.has(b) && cj(cr.get(b)) !== cj(nr.get(b)));
+    const lossIfReplaced = !!(onlyInCur.length || changed.length || roundsOnlyInCur.length || roundsChanged.length);
+    const same = !lossIfReplaced && !onlyInNext.length && !roundsOnlyInNext.length && cj(cur) === cj(next);
+    return { onlyInCur, onlyInNext, changed, roundsOnlyInCur, roundsOnlyInNext, roundsChanged, lossIfReplaced, same };
+  };
+
   // ---- 統計
   /**
    * 趨勢圖用的時間序列與目前狀態：

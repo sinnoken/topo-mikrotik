@@ -23,7 +23,10 @@
       (e) => V.app.banner('無法複製：' + e.message + '；請選取文字後手動複製。', 6000));
   }
 
-  /** 目前基準的檢查結果，依 findingKey 去重複：[{ key, f, idx, dev }]（同一個鍵只取第一筆，計畫也以鍵為單位） */
+  /**
+   * 目前基準的檢查結果，依 findingKey 去重複：[{ key, f, idx, dev }]（同一個鍵只取第一筆，計畫也以鍵為單位）。
+   * 檢查項目不同的（finding.facet，例如 A12 的 DNS 與 NTP）是不同的鍵，各自一列；仍共用鍵的只有依輸入區塊的 I01、I03。
+   */
   function rows(App) {
     const seen = new Set(); const out = [];
     App.snap.findings.forEach((f, idx) => {
@@ -69,7 +72,9 @@
           const cb = h('input', { type: 'checkbox', class: 'patch-pick', 'data-key': r.key, checked: state.keys.has(r.key) || null });
           cb.checked = state.keys.has(r.key);
           cb.addEventListener('change', () => toggleKeys([r.key], cb.checked));
-          return h('label', { class: 'patch-pick-row' }, [cb, ' ', r.dev ? h('span', { class: 'muted' }, Q.devName(r.dev) + '：') : null, r.f.message]);
+          const facet = R().facetText(r.f);
+          return h('label', { class: 'patch-pick-row' }, [cb, ' ', r.dev ? h('span', { class: 'muted' }, Q.devName(r.dev) + '：') : null,
+            facet ? V.chip(facet, 'facet', { title: 'facet：' + r.f.facet }) : null, facet ? ' ' : null, r.f.message]);
         })));
         if (list.length > GROUP_MAX) box.appendChild(h('div', { class: 'muted' }, `只列出前 ${GROUP_MAX} 筆（共 ${list.length} 筆）；其餘請用「依規則」或「依設備」選取`));
       });

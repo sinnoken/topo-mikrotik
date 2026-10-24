@@ -591,7 +591,7 @@ async function buildInput(input) {
     // CSV：UTF-8 BOM 開頭（bytes EF BB BF），內容依 RFC 4180 解析回來要和每筆 finding 對得上
     if (bytes[1].subarray(0, 3).toString('hex') !== 'efbbbf') throw new Error('CSV 應以 UTF-8 BOM 開頭');
     const rows = parseCsv(csv.replace(/^\uFEFF/, ''));
-    if (rows[0].join() !== 'severity,id,title,message,entities,evidence,acknowledged,ack_kind,ack_note,device,action,status,note,waiver_reason,waiver_until') throw new Error('CSV 標頭不符：' + rows[0]);
+    if (rows[0].join() !== 'severity,id,title,message,entities,evidence,acknowledged,ack_kind,ack_note,device,action,status,note,waiver_reason,waiver_until,facet') throw new Error('CSV 標頭不符：' + rows[0]);
     if (rows.length - 1 !== App.snap.findings.length) throw new Error('CSV 每筆檢查結果應恰好一列');
     App.snap.findings.forEach((f, i) => {
       const r = rows[i + 1]; const lg = S.view.app.ledgerExport(f); const ack = lg && !S.view.remediation.isPendingStatus(lg.status) ? lg : {};
@@ -603,6 +603,7 @@ async function buildInput(input) {
       if (r[11] !== (lg ? lg.status : '')) throw new Error(`CSV ${f.id} 的 status 應為處理紀錄的狀態`);
       if (r[9] !== (App.Q.findingDevice(f) || '')) throw new Error('CSV ' + f.id + ' 的 device 應為所屬設備');
       if (r[10].replace(/^'/, '') !== S.check.CATALOG[f.id].action) throw new Error('CSV ' + f.id + ' 的 action 應與 CATALOG 一致（原文照錄）');
+      if (r[15].replace(/^'/, '') !== (f.facet != null ? String(f.facet) : '')) throw new Error('CSV ' + f.id + ' 的 facet 應為檢查項目的原值（沒有時空白）');
       if (r.length !== rows[0].length) throw new Error('CSV 第 ' + (i + 2) + ' 列的欄數應與標頭相同');
     });
     // Markdown（依規則）：每條出現的規則附處理建議與逐條的常見原因，反引號內是行內程式碼（不被跳脫）
@@ -1499,56 +1500,133 @@ async function buildInput(input) {
     $('#detail').querySelectorAll('a').find((x) => x.textContent === '顯示所有區塊').click();
     if (App.sel.domain != null || App.graph.hl.nodes.size !== App.Q.vlan(50).devices.length) throw new Error('應可回到所有區塊');
   });
-  await step('修正計畫的未產生指令：同一台設備多筆相同規則時各列出自己的訊息，點了開啟該筆，原因不逐筆重複，基準中沒有的明確說明', async () => {
+  await step('修正計畫：A12 的 DNS 與 NTP 依 facet 是不同的 findingKey，各自列出自己的訊息、各自可以勾選，詳情標示檢查項目', async () => {
     const RM = S.remediate; const RV = S.view.remediation; const PV = S.view.patchView;
-    // 兩台的 DNS 與 NTP 都不一致：同一台設備有兩筆 A12（choice），而且兩筆的 findingKey 相同
+    // 兩台的 DNS 與 NTP 都不一致：同一組設備有兩筆 A12（choice），實體相同、檢查項目（facet）不同
     const dev = (n, ip, dns, ntp) => `${n} (${ip}):\n### /export terse\n/ip dns set servers=${dns}\n/system ntp client set enabled=yes servers=${ntp}\n`;
     await buildInput(dev('VA', '10.0.0.1', '1.1.1.1', '10.9.9.1') + '_____\n' + dev('VB', '10.0.0.2', '8.8.8.8', '10.9.9.2'));
     const Q = App.Q; const all = Q.findings();
-    const keys = S.util.uniq(all.map((f) => Q.findingKey(f)));
+    const a12 = all.map((f, idx) => ({ f, idx, key: Q.findingKey(f) })).filter((x) => x.f.id === 'A12');
+    if (a12.length < 2) throw new Error('測試資料應有同一組設備的多筆 A12');
+    if (new Set(a12.map((x) => Q.findingBaseKey(x.f))).size !== 1) throw new Error('前提：這幾筆 A12 的規則與實體相同（不含 facet 的鍵相同）');
+    if (new Set(a12.map((x) => x.key)).size !== a12.length) throw new Error('檢查項目不同的 A12 應是不同的 findingKey');
+    // 檢查項目的顯示文字：有對應的轉成可讀文字，沒有對應或格式不符時顯示原值，沒有 facet 時不顯示
+    const byFacet = new Map(a12.map((x) => [x.f.facet, x]));
+    if (!byFacet.has('dns') || !byFacet.has('ntp')) throw new Error('A12 應各有 DNS 與 NTP 一筆');
+    if (RV.facetText(byFacet.get('dns').f) !== 'DNS 伺服器' || RV.facetText(byFacet.get('ntp').f) !== 'NTP 伺服器') throw new Error('A12 的 dns／ntp 應顯示成「DNS 伺服器」「NTP 伺服器」');
+    if (RV.facetText({ id: 'ZZ99', facet: 'raw|value' }) !== 'raw|value' || RV.facetText({ id: 'R06', facet: 'dns' }) !== 'dns') throw new Error('沒有對應或格式不符的 facet 應顯示原值');
+    if (RV.facetText({ id: 'I03' }) !== null) throw new Error('沒有 facet 時不應有檢查項目');
+    const declared = Object.keys(S.check.CATALOG).filter((id) => S.check.CATALOG[id].facet !== undefined);
+    if (!declared.length || declared.some((id) => !RV.FACET_RULES.includes(id))) throw new Error('CATALOG 宣告 facet 的規則都應有顯示格式：' + declared.filter((id) => !RV.FACET_RULES.includes(id)).join('、'));
+    // 詳情：每一筆在標題旁標示自己的檢查項目，title 是原值
+    a12.forEach(({ f, idx }) => {
+      App.selectFinding(idx);
+      const box = $('#detail').querySelectorAll('.finding').find((el) => el.textContent.includes(f.message));
+      const chip = box && box.querySelector('.facet');
+      if (!chip || chip.textContent !== '檢查項目：' + RV.facetText(f) || chip.getAttribute('title') !== 'facet：' + f.facet) throw new Error('詳情應在 ' + f.message + ' 的標題旁標示檢查項目');
+      if (a12.some((o) => o.f !== f && box.textContent.includes('檢查項目：' + RV.facetText(o.f)))) throw new Error('每一筆只標示自己的檢查項目');
+    });
+    const plain = all.findIndex((f) => f.facet == null);
+    if (plain >= 0) {
+      App.selectFinding(plain);
+      const box = $('#detail').querySelectorAll('.finding').find((el) => el.textContent.includes(all[plain].message));
+      if (box && box.querySelector('.facet')) throw new Error('沒有 facet 的檢查結果不應標示檢查項目');
+    }
+    App.select(null);
+    // 未產生指令：每一個鍵各一列，列出自己的訊息，點了（或按 Enter）開啟自己那一筆
     const MISSING_KEY = JSON.stringify(['A12', 'device:不存在的設備']);
-    PV.open(App, keys.concat([MISSING_KEY]));
+    PV.open(App, a12.map((x) => x.key).concat([MISSING_KEY]));
     const plan = RM.plan(Q, Array.from(PV.state.keys).sort(S.util.cmp));
-    const byDev = new Map(); plan.skipped.forEach((x) => { if (x.id) S.util.getOr(byDev, x.id + '|' + x.dev, () => []).push(x); });
-    const dup = Array.from(byDev.values()).find((l) => l.length > 1);
-    if (!dup) throw new Error('測試資料應有同一台設備的多筆相同規則未產生指令');
-    const rows = $('#patch-body').querySelectorAll('.patch-skip');
-    const dupRows = rows.filter((r) => r.getAttribute('data-finding') === dup[0].findingKey && r.textContent.includes(Q.devName(dup[0].dev) + '：'));
-    if (dupRows.length !== dup.length) throw new Error('每一筆未產生指令的項目都應列出');
-    const texts = dupRows.map((r) => r.textContent);
-    if (new Set(texts).size !== texts.length) throw new Error('同一台設備相同規則的多筆應彼此不同：' + texts.join('｜'));
-    const want = all.filter((f) => Q.findingKey(f) === dup[0].findingKey);
-    if (!want.every((f) => texts.some((t) => t.includes(f.message)))) throw new Error('每一筆都應列出檢查結果的訊息');
-    // 原因只在分組標題：每一筆不再重複寫原因或等級
-    const group = $('#patch-body').querySelectorAll('.patch-skip-group').find((g) => g.getAttribute('data-reason') === dup[0].reason);
-    if (!group.querySelector('.patch-label').textContent.includes(RM.SKIP_TEXT[dup[0].reason])) throw new Error('分組標題應是 SKIP_TEXT');
-    if (dupRows.some((r) => r.textContent.includes(RM.SKIP_TEXT[dup[0].reason]) || r.textContent.includes(RV.LEVEL_TEXT[dup[0].level]))) throw new Error('每一筆不應重複寫原因');
-    // 點擊（與鍵盤）開啟對應的那一筆
+    if (!a12.every((x) => plan.skipped.filter((s) => s.findingKey === x.key).length === 1)) throw new Error('每一筆 A12 應各有一個未產生指令的項目');
     const orig = App.selectFinding; const opened = [];
     App.selectFinding = (i) => { opened.push(i); return orig(i); };
     try {
-      dupRows.forEach((r, n) => {
-        const link = r.querySelector('.finding-ref');
-        if (!link || link.getAttribute('title') !== want.find((f) => r.textContent.includes(f.message)).message) throw new Error('訊息連結的 title 應是完整訊息');
+      a12.forEach((x, n) => {
         if (!$('#dlg-patch').open) PV.open(App);
-        const a = $('#patch-body').querySelectorAll('.patch-skip').filter((x) => x.getAttribute('data-finding') === dup[0].findingKey && x.textContent.includes(Q.devName(dup[0].dev) + '：'))[n].querySelector('.finding-ref');
-        if (n === 0) a.click(); else a.dispatch('keydown', { key: 'Enter' });
-        const idx = opened[opened.length - 1];
-        if (idx == null || !r.textContent.includes(all[idx].message)) throw new Error('點擊應開啟這一筆的檢查結果');
+        const rows = $('#patch-body').querySelectorAll('.patch-skip').filter((r) => r.getAttribute('data-finding') === x.key);
+        if (rows.length !== 1) throw new Error('每一個鍵應恰好一列');
+        if (!rows[0].textContent.includes(x.f.message) || a12.some((o) => o !== x && rows[0].textContent.includes(o.f.message))) throw new Error('每一列只列出自己的訊息');
+        const link = rows[0].querySelector('.finding-ref');
+        if (!link || link.getAttribute('title') !== x.f.message) throw new Error('訊息連結的 title 應是完整訊息');
+        if (n === 0) link.click(); else link.dispatch('keydown', { key: 'Enter' });
+        if (opened[opened.length - 1] !== x.idx) throw new Error('點擊應開啟這一筆的檢查結果');
         if ($('#dlg-patch').open) throw new Error('開啟檢查結果時應關閉修正計畫，讓詳情可見');
       });
-      if (new Set(opened).size !== dupRows.length) throw new Error('不同的列應開啟不同的檢查結果');
     } finally { App.selectFinding = orig; }
-    // 基準中沒有的鍵：明確說明，不是空白
+    // 原因只在分組標題：每一筆不再重複寫原因或等級
     PV.open(App);
+    const sk = plan.skipped.find((s) => s.findingKey === a12[0].key);
+    const group = $('#patch-body').querySelectorAll('.patch-skip-group').find((g) => g.getAttribute('data-reason') === sk.reason);
+    if (!group.querySelector('.patch-label').textContent.includes(RM.SKIP_TEXT[sk.reason])) throw new Error('分組標題應是 SKIP_TEXT');
+    if ($('#patch-body').querySelectorAll('.patch-skip').some((r) => r.textContent.includes(RM.SKIP_TEXT[sk.reason]) || r.textContent.includes(RV.LEVEL_TEXT[sk.level]))) throw new Error('每一筆不應重複寫原因');
+    // 基準中沒有的鍵：明確說明，不是空白
     const nf = $('#patch-body').querySelectorAll('.patch-skip').find((r) => r.getAttribute('data-finding') === MISSING_KEY);
     if (!nf || !nf.querySelector('.finding-missing') || nf.querySelector('.finding-missing').textContent !== RV.MISSING_FINDING_TEXT) throw new Error('基準中沒有的鍵應說明「' + RV.MISSING_FINDING_TEXT + '」');
     if (nf.querySelector('.finding-ref')) throw new Error('基準中沒有的鍵不應有連結');
+    // 逐筆勾選：每一筆 A12 各一個勾選框，標示檢查項目；勾一個只加入那一筆
+    $('#patch-body').querySelector('.patch-clear').click();
+    const g = $('#patch-body').querySelectorAll('.patch-group').find((x) => x.getAttribute('data-rule-id') === 'A12');
+    g.open = true; g.dispatch('toggle');
+    const picks = g.querySelectorAll('.patch-pick');
+    if (picks.map((cb) => cb.getAttribute('data-key')).sort().join('\n') !== a12.map((x) => x.key).sort().join('\n')) throw new Error('每一筆 A12 應各有一個勾選框');
+    a12.forEach((x) => {
+      const row = g.querySelectorAll('.patch-pick-row').find((r) => r.querySelector('.patch-pick').getAttribute('data-key') === x.key);
+      if (!row.textContent.includes(x.f.message) || !row.querySelector('.facet') || row.querySelector('.facet').textContent !== RV.facetText(x.f)) throw new Error('勾選列應列出自己的訊息與檢查項目');
+    });
+    const ntp = byFacet.get('ntp').key;
+    const pick = picks.find((cb) => cb.getAttribute('data-key') === ntp);
+    pick.checked = true; pick.dispatch('change');
+    if (PV.state.keys.size !== 1 || !PV.state.keys.has(ntp)) throw new Error('勾選 NTP 只應加入 NTP 那一筆');
+    const after = $('#patch-body').querySelectorAll('.patch-skip').map((r) => r.getAttribute('data-finding'));
+    if (after.join() !== ntp) throw new Error('只勾選 NTP 時，計畫只應有 NTP 那一筆：' + after.join('｜'));
     $('#dlg-patch').close();
     // 過長的訊息截斷，完整內容在 title
     const long = 'x'.repeat(RV.FINDING_TEXT_MAX + 30);
     const el = RV.findingRef(App, { idx: 0, f: { message: long } }, 'k');
     if (el.textContent.length !== RV.FINDING_TEXT_MAX || !el.textContent.endsWith('…') || el.getAttribute('title') !== long) throw new Error('過長的訊息應截斷，完整內容放在 title');
+  });
+  await step('修正計畫的未產生指令：仍共用 findingKey 的 I03（同一份收集檔多段無法辨識）依位置對應，各列出自己的訊息，點了開啟該筆', async () => {
+    const RM = S.remediate; const RV = S.view.remediation; const PV = S.view.patchView;
+    await buildInput(['SW_A (10.0.0.1):', '### /ip arp print detail', ' 0 address=10.0.0.9 mac-address=AA:BB:CC:00:00:09 interface=ether1', 'GARBAGE LINE one',
+      '### /ip address print detail', ' 0 address=10.0.0.1/24 network=10.0.0.0 interface=ether1', 'GARBAGE LINE two', ''].join('\n'));
+    const Q = App.Q; const all = Q.findings();
+    const i03 = all.map((f, idx) => ({ f, idx, key: Q.findingKey(f) })).filter((x) => x.f.id === 'I03');
+    if (i03.length < 2) throw new Error('測試資料應有同一台設備的多段 I03');
+    if (new Set(i03.map((x) => x.key)).size !== 1 || i03.some((x) => x.f.facet != null)) throw new Error('前提：I03 不帶 facet，同一台設備的多段共用一個鍵');
+    if (new Set(i03.map((x) => x.f.message)).size !== i03.length) throw new Error('前提：各段的訊息不同');
+    const key = i03[0].key;
+    PV.open(App, [key]);
+    const sk = RM.plan(Q, [key]).skipped.filter((x) => x.findingKey === key);
+    if (sk.length !== i03.length) throw new Error('共用鍵的每一筆都應是一個未產生指令的項目');
+    // 依位置對應：同一個鍵的第 n 筆對到基準中這個鍵的第 n 筆
+    if (RV.matchFindings(Q, sk).map((m) => m && m.idx).join() !== i03.map((x) => x.idx).join()) throw new Error('共用鍵時應依位置對回基準中的每一筆');
+    const rowsOf = () => $('#patch-body').querySelectorAll('.patch-skip').filter((r) => r.getAttribute('data-finding') === key);
+    const rows = rowsOf();
+    if (rows.length !== i03.length) throw new Error('每一筆未產生指令的項目都應列出');
+    if (!rows.every((r, n) => r.textContent.includes(i03[n].f.message) && i03.every((o, m) => m === n || !r.textContent.includes(o.f.message)))) throw new Error('每一列應列出自己那一筆的訊息');
+    const group = $('#patch-body').querySelectorAll('.patch-skip-group').find((x) => x.getAttribute('data-reason') === sk[0].reason);
+    if (!group.querySelector('.patch-label').textContent.includes(RM.SKIP_TEXT[sk[0].reason])) throw new Error('分組標題應是 SKIP_TEXT');
+    if (rows.some((r) => r.textContent.includes(RM.SKIP_TEXT[sk[0].reason]) || r.textContent.includes(RV.LEVEL_TEXT[sk[0].level]))) throw new Error('每一筆不應重複寫原因');
+    const orig = App.selectFinding; const opened = [];
+    App.selectFinding = (i) => { opened.push(i); return orig(i); };
+    try {
+      i03.forEach((x, n) => {
+        if (!$('#dlg-patch').open) PV.open(App);
+        const link = rowsOf()[n].querySelector('.finding-ref');
+        if (!link || link.getAttribute('title') !== x.f.message) throw new Error('訊息連結的 title 應是完整訊息');
+        if (n === 0) link.click(); else link.dispatch('keydown', { key: 'Enter' });
+        if (opened[opened.length - 1] !== x.idx) throw new Error('點擊應開啟這一筆的檢查結果');
+        if ($('#dlg-patch').open) throw new Error('開啟檢查結果時應關閉修正計畫，讓詳情可見');
+      });
+      if (new Set(opened).size !== i03.length) throw new Error('不同的列應開啟不同的檢查結果');
+    } finally { App.selectFinding = orig; }
+    // 逐筆勾選以鍵為單位：共用鍵的多段只有一個勾選框（計畫也以鍵為單位）
+    PV.open(App);
+    const g = $('#patch-body').querySelectorAll('.patch-group').find((x) => x.getAttribute('data-rule-id') === 'I03');
+    g.open = true; g.dispatch('toggle');
+    const picks = g.querySelectorAll('.patch-pick').map((cb) => cb.getAttribute('data-key'));
+    if (picks.join() !== key) throw new Error('共用鍵的 I03 應只有一個勾選框：' + picks.join('｜'));
+    $('#dlg-patch').close();
   });
   await step('只有 MNDP 的設備對不畫線；詳情仍說明是廣播網域可達、非直連', async () => {
     const input = 'A (10.0.0.1):\n### /ip neighbor print detail\n'

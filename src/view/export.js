@@ -53,6 +53,8 @@
    *   note        ：備註（不論狀態）；waiver_reason／waiver_until：可接受的豁免原因與到期日（UTC ISO）
    * device 是所屬設備鍵（Q.findingDevice；不屬於任何設備為空白）。
    * action 是規則的處理建議（CATALOG，V.remediation.advice），原文照錄（反引號保留）；規則沒有處理建議時為空白。
+   * facet 是檢查項目（finding.facet 原值，例如 A12 的 dns／ntp，會進入 findingKey）；規則沒有 facet 時空白。
+   *   放原值而不是畫面的顯示文字：給試算表篩選與對照 findingKey 用，訊息本身已經寫出項目。
    * 常見原因不放進 CSV：每列都會重複同一段多句文字，合在一格也不好篩選；Markdown 報表與畫面上有。
    * 新欄位一律加在最後，既有欄位的位置不變。
    * 開頭加 UTF-8 BOM，Excel 才會以 UTF-8 讀取中文；換行用 CRLF。
@@ -60,7 +62,7 @@
   function findingsCsv(snap, opts) {
     const lgOf = ledgerOf(opts);
     const head = ['severity', 'id', 'title', 'message', 'entities', 'evidence', 'acknowledged', 'ack_kind', 'ack_note', 'device', 'action',
-      'status', 'note', 'waiver_reason', 'waiver_until'];
+      'status', 'note', 'waiver_reason', 'waiver_until', 'facet'];
     const rows = ordered(snap, opts).map(({ f, dev }) => {
       const lg = lgOf(f); const done = handledOf(lg) || {}; const w = (lg && lg.waiver) || {};
       return [
@@ -70,6 +72,7 @@
         done.at || '', done.status || '', done.note || '', dev || '',
         R().advice(f.id).action || '',
         lg ? lg.status : '', lg ? lg.note || '' : '', w.reason || '', w.until || '',
+        f.facet != null ? String(f.facet) : '',
       ];
     });
     return '\uFEFF' + [head].concat(rows).map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';

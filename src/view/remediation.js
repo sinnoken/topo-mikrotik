@@ -5,6 +5,7 @@
  *   - sortByDevice：檢查結果依所屬設備（Q.findingDevice）排序，檢查結果分頁的「依設備」分組與匯出共用
  *   - 修正計畫的文字（LEVEL_TEXT、RISK_TEXT）與單一項目的套用指令（itemApplyLines，取自 S.remediate.renderRsc）
  *   - matchFindings／findingRef：未產生指令的項目以 findingKey 對回檢查結果，列出訊息並可點擊開啟
+ *   - facetText：檢查結果的檢查項目（finding.facet）的顯示文字，詳情與修正計畫的逐筆勾選共用
  *   - devicesCsvDraft：由 C01 產生 tools/collect.sh 的設備清單草稿
  */
 (function (S) {
@@ -72,8 +73,9 @@
   const clipText = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
   /**
    * 修正計畫的 skipped（或 items）逐筆對回 Q.findings() 中的檢查結果：回傳與 list 等長的陣列，每筆是 { idx, f } 或 null（基準中沒有，例如 not-found）。
-   * idx 與 App.selectFinding 的索引相同。不同的檢查結果可能有相同的 findingKey（例如同一組設備的 A12 DNS 與 NTP），
-   * 所以同一個鍵的第 n 筆對到基準中這個鍵的第 n 筆：S.remediate.plan 對同一個鍵的列依 finding 在基準中的順序排列。
+   * idx 與 App.selectFinding 的索引相同。檢查項目不同的已經以 facet 區分（例如 A12 的 DNS 與 NTP 是不同的鍵），
+   * 但依輸入區塊產生的 I01、I03 不帶 facet，同一台設備的多段仍共用一個 findingKey（ADR-003）。
+   * 這種情況的退路是依位置對應：同一個鍵的第 n 筆對到基準中這個鍵的第 n 筆（S.remediate.plan 對同一個鍵的列依 finding 在基準中的順序排列）。
    */
   function matchFindings(Q, list) {
     const byKey = new Map();
@@ -94,6 +96,38 @@
     const msg = String(hit.f.message || '');
     return V.h('a', { class: 'link finding-ref', title: msg, 'data-finding-idx': String(hit.idx),
       onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); if (before) before(); App.selectFinding(hit.idx); } }, clipText(msg, FINDING_TEXT_MAX));
+  }
+
+  // ---------------------------------------------------------------- 檢查項目（finding.facet）
+  /** facet 中項目代碼的顯示文字（A12、R06 的 dns／ntp／gateway，V06、V07 比較的屬性） */
+  const FACET_ITEM = { dns: 'DNS 伺服器', ntp: 'NTP 伺服器', gateway: '閘道',
+    'vlan-interface-name': 'VLAN 介面名稱', 'vlan-interface-comment': 'VLAN 介面說明', 'bridge-vlan-comment': 'bridge VLAN 說明' };
+  const facetItem = (s) => FACET_ITEM[s] || s;
+  /** 「a|b」格式的 facet 拆成第一段與其餘（其餘部分可能含 |，原樣保留） */
+  const facetSplit = (v) => { const at = v.indexOf('|'); return at < 0 ? [v, ''] : [v.slice(0, at), v.slice(at + 1)]; };
+  /** 有格式的 facet 依規則轉成可讀文字（格式見 CATALOG 的 facet）；第二段缺少時回傳 null，改顯示原值 */
+  const FACET_FORMAT = {
+    I02: (v) => (S.adapters && S.adapters[v] && S.adapters[v].label) || v,
+    V06: facetItem,
+    V07: (v) => { const [a, b] = facetSplit(v); return b ? `${facetItem(a)}「${b}」` : null; },
+    A02: (v) => (v === 'unknown' ? 'VLAN 不明' : `VLAN ${v}`),
+    A07: (v) => `網段 ${v}`,
+    A08: (v) => `網段 ${v}（最外層）`,
+    A10: (v) => { const [a, b] = facetSplit(v); return b ? `${a}「${b}」` : null; },
+    A11: (v) => { const [a, b] = facetSplit(v); return b ? `${a} ${b}` : null; },
+    A12: facetItem,
+    R02: (v) => `本端介面 ${v}`,
+    R05: (v) => `網段 ${v}`,
+    R06: (v) => { const [a, b] = facetSplit(v); return b ? `${facetItem(a)}（${b}）` : null; },
+  };
+  /**
+   * 檢查結果的檢查項目（finding.facet）的顯示文字：同一組規則＋實體可能有多筆時，標示這筆檢查的是哪一個項目。
+   * 沒有 facet 時為 null；規則沒有對應的格式或格式不符時顯示原值，不隱藏。
+   */
+  function facetText(f) {
+    if (!f || f.facet == null) return null;
+    const v = String(f.facet); const fmt = FACET_FORMAT[f.id];
+    return (fmt && fmt(v)) || v;
   }
 
   // ---------------------------------------------------------------- C01 → devices.csv 草稿
@@ -140,5 +174,5 @@
   }
 
   V.remediation = { STATUS_TEXT, statusText, STATUS_CHIP, isPendingStatus, advice, sortByDevice, LEVEL_TEXT, RISK_TEXT, RISK_CHIP, maxRisk, itemApplyLines,
-    MISSING_FINDING_TEXT, FINDING_TEXT_MAX, clipText, matchFindings, findingRef, devicesCsvDraft, USER_PLACEHOLDER };
+    MISSING_FINDING_TEXT, FINDING_TEXT_MAX, clipText, matchFindings, findingRef, FACET_ITEM, FACET_RULES: Object.keys(FACET_FORMAT), facetText, devicesCsvDraft, USER_PLACEHOLDER };
 })(globalThis.SSOT = globalThis.SSOT || {});

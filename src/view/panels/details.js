@@ -62,9 +62,24 @@
     return section('檢查結果', uniq.map((f) => h('div', { class: 'finding' }, [
       V.sevDot(f.severity),
       h('div', null, [h('div', null, [h('b', null, f.title)]), h('div', null, f.message),
-        deviationLine(App, f),
+        deviationLine(App, f), ackLine(f), ...catalogLines(f),
         f.evidence.length ? h('div', { class: f.id === 'C02' ? 'ev stack' : 'ev' }, evidenceLinks(App, f)) : null]),
     ])), { count: uniq.length });
+  }
+  /** 已確認的分類與原因（檢視狀態，見 app-acks.js）；未確認時不顯示 */
+  function ackLine(f) {
+    const ack = V.app && V.app.ackOf ? V.app.ackOf(f) : null;
+    if (!ack) return null;
+    return h('div', { class: 'muted ack-line' }, [V.chip('已確認', 'ok'), ' ', V.remediation.ackKindText(ack.kind), ack.note ? '：' + ack.note : '']);
+  }
+  /** 規則的處理建議與常見原因（CATALOG 的 action／causes）；欄位不存在時不顯示 */
+  function catalogLines(f) {
+    const c = S.check.CATALOG[f.id] || {};
+    const causes = Array.isArray(c.causes) ? c.causes : typeof c.causes === 'string' && c.causes ? [c.causes] : [];
+    return [
+      typeof c.action === 'string' && c.action ? h('div', { class: 'muted catalog-action' }, '處理建議：' + c.action) : null,
+      causes.length ? h('div', { class: 'muted catalog-causes' }, '常見原因：' + causes.join('；')) : null,
+    ];
   }
   /** 跨設備一致性檢查依多數決推定偏離的設備（finding.deviation，推論）；平手時 deviating 為空，不顯示 */
   function deviationLine(App, f) {

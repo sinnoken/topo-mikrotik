@@ -138,13 +138,13 @@
   }
 
   // ================================================================ 匯出
-  /** 匯出目前的基準或檢查結果（種類見 V.exporter.KINDS）；只讀 App.snap，不改寫 */
-  App.exportAs = function (kind) {
+  /** 匯出目前的基準或檢查結果（種類見 V.exporter.KINDS）；只讀 App.snap，不改寫。extra 例如 { byDevice: true } */
+  App.exportAs = function (kind, extra) {
     if (!App.snap) return;
     const k = V.exporter.KINDS[kind];
     if (!k) throw new Error('未知的匯出種類：' + kind);
     // 確認狀態與查詢介面由畫面傳入：匯出內容的組字函式本身不讀全域狀態
-    const opts = { acked: A.ackOf, Q: App.Q };
+    const opts = Object.assign({}, extra || {}, { acked: A.ackOf, Q: App.Q });
     try { V.exporter.download(k.name(App.snap), k.text(App.snap, opts), k.type); } catch (e) {
       console.error(e); A.banner('匯出失敗：' + e.message, 10000);
     }

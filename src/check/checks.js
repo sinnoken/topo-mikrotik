@@ -1,6 +1,8 @@
 /*
  * 一致性檢查：基準可不可信，由這裡回答。
- * 每筆 finding：{ id, severity, title, message, entities:[{type,key}], evidence:[{block,line}] }
+ * 每筆 finding：{ id, severity, cat, title, message, entities:[{type,key}], facet?, evidence:[{block,line}], deviation? }
+ * facet：同一組 id＋實體可能產生多筆的規則，標示這筆檢查的是哪一個項目（例如 A12 的 dns／ntp），會進入 findingKey。
+ *        只有 CATALOG 宣告 facet 的規則才有，而且每筆都有；值只取自設定的項目與正規化後的設定值，不取自訊息、設備名稱或行號。
  * severity：error（資料互相矛盾）／warn（可能有問題）／info（提醒）
  */
 (function (S) {
@@ -29,11 +31,17 @@
 
   function run(M, ctx) {
     const out = [];
-    // extra：個別規則附加的欄位（例如跨設備一致性的 deviation），不可覆寫上列共通欄位
+    // extra：個別規則附加的欄位（例如跨設備一致性的 deviation），不可覆寫上列共通欄位；facet 另外處理（放在 entities 之後）
+    // facet 有沒有要和 CATALOG 的宣告一致：規則漏給或多給都是程式錯誤，直接丟錯，不產生 findingKey 不穩定的 finding
     const add = (id, message, entities, evidence, extra) => {
       const c = CATALOG[id];
-      const f = { id, severity: c.severity, cat: c.cat, title: c.title, message, entities: entities || [], evidence: (evidence || []).slice(0, c.evidenceLimit ?? EVIDENCE_LIMIT) };
-      Object.keys(extra || {}).forEach((k) => { if (!(k in f)) f[k] = extra[k]; });
+      const { facet, ...rest } = extra || {};
+      if ((c.facet !== undefined) !== (facet !== undefined)) throw new Error(`${id}：${c.facet !== undefined ? 'CATALOG 宣告了 facet，finding 卻沒有' : 'CATALOG 沒有宣告 facet，finding 卻有'}`);
+      if (facet !== undefined && (typeof facet !== 'string' || !facet)) throw new Error(`${id}：facet 必須是非空字串，目前是 ${JSON.stringify(facet)}`);
+      const f = { id, severity: c.severity, cat: c.cat, title: c.title, message, entities: entities || [] };
+      if (facet !== undefined) f.facet = facet;
+      f.evidence = (evidence || []).slice(0, c.evidenceLimit ?? EVIDENCE_LIMIT);
+      Object.keys(rest).forEach((k) => { if (!(k in f)) f[k] = rest[k]; });
       out.push(f);
     };
     const name = (devKey) => { const d = M.devices.get(devKey); return d ? S.infer.displayName(d) : devKey; };
@@ -74,7 +82,7 @@
         b.devKey ? [{ type: 'device', key: b.devKey }] : [], ls.map((line) => ({ block: b.id, line })));
     });
     ctx.duplicates.forEach((d) => add('I02', `${name(d.dev)} 的「${S.adapters[d.adapter].label}」出現 ${d.blocks.length} 次，採用最後一次`,
-      [{ type: 'device', key: d.dev }], d.blocks.map((b) => ({ block: b, line: ctx.blocks[b].origin.startLine }))));
+      [{ type: 'device', key: d.dev }], d.blocks.map((b) => ({ block: b, line: ctx.blocks[b].origin.startLine })), { facet: d.adapter }));
 
     // ---- 覆蓋
     const expected = Object.assign({}, EXPECTED, ctx.expectedData || {});
@@ -242,7 +250,7 @@
           if (locations.length < 2) return;
           add('A02', `${K.macPretty(m.mac)} 在 ${vlan ? `VLAN ${vlan}` : 'VLAN 不明'} 的多個終端埠出現：${locations.map(epName).join('、')}`,
             [{ type: 'mac', key: m.mac }].concat(locations.map((ep) => ({ type: 'interface', key: ep }))),
-            locations.map((ep) => macVlanSrc(m, ep, vlan)).filter(Boolean));
+            locations.map((ep) => macVlanSrc(m, ep, vlan)).filter(Boolean), { facet: vlan ? String(vlan) : 'unknown' });
         });
       });
     });
@@ -289,12 +297,12 @@
     M.dhcpNets.forEach((n) => {
       const p = S.ip.parseCidr(n.network); if (!p) return;
       const bad = n.gateways.filter((g) => S.ip.isIp(g) && !S.ip.inNet(g, p.net, p.len));
-      if (bad.length) add('R05', `${name(n.dev)}：${n.network} 的閘道 ${bad.join('、')} 不在網段內`, [{ type: 'device', key: n.dev }], [{ block: n.block, line: n.line }]);
+      if (bad.length) add('R05', `${name(n.dev)}：${n.network} 的閘道 ${bad.join('、')} 不在網段內`, [{ type: 'device', key: n.dev }], [{ block: n.block, line: n.line }], { facet: `${p.net}/${p.len}` });
     });
     configConsistency(M, add, name, epName, byDomain);
     // R02：OSPF 鄰居用位址、router-id、管理 IP 都對不到設備（建模時 peerBasis 為 null）
     M.ospfAdjacencies.forEach((a) => { if (!a.peerBasis) add('R02', `${name(a.dev)} ${K.splitEp(a.localEp)[1]} 的鄰居 ${a.peerId}（${a.peerIp}）`,
-      [{ type: 'device', key: a.dev }, { type: 'device', key: K.dev(a.peerId) }], [{ block: a.block, line: a.line }]); });
+      [{ type: 'device', key: a.dev }, { type: 'device', key: K.dev(a.peerId) }], [{ block: a.block, line: a.line }], { facet: K.splitEp(a.localEp)[1] }); });
 
     firewallChecks(M, add, name);
 
@@ -373,6 +381,8 @@
     Array.from(M.vlans.values()).filter((v) => v.desc && v.desc.trim() && collected(v.dev)).sort((a, b) => byName(a.dev, b.dev) || a.id - b.id)
       .forEach((v) => vlanAttrs.push({ attr: 'bridge VLAN 說明', id: v.id, dev: v.dev, val: v.desc.trim(), ent: { type: 'device', key: v.dev }, src: v.src[0] }));
     const ATTR_ORDER = ['VLAN 介面名稱', 'VLAN 介面說明', 'bridge VLAN 說明'];
+    // V06／V07 的 facet：比較的是哪一種屬性（/interface vlan 的 name、comment，/interface bridge vlan 的 comment）
+    const ATTR_FACET = { 'VLAN 介面名稱': 'vlan-interface-name', 'VLAN 介面說明': 'vlan-interface-comment', 'bridge VLAN 說明': 'bridge-vlan-comment' };
     const entsOf = (items, extra) => (extra || []).concat(U.uniq(items.map((x) => x.ent.type + '\u0000' + x.ent.key)).map((k) => { const [type, key] = k.split('\u0000'); return { type, key }; }));
     const evsOf = (items) => items.filter((x) => x.src).map((x) => ev(x.src));
 
@@ -386,7 +396,7 @@
           const groups = groupDevs(perDev);
           if (groups.length < 2) return;
           const j = judge(groups);
-          add('V06', `VLAN ${id} 的 ${attr}：${fmtGroups(groups, quote)}${j.note}`, entsOf(sel, [{ type: 'vlan', key: String(id) }]), evByGroups(groups, sel, (x) => x.dev, (x) => evsOf([x])), j.extra);
+          add('V06', `VLAN ${id} 的 ${attr}：${fmtGroups(groups, quote)}${j.note}`, entsOf(sel, [{ type: 'vlan', key: String(id) }]), evByGroups(groups, sel, (x) => x.dev, (x) => evsOf([x])), Object.assign({ facet: ATTR_FACET[attr] }, j.extra));
         });
       });
     });
@@ -399,7 +409,7 @@
         if (groups.length < 2) return;
         const ids = U.uniq(sel.map((x) => x.id)).sort((a, b) => a - b);
         const j = judge(groups);
-        add('V07', `${attr}「${sel[0].val}」：${fmtGroups(groups, fmtVlanIds)}${j.note}`, entsOf(sel, ids.map((id) => ({ type: 'vlan', key: String(id) }))), evByGroups(groups, sel, (x) => x.dev, (x) => evsOf([x])), j.extra);
+        add('V07', `${attr}「${sel[0].val}」：${fmtGroups(groups, fmtVlanIds)}${j.note}`, entsOf(sel, ids.map((id) => ({ type: 'vlan', key: String(id) }))), evByGroups(groups, sel, (x) => x.dev, (x) => evsOf([x])), Object.assign({ facet: ATTR_FACET[attr] + '|' + k }, j.extra));
       });
     });
 
@@ -429,7 +439,7 @@
       const groups = groupDevs(perDev);
       if (groups.length < 2) return;
       const j = judge(groups);
-      add('A07', `${net}：${fmtGroups(groups, fmtVlanIds)}${j.note}`, U.uniq(sel.map((x) => x.ep)).map((key) => ({ type: 'interface', key })), evByGroups(groups, sel, (x) => x.dev, (x) => [ev(x.src)]), j.extra);
+      add('A07', `${net}：${fmtGroups(groups, fmtVlanIds)}${j.note}`, U.uniq(sel.map((x) => x.ep)).map((key) => ({ type: 'interface', key })), evByGroups(groups, sel, (x) => x.dev, (x) => [ev(x.src)]), Object.assign({ facet: net }, j.extra));
     });
 
     // ---- A08／A09：所有直連位址（含非 VLAN 介面）
@@ -459,7 +469,7 @@
       // 多數決以「設備 → 它設定的這些網段」分組：同一台設定多個網段時，以網段組合當成它的設定值
       const perDev = new Map(); list.forEach((x) => x.devs.forEach((_, d) => put(perDev, d, x.key, x.key)));
       const jd = judge(groupDevs(perDev));
-      add('A08', (parts.length === 2 ? parts.join('與 ') : parts.join('、')) + jd.note, locsBy.flat().map((l) => ({ type: 'interface', key: l.ep })), interleave(locsBy).map((l) => ev(l.src)), jd.extra);
+      add('A08', (parts.length === 2 ? parts.join('與 ') : parts.join('、')) + jd.note, locsBy.flat().map((l) => ({ type: 'interface', key: l.ep })), interleave(locsBy).map((l) => ev(l.src)), Object.assign({ facet: list[0].key }, jd.extra)); // facet：最外層的網段
     }
     const byIp = new Map();
     ownIfcs.forEach((i) => {
@@ -477,13 +487,13 @@
     M.dhcpNets.forEach((n) => { const p = S.ip.parseCidr(n.network); U.getOr(dhcpBy, p ? pfx(p) : norm(n.network), () => []).push(n); });
     Array.from(dhcpBy.keys()).sort(nat).forEach((net) => {
       const nets = dhcpBy.get(net);
-      [['閘道', 'gateways'], ['DNS', 'dns'], ['NTP', 'ntp']].forEach(([label, k]) => {
+      [['閘道', 'gateways', 'gateway'], ['DNS', 'dns', 'dns'], ['NTP', 'ntp', 'ntp']].forEach(([label, k, facet]) => {
         const sel = nets.filter((n) => n[k] && n[k].length);
         const perDev = new Map(); sel.forEach((n) => n[k].forEach((v) => put(perDev, n.dev, norm(v), v)));
         const groups = groupDevs(perDev);
         if (groups.length < 2) return;
         const j = judge(groups);
-        add('R06', `${net} ${label}：${fmtGroups(groups, show)}${j.note}`, U.uniq(sel.map((n) => n.dev)).sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (n) => n.dev, (n) => [{ block: n.block, line: n.line }]), j.extra);
+        add('R06', `${net} ${label}：${fmtGroups(groups, show)}${j.note}`, U.uniq(sel.map((n) => n.dev)).sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (n) => n.dev, (n) => [{ block: n.block, line: n.line }]), Object.assign({ facet: facet + '|' + net }, j.extra));
       });
     });
 
@@ -507,7 +517,7 @@
         .map((w) => `${show(w.vals)} 只在 ${devList(w.has)}`);
       const j = judge(groups);
       add('A10', `${sel[0].section}「${sel[0].name}」：${fmtGroups(groups, show)}；${diff.join('；')}${j.note}`,
-        devs.sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (b) => b.dev, (b) => [{ block: b.block, line: b.line }]), j.extra);
+        devs.sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (b) => b.dev, (b) => [{ block: b.block, line: b.line }]), Object.assign({ facet: sel[0].section + '|' + sel[0].nameKey }, j.extra));
     });
     const byBindValue = new Map(); binds.forEach((b) => U.getOr(byBindValue, b.section + '\u0000' + b.valueKey, () => []).push(b));
     Array.from(byBindValue.keys()).sort(nat).forEach((k) => {
@@ -521,19 +531,19 @@
       const groups = groupDevs(perDev);
       const j = judge(groups);
       add('A11', `${sel[0].section} ${sel[0].value}：${fmtGroups(groups, quote)}${j.note}`,
-        Array.from(perDev.keys()).sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (b) => b.dev, (b) => [{ block: b.block, line: b.line }]), j.extra);
+        Array.from(perDev.keys()).sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (b) => b.dev, (b) => [{ block: b.block, line: b.line }]), Object.assign({ facet: sel[0].section + '|' + sel[0].valueKey }, j.extra));
     });
 
     // ---- A12：設備層級的 DNS／NTP 伺服器
     const collectedDevs = Array.from(M.devices.values()).filter((d) => d.collected);
-    [['DNS 伺服器', 'dnsServers'], ['NTP 伺服器', 'ntpServers']].forEach(([label, k]) => {
+    [['DNS 伺服器', 'dnsServers', 'dns'], ['NTP 伺服器', 'ntpServers', 'ntp']].forEach(([label, k, facet]) => {
       const sel = collectedDevs.filter((d) => d[k] && d[k].values.length);
       const perDev = new Map(); sel.forEach((d) => d[k].values.forEach((v) => put(perDev, d.key, norm(v), v)));
       const groups = groupDevs(perDev);
       if (groups.length < 2) return;
       sel.sort((a, b) => byName(a.key, b.key));
       const j = judge(groups);
-      add('A12', `${label}：${fmtGroups(groups, show)}${j.note}`, sel.map((d) => ({ type: 'device', key: d.key })), evByGroups(groups, sel, (d) => d.key, (d) => d[k].src.map(ev)), j.extra);
+      add('A12', `${label}：${fmtGroups(groups, show)}${j.note}`, sel.map((d) => ({ type: 'device', key: d.key })), evByGroups(groups, sel, (d) => d.key, (d) => d[k].src.map(ev)), Object.assign({ facet }, j.extra));
     });
   }
 

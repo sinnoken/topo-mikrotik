@@ -1,10 +1,10 @@
 {
  "meta": {
   "schema": "ssot-snapshot/2",
-  "version": "2.8.0",
+  "version": "2.9.0",
   "createdAt": "2026-01-01T00:00:00Z",
   "inputHash": "28211e6ceb748690",
-  "baselineKey": "fd26455652224e71",
+  "baselineKey": "3c7edfbd75ba1396",
   "sources": [
    {
     "name": "sample-bundle.txt",
@@ -38435,6 +38435,7 @@
      "key": "TPE_ACC_SW_02|ether23"
     }
    ],
+   "facet": "30",
    "evidence": [
     {
      "block": 21,
@@ -38583,6 +38584,7 @@
      "key": "TPE_CORE_RT_02|vlan20"
     }
    ],
+   "facet": "10.1.20.0/24",
    "evidence": [
     {
      "block": 67,
@@ -38674,6 +38676,7 @@
      "key": "TPE_ACC_SW_10|vlan10"
     }
    ],
+   "facet": "10.1.10.0/24",
    "evidence": [
     {
      "block": 17,
@@ -38770,6 +38773,7 @@
      "key": "TPE_CORE_RT_02"
     }
    ],
+   "facet": "/ip firewall address-list|mgmt",
    "evidence": [
     {
      "block": 1,
@@ -38811,6 +38815,7 @@
      "key": "TPE_CORE_RT_02"
     }
    ],
+   "facet": "dns",
    "evidence": [
     {
      "block": 1,
@@ -39018,6 +39023,7 @@
      "key": "TPE_ACC_SW_11"
     }
    ],
+   "facet": "mikrotik.bridgehost",
    "evidence": [
     {
      "block": 71,
@@ -39209,6 +39215,7 @@
      "key": "TPE_CORE_RT_02"
     }
    ],
+   "facet": "10.1.20.0/24",
    "evidence": [
     {
      "block": 10,
@@ -39234,6 +39241,7 @@
      "key": "TPE_CORE_RT_02"
     }
    ],
+   "facet": "gateway|10.1.30.0/24",
    "evidence": [
     {
      "block": 1,
@@ -39323,6 +39331,7 @@
      "key": "TPE_CORE_RT_02|vlan10"
     }
    ],
+   "facet": "vlan-interface-comment|mgmt",
    "evidence": [
     {
      "block": 73,
@@ -40024,6 +40033,7 @@
      "key": "TPE_CORE_RT_02"
     }
    ],
+   "facet": "/ip dns static|10.1.20.50",
    "evidence": [
     {
      "block": 1,
@@ -40262,6 +40272,7 @@
      "key": "172.31.255.2"
     }
    ],
+   "facet": "ether46",
    "evidence": [
     {
      "block": 8,
@@ -40316,6 +40327,7 @@
      "key": "TPE_CORE_RT_02|vlan10"
     }
    ],
+   "facet": "vlan-interface-comment",
    "evidence": [
     {
      "block": 17,

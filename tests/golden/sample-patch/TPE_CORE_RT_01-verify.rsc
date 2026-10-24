@@ -1,6 +1,6 @@
 # topo-mikrotik ssot-patch/1 verify
 # device: TPE_CORE_RT_01 (key TPE_CORE_RT_01)
-# baseline: inputHash=28211e6ceb748690 createdAt=2026-01-01T00:00:00Z version=2.8.0
+# baseline: inputHash=28211e6ceb748690 createdAt=2026-01-01T00:00:00Z version=2.9.0
 # Text only: topo-mikrotik never connects to or changes a device. Review every line before use.
 # items: 1
 # Run after the apply file. Each print must list exactly the number of rules stated.

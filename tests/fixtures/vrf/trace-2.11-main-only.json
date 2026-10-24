@@ -1,0 +1,46 @@
+{
+ "_說明": "只有 main 的網路（自行撰寫的 RouterOS 7 輸出），用 2.11.0（加入 VRF 之前）的程式算出的 S.trace 結果與 Q.reach 的文字。tests/core/vrf.js 用來證明：只用 main 時，trace 與 reach 的輸出和 2.11.0 相同，M3 只多了 vrf 等欄位。",
+ "input": [
+  "A (10.0.12.1):", "### /export terse",
+  "/ip address add address=10.0.12.1/29 interface=ether1 network=10.0.12.0", "/ip address add address=192.168.1.1/24 interface=ether2 network=192.168.1.0",
+  "### /ip route print detail without-paging", "Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC",
+  " DAc dst-address=10.0.12.0/29 routing-table=main gateway=ether1 immediate-gw=ether1 distance=0",
+  " DAc dst-address=192.168.1.0/24 routing-table=main gateway=ether2 immediate-gw=ether2 distance=0",
+  " As dst-address=0.0.0.0/0 routing-table=main gateway=10.0.12.2 immediate-gw=10.0.12.2%ether1 distance=1",
+  " As dst-address=10.99.0.0/16 routing-table=main blackhole distance=1",
+  " As dst-address=10.60.0.0/16 routing-table=main gateway=10.0.12.6 immediate-gw=10.0.12.6%ether1 distance=1",
+  " As dst-address=10.50.0.0/16 routing-table=main gateway=10.0.12.2 immediate-gw=10.0.12.2%ether1 distance=1",
+  " As dst-address=10.70.0.0/16 routing-table=main gateway=10.0.23.2 distance=1",
+  "B (10.0.12.2):", "### /export terse",
+  "/ip address add address=10.0.12.2/29 interface=ether1 network=10.0.12.0", "/ip address add address=10.0.23.1/30 interface=ether2 network=10.0.23.0",
+  "### /ip route print detail without-paging", "Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC",
+  " DAc dst-address=10.0.12.0/29 routing-table=main gateway=ether1 immediate-gw=ether1 distance=0",
+  " DAc dst-address=10.0.23.0/30 routing-table=main gateway=ether2 immediate-gw=ether2 distance=0",
+  " As dst-address=0.0.0.0/0 routing-table=main gateway=10.0.23.2 immediate-gw=10.0.23.2%ether2 distance=1",
+  " As dst-address=10.50.0.0/16 routing-table=main gateway=10.0.12.1 immediate-gw=10.0.12.1%ether1 distance=1",
+  " As dst-address=192.168.1.0/24 routing-table=main gateway=10.0.12.1 immediate-gw=10.0.12.1%ether1 distance=1",
+  "C (10.0.23.2):", "### /export terse",
+  "/ip address add address=10.0.23.2/30 interface=ether1 network=10.0.23.0", "/ip address add address=172.20.0.1/24 interface=ether2 network=172.20.0.0",
+  "### /ip route print detail without-paging", "Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC",
+  " DAc dst-address=10.0.23.0/30 routing-table=main gateway=ether1 immediate-gw=ether1 distance=0",
+  " DAc dst-address=172.20.0.0/24 routing-table=main gateway=ether2 immediate-gw=ether2 distance=0",
+  " As dst-address=192.168.0.0/16 routing-table=main gateway=10.0.23.1 immediate-gw=10.0.23.1%ether1 distance=1"
+ ],
+ "cases": [
+  ["192.168.1.10", "172.20.0.5"], ["192.168.1.10", "8.8.8.8"], ["192.168.1.10", "10.50.1.1"], ["192.168.1.10", "10.99.1.1"],
+  ["192.168.1.10", "10.60.1.1"], ["192.168.1.10", "10.70.1.1"], ["192.168.1.10", "192.168.1.20"], ["192.168.1.10", "10.0.23.2"],
+  ["172.20.0.5", "192.168.1.10"], ["10.77.0.1", "8.8.8.8"]
+ ],
+ "expected": [
+  {"trace":{"ok":true,"src":"192.168.1.10","dst":"172.20.0.5","start":"A","reached":true,"hops":[{"dev":"A","route":"0.0.0.0/0","proto":"Static","ecmp":false,"next":[{"ip":"10.0.12.2","ifc":"ether1","dev":"B","status":"ok"}]},{"dev":"B","route":"0.0.0.0/0","proto":"Static","ecmp":false,"next":[{"ip":"10.0.23.2","ifc":"ether2","dev":"C","status":"ok"}]}],"ends":[{"dev":"C","status":"reached","note":"目的位於直連網段 172.20.0.0/24（C ether2）","path":["A","B","C"]}],"edges":[["A","B"],["B","C"]]},"reach":["filter forward：沒有規則決定，預設放行","filter forward：沒有規則決定，預設放行","filter forward：沒有規則決定，預設放行","送達 172.20.0.5（直連網段上的主機）"]},
+  {"trace":{"ok":true,"src":"192.168.1.10","dst":"8.8.8.8","start":"A","reached":false,"hops":[{"dev":"A","route":"0.0.0.0/0","proto":"Static","ecmp":false,"next":[{"ip":"10.0.12.2","ifc":"ether1","dev":"B","status":"ok"}]},{"dev":"B","route":"0.0.0.0/0","proto":"Static","ecmp":false,"next":[{"ip":"10.0.23.2","ifc":"ether2","dev":"C","status":"ok"}]}],"ends":[{"dev":"C","status":"noroute","note":"沒有符合 8.8.8.8 的路由","path":["A","B","C"]}],"edges":[["A","B"],["B","C"]]},"reach":["C 沒有符合 8.8.8.8 的路由，封包被丟棄","filter forward：沒有規則決定，預設放行","filter forward：沒有規則決定，預設放行","C 沒有符合 8.8.8.8 的路由，封包被丟棄"]},
+  {"trace":{"ok":true,"src":"192.168.1.10","dst":"10.50.1.1","start":"A","reached":false,"hops":[{"dev":"A","route":"10.50.0.0/16","proto":"Static","ecmp":false,"next":[{"ip":"10.0.12.2","ifc":"ether1","dev":"B","status":"ok"}]},{"dev":"B","route":"10.50.0.0/16","proto":"Static","ecmp":false,"next":[{"ip":"10.0.12.1","ifc":"ether1","dev":"A","status":"loop","note":"路由迴圈"}]}],"ends":[{"dev":"A","status":"loop","note":"回到 A，路由迴圈","path":["A","B","A"]}],"edges":[["A","B"]]},"reach":["回到 B（同樣的封包），路由迴圈，封包到不了","filter forward：沒有規則決定，預設放行","filter forward：沒有規則決定，預設放行","filter forward：沒有規則決定，預設放行","回到 B（同樣的封包），路由迴圈，封包到不了"]},
+  {"trace":{"ok":true,"src":"192.168.1.10","dst":"10.99.1.1","start":"A","reached":false,"hops":[{"dev":"A","route":"10.99.0.0/16","proto":"黑洞路由","ecmp":false,"next":[]}],"ends":[{"dev":"A","status":"blackhole","note":"10.99.0.0/16 是黑洞路由，封包在此被丟棄","path":["A"]}],"edges":[]},"reach":["10.99.0.0/16 是黑洞路由，封包被丟棄","10.99.0.0/16 是黑洞路由，封包被丟棄"]},
+  {"trace":{"ok":true,"src":"192.168.1.10","dst":"10.60.1.1","start":"A","reached":false,"hops":[{"dev":"A","route":"10.60.0.0/16","proto":"Static","ecmp":false,"next":[{"ip":"10.0.12.6","ifc":"ether1","status":"unknown","note":"下一跳不屬於任何已知設備"}]}],"ends":[{"dev":"A","status":"unknown-nh","note":"下一跳 10.0.12.6 不在基準內","path":["A"]}],"edges":[]},"reach":["A 的下一跳 10.0.12.6 不在基準內，之後的路徑無法判斷","filter forward：沒有規則決定，預設放行","A 的下一跳 10.0.12.6 不在基準內，之後的路徑無法判斷"]},
+  {"trace":{"ok":true,"src":"192.168.1.10","dst":"10.70.1.1","start":"A","reached":false,"hops":[{"dev":"A","route":"10.70.0.0/16","proto":"Static","ecmp":false,"next":[{"ip":"10.0.23.2","ifc":null,"dev":"C","status":"ok"}]}],"ends":[{"dev":"C","status":"noroute","note":"沒有符合 10.70.1.1 的路由","path":["A","C"]}],"edges":[["A","C"]]},"reach":["C 沒有符合 10.70.1.1 的路由，封包被丟棄","filter forward：沒有規則決定，預設放行","C 沒有符合 10.70.1.1 的路由，封包被丟棄"]},
+  {"trace":{"ok":true,"src":"192.168.1.10","dst":"192.168.1.20","start":"A","reached":true,"hops":[],"ends":[{"dev":"A","status":"reached","note":"目的位於直連網段 192.168.1.0/24（A ether2）","path":["A"]}],"edges":[]},"reach":["來源與目的在同一個網段 192.168.1.0/24，不經過路由器（bridge filter 與主機防火牆不在範圍內）"]},
+  {"trace":{"ok":true,"src":"192.168.1.10","dst":"10.0.23.2","start":"A","reached":true,"hops":[{"dev":"A","route":"0.0.0.0/0","proto":"Static","ecmp":false,"next":[{"ip":"10.0.12.2","ifc":"ether1","dev":"B","status":"ok"}]}],"ends":[{"dev":"B","status":"reached","note":"目的位於直連網段 10.0.23.0/30（B ether2）","path":["A","B"]}],"edges":[["A","B"]]},"reach":["filter forward：沒有規則決定，預設放行","filter forward：沒有規則決定，預設放行","filter input：沒有規則決定，預設放行","目的 10.0.23.2 是 C 自己的位址"]},
+  {"trace":{"ok":true,"src":"172.20.0.5","dst":"192.168.1.10","start":"C","reached":true,"hops":[{"dev":"C","route":"192.168.0.0/16","proto":"Static","ecmp":false,"next":[{"ip":"10.0.23.1","ifc":"ether1","dev":"B","status":"ok"}]},{"dev":"B","route":"192.168.1.0/24","proto":"Static","ecmp":false,"next":[{"ip":"10.0.12.1","ifc":"ether1","dev":"A","status":"ok"}]}],"ends":[{"dev":"A","status":"reached","note":"目的位於直連網段 192.168.1.0/24（A ether2）","path":["C","B","A"]}],"edges":[["C","B"],["B","A"]]},"reach":["filter forward：沒有規則決定，預設放行","filter forward：沒有規則決定，預設放行","filter forward：沒有規則決定，預設放行","送達 192.168.1.10（直連網段上的主機）"]},
+  {"trace":{"ok":false,"error":"找不到包含 10.77.0.1 的網段，無法判斷起點設備"},"reach":["找不到包含 10.77.0.1 的網段，不知道封包從哪台設備進入（可用 entry 指定入口介面）","找不到包含 10.77.0.1 的網段，不知道封包從哪台設備進入（可用 entry 指定入口介面）"]}
+ ]
+}

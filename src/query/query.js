@@ -941,7 +941,13 @@
         const q = String(text || '').trim(); const max = limit || 20; const out = [];
         if (!q) return out;
         if (K.isMacText(q)) { const r = Q.findMac(q); out.push({ type: 'mac', key: r.mac, label: K.macPretty(r.mac), sub: r.found ? (r.vendor || '') + (r.ips.length ? ' · ' + r.ips.join(', ') : '') : '基準中沒有這個 MAC' }); }
-        if (S.ip.isIp(q)) { const r = Q.findIp(q); out.push({ type: 'ip', key: q, label: q, sub: r.owner ? '介面位址 · ' + Q.epName(r.owner.endsWith('|') ? r.owner + 'mgmt' : r.owner) : r.macs.length ? 'ARP：' + r.macs.map(K.macPretty).join(', ') : r.subnets.length ? '屬於 ' + Q.epName(r.subnets[0].ep) + ' 的網段' : '基準中沒有這個 IP' }); }
+        if (S.ip.isIp(q)) {
+          const r = Q.findIp(q);
+          // VRF 在 main 時不寫（與 K.inVrf 相同）；在多個 VRF 時寫出數量與名稱，下拉選單就看得出位址重疊
+          const vs = r.vrfs; const NAMES = 4;
+          const inVrfs = vs.length > 1 ? ` · 在 ${vs.length} 個 VRF：${vs.slice(0, NAMES).join('、')}${vs.length > NAMES ? '…' : ''}` : vs.length === 1 && vs[0] !== MAIN ? ` · VRF ${vs[0]}` : '';
+          out.push({ type: 'ip', key: q, label: q, sub: (r.owner ? '介面位址 · ' + Q.epName(r.owner.endsWith('|') ? r.owner + 'mgmt' : r.owner) : r.macs.length ? 'ARP：' + r.macs.map(K.macPretty).join(', ') : r.subnets.length ? '屬於 ' + Q.epName(r.subnets[0].ep) + ' 的網段' : '基準中沒有這個 IP') + inVrfs });
+        }
         if (/^\d{1,4}$/.test(q) && +q >= 1 && +q <= 4094) { const v = Q.vlan(+q); out.push({ type: 'vlan', key: q, label: 'VLAN ' + q, sub: v.devices.length ? `${v.devices.length} 台設備${v.domains.length > 1 ? `（${v.domains.length} 個不相連區塊）` : ''} · ${v.names.join(' / ')}` : '基準中沒有這個 VLAN' }); }
         const uq = q.toUpperCase();
         for (const d of m.devices) {

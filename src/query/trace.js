@@ -182,7 +182,9 @@
     const startNets = Q.subnets().filter((s) => s.vrf === vrf0 && IP.inNet(src, s.net, s.len)).sort((a, b) => b.len - a.len);
     const ownerSrc = Q.ipOwner(src, vrf0);
     const startDev = ownerSrc ? ownerSrc.split('|')[0] : startNets.length ? startNets[0].dev : null;
-    if (!startDev) return { ok: false, error: `找不到包含 ${src} 的網段（VRF ${vrf0}），無法判斷起點設備` };
+    // 文字中的 VRF 在 main 時省略（與 K.inVrf、zone 名稱相同）：只用 main 的網路，文字和加入 VRF 之前相同
+    const notMain = (v) => v !== K.MAIN_VRF;
+    if (!startDev) return { ok: false, error: `找不到包含 ${src} 的網段${notMain(vrf0) ? `（VRF ${vrf0}）` : ''}，無法判斷起點設備` };
 
     const hops = []; const ends = []; const edges = new Set();
     const at = (d, v) => d + '\u0000' + v;
@@ -198,9 +200,9 @@
       if (lk.kind === 'policy-drop') { ends.push({ dev, vrf, status: 'policy-drop', note: `策略路由：${lk.note}，封包被丟棄`, rule: lk.rule, path }); continue; }
       const tableNote = lk.rule ? `（依 /routing rule 第 ${lk.rule.order} 條查路由表 ${lk.table}）` : '';
       const lv = lk.vrf; const leakNote = lk.via.length > 1 ? `（經 VRF 介面從 ${lk.via.join(' → ')}）` : '';
-      if (lk.kind === 'connected') { ends.push({ dev, vrf: lv, status: 'reached', note: `目的位於直連網段 ${lk.conn.net}/${lk.conn.len}（${Q.epName(lk.conn.ep)}，VRF ${lv}）${leakNote}`, path }); continue; }
+      if (lk.kind === 'connected') { ends.push({ dev, vrf: lv, status: 'reached', note: `目的位於直連網段 ${lk.conn.net}/${lk.conn.len}（${Q.epName(lk.conn.ep)}${notMain(lv) ? `，VRF ${lv}` : ''}）${leakNote}`, path }); continue; }
       if (lk.kind === 'no-route-data') { ends.push({ dev, vrf, status: 'noroute', note: '這台設備沒有路由表資料', path }); continue; }
-      if (lk.kind === 'no-match') { ends.push({ dev, vrf: lv, status: 'noroute', note: `${lk.table && lk.table !== lv ? `路由表 ${lk.table} ` : lv !== K.MAIN_VRF ? `VRF ${lv} ` : ''}沒有符合 ${dst} 的路由${tableNote}${leakNote}`, path }); continue; }
+      if (lk.kind === 'no-match') { ends.push({ dev, vrf: lv, status: 'noroute', note: `${lk.table && lk.table !== lv ? `路由表 ${lk.table} ` : notMain(lv) ? `VRF ${lv} ` : ''}沒有符合 ${dst} 的路由${tableNote}${leakNote}`, path }); continue; }
       if (lk.kind === 'blackhole') {
         hops.push({ dev, vrf: lv, via: lk.via, route: lk.route, proto: '黑洞路由', ecmp: false, next: [] });
         ends.push({ dev, vrf: lv, status: 'blackhole', note: `${lk.route} 是黑洞路由，封包在此被丟棄`, path }); continue;
@@ -208,7 +210,7 @@
       const hop = { dev, vrf: lv, via: lk.via, table: lk.table, rule: lk.rule || null, note: tableNote || null, route: lk.route, proto: lk.proto, ecmp: lk.nhs.length > 1, next: [] };
       hops.push(hop);
       const go = (nd, nv, ne, x) => {
-        if (seen.includes(at(nd, nv))) { hop.next.push(Object.assign(x, { dev: nd, vrf: nv, status: 'loop', note: '路由迴圈' })); ends.push({ dev: nd, vrf: nv, status: 'loop', note: `回到 ${Q.devName(nd)}（VRF ${nv}），路由迴圈`, path: path.concat(nd) }); return; }
+        if (seen.includes(at(nd, nv))) { hop.next.push(Object.assign(x, { dev: nd, vrf: nv, status: 'loop', note: '路由迴圈' })); ends.push({ dev: nd, vrf: nv, status: 'loop', note: `回到 ${Q.devName(nd)}${notMain(nv) ? `（VRF ${nv}）` : ''}，路由迴圈`, path: path.concat(nd) }); return; }
         hop.next.push(Object.assign({ dev: nd, vrf: nv, status: 'ok' }, x));
         edges.add(dev + '>' + nd);
         queue.push({ dev: nd, vrf: nv, inEp: ne, ttl: ttl - 1, path: path.concat(nd), seen: seen.concat(at(nd, nv)) });

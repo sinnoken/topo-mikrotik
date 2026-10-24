@@ -130,6 +130,47 @@ test('VRF：S.trace 在 VRF 的路由表追蹤；@main 的閘道換到 main；�
   assert.throws(() => S.trace(Q, '10.1.20.50', '8.8.8.8', { vrf: 'nope' }), TypeError);
 });
 
+test('VRF：只用 main 的網路，S.trace 與 Q.reach 的輸出和 2.11.0 相同（文字不寫 VRF main；tests/fixtures/vrf/trace-2.11-main-only.json）', () => {
+  const fx = JSON.parse(read('tests/fixtures/vrf/trace-2.11-main-only.json'));
+  const s = build(fx.input.join('\n') + '\n'); const Q = S.query(s);
+  assert.deepStrictEqual([i03(s).length, Q.vrfs()], [0, ['main']]);
+  // M3 新增的欄位（只用 main 時是固定值）另外檢查，其餘必須和 2.11.0 完全相同
+  const M3 = { vrf: 'main', via: ['main'], table: 'main', rule: null, crossVrf: false, note: null };
+  const strip = (o, at) => Array.isArray(o) ? o.map((x) => strip(x, at)) : o && typeof o === 'object'
+    ? Object.keys(o).reduce((a, k) => {
+      if (k in M3 && (k !== 'note' || o[k] === null)) { assert.deepStrictEqual(o[k], M3[k], `${at}.${k}`); return a; }
+      a[k] = strip(o[k], at + '.' + k); return a;
+    }, {}) : o;
+  const TEXT = new Set(['note', 'error', 'message', 'detail']);
+  const texts = (o, out) => {
+    if (Array.isArray(o)) o.forEach((x) => texts(x, out));
+    else if (o && typeof o === 'object') Object.keys(o).forEach((k) => { if (k !== 'assumptions') { if (typeof o[k] === 'string' && TEXT.has(k)) out.push(o[k]); else texts(o[k], out); } });
+    return out;
+  };
+  fx.cases.forEach(([src, dst], n) => {
+    assert.deepStrictEqual(strip(S.trace(Q, src, dst), `${src}→${dst}`), fx.expected[n].trace, `trace ${src}→${dst}`);
+    assert.deepStrictEqual(texts(Q.reach(src, dst, { proto: 'tcp', port: 22 }), []), fx.expected[n].reach, `reach ${src}→${dst}`);
+  });
+  assert.ok(fx.expected.some((e) => e.trace.ends && e.trace.ends.some((x) => x.status === 'loop')) && fx.expected.some((e) => !e.trace.ok), '涵蓋直連、迴圈與找不到起點');
+});
+
+test('VRF：Q.search 的 IP 副標，位址在多個 VRF 時寫出數量與名稱；只在 main 時與 2.11.0 相同', () => {
+  const Q = S.query(build(NET()));
+  const sub = (ip) => Q.search(ip).find((r) => r.type === 'ip').sub;
+  assert.strictEqual(sub('10.1.20.2'), '介面位址 · ' + Q.epName('CORE|vlan20') + ' · 在 2 個 VRF：main、cust-a', '重疊的位址');
+  assert.strictEqual(sub('10.1.20.11'), 'ARP：aa:00:00:00:00:01, aa:00:00:00:00:02 · 在 2 個 VRF：main、cust-a');
+  assert.strictEqual(sub('192.168.50.1'), '介面位址 · ' + Q.epName('PE|ether3') + ' · 在 2 個 VRF：main、cust-a', 'CE 的 main 也有這個網段（同 Q.findIp 的 vrfs；S.trace 也要指定 vrf）');
+  const only = S.query(build(['R (10.0.0.1):', '### /export terse', '/ip vrf add interfaces=ether2 name=cust-b',
+    '/ip address add address=10.0.0.1/24 interface=ether1 network=10.0.0.0', '/ip address add address=10.8.0.1/24 interface=ether2 network=10.8.0.0'].join('\n') + '\n'));
+  assert.strictEqual(only.search('10.8.0.1')[0].sub, '介面位址 · ' + only.epName('R|ether2') + ' · VRF cust-b', '只在一個非 main 的 VRF');
+  assert.strictEqual(sub('10.0.0.254'), '介面位址 · ' + Q.epName('CORE|ether1'), '只在 main：不寫 VRF');
+  assert.strictEqual(sub('203.0.113.1'), '基準中沒有這個 IP');
+  const fx = JSON.parse(read('tests/fixtures/vrf/trace-2.11-main-only.json'));
+  const main = S.query(build(fx.input.join('\n') + '\n'));
+  // 2.11.0 的文字
+  assert.deepStrictEqual(['10.0.12.1', '192.168.1.10'].map((ip) => main.search(ip)[0].sub), ['介面位址 · A ether1', '屬於 A ether2 的網段']);
+});
+
 test('VRF：Q.reach、zone、L3 子網圖依 VRF 分開', () => {
   const s = build(NET()); const Q = S.query(s);
   const r = Q.reach('172.16.10.10', '10.1.20.50', { proto: 'tcp', port: 22 });

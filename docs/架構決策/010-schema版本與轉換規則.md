@@ -11,7 +11,7 @@
 | 格式 | 產生者 | 讀取時的版本處理 | 可以從輸入重新產生 |
 |---|---|---|---|
 | `ssot-snapshot/2` | `S.build`（`src/pipeline.js`） | 畫面還原時 schema 或版本不同就用儲存的輸入重建（[ADR-005](005-版本升級規則.md)）；`S.compare.snapshots` 遇到不同 schema 不比對 | 是 |
-| `ssot-ledger/1` | `S.ledger`（`src/ledger/ledger.js`） | `validate` 要求 schema 完全相同，否則報錯；不認得的欄位保留。新增過兩個選用欄位 `iterations[].baseline.baselineKey`、`items[].devs`，相容讀取，不升 schema | 否，是使用者的決定 |
+| `ssot-ledger/1` | `S.ledger`（`src/ledger/ledger.js`） | `validate` 要求 schema 完全相同，否則報錯；不認得的欄位保留。新增過選用欄位 `iterations[].baseline.baselineKey`、`items[].devs`、`history[].fromKey`、`history[].superseded`，相容讀取，不升 schema | 否，是使用者的決定 |
 | `ssot-patch/1` | `S.remediate.plan`（`src/remediate/patch.js`） | 輸出 `.rsc` 時要求 schema 完全相同 | 是 |
 | `ssot-expected/1` | `S.compare.expectedFrom`，或使用者手寫 | `S.compare(Q, expected)` 要求 schema 完全相同 | 否，使用者會修改 |
 | `ssot-snapdiff/1` | `S.compare.snapshots` | 只輸出，不讀入 | 是 |
@@ -33,10 +33,13 @@
   - `S.profile.compile` 開始檢查 `schema` 欄位。
 - **可以重新產生的格式不需要轉換**：`ssot-snapshot`、`ssot-patch`、`ssot-snapdiff`、`ssot-diff`。遇到舊版時明確告知，從原始輸入重新產生。
 
-**相容修改的實例**：`ssot-ledger/1` 新增兩個選用欄位，都**不升 schema**（見 [ADR-002](002-處理紀錄放在基準之外.md) 的「修訂」）：
+**相容修改的實例**：`ssot-ledger/1` 新增下列選用欄位，都**不升 schema**（見 [ADR-002](002-處理紀錄放在基準之外.md) 的「修訂」）：
 
 - `iterations[].baseline.baselineKey`：沒有這個欄位的舊紀錄照常讀取，判斷時退回用 inputHash，不轉換、不改寫。
 - `items[].devs`：沒有這個欄位的舊紀錄照常讀取，推不出設備的項目保守地列為 unobserved，不轉換、不改寫。
+- `history[].fromKey`、`history[].superseded`：只有舊鍵轉換（`reason` 為 `facet-split`）的那一筆歷程才有；沒有這兩個欄位的歷程就不是轉換。舊紀錄不需要轉換格式。
+
+另外，`S.ledger.advance` 的回傳值多了 `split`（這一輪由舊鍵轉換到新鍵的項目）。這是函式的回傳值，不是保存的格式；呼叫端不讀它時行為不變。
 
 舊版程式讀到新紀錄時保留不認得的欄位。這符合上面「新增選用欄位，並寫明沒有這個欄位時的意義」的規則。
 

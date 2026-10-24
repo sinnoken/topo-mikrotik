@@ -47,15 +47,21 @@ git diff --check         # 提交前檢查
 - **載入順序是契約**：[tools/core-files.js](tools/core-files.js) 定義核心檔案順序，`tests/load.js` 用 `vm` 依此在 Node 載入
   與瀏覽器相同的檔案；`index.html` 的前段 `<script>` 必須與它完全一致（有測試檢查）。新增核心檔案要兩邊同步加。
   `index.html` 之後再載入 profiles、嵌入的範例與 `src/view/*`。`vendor/` 不在 `index.html` 裡，由畫面層需要時動態載入，也不列入核心載入順序。
+  畫面起點是 `src/view/app.js`（建立 `App` 與 `S.view.app`，程式內稱 `A`），必須在其他 `app-*.js`
+  （graph／select／panes／toolbar／input／acks）之前載入；這些檔案載入時只定義函式，DOMContentLoaded 後才執行。
 - **管線**（[src/pipeline.js](src/pipeline.js)，`S.build(sources, options) → Snapshot`）：
   ① `readers/`（bundle-v1、files-v1，依 `readers/index.js` 的 `ORDER` 選擇）切成區塊，保留檔案與行號
   → ② `adapters/` 辨識指令 → ③ `adapters/mikrotik.js` 解析為帶 `block`/`line` 的事實
-  → ④ `model/build.js` 事實→實體 → ⑤ `model/infer.js` 推論（設備類型、配對、未知對端等）
-  → ⑥ `check/checks.js` 依 `CATALOG` 產生 findings（I01、K01、A02…）。
+  → ④ `model/build.js` 事實→實體 → ⑤ `model/infer.js` 推論（設備類型、推論鏈路、VLAN 區塊、終端埠、Wi-Fi 位置、
+  防火牆 WAN／LAN 等，全部在檢查之前完成）→ ⑥ `check/checks.js` 依 `CATALOG`（I01、K01、A02、F01…）產生 findings，
+  只讀模型、不寫回。
   `steps()` 是 generator，讓 UI 可顯示進度。
 - **單向依賴**：核心（core/readers/adapters/model/check/profile/query/compare/pipeline）不得碰 DOM、Canvas、IndexedDB。
   View 與 compare 只透過 `SSOT.query(snapshot)`（[src/query/query.js](src/query/query.js)）讀取，不讀原始 model、不改寫 Snapshot。
   `src/view/theme.js` 是顏色／線型／透明度的唯一來源；持久化集中在 `src/view/store.js`。
+- **比對與檢視狀態**：`compare/` 有預期資料比對（`S.compare`）、由基準產生預期資料（`S.compare.expectedFrom`）與
+  新舊基準比對（`S.compare.snapshots`，`ssot-snapdiff/1`）。finding 的穩定鍵是 `Q.findingKey(f)`；
+  「已確認」以它為鍵存在 store 的 `'acks'`，是檢視狀態，不進 Snapshot。
 - **事實 vs 推論**：收集到的設備、介面、鏈路、VLAN、位址、路由是事實；推論需標示。命名 profile（`src/profile/`）
   只能 canonicalize 或加註解，不能新增／刪除／改寫事實。
 - **鏈路語意**：`S.LINK_SCOPE` 區分 interface-adjacency（LLDP／CDP）、broadcast-domain（純 MNDP，只證明 L2 可達，
@@ -66,6 +72,9 @@ git diff --check         # 提交前檢查
   - `type` 是封閉列舉 `S.IFC_TYPES`，原值在 `rawType`。
   - IP 是獨立的 `ipAddresses` 實體，另有推導出的 `prefixes`；介面上沒有 `ips`。畫面用 `Q.addressesOf(ep)`／`Q.ipsOf(ep)` 取得。
   - 設備身分欄位是 `manufacturer`／`deviceType`／`softwareVersion`。
+  - 防火牆規則 `firewallRules` 的 `key` 是「設備|位址族|表|chain|簽章雜湊」，不含編號（插入規則不會讓後面的鍵改變）；
+    WAN／LAN 推論在 `firewallZones`，只看名稱含 WAN／LAN 的 interface list。規則比對語意集中在 `S.infer.fw`，不要另寫一套。
+  - `blocks[].collectedAt`／`failure` 與 `coverage[].failures` 來自收集器的 `# collected-at:`、`# collection failed:` 註解。
   - 內部模型 M 用 Map/Set，只在 `pipeline.js` 的 `serialize` 轉成陣列。
 - **拓樸版面**：
   - [layout.js](src/view/graph/layout.js) 的 `prepare()` 負責分群、終端與分層，`shelf()` 負責書架排列，內建版面與分層版面共用。
@@ -78,7 +87,7 @@ git diff --check         # 提交前檢查
 
 - **擴充點**：新廠牌 → `src/adapters/` 新檔＋`S.adapters.register()`，加入 `tools/core-files.js` 與 `index.html`；
   新輸入格式 → `src/readers/` 並加入 `ORDER`；新檢查 → `CATALOG` 加一筆並實作，並更新 [docs/基準檢查規則.md](docs/基準檢查規則.md)（有測試檢查兩者一致）。
-- **生成檔的指令**：`samples/sample-bundle.txt`／`.js` 用 `npm run sample`，`src/data/oui-data.js` 用 `npm run oui`。
+- **生成檔的指令**：`samples/sample-bundle.txt`／`.js` 用 `npm run sample`（`tests/run.js` 會檢查它與產生器輸出一致），`src/data/oui-data.js` 用 `npm run oui`。
   範例資料刻意含問題；新增檢查時要在產生器放對應問題並加測試。
 - 解析器依 RouterOS 文件撰寫，測試資料為手寫／產生，尚未以真實設備驗證；欄位語意以官方手冊
   <https://manual.mikrotik.com/llms.txt> 為準。
@@ -118,4 +127,4 @@ agent 之間的介面：
 - `routeros-parser-fixtures`：改 adapter／解析、新收集指令（先寫失敗測試再修）
 - `snapshot-contract-change`：改 Snapshot 欄位、finding id、query API 或版本（逐層走完 adapter→model→infer/check→pipeline→query→view→compare）
 - `mikrotik-neighbor-topology`：改鄰居探索（LLDP／MNDP／CDP）與拓樸
-- `routeros-acl-audit`：防火牆規則解析、WAN／LAN 分類、防火牆檢查與比對（資料來自既有的 `/export`）
+- `routeros-acl-audit`：防火牆規則解析、WAN／LAN 分類、F01–F08 與比對（階段一已完成；資料來自既有的 `/export`）

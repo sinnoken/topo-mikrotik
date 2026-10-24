@@ -15,8 +15,10 @@ user-invocable: true
 結果可重現、在瀏覽器離線執行。這個 skill 只講怎麼在本專案裡做 ACL 分析；
 不另外寫 Python 腳本、不產生獨立的 HTML 報表，也不接 CI 通知。
 
-**目前狀態**：核心還沒有解析防火牆（`docs/收集清單與輸入格式.md` 的限制表、`docs/設計說明.md` 的未支援清單）。
-第一次使用時從「階段一」開始，每個階段完成後更新本節。
+**目前狀態**：階段一已完成（adapter → model → infer → check → query → view → compare，即下方「分層與分工」的 1–6）。
+防火牆規則、WAN／LAN 分類與 F01–F08 已在核心，判斷條件見 `docs/基準檢查規則.md` 的「防火牆」，
+資料欄位與比對語意見 `docs/設計說明.md` §5.2、§5.3、§8。之後的修改沿用既有的 `S.infer.fw`（`covers`、`evalChain`、`evalFilter`），
+不要另寫一套規則比對；尚未做的部分（`/ipv6 firewall nat`、命中次數、端到端可達性與 zone 矩陣）見 `docs/設計說明.md` §11。
 
 ## 資料來源
 
@@ -61,7 +63,7 @@ user-invocable: true
 2. **model**（`src/model/build.js`）：轉成防火牆規則實體。key 包含設備、位址族（v4／v6）、表（filter／nat／raw）、
    chain 與順序。內部模型用 Map，只在 `pipeline.js` 的 `serialize` 轉成陣列。
 3. **infer**（`src/model/infer.js`）：「WAN 可連入」是推論，要明確標示。
-   WAN 介面只從 `/interface list member` 的事實推得；沒有可辨識的 WAN 清單時，用 coverage／C 系列 finding 說明無法判斷。
+   WAN 介面只從 `/interface list member` 的事實推得；沒有可辨識的 WAN 清單時不猜，由 F08 與 `coverage[].firewall.wan` 說明無法判斷。
    **不要寫死** `sfp1`、`lte1`、`all-ppp` 這類介面名稱。
 4. **check**（`src/check/checks.js`）：在 `CATALOG` 新增一個類別，同步 `docs/基準檢查規則.md`（`tests/docs.js` 會檢查兩者一致）。
    每筆 finding 的證據指向規則所在行；遮蔽與重複類的 finding 也要附上前面那條規則的行號。
@@ -71,17 +73,20 @@ user-invocable: true
 6. **compare**：規則的簽章用「設備＋位址族＋表＋chain＋比對條件」，不用規則編號，
    這樣插入一條規則時，後面的規則不會全部顯示為變更。比對結果也要區分「新增可連入點」和「既有規則限制變多」。
 
-## 建議的檢查（實作時再定 id 與嚴重度）
+## 檢查與代碼對照
 
-| 檢查 | 依據 | 備註 |
-|---|---|---|
-| 規則被前面的規則完全遮蔽，永遠不會命中 | 事實 | 前一條帶 `random`、`limit`、`dst-limit`、`connection-limit`、`psd`、`nth`、`per-connection-classifier` 時不算遮蔽；清單型欄位（`dst-port`、`connection-state`…）用子集合比較 |
-| 重複規則（相同比對條件與動作） | 事實 | 常見原因是 defconf 被匯入兩次 |
-| WAN 可主動建立新連線的 input／forward accept | 推論（WAN 分類） | 排除 `connection-state` 含 established／related、ICMP、帶 `ipsec-policy`、來源是私有位址或從 LAN 介面進入的規則；被 jump 的子 chain 也要算 |
-| 啟用中的 dst-nat 與對應的 forward 放行 | 推論 | 沒有 in-interface 的 `connection-nat-state=dstnat` 放行可能是 hairpin NAT 需要的，處理說明要提醒 |
-| IPv6 forward 放行只限 dst-port、沒有限 dst-address | 事實 | IPv6 沒有 NAT，等於整個 LAN 都開放 |
-| 以固定來源埠放行（例如 `protocol=tcp src-port=500`） | 事實 | 攻擊者可以用這個來源埠繞過防火牆 |
-| 管理服務啟用、沒有 available-from，且 input 放行 | 事實＋推論 | 要同時看 `/ip service`（含預設值）與 filter |
+判斷條件、排除項與證據以 `docs/基準檢查規則.md` 為準，這裡只列對照；改檢查時兩邊與 `CATALOG` 一起改。
+
+| 代碼 | 嚴重度 | 檢查 | 依據 |
+|---|---|---|---|
+| F01 | 警告 | 規則被前面的規則完全遮蔽，永遠不會命中 | 事實（前一條帶 `random`、`limit` 等不確定比對時不算遮蔽） |
+| F02 | 提醒 | 重複的規則（比對條件與動作相同） | 事實 |
+| F03 | 警告 | WAN 可主動建立新連線的放行規則（input／forward，含被 jump 的子 chain） | 推論（WAN 分類） |
+| F04 | 提醒 | WAN 可連入的 dst-nat 與對應的 forward 放行（附 hairpin 提醒） | 推論（WAN 分類） |
+| F05 | 警告 | IPv6 forward 放行只限目的埠、沒有限目的位址 | 事實；WAN 已知時另看是否從 WAN 到得了 |
+| F06 | 警告 | 以固定來源埠放行 | 事實 |
+| F07 | 警告 | 管理服務啟用、沒有 available-from，且 WAN 可以連入 | 事實＋推論（`/ip service` 含預設值、WAN 分類） |
+| F08 | 提醒 | 無法判斷 WAN 介面（WAN 相關的防火牆檢查未執行） | 推論（WAN 分類的結果） |
 
 嚴重度依實際影響決定：ESP／AH 放行到沒有跑 IPsec 的主機，影響遠小於任意 TCP 埠放行。
 

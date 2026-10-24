@@ -1,6 +1,6 @@
 # RouterOS 網路基準（topo-mikrotik）
 
-由 **MikroTik RouterOS** 的 CLI 輸出，一次建立網路現況基準（Single Source of Truth）：拓樸、介面、VLAN、MAC／IP 位置、路由，並列出資料之間的矛盾與缺漏。
+由 **MikroTik RouterOS** 的 CLI 輸出，一次建立網路現況基準（Single Source of Truth）：拓樸、介面、VLAN、MAC／IP 位置、路由、防火牆規則，並列出資料之間的矛盾與缺漏。
 
 - 純前端、**零相依套件**（不需安裝；分層版面用的 ELK.js 已放在 `vendor/`）、可**完全離線**：直接雙擊 `index.html` 即可使用
 - 資料只在瀏覽器內處理，不會傳到任何地方
@@ -22,13 +22,17 @@
 **左：檢查結果／覆蓋率／清單／比對**
 
 - 點任一筆，圖上會定位並標紅。沒有發現的規則列在下方，分成「通過」與「沒有資料可檢查」（預設收合）。
+- 每筆旁邊的「確認」可標記為已確認：已確認的項目另列一組，不計入上方與頂端摘要的筆數（摘要會註明另有幾項已確認）。確認紀錄只存在這個瀏覽器，不改變基準；按「清除」不會清掉它，之後重新建立同一份網路的基準時仍然有效。
+- 「匯出全部檢查結果」可下載 CSV（UTF-8 含 BOM，Excel 可直接開啟；`acknowledged` 欄是確認時間）或 Markdown 報表，不受上方篩選影響。
+- 「覆蓋率」列出每台設備收集了哪些資料；「有缺漏」包括缺少應收集的資料與有指令收集失敗的設備，失敗的指令與原因可點開原文。
 - 「清單」分設備、介面、IP、網段、MAC、VLAN 六份完整清單，可文字篩選；IP 已去重複，MAC 清單可篩「缺 IP」。
   - 網段是由設備自有介面位址推導的直連網段，列出設定的設備／介面與落在網段內的 IP 數。
   - 設備清單另有「終端」分類：一般非 Wi-Fi 介面須恰好學到一個 MAC，且沒有 LLDP／CDP 介面鄰接。
   - Wi-Fi 介面本身不算終端介面，但每個 Wi-Fi MAC 觀察位置仍列入終端清單，且不參與 A02（MAC 可能因漫遊出現在多個 AP）。
   - 同一 MAC 的一般終端位置只在 VLAN 相同、或兩端皆未記錄 VLAN 時比較；同一個 VLAN ID 分成多個不相連區塊時（例如各站點重用），只比較同一塊內的位置。區塊是依鏈路證據的推論，所以 A02 是待核實的警告。
   - 純 MNDP 廣播網域可達不算直連鄰接，不計入總覽的設備數。
-- 「比對」可載入「預期應該長怎樣」的 JSON（格式 `ssot-expected/1`，範例見 [`samples/expected-sample.json`](samples/expected-sample.json)）與目前基準比對；比對只讀取基準，不會修改它。
+- 「比對」可載入「預期應該長怎樣」的 JSON（格式 `ssot-expected/1`，範例見 [`samples/expected-sample.json`](samples/expected-sample.json)）與目前基準比對；「匯出預期資料」由目前的基準產生這種檔案，之後可拿來和新的基準比對。
+- 「與舊基準比對」可載入之前用「匯出 JSON」存下的基準，依設備、鏈路、VLAN、IP、防火牆、檢查結果分組列出新增、移除與變更；防火牆規則讓 WAN 多出可連入點的標示為「新暴露」，可單獨篩選。比對結果不會儲存，兩種比對都只讀取基準，不會修改它。
 
 **中：拓樸圖**
 
@@ -42,6 +46,9 @@
 **右：詳細資料**
 
 - 鄰居（含類別與 LLDP／MNDP／CDP 協定）、OSPF L3 鄰接、介面（埠模式、PVID、untagged／tagged VLAN、所屬聚合／bridge）、VLAN、MAC、路由表。
+- 設備的「收集到的原始輸出」列出每個指令的收集時間（UTC，收集器記錄的）與收集失敗；有失敗時預設展開。
+- **防火牆**：設備詳情的「防火牆」摘要規則數、有問題的規則數與 WAN／LAN 是否判斷得出來；點「查看防火牆規則與服務」進入防火牆畫面，依位址族、表、chain 列出規則與相關的檢查結果，另列 WAN／LAN 判斷（推論）、`/ip service` 與 interface list。點選 F01–F07 的檢查結果時，會直接開啟防火牆畫面並定位到那條規則或服務。
+- 跨設備一致性的檢查結果，詳情會列出「依多數決推定偏離」的設備（推論）。
 - 每筆都能開啟原文並標示行號；VLAN、鄰居、OSPF、路由與原始輸出可按需要展開。
 
 窄螢幕可切換「拓樸／檢查／詳細資料」工作區。
@@ -54,13 +61,15 @@
 
 ### 基準摘要
 
-建立基準後，頂端摘要會顯示檢查規則發現的錯誤／警告與收集缺漏，並提供直接跳到問題、覆蓋率、搜尋或路由追蹤的入口。每項規則的判斷條件與處理建議見 [基準檢查規則](docs/基準檢查規則.md)。
+建立基準後，頂端摘要會顯示檢查規則發現的錯誤／警告（不含已確認的項目）與收集缺漏（含收集失敗），並提供直接跳到問題、覆蓋率、搜尋或路由追蹤的入口。每項規則的判斷條件與處理建議見 [基準檢查規則](docs/基準檢查規則.md)。
 
 這些是該份 Snapshot 的檢查結果與收集完整度，**不代表即時網路健康狀態**。
 
 ### 儲存
 
-基準會儲存在這個瀏覽器（IndexedDB），下次開啟自動還原；程式更新後若基準格式不同，會用儲存的輸入重新建立。按「清除」只清除本工具的資料。
+基準會儲存在這個瀏覽器（IndexedDB），下次開啟自動還原；程式更新後若基準格式不同，會用儲存的輸入重新建立。按「清除」只清除本工具儲存的基準與輸入；已確認的檢查結果、版面寬度等檢視設定不受影響。
+
+工具列的「匯出 JSON」下載目前的基準（Snapshot 原樣，不改寫），可留作之後「與舊基準比對」的舊基準；「匯出 PNG」下載目前的拓樸圖畫面。
 
 ### SSH 批次收集（選用）
 
@@ -74,7 +83,7 @@ cp tools/devices.csv devices.csv
 
 設備清單第一列必須是 `name,address,user,port`，可再加選填的第五欄 `extra`；`name` 應唯一，且建議與設備的
 `/system identity` 相同。`port` 可留空，預設為 `22`。Wi-Fi AP 或 CAPsMAN 控制器可在 `extra` 填 `wifi`、`wireless`
-或 `capsman`，只對這些設備加收 Wi-Fi 關聯表（判斷客戶端連在哪台 AP），見 [收集清單](docs/收集清單與輸入格式.md)。
+或 `capsman`，只對這些設備加收 Wi-Fi 關聯表（判斷客戶端連在哪台 AP）。`extra` 留空、也沒有用 `--commands` 時，收集器會依 `/interface print` 的介面 type 自動加上 `wifi`（`type=wifi`，需 RouterOS 7.13 以上）或 `wireless`（`type=wlan`），終端機標示 `AUTO` 與依據；不要自動判斷時加 `--no-auto`。詳見 [收集清單 §0](docs/收集清單與輸入格式.md#0-批次-ssh-收集器wsllinux)。
 
 先驗證設備清單與將執行的唯讀命令，不建立連線：
 
@@ -100,6 +109,7 @@ cp tools/devices.csv devices.csv
 - 不要在 CSV 放入密碼或私鑰。RouterOS 6.x 設備的收集檔會含密碼與金鑰（收集器不加 `hide-sensitive`）；收集檔請自行保管，分享或當測試資料前先去識別化，見[收集清單的「安全」](docs/收集清單與輸入格式.md#1-每台設備要收集的指令)。
 - 沒有設定 SSH key 時，可加 `--ask-password`：每台設備互動連線一次（輸入密碼、確認 host key），其餘命令共用該連線；密碼不會寫入任何檔案。
 - 每次執行都會覆蓋輸出檔，要保留舊結果請用 `-o` 指定其他檔名。
+- 收集檔會記錄每個指令的收集時間與失敗原因；有指令失敗時收集器以非零 exit code 結束，建立基準後失敗也會列在 C02 與覆蓋率。
 
 完整收集清單、輸入格式與所有可用的命令 ID 見 [`docs/收集清單與輸入格式.md`](docs/收集清單與輸入格式.md)。
 
@@ -116,10 +126,18 @@ src/
   check/              一致性檢查、覆蓋率
   profile/            命名規則引擎
   pipeline.js         建立基準
-  query/              唯讀查詢、路由追蹤
-  compare/            預期資料比對（獨立格式）
+  query/              唯讀查詢（含防火牆規則）、路由追蹤
+  compare/            預期資料比對、由基準產生預期資料（expectedFrom）、新舊基準比對（snapshots）
   data/               OUI 廠商資料（離線）
-  view/               畫面：dom、theme（顏色／線型／透明度的唯一來源）、store（IndexedDB）、graph（版面、ELK 分層版面＋Canvas）、panels、app
+  view/               畫面：
+    dom.js、theme.js    DOM 小工具；theme 是顏色／線型／透明度的唯一來源
+    store.js            儲存（IndexedDB）
+    export.js           匯出 JSON、CSV、Markdown、預期資料
+    graph/              版面、ELK 分層版面、Canvas
+    panels/             details（詳細資料）、firewall（防火牆畫面）、lists（左側分頁）、baseline-diff（新舊基準比對）
+    app.js              畫面起點（App 狀態、啟動、載入基準），要在其他 app-*.js 之前載入
+    app-graph.js、app-select.js、app-panes.js、app-toolbar.js、app-input.js、app-acks.js
+                        圖資料與版面排程、選取與原文、左側分頁與欄寬、頁首與工具列（含匯出）、輸入對話框、已確認的檢查結果
 vendor/               第三方函式庫（elkjs，EPL-2.0；第一次需要分層版面時才由畫面層載入）
 profiles/             命名規則範例（可不套用）
 samples/              範例收集檔（含刻意放入的問題）、預期資料範例
@@ -142,9 +160,9 @@ npm run test:collector   # 只跑 SSH 收集器測試（需要 bash）
 npm run test:ui          # 只跑畫面冒煙測試（模擬 DOM）
 npm run test:large       # 加上約 1000 台的壓力測試
 npm run golden:update    # 刻意改變 Snapshot 後更新黃金基準，提交前用 git diff 檢視
-npm run sample           # 重新產生範例收集檔並嵌入畫面
+npm run sample           # 重新產生範例收集檔並嵌入畫面（核心測試會檢查 samples/ 和產生器一致，不一致時請執行這個）
 npm run gen:large        # 產生約 1000 台的收集檔（samples/large-1000.txt，不提交）
-npm run oui -- <index.json>      # 更新 OUI 廠商資料（步驟見下方）
+npm run oui -- <index.json>      # 更新 OUI 廠商資料（步驟見「更新外部資產」）
 ```
 
 ### 擴充
@@ -164,13 +182,24 @@ node tools/anonymize.js 收集檔.txt -o tests/fixtures/real/<RouterOS版本>-<�
 
 MAC 保留廠商前綴、IP 與名稱換成一致的代號、密碼與序號換成 `REDACTED`。產生的 `*.map.json` 對照表不要提交；提交前請再人工檢查一次。詳見 [tests/fixtures/real/README.md](tests/fixtures/real/README.md)。
 
-### 更新 OUI 廠商資料
+### 更新外部資產
 
-MAC 前綴 → 廠商的資料來源是 npm 套件 [`oui-data`](https://www.npmjs.com/package/oui-data)（BSD-2-Clause，資料取自 IEEE）。在暫存目錄執行 `npm pack oui-data@<版本>` 並解開，再執行 `npm run oui -- <解開目錄>/package/index.json`。產生器會從同目錄的 `package.json` 讀出版本，寫進 `src/data/oui-data.js` 的檔頭與 `S.oui.source()`；收錄 6／7／9 碼前綴，查詢時取最長符合者。這是開發時的步驟，網頁執行時不連網。
+兩份外部資產都放在 repo 裡，網頁執行時不連網；更新是開發時的步驟。建議每半年檢查一次有沒有新版，或在遇到版面問題、廠商顯示不明時更新。
+
+**ELK.js（分層版面）**
+
+1. 在暫存目錄執行 `npm pack elkjs@<版本>` 並解開，把 `lib/elk.bundled.js` 與 `LICENSE.md` 原樣複製到新的 `vendor/elkjs-<版本>/`，並照舊版寫一份 `README.md`（來源、版本、授權）。授權是 EPL-2.0，`LICENSE.md` 一定要一起放；檔案不要修改。
+2. 把 `src/view/graph/elk-layout.js` 的 `ENGINE_SRC` 改成新路徑，刪掉舊的 `vendor/elkjs-<舊版本>/`。
+3. 更新文件中寫到版本的地方（[設計說明 §12](docs/設計說明.md#12-未知對端210-新增) 的「版面」、`CLAUDE.md` 的架構段）。
+4. 執行 `npm run test:ui`（冒煙測試會實際載入 `ENGINE_SRC` 並排出分層版面）與 `npm test`；再用瀏覽器開啟 `index.html` 載入範例資料，確認分層版面正常。
+
+**OUI 廠商資料**
+
+MAC 前綴 → 廠商的資料來源是 npm 套件 [`oui-data`](https://www.npmjs.com/package/oui-data)（BSD-2-Clause，資料取自 IEEE）。在暫存目錄執行 `npm pack oui-data@<版本>` 並解開，再執行 `npm run oui -- <解開目錄>/package/index.json`。產生器會從同目錄的 `package.json` 讀出版本，寫進 `src/data/oui-data.js` 的檔頭與 `S.oui.source()`；收錄 6／7／9 碼前綴，查詢時取最長符合者。產生後執行 `npm test`，並用 `git diff --stat` 確認只有 `src/data/oui-data.js` 改變。
 
 ### CI
 
-[.github/workflows/ci.yml](.github/workflows/ci.yml) 在 PR 時以 Node 22／24 執行 `npm test`（只 push 到分支不會觸發，需要時可在 Actions 頁手動執行）；壓力測試（`npm run test:large`）只在每週排程與手動觸發時執行。main 上的部署前由 [deploy-pages.yml](.github/workflows/deploy-pages.yml) 跑 `npm test` 後部署到 GitHub Pages。提交前仍請先在本機執行 `npm test`。
+[.github/workflows/ci.yml](.github/workflows/ci.yml) 在 PR 時以 Node 22／24 執行 `npm test`（只 push 到分支不會觸發，需要時可在 Actions 頁手動執行）。另一個大型測試 job 在 PR、每週排程與手動觸發時都會執行：以 Node 24 跑 `npm run test:large`（設定 `SSOT_LARGE_MAX_MS: 40000`，CI runner 較慢，只抓明顯退化），再以 `npm run gen:large` 產生的約 1000 台資料跑一次大型冒煙測試（`SMOKE_INPUT=samples/large-1000.txt node tests/ui-smoke.js`）。main 上的部署前由 [deploy-pages.yml](.github/workflows/deploy-pages.yml) 跑 `npm test` 後部署到 GitHub Pages。提交前仍請先在本機執行 `npm test`。
 
 ### 相關文件
 

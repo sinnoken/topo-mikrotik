@@ -35,6 +35,10 @@ jobs:
       - name: Run tests
         run: npm test
 
+      # 整個 tree 對空 tree 比較：行尾空白、衝突標記等；RouterOS 原始輸出與 vendor 由 .gitattributes 排除
+      - name: Check whitespace and conflict markers
+        run: git diff --check "$(git hash-object -t tree /dev/null)" HEAD
+
   test-large:
     name: Large dataset test
     runs-on: ubuntu-latest

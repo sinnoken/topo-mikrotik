@@ -1,2 +1,6 @@
 * text=auto eol=lf
 *.sh text eol=lf
+# RouterOS 原始輸出與第三方程式碼保留原樣（行尾空白是內容的一部分），git diff --check 不檢查
+samples/** -whitespace
+tests/fixtures/** -whitespace
+vendor/** -whitespace

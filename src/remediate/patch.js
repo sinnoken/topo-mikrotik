@@ -28,7 +28,7 @@
   const SCHEMA = 'ssot-patch/1';
 
   // ---------------------------------------------------------------- 等級與 auto 修正的說明
-  /** finding id → 等級。未列出的是 manual。choice 的修正在第二階段實作，這一階段放進 skipped。 */
+  /** finding id → 等級。未列出的是 manual。choice 中已實作的規則見 CHOICE（目前是 A12），其他 choice 規則放進 skipped（reason: choice）。 */
   const LEVEL = {
     F01: 'auto', F02: 'auto', F06: 'auto',
     F03: 'choice', V01: 'choice', V08: 'choice', R06: 'choice',
@@ -42,7 +42,7 @@
     F06: { why: '以固定來源埠放行可被繞過；停用後若有服務需要，改用連線狀態或目的埠放行', risk: { level: 'medium', text: '依賴這條放行的流量改由後面的規則處理，可能被擋下；先確認沒有服務需要它，或先加上以 connection-state 或 dst-port 放行的規則' } },
   };
   const SKIP_TEXT = {
-    choice: '這項修正需要選擇處理方式，第二階段才產生指令',
+    choice: '這條規則尚未支援選擇修正，沒有產生指令；處理方式見規則的處理建議',
     manual: '這項檢查需要人工判斷，沒有自動修正；處理方式見規則的處理建議',
     'no-rule': '找不到這筆檢查結果指向的防火牆規則',
     'already-disabled': '基準中這條規則已經停用',

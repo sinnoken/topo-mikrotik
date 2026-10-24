@@ -32,8 +32,8 @@ test('IP 位址與前綴實體：位址帶來源行、前綴由設備自有位�
   const s = build(['R_A (10.0.0.1):', '### /export terse', '/ip address add address=10.0.0.1/24 interface=ether1', '/ip address add address=10.0.0.9/24 interface=ether2',
     '/ip address add address=192.0.2.1/32 interface=lo', '### /routing ospf neighbor print detail', ' 0 instance=default area=backbone address=10.9.9.2 router-id=9.9.9.9 state="Full"'].join('\n'));
   const a = s.model.ipAddresses.find((x) => x.address === '10.0.0.1/24');
-  assert.deepStrictEqual([a.ip, a.len, a.family, a.vrf, a.dev, a.ep, a.hearsay, a.src[0][1]], ['10.0.0.1', 24, 4, null, 'R_A', 'R_A|ether1', false, 3]);
-  assert.deepStrictEqual(s.model.prefixes.map((p) => [p.prefix, p.basis, p.eps]), [['10.0.0.0/24', 'connected', ['R_A|ether1', 'R_A|ether2']]], '/32 與鄰居宣告的位址不產生前綴');
+  assert.deepStrictEqual([a.ip, a.len, a.family, a.vrf, a.dev, a.ep, a.hearsay, a.src[0][1]], ['10.0.0.1', 24, 4, 'main', 'R_A', 'R_A|ether1', false, 3]);
+  assert.deepStrictEqual(s.model.prefixes.map((p) => [p.key, p.prefix, p.vrf, p.basis, p.eps]), [['10.0.0.0/24', '10.0.0.0/24', 'main', 'connected', ['R_A|ether1', 'R_A|ether2']]], '/32 與鄰居宣告的位址不產生前綴');
   assert.ok(s.model.ipAddresses.some((x) => x.address === '10.9.9.2/32' && x.hearsay), 'OSPF 鄰居位址保留為鄰居宣告');
   const Q = S.query(s);
   assert.deepStrictEqual([Q.ipOwner('10.0.0.9'), Q.addressesOf('R_A|ether1'), Q.prefixes().length], ['R_A|ether2', ['10.0.0.1/24'], 1]);

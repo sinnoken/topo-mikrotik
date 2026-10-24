@@ -4051,3 +4051,115 @@ Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external
     age=45s
 
 _____
+TPE_PE_RT_01 (10.1.30.243):
+[admin@TPE_PE_RT_01] > /system resource print
+             uptime: 2w1d4h
+            version: 7.12.1 (stable)
+         board-name: RB5009UG+S+
+           platform: MikroTik
+
+[admin@TPE_PE_RT_01] > /export terse
+# 2026-10-13 10:00:00 by RouterOS 7.12.1
+# software id = AB12-0206
+#
+# model = RB5009UG+S+
+# serial number = HF920840563
+/ip vrf add interfaces=ether2,ether3 name=cust-a
+/ip address add address=10.1.30.243/24 interface=ether1 network=10.1.30.0
+/ip address add address=10.1.20.2/24 interface=ether2 network=10.1.20.0
+/ip address add address=192.168.50.1/24 interface=ether3 network=192.168.50.0
+/ip route add dst-address=172.16.10.0/24 gateway=192.168.50.254@cust-a routing-table=cust-a
+/ip route add gateway=10.1.30.2@main routing-table=cust-a
+/ip route add gateway=10.1.30.2
+/system identity set name=TPE_PE_RT_01
+
+[admin@TPE_PE_RT_01] > /ip vrf print detail without-paging
+Flags: X - disabled; * - builtin
+ 0    name="cust-a" interfaces=ether2,ether3
+ 1  * name="main" interfaces=all
+
+[admin@TPE_PE_RT_01] > /ip neighbor print detail without-paging
+Flags: 
+ 0   interface=ether3 address=192.168.50.254 mac-address=E4:8D:8C:00:00:A7
+    identity=TPE_CE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    unpack=none age=3m25s uptime=2w1d4h board="hEX S" ipv6=no
+    interface-name=ether1 system-caps=bridge,router
+    system-caps-enabled=bridge,router
+
+[admin@TPE_PE_RT_01] > /ip address print detail without-paging
+Flags: X - disabled, I - invalid, D - dynamic 
+ 0   address=10.1.30.243/24 network=10.1.30.0 interface=ether1
+    actual-interface=ether1 vrf=main
+ 1   address=10.1.20.2/24 network=10.1.20.0 interface=ether2
+    actual-interface=ether2 vrf=cust-a
+ 2   address=192.168.50.1/24 network=192.168.50.0 interface=ether3
+    actual-interface=ether3 vrf=cust-a
+
+[admin@TPE_PE_RT_01] > /ip arp print detail without-paging
+Flags: X - disabled, I - invalid, H - DHCP, D - dynamic, P - published, C - complete 
+ 0 DC address=10.1.20.11 mac-address=AC:1F:6B:00:00:A8 interface=ether2
+    published=no invalid=no DHCP=no dynamic=yes complete=yes disabled=no
+    vrf=cust-a
+ 1 DC address=192.168.50.254 mac-address=E4:8D:8C:00:00:A7 interface=ether3
+    published=no invalid=no DHCP=no dynamic=yes complete=yes disabled=no
+    vrf=cust-a
+
+[admin@TPE_PE_RT_01] > /ip route print detail without-paging
+Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC, o - OSPF, b - BGP
+ DAc dst-address=10.1.30.0/24 routing-table=main gateway=ether1
+    immediate-gw=ether1 distance=0 scope=10
+ DAc dst-address=10.1.20.0/24 routing-table=cust-a gateway=ether2@cust-a
+    immediate-gw=ether2 distance=0 scope=10
+ DAc dst-address=192.168.50.0/24 routing-table=cust-a gateway=ether3@cust-a
+    immediate-gw=ether3 distance=0 scope=10
+ As  dst-address=172.16.10.0/24 routing-table=cust-a
+    gateway=192.168.50.254@cust-a immediate-gw=192.168.50.254%ether3 distance=1
+    scope=30
+ As  dst-address=0.0.0.0/0 routing-table=cust-a gateway=10.1.30.2@main
+    immediate-gw=10.1.30.2%ether1 distance=1 scope=30
+ As  dst-address=0.0.0.0/0 routing-table=main gateway=10.1.30.2
+    immediate-gw=10.1.30.2%ether1 distance=1 scope=30
+
+_____
+TPE_CE_RT_01 (192.168.50.254):
+[admin@TPE_CE_RT_01] > /system resource print
+             uptime: 2w1d4h
+            version: 7.12.1 (stable)
+         board-name: hEX S
+           platform: MikroTik
+
+[admin@TPE_CE_RT_01] > /export terse
+# 2026-10-13 10:00:00 by RouterOS 7.12.1
+# software id = CD34-2918
+#
+# model = hEX S
+# serial number = HF980470314
+/ip address add address=192.168.50.254/24 interface=ether1 network=192.168.50.0
+/ip address add address=172.16.10.1/24 interface=ether2 network=172.16.10.0
+/ip route add gateway=192.168.50.1
+/ip route add gateway=192.168.50.1 routing-table=to-isp2
+/routing table add disabled=no fib name=to-isp2
+/routing rule add action=lookup-only-in-table src-address=172.16.10.128/25 table=to-isp2
+/routing rule add action=lookup dst-address=203.0.113.0/24 min-prefix=0 table=main
+/system identity set name=TPE_CE_RT_01
+
+[admin@TPE_CE_RT_01] > /ip neighbor print detail without-paging
+Flags: 
+ 0   interface=ether1 address=10.1.30.243 mac-address=E4:8D:8C:00:00:A6
+    identity=TPE_PE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    unpack=none age=3m25s uptime=2w1d4h board=RB5009UG+S+ ipv6=no
+    interface-name=ether3 system-caps=bridge,router
+    system-caps-enabled=bridge,router
+
+[admin@TPE_CE_RT_01] > /ip route print detail without-paging
+Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC, o - OSPF, b - BGP
+ DAc dst-address=172.16.10.0/24 routing-table=main gateway=ether2
+    immediate-gw=ether2 distance=0 scope=10
+ DAc dst-address=192.168.50.0/24 routing-table=main gateway=ether1
+    immediate-gw=ether1 distance=0 scope=10
+ As  dst-address=0.0.0.0/0 routing-table=main gateway=192.168.50.1
+    immediate-gw=192.168.50.1%ether1 distance=1 scope=30
+ As  dst-address=0.0.0.0/0 routing-table=to-isp2 gateway=192.168.50.1
+    immediate-gw=192.168.50.1%ether1 distance=1 scope=30
+
+_____

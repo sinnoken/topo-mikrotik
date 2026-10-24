@@ -111,13 +111,13 @@ test('Q.reach：dst-nat 改寫目的後重新查路由，forward 依改寫後的
   const Q = S.query(s);
   const r = Q.reach('198.51.100.1', '198.51.100.2', { proto: 'tcp', port: 8081 });
   assert.strictEqual(r.verdict, 'allow', JSON.stringify(r.reasons));
-  assert.deepStrictEqual([r.final, r.natApplied], [{ dst: '192.168.2.10', port: 22 }, true]);
+  assert.deepStrictEqual([r.final, r.natApplied], [{ dst: '192.168.2.10', port: 22, vrf: 'main' }, true]);
   const h = r.paths[0].hops[0];
   assert.deepStrictEqual([h.dev, h.chain, h.nat[0].type, h.nat[0].before, h.nat[0].after, h.out], ['R1', 'forward', 'dst-nat', '198.51.100.2:8081', '192.168.2.10:22', 'R1|ether2']);
   assert.strictEqual(h.nat[0].rule.src[0][1] > 0, true, 'NAT 規則附來源行');
   assert.strictEqual(Q.reach('198.51.100.1', '192.168.2.10', { proto: 'tcp', port: 22 }).verdict, 'deny', '沒有經過 dst-nat 的直接連線被 WAN 的 drop 擋下');
   assert.deepStrictEqual(Q.reach('x', '1.1.1.1', { proto: 'tcp', port: 1 }), { ok: false, error: '請輸入有效的 IPv4 位址' });
-  assert.throws(() => Q.reach('192.168.1.5', '192.168.2.5', { proto: 'tcp', port: 22, vrf: 'cust-a' }), /vrf/);
+  assert.throws(() => Q.reach('192.168.1.5', '192.168.2.5', { proto: 'tcp', port: 22, vrf: 'cust-a' }), /VRF/);
   assert.throws(() => Q.reach('192.168.1.5', '192.168.2.5', { proto: 'tcp' }), /port/);
   assert.throws(() => Q.reach('192.168.1.5', '192.168.2.5', { proto: 'icmp', port: 3 }), /port/);
   assert.strictEqual(Q.reach('192.168.1.5', '192.168.2.5', { proto: 'icmp' }).proto, 'icmp');
@@ -127,7 +127,7 @@ test('Q.reach（範例資料）：WAN 經 dst-nat 連到伺服器、沒有 NAT �
   const s = sampleSnap(); const Q = S.query(s);
   const dnat = s.model.firewallRules.find((r) => r.dev === 'TPE_CORE_RT_01' && r.action === 'dst-nat');
   const nat = Q.reach('203.0.113.1', '203.0.113.2', { proto: 'tcp', port: 8443 });
-  assert.deepStrictEqual([nat.verdict, nat.final, nat.paths[0].hops[0].nat[0].rule.key], ['allow', { dst: '10.1.20.11', port: 443 }, dnat.key], 'F04 的連接埠轉送');
+  assert.deepStrictEqual([nat.verdict, nat.final, nat.paths[0].hops[0].nat[0].rule.key], ['allow', { dst: '10.1.20.11', port: 443, vrf: 'main' }, dnat.key], 'F04 的連接埠轉送');
   const direct = Q.reach('203.0.113.1', '10.1.20.11', { proto: 'tcp', port: 443 });
   assert.strictEqual(direct.verdict, 'deny');
   assert.strictEqual(direct.decisive[0].comment, 'defconf: drop all from WAN not DSTNATed');
@@ -149,8 +149,8 @@ test('zone：interface list → VLAN → 網段，每個網段都有 zone 並標
   assert.deepStrictEqual([by('10.1.30.0/24').zone, by('10.1.20.0/24').zone, by('172.31.1.0/30').zone], ['vlan:30', 'vlan:20', 'subnet:172.31.1.0/30']);
   assert.ok(/多數/.test(by('10.1.20.0/24').basis), '10.1.20.0/24 在 ACC_11 是 VLAN 40（A07）：取多數並說明');
   assert.strictEqual(z.subnets.length, s.model.prefixes.length);
-  assert.ok(z.subnets.every((x) => x.zone && x.basis && x.vrf === null));
-  assert.deepStrictEqual(Q.zoneOf('10.1.30.99'), { zone: 'vlan:30', subnet: '10.1.30.0/24', source: 'vlan', inferred: true });
+  assert.ok(z.subnets.every((x) => x.zone && x.basis && x.key === S.keys.inVrf(x.prefix, x.vrf)));
+  assert.deepStrictEqual(Q.zoneOf('10.1.30.99'), { zone: 'vlan:30', subnet: '10.1.30.0/24', key: '10.1.30.0/24', vrf: 'main', source: 'vlan', inferred: true });
   assert.strictEqual(Q.zoneOf('8.8.8.8'), null);
   assert.strictEqual(Q.zones({ sources: ['subnet'] }).zones.length, s.model.prefixes.length, '只用網段：每個網段一個 zone');
   assert.throws(() => Q.zones({ sources: ['foo'] }), /sources/);

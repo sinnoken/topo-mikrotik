@@ -1,54 +1,58 @@
 {
  "meta": {
-  "schema": "ssot-snapshot/2",
-  "version": "2.11.0",
+  "schema": "ssot-snapshot/3",
+  "version": "3.0.0",
   "createdAt": "2026-01-01T00:00:00Z",
-  "inputHash": "cb6374d0bf9a2de6",
-  "baselineKey": "64afff5f10ec8052",
+  "inputHash": "83a376c2f1dcdd12",
+  "baselineKey": "e03226de6d8d7180",
   "sources": [
    {
     "name": "sample-bundle.txt",
     "reader": "bundle-v1",
-    "bytes": 217682,
-    "hash": "947557fbcc933f06"
+    "bytes": 222689,
+    "hash": "d9f134f78be0c9ac"
    }
   ],
   "adapters": {
-   "mikrotik.system": 10,
-   "mikrotik.config": 1050,
+   "mikrotik.system": 14,
+   "mikrotik.config": 1063,
    "mikrotik.fwstats.ip-filter": 23,
    "mikrotik.fwstats.ip-nat": 6,
    "mikrotik.fwstats.ip-raw": 2,
    "mikrotik.fwstats.ipv6-filter": 3,
    "mikrotik.fwstats.ipv6-raw": 2,
-   "mikrotik.neighbor": 119,
+   "mikrotik.neighbor": 121,
    "mikrotik.interface": 28,
    "mikrotik.bridgehost": 788,
-   "mikrotik.arp": 265,
-   "mikrotik.ipaddr": 10,
-   "mikrotik.route": 17,
+   "mikrotik.arp": 267,
+   "mikrotik.ipaddr": 13,
+   "mikrotik.route": 27,
    "mikrotik.ospf": 1,
    "mikrotik.stp": 25,
-   "mikrotik.stpbridge": 12
+   "mikrotik.stpbridge": 12,
+   "mikrotik.vrf": 2
   },
-  "blockCount": 100,
-  "factCount": 2319,
+  "blockCount": 111,
+  "factCount": 2355,
   "profile": null,
   "stats": {
-   "devices": 57,
-   "collected": 17,
-   "interfaces": 332,
-   "links": 80,
+   "devices": 59,
+   "collected": 19,
+   "interfaces": 337,
+   "links": 81,
    "inferredLinks": 1,
-   "ipAddresses": 30,
-   "prefixes": 7,
+   "ipAddresses": 35,
+   "prefixes": 11,
    "wifiAssociations": 0,
    "ospfAdjacencies": 1,
    "firewallRules": 24,
    "vlans": 65,
-   "macs": 149,
-   "arps": 265,
-   "routes": 17,
+   "macs": 151,
+   "arps": 267,
+   "routes": 27,
+   "vrfs": 2,
+   "routingTables": 2,
+   "routingRules": 2,
    "findings": {
     "error": 1,
     "warn": 28,
@@ -75,8 +79,8 @@
     "data": [],
     "hostname": null,
     "routerId": null,
-    "group": "自動群組 3",
-    "component": 3,
+    "group": "自動群組 4",
+    "component": 4,
     "role": null,
     "site": null,
     "label": null,
@@ -86,6 +90,7 @@
     "caps": null,
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_CORE_RT_01"
     ],
@@ -131,6 +136,7 @@
     "caps": "bridge",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -194,6 +200,7 @@
     "caps": "bridge",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -257,6 +264,7 @@
     "caps": "bridge",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -320,6 +328,7 @@
     "caps": "bridge",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -383,6 +392,7 @@
     "caps": "bridge",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -446,6 +456,7 @@
     "caps": "bridge",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -509,6 +520,7 @@
     "caps": "bridge",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -572,6 +584,7 @@
     "caps": "bridge",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -634,6 +647,7 @@
     "caps": "bridge",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -697,6 +711,7 @@
     "caps": "bridge",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -760,6 +775,7 @@
     "caps": "bridge",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -835,6 +851,7 @@
       ]
      ]
     },
+    "policyRules": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -887,6 +904,7 @@
     "caps": "bridge,wlan-ap",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_05"
     ],
@@ -926,6 +944,7 @@
     "caps": "bridge,router",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_BR_SW_01"
     ],
@@ -984,6 +1003,7 @@
     "caps": "bridge",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_BR_RT_01",
      "TPE_LAB_SW_01"
@@ -1004,6 +1024,63 @@
      [
       93,
       3988
+     ]
+    ],
+    "srcNone": null
+   },
+   {
+    "key": "TPE_CE_RT_01",
+    "name": "TPE_CE_RT_01",
+    "names": [
+     "TPE_CE_RT_01"
+    ],
+    "mgmtIp": "192.168.50.254",
+    "manufacturer": "mikrotik",
+    "kind": "router",
+    "kindBasis": "board",
+    "collected": true,
+    "collectedAt": "2026-10-13T10:00:00",
+    "ownMacs": [],
+    "stp": null,
+    "data": [
+     "config",
+     "lldp",
+     "route",
+     "system"
+    ],
+    "hostname": "TPE_CE_RT_01",
+    "routerId": null,
+    "group": "自動群組 3",
+    "component": 3,
+    "role": null,
+    "site": null,
+    "label": null,
+    "deviceType": "hEX S",
+    "softwareVersion": "7.12.1 (stable)",
+    "platform": "MikroTik",
+    "caps": "bridge,router",
+    "dnsServers": null,
+    "ntpServers": null,
+    "policyRules": null,
+    "seenBy": [
+     "TPE_PE_RT_01"
+    ],
+    "src": [
+     [
+      107,
+      4127
+     ],
+     [
+      107,
+      4128
+     ],
+     [
+      108,
+      4132
+     ],
+     [
+      108,
+      4137
      ]
     ],
     "srcNone": null
@@ -1074,6 +1151,7 @@
       ]
      ]
     },
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_01",
      "TPE_ACC_SW_02",
@@ -1173,6 +1251,7 @@
       ]
      ]
     },
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_01",
      "TPE_ACC_SW_03",
@@ -1235,6 +1314,7 @@
     "caps": "bridge",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_06"
     ],
@@ -1276,6 +1356,7 @@
     "caps": "bridge",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_BR_SW_01"
     ],
@@ -1295,6 +1376,66 @@
      [
       97,
       4032
+     ]
+    ],
+    "srcNone": null
+   },
+   {
+    "key": "TPE_PE_RT_01",
+    "name": "TPE_PE_RT_01",
+    "names": [
+     "TPE_PE_RT_01"
+    ],
+    "mgmtIp": "10.1.30.243",
+    "manufacturer": "mikrotik",
+    "kind": "router",
+    "kindBasis": "board",
+    "collected": true,
+    "collectedAt": "2026-10-13T10:00:00",
+    "ownMacs": [],
+    "stp": null,
+    "data": [
+     "arp",
+     "config",
+     "ipaddr",
+     "lldp",
+     "route",
+     "system",
+     "vrf"
+    ],
+    "hostname": "TPE_PE_RT_01",
+    "routerId": null,
+    "group": "自動群組 3",
+    "component": 3,
+    "role": null,
+    "site": null,
+    "label": null,
+    "deviceType": "RB5009UG+S+",
+    "softwareVersion": "7.12.1 (stable)",
+    "platform": "MikroTik",
+    "caps": "bridge,router",
+    "dnsServers": null,
+    "ntpServers": null,
+    "policyRules": null,
+    "seenBy": [
+     "TPE_CE_RT_01"
+    ],
+    "src": [
+     [
+      100,
+      4057
+     ],
+     [
+      100,
+      4058
+     ],
+     [
+      101,
+      4062
+     ],
+     [
+      101,
+      4067
      ]
     ],
     "srcNone": null
@@ -1327,6 +1468,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_01"
     ],
@@ -1361,6 +1503,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_01"
     ],
@@ -1395,6 +1538,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_01"
     ],
@@ -1429,6 +1573,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_02"
     ],
@@ -1463,6 +1608,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_02"
     ],
@@ -1497,6 +1643,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_02"
     ],
@@ -1531,6 +1678,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_03"
     ],
@@ -1565,6 +1713,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_03"
     ],
@@ -1599,6 +1748,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_03"
     ],
@@ -1633,6 +1783,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_04"
     ],
@@ -1667,6 +1818,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_04"
     ],
@@ -1701,6 +1853,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_04"
     ],
@@ -1735,6 +1888,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_05"
     ],
@@ -1769,6 +1923,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_05"
     ],
@@ -1803,6 +1958,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_05"
     ],
@@ -1837,6 +1993,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_06"
     ],
@@ -1871,6 +2028,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_06"
     ],
@@ -1905,6 +2063,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_06"
     ],
@@ -1939,6 +2098,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_07"
     ],
@@ -1973,6 +2133,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_07"
     ],
@@ -2007,6 +2168,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_07"
     ],
@@ -2041,6 +2203,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_08"
     ],
@@ -2075,6 +2238,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_08"
     ],
@@ -2109,6 +2273,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_08"
     ],
@@ -2143,6 +2308,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_09"
     ],
@@ -2177,6 +2343,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_09"
     ],
@@ -2211,6 +2378,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_09"
     ],
@@ -2245,6 +2413,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_10"
     ],
@@ -2279,6 +2448,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_10"
     ],
@@ -2313,6 +2483,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_10"
     ],
@@ -2347,6 +2518,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_11"
     ],
@@ -2381,6 +2553,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_11"
     ],
@@ -2415,6 +2588,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_11"
     ],
@@ -2449,6 +2623,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_12"
     ],
@@ -2483,6 +2658,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_12"
     ],
@@ -2517,6 +2693,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_12"
     ],
@@ -2551,6 +2728,7 @@
     "caps": "station-only",
     "dnsServers": null,
     "ntpServers": null,
+    "policyRules": null,
     "seenBy": [
      "TPE_ACC_SW_06",
      "TPE_ACC_SW_07"
@@ -2586,6 +2764,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -2626,6 +2806,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "root-port",
      "portNumber": 1,
@@ -2722,6 +2904,8 @@
     "ingressFiltering": null,
     "vlanFiltering": true,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -2774,6 +2958,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -2832,6 +3018,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -2890,6 +3078,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -2948,6 +3138,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -3006,6 +3198,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -3064,6 +3258,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -3122,6 +3318,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -3180,6 +3378,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -3238,6 +3438,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -3296,6 +3498,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -3354,6 +3558,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -3412,6 +3618,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "alternate-port",
      "portNumber": 2,
@@ -3477,6 +3685,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -3523,6 +3733,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -3569,6 +3781,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -3618,6 +3832,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "root-port",
      "portNumber": 1,
@@ -3714,6 +3930,8 @@
     "ingressFiltering": null,
     "vlanFiltering": true,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -3766,6 +3984,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -3824,6 +4044,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -3882,6 +4104,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -3940,6 +4164,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -3998,6 +4224,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -4056,6 +4284,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -4114,6 +4344,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -4172,6 +4404,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -4230,6 +4464,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -4288,6 +4524,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -4346,6 +4584,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -4404,6 +4644,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -4448,6 +4690,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "alternate-port",
      "portNumber": 2,
@@ -4513,6 +4757,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -4559,6 +4805,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -4605,6 +4853,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -4654,6 +4904,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "root-port",
      "portNumber": 1,
@@ -4750,6 +5002,8 @@
     "ingressFiltering": null,
     "vlanFiltering": true,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -4802,6 +5056,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -4860,6 +5116,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -4918,6 +5176,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -4976,6 +5236,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -5034,6 +5296,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -5092,6 +5356,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -5150,6 +5416,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -5208,6 +5476,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -5266,6 +5536,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -5324,6 +5596,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -5382,6 +5656,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -5440,6 +5716,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "alternate-port",
      "portNumber": 2,
@@ -5504,6 +5782,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -5550,6 +5830,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -5596,6 +5878,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -5646,6 +5930,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "root-port",
      "portNumber": 1,
@@ -5742,6 +6028,8 @@
     "ingressFiltering": null,
     "vlanFiltering": true,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -5794,6 +6082,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -5852,6 +6142,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -5910,6 +6202,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -5968,6 +6262,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -6026,6 +6322,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -6084,6 +6382,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -6142,6 +6442,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -6200,6 +6502,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -6258,6 +6562,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -6316,6 +6622,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -6374,6 +6682,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -6432,6 +6742,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -6474,6 +6786,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "alternate-port",
      "portNumber": 2,
@@ -6539,6 +6853,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -6585,6 +6901,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -6631,6 +6949,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -6680,6 +7000,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "root-port",
      "portNumber": 1,
@@ -6776,6 +7098,8 @@
     "ingressFiltering": null,
     "vlanFiltering": true,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -6828,6 +7152,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -6886,6 +7212,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -6944,6 +7272,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -7002,6 +7332,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -7060,6 +7392,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -7118,6 +7452,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -7176,6 +7512,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -7234,6 +7572,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -7292,6 +7632,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -7350,6 +7692,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -7408,6 +7752,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -7466,6 +7812,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -7508,6 +7856,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "alternate-port",
      "portNumber": 2,
@@ -7573,6 +7923,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -7619,6 +7971,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -7665,6 +8019,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -7714,6 +8070,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "root-port",
      "portNumber": 1,
@@ -7810,6 +8168,8 @@
     "ingressFiltering": null,
     "vlanFiltering": true,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -7862,6 +8222,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -7920,6 +8282,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -7978,6 +8342,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -8036,6 +8402,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -8094,6 +8462,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -8152,6 +8522,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -8210,6 +8582,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -8268,6 +8642,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -8326,6 +8702,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -8384,6 +8762,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -8442,6 +8822,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -8500,6 +8882,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "designated-port",
      "portNumber": 3,
@@ -8566,6 +8950,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -8608,6 +8994,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "alternate-port",
      "portNumber": 2,
@@ -8673,6 +9061,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -8719,6 +9109,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -8765,6 +9157,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -8814,6 +9208,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "root-port",
      "portNumber": 1,
@@ -8910,6 +9306,8 @@
     "ingressFiltering": null,
     "vlanFiltering": true,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -8962,6 +9360,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -9020,6 +9420,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -9078,6 +9480,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -9136,6 +9540,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -9194,6 +9600,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -9252,6 +9660,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -9310,6 +9720,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -9368,6 +9780,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -9426,6 +9840,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -9484,6 +9900,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -9542,6 +9960,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -9600,6 +10020,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -9642,6 +10064,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "alternate-port",
      "portNumber": 2,
@@ -9707,6 +10131,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -9753,6 +10179,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -9799,6 +10227,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -9848,6 +10278,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "root-port",
      "portNumber": 1,
@@ -9944,6 +10376,8 @@
     "ingressFiltering": null,
     "vlanFiltering": true,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -9996,6 +10430,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -10054,6 +10490,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -10112,6 +10550,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -10170,6 +10610,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -10228,6 +10670,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -10286,6 +10730,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -10344,6 +10790,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -10402,6 +10850,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -10460,6 +10910,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -10518,6 +10970,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -10576,6 +11030,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -10634,6 +11090,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "alternate-port",
      "portNumber": 2,
@@ -10699,6 +11157,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -10745,6 +11205,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -10791,6 +11253,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -10840,6 +11304,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "root-port",
      "portNumber": 1,
@@ -10905,6 +11371,8 @@
     "ingressFiltering": null,
     "vlanFiltering": true,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -10957,6 +11425,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -11013,6 +11483,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -11069,6 +11541,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -11125,6 +11599,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -11177,6 +11653,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -11229,6 +11707,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -11281,6 +11761,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -11333,6 +11815,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -11385,6 +11869,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -11437,6 +11923,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -11489,6 +11977,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -11541,6 +12031,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "alternate-port",
      "portNumber": 2,
@@ -11606,6 +12098,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -11652,6 +12146,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -11698,6 +12194,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -11747,6 +12245,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "root-port",
      "portNumber": 1,
@@ -11843,6 +12343,8 @@
     "ingressFiltering": null,
     "vlanFiltering": true,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -11895,6 +12397,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -11953,6 +12457,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -12011,6 +12517,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -12069,6 +12577,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -12127,6 +12637,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -12185,6 +12697,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -12243,6 +12757,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -12301,6 +12817,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -12359,6 +12877,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -12417,6 +12937,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -12475,6 +12997,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -12533,6 +13057,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "alternate-port",
      "portNumber": 2,
@@ -12598,6 +13124,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -12644,6 +13172,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -12690,6 +13220,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -12739,6 +13271,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "root-port",
      "portNumber": 1,
@@ -12835,6 +13369,8 @@
     "ingressFiltering": null,
     "vlanFiltering": true,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -12887,6 +13423,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -12945,6 +13483,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -13003,6 +13543,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -13061,6 +13603,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -13119,6 +13663,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -13177,6 +13723,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -13235,6 +13783,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -13293,6 +13843,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -13351,6 +13903,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -13409,6 +13963,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -13467,6 +14023,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -13525,6 +14083,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -13569,6 +14129,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "alternate-port",
      "portNumber": 2,
@@ -13635,6 +14197,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -13681,6 +14245,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -13727,6 +14293,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -13777,6 +14345,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -13826,6 +14396,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "root-port",
      "portNumber": 1,
@@ -13922,6 +14494,8 @@
     "ingressFiltering": null,
     "vlanFiltering": true,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -13979,6 +14553,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -14037,6 +14613,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -14095,6 +14673,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      20
@@ -14153,6 +14733,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -14211,6 +14793,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -14269,6 +14853,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -14327,6 +14913,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -14385,6 +14973,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -14443,6 +15033,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -14501,6 +15093,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -14559,6 +15153,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [
      30
@@ -14617,6 +15213,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -14680,6 +15278,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": {
      "role": "alternate-port",
      "portNumber": 2,
@@ -14745,6 +15345,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -14791,6 +15393,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -14837,6 +15441,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -14887,6 +15493,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -14929,6 +15537,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -14966,6 +15576,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -15019,6 +15631,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -15065,6 +15679,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -15111,6 +15727,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -15153,6 +15771,8 @@
     "ingressFiltering": null,
     "vlanFiltering": true,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -15205,6 +15825,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -15264,6 +15886,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -15323,6 +15947,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -15339,6 +15965,98 @@
      [
       93,
       3994
+     ]
+    ],
+    "srcNone": null
+   },
+   {
+    "key": "TPE_CE_RT_01|ether1",
+    "dev": "TPE_CE_RT_01",
+    "name": "ether1",
+    "desc": null,
+    "enabled": null,
+    "status": "up",
+    "type": "physical",
+    "typeBasis": "default",
+    "rawType": null,
+    "hwMac": null,
+    "defaultName": null,
+    "mtu": null,
+    "actualMtu": null,
+    "l2mtu": null,
+    "lag": null,
+    "lagMembers": [],
+    "bridge": null,
+    "parent": null,
+    "encapVlan": null,
+    "mode": null,
+    "pvid": null,
+    "frameTypes": null,
+    "ingressFiltering": null,
+    "vlanFiltering": null,
+    "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
+    "stp": null,
+    "untaggedVlans": [],
+    "taggedVlans": [],
+    "unresolvedVlans": [],
+    "macs": [],
+    "hearsay": false,
+    "edge": false,
+    "unknownPeer": false,
+    "src": [
+     [
+      108,
+      4137
+     ],
+     [
+      109,
+      4148
+     ]
+    ],
+    "srcNone": null
+   },
+   {
+    "key": "TPE_CE_RT_01|ether2",
+    "dev": "TPE_CE_RT_01",
+    "name": "ether2",
+    "desc": null,
+    "enabled": null,
+    "status": "unknown",
+    "type": "physical",
+    "typeBasis": "default",
+    "rawType": null,
+    "hwMac": null,
+    "defaultName": null,
+    "mtu": null,
+    "actualMtu": null,
+    "l2mtu": null,
+    "lag": null,
+    "lagMembers": [],
+    "bridge": null,
+    "parent": null,
+    "encapVlan": null,
+    "mode": null,
+    "pvid": null,
+    "frameTypes": null,
+    "ingressFiltering": null,
+    "vlanFiltering": null,
+    "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
+    "stp": null,
+    "untaggedVlans": [],
+    "taggedVlans": [],
+    "unresolvedVlans": [],
+    "macs": [],
+    "hearsay": false,
+    "edge": false,
+    "unknownPeer": false,
+    "src": [
+     [
+      108,
+      4138
      ]
     ],
     "srcNone": null
@@ -15372,6 +16090,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -15445,6 +16165,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -15518,6 +16240,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -15591,6 +16315,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -15664,6 +16390,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -15737,6 +16465,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -15810,6 +16540,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -15883,6 +16615,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -15956,6 +16690,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -16029,6 +16765,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -16102,6 +16840,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -16175,6 +16915,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -16248,6 +16990,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -16306,6 +17050,8 @@
     "ingressFiltering": null,
     "vlanFiltering": true,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -16364,6 +17110,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -16410,6 +17158,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -16456,6 +17206,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -16502,6 +17254,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -16548,6 +17302,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -16594,6 +17350,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -16640,6 +17398,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -16686,6 +17446,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -16732,6 +17494,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -16778,6 +17542,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -16824,6 +17590,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -16870,6 +17638,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -16916,6 +17686,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -16962,6 +17734,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -17008,6 +17782,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -17054,6 +17830,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -17100,6 +17878,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -17146,6 +17926,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -17192,6 +17974,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -17238,6 +18022,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -17284,6 +18070,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -17330,6 +18118,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -17376,6 +18166,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -17422,6 +18214,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -17468,6 +18262,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -17514,6 +18310,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -17560,6 +18358,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -17606,6 +18406,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -17652,6 +18454,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -17702,6 +18506,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -17752,6 +18558,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -17802,6 +18610,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -17855,6 +18665,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -17913,6 +18725,8 @@
     "ingressFiltering": null,
     "vlanFiltering": true,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -17971,6 +18785,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -18041,6 +18857,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -18111,6 +18929,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -18181,6 +19001,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -18251,6 +19073,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -18321,6 +19145,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -18391,6 +19217,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -18461,6 +19289,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -18531,6 +19361,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -18601,6 +19433,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -18671,6 +19505,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -18741,6 +19577,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -18811,6 +19649,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -18857,6 +19697,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -18903,6 +19745,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -18949,6 +19793,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -18999,6 +19845,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -19049,6 +19897,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -19099,6 +19949,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -19136,6 +19988,8 @@
     "ingressFiltering": null,
     "vlanFiltering": false,
     "vlanUnfiltered": true,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [
@@ -19184,6 +20038,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": true,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -19236,6 +20092,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": true,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -19278,6 +20136,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -19294,6 +20154,162 @@
      [
       97,
       4036
+     ]
+    ],
+    "srcNone": null
+   },
+   {
+    "key": "TPE_PE_RT_01|ether1",
+    "dev": "TPE_PE_RT_01",
+    "name": "ether1",
+    "desc": null,
+    "enabled": null,
+    "status": "unknown",
+    "type": "physical",
+    "typeBasis": "default",
+    "rawType": null,
+    "hwMac": null,
+    "defaultName": null,
+    "mtu": null,
+    "actualMtu": null,
+    "l2mtu": null,
+    "lag": null,
+    "lagMembers": [],
+    "bridge": null,
+    "parent": null,
+    "encapVlan": null,
+    "mode": null,
+    "pvid": null,
+    "frameTypes": null,
+    "ingressFiltering": null,
+    "vlanFiltering": null,
+    "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "reported",
+    "stp": null,
+    "untaggedVlans": [],
+    "taggedVlans": [],
+    "unresolvedVlans": [],
+    "macs": [],
+    "hearsay": false,
+    "edge": false,
+    "unknownPeer": false,
+    "src": [
+     [
+      101,
+      4068
+     ],
+     [
+      104,
+      4091
+     ]
+    ],
+    "srcNone": null
+   },
+   {
+    "key": "TPE_PE_RT_01|ether2",
+    "dev": "TPE_PE_RT_01",
+    "name": "ether2",
+    "desc": null,
+    "enabled": null,
+    "status": "unknown",
+    "type": "physical",
+    "typeBasis": "default",
+    "rawType": null,
+    "hwMac": null,
+    "defaultName": null,
+    "mtu": null,
+    "actualMtu": null,
+    "l2mtu": null,
+    "lag": null,
+    "lagMembers": [],
+    "bridge": null,
+    "parent": null,
+    "encapVlan": null,
+    "mode": null,
+    "pvid": null,
+    "frameTypes": null,
+    "ingressFiltering": null,
+    "vlanFiltering": null,
+    "vlanUnfiltered": false,
+    "vrf": "cust-a",
+    "vrfBasis": "reported",
+    "stp": null,
+    "untaggedVlans": [],
+    "taggedVlans": [],
+    "unresolvedVlans": [],
+    "macs": [],
+    "hearsay": false,
+    "edge": false,
+    "unknownPeer": false,
+    "src": [
+     [
+      101,
+      4069
+     ],
+     [
+      104,
+      4093
+     ],
+     [
+      102,
+      4078
+     ]
+    ],
+    "srcNone": null
+   },
+   {
+    "key": "TPE_PE_RT_01|ether3",
+    "dev": "TPE_PE_RT_01",
+    "name": "ether3",
+    "desc": null,
+    "enabled": null,
+    "status": "up",
+    "type": "physical",
+    "typeBasis": "default",
+    "rawType": null,
+    "hwMac": null,
+    "defaultName": null,
+    "mtu": null,
+    "actualMtu": null,
+    "l2mtu": null,
+    "lag": null,
+    "lagMembers": [],
+    "bridge": null,
+    "parent": null,
+    "encapVlan": null,
+    "mode": null,
+    "pvid": null,
+    "frameTypes": null,
+    "ingressFiltering": null,
+    "vlanFiltering": null,
+    "vlanUnfiltered": false,
+    "vrf": "cust-a",
+    "vrfBasis": "reported",
+    "stp": null,
+    "untaggedVlans": [],
+    "taggedVlans": [],
+    "unresolvedVlans": [],
+    "macs": [],
+    "hearsay": false,
+    "edge": false,
+    "unknownPeer": false,
+    "src": [
+     [
+      101,
+      4070
+     ],
+     [
+      103,
+      4083
+     ],
+     [
+      104,
+      4095
+     ],
+     [
+      102,
+      4078
      ]
     ],
     "srcNone": null
@@ -19324,6 +20340,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -19361,6 +20379,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -19398,6 +20418,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -19435,6 +20457,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -19472,6 +20496,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -19509,6 +20535,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -19546,6 +20574,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -19583,6 +20613,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -19620,6 +20652,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -19657,6 +20691,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -19694,6 +20730,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -19731,6 +20769,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -19768,6 +20808,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -19805,6 +20847,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -19842,6 +20886,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -19879,6 +20925,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -19916,6 +20964,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -19953,6 +21003,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -19990,6 +21042,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -20027,6 +21081,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -20064,6 +21120,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -20101,6 +21159,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -20138,6 +21198,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -20175,6 +21237,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -20212,6 +21276,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -20249,6 +21315,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -20286,6 +21354,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -20323,6 +21393,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -20360,6 +21432,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -20397,6 +21471,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -20434,6 +21510,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -20471,6 +21549,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -20508,6 +21588,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -20545,6 +21627,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -20582,6 +21666,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -20619,6 +21705,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -20656,6 +21744,8 @@
     "ingressFiltering": null,
     "vlanFiltering": null,
     "vlanUnfiltered": false,
+    "vrf": "main",
+    "vrfBasis": "default",
     "stp": null,
     "untaggedVlans": [],
     "taggedVlans": [],
@@ -22455,6 +23545,37 @@
      [
       98,
       4041
+     ]
+    ]
+   },
+   {
+    "key": "TPE_CE_RT_01|ether1~TPE_PE_RT_01|ether3",
+    "a": "TPE_CE_RT_01|ether1",
+    "b": "TPE_PE_RT_01|ether3",
+    "layer": "l2",
+    "via": [
+     "lldp"
+    ],
+    "protocols": [],
+    "verified": true,
+    "hearsay": false,
+    "evidenceScope": "interface-adjacency",
+    "observations": [],
+    "cls": "1g",
+    "vlansA": [],
+    "vlansB": [],
+    "vlansCommon": [],
+    "vlanComparable": true,
+    "vlanMismatch": false,
+    "vlansDiff": [],
+    "src": [
+     [
+      103,
+      4083
+     ],
+     [
+      109,
+      4148
      ]
     ]
    },
@@ -26099,13 +27220,57 @@
     ]
    }
   ],
+  "vrfs": [
+   {
+    "dev": "TPE_PE_RT_01",
+    "name": "cust-a",
+    "order": 1,
+    "source": "print",
+    "disabled": false,
+    "builtin": false,
+    "interfaces": [
+     "ether2",
+     "ether3"
+    ],
+    "members": [
+     "TPE_PE_RT_01|ether2",
+     "TPE_PE_RT_01|ether3"
+    ],
+    "src": [
+     [
+      102,
+      4078
+     ]
+    ]
+   },
+   {
+    "dev": "TPE_PE_RT_01",
+    "name": "main",
+    "order": 2,
+    "source": "print",
+    "disabled": false,
+    "builtin": true,
+    "interfaces": [
+     "all"
+    ],
+    "members": [
+     "TPE_PE_RT_01|ether1"
+    ],
+    "src": [
+     [
+      102,
+      4079
+     ]
+    ]
+   }
+  ],
   "ipAddresses": [
    {
     "address": "10.1.10.2/24",
     "ip": "10.1.10.2",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_CORE_RT_01",
     "ep": "TPE_CORE_RT_01|vlan10",
@@ -26122,7 +27287,7 @@
     "ip": "10.1.10.3",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_CORE_RT_02",
     "ep": "TPE_CORE_RT_02|vlan10",
@@ -26139,7 +27304,7 @@
     "ip": "10.1.10.21",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_ACC_SW_01",
     "ep": "TPE_ACC_SW_01|vlan10",
@@ -26156,7 +27321,7 @@
     "ip": "10.1.10.22",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_ACC_SW_02",
     "ep": "TPE_ACC_SW_02|vlan10",
@@ -26173,7 +27338,7 @@
     "ip": "10.1.10.23",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_ACC_SW_03",
     "ep": "TPE_ACC_SW_03|vlan10",
@@ -26190,7 +27355,7 @@
     "ip": "10.1.10.24",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_ACC_SW_04",
     "ep": "TPE_ACC_SW_04|vlan10",
@@ -26207,7 +27372,7 @@
     "ip": "10.1.10.25",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_ACC_SW_05",
     "ep": "TPE_ACC_SW_05|vlan10",
@@ -26224,7 +27389,7 @@
     "ip": "10.1.10.26",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_ACC_SW_06",
     "ep": "TPE_ACC_SW_06|vlan10",
@@ -26241,7 +27406,7 @@
     "ip": "10.1.10.27",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_ACC_SW_07",
     "ep": "TPE_ACC_SW_07|vlan10",
@@ -26258,7 +27423,7 @@
     "ip": "10.1.10.28",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_ACC_SW_08",
     "ep": "TPE_ACC_SW_08|vlan10",
@@ -26275,7 +27440,7 @@
     "ip": "10.1.10.29",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_ACC_SW_09",
     "ep": "TPE_ACC_SW_09|vlan10",
@@ -26292,7 +27457,7 @@
     "ip": "10.1.10.30",
     "len": 25,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_ACC_SW_10",
     "ep": "TPE_ACC_SW_10|vlan10",
@@ -26309,7 +27474,7 @@
     "ip": "10.1.10.31",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_ACC_SW_11",
     "ep": "TPE_ACC_SW_11|vlan10",
@@ -26326,7 +27491,7 @@
     "ip": "10.1.10.32",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_ACC_SW_12",
     "ep": "TPE_ACC_SW_12|vlan10",
@@ -26343,7 +27508,7 @@
     "ip": "10.1.10.99",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_ACC_SW_11",
     "ep": "TPE_ACC_SW_11|vlan10",
@@ -26360,7 +27525,7 @@
     "ip": "10.1.10.99",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_ACC_SW_12",
     "ep": "TPE_ACC_SW_12|vlan10",
@@ -26377,7 +27542,7 @@
     "ip": "10.1.10.240",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_BR_RT_01",
     "ep": "TPE_BR_RT_01|vlan10",
@@ -26394,7 +27559,7 @@
     "ip": "10.1.10.241",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_BR_SW_01",
     "ep": "TPE_BR_SW_01|vlan10",
@@ -26411,7 +27576,7 @@
     "ip": "10.1.10.242",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_LAB_SW_01",
     "ep": "TPE_LAB_SW_01|vlan10",
@@ -26428,7 +27593,7 @@
     "ip": "10.1.20.2",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_CORE_RT_01",
     "ep": "TPE_CORE_RT_01|vlan20",
@@ -26441,11 +27606,28 @@
     ]
    },
    {
+    "address": "10.1.20.2/24",
+    "ip": "10.1.20.2",
+    "len": 24,
+    "family": 4,
+    "vrf": "cust-a",
+    "role": null,
+    "dev": "TPE_PE_RT_01",
+    "ep": "TPE_PE_RT_01|ether2",
+    "hearsay": false,
+    "src": [
+     [
+      101,
+      4069
+     ]
+    ]
+   },
+   {
     "address": "10.1.20.3/24",
     "ip": "10.1.20.3",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_CORE_RT_02",
     "ep": "TPE_CORE_RT_02|vlan20",
@@ -26462,7 +27644,7 @@
     "ip": "10.1.20.240",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_BR_RT_01",
     "ep": "TPE_BR_RT_01|vlan20",
@@ -26479,7 +27661,7 @@
     "ip": "10.1.20.250",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_ACC_SW_11",
     "ep": "TPE_ACC_SW_11|vlan40",
@@ -26496,7 +27678,7 @@
     "ip": "10.1.30.1",
     "len": 32,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": "vrrp",
     "dev": "TPE_CORE_RT_01",
     "ep": "TPE_CORE_RT_01|vrrp30",
@@ -26513,7 +27695,7 @@
     "ip": "10.1.30.2",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_CORE_RT_01",
     "ep": "TPE_CORE_RT_01|vlan30",
@@ -26530,7 +27712,7 @@
     "ip": "10.1.30.3",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_CORE_RT_02",
     "ep": "TPE_CORE_RT_02|vlan30",
@@ -26543,11 +27725,45 @@
     ]
    },
    {
+    "address": "10.1.30.243/24",
+    "ip": "10.1.30.243",
+    "len": 24,
+    "family": 4,
+    "vrf": "main",
+    "role": null,
+    "dev": "TPE_PE_RT_01",
+    "ep": "TPE_PE_RT_01|ether1",
+    "hearsay": false,
+    "src": [
+     [
+      101,
+      4068
+     ]
+    ]
+   },
+   {
+    "address": "172.16.10.1/24",
+    "ip": "172.16.10.1",
+    "len": 24,
+    "family": 4,
+    "vrf": "main",
+    "role": null,
+    "dev": "TPE_CE_RT_01",
+    "ep": "TPE_CE_RT_01|ether2",
+    "hearsay": false,
+    "src": [
+     [
+      108,
+      4138
+     ]
+    ]
+   },
+   {
     "address": "172.31.1.1/30",
     "ip": "172.31.1.1",
     "len": 30,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_CORE_RT_01",
     "ep": "TPE_CORE_RT_01|ether46",
@@ -26564,7 +27780,7 @@
     "ip": "172.31.1.2",
     "len": 32,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "172.31.255.2",
     "ep": "172.31.255.2|172.31.1.2",
@@ -26577,11 +27793,45 @@
     ]
    },
    {
+    "address": "192.168.50.1/24",
+    "ip": "192.168.50.1",
+    "len": 24,
+    "family": 4,
+    "vrf": "cust-a",
+    "role": null,
+    "dev": "TPE_PE_RT_01",
+    "ep": "TPE_PE_RT_01|ether3",
+    "hearsay": false,
+    "src": [
+     [
+      101,
+      4070
+     ]
+    ]
+   },
+   {
+    "address": "192.168.50.254/24",
+    "ip": "192.168.50.254",
+    "len": 24,
+    "family": 4,
+    "vrf": "main",
+    "role": null,
+    "dev": "TPE_CE_RT_01",
+    "ep": "TPE_CE_RT_01|ether1",
+    "hearsay": false,
+    "src": [
+     [
+      108,
+      4137
+     ]
+    ]
+   },
+   {
     "address": "203.0.113.2/30",
     "ip": "203.0.113.2",
     "len": 30,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_CORE_RT_01",
     "ep": "TPE_CORE_RT_01|ether47",
@@ -26598,7 +27848,7 @@
     "ip": "203.0.113.6",
     "len": 30,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "role": null,
     "dev": "TPE_CORE_RT_02",
     "ep": "TPE_CORE_RT_02|ether47",
@@ -26613,11 +27863,12 @@
   ],
   "prefixes": [
    {
+    "key": "10.1.10.0/24",
     "prefix": "10.1.10.0/24",
     "net": "10.1.10.0",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "basis": "connected",
     "vlan": 10,
     "vlans": [
@@ -26643,11 +27894,12 @@
     ]
    },
    {
+    "key": "10.1.10.0/25",
     "prefix": "10.1.10.0/25",
     "net": "10.1.10.0",
     "len": 25,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "basis": "connected",
     "vlan": 10,
     "vlans": [
@@ -26658,11 +27910,12 @@
     ]
    },
    {
+    "key": "10.1.20.0/24",
     "prefix": "10.1.20.0/24",
     "net": "10.1.20.0",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "basis": "connected",
     "vlan": null,
     "vlans": [
@@ -26677,11 +27930,26 @@
     ]
    },
    {
+    "key": "10.1.20.0/24@cust-a",
+    "prefix": "10.1.20.0/24",
+    "net": "10.1.20.0",
+    "len": 24,
+    "family": 4,
+    "vrf": "cust-a",
+    "basis": "connected",
+    "vlan": null,
+    "vlans": [],
+    "eps": [
+     "TPE_PE_RT_01|ether2"
+    ]
+   },
+   {
+    "key": "10.1.30.0/24",
     "prefix": "10.1.30.0/24",
     "net": "10.1.30.0",
     "len": 24,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "basis": "connected",
     "vlan": 30,
     "vlans": [
@@ -26689,15 +27957,31 @@
     ],
     "eps": [
      "TPE_CORE_RT_01|vlan30",
-     "TPE_CORE_RT_02|vlan30"
+     "TPE_CORE_RT_02|vlan30",
+     "TPE_PE_RT_01|ether1"
     ]
    },
    {
+    "key": "172.16.10.0/24",
+    "prefix": "172.16.10.0/24",
+    "net": "172.16.10.0",
+    "len": 24,
+    "family": 4,
+    "vrf": "main",
+    "basis": "connected",
+    "vlan": null,
+    "vlans": [],
+    "eps": [
+     "TPE_CE_RT_01|ether2"
+    ]
+   },
+   {
+    "key": "172.31.1.0/30",
     "prefix": "172.31.1.0/30",
     "net": "172.31.1.0",
     "len": 30,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "basis": "connected",
     "vlan": null,
     "vlans": [],
@@ -26706,11 +27990,40 @@
     ]
    },
    {
+    "key": "192.168.50.0/24",
+    "prefix": "192.168.50.0/24",
+    "net": "192.168.50.0",
+    "len": 24,
+    "family": 4,
+    "vrf": "main",
+    "basis": "connected",
+    "vlan": null,
+    "vlans": [],
+    "eps": [
+     "TPE_CE_RT_01|ether1"
+    ]
+   },
+   {
+    "key": "192.168.50.0/24@cust-a",
+    "prefix": "192.168.50.0/24",
+    "net": "192.168.50.0",
+    "len": 24,
+    "family": 4,
+    "vrf": "cust-a",
+    "basis": "connected",
+    "vlan": null,
+    "vlans": [],
+    "eps": [
+     "TPE_PE_RT_01|ether3"
+    ]
+   },
+   {
+    "key": "203.0.113.0/30",
     "prefix": "203.0.113.0/30",
     "net": "203.0.113.0",
     "len": 30,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "basis": "connected",
     "vlan": null,
     "vlans": [],
@@ -26719,11 +28032,12 @@
     ]
    },
    {
+    "key": "203.0.113.4/30",
     "prefix": "203.0.113.4/30",
     "net": "203.0.113.4",
     "len": 30,
     "family": 4,
-    "vrf": null,
+    "vrf": "main",
     "basis": "connected",
     "vlan": null,
     "vlans": [],
@@ -34845,6 +36159,23 @@
     ]
    },
    {
+    "mac": "AC1F6B0000A8",
+    "vendor": "Supermicro",
+    "ips": [
+     "10.1.20.11"
+    ],
+    "seen": [],
+    "edge": [],
+    "wifi": null,
+    "behind": null,
+    "src": [
+     [
+      105,
+      4100
+     ]
+    ]
+   },
+   {
     "mac": "D401C3000045",
     "vendor": "Routerboard.com",
     "ips": [],
@@ -34885,6 +36216,23 @@
       4013
      ]
     ]
+   },
+   {
+    "mac": "E48D8C0000A7",
+    "vendor": "Routerboard.com",
+    "ips": [
+     "192.168.50.254"
+    ],
+    "seen": [],
+    "edge": [],
+    "wifi": null,
+    "behind": null,
+    "src": [
+     [
+      105,
+      4103
+     ]
+    ]
    }
   ],
   "wifiAssociations": [],
@@ -34895,6 +36243,7 @@
     "gateways": [
      "10.1.30.1"
     ],
+    "vrf": "main",
     "src": [
      [
       1,
@@ -34908,6 +36257,7 @@
     "gateways": [
      "10.1.21.1"
     ],
+    "vrf": "main",
     "src": [
      [
       15,
@@ -34921,6 +36271,7 @@
     "gateways": [
      "10.1.30.3"
     ],
+    "vrf": "main",
     "src": [
      [
       15,
@@ -34935,6 +36286,7 @@
     "mac": "246E96000005",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -34947,6 +36299,7 @@
     "mac": "246E96000005",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -34955,10 +36308,24 @@
     ]
    },
    {
+    "ip": "10.1.20.11",
+    "mac": "AC1F6B0000A8",
+    "dev": "TPE_PE_RT_01",
+    "ifc": "ether2",
+    "vrf": "cust-a",
+    "src": [
+     [
+      105,
+      4100
+     ]
+    ]
+   },
+   {
     "ip": "10.1.20.12",
     "mac": "246E96000006",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -34971,6 +36338,7 @@
     "mac": "246E96000006",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -34983,6 +36351,7 @@
     "mac": "AC1F6B000007",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -34995,6 +36364,7 @@
     "mac": "AC1F6B000007",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35007,6 +36377,7 @@
     "mac": "246E96000011",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35019,6 +36390,7 @@
     "mac": "246E96000011",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35031,6 +36403,7 @@
     "mac": "AC1F6B000012",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35043,6 +36416,7 @@
     "mac": "AC1F6B000012",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35055,6 +36429,7 @@
     "mac": "1C98EC000013",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35067,6 +36442,7 @@
     "mac": "1C98EC000013",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35079,6 +36455,7 @@
     "mac": "246E9600001D",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35091,6 +36468,7 @@
     "mac": "246E9600001D",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35103,6 +36481,7 @@
     "mac": "246E9600001E",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35115,6 +36494,7 @@
     "mac": "246E9600001E",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35127,6 +36507,7 @@
     "mac": "246E9600001F",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35139,6 +36520,7 @@
     "mac": "246E9600001F",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35151,6 +36533,7 @@
     "mac": "AC1F6B000029",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35163,6 +36546,7 @@
     "mac": "AC1F6B000029",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35175,6 +36559,7 @@
     "mac": "1C98EC00002A",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35187,6 +36572,7 @@
     "mac": "1C98EC00002A",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35199,6 +36585,7 @@
     "mac": "AC1F6B00002B",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35211,6 +36598,7 @@
     "mac": "AC1F6B00002B",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35223,6 +36611,7 @@
     "mac": "1C98EC000035",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35235,6 +36624,7 @@
     "mac": "1C98EC000035",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35247,6 +36637,7 @@
     "mac": "1C98EC000036",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35259,6 +36650,7 @@
     "mac": "1C98EC000036",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35271,6 +36663,7 @@
     "mac": "1C98EC000037",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35283,6 +36676,7 @@
     "mac": "1C98EC000037",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35295,6 +36689,7 @@
     "mac": "246E96000042",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35307,6 +36702,7 @@
     "mac": "246E96000042",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35319,6 +36715,7 @@
     "mac": "246E96000043",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35331,6 +36728,7 @@
     "mac": "246E96000043",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35343,6 +36741,7 @@
     "mac": "1C98EC000044",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35355,6 +36754,7 @@
     "mac": "1C98EC000044",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35367,6 +36767,7 @@
     "mac": "AC1F6B000052",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35379,6 +36780,7 @@
     "mac": "AC1F6B000052",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35391,6 +36793,7 @@
     "mac": "AC1F6B000053",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35403,6 +36806,7 @@
     "mac": "AC1F6B000053",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35415,6 +36819,7 @@
     "mac": "AC1F6B000054",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35427,6 +36832,7 @@
     "mac": "AC1F6B000054",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35439,6 +36845,7 @@
     "mac": "AC1F6B00005E",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35451,6 +36858,7 @@
     "mac": "AC1F6B00005E",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35463,6 +36871,7 @@
     "mac": "1C98EC00005F",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35475,6 +36884,7 @@
     "mac": "1C98EC00005F",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35487,6 +36897,7 @@
     "mac": "AC1F6B000060",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35499,6 +36910,7 @@
     "mac": "AC1F6B000060",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35511,6 +36923,7 @@
     "mac": "246E9600006A",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35523,6 +36936,7 @@
     "mac": "246E9600006A",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35535,6 +36949,7 @@
     "mac": "246E9600006B",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35547,6 +36962,7 @@
     "mac": "246E9600006B",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35559,6 +36975,7 @@
     "mac": "246E9600006C",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35571,6 +36988,7 @@
     "mac": "246E9600006C",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35583,6 +37001,7 @@
     "mac": "246E96000076",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35595,6 +37014,7 @@
     "mac": "246E96000076",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35607,6 +37027,7 @@
     "mac": "AC1F6B000077",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35619,6 +37040,7 @@
     "mac": "AC1F6B000077",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35631,6 +37053,7 @@
     "mac": "1C98EC000078",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35643,6 +37066,7 @@
     "mac": "1C98EC000078",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35655,6 +37079,7 @@
     "mac": "1C98EC000082",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35667,6 +37092,7 @@
     "mac": "1C98EC000082",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35679,6 +37105,7 @@
     "mac": "246E96000083",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35691,6 +37118,7 @@
     "mac": "246E96000083",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35703,6 +37131,7 @@
     "mac": "AC1F6B000084",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35715,6 +37144,7 @@
     "mac": "AC1F6B000084",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35727,6 +37157,7 @@
     "mac": "246E9600008E",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35739,6 +37170,7 @@
     "mac": "246E9600008E",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35751,6 +37183,7 @@
     "mac": "1C98EC00008F",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35763,6 +37196,7 @@
     "mac": "1C98EC00008F",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35775,6 +37209,7 @@
     "mac": "AC1F6B000090",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35787,6 +37222,7 @@
     "mac": "AC1F6B000090",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan20",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35799,6 +37235,7 @@
     "mac": "10BF48000008",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35811,6 +37248,7 @@
     "mac": "6CFE540000A1",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35823,6 +37261,7 @@
     "mac": "04421A000009",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35835,6 +37274,7 @@
     "mac": "04421A000009",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35847,6 +37287,7 @@
     "mac": "04421A00000A",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35859,6 +37300,7 @@
     "mac": "04421A00000A",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35871,6 +37313,7 @@
     "mac": "04421A00000B",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35883,6 +37326,7 @@
     "mac": "04421A00000B",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35895,6 +37339,7 @@
     "mac": "6CFE5400000C",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35907,6 +37352,7 @@
     "mac": "6CFE5400000C",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35919,6 +37365,7 @@
     "mac": "04421A00000D",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35931,6 +37378,7 @@
     "mac": "04421A00000D",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35943,6 +37391,7 @@
     "mac": "10BF4800000E",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35955,6 +37404,7 @@
     "mac": "10BF4800000E",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35967,6 +37417,7 @@
     "mac": "6CFE5400000F",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -35979,6 +37430,7 @@
     "mac": "6CFE5400000F",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -35991,6 +37443,7 @@
     "mac": "6CFE54000014",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36003,6 +37456,7 @@
     "mac": "6CFE54000014",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36015,6 +37469,7 @@
     "mac": "04421A000015",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36027,6 +37482,7 @@
     "mac": "04421A000015",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36039,6 +37495,7 @@
     "mac": "6CFE54000016",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36051,6 +37508,7 @@
     "mac": "6CFE54000016",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36063,6 +37521,7 @@
     "mac": "04421A000017",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36075,6 +37534,7 @@
     "mac": "04421A000017",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36087,6 +37547,7 @@
     "mac": "6CFE54000018",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36099,6 +37560,7 @@
     "mac": "6CFE54000018",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36111,6 +37573,7 @@
     "mac": "10BF48000019",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36123,6 +37586,7 @@
     "mac": "10BF48000019",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36135,6 +37599,7 @@
     "mac": "6CFE5400001A",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36147,6 +37612,7 @@
     "mac": "6CFE5400001A",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36159,6 +37625,7 @@
     "mac": "10BF4800001B",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36171,6 +37638,7 @@
     "mac": "10BF4800001B",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36183,6 +37651,7 @@
     "mac": "6CFE54000020",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36195,6 +37664,7 @@
     "mac": "6CFE54000020",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36207,6 +37677,7 @@
     "mac": "04421A000021",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36219,6 +37690,7 @@
     "mac": "04421A000021",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36231,6 +37703,7 @@
     "mac": "10BF48000022",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36243,6 +37716,7 @@
     "mac": "10BF48000022",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36255,6 +37729,7 @@
     "mac": "6CFE54000023",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36267,6 +37742,7 @@
     "mac": "6CFE54000023",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36279,6 +37755,7 @@
     "mac": "10BF48000024",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36291,6 +37768,7 @@
     "mac": "10BF48000024",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36303,6 +37781,7 @@
     "mac": "04421A000025",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36315,6 +37794,7 @@
     "mac": "04421A000025",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36327,6 +37807,7 @@
     "mac": "04421A000026",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36339,6 +37820,7 @@
     "mac": "04421A000026",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36351,6 +37833,7 @@
     "mac": "10BF48000027",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36363,6 +37846,7 @@
     "mac": "10BF48000027",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36375,6 +37859,7 @@
     "mac": "10BF4800002C",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36387,6 +37872,7 @@
     "mac": "10BF4800002C",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36399,6 +37885,7 @@
     "mac": "6CFE5400002D",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36411,6 +37898,7 @@
     "mac": "6CFE5400002D",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36423,6 +37911,7 @@
     "mac": "6CFE5400002E",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36435,6 +37924,7 @@
     "mac": "6CFE5400002E",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36447,6 +37937,7 @@
     "mac": "04421A00002F",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36459,6 +37950,7 @@
     "mac": "04421A00002F",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36471,6 +37963,7 @@
     "mac": "04421A000030",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36483,6 +37976,7 @@
     "mac": "04421A000030",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36495,6 +37989,7 @@
     "mac": "6CFE54000031",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36507,6 +38002,7 @@
     "mac": "6CFE54000031",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36519,6 +38015,7 @@
     "mac": "6CFE54000032",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36531,6 +38028,7 @@
     "mac": "6CFE54000032",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36543,6 +38041,7 @@
     "mac": "10BF48000033",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36555,6 +38054,7 @@
     "mac": "10BF48000033",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36567,6 +38067,7 @@
     "mac": "10BF48000039",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36579,6 +38080,7 @@
     "mac": "10BF48000039",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36591,6 +38093,7 @@
     "mac": "10BF4800003A",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36603,6 +38106,7 @@
     "mac": "10BF4800003A",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36615,6 +38119,7 @@
     "mac": "10BF4800003B",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36627,6 +38132,7 @@
     "mac": "10BF4800003B",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36639,6 +38145,7 @@
     "mac": "6CFE5400003C",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36651,6 +38158,7 @@
     "mac": "6CFE5400003C",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36663,6 +38171,7 @@
     "mac": "04421A00003D",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36675,6 +38184,7 @@
     "mac": "04421A00003D",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36687,6 +38197,7 @@
     "mac": "6CFE5400003E",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36699,6 +38210,7 @@
     "mac": "6CFE5400003E",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36711,6 +38223,7 @@
     "mac": "6CFE5400003F",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36723,6 +38236,7 @@
     "mac": "6CFE5400003F",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36735,6 +38249,7 @@
     "mac": "10BF48000040",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36747,6 +38262,7 @@
     "mac": "10BF48000040",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36759,6 +38275,7 @@
     "mac": "10BF48000049",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36771,6 +38288,7 @@
     "mac": "10BF48000049",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36783,6 +38301,7 @@
     "mac": "04421A00004A",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36795,6 +38314,7 @@
     "mac": "04421A00004A",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36807,6 +38327,7 @@
     "mac": "10BF4800004B",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36819,6 +38340,7 @@
     "mac": "10BF4800004B",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36831,6 +38353,7 @@
     "mac": "04421A00004C",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36843,6 +38366,7 @@
     "mac": "04421A00004C",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36855,6 +38379,7 @@
     "mac": "10BF4800004D",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36867,6 +38392,7 @@
     "mac": "10BF4800004D",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36879,6 +38405,7 @@
     "mac": "6CFE5400004E",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36891,6 +38418,7 @@
     "mac": "6CFE5400004E",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36903,6 +38431,7 @@
     "mac": "04421A00004F",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36915,6 +38444,7 @@
     "mac": "04421A00004F",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36927,6 +38457,7 @@
     "mac": "04421A000050",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36939,6 +38470,7 @@
     "mac": "04421A000050",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36951,6 +38483,7 @@
     "mac": "04421A000055",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36963,6 +38496,7 @@
     "mac": "04421A000055",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36975,6 +38509,7 @@
     "mac": "10BF48000056",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -36987,6 +38522,7 @@
     "mac": "10BF48000056",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -36999,6 +38535,7 @@
     "mac": "10BF48000057",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37011,6 +38548,7 @@
     "mac": "10BF48000057",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37023,6 +38561,7 @@
     "mac": "04421A000058",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37035,6 +38574,7 @@
     "mac": "04421A000058",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37047,6 +38587,7 @@
     "mac": "10BF48000059",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37059,6 +38600,7 @@
     "mac": "10BF48000059",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37071,6 +38613,7 @@
     "mac": "6CFE5400005A",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37083,6 +38626,7 @@
     "mac": "6CFE5400005A",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37095,6 +38639,7 @@
     "mac": "04421A00005B",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37107,6 +38652,7 @@
     "mac": "04421A00005B",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37119,6 +38665,7 @@
     "mac": "6CFE5400005C",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37131,6 +38678,7 @@
     "mac": "6CFE5400005C",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37143,6 +38691,7 @@
     "mac": "10BF48000061",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37155,6 +38704,7 @@
     "mac": "10BF48000061",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37167,6 +38717,7 @@
     "mac": "04421A000062",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37179,6 +38730,7 @@
     "mac": "04421A000062",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37191,6 +38743,7 @@
     "mac": "10BF48000063",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37203,6 +38756,7 @@
     "mac": "10BF48000063",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37215,6 +38769,7 @@
     "mac": "04421A000064",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37227,6 +38782,7 @@
     "mac": "04421A000064",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37239,6 +38795,7 @@
     "mac": "04421A000065",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37251,6 +38808,7 @@
     "mac": "04421A000065",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37263,6 +38821,7 @@
     "mac": "10BF48000066",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37275,6 +38834,7 @@
     "mac": "10BF48000066",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37287,6 +38847,7 @@
     "mac": "04421A000067",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37299,6 +38860,7 @@
     "mac": "04421A000067",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37311,6 +38873,7 @@
     "mac": "6CFE54000068",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37323,6 +38886,7 @@
     "mac": "6CFE54000068",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37335,6 +38899,7 @@
     "mac": "10BF4800006D",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37347,6 +38912,7 @@
     "mac": "10BF4800006D",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37359,6 +38925,7 @@
     "mac": "10BF4800006E",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37371,6 +38938,7 @@
     "mac": "10BF4800006E",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37383,6 +38951,7 @@
     "mac": "04421A00006F",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37395,6 +38964,7 @@
     "mac": "04421A00006F",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37407,6 +38977,7 @@
     "mac": "6CFE54000070",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37419,6 +38990,7 @@
     "mac": "6CFE54000070",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37431,6 +39003,7 @@
     "mac": "04421A000071",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37443,6 +39016,7 @@
     "mac": "04421A000071",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37455,6 +39029,7 @@
     "mac": "04421A000072",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37467,6 +39042,7 @@
     "mac": "04421A000072",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37479,6 +39055,7 @@
     "mac": "10BF48000073",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37491,6 +39068,7 @@
     "mac": "10BF48000073",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37503,6 +39081,7 @@
     "mac": "10BF48000074",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37515,6 +39094,7 @@
     "mac": "10BF48000074",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37527,6 +39107,7 @@
     "mac": "10BF48000079",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37539,6 +39120,7 @@
     "mac": "10BF48000079",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37551,6 +39133,7 @@
     "mac": "04421A00007A",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37563,6 +39146,7 @@
     "mac": "04421A00007A",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37575,6 +39159,7 @@
     "mac": "10BF4800007B",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37587,6 +39172,7 @@
     "mac": "10BF4800007B",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37599,6 +39185,7 @@
     "mac": "6CFE5400007C",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37611,6 +39198,7 @@
     "mac": "6CFE5400007C",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37623,6 +39211,7 @@
     "mac": "10BF4800007D",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37635,6 +39224,7 @@
     "mac": "10BF4800007D",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37647,6 +39237,7 @@
     "mac": "04421A00007E",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37659,6 +39250,7 @@
     "mac": "04421A00007E",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37671,6 +39263,7 @@
     "mac": "04421A00007F",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37683,6 +39276,7 @@
     "mac": "04421A00007F",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37695,6 +39289,7 @@
     "mac": "6CFE54000080",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37707,6 +39302,7 @@
     "mac": "6CFE54000080",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37719,6 +39315,7 @@
     "mac": "10BF48000085",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37731,6 +39328,7 @@
     "mac": "10BF48000085",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37743,6 +39341,7 @@
     "mac": "10BF48000086",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37755,6 +39354,7 @@
     "mac": "10BF48000086",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37767,6 +39367,7 @@
     "mac": "04421A000087",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37779,6 +39380,7 @@
     "mac": "04421A000087",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37791,6 +39393,7 @@
     "mac": "10BF48000088",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37803,6 +39406,7 @@
     "mac": "10BF48000088",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37815,6 +39419,7 @@
     "mac": "04421A000089",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37827,6 +39432,7 @@
     "mac": "04421A000089",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37839,6 +39445,7 @@
     "mac": "10BF4800008A",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37851,6 +39458,7 @@
     "mac": "10BF4800008A",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37863,6 +39471,7 @@
     "mac": "10BF4800008B",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37875,6 +39484,7 @@
     "mac": "10BF4800008B",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37887,6 +39497,7 @@
     "mac": "04421A00008C",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37899,6 +39510,7 @@
     "mac": "04421A00008C",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37911,6 +39523,7 @@
     "mac": "10BF48000091",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37923,6 +39536,7 @@
     "mac": "10BF48000091",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37935,6 +39549,7 @@
     "mac": "6CFE54000092",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37947,6 +39562,7 @@
     "mac": "6CFE54000092",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37959,6 +39575,7 @@
     "mac": "04421A000093",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37971,6 +39588,7 @@
     "mac": "04421A000093",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -37983,6 +39601,7 @@
     "mac": "04421A000094",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -37995,6 +39614,7 @@
     "mac": "04421A000094",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -38007,6 +39627,7 @@
     "mac": "04421A000095",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -38019,6 +39640,7 @@
     "mac": "04421A000095",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -38031,6 +39653,7 @@
     "mac": "6CFE54000096",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -38043,6 +39666,7 @@
     "mac": "6CFE54000096",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -38055,6 +39679,7 @@
     "mac": "6CFE54000097",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -38067,6 +39692,7 @@
     "mac": "6CFE54000097",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -38079,6 +39705,7 @@
     "mac": "04421A000098",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
@@ -38091,6 +39718,7 @@
     "mac": "04421A000098",
     "dev": "TPE_CORE_RT_02",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       24,
@@ -38103,10 +39731,24 @@
     "mac": "6CFE540000A2",
     "dev": "TPE_CORE_RT_01",
     "ifc": "vlan30",
+    "vrf": "main",
     "src": [
      [
       10,
       884
+     ]
+    ]
+   },
+   {
+    "ip": "192.168.50.254",
+    "mac": "E48D8C0000A7",
+    "dev": "TPE_PE_RT_01",
+    "ifc": "ether3",
+    "vrf": "cust-a",
+    "src": [
+     [
+      105,
+      4103
      ]
     ]
    }
@@ -38119,10 +39761,14 @@
     "proto": "Direct",
     "distance": 0,
     "blackhole": false,
+    "routingTable": "main",
+    "vrf": "main",
     "nh": [
      {
       "ip": null,
-      "ifc": "vlan10"
+      "ifc": "vlan10",
+      "vrf": "main",
+      "vrfBasis": "interface"
      }
     ],
     "src": [
@@ -38139,10 +39785,14 @@
     "proto": "Direct",
     "distance": 0,
     "blackhole": false,
+    "routingTable": "main",
+    "vrf": "main",
     "nh": [
      {
       "ip": null,
-      "ifc": "vlan20"
+      "ifc": "vlan20",
+      "vrf": "main",
+      "vrfBasis": "interface"
      }
     ],
     "src": [
@@ -38153,16 +39803,116 @@
     ]
    },
    {
+    "dev": "TPE_CE_RT_01",
+    "prefix": "0.0.0.0",
+    "len": 0,
+    "proto": "Static",
+    "distance": 1,
+    "blackhole": false,
+    "routingTable": "main",
+    "vrf": "main",
+    "nh": [
+     {
+      "ip": "192.168.50.1",
+      "ifc": "ether1",
+      "vrf": "main",
+      "vrfBasis": "default"
+     }
+    ],
+    "src": [
+     [
+      110,
+      4160
+     ]
+    ]
+   },
+   {
+    "dev": "TPE_CE_RT_01",
+    "prefix": "0.0.0.0",
+    "len": 0,
+    "proto": "Static",
+    "distance": 1,
+    "blackhole": false,
+    "routingTable": "to-isp2",
+    "vrf": null,
+    "nh": [
+     {
+      "ip": "192.168.50.1",
+      "ifc": "ether1",
+      "vrf": "main",
+      "vrfBasis": "default"
+     }
+    ],
+    "src": [
+     [
+      110,
+      4162
+     ]
+    ]
+   },
+   {
+    "dev": "TPE_CE_RT_01",
+    "prefix": "172.16.10.0",
+    "len": 24,
+    "proto": "Direct",
+    "distance": 0,
+    "blackhole": false,
+    "routingTable": "main",
+    "vrf": "main",
+    "nh": [
+     {
+      "ip": null,
+      "ifc": "ether2",
+      "vrf": "main",
+      "vrfBasis": "interface"
+     }
+    ],
+    "src": [
+     [
+      110,
+      4156
+     ]
+    ]
+   },
+   {
+    "dev": "TPE_CE_RT_01",
+    "prefix": "192.168.50.0",
+    "len": 24,
+    "proto": "Direct",
+    "distance": 0,
+    "blackhole": false,
+    "routingTable": "main",
+    "vrf": "main",
+    "nh": [
+     {
+      "ip": null,
+      "ifc": "ether1",
+      "vrf": "main",
+      "vrfBasis": "interface"
+     }
+    ],
+    "src": [
+     [
+      110,
+      4158
+     ]
+    ]
+   },
+   {
     "dev": "TPE_CORE_RT_01",
     "prefix": "0.0.0.0",
     "len": 0,
     "proto": "Static",
     "distance": 1,
     "blackhole": false,
+    "routingTable": "main",
+    "vrf": "main",
     "nh": [
      {
       "ip": "203.0.113.1",
-      "ifc": "ether47"
+      "ifc": "ether47",
+      "vrf": "main",
+      "vrfBasis": "default"
      }
     ],
     "src": [
@@ -38179,10 +39929,14 @@
     "proto": "Direct",
     "distance": 0,
     "blackhole": false,
+    "routingTable": "main",
+    "vrf": "main",
     "nh": [
      {
       "ip": null,
-      "ifc": "vlan10"
+      "ifc": "vlan10",
+      "vrf": "main",
+      "vrfBasis": "interface"
      }
     ],
     "src": [
@@ -38199,10 +39953,14 @@
     "proto": "Direct",
     "distance": 0,
     "blackhole": false,
+    "routingTable": "main",
+    "vrf": "main",
     "nh": [
      {
       "ip": null,
-      "ifc": "vlan20"
+      "ifc": "vlan20",
+      "vrf": "main",
+      "vrfBasis": "interface"
      }
     ],
     "src": [
@@ -38219,10 +39977,14 @@
     "proto": "Direct",
     "distance": 0,
     "blackhole": false,
+    "routingTable": "main",
+    "vrf": "main",
     "nh": [
      {
       "ip": null,
-      "ifc": "vlan30"
+      "ifc": "vlan30",
+      "vrf": "main",
+      "vrfBasis": "interface"
      }
     ],
     "src": [
@@ -38239,10 +40001,14 @@
     "proto": "Static",
     "distance": 1,
     "blackhole": false,
+    "routingTable": "main",
+    "vrf": "main",
     "nh": [
      {
       "ip": "10.97.0.1",
-      "ifc": null
+      "ifc": null,
+      "vrf": "main",
+      "vrfBasis": "default"
      }
     ],
     "src": [
@@ -38259,10 +40025,14 @@
     "proto": "Static",
     "distance": 1,
     "blackhole": false,
+    "routingTable": "main",
+    "vrf": "main",
     "nh": [
      {
       "ip": "10.96.0.1",
-      "ifc": null
+      "ifc": null,
+      "vrf": "main",
+      "vrfBasis": "default"
      }
     ],
     "src": [
@@ -38279,10 +40049,14 @@
     "proto": "Direct",
     "distance": 0,
     "blackhole": false,
+    "routingTable": "main",
+    "vrf": "main",
     "nh": [
      {
       "ip": null,
-      "ifc": "ether46"
+      "ifc": "ether46",
+      "vrf": "main",
+      "vrfBasis": "interface"
      }
     ],
     "src": [
@@ -38299,10 +40073,14 @@
     "proto": "Direct",
     "distance": 0,
     "blackhole": false,
+    "routingTable": "main",
+    "vrf": "main",
     "nh": [
      {
       "ip": null,
-      "ifc": "ether47"
+      "ifc": "ether47",
+      "vrf": "main",
+      "vrfBasis": "interface"
      }
     ],
     "src": [
@@ -38319,10 +40097,14 @@
     "proto": "Static",
     "distance": 1,
     "blackhole": false,
+    "routingTable": "main",
+    "vrf": "main",
     "nh": [
      {
       "ip": "203.0.113.5",
-      "ifc": "ether47"
+      "ifc": "ether47",
+      "vrf": "main",
+      "vrfBasis": "default"
      }
     ],
     "src": [
@@ -38339,10 +40121,14 @@
     "proto": "Direct",
     "distance": 0,
     "blackhole": false,
+    "routingTable": "main",
+    "vrf": "main",
     "nh": [
      {
       "ip": null,
-      "ifc": "vlan10"
+      "ifc": "vlan10",
+      "vrf": "main",
+      "vrfBasis": "interface"
      }
     ],
     "src": [
@@ -38359,10 +40145,14 @@
     "proto": "Direct",
     "distance": 0,
     "blackhole": false,
+    "routingTable": "main",
+    "vrf": "main",
     "nh": [
      {
       "ip": null,
-      "ifc": "vlan20"
+      "ifc": "vlan20",
+      "vrf": "main",
+      "vrfBasis": "interface"
      }
     ],
     "src": [
@@ -38379,10 +40169,14 @@
     "proto": "Direct",
     "distance": 0,
     "blackhole": false,
+    "routingTable": "main",
+    "vrf": "main",
     "nh": [
      {
       "ip": null,
-      "ifc": "vlan30"
+      "ifc": "vlan30",
+      "vrf": "main",
+      "vrfBasis": "interface"
      }
     ],
     "src": [
@@ -38399,6 +40193,8 @@
     "proto": "Blackhole",
     "distance": 1,
     "blackhole": true,
+    "routingTable": "main",
+    "vrf": "main",
     "nh": [],
     "src": [
      [
@@ -38414,10 +40210,14 @@
     "proto": "Static",
     "distance": 1,
     "blackhole": false,
+    "routingTable": "main",
+    "vrf": "main",
     "nh": [
      {
       "ip": "10.94.0.1",
-      "ifc": null
+      "ifc": null,
+      "vrf": "main",
+      "vrfBasis": "default"
      }
     ],
     "src": [
@@ -38434,10 +40234,14 @@
     "proto": "Direct",
     "distance": 0,
     "blackhole": false,
+    "routingTable": "main",
+    "vrf": "main",
     "nh": [
      {
       "ip": null,
-      "ifc": "ether47"
+      "ifc": "ether47",
+      "vrf": "main",
+      "vrfBasis": "interface"
      }
     ],
     "src": [
@@ -38446,8 +40250,220 @@
       1695
      ]
     ]
+   },
+   {
+    "dev": "TPE_PE_RT_01",
+    "prefix": "0.0.0.0",
+    "len": 0,
+    "proto": "Static",
+    "distance": 1,
+    "blackhole": false,
+    "routingTable": "main",
+    "vrf": "main",
+    "nh": [
+     {
+      "ip": "10.1.30.2",
+      "ifc": "ether1",
+      "vrf": "main",
+      "vrfBasis": "default"
+     }
+    ],
+    "src": [
+     [
+      106,
+      4120
+     ]
+    ]
+   },
+   {
+    "dev": "TPE_PE_RT_01",
+    "prefix": "0.0.0.0",
+    "len": 0,
+    "proto": "Static",
+    "distance": 1,
+    "blackhole": false,
+    "routingTable": "cust-a",
+    "vrf": "cust-a",
+    "nh": [
+     {
+      "ip": "10.1.30.2",
+      "ifc": "ether1",
+      "vrf": "main",
+      "vrfBasis": "explicit"
+     }
+    ],
+    "src": [
+     [
+      106,
+      4118
+     ]
+    ]
+   },
+   {
+    "dev": "TPE_PE_RT_01",
+    "prefix": "10.1.20.0",
+    "len": 24,
+    "proto": "Direct",
+    "distance": 0,
+    "blackhole": false,
+    "routingTable": "cust-a",
+    "vrf": "cust-a",
+    "nh": [
+     {
+      "ip": null,
+      "ifc": "ether2",
+      "vrf": "cust-a",
+      "vrfBasis": "explicit"
+     }
+    ],
+    "src": [
+     [
+      106,
+      4111
+     ]
+    ]
+   },
+   {
+    "dev": "TPE_PE_RT_01",
+    "prefix": "10.1.30.0",
+    "len": 24,
+    "proto": "Direct",
+    "distance": 0,
+    "blackhole": false,
+    "routingTable": "main",
+    "vrf": "main",
+    "nh": [
+     {
+      "ip": null,
+      "ifc": "ether1",
+      "vrf": "main",
+      "vrfBasis": "interface"
+     }
+    ],
+    "src": [
+     [
+      106,
+      4109
+     ]
+    ]
+   },
+   {
+    "dev": "TPE_PE_RT_01",
+    "prefix": "172.16.10.0",
+    "len": 24,
+    "proto": "Static",
+    "distance": 1,
+    "blackhole": false,
+    "routingTable": "cust-a",
+    "vrf": "cust-a",
+    "nh": [
+     {
+      "ip": "192.168.50.254",
+      "ifc": "ether3",
+      "vrf": "cust-a",
+      "vrfBasis": "explicit"
+     }
+    ],
+    "src": [
+     [
+      106,
+      4115
+     ]
+    ]
+   },
+   {
+    "dev": "TPE_PE_RT_01",
+    "prefix": "192.168.50.0",
+    "len": 24,
+    "proto": "Direct",
+    "distance": 0,
+    "blackhole": false,
+    "routingTable": "cust-a",
+    "vrf": "cust-a",
+    "nh": [
+     {
+      "ip": null,
+      "ifc": "ether3",
+      "vrf": "cust-a",
+      "vrfBasis": "explicit"
+     }
+    ],
+    "src": [
+     [
+      106,
+      4113
+     ]
+    ]
    }
   ],
+  "routingTables": [
+   {
+    "dev": "TPE_CE_RT_01",
+    "name": "to-isp2",
+    "fib": true,
+    "disabled": false,
+    "source": "export",
+    "vrf": null,
+    "src": [
+     [
+      108,
+      4141
+     ]
+    ]
+   },
+   {
+    "dev": "TPE_PE_RT_01",
+    "name": "cust-a",
+    "fib": true,
+    "disabled": false,
+    "source": "vrf",
+    "vrf": "cust-a",
+    "src": [
+     [
+      102,
+      4078
+     ]
+    ]
+   }
+  ],
+  "routingRules": [
+   {
+    "dev": "TPE_CE_RT_01",
+    "order": 1,
+    "action": "lookup-only-in-table",
+    "table": "to-isp2",
+    "match": {
+     "src-address": "172.16.10.128/25"
+    },
+    "disabled": false,
+    "comment": null,
+    "src": [
+     [
+      108,
+      4142
+     ]
+    ]
+   },
+   {
+    "dev": "TPE_CE_RT_01",
+    "order": 2,
+    "action": "lookup",
+    "table": "main",
+    "match": {
+     "dst-address": "203.0.113.0/24",
+     "min-prefix": "0"
+    },
+    "disabled": false,
+    "comment": null,
+    "src": [
+     [
+      108,
+      4143
+     ]
+    ]
+   }
+  ],
+  "routingMarkRules": [],
   "firewallRules": [
    {
     "key": "TPE_ACC_SW_10|ip|filter|input|92b02c578cd10951",
@@ -39451,6 +41467,19 @@
     }
    },
    {
+    "dev": "TPE_CE_RT_01",
+    "basis": null,
+    "status": "no-wan-list",
+    "wanLists": [],
+    "wanInterfaces": [],
+    "lanLists": [],
+    "lanInterfaces": [],
+    "ipv6": {
+     "status": "unknown",
+     "src": []
+    }
+   },
+   {
     "dev": "TPE_CORE_RT_01",
     "basis": "interface-list",
     "status": "ok",
@@ -39499,6 +41528,19 @@
    },
    {
     "dev": "TPE_LAB_SW_01",
+    "basis": null,
+    "status": "no-wan-list",
+    "wanLists": [],
+    "wanInterfaces": [],
+    "lanLists": [],
+    "lanInterfaces": [],
+    "ipv6": {
+     "status": "unknown",
+     "src": []
+    }
+   },
+   {
+    "dev": "TPE_PE_RT_01",
     "basis": null,
     "status": "no-wan-list",
     "wanLists": [],
@@ -40769,6 +42811,78 @@
     "src": []
    },
    {
+    "dev": "TPE_CE_RT_01",
+    "name": "api",
+    "enabled": true,
+    "port": 8728,
+    "addresses": [],
+    "basis": "default",
+    "src": []
+   },
+   {
+    "dev": "TPE_CE_RT_01",
+    "name": "api-ssl",
+    "enabled": true,
+    "port": 8729,
+    "addresses": [],
+    "basis": "default",
+    "src": []
+   },
+   {
+    "dev": "TPE_CE_RT_01",
+    "name": "ftp",
+    "enabled": true,
+    "port": 21,
+    "addresses": [],
+    "basis": "default",
+    "src": []
+   },
+   {
+    "dev": "TPE_CE_RT_01",
+    "name": "ssh",
+    "enabled": true,
+    "port": 22,
+    "addresses": [],
+    "basis": "default",
+    "src": []
+   },
+   {
+    "dev": "TPE_CE_RT_01",
+    "name": "telnet",
+    "enabled": true,
+    "port": 23,
+    "addresses": [],
+    "basis": "default",
+    "src": []
+   },
+   {
+    "dev": "TPE_CE_RT_01",
+    "name": "winbox",
+    "enabled": true,
+    "port": 8291,
+    "addresses": [],
+    "basis": "default",
+    "src": []
+   },
+   {
+    "dev": "TPE_CE_RT_01",
+    "name": "www",
+    "enabled": true,
+    "port": 80,
+    "addresses": [],
+    "basis": "default",
+    "src": []
+   },
+   {
+    "dev": "TPE_CE_RT_01",
+    "name": "www-ssl",
+    "enabled": false,
+    "port": 443,
+    "addresses": [],
+    "basis": "default",
+    "src": []
+   },
+   {
     "dev": "TPE_CORE_RT_01",
     "name": "api",
     "enabled": false,
@@ -41060,6 +43174,78 @@
    },
    {
     "dev": "TPE_LAB_SW_01",
+    "name": "www-ssl",
+    "enabled": false,
+    "port": 443,
+    "addresses": [],
+    "basis": "default",
+    "src": []
+   },
+   {
+    "dev": "TPE_PE_RT_01",
+    "name": "api",
+    "enabled": true,
+    "port": 8728,
+    "addresses": [],
+    "basis": "default",
+    "src": []
+   },
+   {
+    "dev": "TPE_PE_RT_01",
+    "name": "api-ssl",
+    "enabled": true,
+    "port": 8729,
+    "addresses": [],
+    "basis": "default",
+    "src": []
+   },
+   {
+    "dev": "TPE_PE_RT_01",
+    "name": "ftp",
+    "enabled": true,
+    "port": 21,
+    "addresses": [],
+    "basis": "default",
+    "src": []
+   },
+   {
+    "dev": "TPE_PE_RT_01",
+    "name": "ssh",
+    "enabled": true,
+    "port": 22,
+    "addresses": [],
+    "basis": "default",
+    "src": []
+   },
+   {
+    "dev": "TPE_PE_RT_01",
+    "name": "telnet",
+    "enabled": true,
+    "port": 23,
+    "addresses": [],
+    "basis": "default",
+    "src": []
+   },
+   {
+    "dev": "TPE_PE_RT_01",
+    "name": "winbox",
+    "enabled": true,
+    "port": 8291,
+    "addresses": [],
+    "basis": "default",
+    "src": []
+   },
+   {
+    "dev": "TPE_PE_RT_01",
+    "name": "www",
+    "enabled": true,
+    "port": 80,
+    "addresses": [],
+    "basis": "default",
+    "src": []
+   },
+   {
+    "dev": "TPE_PE_RT_01",
     "name": "www-ssl",
     "enabled": false,
     "port": 443,
@@ -43798,6 +45984,27 @@
    }
   },
   {
+   "dev": "TPE_CE_RT_01",
+   "collected": true,
+   "kind": "router",
+   "data": [
+    "config",
+    "lldp",
+    "route",
+    "system"
+   ],
+   "missing": [],
+   "interfaces": 2,
+   "links": 1,
+   "macs": 0,
+   "failures": [],
+   "firewall": {
+    "rules": 0,
+    "wan": "no-wan-list",
+    "stats": null
+   }
+  },
+  {
    "dev": "TPE_CORE_RT_01",
    "collected": true,
    "kind": "router",
@@ -43882,6 +46089,30 @@
    "interfaces": 4,
    "links": 1,
    "macs": 1,
+   "failures": [],
+   "firewall": {
+    "rules": 0,
+    "wan": "no-wan-list",
+    "stats": null
+   }
+  },
+  {
+   "dev": "TPE_PE_RT_01",
+   "collected": true,
+   "kind": "router",
+   "data": [
+    "arp",
+    "config",
+    "ipaddr",
+    "lldp",
+    "route",
+    "system",
+    "vrf"
+   ],
+   "missing": [],
+   "interfaces": 3,
+   "links": 1,
+   "macs": 0,
    "failures": [],
    "firewall": {
     "rules": 0,
@@ -46130,6 +48361,204 @@
    "file": "sample-bundle.txt",
    "start": 4047,
    "end": 4052,
+   "empty": false,
+   "collectedAt": null,
+   "failure": null,
+   "unrecognizedLines": []
+  },
+  {
+   "id": 100,
+   "device": "TPE_PE_RT_01",
+   "devKey": "TPE_PE_RT_01",
+   "command": "/system resource print",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.system"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 4056,
+   "end": 4060,
+   "empty": false,
+   "collectedAt": null,
+   "failure": null,
+   "unrecognizedLines": []
+  },
+  {
+   "id": 101,
+   "device": "TPE_PE_RT_01",
+   "devKey": "TPE_PE_RT_01",
+   "command": "/export terse",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.config"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 4062,
+   "end": 4075,
+   "empty": false,
+   "collectedAt": null,
+   "failure": null,
+   "unrecognizedLines": []
+  },
+  {
+   "id": 102,
+   "device": "TPE_PE_RT_01",
+   "devKey": "TPE_PE_RT_01",
+   "command": "/ip vrf print detail without-paging",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.vrf"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 4077,
+   "end": 4080,
+   "empty": false,
+   "collectedAt": null,
+   "failure": null,
+   "unrecognizedLines": []
+  },
+  {
+   "id": 103,
+   "device": "TPE_PE_RT_01",
+   "devKey": "TPE_PE_RT_01",
+   "command": "/ip neighbor print detail without-paging",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.neighbor"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 4082,
+   "end": 4088,
+   "empty": false,
+   "collectedAt": null,
+   "failure": null,
+   "unrecognizedLines": []
+  },
+  {
+   "id": 104,
+   "device": "TPE_PE_RT_01",
+   "devKey": "TPE_PE_RT_01",
+   "command": "/ip address print detail without-paging",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.ipaddr"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 4090,
+   "end": 4097,
+   "empty": false,
+   "collectedAt": null,
+   "failure": null,
+   "unrecognizedLines": []
+  },
+  {
+   "id": 105,
+   "device": "TPE_PE_RT_01",
+   "devKey": "TPE_PE_RT_01",
+   "command": "/ip arp print detail without-paging",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.arp"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 4099,
+   "end": 4106,
+   "empty": false,
+   "collectedAt": null,
+   "failure": null,
+   "unrecognizedLines": []
+  },
+  {
+   "id": 106,
+   "device": "TPE_PE_RT_01",
+   "devKey": "TPE_PE_RT_01",
+   "command": "/ip route print detail without-paging",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.route"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 4108,
+   "end": 4122,
+   "empty": false,
+   "collectedAt": null,
+   "failure": null,
+   "unrecognizedLines": []
+  },
+  {
+   "id": 107,
+   "device": "TPE_CE_RT_01",
+   "devKey": "TPE_CE_RT_01",
+   "command": "/system resource print",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.system"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 4126,
+   "end": 4130,
+   "empty": false,
+   "collectedAt": null,
+   "failure": null,
+   "unrecognizedLines": []
+  },
+  {
+   "id": 108,
+   "device": "TPE_CE_RT_01",
+   "devKey": "TPE_CE_RT_01",
+   "command": "/export terse",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.config"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 4132,
+   "end": 4145,
+   "empty": false,
+   "collectedAt": null,
+   "failure": null,
+   "unrecognizedLines": []
+  },
+  {
+   "id": 109,
+   "device": "TPE_CE_RT_01",
+   "devKey": "TPE_CE_RT_01",
+   "command": "/ip neighbor print detail without-paging",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.neighbor"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 4147,
+   "end": 4153,
+   "empty": false,
+   "collectedAt": null,
+   "failure": null,
+   "unrecognizedLines": []
+  },
+  {
+   "id": 110,
+   "device": "TPE_CE_RT_01",
+   "devKey": "TPE_CE_RT_01",
+   "command": "/ip route print detail without-paging",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.route"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 4155,
+   "end": 4164,
    "empty": false,
    "collectedAt": null,
    "failure": null,

@@ -57,19 +57,57 @@
       });
     });
     (m.ospfAdjacencies || []).forEach((a) => U.getOr(ospfByDev, a.dev, () => []).push(a));
-    const ipOwner = new Map(); const subnets = []; const ipsByEp = new Map(); const heard = new Map();
+    // 以 IP 為鍵的索引都用 K.inVrf(ip, vrf)：main 不加後綴，其他 VRF 加 @<VRF>（ADR-015）
+    const MAIN = K.MAIN_VRF;
+    const ipOwner = new Map(); const subnets = []; const ipsByEp = new Map(); const heard = new Map(); const ownersByIp = new Map();
     m.ipAddresses.forEach((a) => {
       U.getOr(ipsByEp, a.ep, () => []).push(a);
       if (a.ip === null) return;
-      if (a.hearsay) { U.getOr(heard, a.ip, () => []).push(a.ep); return; } // 鄰居宣告的位址：事實但非設備自有
-      ipOwner.set(a.ip, a.ep);
-      if (a.len < 32) subnets.push({ ep: a.ep, dev: a.dev, net: S.ip.parseCidr(a.address).net, len: a.len, ip: a.ip });
+      const vrf = K.vrf(a.vrf); const key = K.inVrf(a.ip, vrf);
+      if (a.hearsay) { U.getOr(heard, key, () => []).push(a.ep); return; } // 鄰居宣告的位址：事實但非設備自有
+      ipOwner.set(key, a.ep);
+      const net = a.len < 32 ? S.ip.parseCidr(a.address).net : null;
+      U.getOr(ownersByIp, a.ip, () => []).push({ ep: a.ep, dev: a.dev, vrf, net, len: a.len });
+      if (a.len < 32) subnets.push({ ep: a.ep, dev: a.dev, net, len: a.len, ip: a.ip, vrf, prefix: K.inVrf(net + '/' + a.len, vrf) });
     });
-    m.devices.forEach((d) => { if (d.mgmtIp && !ipOwner.has(d.mgmtIp)) ipOwner.set(d.mgmtIp, d.key + '|'); });
-    const arpsByIp = new Map(); m.arps.forEach((a) => U.getOr(arpsByIp, a.ip, () => []).push(a));
+    m.devices.forEach((d) => { if (d.mgmtIp && !ipOwner.has(d.mgmtIp)) ipOwner.set(d.mgmtIp, d.key + '|'); }); // 管理 IP 視為 main
+    const arpsByIp = new Map(); m.arps.forEach((a) => U.getOr(arpsByIp, K.inVrf(a.ip, a.vrf), () => []).push(a));
     const vlansByDev = new Map();
     m.vlans.forEach((v) => U.getOr(vlansByDev, v.dev, () => []).push(v));
     const routesByDev = new Map(); m.routes.forEach((r) => U.getOr(routesByDev, r.dev, () => []).push(r));
+    // VRF：每台設備的設定（model.vrfs），以及基準中出現的所有 VRF 名稱（main 一定有）。第一次查詢時才建立
+    const vrfDefsByDev = new Map(); (m.vrfs || []).forEach((v) => U.getOr(vrfDefsByDev, v.dev, () => []).push(v));
+    let vrfNames = null;
+    const vrfList = () => {
+      if (vrfNames) return vrfNames;
+      const set = new Set([MAIN]);
+      (m.vrfs || []).forEach((v) => { if (!v.disabled) set.add(v.name); });
+      m.interfaces.forEach((i) => set.add(K.vrf(i.vrf)));
+      m.ipAddresses.forEach((a) => set.add(K.vrf(a.vrf)));
+      m.arps.forEach((a) => set.add(K.vrf(a.vrf)));
+      m.routes.forEach((r) => { if (r.vrf != null) set.add(r.vrf); });
+      vrfNames = Object.freeze(Array.from(set).sort((a, b) => (a === MAIN ? -1 : b === MAIN ? 1 : U.natural(a, b))));
+      return vrfNames;
+    };
+    /** vrf 參數：undefined／null 為不指定；字串必須是基準中的 VRF，否則 TypeError（不猜）。 */
+    const vrfArg = (vrf) => {
+      if (vrf == null) return null;
+      const v = K.vrf(vrf);
+      if (!vrfList().includes(v)) throw new TypeError(`基準中沒有 VRF ${JSON.stringify(String(vrf))}（有：${vrfList().join('、')}）`);
+      return v;
+    };
+    const routesMemo = new Map(); const subnetsMemo = new Map();
+    // 策略路由（https://manual.mikrotik.com/docs/user-guides/routing-and-networking-protocols/routing-decision.md）：每台設備第一次查詢時才整理
+    const POLICY_DEFAULT = ['mangle', 'vrf-lookup', 'vrf-unreach', 'local', 'user', 'main'];
+    const policyMemo = new Map();
+    const byDevList = (list) => { const out = new Map(); (list || []).forEach((x) => U.getOr(out, x.dev, () => []).push(x)); return out; };
+    let rulesByDev = null; let marksByDev = null; let tablesByDev = null;
+    const hopI = {
+      owner: (ip, vrf) => { const k = ipOwner.get(K.inVrf(ip, vrf)); return k ? { key: k, dev: K.splitEp(k)[0] } : null; },
+      owners: (ip) => ownersByIp.get(ip) || EMPTY_LIST,
+      connected: (d, vrf) => Q.subnetsOf(d, vrf),
+    };
+    const EMPTY_LIST = Object.freeze([]);
     const inferredByDev = new Map(); const inferredByEp = new Map(); const inferredByKey = new Map();
     (m.inferredLinks || []).forEach((l) => {
       inferredByKey.set(l.key, l);
@@ -282,7 +320,53 @@
       linkBetween(epA, epB) { return link.get(K.link(epA, epB)) || null; },
       peerOf(l, ep) { return l.a === ep ? l.b : l.a; },
       vlansOf: (d) => vlansByDev.get(d) || [],
-      routesOf: (d) => routesByDev.get(d) || [],
+      /**
+       * 某設備的路由（所有路由表）；給 vrf 時只取 vrf 等於它的路由（那個 VRF 的路由表；只用於策略路由的路由表 vrf 為 null，不會被選到）。
+       * vrf 不是基準中的 VRF 時 TypeError。
+       */
+      routesOf(d, vrf) {
+        if (vrf === undefined) return routesByDev.get(d) || [];
+        const v = vrfArg(vrf); const k = d + '\u0000' + v;
+        if (!routesMemo.has(k)) routesMemo.set(k, Object.freeze((routesByDev.get(d) || []).filter((r) => r.vrf === v)));
+        return routesMemo.get(k);
+      },
+      /** 某設備某張路由表的路由（routes[].routingTable 等於 table，不論是不是 VRF）；沒有時為空陣列。 */
+      routesInTable(d, table) {
+        const k = d + '\u0001' + table;
+        if (!routesMemo.has(k)) routesMemo.set(k, Object.freeze((routesByDev.get(d) || []).filter((r) => K.vrf(r.routingTable) === table)));
+        return routesMemo.get(k);
+      },
+      /** 所有設備的路由表（main 以外）：{ dev, name, fib, disabled, source: export|vrf, vrf, src }。 */
+      routingTables: () => m.routingTables || EMPTY_LIST,
+      /** 所有設備的 /routing rule（依設備、設定順序）。 */
+      routingRules: () => m.routingRules || EMPTY_LIST,
+      /**
+       * 某設備的策略路由（凍結）：{ tables（這台的路由表）, rules（啟用中的 /routing rule，依順序）, marks（啟用中的 mangle mark-routing）,
+       *   policyRules（/routing settings 的 policy-rules；沒寫時是預設順序）, custom（改過 policy-rules）, any（有任何會改變查表的設定） }。
+       * any 為 false 時，查表只看封包所在的 VRF（與沒有策略路由的網路相同）。
+       */
+      policyOf(d) {
+        if (policyMemo.has(d)) return policyMemo.get(d);
+        if (!rulesByDev) { rulesByDev = byDevList(m.routingRules); marksByDev = byDevList(m.routingMarkRules); tablesByDev = byDevList(m.routingTables); }
+        const x = dev.get(d);
+        const rules = (rulesByDev.get(d) || []).filter((r) => !r.disabled); const marks = (marksByDev.get(d) || []).filter((r) => !r.disabled);
+        const set = x && x.policyRules ? x.policyRules.rules : null;
+        const custom = !!set && set.join(',') !== POLICY_DEFAULT.join(',');
+        // 只凍結 Q 自己的陣列與物件，不凍結 Snapshot 的規則
+        const out = Object.freeze({ tables: Object.freeze((tablesByDev.get(d) || []).slice()), rules: Object.freeze(rules), marks: Object.freeze(marks), policyRules: Object.freeze(set ? set.slice() : POLICY_DEFAULT.slice()), custom, any: !!(rules.length || marks.length || custom) });
+        policyMemo.set(d, out);
+        return out;
+      },
+      /** 基準中出現的 VRF 名稱（設定、位址與路由），main 在最前、其餘依名稱（凍結的陣列）。只用 main 的網路是 ['main']。 */
+      vrfs: () => vrfList(),
+      /** 某設備的 VRF 設定（model.vrfs 的元素：{ dev, name, order, interfaces, members, src }），依設定順序；沒有時為空陣列。 */
+      vrfsOf: (d) => vrfDefsByDev.get(d) || EMPTY_LIST,
+      /**
+       * 下一跳（或直連網段上的目的）位址在 dev 的 vrf 中屬於誰：同名 VRF 的擁有者優先；沒有時，dev 在這個 VRF 的直連網段上、
+       * 其他設備位址與網段都相同的唯一介面（推論，crossVrf 為 true；例如 CE 在 main、PE 在 cust-a）。規則見 S.check.hopOwner。
+       * 回傳 { key（介面鍵；管理 IP 為「設備|」）, dev, vrf（擁有者所在的 VRF）, crossVrf } 或 null。
+       */
+      hopOwner: (d, ip, vrf) => S.check.hopOwner(hopI, d, ip, K.vrf(vrf)),
       /** 推論鏈路（沒有 LLDP／CDP 時的替代證據，見設計說明 §5.3）。 */
       inferredLinks: () => m.inferredLinks || [],
       /** 推定在未收集交換器底下的終端，依掛在圖上的設備分組（單一設備時為該設備，否則為錨點所在的已收集設備）。 */
@@ -339,17 +423,25 @@
         }));
       },
       inferredLinksBetween: (a, b) => (inferredByDev.get(a) || []).filter((l) => [l.a, l.b].some((ep) => K.splitEp(ep)[0] === b)),
-      ipOwner: (ip) => ipOwner.get(ip) || null,
+      /**
+       * 擁有這個 IP 的介面鍵（管理 IP 為「設備|」）；沒有時為 null。vrf 省略時 ip 可以是位址鍵（10.0.0.1、10.0.0.1@cust-a，見 K.inVrf），
+       * 沒有 @ 就是 main；給 vrf 時查那個 VRF。不分 VRF 的查詢用 Q.findIp(ip)。
+       */
+      ipOwner: (ip, vrf) => ipOwner.get(vrf === undefined ? String(ip) : K.inVrf(ip, vrf)) || null,
       /** 介面上的 IP 位址實體（含鄰居宣告）。 */
       ipsOf: (ep) => ipsByEp.get(ep) || [],
       /** 介面位址文字（CIDR），畫面顯示用。 */
       addressesOf: (ep) => (ipsByEp.get(ep) || []).map((a) => a.address),
       prefixes: () => m.prefixes,
+      /** 所有設備自有的直連網段：{ ep, dev, net, len, ip, vrf, prefix（網段鍵，K.inVrf） }。 */
       subnets: () => subnets,
-      /** 某設備的直連網段（Q.subnets() 中 dev 為這台設備的元素，順序相同；凍結的陣列）。 */
-      subnetsOf(d) {
+      /** 某設備的直連網段（Q.subnets() 中 dev 為這台設備的元素，順序相同；凍結的陣列）。給 vrf 時只取那個 VRF 的。 */
+      subnetsOf(d, vrf) {
         if (!subnetsByDev) subnetsByDev = freezeAll(subnets.reduce((out, s) => { U.getOr(out, s.dev, () => []).push(s); return out; }, new Map()));
-        return subnetsByDev.get(d) || EMPTY;
+        if (vrf === undefined) return subnetsByDev.get(d) || EMPTY;
+        const v = K.vrf(vrf); const k = d + '\u0000' + v;
+        if (!subnetsMemo.has(k)) subnetsMemo.set(k, Object.freeze((subnetsByDev.get(d) || EMPTY).filter((s) => s.vrf === v)));
+        return subnetsMemo.get(k);
       },
       /**
        * 端到端可達性（推論，見設計說明 §5.3「L4 可達性」）：從 src 到 dst 的新連線，沿 L3 路徑（與 S.trace 相同的轉送決定）逐跳套用
@@ -419,22 +511,22 @@
         });
         return rows;
       },
-      // 每個不重複的 IP 一列：介面位址、設備管理 IP 與 ARP 出現的 IP 合併，來源保留在 from
+      // 每個 VRF 中不重複的 IP 一列（key 是位址鍵 K.inVrf，同一個 IP 在兩個 VRF 是兩列）：介面位址、設備管理 IP 與 ARP 出現的 IP 合併，來源保留在 from
       ipEntries() {
-        const all = new Set(ipOwner.keys()); arpsByIp.forEach((_, ip) => all.add(ip)); heard.forEach((_, ip) => all.add(ip));
-        return Array.from(all).sort(U.natural).map((ip) => {
-          const owner = ipOwner.get(ip) || null; const macs = U.uniq((arpsByIp.get(ip) || []).map((a) => a.mac));
-          const from = [owner ? (owner.endsWith('|') ? '管理' : '介面') : null, macs.length ? 'ARP' : null, !owner && heard.has(ip) ? '鄰居宣告' : null].filter(Boolean);
+        const all = new Set(ipOwner.keys()); arpsByIp.forEach((_, k) => all.add(k)); heard.forEach((_, k) => all.add(k));
+        return Array.from(all).map((key) => [key].concat(K.splitVrf(key))).sort((a, b) => U.natural(a[1], b[1]) || (a[2] === MAIN ? -1 : b[2] === MAIN ? 1 : U.natural(a[2], b[2]))).map(([key, ip, vrf]) => {
+          const owner = ipOwner.get(key) || null; const macs = U.uniq((arpsByIp.get(key) || []).map((a) => a.mac));
+          const from = [owner ? (owner.endsWith('|') ? '管理' : '介面') : null, macs.length ? 'ARP' : null, !owner && heard.has(key) ? '鄰居宣告' : null].filter(Boolean);
           const ownerDev = owner ? K.splitEp(owner)[0] : null;
-          return { ip, owner, dev: ownerDev, ifc: owner && !owner.endsWith('|') ? Q.epName(owner).slice(Q.devName(ownerDev).length + 1) : null, macs, from };
+          return { key, ip, vrf, owner, dev: ownerDev, ifc: owner && !owner.endsWith('|') ? Q.epName(owner).slice(Q.devName(ownerDev).length + 1) : null, macs, from };
         });
       },
-      /** 每個直連網段一列：設定在哪些介面／設備，以及清單中落在網段內的 IP 數（介面位址、管理 IP、ARP 合計）。 */
+      /** 每個 VRF 的每個直連網段一列（key 是網段鍵）：設定在哪些介面／設備，以及清單中同一個 VRF、落在網段內的 IP 數（介面位址、管理 IP、ARP 合計）。 */
       prefixEntries(ips) {
         return m.prefixes.map((p) => ({
-          prefix: p.prefix, net: p.net, len: p.len, basis: p.basis, eps: p.eps,
+          key: p.key || K.inVrf(p.prefix, p.vrf), prefix: p.prefix, net: p.net, len: p.len, vrf: K.vrf(p.vrf), basis: p.basis, eps: p.eps,
           devs: U.uniq(p.eps.map((ep) => K.splitEp(ep)[0])).sort(U.natural),
-          ipCount: (ips || Q.ipEntries()).filter((r) => S.ip.inNet(r.ip, p.net, p.len)).length,
+          ipCount: (ips || Q.ipEntries()).filter((r) => r.vrf === K.vrf(p.vrf) && S.ip.inNet(r.ip, p.net, p.len)).length,
         }));
       },
       epName(ep) { const [d, i] = K.splitEp(ep); const x = ifc.get(ep); return Q.devName(d) + ' ' + (x ? x.name : i); },
@@ -454,7 +546,7 @@
           else if (e.type === 'link') { const l = link.get(e.key); d = K.splitEp(l ? l.a : String(e.key).split('~')[0])[0]; }
           else if (e.type === 'rule') d = (fwByKey.get(e.key) || {}).dev;
           else if (e.type === 'service') d = K.splitEp(e.key)[0];
-          else if (e.type === 'ip') { const o = ipOwner.get(e.key); d = o && K.splitEp(o)[0]; }
+          else if (e.type === 'ip') { const o = ipOwner.get(e.key); d = o && K.splitEp(o)[0]; } // 實體鍵就是位址鍵（K.inVrf）
           if (known(d)) return known(d);
         }
         return null;
@@ -509,14 +601,23 @@
         const x = mac.get(k);
         return x ? Object.assign({ found: true }, x) : { found: false, mac: k, vendor: S.oui ? S.oui.lookup(k) : null, ips: [], seen: [], edge: [] };
       },
-      findIp(ip) {
+      /**
+       * 一個 IP 在基準中的資料。vrf 省略（或 null）時列出所有 VRF 的結果並標出 VRF；給 vrf 時只看那個 VRF（不是基準中的 VRF 時 TypeError）。
+       * 回傳 { ip, vrf（給的 vrf 或 null）, vrfs（有結果的 VRF）, owner（第一個擁有者：main 優先，再依 VRF 名稱）, owners: [{ vrf, ep }],
+       *   arps（每筆有 vrf）, macs, subnets（Q.subnets() 的元素，含 vrf 與網段鍵 prefix；最長遮罩在前）, locations }；ip 無效時為 null。
+       */
+      findIp(ip, vrf) {
         if (!S.ip.isIp(ip)) return null;
-        const arps = arpsByIp.get(ip) || [];
+        const only = vrfArg(vrf);
+        const vs = only ? [only] : vrfList();
+        const owners = vs.map((v) => ({ vrf: v, ep: ipOwner.get(K.inVrf(ip, v)) || null })).filter((o) => o.ep);
+        const arps = vs.flatMap((v) => arpsByIp.get(K.inVrf(ip, v)) || []);
         const macs = U.uniq(arps.map((a) => a.mac));
-        const nets = subnets.filter((s) => S.ip.inNet(ip, s.net, s.len)).sort((a, b) => b.len - a.len);
+        const nets = subnets.filter((s) => (!only || s.vrf === only) && S.ip.inNet(ip, s.net, s.len)).sort((a, b) => b.len - a.len);
         const locations = [];
         macs.forEach((mk) => { const x = mac.get(mk); if (x) x.edge.forEach((ep) => locations.push({ mac: mk, ep })); });
-        return { ip, owner: ipOwner.get(ip) || null, arps, macs, subnets: nets, locations };
+        const found = U.uniq(owners.map((o) => o.vrf).concat(arps.map((a) => K.vrf(a.vrf)), nets.map((s) => s.vrf)));
+        return { ip, vrf: only, vrfs: vs.filter((v) => found.includes(v)), owner: owners.length ? owners[0].ep : null, owners, arps, macs, subnets: nets, locations };
       },
       /**
        * VLAN id 在整個基準的承載情況；domains 依承載此 VLAN 的鏈路、推論鏈路與透通鏈路分成互不相連的區塊（推論，見設計說明 §5.3）。
@@ -699,14 +800,17 @@
       },
       /**
        * L3 子網圖：子網（prefixes）節點、設備或介面節點，以及「在這個子網有位址」的邊。結果依參數快取並深層凍結。
-       * 每個節點與邊都有 vrf（M3 之前固定為 null，即全部視為 main；不同 VRF 的同一網段目前併成一個節點，見 ADR-015）。
+       * VRF 是容器（ADR-015）：每個子網、節點、邊與路由都有 vrf（main 也寫出）；不同 VRF 的同一個網段是不同的子網節點。
+       * id 用 K.inVrf：main 不加後綴（與加入 VRF 之前相同），其他 VRF 加 @<VRF>。設備模式時一台設備在每個有位址的 VRF 各一個節點
+       * （id 為「設備鍵」或「設備鍵@VRF」）；介面模式時介面只屬於一個 VRF，id 就是介面鍵。
        * opts：
        *   nodes：'device'（預設，每台設備一個節點）或 'interface'（每個介面一個節點；管理 IP 的節點 id 為「設備鍵|」）
        *   hearsay：true（預設）／false，是否加入推論的邊：鄰居宣告的位址（basis neighbor）與未列在介面位址的管理 IP（basis mgmt），
        *            都只接到已知網段（最長相符），不產生新網段
-       *   routes：false（預設）／true，是否加入靜態路由與預設路由的邊（routes[]）；目的網段不是已知網段時新增 basis 為 route 的節點
-       * 回傳 { subnets, nodes, edges, routes }：
-       *   subnets[]：{ id（網段字串，M3 起非 main 加上 @VRF）, prefix, net, len, family, vrf, basis（connected／route）, vlan, vlans, eps, devices,
+       *   routes：false（預設）／true，是否加入靜態路由與預設路由的邊（routes[]）；目的網段不是已知網段時新增 basis 為 route 的節點。
+       *           只取 VRF 的路由表（routes[].vrf 不是 null）；只用於策略路由的路由表不畫，數量在 omitted.policyRoutes
+       * 回傳 { subnets, nodes, edges, routes, omitted: { policyRoutes } }：
+       *   subnets[]：{ id（網段鍵：網段字串，非 main 加上 @VRF）, prefix, net, len, family, vrf, basis（connected／route）, vlan, vlans, eps, devices,
        *               routers（接在這裡的路由設備）, gateways（DHCP 網路設定的閘道）, overlaps（包含或被包含的其他網段 id；routes 為 true 時也含路由新增的子網，預設路由 /0 不列）, duplicateIps（同一 IP 設在多個介面，VRRP 除外） }
        *   nodes[]：{ id, type: 'device'|'interface', dev, ep, name, label, kind, collected, vrf, subnets, router, routerBasis, multihomed, hostAddresses }
        *     router（推論）：接到 2 個以上子網，而且有路由表資料（routerBasis 'routes'）或設備類型是路由器／防火牆（'kind'）；
@@ -714,7 +818,8 @@
        *     hostAddresses：/32 的自有位址（loopback 等，不形成網段）。
        *   edges[]：{ id, subnet, node, dev, eps, addresses: [{ address, ip, ep, role, hearsay, seenBy, src }], basis（address／neighbor／mgmt）, inferred, vrf }
        *     管理 IP（mgmt）在 Snapshot 沒有來源行：src 為設備的 src（只由鄰居看到的設備為空），seenBy 列出看到這台設備的已收集設備。
-       *   routes[]：{ id, dev（路由所在的設備；interface 模式也接在設備上）, subnet（目的網段 id）, prefix, len, default, proto, distance, blackhole, nh, via（下一跳所在、這台設備直連的網段 id）, vrf, src }
+       *   routes[]：{ id, dev（路由所在的設備；interface 模式也接在設備上）, node（設備在這個 VRF 的節點 id）, subnet（目的網段 id，同一個 VRF）, prefix, len, default, proto, distance, blackhole,
+       *               nh（含 vrf、vrfBasis）, via（下一跳所在、這台設備在閘道的 VRF 直連的網段 id）, routingTable, vrf, src }
        */
       subnetGraph(opts) {
         const o = opts || {};
@@ -723,50 +828,51 @@
         const withRoutes = oneOf('routes', o.routes, [false, true]);
         const ck = JSON.stringify([nodeMode, withHearsay, withRoutes]);
         if (subnetCache.has(ck)) return subnetCache.get(ck);
-        const VRF = null; // M3 前全部視為 main
         const ipNet = (ip, len) => S.ip.fromInt((S.ip.toInt(ip) & S.ip.maskOf(len)) >>> 0);
+        const keyOf = (net, len, vrf) => K.inVrf(net + '/' + len, vrf);
         const subnets = new Map(); const lens = new Set();
         const subnetNode = (p, basis) => ({
-          id: p.prefix, prefix: p.prefix, net: p.net, len: p.len, family: p.family || 4, vrf: p.vrf == null ? VRF : p.vrf, basis,
+          id: keyOf(p.net, p.len, p.vrf), prefix: p.prefix, net: p.net, len: p.len, family: p.family || 4, vrf: K.vrf(p.vrf), basis,
           vlan: p.vlan == null ? null : p.vlan, vlans: (p.vlans || []).slice(), eps: (p.eps || []).slice(), devices: [], routers: [], gateways: [], overlaps: [], duplicateIps: [],
         });
-        m.prefixes.forEach((p) => { subnets.set(p.prefix, subnetNode(p, 'connected')); lens.add(p.len); });
+        m.prefixes.forEach((p) => { const n = subnetNode(p, 'connected'); subnets.set(n.id, n); lens.add(p.len); });
         const lensDesc = Array.from(lens).sort((a, b) => b - a);
-        const longest = (ip) => { for (const len of lensDesc) { const s = subnets.get(ipNet(ip, len) + '/' + len); if (s) return s; } return null; };
-        // 邊：自有位址一定接到自己的網段；推論的邊只接到已知網段
+        const longest = (ip, vrf) => { for (const len of lensDesc) { const s = subnets.get(keyOf(ipNet(ip, len), len, vrf)); if (s) return s; } return null; };
+        // 邊：自有位址一定接到自己的網段；推論的邊只接到已知網段（同一個 VRF）
         const edges = new Map();
-        const nodeIdOf = (d, ep) => (nodeMode === 'device' ? d : ep || d + '|');
+        const nodeIdOf = (d, ep, vrf) => (nodeMode === 'device' ? K.inVrf(d, vrf) : ep || d + '|');
         const edgeOf = (s, d, ep, basis) => {
-          const node = nodeIdOf(d, ep); const id = s.id + '~' + node;
-          return U.getOr(edges, id, () => ({ id, subnet: s.id, node, dev: d, eps: [], addresses: [], basis, inferred: basis !== 'address', vrf: VRF }));
+          const node = nodeIdOf(d, ep, s.vrf); const id = s.id + '~' + node;
+          return U.getOr(edges, id, () => ({ id, subnet: s.id, node, dev: d, eps: [], addresses: [], basis, inferred: basis !== 'address', vrf: s.vrf }));
         };
         const hostAddrs = new Map();
         m.ipAddresses.forEach((a) => {
           if (a.hearsay || a.ip === null) return;
-          if (a.len >= 32) { U.getOr(hostAddrs, a.dev, () => []).push({ address: a.address, ep: a.ep }); return; }
-          const s = subnets.get(ipNet(a.ip, a.len) + '/' + a.len); if (!s) return;
+          if (a.len >= 32) { U.getOr(hostAddrs, a.dev, () => []).push({ address: a.address, ep: a.ep, vrf: K.vrf(a.vrf) }); return; }
+          const s = subnets.get(keyOf(ipNet(a.ip, a.len), a.len, a.vrf)); if (!s) return;
           const e = edgeOf(s, a.dev, a.ep, 'address');
           if (!e.eps.includes(a.ep)) e.eps.push(a.ep);
           e.addresses.push({ address: a.address, ip: a.ip, ep: a.ep, role: a.role, hearsay: false, seenBy: null, src: copySrc(a.src) });
         });
         const ownDevSubnet = new Set(Array.from(edges.values(), (e) => e.subnet + '~' + e.dev));
         if (withHearsay) {
-          const addInferred = (ip, d, ep, basis, address, src, seenBy) => {
-            const s = longest(ip); if (!s || ownDevSubnet.has(s.id + '~' + d)) return;
+          const addInferred = (ip, vrf, d, ep, basis, address, src, seenBy) => {
+            const s = longest(ip, vrf); if (!s || ownDevSubnet.has(s.id + '~' + d)) return;
             const e = edgeOf(s, d, ep, basis);
             if (ep && !e.eps.includes(ep)) e.eps.push(ep);
             if (!e.addresses.some((x) => x.ip === ip)) e.addresses.push({ address, ip, ep, role: null, hearsay: true, seenBy: seenBy || null, src });
           };
-          m.ipAddresses.forEach((a) => { if (a.hearsay && a.ip !== null) addInferred(a.ip, a.dev, a.ep, 'neighbor', a.address, copySrc(a.src)); });
+          m.ipAddresses.forEach((a) => { if (a.hearsay && a.ip !== null) addInferred(a.ip, a.vrf, a.dev, a.ep, 'neighbor', a.address, copySrc(a.src)); });
           const own = new Set(m.ipAddresses.filter((a) => !a.hearsay && a.ip !== null).map((a) => a.dev + '|' + a.ip));
-          m.devices.forEach((d) => { if (d.mgmtIp && !own.has(d.key + '|' + d.mgmtIp)) addInferred(d.mgmtIp, d.key, null, 'mgmt', d.mgmtIp + '/32', copySrc(d.src), d.seenBy.slice()); });
+          // 管理 IP 沒有介面，視為 main（RouterOS：沒有指定 VRF 時服務在 main）
+          m.devices.forEach((d) => { if (d.mgmtIp && !own.has(d.key + '|' + d.mgmtIp)) addInferred(d.mgmtIp, MAIN, d.key, null, 'mgmt', d.mgmtIp + '/32', copySrc(d.src), d.seenBy.slice()); });
         }
         const edgeList = Array.from(edges.values()).map((e) => Object.assign(e, { eps: e.eps.sort(U.natural) })).sort((x, y) => U.cmp(x.id, y.id));
         // 節點與路由設備
         const subnetsOfDev = new Map(); const nodes = new Map();
         edgeList.forEach((e) => {
           U.getOr(subnetsOfDev, e.dev, () => new Set()).add(e.subnet);
-          const n = U.getOr(nodes, e.node, () => ({ id: e.node, dev: e.dev, ep: nodeMode === 'interface' && !e.node.endsWith('|') ? e.node : null, subnets: [] }));
+          const n = U.getOr(nodes, e.node, () => ({ id: e.node, dev: e.dev, vrf: e.vrf, ep: nodeMode === 'interface' && !e.node.endsWith('|') ? e.node : null, subnets: [] }));
           if (!n.subnets.includes(e.subnet)) n.subnets.push(e.subnet);
         });
         const routerOf = new Map();
@@ -779,31 +885,33 @@
           const x = dev.get(n.dev); const i = n.ep ? ifc.get(n.ep) : null;
           return Object.assign({
             id: n.id, type: nodeMode, dev: n.dev, ep: n.ep, name: nodeMode === 'device' ? null : i ? i.name : n.ep ? K.splitEp(n.ep)[1] : null,
-            label: x ? x.label || x.name : n.dev, kind: x ? x.kind : null, collected: !!(x && x.collected), vrf: VRF, subnets: n.subnets.sort(U.natural),
-          }, routerOf.get(n.dev), { hostAddresses: nodeMode === 'device' ? (hostAddrs.get(n.dev) || []).slice() : (hostAddrs.get(n.dev) || []).filter((h) => h.ep === n.ep) });
+            label: x ? x.label || x.name : n.dev, kind: x ? x.kind : null, collected: !!(x && x.collected), vrf: n.vrf, subnets: n.subnets.sort(U.natural),
+          }, routerOf.get(n.dev), { hostAddresses: (hostAddrs.get(n.dev) || []).filter((h) => (nodeMode === 'device' ? h.vrf === n.vrf : h.ep === n.ep)).map((h) => ({ address: h.address, ep: h.ep })) });
         }).sort((x, y) => U.natural(x.dev, y.dev) || U.natural(x.id, y.id));
         // 子網的設備、路由設備、閘道、重疊與重複 IP
         edgeList.forEach((e) => { const s = subnets.get(e.subnet); if (!s.devices.includes(e.dev)) s.devices.push(e.dev); });
         (m.dhcpNetworks || []).forEach((n) => {
-          const p = S.ip.parseCidr(n.network); const s = p && subnets.get(ipNet(p.ip, p.len) + '/' + p.len);
+          const p = S.ip.parseCidr(n.network); const s = p && subnets.get(keyOf(ipNet(p.ip, p.len), p.len, n.vrf));
           if (s) n.gateways.forEach((g) => { if (!s.gateways.some((x) => x.ip === g && x.dev === n.dev)) s.gateways.push({ ip: g, dev: n.dev, src: copySrc(n.src) }); });
         });
         const seenIp = new Map();
         edgeList.forEach((e) => e.addresses.forEach((a) => { if (!a.hearsay && a.role !== 'vrrp') U.getOr(seenIp, e.subnet + ' ' + a.ip, () => new Set()).add(a.ep); }));
         seenIp.forEach((eps, k) => { if (eps.size > 1) { const [sid, ip] = k.split(' '); subnets.get(sid).duplicateIps.push(ip); } });
         // 路由（選用）：靜態路由與預設路由
-        const routes = [];
+        const routes = []; const omitted = { policyRoutes: 0 };
         if (withRoutes) {
           m.routes.forEach((r, idx) => {
             if (r.proto === 'Direct' || !(r.proto === 'Static' || r.proto === 'Blackhole' || r.len === 0)) return;
-            const prefix = r.prefix + '/' + r.len;
-            if (!subnets.has(prefix)) { subnets.set(prefix, subnetNode({ prefix, net: r.prefix, len: r.len, family: 4, vrf: null }, 'route')); }
+            if (r.vrf == null) { omitted.policyRoutes++; return; } // 只用於策略路由的路由表：不屬於任何 VRF 容器
+            const prefix = r.prefix + '/' + r.len; const sid = K.inVrf(prefix, r.vrf);
+            if (!subnets.has(sid)) { subnets.set(sid, subnetNode({ prefix, net: r.prefix, len: r.len, family: 4, vrf: r.vrf }, 'route')); }
             const mine = subnetsOfDev.get(r.dev) || new Set();
-            const via = U.uniq(r.nh.filter((h) => h.ip && S.ip.isIp(h.ip)).map((h) => longest(h.ip)).filter((s) => s && mine.has(s.id)).map((s) => s.id));
+            const via = U.uniq(r.nh.filter((h) => h.ip && S.ip.isIp(h.ip)).map((h) => longest(h.ip, h.vrf || r.vrf)).filter((s) => s && mine.has(s.id)).map((s) => s.id));
             const src = copySrc(r.src);
             routes.push({
-              id: r.dev + '|' + prefix + '#' + (src.length ? src[0].join(':') : idx), dev: r.dev, subnet: prefix, prefix: r.prefix, len: r.len, default: r.len === 0,
-              proto: r.proto, distance: r.distance == null ? null : r.distance, blackhole: !!r.blackhole, nh: r.nh.map((h) => ({ ip: h.ip || null, ifc: h.ifc || null })), via, vrf: VRF, src,
+              id: K.inVrf(r.dev + '|' + prefix, r.vrf) + '#' + (src.length ? src[0].join(':') : idx), dev: r.dev, node: nodeMode === 'device' ? K.inVrf(r.dev, r.vrf) : null, subnet: sid, prefix: r.prefix, len: r.len, default: r.len === 0,
+              proto: r.proto, distance: r.distance == null ? null : r.distance, blackhole: !!r.blackhole,
+              nh: r.nh.map((h) => ({ ip: h.ip || null, ifc: h.ifc || null, vrf: h.vrf || null, vrfBasis: h.vrfBasis || null })), via, routingTable: r.routingTable || MAIN, vrf: r.vrf, src,
             });
           });
         }
@@ -814,15 +922,16 @@
           if (s.len === 0) return;
           for (const len of overlapLens) {
             if (len >= s.len) continue;
-            const big = subnets.get(ipNet(s.net, len) + '/' + len);
+            const big = subnets.get(keyOf(ipNet(s.net, len), len, s.vrf)); // 只在同一個 VRF 內
             if (big) { s.overlaps.push(big.id); big.overlaps.push(s.id); }
           }
         });
+        const vrfOrder = (a, b) => (a === b ? 0 : a === MAIN ? -1 : b === MAIN ? 1 : U.natural(a, b));
         const subnetList = Array.from(subnets.values()).map((s) => Object.assign(s, {
           devices: s.devices.sort(U.natural), routers: s.devices.filter((d) => (routerOf.get(d) || {}).router).sort(U.natural),
           overlaps: U.uniq(s.overlaps).sort(U.natural), duplicateIps: s.duplicateIps.sort(U.natural),
-        })).sort((x, y) => U.natural(x.net, y.net) || x.len - y.len);
-        const out = deepFreeze({ subnets: subnetList, nodes: nodeList, edges: edgeList, routes });
+        })).sort((x, y) => U.natural(x.net, y.net) || x.len - y.len || vrfOrder(x.vrf, y.vrf));
+        const out = deepFreeze({ subnets: subnetList, nodes: nodeList, edges: edgeList, routes, omitted });
         subnetCache.set(ck, out);
         return out;
       },

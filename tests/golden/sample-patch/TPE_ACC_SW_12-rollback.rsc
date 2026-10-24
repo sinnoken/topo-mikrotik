@@ -1,6 +1,6 @@
 # topo-mikrotik ssot-patch/1 rollback
 # device: TPE_ACC_SW_12 (key TPE_ACC_SW_12)
-# baseline: inputHash=cb6374d0bf9a2de6 createdAt=2026-01-01T00:00:00Z version=2.11.0
+# baseline: inputHash=83a376c2f1dcdd12 createdAt=2026-01-01T00:00:00Z version=3.0.0
 # Text only: topo-mikrotik never connects to or changes a device. Review every line before use.
 # items: 1
 # Restores the values recorded in the baseline (before), in reverse order of the apply file.

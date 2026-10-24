@@ -449,7 +449,7 @@ const l3Lab = () => build([
   '/ip address add address=10.1.0.2/25 interface=ether1', '/ip address add address=10.2.0.1/24 interface=ether2',
 ].join('\n'));
 
-test('L3 子網圖：子網、設備與「有位址」的邊都帶 vrf（目前為 null）；標示路由設備、重疊網段與重複 IP', () => {
+test('L3 子網圖：子網、設備與「有位址」的邊都帶 vrf（只用 main 時都是 main，id 不加後綴）；標示路由設備、重疊網段與重複 IP', () => {
   const s = l3Lab(); const before = JSON.stringify(s); const Q = S.query(s);
   const g = Q.subnetGraph();
   assert.deepStrictEqual(g.subnets.map((x) => [x.id, x.devices, x.basis]), [
@@ -462,9 +462,10 @@ test('L3 子網圖：子網、設備與「有位址」的邊都帶 vrf（目前�
   const e = g.edges.find((x) => x.id === '10.1.0.0/24~R1');
   assert.deepStrictEqual([e.eps, e.basis, e.inferred, e.addresses.map((a) => a.address)], [['R1|ether1'], 'address', false, ['10.1.0.1/24']]);
   assert.ok(e.addresses[0].src.length === 1 && s.blocks[e.addresses[0].src[0][0]], '邊可以回到位址的來源行');
-  // vrf：每個節點、邊、子網與路由都有，M3 之前固定為 null
+  // vrf：每個節點、邊、子網與路由都有；只用 main 的網路都是 main
   const r = Q.subnetGraph({ routes: true });
-  [r.subnets, r.nodes, r.edges, r.routes].forEach((list) => list.forEach((x) => assert.ok('vrf' in x && x.vrf === null, JSON.stringify(x))));
+  [r.subnets, r.nodes, r.edges, r.routes].forEach((list) => list.forEach((x) => assert.ok(x.vrf === 'main', JSON.stringify(x))));
+  assert.deepStrictEqual(r.omitted, { policyRoutes: 0 });
   const def = r.routes.find((x) => x.default);
   assert.deepStrictEqual([def.dev, def.subnet, def.via, def.proto], ['R1', '0.0.0.0/0', ['10.2.0.0/24'], 'Static']);
   assert.strictEqual(r.subnets.find((x) => x.id === '0.0.0.0/0').basis, 'route', '路由的目的不是已知網段時新增節點');
@@ -479,8 +480,8 @@ test('L3 子網圖：子網、設備與「有位址」的邊都帶 vrf（目前�
 
 test('L3 子網圖：範例資料的路由設備、多網段的交換器、鄰居宣告與管理 IP 的推論邊', () => {
   const s = build(read('samples/sample-bundle.txt')); const Q = S.query(s); const g = Q.subnetGraph();
-  assert.deepStrictEqual(g.subnets.filter((x) => x.basis === 'connected').map((x) => x.id), s.model.prefixes.map((p) => p.prefix), '每個 prefixes 一個子網');
-  assert.deepStrictEqual(g.nodes.filter((n) => n.router).map((n) => n.id), ['TPE_BR_RT_01', 'TPE_CORE_RT_01', 'TPE_CORE_RT_02']);
+  assert.deepStrictEqual(g.subnets.filter((x) => x.basis === 'connected').map((x) => x.id), s.model.prefixes.map((p) => p.key), '每個 prefixes（每個 VRF 的每個網段）一個子網');
+  assert.deepStrictEqual(g.nodes.filter((n) => n.router).map((n) => n.id), ['TPE_BR_RT_01', 'TPE_CE_RT_01', 'TPE_CORE_RT_01', 'TPE_CORE_RT_02', 'TPE_PE_RT_01', 'TPE_PE_RT_01@cust-a'], 'PE 在 main 與 cust-a 各一個節點');
   const sw11 = g.nodes.find((n) => n.id === 'TPE_ACC_SW_11');
   assert.deepStrictEqual([sw11.multihomed, sw11.router], [true, false], '交換器在兩個網段有位址，但沒有路由表，不算路由設備');
   assert.ok(g.subnets.find((x) => x.id === '10.1.10.0/24').overlaps.includes('10.1.10.0/25'));
@@ -489,7 +490,7 @@ test('L3 子網圖：範例資料的路由設備、多網段的交換器、鄰�
   const mg = g.edges.filter((e) => e.basis === 'mgmt');
   assert.ok(mg.length && mg.every((e) => e.inferred && e.addresses.every((a) => a.seenBy.length)), '只由鄰居看到的設備，以 seenBy 追溯');
   // 自有位址的邊恰好對應 prefixes 的 eps
-  s.model.prefixes.forEach((p) => assert.deepStrictEqual(g.edges.filter((e) => e.subnet === p.prefix && e.basis === 'address').flatMap((e) => e.eps).sort(), p.eps.slice().sort(), p.prefix));
+  s.model.prefixes.forEach((p) => assert.deepStrictEqual(g.edges.filter((e) => e.subnet === p.key && e.basis === 'address').flatMap((e) => e.eps).sort(), p.eps.slice().sort(), p.key));
   const off = Q.subnetGraph({ hearsay: false });
   assert.ok(off.edges.every((e) => !e.inferred));
 });

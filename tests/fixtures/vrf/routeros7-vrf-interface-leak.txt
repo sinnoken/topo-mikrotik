@@ -1,0 +1,17 @@
+LEAK_RT (10.31.0.1):
+### /export
+/ip/address
+add address=10.31.0.1/24 interface=ether5
+add address=10.32.0.1/24 interface=ether6
+/ip/vrf
+add interfaces=ether5 name=blue
+add interfaces=ether6 name=green
+### /ip route print detail without-paging
+Flags: D - dynamic; X - disabled, I - inactive, A - active;
+c - connect, s - static, o - ospf; + - ecmp
+    DAc   dst-address=10.31.0.0/24 routing-table=blue gateway=ether5@blue immediate-gw=ether5 distance=0 scope=10
+          local-address=10.31.0.1%ether5@blue
+ 1  As   dst-address=10.32.0.0/24 routing-table=blue gateway=green immediate-gw=green distance=1 scope=30 target-scope=10
+ 2  As   dst-address=10.31.0.0/24 routing-table=green gateway=blue immediate-gw=blue distance=1 scope=30 target-scope=10
+    DAc   dst-address=10.32.0.0/24 routing-table=green gateway=ether6@green immediate-gw=ether6 distance=0 scope=10
+          local-address=10.32.0.1%ether6@green

@@ -17,6 +17,7 @@ const PER_ADAPTER = [
   ['mikrotik.ipaddr', '/ip address print detail without-paging', ['Flags: X - disabled, I - invalid, D - dynamic', ' 0 address=10.0.0.1/24 network=10.0.0.0 interface=ether1']],
   ['mikrotik.arp', '/ip arp print detail without-paging', [' 0 DC address=10.0.0.9 mac-address=AA:BB:CC:00:00:09 interface=ether1']],
   ['mikrotik.route', '/ip route print detail without-paging', ['Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC', ' As dst-address=0.0.0.0/0 routing-table=main gateway=10.0.0.254 distance=1']],
+  ['mikrotik.vrf', '/ip vrf print detail without-paging', ['Flags: X - disabled; * - builtin', ' 0    name="cust-a" interfaces=ether2', ' 1  * name="main" interfaces=all']],
   ['mikrotik.ospf', '/routing ospf neighbor print detail without-paging', [' 0 instance=default address=10.9.9.2 router-id=9.9.9.9 state="Full"']],
   ['mikrotik.wifireg', '/interface wifi registration-table print detail without-paging', ['Flags: A - AUTHORIZED', ' 0 A interface=wifi1 mac-address=AA:BB:CC:00:10:01 uptime=1h last-activity=1s']],
   ['mikrotik.stp', '/interface bridge port monitor [find] once', ['   interface: ether1', '        role: root-port']],

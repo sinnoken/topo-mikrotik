@@ -9,7 +9,7 @@ test('範例資料：每項刻意放入的問題都被找到，且沒有多餘�
     A06: 1, A07: 1, A08: 1, A09: 1, A10: 1, A11: 1, A12: 2, R01: 2, R02: 1, R03: 1, R04: 1, R05: 1, R06: 1, C01: 3,
     V08: 1, V09: 1, F01: 1, F02: 1, F03: 1, F04: 1, F05: 1, F06: 1, F07: 1, F08: 1 };
   Object.entries(expect).forEach(([id, n]) => assert.strictEqual(count(s, id), n, `${id} 應有 ${n} 筆，實際 ${count(s, id)}`));
-  assert.strictEqual(s.meta.stats.collected, 17);
+  assert.strictEqual(s.meta.stats.collected, 19); // 含 VRF 的 PE 與 CE 路由器
   // 分支站點：單臂路由的實體埠只靠 VLAN 子介面承載（停用的 VLAN 30 不算），交換器的 PVID 1 不算不一致；LAB 的 bridge 沒有開 vlan-filtering
   const stick = s.model.links.find((l) => l.key === 'TPE_BR_RT_01|ether2~TPE_BR_SW_01|ether1');
   assert.deepStrictEqual([stick.vlansA, stick.vlansB, stick.vlanComparable, stick.vlansDiff], [[10, 20], [1, 10, 20], true, []]);
@@ -32,7 +32,7 @@ test('鏈路配對：聚合成員雙向確認、沒有 LLDP 的鄰居為單側�
   const s = build(read('samples/sample-bundle.txt'));
   const l = s.model.links.find((x) => x.key === 'TPE_ACC_SW_01|sfp-sfpplus1~TPE_CORE_RT_01|sfp-sfpplus1');
   assert.ok(l && l.verified && l.cls === 'lag', JSON.stringify(l));
-  assert.strictEqual(s.model.links.length, 80, 'OSPF adjacencies no longer count as direct topology links（80 含範例中 CSS610 的 MNDP 鏈路與分支站點的兩條）');
+  assert.strictEqual(s.model.links.length, 81, 'OSPF adjacencies no longer count as direct topology links（81 含範例中 CSS610 的 MNDP 鏈路、分支站點的兩條與 PE－CE 的一條）');
   const ap = s.model.links.find((x) => x.key.includes('TPE_AP_01'));
   assert.ok(ap && ap.hearsay);
 });

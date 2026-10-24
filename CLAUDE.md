@@ -20,7 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 npm test                 # 全部：核心、文件、收集器、畫面
-npm run test:core        # 只跑核心測試（tests/run.js；含收集器端到端測試，需要 bash 與 GNU timeout，Windows 用 Git Bash）
+npm run test:core        # 只跑核心測試（tests/core、tests/workflow；含收集器端到端測試，需要 bash 與 GNU timeout，Windows 用 Git Bash）
 npm run test:docs        # 只跑文件與分工一致性（tests/docs.js）
 npm run test:collector   # 只跑 SSH 收集器測試（tests/collect.sh）
 npm run test:ui          # 只跑畫面冒煙測試（tests/ui-smoke.js，模擬 DOM）
@@ -35,7 +35,9 @@ npm run oui -- <index.json>      # 重新產生 src/data/oui-data.js（來源：
 git diff --check         # 提交前檢查
 ```
 
-`tests/run.js` 是自製的 `test(name, fn)` 清單，可用 `--grep <文字>` 只跑名稱含該文字的測試（區分大小寫），
+`tests/run.js` 只是執行器：依檔名載入 `tests/core/*.js`（data-model）再載入 `tests/workflow/*.js`（workflow），
+`--large` 時最後載入 `tests/large.js`；共用 helper 在 `tests/lib.js`（`test`、`build` 等）。新增測試放進對應模組的檔案，
+從 `require('../lib.js')` 取得 helper。可用 `--grep <文字>` 只跑名稱含該文字的測試（區分大小寫），
 結尾會註明「已篩選：N／總數」；沒有任何測試符合或參數不認得時以失敗結束。
 也可在 Node REPL 以 `require('./tests/load.js')()` 取得 `SSOT` 命名空間直接呼叫 `S.build(...)`。
 新增測試使用既有 `build(text)` helper（固定 `now: '2026-01-01T00:00:00Z'`）。
@@ -93,7 +95,7 @@ git diff --check         # 提交前檢查
   adapter 要用 `parse(block, emit, ignore)` 宣告依格式不產生事實的行，否則會成為 I03；
   新輸入格式 → `src/readers/` 並加入 `ORDER`；新檢查 → `src/check/catalog.js` 的 `CATALOG` 加一筆（含常見原因 `causes` 1–4 條與處理方式 `action`），
   在 `src/check/checks.js` 實作，並更新 [docs/基準檢查規則.md](docs/基準檢查規則.md)（有測試檢查標題、嚴重度、「常見原因」條數與「處理」段）。
-- **生成檔的指令**：`samples/sample-bundle.txt`／`.js` 用 `npm run sample`（`tests/run.js` 會檢查它與產生器輸出一致），`src/data/oui-data.js` 用 `npm run oui`。
+- **生成檔的指令**：`samples/sample-bundle.txt`／`.js` 用 `npm run sample`（`tests/core/generated.js` 會檢查它與產生器輸出一致），`src/data/oui-data.js` 用 `npm run oui`。
   範例資料刻意含問題；新增檢查時要在產生器放對應問題並加測試。
 - 解析器依 RouterOS 文件撰寫，測試資料為手寫／產生，尚未以真實設備驗證；欄位語意以官方手冊
   <https://manual.mikrotik.com/llms.txt> 為準。
@@ -104,11 +106,13 @@ git diff --check         # 提交前檢查
 
 ## Agent 分工（`.claude/agents/`）
 
-大型任務可分給 subagent 平行處理。四個 agent 各自負責不重疊的檔案，所有權只定義在 [.claude/agents/ownership.json](.claude/agents/ownership.json)；`tests/docs.js` 會檢查每個檔案恰好屬於一個 agent。
+大型任務可分給 subagent 平行處理。五個 agent 各自負責不重疊的檔案，所有權只定義在 [.claude/agents/ownership.json](.claude/agents/ownership.json)；`tests/docs.js` 會檢查每個檔案恰好屬於一個 agent。
+核心依「單向依賴」的上下游分給 `data-model` 與 `workflow`（[ADR-013](docs/架構決策/013-新增workflow-agent依上下游分工.md)）。
 
 | Agent | 負責 | 驗證 |
 |---|---|---|
-| `data-model` | 解析、建模、推論、檢查、Snapshot、查詢介面、範例與 OUI 產生器 | `npm run test:core` |
+| `data-model` | 上游：解析、建模、推論、檢查、Snapshot、查詢介面、範例與 OUI 產生器 | `npm run test:core` |
+| `workflow` | 下游：比對與預期資料（`compare/`）、修正 patch（`remediate/`）、處理紀錄（`ledger/`）、patch 黃金檔、之後的 CLI | `npm run test:core` |
 | `frontend` | 畫面、樣式、theme、`index.html`、`vendor/` | `npm run test:ui` |
 | `collector` | SSH 收集器 | `npm run test:collector` |
 | `docs` | README、`docs/`、開發原則、skills、agent 定義 | `npm run test:docs` |
@@ -119,12 +123,15 @@ git diff --check         # 提交前檢查
 
 agent 之間的介面：
 - **data-model ↔ frontend**：Snapshot 欄位（設計說明 §5.2）與 `SSOT.query()`。
+- **data-model ↔ workflow**：同樣是 Snapshot 欄位與 `SSOT.query()`；`src/query/` 歸 data-model。workflow 需要新的查詢函式時寫進報告，由 data-model 加入。
+- **workflow ↔ frontend**：`S.compare`、`S.remediate`、`S.ledger`。畫面的指令文字一律由 `S.remediate` 產生，處理紀錄只透過 `S.ledger` 存取。
 - **data-model → docs**：`CATALOG`（`src/check/catalog.js`）與 `docs/基準檢查規則.md` 必須一致，包括 `causes`／`action`。
 - **collector → data-model**：`bundle-v1` 格式與 `tools/collector-commands.sh` 的指令。
 
 排程：
 - 不改介面時，可以平行執行。
-- 要改 Snapshot 或 query 時，依序執行：data-model → frontend → docs。
+- 要改 Snapshot 或 query 時，依序執行：data-model → workflow（下游受影響時）→ frontend → docs。
+- 只改 `S.compare`／`S.remediate`／`S.ledger` 的介面時，依序執行：workflow → frontend → docs。
 - docs 最後執行，依各 agent 報告的「文件影響」更新。
 - 提交前跑一次完整的 `npm test`。
 

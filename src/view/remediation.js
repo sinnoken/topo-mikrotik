@@ -3,7 +3,9 @@
  *   - 處理紀錄的狀態文字（STATUS_TEXT）：狀態本身與轉換規則在核心 S.ledger（見 app-ledger.js）
  *   - advice：規則的常見原因與處理（每次從 CATALOG 讀取）
  *   - sortByDevice：檢查結果依所屬設備（Q.findingDevice）排序，檢查結果分頁的「依設備」分組與匯出共用
- *   - 修正計畫的文字（LEVEL_TEXT、RISK_TEXT）與單一項目的套用指令（itemApplyLines，取自 S.remediate.renderRsc）
+ *   - 修正計畫的文字（LEVEL_TEXT、RISK_TEXT、targetText、choiceText）與單一項目的套用指令（itemApplyLines，取自 S.remediate.renderRsc）
+ *   - matchFindings／findingRef：未產生指令的項目以 findingKey 對回檢查結果，列出訊息並可點擊開啟
+ *   - facetText：檢查結果的檢查項目（finding.facet）的顯示文字，詳情與修正計畫的逐筆勾選共用
  *   - devicesCsvDraft：由 C01 產生 tools/collect.sh 的設備清單草稿
  */
 (function (S) {
@@ -46,7 +48,7 @@
   }
 
   // ---------------------------------------------------------------- 修正計畫（S.remediate）
-  const LEVEL_TEXT = { auto: '可產生指令', choice: '需選擇處理方式（第二階段）', manual: '需人工判斷' };
+  const LEVEL_TEXT = { auto: '可產生指令', choice: '需選擇處理方式（已支援的規則在修正計畫中選擇要採用的值；其他規則尚未產生指令）', manual: '需人工判斷' };
   const RISK_TEXT = { low: '低', medium: '中', high: '高' };
   const RISK_CHIP = { low: 'ok', medium: 'warn', high: 'err' };
   const RISK_ORDER = ['low', 'medium', 'high'];
@@ -62,6 +64,88 @@
     const at = lines.indexOf('# ---- apply');
     if (at < 0) throw new Error('S.remediate.renderRsc 的輸出缺少「# ---- apply」段落');
     return lines.slice(at + 1).filter((l) => l && !l.startsWith('#')).join('\n');
+  }
+
+  /**
+   * item 的修改對象（plan.items[].target）的顯示文字，修正計畫與總表共用：
+   *   rule（F 系列）：「ip filter input 第 6 條」；servers（A12）：「NTP 伺服器（/system ntp client servers）」。
+   * 不認得的 type 原樣顯示 type 與 key，不顯示 undefined。
+   */
+  function targetText(t) {
+    if (t.type === 'rule') return `${t.family} ${t.table} ${t.chain} 第 ${t.position} 條`;
+    if (t.type === 'servers') return `${FACET_ITEM[t.facet] || t.facet}（${t.menu}）`;
+    return `${t.type} ${t.key}`;
+  }
+  /** plan.choices 的一筆目前的選擇：{ option（選到的選項或 null）, text（顯示文字） }；總表與畫面共用 */
+  function choiceText(c) {
+    const option = c.options.find((o) => o.id === c.chosen) || null;
+    if (!option) return { option, text: '沒有多數，尚未選擇（不產生指令）' };
+    const by = c.chosenBy === 'default' ? '（預設：多數決，推論）' : '（使用者選擇）';
+    return { option, text: option.label + by };
+  }
+
+  /** findingKey 對不到目前基準的檢查結果時的說明（例如 skipped 的 not-found） */
+  const MISSING_FINDING_TEXT = '基準中找不到這筆檢查結果';
+  const FINDING_TEXT_MAX = 120; // 清單中訊息的最多字數；完整訊息放在 title
+  /** 過長的訊息截斷並加上「…」 */
+  const clipText = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
+  /**
+   * 修正計畫的 skipped（或 items）逐筆對回 Q.findings() 中的檢查結果：回傳與 list 等長的陣列，每筆是 { idx, f } 或 null（基準中沒有，例如 not-found）。
+   * idx 與 App.selectFinding 的索引相同。檢查項目不同的已經以 facet 區分（例如 A12 的 DNS 與 NTP 是不同的鍵），
+   * 但依輸入區塊產生的 I01、I03 不帶 facet，同一台設備的多段仍共用一個 findingKey（ADR-003）。
+   * 這種情況的退路是依位置對應：同一個鍵的第 n 筆對到基準中這個鍵的第 n 筆（S.remediate.plan 對同一個鍵的列依 finding 在基準中的順序排列）。
+   */
+  function matchFindings(Q, list) {
+    const byKey = new Map();
+    Q.findings().forEach((f, idx) => U.getOr(byKey, Q.findingKey(f), () => []).push({ idx, f }));
+    const used = new Map();
+    return list.map((x) => {
+      const hits = byKey.get(x.findingKey); const n = used.get(x.findingKey) || 0;
+      used.set(x.findingKey, n + 1);
+      return hits && hits[n] ? hits[n] : null;
+    });
+  }
+  /**
+   * 修正計畫中「未產生指令」的一筆所對應的檢查結果（matchFindings 的一筆）：找得到時是可點擊（滑鼠與鍵盤）的訊息連結，
+   * 過長時截斷、完整訊息在 title，點了開啟該筆檢查結果；找不到時明確說明，findingKey 放在 title。before 在開啟前執行（例如關閉對話框）。
+   */
+  function findingRef(App, hit, key, before) {
+    if (!hit) return V.h('span', { class: 'warn-line finding-missing', title: key }, MISSING_FINDING_TEXT);
+    const msg = String(hit.f.message || '');
+    return V.h('a', { class: 'link finding-ref', title: msg, 'data-finding-idx': String(hit.idx),
+      onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); if (before) before(); App.selectFinding(hit.idx); } }, clipText(msg, FINDING_TEXT_MAX));
+  }
+
+  // ---------------------------------------------------------------- 檢查項目（finding.facet）
+  /** facet 中項目代碼的顯示文字（A12、R06 的 dns／ntp／gateway，V06、V07 比較的屬性） */
+  const FACET_ITEM = { dns: 'DNS 伺服器', ntp: 'NTP 伺服器', gateway: '閘道',
+    'vlan-interface-name': 'VLAN 介面名稱', 'vlan-interface-comment': 'VLAN 介面說明', 'bridge-vlan-comment': 'bridge VLAN 說明' };
+  const facetItem = (s) => FACET_ITEM[s] || s;
+  /** 「a|b」格式的 facet 拆成第一段與其餘（其餘部分可能含 |，原樣保留） */
+  const facetSplit = (v) => { const at = v.indexOf('|'); return at < 0 ? [v, ''] : [v.slice(0, at), v.slice(at + 1)]; };
+  /** 有格式的 facet 依規則轉成可讀文字（格式見 CATALOG 的 facet）；第二段缺少時回傳 null，改顯示原值 */
+  const FACET_FORMAT = {
+    I02: (v) => (S.adapters && S.adapters[v] && S.adapters[v].label) || v,
+    V06: facetItem,
+    V07: (v) => { const [a, b] = facetSplit(v); return b ? `${facetItem(a)}「${b}」` : null; },
+    A02: (v) => (v === 'unknown' ? 'VLAN 不明' : `VLAN ${v}`),
+    A07: (v) => `網段 ${v}`,
+    A08: (v) => `網段 ${v}（最外層）`,
+    A10: (v) => { const [a, b] = facetSplit(v); return b ? `${a}「${b}」` : null; },
+    A11: (v) => { const [a, b] = facetSplit(v); return b ? `${a} ${b}` : null; },
+    A12: facetItem,
+    R02: (v) => `本端介面 ${v}`,
+    R05: (v) => `網段 ${v}`,
+    R06: (v) => { const [a, b] = facetSplit(v); return b ? `${facetItem(a)}（${b}）` : null; },
+  };
+  /**
+   * 檢查結果的檢查項目（finding.facet）的顯示文字：同一組規則＋實體可能有多筆時，標示這筆檢查的是哪一個項目。
+   * 沒有 facet 時為 null；規則沒有對應的格式或格式不符時顯示原值，不隱藏。
+   */
+  function facetText(f) {
+    if (!f || f.facet == null) return null;
+    const v = String(f.facet); const fmt = FACET_FORMAT[f.id];
+    return (fmt && fmt(v)) || v;
   }
 
   // ---------------------------------------------------------------- C01 → devices.csv 草稿
@@ -107,6 +191,6 @@
     return { text: out.join('\n') + '\n', rows };
   }
 
-  V.remediation = { STATUS_TEXT, statusText, STATUS_CHIP, isPendingStatus, advice, sortByDevice, LEVEL_TEXT, RISK_TEXT, RISK_CHIP, maxRisk, itemApplyLines,
-    devicesCsvDraft, USER_PLACEHOLDER };
+  V.remediation = { STATUS_TEXT, statusText, STATUS_CHIP, isPendingStatus, advice, sortByDevice, LEVEL_TEXT, RISK_TEXT, RISK_CHIP, maxRisk, itemApplyLines, targetText, choiceText,
+    MISSING_FINDING_TEXT, FINDING_TEXT_MAX, clipText, matchFindings, findingRef, FACET_ITEM, FACET_RULES: Object.keys(FACET_FORMAT), facetText, devicesCsvDraft, USER_PLACEHOLDER };
 })(globalThis.SSOT = globalThis.SSOT || {});

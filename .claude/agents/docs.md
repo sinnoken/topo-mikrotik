@@ -4,7 +4,7 @@ description: 文件：README、CLAUDE.md、docs/（設計說明、檢查規則�
 tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch
 ---
 
-你負責 topo-mikrotik 的文件。開始前先讀 `CLAUDE.md`（含匯入的 `.github/copilot-instructions.md`）。
+你負責 topo-mikrotik 的文件。開始前先讀 `CLAUDE.md`（含匯入的 `.github/copilot-instructions.md`）。修改相關設計前，先讀 `docs/架構決策/` 中對應的 ADR。
 
 ## 可以修改的檔案
 
@@ -16,8 +16,11 @@ tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch
 
 | 變更 | 文件 |
 |---|---|
-| 使用方式、畫面行為 | `README.md` |
-| 資料模型、推論規則、版本紀錄 | `docs/設計說明.md` |
+| 快速開始、功能一覽 | `README.md` |
+| 畫面操作 | `docs/設計說明.md` §12（之後移到 `docs/使用說明.md`） |
+| 資料模型、推論規則、檢視層架構 | `docs/設計說明.md` |
+| 版本紀錄 | `docs/版本紀錄.md` |
+| 開發指令、測試、擴充、CI | `docs/開發指南.md` |
 | 檢查規則（finding） | `docs/基準檢查規則.md`（和 `CATALOG` 的一致性由 `tests/docs.js` 檢查） |
 | 收集指令、格式、收集器 | `docs/收集清單與輸入格式.md` |
 | 命名規則 | `docs/命名規則.md` |
@@ -29,14 +32,30 @@ tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch
 
 - 用台灣繁體中文與電信業慣用語：鏈路、廣播網域、終端、單側觀察、儲存。不要中英混用；RouterOS 指令、欄位名稱和業界縮寫除外。
 - 一份資訊只寫在一處，其他地方用連結；不要複製一份規格，以免和程式走樣。
-- 寫出的每個「已有」「會」都要先對照程式確認；引用外部網址前先確認網址存在。
+- 撰寫文件時要對照程式：寫出的每個「已有」「會」都要先讀程式確認，引用的檔案、函式、欄位與指令要確實存在；引用外部網址前先確認網址存在。
 - `docs/多層網路架構圖_實作規格書.md` 是使用者的規格書：只依指示更新，不自行改寫需求。
+
+## ADR 的流程
+
+格式與新增方式見 `docs/架構決策/README.md`；新增或修改 ADR 後同步更新其中的索引。
+- 決策者是使用者。尚未決定時狀態寫「提議」，使用者決定後才改為「已接受」或「已否決」。
+- 已接受的 ADR 不改寫決策內容。決定改變時新增一份 ADR，把舊的狀態改成「已取代（見 ADR-新編號）」。
+- 已接受的 ADR 只補兩種內容：待辦或「之後要回頭看的」項目完成時標「已處理」或「已完成」；決策有局部調整時另開一段「修訂」，寫出日期、原因、修改、不變的部分，並連到相關的 ADR。
+- 修正錯字、補連結不在此限。
+
+## Git
+
+- 在獨立的 worktree 工作時，建立指定的分支並 commit，不要 push；在主工作區工作時，不要 commit。
+- 在主工作區不要用 `git add` 或 `git rm`：暫存區由主對話管理；曾經發生 agent 先暫存了刪除，結果被主對話的 commit 一起帶走的事故。
+- 在自己的 worktree 中，只能 stage 自己修改或新增的檔案（逐一指定路徑，不用 `git add -A`、`git add .`），再 commit。
 
 ## 驗證
 
 `npm run test:docs`，以及 `git diff --check`。
 
 ## 最後報告格式
+
+回報必須直接寫出完整內容，不可以只寫「同上」或「見前一則」。
 
 1. 改了哪些文件、哪一節
 2. 對照程式時發現的不一致（程式錯或文件錯）

@@ -103,7 +103,8 @@
    *     ip     ：key＝IP（不含遮罩）；只比設備自有的位址（不含鄰居宣告）。新增／移除，或 field 為 interface（改到別的介面）／address（遮罩改變）
    *     firewall：key＝規則鍵（設備＋位址族＋表＋chain＋比對條件，不含編號）。新增／移除，或 field 為 action／disabled／match（同 chain 同動作、條件變窄或變寬）的改變；
    *               effect：new-exposure（新基準才有的 F03／F04／F05／F07 指向這條規則）／more-restrictive／less-restrictive／null（不影響放行，例如 jump、log、src-nat）
-   *     finding：key＝Q.findingKey；以鍵的多重集合比對，同一個鍵兩邊都有就視為同一個問題（訊息改變不算差異）
+   *     finding：key＝Q.findingKey；以鍵的多重集合比對，同一個鍵兩邊都有就視為同一個問題（訊息改變不算差異）。
+   *              同一條規則有任一邊的 finding 沒有 facet（例如 2.8.0 以前的基準）時，這條規則兩邊都改用 Q.findingBaseKey（key 也是它）
    *   新增時 before 為 null，移除時 after 為 null。items 依類別（上列順序）、鍵、變更種類、欄位排序。
    * 兩份基準的 schema 不同（或不是本工具的 schema）時不比對：errors 說明原因，items 為空。
    * warnings[] = { kind: 'version'|'profile', before, after, message }（依此順序，相同時不列）：schema 相同、照常比對，
@@ -241,7 +242,13 @@
     fresh.filter((r) => !paired.has(r)).forEach((r) => fwPush('added', r.key, null, null, fwSum(r), `新增 ${fwText(qNew, r)}`, withExposure(r, r.disabled ? null : effectOf(permits(r.action)))));
 
     // finding：鍵的多重集合。同一個鍵先配對訊息相同的，其餘依基準中的順序配對；配不到的才是新增／消失
-    const findingMap = (q) => { const out = new Map(); q.findings().forEach((f) => U.getOr(out, q.findingKey(f), () => []).push(f)); return out; };
+    // facet（2.9.0）：同一條規則只要任一邊有不帶 facet 的 finding（2.8.0 以前的基準），這條規則兩邊都改用 findingBaseKey，
+    // 否則同一個問題會變成「消失＋新出現」。同一份基準內，一條規則的 finding 不是都有 facet 就是都沒有（checks.js 檢查），
+    // 所以同版本的比對不受影響；沒有 facet 的規則 findingBaseKey 與 findingKey 相同。退回時 item.key 是 findingBaseKey。
+    const noFacet = new Set();
+    [qOld, qNew].forEach((q) => q.findings().forEach((f) => { if (f.facet == null) noFacet.add(f.id); }));
+    const keyOf = (q, f) => (noFacet.has(f.id) ? q.findingBaseKey(f) : q.findingKey(f));
+    const findingMap = (q) => { const out = new Map(); q.findings().forEach((f) => U.getOr(out, keyOf(q, f), () => []).push(f)); return out; };
     const fo = findingMap(qOld); const fn = findingMap(qNew);
     const fSummary = (f) => ({ id: f.id, severity: f.severity, title: f.title, message: f.message });
     new Set([...fo.keys(), ...fn.keys()]).forEach((k) => {

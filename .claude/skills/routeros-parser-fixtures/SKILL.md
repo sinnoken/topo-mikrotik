@@ -22,8 +22,9 @@ parser change that only fits one sample tends to break another. Work fixture-fir
    `x/y` compound names. Test fixtures are hand-written from docs, not captured, so say
    so when the shape is a guess. Consult <https://manual.mikrotik.com/llms.txt> for
    field semantics.
-2. **Write the failing test before the fix** in `tests/run.js`, using the existing
-   `build(text)` helper with a fixed `now`. Cover:
+2. **Write the failing test before the fix** in the matching file under `tests/core/`
+   (for example `print.js`, `export.js`, `neighbors.js`, `i03.js`; `tests/run.js` is only the
+   runner), using the existing `build(text)` helper from `tests/lib.js` with a fixed `now`. Cover:
    - the exact pasted shape (including multi-line continuation);
    - quoting and case variants (`"x"`, `x`, `X`, trailing spaces);
    - both sides of a pair when the fact is relational (reverse observation);

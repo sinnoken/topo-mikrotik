@@ -18,7 +18,7 @@ user-invocable: true
 **目前狀態**：階段一已完成（adapter → model → infer → check → query → view → compare，即下方「分層與分工」的 1–6）。
 防火牆規則、WAN／LAN 分類與 F01–F08 已在核心，判斷條件見 `docs/基準檢查規則.md` 的「防火牆」，
 資料欄位與比對語意見 `docs/設計說明.md` §5.2、§5.3、§8。之後的修改沿用既有的 `S.infer.fw`（`covers`、`evalChain`、`evalFilter`），
-不要另寫一套規則比對；尚未做的部分（`/ipv6 firewall nat`、命中次數、端到端可達性與 zone 矩陣）見 `docs/設計說明.md` §11。
+不要另寫一套規則比對；尚未做的部分（`/ipv6 firewall nat`、命中次數、端到端可達性與 zone 矩陣）見 `docs/路線圖.md`。
 
 ## 資料來源
 

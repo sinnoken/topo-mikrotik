@@ -116,6 +116,7 @@
     const keys = S.util.uniq(fs.map((f) => Q.findingKey(f)));
     const byKey = new Map(fs.map((f) => [Q.findingKey(f), f]));
     const plan = S.remediate.plan(Q, keys);
+    const hits = RM.matchFindings(Q, plan.skipped);
     const ruleOf = (k) => { const f = byKey.get(k); const e = f && f.entities.find((x) => x.type === 'rule'); return e ? e.key : null; };
     const sevCls = (id) => { const s = (S.check.CATALOG[id] || {}).severity; return s === 'error' ? 'err' : s; };
     const ruleLink = (key) => (key ? P().L(App, ruleLabel(App, key), { type: 'rule', key }) : null);
@@ -133,8 +134,9 @@
           h('pre', { class: 'note-box fix-cmd' }, cmd),
         ]);
       }),
-      ...plan.skipped.map((x) => h('div', { class: 'fw-fix skipped', 'data-rule': x.rule || ruleOf(x.findingKey), 'data-finding': x.findingKey }, [
+      ...plan.skipped.map((x, n) => h('div', { class: 'fw-fix skipped', 'data-rule': x.rule || ruleOf(x.findingKey), 'data-finding': x.findingKey }, [
         h('div', { class: 'row' }, [V.chip(x.id, sevCls(x.id)), ' ', ruleLink(x.rule || ruleOf(x.findingKey)), ' ', V.chip('未產生指令', 'warn')]),
+        h('p', { class: 'fix-skip-finding' }, RM.findingRef(App, hits[n], x.findingKey)),
         h('p', { class: 'warn-line fix-skip' }, x.detail),
       ])),
     ], { count: plan.items.length + plan.skipped.length, fold: !focusRule, open: !!focusRule });

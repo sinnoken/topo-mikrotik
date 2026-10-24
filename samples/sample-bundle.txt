@@ -3662,6 +3662,8 @@ TPE_ACC_SW_12 (10.1.10.32):
 /interface bridge vlan add bridge=bridge1 tagged=bond12,ether24 untagged=ether9,ether10,ether11,ether12,ether13,ether14,ether15,ether16 vlan-ids=30
 /ip address add address=10.1.10.32/24 interface=vlan10 network=10.1.10.0
 /ip address add address=10.1.10.99/24 interface=vlan10 network=10.1.10.0
+/system ntp client set enabled=yes
+/system ntp client servers add address=10.1.10.2
 /system identity set name=TPE_ACC_SW_12
 
 [admin@TPE_ACC_SW_12] > /ip neighbor print detail without-paging

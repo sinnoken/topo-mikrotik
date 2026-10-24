@@ -61,10 +61,15 @@
     uniq.sort((a, b) => order[a.severity] - order[b.severity]);
     return section('檢查結果', uniq.map((f) => h('div', { class: 'finding' }, [
       V.sevDot(f.severity),
-      h('div', null, [h('div', null, [h('b', null, f.title)]), h('div', null, f.message),
+      h('div', null, [h('div', null, [h('b', null, f.title), ...facetChip(f)]), h('div', null, f.message),
         deviationLine(App, f), ledgerLine(f), adviceBlock(f.id),
         f.evidence.length ? h('div', { class: f.id === 'C02' ? 'ev stack' : 'ev' }, evidenceLinks(App, f)) : null]),
     ])), { count: uniq.length });
+  }
+  /** 檢查項目（finding.facet，V.remediation.facetText）：標題旁的標籤（回傳子節點陣列，展開放入標題列），title 是原值；沒有 facet 時為空陣列 */
+  function facetChip(f) {
+    const t = V.remediation.facetText(f);
+    return t ? [' ', V.chip('檢查項目：' + t, 'facet', { title: 'facet：' + f.facet })] : [];
   }
   /** 處理紀錄的狀態與備註（使用者的決定，不在基準裡，見 app-ledger.js）；待處理（open）且沒有備註時不顯示 */
   function ledgerLine(f) {

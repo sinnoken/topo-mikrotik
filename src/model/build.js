@@ -11,6 +11,15 @@
 
   function addSrc(ent, f) { if (ent.src.length < MAX_SRC) ent.src.push([f.block, f.line]); }
 
+  /*
+   * 設備層級 DNS／NTP 伺服器的來源（menu＋param）優先序。同一台設備有多個來源時：
+   * values 是所有來源的值依出現順序合併（去重），跨設備比對（A12）以它為準；menu／param 取優先序最高的來源，同序取先出現的。
+   * RouterOS 7 的 /system ntp client servers= 是靜態設定，子選單同時列出它與動態項目（官方手冊），所以 servers= 優先於子選單；
+   * RouterOS 6 的 primary-ntp／secondary-ntp 不會和 7 的寫法同時出現，排最後。
+   */
+  const SERVER_SOURCE_RANK = ['/ip dns|servers', '/system ntp client|servers', '/system ntp client servers|address', '/system ntp client|primary-ntp/secondary-ntp'];
+  const serverRank = (menu, param) => { const r = SERVER_SOURCE_RANK.indexOf(menu + '|' + param); return r < 0 ? SERVER_SOURCE_RANK.length : r; };
+
   function newModel() {
     return {
       devices: new Map(), ifcs: new Map(), links: new Map(), vlans: new Map(), macs: new Map(),
@@ -24,7 +33,7 @@
     const d = getOr(M.devices, key, () => ({
       key, names: new Set(), mgmtIp: null, vendors: new Set(), collected: false, data: new Set(),
       hostname: null, routerId: null, collectedAt: null, ownMacs: new Set(), stp: null, seenBy: new Set(), src: [], deviceType: null, softwareVersion: null, platform: null, caps: null,
-      dnsServers: null, ntpServers: null, // { values: [], src: [[區塊, 行號]] }；只在內部模型，供跨設備比對
+      dnsServers: null, ntpServers: null, // { values: [], menu, param, src: [[區塊, 行號]] }（事實）；多個來源時的規則見 SERVER_SOURCE_RANK
     }));
     if (name) d.names.add(name);
     return d;
@@ -85,7 +94,8 @@
         case 'dhcpNet': M.dhcpNets.push({ dev: f.dev, network: f.network, gateways: f.gateways, dns: f.dns || [], ntp: f.ntp || [], block: f.block, line: f.line }); break;
         case 'dnsServers': case 'ntpServers': {
           if (!f.servers.length) break;
-          const k = f.t; if (!d[k]) d[k] = { values: [], src: [] };
+          const k = f.t; if (!d[k]) d[k] = { values: [], menu: f.menu, param: f.param, src: [] };
+          if (serverRank(f.menu, f.param) < serverRank(d[k].menu, d[k].param)) Object.assign(d[k], { menu: f.menu, param: f.param });
           f.servers.forEach((v) => { if (!d[k].values.includes(v)) d[k].values.push(v); });
           d[k].src.push([f.block, f.line]);
           break;

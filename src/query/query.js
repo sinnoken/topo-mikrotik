@@ -8,12 +8,23 @@
   const U = S.util;
 
   /**
-   * finding 的穩定鍵：id 加上排序後的 entities（type:key），不含 message、evidence 與行號，
+   * finding 的穩定鍵：id、facet（有時），再加上排序、去重後的 entities（type:key），不含 message、evidence 與行號，
    * 所以同一個問題在兩份基準之間（訊息文字或行號改變時）仍對得上。以 JSON 陣列字串表示，避免分隔符號與鍵內容混淆。
-   * 同一份基準內可能碰撞（id 與 entities 都相同、只差訊息）：例如同一台設備的多段 I01／I02、
-   * 沒有設備的 I01（entities 為空）、同一台設備對同一個鄰居 ID 的多筆 R02。需要逐筆對應時以鍵為多重集合處理（見 compare.snapshots）。
+   *   沒有 facet：["A09","interface:A|ether5","ip:10.0.10.1"]（與 2.9.0 之前相同）
+   *   有 facet：  ["A12","facet:dns","device:VA","device:VB"]
+   * facet 固定放在第 2 個元素、不參與排序，並以 "facet:" 開頭；entity 的 type 不會是 facet（有測試檢查），所以不會和實體鍵混淆。
+   * facet 只出現在同一組 id＋實體可能產生多筆的規則（CATALOG 有宣告 facet 的規則，例如 A12 的 dns／ntp），
+   * 值取自設定的項目與正規化後的設定值，不取自訊息、設備名稱或行號（見 check/catalog.js）。
+   * 仍可能碰撞（id、facet、entities 都相同、只差訊息）：例如同一台設備的多段 I01、I03，沒有設備的 I01（entities 為空）。
+   * 需要逐筆對應時以鍵為多重集合處理（見 compare.snapshots）。
    */
-  const findingKey = (f) => JSON.stringify([f.id].concat(U.uniq((f.entities || []).map((e) => e.type + ':' + e.key)).sort(U.cmp)));
+  const entityKeys = (f) => U.uniq((f.entities || []).map((e) => e.type + ':' + e.key)).sort(U.cmp);
+  const findingKey = (f) => JSON.stringify([f.id].concat(f.facet != null ? ['facet:' + f.facet] : [], entityKeys(f)));
+  /**
+   * 不含 facet 的鍵（id＋entities）：2.9.0 之前的 findingKey 就是這個形式。
+   * 給處理紀錄等轉換舊鍵用：舊鍵等於這個值的項目，對應到 facet 不同的每一筆。沒有 facet 的 finding 與 findingKey 相同。
+   */
+  const findingBaseKey = (f) => JSON.stringify([f.id].concat(entityKeys(f)));
 
   S.query = function (snap) {
     const m = snap.model;
@@ -154,6 +165,7 @@
       ipAddresses: () => m.ipAddresses,
       findings: () => snap.findings,
       findingKey,
+      findingBaseKey,
       getDevice: (k) => dev.get(K.dev(k)) || dev.get(k) || null,
       getInterface: (ep) => ifc.get(ep) || null,
       getLink: (k) => link.get(k) || null,
@@ -251,6 +263,12 @@
       prefixes: () => m.prefixes,
       subnets: () => subnets,
       devName(k) { const d = dev.get(k); return d ? (d.label || d.name) : k; },
+      /**
+       * 設備層級的 DNS／NTP 伺服器設定（事實）：{ dns, ntp }，各為 { values, menu, param, src } 或 null（沒有設定、或找不到設備）。
+       * menu／param 是收集到的來源（/ip dns＋servers、/system ntp client＋servers、/system ntp client servers＋address、
+       * /system ntp client＋primary-ntp/secondary-ntp），產生修正指令時依它決定寫法。
+       */
+      serversOf(k) { const d = dev.get(k); return { dns: (d && d.dnsServers) || null, ntp: (d && d.ntpServers) || null }; },
       // 清單與總覽的唯一數字來源：列資料與計數一起算，畫面不得自行重算
       inventory() {
         if (inv) return inv;
@@ -415,4 +433,5 @@
     return Q;
   };
   S.query.findingKey = findingKey;
+  S.query.findingBaseKey = findingBaseKey;
 })(globalThis.SSOT = globalThis.SSOT || {});

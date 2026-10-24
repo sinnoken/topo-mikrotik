@@ -86,6 +86,8 @@
     return (b.lines[idx] || (b.notes && b.notes.get(ref.line)) || '').trim().slice(0, 200);
   }
 
+  const serverConf = (x) => (x ? { values: x.values.slice(), menu: x.menu, param: x.param, src: x.src.slice() } : null);
+
   function serialize(M, c) {
     const nat = U.natural;
     const name = (d) => S.infer.displayName(d);
@@ -94,6 +96,8 @@
       collected: d.collected, collectedAt: d.collectedAt, ownMacs: Array.from(d.ownMacs).sort(), stp: d.stp, data: Array.from(d.data).sort(), hostname: d.hostname, routerId: d.routerId,
       group: d.group, component: d.component, role: d.role || null, site: d.site || null, label: d.label || null,
       deviceType: d.deviceType, softwareVersion: d.softwareVersion, platform: d.platform, caps: d.caps,
+      // 設備層級 DNS／NTP 伺服器（事實，見 model/build.js 的 SERVER_SOURCE_RANK）；沒有設定為 null
+      dnsServers: serverConf(d.dnsServers), ntpServers: serverConf(d.ntpServers),
       seenBy: Array.from(d.seenBy).sort(), src: d.src, srcNone: d.src.length ? null : 'seen-only',
     })).sort((a, b) => nat(a.key, b.key));
 

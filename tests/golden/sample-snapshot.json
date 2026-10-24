@@ -1,21 +1,21 @@
 {
  "meta": {
   "schema": "ssot-snapshot/2",
-  "version": "2.8.0",
+  "version": "2.9.0",
   "createdAt": "2026-01-01T00:00:00Z",
-  "inputHash": "28211e6ceb748690",
-  "baselineKey": "fd26455652224e71",
+  "inputHash": "eb41070625cffb63",
+  "baselineKey": "68e71548c4e53aff",
   "sources": [
    {
     "name": "sample-bundle.txt",
     "reader": "bundle-v1",
-    "bytes": 207824,
-    "hash": "b8ad9cbf5d279d0a"
+    "bytes": 207908,
+    "hash": "78a4f58d8c2eea41"
    }
   ],
   "adapters": {
    "mikrotik.system": 4,
-   "mikrotik.config": 1010,
+   "mikrotik.config": 1011,
    "mikrotik.neighbor": 115,
    "mikrotik.interface": 28,
    "mikrotik.bridgehost": 783,
@@ -27,7 +27,7 @@
    "mikrotik.stpbridge": 12
   },
   "blockCount": 78,
-  "factCount": 2226,
+  "factCount": 2227,
   "profile": null,
   "stats": {
    "devices": 54,
@@ -46,7 +46,7 @@
    "routes": 15,
    "findings": {
     "error": 1,
-    "warn": 27,
+    "warn": 28,
     "info": 26
    }
   }
@@ -79,6 +79,8 @@
     "softwareVersion": null,
     "platform": null,
     "caps": null,
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_CORE_RT_01"
     ],
@@ -122,6 +124,8 @@
     "softwareVersion": "7.12.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -183,6 +187,8 @@
     "softwareVersion": "7.12.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -244,6 +250,8 @@
     "softwareVersion": "7.12.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -305,6 +313,8 @@
     "softwareVersion": "7.12.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -366,6 +376,8 @@
     "softwareVersion": "7.12.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -427,6 +439,8 @@
     "softwareVersion": "7.12.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -488,6 +502,8 @@
     "softwareVersion": "7.12.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -549,6 +565,8 @@
     "softwareVersion": "7.12.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -609,6 +627,8 @@
     "softwareVersion": "7.12.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -670,6 +690,8 @@
     "softwareVersion": "7.12.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -731,6 +753,8 @@
     "softwareVersion": "7.12.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -792,6 +816,20 @@
     "softwareVersion": "7.12.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
+    "dnsServers": null,
+    "ntpServers": {
+     "values": [
+      "10.1.10.2"
+     ],
+     "menu": "/system ntp client servers",
+     "param": "address",
+     "src": [
+      [
+       73,
+       3666
+      ]
+     ]
+    },
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -842,6 +880,8 @@
     "softwareVersion": "7.12.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge,wlan-ap",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_05"
     ],
@@ -886,6 +926,33 @@
     "softwareVersion": "7.12.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge,router",
+    "dnsServers": {
+     "values": [
+      "1.1.1.1",
+      "8.8.8.8"
+     ],
+     "menu": "/ip dns",
+     "param": "servers",
+     "src": [
+      [
+       1,
+       95
+      ]
+     ]
+    },
+    "ntpServers": {
+     "values": [
+      "time.cloudflare.com"
+     ],
+     "menu": "/system ntp client",
+     "param": "servers",
+     "src": [
+      [
+       1,
+       102
+      ]
+     ]
+    },
     "seenBy": [
      "TPE_ACC_SW_01",
      "TPE_ACC_SW_02",
@@ -958,6 +1025,32 @@
     "softwareVersion": "7.12.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge,router",
+    "dnsServers": {
+     "values": [
+      "8.8.8.8"
+     ],
+     "menu": "/ip dns",
+     "param": "servers",
+     "src": [
+      [
+       10,
+       914
+      ]
+     ]
+    },
+    "ntpServers": {
+     "values": [
+      "time.cloudflare.com"
+     ],
+     "menu": "/system ntp client",
+     "param": "servers",
+     "src": [
+      [
+       10,
+       919
+      ]
+     ]
+    },
     "seenBy": [
      "TPE_ACC_SW_01",
      "TPE_ACC_SW_03",
@@ -1018,6 +1111,8 @@
     "softwareVersion": "2.17",
     "platform": "MikroTik",
     "caps": "bridge",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_06"
     ],
@@ -1050,6 +1145,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_01"
     ],
@@ -1082,6 +1179,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_01"
     ],
@@ -1114,6 +1213,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_01"
     ],
@@ -1146,6 +1247,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_02"
     ],
@@ -1178,6 +1281,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_02"
     ],
@@ -1210,6 +1315,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_02"
     ],
@@ -1242,6 +1349,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_03"
     ],
@@ -1274,6 +1383,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_03"
     ],
@@ -1306,6 +1417,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_03"
     ],
@@ -1338,6 +1451,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_04"
     ],
@@ -1370,6 +1485,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_04"
     ],
@@ -1402,6 +1519,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_04"
     ],
@@ -1434,6 +1553,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_05"
     ],
@@ -1466,6 +1587,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_05"
     ],
@@ -1498,6 +1621,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_05"
     ],
@@ -1530,6 +1655,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_06"
     ],
@@ -1562,6 +1689,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_06"
     ],
@@ -1594,6 +1723,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_06"
     ],
@@ -1626,6 +1757,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_07"
     ],
@@ -1658,6 +1791,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_07"
     ],
@@ -1690,6 +1825,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_07"
     ],
@@ -1722,6 +1859,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_08"
     ],
@@ -1754,6 +1893,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_08"
     ],
@@ -1786,6 +1927,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_08"
     ],
@@ -1818,6 +1961,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_09"
     ],
@@ -1850,6 +1995,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_09"
     ],
@@ -1882,6 +2029,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_09"
     ],
@@ -1914,6 +2063,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_10"
     ],
@@ -1946,6 +2097,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_10"
     ],
@@ -1978,6 +2131,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_10"
     ],
@@ -2010,6 +2165,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_11"
     ],
@@ -2042,6 +2199,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_11"
     ],
@@ -2074,6 +2233,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_11"
     ],
@@ -2106,6 +2267,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_12"
     ],
@@ -2138,6 +2301,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_12"
     ],
@@ -2170,6 +2335,8 @@
     "softwareVersion": "Ubuntu 22.04",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_12"
     ],
@@ -2202,6 +2369,8 @@
     "softwareVersion": "7.12.1 (stable)",
     "platform": "Linux",
     "caps": "station-only",
+    "dnsServers": null,
+    "ntpServers": null,
     "seenBy": [
      "TPE_ACC_SW_06",
      "TPE_ACC_SW_07"
@@ -13144,11 +13313,11 @@
      ],
      [
       75,
-      3708
+      3710
      ],
      [
       77,
-      3771
+      3773
      ]
     ],
     "srcNone": null
@@ -13255,11 +13424,11 @@
      ],
      [
       74,
-      3694
+      3696
      ],
      [
       77,
-      3733
+      3735
      ]
     ],
     "srcNone": null
@@ -13311,11 +13480,11 @@
      ],
      [
       74,
-      3698
+      3700
      ],
      [
       77,
-      3735
+      3737
      ]
     ],
     "srcNone": null
@@ -13367,11 +13536,11 @@
      ],
      [
       74,
-      3702
+      3704
      ],
      [
       77,
-      3737
+      3739
      ]
     ],
     "srcNone": null
@@ -13419,7 +13588,7 @@
      ],
      [
       77,
-      3739
+      3741
      ],
      [
       73,
@@ -13475,7 +13644,7 @@
      ],
      [
       77,
-      3741
+      3743
      ],
      [
       73,
@@ -13531,7 +13700,7 @@
      ],
      [
       77,
-      3743
+      3745
      ],
      [
       73,
@@ -13587,7 +13756,7 @@
      ],
      [
       77,
-      3745
+      3747
      ],
      [
       73,
@@ -13643,7 +13812,7 @@
      ],
      [
       77,
-      3747
+      3749
      ],
      [
       73,
@@ -13699,7 +13868,7 @@
      ],
      [
       77,
-      3749
+      3751
      ],
      [
       73,
@@ -13755,7 +13924,7 @@
      ],
      [
       77,
-      3751
+      3753
      ],
      [
       73,
@@ -13811,7 +13980,7 @@
      ],
      [
       77,
-      3753
+      3755
      ],
      [
       73,
@@ -13868,10 +14037,6 @@
     "src": [
      [
       77,
-      3755
-     ],
-     [
-      77,
       3757
      ],
      [
@@ -13881,6 +14046,10 @@
      [
       77,
       3761
+     ],
+     [
+      77,
+      3763
      ]
     ],
     "srcNone": null
@@ -13935,11 +14104,11 @@
      ],
      [
       74,
-      3689
+      3691
      ],
      [
       75,
-      3708
+      3710
      ],
      [
       73,
@@ -13987,7 +14156,7 @@
      ],
      [
       74,
-      3669
+      3671
      ]
     ],
     "srcNone": null
@@ -14031,7 +14200,7 @@
      ],
      [
       74,
-      3679
+      3681
      ]
     ],
     "srcNone": null
@@ -20668,7 +20837,7 @@
      ],
      [
       74,
-      3689
+      3691
      ]
     ]
    },
@@ -20713,7 +20882,7 @@
      ],
      [
       74,
-      3669
+      3671
      ]
     ]
    },
@@ -20758,7 +20927,7 @@
      ],
      [
       74,
-      3679
+      3681
      ]
     ]
    },
@@ -21794,7 +21963,7 @@
     "src": [
      [
       74,
-      3694
+      3696
      ]
     ]
    },
@@ -21822,7 +21991,7 @@
     "src": [
      [
       74,
-      3698
+      3700
      ]
     ]
    },
@@ -21850,7 +22019,7 @@
     "src": [
      [
       74,
-      3702
+      3704
      ]
     ]
    },
@@ -26898,7 +27067,7 @@
     "src": [
      [
       77,
-      3755
+      3757
      ]
     ]
    },
@@ -28890,7 +29059,7 @@
     "src": [
      [
       77,
-      3767
+      3769
      ]
     ]
    },
@@ -28911,7 +29080,7 @@
     "src": [
      [
       77,
-      3769
+      3771
      ]
     ]
    },
@@ -32035,7 +32204,7 @@
     "src": [
      [
       77,
-      3757
+      3759
      ]
     ]
    },
@@ -32056,7 +32225,7 @@
     "src": [
      [
       77,
-      3759
+      3761
      ]
     ]
    },
@@ -32077,7 +32246,7 @@
     "src": [
      [
       77,
-      3761
+      3763
      ]
     ]
    },
@@ -32098,7 +32267,7 @@
     "src": [
      [
       77,
-      3763
+      3765
      ]
     ]
    },
@@ -32119,7 +32288,7 @@
     "src": [
      [
       77,
-      3765
+      3767
      ]
     ]
    },
@@ -38435,6 +38604,7 @@
      "key": "TPE_ACC_SW_02|ether23"
     }
    ],
+   "facet": "30",
    "evidence": [
     {
      "block": 21,
@@ -38560,7 +38730,44 @@
     "basis": "majority",
     "deviating": [
      "TPE_ACC_SW_10"
-    ]
+    ],
+    "groups": [
+     {
+      "value": [
+       "10.1.10.0/24"
+      ],
+      "key": [
+       "10.1.10.0/24"
+      ],
+      "devs": [
+       "TPE_ACC_SW_01",
+       "TPE_ACC_SW_02",
+       "TPE_ACC_SW_03",
+       "TPE_ACC_SW_04",
+       "TPE_ACC_SW_05",
+       "TPE_ACC_SW_06",
+       "TPE_ACC_SW_07",
+       "TPE_ACC_SW_08",
+       "TPE_ACC_SW_09",
+       "TPE_ACC_SW_11",
+       "TPE_ACC_SW_12",
+       "TPE_CORE_RT_01",
+       "TPE_CORE_RT_02"
+      ]
+     },
+     {
+      "value": [
+       "10.1.10.0/25"
+      ],
+      "key": [
+       "10.1.10.0/25"
+      ],
+      "devs": [
+       "TPE_ACC_SW_10"
+      ]
+     }
+    ],
+    "main": 0
    }
   },
   {
@@ -38583,6 +38790,7 @@
      "key": "TPE_CORE_RT_02|vlan20"
     }
    ],
+   "facet": "10.1.20.0/24",
    "evidence": [
     {
      "block": 67,
@@ -38607,7 +38815,33 @@
     "basis": "majority",
     "deviating": [
      "TPE_ACC_SW_11"
-    ]
+    ],
+    "groups": [
+     {
+      "value": [
+       40
+      ],
+      "key": [
+       40
+      ],
+      "devs": [
+       "TPE_ACC_SW_11"
+      ]
+     },
+     {
+      "value": [
+       20
+      ],
+      "key": [
+       20
+      ],
+      "devs": [
+       "TPE_CORE_RT_01",
+       "TPE_CORE_RT_02"
+      ]
+     }
+    ],
+    "main": 1
    }
   },
   {
@@ -38674,6 +38908,7 @@
      "key": "TPE_ACC_SW_10|vlan10"
     }
    ],
+   "facet": "10.1.10.0/24",
    "evidence": [
     {
      "block": 17,
@@ -38716,7 +38951,44 @@
     "basis": "majority",
     "deviating": [
      "TPE_ACC_SW_10"
-    ]
+    ],
+    "groups": [
+     {
+      "value": [
+       "10.1.10.0/24"
+      ],
+      "key": [
+       "10.1.10.0/24"
+      ],
+      "devs": [
+       "TPE_ACC_SW_01",
+       "TPE_ACC_SW_02",
+       "TPE_ACC_SW_03",
+       "TPE_ACC_SW_04",
+       "TPE_ACC_SW_05",
+       "TPE_ACC_SW_06",
+       "TPE_ACC_SW_07",
+       "TPE_ACC_SW_08",
+       "TPE_ACC_SW_09",
+       "TPE_ACC_SW_11",
+       "TPE_ACC_SW_12",
+       "TPE_CORE_RT_01",
+       "TPE_CORE_RT_02"
+      ]
+     },
+     {
+      "value": [
+       "10.1.10.0/25"
+      ],
+      "key": [
+       "10.1.10.0/25"
+      ],
+      "devs": [
+       "TPE_ACC_SW_10"
+      ]
+     }
+    ],
+    "main": 0
    }
   },
   {
@@ -38770,6 +39042,7 @@
      "key": "TPE_CORE_RT_02"
     }
    ],
+   "facet": "/ip firewall address-list|mgmt",
    "evidence": [
     {
      "block": 1,
@@ -38792,7 +39065,34 @@
    ],
    "deviation": {
     "basis": "majority",
-    "deviating": []
+    "deviating": [],
+    "groups": [
+     {
+      "value": [
+       "10.1.10.0/24"
+      ],
+      "key": [
+       "10.1.10.0/24"
+      ],
+      "devs": [
+       "TPE_CORE_RT_01"
+      ]
+     },
+     {
+      "value": [
+       "10.1.10.0/24",
+       "10.1.99.0/24"
+      ],
+      "key": [
+       "10.1.10.0/24",
+       "10.1.99.0/24"
+      ],
+      "devs": [
+       "TPE_CORE_RT_02"
+      ]
+     }
+    ],
+    "main": null
    }
   },
   {
@@ -38811,6 +39111,7 @@
      "key": "TPE_CORE_RT_02"
     }
    ],
+   "facet": "dns",
    "evidence": [
     {
      "block": 1,
@@ -38827,7 +39128,108 @@
    ],
    "deviation": {
     "basis": "majority",
-    "deviating": []
+    "deviating": [],
+    "groups": [
+     {
+      "value": [
+       "1.1.1.1",
+       "8.8.8.8"
+      ],
+      "key": [
+       "1.1.1.1",
+       "8.8.8.8"
+      ],
+      "devs": [
+       "TPE_CORE_RT_01"
+      ]
+     },
+     {
+      "value": [
+       "8.8.8.8"
+      ],
+      "key": [
+       "8.8.8.8"
+      ],
+      "devs": [
+       "TPE_CORE_RT_02"
+      ]
+     }
+    ],
+    "main": null
+   }
+  },
+  {
+   "id": "A12",
+   "severity": "warn",
+   "cat": "位址",
+   "title": "各設備的 DNS／NTP 伺服器設定不同",
+   "message": "NTP 伺服器：TPE_ACC_SW_12 10.1.10.2；TPE_CORE_RT_01、TPE_CORE_RT_02 time.cloudflare.com；依多數推定偏離：TPE_ACC_SW_12",
+   "entities": [
+    {
+     "type": "device",
+     "key": "TPE_ACC_SW_12"
+    },
+    {
+     "type": "device",
+     "key": "TPE_CORE_RT_01"
+    },
+    {
+     "type": "device",
+     "key": "TPE_CORE_RT_02"
+    }
+   ],
+   "facet": "ntp",
+   "evidence": [
+    {
+     "block": 73,
+     "line": 3666,
+     "text": "/system ntp client servers add address=10.1.10.2",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 1,
+     "line": 102,
+     "text": "set enabled=yes servers=time.cloudflare.com",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 10,
+     "line": 919,
+     "text": "/system ntp client set enabled=yes servers=time.cloudflare.com",
+     "file": "sample-bundle.txt"
+    }
+   ],
+   "deviation": {
+    "basis": "majority",
+    "deviating": [
+     "TPE_ACC_SW_12"
+    ],
+    "groups": [
+     {
+      "value": [
+       "10.1.10.2"
+      ],
+      "key": [
+       "10.1.10.2"
+      ],
+      "devs": [
+       "TPE_ACC_SW_12"
+      ]
+     },
+     {
+      "value": [
+       "time.cloudflare.com"
+      ],
+      "key": [
+       "time.cloudflare.com"
+      ],
+      "devs": [
+       "TPE_CORE_RT_01",
+       "TPE_CORE_RT_02"
+      ]
+     }
+    ],
+    "main": 1
    }
   },
   {
@@ -39018,6 +39420,7 @@
      "key": "TPE_ACC_SW_11"
     }
    ],
+   "facet": "mikrotik.bridgehost",
    "evidence": [
     {
      "block": 71,
@@ -39038,7 +39441,7 @@
    "severity": "warn",
    "cat": "輸入",
    "title": "已解析的區塊中有無法辨識的行",
-   "message": "sample-bundle.txt 第 3730–3832 行（/interface bridge host print detail without-paging）：1 行無法辨識，沒有進入基準：第 3831 行「```」",
+   "message": "sample-bundle.txt 第 3732–3834 行（/interface bridge host print detail without-paging）：1 行無法辨識，沒有進入基準：第 3833 行「```」",
    "entities": [
     {
      "type": "device",
@@ -39048,7 +39451,7 @@
    "evidence": [
     {
      "block": 77,
-     "line": 3831,
+     "line": 3833,
      "text": "```",
      "file": "sample-bundle.txt"
     }
@@ -39209,6 +39612,7 @@
      "key": "TPE_CORE_RT_02"
     }
    ],
+   "facet": "10.1.20.0/24",
    "evidence": [
     {
      "block": 10,
@@ -39234,6 +39638,7 @@
      "key": "TPE_CORE_RT_02"
     }
    ],
+   "facet": "gateway|10.1.30.0/24",
    "evidence": [
     {
      "block": 1,
@@ -39250,7 +39655,32 @@
    ],
    "deviation": {
     "basis": "majority",
-    "deviating": []
+    "deviating": [],
+    "groups": [
+     {
+      "value": [
+       "10.1.30.1"
+      ],
+      "key": [
+       "10.1.30.1"
+      ],
+      "devs": [
+       "TPE_CORE_RT_01"
+      ]
+     },
+     {
+      "value": [
+       "10.1.30.3"
+      ],
+      "key": [
+       "10.1.30.3"
+      ],
+      "devs": [
+       "TPE_CORE_RT_02"
+      ]
+     }
+    ],
+    "main": null
    }
   },
   {
@@ -39323,6 +39753,7 @@
      "key": "TPE_CORE_RT_02|vlan10"
     }
    ],
+   "facet": "vlan-interface-comment|mgmt",
    "evidence": [
     {
      "block": 73,
@@ -39347,7 +39778,33 @@
     "basis": "majority",
     "deviating": [
      "TPE_ACC_SW_12"
-    ]
+    ],
+    "groups": [
+     {
+      "value": [
+       99
+      ],
+      "key": [
+       99
+      ],
+      "devs": [
+       "TPE_ACC_SW_12"
+      ]
+     },
+     {
+      "value": [
+       10
+      ],
+      "key": [
+       10
+      ],
+      "devs": [
+       "TPE_CORE_RT_01",
+       "TPE_CORE_RT_02"
+      ]
+     }
+    ],
+    "main": 1
    }
   },
   {
@@ -39896,37 +40353,37 @@
    "evidence": [
     {
      "block": 77,
-     "line": 3739,
+     "line": 3741,
      "text": "4 D mac-address=10:BF:48:00:00:91 on-interface=ether9 bridge=bridge1 vid=30",
      "file": "sample-bundle.txt"
     },
     {
      "block": 77,
-     "line": 3741,
+     "line": 3743,
      "text": "5 D mac-address=6C:FE:54:00:00:92 on-interface=ether10 bridge=bridge1 vid=30",
      "file": "sample-bundle.txt"
     },
     {
      "block": 77,
-     "line": 3743,
+     "line": 3745,
      "text": "6 D mac-address=04:42:1A:00:00:93 on-interface=ether11 bridge=bridge1 vid=30",
      "file": "sample-bundle.txt"
     },
     {
      "block": 77,
-     "line": 3745,
+     "line": 3747,
      "text": "7 D mac-address=04:42:1A:00:00:94 on-interface=ether12 bridge=bridge1 vid=30",
      "file": "sample-bundle.txt"
     },
     {
      "block": 77,
-     "line": 3747,
+     "line": 3749,
      "text": "8 D mac-address=04:42:1A:00:00:95 on-interface=ether13 bridge=bridge1 vid=30",
      "file": "sample-bundle.txt"
     },
     {
      "block": 77,
-     "line": 3749,
+     "line": 3751,
      "text": "9 D mac-address=6C:FE:54:00:00:96 on-interface=ether14 bridge=bridge1 vid=30",
      "file": "sample-bundle.txt"
     }
@@ -39947,37 +40404,37 @@
    "evidence": [
     {
      "block": 77,
-     "line": 3755,
+     "line": 3757,
      "text": "12 D mac-address=04:42:1A:00:00:99 on-interface=ether23 bridge=bridge1 vid=30",
      "file": "sample-bundle.txt"
     },
     {
      "block": 77,
-     "line": 3757,
+     "line": 3759,
      "text": "13 D mac-address=6C:FE:54:00:00:9A on-interface=ether23 bridge=bridge1 vid=30",
      "file": "sample-bundle.txt"
     },
     {
      "block": 77,
-     "line": 3759,
+     "line": 3761,
      "text": "14 D mac-address=6C:FE:54:00:00:9B on-interface=ether23 bridge=bridge1 vid=30",
      "file": "sample-bundle.txt"
     },
     {
      "block": 77,
-     "line": 3761,
+     "line": 3763,
      "text": "15 D mac-address=6C:FE:54:00:00:9C on-interface=ether23 bridge=bridge1 vid=30",
      "file": "sample-bundle.txt"
     },
     {
      "block": 77,
-     "line": 3763,
+     "line": 3765,
      "text": "16 D mac-address=6C:FE:54:00:00:9D on-interface=ether23 bridge=bridge1 vid=30",
      "file": "sample-bundle.txt"
     },
     {
      "block": 77,
-     "line": 3765,
+     "line": 3767,
      "text": "17 D mac-address=6C:FE:54:00:00:9E on-interface=ether23 bridge=bridge1 vid=30",
      "file": "sample-bundle.txt"
     }
@@ -40024,6 +40481,7 @@
      "key": "TPE_CORE_RT_02"
     }
    ],
+   "facet": "/ip dns static|10.1.20.50",
    "evidence": [
     {
      "block": 1,
@@ -40040,7 +40498,32 @@
    ],
    "deviation": {
     "basis": "majority",
-    "deviating": []
+    "deviating": [],
+    "groups": [
+     {
+      "value": [
+       "nas.tpe.lan"
+      ],
+      "key": [
+       "nas.tpe.lan"
+      ],
+      "devs": [
+       "TPE_CORE_RT_01"
+      ]
+     },
+     {
+      "value": [
+       "storage.tpe.lan"
+      ],
+      "key": [
+       "storage.tpe.lan"
+      ],
+      "devs": [
+       "TPE_CORE_RT_02"
+      ]
+     }
+    ],
+    "main": null
    }
   },
   {
@@ -40262,6 +40745,7 @@
      "key": "172.31.255.2"
     }
    ],
+   "facet": "ether46",
    "evidence": [
     {
      "block": 8,
@@ -40316,6 +40800,7 @@
      "key": "TPE_CORE_RT_02|vlan10"
     }
    ],
+   "facet": "vlan-interface-comment",
    "evidence": [
     {
      "block": 17,
@@ -40340,7 +40825,33 @@
     "basis": "majority",
     "deviating": [
      "TPE_ACC_SW_01"
-    ]
+    ],
+    "groups": [
+     {
+      "value": [
+       "Management"
+      ],
+      "key": [
+       "management"
+      ],
+      "devs": [
+       "TPE_ACC_SW_01"
+      ]
+     },
+     {
+      "value": [
+       "MGMT"
+      ],
+      "key": [
+       "mgmt"
+      ],
+      "devs": [
+       "TPE_CORE_RT_01",
+       "TPE_CORE_RT_02"
+      ]
+     }
+    ],
+    "main": 1
    }
   }
  ],
@@ -42441,7 +42952,7 @@
    "how": "command",
    "file": "sample-bundle.txt",
    "start": 3635,
-   "end": 3666,
+   "end": 3668,
    "empty": false,
    "collectedAt": null,
    "failure": null,
@@ -42458,8 +42969,8 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 3668,
-   "end": 3706,
+   "start": 3670,
+   "end": 3708,
    "empty": false,
    "collectedAt": null,
    "failure": null,
@@ -42476,8 +42987,8 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 3708,
-   "end": 3719,
+   "start": 3710,
+   "end": 3721,
    "empty": false,
    "collectedAt": null,
    "failure": null,
@@ -42494,8 +43005,8 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 3721,
-   "end": 3728,
+   "start": 3723,
+   "end": 3730,
    "empty": false,
    "collectedAt": null,
    "failure": null,
@@ -42512,13 +43023,13 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 3730,
-   "end": 3832,
+   "start": 3732,
+   "end": 3834,
    "empty": false,
    "collectedAt": null,
    "failure": null,
    "unrecognizedLines": [
-    3831
+    3833
    ]
   }
  ]

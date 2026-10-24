@@ -13,7 +13,9 @@
  *   mikrotik.interface  /interface print detail             介面狀態（running／停用）
  *   mikrotik.ipaddr     /ip address print detail
  *   mikrotik.arp        /ip arp print detail
- *   mikrotik.route      /ip route print detail
+ *   mikrotik.route      /ip route print detail（所有路由表；VRF 見 ADR-015）
+ *   mikrotik.vrf        /ip vrf print detail（RouterOS 7；VRF 的比對順序與內建 main）
+ *   mikrotik.fwstats.*  /ip firewall filter|nat|raw、/ipv6 firewall filter|raw print stats detail  防火牆命中次數（每個表一個 adapter）
  *   mikrotik.ospf       /routing ospf neighbor print detail
  *   mikrotik.wifireg    /interface wifi｜wireless registration-table、/caps-man registration-table print detail  Wi-Fi 關聯表
  *   mikrotik.stp        /interface bridge port monitor [find] once、/interface bridge monitor [find] once  RSTP 狀態
@@ -41,6 +43,7 @@
     }
     return kv;
   }
+  const LEGEND_MORE = /^(?:[A-Za-z+*]\s+-\s+[\w-]+(?:[,;]\s*|\s*$))+$/;
   function newRow(toks, line) {
     return { flags: toks.filter((t) => !/^\d+$/.test(t)).join(''), idx: toks.find((t) => /^\d+$/.test(t)) ?? null, kv: {}, comment: null, line, lines: [line] };
   }
@@ -58,14 +61,22 @@
     b.lines.forEach((raw) => {
       const legend = raw.match(/^\s*Flags:\s*(.*)$/i);
       if (!legend) return;
-      const re = /(?:^|[;,\s])([A-Za-z])\s*-/g; let m;
+      const re = /(?:^|[;,\s])([A-Za-z*])\s*-/g; let m;
       while ((m = re.exec(legend[1]))) flagChars.add(m[1]);
     });
-    const rows = []; let cur = null; let pending = null;
+    const rows = []; let cur = null; let pending = null; let inLegend = false;
     b.lines.forEach((raw, i) => {
       const line = raw.replace(/\r$/, ''); const t = line.trim();
       if (!t) return;
-      if (/^(Flags|Columns):/i.test(t)) { if (ignore) ignore(at(b, i), '說明行'); return; }
+      if (/^(Flags|Columns):/i.test(t)) { inLegend = /^Flags:/i.test(t); if (ignore) ignore(at(b, i), '說明行'); return; }
+      // 旗標說明換到下一行（手冊 VRF 的 /ip/route print detail：「c - connect, s - static, … + - ecmp」）：緊接在 Flags: 之後、整行都是「字元 - 名稱」
+      if (inLegend && LEGEND_MORE.test(t)) {
+        const re = /(?:^|[;,\s])([A-Za-z*])\s*-/g; let m;
+        while ((m = re.exec(t))) flagChars.add(m[1]);
+        if (ignore) ignore(at(b, i), '說明行');
+        return;
+      }
+      inLegend = false;
       let comment = null; let body = line;
       const ci = line.indexOf(';;;');
       if (ci >= 0) { comment = line.slice(ci + 3).trim(); body = line.slice(0, ci); }
@@ -279,7 +290,10 @@
             const name = kv.name || (sel && sel.name); if (!name) break;
             const br = bridges.get(name) || { filtering: false }; bridges.set(name, br);
             if (kv['vlan-filtering']) br.filtering = kv['vlan-filtering'] === 'yes';
-            const f = { t: 'ifc', ifc: name, rawType: 'bridge', line }; if (kv.comment) f.desc = kv.comment; emit(f); break;
+            const f = { t: 'ifc', ifc: name, rawType: 'bridge', line }; if (kv.comment) f.desc = kv.comment;
+            // vlan-filtering 預設 no，terse export 不寫預設值：add 沒寫就是 no；set 只有寫了才改
+            if (kv['vlan-filtering']) f.vlanFiltering = kv['vlan-filtering'] === 'yes'; else if (cmd === 'add') f.vlanFiltering = false;
+            emit(f); break;
           }
           case '/interface bridge port':
             if (cmd === 'add' && kv.interface) {
@@ -295,9 +309,12 @@
             break;
           case '/interface vlan':
             if (cmd === 'add' && kv.name && kv['vlan-id']) {
-              const f = { t: 'ifc', ifc: kv.name, rawType: 'vlan', parent: kv.interface, encapVlan: +kv['vlan-id'], line }; if (kv.comment) f.desc = kv.comment; emit(f);
+              const f = { t: 'ifc', ifc: kv.name, rawType: 'vlan', parent: kv.interface, encapVlan: +kv['vlan-id'], line }; if (kv.comment) f.desc = kv.comment;
+              if (kv.disabled === 'yes') f.enabled = false;
+              emit(f);
               emit({ t: 'vlan', id: +kv['vlan-id'], name: null, line });
-              emit({ t: 'vmem', vlan: String(kv['vlan-id']), ifc: kv.interface, tagged: true, src: 'config', line });
+              // VLAN 介面在 parent 上收送帶這個 VLAN ID 的 tagged 訊框（設定的事實），停用時不收送
+              if (kv.disabled !== 'yes') emit({ t: 'vmem', vlan: String(kv['vlan-id']), ifc: kv.interface, tagged: true, src: 'config', line });
             }
             break;
           case '/interface bonding':
@@ -308,6 +325,34 @@
             break;
           case '/ip address':
             if (cmd === 'add' && kv.address && kv.interface && kv.disabled !== 'yes') emit({ t: 'ifc', ifc: kv.interface, ip: kv.address, line });
+            break;
+          // VRF（ADR-015，只支援 RouterOS 7）：/ip vrf 的 name、interfaces（https://manual.mikrotik.com/docs/cli-reference/ip/vrf.md）。
+          // 依序比對、第一筆列到的介面屬於它（由 model 決定）；export 依設定順序列出，但不寫出內建的 main，所以看不出 main 排在哪裡
+          // （model 假設在最後，見 resolveVrfs）。停用的項目照樣記下、不比對介面。手冊範例也有單數的 interface=，一併接受。
+          case '/ip vrf':
+            if (cmd === 'add' && kv.name) emit({ t: 'vrf', name: kv.name, interfaces: list(kv.interfaces || kv.interface), disabled: kv.disabled === 'yes', builtin: false, source: 'export', line });
+            break;
+          // 路由表與策略路由（https://manual.mikrotik.com/docs/cli-reference/routing/table.md、…/routing/rule.md、
+          // https://manual.mikrotik.com/docs/user-guides/routing-and-networking-protocols/routing-decision.md）：
+          // /routing table 的 name 與 fib（單獨的字，表示這張表的路由會裝進 FIB）；/routing rule 依序比對的條件、action 與 table；
+          // /routing settings 的 policy-rules 是查表的順序；/ip firewall mangle 只記 mark-routing（改變查哪一張表）
+          case '/routing table':
+            if (cmd === 'add' && kv.name) emit({ t: 'routingTable', name: kv.name, fib: /(^|\s)fib(\s|$)/.test(args), disabled: kv.disabled === 'yes', line });
+            break;
+          case '/routing rule':
+            if (cmd === 'add') {
+              const match = {}; Object.keys(kv).forEach((k) => { if (!['action', 'table', 'disabled', 'comment'].includes(k)) match[k] = kv[k]; });
+              emit({ t: 'routingRule', action: kv.action || 'lookup', table: kv.table || null, match, disabled: kv.disabled === 'yes', comment: kv.comment || null, line });
+            }
+            break;
+          case '/routing settings':
+            if (cmd === 'set' && kv['policy-rules'] !== undefined) emit({ t: 'policyRules', rules: list(kv['policy-rules']), line });
+            break;
+          case '/ip firewall mangle':
+            if (cmd === 'add' && kv.action === 'mark-routing') {
+              const match = {}; Object.keys(kv).forEach((k) => { if (!['action', 'new-routing-mark', 'passthrough', 'disabled', 'comment', 'log', 'log-prefix'].includes(k)) match[k] = kv[k]; });
+              emit({ t: 'markRouting', chain: kv.chain || null, mark: kv['new-routing-mark'] || null, match, disabled: kv.disabled === 'yes', line });
+            }
             break;
           case '/interface vrrp':
             if (cmd === 'add' && kv.name) { const f = { t: 'ifc', ifc: kv.name, rawType: 'vrrp', line }; if (kv.comment) f.desc = kv.comment; emit(f); }
@@ -489,7 +534,10 @@
         if (!kv.address || !kv.interface || !/^\d+\.\d+\.\d+\.\d+\/\d+$/.test(kv.address)) return;
         if (/[XI]/.test(r.flags)) { settle(r, ignore, '停用或無效的項目'); return; }
         settle(r, ignore);
-        emit({ t: 'ifc', ifc: kv['actual-interface'] || kv.interface, ip: kv.address, line: r.line });
+        // vrf=：RouterOS 7 的 print detail 由設備回報位址所在的 VRF（唯讀欄位）；位址屬於 actual-interface（設在 bridge port 上的位址屬於 bridge）
+        const f = { t: 'ifc', ifc: kv['actual-interface'] || kv.interface, ip: kv.address, line: r.line };
+        if (kv.vrf) f.vrf = kv.vrf;
+        emit(f);
       });
     },
   });
@@ -508,12 +556,42 @@
         if (!kv['mac-address']) { settle(r, ignore, '沒有 MAC 的未完成項目'); return; }
         if (kv.address.startsWith('169.254.') || /^(22[4-9]|23\d)\./.test(kv.address)) { settle(r, ignore, 'link-local 或 multicast 位址'); return; }
         settle(r, ignore);
-        emit({ t: 'arp', ifc: kv.interface, ip: kv.address, mac: kv['mac-address'], line: r.line });
+        const f = { t: 'arp', ifc: kv.interface, ip: kv.address, mac: kv['mac-address'], line: r.line };
+        if (kv.vrf) f.vrf = kv.vrf; // RouterOS 7：設備回報的 VRF
+        emit(f);
+      });
+    },
+  });
+
+  // ================================================================ VRF（/ip vrf print detail，RouterOS 7）
+  /*
+   * 手冊 VRF：「Flags: X - disabled; * - builtin」，每列 name=、interfaces=；依序比對介面，內建的 main 是 interfaces=all。
+   * 和 export 不同，print 列出 main 的位置（main 排在前面時，後面的 VRF 拿不到介面）。停用（X）的列照樣記下、不比對介面。
+   * RouterOS 6 沒有這個選單（VRF 在 export 的 /ip route vrf），執行時只有錯誤訊息，由 pipeline 列為 I01。
+   */
+  reg({
+    id: 'mikrotik.vrf', vendor: VENDOR, dataType: 'vrf', label: 'RouterOS VRF',
+    command: /^\/?ip\s+vrf\b/i,
+    detect: (lines) => has(lines, 'name') && has(lines, 'interfaces') && !has(lines, 'dst-address') && !has(lines, 'mtu') && !has(lines, 'type'),
+    parse(b, emit, ignore = noop) {
+      parseRows(b, ignore).forEach((r) => {
+        const kv = r.kv;
+        if (!kv.name || !('interfaces' in kv)) return; // 缺欄位：留給 I03
+        settle(r, ignore);
+        emit({ t: 'vrf', name: kv.name, interfaces: list(kv.interfaces), disabled: r.flags.includes('X'), builtin: r.flags.includes('*'), source: 'print', line: r.line });
       });
     },
   });
 
   // ================================================================ 路由
+  /*
+   * 所有路由表的作用中路由都是事實（ADR-015，RouterOS 7）：routing-table=（main 也會寫出；沒寫時為 main）。
+   * 路由表對應到哪個 VRF 由 model 依 /ip vrf 判斷；沒有對應 VRF 的路由表（策略路由）照樣保留。
+   * gateway 的寫法（https://manual.mikrotik.com/docs/cli-reference/ip/route.md 只列出欄位；@ 的意義見 VRF 手冊的路由洩漏）：IP、IP%介面、介面，
+   * 後面可以再接 @<VRF>，表示在那個 VRF 解析閘道。
+   * 下一跳的 vrf 只記寫出來的 @<VRF>（沒寫為 null）；沒寫時在哪裡解析由 model 依版本的規則決定。
+   */
+  const splitAt = (s) => { const i = s.lastIndexOf('@'); return i < 0 ? [s, null] : [s.slice(0, i), s.slice(i + 1) || null]; };
   reg({
     id: 'mikrotik.route', vendor: VENDOR, dataType: 'route', label: 'RouterOS 路由表',
     command: /^\/?ip\s+route\b/i,
@@ -524,12 +602,12 @@
         const kv = r.kv; const m = String(kv['dst-address'] || '').match(/^(\d+\.\d+\.\d+\.\d+)\/(\d+)$/);
         if (!m) return;
         if (!r.flags.includes('A')) { settle(r, ignore, '非作用中的路由'); return; }  // 只要作用中的路由
-        if (kv['routing-table'] && kv['routing-table'] !== 'main') { settle(r, ignore, '非 main 路由表'); return; }
         const distance = /^\d+$/.test(kv.distance || '') ? +kv.distance : null;
+        const table = { routingTable: kv['routing-table'] || 'main' };
         // 黑洞／不可達／禁止：RouterOS 6 為 B／U／P 旗標或 type=；RouterOS 7 是列中單獨的 blackhole 字（不是 key=value）
         const raw = b.lines.slice(r.line - b.origin.startLine, ri + 1 < rows.length ? rows[ri + 1].line - b.origin.startLine : undefined).join(' ');
         if (/[BUP]/.test(r.flags) || /(^|\s)blackhole(\s|$)/.test(raw) || /^(blackhole|unreachable|prohibit)$/i.test(kv.type || kv.gateway || '')) {
-          emit({ t: 'route', prefix: m[1], len: +m[2], proto: 'Blackhole', nh: [], blackhole: true, distance, line: r.line });
+          emit(Object.assign({ t: 'route', prefix: m[1], len: +m[2], proto: 'Blackhole', nh: [], blackhole: true, distance, line: r.line }, table));
           settle(r, ignore);
           return;
         }
@@ -537,19 +615,58 @@
         const proto = /[cC]/.test(f) ? 'Direct' : f.includes('o') ? 'OSPF' : f.includes('b') ? 'BGP' : /[sS]/.test(f) ? 'Static' : f.includes('d') ? 'DHCP' : f.includes('r') ? 'RIP' : f.includes('v') ? 'VPN' : 'Other';
         const gws = list(kv.gateway); const igws = list(kv['immediate-gw']); const nh = [];
         gws.forEach((g, idx) => {
-          const [gip, gif] = g.split('%');
+          const [g0, vrf] = splitAt(g);
+          const [gip, gif] = g0.split('%');
           if (IPRE.test(gip)) {
             let ifc = gif || null;
-            if (!ifc) { const ig = igws[idx] || igws[0]; if (ig && ig.includes('%')) ifc = ig.split('%')[1]; }
-            nh.push({ ip: gip, ifc });
-          } else if (gip && !/^(blackhole|unreachable|prohibit)$/i.test(gip)) nh.push({ ip: null, ifc: gip });
+            if (!ifc) { const ig = igws[idx] || igws[0]; if (ig && ig.includes('%')) ifc = splitAt(ig.split('%')[1])[0]; }
+            nh.push({ ip: gip, ifc, vrf });
+          } else if (gip && !/^(blackhole|unreachable|prohibit)$/i.test(gip)) nh.push({ ip: null, ifc: gip, vrf });
         });
         if (!nh.length) return;
-        emit({ t: 'route', prefix: m[1], len: +m[2], proto, nh, distance, line: r.line });
+        emit(Object.assign({ t: 'route', prefix: m[1], len: +m[2], proto, nh, distance, line: r.line }, table));
         settle(r, ignore);
       });
     },
   });
+
+  // ================================================================ 防火牆命中次數（print stats）
+  /*
+   * /ip firewall filter|nat|raw、/ipv6 firewall filter|raw 的 print stats detail：每個表一個 adapter（同一設備、同一個 adapter 只採用最後一個區塊，
+   * 五個表若共用一個 adapter 會互相覆蓋）。依手冊（firewall/common-firewall-matchers-and-actions「Stats」）：
+   *  - bytes、packets 是收集當下的累積值；RouterOS 7 以空白分千位（bytes=50 507 925 242），RouterOS 6 是純數字。值可能超過 2^53，以十進位字串保存。
+   *  - D 旗標是動態規則（FastTrack 的 dummy rule、UPnP 等），export 沒有，對應規則時由 model 去掉；X 是停用、I 是 invalid（照樣佔序位）。
+   * 每一列產生 fwStat；另產生一筆 fwStatTable（行號是說明行或第一列），讓「只有說明行、沒有規則」的表也算已收集、0 列。
+   * 只有錯誤訊息（例如沒有 ipv6 套件時 bad command name）不產生任何事實，由 pipeline 列為 I01。
+   * 對應到 export 的規則在 model（numberFirewallRules 之後），不用 print 的編號（手冊：編號由 print 指派，每次可能不同）。
+   */
+  const FW_STAT_TABLES = [['ip', 'filter'], ['ip', 'nat'], ['ip', 'raw'], ['ipv6', 'filter'], ['ipv6', 'raw']];
+  // 千位的空白：等號後的數字串（\d{1,3}( \d{3})+），去掉空白再交給 kvOf
+  const STAT_NUM = /\b(bytes|packets)=(\d{1,3}(?: \d{3})+|\d+)(?=\s|$)/g;
+  const statLine = (l) => l.replace(STAT_NUM, (_, k, v) => `${k}=${v.replace(/ /g, '')}`);
+  FW_STAT_TABLES.forEach(([family, table]) => reg({
+    id: `mikrotik.fwstats.${family}-${table}`, vendor: VENDOR, dataType: 'fwstats', label: `RouterOS 防火牆命中次數（${family === 'ip' ? 'IPv4' : 'IPv6'} ${table}）`,
+    command: new RegExp(`^\\/?${family}\\s+firewall\\s+${table}\\s+print\\b.*\\bstats\\b`, 'i'),
+    detect: () => false, // 內容看不出是哪個表（filter 與 raw 都有 output chain），只依區塊標記的指令辨識
+    family, table,
+    parse(b, emit, ignore = noop) {
+      const nb = { lines: b.lines.map(statLine), origin: b.origin };
+      let legend = null;
+      b.lines.forEach((l, i) => { if (legend === null && /^\s*Flags:/i.test(l)) legend = at(b, i); });
+      const rows = parseRows(nb, ignore);
+      let first = null;
+      rows.forEach((r) => {
+        const kv = r.kv;
+        if (!kv.chain || !/^\d+$/.test(kv.bytes || '') || !/^\d+$/.test(kv.packets || '')) return; // 缺欄位：留給 I03
+        settle(r, ignore);
+        if (first === null) first = r.line;
+        emit({ t: 'fwStat', family, table, flags: r.flags, chain: kv.chain, action: kv.action || 'accept', comment: r.comment, bytes: kv.bytes.replace(/^0+(?=\d)/, ''), packets: kv.packets.replace(/^0+(?=\d)/, ''), line: r.line });
+      });
+      const line = legend !== null ? legend : first;
+      if (line !== null) emit({ t: 'fwStatTable', family, table, line });
+    },
+  }));
+  S.adapters.mikrotikStatLine = statLine; // 測試用
 
   // ================================================================ OSPF 鄰居
   reg({

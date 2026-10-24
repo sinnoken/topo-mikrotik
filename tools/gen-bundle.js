@@ -65,18 +65,65 @@ function exportText(name, board, entries, compact) {
   else { let ctx = null; entries.forEach(([p, c, a]) => { if (p !== ctx) { lines.push(p); ctx = p; } lines.push(...wrapCmd(`${c} ${a}`)); }); }
   return lines.join('\n');
 }
-const sort = (entries) => { const order = ['/interface bridge', '/interface ethernet', '/interface bonding', '/interface vlan', '/interface vrrp', '/interface bridge port', '/interface bridge vlan', '/ip address', '/ip dhcp-server network', '/routing id', '/routing ospf instance', '/ip route',
+const sort = (entries) => { const order = ['/interface bridge', '/interface ethernet', '/interface bonding', '/interface vlan', '/interface vrrp', '/interface bridge port', '/interface bridge vlan', '/ip vrf', '/ip address', '/ip dhcp-server network', '/routing id', '/routing ospf instance', '/ip route', '/routing table', '/routing rule',
   '/ip pool', '/ip dhcp-server lease', '/ip dns', '/ip dns static', '/ip firewall address-list', '/system ntp client', '/system ntp client servers',
   '/interface list', '/interface list member', '/ip firewall filter', '/ip firewall nat', '/ip firewall raw', '/ipv6 firewall filter', '/ip service']; return entries.sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])); };
 
 const bridgeHostText = (rows) => table(rows.map((m) => ({ flags: m.local ? 'DL' : m.static ? '' : 'D', kvs: [['mac-address', m.mac], ['on-interface', m.ifc], ['bridge', 'bridge1'], ['vid', m.vid], ['age', pick(['3s', '12s', '45s', '1m2s'])]] })), 'Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external ');
-const arpText = (rows) => table(rows.map((r) => ({ flags: 'DC', kvs: [['address', r.ip], ['mac-address', r.mac], ['interface', r.ifc], ['published', 'no'], ['invalid', 'no'], ['DHCP', 'no'], ['dynamic', 'yes'], ['complete', 'yes'], ['disabled', 'no']] })), FLAGS_ARP);
-const addrText = (rows) => table(rows.map((r) => ({ flags: '', kvs: [['address', r.cidr], ['network', r.net], ['interface', r.ifc], ['actual-interface', r.ifc]] })), 'Flags: X - disabled, I - invalid, D - dynamic ');
+const arpText = (rows) => table(rows.map((r) => ({ flags: 'DC', kvs: [['address', r.ip], ['mac-address', r.mac], ['interface', r.ifc], ['published', 'no'], ['invalid', 'no'], ['DHCP', 'no'], ['dynamic', 'yes'], ['complete', 'yes'], ['disabled', 'no'], ['vrf', r.vrf]] })), FLAGS_ARP);
+const addrText = (rows) => table(rows.map((r) => ({ flags: '', kvs: [['address', r.cidr], ['network', r.net], ['interface', r.ifc], ['actual-interface', r.ifc], ['vrf', r.vrf]] })), 'Flags: X - disabled, I - invalid, D - dynamic ');
+// r.table：路由表（預設 main）；VRF 的路由表與 VRF 同名，閘道可以帶 @<VRF>（手冊 VRF 的 print detail 範例）
 const routeText = (rows) => table(rows.map((r) => ({ flags: r.flags, kvs: r.blackhole
-  ? [['dst-address', r.dst], ['routing-table', 'main'], ['blackhole', true], ['distance', r.dist], ['scope', r.scope || 30]]
-  : [['dst-address', r.dst], ['routing-table', 'main'], ['gateway', r.gw], ['immediate-gw', r.igw || r.gw], ['distance', r.dist], ['scope', r.scope || 10]] })), 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC, o - OSPF, b - BGP', false);
+  ? [['dst-address', r.dst], ['routing-table', r.table || 'main'], ['blackhole', true], ['distance', r.dist], ['scope', r.scope || 30]]
+  : [['dst-address', r.dst], ['routing-table', r.table || 'main'], ['gateway', r.gw], ['immediate-gw', r.igw || r.gw], ['distance', r.dist], ['scope', r.scope || 10]] })), 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC, o - OSPF, b - BGP', false);
 const ospfText = (rows) => table(rows.map((r) => ({ flags: '', kvs: [['instance', 'default'], ['area', 'backbone'], ['address', r.addr], r.ifc ? ['interface', r.ifc] : null, ['priority', 1], ['router-id', r.id], ['state', 'Full'], ['state-changes', 5], ['adjacency', '1d2h']].filter(Boolean) })), 'Flags: ');
 const ifaceText = (rows) => ['Flags: D - DYNAMIC; R - RUNNING; S - SLAVE', ...rows.map((r, i) => [` ${i}  ${r.flags}  ;;; ${r.comment || ''}`.replace(/ ;;; $/, ''), detailRow('       ', [['name', `"${r.name}"`.replace(/^"|"$/g, '')], ['type', r.type], ['mtu', 1500]])].join('\n').replace(/name=(\S+)/, 'name="$1"').replace(/type=(\S+)/, 'type="$1"'))].join('\n');
+// 防火牆命中次數（print stats detail）：依 export 的規則順序一列一條，RouterOS 7 的數字以空白分千位。
+// 計數器由規則內容算出（不用 rnd，避免改變其他資料的亂數序列）。手冊沒有 stats＋detail 的範例，格式是推定的。
+const FW_STAT_PATH = { filter: '/ip firewall filter', nat: '/ip firewall nat', raw: '/ip firewall raw', v6filter: '/ipv6 firewall filter', v6raw: '/ipv6 firewall raw' };
+const KVARG = /([\w.\-]+)=("(?:[^"\\]|\\.)*"|\S*)/g;
+const argPairs = (a) => { const out = []; let m; KVARG.lastIndex = 0; while ((m = KVARG.exec(a))) out.push([m[1], m[2]]); return out; };
+/** export 的字串值 → print 顯示的文字（\XX 位元組依 UTF-8 解碼）。 */
+const rosText = (v) => {
+  const body = v.replace(/^"(.*)"$/, '$1'); const bytes = [];
+  for (let i = 0; i < body.length; i++) {
+    if (body[i] === '\\') { const h = body.slice(i + 1, i + 3); if (/^[0-9A-F]{2}$/i.test(h)) { bytes.push(parseInt(h, 16)); i += 2; } else bytes.push(body.charCodeAt(++i)); continue; }
+    bytes.push(...Buffer.from(body[i], 'utf8'));
+  }
+  return Buffer.from(bytes).toString('utf8');
+};
+const thousands = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+const strHash = (s) => { let h = 7; for (const ch of s) h = (Math.imul(h, 31) + ch.codePointAt(0)) >>> 0; return h; };
+/** rows：[{ flags, comment, kvs: [[k, v]], seed }]，v 是 print 顯示的值。 */
+function statsText(rows) {
+  const out = ['Flags: X - disabled, I - invalid; D - dynamic'];
+  rows.forEach((r, i) => {
+    const h = strHash(r.seed); const packets = h % 9 === 0 ? 0 : h % 60000; const bytes = packets * (64 + (h >>> 8) % 1400);
+    out.push(` ${String(i).padEnd(2)} ${(r.flags || '').padEnd(2)}${r.comment ? `;;; ${r.comment}` : ''}`.replace(/\s+$/, ''));
+    const toks = r.kvs.map(([k, v]) => `${k}=${/[\s]/.test(v) ? `"${v}"` : v}`).concat([`bytes=${thousands(bytes)}`, `packets=${thousands(packets)}`]);
+    let line = '     ';
+    toks.forEach((t) => { if (line.trim() && line.length + 1 + t.length > 80) { out.push(line); line = '     '; } line += ' ' + t; });
+    out.push(line);
+  });
+  return out.join('\n');
+}
+/** 一台設備的五個 stats 區塊（依 collector 的順序）；extra：{ 表: [多出來的列] }（收集 export 之後才加的規則，F09）。 */
+function fwStats(name, entries, extra) {
+  return Object.entries(FW_STAT_PATH).map(([t, p]) => {
+    const rows = [];
+    if (t === 'filter' && entries.some(([q, , a]) => q === p && /action=fasttrack-connection/.test(a))) {
+      rows.push({ flags: 'D', comment: 'special dummy rule to show fasttrack counters', kvs: [['chain', 'forward'], ['action', 'passthrough']], seed: name + 'fasttrack' });
+    }
+    entries.filter(([q, c]) => q === p && c === 'add').forEach(([, , a], i) => {
+      const kv = argPairs(a); const get = (k) => (kv.find((x) => x[0] === k) || [])[1];
+      rows.push({ flags: get('disabled') === 'yes' ? 'X' : '', comment: get('comment') ? rosText(get('comment')) : null,
+        kvs: [['chain', get('chain')], ['action', get('action') || 'accept']].concat(kv.filter(([k]) => !['chain', 'action', 'comment', 'disabled'].includes(k)).map(([k, v]) => [k, rosText(v)])),
+        seed: name + p + i });
+    });
+    rows.push(...((extra && extra[t]) || []));
+    return [`${p} print stats detail without-paging`, statsText(rows)];
+  });
+}
 const sysText = (board, name) => `             uptime: 2w1d4h\n            version: 7.12.1 (stable)\n         board-name: ${board}\n           platform: MikroTik\n`;
 
 const out = [];
@@ -263,6 +310,8 @@ for (let s = 1; s <= SITES; s++) {
     const cmds = [
       ['/system resource print', sysText(c.board, c.name)],
       [`/export ${ci === 0 ? 'compact' : 'terse'}`, exportText(c.name, c.board, sort(c.entries), ci === 0)],
+      // F09：核心 02 在 export 之後多了一條 dst-nat（nat 表的命中次數對不上，整個表不採用）
+      ...(FAULTS ? fwStats(c.name, c.entries, F && ci === 1 ? { nat: [{ flags: '', comment: 'added after export', kvs: [['chain', 'dstnat'], ['action', 'dst-nat'], ['dst-port', '2222'], ['protocol', 'tcp'], ['to-addresses', `10.${s}.20.12`]], seed: 'extra' }] } : null) : []),
       [`/ip neighbor print ${D}`, neighborText(c.neighbors)],
       [`/interface print ${D}`, ifaceText(ifRows)],
       [`/interface bridge host print ${D}`, bridgeHostText([{ local: true, vid: 0, mac: c.mac, ifc: 'bridge1' }, ...c.macs])],
@@ -305,6 +354,83 @@ if (SITES > 1) {
     [`/export terse`, exportText(wan.name, WAN_BOARD, sort(wan.entries), false)], [`/ip neighbor print ${D}`, neighborText(wan.neighbors)],
     [`/routing ospf neighbor print ${D}`, ospfText(wan.ospf)], [`/ip route print ${D}`, routeText(wan.routes)],
   ]);
+}
+// 分支站點（只在 --faults，放在最後才不會移動前面的行號）：單臂路由與未開 vlan-filtering 的 bridge
+//   TPE_BR_RT_01 ether2 ─ TPE_BR_SW_01 ether1：路由器的實體埠只靠 VLAN 子介面承載 VLAN 10、20（VLAN 30 的子介面停用），
+//     交換器 trunk tagged 10、20；路由器埠不在 bridge 上，交換器的 PVID 1 不算不一致，所以沒有 V01
+//   TPE_BR_SW_01 ether2 ─ TPE_LAB_SW_01 ether1：LAB 的 bridge1 沒有開 vlan-filtering，VLAN 原樣轉送，不比較（V09）
+if (FAULTS) {
+  const C = siteCode(1);
+  const br = [
+    { name: `${C}_BR_RT_01`, ip: `10.1.10.240`, mac: mac(OUI_MT[1]), board: 'RB5009UG+S+', caps: 'bridge,router' },
+    { name: `${C}_BR_SW_01`, ip: `10.1.10.241`, mac: mac(OUI_MT[2]), board: ACC_BOARD, caps: 'bridge' },
+    { name: `${C}_LAB_SW_01`, ip: `10.1.10.242`, mac: mac(OUI_MT[2]), board: ACC_BOARD, caps: 'bridge' },
+  ];
+  const [rt, sw, lab] = br;
+  const nb = (x, port) => ({ name: x.name, ip: x.ip, mac: x.mac, board: x.board, port, caps: x.caps });
+  const entries = {
+    [rt.name]: [['/interface vlan', 'add', 'interface=ether2 name=vlan10 vlan-id=10'], ['/interface vlan', 'add', 'interface=ether2 name=vlan20 vlan-id=20'],
+      ['/interface vlan', 'add', 'disabled=yes interface=ether2 name=vlan30 vlan-id=30'],
+      ['/ip address', 'add', 'address=10.1.10.240/24 interface=vlan10 network=10.1.10.0'], ['/ip address', 'add', 'address=10.1.20.240/24 interface=vlan20 network=10.1.20.0']],
+    [sw.name]: [['/interface bridge', 'add', 'name=bridge1 vlan-filtering=yes'], ['/interface vlan', 'add', 'interface=bridge1 name=vlan10 vlan-id=10'],
+      ['/interface bridge port', 'add', `bridge=bridge1 interface=ether1 comment="to ${rt.name}"`], ['/interface bridge port', 'add', `bridge=bridge1 interface=ether2 comment="to ${lab.name}"`],
+      ['/interface bridge vlan', 'add', 'bridge=bridge1 tagged=bridge1,ether1,ether2 vlan-ids=10'], ['/interface bridge vlan', 'add', 'bridge=bridge1 tagged=ether1,ether2 vlan-ids=20'],
+      ['/ip address', 'add', 'address=10.1.10.241/24 interface=vlan10 network=10.1.10.0']],
+    [lab.name]: [['/interface bridge', 'add', 'name=bridge1'], ['/interface vlan', 'add', 'interface=bridge1 name=vlan10 vlan-id=10'],
+      ['/interface bridge port', 'add', `bridge=bridge1 interface=ether1 comment="to ${sw.name}"`], ['/interface bridge port', 'add', 'bridge=bridge1 interface=ether2'],
+      ['/ip address', 'add', 'address=10.1.10.242/24 interface=vlan10 network=10.1.10.0']],
+  };
+  const neighbors = {
+    [rt.name]: nrow('ether2', nb(sw, 'ether1')),
+    [sw.name]: [...nrow('ether1', nb(rt, 'ether2')), ...nrow('ether2', nb(lab, 'ether1'))],
+    [lab.name]: nrow('ether1', nb(sw, 'ether2')),
+  };
+  const extra = {
+    [rt.name]: [[`/ip route print ${D}`, routeText([10, 20].map((v) => ({ flags: 'DAc', dst: `10.1.${v}.0/24`, gw: `vlan${v}`, igw: `vlan${v}`, dist: 0 })))]],
+    [sw.name]: [[`/interface bridge host print ${D}`, bridgeHostText([{ local: true, vid: 0, mac: sw.mac, ifc: 'bridge1' }, { vid: 10, mac: rt.mac, ifc: 'ether1' }, { vid: 10, mac: lab.mac, ifc: 'ether2' }])]],
+    [lab.name]: [[`/interface bridge host print ${D}`, bridgeHostText([{ local: true, vid: 0, mac: lab.mac, ifc: 'bridge1' }, { vid: 0, mac: sw.mac, ifc: 'ether1' }])]],
+  };
+  br.forEach((x) => device(x.name, x.ip, [['/system resource print', sysText(x.board, x.name)],
+    ['/export terse', exportText(x.name, x.board, sort(entries[x.name]), false)], [`/ip neighbor print ${D}`, neighborText(neighbors[x.name])], ...extra[x.name]]));
+}
+// VRF 與策略路由（只在 --faults，放在最後）：CE 有 /routing table to-isp2 與兩條 /routing rule；PE 路由器的 VRF cust-a（ether2、ether3）與 main 的網段重疊，CE 路由器在 main（VRF 名稱只在設備內有意義）
+//   TPE_PE_RT_01 ether2 10.1.20.2/24（cust-a）與 TPE_CORE_RT_01 vlan20 的 10.1.20.2 相同：不同 VRF，不是 A09
+//   PE 的 ARP 10.1.20.11（cust-a）的 MAC 與核心看到的伺服器不同：不同 VRF，不是 A01
+//   cust-a 的路由：172.16.10.0/24 經 CE（192.168.50.254@cust-a）；預設路由洩漏到 main（10.1.30.2@main，核心 01 的 vlan30）
+//   PE ether1 在 main 的 10.1.30.0/24（使用者網段，不在任何重疊網段群組，不影響既有的檢查）
+if (FAULTS) {
+  const C = siteCode(1);
+  const pe = { name: `${C}_PE_RT_01`, ip: '10.1.30.243', mac: mac(OUI_MT[1]), board: 'RB5009UG+S+', caps: 'bridge,router' };
+  const ce = { name: `${C}_CE_RT_01`, ip: '192.168.50.254', mac: mac(OUI_MT[1]), board: 'hEX S', caps: 'bridge,router' };
+  const nb = (x, port) => ({ name: x.name, ip: x.ip, mac: x.mac, board: x.board, port, caps: x.caps });
+  const peAddrs = [{ cidr: '10.1.30.243/24', net: '10.1.30.0', ifc: 'ether1', vrf: 'main' }, { cidr: '10.1.20.2/24', net: '10.1.20.0', ifc: 'ether2', vrf: 'cust-a' },
+    { cidr: '192.168.50.1/24', net: '192.168.50.0', ifc: 'ether3', vrf: 'cust-a' }];
+  const ceAddrs = [{ cidr: '192.168.50.254/24', net: '192.168.50.0', ifc: 'ether1' }, { cidr: '172.16.10.1/24', net: '172.16.10.0', ifc: 'ether2' }];
+  const peEntries = [['/ip vrf', 'add', 'interfaces=ether2,ether3 name=cust-a'], ...peAddrs.map((a) => ['/ip address', 'add', `address=${a.cidr} interface=${a.ifc} network=${a.net}`]),
+    ['/ip route', 'add', 'dst-address=172.16.10.0/24 gateway=192.168.50.254@cust-a routing-table=cust-a'], ['/ip route', 'add', 'gateway=10.1.30.2@main routing-table=cust-a'], ['/ip route', 'add', 'gateway=10.1.30.2']];
+  const ceEntries = [...ceAddrs.map((a) => ['/ip address', 'add', `address=${a.cidr} interface=${a.ifc} network=${a.net}`]), ['/ip route', 'add', 'gateway=192.168.50.1'],
+    // 策略路由：172.16.10.128/25 只查 to-isp2；往 203.0.113.0/24 的規則用了 min-prefix（無法判斷，trace／reach 為不明）
+    ['/routing table', 'add', 'disabled=no fib name=to-isp2'], ['/ip route', 'add', 'gateway=192.168.50.1 routing-table=to-isp2'],
+    ['/routing rule', 'add', 'action=lookup-only-in-table src-address=172.16.10.128/25 table=to-isp2'],
+    ['/routing rule', 'add', 'action=lookup dst-address=203.0.113.0/24 min-prefix=0 table=main']];
+  const vrfText = ['Flags: X - disabled; * - builtin', ' 0    name="cust-a" interfaces=ether2,ether3', ' 1  * name="main" interfaces=all'].join('\n');
+  const peRoutes = [
+    { flags: 'DAc', dst: '10.1.30.0/24', gw: 'ether1', dist: 0 },
+    { flags: 'DAc', table: 'cust-a', dst: '10.1.20.0/24', gw: 'ether2@cust-a', igw: 'ether2', dist: 0 },
+    { flags: 'DAc', table: 'cust-a', dst: '192.168.50.0/24', gw: 'ether3@cust-a', igw: 'ether3', dist: 0 },
+    { flags: 'As', table: 'cust-a', dst: '172.16.10.0/24', gw: '192.168.50.254@cust-a', igw: '192.168.50.254%ether3', dist: 1, scope: 30 },
+    { flags: 'As', table: 'cust-a', dst: '0.0.0.0/0', gw: '10.1.30.2@main', igw: '10.1.30.2%ether1', dist: 1, scope: 30 },
+    { flags: 'As', dst: '0.0.0.0/0', gw: '10.1.30.2', igw: '10.1.30.2%ether1', dist: 1, scope: 30 },
+  ];
+  const ceRoutes = [{ flags: 'DAc', dst: '172.16.10.0/24', gw: 'ether2', dist: 0 }, { flags: 'DAc', dst: '192.168.50.0/24', gw: 'ether1', dist: 0 },
+    { flags: 'As', dst: '0.0.0.0/0', gw: '192.168.50.1', igw: '192.168.50.1%ether1', dist: 1, scope: 30 },
+    { flags: 'As', table: 'to-isp2', dst: '0.0.0.0/0', gw: '192.168.50.1', igw: '192.168.50.1%ether1', dist: 1, scope: 30 }];
+  const custArps = [{ ip: '10.1.20.11', mac: mac(pick(OUI_SRV)), ifc: 'ether2', vrf: 'cust-a' }, { ip: '192.168.50.254', mac: ce.mac, ifc: 'ether3', vrf: 'cust-a' }];
+  device(pe.name, pe.ip, [['/system resource print', sysText(pe.board, pe.name)], ['/export terse', exportText(pe.name, pe.board, sort(peEntries), false)],
+    [`/ip vrf print ${D}`, vrfText], [`/ip neighbor print ${D}`, neighborText(nrow('ether3', nb(ce, 'ether1')))],
+    [`/ip address print ${D}`, addrText(peAddrs)], [`/ip arp print ${D}`, arpText(custArps)], [`/ip route print ${D}`, routeText(peRoutes)]]);
+  device(ce.name, ce.ip, [['/system resource print', sysText(ce.board, ce.name)], ['/export terse', exportText(ce.name, ce.board, sort(ceEntries), false)],
+    [`/ip neighbor print ${D}`, neighborText(nrow('ether1', nb(pe, 'ether3')))], [`/ip route print ${D}`, routeText(ceRoutes)]]);
 }
 if (FAULTS) out.unshift('# 測試用收集檔：含刻意放入的問題，用來驗證一致性檢查', '');
 process.stdout.write(out.join('\n') + '\n');

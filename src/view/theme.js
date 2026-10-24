@@ -16,6 +16,14 @@
   const kind = { firewall: '#7b208e', switch: '#2795b5', router: '#335dcd', host: '#977af8', unknown: '#535d62' };
   // 狀態文字色：對白底、淺色狀態底與畫布底都 ≥ 4.5:1（與 app.css 的 --err-text 等一致，有測試）
   const text = { body: '#1f2933', muted: '#5f6d7e', err: '#b3261e', warn: '#8a5300', ok: '#17692f', info: '#315d8a' };
+  const mark = { select: '#0b6bcb', hover: '#1f2933', find: '#a44a88', trace: '#622fa6', bad: '#d93025', good: '#1e8e3e' };
+  const weakEdge = {
+    hearsay: { alpha: 0.85, dash: [2, 3] },
+    // 推論鏈路：沒有 LLDP 時由 MAC 表、MNDP、點對點網段推定相鄰（證據強於純 MNDP，弱於 LLDP）
+    inferred: { alpha: 0.9, dash: [10, 3] },
+  };
+  // 圖例中只表達線型時用的中性線色；L2 埠與 L3 子網的外框也用它（中性色：埠、子網靠外形與文字區分，不佔類別色）
+  const keyInk = '#4a5560';
   V.theme = {
     kind,
     // 設備節點外形；Canvas 繪圖與圖例共用
@@ -29,16 +37,38 @@
     multi: { widen: 1.7, gap: 0.34 },
     // 證據強度較弱的邊，鍵與 query devicePairs 的 evidence 相同：單側觀察（對端無 LLDP）、推論。只有 MNDP 的設備對不畫。
     // 只改線型與透明度，保留速率色
-    weakEdge: {
-      hearsay: { alpha: 0.85, dash: [2, 3] },
-      // 推論鏈路：沒有 LLDP 時由 MAC 表、MNDP、點對點網段推定相鄰（證據強於純 MNDP，弱於 LLDP）
-      inferred: { alpha: 0.9, dash: [10, 3] },
-    },
+    weakEdge,
     // 嚴重度：顏色之外一律有外形（錯誤方形、警告三角形），節點右上角與連線中點共用
     sev: { error: '#d93025', warn: '#f29900' },
     sevShape: { error: 'square', warn: 'triangle' },
     // 圖上的標示：選取（藍色實線環）、滑過（深色細環）、搜尋結果、路由追蹤（含箭頭）各用不同顏色；bad／good 是狀態
-    mark: { select: '#0b6bcb', hover: '#1f2933', find: '#a44a88', trace: '#622fa6', bad: '#d93025', good: '#1e8e3e' },
+    mark,
+    // VLAN 承載的高亮（鍵與 Q.vlanCarriers 的 status 相同；設備圖與 L2 埠圖共用）。只用既有的狀態色，另以線型與外形區分：
+    //   carry 承載（實線）、inferred 推論鏈路承載（長虛線，同推論鏈路）、partial 只有一端帶（實線加垂直短刻度＋中點的錯誤外形）、
+    //   oneSide 只有一端可確認（點線＋淡化，推論）
+    // partial 與 carry 的紅綠在紅綠色盲下分不出來（validator 的 CVD 檢查不通過），所以 partial 另有專屬線型：
+    // 沿線每 gap 一道垂直於線的短刻度（全長 len、粗 w）。其他線型都是沿線方向的虛線／點線／雙線，刻度不會和它們混淆。
+    // 單位與 dash 相同：放大到 100% 以上隨縮放變大，縮小時維持螢幕上的大小
+    vlan: {
+      carry: { c: mark.good },
+      inferred: { c: mark.good, dash: weakEdge.inferred.dash },
+      partial: { c: mark.bad, sev: 'error', ticks: { gap: 8, len: 12, w: 2 } },
+      oneSide: { c: mark.good, dash: [2, 4], alpha: 0.55 },
+    },
+    // L2 埠層級圖：設備是容器框（外框用設備類型色），埠是框邊上的小方塊；聚合埠較寬。未收集設備與推論鏈路未收集端的埠用虛線
+    l2: {
+      box: { fill: '#ffffff', radius: 6, labelH: 20, minW: 120, h: 46, portGap: 18, dash: [4, 3] },
+      port: { size: 9, lagW: 16, fill: '#ffffff', stroke: keyInk, dash: [2, 2] },
+    },
+    // L3 子網圖：子網是圓角長條（中性外框、網段文字在內），只由路由得知的目的網段用虛線外框；
+    // 位址邊用 edge.other，推論的位址邊（鄰居回報、管理 IP）用 weakEdge.hearsay；路由是虛線加箭頭；
+    // 網段重疊是警告文字色的虛線，中點加警告外形；重疊與重複 IP 在子網下方另有文字標籤
+    l3: {
+      subnet: { fill: '#ffffff', stroke: keyInk, text: text.body, h: 26, minW: 70, routeDash: [4, 3] },
+      route: { c: keyInk, w: 1.4, dash: [7, 4] },
+      overlap: { c: text.warn, w: 1.6, dash: [3, 3], sev: 'warn' },
+      badge: { bg: '#ffffff', text: text.warn, border: text.warn },
+    },
     alpha: { dimEdge: 0.12, dimNode: 0.15, dimLabel: 0.25, overlay: 0.9 },
     text,
     // 字型清單與 app.css 的 body、--mono 相同（有測試）
@@ -54,7 +84,7 @@
       port: { bg: 'rgba(255,255,255,0.95)', border: 'rgba(120,130,140,0.5)', text: '#4a5560', maxEm: 12 },
       outline: '#ffffff', uncollectedFill: '#ffffff', sevFallback: '#7c8691',
       // 圖例中只表達線型（證據強度、介面類型）時用的中性線色
-      keyInk: '#4a5560',
+      keyInk,
     },
     endpoint: {
       // 廠商色最多 8 色（不用紅、橘黃、綠：避免和狀態混淆），依終端數量排前 8 的廠商；其餘歸「其他」用 vendorFallback
@@ -78,12 +108,34 @@
       focus: { bg: '#e6f0fb', border: '#0b6bcb' },
     },
     // 處理紀錄的收斂趨勢圖（折線，SVG）：以 dataviz validate_palette.js 驗證（亮色、底色 #f8fafc，三色全部通過，最差 ΔE 18.4）。
-    // 同一張圖的三條線另有外形（圓、方、三角）與線尾文字，不只靠顏色；只有一條線的圖（覆蓋率、未知對端）用 single。
-    // 格線與座標軸用比底色深一階的中性色、1px 實線；文字一律用 text.*，不用資料色
+    // 同一張圖的三條線另有外形（圓、方、三角）與線尾的名稱與數值，圖例與 tooltip 也畫出同樣的外形，不只靠顏色；
+    // 只有一條線的圖（覆蓋率、未知對端）用 single。格線與座標軸用比底色深一階的中性色、1px 實線；文字一律用 text.*，不用資料色。
+    // 線型：細線（lineWidth）、小標記（markerSize 是半徑，外圈 markerRing 是底色環）
     trend: {
       pending: '#335dcd', regressed: '#94045d', accepted: '#977af8', single: '#0b6bcb',
       marker: { pending: 'circle', regressed: 'square', accepted: 'triangle' },
       grid: '#e1e7ee', axis: '#cbd5df', crosshair: '#5f6d7e',
+      lineWidth: 1.5, markerSize: 3, markerRing: 1.5,
+    },
+    // L4 zone 矩陣與可達性（panels/l4.js）：鍵與 Q.zoneMatrix 的格子 status、Q.reach 的 verdict 相同。
+    // 狀態色只表示狀態，一律搭配外形符號（glyph）與文字標籤；格子的文字用 text.body（對每個格子底色 ≥ 4.5:1），
+    // 符號用 mark（對格子底色與畫布底色 ≥ 3:1）。allow／deny／partial 的 mark 以 dataviz validate_palette.js 驗證
+    // （亮色、底色 #f8fafc、全部配對：全部通過，最差 CVD ΔE 13.2（deutan）、一般視覺最差 28.5）；仍一律有符號（✓／✕／◐）與文字。
+    // unknown、empty 是刻意的中性色（「無法判斷」「沒有可算的組合」不是一種結果），不受彩度下限約束；
+    // empty 另用斜線底紋（hatch），和 unknown 的實心灰底分開。
+    // 異質（heterogeneous）是文字徽章；對角線（zone 內）是虛線外框（keyInk）
+    l4: {
+      status: {
+        allow: { mark: '#20a050', bg: '#ebf7ee', glyph: '✓' },
+        deny: { mark: '#a9221b', bg: '#fcecea', glyph: '✕' },
+        partial: { mark: '#6f5bd6', bg: '#f0eefc', glyph: '◐' },
+        unknown: { mark: '#5f6d7e', bg: '#eef1f4', glyph: '?' },
+        empty: { mark: '#7c8691', bg: '#ffffff', glyph: '–', hatch: '#e1e7ee' },
+      },
+      text: text.body,
+      badge: { bg: '#ffffff', text: text.body, border: keyInk },
+      diagonal: { border: keyInk, dash: 'dashed' },
+      focus: '#0b6bcb',
     },
     // 新舊基準比對：effect 的文字色（都另有文字標籤與外形）；new-exposure（新暴露）的列另加底色
     diff: {

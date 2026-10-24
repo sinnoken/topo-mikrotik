@@ -59,6 +59,75 @@
   V.CONFIDENCE = { high: '信心高（多重證據）', medium: '信心中（單一證據）' };
   V.WIFI_BASIS = { registration: '依關聯表（已確認）', 'bridge-wifi': '依 MAC 表的無線介面（推定）', 'via-ap-port': '經由 AP 所接的交換器埠（推定，無法區分有線或無線）' };
   V.MODE = { access: 'Access（untagged）', tagged: 'Tagged（trunk）' };
+  // 拓樸圖的層級（App.layer）：L4 不是畫布，是疊在畫布上的 zone 矩陣與可達性（panels/l4.js）
+  V.LAYER = { device: '設備', l2: 'L2 埠', l3: 'L3 子網', l4: 'L4 可達性' };
+  // L4（M2）：格子狀態（Q.zoneMatrix 的 status）、可達性結果（Q.reach 的 verdict）、zone 的來源（Q.zones 的 source）
+  V.L4_STATUS = { allow: '全通', deny: '全擋', partial: '部分', unknown: '不明', empty: '沒有組合' };
+  V.L4_STATUS_TIP = {
+    allow: '這一格算到的位址組合 × 服務全部允許',
+    deny: '全部拒絕（被規則丟棄、沒有路由或黑洞路由）',
+    partial: '有些允許、有些拒絕（不同的位址或服務結果不同）',
+    unknown: '有無法判斷的組合（原因見提示與下鑽），沒有允許與拒絕同時出現',
+    empty: '沒有可算的位址組合（例如目的 zone 只有設備自己的位址，或沒有可當代表的位址）；不是「不明」',
+  };
+  V.VERDICT = { allow: '允許', deny: '拒絕', unknown: '無法判斷' };
+  V.ZONE_SOURCE = { profile: '命名規則', 'interface-list': 'interface list', vlan: 'VLAN', subnet: '網段' };
+  // Q.reach 的原因代碼與結束代碼（src/query/trace.js 的 reason／end）；沒有對照的代碼原樣顯示並標「未翻譯」，不吞掉
+  V.REACH_REASON = {
+    'rule-condition': '規則的比對條件無法判斷', 'raw-notrack': 'raw 規則不追蹤連線（notrack），之後依連線狀態比對的規則結果不明',
+    'nat-ambiguous': '目的 NAT 可能由不同的規則改寫，改寫後的目的不明', 'nat-target': 'NAT 改寫後的位址或埠不明（範圍、無法解析或不支援的動作）',
+    'no-firewall-data': '設備沒有設定資料（/export），防火牆規則不明', 'srcnat-ambiguous': '來源 NAT 可能由不同的規則改寫，之後的來源位址不明',
+    'srcnat-address-unknown': '來源 NAT 改寫後的來源位址不明', 'branches-differ': '有多條路徑（ECMP 或多個閘道），結果不同，實際走哪一條無法判斷',
+    'branch-limit': '路徑太多，只算了前面幾條', ttl: '超過跳數上限（TTL 用盡）', 'device-uncollected': '路徑上的設備沒有收集，不知道它的路由與防火牆',
+    'no-route-data': '設備沒有路由表資料', 'no-route': '沒有符合的路由，封包被丟棄', blackhole: '黑洞路由，封包被丟棄', loop: '路由迴圈，封包到不了',
+    'next-hop-outside': '下一跳不在基準內，之後的路徑無法判斷', 'dst-device-uncollected': '目的位址屬於沒有收集的設備，它自己的防火牆不明',
+    'src-device-uncollected': '來源位址屬於沒有收集的設備', 'src-location-unknown': '找不到包含來源的網段，不知道封包從哪台設備進入',
+    'no-gateway': '來源網段上沒有可當閘道的已收集設備', dropped: '被規則丟棄', local: '目的是設備自己的位址',
+    host: '送達主機（主機本身的防火牆不在範圍內）', segment: '送達直連網段上的主機', 'same-subnet': '來源與目的在同一個網段，不經過路由器',
+    'policy-routing': '策略路由（mangle 的 mark-routing、改過的 policy-rules，或無法判斷的 /routing rule 條件）使查哪一張路由表不明',
+    'policy-drop': '/routing rule 的 drop 或 unreachable，封包被丟棄',
+  };
+  // S.trace 的結束狀態（ends[].status）
+  V.TRACE_END = {
+    reached: '抵達', noroute: '沒有路由', blackhole: '黑洞路由', loop: '路由迴圈', ttl: 'TTL 用盡', 'unknown-nh': '下一跳不在基準內',
+    policy: '策略路由不明', 'policy-drop': '策略路由丟棄',
+  };
+  /**
+   * IP 的選取：{ type: 'ip', key: IP, vrf }。vrf 為 null 時不分 VRF（搜尋：列出所有 VRF 的結果），否則只看那個 VRF。
+   * 從位址鍵（K.inVrf，例如檢查結果的實體、清單的列）建立時，沒有 @ 就是 main。
+   */
+  /**
+   * VRF 選單（路由追蹤、L4 可達性查詢）：第一個選項「依來源位址決定」（值為空字串，不傳 vrf，由查詢層依來源位址決定），其餘是 Q.vrfs()。
+   * value 不在清單中時回到第一個選項。
+   */
+  V.fillVrfSelect = (sel, vrfs, value) => {
+    V.clear(sel);
+    sel.appendChild(V.h('option', { value: '' }, '依來源位址決定'));
+    vrfs.forEach((v) => sel.appendChild(V.h('option', { value: v }, V.vrfText(v))));
+    sel.value = value && vrfs.includes(value) ? value : '';
+  };
+  V.ipSel = (key, vrf) => {
+    if (vrf !== undefined) return { type: 'ip', key: String(key), vrf };
+    const [ip, v] = S.keys.splitVrf(key); return { type: 'ip', key: ip, vrf: v };
+  };
+  /** VRF 標示：main 也寫出（「VRF main」），只在需要和其他 VRF 區分時呼叫 */
+  V.vrfText = (v) => 'VRF ' + S.keys.vrf(v);
+  /** 介面 VRF 的依據（interfaces[].vrfBasis，見 model/build.js 的 resolveVrfs）；export 是推論（export 不寫內建 main，假設 main 在最後） */
+  V.IFC_VRF_BASIS = { reported: '設備回報的 vrf=', 'vrf-print': '依 /ip vrf print 的順序', export: '依 export 的 /ip vrf（推論：假設 main 在最後）', default: '沒有列在任何 VRF，屬於 main' };
+  V.IFC_VRF_INFERRED = new Set(['export']);
+  /** 下一跳解析閘道的 VRF 依據（routes[].nh[].vrfBasis） */
+  V.NH_VRF_BASIS = { explicit: '閘道寫了 @<VRF>', 'vrf-interface': '閘道是 VRF 介面，在那個 VRF 再查一次', interface: '閘道介面所屬的 VRF', default: '只有 IP、沒寫 @，在 main 解析' };
+  V.reachReason = (code) => V.REACH_REASON[code] || `${code}（未翻譯的原因代碼）`;
+  V.REACH_START = { gateway: '來源網段的閘道', device: '來源是網路設備自己的位址（output）', 'same-subnet': '來源與目的在同一個網段', entry: '指定的入口介面', none: '找不到來源所在的網段' };
+  V.REACH_START_BASIS = { dhcp: '依 DHCP 網路的閘道', routes: '依網段上有路由表的設備', subnet: '依網段上已收集的設備' };
+  /** 十進位數字字串（可能超過 2^53，例如命中次數的位元組數）加上千分位；不是數字字串時原樣回傳 */
+  V.bigNum = (s) => (/^\d+$/.test(String(s)) ? String(s).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : String(s));
+  // VLAN 承載（Q.vlanCarriers 的 status 與 reason）；oneSide、inferred 是推論
+  V.VLAN_STATUS = { carry: '兩端都帶這個 VLAN', partial: '只有一端帶這個 VLAN（兩端都有 VLAN 資料，V01）', oneSide: '只有一端可確認帶這個 VLAN（推論）', inferred: '推論鏈路，已收集的各端都帶這個 VLAN（推論）' };
+  V.VLAN_REASON = { unfiltered: '有一端在沒開 vlan-filtering 的 bridge 上，VLAN 原樣轉送、無法確認是否帶這個 VLAN', 'peer-uncollected': '對端設備沒有收集資料，無從得知是否帶這個 VLAN', 'peer-no-vlan-data': '對端設備沒有 VLAN 設定資料，無從得知是否帶這個 VLAN', hearsay: '鏈路只有單側觀察（對端沒有提供 LLDP），對端的 VLAN 無法對照' };
+  // L2 埠圖的邊（Q.portGraph 的 evidence）與 L3 子網圖的邊（Q.subnetGraph 的 basis）
+  V.PORT_EVIDENCE = { adjacency: 'LLDP／CDP 雙側介面鄰接', hearsay: '只有單側觀察（推論）', inferred: '推論鏈路（沒有 LLDP，推論）' };
+  V.L3_BASIS = { address: '介面位址', neighbor: '鄰居回報的位址（推論）', mgmt: '管理 IP（推論，未列在介面位址）' };
   V.ifcState = (i) => (i.enabled === false ? '停用' : V.STATUS[i.status]);
   // 收集失敗（blocks[].failure、coverage[].failures[]）的原因
   V.FAILURE = { timeout: '逾時', 'exit-code': '指令失敗', connection: '連線失敗', other: '其他錯誤' };

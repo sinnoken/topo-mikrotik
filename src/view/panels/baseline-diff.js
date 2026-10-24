@@ -1,10 +1,10 @@
 /*
- * 比對分頁的下半：新舊基準比對。
+ * 「⑤ 驗證」的比對的下半：新舊基準比對（上半的預期資料比對在 panels/lists.js；資料中心的「上一輪的基準」列出摘要）。
  * 讀入之前匯出的基準（Snapshot JSON）當作舊基準，以 S.compare.snapshots(SSOT.query(舊), App.Q) 比對，依類別分組列出。
  * 比對結果與舊基準的查詢介面只放在記憶體（這個檔案的 state）：舊基準可能很大，而且換了新基準就失去意義，所以不存進 store。
  * 檢查結果分頁的「只看新出現的」透過 V.baselineDiff.loaded() 讀取同一份比對結果。
  * 比對結果上方列出核心的提醒（report.warnings：版本或命名規則不同），這些差異不代表網路改變。
- * 修復追蹤改由處理紀錄（S.ledger，「處理紀錄」分頁）判斷，不在這裡。
+ * 修復追蹤改由處理紀錄（S.ledger，「⑤ 驗證」的修復追蹤）判斷，不在這裡。
  */
 (function (S) {
   'use strict';
@@ -21,9 +21,14 @@
   function loadOld(App, text) {
     let old;
     try { old = JSON.parse(text); } catch (e) { return { report: empty('無法讀取：' + e.message), qOld: null }; }
-    if (!old || typeof old !== 'object' || !old.meta || typeof old.meta !== 'object') return { report: empty('這不是基準（Snapshot JSON）：缺少 meta；請用工具列的「匯出 JSON」產生的檔案'), qOld: null };
+    return compareWith(App, old);
+  }
+  /** 已解析的基準物件 → { report, qOld }（loadOld 與 setOld 共用） */
+  function compareWith(App, old) {
+    const oldMeta = S.query.metaOf(old);
+    if (!oldMeta) return { report: empty('這不是基準（Snapshot JSON）：缺少 meta；請用資料中心的「基準 JSON」產生的檔案'), qOld: null };
     // schema 不同時欄位意義不同，舊檔可能連查詢介面都建不起來：只把 meta 交給核心，由核心回報不比對的原因
-    if (old.meta.schema !== App.Q.meta().schema) return { report: S.compare.snapshots({ meta: () => old.meta }, App.Q), qOld: null };
+    if (oldMeta.schema !== App.Q.meta().schema) return { report: S.compare.snapshots({ meta: () => oldMeta }, App.Q), qOld: null };
     let qOld;
     try { qOld = S.query(old); } catch (e) { console.error(e); return { report: empty('舊基準的內容不完整，無法比對：' + e.message), qOld: null }; }
     const report = S.compare.snapshots(qOld, App.Q);
@@ -59,7 +64,8 @@
         const id = it.key.split('|').pop();
         return Q.vlans().some((v) => String(v.id) === id) ? { type: 'vlan', key: id } : null;
       }
-      case 'ip': return { type: 'ip', key: it.key };
+      // 位址鍵（K.inVrf）有 @ 時只看那個 VRF；沒有 @ 時不分 VRF（同一個 IP 在多個 VRF 時由詳情請使用者選擇）
+      case 'ip': return String(it.key).includes('@') ? V.ipSel(it.key) : V.ipSel(it.key, null);
       case 'firewall': {
         if (Q.getFirewallRule(it.key)) return { type: 'rule', key: it.key };
         const dev = K.splitEp(it.key)[0];
@@ -70,7 +76,7 @@
   }
   function open(App, it) {
     if (it.category === 'finding') {
-      const idx = App.snap.findings.findIndex((f) => App.Q.findingKey(f) === it.key);
+      const idx = App.Q.findingIndexByKey(it.key);
       if (idx >= 0) { App.selectFinding(idx); return; }
     } else {
       const sel = selOf(App, it);
@@ -84,21 +90,32 @@
     class: 'chip effect', style: { color: T.effect[e], borderColor: T.effect[e] }, title: e,
   }, [T.effectSev[e] ? h('span', { class: 'sev ' + T.effectSev[e], 'aria-hidden': 'true' }) : null, EFFECT[e] || e]) : null);
 
+  /** 記下比對結果，重繪用到它的畫面（檢查結果的「只看新出現的」、資料中心的「上一輪的基準」） */
+  function adopt(App, name, r) {
+    state.report = r.report; state.qOld = r.qOld; state.addedFindingKeys = null;
+    state.name = name; state.filter = 'all';
+    V.app.renderAll();
+  }
+  /** 讀入舊基準檔（「比對」工作畫面與資料中心共用） */
+  async function loadFile(App, f) {
+    let r;
+    try { r = loadOld(App, await f.text()); } catch (e) { console.error(e); r = { report: empty('無法讀取：' + e.message), qOld: null }; }
+    adopt(App, f.name, r);
+  }
+  /** 以已經在記憶體中的基準當舊基準（例如由工作包帶回的上一輪基準）；只讀，不修改它 */
+  function setOld(App, name, snapshot) { adopt(App, name, compareWith(App, snapshot)); }
+  /** 資料中心的狀態列：{ name, report }；沒有載入時為 null */
+  const status = () => (state.report ? { name: state.name, report: state.report } : null);
+
   function render(App) {
     const box = h('div', { class: 'pane-body baseline-diff' });
-    const file = h('input', { type: 'file', accept: '.json,application/json', class: 'hidden', onchange: async (ev) => {
-      const f = ev.target.files[0]; if (!f) return;
-      let r;
-      try { r = loadOld(App, await f.text()); } catch (e) { console.error(e); r = { report: empty('無法讀取：' + e.message), qOld: null }; }
-      state.report = r.report; state.qOld = r.qOld; state.addedFindingKeys = null;
-      state.name = f.name; state.filter = 'all';
-      // 檢查結果分頁的「只看新出現的」也依這份舊基準
-      V.lists.compare(App); V.lists.findings(App);
+    const file = h('input', { type: 'file', accept: '.json,application/json', class: 'hidden', onchange: (ev) => {
+      const f = ev.target.files[0]; if (f) loadFile(App, f);
     } });
-    box.appendChild(h('h4', { class: 'pane-title' }, '與舊基準比對'));
-    box.appendChild(h('p', { class: 'muted' }, '載入之前匯出的基準（工具列「匯出 JSON」），列出設備、鏈路、VLAN、IP、防火牆規則與檢查結果的變化。只讀取兩份基準，比對結果不會儲存。'));
+    box.appendChild(h('h4', { class: 'work-card-title', id: 'cmp-baseline-title' }, '與舊基準比對'));
+    box.appendChild(h('p', { class: 'muted' }, '載入之前匯出的基準（資料中心的「基準 JSON」），列出設備、鏈路、VLAN、IP、防火牆規則與檢查結果的變化。只讀取兩份基準，比對結果不會儲存。'));
     box.appendChild(h('div', { class: 'row' }, [file,
-      h('button', { disabled: !App.Q || null, onclick: () => file.click() }, '載入舊基準（JSON）…'),
+      h('button', { class: 'cmp-load-previous', disabled: !App.Q || null, onclick: () => file.click() }, '載入舊基準（JSON）…'),
       state.name ? h('span', { class: 'muted' }, state.name) : null]));
     const r = state.report; if (!r || !App.Q) return box;
     if (r.errors.length) {
@@ -124,7 +141,7 @@
       box.appendChild(h('div', { class: 'diff-cat', 'data-category': cat }, [
         h('div', { class: 'diff-head' }, [h('b', null, CATEGORY[cat]), ' ',
           ...Object.entries(CHANGE).filter(([k]) => c[k]).map(([k, [label, cls]]) => V.chip(`${label} ${V.num(c[k])}`, cls))]),
-        V.table([
+        h('div', { class: 'work-table' }, V.table([
           { t: '', f: (i) => V.chip(CHANGE[i.change][0], CHANGE[i.change][1]) },
           { t: '項目', f: (i) => i.message },
           { t: '影響', f: (i) => effectChip(i.effect) },
@@ -132,11 +149,11 @@
           limit: 300, onRow: (i) => open(App, i),
           rowClass: (i) => (i.effect === 'new-exposure' ? 'exposure' : ''),
           rowStyle: (i) => (i.effect === 'new-exposure' ? { background: T.exposureBg } : null),
-        }),
+        })),
       ]));
     });
     return box;
   }
 
-  V.baselineDiff = { render, diffFrom, loaded, reset: () => { state.report = null; state.qOld = null; state.addedFindingKeys = null; state.name = ''; state.filter = 'all'; } };
+  V.baselineDiff = { render, diffFrom, loaded, loadFile, setOld, status, reset: () => { state.report = null; state.qOld = null; state.addedFindingKeys = null; state.name = ''; state.filter = 'all'; } };
 })(globalThis.SSOT = globalThis.SSOT || {});

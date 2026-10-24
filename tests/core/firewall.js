@@ -157,11 +157,11 @@ test('F08：有防火牆規則但無法判斷 WAN（沒有 WAN 清單或清單�
   const v6 = (extra) => fwBox(['/ipv6 firewall filter add action=accept chain=forward dst-port=443 protocol=tcp' + extra], { noLists: true });
   assert.strictEqual(fws(v6(''), 'F05').length, 1, 'WAN 不明時，沒有限制入介面的 IPv6 forward 規則照樣檢查');
   assert.strictEqual(fws(v6(' in-interface=ether1'), 'F05').length, 0, 'WAN 不明時，有限制入介面的不猜');
-  assert.deepStrictEqual(none.coverage[0].firewall, { rules: 1, wan: 'no-wan-list' });
+  assert.deepStrictEqual(none.coverage[0].firewall, { rules: 1, wan: 'no-wan-list', stats: null });
   const empty = fwBox(rule, { emptyWan: true });
   assert.ok(/沒有成員/.test(fws(empty, 'F08')[0].message));
   assert.strictEqual(fws(fwBox([], { noLists: true }), 'F08').length, 0, '沒有任何防火牆規則時不提醒');
-  assert.deepStrictEqual(edgeFw().coverage[0].firewall, { rules: 24, wan: 'ok' });
+  assert.deepStrictEqual(edgeFw().coverage[0].firewall, { rules: 24, wan: 'ok', stats: null });
 });
 test('防火牆查詢：依設備、位址族、表、chain 排序列出規則並附 finding；chain 清單與 jump 關係', () => {
   const s = edgeFw(); const Q = S.query(s);

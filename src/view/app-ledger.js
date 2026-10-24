@@ -93,6 +93,8 @@
   // ================================================================ 查詢（畫面用）
   A.ledger = () => st.ledger;
   A.ledgerState = () => st;
+  /** App.round.ledger 的來源：目前可用的處理紀錄；停用時為 null（工作包不放停用的處理紀錄） */
+  A.ledgerOrNull = () => (st.blocked ? null : st.ledger);
   /** 這筆 finding 的處理紀錄項目；沒有（或處理紀錄停用）時為 null */
   A.ledgerItem = (f) => (App.Q && !st.blocked ? st.ledger.items[App.Q.findingKey(f)] || null : null);
   A.ledgerStatus = (f) => (A.ledgerItem(f) || {}).status || null;
@@ -110,7 +112,7 @@
   A.problemCounts = function problemCounts() {
     const out = { error: 0, warn: 0, handled: 0, regressed: 0, unobserved: 0, waiverExpired: 0 };
     const regressed = new Set();
-    App.snap.findings.forEach((f) => {
+    App.Q.findings().forEach((f) => {
       const s = A.ledgerStatus(f);
       if (s === 'regressed') regressed.add(App.Q.findingKey(f));
       if (f.severity === 'info') return;
@@ -142,9 +144,10 @@
   // ================================================================ 匯出與匯入
   /** 處理紀錄的 JSON 文字；停用時匯出 store 中的原資料（格式不正確的那份），讓使用者自行修正 */
   A.ledgerJson = () => JSON.stringify(st.blocked && st.blocked.raw !== undefined ? st.blocked.raw : st.ledger, null, 2) + '\n';
+  /** 處理紀錄的檔名：ledger-<時間>.json（時間去掉分隔符號與毫秒）；匯出與工作包共用 */
+  A.ledgerFileName = (now) => `ledger-${String(now || nowIso()).replace(/\.\d+Z$/, 'Z').replace(/[^0-9A-Za-z]/g, '')}.json`;
   App.exportLedger = function () {
-    const stamp = new Date().toISOString().replace(/\.\d+Z$/, 'Z').replace(/[^0-9A-Za-z]/g, '');
-    try { V.exporter.download(`ledger-${stamp}.json`, A.ledgerJson(), 'application/json'); } catch (e) {
+    try { V.exporter.download(A.ledgerFileName(), A.ledgerJson(), 'application/json'); } catch (e) {
       console.error(e); A.banner('匯出失敗：' + e.message, 10000);
     }
   };
@@ -158,11 +161,19 @@
     return st.imported;
   };
   /** 確認覆蓋：以匯入的處理紀錄取代目前的（含停用狀態），再以目前的基準推進一輪 */
+  /**
+   * 以另一份（已通過 S.ledger.validate 的）處理紀錄整份取代目前的，含停用狀態；不推進、不寫入 store。
+   * 呼叫端接著推進（A.advanceLedger 或 A.load）後，一律以 A.persistLedger 寫入：同一份基準已在取代的紀錄中時 advance 會略過、不寫入。
+   * 匯入處理紀錄與讀入工作包共用。
+   */
+  A.adoptLedger = function adoptLedger(ledger) {
+    Object.assign(st, { ledger, imported: null, blocked: null, pendingAcks: null, round: null });
+  };
+  A.persistLedger = () => persist();
   App.confirmImport = async function () {
     if (!st.imported || !st.imported.ledger) return false;
     const name = st.imported.name;
-    Object.assign(st, { ledger: st.imported.ledger, imported: null, blocked: null, pendingAcks: null });
-    // 同一份基準已在匯入的紀錄中時 advance 會略過（不寫入），所以一律再寫入一次
+    A.adoptLedger(st.imported.ledger);
     if (App.Q) await A.advanceLedger(App.Q);
     await persist();
     A.renderAll();

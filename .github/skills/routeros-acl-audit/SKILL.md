@@ -14,13 +14,15 @@ user-invocable: true
 不另外寫 Python 腳本、不產生獨立的 HTML 報表，也不接 CI 通知。
 
 **目前狀態**：階段一已完成（adapter → model → infer → check → query → view → compare，即下方「分層與分工」的 1–6）。
-防火牆規則、WAN／LAN 分類與 F01–F08 已在核心，判斷條件見 `docs/基準檢查規則.md` 的「防火牆」，
-資料欄位與比對語意見 `docs/設計說明.md` §5.2、§5.3、§8。之後的修改沿用既有的 `S.infer.fw`（`covers`、`evalChain`、`evalFilter`），
-不要另寫一套規則比對；尚未做的部分（`/ipv6 firewall nat`、命中次數、端到端可達性與 zone 矩陣）見 `docs/路線圖.md`。
+防火牆規則、WAN／LAN 分類與 F01–F09 已在核心，判斷條件見 `docs/基準檢查規則.md` 的「防火牆」，
+資料欄位與比對語意見 `docs/設計說明.md` §5.2、§5.3、§8。命中次數（`print stats`，F09）與端到端可達性、zone 矩陣的查詢
+（`Q.reach`、`Q.zoneMatrix` 等，`src/query/trace.js`）在 2.11.0 加入，見設計說明 §5.3「L4 可達性與 zone」。
+之後的修改沿用既有的 `S.infer.fw`（`covers`、`evalChain`、`evalFilter`、`decide`），
+不要另寫一套規則比對；尚未做的部分（`/ipv6 firewall nat`、L4 的畫面）見 `docs/路線圖.md`。
 
 ## 資料來源
 
-不需要新的收集指令。收集器的 `config` 已經執行 `/export terse`，裡面含有：
+規則本身不需要新的收集指令（命中次數另由 `print stats` 收集，見 `docs/收集清單與輸入格式.md` 的「防火牆命中次數」）。收集器的 `config` 已經執行 `/export terse`，裡面含有：
 
 | 區段 | 用途 |
 |---|---|
@@ -34,7 +36,7 @@ user-invocable: true
 `/export` 的兩個特性會影響判斷：
 
 - **只匯出非預設值**：沒有出現在 `/ip service` 區段的服務是預設狀態（啟用、不限來源）。
-  各版本的預設值以官方手冊 <https://manual.mikrotik.com/llms.txt> 為準，不要把「沒寫」當成「已停用」。
+  各版本的預設值以官方手冊 <https://manual.mikrotik.com/llms.txt> 為準（用 `routeros-manual` skill 的 `manual.py` 查證），不要把「沒寫」當成「已停用」。
 - **不含動態規則**（例如 UPnP 產生的 dst-nat）。報告中要寫明這一點，不可宣稱已列出全部可連入點。
 
 ## 與備份設定 repo 的銜接
@@ -85,6 +87,7 @@ user-invocable: true
 | F06 | 警告 | 以固定來源埠放行 | 事實 |
 | F07 | 警告 | 管理服務啟用、沒有 available-from，且 WAN 可以連入 | 事實＋推論（`/ip service` 含預設值、WAN 分類） |
 | F08 | 提醒 | 無法判斷 WAN 介面（WAN 相關的防火牆檢查未執行） | 推論（WAN 分類的結果） |
+| F09 | 提醒 | 防火牆命中次數對不上 export 的規則（這個表的命中次數不採用） | 事實（`print stats` 的列對 export 的規則，不用 print 的編號） |
 
 嚴重度依實際影響決定：ESP／AH 放行到沒有跑 IPsec 的主機，影響遠小於任意 TCP 埠放行。
 

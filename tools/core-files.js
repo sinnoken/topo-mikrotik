@@ -10,4 +10,6 @@ module.exports = [
   'src/remediate/patch.js',
   // 處理紀錄（ssot-ledger/1），不屬於 Snapshot
   'src/ledger/ledger.js',
+  // 不壓縮 ZIP（S.zip）與工作包（ssot-workpack/1）：工作包讀寫時呼叫 S.build、S.ledger、S.profile
+  'src/workpack/zip.js', 'src/workpack/workpack.js',
 ];

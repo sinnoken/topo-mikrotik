@@ -1,6 +1,6 @@
 # ADR-014：L4 zone 矩陣在查詢時計算，不使用外部圖表元件
 
-- **狀態**：提議
+- **狀態**：已接受
 - **日期**：2026-10-24
 - **決策者**：使用者
 
@@ -11,34 +11,40 @@
 - **計算時機**：L0（src zone × dst zone）寫成「預算（建立基準時一併計算）」，L1–L3 才即時計算（規格書 §5.5、§7）。
 - **前端元件**：待決事項列了 ECharts heatmap、D3 等元件選型（規格書 §9）。
 
-目前程式的相關現況：
+提出這份 ADR 時程式的相關現況：
 
-- 還沒有 `Q.reach`、`Q.matrix`、`Q.ruleImpact`（`src/query/query.js`）。單台設備內的規則判斷已在 `S.infer.fw`（`src/model/infer.js` 的 `evalChain`、`evalFilter`、`packetFor` 等），F03–F05、F07 用它判斷 WAN 可達。
+- 還沒有 `Q.reach`、zone 矩陣與 `Q.ruleImpact`（`src/query/query.js`）。單台設備內的規則判斷已在 `S.infer.fw`（`src/model/infer.js` 的 `evalChain`、`evalFilter`、`packetFor` 等），F03–F05、F07 用它判斷 WAN 可達。
 - 已有「推論在查詢時計算、不存進 Snapshot」的前例：VLAN 區塊（`Q.vlan(id).domains`，[設計說明 §5.3](../設計說明.md#53-關鍵推論)）。
 - Snapshot 會比對黃金基準（`tests/golden/sample-snapshot.json`），也會被新舊比對（`S.compare.snapshots`）逐類比較。
 - 查詢介面 `S.query(snapshot)` 每份基準建立一次，內部已用 Map 建好索引；它只讀基準，不改寫。
 - 專案沒有任何 npm 相依套件。`vendor/` 只有 ELK.js（`vendor/elkjs-0.11.1/`，約 1.6 MB，第一次需要分層版面時才動態載入），因為分層版面難以自製。`index.html` 的 Content-Security-Policy 以 `connect-src 'none'` 禁止執行期網路連線，CDN 不能用。
 - 處理紀錄的收斂趨勢圖（`src/view/panels/ledger.js`）是自製的 SVG，顏色取自 `src/view/theme.js` 的 `trend`，各條線另以外形標記（圓、方、三角）區分，不只靠顏色。
 
-## 決策（建議）
+## 決策
 
 ### 計算時機：查詢時計算，加上快取（選項 B）
 
-- `Q.matrix(...)` 在查詢層（`src/query/`，data-model）依 `Q.reach` 與 zone 定義計算，L0 也一樣，不存進 Snapshot。
-- 快取放在查詢層：以「同一個 `Q`（同一份基準）＋查詢參數（層級、篩選、service 類別）」為鍵，只放在記憶體，不寫進 store 或基準。
+- zone 矩陣在查詢層（`src/query/`，data-model）依 `Q.reach` 的判斷與 zone 定義計算，L0 也一樣，不存進 Snapshot：
+  - `Q.zoneMatrix(opts)` 是 L0；`Q.zoneMatrixSteps(opts)` 是同一份計算的分段版（generator），大型資料可以分段計算、讓出主執行緒，跑完的結果與 `Q.zoneMatrix` 相同。
+  - `Q.zoneCell(srcZone, dstZone, opts)` 是 L1／L2 的下鑽，L3 是對代表位址呼叫 `Q.reach`。
+  - 計算引擎在 `src/query/trace.js`（`S.reach.engine`），`src/query/query.js` 第一次呼叫 L4 函式時才建立。參數與回傳見[設計說明 §5.2「防火牆命中次數與 L4 的查詢」](../設計說明.md#52-實體snapshotmodelschema-ssot-snapshot2)，演算法見[設計說明 §5.3「L4 可達性與 zone」](../設計說明.md#l4-可達性與-zone2110-新增)。
+- 快取放在查詢層：以「同一個 `Q`（同一份基準）＋查詢參數（命名規則的內容雜湊、zone 來源、service）」為鍵，只放在記憶體，不寫進 store 或基準。分段計算中途放棄時不留快取。
 - 理由：
   - **矩陣是推論，不是事實**。它由防火牆規則、路由與 zone 定義推導出來；同一份事實換一種 zone 分法或 service 類別，就是另一張矩陣。Snapshot 中的推論（例如推論鏈路、WAN／LAN 分類）都是逐筆可追溯到來源行的實體或屬性；矩陣是 zone 對 zone 的彙總，數量隨 zone 數的平方增加。
   - **放進 Snapshot 會影響黃金基準與比對**：每次調整 zone 規則或 reach 的判斷，黃金基準都要更新，`S.compare.snapshots` 也要多一類比較；同一份輸入只因矩陣演算法改變，就要升版重建（[ADR-005](005-版本升級規則.md)）。
-  - **結果仍可重現**：矩陣是基準與參數的純函式，不讀目前時間與環境；快取只省下重算的時間，有沒有快取結果都一樣。
+  - **結果仍可重現**：矩陣是基準與參數的純函式，不讀目前時間與環境；快取只省下重算的時間，有沒有快取結果都一樣。分段計算只依經過的時間決定在哪裡讓出，不影響結果。
 
-### 元件：不引入 ECharts、D3，自製 SVG／Canvas
+### 元件：不引入 ECharts、D3，以 HTML 表格加 CSS 自製
 
 - 矩陣是格子，下鑽是表格與路徑，功能不需要通用圖表庫。
 - 引入 ECharts 或 D3 會增加第二個 vendor 依賴，打破「零相依」的原則（ELK 是因為分層版面難以自製才例外）；從 CDN 載入則違反離線原則（`connect-src 'none'`）。
-- 依 dataviz 規則自製（[frontend agent 的規則](../../.claude/agents/frontend.md)）：
+- 矩陣是 HTML 表格 `<table role="grid">` 加 CSS（`src/view/panels/l4.js`、`assets/app.css`），不用 SVG 或 Canvas。理由是可及性：鍵盤操作、螢幕閱讀器與強制色彩都比 SVG／Canvas 容易做好。
+- 規模的上限：zone 超過 60 個（`MATRIX_MAX`）時只用表格檢視；表格檢視最多列 3000 格，完整內容在 CSV。
+- 依 dataviz 規則（[frontend agent 的規則](../../.claude/agents/frontend.md)）：
   - 顏色只取自 `src/view/theme.js`，配色以 dataviz 的 validator 在亮色、底色 `#f8fafc` 驗證。
   - 格子的狀態（全通、全擋、部分、異質，見[規格書 §5.6](../多層網路架構圖_實作規格書.md#56-格子狀態定義m2)）是**狀態色**，一律搭配圖示與文字，不能只靠顏色；文字對底色至少 4.5:1。
   - 格子可以用鍵盤聚焦與操作（例如方向鍵移動、Enter 下鑽）。
+- 畫面的細節見[設計說明 §11「L4 可達性」](../設計說明.md#11-檢視層架構)，操作見[使用說明「L4 可達性」](../使用說明.md#l4-可達性)。
 
 ## 考慮過的選項
 
@@ -46,38 +52,41 @@
 
 | 選項 | 優點 | 缺點 | 結論 |
 |---|---|---|---|
-| A. 建立基準時預先算好，存進 Snapshot（規格書原本的寫法） | 開啟畫面就有 L0；匯出的基準 JSON 帶著矩陣 | 推論的彙總混進事實；調整 zone 或 reach 的規則就要更新黃金基準、升版重建；Snapshot 變大；比對要多一類 | 不建議 |
-| B. 查詢時計算，加上快取 | 事實與推論分開；Snapshot 與黃金基準不受影響；換 zone 分法不必重建基準；結果仍可重現 | 第一次開啟矩陣要計算；大型網路要量測時間，必要時像 ELK 的 `App.ELK_MAX` 一樣設上限並說明 | **建議** |
-| C. 查詢時計算，不快取 | 最簡單 | 下鑽後返回、切換 service 類別都要重算 | 不建議 |
+| A. 建立基準時預先算好，存進 Snapshot（規格書原本的寫法） | 開啟畫面就有 L0；匯出的基準 JSON 帶著矩陣 | 推論的彙總混進事實；調整 zone 或 reach 的規則就要更新黃金基準、升版重建；Snapshot 變大；比對要多一類 | 不採用 |
+| B. 查詢時計算，加上快取 | 事實與推論分開；Snapshot 與黃金基準不受影響；換 zone 分法不必重建基準；結果仍可重現 | 第一次開啟矩陣要計算；大型網路要量測時間，必要時分段計算或設上限並說明 | **採用** |
+| C. 查詢時計算，不快取 | 最簡單 | 下鑽後返回、切換 service 類別都要重算 | 不採用 |
 
 ### 元件
 
 | 選項 | 優點 | 缺點 | 結論 |
 |---|---|---|---|
-| A. ECharts heatmap（放進 `vendor/`） | 功能完整，有縮放與提示框 | 增加大型 vendor 依賴；顏色、外形與鍵盤操作要另外配合 `theme.js` 與既有規則 | 不建議 |
-| B. D3（放進 `vendor/`） | 彈性高 | 格子仍要自己畫，D3 只省下少量工作；仍增加 vendor 依賴 | 不建議 |
-| C. 自製 SVG／Canvas | 零相依；顏色、外形與鍵盤操作沿用既有規則；已有收斂趨勢圖的前例 | 互動（捲動、固定表頭、提示）要自己寫 | **建議** |
+| A. ECharts heatmap（放進 `vendor/`） | 功能完整，有縮放與提示框 | 增加大型 vendor 依賴；顏色、外形與鍵盤操作要另外配合 `theme.js` 與既有規則 | 不採用 |
+| B. D3（放進 `vendor/`） | 彈性高 | 格子仍要自己畫，D3 只省下少量工作；仍增加 vendor 依賴 | 不採用 |
+| C. HTML 表格（`table role="grid"`）加 CSS 自製 | 零相依；顏色、外形與鍵盤操作沿用既有規則；鍵盤、螢幕閱讀器與強制色彩比 SVG／Canvas 容易做好 | 互動（捲動、固定表頭、提示）要自己寫；zone 很多時表格太大，要設上限 | **採用** |
 
 ## 後果
 
 ### 變容易的
 
 - 矩陣演算法與 zone 定義可以調整，不影響已儲存的基準、黃金基準與新舊比對。
-- 畫面與下游模組都透過同一個查詢函式取得矩陣，只有一份計算。
+- 畫面與下游模組都透過同一組查詢函式取得矩陣，只有一份計算。
 - 矩陣的樣式和其他畫面一致，嚴重度與狀態的表示方式相同。
 
 ### 變困難的
 
-- 匯出的基準 JSON 不含矩陣；要分享矩陣結果，需要另外的匯出（例如 CSV 或 Markdown）。
-- 大型網路的 L0 計算時間要量測與控制。
+- 匯出的基準 JSON 不含矩陣；要分享矩陣結果，需要另外的匯出（L4 畫面的「下載 CSV」）。
+- 大型網路的 L0 計算時間要量測與控制（約 1000 台的耗時見[設計說明 §11.6](../設計說明.md#116-規模)）。
 - 矩陣的互動元件要自己寫與測試（`tests/ui-smoke.js`）。
 
 ### 之後要回頭看的
 
 - 兩份基準的矩陣差異（哪些 zone 對新增或少了放行）：是否要在比對中呈現，若要，在比對時對兩份基準各自查詢，而不是把矩陣存進 Snapshot。
-- 規格書 §5.5、§7 的「L0 預算」：使用者決定採用後，請使用者同意更新規格書的寫法。
+- ~~規格書 §5.5、§7 的「L0 預算」：使用者決定採用後，請使用者同意更新規格書的寫法。~~ **已處理**：使用者接受這份 ADR 後，規格書 §5.5、§7 改為「查詢時計算並快取，大型資料分段計算」（規格書 v0.4）。
 
 ## 待辦
 
-- 使用者：決定是否採用。
-- 採用時：data-model 在查詢層實作 `Q.reach`、`Q.matrix`、`Q.ruleImpact` 與快取，並加測試確認有無快取的結果相同；frontend 自製矩陣與下鑽畫面，配色以 validator 驗證；docs 更新規格書 §5.5、§7 與設計說明。
+- ~~使用者：決定是否採用。~~ **已完成**：使用者在 2026-10-24 接受。
+- ~~data-model 在查詢層實作 `Q.reach`、`Q.zoneMatrix`、`Q.zoneCell`、`Q.ruleImpact` 與快取，並加測試確認有無快取的結果相同。~~ **已完成**（7581f44；`tests/core/reach.js`）。
+- ~~data-model：矩陣的分段計算 `Q.zoneMatrixSteps`，並確認分段與一次算完的結果相同。~~ **已完成**（01bffe0；`tests/core/reach.js`、`tests/large.js`）。
+- ~~frontend 自製矩陣與下鑽畫面，配色以 validator 驗證。~~ **已完成**（86244ea；分段計算的進度與異質格的下鑽在 0eea745）。
+- ~~docs 更新規格書 §5.5、§7 與設計說明。~~ **已完成**：設計說明 §5.2、§5.3、§11；規格書 §5.5、§7、§9（規格書 v0.4）。

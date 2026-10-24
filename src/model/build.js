@@ -24,8 +24,11 @@
     return {
       devices: new Map(), ifcs: new Map(), links: new Map(), vlans: new Map(), macs: new Map(),
       arps: [], routes: [], claims: [], ospf: [], ospfAdjacencies: [], vmems: [], assocs: [], dhcpNets: [], ipBinds: [],
+      policy: { tables: [], rules: [], marks: [] }, // /routing table、/routing rule、mangle 的 mark-routing（事實，依設定順序）
+      vrfs: new Map(), // dev → [{ dev, name, interfaces（設定的名稱）, disabled, builtin, source: print|export, members（Set of ep）, order, src }]，依設定順序（resolveVrfs 前是 { print, export }）
       // 防火牆（事實）：規則依輸入順序；interface list 以「設備|名稱」為鍵；/ip service 只有 export 有寫的（預設值由 infer 補上）
-      fw: { rules: [], lists: new Map(), services: new Map(), peers: [], policies: [], ipv6: new Map() }, // ipv6：dev → { use: [[區塊, 行號]], disabled: [區塊, 行號]|null }
+      fw: { rules: [], lists: new Map(), services: new Map(), peers: [], policies: [], ipv6: new Map(), // ipv6：dev → { use: [[區塊, 行號]], disabled: [區塊, 行號]|null }
+        stats: new Map() }, // 命中次數（print stats）：「設備|位址族|表」→ { dev, family, table, block, line, rows: [...] }，對應結果見 matchFirewallStats
     };
   }
 
@@ -34,6 +37,7 @@
       key, names: new Set(), mgmtIp: null, vendors: new Set(), collected: false, data: new Set(),
       hostname: null, routerId: null, collectedAt: null, ownMacs: new Set(), stp: null, seenBy: new Set(), src: [], deviceType: null, softwareVersion: null, platform: null, caps: null,
       dnsServers: null, ntpServers: null, // { values: [], menu, param, src: [[區塊, 行號]] }（事實）；多個來源時的規則見 SERVER_SOURCE_RANK
+      policyRules: null, // /routing settings 的 policy-rules（查表的順序）：{ rules, src }；export 沒有寫出（預設值）時為 null
     }));
     if (name) d.names.add(name);
     return d;
@@ -46,6 +50,10 @@
       type: null, typeBasis: null, rawType: null, hwMac: null, defaultName: null, mtu: null, actualMtu: null, l2mtu: null,
       lag: null, lagMembers: new Set(), bridge: null, parent: null, encapVlan: null,
       mode: null, pvid: null, untaggedVlans: new Set(), taggedVlans: new Set(), unresolvedVlans: new Set(), frameTypes: null, ingressFiltering: null, stp: null,
+      // vlanFiltering：bridge 的 vlan-filtering 設定（事實；不是 bridge 或沒有設定資料為 null），vlanFilteringSrc 是那一行（只在內部模型）。
+      // vlanUnfiltered：在未開 vlan-filtering 的 bridge 上（推論，infer.unfilteredPorts）
+      vlanFiltering: null, vlanFilteringSrc: null, vlanUnfiltered: false,
+      vrf: K.MAIN_VRF, vrfBasis: 'default', reportedVrf: null, // 所屬的 VRF 與依據（resolveVrfs）；reportedVrf 只在內部模型
       ips: new Map(), macs: new Set(), hearsay: false, src: [], // ips：CIDR → 來源 [區塊, 行號]
     }));
   }
@@ -136,7 +144,7 @@
         }
         case 'arp': {
           const mk = K.mac(f.mac); if (!mk) break;
-          M.arps.push({ ip: f.ip, mac: mk, dev: f.dev, ifc: K.ifc(f.ifc), block: f.block, line: f.line });
+          M.arps.push({ ip: f.ip, mac: mk, dev: f.dev, ifc: K.ifc(f.ifc), reportedVrf: f.vrf ? K.vrf(f.vrf) : null, block: f.block, line: f.line });
           const am = getOr(M.macs, mk, () => ({ mac: mk, seen: new Map(), ips: new Set(), src: [] })); am.ips.add(f.ip); addSrc(am, f);
           break;
         }
@@ -149,6 +157,8 @@
           break;
         }
         case 'fwRule': M.fw.rules.push(Object.assign({}, f)); break;
+        case 'fwStatTable': statTable(M, f.dev, f.family, f.table, f.block, f.line); break;
+        case 'fwStat': statTable(M, f.dev, f.family, f.table, f.block, null).rows.push({ flags: f.flags, chain: f.chain, action: f.action, comment: f.comment, bytes: f.bytes, packets: f.packets, block: f.block, line: f.line }); break;
         case 'ifList': {
           const l = fwList(M, f.dev, f.name); l.defined = true; l.include = f.include; l.exclude = f.exclude; l.src.push([f.block, f.line]);
           break;
@@ -175,13 +185,29 @@
         case 'ipsecPolicy': M.fw.policies.push({ dev: f.dev, srcAddress: f.srcAddress, dstAddress: f.dstAddress, peer: f.peer, template: f.template, disabled: f.disabled, src: [[f.block, f.line]] }); break;
         case 'route':
           M.routes.push({ dev: f.dev, prefix: f.prefix, len: f.len, proto: f.proto, distance: f.distance ?? null, blackhole: !!f.blackhole,
-            nh: f.nh.map((n) => ({ ip: n.ip, ifc: n.ifc ? K.ifc(n.ifc) : null })), block: f.block, line: f.line });
+            routingTable: f.routingTable || K.MAIN_VRF, vrf: null,
+            nh: f.nh.map((n) => ({ ip: n.ip, ifc: n.ifc ? K.ifc(n.ifc) : null, written: n.vrf || null })), block: f.block, line: f.line });
           break;
+        // 路由表與策略路由（事實，見 adapters/mikrotik.js）：依設定順序；停用的照樣記下
+        case 'routingTable': M.policy.tables.push({ dev: f.dev, name: f.name, fib: f.fib, disabled: f.disabled, src: [[f.block, f.line]] }); break;
+        case 'routingRule': M.policy.rules.push({ dev: f.dev, action: f.action, table: f.table, match: Object.assign({}, f.match), disabled: f.disabled, comment: f.comment, src: [[f.block, f.line]] }); break;
+        case 'markRouting': M.policy.marks.push({ dev: f.dev, chain: f.chain, mark: f.mark, match: Object.assign({}, f.match), disabled: f.disabled, src: [[f.block, f.line]] }); break;
+        case 'policyRules': d.policyRules = { rules: f.rules.slice(), src: [f.block, f.line] }; break;
+        case 'vrf': { // 依來源分開記（print 優先於 export，見 resolveVrfs）
+          const by = getOr(M.vrfs, f.dev, () => ({ print: [], export: [] }));
+          const list = by[f.source === 'print' ? 'print' : 'export'];
+          list.push({ dev: f.dev, name: K.vrf(f.name), interfaces: f.interfaces.slice(), disabled: !!f.disabled, builtin: !!f.builtin, source: f.source === 'print' ? 'print' : 'export',
+            members: new Set(), order: list.length + 1, src: [[f.block, f.line]] });
+          break;
+        }
         default: break;
       }
     });
 
+    resolveVrfs(M);
     numberFirewallRules(M);
+    emptyStatTables(M, input.blocks);
+    matchFirewallStats(M);
     resolveVlanMembers(M);
     buildAggregates(M);
     classifyInterfaces(M);
@@ -190,6 +216,79 @@
     resolveOspfAdjacencies(M, canon);
     return M;
   }
+
+  /**
+   * VRF（ADR-015，依 RouterOS 手冊 VRF）：
+   *  - 介面（interfaces[].vrfBasis 是依據，依優先順序）：
+   *      reported   /ip address、/ip arp print detail 的 vrf=（RouterOS 7 由設備回報，事實）
+   *      vrf-print  /ip vrf print 的順序：第一筆啟用、在 interfaces 列出它（或 all）的 VRF；含內建 main 的位置（事實）
+   *      export     export 的 /ip vrf 的順序；export 不寫內建 main，假設 main 在最後（推論）
+   *      default    都沒有列出：main
+   *    RouterOS 7.14 起與 VRF 同名的虛擬介面屬於該 VRF。interfaces 列出、但沒有其他資料的介面也建立（設定中的名稱是事實）。
+   *  - ARP、DHCP 網路：ARP 取該列的 vrf=，沒有時取所在介面的 VRF；DHCP 網路取這台設備上直連網段相同的介面的 VRF（沒有時為 main）。
+   *  - 路由：routing-table 是 main，或是這台設備的 VRF 名稱（設定或設備回報的 vrf=）時，vrf 為該名稱；
+   *    其他路由表（只用於策略路由）的 vrf 為 null，路徑追蹤不使用。
+   *  - 下一跳的 vrf：在哪個 VRF 解析這個閘道（vrfBasis 是依據）：
+   *      explicit       gateway 寫了 @<VRF>
+   *      vrf-interface  閘道是 VRF 的虛擬介面（手冊：gateway=vrfTest2），在那個 VRF 再查一次路由
+   *      interface      閘道只有介面：取介面所屬的 VRF
+   *      default        只有 IP、沒寫 @：在 main 解析（VRF 手冊：閘道沒有指定路由表時在 main 解析）
+   * 手冊：https://manual.mikrotik.com/docs/user-guides/routing-and-networking-protocols/vrf.md、https://manual.mikrotik.com/docs/cli-reference/ip/vrf.md（只支援 RouterOS 7）
+   */
+  function resolveVrfs(M) {
+    // 每台設備採用的 VRF 設定：有 /ip vrf print 時用它（列出內建 main 的位置），否則用 export（不寫 main，假設 main 在最後）
+    M.vrfs.forEach((by, dev) => {
+      const defs = by.print.length ? by.print : by.export;
+      M.vrfs.set(dev, defs);
+      defs.forEach((d) => d.interfaces.forEach((n) => { if (K.ifc(n) !== 'all') addSrcTo(iface(M, dev, n), d.src[0]); }));
+    });
+    const ifcsOf = new Map();
+    M.ifcs.forEach((i) => getOr(ifcsOf, i.dev, () => []).push(i));
+    // ARP 列的 vrf=（設備回報）也說明了那個介面的 VRF；位址列的 vrf= 優先
+    M.arps.forEach((a) => { const i = a.reportedVrf && M.ifcs.get(K.ep(a.dev, a.ifc)); if (i && !i.reportedVrf) i.reportedVrf = a.reportedVrf; });
+    M.vrfs.forEach((defs, dev) => {
+      const active = defs.filter((d) => !d.disabled);
+      const listed = active.map((d) => new Set(d.interfaces.map((n) => K.ifc(n))));
+      const named = new Map(active.filter((d) => !d.builtin).map((d) => [K.ifc(d.name), d]));
+      (ifcsOf.get(dev) || []).forEach((i) => {
+        const k = K.ifc(i.name);
+        const d = named.get(k) || active.find((x, idx) => listed[idx].has(k) || listed[idx].has('all'));
+        if (!d) return;
+        i.vrf = d.name; i.vrfBasis = d.source === 'print' ? 'vrf-print' : 'export'; d.members.add(i.key);
+      });
+    });
+    // 設備回報的 vrf= 是事實，優先於依設定順序推出的結果
+    M.ifcs.forEach((i) => { if (i.reportedVrf) { i.vrf = i.reportedVrf; i.vrfBasis = 'reported'; } });
+    const vrfOfEp = (ep) => { const i = M.ifcs.get(ep); return i ? i.vrf : K.MAIN_VRF; };
+    M.arps.forEach((a) => { a.vrf = a.reportedVrf || vrfOfEp(K.ep(a.dev, a.ifc)); });
+    M.dhcpNets.forEach((n) => {
+      const p = S.ip.parseCidr(n.network); n.vrf = K.MAIN_VRF;
+      if (!p) return;
+      const hit = (ifcsOf.get(n.dev) || []).filter((i) => !i.hearsay && Array.from(i.ips.keys()).some((c) => { const q = S.ip.parseCidr(c); return q && q.net === p.net && q.len === p.len; }))
+        .sort((x, y) => S.util.natural(x.name, y.name))[0];
+      if (hit) n.vrf = hit.vrf;
+    });
+    // 每台設備的 VRF 名稱：啟用的設定，加上設備回報的 vrf=（沒有收集 /ip vrf 也知道這個路由表是 VRF）
+    const namesOf = new Map();
+    M.vrfs.forEach((defs, dev) => defs.forEach((d) => { if (!d.disabled && !d.builtin) getOr(namesOf, dev, () => new Set()).add(d.name); }));
+    M.ifcs.forEach((i) => { if (i.reportedVrf && i.reportedVrf !== K.MAIN_VRF) getOr(namesOf, i.dev, () => new Set()).add(i.reportedVrf); });
+    M.arps.forEach((a) => { if (a.reportedVrf && a.reportedVrf !== K.MAIN_VRF) getOr(namesOf, a.dev, () => new Set()).add(a.reportedVrf); });
+    M.routes.forEach((r) => {
+      const names = namesOf.get(r.dev) || new Set();
+      const table = K.vrf(r.routingTable);
+      r.vrf = table === K.MAIN_VRF || names.has(table) ? table : null;
+      const vrfIfc = new Map(Array.from(names, (n) => [K.ifc(n), n]));
+      r.nh = r.nh.map((n) => {
+        let vrf; let vrfBasis;
+        if (n.written) { vrf = K.vrf(n.written); vrfBasis = 'explicit'; }
+        else if (!n.ip && n.ifc && vrfIfc.has(n.ifc)) { vrf = vrfIfc.get(n.ifc); vrfBasis = 'vrf-interface'; }
+        else if (!n.ip && n.ifc) { vrf = vrfOfEp(K.ep(r.dev, n.ifc)); vrfBasis = 'interface'; }
+        else { vrf = K.MAIN_VRF; vrfBasis = 'default'; }
+        return { ip: n.ip, ifc: n.ifc, vrf, vrfBasis };
+      });
+    });
+  }
+  const addSrcTo = (ent, src) => { if (ent.src.length < MAX_SRC) ent.src.push(src); };
 
   function fwList(M, dev, name) {
     return getOr(M.fw.lists, dev + '|' + name, () => ({ dev, name, defined: false, include: [], exclude: [], members: new Map(), src: [] }));
@@ -209,6 +308,52 @@
       r.signature = JSON.stringify([r.dev, r.family, r.table, r.chain, S.infer.fw.canonMatch(r.match)]);
       const n = (sigCount.get(r.signature) || 0) + 1; sigCount.set(r.signature, n);
       r.key = `${ck}|${S.util.hash(r.signature)}${n > 1 ? '#' + n : ''}`;
+    });
+  }
+
+  function statTable(M, dev, family, table, block, line) {
+    const t = getOr(M.fw.stats, dev + '|' + family + '|' + table, () => ({ dev, family, table, block, line: null, rows: [] }));
+    if (line !== null && t.line === null) t.line = line;
+    return t;
+  }
+  /** 有標記指令、但完全沒有輸出的命中次數區塊（收集失敗除外）：這個表已收集、0 列。同一設備同一個表有多個區塊時，已有事實的表不覆寫。 */
+  function emptyStatTables(M, blocks) {
+    blocks.forEach((b) => {
+      if (b.device === null || b.failure || b.empty || b.lines.some((l) => l.trim())) return;
+      (b.adapters || []).forEach((id) => {
+        const a = S.adapters[id];
+        if (!a || a.dataType !== 'fwstats' || M.fw.stats.has(b.devKey + '|' + a.family + '|' + a.table)) return;
+        statTable(M, b.devKey, a.family, a.table, b.id, null);
+        device(M, b.devKey).data.add('fwstats');
+      });
+    });
+  }
+  /**
+   * 命中次數對應到 export 的規則（事實對事實，不用 print 的編號）：每台設備、每個（位址族，表）分開，去掉 D（動態）列後，
+   * 第 i 列對到 export 中這個表的第 i 條 add（order）。每一對都要 chain、action、停用（X 旗標）相同，有註解時註解也要相同；
+   * 列數不同或任一對不符時，整個表都不配（status: mismatch，reason 說明第一個不符），不猜。沒有 export 的設備為 no-export。
+   * 配上時規則帶 stats：{ bytes, packets（十進位字串，收集當下的累積值）, src: [[區塊, 行號]] }。
+   */
+  function matchFirewallStats(M) {
+    const rulesBy = new Map();
+    M.fw.rules.forEach((r) => getOr(rulesBy, r.dev + '|' + r.family + '|' + r.table, () => []).push(r));
+    M.fw.stats.forEach((t, k) => {
+      const all = t.rows; const rows = all.filter((x) => !x.flags.includes('D'));
+      const rules = (rulesBy.get(k) || []).slice().sort((a, b) => a.order - b.order);
+      Object.assign(t, { dynamic: all.length - rows.length, count: rows.length, rules: rules.length, status: 'matched', reason: null });
+      const d = M.devices.get(t.dev);
+      if (!d || !d.data.has('config')) { t.status = 'no-export'; return; }
+      const bad = (code, i, exp, got) => { t.status = 'mismatch'; t.reason = { code, position: i + 1, export: exp, stats: got, rule: rules[i] ? [rules[i].block, rules[i].line] : null, row: rows[i] ? [rows[i].block, rows[i].line] : null }; };
+      if (rows.length !== rules.length) { bad('count', Math.min(rows.length, rules.length), rules.length, rows.length); return; }
+      const text = (s) => (s == null ? '' : String(s).trim());
+      for (let i = 0; i < rows.length; i++) {
+        const x = rows[i]; const r = rules[i];
+        if (x.chain !== r.chain) { bad('chain', i, r.chain, x.chain); return; }
+        if (x.action !== r.action) { bad('action', i, r.action, x.action); return; }
+        if (x.flags.includes('X') !== !!r.disabled) { bad('disabled', i, !!r.disabled, x.flags.includes('X')); return; }
+        if (text(x.comment) !== text(r.comment)) { bad('comment', i, r.comment, x.comment); return; }
+      }
+      rules.forEach((r, i) => { r.stats = { bytes: rows[i].bytes, packets: rows[i].packets, src: [[rows[i].block, rows[i].line]] }; });
     });
   }
 
@@ -236,8 +381,10 @@
     if (f.encapVlan != null) i.encapVlan = f.encapVlan;
     if (f.frameTypes) i.frameTypes = f.frameTypes;
     if (f.ingressFiltering != null) i.ingressFiltering = f.ingressFiltering;
+    if (f.vlanFiltering != null) { i.vlanFiltering = f.vlanFiltering; i.vlanFilteringSrc = [f.block, f.line]; } // export 裡後面的 set 覆寫前面的 add
     ['rawType', 'hwMac', 'defaultName', 'mtu', 'actualMtu', 'l2mtu'].forEach((k) => { if (f[k] != null) i[k] = f[k]; });
     if (f.ip && !i.ips.has(f.ip)) i.ips.set(f.ip, [f.block, f.line]);
+    if (f.vrf) i.reportedVrf = K.vrf(f.vrf); // /ip address print 的 vrf=（設備回報）
   }
 
   /** VLAN 以設備內的 ID 為鍵（RouterOS 的 bridge VLAN 只有 ID）。 */
@@ -414,8 +561,10 @@
    * 對應方式記在鄰接的 peerBasis（內部，不序列化）：address／router-id／router-id-address／mgmt-ip，找不到為 null（check 據此判定 R02）。
    */
   function resolveOspfAdjacencies(M, canon) {
-    const ipOwner = new Map(); const ridOwner = new Map(); const mgmtOwner = new Map();
-    M.ifcs.forEach((i) => i.ips.forEach((_, c) => ipOwner.set(c.split('/')[0], i.key)));
+    const ipOwners = new Map(); const ridOwner = new Map(); const mgmtOwner = new Map();
+    M.ifcs.forEach((i) => i.ips.forEach((_, c) => getOr(ipOwners, c.split('/')[0], () => []).push(i)));
+    // 鄰居位址的擁有者：同名 VRF 的優先（VRF 內的 OSPF instance），沒有時取最後一個（與加入 VRF 之前相同）
+    const ipOwner = { get(ip, vrf) { const l = ipOwners.get(ip); if (!l) return undefined; const same = vrf ? l.filter((i) => i.vrf === vrf) : []; return (same.length ? same : l)[(same.length ? same : l).length - 1].key; } };
     M.devices.forEach((d) => { if (d.routerId) ridOwner.set(d.routerId, d.key); if (d.mgmtIp) mgmtOwner.set(d.mgmtIp, d.key); });
     const subnetsOf = new Map();
     M.ifcs.forEach((i) => i.ips.forEach((_, c) => { const p = S.ip.parseCidr(c); if (p && p.len < 32) getOr(subnetsOf, i.dev, () => []).push({ ep: i.key, net: p.net, len: p.len }); }));
@@ -428,7 +577,8 @@
     });
     M.ospf.forEach((f) => {
       const local = f.localEp;
-      let remote = ipOwner.get(f.nbrAddr);
+      const localVrf = (M.ifcs.get(local) || {}).vrf || K.MAIN_VRF;
+      let remote = ipOwner.get(f.nbrAddr, localVrf);
       const [peerBasis, found] = remote ? ['address', K.splitEp(remote)[0]]
         : ridOwner.get(f.nbrId) ? ['router-id', ridOwner.get(f.nbrId)]
           : ipOwner.get(f.nbrId) ? ['router-id-address', K.splitEp(ipOwner.get(f.nbrId))[0]]
@@ -438,7 +588,8 @@
         const name = canon(f.nbrId); peerDev = K.dev(name);
         device(M, peerDev, name).seenBy.add(f.dev);
       }
-      if (!remote) { const ri = iface(M, peerDev, f.nbrAddr); ri.hearsay = true; ri.ips.set(f.nbrAddr + '/32', [f.block, f.line]); remote = ri.key; }
+      // 只由鄰居得知的位址：與本機介面在同一個 VRF（OSPF 鄰居在同一個網段）
+      if (!remote) { const ri = iface(M, peerDev, f.nbrAddr); ri.hearsay = true; ri.vrf = localVrf; ri.ips.set(f.nbrAddr + '/32', [f.block, f.line]); remote = ri.key; }
       M.ospfAdjacencies.push({
         dev: f.dev, localEp: local, peerDev, peerEp: remote, peerBasis: peerBasis || null,
         peerIp: f.nbrAddr, peerId: f.nbrId, block: f.block, line: f.line,

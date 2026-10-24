@@ -16,7 +16,7 @@ usage() {
   --timeout SECONDS       單一 SSH 指令 timeout（預設 30）
   --retry COUNT           失敗後重試次數（預設 0）
   --ask-password          每台設備連線一次並手動輸入密碼／確認 host key
-  --no-auto               不依型號自動加上選用命令
+  --no-auto               不自動加上選用命令（依介面 type、型號與版本）
   --retry-failed FILE     只重收上次收集檔 FILE 中失敗的指令，必須用 -o 指定新檔（見下方）
   --dry-run               只驗證清單並列出命令，不連線（不含自動加上的命令）
   -h, --help              顯示說明
@@ -24,12 +24,14 @@ usage() {
 設備清單：name,address,user,port[,extra]
   extra 為選填，列出該設備額外執行的選用命令 ID，以空白或分號分隔，例如：
     TPE_AP_01,192.0.2.31,admin,22,wifi
-  選用命令 ID：wifi（RouterOS 7 Wi-Fi 關聯表）、wireless（舊版 wireless）、capsman（舊版 CAPsMAN 控制器）
+  選用命令 ID：wifi（RouterOS 7 Wi-Fi 關聯表）、wireless（舊版 wireless）、capsman（舊版 CAPsMAN 控制器）、
+  vrf（RouterOS 7 的 /ip vrf）
 
 自動選用命令：extra 欄留空且未用 --commands 時，依 /interface print 的介面 type
   加上選用命令（type=wifi 加 wifi，需 RouterOS 7.13 以上；type=wlan 加 wireless）。
   interface 收集失敗時，改依 /system resource print 的 board-name 判斷（只有
-  802.11ax／be 型號、7.13 以上加 wifi）。終端機會標示 AUTO 與依據。
+  802.11ax／be 型號、7.13 以上加 wifi）。RouterOS 7 以上（版本取自 /system resource print）
+  一律加 vrf。終端機會標示 AUTO 與依據。
 
 只重收失敗的指令：tools/collect.sh devices.csv --retry-failed 上次.txt -o 新檔.txt
   讀上次收集檔的 # collection failed: 紀錄，只對這些設備重跑這些指令（連線資訊仍取自設備清單），
@@ -160,7 +162,7 @@ interfaces_of_type() {
   ' "$2"
 }
 
-# 依介面 type（輔助：board-name）自動加上選用命令到 DEVICE_COMMAND_IDS，並在終端機標示依據
+# 依介面 type（輔助：board-name）與版本自動加上選用命令到 DEVICE_COMMAND_IDS，並在終端機標示依據
 add_auto_commands() {
   local interfaces_ok=$1 stdout_file=$2 wifi_names= wlan_names= id reason k
   if (( interfaces_ok )); then

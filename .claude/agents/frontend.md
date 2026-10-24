@@ -15,7 +15,10 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 
 ## 與其他 agent 的介面（契約）
 
-- **資料**：只透過 `SSOT.query(snapshot)` 和 Snapshot 的公開欄位（`docs/設計說明.md` §5.2）讀取。
+- **資料**：只透過 `SSOT.query(snapshot)`（Q）與 `S.query.*` 的靜態函式（規則目錄 `S.query.rule`／`rules`、`dataLabel`、`adapterLabel`、`metaOf`）讀取，函式見 `docs/設計說明.md` §5.2（ADR-018）。
+  - 不讀 `snap.`／`snapshot.` 的欄位（`findings`、`meta`、`coverage`、`blocks`、`model`…），不用 `S.check`、`S.adapters`、`S[…]` 或從 `S` 解構。允許的 `S.*` 成員以 `tests/ui-smoke.js` 的 `VIEW_S_ALLOW`、`VIEW_S_ONLY` 為準（輸入 API 只允許 `S.readers.PASTE`、`S.profile.compile`、`S.inputHashOf` 等），由邊界掃描強制；冒煙測試另以深層凍結的基準確認畫面不改寫基準。
+  - 需要新的資料時寫進報告的「需要其他 agent 處理」，由 data-model 新增 query 函式；不可以在 view 繞過，也不要放寬邊界掃描的允許清單來通過測試。
+  - 選取 finding 用 idx（`Q.finding(idx)`）；跨基準時用 findingKey，再以 `Q.findingIndexByKey` 換回 idx。
 - **修正指令**：指令文字一律由 `S.remediate` 產生（計畫、`.rsc`、回復與驗證），畫面只負責選取、預覽、複製與下載，不自己組 RouterOS 指令。
 - **處理紀錄**：只透過 `S.ledger` 存取（轉換、推進、變更、驗證）。畫面只負責保存到 store、傳入目前時間、顯示結果。
 - **檢視狀態**：選取、展開、縮放、位置都是檢視狀態，不寫回 Snapshot。持久化集中在 `src/view/store.js`。
@@ -27,7 +30,7 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 - `index.html` 必須能用 `file://` 直接開啟：不用 ES module 或 bundler，不在執行期連網；第三方檔案放在 `vendor/`。
 - `index.html` 前段的核心載入順序要和 `tools/core-files.js` 一致；它屬於 `data-model`，新增核心檔案由主對話協調。
 - 冒煙測試用的是極簡的模擬 DOM，斷言要寫關係與可觀察的行為，不要寫死筆數。
-- **配色要用 dataviz skill 的 validator 驗證**，不要憑肉眼判斷。在亮色、畫布底色 `#f8fafc` 下執行：
+- **配色要用 dataviz skill 的 validator 驗證**，不要憑肉眼判斷。validator 在 bundled skill 的目錄裡（`<TEMP>/claude/bundled-skills/<版本>/<hash>/dataviz/scripts/validate_palette.js`）；在 bash 中用 `ls -d "$TEMP"/claude/bundled-skills/*/*/dataviz/scripts/validate_palette.js` 找出路徑（只在 `"$TEMP"/claude` 底下找，`$TEMP` 要加引號；不要用 `find /`，見「執行指令」第 1 條）。用法是 `node validate_palette.js "<hex,...>" --mode light`。在亮色、畫布底色 `#f8fafc` 下執行：
   ```bash
   node <dataviz skill 目錄>/scripts/validate_palette.js "#hex1,#hex2,..." --mode light --surface "#f8fafc"
   ```
@@ -35,6 +38,16 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 - **文字色對其底色至少 4.5:1**：用同一支腳本匯出的 `contrast(a, b)` 計算；`theme.js` 的 `text` 與 `assets/app.css` 的對應變數要一致。
 - **嚴重度不可以只靠顏色**：一律搭配外形（`theme.js` 的 `sevShape`、`V.sevMark`）或文字；狀態色只用於狀態，類別色不用紅、橘黃、綠。
 - **維持鍵盤與觸控操作**：拓樸圖的鍵盤選取、平移、縮放與觸控的拖曳、點選不可以退化；新增的互動元件要可以用鍵盤聚焦與操作。
+
+## 執行指令
+
+曾經發生過：`find / -name … | head` 掃了整台電腦，在背景跑了 9 小時、佔滿一個 CPU 核心；沒有結尾的 heredoc 加 `cat > /tmp/x` 改檔，指令卡在 stdin 上。
+
+1. **搜尋要限定範圍**：只找專案目錄、`"$TEMP"/claude`（`$TEMP` 要加引號：Windows 的 Git Bash 中它含反斜線，不加引號時萬用字元比對不到）與 `~/.claude`。不要用 `find /`，也不要掃整顆磁碟。專案內優先用 Grep／Glob 工具。
+2. **可能跑很久的指令要加 `timeout`**，例如 `timeout 120 …`。`| head` 不會讓前面的指令提早結束（前面的指令要等 head 收滿 N 行才會停），所以改用 `-quit`、`-maxdepth` 或 `timeout`。
+3. **改檔一律用 Edit／Write 工具**，不要用 `cat >`、heredoc、`sed -i` 的多行替換或 `node -e`。
+4. **不要開會等 stdin 的指令**。測試在前景跑。
+5. **結束前停掉自己開的背景指令**；停不掉時，在報告中列出 PID 和指令。
 
 ## Git
 
@@ -53,5 +66,5 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 1. 做了什麼（檔案與重點）
 2. 畫面行為的變更（使用者會看到什麼不同）
 3. 需要其他 agent 處理（data-model／workflow／docs）
-4. 文件影響（設計說明 §11 檢視層架構、§12 畫面操作，README 的功能一覽等）
+4. 文件影響（設計說明 §11 檢視層架構、`docs/使用說明.md` 的畫面操作，README 的功能一覽等）
 5. 驗證結果（指令與通過數；改了配色時附 validator 結果）

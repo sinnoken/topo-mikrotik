@@ -1,14 +1,29 @@
 #!/usr/bin/env bash
 
-COLLECT_COMMAND_IDS=(config neighbor bridgehost route arp system vlans interface ipaddr ospf stp stpbridge)
-# 選用：只有部分設備才有的選單（Wi-Fi AP、CAPsMAN 控制器），不在預設清單；
-# 用 --commands 或設備清單的 extra 欄指定，避免在交換器上執行而得到錯誤回應；
+# 防火牆命中次數（fwfilter…fw6raw）緊接在 config 之後：export 與計數器的收集時間越近，
+# 中間有人增刪規則而對不上的機會越小
+COLLECT_COMMAND_IDS=(config fwfilter fwnat fwraw fw6filter fw6raw neighbor bridgehost route arp system vlans interface ipaddr ospf stp stpbridge)
+# 選用：只有部分設備才有的選單（Wi-Fi AP、CAPsMAN 控制器、RouterOS 7 的 /ip vrf），不在預設清單；
+# 用 --commands 或設備清單的 extra 欄指定，避免在沒有該選單的設備上執行而得到錯誤回應；
 # 確定支援的設備會依 auto_optional_commands 自動加上
-OPTIONAL_COMMAND_IDS=(wifi wireless capsman)
+OPTIONAL_COMMAND_IDS=(wifi wireless capsman vrf)
 
+# 防火牆規則的命中次數（bytes、packets）：只用 print stats，不用 reset-counters 等會改計數器的指令。
+# 每個表一個指令、一個區塊（ID 與指令一對一，--retry-failed 才能由 ### 標記找回 ID）；
+# 只收 export 會解析的表（/ip firewall filter|nat|raw、/ipv6 firewall filter|raw）。
+# 依據：https://manual.mikrotik.com/docs/firewall-and-quality-of-service/firewall/common-firewall-matchers-and-actions.md
+#   （print stats 的 bytes、packets；print 預設等於 print static，只列靜態規則）
+# 加 detail without-paging 的理由同其他指令：key=value 不受欄寬影響
+# （https://manual.mikrotik.com/docs/developer-guides/scripting.md 的 print parameters）。
+# stats 與 detail 並用的輸出格式手冊沒有範例，尚未以真實設備確認。
 command_for_id() {
   case "$1" in
     config) printf '%s\n' '/export terse' ;;
+    fwfilter) printf '%s\n' '/ip firewall filter print stats detail without-paging' ;;
+    fwnat) printf '%s\n' '/ip firewall nat print stats detail without-paging' ;;
+    fwraw) printf '%s\n' '/ip firewall raw print stats detail without-paging' ;;
+    fw6filter) printf '%s\n' '/ipv6 firewall filter print stats detail without-paging' ;;
+    fw6raw) printf '%s\n' '/ipv6 firewall raw print stats detail without-paging' ;;
     neighbor) printf '%s\n' '/ip neighbor print detail without-paging' ;;
     bridgehost) printf '%s\n' '/interface bridge host print detail without-paging' ;;
     route) printf '%s\n' '/ip route print detail without-paging' ;;
@@ -23,6 +38,7 @@ command_for_id() {
     wifi) printf '%s\n' '/interface wifi registration-table print detail without-paging' ;;
     wireless) printf '%s\n' '/interface wireless registration-table print detail without-paging' ;;
     capsman) printf '%s\n' '/caps-man registration-table print detail without-paging' ;;
+    vrf) printf '%s\n' '/ip vrf print detail without-paging' ;;
     *) return 1 ;;
   esac
 }
@@ -84,14 +100,42 @@ wifi_menu_available() {
   return 1
 }
 
+# VRF：RouterOS 7 是 /ip vrf（加上 /routing table），RouterOS 6 是 /ip route vrf
+# （https://manual.mikrotik.com/docs/user-guides/routing-and-networking-protocols/vrf.md、
+#   https://manual.mikrotik.com/docs/user-guides/routing-and-networking-protocols/moving-from-rosv6-to-rosv7.md）。
+# 只收 7 的 /ip vrf print：VRF 依序比對介面，內建的 main（* builtin，interfaces=all）排在前面時
+# 後面的 VRF 拿不到介面（VRF 手冊的 print 範例）；main 是內建項目，export 應該不寫它（待真機確認），
+# 所以只有 print 看得出 main 的位置。
+# 6 的 /ip route vrf 只有設定、全在 export 裡，不另外收；在 6 上執行 /ip vrf 會得到錯誤回應。
+# /routing table 不收：自己加的表（含 fib）在 export 裡，動態的表就是 main 與每個 VRF 同名的表
+# （https://manual.mikrotik.com/docs/user-guides/routing-and-networking-protocols/policy-routing.md）。
+# 所有路由表的路由已在 /ip route print detail 裡（不加 where 時列出每個 routing-table）。
+# 版本是否有 /ip vrf 選單（RouterOS 7 以上）；不符時把原因寫進 VRF_VERSION_REASON
+vrf_menu_available() {
+  local version=$1
+  VRF_VERSION_REASON=
+  if [[ ! "$version" =~ ^([0-9]+)\. ]]; then
+    VRF_VERSION_REASON='版本不明，無法確認有沒有 /ip vrf 選單'; return 1
+  fi
+  (( 10#${BASH_REMATCH[1]} >= 7 )) && return 0
+  VRF_VERSION_REASON="RouterOS $version 沒有 /ip vrf 選單，VRF 設定在 export 的 /ip route vrf"
+  return 1
+}
+
 # auto_optional_commands BOARD VERSION INTERFACES_OK WIFI_NAMES WLAN_NAMES
 # 結果：AUTO_COMMAND_IDS 與同索引的 AUTO_COMMAND_REASONS（要加的 ID 與依據）、
-# AUTO_SKIP_REASONS（看得出有無線但不自動加的原因）。
+# AUTO_SKIP_REASONS（看得出有無線但不自動加、或版本不支援 vrf 的原因）。
+# vrf 只看版本：RouterOS 7 一律加（沒有設定 VRF 時只有內建的 main 一列）。
 # 介面 type 是實際裝了哪個套件、有哪些介面，比型號準：interface 收集成功時只依介面 type，
 # 型號只在 interface 失敗時當輔助，所以兩者不會重複加，也不會因型號在沒有該介面的設備上誤加。
 auto_optional_commands() {
   local board=$1 version=$2 interfaces_ok=$3 wifi_names=$4 wlan_names=$5 standard
   AUTO_COMMAND_IDS=(); AUTO_COMMAND_REASONS=(); AUTO_SKIP_REASONS=()
+  if vrf_menu_available "$version"; then
+    AUTO_COMMAND_IDS+=(vrf); AUTO_COMMAND_REASONS+=("version=$version")
+  else
+    AUTO_SKIP_REASONS+=("vrf：$VRF_VERSION_REASON")
+  fi
   standard=$(board_wireless_standard "$board")
   if (( interfaces_ok )); then
     if [[ -n "$wifi_names" ]]; then

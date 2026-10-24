@@ -163,7 +163,7 @@ test('ARP 與 IP 位址：略過 invalid／disabled、多播、APIPA', () => {
   assert.strictEqual(s.model.arps.length, 1);
   assert.deepStrictEqual(addrs(s, 'R_A|bridge1'), ['10.0.0.1/24']);
 });
-test('路由：RouterOS 7（無序號）、ECMP（gateway=a,b）、連接路由、非作用中與其他路由表略過；RouterOS 6（序號、大寫旗標、pref-src）', () => {
+test('路由：RouterOS 7（無序號）、ECMP（gateway=a,b）、連接路由、非作用中略過、其他路由表保留（沒有 VRF 設定時 vrf 為 null）；RouterOS 6（序號、大寫旗標、pref-src）', () => {
   const v7 = ['Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC, o - OSPF',
     ' DAc dst-address=10.1.1.0/24 routing-table=main gateway=bridge1 immediate-gw=bridge1 distance=0 scope=10',
     ' DAo+ dst-address=10.2.0.0/16 routing-table=main gateway=10.0.0.2,10.0.0.6 immediate-gw=10.0.0.2%ether1,10.0.0.6%ether2 distance=110 scope=20',
@@ -172,9 +172,10 @@ test('路由：RouterOS 7（無序號）、ECMP（gateway=a,b）、連接路由�
   const v6 = ['Flags: X - disabled, A - active, D - dynamic, C - connect, S - static, o - ospf', ' 0 ADC  dst-address=10.1.1.0/24 pref-src=10.1.1.1 gateway=bridge1 gateway-status=bridge1 reachable distance=0 scope=10',
     ' 1 A S  dst-address=0.0.0.0/0 gateway=10.0.0.254 gateway-status=10.0.0.254 reachable via bridge1 distance=1 scope=30', ' 2   S  dst-address=10.7.0.0/16 gateway=10.0.0.9 distance=1'].join('\n');
   const s7 = build('R_A (10.0.0.1):\n### /ip route print detail\n' + v7); const r7 = s7.model.routes;
-  assert.deepStrictEqual(r7.map((r) => r.prefix + '/' + r.len + ' ' + r.proto), ['0.0.0.0/0 Static', '10.1.1.0/24 Direct', '10.2.0.0/16 OSPF']);
-  assert.deepStrictEqual(r7.find((r) => r.prefix === '10.2.0.0').nh, [{ ip: '10.0.0.2', ifc: 'ether1' }, { ip: '10.0.0.6', ifc: 'ether2' }]);
-  assert.deepStrictEqual(r7.find((r) => r.prefix === '10.1.1.0').nh, [{ ip: null, ifc: 'bridge1' }]);
+  assert.deepStrictEqual(r7.map((r) => [r.prefix + '/' + r.len + ' ' + r.proto, r.routingTable, r.vrf]),
+    [['0.0.0.0/0 Static', 'main', 'main'], ['10.1.1.0/24 Direct', 'main', 'main'], ['10.2.0.0/16 OSPF', 'main', 'main'], ['10.6.0.0/16 BGP', 'vrf1', null]]);
+  assert.deepStrictEqual(r7.find((r) => r.prefix === '10.2.0.0').nh, [{ ip: '10.0.0.2', ifc: 'ether1', vrf: 'main', vrfBasis: 'default' }, { ip: '10.0.0.6', ifc: 'ether2', vrf: 'main', vrfBasis: 'default' }]);
+  assert.deepStrictEqual(r7.find((r) => r.prefix === '10.1.1.0').nh, [{ ip: null, ifc: 'bridge1', vrf: 'main', vrfBasis: 'interface' }]);
   const s6 = build('R_A (10.0.0.1):\n### /ip route print detail\n' + v6);
   assert.deepStrictEqual(s6.model.routes.map((r) => r.prefix + ' ' + r.proto), ['0.0.0.0 Static', '10.1.1.0 Direct']);
 });

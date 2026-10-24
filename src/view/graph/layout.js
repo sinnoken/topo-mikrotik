@@ -155,7 +155,72 @@
     return maxMove;
   }
 
-  V.layout = { layout, forceStep, prepare, placeLeaves, shelf, slotW, leafRows, RANK, LDY, LEAF_DY };
+  /**
+   * L2 埠圖的共用步驟：設備層級（prepare 的分層，終端排在所屬設備的下一層）與每個埠在框的哪一邊。
+   * 對端在較上層的埠放在框的上緣（north），其餘放下緣（south）；內建版面與 ELK 共用，結果一致。
+   *   devs [{ id, kind, collected, group, box: { w, h } }]、ports [{ id, dev }]、edges [{ a, b, aDev, bDev }]
+   * 回傳 { groups（prepare 的結果）, level: Map(dev→層), side: Map(port→'north'|'south'), peers: Map(port→[對端設備]) }
+   */
+  function portPrepare(devs, ports, edges) {
+    const seen = new Set(); const devEdges = [];
+    edges.forEach((e) => { const k = e.aDev < e.bDev ? e.aDev + '\u0000' + e.bDev : e.bDev + '\u0000' + e.aDev; if (e.aDev !== e.bDev && !seen.has(k)) { seen.add(k); devEdges.push({ a: e.aDev, b: e.bDev }); } });
+    const groups = prepare(devs, devEdges);
+    const level = new Map();
+    groups.forEach((g) => { g.level.forEach((l, id) => level.set(id, l)); g.leaves.forEach((ids, p) => ids.forEach((id) => level.set(id, (g.level.get(p) || 0) + 1))); });
+    const peers = new Map();
+    edges.forEach((e) => { S.util.getOr(peers, e.a, () => []).push(e.bDev); S.util.getOr(peers, e.b, () => []).push(e.aDev); });
+    const side = new Map();
+    ports.forEach((p) => {
+      const mine = level.get(p.dev) || 0; const ps = peers.get(p.id) || [];
+      side.set(p.id, ps.length && ps.every((d) => (level.get(d) || 0) < mine) ? 'north' : 'south');
+    });
+    return { groups, level, side, peers };
+  }
+  /** 依框的大小把埠平均排在上、下緣；order 決定同一邊的先後（預設依埠名） */
+  function placePorts(devs, ports, side, order) {
+    const anchor = new Map(); const byDev = new Map();
+    ports.forEach((p) => S.util.getOr(byDev, p.dev + '\u0000' + side.get(p.id), () => []).push(p));
+    const box = new Map(devs.map((d) => [d.id, d.box]));
+    byDev.forEach((list, k) => {
+      const [dev, sd] = k.split('\u0000'); const b = box.get(dev); if (!b) return;
+      list.sort(order || ((x, y) => S.util.natural(x.name || x.id, y.name || y.id)));
+      list.forEach((p, i) => anchor.set(p.id, { dx: -b.w / 2 + ((i + 1) * b.w) / (list.length + 1), dy: sd === 'north' ? -b.h / 2 : b.h / 2 }));
+    });
+    return anchor;
+  }
+  /**
+   * L2 埠圖的內建版面（同步）：設備框依層級逐列排開（太寬時折行），各群以書架排列；埠排在框的上、下緣，
+   * 同一邊依對端設備的 x 排序，線比較少交叉。回傳 { pos: Map(dev→{x,y}), anchor: Map(port→{dx,dy}) }
+   */
+  function portLayout(devs, ports, edges) {
+    const P = portPrepare(devs, ports, edges); const GAPX = 60; const GAPY = 120; const MAXW = 2600;
+    const byId = new Map(devs.map((d) => [d.id, d]));
+    const boxes = P.groups.map((g) => {
+      const layers = [];
+      g.members.forEach((n) => { const l = P.level.get(n.id) || 0; (layers[l] || (layers[l] = [])).push(n.id); });
+      const pos = new Map(); let y = 0; let width = 0;
+      layers.forEach((ids) => {
+        if (!ids || !ids.length) return;
+        ids.sort((a, b) => (RANK[byId.get(a).kind] ?? 3) - (RANK[byId.get(b).kind] ?? 3) || S.util.natural(a, b));
+        let row = []; let rowW = 0;
+        const flush = () => {
+          if (!row.length) return;
+          let x = -rowW / 2; const h = Math.max(...row.map((id) => byId.get(id).box.h));
+          row.forEach((id) => { const w = byId.get(id).box.w; pos.set(id, { x: x + w / 2, y: y + h / 2 }); x += w + GAPX; });
+          width = Math.max(width, rowW); y += h + GAPY; row = []; rowW = 0;
+        };
+        ids.forEach((id) => { const w = byId.get(id).box.w; if (row.length && rowW + w > MAXW) flush(); rowW += (row.length ? GAPX : 0) + w; row.push(id); });
+        flush();
+      });
+      return { name: g.name, pos, w: Math.max(width, 1), h: Math.max(y - GAPY, 1), n: g.members.length };
+    });
+    const pos = shelf(boxes);
+    const peerX = (p) => { const ps = P.peers.get(p.id) || []; return ps.length ? ps.reduce((s, d) => s + ((pos.get(d) || { x: 0 }).x), 0) / ps.length : Infinity; };
+    const anchor = placePorts(devs, ports, P.side, (a, b) => peerX(a) - peerX(b) || S.util.natural(a.name || a.id, b.name || b.id));
+    return { pos, anchor };
+  }
+
+  V.layout = { layout, forceStep, prepare, placeLeaves, shelf, slotW, leafRows, RANK, LDY, LEAF_DY, portPrepare, placePorts, portLayout };
 })(globalThis.SSOT = globalThis.SSOT || {});
 
 /*

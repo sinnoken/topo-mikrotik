@@ -98,6 +98,7 @@
       deviceType: d.deviceType, softwareVersion: d.softwareVersion, platform: d.platform, caps: d.caps,
       // 設備層級 DNS／NTP 伺服器（事實，見 model/build.js 的 SERVER_SOURCE_RANK）；沒有設定為 null
       dnsServers: serverConf(d.dnsServers), ntpServers: serverConf(d.ntpServers),
+      policyRules: d.policyRules ? { rules: d.policyRules.rules.slice(), src: [d.policyRules.src] } : null, // /routing settings 的 policy-rules；沒有寫出時為 null（預設順序）
       seenBy: Array.from(d.seenBy).sort(), src: d.src, srcNone: d.src.length ? null : 'seen-only',
     })).sort((a, b) => nat(a.key, b.key));
 
@@ -105,7 +106,7 @@
       key: i.key, dev: i.dev, name: i.name, desc: i.desc, enabled: i.enabled, status: i.status || 'unknown', type: i.type, typeBasis: i.typeBasis,
       rawType: i.rawType, hwMac: i.hwMac, defaultName: i.defaultName, mtu: i.mtu, actualMtu: i.actualMtu, l2mtu: i.l2mtu,
       lag: i.lag, lagMembers: Array.from(i.lagMembers).sort(nat), bridge: i.bridge, parent: i.parent, encapVlan: i.encapVlan,
-      mode: i.mode, pvid: i.pvid, frameTypes: i.frameTypes, ingressFiltering: i.ingressFiltering,
+      mode: i.mode, pvid: i.pvid, frameTypes: i.frameTypes, ingressFiltering: i.ingressFiltering, vlanFiltering: i.vlanFiltering, vlanUnfiltered: !!i.vlanUnfiltered, vrf: i.vrf, vrfBasis: i.vrfBasis,
       stp: i.stp ? { role: i.stp.role, portNumber: i.stp.portNumber, designatedBridge: i.stp.designatedBridge, designatedPort: i.stp.designatedPort, edge: i.stp.edge, sendingRstp: i.stp.sendingRstp } : null, untaggedVlans: U.numSort(Array.from(i.untaggedVlans)), taggedVlans: U.numSort(Array.from(i.taggedVlans)),
       unresolvedVlans: Array.from(i.unresolvedVlans).sort(nat), macs: Array.from(i.macs).sort(),
       hearsay: i.hearsay, edge: M.edge.has(i.key), unknownPeer: M.edge.has(i.key) && !M.edge.get(i.key).linked, src: i.src, srcNone: i.src.length ? null : i.hearsay ? 'hearsay' : 'unrecorded',
@@ -114,7 +115,7 @@
     const links = Array.from(M.links.values()).map((l) => ({
       key: l.key, a: l.a, b: l.b, layer: l.layer, via: Array.from(l.via).sort(), protocols: Array.from(l.protocols || []).sort(), verified: !!l.verified, hearsay: l.hearsay,
       evidenceScope: l.evidenceScope, observations: (l.observations || []).slice().sort((a, b) => nat(a.dev, b.dev) || nat(a.ifc, b.ifc) || nat(a.peerIfc || '', b.peerIfc || '') || nat(a.block, b.block) || a.line - b.line),
-      cls: l.cls, vlansA: l.vlansA || [], vlansB: l.vlansB || [], vlansCommon: l.vlansCommon || [], vlanComparable: !!l.vlanComparable, vlanMismatch: !!l.vlanMismatch, src: l.src,
+      cls: l.cls, vlansA: l.vlansA || [], vlansB: l.vlansB || [], vlansCommon: l.vlansCommon || [], vlanComparable: !!l.vlanComparable, vlanMismatch: !!l.vlanMismatch, vlansDiff: l.vlansDiff || [], src: l.src,
     })).sort((a, b) => nat(a.key, b.key));
 
     const vlans = Array.from(M.vlans.values()).map((v) => ({
@@ -128,23 +129,39 @@
         .sort((x, y) => nat(x.ep, y.ep) || nat(x.vlan || '', y.vlan || '')), edge: m.edge || [], wifi: m.wifi || null, behind: m.behind || null, src: m.src,
     })).sort((a, b) => U.cmp(a.mac, b.mac));
 
-    // IP 位址（參考 NetBox IPAddress）：每個介面上的每個位址一筆；VRF 尚未收集，固定為 null
+    // VRF 依名稱排序，main 在最前（同一個網段或 IP 在多個 VRF 時的順序）
+    const byVrf = (a, b) => (a === b ? 0 : a === K.MAIN_VRF ? -1 : b === K.MAIN_VRF ? 1 : nat(a, b));
+    // IP 位址（參考 NetBox IPAddress）：每個介面上的每個位址一筆；vrf 是介面所屬的 VRF（ADR-015，main 也寫出）
     const ipAddresses = Array.from(M.ifcs.values()).flatMap((i) => Array.from(i.ips, ([address, src]) => {
       const p = S.ip.parseCidr(address);
-      return { address, ip: p ? p.ip : null, len: p ? p.len : null, family: 4, vrf: null, role: i.rawType === 'vrrp' ? 'vrrp' : null, dev: i.dev, ep: i.key, hearsay: i.hearsay, src: [src] };
-    })).sort((a, b) => nat(a.ip || a.address, b.ip || b.address) || nat(a.ep, b.ep));
-    // 前綴（參考 NetBox Prefix）：由設備自有的位址推導的直連網段，屬於推論
+      return { address, ip: p ? p.ip : null, len: p ? p.len : null, family: 4, vrf: i.vrf, role: i.rawType === 'vrrp' ? 'vrrp' : null, dev: i.dev, ep: i.key, hearsay: i.hearsay, src: [src] };
+    })).sort((a, b) => nat(a.ip || a.address, b.ip || b.address) || byVrf(a.vrf, b.vrf) || nat(a.ep, b.ep));
+    // 前綴（參考 NetBox Prefix）：由設備自有的位址推導的直連網段，屬於推論。每個 VRF 的每個網段一筆，key 是 K.inVrf(prefix, vrf)
     const prefixMap = new Map();
     ipAddresses.forEach((a) => {
       if (a.hearsay || a.ip === null || a.len >= 32) return;
-      const net = S.ip.parseCidr(a.address).net; const prefix = net + '/' + a.len;
-      const p = U.getOr(prefixMap, prefix, () => ({ prefix, net, len: a.len, family: 4, vrf: null, basis: 'connected', vlan: null, vlans: [], eps: [] }));
+      const net = S.ip.parseCidr(a.address).net; const prefix = net + '/' + a.len; const key = K.inVrf(prefix, a.vrf);
+      const p = U.getOr(prefixMap, key, () => ({ key, prefix, net, len: a.len, family: 4, vrf: a.vrf, basis: 'connected', vlan: null, vlans: [], eps: [] }));
       const enc = M.ifcs.get(a.ep).encapVlan; if (enc != null && !p.vlans.includes(enc)) p.vlans.push(enc); // 網段設在 VLAN 介面上：所屬 VLAN
       if (!p.eps.includes(a.ep)) p.eps.push(a.ep);
     });
     // 各設備把同一網段設在不同 VLAN（A07）時 vlan 不明確，為 null；vlans 列出全部
     const prefixes = Array.from(prefixMap.values()).map((p) => Object.assign(p, { vlan: p.vlans.length === 1 ? p.vlans[0] : null, vlans: p.vlans.sort((x, y) => x - y), eps: p.eps.sort(nat) }))
-      .sort((a, b) => nat(a.net, b.net) || a.len - b.len);
+      .sort((a, b) => nat(a.net, b.net) || a.len - b.len || byVrf(a.vrf, b.vrf));
+    // VRF 的設定（事實，export 的 /ip vrf 或 /ip vrf print）：每台設備依設定順序（order，第一筆比對到的介面屬於它）
+    const vrfs = Array.from(M.vrfs.values()).flat().map((v) => ({ dev: v.dev, name: v.name, order: v.order, source: v.source, disabled: v.disabled, builtin: v.builtin, interfaces: v.interfaces.slice(), members: Array.from(v.members).sort(nat), src: v.src }))
+      .sort((a, b) => nat(a.dev, b.dev) || a.order - b.order);
+    // 路由表（main 以外）：export 的 /routing table（source export，fib 是事實），以及每個啟用中的 VRF 自動產生的同名動態表（source vrf）
+    const routingTables = M.policy.tables.map((t) => ({ dev: t.dev, name: t.name, fib: t.fib, disabled: t.disabled, source: 'export', vrf: null, src: t.src }))
+      .concat(vrfs.filter((v) => !v.disabled && !v.builtin).map((v) => ({ dev: v.dev, name: v.name, fib: true, disabled: false, source: 'vrf', vrf: v.name, src: v.src })))
+      .sort((a, b) => nat(a.dev, b.dev) || nat(a.name, b.name) || U.cmp(a.source, b.source));
+    // 策略路由（事實）：/routing rule 依設定順序（order 從 1 起算），mangle 的 mark-routing 規則
+    const orderBy = new Map();
+    const routingRules = M.policy.rules.map((r) => { const n = (orderBy.get(r.dev) || 0) + 1; orderBy.set(r.dev, n);
+      return { dev: r.dev, order: n, action: r.action, table: r.table, match: Object.fromEntries(Object.keys(r.match).sort().map((k) => [k, r.match[k]])), disabled: r.disabled, comment: r.comment, src: r.src }; })
+      .sort((a, b) => nat(a.dev, b.dev) || a.order - b.order);
+    const routingMarkRules = M.policy.marks.map((x) => ({ dev: x.dev, chain: x.chain, mark: x.mark, match: Object.fromEntries(Object.keys(x.match).sort().map((k) => [k, x.match[k]])), disabled: x.disabled, src: x.src }))
+      .sort((a, b) => nat(a.dev, b.dev) || a.src[0][0] - b.src[0][0] || a.src[0][1] - b.src[0][1]);
 
     // Wi-Fi 關聯表的原始紀錄（事實）；macs[].wifi 是依此與 MAC 表推論出的位置
     const wifiAssociations = M.assocs.map((a) => ({
@@ -153,12 +170,14 @@
     })).sort((a, b) => U.cmp(a.mac, b.mac) || nat(a.ep, b.ep));
     const inferredLinks = (M.inferred || []).map((r) => ({ key: r.key, a: r.a, b: r.b, bases: r.bases, confidence: r.confidence, evidence: r.evidence }))
       .sort((a, b) => nat(a.key, b.key));
-    const dhcpNetworks = M.dhcpNets.map((n) => ({ dev: n.dev, network: n.network, gateways: n.gateways, src: [[n.block, n.line]] }))
-      .sort((a, b) => nat(a.dev, b.dev) || nat(a.network, b.network));
-    const arps = M.arps.map((a) => ({ ip: a.ip, mac: a.mac, dev: a.dev, ifc: a.ifc, src: [[a.block, a.line]] }))
-      .sort((a, b) => nat(a.ip, b.ip) || nat(a.dev, b.dev) || U.cmp(a.mac, b.mac));
-    const routes = M.routes.map((r) => ({ dev: r.dev, prefix: r.prefix, len: r.len, proto: r.proto, distance: r.distance, blackhole: r.blackhole, nh: r.nh, src: [[r.block, r.line]] }))
-      .sort((a, b) => nat(a.dev, b.dev) || nat(a.prefix, b.prefix) || a.len - b.len);
+    const dhcpNetworks = M.dhcpNets.map((n) => ({ dev: n.dev, network: n.network, gateways: n.gateways, vrf: n.vrf, src: [[n.block, n.line]] }))
+      .sort((a, b) => nat(a.dev, b.dev) || nat(a.network, b.network) || byVrf(a.vrf, b.vrf));
+    const arps = M.arps.map((a) => ({ ip: a.ip, mac: a.mac, dev: a.dev, ifc: a.ifc, vrf: a.vrf, src: [[a.block, a.line]] }))
+      .sort((a, b) => nat(a.ip, b.ip) || byVrf(a.vrf, b.vrf) || nat(a.dev, b.dev) || U.cmp(a.mac, b.mac));
+    // 路由：routingTable 是路由表原值（main 也寫出），vrf 是它對應的 VRF（只用於策略路由的路由表為 null）；nh[].vrf 是解析閘道的 VRF，依據在 vrfBasis（見 model/build.js 的 resolveVrfs）
+    const routes = M.routes.map((r) => ({ dev: r.dev, prefix: r.prefix, len: r.len, proto: r.proto, distance: r.distance, blackhole: r.blackhole,
+      routingTable: r.routingTable, vrf: r.vrf, nh: r.nh, src: [[r.block, r.line]] }))
+      .sort((a, b) => nat(a.dev, b.dev) || nat(a.prefix, b.prefix) || a.len - b.len || byVrf(K.vrf(a.routingTable), K.vrf(b.routingTable)));
     const ospfAdjacencies = M.ospfAdjacencies.map((a) => ({
       dev: a.dev, localEp: a.localEp, peerDev: a.peerDev, peerEp: a.peerEp,
       peerIp: a.peerIp, peerId: a.peerId, reciprocal: a.reciprocal, src: [[a.block, a.line]],
@@ -170,6 +189,7 @@
       key: r.key, dev: r.dev, family: r.family, table: r.table, chain: r.chain, position: r.position, order: r.order, action: r.action,
       match: Object.fromEntries(Object.keys(r.match).sort().map((k) => [k, r.match[k]])), params: Object.fromEntries(Object.keys(r.params).sort().map((k) => [k, r.params[k]])),
       disabled: r.disabled, comment: r.comment, commentEncoding: r.commentEncoding, signature: r.signature, src: [[r.block, r.line]],
+      stats: r.stats ? { bytes: r.stats.bytes, packets: r.stats.packets, src: r.stats.src.map((x) => x.slice()) } : null,
     })).sort((a, b) => nat(a.dev, b.dev) || FAM.indexOf(a.family) - FAM.indexOf(b.family) || TABLE.indexOf(a.table) - TABLE.indexOf(b.table) || a.order - b.order);
     const interfaceLists = Array.from(M.fw.lists.values()).map((l) => ({
       dev: l.dev, name: l.name, defined: l.defined, include: l.include.slice(), exclude: l.exclude.slice(), members: Array.from(l.members.keys()).sort(nat), src: l.src,
@@ -180,6 +200,11 @@
     const ipsecPolicies = M.fw.policies.map((p) => ({ dev: p.dev, srcAddress: p.srcAddress, dstAddress: p.dstAddress, peer: p.peer, template: p.template, disabled: p.disabled, src: p.src }))
       .sort((a, b) => nat(a.dev, b.dev) || a.src[0][1] - b.src[0][1]);
     const firewallZones = Array.from(M.fwZones.values()).map((z) => Object.assign({}, z)).sort((a, b) => nat(a.dev, b.dev));
+    // 命中次數的表（事實＋對應結果）：每台設備、每個（位址族，表）一筆；collectedAt 取該區塊的收集時間
+    const firewallStats = Array.from(M.fw.stats.values()).map((t) => ({
+      dev: t.dev, family: t.family, table: t.table, status: t.status, rows: t.count, dynamic: t.dynamic, rules: t.rules, reason: t.reason,
+      collectedAt: (c.blocks[t.block] || {}).collectedAt || null, src: t.line !== null ? [[t.block, t.line]] : [],
+    })).sort((a, b) => nat(a.dev, b.dev) || FAM.indexOf(a.family) - FAM.indexOf(b.family) || TABLE.indexOf(a.table) - TABLE.indexOf(b.table));
 
     c.findings.forEach((f) => f.evidence.forEach((e) => { e.text = lineText(c.blocks, e); e.file = (c.blocks[e.block] || { origin: {} }).origin.file; }));
 
@@ -191,8 +216,7 @@
 
     const sev = { error: 0, warn: 0, info: 0 };
     c.findings.forEach((f) => { sev[f.severity]++; });
-    const inputText = c.sources.map((s) => (s.name || '') + '\n' + s.text).join('\n\u0000\n');
-    const inputHash = U.hash(inputText);
+    const inputHash = inputHashOf(c.sources);
     return {
       meta: {
         schema: S.SCHEMA, version: S.VERSION,
@@ -201,16 +225,18 @@
         baselineKey: baselineKey(inputHash, c.opt),
         sources: c.sources.map((s) => ({ name: s.name || S.readers.PASTE, reader: c.readersUsed[s.name || S.readers.PASTE] || null, bytes: s.text.length, hash: U.hash(s.text) })),
         adapters: c.usage, blockCount: c.blocks.length, factCount: c.facts.length,
-        profile: c.profile ? { id: c.profile.id, version: c.profile.version } : null,
+        // hash：命名規則全文的雜湊（S.profile.hash），Q.zones 用它核對傳入的是不是同一份命名規則
+        profile: c.profile ? { id: c.profile.id, version: c.profile.version, hash: S.profile.hash(c.opt.profile) } : null,
         stats: {
           devices: devices.length, collected: devices.filter((d) => d.collected).length, interfaces: interfaces.length,
           links: links.length, inferredLinks: inferredLinks.length, ipAddresses: ipAddresses.length, prefixes: prefixes.length, wifiAssociations: wifiAssociations.length, ospfAdjacencies: ospfAdjacencies.length, firewallRules: firewallRules.length, vlans: vlans.length, macs: macs.length, arps: arps.length, routes: routes.length,
+          vrfs: vrfs.length, routingTables: routingTables.length, routingRules: routingRules.length,
           findings: sev,
         },
         timing: { ms: Date.now() - c.t0 },
       },
-      model: { devices, interfaces, links, inferredLinks, ospfAdjacencies, vlans, ipAddresses, prefixes, macs, wifiAssociations, dhcpNetworks, arps, routes,
-        firewallRules, firewallZones, interfaceLists, ipServices, ipsecPeers, ipsecPolicies },
+      model: { devices, interfaces, links, inferredLinks, ospfAdjacencies, vlans, vrfs, ipAddresses, prefixes, macs, wifiAssociations, dhcpNetworks, arps, routes, routingTables, routingRules, routingMarkRules,
+        firewallRules, firewallZones, firewallStats, interfaceLists, ipServices, ipsecPeers, ipsecPolicies },
       findings: c.findings,
       coverage: c.coverage,
       blocks,
@@ -228,8 +254,18 @@
   function baselineKey(inputHash, opt) {
     const minor = String(S.VERSION).split('.').slice(0, 2).join('.');
     const h = (v) => (v == null ? null : U.hash(U.canonicalJson(v)));
-    return U.hash(JSON.stringify([inputHash, minor, h(opt.profile), h(opt.expectedData)]));
+    return U.hash(JSON.stringify([inputHash, minor, opt.profile ? S.profile.hash(opt.profile) : null, h(opt.expectedData)]));
   }
+
+  /**
+   * 輸入指紋（meta.inputHash）：不重建基準也能核對收集檔是不是同一份。sources 同 build（[{ name?, text }]），順序有意義。
+   * 沒有 name 的來源以空字串計算（不是 S.readers.PASTE），所以不能用 meta.sources[].name 重組；要傳入與 build 相同的 sources。
+   */
+  function inputHashOf(sources) {
+    if (!Array.isArray(sources) || sources.some((x) => !x || typeof x.text !== 'string')) throw new TypeError('inputHashOf：sources 必須是 [{ name?, text: 字串 }]');
+    return U.hash(sources.map((x) => (x.name || '') + '\n' + x.text).join('\n\u0000\n'));
+  }
+  S.inputHashOf = inputHashOf;
 
   /** 同步建立（Node、測試用）。 */
   S.build = function (sources, options) {

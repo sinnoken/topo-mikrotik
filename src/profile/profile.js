@@ -9,7 +9,8 @@
  *   "alias": { "OLD-NAME": "NEW_NAME" },
  *   "classify": [ { "match": "_FW_", "flags": "i", "kind": "firewall", "role": "fw" } ],
  *   "group":  { "match": "^([A-Z0-9]+)_", "value": "$1" },
- *   "label":  { "match": "^(.*)$", "value": "$1" }
+ *   "label":  { "match": "^(.*)$", "value": "$1" },
+ *   "zones":  [ { "on": "vlan", "match": "^MGMT$", "zone": "MGMT" } ]   ← 選用：L4 zone 標籤，只在查詢時使用（Q.zones）
  * }
  */
 (function (S) {
@@ -32,6 +33,14 @@
     });
     const group = json.group ? { re: rx(json.group, 'group'), value: json.group.value || '$1' } : null;
     const label = json.label ? { re: rx(json.label, 'label'), value: json.label.value || '$1' } : null;
+    // zones（選用）：L4 zone 的標籤，只在查詢時使用（Q.zones），不寫進 Snapshot；on 是比對的對象
+    const ZONE_ON = ['vlan', 'interface', 'subnet'];
+    if (json.zones != null && !Array.isArray(json.zones)) errs.push('zones 必須是陣列');
+    const zones = (Array.isArray(json.zones) ? json.zones : []).map((r, i) => {
+      if (!ZONE_ON.includes(r && r.on)) errs.push(`zones[${i}].on 必須是 ${ZONE_ON.join(', ')}`);
+      if (!r || typeof r.zone !== 'string' || !r.zone.trim()) errs.push(`zones[${i}].zone 必須是非空字串`);
+      return { re: r ? rx(r, `zones[${i}]`) : null, on: r && r.on, zone: r && r.zone, match: r && r.match };
+    });
     const alias = new Map(Object.entries(json.alias || {}).map(([k, v]) => [String(k).trim().toUpperCase(), String(v)]));
     if (errs.length) throw new Error('命名規則檔有誤：\n- ' + errs.join('\n- '));
 
@@ -58,8 +67,28 @@
         if (label && label.re && (m = label.re.exec(name))) out.label = tmpl(m, label.value);
         return out;
       },
+      /**
+       * 網段的 zone 標籤（註解，不改寫事實）：t = { subnet: '10.0.0.0/24', vlans: [{ id, names }], interfaces: [{ name, desc }] }。
+       * zones 由上往下，第一條符合的規則生效；vlan 比對 VLAN ID（文字）與名稱，interface 比對介面名稱與說明，subnet 比對網段文字。
+       * 回傳 { zone, rule（索引）, on, match } 或 null。
+       */
+      zoneOf(t) {
+        for (let i = 0; i < zones.length; i++) {
+          const z = zones[i]; if (!z.re) continue;
+          const texts = z.on === 'vlan' ? (t.vlans || []).flatMap((v) => [String(v.id)].concat(v.names || []))
+            : z.on === 'interface' ? (t.interfaces || []).flatMap((x) => [x.name, x.desc].filter(Boolean)) : [t.subnet];
+          for (const s of texts) { const m = z.re.exec(s); if (m) return { zone: tmpl(m, z.zone), rule: i, on: z.on, match: z.match }; }
+        }
+        return null;
+      },
     };
   }
 
-  S.profile = { compile, KINDS };
+  /**
+   * 命名規則全文的雜湊（鍵排序後的 JSON）：meta.baselineKey、meta.profile.hash 與 Q.zones 的核對共用這一個算法，
+   * 同一個 id 與 version、內容不同的命名規則也能區分；鍵的順序不算差異。
+   */
+  const hash = (json) => S.util.hash(S.util.canonicalJson(json));
+
+  S.profile = { compile, hash, KINDS };
 })(globalThis.SSOT = globalThis.SSOT || {});

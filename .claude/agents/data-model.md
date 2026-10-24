@@ -17,6 +17,8 @@ tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch
 ## 與其他 agent 的介面（契約）
 
 - **query 是對 workflow 和 frontend 的介面**：Snapshot（`docs/設計說明.md` §5.2）與 `SSOT.query(snapshot)` 的函式，是畫面與下游模組唯一的資料來源。`workflow` 或 `frontend` 需要新的查詢函式時，由你加入。
+  - `src/query` 是畫面與下游唯一的讀取介面（ADR-018）：畫面不讀 Snapshot 的欄位與 `S.check`、`S.adapters`，靜態資料（規則目錄、顯示名稱）放在 `S.query.*`。
+  - 新增查詢函式要考慮 1000 台的效能：索引在第一次呼叫時才建立，不在 `S.query(snap)` 時預先建好全部；回傳的衍生陣列（Q 自己的索引）要凍結，Snapshot 本身不凍結、不複製。
   - 新增欄位或查詢函式屬於相容修改，可以直接做，並在報告列出名稱與意義。
   - 改名、刪除或改變欄位意義屬於破壞性修改，先依 `snapshot-contract-change` skill 評估；必要時調整 `S.SCHEMA`／`S.VERSION`，並在報告中逐項列出受影響的畫面位置與下游模組。
 - **對 docs**：finding 的 ID、標題、嚴重度，以及常見原因與處理（`CATALOG` 的 `causes`／`action`），要和 `docs/基準檢查規則.md` 一致，由 `tests/docs.js` 檢查。改了就在報告的「文件影響」寫出要怎麼改。
@@ -24,10 +26,34 @@ tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch
 ## 規則
 
 - 核心不碰 DOM、Canvas、IndexedDB。事實和推論要分開，並保留來源行號。結果要可重現。
-- 改解析器時依 `routeros-parser-fixtures` skill 先寫測試；欄位語意以 RouterOS 官方手冊為準。
+- 改解析器時依 `routeros-parser-fixtures` skill 先寫測試；欄位語意以 RouterOS 官方手冊為準，查證方式見下方「RouterOS 手冊」。
 - 新增或修改 adapter 時，依該指令格式本來就不產生事實的行（說明行、續行、註解、停用項目…），用 `ignore(line, why)` 宣告；沒有宣告、也沒有產生事實的行會列為 I03（ADR-004）。
 - 依 ADR-005 判斷要不要升版：解析結果（事實、推論、finding、欄位）改變就升 minor，並在 `docs/版本紀錄.md` 寫一筆；只改 `CATALOG` 的 `causes`／`action` 不升版；Snapshot 結構的破壞性改變才改 `S.SCHEMA` 並升 major。
 - 範例資料和 OUI 資料是產生出來的，改產生器後重新產生，不要手動修改。
+
+## RouterOS 手冊
+
+- 只考慮 RouterOS 7.x 以上（[ADR-019](../../docs/架構決策/019-支援範圍RouterOS7以上.md)）：新的解析、收集、fixture 與檢查只依 v7 的語法；現有處理 v6 的程式先不主動拆除，也不再擴充。
+- 查證 RouterOS 的語法、欄位、v6／v7 的差異時，用 `routeros-manual` skill 的查詢腳本，不要憑記憶，也不要自己抓網頁。
+  - 腳本位置（以下稱 `$M`）：`C:/Users/Yicheng/.claude/skills/synced/d229f1ad-4b6f-4d0f-a951-cdd6139693dd_59c41ba4-e5fd-4859-b7cb-ae8035250e30/routeros-manual/scripts/manual.py`
+  - 用法（在 `"$TEMP"` 下執行，並加上 `timeout`）：
+    - 搜尋：`cd "$TEMP" && timeout 60 python "$M" search <英文關鍵字>`
+    - 讀單頁：`cd "$TEMP" && timeout 60 python "$M" get <docs/...路徑> --max-chars N`
+    - 列出版本：`cd "$TEMP" && timeout 60 python "$M" versions`
+  - 這個 skill 是使用者層級的，subagent 的 Skill 清單裡看不到，但可以用 Bash 執行。
+- 線上手冊只有 7.24–7.26 版。v6 和較舊的 v7 要對照 <https://manual.mikrotik.com/docs/cli-reference/compare-versions>；查不到時，要明確寫「無法以手冊確認」。
+- 不要把手冊原文複製進 repo（程式註解、fixture、文件都一樣）。只附網址，並用自己的話摘要。
+- 每一條依手冊寫成的判斷規則，都要在回報中附上網址。
+
+## 執行指令
+
+曾經發生過：`find / -name … | head` 掃了整台電腦，在背景跑了 9 小時、佔滿一個 CPU 核心；沒有結尾的 heredoc 加 `cat > /tmp/x` 改檔，指令卡在 stdin 上。
+
+1. **搜尋要限定範圍**：只找專案目錄、`"$TEMP"/claude`（`$TEMP` 要加引號：Windows 的 Git Bash 中它含反斜線，不加引號時萬用字元比對不到）與 `~/.claude`。不要用 `find /`，也不要掃整顆磁碟。專案內優先用 Grep／Glob 工具。
+2. **可能跑很久的指令要加 `timeout`**，例如 `timeout 120 …`。`| head` 不會讓前面的指令提早結束（前面的指令要等 head 收滿 N 行才會停），所以改用 `-quit`、`-maxdepth` 或 `timeout`。
+3. **改檔一律用 Edit／Write 工具**，不要用 `cat >`、heredoc、`sed -i` 的多行替換或 `node -e`。
+4. **不要開會等 stdin 的指令**。測試在前景跑。
+5. **結束前停掉自己開的背景指令**；停不掉時，在報告中列出 PID 和指令。
 
 ## Git
 

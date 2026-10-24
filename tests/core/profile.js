@@ -21,7 +21,8 @@ test('命名規則：別名合併、去網域、分類、分群；只加註解�
   assert.ok(b.model.devices.some((d) => d.key === 'TPE_FW_01' && d.kind === 'firewall' && d.kindBasis === 'profile' && d.group === 'TPE'));
   assert.ok(!b.model.devices.some((d) => d.key === 'OLD-SW'), '別名應合併');
   assert.strictEqual(a.model.devices.length, 3);
-  assert.deepStrictEqual(b.meta.profile, { id: 't', version: '1' });
+  assert.deepStrictEqual(b.meta.profile, { id: 't', version: '1', hash: S.profile.hash(prof) });
+  assert.notStrictEqual(build(text, { profile: Object.assign({}, prof, { stripDomain: false }) }).meta.profile.hash, b.meta.profile.hash, '同一個 id 與 version、內容不同：雜湊不同');
 });
 test('命名規則有錯時明確回報錯誤', () => {
   assert.throws(() => S.profile.compile({ id: 'x', classify: [{ match: '(' }] }), /正規表示式/);

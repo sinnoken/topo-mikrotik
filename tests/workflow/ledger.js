@@ -41,7 +41,7 @@ test('處理紀錄：三輪推進判定新增、fixed、regressed、豁免到期
   const c01 = q1.findings().filter((f) => f.id === 'C01').length;
   assert.deepStrictEqual([r1.ledger.iterations[0].coverage, r1.ledger.iterations[0].unknownPeers],
     [{ collected: q1.meta().stats.collected, expected: q1.meta().stats.collected + c01 }, unknown]);
-  assert.deepStrictEqual(r1.ledger.iterations[0].baseline, { inputHash: q1.meta().inputHash, baselineKey: q1.meta().baselineKey, createdAt: '2026-01-01T00:00:00Z' });
+  assert.deepStrictEqual(r1.ledger.iterations[0].baseline, { inputHash: q1.meta().inputHash, baselineKey: q1.meta().baselineKey, schema: S.SCHEMA, createdAt: '2026-01-01T00:00:00Z' });
   const f06 = r1.ledger.items[k.F06];
   assert.deepStrictEqual([f06.status, f06.id, f06.dev, f06.firstSeen, f06.lastSeen], ['open', 'F06', 'TPE_CORE_RT_02', q1.meta().baselineKey, q1.meta().baselineKey]);
   // ② 排程的 F06 消失 → fixed；新的 I01 → open；豁免未到期、誤報不變
@@ -213,7 +213,7 @@ test('處理紀錄：依 baselineKey 判斷冪等；換命名規則或 minor 版
   const q = (v, opt) => S.query(buildAtVersion(v, text, opt));
   const base = q(`${maj}.${min}.0`);
   const r1 = L.advance(L.empty(), base, { now: '2026-01-01T00:00:00Z' });
-  assert.deepStrictEqual(r1.ledger.iterations[0].baseline, { inputHash: base.meta().inputHash, baselineKey: base.meta().baselineKey, createdAt: '2026-01-01T00:00:00Z' });
+  assert.deepStrictEqual(r1.ledger.iterations[0].baseline, { inputHash: base.meta().inputHash, baselineKey: base.meta().baselineKey, schema: S.SCHEMA, createdAt: '2026-01-01T00:00:00Z' });
   const any = Object.values(r1.ledger.items)[0];
   assert.deepStrictEqual([any.firstSeen, any.lastSeen, any.history[0].baseline], [base.meta().baselineKey, base.meta().baselineKey, base.meta().baselineKey]);
   // 冪等：同一個基準鍵（重新建立、建立時間不同）不推進
@@ -246,7 +246,7 @@ test('處理紀錄：舊格式（沒有 baselineKey，以 inputHash 記錄）退
   const r1 = L.advance(L.empty(), q1, { now: '2026-01-01T00:00:00Z' });
   // 改成舊格式：iterations 沒有 baselineKey，firstSeen／lastSeen／history 記的是 inputHash
   const legacy = JSON.parse(JSON.stringify(r1.ledger).split(b1).join(h1));
-  legacy.iterations.forEach((r) => { delete r.baseline.baselineKey; });
+  legacy.iterations.forEach((r) => { delete r.baseline.baselineKey; delete r.baseline.schema; }); // 兩者都是之後才加的選用欄位
   assert.ok(!JSON.stringify(legacy).includes(b1) && L.validate(legacy).ok, L.validate(legacy).errors.join('\n'));
   // 手動變更：最新一輪退回用 inputHash，仍能判斷「還在最新一輪」
   assert.throws(() => L.set(legacy, k.F06, { status: 'fixed' }, { now: '2026-01-02T00:00:00Z' }), /仍出現在最新一輪/);
@@ -404,4 +404,186 @@ test('處理紀錄 facet：fromAcks 的舊確認標記（舊鍵）轉換到 dns�
   assert.deepStrictEqual(r.split, [{ from: base, to: uniqSorted([dnsKey, ntpKey]), reason: 'facet-split' }]);
   assert.ok(!r.changes.some((c) => c.key === dnsKey || c.key === ntpKey || c.key === base), '轉換的項目不算新出現或消失');
   assert.ok(L.validate(r.ledger).ok, L.validate(r.ledger).errors.join('\n'));
+});
+// ------------------------------------------------------------------ VRF（3.0.0，ssot-snapshot/3，ADR-015）：舊鍵（不分 VRF）轉換到新鍵
+// CORE、CORE2 在 main；PE、PE2 的 ether2、ether3、VLAN 介面在 VRF cust-a（依手冊 VRF 的 /ip vrf 寫法自行撰寫，不是實機擷取：
+// https://manual.mikrotik.com/docs/user-guides/routing-and-networking-protocols/vrf.md）。
+//   10.1.20.2：四台都有 → 2.11 是一筆 A09；3.0 分成 main（CORE、CORE2，不帶後綴）與 cust-a（PE、PE2）兩筆，實體都是舊鍵的子集合
+//   192.168.50.1：只有 PE、PE2（cust-a）→ A09 的新鍵去掉 @cust-a 就是舊鍵
+//   10.1.20.11 的 ARP：CORE（main）、PE、PE2（cust-a）的 MAC 都不同 → A01 只剩 cust-a 那一組（子集合）
+//   10.1.20.99 的 ARP：CORE（main）與 PE（cust-a）→ 2.11 的 A01 是跨 VRF 的誤報，3.0 不再產生，沒有新鍵可對應
+//   10.50.0.0/24：PE 的 vlan50 與 PE2 的 vlan60 → A07 的 facet 去掉 @cust-a 就是舊的 facet
+const VRF_NET = (withVrf) => [
+  ['CORE', '10.0.0.254', [], ['/ip address add address=10.1.20.2/24 interface=vlan20 network=10.1.20.0'],
+    [' 0 DC address=10.1.20.11 mac-address=AA:00:00:00:00:01 interface=vlan20', ' 1 DC address=10.1.20.99 mac-address=AA:00:00:00:00:0A interface=vlan20']],
+  ['CORE2', '10.0.0.253', [], ['/ip address add address=10.1.20.2/24 interface=vlan20 network=10.1.20.0'], []],
+  ['PE', '10.0.0.1', ['/interface vlan add interface=ether1 name=vlan50 vlan-id=50', '/ip vrf add interfaces=ether2,ether3,vlan50 name=cust-a'],
+    ['/ip address add address=10.1.20.2/24 interface=ether2 network=10.1.20.0', '/ip address add address=192.168.50.1/24 interface=ether3 network=192.168.50.0',
+      '/ip address add address=10.50.0.1/24 interface=vlan50 network=10.50.0.0'],
+    [' 0 DC address=10.1.20.11 mac-address=AA:00:00:00:00:02 interface=ether2', ' 1 DC address=10.1.20.99 mac-address=AA:00:00:00:00:0B interface=ether2']],
+  ['PE2', '10.0.0.2', ['/interface vlan add interface=ether1 name=vlan60 vlan-id=60', '/ip vrf add interfaces=ether2,ether3,vlan60 name=cust-a'],
+    ['/ip address add address=10.1.20.2/24 interface=ether2 network=10.1.20.0', '/ip address add address=192.168.50.1/24 interface=ether3 network=192.168.50.0',
+      '/ip address add address=10.50.0.2/24 interface=vlan60 network=10.50.0.0'],
+    [' 0 DC address=10.1.20.11 mac-address=AA:00:00:00:00:03 interface=ether2']],
+].map(([n, ip, defs, addrs, arps]) => [`${n} (${ip}):`, '### /export terse', ...defs.filter((l) => withVrf || !l.startsWith('/ip vrf')), ...addrs,
+  ...(arps.length ? ['### /ip arp print detail without-paging', ...arps] : [])].join('\n')).join('\n') + '\n';
+/**
+ * 2.11.0 的處理紀錄：2.11 沒有 VRF，所以以「拿掉 /ip vrf」的同一個網路建立的基準代表 2.11 看到的結果（全部在 main，鍵不帶後綴）；
+ * 3.0.0 以前的一輪沒有 baseline.schema。
+ */
+function ledgerAt211(L) {
+  const q211 = S.query(build(VRF_NET(false)));
+  const lg = L.advance(L.empty(), q211, { now: '2026-01-01T00:00:00Z' }).ledger;
+  lg.iterations.forEach((r) => { delete r.baseline.schema; });
+  return { q211, lg };
+}
+const VRF_KEYS = {
+  a09all: '["A09","interface:CORE2|vlan20","interface:CORE|vlan20","interface:PE2|ether2","interface:PE|ether2","ip:10.1.20.2"]',
+  a09main: '["A09","interface:CORE2|vlan20","interface:CORE|vlan20","ip:10.1.20.2"]',
+  a09cust: '["A09","interface:PE2|ether2","interface:PE|ether2","ip:10.1.20.2@cust-a"]',
+  a09c50: '["A09","interface:PE2|ether3","interface:PE|ether3","ip:192.168.50.1"]',
+  a09c50v: '["A09","interface:PE2|ether3","interface:PE|ether3","ip:192.168.50.1@cust-a"]',
+  a01all: '["A01","ip:10.1.20.11","mac:AA0000000001","mac:AA0000000002","mac:AA0000000003"]',
+  a01cust: '["A01","ip:10.1.20.11@cust-a","mac:AA0000000002","mac:AA0000000003"]',
+  a01cross: '["A01","ip:10.1.20.99","mac:AA000000000A","mac:AA000000000B"]',
+  a07: '["A07","facet:10.50.0.0/24","interface:PE2|vlan60","interface:PE|vlan50"]',
+  a07v: '["A07","facet:10.50.0.0/24@cust-a","interface:PE2|vlan60","interface:PE|vlan50"]',
+};
+const vrfIds = new Set(['A01', 'A07', 'A09']);
+const vrfKeysOf = (Q) => uniqSorted(Q.findings().filter((f) => vrfIds.has(f.id)).map(Q.findingKey));
+
+test('處理紀錄 VRF：測試資料在 2.11（不分 VRF）與 3.0 的鍵符合預期', () => {
+  const K = VRF_KEYS;
+  assert.deepStrictEqual(vrfKeysOf(ledgerAt211(S.ledger).q211), uniqSorted([K.a01all, K.a01cross, K.a07, K.a09all, K.a09c50]));
+  assert.deepStrictEqual(vrfKeysOf(S.query(build(VRF_NET(true)))), uniqSorted([K.a01cust, K.a07v, K.a09cust, K.a09c50v, K.a09main]));
+});
+
+test('處理紀錄 VRF：2.11 的紀錄推進 3.0 的基準，去掉 @<VRF> 相同或實體是子集合的新鍵沿用舊狀態（vrf-split，歷程記 fromKey）；沒有新鍵的跨 VRF 誤報照常判定', () => {
+  const L = S.ledger; const K = VRF_KEYS;
+  const { q211, lg: base } = ledgerAt211(L);
+  const t = { now: '2026-01-02T00:00:00Z' };
+  let old = L.set(base, K.a09all, { status: 'accepted', note: '共用位址', waiver: { reason: '各自的位址空間', until: '2026-12-01' } }, t);
+  old = L.set(old, K.a09c50, { status: 'scheduled', patch: 'patch:c50' }, t);
+  old = L.set(old, K.a01all, { status: 'scheduled', note: 'ARP 衝突' }, t);
+  old = L.set(old, K.a07, { status: 'false-positive' }, t);
+  old = L.set(old, K.a01cross, { status: 'scheduled' }, t);
+  const copy = JSON.stringify(old);
+  const q3 = S.query(build(VRF_NET(true)));
+  const r = L.advance(old, q3, { now: '2026-02-01T00:00:00Z' });
+  assert.strictEqual(JSON.stringify(old), copy, '不修改傳入的處理紀錄');
+  assert.deepStrictEqual(r.split, [
+    { from: K.a01all, to: [K.a01cust], reason: 'vrf-split' },
+    { from: K.a07, to: [K.a07v], reason: 'vrf-split' },
+    { from: K.a09all, to: uniqSorted([K.a09cust, K.a09main]), reason: 'vrf-split' },
+    { from: K.a09c50, to: [K.a09c50v], reason: 'vrf-split' },
+  ]);
+  const lg = r.ledger; const b3 = q3.meta().baselineKey;
+  [K.a01all, K.a07, K.a09all, K.a09c50].forEach((k) => assert.strictEqual(lg.items[k], undefined, `${k} 已轉換，舊項目移除`));
+  const pick = (k) => { const it = lg.items[k]; return [it.status, it.note, it.patch, it.waiver && it.waiver.reason, it.lastSeen]; };
+  assert.deepStrictEqual(pick(K.a09main), ['accepted', '共用位址', null, '各自的位址空間', b3]);
+  assert.deepStrictEqual(pick(K.a09cust), ['accepted', '共用位址', null, '各自的位址空間', b3], '一個舊鍵分成兩個新鍵，兩筆都沿用');
+  assert.deepStrictEqual(pick(K.a09c50v), ['scheduled', '', 'patch:c50', null, b3]);
+  assert.deepStrictEqual(pick(K.a01cust), ['scheduled', 'ARP 衝突', null, null, b3]);
+  assert.deepStrictEqual(pick(K.a07v), ['false-positive', '', null, null, b3]);
+  [[K.a09main, K.a09all], [K.a09cust, K.a09all], [K.a09c50v, K.a09c50], [K.a01cust, K.a01all], [K.a07v, K.a07]].forEach(([nk, ok]) => {
+    const h = lg.items[nk].history;
+    assert.deepStrictEqual(h.slice(0, -1), old.items[ok].history, '舊項目的歷程保留');
+    assert.deepStrictEqual(h[h.length - 1], { at: '2026-02-01T00:00:00.000Z', from: old.items[ok].status, to: old.items[ok].status, by: 'advance', baseline: b3, reason: 'vrf-split', fromKey: ok });
+  });
+  // A01 的 devs 依新基準的證據重新推得（只剩 cust-a 的兩台）
+  assert.deepStrictEqual(lg.items[K.a01cust].devs, ['PE', 'PE2']);
+  // 跨 VRF 的 A01 誤報：3.0 不再產生、沒有新鍵可對應 → 依 ADR-015 的表照常判定（設備都已收集，判為 fixed）
+  assert.deepStrictEqual([lg.items[K.a01cross].status, r.changes.filter((c) => c.key === K.a01cross).map((c) => c.reason)], ['fixed', ['disappeared']]);
+  assert.ok(!r.changes.some((c) => [K.a09main, K.a09cust, K.a09c50v, K.a01cust, K.a07v].includes(c.key)), '轉換的項目不算新出現');
+  assert.ok(L.validate(lg).ok, L.validate(lg).errors.join('\n'));
+  assert.strictEqual(lg.iterations[1].baseline.schema, S.SCHEMA, '3.0.0 起記錄這一輪的 schema');
+  assert.ok(q211 && !('schema' in lg.iterations[0].baseline), '舊的一輪不改寫');
+  // 冪等：同一份基準再推進不重複轉換；下一份 3.0 的基準不再轉換
+  const again = L.advance(lg, q3, { now: '2026-02-02T00:00:00Z' });
+  assert.deepStrictEqual([again.skipped, again.split], [true, []]);
+  const next = L.advance(lg, S.query(build('# 下一輪\n' + VRF_NET(true))), { now: '2026-03-01T00:00:00Z' });
+  assert.deepStrictEqual([next.split, next.changes], [[], []]);
+  assert.strictEqual(JSON.stringify(L.advance(old, q3, { now: '2026-02-01T00:00:00Z' })), JSON.stringify(r), '可重現');
+});
+
+test('處理紀錄 VRF：只轉換 3.0.0 以前的一輪留下的舊項目；3.0 之內的變化（記錄了 schema 的一輪）與 ssot-snapshot/2 的基準不轉換', () => {
+  const L = S.ledger; const K = VRF_KEYS;
+  const q3 = S.query(build(VRF_NET(true)));
+  // 同一份「不分 VRF」的紀錄，但那一輪記錄了 schema（3.0 推進的）：鍵的差異是網路的變化，不是鍵的轉換
+  const q211 = S.query(build(VRF_NET(false)));
+  const in3 = L.advance(L.empty(), q211, { now: '2026-01-01T00:00:00Z' });
+  assert.strictEqual(in3.ledger.iterations[0].baseline.schema, S.SCHEMA);
+  const r = L.advance(in3.ledger, q3, { now: '2026-02-01T00:00:00Z' });
+  assert.deepStrictEqual(r.split, []);
+  assert.deepStrictEqual(r.changes.filter((c) => c.reason === 'new').map((c) => c.key), uniqSorted([K.a01cust, K.a07v, K.a09cust, K.a09c50v, K.a09main]));
+  assert.ok([K.a01all, K.a07, K.a09all, K.a09c50].every((k) => r.ledger.items[k].status === 'fixed'));
+  // 新基準是 ssot-snapshot/2（例如舊版匯出的 JSON）：不轉換
+  const { lg } = ledgerAt211(L);
+  const s2 = JSON.parse(JSON.stringify(q3.snapshot)); s2.meta.schema = 'ssot-snapshot/2';
+  assert.deepStrictEqual(L.advance(lg, S.query(s2), { now: '2026-02-01T00:00:00Z' }).split, []);
+  // 最後出現的那一輪找不到（不完整的紀錄）時無法判斷是哪一版留下的，不轉換
+  const lost = JSON.parse(JSON.stringify(lg)); Object.values(lost.items).forEach((it) => { it.lastSeen = 'gone'; });
+  assert.deepStrictEqual(L.advance(lost, q3, { now: '2026-02-01T00:00:00Z' }).split, []);
+  // baseline.schema 的格式
+  const bad = JSON.parse(JSON.stringify(in3.ledger)); bad.iterations[0].baseline.schema = 3;
+  assert.ok(L.validate(bad).errors.some((e) => /baseline\.schema：/.test(e)), L.validate(bad).errors.join('\n'));
+});
+
+test('處理紀錄 VRF：fromAcks 的舊確認標記（不分 VRF 的鍵）也轉換到新鍵', () => {
+  const L = S.ledger; const K = VRF_KEYS;
+  const q3 = S.query(build(VRF_NET(true)));
+  const ack = { at: '2025-06-01T08:00:00.000Z', kind: 'scheduled', note: '' };
+  const r = L.fromAcks({ [K.a09all]: ack, [K.a09c50]: ack }, q3, { now: '2026-01-01T00:00:00Z' });
+  assert.deepStrictEqual(r.split.map((x) => [x.from, x.to, x.reason]), [[K.a09all, uniqSorted([K.a09cust, K.a09main]), 'vrf-split'], [K.a09c50, [K.a09c50v], 'vrf-split']]);
+  [K.a09main, K.a09cust, K.a09c50v].forEach((k) => assert.deepStrictEqual([r.ledger.items[k].status, r.ledger.items[k].history.map((h) => h.reason)], ['scheduled', ['from-ack', 'vrf-split']]));
+  assert.ok(L.validate(r.ledger).ok, L.validate(r.ledger).errors.join('\n'));
+});
+
+test('處理紀錄 VRF：範例資料（含 VRF cust-a）的 2.11 紀錄推進 3.0，鍵都相同，沒有轉換、新增或消失', () => {
+  const L = S.ledger; const text = read('samples/sample-bundle.txt');
+  const q = S.query(build(text));
+  const keys211 = JSON.parse(read('tests/fixtures/vrf/sample-2.11-finding-keys.json')).keys;
+  const lg = L.advance(L.empty(), q, { now: '2026-01-01T00:00:00Z' }).ledger;
+  lg.iterations.forEach((r) => { delete r.baseline.schema; });
+  // 2.11 的鍵都在第一輪；只拿 2.11 就有的項目推進，模擬 2.11 的紀錄
+  keys211.forEach((k) => assert.ok(lg.items[k], `2.11 的鍵 ${k} 應該在 3.0 的範例資料中`));
+  Object.keys(lg.items).filter((k) => !keys211.includes(k)).forEach((k) => { delete lg.items[k]; });
+  const r = L.advance(lg, S.query(build('# 3.0\n' + text)), { now: '2026-02-01T00:00:00Z' });
+  assert.deepStrictEqual(r.split, []);
+  assert.deepStrictEqual(r.changes.filter((c) => c.reason !== 'new'), [], '2.11 的項目沒有消失');
+  assert.ok(r.changes.every((c) => !keys211.includes(c.key)), '新出現的只有 3.0 才有的問題');
+});
+
+module.exports = { VRF_NET, VRF_KEYS, ledgerAt211 };
+
+test('處理紀錄：diff 列出只在一份的項目與輪次、內容不同的項目與輪次；鍵順序不算差異，歷程順序算', () => {
+  const L = S.ledger; const { q1, q2, k, r1, r2 } = ledgerRounds();
+  // 相同（深複製、物件鍵順序打亂）
+  const shuffled = JSON.parse(JSON.stringify(r2.ledger, (key, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).reverse()) : v)));
+  assert.deepStrictEqual(L.diff(r2.ledger, shuffled), { onlyInCur: [], onlyInNext: [], changed: [], roundsOnlyInCur: [], roundsOnlyInNext: [], roundsChanged: [], lossIfReplaced: false, same: true });
+  // cur 比 next 多一輪、多出項目、項目內容不同：以 next 取代會遺失
+  const d = L.diff(r2.ledger, r1.ledger);
+  assert.deepStrictEqual(d.roundsOnlyInCur, [q2.meta().baselineKey]);
+  assert.deepStrictEqual(d.roundsOnlyInNext, []);
+  assert.ok(d.onlyInCur.includes(k.I01new), '第二輪新出現的項目只在 cur');
+  assert.ok(d.changed.includes(k.F06) && d.changed.includes(k.R03), '使用者改過狀態的項目內容不同');
+  assert.deepStrictEqual(d.onlyInCur, d.onlyInCur.slice().sort(), '鍵排序');
+  assert.deepStrictEqual([d.lossIfReplaced, d.same], [true, false]);
+  // 反過來：next 是 cur 的超集時，取代不會遺失（但不相同）
+  const back = L.diff(r1.ledger, r2.ledger);
+  assert.deepStrictEqual([back.onlyInCur, back.roundsOnlyInCur, back.roundsOnlyInNext, back.onlyInNext.includes(k.I01new)], [[], [], [q2.meta().baselineKey], true]);
+  assert.ok(back.changed.length > 0 && back.lossIfReplaced, '同一個項目在 next 有更多歷程，cur 的內容和它不同，仍算 changed');
+  // 同一輪、推進時間不同 → roundsChanged
+  const other = L.advance(L.empty(), q1, { now: '2026-01-05T00:00:00Z' }).ledger;
+  const dr = L.diff(r1.ledger, other);
+  assert.deepStrictEqual([dr.roundsChanged, dr.roundsOnlyInCur, dr.roundsOnlyInNext], [[q1.meta().baselineKey], [], []]);
+  // 歷程順序算差異
+  const swapped = JSON.parse(JSON.stringify(r2.ledger)); const h = swapped.items[k.F06].history; h.reverse();
+  assert.deepStrictEqual(L.diff(r2.ledger, swapped).changed, [k.F06]);
+  // 不認得的欄位也參與比較
+  const extra = JSON.parse(JSON.stringify(r2.ledger)); extra.items[k.F01].future = 1;
+  assert.deepStrictEqual(L.diff(r2.ledger, extra).changed, [k.F01]);
+  // 格式錯誤丟錯；不修改傳入的物件
+  assert.throws(() => L.diff(r2.ledger, { schema: 'ssot-ledger/1' }), /next 的格式不正確/);
+  const before = JSON.stringify(r2.ledger); L.diff(r2.ledger, r1.ledger); assert.strictEqual(JSON.stringify(r2.ledger), before);
 });

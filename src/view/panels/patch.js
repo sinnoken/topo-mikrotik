@@ -1,8 +1,9 @@
 /*
- * 修正計畫（對話框 #dlg-patch）：選取檢查結果 → S.remediate.plan → 依設備列出修改前（證據原文）與修改後（套用指令），
- * 每台設備的套用、回復、驗證三份 .rsc 可以檢視、複製與下載；沒有產生指令的項目依原因分組，列出檢查結果的訊息（點了開啟該筆）。
+ * 修正計畫（流程步驟「④ 修正」的工作畫面 #view-patch，內容在 #patch-body）：選取檢查結果 → S.remediate.plan → 依設備列出修改前（證據原文）
+ * 與修改後（套用指令），每台設備的套用、回復、驗證三份 .rsc 可以檢視、複製與下載；沒有產生指令的項目依原因分組，
+ * 列出檢查結果的訊息（點了在右側的詳細資料開啟該筆，修正計畫留在中間）。
  * 計畫與指令文字全部由核心 S.remediate 產生，這裡只負責選取、預覽與下載。本工具只產生文字，不會連線設備（ADR-001）。
- * 選取是檢視狀態（findingKey 的集合），只在記憶體，不存進 store；換基準時清空。
+ * 選取是檢視狀態（findingKey 的集合），只在記憶體，不存進 store；換基準時清空。展開的規則與焦點所在的按鈕跨重繪保留。
  * choice 等級的修正（目前是 A12）：plan.choices 每筆以 radio 列出選項，選擇（findingKey → 選項 id）同樣是記憶體中的檢視狀態，
  * 以 S.remediate.plan(Q, selection, { choices }) 重新產生計畫，預覽與下載都跟著更新；換基準時清空。
  * 選「不修改」時 remediate 不碰處理紀錄，由這裡以 App.setLedger（S.ledger.set）標為可接受（原因與到期日）。
@@ -15,15 +16,19 @@
   const GROUP_MAX = 200; // 逐筆勾選時每條規則最多列出的筆數
   const KIND = { apply: ['套用', ''], rollback: ['回復', '-rollback'], verify: ['驗證', '-verify'] };
   const DAY_MS = 86400000;
-  const state = { keys: new Set(), view: new Map(), choices: new Map(), inputHash: null, plan: null, files: null };
-  /** 換基準時清空所有檢視狀態（選取、每台設備檢視的檔案、選擇） */
+  const state = { keys: new Set(), view: new Map(), choices: new Map(), open: new Set(), inputHash: null, plan: null, files: null };
+  /** 換基準時清空所有檢視狀態（選取、每台設備檢視的檔案、選擇、展開的規則） */
   function resetFor(App) {
-    if (state.inputHash === App.snap.meta.inputHash) return;
-    state.keys.clear(); state.view.clear(); state.choices.clear(); state.inputHash = App.snap.meta.inputHash;
+    if (state.inputHash === App.Q.meta().inputHash) return;
+    state.keys.clear(); state.view.clear(); state.choices.clear(); state.open.clear(); state.inputHash = App.Q.meta().inputHash;
   }
+  /** 重繪後焦點回到同一個按鈕：有 data-patch-focus 的元素以它為鍵（重繪會重建全部的元素） */
+  const focusKey = (k) => ({ 'data-patch-focus': k });
 
   /** 檔名：files() 的 base 加上種類的後綴（base.rsc、base-rollback.rsc、base-verify.rsc） */
   const fileName = (f, kind) => `${f.base}${KIND[kind][1]}.rsc`;
+  /** 總表的檔名：patch-summary-<建立時間>-<N>dev.md（修正計畫的下載與工作包共用） */
+  const summaryName = (App) => `patch-summary-${V.exporter.baseName(App.Q)}.md`;
   const download = (name, text) => V.exporter.download(name, text, 'text/plain;charset=utf-8');
   function copyText(text, what) {
     const c = globalThis.navigator && globalThis.navigator.clipboard;
@@ -38,7 +43,7 @@
    */
   function rows(App) {
     const seen = new Set(); const out = [];
-    App.snap.findings.forEach((f, idx) => {
+    App.Q.findings().forEach((f, idx) => {
       const key = App.Q.findingKey(f); if (seen.has(key)) return; seen.add(key);
       out.push({ key, f, idx, dev: App.Q.findingDevice(f) });
     });
@@ -70,23 +75,25 @@
     const ruleChips = ids.slice().sort((a, b) => order[RM().levelOf(a)] - order[RM().levelOf(b)] || S.util.natural(a, b)).map((id) => {
       const list = byId.get(id); const lv = RM().levelOf(id); const on = allIn(list);
       return V.chipButton([id + ' ', h('span', { class: 'n' }, String(list.length))], `btn patch-rule ${lv === 'auto' ? 'ok' : ''} ${on ? 'on' : ''}`, {
-        'data-rule-id': id, 'data-level': lv, 'aria-pressed': String(!!on),
-        title: `${(S.check.CATALOG[id] || {}).title || id}：${R().LEVEL_TEXT[lv] || lv}。點一下選取或取消這條規則的全部`,
+        'data-rule-id': id, 'data-level': lv, 'aria-pressed': String(!!on), 'data-patch-focus': 'rule:' + id,
+        title: `${(S.query.rule(id) || {}).title || id}：${R().LEVEL_TEXT[lv] || lv}。點一下選取或取消這條規則的全部`,
         onclick: () => toggleKeys(list.map((r) => r.key), !on),
       });
     });
     // 依設備
     const devs = S.util.uniq(all.map((r) => r.dev).filter(Boolean)).sort((a, b) => S.util.natural(Q.devName(a), Q.devName(b)));
-    const devSel = h('select', { class: 'patch-device', 'aria-label': '依設備選取' }, devs.map((d) => h('option', { value: d }, `${Q.devName(d)}（${all.filter((r) => r.dev === d).length}）`)));
+    const devSel = h('select', Object.assign({ class: 'patch-device', 'aria-label': '依設備選取' }, focusKey('device')), devs.map((d) => h('option', { value: d }, `${Q.devName(d)}（${all.filter((r) => r.dev === d).length}）`)));
+    if (state.device && devs.includes(state.device)) devSel.value = state.device;
+    devSel.addEventListener('change', () => { state.device = devSel.value; });
     const groups = ids.map((id) => {
       const list = byId.get(id);
-      const box = h('details', { class: 'patch-group', 'data-rule-id': id }, [h('summary', null, [
-        h('span', { class: 'mono' }, id), ' ', (S.check.CATALOG[id] || {}).title || '', ' ', V.chip(`${list.filter((r) => state.keys.has(r.key)).length}/${list.length}`)])]);
-      // 展開時才產生清單（大型網路的檢查結果很多）
-      box.addEventListener('toggle', () => {
-        if (!box.open || box.querySelector('.patch-pick')) return;
+      const box = h('details', { class: 'patch-group', 'data-rule-id': id, open: state.open.has(id) || null }, [h('summary', null, [
+        h('span', { class: 'mono' }, id), ' ', (S.query.rule(id) || {}).title || '', ' ', V.chip(`${list.filter((r) => state.keys.has(r.key)).length}/${list.length}`)])]);
+      // 展開時才產生清單（大型網路的檢查結果很多）；展開的規則記在 state.open，重繪後仍展開
+      const fill = () => {
+        if (box.querySelector('.patch-pick')) return;
         box.appendChild(h('div', { class: 'patch-picks' }, list.slice(0, GROUP_MAX).map((r) => {
-          const cb = h('input', { type: 'checkbox', class: 'patch-pick', 'data-key': r.key, checked: state.keys.has(r.key) || null });
+          const cb = h('input', Object.assign({ type: 'checkbox', class: 'patch-pick', 'data-key': r.key, checked: state.keys.has(r.key) || null }, focusKey('pick:' + r.key)));
           cb.checked = state.keys.has(r.key);
           cb.addEventListener('change', () => toggleKeys([r.key], cb.checked));
           const facet = R().facetText(r.f);
@@ -94,15 +101,20 @@
             facet ? V.chip(facet, 'facet', { title: 'facet：' + r.f.facet }) : null, facet ? ' ' : null, r.f.message]);
         })));
         if (list.length > GROUP_MAX) box.appendChild(h('div', { class: 'muted' }, `只列出前 ${GROUP_MAX} 筆（共 ${list.length} 筆）；其餘請用「依規則」或「依設備」選取`));
+      };
+      box.addEventListener('toggle', () => {
+        if (box.open) { state.open.add(id); fill(); } else state.open.delete(id);
       });
+      if (state.open.has(id)) fill();
       return box;
     });
-    return h('div', { class: 'patch-select' }, [
-      h('h4', { class: 'pane-title' }, `選取檢查結果（已選 ${V.num(state.keys.size)} 項）`),
+    return h('div', { class: 'patch-select', role: 'group', 'aria-labelledby': 'patch-select-title' }, [
+      h('h3', { class: 'pane-title', id: 'patch-select-title' }, `要修正哪些（已選 ${V.num(state.keys.size)} 項）`),
       h('div', { class: 'row' }, [h('span', { class: 'muted' }, '依規則：'), ...ruleChips]),
       h('div', { class: 'row' }, [h('span', { class: 'muted' }, '依設備：'), devSel,
-        h('button', { class: 'patch-add-device', disabled: !devs.length || null, onclick: () => toggleKeys(all.filter((r) => r.dev === devSel.value).map((r) => r.key), true) }, '加入這台的全部'),
-        h('button', { class: 'ghost patch-clear', disabled: !state.keys.size || null, onclick: () => { state.keys.clear(); refreshOpen(App); } }, '全部清除')]),
+        h('button', Object.assign({ class: 'patch-add-device', disabled: !devs.length || null, onclick: () => toggleKeys(all.filter((r) => r.dev === devSel.value).map((r) => r.key), true) }, focusKey('add-device')), '加入這台的全部'),
+        h('button', Object.assign({ class: 'ghost patch-clear', disabled: !state.keys.size || null, onclick: () => { state.keys.clear(); refreshOpen(App); } }, focusKey('clear')), '全部清除')]),
+      h('div', { class: 'muted patch-select-note' }, '展開規則可以逐筆勾選；A12 等要選擇處理方式的項目，在計畫的「需要選擇的項目」選擇要採用的值。'),
       h('div', { class: 'patch-groups' }, groups),
     ]);
   }
@@ -133,9 +145,9 @@
       ...items.map((it) => itemBlock(App, plan, it)),
       h('div', { class: 'patch-files' }, [
         h('div', { class: 'row' }, [
-          h('div', { class: 'seg', role: 'group', 'aria-label': '檢視的檔案' }, Object.entries(KIND).map(([k, [label]]) => h('button', {
-            class: `btn ${kind === k ? 'on' : ''}`, 'aria-pressed': String(kind === k), 'data-kind': k,
-            onclick: () => { state.view.set(f.dev, k); render(App); } }, label))),
+          h('div', { class: 'seg', role: 'group', 'aria-label': `${f.name} 檢視的檔案` }, Object.entries(KIND).map(([k, [label]]) => h('button', Object.assign({
+            type: 'button', class: `btn ${kind === k ? 'on' : ''}`, 'aria-pressed': String(kind === k), 'data-kind': k,
+            onclick: () => { state.view.set(f.dev, k); render(App); } }, focusKey(`kind:${f.dev}:${k}`)), label))),
           h('button', { class: 'ghost patch-copy', onclick: () => copyText(f[kind], fileName(f, kind)) }, '複製'),
           ...Object.keys(KIND).map((k) => h('button', { class: 'patch-download', 'data-file': fileName(f, k), onclick: () => download(fileName(f, k), f[k]) }, '下載 ' + fileName(f, k))),
         ]),
@@ -147,7 +159,7 @@
   /** 選擇一個選項：存進檢視狀態後重新產生計畫，焦點留在剛選的 radio（鍵盤以方向鍵切換時不會跳走） */
   function choose(App, key, id) {
     state.choices.set(key, id); refreshOpen(App);
-    const r = $('#patch-body').querySelectorAll('.patch-choice-opt').find((x) => x.getAttribute('data-finding') === key && x.value === id);
+    const r = Array.from($('#patch-body').querySelectorAll('.patch-choice-opt')).find((x) => x.getAttribute('data-finding') === key && x.value === id);
     if (r) r.focus();
   }
   /** 選「不修改」時：處理紀錄已是可接受就顯示豁免內容，否則填原因與到期日後標為可接受（App.setLedger → S.ledger.set） */
@@ -184,7 +196,7 @@
       err]);
   }
   /** plan.choices 的一筆：標題（規則、項目、檢查結果的訊息）、狀態說明、選項的 radio 群組；選不修改時加上處理紀錄的欄位 */
-  function choiceBlock(App, c, hit, n, closeDlg) {
+  function choiceBlock(App, c, hit, n) {
     const status = c.reason === 'needs-choice'
       ? h('p', { class: 'warn-line patch-choice-need', role: 'status' }, '沒有多數，請選擇要採用的值，或選「不修改」標為可接受；選擇前不會產生指令。')
       : c.chosenBy === 'default' ? h('p', { class: 'muted patch-choice-default' }, '預設採用多數設備的值（推論）；可以改選其他組，或選「不修改」。') : null;
@@ -200,89 +212,125 @@
     const items = c.items.length ? h('p', { class: 'muted patch-choice-items' }, `產生 ${c.items.length} 台設備的指令（見下方各設備）`)
       : c.reason === null ? h('p', { class: 'muted patch-choice-items' }, '沒有需要修改的設備，不產生指令') : null;
     return h('div', { class: 'patch-choice', 'data-finding': c.findingKey, 'data-reason': c.reason || '' }, [
-      h('div', { class: 'row' }, [V.chip(c.id), ' ', h('b', null, c.title), ' ', R().findingRef(App, hit, c.findingKey, closeDlg)]),
+      h('div', { class: 'row' }, [V.chip(c.id), ' ', h('b', null, c.title), ' ', R().findingRef(App, hit, c.findingKey)]),
       status,
       h('fieldset', { class: 'patch-choice-set' }, [h('legend', null, `${c.title}：要採用的值`), ...rows]),
       c.chosen === 'accept' ? acceptBox(App, c, hit) : items,
     ]);
   }
   /** 需要選擇的項目（plan.choices）；沒有時為 null */
-  function choicesView(App, plan, closeDlg) {
+  function choicesView(App, plan) {
     const list = plan.choices || [];
     if (!list.length) return null;
     const hits = R().matchFindings(App.Q, list);
     const need = list.filter((c) => c.reason === 'needs-choice').length;
     return h('div', { class: 'patch-choices' }, [
       h('h4', null, ['需要選擇的項目 ', V.chip(String(list.length)), need ? ' ' : null, need ? V.chip(`尚未選擇 ${need} 項`, 'warn') : null]),
-      ...list.map((c, n) => choiceBlock(App, c, hits[n], n, closeDlg)),
+      ...list.map((c, n) => choiceBlock(App, c, hits[n], n)),
     ]);
   }
 
   function planView(App) {
     const plan = state.plan;
-    if (!plan) return h('p', { class: 'muted patch-empty' }, '先在上方選取檢查結果；可以依規則、依設備一次選取，或展開規則逐筆勾選。');
+    if (!plan) return h('p', { class: 'muted patch-empty' }, '先在「要修正哪些」選取檢查結果；可以依規則、依設備一次選取，或展開規則逐筆勾選。');
     const files = state.files;
     const all = () => {
       files.forEach((f) => Object.keys(KIND).forEach((k) => download(fileName(f, k), f[k])));
-      download(`patch-summary-${V.exporter.baseName(App.snap)}.md`, V.exporter.patchSummaryMarkdown(plan, files, App.Q));
+      download(summaryName(App), V.exporter.patchSummaryMarkdown(plan, files, App.Q));
     };
     const hits = R().matchFindings(App.Q, plan.skipped);
-    const closeDlg = () => { const d = $('#dlg-patch'); if (d && d.open) d.close(); };
     const skippedByReason = new Map(); plan.skipped.forEach((x, n) => S.util.getOr(skippedByReason, x.reason, () => []).push({ x, hit: hits[n] }));
     return h('div', { class: 'patch-plan' }, [
       h('div', { class: 'summary sub patch-summary' }, [
         V.chip(`可產生指令 ${V.num(plan.items.length)} 項（${V.num(plan.devices.length)} 台設備）`, plan.items.length ? 'ok' : ''),
         V.chip(`未產生指令 ${V.num(plan.skipped.length)} 項`, plan.skipped.length ? 'warn' : ''),
       ]),
-      choicesView(App, plan, closeDlg),
+      choicesView(App, plan),
       files.length ? h('div', { class: 'row patch-download-all' }, files.length === 1
         ? [h('span', { class: 'muted' }, '單台設備：下載三個 .rsc')].concat(Object.keys(KIND).map((k) => h('button', { class: 'patch-download', 'data-file': fileName(files[0], k),
           onclick: () => download(fileName(files[0], k), files[0][k]) }, '下載 ' + fileName(files[0], k))))
         : [h('button', { class: 'primary patch-download-every', onclick: all }, `逐檔下載全部（${files.length * 3 + 1} 個檔案）`),
-          h('button', { class: 'patch-download-summary', onclick: () => download(`patch-summary-${V.exporter.baseName(App.snap)}.md`, V.exporter.patchSummaryMarkdown(plan, files, App.Q)) }, '只下載總表（Markdown）'),
-          h('span', { class: 'muted' }, '目前沒有 ZIP（第二階段提供）；瀏覽器可能會詢問是否允許下載多個檔案。總表列出每台設備的檔名、項目與風險。')]) : null,
+          h('button', { class: 'patch-download-summary', onclick: () => download(summaryName(App), V.exporter.patchSummaryMarkdown(plan, files, App.Q)) }, '只下載總表（Markdown）'),
+          h('span', { class: 'muted' }, '瀏覽器可能會詢問是否允許下載多個檔案；要一個檔案帶走，可以在資料中心匯出工作包（ZIP，含這裡選取的 patch 與總表）。總表列出每台設備的檔名、項目與風險。')]) : null,
       ...files.map((f) => deviceBlock(App, plan, f)),
       plan.skipped.length ? h('div', { class: 'patch-skipped' }, [
         h('h4', null, ['沒有產生指令的項目 ', V.chip(String(plan.skipped.length), 'warn')]),
         ...Array.from(skippedByReason.entries()).map(([reason, list]) => h('div', { class: 'patch-skip-group', 'data-reason': reason }, [
           h('div', { class: 'patch-label' }, RM().SKIP_TEXT[reason] || reason),
-          // 每一筆列出檢查結果的訊息（同一台設備可能有多筆相同規則），點了開啟該筆；原因已在分組標題，detail 不同時才另外列出
+          // 每一筆列出檢查結果的訊息（同一台設備可能有多筆相同規則），點了在右側開啟該筆；原因已在分組標題，detail 不同時才另外列出
           ...list.map(({ x, hit }) => h('div', { class: 'patch-skip', 'data-finding': x.findingKey }, [
             V.chip(x.id || '—'), ' ', x.dev ? h('span', { class: 'muted' }, App.Q.devName(x.dev) + '：') : null,
-            R().findingRef(App, hit, x.findingKey, closeDlg),
+            R().findingRef(App, hit, x.findingKey),
             x.detail && x.detail !== (RM().SKIP_TEXT[reason] || reason) ? h('div', { class: 'muted patch-skip-detail' }, x.detail) : null])),
         ])),
       ]) : null,
     ]);
   }
 
+  /**
+   * 畫出整個修正計畫：寬的時候左欄是「要修正哪些」（選取），右欄是計畫；窄的時候上下排（assets/app.css 的 .patch-layout）。
+   * 重繪會重建全部的元素：焦點在有 data-patch-focus 的元素上時，重繪後回到同一個元素（鍵盤操作不會跳回開頭）。
+   */
   function render(App) {
-    const body = V.clear($('#patch-body'));
+    const body = $('#patch-body');
+    const ae = document.activeElement;
+    const keep = ae && ae.getAttribute && body.contains && body.contains(ae) ? ae.getAttribute('data-patch-focus') : null;
+    V.clear(body);
     if (!App.snap) { body.appendChild(h('p', { class: 'muted' }, '建立基準後才能產生修正計畫。')); return; }
     body.appendChild(h('p', { class: 'patch-readonly' }, [h('b', null, '本工具只產生文字，不會連線或改動任何設備。'),
       ' 指令依基準的事實產生；套用前請逐行審查，自行以 /import 執行（前置檢查不通過時不會改到任何設定），之後重新收集、建立基準確認結果。']));
-    body.appendChild(selection(App));
-    body.appendChild(h('h4', { class: 'pane-title' }, '修正計畫'));
-    body.appendChild(planView(App));
+    body.appendChild(h('div', { class: 'patch-layout' }, [
+      selection(App),
+      h('div', { class: 'patch-main', role: 'group', 'aria-labelledby': 'patch-plan-title' }, [
+        h('h3', { class: 'pane-title', id: 'patch-plan-title' }, '計畫'), planView(App)]),
+    ]));
+    if (keep) {
+      const el = ['button', 'input', 'select'].flatMap((t) => Array.from(body.querySelectorAll(t))).find((x) => x.getAttribute('data-patch-focus') === keep && !x.disabled);
+      if (el) el.focus();
+    }
   }
-  function refreshOpen(App) { compute(App); render(App); }
+  // 選取或選擇改變後：重新產生計畫並重繪；步驟列「④ 修正」的已選項目數也跟著更新
+  function refreshOpen(App) { compute(App); render(App); V.app.renderSteps(); }
 
-  /** 開啟修正計畫；keys 給定時以它取代目前的選取（例如防火牆畫面的「在修正計畫中開啟」） */
-  function open(App, keys) {
+  /**
+   * 在「④ 修正」開啟修正計畫；keys 給定時以它取代目前的選取（例如防火牆畫面的「在修正計畫中開啟」）。
+   * 焦點移到修正計畫的標題（opt.focus 為 false 時不移動）。
+   */
+  function open(App, keys, opt) {
     if (!App.snap) return;
     resetFor(App);
     if (keys) { state.keys = new Set(keys); }
-    compute(App); render(App);
-    const dlg = $('#dlg-patch'); if (!dlg.open) dlg.showModal();
+    App.showView('patch', { focus: !(opt && opt.focus === false) });
   }
-  /** 重繪時（換基準）：對話框開著才更新；基準不同時清空選取 */
+  /** 重繪（換基準或切到修正計畫時）：修正計畫顯示中才更新；基準不同時清空選取 */
   function refresh(App) {
-    const dlg = $('#dlg-patch'); if (!dlg || !dlg.open) return;
-    if (!App.snap) { dlg.close(); return; }
+    if (App.centerView !== 'patch') return;
+    if (!App.snap) { render(App); return; }
     resetFor(App);
     compute(App); render(App);
   }
+  /** 修正計畫是否顯示在中間 */
+  const isOpen = (App) => App.centerView === 'patch';
 
-  V.patchView = { open, refresh, render, state, fileName };
+  /**
+   * 工作包用：目前修正計畫的選取所產生的檔案 { plan, files, list: [{ name, text }] }（每台設備的套用、回復、驗證 .rsc，加上總表）。
+   * 沒有選取（或換了基準、選取已清空）時為 null。內容和修正計畫畫面的下載相同，都由 S.remediate 產生。
+   */
+  function current(App) {
+    if (!App.snap) return null;
+    resetFor(App);
+    if (!state.keys.size) return null;
+    compute(App);
+    const plan = state.plan; const files = state.files;
+    const list = [];
+    files.forEach((f) => Object.keys(KIND).forEach((k) => list.push({ name: fileName(f, k), text: f[k] })));
+    list.push({ name: summaryName(App), text: V.exporter.patchSummaryMarkdown(plan, files, App.Q) });
+    return { plan, files, list };
+  }
+
+  /** 目前修正計畫選取的項目數（換了基準時先清空）；沒有基準時 0 */
+  function selectedCount(App) { if (!App.snap) return 0; resetFor(App); return state.keys.size; }
+
+  V.patchView = { open, refresh, render, isOpen, state, fileName, current, selectedCount };
   window.App.openPatch = (keys) => open(window.App, keys);
 })(globalThis.SSOT = globalThis.SSOT || {});

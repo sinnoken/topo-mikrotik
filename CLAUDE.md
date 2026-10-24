@@ -50,7 +50,7 @@ git diff --check         # 提交前檢查
   與瀏覽器相同的檔案；`index.html` 的前段 `<script>` 必須與它完全一致（有測試檢查）。新增核心檔案要兩邊同步加。
   `index.html` 之後再載入 profiles、嵌入的範例與 `src/view/*`。`vendor/` 不在 `index.html` 裡，由畫面層需要時動態載入，也不列入核心載入順序。
   畫面起點是 `src/view/app.js`（建立 `App` 與 `S.view.app`，程式內稱 `A`），必須在其他 `app-*.js`
-  （graph／select／panes／toolbar／input／ledger）之前載入；這些檔案載入時只定義函式，DOMContentLoaded 後才執行。
+  （graph／select／panes／toolbar／input／ledger／hub／layers）之前載入；這一輪的資料集中在 `App.round`，只經 `A.load`／`A.setRoundInputs`／`A.clearRound` 改變；這些檔案載入時只定義函式，DOMContentLoaded 後才執行。
 - **管線**（[src/pipeline.js](src/pipeline.js)，`S.build(sources, options) → Snapshot`）：
   ① `readers/`（bundle-v1、files-v1，依 `readers/index.js` 的 `ORDER` 選擇）切成區塊，保留檔案與行號
   → ② `adapters/` 辨識指令 → ③ `adapters/mikrotik.js` 解析為帶 `block`/`line` 的事實
@@ -59,10 +59,11 @@ git diff --check         # 提交前檢查
   產生 findings，只讀模型、不寫回；`catalog.js` 必須在 `checks.js` 之前載入。
   `steps()` 是 generator，讓 UI 可顯示進度。
 - **單向依賴**：核心分成上游與下游。上游（core/readers/adapters/model/check/profile/query/pipeline）產生並查詢 Snapshot；
-  下游（`compare/` 比對、`remediate/` 修正 patch、`ledger/` 處理紀錄）也是核心檔案，但只透過 `SSOT.query(snapshot)` 讀基準、
-  不修改基準，上游也不呼叫它們。所有核心都不得碰 DOM、Canvas、IndexedDB。View 與下游只透過 `SSOT.query(snapshot)`（[src/query/query.js](src/query/query.js)）讀取，不讀原始 model、不改寫 Snapshot。
+  下游（`compare/` 比對、`remediate/` 修正 patch、`ledger/` 處理紀錄、`workpack/` 的 `S.zip` 與工作包 `S.workpack`）也是核心檔案，
+  但只透過 `SSOT.query(snapshot)` 讀基準、不修改基準，上游也不呼叫它們；`S.workpack` 只在呼叫時使用 `S.build`、`S.ledger` 與 `S.profile`。所有核心都不得碰 DOM、Canvas、IndexedDB。View 與下游只透過 `SSOT.query(snapshot)`（[src/query/query.js](src/query/query.js)）讀取，不讀原始 model、不改寫 Snapshot。
   `src/view/theme.js` 是顏色／線型／透明度的唯一來源；持久化集中在 `src/view/store.js`。
-  畫面讀 `CATALOG` 的 `causes`／`action` 只透過 `V.remediation.advice(id)`；含反引號的文字以 `V.codeText` 組成 DOM，不用 innerHTML。
+  `src/view` 只透過 `S.query(snapshot)`／`S.query.*` 讀資料與規則目錄，不讀 Snapshot 的欄位；允許的 `S.*` 成員由 `tests/ui-smoke.js` 的邊界掃描強制（[ADR-018](docs/架構決策/018-畫面只透過Q與S.query讀資料.md)）。
+  畫面讀 `CATALOG` 的 `causes`／`action` 只透過 `V.remediation.advice(id)`（advice 內部經 `S.query.rule`）；含反引號的文字以 `V.codeText` 組成 DOM，不用 innerHTML。
 - **比對與檢視狀態**：`compare/` 有預期資料比對（`S.compare`）、由基準產生預期資料（`S.compare.expectedFrom`）與
   新舊基準比對（`S.compare.snapshots`，`ssot-snapdiff/1`）。finding 的穩定鍵是 `Q.findingKey(f)`；
   處理紀錄（`S.ledger`，`ssot-ledger/1`）以它為鍵存在 store 的 `'ledger'`，是使用者的資料，不進 Snapshot；
@@ -72,7 +73,7 @@ git diff --check         # 提交前檢查
   只能 canonicalize 或加註解，不能新增／刪除／改寫事實。
 - **鏈路語意**：`S.LINK_SCOPE` 區分 interface-adjacency（LLDP／CDP）、broadcast-domain（純 MNDP，只證明 L2 可達，
   不可當直連證據）、routing-adjacency（OSPF，不作為拓樸 edge）。
-- **Snapshot 模型（`ssot-snapshot/2`）**：欄位命名參考 NetBox。完整欄位表見 [docs/設計說明.md](docs/設計說明.md) §5.2，以下是容易用錯的地方：
+- **Snapshot 模型（`ssot-snapshot/3`）**：欄位命名參考 NetBox。完整欄位表見 [docs/設計說明.md](docs/設計說明.md) §5.2，以下是容易用錯的地方：
   - 介面的 VLAN 分成 `pvid`／`untaggedVlans`／`taggedVlans`，取聯集用 `S.util.ifcVlans(i)`。
   - 介面之間的關係都存 ep 鍵，不共用欄位：聚合用 `lag`／`lagMembers`，bridge port 用 `bridge`，VLAN 子介面用 `parent`＋`encapVlan`。
   - `type` 是封閉列舉 `S.IFC_TYPES`，原值在 `rawType`。
@@ -81,6 +82,10 @@ git diff --check         # 提交前檢查
   - 防火牆規則 `firewallRules` 的 `key` 是「設備|位址族|表|chain|簽章雜湊」，不含編號（插入規則不會讓後面的鍵改變）；
     WAN／LAN 推論在 `firewallZones`，只看名稱含 WAN／LAN 的 interface list。規則比對語意集中在 `S.infer.fw`，不要另寫一套。
   - `blocks[].collectedAt`／`failure` 與 `coverage[].failures` 來自收集器的 `# collected-at:`、`# collection failed:` 註解。
+  - VRF（[ADR-015](docs/架構決策/015-支援VRF並升級ssot-snapshot-3.md)）：以 IP 或網段為鍵的地方一律用 `K.inVrf(位址, vrf)`（main 不加後綴，其他 VRF 加 `@<VRF>`），
+    不要自己拼字串；`ipAddresses`／`prefixes`／`arps` 的 `vrf` 一定有值（main 也寫出）。
+  - 路由以路由表為單位：`routes[].routingTable` 是原值，`vrf` 是對應的 VRF（只用於策略路由的路由表為 null）；
+    某個 VRF 的路由用 `Q.routesOf(dev, vrf)`，某張路由表用 `Q.routesInTable(dev, table)`。下一跳的擁有者一律經 `S.check.hopOwner`（`Q.hopOwner`）。
   - 內部模型 M 用 Map/Set，只在 `pipeline.js` 的 `serialize` 轉成陣列。
 - **拓樸版面**：
   - [layout.js](src/view/graph/layout.js) 的 `prepare()` 負責分群、終端與分層，`shelf()` 負責書架排列，內建版面與分層版面共用。
@@ -112,7 +117,7 @@ git diff --check         # 提交前檢查
 | Agent | 負責 | 驗證 |
 |---|---|---|
 | `data-model` | 上游：解析、建模、推論、檢查、Snapshot、查詢介面、範例與 OUI 產生器 | `npm run test:core` |
-| `workflow` | 下游：比對與預期資料（`compare/`）、修正 patch（`remediate/`）、處理紀錄（`ledger/`）、patch 黃金檔、之後的 CLI | `npm run test:core` |
+| `workflow` | 下游：比對與預期資料（`compare/`）、修正 patch（`remediate/`）、處理紀錄（`ledger/`）、工作包與 ZIP（`workpack/`）、patch 黃金檔、之後的 CLI | `npm run test:core` |
 | `frontend` | 畫面、樣式、theme、`index.html`、`vendor/` | `npm run test:ui` |
 | `collector` | SSH 收集器 | `npm run test:collector` |
 | `docs` | README、`docs/`、開發原則、skills、agent 定義 | `npm run test:docs` |
@@ -124,7 +129,7 @@ git diff --check         # 提交前檢查
 agent 之間的介面：
 - **data-model ↔ frontend**：Snapshot 欄位（設計說明 §5.2）與 `SSOT.query()`。
 - **data-model ↔ workflow**：同樣是 Snapshot 欄位與 `SSOT.query()`；`src/query/` 歸 data-model。workflow 需要新的查詢函式時寫進報告，由 data-model 加入。
-- **workflow ↔ frontend**：`S.compare`、`S.remediate`、`S.ledger`。畫面的指令文字一律由 `S.remediate` 產生，處理紀錄只透過 `S.ledger` 存取。
+- **workflow ↔ frontend**：`S.compare`、`S.remediate`、`S.ledger`、`S.workpack`（含 `S.zip`）。畫面的指令文字一律由 `S.remediate` 產生，處理紀錄只透過 `S.ledger` 存取，工作包只透過 `S.workpack` 讀寫。
 - **data-model → docs**：`CATALOG`（`src/check/catalog.js`）與 `docs/基準檢查規則.md` 必須一致，包括 `causes`／`action`。
 - **collector → data-model**：`bundle-v1` 格式與 `tools/collector-commands.sh` 的指令。
 
@@ -142,4 +147,4 @@ agent 之間的介面：
 - `routeros-parser-fixtures`：改 adapter／解析、新收集指令（先寫失敗測試再修）
 - `snapshot-contract-change`：改 Snapshot 欄位、finding id、query API 或版本（逐層走完 adapter→model→infer/check→pipeline→query→view→compare）
 - `mikrotik-neighbor-topology`：改鄰居探索（LLDP／MNDP／CDP）與拓樸
-- `routeros-acl-audit`：防火牆規則解析、WAN／LAN 分類、F01–F08 與比對（階段一已完成；資料來自既有的 `/export`）
+- `routeros-acl-audit`：防火牆規則解析、WAN／LAN 分類、F01–F09 與比對（階段一已完成；規則來自既有的 `/export`，命中次數來自 `print stats`）

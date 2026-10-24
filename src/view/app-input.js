@@ -7,6 +7,12 @@
   const A = V.app; const App = window.App;
 
   const input = { files: [] };
+  /**
+   * S.buildAsync 的進度 { stage, done, total } → 文字與百分比（建立基準與資料中心重建工作包的基準共用）。
+   * 讀取各區塊佔 5–75%，之後依階段：建立模型 80%、一致性檢查 92%、完成 100%。
+   */
+  A.buildProgressText = (p) => p.stage + (p.total > 1 ? `（${p.done}/${p.total}）` : '');
+  A.buildPercent = (p) => (p.stage === '完成' ? 100 : p.stage === '一致性檢查' ? 92 : p.stage === '建立模型' ? 80 : 5 + 70 * (p.done / Math.max(p.total, 1)));
   A.bindInputDialog = function bindInputDialog() {
     const dlg = $('#dlg-input');
     $('#input-close').onclick = () => dlg.close();
@@ -53,6 +59,11 @@
     $('#input-text').value = pasted ? pasted.text : '';
     input.files = App.sources.filter((s) => s.name !== S.readers.PASTE).map((s) => ({ ...s }));
     renderFiles(); await fillProfiles(App.profileJson ? App.profileJson.id : '');
+    // 建立選項 expectedData（目前只會由工作包帶入）：有時才顯示，預設沿用；取消勾選後這次建立不使用
+    const xd = App.round.expectedData;
+    $('#input-xd-row').classList.toggle('hidden', !xd);
+    $('#input-xd').checked = !!xd;
+    $('#input-xd-note').textContent = xd ? `（${V.num(Object.keys(xd).length)} 類設備；會改變基準鍵）` : '';
     $('#input-progress').classList.add('hidden'); $('#input-status').textContent = '';
     $('#dlg-input').showModal();
   };
@@ -63,23 +74,25 @@
     input.files.forEach((f) => sources.push({ name: f.name, text: f.text }));
     if (!sources.length) { $('#input-status').textContent = '請貼上收集檔內容，或選擇檔案。'; return; }
     const pid = $('#input-profile').value; const profile = pid && pid !== '__file' ? S.profiles[pid] : null;
+    const expectedData = App.round.expectedData && $('#input-xd').checked ? App.round.expectedData : null;
     const btn = $('#input-build'); btn.disabled = true;
     const bar = $('#input-progress'); bar.classList.remove('hidden'); const fill = bar.firstElementChild;
     try {
-      const snap = await S.buildAsync(sources, { profile }, (p) => {
-        $('#input-status').textContent = p.stage + (p.total > 1 ? `（${p.done}/${p.total}）` : '');
-        fill.style.width = (p.stage === '完成' ? 100 : p.stage === '一致性檢查' ? 92 : p.stage === '建立模型' ? 80 : 5 + 70 * (p.done / Math.max(p.total, 1))) + '%';
+      const snap = await S.buildAsync(sources, { profile, expectedData }, (p) => {
+        $('#input-status').textContent = A.buildProgressText(p);
+        fill.style.width = A.buildPercent(p) + '%';
       });
-      App.sources = sources; App.profileJson = profile;
       $('#input-status').textContent = '繪製中…';
       await new Promise((r) => setTimeout(r, 0));
-      A.load(snap, null);
-      await S.store.set('last', { snapshot: snap, sources, profile, positions: Object.fromEntries(App.graph.pos) })
-        .catch(() => A.banner('基準太大，無法存入瀏覽器；關閉頁面後需要重新建立。'));
+      // 目前的基準是由工作包帶回的上一輪：換成這一輪後，自動當成「上一輪的基準」比對（只在記憶體，和手動載入舊基準相同）
+      const prev = App.round.origin && App.round.origin.kind === 'workpack' && App.snap ? { name: App.round.origin.name, Q: App.Q, snapshot: App.snap } : null;
+      A.load(snap, null, { sources, profile, expectedData, origin: { kind: 'build' } });
+      if (prev && prev.Q.meta().inputHash !== App.Q.meta().inputHash) V.baselineDiff.setOld(App, `${prev.name}（工作包的基準）`, prev.snapshot);
+      await A.saveLast();
       $('#dlg-input').close();
-      const st = snap.meta.stats;
+      const m = App.Q.meta(); const st = m.stats;
       A.banner(`已建立基準：${V.num(st.collected)} 台已收集設備、${V.num(st.links)} 條鏈路；`
-        + `錯誤 ${st.findings.error}、警告 ${st.findings.warn}（${(snap.meta.timing.ms / 1000).toFixed(1)} 秒）`, 8000);
+        + `錯誤 ${st.findings.error}、警告 ${st.findings.warn}（${(m.timing.ms / 1000).toFixed(1)} 秒）`, 8000);
     } catch (e) {
       $('#input-status').textContent = '建立失敗：' + e.message; console.error(e);
     } finally { btn.disabled = false; }

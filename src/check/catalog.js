@@ -108,7 +108,7 @@
       causes: [
         '兩端 `/interface bridge vlan` 的成員設得不同，某些 VLAN 只在一端。',
         '兩端 bridge port 的 `pvid` 不同。',
-        '一端的 bridge 沒有開啟 `vlan-filtering=yes`，VLAN 成員沒有計入。',
+        '一端是路由器介面上的 VLAN 子介面（`/interface vlan`，例如單臂路由），少建、多建或停用了某個 VLAN。',
       ],
       action: '比對兩端的 `/interface bridge vlan` 與 `/interface bridge port` 的 `pvid`，找出訊息中只在一端的 VLAN 並修正。',
     },
@@ -153,6 +153,14 @@
         '只改了一端 `/interface bridge vlan` 的 `tagged`／`untagged` 清單。',
       ],
       action: '比對兩端 `/interface bridge vlan` 的 `tagged`／`untagged` 與 bridge port 的 `pvid`、`frame-types`，改成同一種標記方式；不一致時，這個 VLAN 的流量進到對端會被丟掉或進到 native VLAN。',
+    },
+    V09: {
+      severity: 'info', cat: 'VLAN', title: '鏈路一端在未開 vlan-filtering 的 bridge 上（VLAN 無法比較）', data: [['lldp'], ['config']],
+      causes: [
+        '這台設備刻意不做 VLAN 過濾，只把 tagged 訊框原樣轉送。',
+        '忘了在 bridge 開啟 `vlan-filtering=yes`，`/interface bridge vlan` 與 bridge port 的 `pvid` 因此沒有作用。',
+      ],
+      action: '確認這個 bridge 是否應該做 VLAN 過濾：要的話先設好 `/interface bridge vlan` 的成員與 bridge port 的 `pvid`，再設定 `vlan-filtering=yes`；刻意透通則不需處理，但這條鏈路的 VLAN 一致性無法由基準確認。',
     },
     // ---- 位址
     A01: {
@@ -212,17 +220,17 @@
     },
     A07: {
       severity: 'warn', cat: '位址', title: '同一網段在不同設備屬於不同 VLAN', data: [['config']],
-      facet: '<網段 net/len>',
+      facet: '<網段 net/len>，非 main 的 VRF 加上 @<VRF>',
       causes: [
         '某台設備的 VLAN ID 設錯。',
         '位址設在錯的 VLAN 介面上。',
-        '各站點刻意重用同一個私有網段（目前不分 VRF）。',
+        '各站點刻意重用同一個私有網段（不同 VRF 已分開比較；同一個 VRF 內重用仍會列出）。',
       ],
       action: '確認 `/interface vlan` 的 `vlan-id` 或 `/ip address` 是否設錯；同一個網段跨在兩個 VLAN，兩邊的主機無法在 L2 互通。有推定偏離時，先從偏離的設備查起。',
     },
     A08: {
       severity: 'warn', cat: '位址', title: '重疊網段在不同設備的遮罩不同', data: [['config', 'ipaddr']],
-      facet: '<最外層的網段 net/len>',
+      facet: '<最外層的網段 net/len>，非 main 的 VRF 加上 @<VRF>',
       causes: [
         '交換器管理位址的遮罩和閘道不一致。',
         '調整網段大小時只改了部分設備。',
@@ -312,7 +320,7 @@
     },
     R06: {
       severity: 'warn', cat: '路由', title: '同一 DHCP 網段在不同設備的閘道、DNS 或 NTP 不同', data: [['config']],
-      facet: 'gateway|<網段>／dns|<網段>／ntp|<網段>',
+      facet: 'gateway|<網段>／dns|<網段>／ntp|<網段>（<網段> 為 net/len，非 main 的 VRF 加上 @<VRF>）',
       causes: [
         'HA 成對的 DHCP 伺服器設定沒有同步。',
         '只改了其中一台的閘道或伺服器。',
@@ -388,7 +396,19 @@
       ],
       action: '建立名稱含 `WAN` 的 interface list（`/interface list add name=WAN`），把對外介面加進去（`/interface list member add list=WAN interface=<介面>`）；RouterOS 的 defconf 就是 `WAN`／`LAN`。',
     },
+    F09: {
+      severity: 'info', cat: '防火牆', title: '防火牆命中次數對不上 export 的規則（這個表的命中次數不採用）', data: [['fwstats']],
+      causes: [
+        '收集 `/export` 與 `print stats` 之間有人新增、刪除或搬動了規則。',
+        '有 export 沒有列出的靜態規則來源（例如腳本在收集時才加入規則）。',
+        '註解含特殊字元，print 與 export 的寫法不同。',
+      ],
+      action: '重新收集這台設備（`/export` 與 `print stats` 一起收）；仍對不上時，對照訊息中的列與規則找出差異。對上之前，這個表的規則沒有命中次數。',
+    },
   };
 
+  // 靜態目錄：載入後凍結（含 data、causes 等巢狀陣列），畫面經 S.query.rule() 取得的物件不會被改到
+  const deepFreeze = (o) => { Object.values(o).forEach((v) => { if (v && typeof v === 'object') deepFreeze(v); }); return Object.freeze(o); };
+  deepFreeze(CATALOG);
   S.check = Object.assign(S.check || {}, { CATALOG });
 })(globalThis.SSOT);

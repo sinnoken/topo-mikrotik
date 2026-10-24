@@ -1,5 +1,5 @@
 /*
- * 唯一鍵正規化。整個系統只有這裡決定「兩個名稱是不是同一個東西」。
+ * 唯一鍵正規化。整個系統只有這裡決定「兩個名稱是不是同一個東西」（含 VRF 的位址鍵）。
  * 規則刻意保守：不依命名格式推測（命名規則屬於 profile，見 src/profile/）。
  */
 (function (S) {
@@ -27,6 +27,20 @@
 
   /** 鏈路：兩端 ep 排序後以 "~" 串接，方向無關。 */
   keys.link = (a, b) => (a < b ? a + '~' + b : b + '~' + a);
+
+  /*
+   * VRF（ADR-015）：沒有指定時是內建的 main（RouterOS 的寫法：沒寫 VRF 就是 main）。
+   * 以 IP 或網段為鍵的地方都加上 VRF：main 不加後綴（10.0.0.1、10.0.0.0/24），其他 VRF 用 RouterOS 的 @<VRF>（10.0.0.1@cust-a）。
+   * 所以只用 main 的網路，鍵（含 findingKey）與加入 VRF 之前相同。VRF 名稱照原樣（RouterOS 的名稱區分大小寫），只去頭尾空白。
+   * 不同設備上名稱相同的 VRF 視為同一個位址空間（跨設備比較位址時的前提）。
+   */
+  keys.MAIN_VRF = 'main';
+  /** VRF 名稱：去頭尾空白；null、undefined、空字串為 main。 */
+  keys.vrf = (v) => { const s = v == null ? '' : String(v).trim(); return s || keys.MAIN_VRF; };
+  /** 位址或網段的鍵：main 不加後綴，其他加上 @<VRF>。 */
+  keys.inVrf = (base, vrf) => { const v = keys.vrf(vrf); return v === keys.MAIN_VRF ? String(base) : base + '@' + v; };
+  /** keys.inVrf 的反向：[位址或網段, VRF]；沒有 @ 時是 main。IPv4 位址與網段不含 @，以最後一個 @ 切開。 */
+  keys.splitVrf = (key) => { const s = String(key); const i = s.lastIndexOf('@'); return i < 0 ? [s, keys.MAIN_VRF] : [s.slice(0, i), keys.vrf(s.slice(i + 1))]; };
 
   S.keys = keys;
 })(globalThis.SSOT = globalThis.SSOT || {});

@@ -9,7 +9,7 @@
  *     status, id, dev, devs?, firstSeen, lastSeen, // firstSeen／lastSeen：第一次／最後一次出現的基準鍵
  *     patch: string|null, waiver: { reason, until }|null, note,
  *     history: [{ at, from, to, by: 'user'|'advance', baseline, reason, waiver?, ack?, fromKey?, superseded? }] } },   // baseline：當時最新一輪的基準鍵
- *   iterations: [{ baseline: { inputHash, baselineKey, createdAt }, at, counts, coverage: { collected, expected }, unknownPeers }]
+ *   iterations: [{ baseline: { inputHash, baselineKey, schema?, createdAt }, at, counts, coverage: { collected, expected }, unknownPeers }]
  * }
  * 基準鍵：基準的 meta.baselineKey（輸入、程式 major.minor 版本、命名規則、預期資料的組合，見 pipeline.js），判斷是否同一份基準。
  *   較早的處理紀錄沒有 baselineKey，firstSeen／lastSeen／history.baseline 記的是 inputHash；這些紀錄一律退回用 inputHash
@@ -19,7 +19,9 @@
  * devs：只有 findingKey 推不出設備的項目（例如只涉及 IP、MAC 的 A01）才有。最後一次出現時，證據所在區塊的設備（排序）；
  *   [] 表示證據都在沒有設備標頭的區塊（收集檔本身的問題）；null 表示推不出來（沒有證據或區塊對不到）。用來判斷能不能觀察到（見 observer）。
  *   較早的紀錄沒有這個欄位，視為推不出來；同樣是新增選用欄位，不升 schema（ADR-010）。
- * fromKey／superseded：舊鍵轉換（reason 為 facet-split 等，見 KEY_MIGRATIONS）的那一筆 history 才有。fromKey 是轉換前的舊鍵；
+ * iterations[].baseline.schema：那一輪基準的 meta.schema（3.0.0 起記錄）。沒有這個欄位的一輪是 3.0.0 以前（ssot-snapshot/2 以前）推進的，
+ *   用來判斷舊鍵轉換的規則適不適用（見 KEY_MIGRATIONS 的 before）；新增選用欄位，不升 schema（ADR-010）。
+ * fromKey／superseded：舊鍵轉換（reason 為 facet-split、vrf-split，見 KEY_MIGRATIONS）的那一筆 history 才有。fromKey 是轉換前的舊鍵；
  *   superseded 只在新鍵已有項目時出現，保存被取代的舊項目完整內容。沒有這兩個欄位的 history 不是轉換；新增選用欄位，不升 schema（ADR-010）。
  * waiver 只在 accepted 時有值；離開 accepted 時，原本的 waiver 記在那一筆 history 的 waiver，不遺失。
  * 狀態轉換規則見 advance 與 set 的說明。
@@ -151,6 +153,7 @@
           if (seen.has(b)) err(`${p}.baseline.${f}`, `與前面的一輪重複（${b}）`); else seen.add(b);
         }
         if (isObj(r.baseline) && !isStrOrNull(r.baseline.createdAt)) err(p + '.baseline.createdAt', '必須是字串或 null');
+        if (isObj(r.baseline) && r.baseline.schema !== undefined && (typeof r.baseline.schema !== 'string' || !r.baseline.schema)) err(p + '.baseline.schema', '必須是非空字串（3.0.0 以前的紀錄沒有這個欄位）');
         if (!isIso(r.at)) err(p + '.at', `必須是 ISO 8601 時間，目前是 ${JSON.stringify(r.at)}`);
         if (!isObj(r.counts)) err(p + '.counts', '必須是物件');
         else COUNT_KEYS.forEach((k) => { if (r.counts[k] !== undefined && !isCount(r.counts[k])) err(`${p}.counts.${k}`, '必須是非負整數'); });
@@ -219,35 +222,89 @@
   // ---- 舊鍵轉換（findingKey 的組成改變時，把舊鍵的決定帶到新鍵）
   /**
    * 鍵的組成改變（ADR-003）後，一個舊鍵可能對應到新基準中的多個新鍵（「舊鍵分裂」）。
-   * 每條規則：{ reason, oldKeys(Q, f) → string[] }，給新基準的一筆 finding，回傳它可能對應到的舊鍵（可以是空陣列）。
+   * 每條規則：{ reason, before?, oldKeys(Q, f, cands) → string[] }，給新基準的一筆 finding，回傳它可能對應到的舊鍵（可以是空陣列）。
    *   reason 寫進新項目那一筆 history 的 reason，用來說明是哪一種轉換。
-   * 擴充方式：在這裡加一條規則即可，轉換流程（migrateKeys）不用改。例如之後 VRF（ssot-snapshot/3）讓實體鍵多了 @VRF：
-   *   { reason: 'vrf-split', oldKeys: (Q, f) => [去掉實體鍵的 @VRF 後的鍵] }；或對 A07／A08／A09／R06 這類依 VRF 拆開、
-   *   實體變少的規則，回傳「實體是它的超集合」的舊鍵（需要時可在規則內參考處理紀錄現有的鍵，由 data-model 提供鍵的拆解函式）。
+   *   before（選用，Snapshot 的 schema，例如 'ssot-snapshot/3'）：鍵的寫法在這個 schema 改變。設定時，只有新基準是這個 schema 以後、
+   *     而且舊項目最後一次出現在更早的 schema 的一輪（iterations[].baseline.schema；沒有這個欄位的一輪是 3.0.0 以前），
+   *     或從未出現過（fromAcks 的舊確認標記）時才轉換。這樣同一個 schema 之內的正常變化（例如重複 IP 少了一台）不會被當成鍵的轉換。
+   *   cands：這條規則可以轉換的舊鍵，Map(「規則 id＋\0＋facet（沒有時為空字串）」→ [{ key, ents: Set(實體) }])，給以「實體是舊鍵的子集合」
+   *     對應的規則用；舊鍵仍要通過 migrateKeys 的條件（處理紀錄有、不在新基準中、符合 before）。
+   * 擴充方式：在這裡加一條規則即可，轉換流程（migrateKeys）不用改。
    * 規則依陣列順序套用；同一筆 finding 的新鍵與舊鍵相同時不算轉換。
    */
+  /** facet 含網段鍵（K.inVrf，main 不加後綴）的規則：A07、A08 的 facet 是網段鍵，R06 是「項目|網段鍵」（check/checks.js 的 configConsistency） */
+  const VRF_FACET = new Set(['A07', 'A08', 'R06']);
+  /** 以群組為實體、依 VRF 分開比較後實體可能變少的規則（ADR-015 的「findingKey 與處理紀錄」）：新鍵的實體是舊鍵的子集合時對應 */
+  const VRF_GROUP = new Set(['A01', 'A07', 'A08', 'A09', 'R06']);
+  /** 新鍵去掉 VRF 後的形式：ip 實體與 VRF_FACET 的 facet 去掉 @<VRF>（K.splitVrf），其餘照舊。回傳 { facet, ents（排序）, key } */
+  function withoutVrf(f) {
+    const facet = f.facet == null ? null : VRF_FACET.has(f.id) ? K.splitVrf(f.facet)[0] : String(f.facet);
+    const ents = U.uniq((f.entities || []).map((e) => e.type + ':' + (e.type === 'ip' ? K.splitVrf(e.key)[0] : e.key))).sort(U.cmp);
+    return { facet, ents, key: JSON.stringify([f.id].concat(facet != null ? ['facet:' + facet] : [], ents)) };
+  }
   const KEY_MIGRATIONS = [
     // 2.9.0：有 facet 的規則，鍵多了 "facet:…"；舊鍵就是不含 facet 的鍵（一個舊鍵對應到 facet 不同的每一筆）
     { reason: 'facet-split', oldKeys: (Q, f) => (f.facet != null ? [Q.findingBaseKey(f)] : []) },
+    // 3.0.0（ssot-snapshot/3，ADR-015）：以 IP 或網段為鍵的地方加上 VRF，main 不加後綴、其他 VRF 加 @<VRF>。
+    //   ip 實體（A01、A05、A09）與 A07／A08／R06 的 facet：新鍵去掉 @<VRF> 就是舊鍵。
+    //   VRF_GROUP 的規則依 VRF 分開比較後，一組可能拆成幾組（不帶後綴的 main 那一組也是）：新鍵的實體是舊鍵的子集合、
+    //   規則 id 與（去掉 @<VRF> 的）facet 相同時對應。拆開後只剩一個位置的組不再產生，沒有新鍵可對應，舊項目照常判定（ADR-015 的表）。
+    { reason: 'vrf-split', before: 'ssot-snapshot/3', oldKeys: (Q, f, cands) => {
+      const w = withoutVrf(f); const out = [];
+      if (w.key !== Q.findingKey(f)) out.push(w.key);
+      if (VRF_GROUP.has(f.id)) (cands.get(f.id + '\u0000' + (w.facet == null ? '' : w.facet)) || []).forEach((c) => { if (c.key !== w.key && w.ents.every((e) => c.ents.has(e))) out.push(c.key); });
+      return out;
+    } },
   ];
+  /** 'ssot-snapshot/3' → 3；不是這個形式時為 null */
+  const schemaNo = (s) => { const m = /^ssot-snapshot\/(\d+)$/.exec(typeof s === 'string' ? s : ''); return m ? Number(m[1]) : null; };
+  /**
+   * 規則的 before 適不適用到某個舊項目（見 KEY_MIGRATIONS）。lastSchema：基準鍵 → 那一輪的 baseline.schema（沒有記錄時為 null）。
+   * 新基準的 schema 早於 before 時不適用；舊項目從未出現過（lastSeen 為 null）時適用；最後出現的那一輪找不到時無法判斷，不轉換。
+   */
+  function beforeOk(rule, it, lastSchema, nowSchema) {
+    if (!rule.before) return true;
+    const b = schemaNo(rule.before);
+    if (!(schemaNo(nowSchema) >= b)) return false;
+    if (it.lastSeen == null) return true;
+    if (!lastSchema.has(it.lastSeen)) return false;
+    const s = schemaNo(lastSchema.get(it.lastSeen));
+    return s === null || s < b;
+  }
+  /** findingKey → { id, facet（沒有時為空字串）, ents: Set }；不是 findingKey 時為 null */
+  function keyParts(key) {
+    const a = parseKey(key); if (!a) return null;
+    const hasFacet = a.length > 1 && a[1].startsWith('facet:');
+    return { id: a[0], facet: hasFacet ? a[1].slice(6) : '', ents: new Set(a.slice(hasFacet ? 2 : 1)) };
+  }
   /**
    * 依 KEY_MIGRATIONS 把舊鍵的項目轉換到新鍵（直接修改 items，呼叫端傳入的是複本）。回傳 [{ from: 舊鍵, to: [新鍵…], reason }]，依舊鍵排序。
-   * 只轉換「處理紀錄有這個舊鍵、而且舊鍵不在新基準中」的項目（舊鍵仍出現在基準時它本身就是現行的項目）。
+   * 只轉換「處理紀錄有這個舊鍵、而且舊鍵不在新基準中」的項目（舊鍵仍出現在基準時它本身就是現行的項目），規則有 before 時還要符合 before。
    *   新鍵還沒有項目：複製整個舊項目（狀態、note、waiver、patch、firstSeen、歷程與不認得的欄位），
    *     歷程加一筆 { from: 狀態, to: 狀態, by: 'advance', reason, fromKey: 舊鍵 }。
    *   新鍵已有項目（只有混用新舊版本時會發生）：以新鍵的項目為準，歷程加一筆同樣的紀錄，並在 superseded 保存舊項目的完整內容。
    *   處理完的舊項目移除：它的內容已在每一筆新項目裡，留著會被判為「消失 → fixed」或重複計數。
    * 冪等：舊項目轉換後就移除，之後的基準不會再轉換；同一份基準再推進時依基準鍵略過。
    */
-  function migrateKeys(items, Q, present, step) {
+  function migrateKeys(items, iterations, Q, present, step) {
     const targets = new Map(); // 舊鍵 → Map(新鍵 → reason)
+    const lastSchema = new Map(iterations.map((r) => [baseOf(r.baseline), r.baseline.schema == null ? null : r.baseline.schema]));
+    const nowSchema = Q.meta().schema;
+    const absent = Object.keys(items).filter((k) => !present.has(k)).sort(U.cmp);
+    // 每條規則可以轉換的舊鍵（符合 before），以及給子集合對應用的索引
+    const rules = KEY_MIGRATIONS.map((m) => {
+      const allowed = new Set(absent.filter((k) => beforeOk(m, items[k], lastSchema, nowSchema)));
+      const cands = new Map();
+      allowed.forEach((k) => { const p = keyParts(k); if (p) U.getOr(cands, p.id + '\u0000' + p.facet, () => []).push({ key: k, ents: p.ents }); });
+      return { m, allowed, cands };
+    });
     Q.findings().forEach((f) => {
       const nk = Q.findingKey(f);
-      KEY_MIGRATIONS.forEach((m) => m.oldKeys(Q, f).forEach((ok) => {
-        if (ok === nk || !items[ok] || present.has(ok)) return;
+      rules.forEach(({ m, allowed, cands }) => { if (allowed.size) m.oldKeys(Q, f, cands).forEach((ok) => {
+        if (ok === nk || !allowed.has(ok)) return;
         const t = U.getOr(targets, ok, () => new Map());
         if (!t.has(nk)) t.set(nk, m.reason);
-      }));
+      }); });
     });
     const out = [];
     Array.from(targets.keys()).sort(U.cmp).forEach((ok) => {
@@ -297,7 +354,7 @@
     Q.findings().forEach((f) => { const k = Q.findingKey(f); if (!present.has(k)) present.set(k, f); U.getOr(byKey, k, () => []).push(f); });
     const step = { at: now, by: 'advance', baseline: hash };
     // 先把舊鍵轉換到新鍵，舊項目才不會在下面被判為消失
-    const split = migrateKeys(out.items, Q, present, step);
+    const split = migrateKeys(out.items, out.iterations, Q, present, step);
     const devsOf = (key) => (devicesOfKey(key).length ? undefined : evidenceDevs(Q, byKey.get(key)));
     const canJudge = observer(Q);
     const changes = []; const unobserved = [];
@@ -336,7 +393,8 @@
     unobserved.sort(U.cmp);
     const tally = byStatus(out);
     out.iterations.push({
-      baseline: Object.assign({ inputHash: meta.inputHash }, meta.baselineKey != null ? { baselineKey: meta.baselineKey } : {}, { createdAt: meta.createdAt || null }), at: now,
+      baseline: Object.assign({ inputHash: meta.inputHash }, meta.baselineKey != null ? { baselineKey: meta.baselineKey } : {},
+        typeof meta.schema === 'string' && meta.schema ? { schema: meta.schema } : {}, { createdAt: meta.createdAt || null }), at: now,
       counts: { new: delta.new, fixed: delta.fixed, open: tally.open, scheduled: tally.scheduled, regressed: tally.regressed, accepted: tally.accepted,
         falsePositive: tally['false-positive'], waiverExpired: delta.waiverExpired, unobserved: unobserved.length },
       coverage: coverageOf(Q), unknownPeers: unknownPeersOf(Q),
@@ -423,6 +481,52 @@
     if (errors.length) throw new Error(`確認標記有 ${errors.length} 筆格式不正確：${errors.join('；')}`);
     out.items = sortItems(out.items);
     return L.advance(out, Q, { now });
+  };
+
+  /**
+   * 這份基準是處理紀錄的第幾輪（iterations 的索引，0 起算）；沒有推進過時為 -1。
+   * meta 是基準的 meta（或 iterations[].baseline 的形式）；判斷方式和 advance 的冪等判斷相同（基準鍵，舊資料退回 inputHash）。
+   * 工作包用它確認基準和處理紀錄是同一輪。
+   */
+  L.roundOf = function roundOf(ledger, meta) {
+    const v = L.validate(ledger);
+    if (!v.ok) throw new Error(`處理紀錄格式不正確（${v.errors.length} 項）：${v.errors.slice(0, 5).join('；')}${v.errors.length > 5 ? '…' : ''}`);
+    const b = baseOf(meta);
+    if (typeof b !== 'string' || !b) throw new Error('基準沒有 baselineKey 或 inputHash');
+    return ledger.iterations.findIndex((r) => baseOf(r.baseline) === b);
+  };
+
+  /**
+   * 兩份處理紀錄的差異（例如讀入工作包、匯入處理紀錄之前，判斷目前的 cur 有沒有 next 沒有的內容）。兩份都要通過 validate，否則丟錯。
+   * 回傳（鍵都排序；輪次依各自的 iterations 順序）：
+   *   onlyInCur／onlyInNext：只在其中一份的項目鍵
+   *   changed             ：兩份都有、內容不同的項目鍵
+   *   roundsOnlyInCur／roundsOnlyInNext：只在其中一份的輪次（基準鍵）
+   *   roundsChanged       ：兩份都有這一輪、內容不同（例如推進的時間或筆數不同）的基準鍵
+   *   lossIfReplaced      ：以 next 整份取代 cur 會不會遺失 cur 的內容（onlyInCur、changed、roundsOnlyInCur、roundsChanged 任一不是空的）
+   *   same                ：兩份內容完全相同
+   * 「內容相同」：以 S.util.canonicalJson 比較，物件的鍵順序不算差異；陣列的順序算差異（history 是依時間附加的歷程，
+   *   順序本身就是內容；devs 已排序）。不認得的欄位（較新版本寫入的）也參與比較，不同就算 changed。
+   * 輪次以基準鍵對應（和 advance 的冪等判斷相同：baselineKey，舊紀錄退回 inputHash）；validate 保證同一份處理紀錄內不重複。
+   */
+  L.diff = function diff(cur, next) {
+    [['cur', cur], ['next', next]].forEach(([n, lg]) => {
+      const v = L.validate(lg);
+      if (!v.ok) throw new Error(`S.ledger.diff：${n} 的格式不正確（${v.errors.length} 項）：${v.errors.slice(0, 5).join('；')}${v.errors.length > 5 ? '…' : ''}`);
+    });
+    const cj = U.canonicalJson; const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+    const ck = Object.keys(cur.items).sort(U.cmp); const nk = Object.keys(next.items).sort(U.cmp);
+    const onlyInCur = ck.filter((k) => !has(next.items, k));
+    const onlyInNext = nk.filter((k) => !has(cur.items, k));
+    const changed = ck.filter((k) => has(next.items, k) && cj(cur.items[k]) !== cj(next.items[k]));
+    const nr = new Map(next.iterations.map((r) => [baseOf(r.baseline), r]));
+    const cr = new Map(cur.iterations.map((r) => [baseOf(r.baseline), r]));
+    const roundsOnlyInCur = cur.iterations.map((r) => baseOf(r.baseline)).filter((b) => !nr.has(b));
+    const roundsOnlyInNext = next.iterations.map((r) => baseOf(r.baseline)).filter((b) => !cr.has(b));
+    const roundsChanged = cur.iterations.map((r) => baseOf(r.baseline)).filter((b) => nr.has(b) && cj(cr.get(b)) !== cj(nr.get(b)));
+    const lossIfReplaced = !!(onlyInCur.length || changed.length || roundsOnlyInCur.length || roundsChanged.length);
+    const same = !lossIfReplaced && !onlyInNext.length && !roundsOnlyInNext.length && cj(cur) === cj(next);
+    return { onlyInCur, onlyInNext, changed, roundsOnlyInCur, roundsOnlyInNext, roundsChanged, lossIfReplaced, same };
   };
 
   // ---- 統計

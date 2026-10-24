@@ -28,8 +28,8 @@ test('清單：Q.inventory 的列與計數一致，且與基準統計對得上',
   const s = build(read('samples/sample-bundle.txt')); const { rows, counts: C } = S.query(s).inventory();
   const st = s.meta.stats;
   assert.deepStrictEqual([C.devices, C.interfaces, C.macs, C.vlans], [st.devices, st.interfaces, st.macs, st.vlans]);
-  assert.strictEqual(new Set(rows.ips.map((r) => r.ip)).size, rows.ips.length, 'IP 清單必須去重複');
-  assert.strictEqual(C.arpIps, new Set(s.model.arps.map((a) => a.ip)).size);
+  assert.strictEqual(new Set(rows.ips.map((r) => r.key)).size, rows.ips.length, 'IP 清單必須去重複（每個 VRF 的每個 IP 一列）');
+  assert.strictEqual(C.arpIps, new Set(s.model.arps.map((a) => S.keys.inVrf(a.ip, a.vrf))).size);
   assert.strictEqual(new Set(rows.macs.map((r) => r.mac)).size, C.macs);
   assert.strictEqual(C.endpointPorts, new Set(rows.endpoints.map((e) => e.key)).size, '終端位置數應依清單中的介面位置計算，包含 Wi-Fi MAC 觀察位置');
   assert.ok(rows.endpoints.every((e) => e.end === true) && rows.devices.every((d) => !d.end));

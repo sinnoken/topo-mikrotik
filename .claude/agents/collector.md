@@ -25,6 +25,30 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 - 失敗要明確呈現：在輸出檔標記、以非零結束碼結束、印出摘要，不要吞掉錯誤。
 - 收集器是本機的 Bash CLI，SSH 或帳密相關的邏輯不可進入瀏覽器端。
 
+## RouterOS 手冊
+
+- 只考慮 RouterOS 7.x 以上（[ADR-019](../../docs/架構決策/019-支援範圍RouterOS7以上.md)）：新的解析、收集、fixture 與檢查只依 v7 的語法；現有處理 v6 的程式先不主動拆除，也不再擴充。
+- 查證 RouterOS 的語法、欄位、v6／v7 的差異時，用 `routeros-manual` skill 的查詢腳本，不要憑記憶，也不要自己抓網頁。
+  - 腳本位置（以下稱 `$M`）：`C:/Users/Yicheng/.claude/skills/synced/d229f1ad-4b6f-4d0f-a951-cdd6139693dd_59c41ba4-e5fd-4859-b7cb-ae8035250e30/routeros-manual/scripts/manual.py`
+  - 用法（在 `"$TEMP"` 下執行，並加上 `timeout`）：
+    - 搜尋：`cd "$TEMP" && timeout 60 python "$M" search <英文關鍵字>`
+    - 讀單頁：`cd "$TEMP" && timeout 60 python "$M" get <docs/...路徑> --max-chars N`
+    - 列出版本：`cd "$TEMP" && timeout 60 python "$M" versions`
+  - 這個 skill 是使用者層級的，subagent 的 Skill 清單裡看不到，但可以用 Bash 執行。
+- 線上手冊只有 7.24–7.26 版。v6 和較舊的 v7 要對照 <https://manual.mikrotik.com/docs/cli-reference/compare-versions>；查不到時，要明確寫「無法以手冊確認」。
+- 不要把手冊原文複製進 repo（程式註解、fixture、文件都一樣）。只附網址，並用自己的話摘要。
+- 每一條依手冊寫成的判斷規則，都要在回報中附上網址。
+
+## 執行指令
+
+曾經發生過：`find / -name … | head` 掃了整台電腦，在背景跑了 9 小時、佔滿一個 CPU 核心；沒有結尾的 heredoc 加 `cat > /tmp/x` 改檔，指令卡在 stdin 上。
+
+1. **搜尋要限定範圍**：只找專案目錄、`"$TEMP"/claude`（`$TEMP` 要加引號：Windows 的 Git Bash 中它含反斜線，不加引號時萬用字元比對不到）與 `~/.claude`。不要用 `find /`，也不要掃整顆磁碟。專案內優先用 Grep／Glob 工具。
+2. **可能跑很久的指令要加 `timeout`**，例如 `timeout 120 …`。`| head` 不會讓前面的指令提早結束（前面的指令要等 head 收滿 N 行才會停），所以改用 `-quit`、`-maxdepth` 或 `timeout`。
+3. **改檔一律用 Edit／Write 工具**，不要用 `cat >`、heredoc、`sed -i` 的多行替換或 `node -e`。
+4. **不要開會等 stdin 的指令**。測試在前景跑。
+5. **結束前停掉自己開的背景指令**；停不掉時，在報告中列出 PID 和指令。
+
 ## Git
 
 - 在獨立的 worktree 工作時，建立指定的分支並 commit，不要 push；在主工作區工作時，不要 commit。

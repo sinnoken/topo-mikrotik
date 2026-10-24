@@ -1,5 +1,6 @@
 /*
- * 頁首與工具列：建立基準、搜尋、路由追蹤、清除；圖的操作（全圖、重新排列、力導向、顯示切換）、圖例與匯出。
+ * 頁首與工具列：資料中心、搜尋、路由追蹤、清除；圖的操作（全圖、重新排列、力導向、顯示切換）、圖例與匯出。
+ * 輸入與輸出的入口集中在資料中心（app-hub.js）；工具列只留和圖有關的「匯出 PNG」（資料中心也有，呼叫同一個 A.exportPng）。
  */
 (function (S) {
   'use strict';
@@ -9,16 +10,17 @@
 
   // ================================================================ 頁首
   A.bindHeader = function bindHeader() {
-    $('#btn-input').onclick = () => A.openInput();
-    $('#btn-trace').onclick = () => { const p = $('#trace-pop'); p.classList.toggle('hidden'); if (!p.classList.contains('hidden')) $('#trace-src').focus(); };
+    $('#btn-trace').onclick = () => { const p = $('#trace-pop'); p.classList.toggle('hidden'); if (!p.classList.contains('hidden')) { A.syncTraceVrf(); $('#trace-src').focus(); } };
     $('#trace-run').onclick = A.runTrace;
-    ['#trace-src', '#trace-dst'].forEach((s) => $(s).addEventListener('keydown', (e) => {
+    ['#trace-src', '#trace-dst', '#trace-vrf'].forEach((s) => $(s).addEventListener('keydown', (e) => {
       if (e.key === 'Enter') A.runTrace();
       if (e.key === 'Escape') $('#trace-pop').classList.add('hidden');
     }));
     $('#btn-clear').onclick = async () => {
       if (!App.snap || !confirm('清除目前的基準與輸入？（只清除這個工具的資料）')) return;
-      await S.store.del('last'); App.snap = null; App.Q = null; App.sources = []; App.graph.setData([], [], new Map()); A.renderAll();
+      await S.store.del('last'); A.clearRound(); App.sel = null;
+      // 沒有基準時只有設備圖（歡迎畫面）：L2／L3 的資料與 VLAN 篩選一起清掉
+      App.vlanFilter = null; A.resetLayers(); App.layer = 'device'; A.setDeviceGraph([], [], new Map()); A.renderAll();
     };
     // 搜尋
     const inp = $('#search'); const dd = $('#search-dd'); let results = []; let active = 0;
@@ -33,7 +35,8 @@
       }, [V.chip(T[r.type]), h('span', null, r.label), h('span', { class: 'sub' }, r.sub || '')])));
       dd.classList.remove('hidden');
     };
-    const pick = (r) => { dd.classList.add('hidden'); inp.blur(); App.select({ type: r.type, key: r.key }, { focus: true }); };
+    // 搜尋是「在圖上定位」：在 ④ 修正、⑤ 驗證時回到上一次看圖的 ② 或 ③，再選取
+    const pick = (r) => { dd.classList.add('hidden'); inp.blur(); App.showView('graph'); App.select({ type: r.type, key: r.key }, { focus: true }); };
     let t = null;
     inp.addEventListener('input', () => { clearTimeout(t); t = setTimeout(show, 120); });
     inp.addEventListener('focus', show);
@@ -89,8 +92,7 @@
       App.graph.showGroups = !App.graph.showGroups; $('#btn-groups').classList.toggle('on', App.graph.showGroups); App.graph.redraw();
     };
     // 畫布每次繪圖都先填滿 theme 的畫布底色，匯出前同步重畫一次，PNG 才是目前畫面且不透明
-    $('#btn-png').onclick = () => { App.graph.draw(); const a = document.createElement('a'); a.download = 'topology.png'; a.href = $('#graph').toDataURL('image/png'); a.click(); };
-    $('#btn-json').onclick = () => App.exportAs('snapshot');
+    $('#btn-png').onclick = () => A.exportPng();
     buildLegend();
   };
 
@@ -131,10 +133,24 @@
         stops.parts.push(`${shade} ${stops.pos || 0}px`, `${shade} ${next}px`); stops.pos = next; return stops;
       }, { parts: [], pos: 0 }).parts.join(', ')})` : color,
     } }, attrs || {}));
+    // 實線加垂直短刻度（theme.vlan.partial.ticks）：與畫布 100% 時的大小相同；刻度與線是兩層背景，強制色彩模式下 .ln 保留原色
+    const tickLine = (color, w, t, alpha, attrs) => {
+      const lh = parseFloat(V.legendLineHeight(w)); const y0 = (t.len - lh) / 2; const x0 = (t.gap - t.w) / 2;
+      return h('span', Object.assign({ class: 'ln', style: {
+        borderTopWidth: '0', height: t.len + 'px', opacity: String(alpha == null ? 1 : alpha),
+        background: `repeating-linear-gradient(90deg, transparent 0 ${x0}px, ${color} ${x0}px ${x0 + t.w}px, transparent ${x0 + t.w}px ${t.gap}px), ` +
+          `linear-gradient(transparent 0 ${y0}px, ${color} ${y0}px ${y0 + lh}px, transparent ${y0 + lh}px)`,
+      } }, attrs || {}));
+    };
     const ring = (color, width, mark) => dot({ background: 'transparent', border: `${width}px solid ${color}` }, { 'data-mark': mark });
     group('設備');
     Object.entries(V.KIND).forEach(([k, label]) => item([dot(Object.assign({ background: V.KIND_COLOR[k] }, SHAPE_CSS[T.shape[k]]))], label));
     item([dot(Object.assign({ background: CV.uncollectedFill, border: '2px dashed ' + V.KIND_COLOR.unknown }, SHAPE_CSS.circle))], '未收集', '基準裡沒有收集檔的設備（虛線外框）');
+    // L2 埠圖與 L3 子網圖的節點（中性外框，靠外形區分）
+    item([dot({ background: T.l2.port.fill, border: '1.5px solid ' + T.l2.port.stroke, width: '9px', height: '9px', borderRadius: '1px' }, { 'data-l2': 'port' })], '埠（L2）',
+      'L2 埠圖：設備是外框為類型色的方框，埠是框邊上的小方塊；較寬的是聚合埠，虛線的是推論鏈路未收集端的未知埠');
+    item([dot({ background: T.l3.subnet.fill, border: '1.6px solid ' + T.l3.subnet.stroke, width: '22px', height: '10px', borderRadius: '5px' }, { 'data-l3': 'subnet' })], '子網（L3）',
+      'L3 子網圖：圓角長條是網段；虛線外框是只由路由得知的目的網段。接到兩個以上子網、有路由表或是路由器／防火牆的設備是路由設備（推論）');
     group('終端');
     // 前 8 個廠商各一色（依基準計算，載入基準後由 renderVendorLegend 填入），其餘與不明廠商用中性色
     vendorBox = h('div', { class: 'lg-vendors' }); grp.appendChild(vendorBox); A.renderVendorLegend();
@@ -157,6 +173,9 @@
     item([line(CV.keyInk, noteW, WEAK.inferred.dash, WEAK.inferred.alpha)], '推論鏈路',
       '長虛線（顏色依連線類別）：沒有 LLDP 的設備（例如只支援 MNDP 的 SwOS 交換器），依 MAC 表、MNDP、點對點網段推定相鄰；是直接相連或中間只有未管理設備');
     Object.values(EP.byType).forEach((t) => item([line(CV.keyInk, noteW, t.dash, WEAK.hearsay.alpha)], t.label, '連到 ' + t.label + ' 介面終端的連線（專用線型）'));
+    item([line(T.l3.route.c, T.l3.route.w, T.l3.route.dash, 1, { 'data-l3': 'route' }), h('span', { class: 'lg-arrow', style: { color: T.l3.route.c } }, '▶')], '路由（L3）',
+      'L3 子網圖開啟「顯示路由」時：靜態路由與預設路由，從路由所在的設備以虛線箭頭指到目的網段');
+    item([line(T.l3.overlap.c, T.l3.overlap.w, T.l3.overlap.dash, 1, { 'data-l3': 'overlap' })], '網段重疊（L3）', 'L3 子網圖：互相包含的網段之間的虛線，中點有警告外形；子網下方另標「重疊網段」「重複 IP」');
     group('標示');
     // 嚴重度：外形與畫布的 sevMark 相同（theme.sevShape），不只靠顏色
     Object.entries(T.sevShape).forEach(([k, shape]) => item([dot(Object.assign({ background: T.sev[k] }, SEV_CSS[shape]), { 'data-shape': shape })],
@@ -165,6 +184,11 @@
     item([ring(M.hover, 2, 'hover')], '滑過', '指標或鍵盤（N 鍵）目前所在的設備（深色細環）；相連的線一起標示');
     item([ring(M.find, 3, 'find')], '搜尋結果', '搜尋 MAC／IP 時，標出所在位置的設備與連線');
     item([line(M.trace, 4, null, T.alpha.overlay, { 'data-mark': 'trace' }), h('span', { class: 'lg-arrow', style: { color: M.trace } }, '▶')], '路由追蹤', '逐跳路徑，箭頭表示方向');
+    // VLAN 篩選：承載狀態（Q.vlanCarriers），線型與外形取自 theme.vlan，不只靠顏色
+    const VL = { carry: ['VLAN 承載', '兩端都帶這個 VLAN（實線）'], inferred: ['VLAN 推論承載', '推論鏈路，已收集的各端都帶這個 VLAN（長虛線，推論）'],
+      partial: ['VLAN 只有一端', '兩端都有 VLAN 資料，只有一端帶這個 VLAN（實線加垂直短刻度，中點有錯誤外形，V01）'], oneSide: ['VLAN 一端未知', '只有一端可確認：對端未收集、沒有 VLAN 資料或只有單側觀察（點線、淡色，推論）'] };
+    Object.entries(T.vlan).forEach(([k, st]) => item([st.ticks ? tickLine(st.c, 4, st.ticks, st.alpha, { 'data-vlan': k }) : line(st.c, 4, st.dash, st.alpha, { 'data-vlan': k }),
+      st.sev ? dot(Object.assign({ background: T.sev[st.sev] }, SEV_CSS[T.sevShape[st.sev]]), { 'data-shape': T.sevShape[st.sev] }) : null].filter(Boolean), VL[k][0], VL[k][1]));
   }
   /** 圖例的線寬：依 theme 的線寬等比放大到圖例可辨識，保持速率越高越粗的順序 */
   V.legendLineHeight = (w) => Math.max(1, Math.round(w * 1.2)) + 'px';
@@ -179,14 +203,25 @@
   };
 
   // ================================================================ 匯出
-  /** 匯出目前的基準或檢查結果（種類見 V.exporter.KINDS）；只讀 App.snap，不改寫。extra 例如 { byDevice: true } */
+  /**
+   * 目前的拓樸圖畫面 → PNG：設備圖是 topology.png，L2 埠圖、L3 子網圖是 topology-l2.png、topology-l3.png（畫的是目前的層級）。
+   * 畫布每次繪圖都先填滿 theme 的畫布底色，匯出前同步重畫一次，PNG 才是目前畫面且不透明。
+   * 資料中心蓋在圖上時畫布大小不變（兩者疊在同一格），所以從資料中心匯出也是同一張圖。
+   */
+  A.exportPng = function exportPng() {
+    if (!App.snap) return;
+    // L4 是矩陣不是畫布：PNG 只匯出拓樸圖的層級，矩陣改用 L4 畫面的「下載 CSV」
+    if (App.layer === 'l4') { A.banner('L4 可達性沒有 PNG：請在 L4 畫面用「下載 CSV」匯出矩陣，或切到設備、L2、L3 再匯出 PNG。', 8000); return; }
+    App.graph.draw(); const a = document.createElement('a'); a.download = A.layerPngName(); a.href = $('#graph').toDataURL('image/png'); a.click();
+  };
+  /** 匯出目前的基準或檢查結果（種類見 V.exporter.KINDS）；透過 App.Q 讀取，不改寫。extra 例如 { byDevice: true } */
   App.exportAs = function (kind, extra) {
     if (!App.snap) return;
     const k = V.exporter.KINDS[kind];
     if (!k) throw new Error('未知的匯出種類：' + kind);
-    // 處理紀錄與查詢介面由畫面傳入：匯出內容的組字函式本身不讀全域狀態
-    const opts = Object.assign({}, extra || {}, { ledgerOf: A.ledgerExport, Q: App.Q });
-    try { V.exporter.download(k.name(App.snap), k.text(App.snap, opts), k.type); } catch (e) {
+    // 處理紀錄由畫面傳入：匯出內容的組字函式本身不讀全域狀態；整份基準只給基準 JSON 原樣序列化
+    const opts = Object.assign({}, extra || {}, { ledgerOf: A.ledgerExport, snapshot: App.snap });
+    try { V.exporter.download(k.name(App.Q), k.text(App.Q, opts), k.type); } catch (e) {
       console.error(e); A.banner('匯出失敗：' + e.message, 10000);
     }
   };

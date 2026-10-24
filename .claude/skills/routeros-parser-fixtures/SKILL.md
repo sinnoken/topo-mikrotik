@@ -21,7 +21,7 @@ parser change that only fits one sample tends to break another. Work fixture-fir
    before adding it to `tests/fixtures/real/`; never commit the `.map.json` table. Note continuation lines, quoting, flags legends, `a,b` lists, and
    `x/y` compound names. Test fixtures are hand-written from docs, not captured, so say
    so when the shape is a guess. Consult <https://manual.mikrotik.com/llms.txt> for
-   field semantics.
+   field semantics; look it up with the `manual.py` script of the `routeros-manual` skill.
 2. **Write the failing test before the fix** in the matching file under `tests/core/`
    (for example `print.js`, `export.js`, `neighbors.js`, `i03.js`; `tests/run.js` is only the
    runner), using the existing `build(text)` helper from `tests/lib.js` with a fixed `now`. Cover:

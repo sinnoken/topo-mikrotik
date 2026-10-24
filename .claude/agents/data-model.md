@@ -26,7 +26,7 @@ tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch
 - 核心不碰 DOM、Canvas、IndexedDB。事實和推論要分開，並保留來源行號。結果要可重現。
 - 改解析器時依 `routeros-parser-fixtures` skill 先寫測試；欄位語意以 RouterOS 官方手冊為準。
 - 新增或修改 adapter 時，依該指令格式本來就不產生事實的行（說明行、續行、註解、停用項目…），用 `ignore(line, why)` 宣告；沒有宣告、也沒有產生事實的行會列為 I03（ADR-004）。
-- 依 ADR-005 判斷要不要升版：解析結果（事實、推論、finding、欄位）改變就升 minor，並在設計說明的版本紀錄寫一筆；只改 `CATALOG` 的 `causes`／`action` 不升版；Snapshot 結構的破壞性改變才改 `S.SCHEMA` 並升 major。
+- 依 ADR-005 判斷要不要升版：解析結果（事實、推論、finding、欄位）改變就升 minor，並在 `docs/版本紀錄.md` 寫一筆；只改 `CATALOG` 的 `causes`／`action` 不升版；Snapshot 結構的破壞性改變才改 `S.SCHEMA` 並升 major。
 - 範例資料和 OUI 資料是產生出來的，改產生器後重新產生，不要手動修改。
 
 ## Git

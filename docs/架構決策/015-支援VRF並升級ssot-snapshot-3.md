@@ -12,7 +12,7 @@
 - **路由**：`routing-table` 不是 `main` 的路由，解析時以「非 main 路由表」列為略過（`src/adapters/mikrotik.js` 的 `mikrotik.route`），不進入基準，也不會列在 I03（`tests/core/i03.js` 以 `routing-table=vrf1` 的路由確認）。`routes` 沒有路由表或 VRF 欄位。
 - **ARP**：`arps` 沒有 VRF 欄位。
 - **VRF 設定**：export 若有 `/ip vrf`，目前列為「未使用的設定」略過。
-- **查詢與檢查**：查詢層以 IP 為鍵建索引（`src/query/query.js` 的 `ipOwner`、`arpsByIp`），路徑追蹤（`S.trace`，`src/query/trace.js`）與 R01／R03／R04 只有 main 表可用；以名稱、網段或 IP 為鍵的檢查把整份基準視為同一個位址空間（[設計說明 §11](../設計說明.md#11-尚未做)）。
+- **查詢與檢查**：查詢層以 IP 為鍵建索引（`src/query/query.js` 的 `ipOwner`、`arpsByIp`），路徑追蹤（`S.trace`，`src/query/trace.js`）與 R01／R03／R04 只有 main 表可用；以名稱、網段或 IP 為鍵的檢查把整份基準視為同一個位址空間（[路線圖「M3：VRF」](../路線圖.md#m3vrf)）。
 
 所以位址在不同 VRF 重疊時：
 

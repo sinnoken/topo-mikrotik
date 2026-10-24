@@ -53,5 +53,5 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 1. 做了什麼（檔案與重點）
 2. 畫面行為的變更（使用者會看到什麼不同）
 3. 需要其他 agent 處理（data-model／workflow／docs）
-4. 文件影響（README 的畫面說明、設計說明 §12 等）
+4. 文件影響（設計說明 §11 檢視層架構、§12 畫面操作，README 的功能一覽等）
 5. 驗證結果（指令與通過數；改了配色時附 validator 結果）

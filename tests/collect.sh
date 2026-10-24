@@ -15,6 +15,16 @@ cat > "$TMP_DIR/ssh" <<'EOF'
 set -euo pipefail
 command_name=
 for argument in "$@"; do target=${command_name:-}; command_name=$argument; done
+# FAKE_SSH_UNREACHABLE：這個位址連不上（OpenSSH 為 255），--ask-password 的 -fN 也失敗
+if [[ -n "${FAKE_SSH_UNREACHABLE:-}" && "$command_name $target" == *"@$FAKE_SSH_UNREACHABLE"* ]]; then
+  printf 'ssh: connect to host %s port 22: No route to host\n' "$FAKE_SSH_UNREACHABLE" >&2; exit 255
+fi
+# --ask-password 的共用連線：建立（-fN）與關閉（-O exit）都不執行遠端指令
+[[ "${1:-}" == -fN || " $* " == *" -O exit "* ]] && exit 0
+# FAKE_SSH_FAIL_ON：「user@位址 指令」符合這個 glob 時失敗
+if [[ -n "${FAKE_SSH_FAIL_ON:-}" && "$target $command_name" == $FAKE_SSH_FAIL_ON ]]; then
+  printf 'permission denied\n' >&2; exit 7
+fi
 if [[ "${FAKE_SSH_MODE:-ok}" == "timeout" ]]; then sleep 2; fi
 # 依位址模擬不同設備（RouterOS 的 SSH 輸出帶 CR）
 board='CRS326-24G-2S+'; version='7.16.1 (stable)'; wireless_types=
@@ -190,5 +200,142 @@ run_collector "$TMP_DIR/devices-auto.csv" --dry-run --device AUTO_AC_BOTH >"$TMP
 if grep -q 'registration-table' "$TMP_DIR/auto-dry.txt"; then
   printf '%s\n' '--dry-run must not list automatic commands' >&2; exit 1
 fi
+
+# --retry-failed：只重收上次失敗的指令，輸出合併後的新收集檔
+fail() { printf '%s\n' "$*" >&2; exit 1; }
+expect_exit() { # 預期結束碼 指令…（不因非零結束碼中止測試）
+  local want=$1 got=0; shift
+  "$@" || got=$?
+  [[ "$got" == "$want" ]] || fail "expected exit $want, got $got: $*"
+}
+cat > "$TMP_DIR/devices-retry.csv" <<'EOF'
+name,address,user,port
+RETRY_A,192.0.2.1,admin,22
+RETRY_B,192.0.2.3,admin,22
+RETRY_C,192.0.2.4,admin,22
+EOF
+RETRY_CMDS=config,route,neighbor
+ROUTE_COMMAND='### /ip route print detail without-paging'
+# 上次：RETRY_A 的 route 失敗、RETRY_C 連不上（--ask-password 時記為 connection）
+FAKE_SSH_FAIL_ON='*@192.0.2.1 /ip route *' FAKE_SSH_UNREACHABLE=192.0.2.4 expect_exit 1 run_collector "$TMP_DIR/devices-retry.csv" \
+  --ask-password --commands "$RETRY_CMDS" --output "$TMP_DIR/prev.txt" >/dev/null 2>&1
+device_section RETRY_A "$TMP_DIR/prev.txt" | grep -qxF '# collection failed: exit code 7'
+device_section RETRY_C "$TMP_DIR/prev.txt" | grep -qxF '# collection failed: connection'
+[[ $(grep -c '^# collection failed: ' "$TMP_DIR/prev.txt") == 2 ]] || fail 'previous file must have 2 failures'
+prev_sum=$(cksum < "$TMP_DIR/prev.txt")
+
+# --dry-run 列出會重收的指令與上次失敗原因，不連線、不需要 -o
+run_collector "$TMP_DIR/devices-retry.csv" --retry-failed "$TMP_DIR/prev.txt" --dry-run --commands "$RETRY_CMDS" >"$TMP_DIR/retry-dry.txt"
+cat > "$TMP_DIR/retry-dry.expected" <<'EOF'
+RETRY_A: /ip route print detail without-paging（上次失敗：exit code 7）
+RETRY_C: /export terse（上次失敗：connection）
+RETRY_C: /ip route print detail without-paging（上次失敗：connection）
+RETRY_C: /ip neighbor print detail without-paging（上次失敗：connection）
+EOF
+diff "$TMP_DIR/retry-dry.expected" "$TMP_DIR/retry-dry.txt" || fail '--retry-failed --dry-run must list exactly the failed commands'
+run_collector "$TMP_DIR/devices-retry.csv" --retry-failed "$TMP_DIR/prev.txt" --dry-run --device RETRY_A >"$TMP_DIR/retry-dry-device.txt"
+[[ $(cat "$TMP_DIR/retry-dry-device.txt") == 'RETRY_A: /ip route print detail without-paging（上次失敗：exit code 7）' ]] ||
+  fail '--retry-failed --dry-run --device must list only that device'
+
+# 重收成功：失敗的區塊換成新結果，其他內容逐字保留，上次的收集檔不變
+run_collector "$TMP_DIR/devices-retry.csv" --retry-failed "$TMP_DIR/prev.txt" --commands "$RETRY_CMDS" \
+  --output "$TMP_DIR/merged.txt" >"$TMP_DIR/merged.log"
+[[ $(cksum < "$TMP_DIR/prev.txt") == "$prev_sum" ]] || fail 'previous file must not be modified'
+grep -q '^# collection failed: ' "$TMP_DIR/merged.txt" && fail 'merged file must have no failures'
+grep -qF '重收 4 個指令，仍失敗 0 個' "$TMP_DIR/merged.log" || fail 'summary must count retried commands'
+device_section RETRY_A "$TMP_DIR/merged.txt" | grep -A1 -xF "$ROUTE_COMMAND" | grep -q '^# collected-at: '
+device_section RETRY_A "$TMP_DIR/merged.txt" | grep -qxF 'name=test interface=ether1 command=/ip route print detail without-paging'
+[[ $(device_section RETRY_A "$TMP_DIR/merged.txt" | grep -cxF "$ROUTE_COMMAND") == 1 ]] || fail 'retried block must replace the old one'
+[[ $(device_section RETRY_C "$TMP_DIR/merged.txt" | grep -c '^### ') == 3 ]] || fail 'connection device must collect its commands'
+# 拿掉重收的部分（RETRY_A 的 route 區塊、RETRY_C 標頭與分隔線之間）後，兩個檔案逐字相同
+without_retried() {
+  awk '
+    /^[A-Za-z0-9][A-Za-z0-9_.:-]* \(/ { dev = $1; skip = 0; print; next }
+    /^_____$/ { skip = 0; print; next }
+    /^### / { skip = (dev == "RETRY_A" && $0 ~ /^### \/ip route /) }
+    dev == "RETRY_C" { next }
+    !skip { print }
+  ' "$1"
+}
+without_retried "$TMP_DIR/prev.txt" > "$TMP_DIR/prev.kept"
+without_retried "$TMP_DIR/merged.txt" > "$TMP_DIR/merged.kept"
+[[ $(grep -c '^# collected-at: ' "$TMP_DIR/prev.kept") == 5 ]] || fail 'kept part must include the original collected-at lines'
+cmp "$TMP_DIR/prev.kept" "$TMP_DIR/merged.kept" || fail 'blocks not retried must be byte-identical'
+# 網站讀入合併檔：沒有重複區塊（I02）、收集器註解沒有格式問題、沒有失敗紀錄
+# （模擬 ssh 的輸出不是真的 RouterOS 內容，解析不出內容的 I01 不在檢查範圍）
+node -e '
+  const S = require(process.argv[1])();
+  const text = require("fs").readFileSync(process.argv[2], "utf8");
+  const s = S.build([{ name: "merged.txt", text }], { now: "2026-01-01T00:00:00Z" });
+  const dup = s.findings.filter((f) => f.id === "I02").map((f) => f.message);
+  const bad = s.blocks.filter((b) => b.failure || b.issues || !b.collectedAt).length;
+  if (dup.length || bad || s.blocks.length !== 9) { console.error(dup, bad, s.blocks.length); process.exit(1); }
+' "$ROOT/tests/load.js" "$TMP_DIR/merged.txt" || fail 'merged file must read without I02, annotation issues or failures'
+
+# 重收仍然失敗：保留新的失敗紀錄，不重複區塊；連線失敗的設備仍記 connection
+FAKE_SSH_FAIL_ON='*@192.0.2.1 /ip route *' FAKE_SSH_UNREACHABLE=192.0.2.4 expect_exit 1 run_collector "$TMP_DIR/devices-retry.csv" \
+  --ask-password --retry-failed "$TMP_DIR/prev.txt" --commands "$RETRY_CMDS" --output "$TMP_DIR/merged-fail.txt" >"$TMP_DIR/merged-fail.log" 2>&1
+grep -qF '仍失敗 2 個' "$TMP_DIR/merged-fail.log" || fail 'summary must count commands that still fail'
+[[ $(device_section RETRY_A "$TMP_DIR/merged-fail.txt" | grep -cxF "$ROUTE_COMMAND") == 1 ]] || fail 'failed retry must not duplicate the block'
+device_section RETRY_A "$TMP_DIR/merged-fail.txt" | grep -A3 -xF "$ROUTE_COMMAND" | grep -qxF '# collection failed: exit code 7'
+device_section RETRY_C "$TMP_DIR/merged-fail.txt" | grep -qxF '# collection failed: connection'
+device_section RETRY_C "$TMP_DIR/merged-fail.txt" | grep -q '^### ' && fail 'unreachable device must not get command blocks'
+# 已有其他區塊的設備連不上時，連線失敗記在重收的指令區塊內
+FAKE_SSH_UNREACHABLE=192.0.2.1 expect_exit 1 run_collector "$TMP_DIR/devices-retry.csv" --ask-password \
+  --retry-failed "$TMP_DIR/prev.txt" --device RETRY_A --output "$TMP_DIR/merged-conn.txt" >/dev/null 2>&1
+device_section RETRY_A "$TMP_DIR/merged-conn.txt" | grep -A2 -xF "$ROUTE_COMMAND" | grep -qxF '# collection failed: connection'
+
+# --device 只重收指定設備；其他失敗原樣保留並以 1 結束
+expect_exit 1 run_collector "$TMP_DIR/devices-retry.csv" --retry-failed "$TMP_DIR/prev.txt" --device RETRY_A \
+  --output "$TMP_DIR/merged-device.txt" >"$TMP_DIR/merged-device.log"
+grep -qF '另有 1 個失敗不在 --device／--commands 範圍' "$TMP_DIR/merged-device.log"
+cmp <(device_section RETRY_C "$TMP_DIR/prev.txt") <(device_section RETRY_C "$TMP_DIR/merged-device.txt") || fail 'unselected device must be kept'
+device_section RETRY_A "$TMP_DIR/merged-device.txt" | grep -q '^# collection failed: ' && fail 'selected device must be retried'
+
+# 自動選用命令不重新判斷：只重收上次失敗的
+cat > "$TMP_DIR/devices-retry-auto.csv" <<'EOF'
+name,address,user,port
+AUTO_CAP_AX,192.0.2.11,admin,22
+AUTO_AC_WLAN,192.0.2.14,admin,22
+EOF
+FAKE_SSH_FAIL_ON='*@192.0.2.1[14] /interface [pw]*' expect_exit 1 run_collector "$TMP_DIR/devices-retry-auto.csv" \
+  --output "$TMP_DIR/prev-auto.txt" >/dev/null 2>&1
+device_section AUTO_CAP_AX "$TMP_DIR/prev-auto.txt" | grep -A3 -xF "$WIFI_COMMAND" | grep -qxF '# collection failed: exit code 7'
+expect_commands AUTO_AC_WLAN 0 0 "$TMP_DIR/prev-auto.txt"
+run_collector "$TMP_DIR/devices-retry-auto.csv" --retry-failed "$TMP_DIR/prev-auto.txt" --output "$TMP_DIR/merged-auto.txt" >"$TMP_DIR/merged-auto.log"
+expect_commands AUTO_CAP_AX 1 0 "$TMP_DIR/merged-auto.txt"
+expect_commands AUTO_AC_WLAN 0 0 "$TMP_DIR/merged-auto.txt"
+grep -q 'AUTO ' "$TMP_DIR/merged-auto.log" && fail 'retry must not re-decide automatic commands'
+grep -q '^# collection failed: ' "$TMP_DIR/merged-auto.txt" && fail 'auto retry must succeed'
+
+# 沒有失敗：提示後以 0 結束，不產生輸出檔
+run_collector "$TMP_DIR/devices.csv" --retry-failed "$TMP_DIR/success.txt" --output "$TMP_DIR/none.txt" >"$TMP_DIR/none.log"
+grep -qF '沒有需要重收的指令' "$TMP_DIR/none.log"
+[[ ! -e "$TMP_DIR/none.txt" ]] || fail 'no output file when nothing to retry'
+
+# 檔案格式錯：以 2 結束並說明原因
+expect_retry_error() { # 收集檔 預期訊息 [其他選項…]
+  local file=$1 message=$2; shift 2
+  expect_exit 2 run_collector "$TMP_DIR/devices-retry.csv" --retry-failed "$file" --output "$TMP_DIR/err-out.txt" "$@" 2>"$TMP_DIR/err.log" >/dev/null
+  grep -qF -- "$message" "$TMP_DIR/err.log" || { cat "$TMP_DIR/err.log" >&2; fail "expected error: $message"; }
+}
+expect_retry_error "$TMP_DIR/missing.txt" '無法讀取上次的收集檔'
+expect_retry_error "$TMP_DIR/devices-retry.csv" '不是 bundle-v1 收集檔'
+printf 'RETRY_A (192.0.2.1):\n### /ip foo print\n# collection failed: timeout\n_____\n' > "$TMP_DIR/bad-command.txt"
+expect_retry_error "$TMP_DIR/bad-command.txt" '失敗的指令不是收集器的指令：/ip foo print'
+printf 'RETRY_A (192.0.2.1):\n_____\n# collection failed: timeout\n' > "$TMP_DIR/bad-outside.txt"
+expect_retry_error "$TMP_DIR/bad-outside.txt" '失敗紀錄不在設備區塊內'
+printf 'RETRY_A (192.0.2.9):\n# collection failed: connection\n_____\n' > "$TMP_DIR/bad-address.txt"
+expect_retry_error "$TMP_DIR/bad-address.txt" '位址在上次收集檔是 192.0.2.9'
+printf 'RETRY_X (192.0.2.1):\n# collection failed: connection\n_____\n' > "$TMP_DIR/bad-device.txt"
+expect_retry_error "$TMP_DIR/bad-device.txt" '有失敗紀錄，但不在設備清單'
+
+# 不合理的選項組合：直接報錯，不靜默忽略
+expect_exit 2 run_collector "$TMP_DIR/devices-retry.csv" --retry-failed "$TMP_DIR/prev.txt" >/dev/null 2>"$TMP_DIR/err.log"
+grep -qF -- '--retry-failed 必須用 -o 指定新的輸出檔' "$TMP_DIR/err.log"
+expect_retry_error "$TMP_DIR/prev.txt" '-o 不可與 --retry-failed 的收集檔相同' --output "$TMP_DIR/prev.txt"
+[[ $(cksum < "$TMP_DIR/prev.txt") == "$prev_sum" ]] || fail 'previous file must not be overwritten'
+expect_retry_error "$TMP_DIR/prev.txt" '--device RETRY_B 在上次收集檔沒有失敗紀錄' --device RETRY_A,RETRY_B
+expect_retry_error "$TMP_DIR/prev.txt" '--commands neighbor 在上次收集檔（選定的設備）沒有失敗紀錄' --device RETRY_A --commands route,neighbor
 
 printf 'collector shell tests passed\n'

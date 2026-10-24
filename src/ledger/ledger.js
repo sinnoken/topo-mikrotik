@@ -425,6 +425,19 @@
     return L.advance(out, Q, { now });
   };
 
+  /**
+   * 這份基準是處理紀錄的第幾輪（iterations 的索引，0 起算）；沒有推進過時為 -1。
+   * meta 是基準的 meta（或 iterations[].baseline 的形式）；判斷方式和 advance 的冪等判斷相同（基準鍵，舊資料退回 inputHash）。
+   * 工作包用它確認基準和處理紀錄是同一輪。
+   */
+  L.roundOf = function roundOf(ledger, meta) {
+    const v = L.validate(ledger);
+    if (!v.ok) throw new Error(`處理紀錄格式不正確（${v.errors.length} 項）：${v.errors.slice(0, 5).join('；')}${v.errors.length > 5 ? '…' : ''}`);
+    const b = baseOf(meta);
+    if (typeof b !== 'string' || !b) throw new Error('基準沒有 baselineKey 或 inputHash');
+    return ledger.iterations.findIndex((r) => baseOf(r.baseline) === b);
+  };
+
   // ---- 統計
   /**
    * 趨勢圖用的時間序列與目前狀態：

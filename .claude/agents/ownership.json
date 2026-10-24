@@ -7,7 +7,7 @@
     "tools/update-golden.js", "tools/anonymize.js", "tests/fixtures/"
   ],
   "workflow": [
-    "src/compare/", "src/remediate/", "src/ledger/",
+    "src/compare/", "src/remediate/", "src/ledger/", "src/workpack/",
     "tests/workflow/", "tests/golden/sample-patch.json", "tests/golden/sample-patch/"
   ],
   "frontend": ["src/view/", "assets/", "index.html", "vendor/", "tests/ui-smoke.js"],

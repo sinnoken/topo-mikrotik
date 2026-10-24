@@ -1370,7 +1370,7 @@ test('raw 表：prerouting 先丟掉的封包不算對外暴露（F03、F07）',
   assert.strictEqual(fws(raw, 'F03').length, 0);
   assert.strictEqual(fws(raw, 'F07').length, 0);
   const s = edgeFw();
-  assert.ok(!fws(s, 'F07').some((f) => /api（/.test(f.message)), 'api（8728）被 raw 擋下');
+  assert.ok(!fws(s, 'F07').some((f) => /：api（/.test(f.message) && /IPv4 從/.test(f.message)), 'api（8728）的 IPv4 被 raw 擋下');
 });
 test('F04：WAN 可連入的 dst-nat 與對應的 forward 放行；沒有 in-interface 的 dstnat 放行附 hairpin 提醒', () => {
   const s = edgeFw();
@@ -1397,11 +1397,39 @@ test('F05：IPv6 forward 放行只限 dst-port、沒有限 dst-address；F06：�
 });
 test('F07：管理服務啟用、沒有 available-from，且 input 放行（含預設值與沒有任何 drop 的情況）', () => {
   const s = edgeFw();
-  assert.deepStrictEqual(fws(s, 'F07').map((f) => [f.message.split('：')[1].split('（')[0], f.evidence.map((e) => e.line)]), [['winbox', [14]]]);
+  const svc = (f) => [f.message.split('：')[1].split('（')[0], f.message.match(/IPv[46](?= 從)/g), f.evidence.map((e) => e.line)];
+  // IPv4：winbox 被 input 第 4 條放行；IPv6：/ipv6 firewall 的 input 沒有規則（預設放行），沒有限制來源的 winbox、api 都可連；
+  // www、ssh 的 available-from 只列 IPv4 位址，IPv6 不能連（手冊：只有 IPv4 前綴時拒絕所有 IPv6 用戶端）。證據是讓 IPv6 生效的那一行
+  assert.deepStrictEqual(fws(s, 'F07').map(svc), [['api', ['IPv6'], [38]], ['winbox', ['IPv4', 'IPv6'], [14, 38]]], '同一服務的 IPv4、IPv6 併成一筆');
   const open = fwBox([]); // 沒有任何防火牆規則：預設全部放行
   assert.deepStrictEqual(fws(open, 'F07').map((f) => f.message.split('：')[1].split('（')[0]).sort(), ['api', 'api-ssl', 'ftp', 'ssh', 'telnet', 'winbox', 'www'].sort());
   const af = fwBox(['/ip service set winbox available-from=192.168.88.0/24', '/ip service set ssh disabled=yes', '/ip firewall filter add action=drop chain=input in-interface-list=!LAN']);
   assert.strictEqual(fws(af, 'F07').length, 0, 'available-from（7.x 名稱）限制來源也算');
+});
+test('F07（IPv6）：有 IPv6 設定時經 /ipv6 firewall 的 raw 與 input 判斷；available-from 依位址族分開；停用 IPv6 或沒有 IPv6 設定時不檢查', () => {
+  const v6 = (lines) => fwBox(['/ip firewall filter add action=drop chain=input in-interface-list=!LAN', '/ip service set ssh disabled=yes',
+    '/ip service set telnet disabled=yes', '/ip service set ftp disabled=yes', '/ip service set www disabled=yes', '/ip service set api disabled=yes', '/ip service set api-ssl disabled=yes', ...lines]);
+  const f07 = (s) => fws(s, 'F07').flatMap((f) => f.message.match(/IPv[46](?= 從)/g).map((fam) => `${f.message.split('：')[1].split('（')[0]} ${fam}`));
+  // IPv4 已被 drop 擋下；/ipv6 address 在 WAN 上、IPv6 沒有任何防火牆規則 → winbox 從 IPv6 可以連入
+  const addr = v6(['/ipv6 address add address=2001:db8::1/64 interface=ether1']);
+  assert.deepStrictEqual(f07(addr), ['winbox IPv6']);
+  const f = fws(addr, 'F07')[0];
+  assert.ok(/IPv6 從 ether1，input 沒有任何規則擋下/.test(f.message), f.message);
+  assert.deepStrictEqual(f.evidence.map((e) => e.line), [15], '證據指向讓 IPv6 生效的 /ipv6 address');
+  assert.deepStrictEqual(f07(v6(['/ipv6 dhcp-client add interface=ether1 request=address,prefix'])), ['winbox IPv6'], 'DHCPv6 client 也算有 IPv6');
+  assert.deepStrictEqual(f07(v6([])), [], '沒有任何 IPv6 設定時無從判斷，不報');
+  assert.deepStrictEqual(f07(v6(['/ipv6 address add address=2001:db8::1/64 interface=ether1', '/ipv6 settings set disable-ipv6=yes'])), [], '停用 IPv6');
+  // /ipv6 firewall 擋下（input 或 raw）
+  assert.deepStrictEqual(f07(v6(['/ipv6 firewall filter add action=drop chain=input in-interface-list=!LAN'])), [], 'IPv6 input 擋下');
+  assert.deepStrictEqual(f07(v6(['/ipv6 address add address=2001:db8::1/64 interface=ether1', '/ipv6 firewall raw add action=drop chain=prerouting in-interface-list=WAN'])), [], 'IPv6 raw 擋下');
+  // available-from 依位址族：只列 IPv4 → IPv6 拒絕；只列 IPv6 → IPv4 拒絕；::/0、0.0.0.0/0 等於不限
+  const af = (v, extra) => f07(fwBox(['/ip service set ssh disabled=yes', '/ip service set telnet disabled=yes', '/ip service set ftp disabled=yes', '/ip service set www disabled=yes',
+    '/ip service set api disabled=yes', '/ip service set api-ssl disabled=yes', `/ip service set winbox available-from=${v}`, '/ipv6 address add address=2001:db8::1/64 interface=ether1', ...(extra || [])]));
+  assert.deepStrictEqual(af('192.168.88.0/24'), []);
+  assert.deepStrictEqual(af('2001:db8:1::/48'), []);
+  assert.deepStrictEqual(af('::/0'), ['winbox IPv6']);
+  assert.deepStrictEqual(af('0.0.0.0/0'), ['winbox IPv4']);
+  assert.deepStrictEqual(af('0.0.0.0/0,::/0').sort(), ['winbox IPv4', 'winbox IPv6']);
 });
 test('F08：有防火牆規則但無法判斷 WAN（沒有 WAN 清單或清單沒有成員）；coverage 標示 WAN 狀態', () => {
   const rule = ['/ip firewall filter add action=accept chain=input dst-port=8291 protocol=tcp'];
@@ -1409,6 +1437,11 @@ test('F08：有防火牆規則但無法判斷 WAN（沒有 WAN 清單或清單�
   assert.strictEqual(fws(none, 'F08').length, 1);
   assert.ok(/沒有名稱含 WAN 的 interface list/.test(fws(none, 'F08')[0].message), fws(none, 'F08')[0].message);
   assert.strictEqual(fws(none, 'F03').length + fws(none, 'F07').length, 0, '無法判斷 WAN 時不猜');
+  // 訊息要和行為一致：F05 仍檢查沒有限制入介面的 forward 規則
+  assert.ok(/F03、F04、F07 未檢查，F05 只檢查沒有限制入介面的 forward 規則/.test(fws(none, 'F08')[0].message), fws(none, 'F08')[0].message);
+  const v6 = (extra) => fwBox(['/ipv6 firewall filter add action=accept chain=forward dst-port=443 protocol=tcp' + extra], { noLists: true });
+  assert.strictEqual(fws(v6(''), 'F05').length, 1, 'WAN 不明時，沒有限制入介面的 IPv6 forward 規則照樣檢查');
+  assert.strictEqual(fws(v6(' in-interface=ether1'), 'F05').length, 0, 'WAN 不明時，有限制入介面的不猜');
   assert.deepStrictEqual(none.coverage[0].firewall, { rules: 1, wan: 'no-wan-list' });
   const empty = fwBox(rule, { emptyWan: true });
   assert.ok(/沒有成員/.test(fws(empty, 'F08')[0].message));
@@ -1653,6 +1686,25 @@ test('RouterOS 7 的斜線路徑：指令標記與 export 選單路徑都視同�
   assert.deepStrictEqual(s.blocks.map((b) => b.command), ['/ip neighbor print detail without-paging', '/interface bridge host print detail without-paging', '/export terse']);
   assert.ok(!ids(s).includes('I01'));
   assert.deepStrictEqual([iface(s, 'SW|ether3').bridge, iface(s, 'SW|ether3').pvid], ['SW|bridge1', 30]);
+});
+// 生成檔一致性：產生器參數從 package.json 的 sample script 讀取（npm run sample 就是這樣產生的），兩邊不會各改各的。
+// 比對前把 CRLF 換成 LF：.gitattributes 已設 eol=lf，但 Windows 上若設定 core.autocrlf 等仍可能拿到 CRLF 的工作檔，換行不同不算生成檔過期。
+const lf = (s) => s.replace(/\r\n/g, '\n');
+const SAMPLE_FIX = '範例資料與產生器不一致：請執行 npm run sample 重新產生（生成檔不要手動修改）';
+test('生成檔：samples/sample-bundle.txt 與 package.json 的 sample script 用產生器產生的結果完全相同', () => {
+  const script = JSON.parse(read('package.json')).scripts.sample;
+  const m = script.match(/^node tools\/gen-bundle\.js ([^>]*?)\s*>\s*samples\/sample-bundle\.txt && node tools\/embed-sample\.js$/);
+  assert.ok(m, `package.json 的 sample script 格式改了，這個測試也要跟著改：${script}`);
+  const want = gen(m[1].split(/\s+/).filter(Boolean));
+  const got = lf(read('samples/sample-bundle.txt'));
+  if (got !== want) {
+    const a = got.split('\n'); const b = want.split('\n'); let k = 0; while (k < a.length && a[k] === b[k]) k++;
+    assert.fail(`${SAMPLE_FIX}\n第一個不同在第 ${k + 1} 行：\n  檔案：${JSON.stringify(a[k])}\n  產生：${JSON.stringify(b[k])}`);
+  }
+});
+test('生成檔：samples/sample-bundle.js 是 tools/embed-sample.js 對 sample-bundle.txt 的輸出', () => {
+  const { embed } = require('../tools/embed-sample.js');
+  assert.ok(lf(read('samples/sample-bundle.js')) === embed(lf(read('samples/sample-bundle.txt'))), SAMPLE_FIX);
 });
 test('黃金基準：範例資料建出的 Snapshot 與 tests/golden/sample-snapshot.json 完全相同', () => {
   const G = require('./golden.js');

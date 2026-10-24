@@ -713,10 +713,10 @@
         });
       });
       const active = rules.filter((r) => !r.disabled && (r.table === 'filter' || (r.table === 'nat' && r.chain === 'dstnat')));
-      // F08：有規則但無法判斷 WAN；F03／F04／F05（WAN 部分）／F07 都需要 WAN，不猜
+      // F08：有規則但無法判斷 WAN；F03／F04／F07 都需要 WAN，不猜；F05 改為只看沒有限制入介面的 forward 規則（見下方 F05）
       if (!ctx.wan && active.length) {
         const why = ctx.status === 'no-wan-list' ? '沒有名稱含 WAN 的 interface list' : `WAN 清單（${ctx.wanLists.join('、')}）沒有成員`;
-        add('F08', `${name(dev)}：有 ${active.length} 條防火牆規則，但${why}，無法判斷哪些介面對外；F03、F04、F05、F07 未檢查`, [{ type: 'device', key: dev }], [ruleEv(active[0])]);
+        add('F08', `${name(dev)}：有 ${active.length} 條防火牆規則，但${why}，無法判斷哪些介面對外；F03、F04、F07 未檢查，F05 只檢查沒有限制入介面的 forward 規則`, [{ type: 'device', key: dev }], [ruleEv(active[0])]);
       }
       const wans = ctx.wan ? Array.from(ctx.wan).sort(S.util.natural) : [];
       const ipsecUp = M.fw.peers.some((p) => p.dev === dev && !p.disabled) || M.fw.policies.some((p) => p.dev === dev && !p.disabled && !p.template);
@@ -780,17 +780,41 @@
         add('F04', `${name(dev)}：WAN（${ifcName(hit.ep)}）的 ${port} 經 dst-nat 轉送到 ${to}，${by ? `forward 第 ${by.position} 條放行` : 'forward 沒有規則擋下'}${hairpin ? '（這條放行沒有限制入介面，可能是 hairpin NAT 需要的；收緊前先確認）' : ''}`,
           ents(r, by), [ruleEv(r)].concat(by ? [ruleEv(by)] : []));
       });
-      // F07：管理服務啟用、沒有 available-from，且從 WAN 的新連線會被 input 放行（先看 raw）
+      // F07：管理服務啟用、來源位址不受限（available-from），且從 WAN 的新連線會被 input 放行（先看 raw）。IPv4、IPv6 分開判斷：
+      //   available-from 空白＝不限；有列位址時只接受清單內的，某一位址族沒有列任何前綴＝那個位址族拒絕（手冊：只有 IPv4 前綴時拒絕所有 IPv6 用戶端）
+      //   IPv6 只在確定有用時才判斷（firewallZones.ipv6.status 為 used），經 /ipv6 firewall 的 raw 與 input
+      const zone = M.fwZones.get(dev);
+      const FAMILIES = [['ip', 'IPv4', 32n], ['ipv6', 'IPv6', 128n]];
+      const openFrom = (sv, fam, bits) => {
+        if (!sv.addresses.length) return true;
+        return sv.addresses.some((a) => {
+          if (a.includes(':') !== (fam === 'ipv6')) return false;
+          const p = fw.parseVal('src-address', a);
+          return p.kind === 'ranges' && p.items.some(([x, y]) => x === 0n && y === (1n << bits) - 1n);
+        });
+      };
+      // 同一個服務的 IPv4、IPv6 併成一筆（鍵不重複）；訊息依位址族列出從哪個 WAN 介面、被哪條規則放行
       (M.fwServices.get(dev) || []).forEach((sv) => {
-        if (!sv.enabled || sv.addresses.length || !sv.port) return;
-        for (const ep of wans) {
-          const res = fw.evalFilter(ctx, 'ip', 'input', { family: 'ip', in: ep, out: null, protocol: 'tcp', dstPort: sv.port, dst: undefined, state: 'new', natState: null });
-          if (res.verdict !== 'accept') continue;
-          const ev = sv.src.map(([block, line]) => ({ block, line })).concat(res.rule ? [ruleEv(res.rule)] : [], res.path.map(ruleEv));
-          add('F07', `${name(dev)}：${sv.name}（tcp/${sv.port}${sv.basis === 'default' ? '，預設值' : ''}）啟用、沒有限制來源位址（available-from），WAN（${ifcName(ep)}）可以連入：${res.rule ? `${res.rule.chain} 第 ${res.rule.position} 條放行` : 'input 沒有任何規則擋下'}`,
-            [{ type: 'device', key: dev }, { type: 'service', key: dev + '|' + sv.name }].concat(res.rule ? [{ type: 'rule', key: res.rule.key }] : []), ev);
-          break;
-        }
+        if (!sv.enabled || !sv.port) return;
+        const hits = [];
+        FAMILIES.forEach(([fam, label, bits]) => {
+          if (fam === 'ipv6' && zone.ipv6.status !== 'used') return;
+          if (!openFrom(sv, fam, bits)) return;
+          for (const ep of wans) {
+            const res = fw.evalFilter(ctx, fam, 'input', { family: fam, in: ep, out: null, protocol: 'tcp', dstPort: sv.port, dst: undefined, state: 'new', natState: null });
+            if (res.verdict === 'accept') { hits.push({ fam, label, ep, res }); break; }
+          }
+        });
+        if (!hits.length) return;
+        const ev = sv.src.map(([block, line]) => ({ block, line }));
+        hits.forEach((h) => {
+          if (h.res.rule) ev.push(ruleEv(h.res.rule));
+          h.res.path.forEach((r) => ev.push(ruleEv(r)));
+          if (h.fam === 'ipv6') zone.ipv6.src.forEach(([block, line]) => ev.push({ block, line })); // 讓 IPv6 生效的那一行
+        });
+        const how = hits.map((h) => `${h.label} 從 ${ifcName(h.ep)}，${h.res.rule ? `${h.res.rule.chain} 第 ${h.res.rule.position} 條放行` : 'input 沒有任何規則擋下'}`).join('；');
+        add('F07', `${name(dev)}：${sv.name}（tcp/${sv.port}${sv.basis === 'default' ? '，預設值' : ''}）啟用、沒有限制來源位址（available-from），WAN 可以連入：${how}`,
+          [{ type: 'device', key: dev }, { type: 'service', key: dev + '|' + sv.name }].concat(hits.filter((h) => h.res.rule).map((h) => ({ type: 'rule', key: h.res.rule.key }))), ev);
       });
     });
   }

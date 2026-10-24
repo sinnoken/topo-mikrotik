@@ -16,7 +16,7 @@
       devices: new Map(), ifcs: new Map(), links: new Map(), vlans: new Map(), macs: new Map(),
       arps: [], routes: [], claims: [], ospf: [], ospfAdjacencies: [], vmems: [], assocs: [], dhcpNets: [], ipBinds: [],
       // 防火牆（事實）：規則依輸入順序；interface list 以「設備|名稱」為鍵；/ip service 只有 export 有寫的（預設值由 infer 補上）
-      fw: { rules: [], lists: new Map(), services: new Map(), peers: [], policies: [] },
+      fw: { rules: [], lists: new Map(), services: new Map(), peers: [], policies: [], ipv6: new Map() }, // ipv6：dev → { use: [[區塊, 行號]], disabled: [區塊, 行號]|null }
     };
   }
 
@@ -157,6 +157,11 @@
           break;
         }
         case 'ipsecPeer': M.fw.peers.push({ dev: f.dev, name: f.name, address: f.address, disabled: f.disabled, src: [[f.block, f.line]] }); break;
+        case 'ipv6Use': case 'ipv6Disabled': {
+          const v = getOr(M.fw.ipv6, f.dev, () => ({ use: [], disabled: null }));
+          if (f.t === 'ipv6Use') v.use.push([f.block, f.line]); else if (!v.disabled) v.disabled = [f.block, f.line];
+          break;
+        }
         case 'ipsecPolicy': M.fw.policies.push({ dev: f.dev, srcAddress: f.srcAddress, dstAddress: f.dstAddress, peer: f.peer, template: f.template, disabled: f.disabled, src: [[f.block, f.line]] }); break;
         case 'route':
           M.routes.push({ dev: f.dev, prefix: f.prefix, len: f.len, proto: f.proto, distance: f.distance ?? null, blackhole: !!f.blackhole,

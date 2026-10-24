@@ -742,6 +742,18 @@
     return { family: rule.family, in: inEp, out, protocol: proto, dstPort: dp === undefined ? null : Number(dp), dst, state: 'new', natState: null };
   }
 
+  /**
+   * IPv6 是否在用（推論）：/ipv6 settings 停用為 disabled；有 /ipv6 address、/ipv6 dhcp-client 或 /ipv6 firewall 規則為 used（src 是第一個證據行）；
+   * 都沒有為 unknown（export 只列非預設值，無從判斷 IPv6 有沒有位址，不猜）。
+   */
+  function ipv6Status(M, dev, rules) {
+    const v = M.fw.ipv6.get(dev);
+    if (v && v.disabled) return { status: 'disabled', src: [v.disabled] };
+    const r = rules.find((x) => x.family === 'ipv6');
+    const ev = (v ? v.use : []).concat(r ? [[r.block, r.line]] : []).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    return ev.length ? { status: 'used', src: [ev[0]] } : { status: 'unknown', src: [] };
+  }
+
   /** 推論：每台有設定資料的設備的 WAN／LAN 分類與有效的 /ip service（含預設值）。 */
   function firewall(M) {
     M.fwZones = new Map(); M.fwServices = new Map(); M.fwCtx = new Map();
@@ -753,7 +765,7 @@
       const ctx = fwContext(d.key, listsByDev.get(d.key) || [], ifcsByDev.get(d.key) || [], rulesByDev.get(d.key) || []);
       M.fwCtx.set(d.key, ctx);
       M.fwZones.set(d.key, { dev: d.key, basis: ctx.status === 'ok' ? 'interface-list' : null, status: ctx.status, wanLists: ctx.wanLists, wanInterfaces: ctx.wan ? Array.from(ctx.wan).sort(S.util.natural) : [],
-        lanLists: ctx.lanLists, lanInterfaces: Array.from(ctx.lan).sort(S.util.natural) });
+        lanLists: ctx.lanLists, lanInterfaces: Array.from(ctx.lan).sort(S.util.natural), ipv6: ipv6Status(M, d.key, rulesByDev.get(d.key) || []) });
       const svcs = new Map(SERVICE_DEFAULTS.map(([name, port, enabled]) => [name, { dev: d.key, name, enabled, port, addresses: [], basis: 'default', src: [] }]));
       M.fw.services.forEach((sv) => {
         if (sv.dev !== d.key) return;

@@ -176,6 +176,12 @@
       });
 
     // 防火牆規則：鍵＝設備＋位址族＋表＋chain＋比對條件（不含編號），插入規則時其他規則不會變成差異
+    // item.key 就是 rule.key（Snapshot 的 firewallRules[].key），定位時用 Q.getFirewallRule(item.key)；要查哪一份基準依 change 決定：
+    //   added、changed（action／disabled／match）→ 新基準的 qNew.getFirewallRule(key)；changed 的 action／disabled 鍵在兩份都存在
+    //   removed → 只存在於舊基準，用 qOld.getFirewallRule(key)（新基準查不到，回傳 null）
+    //   changed 的 match → key 是新規則的鍵，舊規則的鍵在 before.key（兩者不同）
+    // 同一 chain 內簽章相同的重複規則，第二條以後鍵帶 #n（依出現順序編號）：刪掉前面那條時，後面那條會接手原本的鍵，
+    // 比對結果顯示為移除 #n，而不是實際刪掉的那一條；定位到的是目前排第 n 個的那條。
     const fwSum = (r) => ({ key: r.key, position: r.position, action: r.action, disabled: !!r.disabled, comment: nil(r.comment), match: r.match, params: r.params });
     const fwText = (q, r) => {
       const m = Object.keys(r.match).sort().map((k) => `${k}=${r.match[k]}`).join(' ');

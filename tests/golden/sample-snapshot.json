@@ -36998,7 +36998,11 @@
     "wanLists": [],
     "wanInterfaces": [],
     "lanLists": [],
-    "lanInterfaces": []
+    "lanInterfaces": [],
+    "ipv6": {
+     "status": "unknown",
+     "src": []
+    }
    },
    {
     "dev": "TPE_ACC_SW_02",
@@ -37007,7 +37011,11 @@
     "wanLists": [],
     "wanInterfaces": [],
     "lanLists": [],
-    "lanInterfaces": []
+    "lanInterfaces": [],
+    "ipv6": {
+     "status": "unknown",
+     "src": []
+    }
    },
    {
     "dev": "TPE_ACC_SW_03",
@@ -37016,7 +37024,11 @@
     "wanLists": [],
     "wanInterfaces": [],
     "lanLists": [],
-    "lanInterfaces": []
+    "lanInterfaces": [],
+    "ipv6": {
+     "status": "unknown",
+     "src": []
+    }
    },
    {
     "dev": "TPE_ACC_SW_04",
@@ -37025,7 +37037,11 @@
     "wanLists": [],
     "wanInterfaces": [],
     "lanLists": [],
-    "lanInterfaces": []
+    "lanInterfaces": [],
+    "ipv6": {
+     "status": "unknown",
+     "src": []
+    }
    },
    {
     "dev": "TPE_ACC_SW_05",
@@ -37034,7 +37050,11 @@
     "wanLists": [],
     "wanInterfaces": [],
     "lanLists": [],
-    "lanInterfaces": []
+    "lanInterfaces": [],
+    "ipv6": {
+     "status": "unknown",
+     "src": []
+    }
    },
    {
     "dev": "TPE_ACC_SW_06",
@@ -37043,7 +37063,11 @@
     "wanLists": [],
     "wanInterfaces": [],
     "lanLists": [],
-    "lanInterfaces": []
+    "lanInterfaces": [],
+    "ipv6": {
+     "status": "unknown",
+     "src": []
+    }
    },
    {
     "dev": "TPE_ACC_SW_07",
@@ -37052,7 +37076,11 @@
     "wanLists": [],
     "wanInterfaces": [],
     "lanLists": [],
-    "lanInterfaces": []
+    "lanInterfaces": [],
+    "ipv6": {
+     "status": "unknown",
+     "src": []
+    }
    },
    {
     "dev": "TPE_ACC_SW_08",
@@ -37061,7 +37089,11 @@
     "wanLists": [],
     "wanInterfaces": [],
     "lanLists": [],
-    "lanInterfaces": []
+    "lanInterfaces": [],
+    "ipv6": {
+     "status": "unknown",
+     "src": []
+    }
    },
    {
     "dev": "TPE_ACC_SW_09",
@@ -37070,7 +37102,11 @@
     "wanLists": [],
     "wanInterfaces": [],
     "lanLists": [],
-    "lanInterfaces": []
+    "lanInterfaces": [],
+    "ipv6": {
+     "status": "unknown",
+     "src": []
+    }
    },
    {
     "dev": "TPE_ACC_SW_10",
@@ -37079,7 +37115,11 @@
     "wanLists": [],
     "wanInterfaces": [],
     "lanLists": [],
-    "lanInterfaces": []
+    "lanInterfaces": [],
+    "ipv6": {
+     "status": "unknown",
+     "src": []
+    }
    },
    {
     "dev": "TPE_ACC_SW_11",
@@ -37088,7 +37128,11 @@
     "wanLists": [],
     "wanInterfaces": [],
     "lanLists": [],
-    "lanInterfaces": []
+    "lanInterfaces": [],
+    "ipv6": {
+     "status": "unknown",
+     "src": []
+    }
    },
    {
     "dev": "TPE_ACC_SW_12",
@@ -37097,7 +37141,11 @@
     "wanLists": [],
     "wanInterfaces": [],
     "lanLists": [],
-    "lanInterfaces": []
+    "lanInterfaces": [],
+    "ipv6": {
+     "status": "unknown",
+     "src": []
+    }
    },
    {
     "dev": "TPE_CORE_RT_01",
@@ -37114,7 +37162,11 @@
     ],
     "lanInterfaces": [
      "TPE_CORE_RT_01|bridge1"
-    ]
+    ],
+    "ipv6": {
+     "status": "unknown",
+     "src": []
+    }
    },
    {
     "dev": "TPE_CORE_RT_02",
@@ -37131,7 +37183,16 @@
     ],
     "lanInterfaces": [
      "TPE_CORE_RT_02|bridge1"
-    ]
+    ],
+    "ipv6": {
+     "status": "used",
+     "src": [
+      [
+       10,
+       933
+      ]
+     ]
+    }
    }
   ],
   "interfaceLists": [
@@ -38918,7 +38979,7 @@
    "severity": "warn",
    "cat": "防火牆",
    "title": "管理服務沒有限制來源位址，且 WAN 可以連入",
-   "message": "TPE_CORE_RT_02：www-ssl（tcp/443）啟用、沒有限制來源位址（available-from），WAN（ether47）可以連入：input 沒有任何規則擋下",
+   "message": "TPE_CORE_RT_02：www-ssl（tcp/443）啟用、沒有限制來源位址（available-from），WAN 可以連入：IPv4 從 ether47，input 沒有任何規則擋下；IPv6 從 ether47，input 沒有任何規則擋下",
    "entities": [
     {
      "type": "device",
@@ -38934,6 +38995,12 @@
      "block": 10,
      "line": 941,
      "text": "/ip service set www-ssl disabled=no",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 10,
+     "line": 933,
+     "text": "/ipv6 firewall filter add action=accept chain=forward dst-port=443 protocol=tcp",
      "file": "sample-bundle.txt"
     }
    ]
@@ -40078,7 +40145,7 @@
    "severity": "info",
    "cat": "防火牆",
    "title": "無法判斷 WAN 介面（WAN 相關的防火牆檢查未執行）",
-   "message": "TPE_ACC_SW_10：有 1 條防火牆規則，但沒有名稱含 WAN 的 interface list，無法判斷哪些介面對外；F03、F04、F05、F07 未檢查",
+   "message": "TPE_ACC_SW_10：有 1 條防火牆規則，但沒有名稱含 WAN 的 interface list，無法判斷哪些介面對外；F03、F04、F07 未檢查，F05 只檢查沒有限制入介面的 forward 規則",
    "entities": [
     {
      "type": "device",

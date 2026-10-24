@@ -333,6 +333,16 @@
           case '/ip ipsec peer':
             if (cmd === 'add') emit({ t: 'ipsecPeer', name: kv.name || null, address: kv.address || null, disabled: kv.disabled === 'yes', line });
             break;
+          // IPv6 是否在用（F07 的 IPv6 部分）：有位址或 DHCPv6 client，或整個停用
+          case '/ipv6 address':
+            if (cmd === 'add' && kv.interface && kv.disabled !== 'yes') emit({ t: 'ipv6Use', kind: 'address', ifc: kv.interface, line });
+            break;
+          case '/ipv6 dhcp-client':
+            if (cmd === 'add' && kv.interface && kv.disabled !== 'yes') emit({ t: 'ipv6Use', kind: 'dhcp-client', ifc: kv.interface, line });
+            break;
+          case '/ipv6 settings':
+            if (cmd === 'set' && kv['disable-ipv6'] === 'yes') emit({ t: 'ipv6Disabled', line });
+            break;
           case '/ip ipsec policy':
             // set（例如 [ find default=yes ]）是預設的 template policy，不代表有在跑 IPsec
             if (cmd === 'add') emit({ t: 'ipsecPolicy', srcAddress: kv['src-address'] || null, dstAddress: kv['dst-address'] || null, peer: kv.peer || null, template: kv.template === 'yes', disabled: kv.disabled === 'yes', line });

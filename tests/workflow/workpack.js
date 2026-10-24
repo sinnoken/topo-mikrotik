@@ -246,6 +246,36 @@ test('workpack：舊基準（2.11.0 以前）沒有命名規則的內容雜湊�
   assert.strictEqual(v.ok, false);
   assert.ok(v.errors.some((x) => x.code === 'baseline-key' && /基準沒有記錄命名規則的內容雜湊/.test(x.message)), JSON.stringify(v.errors));
 });
+test('workpack VRF：2.11 的工作包（ssot-snapshot/2）讀入時警告 snapshot-schema，validate 從收集檔重建 /3；處理紀錄推進重建的基準時經過 vrf-split 轉換', () => {
+  const { VRF_NET, VRF_KEYS, ledgerAt211 } = require('./ledger.js');
+  const L = S.ledger; const K = VRF_KEYS;
+  const at211 = (fn) => { const keep = S.VERSION; S.VERSION = '2.11.0'; try { return fn(); } finally { S.VERSION = keep; } };
+  // 2.11 的工作包：收集檔原本就含 /ip vrf（2.11 不解讀）；基準是 /2；處理紀錄推進過這份基準（2.11 的鍵不分 VRF，見 ledger.js 的 ledgerAt211）
+  const sources = [{ name: 'vrf-net.txt', text: VRF_NET(true) }];
+  const snap = at211(() => S.build(sources, { now: '2026-01-01T00:00:00Z' }));
+  snap.meta.schema = 'ssot-snapshot/2'; delete snap.meta.timing;
+  const { q211, lg } = ledgerAt211(L);
+  const m211 = q211.meta();
+  const ledger = JSON.parse(JSON.stringify(L.set(lg, K.a09all, { status: 'scheduled', note: '分開位址空間' }, { now: '2026-01-02T00:00:00Z' }))
+    .split(m211.baselineKey).join(snap.meta.baselineKey).split(m211.inputHash).join(snap.meta.inputHash));
+  const parts = [{ role: 'source', name: sources[0].name, text: sources[0].text }, { role: 'snapshot', name: 'snapshot.json', text: JSON.stringify(snap) }, { role: 'ledger', name: 'ledger.json', text: JSON.stringify(ledger) }];
+  const pack = S.workpack.read(at211(() => S.workpack.build(parts, { now: NOW })));
+  assert.deepStrictEqual(pack.warnings.map((w) => w.code), ['snapshot-schema', 'tool-version']);
+  assert.ok(pack.warnings[0].message.includes(`ssot-snapshot/2，本工具是 ${S.SCHEMA}`), pack.warnings[0].message);
+  assert.deepStrictEqual(pack.ledger, ledger, '處理紀錄原樣讀入，不在讀取時轉換');
+  // 重建：程式版本不同所以基準鍵不同（警告）；重建的基準是 /3
+  const v = S.workpack.validate(pack, { now: '2026-02-01T00:00:00Z', profile: null, expectedData: null });
+  assert.deepStrictEqual([v.ok, v.errors, v.warnings.map((w) => w.code)], [true, [], ['baseline-key']]);
+  assert.ok(/程式版本（建立時 2\.11\.0/.test(v.warnings[0].message), v.warnings[0].message);
+  assert.strictEqual(v.snapshot.meta.schema, S.SCHEMA);
+  // 處理紀錄推進重建的基準：2.11 的鍵轉換到 3.0 的鍵，狀態與備註沿用
+  const r = L.advance(pack.ledger, S.query(v.snapshot), { now: '2026-02-01T00:00:00Z' });
+  assert.deepStrictEqual(r.split.find((x) => x.from === K.a09all), { from: K.a09all, to: [K.a09main, K.a09cust].sort(S.util.cmp), reason: 'vrf-split' });
+  assert.deepStrictEqual([K.a09main, K.a09cust].map((k) => [r.ledger.items[k].status, r.ledger.items[k].note]), [['scheduled', '分開位址空間'], ['scheduled', '分開位址空間']]);
+  // 寫回新版：以重建的基準與推進後的處理紀錄建立 3.0 的工作包，讀回沒有警告
+  const next = swap(swap(parts, 'snapshot', JSON.stringify(v.snapshot)), 'ledger', JSON.stringify(r.ledger));
+  assert.deepStrictEqual(S.workpack.read(S.workpack.build(next, { now: NOW })).warnings, []);
+});
 test('workpack：相同的 parts 與 now 產生完全相同的 bytes；不修改傳入的 parts', () => {
   const R = ROUND();
   const parts = clone(R.parts); const before = JSON.stringify(parts.map((p) => Object.assign({}, p, p.bytes ? { bytes: Array.from(p.bytes) } : {})));

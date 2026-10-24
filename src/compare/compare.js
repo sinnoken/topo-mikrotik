@@ -100,7 +100,8 @@
    *     device ：key＝設備鍵；新增／移除，或 field 為 kind／deviceType／softwareVersion 的改變（before／after 是欄位值）
    *     link   ：key＝鏈路鍵；只比 LLDP／CDP 介面鄰接（新增／移除）
    *     vlan   ：key＝「設備|VLAN ID」；設備上新增／移除
-   *     ip     ：key＝IP（不含遮罩）；只比設備自有的位址（不含鄰居宣告）。新增／移除，或 field 為 interface（改到別的介面）／address（遮罩改變）
+   *     ip     ：key＝位址鍵（IP 不含遮罩；非 main 的 VRF 加上 @<VRF>，見 S.keys.inVrf）；只比設備自有的位址（不含鄰居宣告）。
+   *              新增／移除，或 field 為 interface（改到別的介面）／address（遮罩改變）。介面換到另一個 VRF 時是舊鍵移除、新鍵新增
    *     firewall：key＝規則鍵（設備＋位址族＋表＋chain＋比對條件，不含編號）。新增／移除，或 field 為 action／disabled／match（同 chain 同動作、條件變窄或變寬）的改變；
    *               effect：new-exposure（新基準才有的 F03／F04／F05／F07 指向這條規則）／more-restrictive／less-restrictive／null（不影響放行，例如 jump、log、src-nat）
    *     finding：key＝Q.findingKey；以鍵的多重集合比對，同一個鍵兩邊都有就視為同一個問題（訊息改變不算差異）。
@@ -184,10 +185,11 @@
       (k, v) => push('vlan', 'removed', k, null, { dev: v.dev, id: v.id, name: nil(v.name) }, null, `移除 ${vlanText(qOld, v)}`),
       (k, v) => push('vlan', 'added', k, null, null, { dev: v.dev, id: v.id, name: nil(v.name) }, `新增 ${vlanText(qNew, v)}`));
 
-    // IP 位址（設備自有）：同一個 IP 可能在多個介面（例如重複設定），以 { ep, address } 清單比較
+    // IP 位址（設備自有）：同一個 IP 可能在多個介面（例如重複設定），以 { ep, address } 清單比較。
+    // 鍵是位址鍵 K.inVrf（ADR-015）：不同 VRF 的同一個 IP 是不同的鍵，不會併在一起；main（vrf 為 null 時也是）不加後綴
     const ipMap = (q) => {
       const out = new Map();
-      q.ipAddresses().forEach((a) => { if (!a.hearsay) U.getOr(out, a.ip || a.address, () => []).push({ ep: a.ep, address: a.address }); });
+      q.ipAddresses().forEach((a) => { if (!a.hearsay) U.getOr(out, K.inVrf(a.ip || a.address, a.vrf), () => []).push({ ep: a.ep, address: a.address }); });
       out.forEach((list) => list.sort((x, y) => U.natural(x.ep, y.ep) || U.natural(x.address, y.address)));
       return out;
     };

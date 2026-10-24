@@ -80,9 +80,33 @@ test('基準比對：MNDP 廣播網域與鄰居宣告的位址不比；finding �
   const old = JSON.parse(JSON.stringify(o)); old.meta.schema = 'ssot-snapshot/1';
   const bad = S.compare.snapshots(S.query(old), S.query(o));
   assert.strictEqual(bad.errors.length, 1);
-  assert.ok(/schema 不同（舊：ssot-snapshot\/1，新：ssot-snapshot\/2）/.test(bad.errors[0]), bad.errors[0]);
+  assert.ok(bad.errors[0].startsWith(`兩份基準的 schema 不同（舊：ssot-snapshot/1，新：${S.SCHEMA}）`), bad.errors[0]);
   assert.deepStrictEqual(bad.items, []);
   assert.deepStrictEqual(bad.warnings, [], 'schema 不同時不比對，也沒有提示');
+});
+// VRF（ADR-015）：CORE 的 10.1.20.2 在 main，PE 的同一個位址在 VRF cust-a（依手冊 VRF 的 /ip vrf 寫法自行撰寫：
+// https://manual.mikrotik.com/docs/user-guides/routing-and-networking-protocols/vrf.md）
+const vrfNet = (peAddr) => build(['CORE (10.0.0.254):', '### /export terse', '/ip address add address=10.1.20.2/24 interface=vlan20 network=10.1.20.0',
+  'PE (10.0.0.1):', '### /export terse', '/ip vrf add interfaces=ether2 name=cust-a', ...(peAddr ? [`/ip address add address=${peAddr} interface=ether2 network=10.1.20.0`] : [])].join('\n') + '\n');
+test('基準比對 VRF：ip 類別以位址鍵比對，不同 VRF 的同一個 IP 不合併；vrf 為 null 視為 main（鍵不加後綴）', () => {
+  const both = vrfNet('10.1.20.2/24'); const mainOnly = vrfNet(null);
+  const ip = (a, b) => S.compare.snapshots(S.query(a), S.query(b)).items.filter((i) => i.category === 'ip').map((i) => [i.change, i.key, i.field, i.message]);
+  // 拿掉 cust-a 的位址：只有 @cust-a 那一筆移除，main 的不變（不會變成「改到別的介面」）
+  assert.deepStrictEqual(ip(both, mainOnly), [['removed', '10.1.20.2@cust-a', null, '移除位址 10.1.20.2@cust-a：PE ether2（10.1.20.2/24）']]);
+  assert.deepStrictEqual(ip(mainOnly, both), [['added', '10.1.20.2@cust-a', null, '新增位址 10.1.20.2@cust-a：PE ether2（10.1.20.2/24）']]);
+  assert.deepStrictEqual(ip(both, both), []);
+  // 同一個介面換到另一個 VRF：舊鍵移除、新鍵新增
+  const moved = build(['CORE (10.0.0.254):', '### /export terse', '/ip address add address=10.1.20.2/24 interface=vlan20 network=10.1.20.0'].join('\n') + '\n');
+  const toVrf = build(['CORE (10.0.0.254):', '### /export terse', '/ip vrf add interfaces=vlan20 name=cust-b', '/ip address add address=10.1.20.2/24 interface=vlan20 network=10.1.20.0'].join('\n') + '\n');
+  assert.deepStrictEqual(ip(moved, toVrf).map((x) => [x[0], x[1]]), [['removed', '10.1.20.2'], ['added', '10.1.20.2@cust-b']]);
+  // vrf 為 null 的位址（例如手動組的資料）視為 main：鍵與 main 相同，不算差異
+  const nul = JSON.parse(JSON.stringify(mainOnly)); nul.model.ipAddresses.forEach((a) => { a.vrf = null; });
+  assert.deepStrictEqual(ip(mainOnly, nul), []);
+  // 2.x 的基準（ssot-snapshot/2）不和 /3 比對（ADR-015、ADR-010：從原始輸入重建）
+  const s2 = JSON.parse(JSON.stringify(both)); s2.meta.schema = 'ssot-snapshot/2'; s2.meta.version = '2.11.0';
+  const x = S.compare.snapshots(S.query(s2), S.query(both));
+  assert.deepStrictEqual([x.errors.length, x.items, x.warnings], [1, [], []]);
+  assert.ok(x.errors[0].includes('ssot-snapshot/2') && x.errors[0].includes('原始輸入重新建立'), x.errors[0]);
 });
 test('基準比對：版本或命名規則不同時照常比對，warnings 依 version、profile 的順序說明；相同時 warnings 為空', () => {
   const o = pairNet(); const n = pairNet({ ver: '7.13 (stable)' });

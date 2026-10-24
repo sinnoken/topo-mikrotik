@@ -1922,6 +1922,19 @@ test('patch：範例資料的 F01／F06 產生停用規則的 auto item，F02（
   const idx = (x) => snap.findings.findIndex((f) => S.query.findingKey(f) === x.findingKey);
   all.skipped.forEach((x, k) => { const y = all.skipped[k + 1]; if (y && y.dev === x.dev) assert.ok(idx(x) <= idx(y), '同一台設備內依 finding 順序'); });
 });
+test('patch：skipped 的每一種 reason 在 SKIP_TEXT 都有非空的中文說明（畫面以它當分組標題）', () => {
+  const T = P().SKIP_TEXT; const ok = (r) => typeof T[r] === 'string' && T[r].trim() !== '';
+  // 範例資料（含不存在的鍵）實際出現的 reason
+  const plan = patchOf(sampleSnap(), { keys: null }); const missing = patchOf(sampleSnap(), ['["X99"]']);
+  const seen = S.util.uniq(plan.skipped.concat(missing.skipped).map((x) => x.reason));
+  assert.ok(seen.includes('ambiguous-find') && seen.includes('not-found'), seen.join('、'));
+  assert.deepStrictEqual(seen.filter((r) => !ok(r)), [], '範例資料的 plan 有 reason 沒有說明');
+  // 程式中所有寫死的 reason（含範例資料沒有觸發的），以及等級本身（choice／manual）
+  const src = read('src/remediate/patch.js');
+  const all = S.util.uniq(Array.from(src.matchAll(/reason: '([a-z-]+)'/g), (m) => m[1]).concat(['choice', 'manual']));
+  assert.ok(all.length >= 8, all.join('、'));
+  assert.deepStrictEqual(all.filter((r) => !ok(r)), [], 'patch.js 有 reason 沒有說明');
+});
 test('patch：同樣的輸入產生的 plan 與 .rsc 完全相同', () => {
   const a = patchOf(sampleSnap()); const b = patchOf(sampleSnap());
   assert.strictEqual(JSON.stringify(a), JSON.stringify(b));
@@ -2508,6 +2521,42 @@ test('處理紀錄：設備收集失敗時，消失的問題不判為 fixed（un
   assert.deepStrictEqual(S.ledger.devicesOfKey('["K01","link:SW_B|ether24~R_A|ether2"]'), ['R_A', 'SW_B']);
   // 可以判斷時同一輪就是 fixed
   assert.strictEqual(L.advance(r1.ledger, q2, { now: '2026-01-15T00:00:00Z' }).ledger.items[k].status, 'fixed');
+});
+test('處理紀錄：不屬於任何設備的問題（A01）依證據所在區塊的設備判斷；換成另一個網路時列為 unobserved，不判為 fixed、之後也不是 regressed', () => {
+  const L = S.ledger; const text = read('samples/sample-bundle.txt');
+  const q1 = S.query(build(text));
+  const kA01 = LEDGER.keyOf(q1, 'A01');
+  assert.deepStrictEqual(L.devicesOfKey(kA01), [], 'A01 的實體只有 IP 與 MAC');
+  const r1 = L.advance(L.empty(), q1, { now: '2026-01-01T00:00:00Z' });
+  // 證據所在區塊的設備記在項目的 devs；findingKey 本身有設備的項目不記
+  assert.deepStrictEqual(r1.ledger.items[kA01].devs, ['TPE_CORE_RT_01', 'TPE_CORE_RT_02']);
+  assert.ok(!('devs' in r1.ledger.items[LEDGER.keyOf(q1, 'F06')]));
+  // 完全不同的網路：A01 的設備不在基準中 → unobserved
+  const edge = S.query(build('EDGE_RT (10.9.0.1):\n### /ip arp print detail without-paging\n 0 DC address=10.9.0.2 mac-address=AA:BB:CC:00:00:01 interface=ether1\n'));
+  const r2 = L.advance(r1.ledger, edge, { now: '2026-01-15T00:00:00Z' });
+  assert.deepStrictEqual([r2.ledger.items[kA01].status, r2.unobserved.includes(kA01), r2.changes.some((c) => c.key === kA01)], ['open', true, false]);
+  // 再回到範例：A01 仍是 open，不是 regressed
+  const r3 = L.advance(r2.ledger, S.query(build('# 第三輪\n' + text)), { now: '2026-02-01T00:00:00Z' });
+  assert.deepStrictEqual([r3.ledger.items[kA01].status, r3.changes.filter((c) => c.key === kA01)], ['open', []]);
+  // 相關設備都已收集、沒有失敗，而且衝突的 ARP 項目不見了 → fixed
+  const lines = text.split('\n');
+  const conflict = lines.findIndex((l) => l.includes('address=10.1.30.11 mac-address=6C:FE:54:00:00:A1'));
+  const gone = S.query(build(lines.filter((_, i) => i !== conflict).join('\n')));
+  assert.ok(!gone.findings().some((f) => f.id === 'A01'));
+  const fixed = L.advance(r1.ledger, gone, { now: '2026-01-15T00:00:00Z' });
+  assert.deepStrictEqual(fixed.changes.filter((c) => c.key === kA01).map((c) => [c.from, c.to, c.reason]), [['open', 'fixed', 'disappeared']]);
+  // 其中一台設備收集失敗 → unobserved
+  const failed = Object.assign({}, gone, { coverage: () => gone.coverage().map((r) => (r.dev === 'TPE_CORE_RT_02' ? Object.assign({}, r, { failures: [{ reason: 'timeout' }] }) : r)) });
+  assert.ok(L.advance(r1.ledger, failed, { now: '2026-01-15T00:00:00Z' }).unobserved.includes(kA01));
+  // 舊紀錄（沒有 devs）：推不出設備，保守列為 unobserved；再出現時補上 devs
+  const legacy = JSON.parse(JSON.stringify(r1.ledger)); delete legacy.items[kA01].devs;
+  assert.ok(L.validate(legacy).ok);
+  const lr = L.advance(legacy, gone, { now: '2026-01-15T00:00:00Z' });
+  assert.deepStrictEqual([lr.ledger.items[kA01].status, lr.unobserved.includes(kA01)], ['open', true]);
+  assert.deepStrictEqual(L.advance(legacy, S.query(build('# 再一次\n' + text)), { now: '2026-01-15T00:00:00Z' }).ledger.items[kA01].devs, ['TPE_CORE_RT_01', 'TPE_CORE_RT_02']);
+  // devs 的格式
+  const bad = JSON.parse(JSON.stringify(r1.ledger)); bad.items[kA01].devs = ['TPE_CORE_RT_01', 3];
+  assert.ok(L.validate(bad).errors.some((e) => /\.devs：/.test(e)), L.validate(bad).errors.join('\n'));
 });
 test('處理紀錄：set 寫入歷程、accepted 預設豁免半年，不合法的轉換丟出錯誤', () => {
   const L = S.ledger; const { q1, k, r1, r3 } = ledgerRounds();

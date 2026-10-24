@@ -300,7 +300,7 @@
       /**
        * 檢查結果所屬的設備：第一個 device 實體；沒有時取第一個能對到設備的實體（介面、鏈路一端、規則、服務、設備自有的 IP）。
        * 回傳基準中存在的設備鍵，都對不到時為 null（例如沒有設備標頭的 I01、只涉及 MAC 或 VLAN 的檢查）。
-       * 與 src/view/remediation.js 的 findingDevice 規則相同（畫面之後改為呼叫這裡）。
+       * 這是「所屬設備」的唯一實作：修正 patch（src/remediate/patch.js）與畫面（檢查結果分組、匯出、修正計畫）都呼叫這裡，不另寫一份。
        */
       findingDevice(f) {
         const known = (d) => { const x = d && Q.getDevice(d); return x ? x.key : null; };

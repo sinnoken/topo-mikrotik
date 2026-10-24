@@ -6,7 +6,7 @@
  * {
  *   schema: 'ssot-ledger/1',
  *   items: { '<findingKey>': {
- *     status, id, dev, firstSeen, lastSeen,        // firstSeen／lastSeen：第一次／最後一次出現的基準鍵
+ *     status, id, dev, devs?, firstSeen, lastSeen, // firstSeen／lastSeen：第一次／最後一次出現的基準鍵
  *     patch: string|null, waiver: { reason, until }|null, note,
  *     history: [{ at, from, to, by: 'user'|'advance', baseline, reason, waiver?, ack? }] } },   // baseline：當時最新一輪的基準鍵
  *   iterations: [{ baseline: { inputHash, baselineKey, createdAt }, at, counts, coverage: { collected, expected }, unknownPeers }]
@@ -16,6 +16,9 @@
  *   （baseOf），不改寫舊資料。沒有 baselineKey 的舊基準同樣退回用 inputHash。
  *   schema 維持 ssot-ledger/1：只新增選用欄位 baselineKey，舊紀錄不轉換也照常讀取，舊版程式讀到新紀錄時保留不認得的欄位
  *   （ADR-010：新增欄位且能相容讀取時不升 schema）。
+ * devs：只有 findingKey 推不出設備的項目（例如只涉及 IP、MAC 的 A01）才有。最後一次出現時，證據所在區塊的設備（排序）；
+ *   [] 表示證據都在沒有設備標頭的區塊（收集檔本身的問題）；null 表示推不出來（沒有證據或區塊對不到）。用來判斷能不能觀察到（見 observer）。
+ *   較早的紀錄沒有這個欄位，視為推不出來；同樣是新增選用欄位，不升 schema（ADR-010）。
  * waiver 只在 accepted 時有值；離開 accepted 時，原本的 waiver 記在那一筆 history 的 waiver，不遺失。
  * 狀態轉換規則見 advance 與 set 的說明。
  */
@@ -107,6 +110,7 @@
       if (typeof it.id !== 'string' || !it.id) err(p + '.id', '必須是非空字串');
       else if (a && a[0] !== it.id) err(p + '.id', `與鍵的規則 id（${a[0]}）不一致`);
       if (!isStrOrNull(it.dev)) err(p + '.dev', '必須是字串或 null');
+      if (it.devs !== undefined && it.devs !== null && (!Array.isArray(it.devs) || it.devs.some((d) => typeof d !== 'string' || !d))) err(p + '.devs', '必須是設備鍵（非空字串）的陣列或 null');
       ['firstSeen', 'lastSeen', 'patch'].forEach((f) => { if (!isStrOrNull(it[f])) err(`${p}.${f}`, '必須是字串或 null'); });
       if (typeof it.note !== 'string') err(p + '.note', '必須是字串');
       if (it.waiver !== null) {
@@ -167,13 +171,39 @@
    * 基準能不能判斷「某設備上的問題已經消失」：
    *   該設備已收集且沒有任何收集失敗 → 可以；只在鄰居資料中出現（未收集）→ 可以（它的問題不依賴它自己的輸出）；
    *   已收集但有收集失敗、或整台不在基準中 → 不行（問題消失可能只是沒收到資料）。
-   * 不屬於任何設備的問題（例如只涉及 IP、MAC）：基準中有任何收集失敗時不判斷。
+   * findingKey 推不出設備的問題（例如只涉及 IP、MAC）改看項目的 devs（證據所在區塊的設備）：
+   *   devs 的設備都已收集且沒有收集失敗 → 可以。換成另一個網路時這些設備不在基準中，所以不判斷。
+   *   devs 為 []（證據都在沒有設備標頭的區塊，是收集檔本身的問題）→ 基準中沒有任何收集失敗時才可以。
+   *   沒有 devs（舊紀錄）或為 null（推不出來）→ 不行，保守列為 unobserved。
    */
   function observer(Q) {
     const rows = new Map(Q.coverage().map((r) => [r.dev, r]));
     const anyFailure = Q.coverage().some((r) => r.failures && r.failures.length);
     const devOk = (d) => { const r = rows.get(d); return !!r && (!r.collected || !(r.failures || []).length); };
-    return (key) => { const ds = devicesOfKey(key); return ds.length ? ds.every(devOk) : !anyFailure; };
+    const collectedOk = (d) => { const r = rows.get(d); return !!r && r.collected && !(r.failures || []).length; };
+    return (key, it) => {
+      const ds = devicesOfKey(key);
+      if (ds.length) return ds.every(devOk);
+      if (!Array.isArray(it.devs)) return false;
+      return it.devs.length ? it.devs.every(collectedOk) : !anyFailure;
+    };
+  }
+  /**
+   * findingKey 推不出設備時，同一個鍵的所有 finding 的證據所在區塊的設備（排序）；
+   * 證據都在沒有設備標頭的區塊時為 []；沒有證據或有區塊對不到時為 null（推不出來）。
+   */
+  function evidenceDevs(Q, findings) {
+    const out = [];
+    for (const f of findings) {
+      const ev = f.evidence || [];
+      if (!ev.length) return null;
+      for (const e of ev) {
+        const b = typeof Q.block === 'function' ? Q.block(e.block) : null;
+        if (!b) return null;
+        if (b.devKey != null) out.push(b.devKey);
+      }
+    }
+    return U.uniq(out).sort(U.cmp);
   }
   /** 這一輪的覆蓋：collected＝已收集設備數，expected＝已收集＋應收集但未收集（C01，與檢查規則同一個來源） */
   function coverageOf(Q) {
@@ -211,8 +241,9 @@
     if (meta.baselineKey != null && (typeof meta.baselineKey !== 'string' || !meta.baselineKey)) throw new Error('基準的 baselineKey 必須是非空字串');
     const hash = baseOf(meta);
     if (out.iterations.some((r) => baseOf(r.baseline) === hash)) return { ledger: out, changes: [], unobserved: [], skipped: true };
-    const present = new Map();
-    Q.findings().forEach((f) => { const k = Q.findingKey(f); if (!present.has(k)) present.set(k, f); });
+    const present = new Map(); const byKey = new Map();
+    Q.findings().forEach((f) => { const k = Q.findingKey(f); if (!present.has(k)) present.set(k, f); U.getOr(byKey, k, () => []).push(f); });
+    const devsOf = (key) => (devicesOfKey(key).length ? undefined : evidenceDevs(Q, byKey.get(key)));
     const canJudge = observer(Q);
     const changes = []; const unobserved = [];
     const delta = { new: 0, fixed: 0, waiverExpired: 0 };
@@ -225,7 +256,10 @@
     Object.keys(out.items).forEach((key) => {
       const it = out.items[key];
       const here = present.has(key);
-      if (here) { it.lastSeen = hash; if (it.firstSeen === null) it.firstSeen = hash; }
+      if (here) {
+        it.lastSeen = hash; if (it.firstSeen === null) it.firstSeen = hash;
+        const ds = devsOf(key); if (ds !== undefined) it.devs = ds;
+      }
       if (it.status === 'accepted') {
         if (Date.parse(it.waiver.until) < tNow) { change(key, it, 'open', 'waiver-expired'); delta.waiverExpired++; }
         return;
@@ -233,12 +267,13 @@
       if (it.status === 'fixed') { if (here) change(key, it, 'regressed', 'reappeared'); return; }
       if (it.status === 'false-positive' || here) return;
       // open／scheduled／regressed 且基準中沒有
-      if (canJudge(key)) { change(key, it, 'fixed', 'disappeared'); delta.fixed++; } else unobserved.push(key);
+      if (canJudge(key, it)) { change(key, it, 'fixed', 'disappeared'); delta.fixed++; } else unobserved.push(key);
     });
     present.forEach((f, key) => {
       if (out.items[key]) return;
-      out.items[key] = { status: 'open', id: f.id, dev: devOfKey(key), firstSeen: hash, lastSeen: hash, patch: null, waiver: null, note: '',
-        history: [{ at: now, from: null, to: 'open', by: 'advance', baseline: hash, reason: 'new' }] };
+      const ds = devsOf(key);
+      out.items[key] = Object.assign({ status: 'open', id: f.id, dev: devOfKey(key) }, ds !== undefined ? { devs: ds } : {}, { firstSeen: hash, lastSeen: hash, patch: null, waiver: null, note: '',
+        history: [{ at: now, from: null, to: 'open', by: 'advance', baseline: hash, reason: 'new' }] });
       changes.push({ key, from: null, to: 'open', reason: 'new' });
       delta.new++;
     });

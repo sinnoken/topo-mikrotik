@@ -15,7 +15,8 @@
     return {
       devices: new Map(), ifcs: new Map(), links: new Map(), vlans: new Map(), macs: new Map(),
       arps: [], routes: [], claims: [], ospf: [], ospfAdjacencies: [], vmems: [], assocs: [], dhcpNets: [], ipBinds: [],
-      notes: { k01: [], k04: [], r02: [] },
+      // 防火牆（事實）：規則依輸入順序；interface list 以「設備|名稱」為鍵；/ip service 只有 export 有寫的（預設值由 infer 補上）
+      fw: { rules: [], lists: new Map(), services: new Map(), peers: [], policies: [], ipv6: new Map() }, // ipv6：dev → { use: [[區塊, 行號]], disabled: [區塊, 行號]|null }
     };
   }
 
@@ -114,10 +115,12 @@
           const mk = K.mac(f.mac); if (!mk) break;
           const i = iface(M, f.dev, f.ifc); i.macs.add(mk); if (!i.status) i.status = 'up'; addSrc(i, f);
           const m = getOr(M.macs, mk, () => ({ mac: mk, seen: new Map(), ips: new Set(), src: [] }));
-          const vlans = getOr(m.seen, i.key, () => new Set());
-          vlans.add(f.vlan || null); addSrc(m, f);
-          if (!m.seenSrc) m.seenSrc = new Map();
-          if (!m.seenSrc.has(i.key)) m.seenSrc.set(i.key, [f.block, f.line]);
+          // m.seen：ep → Map(VLAN → 該（埠、VLAN）第一次出現的來源)；A02 的證據指向該 VLAN 的那一行，
+          // 埠層的第一個來源由 firstSeenSrc 依插入順序取得。來源只供檢查使用，序列化時只輸出 ep／VLAN。
+          const vlans = getOr(m.seen, i.key, () => new Map());
+          const vlan = f.vlan || null;
+          if (!vlans.has(vlan)) vlans.set(vlan, [f.block, f.line]);
+          addSrc(m, f);
           if (f.static) (m.staticOn || (m.staticOn = new Set())).add(i.key);
           break;
         }
@@ -135,6 +138,31 @@
             signal: f.signal, ip: f.ip, hostname: f.hostname, block: f.block, line: f.line });
           break;
         }
+        case 'fwRule': M.fw.rules.push(Object.assign({}, f)); break;
+        case 'ifList': {
+          const l = fwList(M, f.dev, f.name); l.defined = true; l.include = f.include; l.exclude = f.exclude; l.src.push([f.block, f.line]);
+          break;
+        }
+        case 'ifListMember': {
+          const l = fwList(M, f.dev, f.list);
+          if (!f.disabled) l.members.set(K.ep(f.dev, f.ifc), [f.block, f.line]); // 停用的成員不算
+          break;
+        }
+        case 'ipService': {
+          const sv = getOr(M.fw.services, f.dev + '|' + f.name, () => ({ dev: f.dev, name: f.name, disabled: null, port: null, addresses: null, src: [] }));
+          if (f.disabled !== undefined) sv.disabled = f.disabled;
+          if (f.port !== undefined) sv.port = f.port;
+          if (f.addresses !== undefined) sv.addresses = f.addresses;
+          sv.src.push([f.block, f.line]);
+          break;
+        }
+        case 'ipsecPeer': M.fw.peers.push({ dev: f.dev, name: f.name, address: f.address, disabled: f.disabled, src: [[f.block, f.line]] }); break;
+        case 'ipv6Use': case 'ipv6Disabled': {
+          const v = getOr(M.fw.ipv6, f.dev, () => ({ use: [], disabled: null }));
+          if (f.t === 'ipv6Use') v.use.push([f.block, f.line]); else if (!v.disabled) v.disabled = [f.block, f.line];
+          break;
+        }
+        case 'ipsecPolicy': M.fw.policies.push({ dev: f.dev, srcAddress: f.srcAddress, dstAddress: f.dstAddress, peer: f.peer, template: f.template, disabled: f.disabled, src: [[f.block, f.line]] }); break;
         case 'route':
           M.routes.push({ dev: f.dev, prefix: f.prefix, len: f.len, proto: f.proto, distance: f.distance ?? null, blackhole: !!f.blackhole,
             nh: f.nh.map((n) => ({ ip: n.ip, ifc: n.ifc ? K.ifc(n.ifc) : null })), block: f.block, line: f.line });
@@ -143,6 +171,7 @@
       }
     });
 
+    numberFirewallRules(M);
     resolveVlanMembers(M);
     buildAggregates(M);
     classifyInterfaces(M);
@@ -150,6 +179,27 @@
     buildMndpLinks(M);
     resolveOspfAdjacencies(M, canon);
     return M;
+  }
+
+  function fwList(M, dev, name) {
+    return getOr(M.fw.lists, dev + '|' + name, () => ({ dev, name, defined: false, include: [], exclude: [], members: new Map(), src: [] }));
+  }
+
+  /**
+   * 防火牆規則編號與鍵：order＝同一設備、位址族、表內的順序；position＝chain 內的順序（RouterOS 依此比對），都從 1 起算。
+   * signature＝設備＋位址族＋表＋chain＋比對條件（清單值排序），不含動作與編號，給比對與重複判斷用。
+   * key＝「設備|位址族|表|chain|簽章雜湊」，同一個簽章第二次以後加 #n：在前面插入規則時，後面規則的鍵不變。
+   */
+  function numberFirewallRules(M) {
+    const order = new Map(); const pos = new Map(); const sigCount = new Map();
+    M.fw.rules.forEach((r) => {
+      const tk = r.dev + '|' + r.family + '|' + r.table; const ck = tk + '|' + r.chain;
+      r.order = (order.get(tk) || 0) + 1; order.set(tk, r.order);
+      r.position = (pos.get(ck) || 0) + 1; pos.set(ck, r.position);
+      r.signature = JSON.stringify([r.dev, r.family, r.table, r.chain, S.infer.fw.canonMatch(r.match)]);
+      const n = (sigCount.get(r.signature) || 0) + 1; sigCount.set(r.signature, n);
+      r.key = `${ck}|${S.util.hash(r.signature)}${n > 1 ? '#' + n : ''}`;
+    });
   }
 
   /** 名稱 ↔ IP 綁定的比對鍵：名稱 trim＋不分大小寫（靜態租約的名稱是 MAC，用 MAC 鍵）；IP 去掉 /32、網段取網路位址。 */
@@ -268,6 +318,10 @@
   /**
    * LLDP/CDP interface-adjacency claims: the local interface is authoritative;
    * MNDP-only observations are handled separately as broadcast-domain reachability.
+   * 每筆 LLDP／CDP 觀察記下配對結果 c.pairing（內部，不序列化），由 check 判定 K01／K04：
+   *   { status: 'reciprocal', link, remoteIfc }：對端的鄰居資料回報了這條鏈路，remoteIfc 是對端自己的介面
+   *   { status: 'one-way', link }             ：對端有提供 LLDP／CDP 鄰居資料，但沒有回報這條鏈路
+   *   { status: 'hearsay', link }             ：對端沒有提供 LLDP／CDP 鄰居資料，只有單側觀察
    */
   const BRIDGE_NAME = /^bridge/i;
   const isBridgeIfc = (M, dev, name) => {
@@ -301,7 +355,7 @@
         if (rev) {
           const remote = K.ep(c.peer, rev.ifc);
           const l = addLink(M, local, remote, 'l2', 'lldp', src, { verified: true, protocols: c.protocols });
-          if (!unknownPort && said !== rev.ifc) M.notes.k04.push({ link: l.key, dev: c.dev, said: c.peerIfc, actual: rev.ifc, block: c.block, line: c.line });
+          c.pairing = { status: 'reciprocal', link: l.key, remoteIfc: rev.ifc };
           return;
         }
         const rname = unknownPort ? `?(${c.dev}:${c.ifc})` : c.peerIfc;
@@ -309,14 +363,15 @@
         const existed = M.ifcs.has(remote);
         const ri = iface(M, c.peer, rname); if (!existed) ri.hearsay = true;
         const l = addLink(M, local, remote, 'l2', 'lldp', src, { protocols: c.protocols });
-        M.notes.k01.push({ link: l.key, dev: c.dev, peer: c.peer, ifc: c.ifc, peerIfc: c.peerIfc, block: c.block, line: c.line });
+        c.pairing = { status: 'one-way', link: l.key };
         return;
       }
       const rname = c.peerIfc === '?' ? `?(${c.dev}:${c.ifc})` : c.peerIfc;
       const remote = K.ep(c.peer, rname);
       const existed = M.ifcs.has(remote);
       const ri = iface(M, c.peer, rname); if (!existed) ri.hearsay = true;
-      addLink(M, local, ri.key, 'l2', 'lldp', src, { hearsay: true, protocols: c.protocols });
+      const l = addLink(M, local, ri.key, 'l2', 'lldp', src, { hearsay: true, protocols: c.protocols });
+      c.pairing = { status: 'hearsay', link: l.key };
     });
     // 被權威端改寫過的「單側觀察」介面，若沒有任何鏈路參考就移除
     const used = new Set(); M.links.forEach((l) => { used.add(l.a); used.add(l.b); });
@@ -344,7 +399,10 @@
     });
   }
 
-  /** OSPF 鄰接：用位址找對端介面，再用 router-id、管理 IP 找對端設備；都找不到就建立以鄰居 ID 命名的未知設備。 */
+  /**
+   * OSPF 鄰接：用位址找對端介面，再用 router-id、管理 IP 找對端設備；都找不到就建立以鄰居 ID 命名的未知設備。
+   * 對應方式記在鄰接的 peerBasis（內部，不序列化）：address／router-id／router-id-address／mgmt-ip，找不到為 null（check 據此判定 R02）。
+   */
   function resolveOspfAdjacencies(M, canon) {
     const ipOwner = new Map(); const ridOwner = new Map(); const mgmtOwner = new Map();
     M.ifcs.forEach((i) => i.ips.forEach((_, c) => ipOwner.set(c.split('/')[0], i.key)));
@@ -361,15 +419,18 @@
     M.ospf.forEach((f) => {
       const local = f.localEp;
       let remote = ipOwner.get(f.nbrAddr);
-      let peerDev = remote ? K.splitEp(remote)[0] : ridOwner.get(f.nbrId) || ipOwner.get(f.nbrId) && K.splitEp(ipOwner.get(f.nbrId))[0] || mgmtOwner.get(f.nbrId);
+      const [peerBasis, found] = remote ? ['address', K.splitEp(remote)[0]]
+        : ridOwner.get(f.nbrId) ? ['router-id', ridOwner.get(f.nbrId)]
+          : ipOwner.get(f.nbrId) ? ['router-id-address', K.splitEp(ipOwner.get(f.nbrId))[0]]
+            : mgmtOwner.get(f.nbrId) ? ['mgmt-ip', mgmtOwner.get(f.nbrId)] : [null, null];
+      let peerDev = found;
       if (!peerDev) {
         const name = canon(f.nbrId); peerDev = K.dev(name);
         device(M, peerDev, name).seenBy.add(f.dev);
-        M.notes.r02.push({ dev: f.dev, ifc: K.splitEp(f.localEp)[1], nbrId: f.nbrId, nbrAddr: f.nbrAddr, block: f.block, line: f.line });
       }
       if (!remote) { const ri = iface(M, peerDev, f.nbrAddr); ri.hearsay = true; ri.ips.set(f.nbrAddr + '/32', [f.block, f.line]); remote = ri.key; }
       M.ospfAdjacencies.push({
-        dev: f.dev, localEp: local, peerDev, peerEp: remote,
+        dev: f.dev, localEp: local, peerDev, peerEp: remote, peerBasis: peerBasis || null,
         peerIp: f.nbrAddr, peerId: f.nbrId, block: f.block, line: f.line,
       });
     });
@@ -379,5 +440,11 @@
     });
   }
 
-  S.model = { build };
+  /** MAC 在某埠第一次被學到的來源 [block, line]：m.seen 的 VLAN Map 依插入順序，第一筆就是該埠第一次出現的那一行。 */
+  function firstSeenSrc(m, ep) {
+    const vlans = m && m.seen.get(ep);
+    return vlans ? vlans.values().next().value : undefined;
+  }
+
+  S.model = { build, firstSeenSrc };
 })(globalThis.SSOT = globalThis.SSOT || {});

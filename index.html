@@ -34,12 +34,21 @@
 <script src="src/view/dom.js"></script>
 <script src="src/view/theme.js"></script>
 <script src="src/view/store.js"></script>
+<script src="src/view/export.js"></script>
 <script src="src/view/graph/layout.js"></script>
 <script src="src/view/graph/elk-layout.js"></script>
 <script src="src/view/graph/canvas.js"></script>
 <script src="src/view/panels/details.js"></script>
+<script src="src/view/panels/firewall.js"></script>
 <script src="src/view/panels/lists.js"></script>
+<script src="src/view/panels/baseline-diff.js"></script>
 <script src="src/view/app.js"></script>
+<script src="src/view/app-graph.js"></script>
+<script src="src/view/app-select.js"></script>
+<script src="src/view/app-panes.js"></script>
+<script src="src/view/app-toolbar.js"></script>
+<script src="src/view/app-input.js"></script>
+<script src="src/view/app-acks.js"></script>
 </head>
 <body>
 <div id="app">
@@ -92,7 +101,7 @@
       <div id="toolbar" class="toolbar hidden">
         <div class="grp"><button id="btn-fit" title="整張圖放進畫面">全圖</button><button id="btn-relayout" title="依分群與層級重新排列">重新排列</button><select id="layout-mode" title="重新排列使用的版面"><option value="elk">分層（ELK）</option><option value="builtin">快速（內建）</option></select><button id="btn-force" title="用力導向微調位置（再按一次停止）">力導向排列</button></div>
         <div class="grp"><button id="btn-hosts" title="顯示只由 LLDP 看到的主機">主機</button><button id="btn-unknown" class="on" title="顯示沒有 LLDP 鄰居、只由 MAC 推論出來的終端">未知對端</button><button id="btn-groups" class="on" title="顯示分群底框">分群</button></div>
-        <div class="grp"><button id="btn-png" title="把目前畫面匯出 PNG">匯出 PNG</button></div>
+        <div class="grp"><button id="btn-png" title="把目前畫面匯出 PNG">匯出 PNG</button><button id="btn-json" title="下載目前的基準（Snapshot JSON），內容原樣不改寫">匯出 JSON</button></div>
       </div>
       <div id="legend" class="legend hidden"></div>
       <div id="hint" class="hint hidden">滾輪縮放・拖曳移動・點選看詳細・雙擊聚焦</div>

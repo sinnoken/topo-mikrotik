@@ -66,7 +66,8 @@ function exportText(name, board, entries, compact) {
   return lines.join('\n');
 }
 const sort = (entries) => { const order = ['/interface bridge', '/interface ethernet', '/interface bonding', '/interface vlan', '/interface vrrp', '/interface bridge port', '/interface bridge vlan', '/ip address', '/ip dhcp-server network', '/routing id', '/routing ospf instance', '/ip route',
-  '/ip pool', '/ip dhcp-server lease', '/ip dns', '/ip dns static', '/ip firewall address-list', '/system ntp client']; return entries.sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])); };
+  '/ip pool', '/ip dhcp-server lease', '/ip dns', '/ip dns static', '/ip firewall address-list', '/system ntp client',
+  '/interface list', '/interface list member', '/ip firewall filter', '/ip firewall nat', '/ip firewall raw', '/ipv6 firewall filter', '/ip service']; return entries.sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])); };
 
 const bridgeHostText = (rows) => table(rows.map((m) => ({ flags: m.local ? 'DL' : m.static ? '' : 'D', kvs: [['mac-address', m.mac], ['on-interface', m.ifc], ['bridge', 'bridge1'], ['vid', m.vid], ['age', pick(['3s', '12s', '45s', '1m2s'])]] })), 'Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external ');
 const arpText = (rows) => table(rows.map((r) => ({ flags: 'DC', kvs: [['address', r.ip], ['mac-address', r.mac], ['interface', r.ifc], ['published', 'no'], ['invalid', 'no'], ['DHCP', 'no'], ['dynamic', 'yes'], ['complete', 'yes'], ['disabled', 'no']] })), FLAGS_ARP);
@@ -117,6 +118,7 @@ for (let s = 1; s <= SITES; s++) {
       e.push(['/interface vlan', 'add', 'interface=ether19 name=vlan40 vlan-id=40']);
       e.push(['/ip address', 'add', `address=10.${s}.20.250/24 interface=vlan40 network=10.${s}.20.0`]);
     }
+    if (F && a === 10) e.push(['/ip firewall filter', 'add', 'action=drop chain=input dst-port=23 protocol=tcp']);           // F08：有防火牆規則但沒有 WAN interface list
     const srvPorts = []; const userPorts = [];
     for (let k = 1; k <= SRV; k++) {
       const port = `ether${k}`; const m = mac(pick(OUI_SRV)); const ip = `10.${s}.20.${(a - 1) * SRV + k + 10}`; const nm = `${C}-SRV-${pad(a)}${k}`;
@@ -141,7 +143,8 @@ for (let s = 1; s <= SITES; s++) {
     if (F && a === 1) sw.macs[0].static = true;                                                                                  // 靜態 MAC 項目
     e.push(['/interface bridge vlan', 'add', 'bridge=bridge1 tagged=bond1,ether24,bridge1 vlan-ids=10'.replace('bond1', bond)]);
     e.push(['/interface bridge vlan', 'add', `bridge=bridge1 tagged=${bond},ether24 untagged=${srvPorts.join(',')} vlan-ids=20`]);
-    e.push(['/interface bridge vlan', 'add', `bridge=bridge1 tagged=${bond}${F && a === 3 ? '' : ',ether24'} untagged=${userPorts.join(',')} vlan-ids=30`]); // V01：ACC_03 的 ether24 少了 VLAN 30
+    const v30Untagged = userPorts.concat(F && a === 11 ? ['ether24'] : []);                                                     // V08：ACC_11 的 ether24 把 VLAN 30 設成 untagged（CORE_02 是 tagged）
+    e.push(['/interface bridge vlan', 'add', `bridge=bridge1 tagged=${bond}${F && (a === 3 || a === 11) ? '' : ',ether24'} untagged=${v30Untagged.join(',')} vlan-ids=30`]); // V01：ACC_03 的 ether24 少了 VLAN 30
     e.push(['/ip address', 'add', `address=${sw.ip}/${F && a === 10 ? 25 : 24} interface=vlan10 network=10.${s}.10.0`]);       // A06／A08：ACC_10 的 VLAN 10 遮罩是 /25
     if (F && (a === 11 || a === 12)) e.push(['/ip address', 'add', `address=10.${s}.10.99/24 interface=vlan10 network=10.${s}.10.0`]); // A09：同一 IP 設定在兩台
     acc.push(sw);
@@ -221,6 +224,32 @@ for (let s = 1; s <= SITES; s++) {
       rt.push({ flags: 'DAc', dst: '172.31.1.0/30', gw: 'ether46', igw: 'ether46', dist: 0 });
       c.ospf.push({ addr: '172.31.1.2', id: '172.31.255.2', ifc: null });
     }
+    // 防火牆：defconf 風格（WAN 只放 ISP 上行；多站點時連到 WAN 路由器的 ether48 是內部鏈路，歸在 LAN），管理服務只開給管理網段
+    const FF = (a) => e.push(['/ip firewall filter', 'add', a]);
+    e.push(['/interface list', 'add', 'comment=defconf name=WAN'], ['/interface list', 'add', 'comment=defconf name=LAN']);
+    e.push(['/interface list member', 'add', 'comment=defconf interface=bridge1 list=LAN'], ['/interface list member', 'add', 'comment=defconf interface=ether47 list=WAN']);
+    if (SITES > 1) e.push(['/interface list member', 'add', 'interface=ether48 list=LAN']);
+    FF('action=accept chain=input comment="defconf: accept established,related,untracked" connection-state=established,related,untracked');
+    FF('action=drop chain=input comment="defconf: drop invalid" connection-state=invalid');
+    FF('action=accept chain=input comment="defconf: accept ICMP" protocol=icmp');
+    if (F && ci === 0) {
+      FF('action=accept chain=input comment="defconf: accept ICMP" protocol=icmp');                                          // F02：defconf 匯入兩次
+      FF('action=accept chain=input comment="winbox for vendor" dst-port=8291 protocol=tcp');                                 // F03：WAN 可以連 winbox 埠
+      FF('action=accept chain=input dst-port=8291 in-interface=ether47 protocol=tcp');                                        // F01：被上一條完全涵蓋
+    }
+    if (F && ci === 1) FF('action=accept chain=input protocol=udp src-port=53');                                              // F06：以來源埠 53 放行
+    // F07：核心 02 少了最後的 drop，www-ssl 又啟用且沒有 available-from
+    if (!(F && ci === 1)) FF('action=drop chain=input comment="\\E9\\98\\B2\\E7\\81\\AB\\E7\\89\\86: drop all not coming from LAN" in-interface-list=!LAN');
+    FF('action=fasttrack-connection chain=forward comment="defconf: fasttrack" connection-state=established,related hw-offload=yes');
+    FF('action=accept chain=forward comment="defconf: accept established,related,untracked" connection-state=established,related,untracked');
+    FF('action=drop chain=forward comment="defconf: drop invalid" connection-state=invalid');
+    FF('action=drop chain=forward comment="defconf: drop all from WAN not DSTNATed" connection-nat-state=!dstnat connection-state=new in-interface-list=WAN');
+    e.push(['/ip firewall nat', 'add', 'action=masquerade chain=srcnat comment="defconf: masquerade" ipsec-policy=out,none out-interface-list=WAN']);
+    if (F && ci === 0) e.push(['/ip firewall nat', 'add', `action=dst-nat chain=dstnat dst-port=8443 in-interface-list=WAN protocol=tcp to-addresses=10.${s}.20.11 to-ports=443`]); // F04：連接埠轉送到伺服器
+    if (F && ci === 1) e.push(['/ipv6 firewall filter', 'add', 'action=accept chain=forward dst-port=443 protocol=tcp']);   // F05：IPv6 只限目的埠
+    ['telnet', 'ftp', 'www', 'api', 'api-ssl'].forEach((n) => e.push(['/ip service', 'set', `${n} disabled=yes`]));
+    ['ssh', 'winbox'].forEach((n) => e.push(['/ip service', 'set', `${n} address=10.${s}.10.0/24`]));
+    if (F && ci === 1) e.push(['/ip service', 'set', 'www-ssl disabled=no']);
     if (ci === 0) { e.push(['/routing id', 'add', `disabled=no id=${c.rid} name=main select-dynamic-id=""`]); e.push(['/routing ospf instance', 'add', 'disabled=no name=default router-id=main']); }
     else e.push(['/routing ospf instance', 'set', `[ find default=yes ] router-id=${c.rid}`]);
     c.routes = rt;

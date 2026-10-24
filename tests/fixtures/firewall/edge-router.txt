@@ -1,0 +1,39 @@
+EDGE (10.0.0.1):
+### /export terse
+# 2026-10-13 10:00:00 by RouterOS 7.12.1
+/interface bridge add name=bridge1
+/interface list add comment=defconf name=WAN
+/interface list add comment=defconf name=LAN
+/interface list member add comment=defconf interface=bridge1 list=LAN
+/interface list member add comment=defconf interface=ether1 list=WAN
+/ip address add address=192.168.88.1/24 interface=bridge1 network=192.168.88.0
+/ip address add address=203.0.113.2/30 interface=ether1 network=203.0.113.0
+/ip firewall filter add action=accept chain=input comment="defconf: accept established,related,untracked" connection-state=established,related,untracked
+/ip firewall filter add action=drop chain=input comment="defconf: drop invalid" connection-state=invalid
+/ip firewall filter add action=accept chain=input comment="defconf: accept ICMP" protocol=icmp
+/ip firewall filter add action=accept chain=input comment="winbox from anywhere" dst-port=8291 protocol=tcp
+/ip firewall filter add action=accept chain=input dst-port=8291 protocol=tcp
+/ip firewall filter add action=accept chain=input dst-port=8291,8728 protocol=tcp
+/ip firewall filter add action=accept chain=input dst-port=8291 in-interface=ether1 protocol=tcp
+/ip firewall filter add action=accept chain=input protocol=udp src-port=53
+/ip firewall filter add action=accept chain=input protocol=ipsec-esp
+/ip firewall filter add action=jump chain=input in-interface-list=WAN jump-target=mgmt
+/ip firewall filter add action=drop chain=input comment="defconf: drop all not coming from LAN" in-interface-list=!LAN
+/ip firewall filter add action=accept chain=mgmt dst-port=22 protocol=tcp
+/ip firewall filter add action=return chain=mgmt
+/ip firewall filter add action=accept chain=forward connection-state=established,related
+/ip firewall filter add action=accept chain=forward connection-nat-state=dstnat
+/ip firewall filter add action=drop chain=forward connection-nat-state=!dstnat connection-state=new in-interface-list=WAN
+/ip firewall filter add action=accept chain=output dst-address=10.0.0.0/8
+/ip firewall filter add action=accept chain=output dst-address=10.1.0.0/16
+/ip firewall filter add action=drop chain=input disabled=yes dst-port=23 protocol=tcp
+/ip firewall nat add action=masquerade chain=srcnat out-interface-list=WAN
+/ip firewall nat add action=dst-nat chain=dstnat dst-port=8080 in-interface-list=WAN protocol=tcp to-addresses=192.168.88.10 to-ports=80
+/ip firewall raw add action=drop chain=prerouting dst-port=8728 in-interface-list=WAN protocol=tcp
+/ip service set telnet disabled=yes
+/ip service set ftp disabled=yes
+/ip service set www address=192.168.88.0/24
+/ip service set [ find name=ssh ] address=192.168.88.0/24
+/ip service set api-ssl disabled=yes
+/ipv6 firewall filter add action=accept chain=forward dst-port=443 protocol=tcp
+/ipv6 firewall filter add action=drop chain=forward in-interface-list=!LAN

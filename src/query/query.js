@@ -7,6 +7,14 @@
   const K = S.keys;
   const U = S.util;
 
+  /**
+   * finding 的穩定鍵：id 加上排序後的 entities（type:key），不含 message、evidence 與行號，
+   * 所以同一個問題在兩份基準之間（訊息文字或行號改變時）仍對得上。以 JSON 陣列字串表示，避免分隔符號與鍵內容混淆。
+   * 同一份基準內可能碰撞（id 與 entities 都相同、只差訊息）：例如同一台設備的多段 I01／I02、
+   * 沒有設備的 I01（entities 為空）、同一台設備對同一個鄰居 ID 的多筆 R02。需要逐筆對應時以鍵為多重集合處理（見 compare.snapshots）。
+   */
+  const findingKey = (f) => JSON.stringify([f.id].concat(U.uniq((f.entities || []).map((e) => e.type + ':' + e.key)).sort(U.cmp)));
+
   S.query = function (snap) {
     const m = snap.model;
     const dev = new Map(m.devices.map((d) => [d.key, d]));
@@ -71,7 +79,7 @@
     m.interfaces.forEach((i) => {
       const owner = dev.get(i.dev);
       if (i.type !== 'wireless' || !wifiMacsOf(i).length || i.status === 'down' || i.enabled === false || !owner || !owner.collected) return;
-      if (/^(irb|vlan|lo\d)/.test(i.name)) return;
+      if (S.infer.isVirtualIfc(i)) return;
       const group = [i.key];
       if (i.lag) {
         const p = ifc.get(i.lag);
@@ -81,14 +89,69 @@
       if (group.some(toCollectedInfra)) return;
       U.getOr(wifiByDev, i.dev, () => []).push(i);
     });
+    // 防火牆
+    const FW_FAMILY = ['ip', 'ipv6']; const FW_TABLE = ['filter', 'nat', 'raw'];
+    const fwRules = m.firewallRules || [];
+    const fwByDev = new Map(); const fwByKey = new Map();
+    fwRules.forEach((r) => { U.getOr(fwByDev, r.dev, () => []).push(r); fwByKey.set(r.key, r); });
+    const chainRank = (r) => { const b = S.infer.fw.BUILTIN[r.table] || []; const i = b.indexOf(r.chain); return i < 0 ? b.length : i; };
+    const fwSort = (a, b) => FW_FAMILY.indexOf(a.family) - FW_FAMILY.indexOf(b.family) || FW_TABLE.indexOf(a.table) - FW_TABLE.indexOf(b.table)
+      || chainRank(a) - chainRank(b) || U.natural(a.chain, b.chain) || a.position - b.position;
+    const byDevOf = (list) => { const out = new Map(); (list || []).forEach((x) => U.getOr(out, x.dev, () => []).push(x)); return out; };
+    const listsByDev = byDevOf(m.interfaceLists); const svcByDev = byDevOf(m.ipServices); const peersByDev = byDevOf(m.ipsecPeers); const polByDev = byDevOf(m.ipsecPolicies);
+    const zoneByDev = new Map((m.firewallZones || []).map((z) => [z.dev, z]));
+    const fwCtx = new Map();
+    const ctxOf = (d) => U.getOr(fwCtx, d, () => S.infer.fw.fwContext(d, listsByDev.get(d) || [], (ifcsByDev.get(d) || []).map((i) => i.key), fwByDev.get(d) || []));
     const findingsBy = new Map();
     snap.findings.forEach((f, idx) => f.entities.forEach((e) => U.getOr(findingsBy, e.type + ':' + e.key, () => []).push(idx)));
     const vlanSrc = { vlans: m.vlans, interfaces: m.interfaces, links: m.links, inferred: m.inferredLinks || [], ifc: (ep) => ifc.get(ep), collected: (d) => !!(dev.get(d) || {}).collected };
     // 介面也會繼承其鏈路、設備的檢查結果：在查詢時合併
     const Q = {
       snapshot: snap,
+      // ---- 防火牆（規則是事實；WAN／LAN 分類 firewallZone 是推論）
+      /** 所有防火牆規則，依設備、位址族（ip、ipv6）、表（filter、nat、raw）、表內順序。 */
+      firewallRules: () => fwRules,
+      getFirewallRule: (k) => fwByKey.get(k) || null,
+      /**
+       * 某設備的規則，依位址族、表、chain（內建 chain 在前：input、forward、output／srcnat、dstnat／prerouting、output，其餘依名稱）、chain 內順序排序。
+       * filter：{ family?, table?, chain? }，省略的欄位不篩選。
+       */
+      firewallRulesOf(d, filter) {
+        const f = filter || {};
+        return (fwByDev.get(d) || []).filter((r) => (!f.family || r.family === f.family) && (!f.table || r.table === f.table) && (!f.chain || r.chain === f.chain)).sort(fwSort);
+      },
+      /** 同 firewallRulesOf，每列附上與這條規則有關的 finding：[{ rule, findings }]。 */
+      firewallRuleRows(d, filter) { return Q.firewallRulesOf(d, filter).map((rule) => ({ rule, findings: Q.findingsFor('rule', rule.key) })); },
+      /** 某設備的 chain 清單：[{ family, table, chain, builtin, rules（條數，含停用）, jumpedFrom（jump 到這裡的規則鍵） }]，順序同 firewallRulesOf。 */
+      firewallChains(d) {
+        const out = new Map();
+        Q.firewallRulesOf(d).forEach((r) => {
+          const k = r.family + '|' + r.table + '|' + r.chain;
+          U.getOr(out, k, () => ({ family: r.family, table: r.table, chain: r.chain, builtin: (S.infer.fw.BUILTIN[r.table] || []).includes(r.chain), rules: 0, jumpedFrom: [] })).rules++;
+        });
+        (fwByDev.get(d) || []).forEach((r) => {
+          const c = r.action === 'jump' && out.get(r.family + '|' + r.table + '|' + r.params['jump-target']);
+          if (c) c.jumpedFrom.push(r.key);
+        });
+        return Array.from(out.values());
+      },
+      /** WAN／LAN 分類（推論）：{ dev, basis, status: ok|no-wan-list|empty-wan-list, wanLists, wanInterfaces, lanLists, lanInterfaces }；沒有設定資料的設備為 null。 */
+      firewallZone: (d) => zoneByDev.get(d) || null,
+      /** /ip service（含 export 沒寫的預設值，basis 為 default）。 */
+      ipServicesOf: (d) => svcByDev.get(d) || [],
+      interfaceListsOf: (d) => listsByDev.get(d) || [],
+      ipsecOf: (d) => ({ peers: peersByDev.get(d) || [], policies: polByDev.get(d) || [] }),
+      /** 規則 a 是否涵蓋 b（符合 b 的封包一定符合 a；以 a 所在設備的 interface list 判斷）。比對兩份基準的規則時使用。 */
+      firewallCovers: (a, b) => S.infer.fw.covers(ctxOf(a.dev), a, b),
+      /** 基準的 meta（schema、version、inputHash、stats…）。 */
+      meta: () => snap.meta,
       devices: () => m.devices,
       links: () => m.links,
+      vlans: () => m.vlans,
+      /** 所有 IP 位址實體（含鄰居宣告，hearsay 為 true）。 */
+      ipAddresses: () => m.ipAddresses,
+      findings: () => snap.findings,
+      findingKey,
       getDevice: (k) => dev.get(K.dev(k)) || dev.get(k) || null,
       getInterface: (ep) => ifc.get(ep) || null,
       getLink: (k) => link.get(k) || null,
@@ -328,4 +391,5 @@
     };
     return Q;
   };
+  S.query.findingKey = findingKey;
 })(globalThis.SSOT = globalThis.SSOT || {});

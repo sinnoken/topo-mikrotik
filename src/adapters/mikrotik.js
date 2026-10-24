@@ -6,7 +6,8 @@
  *
  *   mikrotik.neighbor   /ip neighbor print detail          鄰居（LLDP／MNDP／CDP）
  *   mikrotik.config     /export terse（或 compact）          介面、bridge、bridge VLAN、bonding、IP、router-id、
- *                                                         DHCP 網路、DNS／NTP 伺服器、名稱 ↔ IP 設定（IP_BINDS）
+ *                       DHCP 網路、DNS／NTP 伺服器、名稱 ↔ IP 設定（IP_BINDS）、
+ *                       防火牆（/ip|ipv6 firewall filter|nat|raw）、interface list、/ip service、/ip ipsec peer|policy
  *   mikrotik.bridgehost /interface bridge host print detail  MAC 表
  *   mikrotik.vlans      /interface bridge vlan print detail  bridge VLAN 實際成員（含動態）
  *   mikrotik.interface  /interface print detail             介面狀態（running／停用）
@@ -165,6 +166,59 @@
   // 手冊寫 servers 以空白分隔，export 常見逗號；伺服器名稱不含兩者，所以都當分隔
   const serverList = (...vals) => vals.flatMap((v) => String(v || '').split(/[\s,]+/)).filter((v) => v && v !== '0.0.0.0' && v !== '::');
 
+  // ================================================================ 防火牆（/export 的 /ip firewall、/ipv6 firewall 等）
+  /**
+   * RouterOS export 的字串值：引號內以 \ 跳脫（\" \\ \$ \? \_＝空白、\n \r \t），非 ASCII 位元組寫成 \XX（十六進位）。
+   * 位元組依序試 UTF-8、Big5 解碼（註解常見兩種混用）；都失敗、或讀檔時已出現取代字元（U+FFFD）時保留原文，encoding 標為 undecodable。
+   * 回傳 { text, encoding: 'ascii'|'utf-8'|'big5'|'undecodable' }。
+   */
+  const ESC = { n: 10, r: 13, t: 9, _: 32 };
+  function rosString(raw) {
+    const s = String(raw);
+    const body = s.length >= 2 && s[0] === '"' && s[s.length - 1] === '"' ? s.slice(1, -1) : s;
+    if (body.includes('�')) return { text: body, encoding: 'undecodable' };
+    const cps = Array.from(body); const bytes = []; let wide = false;
+    const enc = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null;
+    for (let i = 0; i < cps.length; i++) {
+      const ch = cps[i];
+      if (ch === '\\' && i + 1 < cps.length) {
+        const h = (cps[i + 1] || '') + (cps[i + 2] || '');
+        if (/^[0-9A-Fa-f]{2}$/.test(h)) { bytes.push(parseInt(h, 16)); wide = true; i += 2; continue; }
+        const e = cps[++i]; bytes.push(ESC[e] ?? e.charCodeAt(0)); continue;
+      }
+      const c = ch.codePointAt(0);
+      if (c < 0x80) bytes.push(c);
+      else if (enc) { wide = true; enc.encode(ch).forEach((x) => bytes.push(x)); } else return { text: body, encoding: 'undecodable' };
+    }
+    if (!wide) return { text: String.fromCharCode(...bytes), encoding: 'ascii' };
+    for (const [label, name] of [['utf-8', 'utf-8'], ['big5', 'big5']]) {
+      try { return { text: new TextDecoder(label, { fatal: true }).decode(new Uint8Array(bytes)), encoding: name }; } catch (e) { /* 換下一種編碼 */ }
+    }
+    return { text: body, encoding: 'undecodable' };
+  }
+  S.adapters.rosString = rosString; // 測試用
+  const KVRAW = /([\w.\-]+)=("(?:[^"\\]|\\.)*"|\S*)/g;
+  /** key=value（依出現順序，值為原始文字，含引號）。 */
+  function kvPairs(text) { const out = []; let m; KVRAW.lastIndex = 0; while ((m = KVRAW.exec(text))) out.push([m[1], m[2]]); return out; }
+  const FW_TABLES = {
+    '/ip firewall filter': ['ip', 'filter'], '/ip firewall nat': ['ip', 'nat'], '/ip firewall raw': ['ip', 'raw'],
+    '/ipv6 firewall filter': ['ipv6', 'filter'], '/ipv6 firewall raw': ['ipv6', 'raw'],
+  };
+  // 不是比對條件的欄位：規則本身的屬性與動作參數（官方手冊 filter／nat 的 action 參數）
+  const FW_META = new Set(['chain', 'action', 'comment', 'disabled', 'log', 'log-prefix', 'place-before']);
+  const FW_PARAMS = new Set(['jump-target', 'to-addresses', 'to-ports', 'reject-with', 'address-list', 'address-list-timeout']);
+  /** 一條防火牆規則：比對條件原樣保留（否定是值前面的 !），chain 內順序由 model 依出現順序編號。 */
+  function fwRule(family, table, argText, line) {
+    const match = {}; const params = {}; let chain = null; let action = 'accept'; let disabled = false; let comment = null; let commentEncoding = null;
+    kvPairs(argText).forEach(([k, raw]) => {
+      const v = rosString(raw);
+      if (k === 'comment') { comment = v.text; commentEncoding = v.encoding; } else if (k === 'chain') chain = v.text;
+      else if (k === 'action') action = v.text; else if (k === 'disabled') disabled = v.text === 'yes';
+      else if (FW_PARAMS.has(k)) params[k] = v.text; else if (!FW_META.has(k)) match[k] = v.text;
+    });
+    return { t: 'fwRule', family, table, chain: chain || '(未指定)', action, match, params, disabled, comment, commentEncoding, line };
+  }
+
   // ================================================================ 設定（/export）
   reg({
     id: 'mikrotik.config', vendor: VENDOR, dataType: 'config', label: 'RouterOS 設定',
@@ -258,7 +312,43 @@
           case '/routing ospf instance':
             if (kv['router-id']) { ospfRid = kv['router-id']; ospfLine = line; }
             break;
+          case '/interface list':
+            if (cmd === 'add' && kv.name) emit({ t: 'ifList', name: kv.name, include: list(kv.include), exclude: list(kv.exclude), line });
+            break;
+          case '/interface list member':
+            if (cmd === 'add' && kv.list && kv.interface) emit({ t: 'ifListMember', list: kv.list, ifc: kv.interface, disabled: kv.disabled === 'yes', line });
+            break;
+          case '/ip service': {
+            // 「set telnet disabled=yes」（第一個字是服務名稱）或「set [ find name=ssh ] …」
+            const pos = args.match(/^([^\s=\[]+)(?=\s|$)/);
+            const name = (sel && sel.name) || (pos && pos[1]); if (cmd !== 'set' || !name) break;
+            const f = { t: 'ipService', name, line };
+            if (kv.disabled) f.disabled = kv.disabled === 'yes';
+            if (kv.port && /^\d+$/.test(kv.port)) f.port = +kv.port;
+            // RouterOS 7 的 available-from；舊版 export 為 address。空字串＝不限來源
+            const af = kv['available-from'] !== undefined ? kv['available-from'] : kv.address;
+            if (af !== undefined) f.addresses = list(af);
+            emit(f); break;
+          }
+          case '/ip ipsec peer':
+            if (cmd === 'add') emit({ t: 'ipsecPeer', name: kv.name || null, address: kv.address || null, disabled: kv.disabled === 'yes', line });
+            break;
+          // IPv6 是否在用（F07 的 IPv6 部分）：有位址或 DHCPv6 client，或整個停用
+          case '/ipv6 address':
+            if (cmd === 'add' && kv.interface && kv.disabled !== 'yes') emit({ t: 'ipv6Use', kind: 'address', ifc: kv.interface, line });
+            break;
+          case '/ipv6 dhcp-client':
+            if (cmd === 'add' && kv.interface && kv.disabled !== 'yes') emit({ t: 'ipv6Use', kind: 'dhcp-client', ifc: kv.interface, line });
+            break;
+          case '/ipv6 settings':
+            if (cmd === 'set' && kv['disable-ipv6'] === 'yes') emit({ t: 'ipv6Disabled', line });
+            break;
+          case '/ip ipsec policy':
+            // set（例如 [ find default=yes ]）是預設的 template policy，不代表有在跑 IPsec
+            if (cmd === 'add') emit({ t: 'ipsecPolicy', srcAddress: kv['src-address'] || null, dstAddress: kv['dst-address'] || null, peer: kv.peer || null, template: kv.template === 'yes', disabled: kv.disabled === 'yes', line });
+            break;
           default: {
+            if (FW_TABLES[path]) { if (cmd === 'add') emit(fwRule(FW_TABLES[path][0], FW_TABLES[path][1], args, line)); break; }
             const bind = IP_BINDS[path];
             if (!bind || cmd !== 'add' || kv.disabled === 'yes' || kv.dynamic === 'yes') break;
             if (bind.only && !bind.only.values.includes(String(kv[bind.only.key] || '').toLowerCase())) break;

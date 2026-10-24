@@ -45,6 +45,13 @@
   V.WIFI_BASIS = { registration: '依關聯表（已確認）', 'bridge-wifi': '依 MAC 表的無線介面（推定）', 'via-ap-port': '經由 AP 所接的交換器埠（推定，無法區分有線或無線）' };
   V.MODE = { access: 'Access（untagged）', tagged: 'Tagged（trunk）' };
   V.ifcState = (i) => (i.enabled === false ? '停用' : V.STATUS[i.status]);
+  // 收集失敗（blocks[].failure、coverage[].failures[]）的原因
+  V.FAILURE = { timeout: '逾時', 'exit-code': '指令失敗', connection: '連線失敗', other: '其他錯誤' };
+  V.failureText = (f) => (V.FAILURE[f.reason] || f.reason) + (f.exitCode == null ? '' : `（結束碼 ${f.exitCode}）`);
+  /** 覆蓋率的「有缺漏」：已收集的設備缺少應收集的資料，或有指令收集失敗（只有失敗、沒有缺少也算） */
+  V.coverageGap = (row) => !!row.collected && (row.missing.length > 0 || (row.failures || []).length > 0);
+  /** UTC ISO 時間 → 「2026-10-24 03:00:00 UTC」（收集時間是 UTC，不轉成本機時區） */
+  V.fmtUtc = (iso) => (iso ? String(iso).replace('T', ' ').replace(/\.\d+Z$|Z$/, '') + ' UTC' : '');
   // 鄰居發現協定（LLDP／MNDP／CDP）；L3 鏈路沒有發現協定時退回 via（如 OSPF）
   V.protoText = (l) => ((l.protocols && l.protocols.length ? l.protocols : l.via) || []).map((p) => p.toUpperCase()).join('、');
 
@@ -89,13 +96,15 @@
     const tb = V.h('tbody');
     rows.slice(0, o.limit || rows.length).forEach((r) => {
       const activate = o.onRow ? () => o.onRow(r) : null;
+      // rowClass／rowStyle：呼叫端加的列樣式；顏色由呼叫端從 theme 取，套在每個儲存格（表格的底色畫在 td 上）
+      const style = o.rowStyle ? o.rowStyle(r) : null;
       tb.appendChild(V.h('tr', {
-        class: [activate ? 'click' : '', o.bad && o.bad(r) ? 'bad' : ''].join(' '),
+        class: [activate ? 'click' : '', o.bad && o.bad(r) ? 'bad' : '', o.rowClass ? o.rowClass(r) || '' : ''].join(' '),
         onclick: activate,
         tabindex: activate ? '0' : null,
         onkeydown: activate ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } } : null,
       },
-        cols.map((c) => V.h('td', { class: c.cls || null }, c.f(r)))));
+        cols.map((c) => V.h('td', { class: c.cls || null, style }, c.f(r)))));
     });
     const t = V.h('table', { class: 't' }, [V.h('thead', null, V.h('tr', null, cols.map((c, n) => V.h('th', c.s && o.onSort ? { class: 'sortable', title: '點一下排序', onclick: () => o.onSort(n) } : null, c.t + (o.sortBy === n ? (o.sortDir < 0 ? ' ▼' : ' ▲') : ''))))), tb]);
     if (o.limit && rows.length > o.limit) return V.h('div', null, [t, V.h('div', { class: 'muted table-more' }, `只顯示前 ${o.limit} 筆，共 ${V.num(rows.length)} 筆`)]);

@@ -16,9 +16,9 @@
     I01: { severity: 'error', cat: '輸入', title: '無法辨識的內容' },
     I02: { severity: 'warn', cat: '輸入', title: '同一設備重複提供同類資料（以後者為準）' },
     C01: { severity: 'info', cat: '覆蓋', title: '網路設備僅由鄰居發現、沒有收集資料' },
-    C02: { severity: 'warn', cat: '覆蓋', title: '缺少應收集的資料' },
+    C02: { severity: 'warn', cat: '覆蓋', title: '缺少應收集的資料', evidenceLimit: Infinity }, // 列出全部失敗註解與已收集區塊，才能對照收了哪些
     K01: { severity: 'warn', cat: '鏈路', title: 'LLDP 單向（對端沒有回報這條鏈路）', data: [['lldp']] },
-    K02: { severity: 'error', cat: '鏈路', title: '同一介面對應到多個鄰居', data: [['lldp']] },
+    K02: { severity: 'warn', cat: '鏈路', title: '同一介面對應到多個鄰居', data: [['lldp']] },
     K03: { severity: 'warn', cat: '鏈路', title: '聚合鏈路兩端成員不一致', data: [['lldp'], ['config']] },
     K04: { severity: 'info', cat: '鏈路', title: '對端回報的埠名稱與本機不同', data: [['lldp']] },
     V01: { severity: 'warn', cat: 'VLAN', title: '鏈路兩端 VLAN 不一致', data: [['lldp'], ['config', 'vlans']] },
@@ -26,6 +26,7 @@
     V05: { severity: 'info', cat: 'VLAN', title: 'VLAN 介面沒有任何成員埠（孤立 VLAN）', data: [['config', 'vlans']] },
     V06: { severity: 'info', cat: 'VLAN', title: '同一 VLAN 在不同設備的名稱或說明不同', data: [['config']] },
     V07: { severity: 'warn', cat: 'VLAN', title: '同一名稱在不同設備對應到不同 VLAN', data: [['config']] },
+    V08: { severity: 'warn', cat: 'VLAN', title: '鏈路兩端同一 VLAN 的 tagged／untagged 不一致', data: [['lldp'], ['config', 'vlans']] },
     A01: { severity: 'warn', cat: '位址', title: '同一 IP 對應多個 MAC', data: [['arp']] },
     A02: { severity: 'warn', cat: '位址', title: '同一 MAC 在同一 VLAN 出現在多個終端埠', data: [['mac']] },
     A03: { severity: 'info', cat: '位址', title: '介面有學到 MAC 但沒有 LLDP／CDP 鄰接（未知對端）', data: [['mac']] },
@@ -44,7 +45,18 @@
     R04: { severity: 'warn', cat: '路由', title: '路由下一跳落入黑洞路由', data: [['route']] },
     R05: { severity: 'warn', cat: '路由', title: 'DHCP 網路的閘道不在該網段內', data: [['config']] },
     R06: { severity: 'warn', cat: '路由', title: '同一 DHCP 網段在不同設備的閘道、DNS 或 NTP 不同', data: [['config']] },
+    F01: { severity: 'warn', cat: '防火牆', title: '規則被前面的規則完全遮蔽，永遠不會命中', data: [['config']] },
+    F02: { severity: 'info', cat: '防火牆', title: '重複的規則（比對條件與動作相同）', data: [['config']] },
+    F03: { severity: 'warn', cat: '防火牆', title: 'WAN 可主動建立新連線的放行規則', data: [['config']] },
+    F04: { severity: 'info', cat: '防火牆', title: 'WAN 可連入的 dst-nat（連接埠轉送）', data: [['config']] },
+    F05: { severity: 'warn', cat: '防火牆', title: 'IPv6 forward 放行只限目的埠、沒有限目的位址', data: [['config']] },
+    F06: { severity: 'warn', cat: '防火牆', title: '以固定來源埠放行', data: [['config']] },
+    F07: { severity: 'warn', cat: '防火牆', title: '管理服務沒有限制來源位址，且 WAN 可以連入', data: [['config']] },
+    F08: { severity: 'info', cat: '防火牆', title: '無法判斷 WAN 介面（WAN 相關的防火牆檢查未執行）', data: [['config']] },
   };
+
+  /** 每筆 finding 預設最多附幾筆證據；規則可用 CATALOG 的 evidenceLimit 覆寫。 */
+  const EVIDENCE_LIMIT = 6;
 
   /** 各類設備預期要有的資料（C02），可由 build 選項 expectedData 覆寫。 */
   const EXPECTED = {
@@ -60,9 +72,12 @@
 
   function run(M, ctx) {
     const out = [];
-    const add = (id, message, entities, evidence) => {
+    // extra：個別規則附加的欄位（例如跨設備一致性的 deviation），不可覆寫上列共通欄位
+    const add = (id, message, entities, evidence, extra) => {
       const c = CATALOG[id];
-      out.push({ id, severity: c.severity, cat: c.cat, title: c.title, message, entities: entities || [], evidence: (evidence || []).slice(0, 6) });
+      const f = { id, severity: c.severity, cat: c.cat, title: c.title, message, entities: entities || [], evidence: (evidence || []).slice(0, c.evidenceLimit ?? EVIDENCE_LIMIT) };
+      Object.keys(extra || {}).forEach((k) => { if (!(k in f)) f[k] = extra[k]; });
+      out.push(f);
     };
     const name = (devKey) => { const d = M.devices.get(devKey); return d ? S.infer.displayName(d) : devKey; };
     const epName = (ep) => { const [d] = K.splitEp(ep); const i = M.ifcs.get(ep); return name(d) + ' ' + (i ? i.name : K.splitEp(ep)[1]); };
@@ -75,37 +90,61 @@
       add('I01', `${b.origin.file} 第 ${b.origin.startLine}–${b.origin.endLine} 行：${why}`,
         b.device ? [{ type: 'device', key: b.devKey }] : [], [{ block: b.id, line: b.origin.startLine }]);
     });
+    // 收集器註解（readers/common.js）格式或位置不對：不能確定收集時間或失敗原因，列為無法辨識
+    const ISSUE = {
+      'collected-at-invalid': (x) => `收集時間「${x.text}」不是 UTC ISO 8601 格式（應為 2026-10-24T03:00:00Z 這種秒精度的 UTC 時間）`,
+      'collected-at-misplaced': (x) => `收集時間「${x.text}」不在指令標記的下一行，無法判斷屬於哪個指令`,
+      'failure-duplicate': (x) => `同一段指令輸出有第二個收集失敗註解「${x.text}」，採用第一個`,
+    };
+    ctx.blocks.forEach((b) => (b.issues || []).forEach((x) => add('I01', `${b.origin.file} 第 ${x.line} 行：${ISSUE[x.kind](x)}`,
+      b.devKey ? [{ type: 'device', key: b.devKey }] : [], [{ block: b.id, line: x.line }])));
     ctx.duplicates.forEach((d) => add('I02', `${name(d.dev)} 的「${S.adapters[d.adapter].label}」出現 ${d.blocks.length} 次，採用最後一次`,
       [{ type: 'device', key: d.dev }], d.blocks.map((b) => ({ block: b, line: ctx.blocks[b].origin.startLine }))));
 
     // ---- 覆蓋
     const expected = Object.assign({}, EXPECTED, ctx.expectedData || {});
+    // C02 的證據：該設備在輸入中的各區塊（依輸入順序），可對照實際收集了哪些指令
+    const blocksOf = new Map();
+    ctx.blocks.forEach((b) => { if (b.devKey) S.util.getOr(blocksOf, b.devKey, () => []).push({ block: b.id, line: b.origin.startLine }); });
+    const failed = failuresByDev(ctx.blocks);
+    // C01 的證據：發現這台設備的鄰居資料與 OSPF 鄰居資料那幾行（依輸入順序）
+    const sightings = new Map();
+    M.claims.forEach((c) => S.util.getOr(sightings, c.peer, () => []).push({ block: c.block, line: c.line }));
+    M.ospfAdjacencies.forEach((a) => S.util.getOr(sightings, a.peerDev, () => []).push({ block: a.block, line: a.line }));
+    sightings.forEach((list) => list.sort((a, b) => a.block - b.block || a.line - b.line));
     M.devices.forEach((d) => {
       if (!d.collected) {
         if (d.kind === 'host') return; // 主機本來就不在收集範圍
-        add('C01', `${name(d.key)}：由 ${Array.from(d.seenBy).map(name).join('、')} 發現`, [{ type: 'device', key: d.key }]);
+        add('C01', `${name(d.key)}：由 ${Array.from(d.seenBy).map(name).join('、')} 發現`, [{ type: 'device', key: d.key }], sightings.get(d.key));
         return;
       }
-      const miss = (expected[d.kind] || []).filter((t) => !d.data.has(t));
-      d.missing = miss;
-      if (miss.length) add('C02', `${name(d.key)}（${S.KIND_LABEL[d.kind] || d.kind}）缺少：${miss.map((t) => DATA_LABEL[t] || t).join('、')}`, [{ type: 'device', key: d.key }]);
+      const miss = missingData(d, expected);
+      const fails = failed.get(d.key) || [];
+      if (!miss.length && !fails.length) return;
+      // 「沒收集」列在缺少；「收集了但失敗」另列指令與原因（輸出可能不完整，即使解析出部分資料也要提醒）
+      const parts = [];
+      if (miss.length) parts.push(`缺少：${miss.map((t) => DATA_LABEL[t] || t).join('、')}`);
+      if (fails.length) parts.push(`收集失敗：${fails.map((x) => `${x.command || '連線'}（${x.text}）`).join('、')}`);
+      // 證據：失敗註解那幾行在前，再列設備在輸入中的各區塊（依輸入順序）
+      const seenEv = new Set();
+      const ev = fails.map((x) => ({ block: x.block, line: x.line })).concat(blocksOf.get(d.key) || [])
+        .filter((e) => !seenEv.has(e.block + ':' + e.line) && seenEv.add(e.block + ':' + e.line));
+      add('C02', `${name(d.key)}（${S.KIND_LABEL[d.kind] || d.kind}）${parts.join('；')}`, [{ type: 'device', key: d.key }], ev);
     });
 
     // ---- 鏈路
-    M.notes.k01.forEach((n) => add('K01',
-      `${name(n.dev)} ${M.ifcs.get(K.ep(n.dev, n.ifc)).name} 看到 ${name(n.peer)} ${n.peerIfc}，但 ${name(n.peer)} 的 LLDP 沒有回報 ${name(n.dev)}`,
-      [{ type: 'link', key: n.link }], [{ block: n.block, line: n.line }]));
-    M.notes.k04.forEach((n) => add('K04', `${name(n.dev)} 說對端是「${n.said}」，對端自己的介面是「${n.actual}」`,
-      [{ type: 'link', key: n.link }], [{ block: n.block, line: n.line }]));
-
-    const linksByEp = new Map(); const interfaceLinksByEp = new Map();
-    M.links.forEach((l) => {
-      if (l.layer !== 'l2') return;
-      [l.a, l.b].forEach((ep) => {
-        S.util.getOr(linksByEp, ep, () => []).push(l);
-        if (l.evidenceScope !== LINK_SCOPE.BROADCAST_DOMAIN) S.util.getOr(interfaceLinksByEp, ep, () => []).push(l);
-      });
+    // K01／K04：依建模時的 LLDP／CDP 配對結果（c.pairing，見 model/build.js）判定
+    M.claims.forEach((c) => {
+      const p = c.pairing; if (!p) return; // 只有 MNDP 的觀察沒有配對
+      if (p.status === 'one-way') add('K01',
+        `${name(c.dev)} ${M.ifcs.get(K.ep(c.dev, c.ifc)).name} 看到 ${name(c.peer)} ${c.peerIfc}，但 ${name(c.peer)} 的 LLDP 沒有回報 ${name(c.dev)}`,
+        [{ type: 'link', key: p.link }], [{ block: c.block, line: c.line }]);
+      // 對端埠名不明（RouterOS 6 沒有 interface-name）時無從比較
+      else if (p.status === 'reciprocal' && c.peerIfc !== '?' && K.ifc(c.peerIfc) !== p.remoteIfc) add('K04',
+        `${name(c.dev)} 說對端是「${c.peerIfc}」，對端自己的介面是「${p.remoteIfc}」`, [{ type: 'link', key: p.link }], [{ block: c.block, line: c.line }]);
     });
+
+    const interfaceLinksByEp = M.adjacency; // 介面鄰接索引，由 infer.edgeLocations 算出（之後 M.links 不再變動）
     interfaceLinksByEp.forEach((ls, ep) => {
       if (ls.length < 2) return;
       const peers = ls.map((l) => epName(l.a === ep ? l.b : l.a));
@@ -139,11 +178,10 @@
 
     // 同一個 VLAN ID 只在同一個 VLAN 區塊內比較（A02、V06、A06 共用）；任一位置的設備不在任何區塊時，無從區分，整組比較
     // locations 是位置清單（預設為介面 ep），devOf 取出所在設備；回傳依區塊分開的位置清單
-    const vlanSrc = () => ({ vlans: M.vlans.values(), interfaces: M.ifcs.values(), links: M.links.values(), inferred: M.inferred || [], ifc: (ep) => M.ifcs.get(ep), collected: (d) => !!(M.devices.get(d) || {}).collected });
-    const spans = new Map();
     const byDomain = (vlan, locations, devOf = (ep) => K.splitEp(ep)[0]) => {
       if (!vlan) return [locations];
-      const domains = S.util.getOr(spans, +vlan, () => S.infer.vlanSpan(vlanSrc(), +vlan)).domains;
+      const span = M.vlanSpans.get(+vlan); if (!span) return [locations]; // VLAN 區塊由 infer 算好（vlanDomains）
+      const domains = span.domains;
       const keys = locations.map((x) => (domains.find((d) => d.devices.includes(devOf(x))) || {}).key);
       if (keys.some((k) => !k)) return [locations];
       const parts = new Map(); locations.forEach((x, idx) => S.util.getOr(parts, keys[idx], () => []).push(x));
@@ -152,12 +190,9 @@
 
     // ---- VLAN
     M.links.forEach((l) => {
-      if (l.layer !== 'l2' || !l.vlanComparable) return;
-      if (!l.vlansA.length && !l.vlansB.length) return;
+      if (!l.vlanMismatch) return; // 由 infer.linkVlans 判定
       const sb = new Set(l.vlansB); const sa = new Set(l.vlansA);
       const onlyA = l.vlansA.filter((v) => !sb.has(v)); const onlyB = l.vlansB.filter((v) => !sa.has(v));
-      if (!onlyA.length && !onlyB.length) return;
-      l.vlanMismatch = true;
       const parts = [];
       if (onlyA.length) parts.push(`只在 ${epName(l.a)}：${fmtVlans(onlyA)}`);
       if (onlyB.length) parts.push(`只在 ${epName(l.b)}：${fmtVlans(onlyB)}`);
@@ -173,6 +208,25 @@
       const key = [M.ifcs.get(l.a).lag || l.a, M.ifcs.get(l.b).lag || l.b].sort().join('~'); // 聚合的多條成員鏈路只報一次
       if (nativeSeen.has(key)) return; nativeSeen.add(key);
       add('V04', `${epName(l.a)} PVID ${pa}；${epName(l.b)} PVID ${pb}`, [{ type: 'link', key: l.key }], [{ block: l.src[0][0], line: l.src[0][1] }]);
+    });
+    // tagged／untagged 不一致：兩端都承載同一個 VLAN（不是 V01），但一端帶標籤、另一端不帶。
+    // 邊界：兩端 PVID 都有且不同時，那兩個 PVID 的差異就是 V04 的同一件事，不再列入 V08；其他 VLAN 照常比較。
+    const modeSeen = new Set();
+    M.links.forEach((l) => {
+      if (l.layer !== 'l2' || !l.vlanComparable) return; // vlanComparable 已排除 MNDP、單側觀察與缺 VLAN 資料的一端
+      const ma = S.infer.effVlanModes(M, l.a); const mb = S.infer.effVlanModes(M, l.b);
+      const pa = pvidOf(l.a); const pb = pvidOf(l.b);
+      const skip = new Set(pa != null && pb != null && pa !== pb ? [pa, pb] : []);
+      const diff = (x, y) => S.util.numSort(Array.from(x.tagged).filter((v) => y.untagged.has(v) && !y.tagged.has(v) && !x.untagged.has(v) && !skip.has(v)));
+      const aTagged = diff(ma, mb); const bTagged = diff(mb, ma);
+      if (!aTagged.length && !bTagged.length) return;
+      const ea = M.ifcs.get(l.a).lag || l.a; const eb = M.ifcs.get(l.b).lag || l.b;
+      const key = [ea, eb].sort().join('~'); // 聚合的多條成員鏈路只報一次，以聚合介面稱呼
+      if (modeSeen.has(key)) return; modeSeen.add(key);
+      const parts = [];
+      if (aTagged.length) parts.push(`VLAN ${fmtVlans(aTagged)} 在 ${epName(ea)} 為 tagged、在 ${epName(eb)} 為 untagged`);
+      if (bTagged.length) parts.push(`VLAN ${fmtVlans(bTagged)} 在 ${epName(eb)} 為 tagged、在 ${epName(ea)} 為 untagged`);
+      add('V08', parts.join('；'), [{ type: 'link', key: l.key }], [{ block: l.src[0][0], line: l.src[0][1] }]);
     });
     // 孤立 VLAN：bridge 上的 VLAN 介面，除了 bridge 本身沒有任何成員埠（只在 bridge 有 VLAN 成員資料時判斷，避免 vlan-filtering 關閉時誤報）
     const vlanOf = new Map(); M.vlans.forEach((v) => { if (v.id != null) vlanOf.set(v.dev + '|' + v.id, v); });
@@ -195,21 +249,25 @@
         Array.from(macs.values()).map((a) => ({ block: a.block, line: a.line })));
     });
 
-    const edge = edgePorts(M, interfaceLinksByEp);
-    M.edge = edge;
+    const edge = M.edge; // 終端埠是推論，由 infer.edgeLocations 算出
+    // MAC 表觀察的來源（每個埠第一次學到的那一行；指定 VLAN 時取該 VLAN 的那一行）
+    const toEv = (s) => (s ? { block: s[0], line: s[1] } : null);
+    const macSrc = (mac, ep) => toEv(S.model.firstSeenSrc(M.macs.get(mac), ep));
+    const macVlanSrc = (m, ep, vlan) => toEv(m.seen.get(ep).get(vlan));
+    const byLine = (a, b) => a.block - b.block || a.line - b.line;
     M.macs.forEach((m) => {
-      m.edge = Array.from(m.seen.keys()).filter((ep) => edge.has(ep)).sort();
       const edgeByVlan = new Map();
       m.seen.forEach((vlans, ep) => {
         if (!edge.has(ep)) return;
-        vlans.forEach((vlan) => S.util.getOr(edgeByVlan, vlan, () => new Set()).add(ep));
+        vlans.forEach((_, vlan) => S.util.getOr(edgeByVlan, vlan, () => new Set()).add(ep));
       });
       edgeByVlan.forEach((eps, vlan) => {
         if (eps.size < 2) return;
         byDomain(vlan, Array.from(eps).sort(S.util.natural)).forEach((locations) => {
           if (locations.length < 2) return;
           add('A02', `${K.macPretty(m.mac)} 在 ${vlan ? `VLAN ${vlan}` : 'VLAN 不明'} 的多個終端埠出現：${locations.map(epName).join('、')}`,
-            [{ type: 'mac', key: m.mac }].concat(locations.map((ep) => ({ type: 'interface', key: ep }))));
+            [{ type: 'mac', key: m.mac }].concat(locations.map((ep) => ({ type: 'interface', key: ep }))),
+            locations.map((ep) => macVlanSrc(m, ep, vlan)).filter(Boolean));
         });
       });
     });
@@ -218,9 +276,12 @@
     edgeByDev.forEach((eps, dev) => {
       eps.sort(S.util.natural);
       const desc = eps.slice(0, 8).map((ep) => `${M.ifcs.get(ep).name}（${M.ifcs.get(ep).macs.size}）`).join('、');
-      add('A03', `${name(dev)}：${eps.length} 個介面，${desc}${eps.length > 8 ? '…' : ''}`, [{ type: 'device', key: dev }]);
+      // 終端埠恰好學到一個 MAC：證據是該 MAC 在這個埠的觀察
+      add('A03', `${name(dev)}：${eps.length} 個介面，${desc}${eps.length > 8 ? '…' : ''}`, [{ type: 'device', key: dev }],
+        eps.map((ep) => macSrc(Array.from(M.ifcs.get(ep).macs)[0], ep)).filter(Boolean));
     });
-    manyMacPorts(M, interfaceLinksByEp).forEach(({ ep, n }) => add('A04', `${epName(ep)}：${n} 個 MAC，且沒有 LLDP／CDP 鄰接`, [{ type: 'interface', key: ep }]));
+    manyMacPorts(M, interfaceLinksByEp).forEach(({ ep, n, macs }) => add('A04', `${epName(ep)}：${n} 個 MAC，且沒有 LLDP／CDP 鄰接`, [{ type: 'interface', key: ep }],
+      macs.map((mac) => macSrc(mac, ep)).filter(Boolean).sort(byLine)));
     // ARP 位址不在該設備任何直連網段（只看有介面位址資料的設備）
     const netsOf = new Map();
     M.ifcs.forEach((i) => { if (!i.hearsay) i.ips.forEach((_, c) => { const p = S.ip.parseCidr(c); if (p && p.len < 32) S.util.getOr(netsOf, i.dev, () => []).push(p); }); });
@@ -256,8 +317,11 @@
       if (bad.length) add('R05', `${name(n.dev)}：${n.network} 的閘道 ${bad.join('、')} 不在網段內`, [{ type: 'device', key: n.dev }], [{ block: n.block, line: n.line }]);
     });
     configConsistency(M, add, name, epName, byDomain);
-    M.notes.r02.forEach((n) => add('R02', `${name(n.dev)} ${n.ifc} 的鄰居 ${n.nbrId}（${n.nbrAddr}）`,
-      [{ type: 'device', key: n.dev }, { type: 'device', key: K.dev(n.nbrId) }], [{ block: n.block, line: n.line }]));
+    // R02：OSPF 鄰居用位址、router-id、管理 IP 都對不到設備（建模時 peerBasis 為 null）
+    M.ospfAdjacencies.forEach((a) => { if (!a.peerBasis) add('R02', `${name(a.dev)} ${K.splitEp(a.localEp)[1]} 的鄰居 ${a.peerId}（${a.peerIp}）`,
+      [{ type: 'device', key: a.dev }, { type: 'device', key: K.dev(a.peerId) }], [{ block: a.block, line: a.line }]); });
+
+    firewallChecks(M, add, name);
 
     const order = { error: 0, warn: 1, info: 2 };
     out.sort((a, b) => order[a.severity] - order[b.severity] || S.util.cmp(a.id, b.id) || S.util.natural(a.message, b.message));
@@ -269,6 +333,7 @@
    * 只看已收集設備自己的設定（排除鄰居宣告的介面）；名稱比對 trim＋不分大小寫，值以集合比較（順序不計）。
    * 以 VLAN ID 為鍵的規則（V06、A06）只比同一個 VLAN 區塊；以名稱、網段、IP 為鍵的規則把整份基準視為同一個位址空間（尚無 VRF）。
    * 訊息依設備名稱自然排序，相同設定的設備併成一組。
+   * 除 A09（重複 IP 本身就是衝突）外，各規則以多數決推定偏離的設備（推論），寫在訊息尾端與 finding.deviation。
    */
   const MAX_SHOWN = 8; // 訊息中每台設備最多列出的值，避免大型 address-list 讓訊息過長
   function configConsistency(M, add, name, epName, byDomain) {
@@ -295,6 +360,24 @@
       return Array.from(g.values());
     };
     const devList = (devs) => (devs.length > MAX_SHOWN ? devs.slice(0, MAX_SHOWN).map(name).join('、') + `…（共 ${devs.length} 台）` : devs.map(name).join('、'));
+    /**
+     * 多數決（推論）：台數最多的一組至少 2 台且多於其他每一組時成立，其餘各組的設備推定偏離。
+     * 回傳 { main, deviating: [devKey，依名稱自然排序] }；平手或最多只有 1 台時回傳 null。
+     */
+    const majorityOf = (groups) => {
+      const sorted = groups.slice().sort((a, b) => b.devs.length - a.devs.length);
+      const main = sorted[0];
+      if (!main || main.devs.length < 2 || (sorted[1] && sorted[1].devs.length >= main.devs.length)) return null;
+      return { main, deviating: groups.filter((g) => g !== main).flatMap((g) => g.devs).sort(byName) };
+    };
+    // 附加在訊息尾端的推定結果與 finding 的 deviation 欄位（平手時 deviating 為空陣列）
+    const judge = (groups) => {
+      const m = majorityOf(groups);
+      return {
+        note: m ? `；依多數推定偏離：${devList(m.deviating)}` : '；沒有多數，無法推定',
+        extra: { deviation: { basis: 'majority', deviating: m ? m.deviating : [] } },
+      };
+    };
     const fmtGroups = (groups, fmt) => groups.map((x) => { const v = fmt(x.vals); return devList(x.devs) + (v[0] === '「' ? '' : ' ') + v; }).join('；');
     // 證據最多 6 筆（add() 截斷）：各組輪流取，確保與多數不同的那一組也有來源行
     const interleave = (lists) => { const out = []; for (let k = 0; lists.some((l) => k < l.length); k++) lists.forEach((l) => { if (k < l.length) out.push(l[k]); }); return out; };
@@ -327,7 +410,8 @@
           const perDev = new Map(); sel.forEach((x) => put(perDev, x.dev, norm(x.val), x.val));
           const groups = groupDevs(perDev);
           if (groups.length < 2) return;
-          add('V06', `VLAN ${id} 的 ${attr}：${fmtGroups(groups, quote)}`, entsOf(sel, [{ type: 'vlan', key: String(id) }]), evByGroups(groups, sel, (x) => x.dev, (x) => evsOf([x])));
+          const j = judge(groups);
+          add('V06', `VLAN ${id} 的 ${attr}：${fmtGroups(groups, quote)}${j.note}`, entsOf(sel, [{ type: 'vlan', key: String(id) }]), evByGroups(groups, sel, (x) => x.dev, (x) => evsOf([x])), j.extra);
         });
       });
     });
@@ -339,7 +423,8 @@
         const groups = groupDevs(perDev);
         if (groups.length < 2) return;
         const ids = U.uniq(sel.map((x) => x.id)).sort((a, b) => a - b);
-        add('V07', `${attr}「${sel[0].val}」：${fmtGroups(groups, fmtVlanIds)}`, entsOf(sel, ids.map((id) => ({ type: 'vlan', key: String(id) }))), evByGroups(groups, sel, (x) => x.dev, (x) => evsOf([x])));
+        const j = judge(groups);
+        add('V07', `${attr}「${sel[0].val}」：${fmtGroups(groups, fmtVlanIds)}${j.note}`, entsOf(sel, ids.map((id) => ({ type: 'vlan', key: String(id) }))), evByGroups(groups, sel, (x) => x.dev, (x) => evsOf([x])), j.extra);
       });
     });
 
@@ -355,8 +440,9 @@
         const groups = groupDevs(perDev);
         if (groups.length < 2) return;
         const mask = sel.some((a) => sel.some((b) => a.dev !== b.dev && a.p.len < b.p.len && S.ip.inNet(b.p.net, a.p.net, a.p.len)));
-        add('A06', `VLAN ${id}：${fmtGroups(groups, show)}${mask ? '（網段重疊但遮罩不同）' : ''}`,
-          [{ type: 'vlan', key: String(id) }].concat(U.uniq(sel.map((x) => x.ep)).map((key) => ({ type: 'interface', key }))), evByGroups(groups, sel, (x) => x.dev, (x) => [ev(x.src)]));
+        const j = judge(groups);
+        add('A06', `VLAN ${id}：${fmtGroups(groups, show)}${mask ? '（網段重疊但遮罩不同）' : ''}${j.note}`,
+          [{ type: 'vlan', key: String(id) }].concat(U.uniq(sel.map((x) => x.ep)).map((key) => ({ type: 'interface', key }))), evByGroups(groups, sel, (x) => x.dev, (x) => [ev(x.src)]), j.extra);
       });
     });
 
@@ -367,7 +453,8 @@
       const perDev = new Map(); sel.forEach((x) => put(perDev, x.dev, x.id, x.id));
       const groups = groupDevs(perDev);
       if (groups.length < 2) return;
-      add('A07', `${net}：${fmtGroups(groups, fmtVlanIds)}`, U.uniq(sel.map((x) => x.ep)).map((key) => ({ type: 'interface', key })), evByGroups(groups, sel, (x) => x.dev, (x) => [ev(x.src)]));
+      const j = judge(groups);
+      add('A07', `${net}：${fmtGroups(groups, fmtVlanIds)}${j.note}`, U.uniq(sel.map((x) => x.ep)).map((key) => ({ type: 'interface', key })), evByGroups(groups, sel, (x) => x.dev, (x) => [ev(x.src)]), j.extra);
     });
 
     // ---- A08／A09：所有直連位址（含非 VLAN 介面）
@@ -394,7 +481,10 @@
       const list = group.filter((x) => hit.has(x));
       const parts = list.map((x) => `${x.key}（${devList(Array.from(x.devs.keys()).sort(byName))}）`);
       const locsBy = list.map((x) => Array.from(x.devs.keys()).sort(byName).map((d) => x.devs.get(d)));
-      add('A08', parts.length === 2 ? parts.join('與 ') : parts.join('、'), locsBy.flat().map((l) => ({ type: 'interface', key: l.ep })), interleave(locsBy).map((l) => ev(l.src)));
+      // 多數決以「設備 → 它設定的這些網段」分組：同一台設定多個網段時，以網段組合當成它的設定值
+      const perDev = new Map(); list.forEach((x) => x.devs.forEach((_, d) => put(perDev, d, x.key, x.key)));
+      const jd = judge(groupDevs(perDev));
+      add('A08', (parts.length === 2 ? parts.join('與 ') : parts.join('、')) + jd.note, locsBy.flat().map((l) => ({ type: 'interface', key: l.ep })), interleave(locsBy).map((l) => ev(l.src)), jd.extra);
     }
     const byIp = new Map();
     ownIfcs.forEach((i) => {
@@ -417,7 +507,8 @@
         const perDev = new Map(); sel.forEach((n) => n[k].forEach((v) => put(perDev, n.dev, norm(v), v)));
         const groups = groupDevs(perDev);
         if (groups.length < 2) return;
-        add('R06', `${net} ${label}：${fmtGroups(groups, show)}`, U.uniq(sel.map((n) => n.dev)).sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (n) => n.dev, (n) => [{ block: n.block, line: n.line }]));
+        const j = judge(groups);
+        add('R06', `${net} ${label}：${fmtGroups(groups, show)}${j.note}`, U.uniq(sel.map((n) => n.dev)).sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (n) => n.dev, (n) => [{ block: n.block, line: n.line }]), j.extra);
       });
     });
 
@@ -439,8 +530,9 @@
       });
       const diff = Array.from(where.values()).sort((a, b) => nat(U.uniq(a.vals).sort(nat)[0], U.uniq(b.vals).sort(nat)[0]))
         .map((w) => `${show(w.vals)} 只在 ${devList(w.has)}`);
-      add('A10', `${sel[0].section}「${sel[0].name}」：${fmtGroups(groups, show)}；${diff.join('；')}`,
-        devs.sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (b) => b.dev, (b) => [{ block: b.block, line: b.line }]));
+      const j = judge(groups);
+      add('A10', `${sel[0].section}「${sel[0].name}」：${fmtGroups(groups, show)}；${diff.join('；')}${j.note}`,
+        devs.sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (b) => b.dev, (b) => [{ block: b.block, line: b.line }]), j.extra);
     });
     const byBindValue = new Map(); binds.forEach((b) => U.getOr(byBindValue, b.section + '\u0000' + b.valueKey, () => []).push(b));
     Array.from(byBindValue.keys()).sort(nat).forEach((k) => {
@@ -452,8 +544,9 @@
       const disjoint = sets.some((a, x) => sets.some((b, y) => x < y && !Array.from(a.keys()).some((n) => b.has(n))));
       if (!disjoint) return;
       const groups = groupDevs(perDev);
-      add('A11', `${sel[0].section} ${sel[0].value}：${fmtGroups(groups, quote)}`,
-        Array.from(perDev.keys()).sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (b) => b.dev, (b) => [{ block: b.block, line: b.line }]));
+      const j = judge(groups);
+      add('A11', `${sel[0].section} ${sel[0].value}：${fmtGroups(groups, quote)}${j.note}`,
+        Array.from(perDev.keys()).sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (b) => b.dev, (b) => [{ block: b.block, line: b.line }]), j.extra);
     });
 
     // ---- A12：設備層級的 DNS／NTP 伺服器
@@ -464,43 +557,9 @@
       const groups = groupDevs(perDev);
       if (groups.length < 2) return;
       sel.sort((a, b) => byName(a.key, b.key));
-      add('A12', `${label}：${fmtGroups(groups, show)}`, sel.map((d) => ({ type: 'device', key: d.key })), evByGroups(groups, sel, (d) => d.key, (d) => d[k].src.map(ev)));
+      const j = judge(groups);
+      add('A12', `${label}：${fmtGroups(groups, show)}${j.note}`, sel.map((d) => ({ type: 'device', key: d.key })), evByGroups(groups, sel, (d) => d.key, (d) => d[k].src.map(ev)), j.extra);
     });
-  }
-
-  /**
-   * 終端埠：已收集設備上、恰好學到一個 MAC、非 Wi-Fi、狀態不是 down 的介面，
-   * 且沒有連到其他「已收集的網路設備」（連到主機或未收集設備的埠仍算終端），也沒有推論鏈路。
-   * linksByEp 僅包含介面鄰接證據；廣播網域（MNDP）可達不代表該埠有 LLDP／CDP 鄰接。
-   * 回傳 Map(ep → { linked: 是否有任何 LLDP／CDP 鄰接 })
-   */
-  const NON_EDGE_TYPES = new Set(['bridge', 'vlan', 'loopback', 'vrrp']);
-  function edgePorts(M, adjacencyLinksByEp) {
-    const out = new Map();
-    const toInfra = (ep) => (adjacencyLinksByEp.get(ep) || []).some((l) => {
-      const peer = M.devices.get(K.splitEp(l.a === ep ? l.b : l.a)[0]);
-      return peer && peer.collected && peer.kind !== 'host';
-    });
-    const hasAdjacency = (ep) => adjacencyLinksByEp.has(ep);
-    // 已推論接到網路設備（例如底下沒有其他終端的 CSS106，MAC 表只剩它自己）的埠不是終端埠
-    const inferredEps = new Set((M.inferred || []).flatMap((r) => [r.a, r.b]));
-    // 設備自己的介面 MAC（/interface print 的 mac-address）出現在轉發表時不是外部終端
-    const ownMacs = new Map();
-    M.ifcs.forEach((i) => { const m = i.hwMac && K.mac(i.hwMac); if (m) { if (!ownMacs.has(i.dev)) ownMacs.set(i.dev, new Set()); ownMacs.get(i.dev).add(m); } });
-    M.ifcs.forEach((i, ep) => {
-      // 有 RouterOS 原始 type 時依事實排除虛擬介面；無介面資料才退回名稱推論
-      const virtual = i.rawType ? NON_EDGE_TYPES.has(i.rawType) : /^(irb|vlan|lo\d)/.test(i.name);
-      if (i.macs.size !== 1 || i.type === 'wireless' || i.status === 'down' || i.enabled === false || virtual) return;
-      if (!M.devices.get(i.dev).collected) return;
-      const own = ownMacs.get(i.dev);
-      if (own && own.has(Array.from(i.macs)[0])) return;
-      const group = [ep];
-      if (i.lag) { const p = M.ifcs.get(i.lag); if (p) group.push(p.key, ...p.lagMembers); }
-      group.push(...i.lagMembers);
-      if (group.some((g) => toInfra(g) || inferredEps.has(g))) return;
-      out.set(ep, { linked: group.some(hasAdjacency) });
-    });
-    return out;
   }
 
   /**
@@ -509,21 +568,19 @@
    */
   const MANY_MACS = 5; // 規格書建議的門檻
   function manyMacPorts(M, adjacencyLinksByEp) {
-    const ownMacs = new Map();
-    M.ifcs.forEach((i) => { const m = i.hwMac && K.mac(i.hwMac); if (m) S.util.getOr(ownMacs, i.dev, () => new Set()).add(m); });
+    const ownMacs = S.infer.hwMacsByDev(M);
     const out = [];
     M.ifcs.forEach((i, ep) => {
-      const virtual = i.rawType ? NON_EDGE_TYPES.has(i.rawType) : /^(irb|vlan|lo\d|bridge)/.test(i.name);
-      if (virtual || i.type === 'wireless' || i.type === 'bridge' || i.type === 'lag' || i.status === 'down' || i.enabled === false) return;
+      if (S.infer.isVirtualIfc(i) || i.type === 'wireless' || i.type === 'bridge' || i.type === 'lag' || i.status === 'down' || i.enabled === false) return;
       if (!M.devices.get(i.dev).collected) return;
       const own = ownMacs.get(i.dev) || new Set();
-      const n = Array.from(i.macs).filter((m) => !own.has(m)).length;
+      const macs = Array.from(i.macs).filter((m) => !own.has(m)); const n = macs.length;
       if (n <= MANY_MACS) return;
       const group = [ep];
       if (i.lag) { const p = M.ifcs.get(i.lag); if (p) group.push(p.key, ...p.lagMembers); }
       if (group.some((x) => adjacencyLinksByEp.has(x))) return;
       if (group.some((x) => M.behindAnchors && M.behindAnchors.has(x))) return; // 下面接的是已知的未收集交換器（例如 SwOS），不是不明設備
-      out.push({ ep, n });
+      out.push({ ep, n, macs });
     });
     return out.sort((a, b) => S.util.natural(a.ep, b.ep));
   }
@@ -535,14 +592,40 @@
     return out.join(',');
   }
 
-  function coverage(M) {
+  /** 已收集設備依類型應有、但沒有收集到的資料類別（C02 與 coverage 共用）。 */
+  function missingData(d, expected) {
+    return (expected[d.kind] || []).filter((t) => !d.data.has(t));
+  }
+
+  /**
+   * 收集失敗的區塊（readers 讀到的「# collection failed」），依設備、輸入順序：
+   * { block, line, command（連線失敗為 null）, reason, exitCode, text, dataTypes（該指令對應的資料類別） }
+   */
+  function failuresByDev(blocks) {
+    const out = new Map();
+    (blocks || []).forEach((b) => {
+      if (!b.failure || !b.devKey) return;
+      const dataTypes = S.util.uniq((b.adapters || []).map((a) => S.adapters[a].dataType)).sort();
+      S.util.getOr(out, b.devKey, () => []).push({ block: b.id, line: b.failure.line, command: b.command, reason: b.failure.reason, exitCode: b.failure.exitCode, text: b.failure.text, dataTypes });
+    });
+    return out;
+  }
+
+  /** expectedData：build 選項，覆寫 EXPECTED 的部分類型。blocks：讀取的區塊，用來列出收集失敗的指令。 */
+  function coverage(M, expectedData, blocks) {
+    const failed = failuresByDev(blocks);
+    const fwCount = new Map(); M.fw.rules.forEach((r) => fwCount.set(r.dev, (fwCount.get(r.dev) || 0) + 1));
+    const expected = Object.assign({}, EXPECTED, expectedData || {});
     const linkCount = new Map();
     M.links.forEach((l) => [l.a, l.b].forEach((ep) => { const d = K.splitEp(ep)[0]; linkCount.set(d, (linkCount.get(d) || 0) + 1); }));
     const ifCount = new Map(); const macCount = new Map();
     M.ifcs.forEach((i) => { ifCount.set(i.dev, (ifCount.get(i.dev) || 0) + 1); macCount.set(i.dev, (macCount.get(i.dev) || 0) + i.macs.size); });
     return Array.from(M.devices.values()).map((d) => ({
-      dev: d.key, collected: d.collected, kind: d.kind, data: Array.from(d.data).sort(), missing: d.missing || [],
+      dev: d.key, collected: d.collected, kind: d.kind, data: Array.from(d.data).sort(), missing: d.collected ? missingData(d, expected) : [],
       interfaces: ifCount.get(d.key) || 0, links: linkCount.get(d.key) || 0, macs: macCount.get(d.key) || 0,
+      failures: failed.get(d.key) || [],
+      // 防火牆：有設定資料的設備才有；wan 是 WAN 分類的狀態（ok／no-wan-list／empty-wan-list）
+      firewall: M.fwZones.has(d.key) ? { rules: fwCount.get(d.key) || 0, wan: M.fwZones.get(d.key).status } : null,
     })).sort((a, b) => S.util.natural(a.dev, b.dev));
   }
 
@@ -578,6 +661,162 @@
       return out;
     };
     return walk(ip, [ip], new Set());
+  }
+
+  // ---------------------------------------------------------------- 防火牆（F01–F08）
+  const FAMILY_LABEL = { ip: 'IPv4', ipv6: 'IPv6' };
+  /** 規則的簡短說明：動作＋比對條件（正規順序），太長時截斷。 */
+  function ruleText(r) {
+    const m = S.infer.fw.canonMatch(r.match).map(([k, v]) => `${k}=${v}`).join(' ');
+    const t = `${r.action}${r.params['jump-target'] ? '→' + r.params['jump-target'] : ''}${m ? ' ' + m : ''}`;
+    return t.length > 120 ? t.slice(0, 117) + '…' : t;
+  }
+  const ruleWhere = (name, r) => `${name(r.dev)} ${FAMILY_LABEL[r.family]} ${r.table} ${r.chain} 第 ${r.position} 條`;
+  const ruleEv = (r) => ({ block: r.block, line: r.line });
+  const posVal = (r, k) => (r.match[k] !== undefined && !S.infer.fw.splitNeg(r.match[k]).neg ? S.infer.fw.splitNeg(r.match[k]).body : null);
+  const protoOf = (r) => { const p = posVal(r, 'protocol'); return p === null ? null : S.infer.fw.protoName(p); };
+  const isIcmp = (r) => protoOf(r) === 'icmp' || protoOf(r) === 'icmpv6';
+  /** 只放行既有連線（connection-state 不含 new／untracked）：不是新連線的入口。 */
+  const replyOnly = (r) => {
+    const v = r.match['connection-state']; if (v === undefined) return false;
+    const { neg, body } = S.infer.fw.splitNeg(v); const t = body.split(',');
+    return neg ? ['new', 'untracked'].every((x) => t.includes(x)) : !t.includes('new') && !t.includes('untracked');
+  };
+  /** IPsec 用的放行：ESP、AH，或只限 UDP 500／4500。 */
+  const isIpsecRule = (r) => {
+    const p = protoOf(r);
+    if (p === 'ipsec-esp' || p === 'ipsec-ah') return true;
+    if (p !== 'udp' || posVal(r, 'dst-port') === null) return false;
+    const v = S.infer.fw.parseVal('dst-port', r.match['dst-port']);
+    return v.kind === 'ranges' && v.items.every(([a, b]) => a === b && (a === 500n || a === 4500n));
+  };
+  /** F05 的對象：IPv6 filter 放行有目的埠、沒有目的位址。 */
+  const v6PortOnly = (r) => r.family === 'ipv6' && r.table === 'filter' && r.action === 'accept' && posVal(r, 'dst-port') !== null
+    && r.match['dst-address'] === undefined && r.match['dst-address-list'] === undefined && !replyOnly(r);
+
+  function firewallChecks(M, add, name) {
+    const fw = S.infer.fw;
+    const byDev = new Map(); M.fw.rules.forEach((r) => S.util.getOr(byDev, r.dev, () => []).push(r));
+    const chainsOf = (rules) => { const m = new Map(); rules.forEach((r) => S.util.getOr(m, r.family + '|' + r.table + '|' + r.chain, () => []).push(r)); return m; };
+    M.fwCtx.forEach((ctx, dev) => {
+      const rules = byDev.get(dev) || [];
+      const ents = (...rs) => [{ type: 'device', key: dev }].concat(rs.filter(Boolean).map((r) => ({ type: 'rule', key: r.key })));
+      // F01／F02：同一 chain 內，前面會終止比對的規則涵蓋後面的規則（只看啟用中的規則）。完全相同（含動作）的是重複（F02），其餘是遮蔽（F01）
+      chainsOf(rules).forEach((list) => {
+        const on = list.filter((r) => !r.disabled).sort((a, b) => a.position - b.position);
+        on.forEach((j, n) => {
+          const before = on.slice(0, n);
+          const dup = before.find((i) => i.action === j.action && JSON.stringify(i.params) === JSON.stringify(j.params) && fw.sameMatch(i, j));
+          if (dup) { add('F02', `${ruleWhere(name, j)}與第 ${dup.position} 條的比對條件與動作相同（${ruleText(j)}）`, ents(j), [ruleEv(j), ruleEv(dup)]); return; }
+          const cov = before.find((i) => fw.TERMINAL.has(i.action) && fw.covers(ctx, i, j));
+          if (cov) add('F01', `${ruleWhere(name, j)}（${ruleText(j)}）被第 ${cov.position} 條（${ruleText(cov)}）完全涵蓋，永遠不會命中`, ents(j), [ruleEv(j), ruleEv(cov)]);
+        });
+      });
+      const active = rules.filter((r) => !r.disabled && (r.table === 'filter' || (r.table === 'nat' && r.chain === 'dstnat')));
+      // F08：有規則但無法判斷 WAN；F03／F04／F07 都需要 WAN，不猜；F05 改為只看沒有限制入介面的 forward 規則（見下方 F05）
+      if (!ctx.wan && active.length) {
+        const why = ctx.status === 'no-wan-list' ? '沒有名稱含 WAN 的 interface list' : `WAN 清單（${ctx.wanLists.join('、')}）沒有成員`;
+        add('F08', `${name(dev)}：有 ${active.length} 條防火牆規則，但${why}，無法判斷哪些介面對外；F03、F04、F07 未檢查，F05 只檢查沒有限制入介面的 forward 規則`, [{ type: 'device', key: dev }], [ruleEv(active[0])]);
+      }
+      const wans = ctx.wan ? Array.from(ctx.wan).sort(S.util.natural) : [];
+      const ipsecUp = M.fw.peers.some((p) => p.dev === dev && !p.disabled) || M.fw.policies.some((p) => p.dev === dev && !p.disabled && !p.template);
+      const ifcName = (ep) => K.splitEp(ep)[1];
+      const viaText = (path) => (path.length ? `；經由 ${path.map((x) => `${x.chain} 第 ${x.position} 條 jump`).join('→')}` : '');
+      /** 從 WAN 的任一介面送出符合規則 r 的新連線：第一個由 r 決定的結果（raw prerouting 丟掉的不算），沒有就 null。 */
+      const reachedBy = (r, builtins) => {
+        for (const ep of wans) {
+          for (const b of builtins) {
+            const pkt = fw.packetFor(r, ep, b, ctx);
+            const raw = fw.evalChain(ctx, r.family, 'raw', 'prerouting', Object.assign({}, pkt, { out: undefined }));
+            if (raw.verdict === 'drop') continue;
+            const res = r.table === 'nat' ? fw.evalChain(ctx, r.family, 'nat', b, pkt) : fw.evalFilter(ctx, r.family, b, pkt);
+            if (res.rule === r) return { ep, res, pkt };
+          }
+        }
+        return null;
+      };
+      const filterBuiltins = (r) => (r.chain === 'input' || r.chain === 'forward' ? [r.chain] : fw.BUILTIN.filter.includes(r.chain) ? [] : ['input', 'forward']);
+      // F06：以固定來源埠放行（事實；output 是設備自己送出的封包，回應既有連線的也不算）
+      const f06 = new Set();
+      rules.forEach((r) => {
+        if (r.disabled || r.table !== 'filter' || r.action !== 'accept' || r.chain === 'output' || posVal(r, 'src-port') === null || replyOnly(r)) return;
+        f06.add(r);
+        add('F06', `${ruleWhere(name, r)}（${ruleText(r)}）以來源埠 ${r.match['src-port']} 放行：來源埠由對方決定，攻擊者可以用這個來源埠繞過防火牆`, ents(r), [ruleEv(r)]);
+      });
+      // F05：IPv6 forward 只限目的埠。WAN 已知時要 WAN 的新連線真的會走到這條；不明時只看沒有限制入介面的 forward 規則
+      const f05 = new Set();
+      rules.forEach((r) => {
+        if (r.disabled || !v6PortOnly(r) || f06.has(r) || r.chain === 'input' || r.chain === 'output') return;
+        let hit = null;
+        if (ctx.wan) { hit = reachedBy(r, ['forward']); if (!hit) return; }
+        else if (r.match['in-interface'] !== undefined || r.match['in-interface-list'] !== undefined || r.chain !== 'forward') return;
+        f05.add(r);
+        const path = hit ? hit.res.path : [];
+        add('F05', `${ruleWhere(name, r)}（${ruleText(r)}）只限目的埠、沒有限目的位址：IPv6 沒有 NAT，這些埠對整個網段開放${viaText(path)}`, ents(r, ...path), [ruleEv(r)].concat(path.map(ruleEv)));
+      });
+      if (!ctx.wan) return;
+      // F03：WAN 可主動建立新連線的放行（input／forward，含只被 jump 的子 chain）。排除 ICMP、只放行既有連線、F05／F06 已列的規則
+      rules.forEach((r) => {
+        if (r.disabled || r.table !== 'filter' || r.action !== 'accept' || r.chain === 'output' || f06.has(r) || f05.has(r) || isIcmp(r) || replyOnly(r)) return;
+        const ipsec = isIpsecRule(r);
+        if (ipsec && ipsecUp) return; // 有 IPsec peer／policy 時，這些放行是需要的
+        const hit = reachedBy(r, filterBuiltins(r)); if (!hit) return;
+        add('F03', `${ruleWhere(name, r)}（${ruleText(r)}）讓 WAN（${ifcName(hit.ep)}）可以主動建立新連線${viaText(hit.res.path)}${ipsec ? '；設備沒有 IPsec peer／policy，這條 IPsec 放行可能用不到' : ''}`,
+          ents(r, ...hit.res.path), [ruleEv(r)].concat(hit.res.path.map(ruleEv)));
+      });
+      // F04：WAN 可連入的 dst-nat，且 forward 放行轉送後的連線
+      rules.forEach((r) => {
+        if (r.disabled || r.table !== 'nat' || r.chain !== 'dstnat' || !/^(dst-nat|netmap)$/.test(r.action)) return;
+        const hit = reachedBy(r, ['dstnat']); if (!hit) return;
+        const toAddr = r.params['to-addresses'] ? fw.parseVal('dst-address', r.params['to-addresses'].split('-')[0]) : null;
+        const toPort = r.params['to-ports'] && /^\d+/.test(r.params['to-ports']) ? +r.params['to-ports'].match(/^\d+/)[0] : hit.pkt.dstPort;
+        const fpkt = Object.assign({}, hit.pkt, { out: undefined, natState: 'dstnat', dstPort: toPort, dst: toAddr && toAddr.kind === 'ranges' ? toAddr.items[0][0] : undefined });
+        const fres = fw.evalFilter(ctx, r.family, 'forward', fpkt);
+        if (fres.verdict !== 'accept') return;
+        const by = fres.rule;
+        const hairpin = by && by.match['connection-nat-state'] !== undefined && by.match['in-interface'] === undefined && by.match['in-interface-list'] === undefined;
+        const port = hit.pkt.dstPort != null ? `${hit.pkt.protocol}/${hit.pkt.dstPort}` : hit.pkt.protocol;
+        const to = `${r.params['to-addresses'] || '（未指定位址）'}${r.params['to-ports'] ? ':' + r.params['to-ports'] : ''}`;
+        add('F04', `${name(dev)}：WAN（${ifcName(hit.ep)}）的 ${port} 經 dst-nat 轉送到 ${to}，${by ? `forward 第 ${by.position} 條放行` : 'forward 沒有規則擋下'}${hairpin ? '（這條放行沒有限制入介面，可能是 hairpin NAT 需要的；收緊前先確認）' : ''}`,
+          ents(r, by), [ruleEv(r)].concat(by ? [ruleEv(by)] : []));
+      });
+      // F07：管理服務啟用、來源位址不受限（available-from），且從 WAN 的新連線會被 input 放行（先看 raw）。IPv4、IPv6 分開判斷：
+      //   available-from 空白＝不限；有列位址時只接受清單內的，某一位址族沒有列任何前綴＝那個位址族拒絕（手冊：只有 IPv4 前綴時拒絕所有 IPv6 用戶端）
+      //   IPv6 只在確定有用時才判斷（firewallZones.ipv6.status 為 used），經 /ipv6 firewall 的 raw 與 input
+      const zone = M.fwZones.get(dev);
+      const FAMILIES = [['ip', 'IPv4', 32n], ['ipv6', 'IPv6', 128n]];
+      const openFrom = (sv, fam, bits) => {
+        if (!sv.addresses.length) return true;
+        return sv.addresses.some((a) => {
+          if (a.includes(':') !== (fam === 'ipv6')) return false;
+          const p = fw.parseVal('src-address', a);
+          return p.kind === 'ranges' && p.items.some(([x, y]) => x === 0n && y === (1n << bits) - 1n);
+        });
+      };
+      // 同一個服務的 IPv4、IPv6 併成一筆（鍵不重複）；訊息依位址族列出從哪個 WAN 介面、被哪條規則放行
+      (M.fwServices.get(dev) || []).forEach((sv) => {
+        if (!sv.enabled || !sv.port) return;
+        const hits = [];
+        FAMILIES.forEach(([fam, label, bits]) => {
+          if (fam === 'ipv6' && zone.ipv6.status !== 'used') return;
+          if (!openFrom(sv, fam, bits)) return;
+          for (const ep of wans) {
+            const res = fw.evalFilter(ctx, fam, 'input', { family: fam, in: ep, out: null, protocol: 'tcp', dstPort: sv.port, dst: undefined, state: 'new', natState: null });
+            if (res.verdict === 'accept') { hits.push({ fam, label, ep, res }); break; }
+          }
+        });
+        if (!hits.length) return;
+        const ev = sv.src.map(([block, line]) => ({ block, line }));
+        hits.forEach((h) => {
+          if (h.res.rule) ev.push(ruleEv(h.res.rule));
+          h.res.path.forEach((r) => ev.push(ruleEv(r)));
+          if (h.fam === 'ipv6') zone.ipv6.src.forEach(([block, line]) => ev.push({ block, line })); // 讓 IPv6 生效的那一行
+        });
+        const how = hits.map((h) => `${h.label} 從 ${ifcName(h.ep)}，${h.res.rule ? `${h.res.rule.chain} 第 ${h.res.rule.position} 條放行` : 'input 沒有任何規則擋下'}`).join('；');
+        add('F07', `${name(dev)}：${sv.name}（tcp/${sv.port}${sv.basis === 'default' ? '，預設值' : ''}）啟用、沒有限制來源位址（available-from），WAN 可以連入：${how}`,
+          [{ type: 'device', key: dev }, { type: 'service', key: dev + '|' + sv.name }].concat(hits.filter((h) => h.res.rule).map((h) => ({ type: 'rule', key: h.res.rule.key }))), ev);
+      });
+    });
   }
 
   S.check = { run, coverage, CATALOG, EXPECTED, DATA_LABEL, fmtVlans, resolveNextHop };

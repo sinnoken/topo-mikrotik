@@ -4,7 +4,8 @@
  *
  * 資料都來自 App.round（app.js）：工作包的內容依角色從它組出來，讀回的內容也只經過 A.load／A.setRoundInputs 寫回去。
  * 格式、核對與重建全部在核心 S.workpack（read／build／validate）；處理紀錄只經過 app-ledger.js（S.ledger）。
- * 核心是同步的：1000 台的資料 build、read 各要數秒，validate（重建）約 10 秒；開始前先顯示忙碌提示並讓出一次畫面，
+ * build、read 是同步的（1000 台的資料各要數秒）：開始前先顯示忙碌提示並讓出一次畫面。帶回時的重建核對用
+ * S.workpack.validateAsync（以 S.buildAsync 分段重建，1000 台約 10 秒），畫面不會停住，忙碌提示顯示重建的進度。
  * 進行中停用資料中心的操作。失敗時列出核心回報的全部問題，目前的資料不變。
  */
 (function (S) {
@@ -26,7 +27,7 @@
    */
   const hub = {
     open: false, byDevice: false, pack: { ledger: true, expected: true, report: true, patch: true },
-    busy: null, buildErrors: null, read: null,
+    busy: null, progress: null, buildErrors: null, read: null,
   };
   A.hubState = () => hub;
   A.hubOpen = () => hub.open;
@@ -79,7 +80,18 @@
       setTimeout(go, 100);
     });
   };
-  const idle = () => { hub.busy = null; };
+  const idle = () => { hub.busy = null; hub.progress = null; };
+  /**
+   * 重建的進度（validateAsync 的 onProgress，格式同 S.buildAsync）：只更新忙碌提示裡的進度，不重繪整個資料中心
+   * （每個區塊都會回報一次，重繪全部太慢，也會打斷鍵盤焦點）。
+   */
+  A.hubProgress = function hubProgress(p) {
+    hub.progress = { text: A.buildProgressText(p), pct: Math.round(A.buildPercent(p)) };
+    const box = $('#hub-busy'); if (!box) return;
+    const bar = box.querySelector('.progress'); const label = box.querySelector('.hub-progress-text');
+    if (bar) { bar.classList.remove('indeterminate'); bar.setAttribute('aria-valuenow', String(hub.progress.pct)); bar.firstElementChild.style.width = hub.progress.pct + '%'; }
+    if (label) label.textContent = hub.progress.text;
+  };
   /** 核心回報格式問題（WorkpackError／ZipError）是預期的結果，畫面已列出；其他例外才寫 console.error */
   const logUnexpected = (e) => { if (!(e && (e.name === 'WorkpackError' || e.name === 'ZipError'))) console.error(e); };
   /** 核心丟出的錯誤 → [{ code, path, message }]：WorkpackError／ZipError 用它的 errors（全部問題），其他錯誤一筆 */
@@ -88,7 +100,7 @@
     : [{ code: (e && e.name) || null, path: null, message: (e && e.message) || String(e) }]);
   /** 時間估計用：收集檔的總字元數（約 1400 萬字元是 1000 台） */
   const sizeOf = (sources) => sources.reduce((n, s) => n + s.text.length, 0);
-  const slowNote = (chars) => (chars > 2e6 ? `資料較大（約 ${V.num(Math.round(chars / 1e4) / 100)} 百萬字元），可能要十幾秒；完成前畫面會暫停回應。` : '');
+  const slowNote = (chars) => (chars > 2e6 ? `資料較大（約 ${V.num(Math.round(chars / 1e4) / 100)} 百萬字元），可能要數秒；完成前畫面會暫停回應。` : '');
 
   // ================================================================ 工作包的內容
   /**
@@ -161,20 +173,15 @@
   // ================================================================ 讀入
   /**
    * 目前的處理紀錄裡有、但即將取代它的處理紀錄（next）沒有的內容：{ onlyHere, differ, rounds, blocked }；沒有時 null。
-   *   onlyHere：next 沒有的項目數；differ：兩邊都有但內容不同的項目數；rounds：next 沒有的輪次數；blocked：目前停用（原資料會被取代）
-   * 只比對鍵與內容是否相同，不解讀狀態；用來提醒使用者取代前先匯出。
+   *   onlyHere：next 沒有的項目數；differ：兩邊都有但內容不同的項目數；
+   *   rounds：next 沒有、或同一輪（以基準鍵對應）內容不同的輪次數；blocked：目前停用（原資料會被取代）
+   * 比較在核心（S.ledger.diff）；這裡只換成提示要用的數字，提醒使用者取代前先匯出。
    */
   A.ledgerLoss = function ledgerLoss(next) {
     const st = A.ledgerState();
     if (st.blocked) return st.blocked.raw !== undefined ? { onlyHere: 0, differ: 0, rounds: 0, blocked: true } : null;
-    const cur = st.ledger; const cj = S.util.canonicalJson;
-    const keys = Object.keys(cur.items);
-    const onlyHere = keys.filter((k) => !Object.prototype.hasOwnProperty.call(next.items, k)).length;
-    const differ = keys.filter((k) => Object.prototype.hasOwnProperty.call(next.items, k) && cj(cur.items[k]) !== cj(next.items[k])).length;
-    const roundKey = (it) => cj([it.baseline, it.at]);
-    const theirs = new Set(next.iterations.map(roundKey));
-    const rounds = cur.iterations.filter((it) => !theirs.has(roundKey(it))).length;
-    return onlyHere || differ || rounds ? { onlyHere, differ, rounds, blocked: false } : null;
+    const d = S.ledger.diff(st.ledger, next);
+    return d.lossIfReplaced ? { onlyHere: d.onlyInCur.length, differ: d.changed.length, rounds: d.roundsOnlyInCur.length + d.roundsChanged.length, blocked: false } : null;
   };
   /** 讀入工作包檔（bytes）：S.workpack.read 失敗時列出全部問題，目前的資料不變；成功時等使用者確認要帶回的內容 */
   App.readWorkpack = async function (name, bytes) {
@@ -212,7 +219,7 @@
 
   /**
    * 帶回確認的內容：
-   *   上一輪的基準：以 S.workpack.validate 用工作包的收集檔重建並核對（命名規則依選擇，預設是工作包附的），用重建的基準載入
+   *   上一輪的基準：以 S.workpack.validateAsync 用工作包的收集檔重建並核對（命名規則依選擇，預設是工作包附的），用重建的基準載入
    *   處理紀錄：整份取代目前的，再以載入的基準推進一輪（目前的有工作包沒有的內容時，要先勾選確認）
    *   命名規則：選了工作包附的時加入命名規則清單；預期資料：取代目前的
    * 任何一步失敗都在動到資料之前：重建核對失敗時列出問題，目前的基準、處理紀錄都不變。
@@ -225,8 +232,8 @@
     let res = null;
     if (c.baseline) {
       w.errors = null;
-      await A.hubBusy('正在以工作包的收集檔重建基準並核對…' + slowNote(sizeOf(pack.sources)));
-      try { res = S.workpack.validate(pack, { now: nowIso(), profile, expectedData: pack.expectedData }); } catch (e) {
+      await A.hubBusy('正在以工作包的收集檔重建基準並核對…');
+      try { res = await S.workpack.validateAsync(pack, { now: nowIso(), profile, expectedData: pack.expectedData }, A.hubProgress); } catch (e) {
         console.error(e); res = { ok: false, errors: errorsOf(e), warnings: [], snapshot: null };
       }
       idle();

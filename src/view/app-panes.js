@@ -55,7 +55,7 @@
   };
   A.activatePane = function activatePane(pane) {
     A.closeHub();
-    const button = document.querySelectorAll('#left .tabs button').find((item) => item.dataset.pane === pane);
+    const button = Array.from(document.querySelectorAll('#left .tabs button')).find((item) => item.dataset.pane === pane);
     if (button) button.click();
     A.setWorkspace('checks');
   };

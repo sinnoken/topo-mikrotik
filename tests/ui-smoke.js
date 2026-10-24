@@ -32,12 +32,25 @@ class El extends Node_ {
   scrollIntoView() {} getBoundingClientRect() { return { left: 0, top: 0, width: 1200, height: 800 }; }
   all() { const out = []; const walk = (n) => n.childNodes.forEach((c) => { if (c instanceof El) { out.push(c); walk(c); } }); walk(this); return out; }
   matches(sel) { if (sel.startsWith('#')) return this.id === sel.slice(1); if (sel.startsWith('.')) return this.classList.contains(sel.slice(1)); return this.tagName === sel.toUpperCase(); }
-  querySelectorAll(sel) { const parts = sel.trim().split(/\s+/); let set = [this];
+  // testAll：只給測試程式用的陣列版本。畫面程式用的 querySelectorAll 回傳和瀏覽器一樣的 NodeList（不是陣列），children 是 HTMLCollection
+  testAll(sel) { const parts = sel.trim().split(/\s+/); let set = [this];
     parts.forEach((p) => { const next = []; set.forEach((r) => r.all().forEach((e) => { if (e.matches(p) && !next.includes(e)) next.push(e); })); set = next; }); return set; }
-  querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
+  querySelectorAll(sel) { return new NodeList_(this.testAll(sel)); }
+  querySelector(sel) { return this.testAll(sel)[0] || null; }
+  get children() { return new HTMLCollection_(this.childNodes.filter((c) => c instanceof El)); }
   getContext() { return new Proxy({}, { get: (t, k) => (k === 'measureText' ? (s) => ({ width: String(s).length * 7 }) : k in t ? t[k] : () => {}), set: (t, k, v) => { t[k] = v; return true; } }); }
   toDataURL() { return 'data:,'; }
 }
+/**
+ * 瀏覽器的 NodeList（querySelectorAll）只有 length、索引、item、forEach 與迭代；HTMLCollection（children）連 forEach 都沒有。
+ * 模擬 DOM 照這個形狀回傳：畫面程式直接對它呼叫 find、filter、map 等陣列方法時，測試會和瀏覽器一樣丟錯（要先 Array.from）。
+ */
+class HTMLCollection_ {
+  constructor(list) { list.forEach((x, i) => { this[i] = x; }); Object.defineProperty(this, 'length', { value: list.length }); }
+  item(i) { return this[i] === undefined ? null : this[i]; }
+  [Symbol.iterator]() { let i = 0; return { next: () => (i < this.length ? { value: this[i++], done: false } : { value: undefined, done: true }) }; }
+}
+class NodeList_ extends HTMLCollection_ { forEach(fn, self) { for (let i = 0; i < this.length; i++) fn.call(self, this[i], i, this); } }
 const VOID = new Set(['meta', 'link', 'input', 'br', 'img']);
 function parseHtml(html, root) {
   html = html.replace(/<!--[\s\S]*?-->/g, '').replace(/<script[\s\S]*?<\/script>/g, '');
@@ -63,7 +76,7 @@ head.appendChild = (c) => {
   return c;
 };
 const document = { body, head, activeElement: body, createElement: (t) => new El(t), createElementNS: (ns, t) => Object.assign(new El(t), { namespaceURI: ns }), createTextNode: (t) => new Text_(t),
-  getElementById: (id) => body.querySelector('#' + id), querySelector: (s) => body.querySelector(s), querySelectorAll: (s) => body.querySelectorAll(s),
+  getElementById: (id) => body.querySelector('#' + id), querySelector: (s) => body.querySelector(s), querySelectorAll: (s) => body.querySelectorAll(s), testAll: (s) => body.testAll(s),
   addEventListener: (t, f) => (docListeners[t] = docListeners[t] || []).push(f),
   removeEventListener: (t, f) => { docListeners[t] = (docListeners[t] || []).filter((x) => x !== f); } };
 let rafQ = [];
@@ -159,7 +172,7 @@ async function buildInput(input) {
 }
 
 /** 資料中心（#hub）裡 data-action 為 action 的按鈕；輸入與輸出的入口集中在這裡 */
-const hubBtn = (action) => $('#hub').querySelectorAll('button').find((b) => b.getAttribute('data-action') === action);
+const hubBtn = (action) => $('#hub').testAll('button').find((b) => b.getAttribute('data-action') === action);
 /** 等到條件成立（非同步的建立、讀入、重建）；逾時時丟錯並說明在等什麼 */
 async function until(cond, what) {
   for (let i = 0; i < 8000 && !cond(); i++) await new Promise((r) => setTimeout(r, 5));
@@ -269,6 +282,19 @@ function viewBoundaryViolations(file, src) {
     const bad = files.flatMap((f) => viewBoundaryViolations(f.split(path.sep).join('/'), fs.readFileSync(path.join(ROOT, f), 'utf8')));
     if (bad.length) throw new Error(`畫面直接讀核心內部或 Snapshot 欄位 ${bad.length} 處：\n` + bad.map((v) => '        ' + v.text).join('\n'));
   });
+  await step('NodeList／HTMLCollection：src/view 不對 querySelectorAll、children、childNodes 直接呼叫陣列方法（先 Array.from），也不用測試專用的 testAll', () => {
+    // 執行期由模擬 DOM 的 NodeList_／HTMLCollection_ 抓；這裡靜態掃描，涵蓋冒煙測試沒走到的分支
+    const probe = "a.querySelectorAll('x').find(f); Array.from(a.querySelectorAll('x')).find(f); a.querySelectorAll('x').forEach(f); el.children.map(f); el.testAll('x');";
+    const scan = (src) => stripJs(src).split('\n').flatMap((line, n) => [
+      ...Array.from(line.matchAll(/(querySelectorAll\s*\([^()]*\)|\.children|\.childNodes)\s*\.\s*(find|findIndex|filter|map|flatMap|some|every|reduce|indexOf|includes|slice|concat|join|sort)\b/g)).map((m) => `${n + 1}：${m[0]}`),
+      ...(/\.testAll\s*\(/.test(line) ? [`${n + 1}：testAll`] : [])]);
+    if (scan(probe).length !== 3) throw new Error('掃描器的判斷不符：' + scan(probe).join('、'));
+    const walk = (dir) => fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.js') ? [path.join(dir, e.name)] : []));
+    const bad = walk('src/view').flatMap((f) => scan(fs.readFileSync(path.join(ROOT, f), 'utf8')).map((x) => `${f.split(path.sep).join('/')}:${x}`));
+    if (bad.length) throw new Error('瀏覽器的 NodeList／HTMLCollection 沒有這些陣列方法，請先 Array.from：\n        ' + bad.join('\n        '));
+    const nl = document.querySelectorAll('button');
+    if (Array.isArray(nl) || typeof nl.find === 'function' || typeof nl.forEach !== 'function' || typeof body.children.forEach === 'function') throw new Error('模擬 DOM 應回傳 NodeList（有 forEach、沒有 find）與 HTMLCollection（沒有 forEach）');
+  });
   await step('ELK 不在啟動時載入', () => { if (globalThis.ELK || loadedScripts.length) throw new Error('ELK 應在第一次需要分層版面時才載入'); });
   await step('載入範例並建立基準', async () => {
     await App.loadSample(); if (!$('#input-text').value.includes('TPE_CORE_RT_01')) throw new Error('範例未載入');
@@ -287,7 +313,7 @@ function viewBoundaryViolations(file, src) {
     if (!$('#welcome').classList.contains('hidden')) throw new Error('歡迎畫面未隱藏');
     const collected = App.snap.model.devices.find((device) => device.collected);
     App.select({ type: 'device', key: collected.key });
-    if (!$('#detail .chip-list') || !$('#detail .chip-list').querySelectorAll('.chip').length) throw new Error('設備收集資料標籤應使用可間隔換行的 chip-list');
+    if (!$('#detail .chip-list') || !$('#detail .chip-list').testAll('.chip').length) throw new Error('設備收集資料標籤應使用可間隔換行的 chip-list');
   });
   await step('分層版面（ELK）：所有節點都有座標、各群外框不重疊、完成後有提示', async () => {
     if (App.layoutMode !== 'elk') throw new Error('預設應為分層版面');
@@ -329,11 +355,11 @@ function viewBoundaryViolations(file, src) {
     if (sels.some((x) => !x.key || x.key === 'undefined')) throw new Error('範例資料應涵蓋每種詳情');
     sels.forEach((sel) => {
       App.select(sel);
-      $('#detail').querySelectorAll('h3').forEach((x) => {
+      $('#detail').testAll('h3').forEach((x) => {
         if (!/\bdetail-section\b/.test(x.parentNode.className)) throw new Error(`${sel.type} 詳情的標題「${x.textContent}」不是由 section() 產生`);
       });
-      $('#detail').querySelectorAll('details').forEach((d) => {
-        if (d.querySelectorAll('h3').length) throw new Error(`${sel.type} 詳情的展開區塊「${d.querySelector('summary').textContent}」內不應有標題`);
+      $('#detail').testAll('details').forEach((d) => {
+        if (d.testAll('h3').length) throw new Error(`${sel.type} 詳情的展開區塊「${d.querySelector('summary').textContent}」內不應有標題`);
       });
     });
     App.select(null);
@@ -343,7 +369,7 @@ function viewBoundaryViolations(file, src) {
     if (!il.length) throw new Error('範例資料應有推論鏈路');
     const p = Array.from(App.pairs.values()).find((x) => x.evidence === 'inferred');
     if (!p) throw new Error('推論鏈路應以推論樣式畫在圖上');
-    if (!Array.from(document.querySelectorAll('#legend .li')).some((li) => li.textContent === '推論鏈路')) throw new Error('圖例應有推論鏈路');
+    if (!Array.from(document.testAll('#legend .li')).some((li) => li.textContent === '推論鏈路')) throw new Error('圖例應有推論鏈路');
     App.graph.emit('hover', { item: { type: 'edge', id: p.id }, x: 0, y: 0 });
     if (!text('#tooltip').includes('推論鏈路')) throw new Error('提示應說明是推論鏈路');
     App.graph.emit('click', { type: 'edge', id: p.id });
@@ -356,7 +382,7 @@ function viewBoundaryViolations(file, src) {
     App.select({ type: 'interface', key: ep });
     if (!App.graph.sel.edges.has(p.id)) throw new Error('選取介面時應一併標示它的推論鏈路');
     if (!text('#detail').includes('推論鏈路')) throw new Error('介面詳情應列出推論鏈路');
-    if (Array.from(document.querySelectorAll('#legend .li')).some((li) => li.textContent.includes('L3'))) throw new Error('圖上沒有 L3 連線，圖例不應列出');
+    if (Array.from(document.testAll('#legend .li')).some((li) => li.textContent.includes('L3'))) throw new Error('圖上沒有 L3 連線，圖例不應列出');
     App.select(null);
   });
   await step('推定位置：CSS610 底下的主機畫回圖上，點選顯示推定位置', () => {
@@ -385,7 +411,7 @@ function viewBoundaryViolations(file, src) {
     if (!summary.includes('基準檢查') || !summary.includes('收集完整度')) throw new Error('缺少基準狀態與收集完整度摘要');
     if (summary.includes('網路正常') || summary.includes('即時')) throw new Error('基準摘要不可宣稱即時網路健康');
     // 斷言入口與資料的關係，而非範例才有的特定問題：大型乾淨網路（SMOKE_INPUT）可能沒有缺漏或錯誤
-    const button = (t) => $('#baseline-summary').querySelectorAll('button').find((b) => b.textContent === t);
+    const button = (t) => $('#baseline-summary').testAll('button').find((b) => b.textContent === t);
     const off = (b) => b.getAttribute('disabled') !== null; // 模擬 DOM 的 setAttribute 不會同步 .disabled
     const missing = button('查看收集缺漏');
     const expectedMissing = App.snap.coverage.filter((row) => row.collected && (row.missing.length || row.failures.length)).length;
@@ -393,7 +419,7 @@ function viewBoundaryViolations(file, src) {
     if (expectedMissing) {
       missing.click();
       if (!text('#pane-coverage').includes('有缺漏')) throw new Error('缺漏入口沒有切換至覆蓋率');
-      if ($('#pane-coverage').querySelectorAll('tbody tr').length !== expectedMissing) throw new Error('缺漏入口應預先篩選有缺漏的設備');
+      if ($('#pane-coverage').testAll('tbody tr').length !== expectedMissing) throw new Error('缺漏入口應預先篩選有缺漏的設備');
     }
     const problems = button('查看錯誤／警告');
     const firstProblem = App.snap.findings.find((f) => f.severity !== 'info');
@@ -405,21 +431,21 @@ function viewBoundaryViolations(file, src) {
   });
   await step('窄螢幕工作區切換與詳情漸進展開', () => {
     window.innerWidth = 390;
-    const workspaces = document.querySelectorAll('#mobile-workspaces button');
+    const workspaces = document.testAll('#mobile-workspaces button');
     workspaces.find((b) => b.dataset.workspace === 'checks').click();
     if ($('#main').dataset.workspace !== 'checks') throw new Error('工作區切換未顯示檢查面板');
     App.select({ type: 'device', key: App.snap.model.devices[0].key });
     if ($('#main').dataset.workspace !== 'details') throw new Error('選取資料後應切換至詳細資料工作區');
-    const folds = $('#detail').querySelectorAll('details');
+    const folds = $('#detail').testAll('details');
     if (!folds.length || !folds.some((d) => d.querySelector('summary').textContent.includes('鄰居'))) throw new Error('設備詳細資訊未提供可漸進展開的區塊');
     // 檢查兩種設備：未收集的與已收集的（已收集才有「收集到的原始輸出」等區塊）
-    const noDupTitle = () => $('#detail').querySelectorAll('details').forEach((d) => {
+    const noDupTitle = () => $('#detail').testAll('details').forEach((d) => {
       const title = d.querySelector('summary').firstChild.textContent;
-      if (d.querySelectorAll('h3').some((x) => x.textContent.startsWith(title))) throw new Error(`展開區塊「${title}」內不應再重複同名標題`);
+      if (d.testAll('h3').some((x) => x.textContent.startsWith(title))) throw new Error(`展開區塊「${title}」內不應再重複同名標題`);
     });
     noDupTitle();
     App.select({ type: 'device', key: App.snap.model.devices.find((x) => x.collected && x.data.includes('route')).key });
-    if (!$('#detail').querySelectorAll('summary').some((x) => x.textContent.startsWith('收集到的原始輸出'))) throw new Error('已收集設備應有原始輸出區塊');
+    if (!$('#detail').testAll('summary').some((x) => x.textContent.startsWith('收集到的原始輸出'))) throw new Error('已收集設備應有原始輸出區塊');
     noDupTitle();
     window.innerWidth = 1200;
     workspaces.find((b) => b.dataset.workspace === 'graph').click();
@@ -462,7 +488,7 @@ function viewBoundaryViolations(file, src) {
       const ends = g.nodes.filter((n) => n.kind === 'endpoint');
       if (App.vendorColors.size > EP.vendor.length) throw new Error('廠商色不應超過 theme 的色數');
       ends.forEach((n) => { const want = (n.vendor && App.vendorColors.get(n.vendor)) || EP.vendorFallback; if (n.color !== want) throw new Error('終端顏色應依廠商排名或歸「其他」：' + n.id); });
-      const shown = document.querySelectorAll('#legend .lg-vendor').map((li) => li.textContent);
+      const shown = document.testAll('#legend .lg-vendor').map((li) => li.textContent);
       if (shown.join('|') !== Array.from(App.vendorColors.keys()).join('|')) throw new Error('圖例的廠商應與畫面上的廠商色一致');
       return ends;
     };
@@ -480,14 +506,14 @@ function viewBoundaryViolations(file, src) {
   });
   await step('檢查結果：沒有發現的規則分成「通過」與「沒有資料可檢查」，預設收合', () => {
     const pass = App.Q.ruleStatus().filter((r) => r.status === 'pass'); if (!pass.length) return;
-    const head = () => document.querySelectorAll('#pane-findings .fgroup').find((g) => g.className.split(' ').includes('pass'));
+    const head = () => document.testAll('#pane-findings .fgroup').find((g) => g.className.split(' ').includes('pass'));
     if (!head()) throw new Error('應有「通過」區塊');
-    if (head().querySelectorAll('.rule').length) throw new Error('「通過」區塊預設應收合');
+    if (head().testAll('.rule').length) throw new Error('「通過」區塊預設應收合');
     head().querySelector('.head').click();
-    if (head().querySelectorAll('.rule').length !== pass.length || !text('#pane-findings').includes(pass[0].title)) throw new Error('展開後應列出每一條通過的規則');
+    if (head().testAll('.rule').length !== pass.length || !text('#pane-findings').includes(pass[0].title)) throw new Error('展開後應列出每一條通過的規則');
     // 每一條規則都能看到 CATALOG 的處理建議（預設收合，反引號內是等寬元素）
     const plain = (t) => String(t).replace(/`([^`]+)`/g, '$1');
-    const rows = () => head().querySelectorAll('.rule');
+    const rows = () => head().testAll('.rule');
     rows().forEach((row, n) => {
       const id = pass[n].id; const adv = row.querySelector('.advice');
       if (row.querySelector('.id').textContent !== id) throw new Error('通過的規則應依 ruleStatus 的順序列出');
@@ -503,10 +529,10 @@ function viewBoundaryViolations(file, src) {
     if (rows()[0].querySelector('.advice').getAttribute('open') !== null) throw new Error('收合的處理建議重繪後應保持收合');
     head().querySelector('.head').click();
     const nodata = App.Q.ruleStatus().filter((r) => r.status === 'nodata');
-    const nd = () => document.querySelectorAll('#pane-findings .fgroup').find((g) => g.className.split(' ').includes('nodata'));
+    const nd = () => document.testAll('#pane-findings .fgroup').find((g) => g.className.split(' ').includes('nodata'));
     if (nodata.length) {
       nd().querySelector('.head').click();
-      nd().querySelectorAll('.rule').forEach((row, n) => {
+      nd().testAll('.rule').forEach((row, n) => {
         const adv = row.querySelector('.advice');
         if (!adv || !adv.textContent.includes(plain(S.check.CATALOG[nodata[n].id].action))) throw new Error('沒有資料可檢查的 ' + nodata[n].id + ' 也應附上處理建議');
       });
@@ -538,18 +564,18 @@ function viewBoundaryViolations(file, src) {
       const i = all.findIndex((f) => f.id === id && f.entities.length); if (i < 0) return;
       const f = all[i]; App.selectFinding(i);
       if (!text('#detail').includes(f.message)) throw new Error(id + ' 的詳情應列出這筆檢查結果');
-      const blocks = $('#detail').querySelectorAll('.advice').filter((d) => d.getAttribute('data-rule-id') === id);
+      const blocks = $('#detail').testAll('.advice').filter((d) => d.getAttribute('data-rule-id') === id);
       if (!blocks.length) throw new Error(id + ' 的詳情應有常見原因與處理');
       blocks.forEach((d) => {
         if (d.tagName !== 'DETAILS' || d.getAttribute('open') !== null) throw new Error(id + ' 的常見原因與處理應預設收合');
         const t = d.textContent;
         if (!t.includes(plain(C[id].action))) throw new Error(id + ' 的詳情應顯示 CATALOG 的 action：' + C[id].action);
-        if (!C[id].causes.every((c) => d.querySelectorAll('li').some((li) => li.textContent === plain(c)))) throw new Error(id + ' 的常見原因應逐條列出');
+        if (!C[id].causes.every((c) => d.testAll('li').some((li) => li.textContent === plain(c)))) throw new Error(id + ' 的常見原因應逐條列出');
         if (t.includes('`')) throw new Error(id + ' 的處理建議不應顯示反引號');
-        const shown = d.querySelectorAll('code').map((c) => c.textContent);
+        const shown = d.testAll('code').map((c) => c.textContent);
         const want = codes(C[id].action).concat(...C[id].causes.map(codes));
         if (shown.join('\n') !== want.join('\n')) throw new Error(id + ' 反引號內的片段應依序成為等寬元素：' + JSON.stringify(shown) + ' / ' + JSON.stringify(want));
-        if (d.querySelectorAll('code').some((c) => !c.classList.contains('mono') || c.childNodes.some((n) => n instanceof El))) throw new Error(id + ' 的等寬元素應為純文字的 code.mono');
+        if (d.testAll('code').some((c) => !c.classList.contains('mono') || c.childNodes.some((n) => n instanceof El))) throw new Error(id + ' 的等寬元素應為純文字的 code.mono');
       });
     });
     // 反引號沒有成對時保留原樣，不吞掉文字；內容以文字寫入，不解析 HTML
@@ -564,7 +590,7 @@ function viewBoundaryViolations(file, src) {
     if (!dev.length && !process.env.SMOKE_INPUT) throw new Error('範例資料應有多數決推定偏離設備的檢查結果');
     dev.forEach((i) => {
       const f = all[i]; App.selectFinding(i);
-      const box = $('#detail').querySelectorAll('.finding').find((x) => x.textContent.includes(f.message));
+      const box = $('#detail').testAll('.finding').find((x) => x.textContent.includes(f.message));
       if (!box || !box.textContent.includes('依多數決推定偏離')) throw new Error(`${f.id} 應列出推定偏離的設備`);
       if (!f.deviation.deviating.every((k) => box.textContent.includes(App.Q.devName(k)))) throw new Error(`${f.id} 推定偏離的設備不完整`);
     });
@@ -578,7 +604,7 @@ function viewBoundaryViolations(file, src) {
     const endpointDev = App.snap.model.interfaces.find((i) => i.unknownPeer);
     if (endpointDev) {
       App.select({ type: 'device', key: endpointDev.dev });
-      const headings = $('#detail').querySelectorAll('h3').map((el) => el.textContent.replace(/\d+$/, ''));
+      const headings = $('#detail').testAll('h3').map((el) => el.textContent.replace(/\d+$/, ''));
       const ordered = ['檢查結果', '介面', '沒有 LLDP／CDP 鄰接的埠', '鄰居', '路由表', '收集到的原始輸出']
         .map((title) => headings.indexOf(title)).filter((i) => i >= 0);
       if (ordered.some((i, n) => n && ordered[n - 1] >= i)) throw new Error('設備詳細區塊順序不符');
@@ -620,48 +646,48 @@ function viewBoundaryViolations(file, src) {
     const rows = App.Q.macEntries(); if (!rows.length) throw new Error('清單應有資料');
     const noIp = App.snap.model.macs.filter((x) => !x.ips.length).length;
     if (rows.filter((r) => r.noIp).length < noIp) throw new Error('缺 IP 筆數不符');
-    document.querySelectorAll('#left .tabs button')[2].click();
+    document.testAll('#left .tabs button')[2].click();
     const m = App.snap.model; const ips = App.Q.ipEntries();
     const t = text('#pane-inventory');
     [`設備 ${m.devices.length + App.Q.endpointEntries().length}`, `介面 ${m.interfaces.length}`, `IP ${ips.length}`, `網段 ${m.prefixes.length}`, `MAC ${new Set(rows.map((r) => r.mac)).size}`, `VLAN ${m.vlans.length}`].forEach((x) => { if (!t.includes(x)) throw new Error('清單缺少分類：' + x); });
     if (new Set(ips.map((r) => r.ip)).size !== ips.length) throw new Error('IP 清單應去重複');
-    document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('網段')).click();
+    document.testAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('網段')).click();
     const pre = App.Q.inventory().rows.prefixes;
-    if (!pre.length || document.querySelectorAll('#pane-inventory tbody tr').length !== pre.length) throw new Error('網段清單列數應等於推導出的網段數');
+    if (!pre.length || document.testAll('#pane-inventory tbody tr').length !== pre.length) throw new Error('網段清單列數應等於推導出的網段數');
     pre.forEach((p) => { if (p.ipCount !== ips.filter((r) => S.ip.inNet(r.ip, p.net, p.len)).length) throw new Error('網段的 IP 數應等於清單中落在網段內的 IP'); });
     document.querySelector('#pane-inventory tbody tr').dispatch('keydown', { key: 'Enter' });
     if (App.sel.type !== 'interface' || !pre[0].eps.includes(App.sel.key)) throw new Error('點網段應選取設定該網段的介面');
-    const macChip = document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('MAC'));
+    const macChip = document.testAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('MAC'));
     if (new Set(rows.map((r) => r.mac)).size !== App.snap.meta.stats.macs) throw new Error('清單的不重複 MAC 數應等於總覽');
     const nEnd = App.Q.endpointEntries().length; const unk = App.snap.model.interfaces.filter((i) => i.unknownPeer).length;
     if (nEnd < unk || new Set(App.Q.endpointEntries().map((e) => e.key)).size !== unk) throw new Error('終端的不重複介面數應等於未知對端介面數，且不可少於它');
-    document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('設備')).click();
+    document.testAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('設備')).click();
     const t0 = text('#pane-inventory'); ['全部 ' + (m.devices.length + nEnd), '終端 ' + nEnd].forEach((x) => { if (!t0.includes(x)) throw new Error('設備清單缺少分類：' + x); });
     // 兩層選項：清單種類是分段按鈕，種類內是篩選選項；0 筆的篩選停用
-    const seg = $('#pane-inventory .seg'); if (!seg || seg.querySelectorAll('button').length !== 6) throw new Error('清單種類應為分段按鈕');
-    const sub = document.querySelectorAll('#pane-inventory .summary').find((x) => x.className.split(' ').includes('sub'));
+    const seg = $('#pane-inventory .seg'); if (!seg || seg.testAll('button').length !== 6) throw new Error('清單種類應為分段按鈕');
+    const sub = document.testAll('#pane-inventory .summary').find((x) => x.className.split(' ').includes('sub'));
     if (!sub) throw new Error('種類內的篩選應是第二層');
-    const zero = sub.querySelectorAll('.chip').find((c) => / 0$/.test(c.textContent));
+    const zero = sub.testAll('.chip').find((c) => / 0$/.test(c.textContent));
     if (zero && (!zero.className.includes('off') || zero.getAttribute('aria-disabled') !== 'true')) throw new Error('0 筆的篩選應停用');
     const firstRow = document.querySelector('#pane-inventory tbody tr');
     if (!firstRow || firstRow.getAttribute('tabindex') !== '0') throw new Error('可點選清單列應可透過鍵盤聚焦');
     firstRow.dispatch('keydown', { key: 'Enter' });
     if (App.sel.type !== 'device') throw new Error('清單列按 Enter 應選取設備');
-    document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('終端')).click();
-    if (document.querySelectorAll('#pane-inventory tbody tr').length !== Math.min(nEnd, 500)) throw new Error('終端篩選列數不符');
-    const ipChip = document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('IP')); ipChip.click();
-    document.querySelectorAll('#pane-inventory th')[0].dispatch('click');
-    const col = () => document.querySelectorAll('#pane-inventory tbody tr').map((tr) => tr.querySelectorAll('td')[0].textContent);
+    document.testAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('終端')).click();
+    if (document.testAll('#pane-inventory tbody tr').length !== Math.min(nEnd, 500)) throw new Error('終端篩選列數不符');
+    const ipChip = document.testAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('IP')); ipChip.click();
+    document.testAll('#pane-inventory th')[0].dispatch('click');
+    const col = () => document.testAll('#pane-inventory tbody tr').map((tr) => tr.testAll('td')[0].textContent);
     const asc = col(); const num = (x) => x.split('.').reduce((n, p) => n * 256 + +p, 0);
     if (!asc.length || asc.some((x, i) => i && num(asc[i - 1]) > num(x))) throw new Error('IP 清單應依 IP 數值升冪');
-    document.querySelectorAll('#pane-inventory th')[0].dispatch('click');
+    document.testAll('#pane-inventory th')[0].dispatch('click');
     const desc = col(); if (asc.length > 1 && desc[0] === asc[0]) throw new Error('再點一次應反向排序');
-    document.querySelectorAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('MAC')).click();
+    document.testAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('MAC')).click();
     macChip.click(); const t2 = text('#pane-inventory'); if (!t2.includes('缺 IP ' + new Set(rows.filter((r) => r.noIp).map((r) => r.mac)).size) || !t2.includes('全部 ' + App.snap.meta.stats.macs)) throw new Error('缺 IP 摘要不正確');
     App.select(null); const ov = text('#right'); const uniq = new Set(App.snap.model.arps.map((x) => x.ip)).size;
     if (!ov.includes('IP（ARP）' + uniq.toLocaleString()) && !ov.includes('IP（ARP）')) throw new Error('總覽缺少 IP（ARP）');
   });
-  await step('覆蓋率分頁', () => { document.querySelectorAll('#left .tabs button')[1].click(); if (!text('#pane-coverage').includes(process.env.SMOKE_INPUT ? '有缺漏 0' : '有缺漏 1')) throw new Error('覆蓋率摘要不正確'); });
+  await step('覆蓋率分頁', () => { document.testAll('#left .tabs button')[1].click(); if (!text('#pane-coverage').includes(process.env.SMOKE_INPUT ? '有缺漏 0' : '有缺漏 1')) throw new Error('覆蓋率摘要不正確'); });
   await step('比對分頁', async () => {
     const inp = $('#pane-compare').querySelector('input'); inp.files = [{ name: 'expected-sample.json', text: async () => fs.readFileSync(path.join(ROOT, 'samples/expected-sample.json'), 'utf8') }];
     inp.dispatch('change', { target: inp }); await new Promise((r) => setTimeout(r, 20));
@@ -751,28 +777,28 @@ function viewBoundaryViolations(file, src) {
     const before = problems();
     if (!before.length) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有錯誤或警告'); }
     const f = before[0]; const key = Q.findingKey(f);
-    document.querySelectorAll('#left .tabs button')[0].click();
-    const group = (id) => document.querySelectorAll('#pane-findings .fgroup').find((x) => {
+    document.testAll('#left .tabs button')[0].click();
+    const group = (id) => document.testAll('#pane-findings .fgroup').find((x) => {
       const el = x.querySelector('.head .id'); return el && el.textContent === id && !x.className.includes('handled');
     });
-    const editBtn = (x) => document.querySelectorAll('#pane-findings .ledger-edit').find((b) => b.getAttribute('aria-label') === '處理：' + x.message);
+    const editBtn = (x) => document.testAll('#pane-findings .ledger-edit').find((b) => b.getAttribute('aria-label') === '處理：' + x.message);
     const editor = () => $('#pane-findings').querySelector('.ledger-editor');
     const errText = () => { const e = editor() && editor().querySelector('.ledger-error'); return e && !e.classList.contains('hidden') ? e.textContent : ''; };
     const fill = async (status, o) => {
       const ed = editor(); if (!ed) throw new Error('按「處理」後應出現狀態欄位');
       ed.querySelector('select').value = status;
-      const set = (cls, v) => { if (v !== undefined) ed.querySelectorAll('input').find((i) => i.className.includes(cls)).value = v; };
+      const set = (cls, v) => { if (v !== undefined) ed.testAll('input').find((i) => i.className.includes(cls)).value = v; };
       set('ledger-note', o.note); set('ledger-waiver-reason', o.reason); set('ledger-waiver-until', o.until);
-      ed.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === '儲存處理狀態：' + f.message).click();
+      ed.testAll('button').find((b) => b.getAttribute('aria-label') === '儲存處理狀態：' + f.message).click();
       await new Promise((r) => setTimeout(r, 10));
     };
     if (!editBtn(f)) group(f.id).querySelector('.head').click();
     const snapBefore = JSON.stringify(App.snap);
     editBtn(f).click();
-    const opts = editor().querySelector('select').querySelectorAll('option').map((o) => o.getAttribute('value'));
+    const opts = editor().querySelector('select').testAll('option').map((o) => o.getAttribute('value'));
     const it0 = VA.ledgerItem(f);
     if (opts.join() !== [it0.status].concat(LG.USER_TO[it0.status]).join()) throw new Error('可選的狀態應是目前狀態加上 USER_TO：' + opts);
-    editor().querySelectorAll('button').find((b) => b.textContent === '取消').click();
+    editor().testAll('button').find((b) => b.textContent === '取消').click();
     if (editor()) throw new Error('按「取消」應關閉欄位');
     // 不合法：仍出現在最新一輪的項目不能手動標為 fixed；核心的錯誤要顯示，處理紀錄不變
     editBtn(f).click();
@@ -795,9 +821,9 @@ function viewBoundaryViolations(file, src) {
     let saved = await S.store.get('ledger'); ackedKey = key;
     if (!saved.items[key] || saved.items[key].status !== 'accepted') throw new Error('變更應存進 store 的 ledger');
     // 已處理分組：依狀態，預設收合
-    const handled = (s) => document.querySelectorAll('#pane-findings .fgroup').find((x) => x.className.includes('handled') && x.getAttribute('data-status') === s);
+    const handled = (s) => document.testAll('#pane-findings .fgroup').find((x) => x.className.includes('handled') && x.getAttribute('data-status') === s);
     if (!handled('accepted')) throw new Error('應有「可接受」的已處理分組');
-    if (handled('accepted').querySelectorAll('.fitem').length) throw new Error('已處理分組預設應收合');
+    if (handled('accepted').testAll('.fitem').length) throw new Error('已處理分組預設應收合');
     handled('accepted').querySelector('.head').click();
     const gt = handled('accepted').textContent;
     if (!gt.includes(f.message) || !gt.includes('豁免原因：' + reason1) || !gt.includes('備註：備註一')) throw new Error('已處理的項目應顯示原因與備註');
@@ -807,7 +833,7 @@ function viewBoundaryViolations(file, src) {
     const nHandled = all.filter((x) => x.severity !== 'info' && !VA.isPending(x)).length;
     if (!summary.includes(`另有 ${nHandled} 項已處理`)) throw new Error('基準摘要應註明已處理筆數：' + summary);
     // 改為誤報：備註以公式開頭，CSV 要防公式注入；規則品質列出這條規則
-    document.querySelectorAll('#pane-findings .ledger-edit').find((b) => b.getAttribute('aria-label') === '處理：' + f.message).click();
+    document.testAll('#pane-findings .ledger-edit').find((b) => b.getAttribute('aria-label') === '處理：' + f.message).click();
     const note2 = '=SUM(A1) 是誤判';
     await fill('false-positive', { note: note2 });
     const it2 = VA.ledgerItem(f);
@@ -815,11 +841,11 @@ function viewBoundaryViolations(file, src) {
     if (it2.history[it2.history.length - 1].waiver.reason !== reason1) throw new Error('被移除的豁免應記在歷程');
     App.selectFinding(all.indexOf(f));
     if (text('#detail').includes(f.message) && !text('#detail').includes(RV.statusText('false-positive'))) throw new Error('詳情的檢查結果應標出處理狀態');
-    document.querySelectorAll('#left .tabs button')[0].click();
-    const fp = document.querySelectorAll('#pane-findings .fgroup').find((x) => x.className.includes('fp-rules'));
+    document.testAll('#left .tabs button')[0].click();
+    const fp = document.testAll('#pane-findings .fgroup').find((x) => x.className.includes('fp-rules'));
     if (!fp) throw new Error('有誤報時應列出誤報率最高的規則');
     fp.querySelector('.head').click();
-    const fpRow = document.querySelectorAll('#pane-findings .fp-rules .rule').find((r) => r.getAttribute('data-rule-id') === f.id);
+    const fpRow = document.testAll('#pane-findings .fp-rules .rule').find((r) => r.getAttribute('data-rule-id') === f.id);
     const st = LG.ruleStats(VA.ledger()).find((r) => r.id === f.id);
     if (!fpRow || !fpRow.textContent.includes(`誤報 ${st.falsePositive} / ${st.total}`)) throw new Error('誤報率應與 S.ledger.ruleStats 一致');
     // 匯出：舊欄位由處理紀錄對應；Markdown 標示狀態
@@ -831,8 +857,8 @@ function viewBoundaryViolations(file, src) {
     const md = X.findingsMarkdown(App.Q, opts2);
     if (!md.includes(`**${RV.statusText('false-positive')}**（${userAt}）`) || !md.includes('備註：') || !md.includes('- 處理紀錄：')) throw new Error('Markdown 應標示處理狀態與備註');
     // 改回待處理：回到原本的分組
-    document.querySelectorAll('#pane-findings .fgroup').filter((x) => x.className.includes('handled') && !x.querySelectorAll('.fitem').length).forEach((g) => g.querySelector('.head').click());
-    document.querySelectorAll('#pane-findings .ledger-edit').find((b) => b.getAttribute('aria-label') === '處理：' + f.message).click();
+    document.testAll('#pane-findings .fgroup').filter((x) => x.className.includes('handled') && !x.testAll('.fitem').length).forEach((g) => g.querySelector('.head').click());
+    document.testAll('#pane-findings .ledger-edit').find((b) => b.getAttribute('aria-label') === '處理：' + f.message).click();
     await fill('open', { note: '' });
     if (VA.ledgerStatus(f) !== 'open' || problems().length !== before.length) throw new Error('改回待處理後應算回待處理的問題');
   });
@@ -849,16 +875,16 @@ function viewBoundaryViolations(file, src) {
       if (!first && d === null && Q.devices().some((x) => f.entities.some((e) => owns(x.key, e)))) throw new Error(`${f.id} 的實體屬於某台設備，不應列為不屬於任何設備`);
     });
     if (R.findingDevice(Q, { entities: [] }) !== null || R.findingDevice(Q, { entities: [{ type: 'mac', key: '000000000000' }] }) !== null) throw new Error('沒有實體或只有 MAC 的檢查結果不屬於任何設備');
-    document.querySelectorAll('#left .tabs button')[0].click();
+    document.testAll('#left .tabs button')[0].click();
     // 打開全部嚴重度，再切到依設備
     for (let n = 0; n < 3; n++) {
-      const off = $('#pane-findings').querySelector('.summary').querySelectorAll('.chip').find((c) => c.getAttribute('aria-pressed') === 'false' && c.getAttribute('aria-disabled') !== 'true');
+      const off = $('#pane-findings').querySelector('.summary').testAll('.chip').find((c) => c.getAttribute('aria-pressed') === 'false' && c.getAttribute('aria-disabled') !== 'true');
       if (off) off.click();
     }
-    const seg = (k) => $('#pane-findings').querySelectorAll('button').find((b) => b.getAttribute('data-group-by') === k);
+    const seg = (k) => $('#pane-findings').testAll('button').find((b) => b.getAttribute('data-group-by') === k);
     seg('device').click();
     if (seg('device').getAttribute('aria-pressed') !== 'true') throw new Error('「依設備」應標示為選取');
-    const groups = () => $('#pane-findings').querySelectorAll('.fgroup').filter((g) => g.className.split(' ').includes('by-device'));
+    const groups = () => $('#pane-findings').testAll('.fgroup').filter((g) => g.className.split(' ').includes('by-device'));
     const want = new Map();
     R.sortByDevice(Q, all).forEach((r) => { if (S.view.app.isPending(r.f)) S.util.getOr(want, r.dev, () => []).push(r.idx); });
     const keys = Array.from(want.keys());
@@ -867,14 +893,14 @@ function viewBoundaryViolations(file, src) {
     gs.forEach((g, n) => {
       const name = keys[n] === null ? '不屬於任何設備' : Q.devName(keys[n]);
       if (g.querySelector('.head .title').textContent !== name) throw new Error('分組應依設備名稱排列：' + g.querySelector('.head .title').textContent);
-      const chips = g.querySelector('.head').querySelectorAll('.chip');
+      const chips = g.querySelector('.head').testAll('.chip');
       if (chips[chips.length - 1].textContent !== String(want.get(keys[n]).length)) throw new Error(`${name} 的筆數不符`);
     });
     if (want.has(null) && !gs[gs.length - 1].className.includes('no-device')) throw new Error('不屬於任何設備的應在最後一組');
     if (!process.env.SMOKE_INPUT && !want.has(null)) throw new Error('範例資料應有不屬於任何設備的檢查結果（例如 A01）');
     // 展開一組：每筆標出規則代碼，且都屬於這台設備
     gs[0].querySelector('.head').click();
-    const items = groups()[0].querySelectorAll('.fitem');
+    const items = groups()[0].testAll('.fitem');
     if (items.length !== Math.min(100, want.get(keys[0]).length)) throw new Error('展開後應列出這台設備的檢查結果');
     items.forEach((it, n) => {
       const f = all[want.get(keys[0])[n]];
@@ -909,7 +935,7 @@ function viewBoundaryViolations(file, src) {
     const plain = parseCsv(f2[0].text.replace(/^﻿/, '')).slice(1);
     if (plain.some((r, n) => r[1] !== all[n].id || r[3].replace(/^'/, '') !== all[n].message)) throw new Error('取消依設備排序後應回到基準的順序');
     seg('rule').click();
-    if (groups().length || !$('#pane-findings').querySelectorAll('.fgroup .head .id').length) throw new Error('切回「依規則」應恢復依規則代碼分組');
+    if (groups().length || !$('#pane-findings').testAll('.fgroup .head .id').length) throw new Error('切回「依規則」應恢復依規則代碼分組');
   });
   await step('防火牆：點選指向規則或服務的檢查結果，定位到該設備防火牆畫面的那一列', () => {
     const Q = App.Q; const all = App.snap.findings;
@@ -927,7 +953,7 @@ function viewBoundaryViolations(file, src) {
       if (!row.textContent.includes(f.id)) throw new Error(`${f.id} 定位的列應標出這筆檢查結果`);
       if (e.type === 'rule' && !row.textContent.includes(Q.getFirewallRule(e.key).action)) throw new Error('定位的列應是那條規則');
       if (e.type === 'service' && !row.textContent.includes(S.keys.splitEp(e.key)[1])) throw new Error('定位的列應是那個服務');
-      if (row.querySelectorAll('td')[0].style.background !== S.view.theme.firewall.focus.bg) throw new Error('定位列的顏色應取自 theme');
+      if (row.testAll('td')[0].style.background !== S.view.theme.firewall.focus.bg) throw new Error('定位列的顏色應取自 theme');
     });
     if (!process.env.SMOKE_INPUT && !(types.has('rule') && types.has('service'))) throw new Error('範例資料應同時有指向規則與服務的檢查結果');
     // 找不到的規則或服務：不報錯，說明原因並標出設備
@@ -943,7 +969,7 @@ function viewBoundaryViolations(file, src) {
     if (!rules.length) throw new Error('應有防火牆規則');
     const dev = rules.reduce((best, r) => (Q.firewallRulesOf(r.dev).length > Q.firewallRulesOf(best).length ? r.dev : best), rules[0].dev);
     App.select({ type: 'device', key: dev });
-    const link = $('#detail').querySelectorAll('a').find((a) => a.textContent === '查看防火牆規則與服務');
+    const link = $('#detail').testAll('a').find((a) => a.textContent === '查看防火牆規則與服務');
     if (!link) throw new Error('設備詳情應有防火牆摘要與入口');
     // WAN 狀態用語：摘要與防火牆畫面共用 V.firewall.zoneStatus()；三種狀態都可區分且標示推論
     const ZS = S.view.firewall.zoneStatus; const zoneNow = Q.firewallZone(dev);
@@ -957,21 +983,21 @@ function viewBoundaryViolations(file, src) {
     if (App.sel.type !== 'firewall' || App.sel.dev !== dev) throw new Error('入口應開啟該設備的防火牆畫面');
     // chain 依 Q.firewallChains 的順序，每個 chain 一個可展開區塊；展開後列數等於規則數，position 由小到大
     const chains = Q.firewallChains(dev);
-    const folds = $('#detail').querySelectorAll('details').filter((d) => d.querySelector('.fw-chain'));
+    const folds = $('#detail').testAll('details').filter((d) => d.querySelector('.fw-chain'));
     if (folds.map((d) => d.querySelector('summary').firstChild.textContent).join('|') !== chains.map((c) => c.chain).join('|')) throw new Error('chain 的順序應與 Q.firewallChains 一致');
-    const heads = $('#detail').querySelectorAll('h3').map((x) => x.firstChild.textContent);
+    const heads = $('#detail').testAll('h3').map((x) => x.firstChild.textContent);
     const fams = S.util.uniq(chains.map((c) => c.family + ' ' + c.table));
     const famIdx = fams.map((k) => heads.findIndex((x) => x === k.replace(/^ip /, 'IPv4 ').replace(/^ipv6 /, 'IPv6 ')));
     if (famIdx.some((i) => i < 0) || famIdx.some((x, i) => i && famIdx[i - 1] > x)) throw new Error('位址族與表的分組應依序列出：' + heads.join('|'));
     folds.forEach((d, n) => {
       d.dispatch('toggle');
-      const trs = d.querySelectorAll('tbody tr'); const c = chains[n];
+      const trs = d.testAll('tbody tr'); const c = chains[n];
       if (trs.length !== c.rules) throw new Error(`${c.chain} 的列數應等於規則數`);
-      const pos = trs.map((tr) => Number(tr.querySelectorAll('td')[0].textContent));
+      const pos = trs.map((tr) => Number(tr.testAll('td')[0].textContent));
       if (pos.some((x, i) => i && pos[i - 1] > x)) throw new Error(`${c.chain} 應依 position 排列`);
       const rows = Q.firewallRuleRows(dev, { family: c.family, table: c.table, chain: c.chain });
       trs.forEach((tr, i) => {
-        const r = rows[i].rule; const act = tr.querySelectorAll('td')[1].firstChild;
+        const r = rows[i].rule; const act = tr.testAll('td')[1].firstChild;
         const want = S.view.theme.firewall.action[r.action] || S.view.theme.firewall.action.other;
         if (act.style.color !== want) throw new Error('規則動作的顏色應取自 theme');
         if (!tr.textContent.includes(`第 ${r.src[0][1]} 行`)) throw new Error('每列應有原文行號');
@@ -979,7 +1005,7 @@ function viewBoundaryViolations(file, src) {
       if (c.jumpedFrom.length && !d.textContent.includes('由這些規則 jump 進來')) throw new Error('有規則 jump 進來的 chain 應列出來源規則');
     });
     // 原文行號可開啟
-    const a = $('#detail').querySelectorAll('.fw-chain a').find((x) => /^第 \d+ 行$/.test(x.textContent));
+    const a = $('#detail').testAll('.fw-chain a').find((x) => /^第 \d+ 行$/.test(x.textContent));
     $('#dlg-raw').close(); a.click();
     if (!$('#dlg-raw').open || !text('#raw-title').includes(a.textContent.replace(/\D/g, ''))) throw new Error('點原文行號應開啟原文');
     $('#dlg-raw').close();
@@ -1003,7 +1029,7 @@ function viewBoundaryViolations(file, src) {
       const f = all[i]; const key = Q.findingKey(f);
       App.selectFinding(i);
       if (!text('#detail').includes('修正（停用規則）')) throw new Error(`${f.id} 的防火牆畫面應有修正區塊`);
-      const box = $('#detail').querySelectorAll('.fw-fix').find((b) => b.getAttribute('data-finding') === key);
+      const box = $('#detail').testAll('.fw-fix').find((b) => b.getAttribute('data-finding') === key);
       if (!box) throw new Error(`${f.id} 的修正應對應它的 findingKey`);
       const plan = RM.plan(Q, [key]);
       const it = plan.items.find((x) => x.findingKey === key);
@@ -1034,7 +1060,7 @@ function viewBoundaryViolations(file, src) {
       App.select({ type: 'firewall', dev, key: dev });
       const keys = S.util.uniq(Q.findingsFor('device', dev).filter((f) => f.entities.some((e) => e.type === 'rule') && RM.levelOf(f.id) !== 'manual').map((f) => Q.findingKey(f)));
       const plan = RM.plan(Q, keys);
-      const fold = $('#detail').querySelectorAll('details').find((d) => d.querySelector('summary').textContent.startsWith('修正'));
+      const fold = $('#detail').testAll('details').find((d) => d.querySelector('summary').textContent.startsWith('修正'));
       if (!fold || fold.querySelector('summary .chip').textContent !== String(plan.items.length + plan.skipped.length)) throw new Error('設備的防火牆畫面應收合列出全部修正與筆數');
       // 在修正計畫中開啟：選取就是這些 findingKey
       fold.querySelector('.open-patch').click();
@@ -1062,8 +1088,8 @@ function viewBoundaryViolations(file, src) {
       if (!header) throw new Error('缺少標題列');
       return rows;
     };
-    document.querySelectorAll('#left .tabs button')[1].click();
-    const btn = $('#pane-coverage').querySelectorAll('button').find((b) => b.textContent === '匯出未收集設備的 devices.csv 草稿');
+    document.testAll('#left .tabs button')[1].click();
+    const btn = $('#pane-coverage').testAll('button').find((b) => b.textContent === '匯出未收集設備的 devices.csv 草稿');
     const devs = S.util.uniq(all.filter((f) => f.id === 'C01').map((f) => f.entities.find((e) => e.type === 'device').key)).map((k) => Q.getDevice(k));
     if (!btn) throw new Error('覆蓋率分頁應有匯出 devices.csv 草稿的按鈕');
     if ((btn.getAttribute('disabled') !== null) !== !devs.length) throw new Error('沒有 C01 時按鈕應停用');
@@ -1119,9 +1145,9 @@ function viewBoundaryViolations(file, src) {
       if (!new RegExp('\\.' + c + '\\b[^{]*\\{').test(css)) throw new Error('缺少 .' + c + ' 樣式');
     });
     if (/font-weight:\s*(550|650)/.test(css)) throw new Error('字重只用 400／600／700');
-    const legend = Array.from(document.querySelectorAll('#legend .li'));
-    if (document.querySelectorAll('#legend .lg-group').length !== 5) throw new Error('圖例應分為五類');
-    const groupTitles = document.querySelectorAll('#legend .lg-title').map((el) => el.textContent);
+    const legend = Array.from(document.testAll('#legend .li'));
+    if (document.testAll('#legend .lg-group').length !== 5) throw new Error('圖例應分為五類');
+    const groupTitles = document.testAll('#legend .lg-title').map((el) => el.textContent);
     if (groupTitles.join('|') !== '設備|終端|連線|連線註記|標示') throw new Error('圖例分類順序應為設備、終端、連線、連線註記、標示');
     if (!document.querySelector('#legend .legend-body').classList.contains('hidden')) throw new Error('圖例預設應收合');
     document.querySelector('#legend .legend-head').click();
@@ -1177,7 +1203,7 @@ function viewBoundaryViolations(file, src) {
     const devs = S.util.uniq(blocks.filter((b) => b.devKey && (b.collectedAt || b.failure)).map((b) => b.devKey));
     devs.forEach((dk) => {
       App.select({ type: 'device', key: dk });
-      const fold = $('#detail').querySelectorAll('details').find((d) => d.querySelector('summary').textContent.startsWith('收集到的原始輸出'));
+      const fold = $('#detail').testAll('details').find((d) => d.querySelector('summary').textContent.startsWith('收集到的原始輸出'));
       if (!fold) throw new Error(dk + ' 應有原始輸出區塊');
       const t = fold.textContent;
       blocks.filter((b) => b.devKey === dk).forEach((b) => {
@@ -1191,13 +1217,13 @@ function viewBoundaryViolations(file, src) {
     row.missing = [];
     S.view.app.load(clone, null);
     const gaps = clone.coverage.filter((r) => r.collected && (r.missing.length || r.failures.length));
-    document.querySelectorAll('#left .tabs button')[1].click();
+    document.testAll('#left .tabs button')[1].click();
     if (!text('#pane-coverage').includes('有缺漏 ' + gaps.length)) throw new Error('有缺漏應包含只有收集失敗的設備');
-    const b = $('#baseline-summary').querySelectorAll('button').find((x) => x.textContent === '查看收集缺漏');
+    const b = $('#baseline-summary').testAll('button').find((x) => x.textContent === '查看收集缺漏');
     if (b.getAttribute('disabled') !== null) throw new Error('只有收集失敗時，收集缺漏入口也應可用');
     if (!text('#baseline-summary').includes(`${gaps.length} 台有必要資料缺漏`)) throw new Error('基準摘要的缺漏數應包含收集失敗');
     b.click();
-    const tr = $('#pane-coverage').querySelectorAll('tbody tr');
+    const tr = $('#pane-coverage').testAll('tbody tr');
     if (tr.length !== gaps.length) throw new Error('缺漏篩選列數應等於有缺漏的設備數');
     const t = text('#pane-coverage');
     gaps.forEach((r) => r.failures.forEach((x) => {
@@ -1212,19 +1238,19 @@ function viewBoundaryViolations(file, src) {
     App.select({ type: 'rule', key: disabled.key });
     const row = $('#detail').querySelector('.focus');
     if (!row || !row.className.includes('disabled') || !row.textContent.includes('停用')) throw new Error('停用的規則應標示');
-    if (row.querySelectorAll('td')[0].style.opacity !== String(S.view.theme.firewall.disabledAlpha)) throw new Error('停用規則的透明度應取自 theme');
+    if (row.testAll('td')[0].style.opacity !== String(S.view.theme.firewall.disabledAlpha)) throw new Error('停用規則的透明度應取自 theme');
     const jumped = Q.firewallChains(dev).find((c) => c.jumpedFrom.length);
     if (jumped) {
       App.select({ type: 'firewall', dev });
-      const d = $('#detail').querySelectorAll('details').find((x) => x.querySelector('summary').firstChild.textContent === jumped.chain);
+      const d = $('#detail').testAll('details').find((x) => x.querySelector('summary').firstChild.textContent === jumped.chain);
       d.dispatch('toggle');
-      const a = d.querySelectorAll('a').find((x) => x.textContent.startsWith(Q.getFirewallRule(jumped.jumpedFrom[0]).chain + ' #'));
+      const a = d.testAll('a').find((x) => x.textContent.startsWith(Q.getFirewallRule(jumped.jumpedFrom[0]).chain + ' #'));
       if (!a) throw new Error('jump 來源應可點選');
       a.click(); if (App.sel.type !== 'rule' || App.sel.key !== jumped.jumpedFrom[0]) throw new Error('點 jump 來源應定位到那條規則');
     }
     App.select({ type: 'firewall', dev });
     const defaults = Q.ipServicesOf(dev).filter((s) => s.basis === 'default');
-    const svcRows = $('#detail').querySelectorAll('tbody tr').filter((tr) => Q.ipServicesOf(dev).some((s) => tr.querySelectorAll('td')[0].textContent === s.name));
+    const svcRows = $('#detail').testAll('tbody tr').filter((tr) => Q.ipServicesOf(dev).some((s) => tr.testAll('td')[0].textContent === s.name));
     if (svcRows.filter((tr) => tr.textContent.includes('預設值')).length !== defaults.length) throw new Error('只有 basis 為 default 的服務標示「預設值」');
     // 無法解碼的註解：以基準副本標記一條規則
     const clone = JSON.parse(JSON.stringify(App.snap));
@@ -1242,9 +1268,9 @@ function viewBoundaryViolations(file, src) {
     await buildInput(full);
     const expect = S.compare.snapshots(S.query(JSON.parse(oldJson)), App.Q);
     if (!expect.items.some((i) => i.effect === 'new-exposure')) throw new Error('測試資料應產生新暴露');
-    document.querySelectorAll('#left .tabs button')[3].click();
+    document.testAll('#left .tabs button')[3].click();
     const load = async (name, body) => {
-      const inp = $('#pane-compare').querySelectorAll('input')[1];
+      const inp = $('#pane-compare').testAll('input')[1];
       inp.files = [{ name, text: async () => body }]; inp.dispatch('change', { target: inp }); await new Promise((r) => setTimeout(r, 20));
     };
     const keysBefore = JSON.stringify(await S.store.get('last'));
@@ -1254,25 +1280,25 @@ function viewBoundaryViolations(file, src) {
     Object.entries({ added: '新增', removed: '移除', changed: '變更' }).forEach(([k, label]) => {
       if (!t.includes(`${label} ${expect.summary[k]}`)) throw new Error('摘要應列出' + label + '筆數');
     });
-    const cats = pane().querySelectorAll('.diff-cat').map((x) => x.getAttribute('data-category'));
+    const cats = pane().testAll('.diff-cat').map((x) => x.getAttribute('data-category'));
     const wantCats = ['device', 'link', 'vlan', 'ip', 'firewall', 'finding'].filter((c) => expect.items.some((i) => i.category === c));
     if (cats.join() !== wantCats.join()) throw new Error('應依類別分組並依序列出：' + cats);
     const kids = pane().childNodes;
     if (kids.indexOf(pane().querySelector('.diff-summary')) > kids.indexOf(pane().querySelector('.diff-cat'))) throw new Error('摘要應在分組上方');
     expect.items.forEach((i) => { if (!t.includes(i.message)) throw new Error('缺少差異：' + i.message); });
-    const exposureRows = pane().querySelectorAll('tbody tr').filter((tr) => tr.className.includes('exposure'));
+    const exposureRows = pane().testAll('tbody tr').filter((tr) => tr.className.includes('exposure'));
     if (exposureRows.length !== expect.items.filter((i) => i.effect === 'new-exposure').length) throw new Error('每個新暴露都應醒目標示');
-    if (!exposureRows.every((tr) => tr.querySelectorAll('td')[0].style.background === S.view.theme.diff.exposureBg && tr.textContent.includes('新暴露'))) throw new Error('新暴露的顏色應取自 theme');
+    if (!exposureRows.every((tr) => tr.testAll('td')[0].style.background === S.view.theme.diff.exposureBg && tr.textContent.includes('新暴露'))) throw new Error('新暴露的顏色應取自 theme');
     exposureRows[0].click();
     if (App.sel.type !== 'rule' || !App.Q.getFirewallRule(App.sel.key)) throw new Error('點新暴露的規則應定位到防火牆規則');
-    const filterBtn = pane().querySelectorAll('button').find((b) => b.textContent.startsWith('新暴露'));
+    const filterBtn = pane().testAll('button').find((b) => b.textContent.startsWith('新暴露'));
     filterBtn.click();
-    if (pane().querySelectorAll('tbody tr').some((tr) => !tr.className.includes('exposure'))) throw new Error('新暴露篩選應只列新暴露');
+    if (pane().testAll('tbody tr').some((tr) => !tr.className.includes('exposure'))) throw new Error('新暴露篩選應只列新暴露');
     if (JSON.stringify(await S.store.get('last')) !== keysBefore) throw new Error('比對結果不應存進 store');
     // schema 不同：顯示核心回報的原因，不比對
     const old1 = JSON.parse(oldJson); old1.meta.schema = 'ssot-snapshot/1'; old1.model = {};
     await load('old-v1.json', JSON.stringify(old1));
-    if (!pane().textContent.includes('schema') || pane().querySelectorAll('.diff-cat').length) throw new Error('schema 不同時應顯示原因、不比對');
+    if (!pane().textContent.includes('schema') || pane().testAll('.diff-cat').length) throw new Error('schema 不同時應顯示原因、不比對');
     await load('bad.json', '{not json');
     if (!pane().textContent.includes('無法讀取')) throw new Error('JSON 錯誤時應說明');
     // 匯出預期資料：ssot-expected/1，和同一份基準比對全部一致
@@ -1290,16 +1316,16 @@ function viewBoundaryViolations(file, src) {
   await step('只看新出現的：依舊基準篩選；版本不同時比對結果與篩選都提示「新出現的可能來自新版檢查」，版本相同時沒有提示', async () => {
     const Q = App.Q; const all = App.snap.findings; const key = Q.findingKey;
     const loadOld = async (name, body) => {
-      document.querySelectorAll('#left .tabs button')[3].click();
-      const inp = $('#pane-compare').querySelectorAll('input')[1];
+      document.testAll('#left .tabs button')[3].click();
+      const inp = $('#pane-compare').testAll('input')[1];
       inp.files = [{ name, text: async () => body }]; inp.dispatch('change', { target: inp }); await new Promise((r) => setTimeout(r, 20));
-      document.querySelectorAll('#left .tabs button')[0].click();
+      document.testAll('#left .tabs button')[0].click();
     };
-    const onlyNew = () => $('#pane-findings').querySelectorAll('.chip').find((c) => c.textContent.startsWith('只看新出現的'));
+    const onlyNew = () => $('#pane-findings').testAll('.chip').find((c) => c.textContent.startsWith('只看新出現的'));
     const versionHint = () => $('#pane-findings').querySelector('.only-new-version');
-    const diffWarnings = () => $('#pane-compare').querySelectorAll('.diff-warning');
+    const diffWarnings = () => $('#pane-compare').testAll('.diff-warning');
     // 沒有可用的舊基準（上一步最後載入的是壞掉的 JSON）：停用並說明原因
-    document.querySelectorAll('#left .tabs button')[0].click();
+    document.testAll('#left .tabs button')[0].click();
     if (!onlyNew() || onlyNew().getAttribute('aria-disabled') !== 'true') throw new Error('沒有舊基準時「只看新出現的」應停用');
     if (!text('#pane-findings').includes('載入舊基準後')) throw new Error('停用時應說明原因');
     const count = new Map(); all.forEach((f) => count.set(key(f), (count.get(key(f)) || 0) + 1));
@@ -1318,22 +1344,22 @@ function viewBoundaryViolations(file, src) {
     onlyNew().click();
     if (onlyNew().getAttribute('aria-pressed') !== 'true') throw new Error('「只看新出現的」應可切換');
     for (let n = 0; n < 200; n++) {
-      const head = $('#pane-findings').querySelectorAll('.fgroup').filter((g) => !/\b(handled|rules)\b/.test(g.className)).map((g) => g.querySelector('.head')).find((x) => x.getAttribute('aria-expanded') === 'false');
+      const head = $('#pane-findings').testAll('.fgroup').filter((g) => !/\b(handled|rules)\b/.test(g.className)).map((g) => g.querySelector('.head')).find((x) => x.getAttribute('aria-expanded') === 'false');
       if (!head) break; head.click();
     }
-    const shown = $('#pane-findings').querySelectorAll('.fgroup').filter((g) => !/\b(handled|rules)\b/.test(g.className)).flatMap((g) => g.querySelectorAll('.fitem'));
+    const shown = $('#pane-findings').testAll('.fgroup').filter((g) => !/\b(handled|rules)\b/.test(g.className)).flatMap((g) => g.testAll('.fitem'));
     if (!shown.length || !shown.some((it) => it.textContent.includes(addedF.message))) throw new Error('篩選後應列出新出現的那一筆');
     // 版本不同：比對結果上方與篩選旁都提示
     old.meta.version = '0.0.1';
     await loadOld('old-version.json', JSON.stringify(old));
     const warn = S.compare.snapshots(S.query(old), Q).warnings.find((w) => w.kind === 'version');
     if (!warn) throw new Error('測試資料：版本不同時核心應有 version 的提醒');
-    document.querySelectorAll('#left .tabs button')[3].click();
+    document.testAll('#left .tabs button')[3].click();
     const dw = diffWarnings().find((d) => d.getAttribute('data-kind') === 'version');
     if (!dw || !dw.textContent.includes(warn.message)) throw new Error('比對結果上方應顯示版本不同的提醒');
     const kids = $('#pane-compare').querySelector('.baseline-diff').childNodes;
     if (kids.indexOf($('#pane-compare').querySelector('.diff-warnings')) > kids.indexOf($('#pane-compare').querySelector('.diff-summary'))) throw new Error('提醒應在比對結果上方');
-    document.querySelectorAll('#left .tabs button')[0].click();
+    document.testAll('#left .tabs button')[0].click();
     if (!versionHint() || !versionHint().textContent.includes('新出現的可能來自新版檢查')) throw new Error('只看新出現的應提示新出現的可能來自新版檢查');
     // 舊基準變成不可用：篩選自動關閉並停用，提示一併消失
     await loadOld('bad.json', '{not json');
@@ -1351,26 +1377,26 @@ function viewBoundaryViolations(file, src) {
     // 第二輪：修好了
     await buildInput(sample.replace(F06_LINE + '\n', '') + '\n# round-2\n'); await App.ledgerJob;
     if (VA.ledger().items[key].status !== 'fixed') throw new Error('已排程修復的項目消失時應判定為已修好');
-    document.querySelectorAll('#left .tabs button')[4].click();
-    const fixedList = $('#pane-ledger').querySelectorAll('.ledger-list').find((l) => l.getAttribute('data-reason') === 'disappeared');
-    if (!fixedList || !fixedList.querySelectorAll('.ledger-item').some((x) => x.getAttribute('data-key') === key)) throw new Error('本輪變化應列出已修好的項目');
+    document.testAll('#left .tabs button')[4].click();
+    const fixedList = $('#pane-ledger').testAll('.ledger-list').find((l) => l.getAttribute('data-reason') === 'disappeared');
+    if (!fixedList || !fixedList.testAll('.ledger-item').some((x) => x.getAttribute('data-key') === key)) throw new Error('本輪變化應列出已修好的項目');
     // 第三輪：又出現 → 回歸
     await buildInput(sample + '\n# round-3\n'); await App.ledgerJob;
     if (VA.ledger().items[key].status !== 'regressed') throw new Error('已修好又出現時應標為回歸');
     const nReg = Object.values(VA.ledger().items).filter((it) => it.status === 'regressed' && App.snap.findings.some((f) => App.Q.findingKey(f) === key)).length;
-    const alert = $('#baseline-summary').querySelectorAll('button').find((b) => b.getAttribute('data-alert') === 'regressed');
+    const alert = $('#baseline-summary').testAll('button').find((b) => b.getAttribute('data-alert') === 'regressed');
     if (!alert || !alert.textContent.includes(`回歸 ${nReg} 項`) || !alert.className.includes('err')) throw new Error('基準摘要應醒目提示回歸筆數：' + text('#baseline-summary'));
     alert.click();
     if ($('#pane-ledger').classList.contains('hidden')) throw new Error('點回歸提示應開啟處理紀錄分頁');
-    const reList = $('#pane-ledger').querySelectorAll('.ledger-list').find((l) => l.getAttribute('data-reason') === 'reappeared');
+    const reList = $('#pane-ledger').testAll('.ledger-list').find((l) => l.getAttribute('data-reason') === 'reappeared');
     if (!reList || !reList.textContent.includes(f06.message)) throw new Error('處理紀錄分頁應列出回歸的項目');
     reList.querySelector('.ledger-item').click();
     if (!App.sel) throw new Error('點回歸的項目應定位到那筆檢查結果');
     // 回歸的項目在檢查結果也有標示
-    document.querySelectorAll('#left .tabs button')[0].click();
-    const g06 = document.querySelectorAll('#pane-findings .fgroup').find((x) => { const el = x.querySelector('.head .id'); return el && el.textContent === 'F06'; });
+    document.testAll('#left .tabs button')[0].click();
+    const g06 = document.testAll('#pane-findings .fgroup').find((x) => { const el = x.querySelector('.head .id'); return el && el.textContent === 'F06'; });
     if (g06.querySelector('.head').getAttribute('aria-expanded') === 'false') g06.querySelector('.head').click();
-    if (!$('#pane-findings').querySelectorAll('.ledger-chip').some((c) => c.getAttribute('data-status') === 'regressed')) throw new Error('檢查結果應標示回歸');
+    if (!$('#pane-findings').testAll('.ledger-chip').some((c) => c.getAttribute('data-status') === 'regressed')) throw new Error('檢查結果應標示回歸');
     // 同一份基準再開一次：skipped，不顯示變化
     const iters = VA.ledger().iterations.length;
     A_load: { S.view.app.load(App.snap, null); await App.ledgerJob; }
@@ -1381,20 +1407,20 @@ function viewBoundaryViolations(file, src) {
     const st = VA.ledgerState();
     if (!st.round || !st.round.unobserved.length) throw new Error('沒有收集的設備，消失的待處理項目應列為無法判斷');
     if (st.round.unobserved.some((k) => VA.ledger().items[k].status === 'fixed')) throw new Error('無法判斷的項目不可判定為已修好');
-    const un = $('#baseline-summary').querySelectorAll('button').find((b) => b.getAttribute('data-alert') === 'unobserved');
+    const un = $('#baseline-summary').testAll('button').find((b) => b.getAttribute('data-alert') === 'unobserved');
     if (!un || !un.textContent.includes(`無法判斷 ${st.round.unobserved.length} 項`)) throw new Error('基準摘要應提示無法判斷的筆數');
-    document.querySelectorAll('#left .tabs button')[4].click();
-    const unList = $('#pane-ledger').querySelectorAll('.ledger-list').find((l) => l.getAttribute('data-reason') === 'unobserved');
-    if (!unList || !unList.parentNode.textContent.includes('因收集失敗而無法判斷') || unList.querySelectorAll('.ledger-item').length !== Math.min(300, st.round.unobserved.length)) throw new Error('處理紀錄分頁應說明因收集失敗而無法判斷');
+    document.testAll('#left .tabs button')[4].click();
+    const unList = $('#pane-ledger').testAll('.ledger-list').find((l) => l.getAttribute('data-reason') === 'unobserved');
+    if (!unList || !unList.parentNode.textContent.includes('因收集失敗而無法判斷') || unList.testAll('.ledger-item').length !== Math.min(300, st.round.unobserved.length)) throw new Error('處理紀錄分頁應說明因收集失敗而無法判斷');
     // 趨勢：多輪時畫三張圖（一張一個軸），顏色取自 theme，hover 顯示該輪全部數值，表格列出每一輪
     const series = S.ledger.summary(VA.ledger()).series;
-    const charts = $('#pane-ledger').querySelectorAll('.trend-chart');
+    const charts = $('#pane-ledger').testAll('.trend-chart');
     if (charts.length !== 3) throw new Error('應有三張小倍數折線圖：' + charts.length);
     const T = S.view.theme.trend;
-    const lines = charts[0].querySelectorAll('path').filter((p) => p.className.includes('trend-line'));
+    const lines = charts[0].testAll('path').filter((p) => p.className.includes('trend-line'));
     if (lines.map((p) => p.getAttribute('stroke')).join() !== [T.pending, T.regressed, T.accepted].join()) throw new Error('計數圖的三條線應用 theme.trend 的顏色');
-    if (charts[0].querySelectorAll('.trend-legend-item').length !== 3 || charts[1].querySelector('.trend-legend')) throw new Error('多條線的圖要有圖例，單一條線的不需要');
-    const hits = charts[0].querySelectorAll('rect').filter((r) => r.className.includes('trend-hit'));
+    if (charts[0].testAll('.trend-legend-item').length !== 3 || charts[1].querySelector('.trend-legend')) throw new Error('多條線的圖要有圖例，單一條線的不需要');
+    const hits = charts[0].testAll('rect').filter((r) => r.className.includes('trend-hit'));
     if (hits.length !== series.length) throw new Error('每一輪應有一個 hover 區');
     hits[hits.length - 1].dispatch('pointerenter');
     const tip = charts[0].querySelector('.trend-tip');
@@ -1402,7 +1428,7 @@ function viewBoundaryViolations(file, src) {
     if (tip.classList.contains('hidden') || !tip.textContent.includes(String(lastS.pending)) || !tip.textContent.includes('待處理')) throw new Error('hover 應顯示該輪的數值：' + tip.textContent);
     hits[hits.length - 1].dispatch('pointerleave');
     if (!tip.classList.contains('hidden')) throw new Error('離開時應隱藏 tooltip');
-    if ($('#pane-ledger').querySelector('.trend-table').querySelectorAll('tbody tr').length !== series.length) throw new Error('表格檢視應列出每一輪');
+    if ($('#pane-ledger').querySelector('.trend-table').testAll('tbody tr').length !== series.length) throw new Error('表格檢視應列出每一輪');
     // 之後的步驟以範例資料進行（範例的第一輪已在處理紀錄中，不會再推進）
     await buildInput(sample); await App.ledgerJob;
   });
@@ -1411,8 +1437,8 @@ function viewBoundaryViolations(file, src) {
     const st = S.view.app.ledgerState(); const keep = st.ledger;
     st.ledger = one; S.view.ledgerPane.render(App);
     try {
-      if ($('#pane-ledger').querySelectorAll('.trend-chart').length || !$('#pane-ledger').querySelector('.trend-single')) throw new Error('只有一輪時不應畫圖');
-      if ($('#pane-ledger').querySelectorAll('.trend-tile').length !== 5) throw new Error('應列出待處理、回歸、已豁免、覆蓋率、未知對端');
+      if ($('#pane-ledger').testAll('.trend-chart').length || !$('#pane-ledger').querySelector('.trend-single')) throw new Error('只有一輪時不應畫圖');
+      if ($('#pane-ledger').testAll('.trend-tile').length !== 5) throw new Error('應列出待處理、回歸、已豁免、覆蓋率、未知對端');
     } finally { st.ledger = keep; S.view.ledgerPane.render(App); }
   });
   await step('舊的確認標記轉換成處理紀錄：寫入成功後才刪 acks；轉換失敗或寫入失敗時保留 acks 並說明', async () => {
@@ -1437,7 +1463,7 @@ function viewBoundaryViolations(file, src) {
       if (await S.store.get('ledger')) throw new Error('轉換失敗時不應寫入 ledger');
       if (!text('#banner').includes('無法轉換')) throw new Error('轉換失敗應以 banner 說明：' + text('#banner'));
       if (!$('#pane-findings').querySelector('.ledger-blocked') || !text('#pane-ledger').includes('無法轉換')) throw new Error('檢查結果與處理紀錄分頁應說明處理紀錄無法使用');
-      const btn = document.querySelectorAll('#pane-findings .ledger-edit')[0];
+      const btn = document.testAll('#pane-findings .ledger-edit')[0];
       if (btn && btn.getAttribute('disabled') === null) throw new Error('處理紀錄無法使用時「處理」應停用');
       // 寫入失敗：acks 保留，之後寫入成功才刪
       await S.store.del('ledger'); await S.store.set('acks', acks);
@@ -1456,7 +1482,7 @@ function viewBoundaryViolations(file, src) {
   });
   await step('處理紀錄匯出與匯入：匯出 ssot-ledger/1；匯入先 validate，不合法列出錯誤且不覆蓋，合法時確認後才覆蓋', async () => {
     const VA = S.view.app;
-    document.querySelectorAll('#left .tabs button')[4].click();
+    document.testAll('#left .tabs button')[4].click();
     // 匯出與匯入在資料中心；處理紀錄分頁只有入口，按了會開啟資料中心的處理紀錄那一列
     $('#pane-ledger').querySelector('.open-hub').click();
     if ($('#hub').classList.contains('hidden') || document.activeElement !== $('#hub-sec-ledger')) throw new Error('處理紀錄分頁的入口應開啟資料中心並聚焦處理紀錄');
@@ -1473,7 +1499,7 @@ function viewBoundaryViolations(file, src) {
     const before = JSON.stringify(VA.ledger());
     await importText('bad.json', JSON.stringify({ schema: 'ssot-ledger/0', items: [], iterations: {} }));
     const res = $('#hub').querySelector('.ledger-import-result');
-    if (!res || !res.textContent.includes('schema') || res.querySelectorAll('li').length < 2) throw new Error('不合法時應列出 validate 的錯誤');
+    if (!res || !res.textContent.includes('schema') || res.testAll('li').length < 2) throw new Error('不合法時應列出 validate 的錯誤');
     if (JSON.stringify(VA.ledger()) !== before) throw new Error('不合法時不可覆蓋現有的處理紀錄');
     await importText('broken.json', '{not json');
     if (!text('#hub').includes('不是 JSON')) throw new Error('不是 JSON 時應說明');
@@ -1492,7 +1518,7 @@ function viewBoundaryViolations(file, src) {
   });
   await step('修正計畫：依規則、依設備或逐筆選取，依設備列出修改前（原文行號）與修改後（指令），三份 .rsc 與核心一致，下載檔名用 files() 的 base', async () => {
     const Q = App.Q; const RM = S.remediate; const RV = S.view.remediation; const PV = S.view.patchView;
-    document.querySelectorAll('#left .tabs button')[0].click();
+    document.testAll('#left .tabs button')[0].click();
     $('#pane-findings').querySelector('.open-patch').click();
     if (!$('#dlg-patch').open) throw new Error('應開啟修正計畫');
     if (!text('#patch-body').includes('不會連線')) throw new Error('應標示本工具只產生文字，不會連線設備');
@@ -1501,20 +1527,20 @@ function viewBoundaryViolations(file, src) {
     if (!$('#patch-body').querySelector('.patch-empty')) throw new Error('沒有選取時應說明如何選取');
     const autoIds = S.util.uniq(App.snap.findings.map((f) => f.id)).filter((id) => RM.levelOf(id) === 'auto');
     if (!autoIds.length) { if (process.env.SMOKE_INPUT) { $('#dlg-patch').close(); return; } throw new Error('範例資料應有 auto 修正'); }
-    const chip = (id) => $('#patch-body').querySelectorAll('.patch-rule').find((c) => c.getAttribute('data-rule-id') === id);
+    const chip = (id) => $('#patch-body').testAll('.patch-rule').find((c) => c.getAttribute('data-rule-id') === id);
     autoIds.forEach((id) => chip(id).click());
     if (chip('F03')) chip('F03').click();
     const keys = Array.from(PV.state.keys).sort(S.util.cmp);
     const want = S.util.uniq(App.snap.findings.filter((f) => autoIds.includes(f.id) || f.id === 'F03').map((f) => Q.findingKey(f))).sort(S.util.cmp);
     if (keys.join() !== want.join()) throw new Error('依規則選取應選到這些規則的全部檢查結果');
     const plan = RM.plan(Q, keys); const files = RM.files(plan);
-    const devs = $('#patch-body').querySelectorAll('.patch-dev');
+    const devs = $('#patch-body').testAll('.patch-dev');
     if (devs.map((d) => d.getAttribute('data-dev')).join() !== plan.devices.map((d) => d.key).join()) throw new Error('應依 plan.devices 的順序分台列出');
     plan.items.forEach((it) => {
-      const box = $('#patch-body').querySelectorAll('.patch-item').find((b) => b.getAttribute('data-key') === it.key);
+      const box = $('#patch-body').testAll('.patch-item').find((b) => b.getAttribute('data-key') === it.key);
       if (!box) throw new Error('每個 item 都應列出：' + it.key);
       if (box.querySelector('.patch-cmd').textContent !== RV.itemApplyLines(plan, it)) throw new Error('修改後應是核心產生的套用指令');
-      const links = box.querySelector('.patch-before').querySelectorAll('a');
+      const links = box.querySelector('.patch-before').testAll('a');
       if (links.length !== it.evidence.length || !it.evidence.every((e, n) => links[n].textContent === `${e.file} 第 ${e.line} 行`)) throw new Error('修改前應列出 evidence 的原文行號');
     });
     // 修改前可點開原文
@@ -1528,10 +1554,10 @@ function viewBoundaryViolations(file, src) {
     if (!process.env.SMOKE_INPUT && !plan.skipped.some((x) => x.id === 'F03' && x.reason === 'choice')) throw new Error('F03 應列為 choice，等第二階段');
     // 三份文字：與核心一致，可切換
     const f0 = files[0];
-    const pre = () => $('#patch-body').querySelectorAll('.patch-dev')[0].querySelector('.patch-file');
+    const pre = () => $('#patch-body').testAll('.patch-dev')[0].querySelector('.patch-file');
     if (pre().textContent !== RM.renderRsc(plan, f0.dev)) throw new Error('預設顯示套用檔，內容應與 renderRsc 相同');
     [['rollback', RM.renderRollback], ['verify', RM.renderVerify], ['apply', RM.renderRsc]].forEach(([k, fn]) => {
-      $('#patch-body').querySelectorAll('.patch-dev')[0].querySelectorAll('button').find((b) => b.getAttribute('data-kind') === k).click();
+      $('#patch-body').testAll('.patch-dev')[0].testAll('button').find((b) => b.getAttribute('data-kind') === k).click();
       if (pre().textContent !== fn(plan, f0.dev)) throw new Error(k + ' 的內容應與核心相同');
     });
     $('#patch-body').querySelector('.patch-copy').click();
@@ -1557,18 +1583,18 @@ function viewBoundaryViolations(file, src) {
     if (Array.from(PV.state.keys).sort().join() !== devKeys.sort().join()) throw new Error('依設備應選到這台設備的全部檢查結果');
     const p1 = RM.plan(Q, Array.from(PV.state.keys).sort(S.util.cmp)); const fs1 = RM.files(p1);
     if (fs1.length === 1) {
-      const btns = $('#patch-body').querySelector('.patch-download-all').querySelectorAll('.patch-download');
+      const btns = $('#patch-body').querySelector('.patch-download-all').testAll('.patch-download');
       const { files: got } = await captureDownloads(() => btns.forEach((b) => b.click()));
       if (got.map((x) => x.name).join() !== [fs1[0].base + '.rsc', fs1[0].base + '-rollback.rsc', fs1[0].base + '-verify.rsc'].join()) throw new Error('單台應下載三個 .rsc：' + got.map((x) => x.name));
       if (got[0].text !== RM.renderRsc(p1, fs1[0].dev)) throw new Error('單台下載的套用檔應與 renderRsc 相同');
     }
     // 逐筆勾選
     $('#patch-body').querySelector('.patch-clear').click();
-    const grp = $('#patch-body').querySelectorAll('.patch-group').find((g) => g.getAttribute('data-rule-id') === autoIds[0]);
+    const grp = $('#patch-body').testAll('.patch-group').find((g) => g.getAttribute('data-rule-id') === autoIds[0]);
     grp.open = true; grp.dispatch('toggle');
     const cb = grp.querySelector('.patch-pick'); cb.checked = true; cb.dispatch('change');
     if (!PV.state.keys.has(cb.getAttribute('data-key')) || PV.state.keys.size !== 1) throw new Error('逐筆勾選應加入選取');
-    if (!$('#patch-body').querySelectorAll('.patch-item').length && !$('#patch-body').querySelector('.patch-skipped')) throw new Error('勾選後應產生計畫');
+    if (!$('#patch-body').testAll('.patch-item').length && !$('#patch-body').querySelector('.patch-skipped')) throw new Error('勾選後應產生計畫');
     $('#dlg-patch').close();
   });
   await step('修正計畫的選擇（A12）：NTP 預設採多數（推論）並修改偏離的設備，DNS 沒有多數時提示選擇，選了某一組才產生指令，選「不修改」寫入處理紀錄；畫面與總表沒有 undefined', async () => {
@@ -1583,13 +1609,13 @@ function viewBoundaryViolations(file, src) {
     try {
       PV.open(App, [dnsKey, ntpKey]);
       const body = () => $('#patch-body');
-      const block = (k) => body().querySelectorAll('.patch-choice').find((b) => b.getAttribute('data-finding') === k);
-      const radio = (k, id) => block(k).querySelectorAll('.patch-choice-opt').find((r) => r.value === id);
+      const block = (k) => body().testAll('.patch-choice').find((b) => b.getAttribute('data-finding') === k);
+      const radio = (k, id) => block(k).testAll('.patch-choice-opt').find((r) => r.value === id);
       const noUndefined = (where) => { if (text('#patch-body').includes('undefined')) throw new Error(where + '：修正計畫不應出現 undefined'); };
       /** 計畫中這筆選擇產生的 item 都顯示在所屬設備下：對象是伺服器（不是規則）、修改前→後、警告與核心產生的指令 */
       const checkItems = (plan, c) => c.items.map((k) => {
         const it = plan.items.find((i) => i.key === k);
-        const box = body().querySelectorAll('.patch-dev').find((b) => b.getAttribute('data-dev') === it.dev).querySelectorAll('.patch-item').find((b) => b.getAttribute('data-key') === k);
+        const box = body().testAll('.patch-dev').find((b) => b.getAttribute('data-dev') === it.dev).testAll('.patch-item').find((b) => b.getAttribute('data-key') === k);
         if (!box) throw new Error('選擇產生的指令應列在 ' + it.dev + ' 下');
         const tgt = box.querySelector('.patch-target').textContent;
         if (tgt !== RV.targetText(it.target) || !tgt.includes(RV.FACET_ITEM[c.facet]) || !tgt.includes(it.target.menu)) throw new Error('對象應顯示伺服器的項目與設定選單：' + tgt);
@@ -1602,7 +1628,7 @@ function viewBoundaryViolations(file, src) {
       const plan0 = PV.state.plan; const ntp = plan0.choices.find((c) => c.findingKey === ntpKey);
       const maj = ntp.options.find((o) => o.id === 'majority');
       if (!maj || ntp.chosen !== 'majority' || ntp.chosenBy !== 'default' || !radio(ntpKey, 'majority').checked) throw new Error('有多數時預設應選多數');
-      const majRow = block(ntpKey).querySelectorAll('.patch-choice-row').find((r) => r.getAttribute('data-option') === 'majority');
+      const majRow = block(ntpKey).testAll('.patch-choice-row').find((r) => r.getAttribute('data-option') === 'majority');
       if (!majRow.querySelector('.patch-inferred') || !majRow.textContent.includes('推論') || !majRow.textContent.includes(`${maj.basis.total} 台中 ${maj.basis.agree} 台`)) throw new Error('多數選項應標示推論與依據');
       if (!block(ntpKey).querySelector('.patch-choice-default')) throw new Error('預設採多數時應說明');
       const ntpDevs = checkItems(plan0, ntp);
@@ -1611,7 +1637,7 @@ function viewBoundaryViolations(file, src) {
       // DNS：沒有多數時明確提示，沒有預設的選擇，也不產生指令
       const dns0 = plan0.choices.find((c) => c.findingKey === dnsKey);
       if (dns0.reason !== 'needs-choice') throw new Error('範例資料的 DNS 應沒有多數');
-      if (!block(dnsKey).querySelector('.patch-choice-need').textContent.includes('沒有多數') || block(dnsKey).querySelectorAll('.patch-choice-opt').some((r) => r.checked)) throw new Error('沒有多數時應提示選擇，且沒有預選');
+      if (!block(dnsKey).querySelector('.patch-choice-need').textContent.includes('沒有多數') || block(dnsKey).testAll('.patch-choice-opt').some((r) => r.checked)) throw new Error('沒有多數時應提示選擇，且沒有預選');
       if (plan0.items.some((i) => i.findingKey === dnsKey)) throw new Error('選擇前不應產生 DNS 的指令');
       // 選一組（不含 RT_01 的那組）：其他組的設備（含 RT_01）產生指令；焦點留在剛選的 radio
       const pick = dns0.options.find((o) => o.devs && !o.devs.includes('TPE_CORE_RT_01'));
@@ -1625,7 +1651,7 @@ function viewBoundaryViolations(file, src) {
       if (dnsDevs.slice().sort().join() !== others.slice().sort().join() || !dnsDevs.includes('TPE_CORE_RT_01')) throw new Error('選一組後應修改其他組的設備（範例資料是 TPE_CORE_RT_01）');
       // 預覽與下載都跟著選擇：每台設備的檔案就是 files(plan) 的內容，總表列出選擇
       const files = RM.files(plan1);
-      files.forEach((f) => { if (body().querySelectorAll('.patch-dev').find((b) => b.getAttribute('data-dev') === f.dev).querySelector('.patch-file').textContent !== f.apply) throw new Error('預覽應是依選擇產生的檔案'); });
+      files.forEach((f) => { if (body().testAll('.patch-dev').find((b) => b.getAttribute('data-dev') === f.dev).querySelector('.patch-file').textContent !== f.apply) throw new Error('預覽應是依選擇產生的檔案'); });
       noUndefined('選擇後');
       const md = S.view.exporter.patchSummaryMarkdown(plan1, files, Q);
       if (md.includes('undefined') || !md.includes('需要選擇的項目') || !md.includes(RV.choiceText(dns1).text)) throw new Error('總表應列出目前的選擇，且沒有 undefined');
@@ -1651,7 +1677,7 @@ function viewBoundaryViolations(file, src) {
     const b = App.snap.blocks.find((x) => x.adapters.length && !x.empty && x.unrecognizedLines.length && x.devKey && App.Q.getDevice(x.devKey));
     if (!b) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有部分無法辨識的區塊'); }
     App.select({ type: 'device', key: b.devKey });
-    const link = $('#detail').querySelectorAll('.partial-unrecognized').find((a) => a.textContent === `部分無法辨識（${b.unrecognizedLines.length} 行）`);
+    const link = $('#detail').testAll('.partial-unrecognized').find((a) => a.textContent === `部分無法辨識（${b.unrecognizedLines.length} 行）`);
     if (!link) throw new Error('應標示部分無法辨識的行數');
     link.click();
     if (!$('#dlg-raw').open || !text('#raw-title').includes(`第 ${b.unrecognizedLines[0]} 行`)) throw new Error('點一下應開啟第一個認不得的行');
@@ -1671,12 +1697,12 @@ function viewBoundaryViolations(file, src) {
     if (ds.length < 2) throw new Error('測試資料應有不相連的 VLAN 區塊');
     App.select({ type: 'vlan', key: '50' });
     if (!text('#detail').includes(`${ds.length} 個不相連區塊（推論）`)) throw new Error('應標示不相連區塊');
-    const link = $('#detail').querySelectorAll('a').find((x) => x.textContent.startsWith('區塊 2：'));
+    const link = $('#detail').testAll('a').find((x) => x.textContent.startsWith('區塊 2：'));
     if (!link) throw new Error('應可點選其他區塊');
     link.click();
     if (App.sel.domain !== ds[1].key || !text('#detail').includes(`（區塊 2／${ds.length}）`)) throw new Error('點區塊應切換到該區塊');
     if (Array.from(App.graph.hl.nodes.keys()).join() !== ds[1].devices.join()) throw new Error('圖上應只標出該區塊的設備');
-    $('#detail').querySelectorAll('a').find((x) => x.textContent === '顯示所有區塊').click();
+    $('#detail').testAll('a').find((x) => x.textContent === '顯示所有區塊').click();
     if (App.sel.domain != null || App.graph.hl.nodes.size !== App.Q.vlan(50).devices.length) throw new Error('應可回到所有區塊');
   });
   await step('修正計畫：A12 的 DNS 與 NTP 依 facet 是不同的 findingKey，各自列出自己的訊息、各自可以勾選，詳情標示檢查項目', async () => {
@@ -1700,7 +1726,7 @@ function viewBoundaryViolations(file, src) {
     // 詳情：每一筆在標題旁標示自己的檢查項目，title 是原值
     a12.forEach(({ f, idx }) => {
       App.selectFinding(idx);
-      const box = $('#detail').querySelectorAll('.finding').find((el) => el.textContent.includes(f.message));
+      const box = $('#detail').testAll('.finding').find((el) => el.textContent.includes(f.message));
       const chip = box && box.querySelector('.facet');
       if (!chip || chip.textContent !== '檢查項目：' + RV.facetText(f) || chip.getAttribute('title') !== 'facet：' + f.facet) throw new Error('詳情應在 ' + f.message + ' 的標題旁標示檢查項目');
       if (a12.some((o) => o.f !== f && box.textContent.includes('檢查項目：' + RV.facetText(o.f)))) throw new Error('每一筆只標示自己的檢查項目');
@@ -1708,7 +1734,7 @@ function viewBoundaryViolations(file, src) {
     const plain = all.findIndex((f) => f.facet == null);
     if (plain >= 0) {
       App.selectFinding(plain);
-      const box = $('#detail').querySelectorAll('.finding').find((el) => el.textContent.includes(all[plain].message));
+      const box = $('#detail').testAll('.finding').find((el) => el.textContent.includes(all[plain].message));
       if (box && box.querySelector('.facet')) throw new Error('沒有 facet 的檢查結果不應標示檢查項目');
     }
     App.select(null);
@@ -1722,7 +1748,7 @@ function viewBoundaryViolations(file, src) {
     try {
       a12.forEach((x, n) => {
         if (!$('#dlg-patch').open) PV.open(App);
-        const rows = $('#patch-body').querySelectorAll('.patch-skip').filter((r) => r.getAttribute('data-finding') === x.key);
+        const rows = $('#patch-body').testAll('.patch-skip').filter((r) => r.getAttribute('data-finding') === x.key);
         if (rows.length !== 1) throw new Error('每一個鍵應恰好一列');
         if (!rows[0].textContent.includes(x.f.message) || a12.some((o) => o !== x && rows[0].textContent.includes(o.f.message))) throw new Error('每一列只列出自己的訊息');
         const link = rows[0].querySelector('.finding-ref');
@@ -1735,28 +1761,28 @@ function viewBoundaryViolations(file, src) {
     // 原因只在分組標題：每一筆不再重複寫原因或等級
     PV.open(App);
     const sk = plan.skipped.find((s) => s.findingKey === a12[0].key);
-    const group = $('#patch-body').querySelectorAll('.patch-skip-group').find((g) => g.getAttribute('data-reason') === sk.reason);
+    const group = $('#patch-body').testAll('.patch-skip-group').find((g) => g.getAttribute('data-reason') === sk.reason);
     if (!group.querySelector('.patch-label').textContent.includes(RM.SKIP_TEXT[sk.reason])) throw new Error('分組標題應是 SKIP_TEXT');
-    if ($('#patch-body').querySelectorAll('.patch-skip').some((r) => r.textContent.includes(RM.SKIP_TEXT[sk.reason]) || r.textContent.includes(RV.LEVEL_TEXT[sk.level]))) throw new Error('每一筆不應重複寫原因');
+    if ($('#patch-body').testAll('.patch-skip').some((r) => r.textContent.includes(RM.SKIP_TEXT[sk.reason]) || r.textContent.includes(RV.LEVEL_TEXT[sk.level]))) throw new Error('每一筆不應重複寫原因');
     // 基準中沒有的鍵：明確說明，不是空白
-    const nf = $('#patch-body').querySelectorAll('.patch-skip').find((r) => r.getAttribute('data-finding') === MISSING_KEY);
+    const nf = $('#patch-body').testAll('.patch-skip').find((r) => r.getAttribute('data-finding') === MISSING_KEY);
     if (!nf || !nf.querySelector('.finding-missing') || nf.querySelector('.finding-missing').textContent !== RV.MISSING_FINDING_TEXT) throw new Error('基準中沒有的鍵應說明「' + RV.MISSING_FINDING_TEXT + '」');
     if (nf.querySelector('.finding-ref')) throw new Error('基準中沒有的鍵不應有連結');
     // 逐筆勾選：每一筆 A12 各一個勾選框，標示檢查項目；勾一個只加入那一筆
     $('#patch-body').querySelector('.patch-clear').click();
-    const g = $('#patch-body').querySelectorAll('.patch-group').find((x) => x.getAttribute('data-rule-id') === 'A12');
+    const g = $('#patch-body').testAll('.patch-group').find((x) => x.getAttribute('data-rule-id') === 'A12');
     g.open = true; g.dispatch('toggle');
-    const picks = g.querySelectorAll('.patch-pick');
+    const picks = g.testAll('.patch-pick');
     if (picks.map((cb) => cb.getAttribute('data-key')).sort().join('\n') !== a12.map((x) => x.key).sort().join('\n')) throw new Error('每一筆 A12 應各有一個勾選框');
     a12.forEach((x) => {
-      const row = g.querySelectorAll('.patch-pick-row').find((r) => r.querySelector('.patch-pick').getAttribute('data-key') === x.key);
+      const row = g.testAll('.patch-pick-row').find((r) => r.querySelector('.patch-pick').getAttribute('data-key') === x.key);
       if (!row.textContent.includes(x.f.message) || !row.querySelector('.facet') || row.querySelector('.facet').textContent !== RV.facetText(x.f)) throw new Error('勾選列應列出自己的訊息與檢查項目');
     });
     const ntp = byFacet.get('ntp').key;
     const pick = picks.find((cb) => cb.getAttribute('data-key') === ntp);
     pick.checked = true; pick.dispatch('change');
     if (PV.state.keys.size !== 1 || !PV.state.keys.has(ntp)) throw new Error('勾選 NTP 只應加入 NTP 那一筆');
-    const after = $('#patch-body').querySelectorAll('.patch-skip').map((r) => r.getAttribute('data-finding'));
+    const after = $('#patch-body').testAll('.patch-skip').map((r) => r.getAttribute('data-finding'));
     if (after.join() !== ntp) throw new Error('只勾選 NTP 時，計畫只應有 NTP 那一筆：' + after.join('｜'));
     $('#dlg-patch').close();
     // 過長的訊息截斷，完整內容在 title
@@ -1779,11 +1805,11 @@ function viewBoundaryViolations(file, src) {
     if (sk.length !== i03.length) throw new Error('共用鍵的每一筆都應是一個未產生指令的項目');
     // 依位置對應：同一個鍵的第 n 筆對到基準中這個鍵的第 n 筆
     if (RV.matchFindings(Q, sk).map((m) => m && m.idx).join() !== i03.map((x) => x.idx).join()) throw new Error('共用鍵時應依位置對回基準中的每一筆');
-    const rowsOf = () => $('#patch-body').querySelectorAll('.patch-skip').filter((r) => r.getAttribute('data-finding') === key);
+    const rowsOf = () => $('#patch-body').testAll('.patch-skip').filter((r) => r.getAttribute('data-finding') === key);
     const rows = rowsOf();
     if (rows.length !== i03.length) throw new Error('每一筆未產生指令的項目都應列出');
     if (!rows.every((r, n) => r.textContent.includes(i03[n].f.message) && i03.every((o, m) => m === n || !r.textContent.includes(o.f.message)))) throw new Error('每一列應列出自己那一筆的訊息');
-    const group = $('#patch-body').querySelectorAll('.patch-skip-group').find((x) => x.getAttribute('data-reason') === sk[0].reason);
+    const group = $('#patch-body').testAll('.patch-skip-group').find((x) => x.getAttribute('data-reason') === sk[0].reason);
     if (!group.querySelector('.patch-label').textContent.includes(RM.SKIP_TEXT[sk[0].reason])) throw new Error('分組標題應是 SKIP_TEXT');
     if (rows.some((r) => r.textContent.includes(RM.SKIP_TEXT[sk[0].reason]) || r.textContent.includes(RV.LEVEL_TEXT[sk[0].level]))) throw new Error('每一筆不應重複寫原因');
     const orig = App.selectFinding; const opened = [];
@@ -1801,9 +1827,9 @@ function viewBoundaryViolations(file, src) {
     } finally { App.selectFinding = orig; }
     // 逐筆勾選以鍵為單位：共用鍵的多段只有一個勾選框（計畫也以鍵為單位）
     PV.open(App);
-    const g = $('#patch-body').querySelectorAll('.patch-group').find((x) => x.getAttribute('data-rule-id') === 'I03');
+    const g = $('#patch-body').testAll('.patch-group').find((x) => x.getAttribute('data-rule-id') === 'I03');
     g.open = true; g.dispatch('toggle');
-    const picks = g.querySelectorAll('.patch-pick').map((cb) => cb.getAttribute('data-key'));
+    const picks = g.testAll('.patch-pick').map((cb) => cb.getAttribute('data-key'));
     if (picks.join() !== key) throw new Error('共用鍵的 I03 應只有一個勾選框：' + picks.join('｜'));
     $('#dlg-patch').close();
   });
@@ -1949,7 +1975,7 @@ function viewBoundaryViolations(file, src) {
       Object.entries(T.sevShape).forEach(([k, shape]) => { const got = vertices((k === 'error' ? err : warn)[0].path); if (want[shape] !== got) throw new Error(`${k} 應畫成 ${shape}（${want[shape]} 個頂點），實際 ${got}`); });
     });
     // 圖例：兩種嚴重度都畫出，外形與顏色取自 theme
-    const items = Array.from(document.querySelectorAll('#legend .li'));
+    const items = Array.from(document.testAll('#legend .li'));
     Object.entries(T.sevShape).forEach(([k, shape]) => {
       const li = items.find((x) => x.textContent === S.view.SEV[k]); const sw = li && li.childNodes.find((c) => c.attrs && c.attrs['data-shape']);
       if (!sw) throw new Error('圖例缺少嚴重度：' + k);
@@ -1994,12 +2020,12 @@ function viewBoundaryViolations(file, src) {
     const hash = S.util.hash(S.readers.PASTE + '\n' + input);
     for (let i = 0; i < 4000 && (!App.snap || App.snap.meta.inputHash !== hash); i++) await new Promise((r) => setTimeout(r, 5));
     App.select({ type: 'device', key: 'R_A' });
-    const th = $('#detail').querySelectorAll('th').find((el) => el.textContent.startsWith('網段'));
+    const th = $('#detail').testAll('th').find((el) => el.textContent.startsWith('網段'));
     if (!th) throw new Error('路由表應有可排序的網段標頭');
     th.dispatch('click');
-    const order = () => $('#detail').querySelectorAll('tbody tr').map((tr) => tr.textContent).filter((s) => /^10\.\d+\.0\.0\/16/.test(s)).map((s) => s.split('/')[0]);
+    const order = () => $('#detail').testAll('tbody tr').map((tr) => tr.textContent).filter((s) => /^10\.\d+\.0\.0\/16/.test(s)).map((s) => s.split('/')[0]);
     if (order().join() !== '10.9.0.0,10.10.0.0,10.100.0.0') throw new Error('網段應依 IP 數值升冪：' + order());
-    $('#detail').querySelectorAll('th').find((el) => el.textContent.startsWith('網段')).dispatch('click');
+    $('#detail').testAll('th').find((el) => el.textContent.startsWith('網段')).dispatch('click');
     if (order().join() !== '10.100.0.0,10.10.0.0,10.9.0.0') throw new Error('再點一次應降冪：' + order());
   });
   await step('CAPsMAN Wi-Fi 多 MAC 保留菱形提示，MAC 位置列入終端清單', async () => {
@@ -2058,7 +2084,7 @@ function viewBoundaryViolations(file, src) {
     if (!vStroke || ratio(vStroke.dash) !== ratio(vs.dash) || vStroke.style !== T.edge[ve.cls].c) throw new Error('veth 連線應以專用線型、連線類別色畫出');
     if (!eStroke || ratio(eStroke.dash) !== ratio(T.weakEdge.hearsay.dash)) throw new Error('一般終端連線應維持單側觀察線型');
     if (!/容器 veth/.test(v.tip)) throw new Error('提示應標示容器 veth');
-    if (!Array.from(document.querySelectorAll('#legend .li')).some((el) => /容器 veth/.test(el.textContent))) throw new Error('圖例缺少 veth');
+    if (!Array.from(document.testAll('#legend .li')).some((el) => /容器 veth/.test(el.textContent))) throw new Error('圖例缺少 veth');
   });
   await step('Wi-Fi 介面不列為終端；MAC 位置與單 MAC 有線埠均列入清單', async () => {
     const input = 'SW_A (10.0.0.1):\n### /interface print detail\n'
@@ -2168,8 +2194,8 @@ function viewBoundaryViolations(file, src) {
     if (!/@media \(forced-colors: active\)/.test(css)) throw new Error('應支援強制色彩模式');
     if (!/#graph\s*\{[^}]*touch-action:\s*none/.test(css)) throw new Error('畫布應自己處理觸控拖曳');
     // 篩選選項是可聚焦的按鈕
-    App.select(null); document.querySelectorAll('#left .tabs button')[0].click();
-    const chips = $('#pane-findings').querySelector('.summary').querySelectorAll('.chip');
+    App.select(null); document.testAll('#left .tabs button')[0].click();
+    const chips = $('#pane-findings').querySelector('.summary').testAll('.chip');
     if (!chips.length || !chips.every((c) => c.tagName === 'BUTTON' && c.getAttribute('type') === 'button')) throw new Error('篩選選項應是 <button>');
     // 減少動態效果：力導向一次算完，不排動畫
     const g = App.graph; const before = JSON.stringify(Array.from(g.pos)); const oldMM = window.matchMedia;
@@ -2222,7 +2248,7 @@ function viewBoundaryViolations(file, src) {
     if ($('#hub').classList.contains('hidden') || btnHub.getAttribute('aria-expanded') !== 'true') throw new Error('按「資料中心」應開啟資料中心');
     if (document.activeElement !== $('#hub-title')) throw new Error('開啟後焦點應移到資料中心的標題');
     if (!$('#main').inert || !$('#app').classList.contains('hub-open')) throw new Error('資料中心開啟時主畫面應是 inert（鍵盤不會跑到被蓋住的圖上）');
-    const row = (k) => $('#hub').querySelectorAll('.hub-row').find((r) => r.getAttribute('data-item') === k);
+    const row = (k) => $('#hub').testAll('.hub-row').find((r) => r.getAttribute('data-item') === k);
     ['sources', 'previous', 'ledger', 'profile', 'expected-data', 'expected', 'coverage'].forEach((k) => {
       const r = row(k);
       if (!r) throw new Error('資料中心應列出輸入：' + k);
@@ -2245,7 +2271,7 @@ function viewBoundaryViolations(file, src) {
     const nC01 = App.Q.findingsByRule('C01').length;
     if ((hubBtn('devices-csv').getAttribute('disabled') !== null) !== !nC01) throw new Error('沒有 C01 時 devices.csv 草稿應停用');
     // 工作包的角色：收集檔與基準一定放（不能取消）；命名規則用過就一定放
-    const roleBox = (r) => $('#hub').querySelectorAll('.hub-pack-role').find((x) => x.getAttribute('data-role') === r);
+    const roleBox = (r) => $('#hub').testAll('.hub-pack-role').find((x) => x.getAttribute('data-role') === r);
     ['source', 'snapshot'].forEach((r) => { const cb = roleBox(r); if (!cb || !cb.checked || !cb.disabled) throw new Error(r + ' 是工作包的必要內容，應勾選且不能取消'); });
     if (App.round.profile && (!roleBox('profile').checked || !roleBox('profile').disabled)) throw new Error('基準用了命名規則時，命名規則一定要放進工作包');
     // 勾選可選的角色後，焦點留在同一個核取方塊（重繪不會讓鍵盤跳回開頭）
@@ -2256,7 +2282,7 @@ function viewBoundaryViolations(file, src) {
     (docListeners.keydown || []).forEach((f) => f({ key: 'Escape', preventDefault() {} }));
     if (!$('#hub').classList.contains('hidden') || document.activeElement !== btnHub || $('#main').inert || btnHub.getAttribute('aria-expanded') !== 'false') throw new Error('Esc 應關閉資料中心並把焦點還給按鈕');
     // 檢查結果分頁的「匯出報表…」開啟資料中心的報表區塊
-    document.querySelectorAll('#left .tabs button')[0].click();
+    document.testAll('#left .tabs button')[0].click();
     $('#pane-findings').querySelector('.open-hub').click();
     if ($('#hub').classList.contains('hidden') || document.activeElement !== $('#hub-sec-reports')) throw new Error('「匯出報表…」應開啟資料中心並聚焦報表');
     // 選取（例如從搜尋進來）要在圖與詳情看到結果：關閉資料中心
@@ -2289,11 +2315,11 @@ function viewBoundaryViolations(file, src) {
     expInput.dispatch('change', { target: expInput });
     await until(() => App.round.expected && App.round.expected.name === 'expected-sample.json', '載入預期資料');
     App.openPatch();
-    const auto = $('#patch-body').querySelectorAll('.patch-rule').find((c) => c.getAttribute('data-level') === 'auto');
+    const auto = $('#patch-body').testAll('.patch-rule').find((c) => c.getAttribute('data-level') === 'auto');
     if (auto) auto.click();
     $('#dlg-patch').close();
     App.openHub('outputs');
-    const patchBox = $('#hub').querySelectorAll('.hub-pack-role').find((x) => x.getAttribute('data-role') === 'patch');
+    const patchBox = $('#hub').testAll('.hub-pack-role').find((x) => x.getAttribute('data-role') === 'patch');
     if (!!auto !== patchBox.checked) throw new Error('修正計畫有選取時 patch 才放進工作包');
     // 下載：按鈕開始後立刻顯示忙碌提示並停用操作，完成後下載一個 ZIP
     const { files } = await captureDownloads(async () => {
@@ -2341,7 +2367,7 @@ function viewBoundaryViolations(file, src) {
       const ledgerBefore = JSON.stringify(VA.ledger());
       await readPack(name, bad);
       const box = $('#hub').querySelector('.wp-read-error');
-      if (!box || !box.textContent.includes(name) || box.querySelector('.wp-errors').querySelectorAll('li').length !== want.length) throw new Error(`${name}：應列出全部 ${want.length} 項問題`);
+      if (!box || !box.textContent.includes(name) || box.querySelector('.wp-errors').testAll('li').length !== want.length) throw new Error(`${name}：應列出全部 ${want.length} 項問題`);
       if (!want.every((e) => box.textContent.includes(e.message))) throw new Error(name + '：應列出核心的訊息');
       if (App.snap !== saved.snap || JSON.stringify(VA.ledger()) !== ledgerBefore) throw new Error(name + '：讀入失敗時目前的基準與處理紀錄都不可改變');
     }
@@ -2360,11 +2386,23 @@ function viewBoundaryViolations(file, src) {
     // 沒有勾選確認就不取代
     hubBtn('apply-workpack').click(); await new Promise((r) => setTimeout(r, 10));
     if (App.snap.meta.inputHash === saved.snap.meta.inputHash || !$('#hub').textContent.includes('請先勾選確認')) throw new Error('取代處理紀錄前應先確認');
-    const ack = $('#hub').querySelectorAll('.wp-choose').find((x) => x.getAttribute('data-choose') === 'ack');
+    const ack = $('#hub').testAll('.wp-choose').find((x) => x.getAttribute('data-choose') === 'ack');
     ack.checked = true; ack.dispatch('change');
-    hubBtn('apply-workpack').click();
-    if (!HS().busy || !text('#hub-busy').includes('重建')) throw new Error('重建核對時應顯示忙碌提示');
-    await until(() => HS().read && HS().read.done, '帶回工作包');
+    // 重建用 validateAsync：每次回報進度時，忙碌提示裡的進度條與文字跟著更新（記下每一次的畫面）
+    const seen = []; const origProgress = VA.hubProgress;
+    VA.hubProgress = (pr) => { origProgress(pr); const bar = $('#hub-busy').querySelector('.progress');
+      seen.push({ stage: pr.stage, text: text('#hub-busy'), now: bar && bar.getAttribute('aria-valuenow'), width: bar && bar.firstElementChild.style.width }); };
+    try {
+      hubBtn('apply-workpack').click();
+      if (!HS().busy || !text('#hub-busy').includes('重建')) throw new Error('重建核對時應顯示忙碌提示');
+      await until(() => HS().read && HS().read.done, '帶回工作包');
+    } finally { VA.hubProgress = origProgress; }
+    if (!seen.length) throw new Error('重建期間應回報進度');
+    seen.forEach((x) => {
+      if (!x.text.includes('重建') || !x.text.includes(x.stage) || !/^\d+$/.test(x.now || '') || x.width !== x.now + '%') throw new Error('進度應顯示在忙碌提示中（階段、進度條）：' + JSON.stringify(x));
+    });
+    if (seen.some((x, i) => i && +x.now < +seen[i - 1].now)) throw new Error('進度不應倒退');
+    if (!$('#hub-busy').classList.contains('hidden')) throw new Error('完成後應收起忙碌提示');
     await App.ledgerJob; await App.layoutJob;
     // 基準相同（依關係比對）；處理紀錄、命名規則、預期資料都帶回
     if (App.snap.meta.inputHash !== saved.snap.meta.inputHash || App.snap.meta.baselineKey !== saved.snap.meta.baselineKey) throw new Error('讀回的基準應和匯出前相同（inputHash、baselineKey）');
@@ -2403,11 +2441,11 @@ function viewBoundaryViolations(file, src) {
       S.util.uniq(Q.findings().map((f) => f.id)).forEach((id) => idxs.add(Q.findings().findIndex((f) => f.id === id)));
       idxs.forEach((i) => { App.selectFinding(i); App.graph.draw(); });
       App.select(null); App.graph.draw();
-      document.querySelectorAll('#left .tabs button').forEach((b) => b.click());
-      document.querySelectorAll('#left .tabs button')[0].click();
+      document.testAll('#left .tabs button').forEach((b) => b.click());
+      document.testAll('#left .tabs button')[0].click();
       $('#pane-findings').querySelector('.open-patch').click();
       if (!$('#dlg-patch').open) throw new Error('應開啟修正計畫');
-      $('#patch-body').querySelectorAll('.patch-rule').forEach((c) => c.click());
+      $('#patch-body').testAll('.patch-rule').forEach((c) => c.click());
       $('#dlg-patch').close();
       const kinds = Object.keys(S.view.exporter.KINDS);
       const { files } = await captureDownloads(() => { kinds.forEach((k) => App.exportAs(k)); App.exportAs('csv', { byDevice: true }); App.exportAs('markdown', { byDevice: true }); });

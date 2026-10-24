@@ -149,7 +149,7 @@
   /** 選擇一個選項：存進檢視狀態後重新產生計畫，焦點留在剛選的 radio（鍵盤以方向鍵切換時不會跳走） */
   function choose(App, key, id) {
     state.choices.set(key, id); refreshOpen(App);
-    const r = $('#patch-body').querySelectorAll('.patch-choice-opt').find((x) => x.getAttribute('data-finding') === key && x.value === id);
+    const r = Array.from($('#patch-body').querySelectorAll('.patch-choice-opt')).find((x) => x.getAttribute('data-finding') === key && x.value === id);
     if (r) r.focus();
   }
   /** 選「不修改」時：處理紀錄已是可接受就顯示豁免內容，否則填原因與到期日後標為可接受（App.setLedger → S.ledger.set） */

@@ -122,7 +122,7 @@
     const loss = w.loss;
     const lossText = loss && (loss.blocked ? '目前的處理紀錄停用中；取代後，瀏覽器中格式不正確的原資料會被取代。'
       : `目前的處理紀錄有 ${[loss.onlyHere ? `${V.num(loss.onlyHere)} 項不在工作包中` : '', loss.differ ? `${V.num(loss.differ)} 項和工作包的內容不同` : '',
-        loss.rounds ? `${V.num(loss.rounds)} 輪不在工作包中` : ''].filter(Boolean).join('、')}；取代後這些內容會遺失。`);
+        loss.rounds ? `${V.num(loss.rounds)} 輪不在工作包中或內容不同` : ''].filter(Boolean).join('、')}；取代後這些內容會遺失。`);
     return h('div', { class: 'wp-read wp-read-confirm', role: 'group', 'aria-label': '確認要從工作包帶回的內容' }, [
       h('p', null, [h('b', null, w.name), `：${mf.toolVersion} 版於 ${V.fmtUtc(mf.createdAt)} 建立；收集檔 ${V.num(pack.sources.length)} 份、`
         + `檔案 ${V.num(pack.files.length)} 個；格式與雜湊都已核對。`]),
@@ -226,7 +226,10 @@
         btn('回到拓樸圖', 'close-hub', () => A().closeHub({ focus: true }), { class: 'ghost hub-close', title: '關閉資料中心（Esc）' }),
       ]),
       h('div', { id: 'hub-busy', class: 'hub-busy' + (busy ? '' : ' hidden'), role: 'status', 'aria-live': 'polite' }, busy ? [
-        h('div', { class: 'progress indeterminate', 'aria-hidden': 'true' }, h('div')), h('span', null, hub.busy)] : []),
+        // 有進度（重建）時是確定的進度條，否則是不確定的動畫；文字一律說明在做什麼
+        h('div', { class: 'progress' + (hub.progress ? '' : ' indeterminate'), role: 'progressbar', 'aria-label': hub.busy, 'aria-valuemin': '0', 'aria-valuemax': '100',
+          'aria-valuenow': hub.progress ? String(hub.progress.pct) : null }, h('div', { style: hub.progress ? { width: hub.progress.pct + '%' } : null })),
+        h('span', null, hub.busy), h('span', { class: 'hub-progress-text' }, hub.progress ? hub.progress.text : '')] : []),
       h('section', { class: 'hub-card', id: 'hub-sec-inputs', tabindex: '-1', 'aria-labelledby': 'hub-in-title' }, [
         h('div', { class: 'hub-card-head' }, [h('h2', { id: 'hub-in-title' }, '這一輪的輸入'), h('span', { class: 'hub-spacer' }), wpFile,
           btn('讀入工作包…', 'read-workpack', () => wpFile.click(), { disabled: busy || null }),

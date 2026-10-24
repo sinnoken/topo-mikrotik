@@ -7,6 +7,12 @@
   const A = V.app; const App = window.App;
 
   const input = { files: [] };
+  /**
+   * S.buildAsync 的進度 { stage, done, total } → 文字與百分比（建立基準與資料中心重建工作包的基準共用）。
+   * 讀取各區塊佔 5–75%，之後依階段：建立模型 80%、一致性檢查 92%、完成 100%。
+   */
+  A.buildProgressText = (p) => p.stage + (p.total > 1 ? `（${p.done}/${p.total}）` : '');
+  A.buildPercent = (p) => (p.stage === '完成' ? 100 : p.stage === '一致性檢查' ? 92 : p.stage === '建立模型' ? 80 : 5 + 70 * (p.done / Math.max(p.total, 1)));
   A.bindInputDialog = function bindInputDialog() {
     const dlg = $('#dlg-input');
     $('#input-close').onclick = () => dlg.close();
@@ -73,8 +79,8 @@
     const bar = $('#input-progress'); bar.classList.remove('hidden'); const fill = bar.firstElementChild;
     try {
       const snap = await S.buildAsync(sources, { profile, expectedData }, (p) => {
-        $('#input-status').textContent = p.stage + (p.total > 1 ? `（${p.done}/${p.total}）` : '');
-        fill.style.width = (p.stage === '完成' ? 100 : p.stage === '一致性檢查' ? 92 : p.stage === '建立模型' ? 80 : 5 + 70 * (p.done / Math.max(p.total, 1))) + '%';
+        $('#input-status').textContent = A.buildProgressText(p);
+        fill.style.width = A.buildPercent(p) + '%';
       });
       $('#input-status').textContent = '繪製中…';
       await new Promise((r) => setTimeout(r, 0));

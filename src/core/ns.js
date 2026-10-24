@@ -46,6 +46,13 @@
   util.sortBy = (arr, fn) => arr.sort((x, y) => util.natural(fn(x), fn(y)));
   util.uniq = (arr) => Array.from(new Set(arr));
   util.numSort = (arr) => arr.slice().sort((a, b) => a - b);
+  /** VLAN 清單的精簡文字：[10, 11, 12, 20] → "10-12,20"（輸入須已由小到大排序，例如 util.ifcVlans 的結果）。核心訊息與畫面共用。 */
+  util.fmtVlans = function (ids) {
+    const out = []; let s = null; let p = null;
+    ids.forEach((v) => { if (s === null) { s = p = v; } else if (v === p + 1) { p = v; } else { out.push(s === p ? s : s + '-' + p); s = p = v; } });
+    if (s !== null) out.push(s === p ? s : s + '-' + p);
+    return out.join(',');
+  };
   /** 介面承載的所有 VLAN（PVID ∪ untagged ∪ tagged），由小到大；模型（Set）與 Snapshot（陣列）皆可用。 */
   util.ifcVlans = (i) => util.numSort(util.uniq([i.pvid, ...i.untaggedVlans, ...i.taggedVlans].filter((v) => v != null)));
 

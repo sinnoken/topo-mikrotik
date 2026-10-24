@@ -390,5 +390,8 @@
     },
   };
 
+  // 靜態目錄：載入後凍結（含 data、causes 等巢狀陣列），畫面經 S.query.rule() 取得的物件不會被改到
+  const deepFreeze = (o) => { Object.values(o).forEach((v) => { if (v && typeof v === 'object') deepFreeze(v); }); return Object.freeze(o); };
+  deepFreeze(CATALOG);
   S.check = Object.assign(S.check || {}, { CATALOG });
 })(globalThis.SSOT);

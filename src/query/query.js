@@ -115,6 +115,11 @@
     const ctxOf = (d) => U.getOr(fwCtx, d, () => S.infer.fw.fwContext(d, listsByDev.get(d) || [], (ifcsByDev.get(d) || []).map((i) => i.key), fwByDev.get(d) || []));
     const findingsBy = new Map();
     snap.findings.forEach((f, idx) => f.entities.forEach((e) => U.getOr(findingsBy, e.type + ':' + e.key, () => []).push(idx)));
+    // 第一次查詢時才建立的索引（1000 台規模下多數畫面用不到）；回傳的陣列是 Q 自己的索引，凍結以免呼叫端改壞
+    let byFindingKey = null; let byRule = null; let blocksByDev = null; let covByDev = null;
+    const freezeAll = (map) => { map.forEach((v) => Object.freeze(v)); return map; };
+    const findingKeyIndex = () => byFindingKey || (byFindingKey = freezeAll(snap.findings.reduce((out, f, idx) => { U.getOr(out, findingKey(f), () => []).push(idx); return out; }, new Map())));
+    const EMPTY = Object.freeze([]);
     const vlanSrc = { vlans: m.vlans, interfaces: m.interfaces, links: m.links, inferred: m.inferredLinks || [], ifc: (ep) => ifc.get(ep), collected: (d) => !!(dev.get(d) || {}).collected };
     // 介面也會繼承其鏈路、設備的檢查結果：在查詢時合併
     const Q = {
@@ -163,7 +168,26 @@
       vlans: () => m.vlans,
       /** 所有 IP 位址實體（含鄰居宣告，hearsay 為 true）。 */
       ipAddresses: () => m.ipAddresses,
+      /** 該設備的收集覆蓋列（同 coverage() 的元素）；沒有這台設備時為 null。 */
+      coverageOf(d) {
+        if (!covByDev) covByDev = new Map((snap.coverage || []).map((c) => [c.dev, c]));
+        return covByDev.get(d) || null;
+      },
+      /** 全部 finding，依 Snapshot 的順序；陣列位置（idx）就是 finding(idx)、findingIndexesFor 等使用的索引。 */
       findings: () => snap.findings,
+      /** 第 idx 筆 finding；不是有效索引時為 null。idx 只在同一份 Snapshot 內有效，跨基準請用 findingKey。 */
+      finding: (idx) => (Number.isInteger(idx) && idx >= 0 && idx < snap.findings.length ? snap.findings[idx] : null),
+      /**
+       * findingKey 等於 key 的 finding 索引，由小到大（凍結的陣列）。findingKey 可能碰撞（見上方說明），所以是陣列；沒有時為空陣列。
+       */
+      findingIndexesByKey: (key) => findingKeyIndex().get(key) || EMPTY,
+      /** findingKey 等於 key 的第一筆 finding 索引；沒有時為 -1（碰撞時取 Snapshot 順序的第一筆）。 */
+      findingIndexByKey(key) { const a = findingKeyIndex().get(key); return a ? a[0] : -1; },
+      /** 某條規則（id，例如 'C01'）的 finding，依 Snapshot 的順序（凍結的陣列）。 */
+      findingsByRule(id) {
+        if (!byRule) byRule = freezeAll(snap.findings.reduce((out, f) => { U.getOr(out, f.id, () => []).push(f); return out; }, new Map()));
+        return byRule.get(id) || EMPTY;
+      },
       findingKey,
       findingBaseKey,
       getDevice: (k) => dev.get(K.dev(k)) || dev.get(k) || null,
@@ -339,6 +363,11 @@
       findingsFor(type, key) { return (findingsBy.get(type + ':' + key) || []).map((i) => snap.findings[i]); },
       findingIndexesFor(type, key) { return findingsBy.get(type + ':' + key) || []; },
       block: (id) => snap.blocks[id] || null,
+      /** 屬於某設備的輸入區塊（blocks[].devKey），依輸入順序（凍結的陣列）；沒有時為空陣列。 */
+      blocksOf(d) {
+        if (!blocksByDev) blocksByDev = freezeAll(snap.blocks.reduce((out, b) => { if (b.devKey) U.getOr(out, b.devKey, () => []).push(b); return out; }, new Map()));
+        return blocksByDev.get(d) || EMPTY;
+      },
       /** 有且僅有一個 MAC、非 Wi-Fi，且沒有 LLDP／CDP 介面鄰接的終端埠所屬設備（MNDP 廣播網域可達不算直連鄰接） */
       // 終端清單列：有線未知對端每筆 MAC 一列；Wi-Fi 每個 MAC／介面觀察位置一列。
       endpointEntries() {
@@ -434,4 +463,26 @@
   };
   S.query.findingKey = findingKey;
   S.query.findingBaseKey = findingBaseKey;
+
+  // ---- 不依賴 Snapshot 的靜態資訊：規則目錄與顯示名稱。
+  // 掛在 S.query 上（與 findingKey 相同），畫面與下游不必讀 S.check／S.adapters 的內部結構；
+  // 目前程式的規則目錄，不是建立該基準時的目錄（見 ADR-006 的「變困難的」）。
+  const RULES = Object.freeze(Object.keys(S.check.CATALOG).map((id) => Object.freeze(Object.assign({ id }, S.check.CATALOG[id]))));
+  const RULE_BY_ID = new Map(RULES.map((r) => [r.id, r]));
+  /**
+   * 一條規則的目錄資料（凍結）：{ id, severity, cat, title, data?, evidenceLimit?, facet?, causes, action }；不認得的 id 為 null。
+   * causes／action 給 V.remediation.advice 用，其他畫面不直接讀。
+   */
+  S.query.rule = (id) => RULE_BY_ID.get(id) || null;
+  /** 所有規則（凍結的陣列），依 CATALOG 的宣告順序（I、K、V、A…，匯出附錄依這個順序）；依編號排序的結果見 Q.ruleStatus()。 */
+  S.query.rules = () => RULES;
+  /** 資料類別（設備的 data、coverage 的 data／missing、收集失敗的 dataTypes）的顯示名稱；不認得時原樣回傳。 */
+  S.query.dataLabel = (t) => S.check.DATA_LABEL[t] || t;
+  /** 解析器（adapter id，見 meta.adapters、blocks[].adapters）的顯示名稱；不認得時原樣回傳。 */
+  S.query.adapterLabel = (id) => (Object.prototype.hasOwnProperty.call(S.adapters, id) && S.adapters[id] && S.adapters[id].label) || id;
+  /**
+   * 還沒建立查詢介面的 Snapshot JSON（瀏覽器儲存或使用者匯入的檔案）的 meta；不像 Snapshot（不是物件或沒有 meta 物件）時為 null。
+   * 用來先判斷 schema／version 是否相容，再決定要 S.query 還是重建。
+   */
+  S.query.metaOf = (json) => (json && typeof json === 'object' && !Array.isArray(json) && json.meta && typeof json.meta === 'object' && !Array.isArray(json.meta) ? json.meta : null);
 })(globalThis.SSOT = globalThis.SSOT || {});

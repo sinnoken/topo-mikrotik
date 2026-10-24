@@ -24,10 +24,12 @@
     firewall: ['lldp', 'config', 'route'],
     host: [], unknown: [],
   };
-  const DATA_LABEL = {
+  const fmtVlans = S.util.fmtVlans;
+  // 資料類別的顯示名稱；畫面透過 S.query.dataLabel 讀取
+  const DATA_LABEL = Object.freeze({
     lldp: '鄰居', config: '設定', vlans: 'VLAN 成員', mac: 'MAC 表', arp: 'ARP', route: '路由表',
     ospf: 'OSPF', ipaddr: 'IP 位址', ifstatus: '介面狀態', system: '系統資訊', wifireg: 'Wi-Fi 關聯表', stp: 'RSTP 狀態',
-  };
+  });
 
   function run(M, ctx) {
     const out = [];
@@ -573,13 +575,6 @@
       out.push({ ep, n, macs });
     });
     return out.sort((a, b) => S.util.natural(a.ep, b.ep));
-  }
-
-  function fmtVlans(ids) {
-    const out = []; let s = null; let p = null;
-    ids.forEach((v) => { if (s === null) { s = p = v; } else if (v === p + 1) { p = v; } else { out.push(s === p ? s : s + '-' + p); s = p = v; } });
-    if (s !== null) out.push(s === p ? s : s + '-' + p);
-    return out.join(',');
   }
 
   /** 已收集設備依類型應有、但沒有收集到的資料類別（C02 與 coverage 共用）。 */

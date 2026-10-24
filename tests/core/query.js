@@ -214,3 +214,88 @@ test('facet：仍會碰撞的規則（I01、I03 依輸入區塊，不是檢查�
   assert.ok(i03.every((f) => !('facet' in f)));
   assert.strictEqual(new Set(i03.map(S.query.findingKey)).size, 1, 'I03 同一台設備的多段仍共用一個鍵（ADR-003）');
 });
+
+// ------------------------------------------------------------------ 畫面用的查詢（不直接讀 Snapshot 欄位與 S.check）
+test('查詢介面：finding 依 idx 與 findingKey 取得；碰撞的鍵回傳全部索引，第一筆依 Snapshot 順序', () => {
+  const s = build(read('samples/sample-bundle.txt')); const Q = S.query(s);
+  assert.strictEqual(Q.findings(), s.findings, 'findings() 回傳 Snapshot 的陣列本身，不複製');
+  s.findings.forEach((f, idx) => {
+    assert.strictEqual(Q.finding(idx), f);
+    const all = Q.findingIndexesByKey(Q.findingKey(f));
+    assert.ok(all.includes(idx), `${f.id} 的索引在同鍵清單中`);
+    assert.strictEqual(Q.findingIndexByKey(Q.findingKey(f)), s.findings.findIndex((x) => Q.findingKey(x) === Q.findingKey(f)), '與畫面原本的 findIndex 相同');
+  });
+  [-1, s.findings.length, 1.5, '0', null, undefined].forEach((x) => assert.strictEqual(Q.finding(x), null, `無效索引 ${String(x)}`));
+  assert.deepStrictEqual(Q.findingIndexesByKey('["NOPE"]'), []);
+  assert.strictEqual(Q.findingIndexByKey('["NOPE"]'), -1);
+  // 碰撞：同一台設備兩段無法辨識的行（I03 共用一個鍵）
+  const c = build(['SW_A (10.0.0.1):', '### /ip arp print detail', ' 0 address=10.0.0.9 mac-address=AA:BB:CC:00:00:09 interface=ether1', 'GARBAGE LINE one',
+    '### /ip address print detail', ' 0 address=10.0.0.1/24 network=10.0.0.0 interface=ether1', 'GARBAGE LINE two'].join('\n'));
+  const Qc = S.query(c); const i03 = c.findings.map((f, idx) => [f, idx]).filter(([f]) => f.id === 'I03').map(([, idx]) => idx);
+  assert.strictEqual(i03.length, 2);
+  assert.deepStrictEqual(Array.from(Qc.findingIndexesByKey(Qc.findingKey(c.findings[i03[0]]))), i03);
+  assert.strictEqual(Qc.findingIndexByKey(Qc.findingKey(c.findings[i03[1]])), i03[0]);
+  assert.ok(Object.isFrozen(Qc.findingIndexesByKey(Qc.findingKey(c.findings[i03[0]]))), '索引陣列是 Q 的，凍結');
+});
+
+test('查詢介面：findingsByRule、blocksOf、coverageOf 與直接讀 Snapshot 的結果相同', () => {
+  const s = build(read('samples/sample-bundle.txt')); const Q = S.query(s);
+  const ruleIds = S.util.uniq(s.findings.map((f) => f.id));
+  assert.ok(ruleIds.includes('C01') && ruleIds.includes('K01'), '範例資料含 C01、K01');
+  ruleIds.forEach((id) => assert.deepStrictEqual(Array.from(Q.findingsByRule(id)), s.findings.filter((f) => f.id === id), id));
+  assert.deepStrictEqual(Q.findingsByRule('ZZ99'), []);
+  assert.ok(Object.isFrozen(Q.findingsByRule('C01')) && Object.isFrozen(Q.findingsByRule('ZZ99')));
+  s.model.devices.forEach((d) => {
+    assert.deepStrictEqual(Array.from(Q.blocksOf(d.key)), s.blocks.filter((b) => b.devKey === d.key), `${d.key} 的區塊`);
+    assert.strictEqual(Q.coverageOf(d.key), s.coverage.find((c) => c.dev === d.key) || null, `${d.key} 的覆蓋`);
+  });
+  assert.ok(Q.blocksOf(s.model.devices.find((d) => d.collected).key).length > 0);
+  assert.deepStrictEqual(Q.blocksOf('NOPE'), []); assert.strictEqual(Q.coverageOf('NOPE'), null);
+  assert.ok(Q.blocksOf(s.model.devices[0].key).every((b) => Q.block(b.id) === b), 'blocksOf 的元素與 block(id) 是同一個物件');
+  assert.strictEqual(Q.meta(), s.meta); assert.strictEqual(Q.coverage(), s.coverage); assert.strictEqual(Q.devices(), s.model.devices);
+});
+
+test('查詢介面：規則目錄、資料類別、解析器名稱與 VLAN 文字（靜態，不需要 Snapshot）', () => {
+  const C = S.check.CATALOG;
+  assert.deepStrictEqual(S.query.rules().map((r) => r.id), Object.keys(C), '依 CATALOG 的宣告順序');
+  S.query.rules().forEach((r) => {
+    assert.strictEqual(S.query.rule(r.id), r);
+    const { id, ...rest } = r; assert.deepStrictEqual(rest, C[id], `${id} 的內容與 CATALOG 相同`);
+  });
+  assert.strictEqual(S.query.rule('ZZ99'), null); assert.strictEqual(S.query.rule('toString'), null);
+  // 凍結：呼叫端改不到目錄（含巢狀的 data、causes）
+  const k01 = S.query.rule('K01');
+  assert.ok(Object.isFrozen(S.query.rules()) && Object.isFrozen(k01) && Object.isFrozen(k01.causes) && Object.isFrozen(C.K01) && Object.isFrozen(C.K01.causes));
+  assert.throws(() => { 'use strict'; k01.title = 'x'; }, TypeError);
+  assert.throws(() => { 'use strict'; C.K01.causes.push('x'); }, TypeError);
+  assert.ok(Object.values(C).every((c) => !c.data || (Object.isFrozen(c.data) && c.data.every(Object.isFrozen))));
+  // 資料類別：每條規則需要的資料都有名稱；不認得的原樣回傳
+  Object.values(C).forEach((c) => (c.data || []).flat().forEach((t) => assert.notStrictEqual(S.query.dataLabel(t), t, t)));
+  assert.strictEqual(S.query.dataLabel('lldp'), S.check.DATA_LABEL.lldp);
+  assert.strictEqual(S.query.dataLabel('nope'), 'nope');
+  assert.ok(Object.isFrozen(S.check.DATA_LABEL));
+  // 解析器名稱：已登錄的 adapter 用 label；不認得的 id 與登錄表本身的方法名稱都原樣回傳
+  S.adapters.list.forEach((a) => assert.strictEqual(S.query.adapterLabel(a.id), a.label));
+  ['nope', 'list', 'register', 'parse', 'constructor'].forEach((x) => assert.strictEqual(S.query.adapterLabel(x), x));
+  // VLAN 文字：核心訊息與畫面同一個實作
+  assert.strictEqual(S.check.fmtVlans, S.util.fmtVlans);
+  assert.strictEqual(S.util.fmtVlans([1, 2, 3, 5, 7, 8, 4094]), '1-3,5,7-8,4094');
+  assert.strictEqual(S.util.fmtVlans([]), '');
+  assert.strictEqual(S.util.fmtVlans([10]), '10');
+});
+
+test('查詢介面：metaOf 只在 JSON 像 Snapshot 時回傳 meta', () => {
+  const s = build(read('samples/sample-bundle.txt'));
+  assert.strictEqual(S.query.metaOf(s), s.meta);
+  const j = JSON.parse(JSON.stringify(s));
+  assert.deepStrictEqual(S.query.metaOf(j), s.meta);
+  assert.strictEqual(S.query.metaOf(j).schema, S.SCHEMA);
+  [null, undefined, 0, 'x', [], { meta: null }, { meta: 'x' }, { meta: [] }, {}].forEach((x) => assert.strictEqual(S.query.metaOf(x), null, JSON.stringify(x)));
+});
+
+test('查詢介面：第一次呼叫才建立索引，不改動 Snapshot（建立前後 JSON 相同）', () => {
+  const s = build(read('samples/sample-bundle.txt')); const before = JSON.stringify(s); const Q = S.query(s);
+  Q.findingIndexesByKey('x'); Q.findingsByRule('C01'); Q.blocksOf('x'); Q.coverageOf('x');
+  assert.strictEqual(JSON.stringify(s), before);
+  assert.ok(!Object.isFrozen(s.findings) && !Object.isFrozen(s.blocks), 'Snapshot 本身不凍結（靠約定唯讀；畫面會存進 IndexedDB 與匯出）');
+});

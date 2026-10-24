@@ -5,7 +5,7 @@ argument-hint: "Describe the field or contract being changed"
 user-invocable: true
 ---
 
-> Claude Code 版。內容與 `.github/skills/snapshot-contract-change/SKILL.md`（GitHub Copilot 版）相同，修改時兩邊一起改；`tests/run.js` 會檢查兩者一致。
+> Claude Code 版。內容與 `.github/skills/snapshot-contract-change/SKILL.md`（GitHub Copilot 版）相同，修改時兩邊一起改；`tests/docs.js` 會檢查兩者一致。
 
 # Snapshot Contract Change
 
@@ -41,8 +41,13 @@ Work through each layer in order and record which ones the change touches:
 - `S.VERSION` and `S.SCHEMA` live in `src/core/ns.js`. The app rebuilds a restored
   baseline from its saved inputs when `snap.meta.version` differs from `S.VERSION`, so
   bumping the version is what makes old browsers pick up parsing changes.
-  - Bump it only when the user wants stored baselines rebuilt, and say so. Do not bump
-    it as a reflex, and revert if the user declines.
+  - When to bump is decided in `docs/架構決策/005-版本升級規則.md` (ADR-005): bump the
+    minor version whenever the same input would produce a different Snapshot (facts,
+    inferences, findings or fields); adding only CATALOG text (`causes`, `action`) does
+    not bump. Follow that ADR instead of restating it here, and say in the report that
+    the version was bumped.
+  - The minor version is also part of `meta.baselineKey`, so a minor bump starts a new
+    round in the ledger; a patch bump does not.
   - Change `S.SCHEMA` only for a breaking shape change. The restore path (`App.restore`)
     rebuilds a baseline with a different schema from its saved inputs. If there are no
     inputs, it tells the user the baseline is incompatible.

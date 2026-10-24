@@ -92,7 +92,8 @@ CLI 輸入轉成可追溯的純 JSON Snapshot，畫面只是 Snapshot 的檢視�
   LLDP／CDP 鄰接證據。
 - **文件同步對照**：使用方式、畫面行為 → `README.md`；資料模型、推論規則
   → `docs/設計說明.md`；檢查規則 → `docs/基準檢查規則.md`；收集指令與格式 → `docs/收集清單與輸入格式.md`；命名 profile →
-  `docs/命名規則.md`。程式與文件一起改，不另寫一份與程式脫節的規格。
+  `docs/命名規則.md`；影響整體的決策（背景、選項與取捨）→ `docs/架構決策/`（ADR，
+  格式與新增方式見該目錄的 `README.md`）。程式與文件一起改，不另寫一份與程式脫節的規格。
 - **專用 skill**：改 adapter／解析使用 `routeros-parser-fixtures`；改 Snapshot 欄位、
   檢查代碼或版本使用 `snapshot-contract-change`；改鄰居與拓樸使用
   `mikrotik-neighbor-topology`；改防火牆規則解析與檢查使用 `routeros-acl-audit`。

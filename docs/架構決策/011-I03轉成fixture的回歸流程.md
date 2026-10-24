@@ -51,4 +51,4 @@
 
 - 使用者：決定是否採用。
 - docs：`routeros-parser-fixtures` skill 補上 I03 → fixture 的步驟（本次已加入）。
-- data-model：`tests/fixtures/real/README.md` 的「測試會檢查什麼」目前只寫「不可出現 I01」，實際上也不可有 I03，要補上。
+- ~~data-model：`tests/fixtures/real/README.md` 的「測試會檢查什麼」目前只寫「不可出現 I01」，實際上也不可有 I03，要補上。~~ **已完成**。

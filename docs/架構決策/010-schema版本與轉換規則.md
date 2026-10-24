@@ -11,7 +11,7 @@
 | 格式 | 產生者 | 讀取時的版本處理 | 可以從輸入重新產生 |
 |---|---|---|---|
 | `ssot-snapshot/2` | `S.build`（`src/pipeline.js`） | 畫面還原時 schema 或版本不同就用儲存的輸入重建（[ADR-005](005-版本升級規則.md)）；`S.compare.snapshots` 遇到不同 schema 不比對 | 是 |
-| `ssot-ledger/1` | `S.ledger`（`src/ledger/ledger.js`） | `validate` 要求 schema 完全相同，否則報錯 | 否，是使用者的決定 |
+| `ssot-ledger/1` | `S.ledger`（`src/ledger/ledger.js`） | `validate` 要求 schema 完全相同，否則報錯；不認得的欄位保留 | 否，是使用者的決定 |
 | `ssot-patch/1` | `S.remediate.plan`（`src/remediate/patch.js`） | 輸出 `.rsc` 時要求 schema 完全相同 | 是 |
 | `ssot-expected/1` | `S.compare.expectedFrom`，或使用者手寫 | `S.compare(Q, expected)` 要求 schema 完全相同 | 否，使用者會修改 |
 | `ssot-snapdiff/1` | `S.compare.snapshots` | 只輸出，不讀入 | 是 |
@@ -32,6 +32,8 @@
   - 每個舊版保留一份範例檔，測試它能轉換成新版且內容不遺失。
   - `S.profile.compile` 開始檢查 `schema` 欄位。
 - **可以重新產生的格式不需要轉換**：`ssot-snapshot`、`ssot-patch`、`ssot-snapdiff`、`ssot-diff`。遇到舊版時明確告知，從原始輸入重新產生。
+
+**相容修改的實例**：`ssot-ledger/1` 新增選用欄位 `baselineKey`（`iterations[].baseline.baselineKey`，見 [ADR-002](002-處理紀錄放在基準之外.md) 的「修訂」），**不升 schema**。沒有這個欄位的舊紀錄照常讀取，判斷時退回用 inputHash，不轉換、不改寫；舊版程式讀到新紀錄時保留不認得的欄位。這符合上面「新增選用欄位，並寫明沒有這個欄位時的意義」的規則。
 
 ## 考慮過的選項
 

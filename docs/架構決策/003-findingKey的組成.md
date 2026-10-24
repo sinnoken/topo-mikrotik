@@ -52,9 +52,9 @@
 ### 之後要回頭看的
 
 - 碰撞的規則是否補上可以區分的實體（例如 I03 依區塊區分），要和處理紀錄的相容性一起評估：補上之後，舊的鍵都會改變。
-- 「finding 所屬設備」目前有兩份實作：`Q.findingDevice`（query.js）與 `V.remediation.findingDevice`（src/view/remediation.js），規則相同。畫面應改為呼叫查詢介面。
+- 「finding 所屬設備」目前有兩份實作：`Q.findingDevice`（query.js）與 `V.remediation.findingDevice`（src/view/remediation.js），規則相同。畫面應改為呼叫查詢介面。**已處理**：畫面的實作已移除，分組、匯出與修正計畫都呼叫 `Q.findingDevice`，只剩一份。
 
 ## 待辦
 
-- frontend：檢查結果分組、匯出改用 `Q.findingDevice`，移除畫面的重複實作。
+- ~~frontend：檢查結果分組、匯出改用 `Q.findingDevice`，移除畫面的重複實作。~~ **已完成**。
 - data-model：若要處理碰撞，先列出受影響的規則與處理紀錄的轉換方式。

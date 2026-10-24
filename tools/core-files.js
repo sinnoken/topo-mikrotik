@@ -6,4 +6,6 @@ module.exports = [
   'src/data/oui-data.js', 'src/data/oui.js',
   'src/profile/profile.js', 'src/model/build.js', 'src/model/infer.js', 'src/check/catalog.js', 'src/check/checks.js',
   'src/pipeline.js', 'src/query/query.js', 'src/query/trace.js', 'src/compare/compare.js',
+  // 處理紀錄（ssot-ledger/1），不屬於 Snapshot
+  'src/ledger/ledger.js',
 ];

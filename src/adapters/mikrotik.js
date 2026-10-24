@@ -28,6 +28,7 @@
   const VENDOR = 'mikrotik';
   const has = (lines, key) => { const re = new RegExp('(^|\\s)' + key + '='); return lines.some((l) => re.test(l)); };
   const list = (v) => String(v || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const noop = () => {};
 
   // ================================================================ detail 輸出解析
   const KVRE = /([\w.\-]+)=("(?:[^"\\]|\\.)*"|\S*)/g;
@@ -41,7 +42,7 @@
     return kv;
   }
   function newRow(toks, line) {
-    return { flags: toks.filter((t) => !/^\d+$/.test(t)).join(''), idx: toks.find((t) => /^\d+$/.test(t)) ?? null, kv: {}, comment: null, line };
+    return { flags: toks.filter((t) => !/^\d+$/.test(t)).join(''), idx: toks.find((t) => /^\d+$/.test(t)) ?? null, kv: {}, comment: null, line, lines: [line] };
   }
   /**
    * 把 detail 輸出切成「列」：
@@ -49,9 +50,10 @@
    *  - 續行：沒有序號與旗標、直接以 key=value 開頭（終端機換行）→ 併入上一列
    *  - `;;; 註解` 屬於它所在或下一個列
    *  - 旗標說明可區分列首旗標與 CAPsMAN 等續行說明
-   *  - `Flags:`、`Columns:` 說明行略過
+   *  - `Flags:`、`Columns:` 說明行略過（傳入 ignore 時列為可忽略）
+   * 每列帶 lines（這一列涵蓋的行號）；不屬於任何列的行（沒有 key=value 也不是註解）不在任何列中，由 adapter 層列為無法辨識。
    */
-  function parseRows(b) {
+  function parseRows(b, ignore) {
     const flagChars = new Set();
     b.lines.forEach((raw) => {
       const legend = raw.match(/^\s*Flags:\s*(.*)$/i);
@@ -62,7 +64,8 @@
     const rows = []; let cur = null; let pending = null;
     b.lines.forEach((raw, i) => {
       const line = raw.replace(/\r$/, ''); const t = line.trim();
-      if (!t || /^(Flags|Columns):/i.test(t)) return;
+      if (!t) return;
+      if (/^(Flags|Columns):/i.test(t)) { if (ignore) ignore(at(b, i), '說明行'); return; }
       let comment = null; let body = line;
       const ci = line.indexOf(';;;');
       if (ci >= 0) { comment = line.slice(ci + 3).trim(); body = line.slice(0, ci); }
@@ -75,21 +78,37 @@
           const rowPrefix = indexed || !flagChars.size || (flagTokens.length && flagTokens.every((token) =>
             Array.from(token).every((ch) => flagChars.has(ch))));
           if (toks.length && rowPrefix) { cur = newRow(toks, at(b, i)); cur.comment = comment; rows.push(cur); }
-          else if (toks.length && cur) cur.comment = [cur.comment, comment].filter(Boolean).join('; ');
-          else pending = comment;
+          else if (toks.length && cur) { cur.comment = [cur.comment, comment].filter(Boolean).join('; '); cur.lines.push(at(b, i)); }
+          else pending = { text: comment, line: at(b, i) };
+        } else {
+          // 只有序號與旗標、欄位在下一行（與上面 `;;;` 列首同樣的形狀，只是沒有註解）：開新列，否則下一行會被併進上一列。
+          // 序號必須有；旗標須是說明行列出的字元（沒有說明行時只接受英文字母），雜訊不會被當成列首
+          const toks = t.split(/\s+/);
+          const flagOk = (ch) => (flagChars.size ? flagChars.has(ch) : /[A-Za-z]/.test(ch));
+          if (/^\d+$/.test(toks[0]) && toks.slice(1).every((token) => Array.from(token).every(flagOk))) {
+            cur = newRow(toks, at(b, i)); rows.push(cur);
+            if (pending) { cur.comment = pending.text; cur.lines.unshift(pending.line); pending = null; }
+          }
         }
         return;
       }
       const prefix = body.slice(0, km.index + km[1].length).trim();
       const rest = body.slice(km.index + km[1].length);
-      if (!prefix && cur) { Object.assign(cur.kv, kvOf(rest)); return; }
+      if (!prefix && cur) { Object.assign(cur.kv, kvOf(rest)); cur.lines.push(at(b, i)); return; }
       cur = newRow(prefix.split(/\s+/).filter(Boolean), at(b, i));
-      cur.comment = comment !== null ? comment : pending; pending = null;
+      cur.comment = comment !== null ? comment : pending && pending.text;
+      if (pending) cur.lines.unshift(pending.line);
+      pending = null;
       Object.assign(cur.kv, kvOf(rest)); rows.push(cur);
     });
     return rows;
   }
   S.adapters.mikrotikRows = parseRows; // 測試用
+  /**
+   * 一列處理完：產生事實時，列首以外的行（續行、獨立的 ;;; 註解）是同一筆的一部分；
+   * why 有值時整列依該原因略過（停用、非作用中、重複列…）。缺必要欄位的列不呼叫，留給 I03。
+   */
+  const settle = (r, ignore, why) => r.lines.forEach((n) => { if (why || n !== r.line) ignore(n, why || '續行'); });
 
   // ================================================================ 鄰居
   const isBridgeName = (n) => /^bridge/i.test(n);
@@ -99,9 +118,9 @@
     id: 'mikrotik.neighbor', vendor: VENDOR, dataType: 'lldp', label: 'RouterOS 鄰居（LLDP／MNDP／CDP）',
     command: /^\/?ip\s+neighbou?r\b/i,
     detect: (lines) => has(lines, 'identity') && has(lines, 'mac-address') && has(lines, 'interface'),
-    parse(b, emit) {
+    parse(b, emit, ignore = noop) {
       const rows = [];
-      parseRows(b).forEach((r) => {
+      parseRows(b, ignore).forEach((r) => {
         const kv = r.kv;
         const locals = list(String(kv.interface || '').replace(/\//g, ','));
         if (!locals.length) return;
@@ -111,7 +130,7 @@
         rows.push({
           local: locals.find((x) => !isBridgeName(x)) || locals[0], viaBridge: locals.every(isBridgeName),
           peer, ident: kv.identity || null, discoveredBy: kv['discovered-by'] || '', peerIfc: peerPort(kv['interface-name']), mac: kv['mac-address'] || null, addr,
-          board: kv.board || null, platform: kv.platform || null, version: kv.version || null, caps: kv['system-caps-enabled'] || kv['system-caps'] || null, line: r.line,
+          board: kv.board || null, platform: kv.platform || null, version: kv.version || null, caps: kv['system-caps-enabled'] || kv['system-caps'] || null, line: r.line, row: r,
         });
       });
       // 同一台鄰居可能被多個協定（LLDP／MNDP／CDP）、或同時從連接埠與 bridge 看到：
@@ -124,11 +143,13 @@
       });
       const physical = rows.filter((r) => !r.viaBridge);
       const groups = [];
+      rows.forEach((r) => { if (r.viaBridge && physical.some((p) => same(p, r))) settle(r.row, ignore, '同一鄰居經 bridge 的重複列'); });
       physical.concat(rows.filter((r) => r.viaBridge && !physical.some((p) => same(p, r)))).forEach((r) => {
         const g = groups.find((x) => x.local === r.local && x.rows.some((y) => same(y, r)));
         if (g) g.rows.push(r); else groups.push({ local: r.local, rows: [r] });
       });
       groups.forEach((g) => {
+        g.rows.forEach((r, k) => settle(r.row, ignore, k ? '同一鄰居的其他協定或重複列（已合併）' : null));
         const first = (f, rs) => { const r = rs.find((x) => x[f]); return r ? r[f] : null; };
         const lldp = g.rows.filter((r) => r.protos.includes('lldp'));
         const prefer = lldp.concat(g.rows.filter((r) => !lldp.includes(r)));
@@ -224,12 +245,12 @@
     id: 'mikrotik.config', vendor: VENDOR, dataType: 'config', label: 'RouterOS 設定',
     command: /^\/?export\b/i,
     detect: (lines) => lines.some((l) => /^\s*(\/[\w\- ]+?\s+)?add\s+[\w\-]+=/.test(l)) && lines.some((l) => /^\s*\/(interface|ip|system|routing)\b/.test(l)),
-    parse(b, emit) {
-      // 還原斷行：行尾 \ 接到下一行（續行的前導空白去掉）
+    parse(b, emit, ignore = noop) {
+      // 還原斷行：行尾 \ 接到下一行（續行的前導空白去掉）；續行屬於同一個敘述
       const lines = []; let acc = null;
       b.lines.forEach((raw, i) => {
         const l = raw.replace(/\r$/, '');
-        if (acc) acc.text += l.trim(); else acc = { text: l.trim(), line: at(b, i) };
+        if (acc) { acc.text += l.trim(); ignore(at(b, i), '續行'); } else acc = { text: l.trim(), line: at(b, i) };
         if (acc.text.endsWith('\\')) { acc.text = acc.text.slice(0, -1); return; }
         lines.push(acc); acc = null;
       });
@@ -359,22 +380,25 @@
           }
         }
       };
+      // 可忽略：export 抬頭（# 註解）、選單路徑行、語法正確但這個工具沒有使用（或停用、欄位不足）的 add／set 敘述。
+      // 其他內容（不是 #、/選單、add／set 開頭，或還沒有選單路徑就出現 add／set）不是 export 的格式，留給 I03。
       lines.forEach(({ text, line }) => {
         // export 開頭的「# 日期 時間 by RouterOS 版本」：設備自己記錄的收集時間（設備本地時間）
         const hdr = text && text.match(/^#\s*(\d{4}-\d{2}-\d{2}|[a-z]{3}\/\d{2}\/\d{4})\s+(\d{2}:\d{2}:\d{2})\s+by RouterOS\b/i);
         if (hdr) { const at = exportTime(hdr[1], hdr[2]); if (at) emit({ t: 'collectedAt', at, line }); }
-        if (!text || text.startsWith('#')) return;
+        if (!text) return;
+        if (text.startsWith('#')) { ignore(line, '註解'); return; }
         if (text[0] === '/') {
           // RouterOS 7 也可能輸出斜線分隔的選單路徑（/interface/bridge/port），視同空白分隔
           text = text.replace(/^\/[\w\-/]+/, (p) => '/' + p.slice(1).split('/').filter(Boolean).join(' '));
           const m = text.match(/^(\/[\w\-]+(?:\s+[\w\-]+)*?)(?:\s+(add|set)\b\s*(.*))?$/);
           if (!m) return;
           const path = m[1].replace(/\s+/g, ' ');
-          if (m[2]) handle(path, m[2], m[3] || '', line); else ctx = path;
+          if (m[2]) { handle(path, m[2], m[3] || '', line); ignore(line, '未使用的設定'); } else { ctx = path; ignore(line, '選單路徑'); }
           return;
         }
         const m = text.match(/^(add|set)\b\s*(.*)$/);
-        if (m) handle(ctx, m[1], m[2], line);
+        if (m && ctx) { handle(ctx, m[1], m[2], line); ignore(line, '未使用的設定'); }
       });
 
       // bridge VLAN filtering：只有開啟時，VLAN 成員才有意義
@@ -398,10 +422,11 @@
     id: 'mikrotik.bridgehost', vendor: VENDOR, dataType: 'mac', label: 'RouterOS MAC 表',
     command: /^\/?interface\s+bridge\s+host\b/i,
     detect: (lines) => has(lines, 'mac-address') && has(lines, 'on-interface'),
-    parse(b, emit) {
-      parseRows(b).forEach((r) => {
+    parse(b, emit, ignore = noop) {
+      parseRows(b, ignore).forEach((r) => {
         const kv = r.kv;
         if (!kv['mac-address'] || !kv['on-interface']) return;
+        settle(r, ignore);
         if (r.flags.includes('L')) { emit({ t: 'ownMac', mac: kv['mac-address'], ifc: kv['on-interface'], line: r.line }); return; } // L：設備自己的 MAC，不是學到的位置
         // 沒有 D（dynamic）旗標的是手動設定的靜態項目
         emit({ t: 'mac', vlan: kv.vid && kv.vid !== '0' ? kv.vid : null, mac: kv['mac-address'], ifc: kv['on-interface'], static: !r.flags.includes('D'), line: r.line });
@@ -414,9 +439,10 @@
     id: 'mikrotik.vlans', vendor: VENDOR, dataType: 'vlans', label: 'RouterOS VLAN 成員',
     command: /^\/?interface\s+bridge\s+vlan\b/i,
     detect: (lines) => has(lines, 'vlan-ids') && has(lines, 'bridge') && (has(lines, 'tagged') || has(lines, 'untagged') || has(lines, 'current-tagged')),
-    parse(b, emit) {
-      parseRows(b).forEach((r) => {
+    parse(b, emit, ignore = noop) {
+      parseRows(b, ignore).forEach((r) => {
         const kv = r.kv; const ids = S.util.vlanTokens(kv['vlan-ids'] || ''); if (!ids.length) return;
+        settle(r, ignore);
         const tagged = 'current-tagged' in kv ? list(kv['current-tagged']) : list(kv.tagged);
         const untagged = 'current-untagged' in kv ? list(kv['current-untagged']) : list(kv.untagged);
         ids.forEach((id) => {
@@ -433,9 +459,10 @@
     id: 'mikrotik.interface', vendor: VENDOR, dataType: 'ifstatus', label: 'RouterOS 介面狀態',
     command: /^\/?interface\s+print\b/i,
     detect: (lines) => has(lines, 'name') && has(lines, 'type') && has(lines, 'mtu'),
-    parse(b, emit) {
-      parseRows(b).forEach((r) => {
+    parse(b, emit, ignore = noop) {
+      parseRows(b, ignore).forEach((r) => {
         const kv = r.kv; if (!kv.name) return;
+        settle(r, ignore);
         const f = { t: 'ifc', ifc: kv.name, status: r.flags.includes('R') ? 'up' : 'down', line: r.line };
         f.enabled = !r.flags.includes('X');
         const desc = kv.comment || r.comment; if (desc) f.desc = desc;
@@ -453,10 +480,12 @@
     id: 'mikrotik.ipaddr', vendor: VENDOR, dataType: 'ipaddr', label: 'RouterOS IP 位址',
     command: /^\/?ip\s+address\b/i,
     detect: (lines) => lines.some((l) => /(^|\s)address=\d+\.\d+\.\d+\.\d+\/\d+/.test(l)) && has(lines, 'network') && has(lines, 'interface'),
-    parse(b, emit) {
-      parseRows(b).forEach((r) => {
+    parse(b, emit, ignore = noop) {
+      parseRows(b, ignore).forEach((r) => {
         const kv = r.kv;
-        if (!kv.address || !kv.interface || /[XI]/.test(r.flags) || !/^\d+\.\d+\.\d+\.\d+\/\d+$/.test(kv.address)) return;
+        if (!kv.address || !kv.interface || !/^\d+\.\d+\.\d+\.\d+\/\d+$/.test(kv.address)) return;
+        if (/[XI]/.test(r.flags)) { settle(r, ignore, '停用或無效的項目'); return; }
+        settle(r, ignore);
         emit({ t: 'ifc', ifc: kv['actual-interface'] || kv.interface, ip: kv.address, line: r.line });
       });
     },
@@ -467,11 +496,15 @@
     id: 'mikrotik.arp', vendor: VENDOR, dataType: 'arp', label: 'RouterOS ARP 表',
     command: /^\/?ip\s+arp\b/i,
     detect: (lines) => has(lines, 'mac-address') && has(lines, 'complete') && has(lines, 'interface'),
-    parse(b, emit) {
-      parseRows(b).forEach((r) => {
+    parse(b, emit, ignore = noop) {
+      parseRows(b, ignore).forEach((r) => {
         const kv = r.kv;
-        if (!kv.address || !kv['mac-address'] || !IPRE.test(kv.address) || /[XI]/.test(r.flags)) return;
-        if (kv.address.startsWith('169.254.') || /^(22[4-9]|23\d)\./.test(kv.address)) return;
+        if (!kv.address || !IPRE.test(kv.address)) return;
+        if (/[XI]/.test(r.flags)) { settle(r, ignore, '停用或無效的項目'); return; }
+        // 還沒解析出 MAC 的項目（手冊：status 為 incomplete／failed 時沒有 mac-address）
+        if (!kv['mac-address']) { settle(r, ignore, '沒有 MAC 的未完成項目'); return; }
+        if (kv.address.startsWith('169.254.') || /^(22[4-9]|23\d)\./.test(kv.address)) { settle(r, ignore, 'link-local 或 multicast 位址'); return; }
+        settle(r, ignore);
         emit({ t: 'arp', ifc: kv.interface, ip: kv.address, mac: kv['mac-address'], line: r.line });
       });
     },
@@ -482,17 +515,19 @@
     id: 'mikrotik.route', vendor: VENDOR, dataType: 'route', label: 'RouterOS 路由表',
     command: /^\/?ip\s+route\b/i,
     detect: (lines) => has(lines, 'dst-address') && (has(lines, 'gateway') || has(lines, 'immediate-gw')),
-    parse(b, emit) {
-      const rows = parseRows(b);
+    parse(b, emit, ignore = noop) {
+      const rows = parseRows(b, ignore);
       rows.forEach((r, ri) => {
         const kv = r.kv; const m = String(kv['dst-address'] || '').match(/^(\d+\.\d+\.\d+\.\d+)\/(\d+)$/);
-        if (!m || !r.flags.includes('A')) return;                                 // 只要作用中的路由
-        if (kv['routing-table'] && kv['routing-table'] !== 'main') return;
+        if (!m) return;
+        if (!r.flags.includes('A')) { settle(r, ignore, '非作用中的路由'); return; }  // 只要作用中的路由
+        if (kv['routing-table'] && kv['routing-table'] !== 'main') { settle(r, ignore, '非 main 路由表'); return; }
         const distance = /^\d+$/.test(kv.distance || '') ? +kv.distance : null;
         // 黑洞／不可達／禁止：RouterOS 6 為 B／U／P 旗標或 type=；RouterOS 7 是列中單獨的 blackhole 字（不是 key=value）
         const raw = b.lines.slice(r.line - b.origin.startLine, ri + 1 < rows.length ? rows[ri + 1].line - b.origin.startLine : undefined).join(' ');
         if (/[BUP]/.test(r.flags) || /(^|\s)blackhole(\s|$)/.test(raw) || /^(blackhole|unreachable|prohibit)$/i.test(kv.type || kv.gateway || '')) {
           emit({ t: 'route', prefix: m[1], len: +m[2], proto: 'Blackhole', nh: [], blackhole: true, distance, line: r.line });
+          settle(r, ignore);
           return;
         }
         const f = r.flags;
@@ -508,6 +543,7 @@
         });
         if (!nh.length) return;
         emit({ t: 'route', prefix: m[1], len: +m[2], proto, nh, distance, line: r.line });
+        settle(r, ignore);
       });
     },
   });
@@ -517,10 +553,11 @@
     id: 'mikrotik.ospf', vendor: VENDOR, dataType: 'ospf', label: 'RouterOS OSPF 鄰居',
     command: /^\/?routing\s+ospf\s+neighbou?r\b/i,
     detect: (lines) => has(lines, 'router-id') && has(lines, 'state') && lines.some((l) => /(^|\s)address=\d/.test(l)),
-    parse(b, emit) {
-      parseRows(b).forEach((r) => {
+    parse(b, emit, ignore = noop) {
+      parseRows(b, ignore).forEach((r) => {
         const kv = r.kv;
         if (!IPRE.test(kv.address || '') || !IPRE.test(kv['router-id'] || '')) return;
+        settle(r, ignore);
         emit({ t: 'ospf', nbrAddr: kv.address, nbrId: kv['router-id'], state: kv.state || '', ifc: kv.interface || null, line: r.line });
       });
     },
@@ -540,19 +577,19 @@
   }
   S.adapters.mikrotikDuration = duration; // 測試用
   const dbm = (v) => { const m = String(v || '').match(/^(-?\d+)/); return m ? +m[1] : null; };
-  // RouterOS 對不存在的選單或語法錯誤的回應：不是空的關聯表，交由 I01 呈現
-  const ROS_ERROR = /^\s*(bad command name|syntax error|expected end of command|no such (item|command))/i;
   reg({
     id: 'mikrotik.wifireg', vendor: VENDOR, dataType: 'wifireg', label: 'RouterOS Wi-Fi 關聯表',
     command: /^\/?(interface\s+(wifi|wireless)\s+registration-table|caps-man\s+registration-table)\b/i,
     detect: (lines) => has(lines, 'mac-address') && has(lines, 'interface') && has(lines, 'uptime') && (has(lines, 'last-activity') || has(lines, 'rx-signal')),
-    parse(b, emit) {
+    parse(b, emit, ignore = noop) {
       // eap-identity、eap-username 是使用者帳號（個資），刻意不讀取；原文仍在收集檔，見 docs/收集清單與輸入格式.md
-      let rows = 0;
-      parseRows(b).forEach((r) => {
+      let rows = 0; const handled = new Set();
+      const mark = (n, why) => { handled.add(n); ignore(n, why); };
+      parseRows(b, mark).forEach((r) => {
         const kv = r.kv;
         if (!kv['mac-address'] || !kv.interface) return;
-        if (kv.ap === 'yes' || kv.ap === 'true') return; // 舊版 wireless：對端是 AP（WDS／站台模式），不是客戶端
+        if (kv.ap === 'yes' || kv.ap === 'true') { settle(r, mark, '對端是 AP，不是客戶端'); return; } // 舊版 wireless：WDS／站台模式
+        settle(r, ignore);
         rows++;
         emit({
           t: 'assoc', ifc: kv.interface, mac: kv['mac-address'], ssid: kv.ssid || null, band: kv.band || null,
@@ -563,8 +600,10 @@
           line: r.line,
         });
       });
-      // 沒有客戶端時表格只有說明行：記為「已收集、0 筆」，避免被當成無法辨識
-      if (!rows && !b.lines.some((l) => ROS_ERROR.test(l))) emit({ t: 'assocTable', rows: 0, line: b.origin.startLine });
+      // 沒有客戶端時表格只有說明行（或只有對端 AP）：記為「已收集、0 筆」，避免被當成無法辨識。
+      // 有任何其他內容（RouterOS 錯誤訊息、雜訊）時不記，整段由 I01 呈現。事實指向第一個說明行。
+      const content = b.lines.map((l, i) => (l.trim() ? at(b, i) : null)).filter((n) => n !== null);
+      if (!rows && content.every((n) => handled.has(n))) emit({ t: 'assocTable', rows: 0, line: content.length ? content[0] : b.origin.startLine });
     },
   });
 
@@ -573,25 +612,29 @@
    * monitor 一次列出多個項目時是欄式輸出：每行「key: 值1 值2 …」，冒號對齊，第一行 interface（或 name）決定欄數與每欄的起始位置。
    * 官方手冊的範例裡，某些欄位只有部分埠有值（例如 designated-port 的 designated-bridge-id 是空白），
    * 所以依起始位置切欄；冒號沒有對齊的行（例如手寫資料）才退回以空白切開，且數量必須等於欄數。
+   * consumed(行號)：有讀進欄位的行（不是 key: 的行、值的數量對不上欄數的行不算，留給 I03）。
    */
-  function monitorColumns(b) {
-    let starts = null; let valueAt = -1; const out = [];
+  function monitorColumns(b, consumed) {
+    const use = consumed || (() => {});
+    let starts = null; let valueAt = -1; let colonAt = -1; const out = [];
     b.lines.forEach((raw, i) => {
       const line = raw.replace(/\r$/, '');
-      const m = line.match(/^(\s*([\w-]+):\s*)(.*?)\s*$/); if (!m) return;
-      const key = m[2]; const at0 = m[1].length;
+      const m = line.match(/^((\s*[\w-]+):\s*)(.*?)\s*$/); if (!m) return;
+      const key = m[2].trim(); const at0 = m[1].length; const colon = m[2].length;
       if (!starts && (key === 'interface' || key === 'name')) {
         starts = []; const re = /\S+/g; let t;
         while ((t = re.exec(m[3]))) { starts.push(at0 + t.index); out.push({ [key]: t[0], _line: at(b, i) }); }
-        valueAt = at0; return;
+        valueAt = at0; colonAt = colon; use(at(b, i)); return;
       }
       // 只監看一個項目（例如 /interface bridge monitor bridge1）時沒有 interface／name 行：整段是單一欄
-      if (!starts) { starts = [at0]; valueAt = at0; out.push({ _line: at(b, i) }); }
-      if (at0 === valueAt || !m[3]) {
+      if (!starts) { starts = [at0]; valueAt = at0; colonAt = colon; out.push({ _line: at(b, i) }); }
+      // 冒號對齊：第一欄是空白時值會從後面的欄開始（手冊範例的 last-topology-change），仍依起始位置切欄
+      if (at0 === valueAt || !m[3] || (colon === colonAt && at0 > valueAt)) {
         starts.forEach((st, k) => { const v = line.slice(st, k + 1 < starts.length ? starts[k + 1] : undefined).trim(); if (v) out[k][key] = v; });
+        use(at(b, i));
       } else {
         const vals = m[3].split(/\s+/);
-        if (vals.length === starts.length) vals.forEach((v, k) => { out[k][key] = v; });
+        if (vals.length === starts.length) { vals.forEach((v, k) => { out[k][key] = v; }); use(at(b, i)); }
       }
     });
     return out;
@@ -604,9 +647,11 @@
     id: 'mikrotik.stp', vendor: VENDOR, dataType: 'stp', label: 'RouterOS RSTP 埠狀態',
     command: /^\/?interface\s+bridge\s+port\s+monitor\b/i,
     detect: (lines) => lines.some((l) => /^\s*(role|designated-bridge(-id)?):/.test(l)),
-    parse(b, emit) {
-      monitorColumns(b).forEach((c) => {
+    parse(b, emit, ignore = noop) {
+      const fields = []; let marked = false;
+      monitorColumns(b, (n) => fields.push(n)).forEach((c) => {
         if (c.role === undefined && c['designated-bridge-id'] === undefined && c['designated-bridge'] === undefined) return;
+        if (!marked) { fields.forEach((n) => ignore(n, '同一筆的其他欄位')); marked = true; }
         const portNo = c['port-number'] || (String(c['port-id'] || '').match(/(\d+)$/) || [])[1];
         const dPort = c['designated-port-number'] || (String(c['designated-port-id'] || '').match(/(\d+)$/) || [])[1];
         emit({ t: 'stpPort', ifc: c.interface, role: c.role || null, portNumber: portNo ? +portNo : null,
@@ -619,9 +664,12 @@
     id: 'mikrotik.stpbridge', vendor: VENDOR, dataType: 'stp', label: 'RouterOS RSTP bridge 狀態',
     command: /^\/?interface\s+bridge\s+monitor\b/i,
     detect: (lines) => lines.some((l) => /^\s*(root-bridge-id|current-mac-address):/.test(l)),
-    parse(b, emit) {
-      monitorColumns(b).forEach((c) => {
-        if (c['current-mac-address'] || c['root-bridge-id']) emit({ t: 'stpBridge', ifc: c.name || c.interface, mac: c['current-mac-address'] || null, rootBridge: bridgeIdMac(c['root-bridge-id']), isRoot: yes(c['root-bridge']), line: c._line });
+    parse(b, emit, ignore = noop) {
+      const fields = []; let marked = false;
+      monitorColumns(b, (n) => fields.push(n)).forEach((c) => {
+        if (!(c['current-mac-address'] || c['root-bridge-id'])) return;
+        if (!marked) { fields.forEach((n) => ignore(n, '同一筆的其他欄位')); marked = true; }
+        emit({ t: 'stpBridge', ifc: c.name || c.interface, mac: c['current-mac-address'] || null, rootBridge: bridgeIdMac(c['root-bridge-id']), isRoot: yes(c['root-bridge']), line: c._line });
       });
     },
   });
@@ -631,13 +679,14 @@
     id: 'mikrotik.system', vendor: VENDOR, dataType: 'system', label: 'RouterOS 系統資訊',
     command: /^\/?system\s+(resource|identity)\b/i,
     detect: (lines) => lines.some((l) => /^\s*board-name:/.test(l)),
-    parse(b, emit) {
+    parse(b, emit, ignore = noop) {
       const identity = /identity/i.test(b.command || '');
       b.lines.forEach((l, i) => {
         let m;
         if ((m = l.match(/^\s*board-name:\s*(.+?)\s*$/))) emit({ t: 'sys', board: m[1], line: at(b, i) });
         else if ((m = l.match(/^\s*version:\s*(.+?)\s*$/))) emit({ t: 'sys', version: m[1], line: at(b, i) });
         else if (identity && (m = l.match(/^\s*name:\s*(.+?)\s*$/))) emit({ t: 'hostname', name: m[1], line: at(b, i) });
+        else if (/^\s*[\w-]+:(\s|$)/.test(l)) ignore(at(b, i), '未使用的欄位'); // print 的「key: value」格式，其他欄位（uptime、cpu…）不需要
       });
     },
   });

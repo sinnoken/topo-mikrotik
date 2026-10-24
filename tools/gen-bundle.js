@@ -286,7 +286,8 @@ for (let s = 1; s <= SITES; s++) {
     ].map((l) => l.replace(/\s+$/, '')).join('\n')]);
     cmds.push(['/interface bridge monitor [find] once', [`                   name: bridge1`, `                  state: enabled`, `    current-mac-address: ${sw.mac}`, `              bridge-id: 0x8000.${sw.mac}`,
       `            root-bridge: no`, `         root-bridge-id: 0x8000.${core[0].mac}`, `              root-port: bond${i + 1}`].join('\n')]);
-    if (!(F && i === 8)) cmds.push([`/interface bridge host print ${D}`, bridgeHostText([{ local: true, vid: 0, mac: sw.mac, ifc: 'bridge1' }, ...sw.macs])]);       // C02：ACC_09 沒有 MAC 表
+    if (!(F && i === 8)) cmds.push([`/interface bridge host print ${D}`, bridgeHostText([{ local: true, vid: 0, mac: sw.mac, ifc: 'bridge1' }, ...sw.macs])       // C02：ACC_09 沒有 MAC 表
+      + (F && i === 11 ? '\n```' : '')]);                                                                                // I03：ACC_12 的 MAC 表後面混入 markdown 標記（從聊天或文件貼上）；放在最後一台的最後，不移動其他行號
     if (F && i === 9) cmds.push(['/system routerboard print', 'routerboard: yes\n        model: CRS326-24G-2S+\n serial-number: HF1234567890']);                  // I01
     if (F && i === 10) cmds.push([`/interface bridge host print ${D}`, bridgeHostText([{ local: true, vid: 0, mac: sw.mac, ifc: 'bridge1' }, ...sw.macs])]);      // I02
     device(sw.name, sw.ip, cmds);

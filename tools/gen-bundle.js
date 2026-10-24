@@ -306,5 +306,43 @@ if (SITES > 1) {
     [`/routing ospf neighbor print ${D}`, ospfText(wan.ospf)], [`/ip route print ${D}`, routeText(wan.routes)],
   ]);
 }
+// 分支站點（只在 --faults，放在最後才不會移動前面的行號）：單臂路由與未開 vlan-filtering 的 bridge
+//   TPE_BR_RT_01 ether2 ─ TPE_BR_SW_01 ether1：路由器的實體埠只靠 VLAN 子介面承載 VLAN 10、20（VLAN 30 的子介面停用），
+//     交換器 trunk tagged 10、20；路由器埠不在 bridge 上，交換器的 PVID 1 不算不一致，所以沒有 V01
+//   TPE_BR_SW_01 ether2 ─ TPE_LAB_SW_01 ether1：LAB 的 bridge1 沒有開 vlan-filtering，VLAN 原樣轉送，不比較（V09）
+if (FAULTS) {
+  const C = siteCode(1);
+  const br = [
+    { name: `${C}_BR_RT_01`, ip: `10.1.10.240`, mac: mac(OUI_MT[1]), board: 'RB5009UG+S+', caps: 'bridge,router' },
+    { name: `${C}_BR_SW_01`, ip: `10.1.10.241`, mac: mac(OUI_MT[2]), board: ACC_BOARD, caps: 'bridge' },
+    { name: `${C}_LAB_SW_01`, ip: `10.1.10.242`, mac: mac(OUI_MT[2]), board: ACC_BOARD, caps: 'bridge' },
+  ];
+  const [rt, sw, lab] = br;
+  const nb = (x, port) => ({ name: x.name, ip: x.ip, mac: x.mac, board: x.board, port, caps: x.caps });
+  const entries = {
+    [rt.name]: [['/interface vlan', 'add', 'interface=ether2 name=vlan10 vlan-id=10'], ['/interface vlan', 'add', 'interface=ether2 name=vlan20 vlan-id=20'],
+      ['/interface vlan', 'add', 'disabled=yes interface=ether2 name=vlan30 vlan-id=30'],
+      ['/ip address', 'add', 'address=10.1.10.240/24 interface=vlan10 network=10.1.10.0'], ['/ip address', 'add', 'address=10.1.20.240/24 interface=vlan20 network=10.1.20.0']],
+    [sw.name]: [['/interface bridge', 'add', 'name=bridge1 vlan-filtering=yes'], ['/interface vlan', 'add', 'interface=bridge1 name=vlan10 vlan-id=10'],
+      ['/interface bridge port', 'add', `bridge=bridge1 interface=ether1 comment="to ${rt.name}"`], ['/interface bridge port', 'add', `bridge=bridge1 interface=ether2 comment="to ${lab.name}"`],
+      ['/interface bridge vlan', 'add', 'bridge=bridge1 tagged=bridge1,ether1,ether2 vlan-ids=10'], ['/interface bridge vlan', 'add', 'bridge=bridge1 tagged=ether1,ether2 vlan-ids=20'],
+      ['/ip address', 'add', 'address=10.1.10.241/24 interface=vlan10 network=10.1.10.0']],
+    [lab.name]: [['/interface bridge', 'add', 'name=bridge1'], ['/interface vlan', 'add', 'interface=bridge1 name=vlan10 vlan-id=10'],
+      ['/interface bridge port', 'add', `bridge=bridge1 interface=ether1 comment="to ${sw.name}"`], ['/interface bridge port', 'add', 'bridge=bridge1 interface=ether2'],
+      ['/ip address', 'add', 'address=10.1.10.242/24 interface=vlan10 network=10.1.10.0']],
+  };
+  const neighbors = {
+    [rt.name]: nrow('ether2', nb(sw, 'ether1')),
+    [sw.name]: [...nrow('ether1', nb(rt, 'ether2')), ...nrow('ether2', nb(lab, 'ether1'))],
+    [lab.name]: nrow('ether1', nb(sw, 'ether2')),
+  };
+  const extra = {
+    [rt.name]: [[`/ip route print ${D}`, routeText([10, 20].map((v) => ({ flags: 'DAc', dst: `10.1.${v}.0/24`, gw: `vlan${v}`, igw: `vlan${v}`, dist: 0 })))]],
+    [sw.name]: [[`/interface bridge host print ${D}`, bridgeHostText([{ local: true, vid: 0, mac: sw.mac, ifc: 'bridge1' }, { vid: 10, mac: rt.mac, ifc: 'ether1' }, { vid: 10, mac: lab.mac, ifc: 'ether2' }])]],
+    [lab.name]: [[`/interface bridge host print ${D}`, bridgeHostText([{ local: true, vid: 0, mac: lab.mac, ifc: 'bridge1' }, { vid: 0, mac: sw.mac, ifc: 'ether1' }])]],
+  };
+  br.forEach((x) => device(x.name, x.ip, [['/system resource print', sysText(x.board, x.name)],
+    ['/export terse', exportText(x.name, x.board, sort(entries[x.name]), false)], [`/ip neighbor print ${D}`, neighborText(neighbors[x.name])], ...extra[x.name]]));
+}
 if (FAULTS) out.unshift('# 測試用收集檔：含刻意放入的問題，用來驗證一致性檢查', '');
 process.stdout.write(out.join('\n') + '\n');

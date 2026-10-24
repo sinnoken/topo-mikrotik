@@ -71,7 +71,7 @@ test('C02 的證據不限 6 筆：列出全部失敗註解與已收集區塊；�
 });
 test('每條檢查規則都有常見原因（1–4 條，皆非空）與處理方式，且只放在 CATALOG、不複製到 finding', () => {
   const ids = Object.keys(S.check.CATALOG);
-  assert.strictEqual(ids.length, 41);
+  assert.strictEqual(ids.length, 42);
   Object.entries(S.check.CATALOG).forEach(([id, c]) => {
     assert.ok(typeof c.action === 'string' && c.action.trim() !== '', `${id} 缺少處理方式（action）`);
     assert.ok(Array.isArray(c.causes) && c.causes.length >= 1 && c.causes.length <= 4, `${id} 的常見原因（causes）應有 1–4 條`);

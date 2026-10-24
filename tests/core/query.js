@@ -383,7 +383,15 @@ test('VLAN 承載鏈路：範例資料與 Q.vlan 一致；只有一端的鏈路�
   });
   assert.strictEqual(Q.vlanCarriers(30).counts.partial, 1);
   const os = Q.vlanCarriers(20).links.filter((r) => r.status === 'oneSide');
-  assert.ok(os.length > 0 && os.every((r) => r.reason === 'peer-uncollected' && [r.a, r.b].some((x) => x.has === null)), '範例的伺服器只由 LLDP 看到');
+  const srv = os.filter((r) => r.reason !== 'unfiltered');
+  assert.ok(srv.length > 0 && srv.every((r) => r.reason === 'peer-uncollected' && [r.a, r.b].some((x) => x.has === null)), '範例的伺服器只由 LLDP 看到');
+  // 範例的 TPE_LAB_SW_01 沒有開 vlan-filtering：與 Q.vlan(id).transparent 同一組，未過濾的一端無從得知
+  [10, 20].forEach((id) => {
+    const un = Q.vlanCarriers(id).links.filter((r) => r.reason === 'unfiltered');
+    assert.deepStrictEqual(un.map((r) => r.key), ['TPE_BR_SW_01|ether2~TPE_LAB_SW_01|ether1'], `VLAN ${id}`);
+    assert.deepStrictEqual(un.map((r) => r.key), Q.vlan(id).transparent.map((l) => l.key));
+    assert.deepStrictEqual([un[0].a.has, un[0].b.has], [true, null]);
+  });
 });
 
 test('埠層級 L2 圖：聚合成員預設併成聚合埠，可展開；只畫介面鄰接，MNDP 列在 omitted', () => {
@@ -472,7 +480,7 @@ test('L3 子網圖：子網、設備與「有位址」的邊都帶 vrf（目前�
 test('L3 子網圖：範例資料的路由設備、多網段的交換器、鄰居宣告與管理 IP 的推論邊', () => {
   const s = build(read('samples/sample-bundle.txt')); const Q = S.query(s); const g = Q.subnetGraph();
   assert.deepStrictEqual(g.subnets.filter((x) => x.basis === 'connected').map((x) => x.id), s.model.prefixes.map((p) => p.prefix), '每個 prefixes 一個子網');
-  assert.deepStrictEqual(g.nodes.filter((n) => n.router).map((n) => n.id), ['TPE_CORE_RT_01', 'TPE_CORE_RT_02']);
+  assert.deepStrictEqual(g.nodes.filter((n) => n.router).map((n) => n.id), ['TPE_BR_RT_01', 'TPE_CORE_RT_01', 'TPE_CORE_RT_02']);
   const sw11 = g.nodes.find((n) => n.id === 'TPE_ACC_SW_11');
   assert.deepStrictEqual([sw11.multihomed, sw11.router], [true, false], '交換器在兩個網段有位址，但沒有路由表，不算路由設備');
   assert.ok(g.subnets.find((x) => x.id === '10.1.10.0/24').overlaps.includes('10.1.10.0/25'));

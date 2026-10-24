@@ -279,7 +279,10 @@
             const name = kv.name || (sel && sel.name); if (!name) break;
             const br = bridges.get(name) || { filtering: false }; bridges.set(name, br);
             if (kv['vlan-filtering']) br.filtering = kv['vlan-filtering'] === 'yes';
-            const f = { t: 'ifc', ifc: name, rawType: 'bridge', line }; if (kv.comment) f.desc = kv.comment; emit(f); break;
+            const f = { t: 'ifc', ifc: name, rawType: 'bridge', line }; if (kv.comment) f.desc = kv.comment;
+            // vlan-filtering 預設 no，terse export 不寫預設值：add 沒寫就是 no；set 只有寫了才改
+            if (kv['vlan-filtering']) f.vlanFiltering = kv['vlan-filtering'] === 'yes'; else if (cmd === 'add') f.vlanFiltering = false;
+            emit(f); break;
           }
           case '/interface bridge port':
             if (cmd === 'add' && kv.interface) {
@@ -295,9 +298,12 @@
             break;
           case '/interface vlan':
             if (cmd === 'add' && kv.name && kv['vlan-id']) {
-              const f = { t: 'ifc', ifc: kv.name, rawType: 'vlan', parent: kv.interface, encapVlan: +kv['vlan-id'], line }; if (kv.comment) f.desc = kv.comment; emit(f);
+              const f = { t: 'ifc', ifc: kv.name, rawType: 'vlan', parent: kv.interface, encapVlan: +kv['vlan-id'], line }; if (kv.comment) f.desc = kv.comment;
+              if (kv.disabled === 'yes') f.enabled = false;
+              emit(f);
               emit({ t: 'vlan', id: +kv['vlan-id'], name: null, line });
-              emit({ t: 'vmem', vlan: String(kv['vlan-id']), ifc: kv.interface, tagged: true, src: 'config', line });
+              // VLAN 介面在 parent 上收送帶這個 VLAN ID 的 tagged 訊框（設定的事實），停用時不收送
+              if (kv.disabled !== 'yes') emit({ t: 'vmem', vlan: String(kv['vlan-id']), ifc: kv.interface, tagged: true, src: 'config', line });
             }
             break;
           case '/interface bonding':

@@ -105,7 +105,7 @@
       key: i.key, dev: i.dev, name: i.name, desc: i.desc, enabled: i.enabled, status: i.status || 'unknown', type: i.type, typeBasis: i.typeBasis,
       rawType: i.rawType, hwMac: i.hwMac, defaultName: i.defaultName, mtu: i.mtu, actualMtu: i.actualMtu, l2mtu: i.l2mtu,
       lag: i.lag, lagMembers: Array.from(i.lagMembers).sort(nat), bridge: i.bridge, parent: i.parent, encapVlan: i.encapVlan,
-      mode: i.mode, pvid: i.pvid, frameTypes: i.frameTypes, ingressFiltering: i.ingressFiltering,
+      mode: i.mode, pvid: i.pvid, frameTypes: i.frameTypes, ingressFiltering: i.ingressFiltering, vlanFiltering: i.vlanFiltering, vlanUnfiltered: !!i.vlanUnfiltered,
       stp: i.stp ? { role: i.stp.role, portNumber: i.stp.portNumber, designatedBridge: i.stp.designatedBridge, designatedPort: i.stp.designatedPort, edge: i.stp.edge, sendingRstp: i.stp.sendingRstp } : null, untaggedVlans: U.numSort(Array.from(i.untaggedVlans)), taggedVlans: U.numSort(Array.from(i.taggedVlans)),
       unresolvedVlans: Array.from(i.unresolvedVlans).sort(nat), macs: Array.from(i.macs).sort(),
       hearsay: i.hearsay, edge: M.edge.has(i.key), unknownPeer: M.edge.has(i.key) && !M.edge.get(i.key).linked, src: i.src, srcNone: i.src.length ? null : i.hearsay ? 'hearsay' : 'unrecorded',
@@ -114,7 +114,7 @@
     const links = Array.from(M.links.values()).map((l) => ({
       key: l.key, a: l.a, b: l.b, layer: l.layer, via: Array.from(l.via).sort(), protocols: Array.from(l.protocols || []).sort(), verified: !!l.verified, hearsay: l.hearsay,
       evidenceScope: l.evidenceScope, observations: (l.observations || []).slice().sort((a, b) => nat(a.dev, b.dev) || nat(a.ifc, b.ifc) || nat(a.peerIfc || '', b.peerIfc || '') || nat(a.block, b.block) || a.line - b.line),
-      cls: l.cls, vlansA: l.vlansA || [], vlansB: l.vlansB || [], vlansCommon: l.vlansCommon || [], vlanComparable: !!l.vlanComparable, vlanMismatch: !!l.vlanMismatch, src: l.src,
+      cls: l.cls, vlansA: l.vlansA || [], vlansB: l.vlansB || [], vlansCommon: l.vlansCommon || [], vlanComparable: !!l.vlanComparable, vlanMismatch: !!l.vlanMismatch, vlansDiff: l.vlansDiff || [], src: l.src,
     })).sort((a, b) => nat(a.key, b.key));
 
     const vlans = Array.from(M.vlans.values()).map((v) => ({

@@ -150,12 +150,14 @@
       const md = S.infer.effVlanModes(effM, ep); const t = md.tagged.has(id); const u = md.untagged.has(id);
       return t && u ? 'both' : t ? 'tagged' : u ? 'untagged' : null;
     };
+    const unfilteredEp = (ep) => { const i = ifc.get(ep); return !!(i && i.vlanUnfiltered); };
     /**
-     * 鏈路一端對某 VLAN 的狀態。has：true／false 是事實（這台設備有 VLAN 設定資料），null 是無從得知（未收集或沒有 VLAN 資料）。
+     * 鏈路一端對某 VLAN 的狀態。has：true／false 是事實（這台設備有 VLAN 設定資料），null 是無從得知
+     * （未收集、沒有 VLAN 資料，或這一端在未開 vlan-filtering 的 bridge 上、VLAN 原樣轉送）。
      * via：self（介面本身）、lag（所屬聚合介面，同 effVlans）、member（推論鏈路記在聚合上，由成員埠帶這個 VLAN，同 vlanSpan）。
      */
     const vlanSide = (ep, id, has, viaMember) => {
-      const d = K.splitEp(ep)[0]; const i = ifc.get(ep); const known = vlanDataDev(d);
+      const d = K.splitEp(ep)[0]; const i = ifc.get(ep); const known = vlanDataDev(d) && !unfilteredEp(ep);
       let via = null; let mode = null;
       if (has && i) {
         const p = i.lag ? ifc.get(i.lag) : null;
@@ -468,20 +470,21 @@
         return { ip, owner: ipOwner.get(ip) || null, arps, macs, subnets: nets, locations };
       },
       /**
-       * VLAN id 在整個基準的承載情況；domains 依承載此 VLAN 的鏈路與推論鏈路分成互不相連的區塊（推論，見設計說明 §5.3）。
-       * 給 domain（區塊的 key）時，devices／entries／carry／partial／inferred 只含那個區塊。
+       * VLAN id 在整個基準的承載情況；domains 依承載此 VLAN 的鏈路、推論鏈路與透通鏈路分成互不相連的區塊（推論，見設計說明 §5.3）。
+       * transparent：只有一端帶這個 VLAN、另一端在未開 vlan-filtering 的 bridge 上的介面鄰接鏈路（推論：原樣轉送，無從確認）。
+       * 給 domain（區塊的 key）時，devices／entries／carry／partial／inferred／transparent 只含那個區塊。
        */
       vlan(id, domain) {
         id = +id;
         const all = S.infer.vlanSpan(vlanSrc, id);
         const pick = (d) => {
           const set = new Set(d.devices); const has = (l) => set.has(K.splitEp(l.a)[0]) || set.has(K.splitEp(l.b)[0]);
-          return Object.assign({}, d, { entries: all.entries.filter((e) => set.has(e.dev)), carry: all.carry.filter(has), partial: all.partial.filter(has), inferred: all.inferred.filter(has) });
+          return Object.assign({}, d, { entries: all.entries.filter((e) => set.has(e.dev)), carry: all.carry.filter(has), partial: all.partial.filter(has), inferred: all.inferred.filter(has), transparent: all.transparent.filter(has) });
         };
         const domains = all.domains.map(pick);
         const one = domain != null && domains.find((d) => d.key === domain);
         const scope = one || all;
-        return { id, domain: one ? one.key : null, domains, entries: scope.entries, devices: scope.devices, carry: scope.carry, partial: scope.partial, inferred: scope.inferred,
+        return { id, domain: one ? one.key : null, domains, entries: scope.entries, devices: scope.devices, carry: scope.carry, partial: scope.partial, inferred: scope.inferred, transparent: scope.transparent,
           names: U.uniq(scope.entries.map((e) => e.name).filter(Boolean)) };
       },
       /** 基準中出現的所有 VLAN ID（VLAN 定義與介面的 PVID／untagged／tagged），由小到大（凍結的陣列）。VLAN 篩選的選項用。 */
@@ -501,13 +504,16 @@
        *     status（判斷依據與 Q.vlan 相同：兩端的 effVlans，即介面本身 ∪ 所屬聚合的 PVID／untagged／tagged）：
        *       carry    兩端都帶這個 VLAN（事實）
        *       partial  兩端都有 VLAN 資料、只有一端帶（事實；兩端不一致，V01）
-       *       oneSide  只有一端帶，另一端無從得知（推論：未收集、沒有 VLAN 資料，或鏈路是單側觀察）；reason 為
-       *                peer-uncollected、peer-no-vlan-data 或 hearsay。不參與 Q.vlan 的區塊劃分
+       *       oneSide  只有一端帶，另一端無從得知（推論）；reason 為
+       *                unfiltered（任一端在未開 vlan-filtering 的 bridge 上，VLAN 原樣轉送；即 Q.vlan(id).transparent，參與區塊劃分）、
+       *                peer-uncollected、peer-no-vlan-data 或 hearsay（這三種不參與 Q.vlan 的區塊劃分）
        *       inferred 推論鏈路，已收集的各端都帶這個 VLAN（推論，同 Q.vlan(id).inferred）
        *     inferred 為 true 表示這一列是推論（oneSide、inferred）；hearsay 為 true 表示鏈路本身只有單側觀察。
        *     只算介面鄰接（LLDP／CDP）；MNDP 只證明同一廣播網域，不列入。
        *   eps：帶這個 VLAN 的鏈路端點（has 為 true），排序後的 ep 鍵。
-       * 依 status（carry、partial、oneSide、inferred）再依鍵排序。VLAN 子介面（parent＋encapVlan）不算進 parent 的 VLAN，與 V01 相同。
+       * 依 status（carry、partial、oneSide、inferred）再依鍵排序。VLAN 子介面（parent＋encapVlan）讓 parent 以 tagged 帶那個 VLAN
+       * （export 解析時記成 parent 的 taggedVlans，停用的子介面不算）；parent 是 bridge 時只有 bridge 本身帶，成員埠不帶。與 V01 相同。
+       * partial 只含 vlansDiff 中的 VLAN（例如單臂路由的實體埠對上 PVID 1，不算 partial）。
        */
       vlanCarriers(id, domain) {
         id = +id;
@@ -527,7 +533,9 @@
           if (inA === inB) return;
           if (v.domain != null && !inScope.has(K.splitEp(inA ? l.a : l.b)[0])) return;
           const a = vlanSide(l.a, id, inA); const b = vlanSide(l.b, id, inB); const peer = inA ? b : a;
-          add(l, 'link', 'oneSide', a, b, { reason: !peer.collected ? 'peer-uncollected' : !peer.vlanData ? 'peer-no-vlan-data' : 'hearsay' });
+          // unfiltered 與 Q.vlan(id).transparent 是同一組鏈路（同一份 vlanUnfiltered 判斷）
+          const reason = unfilteredEp(l.a) || unfilteredEp(l.b) ? 'unfiltered' : !peer.collected ? 'peer-uncollected' : !peer.vlanData ? 'peer-no-vlan-data' : 'hearsay';
+          add(l, 'link', 'oneSide', a, b, { reason });
         });
         // 推論鏈路：已收集的一端（記在聚合上時看成員埠）帶這個 VLAN；未收集的一端無從得知
         v.inferred.forEach((l) => {
@@ -650,7 +658,7 @@
        *   routes：false（預設）／true，是否加入靜態路由與預設路由的邊（routes[]）；目的網段不是已知網段時新增 basis 為 route 的節點
        * 回傳 { subnets, nodes, edges, routes }：
        *   subnets[]：{ id（網段字串，M3 起非 main 加上 @VRF）, prefix, net, len, family, vrf, basis（connected／route）, vlan, vlans, eps, devices,
-       *               routers（接在這裡的路由設備）, gateways（DHCP 網路設定的閘道）, overlaps（包含或被包含的其他網段 id）, duplicateIps（同一 IP 設在多個介面，VRRP 除外） }
+       *               routers（接在這裡的路由設備）, gateways（DHCP 網路設定的閘道）, overlaps（包含或被包含的其他網段 id；routes 為 true 時也含路由新增的子網，預設路由 /0 不列）, duplicateIps（同一 IP 設在多個介面，VRRP 除外） }
        *   nodes[]：{ id, type: 'device'|'interface', dev, ep, name, label, kind, collected, vrf, subnets, router, routerBasis, multihomed, hostAddresses }
        *     router（推論）：接到 2 個以上子網，而且有路由表資料（routerBasis 'routes'）或設備類型是路由器／防火牆（'kind'）；
        *     只是多張網卡的主機不算（multihomed 為 true、router 為 false）。interface 節點的 router 是所屬設備的值。
@@ -731,13 +739,6 @@
           const p = S.ip.parseCidr(n.network); const s = p && subnets.get(ipNet(p.ip, p.len) + '/' + p.len);
           if (s) n.gateways.forEach((g) => { if (!s.gateways.some((x) => x.ip === g && x.dev === n.dev)) s.gateways.push({ ip: g, dev: n.dev, src: copySrc(n.src) }); });
         });
-        subnets.forEach((s) => {
-          for (const len of lensDesc) {
-            if (len >= s.len) continue;
-            const big = subnets.get(ipNet(s.net, len) + '/' + len);
-            if (big) { s.overlaps.push(big.id); big.overlaps.push(s.id); }
-          }
-        });
         const seenIp = new Map();
         edgeList.forEach((e) => e.addresses.forEach((a) => { if (!a.hearsay && a.role !== 'vrrp') U.getOr(seenIp, e.subnet + ' ' + a.ip, () => new Set()).add(a.ep); }));
         seenIp.forEach((eps, k) => { if (eps.size > 1) { const [sid, ip] = k.split(' '); subnets.get(sid).duplicateIps.push(ip); } });
@@ -757,6 +758,17 @@
             });
           });
         }
+        // 重疊：在路由新增的子網之後才算，路由子網（例如彙總路由）也互相列出。預設路由（/0）包含所有網段，不列。
+        // via 與推論邊的最長相符（longest）仍只看直連網段
+        const overlapLens = U.uniq(Array.from(subnets.values(), (s) => s.len)).filter((len) => len > 0).sort((a, b) => b - a);
+        subnets.forEach((s) => {
+          if (s.len === 0) return;
+          for (const len of overlapLens) {
+            if (len >= s.len) continue;
+            const big = subnets.get(ipNet(s.net, len) + '/' + len);
+            if (big) { s.overlaps.push(big.id); big.overlaps.push(s.id); }
+          }
+        });
         const subnetList = Array.from(subnets.values()).map((s) => Object.assign(s, {
           devices: s.devices.sort(U.natural), routers: s.devices.filter((d) => (routerOf.get(d) || {}).router).sort(U.natural),
           overlaps: U.uniq(s.overlaps).sort(U.natural), duplicateIps: s.duplicateIps.sort(U.natural),

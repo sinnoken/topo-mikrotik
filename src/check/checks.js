@@ -175,16 +175,16 @@
 
     // ---- VLAN
     M.links.forEach((l) => {
-      if (!l.vlanMismatch) return; // 由 infer.linkVlans 判定
-      const sb = new Set(l.vlansB); const sa = new Set(l.vlansA);
-      const onlyA = l.vlansA.filter((v) => !sb.has(v)); const onlyB = l.vlansB.filter((v) => !sa.has(v));
+      if (!l.vlanMismatch) return; // 由 infer.linkVlans 判定：vlansDiff 是計入 V01、只在一端的 VLAN
+      const diff = new Set(l.vlansDiff);
+      const onlyA = l.vlansA.filter((v) => diff.has(v)); const onlyB = l.vlansB.filter((v) => diff.has(v));
       const parts = [];
       if (onlyA.length) parts.push(`只在 ${epName(l.a)}：${fmtVlans(onlyA)}`);
       if (onlyB.length) parts.push(`只在 ${epName(l.b)}：${fmtVlans(onlyB)}`);
       add('V01', parts.join('；'), [{ type: 'link', key: l.key }], [{ block: l.src[0][0], line: l.src[0][1] }]);
     });
     // native VLAN：兩端都有 PVID（聚合成員取所屬聚合介面的）且不同
-    const pvidOf = (ep) => { const i = M.ifcs.get(ep); if (!i) return null; if (i.pvid != null) return i.pvid; const p = i.lag && M.ifcs.get(i.lag); return p ? p.pvid : null; };
+    const pvidOf = (ep) => S.infer.effPvid(M, ep);
     const nativeSeen = new Set();
     M.links.forEach((l) => {
       if (l.layer !== 'l2' || !l.vlanComparable) return;
@@ -213,12 +213,32 @@
       if (bTagged.length) parts.push(`VLAN ${fmtVlans(bTagged)} 在 ${epName(eb)} 為 tagged、在 ${epName(ea)} 為 untagged`);
       add('V08', parts.join('；'), [{ type: 'link', key: l.key }], [{ block: l.src[0][0], line: l.src[0][1] }]);
     });
+    // 未過濾的 bridge：一端在未開 vlan-filtering 的 bridge 上（VLAN 原樣轉送，V01／V04／V08 不比較），對端以 tagged 承載 VLAN。
+    // 兩端都未過濾、對端沒有 VLAN 資料或只有 untagged 時不報：untagged 訊框經過未過濾的 bridge 不受影響
+    const unfSeen = new Set();
+    M.links.forEach((l) => {
+      if (l.layer !== 'l2' || l.evidenceScope !== LINK_SCOPE.INTERFACE_ADJACENCY || l.hearsay) return;
+      const ia = M.ifcs.get(l.a); const ib = M.ifcs.get(l.b);
+      if (!ia || !ib || !ia.vlanUnfiltered === !ib.vlanUnfiltered) return;
+      const [u, o] = ia.vlanUnfiltered ? [ia, ib] : [ib, ia];
+      const od = M.devices.get(o.dev);
+      if (!od || !S.infer.VLAN_DATA.some((t) => od.data.has(t))) return;
+      const tagged = S.util.numSort(Array.from(S.infer.effVlanModes(M, o.key).tagged));
+      if (!tagged.length) return;
+      const eu = u.lag || u.key; const eo = o.lag || o.key;
+      const key = [eu, eo].sort().join('~'); // 聚合的多條成員鏈路只報一次，以聚合介面稱呼
+      if (unfSeen.has(key)) return; unfSeen.add(key);
+      const br = S.infer.bridgeOf(M, u.key);
+      const ev = [{ block: l.src[0][0], line: l.src[0][1] }].concat(br.vlanFilteringSrc ? [{ block: br.vlanFilteringSrc[0], line: br.vlanFilteringSrc[1] }] : []);
+      add('V09', `${epName(eu)} 所在的 ${br.name} 沒有開啟 vlan-filtering，VLAN 原樣轉送、無法比較；${epName(eo)} 以 tagged 承載 VLAN ${fmtVlans(tagged)}`,
+        [{ type: 'link', key: l.key }, { type: 'interface', key: br.key }], ev);
+    });
     // 孤立 VLAN：bridge 上的 VLAN 介面，除了 bridge 本身沒有任何成員埠（只在 bridge 有 VLAN 成員資料時判斷，避免 vlan-filtering 關閉時誤報）
     const vlanOf = new Map(); M.vlans.forEach((v) => { if (v.id != null) vlanOf.set(v.dev + '|' + v.id, v); });
     const filtering = new Set(); M.vlans.forEach((v) => v.members.forEach((_, ep) => { const i = M.ifcs.get(ep); if (i && i.type !== 'bridge') filtering.add(v.dev); }));
     M.ifcs.forEach((i) => {
       if (i.type !== 'vlan' || i.encapVlan == null || !i.parent || !filtering.has(i.dev)) return;
-      const parent = M.ifcs.get(i.parent); if (!parent || parent.type !== 'bridge') return;
+      const parent = M.ifcs.get(i.parent); if (!parent || parent.type !== 'bridge' || parent.vlanFiltering === false) return; // 未過濾的 bridge 沒有 VLAN 成員可看
       const v = vlanOf.get(i.dev + '|' + i.encapVlan);
       const ports = v ? Array.from(v.members.keys()).filter((ep) => ep !== i.parent && ep !== i.key) : [];
       if (ports.length) return;

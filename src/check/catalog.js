@@ -108,7 +108,7 @@
       causes: [
         '兩端 `/interface bridge vlan` 的成員設得不同，某些 VLAN 只在一端。',
         '兩端 bridge port 的 `pvid` 不同。',
-        '一端的 bridge 沒有開啟 `vlan-filtering=yes`，VLAN 成員沒有計入。',
+        '一端是路由器介面上的 VLAN 子介面（`/interface vlan`，例如單臂路由），少建、多建或停用了某個 VLAN。',
       ],
       action: '比對兩端的 `/interface bridge vlan` 與 `/interface bridge port` 的 `pvid`，找出訊息中只在一端的 VLAN 並修正。',
     },
@@ -153,6 +153,14 @@
         '只改了一端 `/interface bridge vlan` 的 `tagged`／`untagged` 清單。',
       ],
       action: '比對兩端 `/interface bridge vlan` 的 `tagged`／`untagged` 與 bridge port 的 `pvid`、`frame-types`，改成同一種標記方式；不一致時，這個 VLAN 的流量進到對端會被丟掉或進到 native VLAN。',
+    },
+    V09: {
+      severity: 'info', cat: 'VLAN', title: '鏈路一端在未開 vlan-filtering 的 bridge 上（VLAN 無法比較）', data: [['lldp'], ['config']],
+      causes: [
+        '這台設備刻意不做 VLAN 過濾，只把 tagged 訊框原樣轉送。',
+        '忘了在 bridge 開啟 `vlan-filtering=yes`，`/interface bridge vlan` 與 bridge port 的 `pvid` 因此沒有作用。',
+      ],
+      action: '確認這個 bridge 是否應該做 VLAN 過濾：要的話先設好 `/interface bridge vlan` 的成員與 bridge port 的 `pvid`，再設定 `vlan-filtering=yes`；刻意透通則不需處理，但這條鏈路的 VLAN 一致性無法由基準確認。',
     },
     // ---- 位址
     A01: {

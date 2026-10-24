@@ -46,6 +46,9 @@
       type: null, typeBasis: null, rawType: null, hwMac: null, defaultName: null, mtu: null, actualMtu: null, l2mtu: null,
       lag: null, lagMembers: new Set(), bridge: null, parent: null, encapVlan: null,
       mode: null, pvid: null, untaggedVlans: new Set(), taggedVlans: new Set(), unresolvedVlans: new Set(), frameTypes: null, ingressFiltering: null, stp: null,
+      // vlanFiltering：bridge 的 vlan-filtering 設定（事實；不是 bridge 或沒有設定資料為 null），vlanFilteringSrc 是那一行（只在內部模型）。
+      // vlanUnfiltered：在未開 vlan-filtering 的 bridge 上（推論，infer.unfilteredPorts）
+      vlanFiltering: null, vlanFilteringSrc: null, vlanUnfiltered: false,
       ips: new Map(), macs: new Set(), hearsay: false, src: [], // ips：CIDR → 來源 [區塊, 行號]
     }));
   }
@@ -236,6 +239,7 @@
     if (f.encapVlan != null) i.encapVlan = f.encapVlan;
     if (f.frameTypes) i.frameTypes = f.frameTypes;
     if (f.ingressFiltering != null) i.ingressFiltering = f.ingressFiltering;
+    if (f.vlanFiltering != null) { i.vlanFiltering = f.vlanFiltering; i.vlanFilteringSrc = [f.block, f.line]; } // export 裡後面的 set 覆寫前面的 add
     ['rawType', 'hwMac', 'defaultName', 'mtu', 'actualMtu', 'l2mtu'].forEach((k) => { if (f[k] != null) i[k] = f[k]; });
     if (f.ip && !i.ips.has(f.ip)) i.ips.set(f.ip, [f.block, f.line]);
   }

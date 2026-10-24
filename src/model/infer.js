@@ -21,7 +21,8 @@
   function infer(M, profile) {
     inferKinds(M);
     linkClasses(M);
-    linkVlans(M);
+    unfilteredPorts(M);
+    linkVlans(M); // 用到 vlanUnfiltered
     inferLinks(M);
     vlanDomains(M); // 用到鏈路兩端 VLAN 與推論鏈路
     if (profile) applyProfile(M, profile);
@@ -96,6 +97,26 @@
     });
   }
 
+  /**
+   * 介面所在的 bridge 介面：bridge 本身、bridge port，或所屬聚合是 bridge port（聚合成員）。不在 bridge 上為 null。
+   * M 只需要 ifcs.get，Snapshot 的介面也可以直接套用。
+   */
+  function bridgeOf(M, ep) {
+    const i = M.ifcs.get(ep); if (!i) return null;
+    if (i.type === 'bridge') return i;
+    const p = i.lag ? M.ifcs.get(i.lag) : null;
+    const b = i.bridge || (p && p.bridge);
+    return (b && M.ifcs.get(b)) || null;
+  }
+  /**
+   * 未開 vlan-filtering 的 bridge（推論，依手冊）：bridge 不看 VLAN 標籤、不改標籤，pvid、frame-types、ingress-filtering 都沒有作用，
+   * 所以 bridge 本身、它的 port 與 port 的聚合成員，VLAN 原樣轉送、無法由設定確認承載哪些 VLAN（vlanUnfiltered）。
+   * 只看 vlanFiltering 為 false（export 有這個 bridge 的定義）；只由其他輸出知道的 bridge 為 null，不當成未過濾。
+   * https://manual.mikrotik.com/docs/bridging-and-switching.md（Bridge VLAN Filtering；Bridge Port Settings 的 pvid、frame-types、ingress-filtering）
+   */
+  function unfilteredPorts(M) {
+    M.ifcs.forEach((i) => { const b = bridgeOf(M, i.key); i.vlanUnfiltered = !!b && b.vlanFiltering === false; });
+  }
   /** 介面的實際 VLAN：自己的 ∪ 所屬聚合介面的 */
   function effVlans(M, ep) {
     const i = M.ifcs.get(ep);
@@ -122,16 +143,22 @@
   /**
    * 一個 VLAN ID 的承載情況與不相連區塊（推論，設計說明 §5.3「VLAN 區塊」）。內部模型與 Snapshot 共用：
    *   src = { vlans, interfaces, links, inferred（推論鏈路）, ifc(ep), collected(dev) }，集合可為陣列或 Map/Set 的迭代器。
-   * domains 依承載此 VLAN 的鏈路與推論鏈路相連；只經由未收集設備相連也算同一塊，但那台設備不列入。
+   * domains 依承載此 VLAN 的鏈路、推論鏈路與透通鏈路（transparent：一端帶、另一端在未開 vlan-filtering 的 bridge 上）相連；
+   * 只經由未收集設備或未過濾的 bridge 相連也算同一塊，但那台設備（沒有這個 VLAN 時）不列入。
    */
   function vlanSpan(src, id) {
     const devOf = (ep) => K.splitEp(ep)[0];
     const entries = Array.from(src.vlans).filter((v) => v.id === id);
-    const carry = []; const partial = [];
+    const carry = []; const partial = []; const transparent = [];
+    const unf = (ep) => { const i = src.ifc(ep); return !!(i && i.vlanUnfiltered); };
     for (const l of src.links) {
       if (l.layer !== 'l2') continue;
       const inA = l.vlansA.includes(id); const inB = l.vlansB.includes(id);
-      if (inA && inB) carry.push(l); else if ((inA || inB) && l.vlanComparable !== false && l.vlanMismatch) partial.push(l);
+      if (inA && inB) carry.push(l);
+      // 透通（推論）：只有一端帶，另一端在未開 vlan-filtering 的 bridge 上（原樣轉送，無從確認）；連接兩側的區塊
+      else if (inA !== inB && l.evidenceScope === LINK_SCOPE.INTERFACE_ADJACENCY && (unf(l.a) || unf(l.b))) transparent.push(l);
+      // vlansDiff：可比較時計入 V01 的 VLAN（舊版 Snapshot 沒有這個欄位時，沿用 vlanMismatch）
+      else if ((inA || inB) && l.vlanComparable !== false && l.vlanMismatch && (!l.vlansDiff || l.vlansDiff.includes(id))) partial.push(l);
     }
     const devs = S.util.uniq(entries.map((v) => v.dev)); const seen = new Set(devs); // 1000 台時 includes 是 O(介面×設備)
     for (const i of src.interfaces) if (!seen.has(i.dev) && S.util.ifcVlans(i).includes(id)) { seen.add(i.dev); devs.push(i.dev); }
@@ -143,11 +170,11 @@
     });
     const devices = devs.sort(S.util.natural);
     const own = new Set(devices);
-    const bridging = S.util.uniq(inferred.flatMap((l) => [devOf(l.a), devOf(l.b)])).filter((d) => !own.has(d));
-    const domains = S.util.components(devices.concat(bridging), carry.concat(inferred).map((l) => [devOf(l.a), devOf(l.b)]))
+    const bridging = S.util.uniq(inferred.concat(transparent).flatMap((l) => [devOf(l.a), devOf(l.b)])).filter((d) => !own.has(d));
+    const domains = S.util.components(devices.concat(bridging), carry.concat(inferred, transparent).map((l) => [devOf(l.a), devOf(l.b)]))
       .map((ks) => ks.filter((d) => own.has(d))).filter((ks) => ks.length)
       .map((ks) => ({ key: id + '@' + ks[0], devices: ks }));
-    return { entries, devices, carry, partial, inferred, domains };
+    return { entries, devices, carry, partial, inferred, transparent, domains };
   }
   /** 每個 VLAN ID 的承載情況與不相連區塊（M.vlanSpans：Map(id → vlanSpan 的結果)），check 的 A02、V06、A06 只讀這個結果。 */
   function vlanDomains(M) {
@@ -159,21 +186,44 @@
     M.vlanSpans = new Map();
     S.util.numSort(Array.from(ids)).forEach((id) => M.vlanSpans.set(id, vlanSpan(src(), id)));
   }
+  /** 介面（含所屬聚合）的 PVID；沒有為 null。 */
+  function effPvid(M, ep) {
+    const i = M.ifcs.get(ep); if (!i) return null;
+    if (i.pvid != null) return i.pvid;
+    const p = i.lag && M.ifcs.get(i.lag);
+    return p ? p.pvid : null;
+  }
+  /**
+   * 鏈路兩端 VLAN（V01、Q.vlan、Q.vlanCarriers 共用這裡的結果）：
+   *   vlansA／vlansB：兩端的 effVlans；vlansCommon：交集。
+   *   vlanComparable：兩端都有 VLAN 資料、不是單側觀察，而且兩端都不在未開 vlan-filtering 的 bridge 上（那一端 VLAN 原樣轉送，無從比較）。
+   *   vlansDiff：可比較時只在一端、計入 V01 的 VLAN。一端不在任何 bridge 上又沒有 PVID 時（例如單臂路由的實體埠，VLAN 只靠子介面），
+   *     它的 untagged 訊框由介面本身處理、沒有 VLAN ID，所以對端只以 untagged 承載、這一端沒有的 VLAN（通常是 PVID 1）不算不一致。
+   *     「不在 bridge 上」要有那台設備的 export 才能確定。
+   *   vlanMismatch：vlansDiff 不是空的。
+   * PVID 是 bridge port 的屬性：https://manual.mikrotik.com/docs/bridging-and-switching.md（Bridge Port Settings 的 pvid）
+   */
   function linkVlans(M) {
+    const hasData = (d) => d && VLAN_DATA.some((t) => d.data.has(t));
+    const noVlanUntagged = (ep, d) => !!d && d.data.has('config') && !bridgeOf(M, ep) && effPvid(M, ep) == null;
+    const untaggedOnly = (ep) => { const md = effVlanModes(M, ep); return (v) => md.untagged.has(v) && !md.tagged.has(v); };
     M.links.forEach((l) => {
       if (l.layer !== 'l2') return;
       if (l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN) {
-        l.vlansA = []; l.vlansB = []; l.vlansCommon = []; l.vlanComparable = false; l.vlanMismatch = false;
+        l.vlansA = []; l.vlansB = []; l.vlansCommon = []; l.vlanComparable = false; l.vlanMismatch = false; l.vlansDiff = [];
         return;
       }
       l.vlansA = effVlans(M, l.a); l.vlansB = effVlans(M, l.b);
-      const sb = new Set(l.vlansB);
+      const sa = new Set(l.vlansA); const sb = new Set(l.vlansB);
       l.vlansCommon = l.vlansA.filter((v) => sb.has(v));
       const da = M.devices.get(K.splitEp(l.a)[0]); const db = M.devices.get(K.splitEp(l.b)[0]);
-      const hasData = (d) => d && VLAN_DATA.some((t) => d.data.has(t));
-      l.vlanComparable = hasData(da) && hasData(db) && !l.hearsay;
-      // 兩端都有 VLAN 資料時，任一端有對方沒有的 VLAN 就是不一致（V01）；effVlans 已去重
-      l.vlanMismatch = l.vlanComparable && (l.vlansCommon.length < l.vlansA.length || l.vlansCommon.length < l.vlansB.length);
+      const unfiltered = [l.a, l.b].some((ep) => { const i = M.ifcs.get(ep); return !!(i && i.vlanUnfiltered); });
+      l.vlanComparable = !!(hasData(da) && hasData(db)) && !l.hearsay && !unfiltered;
+      let onlyA = l.vlansA.filter((v) => !sb.has(v)); let onlyB = l.vlansB.filter((v) => !sa.has(v));
+      if (noVlanUntagged(l.a, da)) { const u = untaggedOnly(l.b); onlyB = onlyB.filter((v) => !u(v)); }
+      if (noVlanUntagged(l.b, db)) { const u = untaggedOnly(l.a); onlyA = onlyA.filter((v) => !u(v)); }
+      l.vlansDiff = l.vlanComparable ? S.util.numSort(onlyA.concat(onlyB)) : [];
+      l.vlanMismatch = l.vlansDiff.length > 0;
     });
   }
 
@@ -783,7 +833,7 @@
     return d.key;
   }
 
-  S.infer = { infer, displayName, effVlans, effVlanModes, vlanSpan, VLAN_DATA, isVirtualIfc, hwMacsByDev, wifiLocations, behindLocations };
+  S.infer = { infer, displayName, effVlans, effVlanModes, effPvid, bridgeOf, vlanSpan, VLAN_DATA, isVirtualIfc, hwMacsByDev, wifiLocations, behindLocations };
   S.infer.fw = { canonMatch, covers, sameMatch, evalChain, evalFilter, packetFor, fwContext, parseVal, splitNeg, protoName,
     TERMINAL: FW_TERMINAL, BUILTIN: FW_BUILTIN, NONDET: FW_NONDET, PORT_PROTOCOLS };
 })(globalThis.SSOT = globalThis.SSOT || {});

@@ -3,7 +3,7 @@
 COLLECT_COMMAND_IDS=(config neighbor bridgehost route arp system vlans interface ipaddr ospf stp stpbridge)
 # 選用：只有部分設備才有的選單（Wi-Fi AP、CAPsMAN 控制器），不在預設清單；
 # 用 --commands 或設備清單的 extra 欄指定，避免在交換器上執行而得到錯誤回應；
-# 確定支援的型號會依 auto_optional_commands 自動加上
+# 確定支援的設備會依 auto_optional_commands 自動加上
 OPTIONAL_COMMAND_IDS=(wifi wireless capsman)
 
 command_for_id() {
@@ -27,21 +27,25 @@ command_for_id() {
   esac
 }
 
-# 依 /system resource print 的 board-name 與 version 自動加上的選用指令。
-# 結果放在 AUTO_COMMAND_IDS（要加的 ID）與 AUTO_SKIP_REASON（認得無線型號但不自動加的原因）。
-# 只在確定的情況加上（依據：https://manual.mikrotik.com/docs/wireless.md、
-# https://manual.mikrotik.com/docs/wireless/wifi.md、
-# https://manual.mikrotik.com/docs/getting-started/installation-and-upgrade/packages.md）：
-# - 802.11ax／be 的內建無線只能用 /interface wifi（wifi-qcom、wifi-qcom-be、wifi-mediatek），
-#   而這個選單 7.13 起才叫 wifi（之前是 wifiwave2 套件），所以要 7.13 以上。
-# - 802.11ac 可裝 wifi-qcom-ac（/interface wifi）或 wireless（/interface wireless），型號判斷不出來。
-# - 802.11n 以下用 wireless 套件，7.13 起是另外安裝的套件，型號判斷不出有沒有裝。
-# - CAPsMAN 控制器可以是任何型號，也判斷不出來。
-auto_optional_commands() {
-  local board=$1 version=$2 standard= word segment words=()
-  AUTO_COMMAND_IDS=(); AUTO_SKIP_REASON=
-  # 型號名稱中的無線標準：獨立的字（cAP ax、hAP ac^2、hAP be lite）或產品代碼的無線段（C52iG-5HaxD2HaxD-TC）
-  read -ra words <<< "${board//-/ }"
+# 自動加上選用指令的判斷，依據：
+# - 介面 type：/interface print 中 wifi 套件的介面 type=wifi
+#   （https://manual.mikrotik.com/docs/developer-guides/rest-api.md 的 /interface/print 範例），
+#   wireless 套件的介面 type=wlan
+#   （https://manual.mikrotik.com/docs/wireless/abgn/capsman/ap-controller-capsman.md 的 /interface print 範例）。
+# - 型號：https://manual.mikrotik.com/docs/wireless.md、https://manual.mikrotik.com/docs/wireless/wifi.md、
+#   https://manual.mikrotik.com/docs/getting-started/installation-and-upgrade/packages.md
+#   802.11ax／be 的內建無線只能用 /interface wifi；802.11ac 可裝 wifi-qcom-ac 或 wireless，型號判斷不出來；
+#   802.11n 以下用 wireless 套件，7.13 起另外安裝，型號判斷不出有沒有裝。
+# - /interface wifi 選單 7.13 起才有（之前是 wifiwave2 套件），所以加 wifi 一律要 7.13 以上。
+# CAPsMAN 控制器可以是任何型號、也沒有對應的介面 type，不自動判斷。
+WIFI_INTERFACE_TYPE=wifi
+WIRELESS_INTERFACE_TYPE=wlan
+
+# 型號名稱中的無線標準：ax（含 be）、ac、n 或空。
+# 認得獨立的字（cAP ax、hAP ac^2、hAP be lite）與產品代碼的無線段（C52iG-5HaxD2HaxD-TC）
+board_wireless_standard() {
+  local standard= word segment words=()
+  read -ra words <<< "${1//-/ }"
   for word in ${words[@]+"${words[@]}"}; do
     if [[ "$word" =~ ^(ax|be|ac)([^A-Za-z]|$) ]]; then
       segment=${BASH_REMATCH[1]}
@@ -56,16 +60,55 @@ auto_optional_commands() {
       *n*) [[ -n "$standard" ]] || standard=n ;;
     esac
   done
+  printf '%s' "$standard"
+}
+
+# 版本是否 7.13 以上（/interface wifi 選單存在）；不符時把原因寫進 WIFI_VERSION_REASON
+wifi_menu_available() {
+  local version=$1
+  WIFI_VERSION_REASON=
+  if [[ ! "$version" =~ ^([0-9]+)\.([0-9]+) ]]; then
+    WIFI_VERSION_REASON='版本不明，無法確認是否為 7.13 以上'; return 1
+  fi
+  (( 10#${BASH_REMATCH[1]} > 7 || (10#${BASH_REMATCH[1]} == 7 && 10#${BASH_REMATCH[2]} >= 13) )) && return 0
+  WIFI_VERSION_REASON="RouterOS $version 早於 7.13，Wi-Fi 選單是 wifiwave2"
+  return 1
+}
+
+# auto_optional_commands BOARD VERSION INTERFACES_OK WIFI_NAMES WLAN_NAMES
+# 結果：AUTO_COMMAND_IDS 與同索引的 AUTO_COMMAND_REASONS（要加的 ID 與依據）、
+# AUTO_SKIP_REASONS（看得出有無線但不自動加的原因）。
+# 介面 type 是實際裝了哪個套件、有哪些介面，比型號準：interface 收集成功時只依介面 type，
+# 型號只在 interface 失敗時當輔助，所以兩者不會重複加，也不會因型號在沒有該介面的設備上誤加。
+auto_optional_commands() {
+  local board=$1 version=$2 interfaces_ok=$3 wifi_names=$4 wlan_names=$5 standard
+  AUTO_COMMAND_IDS=(); AUTO_COMMAND_REASONS=(); AUTO_SKIP_REASONS=()
+  standard=$(board_wireless_standard "$board")
+  if (( interfaces_ok )); then
+    if [[ -n "$wifi_names" ]]; then
+      if wifi_menu_available "$version"; then
+        AUTO_COMMAND_IDS+=(wifi); AUTO_COMMAND_REASONS+=("interface type=$WIFI_INTERFACE_TYPE：$wifi_names")
+      else
+        AUTO_SKIP_REASONS+=("interface type=$WIFI_INTERFACE_TYPE：$wifi_names；$WIFI_VERSION_REASON")
+      fi
+    fi
+    if [[ -n "$wlan_names" ]]; then
+      AUTO_COMMAND_IDS+=(wireless); AUTO_COMMAND_REASONS+=("interface type=$WIRELESS_INTERFACE_TYPE：$wlan_names")
+    fi
+    if [[ -z "$wifi_names$wlan_names" && -n "$standard" ]]; then
+      AUTO_SKIP_REASONS+=("board-name=$board：沒有 type=$WIFI_INTERFACE_TYPE 或 $WIRELESS_INTERFACE_TYPE 的介面")
+    fi
+    return 0
+  fi
   case "$standard" in
     ax)
-      if [[ ! "$version" =~ ^([0-9]+)\.([0-9]+) ]]; then
-        AUTO_SKIP_REASON='版本不明，無法確認是否為 7.13 以上'
-      elif (( 10#${BASH_REMATCH[1]} > 7 || (10#${BASH_REMATCH[1]} == 7 && 10#${BASH_REMATCH[2]} >= 13) )); then
-        AUTO_COMMAND_IDS=(wifi)
+      if wifi_menu_available "$version"; then
+        AUTO_COMMAND_IDS+=(wifi); AUTO_COMMAND_REASONS+=("board-name=$board")
       else
-        AUTO_SKIP_REASON="RouterOS $version 早於 7.13，Wi-Fi 選單是 wifiwave2"
+        AUTO_SKIP_REASONS+=("board-name=$board：$WIFI_VERSION_REASON")
       fi ;;
-    ac) AUTO_SKIP_REASON='802.11ac 可用 wifi 或 wireless，請在 extra 欄指定' ;;
-    n) AUTO_SKIP_REASON='802.11n 用 wireless 套件，請在 extra 欄指定 wireless' ;;
+    ac) AUTO_SKIP_REASONS+=("board-name=$board：802.11ac 可用 wifi 或 wireless，interface 未收集成功無法判斷，請在 extra 欄指定") ;;
+    n) AUTO_SKIP_REASONS+=("board-name=$board：802.11n 用 wireless 套件，interface 未收集成功無法判斷，請在 extra 欄指定 wireless") ;;
   esac
+  return 0
 }

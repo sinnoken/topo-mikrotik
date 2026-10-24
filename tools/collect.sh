@@ -25,9 +25,10 @@ usage() {
     TPE_AP_01,192.0.2.31,admin,22,wifi
   選用命令 ID：wifi（RouterOS 7 Wi-Fi 關聯表）、wireless（舊版 wireless）、capsman（舊版 CAPsMAN 控制器）
 
-自動選用命令：extra 欄留空且未用 --commands 時，依 /system resource print 的
-  board-name 與 version 加上確定支援的選用命令（目前只有 802.11ax／be 型號、
-  RouterOS 7.13 以上加 wifi），終端機會標示 AUTO。
+自動選用命令：extra 欄留空且未用 --commands 時，依 /interface print 的介面 type
+  加上選用命令（type=wifi 加 wifi，需 RouterOS 7.13 以上；type=wlan 加 wireless）。
+  interface 收集失敗時，改依 /system resource print 的 board-name 判斷（只有
+  802.11ax／be 型號、7.13 以上加 wifi）。終端機會標示 AUTO 與依據。
 EOF
 }
 
@@ -117,20 +118,42 @@ resource_field() {
   sed -n "s/^[[:space:]]*$1:[[:space:]]*//p" "$2" | tr -d '\r' | head -n 1
 }
 
-# 依 board-name 自動加上選用命令到 DEVICE_COMMAND_IDS，並在終端機標示
+# 從 /interface print detail 輸出列出指定 type 的介面名稱（以「, 」分隔）。
+# 每筆以編號行開始、可能折行；;;; 之後是註解，不當成欄位
+interfaces_of_type() {
+  awk -v want="$1" '
+    function value(text, key,   v) {
+      if (!match(text, "(^|[ \t])" key "=(\"[^\"]*\"|[^ \t]+)")) return ""
+      v = substr(text, RSTART, RLENGTH); sub("^[ \t]*" key "=", "", v); gsub(/"/, "", v); return v
+    }
+    function flush() {
+      if (entry != "" && value(entry, "type") == want) names = names (names == "" ? "" : ", ") value(entry, "name")
+      entry = ""
+    }
+    { line = $0; sub(/\r$/, "", line); sub(/;;;.*/, "", line) }
+    line ~ /^[ \t]*[0-9]+([ \t]|$)/ { flush(); entry = line; next }
+    entry != "" { entry = entry " " line }
+    END { flush(); print names }
+  ' "$2"
+}
+
+# 依介面 type（輔助：board-name）自動加上選用命令到 DEVICE_COMMAND_IDS，並在終端機標示依據
 add_auto_commands() {
-  local stdout_file=$1 board version id
-  board=$(resource_field board-name "$stdout_file")
-  version=$(resource_field version "$stdout_file")
-  auto_optional_commands "$board" "$version"
-  for id in ${AUTO_COMMAND_IDS[@]+"${AUTO_COMMAND_IDS[@]}"}; do
+  local interfaces_ok=$1 stdout_file=$2 wifi_names= wlan_names= id reason k
+  if (( interfaces_ok )); then
+    wifi_names=$(interfaces_of_type "$WIFI_INTERFACE_TYPE" "$stdout_file")
+    wlan_names=$(interfaces_of_type "$WIRELESS_INTERFACE_TYPE" "$stdout_file")
+  fi
+  auto_optional_commands "$AUTO_BOARD" "$AUTO_VERSION" "$interfaces_ok" "$wifi_names" "$wlan_names"
+  for ((k = 0; k < ${#AUTO_COMMAND_IDS[@]}; k++)); do
+    id=${AUTO_COMMAND_IDS[k]}
     [[ " ${DEVICE_COMMAND_IDS[*]} " == *" $id "* ]] && continue
     DEVICE_COMMAND_IDS+=("$id")
-    printf '  AUTO %s（board-name=%s）\n' "$id" "$board"
+    printf '  AUTO %s（%s）\n' "$id" "${AUTO_COMMAND_REASONS[k]}"
   done
-  if [[ -n "$AUTO_SKIP_REASON" ]]; then
-    printf '  AUTO 略過（board-name=%s：%s）\n' "$board" "$AUTO_SKIP_REASON"
-  fi
+  for reason in ${AUTO_SKIP_REASONS[@]+"${AUTO_SKIP_REASONS[@]}"}; do
+    printf '  AUTO 略過（%s）\n' "$reason"
+  done
 }
 
 selected_device() {
@@ -226,9 +249,10 @@ for ((i = 0; i < ${#DEVICE_NAMES[@]}; i++)); do
     fi
   fi
   device_commands "$i"
-  auto=0
+  auto=0; AUTO_BOARD=; AUTO_VERSION=
   (( AUTO )) && [[ -z "$COMMAND_FILTER" && -z "${DEVICE_EXTRAS[i]}" ]] && auto=1
-  # 用索引走訪：system 成功後可能在尾端追加自動選用命令
+  # 用索引走訪：interface 執行後可能在尾端追加自動選用命令。
+  # 自動判斷只在用預設清單時發生，預設清單中 system 排在 interface 之前，判斷時已有 board-name 與版本
   for ((c = 0; c < ${#DEVICE_COMMAND_IDS[@]}; c++)); do
     id=${DEVICE_COMMAND_IDS[c]}
     command=$(command_for_id "$id")
@@ -237,7 +261,10 @@ for ((i = 0; i < ${#DEVICE_NAMES[@]}; i++)); do
     if run_command "$address" "$user" "$port" "$command" "$stdout_file" "$stderr_file"; then
       cat "$stdout_file" >> "$OUTPUT"
       printf '  OK %s\n' "$id"
-      if (( auto )) && [[ "$id" == system ]]; then add_auto_commands "$stdout_file"; fi
+      if (( auto )) && [[ "$id" == system ]]; then
+        AUTO_BOARD=$(resource_field board-name "$stdout_file"); AUTO_VERSION=$(resource_field version "$stdout_file")
+      fi
+      if (( auto )) && [[ "$id" == interface ]]; then add_auto_commands 1 "$stdout_file"; fi
     else
       code=$?
       failures=$((failures + 1))
@@ -250,6 +277,8 @@ for ((i = 0; i < ${#DEVICE_NAMES[@]}; i++)); do
         printf '  FAIL %s (exit %s)\n' "$id" "$code" >&2
       fi
       if [[ -s "$stderr_file" ]]; then sed 's/^/    /' "$stderr_file" >&2; fi
+      # interface 失敗時退回只依 board-name 判斷
+      if (( auto )) && [[ "$id" == interface ]]; then add_auto_commands 0 "$stdout_file"; fi
     fi
   done
   if ((${#SSH_CONTROL_OPTS[@]})); then ssh "${SSH_CONTROL_OPTS[@]}" -O exit -p "$port" "$user@$address" 2>/dev/null; fi

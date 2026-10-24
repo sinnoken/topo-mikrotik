@@ -143,4 +143,4 @@ agent 之間的介面：
 - `routeros-parser-fixtures`：改 adapter／解析、新收集指令（先寫失敗測試再修）
 - `snapshot-contract-change`：改 Snapshot 欄位、finding id、query API 或版本（逐層走完 adapter→model→infer/check→pipeline→query→view→compare）
 - `mikrotik-neighbor-topology`：改鄰居探索（LLDP／MNDP／CDP）與拓樸
-- `routeros-acl-audit`：防火牆規則解析、WAN／LAN 分類、F01–F08 與比對（階段一已完成；資料來自既有的 `/export`）
+- `routeros-acl-audit`：防火牆規則解析、WAN／LAN 分類、F01–F09 與比對（階段一已完成；規則來自既有的 `/export`，命中次數來自 `print stats`）

@@ -100,17 +100,35 @@ finding 的實體中，只有 `ip` 類型帶 IP：A01（IP＋MAC）、A05（設�
 
 ### 之後要回頭看的
 
-- 策略路由（`routing-mark` 與非 VRF 的路由表）是否納入路徑追蹤。
+- ~~策略路由（`routing-mark` 與非 VRF 的路由表）是否納入路徑追蹤。~~ **已處理**：納入，mark-routing 與無法判斷的條件為不明（見下方「修訂」）。
 - `/ip service` 的 `vrf` 屬性：F07 判斷 WAN 能否連入管理服務時，是否要考慮服務所在的 VRF。
 - 防火牆規則與 VRF 的關係（例如以 VRF 介面為 `in-interface`），在 M2 的 `Q.reach` 跨 VRF 時再確認。
 - [ADR-010](010-schema版本與轉換規則.md) 已接受；這份 ADR 的轉換規則以它的分類為前提。
+
+## 修訂
+
+### 2026-10-25：資料層的實作結果（3.0.0，808c630）
+
+- **原因**：實作資料層時，決策中的幾點要補上細節，或依手冊調整：
+  - 決策只寫「介面依 `/ip vrf` 的 `interfaces` 得到所屬的 VRF」，但 export 不寫內建的 `main`，看不出它排在哪裡；手冊也說 VRF 依序比對，main 排在前面時，後面的 VRF 拿不到介面。
+  - 背景寫「`/ip address`、`/ip arp` 本身不指定 VRF」，但 RouterOS 7 的 print 有唯讀的 `vrf` 欄位（[/ip address](https://manual.mikrotik.com/docs/cli-reference/ip/address.md)、[/ip arp](https://manual.mikrotik.com/docs/cli-reference/ip/arp.md)），是設備回報的事實。
+  - CE 與 PE 之間的鏈路，兩端常在不同名稱的 VRF（CE 在 main、PE 在 `cust-a`），只依「同名 VRF」找下一跳的擁有者會找不到。
+  - 「考慮過的選項」把策略路由列為不在這次範圍，但使用者的網路有策略路由，只沿 VRF 的路由表追蹤會把它當成查 main，結果看似確定卻是錯的。
+- **修改**（細節見[設計說明 §5.2「VRF 與路由表」](../設計說明.md#52-實體snapshotmodelschema-ssot-snapshot2)）：
+  - **介面所屬的 VRF 的優先順序**：設備回報的 `vrf=`（`/ip address`、`/ip arp` 的 print，事實）→ `/ip vrf print` 的順序（含內建 main 的位置，事實；collector 在 RouterOS 7 自動收集）→ export 的 `/ip vrf`（假設 main 在最後，推論）→ main。print 優先於 export。依據記在 `interfaces[].vrfBasis`。位址屬於 `actual-interface`；和 VRF 同名的介面屬於那個 VRF（[VRF 手冊](https://manual.mikrotik.com/docs/user-guides/routing-and-networking-protocols/vrf.md)：7.14 起自動產生的 VRF 介面）。
+  - **下一跳的 VRF**：除了 `@<VRF>`，閘道是 VRF 介面時在那個 VRF 解析，只有介面時取介面的 VRF，只有 IP 時在 main 解析（`nh[].vrfBasis`）。
+  - **跨 VRF 的擁有者推論**：同名 VRF 中找不到下一跳的擁有者時，若這台設備在那個 VRF 有包含它的直連網段，而其他設備上位址與網段都相同的介面恰好一個，就採用它（`crossVrf`，推論）；兩個以上不猜。規則只有一份（`S.check.hopOwner`），R01／R03／R04、路徑追蹤與可達性共用。
+  - **策略路由納入路徑追蹤**：`/routing table`、`/routing rule`、`/routing settings` 的 `policy-rules` 與 mangle 的 mark-routing 改為事實，依手冊預設的查表順序評估能判斷的條件（src、dst、入介面）；有 mark-routing、改過 `policy-rules` 或條件無法判斷時為不明（`policy-routing`），drop／unreachable 為拒絕（`policy-drop`），不假設查 main（[Routing Decision](https://manual.mikrotik.com/docs/user-guides/routing-and-networking-protocols/routing-decision.md)、[/routing rule](https://manual.mikrotik.com/docs/cli-reference/routing/rule.md)、[/routing settings](https://manual.mikrotik.com/docs/cli-reference/routing/settings.md)、[/routing table](https://manual.mikrotik.com/docs/cli-reference/routing/table.md)）。
+  - **只依 RouterOS 7**：RouterOS 6 的 `/ip route vrf`、`routing-mark` 寫法不處理（[ADR-019](019-支援範圍RouterOS7以上.md)）。
+- **不變的部分**：鍵依選項 B（main 不加後綴，其他 VRF 加 `@<VRF>`，`src/core/keys.js` 是唯一來源；範例資料的 57 個 findingKey 和 2.11.0 相同）；schema 升為 `ssot-snapshot/3`、版本 3.0.0（[ADR-005](005-版本升級規則.md)）；`/2` 從輸入重建、不寫轉換（[ADR-010](010-schema版本與轉換規則.md)）；以網段或 IP 為鍵的檢查只在同一個 VRF 內比較；處理紀錄的鍵對應與新舊比對依上方決策實作（f68e7b7，見 [ADR-002 的修訂](002-處理紀錄放在基準之外.md#修訂)），畫面由 frontend 進行中。
 
 ## 待辦
 
 - ~~使用者：決定是否採用，以及選項 B 的鍵寫法。~~ **已完成**：使用者在 2026-10-24 接受，鍵依選項 B（main 不加後綴，其他 VRF 加 `@<VRF>`）。
 - 採用時：
-  - collector：評估另收 `/ip vrf` 或 `/routing table` 的 print；同步 `docs/收集清單與輸入格式.md`。
-  - data-model：解析 `/ip vrf`、非 main 路由表改為事實、`src/core/keys.js` 的 VRF 鍵、升 `ssot-snapshot/3` 與 3.0.0、查詢與檢查分 VRF、`S.trace` 與 `Q.reach` 支援 vrf；先寫失敗的測試（含位址重疊的範例）。
-  - workflow：處理紀錄的鍵對應（與 facet 的轉換共用）與舊版範例測試；新舊比對的 IP 類別加上 VRF。
+  - ~~collector：評估另收 `/ip vrf` 或 `/routing table` 的 print；同步 `docs/收集清單與輸入格式.md`。~~ **已完成**：RouterOS 7 自動收集 `/ip vrf print detail without-paging`（23fff9e，[收集清單 §1](../收集清單與輸入格式.md#1-每台設備要收集的指令)）；`/routing table` 由 export 讀取，不另收。
+  - ~~data-model：解析 `/ip vrf`、非 main 路由表改為事實、`src/core/keys.js` 的 VRF 鍵、升 `ssot-snapshot/3` 與 3.0.0、查詢與檢查分 VRF、`S.trace` 與 `Q.reach` 支援 vrf；先寫失敗的測試（含位址重疊的範例）。~~ **已完成**（808c630，`tests/core/vrf.js`；實作結果見上方「修訂」）。
+  - ~~workflow：處理紀錄的鍵對應（與 facet 的轉換共用）與舊版範例測試；新舊比對的 IP 類別加上 VRF。~~ **已完成**（f68e7b7）：`KEY_MIGRATIONS` 的 `vrf-split`（去掉 `@<VRF>` 後相同，或實體是舊鍵的子集合；只在舊項目最後出現在 3.0.0 以前時轉換，見 [ADR-002 的修訂](002-處理紀錄放在基準之外.md#修訂)），測試含 2.11 的處理紀錄與工作包；`S.compare.snapshots` 的 ip 鍵改為位址鍵（[設計說明第 8 節](../設計說明.md#8-比對獨立模組)）。
+  - 使用者：上方「建議的對應方式」中「找不到時，舊鍵維持原狀態並記下『規則因 VRF 改變』，不判為 fixed，畫面列出這些項目」**尚未實作**，目前找不到對應的舊項目照原本的規則判定（可能判為 fixed）。待使用者決定是否要做。
   - frontend：L3 子網圖的 VRF 容器、IP 搜尋與詳情顯示 VRF。
-  - docs：設計說明 §5.2 與版本紀錄、基準檢查規則中 VRF 相關的說明、規格書的狀態。
+  - docs：設計說明 §5.2 與版本紀錄、基準檢查規則中 VRF 相關的說明、規格書的狀態。資料層、處理紀錄與比對的部分已完成（3.0.0）；畫面的部分等 frontend 完成後再補。

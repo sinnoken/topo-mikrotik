@@ -38,7 +38,8 @@
 
 - `iterations[].baseline.baselineKey`：沒有這個欄位的舊紀錄照常讀取，判斷時退回用 inputHash，不轉換、不改寫。
 - `items[].devs`：沒有這個欄位的舊紀錄照常讀取，推不出設備的項目保守地列為 unobserved，不轉換、不改寫。
-- `history[].fromKey`、`history[].superseded`：只有舊鍵轉換（`reason` 為 `facet-split`）的那一筆歷程才有；沒有這兩個欄位的歷程就不是轉換。舊紀錄不需要轉換格式。
+- `history[].fromKey`、`history[].superseded`：只有舊鍵轉換（`reason` 為 `facet-split` 或 `vrf-split`）的那一筆歷程才有；沒有這兩個欄位的歷程就不是轉換。舊紀錄不需要轉換格式。
+- `iterations[].baseline.schema`（3.0.0）：那一輪基準的 `meta.schema`。沒有這個欄位的一輪視為 3.0.0 以前推進的，供舊鍵轉換 `vrf-split` 的 `before` 判斷（見 [ADR-002](002-處理紀錄放在基準之外.md) 的「修訂」）；不轉換、不改寫舊紀錄。
 
 另外，`S.ledger.advance` 的回傳值多了 `split`（這一輪由舊鍵轉換到新鍵的項目）。這是函式的回傳值，不是保存的格式；呼叫端不讀它時行為不變。
 

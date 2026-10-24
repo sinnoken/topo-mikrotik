@@ -73,7 +73,7 @@ git diff --check         # 提交前檢查
   只能 canonicalize 或加註解，不能新增／刪除／改寫事實。
 - **鏈路語意**：`S.LINK_SCOPE` 區分 interface-adjacency（LLDP／CDP）、broadcast-domain（純 MNDP，只證明 L2 可達，
   不可當直連證據）、routing-adjacency（OSPF，不作為拓樸 edge）。
-- **Snapshot 模型（`ssot-snapshot/2`）**：欄位命名參考 NetBox。完整欄位表見 [docs/設計說明.md](docs/設計說明.md) §5.2，以下是容易用錯的地方：
+- **Snapshot 模型（`ssot-snapshot/3`）**：欄位命名參考 NetBox。完整欄位表見 [docs/設計說明.md](docs/設計說明.md) §5.2，以下是容易用錯的地方：
   - 介面的 VLAN 分成 `pvid`／`untaggedVlans`／`taggedVlans`，取聯集用 `S.util.ifcVlans(i)`。
   - 介面之間的關係都存 ep 鍵，不共用欄位：聚合用 `lag`／`lagMembers`，bridge port 用 `bridge`，VLAN 子介面用 `parent`＋`encapVlan`。
   - `type` 是封閉列舉 `S.IFC_TYPES`，原值在 `rawType`。
@@ -82,6 +82,10 @@ git diff --check         # 提交前檢查
   - 防火牆規則 `firewallRules` 的 `key` 是「設備|位址族|表|chain|簽章雜湊」，不含編號（插入規則不會讓後面的鍵改變）；
     WAN／LAN 推論在 `firewallZones`，只看名稱含 WAN／LAN 的 interface list。規則比對語意集中在 `S.infer.fw`，不要另寫一套。
   - `blocks[].collectedAt`／`failure` 與 `coverage[].failures` 來自收集器的 `# collected-at:`、`# collection failed:` 註解。
+  - VRF（[ADR-015](docs/架構決策/015-支援VRF並升級ssot-snapshot-3.md)）：以 IP 或網段為鍵的地方一律用 `K.inVrf(位址, vrf)`（main 不加後綴，其他 VRF 加 `@<VRF>`），
+    不要自己拼字串；`ipAddresses`／`prefixes`／`arps` 的 `vrf` 一定有值（main 也寫出）。
+  - 路由以路由表為單位：`routes[].routingTable` 是原值，`vrf` 是對應的 VRF（只用於策略路由的路由表為 null）；
+    某個 VRF 的路由用 `Q.routesOf(dev, vrf)`，某張路由表用 `Q.routesInTable(dev, table)`。下一跳的擁有者一律經 `S.check.hopOwner`（`Q.hopOwner`）。
   - 內部模型 M 用 Map/Set，只在 `pipeline.js` 的 `serialize` 轉成陣列。
 - **拓樸版面**：
   - [layout.js](src/view/graph/layout.js) 的 `prepare()` 負責分群、終端與分層，`shelf()` 負責書架排列，內建版面與分層版面共用。

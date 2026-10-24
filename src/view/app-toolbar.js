@@ -10,9 +10,9 @@
 
   // ================================================================ 頁首
   A.bindHeader = function bindHeader() {
-    $('#btn-trace').onclick = () => { const p = $('#trace-pop'); p.classList.toggle('hidden'); if (!p.classList.contains('hidden')) $('#trace-src').focus(); };
+    $('#btn-trace').onclick = () => { const p = $('#trace-pop'); p.classList.toggle('hidden'); if (!p.classList.contains('hidden')) { A.syncTraceVrf(); $('#trace-src').focus(); } };
     $('#trace-run').onclick = A.runTrace;
-    ['#trace-src', '#trace-dst'].forEach((s) => $(s).addEventListener('keydown', (e) => {
+    ['#trace-src', '#trace-dst', '#trace-vrf'].forEach((s) => $(s).addEventListener('keydown', (e) => {
       if (e.key === 'Enter') A.runTrace();
       if (e.key === 'Escape') $('#trace-pop').classList.add('hidden');
     }));

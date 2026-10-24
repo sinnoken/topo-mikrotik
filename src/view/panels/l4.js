@@ -30,7 +30,8 @@
 
   // 檢視狀態（不寫進基準、不存進 store）
   //   mx：「全部服務」的矩陣（服務選單的選項）；current：目前畫的矩陣（CSV 用）；showAllGroups：異質格子的 L1 是否列出全部的組
-  const st = { Q: null, service: '', mode: 'matrix', cell: null, cellData: null, reach: null, reachReq: null, reachErr: null, hideDeny: true, showAllGroups: false, focus: [0, 0], mx: null, current: null, error: null };
+  //   vrf：矩陣依來源 zone 的 VRF 篩選（'' 是全部）；reachVrfs：可達性查詢的來源在多個 VRF 時，可以選的 VRF
+  const st = { Q: null, service: '', mode: 'matrix', vrf: '', cell: null, cellData: null, reach: null, reachReq: null, reachErr: null, reachVrfs: null, hideDeny: true, showAllGroups: false, focus: [0, 0], mx: null, current: null, error: null };
   /** 這個畫面已經算過的矩陣：Q → Map(service → 計算毫秒數，只算 next() 本身)；查詢層有快取，再開時不顯示忙碌提示 */
   const computed = new WeakMap();
   /** 分段計算的紀錄：Q → Map(service → { ms, wallMs, steps, maxStepMs, maxGapMs })；大型冒煙測試讀主執行緒被佔住的最長時間 */
@@ -127,10 +128,16 @@
     const proto = h('select', { id: 'l4-proto', 'aria-label': '協定' }, PROTOS.map((p) => h('option', { value: p }, p)));
     const port = h('input', { id: 'l4-port', type: 'text', inputmode: 'numeric', placeholder: '443', autocomplete: 'off', 'aria-label': '目的埠', class: 'l4-port' });
     proto.onchange = () => { port.disabled = proto.value === 'icmp'; };
-    const run = () => runReach(App, src.value.trim(), dst.value.trim(), proto.value, port.value.trim());
-    [src, dst, port].forEach((x) => x.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); run(); } }));
+    // VRF（選用）：空字串是「依來源位址決定」；基準只有 main 時不顯示
+    const vrf = h('select', { id: 'l4-vrf', 'aria-label': '來源的 VRF' });
+    const vrfBox = h('span', { class: 'l4-vrf-box hidden' }, [h('label', { for: 'l4-vrf' }, 'VRF'), ' ', vrf]);
+    // 矩陣的 VRF 篩選（依來源 zone 的 VRF）：基準的 zone 在兩個以上的 VRF 時才顯示
+    const vrfFilter = h('select', { id: 'l4-vrf-filter', 'aria-label': '依來源 zone 的 VRF 篩選', onchange: () => { st.vrf = vrfFilter.value; st.focus = [0, 0]; if (st.current) { renderMatrix(App, st.current); } } });
+    const vrfFilterBox = h('span', { class: 'l4-vrf-filter hidden' }, [h('label', { for: 'l4-vrf-filter', class: 'muted' }, 'VRF'), ' ', vrfFilter]);
+    const run = () => runReach(App, src.value.trim(), dst.value.trim(), proto.value, port.value.trim(), vrf.value);
+    [src, dst, port, vrf].forEach((x) => x.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); run(); } }));
     els = {
-      root, serviceSel, modes, src, dst, proto, port,
+      root, serviceSel, modes, src, dst, proto, port, vrf, vrfBox, vrfFilter, vrfFilterBox,
       status: h('div', { id: 'l4-status', class: 'l4-status', role: 'status', 'aria-live': 'polite' }),
       matrix: h('div', { id: 'l4-matrix', class: 'l4-matrix' }),
       legend: h('div', { id: 'l4-legend', class: 'l4-legend' }),
@@ -155,13 +162,13 @@
         h('p', { class: 'muted l4-note' }, '輸入來源與目的 IP、協定與埠，沿各設備的路由逐跳套用 raw、dst-nat、filter 與 src-nat（Q.reach）；結果顯示在下方的 L3。'),
         h('div', { class: 'form-row l4-form' }, [
           h('label', { for: 'l4-src' }, '來源'), src, h('label', { for: 'l4-dst' }, '目的'), dst,
-          h('label', { for: 'l4-proto' }, '協定'), proto, h('label', { for: 'l4-port' }, '埠'), port,
+          h('label', { for: 'l4-proto' }, '協定'), proto, h('label', { for: 'l4-port' }, '埠'), port, vrfBox,
           h('button', { type: 'button', class: 'primary', id: 'l4-run', onclick: run }, '查詢'),
         ]),
       ]),
       h('section', { class: 'work-card l4-card', 'aria-labelledby': 'l4-matrix-title' }, [
         h('div', { class: 'l4-card-head' }, [h('h3', { id: 'l4-matrix-title', class: 'work-card-title' }, 'zone 矩陣（L0）'),
-          h('label', { for: 'l4-service', class: 'muted' }, '服務'), serviceSel, modes, els.csv]),
+          h('label', { for: 'l4-service', class: 'muted' }, '服務'), serviceSel, vrfFilterBox, modes, els.csv]),
         els.status, els.legend, els.box,
       ]),
       els.drill, els.zones, els.live,
@@ -191,7 +198,7 @@
   }
   function resetState(Q) {
     stopJob();
-    Object.assign(st, { Q, service: '', cell: null, cellData: null, reach: null, reachReq: null, reachErr: null, showAllGroups: false, focus: [0, 0], mx: null, current: null, error: null });
+    Object.assign(st, { Q, service: '', vrf: '', cell: null, cellData: null, reach: null, reachReq: null, reachErr: null, reachVrfs: null, showAllGroups: false, focus: [0, 0], mx: null, current: null, error: null });
     if (els) { els.drill.classList.add('hidden'); V.clear(els.drill); }
   }
   /** 放棄進行中的分段計算：generator 的 return() 讓查詢層不留下不完整的快取；之後不會再畫它的結果 */
@@ -286,6 +293,18 @@
     sel.appendChild(h('option', { value: '' }, '全部服務'));
     ids.forEach((id) => sel.appendChild(h('option', { value: id }, id)));
     sel.value = st.service;
+    // 可達性查詢的 VRF：基準有兩個以上的 VRF 時才顯示（只用 main 的網路與加入 VRF 之前相同）
+    const vrfs = App.Q.vrfs();
+    els.vrfBox.classList.toggle('hidden', vrfs.length < 2);
+    V.fillVrfSelect(els.vrf, vrfs, els.vrf.value);
+    // 矩陣的 VRF 篩選：zone 在兩個以上的 VRF 時才顯示（選項是 zoneMatrix.vrfs）
+    const ref = st.current || st.mx; const mvrfs = ref ? ref.vrfs || [] : [];
+    if (!mvrfs.includes(st.vrf)) st.vrf = '';
+    els.vrfFilterBox.classList.toggle('hidden', mvrfs.length < 2);
+    V.clear(els.vrfFilter);
+    els.vrfFilter.appendChild(h('option', { value: '' }, '全部 VRF'));
+    mvrfs.forEach((v) => els.vrfFilter.appendChild(h('option', { value: v }, `來源在 ${V.vrfText(v)}`)));
+    els.vrfFilter.value = st.vrf;
     const tooBig = st.mx && st.mx.zones.length > MATRIX_MAX;
     els.modes.querySelectorAll('button').forEach((b) => {
       const on = (tooBig ? 'table' : st.mode) === b.dataset.mode;
@@ -317,12 +336,14 @@
     if (!mx.zones.length) { box.appendChild(h('p', { class: 'muted' }, '基準中沒有 IPv4 直連網段，無法建立 zone。')); return; }
     const tooBig = mx.zones.length > MATRIX_MAX;
     if (tooBig) box.appendChild(h('p', { class: 'muted' }, `zone 有 ${V.num(mx.zones.length)} 個（超過 ${MATRIX_MAX} 個），只用表格檢視。`));
+    const srcZones = rowZones(mx);
+    if (st.vrf) box.appendChild(h('p', { class: 'muted l4-vrf-note' }, `只列來源在 ${V.vrfText(st.vrf)} 的 zone（${V.num(srcZones.length)} 個）；目的保留全部的 zone，跨 VRF 的格子（路由洩漏）照樣看得到。`));
     if (st.mode === 'table' || tooBig) { box.appendChild(matrixTable(App, mx)); return; }
     const byKey = new Map(mx.cells.map((c) => [c.src + '\u0000' + c.dst, c]));
     const n = mx.zones.length;
-    const [fr, fc] = [Math.min(st.focus[0], n - 1), Math.min(st.focus[1], n - 1)];
+    const [fr, fc] = [Math.min(st.focus[0], srcZones.length - 1), Math.min(st.focus[1], n - 1)];
     const head = h('tr', null, [h('th', { scope: 'col', class: 'l4-corner' }, '來源 ＼ 目的')].concat(mx.zones.map((z) => h('th', { scope: 'col', class: 'l4-colhead', title: z.basis }, zoneLabel(z)))));
-    const rows = mx.zones.map((zs, r) => {
+    const rows = srcZones.map((zs, r) => {
       const tds = mx.zones.map((zd, c) => {
         const cell = byKey.get(zs.id + '\u0000' + zd.id);
         const td = cellEl(App, cell, r, c, r === fr && c === fc);
@@ -331,7 +352,7 @@
       });
       return h('tr', null, [h('th', { scope: 'row', class: 'l4-rowhead', title: zs.basis }, zoneLabel(zs))].concat(tds));
     });
-    box.appendChild(h('div', { class: 'l4-grid-wrap' }, h('table', { class: 'l4-grid', role: 'grid', 'aria-label': `zone 矩陣：列是來源 zone，欄是目的 zone（${st.service ? '服務 ' + st.service : '全部服務'}）。方向鍵移動，Enter 往下看`, 'aria-rowcount': String(n + 1), 'aria-colcount': String(n + 1) }, [
+    box.appendChild(h('div', { class: 'l4-grid-wrap' }, h('table', { class: 'l4-grid', role: 'grid', 'aria-label': `zone 矩陣：列是來源 zone，欄是目的 zone（${st.service ? '服務 ' + st.service : '全部服務'}）。方向鍵移動，Enter 往下看`, 'aria-rowcount': String(srcZones.length + 1), 'aria-colcount': String(n + 1) }, [
       h('thead', null, head), h('tbody', null, rows),
     ])));
   }
@@ -363,14 +384,15 @@
     return td;
   }
   function onCellKey(App, e, r, c) {
-    const n = gridCells.length; if (!n) return;
+    // 列數與欄數可能不同（VRF 篩選只篩來源 zone）
+    const nr = gridCells.length; if (!nr) return; const nc = gridCells[0].length;
     let to = null;
-    if (e.key === 'ArrowRight') to = [r, Math.min(n - 1, c + 1)];
+    if (e.key === 'ArrowRight') to = [r, Math.min(nc - 1, c + 1)];
     else if (e.key === 'ArrowLeft') to = [r, Math.max(0, c - 1)];
-    else if (e.key === 'ArrowDown') to = [Math.min(n - 1, r + 1), c];
+    else if (e.key === 'ArrowDown') to = [Math.min(nr - 1, r + 1), c];
     else if (e.key === 'ArrowUp') to = [Math.max(0, r - 1), c];
     else if (e.key === 'Home') to = e.ctrlKey ? [0, 0] : [r, 0];
-    else if (e.key === 'End') to = e.ctrlKey ? [n - 1, n - 1] : [r, n - 1];
+    else if (e.key === 'End') to = e.ctrlKey ? [nr - 1, nc - 1] : [r, nc - 1];
     else if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault(); const td = gridCells[r][c];
       setRoving(r, c); openCell(App, td.dataset.src, td.dataset.dst); return;
@@ -402,9 +424,15 @@
   }
   function hideTip() { if (els) els.tip.classList.add('hidden'); }
 
+  /** 矩陣的列（來源 zone）：有 VRF 篩選時只取來源在那個 VRF 的 zone；欄（目的 zone）一律是全部 */
+  const rowZones = (mx) => (st.vrf ? mx.zones.filter((z) => z.vrf === st.vrf) : mx.zones);
+  /** 格子：VRF 篩選時只取來源 zone 在那個 VRF 的格子（表格檢視與 CSV 共用） */
+  const shownCells = (mx) => { if (!st.vrf) return mx.cells; const ids = new Set(rowZones(mx).map((z) => z.id)); return mx.cells.filter((c) => ids.has(c.src)); };
+  /** zone 的 VRF（zone 矩陣有兩個以上的 VRF 時，表格與 CSV 多兩欄） */
+  const zoneVrf = (Q, id) => { const z = zoneIndex(Q).get(id); return z ? z.vrf : ''; };
   /** 表格檢視：每一格一列（和矩陣同一份 Q.zoneMatrix 的結果），可排序，點一列往下看 */
   function matrixTable(App, mx) {
-    const Q = App.Q;
+    const Q = App.Q; const mv = (mx.vrfs || []).length > 1;
     return h('div', { class: 'work-table l4-table' }, V.table([
       { t: '來源 zone', f: (c) => zoneName(Q, c.src), s: (c) => zoneName(Q, c.src) },
       { t: '目的 zone', f: (c) => h('span', null, [zoneName(Q, c.dst), c.diagonal ? h('span', { class: 'muted' }, '（zone 內）') : null]), s: (c) => zoneName(Q, c.dst) },
@@ -415,16 +443,19 @@
       { t: '總數', f: (c) => V.num(c.counts.total), s: (c) => c.counts.total, cls: 'num' },
       { t: '代表規則', f: (c) => (c.rule ? decisiveText(Q, c.rule) : '—'), s: (c) => (c.rule ? decisiveText(Q, c.rule) : null) },
       { t: '無法判斷的原因', f: (c) => c.reasons.map((x) => `${V.reachReason(x.code)}（${V.num(x.count)}）`).join('、'), s: (c) => (c.reasons[0] || {}).code },
-    ], mx.cells, { onRow: (c) => openCell(App, c.src, c.dst), rowClass: (c) => 'l4-row st-' + c.status, limit: TABLE_LIMIT }));
+      // zone 在多個 VRF 時：來源與目的的 VRF（放在最後，其他欄位的位置與只有 main 時相同）
+      ...(mv ? [{ t: '來源 VRF', f: (c) => zoneVrf(Q, c.src), s: (c) => zoneVrf(Q, c.src) }, { t: '目的 VRF', f: (c) => zoneVrf(Q, c.dst), s: (c) => zoneVrf(Q, c.dst) }] : []),
+    ], shownCells(mx), { onRow: (c) => openCell(App, c.src, c.dst), rowClass: (c) => 'l4-row st-' + c.status, limit: TABLE_LIMIT }));
   }
+  /** CSV：目前 service 的矩陣，每一格一列；有 VRF 篩選時只有篩選後的格子（檔名加上 VRF）；zone 在多個 VRF 時多「來源 VRF」「目的 VRF」兩欄 */
   function downloadCsv(App) {
     const mx = st.current; if (!mx) { V.app.banner('zone 矩陣還在計算，完成後再下載。', 4000); return; }
-    const Q = App.Q; const C = V.exporter.csvCell;
-    const head = ['來源 zone', '目的 zone', 'zone 內', '狀態', '異質', '允許', '拒絕', '無法判斷', '總數', '代表規則', '無法判斷的原因'];
-    const rows = mx.cells.map((c) => [zoneName(Q, c.src), zoneName(Q, c.dst), c.diagonal ? '是' : '', V.L4_STATUS[c.status], c.heterogeneous ? '是' : '',
-      c.counts.allow, c.counts.deny, c.counts.unknown, c.counts.total, c.rule ? decisiveText(Q, c.rule) : '', c.reasons.map((x) => `${V.reachReason(x.code)}（${x.count}）`).join('、')]);
+    const Q = App.Q; const C = V.exporter.csvCell; const mv = (mx.vrfs || []).length > 1;
+    const head = ['來源 zone', '目的 zone', 'zone 內', '狀態', '異質', '允許', '拒絕', '無法判斷', '總數', '代表規則', '無法判斷的原因'].concat(mv ? ['來源 VRF', '目的 VRF'] : []);
+    const rows = shownCells(mx).map((c) => [zoneName(Q, c.src), zoneName(Q, c.dst), c.diagonal ? '是' : '', V.L4_STATUS[c.status], c.heterogeneous ? '是' : '',
+      c.counts.allow, c.counts.deny, c.counts.unknown, c.counts.total, c.rule ? decisiveText(Q, c.rule) : '', c.reasons.map((x) => `${V.reachReason(x.code)}（${x.count}）`).join('、')].concat(mv ? [zoneVrf(Q, c.src), zoneVrf(Q, c.dst)] : []));
     const text = '﻿' + [head].concat(rows).map((r) => r.map(C).join(',')).join('\r\n') + '\r\n';
-    V.exporter.download(`l4-matrix-${V.exporter.baseName(Q)}${st.service ? '-' + st.service.replace('/', '-') : ''}.csv`, text, 'text/csv;charset=utf-8');
+    V.exporter.download(`l4-matrix-${V.exporter.baseName(Q)}${st.service ? '-' + st.service.replace('/', '-') : ''}${st.vrf ? '-vrf-' + st.vrf.replace(/[^\w.-]/g, '_') : ''}.csv`, text, 'text/csv;charset=utf-8');
   }
 
   // ---------------------------------------------------------------- zone 的依據
@@ -433,8 +464,12 @@
     box.appendChild(h('h3', { id: 'l4-zones-title', class: 'work-card-title' }, ['zone 的依據 ', V.chip('推論', 'info')]));
     if (st.zo && st.zo.error) box.appendChild(h('p', { class: 'warn-line l4-profile-error' }, '命名規則的 zones 段沒有套用：' + st.zo.error));
     box.appendChild(h('p', { class: 'muted l4-note' }, '每個 IPv4 直連網段依序取第一個有結果的來源：命名規則的 zones 標籤 → interface list → VLAN → 網段本身。命名規則的標籤是註解，其餘都是推論（同一個 VLAN ID 視為同一個 zone）。'));
+    // zone 依 VRF 分開：main 以外的 zone id 帶 @<VRF>、名稱帶（VRF …）；有兩個以上的 VRF 時另列一欄
+    const mv = S.util.uniq(z.zones.map((x) => x.vrf)).length > 1;
+    const vrfCol = mv ? [{ t: 'VRF', f: (x) => h('span', { class: 'mono' }, x.vrf || ''), s: (x) => x.vrf }] : [];
+    if (mv) box.appendChild(h('p', { class: 'muted l4-note' }, '每個 VRF 的 zone 分開計算（不同 VRF 是不同的位址空間）：main 以外的 zone 名稱標出 VRF。'));
     box.appendChild(h('div', { class: 'work-table' }, V.table([
-      { t: 'zone', f: (x) => h('span', { class: 'l4-zone-row', 'data-zone': x.id }, zoneLabel(x)), s: (x) => x.name },
+      { t: 'zone', f: (x) => h('span', { class: 'l4-zone-row', 'data-zone': x.id }, zoneLabel(x)), s: (x) => x.name }, ...vrfCol,
       { t: '來源', f: (x) => V.ZONE_SOURCE[x.source] || x.source, s: (x) => x.source },
       { t: '依據', f: (x) => x.basis || '' },
       { t: '網段', f: (x) => h('span', { class: 'mono' }, x.subnets.join('、')), s: (x) => x.subnets.length },
@@ -442,7 +477,7 @@
     ], z.zones)));
     const zi = zoneIndex(Q);
     box.appendChild(h('details', { class: 'l4-fold' }, [h('summary', null, `每個網段的依據（${V.num(z.subnets.length)}）`), h('div', { class: 'work-table' }, V.table([
-      { t: '網段', f: (s) => h('span', { class: 'mono' }, s.prefix), s: (s) => s.prefix },
+      { t: '網段', f: (s) => h('span', { class: 'mono' }, s.prefix), s: (s) => s.prefix }, ...vrfCol,
       { t: 'zone', f: (s) => (zi.get(s.zone) || { name: s.zone }).name, s: (s) => (zi.get(s.zone) || { name: s.zone }).name },
       { t: '來源', f: (s) => h('span', null, [V.ZONE_SOURCE[s.source] || s.source, s.inferred ? ' ' : '', s.inferred ? V.chip('推論', 'info') : null]) },
       { t: '依據', f: (s) => s.basis || '' },
@@ -454,7 +489,7 @@
   /** L0 → L1／L2：一格的位址組與牽涉的規則（Q.zoneCell）；焦點移到下鑽的標題 */
   function openCell(App, src, dst) {
     hideTip();
-    st.cell = { src, dst }; st.reach = null; st.reachReq = null; st.reachErr = null; st.showAllGroups = false;
+    st.cell = { src, dst }; st.reach = null; st.reachReq = null; st.reachErr = null; st.reachVrfs = null; st.showAllGroups = false;
     st.cellData = App.Q.zoneCell(src, dst, optsOf(st.service));
     renderDrill(App);
     announce(`已開啟 ${zoneName(App.Q, src)} → ${zoneName(App.Q, dst)} 的下鑽：${V.L4_STATUS[st.cellData.status]}`);
@@ -464,25 +499,36 @@
   function openGroup(App, gi, svcId) {
     const c = st.cellData; const g = c && c.groups[gi]; if (!g) return;
     const s = svcOf(svcId || g.services[0].service);
-    query(App, { src: g.srcs[0].ip, dst: g.dst.ip, proto: s.proto, port: s.port, from: 'cell', group: gi, service: svcId || g.services[0].service });
+    // 代表位址的 VRF（zone 依 VRF 分開）：重疊的位址在多個 VRF，一定要帶上
+    query(App, { src: g.srcs[0].ip, dst: g.dst.ip, proto: s.proto, port: s.port, vrf: g.srcs[0].vrf || null, from: 'cell', group: gi, service: svcId || g.services[0].service });
   }
-  /** 可達性查詢（表單）：結果用同一個 L3 畫面；表單的查詢不屬於任何格子，關掉 L1／L2 */
-  function runReach(App, src, dst, proto, port) {
+  /**
+   * 可達性查詢（表單）：結果用同一個 L3 畫面；表單的查詢不屬於任何格子，關掉 L1／L2。
+   * vrf：來源的 VRF（選用；空字串或省略是依來源位址決定，位址在多個 VRF 時提示選擇）
+   */
+  function runReach(App, src, dst, proto, port, vrf) {
     const p = PROTOS.includes(proto) ? proto : String(proto || 'tcp');
     const pt = p === 'icmp' || port === '' || port == null ? (p === 'icmp' ? null : undefined) : /^\d+$/.test(String(port)) ? Number(port) : port;
     st.cell = null; st.cellData = null;
     els.src.value = src; els.dst.value = dst; els.proto.value = p; els.port.value = pt == null ? '' : String(pt); els.port.disabled = p === 'icmp';
-    query(App, { src, dst, proto: p, port: pt, from: 'form' });
+    if (vrf !== undefined) els.vrf.value = vrf || '';
+    query(App, { src, dst, proto: p, port: pt, vrf: vrf || null, from: 'form' });
   }
   function query(App, req) {
-    st.reachReq = req; st.reach = null; st.reachErr = null;
+    st.reachReq = req; st.reach = null; st.reachErr = null; st.reachVrfs = null;
     try {
-      const r = App.Q.reach(req.src, req.dst, { proto: req.proto, port: req.port });
-      if (r.ok) st.reach = r; else st.reachErr = r.error;
-    } catch (e) { st.reachErr = e.message; } // 參數不合法（例如 tcp 沒有埠）：核心丟 TypeError，原文顯示
+      const r = App.Q.reach(req.src, req.dst, Object.assign({ proto: req.proto, port: req.port }, req.vrf ? { vrf: req.vrf } : {}));
+      if (r.ok) st.reach = r; else { st.reachErr = r.error; st.reachVrfs = r.vrfs || null; } // vrfs：來源在多個 VRF，請使用者選擇
+    } catch (e) { st.reachErr = e.message; } // 參數不合法（例如 tcp 沒有埠、不存在的 VRF）：核心丟 TypeError，原文顯示
     renderDrill(App);
-    announce(st.reach ? `L3：${req.src} → ${req.dst} ${svcLabel(req)} ${V.VERDICT[st.reach.verdict]}` : `L3：查詢失敗，${st.reachErr}`);
+    announce(st.reach ? `L3：${req.src} → ${req.dst} ${svcLabel(req)} ${V.VERDICT[st.reach.verdict]}` : st.reachVrfs ? `L3：來源 ${req.src} 在多個 VRF，請選擇 VRF` : `L3：查詢失敗，${st.reachErr}`);
     focusDrill(st.cell ? 'l3' : null);
+  }
+  /** 來源在多個 VRF 時，用選的 VRF 重新查詢（同一個請求，只換 VRF） */
+  function rerunWithVrf(App, vrf) {
+    const q = st.reachReq; if (!q) return;
+    if (q.from === 'form') runReach(App, q.src, q.dst, q.proto, q.port == null ? '' : String(q.port), vrf);
+    else query(App, Object.assign({}, q, { vrf }));
   }
   const svcLabel = (q) => q.proto + (q.port != null ? '/' + q.port : '');
   function announce(text) { if (els) els.live.textContent = text; }
@@ -514,7 +560,7 @@
     if (st.reach || st.reachErr) box.appendChild(reachBlock(App));
   }
   function closeDrill(App) {
-    st.cell = null; st.cellData = null; st.reach = null; st.reachReq = null; st.reachErr = null; renderDrill(App);
+    st.cell = null; st.cellData = null; st.reach = null; st.reachReq = null; st.reachErr = null; st.reachVrfs = null; renderDrill(App);
     const td = gridCells[st.focus[0]] && gridCells[st.focus[0]][st.focus[1]];
     if (td) td.focus(); else { const t = $('#l4-matrix-title'); if (t) t.focus(); }
   }
@@ -594,8 +640,15 @@
   /** L3：Q.reach 的結果：結論、起點、NAT 之後的目的、決定的規則、無法判斷的原因與每條路徑的逐跳 */
   function reachBlock(App) {
     const Q = App.Q; const q = st.reachReq; const r = st.reach;
-    const title = `L3：${q.src} → ${q.dst} ${svcLabel(q)}`;
+    const multi = Q.vrfs().length > 1;
+    const title = `L3：${q.src} → ${q.dst} ${svcLabel(q)}${multi && (r || q.vrf) ? `（${V.vrfText(r ? r.vrf : q.vrf)}）` : ''}`;
     const out = [h('h4', { id: 'l4-l3-title', tabindex: '-1' }, title)];
+    if (!r && st.reachVrfs) {
+      // 來源位址在多個 VRF（位址重疊）：查詢層不猜，列出可選的 VRF，選了就重新查詢
+      out.push(h('p', { class: 'warn-line l4-reach-vrf' }, `來源 ${q.src} 在多個 VRF（${st.reachVrfs.join('、')}，位址重疊），無法判斷封包從哪一個開始：請選擇 VRF。`));
+      out.push(h('div', { class: 'row l4-reach-vrfs', role: 'group', 'aria-label': '選擇來源的 VRF' }, st.reachVrfs.map((v) => h('button', { type: 'button', 'data-vrf': v, onclick: () => rerunWithVrf(App, v) }, `用 ${V.vrfText(v)} 查詢`))));
+      return h('div', { class: 'l4-sub l4-l3' }, out);
+    }
     if (!r) { out.push(h('p', { class: 'diffA l4-reach-error' }, '無法查詢：' + st.reachErr)); return h('div', { class: 'l4-sub l4-l3' }, out); }
     const start = r.start || {};
     out.push(h('div', { class: 'row' }, [h('span', { class: 'l4-verdict', 'data-verdict': r.verdict }, verdictTag(r.verdict)),
@@ -614,17 +667,29 @@
     out.push(h('details', { class: 'l4-fold' }, [h('summary', null, '這次查詢的前提'), h('ul', null, r.assumptions.map((a) => h('li', null, a.message)))]));
     return h('div', { class: 'l4-sub l4-l3' }, out);
   }
+  /** /routing rule（策略路由）的文字：決定查表的規則、或使路由不明／丟棄的規則 */
+  const routingRuleText = (r) => `/routing rule 第 ${r.order} 條（${Object.entries(r.match || {}).map(([k, v]) => `${k}=${v}`).join(' ') || '沒有條件'}，${r.action}${r.table ? ' ' + r.table : ''}）`;
+  /** 這一跳的路由：VRF（基準有多個 VRF 時）、查的路由表（不是 VRF 的表時）、決定查表的規則與閘道（在別的 VRF 解析時標 @VRF） */
+  function routeText(rt, multi) {
+    if (!rt) return '';
+    const gw = rt.gateway ? ' 經 ' + rt.gateway + (rt.gatewayVrf && rt.gatewayVrf !== rt.vrf ? '@' + rt.gatewayVrf : '') : '';
+    return `・路由 ${rt.prefix || '—'}（${rt.proto || '—'}）${gw}`
+      + (rt.table && rt.table !== rt.vrf ? `・路由表 ${rt.table}` : '')
+      + (multi && rt.via && rt.via.length > 1 ? `・經 VRF 介面 ${rt.via.join(' → ')}` : '')
+      + (rt.rule ? `・依 ${routingRuleText(rt.rule)}` : '');
+  }
   function pathBlock(App, p, n, total) {
-    const Q = App.Q;
+    const Q = App.Q; const multi = Q.vrfs().length > 1;
     const addr = (ip, port) => (ip == null ? '（來源位址不明）' : ip + (port != null ? ':' + port : ''));
+    const endRules = p.end ? (p.end.rules || []).concat(p.end.rule ? [p.end.rule] : []) : [];
     return h('div', { class: 'l4-path', 'data-verdict': p.verdict }, [
       h('div', { class: 'l4-path-head' }, [total > 1 ? `路徑 ${n + 1}：` : '路徑：', verdictTag(p.verdict)]),
       h('ol', { class: 'l4-hops' }, p.hops.map((hp) => h('li', { class: 'l4-hop', 'data-dev': hp.dev }, [
-        h('div', null, [h('b', null, devLink(App, hp.dev)), hp.chain ? h('span', { class: 'muted' }, ` ${hp.chain}`) : null,
+        h('div', null, [h('b', null, devLink(App, hp.dev)), multi && hp.vrf ? h('span', { class: 'mono muted l4-hop-vrf' }, ` @${hp.vrf}`) : null, hp.chain ? h('span', { class: 'muted' }, ` ${hp.chain}`) : null,
           hp.collected ? null : V.chip('未收集', 'warn'), hp.firewall === 'none' && hp.collected ? V.chip('沒有防火牆資料', 'warn') : null, ' ',
           hp.verdict === 'pass' ? statusTag('allow', '這一跳通過') : verdictTag(hp.verdict)]),
         h('div', { class: 'mono l4-hop-addr' }, `${addr(hp.src, null)} → ${addr(hp.dst, hp.port)}${hp.dstOut !== hp.dst || hp.portOut !== hp.port ? `　改寫為 ${addr(hp.dstOut, hp.portOut)}` : ''}${hp.srcOut !== hp.src ? `　來源改寫為 ${addr(hp.srcOut, null)}` : ''}`),
-        h('div', { class: 'muted' }, `入 ${hp.inKnown ? epText(Q, hp.in) : '不明'}・出 ${hp.outKnown ? epText(Q, hp.out) : '不明'}${hp.route ? `・路由 ${hp.route.prefix || '—'}（${hp.route.proto || '—'}）${hp.route.gateway ? ' 經 ' + hp.route.gateway : ''}` : ''}`),
+        h('div', { class: 'muted' }, `入 ${hp.inKnown ? epText(Q, hp.in) : '不明'}・出 ${hp.outKnown ? epText(Q, hp.out) : '不明'}${routeText(hp.route, multi)}`),
         hp.stages.length ? h('ul', { class: 'l4-stages' }, hp.stages.map((sg) => h('li', { 'data-status': sg.status }, [
           h('span', { class: 'mono' }, `${sg.table} ${sg.chain}`), '：',
           sg.status === 'decided' ? (sg.rule ? ruleLink(App, sg.rule) : (sg.note || '').replace(/^[^：]*：/, '')) : `無法判斷（可能 ${S.util.uniq(sg.outcomes.map((o) => o.verdict)).join('／')}）`,
@@ -635,7 +700,10 @@
         hp.service ? h('div', { class: 'muted' }, `設備的服務 ${hp.service.name}（埠 ${hp.service.port}）：${hp.service.enabled ? (hp.service.accepts === false ? '來源不在允許的位址內' : hp.service.accepts == null ? '來源位址不明' : '接受') : '停用'}`) : null,
         hp.reasons.length ? h('ul', { class: 'l4-reasons' }, hp.reasons.map((x) => reasonItem(App, x))) : null,
       ]))),
-      p.end ? h('div', { class: 'l4-end', 'data-code': p.end.code, title: reasonNote(p.end.code) }, [h('b', null, '結束：' + V.reachReason(p.end.code)), p.end.message ? '　' + p.end.message : '']) : null,
+      p.end ? h('div', { class: 'l4-end', 'data-code': p.end.code, title: reasonNote(p.end.code) }, [h('b', null, '結束：' + V.reachReason(p.end.code)), p.end.message ? '　' + p.end.message : '',
+        multi && p.end.vrf ? h('span', { class: 'muted' }, `（${V.vrfText(p.end.vrf)}）`) : null,
+        // 策略路由不明（policy-routing）或被 /routing rule 丟棄（policy-drop）：列出相關的規則
+        endRules.length ? h('ul', { class: 'l4-end-rules' }, endRules.map((r) => h('li', { class: 'muted' }, routingRuleText(r)))) : null]) : null,
     ]);
   }
 
@@ -644,9 +712,9 @@
     /** 查詢 zone 的參數（命名規則的 zones 段，核對失敗時不套用並附 error）；規則的 L4 影響（panels/firewall.js）用同一份 */
     zoneOpts,
     /** 測試與其他畫面用：目前的檢視狀態（複本） */
-    state: () => ({ service: st.service, mode: st.mode, cell: st.cell ? Object.assign({}, st.cell) : null, reach: st.reach, reachReq: st.reachReq ? Object.assign({}, st.reachReq) : null, reachErr: st.reachErr, focus: st.focus.slice(), error: st.error,
+    state: () => ({ service: st.service, mode: st.mode, vrf: st.vrf, reachVrfs: st.reachVrfs ? st.reachVrfs.slice() : null, cell: st.cell ? Object.assign({}, st.cell) : null, reach: st.reach, reachReq: st.reachReq ? Object.assign({}, st.reachReq) : null, reachErr: st.reachErr, focus: st.focus.slice(), error: st.error,
       showAllGroups: st.showAllGroups, computing: job ? { service: job.key, progress: job.progress ? Object.assign({}, job.progress) : null } : null }),
-    openCell, openGroup, runReach,
+    openCell, openGroup, runReach, rerunWithVrf,
     /** 這個畫面在某份基準上算過的矩陣（service → 毫秒數）；大型冒煙測試讀計算時間 */
     timings: (Q) => new Map(computed.get(Q) || []),
     /** 分段計算的紀錄（service → { ms, wallMs, steps, maxStepMs：一段最久佔住主執行緒多久, maxGapMs：兩段之間最長的間隔 }） */

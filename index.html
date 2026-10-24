@@ -91,6 +91,8 @@
       <div id="trace-pop" class="popover hidden">
         <div class="form-row"><label>來源 IP</label><input id="trace-src" type="text" placeholder="10.1.30.15"></div>
         <div class="form-row"><label>目的 IP</label><input id="trace-dst" type="text" placeholder="10.1.20.11"></div>
+        <div class="form-row hidden" id="trace-vrf-row"><label for="trace-vrf">VRF</label><select id="trace-vrf" aria-label="追蹤的 VRF"></select></div>
+        <div id="trace-msg" class="trace-msg warn-line hidden" role="alert"></div>
         <div class="form-row" style="margin:0"><span class="muted" style="flex:1;font-size:12px">依各設備路由表逐跳追蹤（含 ECMP）</span><button class="primary" id="trace-run">追蹤</button></div>
       </div>
     </div>

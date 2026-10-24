@@ -82,9 +82,10 @@
         setHl({ nodes: new Map(S.util.uniq(ds).map((d) => [d, MARK.find])), edges: em }); focus = S.util.uniq(ds); break;
       }
       case 'ip': {
-        const r = Q.findIp(sel.key);
+        // sel.vrf：null／undefined 是不分 VRF（搜尋），列出所有 VRF 的擁有者
+        const r = Q.findIp(sel.key, sel.vrf == null ? undefined : sel.vrf);
         const ds = S.util.uniq([
-          ...(r.owner ? [r.owner.split('|')[0]] : []),
+          ...r.owners.map((x) => devOf(x.ep)),
           ...r.locations.map((x) => devOf(x.ep)),
           ...r.locations.map((x) => App.vOfEp.get(x.ep)).filter(Boolean),
         ]);
@@ -125,7 +126,7 @@
     const f = App.Q.finding(idx);
     // 指向防火牆規則或服務的檢查結果，定位到該設備防火牆畫面的那一列（第一個實體通常是設備）
     const e = f.entities.find((x) => x.type === 'rule' || x.type === 'service') || f.entities[0];
-    const sel = !e ? null : f.id === 'A03' ? { type: 'endpoints', dev: e.key } : { type: e.type, key: e.key };
+    const sel = !e ? null : f.id === 'A03' ? { type: 'endpoints', dev: e.key } : e.type === 'ip' ? V.ipSel(e.key) : { type: e.type, key: e.key };
     App.select(sel, { focus: true, findingEntities: f.id === 'A03' ? null : f.entities });
   };
 
@@ -196,20 +197,45 @@
   };
 
   // ================================================================ 路由追蹤
-  App.openTrace = function (src, dst) {
+  /**
+   * VRF 選單：基準只有 main 時不顯示（畫面與加入 VRF 之前相同）；否則列出 Q.vrfs()，預設「依來源位址決定」。
+   * 提示（#trace-msg）只在來源位址在多個 VRF、需要選擇時顯示。
+   */
+  A.syncTraceVrf = function syncTraceVrf(value) {
+    const vrfs = App.Q ? App.Q.vrfs() : [];
+    $('#trace-vrf-row').classList.toggle('hidden', vrfs.length < 2);
+    V.fillVrfSelect($('#trace-vrf'), vrfs, value === undefined ? $('#trace-vrf').value : value);
+  };
+  const traceMsg = (text) => { const m = $('#trace-msg'); m.textContent = text || ''; m.classList.toggle('hidden', !text); };
+  /** 開啟路由追蹤。vrf：預先選好的 VRF（例如從某個 VRF 的 IP 詳情來）；省略時保留選單目前的值 */
+  App.openTrace = function (src, dst, vrf) {
     A.closeHub();
     const pop = $('#trace-pop'); pop.classList.remove('hidden');
     if (src !== undefined) $('#trace-src').value = src; if (dst !== undefined) $('#trace-dst').value = dst;
+    A.syncTraceVrf(vrf === undefined ? undefined : vrf || ''); traceMsg('');
     ($('#trace-src').value ? $('#trace-dst') : $('#trace-src')).focus();
   };
   A.runTrace = function runTrace() {
     if (!App.Q) return;
     const src = $('#trace-src').value.trim(); const dst = $('#trace-dst').value.trim();
-    const r = S.trace(App.Q, src, dst);
-    // 回程：無狀態的 ACL 需要確認反向路徑；起點找不到時一樣明確顯示原因
-    const reverse = r.ok ? S.trace(App.Q, dst, src) : null;
+    A.syncTraceVrf();
+    const vrf = $('#trace-vrf').value || undefined; // 空字串：依來源位址決定
+    const r = S.trace(App.Q, src, dst, vrf ? { vrf } : undefined);
+    // 來源位址在多個 VRF（位址重疊）：查詢層不猜，請使用者選擇；彈出視窗留著，焦點移到 VRF 選單
+    if (!r.ok && r.vrfs) {
+      $('#trace-pop').classList.remove('hidden'); $('#trace-vrf-row').classList.remove('hidden');
+      traceMsg(`來源 ${src} 在多個 VRF（${r.vrfs.join('、')}，位址重疊），無法判斷從哪一個開始：請在 VRF 選單選擇其中一個，再按「追蹤」。`);
+      $('#trace-vrf').focus();
+      return;
+    }
+    traceMsg('');
+    // 回程：無狀態的 ACL 需要確認反向路徑；起點找不到時一樣明確顯示原因。
+    // 回程的 VRF：去程抵達的 VRF 只有一個時用它，否則用使用者選的（都沒有時依位址決定，位址在多個 VRF 時回程顯示原因）
+    const reached = r.ok ? S.util.uniq(r.ends.filter((e) => e.status === 'reached').map((e) => e.vrf)) : [];
+    const backVrf = reached.length === 1 ? reached[0] : vrf;
+    const reverse = r.ok ? S.trace(App.Q, dst, src, backVrf ? { vrf: backVrf } : undefined) : null;
     $('#trace-pop').classList.add('hidden');
     App.showView('graph'); // 路由追蹤的路徑畫在拓樸圖上：工作畫面開著時切回拓樸圖
-    App.select({ type: 'trace', result: r, reverse }, { focus: true });
+    App.select({ type: 'trace', result: r, reverse, vrf: vrf || null }, { focus: true });
   };
 })(globalThis.SSOT = globalThis.SSOT || {});

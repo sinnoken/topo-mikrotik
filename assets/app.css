@@ -348,7 +348,8 @@ pre.raw .hl { background: #fff3c4; display: block; }
 .form-row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
 .form-row label { color: var(--muted); }
 .popover { position: absolute; top: 44px; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-md); padding: 14px; z-index: 60; width: 300px; }
-.popover .form-row input { flex: 1; }
+.popover .form-row input, .popover .form-row select { flex: 1; }
+.trace-msg { font-size: var(--fs-sm); margin: -4px 0 10px; }
 
 /* ---------- L4 可達性（panels/l4.js）：疊在畫布上、工具列（z-index 5）下面；格子的底色與符號色取自 theme.l4（inline style） ---------- */
 .l4 { position: absolute; inset: 0; z-index: 4; overflow: auto; overflow-x: hidden; background: var(--bg); padding-top: 50px; container-type: inline-size; }

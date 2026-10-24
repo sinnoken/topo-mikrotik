@@ -64,7 +64,8 @@
         const id = it.key.split('|').pop();
         return Q.vlans().some((v) => String(v.id) === id) ? { type: 'vlan', key: id } : null;
       }
-      case 'ip': return { type: 'ip', key: it.key };
+      // 位址鍵（K.inVrf）有 @ 時只看那個 VRF；沒有 @ 時不分 VRF（同一個 IP 在多個 VRF 時由詳情請使用者選擇）
+      case 'ip': return String(it.key).includes('@') ? V.ipSel(it.key) : V.ipSel(it.key, null);
       case 'firewall': {
         if (Q.getFirewallRule(it.key)) return { type: 'rule', key: it.key };
         const dev = K.splitEp(it.key)[0];

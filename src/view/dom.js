@@ -84,7 +84,39 @@
     'src-device-uncollected': '來源位址屬於沒有收集的設備', 'src-location-unknown': '找不到包含來源的網段，不知道封包從哪台設備進入',
     'no-gateway': '來源網段上沒有可當閘道的已收集設備', dropped: '被規則丟棄', local: '目的是設備自己的位址',
     host: '送達主機（主機本身的防火牆不在範圍內）', segment: '送達直連網段上的主機', 'same-subnet': '來源與目的在同一個網段，不經過路由器',
+    'policy-routing': '策略路由（mangle 的 mark-routing、改過的 policy-rules，或無法判斷的 /routing rule 條件）使查哪一張路由表不明',
+    'policy-drop': '/routing rule 的 drop 或 unreachable，封包被丟棄',
   };
+  // S.trace 的結束狀態（ends[].status）
+  V.TRACE_END = {
+    reached: '抵達', noroute: '沒有路由', blackhole: '黑洞路由', loop: '路由迴圈', ttl: 'TTL 用盡', 'unknown-nh': '下一跳不在基準內',
+    policy: '策略路由不明', 'policy-drop': '策略路由丟棄',
+  };
+  /**
+   * IP 的選取：{ type: 'ip', key: IP, vrf }。vrf 為 null 時不分 VRF（搜尋：列出所有 VRF 的結果），否則只看那個 VRF。
+   * 從位址鍵（K.inVrf，例如檢查結果的實體、清單的列）建立時，沒有 @ 就是 main。
+   */
+  /**
+   * VRF 選單（路由追蹤、L4 可達性查詢）：第一個選項「依來源位址決定」（值為空字串，不傳 vrf，由查詢層依來源位址決定），其餘是 Q.vrfs()。
+   * value 不在清單中時回到第一個選項。
+   */
+  V.fillVrfSelect = (sel, vrfs, value) => {
+    V.clear(sel);
+    sel.appendChild(V.h('option', { value: '' }, '依來源位址決定'));
+    vrfs.forEach((v) => sel.appendChild(V.h('option', { value: v }, V.vrfText(v))));
+    sel.value = value && vrfs.includes(value) ? value : '';
+  };
+  V.ipSel = (key, vrf) => {
+    if (vrf !== undefined) return { type: 'ip', key: String(key), vrf };
+    const [ip, v] = S.keys.splitVrf(key); return { type: 'ip', key: ip, vrf: v };
+  };
+  /** VRF 標示：main 也寫出（「VRF main」），只在需要和其他 VRF 區分時呼叫 */
+  V.vrfText = (v) => 'VRF ' + S.keys.vrf(v);
+  /** 介面 VRF 的依據（interfaces[].vrfBasis，見 model/build.js 的 resolveVrfs）；export 是推論（export 不寫內建 main，假設 main 在最後） */
+  V.IFC_VRF_BASIS = { reported: '設備回報的 vrf=', 'vrf-print': '依 /ip vrf print 的順序', export: '依 export 的 /ip vrf（推論：假設 main 在最後）', default: '沒有列在任何 VRF，屬於 main' };
+  V.IFC_VRF_INFERRED = new Set(['export']);
+  /** 下一跳解析閘道的 VRF 依據（routes[].nh[].vrfBasis） */
+  V.NH_VRF_BASIS = { explicit: '閘道寫了 @<VRF>', 'vrf-interface': '閘道是 VRF 介面，在那個 VRF 再查一次', interface: '閘道介面所屬的 VRF', default: '只有 IP、沒寫 @，在 main 解析' };
   V.reachReason = (code) => V.REACH_REASON[code] || `${code}（未翻譯的原因代碼）`;
   V.REACH_START = { gateway: '來源網段的閘道', device: '來源是網路設備自己的位址（output）', 'same-subnet': '來源與目的在同一個網段', entry: '指定的入口介面', none: '找不到來源所在的網段' };
   V.REACH_START_BASIS = { dhcp: '依 DHCP 網路的閘道', routes: '依網段上有路由表的設備', subnet: '依網段上已收集的設備' };

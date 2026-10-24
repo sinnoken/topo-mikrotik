@@ -334,6 +334,8 @@
     const ipOf = (r) => (r.end ? r.ips[0] : r.mgmtIp); const vendorOf = (r) => (r.end ? r.vendors.join(' / ') : r.manufacturer);
     const dn = (d) => (d ? Q.devName(d) : '—'); const mono = (t) => h('span', { class: 'mono' }, t || '—');
     const TAB_COUNT = { device: C.devices + C.endpoints, interface: C.interfaces, ip: C.ips, prefix: C.prefixes, mac: C.macs, vlan: C.vlans };
+    const multiVrf = Q.vrfs().length > 1;
+    const vrfCol = multiVrf ? [{ t: 'VRF', f: (r) => mono(r.vrf), s: (r) => (r.vrf === K.MAIN_VRF ? '' : r.vrf) }] : [];
     const T = {
       device: ['設備', devRows, [
         { t: '設備', f: (r) => nameOf(r), s: nameOf }, { t: '類型', f: (r) => (r.wifi ? V.chip('Wi-Fi', 'info') : r.end ? V.chip('終端', 'kind-unknown') : V.kindChip(r.kind)), s: (r) => (r.wifi ? 'Wi-Fi' : r.end ? '終端' : V.KIND[r.kind] || r.kind) },
@@ -345,14 +347,15 @@
         { t: '設備', f: (r) => dn(r.dev), s: (r) => dn(r.dev) }, { t: '介面', f: (r) => mono(r.name), s: (r) => r.name }, { t: '狀態', f: (r) => r.status, s: (r) => r.status },
         { t: 'IP', f: (r) => mono(App.Q.addressesOf(r.key).slice(0, 2).join(' ')), s: (r) => App.Q.addressesOf(r.key)[0] }, { t: 'VLAN', f: (r) => h('span', { class: 'vlanlist' }, S.util.ifcVlans(r).length ? S.util.fmtVlans(S.util.ifcVlans(r)) : '—'), s: (r) => S.util.ifcVlans(r).join(' ') }],
       (r) => ({ type: 'interface', key: r.key }), (r) => [dn(r.dev), r.name, r.desc, App.Q.addressesOf(r.key).join(' '), S.util.ifcVlans(r).join(' ')]],
+      // IP 與網段：每個 VRF 各一列（鍵是位址鍵／網段鍵）；基準有多個 VRF 時加一欄 VRF，只用 main 時與加入 VRF 之前相同
       ip: ['IP', R.ips, [
-        { t: 'IP', f: (r) => mono(r.ip), s: (r) => r.ip }, { t: '設備', f: (r) => dn(r.dev), s: (r) => r.dev && dn(r.dev) }, { t: '介面', f: (r) => mono(r.ifc), s: (r) => r.ifc },
+        { t: 'IP', f: (r) => mono(r.ip), s: (r) => r.ip }, ...vrfCol, { t: '設備', f: (r) => dn(r.dev), s: (r) => r.dev && dn(r.dev) }, { t: '介面', f: (r) => mono(r.ifc), s: (r) => r.ifc },
         { t: 'MAC', f: (r) => mono(r.macs.slice(0, 2).map(K.macPretty).join(' ')), s: (r) => r.macs[0] }, { t: '來源', f: (r) => r.from.join('、'), s: (r) => r.from.join('、') }],
-      (r) => ({ type: 'ip', key: r.ip }), (r) => [r.ip, dn(r.dev), r.ifc, r.macs.map(K.macPretty).join(' ')]],
+      (r) => V.ipSel(r.ip, r.vrf), (r) => [r.ip, r.key, dn(r.dev), r.ifc, r.macs.map(K.macPretty).join(' ')]],
       prefix: ['網段', R.prefixes, [
-        { t: '網段', f: (r) => mono(r.prefix), s: (r) => r.net }, { t: '設備', f: (r) => r.devs.map(dn).join('、'), s: (r) => dn(r.devs[0]) },
+        { t: '網段', f: (r) => mono(r.prefix), s: (r) => r.net }, ...vrfCol, { t: '設備', f: (r) => r.devs.map(dn).join('、'), s: (r) => dn(r.devs[0]) },
         { t: '介面', f: (r) => mono(r.eps.map((ep) => K.splitEp(ep)[1]).join(' ')), s: (r) => r.eps.length }, { t: 'IP 數', f: (r) => String(r.ipCount), s: (r) => r.ipCount }],
-      (r) => ({ type: 'interface', key: r.eps[0] }), (r) => [r.prefix, ...r.devs.map(dn), ...r.eps]],
+      (r) => ({ type: 'interface', key: r.eps[0] }), (r) => [r.prefix, r.key, ...r.devs.map(dn), ...r.eps]],
       mac: ['MAC', R.macs, [
         { t: '設備', f: (r) => dn(r.dev), s: (r) => r.dev && dn(r.dev) }, { t: '介面', f: (r) => mono(r.ifc), s: (r) => r.ifc }, { t: 'MAC', f: (r) => mono(K.macPretty(r.mac)), s: (r) => r.mac },
         { t: 'VLAN', f: (r) => r.vlan || '—', s: (r) => r.vlan }, { t: 'IP', f: (r) => (r.ips.length ? r.ips.slice(0, 2).join(' ') : V.chip('缺 IP', 'warn')), s: (r) => r.ips[0] }],
@@ -384,7 +387,8 @@
       const sc = cols[inv.sortBy] && cols[inv.sortBy].s ? cols[inv.sortBy] : null;
       const view = sc ? V.sortRows(rows, sc, inv.sortDir) : rows;
       const note = inv.kind === 'mac' ? `共 ${C.macRows} 列（同一個 MAC 在每個觀察到的介面各一列，不重複的 MAC ${C.macs} 個）` : inv.kind === 'vlan' ? `共 ${C.vlans} 筆（每台設備的每個 VLAN 定義一筆，不重複的 VLAN ID ${C.vlanIds} 個）`
-        : inv.kind === 'prefix' ? '由設備自有的介面位址推導的直連網段（推論）；VRF 尚未收集' : '';
+        : inv.kind === 'prefix' ? `由設備自有的介面位址推導的直連網段（推論）${multiVrf ? '；每個 VRF 各一列，同一個網段在不同 VRF 是不同的位址空間' : ''}`
+          : inv.kind === 'ip' && multiVrf ? '每個 VRF 各一列：同一個 IP 在不同 VRF 是不同的位址' : '';
       V.clear(body); if (note) body.appendChild(h('div', { class: 'muted pane-note' }, note));
       body.appendChild(V.table(cols, view, { onRow: (r) => App.select(sel(r), { focus: true }), limit: 500, sortBy: sc ? inv.sortBy : -1, sortDir: inv.sortDir,
         onSort: (n) => { inv.sortDir = inv.sortBy === n ? -inv.sortDir : 1; inv.sortBy = n; draw(); } }));

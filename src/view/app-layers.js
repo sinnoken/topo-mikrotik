@@ -151,10 +151,19 @@
 
   // ================================================================ L3 子網圖
   const NET = 'net|';
+  /** L3 的 VRF 容器名稱（分群框的標題） */
+  const vrfGroup = (v) => V.vrfText(v);
+  /**
+   * VRF 是容器（ADR-015）：Q.subnetGraph 的子網 id 是網段鍵、設備節點 id 是「設備鍵」或「設備鍵@VRF」（K.inVrf）。
+   * 基準有兩個以上的 VRF 時，每個 VRF（含 main）是一個分群框，分群改依 VRF（不再依設備圖的區域）；只有 main 時分群與加入 VRF 之前相同。
+   */
   function buildL3() {
-    const Q = App.Q; const N = T.l3.subnet;
+    const Q = App.Q; const N = T.l3.subnet; const MAIN = K.MAIN_VRF;
     const sg = Q.subnetGraph({ routes: App.l3.routes });
     const sv = A.severities(Q);
+    const used = new Set(sg.subnets.map((s) => s.vrf).concat(sg.nodes.map((n) => n.vrf)));
+    const vrfs = Q.vrfs().filter((v) => used.has(v)); // main 在最前（Q.vrfs 的順序）
+    const byVrf = vrfs.length > 1;
     // 分群沿用設備圖（命名規則的 group，或大型網路自動切出的區域）；子網歸到接在它上面最多設備的那一群
     const devGroup = new Map(App.deviceGraph.nodes.map((n) => [n.id, n.group || '']));
     const majority = (devs) => {
@@ -164,23 +173,33 @@
     const nodes = sg.subnets.map((s) => {
       const label = s.id + (s.vlan != null ? `・VLAN ${s.vlan}` : '');
       const badges = [s.overlaps.length ? `重疊網段 ${s.overlaps.length}` : null, s.duplicateIps.length ? `重複 IP ${s.duplicateIps.length}` : null].filter(Boolean);
-      return { id: NET + s.id, kind: 'subnet', label, collected: true, group: majority(s.devices.concat(s.routers)), box: { w: Math.round(Math.max(N.minW, label.length * 7 + 26)), h: N.h }, routeOnly: s.basis === 'route', badges, subnet: s };
+      return { id: NET + s.id, kind: 'subnet', label, collected: true, group: byVrf ? vrfGroup(s.vrf) : majority(s.devices.concat(s.routers)), vrf: s.vrf,
+        box: { w: Math.round(Math.max(N.minW, label.length * 7 + 26)), h: N.h }, routeOnly: s.basis === 'route', badges, subnet: s };
     });
-    const devNode = (n) => ({ id: n.dev, label: n.label, kind: n.kind || 'unknown', collected: n.collected, group: devGroup.get(n.dev) || '', sev: sv.devSev.get(n.dev) || null, l3: n });
+    // 設備在 main 以外的 VRF 的節點：標籤加上 @<VRF>（與 id、網段鍵的寫法相同）
+    const devNode = (n) => ({ id: n.id, dev: n.dev, label: n.vrf && n.vrf !== MAIN ? n.label + '@' + n.vrf : n.label, kind: n.kind || 'unknown', collected: n.collected,
+      group: byVrf ? vrfGroup(n.vrf) : devGroup.get(n.dev) || '', vrf: n.vrf, sev: sv.devSev.get(n.dev) || null, l3: n });
     const devIds = new Set();
     sg.nodes.forEach((n) => { if (!devIds.has(n.id)) { devIds.add(n.id); nodes.push(devNode(n)); } });
     const edges = sg.edges.map((e) => ({ id: 'a|' + e.id, a: NET + e.subnet, b: e.node, cls: 'other', count: 1, evidence: e.inferred ? 'hearsay' : 'adjacency', l3: e }));
     sg.routes.forEach((r) => {
-      if (!devIds.has(r.dev)) { const d = Q.getDevice(r.dev); devIds.add(r.dev); nodes.push({ id: r.dev, label: d ? d.label || d.name : r.dev, kind: (d && d.kind) || 'unknown', collected: !!(d && d.collected), group: devGroup.get(r.dev) || '', sev: sv.devSev.get(r.dev) || null }); }
-      edges.push({ id: 'r|' + r.id, a: r.dev, b: NET + r.subnet, style: T.l3.route, arrow: true, count: 1, route: r });
+      const id = r.node || r.dev;
+      if (!devIds.has(id)) {
+        const d = Q.getDevice(r.dev); devIds.add(id);
+        nodes.push({ id, dev: r.dev, label: (d ? d.label || d.name : r.dev) + (r.vrf !== MAIN ? '@' + r.vrf : ''), kind: (d && d.kind) || 'unknown', collected: !!(d && d.collected),
+          group: byVrf ? vrfGroup(r.vrf) : devGroup.get(r.dev) || '', vrf: r.vrf, sev: sv.devSev.get(r.dev) || null });
+      }
+      edges.push({ id: 'r|' + r.id, a: id, b: NET + r.subnet, style: T.l3.route, arrow: true, count: 1, route: r });
     });
     const OV = T.l3.overlap;
     sg.subnets.forEach((s) => s.overlaps.forEach((o) => { if (S.util.natural(s.id, o) < 0) edges.push({ id: 'o|' + s.id + '|' + o, a: NET + s.id, b: NET + o, style: OV, sev: OV.sev, count: 1, overlap: [s.id, o] }); }));
     const edgesOf = new Map(); edges.forEach((e) => [e.a, e.b].forEach((x) => S.util.getOr(edgesOf, x, () => []).push(e)));
+    // 設備鍵 → 這台設備在圖上的節點（每個 VRF 一個）
+    const nodesOfDev = new Map(); nodes.forEach((n) => { if (n.kind !== 'subnet') S.util.getOr(nodesOfDev, n.dev || n.id, () => []).push(n.id); });
     return {
       nodes, edges, pos: new Map(), sg,
-      index: { subnets: new Map(sg.subnets.map((s) => [s.id, s])), edgesOf, nodes: new Map(nodes.map((n) => [n.id, n])), edges: new Map(edges.map((e) => [e.id, e])) },
-      info: { routes: App.l3.routes },
+      index: { subnets: new Map(sg.subnets.map((s) => [s.id, s])), edgesOf, nodesOfDev, nodes: new Map(nodes.map((n) => [n.id, n])), edges: new Map(edges.map((e) => [e.id, e])) },
+      info: { routes: App.l3.routes, vrfs, byVrf, omitted: sg.omitted || { policyRoutes: 0 } },
     };
   }
   /** 顯示路由時沿用不顯示路由的位置，只把多出來的目的網段排在路由所在設備的上方（不重排整張圖） */
@@ -282,29 +301,33 @@
     const finds = (ids, col) => { const m = new Map(); ids.filter(has).forEach((x) => m.set(x, col)); return m; };
     const l2 = e.layer === 'l2';
     const portOf = (ep) => (l2 ? e.index.portOfEp.get(ep) : null);
-    const subnetsOfIp = (ip) => { const r = Q.findIp(ip); return r ? r.subnets.map((s) => NET + s.net + '/' + s.len).filter(has) : []; };
+    // L3：一台設備在每個 VRF 各一個節點（id 為設備鍵或「設備鍵@VRF」）；L2 的設備框 id 就是設備鍵
+    const nodesOf = (d) => (l2 ? (has(d) ? [d] : []) : (e.index.nodesOfDev.get(d) || []).filter(has));
+    const nodeAt = (d, vrf) => { const id = K.inVrf(d, vrf); return !l2 && has(id) ? id : has(d) ? d : null; };
+    // IP 所在的子網（網段鍵）；給了 vrf 時只取那個 VRF 的
+    const subnetsOfIp = (ip, vrf) => { const r = Q.findIp(ip); return r ? r.subnets.filter((s) => vrf == null || s.vrf === vrf).map((s) => NET + s.prefix).filter(has) : []; };
     switch (sel.type) {
       case 'device': case 'firewall': case 'endpoints': case 'rule': case 'service': {
         const r = sel.type === 'rule' ? Q.getFirewallRule(sel.key) : null;
         const d = sel.type === 'device' ? sel.key : sel.dev || (r ? r.dev : devOf(sel.key));
-        if (has(d)) { out.nodes = [d]; out.focus = [d]; }
+        const ids = nodesOf(d);
+        if (ids.length) { out.nodes = ids; out.focus = ids; }
         break;
       }
       case 'interface': {
         const p = portOf(sel.key); const d = devOf(sel.key);
+        const i = Q.getInterface(sel.key); const n = !l2 && i ? nodeAt(d, i.vrf) : null;
         if (p) { out.nodes = [p]; out.edges = e.index.edgesOfPort.get(p) || []; out.focus = [p]; }
-        else if (has(d)) {
-          out.nodes = [d]; out.focus = [d];
-          if (!l2) out.edges = (e.index.edgesOf.get(d) || []).filter((x) => x.l3 && x.l3.eps.includes(sel.key)).map((x) => x.id);
-        }
+        else if (n) { out.nodes = [n]; out.focus = [n]; out.edges = (e.index.edgesOf.get(n) || []).filter((x) => x.l3 && x.l3.eps.includes(sel.key)).map((x) => x.id); }
+        else if (nodesOf(d).length) { out.nodes = nodesOf(d); out.focus = out.nodes; }
         break;
       }
       case 'link': case 'pair': {
         const keys = sel.type === 'link' ? [sel.key] : (sel.links || []).concat(Q.inferredLinksBetween(sel.devs[0], sel.devs[1]).map((l) => l.key));
         const devs = sel.type === 'pair' ? sel.devs : (() => { const l = Q.getLink(sel.key); return l ? [devOf(l.a), devOf(l.b)] : []; })();
         if (l2) { out.edges = S.util.uniq(keys.map((k) => e.index.edgeOfLink.get(k)).filter(Boolean)); out.focus = out.edges.flatMap((x) => { const ed = e.index.edges.get(x); return [ed.a, ed.b]; }); }
-        else { out.nodes = devs.filter(has); out.focus = out.nodes; }
-        if (!out.focus.length) out.focus = devs.filter(has);
+        else { out.nodes = devs.flatMap(nodesOf); out.focus = out.nodes; }
+        if (!out.focus.length) out.focus = devs.flatMap(nodesOf);
         break;
       }
       case 'subnet': {
@@ -319,35 +342,55 @@
       case 'vlan': { const m = A.vlanMarks(sel.key, sel.domain); out.hl = m; out.focus = Array.from(m.nodes.keys()); break; }
       case 'mac': {
         const m = Q.findMac(sel.key);
-        const ids = S.util.uniq(m.edge.map(devOf).concat(l2 ? m.edge.map(portOf).filter(Boolean) : []).concat(m.behind ? [devOf(m.behind.anchor)] : []));
+        const ids = S.util.uniq(m.edge.map(devOf).concat(m.behind ? [devOf(m.behind.anchor)] : []).flatMap(nodesOf).concat(l2 ? m.edge.map(portOf).filter(Boolean) : []));
         out.hl = { nodes: finds(ids, MARK.find), edges: new Map() }; out.focus = ids.filter(has); break;
       }
       case 'ip': {
-        const r = Q.findIp(sel.key); if (!r) break;
-        const ids = S.util.uniq([...(r.owner ? [r.owner.split('|')[0]] : []), ...r.locations.map((x) => devOf(x.ep)), ...(l2 ? r.locations.map((x) => portOf(x.ep)).filter(Boolean) : subnetsOfIp(sel.key))]);
+        // sel.vrf：null／undefined 是不分 VRF（搜尋），否則只標那個 VRF
+        const r = Q.findIp(sel.key, sel.vrf == null ? undefined : sel.vrf); if (!r) break;
+        const owners = r.owners.map((x) => (l2 ? (has(devOf(x.ep)) ? devOf(x.ep) : null) : nodeAt(devOf(x.ep), x.vrf))).filter(Boolean);
+        const ids = S.util.uniq([...owners, ...r.locations.map((x) => devOf(x.ep)).flatMap(nodesOf), ...(l2 ? r.locations.map((x) => portOf(x.ep)).filter(Boolean) : subnetsOfIp(sel.key, sel.vrf))]);
         out.hl = { nodes: finds(ids, MARK.find), edges: new Map() }; out.focus = ids.filter(has); break;
       }
       case 'trace': {
         const t = sel.result; if (!t.ok) break;
-        out.overlay = t.edges.filter(([a, b]) => has(a) && has(b)).map(([a, b]) => ({ a, b, color: MARK.trace }));
-        const ds = S.util.uniq([t.start, ...t.hops.map((x) => x.dev), ...t.ends.map((x) => x.dev)]);
-        out.hl = { nodes: new Map(ds.filter(has).map((d) => [d, t.ends.some((x) => x.dev === d && x.status !== 'reached') ? MARK.bad : MARK.trace])), edges: new Map() };
-        out.focus = ds.filter(has); break;
+        if (l2) out.overlay = t.edges.filter(([a, b]) => has(a) && has(b)).map(([a, b]) => ({ a, b, color: MARK.trace }));
+        else { // L3：每一跳在它的 VRF 的節點，到下一台在它的 VRF 的節點
+          const seen = new Set();
+          t.hops.forEach((hp) => hp.next.forEach((n) => {
+            if (!n.dev || n.status !== 'ok') return; // 與 t.edges 相同：只畫實際交給下一台的（迴圈、不明的下一跳不畫）
+            const a = nodeAt(hp.dev, hp.vrf); const b = nodeAt(n.dev, n.vrf);
+            if (a && b && a !== b && !seen.has(a + '>' + b)) { seen.add(a + '>' + b); out.overlay.push({ a, b, color: MARK.trace }); }
+          }));
+        }
+        const at = (d, v) => (l2 ? (has(d) ? d : null) : nodeAt(d, v));
+        const marks = new Map();
+        [{ dev: t.start, vrf: t.vrf }].concat(t.hops, t.ends).forEach((x) => {
+          const id = at(x.dev, x.vrf); if (!id) return;
+          const bad = t.ends.some((y) => y.dev === x.dev && y.status !== 'reached');
+          if (!marks.has(id) || bad) marks.set(id, bad ? MARK.bad : MARK.trace);
+        });
+        out.hl = { nodes: marks, edges: new Map() };
+        out.focus = Array.from(marks.keys()); break;
       }
       default: break;
     }
     if (o && o.findingEntities) {
       const nm = new Map(); const em = new Map();
       o.findingEntities.forEach((x) => {
-        if (x.type === 'device' && has(x.key)) nm.set(x.key, MARK.bad);
-        if (x.type === 'interface' || x.type === 'service') { const p = portOf(x.key); if (p) nm.set(p, MARK.bad); else if (has(devOf(x.key))) nm.set(devOf(x.key), MARK.bad); }
-        if (x.type === 'rule') { const r = Q.getFirewallRule(x.key); if (r && has(r.dev)) nm.set(r.dev, MARK.bad); }
+        if (x.type === 'device') nodesOf(x.key).forEach((d) => nm.set(d, MARK.bad));
+        if (x.type === 'interface' || x.type === 'service') {
+          const p = portOf(x.key); const i = x.type === 'interface' ? Q.getInterface(x.key) : null; const n = !l2 && i ? nodeAt(devOf(x.key), i.vrf) : null;
+          if (p) nm.set(p, MARK.bad); else if (n) nm.set(n, MARK.bad); else nodesOf(devOf(x.key)).forEach((d) => nm.set(d, MARK.bad));
+        }
+        if (x.type === 'rule') { const r = Q.getFirewallRule(x.key); if (r) nodesOf(r.dev).forEach((d) => nm.set(d, MARK.bad)); }
         if (x.type === 'link') {
           const l = Q.getLink(x.key); if (!l) return;
           const eid = l2 ? e.index.edgeOfLink.get(l.key) : null; if (eid) em.set(eid, MARK.bad);
-          [devOf(l.a), devOf(l.b)].filter(has).forEach((d) => nm.set(d, MARK.bad));
+          [devOf(l.a), devOf(l.b)].flatMap(nodesOf).forEach((d) => nm.set(d, MARK.bad));
         }
-        if (x.type === 'ip' && !l2) subnetsOfIp(x.key).forEach((s) => nm.set(s, MARK.bad));
+        // IP 實體的鍵是位址鍵（K.inVrf）
+        if (x.type === 'ip' && !l2) { const [ip, vrf] = K.splitVrf(x.key); subnetsOfIp(ip, vrf).forEach((s) => nm.set(s, MARK.bad)); }
       });
       if (nm.size || em.size) { out.hl = { nodes: nm, edges: em }; out.focus = Array.from(nm.keys()); }
     }
@@ -368,7 +411,7 @@
       const n = App.graph.nodeById.get(it.id); if (!n) return;
       if (n.kind === 'subnet') return App.select({ type: 'subnet', key: n.subnet.id });
       if (n.kind === 'port') return App.select(n.ifc ? { type: 'interface', key: n.ifc } : { type: 'device', key: n.dev });
-      return App.select({ type: 'device', key: n.id });
+      return App.select({ type: 'device', key: n.dev || n.id }); // L3 的「設備鍵@VRF」節點也開啟設備
     }
     const ed = e.index.edges.get(it.id); if (!ed) return;
     if (ed.pg) {
@@ -402,14 +445,15 @@
           + (p.lag ? `・屬於 ${K.splitEp(p.lag)[1]}` : '')
           + (p.vlans.length ? `・VLAN ${S.util.fmtVlans(p.vlans)}` : '');
       }
+      const vrfTip = e.info.byVrf && n.vrf ? '・' + V.vrfText(n.vrf) : '';
       if (n.kind === 'subnet') {
         const s = n.subnet;
-        return `${s.id}${s.vlan != null ? `・VLAN ${s.vlan}` : ''}・${s.basis === 'route' ? '只由路由得知（不是直連網段）' : `${s.devices.length} 台設備`}`
+        return `${s.id}${vrfTip}${s.vlan != null ? `・VLAN ${s.vlan}` : ''}・${s.basis === 'route' ? '只由路由得知（不是直連網段）' : `${s.devices.length} 台設備`}`
           + (s.routers.length ? `・路由設備 ${s.routers.map((d) => Q.devName(d)).join('、')}` : '')
           + (s.overlaps.length ? `・與 ${s.overlaps.join('、')} 重疊` : '') + (s.duplicateIps.length ? `・重複 IP ${s.duplicateIps.join('、')}` : '');
       }
-      const d = Q.getDevice(n.id);
-      const base = d ? `${d.label || d.name}・${V.KIND[d.kind]}${d.collected ? '' : '・未收集'}` : n.label;
+      const d = Q.getDevice(n.dev || n.id);
+      const base = (d ? `${d.label || d.name}・${V.KIND[d.kind]}${d.collected ? '' : '・未收集'}` : n.label) + vrfTip;
       if (n.l3) return base + (n.l3.router ? `・路由設備（推論：${n.l3.routerBasis === 'routes' ? '有路由表' : '設備類型'}，接 ${n.l3.subnets.length} 個子網）` : n.l3.multihomed ? `・多個子網的主機（不算路由設備）` : '');
       return base + (n.sub ? '・' + n.sub : '');
     }
@@ -421,7 +465,9 @@
     }
     if (ed.route) {
       const r = ed.route;
-      return `${Q.devName(r.dev)} 的${r.default ? '預設路由' : '路由'} ${r.subnet}（${r.proto}）・下一跳 ${r.nh.map((x) => x.ip || x.ifc).filter(Boolean).join('、') || '—'}${r.blackhole ? '・黑洞路由' : ''}`;
+      // 閘道在別的 VRF 解析（路由洩漏）時以 RouterOS 的寫法 位址@VRF 標出
+      const nh = r.nh.map((x) => (x.ip ? (x.vrf && x.vrf !== r.vrf ? x.ip + '@' + x.vrf : x.ip) : x.ifc)).filter(Boolean);
+      return `${Q.devName(r.dev)} 的${r.default ? '預設路由' : '路由'} ${r.subnet}（${r.proto}${e.info.byVrf || r.routingTable !== K.MAIN_VRF ? `，路由表 ${r.routingTable}` : ''}）・下一跳 ${nh.join('、') || '—'}${r.blackhole ? '・黑洞路由' : ''}`;
     }
     if (ed.overlap) return `網段重疊：${ed.overlap.join(' 與 ')}`;
     if (ed.l3) {
@@ -519,7 +565,9 @@
       note.textContent = `L3 子網圖：${n(ss.length)} 個網段、${n(e.sg.nodes.length)} 個設備節點；點線是推論的位址（鄰居回報、管理 IP）`
         + (e.info.routes ? `，虛線箭頭是 ${n(e.sg.routes.length)} 條靜態／預設路由` : '') + '。'
         + (ov || dup ? `有 ${n(ov)} 個網段重疊、${n(dup)} 個重複 IP（點選子網看詳情）。` : '')
-        + 'M3 之前不分 VRF。';
+        // VRF 是容器：每個 VRF 一個框；同一個網段在不同 VRF 是不同的子網，一台設備在每個 VRF 各一個節點（@<VRF>）
+        + (e.info.byVrf ? `每個 VRF 一個框（${e.info.vrfs.join('、')}）：同一個網段在不同 VRF 是不同的子網，設備在 main 以外的 VRF 標 @<VRF>。` : '')
+        + (e.info.routes && e.info.omitted.policyRoutes ? `另有 ${n(e.info.omitted.policyRoutes)} 條只用於策略路由的路由表（不屬於任何 VRF）的路由沒有畫，見設備詳情的路由表。` : '');
     }
   }
   /** 匯出 PNG 的檔名：目前的層級（L4 沒有 PNG，見 A.exportPng） */

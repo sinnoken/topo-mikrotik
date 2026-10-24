@@ -9,13 +9,43 @@
   const MARK = V.theme.mark;
 
   // ================================================================ 選取
+  /**
+   * 選取：圖上的標示依目前的層級（設備圖在這裡，L2／L3 在 app-layers.js 的 A.layerMarks），詳情在右側。
+   * opt.focus：圖移到選取的位置；opt.findingEntities：標出檢查結果的實體；
+   * opt.refresh：只在圖上重新標示（切換層級、取消 VLAN 篩選時），不重繪詳情、不切換工作區
+   * 選了 VLAN 時同時設為 VLAN 篩選（App.vlanFilter）：之後選其他東西，沒有自己的標示時仍標出這個 VLAN，直到在選單取消。
+   */
   App.select = function (sel, opt) {
     App.sel = sel; const o = opt || {}; const g = App.graph; const Q = App.Q;
     g.setOverlay([]); g.setHighlight(null);
-    let nodes = []; let edges = []; let focus = [];
-    if (!sel) { g.setSelection([], []); V.details.render(App, null); return; }
-    A.closeHub(); // 選取要在圖與詳情上看到結果（例如從搜尋或摘要進來）
+    if (sel && sel.type === 'vlan') { App.vlanFilter = { id: +sel.key, domain: sel.domain == null ? null : sel.domain }; if (!o.refresh) A.syncLayerUi(); }
+    const filterMarks = () => (App.vlanFilter && Q ? A.vlanMarks(App.vlanFilter.id, App.vlanFilter.domain) : null);
+    if (!sel) { g.setSelection([], []); g.setHighlight(filterMarks()); if (!o.refresh) V.details.render(App, null); return; }
+    if (!o.refresh) {
+      A.closeHub(); // 選取要在圖與詳情上看到結果（例如從搜尋或摘要進來）
+      // L2 只畫一台設備與鄰居時，選了不在圖上的設備就改看那一台
+      const d = sel.type === 'device' ? sel.key : sel.type === 'interface' ? K.splitEp(sel.key)[0] : null;
+      A.recenterL2(d);
+    }
     // 中間的工作畫面（修正計畫、比對、收斂趨勢）不切換：詳情在右側顯示，圖的選取也更新，回到拓樸圖時就看得到
+    const r = App.layer === 'device' ? deviceMarks(sel, o) : A.layerMarks(sel, o);
+    if (r.overlay.length) g.setOverlay(r.overlay);
+    g.setHighlight(r.hl || filterMarks());
+    const focus = r.focus;
+    // 要聚焦的主機被隱藏時，自動顯示主機
+    if (!App.showHosts && focus.some((k) => { const d = Q.getDevice(k); return d && d.kind === 'host'; })) { App.showHosts = true; A.applyVisibility(); }
+    if (!App.showUnknown && focus.some((k) => String(k).startsWith('?'))) { App.showUnknown = true; A.applyVisibility(); }
+    g.setSelection(r.nodes, r.edges);
+    if (o.focus && focus.length) g.focus(focus);
+    if (o.refresh) return;
+    V.details.render(App, sel);
+    if (sel && A.isNarrowScreen()) A.setWorkspace('details');
+  };
+  /** 設備圖上的標示：回傳 { nodes, edges, focus, hl, overlay } */
+  function deviceMarks(sel, o) {
+    const g = App.graph; const Q = App.Q;
+    let nodes = []; let edges = []; let focus = []; let hl = null; let overlay = [];
+    const setHl = (x) => { hl = x; };
     const pairsOf = (linkKeys) => S.util.uniq(linkKeys.map((k) => App.pairOfLink.get(k)).filter(Boolean));
     const devOf = (ep) => K.splitEp(ep)[0];
     switch (sel.type) {
@@ -49,7 +79,7 @@
           ds.push(devOf(m.behind.anchor), ...(m.behind.dev ? [m.behind.dev] : m.behind.via), ...(vid ? [vid] : []));
           pairsOf(Q.behindVia(m.mac).map((l) => l.key)).concat(vid ? ['v~' + vid] : []).forEach((p) => em.set(p, MARK.find));
         }
-        g.setHighlight({ nodes: new Map(S.util.uniq(ds).map((d) => [d, MARK.find])), edges: em }); focus = S.util.uniq(ds); break;
+        setHl({ nodes: new Map(S.util.uniq(ds).map((d) => [d, MARK.find])), edges: em }); focus = S.util.uniq(ds); break;
       }
       case 'ip': {
         const r = Q.findIp(sel.key);
@@ -58,19 +88,21 @@
           ...r.locations.map((x) => devOf(x.ep)),
           ...r.locations.map((x) => App.vOfEp.get(x.ep)).filter(Boolean),
         ]);
-        g.setHighlight({ nodes: new Map(ds.map((d) => [d, MARK.find])), edges: new Map() }); focus = ds; break;
+        setHl({ nodes: new Map(ds.map((d) => [d, MARK.find])), edges: new Map() }); focus = ds; break;
       }
-      case 'vlan': {
-        const v = Q.vlan(sel.key, sel.domain); const em = new Map();
-        pairsOf(v.carry.concat(v.inferred).map((l) => l.key)).forEach((p) => em.set(p, MARK.good));
-        pairsOf(v.partial.map((l) => l.key)).forEach((p) => em.set(p, MARK.bad));
-        g.setHighlight({ nodes: new Map(v.devices.map((d) => [d, MARK.good])), edges: em }); focus = v.devices; break;
+      // VLAN：每條鏈路的承載狀態由 Q.vlanCarriers 決定（線型與外形見 theme.vlan），A.vlanMarks 與 L2 埠圖共用
+      case 'vlan': { const m = A.vlanMarks(sel.key, sel.domain); setHl(m); focus = Array.from(m.nodes.keys()); break; }
+      // 子網（從 L3 子網圖或詳情來）：標出接在這個子網的設備
+      case 'subnet': {
+        const s = Q.subnetGraph().subnets.find((x) => x.id === sel.key);
+        if (s) { setHl({ nodes: new Map(s.devices.filter((d) => g.nodeById.has(d)).map((d) => [d, MARK.find])), edges: new Map() }); focus = s.devices; }
+        break;
       }
       case 'trace': {
         const t = sel.result; if (t.ok) {
-          g.setOverlay(t.edges.map(([a, b]) => ({ a, b, color: MARK.trace })));
+          overlay = t.edges.map(([a, b]) => ({ a, b, color: MARK.trace }));
           const ds = S.util.uniq([t.start, ...t.hops.map((x) => x.dev), ...t.ends.map((e) => e.dev)]);
-          g.setHighlight({ nodes: new Map(ds.map((d) => [d, t.ends.some((e) => e.dev === d && e.status !== 'reached') ? MARK.bad : MARK.trace])), edges: new Map() }); focus = ds;
+          setHl({ nodes: new Map(ds.map((d) => [d, t.ends.some((e) => e.dev === d && e.status !== 'reached') ? MARK.bad : MARK.trace])), edges: new Map() }); focus = ds;
         }
         break;
       }
@@ -84,16 +116,10 @@
         if (e.type === 'rule') { const r = Q.getFirewallRule(e.key); if (r) nm.set(r.dev, MARK.bad); }
         if (e.type === 'link') { const l = Q.getLink(e.key); if (l) { em.set(App.pairOfLink.get(l.key), MARK.bad); nm.set(devOf(l.a), MARK.bad); nm.set(devOf(l.b), MARK.bad); } }
       });
-      if (nm.size || em.size) { g.setHighlight({ nodes: nm, edges: em }); focus = Array.from(nm.keys()); }
+      if (nm.size || em.size) { setHl({ nodes: nm, edges: em }); focus = Array.from(nm.keys()); }
     }
-    // 要聚焦的主機被隱藏時，自動顯示主機
-    if (!App.showHosts && focus.some((k) => { const d = Q.getDevice(k); return d && d.kind === 'host'; })) { App.showHosts = true; A.applyVisibility(); }
-    if (!App.showUnknown && focus.some((k) => String(k).startsWith('?'))) { App.showUnknown = true; A.applyVisibility(); }
-    g.setSelection(nodes, edges);
-    if (o.focus && focus.length) g.focus(focus);
-    V.details.render(App, sel);
-    if (sel && A.isNarrowScreen()) A.setWorkspace('details');
-  };
+    return { nodes, edges, focus, hl, overlay };
+  }
 
   App.selectFinding = function (idx) {
     const f = App.Q.finding(idx);
@@ -113,6 +139,7 @@
   };
   A.onGraphClick = function onGraphClick(it) {
     if (!it) return App.select(null);
+    if (App.layer !== 'device') return A.layerClick(it);
     if (it.type === 'node') return App.select(String(it.id).startsWith('?') ? selOfVirtual(it.id) : { type: 'device', key: it.id });
     const p = App.pairs.get(it.id); if (!p) return;
     if (p.virtual) return App.select(selOfVirtual(p.b));
@@ -120,6 +147,7 @@
     else App.select({ type: 'pair', id: p.id, links: p.links, devs: [p.a, p.b] });
   };
   A.onGraphDblClick = function onGraphDblClick(it) {
+    if (App.layer !== 'device') return A.layerDblClick(it);
     const v = App.virtual.get(it.id);
     if (v && (v.type === 'endpoints' || v.type === 'behind')) return App.toggleExpand(v.dev);         // 群組：展開
     if (v) return App.select(selOfVirtual(it.id), { focus: true });
@@ -129,7 +157,8 @@
     const tip = $('#tooltip');
     if (!ev.item) { tip.classList.add('hidden'); return; }
     let text = '';
-    if (ev.item.type === 'node') {
+    if (App.layer !== 'device') text = A.layerTip(ev.item);
+    else if (ev.item.type === 'node') {
       const vn = App.graph.nodeById.get(ev.item.id);
       if (vn && vn.virtual) text = vn.tip; else { const d = App.Q.getDevice(ev.item.id); text = `${d.label || d.name}・${V.KIND[d.kind]}${d.collected ? '' : '・未收集'}`; }
     } else {
@@ -140,6 +169,9 @@
         const bases = S.util.uniq(App.Q.inferredLinksBetween(p.a, p.b).flatMap((l) => l.bases)).map((x) => V.INFER_BASIS[x]);
         text = `${ends()}・推論鏈路：沒有 LLDP，依 ${bases.join('、')} 推定相鄰`;
       } else text = `${ends()}${p.hasDomain ? '・另有 MNDP L2 廣播網域可達證據' : ''}`;
+      // VLAN 篩選中：這條線的承載狀態與原因（推論的原因以中文說明）
+      const vt = !p.virtual && A.vlanTip(p.links.concat(p.inferred));
+      if (vt) text += '・' + vt;
     }
     tip.textContent = text; tip.classList.remove('hidden');
     tip.style.left = (ev.x + 14) + 'px'; tip.style.top = (ev.y + 12) + 'px';

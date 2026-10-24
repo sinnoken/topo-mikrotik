@@ -1,6 +1,6 @@
 /*
  * 右側：選中項目的詳細資料。所有內容都從查詢介面（Q）取得，並附上來源（可開啟原文）。
- * 支援：device、link、pair（同兩台設備間多條鏈路）、interface、mac、ip、vlan、trace、route，
+ * 支援：device、link、pair（同兩台設備間多條鏈路）、interface、mac、ip、vlan、subnet（L3 子網圖）、trace、route，
  * 以及防火牆（firewall／rule／service，畫面在 panels/firewall.js）
  */
 (function (S) {
@@ -12,7 +12,7 @@
     if (!App.Q) return root.appendChild(h('div', { class: 'empty-detail' }, [h('div', { class: 'big' }, '尚未建立基準'), '建立後，點選圖上的設備或連線，詳細資料會顯示在這裡。']));
     if (!sel) return root.appendChild(overview(App));
     const fw = (a, s) => V.firewall.render(a, s);
-    const fn = { device, link, pair, interface: iface, endpoints, mac, ip, vlan, trace, firewall: fw, rule: fw, service: fw }[sel.type];
+    const fn = { device, link, pair, interface: iface, endpoints, mac, ip, vlan, subnet, trace, firewall: fw, rule: fw, service: fw }[sel.type];
     root.appendChild(fn ? fn(App, sel) : h('div', { class: 'empty-detail' }, '無法顯示'));
     root.scrollTop = 0;
     // 定位到某一列時（例如防火牆規則），把它捲到畫面中間
@@ -372,6 +372,10 @@
   }
 
   // ---------------------------------------------------------------- 介面
+  /** 在沒開 vlan-filtering 的 bridge 上（vlanUnfiltered，推論）：VLAN 的埠設定沒有作用，值旁邊標出來 */
+  const unfilteredNote = (i, text) => (i.vlanUnfiltered
+    ? h('span', null, [text, ' ', V.chip('沒有作用（bridge 沒開 vlan-filtering）', 'info', { title: '依 RouterOS 手冊，bridge 沒開 vlan-filtering 時不看也不改 VLAN 標籤，pvid、frame-types、ingress-filtering 都沒有作用（推論）' })])
+    : text);
   function iface(App, sel) {
     const Q = App.Q; const i = Q.getInterface(sel.key);
     if (!i) return h('div', { class: 'empty-detail' }, '基準中沒有這個介面');
@@ -390,8 +394,11 @@
         ['IP', Q.addressesOf(i.key).join('、')], ['埠模式', V.MODE[i.mode]], ['所屬聚合', i.lag ? epLink(App, i.lag) : null], ['所屬 Bridge', i.bridge ? epLink(App, i.bridge) : null],
         ['聚合成員', i.lagMembers.length ? h('span', null, i.lagMembers.flatMap((m, n) => [n ? '、' : '', epLink(App, m)])) : null],
         ['RSTP', i.stp ? [i.stp.role, i.stp.edge ? 'edge' : null, i.stp.designatedBridge ? `指定橋接器 ${K.macPretty(i.stp.designatedBridge)}` : null].filter(Boolean).join('・') : null],
-        ['PVID', i.pvid == null ? null : String(i.pvid)], ['frame-types', i.frameTypes],
-        ['ingress-filtering', i.ingressFiltering == null ? null : i.ingressFiltering ? '開' : '關'],
+        // bridge 的 vlan-filtering（事實）；介面在沒開 vlan-filtering 的 bridge 上（推論）時，pvid、frame-types、ingress-filtering 都沒有作用
+        ['vlan-filtering', i.vlanFiltering == null ? null : i.vlanFiltering ? '開' : h('span', null, ['關', ' ', V.chip('VLAN 原樣轉送，不看也不改標籤', 'warn')])],
+        ['所屬 bridge 的 VLAN 過濾', i.vlanUnfiltered && i.vlanFiltering == null ? h('span', null, ['沒開 vlan-filtering ', V.chip('推論', 'info')]) : null],
+        ['PVID', i.pvid == null ? null : unfilteredNote(i, String(i.pvid))], ['frame-types', i.frameTypes ? unfilteredNote(i, i.frameTypes) : null],
+        ['ingress-filtering', i.ingressFiltering == null ? null : unfilteredNote(i, i.ingressFiltering ? '開' : '關')],
         ['Untagged VLAN', i.untaggedVlans.length ? h('span', { class: 'vlanlist' }, vlanText(i.untaggedVlans)) : null],
         ['Tagged VLAN', i.taggedVlans.length ? h('span', { class: 'vlanlist' }, vlanText(i.taggedVlans)) : null], ['無法辨識的 VLAN', i.unresolvedVlans.join('、')],
         ['VLAN 子介面', i.parent ? h('span', null, [epLink(App, i.parent), ` 上的 VLAN ${i.encapVlan}`]) : null]]),
@@ -482,11 +489,13 @@
         split ? V.chip(`${v.domains.length} 個不相連區塊（推論）`, 'warn') : null,
       ]),
       kv([['名稱', v.names.length ? v.names.join('、') : '—']]),
-      h('p', { class: 'muted' }, '圖上：綠色為兩端都有此 VLAN 的鏈路，紅色為只有一端有；推論鏈路在已收集的各端都有此 VLAN 時也標綠色（屬推論）。'),
+      h('p', { class: 'muted' }, '圖上（設備圖與 L2 埠圖）：兩端都帶此 VLAN 的鏈路是實線，推論鏈路是長虛線（推論）；只有一端帶的是錯誤色並在中點標方形；'
+        + '只有一端可確認（對端未收集、沒有 VLAN 資料或只有單側觀察）是淡色點線（推論）。選了 VLAN 後會持續標示，在工具列的 VLAN 選單取消。'),
       split ? h('p', { class: 'muted' }, '同一個 VLAN ID 的設備之間沒有承載此 VLAN 的鏈路相連，可能是各自獨立的廣播網域（例如不同站點重用 VLAN ID），'
         + '也可能只是中間有沒收集、沒有 LLDP 的設備。區塊是依鏈路證據的推論。') : null,
       findingsBlock(App, fl),
       section('只有一端有此 VLAN 的鏈路', v.partial.map((l) => h('div', null, L(App, `${Q.epName(l.a)} ⇄ ${Q.epName(l.b)}`, { type: 'link', key: l.key }))), { count: v.partial.length }),
+      oneSideSection(App, Q.vlanCarriers(v.id, sel.domain)),
       section('設備', V.table([
         { t: '設備', f: (d) => devLink(App, d) },
         { t: '名稱', f: (d) => (v.entries.find((e) => e.dev === d) || {}).name || '' },
@@ -499,6 +508,83 @@
           : L(App, domainName(d, idx), { type: 'vlan', key: String(v.id), domain: d.key }))),
         at >= 0 ? h('div', null, L(App, '顯示所有區塊', { type: 'vlan', key: String(v.id) })) : null,
       ] : null, { count: v.domains.length }),
+    ]);
+  }
+
+  /** VLAN 承載中屬於推論的鏈路（Q.vlanCarriers 的 oneSide）：列出兩端與原因；Q.vlan 的「只有一端有」是兩端都有資料的事實，不在這裡 */
+  function oneSideSection(App, c) {
+    const Q = App.Q; const rows = c.links.filter((l) => l.status === 'oneSide');
+    return section('只有一端可確認的鏈路（推論）', rows.length ? [
+      h('p', { class: 'muted' }, '一端帶這個 VLAN，另一端無從得知（原因見右欄）：不算 VLAN 不一致（V01）。'),
+      V.table([
+        { t: '鏈路', f: (l) => L(App, `${Q.epName(l.a.ep)} ⇄ ${Q.epName(l.b.ep)}`, { type: 'link', key: l.key }) },
+        { t: '原因', f: (l) => V.VLAN_REASON[l.reason] || l.reason },
+      ], rows, { limit: 300 }),
+    ] : null, { count: rows.length, fold: true });
+  }
+
+  // ---------------------------------------------------------------- L3 子網
+  /** 子網的查詢結果依 Q 建一次索引（Q.subnetGraph 已快取；這裡只依網段分組，不改它的結果） */
+  const subnetIndexes = new WeakMap();
+  function subnetIndex(Q) {
+    let x = subnetIndexes.get(Q);
+    if (!x) {
+      const g = Q.subnetGraph({ routes: true }); const edges = new Map(); const routes = new Map();
+      g.edges.forEach((e) => S.util.getOr(edges, e.subnet, () => []).push(e));
+      g.routes.forEach((r) => S.util.getOr(routes, r.subnet, () => []).push(r));
+      x = { byId: new Map(g.subnets.map((s) => [s.id, s])), edges, routes };
+      subnetIndexes.set(Q, x);
+    }
+    return x;
+  }
+  const subnetLink = (App, id) => L(App, id, { type: 'subnet', key: id });
+  /** 子網：位址（設在哪個介面、依據與來源行）、設備與路由設備、重疊網段、重複 IP、路由到這個網段的設備 */
+  function subnet(App, sel) {
+    const Q = App.Q; const X = subnetIndex(Q); const s = X.byId.get(sel.key);
+    if (!s) return h('div', { class: 'empty-detail' }, '基準中沒有這個網段');
+    const rows = (X.edges.get(s.id) || []).flatMap((e) => e.addresses.map((a) => ({ e, a })))
+      .sort((x, y) => S.util.natural(x.a.ip || '', y.a.ip || '') || S.util.natural(x.e.dev, y.e.dev));
+    const dup = new Set(s.duplicateIps);
+    const routes = X.routes.get(s.id) || [];
+    // 檢查結果：重複 IP（A09，以 IP 為實體）與這個網段或重疊網段的 A07、A08（facet 是網段）
+    const nets = new Set([s.id].concat(s.overlaps));
+    const fl = s.duplicateIps.flatMap((ip) => Q.findingsFor('ip', ip)).concat(['A07', 'A08'].flatMap((id) => Q.findingsByRule(id)).filter((f) => nets.has(f.facet)));
+    const relation = (o) => { const x = X.byId.get(o); return x && x.len < s.len ? '包含這個網段' : '在這個網段內'; };
+    const src = S.util.uniq(rows.flatMap((r) => r.a.src.map((x) => x.join(':')))).map((k) => k.split(':').map(Number));
+    return h('div', { class: 'detail' }, [
+      h('h2', { class: 'mono' }, s.id),
+      h('div', { class: 'row' }, [
+        V.chip(s.basis === 'route' ? '只由路由得知（不是直連網段）' : '直連網段', s.basis === 'route' ? 'info' : ''),
+        s.vlan != null ? V.chip('VLAN ' + s.vlan) : null,
+        V.chip(`${s.devices.length} 台設備`),
+        s.routers.length ? V.chip(`${s.routers.length} 台路由設備（推論）`, 'info') : null,
+        s.overlaps.length ? V.chip(`與 ${s.overlaps.length} 個網段重疊`, 'warn') : null,
+        s.duplicateIps.length ? V.chip(`重複 IP ${s.duplicateIps.length} 個`, 'warn') : null,
+      ]),
+      kv([['網段', h('span', { class: 'mono' }, s.prefix)], ['VLAN', s.vlans.length ? h('span', { class: 'vlanlist' }, vlanText(s.vlans)) : null],
+        ['路由設備', s.routers.length ? h('span', null, s.routers.flatMap((d, n) => [n ? '、' : '', devLink(App, d)])) : null],
+        ['閘道（DHCP 網路）', s.gateways.length ? h('span', null, s.gateways.flatMap((g, n) => [n ? '、' : '', ipLink(App, g.ip), `（${Q.devName(g.dev)}）`])) : null],
+        // M3 之前位址的 vrf 一律為 null（ADR-015）：同一網段在不同 VRF 目前併成一個節點
+        ['VRF', s.vrf == null ? '不分 VRF（M3 之前全部視為 main）' : s.vrf]]),
+      findingsBlock(App, fl),
+      section('位址', rows.length ? V.table([
+        { t: 'IP', f: (r) => h('span', { class: dup.has(r.a.ip) ? 'mono diffA' : 'mono' }, r.a.address + (dup.has(r.a.ip) ? '（重複）' : '')), s: (r) => r.a.ip },
+        { t: '設備／介面', f: (r) => (r.a.ep ? epLink(App, r.a.ep) : h('span', null, [devLink(App, r.e.dev), '（管理 IP）'])), s: (r) => Q.devName(r.e.dev) },
+        { t: '依據', f: (r) => h('span', null, [V.L3_BASIS[r.e.basis], r.a.role ? `・${r.a.role.toUpperCase()}` : '', r.e.inferred ? ' ' : '', r.e.inferred ? V.chip('推論', 'info') : null,
+          r.a.seenBy && r.a.seenBy.length ? h('span', { class: 'muted' }, `（由 ${r.a.seenBy.map((d) => Q.devName(d)).join('、')} 看到）`) : null]), s: (r) => r.e.basis },
+        { t: '來源', f: (r) => { const x = r.a.src[0]; const b = x && Q.block(x[0]); return b ? h('a', { class: 'link mono', onclick: () => App.openRaw(b.file, x[1]) }, `${b.file} 第 ${x[1]} 行`) : ''; } },
+      ], rows, { limit: 500, bad: (r) => dup.has(r.a.ip) }) : null, { count: rows.length }),
+      section('設備', s.devices.length ? h('div', { class: 'chip-list' }, s.devices.map((d) => devLink(App, d))) : null, { count: s.devices.length, fold: true }),
+      section('重疊網段', s.overlaps.length ? s.overlaps.map((o) => h('div', null, [subnetLink(App, o), h('span', { class: 'muted' }, '　' + relation(o))])) : null, { count: s.overlaps.length }),
+      section('重複 IP', s.duplicateIps.length ? s.duplicateIps.map((ip) => h('div', null, [ipLink(App, ip), '：',
+        ...rows.filter((r) => r.a.ip === ip && r.a.ep).flatMap((r, n) => [n ? '、' : '', epLink(App, r.a.ep)])])) : null, { count: s.duplicateIps.length }),
+      section('路由到這個網段', routes.length ? V.table([
+        { t: '設備', f: (r) => devLink(App, r.dev) },
+        { t: '協定', f: (r) => (r.blackhole ? h('span', { class: 'diffA' }, '黑洞路由') : r.proto + (r.default ? '（預設路由）' : '')) },
+        { t: '下一跳', f: (r) => h('span', { class: 'mono' }, r.nh.map((n) => (n.ip ? n.ip + ' ' : '') + (n.ifc || '')).join('\n')) },
+        { t: '經由', f: (r) => h('span', null, r.via.flatMap((v, n) => [n ? '、' : '', subnetLink(App, v)])) },
+      ], routes, { limit: 200 }) : null, { count: routes.length, fold: true }),
+      sourcesBlock(App, src),
     ]);
   }
 

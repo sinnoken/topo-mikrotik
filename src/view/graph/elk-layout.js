@@ -89,7 +89,54 @@
     return { name: g.name, pos, w: Math.max(w, 1), h: Math.max(res.height || 0, 1), n: g.members.length };
   }
 
+  /**
+   * L2 埠圖的分層版面：設備是 ELK 的節點、埠是它的 ports（固定在 portPrepare 決定的上、下緣，同一邊由 ELK 排序以減少交叉），
+   * 邊接在埠上。分群與內建版面相同，各群各算一次再以書架排列。
+   * @param devs, ports, edges 同 V.layout.portLayout
+   * @param opt { maxNodes, deadlineMs, isStale() }
+   * @returns Promise<{ pos: Map(dev→{x,y}), anchor: Map(port→{dx,dy}), stats: { groups, nodes, ports, ms } }>
+   */
+  async function elkPorts(devs, ports, edges, opt) {
+    const o = Object.assign({ maxNodes: 1500, deadlineMs: 20000, isStale: () => false }, opt);
+    if (devs.length > o.maxNodes) throw new ElkLayoutError('too-large', `設備 ${devs.length} 台，超過分層版面上限 ${o.maxNodes} 台`);
+    const P = L.portPrepare(devs, ports, edges);
+    await loadEngine();
+    const engine = new globalThis.ELK();
+    const t0 = Date.now(); const boxes = []; const anchor = new Map();
+    const byDev = new Map(); ports.forEach((p) => S.util.getOr(byDev, p.dev, () => []).push(p));
+    const box = new Map(devs.map((d) => [d.id, d.box]));
+    const PS = V.theme.l2.port.size;
+    for (const g of P.groups) {
+      await new Promise((r) => setTimeout(r, 0));
+      if (o.isStale()) throw new ElkLayoutError('stale', '基準已更換，取消分層版面');
+      if (Date.now() - t0 > o.deadlineMs) throw new ElkLayoutError('timeout', `分層版面超過 ${Math.round(o.deadlineMs / 1000)} 秒`);
+      const inG = new Set(g.members.map((n) => n.id));
+      const children = g.members.map((n) => ({
+        id: n.id, width: box.get(n.id).w, height: box.get(n.id).h,
+        layoutOptions: { 'elk.portConstraints': 'FIXED_SIDE', 'elk.spacing.portPort': '10' },
+        ports: (byDev.get(n.id) || []).map((p) => ({ id: p.id, width: PS, height: PS, layoutOptions: { 'elk.port.side': P.side.get(p.id) === 'north' ? 'NORTH' : 'SOUTH' } })),
+      }));
+      const elkEdges = [];
+      edges.forEach((e) => {
+        if (!inG.has(e.aDev) || !inG.has(e.bDev) || e.aDev === e.bDev) return;
+        const la = P.level.get(e.aDev) || 0; const lb = P.level.get(e.bDev) || 0;
+        const [src, dst] = la < lb || (la === lb && S.util.natural(e.aDev, e.bDev) <= 0) ? [e.a, e.b] : [e.b, e.a];
+        elkEdges.push({ id: 'e' + elkEdges.length, sources: [src], targets: [dst] });
+      });
+      const res = await engine.layout({ id: 'g', layoutOptions: OPTIONS, children, edges: elkEdges });
+      const w = res.width || 0; const pos = new Map();
+      res.children.forEach((c) => {
+        const b = box.get(c.id); pos.set(c.id, { x: c.x + b.w / 2 - w / 2, y: c.y + b.h / 2 });
+        // ELK 把埠放在框外緣：y 改成框的上、下緣（邊在 portPrepare 已決定），x 用 ELK 排好的順序
+        (c.ports || []).forEach((p) => anchor.set(p.id, { dx: Math.max(-b.w / 2, Math.min(b.w / 2, p.x + PS / 2 - b.w / 2)), dy: P.side.get(p.id) === 'north' ? -b.h / 2 : b.h / 2 }));
+      });
+      boxes.push({ name: g.name, pos, w: Math.max(w, 1), h: Math.max(res.height || 0, 1), n: g.members.length });
+    }
+    return { pos: L.shelf(boxes), anchor, stats: { groups: P.groups.length, nodes: devs.length, ports: ports.length, ms: Date.now() - t0 } };
+  }
+
   L.elk = elk;
+  L.elkPorts = elkPorts;
   L.ELK_SRC = ENGINE_SRC;
   L.ElkLayoutError = ElkLayoutError;
 })(globalThis.SSOT = globalThis.SSOT || {});

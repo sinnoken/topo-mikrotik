@@ -21,8 +21,10 @@
         radius: (n) => App.graph.radius(n), maxNodes: App.ELK_MAX, isStale: () => App.snap !== snap || App.layoutToken !== token,
       });
       if (App.snap !== snap || App.layoutToken !== token) return;
-      r.pos.forEach((p, id) => App.graph.pos.set(id, p));
-      App.graph.computeGroups(); App.graph.fit(); A.savePositions();
+      // 設備圖的位置（App.devicePos）：看的是 L2／L3 時也寫進設備圖，回到設備圖時再全圖
+      r.pos.forEach((p, id) => App.devicePos.set(id, p));
+      if (App.layer === 'device') { App.graph.computeGroups(); App.graph.fit(); } else A.forgetView('device');
+      A.savePositions();
       A.banner(`已套用分層版面（${r.stats.coreNodes} 台網路設備，${r.stats.ms} ms）`, 4000);
     } catch (e) {
       if (e.code === 'stale') return;
@@ -34,24 +36,33 @@
   /** 依目前的版面模式重新排列（工具列的「重新排列」與切換版面模式） */
   A.relayout = function relayout() {
     if (!App.snap) return;
+    if (App.layer !== 'device') { A.relayoutLayer(); return; } // L2／L3：只重排目前的層級（app-layers.js）
     const g = A.graphData(App.Q);
     if (App.layoutMode === 'elk') { App.layoutJob = A.applyElk(g); return; }
     App.layoutToken = (App.layoutToken || 0) + 1; // 取消進行中的分層版面
     const auto = V.layout.layout(g.nodes, g.edges);
-    auto.forEach((p, id) => App.graph.pos.set(id, p)); App.graph.computeGroups(); App.graph.fit(); A.savePositions();
+    auto.forEach((p, id) => App.devicePos.set(id, p)); App.graph.computeGroups(); App.graph.fit(); A.savePositions();
   };
 
   // ================================================================ 圖資料
-  /** 基準 → 圖：同兩台設備之間的多條鏈路合併成一條線 */
-  A.graphData = function graphData(Q) {
-    const sevRank = { error: 2, warn: 1 };
-    const devSev = new Map(); const linkSev = new Map();
-    const bump = (map, k, s) => { if (!sevRank[s]) return; if (!map.has(k) || sevRank[s] > sevRank[map.get(k)]) map.set(k, s); };
+  /**
+   * 圖上的嚴重度（錯誤、警告；提醒不標）：設備（含其介面的）、鏈路與介面各自最嚴重的一級。設備圖、L2 埠圖與 L3 子網圖共用。
+   * 回傳 { devSev, linkSev, ifcSev, rank }，都是 Map(鍵→'error'|'warn')
+   */
+  A.severities = function severities(Q) {
+    const rank = { error: 2, warn: 1 };
+    const devSev = new Map(); const linkSev = new Map(); const ifcSev = new Map();
+    const bump = (map, k, s) => { if (!rank[s]) return; if (!map.has(k) || rank[s] > rank[map.get(k)]) map.set(k, s); };
     Q.findings().forEach((f) => f.entities.forEach((e) => {
       if (e.type === 'device') bump(devSev, e.key, f.severity);
       else if (e.type === 'link') bump(linkSev, e.key, f.severity);
-      else if (e.type === 'interface') bump(devSev, K.splitEp(e.key)[0], f.severity);
+      else if (e.type === 'interface') { bump(devSev, K.splitEp(e.key)[0], f.severity); bump(ifcSev, e.key, f.severity); }
     }));
+    return { devSev, linkSev, ifcSev, rank };
+  };
+  /** 基準 → 圖：同兩台設備之間的多條鏈路合併成一條線 */
+  A.graphData = function graphData(Q) {
+    const { devSev, linkSev, rank: sevRank } = A.severities(Q);
     const nodes = Q.devices().map((d) => ({
       id: d.key, label: d.label || d.name, kind: d.kind, collected: d.collected, group: d.group, sev: devSev.get(d.key) || null,
     }));
@@ -190,17 +201,19 @@
 
   /** 展開／收合後重建圖資料，保留使用者已調整的位置 */
   function refreshGraph() {
-    const g = A.graphData(App.Q); const old = App.graph.pos; const pos = new Map(); const fresh = [];
+    const g = A.graphData(App.Q); const old = App.devicePos; const pos = new Map(); const fresh = [];
     g.nodes.forEach((n) => { const q = old.get(n.id); if (q) pos.set(n.id, q); else fresh.push(n); });
     A.placeLeaves(fresh, g.nodes, g.edges, pos);
     fresh.forEach((n) => { if (!pos.has(n.id)) pos.set(n.id, { x: 0, y: 0 }); });
-    App.graph.setData(g.nodes, g.edges, pos);
+    A.setDeviceGraph(g.nodes, g.edges, pos);
     A.applyVisibility();
     App.select(App.sel, {});
     A.savePositions();
   }
+  /** 展開／收合未知對端是設備圖的操作：看的是 L2／L3 時先切回設備圖 */
   App.toggleExpand = function (dk) {
     if (App.expanded.has(dk)) App.expanded.delete(dk); else App.expanded.add(dk);
+    if (App.layer !== 'device') A.showLayer('device');
     refreshGraph();
   };
 

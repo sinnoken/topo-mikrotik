@@ -59,6 +59,14 @@
   V.CONFIDENCE = { high: '信心高（多重證據）', medium: '信心中（單一證據）' };
   V.WIFI_BASIS = { registration: '依關聯表（已確認）', 'bridge-wifi': '依 MAC 表的無線介面（推定）', 'via-ap-port': '經由 AP 所接的交換器埠（推定，無法區分有線或無線）' };
   V.MODE = { access: 'Access（untagged）', tagged: 'Tagged（trunk）' };
+  // 拓樸圖的層級（App.layer）：L4 在 M2
+  V.LAYER = { device: '設備', l2: 'L2 埠', l3: 'L3 子網' };
+  // VLAN 承載（Q.vlanCarriers 的 status 與 reason）；oneSide、inferred 是推論
+  V.VLAN_STATUS = { carry: '兩端都帶這個 VLAN', partial: '只有一端帶這個 VLAN（兩端都有 VLAN 資料，V01）', oneSide: '只有一端可確認帶這個 VLAN（推論）', inferred: '推論鏈路，已收集的各端都帶這個 VLAN（推論）' };
+  V.VLAN_REASON = { unfiltered: '有一端在沒開 vlan-filtering 的 bridge 上，VLAN 原樣轉送、無法確認是否帶這個 VLAN', 'peer-uncollected': '對端設備沒有收集資料，無從得知是否帶這個 VLAN', 'peer-no-vlan-data': '對端設備沒有 VLAN 設定資料，無從得知是否帶這個 VLAN', hearsay: '鏈路只有單側觀察（對端沒有提供 LLDP），對端的 VLAN 無法對照' };
+  // L2 埠圖的邊（Q.portGraph 的 evidence）與 L3 子網圖的邊（Q.subnetGraph 的 basis）
+  V.PORT_EVIDENCE = { adjacency: 'LLDP／CDP 雙側介面鄰接', hearsay: '只有單側觀察（推論）', inferred: '推論鏈路（沒有 LLDP，推論）' };
+  V.L3_BASIS = { address: '介面位址', neighbor: '鄰居回報的位址（推論）', mgmt: '管理 IP（推論，未列在介面位址）' };
   V.ifcState = (i) => (i.enabled === false ? '停用' : V.STATUS[i.status]);
   // 收集失敗（blocks[].failure、coverage[].failures[]）的原因
   V.FAILURE = { timeout: '逾時', 'exit-code': '指令失敗', connection: '連線失敗', other: '其他錯誤' };

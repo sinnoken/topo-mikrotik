@@ -16,6 +16,14 @@
   const kind = { firewall: '#7b208e', switch: '#2795b5', router: '#335dcd', host: '#977af8', unknown: '#535d62' };
   // 狀態文字色：對白底、淺色狀態底與畫布底都 ≥ 4.5:1（與 app.css 的 --err-text 等一致，有測試）
   const text = { body: '#1f2933', muted: '#5f6d7e', err: '#b3261e', warn: '#8a5300', ok: '#17692f', info: '#315d8a' };
+  const mark = { select: '#0b6bcb', hover: '#1f2933', find: '#a44a88', trace: '#622fa6', bad: '#d93025', good: '#1e8e3e' };
+  const weakEdge = {
+    hearsay: { alpha: 0.85, dash: [2, 3] },
+    // 推論鏈路：沒有 LLDP 時由 MAC 表、MNDP、點對點網段推定相鄰（證據強於純 MNDP，弱於 LLDP）
+    inferred: { alpha: 0.9, dash: [10, 3] },
+  };
+  // 圖例中只表達線型時用的中性線色；L2 埠與 L3 子網的外框也用它（中性色：埠、子網靠外形與文字區分，不佔類別色）
+  const keyInk = '#4a5560';
   V.theme = {
     kind,
     // 設備節點外形；Canvas 繪圖與圖例共用
@@ -29,16 +37,35 @@
     multi: { widen: 1.7, gap: 0.34 },
     // 證據強度較弱的邊，鍵與 query devicePairs 的 evidence 相同：單側觀察（對端無 LLDP）、推論。只有 MNDP 的設備對不畫。
     // 只改線型與透明度，保留速率色
-    weakEdge: {
-      hearsay: { alpha: 0.85, dash: [2, 3] },
-      // 推論鏈路：沒有 LLDP 時由 MAC 表、MNDP、點對點網段推定相鄰（證據強於純 MNDP，弱於 LLDP）
-      inferred: { alpha: 0.9, dash: [10, 3] },
-    },
+    weakEdge,
     // 嚴重度：顏色之外一律有外形（錯誤方形、警告三角形），節點右上角與連線中點共用
     sev: { error: '#d93025', warn: '#f29900' },
     sevShape: { error: 'square', warn: 'triangle' },
     // 圖上的標示：選取（藍色實線環）、滑過（深色細環）、搜尋結果、路由追蹤（含箭頭）各用不同顏色；bad／good 是狀態
-    mark: { select: '#0b6bcb', hover: '#1f2933', find: '#a44a88', trace: '#622fa6', bad: '#d93025', good: '#1e8e3e' },
+    mark,
+    // VLAN 承載的高亮（鍵與 Q.vlanCarriers 的 status 相同；設備圖與 L2 埠圖共用）。只用既有的狀態色，另以線型與外形區分：
+    //   carry 承載（實線）、inferred 推論鏈路承載（長虛線，同推論鏈路）、partial 只有一端帶（狀態色＋中點的錯誤外形）、
+    //   oneSide 只有一端可確認（點線＋淡化，推論）
+    vlan: {
+      carry: { c: mark.good },
+      inferred: { c: mark.good, dash: weakEdge.inferred.dash },
+      partial: { c: mark.bad, sev: 'error' },
+      oneSide: { c: mark.good, dash: [2, 4], alpha: 0.55 },
+    },
+    // L2 埠層級圖：設備是容器框（外框用設備類型色），埠是框邊上的小方塊；聚合埠較寬。未收集設備與推論鏈路未收集端的埠用虛線
+    l2: {
+      box: { fill: '#ffffff', radius: 6, labelH: 20, minW: 120, h: 46, portGap: 18, dash: [4, 3] },
+      port: { size: 9, lagW: 16, fill: '#ffffff', stroke: keyInk, dash: [2, 2] },
+    },
+    // L3 子網圖：子網是圓角長條（中性外框、網段文字在內），只由路由得知的目的網段用虛線外框；
+    // 位址邊用 edge.other，推論的位址邊（鄰居回報、管理 IP）用 weakEdge.hearsay；路由是虛線加箭頭；
+    // 網段重疊是警告文字色的虛線，中點加警告外形；重疊與重複 IP 在子網下方另有文字標籤
+    l3: {
+      subnet: { fill: '#ffffff', stroke: keyInk, text: text.body, h: 26, minW: 70, routeDash: [4, 3] },
+      route: { c: keyInk, w: 1.4, dash: [7, 4] },
+      overlap: { c: text.warn, w: 1.6, dash: [3, 3], sev: 'warn' },
+      badge: { bg: '#ffffff', text: text.warn, border: text.warn },
+    },
     alpha: { dimEdge: 0.12, dimNode: 0.15, dimLabel: 0.25, overlay: 0.9 },
     text,
     // 字型清單與 app.css 的 body、--mono 相同（有測試）
@@ -54,7 +81,7 @@
       port: { bg: 'rgba(255,255,255,0.95)', border: 'rgba(120,130,140,0.5)', text: '#4a5560', maxEm: 12 },
       outline: '#ffffff', uncollectedFill: '#ffffff', sevFallback: '#7c8691',
       // 圖例中只表達線型（證據強度、介面類型）時用的中性線色
-      keyInk: '#4a5560',
+      keyInk,
     },
     endpoint: {
       // 廠商色最多 8 色（不用紅、橘黃、綠：避免和狀態混淆），依終端數量排前 8 的廠商；其餘歸「其他」用 vendorFallback

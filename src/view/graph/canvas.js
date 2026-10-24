@@ -4,6 +4,11 @@
  *  - 鍵盤：畫布可取得焦點，N／Shift+N 輪流移到設備、Enter 開詳情、Esc 取消選取、方向鍵平移、+／- 縮放、0 全圖
  *  - 依縮放程度決定是否畫標籤與埠名，只畫畫面內的物件（1000 台以上仍流暢）
  * 資料：nodes [{id,label,kind,collected,group,sev}]、edges [{id,a,b,cls,layer,count,sev,hearsay,mismatch,labelA,labelB}]
+ * L2 埠圖與 L3 子網圖（app-layers.js）另用：
+ *  - node.box { w, h }：容器框（L2 的設備）或長條（L3 的子網，kind 'subnet'），命中範圍與標示環是矩形
+ *  - node.anchor { parent, dx, dy }：位置跟著 parent（L2 的埠）；pos 不存它，拖曳它等於拖曳 parent
+ *  - edge.style { c, w, dash }：取代依 cls 的連線樣式；edge.arrow：在 b 端附近畫箭頭（L3 的路由）
+ *  - 高亮 hl.edges 的值可以是顏色，或 { c, dash, alpha, sev }（VLAN 承載：線型與中點外形，不只靠顏色）
  */
 (function (S) {
   'use strict';
@@ -34,7 +39,21 @@
     setData(nodes, edges, pos) {
       this.nodes = nodes; this.edges = edges; this.pos = pos; this.nodeById = new Map(nodes.map((n) => [n.id, n]));
       this.edgesByNode = new Map(); edges.forEach((e) => { [e.a, e.b].forEach((x) => S.util.getOr(this.edgesByNode, x, () => []).push(e)); });
+      // 掛在容器上的節點（L2 的埠）：滑過容器時一起標出它們的連線，鍵盤 N 依容器、再依它的埠輪流
+      this.childrenOf = new Map(); nodes.forEach((n) => { if (n.anchor) S.util.getOr(this.childrenOf, n.anchor.parent, () => []).push(n); });
       this.dirty = true;
+    }
+    /** 節點的世界座標：掛在容器上的節點（anchor）是容器的位置加上偏移，其他取 pos */
+    at(id) {
+      const n = this.nodeById.get(id);
+      if (n && n.anchor) { const p = this.pos.get(n.anchor.parent); return p ? { x: p.x + n.anchor.dx, y: p.y + n.anchor.dy } : null; }
+      return this.pos.get(id);
+    }
+    /** 可見：通過 visible 篩選，掛在容器上的節點另要容器可見 */
+    isVisible(n) {
+      if (!this.visible(n)) return false;
+      if (!n.anchor) return true;
+      const p = this.nodeById.get(n.anchor.parent); return !!p && this.visible(p);
     }
     setVisible(fn) { this.visible = fn; this.dirty = true; }
     setSelection(nodes, edges) { this.sel = { nodes: new Set(nodes || []), edges: new Set(edges || []) }; this.dirty = true; }
@@ -46,7 +65,11 @@
     toScreen(p) { return { x: p.x * this.s + this.tx, y: p.y * this.s + this.ty }; }
     toWorld(x, y) { return { x: (x - this.tx) / this.s, y: (y - this.ty) / this.s }; }
     fit(ids, pad) {
-      const list = (ids && ids.length ? ids : this.nodes.filter((n) => this.visible(n)).map((n) => n.id)).map((id) => this.pos.get(id)).filter(Boolean);
+      // 容器框（box）以四個角計算，整個框才會在畫面內
+      const list = (ids && ids.length ? ids : this.nodes.filter((n) => this.isVisible(n)).map((n) => n.id)).flatMap((id) => {
+        const p = this.at(id); const n = this.nodeById.get(id); if (!p) return [];
+        return n && n.box ? [{ x: p.x - n.box.w / 2, y: p.y - n.box.h / 2 }, { x: p.x + n.box.w / 2, y: p.y + n.box.h / 2 }] : [p];
+      });
       if (!list.length) return;
       const xs = list.map((p) => p.x); const ys = list.map((p) => p.y);
       const minX = Math.min(...xs); const maxX = Math.max(...xs); const minY = Math.min(...ys); const maxY = Math.max(...ys);
@@ -72,7 +95,10 @@
         const type = ev.pointerType || 'mouse';
         if (type === 'mouse' && ev.button) return; // 只用主按鍵
         const p = at(ev); const n = this.hitNode(p, type);
-        drag = { id: ev.pointerId, type, start: p, last: p, node: n, moved: false };
+        // 拖曳掛在容器上的節點（埠）等於拖曳容器；記下指標與節點中心的差，大的容器才不會跳到指標位置
+        const target = n && n.anchor ? this.nodeById.get(n.anchor.parent) : n;
+        const w = this.toWorld(p.x, p.y); const c = target ? this.at(target.id) : null;
+        drag = { id: ev.pointerId, type, start: p, last: p, node: n, target, off: c ? { x: w.x - c.x, y: w.y - c.y } : null, moved: false };
         cv.classList.add('dragging');
         if (cv.setPointerCapture && ev.pointerId != null) { try { cv.setPointerCapture(ev.pointerId); } catch (e) { /* 指標已不存在：仍以 window 事件追蹤 */ } }
       });
@@ -90,14 +116,14 @@
         if (!mine(ev)) return;
         if (Math.abs(p.x - drag.start.x) + Math.abs(p.y - drag.start.y) > (drag.type === 'mouse' ? 3 : 8)) drag.moved = true;
         if (!drag.moved) return;
-        if (drag.node) { const w = this.toWorld(p.x, p.y); this.pos.set(drag.node.id, w); }
+        if (drag.target) { const w = this.toWorld(p.x, p.y); this.pos.set(drag.target.id, { x: w.x - drag.off.x, y: w.y - drag.off.y }); }
         else { this.tx += p.x - drag.last.x; this.ty += p.y - drag.last.y; }
         drag.last = p; this.dirty = true;
       });
       const end = (ev, cancelled) => {
         if (!mine(ev)) return; cv.classList.remove('dragging');
         const d = drag; drag = null;
-        if (d.moved) { if (d.node) this.emit('moved', d.node.id); return; }
+        if (d.moved) { if (d.target) this.emit('moved', d.target.id); return; }
         if (cancelled || ev.target !== cv) return;
         const p = at(ev); const n = this.hitNode(p, d.type);
         if (n) {
@@ -140,15 +166,18 @@
     }
     /** 依畫面上的位置（由上而下、由左而右）輪流移到下一台可見的設備；移出畫面時平移到中央 */
     cycle(dir) {
-      const list = this.nodes.filter((n) => this.visible(n) && this.pos.has(n.id));
-      if (!list.length) return;
+      // 容器依畫面位置排序，每個容器後面接著它的埠（依框上的位置）：L2 的埠也走得到
+      const top = this.nodes.filter((n) => !n.anchor && this.isVisible(n) && this.pos.has(n.id));
+      if (!top.length) return;
       const ROWH = 40; const key = (n) => { const p = this.pos.get(n.id); return [Math.round(p.y / ROWH), p.x]; };
-      list.sort((a, b) => { const ka = key(a); const kb = key(b); return ka[0] - kb[0] || ka[1] - kb[1] || S.util.natural(a.id, b.id); });
+      top.sort((a, b) => { const ka = key(a); const kb = key(b); return ka[0] - kb[0] || ka[1] - kb[1] || S.util.natural(a.id, b.id); });
+      const list = top.flatMap((n) => [n].concat((this.childrenOf.get(n.id) || []).filter((c) => this.isVisible(c))
+        .sort((a, b) => a.anchor.dy - b.anchor.dy || a.anchor.dx - b.anchor.dx || S.util.natural(a.id, b.id))));
       const i = list.findIndex((n) => n.id === this.kbd);
       const n = list[i < 0 ? (dir > 0 ? 0 : list.length - 1) : (i + dir + list.length) % list.length];
       this.kbd = n.id; this.hover = { type: 'node', id: n.id };
-      let sp = this.toScreen(this.pos.get(n.id)); const m = 40;
-      if (sp.x < m || sp.y < m || sp.x > this.w - m || sp.y > this.h - m) { this.tx += this.w / 2 - sp.x; this.ty += this.h / 2 - sp.y; sp = this.toScreen(this.pos.get(n.id)); }
+      let sp = this.toScreen(this.at(n.id)); const m = 40;
+      if (sp.x < m || sp.y < m || sp.x > this.w - m || sp.y > this.h - m) { this.tx += this.w / 2 - sp.x; this.ty += this.h / 2 - sp.y; sp = this.toScreen(this.at(n.id)); }
       this.dirty = true; this.emit('hover', { item: this.hover, x: sp.x, y: sp.y, keyboard: true });
     }
     /** 以畫面上的一點（預設中央）為中心縮放 */
@@ -158,29 +187,35 @@
       this.s = ns; this.tx = p.x - w.x * ns; this.ty = p.y - w.y * ns; this.dirty = true;
     }
     radius(n) {
+      if (n.box) return Math.max(n.box.w, n.box.h) / 2;
+      if (n.kind === 'port') return T.l2.port.size / 2 + 1;
       if (n.kind === 'endpoint') return 7; if (n.kind === 'cluster') return 12; if (n.kind === 'downstream') return 9;
       return n.kind === 'host' ? 6 : n.collected ? 13 : 9;
     }
-    /** type 是指標種類：觸控的命中範圍較大（螢幕上約多 10px） */
+    /** type 是指標種類：觸控的命中範圍較大（螢幕上約多 10px）。容器框（box）只在沒有點到其他節點（例如框上的埠）時命中 */
     hitNode(p, type) {
-      const w = this.toWorld(p.x, p.y); let best = null; let bd = Infinity; const slop = (type === 'touch' ? 14 : 4) / this.s;
+      const w = this.toWorld(p.x, p.y); let best = null; let bd = Infinity; let box = null; let area = Infinity; const slop = (type === 'touch' ? 14 : 4) / this.s;
       for (const n of this.nodes) {
-        if (!this.visible(n)) continue; const q = this.pos.get(n.id); if (!q) continue;
+        if (!this.isVisible(n)) continue; const q = this.at(n.id); if (!q) continue;
+        if (n.box) {
+          if (Math.abs(q.x - w.x) <= n.box.w / 2 + slop && Math.abs(q.y - w.y) <= n.box.h / 2 + slop && n.box.w * n.box.h < area) { box = n; area = n.box.w * n.box.h; }
+          continue;
+        }
         const d = Math.hypot(q.x - w.x, q.y - w.y); const r = this.radius(n) + slop;
         if (d < r && d < bd) { best = n; bd = d; }
       }
-      return best;
+      return best || box;
     }
     hitEdge(p, type) {
       const w = this.toWorld(p.x, p.y); const tol = (type === 'touch' ? 14 : 6) / this.s; let best = null; let bd = tol;
       for (const e of this.edges) {
         if (!this._edgeVisible(e)) continue;
-        const a = this.pos.get(e.a); const b = this.pos.get(e.b); if (!a || !b) continue;
+        const a = this.at(e.a); const b = this.at(e.b); if (!a || !b) continue;
         const d = segDist(w, a, b); if (d < bd) { bd = d; best = e; }
       }
       return best;
     }
-    _edgeVisible(e) { const a = this.nodeById.get(e.a); const b = this.nodeById.get(e.b); return a && b && this.visible(a) && this.visible(b); }
+    _edgeVisible(e) { const a = this.nodeById.get(e.a); const b = this.nodeById.get(e.b); return a && b && this.isVisible(a) && this.isVisible(b); }
 
     // ---------------- 繪圖
     _loop() { const tick = () => { if (this.dirty) { this.dirty = false; this.draw(); } requestAnimationFrame(tick); }; requestAnimationFrame(tick); }
@@ -194,7 +229,8 @@
       const hl = this.hl; const dim = hl && (hl.nodes.size || hl.edges.size);
       const hoverN = this.hover && this.hover.type === 'node' ? this.hover.id : null;
       const hoverE = this.hover && this.hover.type === 'edge' ? this.hover.id : null;
-      const hoverAdj = new Set(); if (hoverN) (this.edgesByNode.get(hoverN) || []).forEach((e) => hoverAdj.add(e.id));
+      const hoverAdj = new Set();
+      if (hoverN) [hoverN].concat((this.childrenOf.get(hoverN) || []).map((x) => x.id)).forEach((id) => (this.edgesByNode.get(id) || []).forEach((e) => hoverAdj.add(e.id)));
       c.save(); c.translate(this.tx, this.ty); c.scale(s, s);
 
       // 分群底色
@@ -208,26 +244,29 @@
 
       // 連線
       const drawEdge = (e, override) => {
-        const a = this.pos.get(e.a); const b = this.pos.get(e.b); if (!a || !b) return;
+        const a = this.at(e.a); const b = this.at(e.b); if (!a || !b) return;
         if (!inView(a) && !inView(b) && !segInView(a, b, view)) return;
-        const st = EDGE[e.cls] || EDGE.other; let col = st.c; const multi = e.count > 1; let w = st.w * (multi ? T.multi.widen : 1); let alpha = 1;
+        const st = e.style || EDGE[e.cls] || EDGE.other; let col = st.c; const multi = e.count > 1; let w = st.w * (multi ? T.multi.widen : 1); let alpha = 1;
         // 證據強度（query 的 devicePairs 決定）只改線型與透明度，保留速率色；連到終端的連線依介面類型換線型
         const weak = WEAK[e.evidence];
         if (weak) alpha = weak.alpha;
-        const hc = hl && hl.edges.get(e.id);
+        // 高亮可以是顏色，或 { c, dash, alpha, sev }（VLAN 承載：線型與中點外形）
+        const hv = hl && hl.edges.get(e.id); const hc = hv ? (typeof hv === 'string' ? { c: hv } : hv) : null;
         if (dim && !hc && !override) alpha = ALPHA.dimEdge;
-        if (hc) { col = hc; w = Math.max(w, 3.5, 2.5 / s); }
+        if (hc) { col = hc.c; w = Math.max(w, 3.5, 2.5 / s); if (hc.alpha != null) alpha = hc.alpha; }
         if (override) { col = override; w = Math.max(w, 3.5, 2.5 / s); alpha = 1; }
         c.globalAlpha = alpha; c.strokeStyle = col; c.lineWidth = Math.max(w, 0.8 / s);
-        const dash = (e.ifStyle && e.ifStyle.dash) || (weak ? weak.dash : st.dash);
+        const dash = (hc && !override && hc.dash) || (e.ifStyle && e.ifStyle.dash) || (weak ? weak.dash : st.dash);
         c.setLineDash(dash ? dash.map((d) => d / Math.min(s, 1)) : []);
         c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
         if (multi) { // 多條鏈路：中間一條底色細縫，看起來是雙線
           c.strokeStyle = CV.surface; c.lineWidth = Math.max(w, 0.8 / s) * T.multi.gap; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
         }
         c.setLineDash([]);
-        if (e.sev && !dim && !override) { // 有問題的連線：中點標記（外形同節點）
-          c.globalAlpha = 1; sevMark(c, e.sev, (a.x + b.x) / 2, (a.y + b.y) / 2, Math.max(4.5, 3.5 / s));
+        if (e.arrow) arrow(c, a, b, Math.max(8, 6 / s), col, 0.8);
+        const midSev = hc && hc.sev && !override ? hc.sev : e.sev && !dim && !override ? e.sev : null;
+        if (midSev) { // 有問題的連線（或 VLAN 只有一端帶）：中點標記（外形同節點）
+          c.globalAlpha = 1; sevMark(c, midSev, (a.x + b.x) / 2, (a.y + b.y) / 2, Math.max(4.5, 3.5 / s));
         }
         c.globalAlpha = 1;
       };
@@ -240,32 +279,52 @@
       }
       // 疊加路徑（路由追蹤）
       this.overlay.forEach((o) => {
-        const a = this.pos.get(o.a); const b = this.pos.get(o.b); if (!a || !b) return;
+        const a = this.at(o.a); const b = this.at(o.b); if (!a || !b) return;
         c.strokeStyle = o.color || MARK.trace; c.lineWidth = Math.max(6, 4 / s); c.globalAlpha = ALPHA.overlay;
         c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke(); arrow(c, a, b, Math.max(14, 10 / s), o.color || MARK.trace); c.globalAlpha = 1;
       });
 
       // 節點
       const portLabels = s > 1.25;
+      // 標示環：一般節點是圓，容器框與子網長條是外擴的圓角矩形
+      const ring = (n, p, r, extra) => {
+        c.beginPath();
+        if (n.box) roundRect(c, p.x - n.box.w / 2 - extra, p.y - n.box.h / 2 - extra, n.box.w + extra * 2, n.box.h + extra * 2, 6 + extra);
+        else c.arc(p.x, p.y, r + extra, 0, Math.PI * 2);
+        c.stroke();
+      };
+      const inViewNode = (n, p) => p && (inView(p) || (n.box && p.x + n.box.w / 2 > view.x0 && p.x - n.box.w / 2 < view.x1 && p.y + n.box.h / 2 > view.y0 && p.y - n.box.h / 2 < view.y1));
       for (const n of this.nodes) {
-        if (!this.visible(n)) continue; const p = this.pos.get(n.id); if (!inView(p)) continue;
-        const r = this.radius(n); const col = KIND_COLOR[n.kind] || KIND_COLOR.unknown;
+        if (!this.isVisible(n)) continue; const p = this.at(n.id); if (!inViewNode(n, p)) continue;
+        const r = n.box ? 0 : this.radius(n); const col = KIND_COLOR[n.kind] || KIND_COLOR.unknown;
         const hcol = hl && hl.nodes.get(n.id);
         c.globalAlpha = dim && !hcol && !this.sel.nodes.has(n.id) ? ALPHA.dimNode : 1;
         drawShape(c, n, p, r, col, s);
-        if (hcol) { c.strokeStyle = hcol; c.lineWidth = 3.5; c.beginPath(); c.arc(p.x, p.y, r + 5, 0, Math.PI * 2); c.stroke(); }
-        if (this.sel.nodes.has(n.id)) { c.strokeStyle = MARK.select; c.lineWidth = 3; c.beginPath(); c.arc(p.x, p.y, r + 6, 0, Math.PI * 2); c.stroke(); }
+        if (hcol) { c.strokeStyle = hcol; c.lineWidth = 3.5; ring(n, p, r, n.kind === 'port' ? 3 : 5); }
+        if (this.sel.nodes.has(n.id)) { c.strokeStyle = MARK.select; c.lineWidth = 3; ring(n, p, r, n.kind === 'port' ? 4 : 6); }
         // 滑過：節點本身也有回饋（深色細環，與選取的藍色粗環、搜尋結果的顏色環不同）
-        if (n.id === hoverN) { c.strokeStyle = MARK.hover; c.lineWidth = 2; c.beginPath(); c.arc(p.x, p.y, r + (this.sel.nodes.has(n.id) ? 9.5 : 3.5), 0, Math.PI * 2); c.stroke(); }
-        // 嚴重度：主機與終端（較小的節點）也顯示，外形區分錯誤與警告
-        if (n.sev) sevMark(c, n.sev, p.x + r * 0.85, p.y - r * 0.85, Math.max(4, Math.min(5, r * 0.5)));
+        if (n.id === hoverN) { c.strokeStyle = MARK.hover; c.lineWidth = 2; ring(n, p, r, this.sel.nodes.has(n.id) ? 9.5 : 3.5); }
+        // 嚴重度：主機與終端（較小的節點）也顯示，外形區分錯誤與警告；容器框標在右上角
+        if (n.sev) {
+          if (n.box) sevMark(c, n.sev, p.x + n.box.w / 2 - 2, p.y - n.box.h / 2 + 2, 5);
+          else sevMark(c, n.sev, p.x + r * 0.85, p.y - r * 0.85, Math.max(4, Math.min(5, r * 0.5)));
+        }
+        c.globalAlpha = 1;
+      }
+      // 容器框、子網長條與埠的文字（畫在節點內或框邊旁，不參與下面的標籤避讓）
+      for (const n of this.nodes) {
+        if (!(n.box || n.kind === 'port') || !this.isVisible(n)) continue; const p = this.at(n.id); if (!inViewNode(n, p)) continue;
+        const forced = this.sel.nodes.has(n.id) || n.id === hoverN || (hl && hl.nodes.has(n.id));
+        c.globalAlpha = dim && !forced ? ALPHA.dimLabel : 1;
+        if (n.kind === 'port') { if (s > 0.9 || forced) portName(c, n, p, s, forced); }
+        else if (s > 0.18 || forced) boxText(c, n, p, s);
         c.globalAlpha = 1;
       }
       // 標籤：依重要性排序，與已畫的標籤重疊就略過（避免縮小時糊成一片）
       const RANKL = { firewall: 0, router: 1, switch: 2, unknown: 3, host: 4, cluster: 5, downstream: 5, endpoint: 6 };
       const cand = [];
       for (const n of this.nodes) {
-        if (!this.visible(n)) continue; const p = this.pos.get(n.id); if (!inView(p)) continue;
+        if (n.box || n.kind === 'port' || !this.isVisible(n)) continue; const p = this.at(n.id); if (!inView(p)) continue;
         const forced = this.sel.nodes.has(n.id) || n.id === hoverN;
         const marked = hl && hl.nodes.has(n.id);
         if (!forced && !marked && (n.kind === 'host' || n.kind === 'endpoint' || n.kind === 'downstream') && s < 0.9) continue;
@@ -292,7 +351,7 @@
       const isForced = (e) => this.sel.edges.has(e.id) || e.id === hoverE || hoverAdj.has(e.id);
       const edgesToLabel = this.edges.filter((e) => this._edgeVisible(e) && (portLabels || isForced(e)));
       const drawPort = (e, force) => {
-        const a = this.pos.get(e.a); const b = this.pos.get(e.b);
+        const a = this.at(e.a); const b = this.at(e.b);
         if (!a || !b || (!inView(a) && !inView(b))) return;
         const k = force ? Math.max(1, 1.25 / s) : 1; // 縮小時放大字級，保持螢幕上可讀
         c.font = `${10 * k}px ${T.font.mono}`;
@@ -306,7 +365,7 @@
     computeGroups() {
       const boxes = new Map();
       this.nodes.forEach((n) => {
-        if (!this.visible(n)) return; const p = this.pos.get(n.id); if (!p) return;
+        if (n.anchor || !this.isVisible(n)) return; const p = this.pos.get(n.id); if (!p) return;
         const g = S.util.getOr(boxes, n.group || '', () => ({ name: n.group || '', x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, n: 0 }));
         g.x0 = Math.min(g.x0, p.x - 50); g.y0 = Math.min(g.y0, p.y - 50); g.x1 = Math.max(g.x1, p.x + 50); g.y1 = Math.max(g.y1, p.y + 40); g.n++;
       });
@@ -317,6 +376,9 @@
 
   function drawShape(c, n, p, r, col, s) {
     if (n.virtual) return drawVirtual(c, n, p, r, s);
+    if (n.kind === 'subnet') return drawSubnet(c, n, p);
+    if (n.box) return drawBox(c, n, p, col);
+    if (n.kind === 'port') return drawPortShape(c, n, p);
     c.lineWidth = 2;
     const fill = n.collected ? col : CV.uncollectedFill;
     c.fillStyle = fill; c.strokeStyle = n.collected ? shade(col) : col;
@@ -336,6 +398,58 @@
     else if (n.kind === 'router') { c.moveTo(p.x - r * 0.5, p.y); c.lineTo(p.x + r * 0.5, p.y); c.moveTo(p.x, p.y - r * 0.5); c.lineTo(p.x, p.y + r * 0.5); }
     else if (n.kind === 'firewall') { c.moveTo(p.x - r * 0.45, p.y - r * 0.15); c.lineTo(p.x + r * 0.45, p.y - r * 0.15); c.moveTo(p.x - r * 0.45, p.y + r * 0.25); c.lineTo(p.x + r * 0.45, p.y + r * 0.25); c.moveTo(p.x, p.y - r * 0.15); c.lineTo(p.x, p.y + r * 0.25); }
     c.stroke();
+  }
+  /** L2 的設備：容器框，外框用設備類型色（未收集是虛線），框左上角是設備名稱；框上的埠是另外的節點 */
+  function drawBox(c, n, p, col) {
+    const B = T.l2.box; const w = n.box.w; const h = n.box.h;
+    c.fillStyle = B.fill; c.strokeStyle = col; c.lineWidth = 2;
+    if (!n.collected) c.setLineDash(B.dash);
+    roundRect(c, p.x - w / 2, p.y - h / 2, w, h, B.radius); c.fill(); c.stroke(); c.setLineDash([]);
+    // 左側的類型色條：框很淡時也看得出設備類型（外形以外再加一個位置固定的色塊）
+    c.fillStyle = col; c.fillRect(p.x - w / 2 + 1, p.y - h / 2 + 4, 4, h - 8);
+  }
+  /** L3 的子網：圓角長條；只由路由得知的目的網段是虛線外框 */
+  function drawSubnet(c, n, p) {
+    const N = T.l3.subnet; const w = n.box.w; const h = n.box.h;
+    c.fillStyle = N.fill; c.strokeStyle = N.stroke; c.lineWidth = 1.6;
+    if (n.routeOnly) c.setLineDash(N.routeDash);
+    roundRect(c, p.x - w / 2, p.y - h / 2, w, h, h / 2); c.fill(); c.stroke(); c.setLineDash([]);
+  }
+  /** L2 的埠：框邊上的小方塊；聚合埠較寬，推論鏈路未收集端的未知埠是虛線 */
+  function drawPortShape(c, n, p) {
+    const P = T.l2.port; const w = n.lag ? P.lagW : P.size; const h = P.size;
+    c.fillStyle = P.fill; c.strokeStyle = P.stroke; c.lineWidth = 1.5;
+    if (n.unknown) c.setLineDash(P.dash);
+    roundRect(c, p.x - w / 2, p.y - h / 2, w, h, 1.5); c.fill(); c.stroke(); c.setLineDash([]);
+  }
+  /** 容器框的設備名稱（左上角、框內）與子網長條的網段文字（置中）；子網的重疊、重複 IP 另在下方以警告外形加文字標示 */
+  function boxText(c, n, p, s) {
+    const w = n.box.w; const h = n.box.h;
+    if (n.kind === 'subnet') {
+      const N = T.l3.subnet; c.font = `600 11px ${T.font.mono}`; c.fillStyle = N.text; c.textAlign = 'center';
+      c.fillText(fitText(c, n.label, w - 10), p.x, p.y + 4); c.textAlign = 'left';
+      (n.badges || []).forEach((b, i) => {
+        const B = T.l3.badge; c.font = `600 10px ${T.font.ui}`; const tw = c.measureText(b).width + 18; const y = p.y + h / 2 + 4 + i * 16; const x = p.x - tw / 2;
+        c.fillStyle = B.bg; c.strokeStyle = B.border; c.lineWidth = 1; roundRect(c, x, y, tw, 14, 3); c.fill(); c.stroke();
+        sevMark(c, 'warn', x + 7, y + 7, 3.5);
+        c.fillStyle = B.text; c.fillText(b, x + 13, y + 10.5);
+      });
+      return;
+    }
+    const B = T.l2.box; c.font = `${n.collected ? 600 : 400} 12px ${T.font.ui}`;
+    c.fillStyle = n.collected ? CV.label.text : CV.label.textUncollected;
+    c.fillText(fitText(c, n.label, w - 16), p.x - w / 2 + 9, p.y - h / 2 + B.labelH - 5);
+    if (n.sub && s > 0.5) { c.font = `10px ${T.font.ui}`; c.fillStyle = CV.label.textUncollected; c.fillText(fitText(c, n.sub, w - 16), p.x - w / 2 + 9, p.y - h / 2 + B.labelH + 9); }
+  }
+  /** 埠名：放在埠往框外的方向（依它在框上的位置），等寬字型 */
+  function portName(c, n, p, s, forced) {
+    const k = forced ? Math.max(1, 1 / s) : 1; c.font = `${9 * k}px ${T.font.mono}`;
+    const text = fitText(c, n.label, 9 * k * CV.port.maxEm); const tw = c.measureText(text).width;
+    const len = Math.hypot(n.anchor.dx, n.anchor.dy) || 1; const ux = n.anchor.dx / len; const uy = n.anchor.dy / len;
+    const vertical = Math.abs(n.anchor.dy) >= Math.abs(n.anchor.dx) * 0.4;
+    const x = vertical ? p.x : p.x + ux * (tw / 2 + 9 * k); const y = vertical ? p.y + (uy >= 0 ? 15 * k : -9 * k) : p.y + 3 * k;
+    c.fillStyle = CV.port.bg; c.fillRect(x - tw / 2 - 2, y - 9 * k, tw + 4, 11 * k);
+    c.fillStyle = CV.port.text; c.textAlign = 'center'; c.fillText(text, x, y); c.textAlign = 'left';
   }
   /**
    * 嚴重度標記：錯誤是方形、警告是三角形（theme.sevShape），外圍一圈底色環，在線上或節點上都看得清楚。
@@ -398,8 +512,10 @@
     if (FIT_CACHE.size >= FIT_MAX) FIT_CACHE.clear();
     FIT_CACHE.set(key, out); return out;
   }
-  function arrow(c, a, b, size, col) {
-    const ang = Math.atan2(b.y - a.y, b.x - a.x); const mx = a.x + (b.x - a.x) * 0.6; const my = a.y + (b.y - a.y) * 0.6;
+  /** t：箭頭在 a→b 上的位置（預設 0.6） */
+  function arrow(c, a, b, size, col, t) {
+    const k = t == null ? 0.6 : t;
+    const ang = Math.atan2(b.y - a.y, b.x - a.x); const mx = a.x + (b.x - a.x) * k; const my = a.y + (b.y - a.y) * k;
     c.fillStyle = col; c.beginPath(); c.moveTo(mx + Math.cos(ang) * size, my + Math.sin(ang) * size);
     c.lineTo(mx + Math.cos(ang + 2.5) * size, my + Math.sin(ang + 2.5) * size); c.lineTo(mx + Math.cos(ang - 2.5) * size, my + Math.sin(ang - 2.5) * size); c.closePath(); c.fill();
   }

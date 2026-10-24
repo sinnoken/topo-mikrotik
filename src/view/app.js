@@ -5,6 +5,7 @@
  * 這個檔案是畫面的起點：檢視狀態（App）、啟動、還原與儲存（store 接線）、載入基準與整體重繪。
  * 其他責任分在 app-*.js；彼此共用的內部函式掛在 S.view.app（程式內稱 A），公開操作掛在 App：
  *   app-graph.js   基準 → 圖資料、未知對端、版面排程（ELK／內建）
+ *   app-layers.js  拓樸圖的層級（設備、L2 埠、L3 子網）、VLAN 篩選，以及 L2／L3 的圖資料、版面與標示
  *   app-select.js  選取、圖上互動、原文檢視、路由追蹤
  *   app-toolbar.js 頁首（搜尋、追蹤、清除）、工具列、圖例、匯出
  *   app-panes.js   左側分頁、中間的工作畫面（App.showView）、窄螢幕工作區、左右欄寬度
@@ -34,6 +35,11 @@
     UNKNOWN_EXPAND_MAX: 8, UNKNOWN_TOTAL_CAP: 800,
     // 版面模式：elk（分層，預設）或 builtin（快速）；網路設備超過 ELK_MAX 台時分層版面不執行
     layoutMode: 'elk', layoutJob: Promise.resolve(), ELK_MAX: 1500,
+    // 拓樸圖的層級（app-layers.js）：device（設備圖）、l2（埠層級）、l3（子網）。設備圖的位置在 devicePos（存進 store 的 'last'）；
+    // L2／L3 的位置只在記憶體（App.layers），換基準時清空。layerJob 是 L2／L3 背景版面的工作（測試可等待）
+    layer: 'device', devicePos: new Map(), deviceGraph: { nodes: [], edges: [] }, layerJob: Promise.resolve(),
+    // L2 埠圖整張畫的上限（設備數）：埠讓 ELK 的計算量比設備圖大得多，超過時只畫選取的設備與它的鄰居
+    L2_MAX: 300,
   };
   window.App = App;
 
@@ -71,7 +77,7 @@
   /** 存進 store 的 'last'：基準、輸入與目前的節點位置（位置是檢視狀態，和基準一起還原）。失敗時以 banner 說明，回傳 false */
   A.saveLast = function saveLast() {
     const r = App.round;
-    return S.store.set('last', { snapshot: r.snapshot, sources: r.sources, profile: r.profile, expectedData: r.expectedData, positions: Object.fromEntries(App.graph.pos) })
+    return S.store.set('last', { snapshot: r.snapshot, sources: r.sources, profile: r.profile, expectedData: r.expectedData, positions: Object.fromEntries(App.devicePos) })
       .then(() => true, () => { A.banner('基準太大，無法存入瀏覽器；關閉頁面後需要重新建立。'); return false; });
   };
 
@@ -82,9 +88,10 @@
     App.graph.on('dblclick', A.onGraphDblClick);
     App.graph.on('hover', A.onHover);
     let saveT = null;
-    App.graph.on('moved', () => { clearTimeout(saveT); saveT = setTimeout(A.savePositions, 600); App.graph.computeGroups(); });
+    // 只有設備圖的位置存進 store；L2／L3 拖曳後的位置留在記憶體（App.layers）
+    App.graph.on('moved', () => { if (App.layer === 'device') { clearTimeout(saveT); saveT = setTimeout(A.savePositions, 600); } App.graph.computeGroups(); });
     App.layoutMode = (await S.store.get('layoutMode').catch(() => null)) || 'elk';
-    A.bindHeader(); A.bindToolbar(); A.bindInputDialog(); A.bindHub(); A.bindTabs(); A.bindCenterViews(); A.bindMobileWorkspaces(); await A.bindResizers();
+    A.bindHeader(); A.bindToolbar(); A.bindLayers(); A.bindInputDialog(); A.bindHub(); A.bindTabs(); A.bindCenterViews(); A.bindMobileWorkspaces(); await A.bindResizers();
     if (!(await S.store.available())) A.banner('這個瀏覽器無法使用本機儲存，關閉頁面後基準不會保留。');
     await A.loadLedger();
     await App.restore();
@@ -116,7 +123,7 @@
   A.savePositions = async function savePositions() {
     if (!App.snap) return;
     const last = await S.store.get('last'); if (!last) return;
-    last.positions = Object.fromEntries(App.graph.pos); await S.store.set('last', last);
+    last.positions = Object.fromEntries(App.devicePos); await S.store.set('last', last);
   };
 
   // ================================================================ 載入基準
@@ -144,9 +151,11 @@
       else pos.set(n.id, auto.get(n.id) || { x: 0, y: 0 });
     });
     A.placeLeaves(fresh, g.nodes, g.edges, pos);
-    App.graph.setData(g.nodes, g.edges, pos);
+    // L2／L3 的版面與位置屬於上一份基準：清掉；目前看的是 L2／L3 時，用新的基準重畫那一層
+    A.resetLayers();
+    A.setDeviceGraph(g.nodes, g.edges, pos);
     A.applyVisibility();
-    App.graph.fit();
+    if (App.layer === 'device') App.graph.fit(); else A.showLayer(App.layer, { rebuild: true });
     A.renderAll();
     // 先以內建版面立即出圖；沒有儲存位置時再於背景套用分層版面
     App.layoutJob = App.layoutMode === 'elk' && !(positions && Object.keys(positions).length) ? A.applyElk(g) : Promise.resolve();
@@ -175,7 +184,7 @@
     V.lists.findings(App); V.lists.coverage(App); V.lists.compare.summary(App); V.lists.inventory(App);
     V.ledgerPane.render(App); V.hub.render(App);
     // 中間的工作畫面：沒有基準時切回拓樸圖；只重繪目前顯示的那一個
-    A.syncCenterTabs(); A.renderCenter();
+    A.syncCenterTabs(); A.renderCenter(); A.syncLayerUi();
     V.details.render(App, App.sel);
   };
   function renderBaselineSummary() {

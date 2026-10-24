@@ -21,6 +21,8 @@
 | [011](011-I03轉成fixture的回歸流程.md) | I03 → fixture 的回歸流程 | 提議 |
 | [012](012-多廠牌的防火牆模型策略.md) | 多廠牌的防火牆模型策略 | 提議 |
 | [013](013-新增workflow-agent依上下游分工.md) | 新增 workflow agent，依上下游分工 | 已接受 |
+| [014](014-L4-zone矩陣在查詢時計算.md) | L4 zone 矩陣在查詢時計算，不使用外部圖表元件 | 提議 |
+| [015](015-支援VRF並升級ssot-snapshot-3.md) | 支援 VRF：位址、路由、ARP 加上 vrf，升級為 ssot-snapshot/3 | 提議 |
 
 ## 狀態
 

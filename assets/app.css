@@ -140,6 +140,21 @@ footer { display: flex; align-items: center; gap: 16px; padding: 0 12px; font-si
 .fitem:hover { background: var(--accent-soft); }
 .fitem.sel { border-left-color: var(--accent); background: var(--accent-soft); }
 .more { display: block; margin: 4px 26px; font-size: var(--fs-sm); }
+/* 一筆檢查結果與它的「確認／取消確認」按鈕 */
+.fitem-row { display: flex; align-items: flex-start; }
+.fitem-row .fitem { flex: 1; min-width: 0; }
+.fitem-row .fitem .id { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); }
+.fitem-row .fitem .note { font-size: var(--fs-sm); }
+.fitem-row .ack { min-height: 0; padding: 3px 8px; margin: 3px 6px 0 0; font-size: var(--fs-sm); color: var(--muted); }
+.fgroup.acked > .head { color: var(--muted); }
+/* 收集失敗清單（覆蓋率） */
+.failure + .failure { margin-top: 3px; }
+/* 新舊基準比對 */
+.pane-title { margin: 14px 0 6px; font-size: var(--fs-md); }
+.diff-cat { margin-top: 10px; }
+.diff-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
+.diff-summary { padding-left: 0; padding-right: 0; }
+.chip.effect { background: #fff; }
 
 /* ---------- 表格 ---------- */
 table.t { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--fs-md); }

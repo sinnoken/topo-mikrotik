@@ -50,6 +50,17 @@
       cluster: { fill: '#eceff1', stroke: '#78909c', text: '#37474f' },
       dash: [3, 2],
     },
+    // 防火牆規則畫面：動作文字色、停用規則的透明度、目前定位到的列
+    firewall: {
+      action: { accept: '#1e8e3e', drop: '#d93025', reject: '#d93025', 'tarpit': '#d93025', jump: '#3b6ea8', return: '#687789', other: '#4a5560' },
+      disabledAlpha: 0.5,
+      focus: { bg: '#e6f0fb', border: '#0b6bcb' },
+    },
+    // 新舊基準比對：effect 的標示色；new-exposure（新暴露）要醒目
+    diff: {
+      effect: { 'new-exposure': '#d93025', 'less-restrictive': '#b26a00', 'more-restrictive': '#1e8e3e' },
+      exposureBg: '#fdecea',
+    },
   };
   V.EDGE_STYLE = V.theme.edge; V.KIND_COLOR = kind;
 })(globalThis.SSOT = globalThis.SSOT || {});

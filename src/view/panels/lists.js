@@ -4,6 +4,7 @@
 (function (S) {
   'use strict';
   const V = S.view; const h = V.h; const K = S.keys;
+  const A = () => V.app; // 畫面組裝的內部函式（app.js 在本檔之後才載入）
 
   // ---------------------------------------------------------------- 檢查結果
   const state = { sev: { error: true, warn: true, info: true }, open: new Set(), shown: new Map(), selected: -1 };
@@ -20,13 +21,39 @@
   function findings(App) {
     const root = V.clear(V.$('#pane-findings'));
     if (!App.snap) return root.appendChild(h('div', { class: 'empty-detail' }, '建立基準後，資料之間的矛盾與缺漏會列在這裡。'));
-    const all = App.snap.findings; const st = App.snap.meta.stats.findings;
+    const all = App.snap.findings;
+    // 已確認的項目另列一組（預設收合），不算在上方各嚴重度的筆數裡
+    const acked = []; const st = { error: 0, warn: 0, info: 0 };
+    all.forEach((f, idx) => { if (App.isAcked(f)) acked.push(idx); else st[f.severity]++; });
+    const ackedSet = new Set(acked);
     root.appendChild(h('div', { class: 'summary' }, ['error', 'warn', 'info'].map((s) => filterChip(V.SEV[s], st[s], { cls: s === 'error' ? 'err' : s, on: state.sev[s],
       onclick: () => { state.sev[s] = !state.sev[s]; findings(App); }, title: '點一下切換顯示',
     }))));
+    // 匯出不受上方嚴重度篩選影響：一律輸出全部檢查結果（含已確認，另有一欄標示）
+    root.appendChild(h('div', { class: 'row spaced pane-section' }, [
+      h('span', { class: 'muted' }, '匯出全部檢查結果'),
+      h('button', { title: '每筆一列，含相關實體、證據行號與確認時間（Excel 可直接開啟）', onclick: () => App.exportAs('csv') }, 'CSV'),
+      h('button', { title: '依嚴重度分組的報表，含證據行號，已確認的項目會標示', onclick: () => App.exportAs('markdown') }, 'Markdown'),
+    ]));
     if (!all.length) root.appendChild(h('div', { class: 'empty-detail' }, [h('div', { class: 'big' }, '沒有發現問題'), '所有資料彼此一致。']));
+    /** 一筆檢查結果：點文字定位，旁邊的按鈕標記或取消確認 */
+    const item = (i) => {
+      const f = all[i]; const ack = ackedSet.has(i) ? A().ackOf(f) : null;
+      const select = () => { state.selected = i; App.selectFinding(i); findings(App); };
+      return h('div', { class: 'fitem-row' }, [
+        h('div', { class: 'fitem' + (state.selected === i ? ' sel' : ''), role: 'button', tabindex: '0', onclick: select, onkeydown: activateByKey(select) }, [
+          ack ? h('span', { class: 'id' }, f.id + ' ') : null, f.message,
+          ack ? h('div', { class: 'muted note' }, `已確認：${V.fmtUtc(ack.at)}`) : null,
+        ]),
+        h('button', {
+          class: 'ghost ack', title: ack ? '取消確認，移回原本的分組' : '標記為已確認（只存在這個瀏覽器，不改變基準）',
+          'aria-label': (ack ? '取消確認：' : '確認：') + f.message,
+          onclick: (e) => { e.stopPropagation(); App.ackFinding(f, !ack); },
+        }, ack ? '取消確認' : '確認'),
+      ]);
+    };
     const groups = new Map();
-    all.forEach((f, idx) => { if (state.sev[f.severity]) S.util.getOr(groups, f.id, () => []).push(idx); });
+    all.forEach((f, idx) => { if (state.sev[f.severity] && !ackedSet.has(idx)) S.util.getOr(groups, f.id, () => []).push(idx); });
     groups.forEach((idxs, id) => {
       const c = S.check.CATALOG[id]; const open = state.open.has(id);
       const toggle = () => { open ? state.open.delete(id) : state.open.add(id); findings(App); };
@@ -35,14 +62,21 @@
       ])]);
       if (open) {
         const n = state.shown.get(id) || 100;
-        g.appendChild(h('div', { class: 'items' }, idxs.slice(0, n).map((i) => {
-          const select = () => { state.selected = i; App.selectFinding(i); findings(App); };
-          return h('div', { class: 'fitem' + (state.selected === i ? ' sel' : ''), role: 'button', tabindex: '0', onclick: select, onkeydown: activateByKey(select) }, all[i].message);
-        })));
+        g.appendChild(h('div', { class: 'items' }, idxs.slice(0, n).map(item)));
         if (idxs.length > n) g.appendChild(h('a', { class: 'link more', onclick: () => { state.shown.set(id, n + 200); findings(App); } }, `再顯示 200 筆（共 ${idxs.length} 筆）`));
       }
       root.appendChild(g);
     });
+    // 已確認：不受上方嚴重度篩選影響，預設收合
+    if (acked.length) {
+      const key = '#acked'; const open = state.open.has(key);
+      const toggle = () => { open ? state.open.delete(key) : state.open.add(key); findings(App); };
+      const g = h('div', { class: 'fgroup acked' }, [h('div', { class: 'head', role: 'button', tabindex: '0', 'aria-expanded': String(open), onclick: toggle, onkeydown: activateByKey(toggle) }, [
+        h('span', null, open ? '▾' : '▸'), h('span', { class: 'title' }, '已確認'), V.chip(String(acked.length)),
+      ])]);
+      if (open) g.appendChild(h('div', { class: 'items' }, acked.map(item)));
+      root.appendChild(g);
+    }
     // 沒有發現的規則：分成「通過」與「沒有資料可檢查」，預設收合（不受上方嚴重度篩選影響）
     const rules = App.Q.ruleStatus();
     const DL = S.check.DATA_LABEL;
@@ -75,7 +109,8 @@
     const root = V.clear(V.$('#pane-coverage'));
     if (!App.snap) return root.appendChild(h('div', { class: 'empty-detail' }, '建立基準後，可以在這裡看到每台設備收集了哪些資料。'));
     const rows = App.snap.coverage; const Q = App.Q;
-    const collected = rows.filter((r) => r.collected); const missing = collected.filter((r) => r.missing.length);
+    // 有缺漏：缺少應收集的資料，或有指令收集失敗（V.coverageGap，與基準摘要同一個判斷）
+    const collected = rows.filter((r) => r.collected); const missing = collected.filter(V.coverageGap);
     const seenOnly = rows.filter((r) => !r.collected && r.kind !== 'host'); const hosts = rows.filter((r) => !r.collected && r.kind === 'host');
     const F = { all: ['全部已收集', collected], missing: ['有缺漏', missing], seen: ['未收集的網路設備', seenOnly], hosts: ['主機（只由 LLDP 看到）', hosts] };
     root.appendChild(h('div', { class: 'summary' }, Object.entries(F).map(([k, [label, list]]) => filterChip(label, list.length, { cls: k === 'missing' ? 'err' : '', on: cov.filter === k, onclick: () => { cov.filter = k; coverage(App); } }))));
@@ -83,16 +118,34 @@
     root.appendChild(V.table([
       { t: '設備', f: (r) => Q.devName(r.dev) },
       { t: '類型', f: (r) => V.kindChip(r.kind) },
-      { t: '資料', f: (r) => h('div', { class: 'chip-list' }, [...r.data.map((t) => V.chip(S.check.DATA_LABEL[t] || t)), ...r.missing.map((t) => V.chip('缺 ' + (S.check.DATA_LABEL[t] || t), 'err'))]) },
+      { t: '資料', f: (r) => h('div', { class: 'chip-list' }, [
+        ...r.data.map((t) => V.chip(S.check.DATA_LABEL[t] || t)),
+        ...r.missing.map((t) => V.chip('缺 ' + (S.check.DATA_LABEL[t] || t), 'err')),
+      ]) },
+      { t: '收集失敗', f: (r) => failureList(App, r.failures || []) },
       { t: '鏈路', f: (r) => String(r.links) },
-    ], list, { onRow: (r) => App.select({ type: 'device', key: r.dev }, { focus: true }), limit: 600, bad: (r) => r.missing.length > 0 }));
+    ], list, { onRow: (r) => App.select({ type: 'device', key: r.dev }, { focus: true }), limit: 600, bad: V.coverageGap }));
   }
   coverage.showMissing = (App) => { cov.filter = 'missing'; coverage(App); };
+  /** 收集失敗清單：原因、指令（標頭層級的失敗沒有指令）與影響的資料類別；點一下開啟原文的失敗行 */
+  function failureList(App, list) {
+    if (!list.length) return '';
+    return h('div', null, list.map((x) => {
+      const b = App.Q.block(x.block);
+      const what = (x.command || '整台設備') + (x.dataTypes.length ? `（影響：${x.dataTypes.map((t) => S.check.DATA_LABEL[t] || t).join('、')}）` : '');
+      return h('div', { class: 'failure' }, [
+        V.chip(V.failureText(x), 'err', { title: x.text || null }), ' ', what, ' ',
+        b ? h('a', { class: 'link mono', onclick: (e) => { e.stopPropagation(); App.openRaw(b.file, x.line); } }, `第 ${x.line} 行`) : null,
+      ]);
+    }));
+  }
 
   // ---------------------------------------------------------------- 比對
   const cmp = { report: null, name: '', filter: 'problem' };
   function compare(App) {
-    const root = V.clear(V.$('#pane-compare'));
+    // 分頁上半是預期資料比對，下半是新舊基準比對（panels/baseline-diff.js）
+    const pane = V.clear(V.$('#pane-compare')); const root = h('div');
+    pane.appendChild(root); pane.appendChild(V.baselineDiff.render(App));
     const file = h('input', { type: 'file', accept: '.json,application/json', class: 'hidden', onchange: async (ev) => {
       const f = ev.target.files[0]; if (!f) return;
       try { const exp = JSON.parse(await f.text()); cmp.report = S.compare(App.Q, exp); cmp.name = f.name; } catch (e) { cmp.report = { errors: ['無法讀取：' + e.message], items: [], summary: {} }; cmp.name = f.name; }
@@ -100,7 +153,14 @@
     } });
     root.appendChild(h('div', { class: 'pane-body' }, [
       h('p', { class: 'muted' }, '把「預期應該長怎樣」的資料（格式 ssot-expected/1，獨立於基準）和目前基準比對。比對只讀取基準，不會修改它。'),
-      h('div', { class: 'row' }, [file, h('button', { disabled: !App.Q || null, onclick: () => file.click() }, '載入預期資料（JSON）…'), cmp.name ? h('span', { class: 'muted' }, cmp.name) : null]),
+      h('div', { class: 'row' }, [
+        file, h('button', { disabled: !App.Q || null, onclick: () => file.click() }, '載入預期資料（JSON）…'),
+        h('button', {
+          disabled: !App.Q || null, onclick: () => App.exportAs('expected'),
+          title: '由目前的基準產生預期資料（已收集的設備、雙向確認的鏈路、VLAN），之後可拿來和新的基準比對',
+        }, '匯出預期資料'),
+        cmp.name ? h('span', { class: 'muted' }, cmp.name) : null,
+      ]),
       h('details', null, [h('summary', { class: 'muted' }, '格式說明'), h('pre', { class: 'raw note-box' },
         '{\n  "schema": "ssot-expected/1",\n  "devices": ["TPE_CORE_SW_01", {"name": "TPE_FW_01", "kind": "firewall"}],\n  "links": [{"a": "TPE_CORE_SW_01 xe-0/0/0", "b": "TPE_FW_01 port1"}],\n  "vlans": [{"device": "TPE_ACC_SW_01", "id": 20, "name": "SRV"}],\n  "strictDevices": false,\n  "strictLinks": false\n}')]),
     ]));
@@ -118,7 +178,7 @@
       },
     }));
   }
-  compare.reset = () => { cmp.report = null; cmp.name = ''; };
+  compare.reset = () => { cmp.report = null; cmp.name = ''; V.baselineDiff.reset(); };
 
   // ---------------------------------------------------------------- 清單：設備、介面、IP、網段、MAC、VLAN
   const inv = { kind: 'device', filter: 'all', q: '', sortBy: -1, sortDir: 1 };

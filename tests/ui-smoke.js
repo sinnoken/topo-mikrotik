@@ -82,6 +82,44 @@ const text = (sel) => $(sel).textContent;
 const steps = [];
 const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name); } catch (e) { steps.push('  ✗ ' + name + '\n      ' + (e.stack || e).toString().split('\n').slice(0, 4).join('\n      ')); process.exitCode = 1; } };
 
+// 攔下本機下載：模擬 URL.createObjectURL／revokeObjectURL 與 <a download>，讀回每個下載的檔名與內容。
+// Node 沒有 Blob 時補一個最小實作
+if (!globalThis.Blob) globalThis.Blob = class { constructor(parts, o) { this.buf = Buffer.from(parts.join(''), 'utf8'); this.type = o.type; } async arrayBuffer() { return this.buf; } };
+async function captureDownloads(fn) {
+  const made = []; const revoked = []; const anchors = [];
+  const orig = { create: URL.createObjectURL, revoke: URL.revokeObjectURL, append: document.body.appendChild };
+  URL.createObjectURL = (b) => { made.push(b); return 'blob:smoke/' + made.length; };
+  URL.revokeObjectURL = (u) => revoked.push(u);
+  document.body.appendChild = function (c) { if (c.tagName === 'A') anchors.push(c); return orig.append.call(this, c); };
+  try { await fn(); await new Promise((r) => setTimeout(r, 5)); } finally {
+    URL.createObjectURL = orig.create; URL.revokeObjectURL = orig.revoke; document.body.appendChild = orig.append;
+  }
+  const bytes = await Promise.all(made.map(async (b) => Buffer.from(await b.arrayBuffer())));
+  return { made, revoked, anchors, files: anchors.map((a, i) => ({ name: a.getAttribute('download'), bytes: bytes[i], text: bytes[i] ? bytes[i].toString('utf8') : '' })) };
+}
+/** 依 RFC 4180 解析 CSV（引號內可有逗號、引號與換行） */
+const parseCsv = (t) => {
+  const rows = [[]]; let cell = ''; let q = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (q) { if (c === '"' && t[i + 1] === '"') { cell += '"'; i++; } else if (c === '"') q = false; else cell += c; }
+    else if (c === '"') q = true;
+    else if (c === ',') { rows[rows.length - 1].push(cell); cell = ''; }
+    else if (c === '\r' && t[i + 1] === '\n') { rows[rows.length - 1].push(cell); cell = ''; rows.push([]); i++; }
+    else cell += c;
+  }
+  if (rows[rows.length - 1].length === 0 && cell === '') rows.pop(); else rows[rows.length - 1].push(cell);
+  return rows;
+};
+/** 在輸入框貼上文字並建立基準，等到新的基準載入 */
+async function buildInput(input) {
+  $('#input-text').value = input; $('#input-build').click();
+  const hash = S.util.hash(S.readers.PASTE + '\n' + input);
+  for (let i = 0; i < 4000 && (!App.snap || App.snap.meta.inputHash !== hash); i++) await new Promise((r) => setTimeout(r, 5));
+  if (App.snap.meta.inputHash !== hash) throw new Error('基準未建立：' + text('#input-status'));
+  await App.layoutJob;
+}
+
 (async () => {
   await step('啟動、顯示歡迎畫面', async () => { (docListeners.DOMContentLoaded || []).forEach((f) => f()); await new Promise((r) => setTimeout(r, 20)); if ($('#welcome').classList.contains('hidden')) throw new Error('應顯示歡迎畫面'); });
   await step('離線契約：CSP 禁止網路連線，程式碼不使用網路 API', () => {
@@ -149,6 +187,8 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
       { type: 'device', key: (m.devices.find((d) => !d.collected) || {}).key },
       { type: 'link', key: (m.links[0] || {}).key }, { type: 'interface', key: (m.interfaces.find((i) => i.macs.length) || {}).key },
       { type: 'mac', key: (m.macs[0] || {}).mac }, { type: 'ip', key: (Q.ipEntries()[0] || {}).ip }, { type: 'vlan', key: String((m.vlans.find((v) => v.id != null) || {}).id) },
+      // 防火牆畫面（panels/firewall.js）也只用 section() 產生區塊
+      { type: 'firewall', dev: (m.firewallRules[0] || {}).dev, key: (m.firewallRules[0] || {}).dev },
     ];
     if (sels.some((x) => !x.key || x.key === 'undefined')) throw new Error('範例資料應涵蓋每種詳情');
     sels.forEach((sel) => {
@@ -212,7 +252,7 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     const button = (t) => $('#baseline-summary').querySelectorAll('button').find((b) => b.textContent === t);
     const off = (b) => b.getAttribute('disabled') !== null; // 模擬 DOM 的 setAttribute 不會同步 .disabled
     const missing = button('查看收集缺漏');
-    const expectedMissing = App.snap.coverage.filter((row) => row.collected && row.missing.length).length;
+    const expectedMissing = App.snap.coverage.filter((row) => row.collected && (row.missing.length || row.failures.length)).length;
     if (!missing || off(missing) !== !expectedMissing) throw new Error('收集缺漏入口應在有缺漏時才可用');
     if (expectedMissing) {
       missing.click();
@@ -393,6 +433,187 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     inp.dispatch('change', { target: inp }); await new Promise((r) => setTimeout(r, 20));
     if (!text('#pane-compare').includes('有差異')) throw new Error('比對結果未顯示');
   });
+  await step('匯出：基準 JSON 與檢查結果 CSV／Markdown 在本機產生，下載後釋放 URL，不改寫基準', async () => {
+    const before = JSON.stringify(App.snap);
+    const { made, revoked, anchors, files } = await captureDownloads(() => {
+      $('#btn-json').click();
+      const button = (t) => $('#pane-findings').querySelectorAll('button').find((b) => b.textContent === t);
+      if (!button('CSV') || !button('Markdown')) throw new Error('檢查結果分頁應有 CSV 與 Markdown 匯出按鈕');
+      button('CSV').click(); button('Markdown').click();
+    });
+    if (made.length !== 3 || anchors.length !== 3) throw new Error('三種匯出各應產生一個下載');
+    if (revoked.join() !== made.map((b, i) => 'blob:smoke/' + (i + 1)).join()) throw new Error('下載後應釋放每一個 object URL');
+    if (anchors.some((a) => a.parentNode)) throw new Error('下載用的連結應在點擊後移除');
+    const names = anchors.map((a) => a.getAttribute('download'));
+    const devs = String(App.snap.meta.stats.devices);
+    if (!/\.json$/.test(names[0]) || !/\.csv$/.test(names[1]) || !/\.md$/.test(names[2])) throw new Error('副檔名不符：' + names);
+    if (!names.every((n) => n.includes(devs + 'dev') && /\d{8}T\d{6}Z/.test(n))) throw new Error('檔名應含設備數與建立時間：' + names);
+    if (JSON.stringify(App.snap) !== before) throw new Error('匯出不可改寫基準');
+    const bytes = files.map((f) => f.bytes);
+    const [json, csv, md] = files.map((f) => f.text);
+    require('assert').deepStrictEqual(JSON.parse(json), App.snap);
+    // CSV：UTF-8 BOM 開頭（bytes EF BB BF），內容依 RFC 4180 解析回來要和每筆 finding 對得上
+    if (bytes[1].subarray(0, 3).toString('hex') !== 'efbbbf') throw new Error('CSV 應以 UTF-8 BOM 開頭');
+    const rows = parseCsv(csv.replace(/^\uFEFF/, ''));
+    if (rows[0].join() !== 'severity,id,title,message,entities,evidence,acknowledged') throw new Error('CSV 標頭不符：' + rows[0]);
+    if (rows.length - 1 !== App.snap.findings.length) throw new Error('CSV 每筆檢查結果應恰好一列');
+    App.snap.findings.forEach((f, i) => {
+      const r = rows[i + 1];
+      if (r[0] !== f.severity || r[1] !== f.id || r[3].replace(/^'/, '') !== f.message) throw new Error(`CSV 第 ${i + 2} 列與 ${f.id} 不符`);
+      if (!f.entities.every((e) => r[4].includes(e.type + ':' + e.key))) throw new Error(`CSV ${f.id} 缺少相關實體`);
+      if (r[5] !== f.evidence.map((e) => `${e.file}:${e.line}`).join('; ')) throw new Error(`CSV ${f.id} 的證據應合在同一格`);
+      if (r[6] !== ((S.view.app.ackOf(f) || {}).at || '')) throw new Error(`CSV ${f.id} 的 acknowledged 應為確認時間（未確認為空白）`);
+    });
+    // 跳脫：逗號、引號、換行、公式開頭；以人工 finding 走一次完整組字再解析回來
+    const X = S.view.exporter;
+    [['a,b', '"a,b"'], ['說 "hi"', '"說 ""hi"""'], ['x\ny', '"x\ny"'], ['=1+1', "'=1+1"], [' 空白', '" 空白"'], ['一般', '一般']].forEach(([v, want]) => {
+      if (X.csvCell(v) !== want) throw new Error(`csvCell(${JSON.stringify(v)}) 應為 ${want}，實際 ${X.csvCell(v)}`);
+    });
+    const tricky = { meta: App.snap.meta, findings: [{ id: 'T01', severity: 'warn', title: '標題, "引號"', message: '第一行\r\n第二行, "x"',
+      entities: [{ type: 'device', key: 'A,B' }], evidence: [{ file: 'a.txt', line: 3, text: '' }, { file: 'b "x".txt', line: 9, text: '' }] }] };
+    const tr = parseCsv(X.findingsCsv(tricky).replace(/^\uFEFF/, ''));
+    if (tr.length !== 2 || tr[1][2] !== '標題, "引號"' || tr[1][3] !== '第一行\r\n第二行, "x"' || tr[1][4] !== 'device:A,B'
+      || tr[1][5] !== 'a.txt:3; b "x".txt:9') throw new Error('CSV 跳脫後應能完整解析回原值：' + JSON.stringify(tr[1]));
+    // Markdown：依嚴重度分組（錯誤 → 警告 → 提醒），每筆 finding 的規則與證據行號都在
+    const heads = ['error', 'warn', 'info'].map((s) => md.indexOf(`\n## ${S.view.SEV[s]}（`));
+    if (heads.some((x) => x < 0) || heads.some((x, i) => i && heads[i - 1] > x)) throw new Error('Markdown 應依嚴重度分組並依序排列');
+    App.snap.findings.forEach((f) => {
+      const sev = ['error', 'warn', 'info'].indexOf(f.severity); const at = md.indexOf(`\n### ${f.id} `, heads[sev]);
+      if (at < 0 || (sev < 2 && at > heads[sev + 1])) throw new Error(`Markdown 的 ${f.id} 應在「${S.view.SEV[f.severity]}」分組下`);
+      if (!f.evidence.every((e) => md.includes(` 第 ${e.line} 行：`))) throw new Error(`Markdown 缺少 ${f.id} 的證據行號`);
+    });
+    const tmd = X.findingsMarkdown(tricky);
+    if (!tmd.includes('標題, "引號"') || !tmd.includes('第一行 第二行')) throw new Error('Markdown 訊息應保留文字並把換行併成一行');
+    tricky.findings[0].message = '<b>*x*</b>'; tricky.findings[0].evidence[0].text = 'a`b';
+    const emd = X.findingsMarkdown(tricky);
+    if (!emd.includes('\\<b\\>\\*x\\*\\</b\\>') || !emd.includes('`` a`b ``')) throw new Error('Markdown 應跳脫格式字元與行內程式碼的反引號');
+  });
+  let ackedKey = null; // 已確認的 finding 鍵：清除基準後要仍然存在
+  await step('已確認的檢查結果：標記、另列分組、摘要排除並註明、匯出標示、可取消', async () => {
+    const Q = App.Q; const all = App.snap.findings;
+    const problems = () => all.filter((f) => f.severity !== 'info' && !App.isAcked(f));
+    const before = problems();
+    if (!before.length) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有錯誤或警告'); }
+    const f = before[0]; const g = before.find((x) => Q.findingKey(x) !== Q.findingKey(f));
+    document.querySelectorAll('#left .tabs button')[0].click();
+    const group = (id) => document.querySelectorAll('#pane-findings .fgroup').find((x) => {
+      const el = x.querySelector('.head .id'); return el && el.textContent === id && !x.className.includes('acked');
+    });
+    const ackButton = (x, label) => document.querySelectorAll('#pane-findings .ack').find((b) => b.getAttribute('aria-label') === label + x.message);
+    if (!ackButton(f, '確認：')) group(f.id).querySelector('.head').click();
+    const snapBefore = JSON.stringify(App.snap);
+    ackButton(f, '確認：').click(); await new Promise((r) => setTimeout(r, 10));
+    if (!App.isAcked(f)) throw new Error('按「確認」後應標為已確認');
+    if (JSON.stringify(App.snap) !== snapBefore) throw new Error('確認是檢視狀態，不可改寫基準');
+    const saved = await S.store.get('acks'); ackedKey = Q.findingKey(f);
+    if (!saved || !saved[ackedKey] || !/^\d{4}-\d\d-\d\dT/.test(saved[ackedKey].at)) throw new Error('確認應以 findingKey 存進 store 的 acks，並記錄確認時間');
+    // 已確認分組：預設收合，展開後列出這一筆與確認時間；原本的分組不再列出它
+    const ackedGroup = () => document.querySelectorAll('#pane-findings .fgroup').find((x) => x.className.split(' ').includes('acked'));
+    if (!ackedGroup()) throw new Error('應有「已確認」分組');
+    if (ackedGroup().querySelectorAll('.fitem').length) throw new Error('「已確認」分組預設應收合');
+    const nAcked = all.filter((x) => App.isAcked(x)).length;
+    if (!ackedGroup().querySelector('.head').textContent.includes(String(nAcked))) throw new Error('「已確認」分組應顯示筆數');
+    ackedGroup().querySelector('.head').click();
+    if (!ackedGroup().textContent.includes(f.message) || !ackedGroup().textContent.includes('已確認：')) throw new Error('展開「已確認」應列出該筆與確認時間');
+    const others = document.querySelectorAll('#pane-findings .fgroup').filter((x) => !x.className.includes('acked'));
+    if (others.some((x) => x.textContent.includes(f.message) && all.filter((y) => y.message === f.message).length === 1)) throw new Error('已確認的項目不應留在原本的分組');
+    ackedGroup().querySelector('.head').click();
+    // 基準摘要：錯誤／警告排除已確認，並註明已確認筆數
+    const summary = text('#baseline-summary'); const left = problems();
+    const err = left.filter((x) => x.severity === 'error').length; const warn = left.filter((x) => x.severity === 'warn').length;
+    if (left.length !== before.length - 1) throw new Error('確認一筆後，待處理的問題應少一筆');
+    if (left.length && !summary.includes(`${err} 項錯誤、${warn} 項警告`)) throw new Error('基準摘要的計數應排除已確認：' + summary);
+    if (!summary.includes(`另有 ${nAcked} 項已確認`)) throw new Error('基準摘要應註明已確認筆數：' + summary);
+    // 匯出：CSV 的 acknowledged 欄是確認時間，Markdown 標示已確認
+    const X = S.view.exporter; const opts = { acked: S.view.app.ackOf };
+    const rows = parseCsv(X.findingsCsv(App.snap, opts).replace(/^\uFEFF/, ''));
+    const at = saved[ackedKey].at;
+    const rowOf = (x) => rows[all.indexOf(x) + 1];
+    if (rowOf(f)[6] !== at || all.filter((x) => !App.isAcked(x)).some((x) => rowOf(x)[6] !== '')) throw new Error('CSV 的 acknowledged 欄應只在已確認的列填確認時間');
+    const md = X.findingsMarkdown(App.snap, opts);
+    if (!md.includes(`**已確認**（${at}）`) || !md.includes(`- 已確認：${nAcked}`)) throw new Error('Markdown 應標示已確認的項目與筆數');
+    // 取消：另一筆確認後再取消，回到原本的分組
+    if (g) {
+      if (!ackButton(g, '確認：')) group(g.id).querySelector('.head').click();
+      ackButton(g, '確認：').click(); await new Promise((r) => setTimeout(r, 10));
+      if (!App.isAcked(g)) throw new Error('第二筆應可確認');
+      ackedGroup().querySelector('.head').click();
+      ackButton(g, '取消確認：').click(); await new Promise((r) => setTimeout(r, 10));
+      if (App.isAcked(g) || (await S.store.get('acks'))[Q.findingKey(g)]) throw new Error('取消確認後應移除紀錄');
+      if (problems().length !== left.length) throw new Error('取消確認後應算回待處理的問題');
+    }
+  });
+  await step('防火牆：點選指向規則或服務的檢查結果，定位到該設備防火牆畫面的那一列', () => {
+    const Q = App.Q; const all = App.snap.findings;
+    const idxs = all.map((f, i) => i).filter((i) => all[i].entities.some((e) => e.type === 'rule' || e.type === 'service'));
+    if (!idxs.length) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有指向防火牆規則或服務的檢查結果'); }
+    const types = new Set();
+    idxs.forEach((i) => {
+      const f = all[i]; const e = f.entities.find((x) => x.type === 'rule' || x.type === 'service'); types.add(e.type);
+      App.selectFinding(i);
+      if (!App.sel || App.sel.type !== e.type || App.sel.key !== e.key) throw new Error(`${f.id} 應選取它指向的${e.type === 'rule' ? '規則' : '服務'}`);
+      const dev = e.type === 'rule' ? Q.getFirewallRule(e.key).dev : S.keys.splitEp(e.key)[0];
+      if (!App.graph.sel.nodes.has(dev)) throw new Error(`${f.id} 應在圖上選取規則所在的設備`);
+      const row = $('#detail').querySelector('.focus');
+      if (!row) throw new Error(`${f.id} 應在詳情標出定位的列`);
+      if (!row.textContent.includes(f.id)) throw new Error(`${f.id} 定位的列應標出這筆檢查結果`);
+      if (e.type === 'rule' && !row.textContent.includes(Q.getFirewallRule(e.key).action)) throw new Error('定位的列應是那條規則');
+      if (e.type === 'service' && !row.textContent.includes(S.keys.splitEp(e.key)[1])) throw new Error('定位的列應是那個服務');
+      if (row.querySelectorAll('td')[0].style.background !== S.view.theme.firewall.focus.bg) throw new Error('定位列的顏色應取自 theme');
+    });
+    if (!process.env.SMOKE_INPUT && !(types.has('rule') && types.has('service'))) throw new Error('範例資料應同時有指向規則與服務的檢查結果');
+    // 找不到的規則或服務：不報錯，說明原因並標出設備
+    const dev = Q.firewallRules()[0].dev;
+    App.select({ type: 'rule', key: dev + '|ip|filter|input|nope' });
+    if (!text('#detail').includes('基準中沒有這條規則') || !App.graph.sel.nodes.has(dev)) throw new Error('找不到的規則應說明，並標出設備');
+    App.select({ type: 'service', key: dev + '|nope' });
+    if (!text('#detail').includes('基準中沒有這個服務')) throw new Error('找不到的服務應說明');
+    App.select(null);
+  });
+  await step('防火牆畫面：依位址族 → 表 → chain → position 列出，標出 WAN／LAN 判斷、服務與原文行號', () => {
+    const Q = App.Q; const rules = Q.firewallRules();
+    if (!rules.length) throw new Error('應有防火牆規則');
+    const dev = rules.reduce((best, r) => (Q.firewallRulesOf(r.dev).length > Q.firewallRulesOf(best).length ? r.dev : best), rules[0].dev);
+    App.select({ type: 'device', key: dev });
+    const link = $('#detail').querySelectorAll('a').find((a) => a.textContent === '查看防火牆規則與服務');
+    if (!link) throw new Error('設備詳情應有防火牆摘要與入口');
+    link.click();
+    if (App.sel.type !== 'firewall' || App.sel.dev !== dev) throw new Error('入口應開啟該設備的防火牆畫面');
+    // chain 依 Q.firewallChains 的順序，每個 chain 一個可展開區塊；展開後列數等於規則數，position 由小到大
+    const chains = Q.firewallChains(dev);
+    const folds = $('#detail').querySelectorAll('details').filter((d) => d.querySelector('.fw-chain'));
+    if (folds.map((d) => d.querySelector('summary').firstChild.textContent).join('|') !== chains.map((c) => c.chain).join('|')) throw new Error('chain 的順序應與 Q.firewallChains 一致');
+    const heads = $('#detail').querySelectorAll('h3').map((x) => x.firstChild.textContent);
+    const fams = S.util.uniq(chains.map((c) => c.family + ' ' + c.table));
+    const famIdx = fams.map((k) => heads.findIndex((x) => x === k.replace(/^ip /, 'IPv4 ').replace(/^ipv6 /, 'IPv6 ')));
+    if (famIdx.some((i) => i < 0) || famIdx.some((x, i) => i && famIdx[i - 1] > x)) throw new Error('位址族與表的分組應依序列出：' + heads.join('|'));
+    folds.forEach((d, n) => {
+      d.dispatch('toggle');
+      const trs = d.querySelectorAll('tbody tr'); const c = chains[n];
+      if (trs.length !== c.rules) throw new Error(`${c.chain} 的列數應等於規則數`);
+      const pos = trs.map((tr) => Number(tr.querySelectorAll('td')[0].textContent));
+      if (pos.some((x, i) => i && pos[i - 1] > x)) throw new Error(`${c.chain} 應依 position 排列`);
+      const rows = Q.firewallRuleRows(dev, { family: c.family, table: c.table, chain: c.chain });
+      trs.forEach((tr, i) => {
+        const r = rows[i].rule; const act = tr.querySelectorAll('td')[1].firstChild;
+        const want = S.view.theme.firewall.action[r.action] || S.view.theme.firewall.action.other;
+        if (act.style.color !== want) throw new Error('規則動作的顏色應取自 theme');
+        if (!tr.textContent.includes(`第 ${r.src[0][1]} 行`)) throw new Error('每列應有原文行號');
+      });
+      if (c.jumpedFrom.length && !d.textContent.includes('由這些規則 jump 進來')) throw new Error('有規則 jump 進來的 chain 應列出來源規則');
+    });
+    // 原文行號可開啟
+    const a = $('#detail').querySelectorAll('.fw-chain a').find((x) => /^第 \d+ 行$/.test(x.textContent));
+    $('#dlg-raw').close(); a.click();
+    if (!$('#dlg-raw').open || !text('#raw-title').includes(a.textContent.replace(/\D/g, ''))) throw new Error('點原文行號應開啟原文');
+    $('#dlg-raw').close();
+    // WAN／LAN 判斷與服務
+    const zone = Q.firewallZone(dev); const t = text('#detail');
+    if (zone && (!t.includes('WAN／LAN 判斷（推論）') || !zone.wanLists.every((x) => t.includes(x)))) throw new Error('應顯示 WAN／LAN 判斷與依據');
+    const svc = Q.ipServicesOf(dev);
+    if (svc.length && !svc.every((x) => t.includes(x.name))) throw new Error('應列出 /ip service');
+    if (svc.some((x) => x.basis === 'default') && !t.includes('預設值')) throw new Error('basis 為 default 的服務應標示「預設值」');
+  });
   await step('樣式單一來源：CSS 設備類型變數與 theme 一致，圖例取自 theme', async () => {
     const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8'); const T = S.view.theme;
     [
@@ -455,6 +676,123 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (hs.style.opacity !== String(T.weakEdge.hearsay.alpha) || !hs.style.background.includes(T.weakEdge.hearsay.c)) throw new Error('單側觀察圖例顏色或透明度與 theme 不一致');
     if (is.style.opacity !== String(T.weakEdge.inferred.alpha) || !is.style.background.includes(T.weakEdge.inferred.c)) throw new Error('推論鏈路圖例顏色或透明度與 theme 不一致');
     if (hs.style.background === is.style.background) throw new Error('單側觀察與推論鏈路圖例線型應可區分');
+  });
+  await step('收集時間與失敗：原始輸出列出收集時間與失敗，覆蓋率把失敗算進「有缺漏」並顯示原因', async () => {
+    await buildInput(fs.readFileSync(path.join(ROOT, 'tests/fixtures/collector/collected-at-and-failures.txt'), 'utf8'));
+    const blocks = App.snap.blocks;
+    if (!blocks.some((b) => b.collectedAt) || !blocks.some((b) => b.failure)) throw new Error('測試資料應有收集時間與失敗');
+    const devs = S.util.uniq(blocks.filter((b) => b.devKey && (b.collectedAt || b.failure)).map((b) => b.devKey));
+    devs.forEach((dk) => {
+      App.select({ type: 'device', key: dk });
+      const fold = $('#detail').querySelectorAll('details').find((d) => d.querySelector('summary').textContent.startsWith('收集到的原始輸出'));
+      if (!fold) throw new Error(dk + ' 應有原始輸出區塊');
+      const t = fold.textContent;
+      blocks.filter((b) => b.devKey === dk).forEach((b) => {
+        if (b.collectedAt && !t.includes(S.view.fmtUtc(b.collectedAt))) throw new Error(`${dk} 的原始輸出應列出收集時間 ${b.collectedAt}`);
+        if (b.failure && !t.includes(S.view.failureText(b.failure))) throw new Error(`${dk} 的原始輸出應列出失敗原因`);
+      });
+    });
+    // 只有失敗、沒有缺少的設備也算「有缺漏」：以基準的副本把缺少清空、保留失敗來驗證畫面的判斷
+    const clone = JSON.parse(JSON.stringify(App.snap));
+    const row = clone.coverage.find((r) => r.collected && r.failures.length);
+    row.missing = [];
+    S.view.app.load(clone, null);
+    const gaps = clone.coverage.filter((r) => r.collected && (r.missing.length || r.failures.length));
+    document.querySelectorAll('#left .tabs button')[1].click();
+    if (!text('#pane-coverage').includes('有缺漏 ' + gaps.length)) throw new Error('有缺漏應包含只有收集失敗的設備');
+    const b = $('#baseline-summary').querySelectorAll('button').find((x) => x.textContent === '查看收集缺漏');
+    if (b.getAttribute('disabled') !== null) throw new Error('只有收集失敗時，收集缺漏入口也應可用');
+    if (!text('#baseline-summary').includes(`${gaps.length} 台有必要資料缺漏`)) throw new Error('基準摘要的缺漏數應包含收集失敗');
+    b.click();
+    const tr = $('#pane-coverage').querySelectorAll('tbody tr');
+    if (tr.length !== gaps.length) throw new Error('缺漏篩選列數應等於有缺漏的設備數');
+    const t = text('#pane-coverage');
+    gaps.forEach((r) => r.failures.forEach((x) => {
+      if (!t.includes(S.view.failureText(x)) || !t.includes(x.command || '整台設備')) throw new Error('覆蓋率應顯示失敗原因與指令');
+    }));
+  });
+  await step('防火牆畫面：停用規則、無法解碼的註解、jump 來源與預設值服務', async () => {
+    await buildInput(fs.readFileSync(path.join(ROOT, 'tests/fixtures/firewall/edge-router.txt'), 'utf8'));
+    const Q = App.Q; const dev = Q.firewallRules()[0].dev;
+    const disabled = Q.firewallRules().find((r) => r.disabled);
+    if (!disabled) throw new Error('測試資料應有停用的規則');
+    App.select({ type: 'rule', key: disabled.key });
+    const row = $('#detail').querySelector('.focus');
+    if (!row || !row.className.includes('disabled') || !row.textContent.includes('停用')) throw new Error('停用的規則應標示');
+    if (row.querySelectorAll('td')[0].style.opacity !== String(S.view.theme.firewall.disabledAlpha)) throw new Error('停用規則的透明度應取自 theme');
+    const jumped = Q.firewallChains(dev).find((c) => c.jumpedFrom.length);
+    if (jumped) {
+      App.select({ type: 'firewall', dev });
+      const d = $('#detail').querySelectorAll('details').find((x) => x.querySelector('summary').firstChild.textContent === jumped.chain);
+      d.dispatch('toggle');
+      const a = d.querySelectorAll('a').find((x) => x.textContent.startsWith(Q.getFirewallRule(jumped.jumpedFrom[0]).chain + ' #'));
+      if (!a) throw new Error('jump 來源應可點選');
+      a.click(); if (App.sel.type !== 'rule' || App.sel.key !== jumped.jumpedFrom[0]) throw new Error('點 jump 來源應定位到那條規則');
+    }
+    App.select({ type: 'firewall', dev });
+    const defaults = Q.ipServicesOf(dev).filter((s) => s.basis === 'default');
+    const svcRows = $('#detail').querySelectorAll('tbody tr').filter((tr) => Q.ipServicesOf(dev).some((s) => tr.querySelectorAll('td')[0].textContent === s.name));
+    if (svcRows.filter((tr) => tr.textContent.includes('預設值')).length !== defaults.length) throw new Error('只有 basis 為 default 的服務標示「預設值」');
+    // 無法解碼的註解：以基準副本標記一條規則
+    const clone = JSON.parse(JSON.stringify(App.snap));
+    const r = clone.model.firewallRules.find((x) => x.comment); r.commentEncoding = 'undecodable';
+    S.view.app.load(clone, null);
+    App.select({ type: 'rule', key: r.key });
+    if (!$('#detail').querySelector('.focus').textContent.includes('註解無法解碼')) throw new Error('commentEncoding 為 undecodable 時應標示');
+  });
+  await step('新舊基準比對：依類別分組、摘要在上、新暴露醒目，schema 不同時顯示原因，可匯出預期資料', async () => {
+    const full = fs.readFileSync(path.join(ROOT, 'tests/fixtures/firewall/edge-router.txt'), 'utf8');
+    // 舊基準少了幾條放行規則：新基準多出的 WAN 可連入規則應標成新暴露
+    const oldInput = full.split('\n').filter((l) => !/dst-port=8291/.test(l) || /in-interface-list/.test(l)).join('\n');
+    await buildInput(oldInput);
+    const oldJson = S.view.exporter.snapshotJson(App.snap);
+    await buildInput(full);
+    const expect = S.compare.snapshots(S.query(JSON.parse(oldJson)), App.Q);
+    if (!expect.items.some((i) => i.effect === 'new-exposure')) throw new Error('測試資料應產生新暴露');
+    document.querySelectorAll('#left .tabs button')[3].click();
+    const load = async (name, body) => {
+      const inp = $('#pane-compare').querySelectorAll('input')[1];
+      inp.files = [{ name, text: async () => body }]; inp.dispatch('change', { target: inp }); await new Promise((r) => setTimeout(r, 20));
+    };
+    const keysBefore = JSON.stringify(await S.store.get('last'));
+    await load('old.json', oldJson);
+    const pane = () => $('#pane-compare').querySelector('.baseline-diff');
+    const t = pane().textContent;
+    Object.entries({ added: '新增', removed: '移除', changed: '變更' }).forEach(([k, label]) => {
+      if (!t.includes(`${label} ${expect.summary[k]}`)) throw new Error('摘要應列出' + label + '筆數');
+    });
+    const cats = pane().querySelectorAll('.diff-cat').map((x) => x.getAttribute('data-category'));
+    const wantCats = ['device', 'link', 'vlan', 'ip', 'firewall', 'finding'].filter((c) => expect.items.some((i) => i.category === c));
+    if (cats.join() !== wantCats.join()) throw new Error('應依類別分組並依序列出：' + cats);
+    const kids = pane().childNodes;
+    if (kids.indexOf(pane().querySelector('.diff-summary')) > kids.indexOf(pane().querySelector('.diff-cat'))) throw new Error('摘要應在分組上方');
+    expect.items.forEach((i) => { if (!t.includes(i.message)) throw new Error('缺少差異：' + i.message); });
+    const exposureRows = pane().querySelectorAll('tbody tr').filter((tr) => tr.className.includes('exposure'));
+    if (exposureRows.length !== expect.items.filter((i) => i.effect === 'new-exposure').length) throw new Error('每個新暴露都應醒目標示');
+    if (!exposureRows.every((tr) => tr.querySelectorAll('td')[0].style.background === S.view.theme.diff.exposureBg && tr.textContent.includes('新暴露'))) throw new Error('新暴露的顏色應取自 theme');
+    exposureRows[0].click();
+    if (App.sel.type !== 'rule' || !App.Q.getFirewallRule(App.sel.key)) throw new Error('點新暴露的規則應定位到防火牆規則');
+    const filterBtn = pane().querySelectorAll('button').find((b) => b.textContent.startsWith('新暴露'));
+    filterBtn.click();
+    if (pane().querySelectorAll('tbody tr').some((tr) => !tr.className.includes('exposure'))) throw new Error('新暴露篩選應只列新暴露');
+    if (JSON.stringify(await S.store.get('last')) !== keysBefore) throw new Error('比對結果不應存進 store');
+    // schema 不同：顯示核心回報的原因，不比對
+    const old1 = JSON.parse(oldJson); old1.meta.schema = 'ssot-snapshot/1'; old1.model = {};
+    await load('old-v1.json', JSON.stringify(old1));
+    if (!pane().textContent.includes('schema') || pane().querySelectorAll('.diff-cat').length) throw new Error('schema 不同時應顯示原因、不比對');
+    await load('bad.json', '{not json');
+    if (!pane().textContent.includes('無法讀取')) throw new Error('JSON 錯誤時應說明');
+    // 匯出預期資料：ssot-expected/1，和同一份基準比對全部一致
+    const { files } = await captureDownloads(() => {
+      $('#pane-compare').querySelectorAll('button').find((b) => b.textContent === '匯出預期資料').click();
+    });
+    if (files.length !== 1 || !/^expected-.*\.json$/.test(files[0].name)) throw new Error('應下載預期資料 JSON：' + files.map((f) => f.name));
+    const exp = JSON.parse(files[0].text);
+    if (exp.schema !== 'ssot-expected/1') throw new Error('預期資料的 schema 應為 ssot-expected/1');
+    require('assert').deepStrictEqual(exp, S.compare.expectedFrom(App.Q));
+    const inp = $('#pane-compare').querySelector('input');
+    inp.files = [{ name: files[0].name, text: async () => files[0].text }]; inp.dispatch('change', { target: inp }); await new Promise((r) => setTimeout(r, 20));
+    if (!text('#pane-compare').includes('有差異 0')) throw new Error('匯出的預期資料和同一份基準比對應全部一致');
   });
   await step('只有 MNDP 的設備對不畫線；詳情仍說明是廣播網域可達、非直連', async () => {
     const input = 'A (10.0.0.1):\n### /ip neighbor print detail\n'
@@ -664,7 +1002,10 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
       if (!$('#tooltip').classList.contains('hidden')) throw new Error('指標離開畫布時提示應隱藏');
     });
   });
-  await step('清除基準', async () => { $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20)); if (App.snap) throw new Error('未清除'); });
+  await step('清除基準（已確認的檢查結果不受影響）', async () => {
+    $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20)); if (App.snap) throw new Error('未清除');
+    if (ackedKey && !((await S.store.get('acks')) || {})[ackedKey]) throw new Error('清除基準不應清掉已確認的檢查結果');
+  });
   await step('還原舊 schema 的基準：有儲存輸入時重建，沒有時明確告知', async () => {
     const sources = [{ name: 'sample-bundle.txt', text: S.samples['sample-bundle.txt'] }];
     const old = { meta: { schema: 'ssot-snapshot/1', version: '1.3.2', createdAt: '2026-01-01T00:00:00Z' }, model: {} };

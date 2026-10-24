@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm test)",
+      "Bash(npm run test:core)",
+      "Bash(npm run test:ui)",
+      "Bash(npm run test:collector)",
+      "Bash(npm run test:large)"
+    ]
+  }
+}

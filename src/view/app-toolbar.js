@@ -210,6 +210,8 @@
    */
   A.exportPng = function exportPng() {
     if (!App.snap) return;
+    // L4 是矩陣不是畫布：PNG 只匯出拓樸圖的層級，矩陣改用 L4 畫面的「下載 CSV」
+    if (App.layer === 'l4') { A.banner('L4 可達性沒有 PNG：請在 L4 畫面用「下載 CSV」匯出矩陣，或切到設備、L2、L3 再匯出 PNG。', 8000); return; }
     App.graph.draw(); const a = document.createElement('a'); a.download = A.layerPngName(); a.href = $('#graph').toDataURL('image/png'); a.click();
   };
   /** 匯出目前的基準或檢查結果（種類見 V.exporter.KINDS）；透過 App.Q 讀取，不改寫。extra 例如 { byDevice: true } */

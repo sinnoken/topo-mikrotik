@@ -28,7 +28,7 @@
   A.STEP_LABEL = { input: '① 輸入', view: '② 檢視', triage: '③ 分診', fix: '④ 修正', verify: '⑤ 驗證' };
   const STEP_TITLE = {
     input: '資料中心：這一輪的輸入（收集檔、工作包、處理紀錄、命名規則、預期資料）、覆蓋率與輸出',
-    view: '左邊是清單（設備、介面、IP、網段、MAC、VLAN），中間是拓樸圖（設備、L2 埠、L3 子網）',
+    view: '左邊是清單（設備、介面、IP、網段、MAC、VLAN），中間是拓樸圖（設備、L2 埠、L3 子網）或 L4 可達性（zone 矩陣）',
     triage: '左邊是檢查結果（決定修、接受或標為誤報），中間是拓樸圖，右邊是證據與處理建議',
     fix: '中間是修正計畫：選取檢查結果，預覽修改前後，下載套用、回復與驗證的 .rsc',
     verify: '中間是本輪變化、修復追蹤、收斂趨勢與比對：確認哪些已修好、哪些回歸',
@@ -104,6 +104,8 @@
     const s = MAP[view][0] || (WORK[App.step].center === 'graph' ? App.step : graphStep);
     const block = view === 'compare' || view === 'trend' ? view : null;
     App.showStep(s, { focus: o.focus ? MAP[view][1] : null, scroll: o.focus ? null : block, workspace: 'graph' });
+    // 「在圖上定位」（搜尋、路由追蹤）：L4 是矩陣、沒有圖，改回設備圖
+    if (view === 'graph' && App.layer === 'l4') A.showLayer('device');
   };
 
   /** 每一步的狀態文字（不只靠顏色）：① 已收集台數、② 拓樸圖的層級、③ 待處理筆數、④ 已選項目、⑤ 處理紀錄的第幾輪 */

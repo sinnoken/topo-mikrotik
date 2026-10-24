@@ -1,6 +1,8 @@
 /*
- * 拓樸圖的層級：設備圖（app-graph.js）、L2 埠圖（Q.portGraph）、L3 子網圖（Q.subnetGraph）；L4 在 M2。
+ * 拓樸圖的層級：設備圖（app-graph.js）、L2 埠圖（Q.portGraph）、L3 子網圖（Q.subnetGraph）、L4 可達性（panels/l4.js）。
  * 三種圖共用同一張畫布（App.graph）：切換時換掉圖資料，各自的位置與縮放分開保存，不互相覆蓋。
+ * L4 不是節點與連線的圖，而是 zone 矩陣：選了 L4 時畫布保持原樣（不換資料、不動縮放），#view-l4 疊在畫布上、工具列下面，
+ * 畫布、圖例與說明不能聚焦也不顯示；回到其他層級時畫布照原本的方式還原。
  *  - 設備圖的位置是 App.devicePos（存進 store 的 'last'，與基準一起還原，格式不變）
  *  - L2／L3 的位置只在記憶體：App.layers 依「層級＋選項」各存一份（版面由 ELK 或內建版面重新算得出來；
  *    埠的 id 依聚合收合或展開而不同，存進 store 還要處理失效），換基準或清除時清空
@@ -11,7 +13,7 @@
   const V = S.view; const h = V.h; const $ = V.$; const K = S.keys;
   const A = V.app; const App = window.App;
   const T = V.theme; const MARK = T.mark;
-  const LAYERS = ['device', 'l2', 'l3'];
+  const LAYERS = ['device', 'l2', 'l3', 'l4'];
   const STATUS_RANK = { oneSide: 0, inferred: 1, carry: 2, partial: 3 };
 
   // 檢視狀態（不寫進基準、不存進 store）
@@ -24,7 +26,7 @@
   const saveView = (g) => ({ s: g.s, tx: g.tx, ty: g.ty });
   const restoreView = (g, v) => { if (v) Object.assign(g, v); else g.fit(); g.redraw(); };
   /** 目前層級的圖資料（設備圖為 null） */
-  App.layerEntry = A.layerEntry = () => (App.layer === 'device' ? null : App.layers.get(entryKey(App.layer)) || null);
+  App.layerEntry = A.layerEntry = () => (App.layer === 'device' || App.layer === 'l4' ? null : App.layers.get(entryKey(App.layer)) || null);
   /** 讓某一層下次顯示時重新全圖（例如背景的分層版面完成時，看的是另一層） */
   A.forgetView = (layer) => { if (layer === 'device') deviceView = null; };
   /** 設備圖的資料：看的是設備圖時直接換上畫布，否則等切回時再換 */
@@ -43,17 +45,24 @@
   /**
    * 顯示某一層。opt.rebuild：重新建立這一層的圖（選項或基準改變）；opt.focus：焦點移到畫布。
    * 切換時保留選取（在新的一層重新標示），平移與縮放各層分開。
+   * L4：畫布不換資料（離開 L4 時也不記縮放），矩陣由 V.l4.show 畫；App.l4Job 是矩陣的計算（第一次在背景，測試可等待）。
+   * opt.focus 在 L4 時把焦點移到 L4 的標題。
    */
   App.showLayer = A.showLayer = function showLayer(layer, opt) {
-    if (layer === 'l4') throw new RangeError('L4 視圖在 M2 才有');
     if (!LAYERS.includes(layer)) throw new RangeError('未知的層級：' + layer);
     const o = opt || {}; const g = App.graph;
     const target = App.Q ? layer : 'device';
-    // 離開的那一層：記下縮放與平移
+    // 離開的那一層：記下縮放與平移（L4 沒有畫布的狀態）
     if (App.layer === 'device') deviceView = g.nodes === App.deviceGraph.nodes ? saveView(g) : deviceView;
-    else { const cur = A.layerEntry(); if (cur && g.nodes === cur.nodes) cur.view = saveView(g); }
+    else if (App.layer !== 'l4') { const cur = A.layerEntry(); if (cur && g.nodes === cur.nodes) cur.view = saveView(g); }
     App.layer = target;
     g.hover = null; g.kbd = null; g.setOverlay([]); $('#tooltip').classList.add('hidden');
+    if (target === 'l4') {
+      A.syncLayerUi();
+      App.l4Job = V.l4.show(App, { rebuild: !!o.rebuild });
+      if (o.focus) { const t = $('#l4-title'); if (t) t.focus(); }
+      return;
+    }
     if (target === 'device') { g.setData(App.deviceGraph.nodes, App.deviceGraph.edges, App.devicePos); A.applyVisibility(); restoreView(g, deviceView); }
     else {
       const e = ensureEntry(target, o.rebuild);
@@ -426,7 +435,6 @@
   const layerBtns = () => Array.from(document.querySelectorAll('#layer-switch button'));
   A.bindLayers = function bindLayers() {
     const btns = layerBtns();
-    btns.forEach((b) => { if (b.dataset.layer === 'l4') b.disabled = true; }); // L4 在 M2：停用（不可聚焦），文字標示「M2」
     btns.forEach((b) => {
       b.addEventListener('click', () => { if (!b.disabled) App.showLayer(b.dataset.layer); });
       b.addEventListener('keydown', (ev) => {
@@ -467,6 +475,11 @@
     });
     // 只在某些層級有用的工具列群組：class layer-only，data-layers 列出層級
     document.querySelectorAll('.layer-only').forEach((el) => el.classList.toggle('hidden', !el.dataset.layers.split(' ').includes(L)));
+    // L4：矩陣疊在畫布上；畫布、圖例與操作說明不顯示也不能聚焦（鍵盤不會移到底下的畫布）
+    const l4 = L === 'l4' && !!App.Q;
+    $('#view-l4').classList.toggle('hidden', !l4);
+    $('#graph').inert = l4;
+    ['#legend', '#hint'].forEach((s) => $(s).classList.toggle('hidden', !App.snap || l4));
     // VLAN 選單：選項來自 Q.vlanIds()，換基準時重建
     const sel = $('#vlan-filter');
     if (App.Q && vlanOptionsOf !== App.Q) {
@@ -485,7 +498,7 @@
     $('#btn-force').disabled = L === 'l2';
     $('#btn-force').title = L === 'l2' ? 'L2 埠圖的埠固定在設備框上，不用力導向' : '用力導向微調位置（再按一次停止）';
     const cv = $('#graph');
-    cv.setAttribute('aria-label', `拓樸圖（${V.LAYER[L]}）。N 下一個${L === 'l2' ? '設備或埠' : L === 'l3' ? '子網或設備' : '設備'}、Shift+N 上一個、Enter 開啟詳情、Shift+Enter 聚焦、Esc 取消選取、方向鍵平移、+ 與 - 縮放、0 全圖`);
+    if (L !== 'l4') cv.setAttribute('aria-label', `拓樸圖（${V.LAYER[L]}）。N 下一個${L === 'l2' ? '設備或埠' : L === 'l3' ? '子網或設備' : '設備'}、Shift+N 上一個、Enter 開啟詳情、Shift+Enter 聚焦、Esc 取消選取、方向鍵平移、+ 與 - 縮放、0 全圖`);
     renderNote();
     A.renderSteps(); // 步驟列「② 檢視」的狀態是目前的層級
   };
@@ -509,6 +522,6 @@
         + 'M3 之前不分 VRF。';
     }
   }
-  /** 匯出 PNG 的檔名：目前的層級 */
+  /** 匯出 PNG 的檔名：目前的層級（L4 沒有 PNG，見 A.exportPng） */
   A.layerPngName = () => (App.layer === 'device' ? 'topology.png' : `topology-${App.layer}.png`);
 })(globalThis.SSOT = globalThis.SSOT || {});

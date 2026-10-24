@@ -3,6 +3,7 @@
  * 規則依位址族 → 表 → chain → position 列出（Q.firewallRuleRows、Q.firewallChains），
  * 另列 WAN／LAN 判斷（推論，Q.firewallZone）、/ip service 與 interface list，
  * 以及指向規則、核心有修正方式的檢查結果的修正指令（S.remediate.plan，只是文字；不能產生指令的列出原因）。
+ * 定位到一條規則時另列命中次數（rule.stats，事實；沒有資料或對不上（F09）時說明原因）與 L4 的影響（Q.ruleImpact，推論，按了才算）。
  * 區塊一律用 details.js 的 section() 產生；顏色取自 theme.firewall。
  */
 (function (S) {
@@ -56,6 +57,8 @@
         x.rule.commentEncoding === 'undecodable' ? V.chip('註解無法解碼', 'warn', { title: '註解的位元組不是 ASCII、UTF-8 或 Big5，原文可能已損毀' }) : null,
       ]) },
       { t: '狀態', f: (x) => (x.rule.disabled ? V.chip('停用') : '') },
+      // 命中次數（print stats，事實）：封包數；沒有資料時空白（原因在規則的詳情）
+      { t: '命中', f: (x) => (x.rule.stats ? h('span', { class: 'mono fw-hits', title: `${V.bigNum(x.rule.stats.packets)} 個封包、${V.bigNum(x.rule.stats.bytes)} 位元組（收集當下的累積值）` }, V.bigNum(x.rule.stats.packets)) : ''), cls: 'num' },
       { t: '檢查', f: (x) => h('span', null, findingChips(App, 'rule', x.rule.key)) },
       { t: '原文', f: (x) => srcLink(App, x.rule.src) },
     ], rows, {
@@ -142,6 +145,94 @@
     ], { count: plan.items.length + plan.skipped.length, fold: !focusRule, open: !!focusRule });
   }
 
+  // ---------------------------------------------------------------- 命中次數（print stats，事實）與 L4 的影響（Q.ruleImpact，推論）
+  const STATS_NOTE = '命中次數是收集當下的累積值（設備重開或 reset-counters 後會從 0 重新計算）。0 只代表到收集時為止沒有比對到，不代表規則沒用：備援、少見的流量或剛加上的規則都可能是 0。';
+  /** 對不上（F09）的第一個不符：model 的 matchFirewallStats 的 reason */
+  function mismatchText(x) {
+    if (!x) return '';
+    const v = (s) => (s === true ? '停用' : s === false ? '啟用' : s == null || s === '' ? '（空）' : String(s));
+    if (x.code === 'count') return `去掉動態（D）列後有 ${V.num(x.stats)} 列，export 有 ${V.num(x.export)} 條規則`;
+    const what = { chain: 'chain', action: '動作', disabled: '停用狀態', comment: '註解' }[x.code] || x.code;
+    return `第 ${x.position} 列的${what}不同（export：${v(x.export)}，print stats：${v(x.stats)}）`;
+  }
+  function statsSection(App, r) {
+    const Q = App.Q; const { section, kv } = P();
+    const note = h('p', { class: 'muted fw-stats-note' }, STATS_NOTE);
+    if (r.stats) {
+      return section('命中次數', [kv([
+        ['封包', h('span', { class: 'mono fw-stat-packets' }, V.bigNum(r.stats.packets))],
+        ['位元組', h('span', { class: 'mono fw-stat-bytes' }, V.bigNum(r.stats.bytes))],
+        ['來源', srcLink(App, r.stats.src)]]), note]);
+    }
+    const label = `${FAMILY[r.family] || r.family} ${r.table}`;
+    const t = Q.firewallStatsOf(r.dev).find((x) => x.family === r.family && x.table === r.table);
+    const f09 = Q.findingIndexesFor('device', r.dev).filter((i) => Q.finding(i).id === 'F09');
+    let msg;
+    if (!t) msg = `沒有命中次數資料：這台設備沒有收集 ${label} 的 print stats。`;
+    else if (t.status === 'mismatch') msg = `命中次數對不上 export 的規則，${label} 整個表的命中次數都不採用（F09）：${mismatchText(t.reason)}。`;
+    else if (t.status === 'no-export') msg = `沒有命中次數資料：有 ${label} 的 print stats，但這台設備沒有 export，對不到規則。`;
+    else msg = '沒有命中次數資料：這條規則沒有對應的 print stats 列。';
+    return section('命中次數', [
+      h('p', { class: t && t.status === 'mismatch' ? 'warn-line fw-stats-missing' : 'muted fw-stats-missing' }, [msg,
+        t && t.reason && t.reason.row ? h('span', null, [' ', srcLink(App, [t.reason.row])]) : null]),
+      f09.length ? h('div', { class: 'row' }, f09.map((i) => h('a', { class: 'link', title: Q.finding(i).message, onclick: () => App.selectFinding(i) }, V.chip('F09', 'info')))) : null,
+      note,
+    ]);
+  }
+  /** 規則影響的結果：Q → Map(規則鍵 → 結果)；計算要遍歷整個矩陣（大型網路約 1 秒），所以按了才算，結果留到換基準 */
+  const impacts = new WeakMap();
+  function impactSection(App, key) {
+    const Q = App.Q; const { section } = P();
+    const cache = impacts.get(Q); const res = cache && cache.get(key);
+    const body = h('div', { class: 'fw-impact' });
+    if (!res) {
+      body.appendChild(h('p', { class: 'muted' }, '這條規則在 L4 的影響（推論）：牽涉到哪些 zone 對，以及停用它時哪些路徑的結果會改變。第一次計算要先算 zone 矩陣，大型網路約需數秒。'));
+      const btn = h('button', { type: 'button', class: 'fw-impact-run', onclick: () => {
+        btn.disabled = true; btn.textContent = '計算中…'; body.setAttribute('aria-busy', 'true');
+        App.l4ImpactJob = new Promise((resolve) => setTimeout(() => {
+          try {
+            const r = Q.ruleImpact(key, V.l4.zoneOpts(App).opts);
+            if (!impacts.has(Q)) impacts.set(Q, new Map());
+            impacts.get(Q).set(key, r || { missing: true });
+          } catch (e) { console.error(e); V.app.banner('無法計算規則的影響：' + e.message, 8000); }
+          finally { resolve(); if (App.Q === Q && App.sel && App.sel.type === 'rule' && App.sel.key === key) V.details.render(App, App.sel); }
+        }, 30));
+      } }, '計算 L4 影響');
+      body.appendChild(h('div', { class: 'row' }, btn));
+      return section('L4 影響（推論）', body);
+    }
+    if (res.missing) return section('L4 影響（推論）', h('p', { class: 'muted' }, '基準中沒有這條規則。'));
+    const zn = new Map(Q.zones(V.l4.zoneOpts(App).opts).zones.map((z) => [z.id, z.name]));
+    const name = (id) => (id == null ? '（不在任何 zone）' : zn.get(id) || id);
+    const c = res.ifDisabled.counts; const ad = c['allow→deny'] || 0;
+    body.appendChild(h('div', { class: 'row' }, [
+      V.chip(`牽涉 ${V.num(res.cells.length)} 個 zone 對`), V.chip(`決定結果 ${V.num(res.total.decides)}・條件無法判斷 ${V.num(res.total.uncertain)}・經過 ${V.num(res.total.passes)}`),
+      res.shadowed ? V.chip('被遮蔽（F01）', 'warn') : null, res.duplicate ? V.chip('重複（F02）', 'warn') : null,
+    ]));
+    body.appendChild(h('p', { class: 'fw-impact-disabled' }, [h('b', null, '停用這條規則後：'),
+      `allow→deny ${V.num(ad)} 筆`, ...Object.entries(c).filter(([k]) => k !== 'allow→deny').map(([k, n]) => `、${k} ${V.num(n)} 筆`),
+      `（共 ${V.num(res.ifDisabled.total)} 筆結果改變${res.ifDisabled.truncated ? '，下表只列前幾筆' : ''}）`]));
+    if (res.cells.length) {
+      body.appendChild(V.table([
+        { t: '來源 zone', f: (x) => name(x.src), s: (x) => name(x.src) },
+        { t: '目的 zone', f: (x) => name(x.dst), s: (x) => name(x.dst) },
+        { t: '位置', f: (x) => (x.plane === 'device' ? '設備本身（input／output）' : '轉送') },
+        { t: '決定', f: (x) => V.num(x.decides), s: (x) => x.decides },
+        { t: '無法判斷', f: (x) => V.num(x.uncertain), s: (x) => x.uncertain },
+        { t: '經過', f: (x) => V.num(x.passes), s: (x) => x.passes },
+        { t: '服務', f: (x) => h('span', { class: 'mono' }, x.services.join(' ')) },
+      ], res.cells, { limit: 200 }));
+    } else body.appendChild(h('p', { class: 'muted' }, '矩陣的代表位址組合都沒有經過這條規則。'));
+    if (res.ifDisabled.changed.length) {
+      body.appendChild(h('details', { class: 'fw-impact-changed' }, [h('summary', null, `停用後改變的路徑（${V.num(res.ifDisabled.total)}）`), V.table([
+        { t: '來源', f: (x) => h('span', { class: 'mono' }, x.src) }, { t: '目的', f: (x) => h('span', { class: 'mono' }, x.dst) },
+        { t: 'zone', f: (x) => `${name(x.srcZone)} → ${name(x.dstZone)}` }, { t: '服務', f: (x) => x.service },
+        { t: '變化', f: (x) => `${V.VERDICT[x.from] || x.from} → ${V.VERDICT[x.to] || x.to}` },
+      ], res.ifDisabled.changed)]));
+    }
+    return section('L4 影響（推論）', body);
+  }
+
   function render(App, sel) {
     const Q = App.Q; const { section, kv, epLink, devLink, findingsBlock } = P();
     let dev = sel.dev; let focusRule = null; let focusSvc = null; let notice = null;
@@ -176,6 +267,8 @@
       ]),
       notice ? h('p', { class: 'diffA' }, notice) : null,
       findingsBlock(App, fwFindings),
+      focusRule ? statsSection(App, Q.getFirewallRule(focusRule)) : null,
+      focusRule ? impactSection(App, focusRule) : null,
       fixSection(App, dev, focusRule),
       section('WAN／LAN 判斷（推論）', zone ? [
         kv([['狀態', V.chip(zs.text, zs.tone)], ['依據', ZONE_BASIS[zone.basis] || zone.basis || '—'],

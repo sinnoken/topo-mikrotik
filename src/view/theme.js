@@ -117,6 +117,26 @@
       grid: '#e1e7ee', axis: '#cbd5df', crosshair: '#5f6d7e',
       lineWidth: 1.5, markerSize: 3, markerRing: 1.5,
     },
+    // L4 zone 矩陣與可達性（panels/l4.js）：鍵與 Q.zoneMatrix 的格子 status、Q.reach 的 verdict 相同。
+    // 狀態色只表示狀態，一律搭配外形符號（glyph）與文字標籤；格子的文字用 text.body（對每個格子底色 ≥ 4.5:1），
+    // 符號用 mark（對格子底色與畫布底色 ≥ 3:1）。allow／deny／partial 的 mark 以 dataviz validate_palette.js 驗證
+    // （亮色、底色 #f8fafc、全部配對：全部通過，最差 CVD ΔE 13.2（deutan）、一般視覺最差 28.5）；仍一律有符號（✓／✕／◐）與文字。
+    // unknown、empty 是刻意的中性色（「無法判斷」「沒有可算的組合」不是一種結果），不受彩度下限約束；
+    // empty 另用斜線底紋（hatch），和 unknown 的實心灰底分開。
+    // 異質（heterogeneous）是文字徽章；對角線（zone 內）是虛線外框（keyInk）
+    l4: {
+      status: {
+        allow: { mark: '#20a050', bg: '#ebf7ee', glyph: '✓' },
+        deny: { mark: '#a9221b', bg: '#fcecea', glyph: '✕' },
+        partial: { mark: '#6f5bd6', bg: '#f0eefc', glyph: '◐' },
+        unknown: { mark: '#5f6d7e', bg: '#eef1f4', glyph: '?' },
+        empty: { mark: '#7c8691', bg: '#ffffff', glyph: '–', hatch: '#e1e7ee' },
+      },
+      text: text.body,
+      badge: { bg: '#ffffff', text: text.body, border: keyInk },
+      diagonal: { border: keyInk, dash: 'dashed' },
+      focus: '#0b6bcb',
+    },
     // 新舊基準比對：effect 的文字色（都另有文字標籤與外形）；new-exposure（新暴露）的列另加底色
     diff: {
       effect: { 'new-exposure': text.err, 'less-restrictive': text.warn, 'more-restrictive': text.ok },

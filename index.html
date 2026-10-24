@@ -46,6 +46,7 @@
 <script src="src/view/graph/canvas.js"></script>
 <script src="src/view/panels/details.js"></script>
 <script src="src/view/panels/firewall.js"></script>
+<script src="src/view/panels/l4.js"></script>
 <script src="src/view/panels/lists.js"></script>
 <script src="src/view/panels/baseline-diff.js"></script>
 <script src="src/view/panels/ledger.js"></script>
@@ -126,16 +127,18 @@
           <button type="button" role="radio" data-layer="device" aria-checked="true" tabindex="0" class="on" title="設備與設備之間的鏈路（同兩台設備的多條鏈路併成一條線）">設備</button>
           <button type="button" role="radio" data-layer="l2" aria-checked="false" tabindex="-1" title="埠層級的 L2 圖：設備是方框，埠在框邊上，線接在埠上（只算 LLDP／CDP 介面鄰接與推論鏈路）">L2 埠</button>
           <button type="button" role="radio" data-layer="l3" aria-checked="false" tabindex="-1" title="L3 子網圖：子網與設備是節點，路由設備是跨子網的連接點">L3 子網</button>
-          <button type="button" role="radio" data-layer="l4" aria-checked="false" tabindex="-1" aria-disabled="true" title="L4 可達性與 zone 矩陣在 M2 才有">L4（M2）</button>
+          <button type="button" role="radio" data-layer="l4" aria-checked="false" tabindex="-1" title="L4 可達性：zone 矩陣（來源 zone × 目的 zone 的防火牆與 NAT 結果，推論）、下鑽到位址與規則、逐跳的可達性查詢">L4 可達性</button>
         </div>
-        <div class="grp"><select id="vlan-filter" aria-label="VLAN 篩選" title="在設備圖與 L2 埠圖標出承載這個 VLAN 的鏈路（L3 標出這個 VLAN 的子網）；選其他東西時仍保留，選「不篩選」取消"><option value="">VLAN：不篩選</option></select></div>
+        <div class="grp layer-only" data-layers="device l2 l3"><select id="vlan-filter" aria-label="VLAN 篩選" title="在設備圖與 L2 埠圖標出承載這個 VLAN 的鏈路（L3 標出這個 VLAN 的子網）；選其他東西時仍保留，選「不篩選」取消"><option value="">VLAN：不篩選</option></select></div>
         <div class="grp layer-only hidden" data-layers="l2"><button type="button" id="btn-l2-lag" aria-pressed="false" title="聚合介面的成員各自畫成一個埠（預設收合：成員併進聚合介面）">展開聚合</button><button type="button" id="btn-l2-ports" aria-pressed="false" title="也畫沒有連線的實體、聚合與無線介面">全部的埠</button><select id="l2-scope" aria-label="L2 埠圖的範圍" title="整張圖，或只畫選取的設備與它的鄰居（設備太多時只能選後者）"><option value="all">整張圖</option><option value="focus">選取的設備與鄰居</option></select></div>
         <div class="grp layer-only hidden" data-layers="l3"><button type="button" id="btn-l3-routes" aria-pressed="false" title="以虛線箭頭畫出靜態路由與預設路由，指到目的網段">顯示路由</button></div>
-        <div class="grp"><button id="btn-fit" title="整張圖放進畫面">全圖</button><button id="btn-relayout" title="依分群與層級重新排列（只排目前的層級）">重新排列</button><select id="layout-mode" title="重新排列使用的版面"><option value="elk">分層（ELK）</option><option value="builtin">快速（內建）</option></select><button id="btn-force" title="用力導向微調位置（再按一次停止）">力導向排列</button></div>
-        <div class="grp"><button id="btn-hosts" title="顯示只由 LLDP 看到的主機">主機</button></div>
+        <div class="grp layer-only" data-layers="device l2 l3"><button id="btn-fit" title="整張圖放進畫面">全圖</button><button id="btn-relayout" title="依分群與層級重新排列（只排目前的層級）">重新排列</button><select id="layout-mode" title="重新排列使用的版面"><option value="elk">分層（ELK）</option><option value="builtin">快速（內建）</option></select><button id="btn-force" title="用力導向微調位置（再按一次停止）">力導向排列</button></div>
+        <div class="grp layer-only" data-layers="device l2 l3"><button id="btn-hosts" title="顯示只由 LLDP 看到的主機">主機</button></div>
         <div class="grp layer-only" data-layers="device"><button id="btn-unknown" class="on" title="顯示沒有 LLDP 鄰居、只由 MAC 推論出來的終端">未知對端</button><button id="btn-groups" class="on" title="顯示分群底框">分群</button></div>
-        <div class="grp"><button id="btn-png" title="把目前畫面匯出 PNG（目前的層級；其他匯出在資料中心）">匯出 PNG</button></div>
+        <div class="grp layer-only" data-layers="device l2 l3"><button id="btn-png" title="把目前畫面匯出 PNG（目前的層級；其他匯出在資料中心）">匯出 PNG</button></div>
       </div>
+      <!-- L4（src/view/panels/l4.js）：zone 矩陣、下鑽與可達性查詢。不是畫布：選了 L4 時疊在畫布上、工具列下面（層級切換仍在工具列，Tab 順序在矩陣之前），內容由 V.l4 產生 -->
+      <section id="view-l4" class="l4 hidden" aria-labelledby="l4-title"></section>
       <div id="layer-note" class="layer-note hidden" aria-live="polite"></div>
       <div id="legend" class="legend hidden"></div>
       <div id="hint" class="hint hidden">滾輪縮放・拖曳移動・點選看詳細・雙擊聚焦・鍵盤：N 切換設備、Enter 詳情</div>

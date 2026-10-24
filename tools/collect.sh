@@ -16,13 +16,18 @@ usage() {
   --timeout SECONDS       單一 SSH 指令 timeout（預設 30）
   --retry COUNT           失敗後重試次數（預設 0）
   --ask-password          每台設備連線一次並手動輸入密碼／確認 host key
-  --dry-run               只驗證清單並列出命令，不連線
+  --no-auto               不依型號自動加上選用命令
+  --dry-run               只驗證清單並列出命令，不連線（不含自動加上的命令）
   -h, --help              顯示說明
 
 設備清單：name,address,user,port[,extra]
   extra 為選填，列出該設備額外執行的選用命令 ID，以空白或分號分隔，例如：
     TPE_AP_01,192.0.2.31,admin,22,wifi
   選用命令 ID：wifi（RouterOS 7 Wi-Fi 關聯表）、wireless（舊版 wireless）、capsman（舊版 CAPsMAN 控制器）
+
+自動選用命令：extra 欄留空且未用 --commands 時，依 /system resource print 的
+  board-name 與 version 加上確定支援的選用命令（目前只有 802.11ax／be 型號、
+  RouterOS 7.13 以上加 wifi），終端機會標示 AUTO。
 EOF
 }
 
@@ -107,6 +112,27 @@ device_commands() {
   done
 }
 
+# 從 /system resource print 輸出取一個欄位的值（RouterOS 的 SSH 輸出可能帶 CR）
+resource_field() {
+  sed -n "s/^[[:space:]]*$1:[[:space:]]*//p" "$2" | tr -d '\r' | head -n 1
+}
+
+# 依 board-name 自動加上選用命令到 DEVICE_COMMAND_IDS，並在終端機標示
+add_auto_commands() {
+  local stdout_file=$1 board version id
+  board=$(resource_field board-name "$stdout_file")
+  version=$(resource_field version "$stdout_file")
+  auto_optional_commands "$board" "$version"
+  for id in ${AUTO_COMMAND_IDS[@]+"${AUTO_COMMAND_IDS[@]}"}; do
+    [[ " ${DEVICE_COMMAND_IDS[*]} " == *" $id "* ]] && continue
+    DEVICE_COMMAND_IDS+=("$id")
+    printf '  AUTO %s（board-name=%s）\n' "$id" "$board"
+  done
+  if [[ -n "$AUTO_SKIP_REASON" ]]; then
+    printf '  AUTO 略過（board-name=%s：%s）\n' "$board" "$AUTO_SKIP_REASON"
+  fi
+}
+
 selected_device() {
   [[ -z "$DEVICE_FILTER" || ",$DEVICE_FILTER," == *",$1,"* ]]
 }
@@ -134,6 +160,7 @@ DEVICE_FILTER=
 COMMAND_FILTER=
 DRY_RUN=0
 ASK_PASSWORD=0
+AUTO=1
 SSH_CONTROL_OPTS=()
 DEVICE_NAMES=(); DEVICE_ADDRESSES=(); DEVICE_USERS=(); DEVICE_PORTS=(); DEVICE_EXTRAS=(); COMMAND_IDS=(); DEVICE_COMMAND_IDS=()
 INVENTORY=
@@ -146,6 +173,7 @@ while (($#)); do
     --timeout) (($# >= 2)) || die "$1 需要值"; TIMEOUT=$2; shift 2 ;;
     --retry) (($# >= 2)) || die "$1 需要值"; RETRY=$2; shift 2 ;;
     --ask-password) ASK_PASSWORD=1; shift ;;
+    --no-auto) AUTO=0; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage; exit 0 ;;
     -*) die "未知選項：$1" ;;
@@ -198,13 +226,18 @@ for ((i = 0; i < ${#DEVICE_NAMES[@]}; i++)); do
     fi
   fi
   device_commands "$i"
-  for id in "${DEVICE_COMMAND_IDS[@]}"; do
+  auto=0
+  (( AUTO )) && [[ -z "$COMMAND_FILTER" && -z "${DEVICE_EXTRAS[i]}" ]] && auto=1
+  # 用索引走訪：system 成功後可能在尾端追加自動選用命令
+  for ((c = 0; c < ${#DEVICE_COMMAND_IDS[@]}; c++)); do
+    id=${DEVICE_COMMAND_IDS[c]}
     command=$(command_for_id "$id")
-    printf '### %s\n' "$command" >> "$OUTPUT"
+    printf '### %s\n# collected-at: %s\n' "$command" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$OUTPUT"
     stdout_file="$TMP_DIR/stdout"; stderr_file="$TMP_DIR/stderr"
     if run_command "$address" "$user" "$port" "$command" "$stdout_file" "$stderr_file"; then
       cat "$stdout_file" >> "$OUTPUT"
       printf '  OK %s\n' "$id"
+      if (( auto )) && [[ "$id" == system ]]; then add_auto_commands "$stdout_file"; fi
     else
       code=$?
       failures=$((failures + 1))

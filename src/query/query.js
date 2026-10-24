@@ -295,6 +295,27 @@
         }));
       },
       epName(ep) { const [d, i] = K.splitEp(ep); const x = ifc.get(ep); return Q.devName(d) + ' ' + (x ? x.name : i); },
+      /**
+       * 檢查結果所屬的設備：第一個 device 實體；沒有時取第一個能對到設備的實體（介面、鏈路一端、規則、服務、設備自有的 IP）。
+       * 回傳基準中存在的設備鍵，都對不到時為 null（例如沒有設備標頭的 I01、只涉及 MAC 或 VLAN 的檢查）。
+       * 與 src/view/remediation.js 的 findingDevice 規則相同（畫面之後改為呼叫這裡）。
+       */
+      findingDevice(f) {
+        const known = (d) => { const x = d && Q.getDevice(d); return x ? x.key : null; };
+        const ents = f.entities || [];
+        const devEnt = ents.find((e) => e.type === 'device');
+        if (devEnt && known(devEnt.key)) return known(devEnt.key);
+        for (const e of ents) {
+          let d = null;
+          if (e.type === 'interface') d = (ifc.get(e.key) || {}).dev || K.splitEp(e.key)[0];
+          else if (e.type === 'link') { const l = link.get(e.key); d = K.splitEp(l ? l.a : String(e.key).split('~')[0])[0]; }
+          else if (e.type === 'rule') d = (fwByKey.get(e.key) || {}).dev;
+          else if (e.type === 'service') d = K.splitEp(e.key)[0];
+          else if (e.type === 'ip') { const o = ipOwner.get(e.key); d = o && K.splitEp(o)[0]; }
+          if (known(d)) return known(d);
+        }
+        return null;
+      },
       findingsFor(type, key) { return (findingsBy.get(type + ':' + key) || []).map((i) => snap.findings[i]); },
       findingIndexesFor(type, key) { return findingsBy.get(type + ':' + key) || []; },
       block: (id) => snap.blocks[id] || null,

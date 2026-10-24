@@ -132,5 +132,6 @@
    "detail": "重複的規則條件相同，find 無法區分（同一個 chain 第 3 條也符合）：先在 WinBox／WebFig 為要停用的這條加上不同的 comment，再重新收集",
    "rule": "TPE_CORE_RT_01|ip|filter|input|249c268da358d5ea#2"
   }
- ]
+ ],
+ "choices": []
 }

@@ -155,6 +155,8 @@ test('patch facet：有 facet 的 finding 各自以 findingKey 選取與列入 s
   facets.forEach((f) => {
     const k = Q.findingKey(f);
     assert.ok(JSON.parse(k)[1] === 'facet:' + f.facet, k);
+    // 有實作 choice 的規則（A12）每筆一個 choice，其餘列入 skipped
+    if (f.id === 'A12') { assert.strictEqual(all.choices.filter((c) => c.findingKey === k).length, 1, k); return; }
     assert.strictEqual(all.skipped.filter((x) => x.findingKey === k).length, snap.findings.filter((g) => Q.findingKey(g) === k).length, k);
     const one = P().plan(Q, [k]);
     assert.deepStrictEqual(one.skipped.map((x) => [x.findingKey, x.id]), snap.findings.filter((g) => Q.findingKey(g) === k).map(() => [k, f.id]));
@@ -162,4 +164,152 @@ test('patch facet：有 facet 的 finding 各自以 findingKey 選取與列入 s
   const a12 = facets.find((f) => f.id === 'A12'); const base = Q.findingBaseKey(a12);
   assert.notStrictEqual(base, Q.findingKey(a12));
   assert.deepStrictEqual(P().plan(Q, [base]).skipped.map((x) => [x.findingKey, x.reason]), [[base, 'not-found']]);
+});
+
+// ------------------------------------------------------------------ A12 的 choice 修正（DNS／NTP 伺服器）
+// DNS：SW_A、SW_B（順序不同，同一組）1.1.1.1、8.8.8.8；SW_C、SW_D 9.9.9.9 → 2 對 2，沒有多數
+// NTP：SW_A、SW_C 10.0.0.123（servers=）；SW_B 10.0.0.9（子選單）；SW_D 10.0.0.5（RouterOS 6 primary-ntp）→ 多數是 10.0.0.123
+const devText = (rows) => rows.map(([n, ip, lines]) => [`${n} (${ip}):`, '### /export terse', ...lines].join('\n')).join('\n');
+const A12_TEXT = devText([
+  ['SW_A', '10.0.0.1', ['/ip dns set servers=1.1.1.1,8.8.8.8', '/system ntp client set enabled=yes servers=10.0.0.123']],
+  ['SW_B', '10.0.0.2', ['/ip dns set servers=8.8.8.8,1.1.1.1', '/system ntp client set enabled=yes', '/system ntp client servers add address=10.0.0.9']],
+  ['SW_C', '10.0.0.3', ['/ip dns set servers=9.9.9.9', '/system ntp client set enabled=yes servers=10.0.0.123']],
+  ['SW_D', '10.0.0.4', ['/ip dns set servers=9.9.9.9', '/system ntp client set enabled=yes primary-ntp=10.0.0.5']],
+]);
+const a12 = () => {
+  const snap = S.build([{ name: 'a12.txt', text: A12_TEXT }], { now: '2026-01-01T00:00:00Z' }); const Q = S.query(snap);
+  const key = (facet) => Q.findingKey(snap.findings.find((f) => f.id === 'A12' && f.facet === facet));
+  return { snap, Q, dns: key('dns'), ntp: key('ntp') };
+};
+const choiceOf = (p, k) => p.choices.find((c) => c.findingKey === k);
+test('patch A12：有多數時預設改成多數的值（推論，寫出依據）；子選單逐筆改 address；RouterOS 6 的設備列為 manual', () => {
+  const { Q, ntp } = a12();
+  const p = P().plan(Q, [ntp]);
+  const c = choiceOf(p, ntp);
+  assert.deepStrictEqual([c.id, c.facet, c.chosen, c.chosenBy, c.value, c.reason], ['A12', 'ntp', 'majority', 'default', ['10.0.0.123'], null]);
+  const maj = c.options.find((o) => o.id === 'majority');
+  assert.deepStrictEqual([maj.value, maj.basis, maj.inferred], [['10.0.0.123'], { agree: 2, total: 4, devs: ['SW_A', 'SW_C'] }, true], '多數決是推論，依據是 4 台中 2 台');
+  assert.ok(/4 台中 2 台/.test(maj.label), maj.label);
+  assert.deepStrictEqual(c.options.map((o) => o.id), ['majority', 'device:SW_A', 'device:SW_B', 'device:SW_D', 'accept']);
+  const ob = c.options.find((o) => o.id === 'device:SW_B');
+  assert.deepStrictEqual([ob.value, ob.devs, typeof ob.label], [['10.0.0.9'], ['SW_B'], 'string']);
+  // 只改值和選擇不同、而且可以產生指令的設備：SW_B（子選單）；SW_D 是 RouterOS 6 → manual；SW_A、SW_C 已經相同
+  assert.deepStrictEqual(p.items.map((i) => [i.dev, i.level, i.choice, i.target.type, i.target.menu, i.target.param]), [['SW_B', 'choice', 'majority', 'servers', '/system ntp client servers', 'address']]);
+  assert.deepStrictEqual(c.items, [p.items[0].key]);
+  assert.deepStrictEqual(p.items[0].ops, [{ op: 'set', path: '/system ntp client servers', where: { address: '10.0.0.9' }, expect: 1, props: { address: '10.0.0.123' }, before: { address: '10.0.0.9' } }]);
+  assert.deepStrictEqual(p.skipped.map((x) => [x.findingKey, x.dev, x.level, x.reason]), [[ntp, 'SW_D', 'manual', 'ntp-v6']]);
+  assert.ok(P().SKIP_TEXT['ntp-v6'] && /手冊/.test(P().SKIP_TEXT['ntp-v6']));
+  assert.ok(/推論/.test(p.items[0].note), p.items[0].note);
+  assert.ok(p.items[0].evidence.length && p.items[0].evidence.every((e) => e.line > 0 && /10\.0\.0\.9/.test(e.text)), '證據是這台設備的設定行');
+  const apply = P().renderRsc(p, 'SW_B');
+  assert.ok(apply.includes(':if ([:len [/system ntp client servers find where address="10.0.0.9"]] != 1) do={ :error'), apply);
+  assert.ok(apply.includes('/system ntp client servers set [find where address="10.0.0.9"] address=10.0.0.123'), apply);
+  const back = P().renderRollback(p, 'SW_B');
+  assert.ok(back.includes(':if ([:len [/system ntp client servers find where address="10.0.0.123"]] != 1) do={ :error'), back);
+  assert.ok(back.includes('/system ntp client servers set [find where address="10.0.0.123"] address=10.0.0.9'), back);
+  assert.ok(P().renderVerify(p, 'SW_B').includes('/system ntp client servers print where address="10.0.0.123"'));
+});
+test('patch A12：沒有多數時不產生指令（needs-choice，附選項）；選某一組後改其他組的設備；同一組的別台也可當選項 id', () => {
+  const { Q, dns } = a12();
+  const p = P().plan(Q, [dns]);
+  const c = choiceOf(p, dns);
+  assert.deepStrictEqual([c.chosen, c.chosenBy, c.value, c.reason, c.items], [null, null, null, 'needs-choice', []]);
+  assert.deepStrictEqual(c.options.map((o) => [o.id, o.value || null, o.devs || null]), [['device:SW_A', ['1.1.1.1', '8.8.8.8'], ['SW_A', 'SW_B']], ['device:SW_C', ['9.9.9.9'], ['SW_C', 'SW_D']], ['accept', null, null]]);
+  assert.deepStrictEqual([p.items, p.skipped.map((x) => [x.findingKey, x.dev, x.level, x.reason])], [[], [[dns, 'SW_A', 'choice', 'needs-choice']]]);
+  assert.deepStrictEqual(p.skipped[0].options, c.options, '畫面可以直接用 skipped 的選項讓使用者選');
+  // 選 SW_C 那一組（9.9.9.9）：改 SW_A、SW_B
+  const q = P().plan(Q, [dns], { choices: { [dns]: 'device:SW_C' } });
+  const cq = choiceOf(q, dns);
+  assert.deepStrictEqual([cq.chosen, cq.chosenBy, cq.value, cq.reason], ['device:SW_C', 'user', ['9.9.9.9'], null]);
+  assert.deepStrictEqual(q.items.map((i) => [i.dev, i.ops]), [
+    ['SW_A', [{ op: 'set-list', path: '/ip dns', param: 'servers', value: ['9.9.9.9'], before: ['1.1.1.1', '8.8.8.8'] }]],
+    ['SW_B', [{ op: 'set-list', path: '/ip dns', param: 'servers', value: ['9.9.9.9'], before: ['8.8.8.8', '1.1.1.1'] }]]]);
+  // 同一組的其他設備（SW_D）也可以當選項 id，結果相同（chosen 正規化成該組的選項 id）
+  const alias = P().plan(Q, [dns], { choices: { [dns]: 'device:SW_D' } });
+  assert.deepStrictEqual([alias.items, choiceOf(alias, dns).chosen], [q.items, 'device:SW_C']);
+  // 選 SW_A 那一組：只改 SW_C、SW_D（SW_B 順序不同但同一組，不改）
+  assert.deepStrictEqual(P().plan(Q, [dns], { choices: { [dns]: 'device:SW_A' } }).items.map((i) => [i.dev, i.ops[0].value]), [['SW_C', ['1.1.1.1', '8.8.8.8']], ['SW_D', ['1.1.1.1', '8.8.8.8']]]);
+  const apply = P().renderRsc(q, 'SW_B');
+  assert.ok(apply.includes(':if ([:len [/ip dns get servers]] != 2) do={ :error'), apply);
+  assert.ok(apply.includes(':if ([:tostr [:pick [/ip dns get servers] 0]] != "8.8.8.8") do={ :error'), apply);
+  assert.ok(apply.includes(':if ([:tostr [:pick [/ip dns get servers] 1]] != "1.1.1.1") do={ :error'), apply);
+  assert.ok(apply.includes('/ip dns set servers=9.9.9.9'), apply);
+  assert.ok(/test router/i.test(apply), '前置檢查的比對方式註明要在測試機確認');
+  const back = P().renderRollback(q, 'SW_B');
+  assert.ok(back.includes(':if ([:tostr [:pick [/ip dns get servers] 0]] != "9.9.9.9") do={ :error') && back.includes('/ip dns set servers=8.8.8.8,1.1.1.1'), back);
+  // 不認得的選項明確丟錯；choices 格式錯誤也丟錯
+  assert.throws(() => P().plan(Q, [dns], { choices: { [dns]: 'device:NOPE' } }), /device:NOPE/);
+  assert.throws(() => P().plan(Q, [dns], { choices: { [dns]: 1 } }), /choices/);
+  assert.throws(() => P().plan(Q, [dns], { choice: {} }), /不認得的欄位/);
+});
+test('patch A12：選 accept 不產生指令並說明；DNS 與 NTP 各自選擇', () => {
+  const { Q, dns, ntp } = a12();
+  const p = P().plan(Q, { ids: ['A12'] }, { choices: { [dns]: 'device:SW_A', [ntp]: 'accept' } });
+  assert.deepStrictEqual(p.choices.map((c) => [c.facet, c.chosen, c.reason]), [['dns', 'device:SW_A', null], ['ntp', 'accept', 'accepted-choice']]);
+  assert.deepStrictEqual(p.items.map((i) => [i.dev, i.target.facet]), [['SW_C', 'dns'], ['SW_D', 'dns']]);
+  assert.deepStrictEqual(p.skipped.map((x) => [x.findingKey, x.level, x.reason]), [[ntp, 'choice', 'accepted-choice']]);
+  assert.ok(/可接受/.test(p.skipped[0].detail));
+  // 反過來：DNS accept、NTP 預設多數
+  const r = P().plan(Q, { ids: ['A12'] }, { choices: { [dns]: 'accept' } });
+  assert.deepStrictEqual(r.items.map((i) => [i.dev, i.target.facet]), [['SW_B', 'ntp']]);
+  assert.deepStrictEqual(r.skipped.map((x) => [x.reason, x.dev]), [['accepted-choice', 'SW_A'], ['ntp-v6', 'SW_D']], '依設備排序；整筆的 skipped 的 dev 與其他規則相同，是 Q.findingDevice');
+});
+test('patch A12：前置檢查都在套用之前；rollback 是 apply 的反向；同樣的輸入與選擇結果相同', () => {
+  const { Q, dns } = a12();
+  const choices = { [dns]: 'device:SW_C' };
+  const p = P().plan(Q, { ids: ['A12'] }, { choices });
+  ['SW_A', 'SW_B'].forEach((dev) => {
+    const lines = P().renderRsc(p, dev).split('\n');
+    const lastIf = lines.map((l) => l.startsWith(':if ')).lastIndexOf(true);
+    const firstChange = lines.findIndex((l) => /^\/(ip dns|system ntp client)/.test(l));
+    assert.ok(lastIf >= 0 && firstChange > lastIf, `${dev}：所有前置檢查都在第一條修改之前`);
+    assert.ok(lines.every((l) => /^[\x20-\x7e]*$/.test(l)), '只含 ASCII');
+  });
+  // SW_B 有 dns（set-list）與 ntp（子選單）兩個 item；rollback 的 op 是倒序、值互換
+  assert.deepStrictEqual(p.items.filter((i) => i.dev === 'SW_B').map((i) => i.target.facet), ['dns', 'ntp']);
+  const ops = p.items.filter((i) => i.dev === 'SW_B').flatMap((i) => i.ops);
+  assert.deepStrictEqual(P().rollbackOps(p, 'SW_B').map((x) => x.op), ops.slice().reverse().map((op) => (op.op === 'set-list'
+    ? Object.assign({}, op, { value: op.before, before: op.value })
+    : Object.assign({}, op, { where: Object.assign({}, op.where, op.props), props: op.before, before: op.props }))));
+  const changes = (t) => t.split('\n').filter((l) => /^\/(ip dns|system ntp client)/.test(l));
+  assert.deepStrictEqual(changes(P().renderRollback(p, 'SW_B')), ['/system ntp client servers set [find where address="10.0.0.123"] address=10.0.0.9', '/ip dns set servers=8.8.8.8,1.1.1.1']);
+  assert.strictEqual(JSON.stringify(P().plan(Q, { ids: ['A12'] }, { choices })), JSON.stringify(p));
+  assert.strictEqual(JSON.stringify(P().files(p)), JSON.stringify(P().files(P().plan(a12().Q, { ids: ['A12'] }, { choices }))));
+  assert.strictEqual(JSON.stringify(p), JSON.stringify(JSON.parse(JSON.stringify(p))), 'plan 是純 JSON');
+});
+test('patch A12：子選單的伺服器數量不同時，多的 remove、少的 add；rollback 反向（移除的項目只能以 address 加回，附警告）', () => {
+  const Q = S.query(S.build([{ name: 'n.txt', text: devText([
+    ['SW_A', '10.0.0.1', ['/system ntp client set enabled=yes servers=10.0.0.123']],
+    ['SW_B', '10.0.0.2', ['/system ntp client set enabled=yes servers=10.0.0.123']],
+    ['SW_C', '10.0.0.3', ['/system ntp client set enabled=yes', '/system ntp client servers add address=10.0.0.8', '/system ntp client servers add address=10.0.0.9']],
+  ]) }], { now: '2026-01-01T00:00:00Z' }));
+  const p = P().plan(Q, { ids: ['A12'] });
+  assert.deepStrictEqual(p.items.map((i) => [i.dev, i.ops.map((o) => [o.op, o.where || null, o.props || null, o.expect])]), [['SW_C', [
+    ['set', { address: '10.0.0.8' }, { address: '10.0.0.123' }, 1],
+    ['remove', { address: '10.0.0.9' }, null, 1]]]]);
+  assert.ok(p.items[0].warnings.some((w) => /rollback/.test(w) && /address/.test(w)), p.items[0].warnings.join('\n'));
+  const apply = P().renderRsc(p, 'SW_C'); const back = P().renderRollback(p, 'SW_C');
+  assert.ok(apply.includes('/system ntp client servers remove [find where address="10.0.0.9"]'), apply);
+  assert.ok(back.includes(':if ([:len [/system ntp client servers find where address="10.0.0.9"]] != 0) do={ :error'), back);
+  assert.ok(back.includes('/system ntp client servers add address=10.0.0.9'), back);
+  const idxAdd = back.indexOf('servers add'); const idxSet = back.indexOf('servers set');
+  assert.ok(idxAdd >= 0 && idxSet > idxAdd, 'rollback 倒序：先加回移除的，再改回 address');
+  // 少的一邊：多數有兩台、偏離的子選單只有一筆 → set 一筆、add 一筆
+  const Q2 = S.query(S.build([{ name: 'n.txt', text: devText([
+    ['SW_A', '10.0.0.1', ['/system ntp client set enabled=yes servers=10.0.0.1,10.0.0.2']],
+    ['SW_B', '10.0.0.2', ['/system ntp client set enabled=yes servers=10.0.0.1,10.0.0.2']],
+    ['SW_C', '10.0.0.3', ['/system ntp client set enabled=yes', '/system ntp client servers add address=10.0.0.9']],
+  ]) }], { now: '2026-01-01T00:00:00Z' }));
+  const p2 = P().plan(Q2, { ids: ['A12'] });
+  assert.deepStrictEqual(p2.items[0].ops.map((o) => [o.op, o.where || null, o.props || null, o.expect]), [
+    ['set', { address: '10.0.0.9' }, { address: '10.0.0.1' }, 1], ['add', { address: '10.0.0.2' }, { address: '10.0.0.2' }, 0]]);
+  const a2 = P().renderRsc(p2, 'SW_C');
+  assert.ok(a2.includes(':if ([:len [/system ntp client servers find where address="10.0.0.2"]] != 0) do={ :error') && a2.includes('/system ntp client servers add address=10.0.0.2'), a2);
+  assert.ok(P().renderRollback(p2, 'SW_C').includes('/system ntp client servers remove [find where address="10.0.0.2"]'));
+});
+test('patch A12：範例資料 NTP 有多數（改 TPE_ACC_SW_12 的子選單），DNS 沒有多數（needs-choice）', () => {
+  const snap = sampleSnap(); const Q = S.query(snap);
+  const p = P().plan(Q, { ids: ['A12'] });
+  assert.deepStrictEqual(p.choices.map((c) => [c.facet, c.chosen, c.reason]), [['dns', null, 'needs-choice'], ['ntp', 'majority', null]]);
+  assert.deepStrictEqual(p.items.map((i) => [i.dev, i.ops]), [['TPE_ACC_SW_12', [{ op: 'set', path: '/system ntp client servers', where: { address: '10.1.10.2' }, expect: 1, props: { address: 'time.cloudflare.com' }, before: { address: '10.1.10.2' } }]]]);
 });

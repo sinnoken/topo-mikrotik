@@ -24,6 +24,28 @@ test('docs/基準檢查規則.md 與 CATALOG 一致：每項規則都有章節�
     assert.ok(new RegExp(`^### ${id}$`, 'm').test(doc), `${id} 缺少說明章節`);
   });
 });
+// 文字不要求逐字相同（文件可加連結與補充），只檢查結構：每條規則都有「常見原因」與「處理」，原因條數與 CATALOG 相同
+test('docs/基準檢查規則.md 每項規則都有「常見原因」（條數同 CATALOG 的 causes）與「處理」（對應 action）', () => {
+  const doc = read('docs/基準檢查規則.md');
+  const problems = [];
+  Object.entries(S.check.CATALOG).forEach(([id, c]) => {
+    const m = new RegExp(`^### ${id}\\n([\\s\\S]*?)(?=^##)`, 'm').exec(doc);
+    if (!m) { problems.push(`${id}：找不到章節`); return; }
+    const lines = m[1].split('\n');
+    const at = (label) => lines.reduce((a, l, k) => (l.startsWith(`- **${label}**：`) ? a.concat(k) : a), []);
+    const causes = at('常見原因'); const action = at('處理');
+    if (causes.length !== 1) problems.push(`${id}：「常見原因」應恰好一段，實際 ${causes.length} 段`);
+    else {
+      const items = [];
+      for (let k = causes[0] + 1; k < lines.length && /^ {2}- \S/.test(lines[k]); k++) items.push(lines[k]);
+      if (lines[causes[0]] !== '- **常見原因**：') problems.push(`${id}：「常見原因」請逐條寫成子項目，不要寫在同一行`);
+      else if (items.length !== c.causes.length) problems.push(`${id}：「常見原因」有 ${items.length} 條，CATALOG 的 causes 有 ${c.causes.length} 條`);
+    }
+    if (action.length !== 1) problems.push(`${id}：「處理」應恰好一段，實際 ${action.length} 段`);
+    else if (!lines[action[0]].slice('- **處理**：'.length).trim()) problems.push(`${id}：「處理」是空的`);
+  });
+  assert.deepStrictEqual(problems, [], '請依 src/check/catalog.js 的 causes／action 更新文件');
+});
 test('.claude/skills 與 .github/skills 的 skill 內容一致（Claude Code 版只多一行同步說明）', () => {
   const names = fs.readdirSync(path.join(ROOT, '.github/skills')).sort();
   assert.deepStrictEqual(fs.readdirSync(path.join(ROOT, '.claude/skills')).sort(), names);

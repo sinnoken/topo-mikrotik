@@ -2,3 +2,5 @@
 *.map.json
 # 產生的大型測試資料
 samples/large-1000.txt
+# Claude Code subagent 的 git worktree（本機工作目錄）
+.claude/worktrees/

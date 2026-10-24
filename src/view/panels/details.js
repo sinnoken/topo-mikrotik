@@ -62,9 +62,34 @@
     return section('檢查結果', uniq.map((f) => h('div', { class: 'finding' }, [
       V.sevDot(f.severity),
       h('div', null, [h('div', null, [h('b', null, f.title)]), h('div', null, f.message),
-        deviationLine(App, f),
+        deviationLine(App, f), ackLine(f), adviceBlock(f.id),
         f.evidence.length ? h('div', { class: f.id === 'C02' ? 'ev stack' : 'ev' }, evidenceLinks(App, f)) : null]),
     ])), { count: uniq.length });
+  }
+  /** 已確認的分類與原因（檢視狀態，見 app-acks.js）；未確認時不顯示 */
+  function ackLine(f) {
+    const ack = V.app && V.app.ackOf ? V.app.ackOf(f) : null;
+    if (!ack) return null;
+    return h('div', { class: 'muted ack-line' }, [V.chip('已確認', 'ok'), ' ', V.remediation.ackKindText(ack.kind), ack.note ? '：' + ack.note : '']);
+  }
+  /**
+   * 規則的常見原因與處理（V.remediation.advice，文字來自 CATALOG）：預設收合的展開列，檢查結果與規則清單共用。
+   * 反引號內的指令與欄位以 <code> 顯示（V.codeText，不用 innerHTML）。兩個欄位都沒有時不顯示。
+   * opt.open：預設展開；opt.ontoggle：展開狀態改變時呼叫（呼叫端要跨重繪保留時用）。
+   */
+  function adviceBlock(id, opt) {
+    const a = V.remediation.advice(id); const o = opt || {};
+    if (!a.action && !a.causes.length) return null;
+    const el = h('details', { class: 'advice', 'data-rule-id': id, open: !!o.open }, [
+      h('summary', null, a.action && a.causes.length ? '常見原因與處理' : a.action ? '處理建議' : '常見原因'),
+      h('div', { class: 'advice-body' }, [
+        a.action ? h('div', { class: 'advice-action' }, [h('span', { class: 'advice-label' }, '處理：'), ...V.codeText(a.action)]) : null,
+        a.causes.length ? h('div', { class: 'advice-causes' }, [h('span', { class: 'advice-label' }, '常見原因：'),
+          h('ul', null, a.causes.map((c) => h('li', null, V.codeText(c))))]) : null,
+      ]),
+    ]);
+    if (o.ontoggle) el.addEventListener('toggle', () => o.ontoggle(!!el.open));
+    return el;
   }
   /** 跨設備一致性檢查依多數決推定偏離的設備（finding.deviation，推論）；平手時 deviating 為空，不顯示 */
   function deviationLine(App, f) {
@@ -136,6 +161,8 @@
         multi ? V.chip(`${multi} 個終端埠有多個 MAC`, 'warn') : null,
         rows.length + wifi.length > 1 ? h('button', { onclick: () => App.toggleExpand(sel.dev) }, collapsed ? '在圖上展開' : (App.expanded.has(sel.dev) ? '在圖上收合' : '（已全部展開）')) : null]),
       h('p', { class: 'muted' }, '一般終端埠只學到一個 MAC，且沒有 LLDP／CDP 介面鄰接。Wi-Fi 是一對多介面：每個觀察到的 MAC 位置會列入終端清單，但不把 Wi-Fi 介面判為終端，也不參與 A02，因為 MAC 可能隨使用者漫遊而移動。MNDP 只代表同一 L2 廣播網域可達，不算直連鄰接。'),
+      // 點選 A03（未知對端）會來到這裡：列出這台設備的 A03，處理建議才看得到
+      findingsBlock(App, Q.findingsFor('device', sel.dev).filter((f) => f.id === 'A03')),
       section('終端埠', rows.length ? unknownTable(App, rows) : null, { count: rows.length }),
       section('Wi-Fi MAC 觀察（列入終端清單，不參與 A02）', wifi.length ? unknownTable(App, wifi, () => false) : null, { count: wifi.length }),
     ]);
@@ -229,10 +256,12 @@
     const Q = App.Q; const rules = Q.firewallRulesOf(dev); const services = Q.ipServicesOf(dev); const zone = Q.firewallZone(dev);
     if (!rules.length && !services.length && !zone) return null;
     const bad = rules.filter((r) => Q.findingsFor('rule', r.key).some((f) => f.severity !== 'info')).length;
+    // 用語與防火牆畫面共用 firewall.js 的 zoneStatus()（該檔在本檔之後載入，render 時才取用）
+    const zs = zone && V.firewall.zoneStatus(zone.status);
     return section('防火牆', [
       h('div', { class: 'row' }, [
         V.chip(`${rules.length} 條規則`), bad ? V.chip(`${bad} 條有問題`, 'warn') : null, V.chip(`${services.length} 個服務`),
-        zone ? V.chip(zone.status === 'ok' ? 'WAN／LAN 已判斷（推論）' : '無法判斷 WAN', zone.status === 'ok' ? 'ok' : 'warn') : null,
+        zs ? V.chip(zs.short, zs.tone, { title: zs.text }) : null,
       ]),
       h('div', null, h('a', { class: 'link', onclick: () => App.select({ type: 'firewall', dev }) }, '查看防火牆規則與服務')),
     ]);
@@ -495,5 +524,5 @@
   }
 
   // 其他詳情畫面（panels/firewall.js）共用的片段：區塊一律經 section() 產生
-  V.details = { render, parts: { section, kv, L, devLink, epLink, findingsBlock } };
+  V.details = { render, parts: { section, kv, L, devLink, epLink, findingsBlock, adviceBlock } };
 })(globalThis.SSOT = globalThis.SSOT || {});

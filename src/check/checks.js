@@ -8,52 +8,9 @@
   const K = S.keys;
   const LINK_SCOPE = S.LINK_SCOPE;
 
-  /*
-   * data：規則需要的資料類別（設備的 data）。外層每一組都要有，組內任一種即可；沒有 data 的規則（輸入、覆蓋）一律會檢查。
-   * 只用來區分「通過」與「沒有資料可檢查」，不影響檢查本身。
-   */
-  const CATALOG = {
-    I01: { severity: 'error', cat: '輸入', title: '無法辨識的內容' },
-    I02: { severity: 'warn', cat: '輸入', title: '同一設備重複提供同類資料（以後者為準）' },
-    C01: { severity: 'info', cat: '覆蓋', title: '網路設備僅由鄰居發現、沒有收集資料' },
-    C02: { severity: 'warn', cat: '覆蓋', title: '缺少應收集的資料', evidenceLimit: Infinity }, // 列出全部失敗註解與已收集區塊，才能對照收了哪些
-    K01: { severity: 'warn', cat: '鏈路', title: 'LLDP 單向（對端沒有回報這條鏈路）', data: [['lldp']] },
-    K02: { severity: 'warn', cat: '鏈路', title: '同一介面對應到多個鄰居', data: [['lldp']] },
-    K03: { severity: 'warn', cat: '鏈路', title: '聚合鏈路兩端成員不一致', data: [['lldp'], ['config']] },
-    K04: { severity: 'info', cat: '鏈路', title: '對端回報的埠名稱與本機不同', data: [['lldp']] },
-    V01: { severity: 'warn', cat: 'VLAN', title: '鏈路兩端 VLAN 不一致', data: [['lldp'], ['config', 'vlans']] },
-    V04: { severity: 'warn', cat: 'VLAN', title: '鏈路兩端 native VLAN（PVID）不一致', data: [['lldp'], ['config']] },
-    V05: { severity: 'info', cat: 'VLAN', title: 'VLAN 介面沒有任何成員埠（孤立 VLAN）', data: [['config', 'vlans']] },
-    V06: { severity: 'info', cat: 'VLAN', title: '同一 VLAN 在不同設備的名稱或說明不同', data: [['config']] },
-    V07: { severity: 'warn', cat: 'VLAN', title: '同一名稱在不同設備對應到不同 VLAN', data: [['config']] },
-    V08: { severity: 'warn', cat: 'VLAN', title: '鏈路兩端同一 VLAN 的 tagged／untagged 不一致', data: [['lldp'], ['config', 'vlans']] },
-    A01: { severity: 'warn', cat: '位址', title: '同一 IP 對應多個 MAC', data: [['arp']] },
-    A02: { severity: 'warn', cat: '位址', title: '同一 MAC 在同一 VLAN 出現在多個終端埠', data: [['mac']] },
-    A03: { severity: 'info', cat: '位址', title: '介面有學到 MAC 但沒有 LLDP／CDP 鄰接（未知對端）', data: [['mac']] },
-    A04: { severity: 'info', cat: '位址', title: '單一埠學到過多 MAC（可能下掛未管理交換器或 hypervisor）', data: [['mac']] },
-    A05: { severity: 'info', cat: '位址', title: 'ARP 位址不屬於該設備任何直連網段', data: [['arp'], ['config', 'ipaddr']] },
-    A06: { severity: 'warn', cat: '位址', title: '同一 VLAN 在不同設備設定不同網段', data: [['config']] },
-    A07: { severity: 'warn', cat: '位址', title: '同一網段在不同設備屬於不同 VLAN', data: [['config']] },
-    A08: { severity: 'warn', cat: '位址', title: '重疊網段在不同設備的遮罩不同', data: [['config', 'ipaddr']] },
-    A09: { severity: 'warn', cat: '位址', title: '同一 IP 位址設定在多台設備', data: [['config', 'ipaddr']] },
-    A10: { severity: 'warn', cat: '位址', title: '同一名稱在不同設備對應到不同 IP', data: [['config']] },
-    A11: { severity: 'info', cat: '位址', title: '同一 IP 在不同設備以不同名稱設定', data: [['config']] },
-    A12: { severity: 'warn', cat: '位址', title: '各設備的 DNS／NTP 伺服器設定不同', data: [['config']] },
-    R01: { severity: 'info', cat: '路由', title: '路由下一跳不屬於任何已知設備', data: [['route']] },
-    R02: { severity: 'info', cat: '路由', title: 'OSPF 鄰居無法對應到已收集的設備', data: [['ospf']] },
-    R03: { severity: 'warn', cat: '路由', title: '路由下一跳形成迴圈', data: [['route']] },
-    R04: { severity: 'warn', cat: '路由', title: '路由下一跳落入黑洞路由', data: [['route']] },
-    R05: { severity: 'warn', cat: '路由', title: 'DHCP 網路的閘道不在該網段內', data: [['config']] },
-    R06: { severity: 'warn', cat: '路由', title: '同一 DHCP 網段在不同設備的閘道、DNS 或 NTP 不同', data: [['config']] },
-    F01: { severity: 'warn', cat: '防火牆', title: '規則被前面的規則完全遮蔽，永遠不會命中', data: [['config']] },
-    F02: { severity: 'info', cat: '防火牆', title: '重複的規則（比對條件與動作相同）', data: [['config']] },
-    F03: { severity: 'warn', cat: '防火牆', title: 'WAN 可主動建立新連線的放行規則', data: [['config']] },
-    F04: { severity: 'info', cat: '防火牆', title: 'WAN 可連入的 dst-nat（連接埠轉送）', data: [['config']] },
-    F05: { severity: 'warn', cat: '防火牆', title: 'IPv6 forward 放行只限目的埠、沒有限目的位址', data: [['config']] },
-    F06: { severity: 'warn', cat: '防火牆', title: '以固定來源埠放行', data: [['config']] },
-    F07: { severity: 'warn', cat: '防火牆', title: '管理服務沒有限制來源位址，且 WAN 可以連入', data: [['config']] },
-    F08: { severity: 'info', cat: '防火牆', title: '無法判斷 WAN 介面（WAN 相關的防火牆檢查未執行）', data: [['config']] },
-  };
+  // 規則目錄（編號、嚴重度、標題、需要的資料、常見原因與處理）在 catalog.js，須先載入
+  if (!S.check || !S.check.CATALOG) throw new Error('src/check/catalog.js 必須在 src/check/checks.js 之前載入');
+  const CATALOG = S.check.CATALOG;
 
   /** 每筆 finding 預設最多附幾筆證據；規則可用 CATALOG 的 evidenceLimit 覆寫。 */
   const EVIDENCE_LIMIT = 6;

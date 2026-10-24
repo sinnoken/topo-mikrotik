@@ -154,6 +154,24 @@ footer { display: flex; align-items: center; gap: 16px; padding: 0 12px; font-si
 .diff-cat { margin-top: 10px; }
 .diff-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
 .diff-summary { padding-left: 0; padding-right: 0; }
+/* 修復追蹤（比對結果上方） */
+.fix-tracking { margin: 10px 0 4px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.fix-summary { padding-left: 0; padding-right: 0; border-bottom: none; background: none; }
+.fix-group { margin-top: 8px; }
+.fix-group .clear-fixed { min-height: 0; padding: 3px 8px; font-size: var(--fs-sm); }
+/* 檢查結果：確認的分類與原因、分組方式 */
+.ack-editor { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 4px 10px 8px 26px; }
+.ack-editor .ack-note-input { flex: 1; min-width: 160px; }
+.ack-editor button, .ack-editor select, .ack-editor input { min-height: 28px; padding: 3px 8px; font-size: var(--fs-sm); }
+.findings-view { align-items: center; }
+.findings-view .seg button { min-height: 26px; padding: 2px 10px; border: none; border-radius: 0; box-shadow: none; font-size: var(--fs-sm); }
+.findings-view .seg button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.findings-view .note, .devices-draft .muted { font-size: var(--fs-sm); }
+.export-by-device.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+/* 防火牆修正範例 */
+.fw-fix { margin-bottom: 10px; }
+.fw-fix pre { margin: 4px 0; font-family: var(--mono); font-size: var(--fs-sm); overflow-x: auto; }
+.fw-fix .warn-line { color: var(--warn); font-size: var(--fs-sm); }
 .chip.effect { background: #fff; }
 
 /* ---------- 表格 ---------- */
@@ -187,6 +205,15 @@ table.t tr.click { cursor: pointer; }
 .finding { display: flex; gap: 9px; align-items: flex-start; padding: 9px 10px; border: 1px solid var(--line-soft); border-radius: var(--radius); margin-bottom: 7px; font-size: var(--fs-md); background: var(--surface); }
 .finding .ev { margin-top: 2px; }
 .finding > .sev { margin-top: 5px; }
+/* 規則的常見原因與處理（CATALOG）：檢查結果與規則清單共用，預設收合 */
+.advice { margin-top: 4px; font-size: var(--fs-sm); }
+.advice > summary { cursor: pointer; color: var(--accent); width: max-content; max-width: 100%; }
+.advice > summary:hover { text-decoration: underline; }
+.advice-body { margin-top: 4px; padding: 6px 8px; border-left: 2px solid var(--line-strong); background: var(--surface-hover); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.advice-label { color: var(--muted); font-weight: 600; }
+.advice-causes { margin-top: 4px; }
+.advice-causes ul { margin: 2px 0 0; padding-left: 18px; }
+.advice code { padding: 0 3px; border-radius: 3px; background: var(--neutral-soft); overflow-wrap: anywhere; }
 .ev .link + .link { margin-left: 10px; }
 .ev.stack .link { display: block; }
 .ev.stack .link + .link { margin-left: 0; }

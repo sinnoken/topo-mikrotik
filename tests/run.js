@@ -704,6 +704,18 @@ test('C02 的證據不限 6 筆：列出全部失敗註解與已收集區塊；�
   assert.strictEqual(S.check.CATALOG.C02.evidenceLimit, Infinity);
   assert.ok(Object.entries(S.check.CATALOG).every(([id, c]) => id === 'C02' || c.evidenceLimit === undefined));
 });
+test('每條檢查規則都有常見原因（1–4 條，皆非空）與處理方式，且只放在 CATALOG、不複製到 finding', () => {
+  const ids = Object.keys(S.check.CATALOG);
+  assert.strictEqual(ids.length, 40);
+  Object.entries(S.check.CATALOG).forEach(([id, c]) => {
+    assert.ok(typeof c.action === 'string' && c.action.trim() !== '', `${id} 缺少處理方式（action）`);
+    assert.ok(Array.isArray(c.causes) && c.causes.length >= 1 && c.causes.length <= 4, `${id} 的常見原因（causes）應有 1–4 條`);
+    c.causes.forEach((x, k) => assert.ok(typeof x === 'string' && x.trim() !== '', `${id} 的第 ${k + 1} 條常見原因是空的`));
+  });
+  const s = build(read('samples/sample-bundle.txt'));
+  assert.ok(s.findings.length > 0);
+  assert.ok(s.findings.every((f) => !('causes' in f) && !('action' in f)), 'finding 不帶 causes／action，畫面從 CATALOG 讀');
+});
 test('A02：同一個 VLAN ID 只在同一個 VLAN 區塊內比較，不相連的區塊（例如各站點重用 VLAN ID）不報', () => {
   const mac = 'AA:BB:CC:00:00:01';
   const sw = (name, ip, nb) => [`${name} (${ip}):`, NB(nb), '### /export terse', '/interface bridge add name=bridge1 vlan-filtering=yes',
@@ -1718,6 +1730,356 @@ test('index.html 載入的核心檔案與測試相同、順序一致', () => {
   const scripts = Array.from(html.matchAll(/<script src="([^"]+)"/g)).map((m) => m[1]);
   const core = require('../tools/core-files.js');
   assert.deepStrictEqual(scripts.slice(0, core.length), core);
+});
+
+// ------------------------------------------------------------------ 收集器 → reader 端到端契約
+// 用假的 ssh 實際跑 tools/collect.sh（方式同 tests/collect.sh），把產生的 bundle-v1 交給核心，確認兩邊對格式的認知一致。
+// 環境缺 bash 或 GNU timeout 時「明確失敗」而不是略過：npm test 本來就要跑 bash tests/collect.sh，CI（ubuntu）一定有；
+// 略過會讓這份跨元件契約在少了工具的環境裡看起來像是通過。
+const E2E = {
+  // 每台設備每個指令的固定輸出（RouterOS 的 SSH 輸出帶 CR）；exit 不是 0 的指令模擬失敗
+  devices: [['SW_A', '192.0.2.1'], ['R_B', '192.0.2.2']],
+  commands: ['system', 'config', 'neighbor', 'interface', 'arp'],
+  cmdText: { system: '/system resource print', config: '/export terse', neighbor: '/ip neighbor print detail without-paging',
+    interface: '/interface print detail without-paging', arp: '/ip arp print detail without-paging' },
+  out: {
+    'SW_A|system': ['            version: 7.16.1 (stable)', '         board-name: CRS326-24G-2S+', '           platform: MikroTik'],
+    'SW_A|config': ['# 2026-10-24 03:00:00 by RouterOS 7.16.1', '/interface bridge add name=bridge1 vlan-filtering=yes',
+      '/interface bridge port add bridge=bridge1 interface=ether2 pvid=20', '/interface bridge vlan add bridge=bridge1 tagged=ether1 untagged=ether2 vlan-ids=20',
+      '/ip address add address=192.0.2.1/24 interface=bridge1 network=192.0.2.0', '/system identity set name=SW_A'],
+    'SW_A|neighbor': [' 0 interface=ether1 address=192.0.2.2 mac-address=AA:BB:CC:00:00:02 identity=R_B platform=MikroTik', '    interface-name=ether1 discovered-by=lldp'],
+    'SW_A|interface': ['Flags: R - RUNNING', ' 0  R  name="ether1" default-name="ether1" type="ether" mtu=1500 mac-address=AA:BB:CC:00:00:01',
+      ' 1  R  name="ether2" default-name="ether2" type="ether" mtu=1500', ' 2  R  name="bridge1" type="bridge" mtu=auto'],
+    'SW_A|arp': [' 0 DC address=192.0.2.2 mac-address=AA:BB:CC:00:00:02 interface=bridge1'],
+    'R_B|system': ['            version: 7.16.1 (stable)', '         board-name: RB5009UG+S+', '           platform: MikroTik'],
+    'R_B|config': ['/ip address add address=192.0.2.2/24 interface=ether1 network=192.0.2.0', '/system identity set name=R_B'],
+    'R_B|neighbor': [' 0 interface=ether1 address=192.0.2.1 mac-address=AA:BB:CC:00:00:01 identity=SW_A platform=MikroTik', '    interface-name=ether1 discovered-by=lldp'],
+    'R_B|interface': ['Flags: R - RUNNING', ' 0  R  name="ether1" default-name="ether1" type="ether" mtu=1500 mac-address=AA:BB:CC:00:00:02'],
+  },
+  fail: { 'R_B|arp': { exit: 3, stderr: 'failure: not enough permissions' } },
+};
+const FAKE_SSH = [
+  '#!/usr/bin/env bash',
+  '# 假的 ssh：最後一個參數是指令、倒數第二個是 user@位址；輸出取自 responses/<位址>/<指令>，有 .exit 檔時以該結束碼失敗',
+  'set -u',
+  'DIR=$(cd "$(dirname "$0")" && pwd)',
+  'command_name=; target=',
+  'for argument in "$@"; do target=${command_name:-}; command_name=$argument; done',
+  'printf \'%s|%s\\n\' "$target" "$command_name" >> "$DIR/../ssh.log"',
+  'f="$DIR/../responses/${target#*@}/$(printf \'%s\' "$command_name" | tr -c \'A-Za-z0-9\' \'_\')"',
+  'if [[ -f "$f.exit" ]]; then [[ -f "$f" ]] && cat "$f"; cat "$f.stderr" >&2; exit "$(cat "$f.exit")"; fi',
+  '[[ -f "$f" ]] || { printf \'fake ssh：沒有準備 %s 的輸出\\n\' "$target|$command_name" >&2; exit 99; }',
+  'cat "$f"', ''].join('\n');
+const E2E_WRAPPER = ['#!/usr/bin/env bash', 'set -euo pipefail', 'DIR=$(cd "$(dirname "$0")" && pwd)', 'export PATH="$DIR/bin:$PATH"', 'exec bash "$@"', ''].join('\n');
+const slug = (cmd) => cmd.replace(/[^A-Za-z0-9]/g, '_');
+const bashPath = (p) => p.replace(/\\/g, '/'); // Git Bash 接受 C:/… 形式；Linux 不變
+/** 檢查 bash 與 GNU timeout；缺少時丟出說明原因的錯誤（測試失敗，不略過）。 */
+function requireBashTools() {
+  const { spawnSync } = require('child_process');
+  const r = spawnSync('bash', ['-c', 'command -v timeout >/dev/null || { echo "找不到 timeout"; exit 3; }; timeout --version | head -n 1'], { encoding: 'utf8' });
+  if (r.error) assert.fail(`收集器端到端測試需要 bash（${r.error.code || r.error.message}）；Windows 請安裝 Git Bash 並放在 PATH 前面，WSL／Linux 請安裝 bash`);
+  if (r.status !== 0 || !/GNU coreutils/.test(r.stdout)) assert.fail(`收集器端到端測試需要 GNU timeout（coreutils）：${(r.stdout + r.stderr).trim() || `bash 結束碼 ${r.status}`}`);
+}
+/** 在暫存目錄準備假的 ssh 並執行 tools/collect.sh；回傳 { status, text, log, stderr }，結束後刪除暫存目錄。 */
+function runCollector() {
+  const os = require('os'); const { spawnSync } = require('child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'topo-mikrotik-e2e-'));
+  try {
+    fs.mkdirSync(path.join(dir, 'bin'));
+    fs.writeFileSync(path.join(dir, 'bin', 'ssh'), FAKE_SSH, { mode: 0o755 });
+    fs.writeFileSync(path.join(dir, 'run.sh'), E2E_WRAPPER, { mode: 0o755 });
+    E2E.devices.forEach(([name, ip]) => {
+      const d = path.join(dir, 'responses', ip); fs.mkdirSync(d, { recursive: true });
+      E2E.commands.forEach((id) => {
+        const k = `${name}|${id}`; const f = path.join(d, slug(E2E.cmdText[id]));
+        if (E2E.out[k]) fs.writeFileSync(f, E2E.out[k].map((l) => l + '\r\n').join(''));
+        if (E2E.fail[k]) { fs.writeFileSync(f + '.exit', String(E2E.fail[k].exit)); fs.writeFileSync(f + '.stderr', E2E.fail[k].stderr + '\n'); }
+      });
+    });
+    fs.writeFileSync(path.join(dir, 'devices.csv'), ['name,address,user,port', ...E2E.devices.map(([n, ip]) => `${n},${ip},admin,22`)].join('\n') + '\n');
+    const out = path.join(dir, 'bundle.txt');
+    const r = spawnSync('bash', [bashPath(path.join(dir, 'run.sh')), bashPath(path.join(ROOT, 'tools/collect.sh')), bashPath(path.join(dir, 'devices.csv')),
+      '--commands', E2E.commands.join(','), '--timeout', '20', '--output', bashPath(out)], { encoding: 'utf8', timeout: 120000 });
+    if (r.error) throw r.error;
+    const read1 = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '');
+    return { status: r.status, stderr: r.stderr, stdout: r.stdout, text: read1(out), log: read1(path.join(dir, 'ssh.log')) };
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
+test('收集器端到端：假 ssh 執行 tools/collect.sh 產生的 bundle-v1，核心讀得出收集時間、失敗原因、設備與指令，且收集器註解不是 I01', () => {
+  requireBashTools();
+  const run = runCollector();
+  assert.strictEqual(run.status, 1, `有一個指令失敗，收集器應以 1 結束；實際 ${run.status}\n${run.stdout}\n${run.stderr}`);
+  assert.ok(/failure: not enough permissions/.test(run.stderr), '失敗指令的 stderr 要轉給使用者：' + run.stderr);
+  // 每台設備依序執行每個指令，連到正確的位址（假 ssh 記錄「user@位址|指令」）
+  const want = E2E.devices.flatMap(([, ip]) => E2E.commands.map((id) => `admin@${ip}|${E2E.cmdText[id]}`));
+  assert.deepStrictEqual(run.log.trim().split(/\r?\n/), want);
+  const s = S.build([{ name: 'collection.txt', text: run.text }], { now: '2026-01-01T00:00:00Z' });
+  assert.strictEqual(s.meta.sources[0].reader, 'bundle-v1');
+  assert.deepStrictEqual(s.findings.filter((f) => f.id === 'I01').map((f) => f.message), [], '收集器寫的 # collected-at／# collection failed 不可變成 I01');
+  // 設備名稱與指令標記對回來：每個區塊一個指令，順序與收集順序相同
+  assert.deepStrictEqual(s.blocks.map((b) => [b.device, b.command]), E2E.devices.flatMap(([n]) => E2E.commands.map((id) => [n, E2E.cmdText[id]])));
+  assert.deepStrictEqual(s.model.devices.filter((d) => d.collected).map((d) => [d.key, d.mgmtIp]), E2E.devices.slice().sort((x, y) => S.util.natural(x[0], y[0])));
+  // 收集時間：每個區塊都有，格式是 UTC ISO 8601 秒精度（值由收集當下決定，不比對）
+  s.blocks.forEach((b) => assert.ok(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(b.collectedAt || ''), `${b.device} ${b.command} 的 collectedAt：${b.collectedAt}`));
+  // 失敗：只有 R_B 的 ARP，原因 exit-code，結束碼 3；其他區塊沒有 failure
+  assert.deepStrictEqual(s.blocks.filter((b) => b.failure).map((b) => [b.device, b.command, b.failure.reason, b.failure.exitCode]),
+    [['R_B', E2E.cmdText.arp, 'exit-code', 3]]);
+  assert.deepStrictEqual(s.coverage.find((c) => c.dev === 'R_B').failures.map((x) => [x.command, x.reason, x.exitCode, x.dataTypes]),
+    [[E2E.cmdText.arp, 'exit-code', 3, ['arp']]]);
+  assert.deepStrictEqual(s.coverage.find((c) => c.dev === 'SW_A').failures, []);
+  // 收集到的內容確實被解析：LLDP 雙向、ARP、VLAN、IP
+  assert.deepStrictEqual(s.model.links.map((l) => [l.key, l.verified]), [['R_B|ether1~SW_A|ether1', true]]);
+  assert.deepStrictEqual(s.model.arps.map((a) => [a.dev, a.ip]), [['SW_A', '192.0.2.2']]);
+  assert.deepStrictEqual(addrs(s, 'R_B|ether1'), ['192.0.2.2/24']);
+  assert.deepStrictEqual(iface(s, 'SW_A|ether2').untaggedVlans, [20]);
+  // 可重現：再收集一次，除了收集時間以外輸出相同，Snapshot 的模型、finding、coverage 也相同
+  const again = runCollector();
+  const norm = (t) => t.replace(/^# collected-at: .*$/gm, '# collected-at: <時間>');
+  assert.strictEqual(norm(again.text), norm(run.text));
+  const s2 = S.build([{ name: 'collection.txt', text: again.text }], { now: '2026-01-01T00:00:00Z' });
+  // 收集時間也會出現在 C02 證據的原文裡，一併換掉
+  const stable = (x) => JSON.stringify({ model: x.model, findings: x.findings, coverage: x.coverage, blocks: x.blocks }).replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z/g, '<時間>');
+  assert.strictEqual(stable(s2), stable(s));
+});
+
+// ------------------------------------------------------------------ 防火牆語意的性質測試（S.infer.fw）
+// 固定種子的亂數產生規則組合；失敗時訊息帶種子與規則，用同一個種子就能重現。
+const mulberry32 = (seed) => () => { seed = (seed + 0x6D2B79F5) | 0; let t = seed; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+const pick = (rnd, xs) => xs[Math.floor(rnd() * xs.length)];
+const FWGEN = {
+  protocol: ['tcp', 'udp', 'icmp', '6', '17'],
+  'dst-port': ['22', '80', '443', '80,443', '443,80', '22,80,443', '1000-2000', '1500', '1-65535', '22,8000-8100', '8000-8050'],
+  'src-address': ['10.0.0.0/8', '10.1.0.0/16', '10.1.2.3', '192.168.1.0/24', '0.0.0.0/0', '203.0.113.0/24', '10.0.0.1-10.0.0.50', '10.0.0.10'],
+  'in-interface': ['ether1', 'ether2', 'bridge1'],
+  'in-interface-list': ['WAN', 'LAN', 'all', 'dynamic'], // dynamic 是內建清單，export 看不到成員：無法判斷
+  'connection-state': ['new', 'established,related', 'invalid', 'established,related,untracked', 'related,established', 'new,invalid'],
+};
+const FW_NONDET_GEN = { limit: '10,5:packet', random: '50', nth: '2,1' };
+/** 一組比對條件：每個欄位約 3 成機率出現，其中約 2 成加 !。 */
+function genMatch(rnd) {
+  const m = {};
+  Object.keys(FWGEN).forEach((k) => { if (rnd() < 0.3) m[k] = (rnd() < 0.2 ? '!' : '') + pick(rnd, FWGEN[k]); });
+  return m;
+}
+const fwRuleText = (r) => `/ip firewall filter add action=${r.action} chain=${r.chain}${Object.keys(r.match).map((k) => ` ${k}=${r.match[k]}`).join('')}`;
+// 和 fwBox 相同的設備：WAN＝ether1、LAN＝bridge1（另加 ether2）
+const FW_LISTS = [['WAN', ['ether1']], ['LAN', ['bridge1', 'ether2']]];
+const K_EP = (d, i) => S.keys.ep(d, i);
+const fwPropCtx = (rules) => S.infer.fw.fwContext('R', FW_LISTS.map(([name, m]) => ({ name, defined: true, include: [], exclude: [], members: m.map((x) => K_EP('R', x)) })),
+  ['ether1', 'ether2', 'ether3', 'bridge1'].map((x) => K_EP('R', x)), rules);
+const fwProp = (match, action = 'accept', chain = 'input') => ({ dev: 'R', family: 'ip', table: 'filter', chain, action, match, params: {}, disabled: false });
+const hasUnknownList = (r) => ['in-interface-list', 'out-interface-list'].some((k) => r.match[k] !== undefined && S.infer.fw.splitNeg(r.match[k]).body === 'dynamic');
+test('防火牆性質：covers 自反、遞移；前一條帶 limit／random／nth 時一律不涵蓋（固定種子，數百組規則）', () => {
+  const fw = S.infer.fw;
+  let rules = 0; let chains = 0; let skipped = 0;
+  for (let seed = 1; seed <= 25; seed++) {
+    const rnd = mulberry32(seed);
+    const rs = Array.from({ length: 32 }, () => fwProp(genMatch(rnd)));
+    const ctx = fwPropCtx(rs);
+    const cov = rs.map((a) => rs.map((b) => fw.covers(ctx, a, b)));
+    const show = (...xs) => `種子 ${seed}：` + xs.map((r) => JSON.stringify(r.match)).join(' ／ ');
+    rs.forEach((a, i) => {
+      rules++;
+      assert.ok(cov[i][i], `covers(a, a) 不成立；${show(a)}`);
+      rs.forEach((b, j) => {
+        if (!cov[i][j]) return;
+        rs.forEach((c, k) => {
+          if (!cov[j][k]) return;
+          // 只計入非平凡的鏈：a 有條件，且 a、b、c 的條件兩兩不同（空條件的規則涵蓋一切，不算測到遞移）
+          const ms = [a, b, c].map((r) => JSON.stringify(r.match));
+          if (ms[0] !== '{}' && new Set(ms).size === 3) chains++;
+          // 例外（依設計）：c 用了無法展開成員的清單（例如內建的 dynamic）時，covers 只接受字面相同的介面條件，
+          // 不推導「a 不限介面（或 all）→ 一定涵蓋」。這是保守的近似：只會少判涵蓋（少報 F01），不會誤判。
+          if (!cov[i][k] && hasUnknownList(c) && !hasUnknownList(a)) { skipped++; return; }
+          assert.ok(cov[i][k], `遞移不成立：covers(a,b) 且 covers(b,c)，但 covers(a,c) 為否；${show(a, b, c)}`);
+        });
+      });
+      // 帶不確定比對（limit、random、nth）的規則不會被當成涵蓋任何規則，包括和自己完全相同的規則
+      Object.entries(FW_NONDET_GEN).forEach(([k, v]) => {
+        const nd = fwProp(Object.assign({}, a.match, { [k]: v }));
+        rs.concat([nd, fwProp(Object.assign({}, nd.match))]).forEach((b) => assert.strictEqual(fw.covers(ctx, nd, b), false, `${k} 的規則不可涵蓋；${show(nd, b)}`));
+      });
+    });
+  }
+  console.log(`      ${rules} 組規則、${chains} 組非平凡的涵蓋鏈；${skipped} 組因 c 用了無法展開的清單而不遞移（依設計）`);
+  assert.ok(rules >= 800, `只產生 ${rules} 組規則`);
+  assert.ok(chains >= 300, `只有 ${chains} 組非平凡的 a→b→c 涵蓋鏈，遞移性測得不夠（調整產生器的機率）`);
+  // 上面例外的具體案例：結果是「不涵蓋」，不是錯誤的涵蓋
+  const ctx = fwPropCtx([]); const any = fwProp({ 'in-interface-list': 'all' }); const none = fwProp({}); const dyn = fwProp({ 'in-interface-list': 'dynamic' });
+  assert.deepStrictEqual([fw.covers(ctx, any, none), fw.covers(ctx, none, dyn), fw.covers(ctx, any, dyn), fw.covers(ctx, dyn, dyn)], [true, true, false, true]);
+});
+test('防火牆性質：在 chain 任意位置插入規則，其他規則的 key 不變；在 input 最前面插入 drop，F03 不會增加；不確定比對不產生 F01', () => {
+  const fw = S.infer.fw;
+  const ACTIONS = ['accept', 'accept', 'drop', 'reject'];
+  const rulesOf = (s) => s.model.firewallRules.filter((r) => r.dev === 'R' && r.table === 'filter');
+  let f03Before = 0; let f03Dropped = 0; let dupInserts = 0;
+  for (let seed = 1; seed <= 120; seed++) {
+    const rnd = mulberry32(1000 + seed);
+    // 約 15% 的規則帶不確定比對（limit／random／nth）
+    const withNondet = (m) => { const k = pick(rnd, Object.keys(FW_NONDET_GEN)); return Object.assign(m, { [k]: FW_NONDET_GEN[k] }); };
+    const gen = (chain) => fwProp(rnd() < 0.15 ? withNondet(genMatch(rnd)) : genMatch(rnd), pick(rnd, ACTIONS), chain);
+    const base = Array.from({ length: 3 + Math.floor(rnd() * 5) }, () => gen(rnd() < 0.7 ? 'input' : 'forward'));
+    const where = (s) => `種子 ${1000 + seed}：\n        ${s.join('\n        ')}`;
+    const s0 = fwBox(base.map(fwRuleText)); const r0 = rulesOf(s0);
+    // 插入：同一 chain 內任意位置；有時與既有規則的比對條件相同（簽章相同、動作可不同）
+    const chain = pick(rnd, ['input', 'forward']);
+    const same = base.filter((r) => r.chain === chain);
+    const ins = same.length && rnd() < 0.25 ? fwProp(Object.assign({}, pick(rnd, same).match), pick(rnd, ACTIONS), chain) : gen(chain);
+    const at = Math.floor(rnd() * (base.length + 1));
+    const lines1 = base.map(fwRuleText); lines1.splice(at, 0, fwRuleText(ins));
+    const s1 = fwBox(lines1); const r1 = rulesOf(s1);
+    const added = r1[at]; assert.strictEqual(added.src[0][1] - r0[0].src[0][1], at, where(lines1));
+    const rest = r1.filter((_, k) => k !== at);
+    rest.forEach((n, k) => {
+      const o = r0[k];
+      assert.strictEqual(n.signature, o.signature, where(lines1));
+      if (o.signature !== added.signature) assert.strictEqual(n.key, o.key, `插入規則後，簽章不同的規則鍵改變：${o.key} → ${n.key}\n${where(lines1)}`);
+    });
+    // 依設計：同一 chain 簽章相同的規則依出現順序加 #n，插在它們前面時 #n 會往後移（compare.js 已註明）；整組的鍵只多出下一個編號
+    const grp0 = r0.filter((r) => r.signature === added.signature).map((r) => r.key);
+    const grp1 = r1.filter((r) => r.signature === added.signature).map((r) => r.key);
+    if (grp0.length) dupInserts++;
+    assert.deepStrictEqual(grp1.slice(0, grp0.length).sort(), grp0.slice().sort(), where(lines1));
+    assert.strictEqual(grp1.length, grp0.length + 1);
+    assert.strictEqual(new Set(r1.map((r) => r.key)).size, r1.length, `規則鍵重複\n${where(lines1)}`);
+    // 不確定比對：被當成「前面的規則」的 F01 都不可帶 limit／random／nth
+    [s0, s1].forEach((s) => fws(s, 'F01').forEach((f) => {
+      const by = rulesOf(s).find((r) => r.src[0][1] === f.evidence[1].line); // F01 的第二筆證據是涵蓋它的前一條規則
+      assert.ok(!Object.keys(by.match).some((k) => fw.NONDET.has(k)), `${f.message}\n${where(lines1)}`);
+    }));
+    // input 最前面插入 drop：F03 只會變少；留下的 F03 都是原本就有的規則（以表內順序對回）
+    const drop = fwProp(rnd() < 0.3 ? {} : genMatch(rnd), 'drop', 'input');
+    const lines2 = [fwRuleText(drop)].concat(base.map(fwRuleText));
+    const s2 = fwBox(lines2);
+    const f03Orders = (s, shift) => fws(s, 'F03').map((f) => s.model.firewallRules.find((r) => r.key === f.entities[1].key).order - shift);
+    const before = f03Orders(s0, 0); const after = f03Orders(s2, 1);
+    assert.ok(after.length <= before.length, `F03 從 ${before.length} 筆增加到 ${after.length} 筆\n${where(lines2)}`);
+    after.forEach((o) => assert.ok(before.includes(o), `插入 drop 後出現原本沒有的 F03（表內第 ${o} 條）\n${where(lines2)}`));
+    f03Before += before.length; f03Dropped += before.length - after.length;
+  }
+  console.log(`      120 組 chain：F03 ${f03Before} 筆，插入 drop 後擋下 ${f03Dropped} 筆；${dupInserts} 次插入與既有規則簽章相同`);
+  assert.ok(f03Before > 20 && f03Dropped > 0, `F03 ${f03Before} 筆、被 drop 擋下 ${f03Dropped} 筆：產生的規則太少觸發 F03，性質測得不夠`);
+  assert.ok(dupInserts > 5, `只有 ${dupInserts} 次插入與既有規則簽章相同的規則`);
+});
+
+// ------------------------------------------------------------------ 新舊比對的性質測試（S.compare.snapshots）
+/** 字串替換，且必須恰好替換一次（範例資料改版時明確失敗，而不是悄悄沒改到）。 */
+const replaceOnce = (text, from, to, what) => {
+  const n = text.split(from).length - 1;
+  assert.strictEqual(n, 1, `${what}：範例資料中「${String(from).slice(0, 60)}」應恰好出現 1 次，實際 ${n} 次`);
+  return text.replace(from, to);
+};
+/** 從範例資料改出的「新」基準：刪一條鏈路（兩端的 LLDP 項目）、改一個 VLAN、改一個遮罩、加一條 WAN 可連入的 accept、收窄一條既有放行。 */
+function mutatedSample() {
+  let t = read('samples/sample-bundle.txt');
+  // TPE_CORE_RT_01 qsfpplus2-1 ⇄ TPE_CORE_RT_02 qsfpplus2-1：兩端各一筆鄰居項目（編號行＋縮排的續行）
+  t = t.replace(/^ +\d+ +interface=qsfpplus2-1 address=10\.1\.10\.[23] [^\n]*\n(?: {4}[^\n]*\n)*/gm, (m) => { mutatedSample.dropped++; return ''; });
+  // TPE_ACC_SW_01 的 VLAN 30 → 31、管理位址 /24 → /25（這兩行相鄰，合起來在範例中唯一）
+  const VLAN30 = 'untagged=ether9,ether10,ether11,ether12,ether13,ether14,ether15,ether16 vlan-ids=';
+  t = replaceOnce(t, `${VLAN30}30\n/ip address add address=10.1.10.21/24 interface=vlan10`, `${VLAN30}31\n/ip address add address=10.1.10.21/25 interface=vlan10`, 'VLAN 與遮罩');
+  t = replaceOnce(t, '/ip firewall filter\nadd action=accept chain=input \\\n', '/ip firewall filter\nadd action=accept chain=input dst-port=3389 in-interface-list=WAN protocol=tcp\nadd action=accept chain=input \\\n', '防火牆');
+  // 既有的 winbox 放行加上來源限制（條件變窄 → firewall 的 match 改變）
+  t = replaceOnce(t, 'dst-port=8291 in-interface=ether47 \\\n    protocol=tcp\n', 'dst-port=8291 in-interface=ether47 \\\n    protocol=tcp src-address=198.51.100.0/24\n', '防火牆條件');
+  return t;
+}
+mutatedSample.dropped = 0;
+test('比對性質：自己比自己為 0；A→B 的新增／移除與 B→A 互換、改變互相對應；只改 finding 訊息不算差異；新增 WAN 放行是 new-exposure', () => {
+  const A = build(read('samples/sample-bundle.txt'));
+  mutatedSample.dropped = 0; const B = build(mutatedSample());
+  assert.strictEqual(mutatedSample.dropped, 2, '要刪掉兩端各一筆鄰居項目');
+  const QA = S.query(A); const QB = S.query(B);
+  const diff = (x, y) => { const r = S.compare.snapshots(x, y); assert.deepStrictEqual(r.errors, []); return r; };
+  // 同一份：0 個 item（兩份都試）
+  assert.deepStrictEqual(diff(QA, QA).items, []);
+  assert.deepStrictEqual(diff(QB, QB).items, []);
+  assert.deepStrictEqual(diff(QA, S.query(build(read('samples/sample-bundle.txt')))).items, [], '重新建立的同一份輸入也是 0');
+  const ab = diff(QA, QB); const ba = diff(QB, QA);
+  const keysOf = (r, change) => r.items.filter((i) => i.change === change).map((i) => `${i.category}|${i.key}`).sort();
+  // 刻意的改變都有出現
+  const has = (cat, change, key) => ab.items.some((i) => i.category === cat && i.change === change && (key === undefined || i.key === key));
+  assert.ok(has('link', 'removed', 'TPE_CORE_RT_01|qsfpplus2-1~TPE_CORE_RT_02|qsfpplus2-1'), '刪掉的鏈路');
+  // 埠的 pvid 仍是 30，所以 VLAN 30 仍在（隱含的 VLAN）；只多出 31
+  assert.ok(has('vlan', 'added', 'TPE_ACC_SW_01|31') && !has('vlan', 'removed', 'TPE_ACC_SW_01|30'), '改掉的 VLAN');
+  assert.ok(ab.items.some((i) => i.category === 'ip' && i.change === 'changed' && i.key === '10.1.10.21' && i.field === 'address'), '改掉的遮罩');
+  assert.ok(ab.items.some((i) => i.category === 'firewall' && i.change === 'changed' && i.field === 'match' && i.before.key !== i.key), '收窄的防火牆規則');
+  assert.ok(has('firewall', 'added') && has('finding', 'added') && has('finding', 'removed'), JSON.stringify(ab.summary));
+  // A→B 的新增＝B→A 的移除（鍵完全相同，含重複的 finding 鍵）
+  assert.deepStrictEqual(keysOf(ab, 'added'), keysOf(ba, 'removed'));
+  assert.deepStrictEqual(keysOf(ab, 'removed'), keysOf(ba, 'added'));
+  assert.deepStrictEqual([ab.summary.added, ab.summary.removed, ab.summary.changed], [ba.summary.removed, ba.summary.added, ba.summary.changed]);
+  // 改變：同類別、同欄位、before／after 互換。防火牆 match 改變的鍵是「新」規則的鍵、舊的在 before.key，所以反向時兩者互換
+  const chg = (r) => r.items.filter((i) => i.change === 'changed').map((i) => (i.category === 'firewall' && i.field === 'match'
+    ? JSON.stringify([i.category, i.field, i.before.key, i.key]) : JSON.stringify([i.category, i.field, i.key, i.before, i.after]))).sort();
+  const chgRev = (r) => r.items.filter((i) => i.change === 'changed').map((i) => (i.category === 'firewall' && i.field === 'match'
+    ? JSON.stringify([i.category, i.field, i.key, i.before.key]) : JSON.stringify([i.category, i.field, i.key, i.after, i.before]))).sort();
+  assert.ok(chg(ab).length > 0, '至少要有一筆改變');
+  assert.deepStrictEqual(chg(ab), chgRev(ba));
+  // 只改 finding 的訊息：findingKey 不變，比對沒有任何 finding 的新增或移除
+  const A2 = JSON.parse(JSON.stringify(A)); A2.findings.forEach((f) => { f.message += '（訊息改寫）'; });
+  const QA2 = S.query(A2);
+  assert.deepStrictEqual(A2.findings.map(QA2.findingKey), A.findings.map(QA.findingKey));
+  const m = diff(QA, QA2);
+  assert.deepStrictEqual(m.items.filter((i) => i.category === 'finding'), []);
+  assert.deepStrictEqual(m.summary.byCategory.finding, { added: 0, removed: 0, changed: 0 });
+  // 新增的 WAN 放行：對應的 item 是 new-exposure，且新基準有一筆指向它的 F03
+  const fwAdded = ab.items.filter((i) => i.category === 'firewall' && i.change === 'added');
+  assert.deepStrictEqual(fwAdded.map((i) => [i.after.match, i.effect]), [[{ 'dst-port': '3389', 'in-interface-list': 'WAN', protocol: 'tcp' }, 'new-exposure']]);
+  assert.ok(B.findings.some((f) => f.id === 'F03' && f.entities.some((e) => e.type === 'rule' && e.key === fwAdded[0].key)));
+  // 反向（拿掉這條）是移除、放行變少，不是 new-exposure
+  assert.deepStrictEqual(ba.items.filter((i) => i.category === 'firewall' && i.change !== 'changed').map((i) => [i.change, i.key, i.effect]), [['removed', fwAdded[0].key, 'more-restrictive']]);
+});
+
+// ------------------------------------------------------------------ 每一行輸入都有被處理
+/*
+ * 不變式：每個非空行屬於下列其中一種，沒有內容被靜默丟掉。
+ *   ① 結構行：設備標頭「名稱 (IP):」、分隔線「_____」、指令標記（### …／[user@host] > …）、註解（# 開頭，### 與 export 抬頭除外）。
+ *      bundle-v1 的標頭與分隔線依 readers/bundle-v1.js 檔頭的格式說明另外寫在這裡，當作獨立的規格，不沿用 reader 的正規式。
+ *   ② 落在「有被 adapter 解析」的區塊內：區塊的 adapters 不是空的，且有解析出事實（empty 為 false）。
+ *   ③ 落在列為 I01 的區塊內（I01 的證據指回該區塊）。
+ * 粒度是「區塊」：區塊有解析出事實，就視為整個區塊被處理；不要求每一行都產生事實——表頭、Flags 說明行、
+ * export 的 software id／model 註解、bridge 重複列、停用項目等，依設計不產生事實。
+ * 另外確認區塊之間不重疊、每個區塊都屬於 ②③，或是只有收集失敗註解的區塊（例如連線失敗；其中若有內容行，逐行檢查時仍會報出）。
+ */
+const BUNDLE_HEADER = /^\s*[A-Za-z0-9][\w.\-:]*\s*\(\d{1,3}(?:\.\d{1,3}){3}\)\s*:\s*$/;
+const BUNDLE_SEP = /^\s*_{5,}\s*$/;
+const COMMENT_LINE = /^\s*#(?!##)/;
+const EXPORT_HEADER_LINE = /^\s*#\s*\S+\s+\d{2}:\d{2}:\d{2}\s+by RouterOS\b/i;
+function unhandledLines(name, text) {
+  const s = S.build([{ name, text }], { now: '2026-01-01T00:00:00Z' });
+  const reader = s.meta.sources[0].reader;
+  const i01 = new Set(s.findings.filter((f) => f.id === 'I01').flatMap((f) => f.evidence.map((e) => e.block)));
+  const status = (b) => (b.adapters.length && !b.empty ? 'parsed' : i01.has(b.id) ? 'i01' : b.how === 'none' && b.failure ? 'notes-only' : null);
+  const problems = [];
+  s.blocks.forEach((b) => { if (!status(b)) problems.push(`區塊 ${b.id}（第 ${b.start}–${b.end} 行，${b.command || '沒有指令'}）既沒有解析也沒有列為 I01`); });
+  const sorted = s.blocks.slice().sort((a, b) => a.start - b.start);
+  sorted.forEach((b, k) => { if (k && b.start <= sorted[k - 1].end) problems.push(`區塊 ${sorted[k - 1].id} 與 ${b.id} 的行號範圍重疊`); });
+  const owner = new Map(); s.blocks.forEach((b) => { for (let n = b.start; n <= b.end; n++) owner.set(n, b); });
+  const structural = (line) => S.readers._common.markerOf(line) !== null || (COMMENT_LINE.test(line) && !EXPORT_HEADER_LINE.test(line))
+    || (reader === 'bundle-v1' && (BUNDLE_HEADER.test(line) || BUNDLE_SEP.test(line)));
+  text.split(/\r?\n/).forEach((line, k) => {
+    if (!line.trim() || structural(line)) return;
+    const b = owner.get(k + 1); const st = b && status(b);
+    if (st !== 'parsed' && st !== 'i01') problems.push(`第 ${k + 1} 行${b ? `（區塊 ${b.id}：${st}）` : '不在任何區塊內'}：${line.trim().slice(0, 80)}`);
+  });
+  return { s, problems };
+}
+test('每一行輸入都有被處理：範例資料與 tests/fixtures/ 的每個非空行都是結構行、已解析區塊或 I01 區塊', () => {
+  const files = ['samples/sample-bundle.txt'];
+  const walk = (dir) => fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).sort((a, b) => S.util.cmp(a.name, b.name))
+    .forEach((e) => (e.isDirectory() ? walk(`${dir}/${e.name}`) : e.name.endsWith('.txt') && files.push(`${dir}/${e.name}`)));
+  walk('tests/fixtures');
+  assert.ok(files.length >= 8, files.join('、'));
+  let lines = 0;
+  files.forEach((f) => {
+    const text = read(f); lines += text.split(/\r?\n/).filter((l) => l.trim()).length;
+    const { problems } = unhandledLines(path.basename(f), text);
+    assert.deepStrictEqual(problems.slice(0, 10), [], `${f} 有內容沒被處理（共 ${problems.length} 處）`);
+  });
+  console.log(`      ${files.length} 個檔案、${lines} 個非空行`);
+  // 不變式本身要抓得到問題：沒有標頭的內容是 I01（算處理）；一個辨識成功但解析不出東西的區塊也是 I01
+  assert.deepStrictEqual(unhandledLines('a.txt', '雜訊\nSW (10.0.0.1):\n### /ip arp print detail\n 0 DC address=10.0.0.9 mac-address=AA:BB:CC:00:00:09 interface=ether1\n').problems, []);
+  assert.deepStrictEqual(unhandledLines('a.txt', 'SW (10.0.0.1):\n### /ip arp print\nFlags: X\n 0 10.0.0.2 AA:BB:CC:00:00:01 bridge1\n').problems, []);
+  assert.ok(unhandledLines('a.txt', 'SW (10.0.0.1):\n### /ip arp print detail\n 0 DC address=10.0.0.9 mac-address=AA:BB:CC:00:00:09 interface=ether1\n').s.blocks.every((b) => b.adapters.length));
 });
 
 if (ARGS.large) {

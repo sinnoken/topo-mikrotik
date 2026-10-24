@@ -8,5 +8,5 @@
   "frontend": ["src/view/", "assets/", "index.html", "vendor/", "tests/ui-smoke.js"],
   "collector": ["tools/collect.sh", "tools/collector-commands.sh", "tools/devices.csv", "tests/collect.sh"],
   "docs": ["README.md", "CLAUDE.md", "docs/", ".github/copilot-instructions.md", ".github/skills/", ".claude/skills/", ".claude/agents/", "tests/docs.js"],
-  "lead": ["package.json", "package-lock.json", ".gitattributes", ".gitignore", ".github/workflows/"]
+  "lead": ["package.json", "package-lock.json", ".gitattributes", ".gitignore", ".github/workflows/", ".claude/settings.json"]
 }

@@ -47,10 +47,23 @@ jobs:
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v6
 
+      # 只發布畫面需要的檔案；tests、docs、tools、.claude 等不上站
+      - name: Assemble site
+        run: |
+          mkdir _site
+          git ls-files -z index.html assets src profiles samples vendor | xargs -0 cp --parents -t _site
+          engine=$(sed -nE "s/.*ENGINE_SRC = '([^']+)'.*/\1/p" src/view/graph/elk-layout.js)
+          [ -n "$engine" ] || { echo "::error::找不到 elk-layout.js 的 ENGINE_SRC"; exit 1; }
+          missing=0
+          for f in $(grep -oE '(src|href)="[^"#:]+"' index.html | sed -E 's/^(src|href)="//;s/"$//') "$engine"; do
+            [ -f "_site/$f" ] || { echo "::error::網站缺少 $f"; missing=1; }
+          done
+          exit $missing
+
       - name: Upload static site
         uses: actions/upload-pages-artifact@v5
         with:
-          path: .
+          path: _site
 
       - name: Deploy to GitHub Pages
         id: deployment

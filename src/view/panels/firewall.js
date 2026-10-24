@@ -1,7 +1,8 @@
 /*
  * 右側：某台設備的防火牆（選取 type 為 firewall／rule／service）。
  * 規則依位址族 → 表 → chain → position 列出（Q.firewallRuleRows、Q.firewallChains），
- * 另列 WAN／LAN 判斷（推論，Q.firewallZone）、/ip service 與 interface list。
+ * 另列 WAN／LAN 判斷（推論，Q.firewallZone）、/ip service 與 interface list，
+ * 以及適合停用處理的檢查結果（F01／F02／F03／F06）的停用指令範例（V.remediation.disableRuleFix，只是文字）。
  * 區塊一律用 details.js 的 section() 產生；顏色取自 theme.firewall。
  */
 (function (S) {
@@ -11,11 +12,14 @@
   const FAMILY = { ip: 'IPv4', ipv6: 'IPv6' };
   // 文字對照核心的判斷（infer.js fwContext）：已定義的 interface list 名稱含獨立的 WAN 字樣（不分大小寫，
   // 前後不接英文字母，例如 WAN、ISP-WAN、wan2），成員含 include／exclude 展開後的結果；LAN 同理
+  // 防火牆畫面用 text，設備詳情的摘要用 short（標示推論）；兩處都經由 zoneStatus() 取用，不另寫一份
   const ZONE_STATUS = {
-    ok: ['已找到 WAN 介面', 'ok'],
-    'no-wan-list': ['沒有名稱含 WAN 的 interface list，WAN 相關檢查未執行', 'warn'],
-    'empty-wan-list': ['名稱含 WAN 的 interface list 沒有可確定的成員，WAN 相關檢查未執行', 'warn'],
+    ok: { text: '已找到 WAN 介面', short: '已找到 WAN 介面（推論）', tone: 'ok' },
+    'no-wan-list': { text: '沒有名稱含 WAN 的 interface list，WAN 相關檢查未執行', short: '沒有 WAN interface list（推論）', tone: 'warn' },
+    'empty-wan-list': { text: '名稱含 WAN 的 interface list 沒有可確定的成員，WAN 相關檢查未執行', short: 'WAN interface list 沒有成員（推論）', tone: 'warn' },
   };
+  /** WAN 判斷狀態的文字與色調；未知的 status 原樣顯示，不假裝成已知狀態 */
+  const zoneStatus = (status) => ZONE_STATUS[status] || { text: String(status), short: `${status}（推論）`, tone: '' };
   const ZONE_BASIS = { 'interface-list': '依名稱含 WAN／LAN 的 interface list' };
   // 規則不多時，內建 chain 預設展開；多時全部收合，展開時才產生表格（大型網路單台設備可能有上百條）
   const OPEN_ALL_MAX = 60;
@@ -91,6 +95,37 @@
     return el;
   }
 
+  const FIND_BY = { comment: '依註解 find', match: '依比對條件 find', 'comment+match': '依註解與比對條件 find' };
+  /** 複製到剪貼簿；瀏覽器不支援或拒絕時說明，請使用者手動選取（不靜默失敗） */
+  function copyText(text) {
+    const c = globalThis.navigator && globalThis.navigator.clipboard;
+    if (!c || !c.writeText) { V.app.banner('這個瀏覽器無法自動複製，請選取指令文字後手動複製。', 6000); return; }
+    c.writeText(text).then(() => V.app.banner('已複製指令範例；執行前請核對。', 3000),
+      (e) => V.app.banner('無法複製：' + e.message + '；請選取指令文字後手動複製。', 6000));
+  }
+  /**
+   * 修正範例（停用規則）：定位到某條規則時只列這條規則的，否則列這台設備全部可用停用處理的檢查結果（預設收合）。
+   * 指令由 V.remediation.disableRuleFix 產生，只是文字。
+   */
+  function fixSection(App, dev, focusRule) {
+    const Q = App.Q;
+    const list = (focusRule ? Q.findingsFor('rule', focusRule) : Q.findingsFor('device', dev))
+      .map((f) => V.remediation.disableRuleFix(Q, f)).filter(Boolean);
+    if (!list.length) return null;
+    const sevCls = (id) => { const s = (S.check.CATALOG[id] || {}).severity; return s === 'error' ? 'err' : s; };
+    return P().section('修正範例（停用規則）', [
+      h('p', { class: 'muted' }, '範例，執行前請核對：只產生文字，不會連線或寫回設備。以 comment 或比對條件 find（不用規則編號），附驗證與回復指令。'),
+      ...list.map((x) => h('div', { class: 'fw-fix', 'data-rule': x.rule.key }, [
+        h('div', { class: 'row' }, [V.chip(x.id, sevCls(x.id)), ' ', P().L(App, ruleLabel(App, x.rule.key), { type: 'rule', key: x.rule.key }), ' ',
+          V.chip(FIND_BY[x.by] || x.by, 'info'), ' ',
+          h('button', { class: 'ghost copy-fix', title: '複製指令範例', onclick: () => copyText(x.text) }, '複製')]),
+        x.confirm ? h('p', { class: 'warn-line' }, x.id + '：' + x.confirm) : null,
+        ...x.warnings.map((w) => h('p', { class: 'warn-line fix-warning' }, '警告：' + w)),
+        h('pre', { class: 'note-box fix-cmd' }, x.text),
+      ])),
+    ], { count: list.length, fold: !focusRule, open: !!focusRule });
+  }
+
   function render(App, sel) {
     const Q = App.Q; const { section, kv, epLink, devLink, findingsBlock } = P();
     let dev = sel.dev; let focusRule = null; let focusSvc = null; let notice = null;
@@ -115,7 +150,7 @@
       if (!t) { t = { k, family: c.family, table: c.table, chains: [] }; tables.push(t); }
       t.chains.push(c);
     });
-    const zs = zone && (ZONE_STATUS[zone.status] || [zone.status, '']);
+    const zs = zone && zoneStatus(zone.status);
     const svcKey = (s) => s.dev + '|' + s.name;
     return h('div', { class: 'detail' }, [
       h('h2', null, [devLink(App, dev), ' 的防火牆']),
@@ -125,8 +160,9 @@
       ]),
       notice ? h('p', { class: 'diffA' }, notice) : null,
       findingsBlock(App, fwFindings),
+      fixSection(App, dev, focusRule),
       section('WAN／LAN 判斷（推論）', zone ? [
-        kv([['狀態', V.chip(zs[0], zs[1])], ['依據', ZONE_BASIS[zone.basis] || zone.basis || '—'],
+        kv([['狀態', V.chip(zs.text, zs.tone)], ['依據', ZONE_BASIS[zone.basis] || zone.basis || '—'],
           ['WAN list', zone.wanLists.join('、') || '—'],
           ['WAN 介面', zone.wanInterfaces.length ? h('span', null, zone.wanInterfaces.flatMap((ep, n) => [n ? '、' : '', epLink(App, ep)])) : '—'],
           ['LAN list', zone.lanLists.join('、') || '—'],
@@ -158,5 +194,5 @@
     ]);
   }
 
-  V.firewall = { render };
+  V.firewall = { render, zoneStatus };
 })(globalThis.SSOT = globalThis.SSOT || {});

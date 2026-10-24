@@ -230,7 +230,6 @@
     return U.hash(JSON.stringify([inputHash, minor, h(opt.profile), h(opt.expectedData)]));
   }
 
-  /** 同步建立（Node、測試用）。 */
   /**
    * 輸入指紋（meta.inputHash）：不重建基準也能核對收集檔是不是同一份。sources 同 build（[{ name?, text }]），順序有意義。
    * 沒有 name 的來源以空字串計算（不是 S.readers.PASTE），所以不能用 meta.sources[].name 重組；要傳入與 build 相同的 sources。
@@ -241,6 +240,7 @@
   }
   S.inputHashOf = inputHashOf;
 
+  /** 同步建立（Node、測試用）。 */
   S.build = function (sources, options) {
     const it = steps(sources, options);
     let r = it.next();

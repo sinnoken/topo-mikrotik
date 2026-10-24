@@ -17,7 +17,7 @@
  *   expected/<名稱>                 預期資料（ssot-expected/1，S.compare 用，最多一份）
  *   reports/<名稱>、patches/<名稱>  報表（CSV、Markdown…）與修正 patch（.rsc…），任意份數，不解讀內容
  *
- * manifest（見 docs 的工作包 ADR）：
+ * manifest（格式見 docs/設計說明.md §10A）：
  *   { schema: 'ssot-workpack/1', toolVersion, createdAt, inputHash, baselineKey,
  *     baseline: { schema, version, createdAt, profile },
  *     files: [{ role, path, name, bytes, sha256 }] }

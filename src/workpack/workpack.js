@@ -155,7 +155,10 @@
           }
         });
       }
-    } else W('snapshot-sources', paths.snapshot, '基準沒有 meta.sources，無法逐一核對收集檔；用 validate 重建後核對 inputHash');
+    } else W('snapshot-sources', paths.snapshot, '基準沒有 meta.sources，無法逐一核對收集檔（仍以 inputHash 核對全部收集檔）');
+    // 全部收集檔的指紋（名稱、內容與順序；和 meta.inputHash 同一個演算法）：不用重建也能確認收集檔屬於這份基準
+    const ih = S.inputHashOf(c.sources);
+    if (ih !== meta.inputHash) E('input-hash', null, `收集檔的 inputHash（${ih}）和基準的 meta.inputHash（${meta.inputHash}）不同，基準不是由這些收集檔（依這個順序）建立的`);
     // 命名規則：基準用過命名規則時一定要附上，而且 id 與版本相同
     let profile = null;
     if (c.has.profile) {
@@ -325,6 +328,10 @@
     const chk = consistency(content, content.paths);
     chk.errors.forEach((x) => errors.push(x)); chk.warnings.forEach((x) => warnings.push(x));
     const meta = errors.length ? null : content.snapshot.meta;
+    { // 收集檔已在上面解讀成功，一定可以計算
+      const ih = S.inputHashOf(content.sources);
+      if (ih !== manifest.inputHash) E('input-hash', MANIFEST, `收集檔的 inputHash（${ih}）和 manifest（${manifest.inputHash}）不同，manifest 不是這些收集檔（依這個順序）的工作包`);
+    }
     if (meta) {
       if (meta.inputHash !== manifest.inputHash) E('baseline-mismatch', content.paths.snapshot, `基準的 inputHash（${meta.inputHash}）和 manifest（${manifest.inputHash}）不同`);
       const bk = meta.baselineKey == null ? null : meta.baselineKey;
@@ -344,7 +351,9 @@
    * opts：{ now, profile, expectedData }，三者都要明確給（profile、expectedData 不使用時傳 null）；用哪一份由呼叫端決定，
    *   通常是 pack.profile 與 pack.expectedData（畫面也可以換成使用者目前的命名規則）。
    * 回傳 { ok, errors, warnings, snapshot }：snapshot 是重建的基準（重建失敗時為 null），呼叫端可直接使用，不必再建一次。
-   *   - inputHash 不同 → error（input-hash）：inputHash 只由收集檔的名稱與內容決定，收集檔已通過 SHA-256 驗證，
+   *   - inputHash 不同 → error（input-hash）。read 已經以 S.inputHashOf 核對過，所以 read 的結果不會走到這裡；
+   *     保留這一步是為了呼叫端自己組的 pack，以及 S.build 與 S.inputHashOf 萬一不一致時仍抓得到。
+   *     inputHash 只由收集檔的名稱與內容決定，收集檔已通過 SHA-256 驗證，
    *     不同表示 manifest 與基準不屬於這些收集檔，不能當成同一輪帶回。
    *   - baselineKey 不同 → 程式的 major.minor、命名規則或 expectedData 和建立時不同時是 warning（baseline-key，說明哪一項不同；
    *     處理紀錄會把它當成新的一輪，這是預期的行為）；三者都相同卻不同時是 error（baseline-key），工作包的內容自相矛盾。

@@ -322,15 +322,8 @@ test('workpack：validate 重建後 inputHash 不同是錯誤；命名規則或 
   assert.ok(/命名規則/.test(v.warnings[0].message) && !/expectedData/.test(v.warnings[0].message), v.warnings[0].message);
   v = S.workpack.validate(pack, { now: NOW, profile: pack.profile, expectedData: null });
   assert.ok(/expectedData/.test(v.warnings[0].message), v.warnings[0].message);
-  // 收集檔被換掉、基準沒有 meta.sources 可核對：read 只警告，validate 以 inputHash 抓出
-  const z2 = repack(z, (m, es) => {
-    const snapPath = m.files.find((f) => f.role === 'snapshot').path;
-    const snap = JSON.parse(dec(es.find((e) => e.path === snapPath).bytes)); delete snap.meta.sources;
-    rehash(m, es, snapPath, enc(JSON.stringify(snap)));
-    rehash(m, es, m.files[0].path, enc(SAMPLE + '\n'));
-  });
-  const p2 = S.workpack.read(z2);
-  assert.deepStrictEqual(p2.warnings.map((w) => w.code), ['snapshot-sources']);
+  // 呼叫端自己組的 pack（收集檔被換掉）：validate 重建後以 inputHash 抓出
+  const p2 = Object.assign({}, pack, { sources: pack.sources.map((x, i) => (i ? x : { name: x.name, text: x.text + '\n' })) });
   v = S.workpack.validate(p2, { now: NOW, profile: p2.profile, expectedData: p2.expectedData });
   assert.deepStrictEqual([v.ok, v.errors.map((x) => x.code)], [false, ['input-hash']]);
   // manifest 與基準的 baselineKey 一起被改：版本、命名規則、expectedData 都相同卻對不上 → 錯誤
@@ -367,4 +360,27 @@ test('ledger：roundOf 回傳這份基準是第幾輪，沒有推進過時為 -1
   assert.strictEqual(L.roundOf(R.ledger, { inputHash: R.snap.meta.inputHash }), -1, '有 baselineKey 的一輪不以 inputHash 對應（和 advance 相同）');
   assert.throws(() => L.roundOf({ schema: 'x' }, R.snap.meta), /格式不正確/);
   assert.throws(() => L.roundOf(R.ledger, {}), /baselineKey 或 inputHash/);
+});
+test('workpack：read 不重建也以 S.inputHashOf 核對收集檔；名稱與內容都對、只有順序不同也抓得到', () => {
+  const R = ROUND(); const z = S.workpack.build(R.parts, { now: NOW });
+  const snapPath = (m) => m.files.find((f) => f.role === 'snapshot').path;
+  /** 刪掉基準的 meta.sources（逐一核對無法進行），只剩 inputHash 可以核對 */
+  const noSources = (m, es) => { const snap = JSON.parse(dec(es.find((e) => e.path === snapPath(m)).bytes)); delete snap.meta.sources; rehash(m, es, snapPath(m), enc(JSON.stringify(snap))); };
+  assert.deepStrictEqual(S.workpack.read(repack(z, noSources)).warnings.map((w) => w.code), ['snapshot-sources'], '沒有被改時只有警告');
+  // 兩份收集檔在 manifest 中對調順序：名稱、大小、SHA-256 都對
+  const swapped = repack(z, (m, es) => { noSources(m, es); [m.files[0], m.files[1]] = [m.files[1], m.files[0]]; });
+  let e = throwsCode(() => S.workpack.read(swapped), 'input-hash');
+  assert.deepStrictEqual(e.errors.map((x) => [x.code, x.path]), [['input-hash', null], ['input-hash', 'manifest.json']], '和基準、manifest 都對不上');
+  assert.ok(/順序/.test(e.errors[0].message), e.errors[0].message);
+  // 有 meta.sources 時，逐一核對也會抓到（兩種代碼一起列出）
+  e = throwsCode(() => S.workpack.read(repack(z, (m) => { [m.files[0], m.files[1]] = [m.files[1], m.files[0]]; })), 'input-hash');
+  assert.ok(e.errors.some((x) => x.code === 'source-mismatch'), JSON.stringify(e.errors));
+  // 收集檔被換掉（manifest 的雜湊也跟著改）
+  throwsCode(() => S.workpack.read(repack(z, (m, es) => { noSources(m, es); rehash(m, es, m.files[0].path, enc(SAMPLE + '\n')); })), 'input-hash');
+  // manifest 的 inputHash 被改：基準與 manifest 不同，收集檔與 manifest 也不同
+  e = throwsCode(() => S.workpack.read(repack(z, (m) => { m.inputHash = 'x'; })), 'input-hash');
+  assert.ok(e.errors.some((x) => x.code === 'baseline-mismatch'));
+  // build 也用同一個檢查：收集檔順序和基準不同時拒絕
+  const srcs = R.parts.filter((p) => p.role === 'source');
+  throwsCode(() => S.workpack.build(without(R.parts, 'source').concat([srcs[1], srcs[0]]), { now: NOW }), 'input-hash');
 });

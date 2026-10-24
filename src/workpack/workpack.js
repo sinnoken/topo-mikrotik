@@ -53,7 +53,7 @@
   const ERRORS = Object.freeze(['no-manifest', 'manifest', 'schema', 'schema-newer', 'missing-file', 'size', 'hash', 'duplicate-path',
     'count', 'encoding', 'json', 'snapshot', 'baseline-mismatch', 'source-mismatch', 'ledger', 'ledger-baseline', 'profile', 'profile-mismatch',
     'expected', 'expected-data', 'rebuild', 'input-hash', 'baseline-key']);
-  const WARNINGS = Object.freeze(['unknown-role', 'unlisted-file', 'tool-version', 'snapshot-schema', 'snapshot-sources', 'ledger-newer', 'baseline-key']);
+  const WARNINGS = Object.freeze(['unknown-role', 'unlisted-file', 'tool-version', 'snapshot-schema', 'snapshot-sources', 'ledger-newer', 'profile-unverified', 'baseline-key']);
 
   // ---------------------------------------------------------------- SHA-256（FIPS 180-4），用於 manifest 的檔案雜湊
   // 不用 S.util.hash（FNV，針對字串的輸入指紋）：檔案雜湊要對 bytes 計算，而且使用者可以用 sha256sum 等一般工具核對。
@@ -160,7 +160,9 @@
     // 全部收集檔的指紋（名稱、內容與順序；和 meta.inputHash 同一個演算法）：不用重建也能確認收集檔屬於這份基準
     const ih = S.inputHashOf(c.sources);
     if (ih !== meta.inputHash) E('input-hash', null, `收集檔的 inputHash（${ih}）和基準的 meta.inputHash（${meta.inputHash}）不同，基準不是由這些收集檔（依這個順序）建立的`);
-    // 命名規則：基準用過命名規則時一定要附上，而且 id 與版本相同
+    // 命名規則：基準用過命名規則時一定要附上，而且是同一份（id、版本與內容雜湊 meta.profile.hash 都相同）。
+    // 2.11.0 以前的基準沒有 hash：只能比 id 與版本，另以 profile-unverified 警告；validate 重建出的基準一定有 hash，
+    // 內容不同時重建的基準鍵也會不同（baseline-key）
     let profile = null;
     if (c.has.profile) {
       try { profile = S.profile.compile(c.profile); } catch (e) { E('profile', paths.profile, e.message); }
@@ -171,6 +173,10 @@
     else if (!mp && c.has.profile && profile) E('profile-mismatch', paths.profile, `基準沒有使用命名規則，工作包卻附上了 ${profile.id}`);
     else if (mp && profile && (mp.id !== profile.id || mp.version !== profile.version)) {
       E('profile-mismatch', paths.profile, `命名規則是 ${profile.id}（版本 ${profile.version}），基準使用的是 ${mp.id}（版本 ${mp.version}）`);
+    } else if (mp && profile && mp.hash == null) {
+      W('profile-unverified', paths.profile, `基準沒有記錄命名規則 ${mp.id}（版本 ${mp.version}）的內容雜湊（2.11.0 以前建立），只核對了 id 與版本，無法確認內容相同；重建（validate）時會再以基準鍵核對`);
+    } else if (mp && profile && S.profile.hash(c.profile) !== mp.hash) {
+      E('profile-mismatch', paths.profile, `命名規則 ${profile.id}（版本 ${profile.version}）的內容和建立基準時的不同（id 與版本相同，內容雜湊不同）；重建時無法得到同一份基準`);
     }
     if (c.has['expected-data']) {
       const d = c.expectedData;
@@ -400,7 +406,10 @@
       if (why.length) {
         warnings.push({ code: 'baseline-key', path: null, message: `重建的基準鍵和工作包不同：${why.join('、')}；處理紀錄會把它當成新的一輪` });
       } else {
-        errors.push({ code: 'baseline-key', path: null, message: `程式版本、命名規則與 expectedData 都和建立時相同，重建的基準鍵（${meta.baselineKey}）卻和工作包（${mf.baselineKey}）不同` });
+        // 舊基準沒有命名規則的內容雜湊時，read 只核對了 id 與版本（profile-unverified）：最可能的原因是附的命名規則內容和建立時不同
+        const op = isObj(pack.snapshot) && isObj(pack.snapshot.meta) ? pack.snapshot.meta.profile : null;
+        const hint = isObj(op) && op.hash == null ? '；基準沒有記錄命名規則的內容雜湊，可能是工作包附的命名規則內容和建立時不同（id 與版本相同）' : '';
+        errors.push({ code: 'baseline-key', path: null, message: `程式版本、命名規則與 expectedData 都和建立時相同，重建的基準鍵（${meta.baselineKey}）卻和工作包（${mf.baselineKey}）不同${hint}` });
       }
     }
     return { ok: errors.length === 0, errors, warnings, snapshot: snap };

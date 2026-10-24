@@ -107,9 +107,11 @@
    *              同一條規則有任一邊的 finding 沒有 facet（例如 2.8.0 以前的基準）時，這條規則兩邊都改用 Q.findingBaseKey（key 也是它）
    *   新增時 before 為 null，移除時 after 為 null。items 依類別（上列順序）、鍵、變更種類、欄位排序。
    * 兩份基準的 schema 不同（或不是本工具的 schema）時不比對：errors 說明原因，items 為空。
-   * warnings[] = { kind: 'version'|'profile', before, after, message }（依此順序，相同時不列）：schema 相同、照常比對，
+   * warnings[] = { kind: 'version'|'profile'|'profile-unverified', before, after, message }（依此順序，相同時不列）：schema 相同、照常比對，
    *   但差異可能來自程式或命名規則而不是網路。version 的 before／after 是 meta.version（沒有時為 null）；
-   *   profile 的是 meta.profile（{ id, version } 或 null）。schema 不同而不比對時 warnings 為空。
+   *   profile 與 profile-unverified 的是 meta.profile（{ id, version, hash } 或 null；hash 沒有時為 null）。
+   *   profile：id、version 或內容雜湊不同（有一邊沒有命名規則也算）。profile-unverified：id 與 version 相同，
+   *   但有一邊沒有 hash（2.11.0 以前的基準），無法確認內容相同；兩者最多出現一個。schema 不同而不比對時 warnings 為空。
    */
   S.compare.snapshots = function (qOld, qNew) {
     const errors = [];
@@ -130,11 +132,18 @@
       const t = (v) => (v == null ? '未標示' : v);
       warnings.push({ kind: 'version', before: vo, after: vn, message: `版本不同（${t(vo)} → ${t(vn)}）：新版才有的檢查會顯示為新出現，不代表網路改變` });
     }
-    const prof = (p) => (p ? { id: nil(p.id), version: nil(p.version) } : null);
+    // 命名規則：id、version 與內容雜湊（meta.profile.hash，S.profile.hash 算出）。2.11.0 以前的基準沒有 hash，
+    // id 與 version 相同時無法確認內容相同，以 profile-unverified 提示，不當成相同、也不當成不同
+    const prof = (p) => (p ? { id: nil(p.id), version: nil(p.version), hash: nil(p.hash) } : null);
     const po = prof(mo.profile); const pn = prof(mn.profile);
-    if (JSON.stringify(po) !== JSON.stringify(pn)) {
-      const t = (p) => (p ? `${p.id}（版本 ${p.version == null ? '未標示' : p.version}）` : '沒有');
+    const t = (p) => (p ? `${p.id}（版本 ${p.version == null ? '未標示' : p.version}）` : '沒有');
+    const sameName = po && pn ? po.id === pn.id && po.version === pn.version : po === pn;
+    if (!sameName) {
       warnings.push({ kind: 'profile', before: po, after: pn, message: `命名規則不同（${t(po)} → ${t(pn)}）：設備名稱、類型與分群可能因此不同，這部分的差異不代表網路改變` });
+    } else if (po && (po.hash == null || pn.hash == null)) {
+      warnings.push({ kind: 'profile-unverified', before: po, after: pn, message: `命名規則都是 ${t(pn)}，但${po.hash == null && pn.hash == null ? '兩份' : po.hash == null ? '舊' : '新'}基準沒有記錄內容雜湊（2.11.0 以前建立），無法比對內容是否相同：內容若不同，設備名稱、類型與分群的差異不代表網路改變` });
+    } else if (po && po.hash !== pn.hash) {
+      warnings.push({ kind: 'profile', before: po, after: pn, message: `命名規則的內容不同（都是 ${t(pn)}，但內容雜湊不同）：設備名稱、類型與分群可能因此不同，這部分的差異不代表網路改變` });
     }
 
     const items = report.items;

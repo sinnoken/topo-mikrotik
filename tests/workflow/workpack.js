@@ -211,6 +211,41 @@ test('workpack：範例資料建立工作包再讀回，基準、處理紀錄、
   // 讀回後再推進同一份基準：處理紀錄認得是同一輪
   assert.strictEqual(S.ledger.advance(pack.ledger, S.query(v.snapshot), { now: NOW }).skipped, true);
 });
+test('workpack：命名規則的 id 與版本相同、內容不同時是 profile-mismatch；鍵的順序不同不算', () => {
+  const R = ROUND();
+  const changed = Object.assign({}, PROFILE, { stripDomain: !PROFILE.stripDomain });
+  const e = throwsCode(() => S.workpack.build(swap(R.parts, 'profile', JSON.stringify(changed)), { now: NOW }), 'profile-mismatch');
+  assert.ok(e.errors.some((x) => x.code === 'profile-mismatch' && x.path === 'profile/floor-device-naming.json' && /內容雜湊不同/.test(x.message)), JSON.stringify(e.errors));
+  // 讀入手動改過命名規則的工作包也抓得到（不必等到重建）
+  const z = S.workpack.build(R.parts, { now: NOW });
+  const bad = repack(z, (m, entries) => { rehash(m, entries, 'profile/floor-device-naming.json', enc(JSON.stringify(changed))); });
+  throwsCode(() => S.workpack.read(bad), 'profile-mismatch');
+  const reordered = {}; Object.keys(PROFILE).reverse().forEach((k) => { reordered[k] = PROFILE[k]; });
+  assert.deepStrictEqual(S.workpack.read(S.workpack.build(swap(R.parts, 'profile', JSON.stringify(reordered)), { now: NOW })).warnings, []);
+});
+test('workpack：舊基準（2.11.0 以前）沒有命名規則的內容雜湊時，只比 id 與版本並警告 profile-unverified；重建後以基準鍵核對', () => {
+  const R = ROUND();
+  const old = JSON.parse(JSON.stringify(R.snap)); delete old.meta.profile.hash;
+  const parts = swap(R.parts, 'snapshot', JSON.stringify(old));
+  const pack = S.workpack.read(S.workpack.build(parts, { now: NOW }));
+  assert.deepStrictEqual(pack.warnings.map((w) => [w.code, w.path]), [['profile-unverified', 'profile/floor-device-naming.json']]);
+  assert.ok(/無法確認內容相同/.test(pack.warnings[0].message), pack.warnings[0].message);
+  assert.ok(S.workpack.WARNINGS.includes('profile-unverified'));
+  assert.deepStrictEqual(pack.manifest.baseline.profile, { id: PROFILE.id, version: PROFILE.version });
+  // 同一份命名規則：重建出的基準有 hash，基準鍵相同
+  let v = S.workpack.validate(pack, { now: NOW, profile: pack.profile, expectedData: pack.expectedData });
+  assert.deepStrictEqual([v.ok, v.errors, v.warnings], [true, [], []]);
+  assert.strictEqual(v.snapshot.meta.profile.hash, S.profile.hash(PROFILE));
+  // id 與版本仍然要相同
+  throwsCode(() => S.workpack.build(swap(parts, 'profile', JSON.stringify(Object.assign({}, PROFILE, { version: '99' }))), { now: NOW }), 'profile-mismatch');
+  // 內容不同：讀入時只能警告，重建時基準鍵不同而抓到，訊息指出可能的原因
+  const changed = Object.assign({}, PROFILE, { stripDomain: !PROFILE.stripDomain });
+  const p2 = S.workpack.read(S.workpack.build(swap(parts, 'profile', JSON.stringify(changed)), { now: NOW }));
+  assert.deepStrictEqual(p2.warnings.map((w) => w.code), ['profile-unverified']);
+  v = S.workpack.validate(p2, { now: NOW, profile: p2.profile, expectedData: p2.expectedData });
+  assert.strictEqual(v.ok, false);
+  assert.ok(v.errors.some((x) => x.code === 'baseline-key' && /基準沒有記錄命名規則的內容雜湊/.test(x.message)), JSON.stringify(v.errors));
+});
 test('workpack：相同的 parts 與 now 產生完全相同的 bytes；不修改傳入的 parts', () => {
   const R = ROUND();
   const parts = clone(R.parts); const before = JSON.stringify(parts.map((p) => Object.assign({}, p, p.bytes ? { bytes: Array.from(p.bytes) } : {})));

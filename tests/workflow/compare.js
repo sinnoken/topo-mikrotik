@@ -96,15 +96,45 @@ test('基準比對：版本或命名規則不同時照常比對，warnings 依 v
   assert.strictEqual(v.warnings[0].message, `版本不同（2.7.0 → ${S.VERSION}）：新版才有的檢查會顯示為新出現，不代表網路改變`);
   // 命名規則不同（沒有 → 有、id 或 version 不同）；舊基準沒有 version 欄位時寫「未標示」
   const text = 'SW_A (10.0.0.1):\n### /ip neighbor print detail\n 0 interface=ether1 mac-address=AA:00:00:00:00:01 identity=TPE_FW_01 interface-name=port1\n';
-  const plain = build(text); const named = build(text, { profile: { id: 't', classify: [{ match: '_FW_', kind: 'firewall' }] } });
+  const PROF = { id: 't', classify: [{ match: '_FW_', kind: 'firewall' }] };
+  const H = S.profile.hash(PROF);
+  const plain = build(text); const named = build(text, { profile: PROF });
+  assert.strictEqual(named.meta.profile.hash, H);
   const p = S.compare.snapshots(S.query(plain), S.query(named));
-  assert.deepStrictEqual(p.warnings.map((w) => [w.kind, w.before, w.after]), [['profile', null, { id: 't', version: '1' }]]);
+  assert.deepStrictEqual(p.warnings.map((w) => [w.kind, w.before, w.after]), [['profile', null, { id: 't', version: '1', hash: H }]]);
   assert.ok(/^命名規則不同（沒有 → t（版本 1））：/.test(p.warnings[0].message), p.warnings[0].message);
   const named2 = JSON.parse(JSON.stringify(named)); named2.meta.profile.version = '2'; delete named2.meta.version;
   const both = S.compare.snapshots(S.query(named2), S.query(named));
-  assert.deepStrictEqual(both.warnings.map((w) => [w.kind, w.before, w.after]), [['version', null, S.VERSION], ['profile', { id: 't', version: '2' }, { id: 't', version: '1' }]]);
+  assert.deepStrictEqual(both.warnings.map((w) => [w.kind, w.before, w.after]), [['version', null, S.VERSION], ['profile', { id: 't', version: '2', hash: H }, { id: 't', version: '1', hash: H }]]);
   assert.ok(/^版本不同（未標示 → /.test(both.warnings[0].message) && /t（版本 2） → t（版本 1）/.test(both.warnings[1].message), JSON.stringify(both.warnings));
   assert.deepStrictEqual(S.compare.snapshots(S.query(named), S.query(JSON.parse(JSON.stringify(named)))).warnings, [], '內容相同的 profile 不提示');
+});
+test('基準比對：命名規則 id 與 version 相同、內容不同時以 profile 提示；舊基準沒有內容雜湊時以 profile-unverified 提示', () => {
+  const text = 'SW_A (10.0.0.1):\n### /ip neighbor print detail\n 0 interface=ether1 mac-address=AA:00:00:00:00:01 identity=TPE_FW_01 interface-name=port1\n';
+  const P1 = { id: 't', version: '1', classify: [{ match: '_FW_', kind: 'firewall' }] };
+  const P2 = { id: 't', version: '1', classify: [{ match: '_FW_', kind: 'router' }] };
+  const a = build(text, { profile: P1 }); const b = build(text, { profile: P2 });
+  // 內容不同、id 與 version 相同：以內容雜湊抓到
+  const d = S.compare.snapshots(S.query(a), S.query(b));
+  assert.deepStrictEqual(d.warnings.map((w) => [w.kind, w.before, w.after]),
+    [['profile', { id: 't', version: '1', hash: S.profile.hash(P1) }, { id: 't', version: '1', hash: S.profile.hash(P2) }]]);
+  assert.ok(/^命名規則的內容不同（都是 t（版本 1），但內容雜湊不同）：/.test(d.warnings[0].message), d.warnings[0].message);
+  // 鍵的順序不算內容不同
+  const P1r = { classify: [{ kind: 'firewall', match: '_FW_' }], version: '1', id: 't' };
+  assert.deepStrictEqual(S.compare.snapshots(S.query(a), S.query(build(text, { profile: P1r }))).warnings, []);
+  // 2.11.0 以前的基準沒有 hash：只能比 id 與 version，提示無法比對內容（不當成相同，也不當成不同）
+  const old = JSON.parse(JSON.stringify(a)); delete old.meta.profile.hash;
+  const u = S.compare.snapshots(S.query(old), S.query(b));
+  assert.deepStrictEqual(u.warnings.map((w) => [w.kind, w.before, w.after]),
+    [['profile-unverified', { id: 't', version: '1', hash: null }, { id: 't', version: '1', hash: S.profile.hash(P2) }]]);
+  assert.ok(/^命名規則都是 t（版本 1），但舊基準沒有記錄內容雜湊（2\.11\.0 以前建立），無法比對內容是否相同/.test(u.warnings[0].message), u.warnings[0].message);
+  assert.ok(/但新基準沒有/.test(S.compare.snapshots(S.query(b), S.query(old)).warnings[0].message));
+  assert.ok(/但兩份基準沒有/.test(S.compare.snapshots(S.query(old), S.query(old)).warnings[0].message));
+  // id 或 version 不同時照舊是 profile（不論有沒有 hash）
+  const old2 = JSON.parse(JSON.stringify(old)); old2.meta.profile.version = '0';
+  assert.deepStrictEqual(S.compare.snapshots(S.query(old2), S.query(b)).warnings.map((w) => w.kind), ['profile']);
+  // 都沒有命名規則：不提示
+  assert.deepStrictEqual(S.compare.snapshots(S.query(build(text)), S.query(build(text))).warnings, []);
 });
 test('由基準產生預期資料（ssot-expected/1）：已收集設備、雙向確認的鏈路、VLAN；和同一份基準比對全部 ok', () => {
   const s = build(read('samples/sample-bundle.txt')); const Q = S.query(s);

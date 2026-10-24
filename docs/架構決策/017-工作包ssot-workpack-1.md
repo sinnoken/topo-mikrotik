@@ -59,6 +59,18 @@
 
 - 總大小達 4 GiB 或超過 65534 個檔案時需要 ZIP64；目前的規模遠低於上限，等需要時再評估。
 
+## 修訂
+
+### 2026-10-24：命名規則要內容雜湊也相同（2.11.0）
+
+- **原因**：原本只核對命名規則的 id 與版本。改了內容（例如 L4 的 `zones` 段）卻沒提高版本時，read 會把它當成同一份，要等 validate 重建出不同的基準鍵才發現；L4 查詢也會用和這一輪基準不一致的 zone。
+- **修改**（1117a34、6a08235）：
+  - 基準的 `meta.profile` 新增 `hash`（`S.profile.hash`：命名規則全文以鍵排序後的 JSON 算出的雜湊，和 `meta.baselineKey` 共用同一個算法；見[設計說明 §5.2](../設計說明.md#52-實體snapshotmodelschema-ssot-snapshot2)）。
+  - build、read 核對命名規則時，id、版本與內容雜湊都相同才算同一份；內容雜湊不同是錯誤 `profile-mismatch`。
+  - 2.11.0 以前的基準沒有 `hash`：只核對 id 與版本，另列警告 `profile-unverified`；validate 重建時仍以基準鍵核對，內容不同時基準鍵也會不同。
+  - 新舊基準比對的警告同樣改用內容雜湊（`profile`、`profile-unverified`，見[設計說明第 8 節](../設計說明.md#8-比對獨立模組)）；L4 查詢的核對見[設計說明 §5.3](../設計說明.md#l4-可達性與-zone2110-新增)。
+- **不變的部分**：工作包的格式（`ssot-workpack/1`，不升 schema）、角色與 manifest 的欄位（`baseline.profile` 照抄 `meta.profile`，所以新的工作包也帶 `hash`）；inputHash 不同是錯誤、baselineKey 不同是警告、三個來源都相同而基準鍵不同是錯誤，這些判斷都不變。
+
 ## 待辦
 
 - ~~frontend：資料中心畫面、工作包的下載與讀入（路線圖「版面重整 1」）。~~ **已完成**（8f8523e）。

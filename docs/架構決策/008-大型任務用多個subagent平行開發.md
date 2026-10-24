@@ -43,7 +43,7 @@
 
 ### 之後要回頭看的
 
-- **`tests/run.js` 依模組拆檔**（例如解析、建模、檢查、比對、patch、處理紀錄各一個檔案），減少合併衝突。要同時調整 `npm run test:core` 與 `tests/load.js` 的用法，由 data-model 與 lead（`package.json`）一起處理。
+- **`tests/run.js` 依模組拆檔**（例如解析、建模、檢查、比對、patch、處理紀錄各一個檔案），減少合併衝突。要同時調整 `npm run test:core` 與 `tests/load.js` 的用法，由 data-model 與 lead（`package.json`）一起處理。**已處理**：依 [ADR-013](013-新增workflow-agent依上下游分工.md) 拆檔（2d87fab），`tests/run.js` 只留執行器，測試在 `tests/core/` 與 `tests/workflow/`，共用 helper 在 `tests/lib.js`；`npm run test:core` 的用法不變。
 
 ## 修訂
 
@@ -58,4 +58,4 @@
 
 ## 待辦
 
-- data-model＋lead：評估 `tests/run.js` 拆檔。
+- ~~data-model＋lead：評估 `tests/run.js` 拆檔。~~ **已完成**：見上方「之後要回頭看的」。

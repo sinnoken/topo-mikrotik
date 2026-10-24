@@ -41,7 +41,8 @@ tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch
 ## Git
 
 - 在獨立的 worktree 工作時，建立指定的分支並 commit，不要 push；在主工作區工作時，不要 commit。
-- 不要用 `git rm` 或 `git add`。暫存區由主對話管理；曾經發生 agent 先暫存了刪除，結果被主對話的 commit 一起帶走的事故。
+- 在主工作區不要用 `git add` 或 `git rm`：暫存區由主對話管理；曾經發生 agent 先暫存了刪除，結果被主對話的 commit 一起帶走的事故。
+- 在自己的 worktree 中，只能 stage 自己修改或新增的檔案（逐一指定路徑，不用 `git add -A`、`git add .`），再 commit。
 
 ## 驗證
 

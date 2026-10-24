@@ -10,7 +10,7 @@
 
 消除 I03 有兩條路：修正解析器，或把那幾行列為可忽略。後者比較快，但如果那幾行其實含有資料，就變成靜默丟掉資料。
 
-`tests/run.js` 已經檢查：`tests/fixtures/` 下每個收集檔的每個非空行都有去處，而且沒有 I03；`tests/fixtures/real/` 的收集檔沒有 I01。
+核心測試已經檢查：`tests/fixtures/` 下每個收集檔的每個非空行都有去處，而且沒有 I03（`tests/core/i03.js`）；`tests/fixtures/real/` 的收集檔沒有 I01（`tests/core/fixtures.js`）。這些測試原本在 `tests/run.js`，依 [ADR-013](013-新增workflow-agent依上下游分工.md) 拆檔。
 
 ## 決策（建議）
 

@@ -53,6 +53,6 @@
 
 ## 待辦
 
-- lead：依拆檔後的實際檔案清單更新 `ownership.json`、`package.json` 與 `tests/run.js` 的執行器。
-- data-model 與 workflow：各自把測試搬到 `tests/core/`、`tests/workflow/`，搬移前後測試數相同。
+- ~~lead：依拆檔後的實際檔案清單更新 `ownership.json`、`package.json` 與 `tests/run.js` 的執行器。~~ **已完成**（2d87fab）：`tests/run.js` 依檔名載入 `tests/core/*.js` 再載入 `tests/workflow/*.js`；`ownership.json` 已列入兩個目錄與 `tests/lib.js`；`package.json` 的指令不需要改。
+- ~~data-model 與 workflow：各自把測試搬到 `tests/core/`、`tests/workflow/`，搬移前後測試數相同。~~ **已完成**（2d87fab）：`tests/core/` 135 項、`tests/workflow/` 24 項，搬移前後的測試名稱清單相同。
 - ~~docs：新增 `.claude/agents/workflow.md`，更新另外四個 agent 定義與 CLAUDE.md 的「Agent 分工」。~~ **已完成**。

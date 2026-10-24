@@ -38,7 +38,7 @@ user-invocable: true
 `/export` 的兩個特性會影響判斷：
 
 - **只匯出非預設值**：沒有出現在 `/ip service` 區段的服務是預設狀態（啟用、不限來源）。
-  各版本的預設值以官方手冊 <https://manual.mikrotik.com/llms.txt> 為準，不要把「沒寫」當成「已停用」。
+  各版本的預設值以官方手冊 <https://manual.mikrotik.com/llms.txt> 為準（用 `routeros-manual` skill 的 `manual.py` 查證），不要把「沒寫」當成「已停用」。
 - **不含動態規則**（例如 UPnP 產生的 dst-nat）。報告中要寫明這一點，不可宣稱已列出全部可連入點。
 
 ## 與備份設定 repo 的銜接

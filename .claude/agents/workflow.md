@@ -35,9 +35,23 @@ tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch
 - **工具維持唯讀**（ADR-001）：不連線、不套用到設備，patch 只產生文字。`.rsc` 只含 ASCII，中文說明放在計畫的 note、risk、warnings。
 - **處理紀錄不進 Snapshot**（ADR-002）：處理紀錄是使用者的決定，不是事實。全部是純函式，不碰 DOM 與 IndexedDB，不讀目前時間，`now` 由呼叫端傳入；不修改傳入的物件。
 - **格式相容**（ADR-010）：新增欄位要相容，也就是新增選用欄位，並寫明沒有這個欄位時的意義；讀取時保留不認得的欄位。使用者長期保存的格式（`ssot-ledger`、`ssot-expected`、`ssot-workpack`）要能「讀舊版、寫新版」。
-- **RouterOS 指令與 scripting 語法要查手冊**：用 `routeros-manual`、`routeros-scripting` skill 查證，不憑記憶組指令。
+- **RouterOS 指令與 scripting 語法要查手冊**：不憑記憶組指令，查證方式見下方「RouterOS 手冊」；scripting 語法另可參考 `routeros-scripting` skill。
 - 結果要可重現：相同輸入與選項得到相同結果；輸出排序、訊息與鍵保持穩定。
 - 改到 patch 輸出時，用 `npm run golden:update` 更新黃金檔，並用 `git diff` 檢視差異。
+
+## RouterOS 手冊
+
+- 只考慮 RouterOS 7.x 以上（[ADR-019](../../docs/架構決策/019-支援範圍RouterOS7以上.md)）：新的解析、收集、fixture 與檢查只依 v7 的語法；現有處理 v6 的程式先不主動拆除，也不再擴充。
+- 查證 RouterOS 的語法、欄位、v6／v7 的差異時，用 `routeros-manual` skill 的查詢腳本，不要憑記憶，也不要自己抓網頁。
+  - 腳本位置（以下稱 `$M`）：`C:/Users/Yicheng/.claude/skills/synced/d229f1ad-4b6f-4d0f-a951-cdd6139693dd_59c41ba4-e5fd-4859-b7cb-ae8035250e30/routeros-manual/scripts/manual.py`
+  - 用法（在 `"$TEMP"` 下執行，並加上 `timeout`）：
+    - 搜尋：`cd "$TEMP" && timeout 60 python "$M" search <英文關鍵字>`
+    - 讀單頁：`cd "$TEMP" && timeout 60 python "$M" get <docs/...路徑> --max-chars N`
+    - 列出版本：`cd "$TEMP" && timeout 60 python "$M" versions`
+  - 這個 skill 是使用者層級的，subagent 的 Skill 清單裡看不到，但可以用 Bash 執行。
+- 線上手冊只有 7.24–7.26 版。v6 和較舊的 v7 要對照 <https://manual.mikrotik.com/docs/cli-reference/compare-versions>；查不到時，要明確寫「無法以手冊確認」。
+- 不要把手冊原文複製進 repo（程式註解、fixture、文件都一樣）。只附網址，並用自己的話摘要。
+- 每一條依手冊寫成的判斷規則，都要在回報中附上網址。
 
 ## 執行指令
 

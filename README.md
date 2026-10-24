@@ -11,7 +11,7 @@
 
 1. 開啟 `index.html`（`file://` 即可，不需伺服器）。`main` 分支也會由 [deploy-pages.yml](.github/workflows/deploy-pages.yml) 部署到 GitHub Pages（<https://sinnoken.github.io/topo-mikrotik/>），一樣只在瀏覽器內處理。
 2. 按 **建立基準…** → **載入範例資料**（已有基準時，從頁首的 **資料中心** → **讀入收集檔…** 開啟同一個對話框）。範例刻意放了幾個問題，可以先看檢查結果長什麼樣子。
-3. 要用自己的網路：依 [收集清單](docs/收集清單與輸入格式.md) 收集每台 RouterOS 的輸出（**所有 print 都要加 `detail without-paging`**），合併成一個收集檔後貼上或選擇檔案。
+3. 支援範圍是 **RouterOS 7 以上**（[ADR-019](docs/架構決策/019-支援範圍RouterOS7以上.md)）。要用自己的網路：依 [收集清單](docs/收集清單與輸入格式.md) 收集每台 RouterOS 的輸出（**所有 print 都要加 `detail without-paging`**），合併成一個收集檔後貼上或選擇檔案。
 4. 多台設備可在 WSL／Linux 用 SSH 批次收集，產生可直接載入的收集檔：
 
    ```bash
@@ -77,5 +77,5 @@ git diff --check
 ## 注意
 
 - 這是 topo-ssot 的 **MikroTik 專用版**，與多廠牌版並存時互不影響（瀏覽器儲存名稱不同）。
-- 解析器依 RouterOS 文件與慣例撰寫，測試資料由程式產生，**尚未用真實設備輸出驗證**。RouterOS 7 為主，6.43 以上大致可用。
+- 解析器依 RouterOS 文件與慣例撰寫，測試資料由程式產生，**尚未用真實設備輸出驗證**。只支援 RouterOS 7 以上；RouterOS 6 的輸入照現有行為處理，不保證結果正確。
 - 支援範圍與限制見 [docs/收集清單與輸入格式.md](docs/收集清單與輸入格式.md) 第 4 節。

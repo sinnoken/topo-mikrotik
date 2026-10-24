@@ -2224,6 +2224,193 @@ test('每一行輸入都有被處理：範例資料與 tests/fixtures/ 的每個
   assert.ok(unhandledLines('a.txt', 'SW (10.0.0.1):\n### /ip arp print detail\n 0 DC address=10.0.0.9 mac-address=AA:BB:CC:00:00:09 interface=ether1\n').s.blocks.every((b) => b.adapters.length));
 });
 
+// ------------------------------------------------------------------ 處理紀錄（ssot-ledger/1，不屬於 Snapshot）
+// 三輪：① 範例 ② 刪掉 F06 那條規則、檔頭多一行雜訊（新的 I01）③ 範例加一行註解（內容同 ①、inputHash 不同）
+const LEDGER = (() => {
+  const text = read('samples/sample-bundle.txt');
+  const lines = text.split('\n');
+  const f06 = lines.findIndex((l) => l.includes('chain=input protocol=udp src-port=53'));
+  const q = (t) => S.query(build(t));
+  return {
+    q1: () => q(text),
+    q2: () => q('雜訊行\n' + lines.filter((_, i) => i !== f06).join('\n')),
+    q3: () => q('# 第三輪\n' + text),
+    keyOf: (Q, id) => Q.findings().filter((f) => f.id === id).map(Q.findingKey)[0],
+  };
+})();
+/** 跑完整的三輪，回傳每一輪的結果與用到的鍵 */
+function ledgerRounds() {
+  const L = S.ledger; const q1 = LEDGER.q1(); const q2 = LEDGER.q2(); const q3 = LEDGER.q3();
+  const k = { F06: LEDGER.keyOf(q1, 'F06'), R03: LEDGER.keyOf(q1, 'R03'), F01: LEDGER.keyOf(q1, 'F01'), A04: LEDGER.keyOf(q1, 'A04'), I01new: LEDGER.keyOf(q2, 'I01') };
+  const r1 = L.advance(L.empty(), q1, { now: '2026-01-01T00:00:00Z' });
+  let lg = L.set(r1.ledger, k.F06, { status: 'scheduled', patch: 'patch:F06' }, { now: '2026-01-02T00:00:00Z' });
+  lg = L.set(lg, k.R03, { status: 'accepted', waiver: { reason: '實驗室路由', until: '2026-02-01' } }, { now: '2026-01-02T00:00:00Z' });
+  lg = L.set(lg, k.F01, { status: 'false-positive', note: '廠商專用' }, { now: '2026-01-02T00:00:00Z' });
+  const r2 = L.advance(lg, q2, { now: '2026-01-15T00:00:00Z' });
+  const r3 = L.advance(r2.ledger, q3, { now: '2026-03-01T00:00:00Z' });
+  return { q1, q2, q3, k, r1, r2, r3 };
+}
+test('處理紀錄：三輪推進判定新增、fixed、regressed、豁免到期，誤報不變', () => {
+  const { q1, q2, q3, k, r1, r2, r3 } = ledgerRounds();
+  const nKeys = new Set(q1.findings().map(q1.findingKey)).size;
+  assert.ok(k.I01new && !q1.findings().some((f) => q1.findingKey(f) === k.I01new), '第二輪要有第一輪沒有的 I01');
+  assert.ok(!q2.findings().some((f) => f.id === 'F06'), '第二輪刪掉了 F06 的規則');
+  // ① 全部新增為 open
+  assert.strictEqual(r1.changes.length, nKeys);
+  assert.ok(r1.changes.every((c) => c.from === null && c.to === 'open' && c.reason === 'new'));
+  assert.deepStrictEqual(r1.ledger.iterations[0].counts, { new: nKeys, fixed: 0, open: nKeys, scheduled: 0, regressed: 0, accepted: 0, falsePositive: 0, waiverExpired: 0, unobserved: 0 });
+  const unknown = q1.unknownDevices().reduce((n, d) => n + q1.unknownPeers(d).length, 0);
+  const c01 = q1.findings().filter((f) => f.id === 'C01').length;
+  assert.deepStrictEqual([r1.ledger.iterations[0].coverage, r1.ledger.iterations[0].unknownPeers],
+    [{ collected: q1.meta().stats.collected, expected: q1.meta().stats.collected + c01 }, unknown]);
+  assert.deepStrictEqual(r1.ledger.iterations[0].baseline, { inputHash: q1.meta().inputHash, createdAt: '2026-01-01T00:00:00Z' });
+  const f06 = r1.ledger.items[k.F06];
+  assert.deepStrictEqual([f06.status, f06.id, f06.dev, f06.firstSeen, f06.lastSeen], ['open', 'F06', 'TPE_CORE_RT_02', q1.meta().inputHash, q1.meta().inputHash]);
+  // ② 排程的 F06 消失 → fixed；新的 I01 → open；豁免未到期、誤報不變
+  assert.deepStrictEqual(r2.changes.map((c) => [c.key, c.from, c.to, c.reason]), [[k.F06, 'scheduled', 'fixed', 'disappeared'], [k.I01new, null, 'open', 'new']].sort((a, b) => S.util.cmp(a[0], b[0])));
+  assert.strictEqual(r2.ledger.items[k.F06].lastSeen, q1.meta().inputHash, 'F06 最後出現在第一輪');
+  assert.strictEqual(r2.ledger.items[k.F06].patch, 'patch:F06');
+  assert.deepStrictEqual(['R03', 'F01'].map((id) => r2.ledger.items[k[id]].status), ['accepted', 'false-positive']);
+  assert.strictEqual(r2.ledger.items[k.A04].lastSeen, q2.meta().inputHash);
+  assert.deepStrictEqual([r2.ledger.iterations[1].counts.new, r2.ledger.iterations[1].counts.fixed, r2.ledger.iterations[1].counts.accepted, r2.ledger.iterations[1].counts.falsePositive], [1, 1, 1, 1]);
+  // ③ F06 再出現 → regressed；I01 消失 → fixed；R03 豁免到期 → open，原本的豁免記在歷程
+  assert.deepStrictEqual(r3.changes.map((c) => [c.key, c.from, c.to, c.reason]), [
+    [k.F06, 'fixed', 'regressed', 'reappeared'], [k.I01new, 'open', 'fixed', 'disappeared'], [k.R03, 'accepted', 'open', 'waiver-expired']].sort((a, b) => S.util.cmp(a[0], b[0])));
+  const r03 = r3.ledger.items[k.R03];
+  assert.deepStrictEqual([r03.status, r03.waiver], ['open', null]);
+  assert.deepStrictEqual(r03.history[r03.history.length - 1], { at: '2026-03-01T00:00:00.000Z', from: 'accepted', to: 'open', by: 'advance', baseline: q3.meta().inputHash, reason: 'waiver-expired',
+    waiver: { reason: '實驗室路由', until: '2026-02-01T00:00:00.000Z' } });
+  assert.deepStrictEqual(r3.ledger.items[k.F06].history.map((h) => [h.from, h.to, h.by]), [[null, 'open', 'advance'], ['open', 'scheduled', 'user'], ['scheduled', 'fixed', 'advance'], ['fixed', 'regressed', 'advance']]);
+  assert.strictEqual(r3.ledger.items[k.F01].status, 'false-positive');
+  const c3 = r3.ledger.iterations[2].counts;
+  assert.deepStrictEqual([c3.new, c3.fixed, c3.regressed, c3.waiverExpired, c3.accepted, c3.falsePositive, c3.open], [0, 1, 1, 1, 0, 1, nKeys - 2]);
+  // 統計
+  const sum = S.ledger.summary(r3.ledger);
+  assert.deepStrictEqual(sum.series.map((p) => p.pending), [nKeys, nKeys - 2, nKeys - 1]);
+  assert.deepStrictEqual(sum.current.byStatus, { open: nKeys - 2, scheduled: 0, fixed: 1, accepted: 0, 'false-positive': 1, regressed: 1 });
+  const f01 = S.ledger.ruleStats(r3.ledger).find((r) => r.id === 'F01');
+  assert.deepStrictEqual([f01.total, f01.falsePositive, f01.rate], [1, 1, 1]);
+  assert.ok(S.ledger.validate(r3.ledger).ok, S.ledger.validate(r3.ledger).errors.join('\n'));
+});
+test('處理紀錄：同一份基準重複推進是冪等的；結果可重現、不修改傳入的資料與 Snapshot', () => {
+  const L = S.ledger; const a = ledgerRounds(); const b = ledgerRounds();
+  assert.strictEqual(JSON.stringify(a.r3), JSON.stringify(b.r3), '同樣的輸入與 now 要得到完全相同的結果');
+  const before = JSON.stringify(a.r3.ledger); const snapBefore = JSON.stringify(a.q3.snapshot);
+  [a.q3, a.q1, a.q2].forEach((q) => {
+    const again = L.advance(a.r3.ledger, q, { now: '2026-04-01T00:00:00Z' });
+    assert.deepStrictEqual([again.skipped, again.changes, again.unobserved], [true, [], []]);
+    assert.strictEqual(JSON.stringify(again.ledger), before, '已推進過的基準不新增一輪、不寫 history');
+  });
+  assert.strictEqual(JSON.stringify(a.r3.ledger), before, '傳入的 ledger 不被修改');
+  assert.strictEqual(JSON.stringify(a.q3.snapshot), snapBefore, 'Snapshot 不被修改');
+  // set 沒有任何改變時不寫 history
+  const same = L.set(a.r3.ledger, a.k.F01, { status: 'false-positive', note: '廠商專用' }, { now: '2026-04-01T00:00:00Z' });
+  assert.strictEqual(JSON.stringify(same), before);
+});
+test('處理紀錄：設備收集失敗時，消失的問題不判為 fixed（unobserved）', () => {
+  const L = S.ledger; const q1 = LEDGER.q1(); const q2 = LEDGER.q2();
+  const k = LEDGER.keyOf(q1, 'F06');
+  const r1 = L.advance(L.empty(), q1, { now: '2026-01-01T00:00:00Z' });
+  // 第二輪假設 TPE_CORE_RT_02 有一個指令收集失敗：F06 消失可能只是沒收到資料
+  const failed = Object.assign({}, q2, { coverage: () => q2.coverage().map((r) => (r.dev === 'TPE_CORE_RT_02' ? Object.assign({}, r, { failures: [{ reason: 'timeout' }] }) : r)) });
+  const r2 = L.advance(r1.ledger, failed, { now: '2026-01-15T00:00:00Z' });
+  assert.strictEqual(r2.ledger.items[k].status, 'open');
+  assert.ok(r2.unobserved.includes(k));
+  assert.ok(!r2.changes.some((c) => c.key === k));
+  assert.strictEqual(r2.ledger.iterations[1].counts.unobserved, r2.unobserved.length);
+  // 不屬於任何設備的問題（第二輪新增的 I01）：基準中有任何收集失敗時也不判斷
+  const kI01 = LEDGER.keyOf(q2, 'I01');
+  const r3 = L.advance(r2.ledger, Object.assign({}, LEDGER.q1(), { coverage: failed.coverage, meta: () => ({ inputHash: 'h3', createdAt: null }) }), { now: '2026-02-01T00:00:00Z' });
+  assert.deepStrictEqual([r3.ledger.items[kI01].status, r3.unobserved.includes(kI01)], ['open', true]);
+  assert.deepStrictEqual(S.ledger.devicesOfKey('["A01","ip:10.1.30.11","mac:10BF48000008"]'), []);
+  assert.deepStrictEqual(S.ledger.devicesOfKey('["K01","link:SW_B|ether24~R_A|ether2"]'), ['R_A', 'SW_B']);
+  // 可以判斷時同一輪就是 fixed
+  assert.strictEqual(L.advance(r1.ledger, q2, { now: '2026-01-15T00:00:00Z' }).ledger.items[k].status, 'fixed');
+});
+test('處理紀錄：set 寫入歷程、accepted 預設豁免半年，不合法的轉換丟出錯誤', () => {
+  const L = S.ledger; const { q1, k, r1, r3 } = ledgerRounds();
+  const now = { now: '2026-01-02T00:00:00Z' };
+  const lg = L.set(r1.ledger, k.A04, { status: 'accepted', waiver: { reason: '交換器在機櫃內' }, note: '已知' }, now);
+  const it = lg.items[k.A04];
+  assert.deepStrictEqual([it.status, it.waiver, it.note], ['accepted', { reason: '交換器在機櫃內', until: '2026-07-03T00:00:00.000Z' }, '已知']);
+  assert.deepStrictEqual(it.history[1], { at: '2026-01-02T00:00:00.000Z', from: 'open', to: 'accepted', by: 'user', baseline: q1.meta().inputHash, reason: null });
+  // 修改原因（狀態不變）也寫一筆歷程，舊的豁免保留在歷程
+  const lg2 = L.set(lg, k.A04, { waiver: { reason: '新原因', until: '2026-12-31' } }, now);
+  assert.deepStrictEqual(lg2.items[k.A04].history[2].reason, 'edit');
+  assert.deepStrictEqual(lg2.items[k.A04].history[2].waiver, it.waiver);
+  // 離開 accepted 時清掉豁免，記在歷程
+  const lg3 = L.set(lg2, k.A04, { status: 'scheduled' }, now);
+  assert.deepStrictEqual([lg3.items[k.A04].waiver, lg3.items[k.A04].history[3].waiver.reason], [null, '新原因']);
+  const bad = (fn, re) => assert.throws(fn, re);
+  bad(() => L.set(r1.ledger, k.A04, { status: 'accepted' }, now), /waiver/);
+  bad(() => L.set(r1.ledger, k.A04, { status: 'accepted', waiver: { reason: 'x', until: '2025-12-31' } }, now), /必須晚於 now/);
+  bad(() => L.set(r1.ledger, k.A04, { status: 'scheduled', waiver: { reason: 'x' } }, now), /只有 accepted/);
+  bad(() => L.set(r1.ledger, k.A04, { status: 'regressed' }, now), /regressed 只由 advance/);
+  bad(() => L.set(r1.ledger, k.A04, { status: 'fixed' }, now), /仍出現在最新一輪/);
+  bad(() => L.set(r1.ledger, k.A04, { status: 'done' }, now), /不認得的狀態/);
+  bad(() => L.set(r1.ledger, '["Z99"]', { status: 'open' }, now), /沒有這個項目/);
+  bad(() => L.set(r1.ledger, k.A04, { status: 'open' }, {}), /now/);
+  bad(() => L.set(r1.ledger, k.A04, { note: 3 }, now), /note/);
+  // fixed 只由 advance 判定，使用者不能改狀態；不在最新一輪的項目可以手動標 fixed
+  bad(() => L.set(r3.ledger, k.I01new, { status: 'open' }, now), /不能由 fixed 手動改為 open/);
+  assert.strictEqual(L.set(r3.ledger, k.I01new, { note: '已確認' }, now).items[k.I01new].note, '已確認');
+  const gone = L.advance(L.set(r1.ledger, k.F06, { status: 'scheduled' }, now), LEDGER.q2(), { now: '2026-01-15T00:00:00Z' });
+  assert.strictEqual(gone.ledger.items[k.F06].status, 'fixed');
+  assert.throws(() => L.advance(L.empty(), q1, { now: 'yesterday' }), /now 必須是 ISO 8601/);
+});
+test('處理紀錄：fromAcks 依分類轉換舊確認標記，保留原始紀錄並推進一輪', () => {
+  const L = S.ledger; const q1 = LEDGER.q1();
+  const k = (id) => LEDGER.keyOf(q1, id);
+  const acks = {
+    [k('A04')]: { at: '2025-06-01T08:00:00.000Z', kind: 'accepted', note: ' 監控用交換器 ' },
+    [k('F06')]: { at: '2025-06-02T08:00:00.000Z', kind: 'scheduled', note: '' },
+    [k('F01')]: { at: '2025-06-03T08:00:00.000Z', kind: 'false-positive', note: '' },
+    [k('R03')]: { at: '2025-06-04T08:00:00.000Z', kind: null, note: '' },
+    [k('R01')]: { at: '2025-06-05T08:00:00.000Z', kind: 'later-kind', note: '', extra: 1 },
+    '["C02","device:GONE_SW"]': { at: '2025-06-06T08:00:00.000Z', kind: 'scheduled', note: '' },
+  };
+  const r = L.fromAcks(acks, q1, { now: '2026-01-01T00:00:00Z' });
+  const st = (key) => r.ledger.items[key].status;
+  assert.deepStrictEqual(['A04', 'F06', 'F01', 'R03', 'R01'].map((id) => st(k(id))), ['accepted', 'scheduled', 'false-positive', 'accepted', 'accepted']);
+  assert.deepStrictEqual(r.ledger.items[k('A04')].waiver, { reason: '監控用交換器', until: '2026-07-02T00:00:00.000Z' });
+  assert.deepStrictEqual(r.ledger.items[k('R01')].history[0], { at: '2025-06-05T08:00:00.000Z', from: null, to: 'accepted', by: 'user', baseline: null, reason: 'from-ack',
+    ack: { at: '2025-06-05T08:00:00.000Z', kind: 'later-kind', note: '', extra: 1 } });
+  assert.strictEqual(r.ledger.items[k('F06')].firstSeen, q1.meta().inputHash, '推進後補上 firstSeen');
+  // 不在基準中、設備也不在基準中的排程項目：無法判斷，維持 scheduled
+  assert.deepStrictEqual([st('["C02","device:GONE_SW"]'), r.unobserved], ['scheduled', ['["C02","device:GONE_SW"]']]);
+  // 其他 finding 新增為 open；轉換結果可以通過驗證
+  assert.strictEqual(r.ledger.iterations.length, 1);
+  assert.strictEqual(r.changes.filter((c) => c.reason === 'new').length, new Set(q1.findings().map(q1.findingKey)).size - 5);
+  assert.ok(L.validate(r.ledger).ok);
+  // Map 也可以；格式不對的確認標記全部列出並丟錯
+  assert.strictEqual(JSON.stringify(L.fromAcks(new Map(Object.entries(acks)), q1, { now: '2026-01-01T00:00:00Z' })), JSON.stringify(r));
+  assert.throws(() => L.fromAcks({ 'not-json': { at: '2025-01-01T00:00:00Z' }, '["A04"]': { at: 5 } }, q1, { now: '2026-01-01T00:00:00Z' }),
+    (e) => /2 筆格式不正確/.test(e.message) && /acks\[not-json\]/.test(e.message) && /acks\[\["A04"\]\]\.at/.test(e.message));
+});
+test('處理紀錄：validate 對錯誤的格式逐項回報、不修改資料', () => {
+  const L = S.ledger; const { r3 } = ledgerRounds();
+  assert.deepStrictEqual(L.validate(L.empty()), { ok: true, errors: [] });
+  assert.deepStrictEqual(L.validate(null).ok, false);
+  const bad = JSON.parse(JSON.stringify(r3.ledger));
+  const keys = Object.keys(bad.items);
+  bad.schema = 'ssot-ledger/0';
+  bad.items[keys[0]].status = 'done';
+  bad.items[keys[1]].id = 'X99';
+  bad.items[keys[2]].history[0].by = 'robot';
+  bad.items[keys[3]].status = 'accepted';
+  bad.items['oops'] = { status: 'open' };
+  bad.iterations[1].baseline.inputHash = bad.iterations[0].baseline.inputHash;
+  bad.iterations[2].counts.open = -1;
+  const copy = JSON.stringify(bad);
+  const v = L.validate(bad);
+  assert.strictEqual(v.ok, false);
+  [/^schema：/, new RegExp(`^items\\[${keys[0].replace(/[[\]|.]/g, '\\$&')}\\]\\.status：`), /\.id：與鍵的規則 id/, /\.history\[0\]\.by：/, /accepted 必須有豁免/,
+    /^items\[oops\]：鍵不是 findingKey/, /^iterations\[1\]\.baseline\.inputHash：與前面的一輪重複/, /^iterations\[2\]\.counts\.open：必須是非負整數/]
+    .forEach((re) => assert.ok(v.errors.some((e) => re.test(e)), `${re} 沒有回報：\n${v.errors.join('\n')}`));
+  assert.strictEqual(JSON.stringify(bad), copy, 'validate 不修改資料');
+  assert.throws(() => L.advance(bad, LEDGER.q1(), { now: '2026-01-01T00:00:00Z' }), /處理紀錄格式不正確/);
+});
+
 if (ARGS.large) {
   test('壓力：約 1000 台設備在時間內完成，且乾淨網路沒有誤報', () => {
     const text = gen(['--sites', '40', '--access', '24']);

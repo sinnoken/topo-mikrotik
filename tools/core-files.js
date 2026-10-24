@@ -8,4 +8,6 @@ module.exports = [
   'src/pipeline.js', 'src/query/query.js', 'src/query/trace.js', 'src/compare/compare.js',
   // 修正 patch（ssot-patch/1）：只讀查詢介面，產生文字
   'src/remediate/patch.js',
+  // 處理紀錄（ssot-ledger/1），不屬於 Snapshot
+  'src/ledger/ledger.js',
 ];

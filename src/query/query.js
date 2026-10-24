@@ -145,6 +145,8 @@
       firewallCovers: (a, b) => S.infer.fw.covers(ctxOf(a.dev), a, b),
       /** 基準的 meta（schema、version、inputHash、stats…）。 */
       meta: () => snap.meta,
+      /** 每台設備的收集覆蓋（Snapshot 的 coverage：collected、data、missing、failures…），依設備排序。 */
+      coverage: () => snap.coverage || [],
       devices: () => m.devices,
       links: () => m.links,
       vlans: () => m.vlans,

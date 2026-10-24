@@ -220,17 +220,17 @@
     },
     A07: {
       severity: 'warn', cat: '位址', title: '同一網段在不同設備屬於不同 VLAN', data: [['config']],
-      facet: '<網段 net/len>',
+      facet: '<網段 net/len>，非 main 的 VRF 加上 @<VRF>',
       causes: [
         '某台設備的 VLAN ID 設錯。',
         '位址設在錯的 VLAN 介面上。',
-        '各站點刻意重用同一個私有網段（目前不分 VRF）。',
+        '各站點刻意重用同一個私有網段（不同 VRF 已分開比較；同一個 VRF 內重用仍會列出）。',
       ],
       action: '確認 `/interface vlan` 的 `vlan-id` 或 `/ip address` 是否設錯；同一個網段跨在兩個 VLAN，兩邊的主機無法在 L2 互通。有推定偏離時，先從偏離的設備查起。',
     },
     A08: {
       severity: 'warn', cat: '位址', title: '重疊網段在不同設備的遮罩不同', data: [['config', 'ipaddr']],
-      facet: '<最外層的網段 net/len>',
+      facet: '<最外層的網段 net/len>，非 main 的 VRF 加上 @<VRF>',
       causes: [
         '交換器管理位址的遮罩和閘道不一致。',
         '調整網段大小時只改了部分設備。',
@@ -320,7 +320,7 @@
     },
     R06: {
       severity: 'warn', cat: '路由', title: '同一 DHCP 網段在不同設備的閘道、DNS 或 NTP 不同', data: [['config']],
-      facet: 'gateway|<網段>／dns|<網段>／ntp|<網段>',
+      facet: 'gateway|<網段>／dns|<網段>／ntp|<網段>（<網段> 為 net/len，非 main 的 VRF 加上 @<VRF>）',
       causes: [
         'HA 成對的 DHCP 伺服器設定沒有同步。',
         '只改了其中一台的閘道或伺服器。',

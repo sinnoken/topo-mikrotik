@@ -229,10 +229,12 @@
     const Q = App.Q; const rules = Q.firewallRulesOf(dev); const services = Q.ipServicesOf(dev); const zone = Q.firewallZone(dev);
     if (!rules.length && !services.length && !zone) return null;
     const bad = rules.filter((r) => Q.findingsFor('rule', r.key).some((f) => f.severity !== 'info')).length;
+    // 用語與防火牆畫面共用 firewall.js 的 zoneStatus()（該檔在本檔之後載入，render 時才取用）
+    const zs = zone && V.firewall.zoneStatus(zone.status);
     return section('防火牆', [
       h('div', { class: 'row' }, [
         V.chip(`${rules.length} 條規則`), bad ? V.chip(`${bad} 條有問題`, 'warn') : null, V.chip(`${services.length} 個服務`),
-        zone ? V.chip(zone.status === 'ok' ? 'WAN／LAN 已判斷（推論）' : '無法判斷 WAN', zone.status === 'ok' ? 'ok' : 'warn') : null,
+        zs ? V.chip(zs.short, zs.tone, { title: zs.text }) : null,
       ]),
       h('div', null, h('a', { class: 'link', onclick: () => App.select({ type: 'firewall', dev }) }, '查看防火牆規則與服務')),
     ]);

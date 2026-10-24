@@ -595,7 +595,15 @@ async function buildInput(input) {
     App.select({ type: 'device', key: dev });
     const link = $('#detail').querySelectorAll('a').find((a) => a.textContent === '查看防火牆規則與服務');
     if (!link) throw new Error('設備詳情應有防火牆摘要與入口');
+    // WAN 狀態用語：摘要與防火牆畫面共用 V.firewall.zoneStatus()；三種狀態都可區分且標示推論
+    const ZS = S.view.firewall.zoneStatus; const zoneNow = Q.firewallZone(dev);
+    const known = ['ok', 'no-wan-list', 'empty-wan-list'].map(ZS);
+    if (new Set(known.map((z) => z.short)).size !== known.length || new Set(known.map((z) => z.text)).size !== known.length) throw new Error('三種 WAN 狀態的文字應可區分');
+    if (known.some((z) => !z.short.includes('（推論）') || !z.tone)) throw new Error('WAN 狀態摘要應標示（推論）並有色調');
+    if (Q.devices().some((d) => { const z = Q.firewallZone(d.key); return z && !known.includes(ZS(z.status)); })) throw new Error('基準中的 WAN 狀態都應有對應用語');
+    if (zoneNow && !text('#detail').includes(ZS(zoneNow.status).short)) throw new Error('設備詳情的防火牆摘要應顯示 WAN 狀態（與防火牆畫面同一來源）');
     link.click();
+    if (zoneNow && !text('#detail').includes(ZS(zoneNow.status).text)) throw new Error('防火牆畫面應顯示 WAN 狀態的完整說明');
     if (App.sel.type !== 'firewall' || App.sel.dev !== dev) throw new Error('入口應開啟該設備的防火牆畫面');
     // chain 依 Q.firewallChains 的順序，每個 chain 一個可展開區塊；展開後列數等於規則數，position 由小到大
     const chains = Q.firewallChains(dev);

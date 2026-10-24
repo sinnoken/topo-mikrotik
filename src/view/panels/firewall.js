@@ -11,11 +11,14 @@
   const FAMILY = { ip: 'IPv4', ipv6: 'IPv6' };
   // 文字對照核心的判斷（infer.js fwContext）：已定義的 interface list 名稱含獨立的 WAN 字樣（不分大小寫，
   // 前後不接英文字母，例如 WAN、ISP-WAN、wan2），成員含 include／exclude 展開後的結果；LAN 同理
+  // 防火牆畫面用 text，設備詳情的摘要用 short（標示推論）；兩處都經由 zoneStatus() 取用，不另寫一份
   const ZONE_STATUS = {
-    ok: ['已找到 WAN 介面', 'ok'],
-    'no-wan-list': ['沒有名稱含 WAN 的 interface list，WAN 相關檢查未執行', 'warn'],
-    'empty-wan-list': ['名稱含 WAN 的 interface list 沒有可確定的成員，WAN 相關檢查未執行', 'warn'],
+    ok: { text: '已找到 WAN 介面', short: '已找到 WAN 介面（推論）', tone: 'ok' },
+    'no-wan-list': { text: '沒有名稱含 WAN 的 interface list，WAN 相關檢查未執行', short: '沒有 WAN interface list（推論）', tone: 'warn' },
+    'empty-wan-list': { text: '名稱含 WAN 的 interface list 沒有可確定的成員，WAN 相關檢查未執行', short: 'WAN interface list 沒有成員（推論）', tone: 'warn' },
   };
+  /** WAN 判斷狀態的文字與色調；未知的 status 原樣顯示，不假裝成已知狀態 */
+  const zoneStatus = (status) => ZONE_STATUS[status] || { text: String(status), short: `${status}（推論）`, tone: '' };
   const ZONE_BASIS = { 'interface-list': '依名稱含 WAN／LAN 的 interface list' };
   // 規則不多時，內建 chain 預設展開；多時全部收合，展開時才產生表格（大型網路單台設備可能有上百條）
   const OPEN_ALL_MAX = 60;
@@ -115,7 +118,7 @@
       if (!t) { t = { k, family: c.family, table: c.table, chains: [] }; tables.push(t); }
       t.chains.push(c);
     });
-    const zs = zone && (ZONE_STATUS[zone.status] || [zone.status, '']);
+    const zs = zone && zoneStatus(zone.status);
     const svcKey = (s) => s.dev + '|' + s.name;
     return h('div', { class: 'detail' }, [
       h('h2', null, [devLink(App, dev), ' 的防火牆']),
@@ -126,7 +129,7 @@
       notice ? h('p', { class: 'diffA' }, notice) : null,
       findingsBlock(App, fwFindings),
       section('WAN／LAN 判斷（推論）', zone ? [
-        kv([['狀態', V.chip(zs[0], zs[1])], ['依據', ZONE_BASIS[zone.basis] || zone.basis || '—'],
+        kv([['狀態', V.chip(zs.text, zs.tone)], ['依據', ZONE_BASIS[zone.basis] || zone.basis || '—'],
           ['WAN list', zone.wanLists.join('、') || '—'],
           ['WAN 介面', zone.wanInterfaces.length ? h('span', null, zone.wanInterfaces.flatMap((ep, n) => [n ? '、' : '', epLink(App, ep)])) : '—'],
           ['LAN list', zone.lanLists.join('、') || '—'],
@@ -158,5 +161,5 @@
     ]);
   }
 
-  V.firewall = { render };
+  V.firewall = { render, zoneStatus };
 })(globalThis.SSOT = globalThis.SSOT || {});

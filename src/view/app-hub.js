@@ -41,8 +41,8 @@
       // 只處理資料中心內（或沒有焦點時）的 Esc：頁首的搜尋、路由追蹤各自用 Esc 收起
       const root = $('#hub'); const t = e.target;
       if (t && t !== document.body && root.contains && !root.contains(t)) return;
-      // 對話框（輸入、修正計畫、原文）開著時，Esc 先關對話框
-      if (['#dlg-input', '#dlg-patch', '#dlg-raw'].some((s) => $(s) && $(s).open)) return;
+      // 對話框（輸入、原文）開著時，Esc 先關對話框
+      if (['#dlg-input', '#dlg-raw'].some((s) => $(s) && $(s).open)) return;
       A.closeHub({ focus: true });
     });
   };

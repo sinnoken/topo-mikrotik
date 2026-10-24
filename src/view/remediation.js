@@ -106,13 +106,14 @@
   }
   /**
    * 修正計畫中「未產生指令」的一筆所對應的檢查結果（matchFindings 的一筆）：找得到時是可點擊（滑鼠與鍵盤）的訊息連結，
-   * 過長時截斷、完整訊息在 title，點了開啟該筆檢查結果；找不到時明確說明，findingKey 放在 title。before 在開啟前執行（例如關閉對話框）。
+   * 過長時截斷、完整訊息在 title，點了在右側的詳細資料開啟該筆檢查結果（修正計畫留在中間）；
+   * 找不到時明確說明，findingKey 放在 title。
    */
-  function findingRef(App, hit, key, before) {
+  function findingRef(App, hit, key) {
     if (!hit) return V.h('span', { class: 'warn-line finding-missing', title: key }, MISSING_FINDING_TEXT);
     const msg = String(hit.f.message || '');
     return V.h('a', { class: 'link finding-ref', title: msg, 'data-finding-idx': String(hit.idx),
-      onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); if (before) before(); App.selectFinding(hit.idx); } }, clipText(msg, FINDING_TEXT_MAX));
+      onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); App.selectFinding(hit.idx); } }, clipText(msg, FINDING_TEXT_MAX));
   }
 
   // ---------------------------------------------------------------- 檢查項目（finding.facet）

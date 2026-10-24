@@ -7,7 +7,7 @@
  *   app-graph.js   基準 → 圖資料、未知對端、版面排程（ELK／內建）
  *   app-select.js  選取、圖上互動、原文檢視、路由追蹤
  *   app-toolbar.js 頁首（搜尋、追蹤、清除）、工具列、圖例、匯出
- *   app-panes.js   左側分頁、窄螢幕工作區、左右欄寬度
+ *   app-panes.js   左側分頁、中間的工作畫面（App.showView）、窄螢幕工作區、左右欄寬度
  *   app-input.js   輸入對話框與建立基準
  *   app-ledger.js  處理紀錄（S.ledger；store 的 'ledger'，並轉換舊的 'acks'）
  *   app-hub.js     資料中心：這一輪的輸入與輸出、工作包（S.workpack）的下載與讀入
@@ -84,7 +84,7 @@
     let saveT = null;
     App.graph.on('moved', () => { clearTimeout(saveT); saveT = setTimeout(A.savePositions, 600); App.graph.computeGroups(); });
     App.layoutMode = (await S.store.get('layoutMode').catch(() => null)) || 'elk';
-    A.bindHeader(); A.bindToolbar(); A.bindInputDialog(); A.bindHub(); A.bindTabs(); A.bindMobileWorkspaces(); await A.bindResizers();
+    A.bindHeader(); A.bindToolbar(); A.bindInputDialog(); A.bindHub(); A.bindTabs(); A.bindCenterViews(); A.bindMobileWorkspaces(); await A.bindResizers();
     if (!(await S.store.available())) A.banner('這個瀏覽器無法使用本機儲存，關閉頁面後基準不會保留。');
     await A.loadLedger();
     await App.restore();
@@ -172,8 +172,10 @@
       f.appendChild(h('span', { class: 'mono' }, `輸入指紋 ${m.inputHash}`));
       f.appendChild(h('span', null, `版本 ${m.version}`));
     } else f.appendChild(h('span', null, `RouterOS 網路基準 ${S.VERSION}・資料只在這個瀏覽器處理，不會傳到任何地方`));
-    V.lists.findings(App); V.lists.coverage(App); V.lists.compare(App); V.lists.inventory(App);
-    V.ledgerPane.render(App); V.patchView.refresh(App); V.hub.render(App);
+    V.lists.findings(App); V.lists.coverage(App); V.lists.compare.summary(App); V.lists.inventory(App);
+    V.ledgerPane.render(App); V.hub.render(App);
+    // 中間的工作畫面：沒有基準時切回拓樸圖；只重繪目前顯示的那一個
+    A.syncCenterTabs(); A.renderCenter();
     V.details.render(App, App.sel);
   };
   function renderBaselineSummary() {

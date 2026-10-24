@@ -1,5 +1,5 @@
 /*
- * 左側四個分頁：檢查結果、覆蓋率、清單、比對。
+ * 左側的分頁：檢查結果、覆蓋率、清單、比對（摘要與入口）；以及中間的「比對」工作畫面（預期資料比對＋新舊基準比對）。
  */
 (function (S) {
   'use strict';
@@ -68,7 +68,7 @@
     const root = V.clear(V.$('#pane-findings'));
     if (!App.snap) return root.appendChild(h('div', { class: 'empty-detail' }, '建立基準後，資料之間的矛盾與缺漏會列在這裡。'));
     const Q = App.Q; const all = Q.findings();
-    // 只看新出現的：依「比對」分頁載入的舊基準（S.compare.snapshots 的 finding added）；沒有舊基準時停用
+    // 只看新出現的：依「比對」載入的舊基準（S.compare.snapshots 的 finding added）；沒有舊基準時停用
     const base = V.baselineDiff.loaded();
     if (!base) state.onlyNew = false;
     const isNew = (f) => !!base && base.addedFindingKeys.has(Q.findingKey(f));
@@ -93,8 +93,8 @@
         onclick: () => { state.groupBy = k; findings(App); } }, label))),
       base ? filterChip('只看新出現的', nNew, { cls: 'info', on: state.onlyNew, title: `與舊基準（${base.name}）比對後新出現的檢查結果`,
         onclick: () => { state.onlyNew = !state.onlyNew; findings(App); } })
-        : V.chipButton('只看新出現的', 'btn off only-new', { 'aria-disabled': 'true', 'aria-pressed': 'false', title: '需要先在「比對」分頁載入舊基準' }),
-      base ? null : h('span', { class: 'muted note only-new-why' }, '在「比對」分頁載入舊基準後，才能只看新出現的'),
+        : V.chipButton('只看新出現的', 'btn off only-new', { 'aria-disabled': 'true', 'aria-pressed': 'false', title: '需要先在中間的「比對」或資料中心載入舊基準' }),
+      base ? null : h('span', { class: 'muted note only-new-why' }, '在「比對」或資料中心載入舊基準後，才能只看新出現的'),
       versionWarn ? h('span', { class: 'note warn-line only-new-version', title: versionWarn.message }, '新出現的可能來自新版檢查：' + versionWarn.message) : null,
     ]));
     // 報表（CSV、Markdown）的匯出集中在資料中心；這裡只放入口
@@ -279,26 +279,34 @@
     }
     return c.report;
   }
-  /** 讀入預期資料檔（ssot-expected/1）：比對分頁與資料中心共用。無法解析時記下原因（比對結果顯示），不丟例外 */
+  /** 讀入預期資料檔（ssot-expected/1）：「比對」工作畫面與資料中心共用。無法解析時記下原因（比對結果顯示），不丟例外 */
   async function loadExpectedFile(App, f) {
     let text = null; let data = null; let error = null;
     try { text = await f.text(); data = JSON.parse(text); } catch (e) { error = '無法讀取：' + e.message; }
     App.round.expected = { name: f.name, data, error };
     A().renderAll();
   }
+  const CMP_ST = { ok: ['一致', 'ok'], missing: ['基準缺少', 'err'], different: ['不同', 'warn'], unexpected: ['基準多出', 'info'] };
+  /**
+   * 中間的「比對」工作畫面（#compare-body）：上方是預期資料比對，下方是新舊基準比對（panels/baseline-diff.js），各一張卡片。
+   * 點一列在右側的詳細資料開啟該項目（比對留在中間）。
+   */
   function compare(App) {
-    // 分頁上半是預期資料比對，下半是新舊基準比對（panels/baseline-diff.js）
-    const pane = V.clear(V.$('#pane-compare')); const root = h('div');
-    pane.appendChild(root); pane.appendChild(V.baselineDiff.render(App));
+    const pane = V.clear(V.$('#compare-body'));
+    if (!App.snap) { pane.appendChild(h('p', { class: 'muted' }, '建立基準後才能比對。')); return; }
+    const root = h('section', { class: 'work-card cmp-expected', 'aria-labelledby': 'cmp-expected-title' });
+    pane.appendChild(root);
+    pane.appendChild(h('section', { class: 'work-card cmp-baseline', 'aria-labelledby': 'cmp-baseline-title' }, V.baselineDiff.render(App)));
     const file = h('input', { type: 'file', accept: '.json,application/json', class: 'hidden', onchange: (ev) => {
       const f = ev.target.files[0]; if (f) loadExpectedFile(App, f);
     } });
     const exp = App.round.expected;
     root.appendChild(h('div', { class: 'pane-body' }, [
+      h('h3', { class: 'work-card-title', id: 'cmp-expected-title' }, '預期資料比對'),
       h('p', { class: 'muted' }, '把「預期應該長怎樣」的資料（格式 ssot-expected/1，獨立於基準）和目前基準比對。比對只讀取基準，不會修改它。'
         + '預期資料是這一輪的輸入，換了基準會重新比對；由基準產生預期資料在資料中心的「這一輪的輸出」。'),
       h('div', { class: 'row' }, [
-        file, h('button', { disabled: !App.Q || null, onclick: () => file.click() }, '載入預期資料（JSON）…'),
+        file, h('button', { class: 'cmp-load-expected', disabled: !App.Q || null, onclick: () => file.click() }, '載入預期資料（JSON）…'),
         exp ? h('span', { class: 'muted' }, exp.name) : null,
       ]),
       h('details', null, [h('summary', { class: 'muted' }, '格式說明'), h('pre', { class: 'raw note-box' },
@@ -306,22 +314,46 @@
     ]));
     const r = expectedReport(App); if (!r) return;
     if (r.errors.length) root.appendChild(h('div', { class: 'pane-section' }, r.errors.map((e) => h('div', { class: 'finding' }, [V.sevDot('error'), e]))));
-    const ST = { ok: ['一致', 'ok'], missing: ['基準缺少', 'err'], different: ['不同', 'warn'], unexpected: ['基準多出', 'info'] };
     root.appendChild(h('div', { class: 'summary' }, [filterChip('有差異', r.items.filter((i) => i.status !== 'ok').length, { on: cmp.filter === 'problem', onclick: () => { cmp.filter = 'problem'; compare(App); } }),
-      ...Object.entries(ST).map(([k, [label, cls]]) => filterChip(label, r.summary[k] || 0, { cls, on: cmp.filter === k, onclick: () => { cmp.filter = k; compare(App); } }))]));
+      ...Object.entries(CMP_ST).map(([k, [label, cls]]) => filterChip(label, r.summary[k] || 0, { cls, on: cmp.filter === k, onclick: () => { cmp.filter = k; compare(App); } }))]));
     const items = r.items.filter((i) => (cmp.filter === 'problem' ? i.status !== 'ok' : i.status === cmp.filter));
-    root.appendChild(V.table([{ t: '', f: (i) => V.chip(ST[i.status][0], ST[i.status][1]) }, { t: '項目', f: (i) => i.message }], items, {
+    root.appendChild(h('div', { class: 'work-table' }, V.table([{ t: '', f: (i) => V.chip(CMP_ST[i.status][0], CMP_ST[i.status][1]) }, { t: '項目', f: (i) => i.message }], items, {
       onRow: (i) => {
         if (i.type === 'device' && App.Q.getDevice(i.ref)) App.select({ type: 'device', key: i.ref }, { focus: true });
         else if (i.type === 'link' && App.Q.getLink(i.ref)) App.select({ type: 'link', key: i.ref }, { focus: true });
         else if (i.type === 'link') { const ep = i.ref.split('~')[0]; if (App.Q.getInterface(ep)) App.select({ type: 'interface', key: ep }, { focus: true }); }
       },
-    }));
+    })));
+  }
+  /**
+   * 左側的「比對」分頁：只留摘要與入口（比對結果在中間的「比對」工作畫面）。
+   * 數字都來自同一份比對結果（預期資料：compare.report；新舊基準：V.baselineDiff.status）。
+   */
+  function compareSummary(App) {
+    const pane = V.clear(V.$('#pane-compare'));
+    if (!App.snap) return pane.appendChild(h('div', { class: 'empty-detail' }, '建立基準後，可以和預期資料或上一輪的基準比對。'));
+    const r = expectedReport(App); const exp = App.round.expected; const prev = V.baselineDiff.status();
+    const nDiff = r && !r.errors.length ? r.items.filter((i) => i.status !== 'ok').length : 0;
+    const line = (title, kids) => h('div', { class: 'cmp-sum-row' }, [h('b', null, title), h('div', { class: 'chip-list' }, kids)]);
+    const exposure = prev && !prev.report.errors.length ? prev.report.items.filter((i) => i.effect === 'new-exposure').length : 0;
+    pane.appendChild(h('div', { class: 'pane-body cmp-summary' }, [
+      h('p', { class: 'muted' }, '比對的結果在中間的「比對」，全寬顯示；這裡只列摘要。'),
+      line('預期資料', !exp ? [h('span', { class: 'muted' }, '未載入')] : r && r.errors.length ? [V.chip('無法比對', 'err', { title: r.errors[0] })]
+        : r ? [h('span', { class: 'muted' }, exp.name), V.chip(`有差異 ${V.num(nDiff)}`, nDiff ? 'warn' : 'ok'), V.chip(`一致 ${V.num(r.summary.ok || 0)}`)] : []),
+      line('上一輪的基準', !prev ? [h('span', { class: 'muted' }, '未載入')] : prev.report.errors.length ? [h('span', { class: 'muted' }, prev.name), V.chip('無法比對', 'err', { title: prev.report.errors[0] })]
+        : [h('span', { class: 'muted' }, prev.name), V.chip(`新增 ${V.num(prev.report.summary.added)}`), V.chip(`移除 ${V.num(prev.report.summary.removed)}`), V.chip(`變更 ${V.num(prev.report.summary.changed)}`),
+          exposure ? V.chip(`新暴露 ${V.num(exposure)}`, 'err') : null]),
+      h('div', { class: 'row spaced' }, [
+        h('button', { class: 'primary open-view', 'data-view': 'compare', onclick: () => App.showView('compare', { focus: true }) }, '在中間開啟比對'),
+        h('button', { class: 'open-hub', 'data-hub-section': 'inputs', onclick: () => App.openHub('inputs') }, '在資料中心載入…'),
+      ]),
+    ]));
   }
   // 換基準時：新舊基準比對清空（舊基準要重新載入）；預期資料保留，下一次重繪時和新的基準重新比對
   compare.reset = () => { V.baselineDiff.reset(); };
   compare.report = expectedReport;
   compare.loadFile = loadExpectedFile;
+  compare.summary = compareSummary;
 
   // ---------------------------------------------------------------- 清單：設備、介面、IP、網段、MAC、VLAN
   const inv = { kind: 'device', filter: 'all', q: '', sortBy: -1, sortDir: 1 };

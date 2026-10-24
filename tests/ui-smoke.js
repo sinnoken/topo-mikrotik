@@ -16,6 +16,7 @@ class Node_ { constructor() { this.childNodes = []; this.parentNode = null; }
   appendChild(c) { if (c.parentNode) c.parentNode.removeChild(c); c.parentNode = this; this.childNodes.push(c); return c; }
   removeChild(c) { this.childNodes = this.childNodes.filter((x) => x !== c); c.parentNode = null; return c; }
   get firstChild() { return this.childNodes[0] || null; } get firstElementChild() { return this.childNodes.find((c) => c instanceof El) || null; }
+  contains(n) { for (let x = n; x; x = x.parentNode) if (x === this) return true; return false; }
   get textContent() { return this.childNodes.map((c) => c.textContent).join(''); }
   set textContent(t) { this.childNodes = []; if (t !== '') this.appendChild(new Text_(String(t))); } }
 class Text_ extends Node_ { constructor(t) { super(); this.t = t; } get textContent() { return this.t; } }
@@ -688,10 +689,26 @@ function viewBoundaryViolations(file, src) {
     if (!ov.includes('IP（ARP）' + uniq.toLocaleString()) && !ov.includes('IP（ARP）')) throw new Error('總覽缺少 IP（ARP）');
   });
   await step('覆蓋率分頁', () => { document.testAll('#left .tabs button')[1].click(); if (!text('#pane-coverage').includes(process.env.SMOKE_INPUT ? '有缺漏 0' : '有缺漏 1')) throw new Error('覆蓋率摘要不正確'); });
-  await step('比對分頁', async () => {
-    const inp = $('#pane-compare').querySelector('input'); inp.files = [{ name: 'expected-sample.json', text: async () => fs.readFileSync(path.join(ROOT, 'samples/expected-sample.json'), 'utf8') }];
+  await step('比對：結果在中間的「比對」全寬顯示，左側分頁只留摘要與入口', async () => {
+    document.testAll('#left .tabs button')[3].click();
+    const open = $('#pane-compare').testAll('.open-view').find((b) => b.getAttribute('data-view') === 'compare');
+    if (!open) throw new Error('左側的比對分頁應有「在中間開啟比對」的入口');
+    if ($('#pane-compare').querySelector('input') || $('#pane-compare').querySelector('table')) throw new Error('左側的比對分頁只留摘要，載入與結果在中間');
+    open.click();
+    if (App.centerView !== 'compare' || $('#view-compare').classList.contains('hidden') || document.activeElement !== $('#compare-title')) throw new Error('入口應在中間開啟比對並聚焦標題');
+    const inp = $('#compare-body').querySelector('input'); inp.files = [{ name: 'expected-sample.json', text: async () => fs.readFileSync(path.join(ROOT, 'samples/expected-sample.json'), 'utf8') }];
     inp.dispatch('change', { target: inp }); await new Promise((r) => setTimeout(r, 20));
-    if (!text('#pane-compare').includes('有差異')) throw new Error('比對結果未顯示');
+    if (!text('#compare-body').includes('有差異')) throw new Error('比對結果未顯示');
+    // 左側的摘要和中間的結果是同一份比對（筆數依關係，不寫死）
+    const rep = S.view.lists.compare.report(App); const nDiff = rep.items.filter((i) => i.status !== 'ok').length;
+    if (!text('#pane-compare').includes('expected-sample.json') || !text('#pane-compare').includes(`有差異 ${nDiff}`)) throw new Error('左側摘要應列出預期資料的檔名與差異筆數：' + text('#pane-compare'));
+    // 點一列：詳情在右側，比對留在中間
+    const row = $('#compare-body').testAll('tbody tr').find((tr) => tr.getAttribute('tabindex') === '0');
+    if (row) {
+      App.select(null); row.click();
+      if (App.centerView !== 'compare') throw new Error('點比對的一列時，比對應留在中間');
+    }
+    App.showView('graph');
   });
   await step('匯出：基準 JSON 與檢查結果 CSV／Markdown 在本機產生（入口在資料中心），下載後釋放 URL，不改寫基準', async () => {
     const before = JSON.stringify(App.snap);
@@ -1064,8 +1081,9 @@ function viewBoundaryViolations(file, src) {
       if (!fold || fold.querySelector('summary .chip').textContent !== String(plan.items.length + plan.skipped.length)) throw new Error('設備的防火牆畫面應收合列出全部修正與筆數');
       // 在修正計畫中開啟：選取就是這些 findingKey
       fold.querySelector('.open-patch').click();
-      if (!$('#dlg-patch').open || Array.from(S.view.patchView.state.keys).sort().join() !== keys.slice().sort().join()) throw new Error('「在修正計畫中開啟」應以這些檢查結果開啟修正計畫');
-      $('#dlg-patch').close();
+      if (!S.view.patchView.isOpen(App) || Array.from(S.view.patchView.state.keys).sort().join() !== keys.slice().sort().join()) throw new Error('「在修正計畫中開啟」應以這些檢查結果在中間開啟修正計畫');
+      if (document.activeElement !== $('#patch-title')) throw new Error('從防火牆畫面開啟修正計畫時，焦點應移到修正計畫的標題');
+      App.showView('graph');
     }
     App.select(null);
   });
@@ -1268,14 +1286,17 @@ function viewBoundaryViolations(file, src) {
     await buildInput(full);
     const expect = S.compare.snapshots(S.query(JSON.parse(oldJson)), App.Q);
     if (!expect.items.some((i) => i.effect === 'new-exposure')) throw new Error('測試資料應產生新暴露');
-    document.testAll('#left .tabs button')[3].click();
+    App.showView('compare');
     const load = async (name, body) => {
-      const inp = $('#pane-compare').testAll('input')[1];
+      const inp = $('#compare-body').querySelector('.baseline-diff').querySelector('input');
       inp.files = [{ name, text: async () => body }]; inp.dispatch('change', { target: inp }); await new Promise((r) => setTimeout(r, 20));
     };
     const keysBefore = JSON.stringify(await S.store.get('last'));
     await load('old.json', oldJson);
-    const pane = () => $('#pane-compare').querySelector('.baseline-diff');
+    const pane = () => $('#compare-body').querySelector('.baseline-diff');
+    // 左側的比對分頁：新舊基準比對的摘要（同一份比對結果）
+    const sumText = text('#pane-compare');
+    if (!sumText.includes('old.json') || !sumText.includes(`新增 ${expect.summary.added}`) || !sumText.includes(`新暴露 ${expect.items.filter((i) => i.effect === 'new-exposure').length}`)) throw new Error('左側摘要應列出新舊基準比對的筆數與新暴露：' + sumText);
     const t = pane().textContent;
     Object.entries({ added: '新增', removed: '移除', changed: '變更' }).forEach(([k, label]) => {
       if (!t.includes(`${label} ${expect.summary[k]}`)) throw new Error('摘要應列出' + label + '筆數');
@@ -1291,6 +1312,7 @@ function viewBoundaryViolations(file, src) {
     if (!exposureRows.every((tr) => tr.testAll('td')[0].style.background === S.view.theme.diff.exposureBg && tr.textContent.includes('新暴露'))) throw new Error('新暴露的顏色應取自 theme');
     exposureRows[0].click();
     if (App.sel.type !== 'rule' || !App.Q.getFirewallRule(App.sel.key)) throw new Error('點新暴露的規則應定位到防火牆規則');
+    if (App.centerView !== 'compare' || !$('#detail').querySelector('.focus')) throw new Error('點比對的一列時，比對留在中間、右側顯示那條規則');
     const filterBtn = pane().testAll('button').find((b) => b.textContent.startsWith('新暴露'));
     filterBtn.click();
     if (pane().testAll('tbody tr').some((tr) => !tr.className.includes('exposure'))) throw new Error('新暴露篩選應只列新暴露');
@@ -1309,21 +1331,23 @@ function viewBoundaryViolations(file, src) {
     const exp = JSON.parse(files[0].text);
     if (exp.schema !== 'ssot-expected/1') throw new Error('預期資料的 schema 應為 ssot-expected/1');
     require('assert').deepStrictEqual(exp, S.compare.expectedFrom(App.Q));
-    const inp = $('#pane-compare').querySelector('input');
+    App.showView('compare');
+    const inp = $('#compare-body').querySelector('input');
     inp.files = [{ name: files[0].name, text: async () => files[0].text }]; inp.dispatch('change', { target: inp }); await new Promise((r) => setTimeout(r, 20));
-    if (!text('#pane-compare').includes('有差異 0')) throw new Error('匯出的預期資料和同一份基準比對應全部一致');
+    if (!text('#compare-body').includes('有差異 0')) throw new Error('匯出的預期資料和同一份基準比對應全部一致');
+    App.showView('graph');
   });
   await step('只看新出現的：依舊基準篩選；版本不同時比對結果與篩選都提示「新出現的可能來自新版檢查」，版本相同時沒有提示', async () => {
     const Q = App.Q; const all = App.snap.findings; const key = Q.findingKey;
     const loadOld = async (name, body) => {
-      document.testAll('#left .tabs button')[3].click();
-      const inp = $('#pane-compare').testAll('input')[1];
+      App.showView('compare');
+      const inp = $('#compare-body').querySelector('.baseline-diff').querySelector('input');
       inp.files = [{ name, text: async () => body }]; inp.dispatch('change', { target: inp }); await new Promise((r) => setTimeout(r, 20));
       document.testAll('#left .tabs button')[0].click();
     };
     const onlyNew = () => $('#pane-findings').testAll('.chip').find((c) => c.textContent.startsWith('只看新出現的'));
     const versionHint = () => $('#pane-findings').querySelector('.only-new-version');
-    const diffWarnings = () => $('#pane-compare').testAll('.diff-warning');
+    const diffWarnings = () => $('#compare-body').testAll('.diff-warning');
     // 沒有可用的舊基準（上一步最後載入的是壞掉的 JSON）：停用並說明原因
     document.testAll('#left .tabs button')[0].click();
     if (!onlyNew() || onlyNew().getAttribute('aria-disabled') !== 'true') throw new Error('沒有舊基準時「只看新出現的」應停用');
@@ -1354,16 +1378,17 @@ function viewBoundaryViolations(file, src) {
     await loadOld('old-version.json', JSON.stringify(old));
     const warn = S.compare.snapshots(S.query(old), Q).warnings.find((w) => w.kind === 'version');
     if (!warn) throw new Error('測試資料：版本不同時核心應有 version 的提醒');
-    document.testAll('#left .tabs button')[3].click();
+    App.showView('compare');
     const dw = diffWarnings().find((d) => d.getAttribute('data-kind') === 'version');
     if (!dw || !dw.textContent.includes(warn.message)) throw new Error('比對結果上方應顯示版本不同的提醒');
-    const kids = $('#pane-compare').querySelector('.baseline-diff').childNodes;
-    if (kids.indexOf($('#pane-compare').querySelector('.diff-warnings')) > kids.indexOf($('#pane-compare').querySelector('.diff-summary'))) throw new Error('提醒應在比對結果上方');
+    const kids = $('#compare-body').querySelector('.baseline-diff').childNodes;
+    if (kids.indexOf($('#compare-body').querySelector('.diff-warnings')) > kids.indexOf($('#compare-body').querySelector('.diff-summary'))) throw new Error('提醒應在比對結果上方');
     document.testAll('#left .tabs button')[0].click();
     if (!versionHint() || !versionHint().textContent.includes('新出現的可能來自新版檢查')) throw new Error('只看新出現的應提示新出現的可能來自新版檢查');
     // 舊基準變成不可用：篩選自動關閉並停用，提示一併消失
     await loadOld('bad.json', '{not json');
     if (onlyNew().getAttribute('aria-disabled') !== 'true' || versionHint()) throw new Error('舊基準不可用時篩選應關閉並停用');
+    App.showView('graph');
   });
   await step('處理紀錄多輪推進：修好判定已修好、又出現標為回歸並醒目提示，收集不到的設備列為無法判斷，趨勢圖與表格', async () => {
     const VA = S.view.app; const sample = S.samples['sample-bundle.txt'];
@@ -1412,34 +1437,64 @@ function viewBoundaryViolations(file, src) {
     document.testAll('#left .tabs button')[4].click();
     const unList = $('#pane-ledger').testAll('.ledger-list').find((l) => l.getAttribute('data-reason') === 'unobserved');
     if (!unList || !unList.parentNode.textContent.includes('因收集失敗而無法判斷') || unList.testAll('.ledger-item').length !== Math.min(300, st.round.unobserved.length)) throw new Error('處理紀錄分頁應說明因收集失敗而無法判斷');
-    // 趨勢：多輪時畫三張圖（一張一個軸），顏色取自 theme，hover 顯示該輪全部數值，表格列出每一輪
+    // 趨勢：左側分頁只列最新一輪的數字與入口；圖在中間的「收斂趨勢」全寬顯示
     const series = S.ledger.summary(VA.ledger()).series;
-    const charts = $('#pane-ledger').testAll('.trend-chart');
+    if ($('#pane-ledger').testAll('.trend-chart').length || $('#pane-ledger').testAll('.trend-tile').length !== 5) throw new Error('左側的處理紀錄分頁只列最新一輪的數字，圖在中間');
+    const openTrend = $('#pane-ledger').testAll('.open-view').find((b) => b.getAttribute('data-view') === 'trend');
+    if (!openTrend || !openTrend.textContent.includes(`${series.length} 輪`)) throw new Error('左側應有「在中間開啟收斂趨勢」的入口並註明輪數');
+    openTrend.click();
+    if (App.centerView !== 'trend' || $('#view-trend').classList.contains('hidden') || document.activeElement !== $('#trend-title')) throw new Error('入口應在中間開啟收斂趨勢並聚焦標題');
+    // 多輪時畫三張圖（一張一個軸），顏色與線寬取自 theme，hover 顯示該輪全部數值，表格列出每一輪
+    const charts = $('#trend-body').testAll('.trend-chart');
     if (charts.length !== 3) throw new Error('應有三張小倍數折線圖：' + charts.length);
     const T = S.view.theme.trend;
     const lines = charts[0].testAll('path').filter((p) => p.className.includes('trend-line'));
     if (lines.map((p) => p.getAttribute('stroke')).join() !== [T.pending, T.regressed, T.accepted].join()) throw new Error('計數圖的三條線應用 theme.trend 的顏色');
+    if (charts.some((c) => c.testAll('path').filter((p) => p.className.includes('trend-line')).some((p) => p.getAttribute('stroke-width') !== String(T.lineWidth)))) throw new Error('折線應是 theme.trend.lineWidth 的細線');
     if (charts[0].testAll('.trend-legend-item').length !== 3 || charts[1].querySelector('.trend-legend')) throw new Error('多條線的圖要有圖例，單一條線的不需要');
+    // 不只靠顏色：圖例的樣本畫出和線上相同的外形；線尾寫出名稱與數值，數值相同的線不會疊在一起
+    charts[0].testAll('.trend-legend-item').forEach((it) => {
+      const k = it.getAttribute('data-series'); const sw = it.querySelector('.trend-swatch');
+      if (!sw || !sw.all().some((x) => x.getAttribute('data-shape') === T.marker[k])) throw new Error('圖例的樣本應畫出 ' + k + ' 的外形');
+    });
+    const ends = charts[0].testAll('text').filter((t) => t.className.includes('trend-end'));
+    if (ends.length !== 3 || !ends.every((e) => e.textContent.startsWith({ pending: '待處理', regressed: '回歸', accepted: '已豁免' }[e.getAttribute('data-series')]))) throw new Error('線尾應寫出名稱與數值');
+    const ys = ends.map((e) => +e.getAttribute('y')).sort((a, b) => a - b);
+    if (ys.some((y, i) => i && y - ys[i - 1] < 11)) throw new Error('線尾的文字不應重疊：' + ys.join());
+    // 文字（座標軸、線尾、tooltip）對圖的底色 ≥ 4.5:1
+    const TX = S.view.theme.text;
+    [TX.body, TX.muted].forEach((c) => ['#ffffff', S.view.theme.canvas.surface].forEach((bg) => { if (contrastOf(c, bg) < 4.5) throw new Error(`趨勢圖的文字 ${c} 對 ${bg} 只有 ${contrastOf(c, bg).toFixed(2)}:1`); }));
+    if (!charts[0].testAll('text').every((t) => [TX.body, TX.muted].includes(t.getAttribute('fill')))) throw new Error('趨勢圖的文字應用 theme.text 的文字色，不用資料色');
     const hits = charts[0].testAll('rect').filter((r) => r.className.includes('trend-hit'));
     if (hits.length !== series.length) throw new Error('每一輪應有一個 hover 區');
     hits[hits.length - 1].dispatch('pointerenter');
     const tip = charts[0].querySelector('.trend-tip');
     const lastS = series[series.length - 1];
-    if (tip.classList.contains('hidden') || !tip.textContent.includes(String(lastS.pending)) || !tip.textContent.includes('待處理')) throw new Error('hover 應顯示該輪的數值：' + tip.textContent);
+    if (tip.classList.contains('hidden') || !tip.textContent.includes(S.view.num(lastS.pending)) || !tip.textContent.includes('待處理') || !tip.textContent.includes(S.view.fmtUtc(lastS.at))) throw new Error('hover 應顯示該輪的數值與時間：' + tip.textContent);
+    if (tip.testAll('.trend-swatch').length !== 3) throw new Error('tooltip 的每一列應有和圖例相同的樣本');
     hits[hits.length - 1].dispatch('pointerleave');
     if (!tip.classList.contains('hidden')) throw new Error('離開時應隱藏 tooltip');
-    if ($('#pane-ledger').querySelector('.trend-table').testAll('tbody tr').length !== series.length) throw new Error('表格檢視應列出每一輪');
+    // 鍵盤：一張圖只有一個 Tab 停點（最後一輪），方向鍵換輪次並顯示該輪的數值
+    if (hits.filter((r) => r.getAttribute('tabindex') === '0').length !== 1 || hits[hits.length - 1].getAttribute('tabindex') !== '0') throw new Error('一張圖只有一個 Tab 停點（最後一輪）');
+    hits[hits.length - 1].dispatch('keydown', { key: 'ArrowLeft' });
+    const prev = hits[hits.length - 2]; const prevS = series[series.length - 2];
+    if (document.activeElement !== prev || prev.getAttribute('tabindex') !== '0' || hits[hits.length - 1].getAttribute('tabindex') !== '-1') throw new Error('左方向鍵應移到上一輪');
+    if (tip.classList.contains('hidden') || !tip.textContent.includes(S.view.num(prevS.pending))) throw new Error('鍵盤移到的輪次應顯示它的數值：' + tip.textContent);
+    hits[hits.length - 2].dispatch('keydown', { key: 'End' });
+    if (document.activeElement !== hits[hits.length - 1]) throw new Error('End 應移到最後一輪');
+    if ($('#trend-body').querySelector('.trend-table').testAll('tbody tr').length !== series.length) throw new Error('表格檢視應列出每一輪');
+    App.showView('graph');
     // 之後的步驟以範例資料進行（範例的第一輪已在處理紀錄中，不會再推進）
     await buildInput(sample); await App.ledgerJob;
   });
   await step('處理紀錄：只有一輪時顯示目前的數字、不畫圖', () => {
     const lg = S.view.app.ledger(); const one = Object.assign({}, lg, { iterations: lg.iterations.slice(-1) });
     const st = S.view.app.ledgerState(); const keep = st.ledger;
-    st.ledger = one; S.view.ledgerPane.render(App);
+    st.ledger = one; S.view.ledgerPane.render(App); S.view.ledgerPane.renderTrend(App);
     try {
-      if ($('#pane-ledger').testAll('.trend-chart').length || !$('#pane-ledger').querySelector('.trend-single')) throw new Error('只有一輪時不應畫圖');
-      if ($('#pane-ledger').testAll('.trend-tile').length !== 5) throw new Error('應列出待處理、回歸、已豁免、覆蓋率、未知對端');
-    } finally { st.ledger = keep; S.view.ledgerPane.render(App); }
+      if ($('#trend-body').testAll('.trend-chart').length || !$('#trend-body').querySelector('.trend-single')) throw new Error('只有一輪時不應畫圖');
+      if ($('#trend-body').testAll('.trend-tile').length !== 5 || $('#pane-ledger').testAll('.trend-tile').length !== 5) throw new Error('應列出待處理、回歸、已豁免、覆蓋率、未知對端');
+    } finally { st.ledger = keep; S.view.ledgerPane.render(App); S.view.ledgerPane.renderTrend(App); }
   });
   await step('舊的確認標記轉換成處理紀錄：寫入成功後才刪 acks；轉換失敗或寫入失敗時保留 acks 並說明', async () => {
     const VA = S.view.app; const Q = App.Q; const all = App.snap.findings;
@@ -1520,15 +1575,22 @@ function viewBoundaryViolations(file, src) {
     const Q = App.Q; const RM = S.remediate; const RV = S.view.remediation; const PV = S.view.patchView;
     document.testAll('#left .tabs button')[0].click();
     $('#pane-findings').querySelector('.open-patch').click();
-    if (!$('#dlg-patch').open) throw new Error('應開啟修正計畫');
+    // 修正計畫在中間的工作畫面（不是對話框）：分頁選取、拓樸圖被蓋住時 inert，焦點移到標題
+    if (!PV.isOpen(App) || $('#view-patch').classList.contains('hidden') || $('#dlg-patch')) throw new Error('應在中間開啟修正計畫（不是對話框）');
+    if ($('#view-tab-patch').getAttribute('aria-selected') !== 'true' || !$('#view-graph').inert) throw new Error('修正計畫的分頁應為選取，底下的拓樸圖不可聚焦');
+    if (document.activeElement !== $('#patch-title') || !$('#view-patch').contains($('#patch-body'))) throw new Error('開啟後焦點應移到修正計畫的標題');
     if (!text('#patch-body').includes('不會連線')) throw new Error('應標示本工具只產生文字，不會連線設備');
     // 同一份基準再開啟時保留上次的選取（例如從防火牆畫面開啟的）；全部清除後沒有計畫
     if (PV.state.keys.size) $('#patch-body').querySelector('.patch-clear').click();
     if (!$('#patch-body').querySelector('.patch-empty')) throw new Error('沒有選取時應說明如何選取');
     const autoIds = S.util.uniq(App.snap.findings.map((f) => f.id)).filter((id) => RM.levelOf(id) === 'auto');
-    if (!autoIds.length) { if (process.env.SMOKE_INPUT) { $('#dlg-patch').close(); return; } throw new Error('範例資料應有 auto 修正'); }
+    if (!autoIds.length) { if (process.env.SMOKE_INPUT) { App.showView('graph'); return; } throw new Error('範例資料應有 auto 修正'); }
     const chip = (id) => $('#patch-body').testAll('.patch-rule').find((c) => c.getAttribute('data-rule-id') === id);
-    autoIds.forEach((id) => chip(id).click());
+    // 選取與計畫兩欄都在同一個工作畫面；用鍵盤按規則時，重繪後焦點留在同一個規則按鈕
+    if (!$('#patch-body').querySelector('.patch-layout') || !$('#patch-body').querySelector('.patch-select') || !$('#patch-body').querySelector('.patch-main')) throw new Error('修正計畫應有「要修正哪些」與計畫兩欄');
+    chip(autoIds[0]).focus(); chip(autoIds[0]).click();
+    if (document.activeElement !== chip(autoIds[0])) throw new Error('重繪後焦點應留在剛按的規則按鈕');
+    autoIds.slice(1).forEach((id) => chip(id).click());
     if (chip('F03')) chip('F03').click();
     const keys = Array.from(PV.state.keys).sort(S.util.cmp);
     const want = S.util.uniq(App.snap.findings.filter((f) => autoIds.includes(f.id) || f.id === 'F03').map((f) => Q.findingKey(f))).sort(S.util.cmp);
@@ -1592,10 +1654,21 @@ function viewBoundaryViolations(file, src) {
     $('#patch-body').querySelector('.patch-clear').click();
     const grp = $('#patch-body').testAll('.patch-group').find((g) => g.getAttribute('data-rule-id') === autoIds[0]);
     grp.open = true; grp.dispatch('toggle');
-    const cb = grp.querySelector('.patch-pick'); cb.checked = true; cb.dispatch('change');
+    const cb = grp.querySelector('.patch-pick'); cb.focus(); cb.checked = true; cb.dispatch('change');
     if (!PV.state.keys.has(cb.getAttribute('data-key')) || PV.state.keys.size !== 1) throw new Error('逐筆勾選應加入選取');
     if (!$('#patch-body').testAll('.patch-item').length && !$('#patch-body').querySelector('.patch-skipped')) throw new Error('勾選後應產生計畫');
-    $('#dlg-patch').close();
+    // 重繪後展開的規則仍展開，焦點留在剛勾選的那一筆
+    const grp2 = $('#patch-body').testAll('.patch-group').find((g) => g.getAttribute('data-rule-id') === autoIds[0]);
+    const cb2 = grp2.testAll('.patch-pick').find((x) => x.getAttribute('data-key') === cb.getAttribute('data-key'));
+    if (grp2.getAttribute('open') === null || !cb2 || !cb2.checked || document.activeElement !== cb2) throw new Error('勾選後展開的規則應保持展開，焦點留在同一筆');
+    // 點未產生指令的一筆：在右側開啟該筆，修正計畫留在中間
+    const ref = $('#patch-body').querySelector('.finding-ref');
+    if (ref) {
+      App.select(null); ref.click();
+      const f = App.Q.finding(+ref.getAttribute('data-finding-idx'));
+      if (!PV.isOpen(App) || (f.entities.length && !App.sel)) throw new Error('點修正計畫中的檢查結果時，修正計畫應留在中間，右側顯示詳情');
+    }
+    App.showView('graph');
   });
   await step('修正計畫的選擇（A12）：NTP 預設採多數（推論）並修改偏離的設備，DNS 沒有多數時提示選擇，選了某一組才產生指令，選「不修改」寫入處理紀錄；畫面與總表沒有 undefined', async () => {
     const Q = App.Q; const RM = S.remediate; const RV = S.view.remediation; const PV = S.view.patchView; const VA = S.view.app;
@@ -1666,10 +1739,10 @@ function viewBoundaryViolations(file, src) {
       block(dnsKey).querySelector('.patch-accept-save').click(); await new Promise((res) => setTimeout(res, 10));
       const it = VA.ledgerItem(dnsF);
       if (it.status !== 'accepted' || it.waiver.reason !== '兩台各自使用不同的上游 DNS' || (await S.store.get('ledger')).items[dnsKey].status !== 'accepted') throw new Error('選不修改後處理紀錄應變成可接受並存進 store');
-      if (!$('#dlg-patch').open || !block(dnsKey).querySelector('.patch-accept-done')) throw new Error('標為可接受後修正計畫應維持開啟並顯示處理紀錄的狀態');
+      if (!PV.isOpen(App) || !block(dnsKey).querySelector('.patch-accept-done')) throw new Error('標為可接受後修正計畫應維持開啟並顯示處理紀錄的狀態');
       noUndefined('標為可接受後');
     } finally {
-      PV.state.choices.clear(); $('#dlg-patch').close();
+      PV.state.choices.clear(); App.showView('graph');
       App.importLedger('restore.json', savedLedger); await App.confirmImport();
     }
   });
@@ -1747,7 +1820,6 @@ function viewBoundaryViolations(file, src) {
     App.selectFinding = (i) => { opened.push(i); return orig(i); };
     try {
       a12.forEach((x, n) => {
-        if (!$('#dlg-patch').open) PV.open(App);
         const rows = $('#patch-body').testAll('.patch-skip').filter((r) => r.getAttribute('data-finding') === x.key);
         if (rows.length !== 1) throw new Error('每一個鍵應恰好一列');
         if (!rows[0].textContent.includes(x.f.message) || a12.some((o) => o !== x && rows[0].textContent.includes(o.f.message))) throw new Error('每一列只列出自己的訊息');
@@ -1755,7 +1827,8 @@ function viewBoundaryViolations(file, src) {
         if (!link || link.getAttribute('title') !== x.f.message) throw new Error('訊息連結的 title 應是完整訊息');
         if (n === 0) link.click(); else link.dispatch('keydown', { key: 'Enter' });
         if (opened[opened.length - 1] !== x.idx) throw new Error('點擊應開啟這一筆的檢查結果');
-        if ($('#dlg-patch').open) throw new Error('開啟檢查結果時應關閉修正計畫，讓詳情可見');
+        // 修正計畫在中間、詳情在右側：開啟檢查結果時修正計畫留著，右側顯示這一筆
+        if (!PV.isOpen(App) || !text('#detail').includes(x.f.message)) throw new Error('開啟檢查結果時修正計畫應留在中間，右側的詳情顯示這一筆');
       });
     } finally { App.selectFinding = orig; }
     // 原因只在分組標題：每一筆不再重複寫原因或等級
@@ -1784,7 +1857,7 @@ function viewBoundaryViolations(file, src) {
     if (PV.state.keys.size !== 1 || !PV.state.keys.has(ntp)) throw new Error('勾選 NTP 只應加入 NTP 那一筆');
     const after = $('#patch-body').testAll('.patch-skip').map((r) => r.getAttribute('data-finding'));
     if (after.join() !== ntp) throw new Error('只勾選 NTP 時，計畫只應有 NTP 那一筆：' + after.join('｜'));
-    $('#dlg-patch').close();
+    App.showView('graph');
     // 過長的訊息截斷，完整內容在 title
     const long = 'x'.repeat(RV.FINDING_TEXT_MAX + 30);
     const el = RV.findingRef(App, { idx: 0, f: { message: long } }, 'k');
@@ -1816,12 +1889,11 @@ function viewBoundaryViolations(file, src) {
     App.selectFinding = (i) => { opened.push(i); return orig(i); };
     try {
       i03.forEach((x, n) => {
-        if (!$('#dlg-patch').open) PV.open(App);
         const link = rowsOf()[n].querySelector('.finding-ref');
         if (!link || link.getAttribute('title') !== x.f.message) throw new Error('訊息連結的 title 應是完整訊息');
         if (n === 0) link.click(); else link.dispatch('keydown', { key: 'Enter' });
         if (opened[opened.length - 1] !== x.idx) throw new Error('點擊應開啟這一筆的檢查結果');
-        if ($('#dlg-patch').open) throw new Error('開啟檢查結果時應關閉修正計畫，讓詳情可見');
+        if (!PV.isOpen(App)) throw new Error('開啟檢查結果時修正計畫應留在中間（詳情在右側）');
       });
       if (new Set(opened).size !== i03.length) throw new Error('不同的列應開啟不同的檢查結果');
     } finally { App.selectFinding = orig; }
@@ -1831,7 +1903,7 @@ function viewBoundaryViolations(file, src) {
     g.open = true; g.dispatch('toggle');
     const picks = g.testAll('.patch-pick').map((cb) => cb.getAttribute('data-key'));
     if (picks.join() !== key) throw new Error('共用鍵的 I03 應只有一個勾選框：' + picks.join('｜'));
-    $('#dlg-patch').close();
+    App.showView('graph');
   });
   await step('只有 MNDP 的設備對不畫線；詳情仍說明是廣播網域可達、非直連', async () => {
     const input = 'A (10.0.0.1):\n### /ip neighbor print detail\n'
@@ -2241,6 +2313,75 @@ function viewBoundaryViolations(file, src) {
       if (!$('#tooltip').classList.contains('hidden')) throw new Error('指標離開畫布時提示應隱藏');
     });
   });
+  await step('中間的工作畫面：拓樸圖、修正計畫、比對、收斂趨勢可切換（tablist，鍵盤可操作）；切換不丟失畫布的位置、縮放與選取，也不重新排列；PNG 照常', async () => {
+    const g = App.graph; const VA = S.view.app;
+    const tabs = document.testAll('#center-views button');
+    if (tabs.map((t) => t.getAttribute('data-view')).join() !== 'graph,patch,compare,trend') throw new Error('中間的分頁應依序是拓樸圖、修正計畫、比對、收斂趨勢');
+    if ($('#center-views').getAttribute('role') !== 'tablist' || !tabs.every((t) => t.getAttribute('role') === 'tab' && $('#' + t.getAttribute('aria-controls')).getAttribute('role') === 'tabpanel')) throw new Error('切換按鈕應是 tablist／tab，各自控制一個 tabpanel');
+    // 先在圖上留下狀態：選取一台設備、平移與縮放、移動一個節點
+    const dev = App.Q.devices().find((d) => g.nodeById.has(d.key));
+    App.select({ type: 'device', key: dev.key });
+    g.s = 1.37; g.tx = 123; g.ty = -45; const moved = { x: 777, y: 333 }; g.pos.set(dev.key, moved);
+    const snapState = () => JSON.stringify({ s: g.s, tx: g.tx, ty: g.ty, pos: Array.from(g.pos), sel: App.sel, nodes: Array.from(g.sel.nodes), w: g.w, h: g.h, n: g.nodes.length });
+    const before = snapState();
+    // 切換期間不可重新排列或全圖（spy：版面計算、fit、ELK）
+    const calls = []; const spy = (obj, k) => { const o = obj[k]; obj[k] = function (...a) { calls.push(k); return o.apply(this, a); }; return () => { obj[k] = o; }; };
+    const undo = [spy(S.view.layout, 'layout'), spy(g, 'fit'), spy(VA, 'applyElk'), spy(VA, 'relayout')];
+    try {
+      ['patch', 'compare', 'trend', 'graph', 'trend', 'patch', 'graph'].forEach((v) => {
+        tabs.find((t) => t.getAttribute('data-view') === v).click();
+        if (App.centerView !== v || $('#center').dataset.view !== v) throw new Error('點分頁應切到 ' + v);
+        tabs.forEach((t) => {
+          const on = t.getAttribute('data-view') === v;
+          if (t.getAttribute('aria-selected') !== String(on) || t.getAttribute('tabindex') !== (on ? '0' : '-1')) throw new Error('分頁的 aria-selected 與 tabindex 應跟著切換（roving tabindex）');
+        });
+        ['patch', 'compare', 'trend'].forEach((x) => { if ($('#view-' + x).classList.contains('hidden') !== (x !== v)) throw new Error('只顯示目前的工作畫面：' + x); });
+        if (!!$('#view-graph').inert !== (v !== 'graph')) throw new Error('工作畫面蓋住拓樸圖時，拓樸圖應是 inert');
+        if ($('#view-graph').classList.contains('hidden')) throw new Error('拓樸圖不可隱藏（display: none 會讓畫布變成 0 大小）');
+      });
+      // 鍵盤：方向鍵、Home、End 在分頁間移動並切換，焦點跟著移動
+      const key = (t, k) => t.dispatch('keydown', { key: k });
+      tabs[0].focus(); key(tabs[0], 'ArrowRight');
+      if (App.centerView !== 'patch' || document.activeElement !== tabs[1]) throw new Error('右方向鍵應移到下一個分頁並切換');
+      key(tabs[1], 'End'); if (App.centerView !== 'trend' || document.activeElement !== tabs[3]) throw new Error('End 應移到最後一個分頁');
+      key(tabs[3], 'ArrowRight'); if (App.centerView !== 'graph' || document.activeElement !== tabs[0]) throw new Error('最後一個再往右應回到第一個');
+      key(tabs[0], 'ArrowLeft'); if (App.centerView !== 'trend') throw new Error('第一個再往左應到最後一個');
+      key(tabs[3], 'Home'); if (App.centerView !== 'graph' || document.activeElement !== tabs[0]) throw new Error('Home 應移到第一個分頁');
+      // PNG：在工作畫面也匯出同一張圖（畫布沒有被隱藏，大小不變）
+      App.showView('compare');
+      let drew = 0; const oldDraw = g.draw; g.draw = function () { drew++; return oldDraw.call(this); };
+      const made = []; const oldCreate = document.createElement;
+      document.createElement = (t) => { const el = oldCreate(t); if (t === 'a') made.push(el); return el; };
+      try { VA.exportPng(); } finally { g.draw = oldDraw; document.createElement = oldCreate; }
+      if (!drew || made.length !== 1 || made[0].download !== 'topology.png' || !String(made[0].href).startsWith('data:')) throw new Error('在工作畫面時也應能匯出拓樸 PNG（同一張畫布）');
+      App.showView('graph');
+    } finally { undo.forEach((f) => f()); }
+    if (calls.length) throw new Error('切換工作畫面不應重新排列或全圖：' + calls.join('、'));
+    if (snapState() !== before) throw new Error('切換工作畫面後畫布的位置、縮放與選取應保留');
+    // 從其他地方開啟：焦點移到工作畫面的標題；拓樸圖則移到畫布
+    App.showView('trend', { focus: true }); if (document.activeElement !== $('#trend-title')) throw new Error('開啟收斂趨勢時焦點應移到標題');
+    App.showView('graph', { focus: true }); if (document.activeElement !== $('#graph')) throw new Error('回到拓樸圖時焦點應移到畫布');
+    // 在工作畫面點選設備：詳情在右側，工作畫面不切換；搜尋是在圖上定位，會切回拓樸圖
+    App.showView('compare'); App.select({ type: 'device', key: dev.key });
+    if (App.centerView !== 'compare' || !text('#detail').includes(dev.name)) throw new Error('在工作畫面選取時，右側顯示詳情、工作畫面不切換');
+    const inp = $('#search'); inp.value = dev.name; inp.dispatch('input'); await new Promise((r) => setTimeout(r, 150));
+    inp.dispatch('keydown', { key: 'Enter' });
+    if (App.centerView !== 'graph' || !App.sel) throw new Error('搜尋選取後應切回拓樸圖');
+    // 資料中心開著時切換工作畫面：先關閉資料中心
+    App.openHub(); App.showView('patch');
+    if (!$('#hub').classList.contains('hidden') || App.centerView !== 'patch') throw new Error('切到工作畫面時應關閉資料中心');
+    // 窄螢幕：切到工作畫面時顯示中間的工作區
+    window.innerWidth = 390; S.view.app.setWorkspace('details'); App.showView('compare');
+    if ($('#main').dataset.workspace !== 'graph') throw new Error('窄螢幕切到工作畫面時應顯示中間的工作區');
+    window.innerWidth = 1200; S.view.app.setWorkspace('graph'); App.showView('graph');
+    // CSS：工作畫面疊在拓樸圖上、不水平捲動；寬表格在自己的框內捲動；強制色彩下選取的分頁有系統色外框
+    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
+    if (!/\.work \{[^}]*position: absolute[^}]*overflow-x: hidden/.test(css)) throw new Error('工作畫面應疊在拓樸圖上，且不水平捲動');
+    if (!/\.work-table \{[^}]*overflow-x: auto/.test(css)) throw new Error('寬的表格應在自己的框內捲動');
+    const forced = css.slice(css.indexOf('@media (forced-colors: active)'));
+    if (!/\.center-views \[role="tab"\]\[aria-selected="true"\]/.test(forced.slice(0, forced.indexOf('\n}')))) throw new Error('強制色彩模式下選取的分頁應有系統色外框');
+    if (!/\.patch-layout \{ display: grid; grid-template-columns: minmax\(0, 1fr\);/.test(css) || !/@container \(min-width: \d+px\)/.test(css)) throw new Error('修正計畫預設單欄，工作畫面夠寬時才分兩欄');
+  });
   await step('資料中心：列出這一輪所有的輸入與輸出與各自的狀態，鍵盤可開關（Esc 關閉後焦點回到按鈕），蓋住主畫面時主畫面不可聚焦', async () => {
     const VA = S.view.app; const NUM = S.view.num; const btnHub = $('#btn-hub');
     if (!btnHub || $('#btn-input')) throw new Error('頁首應有「資料中心」，建立基準改由資料中心的「讀入收集檔…」進入');
@@ -2315,9 +2456,10 @@ function viewBoundaryViolations(file, src) {
     expInput.dispatch('change', { target: expInput });
     await until(() => App.round.expected && App.round.expected.name === 'expected-sample.json', '載入預期資料');
     App.openPatch();
+    if (!$('#hub').classList.contains('hidden') || !S.view.patchView.isOpen(App)) throw new Error('從資料中心開啟修正計畫時應關閉資料中心，修正計畫在中間');
     const auto = $('#patch-body').testAll('.patch-rule').find((c) => c.getAttribute('data-level') === 'auto');
     if (auto) auto.click();
-    $('#dlg-patch').close();
+    App.showView('graph');
     App.openHub('outputs');
     const patchBox = $('#hub').testAll('.hub-pack-role').find((x) => x.getAttribute('data-role') === 'patch');
     if (!!auto !== patchBox.checked) throw new Error('修正計畫有選取時 patch 才放進工作包');
@@ -2444,9 +2586,11 @@ function viewBoundaryViolations(file, src) {
       document.testAll('#left .tabs button').forEach((b) => b.click());
       document.testAll('#left .tabs button')[0].click();
       $('#pane-findings').querySelector('.open-patch').click();
-      if (!$('#dlg-patch').open) throw new Error('應開啟修正計畫');
+      if (!S.view.patchView.isOpen(App)) throw new Error('應開啟修正計畫');
       $('#patch-body').testAll('.patch-rule').forEach((c) => c.click());
-      $('#dlg-patch').close();
+      // 比對與收斂趨勢的工作畫面也只讀基準
+      App.showView('compare'); App.showView('trend');
+      App.showView('graph');
       const kinds = Object.keys(S.view.exporter.KINDS);
       const { files } = await captureDownloads(() => { kinds.forEach((k) => App.exportAs(k)); App.exportAs('csv', { byDevice: true }); App.exportAs('markdown', { byDevice: true }); });
       if (files.length !== kinds.length + 2) throw new Error(`每種匯出都應產生下載（${files.length}／${kinds.length + 2}）`);
@@ -2464,8 +2608,12 @@ function viewBoundaryViolations(file, src) {
       VA.load(orig, null); await App.ledgerJob; await App.layoutJob;
     }
   });
-  await step('清除基準（處理紀錄不受影響）', async () => {
+  await step('清除基準（處理紀錄不受影響）；沒有基準時中間只有拓樸圖（歡迎畫面）', async () => {
+    App.showView('patch');
     $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20)); if (App.snap) throw new Error('未清除');
+    if (App.centerView !== 'graph' || !$('#view-patch').classList.contains('hidden') || $('#view-graph').inert) throw new Error('清除基準後中間應切回拓樸圖');
+    if (!document.testAll('#center-views button').filter((t) => t.getAttribute('data-view') !== 'graph').every((t) => t.disabled)) throw new Error('沒有基準時其他工作畫面的分頁應停用');
+    App.showView('trend'); if (App.centerView !== 'graph') throw new Error('沒有基準時不能切到其他工作畫面');
     const lg = await S.store.get('ledger');
     if (!lg || (ackedKey && !lg.items[ackedKey])) throw new Error('清除基準不應清掉處理紀錄');
   });

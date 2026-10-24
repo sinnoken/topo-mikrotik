@@ -15,6 +15,7 @@
     let nodes = []; let edges = []; let focus = [];
     if (!sel) { g.setSelection([], []); V.details.render(App, null); return; }
     A.closeHub(); // 選取要在圖與詳情上看到結果（例如從搜尋或摘要進來）
+    // 中間的工作畫面（修正計畫、比對、收斂趨勢）不切換：詳情在右側顯示，圖的選取也更新，回到拓樸圖時就看得到
     const pairsOf = (linkKeys) => S.util.uniq(linkKeys.map((k) => App.pairOfLink.get(k)).filter(Boolean));
     const devOf = (ep) => K.splitEp(ep)[0];
     switch (sel.type) {
@@ -176,6 +177,7 @@
     // 回程：無狀態的 ACL 需要確認反向路徑；起點找不到時一樣明確顯示原因
     const reverse = r.ok ? S.trace(App.Q, dst, src) : null;
     $('#trace-pop').classList.add('hidden');
+    App.showView('graph'); // 路由追蹤的路徑畫在拓樸圖上：工作畫面開著時切回拓樸圖
     App.select({ type: 'trace', result: r, reverse }, { focus: true });
   };
 })(globalThis.SSOT = globalThis.SSOT || {});

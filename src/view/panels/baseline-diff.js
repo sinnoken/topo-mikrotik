@@ -1,5 +1,5 @@
 /*
- * 比對分頁的下半：新舊基準比對。
+ * 中間的「比對」工作畫面的下半：新舊基準比對（左側的「比對」分頁只列摘要，見 panels/lists.js）。
  * 讀入之前匯出的基準（Snapshot JSON）當作舊基準，以 S.compare.snapshots(SSOT.query(舊), App.Q) 比對，依類別分組列出。
  * 比對結果與舊基準的查詢介面只放在記憶體（這個檔案的 state）：舊基準可能很大，而且換了新基準就失去意義，所以不存進 store。
  * 檢查結果分頁的「只看新出現的」透過 V.baselineDiff.loaded() 讀取同一份比對結果。
@@ -95,7 +95,7 @@
     state.name = name; state.filter = 'all';
     V.app.renderAll();
   }
-  /** 讀入舊基準檔（比對分頁與資料中心共用） */
+  /** 讀入舊基準檔（「比對」工作畫面與資料中心共用） */
   async function loadFile(App, f) {
     let r;
     try { r = loadOld(App, await f.text()); } catch (e) { console.error(e); r = { report: empty('無法讀取：' + e.message), qOld: null }; }
@@ -111,10 +111,10 @@
     const file = h('input', { type: 'file', accept: '.json,application/json', class: 'hidden', onchange: (ev) => {
       const f = ev.target.files[0]; if (f) loadFile(App, f);
     } });
-    box.appendChild(h('h4', { class: 'pane-title' }, '與舊基準比對'));
+    box.appendChild(h('h3', { class: 'work-card-title', id: 'cmp-baseline-title' }, '與舊基準比對'));
     box.appendChild(h('p', { class: 'muted' }, '載入之前匯出的基準（資料中心的「基準 JSON」），列出設備、鏈路、VLAN、IP、防火牆規則與檢查結果的變化。只讀取兩份基準，比對結果不會儲存。'));
     box.appendChild(h('div', { class: 'row' }, [file,
-      h('button', { disabled: !App.Q || null, onclick: () => file.click() }, '載入舊基準（JSON）…'),
+      h('button', { class: 'cmp-load-previous', disabled: !App.Q || null, onclick: () => file.click() }, '載入舊基準（JSON）…'),
       state.name ? h('span', { class: 'muted' }, state.name) : null]));
     const r = state.report; if (!r || !App.Q) return box;
     if (r.errors.length) {
@@ -140,7 +140,7 @@
       box.appendChild(h('div', { class: 'diff-cat', 'data-category': cat }, [
         h('div', { class: 'diff-head' }, [h('b', null, CATEGORY[cat]), ' ',
           ...Object.entries(CHANGE).filter(([k]) => c[k]).map(([k, [label, cls]]) => V.chip(`${label} ${V.num(c[k])}`, cls))]),
-        V.table([
+        h('div', { class: 'work-table' }, V.table([
           { t: '', f: (i) => V.chip(CHANGE[i.change][0], CHANGE[i.change][1]) },
           { t: '項目', f: (i) => i.message },
           { t: '影響', f: (i) => effectChip(i.effect) },
@@ -148,7 +148,7 @@
           limit: 300, onRow: (i) => open(App, i),
           rowClass: (i) => (i.effect === 'new-exposure' ? 'exposure' : ''),
           rowStyle: (i) => (i.effect === 'new-exposure' ? { background: T.exposureBg } : null),
-        }),
+        })),
       ]));
     });
     return box;

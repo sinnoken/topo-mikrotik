@@ -33,7 +33,8 @@
       }, [V.chip(T[r.type]), h('span', null, r.label), h('span', { class: 'sub' }, r.sub || '')])));
       dd.classList.remove('hidden');
     };
-    const pick = (r) => { dd.classList.add('hidden'); inp.blur(); App.select({ type: r.type, key: r.key }, { focus: true }); };
+    // 搜尋是「在圖上定位」：工作畫面（修正計畫、比對、收斂趨勢）開著時切回拓樸圖，再選取
+    const pick = (r) => { dd.classList.add('hidden'); inp.blur(); App.showView('graph'); App.select({ type: r.type, key: r.key }, { focus: true }); };
     let t = null;
     inp.addEventListener('input', () => { clearTimeout(t); t = setTimeout(show, 120); });
     inp.addEventListener('focus', show);

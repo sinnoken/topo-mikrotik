@@ -29,5 +29,19 @@ module.exports = function registerLarge(LARGE_MAX_MS) {
       + `subnetGraph＋routes ${sgMs} ms（${sg.subnets.length} 子網、${sg.nodes.length} 節點、${sg.edges.length} 邊、${sg.routes.length} 路由）`);
     [vcMs, pgMs, paMs, sgMs].forEach((x) => assert.ok(x < LARGE_MAX_MS / 4, `L2／L3 查詢耗時 ${x} ms`));
     assert.ok(pg.edges.length > 1000 && sg.subnets.length > 100);
+    // L4（M2）：zone、可達性、zone 矩陣（L0）與下鑽、規則影響；查詢時計算，不寫進 Snapshot
+    const [zs, zMs] = time(() => Q.zones());
+    const [rc, rMs] = time(() => Q.reach('10.1.30.11', '10.40.20.11', { proto: 'tcp', port: 443 }));
+    const [mx, mMs] = time(() => Q.zoneMatrix());
+    const [cell, cMs] = time(() => Q.zoneCell('vlan:30', 'vlan:20'));
+    const fwd = Q.firewallRules().find((r) => r.chain === 'forward' && r.action === 'drop' && r.match['in-interface-list'] === 'WAN');
+    const [im, iMs] = time(() => Q.ruleImpact(fwd.key));
+    console.log(`      zones ${zMs} ms（${zs.zones.length} 個 zone、${zs.subnets.length} 個網段）；reach ${rMs} ms（${rc.verdict}，${rc.paths.length} 條路徑）；`
+      + `zoneMatrix ${mMs} ms（${mx.stats.representatives} 個代表位址、${mx.stats.evaluations} 次判斷）；zoneCell ${cMs} ms（${cell.groups.length} 列）；ruleImpact ${iMs} ms（${im.total.evaluations} 筆）`);
+    assert.strictEqual(rc.verdict, 'allow');
+    assert.ok(mx.stats.evaluations > 50000);
+    assert.ok(mx.cells.filter((c) => c.status !== 'empty').every((c) => c.status === 'allow'), '乾淨網路的內部 VLAN 之間全通');
+    [zMs, rMs, mMs, cMs, iMs].forEach((x) => assert.ok(x < LARGE_MAX_MS / 4, `L4 查詢耗時 ${x} ms`));
+    assert.strictEqual(s.model.zoneMatrix, undefined, '矩陣不寫進 Snapshot');
   });
 };

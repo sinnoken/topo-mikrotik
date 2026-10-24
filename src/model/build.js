@@ -25,7 +25,8 @@
       devices: new Map(), ifcs: new Map(), links: new Map(), vlans: new Map(), macs: new Map(),
       arps: [], routes: [], claims: [], ospf: [], ospfAdjacencies: [], vmems: [], assocs: [], dhcpNets: [], ipBinds: [],
       // 防火牆（事實）：規則依輸入順序；interface list 以「設備|名稱」為鍵；/ip service 只有 export 有寫的（預設值由 infer 補上）
-      fw: { rules: [], lists: new Map(), services: new Map(), peers: [], policies: [], ipv6: new Map() }, // ipv6：dev → { use: [[區塊, 行號]], disabled: [區塊, 行號]|null }
+      fw: { rules: [], lists: new Map(), services: new Map(), peers: [], policies: [], ipv6: new Map(), // ipv6：dev → { use: [[區塊, 行號]], disabled: [區塊, 行號]|null }
+        stats: new Map() }, // 命中次數（print stats）：「設備|位址族|表」→ { dev, family, table, block, line, rows: [...] }，對應結果見 matchFirewallStats
     };
   }
 
@@ -152,6 +153,8 @@
           break;
         }
         case 'fwRule': M.fw.rules.push(Object.assign({}, f)); break;
+        case 'fwStatTable': statTable(M, f.dev, f.family, f.table, f.block, f.line); break;
+        case 'fwStat': statTable(M, f.dev, f.family, f.table, f.block, null).rows.push({ flags: f.flags, chain: f.chain, action: f.action, comment: f.comment, bytes: f.bytes, packets: f.packets, block: f.block, line: f.line }); break;
         case 'ifList': {
           const l = fwList(M, f.dev, f.name); l.defined = true; l.include = f.include; l.exclude = f.exclude; l.src.push([f.block, f.line]);
           break;
@@ -185,6 +188,8 @@
     });
 
     numberFirewallRules(M);
+    emptyStatTables(M, input.blocks);
+    matchFirewallStats(M);
     resolveVlanMembers(M);
     buildAggregates(M);
     classifyInterfaces(M);
@@ -212,6 +217,52 @@
       r.signature = JSON.stringify([r.dev, r.family, r.table, r.chain, S.infer.fw.canonMatch(r.match)]);
       const n = (sigCount.get(r.signature) || 0) + 1; sigCount.set(r.signature, n);
       r.key = `${ck}|${S.util.hash(r.signature)}${n > 1 ? '#' + n : ''}`;
+    });
+  }
+
+  function statTable(M, dev, family, table, block, line) {
+    const t = getOr(M.fw.stats, dev + '|' + family + '|' + table, () => ({ dev, family, table, block, line: null, rows: [] }));
+    if (line !== null && t.line === null) t.line = line;
+    return t;
+  }
+  /** 有標記指令、但完全沒有輸出的命中次數區塊（收集失敗除外）：這個表已收集、0 列。同一設備同一個表有多個區塊時，已有事實的表不覆寫。 */
+  function emptyStatTables(M, blocks) {
+    blocks.forEach((b) => {
+      if (b.device === null || b.failure || b.empty || b.lines.some((l) => l.trim())) return;
+      (b.adapters || []).forEach((id) => {
+        const a = S.adapters[id];
+        if (!a || a.dataType !== 'fwstats' || M.fw.stats.has(b.devKey + '|' + a.family + '|' + a.table)) return;
+        statTable(M, b.devKey, a.family, a.table, b.id, null);
+        device(M, b.devKey).data.add('fwstats');
+      });
+    });
+  }
+  /**
+   * 命中次數對應到 export 的規則（事實對事實，不用 print 的編號）：每台設備、每個（位址族，表）分開，去掉 D（動態）列後，
+   * 第 i 列對到 export 中這個表的第 i 條 add（order）。每一對都要 chain、action、停用（X 旗標）相同，有註解時註解也要相同；
+   * 列數不同或任一對不符時，整個表都不配（status: mismatch，reason 說明第一個不符），不猜。沒有 export 的設備為 no-export。
+   * 配上時規則帶 stats：{ bytes, packets（十進位字串，收集當下的累積值）, src: [[區塊, 行號]] }。
+   */
+  function matchFirewallStats(M) {
+    const rulesBy = new Map();
+    M.fw.rules.forEach((r) => getOr(rulesBy, r.dev + '|' + r.family + '|' + r.table, () => []).push(r));
+    M.fw.stats.forEach((t, k) => {
+      const all = t.rows; const rows = all.filter((x) => !x.flags.includes('D'));
+      const rules = (rulesBy.get(k) || []).slice().sort((a, b) => a.order - b.order);
+      Object.assign(t, { dynamic: all.length - rows.length, count: rows.length, rules: rules.length, status: 'matched', reason: null });
+      const d = M.devices.get(t.dev);
+      if (!d || !d.data.has('config')) { t.status = 'no-export'; return; }
+      const bad = (code, i, exp, got) => { t.status = 'mismatch'; t.reason = { code, position: i + 1, export: exp, stats: got, rule: rules[i] ? [rules[i].block, rules[i].line] : null, row: rows[i] ? [rows[i].block, rows[i].line] : null }; };
+      if (rows.length !== rules.length) { bad('count', Math.min(rows.length, rules.length), rules.length, rows.length); return; }
+      const text = (s) => (s == null ? '' : String(s).trim());
+      for (let i = 0; i < rows.length; i++) {
+        const x = rows[i]; const r = rules[i];
+        if (x.chain !== r.chain) { bad('chain', i, r.chain, x.chain); return; }
+        if (x.action !== r.action) { bad('action', i, r.action, x.action); return; }
+        if (x.flags.includes('X') !== !!r.disabled) { bad('disabled', i, !!r.disabled, x.flags.includes('X')); return; }
+        if (text(x.comment) !== text(r.comment)) { bad('comment', i, r.comment, x.comment); return; }
+      }
+      rules.forEach((r, i) => { r.stats = { bytes: rows[i].bytes, packets: rows[i].packets, src: [[rows[i].block, rows[i].line]] }; });
     });
   }
 

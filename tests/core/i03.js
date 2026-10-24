@@ -22,6 +22,8 @@ const PER_ADAPTER = [
   ['mikrotik.stp', '/interface bridge port monitor [find] once', ['   interface: ether1', '        role: root-port']],
   ['mikrotik.stpbridge', '/interface bridge monitor [find] once', ['                   name: bridge1', '    current-mac-address: D4:01:C3:00:00:0A']],
   ['mikrotik.system', '/system resource print', ['     uptime: 1d', '    version: 7.12.1 (stable)', ' board-name: CRS326-24G-2S+']],
+  ...[['ip', 'filter', 'input'], ['ip', 'nat', 'srcnat'], ['ip', 'raw', 'prerouting'], ['ipv6', 'filter', 'forward'], ['ipv6', 'raw', 'output']].map(([fam, table, chain]) => [`mikrotik.fwstats.${fam}-${table}`,
+    `/${fam} firewall ${table} print stats detail without-paging`, ['Flags: X - disabled, I - invalid; D - dynamic', ' 0    ;;; c', `      chain=${chain} action=accept bytes=1 234 packets=12`]]),
 ];
 const blockText = (cmd, lines) => ['SW (10.0.0.1):', `### ${cmd}`, ...lines].join('\n') + '\n';
 test('I03：每種 adapter 的區塊內夾一行垃圾都會列出（行號、原文），正常輸出沒有 I03，I01 不受影響', () => {

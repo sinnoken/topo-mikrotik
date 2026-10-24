@@ -14,6 +14,7 @@
  *   mikrotik.ipaddr     /ip address print detail
  *   mikrotik.arp        /ip arp print detail
  *   mikrotik.route      /ip route print detail
+ *   mikrotik.fwstats.*  /ip firewall filter|nat|raw、/ipv6 firewall filter|raw print stats detail  防火牆命中次數（每個表一個 adapter）
  *   mikrotik.ospf       /routing ospf neighbor print detail
  *   mikrotik.wifireg    /interface wifi｜wireless registration-table、/caps-man registration-table print detail  Wi-Fi 關聯表
  *   mikrotik.stp        /interface bridge port monitor [find] once、/interface bridge monitor [find] once  RSTP 狀態
@@ -556,6 +557,44 @@
       });
     },
   });
+
+  // ================================================================ 防火牆命中次數（print stats）
+  /*
+   * /ip firewall filter|nat|raw、/ipv6 firewall filter|raw 的 print stats detail：每個表一個 adapter（同一設備、同一個 adapter 只採用最後一個區塊，
+   * 五個表若共用一個 adapter 會互相覆蓋）。依手冊（firewall/common-firewall-matchers-and-actions「Stats」）：
+   *  - bytes、packets 是收集當下的累積值；RouterOS 7 以空白分千位（bytes=50 507 925 242），RouterOS 6 是純數字。值可能超過 2^53，以十進位字串保存。
+   *  - D 旗標是動態規則（FastTrack 的 dummy rule、UPnP 等），export 沒有，對應規則時由 model 去掉；X 是停用、I 是 invalid（照樣佔序位）。
+   * 每一列產生 fwStat；另產生一筆 fwStatTable（行號是說明行或第一列），讓「只有說明行、沒有規則」的表也算已收集、0 列。
+   * 只有錯誤訊息（例如沒有 ipv6 套件時 bad command name）不產生任何事實，由 pipeline 列為 I01。
+   * 對應到 export 的規則在 model（numberFirewallRules 之後），不用 print 的編號（手冊：編號由 print 指派，每次可能不同）。
+   */
+  const FW_STAT_TABLES = [['ip', 'filter'], ['ip', 'nat'], ['ip', 'raw'], ['ipv6', 'filter'], ['ipv6', 'raw']];
+  // 千位的空白：等號後的數字串（\d{1,3}( \d{3})+），去掉空白再交給 kvOf
+  const STAT_NUM = /\b(bytes|packets)=(\d{1,3}(?: \d{3})+|\d+)(?=\s|$)/g;
+  const statLine = (l) => l.replace(STAT_NUM, (_, k, v) => `${k}=${v.replace(/ /g, '')}`);
+  FW_STAT_TABLES.forEach(([family, table]) => reg({
+    id: `mikrotik.fwstats.${family}-${table}`, vendor: VENDOR, dataType: 'fwstats', label: `RouterOS 防火牆命中次數（${family === 'ip' ? 'IPv4' : 'IPv6'} ${table}）`,
+    command: new RegExp(`^\\/?${family}\\s+firewall\\s+${table}\\s+print\\b.*\\bstats\\b`, 'i'),
+    detect: () => false, // 內容看不出是哪個表（filter 與 raw 都有 output chain），只依區塊標記的指令辨識
+    family, table,
+    parse(b, emit, ignore = noop) {
+      const nb = { lines: b.lines.map(statLine), origin: b.origin };
+      let legend = null;
+      b.lines.forEach((l, i) => { if (legend === null && /^\s*Flags:/i.test(l)) legend = at(b, i); });
+      const rows = parseRows(nb, ignore);
+      let first = null;
+      rows.forEach((r) => {
+        const kv = r.kv;
+        if (!kv.chain || !/^\d+$/.test(kv.bytes || '') || !/^\d+$/.test(kv.packets || '')) return; // 缺欄位：留給 I03
+        settle(r, ignore);
+        if (first === null) first = r.line;
+        emit({ t: 'fwStat', family, table, flags: r.flags, chain: kv.chain, action: kv.action || 'accept', comment: r.comment, bytes: kv.bytes.replace(/^0+(?=\d)/, ''), packets: kv.packets.replace(/^0+(?=\d)/, ''), line: r.line });
+      });
+      const line = legend !== null ? legend : first;
+      if (line !== null) emit({ t: 'fwStatTable', family, table, line });
+    },
+  }));
+  S.adapters.mikrotikStatLine = statLine; // 測試用
 
   // ================================================================ OSPF 鄰居
   reg({

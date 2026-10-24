@@ -28,7 +28,7 @@
   // 資料類別的顯示名稱；畫面透過 S.query.dataLabel 讀取
   const DATA_LABEL = Object.freeze({
     lldp: '鄰居', config: '設定', vlans: 'VLAN 成員', mac: 'MAC 表', arp: 'ARP', route: '路由表',
-    ospf: 'OSPF', ipaddr: 'IP 位址', ifstatus: '介面狀態', system: '系統資訊', wifireg: 'Wi-Fi 關聯表', stp: 'RSTP 狀態',
+    ospf: 'OSPF', ipaddr: 'IP 位址', ifstatus: '介面狀態', system: '系統資訊', wifireg: 'Wi-Fi 關聯表', stp: 'RSTP 狀態', fwstats: '防火牆命中次數',
   });
 
   function run(M, ctx) {
@@ -327,6 +327,7 @@
       [{ type: 'device', key: a.dev }, { type: 'device', key: K.dev(a.peerId) }], [{ block: a.block, line: a.line }], { facet: K.splitEp(a.localEp)[1] }); });
 
     firewallChecks(M, add, name);
+    statsChecks(M, add, name);
 
     const order = { error: 0, warn: 1, info: 2 };
     out.sort((a, b) => order[a.severity] - order[b.severity] || S.util.cmp(a.id, b.id) || S.util.natural(a.message, b.message));
@@ -616,6 +617,37 @@
     return out;
   }
 
+  /** 命中次數各表的對應結果：{ matched, mismatch, noExport }（表數）；這台設備沒有收集命中次數時為 null。 */
+  function statsOf(M, dev) {
+    const ts = Array.from(M.fw.stats.values()).filter((t) => t.dev === dev);
+    if (!ts.length) return null;
+    return { matched: ts.filter((t) => t.status === 'matched').length, mismatch: ts.filter((t) => t.status === 'mismatch').length, noExport: ts.filter((t) => t.status === 'no-export').length };
+  }
+  /** F09：命中次數對不上 export 的規則（整個表不配，不猜）。 */
+  const STAT_WHY = {
+    count: (r) => `去掉動態（D）列後有 ${r.stats} 列，export 有 ${r.export} 條規則`,
+    chain: (r) => `第 ${r.position} 列的 chain 是 ${r.stats}，export 第 ${r.position} 條是 ${r.export}`,
+    action: (r) => `第 ${r.position} 列的 action 是 ${r.stats}，export 第 ${r.position} 條是 ${r.export}`,
+    disabled: (r) => `第 ${r.position} 列${r.stats ? '是' : '不是'}停用（X），export 第 ${r.position} 條${r.export ? '是' : '不是'} disabled=yes`,
+    comment: (r) => `第 ${r.position} 列的註解（${r.stats || '無'}）與 export 第 ${r.position} 條（${r.export || '無'}）不同`,
+  };
+  /** 每台設備一筆（同一台設備的多個表併在訊息裡，findingKey 不會碰撞），依位址族、表的順序。 */
+  function statsChecks(M, add, name) {
+    const FAM = { ip: 'IPv4', ipv6: 'IPv6' }; const ORDER = ['ip|filter', 'ip|nat', 'ip|raw', 'ipv6|filter', 'ipv6|raw'];
+    const byDev = new Map();
+    M.fw.stats.forEach((t) => { if (t.status === 'mismatch') S.util.getOr(byDev, t.dev, () => []).push(t); });
+    byDev.forEach((ts, dev) => {
+      ts.sort((a, b) => ORDER.indexOf(a.family + '|' + a.table) - ORDER.indexOf(b.family + '|' + b.table));
+      const ev = [];
+      ts.forEach((t) => {
+        const r = t.reason; const e = [r.row, r.rule].filter(Boolean).map(([block, line]) => ({ block, line }));
+        ev.push(...(e.length ? e : t.line !== null ? [{ block: t.block, line: t.line }] : []));
+      });
+      add('F09', `${name(dev)}：${ts.map((t) => `${FAM[t.family]} ${t.table}（${STAT_WHY[t.reason.code](t.reason)}）`).join('；')}；${ts.length > 1 ? '這些表' : '這個表'}的命中次數全部不採用`,
+        [{ type: 'device', key: dev }], ev);
+    });
+  }
+
   /** expectedData：build 選項，覆寫 EXPECTED 的部分類型。blocks：讀取的區塊，用來列出收集失敗的指令。 */
   function coverage(M, expectedData, blocks) {
     const failed = failuresByDev(blocks);
@@ -629,8 +661,9 @@
       dev: d.key, collected: d.collected, kind: d.kind, data: Array.from(d.data).sort(), missing: d.collected ? missingData(d, expected) : [],
       interfaces: ifCount.get(d.key) || 0, links: linkCount.get(d.key) || 0, macs: macCount.get(d.key) || 0,
       failures: failed.get(d.key) || [],
-      // 防火牆：有設定資料的設備才有；wan 是 WAN 分類的狀態（ok／no-wan-list／empty-wan-list）
-      firewall: M.fwZones.has(d.key) ? { rules: fwCount.get(d.key) || 0, wan: M.fwZones.get(d.key).status } : null,
+      // 防火牆：有設定資料的設備才有；wan 是 WAN 分類的狀態（ok／no-wan-list／empty-wan-list）；
+      // stats 是命中次數（print stats）各表的對應結果（matched／mismatch 的表數，沒有收集時為 null）
+      firewall: M.fwZones.has(d.key) ? { rules: fwCount.get(d.key) || 0, wan: M.fwZones.get(d.key).status, stats: statsOf(M, d.key) } : null,
     })).sort((a, b) => S.util.natural(a.dev, b.dev));
   }
 

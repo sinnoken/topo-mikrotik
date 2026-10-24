@@ -134,6 +134,10 @@
     const freezeAll = (map) => { map.forEach((v) => Object.freeze(v)); return map; };
     const findingKeyIndex = () => byFindingKey || (byFindingKey = freezeAll(snap.findings.reduce((out, f, idx) => { U.getOr(out, findingKey(f), () => []).push(idx); return out; }, new Map())));
     const EMPTY = Object.freeze([]);
+    let subnetsByDev = null;
+    // L4（M2）：可達性、zone、zone 矩陣與規則影響。第一次呼叫時才建立（src/query/trace.js 的 S.reach.engine），結果都是推論、只在記憶體快取，不寫進 Snapshot（ADR-014）
+    let l4 = null;
+    const L4 = () => l4 || (l4 = S.reach.engine(Q, { ctxOf }));
     const vlanSrc = { vlans: m.vlans, interfaces: m.interfaces, links: m.links, inferred: m.inferredLinks || [], ifc: (ep) => ifc.get(ep), collected: (d) => !!(dev.get(d) || {}).collected };
 
     // ---- L2／L3 視圖（M1）：第一次呼叫時才建立，依參數快取；回傳的物件都是這裡新建的，深層凍結
@@ -202,6 +206,12 @@
         });
         return Array.from(out.values());
       },
+      /**
+       * 防火牆命中次數（print stats）各表的對應結果（事實）：[{ dev, family, table, status: matched|mismatch|no-export, rows（去掉 D 列）, dynamic, rules, reason, collectedAt, src }]。
+       * 配上時規則的 stats 為 { bytes, packets, src }（十進位字串，收集當下的累積值，可能被 reset 過；0 只代表到收集時為止沒有比對到）。
+       */
+      firewallStats: () => m.firewallStats || EMPTY,
+      firewallStatsOf(d) { return (m.firewallStats || EMPTY).filter((t) => t.dev === d); },
       /** WAN／LAN 分類（推論）：{ dev, basis, status: ok|no-wan-list|empty-wan-list, wanLists, wanInterfaces, lanLists, lanInterfaces }；沒有設定資料的設備為 null。 */
       firewallZone: (d) => zoneByDev.get(d) || null,
       /** /ip service（含 export 沒寫的預設值，basis 為 default）。 */
@@ -336,6 +346,36 @@
       addressesOf: (ep) => (ipsByEp.get(ep) || []).map((a) => a.address),
       prefixes: () => m.prefixes,
       subnets: () => subnets,
+      /** 某設備的直連網段（Q.subnets() 中 dev 為這台設備的元素，順序相同；凍結的陣列）。 */
+      subnetsOf(d) {
+        if (!subnetsByDev) subnetsByDev = freezeAll(subnets.reduce((out, s) => { U.getOr(out, s.dev, () => []).push(s); return out; }, new Map()));
+        return subnetsByDev.get(d) || EMPTY;
+      },
+      /**
+       * 端到端可達性（推論，見設計說明 §5.3「L4 可達性」）：從 src 到 dst 的新連線，沿 L3 路徑（與 S.trace 相同的轉送決定）逐跳套用
+       * raw prerouting → nat dstnat（dst-nat 改寫目的後重新查路由）→ filter input／forward（設備自己送出的是 raw／filter output）→ nat srcnat。
+       * opts：{ proto（預設 tcp）, port（tcp／udp 必填）, vrf（只能是 null，M3）, entry（選用：封包進入的介面鍵，來源不在任何網段時用）, disabledRules（選用：當作停用的規則鍵） }
+       * 回傳（深層凍結）{ ok, src, dst, proto, port, vrf, entry, verdict: allow|deny|unknown, final: { dst, port }|null（NAT 後）, natApplied, start,
+       *   reasons（unknown 的原因）, notes, decisive（決定結果的規則或預設）, paths: [{ verdict, hops, end }], assumptions }；位址無效時 { ok: false, error }。
+       */
+      reach: (src, dst, opts) => L4().reach(src, dst, opts),
+      /**
+       * zone（推論，不寫進 Snapshot）：每個 IPv4 直連網段依序取第一個有結果的來源：命名規則的 zones 標籤（profile）→ interface list → VLAN → 網段本身。
+       * opts：{ profile（選用：建立基準時用的命名規則 JSON，id／版本要相同）, sources（選用：要用的來源，subnet 一定包含） }
+       * 回傳 { zones: [{ id, name, source, inferred, basis, subnets, devices, vrf }], subnets: [{ prefix, zone, source, inferred, basis, detail, alternatives, eps, vrf }] }
+       */
+      zones: (opts) => L4().zones(opts),
+      /** IP 所屬的 zone（最長相符的直連網段）：{ zone, subnet, source, inferred }；不在任何網段時為 null。 */
+      zoneOf: (ip, opts) => L4().zoneOf(ip, opts),
+      /**
+       * zone 矩陣 L0（推論，查詢時計算並快取，不寫進 Snapshot；ADR-014）。opts：zones 的參數，另加 services（[{ proto, port }]，預設 S.query.l4Services() 加 dst-nat 的目的埠）。
+       * 回傳 { zones, services, cells: [{ src, dst, diagonal, status: allow|deny|partial|unknown|empty, counts, services, heterogeneous, rule, rules, ruleCount, reasons }], stats }
+       */
+      zoneMatrix: (opts) => L4().matrix(opts),
+      /** 矩陣下鑽 L1／L2：一格的摘要，加上 groups（目的 × 結果相同的來源代表）與 ruleDetails（牽涉的規則）。L3 是 Q.reach(來源代表, 目的, { proto, port })。 */
+      zoneCell: (srcZone, dstZone, opts) => L4().cell(srcZone, dstZone, opts),
+      /** 規則的影響：牽涉到這條規則的 zone 對與路徑，以及停用它時結果改變的路徑（ifDisabled）。沒有這條規則時為 null。 */
+      ruleImpact: (key, opts) => L4().ruleImpact(key, opts),
       devName(k) { const d = dev.get(k); return d ? (d.label || d.name) : k; },
       /**
        * 設備層級的 DNS／NTP 伺服器設定（事實）：{ dns, ntp }，各為 { values, menu, param, src } 或 null（沒有設定、或找不到設備）。

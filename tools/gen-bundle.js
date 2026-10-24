@@ -77,6 +77,52 @@ const routeText = (rows) => table(rows.map((r) => ({ flags: r.flags, kvs: r.blac
   : [['dst-address', r.dst], ['routing-table', 'main'], ['gateway', r.gw], ['immediate-gw', r.igw || r.gw], ['distance', r.dist], ['scope', r.scope || 10]] })), 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC, o - OSPF, b - BGP', false);
 const ospfText = (rows) => table(rows.map((r) => ({ flags: '', kvs: [['instance', 'default'], ['area', 'backbone'], ['address', r.addr], r.ifc ? ['interface', r.ifc] : null, ['priority', 1], ['router-id', r.id], ['state', 'Full'], ['state-changes', 5], ['adjacency', '1d2h']].filter(Boolean) })), 'Flags: ');
 const ifaceText = (rows) => ['Flags: D - DYNAMIC; R - RUNNING; S - SLAVE', ...rows.map((r, i) => [` ${i}  ${r.flags}  ;;; ${r.comment || ''}`.replace(/ ;;; $/, ''), detailRow('       ', [['name', `"${r.name}"`.replace(/^"|"$/g, '')], ['type', r.type], ['mtu', 1500]])].join('\n').replace(/name=(\S+)/, 'name="$1"').replace(/type=(\S+)/, 'type="$1"'))].join('\n');
+// 防火牆命中次數（print stats detail）：依 export 的規則順序一列一條，RouterOS 7 的數字以空白分千位。
+// 計數器由規則內容算出（不用 rnd，避免改變其他資料的亂數序列）。手冊沒有 stats＋detail 的範例，格式是推定的。
+const FW_STAT_PATH = { filter: '/ip firewall filter', nat: '/ip firewall nat', raw: '/ip firewall raw', v6filter: '/ipv6 firewall filter', v6raw: '/ipv6 firewall raw' };
+const KVARG = /([\w.\-]+)=("(?:[^"\\]|\\.)*"|\S*)/g;
+const argPairs = (a) => { const out = []; let m; KVARG.lastIndex = 0; while ((m = KVARG.exec(a))) out.push([m[1], m[2]]); return out; };
+/** export 的字串值 → print 顯示的文字（\XX 位元組依 UTF-8 解碼）。 */
+const rosText = (v) => {
+  const body = v.replace(/^"(.*)"$/, '$1'); const bytes = [];
+  for (let i = 0; i < body.length; i++) {
+    if (body[i] === '\\') { const h = body.slice(i + 1, i + 3); if (/^[0-9A-F]{2}$/i.test(h)) { bytes.push(parseInt(h, 16)); i += 2; } else bytes.push(body.charCodeAt(++i)); continue; }
+    bytes.push(...Buffer.from(body[i], 'utf8'));
+  }
+  return Buffer.from(bytes).toString('utf8');
+};
+const thousands = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+const strHash = (s) => { let h = 7; for (const ch of s) h = (Math.imul(h, 31) + ch.codePointAt(0)) >>> 0; return h; };
+/** rows：[{ flags, comment, kvs: [[k, v]], seed }]，v 是 print 顯示的值。 */
+function statsText(rows) {
+  const out = ['Flags: X - disabled, I - invalid; D - dynamic'];
+  rows.forEach((r, i) => {
+    const h = strHash(r.seed); const packets = h % 9 === 0 ? 0 : h % 60000; const bytes = packets * (64 + (h >>> 8) % 1400);
+    out.push(` ${String(i).padEnd(2)} ${(r.flags || '').padEnd(2)}${r.comment ? `;;; ${r.comment}` : ''}`.replace(/\s+$/, ''));
+    const toks = r.kvs.map(([k, v]) => `${k}=${/[\s]/.test(v) ? `"${v}"` : v}`).concat([`bytes=${thousands(bytes)}`, `packets=${thousands(packets)}`]);
+    let line = '     ';
+    toks.forEach((t) => { if (line.trim() && line.length + 1 + t.length > 80) { out.push(line); line = '     '; } line += ' ' + t; });
+    out.push(line);
+  });
+  return out.join('\n');
+}
+/** 一台設備的五個 stats 區塊（依 collector 的順序）；extra：{ 表: [多出來的列] }（收集 export 之後才加的規則，F09）。 */
+function fwStats(name, entries, extra) {
+  return Object.entries(FW_STAT_PATH).map(([t, p]) => {
+    const rows = [];
+    if (t === 'filter' && entries.some(([q, , a]) => q === p && /action=fasttrack-connection/.test(a))) {
+      rows.push({ flags: 'D', comment: 'special dummy rule to show fasttrack counters', kvs: [['chain', 'forward'], ['action', 'passthrough']], seed: name + 'fasttrack' });
+    }
+    entries.filter(([q, c]) => q === p && c === 'add').forEach(([, , a], i) => {
+      const kv = argPairs(a); const get = (k) => (kv.find((x) => x[0] === k) || [])[1];
+      rows.push({ flags: get('disabled') === 'yes' ? 'X' : '', comment: get('comment') ? rosText(get('comment')) : null,
+        kvs: [['chain', get('chain')], ['action', get('action') || 'accept']].concat(kv.filter(([k]) => !['chain', 'action', 'comment', 'disabled'].includes(k)).map(([k, v]) => [k, rosText(v)])),
+        seed: name + p + i });
+    });
+    rows.push(...((extra && extra[t]) || []));
+    return [`${p} print stats detail without-paging`, statsText(rows)];
+  });
+}
 const sysText = (board, name) => `             uptime: 2w1d4h\n            version: 7.12.1 (stable)\n         board-name: ${board}\n           platform: MikroTik\n`;
 
 const out = [];
@@ -263,6 +309,8 @@ for (let s = 1; s <= SITES; s++) {
     const cmds = [
       ['/system resource print', sysText(c.board, c.name)],
       [`/export ${ci === 0 ? 'compact' : 'terse'}`, exportText(c.name, c.board, sort(c.entries), ci === 0)],
+      // F09：核心 02 在 export 之後多了一條 dst-nat（nat 表的命中次數對不上，整個表不採用）
+      ...(FAULTS ? fwStats(c.name, c.entries, F && ci === 1 ? { nat: [{ flags: '', comment: 'added after export', kvs: [['chain', 'dstnat'], ['action', 'dst-nat'], ['dst-port', '2222'], ['protocol', 'tcp'], ['to-addresses', `10.${s}.20.12`]], seed: 'extra' }] } : null) : []),
       [`/ip neighbor print ${D}`, neighborText(c.neighbors)],
       [`/interface print ${D}`, ifaceText(ifRows)],
       [`/interface bridge host print ${D}`, bridgeHostText([{ local: true, vid: 0, mac: c.mac, ifc: 'bridge1' }, ...c.macs])],

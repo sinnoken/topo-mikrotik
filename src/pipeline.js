@@ -170,6 +170,7 @@
       key: r.key, dev: r.dev, family: r.family, table: r.table, chain: r.chain, position: r.position, order: r.order, action: r.action,
       match: Object.fromEntries(Object.keys(r.match).sort().map((k) => [k, r.match[k]])), params: Object.fromEntries(Object.keys(r.params).sort().map((k) => [k, r.params[k]])),
       disabled: r.disabled, comment: r.comment, commentEncoding: r.commentEncoding, signature: r.signature, src: [[r.block, r.line]],
+      stats: r.stats ? { bytes: r.stats.bytes, packets: r.stats.packets, src: r.stats.src.map((x) => x.slice()) } : null,
     })).sort((a, b) => nat(a.dev, b.dev) || FAM.indexOf(a.family) - FAM.indexOf(b.family) || TABLE.indexOf(a.table) - TABLE.indexOf(b.table) || a.order - b.order);
     const interfaceLists = Array.from(M.fw.lists.values()).map((l) => ({
       dev: l.dev, name: l.name, defined: l.defined, include: l.include.slice(), exclude: l.exclude.slice(), members: Array.from(l.members.keys()).sort(nat), src: l.src,
@@ -180,6 +181,11 @@
     const ipsecPolicies = M.fw.policies.map((p) => ({ dev: p.dev, srcAddress: p.srcAddress, dstAddress: p.dstAddress, peer: p.peer, template: p.template, disabled: p.disabled, src: p.src }))
       .sort((a, b) => nat(a.dev, b.dev) || a.src[0][1] - b.src[0][1]);
     const firewallZones = Array.from(M.fwZones.values()).map((z) => Object.assign({}, z)).sort((a, b) => nat(a.dev, b.dev));
+    // 命中次數的表（事實＋對應結果）：每台設備、每個（位址族，表）一筆；collectedAt 取該區塊的收集時間
+    const firewallStats = Array.from(M.fw.stats.values()).map((t) => ({
+      dev: t.dev, family: t.family, table: t.table, status: t.status, rows: t.count, dynamic: t.dynamic, rules: t.rules, reason: t.reason,
+      collectedAt: (c.blocks[t.block] || {}).collectedAt || null, src: t.line !== null ? [[t.block, t.line]] : [],
+    })).sort((a, b) => nat(a.dev, b.dev) || FAM.indexOf(a.family) - FAM.indexOf(b.family) || TABLE.indexOf(a.table) - TABLE.indexOf(b.table));
 
     c.findings.forEach((f) => f.evidence.forEach((e) => { e.text = lineText(c.blocks, e); e.file = (c.blocks[e.block] || { origin: {} }).origin.file; }));
 
@@ -209,7 +215,7 @@
         timing: { ms: Date.now() - c.t0 },
       },
       model: { devices, interfaces, links, inferredLinks, ospfAdjacencies, vlans, ipAddresses, prefixes, macs, wifiAssociations, dhcpNetworks, arps, routes,
-        firewallRules, firewallZones, interfaceLists, ipServices, ipsecPeers, ipsecPolicies },
+        firewallRules, firewallZones, firewallStats, interfaceLists, ipServices, ipsecPeers, ipsecPolicies },
       findings: c.findings,
       coverage: c.coverage,
       blocks,

@@ -151,6 +151,61 @@ set winbox address=10.1.10.0/24
 /system identity
 set name=TPE_CORE_RT_01
 
+[admin@TPE_CORE_RT_01] > /ip firewall filter print stats detail without-paging
+Flags: X - disabled, I - invalid; D - dynamic
+ 0  D ;;; special dummy rule to show fasttrack counters
+      chain=forward action=passthrough bytes=67 033 884 packets=51 924
+ 1    ;;; defconf: accept established,related,untracked
+      chain=input action=accept connection-state=established,related,untracked
+      bytes=10 660 775 packets=50 525
+ 2    ;;; defconf: drop invalid
+      chain=input action=drop connection-state=invalid bytes=10 660 986
+      packets=50 526
+ 3    ;;; defconf: accept ICMP
+      chain=input action=accept protocol=icmp bytes=10 661 197 packets=50 527
+ 4    ;;; defconf: accept ICMP
+      chain=input action=accept protocol=icmp bytes=10 661 408 packets=50 528
+ 5    ;;; winbox for vendor
+      chain=input action=accept dst-port=8291 protocol=tcp bytes=10 661 619
+      packets=50 529
+ 6
+      chain=input action=accept dst-port=8291 in-interface=ether47 protocol=tcp
+      bytes=10 661 830 packets=50 530
+ 7    ;;; 防火牆: drop all not coming from LAN
+      chain=input action=drop in-interface-list=!LAN bytes=10 662 041
+      packets=50 531
+ 8    ;;; defconf: fasttrack
+      chain=forward action=fasttrack-connection
+      connection-state=established,related hw-offload=yes bytes=0 packets=0
+ 9    ;;; defconf: accept established,related,untracked
+      chain=forward action=accept connection-state=established,related,untracked
+      bytes=10 662 463 packets=50 533
+ 10   ;;; defconf: drop invalid
+      chain=forward action=drop connection-state=invalid bytes=10 662 674
+      packets=50 534
+ 11   ;;; defconf: drop all from WAN not DSTNATed
+      chain=forward action=drop connection-nat-state=!dstnat
+      connection-state=new in-interface-list=WAN bytes=5 557 328 packets=23 954
+
+[admin@TPE_CORE_RT_01] > /ip firewall nat print stats detail without-paging
+Flags: X - disabled, I - invalid; D - dynamic
+ 0    ;;; defconf: masquerade
+      chain=srcnat action=masquerade ipsec-policy=out,none
+      out-interface-list=WAN bytes=9 895 090 packets=43 210
+ 1
+      chain=dstnat action=dst-nat dst-port=8443 in-interface-list=WAN
+      protocol=tcp to-addresses=10.1.20.11 to-ports=443 bytes=9 895 319
+      packets=43 211
+
+[admin@TPE_CORE_RT_01] > /ip firewall raw print stats detail without-paging
+Flags: X - disabled, I - invalid; D - dynamic
+
+[admin@TPE_CORE_RT_01] > /ipv6 firewall filter print stats detail without-paging
+Flags: X - disabled, I - invalid; D - dynamic
+
+[admin@TPE_CORE_RT_01] > /ipv6 firewall raw print stats detail without-paging
+Flags: X - disabled, I - invalid; D - dynamic
+
 [admin@TPE_CORE_RT_01] > /ip neighbor print detail without-paging
 Flags: 
  0   interface=sfp-sfpplus1 address=10.1.10.21 mac-address=48:A9:8A:00:00:04
@@ -940,6 +995,55 @@ TPE_CORE_RT_02 (10.1.10.3):
 /ip service set winbox address=10.1.10.0/24
 /ip service set www-ssl disabled=no
 /system identity set name=TPE_CORE_RT_02
+
+[admin@TPE_CORE_RT_02] > /ip firewall filter print stats detail without-paging
+Flags: X - disabled, I - invalid; D - dynamic
+ 0  D ;;; special dummy rule to show fasttrack counters
+      chain=forward action=passthrough bytes=33 040 340 packets=38 419
+ 1    ;;; defconf: accept established,related,untracked
+      chain=input action=accept connection-state=established,related,untracked
+      bytes=0 packets=0
+ 2    ;;; defconf: drop invalid
+      chain=input action=drop connection-state=invalid bytes=25 726 800
+      packets=21 439
+ 3    ;;; defconf: accept ICMP
+      chain=input action=accept protocol=icmp bytes=25 728 000 packets=21 440
+ 4
+      chain=input action=accept protocol=udp src-port=53 bytes=25 729 200
+      packets=21 441
+ 5    ;;; defconf: fasttrack
+      chain=forward action=fasttrack-connection
+      connection-state=established,related hw-offload=yes bytes=25 730 400
+      packets=21 442
+ 6    ;;; defconf: accept established,related,untracked
+      chain=forward action=accept connection-state=established,related,untracked
+      bytes=25 731 600 packets=21 443
+ 7    ;;; defconf: drop invalid
+      chain=forward action=drop connection-state=invalid bytes=25 732 800
+      packets=21 444
+ 8    ;;; defconf: drop all from WAN not DSTNATed
+      chain=forward action=drop connection-nat-state=!dstnat
+      connection-state=new in-interface-list=WAN bytes=25 734 000 packets=21 445
+
+[admin@TPE_CORE_RT_02] > /ip firewall nat print stats detail without-paging
+Flags: X - disabled, I - invalid; D - dynamic
+ 0    ;;; defconf: masquerade
+      chain=srcnat action=masquerade ipsec-policy=out,none
+      out-interface-list=WAN bytes=46 966 343 packets=38 153
+ 1    ;;; added after export
+      chain=dstnat action=dst-nat dst-port=2222 protocol=tcp
+      to-addresses=10.1.20.12 bytes=10 326 120 packets=9 705
+
+[admin@TPE_CORE_RT_02] > /ip firewall raw print stats detail without-paging
+Flags: X - disabled, I - invalid; D - dynamic
+
+[admin@TPE_CORE_RT_02] > /ipv6 firewall filter print stats detail without-paging
+Flags: X - disabled, I - invalid; D - dynamic
+ 0
+      chain=forward action=accept dst-port=443 protocol=tcp bytes=0 packets=0
+
+[admin@TPE_CORE_RT_02] > /ipv6 firewall raw print stats detail without-paging
+Flags: X - disabled, I - invalid; D - dynamic
 
 [admin@TPE_CORE_RT_02] > /ip neighbor print detail without-paging
 Flags: 

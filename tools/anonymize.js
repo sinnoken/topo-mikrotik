@@ -23,6 +23,21 @@ const SECRET_KEYS = /^(eap-identity|eap-username|password|.*-password|passphrase
 const SNMP_COMMUNITY = /^\/\s*snmp[\s/]+community\b/i;
 const MENU_MARKER = /^\s*(?:###\s*|\[[^\]]*\]\s*>?\s*)(\/\S.*)$/;
 
+/** RouterOS export 字串值的跳脫（\XX 位元組依 UTF-8、\" \\ 等單字元）→ 文字；解不出 UTF-8 時原樣回傳。 */
+function rosDecode(v) {
+  if (!v.includes('\\')) return v;
+  const bytes = [];
+  for (let i = 0; i < v.length; i++) {
+    if (v[i] === '\\' && i + 1 < v.length) {
+      const h = v.slice(i + 1, i + 3);
+      if (/^[0-9A-F]{2}$/i.test(h)) { bytes.push(parseInt(h, 16)); i += 2; } else bytes.push(...Buffer.from(v[++i], 'utf8'));
+      continue;
+    }
+    bytes.push(...Buffer.from(v[i], 'utf8'));
+  }
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(bytes)); } catch (e) { return v; }
+}
+
 function anonymize(text, opt) {
   const o = opt || {};
   const maps = { dev: new Map(), net: new Map(), mac: new Map(), ssid: new Map(), host: new Map(), comment: new Map(), radio: new Map() };
@@ -89,7 +104,8 @@ function anonymize(text, opt) {
     if (k === 'ssid') return `${pre}${key}=${quote(raw, code('ssid', 'SSID-', v))}`;
     if (k === 'dhcp-hostname' || k === 'host-name') return `${pre}${key}=${quote(raw, code('host', 'HOST-', v))}`;
     if (k === 'radio-name') return `${pre}${key}=${quote(raw, code('radio', 'RADIO-', v))}`;
-    if (k === 'comment' || k === 'system-description') return `${pre}${key}=${quote(raw, code('comment', 'comment-', v))}`;
+    // export 的註解以 \XX 位元組與 \" 跳脫，print 的 ;;; 是解碼後的文字：解碼後當鍵，兩邊同一個註解換成同一個代號（命中次數靠註解對應規則）
+    if (k === 'comment' || k === 'system-description') return `${pre}${key}=${quote(raw, code('comment', 'comment-', k === 'comment' ? rosDecode(v) : v))}`;
     return all;
   });
   out = out.replace(/;;;\s*(.+)$/gm, (_, c) => `;;; ${code('comment', 'comment-', c.trim())}`);

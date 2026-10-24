@@ -396,6 +396,15 @@
       ],
       action: '建立名稱含 `WAN` 的 interface list（`/interface list add name=WAN`），把對外介面加進去（`/interface list member add list=WAN interface=<介面>`）；RouterOS 的 defconf 就是 `WAN`／`LAN`。',
     },
+    F09: {
+      severity: 'info', cat: '防火牆', title: '防火牆命中次數對不上 export 的規則（這個表的命中次數不採用）', data: [['fwstats']],
+      causes: [
+        '收集 `/export` 與 `print stats` 之間有人新增、刪除或搬動了規則。',
+        '有 export 沒有列出的靜態規則來源（例如腳本在收集時才加入規則）。',
+        '註解含特殊字元，print 與 export 的寫法不同。',
+      ],
+      action: '重新收集這台設備（`/export` 與 `print stats` 一起收）；仍對不上時，對照訊息中的列與規則找出差異。對上之前，這個表的規則沒有命中次數。',
+    },
   };
 
   // 靜態目錄：載入後凍結（含 data、causes 等巢狀陣列），畫面經 S.query.rule() 取得的物件不會被改到

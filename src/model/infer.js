@@ -560,6 +560,9 @@
    *   covers(ctx, i, j)：規則 i 是否涵蓋 j（符合 j 的封包一定符合 i）。i 帶不確定的比對（limit、random…）時一律不涵蓋。
    *   evalChain(ctx, …, pkt)：一個「來自 WAN 的新連線」封包依序走過 chain（含 jump／return），回傳決定它的規則。
    *     每個條件為 true／false／null（無法判斷）；只有全部為 true 的規則才算命中，null 的規則略過（近似，見設計說明）。
+   *   decide(ctx, …, pkt)：同樣走過 chain，但不略過無法判斷的規則：列出所有可能的結果，只有一種時才算決定（端到端可達性 Q.reach 用）。
+   *     pkt.reach 為 true 時是一個已知來源的封包（src、srcLocal、dstLocal 都給定），條件的判斷見 condition。
+   * 模擬的是 RouterOS 的處理順序（first-match、jump／return、內建 chain 沒有規則決定時放行），不是跨廠牌的共同模型（ADR-012）。
    * WAN／LAN 是推論：只看名稱含 WAN／LAN 的 interface list 及其成員（/interface list member 的事實），不看介面名稱。
    */
   const FW_NONDET = new Set(['random', 'limit', 'dst-limit', 'connection-limit', 'psd', 'nth', 'per-connection-classifier']);
@@ -707,14 +710,41 @@
   }
   const sameMatch = (a, b) => JSON.stringify(canonMatch(a.match)) === JSON.stringify(canonMatch(b.match));
 
+  /** 位址類型（dst-address-type／src-address-type）對一個單播封包的結果；local 由呼叫端給定（位址是不是這台設備的），其他類型無法判斷。 */
+  const addrType = (body, local) => {
+    const r = tokens(body).map((t) => (t === 'local' ? (local === undefined ? null : local) : t === 'unicast' ? true : t === 'broadcast' || t === 'multicast' ? false : null));
+    return r.includes(true) ? true : r.includes(null) ? null : false;
+  };
   /**
    * 一個條件對封包的結果：true／false／null（無法判斷）。
    * pkt：{ family, chain, in: ep, out: ep|null（沒有出介面，例如 input）|undefined（不明）, protocol, dstPort: 數字|null（不是規則提到的埠）,
    *        dst: BigInt|undefined, state: 'new', natState: null|'dstnat' }；來源是任意公網位址、來源埠由攻擊者選。
+   * pkt.reach 為 true（Q.reach）時來源是已知的位址：src: BigInt|null（null 是 NAT 後不明）、srcPort: 數字|null（null 是用戶端自選、不明）、
+   *   srcLocal／dstLocal：位址是不是這台設備的、ipsec: 'none'（設備沒有啟用中的 IPsec policy）|null（不明）；address-list 的內容不在基準中，一律無法判斷。
    */
   function condition(ctx, rule, key, pkt) {
     const v = rule.match[key]; const { neg, body } = splitNeg(v);
     const flip = (x) => (x === null ? null : neg ? !x : x);
+    if (pkt.reach) {
+      switch (key) {
+        case 'src-port': case 'port': {
+          if (!PORT_PROTOCOLS.has(pkt.protocol)) return neg;
+          const p = parseVal(key, v); if (p.kind !== 'ranges') return null;
+          if (key === 'port' && pkt.dstPort != null && inRanges(BigInt(pkt.dstPort), p.items)) return flip(true);
+          return pkt.srcPort == null ? null : flip(inRanges(BigInt(pkt.srcPort), p.items));
+        }
+        case 'src-address': {
+          if (pkt.src == null) return null;
+          const p = parseVal(key, v); if (p.kind !== 'ranges' || p.bits !== (pkt.family === 'ipv6' ? 128 : 32)) return null;
+          return flip(inRanges(pkt.src, p.items));
+        }
+        case 'src-address-list': case 'dst-address-list': return null;
+        case 'dst-address-type': return flip(addrType(body, pkt.dstLocal));
+        case 'src-address-type': return flip(addrType(body, pkt.srcLocal));
+        case 'ipsec-policy': if (pkt.ipsec !== 'none') return null; break;
+        default: break;
+      }
+    }
     switch (key) {
       case 'protocol': return flip(protoName(body) === pkt.protocol);
       case 'dst-port': { if (pkt.dstPort == null || !PORT_PROTOCOLS.has(pkt.protocol)) return neg; const p = parseVal(key, v); return p.kind === 'ranges' ? flip(inRanges(BigInt(pkt.dstPort), p.items)) : null; }
@@ -736,14 +766,15 @@
       default: return null;
     }
   }
-  function ruleMatches(ctx, rule, pkt) {
+  /** why（選用）：結果為 null 時，收集無法判斷的條件鍵（介面不明時是 in-interface／out-interface，清單無法展開時是該清單的鍵）。 */
+  function ruleMatches(ctx, rule, pkt, why) {
     let res = true;
     for (const dir of ['in', 'out']) {
       if (rule.match[dir + '-interface'] === undefined && rule.match[dir + '-interface-list'] === undefined) continue;
       const at = pkt[dir];
-      if (at === undefined) { res = null; continue; }
+      if (at === undefined) { res = null; if (why) why.push(dir + '-interface'); continue; }
       const e = ifcSet(ctx, rule, dir);
-      if (e === UNKNOWN) { res = null; continue; }
+      if (e === UNKNOWN) { res = null; if (why) why.push(dir + '-interface-list'); continue; }
       if (at === null) { // 沒有這個方向的介面（例如 input 沒有出介面）：只有否定條件會成立
         const negOnly = [dir + '-interface', dir + '-interface-list'].every((k) => rule.match[k] === undefined || splitNeg(rule.match[k]).neg);
         if (!negOnly) return false; continue;
@@ -754,7 +785,7 @@
       if (/^(in|out)-interface(-list)?$/.test(k)) continue;
       const c = FW_NONDET.has(k) ? null : condition(ctx, rule, k, pkt);
       if (c === false) return false;
-      if (c === null) res = null;
+      if (c === null) { res = null; if (why) why.push(k); }
     }
     return res;
   }
@@ -784,6 +815,61 @@
     const f = evalChain(ctx, family, 'filter', builtin, pkt);
     return f.verdict ? f : { verdict: 'accept', rule: null, path: [], policy: true };
   }
+  /**
+   * 三值的 chain 判斷（Q.reach 用）：和 evalChain 一樣依序走（含 jump／return），但條件無法判斷的規則不略過，而是列出所有可能的結果。
+   * 回傳 { decided, verdict, rule, policy, path, hits, uncertain, outcomes }：
+   *   outcomes：[{ verdict, rule, path, policy }]，verdict 依表正規化：filter／raw 為 accept／drop（raw 另有 notrack），
+   *     nat 為 NAT 動作或 none（accept、沒有規則決定）；沒有規則決定時 rule 為 null、policy 為 true（內建 chain 的預設）。
+   *   decided：所有可能的結果相同（nat 另要是同一條規則，因為改寫的位址可能不同）。verdict／rule／policy／path 是條件都成立時的結果：
+   *     第一條確定命中的終止規則，沒有就是預設。
+   *   hits：確定命中的規則（依序，含 jump 與不終止比對的動作，例如 log、passthrough）。
+   *   uncertain：[{ rule, keys, verdicts }]：條件無法判斷、命中時會導向某個結果的規則；keys 是無法判斷的條件，verdicts 是它可能導向的結果。
+   * skip：當作停用的規則鍵（Set；估計停用一條規則的影響用）。
+   */
+  function decide(ctx, family, table, chain, pkt, skip) {
+    const hits = []; const uncertain = [];
+    const walk = (ch, via, sure) => {
+      const outs = [];
+      if (via.length > 16) { outs.push({ cont: true }); return outs; }
+      const p = Object.assign({}, pkt, { chain: ch });
+      for (const r of ctx.chain(family, table, ch)) {
+        if (r.disabled || (skip && skip.has(r.key))) continue;
+        const why = [];
+        const m = ruleMatches(ctx, r, p, why);
+        if (m === false) continue;
+        const definite = sure && m === true;
+        let res;
+        if (r.action === 'jump') {
+          const target = r.params['jump-target'];
+          if (!target || via.some((x) => x.params['jump-target'] === target) || target === ch) continue;
+          if (definite) hits.push(r);
+          res = walk(target, via.concat(r), definite);
+        } else if (r.action === 'return') { if (definite) hits.push(r); res = [{ ret: true }]; }
+        else if (r.action === 'drop' || r.action === 'reject' || r.action === 'tarpit') { if (definite) hits.push(r); res = [{ verdict: 'drop', rule: r, path: via }]; }
+        else if (FW_TERMINAL.has(r.action) || (table === 'raw' && r.action === 'notrack')) { if (definite) hits.push(r); res = [{ verdict: r.action, rule: r, path: via }]; }
+        else { if (definite) hits.push(r); res = [{ cont: true }]; }
+        const finals = res.filter((o) => !o.cont && !o.ret);
+        if (m === null && (finals.length || res.some((o) => o.ret))) uncertain.push({ rule: r, keys: why, verdicts: S.util.uniq(finals.map((o) => norm(table, o.verdict)).concat(res.some((o) => o.ret) ? ['return'] : [])) });
+        outs.push(...finals);
+        if (m !== true) continue;
+        if (res.some((o) => o.ret)) { outs.push({ cont: true }); return outs; } // return：這個 chain 到此結束，回到呼叫的 chain
+        if (!res.some((o) => o.cont)) return outs; // 在這裡一定有結果
+      }
+      outs.push({ cont: true });
+      return outs;
+    };
+    const outs = walk(chain, [], true);
+    const seen = new Map();
+    const outcome = (o) => {
+      const verdict = o.cont ? (table === 'nat' ? 'none' : 'accept') : norm(table, o.verdict);
+      return { key: table === 'nat' && verdict !== 'none' ? verdict + '|' + o.rule.key : verdict, verdict, rule: o.cont ? null : o.rule, path: o.path || [], policy: !!o.cont };
+    };
+    outs.forEach((o) => { const x = outcome(o); if (!seen.has(x.key)) seen.set(x.key, x); });
+    const primary = outcome(outs[outs.length - 1]);
+    return { decided: seen.size === 1, verdict: primary.verdict, rule: primary.rule, policy: primary.policy, path: primary.path, hits, uncertain,
+      outcomes: Array.from(seen.values()).map(({ key, ...x }) => x) };
+  }
+  const norm = (table, verdict) => (table === 'nat' && verdict === 'accept' ? 'none' : verdict);
   /** 由規則本身的條件組出「會符合它」的 WAN 封包（協定、第一個目的埠／位址、出介面）。 */
   function packetFor(rule, inEp, chain, ctx) {
     const first = (k) => { const v = rule.match[k]; if (v === undefined || splitNeg(v).neg) return undefined; const p = parseVal(k, v); return p.kind === 'ranges' ? p.items[0][0] : undefined; };
@@ -834,6 +920,6 @@
   }
 
   S.infer = { infer, displayName, effVlans, effVlanModes, effPvid, bridgeOf, vlanSpan, VLAN_DATA, isVirtualIfc, hwMacsByDev, wifiLocations, behindLocations };
-  S.infer.fw = { canonMatch, covers, sameMatch, evalChain, evalFilter, packetFor, fwContext, parseVal, splitNeg, protoName,
+  S.infer.fw = { canonMatch, covers, sameMatch, evalChain, evalFilter, decide, packetFor, fwContext, parseVal, splitNeg, protoName,
     TERMINAL: FW_TERMINAL, BUILTIN: FW_BUILTIN, NONDET: FW_NONDET, PORT_PROTOCOLS };
 })(globalThis.SSOT = globalThis.SSOT || {});

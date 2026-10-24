@@ -111,6 +111,44 @@ const parseCsv = (t) => {
   if (rows[rows.length - 1].length === 0 && cell === '') rows.pop(); else rows[rows.length - 1].push(cell);
   return rows;
 };
+/** WCAG 2 對比：'#rrggbb' 或 'rgba(r,g,b,a)'（半透明色先疊在 base 上） */
+const rgbOf = (c, base) => {
+  const m = String(c).match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)$/);
+  if (m) { const a = m[4] == null ? 1 : +m[4]; const b = base ? rgbOf(base) : [255, 255, 255]; return [1, 2, 3].map((i) => +m[i] * a + b[i - 1] * (1 - a)); }
+  if (!/^#[0-9a-fA-F]{6}$/.test(c)) throw new Error('無法解析的顏色：' + c);
+  const n = parseInt(c.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255];
+};
+const luminance = (rgb) => { const [r, g, b] = rgb.map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+const contrastOf = (fg, bg, base) => { const [a, b] = [luminance(rgbOf(fg, base)), luminance(rgbOf(bg, base))].sort((x, y) => y - x); return (a + 0.05) / (b + 0.05); };
+/** 讀 app.css 的 :root 變數 */
+const cssVars = (css) => Object.fromEntries(Array.from(css.match(/:root\s*\{([^}]*)\}/)[1].matchAll(/--([\w-]+):\s*([^;]+);/g)).map((m) => [m[1], m[2].trim()]));
+/** 記錄 Canvas 的路徑與填色／描邊（模擬 context 的方法本身不做事）：回傳每次 fill／stroke 的樣式與路徑點 */
+function recordCanvas(ctx, fn) {
+  const names = ['beginPath', 'moveTo', 'lineTo', 'arc', 'closePath', 'fill', 'stroke', 'fillText', 'fillRect', 'setLineDash'];
+  const old = Object.fromEntries(names.map((k) => [k, ctx[k]])); const ops = []; let path = []; let dash = [];
+  ctx.setLineDash = (d) => { dash = d.slice(); };
+  ctx.beginPath = () => { path = []; };
+  ctx.moveTo = (x, y) => path.push({ t: 'M', x, y }); ctx.lineTo = (x, y) => path.push({ t: 'L', x, y });
+  ctx.arc = (x, y, r) => path.push({ t: 'A', x, y, r }); ctx.closePath = () => path.push({ t: 'Z' });
+  ctx.fill = () => ops.push({ op: 'fill', style: ctx.fillStyle, alpha: ctx.globalAlpha, path: path.slice() });
+  ctx.stroke = () => ops.push({ op: 'stroke', style: ctx.strokeStyle, width: ctx.lineWidth, alpha: ctx.globalAlpha, dash: dash.slice(), path: path.slice() });
+  ctx.fillText = (s, x, y) => ops.push({ op: 'text', text: String(s), style: ctx.fillStyle, font: ctx.font, x, y });
+  ctx.fillRect = (x, y, w, h) => ops.push({ op: 'rect', style: ctx.fillStyle, x, y, w, h });
+  try { fn(); } finally { Object.assign(ctx, old); }
+  return ops;
+}
+/** 暫時換成測試用的圖資料，結束後還原 */
+function withGraph(graph, nodes, edges, pos, fn) {
+  const old = { nodes: graph.nodes, edges: graph.edges, pos: graph.pos, sel: graph.sel, hl: graph.hl, hover: graph.hover, s: graph.s, tx: graph.tx, ty: graph.ty, visible: graph.visible, groupBoxes: graph.groupBoxes };
+  try { graph.setData(nodes, edges, pos); graph.hl = null; graph.hover = null; graph.visible = () => true; graph.groupBoxes = null; graph.setSelection([], []); graph.fit(); return fn(); } finally {
+    graph.setData(old.nodes, old.edges, old.pos); graph.setSelection(old.sel.nodes, old.sel.edges); graph.setHighlight(old.hl);
+    Object.assign(graph, { hover: old.hover, s: old.s, tx: old.tx, ty: old.ty, visible: old.visible, groupBoxes: old.groupBoxes }); graph.redraw();
+  }
+}
+/** 路徑的頂點數（arc 記為 0，代表圓形） */
+const vertices = (path) => (path.some((p) => p.t === 'A') ? 0 : path.filter((p) => p.t === 'M' || p.t === 'L').length);
+const near = (path, q, d) => path.length && path.every((p) => p.t === 'Z' || Math.hypot(p.x - q.x, p.y - q.y) <= d);
+
 /** 在輸入框貼上文字並建立基準，等到新的基準載入 */
 async function buildInput(input) {
   $('#input-text').value = input; $('#input-build').click();
@@ -319,6 +357,28 @@ async function buildInput(input) {
     if (m) { App.select({ type: 'mac', key: m.mac }, { focus: true }); if (!g.hl.nodes.has(App.vOfEp.get(m.edge[0]))) throw new Error('MAC 搜尋應標出未知對端'); }
     // 檢查結果 A03 → 顯示終端清單
     const i = App.snap.findings.findIndex((f) => f.id === 'A03'); if (i >= 0) { App.selectFinding(i); if (App.sel.type !== 'endpoints') throw new Error('A03 應顯示終端清單'); }
+  });
+  await step('廠商色最多 theme 的色數：依終端數量取前幾名，其餘歸「其他」，圖例列出同樣的對應', () => {
+    const EP = S.view.theme.endpoint; const g = App.graph; const old = EP.vendor;
+    const check = () => {
+      const ends = g.nodes.filter((n) => n.kind === 'endpoint');
+      if (App.vendorColors.size > EP.vendor.length) throw new Error('廠商色不應超過 theme 的色數');
+      ends.forEach((n) => { const want = (n.vendor && App.vendorColors.get(n.vendor)) || EP.vendorFallback; if (n.color !== want) throw new Error('終端顏色應依廠商排名或歸「其他」：' + n.id); });
+      const shown = document.querySelectorAll('#legend .lg-vendor').map((li) => li.textContent);
+      if (shown.join('|') !== Array.from(App.vendorColors.keys()).join('|')) throw new Error('圖例的廠商應與畫面上的廠商色一致');
+      return ends;
+    };
+    const ends = check(); if (process.env.SMOKE_INPUT) return; // 大型網路全部收合，沒有個別終端
+    const vendors = S.util.uniq(ends.map((n) => n.vendor).filter(Boolean));
+    if (vendors.length < 2) throw new Error('範例資料應有兩個以上廠商的終端');
+    try {
+      EP.vendor = old.slice(0, 1); App.toggleExpand('TPE_ACC_SW_01'); App.toggleExpand('TPE_ACC_SW_01');
+      check();
+      if (App.vendorColors.size !== 1 || !App.vendorOthers) throw new Error('超過色數的廠商應歸「其他」');
+      if (!g.nodes.some((n) => n.kind === 'endpoint' && n.vendor && n.color === EP.vendorFallback)) throw new Error('排名之外的廠商應使用 vendorFallback');
+      if (!text('#legend').includes(`其他廠商（${App.vendorOthers} 家）`)) throw new Error('圖例應註明歸為其他的廠商數');
+    } finally { EP.vendor = old; App.toggleExpand('TPE_ACC_SW_01'); App.toggleExpand('TPE_ACC_SW_01'); }
+    check();
   });
   await step('檢查結果：沒有發現的規則分成「通過」與「沒有資料可檢查」，預設收合', () => {
     const pass = App.Q.ruleStatus().filter((r) => r.status === 'pass'); if (!pass.length) return;
@@ -984,9 +1044,9 @@ async function buildInput(input) {
     });
     if (/font-weight:\s*(550|650)/.test(css)) throw new Error('字重只用 400／600／700');
     const legend = Array.from(document.querySelectorAll('#legend .li'));
-    if (document.querySelectorAll('#legend .lg-group').length !== 4) throw new Error('圖例應分為四類');
+    if (document.querySelectorAll('#legend .lg-group').length !== 5) throw new Error('圖例應分為五類');
     const groupTitles = document.querySelectorAll('#legend .lg-title').map((el) => el.textContent);
-    if (groupTitles.join('|') !== '設備|終端|連線|連線註記') throw new Error('圖例分類順序應為設備、終端、連線、連線註記');
+    if (groupTitles.join('|') !== '設備|終端|連線|連線註記|標示') throw new Error('圖例分類順序應為設備、終端、連線、連線註記、標示');
     if (!document.querySelector('#legend .legend-body').classList.contains('hidden')) throw new Error('圖例預設應收合');
     document.querySelector('#legend .legend-head').click();
     if (document.querySelector('#legend .legend-body').classList.contains('hidden')) throw new Error('點圖例標題應展開');
@@ -998,13 +1058,26 @@ async function buildInput(input) {
     Object.entries(T.edge).forEach(([k, st]) => {
       const row = legend.find((li) => li.textContent === S.view.CLS[k]); const l = row && sw(row)[0];
       if (!l) throw new Error('圖例缺少連線類別：' + k);
-      if (!l.style.background.includes(st.c) || l.style.height !== Math.max(2, Math.round(st.w)) + 'px') throw new Error('圖例連線色或線寬與 theme 不一致：' + k);
+      if (!l.style.background.includes(st.c) || l.style.height !== S.view.legendLineHeight(st.w)) throw new Error('圖例連線色或線寬與 theme 不一致：' + k);
       if (!!st.dash !== l.style.background.includes('repeating-linear-gradient')) throw new Error('圖例連線虛線與 theme 不一致：' + k);
     });
     const edgeLegend = (k) => legend.find((li) => li.textContent === S.view.CLS[k]);
     const oneG = edgeLegend('1g'); const other = edgeLegend('other');
     if (!oneG || !other || !oneG.getAttribute('title').includes('不代表實際協商速率')) throw new Error('1G 圖例需說明其為介面名稱推估，而非實際協商速率');
     if (T.edge['1g'].c === T.edge.other.c || T.edge['1g'].w <= T.edge.other.w) throw new Error('1G 連線樣式應明顯區別於其他連線');
+    // 線寬隨速率遞增（畫布與圖例都是）；多條鏈路的雙線另有圖例
+    const speeds = ['1g', '10g', '40g'];
+    speeds.slice(1).forEach((k, i) => {
+      if (T.edge[k].w <= T.edge[speeds[i]].w) throw new Error(`${k} 線寬應大於 ${speeds[i]}`);
+      if (parseFloat(S.view.legendLineHeight(T.edge[k].w)) <= parseFloat(S.view.legendLineHeight(T.edge[speeds[i]].w))) throw new Error(`圖例的 ${k} 應比 ${speeds[i]} 粗`);
+    });
+    if (!legend.some((li) => li.textContent.includes('多條鏈路') && li.querySelector('.ln') && li.querySelector('.ln').getAttribute('data-multi') !== null)) throw new Error('圖例應說明多條鏈路的雙線');
+    // 標示：選取、滑過、搜尋結果、路由追蹤的圖例顏色取自 theme.mark
+    ['select', 'hover', 'find', 'trace'].forEach((k) => {
+      const swatch = legend.flatMap((li) => li.childNodes).find((c) => c.attrs && c.attrs['data-mark'] === k);
+      if (!swatch) throw new Error('圖例缺少標示：' + k);
+      const st = swatch.style; if (!String(st.border || st.background).includes(T.mark[k])) throw new Error('圖例標示色與 theme 不一致：' + k);
+    });
     let keyboardLinkActivated = false;
     const keyboardLink = S.view.h('a', { class: 'link', onclick: () => { keyboardLinkActivated = true; } }, '鍵盤連結');
     if (keyboardLink.getAttribute('tabindex') !== '0' || keyboardLink.getAttribute('role') !== 'link') throw new Error('動態連結需具備鍵盤焦點與連結語意');
@@ -1014,8 +1087,11 @@ async function buildInput(input) {
     if (!hearsay || !inferred) throw new Error('圖例缺少單側觀察或推論鏈路註記');
     if (legend.some((li) => li.textContent === 'MNDP')) throw new Error('MNDP 不畫在圖上，圖例不應列出');
     const hs = sw(hearsay)[0]; const is = sw(inferred)[0];
-    if (hs.style.opacity !== String(T.weakEdge.hearsay.alpha) || !hs.style.background.includes(T.weakEdge.hearsay.c)) throw new Error('單側觀察圖例顏色或透明度與 theme 不一致');
-    if (is.style.opacity !== String(T.weakEdge.inferred.alpha) || !is.style.background.includes(T.weakEdge.inferred.c)) throw new Error('推論鏈路圖例顏色或透明度與 theme 不一致');
+    // 證據強度只改線型與透明度（畫布保留速率色），圖例用中性線色只表達線型
+    const dashOf = (d) => d.reduce((acc, n) => { acc.pos += n; acc.out.push(acc.pos + 'px'); return acc; }, { pos: 0, out: [] }).out;
+    [[hs, T.weakEdge.hearsay], [is, T.weakEdge.inferred]].forEach(([el, st]) => {
+      if (el.style.opacity !== String(st.alpha) || !el.style.background.includes(T.canvas.keyInk) || !dashOf(st.dash).every((x) => el.style.background.includes(x))) throw new Error('證據強度圖例的線型或透明度與 theme 不一致');
+    });
     if (hs.style.background === is.style.background) throw new Error('單側觀察與推論鏈路圖例線型應可區分');
   });
   await step('收集時間與失敗：原始輸出列出收集時間與失敗，覆蓋率把失敗算進「有缺漏」並顯示原因', async () => {
@@ -1282,7 +1358,7 @@ async function buildInput(input) {
       ctx.stroke = () => { strokes.push({ alpha: ctx.globalAlpha, color: ctx.strokeStyle, dash: dash.slice(), from, to }); };
       graph.setData(nodes, edges, pos); graph.hl = null; graph.hover = null; graph.setSelection([], []); graph.fit(); graph.draw();
       const pure = segmentStrokes('weak-a', 'weak-b');
-      if (!pure.some((s) => s.alpha === weak.inferred.alpha && s.color === weak.inferred.c && s.dash.join() === weak.inferred.dash.join())) throw new Error('推論鏈路應使用 theme 指定的顏色、透明度與虛線');
+      if (!pure.some((s) => s.alpha === weak.inferred.alpha && s.color === S.view.theme.edge.other.c && s.dash.join() === weak.inferred.dash.join())) throw new Error('推論鏈路應保留連線類別色，只改 theme 指定的透明度與虛線');
       const mixed = segmentStrokes('mixed-a', 'mixed-b');
       if (!mixed.length || mixed.some((s) => s.alpha !== 1)) throw new Error('有介面鄰接的邊不應套用弱邊透明度');
       graph.setSelection([], ['weak-edge']); strokes.length = 0; graph.draw();
@@ -1294,6 +1370,93 @@ async function buildInput(input) {
       graph.setData(old.nodes, old.edges, old.pos); graph.setSelection(old.sel.nodes, old.sel.edges);
       graph.setHighlight(old.hl); graph.hover = old.hover; graph.s = old.s; graph.tx = old.tx; graph.ty = old.ty; graph.redraw();
     }
+  });
+  await step('文字對比：每個文字色對它的底色 ≥ 4.5:1（CSS 變數、狀態標籤、theme 的文字色）', () => {
+    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8'); const v = cssVars(css); const T = S.view.theme;
+    const white = '#ffffff';
+    // 狀態文字色的單一來源：theme.text 與 CSS 的 --*-text、--muted、--text 相同
+    [['err', 'err-text'], ['warn', 'warn-text'], ['ok', 'ok-text'], ['info', 'info-text'], ['muted', 'muted'], ['body', 'text']].forEach(([k, n]) => {
+      if ((v[n] || '').toLowerCase() !== T.text[k].toLowerCase()) throw new Error(`--${n} 與 theme.text.${k} 不一致`);
+    });
+    const pairs = [
+      ['--text', v.text, [white, v.surface, v.bg]],
+      ['--muted', v.muted, [white, v.surface, v['surface-hover'], v['neutral-soft'], v['accent-soft'], v['accent-hover'], v['err-soft'], v['warn-soft']]],
+      ['--accent', v.accent, [white, v.surface, v['accent-soft'], v['accent-hover']]],
+      ['--err-text', v['err-text'], [white, v.surface, v['err-soft'], T.firewall.focus.bg]],
+      ['--warn-text', v['warn-text'], [white, v.surface, v['warn-soft'], T.firewall.focus.bg]],
+      ['--ok-text', v['ok-text'], [white, v.surface, v['ok-soft'], T.firewall.focus.bg]],
+      ['--info-text', v['info-text'], [white, v.surface, v['info-soft']]],
+    ];
+    // 狀態與設備類型標籤：.chip.xxx { background; color }（color 可能是變數）
+    Array.from(css.matchAll(/\.chip\.(err|warn|info|ok|kind-[a-z]+)\s*\{([^}]*)\}/g)).forEach((m) => {
+      const val = (prop) => { const x = (m[2].match(new RegExp('(?:^|;)\\s*' + prop + ':\\s*([^;]+)')) || [])[1]; return x && x.trim().replace(/^var\(--([\w-]+)\)$/, (_, n) => v[n]); };
+      pairs.push(['.chip.' + m[1], val('color'), [val('background')]]);
+    });
+    if (pairs.filter((p) => p[0].startsWith('.chip.kind-')).length !== Object.keys(S.view.KIND).length) throw new Error('每個設備類型都應有 .chip.kind-* 樣式');
+    // theme 的文字色：防火牆動作（一般列、斑馬列、定位列）、比對 effect（白底、新暴露列）、畫布上的文字（疊在畫布底色上）
+    Object.entries(T.firewall.action).forEach(([k, c]) => pairs.push(['firewall.action.' + k, c, [white, v.surface, T.firewall.focus.bg]]));
+    Object.entries(T.diff.effect).forEach(([k, c]) => pairs.push(['diff.effect.' + k, c, [white, T.diff.exposureBg]]));
+    const onCanvas = (bg) => '#' + rgbOf(bg, v.surface).map((x) => Math.round(x).toString(16).padStart(2, '0')).join('');
+    pairs.push(['canvas.group.text', T.canvas.group.text, [onCanvas(T.canvas.group.fill)]]);
+    pairs.push(['canvas.label.text', T.canvas.label.text, [onCanvas(T.canvas.label.bg)]], ['canvas.label.textUncollected', T.canvas.label.textUncollected, [onCanvas(T.canvas.label.bg)]]);
+    pairs.push(['canvas.port.text', T.canvas.port.text, [onCanvas(T.canvas.port.bg)]]);
+    pairs.push(['endpoint.downstream.text', T.endpoint.downstream.text, [T.endpoint.downstream.fill]], ['endpoint.cluster.text', T.endpoint.cluster.text, [T.endpoint.cluster.fill]]);
+    const low = [];
+    pairs.forEach(([name, fg, bgs]) => {
+      if (!fg) throw new Error('找不到文字色：' + name);
+      bgs.forEach((bg) => { if (!bg) throw new Error('找不到底色：' + name); const r = contrastOf(fg, bg); if (r < 4.5) low.push(`${name} ${fg} 對 ${bg} 只有 ${r.toFixed(2)}:1`); });
+    });
+    if (low.length) throw new Error('文字對比不足：\n' + low.join('\n'));
+    // 這些文字改用文字色變數，不寫死色值：修正範例的警告列、原文行號、比對差異
+    [/\.fw-fix \.warn-line\s*\{[^}]*color:\s*var\(--warn-text\)/, /pre\.raw \.ln\s*\{[^}]*color:\s*var\(--muted\)/, /\.diffA\s*\{[^}]*color:\s*var\(--err-text\)/].forEach((re) => {
+      if (!re.test(css)) throw new Error('應使用文字色變數：' + re);
+    });
+  });
+  await step('嚴重度在畫布上有外形：錯誤與警告外形不同，主機與連線中點也顯示', () => {
+    const graph = App.graph; const T = S.view.theme;
+    const nodes = [
+      { id: 'sev-sw', label: 'sev-sw', kind: 'switch', collected: true, group: 't', sev: null },
+      { id: 'sev-err', label: 'sev-err', kind: 'host', collected: true, group: 't', sev: 'error' },
+      { id: 'sev-warn', label: 'sev-warn', kind: 'host', collected: true, group: 't', sev: 'warn' },
+    ];
+    const edges = [{ id: 'sev-e', a: 'sev-sw', b: 'sev-err', cls: '1g', count: 1, evidence: 'adjacency', sev: 'warn' }];
+    const pos = new Map([['sev-sw', { x: 0, y: 0 }], ['sev-err', { x: 200, y: 0 }], ['sev-warn', { x: 0, y: 200 }]]);
+    withGraph(graph, nodes, edges, pos, () => {
+      if (graph.radius(nodes[1]) > 7) throw new Error('測試前提：主機是小節點');
+      const ops = recordCanvas(graph.ctx, () => graph.draw());
+      const marks = (sev, at) => ops.filter((o) => o.op === 'fill' && o.style === T.sev[sev] && near(o.path, at, 20));
+      const err = marks('error', pos.get('sev-err')); const warn = marks('warn', pos.get('sev-warn'));
+      if (!err.length) throw new Error('主機上的錯誤應顯示嚴重度標記');
+      if (!warn.length) throw new Error('主機上的警告應顯示嚴重度標記');
+      const mid = marks('warn', { x: 100, y: 0 });
+      if (!mid.length) throw new Error('有問題的連線應在中點顯示嚴重度標記');
+      if (vertices(err[0].path) === vertices(warn[0].path)) throw new Error('錯誤與警告的外形應不同');
+      if (vertices(mid[0].path) !== vertices(warn[0].path)) throw new Error('連線中點與節點的警告外形應相同');
+      const want = { square: 4, triangle: 3 };
+      Object.entries(T.sevShape).forEach(([k, shape]) => { const got = vertices((k === 'error' ? err : warn)[0].path); if (want[shape] !== got) throw new Error(`${k} 應畫成 ${shape}（${want[shape]} 個頂點），實際 ${got}`); });
+    });
+    // 圖例：兩種嚴重度都畫出，外形與顏色取自 theme
+    const items = Array.from(document.querySelectorAll('#legend .li'));
+    Object.entries(T.sevShape).forEach(([k, shape]) => {
+      const li = items.find((x) => x.textContent === S.view.SEV[k]); const sw = li && li.childNodes.find((c) => c.attrs && c.attrs['data-shape']);
+      if (!sw) throw new Error('圖例缺少嚴重度：' + k);
+      if (sw.getAttribute('data-shape') !== shape || sw.style.background !== T.sev[k]) throw new Error('圖例的嚴重度外形或顏色與 theme 不一致：' + k);
+      if (shape === 'triangle' && !String(sw.style.clipPath).includes('polygon')) throw new Error('圖例的警告應畫成三角形');
+    });
+  });
+  await step('高亮不重複：滑過、搜尋、選取、追蹤各自不同，滑過時節點本身有回饋', () => {
+    const graph = App.graph; const M = S.view.theme.mark;
+    if (M.hover === M.find) throw new Error('滑過與搜尋結果不應同色');
+    if (M.select === M.trace) throw new Error('選取與路由追蹤不應同色');
+    if ([M.select, M.hover, M.find, M.trace].some((c) => c === M.bad || c === M.good || Object.values(S.view.theme.sev).includes(c))) throw new Error('標示色不應使用狀態色');
+    const nodes = ['hv-a', 'hv-b'].map((id) => ({ id, label: id, kind: 'router', collected: true, group: 't' }));
+    const pos = new Map([['hv-a', { x: 0, y: 0 }], ['hv-b', { x: 200, y: 0 }]]);
+    withGraph(graph, nodes, [{ id: 'hv-e', a: 'hv-a', b: 'hv-b', cls: '1g', count: 1, evidence: 'adjacency' }], pos, () => {
+      const ring = (ops) => ops.filter((o) => o.op === 'stroke' && o.style === M.hover && o.path.some((p) => p.t === 'A' && Math.hypot(p.x, p.y) < 0.01));
+      if (ring(recordCanvas(graph.ctx, () => graph.draw())).length) throw new Error('沒有滑過時不應有滑過環');
+      graph.hover = { type: 'node', id: 'hv-a' };
+      if (!ring(recordCanvas(graph.ctx, () => graph.draw())).length) throw new Error('滑過節點時節點本身應有回饋');
+    });
   });
   await step('OSPF-only 鄰接不畫拓樸 edge，仍保留 L3 設備細節與來源', async () => {
     const input = 'R_A (10.0.0.1):\n### /export terse\n/ip address add address=10.254.0.1/30 interface=ether48\n'
@@ -1355,7 +1518,7 @@ async function buildInput(input) {
     const detail = text('#detail');
     if (!detail.includes('14:63:93:c4:13:24') || !detail.includes('18:f0:e4:ff:ef:35')) throw new Error('設備詳情應逐筆顯示 Wi-Fi MAC 位置');
   });
-  await step('veth 連線以專用顏色識別', async () => {
+  await step('veth 與 Wi-Fi 連線以專用線型識別，顏色維持連線類別色', async () => {
     const input = 'SW_A (10.0.0.1):\n### /interface print detail\n'
       + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
       + ' 0  R  name="veth1" type="veth" mtu=1500\n'
@@ -1369,9 +1532,18 @@ async function buildInput(input) {
     if (App.snap.meta.inputHash !== hash) throw new Error('veth 基準未建立');
     const v = App.graph.nodes.find((n) => n.id === '?p|SW_A|veth1'); const e = App.graph.nodes.find((n) => n.id === '?p|SW_A|ether5');
     if (!v || !e) throw new Error('veth1 與 ether5 終端都應畫出');
-    if (v.ifStyle || v.color === '#d81b60') throw new Error('veth 節點外觀不應改變，只識別連線');
+    const T = S.view.theme; const vs = T.endpoint.byType.veth; const ws = T.endpoint.byType.wireless;
+    if (v.ifStyle) throw new Error('veth 節點外觀不應改變，只識別連線');
     const ve = App.graph.edges.find((x) => x.b === v.id); const ee = App.graph.edges.find((x) => x.b === e.id);
-    if (!ve || !ve.ifStyle || ve.ifStyle.c !== '#d81b60' || ee.ifStyle) throw new Error('veth 連線應帶專用色，其他連線不變');
+    if (!ve || ve.ifStyle !== vs || ee.ifStyle) throw new Error('veth 連線應帶專用線型，其他連線不變');
+    const pats = [vs.dash, ws.dash, T.weakEdge.hearsay.dash, T.weakEdge.inferred.dash, T.edge.oob.dash].map((d) => d.join());
+    if (new Set(pats).size !== pats.length) throw new Error('veth、Wi-Fi、單側觀察、推論鏈路與管理線的線型應各不相同');
+    const g = App.graph; const ops = recordCanvas(g.ctx, () => g.draw());
+    const seg = (id) => { const a = g.pos.get('SW_A'); const b = g.pos.get(id); return ops.filter((o) => o.op === 'stroke' && o.path.length === 2 && near([o.path[0]], a, 0.01) && near([o.path[1]], b, 0.01)); };
+    const ratio = (d) => d.map((x) => (x / d[0]).toFixed(3)).join();
+    const vStroke = seg(v.id)[0]; const eStroke = seg(e.id)[0];
+    if (!vStroke || ratio(vStroke.dash) !== ratio(vs.dash) || vStroke.style !== T.edge[ve.cls].c) throw new Error('veth 連線應以專用線型、連線類別色畫出');
+    if (!eStroke || ratio(eStroke.dash) !== ratio(T.weakEdge.hearsay.dash)) throw new Error('一般終端連線應維持單側觀察線型');
     if (!/容器 veth/.test(v.tip)) throw new Error('提示應標示容器 veth');
     if (!Array.from(document.querySelectorAll('#legend .li')).some((el) => /容器 veth/.test(el.textContent))) throw new Error('圖例缺少 veth');
   });
@@ -1415,9 +1587,113 @@ async function buildInput(input) {
     rgrip.dispatch('dblclick'); if (App.layout.right !== 400) throw new Error('雙擊應還原預設寬度');
     grip.dispatch('dblclick');
   });
+  await step('鍵盤：畫布可聚焦，N 輪流移到設備、Enter 開啟詳情、Esc 取消選取，方向鍵平移、+／- 縮放', () => {
+    const g = App.graph; const cv = $('#graph');
+    if (cv.getAttribute('tabindex') !== '0' || !/Enter/.test(cv.getAttribute('aria-label') || '')) throw new Error('畫布應可聚焦，aria-label 說明按鍵');
+    const key = (k, extra) => cv.dispatch('keydown', Object.assign({ key: k }, extra || {}));
+    cv.focus(); App.select(null);
+    const visible = g.nodes.filter((n) => g.visible(n));
+    if (visible.length < 2) throw new Error('測試前提：至少兩個可見節點');
+    key('n'); const first = g.kbd;
+    if (!first || !g.hover || g.hover.id !== first) throw new Error('按 N 應移到一台設備，並以滑過樣式標示');
+    if ($('#tooltip').classList.contains('hidden') || !text('#graph-live')) throw new Error('鍵盤移到設備時應顯示提示，並讀給螢幕閱讀器');
+    key('n'); const second = g.kbd;
+    if (second === first) throw new Error('再按 N 應移到下一台');
+    key('N', { shiftKey: true }); if (g.kbd !== first) throw new Error('Shift+N 應回到上一台');
+    const seen = new Set(); for (let i = 0; i < visible.length; i++) { key('n'); seen.add(g.kbd); }
+    if (seen.size !== visible.length) throw new Error('N 應能輪流走過每一台可見的設備');
+    key('Enter');
+    const n = g.nodeById.get(g.kbd);
+    if (!App.sel) throw new Error('Enter 應選取設備並開啟詳情');
+    if (!n.virtual && (App.sel.type !== 'device' || App.sel.key !== n.id || !text('#detail').includes(App.Q.getDevice(n.id).name))) throw new Error('Enter 應開啟這台設備的詳情');
+    key('Escape'); if (App.sel || g.kbd || g.hover) throw new Error('Esc 應取消選取');
+    const t0 = { tx: g.tx, ty: g.ty, s: g.s };
+    key('ArrowRight'); if (!(g.tx < t0.tx)) throw new Error('方向鍵應平移畫面');
+    key('ArrowDown'); if (!(g.ty < t0.ty)) throw new Error('方向鍵應平移畫面');
+    key('+'); if (!(g.s > t0.s)) throw new Error('+ 應放大'); const s1 = g.s;
+    key('-'); if (!(g.s < s1)) throw new Error('- 應縮小');
+    let prevented = false; cv.dispatch('keydown', { key: 'n', ctrlKey: true, preventDefault() { prevented = true; } });
+    if (prevented) throw new Error('帶 Ctrl 的按鍵應交給瀏覽器');
+    key('0');
+  });
+  await step('Pointer 事件：滑鼠拖曳節點與平移、觸控點選與點兩下', () => {
+    const g = App.graph; const cv = $('#graph');
+    const fire = (t, target, p, extra) => (winListeners[t] || []).forEach((f) => f(Object.assign({ target, clientX: p.x, clientY: p.y, pointerId: 1, pointerType: 'mouse', button: 0, preventDefault() {} }, extra || {})));
+    const down = (p, extra) => cv.dispatch('pointerdown', Object.assign({ clientX: p.x, clientY: p.y, pointerId: 1, pointerType: 'mouse', button: 0 }, extra || {}));
+    const n = g.nodes.find((x) => g.visible(x) && !x.virtual); const p0 = g.toScreen(g.pos.get(n.id)); const w0 = Object.assign({}, g.pos.get(n.id));
+    let moved = null; const oldMoved = g.handlers.moved; g.on('moved', (id) => { moved = id; });
+    try {
+      down(p0); fire('pointermove', cv, { x: p0.x + 50, y: p0.y + 30 }); fire('pointerup', cv, { x: p0.x + 50, y: p0.y + 30 });
+      const w1 = g.pos.get(n.id);
+      if (moved !== n.id || Math.abs(w1.x - w0.x - 50 / g.s) > 0.01 || Math.abs(w1.y - w0.y - 30 / g.s) > 0.01) throw new Error('拖曳節點應移動節點並通知儲存位置');
+      g.pos.set(n.id, w0);
+      const empty = { x: -5000, y: -5000 }; const tx = g.tx; moved = null;
+      down(empty); fire('pointermove', cv, { x: empty.x + 40, y: empty.y }); fire('pointerup', cv, { x: empty.x + 40, y: empty.y });
+      if (Math.abs(g.tx - tx - 40) > 0.01 || moved) throw new Error('拖曳背景應平移畫面，不移動節點');
+      // 觸控：點一下選取（命中範圍較大），點兩下等同雙擊；沒有 hover
+      App.select(null); const touch = { pointerType: 'touch', pointerId: 7 };
+      const near = { x: p0.x + g.radius(n) * g.s + 8, y: p0.y };
+      fire('pointermove', cv, near, touch); if (g.hover && g.hover.id === n.id) throw new Error('觸控不應觸發 hover');
+      down(near, touch); fire('pointerup', cv, near, Object.assign({ timeStamp: 1000 }, touch));
+      if (!App.sel || App.sel.key !== n.id) throw new Error('觸控點一下應選取設備（命中範圍包含節點外側一點）');
+      let dbl = null; const oldDbl = g.handlers.dblclick; g.on('dblclick', (it) => { dbl = it; });
+      try {
+        down(near, touch); fire('pointerup', cv, near, Object.assign({ timeStamp: 1200 }, touch));
+        if (!dbl || dbl.id !== n.id) throw new Error('觸控快速點兩下應等同雙擊');
+      } finally { g.on('dblclick', oldDbl); }
+      App.select(null);
+    } finally { g.on('moved', oldMoved); }
+  });
+  await step('焦點框、篩選選項按鈕、強制色彩與減少動態效果', () => {
+    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8'); const v = cssVars(css);
+    // 焦點框的顏色（var() 展開後）對白底與表面色 ≥ 3:1
+    const ring = v['focus-ring'].replace(/var\(--([\w-]+)\)/g, (_, n) => v[n]);
+    const colors = (ring.match(/#[0-9a-fA-F]{6}|rgba?\([^)]*\)/g) || []);
+    const outer = colors[colors.length - 1];
+    if (!outer || ['#ffffff', v.surface].some((bg) => contrastOf(outer, bg) < 3)) throw new Error('焦點框對底色應 ≥ 3:1：' + ring);
+    if (!/#graph:focus-visible\s*\{[^}]*outline:/.test(css)) throw new Error('畫布取得焦點時應有明顯的焦點框');
+    if (!/@media \(forced-colors: active\)/.test(css)) throw new Error('應支援強制色彩模式');
+    if (!/#graph\s*\{[^}]*touch-action:\s*none/.test(css)) throw new Error('畫布應自己處理觸控拖曳');
+    // 篩選選項是可聚焦的按鈕
+    App.select(null); document.querySelectorAll('#left .tabs button')[0].click();
+    const chips = $('#pane-findings').querySelector('.summary').querySelectorAll('.chip');
+    if (!chips.length || !chips.every((c) => c.tagName === 'BUTTON' && c.getAttribute('type') === 'button')) throw new Error('篩選選項應是 <button>');
+    // 減少動態效果：力導向一次算完，不排動畫
+    const g = App.graph; const before = JSON.stringify(Array.from(g.pos)); const oldMM = window.matchMedia;
+    window.matchMedia = (q) => ({ matches: /prefers-reduced-motion:\s*reduce/.test(q) });
+    try {
+      rafQ = []; $('#btn-force').click();
+      if ($('#btn-force').classList.contains('on') || rafQ.length) throw new Error('減少動態效果時不應播放力導向動畫');
+      if (JSON.stringify(Array.from(g.pos)) === before) throw new Error('減少動態效果時應直接套用力導向的結果');
+    } finally { if (oldMM) window.matchMedia = oldMM; else delete window.matchMedia; }
+  });
+  await step('畫布：先填滿 theme 的底色（PNG 不透明）、字型與 CSS 一致、過長標籤截斷', async () => {
+    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8'); const v = cssVars(css); const T = S.view.theme; const g = App.graph;
+    if (v.surface !== T.canvas.surface) throw new Error('theme.canvas.surface 應與 --surface 相同');
+    const bodyFont = (css.match(/(?:^|\n)body\s*\{[^}]*font:\s*\S+\s+([^;]+);/) || [])[1]; // font: 字級/行高 字型清單
+    if (!bodyFont || bodyFont.trim() !== T.font.ui) throw new Error('畫布字型應與 body 相同：' + bodyFont);
+    if (v.mono !== T.font.mono) throw new Error('畫布等寬字型應與 --mono 相同');
+    const long = '很長的設備名稱'.repeat(8) + '-END';
+    const nodes = [{ id: 'fx-a', label: long, kind: 'router', collected: true, group: 't' }, { id: 'fx-b', label: 'short', kind: 'router', collected: true, group: 't' }];
+    withGraph(g, nodes, [{ id: 'fx-e', a: 'fx-a', b: 'fx-b', cls: '1g', count: 1, evidence: 'adjacency', labelA: 'ether1', labelB: 'ether2' }],
+      new Map([['fx-a', { x: 0, y: 0 }], ['fx-b', { x: 600, y: 0 }]]), () => {
+        g.s = 1.5; const ops = recordCanvas(g.ctx, () => g.draw());
+        const bg = ops.find((o) => o.op === 'rect');
+        if (!bg || ops.indexOf(bg) !== 0 || bg.style !== T.canvas.surface || bg.w < g.w || bg.h < g.h) throw new Error('繪圖應先以 theme 的畫布底色填滿畫面');
+        const texts = ops.filter((o) => o.op === 'text');
+        const cut = texts.find((o) => o.text.endsWith('…'));
+        if (!cut || cut.text.length >= long.length || !long.startsWith(cut.text.slice(0, -1))) throw new Error('過長的標籤應截斷並加上「…」');
+        if (!texts.some((o) => o.text === 'short')) throw new Error('短標籤不應截斷');
+        if (!texts.every((o) => String(o.font).includes(T.font.ui) || String(o.font).includes(T.font.mono))) throw new Error('畫布文字應使用 theme 的字型清單');
+      });
+    // 匯出 PNG：匯出前重畫（畫面已有底色）
+    let drew = 0; const oldDraw = g.draw; g.draw = function () { drew++; return oldDraw.call(this); };
+    try { await captureDownloads(() => $('#btn-png').click()); } finally { g.draw = oldDraw; }
+    if (!drew) throw new Error('匯出 PNG 前應重畫畫布');
+  });
   await step('滑過左右欄與工具列時不會穿透觸發拓樸圖 hover', () => {
     const g = App.graph; const cv = $('#graph');
-    const move = (target, p) => (winListeners.mousemove || []).forEach((f) => f({ target, clientX: p.x, clientY: p.y }));
+    const move = (target, p) => (winListeners.pointermove || []).forEach((f) => f({ target, clientX: p.x, clientY: p.y, pointerType: 'mouse' }));
     const n = g.nodes.find((x) => g.visible(x)); const p = g.toScreen(g.pos.get(n.id));
     move(cv, p); if (!g.hover || g.hover.id !== n.id) throw new Error('畫布上的節點應可 hover');
     [$('#left'), $('#right'), $('#btn-fit')].forEach((el) => {

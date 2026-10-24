@@ -100,9 +100,10 @@
     V.app.banner('這個項目只在舊基準中，目前的基準沒有可以定位的對象。', 4000);
   }
 
+  // effect 的文字色在色盲下接近，所以前面加上與嚴重度相同的外形（theme.diff.effectSev：方形、三角形、圓形）
   const effectChip = (e) => (e ? h('span', {
     class: 'chip effect', style: { color: T.effect[e], borderColor: T.effect[e] }, title: e,
-  }, EFFECT[e] || e) : null);
+  }, [T.effectSev[e] ? h('span', { class: 'sev ' + T.effectSev[e], 'aria-hidden': 'true' }) : null, EFFECT[e] || e]) : null);
 
   function render(App) {
     const box = h('div', { class: 'pane-body baseline-diff' });

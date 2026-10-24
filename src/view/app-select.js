@@ -141,6 +141,8 @@
     }
     tip.textContent = text; tip.classList.remove('hidden');
     tip.style.left = (ev.x + 14) + 'px'; tip.style.top = (ev.y + 12) + 'px';
+    // 鍵盤移到的設備也讀給螢幕閱讀器（aria-live）
+    if (ev.keyboard) $('#graph-live').textContent = text + '。按 Enter 開啟詳情';
   };
 
   // ================================================================ 原文檢視

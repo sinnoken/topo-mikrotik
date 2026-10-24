@@ -72,6 +72,8 @@
   V.codeText = (s) => V.codeParts(s).map((p) => (p.code ? V.h('code', { class: 'mono' }, p.text) : p.text));
 
   V.chip = (text, cls, attrs) => V.h('span', Object.assign({ class: 'chip ' + (cls || '') }, attrs || {}), text);
+  /** 可操作的 chip（篩選選項）：用 <button>，鍵盤可以聚焦與按 Enter／空白鍵操作 */
+  V.chipButton = (text, cls, attrs) => V.h('button', Object.assign({ type: 'button', class: 'chip ' + (cls || '') }, attrs || {}), text);
   V.kindChip = (k) => V.chip(V.KIND[k] || k, 'kind-' + k);
   V.sevDot = (s) => V.h('span', { class: 'sev ' + s, title: V.SEV[s] });
   V.fmtTime = (iso) => { const d = new Date(iso); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };

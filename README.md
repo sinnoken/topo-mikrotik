@@ -143,7 +143,7 @@ profiles/             命名規則範例（可不套用）
 samples/              範例收集檔（含刻意放入的問題）、預期資料範例
 tools/                SSH 收集器、去識別化、產生測試資料、更新 OUI、嵌入範例
 tests/                核心、文件、收集器、畫面冒煙測試；golden/ 黃金基準；fixtures/ 手冊與真實設備輸出
-docs/                 設計說明、檢查規則、收集清單、命名規則、多層架構圖規格
+docs/                 設計說明、檢查規則、收集清單、命名規則、發布前檢查表、多層架構圖規格
 ```
 
 處理流程：reader 切成區塊（保留檔案與行號）→ adapter 解析為事實 → model 建立實體 → 推論 → 檢查 → Snapshot（`ssot-snapshot/2`）。畫面與比對只透過 `SSOT.query()` 唯讀存取 Snapshot。細節見 [docs/設計說明.md](docs/設計說明.md)。
@@ -201,12 +201,15 @@ MAC 前綴 → 廠商的資料來源是 npm 套件 [`oui-data`](https://www.npmj
 
 [.github/workflows/ci.yml](.github/workflows/ci.yml) 在 PR 時以 Node 22／24 執行 `npm test`（只 push 到分支不會觸發，需要時可在 Actions 頁手動執行）。另一個大型測試 job 在 PR、每週排程與手動觸發時都會執行：以 Node 24 跑 `npm run test:large`（設定 `SSOT_LARGE_MAX_MS: 40000`，CI runner 較慢，只抓明顯退化），再以 `npm run gen:large` 產生的約 1000 台資料跑一次大型冒煙測試（`SMOKE_INPUT=samples/large-1000.txt node tests/ui-smoke.js`）。main 上的部署前由 [deploy-pages.yml](.github/workflows/deploy-pages.yml) 跑 `npm test` 後部署到 GitHub Pages。提交前仍請先在本機執行 `npm test`。
 
+CI 的畫面測試用模擬 DOM，測不到 Canvas、CSP、`file://` 載入、ELK 動態載入、IndexedDB 與檔案下載；發布前請在真實瀏覽器照 [發布前檢查表](docs/發布前檢查表.md) 手動檢查一次。
+
 ### 相關文件
 
 - [設計說明](docs/設計說明.md)：設計取捨、Snapshot 欄位
 - [基準檢查規則](docs/基準檢查規則.md)：每項檢查的判斷條件與處理建議
 - [收集清單與輸入格式](docs/收集清單與輸入格式.md)：收集指令、`bundle-v1`／`files-v1` 格式、支援範圍
 - [命名規則](docs/命名規則.md)：命名 profile
+- [發布前檢查表](docs/發布前檢查表.md)：真實瀏覽器的手動檢查項目
 - [CLAUDE.md](CLAUDE.md)、[.github/copilot-instructions.md](.github/copilot-instructions.md)：開發原則與 AI 協作分工
 
 ## 注意

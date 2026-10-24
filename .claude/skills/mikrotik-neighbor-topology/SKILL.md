@@ -5,7 +5,7 @@ argument-hint: "Describe the RouterOS neighbor/topology behavior to inspect or c
 user-invocable: true
 ---
 
-> Claude Code 版。內容與 `.github/skills/mikrotik-neighbor-topology/SKILL.md`（GitHub Copilot 版）相同，修改時兩邊一起改；`tests/run.js` 會檢查兩者一致。
+> Claude Code 版。內容與 `.github/skills/mikrotik-neighbor-topology/SKILL.md`（GitHub Copilot 版）相同，修改時兩邊一起改；`tests/docs.js` 會檢查兩者一致。
 
 # MikroTik Neighbor Topology
 

@@ -1,0 +1,136 @@
+{
+ "schema": "ssot-patch/1",
+ "baseline": {
+  "inputHash": "28211e6ceb748690",
+  "createdAt": "2026-01-01T00:00:00Z",
+  "version": "2.8.0"
+ },
+ "devices": [
+  {
+   "key": "TPE_CORE_RT_01",
+   "name": "TPE_CORE_RT_01"
+  },
+  {
+   "key": "TPE_CORE_RT_02",
+   "name": "TPE_CORE_RT_02"
+  }
+ ],
+ "items": [
+  {
+   "key": "disable-rule:TPE_CORE_RT_01|ip|filter|input|948a221c2f615ad3",
+   "findingKey": "[\"F01\",\"device:TPE_CORE_RT_01\",\"rule:TPE_CORE_RT_01|ip|filter|input|948a221c2f615ad3\"]",
+   "id": "F01",
+   "dev": "TPE_CORE_RT_01",
+   "level": "auto",
+   "target": {
+    "type": "rule",
+    "key": "TPE_CORE_RT_01|ip|filter|input|948a221c2f615ad3",
+    "family": "ip",
+    "table": "filter",
+    "chain": "input",
+    "position": 6,
+    "by": "match"
+   },
+   "ops": [
+    {
+     "op": "set",
+     "path": "/ip firewall filter",
+     "where": {
+      "chain": "input",
+      "action": "accept",
+      "dst-port": "8291",
+      "in-interface": "ether47",
+      "protocol": "tcp"
+     },
+     "expect": 1,
+     "props": {
+      "disabled": "yes"
+     },
+     "before": {
+      "disabled": "no"
+     }
+    }
+   ],
+   "evidence": [
+    {
+     "block": 1,
+     "line": 121,
+     "text": "add action=accept chain=input dst-port=8291 in-interface=ether47 \\",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 1,
+     "line": 119,
+     "text": "add action=accept chain=input comment=\"winbox for vendor\" dst-port=8291 \\",
+     "file": "sample-bundle.txt"
+    }
+   ],
+   "risk": {
+    "level": "low",
+    "text": "依基準的事實，前面的規則已涵蓋這條；export 不含動態規則，套用前以前置檢查確認只找到一條"
+   },
+   "note": "這條規則被前面的規則完全遮蔽，停用不會改變防火牆行為",
+   "warnings": []
+  },
+  {
+   "key": "disable-rule:TPE_CORE_RT_02|ip|filter|input|f27fa736c270579f",
+   "findingKey": "[\"F06\",\"device:TPE_CORE_RT_02\",\"rule:TPE_CORE_RT_02|ip|filter|input|f27fa736c270579f\"]",
+   "id": "F06",
+   "dev": "TPE_CORE_RT_02",
+   "level": "auto",
+   "target": {
+    "type": "rule",
+    "key": "TPE_CORE_RT_02|ip|filter|input|f27fa736c270579f",
+    "family": "ip",
+    "table": "filter",
+    "chain": "input",
+    "position": 4,
+    "by": "match"
+   },
+   "ops": [
+    {
+     "op": "set",
+     "path": "/ip firewall filter",
+     "where": {
+      "chain": "input",
+      "action": "accept",
+      "protocol": "udp",
+      "src-port": "53"
+     },
+     "expect": 1,
+     "props": {
+      "disabled": "yes"
+     },
+     "before": {
+      "disabled": "no"
+     }
+    }
+   ],
+   "evidence": [
+    {
+     "block": 10,
+     "line": 927,
+     "text": "/ip firewall filter add action=accept chain=input protocol=udp src-port=53",
+     "file": "sample-bundle.txt"
+    }
+   ],
+   "risk": {
+    "level": "medium",
+    "text": "依賴這條放行的流量改由後面的規則處理，可能被擋下；先確認沒有服務需要它，或先加上以 connection-state 或 dst-port 放行的規則"
+   },
+   "note": "以固定來源埠放行可被繞過；停用後若有服務需要，改用連線狀態或目的埠放行",
+   "warnings": []
+  }
+ ],
+ "skipped": [
+  {
+   "findingKey": "[\"F02\",\"device:TPE_CORE_RT_01\",\"rule:TPE_CORE_RT_01|ip|filter|input|249c268da358d5ea#2\"]",
+   "id": "F02",
+   "dev": "TPE_CORE_RT_01",
+   "level": "manual",
+   "reason": "ambiguous-find",
+   "detail": "重複的規則條件相同，find 無法區分（同一個 chain 第 3 條也符合）：先在 WinBox／WebFig 為要停用的這條加上不同的 comment，再重新收集",
+   "rule": "TPE_CORE_RT_01|ip|filter|input|249c268da358d5ea#2"
+  }
+ ]
+}

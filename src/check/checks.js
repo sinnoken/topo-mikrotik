@@ -40,8 +40,14 @@
     const epName = (ep) => { const [d] = K.splitEp(ep); const i = M.ifcs.get(ep); return name(d) + ' ' + (i ? i.name : K.splitEp(ep)[1]); };
 
     // ---- 輸入
+    // 訊息中引用原文時的長度上限（I01 的錯誤訊息、I03 的無法辨識行）
+    const clip = (t) => { t = String(t == null ? '' : t).trim(); return t.length > 60 ? t.slice(0, 60) + '…' : t; };
     ctx.unrecognized.forEach((b) => {
+      // 整段只有 RouterOS 錯誤訊息：沒有內容是因為指令執行失敗，不是輸出格式不對
+      const content = b.lines.filter((l) => l.trim());
+      const rosErr = b.device !== null && content.length && content.every(S.adapters.util.rosError);
       const why = b.device === null ? '沒有設備標頭'
+        : rosErr ? `指令執行錯誤：${clip(content[0])}${b.command ? `（指令：${b.command}）` : ''}；請確認 RouterOS 版本與已安裝的套件是否支援這個指令，或改用正確的指令重新收集`
         : b.empty ? `解析器已辨識（${(b.adapters || []).map((a) => S.adapters[a].label).join('、')}），但解析不出任何內容；RouterOS 的 print 指令請加上 detail without-paging`
           : '沒有任何解析器認得這段內容' + (b.command ? `（指令：${b.command}）` : '');
       add('I01', `${b.origin.file} 第 ${b.origin.startLine}–${b.origin.endLine} 行：${why}`,
@@ -55,6 +61,18 @@
     };
     ctx.blocks.forEach((b) => (b.issues || []).forEach((x) => add('I01', `${b.origin.file} 第 ${x.line} 行：${ISSUE[x.kind](x)}`,
       b.devKey ? [{ type: 'device', key: b.devKey }] : [], [{ block: b.id, line: x.line }])));
+    // 已解析區塊中認不得的行（adapters.parse）：其餘內容照常進入基準，這幾行沒有；RouterOS 錯誤訊息另外點出，代表輸出可能不完整
+    const I03_SAMPLE = 3; // 訊息中列出前幾行的原文
+    ctx.blocks.forEach((b) => {
+      const ls = b.unrecognizedLines || []; if (!ls.length) return;
+      const text = (n) => clip(b.lines[n - b.origin.startLine]);
+      const quote = (n) => `第 ${n} 行「${text(n)}」`;
+      const errs = ls.filter((n) => S.adapters.util.rosError(b.lines[n - b.origin.startLine]));
+      const sample = ls.slice(0, I03_SAMPLE).map(quote).join('、') + (ls.length > I03_SAMPLE ? ' 等' : '');
+      const err = errs.length ? `；其中 ${errs.length} 行是 RouterOS 錯誤訊息（${quote(errs[0])}），指令可能沒有完整執行，資料可能不完整` : '';
+      add('I03', `${b.origin.file} 第 ${b.origin.startLine}–${b.origin.endLine} 行（${b.command || '沒有指令標記'}）：${ls.length} 行無法辨識，沒有進入基準：${sample}${err}`,
+        b.devKey ? [{ type: 'device', key: b.devKey }] : [], ls.map((line) => ({ block: b.id, line })));
+    });
     ctx.duplicates.forEach((d) => add('I02', `${name(d.dev)} 的「${S.adapters[d.adapter].label}」出現 ${d.blocks.length} 次，採用最後一次`,
       [{ type: 'device', key: d.dev }], d.blocks.map((b) => ({ block: b, line: ctx.blocks[b].origin.startLine }))));
 

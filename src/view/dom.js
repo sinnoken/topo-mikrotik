@@ -30,6 +30,21 @@
     });
     return el;
   };
+  /** SVG 元素（圖表用）：與 h 相同的寫法，但以 SVG 命名空間建立，屬性一律 setAttribute */
+  V.svg = function svg(tag, attrs, children) {
+    const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    Object.entries(attrs || {}).forEach(([k, v]) => {
+      if (v === null || v === undefined || v === false) return;
+      if (k === 'text') el.textContent = v;
+      else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, String(v));
+    });
+    (Array.isArray(children) ? children : children === undefined ? [] : [children]).forEach((c) => {
+      if (c === null || c === undefined || c === false) return;
+      el.appendChild(typeof c === 'string' || typeof c === 'number' ? document.createTextNode(String(c)) : c);
+    });
+    return el;
+  };
   V.$ = (sel, root) => (root || document).querySelector(sel);
   V.clear = (el) => { while (el.firstChild) el.removeChild(el.firstChild); return el; };
 
@@ -72,6 +87,8 @@
   V.codeText = (s) => V.codeParts(s).map((p) => (p.code ? V.h('code', { class: 'mono' }, p.text) : p.text));
 
   V.chip = (text, cls, attrs) => V.h('span', Object.assign({ class: 'chip ' + (cls || '') }, attrs || {}), text);
+  /** 可操作的 chip（篩選選項）：用 <button>，鍵盤可以聚焦與按 Enter／空白鍵操作 */
+  V.chipButton = (text, cls, attrs) => V.h('button', Object.assign({ type: 'button', class: 'chip ' + (cls || '') }, attrs || {}), text);
   V.kindChip = (k) => V.chip(V.KIND[k] || k, 'kind-' + k);
   V.sevDot = (s) => V.h('span', { class: 'sev ' + s, title: V.SEV[s] });
   V.fmtTime = (iso) => { const d = new Date(iso); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };

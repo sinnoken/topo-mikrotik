@@ -13,6 +13,27 @@ function goldenSnapshot(S) {
 }
 const serialize = (snap) => JSON.stringify(snap, null, 1) + '\n';
 
+// ---- 修正 patch（ssot-patch/1）的黃金檔：範例資料的 F01／F02／F06，plan 一份、每台設備三份 .rsc
+const PATCH_FILE = path.join(__dirname, 'golden', 'sample-patch.json');
+const PATCH_DIR = path.join(__dirname, 'golden', 'sample-patch');
+const PATCH_SELECTION = { ids: ['F01', 'F02', 'F06'] };
+const serializePlan = (plan) => JSON.stringify(plan, null, 1) + '\n';
+/** 回傳 { plan, files: { 檔名: 內容 } }（檔名依 S.remediate.files 的 base）。 */
+function goldenPatch(S, snap) {
+  const Q = S.query(snap || goldenSnapshot(S));
+  const plan = S.remediate.plan(Q, PATCH_SELECTION);
+  const files = {};
+  S.remediate.files(plan).forEach((f) => { files[f.base + '.rsc'] = f.apply; files[f.base + '-rollback.rsc'] = f.rollback; files[f.base + '-verify.rsc'] = f.verify; });
+  return { plan, files };
+}
+/** 目前存放的 patch 黃金檔：{ 檔名: 內容 }（目錄不存在時為空物件）。 */
+function storedPatchFiles() {
+  if (!fs.existsSync(PATCH_DIR)) return {};
+  const out = {};
+  fs.readdirSync(PATCH_DIR).filter((f) => f.endsWith('.rsc')).sort().forEach((f) => { out[f] = fs.readFileSync(path.join(PATCH_DIR, f), 'utf8').replace(/\r\n/g, '\n'); });
+  return out;
+}
+
 /** 列出兩個 JSON 值第一批不同的路徑（最多 limit 筆），讓失敗訊息指出改到哪裡。 */
 function diffPaths(a, b, limit, at, out) {
   out = out || []; at = at || '';
@@ -26,4 +47,4 @@ function diffPaths(a, b, limit, at, out) {
   return out;
 }
 
-module.exports = { FILE, goldenSnapshot, serialize, diffPaths };
+module.exports = { FILE, goldenSnapshot, serialize, diffPaths, PATCH_FILE, PATCH_DIR, PATCH_SELECTION, serializePlan, goldenPatch, storedPatchFiles };

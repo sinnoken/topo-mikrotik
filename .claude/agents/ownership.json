@@ -1,7 +1,7 @@
 {
   "_說明": "每個檔案只屬於一個 agent，可同時執行而不互相改到同一個檔案。結尾是 / 的代表整個目錄。tests/docs.js 會檢查 repo 中每個檔案恰好屬於一個 agent。lead 是主對話（分派、跨領域修改、提交與推送）。",
   "data-model": [
-    "src/core/", "src/readers/", "src/adapters/", "src/model/", "src/check/", "src/profile/", "src/query/", "src/compare/", "src/data/",
+    "src/core/", "src/readers/", "src/adapters/", "src/model/", "src/check/", "src/profile/", "src/query/", "src/compare/", "src/remediate/", "src/ledger/", "src/data/",
     "src/pipeline.js", "profiles/", "samples/", "tools/core-files.js", "tools/gen-bundle.js", "tools/embed-sample.js", "tools/build-oui.js",
     "tests/run.js", "tests/load.js", "tests/golden.js", "tests/golden/", "tools/update-golden.js", "tools/anonymize.js", "tests/fixtures/"
   ],

@@ -2,7 +2,7 @@
  * 右側：某台設備的防火牆（選取 type 為 firewall／rule／service）。
  * 規則依位址族 → 表 → chain → position 列出（Q.firewallRuleRows、Q.firewallChains），
  * 另列 WAN／LAN 判斷（推論，Q.firewallZone）、/ip service 與 interface list，
- * 以及適合停用處理的檢查結果（F01／F02／F03／F06）的停用指令範例（V.remediation.disableRuleFix，只是文字）。
+ * 以及指向規則、核心有修正方式的檢查結果的修正指令（S.remediate.plan，只是文字；不能產生指令的列出原因）。
  * 區塊一律用 details.js 的 section() 產生；顏色取自 theme.firewall。
  */
 (function (S) {
@@ -97,33 +97,47 @@
 
   const FIND_BY = { comment: '依註解 find', match: '依比對條件 find', 'comment+match': '依註解與比對條件 find' };
   /** 複製到剪貼簿；瀏覽器不支援或拒絕時說明，請使用者手動選取（不靜默失敗） */
-  function copyText(text) {
+  function copyText(text, what) {
     const c = globalThis.navigator && globalThis.navigator.clipboard;
-    if (!c || !c.writeText) { V.app.banner('這個瀏覽器無法自動複製，請選取指令文字後手動複製。', 6000); return; }
-    c.writeText(text).then(() => V.app.banner('已複製指令範例；執行前請核對。', 3000),
-      (e) => V.app.banner('無法複製：' + e.message + '；請選取指令文字後手動複製。', 6000));
+    if (!c || !c.writeText) { V.app.banner('這個瀏覽器無法自動複製，請選取文字後手動複製。', 6000); return; }
+    c.writeText(text).then(() => V.app.banner(`已複製${what || '指令'}；執行前請核對。`, 3000),
+      (e) => V.app.banner('無法複製：' + e.message + '；請選取文字後手動複製。', 6000));
   }
   /**
-   * 修正範例（停用規則）：定位到某條規則時只列這條規則的，否則列這台設備全部可用停用處理的檢查結果（預設收合）。
-   * 指令由 V.remediation.disableRuleFix 產生，只是文字。
+   * 修正（停用規則）：定位到某條規則時只列這條規則的，否則列這台設備全部（預設收合）。
+   * 對象是指向規則、核心有修正方式（S.remediate.levelOf 不是 manual）的檢查結果；計畫與指令都由 S.remediate 產生，
+   * 不能產生指令的（例如 F03 要選擇處理方式、F02 的 find 無法區分）列出核心給的原因。
    */
   function fixSection(App, dev, focusRule) {
-    const Q = App.Q;
-    const list = (focusRule ? Q.findingsFor('rule', focusRule) : Q.findingsFor('device', dev))
-      .map((f) => V.remediation.disableRuleFix(Q, f)).filter(Boolean);
-    if (!list.length) return null;
+    const Q = App.Q; const RM = V.remediation;
+    const fs = (focusRule ? Q.findingsFor('rule', focusRule) : Q.findingsFor('device', dev))
+      .filter((f) => f.entities.some((e) => e.type === 'rule') && S.remediate.levelOf(f.id) !== 'manual');
+    if (!fs.length) return null;
+    const keys = S.util.uniq(fs.map((f) => Q.findingKey(f)));
+    const byKey = new Map(fs.map((f) => [Q.findingKey(f), f]));
+    const plan = S.remediate.plan(Q, keys);
+    const ruleOf = (k) => { const f = byKey.get(k); const e = f && f.entities.find((x) => x.type === 'rule'); return e ? e.key : null; };
     const sevCls = (id) => { const s = (S.check.CATALOG[id] || {}).severity; return s === 'error' ? 'err' : s; };
-    return P().section('修正範例（停用規則）', [
-      h('p', { class: 'muted' }, '範例，執行前請核對：只產生文字，不會連線或寫回設備。以 comment 或比對條件 find（不用規則編號），附驗證與回復指令。'),
-      ...list.map((x) => h('div', { class: 'fw-fix', 'data-rule': x.rule.key }, [
-        h('div', { class: 'row' }, [V.chip(x.id, sevCls(x.id)), ' ', P().L(App, ruleLabel(App, x.rule.key), { type: 'rule', key: x.rule.key }), ' ',
-          V.chip(FIND_BY[x.by] || x.by, 'info'), ' ',
-          h('button', { class: 'ghost copy-fix', title: '複製指令範例', onclick: () => copyText(x.text) }, '複製')]),
-        x.confirm ? h('p', { class: 'warn-line' }, x.id + '：' + x.confirm) : null,
-        ...x.warnings.map((w) => h('p', { class: 'warn-line fix-warning' }, '警告：' + w)),
-        h('pre', { class: 'note-box fix-cmd' }, x.text),
+    const ruleLink = (key) => (key ? P().L(App, ruleLabel(App, key), { type: 'rule', key }) : null);
+    return P().section('修正（停用規則）', [
+      h('p', { class: 'muted' }, '只產生文字，不會連線或改動設備。指令以 comment 或比對條件 find（不用規則編號）；完整的 .rsc（含前置檢查、回復與驗證）在修正計畫。'),
+      h('div', { class: 'row' }, h('button', { class: 'open-patch', onclick: () => App.openPatch(keys) }, '在修正計畫中開啟（套用、回復、驗證）')),
+      ...plan.items.map((it) => {
+        const cmd = RM.itemApplyLines(plan, it);
+        return h('div', { class: 'fw-fix', 'data-rule': it.target.key, 'data-finding': it.findingKey }, [
+          h('div', { class: 'row' }, [V.chip(it.id, sevCls(it.id)), ' ', ruleLink(it.target.key), ' ', V.chip(FIND_BY[it.target.by] || it.target.by, 'info'), ' ',
+            V.chip('風險 ' + (RM.RISK_TEXT[it.risk.level] || it.risk.level), RM.RISK_CHIP[it.risk.level] || '', { title: it.risk.text }), ' ',
+            h('button', { class: 'ghost copy-fix', title: '複製套用指令', onclick: () => copyText(cmd, '套用指令') }, '複製')]),
+          h('p', { class: 'muted' }, it.note),
+          ...it.warnings.map((w) => h('p', { class: 'warn-line fix-warning' }, '警告：' + w)),
+          h('pre', { class: 'note-box fix-cmd' }, cmd),
+        ]);
+      }),
+      ...plan.skipped.map((x) => h('div', { class: 'fw-fix skipped', 'data-rule': x.rule || ruleOf(x.findingKey), 'data-finding': x.findingKey }, [
+        h('div', { class: 'row' }, [V.chip(x.id, sevCls(x.id)), ' ', ruleLink(x.rule || ruleOf(x.findingKey)), ' ', V.chip('未產生指令', 'warn')]),
+        h('p', { class: 'warn-line fix-skip' }, x.detail),
       ])),
-    ], { count: list.length, fold: !focusRule, open: !!focusRule });
+    ], { count: plan.items.length + plan.skipped.length, fold: !focusRule, open: !!focusRule });
   }
 
   function render(App, sel) {

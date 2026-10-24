@@ -1,22 +1,23 @@
 {
  "meta": {
   "schema": "ssot-snapshot/2",
-  "version": "2.7.0",
+  "version": "2.8.0",
   "createdAt": "2026-01-01T00:00:00Z",
-  "inputHash": "bd17113eef3dfbec",
+  "inputHash": "28211e6ceb748690",
+  "baselineKey": "fd26455652224e71",
   "sources": [
    {
     "name": "sample-bundle.txt",
     "reader": "bundle-v1",
-    "bytes": 207820,
-    "hash": "6f36d64d0cc6167c"
+    "bytes": 207824,
+    "hash": "b8ad9cbf5d279d0a"
    }
   ],
   "adapters": {
    "mikrotik.system": 4,
    "mikrotik.config": 1010,
    "mikrotik.neighbor": 115,
-   "mikrotik.interface": 26,
+   "mikrotik.interface": 28,
    "mikrotik.bridgehost": 783,
    "mikrotik.arp": 265,
    "mikrotik.ipaddr": 10,
@@ -26,7 +27,7 @@
    "mikrotik.stpbridge": 12
   },
   "blockCount": 78,
-  "factCount": 2224,
+  "factCount": 2226,
   "profile": null,
   "stats": {
    "devices": 54,
@@ -45,7 +46,7 @@
    "routes": 15,
    "findings": {
     "error": 1,
-    "warn": 26,
+    "warn": 27,
     "info": 26
    }
   }
@@ -15015,14 +15016,14 @@
     "dev": "TPE_CORE_RT_01",
     "name": "bond100",
     "desc": "core interconnect",
-    "enabled": null,
-    "status": "unknown",
+    "enabled": true,
+    "status": "up",
     "type": "lag",
     "typeBasis": "rawType",
     "rawType": "bond",
     "hwMac": null,
     "defaultName": null,
-    "mtu": null,
+    "mtu": 1500,
     "actualMtu": null,
     "l2mtu": null,
     "lag": null,
@@ -15055,16 +15056,16 @@
       43
      ],
      [
+      3,
+      289
+     ],
+     [
       1,
       65
      ],
      [
       1,
       68
-     ],
-     [
-      1,
-      71
      ]
     ],
     "srcNone": null
@@ -15073,7 +15074,7 @@
     "key": "TPE_CORE_RT_01|bridge1",
     "dev": "TPE_CORE_RT_01",
     "name": "bridge1",
-    "desc": "core interconnect",
+    "desc": null,
     "enabled": true,
     "status": "up",
     "type": "bridge",
@@ -15112,7 +15113,7 @@
      ],
      [
       3,
-      289
+      291
      ],
      [
       1,
@@ -16554,14 +16555,14 @@
     "dev": "TPE_CORE_RT_02",
     "name": "bond100",
     "desc": "core interconnect",
-    "enabled": null,
-    "status": "unknown",
+    "enabled": true,
+    "status": "up",
     "type": "lag",
     "typeBasis": "rawType",
     "rawType": "bond",
     "hwMac": null,
     "defaultName": null,
-    "mtu": null,
+    "mtu": 1500,
     "actualMtu": null,
     "l2mtu": null,
     "lag": null,
@@ -16594,16 +16595,16 @@
       886
      ],
      [
+      12,
+      1031
+     ],
+     [
       10,
       902
      ],
      [
       10,
       903
-     ],
-     [
-      10,
-      904
      ]
     ],
     "srcNone": null
@@ -16612,7 +16613,7 @@
     "key": "TPE_CORE_RT_02|bridge1",
     "dev": "TPE_CORE_RT_02",
     "name": "bridge1",
-    "desc": "core interconnect",
+    "desc": null,
     "enabled": true,
     "status": "up",
     "type": "bridge",
@@ -16651,7 +16652,7 @@
      ],
      [
       12,
-      1031
+      1033
      ],
      [
       10,
@@ -39033,6 +39034,27 @@
    ]
   },
   {
+   "id": "I03",
+   "severity": "warn",
+   "cat": "輸入",
+   "title": "已解析的區塊中有無法辨識的行",
+   "message": "sample-bundle.txt 第 3730–3832 行（/interface bridge host print detail without-paging）：1 行無法辨識，沒有進入基準：第 3831 行「```」",
+   "entities": [
+    {
+     "type": "device",
+     "key": "TPE_ACC_SW_12"
+    }
+   ],
+   "evidence": [
+    {
+     "block": 77,
+     "line": 3831,
+     "text": "```",
+     "file": "sample-bundle.txt"
+    }
+   ]
+  },
+  {
    "id": "K01",
    "severity": "warn",
    "cat": "鏈路",
@@ -41110,7 +41132,8 @@
    "end": 9,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 1,
@@ -41127,7 +41150,8 @@
    "end": 153,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 2,
@@ -41144,7 +41168,8 @@
    "end": 262,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 3,
@@ -41161,7 +41186,8 @@
    "end": 293,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 4,
@@ -41178,7 +41204,8 @@
    "end": 562,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 5,
@@ -41195,7 +41222,8 @@
    "end": 831,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 6,
@@ -41212,7 +41240,8 @@
    "end": 846,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 7,
@@ -41229,7 +41258,8 @@
    "end": 865,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 8,
@@ -41246,7 +41276,8 @@
    "end": 870,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 9,
@@ -41263,7 +41294,8 @@
    "end": 878,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 10,
@@ -41280,7 +41312,8 @@
    "end": 943,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 11,
@@ -41297,7 +41330,8 @@
    "end": 1004,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 12,
@@ -41314,7 +41348,8 @@
    "end": 1035,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 13,
@@ -41331,7 +41366,8 @@
    "end": 1304,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 14,
@@ -41348,7 +41384,8 @@
    "end": 1571,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 15,
@@ -41365,7 +41402,8 @@
    "end": 1582,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 16,
@@ -41382,7 +41420,8 @@
    "end": 1598,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 17,
@@ -41399,7 +41438,8 @@
    "end": 1631,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 18,
@@ -41416,7 +41456,8 @@
    "end": 1671,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 19,
@@ -41433,7 +41474,8 @@
    "end": 1684,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 20,
@@ -41450,7 +41492,8 @@
    "end": 1693,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 21,
@@ -41467,7 +41510,8 @@
    "end": 1780,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 22,
@@ -41484,7 +41528,8 @@
    "end": 1813,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 23,
@@ -41501,7 +41546,8 @@
    "end": 1848,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 24,
@@ -41518,7 +41564,8 @@
    "end": 1861,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 25,
@@ -41535,7 +41582,8 @@
    "end": 1870,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 26,
@@ -41552,7 +41600,8 @@
    "end": 1959,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 27,
@@ -41569,7 +41618,8 @@
    "end": 1992,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 28,
@@ -41586,7 +41636,8 @@
    "end": 2032,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 29,
@@ -41603,7 +41654,8 @@
    "end": 2045,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 30,
@@ -41620,7 +41672,8 @@
    "end": 2054,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 31,
@@ -41637,7 +41690,8 @@
    "end": 2141,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 32,
@@ -41654,7 +41708,8 @@
    "end": 2174,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 33,
@@ -41671,7 +41726,8 @@
    "end": 2214,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 34,
@@ -41688,7 +41744,8 @@
    "end": 2227,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 35,
@@ -41705,7 +41762,8 @@
    "end": 2236,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 36,
@@ -41722,7 +41780,8 @@
    "end": 2323,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 37,
@@ -41739,7 +41798,8 @@
    "end": 2356,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 38,
@@ -41756,7 +41816,8 @@
    "end": 2401,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 39,
@@ -41773,7 +41834,8 @@
    "end": 2414,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 40,
@@ -41790,7 +41852,8 @@
    "end": 2423,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 41,
@@ -41807,7 +41870,8 @@
    "end": 2510,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 42,
@@ -41824,7 +41888,8 @@
    "end": 2543,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 43,
@@ -41841,7 +41906,8 @@
    "end": 2591,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 44,
@@ -41858,7 +41924,8 @@
    "end": 2604,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 45,
@@ -41875,7 +41942,8 @@
    "end": 2613,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 46,
@@ -41892,7 +41960,8 @@
    "end": 2708,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 47,
@@ -41909,7 +41978,8 @@
    "end": 2741,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 48,
@@ -41926,7 +41996,8 @@
    "end": 2785,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 49,
@@ -41943,7 +42014,8 @@
    "end": 2798,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 50,
@@ -41960,7 +42032,8 @@
    "end": 2807,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 51,
@@ -41977,7 +42050,8 @@
    "end": 2894,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 52,
@@ -41994,7 +42068,8 @@
    "end": 2927,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 53,
@@ -42011,7 +42086,8 @@
    "end": 2967,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 54,
@@ -42028,7 +42104,8 @@
    "end": 2980,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 55,
@@ -42045,7 +42122,8 @@
    "end": 2989,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 56,
@@ -42062,7 +42140,8 @@
    "end": 3076,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 57,
@@ -42079,7 +42158,8 @@
    "end": 3109,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 58,
@@ -42096,7 +42176,8 @@
    "end": 3149,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 59,
@@ -42113,7 +42194,8 @@
    "end": 3162,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 60,
@@ -42130,7 +42212,8 @@
    "end": 3171,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 61,
@@ -42147,7 +42230,8 @@
    "end": 3205,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 62,
@@ -42164,7 +42248,8 @@
    "end": 3245,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 63,
@@ -42181,7 +42266,8 @@
    "end": 3258,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 64,
@@ -42198,7 +42284,8 @@
    "end": 3267,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 65,
@@ -42215,7 +42302,8 @@
    "end": 3354,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 66,
@@ -42230,7 +42318,8 @@
    "end": 3359,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 67,
@@ -42247,7 +42336,8 @@
    "end": 3395,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 68,
@@ -42264,7 +42354,8 @@
    "end": 3435,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 69,
@@ -42281,7 +42372,8 @@
    "end": 3448,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 70,
@@ -42298,7 +42390,8 @@
    "end": 3457,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 71,
@@ -42315,7 +42408,8 @@
    "end": 3544,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 72,
@@ -42332,7 +42426,8 @@
    "end": 3631,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 73,
@@ -42349,7 +42444,8 @@
    "end": 3666,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 74,
@@ -42366,7 +42462,8 @@
    "end": 3706,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 75,
@@ -42383,7 +42480,8 @@
    "end": 3719,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 76,
@@ -42400,7 +42498,8 @@
    "end": 3728,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": []
   },
   {
    "id": 77,
@@ -42414,10 +42513,13 @@
    "how": "command",
    "file": "sample-bundle.txt",
    "start": 3730,
-   "end": 3831,
+   "end": 3832,
    "empty": false,
    "collectedAt": null,
-   "failure": null
+   "failure": null,
+   "unrecognizedLines": [
+    3831
+   ]
   }
  ]
 }

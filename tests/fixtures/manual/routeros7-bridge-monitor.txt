@@ -18,4 +18,3 @@ SW_MANUAL (192.0.2.1):
               mld-querier: none                            
         declared-vlan-ids: 1                               
       registered-vlan-ids: 1                               
-```

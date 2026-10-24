@@ -9,7 +9,7 @@
  *   app-toolbar.js 頁首（搜尋、追蹤、清除）、工具列、圖例、匯出
  *   app-panes.js   左側分頁、窄螢幕工作區、左右欄寬度
  *   app-input.js   輸入對話框與建立基準
- *   app-acks.js    已確認的檢查結果（store 的 'acks'）
+ *   app-ledger.js  處理紀錄（S.ledger；store 的 'ledger'，並轉換舊的 'acks'）
  * 這些檔案在載入時只定義函式，實際執行都在 DOMContentLoaded 之後，所以彼此的載入先後不影響行為；
  * 只有這個檔案要最先載入，因為它建立 App 與 A。
  */
@@ -22,6 +22,8 @@
     pairOfLink: new Map(), pairs: new Map(), sel: null, showHosts: true,
     // 未知對端（沒有 LLDP／CDP 介面鄰接、只由 MAC 推論出來的終端）：只存在於畫面，不寫進基準
     showUnknown: true, expanded: new Set(), virtual: new Map(), vOfEp: new Map(), virtualByDev: new Map(),
+    // 終端的廠商色（前 8 個廠商；其餘歸「其他」），由 app-graph.js 依基準計算，只用於畫面與圖例
+    vendorColors: new Map(), vendorOthers: 0,
     UNKNOWN_EXPAND_MAX: 8, UNKNOWN_TOTAL_CAP: 800,
     // 版面模式：elk（分層，預設）或 builtin（快速）；網路設備超過 ELK_MAX 台時分層版面不執行
     layoutMode: 'elk', layoutJob: Promise.resolve(), ELK_MAX: 1500,
@@ -39,7 +41,7 @@
     App.layoutMode = (await S.store.get('layoutMode').catch(() => null)) || 'elk';
     A.bindHeader(); A.bindToolbar(); A.bindInputDialog(); A.bindTabs(); A.bindMobileWorkspaces(); await A.bindResizers();
     if (!(await S.store.available())) A.banner('這個瀏覽器無法使用本機儲存，關閉頁面後基準不會保留。');
-    await A.loadAcks();
+    await A.loadLedger();
     await App.restore();
   }
 
@@ -72,6 +74,8 @@
   // ================================================================ 載入基準
   A.load = function load(snap, positions) {
     App.snap = snap; App.Q = S.query(snap); App.sel = null; App.expanded = new Set();
+    // 處理紀錄推進一輪（目前時間由畫面傳入）；寫入 store 是非同步的，App.ledgerJob 讓呼叫端可以等待
+    App.ledgerJob = A.advanceLedger(App.Q);
     V.lists.findings.reset(); V.lists.compare.reset(); V.lists.findings.openFirst(snap);
     const g = A.graphData(App.Q, snap);
     const hostCount = g.nodes.filter((n) => n.kind === 'host').length;
@@ -115,6 +119,7 @@
       f.appendChild(h('span', null, `版本 ${m.version}`));
     } else f.appendChild(h('span', null, `RouterOS 網路基準 ${S.VERSION}・資料只在這個瀏覽器處理，不會傳到任何地方`));
     V.lists.findings(App); V.lists.coverage(App); V.lists.compare(App); V.lists.inventory(App);
+    V.ledgerPane.render(App); V.patchView.refresh(App);
     V.details.render(App, App.sel);
   };
   function renderBaselineSummary() {
@@ -124,15 +129,21 @@
     if (!has) return;
     const stats = App.snap.meta.stats;
     const missing = App.snap.coverage.filter(V.coverageGap).length;
-    // 已確認的錯誤／警告不算在待處理的問題裡，但註明筆數
+    // 已處理（排程修復、可接受、誤報、已修好）的錯誤／警告不算在待處理的問題裡，但註明筆數
     const pc = A.problemCounts(); const problems = pc.error + pc.warn;
-    const ackNote = pc.acked ? `（另有 ${V.num(pc.acked)} 項已確認）` : '';
+    const ackNote = pc.handled ? `（另有 ${V.num(pc.handled)} 項已處理）` : '';
     root.appendChild(h('div', { class: 'baseline-state' }, [
       h('strong', null, '基準檢查'),
       h('span', { class: 'baseline-message' }, (problems
         ? `目前規則找到 ${V.num(pc.error)} 項錯誤、${V.num(pc.warn)} 項警告`
         : '目前規則未發現待處理的錯誤或警告') + ackNote),
       h('span', { class: 'baseline-coverage' }, `收集完整度：${V.num(stats.collected)} / ${V.num(stats.devices)} 台設備已收集；${V.num(missing)} 台有必要資料缺漏`),
+      // 處理紀錄的提示：回歸（修好後又出現）、因收集失敗而無法判斷、豁免到期；點一下開啟處理紀錄分頁
+      ...[['regressed', 'err', (n) => `回歸 ${V.num(n)} 項`, '已修好的問題又出現（依處理紀錄）'],
+        ['unobserved', 'warn', (n) => `無法判斷 ${V.num(n)} 項`, '這一輪消失的待處理項目，所屬設備有收集失敗或沒有收集，因收集失敗而無法判斷是否已修好'],
+        ['waiverExpired', 'warn', (n) => `豁免到期 ${V.num(n)} 項`, '「可接受」的豁免已到期，改回待處理']]
+        .filter(([k]) => pc[k]).map(([k, cls, label, title]) => V.chipButton(label(pc[k]), 'btn ' + cls + ' ledger-alert', { 'data-alert': k, title,
+          onclick: () => A.activatePane('pane-ledger') })),
     ]));
     const actions = h('div', { class: 'baseline-actions' });
     actions.appendChild(h('button', {

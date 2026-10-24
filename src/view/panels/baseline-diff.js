@@ -3,7 +3,8 @@
  * 讀入之前匯出的基準（Snapshot JSON）當作舊基準，以 S.compare.snapshots(SSOT.query(舊), App.Q) 比對，依類別分組列出。
  * 比對結果與舊基準的查詢介面只放在記憶體（這個檔案的 state）：舊基準可能很大，而且換了新基準就失去意義，所以不存進 store。
  * 檢查結果分頁的「只看新出現的」透過 V.baselineDiff.loaded() 讀取同一份比對結果。
- * 比對結果上方另有修復追蹤：「已排程修復」的確認在兩份基準之間是否已修復（V.remediation.fixTracking）。
+ * 比對結果上方列出核心的提醒（report.warnings：版本或命名規則不同），這些差異不代表網路改變。
+ * 修復追蹤改由處理紀錄（S.ledger，「處理紀錄」分頁）判斷，不在這裡。
  */
 (function (S) {
   'use strict';
@@ -38,36 +39,14 @@
     return { name: state.name, report: state.report, qOld: state.qOld, addedFindingKeys: state.addedFindingKeys };
   }
 
-  /** 修復追蹤：「已排程修復」的確認分成已修復／仍存在／變更；可一鍵清掉已修復的確認 */
-  function fixSection(App) {
-    const ft = V.remediation.fixTracking(state.qOld, App.Q, V.app.ackEntries());
-    const box = h('div', { class: 'fix-tracking' }, [h('div', { class: 'diff-head' }, [h('b', null, '修復追蹤'), ' ',
-      h('span', { class: 'muted' }, '確認時分類為「已排程修復」的檢查結果，在兩份基準之間的變化')])]);
-    const total = ft.fixed.length + ft.open.length + ft.changed.length;
-    if (!total) { box.appendChild(h('div', { class: 'muted pane-note' }, '沒有「已排程修復」的確認項目出現在這兩份基準中。確認檢查結果時選「已排程修復」，之後比對就會在這裡追蹤。')); return box; }
-    const GROUPS = [
-      ['fixed', '已修復', 'ok', '新基準已經沒有這筆', (x) => x.before],
-      ['open', '仍存在', 'warn', '新基準仍有，訊息相同', (x) => x.after],
-      ['changed', '變更', 'info', '兩份基準都有，但訊息不同', (x) => x.after],
-    ];
-    // 類別名稱不用 diff-summary／diff-cat：那兩個是下方比對結果的結構
-    box.appendChild(h('div', { class: 'summary fix-summary' }, GROUPS.map(([k, label, cls]) => V.chip(`${label} ${V.num(ft[k].length)}`, ft[k].length ? cls : '', { 'data-fix': k }))));
-    GROUPS.forEach(([k, label, cls, note, pick]) => {
-      if (!ft[k].length) return;
-      const rows = ft[k].map((x) => ({ x, f: pick(x)[0], before: x.before[0] || null }));
-      box.appendChild(h('div', { class: 'fix-group', 'data-fix': k }, [
-        h('div', { class: 'diff-head' }, [V.chip(label, cls), ' ', h('span', { class: 'muted' }, note),
-          k === 'fixed' ? h('button', {
-            class: 'ghost clear-fixed', title: '這些項目在新基準中已經沒有，清掉它們的確認紀錄（只影響這個瀏覽器）',
-            onclick: async () => { const n = await App.clearAcks(ft.fixed.map((x) => x.key)); V.app.banner(`已清掉 ${n} 筆已修復的確認。`, 4000); },
-          }, `清掉已修復的確認（${V.num(ft.fixed.length)}）`) : null]),
-        V.table([
-          { t: '規則', f: (r) => h('span', { class: 'mono' }, r.f.id) },
-          { t: '項目', f: (r) => (k === 'changed' && r.before ? h('div', null, [h('div', { class: 'muted' }, '舊：' + r.before.message), h('div', null, '新：' + r.f.message)]) : r.f.message) },
-        ], rows, { limit: 300, onRow: k === 'fixed' ? null : (r) => open(App, { category: 'finding', key: r.x.key }) }),
-      ]));
-    });
-    return box;
+  // 提醒的圖示：版本不同（新版才有的檢查）、命名規則不同（名稱與分群）；不認得的 kind 用通用圖示
+  const WARN_ICON = { version: '⟳', profile: '✎' };
+  /** 核心的提醒（report.warnings）：一律在比對結果上方，每筆一行 */
+  function warningsBlock(r) {
+    const list = r.warnings || [];
+    if (!list.length) return null;
+    return h('div', { class: 'diff-warnings', role: 'note' }, list.map((w) => h('div', { class: 'diff-warning warn-line', 'data-kind': w.kind }, [
+      h('span', { class: 'diff-warning-icon', 'aria-hidden': 'true' }, WARN_ICON[w.kind] || '!'), ' ', w.message])));
   }
 
   /** 差異項目 → 目前基準中可定位的選取；只在舊基準中的項目回傳 null */
@@ -100,9 +79,10 @@
     V.app.banner('這個項目只在舊基準中，目前的基準沒有可以定位的對象。', 4000);
   }
 
+  // effect 的文字色在色盲下接近，所以前面加上與嚴重度相同的外形（theme.diff.effectSev：方形、三角形、圓形）
   const effectChip = (e) => (e ? h('span', {
     class: 'chip effect', style: { color: T.effect[e], borderColor: T.effect[e] }, title: e,
-  }, EFFECT[e] || e) : null);
+  }, [T.effectSev[e] ? h('span', { class: 'sev ' + T.effectSev[e], 'aria-hidden': 'true' }) : null, EFFECT[e] || e]) : null);
 
   function render(App) {
     const box = h('div', { class: 'pane-body baseline-diff' });
@@ -125,7 +105,7 @@
       box.appendChild(h('div', { class: 'diff-errors' }, r.errors.map((e) => h('div', { class: 'finding' }, [V.sevDot('error'), e]))));
       return box;
     }
-    if (state.qOld) box.appendChild(fixSection(App));
+    const warn = warningsBlock(r); if (warn) box.appendChild(warn);
     const exposure = r.items.filter((i) => i.effect === 'new-exposure');
     // 摘要：變更種類與新暴露；新暴露可單獨篩選
     box.appendChild(h('div', { class: 'summary diff-summary' }, [

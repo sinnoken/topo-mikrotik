@@ -3828,5 +3828,6 @@ Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external
     age=3s
  49 D mac-address=10:BF:48:00:00:24 on-interface=bond12 bridge=bridge1 vid=30
     age=45s
+```
 
 _____

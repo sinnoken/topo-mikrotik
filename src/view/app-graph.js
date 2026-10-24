@@ -7,7 +7,8 @@
   const V = S.view; const $ = V.$; const K = S.keys; const LINK_SCOPE = S.LINK_SCOPE;
   const A = V.app; const App = window.App;
   const EP = V.theme.endpoint;
-  const vendorColor = (v) => (v ? EP.vendor[Array.from(v).reduce((a, ch) => a + ch.charCodeAt(0), 0) % EP.vendor.length] : EP.vendorFallback);
+  const vendorColor = (v) => (v && App.vendorColors.get(v)) || EP.vendorFallback;
+  const isMultiWifi = (r) => r.visualOnly && r.type === 'wireless' && r.macs.length > 1;
   const vendorIni = (v) => (v ? v.replace(/[^A-Za-z0-9\u4e00-\u9fff]/g, '').slice(0, 2).toUpperCase() : '?');
 
   // ================================================================ 版面排程
@@ -91,8 +92,23 @@
    * 單一 MAC：圓形；多 MAC 的 Wi-Fi：菱形（僅為圖面提示，不視為終端或參與 A02）。
    *  - 一台設備上超過 UNKNOWN_EXPAND_MAX 個（或全網超過上限）：收合成一個群組節點，雙擊展開
    */
+  /**
+   * 廠商色：theme 只有 8 色，依終端數量取前 8 個廠商（同數量依名稱），其餘與不明廠商歸「其他」（vendorFallback）。
+   * 數量取自全部未知對端與推定終端，不受展開／收合影響，所以同一份基準裡廠商的顏色固定。
+   */
+  function vendorPalette(Q) {
+    const n = new Map(); const add = (v) => { if (v) n.set(v, (n.get(v) || 0) + 1); };
+    Q.visualUnknownDevices().forEach((d) => Q.visualUnknownPeers(d).forEach((r) => { if (!isMultiWifi(r)) add(r.macs[0].vendor); }));
+    Q.behindGroups().forEach((rows) => rows.forEach((x) => add(x.vendor)));
+    const ranked = Array.from(n.entries()).sort((a, b) => b[1] - a[1] || S.util.natural(a[0], b[0]));
+    App.vendorColors = new Map(ranked.slice(0, EP.vendor.length).map(([v], i) => [v, EP.vendor[i]]));
+    App.vendorOthers = ranked.length - App.vendorColors.size;
+    if (A.renderVendorLegend) A.renderVendorLegend();
+  }
+
   function addUnknownPeers(Q, nodes, pairs) {
     App.virtual = new Map(); App.vOfEp = new Map(); App.virtualByDev = new Map();
+    vendorPalette(Q);
     const devs = Q.visualUnknownDevices();
     const total = devs.reduce((n, d) => n + Q.visualUnknownPeers(d).length, 0);
     const forceCollapse = total > App.UNKNOWN_TOTAL_CAP;
@@ -116,7 +132,7 @@
       }
       rows.forEach((r) => {
         const vid = '?p|' + r.ep; const m0 = r.macs[0]; const ip = m0.ips[0];
-        const multiWifi = r.visualOnly && r.type === 'wireless' && r.macs.length > 1; const ifStyle = EP.styleOf(r);
+        const multiWifi = isMultiWifi(r); const ifStyle = EP.styleOf(r);
         const label = r.desc || ip || m0.vendor || K.macPretty(m0.mac).slice(-8);
         const tip = `${Q.devName(dk)} ${r.name}`
           + (multiWifi ? '（Wi-Fi・多個 MAC）' : '')
@@ -126,7 +142,7 @@
           + (m0.vendor ? '・' + m0.vendor : '')
           + (r.vlans.length ? '・VLAN ' + r.vlans.join(',') : '');
         nodes.push({ id: vid, label: multiWifi ? `${r.macs.length} 個 MAC` : label, kind: multiWifi ? 'downstream' : 'endpoint', collected: false, virtual: true, parent: dk, group: dev.group,
-          count: r.macs.length, color: vendorColor(m0.vendor), ini: vendorIni(m0.vendor), tip });
+          count: r.macs.length, vendor: m0.vendor || null, color: vendorColor(m0.vendor), ini: vendorIni(m0.vendor), tip });
         App.virtual.set(vid, { type: 'interface', ep: r.ep }); App.vOfEp.set(r.ep, vid);
         link(dk, vid, r.name, { ifStyle });
       });
@@ -147,7 +163,7 @@
       rows.forEach((x) => {
         const vid = '?b|' + x.mac; const ip = x.ips[0];
         nodes.push({ id: vid, label: ip || x.vendor || K.macPretty(x.mac).slice(-8), kind: 'endpoint', collected: false, virtual: true, parent: dk, group: dev.group, count: 1,
-          color: vendorColor(x.vendor), ini: vendorIni(x.vendor),
+          vendor: x.vendor || null, color: vendorColor(x.vendor), ini: vendorIni(x.vendor),
           tip: `推定位置：${K.macPretty(x.mac)}${ip ? '・' + ip : ''}${x.vendor ? '・' + x.vendor : ''} ${where(x)}・${via(x)}` });
         App.virtual.set(vid, { type: 'mac', mac: x.mac });
         link(dk, vid, '埠不明', { evidence: 'inferred' });

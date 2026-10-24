@@ -48,7 +48,7 @@ git diff --check         # 提交前檢查
   與瀏覽器相同的檔案；`index.html` 的前段 `<script>` 必須與它完全一致（有測試檢查）。新增核心檔案要兩邊同步加。
   `index.html` 之後再載入 profiles、嵌入的範例與 `src/view/*`。`vendor/` 不在 `index.html` 裡，由畫面層需要時動態載入，也不列入核心載入順序。
   畫面起點是 `src/view/app.js`（建立 `App` 與 `S.view.app`，程式內稱 `A`），必須在其他 `app-*.js`
-  （graph／select／panes／toolbar／input／acks）之前載入；這些檔案載入時只定義函式，DOMContentLoaded 後才執行。
+  （graph／select／panes／toolbar／input／ledger）之前載入；這些檔案載入時只定義函式，DOMContentLoaded 後才執行。
 - **管線**（[src/pipeline.js](src/pipeline.js)，`S.build(sources, options) → Snapshot`）：
   ① `readers/`（bundle-v1、files-v1，依 `readers/index.js` 的 `ORDER` 選擇）切成區塊，保留檔案與行號
   → ② `adapters/` 辨識指令 → ③ `adapters/mikrotik.js` 解析為帶 `block`/`line` 的事實
@@ -56,13 +56,16 @@ git diff --check         # 提交前檢查
   防火牆 WAN／LAN 等，全部在檢查之前完成）→ ⑥ `check/checks.js` 依 `check/catalog.js` 的 `CATALOG`（I01、K01、A02、F01…）
   產生 findings，只讀模型、不寫回；`catalog.js` 必須在 `checks.js` 之前載入。
   `steps()` 是 generator，讓 UI 可顯示進度。
-- **單向依賴**：核心（core/readers/adapters/model/check/profile/query/compare/pipeline）不得碰 DOM、Canvas、IndexedDB。
-  View 與 compare 只透過 `SSOT.query(snapshot)`（[src/query/query.js](src/query/query.js)）讀取，不讀原始 model、不改寫 Snapshot。
+- **單向依賴**：核心分成上游與下游。上游（core/readers/adapters/model/check/profile/query/pipeline）產生並查詢 Snapshot；
+  下游（`compare/` 比對、`remediate/` 修正 patch、`ledger/` 處理紀錄）也是核心檔案，但只透過 `SSOT.query(snapshot)` 讀基準、
+  不修改基準，上游也不呼叫它們。所有核心都不得碰 DOM、Canvas、IndexedDB。View 與下游只透過 `SSOT.query(snapshot)`（[src/query/query.js](src/query/query.js)）讀取，不讀原始 model、不改寫 Snapshot。
   `src/view/theme.js` 是顏色／線型／透明度的唯一來源；持久化集中在 `src/view/store.js`。
   畫面讀 `CATALOG` 的 `causes`／`action` 只透過 `V.remediation.advice(id)`；含反引號的文字以 `V.codeText` 組成 DOM，不用 innerHTML。
 - **比對與檢視狀態**：`compare/` 有預期資料比對（`S.compare`）、由基準產生預期資料（`S.compare.expectedFrom`）與
   新舊基準比對（`S.compare.snapshots`，`ssot-snapdiff/1`）。finding 的穩定鍵是 `Q.findingKey(f)`；
-  「已確認」以它為鍵存在 store 的 `'acks'`，是檢視狀態，不進 Snapshot。
+  處理紀錄（`S.ledger`，`ssot-ledger/1`）以它為鍵存在 store 的 `'ledger'`，是使用者的資料，不進 Snapshot；
+  舊的 `'acks'` 第一次遇到基準時以 `S.ledger.fromAcks` 轉換。同一輪的判斷依 `meta.baselineKey`（輸入＋major.minor＋命名規則與預期資料）。
+  修正 patch（`S.remediate`，`ssot-patch/1`）只產生 .rsc 文字，不連線設備（[ADR-001](docs/架構決策/001-工具維持唯讀.md)）。
 - **事實 vs 推論**：收集到的設備、介面、鏈路、VLAN、位址、路由是事實；推論需標示。命名 profile（`src/profile/`）
   只能 canonicalize 或加註解，不能新增／刪除／改寫事實。
 - **鏈路語意**：`S.LINK_SCOPE` 區分 interface-adjacency（LLDP／CDP）、broadcast-domain（純 MNDP，只證明 L2 可達，
@@ -87,6 +90,7 @@ git diff --check         # 提交前檢查
 ## 修改守則（補充匯入的開發原則）
 
 - **擴充點**：新廠牌 → `src/adapters/` 新檔＋`S.adapters.register()`，加入 `tools/core-files.js` 與 `index.html`；
+  adapter 要用 `parse(block, emit, ignore)` 宣告依格式不產生事實的行，否則會成為 I03；
   新輸入格式 → `src/readers/` 並加入 `ORDER`；新檢查 → `src/check/catalog.js` 的 `CATALOG` 加一筆（含常見原因 `causes` 1–4 條與處理方式 `action`），
   在 `src/check/checks.js` 實作，並更新 [docs/基準檢查規則.md](docs/基準檢查規則.md)（有測試檢查標題、嚴重度、「常見原因」條數與「處理」段）。
 - **生成檔的指令**：`samples/sample-bundle.txt`／`.js` 用 `npm run sample`（`tests/run.js` 會檢查它與產生器輸出一致），`src/data/oui-data.js` 用 `npm run oui`。
@@ -95,6 +99,8 @@ git diff --check         # 提交前檢查
   <https://manual.mikrotik.com/llms.txt> 為準。
 - 大型冒煙測試：先 `npm run gen:large`，再 `SMOKE_INPUT=samples/large-1000.txt node tests/ui-smoke.js`，應全部通過。
   依範例資料才有的問題（例如 K01「LLDP 單向」）所寫的斷言，都依 Snapshot 是否有該 finding 判斷；範例資料必須含 K01。
+- **架構決策**：影響整體的決策（唯讀、處理紀錄、findingKey、版本規則、分工方式等）記錄在 [docs/架構決策/](docs/架構決策/README.md)。
+  修改相關設計前先讀對應的 ADR；決定改變時新增一份 ADR，並把舊的標為「已取代」，不改寫已接受的 ADR。
 
 ## Agent 分工（`.claude/agents/`）
 

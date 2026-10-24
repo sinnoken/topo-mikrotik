@@ -6,7 +6,7 @@
  */
 (function (S) {
   'use strict';
-  S.VERSION = '2.7.0';
+  S.VERSION = '2.8.0';
   S.SCHEMA = 'ssot-snapshot/2';
   S.LINK_SCOPE = Object.freeze({
     INTERFACE_ADJACENCY: 'interface-adjacency',
@@ -37,6 +37,9 @@
   };
 
   util.cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  /** 物件的鍵依字典序排列後的 JSON（陣列順序保留）：內容相同、只差鍵順序的物件得到同一個字串，用於計算雜湊。 */
+  util.canonicalJson = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x)
+    ? Object.keys(x).sort(util.cmp).reduce((o, key) => { o[key] = x[key]; return o; }, {}) : x));
   /** 自然排序（ge-0/0/2 < ge-0/0/10）。 */
   const collator = typeof Intl !== 'undefined' ? new Intl.Collator('en', { numeric: true, sensitivity: 'base' }) : null;
   util.natural = (a, b) => (collator ? collator.compare(String(a), String(b)) : util.cmp(String(a), String(b)));

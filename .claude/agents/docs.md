@@ -23,6 +23,7 @@ tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch
 | 命名規則 | `docs/命名規則.md` |
 | 開發原則、skills | `.github/copilot-instructions.md`；skill 的 `.github` 和 `.claude` 兩份要同步（有測試） |
 | agent 分工 | `.claude/agents/*.md`、`ownership.json`（每個檔案恰好一個負責者，有測試） |
+| 影響整體的決策 | `docs/架構決策/`（ADR；已接受的只補「已處理」與「修訂」，不改寫決策） |
 
 ## 規則
 

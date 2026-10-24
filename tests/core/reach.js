@@ -163,6 +163,17 @@ test('zone：interface list → VLAN → 網段，每個網段都有 zone 並標
   const byp = (p) => zp.subnets.find((x) => x.prefix === p);
   assert.deepStrictEqual([byp('10.1.30.0/24').zone, byp('10.1.30.0/24').source, byp('10.1.30.0/24').inferred, byp('172.31.1.0/30').zone], ['tag:USER', 'profile', false, 'tag:LAB']);
   assert.deepStrictEqual(byp('10.1.30.0/24').alternatives.map((a) => a.zone), ['vlan:30', 'subnet:10.1.30.0/24']);
+  // 鍵的順序不同仍是同一份（與 baselineKey 相同的 canonicalJson 雜湊）
+  const reordered = Object.fromEntries(Object.keys(profile).reverse().map((k) => [k, profile[k]]));
+  assert.strictEqual(S.query(sp).zones({ profile: reordered }).subnets.length, zp.subnets.length);
+  assert.strictEqual(sp.meta.profile.hash, S.profile.hash(reordered));
+  // 同一個 id 與 version、zones 段不同：算出的 zone 會和這一輪不一致，要擋下並說明原因
+  const edited = Object.assign({}, profile, { zones: [{ on: 'vlan', match: '^30$', zone: 'GUEST' }] });
+  assert.throws(() => S.query(sp).zones({ profile: edited }), /內容雜湊不一致/);
+  assert.throws(() => S.query(sp).zoneMatrix({ profile: edited }), /內容雜湊不一致/);
+  // 沒有記錄雜湊的基準（2.11.0 以前建立）無法確認，不退回只比 id 與 version
+  const old = JSON.parse(JSON.stringify(sp)); delete old.meta.profile.hash;
+  assert.throws(() => S.query(old).zones({ profile }), /沒有記錄命名規則.*內容雜湊/);
   assert.throws(() => S.profile.compile({ id: 'x', zones: [{ on: 'host', match: 'a', zone: 'Z' }] }), /zones\[0\]\.on/);
 });
 

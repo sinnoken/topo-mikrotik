@@ -84,5 +84,11 @@
     };
   }
 
-  S.profile = { compile, KINDS };
+  /**
+   * 命名規則全文的雜湊（鍵排序後的 JSON）：meta.baselineKey、meta.profile.hash 與 Q.zones 的核對共用這一個算法，
+   * 同一個 id 與 version、內容不同的命名規則也能區分；鍵的順序不算差異。
+   */
+  const hash = (json) => S.util.hash(S.util.canonicalJson(json));
+
+  S.profile = { compile, hash, KINDS };
 })(globalThis.SSOT = globalThis.SSOT || {});

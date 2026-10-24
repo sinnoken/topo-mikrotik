@@ -34,8 +34,11 @@ module.exports = function registerLarge(LARGE_MAX_MS) {
     const [rc, rMs] = time(() => Q.reach('10.1.30.11', '10.40.20.11', { proto: 'tcp', port: 443 }));
     const [mx, mMs] = time(() => Q.zoneMatrix());
     const [cell, cMs] = time(() => Q.zoneCell('vlan:30', 'vlan:20'));
-    const fwd = Q.firewallRules().find((r) => r.chain === 'forward' && r.action === 'drop' && r.match['in-interface-list'] === 'WAN');
-    const [im, iMs] = time(() => Q.ruleImpact(fwd.key));
+    // 規則影響要量一條真的有影響的規則：乾淨網路的內部流量在 forward 都沒有命中任何規則（預設放行），
+    // forward 規則的影響都是 0 筆；input 的「!LAN 一律丟棄」會被所有代表位址往設備位址的判斷命中
+    const busy = Q.firewallRules().find((r) => r.chain === 'input' && r.action === 'drop' && r.match['in-interface-list'] === '!LAN');
+    const [im, iMs] = time(() => Q.ruleImpact(busy.key));
+    assert.ok(im.total.evaluations > 1000 && im.total.decides > 0, `選到的規則要有影響（${im.total.evaluations} 筆）`);
     console.log(`      zones ${zMs} ms（${zs.zones.length} 個 zone、${zs.subnets.length} 個網段）；reach ${rMs} ms（${rc.verdict}，${rc.paths.length} 條路徑）；`
       + `zoneMatrix ${mMs} ms（${mx.stats.representatives} 個代表位址、${mx.stats.evaluations} 次判斷）；zoneCell ${cMs} ms（${cell.groups.length} 列）；ruleImpact ${iMs} ms（${im.total.evaluations} 筆）`);
     assert.strictEqual(rc.verdict, 'allow');

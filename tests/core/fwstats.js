@@ -34,7 +34,7 @@ test('命中次數：RouterOS 7 的千位空白、超過 2^53 的值以字串保
   const t = stats(s)[0];
   assert.deepStrictEqual([t.dev, t.family, t.table, t.status, t.rows, t.dynamic, t.rules, t.reason, t.src], ['R', 'ip', 'filter', 'matched', 4, 1, 4, null, [[1, 8]]]);
   assert.ok(s.model.devices.find((d) => d.key === 'R').data.includes('fwstats'));
-  assert.deepStrictEqual(s.coverage[0].firewall.stats, { matched: 1, mismatch: 0, noExport: 0 });
+  assert.deepStrictEqual(s.coverage[0].firewall.stats, { matched: 1, mismatch: 0 });
   assert.strictEqual(S.query(s).firewallStatsOf('R').length, 1);
   assert.strictEqual(S.adapters.mikrotikStatLine('bytes=50 507 925 242 packets=7'), 'bytes=50507925242 packets=7');
 });
@@ -63,6 +63,9 @@ test('命中次數：只有說明行或沒有輸出時是已收集、0 列；沒
   assert.strictEqual(count(s, 'F09'), 0);
   const noExport = box(V7_FILTER);
   assert.deepStrictEqual([stats(noExport)[0].status, count(noExport, 'F09'), noExport.model.firewallRules.length], ['no-export', 0, 0], '沒有 export：計數器不配，也不算對不上');
+  // 沒有 export 的設備 coverage[].firewall 是 null（不會有永遠是 0 的 noExport 表數）；no-export 由 Q.firewallStatsOf 呈現
+  assert.strictEqual(noExport.coverage[0].firewall, null);
+  assert.deepStrictEqual(S.query(noExport).firewallStatsOf('R').map((t) => t.status), ['no-export']);
   // 沒有指令標記時不猜是哪個表
   const bare = build(['R (10.0.0.1):', '### /export terse', '/interface bridge add name=bridge1', '###', ...V7_FILTER.slice(1)].join('\n'));
   assert.strictEqual(stats(bare).length, 0);
@@ -94,7 +97,7 @@ test('命中次數對不上（F09）：列數、chain、action、停用、註解
   const f = two.findings.filter((x) => x.id === 'F09');
   assert.strictEqual(f.length, 1);
   assert.ok(/IPv4 filter（.*）；IPv4 nat（/.test(f[0].message), f[0].message);
-  assert.deepStrictEqual(two.coverage[0].firewall.stats, { matched: 0, mismatch: 2, noExport: 0 });
+  assert.deepStrictEqual(two.coverage[0].firewall.stats, { matched: 0, mismatch: 2 });
 });
 
 test('命中次數（範例資料）：核心 01 全部配上、核心 02 的 nat 多一條（F09），其他表照樣配上', () => {
@@ -106,6 +109,15 @@ test('命中次數（範例資料）：核心 01 全部配上、核心 02 的 na
   assert.strictEqual(t('TPE_CORE_RT_02', 'ipv6', 'filter').status, 'matched');
   const f = s.findings.filter((x) => x.id === 'F09');
   assert.deepStrictEqual(f.map((x) => x.entities[0].key), ['TPE_CORE_RT_02']);
+  // 覆蓋率的表數要能說明每個收到的表：有 export 的設備，各狀態的表數加總等於該設備的表數（沒有永遠是 0 的欄位）；
+  // 沒有 export 的設備 firewall 是 null，它的表都是 no-export
+  s.coverage.forEach((c) => {
+    const ts = s.model.firewallStats.filter((x) => x.dev === c.dev);
+    if (!ts.length) return;
+    if (c.firewall === null) { assert.ok(ts.every((x) => x.status === 'no-export'), c.dev); return; }
+    assert.deepStrictEqual(Object.keys(c.firewall.stats).sort(), ['matched', 'mismatch'], c.dev);
+    assert.strictEqual(c.firewall.stats.matched + c.firewall.stats.mismatch, ts.length, c.dev);
+  });
   const nat2 = s.model.firewallRules.filter((r) => r.dev === 'TPE_CORE_RT_02' && r.table === 'nat');
   assert.ok(nat2.every((r) => r.stats === null));
   assert.ok(s.model.firewallRules.filter((r) => r.dev === 'TPE_CORE_RT_01').every((r) => r.stats && /^\d+$/.test(r.stats.bytes)));

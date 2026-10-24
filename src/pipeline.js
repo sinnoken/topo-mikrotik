@@ -206,7 +206,8 @@
         baselineKey: baselineKey(inputHash, c.opt),
         sources: c.sources.map((s) => ({ name: s.name || S.readers.PASTE, reader: c.readersUsed[s.name || S.readers.PASTE] || null, bytes: s.text.length, hash: U.hash(s.text) })),
         adapters: c.usage, blockCount: c.blocks.length, factCount: c.facts.length,
-        profile: c.profile ? { id: c.profile.id, version: c.profile.version } : null,
+        // hash：命名規則全文的雜湊（S.profile.hash），Q.zones 用它核對傳入的是不是同一份命名規則
+        profile: c.profile ? { id: c.profile.id, version: c.profile.version, hash: S.profile.hash(c.opt.profile) } : null,
         stats: {
           devices: devices.length, collected: devices.filter((d) => d.collected).length, interfaces: interfaces.length,
           links: links.length, inferredLinks: inferredLinks.length, ipAddresses: ipAddresses.length, prefixes: prefixes.length, wifiAssociations: wifiAssociations.length, ospfAdjacencies: ospfAdjacencies.length, firewallRules: firewallRules.length, vlans: vlans.length, macs: macs.length, arps: arps.length, routes: routes.length,
@@ -233,7 +234,7 @@
   function baselineKey(inputHash, opt) {
     const minor = String(S.VERSION).split('.').slice(0, 2).join('.');
     const h = (v) => (v == null ? null : U.hash(U.canonicalJson(v)));
-    return U.hash(JSON.stringify([inputHash, minor, h(opt.profile), h(opt.expectedData)]));
+    return U.hash(JSON.stringify([inputHash, minor, opt.profile ? S.profile.hash(opt.profile) : null, h(opt.expectedData)]));
   }
 
   /**

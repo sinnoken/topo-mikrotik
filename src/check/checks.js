@@ -617,11 +617,15 @@
     return out;
   }
 
-  /** 命中次數各表的對應結果：{ matched, mismatch, noExport }（表數）；這台設備沒有收集命中次數時為 null。 */
+  /**
+   * 命中次數各表的對應結果：{ matched, mismatch }（表數）；這台設備沒有收集命中次數時為 null。
+   * 只用在有 export 的設備（coverage[].firewall 不是 null），所以不會有 no-export；
+   * 沒有 export、只有命中次數的設備由 Q.firewallStatsOf(dev) 的 status: 'no-export' 呈現。
+   */
   function statsOf(M, dev) {
     const ts = Array.from(M.fw.stats.values()).filter((t) => t.dev === dev);
     if (!ts.length) return null;
-    return { matched: ts.filter((t) => t.status === 'matched').length, mismatch: ts.filter((t) => t.status === 'mismatch').length, noExport: ts.filter((t) => t.status === 'no-export').length };
+    return { matched: ts.filter((t) => t.status === 'matched').length, mismatch: ts.filter((t) => t.status === 'mismatch').length };
   }
   /** F09：命中次數對不上 export 的規則（整個表不配，不猜）。 */
   const STAT_WHY = {

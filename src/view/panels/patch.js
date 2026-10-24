@@ -1,6 +1,6 @@
 /*
  * 修正計畫（對話框 #dlg-patch）：選取檢查結果 → S.remediate.plan → 依設備列出修改前（證據原文）與修改後（套用指令），
- * 每台設備的套用、回復、驗證三份 .rsc 可以檢視、複製與下載；沒有產生指令的項目列出核心給的原因。
+ * 每台設備的套用、回復、驗證三份 .rsc 可以檢視、複製與下載；沒有產生指令的項目依原因分組，列出檢查結果的訊息（點了開啟該筆）。
  * 計畫與指令文字全部由核心 S.remediate 產生，這裡只負責選取、預覽與下載。本工具只產生文字，不會連線設備（ADR-001）。
  * 選取是檢視狀態（findingKey 的集合），只在記憶體，不存進 store；換基準時清空。
  */
@@ -128,8 +128,9 @@
       files.forEach((f) => Object.keys(KIND).forEach((k) => download(fileName(f, k), f[k])));
       download(`patch-summary-${V.exporter.baseName(App.snap)}.md`, V.exporter.patchSummaryMarkdown(plan, files, App.Q));
     };
-    const SKIP_LEVEL = (x) => (x.level ? R().LEVEL_TEXT[x.level] || x.level : '');
-    const skippedByReason = new Map(); plan.skipped.forEach((x) => S.util.getOr(skippedByReason, x.reason, () => []).push(x));
+    const hits = R().matchFindings(App.Q, plan.skipped);
+    const closeDlg = () => { const d = $('#dlg-patch'); if (d && d.open) d.close(); };
+    const skippedByReason = new Map(); plan.skipped.forEach((x, n) => S.util.getOr(skippedByReason, x.reason, () => []).push({ x, hit: hits[n] }));
     return h('div', { class: 'patch-plan' }, [
       h('div', { class: 'summary sub patch-summary' }, [
         V.chip(`可產生指令 ${V.num(plan.items.length)} 項（${V.num(plan.devices.length)} 台設備）`, plan.items.length ? 'ok' : ''),
@@ -146,9 +147,11 @@
         h('h4', null, ['沒有產生指令的項目 ', V.chip(String(plan.skipped.length), 'warn')]),
         ...Array.from(skippedByReason.entries()).map(([reason, list]) => h('div', { class: 'patch-skip-group', 'data-reason': reason }, [
           h('div', { class: 'patch-label' }, RM().SKIP_TEXT[reason] || reason),
-          ...list.map((x) => h('div', { class: 'patch-skip', 'data-finding': x.findingKey }, [
+          // 每一筆列出檢查結果的訊息（同一台設備可能有多筆相同規則），點了開啟該筆；原因已在分組標題，detail 不同時才另外列出
+          ...list.map(({ x, hit }) => h('div', { class: 'patch-skip', 'data-finding': x.findingKey }, [
             V.chip(x.id || '—'), ' ', x.dev ? h('span', { class: 'muted' }, App.Q.devName(x.dev) + '：') : null,
-            x.detail !== RM().SKIP_TEXT[reason] ? x.detail : SKIP_LEVEL(x)])),
+            R().findingRef(App, hit, x.findingKey, closeDlg),
+            x.detail && x.detail !== (RM().SKIP_TEXT[reason] || reason) ? h('div', { class: 'muted patch-skip-detail' }, x.detail) : null])),
         ])),
       ]) : null,
     ]);

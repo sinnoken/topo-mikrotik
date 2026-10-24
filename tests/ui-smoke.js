@@ -919,6 +919,8 @@ async function buildInput(input) {
         seen.skipped++;
         const sk = plan.skipped.find((x) => x.findingKey === key);
         if (!box.className.includes('skipped') || !box.textContent.includes(sk.detail)) throw new Error(`${f.id} 沒有產生指令時應列出原因：${sk.detail}`);
+        const ref = box.querySelector('.finding-ref');
+        if (!ref || ref.getAttribute('title') !== f.message) throw new Error(`${f.id} 沒有產生指令時應列出檢查結果的訊息`);
         if (box.querySelector('.fix-cmd')) throw new Error(`${f.id} 沒有產生指令時不應有指令`);
       }
       if (f.id === 'F03' && (it || box.textContent.includes('disabled=yes'))) throw new Error('F03 在核心是 choice，畫面不可產生停用指令');
@@ -1496,6 +1498,57 @@ async function buildInput(input) {
     if (Array.from(App.graph.hl.nodes.keys()).join() !== ds[1].devices.join()) throw new Error('圖上應只標出該區塊的設備');
     $('#detail').querySelectorAll('a').find((x) => x.textContent === '顯示所有區塊').click();
     if (App.sel.domain != null || App.graph.hl.nodes.size !== App.Q.vlan(50).devices.length) throw new Error('應可回到所有區塊');
+  });
+  await step('修正計畫的未產生指令：同一台設備多筆相同規則時各列出自己的訊息，點了開啟該筆，原因不逐筆重複，基準中沒有的明確說明', async () => {
+    const RM = S.remediate; const RV = S.view.remediation; const PV = S.view.patchView;
+    // 兩台的 DNS 與 NTP 都不一致：同一台設備有兩筆 A12（choice），而且兩筆的 findingKey 相同
+    const dev = (n, ip, dns, ntp) => `${n} (${ip}):\n### /export terse\n/ip dns set servers=${dns}\n/system ntp client set enabled=yes servers=${ntp}\n`;
+    await buildInput(dev('VA', '10.0.0.1', '1.1.1.1', '10.9.9.1') + '_____\n' + dev('VB', '10.0.0.2', '8.8.8.8', '10.9.9.2'));
+    const Q = App.Q; const all = Q.findings();
+    const keys = S.util.uniq(all.map((f) => Q.findingKey(f)));
+    const MISSING_KEY = JSON.stringify(['A12', 'device:不存在的設備']);
+    PV.open(App, keys.concat([MISSING_KEY]));
+    const plan = RM.plan(Q, Array.from(PV.state.keys).sort(S.util.cmp));
+    const byDev = new Map(); plan.skipped.forEach((x) => { if (x.id) S.util.getOr(byDev, x.id + '|' + x.dev, () => []).push(x); });
+    const dup = Array.from(byDev.values()).find((l) => l.length > 1);
+    if (!dup) throw new Error('測試資料應有同一台設備的多筆相同規則未產生指令');
+    const rows = $('#patch-body').querySelectorAll('.patch-skip');
+    const dupRows = rows.filter((r) => r.getAttribute('data-finding') === dup[0].findingKey && r.textContent.includes(Q.devName(dup[0].dev) + '：'));
+    if (dupRows.length !== dup.length) throw new Error('每一筆未產生指令的項目都應列出');
+    const texts = dupRows.map((r) => r.textContent);
+    if (new Set(texts).size !== texts.length) throw new Error('同一台設備相同規則的多筆應彼此不同：' + texts.join('｜'));
+    const want = all.filter((f) => Q.findingKey(f) === dup[0].findingKey);
+    if (!want.every((f) => texts.some((t) => t.includes(f.message)))) throw new Error('每一筆都應列出檢查結果的訊息');
+    // 原因只在分組標題：每一筆不再重複寫原因或等級
+    const group = $('#patch-body').querySelectorAll('.patch-skip-group').find((g) => g.getAttribute('data-reason') === dup[0].reason);
+    if (!group.querySelector('.patch-label').textContent.includes(RM.SKIP_TEXT[dup[0].reason])) throw new Error('分組標題應是 SKIP_TEXT');
+    if (dupRows.some((r) => r.textContent.includes(RM.SKIP_TEXT[dup[0].reason]) || r.textContent.includes(RV.LEVEL_TEXT[dup[0].level]))) throw new Error('每一筆不應重複寫原因');
+    // 點擊（與鍵盤）開啟對應的那一筆
+    const orig = App.selectFinding; const opened = [];
+    App.selectFinding = (i) => { opened.push(i); return orig(i); };
+    try {
+      dupRows.forEach((r, n) => {
+        const link = r.querySelector('.finding-ref');
+        if (!link || link.getAttribute('title') !== want.find((f) => r.textContent.includes(f.message)).message) throw new Error('訊息連結的 title 應是完整訊息');
+        if (!$('#dlg-patch').open) PV.open(App);
+        const a = $('#patch-body').querySelectorAll('.patch-skip').filter((x) => x.getAttribute('data-finding') === dup[0].findingKey && x.textContent.includes(Q.devName(dup[0].dev) + '：'))[n].querySelector('.finding-ref');
+        if (n === 0) a.click(); else a.dispatch('keydown', { key: 'Enter' });
+        const idx = opened[opened.length - 1];
+        if (idx == null || !r.textContent.includes(all[idx].message)) throw new Error('點擊應開啟這一筆的檢查結果');
+        if ($('#dlg-patch').open) throw new Error('開啟檢查結果時應關閉修正計畫，讓詳情可見');
+      });
+      if (new Set(opened).size !== dupRows.length) throw new Error('不同的列應開啟不同的檢查結果');
+    } finally { App.selectFinding = orig; }
+    // 基準中沒有的鍵：明確說明，不是空白
+    PV.open(App);
+    const nf = $('#patch-body').querySelectorAll('.patch-skip').find((r) => r.getAttribute('data-finding') === MISSING_KEY);
+    if (!nf || !nf.querySelector('.finding-missing') || nf.querySelector('.finding-missing').textContent !== RV.MISSING_FINDING_TEXT) throw new Error('基準中沒有的鍵應說明「' + RV.MISSING_FINDING_TEXT + '」');
+    if (nf.querySelector('.finding-ref')) throw new Error('基準中沒有的鍵不應有連結');
+    $('#dlg-patch').close();
+    // 過長的訊息截斷，完整內容在 title
+    const long = 'x'.repeat(RV.FINDING_TEXT_MAX + 30);
+    const el = RV.findingRef(App, { idx: 0, f: { message: long } }, 'k');
+    if (el.textContent.length !== RV.FINDING_TEXT_MAX || !el.textContent.endsWith('…') || el.getAttribute('title') !== long) throw new Error('過長的訊息應截斷，完整內容放在 title');
   });
   await step('只有 MNDP 的設備對不畫線；詳情仍說明是廣播網域可達、非直連', async () => {
     const input = 'A (10.0.0.1):\n### /ip neighbor print detail\n'

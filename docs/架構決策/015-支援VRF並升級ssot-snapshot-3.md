@@ -103,11 +103,11 @@ finding 的實體中，只有 `ip` 類型帶 IP：A01（IP＋MAC）、A05（設�
 - 策略路由（`routing-mark` 與非 VRF 的路由表）是否納入路徑追蹤。
 - `/ip service` 的 `vrf` 屬性：F07 判斷 WAN 能否連入管理服務時，是否要考慮服務所在的 VRF。
 - 防火牆規則與 VRF 的關係（例如以 VRF 介面為 `in-interface`），在 M2 的 `Q.reach` 跨 VRF 時再確認。
-- [ADR-010](010-schema版本與轉換規則.md) 仍是提議；這份 ADR 的轉換規則以它的分類為前提，兩者要一起決定。
+- [ADR-010](010-schema版本與轉換規則.md) 已接受；這份 ADR 的轉換規則以它的分類為前提。
 
 ## 待辦
 
-- 使用者：決定是否採用，以及選項 B 的鍵寫法。
+- ~~使用者：決定是否採用，以及選項 B 的鍵寫法。~~ **已完成**：使用者在 2026-10-24 接受，鍵依選項 B（main 不加後綴，其他 VRF 加 `@<VRF>`）。
 - 採用時：
   - collector：評估另收 `/ip vrf` 或 `/routing table` 的 print；同步 `docs/收集清單與輸入格式.md`。
   - data-model：解析 `/ip vrf`、非 main 路由表改為事實、`src/core/keys.js` 的 VRF 鍵、升 `ssot-snapshot/3` 與 3.0.0、查詢與檢查分 VRF、`S.trace` 與 `Q.reach` 支援 vrf；先寫失敗的測試（含位址重疊的範例）。

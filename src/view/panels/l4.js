@@ -6,7 +6,9 @@
  * 這些都是推論，由查詢層計算並快取，不寫進基準（ADR-014）；畫面不自己判斷規則或路由，只負責選取、顯示與鍵盤操作。
  * 目前的 service、檢視方式（矩陣／表格）與下鑽到哪裡是檢視狀態，只在記憶體，不存進 store，換基準時清掉。
  * 顏色與符號取自 theme.l4；格子狀態一律有符號與文字（V.L4_STATUS），不只靠顏色。
- * 第一次計算矩陣（大型網路要數秒）時先顯示忙碌提示，下一輪事件循環才計算；同一份基準、同一個 service 再開時直接使用查詢層的快取。
+ * 第一次計算矩陣（大型網路要數秒）時用 Q.zoneMatrixSteps 分段計算：每段約 25 ms，段與段之間 setTimeout(0) 讓出主執行緒，
+ * 進度條顯示目前的階段與進度，計算中畫面仍可操作；換 service、換基準或離開 L4 時放棄（it.return()），不畫過期的結果，查詢層也不留快取。
+ * 同一份基準、同一個 service 再開時直接使用查詢層的快取。
  */
 (function (S) {
   'use strict';
@@ -22,13 +24,23 @@
   /** 顯示忙碌提示後，等多久才開始計算（讓瀏覽器先畫出提示） */
   const BUSY_DELAY = 40;
   const PROTOS = ['tcp', 'udp', 'icmp'];
+  /** Q.zoneMatrixSteps 的階段（依序） */
+  const STAGES = ['reps', 'evaluate', 'summary'];
+  const STAGE_LABEL = { reps: '找代表位址', evaluate: '逐一判斷', summary: '整理格子' };
 
   // 檢視狀態（不寫進基準、不存進 store）
-  //   mx：「全部服務」的矩陣（服務選單的選項）；current：目前畫的矩陣（CSV 用）
-  const st = { Q: null, service: '', mode: 'matrix', cell: null, cellData: null, reach: null, reachReq: null, reachErr: null, hideDeny: true, focus: [0, 0], token: 0, mx: null, current: null, error: null };
-  /** 這個畫面已經算過的矩陣：Q → Map(service → 計算毫秒數)；查詢層有快取，再開時不顯示忙碌提示 */
+  //   mx：「全部服務」的矩陣（服務選單的選項）；current：目前畫的矩陣（CSV 用）；showAllGroups：異質格子的 L1 是否列出全部的組
+  const st = { Q: null, service: '', mode: 'matrix', cell: null, cellData: null, reach: null, reachReq: null, reachErr: null, hideDeny: true, showAllGroups: false, focus: [0, 0], mx: null, current: null, error: null };
+  /** 這個畫面已經算過的矩陣：Q → Map(service → 計算毫秒數，只算 next() 本身)；查詢層有快取，再開時不顯示忙碌提示 */
   const computed = new WeakMap();
-  let els = null; let gridCells = [];
+  /** 分段計算的紀錄：Q → Map(service → { ms, wallMs, steps, maxStepMs, maxGapMs })；大型冒煙測試讀主執行緒被佔住的最長時間 */
+  const runs = new WeakMap();
+  /** 進行中的分段計算（同時最多一個）：{ Q, key, zo, it, promise, progress, … } */
+  let job = null;
+  let els = null; let gridCells = []; let busyEls = null;
+  /** 原因代碼的說明（S.query.reachReasonCodes 的 note），放在原因的提示裡 */
+  let reasonNotes = null;
+  const reasonNote = (code) => { if (!reasonNotes) reasonNotes = new Map(S.query.reachReasonCodes().map((x) => [x.code, x.note])); return reasonNotes.get(code) || null; };
 
   const svcIdOf = (s) => s.proto + (s.port != null ? '/' + s.port : '');
   const svcOf = (id) => { const [proto, port] = String(id).split('/'); return { proto, port: port === undefined ? null : Number(port) }; };
@@ -66,7 +78,7 @@
   };
   const verdictTag = (v) => statusTag(v, V.VERDICT[v] || v);
   /** 異質的徽章（文字，不只靠顏色）；顏色取自 theme.l4.badge */
-  const hetBadge = () => { const b = TH().badge; return h('span', { class: 'l4-het', style: { background: b.bg, color: b.text, borderColor: b.border } }, '≠ 異質'); };
+  const hetBadge = (text, cls) => { const b = TH().badge; return h('span', { class: 'l4-het' + (cls ? ' ' + cls : ''), style: { background: b.bg, color: b.text, borderColor: b.border } }, text || '≠ 異質'); };
   /** 對角線（zone 內）的虛線外框：顏色取自 theme.l4.diagonal */
   const diagStyle = () => ({ borderColor: TH().diagonal.border, borderStyle: TH().diagonal.dash });
 
@@ -89,7 +101,7 @@
   }
   const devLink = (App, d) => h('a', { class: 'link', onclick: () => App.select({ type: 'device', key: d }) }, App.Q.devName(d));
   const epText = (Q, ep) => (ep ? Q.epName(ep) : '不明');
-  const reasonItem = (App, r) => h('li', { class: 'l4-reason', 'data-code': r.code }, [
+  const reasonItem = (App, r) => h('li', { class: 'l4-reason', 'data-code': r.code, title: reasonNote(r.code) }, [
     h('b', null, V.reachReason(r.code)), r.message ? '：' + r.message : '',
     r.rule ? h('span', null, ['（', ruleLink(App, r.rule), '）']) : null,
   ]);
@@ -178,36 +190,91 @@
     return refresh(App);
   }
   function resetState(Q) {
-    Object.assign(st, { Q, service: '', cell: null, cellData: null, reach: null, reachReq: null, reachErr: null, focus: [0, 0], mx: null, current: null, error: null });
+    stopJob();
+    Object.assign(st, { Q, service: '', cell: null, cellData: null, reach: null, reachReq: null, reachErr: null, showAllGroups: false, focus: [0, 0], mx: null, current: null, error: null });
     if (els) { els.drill.classList.add('hidden'); V.clear(els.drill); }
   }
-  /** 依目前的 service 取得矩陣：這個畫面算過的直接畫；第一次先顯示忙碌提示，下一輪事件循環才計算 */
+  /** 放棄進行中的分段計算：generator 的 return() 讓查詢層不留下不完整的快取；之後不會再畫它的結果 */
+  function stopJob() {
+    const j = job; if (!j) return;
+    job = null;
+    if (j.it) { try { j.it.return(); } catch (e) { console.error(e); } }
+  }
+  /**
+   * 依目前的 service 取得矩陣：這個畫面算過的直接畫；否則用 Q.zoneMatrixSteps 分段計算（先顯示忙碌提示，BUSY_DELAY 後開始）。
+   * 同一份基準、同一個 service 已經在算（例如只換了檢視方式）時沿用它，算完依當時的檢視方式畫。回傳計算的 Promise（放棄時也會結束）。
+   */
   function refresh(App) {
-    const Q = App.Q; const key = st.service; const token = ++st.token;
+    const Q = App.Q; const key = st.service;
     syncControls(App);
+    if (job && job.Q === Q && job.key === key && job.zo === st.zo) return job.promise;
+    stopJob();
     const seen = computed.get(Q);
     if (seen && seen.has(key)) { draw(App, Q.zoneMatrix(optsOf(key)), null); return Promise.resolve(); }
+    // 舊的矩陣是別的 service 的結果：計算期間不顯示，也不能下載
+    st.current = null; V.clear(els.matrix); gridCells = []; hideTip();
     setBusy(true, key);
-    return new Promise((resolve) => setTimeout(() => {
-      try {
-        if (token !== st.token || App.Q !== Q) return;
-        const t0 = Date.now(); const mx = Q.zoneMatrix(optsOf(key)); const ms = Date.now() - t0;
-        if (!computed.has(Q)) computed.set(Q, new Map());
-        computed.get(Q).set(key, ms);
-        draw(App, mx, ms);
-      } catch (e) {
+    const j = { Q, key, zo: st.zo, it: null, progress: null, steps: 0, ms: 0, maxStepMs: 0, maxGapMs: 0, t0: Date.now(), last: 0 };
+    job = j;
+    j.promise = new Promise((resolve) => {
+      const fail = (e) => {
         console.error(e);
         st.error = e.message; setBusy(false); els.status.textContent = '無法計算 zone 矩陣：' + e.message;
-      } finally { resolve(); }
-    }, BUSY_DELAY));
+      };
+      const tick = () => {
+        if (job !== j) { resolve(); return; } // 換了 service 或基準：stopJob 已經放棄
+        if (App.Q !== Q || App.layer !== 'l4') {
+          stopJob(); setBusy(false);
+          els.status.textContent = App.Q !== Q ? '基準已更換，已停止計算 zone 矩陣。' : '已停止計算 zone 矩陣（離開了 L4）；回到 L4 時重新計算。';
+          resolve(); return;
+        }
+        const s0 = Date.now();
+        if (j.last) j.maxGapMs = Math.max(j.maxGapMs, s0 - j.last);
+        let r;
+        try {
+          if (!j.it) j.it = Q.zoneMatrixSteps(optsOf(key));
+          r = j.it.next(); // 參數錯誤（TypeError）在第一次 next() 丟出
+        } catch (e) { job = null; fail(e); resolve(); return; }
+        const ms = Date.now() - s0; j.last = Date.now();
+        j.steps++; j.ms += ms; j.maxStepMs = Math.max(j.maxStepMs, ms);
+        if (!r.done) { j.progress = r.value; setProgress(r.value); setTimeout(tick, 0); return; }
+        job = null;
+        if (!computed.has(Q)) computed.set(Q, new Map());
+        computed.get(Q).set(key, j.ms);
+        if (!runs.has(Q)) runs.set(Q, new Map());
+        runs.get(Q).set(key, { ms: j.ms, wallMs: Date.now() - j.t0, steps: j.steps, maxStepMs: j.maxStepMs, maxGapMs: j.maxGapMs });
+        try { draw(App, r.value, j.ms, j.steps); } catch (e) { fail(e); }
+        resolve();
+      };
+      setTimeout(tick, BUSY_DELAY);
+    });
+    return j.promise;
   }
+  /** 忙碌提示：說明文字在 live region 讀一次；進度條與數字每段更新，不在 live region 反覆朗讀（進度條有 aria-valuetext） */
   function setBusy(on, key) {
     els.matrix.setAttribute('aria-busy', String(on));
-    if (!on) return;
-    V.clear(els.status).appendChild(h('div', { class: 'l4-busy' }, [
-      h('div', { class: 'progress indeterminate', role: 'progressbar', 'aria-label': '計算中' }, h('div')),
-      h('span', null, `計算 zone 矩陣中（${key ? '服務 ' + key : '全部服務'}）…第一次計算要逐一判斷每個 zone 的代表位址，大型網路約需數秒；之後同一份基準會直接使用快取`),
+    if (!on) { busyEls = null; return; }
+    const fill = h('div');
+    const bar = h('div', { id: 'l4-progress', class: 'progress indeterminate', role: 'progressbar', 'aria-label': 'zone 矩陣的計算進度', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuetext': '準備中' }, fill);
+    const text = h('span', { id: 'l4-progress-text', class: 'l4-progress-text', 'aria-hidden': 'true' }, '準備中');
+    busyEls = { bar, fill, text };
+    V.clear(els.status).appendChild(h('div', { class: 'l4-busy' }, [bar,
+      h('span', null, `計算 zone 矩陣中（${key ? '服務 ' + key : '全部服務'}）…第一次計算要逐一判斷每個 zone 的代表位址，大型網路約需數秒，計算時可以繼續操作；之後同一份基準會直接使用快取`),
+      text,
     ]));
+  }
+  /** 進度：Q.zoneMatrixSteps 每段的 { stage, done, total }（total 是上限）；每個階段各自從 0 開始 */
+  function setProgress(p) {
+    if (!busyEls) return;
+    const n = STAGES.indexOf(p.stage) + 1; const label = STAGE_LABEL[p.stage] || p.stage;
+    const pct = p.total > 0 ? Math.min(100, Math.round((p.done / p.total) * 100)) : 0;
+    const t = `第 ${n || '?'}／${STAGES.length} 段：${label} ${V.num(p.done)}／${V.num(p.total)}`;
+    const { bar, fill, text } = busyEls;
+    bar.classList.remove('indeterminate');
+    bar.setAttribute('aria-valuenow', String(pct)); bar.setAttribute('aria-valuetext', t);
+    bar.dataset.stage = p.stage;
+    fill.style.width = pct + '%';
+    text.textContent = t;
   }
   /** 服務選單（全部，或單一 proto/port：預設服務與 dst-nat 規則的目的埠）與檢視方式 */
   function syncControls(App) {
@@ -227,12 +294,12 @@
       b.title = b.disabled ? `zone 超過 ${MATRIX_MAX} 個，只能用表格檢視` : b.dataset.mode === 'matrix' ? '來源 zone × 目的 zone 的格子（方向鍵移動，Enter 往下看）' : '每一格一列，可排序（和矩陣是同一份結果）';
     });
   }
-  function draw(App, mx, ms) {
+  function draw(App, mx, ms, steps) {
     if (!st.service) st.mx = mx; // 服務選單的選項來自「全部服務」的矩陣
     st.error = null; setBusy(false);
     const Q = App.Q; const s = mx.stats;
     els.status.textContent = `${V.num(s.zones)} 個 zone、${V.num(s.representatives)} 個代表位址、${V.num(s.natEntries)} 個 dst-nat 入口、${V.num(s.evaluations)} 次判斷；`
-      + (ms == null ? '使用快取' : `計算 ${V.num(ms)} ms（之後同一份基準直接使用快取）`) + '。'
+      + (ms == null ? '使用快取' : `計算 ${V.num(ms)} ms${steps > 1 ? `，分 ${V.num(steps)} 段` : ''}（之後同一份基準直接使用快取）`) + '。'
       + (st.zo && st.zo.error ? '命名規則的 zones 段沒有套用（原因見「zone 的依據」）。' : '');
     syncControls(App);
     st.current = mx;
@@ -387,7 +454,7 @@
   /** L0 → L1／L2：一格的位址組與牽涉的規則（Q.zoneCell）；焦點移到下鑽的標題 */
   function openCell(App, src, dst) {
     hideTip();
-    st.cell = { src, dst }; st.reach = null; st.reachReq = null; st.reachErr = null;
+    st.cell = { src, dst }; st.reach = null; st.reachReq = null; st.reachErr = null; st.showAllGroups = false;
     st.cellData = App.Q.zoneCell(src, dst, optsOf(st.service));
     renderDrill(App);
     announce(`已開啟 ${zoneName(App.Q, src)} → ${zoneName(App.Q, dst)} 的下鑽：${V.L4_STATUS[st.cellData.status]}`);
@@ -437,7 +504,7 @@
         V.chip(`允許 ${V.num(c.counts.allow)}・拒絕 ${V.num(c.counts.deny)}・無法判斷 ${V.num(c.counts.unknown)}／共 ${V.num(c.counts.total)}`),
         st.service ? V.chip('服務 ' + st.service) : V.chip('全部服務'),
         h('button', { type: 'button', class: 'ghost l4-close', onclick: () => closeDrill(App) }, '關閉下鑽')]));
-      if (c.reasons.length) box.appendChild(h('div', { class: 'l4-reasons' }, [h('b', null, '無法判斷的原因：'), h('ul', null, c.reasons.map((x) => h('li', { class: 'l4-reason', 'data-code': x.code }, `${V.reachReason(x.code)}（${V.num(x.count)} 組）`)))]));
+      if (c.reasons.length) box.appendChild(h('div', { class: 'l4-reasons' }, [h('b', null, '無法判斷的原因：'), h('ul', null, c.reasons.map((x) => h('li', { class: 'l4-reason', 'data-code': x.code, title: reasonNote(x.code) }, `${V.reachReason(x.code)}（${V.num(x.count)} 組）`)))]));
       box.appendChild(groupsBlock(App, c));
       box.appendChild(rulesBlock(App, c));
     } else {
@@ -451,34 +518,62 @@
     const td = gridCells[st.focus[0]] && gridCells[st.focus[0]][st.focus[1]];
     if (td) td.focus(); else { const t = $('#l4-matrix-title'); if (t) t.focus(); }
   }
-  /** L1：目的 × 結果相同的來源代表（Q.zoneCell 的 groups）；全部拒絕的組預設收起 */
+  /** 重畫下鑽後把焦點放回同一個切換按鈕（按鈕是重新建立的） */
+  const rerenderKeep = (App, sel) => { renderDrill(App); const b = els.drill.querySelector(sel); if (b) b.focus(); };
+  /**
+   * L1：目的 × 結果相同的來源代表（Q.zoneCell 的 groups）。
+   * 異質的格子（規格書 §5.7）：預設只列造成差異的組（groups[].divergent），可切換顯示全部；造成差異的服務（divergentServices）另標「≠ 差異」文字。
+   * 其他格子：全部拒絕的組預設收起。
+   */
   function groupsBlock(App, c) {
     const Q = App.Q; const all = c.groups.map((g, i) => ({ g, i }));
-    const hidden = st.hideDeny && all.some((x) => x.g.status !== 'deny') ? all.filter((x) => x.g.status === 'deny').length : 0;
-    const rows = hidden ? all.filter((x) => x.g.status !== 'deny') : all;
-    const toggle = all.some((x) => x.g.status === 'deny') && all.some((x) => x.g.status !== 'deny')
-      ? h('button', { type: 'button', class: 'ghost l4-hide-deny', 'aria-pressed': String(st.hideDeny), onclick: () => { st.hideDeny = !st.hideDeny; renderDrill(App); } },
-        st.hideDeny ? `顯示全部拒絕的組（${V.num(all.filter((x) => x.g.status === 'deny').length)}）` : '收起全部拒絕的組') : null;
+    const divN = all.filter((x) => x.g.divergent).length;
+    const het = c.heterogeneous && divN > 0;
+    let rows = all; let hidden = 0; let toggle = null; let divNote = null;
+    if (het) {
+      const only = !st.showAllGroups;
+      if (only) rows = all.filter((x) => x.g.divergent);
+      if (divN < all.length) {
+        toggle = h('button', { type: 'button', class: 'ghost l4-show-all', 'aria-pressed': String(!only), onclick: () => { st.showAllGroups = !st.showAllGroups; rerenderKeep(App, '.l4-show-all'); } },
+          only ? `顯示全部（${V.num(all.length)} 組）` : `只顯示造成差異的組（${V.num(divN)}）`);
+      }
+      divNote = h('p', { class: 'l4-note l4-div-note' }, [hetBadge(), ' ',
+        only && divN < all.length ? `這一格異質：只列出造成差異的 ${V.num(divN)} 組（共 ${V.num(all.length)} 組）。` : `這一格異質：${V.num(all.length)} 組中有 ${V.num(divN)} 組造成差異。`,
+        '造成差異是指某個服務的結果和同一個目的的其他來源、或同一批來源往其他目的的結果不同，而且是少數（平手時兩邊都算）；那個服務的按鈕標「≠ 差異」。']);
+    } else {
+      hidden = st.hideDeny && all.some((x) => x.g.status !== 'deny') ? all.filter((x) => x.g.status === 'deny').length : 0;
+      if (hidden) rows = all.filter((x) => x.g.status !== 'deny');
+      toggle = all.some((x) => x.g.status === 'deny') && all.some((x) => x.g.status !== 'deny')
+        ? h('button', { type: 'button', class: 'ghost l4-hide-deny', 'aria-pressed': String(st.hideDeny), onclick: () => { st.hideDeny = !st.hideDeny; rerenderKeep(App, '.l4-hide-deny'); } },
+          st.hideDeny ? `顯示全部拒絕的組（${V.num(all.filter((x) => x.g.status === 'deny').length)}）` : '收起全部拒絕的組') : null;
+    }
+    const divMark = () => hetBadge('≠ 差異', 'l4-div-mark');
     const srcText = (g) => (g.srcs.length === 1 ? g.srcs[0].ip : `${g.srcs[0].ip} 等 ${V.num(g.srcs.length)} 個`);
     const srcTitle = (g) => g.srcs.map((s) => `${s.ip}（${s.range ? s.range.join('–') : s.subnet || ''}；${s.basis === 'arp' ? 'ARP 看到的位址' : '推算的位址'}）`).join('\n');
     return h('div', { class: 'l4-sub' }, [
       h('h4', null, ['L1：位址組 ', V.chip(String(c.groups.length))]),
       h('p', { class: 'muted l4-note' }, '每一列是一個目的與一組結果相同的來源代表；點一列或某個服務看逐跳路徑（L3）。代表位址是等價類的代表：同一個區段內的位址對所有規則的位址條件結果相同。'),
-      toggle,
+      divNote, toggle,
       c.groups.length ? h('div', { class: 'work-table' }, V.table([
         { t: '目的', f: ({ g }) => h('span', null, [h('span', { class: 'mono' }, g.dst.ip), ' ',
           g.dst.via === 'nat' ? V.chip(`dst-nat 入口 → ${g.dst.natTo}`, 'info', { title: `${Q.devName(g.dst.dev)} 的 dst-nat 規則把這個位址改寫到 ${g.dst.natTo}` }) : null,
           h('span', { class: 'muted' }, ` ${zoneName(Q, g.dst.zone)}`)]) },
         { t: '來源（代表）', f: ({ g }) => h('span', { class: 'mono', title: srcTitle(g) }, srcText(g)) },
-        { t: '結果', f: ({ g, i }) => h('span', { class: 'l4-svcs' }, g.services.map((s) => h('button', {
-          type: 'button', class: 'l4-svc st-' + s.verdict, 'data-service': s.service, 'data-group': String(i), title: `看 ${s.service} 的逐跳路徑`,
-          style: { background: cellBg(s.verdict), color: TH().text },
-          onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); openGroup(App, i, s.service); },
-        }, [statusMark(s.verdict), ` ${s.service} ${V.VERDICT[s.verdict]}`, s.final && (s.final.dst !== g.dst.ip || s.final.port !== svcOf(s.service).port) ? ` → ${s.final.dst}${s.final.port != null ? ':' + s.final.port : ''}` : '']))) },
+        { t: '結果', f: ({ g, i }) => h('span', { class: 'l4-svcs' }, g.services.map((s) => {
+          const dv = g.divergentServices.includes(s.service);
+          return h('button', {
+            type: 'button', class: 'l4-svc st-' + s.verdict + (dv ? ' div' : ''), 'data-service': s.service, 'data-group': String(i), 'data-divergent': dv ? 'true' : null,
+            title: dv ? `${s.service} 的結果造成這一格異質；看逐跳路徑` : `看 ${s.service} 的逐跳路徑`,
+            style: { background: cellBg(s.verdict), color: TH().text },
+            onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); openGroup(App, i, s.service); },
+          }, [statusMark(s.verdict), ` ${s.service} ${V.VERDICT[s.verdict]}`, s.final && (s.final.dst !== g.dst.ip || s.final.port !== svcOf(s.service).port) ? ` → ${s.final.dst}${s.final.port != null ? ':' + s.final.port : ''}` : '', dv ? divMark() : null]);
+        })) },
         { t: '狀態', f: ({ g }) => statusTag(g.status), s: ({ g }) => g.status },
+      ].concat(het ? [{ t: '造成差異的服務', f: ({ g }) => (g.divergent ? h('span', { class: 'l4-div-svcs' }, ['≠ ', h('span', { class: 'mono' }, g.divergentServices.join('、'))]) : '—'), s: ({ g }) => g.divergentServices.length }] : [], [
         { t: '閘道／入口', f: ({ g }) => g.srcDevices.map((x) => (x.includes('|') ? Q.epName(x) : Q.devName(x))).join('、') || '—' },
-      ], rows, { onRow: ({ i }) => openGroup(App, i), limit: ROW_LIMIT, rowClass: ({ g }) => 'l4-group st-' + g.status })) : h('p', { class: 'muted' }, '這一格沒有可算的位址組合。'),
+      ]), rows, { onRow: ({ i }) => openGroup(App, i), limit: ROW_LIMIT, rowClass: ({ g }) => 'l4-group st-' + g.status + (g.divergent ? ' div' : '') })) : h('p', { class: 'muted' }, '這一格沒有可算的位址組合。'),
       hidden ? h('p', { class: 'muted' }, `另有 ${V.num(hidden)} 組全部拒絕，已收起。`) : null,
+      het && rows.length < all.length ? h('p', { class: 'muted' }, `另有 ${V.num(all.length - rows.length)} 組沒有造成差異，已收起。`) : null,
     ]);
   }
   /** L2：牽涉的規則（Q.zoneCell 的 ruleDetails）：決定結果的規則、chain 結尾的預設與路由，以及條件無法判斷的規則 */
@@ -540,7 +635,7 @@
         hp.service ? h('div', { class: 'muted' }, `設備的服務 ${hp.service.name}（埠 ${hp.service.port}）：${hp.service.enabled ? (hp.service.accepts === false ? '來源不在允許的位址內' : hp.service.accepts == null ? '來源位址不明' : '接受') : '停用'}`) : null,
         hp.reasons.length ? h('ul', { class: 'l4-reasons' }, hp.reasons.map((x) => reasonItem(App, x))) : null,
       ]))),
-      p.end ? h('div', { class: 'l4-end', 'data-code': p.end.code }, [h('b', null, '結束：' + V.reachReason(p.end.code)), p.end.message ? '　' + p.end.message : '']) : null,
+      p.end ? h('div', { class: 'l4-end', 'data-code': p.end.code, title: reasonNote(p.end.code) }, [h('b', null, '結束：' + V.reachReason(p.end.code)), p.end.message ? '　' + p.end.message : '']) : null,
     ]);
   }
 
@@ -549,9 +644,12 @@
     /** 查詢 zone 的參數（命名規則的 zones 段，核對失敗時不套用並附 error）；規則的 L4 影響（panels/firewall.js）用同一份 */
     zoneOpts,
     /** 測試與其他畫面用：目前的檢視狀態（複本） */
-    state: () => ({ service: st.service, mode: st.mode, cell: st.cell ? Object.assign({}, st.cell) : null, reach: st.reach, reachReq: st.reachReq ? Object.assign({}, st.reachReq) : null, reachErr: st.reachErr, focus: st.focus.slice(), error: st.error }),
+    state: () => ({ service: st.service, mode: st.mode, cell: st.cell ? Object.assign({}, st.cell) : null, reach: st.reach, reachReq: st.reachReq ? Object.assign({}, st.reachReq) : null, reachErr: st.reachErr, focus: st.focus.slice(), error: st.error,
+      showAllGroups: st.showAllGroups, computing: job ? { service: job.key, progress: job.progress ? Object.assign({}, job.progress) : null } : null }),
     openCell, openGroup, runReach,
     /** 這個畫面在某份基準上算過的矩陣（service → 毫秒數）；大型冒煙測試讀計算時間 */
     timings: (Q) => new Map(computed.get(Q) || []),
+    /** 分段計算的紀錄（service → { ms, wallMs, steps, maxStepMs：一段最久佔住主執行緒多久, maxGapMs：兩段之間最長的間隔 }） */
+    runs: (Q) => new Map(runs.get(Q) || []),
   };
 })(globalThis.SSOT = globalThis.SSOT || {});

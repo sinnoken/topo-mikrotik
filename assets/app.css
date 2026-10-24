@@ -368,6 +368,10 @@ pre.raw .hl { background: #fff3c4; display: block; }
 .l4-status { min-height: 22px; margin: 4px 0 8px; font-size: var(--fs-sm); color: var(--text); }
 .l4-busy { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 10px; border: 1px solid #d5e3f2; border-radius: var(--radius); background: var(--info-soft); color: var(--info-text); font-weight: 600; }
 .l4-busy .progress { flex: 0 1 200px; }
+.l4-progress-text { font-variant-numeric: tabular-nums; font-weight: 400; }
+.l4-div-note { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
+.l4-div-note .l4-het { margin-left: 0; }
+.l4-show-all { margin-bottom: 6px; }
 .l4-legend { margin-bottom: 8px; font-size: var(--fs-sm); }
 .l4-legend-row { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
 .l4-legend-item { display: inline-flex; align-items: center; gap: 5px; }
@@ -438,7 +442,7 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
   .l4-cell, .l4-tag, .l4-svc, .l4-het, .l4-swatch, .l4-zone-src, .l4-zone-inf { border-color: CanvasText; }
   .l4-cell.diag { border-style: dashed; }
   .l4-cell:focus, .l4-cell:focus-visible { outline: 3px solid Highlight; outline-offset: -3px; }
-  .l4-modes button[aria-pressed="true"], .l4-hide-deny[aria-pressed="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
+  .l4-modes button[aria-pressed="true"], .l4-hide-deny[aria-pressed="true"], .l4-show-all[aria-pressed="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
   .l4-tip { border-color: CanvasText; }
 }
 

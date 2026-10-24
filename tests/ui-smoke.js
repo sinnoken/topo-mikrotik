@@ -944,6 +944,13 @@ function viewBoundaryViolations(file, src) {
   const l4State = () => S.view.l4.state();
   const cellTd = (src, dst) => l4Cells().find((t) => t.dataset.src === src && t.dataset.dst === dst);
   const svcParts = (id) => { const [proto, port] = id.split('/'); return { proto, port: port === undefined ? null : Number(port) }; };
+  /** 下鑽中某一組的服務按鈕；那一組收起時（異質格子只列造成差異的組、或全部拒絕的組）先按顯示全部 */
+  const l4SvcBtn = (gi, svc) => {
+    const find = () => $('#l4-drill').testAll('.l4-svc').find((b) => b.dataset.group === String(gi) && b.dataset.service === svc);
+    if (!find()) { const t = $('#l4-drill').querySelector('.l4-show-all') || $('#l4-drill').querySelector('.l4-hide-deny'); if (t) t.click(); }
+    if (!find()) throw new Error(`下鑽應有第 ${gi + 1} 組 ${svc} 的按鈕`);
+    return find();
+  };
   await step('L4 zone 矩陣（L0）：每一格有狀態的符號與文字（不只靠顏色）、empty 和 unknown 分開、標出異質與 zone 內；圖例、提示、zone 的來源與推論、判斷的前提', async () => {
     const Q = App.Q; const V = S.view; const G = V.theme.l4.status;
     App.select(null); layerBtn('l4').click();
@@ -1003,7 +1010,10 @@ function viewBoundaryViolations(file, src) {
     // 強制色彩：格子有系統色外框，焦點用 Highlight
     const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8'); const forced = css.slice(css.indexOf('@media (forced-colors: active)'));
     if (!/\.l4-cell:focus[^{]*\{[^}]*Highlight/.test(forced) || !/\.l4-cell,[^{]*\{[^}]*CanvasText/.test(forced)) throw new Error('強制色彩模式下 L4 的格子要有系統色外框與焦點');
-    if (process.env.SMOKE_INPUT) console.log(`      L4 矩陣第一次計算：${S.view.l4.timings(Q).get('')} ms（${mx.zones.length} 個 zone、${mx.stats.evaluations} 次判斷）`);
+    if (process.env.SMOKE_INPUT) {
+      const run = S.view.l4.runs(Q).get('') || {};
+      console.log(`      L4 矩陣第一次計算：${S.view.l4.timings(Q).get('')} ms（${mx.zones.length} 個 zone、${mx.stats.evaluations} 次判斷）；分 ${run.steps} 段，一段最久 ${run.maxStepMs} ms，兩段之間最長 ${run.maxGapMs} ms，總共 ${run.wallMs} ms`);
+    }
   });
   await step('L4 下鑽：方向鍵在格子間移動（roving tabindex），Enter 開 L1／L2，點一組的服務開 L3；焦點移到下鑽的標題，規則可點開詳情', async () => {
     const Q = App.Q; const V = S.view; const mx = Q.zoneMatrix(); const n = mx.zones.length;
@@ -1027,16 +1037,40 @@ function viewBoundaryViolations(file, src) {
     if (document.activeElement !== $('#l4-drill-title') || !text('#l4-live').includes('下鑽')) throw new Error('下鑽後焦點應移到下鑽的標題，並讀出開啟了哪一格');
     const cell = Q.zoneCell(target.src, target.dst); const d = text('#l4-drill');
     if (!d.includes('L1') || !d.includes('L2')) throw new Error('下鑽應有 L1（位址組）與 L2（牽涉的規則）');
-    const shown = $('#l4-drill').testAll('.l4-group').length; const denyAll = cell.groups.filter((g) => g.status === 'deny').length;
-    if (shown !== Math.min(300, cell.groups.some((g) => g.status !== 'deny') ? cell.groups.length - denyAll : cell.groups.length)) throw new Error(`L1 的組數不符（${shown}／${cell.groups.length}，全部拒絕 ${denyAll}）`);
+    const shown = () => $('#l4-drill').testAll('.l4-group').length; const denyAll = cell.groups.filter((g) => g.status === 'deny').length;
+    const divCount = cell.groups.filter((g) => g.divergent).length;
+    if (cell.heterogeneous !== (divCount > 0)) throw new Error('有 divergent 的組 ⇔ 格子異質');
+    if (cell.heterogeneous) {
+      // 異質（規格書 §5.7）：預設只列造成差異的組；「顯示全部（N 組）」可切換，焦點留在切換按鈕
+      if (shown() !== Math.min(300, divCount)) throw new Error(`異質的格子預設只顯示造成差異的組（${shown()}／divergent ${divCount}）`);
+      if (!text('#l4-drill').includes('異質')) throw new Error('異質的下鑽應說明只列出造成差異的組');
+      const sa = () => $('#l4-drill').querySelector('.l4-show-all');
+      if (divCount < cell.groups.length) {
+        if (!sa() || sa().getAttribute('aria-pressed') !== 'false' || !sa().textContent.includes(`顯示全部（${V.num(cell.groups.length)} 組）`)) throw new Error('異質的下鑽應有「顯示全部（N 組）」');
+        sa().click();
+        if (shown() !== Math.min(300, cell.groups.length) || sa().getAttribute('aria-pressed') !== 'true' || document.activeElement !== sa()) throw new Error('「顯示全部」後應列出全部的組，焦點留在切換按鈕');
+        sa().click();
+        if (shown() !== Math.min(300, divCount) || sa().getAttribute('aria-pressed') !== 'false') throw new Error('再按一次應回到只顯示造成差異的組');
+      }
+      // 造成差異的服務：按鈕上有「差異」文字（不只靠顏色），其他服務沒有
+      const btns = $('#l4-drill').testAll('.l4-svc');
+      cell.groups.forEach((g, i) => { if (!g.divergent) return; g.services.forEach((s) => {
+        const b = btns.find((x) => x.dataset.group === String(i) && x.dataset.service === s.service);
+        if (b && g.divergentServices.includes(s.service) !== b.textContent.includes('差異')) throw new Error(`造成差異的服務才標「差異」：第 ${i + 1} 組 ${s.service}`);
+      }); });
+      if (!cell.groups.some((g) => g.divergentServices.length)) throw new Error('divergent 的組應列出造成差異的服務');
+      if (!process.env.SMOKE_INPUT && !cell.groups.some((g) => g.divergentServices.includes('tcp/8443'))) throw new Error('範例資料的 WAN → VLAN 20 應是 tcp/8443 造成差異');
+    } else {
+      if (shown() !== Math.min(300, cell.groups.some((g) => g.status !== 'deny') ? cell.groups.length - denyAll : cell.groups.length)) throw new Error(`L1 的組數不符（${shown()}／${cell.groups.length}，全部拒絕 ${denyAll}）`);
+      const hide = $('#l4-drill').querySelector('.l4-hide-deny');
+      if (hide) { hide.click(); if (shown() !== Math.min(300, cell.groups.length)) throw new Error('「顯示全部拒絕的組」後應列出全部'); $('#l4-drill').querySelector('.l4-hide-deny').click(); }
+    }
     if ($('#l4-drill').testAll('.l4-ruledetail').length !== Math.min(300, cell.ruleDetails.length)) throw new Error('L2 應列出 Q.zoneCell 的每一條牽涉的規則');
-    const hide = $('#l4-drill').querySelector('.l4-hide-deny');
-    if (hide) { hide.click(); if ($('#l4-drill').testAll('.l4-group').length !== Math.min(300, cell.groups.length)) throw new Error('「顯示全部拒絕的組」後應列出全部'); $('#l4-drill').querySelector('.l4-hide-deny').click(); }
     // L1 → L3：點一組的某個服務
     const gi = cell.groups.findIndex((g) => !process.env.SMOKE_INPUT ? g.services.some((s) => s.service === 'tcp/8443' && s.verdict === 'allow') : g.status !== 'deny');
     if (gi < 0) throw new Error('應有可以看 L3 的組');
     const g = cell.groups[gi]; const svc = (g.services.find((s) => s.service === 'tcp/8443' && s.verdict === 'allow') || g.services[0]).service;
-    const btn = $('#l4-drill').testAll('.l4-svc').find((b) => b.dataset.group === String(gi) && b.dataset.service === svc);
+    const btn = l4SvcBtn(gi, svc);
     btn.click();
     const s1 = l4State(); const p = svcParts(svc);
     if (!s1.reach || s1.reach !== Q.reach(g.srcs[0].ip, g.dst.ip, { proto: p.proto, port: p.port })) throw new Error('L3 應是這一組代表位址的 Q.reach');
@@ -1077,6 +1111,11 @@ function viewBoundaryViolations(file, src) {
     // 無法判斷：每個原因代碼都有中文說明
     const mx = Q.zoneMatrix();
     mx.cells.forEach((c) => c.reasons.forEach((x) => { if (!V.REACH_REASON[x.code]) throw new Error('原因代碼沒有中文說明：' + x.code); }));
+    // 查詢層的原因與結束代碼清單：每一個都有中文對照（不只範例資料出現的）
+    const codes = S.query.reachReasonCodes();
+    if (!codes.length || !Object.isFrozen(codes)) throw new Error('S.query.reachReasonCodes() 應是凍結的非空陣列');
+    const missing = codes.filter((x) => !V.REACH_REASON[x.code]).map((x) => x.code);
+    if (!codes.every((x) => V.REACH_REASON[x.code])) throw new Error('原因代碼沒有中文說明：' + missing.join('、'));
     const u = mx.cells.find((c) => c.status === 'unknown');
     if (!u && !process.env.SMOKE_INPUT) throw new Error('範例資料應有無法判斷的格子');
     if (u) {
@@ -1084,7 +1123,7 @@ function viewBoundaryViolations(file, src) {
       if (!text('#l4-drill').includes(V.reachReason(u.reasons[0].code))) throw new Error('unknown 的格子應以中文列出原因');
       const cd = Q.zoneCell(u.src, u.dst); const gi = cd.groups.findIndex((g) => g.services.some((s) => s.verdict === 'unknown'));
       const svc = cd.groups[gi].services.find((s) => s.verdict === 'unknown').service;
-      $('#l4-drill').testAll('.l4-svc').find((b) => b.dataset.group === String(gi) && b.dataset.service === svc).click();
+      l4SvcBtn(gi, svc).click();
       const r = l4State().reach;
       if (!r || r.verdict !== 'unknown' || !r.reasons.length) throw new Error('L3 應是無法判斷並附原因');
       const t = text('#l4-drill');
@@ -1133,6 +1172,53 @@ function viewBoundaryViolations(file, src) {
     const { files } = await captureDownloads(() => L4().querySelector('.l4-csv').click());
     const csv = parseCsv(files[0].text.replace(/^﻿/, ''));
     if (!files[0].name.endsWith('.csv') || csv.length - 1 !== mx.cells.length || !csv[0].includes('狀態')) throw new Error('CSV 應每一格一列');
+    App.showLayer('device');
+  });
+  await step('L4 分段計算：進度條顯示階段與進度；計算中仍可操作（切換層級、可達性查詢）；離開 L4 或換服務時放棄，不畫過期的結果、不留下半成品', async () => {
+    const Q = App.Q; const V = S.view; const mx = Q.zoneMatrix();
+    // 查詢層沒有快取時，分段計算的第一次 next() 不會結束（只看不算：馬上 return()）
+    const notCached = (id) => { const it = Q.zoneMatrixSteps({ services: [svcParts(id)] }); const r = it.next(); it.return(); return !r.done; };
+    const svc = mx.services.map((s) => s.id).find((id) => !V.l4.timings(Q).has(id) && notCached(id));
+    if (!svc) throw new Error('測試前提：應有還沒算過的服務');
+    const tick = () => new Promise((r) => setImmediate(r));
+    const until = async (cond, what) => { for (let i = 0; i < 200000 && !cond(); i++) await tick(); if (!cond()) throw new Error('等不到：' + what); };
+    const computing = () => { const c = l4State().computing; return !!(c && c.progress); };
+    App.showLayer('l4'); await App.l4Job;
+    const sel = $('#l4-service');
+    // 1. 計算中離開 L4：馬上切換；計算在下一段之前放棄
+    sel.value = svc; sel.dispatch('change'); const job1 = App.l4Job;
+    await until(computing, '開始分段計算');
+    const bar = $('#l4-progress');
+    if (!bar || bar.getAttribute('role') !== 'progressbar' || !/(找代表位址|逐一判斷|整理格子)/.test(bar.getAttribute('aria-valuetext') || '') || bar.getAttribute('aria-valuenow') == null) throw new Error('進度條應有階段的中文與進度（aria-valuetext、aria-valuenow）');
+    if (!/第 \d／3 段：(找代表位址|逐一判斷|整理格子) [\d,]+／[\d,]+/.test(text('#l4-progress-text'))) throw new Error('進度應寫出階段與 done/total：' + text('#l4-progress-text'));
+    if (l4Cells().length) throw new Error('計算中不應顯示別的服務的舊矩陣');
+    layerBtn('device').click();
+    if (App.layer !== 'device' || !L4().classList.contains('hidden')) throw new Error('計算中仍可切換層級');
+    await job1;
+    if (l4State().computing || V.l4.timings(Q).has(svc) || !notCached(svc)) throw new Error('離開 L4 時應放棄計算，查詢層不留下快取');
+    if ($('#l4-matrix').getAttribute('aria-busy') !== 'false' || !text('#l4-status').includes('已停止')) throw new Error('放棄後應拿掉 aria-busy，並說明已停止');
+    // 2. 回到 L4 重新計算；計算中可以做可達性查詢（不中斷計算），再換服務時放棄，畫的是新服務的矩陣
+    App.showLayer('l4'); const job2 = App.l4Job;
+    await until(computing, '回到 L4 後重新計算');
+    $('#l4-src').value = '10.1.30.11'; $('#l4-dst').value = '10.1.10.2'; $('#l4-proto').value = 'tcp'; $('#l4-proto').dispatch('change'); $('#l4-port').value = '22'; $('#l4-run').click();
+    if (!l4State().reachReq || !l4State().computing) throw new Error('計算中可以做可達性查詢，而且不中斷矩陣的計算');
+    sel.value = ''; sel.dispatch('change'); // 「全部服務」已算過：馬上畫
+    if (l4State().computing || text('#l4-status').includes('計算 zone 矩陣中')) throw new Error('換到算過的服務時應放棄進行中的計算，直接畫');
+    await job2;
+    if (V.l4.timings(Q).has(svc) || !notCached(svc)) throw new Error('換服務時應放棄計算，查詢層不留下快取');
+    mx.cells.forEach((c) => { const td = cellTd(c.src, c.dst); if (mx.zones.length <= V.l4.MATRIX_MAX && (!td || td.dataset.status !== c.status)) throw new Error('放棄後畫的應是目前服務（全部服務）的矩陣'); });
+    // 3. 跑完：每個階段的進度都更新過，結果與 Q.zoneMatrix 相同
+    sel.value = svc; sel.dispatch('change'); const job3 = App.l4Job;
+    let fin = false; job3.then(() => { fin = true; });
+    const stages = new Set(); const texts = new Set();
+    while (!fin) { await tick(); const b = $('#l4-progress'); if (b && b.dataset.stage) { stages.add(b.dataset.stage); texts.add(text('#l4-progress-text')); } }
+    if (!['reps', 'evaluate', 'summary'].every((s) => stages.has(s)) || texts.size < 3) throw new Error('分段計算時進度應依序更新三個階段：' + Array.from(texts).join('／'));
+    const one = Q.zoneMatrix({ services: [svcParts(svc)] });
+    if (notCached(svc) || !V.l4.timings(Q).has(svc)) throw new Error('跑完應寫進查詢層的快取');
+    one.cells.forEach((c) => { const td = cellTd(c.src, c.dst); if (one.zones.length <= V.l4.MATRIX_MAX && (!td || td.dataset.status !== c.status)) throw new Error('分段計算的結果應與 Q.zoneMatrix 相同'); });
+    const run = V.l4.runs(Q).get(svc);
+    if (!run || run.steps < 3 || !text('#l4-status').includes(`分 ${V.num(run.steps)} 段`)) throw new Error('應記錄並寫出分了幾段：' + text('#l4-status'));
+    if (process.env.SMOKE_INPUT) console.log(`      L4 分段計算（${svc}）：${run.ms} ms，分 ${run.steps} 段，一段最久 ${run.maxStepMs} ms，兩段之間最長 ${run.maxGapMs} ms，總共 ${run.wallMs} ms`);
     App.showLayer('device');
   });
   await step('規則詳情：命中次數（千分位）、沒有資料與對不上（F09）的說明、0 不代表沒用；L4 影響（zone 對與停用後 allow→deny）', async () => {

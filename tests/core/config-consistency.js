@@ -1,7 +1,7 @@
 // 跨設備組態一致性
 'use strict';
 const assert = require('assert');
-const { read, build, ids, test, NB } = require('../lib.js');
+const { S, read, build, ids, test, NB } = require('../lib.js');
 // ------------------------------------------------------------------ 跨設備組態一致性（同質不同名、同名不同值）
 // 兩台交換器以 ether1 互相 LLDP，ether1 tagged VLAN 10（同一個 VLAN 區塊）；linked=false 時沒有鏈路（不同區塊）
 const cfgPair = (a, b, linked = true) => {
@@ -97,29 +97,57 @@ test('多數決：最多的一組至少 2 台且多於其他每一組才推定�
   const dns = (v) => [`/ip dns set servers=${v}`];
   const two = cfgTrio(dns('8.8.8.8'), dns('1.1.1.1'), dns('8.8.8.8'));
   assert.deepStrictEqual(msgs(two, 'A12'), ['DNS 伺服器：SW_A、SW_C 8.8.8.8；SW_B 1.1.1.1；依多數推定偏離：SW_B']);
-  assert.deepStrictEqual(two.findings.find((f) => f.id === 'A12').deviation, { basis: 'majority', deviating: ['SW_B'] });
+  assert.deepStrictEqual(two.findings.find((f) => f.id === 'A12').deviation, { basis: 'majority', deviating: ['SW_B'],
+    groups: [{ value: ['8.8.8.8'], key: ['8.8.8.8'], devs: ['SW_A', 'SW_C'] }, { value: ['1.1.1.1'], key: ['1.1.1.1'], devs: ['SW_B'] }], main: 0 });
   const tie = cfgTrio(dns('8.8.8.8'), dns('1.1.1.1'), dns('9.9.9.9'));
   assert.ok(msgs(tie, 'A12')[0].endsWith('；沒有多數，無法推定'), '1 對 1 對 1 平手');
-  assert.deepStrictEqual(tie.findings.find((f) => f.id === 'A12').deviation, { basis: 'majority', deviating: [] });
+  assert.deepStrictEqual(tie.findings.find((f) => f.id === 'A12').deviation, { basis: 'majority', deviating: [],
+    groups: [{ value: ['8.8.8.8'], key: ['8.8.8.8'], devs: ['SW_A'] }, { value: ['1.1.1.1'], key: ['1.1.1.1'], devs: ['SW_B'] }, { value: ['9.9.9.9'], key: ['9.9.9.9'], devs: ['SW_C'] }], main: null });
   const pair = cfgPair(dns('8.8.8.8'), dns('1.1.1.1'));
-  assert.deepStrictEqual(pair.findings.find((f) => f.id === 'A12').deviation, { basis: 'majority', deviating: [] }, '1 對 1 平手');
+  assert.deepStrictEqual(pair.findings.find((f) => f.id === 'A12').deviation, { basis: 'majority', deviating: [],
+    groups: [{ value: ['8.8.8.8'], key: ['8.8.8.8'], devs: ['SW_A'] }, { value: ['1.1.1.1'], key: ['1.1.1.1'], devs: ['SW_B'] }], main: null }, '1 對 1 平手');
   // A08：同一台設定多個網段時，以網段組合當成它的設定值
   const ipa = (c, ifc = 'ether5') => `/ip address add address=${c} interface=${ifc}`;
   const a08 = cfgTrio([ipa('10.0.10.1/24'), ipa('10.0.10.129/25', 'ether6')], [ipa('10.0.10.2/24')], [ipa('10.0.10.3/24')]);
   const f08 = a08.findings.find((f) => f.id === 'A08');
   assert.ok(f08.message.endsWith('；依多數推定偏離：SW_A'), f08.message);
-  assert.deepStrictEqual(f08.deviation, { basis: 'majority', deviating: ['SW_A'] });
+  assert.deepStrictEqual(f08.deviation, { basis: 'majority', deviating: ['SW_A'],
+    groups: [{ value: ['10.0.10.0/24', '10.0.10.128/25'], key: ['10.0.10.0/24', '10.0.10.128/25'], devs: ['SW_A'] }, { value: ['10.0.10.0/24'], key: ['10.0.10.0/24'], devs: ['SW_B', 'SW_C'] }], main: 1 });
   const a09 = cfgPair([ipa('10.0.10.1/24')], [ipa('10.0.10.1/24', 'ether6')]).findings.find((f) => f.id === 'A09');
   assert.ok(a09 && !('deviation' in a09) && !a09.message.includes('多數'), 'A09 重複 IP 本身就是衝突，不套用多數決');
 });
-test('多數決：範例資料中 A06 推定 TPE_ACC_SW_10 偏離，A12 兩台核心沒有多數', () => {
+test('多數決的分組（deviation.groups／main）：顯示值取該組第一台設備的設定順序，key 是比對用的正規化值；分組不計順序、不分大小寫', () => {
+  const ntp = (v) => [`/system ntp client set enabled=yes servers=${v}`];
+  const s = cfgTrio(ntp('Time.Cloudflare.com,10.0.0.1'), ntp('10.0.0.1,time.cloudflare.com'), ntp('10.0.0.9'));
+  const f = s.findings.find((x) => x.id === 'A12' && x.facet === 'ntp');
+  assert.deepStrictEqual(f.deviation, { basis: 'majority', deviating: ['SW_C'],
+    groups: [{ value: ['Time.Cloudflare.com', '10.0.0.1'], key: ['time.cloudflare.com', '10.0.0.1'], devs: ['SW_A', 'SW_B'] }, { value: ['10.0.0.9'], key: ['10.0.0.9'], devs: ['SW_C'] }], main: 0 });
+});
+test('多數決：範例資料中 A06 推定 TPE_ACC_SW_10 偏離；A12 的 DNS 兩台核心沒有多數，NTP 推定 TPE_ACC_SW_12 偏離', () => {
   const s = build(read('samples/sample-bundle.txt'));
   const a06 = s.findings.find((f) => f.id === 'A06');
   assert.ok(a06.message.endsWith('（網段重疊但遮罩不同）；依多數推定偏離：TPE_ACC_SW_10'), a06.message);
-  assert.deepStrictEqual(a06.deviation, { basis: 'majority', deviating: ['TPE_ACC_SW_10'] });
-  const a12 = s.findings.find((f) => f.id === 'A12');
+  assert.deepStrictEqual([a06.deviation.basis, a06.deviation.deviating], ['majority', ['TPE_ACC_SW_10']]);
+  const a12 = s.findings.find((f) => f.id === 'A12' && f.facet === 'dns');
   assert.strictEqual(a12.message, 'DNS 伺服器：TPE_CORE_RT_01 1.1.1.1、8.8.8.8；TPE_CORE_RT_02 8.8.8.8；沒有多數，無法推定');
-  assert.deepStrictEqual(a12.deviation, { basis: 'majority', deviating: [] });
+  assert.deepStrictEqual(a12.deviation, { basis: 'majority', deviating: [],
+    groups: [{ value: ['1.1.1.1', '8.8.8.8'], key: ['1.1.1.1', '8.8.8.8'], devs: ['TPE_CORE_RT_01'] }, { value: ['8.8.8.8'], key: ['8.8.8.8'], devs: ['TPE_CORE_RT_02'] }], main: null });
+  const ntp = s.findings.find((f) => f.id === 'A12' && f.facet === 'ntp');
+  assert.strictEqual(ntp.message, 'NTP 伺服器：TPE_ACC_SW_12 10.1.10.2；TPE_CORE_RT_01、TPE_CORE_RT_02 time.cloudflare.com；依多數推定偏離：TPE_ACC_SW_12');
+  assert.deepStrictEqual(ntp.deviation, { basis: 'majority', deviating: ['TPE_ACC_SW_12'],
+    groups: [{ value: ['10.1.10.2'], key: ['10.1.10.2'], devs: ['TPE_ACC_SW_12'] }, { value: ['time.cloudflare.com'], key: ['time.cloudflare.com'], devs: ['TPE_CORE_RT_01', 'TPE_CORE_RT_02'] }], main: 1 });
+  // 兩種 NTP 寫法：核心用 servers=，ACC_SW_12 用 RouterOS 7 的 servers 子選單
+  const Q = S.query(s);
+  assert.deepStrictEqual(['TPE_CORE_RT_01', 'TPE_ACC_SW_12'].map((k) => { const n = Q.serversOf(k).ntp; return [n.menu, n.param]; }),
+    [['/system ntp client', 'servers'], ['/system ntp client servers', 'address']]);
   const withDev = ['V06', 'V07', 'A06', 'A07', 'A08', 'A10', 'A11', 'A12', 'R06'];
   s.findings.forEach((f) => assert.strictEqual('deviation' in f, withDev.includes(f.id), `${f.id} 的 deviation 欄位`));
+  // 每條多數決規則的分組都一致：至少兩組、每台設備只在一組；有多數時 deviating 是其餘各組的設備，沒有多數時 main 為 null、deviating 為空
+  s.findings.filter((f) => f.deviation).forEach((f) => {
+    const d = f.deviation; const all = d.groups.flatMap((g) => g.devs);
+    assert.ok(d.groups.length >= 2 && new Set(all).size === all.length, f.id);
+    d.groups.forEach((g) => assert.ok(g.devs.length && g.value.length === g.key.length, f.id));
+    if (d.main === null) assert.deepStrictEqual(d.deviating, [], f.id);
+    else assert.deepStrictEqual(d.deviating.slice().sort(), d.groups.filter((g, i) => i !== d.main).flatMap((g) => g.devs).sort(), f.id);
+  });
 });

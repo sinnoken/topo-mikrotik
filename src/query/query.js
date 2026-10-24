@@ -263,6 +263,12 @@
       prefixes: () => m.prefixes,
       subnets: () => subnets,
       devName(k) { const d = dev.get(k); return d ? (d.label || d.name) : k; },
+      /**
+       * 設備層級的 DNS／NTP 伺服器設定（事實）：{ dns, ntp }，各為 { values, menu, param, src } 或 null（沒有設定、或找不到設備）。
+       * menu／param 是收集到的來源（/ip dns＋servers、/system ntp client＋servers、/system ntp client servers＋address、
+       * /system ntp client＋primary-ntp/secondary-ntp），產生修正指令時依它決定寫法。
+       */
+      serversOf(k) { const d = dev.get(k); return { dns: (d && d.dnsServers) || null, ntp: (d && d.ntpServers) || null }; },
       // 清單與總覽的唯一數字來源：列資料與計數一起算，畫面不得自行重算
       inventory() {
         if (inv) return inv;

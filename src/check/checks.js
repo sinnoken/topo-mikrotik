@@ -353,12 +353,17 @@
       if (!main || main.devs.length < 2 || (sorted[1] && sorted[1].devs.length >= main.devs.length)) return null;
       return { main, deviating: groups.filter((g) => g !== main).flatMap((g) => g.devs).sort(byName) };
     };
-    // 附加在訊息尾端的推定結果與 finding 的 deviation 欄位（平手時 deviating 為空陣列）
+    /**
+     * 附加在訊息尾端的推定結果與 finding 的 deviation 欄位（平手時 deviating 為空陣列、main 為 null）。
+     * groups：多數決實際用的分組（groupDevs 的結果，順序相同）；value 是該組第一台設備的顯示值（依它的設定順序），
+     * key 是同位置的正規化比對值，devs 依名稱自然排序。main 是多數組在 groups 的索引。
+     */
     const judge = (groups) => {
       const m = majorityOf(groups);
       return {
         note: m ? `；依多數推定偏離：${devList(m.deviating)}` : '；沒有多數，無法推定',
-        extra: { deviation: { basis: 'majority', deviating: m ? m.deviating : [] } },
+        extra: { deviation: { basis: 'majority', deviating: m ? m.deviating : [],
+          groups: groups.map((g) => ({ value: g.vals.slice(), key: g.keys.slice(), devs: g.devs.slice() })), main: m ? groups.indexOf(m.main) : null } },
       };
     };
     const fmtGroups = (groups, fmt) => groups.map((x) => { const v = fmt(x.vals); return devList(x.devs) + (v[0] === '「' ? '' : ' ') + v; }).join('；');

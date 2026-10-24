@@ -315,17 +315,20 @@
           case '/ip dhcp-server network':
             if (cmd === 'add' && kv.address) emit({ t: 'dhcpNet', network: kv.address, gateways: list(kv.gateway), dns: list(kv['dns-server']), ntp: list(kv['ntp-server']), line });
             break;
+          // menu／param：值是從哪個選單的哪個參數收集到的（產生修正指令要用）。只讀可設定的 servers；
+          // dynamic-servers 是唯讀（DHCP client 等服務學到的），不是設定值，不收
           case '/ip dns':
-            if (cmd === 'set' && 'servers' in kv) emit({ t: 'dnsServers', servers: serverList(kv.servers), line });
+            if (cmd === 'set' && 'servers' in kv) emit({ t: 'dnsServers', servers: serverList(kv.servers), menu: path, param: 'servers', line });
             break;
-          case '/system ntp client': { // RouterOS 7：servers=；RouterOS 6：primary-ntp／secondary-ntp
+          case '/system ntp client': { // RouterOS 7：servers=；RouterOS 6：primary-ntp／secondary-ntp（兩個固定欄位，記成同一個 param）
             if (cmd !== 'set') break;
-            const servers = serverList(kv.servers, kv['primary-ntp'], kv['secondary-ntp']);
-            if (servers.length) emit({ t: 'ntpServers', servers, line });
+            if ('servers' in kv) { const servers = serverList(kv.servers); if (servers.length) emit({ t: 'ntpServers', servers, menu: path, param: 'servers', line }); break; }
+            const servers = serverList(kv['primary-ntp'], kv['secondary-ntp']);
+            if (servers.length) emit({ t: 'ntpServers', servers, menu: path, param: 'primary-ntp/secondary-ntp', line });
             break;
           }
-          case '/system ntp client servers': // RouterOS 7 的伺服器清單子選單
-            if (cmd === 'add' && kv.address && kv.disabled !== 'yes') emit({ t: 'ntpServers', servers: serverList(kv.address), line });
+          case '/system ntp client servers': // RouterOS 7 的伺服器清單子選單：每筆 add 一個伺服器
+            if (cmd === 'add' && kv.address && kv.disabled !== 'yes') emit({ t: 'ntpServers', servers: serverList(kv.address), menu: path, param: 'address', line });
             break;
           case '/routing id':
             if (cmd === 'add' && kv.name && kv.id) ridNames.set(kv.name, kv.id);

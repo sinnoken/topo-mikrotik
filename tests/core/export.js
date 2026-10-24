@@ -96,7 +96,43 @@ test('export：DNS／NTP 伺服器（servers=、RouterOS 7 servers 子選單、R
   assert.deepStrictEqual(M.ipBinds.map((b) => [b.section, b.nameKey, b.valueKey]).slice(2, 4), [['/ip dhcp-server lease', 'AABBCC000005', '10.1.30.5'], ['/ip dns static', 'dns1.lan', '10.1.10.53']]);
   assert.deepStrictEqual([M.dhcpNets[0].dns, M.dhcpNets[0].ntp], [['10.1.10.53', '10.1.10.54'], ['10.1.10.123']]);
   const s = build(BIND_EXPORT);
-  assert.ok(!('dns' in s.model.dhcpNetworks[0]) && !('dnsServers' in s.model.devices[0]), '新資料只在內部模型，Snapshot 欄位不變');
+  assert.ok(!('dns' in s.model.dhcpNetworks[0]), 'DHCP 網路的 DNS／NTP 只在內部模型');
+});
+// 設備層級的 DNS／NTP 伺服器（devices[].dnsServers／ntpServers）：記錄是從哪個選單、哪個參數收集到的
+const srvOf = (text, key) => {
+  const s = build(text); const d = s.model.devices.find((x) => x.key === key);
+  const strip = (v) => v && { values: v.values, menu: v.menu, param: v.param, lines: v.src.map((x) => x[1]) };
+  return { s, dns: strip(d.dnsServers), ntp: strip(d.ntpServers) };
+};
+test('export：設備的 DNS／NTP 伺服器進入 Snapshot，記錄來源選單與參數；同一台有多種 NTP 來源時依優先序取來源、值依出現順序合併', () => {
+  // facts 帶 menu／param
+  const f = configFacts(BIND_EXPORT);
+  assert.deepStrictEqual(f.filter((x) => x.t === 'dnsServers' || x.t === 'ntpServers').map((x) => [x.t, x.menu, x.param, x.line]),
+    [['dnsServers', '/ip dns', 'servers', 13], ['ntpServers', '/system ntp client', 'servers', 24], ['ntpServers', '/system ntp client servers', 'address', 25]]);
+  // RouterOS 7：servers= 與 servers 子選單同時出現時，來源取 /system ntp client 的 servers（手冊：servers 是靜態設定，子選單同時列出它與動態項目）；值依出現順序合併，停用的子選單項目不算
+  const a = srvOf(BIND_EXPORT, 'R_A');
+  assert.deepStrictEqual(a.dns, { values: ['1.1.1.1', '8.8.8.8'], menu: '/ip dns', param: 'servers', lines: [13] });
+  assert.deepStrictEqual(a.ntp, { values: ['10.1.10.123', '10.1.10.124'], menu: '/system ntp client', param: 'servers', lines: [24, 25] });
+  // 子選單在 servers= 之前出現，來源仍是 servers=（優先序，不是出現順序）
+  const rev = srvOf(['R_D (10.0.0.4):', '### /export', '/system ntp client servers add address=10.1.10.124', '/system ntp client set enabled=yes servers=10.1.10.123'].join('\n'), 'R_D');
+  assert.deepStrictEqual(rev.ntp, { values: ['10.1.10.124', '10.1.10.123'], menu: '/system ntp client', param: 'servers', lines: [3, 4] });
+  // 只有子選單：每筆 add 是一個伺服器，依 add 的順序
+  const sub = srvOf(['R_B (10.0.0.2):', '### /export', '/system ntp client set enabled=yes', '/system ntp client servers', 'add address=time.cloudflare.com', 'add address=10.1.10.2'].join('\n'), 'R_B');
+  assert.deepStrictEqual(sub.ntp, { values: ['time.cloudflare.com', '10.1.10.2'], menu: '/system ntp client servers', param: 'address', lines: [5, 6] });
+  // RouterOS 6：primary-ntp／secondary-ntp（values 依 primary、secondary 的順序；0.0.0.0 是未設定）
+  const v6 = srvOf(['R_C (10.0.0.3):', '### /export', '/system ntp client', 'set enabled=yes primary-ntp=10.1.10.123 secondary-ntp=10.1.10.124'].join('\n'), 'R_C');
+  assert.deepStrictEqual(v6.ntp, { values: ['10.1.10.123', '10.1.10.124'], menu: '/system ntp client', param: 'primary-ntp/secondary-ntp', lines: [4] });
+  // dynamic-servers 是唯讀（DHCP 等其他服務學到的），不是設定值，不和 servers 混在一起
+  const dyn = srvOf(['R_E (10.0.0.5):', '### /export', '/ip dns set servers=1.1.1.1 dynamic-servers=9.9.9.9'].join('\n'), 'R_E');
+  assert.deepStrictEqual(dyn.dns, { values: ['1.1.1.1'], menu: '/ip dns', param: 'servers', lines: [3] });
+  const only = build(['R_E (10.0.0.5):', '### /export', '/ip dns set allow-remote-requests=yes dynamic-servers=9.9.9.9'].join('\n'));
+  assert.strictEqual(only.model.devices[0].dnsServers, null, '只有 dynamic-servers 不算有設定 servers');
+  // 沒有設定：null；查詢介面 Q.serversOf 回傳 { dns, ntp }，找不到的設備兩者皆 null
+  assert.strictEqual(sub.dns, null);
+  const Q = S.query(a.s);
+  assert.deepStrictEqual(Q.serversOf('R_A'), { dns: a.s.model.devices.find((x) => x.key === 'R_A').dnsServers, ntp: a.s.model.devices.find((x) => x.key === 'R_A').ntpServers });
+  assert.deepStrictEqual(Q.serversOf('NOPE'), { dns: null, ntp: null });
+  assert.deepStrictEqual(S.query(sub.s).serversOf('R_B').dns, null);
 });
 test('export：bridge 沒有開 vlan-filtering 時，不產生 VLAN 成員', () => {
   const s = build('SW_A (10.0.0.1):\n### /export terse\n/interface bridge add name=bridge1\n/interface bridge port add bridge=bridge1 interface=ether1 pvid=20\n/interface bridge vlan add bridge=bridge1 tagged=ether1 vlan-ids=10\n');

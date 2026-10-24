@@ -66,7 +66,7 @@ function exportText(name, board, entries, compact) {
   return lines.join('\n');
 }
 const sort = (entries) => { const order = ['/interface bridge', '/interface ethernet', '/interface bonding', '/interface vlan', '/interface vrrp', '/interface bridge port', '/interface bridge vlan', '/ip address', '/ip dhcp-server network', '/routing id', '/routing ospf instance', '/ip route',
-  '/ip pool', '/ip dhcp-server lease', '/ip dns', '/ip dns static', '/ip firewall address-list', '/system ntp client',
+  '/ip pool', '/ip dhcp-server lease', '/ip dns', '/ip dns static', '/ip firewall address-list', '/system ntp client', '/system ntp client servers',
   '/interface list', '/interface list member', '/ip firewall filter', '/ip firewall nat', '/ip firewall raw', '/ipv6 firewall filter', '/ip service']; return entries.sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])); };
 
 const bridgeHostText = (rows) => table(rows.map((m) => ({ flags: m.local ? 'DL' : m.static ? '' : 'D', kvs: [['mac-address', m.mac], ['on-interface', m.ifc], ['bridge', 'bridge1'], ['vid', m.vid], ['age', pick(['3s', '12s', '45s', '1m2s'])]] })), 'Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external ');
@@ -147,6 +147,7 @@ for (let s = 1; s <= SITES; s++) {
     e.push(['/interface bridge vlan', 'add', `bridge=bridge1 tagged=${bond}${F && (a === 3 || a === 11) ? '' : ',ether24'} untagged=${v30Untagged.join(',')} vlan-ids=30`]); // V01：ACC_03 的 ether24 少了 VLAN 30
     e.push(['/ip address', 'add', `address=${sw.ip}/${F && a === 10 ? 25 : 24} interface=vlan10 network=10.${s}.10.0`]);       // A06／A08：ACC_10 的 VLAN 10 遮罩是 /25
     if (F && (a === 11 || a === 12)) e.push(['/ip address', 'add', `address=10.${s}.10.99/24 interface=vlan10 network=10.${s}.10.0`]); // A09：同一 IP 設定在兩台
+    if (F && a === 12) e.push(['/system ntp client', 'set', 'enabled=yes'], ['/system ntp client servers', 'add', `address=10.${s}.10.2`]); // A12：ACC_12 的 NTP 伺服器與兩台核心不同（RouterOS 7 的 servers 子選單寫法），依多數推定偏離
     acc.push(sw);
   }
   acc.forEach((sw) => {                       // 上行學到的其他 MAC
@@ -212,7 +213,7 @@ for (let s = 1; s <= SITES; s++) {
     if (F) {                                                                                                           // 名稱 ↔ IP 設定與 DNS／NTP 伺服器
       e.push(['/ip pool', 'add', `name=pool-user ranges=10.${s}.30.100-10.${s}.30.200`]);
       if (ci === 0) e.push(['/ip dhcp-server lease', 'add', `address=10.${s}.30.20 mac-address=6C:FE:54:00:AA:01 server=dhcp-user`]);
-      e.push(['/ip dns', 'set', `allow-remote-requests=yes servers=${ci === 0 ? '1.1.1.1,8.8.8.8' : '8.8.8.8'}`]);                    // A12：DNS 伺服器不同（NTP 相同）
+      e.push(['/ip dns', 'set', `allow-remote-requests=yes servers=${ci === 0 ? '1.1.1.1,8.8.8.8' : '8.8.8.8'}`]);                    // A12：DNS 伺服器兩台核心不同（沒有多數）
       e.push(['/ip dns static', 'add', `address=10.${s}.10.2 name=ntp.${C.toLowerCase()}.lan`]);
       e.push(['/ip dns static', 'add', `address=10.${s}.20.50 name=${ci === 0 ? 'nas' : 'storage'}.${C.toLowerCase()}.lan`]);          // A11：同一 IP 兩個名稱
       e.push(['/ip firewall address-list', 'add', `address=10.${s}.10.0/24 list=MGMT`]);

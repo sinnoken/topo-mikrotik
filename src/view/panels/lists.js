@@ -8,9 +8,9 @@
 
   // ---------------------------------------------------------------- 檢查結果
   // groupBy：rule（依規則代碼）或 device（依設備，Q.findingDevice）；onlyNew：只看與舊基準比對後新出現的；
-  // exportByDevice：匯出 CSV／Markdown 時依設備排序；editing：正在變更處理狀態的那一筆（findings 的索引）
+  // editing：正在變更處理狀態的那一筆（findings 的索引）。匯出報表的「依設備排序」在資料中心（app-hub.js）
   const state = { sev: { error: true, warn: true, info: true }, open: new Set(), shown: new Map(), selected: -1,
-    groupBy: 'rule', onlyNew: false, exportByDevice: false, editing: -1 };
+    groupBy: 'rule', onlyNew: false, editing: -1 };
   const R = () => V.remediation;
   const DAY_MS = 86400000;
   const dateOf = (iso) => String(iso).slice(0, 10);
@@ -97,14 +97,10 @@
       base ? null : h('span', { class: 'muted note only-new-why' }, '在「比對」分頁載入舊基準後，才能只看新出現的'),
       versionWarn ? h('span', { class: 'note warn-line only-new-version', title: versionWarn.message }, '新出現的可能來自新版檢查：' + versionWarn.message) : null,
     ]));
-    // 匯出不受上方篩選影響：一律輸出全部檢查結果（含處理狀態）；可選擇依設備排序
+    // 報表（CSV、Markdown）的匯出集中在資料中心；這裡只放入口
     root.appendChild(h('div', { class: 'row spaced pane-section' }, [
-      h('span', { class: 'muted' }, '匯出全部檢查結果'),
-      h('button', { title: '每筆一列，含相關實體、證據行號、處理狀態、時間與備註（Excel 可直接開啟）', onclick: () => App.exportAs('csv', { byDevice: state.exportByDevice }) }, 'CSV'),
-      h('button', { title: '依嚴重度（或依設備）分組的報表，含證據行號，已處理的項目會標示狀態與備註', onclick: () => App.exportAs('markdown', { byDevice: state.exportByDevice }) }, 'Markdown'),
-      h('button', { class: 'ghost export-by-device' + (state.exportByDevice ? ' on' : ''), 'aria-pressed': String(state.exportByDevice),
-        title: '匯出時依設備排序（Markdown 依設備分組）；不屬於任何設備的排最後',
-        onclick: () => { state.exportByDevice = !state.exportByDevice; findings(App); } }, '依設備排序'),
+      h('button', { class: 'open-hub', 'data-hub-section': 'reports', title: '檢查結果的 CSV／Markdown 報表（含處理狀態）在資料中心的「這一輪的輸出」',
+        onclick: () => App.openHub('reports') }, '匯出報表…'),
       h('button', { class: 'open-patch', title: '選取檢查結果，產生每台設備的修正 .rsc（套用、回復、驗證）；只產生文字，不會連線設備', onclick: () => App.openPatch() }, '修正計畫…'),
     ]));
     if (!all.length) root.appendChild(h('div', { class: 'empty-detail' }, [h('div', { class: 'big' }, '沒有發現問題'), '所有資料彼此一致。']));
@@ -268,30 +264,47 @@
   }
 
   // ---------------------------------------------------------------- 比對
-  const cmp = { report: null, name: '', filter: 'problem' };
+  // 預期資料本身是這一輪的輸入（App.round.expected）；比對結果是它和目前基準的衍生結果，依兩者快取，換基準時重新比對
+  const cmp = { filter: 'problem', cache: { Q: null, expected: null, report: null } };
+  /** 目前的預期資料比對結果；沒有載入預期資料或沒有基準時為 null。無法解析的檔案以 errors 說明 */
+  function expectedReport(App) {
+    const exp = App.round.expected;
+    if (!exp || !App.Q) return null;
+    const c = cmp.cache;
+    if (c.Q !== App.Q || c.expected !== exp) {
+      c.Q = App.Q; c.expected = exp;
+      const fail = (msg) => ({ errors: [msg], items: [], summary: {} });
+      if (exp.error) c.report = fail(exp.error);
+      else { try { c.report = S.compare(App.Q, exp.data); } catch (e) { c.report = fail('無法比對：' + e.message); } }
+    }
+    return c.report;
+  }
+  /** 讀入預期資料檔（ssot-expected/1）：比對分頁與資料中心共用。無法解析時記下原因（比對結果顯示），不丟例外 */
+  async function loadExpectedFile(App, f) {
+    let text = null; let data = null; let error = null;
+    try { text = await f.text(); data = JSON.parse(text); } catch (e) { error = '無法讀取：' + e.message; }
+    App.round.expected = { name: f.name, data, error };
+    A().renderAll();
+  }
   function compare(App) {
     // 分頁上半是預期資料比對，下半是新舊基準比對（panels/baseline-diff.js）
     const pane = V.clear(V.$('#pane-compare')); const root = h('div');
     pane.appendChild(root); pane.appendChild(V.baselineDiff.render(App));
-    const file = h('input', { type: 'file', accept: '.json,application/json', class: 'hidden', onchange: async (ev) => {
-      const f = ev.target.files[0]; if (!f) return;
-      try { const exp = JSON.parse(await f.text()); cmp.report = S.compare(App.Q, exp); cmp.name = f.name; } catch (e) { cmp.report = { errors: ['無法讀取：' + e.message], items: [], summary: {} }; cmp.name = f.name; }
-      compare(App);
+    const file = h('input', { type: 'file', accept: '.json,application/json', class: 'hidden', onchange: (ev) => {
+      const f = ev.target.files[0]; if (f) loadExpectedFile(App, f);
     } });
+    const exp = App.round.expected;
     root.appendChild(h('div', { class: 'pane-body' }, [
-      h('p', { class: 'muted' }, '把「預期應該長怎樣」的資料（格式 ssot-expected/1，獨立於基準）和目前基準比對。比對只讀取基準，不會修改它。'),
+      h('p', { class: 'muted' }, '把「預期應該長怎樣」的資料（格式 ssot-expected/1，獨立於基準）和目前基準比對。比對只讀取基準，不會修改它。'
+        + '預期資料是這一輪的輸入，換了基準會重新比對；由基準產生預期資料在資料中心的「這一輪的輸出」。'),
       h('div', { class: 'row' }, [
         file, h('button', { disabled: !App.Q || null, onclick: () => file.click() }, '載入預期資料（JSON）…'),
-        h('button', {
-          disabled: !App.Q || null, onclick: () => App.exportAs('expected'),
-          title: '由目前的基準產生預期資料（已收集的設備、雙向確認的鏈路、VLAN），之後可拿來和新的基準比對',
-        }, '匯出預期資料'),
-        cmp.name ? h('span', { class: 'muted' }, cmp.name) : null,
+        exp ? h('span', { class: 'muted' }, exp.name) : null,
       ]),
       h('details', null, [h('summary', { class: 'muted' }, '格式說明'), h('pre', { class: 'raw note-box' },
         '{\n  "schema": "ssot-expected/1",\n  "devices": ["TPE_CORE_SW_01", {"name": "TPE_FW_01", "kind": "firewall"}],\n  "links": [{"a": "TPE_CORE_SW_01 xe-0/0/0", "b": "TPE_FW_01 port1"}],\n  "vlans": [{"device": "TPE_ACC_SW_01", "id": 20, "name": "SRV"}],\n  "strictDevices": false,\n  "strictLinks": false\n}')]),
     ]));
-    const r = cmp.report; if (!r) return;
+    const r = expectedReport(App); if (!r) return;
     if (r.errors.length) root.appendChild(h('div', { class: 'pane-section' }, r.errors.map((e) => h('div', { class: 'finding' }, [V.sevDot('error'), e]))));
     const ST = { ok: ['一致', 'ok'], missing: ['基準缺少', 'err'], different: ['不同', 'warn'], unexpected: ['基準多出', 'info'] };
     root.appendChild(h('div', { class: 'summary' }, [filterChip('有差異', r.items.filter((i) => i.status !== 'ok').length, { on: cmp.filter === 'problem', onclick: () => { cmp.filter = 'problem'; compare(App); } }),
@@ -305,7 +318,10 @@
       },
     }));
   }
-  compare.reset = () => { cmp.report = null; cmp.name = ''; V.baselineDiff.reset(); };
+  // 換基準時：新舊基準比對清空（舊基準要重新載入）；預期資料保留，下一次重繪時和新的基準重新比對
+  compare.reset = () => { V.baselineDiff.reset(); };
+  compare.report = expectedReport;
+  compare.loadFile = loadExpectedFile;
 
   // ---------------------------------------------------------------- 清單：設備、介面、IP、網段、MAC、VLAN
   const inv = { kind: 'device', filter: 'all', q: '', sortBy: -1, sortDir: 1 };

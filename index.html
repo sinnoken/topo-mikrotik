@@ -49,6 +49,7 @@
 <script src="src/view/panels/lists.js"></script>
 <script src="src/view/panels/baseline-diff.js"></script>
 <script src="src/view/panels/ledger.js"></script>
+<script src="src/view/panels/hub.js"></script>
 <script src="src/view/app.js"></script>
 <script src="src/view/app-graph.js"></script>
 <script src="src/view/app-select.js"></script>
@@ -56,6 +57,7 @@
 <script src="src/view/app-toolbar.js"></script>
 <script src="src/view/app-input.js"></script>
 <script src="src/view/app-ledger.js"></script>
+<script src="src/view/app-hub.js"></script>
 <script src="src/view/panels/patch.js"></script>
 </head>
 <body>
@@ -65,7 +67,6 @@
       <svg viewBox="0 0 24 24"><circle cx="5" cy="5" r="3" fill="#0b6bcb"/><circle cx="19" cy="5" r="3" fill="#0b6bcb"/><circle cx="12" cy="19" r="3" fill="#22a338"/><path d="M5 5L19 5M5 5L12 19M19 5L12 19" stroke="#0b6bcb" stroke-width="1.5"/></svg>
       RouterOS 網路基準
     </div>
-    <button class="primary" id="btn-input">建立基準…</button>
     <div class="search">
       <span class="icon">⌕</span>
       <input id="search" type="search" placeholder="搜尋設備、MAC、IP、VLAN、介面描述（按 / 開始）" autocomplete="off">
@@ -80,6 +81,7 @@
       </div>
     </div>
     <div class="spacer"></div>
+    <button id="btn-hub" class="hub-btn" aria-controls="hub" aria-expanded="false" title="這一輪的輸入與輸出：收集檔、工作包、處理紀錄、命名規則、預期資料、報表與 patch">資料中心</button>
     <button class="ghost" id="btn-clear" title="清除這個工具儲存的基準與輸入">清除</button>
   </header>
 
@@ -112,7 +114,7 @@
       <div id="toolbar" class="toolbar hidden">
         <div class="grp"><button id="btn-fit" title="整張圖放進畫面">全圖</button><button id="btn-relayout" title="依分群與層級重新排列">重新排列</button><select id="layout-mode" title="重新排列使用的版面"><option value="elk">分層（ELK）</option><option value="builtin">快速（內建）</option></select><button id="btn-force" title="用力導向微調位置（再按一次停止）">力導向排列</button></div>
         <div class="grp"><button id="btn-hosts" title="顯示只由 LLDP 看到的主機">主機</button><button id="btn-unknown" class="on" title="顯示沒有 LLDP 鄰居、只由 MAC 推論出來的終端">未知對端</button><button id="btn-groups" class="on" title="顯示分群底框">分群</button></div>
-        <div class="grp"><button id="btn-png" title="把目前畫面匯出 PNG">匯出 PNG</button><button id="btn-json" title="下載目前的基準（Snapshot JSON），內容原樣不改寫">匯出 JSON</button></div>
+        <div class="grp"><button id="btn-png" title="把目前畫面匯出 PNG（其他匯出在資料中心）">匯出 PNG</button></div>
       </div>
       <div id="legend" class="legend hidden"></div>
       <div id="hint" class="hint hidden">滾輪縮放・拖曳移動・點選看詳細・雙擊聚焦・鍵盤：N 切換設備、Enter 詳情</div>
@@ -138,6 +140,8 @@
 
     <aside id="right"><div id="detail" class="pane"></div></aside>
   </div>
+  <!-- 資料中心：和 #main 疊在同一格，開啟時蓋住主畫面（畫布大小不變），內容由 src/view/panels/hub.js 產生 -->
+  <section id="hub" class="hub hidden" aria-labelledby="hub-title"></section>
   <footer id="footer"></footer>
 </div>
 
@@ -158,6 +162,10 @@
         <label for="input-profile">命名規則</label>
         <select id="input-profile"></select>
         <span class="muted" style="font-size:12px">只用來加上站點、角色等註解，不會改變事實；可不套用</span>
+      </div>
+      <div class="form-row hidden" id="input-xd-row">
+        <label><input type="checkbox" id="input-xd" checked> 使用建立選項 expectedData（由工作包帶回）</label>
+        <span class="muted" style="font-size:12px" id="input-xd-note"></span>
       </div>
     </div>
     <div class="df">

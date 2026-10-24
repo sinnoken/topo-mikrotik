@@ -158,6 +158,14 @@ async function buildInput(input) {
   await App.layoutJob;
 }
 
+/** 資料中心（#hub）裡 data-action 為 action 的按鈕；輸入與輸出的入口集中在這裡 */
+const hubBtn = (action) => $('#hub').querySelectorAll('button').find((b) => b.getAttribute('data-action') === action);
+/** 等到條件成立（非同步的建立、讀入、重建）；逾時時丟錯並說明在等什麼 */
+async function until(cond, what) {
+  for (let i = 0; i < 8000 && !cond(); i++) await new Promise((r) => setTimeout(r, 5));
+  if (!cond()) throw new Error('逾時：' + what);
+}
+
 // ------------------------------------------------------------ 畫面與資料的邊界（靜態掃描 src/view）
 /**
  * 去掉 JS 的註解，字串、template 文字與 regex 的內容換成空白（換行保留，行號不變）；template 的 ${} 內是程式碼，保留。
@@ -659,13 +667,12 @@ function viewBoundaryViolations(file, src) {
     inp.dispatch('change', { target: inp }); await new Promise((r) => setTimeout(r, 20));
     if (!text('#pane-compare').includes('有差異')) throw new Error('比對結果未顯示');
   });
-  await step('匯出：基準 JSON 與檢查結果 CSV／Markdown 在本機產生，下載後釋放 URL，不改寫基準', async () => {
+  await step('匯出：基準 JSON 與檢查結果 CSV／Markdown 在本機產生（入口在資料中心），下載後釋放 URL，不改寫基準', async () => {
     const before = JSON.stringify(App.snap);
+    if ($('#btn-json')) throw new Error('基準 JSON 的匯出已移到資料中心，工具列不應再有「匯出 JSON」');
     const { made, revoked, anchors, files } = await captureDownloads(() => {
-      $('#btn-json').click();
-      const button = (t) => $('#pane-findings').querySelectorAll('button').find((b) => b.textContent === t);
-      if (!button('CSV') || !button('Markdown')) throw new Error('檢查結果分頁應有 CSV 與 Markdown 匯出按鈕');
-      button('CSV').click(); button('Markdown').click();
+      if (!hubBtn('export-snapshot') || !hubBtn('export-csv') || !hubBtn('export-markdown')) throw new Error('資料中心應有基準 JSON、CSV 與 Markdown 的匯出按鈕');
+      hubBtn('export-snapshot').click(); hubBtn('export-csv').click(); hubBtn('export-markdown').click();
     });
     if (made.length !== 3 || anchors.length !== 3) throw new Error('三種匯出各應產生一個下載');
     if (revoked.join() !== made.map((b, i) => 'blob:smoke/' + (i + 1)).join()) throw new Error('下載後應釋放每一個 object URL');
@@ -875,10 +882,11 @@ function viewBoundaryViolations(file, src) {
     });
     groups()[0].querySelector('.head').click();
     // 匯出：可選依設備排序；CSV 的 device 欄依分組順序，Markdown 依設備分組
-    const toggle = () => $('#pane-findings').querySelectorAll('button').find((b) => b.textContent === '依設備排序');
+    // 報表的匯出在資料中心（檢查結果分頁只有入口）；依設備排序的切換也在那裡
+    const toggle = () => hubBtn('by-device');
     toggle().click();
     if (toggle().getAttribute('aria-pressed') !== 'true') throw new Error('「依設備排序」應可切換');
-    const button = (t) => $('#pane-findings').querySelectorAll('button').find((b) => b.textContent === t);
+    const button = (t) => hubBtn(t === 'CSV' ? 'export-csv' : 'export-markdown');
     const { files } = await captureDownloads(() => { button('CSV').click(); button('Markdown').click(); });
     const rows = parseCsv(files[0].text.replace(/^﻿/, '')).slice(1);
     if (rows.length !== all.length) throw new Error('依設備排序仍應輸出全部檢查結果');
@@ -1269,7 +1277,7 @@ function viewBoundaryViolations(file, src) {
     if (!pane().textContent.includes('無法讀取')) throw new Error('JSON 錯誤時應說明');
     // 匯出預期資料：ssot-expected/1，和同一份基準比對全部一致
     const { files } = await captureDownloads(() => {
-      $('#pane-compare').querySelectorAll('button').find((b) => b.textContent === '匯出預期資料').click();
+      hubBtn('export-expected').click(); // 由基準產生預期資料是這一輪的輸出，入口在資料中心
     });
     if (files.length !== 1 || !/^expected-.*\.json$/.test(files[0].name)) throw new Error('應下載預期資料 JSON：' + files.map((f) => f.name));
     const exp = JSON.parse(files[0].text);
@@ -1449,34 +1457,38 @@ function viewBoundaryViolations(file, src) {
   await step('處理紀錄匯出與匯入：匯出 ssot-ledger/1；匯入先 validate，不合法列出錯誤且不覆蓋，合法時確認後才覆蓋', async () => {
     const VA = S.view.app;
     document.querySelectorAll('#left .tabs button')[4].click();
-    const btn = (cls) => $('#pane-ledger').querySelector('.' + cls);
+    // 匯出與匯入在資料中心；處理紀錄分頁只有入口，按了會開啟資料中心的處理紀錄那一列
+    $('#pane-ledger').querySelector('.open-hub').click();
+    if ($('#hub').classList.contains('hidden') || document.activeElement !== $('#hub-sec-ledger')) throw new Error('處理紀錄分頁的入口應開啟資料中心並聚焦處理紀錄');
+    const btn = (cls) => $('#hub').querySelector('.' + cls);
     const { files } = await captureDownloads(() => btn('ledger-export').click());
     if (files.length !== 1 || !/^ledger-\d{8}T\d{6}Z\.json$/.test(files[0].name)) throw new Error('應下載 ledger-時間.json：' + (files[0] || {}).name);
     const exported = JSON.parse(files[0].text);
     require('assert').deepStrictEqual(exported, VA.ledger());
     if (!S.ledger.validate(exported).ok) throw new Error('匯出的處理紀錄應通過 validate');
     const importText = async (name, body) => {
-      const inp = $('#pane-ledger').querySelector('.ledger-file');
+      const inp = $('#hub').querySelector('.hub-file-ledger');
       inp.files = [{ name, text: async () => body }]; inp.dispatch('change', { target: inp }); await new Promise((r) => setTimeout(r, 10));
     };
     const before = JSON.stringify(VA.ledger());
     await importText('bad.json', JSON.stringify({ schema: 'ssot-ledger/0', items: [], iterations: {} }));
-    const res = $('#pane-ledger').querySelector('.ledger-import-result');
+    const res = $('#hub').querySelector('.ledger-import-result');
     if (!res || !res.textContent.includes('schema') || res.querySelectorAll('li').length < 2) throw new Error('不合法時應列出 validate 的錯誤');
     if (JSON.stringify(VA.ledger()) !== before) throw new Error('不合法時不可覆蓋現有的處理紀錄');
     await importText('broken.json', '{not json');
-    if (!text('#pane-ledger').includes('不是 JSON')) throw new Error('不是 JSON 時應說明');
+    if (!text('#hub').includes('不是 JSON')) throw new Error('不是 JSON 時應說明');
     // 合法：先確認，按「覆蓋」才取代
     const k = Object.keys(exported.items)[0];
     const mod = JSON.parse(JSON.stringify(exported)); mod.items[k].note = '匯入的備註';
     await importText('good.json', JSON.stringify(mod));
-    if (!$('#pane-ledger').querySelector('.ledger-import-confirm')) throw new Error('合法時應請使用者確認覆蓋');
+    if (!$('#hub').querySelector('.ledger-import-confirm')) throw new Error('合法時應請使用者確認覆蓋');
     if (VA.ledger().items[k].note === '匯入的備註') throw new Error('確認前不可覆蓋');
-    $('#pane-ledger').querySelector('.ledger-confirm-import').click(); await new Promise((r) => setTimeout(r, 10));
+    $('#hub').querySelector('.ledger-confirm-import').click(); await new Promise((r) => setTimeout(r, 10));
     if (VA.ledger().items[k].note !== '匯入的備註' || (await S.store.get('ledger')).items[k].note !== '匯入的備註') throw new Error('確認後應覆蓋並存進 store');
     // 還原
     await importText('restore.json', JSON.stringify(exported));
-    $('#pane-ledger').querySelector('.ledger-confirm-import').click(); await new Promise((r) => setTimeout(r, 10));
+    $('#hub').querySelector('.ledger-confirm-import').click(); await new Promise((r) => setTimeout(r, 10));
+    S.view.app.closeHub();
   });
   await step('修正計畫：依規則、依設備或逐筆選取，依設備列出修改前（原文行號）與修改後（指令），三份 .rsc 與核心一致，下載檔名用 files() 的 base', async () => {
     const Q = App.Q; const RM = S.remediate; const RV = S.view.remediation; const PV = S.view.patchView;
@@ -2203,7 +2215,175 @@ function viewBoundaryViolations(file, src) {
       if (!$('#tooltip').classList.contains('hidden')) throw new Error('指標離開畫布時提示應隱藏');
     });
   });
-  await step('深層凍結的基準：選設備、選檢查結果、開詳情、開修正計畫、匯出，都不改寫基準也不因凍結出錯', async () => {
+  await step('資料中心：列出這一輪所有的輸入與輸出與各自的狀態，鍵盤可開關（Esc 關閉後焦點回到按鈕），蓋住主畫面時主畫面不可聚焦', async () => {
+    const VA = S.view.app; const NUM = S.view.num; const btnHub = $('#btn-hub');
+    if (!btnHub || $('#btn-input')) throw new Error('頁首應有「資料中心」，建立基準改由資料中心的「讀入收集檔…」進入');
+    btnHub.click();
+    if ($('#hub').classList.contains('hidden') || btnHub.getAttribute('aria-expanded') !== 'true') throw new Error('按「資料中心」應開啟資料中心');
+    if (document.activeElement !== $('#hub-title')) throw new Error('開啟後焦點應移到資料中心的標題');
+    if (!$('#main').inert || !$('#app').classList.contains('hub-open')) throw new Error('資料中心開啟時主畫面應是 inert（鍵盤不會跑到被蓋住的圖上）');
+    const row = (k) => $('#hub').querySelectorAll('.hub-row').find((r) => r.getAttribute('data-item') === k);
+    ['sources', 'previous', 'ledger', 'profile', 'expected-data', 'expected', 'coverage'].forEach((k) => {
+      const r = row(k);
+      if (!r) throw new Error('資料中心應列出輸入：' + k);
+      const stx = r.querySelector('.hub-st');
+      if (!stx || !stx.textContent.trim()) throw new Error(`${k} 應有狀態文字（不只靠顏色）`);
+      if (/hub-st-(ok|warn|err)/.test(stx.className) && !/^[✓!✗] /.test(stx.textContent)) throw new Error(`${k} 的狀態色應搭配符號`);
+    });
+    ['read-workpack', 'read-sources', 'load-previous', 'import-ledger', 'change-profile', 'load-expected', 'devices-csv',
+      'download-workpack', 'export-snapshot', 'export-ledger', 'open-patch', 'export-markdown', 'export-csv', 'by-device', 'export-png', 'export-devices-csv', 'export-expected']
+      .forEach((a) => { if (!hubBtn(a)) throw new Error('資料中心缺少入口：' + a); });
+    // 狀態和目前的資料一致（依關係，不寫死筆數）
+    const m = App.Q.meta();
+    if (!row('sources').textContent.includes(`已收集 ${NUM(m.stats.collected)} 台`)) throw new Error('收集檔應列出已收集的台數：' + row('sources').textContent);
+    const idx = VA.ledgerRoundIndex();
+    if (idx < 0 || !row('ledger').textContent.includes(`第 ${NUM(idx + 1)} 輪`)) throw new Error('處理紀錄應列出目前是第幾輪：' + row('ledger').textContent);
+    if (!row('profile').textContent.includes(m.profile ? '已套用' : '未套用')) throw new Error('命名規則的狀態應依基準');
+    const rep = S.view.lists.compare.report(App);
+    if (!!App.round.expected !== !row('expected').textContent.includes('未載入')) throw new Error('預期資料的狀態應依是否載入');
+    if (rep && !rep.errors.length && !row('expected').textContent.includes('已比對')) throw new Error('預期資料載入後應列出比對結果');
+    const nC01 = App.Q.findingsByRule('C01').length;
+    if ((hubBtn('devices-csv').getAttribute('disabled') !== null) !== !nC01) throw new Error('沒有 C01 時 devices.csv 草稿應停用');
+    // 工作包的角色：收集檔與基準一定放（不能取消）；命名規則用過就一定放
+    const roleBox = (r) => $('#hub').querySelectorAll('.hub-pack-role').find((x) => x.getAttribute('data-role') === r);
+    ['source', 'snapshot'].forEach((r) => { const cb = roleBox(r); if (!cb || !cb.checked || !cb.disabled) throw new Error(r + ' 是工作包的必要內容，應勾選且不能取消'); });
+    if (App.round.profile && (!roleBox('profile').checked || !roleBox('profile').disabled)) throw new Error('基準用了命名規則時，命名規則一定要放進工作包');
+    // 勾選可選的角色後，焦點留在同一個核取方塊（重繪不會讓鍵盤跳回開頭）
+    const lgBox = roleBox('ledger'); lgBox.focus(); lgBox.checked = false; lgBox.dispatch('change');
+    if (roleBox('ledger').checked || document.activeElement !== roleBox('ledger')) throw new Error('取消勾選後應保持取消，焦點留在同一個核取方塊');
+    roleBox('ledger').checked = true; roleBox('ledger').dispatch('change');
+    // Esc 關閉，焦點回到頁首的按鈕
+    (docListeners.keydown || []).forEach((f) => f({ key: 'Escape', preventDefault() {} }));
+    if (!$('#hub').classList.contains('hidden') || document.activeElement !== btnHub || $('#main').inert || btnHub.getAttribute('aria-expanded') !== 'false') throw new Error('Esc 應關閉資料中心並把焦點還給按鈕');
+    // 檢查結果分頁的「匯出報表…」開啟資料中心的報表區塊
+    document.querySelectorAll('#left .tabs button')[0].click();
+    $('#pane-findings').querySelector('.open-hub').click();
+    if ($('#hub').classList.contains('hidden') || document.activeElement !== $('#hub-sec-reports')) throw new Error('「匯出報表…」應開啟資料中心並聚焦報表');
+    // 選取（例如從搜尋進來）要在圖與詳情看到結果：關閉資料中心
+    App.select({ type: 'device', key: App.Q.devices()[0].key });
+    if (!$('#hub').classList.contains('hidden')) throw new Error('選取設備後應關閉資料中心');
+    // 窄螢幕：資料中心的列與輸出卡片改成單欄（覆蓋一般樣式，所以要寫在它之後），不產生水平捲動
+    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
+    const base = css.indexOf('.hub-row { display: grid;'); const narrow = css.lastIndexOf('@media (max-width: 900px)');
+    const tail = css.slice(narrow);
+    if (base < 0 || narrow < base || !/\.hub-row \{ grid-template-columns: minmax\(0, 1fr\); \}/.test(tail) || !/\.hub-outs \{ grid-template-columns: minmax\(0, 1fr\); \}/.test(tail)) throw new Error('窄螢幕時資料中心應改成單欄，且規則要在一般樣式之後');
+    if (!/\.hub \{[^}]*overflow-x: hidden/.test(css)) throw new Error('資料中心不應水平捲動');
+  });
+  await step('工作包：下載後讀回，基準、處理紀錄、命名規則與預期資料都帶回；壞掉的工作包列出全部問題，目前的資料不變', async () => {
+    const VA = S.view.app; const WP = S.workpack; const HS = () => VA.hubState(); const deep = require('assert').deepStrictEqual;
+    // 這一輪：範例資料（或 SMOKE_INPUT）＋命名規則
+    const input = process.env.SMOKE_INPUT ? fs.readFileSync(process.env.SMOKE_INPUT, 'utf8') : S.samples['sample-bundle.txt'];
+    const pid = Object.keys(S.profiles).find((k) => S.profiles[k] && S.profiles[k].id);
+    if (!pid) throw new Error('測試前提：應有內建的命名規則');
+    await App.openInput(); $('#input-profile').value = pid; $('#input-text').value = input + '\n# workpack\n'; $('#input-build').click();
+    const hash = S.util.hash(S.readers.PASTE + '\n' + input + '\n# workpack\n');
+    await until(() => App.snap && App.snap.meta.inputHash === hash && App.round.profile === S.profiles[pid], '建立有命名規則的基準');
+    await App.layoutJob; await App.ledgerJob;
+    if (!App.snap.meta.profile) throw new Error('測試前提：基準應套用命名規則');
+    // 處理紀錄改一筆備註；載入預期資料（比對用）；修正計畫選一條可產生指令的規則
+    const f0 = App.snap.findings.find((f) => VA.ledgerItem(f));
+    if ((await App.setLedger(f0, { note: '工作包測試' })).ok !== true) throw new Error('應可寫入處理紀錄');
+    App.openHub('inputs');
+    const expInput = $('#hub').querySelector('.hub-file-expected');
+    expInput.files = [{ name: 'expected-sample.json', text: async () => fs.readFileSync(path.join(ROOT, 'samples/expected-sample.json'), 'utf8') }];
+    expInput.dispatch('change', { target: expInput });
+    await until(() => App.round.expected && App.round.expected.name === 'expected-sample.json', '載入預期資料');
+    App.openPatch();
+    const auto = $('#patch-body').querySelectorAll('.patch-rule').find((c) => c.getAttribute('data-level') === 'auto');
+    if (auto) auto.click();
+    $('#dlg-patch').close();
+    App.openHub('outputs');
+    const patchBox = $('#hub').querySelectorAll('.hub-pack-role').find((x) => x.getAttribute('data-role') === 'patch');
+    if (!!auto !== patchBox.checked) throw new Error('修正計畫有選取時 patch 才放進工作包');
+    // 下載：按鈕開始後立刻顯示忙碌提示並停用操作，完成後下載一個 ZIP
+    const { files } = await captureDownloads(async () => {
+      hubBtn('download-workpack').click();
+      if (!HS().busy || $('#hub-busy').classList.contains('hidden') || $('#hub').getAttribute('aria-busy') !== 'true') throw new Error('建立工作包時應先顯示忙碌提示');
+      if (hubBtn('download-workpack').getAttribute('disabled') === null) throw new Error('進行中應停用下載按鈕');
+      await until(() => !HS().busy, '建立工作包');
+    });
+    if (HS().buildErrors) throw new Error('建立工作包失敗：' + HS().buildErrors.map((e) => e.message).join('；'));
+    if (files.length !== 1 || !/^workpack-\d{8}T\d{6}Z-\d+dev\.zip$/.test(files[0].name)) throw new Error('應下載 workpack-<建立時間>-<N>dev.zip：' + files.map((f) => f.name));
+    const bytes = new Uint8Array(files[0].bytes);
+    const pack = WP.read(bytes);
+    const roles = (r) => pack.files.filter((f) => f.role === r);
+    deep(pack.snapshot, JSON.parse(JSON.stringify(App.snap)));
+    deep(pack.sources, App.round.sources.map((s) => ({ name: s.name, text: s.text })));
+    deep(pack.ledger, VA.ledger()); deep(pack.profile, App.round.profile); deep(pack.expected, App.round.expected.data);
+    const K = S.view.exporter.KINDS;
+    if (roles('report').map((f) => f.name).join() !== [K.csv.name(App.Q), K.markdown.name(App.Q)].join()) throw new Error('報表應依匯出的檔名放進工作包');
+    const cur = S.view.patchView.current(App);
+    if (roles('patch').map((f) => f.name).join() !== (cur ? cur.list.map((f) => f.name).join() : '')) throw new Error('patch 應是修正計畫選取的 .rsc 與總表');
+    if (cur && !roles('patch').every((f, i) => Buffer.from(f.bytes).toString('utf8') === cur.list[i].text)) throw new Error('patch 的內容應和修正計畫下載的相同（S.remediate 產生）');
+    const saved = { snap: App.snap, ledger: JSON.parse(JSON.stringify(VA.ledger())), profile: App.round.profile, findings: App.snap.findings.length };
+
+    // 讀入壞掉的工作包：列出全部問題（和核心回報的筆數相同），目前的資料不變
+    const readPack = async (name, b) => {
+      App.cancelWorkpack();
+      const inp = $('#hub').querySelector('.hub-file-workpack');
+      inp.files = [{ name, arrayBuffer: async () => b }]; inp.dispatch('change', { target: inp });
+      await until(() => !HS().busy && HS().read, '讀入工作包 ' + name);
+    };
+    const enc = (o) => S.zip.utf8.encode(JSON.stringify(o));
+    const crcBad = bytes.slice(); const src0 = S.zip.read(bytes).entries.find((e) => e.path.startsWith('sources/'));
+    crcBad[Buffer.from(bytes).indexOf(Buffer.from(src0.bytes.subarray(0, 64))) + 10] ^= 0x20;
+    // 收集檔順序不同：兩份收集檔的工作包，manifest 中兩份對調（各自的雜湊仍正確）
+    const edge = fs.readFileSync(path.join(ROOT, 'tests/fixtures/firewall/edge-router.txt'), 'utf8');
+    const two = [{ name: 'a.txt', text: edge }, { name: 'b.txt', text: edge + '\n# second\n' }];
+    const now2 = '2026-01-01T00:00:00Z'; const snap2 = S.build(two, { now: now2 });
+    const z2 = S.zip.read(WP.build(two.map((s) => ({ role: 'source', name: s.name, text: s.text })).concat([{ role: 'snapshot', name: 'b.json', text: JSON.stringify(snap2) }]), { now: now2 }));
+    const mf = JSON.parse(S.zip.utf8.decode(z2.entries[0].bytes)); const si = mf.files.map((f, i) => [f, i]).filter(([f]) => f.role === 'source').map(([, i]) => i);
+    [mf.files[si[0]], mf.files[si[1]]] = [mf.files[si[1]], mf.files[si[0]]];
+    const swapped = S.zip.write([{ path: 'manifest.json', bytes: enc(mf) }].concat(z2.entries.slice(1).map((e) => ({ path: e.path, bytes: e.bytes }))));
+    for (const [name, bad] of [['truncated.zip', bytes.slice(0, bytes.length - 30)], ['crc.zip', crcBad], ['order.zip', swapped]]) {
+      let want = null; try { WP.read(bad); } catch (e) { want = e.errors; }
+      if (!want || !want.length) throw new Error(name + '：測試資料應讓 S.workpack.read 失敗');
+      const ledgerBefore = JSON.stringify(VA.ledger());
+      await readPack(name, bad);
+      const box = $('#hub').querySelector('.wp-read-error');
+      if (!box || !box.textContent.includes(name) || box.querySelector('.wp-errors').querySelectorAll('li').length !== want.length) throw new Error(`${name}：應列出全部 ${want.length} 項問題`);
+      if (!want.every((e) => box.textContent.includes(e.message))) throw new Error(name + '：應列出核心的訊息');
+      if (App.snap !== saved.snap || JSON.stringify(VA.ledger()) !== ledgerBefore) throw new Error(name + '：讀入失敗時目前的基準與處理紀錄都不可改變');
+    }
+    const orderText = $('#hub').querySelector('.wp-read-error').textContent;
+    if (!orderText.includes('source-mismatch') && !orderText.includes('input-hash')) throw new Error('順序不同時應列出收集檔不符：' + orderText);
+
+    // 換成另一份基準，並讓目前的處理紀錄多出工作包沒有的內容
+    await buildInput(edge); await App.ledgerJob;
+    await App.setLedger(App.snap.findings.find((f) => VA.ledgerItem(f)), { note: '工作包之後才改的' });
+    App.openHub('inputs');
+    await readPack(files[0].name, bytes);
+    const w = HS().read;
+    if (!w.pack || !$('#hub').querySelector('.wp-read-confirm')) throw new Error('讀入成功時應請使用者確認要帶回的內容');
+    if (!w.loss || !$('#hub').querySelector('.wp-loss')) throw new Error('目前的處理紀錄有工作包沒有的內容時應明確提示');
+    if ($('#hub').querySelector('.wp-profile').value !== 'pack') throw new Error('命名規則預設應用工作包附的');
+    // 沒有勾選確認就不取代
+    hubBtn('apply-workpack').click(); await new Promise((r) => setTimeout(r, 10));
+    if (App.snap.meta.inputHash === saved.snap.meta.inputHash || !$('#hub').textContent.includes('請先勾選確認')) throw new Error('取代處理紀錄前應先確認');
+    const ack = $('#hub').querySelectorAll('.wp-choose').find((x) => x.getAttribute('data-choose') === 'ack');
+    ack.checked = true; ack.dispatch('change');
+    hubBtn('apply-workpack').click();
+    if (!HS().busy || !text('#hub-busy').includes('重建')) throw new Error('重建核對時應顯示忙碌提示');
+    await until(() => HS().read && HS().read.done, '帶回工作包');
+    await App.ledgerJob; await App.layoutJob;
+    // 基準相同（依關係比對）；處理紀錄、命名規則、預期資料都帶回
+    if (App.snap.meta.inputHash !== saved.snap.meta.inputHash || App.snap.meta.baselineKey !== saved.snap.meta.baselineKey) throw new Error('讀回的基準應和匯出前相同（inputHash、baselineKey）');
+    if (App.snap.findings.length !== saved.findings) throw new Error('讀回的基準的檢查結果筆數應和匯出前相同');
+    const qSaved = S.query(saved.snap);
+    deep(App.snap.findings.map((f) => App.Q.findingKey(f)), saved.snap.findings.map((f) => qSaved.findingKey(f)));
+    deep(VA.ledger(), saved.ledger); deep(await S.store.get('ledger'), saved.ledger);
+    deep(App.round.profile, saved.profile); deep(App.round.expected.data, pack.expected);
+    deep(App.round.sources, pack.sources);
+    const last = await S.store.get('last'); deep(last.profile, saved.profile); deep(last.sources, pack.sources);
+    if (!App.round.origin || App.round.origin.kind !== 'workpack') throw new Error('應記下基準來自工作包');
+    if (!$('#hub').querySelector('.wp-read-done') || !text('#hub').includes('上一輪的基準')) throw new Error('應列出帶回的內容');
+    // 再讀入這一輪的收集檔：自動和工作包的基準比對
+    await buildInput(edge + '\n# next\n');
+    const st = S.view.baselineDiff.status();
+    if (!st || !st.name.includes(files[0].name) || st.report.errors.length) throw new Error('讀入這一輪的收集檔後，應自動以工作包的基準當上一輪比對');
+    App.cancelWorkpack(); VA.closeHub();
+  });
+  await step('深層凍結的基準：選設備、選檢查結果、開詳情、開修正計畫、匯出、建立工作包，都不改寫基準也不因凍結出錯', async () => {
     const VA = S.view.app; const orig = App.snap;
     const deepFreeze = (o) => { if (o && typeof o === 'object' && !Object.isFrozen(o)) { Object.freeze(o); Object.values(o).forEach(deepFreeze); } return o; };
     const frozen = deepFreeze(JSON.parse(JSON.stringify(orig))); const before = JSON.stringify(frozen);
@@ -2233,6 +2413,12 @@ function viewBoundaryViolations(file, src) {
       const { files } = await captureDownloads(() => { kinds.forEach((k) => App.exportAs(k)); App.exportAs('csv', { byDevice: true }); App.exportAs('markdown', { byDevice: true }); });
       if (files.length !== kinds.length + 2) throw new Error(`每種匯出都應產生下載（${files.length}／${kinds.length + 2}）`);
       require('assert').deepStrictEqual(JSON.parse(files[kinds.indexOf('snapshot')].text), JSON.parse(before));
+      // 資料中心的狀態與工作包（基準、報表、patch 都從凍結的基準組出來）
+      App.openHub();
+      const wp = await captureDownloads(() => App.downloadWorkpack());
+      if (wp.files.length !== 1 || VA.hubState().buildErrors) throw new Error('凍結的基準也應能建立工作包：' + JSON.stringify(VA.hubState().buildErrors));
+      require('assert').deepStrictEqual(S.workpack.read(new Uint8Array(wp.files[0].bytes)).snapshot, JSON.parse(before));
+      VA.closeHub();
       if (JSON.stringify(frozen) !== before) throw new Error('畫面不可改寫基準');
       if (errors.length) throw new Error('凍結的基準不應造成錯誤：\n' + errors.join('\n'));
     } finally {

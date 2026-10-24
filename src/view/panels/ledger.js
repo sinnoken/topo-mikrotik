@@ -177,35 +177,40 @@
       body.appendChild(h('h4', { class: 'pane-title' }, '收斂趨勢'));
       body.appendChild(trend(sum.series));
     }
-    // 匯出與匯入
-    const file = h('input', { type: 'file', accept: '.json,application/json', class: 'hidden ledger-file', onchange: async (ev) => {
-      const f = ev.target.files[0]; if (!f) return;
-      let text; try { text = await f.text(); } catch (e) { App.importLedger(f.name, ''); return; }
-      App.importLedger(f.name, text);
-    } });
+    // 匯出與匯入集中在資料中心（app-hub.js）；這裡只放入口
     body.appendChild(h('h4', { class: 'pane-title' }, '匯出與匯入'));
-    body.appendChild(h('div', { class: 'row' }, [file,
-      h('button', { class: 'ledger-export', disabled: st.blocked && st.blocked.raw === undefined ? true : null, onclick: () => App.exportLedger() }, '匯出處理紀錄（JSON）'),
-      h('button', { class: 'ledger-import', onclick: () => file.click() }, '匯入處理紀錄…')]));
-    body.appendChild(h('p', { class: 'muted' }, '匯入會先檢查格式；格式正確時，確認後以匯入的內容覆蓋目前的處理紀錄（不合併），再以目前的基準推進一輪。建議覆蓋前先匯出目前的處理紀錄。'));
-    const imp = st.imported;
-    if (imp && imp.errors) {
-      body.appendChild(h('div', { class: 'ledger-import-result', role: 'alert' }, [
-        h('p', { class: 'warn-line' }, `${imp.name} 的格式不正確（${imp.errors.length} 項），沒有匯入，目前的處理紀錄不變：`),
-        h('ul', { class: 'ledger-errors' }, imp.errors.slice(0, 30).map((e) => h('li', { class: 'mono' }, e))),
-        h('button', { onclick: () => App.cancelImport() }, '關閉'),
-      ]));
-    } else if (imp && imp.ledger) {
-      body.appendChild(h('div', { class: 'ledger-import-result ledger-import-confirm' }, [
-        h('p', null, `${imp.name}：${V.num(Object.keys(imp.ledger.items).length)} 項、${V.num(imp.ledger.iterations.length)} 輪。覆蓋目前的處理紀錄`
-          + (st.blocked ? '' : `（${V.num(Object.keys(lg.items).length)} 項、${V.num(lg.iterations.length)} 輪）`) + '？'),
-        h('div', { class: 'row' }, [
-          st.blocked ? null : h('button', { onclick: () => App.exportLedger() }, '先匯出目前的'),
-          h('button', { class: 'primary ledger-confirm-import', onclick: () => App.confirmImport() }, '覆蓋'),
-          h('button', { class: 'ghost', onclick: () => App.cancelImport() }, '取消')]),
-      ]));
-    }
+    body.appendChild(h('div', { class: 'row' }, [
+      h('button', { class: 'open-hub', 'data-hub-section': 'ledger', onclick: () => App.openHub('ledger') }, '在資料中心匯出或匯入…'),
+      h('span', { class: 'muted' }, '處理紀錄也會放進工作包，下一輪讀回工作包就能接著做。'),
+    ]));
   }
 
-  V.ledgerPane = { render, lineChart, niceMax };
+  /**
+   * 匯入處理紀錄的結果（資料中心顯示）：格式不正確時列出全部錯誤、目前的處理紀錄不變；格式正確時請使用者確認整份覆蓋。
+   * 沒有進行中的匯入時回傳 null。
+   */
+  function importBlock(App) {
+    const st = A().ledgerState(); const lg = st.ledger; const imp = st.imported;
+    if (imp && imp.errors) {
+      return h('div', { class: 'ledger-import-result', role: 'alert' }, [
+        h('p', { class: 'warn-line' }, `${imp.name} 的格式不正確（${imp.errors.length} 項），沒有匯入，目前的處理紀錄不變：`),
+        h('ul', { class: 'ledger-errors' }, imp.errors.map((e) => h('li', { class: 'mono' }, e))),
+        h('button', { 'data-hub-focus': 'ledger-import', onclick: () => App.cancelImport() }, '關閉'),
+      ]);
+    }
+    if (imp && imp.ledger) {
+      return h('div', { class: 'ledger-import-result ledger-import-confirm', role: 'group', 'aria-label': '確認匯入處理紀錄' }, [
+        h('p', null, `${imp.name}：${V.num(Object.keys(imp.ledger.items).length)} 項、${V.num(imp.ledger.iterations.length)} 輪。覆蓋目前的處理紀錄`
+          + (st.blocked ? '' : `（${V.num(Object.keys(lg.items).length)} 項、${V.num(lg.iterations.length)} 輪）`) + '？'),
+        h('p', { class: 'muted' }, '覆蓋是整份取代（不合併），之後以目前的基準推進一輪。建議覆蓋前先匯出目前的處理紀錄。'),
+        h('div', { class: 'row' }, [
+          st.blocked ? null : h('button', { onclick: () => App.exportLedger() }, '先匯出目前的'),
+          h('button', { class: 'primary ledger-confirm-import', 'data-hub-focus': 'ledger-confirm', onclick: () => App.confirmImport() }, '覆蓋'),
+          h('button', { class: 'ghost', onclick: () => App.cancelImport() }, '取消')]),
+      ]);
+    }
+    return null;
+  }
+
+  V.ledgerPane = { render, importBlock, lineChart, niceMax };
 })(globalThis.SSOT = globalThis.SSOT || {});

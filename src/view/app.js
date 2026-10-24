@@ -10,6 +10,13 @@
  *   app-panes.js   左側分頁、窄螢幕工作區、左右欄寬度
  *   app-input.js   輸入對話框與建立基準
  *   app-ledger.js  處理紀錄（S.ledger；store 的 'ledger'，並轉換舊的 'acks'）
+ *   app-hub.js     資料中心：這一輪的輸入與輸出、工作包（S.workpack）的下載與讀入
+ *
+ * 「這一輪的資料」集中在 App.round（見下方 A.newRound）：收集檔、命名規則、建立選項 expectedData、基準與查詢介面、
+ * 比對用的預期資料。工作包的讀寫、儲存（store 的 'last'）與畫面都從這裡讀；改變它只經過 A.load（換基準，可同時換輸入）、
+ * A.setRoundInputs（只換輸入）與 A.clearRound（清除）。App.snap、App.Q、App.sources、App.profileJson 是它的唯讀存取器，
+ * 讓既有的讀取不必改寫；處理紀錄仍由 app-ledger.js 管理（停用、轉換、寫入 store），App.round.ledger 是唯讀的存取器。
+ * 檢視狀態（選取、展開、版面、縮放與位置）不放在這裡，留在 App 上。
  * 這些檔案在載入時只定義函式，實際執行都在 DOMContentLoaded 之後，所以彼此的載入先後不影響行為；
  * 只有這個檔案要最先載入，因為它建立 App 與 A。
  */
@@ -18,7 +25,7 @@
   const V = S.view; const h = V.h; const $ = V.$;
   const A = (V.app = V.app || {});
   const App = {
-    snap: null, Q: null, sources: [], profileJson: null, graph: null,
+    graph: null,
     pairOfLink: new Map(), pairs: new Map(), sel: null, showHosts: true,
     // 未知對端（沒有 LLDP／CDP 介面鄰接、只由 MAC 推論出來的終端）：只存在於畫面，不寫進基準
     showUnknown: true, expanded: new Set(), virtual: new Map(), vOfEp: new Map(), virtualByDev: new Map(),
@@ -30,6 +37,44 @@
   };
   window.App = App;
 
+  // ================================================================ 這一輪的資料
+  /**
+   * 這一輪的資料（不是檢視狀態）：
+   *   sources       收集檔 [{ name, text }]（S.build 的來源，順序決定 inputHash）
+   *   profile       建立基準時用的命名規則 JSON，沒有時 null
+   *   expectedData  S.build 的建立選項 expectedData（各類設備應有的資料），沒有時 null；目前只會由工作包帶入
+   *   snapshot、Q   基準與它的查詢介面（SSOT.query），沒有時 null
+   *   expected      比對用的預期資料 { name, data（ssot-expected/1；無法解析時 null）, error }，沒有時 null；換基準時保留並重新比對
+   *   origin        這份基準怎麼來的 { kind: 'build' | 'restore' | 'workpack', name?, createdAt? }，沒有時 null
+   *   ledger        （唯讀）目前的處理紀錄；處理紀錄停用時為 null
+   */
+  A.newRound = (fields) => Object.assign({
+    sources: [], profile: null, expectedData: null, snapshot: null, Q: null, expected: null, origin: null,
+    get ledger() { return A.ledgerOrNull ? A.ledgerOrNull() : null; },
+  }, fields || {});
+  App.round = A.newRound();
+  // 既有的讀取沿用 App.snap／App.Q／App.sources／App.profileJson：唯讀，寫入一律經過 A.load／A.setRoundInputs（嚴格模式下直接指定會丟錯）
+  Object.defineProperties(App, {
+    snap: { get: () => App.round.snapshot, enumerable: true },
+    Q: { get: () => App.round.Q, enumerable: true },
+    sources: { get: () => App.round.sources, enumerable: true },
+    profileJson: { get: () => App.round.profile, enumerable: true },
+  });
+  /** 只換這一輪的輸入（收集檔、命名規則、expectedData、來源）；有給的欄位才換，基準不變 */
+  A.setRoundInputs = function setRoundInputs(inputs) {
+    ['sources', 'profile', 'expectedData', 'origin'].forEach((k) => {
+      if (inputs && k in inputs) App.round[k] = k === 'sources' ? inputs[k] || [] : inputs[k] || null;
+    });
+  };
+  /** 清除這一輪的資料（「清除」按鈕）：基準、輸入與比對用的預期資料；處理紀錄不在這裡，不受影響 */
+  A.clearRound = function clearRound() { App.round = A.newRound(); };
+  /** 存進 store 的 'last'：基準、輸入與目前的節點位置（位置是檢視狀態，和基準一起還原）。失敗時以 banner 說明，回傳 false */
+  A.saveLast = function saveLast() {
+    const r = App.round;
+    return S.store.set('last', { snapshot: r.snapshot, sources: r.sources, profile: r.profile, expectedData: r.expectedData, positions: Object.fromEntries(App.graph.pos) })
+      .then(() => true, () => { A.banner('基準太大，無法存入瀏覽器；關閉頁面後需要重新建立。'); return false; });
+  };
+
   // ================================================================ 啟動
   async function init() {
     App.graph = new V.GraphView($('#graph'));
@@ -39,7 +84,7 @@
     let saveT = null;
     App.graph.on('moved', () => { clearTimeout(saveT); saveT = setTimeout(A.savePositions, 600); App.graph.computeGroups(); });
     App.layoutMode = (await S.store.get('layoutMode').catch(() => null)) || 'elk';
-    A.bindHeader(); A.bindToolbar(); A.bindInputDialog(); A.bindTabs(); A.bindMobileWorkspaces(); await A.bindResizers();
+    A.bindHeader(); A.bindToolbar(); A.bindInputDialog(); A.bindHub(); A.bindTabs(); A.bindMobileWorkspaces(); await A.bindResizers();
     if (!(await S.store.available())) A.banner('這個瀏覽器無法使用本機儲存，關閉頁面後基準不會保留。');
     await A.loadLedger();
     await App.restore();
@@ -52,11 +97,12 @@
     const savedMeta = last ? S.query.metaOf(last.snapshot) : null;
     const saved = savedMeta ? last.snapshot : null;
     if (saved) {
-      App.sources = last.sources || []; App.profileJson = last.profile || null;
+      const inputs = { sources: last.sources || [], profile: last.profile || null, expectedData: last.expectedData || null, origin: { kind: 'restore' } };
+      A.setRoundInputs(inputs); // 無法還原基準時，輸入對話框仍可帶出上次的收集檔
       const sameSchema = savedMeta.schema === S.SCHEMA;
       let snap = sameSchema ? saved : null; let msg = `已還原上次建立的基準（${V.fmtTime(savedMeta.createdAt)}）`;
-      if ((!sameSchema || savedMeta.version !== S.VERSION) && App.sources.length) { // 程式更新過：用儲存的輸入重建，欄位才會完整
-        try { snap = await S.buildAsync(App.sources, { profile: App.profileJson }); msg = '程式已更新，已用儲存的輸入重新建立基準'; } catch (e) {
+      if ((!sameSchema || savedMeta.version !== S.VERSION) && inputs.sources.length) { // 程式更新過：用儲存的輸入重建，欄位才會完整
+        try { snap = await S.buildAsync(inputs.sources, { profile: inputs.profile, expectedData: inputs.expectedData }); msg = '程式已更新，已用儲存的輸入重新建立基準'; } catch (e) {
           console.error(e);
           if (!sameSchema) msg = `上次的基準格式（${savedMeta.schema}）已不相容，重新建立失敗：${e.message}。請重新建立基準。`;
         }
@@ -74,8 +120,14 @@
   };
 
   // ================================================================ 載入基準
-  A.load = function load(snap, positions) {
-    App.snap = snap; App.Q = S.query(snap); App.sel = null; App.expanded = new Set();
+  /**
+   * 換成另一份基準。inputs（選用）是要一起換的輸入 { sources, profile, expectedData, origin }：
+   * 和基準同時換，不會出現「基準換了、收集檔還是舊的」的中間狀態。
+   */
+  A.load = function load(snap, positions, inputs) {
+    const Q = S.query(snap);
+    if (inputs) A.setRoundInputs(inputs);
+    App.round.snapshot = snap; App.round.Q = Q; App.sel = null; App.expanded = new Set();
     // 處理紀錄推進一輪（目前時間由畫面傳入）；寫入 store 是非同步的，App.ledgerJob 讓呼叫端可以等待
     App.ledgerJob = A.advanceLedger(App.Q);
     V.lists.findings.reset(); V.lists.compare.reset(); V.lists.findings.openFirst(App.Q);
@@ -121,7 +173,7 @@
       f.appendChild(h('span', null, `版本 ${m.version}`));
     } else f.appendChild(h('span', null, `RouterOS 網路基準 ${S.VERSION}・資料只在這個瀏覽器處理，不會傳到任何地方`));
     V.lists.findings(App); V.lists.coverage(App); V.lists.compare(App); V.lists.inventory(App);
-    V.ledgerPane.render(App); V.patchView.refresh(App);
+    V.ledgerPane.render(App); V.patchView.refresh(App); V.hub.render(App);
     V.details.render(App, App.sel);
   };
   function renderBaselineSummary() {

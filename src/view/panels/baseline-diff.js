@@ -21,8 +21,12 @@
   function loadOld(App, text) {
     let old;
     try { old = JSON.parse(text); } catch (e) { return { report: empty('無法讀取：' + e.message), qOld: null }; }
+    return compareWith(App, old);
+  }
+  /** 已解析的基準物件 → { report, qOld }（loadOld 與 setOld 共用） */
+  function compareWith(App, old) {
     const oldMeta = S.query.metaOf(old);
-    if (!oldMeta) return { report: empty('這不是基準（Snapshot JSON）：缺少 meta；請用工具列的「匯出 JSON」產生的檔案'), qOld: null };
+    if (!oldMeta) return { report: empty('這不是基準（Snapshot JSON）：缺少 meta；請用資料中心的「基準 JSON」產生的檔案'), qOld: null };
     // schema 不同時欄位意義不同，舊檔可能連查詢介面都建不起來：只把 meta 交給核心，由核心回報不比對的原因
     if (oldMeta.schema !== App.Q.meta().schema) return { report: S.compare.snapshots({ meta: () => oldMeta }, App.Q), qOld: null };
     let qOld;
@@ -85,19 +89,30 @@
     class: 'chip effect', style: { color: T.effect[e], borderColor: T.effect[e] }, title: e,
   }, [T.effectSev[e] ? h('span', { class: 'sev ' + T.effectSev[e], 'aria-hidden': 'true' }) : null, EFFECT[e] || e]) : null);
 
+  /** 記下比對結果，重繪用到它的畫面（檢查結果的「只看新出現的」、資料中心的「上一輪的基準」） */
+  function adopt(App, name, r) {
+    state.report = r.report; state.qOld = r.qOld; state.addedFindingKeys = null;
+    state.name = name; state.filter = 'all';
+    V.app.renderAll();
+  }
+  /** 讀入舊基準檔（比對分頁與資料中心共用） */
+  async function loadFile(App, f) {
+    let r;
+    try { r = loadOld(App, await f.text()); } catch (e) { console.error(e); r = { report: empty('無法讀取：' + e.message), qOld: null }; }
+    adopt(App, f.name, r);
+  }
+  /** 以已經在記憶體中的基準當舊基準（例如由工作包帶回的上一輪基準）；只讀，不修改它 */
+  function setOld(App, name, snapshot) { adopt(App, name, compareWith(App, snapshot)); }
+  /** 資料中心的狀態列：{ name, report }；沒有載入時為 null */
+  const status = () => (state.report ? { name: state.name, report: state.report } : null);
+
   function render(App) {
     const box = h('div', { class: 'pane-body baseline-diff' });
-    const file = h('input', { type: 'file', accept: '.json,application/json', class: 'hidden', onchange: async (ev) => {
-      const f = ev.target.files[0]; if (!f) return;
-      let r;
-      try { r = loadOld(App, await f.text()); } catch (e) { console.error(e); r = { report: empty('無法讀取：' + e.message), qOld: null }; }
-      state.report = r.report; state.qOld = r.qOld; state.addedFindingKeys = null;
-      state.name = f.name; state.filter = 'all';
-      // 檢查結果分頁的「只看新出現的」也依這份舊基準
-      V.lists.compare(App); V.lists.findings(App);
+    const file = h('input', { type: 'file', accept: '.json,application/json', class: 'hidden', onchange: (ev) => {
+      const f = ev.target.files[0]; if (f) loadFile(App, f);
     } });
     box.appendChild(h('h4', { class: 'pane-title' }, '與舊基準比對'));
-    box.appendChild(h('p', { class: 'muted' }, '載入之前匯出的基準（工具列「匯出 JSON」），列出設備、鏈路、VLAN、IP、防火牆規則與檢查結果的變化。只讀取兩份基準，比對結果不會儲存。'));
+    box.appendChild(h('p', { class: 'muted' }, '載入之前匯出的基準（資料中心的「基準 JSON」），列出設備、鏈路、VLAN、IP、防火牆規則與檢查結果的變化。只讀取兩份基準，比對結果不會儲存。'));
     box.appendChild(h('div', { class: 'row' }, [file,
       h('button', { disabled: !App.Q || null, onclick: () => file.click() }, '載入舊基準（JSON）…'),
       state.name ? h('span', { class: 'muted' }, state.name) : null]));
@@ -139,5 +154,5 @@
     return box;
   }
 
-  V.baselineDiff = { render, diffFrom, loaded, reset: () => { state.report = null; state.qOld = null; state.addedFindingKeys = null; state.name = ''; state.filter = 'all'; } };
+  V.baselineDiff = { render, diffFrom, loaded, loadFile, setOld, status, reset: () => { state.report = null; state.qOld = null; state.addedFindingKeys = null; state.name = ''; state.filter = 'all'; } };
 })(globalThis.SSOT = globalThis.SSOT || {});

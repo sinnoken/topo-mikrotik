@@ -14,6 +14,7 @@
     g.setOverlay([]); g.setHighlight(null);
     let nodes = []; let edges = []; let focus = [];
     if (!sel) { g.setSelection([], []); V.details.render(App, null); return; }
+    A.closeHub(); // 選取要在圖與詳情上看到結果（例如從搜尋或摘要進來）
     const pairsOf = (linkKeys) => S.util.uniq(linkKeys.map((k) => App.pairOfLink.get(k)).filter(Boolean));
     const devOf = (ep) => K.splitEp(ep)[0];
     switch (sel.type) {
@@ -163,6 +164,7 @@
 
   // ================================================================ 路由追蹤
   App.openTrace = function (src, dst) {
+    A.closeHub();
     const pop = $('#trace-pop'); pop.classList.remove('hidden');
     if (src !== undefined) $('#trace-src').value = src; if (dst !== undefined) $('#trace-dst').value = dst;
     ($('#trace-src').value ? $('#trace-dst') : $('#trace-src')).focus();

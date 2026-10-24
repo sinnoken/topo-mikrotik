@@ -1,5 +1,6 @@
 /*
- * 頁首與工具列：建立基準、搜尋、路由追蹤、清除；圖的操作（全圖、重新排列、力導向、顯示切換）、圖例與匯出。
+ * 頁首與工具列：資料中心、搜尋、路由追蹤、清除；圖的操作（全圖、重新排列、力導向、顯示切換）、圖例與匯出。
+ * 輸入與輸出的入口集中在資料中心（app-hub.js）；工具列只留和圖有關的「匯出 PNG」（資料中心也有，呼叫同一個 A.exportPng）。
  */
 (function (S) {
   'use strict';
@@ -9,7 +10,6 @@
 
   // ================================================================ 頁首
   A.bindHeader = function bindHeader() {
-    $('#btn-input').onclick = () => A.openInput();
     $('#btn-trace').onclick = () => { const p = $('#trace-pop'); p.classList.toggle('hidden'); if (!p.classList.contains('hidden')) $('#trace-src').focus(); };
     $('#trace-run').onclick = A.runTrace;
     ['#trace-src', '#trace-dst'].forEach((s) => $(s).addEventListener('keydown', (e) => {
@@ -18,7 +18,7 @@
     }));
     $('#btn-clear').onclick = async () => {
       if (!App.snap || !confirm('清除目前的基準與輸入？（只清除這個工具的資料）')) return;
-      await S.store.del('last'); App.snap = null; App.Q = null; App.sources = []; App.graph.setData([], [], new Map()); A.renderAll();
+      await S.store.del('last'); A.clearRound(); App.sel = null; App.graph.setData([], [], new Map()); A.renderAll();
     };
     // 搜尋
     const inp = $('#search'); const dd = $('#search-dd'); let results = []; let active = 0;
@@ -89,8 +89,7 @@
       App.graph.showGroups = !App.graph.showGroups; $('#btn-groups').classList.toggle('on', App.graph.showGroups); App.graph.redraw();
     };
     // 畫布每次繪圖都先填滿 theme 的畫布底色，匯出前同步重畫一次，PNG 才是目前畫面且不透明
-    $('#btn-png').onclick = () => { App.graph.draw(); const a = document.createElement('a'); a.download = 'topology.png'; a.href = $('#graph').toDataURL('image/png'); a.click(); };
-    $('#btn-json').onclick = () => App.exportAs('snapshot');
+    $('#btn-png').onclick = () => A.exportPng();
     buildLegend();
   };
 
@@ -179,6 +178,14 @@
   };
 
   // ================================================================ 匯出
+  /**
+   * 目前的拓樸圖畫面 → topology.png。畫布每次繪圖都先填滿 theme 的畫布底色，匯出前同步重畫一次，PNG 才是目前畫面且不透明。
+   * 資料中心蓋在圖上時畫布大小不變（兩者疊在同一格），所以從資料中心匯出也是同一張圖。
+   */
+  A.exportPng = function exportPng() {
+    if (!App.snap) return;
+    App.graph.draw(); const a = document.createElement('a'); a.download = 'topology.png'; a.href = $('#graph').toDataURL('image/png'); a.click();
+  };
   /** 匯出目前的基準或檢查結果（種類見 V.exporter.KINDS）；透過 App.Q 讀取，不改寫。extra 例如 { byDevice: true } */
   App.exportAs = function (kind, extra) {
     if (!App.snap) return;

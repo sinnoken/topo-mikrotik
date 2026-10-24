@@ -24,6 +24,8 @@
 
   /** 檔名：files() 的 base 加上種類的後綴（base.rsc、base-rollback.rsc、base-verify.rsc） */
   const fileName = (f, kind) => `${f.base}${KIND[kind][1]}.rsc`;
+  /** 總表的檔名：patch-summary-<建立時間>-<N>dev.md（對話框的下載與工作包共用） */
+  const summaryName = (App) => `patch-summary-${V.exporter.baseName(App.Q)}.md`;
   const download = (name, text) => V.exporter.download(name, text, 'text/plain;charset=utf-8');
   function copyText(text, what) {
     const c = globalThis.navigator && globalThis.navigator.clipboard;
@@ -224,7 +226,7 @@
     const files = state.files;
     const all = () => {
       files.forEach((f) => Object.keys(KIND).forEach((k) => download(fileName(f, k), f[k])));
-      download(`patch-summary-${V.exporter.baseName(App.Q)}.md`, V.exporter.patchSummaryMarkdown(plan, files, App.Q));
+      download(summaryName(App), V.exporter.patchSummaryMarkdown(plan, files, App.Q));
     };
     const hits = R().matchFindings(App.Q, plan.skipped);
     const closeDlg = () => { const d = $('#dlg-patch'); if (d && d.open) d.close(); };
@@ -239,8 +241,8 @@
         ? [h('span', { class: 'muted' }, '單台設備：下載三個 .rsc')].concat(Object.keys(KIND).map((k) => h('button', { class: 'patch-download', 'data-file': fileName(files[0], k),
           onclick: () => download(fileName(files[0], k), files[0][k]) }, '下載 ' + fileName(files[0], k))))
         : [h('button', { class: 'primary patch-download-every', onclick: all }, `逐檔下載全部（${files.length * 3 + 1} 個檔案）`),
-          h('button', { class: 'patch-download-summary', onclick: () => download(`patch-summary-${V.exporter.baseName(App.Q)}.md`, V.exporter.patchSummaryMarkdown(plan, files, App.Q)) }, '只下載總表（Markdown）'),
-          h('span', { class: 'muted' }, '目前沒有 ZIP（第二階段提供）；瀏覽器可能會詢問是否允許下載多個檔案。總表列出每台設備的檔名、項目與風險。')]) : null,
+          h('button', { class: 'patch-download-summary', onclick: () => download(summaryName(App), V.exporter.patchSummaryMarkdown(plan, files, App.Q)) }, '只下載總表（Markdown）'),
+          h('span', { class: 'muted' }, '瀏覽器可能會詢問是否允許下載多個檔案；要一個檔案帶走，可以在資料中心匯出工作包（ZIP，含這裡選取的 patch 與總表）。總表列出每台設備的檔名、項目與風險。')]) : null,
       ...files.map((f) => deviceBlock(App, plan, f)),
       plan.skipped.length ? h('div', { class: 'patch-skipped' }, [
         h('h4', null, ['沒有產生指令的項目 ', V.chip(String(plan.skipped.length), 'warn')]),
@@ -283,6 +285,25 @@
     compute(App); render(App);
   }
 
-  V.patchView = { open, refresh, render, state, fileName };
+  /**
+   * 工作包用：目前修正計畫的選取所產生的檔案 { plan, files, list: [{ name, text }] }（每台設備的套用、回復、驗證 .rsc，加上總表）。
+   * 沒有選取（或換了基準、選取已清空）時為 null。內容和對話框的下載相同，都由 S.remediate 產生。
+   */
+  function current(App) {
+    if (!App.snap) return null;
+    resetFor(App);
+    if (!state.keys.size) return null;
+    compute(App);
+    const plan = state.plan; const files = state.files;
+    const list = [];
+    files.forEach((f) => Object.keys(KIND).forEach((k) => list.push({ name: fileName(f, k), text: f[k] })));
+    list.push({ name: summaryName(App), text: V.exporter.patchSummaryMarkdown(plan, files, App.Q) });
+    return { plan, files, list };
+  }
+
+  /** 目前修正計畫選取的項目數（換了基準時先清空）；沒有基準時 0 */
+  function selectedCount(App) { if (!App.snap) return 0; resetFor(App); return state.keys.size; }
+
+  V.patchView = { open, refresh, render, state, fileName, current, selectedCount };
   window.App.openPatch = (keys) => open(window.App, keys);
 })(globalThis.SSOT = globalThis.SSOT || {});

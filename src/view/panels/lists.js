@@ -1,5 +1,6 @@
 /*
- * 左側的分頁：檢查結果、覆蓋率、清單、比對（摘要與入口）；以及中間的「比對」工作畫面（預期資料比對＋新舊基準比對）。
+ * 依流程步驟分配的清單：檢查結果（③ 分診的左側）、清單（② 檢視的左側）、覆蓋率（① 輸入，資料中心裡的 #pane-coverage）；
+ * 以及「⑤ 驗證」裡的比對（預期資料比對＋新舊基準比對，#compare-body）。
  */
 (function (S) {
   'use strict';
@@ -68,7 +69,7 @@
     const root = V.clear(V.$('#pane-findings'));
     if (!App.snap) return root.appendChild(h('div', { class: 'empty-detail' }, '建立基準後，資料之間的矛盾與缺漏會列在這裡。'));
     const Q = App.Q; const all = Q.findings();
-    // 只看新出現的：依「比對」載入的舊基準（S.compare.snapshots 的 finding added）；沒有舊基準時停用
+    // 只看新出現的：依「⑤ 驗證」的比對或資料中心載入的舊基準（S.compare.snapshots 的 finding added）；沒有舊基準時停用
     const base = V.baselineDiff.loaded();
     if (!base) state.onlyNew = false;
     const isNew = (f) => !!base && base.addedFindingKeys.has(Q.findingKey(f));
@@ -93,8 +94,8 @@
         onclick: () => { state.groupBy = k; findings(App); } }, label))),
       base ? filterChip('只看新出現的', nNew, { cls: 'info', on: state.onlyNew, title: `與舊基準（${base.name}）比對後新出現的檢查結果`,
         onclick: () => { state.onlyNew = !state.onlyNew; findings(App); } })
-        : V.chipButton('只看新出現的', 'btn off only-new', { 'aria-disabled': 'true', 'aria-pressed': 'false', title: '需要先在中間的「比對」或資料中心載入舊基準' }),
-      base ? null : h('span', { class: 'muted note only-new-why' }, '在「比對」或資料中心載入舊基準後，才能只看新出現的'),
+        : V.chipButton('只看新出現的', 'btn off only-new', { 'aria-disabled': 'true', 'aria-pressed': 'false', title: '需要先在「⑤ 驗證」的比對或資料中心載入舊基準' }),
+      base ? null : h('span', { class: 'muted note only-new-why' }, '在「⑤ 驗證」的比對或資料中心載入舊基準後，才能只看新出現的'),
       versionWarn ? h('span', { class: 'note warn-line only-new-version', title: versionWarn.message }, '新出現的可能來自新版檢查：' + versionWarn.message) : null,
     ]));
     // 報表（CSV、Markdown）的匯出集中在資料中心；這裡只放入口
@@ -106,7 +107,7 @@
     if (!all.length) root.appendChild(h('div', { class: 'empty-detail' }, [h('div', { class: 'big' }, '沒有發現問題'), '所有資料彼此一致。']));
     else if (state.onlyNew && !nNew) root.appendChild(h('div', { class: 'muted pane-note' }, `與舊基準（${base.name}）比對，沒有新出現的檢查結果。`));
     const ledgerBlocked = A().ledgerState().blocked;
-    if (ledgerBlocked) root.appendChild(h('div', { class: 'pane-note warn-line ledger-blocked' }, '處理紀錄目前無法使用：' + ledgerBlocked.reason + '（見「處理紀錄」分頁）'));
+    if (ledgerBlocked) root.appendChild(h('div', { class: 'pane-note warn-line ledger-blocked' }, '處理紀錄目前無法使用：' + ledgerBlocked.reason + '（見「⑤ 驗證」的處理紀錄）'));
     /** 一筆檢查結果：點文字定位；旁邊的「處理」變更處理紀錄的狀態與備註 */
     const item = (i, showId) => {
       const f = all[i]; const it = A().ledgerItem(f); const s = it ? it.status : null;
@@ -227,18 +228,10 @@
     const collected = rows.filter((r) => r.collected); const missing = collected.filter(V.coverageGap);
     const seenOnly = rows.filter((r) => !r.collected && r.kind !== 'host'); const hosts = rows.filter((r) => !r.collected && r.kind === 'host');
     const F = { all: ['全部已收集', collected], missing: ['有缺漏', missing], seen: ['未收集的網路設備', seenOnly], hosts: ['主機（只由 LLDP 看到）', hosts] };
+    // 篩選選項；devices.csv 草稿（C01）的匯出在資料中心同一頁的「這一輪的輸入」與「給收集器」
     root.appendChild(h('div', { class: 'summary' }, Object.entries(F).map(([k, [label, list]]) => filterChip(label, list.length, { cls: k === 'missing' ? 'err' : '', on: cov.filter === k, onclick: () => { cov.filter = k; coverage(App); } }))));
-    // C01（只被鄰居發現、沒有收集資料的網路設備）→ tools/collect.sh 的設備清單草稿
-    const nC01 = Q.findingsByRule('C01').length;
-    root.appendChild(h('div', { class: 'row spaced pane-section devices-draft' }, [
-      h('span', { class: 'muted' }, nC01 ? `未收集的網路設備（C01）${V.num(nC01)} 台，可匯出收集器的設備清單草稿` : '沒有未收集的網路設備（C01）'),
-      h('button', {
-        disabled: !nC01 || null, onclick: () => App.exportAs('devicesCsv'),
-        title: 'tools/collect.sh 的 devices.csv（name,address,user,port[,extra]）；address 取管理 IP 或鄰居回報的位址，user 是佔位值，執行前請修改',
-      }, '匯出未收集設備的 devices.csv 草稿'),
-    ]));
     const list = F[cov.filter][1];
-    root.appendChild(V.table([
+    root.appendChild(h('div', { class: 'work-table' }, V.table([
       { t: '設備', f: (r) => Q.devName(r.dev) },
       { t: '類型', f: (r) => V.kindChip(r.kind) },
       { t: '資料', f: (r) => h('div', { class: 'chip-list' }, [
@@ -247,7 +240,7 @@
       ]) },
       { t: '收集失敗', f: (r) => failureList(App, r.failures || []) },
       { t: '鏈路', f: (r) => String(r.links) },
-    ], list, { onRow: (r) => App.select({ type: 'device', key: r.dev }, { focus: true }), limit: 600, bad: V.coverageGap }));
+    ], list, { onRow: (r) => App.select({ type: 'device', key: r.dev }, { focus: true }), limit: 600, bad: V.coverageGap })));
   }
   coverage.showMissing = (App) => { cov.filter = 'missing'; coverage(App); };
   /** 收集失敗清單：原因、指令（標頭層級的失敗沒有指令）與影響的資料類別；點一下開啟原文的失敗行 */
@@ -288,7 +281,7 @@
   }
   const CMP_ST = { ok: ['一致', 'ok'], missing: ['基準缺少', 'err'], different: ['不同', 'warn'], unexpected: ['基準多出', 'info'] };
   /**
-   * 中間的「比對」工作畫面（#compare-body）：上方是預期資料比對，下方是新舊基準比對（panels/baseline-diff.js），各一張卡片。
+   * 「⑤ 驗證」的比對（#compare-body）：上方是預期資料比對，下方是新舊基準比對（panels/baseline-diff.js），各一張卡片。
    * 點一列在右側的詳細資料開啟該項目（比對留在中間）。
    */
   function compare(App) {
@@ -302,7 +295,7 @@
     } });
     const exp = App.round.expected;
     root.appendChild(h('div', { class: 'pane-body' }, [
-      h('h3', { class: 'work-card-title', id: 'cmp-expected-title' }, '預期資料比對'),
+      h('h4', { class: 'work-card-title', id: 'cmp-expected-title' }, '預期資料比對'),
       h('p', { class: 'muted' }, '把「預期應該長怎樣」的資料（格式 ssot-expected/1，獨立於基準）和目前基準比對。比對只讀取基準，不會修改它。'
         + '預期資料是這一輪的輸入，換了基準會重新比對；由基準產生預期資料在資料中心的「這一輪的輸出」。'),
       h('div', { class: 'row' }, [
@@ -325,35 +318,10 @@
       },
     })));
   }
-  /**
-   * 左側的「比對」分頁：只留摘要與入口（比對結果在中間的「比對」工作畫面）。
-   * 數字都來自同一份比對結果（預期資料：compare.report；新舊基準：V.baselineDiff.status）。
-   */
-  function compareSummary(App) {
-    const pane = V.clear(V.$('#pane-compare'));
-    if (!App.snap) return pane.appendChild(h('div', { class: 'empty-detail' }, '建立基準後，可以和預期資料或上一輪的基準比對。'));
-    const r = expectedReport(App); const exp = App.round.expected; const prev = V.baselineDiff.status();
-    const nDiff = r && !r.errors.length ? r.items.filter((i) => i.status !== 'ok').length : 0;
-    const line = (title, kids) => h('div', { class: 'cmp-sum-row' }, [h('b', null, title), h('div', { class: 'chip-list' }, kids)]);
-    const exposure = prev && !prev.report.errors.length ? prev.report.items.filter((i) => i.effect === 'new-exposure').length : 0;
-    pane.appendChild(h('div', { class: 'pane-body cmp-summary' }, [
-      h('p', { class: 'muted' }, '比對的結果在中間的「比對」，全寬顯示；這裡只列摘要。'),
-      line('預期資料', !exp ? [h('span', { class: 'muted' }, '未載入')] : r && r.errors.length ? [V.chip('無法比對', 'err', { title: r.errors[0] })]
-        : r ? [h('span', { class: 'muted' }, exp.name), V.chip(`有差異 ${V.num(nDiff)}`, nDiff ? 'warn' : 'ok'), V.chip(`一致 ${V.num(r.summary.ok || 0)}`)] : []),
-      line('上一輪的基準', !prev ? [h('span', { class: 'muted' }, '未載入')] : prev.report.errors.length ? [h('span', { class: 'muted' }, prev.name), V.chip('無法比對', 'err', { title: prev.report.errors[0] })]
-        : [h('span', { class: 'muted' }, prev.name), V.chip(`新增 ${V.num(prev.report.summary.added)}`), V.chip(`移除 ${V.num(prev.report.summary.removed)}`), V.chip(`變更 ${V.num(prev.report.summary.changed)}`),
-          exposure ? V.chip(`新暴露 ${V.num(exposure)}`, 'err') : null]),
-      h('div', { class: 'row spaced' }, [
-        h('button', { class: 'primary open-view', 'data-view': 'compare', onclick: () => App.showView('compare', { focus: true }) }, '在中間開啟比對'),
-        h('button', { class: 'open-hub', 'data-hub-section': 'inputs', onclick: () => App.openHub('inputs') }, '在資料中心載入…'),
-      ]),
-    ]));
-  }
   // 換基準時：新舊基準比對清空（舊基準要重新載入）；預期資料保留，下一次重繪時和新的基準重新比對
   compare.reset = () => { V.baselineDiff.reset(); };
   compare.report = expectedReport;
   compare.loadFile = loadExpectedFile;
-  compare.summary = compareSummary;
 
   // ---------------------------------------------------------------- 清單：設備、介面、IP、網段、MAC、VLAN
   const inv = { kind: 'device', filter: 'all', q: '', sortBy: -1, sortDir: 1 };

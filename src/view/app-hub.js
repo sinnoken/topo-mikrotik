@@ -16,7 +16,8 @@
 
   /**
    * 資料中心的檢視狀態（不進基準，也不存進 store）：
-   *   open        是否開啟
+   *   open        是否開啟（開著時流程步驟的目前一步是「① 輸入」）
+   *   opener      開啟它的按鈕（步驟列的 ①）；鍵盤關閉時焦點回到它，null 時回到「資料中心」按鈕
    *   byDevice    匯出報表時依設備排序（Markdown 依設備分組）
    *   pack        工作包要放哪些可選的角色（收集檔與基準一定放；命名規則與 expectedData 用過就一定放）
    *   busy        進行中的長時間操作的說明（null 表示沒有）
@@ -26,7 +27,7 @@
    *               { name, done: true, warnings, brought }（已帶回）
    */
   const hub = {
-    open: false, byDevice: false, pack: { ledger: true, expected: true, report: true, patch: true },
+    open: false, opener: null, byDevice: false, pack: { ledger: true, expected: true, report: true, patch: true },
     busy: null, progress: null, buildErrors: null, read: null,
   };
   A.hubState = () => hub;
@@ -46,25 +47,30 @@
       A.closeHub({ focus: true });
     });
   };
-  /** 開啟資料中心；section 是要捲到並聚焦的區塊（inputs、outputs、ledger、reports），省略時聚焦標題 */
-  App.openHub = function (section) {
-    hub.open = true;
+  /**
+   * 開啟資料中心（流程步驟的「① 輸入」）；section 是要捲到並聚焦的區塊（inputs、coverage、outputs、ledger、reports），省略時聚焦標題。
+   * opt.opener 是開啟它的按鈕（步驟列的 ①）：用鍵盤關閉時焦點回到它，沒有時回到頁首的「資料中心」按鈕。
+   */
+  App.openHub = function (section, opt) {
+    hub.open = true; hub.opener = (opt && opt.opener) || null;
     $('#hub').classList.remove('hidden'); $('#app').classList.add('hub-open');
     // 資料中心蓋在主畫面上（同一格，畫布大小不變）：主畫面不可聚焦，鍵盤只在資料中心內移動
     $('#main').inert = true; $('#mobile-workspaces').inert = true;
     $('#btn-hub').setAttribute('aria-expanded', 'true'); $('#btn-hub').classList.add('on');
-    renderHub();
+    renderHub(); A.renderSteps();
     const target = (section && $('#hub-sec-' + section)) || $('#hub-title');
     if (target) { target.focus(); if (target.scrollIntoView) target.scrollIntoView({ block: 'start' }); }
   };
-  /** 關閉資料中心；opt.focus 為 true 時焦點回到頁首的「資料中心」按鈕（鍵盤關閉時） */
+  /** 關閉資料中心（回到 App.step 那一步）；opt.focus 為 true 時焦點回到開啟它的按鈕或頁首的「資料中心」按鈕（鍵盤關閉時） */
   A.closeHub = function closeHub(opt) {
     if (!hub.open) return;
     hub.open = false;
+    const back = hub.opener || $('#btn-hub'); hub.opener = null;
     $('#hub').classList.add('hidden'); $('#app').classList.remove('hub-open');
     $('#main').inert = false; $('#mobile-workspaces').inert = false;
     $('#btn-hub').setAttribute('aria-expanded', 'false'); $('#btn-hub').classList.remove('on');
-    if (opt && opt.focus) $('#btn-hub').focus();
+    A.renderSteps();
+    if (opt && opt.focus) back.focus();
   };
 
   // ================================================================ 忙碌提示

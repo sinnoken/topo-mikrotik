@@ -1,10 +1,10 @@
 /*
- * 中間的「比對」工作畫面的下半：新舊基準比對（左側的「比對」分頁只列摘要，見 panels/lists.js）。
+ * 「⑤ 驗證」的比對的下半：新舊基準比對（上半的預期資料比對在 panels/lists.js；資料中心的「上一輪的基準」列出摘要）。
  * 讀入之前匯出的基準（Snapshot JSON）當作舊基準，以 S.compare.snapshots(SSOT.query(舊), App.Q) 比對，依類別分組列出。
  * 比對結果與舊基準的查詢介面只放在記憶體（這個檔案的 state）：舊基準可能很大，而且換了新基準就失去意義，所以不存進 store。
  * 檢查結果分頁的「只看新出現的」透過 V.baselineDiff.loaded() 讀取同一份比對結果。
  * 比對結果上方列出核心的提醒（report.warnings：版本或命名規則不同），這些差異不代表網路改變。
- * 修復追蹤改由處理紀錄（S.ledger，「處理紀錄」分頁）判斷，不在這裡。
+ * 修復追蹤改由處理紀錄（S.ledger，「⑤ 驗證」的修復追蹤）判斷，不在這裡。
  */
 (function (S) {
   'use strict';
@@ -111,7 +111,7 @@
     const file = h('input', { type: 'file', accept: '.json,application/json', class: 'hidden', onchange: (ev) => {
       const f = ev.target.files[0]; if (f) loadFile(App, f);
     } });
-    box.appendChild(h('h3', { class: 'work-card-title', id: 'cmp-baseline-title' }, '與舊基準比對'));
+    box.appendChild(h('h4', { class: 'work-card-title', id: 'cmp-baseline-title' }, '與舊基準比對'));
     box.appendChild(h('p', { class: 'muted' }, '載入之前匯出的基準（資料中心的「基準 JSON」），列出設備、鏈路、VLAN、IP、防火牆規則與檢查結果的變化。只讀取兩份基準，比對結果不會儲存。'));
     box.appendChild(h('div', { class: 'row' }, [file,
       h('button', { class: 'cmp-load-previous', disabled: !App.Q || null, onclick: () => file.click() }, '載入舊基準（JSON）…'),

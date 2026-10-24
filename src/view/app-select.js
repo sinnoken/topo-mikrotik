@@ -27,7 +27,7 @@
       const d = sel.type === 'device' ? sel.key : sel.type === 'interface' ? K.splitEp(sel.key)[0] : null;
       A.recenterL2(d);
     }
-    // 中間的工作畫面（修正計畫、比對、收斂趨勢）不切換：詳情在右側顯示，圖的選取也更新，回到拓樸圖時就看得到
+    // 步驟與中間的工作畫面（④ 修正計畫、⑤ 驗證）不切換：詳情在右側顯示，圖的選取也更新，回到拓樸圖時就看得到
     const r = App.layer === 'device' ? deviceMarks(sel, o) : A.layerMarks(sel, o);
     if (r.overlay.length) g.setOverlay(r.overlay);
     g.setHighlight(r.hl || filterMarks());

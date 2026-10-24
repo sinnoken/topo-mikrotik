@@ -68,6 +68,18 @@
       <svg viewBox="0 0 24 24"><circle cx="5" cy="5" r="3" fill="#0b6bcb"/><circle cx="19" cy="5" r="3" fill="#0b6bcb"/><circle cx="12" cy="19" r="3" fill="#22a338"/><path d="M5 5L19 5M5 5L12 19M19 5L12 19" stroke="#0b6bcb" stroke-width="1.5"/></svg>
       RouterOS 網路基準
     </div>
+    <!-- 流程步驟（src/view/app-panes.js 的 App.showStep）：導覽，目前的一步是 aria-current="step"；狀態文字由 A.renderSteps 寫入。
+         ① 是資料中心（蓋住主畫面的另一層），②–⑤ 切換左側清單與中間的工作畫面 -->
+    <nav id="steps" class="steps" aria-label="流程步驟">
+      <ol>
+        <li><button type="button" id="step-input" data-step="input" aria-current="false" aria-disabled="false"><span class="step-n">①</span> <span class="step-name">輸入</span> <span class="step-st"></span></button></li>
+        <li><button type="button" id="step-view" data-step="view" aria-current="false" aria-disabled="false"><span class="step-n">②</span> <span class="step-name">檢視</span> <span class="step-st"></span></button></li>
+        <li><button type="button" id="step-triage" data-step="triage" aria-current="step" aria-disabled="false" class="on"><span class="step-n">③</span> <span class="step-name">分診</span> <span class="step-st"></span></button></li>
+        <li><button type="button" id="step-fix" data-step="fix" aria-current="false" aria-disabled="true"><span class="step-n">④</span> <span class="step-name">修正</span> <span class="step-st"></span></button></li>
+        <li><button type="button" id="step-verify" data-step="verify" aria-current="false" aria-disabled="true"><span class="step-n">⑤</span> <span class="step-name">驗證</span> <span class="step-st"></span></button></li>
+      </ol>
+    </nav>
+    <div class="spacer"></div>
     <div class="search">
       <span class="icon">⌕</span>
       <input id="search" type="search" placeholder="搜尋設備、MAC、IP、VLAN、介面描述（按 / 開始）" autocomplete="off">
@@ -81,45 +93,31 @@
         <div class="form-row" style="margin:0"><span class="muted" style="flex:1;font-size:12px">依各設備路由表逐跳追蹤（含 ECMP）</span><button class="primary" id="trace-run">追蹤</button></div>
       </div>
     </div>
-    <div class="spacer"></div>
     <button id="btn-hub" class="hub-btn" aria-controls="hub" aria-expanded="false" title="這一輪的輸入與輸出：收集檔、工作包、處理紀錄、命名規則、預期資料、報表與 patch">資料中心</button>
     <button class="ghost" id="btn-clear" title="清除這個工具儲存的基準與輸入">清除</button>
   </header>
 
   <section id="baseline-summary" class="baseline-summary hidden" aria-live="polite"></section>
+  <!-- 窄螢幕的三個工作區，依流程排列：左側的清單 → 中間的工作畫面 → 詳細資料（標籤依目前的步驟，見 A.syncWorkspaces） -->
   <nav id="mobile-workspaces" class="mobile-workspaces" aria-label="工作區">
-    <button class="on" data-workspace="graph" aria-pressed="true" title="拓樸圖、修正計畫、比對、收斂趨勢">工作畫面</button>
-    <button data-workspace="checks" aria-pressed="false">檢查／清單</button>
+    <button data-workspace="checks" aria-pressed="false">檢查結果</button>
+    <button class="on" data-workspace="graph" aria-pressed="true">拓樸圖</button>
     <button data-workspace="details" aria-pressed="false">詳細資料</button>
   </nav>
 
-  <div id="main" data-workspace="graph">
-    <aside id="left">
-      <div class="tabs">
-        <button class="on" data-pane="pane-findings">檢查結果</button>
-        <button data-pane="pane-coverage">覆蓋率</button>
-        <button data-pane="pane-inventory">清單</button>
-        <button data-pane="pane-compare">比對</button>
-        <button data-pane="pane-ledger">處理紀錄</button>
-      </div>
+  <div id="main" data-workspace="graph" data-step="triage">
+    <!-- 左側的清單依步驟：② 檢視是清單（設備、介面、IP…），③ 分診是檢查結果；④ 修正、⑤ 驗證沒有左側，中間全寬 -->
+    <aside id="left" aria-labelledby="left-title">
+      <div class="left-head"><h2 id="left-title" class="left-title" tabindex="-1">檢查結果</h2></div>
       <div id="pane-findings" class="pane"></div>
-      <div id="pane-coverage" class="pane hidden"></div>
       <div id="pane-inventory" class="pane hidden"></div>
-      <div id="pane-compare" class="pane hidden"></div>
-      <div id="pane-ledger" class="pane hidden"></div>
     </aside>
 
-    <section id="center" data-view="graph">
-      <!-- 中間的工作畫面：拓樸圖、修正計畫、比對、收斂趨勢（src/view/app-panes.js 的 App.showView）。
+    <section id="center" data-view="graph" aria-label="工作畫面">
+      <!-- 中間的工作畫面依步驟：拓樸圖（② 檢視、③ 分診）、修正計畫（④ 修正）、驗證（⑤ 驗證；src/view/app-panes.js 的 App.showStep）。
            工作畫面疊在拓樸圖上面（同一格），畫布的大小、位置、縮放與選取都不變 -->
-      <div id="center-views" class="center-views" role="tablist" aria-label="中間的工作畫面">
-        <button type="button" role="tab" id="view-tab-graph" data-view="graph" aria-controls="view-graph" aria-selected="true" tabindex="0" class="on">拓樸圖</button>
-        <button type="button" role="tab" id="view-tab-patch" data-view="patch" aria-controls="view-patch" aria-selected="false" tabindex="-1">修正計畫</button>
-        <button type="button" role="tab" id="view-tab-compare" data-view="compare" aria-controls="view-compare" aria-selected="false" tabindex="-1">比對</button>
-        <button type="button" role="tab" id="view-tab-trend" data-view="trend" aria-controls="view-trend" aria-selected="false" tabindex="-1">收斂趨勢</button>
-      </div>
       <div id="stage" class="stage">
-      <div id="view-graph" class="view-graph" role="tabpanel" aria-labelledby="view-tab-graph">
+      <div id="view-graph" class="view-graph" role="region" aria-label="拓樸圖">
       <canvas id="graph" tabindex="0" aria-label="拓樸圖。N 下一台設備、Shift+N 上一台、Enter 開啟詳情、Shift+Enter 聚焦、Esc 取消選取、方向鍵平移、+ 與 - 縮放、0 全圖"></canvas>
       <div id="graph-live" class="sr-only" aria-live="polite"></div>
       <div id="toolbar" class="toolbar hidden">
@@ -159,23 +157,28 @@
         </div>
       </div>
       </div>
-      <!-- 工作畫面的內容由 panels/patch.js、panels/lists.js（比對）、panels/ledger.js（收斂趨勢）產生 -->
-      <section id="view-patch" class="work hidden" role="tabpanel" aria-labelledby="view-tab-patch">
+      <!-- 工作畫面的內容由 panels/patch.js（修正計畫）、panels/ledger.js（本輪變化、處理紀錄、修復追蹤、收斂趨勢）、panels/lists.js（比對）產生 -->
+      <section id="view-patch" class="work hidden" aria-labelledby="patch-title">
         <div class="work-inner">
           <div class="work-head"><h2 id="patch-title" class="work-title" tabindex="-1">修正計畫</h2><span class="muted">選取檢查結果，產生每台設備的 RouterOS .rsc；本工具只產生文字，不會連線或改動任何設備</span></div>
           <div id="patch-body"></div>
         </div>
       </section>
-      <section id="view-compare" class="work hidden" role="tabpanel" aria-labelledby="view-tab-compare">
+      <!-- ⑤ 驗證：左欄是本輪變化與處理紀錄（工作畫面夠寬時固定），右欄是修復追蹤、收斂趨勢與比對 -->
+      <section id="view-verify" class="work hidden" aria-labelledby="verify-title">
         <div class="work-inner">
-          <div class="work-head"><h2 id="compare-title" class="work-title" tabindex="-1">比對</h2><span class="muted">預期資料與目前基準、上一輪基準與目前基準；比對只讀取基準，不會修改它</span></div>
-          <div id="compare-body"></div>
-        </div>
-      </section>
-      <section id="view-trend" class="work hidden" role="tabpanel" aria-labelledby="view-tab-trend">
-        <div class="work-inner">
-          <div class="work-head"><h2 id="trend-title" class="work-title" tabindex="-1">收斂趨勢</h2><span class="muted">每建立一份新的基準算一輪；數字來自處理紀錄</span></div>
-          <div id="trend-body"></div>
+          <div class="work-head"><h2 id="verify-title" class="work-title" tabindex="-1">驗證</h2><span class="muted">重新收集、建立基準後，確認哪些已修好、哪些回歸；數字來自處理紀錄，比對只讀取基準，不會修改它</span></div>
+          <div id="verify-body" class="verify-layout">
+            <div class="verify-side">
+              <section class="work-card verify-card" aria-labelledby="round-title"><h3 id="round-title" class="work-card-title" tabindex="-1">本輪變化</h3><div id="round-body"></div></section>
+              <section class="work-card verify-card" aria-labelledby="ledger-title"><h3 id="ledger-title" class="work-card-title" tabindex="-1">處理紀錄</h3><div id="ledger-body"></div></section>
+            </div>
+            <div class="verify-main">
+              <section class="work-card verify-card" aria-labelledby="tracking-title"><h3 id="tracking-title" class="work-card-title" tabindex="-1">修復追蹤</h3><div id="tracking-body"></div></section>
+              <section class="work-card verify-card" aria-labelledby="trend-title"><h3 id="trend-title" class="work-card-title" tabindex="-1">收斂趨勢</h3><div id="trend-body"></div></section>
+              <section class="verify-compare" aria-labelledby="compare-title"><h3 id="compare-title" class="verify-sec-title" tabindex="-1">比對</h3><div id="compare-body"></div></section>
+            </div>
+          </div>
         </div>
       </section>
       <div id="banner" class="banner hidden"></div>

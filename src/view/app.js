@@ -8,7 +8,7 @@
  *   app-layers.js  拓樸圖的層級（設備、L2 埠、L3 子網）、VLAN 篩選，以及 L2／L3 的圖資料、版面與標示
  *   app-select.js  選取、圖上互動、原文檢視、路由追蹤
  *   app-toolbar.js 頁首（搜尋、追蹤、清除）、工具列、圖例、匯出
- *   app-panes.js   左側分頁、中間的工作畫面（App.showView）、窄螢幕工作區、左右欄寬度
+ *   app-panes.js   流程步驟（App.showStep）、左側的清單、中間的工作畫面（App.showView）、窄螢幕工作區、左右欄寬度
  *   app-input.js   輸入對話框與建立基準
  *   app-ledger.js  處理紀錄（S.ledger；store 的 'ledger'，並轉換舊的 'acks'）
  *   app-hub.js     資料中心：這一輪的輸入與輸出、工作包（S.workpack）的下載與讀入
@@ -91,7 +91,7 @@
     // 只有設備圖的位置存進 store；L2／L3 拖曳後的位置留在記憶體（App.layers）
     App.graph.on('moved', () => { if (App.layer === 'device') { clearTimeout(saveT); saveT = setTimeout(A.savePositions, 600); } App.graph.computeGroups(); });
     App.layoutMode = (await S.store.get('layoutMode').catch(() => null)) || 'elk';
-    A.bindHeader(); A.bindToolbar(); A.bindLayers(); A.bindInputDialog(); A.bindHub(); A.bindTabs(); A.bindCenterViews(); A.bindMobileWorkspaces(); await A.bindResizers();
+    A.bindHeader(); A.bindToolbar(); A.bindLayers(); A.bindInputDialog(); A.bindHub(); A.bindSteps(); A.bindMobileWorkspaces(); await A.bindResizers();
     if (!(await S.store.available())) A.banner('這個瀏覽器無法使用本機儲存，關閉頁面後基準不會保留。');
     await A.loadLedger();
     await App.restore();
@@ -181,10 +181,11 @@
       f.appendChild(h('span', { class: 'mono' }, `輸入指紋 ${m.inputHash}`));
       f.appendChild(h('span', null, `版本 ${m.version}`));
     } else f.appendChild(h('span', null, `RouterOS 網路基準 ${S.VERSION}・資料只在這個瀏覽器處理，不會傳到任何地方`));
-    V.lists.findings(App); V.lists.coverage(App); V.lists.compare.summary(App); V.lists.inventory(App);
+    // 覆蓋率在資料中心（① 輸入），由 V.hub.render 一起畫
+    V.lists.findings(App); V.lists.inventory(App);
     V.ledgerPane.render(App); V.hub.render(App);
-    // 中間的工作畫面：沒有基準時切回拓樸圖；只重繪目前顯示的那一個
-    A.syncCenterTabs(); A.renderCenter(); A.syncLayerUi();
+    // 步驟與中間的工作畫面：沒有基準時 ④、⑤ 回到 ③；只重繪目前顯示的那一個
+    A.syncSteps(); A.renderCenter(); A.syncLayerUi();
     V.details.render(App, App.sel);
   };
   function renderBaselineSummary() {
@@ -203,26 +204,26 @@
         ? `目前規則找到 ${V.num(pc.error)} 項錯誤、${V.num(pc.warn)} 項警告`
         : '目前規則未發現待處理的錯誤或警告') + ackNote),
       h('span', { class: 'baseline-coverage' }, `收集完整度：${V.num(stats.collected)} / ${V.num(stats.devices)} 台設備已收集；${V.num(missing)} 台有必要資料缺漏`),
-      // 處理紀錄的提示：回歸（修好後又出現）、因收集失敗而無法判斷、豁免到期；點一下開啟處理紀錄分頁
+      // 處理紀錄的提示：回歸（修好後又出現）、因收集失敗而無法判斷、豁免到期；點一下到「⑤ 驗證」的本輪變化
       ...[['regressed', 'err', (n) => `回歸 ${V.num(n)} 項`, '已修好的問題又出現（依處理紀錄）'],
         ['unobserved', 'warn', (n) => `無法判斷 ${V.num(n)} 項`, '這一輪消失的待處理項目，所屬設備有收集失敗或沒有收集，因收集失敗而無法判斷是否已修好'],
         ['waiverExpired', 'warn', (n) => `豁免到期 ${V.num(n)} 項`, '「可接受」的豁免已到期，改回待處理']]
-        .filter(([k]) => pc[k]).map(([k, cls, label, title]) => V.chipButton(label(pc[k]), 'btn ' + cls + ' ledger-alert', { 'data-alert': k, title,
-          onclick: () => A.activatePane('pane-ledger') })),
+        .filter(([k]) => pc[k]).map(([k, cls, label, title]) => V.chipButton(label(pc[k]), 'btn ' + cls + ' ledger-alert', { 'data-alert': k, title: title + '；在「⑤ 驗證」的本輪變化',
+          onclick: () => App.showStep('verify', { focus: 'round' }) })),
     ]));
     const actions = h('div', { class: 'baseline-actions' });
     actions.appendChild(h('button', {
-      disabled: !problems,
+      disabled: !problems, title: '在「③ 分診」的檢查結果只列錯誤與警告',
       onclick: () => {
         V.lists.findings.showProblems(App);
-        A.activatePane('pane-findings');
+        App.showStep('triage');
       },
     }, '查看錯誤／警告'));
     actions.appendChild(h('button', {
-      disabled: !missing,
+      disabled: !missing, title: '在「① 輸入」的覆蓋率只列有缺漏的設備',
       onclick: () => {
         V.lists.coverage.showMissing(App);
-        A.activatePane('pane-coverage');
+        App.openHub('coverage');
       },
     }, '查看收集缺漏'));
     actions.appendChild(h('button', { onclick: () => App.openTrace() }, '路由追蹤'));

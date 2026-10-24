@@ -1,5 +1,6 @@
 /*
- * 資料中心的畫面（#hub）：「這一輪的輸入」逐項列出來源與狀態，「這一輪的輸出」列出工作包的內容與各種匯出。
+ * 資料中心的畫面（#hub，流程步驟的「① 輸入」）：「這一輪的輸入」逐項列出來源與狀態，「覆蓋率」列出每台設備收集了哪些資料，
+ * 「這一輪的輸出」列出工作包的內容與各種匯出。
  * 狀態與動作在 app-hub.js；資料都透過 App.round 與 App.Q（SSOT.query）讀取，這裡只排版。
  * 狀態文字一律有符號或文字（✓、!、✗、未載入），不只靠顏色；顏色只用既有的文字色變數。
  * 每次重繪都重建內容；有 data-hub-focus 的元素在重繪後把焦點還給同一個元素，鍵盤操作不會跳回開頭。
@@ -81,7 +82,8 @@
     const nC01 = Q ? Q.findingsByRule('C01').length : 0;
     rows.push(row('coverage', '覆蓋率', Q ? `已收集 ${V.num(m.stats.collected)}／${V.num(m.stats.devices)} 台${nC01 ? `（${V.num(nC01)} 台網路設備只被鄰居發現）` : ''}` : '—',
       !Q ? st('muted', '建立基準後顯示') : nC01 ? st('warn', '有未收集的網路設備（C01）') : st('ok', '沒有未收集的網路設備'),
-      [btn('匯出 devices.csv 草稿', 'devices-csv', () => App.exportAs('devicesCsv'), { disabled: !nC01 || null, title: '給 tools/collect.sh 的設備清單草稿；user 是佔位值，執行前請修改' })]));
+      [btn('每台設備的收集情形', 'open-coverage', () => { const sec = $('#hub-sec-coverage'); if (sec) { sec.focus(); if (sec.scrollIntoView) sec.scrollIntoView({ block: 'start' }); } }, { disabled: !Q || null, title: '下方的「覆蓋率」：每台設備收集了哪些資料、缺漏與收集失敗' }),
+        btn('匯出 devices.csv 草稿', 'devices-csv', () => App.exportAs('devicesCsv'), { disabled: !nC01 || null, title: '給 tools/collect.sh 的設備清單草稿；user 是佔位值，執行前請修改' })]));
     return h('div', { class: 'hub-rows' }, [
       h('div', { class: 'hub-row hub-row-head', 'aria-hidden': 'true' }, ['項目', '來源', '狀態', '操作'].map((t) => h('div', null, t))), ...rows]);
   }
@@ -189,7 +191,7 @@
       card('device', '給設備', `修正 patch：每台的套用、回復、驗證 .rsc 與總表。本工具只產生文字，不會連線設備。${nPatch ? `目前選取 ${V.num(nPatch)} 項，會放進工作包。` : ''}`, [
         btn('開啟修正計畫', 'open-patch', () => App.openPatch(), { class: 'open-patch', disabled: off }),
       ]),
-      card('report', '給報告或紀錄', '檢查結果 Markdown／CSV（含處理狀態，不受檢查結果分頁的篩選影響）・拓樸 PNG', [
+      card('report', '給報告或紀錄', '檢查結果 Markdown／CSV（含處理狀態，不受「③ 分診」檢查結果的篩選影響）・拓樸 PNG', [
         btn('Markdown', 'export-markdown', () => A().exportReport('markdown'), { disabled: off, title: '依嚴重度（或依設備）分組的報表，含證據行號，已處理的項目會標示狀態與備註' }),
         btn('CSV', 'export-csv', () => A().exportReport('csv'), { disabled: off, title: '每筆一列，含相關實體、證據行號、處理狀態、時間與備註（Excel 可直接開啟）' }),
         btn('依設備排序', 'by-device', () => A().toggleByDevice(), { class: 'ghost export-by-device' + (hub.byDevice ? ' on' : ''), 'aria-pressed': String(hub.byDevice),
@@ -223,7 +225,7 @@
         h('h1', { id: 'hub-title', tabindex: '-1' }, '資料中心'),
         h('span', { class: 'muted' }, '每一輪的輸入與輸出都在這裡；全部在本機處理，不會傳到任何地方'),
         h('span', { class: 'hub-spacer' }),
-        btn('回到拓樸圖', 'close-hub', () => A().closeHub({ focus: true }), { class: 'ghost hub-close', title: '關閉資料中心（Esc）' }),
+        btn(`回到「${A().STEP_LABEL[App.step]}」`, 'close-hub', () => A().closeHub({ focus: true }), { class: 'ghost hub-close', title: '關閉資料中心（Esc）' }),
       ]),
       h('div', { id: 'hub-busy', class: 'hub-busy' + (busy ? '' : ' hidden'), role: 'status', 'aria-live': 'polite' }, busy ? [
         // 有進度（重建）時是確定的進度條，否則是不確定的動畫；文字一律說明在做什麼
@@ -239,6 +241,12 @@
         inputRows(App, busy),
         V.ledgerPane.importBlock(App),
       ]),
+      // 覆蓋率：每台設備收集了哪些資料（V.lists.coverage 畫進 #pane-coverage，篩選跨重繪保留）
+      h('section', { class: 'hub-card', id: 'hub-sec-coverage', tabindex: '-1', 'aria-labelledby': 'hub-cov-title' }, [
+        h('div', { class: 'hub-card-head' }, [h('h2', { id: 'hub-cov-title' }, '覆蓋率')]),
+        h('p', { class: 'muted' }, '每台設備收集了哪些資料；「有缺漏」包括缺少應收集的資料與有指令收集失敗的設備，失敗的指令可以開啟原文。點一列在右側看設備的詳細資料（資料中心會關閉）。'),
+        h('div', { id: 'pane-coverage', class: 'hub-coverage' }),
+      ]),
       h('section', { class: 'hub-card', id: 'hub-sec-outputs', tabindex: '-1', 'aria-labelledby': 'hub-out-title' }, [
         h('div', { class: 'hub-card-head' }, [h('h2', { id: 'hub-out-title' }, '這一輪的輸出')]),
         h('p', { class: 'muted' }, '工作包（不壓縮的 ZIP）包含收集檔、基準、處理紀錄、報表與 patch；下一輪讀回這一份就能接著做。收集檔可能含有設備機密，請自行保管。'),
@@ -246,6 +254,7 @@
         outputCards(App, hub),
       ]),
     ]));
+    V.lists.coverage(App);
     if (focusKey) {
       const el = ['button', 'input', 'select'].flatMap((t) => Array.from(root.querySelectorAll(t))).find((x) => x.getAttribute('data-hub-focus') === focusKey && !x.disabled);
       if (el) el.focus();

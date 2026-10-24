@@ -487,6 +487,7 @@
     const cv = $('#graph');
     cv.setAttribute('aria-label', `拓樸圖（${V.LAYER[L]}）。N 下一個${L === 'l2' ? '設備或埠' : L === 'l3' ? '子網或設備' : '設備'}、Shift+N 上一個、Enter 開啟詳情、Shift+Enter 聚焦、Esc 取消選取、方向鍵平移、+ 與 - 縮放、0 全圖`);
     renderNote();
+    A.renderSteps(); // 步驟列「② 檢視」的狀態是目前的層級
   };
   /** 這一層的說明：畫了多少、哪些沒畫（L2 的 MNDP、只畫一台設備時的原因），L3 的路由、重疊與 VRF */
   function renderNote() {

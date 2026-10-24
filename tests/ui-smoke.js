@@ -174,6 +174,9 @@ async function buildInput(input) {
 
 /** 資料中心（#hub）裡 data-action 為 action 的按鈕；輸入與輸出的入口集中在這裡 */
 const hubBtn = (action) => $('#hub').testAll('button').find((b) => b.getAttribute('data-action') === action);
+/** 流程步驟（#steps）的按鈕：input、view、triage、fix、verify；goStep 和使用者一樣點一下切換 */
+const stepBtn = (s) => document.testAll('#steps button').find((b) => b.dataset.step === s);
+const goStep = (s) => stepBtn(s).click();
 /** 等到條件成立（非同步的建立、讀入、重建）；逾時時丟錯並說明在等什麼 */
 async function until(cond, what) {
   for (let i = 0; i < 8000 && !cond(); i++) await new Promise((r) => setTimeout(r, 5));
@@ -891,7 +894,8 @@ function viewBoundaryViolations(file, src) {
     const rows = App.Q.macEntries(); if (!rows.length) throw new Error('清單應有資料');
     const noIp = App.snap.model.macs.filter((x) => !x.ips.length).length;
     if (rows.filter((r) => r.noIp).length < noIp) throw new Error('缺 IP 筆數不符');
-    document.testAll('#left .tabs button')[2].click();
+    goStep('view'); // 清單在「② 檢視」的左側
+    if ($('#pane-inventory').classList.contains('hidden') || !$('#pane-findings').classList.contains('hidden')) throw new Error('② 檢視的左側應是清單');
     const m = App.snap.model; const ips = App.Q.ipEntries();
     const t = text('#pane-inventory');
     [`設備 ${m.devices.length + App.Q.endpointEntries().length}`, `介面 ${m.interfaces.length}`, `IP ${ips.length}`, `網段 ${m.prefixes.length}`, `MAC ${new Set(rows.map((r) => r.mac)).size}`, `VLAN ${m.vlans.length}`].forEach((x) => { if (!t.includes(x)) throw new Error('清單缺少分類：' + x); });
@@ -932,25 +936,28 @@ function viewBoundaryViolations(file, src) {
     App.select(null); const ov = text('#right'); const uniq = new Set(App.snap.model.arps.map((x) => x.ip)).size;
     if (!ov.includes('IP（ARP）' + uniq.toLocaleString()) && !ov.includes('IP（ARP）')) throw new Error('總覽缺少 IP（ARP）');
   });
-  await step('覆蓋率分頁', () => { document.testAll('#left .tabs button')[1].click(); if (!text('#pane-coverage').includes(process.env.SMOKE_INPUT ? '有缺漏 0' : '有缺漏 1')) throw new Error('覆蓋率摘要不正確'); });
-  await step('比對：結果在中間的「比對」全寬顯示，左側分頁只留摘要與入口', async () => {
-    document.testAll('#left .tabs button')[3].click();
-    const open = $('#pane-compare').testAll('.open-view').find((b) => b.getAttribute('data-view') === 'compare');
-    if (!open) throw new Error('左側的比對分頁應有「在中間開啟比對」的入口');
-    if ($('#pane-compare').querySelector('input') || $('#pane-compare').querySelector('table')) throw new Error('左側的比對分頁只留摘要，載入與結果在中間');
-    open.click();
-    if (App.centerView !== 'compare' || $('#view-compare').classList.contains('hidden') || document.activeElement !== $('#compare-title')) throw new Error('入口應在中間開啟比對並聚焦標題');
+  await step('覆蓋率在「① 輸入」（資料中心）', () => {
+    goStep('input');
+    if ($('#hub').classList.contains('hidden') || !$('#hub').contains($('#pane-coverage'))) throw new Error('覆蓋率應在資料中心（① 輸入）');
+    if (!text('#pane-coverage').includes(process.env.SMOKE_INPUT ? '有缺漏 0' : '有缺漏 1')) throw new Error('覆蓋率摘要不正確');
+    S.view.app.closeHub();
+  });
+  await step('比對：在「⑤ 驗證」全寬顯示，資料中心的「預期資料」列出同一份比對的摘要', async () => {
+    goStep('verify');
+    if (App.step !== 'verify' || App.centerView !== 'verify' || $('#view-verify').classList.contains('hidden') || document.activeElement !== $('#verify-title')) throw new Error('⑤ 驗證應在中間開啟並聚焦標題');
+    if (!$('#view-verify').contains($('#compare-body')) || !$('#left').classList.contains('hidden')) throw new Error('比對在中間的驗證畫面，⑤ 沒有左側清單');
     const inp = $('#compare-body').querySelector('input'); inp.files = [{ name: 'expected-sample.json', text: async () => fs.readFileSync(path.join(ROOT, 'samples/expected-sample.json'), 'utf8') }];
     inp.dispatch('change', { target: inp }); await new Promise((r) => setTimeout(r, 20));
     if (!text('#compare-body').includes('有差異')) throw new Error('比對結果未顯示');
-    // 左側的摘要和中間的結果是同一份比對（筆數依關係，不寫死）
+    // 資料中心的摘要和驗證畫面的結果是同一份比對（筆數依關係，不寫死）
     const rep = S.view.lists.compare.report(App); const nDiff = rep.items.filter((i) => i.status !== 'ok').length;
-    if (!text('#pane-compare').includes('expected-sample.json') || !text('#pane-compare').includes(`有差異 ${nDiff}`)) throw new Error('左側摘要應列出預期資料的檔名與差異筆數：' + text('#pane-compare'));
+    const hubRow = $('#hub').testAll('.hub-row').find((r) => r.getAttribute('data-item') === 'expected');
+    if (!hubRow.textContent.includes('expected-sample.json') || !hubRow.textContent.includes(`有差異 ${S.view.num(nDiff)} 項`)) throw new Error('資料中心應列出預期資料的檔名與差異筆數：' + hubRow.textContent);
     // 點一列：詳情在右側，比對留在中間
     const row = $('#compare-body').testAll('tbody tr').find((tr) => tr.getAttribute('tabindex') === '0');
     if (row) {
       App.select(null); row.click();
-      if (App.centerView !== 'compare') throw new Error('點比對的一列時，比對應留在中間');
+      if (App.centerView !== 'verify') throw new Error('點比對的一列時，比對應留在中間');
     }
     App.showView('graph');
   });
@@ -1038,7 +1045,7 @@ function viewBoundaryViolations(file, src) {
     const before = problems();
     if (!before.length) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有錯誤或警告'); }
     const f = before[0]; const key = Q.findingKey(f);
-    document.testAll('#left .tabs button')[0].click();
+    goStep('triage');
     const group = (id) => document.testAll('#pane-findings .fgroup').find((x) => {
       const el = x.querySelector('.head .id'); return el && el.textContent === id && !x.className.includes('handled');
     });
@@ -1102,7 +1109,7 @@ function viewBoundaryViolations(file, src) {
     if (it2.history[it2.history.length - 1].waiver.reason !== reason1) throw new Error('被移除的豁免應記在歷程');
     App.selectFinding(all.indexOf(f));
     if (text('#detail').includes(f.message) && !text('#detail').includes(RV.statusText('false-positive'))) throw new Error('詳情的檢查結果應標出處理狀態');
-    document.testAll('#left .tabs button')[0].click();
+    goStep('triage');
     const fp = document.testAll('#pane-findings .fgroup').find((x) => x.className.includes('fp-rules'));
     if (!fp) throw new Error('有誤報時應列出誤報率最高的規則');
     fp.querySelector('.head').click();
@@ -1136,7 +1143,7 @@ function viewBoundaryViolations(file, src) {
       if (!first && d === null && Q.devices().some((x) => f.entities.some((e) => owns(x.key, e)))) throw new Error(`${f.id} 的實體屬於某台設備，不應列為不屬於任何設備`);
     });
     if (R.findingDevice(Q, { entities: [] }) !== null || R.findingDevice(Q, { entities: [{ type: 'mac', key: '000000000000' }] }) !== null) throw new Error('沒有實體或只有 MAC 的檢查結果不屬於任何設備');
-    document.testAll('#left .tabs button')[0].click();
+    goStep('triage');
     // 打開全部嚴重度，再切到依設備
     for (let n = 0; n < 3; n++) {
       const off = $('#pane-findings').querySelector('.summary').testAll('.chip').find((c) => c.getAttribute('aria-pressed') === 'false' && c.getAttribute('aria-disabled') !== 'true');
@@ -1350,10 +1357,11 @@ function viewBoundaryViolations(file, src) {
       if (!header) throw new Error('缺少標題列');
       return rows;
     };
-    document.testAll('#left .tabs button')[1].click();
-    const btn = $('#pane-coverage').testAll('button').find((b) => b.textContent === '匯出未收集設備的 devices.csv 草稿');
+    goStep('input'); // 覆蓋率與 devices.csv 草稿在「① 輸入」（資料中心）
+    const btn = hubBtn('devices-csv');
+    S.view.app.closeHub();
     const devs = S.util.uniq(all.filter((f) => f.id === 'C01').map((f) => f.entities.find((e) => e.type === 'device').key)).map((k) => Q.getDevice(k));
-    if (!btn) throw new Error('覆蓋率分頁應有匯出 devices.csv 草稿的按鈕');
+    if (!btn || !/devices\.csv 草稿/.test(btn.textContent)) throw new Error('① 輸入的覆蓋率應有匯出 devices.csv 草稿的按鈕');
     if ((btn.getAttribute('disabled') !== null) !== !devs.length) throw new Error('沒有 C01 時按鈕應停用');
     if (!devs.length) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有 C01'); }
     const { files } = await captureDownloads(() => btn.click());
@@ -1479,7 +1487,7 @@ function viewBoundaryViolations(file, src) {
     row.missing = [];
     S.view.app.load(clone, null);
     const gaps = clone.coverage.filter((r) => r.collected && (r.missing.length || r.failures.length));
-    document.testAll('#left .tabs button')[1].click();
+    goStep('input');
     if (!text('#pane-coverage').includes('有缺漏 ' + gaps.length)) throw new Error('有缺漏應包含只有收集失敗的設備');
     const b = $('#baseline-summary').testAll('button').find((x) => x.textContent === '查看收集缺漏');
     if (b.getAttribute('disabled') !== null) throw new Error('只有收集失敗時，收集缺漏入口也應可用');
@@ -1491,6 +1499,8 @@ function viewBoundaryViolations(file, src) {
     gaps.forEach((r) => r.failures.forEach((x) => {
       if (!t.includes(S.view.failureText(x)) || !t.includes(x.command || '整台設備')) throw new Error('覆蓋率應顯示失敗原因與指令');
     }));
+    if (document.activeElement !== $('#hub-sec-coverage')) throw new Error('「查看收集缺漏」應在資料中心聚焦覆蓋率');
+    S.view.app.closeHub();
   });
   await step('防火牆畫面：停用規則、無法解碼的註解、jump 來源與預設值服務', async () => {
     await buildInput(fs.readFileSync(path.join(ROOT, 'tests/fixtures/firewall/edge-router.txt'), 'utf8'));
@@ -1538,10 +1548,11 @@ function viewBoundaryViolations(file, src) {
     const keysBefore = JSON.stringify(await S.store.get('last'));
     await load('old.json', oldJson);
     const pane = () => $('#compare-body').querySelector('.baseline-diff');
-    // 左側的比對分頁：新舊基準比對的摘要（同一份比對結果）
-    const sumText = text('#pane-compare');
-    if (!sumText.includes('old.json') || !sumText.includes(`新增 ${expect.summary.added}`) || !sumText.includes(`新暴露 ${expect.items.filter((i) => i.effect === 'new-exposure').length}`)) throw new Error('左側摘要應列出新舊基準比對的筆數與新暴露：' + sumText);
+    // 資料中心的「上一輪的基準」：新舊基準比對的摘要（同一份比對結果）；新暴露的筆數在驗證畫面的摘要
+    const sumText = $('#hub').testAll('.hub-row').find((r) => r.getAttribute('data-item') === 'previous').textContent;
+    if (!sumText.includes('old.json') || !sumText.includes(`新增 ${S.view.num(expect.summary.added)}`)) throw new Error('資料中心應列出新舊基準比對的筆數：' + sumText);
     const t = pane().textContent;
+    if (!t.includes(`新暴露 ${S.view.num(expect.items.filter((i) => i.effect === 'new-exposure').length)}`)) throw new Error('驗證畫面的比對摘要應列出新暴露的筆數');
     Object.entries({ added: '新增', removed: '移除', changed: '變更' }).forEach(([k, label]) => {
       if (!t.includes(`${label} ${expect.summary[k]}`)) throw new Error('摘要應列出' + label + '筆數');
     });
@@ -1556,7 +1567,7 @@ function viewBoundaryViolations(file, src) {
     if (!exposureRows.every((tr) => tr.testAll('td')[0].style.background === S.view.theme.diff.exposureBg && tr.textContent.includes('新暴露'))) throw new Error('新暴露的顏色應取自 theme');
     exposureRows[0].click();
     if (App.sel.type !== 'rule' || !App.Q.getFirewallRule(App.sel.key)) throw new Error('點新暴露的規則應定位到防火牆規則');
-    if (App.centerView !== 'compare' || !$('#detail').querySelector('.focus')) throw new Error('點比對的一列時，比對留在中間、右側顯示那條規則');
+    if (App.centerView !== 'verify' || !$('#detail').querySelector('.focus')) throw new Error('點比對的一列時，比對留在中間、右側顯示那條規則');
     const filterBtn = pane().testAll('button').find((b) => b.textContent.startsWith('新暴露'));
     filterBtn.click();
     if (pane().testAll('tbody tr').some((tr) => !tr.className.includes('exposure'))) throw new Error('新暴露篩選應只列新暴露');
@@ -1587,13 +1598,13 @@ function viewBoundaryViolations(file, src) {
       App.showView('compare');
       const inp = $('#compare-body').querySelector('.baseline-diff').querySelector('input');
       inp.files = [{ name, text: async () => body }]; inp.dispatch('change', { target: inp }); await new Promise((r) => setTimeout(r, 20));
-      document.testAll('#left .tabs button')[0].click();
+      goStep('triage');
     };
     const onlyNew = () => $('#pane-findings').testAll('.chip').find((c) => c.textContent.startsWith('只看新出現的'));
     const versionHint = () => $('#pane-findings').querySelector('.only-new-version');
     const diffWarnings = () => $('#compare-body').testAll('.diff-warning');
     // 沒有可用的舊基準（上一步最後載入的是壞掉的 JSON）：停用並說明原因
-    document.testAll('#left .tabs button')[0].click();
+    goStep('triage');
     if (!onlyNew() || onlyNew().getAttribute('aria-disabled') !== 'true') throw new Error('沒有舊基準時「只看新出現的」應停用');
     if (!text('#pane-findings').includes('載入舊基準後')) throw new Error('停用時應說明原因');
     const count = new Map(); all.forEach((f) => count.set(key(f), (count.get(key(f)) || 0) + 1));
@@ -1627,7 +1638,7 @@ function viewBoundaryViolations(file, src) {
     if (!dw || !dw.textContent.includes(warn.message)) throw new Error('比對結果上方應顯示版本不同的提醒');
     const kids = $('#compare-body').querySelector('.baseline-diff').childNodes;
     if (kids.indexOf($('#compare-body').querySelector('.diff-warnings')) > kids.indexOf($('#compare-body').querySelector('.diff-summary'))) throw new Error('提醒應在比對結果上方');
-    document.testAll('#left .tabs button')[0].click();
+    goStep('triage');
     if (!versionHint() || !versionHint().textContent.includes('新出現的可能來自新版檢查')) throw new Error('只看新出現的應提示新出現的可能來自新版檢查');
     // 舊基準變成不可用：篩選自動關閉並停用，提示一併消失
     await loadOld('bad.json', '{not json');
@@ -1646,23 +1657,27 @@ function viewBoundaryViolations(file, src) {
     // 第二輪：修好了
     await buildInput(sample.replace(F06_LINE + '\n', '') + '\n# round-2\n'); await App.ledgerJob;
     if (VA.ledger().items[key].status !== 'fixed') throw new Error('已排程修復的項目消失時應判定為已修好');
-    document.testAll('#left .tabs button')[4].click();
-    const fixedList = $('#pane-ledger').testAll('.ledger-list').find((l) => l.getAttribute('data-reason') === 'disappeared');
+    goStep('verify'); // 本輪變化與修復追蹤在「⑤ 驗證」的中間
+    const fixedList = $('#round-body').testAll('.ledger-list').find((l) => l.getAttribute('data-reason') === 'disappeared');
     if (!fixedList || !fixedList.testAll('.ledger-item').some((x) => x.getAttribute('data-key') === key)) throw new Error('本輪變化應列出已修好的項目');
+    const fixedTrack = $('#tracking-body').testAll('.ledger-list').find((l) => l.getAttribute('data-status') === 'fixed');
+    if (!fixedTrack || !fixedTrack.testAll('.ledger-item').some((x) => x.getAttribute('data-key') === key)) throw new Error('修復追蹤應列出累計已修好的項目');
     // 第三輪：又出現 → 回歸
     await buildInput(sample + '\n# round-3\n'); await App.ledgerJob;
     if (VA.ledger().items[key].status !== 'regressed') throw new Error('已修好又出現時應標為回歸');
     const nReg = Object.values(VA.ledger().items).filter((it) => it.status === 'regressed' && App.snap.findings.some((f) => App.Q.findingKey(f) === key)).length;
     const alert = $('#baseline-summary').testAll('button').find((b) => b.getAttribute('data-alert') === 'regressed');
     if (!alert || !alert.textContent.includes(`回歸 ${nReg} 項`) || !alert.className.includes('err')) throw new Error('基準摘要應醒目提示回歸筆數：' + text('#baseline-summary'));
+    goStep('triage');
     alert.click();
-    if ($('#pane-ledger').classList.contains('hidden')) throw new Error('點回歸提示應開啟處理紀錄分頁');
-    const reList = $('#pane-ledger').testAll('.ledger-list').find((l) => l.getAttribute('data-reason') === 'reappeared');
-    if (!reList || !reList.textContent.includes(f06.message)) throw new Error('處理紀錄分頁應列出回歸的項目');
+    if (App.step !== 'verify' || $('#view-verify').classList.contains('hidden') || document.activeElement !== $('#round-title')) throw new Error('點回歸提示應到「⑤ 驗證」並聚焦本輪變化');
+    if (!stepBtn('verify').textContent.includes(`回歸 ${nReg}`)) throw new Error('⑤ 的狀態應寫出回歸筆數：' + stepBtn('verify').textContent);
+    const reList = $('#round-body').testAll('.ledger-list').find((l) => l.getAttribute('data-reason') === 'reappeared');
+    if (!reList || !reList.textContent.includes(f06.message)) throw new Error('本輪變化應列出回歸的項目');
     reList.querySelector('.ledger-item').click();
-    if (!App.sel) throw new Error('點回歸的項目應定位到那筆檢查結果');
+    if (!App.sel || App.step !== 'verify') throw new Error('點回歸的項目應定位到那筆檢查結果（詳情在右側，留在驗證）');
     // 回歸的項目在檢查結果也有標示
-    document.testAll('#left .tabs button')[0].click();
+    goStep('triage');
     const g06 = document.testAll('#pane-findings .fgroup').find((x) => { const el = x.querySelector('.head .id'); return el && el.textContent === 'F06'; });
     if (g06.querySelector('.head').getAttribute('aria-expanded') === 'false') g06.querySelector('.head').click();
     if (!$('#pane-findings').testAll('.ledger-chip').some((c) => c.getAttribute('data-status') === 'regressed')) throw new Error('檢查結果應標示回歸');
@@ -1678,16 +1693,15 @@ function viewBoundaryViolations(file, src) {
     if (st.round.unobserved.some((k) => VA.ledger().items[k].status === 'fixed')) throw new Error('無法判斷的項目不可判定為已修好');
     const un = $('#baseline-summary').testAll('button').find((b) => b.getAttribute('data-alert') === 'unobserved');
     if (!un || !un.textContent.includes(`無法判斷 ${st.round.unobserved.length} 項`)) throw new Error('基準摘要應提示無法判斷的筆數');
-    document.testAll('#left .tabs button')[4].click();
-    const unList = $('#pane-ledger').testAll('.ledger-list').find((l) => l.getAttribute('data-reason') === 'unobserved');
-    if (!unList || !unList.parentNode.textContent.includes('因收集失敗而無法判斷') || unList.testAll('.ledger-item').length !== Math.min(300, st.round.unobserved.length)) throw new Error('處理紀錄分頁應說明因收集失敗而無法判斷');
-    // 趨勢：左側分頁只列最新一輪的數字與入口；圖在中間的「收斂趨勢」全寬顯示
+    goStep('verify');
+    const unList = $('#round-body').testAll('.ledger-list').find((l) => l.getAttribute('data-reason') === 'unobserved');
+    if (!unList || !unList.parentNode.textContent.includes('因收集失敗而無法判斷') || unList.testAll('.ledger-item').length !== Math.min(300, st.round.unobserved.length)) throw new Error('本輪變化應說明因收集失敗而無法判斷');
+    // 趨勢：和本輪變化、修復追蹤、比對一起在「⑤ 驗證」；步驟的狀態是處理紀錄的第幾輪
     const series = S.ledger.summary(VA.ledger()).series;
-    if ($('#pane-ledger').testAll('.trend-chart').length || $('#pane-ledger').testAll('.trend-tile').length !== 5) throw new Error('左側的處理紀錄分頁只列最新一輪的數字，圖在中間');
-    const openTrend = $('#pane-ledger').testAll('.open-view').find((b) => b.getAttribute('data-view') === 'trend');
-    if (!openTrend || !openTrend.textContent.includes(`${series.length} 輪`)) throw new Error('左側應有「在中間開啟收斂趨勢」的入口並註明輪數');
-    openTrend.click();
-    if (App.centerView !== 'trend' || $('#view-trend').classList.contains('hidden') || document.activeElement !== $('#trend-title')) throw new Error('入口應在中間開啟收斂趨勢並聚焦標題');
+    if (!stepBtn('verify').textContent.includes(`第 ${VA.ledgerRoundIndex() + 1} 輪`)) throw new Error('⑤ 的狀態應寫出目前是第幾輪：' + stepBtn('verify').textContent);
+    App.showView('trend', { focus: true });
+    if (App.centerView !== 'verify' || $('#view-verify').classList.contains('hidden') || document.activeElement !== $('#trend-title')) throw new Error('收斂趨勢的入口應開啟驗證並聚焦收斂趨勢的標題');
+    if (!$('#view-verify').contains($('#trend-body')) || !$('#view-verify').contains($('#round-body')) || !$('#view-verify').contains($('#tracking-body'))) throw new Error('收斂趨勢、本輪變化、修復追蹤都在驗證畫面');
     // 多輪時畫三張圖（一張一個軸），顏色與線寬取自 theme，hover 顯示該輪全部數值，表格列出每一輪
     const charts = $('#trend-body').testAll('.trend-chart');
     if (charts.length !== 3) throw new Error('應有三張小倍數折線圖：' + charts.length);
@@ -1737,7 +1751,7 @@ function viewBoundaryViolations(file, src) {
     st.ledger = one; S.view.ledgerPane.render(App); S.view.ledgerPane.renderTrend(App);
     try {
       if ($('#trend-body').testAll('.trend-chart').length || !$('#trend-body').querySelector('.trend-single')) throw new Error('只有一輪時不應畫圖');
-      if ($('#trend-body').testAll('.trend-tile').length !== 5 || $('#pane-ledger').testAll('.trend-tile').length !== 5) throw new Error('應列出待處理、回歸、已豁免、覆蓋率、未知對端');
+      if ($('#trend-body').testAll('.trend-tile').length !== 5) throw new Error('應列出待處理、回歸、已豁免、覆蓋率、未知對端');
     } finally { st.ledger = keep; S.view.ledgerPane.render(App); S.view.ledgerPane.renderTrend(App); }
   });
   await step('舊的確認標記轉換成處理紀錄：寫入成功後才刪 acks；轉換失敗或寫入失敗時保留 acks 並說明', async () => {
@@ -1761,7 +1775,8 @@ function viewBoundaryViolations(file, src) {
       if (JSON.stringify(await S.store.get('acks')) !== JSON.stringify(bad)) throw new Error('轉換失敗時 acks 應原樣保留');
       if (await S.store.get('ledger')) throw new Error('轉換失敗時不應寫入 ledger');
       if (!text('#banner').includes('無法轉換')) throw new Error('轉換失敗應以 banner 說明：' + text('#banner'));
-      if (!$('#pane-findings').querySelector('.ledger-blocked') || !text('#pane-ledger').includes('無法轉換')) throw new Error('檢查結果與處理紀錄分頁應說明處理紀錄無法使用');
+      if (!$('#pane-findings').querySelector('.ledger-blocked') || !text('#ledger-body').includes('無法轉換') || !text('#round-body').includes('無法轉換')) throw new Error('檢查結果與驗證的處理紀錄應說明處理紀錄無法使用');
+      if (!stepBtn('verify').textContent.includes('處理紀錄停用')) throw new Error('⑤ 的狀態應說明處理紀錄停用');
       const btn = document.testAll('#pane-findings .ledger-edit')[0];
       if (btn && btn.getAttribute('disabled') === null) throw new Error('處理紀錄無法使用時「處理」應停用');
       // 寫入失敗：acks 保留，之後寫入成功才刪
@@ -1781,10 +1796,11 @@ function viewBoundaryViolations(file, src) {
   });
   await step('處理紀錄匯出與匯入：匯出 ssot-ledger/1；匯入先 validate，不合法列出錯誤且不覆蓋，合法時確認後才覆蓋', async () => {
     const VA = S.view.app;
-    document.testAll('#left .tabs button')[4].click();
-    // 匯出與匯入在資料中心；處理紀錄分頁只有入口，按了會開啟資料中心的處理紀錄那一列
-    $('#pane-ledger').querySelector('.open-hub').click();
-    if ($('#hub').classList.contains('hidden') || document.activeElement !== $('#hub-sec-ledger')) throw new Error('處理紀錄分頁的入口應開啟資料中心並聚焦處理紀錄');
+    goStep('verify');
+    // 匯出與匯入在資料中心；驗證畫面的處理紀錄只有入口，按了會開啟資料中心的處理紀錄那一列
+    $('#ledger-body').querySelector('.open-hub').click();
+    if ($('#hub').classList.contains('hidden') || document.activeElement !== $('#hub-sec-ledger')) throw new Error('驗證畫面的處理紀錄入口應開啟資料中心並聚焦處理紀錄');
+    if (stepBtn('input').getAttribute('aria-current') !== 'step') throw new Error('資料中心開著時目前的一步是「① 輸入」');
     const btn = (cls) => $('#hub').querySelector('.' + cls);
     const { files } = await captureDownloads(() => btn('ledger-export').click());
     if (files.length !== 1 || !/^ledger-\d{8}T\d{6}Z\.json$/.test(files[0].name)) throw new Error('應下載 ledger-時間.json：' + (files[0] || {}).name);
@@ -1817,11 +1833,11 @@ function viewBoundaryViolations(file, src) {
   });
   await step('修正計畫：依規則、依設備或逐筆選取，依設備列出修改前（原文行號）與修改後（指令），三份 .rsc 與核心一致，下載檔名用 files() 的 base', async () => {
     const Q = App.Q; const RM = S.remediate; const RV = S.view.remediation; const PV = S.view.patchView;
-    document.testAll('#left .tabs button')[0].click();
+    goStep('triage');
     $('#pane-findings').querySelector('.open-patch').click();
     // 修正計畫在中間的工作畫面（不是對話框）：分頁選取、拓樸圖被蓋住時 inert，焦點移到標題
     if (!PV.isOpen(App) || $('#view-patch').classList.contains('hidden') || $('#dlg-patch')) throw new Error('應在中間開啟修正計畫（不是對話框）');
-    if ($('#view-tab-patch').getAttribute('aria-selected') !== 'true' || !$('#view-graph').inert) throw new Error('修正計畫的分頁應為選取，底下的拓樸圖不可聚焦');
+    if (App.step !== 'fix' || stepBtn('fix').getAttribute('aria-current') !== 'step' || !$('#view-graph').inert || !$('#left').classList.contains('hidden')) throw new Error('修正計畫是「④ 修正」（目前的一步，沒有左側清單），底下的拓樸圖不可聚焦');
     if (document.activeElement !== $('#patch-title') || !$('#view-patch').contains($('#patch-body'))) throw new Error('開啟後焦點應移到修正計畫的標題');
     if (!text('#patch-body').includes('不會連線')) throw new Error('應標示本工具只產生文字，不會連線設備');
     // 同一份基準再開啟時保留上次的選取（例如從防火牆畫面開啟的）；全部清除後沒有計畫
@@ -2510,7 +2526,7 @@ function viewBoundaryViolations(file, src) {
     if (!/@media \(forced-colors: active\)/.test(css)) throw new Error('應支援強制色彩模式');
     if (!/#graph\s*\{[^}]*touch-action:\s*none/.test(css)) throw new Error('畫布應自己處理觸控拖曳');
     // 篩選選項是可聚焦的按鈕
-    App.select(null); document.testAll('#left .tabs button')[0].click();
+    App.select(null); goStep('triage');
     const chips = $('#pane-findings').querySelector('.summary').testAll('.chip');
     if (!chips.length || !chips.every((c) => c.tagName === 'BUTTON' && c.getAttribute('type') === 'button')) throw new Error('篩選選項應是 <button>');
     // 減少動態效果：力導向一次算完，不排動畫
@@ -2557,11 +2573,36 @@ function viewBoundaryViolations(file, src) {
       if (!$('#tooltip').classList.contains('hidden')) throw new Error('指標離開畫布時提示應隱藏');
     });
   });
-  await step('中間的工作畫面：拓樸圖、修正計畫、比對、收斂趨勢可切換（tablist，鍵盤可操作）；切換不丟失畫布的位置、縮放與選取，也不重新排列；PNG 照常', async () => {
+  await step('流程步驟：①–⑤ 都能切換（nav、aria-current="step"），左側清單與中間的工作畫面跟著換、焦點移到這一步的標題；切換不丟失畫布的位置、縮放與選取，也不重新排列；PNG 照常', async () => {
     const g = App.graph; const VA = S.view.app;
-    const tabs = document.testAll('#center-views button');
-    if (tabs.map((t) => t.getAttribute('data-view')).join() !== 'graph,patch,compare,trend') throw new Error('中間的分頁應依序是拓樸圖、修正計畫、比對、收斂趨勢');
-    if ($('#center-views').getAttribute('role') !== 'tablist' || !tabs.every((t) => t.getAttribute('role') === 'tab' && $('#' + t.getAttribute('aria-controls')).getAttribute('role') === 'tabpanel')) throw new Error('切換按鈕應是 tablist／tab，各自控制一個 tabpanel');
+    const nav = $('#steps'); const btns = document.testAll('#steps button');
+    if (nav.tagName !== 'NAV' || nav.getAttribute('aria-label') !== '流程步驟' || !nav.querySelector('ol')) throw new Error('流程步驟應是有名稱的 nav（ol 列出步驟）');
+    if (btns.map((b) => b.dataset.step).join() !== 'input,view,triage,fix,verify') throw new Error('步驟應依序是 ① 輸入 ② 檢視 ③ 分診 ④ 修正 ⑤ 驗證：' + btns.map((b) => b.textContent).join('、'));
+    if (!btns.every((b) => b.getAttribute('type') === 'button' && b.getAttribute('tabindex') === null && /^[①②③④⑤]/.test(b.textContent))) throw new Error('每一步是可以 Tab 到的按鈕，文字以步驟號碼開頭');
+    if (document.testAll('#center-views').length || document.testAll('#left .tabs').length) throw new Error('左側五個分頁與中間的分頁已由流程步驟取代');
+    // 每一步的左側清單與中間的工作畫面（④、⑤ 沒有左側清單，中間全寬）
+    const EXPECT = { view: ['pane-inventory', 'graph', '清單'], triage: ['pane-findings', 'graph', '檢查結果'], fix: [null, 'patch'], verify: [null, 'verify'] };
+    const check = (s) => {
+      const cur = btns.filter((b) => b.getAttribute('aria-current') === 'step');
+      if (cur.length !== 1 || cur[0] !== stepBtn(s) || !btns.every((b) => ['step', 'false'].includes(b.getAttribute('aria-current')))) throw new Error('只有目前的一步是 aria-current="step"：' + s);
+      if (!stepBtn(s).classList.contains('on')) throw new Error('目前的一步應有選取的樣式');
+      if (s === 'input') {
+        if ($('#hub').classList.contains('hidden') || document.activeElement !== $('#hub-title') || !$('#main').inert) throw new Error('① 輸入是資料中心：開啟、聚焦標題、主畫面 inert');
+        return;
+      }
+      if (!$('#hub').classList.contains('hidden') || $('#main').inert) throw new Error('換到 ②–⑤ 時應關閉資料中心');
+      const [left, center, title] = EXPECT[s];
+      if (App.step !== s || App.centerView !== center || $('#center').dataset.view !== center || $('#main').dataset.step !== s) throw new Error(`${s} 的中間應是 ${center}`);
+      if ($('#left').classList.contains('hidden') !== !left) throw new Error(`${s} 的左側清單應${left ? '顯示' : '隱藏'}`);
+      ['pane-findings', 'pane-inventory'].forEach((id) => { if ($('#' + id).classList.contains('hidden') !== (id !== left)) throw new Error(`${s} 的左側應只顯示 ${left}`); });
+      if (left && $('#left-title').textContent !== title) throw new Error(`${s} 的左側標題應是「${title}」`);
+      ['patch', 'verify'].forEach((x) => { if ($('#view-' + x).classList.contains('hidden') !== (x !== center)) throw new Error('只顯示目前的工作畫面：' + x); });
+      if (!!$('#view-graph').inert !== (center !== 'graph')) throw new Error('工作畫面蓋住拓樸圖時，拓樸圖應是 inert');
+      if ($('#view-graph').classList.contains('hidden')) throw new Error('拓樸圖不可隱藏（display: none 會讓畫布變成 0 大小）');
+      if (!$('#main').style.gridTemplateColumns.startsWith(left ? App.layout.left + 'px' : '0px')) throw new Error('沒有左側清單時左欄寬度為 0：' + $('#main').style.gridTemplateColumns);
+      const focusTo = left ? $('#left-title') : $('#' + center + '-title');
+      if (document.activeElement !== focusTo) throw new Error(`點 ${s} 後焦點應移到這一步的標題`);
+    };
     // 先在圖上留下狀態：選取一台設備、平移與縮放、移動一個節點
     const dev = App.Q.devices().find((d) => g.nodeById.has(d.key));
     App.select({ type: 'device', key: dev.key });
@@ -2572,27 +2613,15 @@ function viewBoundaryViolations(file, src) {
     const calls = []; const spy = (obj, k) => { const o = obj[k]; obj[k] = function (...a) { calls.push(k); return o.apply(this, a); }; return () => { obj[k] = o; }; };
     const undo = [spy(S.view.layout, 'layout'), spy(g, 'fit'), spy(VA, 'applyElk'), spy(VA, 'relayout')];
     try {
-      ['patch', 'compare', 'trend', 'graph', 'trend', 'patch', 'graph'].forEach((v) => {
-        tabs.find((t) => t.getAttribute('data-view') === v).click();
-        if (App.centerView !== v || $('#center').dataset.view !== v) throw new Error('點分頁應切到 ' + v);
-        tabs.forEach((t) => {
-          const on = t.getAttribute('data-view') === v;
-          if (t.getAttribute('aria-selected') !== String(on) || t.getAttribute('tabindex') !== (on ? '0' : '-1')) throw new Error('分頁的 aria-selected 與 tabindex 應跟著切換（roving tabindex）');
-        });
-        ['patch', 'compare', 'trend'].forEach((x) => { if ($('#view-' + x).classList.contains('hidden') !== (x !== v)) throw new Error('只顯示目前的工作畫面：' + x); });
-        if (!!$('#view-graph').inert !== (v !== 'graph')) throw new Error('工作畫面蓋住拓樸圖時，拓樸圖應是 inert');
-        if ($('#view-graph').classList.contains('hidden')) throw new Error('拓樸圖不可隱藏（display: none 會讓畫布變成 0 大小）');
-      });
-      // 鍵盤：方向鍵、Home、End 在分頁間移動並切換，焦點跟著移動
-      const key = (t, k) => t.dispatch('keydown', { key: k });
-      tabs[0].focus(); key(tabs[0], 'ArrowRight');
-      if (App.centerView !== 'patch' || document.activeElement !== tabs[1]) throw new Error('右方向鍵應移到下一個分頁並切換');
-      key(tabs[1], 'End'); if (App.centerView !== 'trend' || document.activeElement !== tabs[3]) throw new Error('End 應移到最後一個分頁');
-      key(tabs[3], 'ArrowRight'); if (App.centerView !== 'graph' || document.activeElement !== tabs[0]) throw new Error('最後一個再往右應回到第一個');
-      key(tabs[0], 'ArrowLeft'); if (App.centerView !== 'trend') throw new Error('第一個再往左應到最後一個');
-      key(tabs[3], 'Home'); if (App.centerView !== 'graph' || document.activeElement !== tabs[0]) throw new Error('Home 應移到第一個分頁');
+      // 每一步都能切換（含從資料中心直接到其他步、同一步再點一次）；鍵盤的 Enter／空白鍵在按鈕上就是 click
+      ['input', 'view', 'triage', 'fix', 'verify', 'triage', 'input', 'fix', 'fix', 'verify', 'input', 'view'].forEach((s) => { goStep(s); check(s); });
+      // 資料中心的「回到…」與 Esc：回到開啟前的那一步，焦點回到開啟它的步驟按鈕
+      goStep('input');
+      if (!hubBtn('close-hub').textContent.includes('② 檢視')) throw new Error('資料中心的關閉按鈕應寫出要回到哪一步：' + hubBtn('close-hub').textContent);
+      (docListeners.keydown || []).forEach((f) => f({ key: 'Escape', preventDefault() {} }));
+      if (!$('#hub').classList.contains('hidden') || App.step !== 'view' || document.activeElement !== stepBtn('input') || stepBtn('view').getAttribute('aria-current') !== 'step') throw new Error('Esc 關閉資料中心後應回到 ② 檢視，焦點回到 ① 的按鈕');
       // PNG：在工作畫面也匯出同一張圖（畫布沒有被隱藏，大小不變）
-      App.showView('compare');
+      App.showStep('verify');
       let drew = 0; const oldDraw = g.draw; g.draw = function () { drew++; return oldDraw.call(this); };
       const made = []; const oldCreate = document.createElement;
       document.createElement = (t) => { const el = oldCreate(t); if (t === 'a') made.push(el); return el; };
@@ -2600,31 +2629,122 @@ function viewBoundaryViolations(file, src) {
       if (!drew || made.length !== 1 || made[0].download !== 'topology.png' || !String(made[0].href).startsWith('data:')) throw new Error('在工作畫面時也應能匯出拓樸 PNG（同一張畫布）');
       App.showView('graph');
     } finally { undo.forEach((f) => f()); }
-    if (calls.length) throw new Error('切換工作畫面不應重新排列或全圖：' + calls.join('、'));
-    if (snapState() !== before) throw new Error('切換工作畫面後畫布的位置、縮放與選取應保留');
-    // 從其他地方開啟：焦點移到工作畫面的標題；拓樸圖則移到畫布
-    App.showView('trend', { focus: true }); if (document.activeElement !== $('#trend-title')) throw new Error('開啟收斂趨勢時焦點應移到標題');
-    App.showView('graph', { focus: true }); if (document.activeElement !== $('#graph')) throw new Error('回到拓樸圖時焦點應移到畫布');
+    if (calls.length) throw new Error('切換步驟不應重新排列或全圖：' + calls.join('、'));
+    if (snapState() !== before) throw new Error('切換步驟後畫布的位置、縮放與選取應保留');
+    // 從其他地方開啟（App.showView）：patch 是 ④，trend、compare 是 ⑤ 的區塊；graph 回到上一次看圖的那一步（這裡是 ②）
+    App.showView('trend', { focus: true }); if (App.step !== 'verify' || document.activeElement !== $('#trend-title')) throw new Error('開啟收斂趨勢時應到 ⑤，焦點移到收斂趨勢的標題');
+    App.showView('compare', { focus: true }); if (App.step !== 'verify' || document.activeElement !== $('#compare-title')) throw new Error('開啟比對時應到 ⑤，焦點移到比對的標題');
+    App.showView('patch', { focus: true }); if (App.step !== 'fix' || document.activeElement !== $('#patch-title')) throw new Error('開啟修正計畫時應到 ④，焦點移到標題');
+    App.showView('graph', { focus: true }); if (App.step !== 'view' || document.activeElement !== $('#graph')) throw new Error('回到拓樸圖時應回到上一次看圖的 ②，焦點移到畫布');
+    try { App.showStep('nope'); throw new Error('未知的步驟應丟出 RangeError'); } catch (e) { if (!(e instanceof RangeError)) throw e; }
     // 在工作畫面點選設備：詳情在右側，工作畫面不切換；搜尋是在圖上定位，會切回拓樸圖
-    App.showView('compare'); App.select({ type: 'device', key: dev.key });
-    if (App.centerView !== 'compare' || !text('#detail').includes(dev.name)) throw new Error('在工作畫面選取時，右側顯示詳情、工作畫面不切換');
+    goStep('triage'); App.showStep('verify'); App.select({ type: 'device', key: dev.key });
+    if (App.centerView !== 'verify' || !text('#detail').includes(dev.name)) throw new Error('在工作畫面選取時，右側顯示詳情、工作畫面不切換');
     const inp = $('#search'); inp.value = dev.name; inp.dispatch('input'); await new Promise((r) => setTimeout(r, 150));
     inp.dispatch('keydown', { key: 'Enter' });
-    if (App.centerView !== 'graph' || !App.sel) throw new Error('搜尋選取後應切回拓樸圖');
+    if (App.centerView !== 'graph' || App.step !== 'triage' || !App.sel) throw new Error('搜尋選取後應回到上一次看圖的 ③');
     // 資料中心開著時切換工作畫面：先關閉資料中心
     App.openHub(); App.showView('patch');
     if (!$('#hub').classList.contains('hidden') || App.centerView !== 'patch') throw new Error('切到工作畫面時應關閉資料中心');
-    // 窄螢幕：切到工作畫面時顯示中間的工作區
-    window.innerWidth = 390; S.view.app.setWorkspace('details'); App.showView('compare');
-    if ($('#main').dataset.workspace !== 'graph') throw new Error('窄螢幕切到工作畫面時應顯示中間的工作區');
-    window.innerWidth = 1200; S.view.app.setWorkspace('graph'); App.showView('graph');
-    // CSS：工作畫面疊在拓樸圖上、不水平捲動；寬表格在自己的框內捲動；強制色彩下選取的分頁有系統色外框
+    // 窄螢幕：工作區依流程排列（清單 → 工作畫面 → 詳細資料），標籤跟著步驟；有清單的步驟先看清單，④、⑤ 看工作畫面
+    window.innerWidth = 390;
+    const ws = () => document.testAll('#mobile-workspaces button');
+    if (ws().map((b) => b.dataset.workspace).join() !== 'checks,graph,details') throw new Error('窄螢幕的工作區應依流程排列：清單、工作畫面、詳細資料');
+    goStep('triage'); if ($('#main').dataset.workspace !== 'checks' || ws()[0].textContent !== '檢查結果' || ws()[1].textContent !== '拓樸圖') throw new Error('窄螢幕的 ③ 應先顯示檢查結果');
+    goStep('view'); if ($('#main').dataset.workspace !== 'checks' || ws()[0].textContent !== '清單') throw new Error('窄螢幕的 ② 應先顯示清單');
+    goStep('fix'); if ($('#main').dataset.workspace !== 'graph' || !ws()[0].classList.contains('hidden') || ws()[1].textContent !== '修正計畫') throw new Error('窄螢幕的 ④ 沒有清單，顯示修正計畫');
+    VA.setWorkspace('checks'); if ($('#main').dataset.workspace !== 'graph') throw new Error('沒有左側清單時不能切到清單工作區');
+    VA.setWorkspace('details'); App.showView('compare');
+    if ($('#main').dataset.workspace !== 'graph' || ws()[1].textContent !== '驗證') throw new Error('窄螢幕切到工作畫面時應顯示中間的工作區');
+    window.innerWidth = 1200; goStep('triage'); VA.setWorkspace('graph'); App.showView('graph');
+    // CSS：工作畫面疊在拓樸圖上、不水平捲動；寬表格在自己的框內捲動；強制色彩下目前的一步有系統色外框
     const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
     if (!/\.work \{[^}]*position: absolute[^}]*overflow-x: hidden/.test(css)) throw new Error('工作畫面應疊在拓樸圖上，且不水平捲動');
     if (!/\.work-table \{[^}]*overflow-x: auto/.test(css)) throw new Error('寬的表格應在自己的框內捲動');
     const forced = css.slice(css.indexOf('@media (forced-colors: active)'));
-    if (!/\.center-views \[role="tab"\]\[aria-selected="true"\]/.test(forced.slice(0, forced.indexOf('\n}')))) throw new Error('強制色彩模式下選取的分頁應有系統色外框');
-    if (!/\.patch-layout \{ display: grid; grid-template-columns: minmax\(0, 1fr\);/.test(css) || !/@container \(min-width: \d+px\)/.test(css)) throw new Error('修正計畫預設單欄，工作畫面夠寬時才分兩欄');
+    if (!/\.steps button\[aria-current="step"\]/.test(forced.slice(0, forced.indexOf('\n}')))) throw new Error('強制色彩模式下目前的一步應有系統色外框');
+    // 步驟的文字色對底色 ≥ 4.5:1：目前的一步（強調色／淺強調底）、其他步驟（次要文字色／頁首白底）
+    const cv = cssVars(css);
+    [[cv.accent, cv['accent-soft']], [cv.muted, '#ffffff'], [cv.text, cv['surface-hover']]].forEach(([fg, bg]) => {
+      if (contrastOf(fg, bg) < 4.5) throw new Error(`步驟的文字 ${fg} 對 ${bg} 只有 ${contrastOf(fg, bg).toFixed(2)}:1`);
+    });
+    // 目前的一步不只靠顏色：粗體與底線
+    if (!/\.steps button\[aria-current="step"\] \{[^}]*font-weight: 700[^}]*box-shadow: inset 0 -2px/.test(css)) throw new Error('目前的一步除了顏色，還要有粗體與底線');
+    if (!/\.patch-layout \{ display: grid; grid-template-columns: minmax\(0, 1fr\);/.test(css) || !/\.verify-layout \{ display: grid; grid-template-columns: minmax\(0, 1fr\);/.test(css) || !/@container \(min-width: \d+px\)/.test(css)) throw new Error('修正計畫與驗證預設單欄，工作畫面夠寬時才分兩欄');
+    // 窄螢幕的步驟列：五步等寬、可以換行（不出現水平捲動），放在一般樣式之後
+    const narrow = css.slice(css.indexOf('@media (max-width: 900px)'));
+    if (!/\.steps ol \{ display: grid; grid-template-columns: repeat\(5, minmax\(0, 1fr\)\);/.test(narrow) || !/\.steps button \{[^}]*white-space: normal/.test(narrow)) throw new Error('窄螢幕時步驟列應五步等寬且可換行');
+  });
+  await step('每一項舊功能都還找得到（左側五個分頁、中間四個分頁 → 流程步驟）', () => {
+    // [舊位置, 新的一步, 檢查新位置有這個功能]
+    const has = (sel, what) => { const el = $(sel); if (!el || !el.textContent.trim()) throw new Error(what + '：' + sel + ' 沒有內容'); return el; };
+    const visible = (el) => { for (let x = el; x && x !== document.body; x = x.parentNode) if (x.classList && x.classList.contains('hidden')) return false; return true; };
+    const MOVES = [
+      ['左：檢查結果（篩選、分組、處理、匯出報表、修正計畫的入口）', 'triage', () => {
+        const p = has('#pane-findings', '檢查結果');
+        if (!p.querySelector('.findings-view') || !p.querySelector('.open-hub') || !p.querySelector('.open-patch') || !p.testAll('.fgroup').length) throw new Error('檢查結果的篩選與入口');
+        return p; }],
+      ['左：覆蓋率（每台設備、缺漏與收集失敗、devices.csv 草稿）', 'input', () => {
+        const p = has('#pane-coverage', '覆蓋率');
+        if (!$('#hub').contains(p) || !p.querySelector('table') || !hubBtn('devices-csv') || !hubBtn('open-coverage')) throw new Error('覆蓋率在資料中心，有表格與 devices.csv 草稿');
+        return p; }],
+      ['左：清單（設備、介面、IP、網段、MAC、VLAN）', 'view', () => { const p = has('#pane-inventory', '清單'); if (p.querySelector('.seg').testAll('button').length !== 6) throw new Error('清單的六種'); return p; }],
+      ['左：比對（摘要與入口）→ 驗證的比對與資料中心的摘要', 'verify', () => {
+        const p = has('#compare-body', '比對');
+        if (!p.querySelector('.cmp-expected') || !p.querySelector('.cmp-baseline') || !p.querySelector('.cmp-load-expected') || !p.querySelector('.cmp-load-previous')) throw new Error('預期資料比對與新舊基準比對');
+        if (!$('#hub').testAll('.hub-row').some((r) => r.getAttribute('data-item') === 'previous') || !hubBtn('load-expected')) throw new Error('資料中心的比對摘要與載入');
+        return p; }],
+      ['左：處理紀錄的本輪變化', 'verify', () => has('#round-body', '本輪變化')],
+      ['左：處理紀錄的修復追蹤', 'verify', () => has('#tracking-body', '修復追蹤')],
+      ['左：處理紀錄的各狀態筆數與匯出／匯入的入口', 'verify', () => {
+        const p = has('#ledger-body', '處理紀錄');
+        if (!p.querySelector('.ledger-counts') || !p.querySelector('.open-hub') || !hubBtn('export-ledger') || !hubBtn('import-ledger')) throw new Error('處理紀錄的筆數與匯出／匯入');
+        return p; }],
+      ['中：拓樸圖（層級切換、VLAN 篩選）', 'view', () => { if (!visible($('#layer-switch')) || $('#view-graph').inert) throw new Error('② 的拓樸圖與層級切換'); return $('#layer-switch'); }],
+      ['中：拓樸圖（③ 也看得到層級切換）', 'triage', () => { if (!visible($('#layer-switch')) || $('#view-graph').inert) throw new Error('③ 的拓樸圖與層級切換'); return $('#layer-switch'); }],
+      ['中：修正計畫', 'fix', () => { const p = has('#patch-body', '修正計畫'); if (!p.querySelector('.patch-select') || !p.querySelector('.patch-main')) throw new Error('修正計畫的選取與計畫'); return p; }],
+      ['中：比對', 'verify', () => has('#compare-body', '比對')],
+      ['中：收斂趨勢', 'verify', () => { const p = has('#trend-body', '收斂趨勢'); if (!p.testAll('.trend-tile').length) throw new Error('收斂趨勢的數字'); return p; }],
+    ];
+    MOVES.forEach(([old, s, find]) => {
+      goStep(s);
+      let el; try { el = find(); } catch (e) { throw new Error(`「${old}」在 ${S.view.app.STEP_LABEL[s]} 找不到：${e.message}`); }
+      if (!visible(el)) throw new Error(`「${old}」在 ${S.view.app.STEP_LABEL[s]} 應看得到`);
+    });
+    goStep('triage');
+  });
+  await step('步驟的狀態會隨資料更新（文字，不只靠顏色）', async () => {
+    const VA = S.view.app; const NUM = S.view.num; const st = (s) => stepBtn(s).querySelector('.step-st').textContent;
+    const m = App.Q.meta();
+    if (st('input') !== `${NUM(m.stats.collected)} 台`) throw new Error('① 應寫出已收集的台數：' + st('input'));
+    const pc0 = VA.problemCounts();
+    if (st('triage') !== `待處理 ${NUM(pc0.error + pc0.warn)}`) throw new Error('③ 應寫出待處理筆數：' + st('triage'));
+    if (!st('verify').startsWith(`第 ${NUM(VA.ledgerRoundIndex() + 1)} 輪`)) throw new Error('⑤ 應寫出處理紀錄的第幾輪：' + st('verify'));
+    // ②：拓樸圖的層級
+    if (st('view') !== S.view.LAYER[App.layer]) throw new Error('② 應寫出目前的層級：' + st('view'));
+    App.showLayer('l3'); await App.layerJob;
+    if (st('view') !== S.view.LAYER.l3) throw new Error('換層級後 ② 的狀態應更新：' + st('view'));
+    App.showLayer('device');
+    // ④：修正計畫已選的項目數
+    App.openPatch(); const PV = S.view.patchView;
+    if (PV.state.keys.size) $('#patch-body').querySelector('.patch-clear').click();
+    if (st('fix') !== '已選 0') throw new Error('④ 應寫出已選的項目數：' + st('fix'));
+    const rule = $('#patch-body').testAll('.patch-rule')[0]; rule.click();
+    if (!PV.state.keys.size || st('fix') !== `已選 ${NUM(PV.state.keys.size)}`) throw new Error('選取後 ④ 的狀態應更新：' + st('fix'));
+    $('#patch-body').querySelector('.patch-clear').click();
+    if (st('fix') !== '已選 0') throw new Error('清除選取後 ④ 的狀態應更新');
+    // ③：把一筆待處理的錯誤／警告標為誤報後，待處理減一（處理紀錄是使用者的資料，結束後還原）
+    const keep = JSON.parse(JSON.stringify(VA.ledger()));
+    const f = App.Q.findings().find((x) => x.severity !== 'info' && S.view.remediation.isPendingStatus(VA.ledgerStatus(x)) && (S.ledger.USER_TO[VA.ledgerItem(x).status] || []).includes('false-positive'));
+    if (f) {
+      const r = await App.setLedger(f, { status: 'false-positive' });
+      if (!r.ok) throw new Error('應可標為誤報：' + r.error);
+      const pc1 = VA.problemCounts();
+      if (pc1.error + pc1.warn !== pc0.error + pc0.warn - 1 || st('triage') !== `待處理 ${NUM(pc1.error + pc1.warn)}`) throw new Error('標為誤報後 ③ 的待處理應減一：' + st('triage'));
+      await S.store.set('ledger', keep); await VA.loadLedger(); VA.renderAll();
+      if (st('triage') !== `待處理 ${NUM(pc0.error + pc0.warn)}`) throw new Error('還原處理紀錄後 ③ 應回到原本的筆數');
+    } else if (!process.env.SMOKE_INPUT) throw new Error('範例資料應有可標為誤報的待處理項目');
+    App.showView('graph');
   });
   await step('資料中心：列出這一輪所有的輸入與輸出與各自的狀態，鍵盤可開關（Esc 關閉後焦點回到按鈕），蓋住主畫面時主畫面不可聚焦', async () => {
     const VA = S.view.app; const NUM = S.view.num; const btnHub = $('#btn-hub');
@@ -2667,7 +2787,7 @@ function viewBoundaryViolations(file, src) {
     (docListeners.keydown || []).forEach((f) => f({ key: 'Escape', preventDefault() {} }));
     if (!$('#hub').classList.contains('hidden') || document.activeElement !== btnHub || $('#main').inert || btnHub.getAttribute('aria-expanded') !== 'false') throw new Error('Esc 應關閉資料中心並把焦點還給按鈕');
     // 檢查結果分頁的「匯出報表…」開啟資料中心的報表區塊
-    document.testAll('#left .tabs button')[0].click();
+    goStep('triage');
     $('#pane-findings').querySelector('.open-hub').click();
     if ($('#hub').classList.contains('hidden') || document.activeElement !== $('#hub-sec-reports')) throw new Error('「匯出報表…」應開啟資料中心並聚焦報表');
     // 選取（例如從搜尋進來）要在圖與詳情看到結果：關閉資料中心
@@ -2827,8 +2947,8 @@ function viewBoundaryViolations(file, src) {
       S.util.uniq(Q.findings().map((f) => f.id)).forEach((id) => idxs.add(Q.findings().findIndex((f) => f.id === id)));
       idxs.forEach((i) => { App.selectFinding(i); App.graph.draw(); });
       App.select(null); App.graph.draw();
-      document.testAll('#left .tabs button').forEach((b) => b.click());
-      document.testAll('#left .tabs button')[0].click();
+      ['input', 'view', 'triage', 'fix', 'verify'].forEach(goStep);
+      goStep('triage');
       $('#pane-findings').querySelector('.open-patch').click();
       if (!S.view.patchView.isOpen(App)) throw new Error('應開啟修正計畫');
       $('#patch-body').testAll('.patch-rule').forEach((c) => c.click());
@@ -2858,12 +2978,16 @@ function viewBoundaryViolations(file, src) {
       VA.load(orig, null); await App.ledgerJob; await App.layoutJob;
     }
   });
-  await step('清除基準（處理紀錄不受影響）；沒有基準時中間只有拓樸圖（歡迎畫面）', async () => {
+  await step('清除基準（處理紀錄不受影響）；沒有基準時 ④、⑤ 停用，中間只有拓樸圖（歡迎畫面）', async () => {
     App.showView('patch');
     $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20)); if (App.snap) throw new Error('未清除');
-    if (App.centerView !== 'graph' || !$('#view-patch').classList.contains('hidden') || $('#view-graph').inert) throw new Error('清除基準後中間應切回拓樸圖');
-    if (!document.testAll('#center-views button').filter((t) => t.getAttribute('data-view') !== 'graph').every((t) => t.disabled)) throw new Error('沒有基準時其他工作畫面的分頁應停用');
-    App.showView('trend'); if (App.centerView !== 'graph') throw new Error('沒有基準時不能切到其他工作畫面');
+    if (App.step !== 'triage' || App.centerView !== 'graph' || !$('#view-patch').classList.contains('hidden') || $('#view-graph').inert) throw new Error('清除基準後應回到「③ 分診」的拓樸圖');
+    if (!['fix', 'verify'].every((s) => stepBtn(s).getAttribute('aria-disabled') === 'true') || ['input', 'view', 'triage'].some((s) => stepBtn(s).getAttribute('aria-disabled') !== 'false')) throw new Error('沒有基準時只有 ④、⑤ 停用（aria-disabled，仍可聚焦）');
+    if (!stepBtn('input').textContent.includes('未載入') || !stepBtn('fix').textContent.includes('建立基準後')) throw new Error('沒有基準時步驟的狀態應說明：' + text('#steps'));
+    goStep('verify'); if (App.step !== 'triage' || !text('#banner').includes('建立基準後')) throw new Error('停用的步驟按了不切換，並說明原因');
+    App.showView('trend'); if (App.centerView !== 'graph' || App.step !== 'triage') throw new Error('沒有基準時不能切到其他工作畫面');
+    goStep('view'); if (App.step !== 'view' || !text('#pane-inventory').includes('建立基準後')) throw new Error('沒有基準時 ② 仍可開啟並說明');
+    goStep('triage');
     const lg = await S.store.get('ledger');
     if (!lg || (ackedKey && !lg.items[ackedKey])) throw new Error('清除基準不應清掉處理紀錄');
   });

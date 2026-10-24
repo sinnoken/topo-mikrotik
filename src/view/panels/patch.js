@@ -1,5 +1,5 @@
 /*
- * 修正計畫（中間的工作畫面 #view-patch，內容在 #patch-body）：選取檢查結果 → S.remediate.plan → 依設備列出修改前（證據原文）
+ * 修正計畫（流程步驟「④ 修正」的工作畫面 #view-patch，內容在 #patch-body）：選取檢查結果 → S.remediate.plan → 依設備列出修改前（證據原文）
  * 與修改後（套用指令），每台設備的套用、回復、驗證三份 .rsc 可以檢視、複製與下載；沒有產生指令的項目依原因分組，
  * 列出檢查結果的訊息（點了在右側的詳細資料開啟該筆，修正計畫留在中間）。
  * 計畫與指令文字全部由核心 S.remediate 產生，這裡只負責選取、預覽與下載。本工具只產生文字，不會連線設備（ADR-001）。
@@ -289,10 +289,11 @@
       if (el) el.focus();
     }
   }
-  function refreshOpen(App) { compute(App); render(App); }
+  // 選取或選擇改變後：重新產生計畫並重繪；步驟列「④ 修正」的已選項目數也跟著更新
+  function refreshOpen(App) { compute(App); render(App); V.app.renderSteps(); }
 
   /**
-   * 在中間的工作畫面開啟修正計畫；keys 給定時以它取代目前的選取（例如防火牆畫面的「在修正計畫中開啟」）。
+   * 在「④ 修正」開啟修正計畫；keys 給定時以它取代目前的選取（例如防火牆畫面的「在修正計畫中開啟」）。
    * 焦點移到修正計畫的標題（opt.focus 為 false 時不移動）。
    */
   function open(App, keys, opt) {

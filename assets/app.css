@@ -42,7 +42,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .hidden { display: none !important; }
 
 /* ---------- 版面 ---------- */
-#app { display: grid; grid-template-rows: 48px auto auto minmax(0, 1fr) 26px; height: 100vh; }
+/* 頁首的高度依內容（流程步驟放不下時換行），至少 48px */
+#app { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) 26px; height: 100vh; }
 #app > header { grid-row: 1; }
 #baseline-summary { grid-row: 2; }
 #mobile-workspaces { grid-row: 3; }
@@ -50,25 +51,38 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 #app > footer { grid-row: 5; }
 /* 資料中心（#hub）和 #main 疊在同一格（也蓋住窄螢幕的工作區列）：明確指定欄，避免自動放置另開一欄 */
 #app > * { grid-column: 1; }
-header { display: flex; align-items: center; gap: 10px; padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--line); box-shadow: 0 1px 4px rgba(22, 37, 54, .035); z-index: 7; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-height: 48px; padding: 6px 12px; background: var(--panel); border-bottom: 1px solid var(--line); box-shadow: 0 1px 4px rgba(22, 37, 54, .035); z-index: 7; }
 header .brand { font-weight: 700; font-size: var(--fs-lg); letter-spacing: .01em; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 header .brand svg { width: 22px; height: 22px; }
 header .spacer { flex: 1; }
-#main { display: grid; grid-template-columns: 330px 1fr 400px; min-height: 0; }
+/* 流程步驟（app-panes.js）：導覽，目前的一步除了顏色，還有粗體與底線（aria-current="step"）；每一步有狀態文字 */
+.steps ol { display: flex; flex-wrap: wrap; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.steps button { display: inline-flex; align-items: baseline; gap: 5px; min-height: var(--control-h); padding: 5px 10px; border: 1px solid transparent; border-radius: var(--radius); background: transparent; color: var(--muted); box-shadow: none; white-space: nowrap; }
+.steps button:hover { background: var(--surface-hover); color: var(--text); border-color: transparent; }
+.steps .step-n { font-weight: 700; }
+.steps .step-st { font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.steps button[aria-current="step"] { background: var(--accent-soft); color: var(--accent); font-weight: 700; box-shadow: inset 0 -2px var(--accent); }
+.steps button[aria-current="step"] .step-st { font-weight: 600; }
+.steps button[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
+.steps button[aria-disabled="true"]:hover { background: transparent; color: var(--muted); }
+#main { display: grid; grid-template-columns: 330px minmax(0, 1fr) 400px; min-height: 0; }
+/* 欄的位置固定：④、⑤ 沒有左側清單（#left 隱藏、寬度 0）時，中間仍在第二欄 */
+#main > #left { grid-column: 1; } #main > #center { grid-column: 2; } #main > #right { grid-column: 3; }
+#main > * { grid-row: 1; }
 #left, #right { background: var(--panel); min-height: 0; display: flex; flex-direction: column; }
+.left-head { flex: none; padding: 10px 12px 8px; border-bottom: 1px solid var(--line); background: linear-gradient(#fff, var(--surface)); }
+.left-title { margin: 0; font-size: var(--fs-lg); }
+.left-title:focus { outline: none; }
+.left-title:focus-visible { box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
 #left { border-right: 1px solid var(--line); }
 #right { border-left: 1px solid var(--line); }
 #left, #right { position: relative; }
 .grip { position: absolute; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 6; }
 .grip-left { right: -3px; } .grip-right { left: -3px; }
 .grip:hover, .grip.on { background: var(--accent-soft); }
-/* 中間：上方是工作畫面的分頁（拓樸圖、修正計畫、比對、收斂趨勢），下方的 #stage 是畫面本身。
+/* 中間：#stage 是工作畫面本身（依流程步驟：拓樸圖、修正計畫、驗證）。
    工作畫面疊在拓樸圖上（同一格）：畫布的大小不因切換而改變，位置、縮放、選取都保留 */
 #center { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-.center-views { flex: none; display: flex; flex-wrap: wrap; gap: 2px; padding: 5px 8px 0; border-bottom: 1px solid var(--line); background: linear-gradient(#fff, var(--surface)); }
-.center-views [role="tab"] { min-height: 36px; border: none; border-bottom: 2px solid transparent; border-radius: var(--radius-sm) var(--radius-sm) 0 0; background: none; padding: 7px 12px; color: var(--muted); box-shadow: none; }
-.center-views [role="tab"]:hover:not(:disabled) { color: var(--text); background: var(--surface-hover); }
-.center-views [role="tab"][aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); background: var(--accent-hover); font-weight: 600; }
 .stage { position: relative; flex: 1 1 auto; min-height: 0; min-width: 0; }
 /* z-index: 0 讓拓樸圖上的提示（tooltip 等）都留在工作畫面底下 */
 .view-graph { position: absolute; inset: 0; z-index: 0; }
@@ -85,7 +99,18 @@ header .spacer { flex: 1; }
 #compare-body { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 #compare-body .work-card > .pane-body, #compare-body .baseline-diff { padding: 14px; }
 #compare-body .summary { padding-left: 0; padding-right: 0; background: none; }
-.cmp-summary .cmp-sum-row { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-bottom: 1px solid var(--line-soft); }
+/* ⑤ 驗證：窄的時候上下排；工作畫面夠寬時左欄是本輪變化與處理紀錄（捲動時固定），右欄是修復追蹤、收斂趨勢與比對 */
+.verify-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
+.verify-side, .verify-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.verify-card { padding: 12px 14px; }
+.verify-card .summary { padding-left: 0; padding-right: 0; background: none; border-bottom: none; }
+.verify-sec-title { margin: 4px 0 8px; font-size: var(--fs-xl); }
+.verify-sec-title:focus, .verify-card .work-card-title:focus { outline: none; }
+.verify-sec-title:focus-visible, .verify-card .work-card-title:focus-visible { box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
+@container (min-width: 880px) {
+  .verify-layout { grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); }
+  .verify-side { position: sticky; top: 0; max-height: calc(100vh - 200px); overflow: auto; }
+}
 footer { display: flex; align-items: center; gap: 16px; padding: 0 12px; font-size: var(--fs-sm); color: var(--muted); background: var(--panel); border-top: 1px solid var(--line); white-space: nowrap; overflow: hidden; }
 .baseline-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; background: #fff; border-bottom: 1px solid var(--line); }
 .baseline-state { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; min-width: 0; }
@@ -97,7 +122,7 @@ footer { display: flex; align-items: center; gap: 16px; padding: 0 12px; font-si
 .mobile-workspaces { display: none; }
 
 /* ---------- 搜尋 ---------- */
-.search { position: relative; width: 380px; }
+.search { position: relative; flex: 0 1 340px; min-width: 200px; }
 .search input { width: 100%; padding-left: 28px; }
 .search .icon { position: absolute; left: 8px; top: 7px; color: var(--muted); pointer-events: none; }
 .dropdown { position: absolute; top: 38px; left: 0; right: 0; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-md); z-index: 50; max-height: 420px; overflow: auto; }
@@ -107,10 +132,6 @@ footer { display: flex; align-items: center; gap: 16px; padding: 0 12px; font-si
 .dropdown .empty { padding: 10px; color: var(--muted); }
 
 /* ---------- 標籤、徽章 ---------- */
-.tabs { display: flex; border-bottom: 1px solid var(--line); padding: 5px 8px 0; flex: none; gap: 2px; background: linear-gradient(#fff, var(--surface)); }
-.tabs button { min-height: 38px; border: none; border-bottom: 2px solid transparent; border-radius: var(--radius-sm) var(--radius-sm) 0 0; background: none; padding: 8px 10px; color: var(--muted); box-shadow: none; }
-.tabs button:hover { color: var(--text); background: var(--surface-hover); }
-.tabs button.on { color: var(--accent); border-bottom-color: var(--accent); background: var(--accent-hover); font-weight: 600; }
 .pane { flex: 1; overflow: auto; min-height: 0; }
 .pane-body { padding: 10px; }
 .pane-body > p:first-child { margin-top: 0; }
@@ -203,7 +224,7 @@ button.chip { box-shadow: none; line-height: inherit; text-align: left; }
 .findings-view { align-items: center; }
 .findings-view .seg button { min-height: 26px; padding: 2px 10px; border: none; border-radius: 0; box-shadow: none; font-size: var(--fs-sm); }
 .findings-view .seg button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-.findings-view .note, .devices-draft .muted { font-size: var(--fs-sm); }
+.findings-view .note { font-size: var(--fs-sm); }
 .export-by-device.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 /* 防火牆修正範例 */
 .fw-fix { margin-bottom: 10px; }
@@ -334,9 +355,10 @@ pre.raw .hl { background: #fff3c4; display: block; }
 @media (forced-colors: active) {
   button:focus-visible, a:focus-visible, summary:focus-visible, .fgroup > .head:focus-visible, .fitem:focus-visible, tr.click:focus-visible,
   input:focus, select:focus, textarea:focus, #graph:focus-visible { outline: 2px solid Highlight; outline-offset: 2px; }
-  .chip.btn.on, .tabs button.on, .seg button.on, .toolbar .grp button.on, .mobile-workspaces button.on, .export-by-device.on, header .hub-btn.on,
-  .center-views [role="tab"][aria-selected="true"], .layer-switch [role="radio"][aria-checked="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
-  .layer-switch [role="radio"]:disabled { color: GrayText; }
+  .chip.btn.on, .seg button.on, .toolbar .grp button.on, .mobile-workspaces button.on, .export-by-device.on, header .hub-btn.on,
+  .steps button[aria-current="step"], .layer-switch [role="radio"][aria-checked="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
+  .layer-switch [role="radio"]:disabled, .steps button[aria-disabled="true"] { color: GrayText; }
+  .left-title:focus-visible, .verify-sec-title:focus-visible, .verify-card .work-card-title:focus-visible { outline: 2px solid Highlight; outline-offset: 2px; }
   .layer-note { border-color: CanvasText; }
   .hub-card:focus-visible, .hub-row:focus-visible, .hub-out:focus-visible, #hub-title:focus-visible, .work-title:focus-visible, .trend-hit:focus { outline: 2px solid Highlight; outline-offset: 2px; }
   .work-card, .patch-dev, .patch-choice { border-color: CanvasText; }
@@ -359,8 +381,13 @@ pre.raw .hl { background: #fff3c4; display: block; }
   header { min-height: 48px; padding: 6px 10px; flex-wrap: wrap; gap: 7px; }
   header .brand { font-size: var(--fs-lg); }
   header .spacer { display: none; }
-  .search { order: 5; width: 100%; }
+  .search { order: 5; flex: 1 1 100%; }
   .search input { min-height: 38px; }
+  /* 流程步驟：自己一列，五步等寬；號碼與名稱在上、狀態在下，文字可以換行，不出現水平捲動 */
+  .steps { order: 4; flex: 1 1 100%; min-width: 0; }
+  .steps ol { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 3px; }
+  .steps button { width: 100%; min-width: 0; min-height: 44px; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0 3px; padding: 4px 2px; white-space: normal; text-align: center; line-height: 1.25; }
+  .steps .step-st { flex-basis: 100%; font-size: var(--fs-xs); overflow-wrap: anywhere; }
   #btn-clear { margin-left: auto; }
   .baseline-summary { align-items: flex-start; flex-direction: column; gap: 8px; padding: 9px 10px; }
   .baseline-state { gap: 4px 9px; }
@@ -405,8 +432,7 @@ pre.raw .hl { background: #fff3c4; display: block; }
 .trend-tile { min-width: 70px; padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #fff; }
 .trend-value { font-size: var(--fs-lg); font-weight: 600; font-variant-numeric: tabular-nums; }
 /* 中間的「收斂趨勢」：三張小倍數折線圖並排（放不下時換行）；一張圖的寬度固定（px），比畫面寬時在自己的框內捲動 */
-#trend-body .work-card { padding: 14px; }
-#trend-body .work-card > p { margin: 0 0 6px; }
+#trend-body > p { margin: 0 0 6px; }
 .trend-charts { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 12px; }
 .trend-chart { margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; min-width: 0; max-width: 100%; }
 .trend-title { font-size: var(--fs-md); font-weight: 600; margin-bottom: 4px; }
@@ -497,6 +523,9 @@ header .hub-btn.on { background: var(--accent-soft); color: var(--accent); borde
 .hub-out p { margin: 0; }
 .hub-out .row { margin: 0; }
 .hub-cmd { display: block; padding: 6px 8px; border-radius: var(--radius-sm); background: var(--neutral-soft); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* 覆蓋率（① 輸入）：篩選選項與每台設備的表格；表格寬於畫面時在自己的框內捲動 */
+.hub-coverage { min-width: 0; }
+.hub-coverage .summary { padding-left: 0; padding-right: 0; background: none; }
 .hub-pack { display: flex; flex-direction: column; gap: 8px; }
 .hub-pack .row { margin: 0; }
 .wp-choices { margin: 0; padding: 6px 10px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); display: flex; flex-direction: column; gap: 5px; min-width: 0; }
@@ -526,10 +555,8 @@ header .hub-btn.on { background: var(--accent-soft); color: var(--accent); borde
   .hub-act { justify-content: flex-start; }
   .hub-outs { grid-template-columns: minmax(0, 1fr); }
   #app.hub-open #banner { left: 10px; right: 10px; top: auto; bottom: 34px; }
-  /* 中間的工作畫面：分頁可以換行、內距縮小；內容不出現整頁的水平捲動（寬的表格、指令與圖在自己的框內捲動） */
-  .center-views { padding: 4px 6px 0; }
-  .center-views [role="tab"] { min-height: 38px; padding: 6px 9px; }
+  /* 中間的工作畫面：內距縮小；內容不出現整頁的水平捲動（寬的表格、指令與圖在自己的框內捲動） */
   .work-inner { padding: 12px 10px 24px; gap: 12px; }
   .work-title { font-size: var(--fs-xl); }
-  .patch-select, .patch-main { padding: 10px; }
+  .patch-select, .patch-main, .verify-card { padding: 10px; }
 }

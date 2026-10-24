@@ -704,6 +704,18 @@ test('C02 的證據不限 6 筆：列出全部失敗註解與已收集區塊；�
   assert.strictEqual(S.check.CATALOG.C02.evidenceLimit, Infinity);
   assert.ok(Object.entries(S.check.CATALOG).every(([id, c]) => id === 'C02' || c.evidenceLimit === undefined));
 });
+test('每條檢查規則都有常見原因（1–4 條，皆非空）與處理方式，且只放在 CATALOG、不複製到 finding', () => {
+  const ids = Object.keys(S.check.CATALOG);
+  assert.strictEqual(ids.length, 40);
+  Object.entries(S.check.CATALOG).forEach(([id, c]) => {
+    assert.ok(typeof c.action === 'string' && c.action.trim() !== '', `${id} 缺少處理方式（action）`);
+    assert.ok(Array.isArray(c.causes) && c.causes.length >= 1 && c.causes.length <= 4, `${id} 的常見原因（causes）應有 1–4 條`);
+    c.causes.forEach((x, k) => assert.ok(typeof x === 'string' && x.trim() !== '', `${id} 的第 ${k + 1} 條常見原因是空的`));
+  });
+  const s = build(read('samples/sample-bundle.txt'));
+  assert.ok(s.findings.length > 0);
+  assert.ok(s.findings.every((f) => !('causes' in f) && !('action' in f)), 'finding 不帶 causes／action，畫面從 CATALOG 讀');
+});
 test('A02：同一個 VLAN ID 只在同一個 VLAN 區塊內比較，不相連的區塊（例如各站點重用 VLAN ID）不報', () => {
   const mac = 'AA:BB:CC:00:00:01';
   const sw = (name, ip, nb) => [`${name} (${ip}):`, NB(nb), '### /export terse', '/interface bridge add name=bridge1 vlan-filtering=yes',

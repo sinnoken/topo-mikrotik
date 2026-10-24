@@ -392,6 +392,8 @@ pre.raw .hl { background: #fff3c4; display: block; }
 .patch-download, .patch-copy { min-height: 28px; padding: 3px 8px; font-size: var(--fs-sm); }
 .patch-skipped { margin-top: 12px; }
 .patch-skip { font-size: var(--fs-md); padding: 3px 0 3px 10px; }
+.patch-skip .finding-ref, .fw-fix .finding-ref { overflow-wrap: anywhere; }
+.patch-skip-detail { font-size: var(--fs-sm); margin: 1px 0 0; }
 .diff-warnings { margin: 8px 0; }
 .diff-warning { font-size: var(--fs-md); padding: 2px 0; }
 .partial-unrecognized { margin-left: 6px; color: var(--warn-text); }

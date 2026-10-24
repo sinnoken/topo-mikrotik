@@ -4,6 +4,7 @@
  *   - advice：規則的常見原因與處理（每次從 CATALOG 讀取）
  *   - sortByDevice：檢查結果依所屬設備（Q.findingDevice）排序，檢查結果分頁的「依設備」分組與匯出共用
  *   - 修正計畫的文字（LEVEL_TEXT、RISK_TEXT）與單一項目的套用指令（itemApplyLines，取自 S.remediate.renderRsc）
+ *   - matchFindings／findingRef：未產生指令的項目以 findingKey 對回檢查結果，列出訊息並可點擊開啟
  *   - devicesCsvDraft：由 C01 產生 tools/collect.sh 的設備清單草稿
  */
 (function (S) {
@@ -64,6 +65,37 @@
     return lines.slice(at + 1).filter((l) => l && !l.startsWith('#')).join('\n');
   }
 
+  /** findingKey 對不到目前基準的檢查結果時的說明（例如 skipped 的 not-found） */
+  const MISSING_FINDING_TEXT = '基準中找不到這筆檢查結果';
+  const FINDING_TEXT_MAX = 120; // 清單中訊息的最多字數；完整訊息放在 title
+  /** 過長的訊息截斷並加上「…」 */
+  const clipText = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
+  /**
+   * 修正計畫的 skipped（或 items）逐筆對回 Q.findings() 中的檢查結果：回傳與 list 等長的陣列，每筆是 { idx, f } 或 null（基準中沒有，例如 not-found）。
+   * idx 與 App.selectFinding 的索引相同。不同的檢查結果可能有相同的 findingKey（例如同一組設備的 A12 DNS 與 NTP），
+   * 所以同一個鍵的第 n 筆對到基準中這個鍵的第 n 筆：S.remediate.plan 對同一個鍵的列依 finding 在基準中的順序排列。
+   */
+  function matchFindings(Q, list) {
+    const byKey = new Map();
+    Q.findings().forEach((f, idx) => U.getOr(byKey, Q.findingKey(f), () => []).push({ idx, f }));
+    const used = new Map();
+    return list.map((x) => {
+      const hits = byKey.get(x.findingKey); const n = used.get(x.findingKey) || 0;
+      used.set(x.findingKey, n + 1);
+      return hits && hits[n] ? hits[n] : null;
+    });
+  }
+  /**
+   * 修正計畫中「未產生指令」的一筆所對應的檢查結果（matchFindings 的一筆）：找得到時是可點擊（滑鼠與鍵盤）的訊息連結，
+   * 過長時截斷、完整訊息在 title，點了開啟該筆檢查結果；找不到時明確說明，findingKey 放在 title。before 在開啟前執行（例如關閉對話框）。
+   */
+  function findingRef(App, hit, key, before) {
+    if (!hit) return V.h('span', { class: 'warn-line finding-missing', title: key }, MISSING_FINDING_TEXT);
+    const msg = String(hit.f.message || '');
+    return V.h('a', { class: 'link finding-ref', title: msg, 'data-finding-idx': String(hit.idx),
+      onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); if (before) before(); App.selectFinding(hit.idx); } }, clipText(msg, FINDING_TEXT_MAX));
+  }
+
   // ---------------------------------------------------------------- C01 → devices.csv 草稿
   /*
    * 格式依 tools/collect.sh 的 load_inventory：name,address,user,port[,extra]，第一個資料列是標題列；
@@ -108,5 +140,5 @@
   }
 
   V.remediation = { STATUS_TEXT, statusText, STATUS_CHIP, isPendingStatus, advice, sortByDevice, LEVEL_TEXT, RISK_TEXT, RISK_CHIP, maxRisk, itemApplyLines,
-    devicesCsvDraft, USER_PLACEHOLDER };
+    MISSING_FINDING_TEXT, FINDING_TEXT_MAX, clipText, matchFindings, findingRef, devicesCsvDraft, USER_PLACEHOLDER };
 })(globalThis.SSOT = globalThis.SSOT || {});

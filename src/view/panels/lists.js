@@ -67,7 +67,7 @@
   function findings(App) {
     const root = V.clear(V.$('#pane-findings'));
     if (!App.snap) return root.appendChild(h('div', { class: 'empty-detail' }, '建立基準後，資料之間的矛盾與缺漏會列在這裡。'));
-    const all = App.snap.findings; const Q = App.Q;
+    const Q = App.Q; const all = Q.findings();
     // 只看新出現的：依「比對」分頁載入的舊基準（S.compare.snapshots 的 finding added）；沒有舊基準時停用
     const base = V.baselineDiff.loaded();
     if (!base) state.onlyNew = false;
@@ -162,7 +162,7 @@
       const groups = new Map();
       all.forEach((f, idx) => { if (shown(idx)) S.util.getOr(groups, f.id, () => []).push(idx); });
       groups.forEach((idxs, id) => {
-        const c = S.check.CATALOG[id];
+        const c = S.query.rule(id);
         root.appendChild(group(id, [V.sevDot(c.severity), h('span', { class: 'title' }, c.title), h('span', { class: 'id' }, id)], idxs, '', false));
       });
     }
@@ -188,16 +188,15 @@
       ])]);
       if (open) g.appendChild(h('div', { class: 'items' }, fp.map((r) => h('div', { class: 'rule', 'data-rule-id': r.id, title: '依處理紀錄：標為誤報的筆數／這條規則在處理紀錄中的總筆數' }, [
         h('span', { class: 'mark' }, '!'),
-        h('span', { class: 'title' }, [(S.check.CATALOG[r.id] || {}).title || r.id,
+        h('span', { class: 'title' }, [(S.query.rule(r.id) || {}).title || r.id,
           h('div', { class: 'muted note' }, `誤報 ${V.num(r.falsePositive)} / ${V.num(r.total)}（${Math.round(r.rate * 100)}%）`)]),
         h('span', { class: 'id' }, r.id)]))));
       root.appendChild(g);
     }
     // 沒有發現的規則：分成「通過」與「沒有資料可檢查」，預設收合（不受上方嚴重度篩選影響）
     const rules = App.Q.ruleStatus();
-    const DL = S.check.DATA_LABEL;
     [['pass', '通過', '✓', (r) => '需要的資料都有收到，沒有發現問題'],
-      ['nodata', '沒有資料可檢查', '–', (r) => '缺少：' + r.missing.map((g) => g.map((t) => DL[t] || t).join(' 或 ')).join('、')]].forEach(([st, label, mark, note]) => {
+      ['nodata', '沒有資料可檢查', '–', (r) => '缺少：' + r.missing.map((g) => g.map(S.query.dataLabel).join(' 或 ')).join('、')]].forEach(([st, label, mark, note]) => {
       const list = rules.filter((r) => r.status === st); if (!list.length) return;
       const key = '#' + st; const open = state.open.has(key);
       const toggle = () => { open ? state.open.delete(key) : state.open.add(key); findings(App); };
@@ -214,7 +213,7 @@
     });
   }
   findings.reset = () => { state.open = new Set(); state.shown = new Map(); state.selected = -1; state.editing = -1; state.onlyNew = false; };
-  findings.openFirst = (snap) => { const f = snap.findings.find((x) => x.severity !== 'info'); if (f) state.open.add(f.id); };
+  findings.openFirst = (Q) => { const f = Q.findings().find((x) => x.severity !== 'info'); if (f) state.open.add(f.id); };
   findings.showProblems = (App) => {
     state.sev = { error: true, warn: true, info: false };
     state.open = new Set();
@@ -227,14 +226,14 @@
   function coverage(App) {
     const root = V.clear(V.$('#pane-coverage'));
     if (!App.snap) return root.appendChild(h('div', { class: 'empty-detail' }, '建立基準後，可以在這裡看到每台設備收集了哪些資料。'));
-    const rows = App.snap.coverage; const Q = App.Q;
+    const Q = App.Q; const rows = Q.coverage();
     // 有缺漏：缺少應收集的資料，或有指令收集失敗（V.coverageGap，與基準摘要同一個判斷）
     const collected = rows.filter((r) => r.collected); const missing = collected.filter(V.coverageGap);
     const seenOnly = rows.filter((r) => !r.collected && r.kind !== 'host'); const hosts = rows.filter((r) => !r.collected && r.kind === 'host');
     const F = { all: ['全部已收集', collected], missing: ['有缺漏', missing], seen: ['未收集的網路設備', seenOnly], hosts: ['主機（只由 LLDP 看到）', hosts] };
     root.appendChild(h('div', { class: 'summary' }, Object.entries(F).map(([k, [label, list]]) => filterChip(label, list.length, { cls: k === 'missing' ? 'err' : '', on: cov.filter === k, onclick: () => { cov.filter = k; coverage(App); } }))));
     // C01（只被鄰居發現、沒有收集資料的網路設備）→ tools/collect.sh 的設備清單草稿
-    const nC01 = App.snap.findings.filter((f) => f.id === 'C01').length;
+    const nC01 = Q.findingsByRule('C01').length;
     root.appendChild(h('div', { class: 'row spaced pane-section devices-draft' }, [
       h('span', { class: 'muted' }, nC01 ? `未收集的網路設備（C01）${V.num(nC01)} 台，可匯出收集器的設備清單草稿` : '沒有未收集的網路設備（C01）'),
       h('button', {
@@ -247,8 +246,8 @@
       { t: '設備', f: (r) => Q.devName(r.dev) },
       { t: '類型', f: (r) => V.kindChip(r.kind) },
       { t: '資料', f: (r) => h('div', { class: 'chip-list' }, [
-        ...r.data.map((t) => V.chip(S.check.DATA_LABEL[t] || t)),
-        ...r.missing.map((t) => V.chip('缺 ' + (S.check.DATA_LABEL[t] || t), 'err')),
+        ...r.data.map((t) => V.chip(S.query.dataLabel(t))),
+        ...r.missing.map((t) => V.chip('缺 ' + S.query.dataLabel(t), 'err')),
       ]) },
       { t: '收集失敗', f: (r) => failureList(App, r.failures || []) },
       { t: '鏈路', f: (r) => String(r.links) },
@@ -260,7 +259,7 @@
     if (!list.length) return '';
     return h('div', null, list.map((x) => {
       const b = App.Q.block(x.block);
-      const what = (x.command || '整台設備') + (x.dataTypes.length ? `（影響：${x.dataTypes.map((t) => S.check.DATA_LABEL[t] || t).join('、')}）` : '');
+      const what = (x.command || '整台設備') + (x.dataTypes.length ? `（影響：${x.dataTypes.map(S.query.dataLabel).join('、')}）` : '');
       return h('div', { class: 'failure' }, [
         V.chip(V.failureText(x), 'err', { title: x.text || null }), ' ', what, ' ',
         b ? h('a', { class: 'link mono', onclick: (e) => { e.stopPropagation(); App.openRaw(b.file, x.line); } }, `第 ${x.line} 行`) : null,
@@ -328,7 +327,7 @@
       (r) => (r.end ? { type: 'interface', key: r.key } : { type: 'device', key: r.key }), (r) => [nameOf(r), ipOf(r), vendorOf(r), r.kind, r.end ? dn(r.dev) + ' ' + r.ifc : null]],
       interface: ['介面', R.interfaces, [
         { t: '設備', f: (r) => dn(r.dev), s: (r) => dn(r.dev) }, { t: '介面', f: (r) => mono(r.name), s: (r) => r.name }, { t: '狀態', f: (r) => r.status, s: (r) => r.status },
-        { t: 'IP', f: (r) => mono(App.Q.addressesOf(r.key).slice(0, 2).join(' ')), s: (r) => App.Q.addressesOf(r.key)[0] }, { t: 'VLAN', f: (r) => h('span', { class: 'vlanlist' }, S.util.ifcVlans(r).length ? S.check.fmtVlans(S.util.ifcVlans(r)) : '—'), s: (r) => S.util.ifcVlans(r).join(' ') }],
+        { t: 'IP', f: (r) => mono(App.Q.addressesOf(r.key).slice(0, 2).join(' ')), s: (r) => App.Q.addressesOf(r.key)[0] }, { t: 'VLAN', f: (r) => h('span', { class: 'vlanlist' }, S.util.ifcVlans(r).length ? S.util.fmtVlans(S.util.ifcVlans(r)) : '—'), s: (r) => S.util.ifcVlans(r).join(' ') }],
       (r) => ({ type: 'interface', key: r.key }), (r) => [dn(r.dev), r.name, r.desc, App.Q.addressesOf(r.key).join(' '), S.util.ifcVlans(r).join(' ')]],
       ip: ['IP', R.ips, [
         { t: 'IP', f: (r) => mono(r.ip), s: (r) => r.ip }, { t: '設備', f: (r) => dn(r.dev), s: (r) => r.dev && dn(r.dev) }, { t: '介面', f: (r) => mono(r.ifc), s: (r) => r.ifc },

@@ -20,8 +20,8 @@
   };
   /** 處理紀錄項目的一列：規則、設備、目前基準中的訊息（沒有時列出 findingKey）；目前基準有這筆時點一下定位 */
   function itemRow(App, key, it, extra) {
-    const idx = App.snap ? App.snap.findings.findIndex((f) => App.Q.findingKey(f) === key) : -1;
-    const f = idx >= 0 ? App.snap.findings[idx] : null;
+    const idx = App.Q ? App.Q.findingIndexByKey(key) : -1;
+    const f = idx >= 0 ? App.Q.finding(idx) : null;
     const dev = it && it.dev ? (App.Q && App.Q.getDevice(it.dev) ? App.Q.devName(it.dev) : it.dev) : null;
     const go = idx >= 0 ? () => App.selectFinding(idx) : null;
     return h('div', { class: 'ledger-item' + (go ? ' click' : ''), 'data-key': key, role: go ? 'button' : null, tabindex: go ? '0' : null, onclick: go,

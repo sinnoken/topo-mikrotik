@@ -21,9 +21,10 @@
   function loadOld(App, text) {
     let old;
     try { old = JSON.parse(text); } catch (e) { return { report: empty('無法讀取：' + e.message), qOld: null }; }
-    if (!old || typeof old !== 'object' || !old.meta || typeof old.meta !== 'object') return { report: empty('這不是基準（Snapshot JSON）：缺少 meta；請用工具列的「匯出 JSON」產生的檔案'), qOld: null };
+    const oldMeta = S.query.metaOf(old);
+    if (!oldMeta) return { report: empty('這不是基準（Snapshot JSON）：缺少 meta；請用工具列的「匯出 JSON」產生的檔案'), qOld: null };
     // schema 不同時欄位意義不同，舊檔可能連查詢介面都建不起來：只把 meta 交給核心，由核心回報不比對的原因
-    if (old.meta.schema !== App.Q.meta().schema) return { report: S.compare.snapshots({ meta: () => old.meta }, App.Q), qOld: null };
+    if (oldMeta.schema !== App.Q.meta().schema) return { report: S.compare.snapshots({ meta: () => oldMeta }, App.Q), qOld: null };
     let qOld;
     try { qOld = S.query(old); } catch (e) { console.error(e); return { report: empty('舊基準的內容不完整，無法比對：' + e.message), qOld: null }; }
     const report = S.compare.snapshots(qOld, App.Q);
@@ -70,7 +71,7 @@
   }
   function open(App, it) {
     if (it.category === 'finding') {
-      const idx = App.snap.findings.findIndex((f) => App.Q.findingKey(f) === it.key);
+      const idx = App.Q.findingIndexByKey(it.key);
       if (idx >= 0) { App.selectFinding(idx); return; }
     } else {
       const sel = selOf(App, it);

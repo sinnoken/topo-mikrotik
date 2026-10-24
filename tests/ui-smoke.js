@@ -158,6 +158,78 @@ async function buildInput(input) {
   await App.layoutJob;
 }
 
+// ------------------------------------------------------------ 畫面與資料的邊界（靜態掃描 src/view）
+/**
+ * 去掉 JS 的註解，字串、template 文字與 regex 的內容換成空白（換行保留，行號不變）；template 的 ${} 內是程式碼，保留。
+ * 只為邊界掃描用，不是完整的 parser：/ 依前一個有效字元判斷是除號還是 regex。
+ */
+function stripJs(src) {
+  const blank = (s) => s.replace(/[^\n]/g, ' ');
+  const n = src.length; const tpl = []; // 每層 template 的 ${} 內目前的大括號深度
+  let out = ''; let i = 0; let prev = '';
+  while (i < n) {
+    const c = src[i]; const d = src[i + 1];
+    if (c === '/' && d === '/') { const j = src.indexOf('\n', i); const e = j < 0 ? n : j; out += blank(src.slice(i, e)); i = e; continue; }
+    if (c === '/' && d === '*') { const j = src.indexOf('*/', i + 2); const e = j < 0 ? n : j + 2; out += blank(src.slice(i, e)); i = e; continue; }
+    if (c === "'" || c === '"') {
+      let j = i + 1; while (j < n && src[j] !== c && src[j] !== '\n') { if (src[j] === '\\') j++; j++; }
+      out += c + blank(src.slice(i + 1, j)) + c; i = j + 1; prev = c; continue;
+    }
+    if (c === '`' || (c === '}' && tpl.length && tpl[tpl.length - 1] === 0)) {
+      if (c === '}') tpl.pop();
+      let j = i + 1; while (j < n && src[j] !== '`' && !(src[j] === '$' && src[j + 1] === '{')) { if (src[j] === '\\') j++; j++; }
+      out += c + blank(src.slice(i + 1, j));
+      if (src[j] === '`') { out += '`'; i = j + 1; prev = '`'; } else { out += '${'; tpl.push(0); i = j + 2; prev = '{'; }
+      continue;
+    }
+    if (c === '/' && (prev === '' || /[(,=:[!&|?{};+\-*%<>~^]/.test(prev) || /\b(return|typeof|case|in|of|void)$/.test(out.trimEnd()))) {
+      let j = i + 1; let cls = false;
+      while (j < n && src[j] !== '\n' && (cls || src[j] !== '/')) { if (src[j] === '\\') j++; else if (src[j] === '[') cls = true; else if (src[j] === ']') cls = false; j++; }
+      out += '/' + blank(src.slice(i + 1, j)) + '/'; i = j + 1; prev = '/'; continue;
+    }
+    if (tpl.length && c === '{') tpl[tpl.length - 1]++;
+    if (tpl.length && c === '}') tpl[tpl.length - 1]--;
+    out += c; if (!/\s/.test(c)) prev = c; i++;
+  }
+  return out;
+}
+/** 畫面可以使用的 SSOT 成員：查詢介面、輸入 API、常數、下游 API 與畫面自己的命名空間 */
+const VIEW_S_ALLOW = new Set(['query', 'trace', 'util', 'keys', 'VERSION', 'SCHEMA', 'LINK_SCOPE', 'KIND_LABEL', 'build', 'buildAsync', 'inputHashOf',
+  'profiles', 'samples', 'compare', 'remediate', 'ledger', 'workpack', 'zip', 'view', 'store']);
+/** 只允許其中一個成員的核心命名空間 */
+const VIEW_S_ONLY = { readers: 'PASTE', profile: 'compile' };
+const VIEW_S_HINT = {
+  'check.CATALOG': '(S.query.rule(id) || {}).欄位，或 S.query.rules()（causes／action 只經過 V.remediation.advice）',
+  'check.DATA_LABEL': 'S.query.dataLabel(t)', 'check.fmtVlans': 'S.util.fmtVlans(ids)', adapters: 'S.query.adapterLabel(id)',
+  readers: '只允許 S.readers.PASTE；建立基準用 S.build／S.buildAsync', profile: '只允許 S.profile.compile',
+};
+const VIEW_FIELD_HINT = {
+  findings: 'Q.findings()／Q.finding(idx)／Q.findingsByRule(id)／Q.findingIndexByKey(key)',
+  meta: 'Q.meta()；還沒建立查詢介面的 JSON 用 S.query.metaOf(x)',
+  coverage: 'Q.coverage()／Q.coverageOf(devKey)', blocks: 'Q.blocksOf(devKey)／Q.block(id)',
+  model: 'Q 的查詢函式（例如 Q.devices()、Q.getDevice(key)）',
+};
+const VIEW_DEFAULT_HINT = '改用 SSOT.query(snapshot) 或 S.query.* 的查詢函式；沒有合適的函式時請 data-model 新增';
+/** 一個畫面檔案違反邊界的地方：[{ line, text }]，text 含檔案、行號、寫法與建議 */
+function viewBoundaryViolations(file, src) {
+  const out = [];
+  stripJs(src).split('\n').forEach((line, n) => {
+    const add = (what, hint) => out.push({ line: n + 1, text: `${file}:${n + 1}：${what} → 建議：${hint}` });
+    for (const m of line.matchAll(/(?<![\w$.])(?:globalThis\s*\.\s*)?(?:S|SSOT)\s*(?:\.\s*([A-Za-z_$][\w$]*)(?:\s*\.\s*([A-Za-z_$][\w$]*))?|\[)/g)) {
+      const [all, top, sub] = m;
+      if (!top) { add(all.trim() + '…（計算的成員名稱）', '用固定的成員名稱存取允許的 API'); continue; }
+      if (VIEW_S_ONLY[top]) { if (sub !== VIEW_S_ONLY[top]) add(`S.${top}${sub ? '.' + sub : ''}`, VIEW_S_HINT[top]); continue; }
+      if (!VIEW_S_ALLOW.has(top)) add(`S.${top}${sub ? '.' + sub : ''}`, VIEW_S_HINT[top + '.' + sub] || VIEW_S_HINT[top] || VIEW_DEFAULT_HINT);
+    }
+    if (/\}\s*=\s*(?:globalThis\s*\.\s*)?(?:S|SSOT)(?![\w$])(?!\s*\.)/.test(line)) add('從 S 解構', '逐一使用允許的 S.* 成員');
+    for (const m of line.matchAll(/(?<![\w$])(snap|snapshot)(?![\w$])\s*(?:\.\s*([A-Za-z_$][\w$]*)|\[)/g)) {
+      add(`${m[1]}.${m[2] || '[…]'}（讀 Snapshot 欄位）`, VIEW_FIELD_HINT[m[2]] || VIEW_DEFAULT_HINT);
+    }
+    if (/\bQ\s*\.\s*snapshot(?![\w$])/.test(line)) add('Q.snapshot', VIEW_DEFAULT_HINT);
+  });
+  return out;
+}
+
 (async () => {
   await step('啟動、顯示歡迎畫面', async () => { (docListeners.DOMContentLoaded || []).forEach((f) => f()); await new Promise((r) => setTimeout(r, 20)); if ($('#welcome').classList.contains('hidden')) throw new Error('應顯示歡迎畫面'); });
   await step('離線契約：CSP 禁止網路連線，程式碼不使用網路 API', () => {
@@ -170,6 +242,24 @@ async function buildInput(input) {
       const hit = code.match(/\bfetch\(|XMLHttpRequest|new WebSocket|sendBeacon|EventSource/);
       if (hit) throw new Error(`${f} 使用了網路 API：${hit[0]}`);
     });
+  });
+  await step('畫面與資料的邊界：src/view 只用允許的 S.* 成員，不讀 Snapshot 欄位（去掉註解後掃描）', () => {
+    // 掃描器本身：註解、字串與 regex 內的文字不算；template 的 ${} 內算程式碼
+    const probe = [
+      '// S.check.CATALOG 與 App.snap.findings 寫在註解中', "const a = '字串中的 App.snap.findings'; const r = /S.check/.test(x);",
+      'const b = S.check.CATALOG[id];', 'const c = App.snap.findings[0]; const t = `x ${S.adapters[id].label} y`;',
+      'const ok = S.query.rule(id) && S.readers.PASTE && S.profile.compile && S.inputHashOf && SSOT.util.natural && JSON.stringify(snap);',
+      'const bad = S.readers.ORDER + S.profile.load; const { check } = S; const m = last.snapshot.meta; const z = Q.snapshot;',
+    ].join('\n');
+    const got = viewBoundaryViolations('probe.js', probe);
+    const lines = got.map((v) => v.line).join();
+    if (lines !== '3,4,4,6,6,6,6,6') throw new Error('邊界掃描器的判斷不符（行號 ' + lines + '）：\n' + got.map((v) => v.text).join('\n'));
+    if (!got[0].text.includes('probe.js:3') || !got[0].text.includes('S.query.rule')) throw new Error('違規訊息應列出檔案、行號與建議的寫法：' + got[0].text);
+    const walk = (dir) => fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.js') ? [path.join(dir, e.name)] : []));
+    const files = walk('src/view');
+    if (!files.length) throw new Error('應掃描到 src/view 的檔案');
+    const bad = files.flatMap((f) => viewBoundaryViolations(f.split(path.sep).join('/'), fs.readFileSync(path.join(ROOT, f), 'utf8')));
+    if (bad.length) throw new Error(`畫面直接讀核心內部或 Snapshot 欄位 ${bad.length} 處：\n` + bad.map((v) => '        ' + v.text).join('\n'));
   });
   await step('ELK 不在啟動時載入', () => { if (globalThis.ELK || loadedScripts.length) throw new Error('ELK 應在第一次需要分層版面時才載入'); });
   await step('載入範例並建立基準', async () => {
@@ -623,9 +713,10 @@ async function buildInput(input) {
     [['a,b', '"a,b"'], ['說 "hi"', '"說 ""hi"""'], ['x\ny', '"x\ny"'], ['=1+1', "'=1+1"], [' 空白', '" 空白"'], ['一般', '一般']].forEach(([v, want]) => {
       if (X.csvCell(v) !== want) throw new Error(`csvCell(${JSON.stringify(v)}) 應為 ${want}，實際 ${X.csvCell(v)}`);
     });
-    const tricky = { meta: App.snap.meta, findings: [{ id: 'T01', severity: 'warn', title: '標題, "引號"', message: '第一行\r\n第二行, "x"',
+    // 匯出的組字函式只透過 Q 讀取：以目前基準的副本換上人工 finding，再建立查詢介面
+    const tricky = { ...JSON.parse(JSON.stringify(App.snap)), findings: [{ id: 'T01', severity: 'warn', title: '標題, "引號"', message: '第一行\r\n第二行, "x"',
       entities: [{ type: 'device', key: 'A,B' }], evidence: [{ file: 'a.txt', line: 3, text: '' }, { file: 'b "x".txt', line: 9, text: '' }] }] };
-    const tr = parseCsv(X.findingsCsv(tricky).replace(/^\uFEFF/, ''));
+    const tr = parseCsv(X.findingsCsv(S.query(tricky)).replace(/^\uFEFF/, ''));
     if (tr.length !== 2 || tr[1][2] !== '標題, "引號"' || tr[1][3] !== '第一行\r\n第二行, "x"' || tr[1][4] !== 'device:A,B'
       || tr[1][5] !== 'a.txt:3; b "x".txt:9') throw new Error('CSV 跳脫後應能完整解析回原值：' + JSON.stringify(tr[1]));
     // Markdown：依嚴重度分組（錯誤 → 警告 → 提醒），每筆 finding 的規則與證據行號都在
@@ -636,10 +727,10 @@ async function buildInput(input) {
       if (at < 0 || (sev < 2 && at > heads[sev + 1])) throw new Error(`Markdown 的 ${f.id} 應在「${S.view.SEV[f.severity]}」分組下`);
       if (!f.evidence.every((e) => md.includes(` 第 ${e.line} 行：`))) throw new Error(`Markdown 缺少 ${f.id} 的證據行號`);
     });
-    const tmd = X.findingsMarkdown(tricky);
+    const tmd = X.findingsMarkdown(S.query(tricky));
     if (!tmd.includes('標題, "引號"') || !tmd.includes('第一行 第二行')) throw new Error('Markdown 訊息應保留文字並把換行併成一行');
     tricky.findings[0].message = '<b>*x*</b>'; tricky.findings[0].evidence[0].text = 'a`b';
-    const emd = X.findingsMarkdown(tricky);
+    const emd = X.findingsMarkdown(S.query(tricky));
     if (!emd.includes('\\<b\\>\\*x\\*\\</b\\>') || !emd.includes('`` a`b ``')) throw new Error('Markdown 應跳脫格式字元與行內程式碼的反引號');
   });
   let ackedKey = null; // 處理紀錄中已處理的 finding 鍵：清除基準後要仍然存在
@@ -726,11 +817,11 @@ async function buildInput(input) {
     if (!fpRow || !fpRow.textContent.includes(`誤報 ${st.falsePositive} / ${st.total}`)) throw new Error('誤報率應與 S.ledger.ruleStats 一致');
     // 匯出：舊欄位由處理紀錄對應；Markdown 標示狀態
     const X = S.view.exporter; const opts2 = { ledgerOf: VA.ledgerExport };
-    const rows = parseCsv(X.findingsCsv(App.snap, opts2).replace(/^﻿/, ''));
+    const rows = parseCsv(X.findingsCsv(App.Q, opts2).replace(/^﻿/, ''));
     const row = rows[all.indexOf(f) + 1]; const userAt = VA.ledgerUserAt(it2);
     if (row[6] !== userAt || row[7] !== 'false-positive' || row[8] !== "'" + note2 || row[11] !== 'false-positive' || row[12] !== "'" + note2) throw new Error('CSV 的處理紀錄欄位不符：' + row);
     if (all.filter((x) => VA.isPending(x)).some((x) => rows[all.indexOf(x) + 1][6] !== '' || rows[all.indexOf(x) + 1][7] !== '')) throw new Error('待處理的列 acknowledged／ack_kind 應為空白');
-    const md = X.findingsMarkdown(App.snap, opts2);
+    const md = X.findingsMarkdown(App.Q, opts2);
     if (!md.includes(`**${RV.statusText('false-positive')}**（${userAt}）`) || !md.includes('備註：') || !md.includes('- 處理紀錄：')) throw new Error('Markdown 應標示處理狀態與備註');
     // 改回待處理：回到原本的分組
     document.querySelectorAll('#pane-findings .fgroup').filter((x) => x.className.includes('handled') && !x.querySelectorAll('.fitem').length).forEach((g) => g.querySelector('.head').click());
@@ -986,7 +1077,7 @@ async function buildInput(input) {
       const clone = JSON.parse(JSON.stringify(App.snap));
       const d1 = clone.model.devices.find((d) => d.key === devs[0].key); const d2 = clone.model.devices.find((d) => d.key === devs[1].key);
       d1.mgmtIp = null; clone.model.ipAddresses = clone.model.ipAddresses.filter((a) => a.dev !== d1.key); d2.name = 'BAD NAME';
-      const dr = R.devicesCsvDraft(clone, S.query(clone)); const r2 = collectInventory(dr.text);
+      const dr = R.devicesCsvDraft(S.query(clone)); const r2 = collectInventory(dr.text);
       if (r2.some((r) => r.name === d1.name) || !dr.text.includes(`# ${d1.name}：沒有管理 IP`)) throw new Error('沒有位址的設備應寫成註解列並說明');
       if (r2.some((r) => r.name === 'BAD NAME') || !dr.text.includes('# BAD NAME：名稱不符合')) throw new Error('名稱不符合 collect.sh 規則的設備應寫成註解列並說明');
       if (r2.length !== rows.length - 2) throw new Error('其他設備應照常列出');
@@ -2111,6 +2202,43 @@ async function buildInput(input) {
       if (g.hover) throw new Error(`指標在 #${el.id} 上時不應 hover 到底下的節點`);
       if (!$('#tooltip').classList.contains('hidden')) throw new Error('指標離開畫布時提示應隱藏');
     });
+  });
+  await step('深層凍結的基準：選設備、選檢查結果、開詳情、開修正計畫、匯出，都不改寫基準也不因凍結出錯', async () => {
+    const VA = S.view.app; const orig = App.snap;
+    const deepFreeze = (o) => { if (o && typeof o === 'object' && !Object.isFrozen(o)) { Object.freeze(o); Object.values(o).forEach(deepFreeze); } return o; };
+    const frozen = deepFreeze(JSON.parse(JSON.stringify(orig))); const before = JSON.stringify(frozen);
+    // 畫面捕捉的例外（例如匯出失敗）只寫 console.error 與 banner：一併收集，凍結造成的寫入錯誤不會被吞掉
+    const errors = []; const origError = console.error; console.error = (...a) => { errors.push(a.map(String).join(' ')); };
+    try {
+      VA.load(frozen, null); await App.ledgerJob; await App.layoutJob;
+      if (App.snap !== frozen) throw new Error('應載入凍結的基準');
+      const Q = App.Q;
+      Q.devices().slice(0, 50).forEach((d) => App.select({ type: 'device', key: d.key }, { focus: true }));
+      const d0 = Q.devices().find((d) => d.collected) || Q.devices()[0];
+      App.select({ type: 'device', key: d0.key }, { focus: true });
+      if (!text('#detail').includes(d0.name)) throw new Error('凍結的基準也應顯示設備詳情');
+      Q.links().slice(0, 50).forEach((l) => App.select({ type: 'link', key: l.key }));
+      // 每條規則至少選一筆（大型資料只取前 200 筆再補上其他規則的第一筆）
+      const idxs = new Set(Q.findings().slice(0, 200).map((f, i) => i));
+      S.util.uniq(Q.findings().map((f) => f.id)).forEach((id) => idxs.add(Q.findings().findIndex((f) => f.id === id)));
+      idxs.forEach((i) => { App.selectFinding(i); App.graph.draw(); });
+      App.select(null); App.graph.draw();
+      document.querySelectorAll('#left .tabs button').forEach((b) => b.click());
+      document.querySelectorAll('#left .tabs button')[0].click();
+      $('#pane-findings').querySelector('.open-patch').click();
+      if (!$('#dlg-patch').open) throw new Error('應開啟修正計畫');
+      $('#patch-body').querySelectorAll('.patch-rule').forEach((c) => c.click());
+      $('#dlg-patch').close();
+      const kinds = Object.keys(S.view.exporter.KINDS);
+      const { files } = await captureDownloads(() => { kinds.forEach((k) => App.exportAs(k)); App.exportAs('csv', { byDevice: true }); App.exportAs('markdown', { byDevice: true }); });
+      if (files.length !== kinds.length + 2) throw new Error(`每種匯出都應產生下載（${files.length}／${kinds.length + 2}）`);
+      require('assert').deepStrictEqual(JSON.parse(files[kinds.indexOf('snapshot')].text), JSON.parse(before));
+      if (JSON.stringify(frozen) !== before) throw new Error('畫面不可改寫基準');
+      if (errors.length) throw new Error('凍結的基準不應造成錯誤：\n' + errors.join('\n'));
+    } finally {
+      console.error = origError;
+      VA.load(orig, null); await App.ledgerJob; await App.layoutJob;
+    }
   });
   await step('清除基準（處理紀錄不受影響）', async () => {
     $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20)); if (App.snap) throw new Error('未清除');

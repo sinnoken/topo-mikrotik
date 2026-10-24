@@ -1,7 +1,8 @@
 /*
  * 匯出：基準 Snapshot（JSON）、檢查結果（CSV、Markdown）、預期資料（ssot-expected/1 JSON）、未收集設備的 devices.csv 草稿、
  * 修正計畫的總表（Markdown）。
- * 組字邏輯都是純函式（只讀傳入的 Snapshot，不改寫），下載只在本機以 Blob 產生，不經過網路。
+ * 組字邏輯都是純函式，透過傳入的查詢介面（Q）讀取基準、不改寫；只有基準 JSON 需要整份 Snapshot（原樣序列化）。
+ * 下載只在本機以 Blob 產生，不經過網路。
  */
 (function (S) {
   'use strict';
@@ -11,10 +12,10 @@
   const FORMULA_START = /^[=+\-@\t\r]/;
 
   /** 檔名用的建立時間：ISO 時間去掉分隔符號與毫秒（20260101T000000Z），只留英數字 */
-  const stamp = (snap) => String(snap.meta.createdAt || '')
+  const stamp = (Q) => String(Q.meta().createdAt || '')
     .replace(/\.\d+(?=Z$)/, '')
     .replace(/[^0-9A-Za-z]/g, '') || 'unknown';
-  const baseName = (snap) => `${stamp(snap)}-${snap.meta.stats.devices}dev`;
+  const baseName = (Q) => `${stamp(Q)}-${Q.meta().stats.devices}dev`;
 
   const entityText = (e) => `${e.type}:${e.key}`;
   const evidenceText = (e) => `${e.file}:${e.line}`;
@@ -32,16 +33,16 @@
   /**
    * opts.ledgerOf(f) → 處理紀錄 { status, at, note, waiver } 或 null（at 是使用者最後一次變更的時間，沒有時為 null）。
    * 處理紀錄是使用者的資料（不在 Snapshot 裡），由畫面傳入；沒傳時視為都不在處理紀錄中（待處理）。
-   * opts.Q：目前基準的查詢介面，用來判斷檢查結果所屬的設備（Q.findingDevice）；opts.byDevice 為 true 時依設備排序（需要 opts.Q）。
+   * Q：目前基準的查詢介面（檢查結果、meta 與所屬設備 Q.findingDevice 都由它讀取）；opts.byDevice 為 true 時依設備排序。
    */
   const ledgerOf = (opts) => (opts && opts.ledgerOf ? opts.ledgerOf : () => null);
   const R = () => V.remediation;
   /** 已處理（不是待處理）時的處理紀錄，否則 null：舊欄位 acknowledged／ack_kind／ack_note 與 Markdown 的已處理標示用 */
   const handledOf = (lg) => (lg && !R().isPendingStatus(lg.status) ? lg : null);
   /** 匯出的順序：預設保留 Snapshot 的順序；依設備時用 V.remediation.sortByDevice（與畫面分組同一個判斷） */
-  const ordered = (snap, opts) => (opts && opts.byDevice && opts.Q
-    ? R().sortByDevice(opts.Q, snap.findings)
-    : snap.findings.map((f, idx) => ({ f, idx, dev: opts && opts.Q ? opts.Q.findingDevice(f) : null })));
+  const ordered = (Q, opts) => (opts && opts.byDevice
+    ? R().sortByDevice(Q, Q.findings())
+    : Q.findings().map((f, idx) => ({ f, idx, dev: Q.findingDevice(f) })));
 
   /**
    * 檢查結果 CSV：一筆 finding 一列；多個相關實體、多筆證據各自合在同一格，以「; 」分隔。
@@ -59,11 +60,11 @@
    * 新欄位一律加在最後，既有欄位的位置不變。
    * 開頭加 UTF-8 BOM，Excel 才會以 UTF-8 讀取中文；換行用 CRLF。
    */
-  function findingsCsv(snap, opts) {
+  function findingsCsv(Q, opts) {
     const lgOf = ledgerOf(opts);
     const head = ['severity', 'id', 'title', 'message', 'entities', 'evidence', 'acknowledged', 'ack_kind', 'ack_note', 'device', 'action',
       'status', 'note', 'waiver_reason', 'waiver_until', 'facet'];
-    const rows = ordered(snap, opts).map(({ f, dev }) => {
+    const rows = ordered(Q, opts).map(({ f, dev }) => {
       const lg = lgOf(f); const done = handledOf(lg) || {}; const w = (lg && lg.waiver) || {};
       return [
         f.severity, f.id, f.title, f.message,
@@ -104,14 +105,14 @@
   /**
    * 檢查結果 Markdown 報表。已處理的項目加註狀態與時間，豁免與備註另起一行；回歸的項目標示「回歸」。
    *   預設：依嚴重度分組，組內依規則代碼分段，保留 Snapshot 的排列順序。
-   *   opts.byDevice（需要 opts.Q）：依設備分組（Q.findingDevice），不屬於任何設備的最後一組；組內保留原順序。
+   *   opts.byDevice：依設備分組（Q.findingDevice），不屬於任何設備的最後一組；組內保留原順序。
    *     同一條規則會出現在很多台設備，處理建議與常見原因只在報表最後的附錄列一次（依 CATALOG 的順序）。
    */
-  function findingsMarkdown(snap, opts) {
+  function findingsMarkdown(Q, opts) {
     const lgOf = ledgerOf(opts);
-    const m = snap.meta; const st = m.stats;
+    const m = Q.meta(); const st = m.stats; const all = Q.findings();
     const counts = {};
-    snap.findings.forEach((f) => { const lg = lgOf(f); if (lg && lg.status !== 'open') counts[lg.status] = (counts[lg.status] || 0) + 1; });
+    all.forEach((f) => { const lg = lgOf(f); if (lg && lg.status !== 'open') counts[lg.status] = (counts[lg.status] || 0) + 1; });
     const statusLine = Object.keys(R().STATUS_TEXT).filter((s) => counts[s]).map((s) => `${R().statusText(s)} ${counts[s]}`)
       .concat(Object.keys(counts).filter((s) => !R().STATUS_TEXT[s]).map((s) => `${s} ${counts[s]}`)).join('、') || '沒有';
     const out = [
@@ -134,26 +135,26 @@
       if (f.entities.length) out.push(`  - 相關實體：${f.entities.map((e) => mdCode(entityText(e))).join('、')}`);
       f.evidence.forEach((e) => out.push(`  - 證據：${mdText(e.file)} 第 ${e.line} 行：${mdCode(e.text)}`));
     };
-    if (opts && opts.byDevice && opts.Q) {
-      const Q = opts.Q; const groups = new Map();
-      R().sortByDevice(Q, snap.findings).forEach((r) => S.util.getOr(groups, r.dev, () => []).push(r.f));
+    if (opts && opts.byDevice) {
+      const groups = new Map();
+      R().sortByDevice(Q, all).forEach((r) => S.util.getOr(groups, r.dev, () => []).push(r.f));
       groups.forEach((fs, dev) => {
         if (out[out.length - 1] !== '') out.push('');
         out.push(`## ${dev === null ? '不屬於任何設備' : mdText(Q.devName(dev))}（${fs.length}）`, '');
         fs.forEach((f) => item(f, `${V.SEV[f.severity]} ${f.id} ${mdText(f.title)}：`));
       });
       if (!groups.size) out.push('', '沒有檢查結果。');
-      const used = new Set(snap.findings.map((f) => f.id));
-      const ids = Object.keys(S.check.CATALOG).filter((id) => used.has(id) && catalogLines(id).length);
-      if (ids.length) {
+      const used = new Set(all.map((f) => f.id));
+      const rules = S.query.rules().filter((r) => used.has(r.id) && catalogLines(r.id).length);
+      if (rules.length) {
         if (out[out.length - 1] !== '') out.push('');
         out.push('## 附錄：處理建議與常見原因', '');
-        ids.forEach((id) => out.push(`### ${id} ${mdText(S.check.CATALOG[id].title)}`, '', ...catalogLines(id)));
+        rules.forEach((r) => out.push(`### ${r.id} ${mdText(r.title)}`, '', ...catalogLines(r.id)));
       }
       return out.join('\n').replace(/\n+$/, '') + '\n';
     }
     SEV_ORDER.forEach((sev) => {
-      const list = snap.findings.filter((f) => f.severity === sev);
+      const list = all.filter((f) => f.severity === sev);
       if (out[out.length - 1] !== '') out.push('');
       out.push(`## ${V.SEV[sev]}（${list.length}）`, '');
       if (!list.length) { out.push('沒有。'); return; }
@@ -228,21 +229,24 @@
 
   V.exporter = {
     snapshotJson, findingsCsv, findingsMarkdown, patchSummaryMarkdown, csvCell, download, baseName,
-    /** 匯出種類 → 檔名、內容與 MIME；畫面的按鈕都經過這裡 */
+    /**
+     * 匯出種類 → 檔名 name(Q)、內容 text(Q, opts) 與 MIME；畫面的按鈕都經過這裡。Q 是目前基準的查詢介面。
+     * 基準 JSON 要原樣序列化整份 Snapshot，由 opts.snapshot 傳入（只序列化，不讀欄位）。
+     */
     KINDS: {
-      snapshot: { name: (s) => `baseline-${baseName(s)}.json`, text: snapshotJson, type: 'application/json' },
-      csv: { name: (s) => `findings-${baseName(s)}.csv`, text: findingsCsv, type: 'text/csv;charset=utf-8' },
-      markdown: { name: (s) => `findings-${baseName(s)}.md`, text: findingsMarkdown, type: 'text/markdown;charset=utf-8' },
-      // 預期資料（ssot-expected/1）由核心的 S.compare.expectedFrom 產生；opts.Q 是目前基準的查詢介面
+      snapshot: { name: (Q) => `baseline-${baseName(Q)}.json`, text: (Q, opts) => snapshotJson(opts.snapshot), type: 'application/json' },
+      csv: { name: (Q) => `findings-${baseName(Q)}.csv`, text: findingsCsv, type: 'text/csv;charset=utf-8' },
+      markdown: { name: (Q) => `findings-${baseName(Q)}.md`, text: findingsMarkdown, type: 'text/markdown;charset=utf-8' },
+      // 預期資料（ssot-expected/1）由核心的 S.compare.expectedFrom 產生
       expected: {
-        name: (s) => `expected-${baseName(s)}.json`,
-        text: (s, opts) => JSON.stringify(S.compare.expectedFrom(opts.Q), null, 2) + '\n',
+        name: (Q) => `expected-${baseName(Q)}.json`,
+        text: (Q) => JSON.stringify(S.compare.expectedFrom(Q), null, 2) + '\n',
         type: 'application/json',
       },
       // tools/collect.sh 的設備清單草稿（C01）：不加 BOM、換行用 LF，collect.sh 以 bash read 逐行讀取
       devicesCsv: {
-        name: (s) => `devices-draft-${baseName(s)}.csv`,
-        text: (s, opts) => V.remediation.devicesCsvDraft(s, opts.Q).text,
+        name: (Q) => `devices-draft-${baseName(Q)}.csv`,
+        text: (Q) => V.remediation.devicesCsvDraft(Q).text,
         type: 'text/csv;charset=utf-8',
       },
     },

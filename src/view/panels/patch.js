@@ -18,8 +18,8 @@
   const state = { keys: new Set(), view: new Map(), choices: new Map(), inputHash: null, plan: null, files: null };
   /** 換基準時清空所有檢視狀態（選取、每台設備檢視的檔案、選擇） */
   function resetFor(App) {
-    if (state.inputHash === App.snap.meta.inputHash) return;
-    state.keys.clear(); state.view.clear(); state.choices.clear(); state.inputHash = App.snap.meta.inputHash;
+    if (state.inputHash === App.Q.meta().inputHash) return;
+    state.keys.clear(); state.view.clear(); state.choices.clear(); state.inputHash = App.Q.meta().inputHash;
   }
 
   /** 檔名：files() 的 base 加上種類的後綴（base.rsc、base-rollback.rsc、base-verify.rsc） */
@@ -38,7 +38,7 @@
    */
   function rows(App) {
     const seen = new Set(); const out = [];
-    App.snap.findings.forEach((f, idx) => {
+    App.Q.findings().forEach((f, idx) => {
       const key = App.Q.findingKey(f); if (seen.has(key)) return; seen.add(key);
       out.push({ key, f, idx, dev: App.Q.findingDevice(f) });
     });
@@ -71,7 +71,7 @@
       const list = byId.get(id); const lv = RM().levelOf(id); const on = allIn(list);
       return V.chipButton([id + ' ', h('span', { class: 'n' }, String(list.length))], `btn patch-rule ${lv === 'auto' ? 'ok' : ''} ${on ? 'on' : ''}`, {
         'data-rule-id': id, 'data-level': lv, 'aria-pressed': String(!!on),
-        title: `${(S.check.CATALOG[id] || {}).title || id}：${R().LEVEL_TEXT[lv] || lv}。點一下選取或取消這條規則的全部`,
+        title: `${(S.query.rule(id) || {}).title || id}：${R().LEVEL_TEXT[lv] || lv}。點一下選取或取消這條規則的全部`,
         onclick: () => toggleKeys(list.map((r) => r.key), !on),
       });
     });
@@ -81,7 +81,7 @@
     const groups = ids.map((id) => {
       const list = byId.get(id);
       const box = h('details', { class: 'patch-group', 'data-rule-id': id }, [h('summary', null, [
-        h('span', { class: 'mono' }, id), ' ', (S.check.CATALOG[id] || {}).title || '', ' ', V.chip(`${list.filter((r) => state.keys.has(r.key)).length}/${list.length}`)])]);
+        h('span', { class: 'mono' }, id), ' ', (S.query.rule(id) || {}).title || '', ' ', V.chip(`${list.filter((r) => state.keys.has(r.key)).length}/${list.length}`)])]);
       // 展開時才產生清單（大型網路的檢查結果很多）
       box.addEventListener('toggle', () => {
         if (!box.open || box.querySelector('.patch-pick')) return;
@@ -224,7 +224,7 @@
     const files = state.files;
     const all = () => {
       files.forEach((f) => Object.keys(KIND).forEach((k) => download(fileName(f, k), f[k])));
-      download(`patch-summary-${V.exporter.baseName(App.snap)}.md`, V.exporter.patchSummaryMarkdown(plan, files, App.Q));
+      download(`patch-summary-${V.exporter.baseName(App.Q)}.md`, V.exporter.patchSummaryMarkdown(plan, files, App.Q));
     };
     const hits = R().matchFindings(App.Q, plan.skipped);
     const closeDlg = () => { const d = $('#dlg-patch'); if (d && d.open) d.close(); };
@@ -239,7 +239,7 @@
         ? [h('span', { class: 'muted' }, '單台設備：下載三個 .rsc')].concat(Object.keys(KIND).map((k) => h('button', { class: 'patch-download', 'data-file': fileName(files[0], k),
           onclick: () => download(fileName(files[0], k), files[0][k]) }, '下載 ' + fileName(files[0], k))))
         : [h('button', { class: 'primary patch-download-every', onclick: all }, `逐檔下載全部（${files.length * 3 + 1} 個檔案）`),
-          h('button', { class: 'patch-download-summary', onclick: () => download(`patch-summary-${V.exporter.baseName(App.snap)}.md`, V.exporter.patchSummaryMarkdown(plan, files, App.Q)) }, '只下載總表（Markdown）'),
+          h('button', { class: 'patch-download-summary', onclick: () => download(`patch-summary-${V.exporter.baseName(App.Q)}.md`, V.exporter.patchSummaryMarkdown(plan, files, App.Q)) }, '只下載總表（Markdown）'),
           h('span', { class: 'muted' }, '目前沒有 ZIP（第二階段提供）；瀏覽器可能會詢問是否允許下載多個檔案。總表列出每台設備的檔名、項目與風險。')]) : null,
       ...files.map((f) => deviceBlock(App, plan, f)),
       plan.skipped.length ? h('div', { class: 'patch-skipped' }, [

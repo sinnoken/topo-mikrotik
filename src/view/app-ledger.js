@@ -110,7 +110,7 @@
   A.problemCounts = function problemCounts() {
     const out = { error: 0, warn: 0, handled: 0, regressed: 0, unobserved: 0, waiverExpired: 0 };
     const regressed = new Set();
-    App.snap.findings.forEach((f) => {
+    App.Q.findings().forEach((f) => {
       const s = A.ledgerStatus(f);
       if (s === 'regressed') regressed.add(App.Q.findingKey(f));
       if (f.severity === 'info') return;

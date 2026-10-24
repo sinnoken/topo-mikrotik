@@ -42,7 +42,7 @@
       ? h('details', { class: 'detail-fold', open: !!o.open }, [h('summary', null, head), body])
       : h('div', { class: 'detail-section' }, [h('h3', null, head), body]);
   }
-  const vlanText = (ids) => (ids && ids.length ? S.check.fmtVlans(ids) : '—');
+  const vlanText = (ids) => (ids && ids.length ? S.util.fmtVlans(ids) : '—');
 
   /*
    * 每個詳情頁的區塊順序一致：
@@ -130,7 +130,7 @@
 
   // ---------------------------------------------------------------- 總覽
   function overview(App) {
-    const m = App.snap.meta; const st = m.stats; const C = App.Q.inventory().counts;
+    const m = App.Q.meta(); const st = m.stats; const C = App.Q.inventory().counts;
     return h('div', { class: 'detail' }, [
       h('h2', null, '總覽'),
       kv([['建立時間', V.fmtTime(m.createdAt)], ['輸入指紋', h('span', { class: 'mono' }, m.inputHash)],
@@ -140,7 +140,7 @@
       section('內容', kv([['設備', `${V.num(st.devices)}（已收集 ${V.num(st.collected)}）`], ['介面', V.num(st.interfaces)], ['鏈路', V.num(st.links)], ['VLAN 定義', V.num(st.vlans)],
         ['MAC', V.num(st.macs)], ['終端 MAC 位置（含 Wi-Fi 漫遊觀察）', V.num(C.endpoints)], ['IP（ARP）', V.num(C.arpIps)], ['路由', V.num(st.routes)]])),
       section('檢查結果', h('div', { class: 'row' }, [V.chip(`錯誤 ${st.findings.error}`, 'err'), V.chip(`警告 ${st.findings.warn}`, 'warn'), V.chip(`提醒 ${st.findings.info}`, 'info')])),
-      section('解析器使用量', V.table([{ t: '解析器', f: (r) => (S.adapters[r[0]] ? S.adapters[r[0]].label : r[0]) }, { t: '事實數', f: (r) => V.num(r[1]) }], Object.entries(m.adapters)),
+      section('解析器使用量', V.table([{ t: '解析器', f: (r) => S.query.adapterLabel(r[0]) }, { t: '事實數', f: (r) => V.num(r[1]) }], Object.entries(m.adapters)),
         { count: Object.keys(m.adapters).length }),
       h('p', { class: 'muted' }, '點選圖上的設備或連線、左側的檢查結果，或使用上方搜尋（設備、MAC、IP、VLAN）。'),
     ]);
@@ -184,12 +184,12 @@
     if (!d) return h('div', { class: 'empty-detail' }, '基準中沒有這台設備');
     const links = Q.linksOf(d.key);
     const ospfAdjacencies = Q.ospfAdjacenciesOf(d.key);
-    const cov = App.snap.coverage.find((c) => c.dev === d.key);
+    const cov = App.Q.coverageOf(d.key);
     const ifs = Q.interfacesOf(d.key).filter((i) => !i.hearsay || !d.collected);
     const fl = Q.findingsFor('device', d.key).concat(...links.map((l) => Q.findingsFor('link', l.key)), ...ifs.map((i) => Q.findingsFor('interface', i.key)));
     const peerRows = Q.neighborRows(d.key).sort((x, y) => S.util.natural(x.mine, y.mine));
     const vlans = Q.vlansOf(d.key); const routes = Q.routesOf(d.key); const unk = Q.unknownPeers(d.key);
-    const blocks = App.snap.blocks.filter((b) => b.devKey === d.key);
+    const blocks = App.Q.blocksOf(d.key);
     const neighborHasFinding = peerRows.some((r) => r.links.some((l) =>
       l.vlanMismatch || Q.findingsFor('link', l.key).some((f) => f.severity !== 'info')));
     return h('div', { class: 'detail' }, [
@@ -201,8 +201,8 @@
         ['其他名稱', d.names.length > 1 ? d.names.join('、') : null], ['Router ID', d.routerId],
         ['看到它的設備', d.seenBy.length ? h('span', null, d.seenBy.flatMap((k, i) => [i ? '、' : '', devLink(App, k)])) : null],
         ['收集的資料', d.collected ? h('div', { class: 'chip-list' }, [
-          ...(cov ? cov.data : []).map((t) => V.chip(S.check.DATA_LABEL[t] || t, 'ok')),
-          ...(cov ? cov.missing : []).map((t) => V.chip('缺 ' + (S.check.DATA_LABEL[t] || t), 'err')),
+          ...(cov ? cov.data : []).map((t) => V.chip(S.query.dataLabel(t), 'ok')),
+          ...(cov ? cov.missing : []).map((t) => V.chip('缺 ' + S.query.dataLabel(t), 'err')),
           ...(cov && cov.failures ? cov.failures : []).map((x) => V.chip(`收集失敗：${x.command || '整台設備'}`, 'err', { title: V.failureText(x) })),
         ]) : null]]),
       findingsBlock(App, fl),
@@ -283,11 +283,11 @@
       { t: '收集時間', f: (b) => (b.collectedAt ? h('span', { class: 'mono' }, V.fmtUtc(b.collectedAt)) : ''), s: (b) => b.collectedAt },
       { t: '失敗', f: (b) => (b.failure ? V.chip(V.failureText(b.failure), 'err', { title: b.failure.text || null }) : ''), s: (b) => (b.failure ? b.failure.reason : null) },
       // 已解析的區塊仍可能有認不得的行（I03）：標出行數，點一下開啟第一行
-      { t: '解析器', f: (b) => (b.adapters.length && !b.empty ? h('span', null, [b.adapters.map((a) => S.adapters[a].label).join('、'),
+      { t: '解析器', f: (b) => (b.adapters.length && !b.empty ? h('span', null, [b.adapters.map(S.query.adapterLabel).join('、'),
         (b.unrecognizedLines || []).length ? h('a', { class: 'link partial-unrecognized', title: '這個區塊有認不得的行，這些行沒有進入基準；點一下開啟第一行',
           onclick: (e) => { e.stopPropagation(); App.openRaw(b.file, b.unrecognizedLines[0]); } }, `部分無法辨識（${V.num(b.unrecognizedLines.length)} 行）`) : null])
         : h('span', { class: 'diffA' }, '無法辨識')),
-        s: (b) => (b.adapters.length && !b.empty ? b.adapters.map((a) => S.adapters[a].label).join('、') : '無法辨識') },
+        s: (b) => (b.adapters.length && !b.empty ? b.adapters.map(S.query.adapterLabel).join('、') : '無法辨識') },
       { t: '行', f: (b) => `${b.start}–${b.end}`, s: (b) => b.start },
     ], bs, { onRow: (b) => App.openRaw(b.file, b.failure ? b.failure.line : b.start), bad: (b) => !!b.failure });
   }

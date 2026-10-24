@@ -179,14 +179,14 @@
   };
 
   // ================================================================ 匯出
-  /** 匯出目前的基準或檢查結果（種類見 V.exporter.KINDS）；只讀 App.snap，不改寫。extra 例如 { byDevice: true } */
+  /** 匯出目前的基準或檢查結果（種類見 V.exporter.KINDS）；透過 App.Q 讀取，不改寫。extra 例如 { byDevice: true } */
   App.exportAs = function (kind, extra) {
     if (!App.snap) return;
     const k = V.exporter.KINDS[kind];
     if (!k) throw new Error('未知的匯出種類：' + kind);
-    // 處理紀錄與查詢介面由畫面傳入：匯出內容的組字函式本身不讀全域狀態
-    const opts = Object.assign({}, extra || {}, { ledgerOf: A.ledgerExport, Q: App.Q });
-    try { V.exporter.download(k.name(App.snap), k.text(App.snap, opts), k.type); } catch (e) {
+    // 處理紀錄由畫面傳入：匯出內容的組字函式本身不讀全域狀態；整份基準只給基準 JSON 原樣序列化
+    const opts = Object.assign({}, extra || {}, { ledgerOf: A.ledgerExport, snapshot: App.snap });
+    try { V.exporter.download(k.name(App.Q), k.text(App.Q, opts), k.type); } catch (e) {
       console.error(e); A.banner('匯出失敗：' + e.message, 10000);
     }
   };

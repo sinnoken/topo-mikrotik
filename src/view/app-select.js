@@ -94,7 +94,7 @@
   };
 
   App.selectFinding = function (idx) {
-    const f = App.snap.findings[idx];
+    const f = App.Q.finding(idx);
     // 指向防火牆規則或服務的檢查結果，定位到該設備防火牆畫面的那一列（第一個實體通常是設備）
     const e = f.entities.find((x) => x.type === 'rule' || x.type === 'service') || f.entities[0];
     const sel = !e ? null : f.id === 'A03' ? { type: 'endpoints', dev: e.key } : { type: e.type, key: e.key };

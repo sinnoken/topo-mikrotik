@@ -77,9 +77,9 @@
       await S.store.set('last', { snapshot: snap, sources, profile, positions: Object.fromEntries(App.graph.pos) })
         .catch(() => A.banner('基準太大，無法存入瀏覽器；關閉頁面後需要重新建立。'));
       $('#dlg-input').close();
-      const st = snap.meta.stats;
+      const m = App.Q.meta(); const st = m.stats;
       A.banner(`已建立基準：${V.num(st.collected)} 台已收集設備、${V.num(st.links)} 條鏈路；`
-        + `錯誤 ${st.findings.error}、警告 ${st.findings.warn}（${(snap.meta.timing.ms / 1000).toFixed(1)} 秒）`, 8000);
+        + `錯誤 ${st.findings.error}、警告 ${st.findings.warn}（${(m.timing.ms / 1000).toFixed(1)} 秒）`, 8000);
     } catch (e) {
       $('#input-status').textContent = '建立失敗：' + e.message; console.error(e);
     } finally { btn.disabled = false; }

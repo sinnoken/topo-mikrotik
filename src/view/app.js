@@ -48,17 +48,19 @@
   /** 還原上次的基準：schema 或版本不同時用儲存的輸入重建；無法還原時明確告知，不靜默略過。 */
   App.restore = async function () {
     const last = await S.store.get('last').catch(() => null);
-    const saved = last && last.snapshot && last.snapshot.meta ? last.snapshot : null;
+    // 儲存的基準還沒建立查詢介面：先用 S.query.metaOf 讀 meta 判斷相容，再決定直接載入或重建
+    const savedMeta = last ? S.query.metaOf(last.snapshot) : null;
+    const saved = savedMeta ? last.snapshot : null;
     if (saved) {
       App.sources = last.sources || []; App.profileJson = last.profile || null;
-      const sameSchema = saved.meta.schema === S.SCHEMA;
-      let snap = sameSchema ? saved : null; let msg = `已還原上次建立的基準（${V.fmtTime(saved.meta.createdAt)}）`;
-      if ((!sameSchema || saved.meta.version !== S.VERSION) && App.sources.length) { // 程式更新過：用儲存的輸入重建，欄位才會完整
+      const sameSchema = savedMeta.schema === S.SCHEMA;
+      let snap = sameSchema ? saved : null; let msg = `已還原上次建立的基準（${V.fmtTime(savedMeta.createdAt)}）`;
+      if ((!sameSchema || savedMeta.version !== S.VERSION) && App.sources.length) { // 程式更新過：用儲存的輸入重建，欄位才會完整
         try { snap = await S.buildAsync(App.sources, { profile: App.profileJson }); msg = '程式已更新，已用儲存的輸入重新建立基準'; } catch (e) {
           console.error(e);
-          if (!sameSchema) msg = `上次的基準格式（${saved.meta.schema}）已不相容，重新建立失敗：${e.message}。請重新建立基準。`;
+          if (!sameSchema) msg = `上次的基準格式（${savedMeta.schema}）已不相容，重新建立失敗：${e.message}。請重新建立基準。`;
         }
-      } else if (!sameSchema) msg = `上次的基準格式（${saved.meta.schema}）已不相容，且沒有儲存輸入，請重新建立基準。`;
+      } else if (!sameSchema) msg = `上次的基準格式（${savedMeta.schema}）已不相容，且沒有儲存輸入，請重新建立基準。`;
       if (snap) A.load(snap, last.positions); else A.renderAll();
       A.banner(msg, 6000);
     } else A.renderAll();
@@ -76,8 +78,8 @@
     App.snap = snap; App.Q = S.query(snap); App.sel = null; App.expanded = new Set();
     // 處理紀錄推進一輪（目前時間由畫面傳入）；寫入 store 是非同步的，App.ledgerJob 讓呼叫端可以等待
     App.ledgerJob = A.advanceLedger(App.Q);
-    V.lists.findings.reset(); V.lists.compare.reset(); V.lists.findings.openFirst(snap);
-    const g = A.graphData(App.Q, snap);
+    V.lists.findings.reset(); V.lists.compare.reset(); V.lists.findings.openFirst(App.Q);
+    const g = A.graphData(App.Q);
     const hostCount = g.nodes.filter((n) => n.kind === 'host').length;
     App.showHosts = hostCount <= 300;
     const pos = new Map();
@@ -111,7 +113,7 @@
     $('#btn-trace').disabled = !has; $('#search').disabled = !has; $('#btn-clear').disabled = !has;
     const f = V.clear($('#footer'));
     if (has) {
-      const m = App.snap.meta;
+      const m = App.Q.meta();
       f.appendChild(h('span', null, `建立：${V.fmtTime(m.createdAt)}`));
       f.appendChild(h('span', null, `設備 ${V.num(m.stats.devices)}（已收集 ${V.num(m.stats.collected)}）・鏈路 ${V.num(m.stats.links)}・MAC ${V.num(m.stats.macs)}`));
       f.appendChild(h('span', null, `命名規則：${m.profile ? m.profile.id : '未套用'}`));
@@ -127,8 +129,8 @@
     const has = !!App.snap;
     root.classList.toggle('hidden', !has);
     if (!has) return;
-    const stats = App.snap.meta.stats;
-    const missing = App.snap.coverage.filter(V.coverageGap).length;
+    const stats = App.Q.meta().stats;
+    const missing = App.Q.coverage().filter(V.coverageGap).length;
     // 已處理（排程修復、可接受、誤報、已修好）的錯誤／警告不算在待處理的問題裡，但註明筆數
     const pc = A.problemCounts(); const problems = pc.error + pc.warn;
     const ackNote = pc.handled ? `（另有 ${V.num(pc.handled)} 項已處理）` : '';

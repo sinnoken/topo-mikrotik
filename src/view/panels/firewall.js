@@ -33,7 +33,7 @@
   };
   /** 與某實體有關的檢查結果：代碼標籤，點一下開啟該筆檢查結果 */
   const findingChips = (App, type, key) => App.Q.findingIndexesFor(type, key).map((i) => {
-    const f = App.snap.findings[i];
+    const f = App.Q.finding(i);
     return h('a', { class: 'link', title: f.message, onclick: (e) => { e.stopPropagation(); App.selectFinding(i); } },
       V.chip(f.id, f.severity === 'error' ? 'err' : f.severity));
   });
@@ -118,7 +118,7 @@
     const plan = S.remediate.plan(Q, keys);
     const hits = RM.matchFindings(Q, plan.skipped);
     const ruleOf = (k) => { const f = byKey.get(k); const e = f && f.entities.find((x) => x.type === 'rule'); return e ? e.key : null; };
-    const sevCls = (id) => { const s = (S.check.CATALOG[id] || {}).severity; return s === 'error' ? 'err' : s; };
+    const sevCls = (id) => { const s = (S.query.rule(id) || {}).severity; return s === 'error' ? 'err' : s; };
     const ruleLink = (key) => (key ? P().L(App, ruleLabel(App, key), { type: 'rule', key }) : null);
     return P().section('修正（停用規則）', [
       h('p', { class: 'muted' }, '只產生文字，不會連線或改動設備。指令以 comment 或比對條件 find（不用規則編號）；完整的 .rsc（含前置檢查、回復與驗證）在修正計畫。'),
@@ -158,7 +158,7 @@
     const services = Q.ipServicesOf(dev); const lists = Q.interfaceListsOf(dev);
     const rules = Q.firewallRulesOf(dev);
     const openAll = rules.length <= OPEN_ALL_MAX;
-    const fwFindings = Q.findingsFor('device', dev).filter((f) => (S.check.CATALOG[f.id] || {}).cat === '防火牆');
+    const fwFindings = Q.findingsFor('device', dev).filter((f) => (S.query.rule(f.id) || {}).cat === '防火牆');
     // 位址族 → 表：一般區塊；其下每個 chain 是可展開區塊
     const tables = [];
     chains.forEach((c) => {

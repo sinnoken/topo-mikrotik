@@ -1,7 +1,7 @@
 /*
  * 分診 → 修 → 驗證 的畫面輔助：都是純函式，只透過查詢介面（Q）與核心（S.ledger、S.remediate）讀取，不改寫 Snapshot。
  *   - 處理紀錄的狀態文字（STATUS_TEXT）：狀態本身與轉換規則在核心 S.ledger（見 app-ledger.js）
- *   - advice：規則的常見原因與處理（每次從 CATALOG 讀取）
+ *   - advice：規則的常見原因與處理（每次從規則目錄 S.query.rule 讀取）
  *   - sortByDevice：檢查結果依所屬設備（Q.findingDevice）排序，檢查結果分頁的「依設備」分組與匯出共用
  *   - 修正計畫的文字（LEVEL_TEXT、RISK_TEXT、targetText、choiceText）與單一項目的套用指令（itemApplyLines，取自 S.remediate.renderRsc）
  *   - matchFindings／findingRef：未產生指令的項目以 findingKey 對回檢查結果，列出訊息並可點擊開啟
@@ -23,12 +23,13 @@
 
   // ---------------------------------------------------------------- 規則的常見原因與處理
   /**
-   * 規則的處理建議與常見原因：每次都從 S.check.CATALOG 讀取，不複製文字（詳情、規則清單與匯出共用）。
+   * 規則的處理建議與常見原因：每次都從規則目錄（S.query.rule）讀取，不複製文字（詳情、規則清單與匯出共用）。
+   * 這是畫面讀 causes／action 的唯一入口。
    * 回傳 { action: 字串或 null, causes: 字串陣列 }；欄位不存在時 action 為 null、causes 為空陣列。
    * causes 寫成單一字串時視為一條。
    */
   function advice(id) {
-    const c = S.check.CATALOG[id] || {};
+    const c = S.query.rule(id) || {};
     const causes = Array.isArray(c.causes) ? c.causes.filter((x) => typeof x === 'string' && x) : typeof c.causes === 'string' && c.causes ? [c.causes] : [];
     return { action: typeof c.action === 'string' && c.action ? c.action : null, causes };
   }
@@ -96,13 +97,11 @@
    * 這種情況的退路是依位置對應：同一個鍵的第 n 筆對到基準中這個鍵的第 n 筆（S.remediate.plan 對同一個鍵的列依 finding 在基準中的順序排列）。
    */
   function matchFindings(Q, list) {
-    const byKey = new Map();
-    Q.findings().forEach((f, idx) => U.getOr(byKey, Q.findingKey(f), () => []).push({ idx, f }));
     const used = new Map();
     return list.map((x) => {
-      const hits = byKey.get(x.findingKey); const n = used.get(x.findingKey) || 0;
+      const n = used.get(x.findingKey) || 0; const idx = Q.findingIndexesByKey(x.findingKey)[n];
       used.set(x.findingKey, n + 1);
-      return hits && hits[n] ? hits[n] : null;
+      return idx === undefined ? null : { idx, f: Q.finding(idx) };
     });
   }
   /**
@@ -125,7 +124,7 @@
   const facetSplit = (v) => { const at = v.indexOf('|'); return at < 0 ? [v, ''] : [v.slice(0, at), v.slice(at + 1)]; };
   /** 有格式的 facet 依規則轉成可讀文字（格式見 CATALOG 的 facet）；第二段缺少時回傳 null，改顯示原值 */
   const FACET_FORMAT = {
-    I02: (v) => (S.adapters && S.adapters[v] && S.adapters[v].label) || v,
+    I02: (v) => S.query.adapterLabel(v),
     V06: facetItem,
     V07: (v) => { const [a, b] = facetSplit(v); return b ? `${facetItem(a)}「${b}」` : null; },
     A02: (v) => (v === 'unknown' ? 'VLAN 不明' : `VLAN ${v}`),
@@ -156,10 +155,10 @@
    */
   const USER_PLACEHOLDER = 'CHANGE_ME';
   const COLLECT_NAME = /^[A-Za-z0-9][A-Za-z0-9_.:-]*$/; // 與 collect.sh 的設備名稱規則相同
-  /** 回傳 { text, rows: [{ dev, name, address, basis, ok, reason }] }；address 依序取管理 IP、鄰居回報的位址 */
-  function devicesCsvDraft(snap, Q) {
+  /** Q 是基準的查詢介面。回傳 { text, rows: [{ dev, name, address, basis, ok, reason }] }；address 依序取管理 IP、鄰居回報的位址 */
+  function devicesCsvDraft(Q) {
     const one = (s) => String(s).replace(/[\r\n]+/g, ' ');
-    const devs = U.uniq(snap.findings.filter((f) => f.id === 'C01').map((f) => (f.entities.find((e) => e.type === 'device') || {}).key).filter(Boolean));
+    const devs = U.uniq(Q.findingsByRule('C01').map((f) => (f.entities.find((e) => e.type === 'device') || {}).key).filter(Boolean));
     const seen = new Set();
     const rows = devs.map((k) => Q.getDevice(k)).filter(Boolean).map((d) => {
       const heard = Q.ipAddresses().filter((a) => a.dev === d.key && a.hearsay).map((a) => a.ip);
@@ -173,7 +172,7 @@
       if (!reason) seen.add(d.name);
       return { dev: d.key, name: d.name, address, basis, ok: !reason, reason };
     });
-    const m = snap.meta;
+    const m = Q.meta();
     const out = [
       '# devices.csv 草稿：由 topo-mikrotik 依 C01（只被鄰居發現、沒有收集資料的網路設備）產生',
       `# 基準建立時間 ${m.createdAt}，輸入指紋 ${m.inputHash}`,

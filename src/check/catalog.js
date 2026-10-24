@@ -8,6 +8,9 @@
  *   data：規則需要的資料類別（設備的 data）。外層每一組都要有，組內任一種即可；沒有 data 的規則（輸入、覆蓋）一律會檢查。
  *         只用來區分「通過」與「沒有資料可檢查」，不影響檢查本身。
  *   evidenceLimit：每筆 finding 最多附幾筆證據，沒寫時用 checks.js 的預設值。
+ *   facet：只有「同一組 id＋實體可能產生多筆 finding」的規則才有，說明 finding.facet 的格式（檢查的是哪一個項目）。
+ *         有宣告的規則每筆 finding 都帶 facet，沒宣告的都不帶（checks.js 的 add() 檢查）；facet 會進入 findingKey（query.js）。
+ *         格式中的 <…> 是取自設定的值（已正規化），其餘是固定字樣；多段以「|」分隔，固定字樣在前。
  *   causes：常見原因，每條一句。action：怎麼處理，可以照著做的步驟。
  *         這兩項只放在 CATALOG（S.check.CATALOG[f.id]），不複製到 finding，也不進 Snapshot。
  */
@@ -27,6 +30,7 @@
     },
     I02: {
       severity: 'warn', cat: '輸入', title: '同一設備重複提供同類資料（以後者為準）',
+      facet: '<adapter id>（例如 mikrotik.arp）',
       causes: [
         '合併多次收集的檔案，同一台設備的同一個指令出現兩次以上。',
         '同一段輸出被重複貼上。',
@@ -126,6 +130,7 @@
     },
     V06: {
       severity: 'info', cat: 'VLAN', title: '同一 VLAN 在不同設備的名稱或說明不同', data: [['config']],
+      facet: 'vlan-interface-name／vlan-interface-comment／bridge-vlan-comment',
       causes: [
         '各設備各自命名，沒有統一的命名方式。',
         '改名或修改說明時只改了部分設備。',
@@ -134,6 +139,7 @@
     },
     V07: {
       severity: 'warn', cat: 'VLAN', title: '同一名稱在不同設備對應到不同 VLAN', data: [['config']],
+      facet: '<V06 的屬性>|<名稱或說明（trim、小寫）>',
       causes: [
         '某台設備的 VLAN ID 設錯。',
         '不同站點刻意沿用同一個名稱。',
@@ -161,6 +167,7 @@
     },
     A02: {
       severity: 'warn', cat: '位址', title: '同一 MAC 在同一 VLAN 出現在多個終端埠', data: [['mac']],
+      facet: '<VLAN ID>，VLAN 不明時為 unknown',
       causes: [
         '同一台主機的兩個網路卡共用 MAC，例如部分 bonding 模式。',
         '虛擬機遷移。',
@@ -205,6 +212,7 @@
     },
     A07: {
       severity: 'warn', cat: '位址', title: '同一網段在不同設備屬於不同 VLAN', data: [['config']],
+      facet: '<網段 net/len>',
       causes: [
         '某台設備的 VLAN ID 設錯。',
         '位址設在錯的 VLAN 介面上。',
@@ -214,6 +222,7 @@
     },
     A08: {
       severity: 'warn', cat: '位址', title: '重疊網段在不同設備的遮罩不同', data: [['config', 'ipaddr']],
+      facet: '<最外層的網段 net/len>',
       causes: [
         '交換器管理位址的遮罩和閘道不一致。',
         '調整網段大小時只改了部分設備。',
@@ -230,6 +239,7 @@
     },
     A10: {
       severity: 'warn', cat: '位址', title: '同一名稱在不同設備對應到不同 IP', data: [['config']],
+      facet: '<選單路徑>|<名稱（trim、小寫；DHCP lease 為正規化的 MAC）>',
       causes: [
         'HA 成對設備或同一角色的設備之間，清單漏同步。',
         '各設備刻意設定不同的值。',
@@ -238,6 +248,7 @@
     },
     A11: {
       severity: 'info', cat: '位址', title: '同一 IP 在不同設備以不同名稱設定', data: [['config']],
+      facet: '<選單路徑>|<IP 或網段（正規化）>',
       causes: [
         '各設備各自為同一個位址命名，沒有共同的名稱。',
         '改名時只改了部分設備。',
@@ -246,6 +257,7 @@
     },
     A12: {
       severity: 'warn', cat: '位址', title: '各設備的 DNS／NTP 伺服器設定不同', data: [['config']],
+      facet: 'dns／ntp',
       causes: [
         '更換 DNS 或 NTP 伺服器時只改了部分設備。',
         '分層設定（交換器指向核心、核心指向 ISP），可能是刻意的。',
@@ -264,6 +276,7 @@
     },
     R02: {
       severity: 'info', cat: '路由', title: 'OSPF 鄰居無法對應到已收集的設備', data: [['ospf']],
+      facet: '<本端介面名稱>',
       causes: [
         'OSPF 鄰居設備沒有收集。',
         '鄰居的 router-id 或介面位址沒有收集到。',
@@ -289,6 +302,7 @@
     },
     R05: {
       severity: 'warn', cat: '路由', title: 'DHCP 網路的閘道不在該網段內', data: [['config']],
+      facet: '<DHCP 網段 net/len>',
       causes: [
         '`/ip dhcp-server network` 的 `gateway` 打錯或沿用其他網段的設定。',
         '網段改過，但閘道沒有跟著改。',
@@ -298,6 +312,7 @@
     },
     R06: {
       severity: 'warn', cat: '路由', title: '同一 DHCP 網段在不同設備的閘道、DNS 或 NTP 不同', data: [['config']],
+      facet: 'gateway|<網段>／dns|<網段>／ntp|<網段>',
       causes: [
         'HA 成對的 DHCP 伺服器設定沒有同步。',
         '只改了其中一台的閘道或伺服器。',

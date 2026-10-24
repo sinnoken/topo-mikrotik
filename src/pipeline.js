@@ -191,8 +191,7 @@
 
     const sev = { error: 0, warn: 0, info: 0 };
     c.findings.forEach((f) => { sev[f.severity]++; });
-    const inputText = c.sources.map((s) => (s.name || '') + '\n' + s.text).join('\n\u0000\n');
-    const inputHash = U.hash(inputText);
+    const inputHash = inputHashOf(c.sources);
     return {
       meta: {
         schema: S.SCHEMA, version: S.VERSION,
@@ -232,6 +231,16 @@
   }
 
   /** 同步建立（Node、測試用）。 */
+  /**
+   * 輸入指紋（meta.inputHash）：不重建基準也能核對收集檔是不是同一份。sources 同 build（[{ name?, text }]），順序有意義。
+   * 沒有 name 的來源以空字串計算（不是 S.readers.PASTE），所以不能用 meta.sources[].name 重組；要傳入與 build 相同的 sources。
+   */
+  function inputHashOf(sources) {
+    if (!Array.isArray(sources) || sources.some((x) => !x || typeof x.text !== 'string')) throw new TypeError('inputHashOf：sources 必須是 [{ name?, text: 字串 }]');
+    return U.hash(sources.map((x) => (x.name || '') + '\n' + x.text).join('\n\u0000\n'));
+  }
+  S.inputHashOf = inputHashOf;
+
   S.build = function (sources, options) {
     const it = steps(sources, options);
     let r = it.next();

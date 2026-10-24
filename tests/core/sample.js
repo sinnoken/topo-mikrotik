@@ -49,3 +49,22 @@ test('基準鍵 meta.baselineKey：由 inputHash、major.minor 版本、命名�
   assert.deepStrictEqual([exp.inputHash === base.inputHash, exp.baselineKey === base.baselineKey], [true, false], '換預期資料：基準鍵不同');
   assert.strictEqual(key({ expectedData: { router: ['route'], switch: ['lldp'] } }).baselineKey, exp.baselineKey, '預期資料的鍵順序不影響');
 });
+
+test('輸入指紋：S.inputHashOf 與 meta.inputHash 相同（不重建也能核對）；meta.sources 的 bytes、hash 依各檔文字計算', () => {
+  const a = read('samples/sample-bundle.txt');
+  const cases = [
+    [{ name: 'a.txt', text: a }],
+    [{ text: a }], // 沒有名稱：inputHash 以空字串計算，meta.sources 的 name 是 S.readers.PASTE
+    [{ name: 'x.txt', text: 'SW_A (10.0.0.1):\n### /system identity print\nname: SW_A\n' }, { name: 'y.txt', text: 'SW_B (10.0.0.2):\n### /system identity print\nname: SW_B\n' }],
+  ];
+  cases.forEach((src) => {
+    const s = S.build(src, { now: '2026-01-01T00:00:00Z' });
+    assert.strictEqual(S.inputHashOf(src), s.meta.inputHash);
+    assert.deepStrictEqual(s.meta.sources.map((x) => [x.name, x.bytes, x.hash]), src.map((x) => [x.name || S.readers.PASTE, x.text.length, S.util.hash(x.text)]));
+    assert.ok(s.meta.sources.every((x) => typeof x.reader === 'string' || x.reader === null));
+  });
+  assert.notStrictEqual(S.inputHashOf([{ text: a }]), S.inputHashOf([{ name: S.readers.PASTE, text: a }]), '沒有名稱與名稱為 PASTE 的指紋不同（與 2.9.0 之前相同）');
+  const two = cases[2];
+  assert.notStrictEqual(S.inputHashOf(two), S.inputHashOf(two.slice().reverse()), '順序有意義');
+  [null, 'x', [{}], [{ name: 'a', text: 1 }], [null]].forEach((bad) => assert.throws(() => S.inputHashOf(bad), TypeError, JSON.stringify(bad)));
+});

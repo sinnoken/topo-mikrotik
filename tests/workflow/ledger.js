@@ -290,3 +290,118 @@ test('處理紀錄：validate 對錯誤的格式逐項回報、不修改資料',
   assert.strictEqual(JSON.stringify(bad), copy, 'validate 不修改資料');
   assert.throws(() => L.advance(bad, LEDGER.q1(), { now: '2026-01-01T00:00:00Z' }), /處理紀錄格式不正確/);
 });
+
+// ------------------------------------------------------------------ facet（2.9.0）：舊鍵（findingBaseKey）轉換到新鍵
+// 兩台設備的 DNS 與 NTP 伺服器都不同：2.9.0 起 A12 是 dns／ntp 兩筆（facet 不同），2.8.0 以前兩筆共用同一個鍵
+const FACET_TEXT = [['SW_A', '10.0.0.1', '1.1.1.1', '10.0.0.11'], ['SW_B', '10.0.0.2', '8.8.8.8', '10.0.0.12']]
+  .map(([n, ip, dns, ntp]) => [`${n} (${ip}):`, '### /export terse', `/ip dns set servers=${dns}`, `/system ntp client set enabled=yes servers=${ntp}`].join('\n')).join('\n');
+/** 2.8.0 的基準：程式還沒有 facet，所以 finding 沒有 facet 欄位、版本是 2.8.0（findingKey 等於 findingBaseKey） */
+function snapAt280(text) {
+  const s = JSON.parse(JSON.stringify(buildAtVersion('2.8.0', text)));
+  s.findings.forEach((f) => { delete f.facet; });
+  return s;
+}
+const facetQs = (text) => ({ q28: S.query(snapAt280(text)), q29: S.query(build(text)) });
+const a12Keys = (Q) => Q.findings().filter((f) => f.id === 'A12').map((f) => [f.facet, Q.findingKey(f), Q.findingBaseKey(f)]);
+const uniqSorted = (a) => S.util.uniq(a).sort(S.util.cmp);
+
+test('處理紀錄 facet：2.8.0 的紀錄推進 2.9.0 的基準，A12 舊鍵分成 dns／ntp 兩筆，狀態、說明、豁免、patch 都保留；舊項目移除，不判為 fixed、不重複計數', () => {
+  const L = S.ledger; const { q28, q29 } = facetQs(FACET_TEXT);
+  const [[f1, dnsKey, base], [f2, ntpKey, base2]] = a12Keys(q29);
+  assert.deepStrictEqual([f1, f2, base2], ['dns', 'ntp', base], '2.9.0 有 dns／ntp 兩筆，舊鍵相同');
+  assert.deepStrictEqual(a12Keys(q28).map((x) => x[1]), [base, base], '2.8.0 的兩筆共用舊鍵');
+  const r1 = L.advance(L.empty(), q28, { now: '2026-01-01T00:00:00Z' });
+  const old = L.set(r1.ledger, base, { status: 'accepted', note: '分站自管', patch: 'patch:a12', waiver: { reason: '分站各自的 DNS／NTP', until: '2026-12-01' } }, { now: '2026-01-02T00:00:00Z' });
+  const r2 = L.advance(old, q29, { now: '2026-02-01T00:00:00Z' });
+  const lg = r2.ledger;
+  assert.strictEqual(lg.items[base], undefined, '舊項目已轉換到新鍵，不再留在處理紀錄');
+  [dnsKey, ntpKey].forEach((k) => {
+    const it = lg.items[k];
+    assert.deepStrictEqual([it.status, it.note, it.patch, it.waiver, it.id, it.dev, it.firstSeen, it.lastSeen],
+      ['accepted', '分站自管', 'patch:a12', old.items[base].waiver, 'A12', null, q28.meta().baselineKey, q29.meta().baselineKey]);
+    assert.deepStrictEqual(it.history.slice(0, -1), old.items[base].history, '舊項目的歷程保留在每一筆新項目');
+    assert.deepStrictEqual(it.history[it.history.length - 1],
+      { at: '2026-02-01T00:00:00.000Z', from: 'accepted', to: 'accepted', by: 'advance', baseline: q29.meta().baselineKey, reason: 'facet-split', fromKey: base });
+  });
+  assert.deepStrictEqual(r2.split, [{ from: base, to: uniqSorted([dnsKey, ntpKey]), reason: 'facet-split' }]);
+  assert.deepStrictEqual(r2.changes, [], '同一份輸入：沒有新出現、也沒有消失（舊鍵不判為 fixed）');
+  assert.deepStrictEqual(r2.unobserved, []);
+  assert.strictEqual(r2.ledger.iterations[1].counts.accepted, 2, 'dns／ntp 各算一筆，舊項目不再計數');
+  assert.strictEqual(L.summary(lg).current.total, Object.keys(r1.ledger.items).length + 1);
+  assert.ok(L.validate(lg).ok, L.validate(lg).errors.join('\n'));
+  // 轉換後可以分開處理
+  const one = L.set(lg, ntpKey, { status: 'open' }, { now: '2026-02-02T00:00:00Z' });
+  assert.deepStrictEqual([one.items[dnsKey].status, one.items[ntpKey].status], ['accepted', 'open']);
+});
+
+test('處理紀錄 facet：轉換是冪等的；同一份基準再推進不重複轉換，之後的基準也不再轉換', () => {
+  const L = S.ledger; const { q28, q29 } = facetQs(FACET_TEXT);
+  const old = L.advance(L.empty(), q28, { now: '2026-01-01T00:00:00Z' }).ledger;
+  const copy = JSON.stringify(old);
+  const a = L.advance(old, q29, { now: '2026-02-01T00:00:00Z' });
+  const b = L.advance(old, q29, { now: '2026-02-01T00:00:00Z' });
+  assert.strictEqual(JSON.stringify(a), JSON.stringify(b), '同樣的輸入得到同樣的結果');
+  assert.strictEqual(JSON.stringify(old), copy, '不修改傳入的處理紀錄');
+  const again = L.advance(a.ledger, q29, { now: '2026-02-02T00:00:00Z' });
+  assert.deepStrictEqual([again.skipped, again.split, JSON.stringify(again.ledger)], [true, [], JSON.stringify(a.ledger)]);
+  // 下一份 2.9.0 的基準（輸入不同）：已經是新鍵，不再轉換，各筆仍是 open
+  const next = L.advance(a.ledger, S.query(build('# 下一輪\n' + FACET_TEXT)), { now: '2026-03-01T00:00:00Z' });
+  assert.deepStrictEqual([next.skipped, next.split, next.changes], [false, [], []]);
+  const splits = (lg) => Object.values(lg.items).reduce((n, it) => n + it.history.filter((h) => h.reason === 'facet-split').length, 0);
+  assert.deepStrictEqual([splits(a.ledger), splits(next.ledger)], [2, 2]);
+});
+
+test('處理紀錄 facet：新鍵已有項目時以新鍵為準，舊項目內容記在歷程；問題已不存在的舊鍵照常判為 fixed', () => {
+  const L = S.ledger; const { q28, q29 } = facetQs(FACET_TEXT);
+  const [[, dnsKey, base], [, ntpKey]] = a12Keys(q29);
+  let old = L.advance(L.empty(), q28, { now: '2026-01-01T00:00:00Z' }).ledger;
+  old = L.set(old, base, { status: 'scheduled', note: '舊的' }, { now: '2026-01-02T00:00:00Z' });
+  // 混用版本時才會有：新鍵已經有自己的項目
+  const mixed = JSON.parse(JSON.stringify(old));
+  mixed.items[dnsKey] = Object.assign(JSON.parse(JSON.stringify(old.items[base])), { status: 'false-positive', note: '新的' });
+  const r = L.advance(mixed, q29, { now: '2026-02-01T00:00:00Z' });
+  const dns = r.ledger.items[dnsKey]; const last = dns.history[dns.history.length - 1];
+  assert.deepStrictEqual([dns.status, dns.note, r.ledger.items[ntpKey].status, r.ledger.items[ntpKey].note, r.ledger.items[base]], ['false-positive', '新的', 'scheduled', '舊的', undefined]);
+  assert.deepStrictEqual([last.reason, last.fromKey, last.from, last.to, last.superseded], ['facet-split', base, 'false-positive', 'false-positive', old.items[base]]);
+  assert.ok(L.validate(r.ledger).ok, L.validate(r.ledger).errors.join('\n'));
+  // DNS／NTP 改成一致後：2.9.0 沒有 A12，舊鍵沒有可轉換的 finding，照常判為 fixed
+  const same = S.query(build(FACET_TEXT.replace('8.8.8.8', '1.1.1.1').replace('10.0.0.12', '10.0.0.11')));
+  assert.deepStrictEqual(a12Keys(same), []);
+  const fixed = L.advance(old, same, { now: '2026-02-01T00:00:00Z' });
+  assert.deepStrictEqual([fixed.split, fixed.ledger.items[base].status, fixed.changes.find((c) => c.key === base).reason], [[], 'fixed', 'disappeared']);
+});
+
+test('處理紀錄 facet：範例資料以 2.8.0 的紀錄推進 2.9.0，12 條有 facet 的規則都對得上；沒有 facet 的規則不受影響', () => {
+  const L = S.ledger; const text = read('samples/sample-bundle.txt');
+  const { q28, q29 } = facetQs(text);
+  const facetIds = uniqSorted(q29.findings().filter((f) => f.facet != null).map((f) => f.id));
+  assert.deepStrictEqual(facetIds, ['A02', 'A07', 'A08', 'A10', 'A11', 'A12', 'I02', 'R02', 'R05', 'R06', 'V06', 'V07']);
+  const r1 = L.advance(L.empty(), q28, { now: '2026-01-01T00:00:00Z' });
+  const r2 = L.advance(r1.ledger, q29, { now: '2026-02-01T00:00:00Z' });
+  assert.deepStrictEqual([r2.changes, r2.unobserved], [[], []], '同一份輸入升版：不出現新增、fixed 或無法判斷');
+  assert.deepStrictEqual(Object.keys(r2.ledger.items), uniqSorted(q29.findings().map(q29.findingKey)), '項目就是 2.9.0 的鍵，沒有殘留的舊鍵');
+  // 沒有 facet 的規則：鍵不變，項目原樣（只更新 lastSeen）
+  q29.findings().filter((f) => f.facet == null).forEach((f) => {
+    const k = q29.findingKey(f);
+    assert.strictEqual(k, q29.findingBaseKey(f));
+    assert.deepStrictEqual(Object.assign({}, r2.ledger.items[k], { lastSeen: null }), Object.assign({}, r1.ledger.items[k], { lastSeen: null }), k);
+  });
+  assert.strictEqual(r2.split.length, uniqSorted(q29.findings().filter((f) => f.facet != null).map(q29.findingBaseKey)).length);
+});
+
+test('處理紀錄 facet：fromAcks 的舊確認標記（舊鍵）轉換到 dns／ntp 兩筆新鍵', () => {
+  const L = S.ledger; const { q29 } = facetQs(FACET_TEXT);
+  const [[, dnsKey, base], [, ntpKey]] = a12Keys(q29);
+  const ack = { at: '2025-06-01T08:00:00.000Z', kind: 'scheduled', note: '改成同一組' };
+  const r = L.fromAcks({ [base]: ack }, q29, { now: '2026-01-01T00:00:00Z' });
+  assert.strictEqual(r.ledger.items[base], undefined);
+  [dnsKey, ntpKey].forEach((k) => {
+    const it = r.ledger.items[k];
+    assert.deepStrictEqual([it.status, it.note, it.history.map((h) => h.reason)], ['scheduled', '改成同一組', ['from-ack', 'facet-split']]);
+    assert.deepStrictEqual(it.history[0].ack, ack);
+    assert.strictEqual(it.history[1].fromKey, base);
+  });
+  assert.deepStrictEqual(r.split, [{ from: base, to: uniqSorted([dnsKey, ntpKey]), reason: 'facet-split' }]);
+  assert.ok(!r.changes.some((c) => c.key === dnsKey || c.key === ntpKey || c.key === base), '轉換的項目不算新出現或消失');
+  assert.ok(L.validate(r.ledger).ok, L.validate(r.ledger).errors.join('\n'));
+});

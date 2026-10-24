@@ -147,3 +147,19 @@ test('patch：selection 可用 findingKey 清單或 { keys, ids, devices } 交�
   assert.throws(() => P().plan(Q, { ids: 'F01' }), /字串陣列/);
   assert.throws(() => P().plan(Q, 'F01'), /selection/);
 });
+test('patch facet：有 facet 的 finding 各自以 findingKey 選取與列入 skipped；舊鍵（findingBaseKey）不是目前的鍵，列為 not-found', () => {
+  const snap = sampleSnap(); const Q = S.query(snap);
+  const facets = snap.findings.filter((f) => f.facet != null);
+  assert.ok(facets.length >= 12);
+  const all = P().plan(Q);
+  facets.forEach((f) => {
+    const k = Q.findingKey(f);
+    assert.ok(JSON.parse(k)[1] === 'facet:' + f.facet, k);
+    assert.strictEqual(all.skipped.filter((x) => x.findingKey === k).length, snap.findings.filter((g) => Q.findingKey(g) === k).length, k);
+    const one = P().plan(Q, [k]);
+    assert.deepStrictEqual(one.skipped.map((x) => [x.findingKey, x.id]), snap.findings.filter((g) => Q.findingKey(g) === k).map(() => [k, f.id]));
+  });
+  const a12 = facets.find((f) => f.id === 'A12'); const base = Q.findingBaseKey(a12);
+  assert.notStrictEqual(base, Q.findingKey(a12));
+  assert.deepStrictEqual(P().plan(Q, [base]).skipped.map((x) => [x.findingKey, x.reason]), [[base, 'not-found']]);
+});

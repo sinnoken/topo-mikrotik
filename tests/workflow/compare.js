@@ -195,3 +195,40 @@ test('比對性質：自己比自己為 0；A→B 的新增／移除與 B→A �
   // 反向（拿掉這條）是移除、放行變少，不是 new-exposure
   assert.deepStrictEqual(ba.items.filter((i) => i.category === 'firewall' && i.change !== 'changed').map((i) => [i.change, i.key, i.effect]), [['removed', fwAdded[0].key, 'more-restrictive']]);
 });
+
+// facet（2.9.0）：2.8.0 以前的基準沒有 facet，同一組 id＋實體的多筆共用一個鍵
+/** 模擬 2.8.0 的基準：finding 沒有 facet、版本是 2.8.0 */
+function snapAt280(snap) {
+  const s = JSON.parse(JSON.stringify(snap)); s.meta.version = '2.8.0';
+  s.findings.forEach((f) => { delete f.facet; });
+  return s;
+}
+test('基準比對 facet：跨版本（一邊沒有 facet）的規則改用 findingBaseKey 比對，不出現假的消失與新出現；版本提示保留', () => {
+  const snap = build(read('samples/sample-bundle.txt'));
+  const facetIds = new Set(snap.findings.filter((f) => f.facet != null).map((f) => f.id));
+  assert.strictEqual(facetIds.size, 12);
+  const old = snapAt280(snap);
+  [[old, snap], [snap, old]].forEach(([a, b]) => {
+    const r = S.compare.snapshots(S.query(a), S.query(b));
+    assert.deepStrictEqual(r.items.filter((i) => i.category === 'finding'), [], '同一份輸入跨版本：finding 沒有差異');
+    assert.deepStrictEqual(r.warnings.map((w) => w.kind), ['version']);
+  });
+  // 跨版本時問題真的改變：A12 的 NTP 改成一致，只剩 DNS 一筆 → 以舊鍵的多重集合比對，消失的是 NTP 那一筆
+  const two = (dns, ntp) => build([['SW_A', '10.0.0.1', '1.1.1.1', '10.0.0.11'], ['SW_B', '10.0.0.2', dns, ntp]]
+    .map(([n, ip, d, t]) => [`${n} (${ip}):`, '### /export terse', `/ip dns set servers=${d}`, `/system ntp client set enabled=yes servers=${t}`].join('\n')).join('\n'));
+  const before = two('8.8.8.8', '10.0.0.12'); const after = two('8.8.8.8', '10.0.0.11');
+  const Qb = S.query(before);
+  const base = Qb.findingBaseKey(before.findings.find((f) => f.id === 'A12'));
+  const cross = S.compare.snapshots(S.query(snapAt280(before)), S.query(after)).items.filter((i) => i.category === 'finding');
+  assert.deepStrictEqual(cross.map((i) => [i.change, i.key, i.before.id]), [['removed', base, 'A12']]);
+  assert.ok(/NTP/.test(cross[0].message), cross[0].message);
+  // 同版本（兩邊都有 facet）：以 findingKey 比對，鍵含 facet
+  const same = S.compare.snapshots(Qb, S.query(after)).items.filter((i) => i.category === 'finding');
+  assert.deepStrictEqual(same.map((i) => [i.change, i.key]), [['removed', Qb.findingKey(before.findings.find((f) => f.id === 'A12' && f.facet === 'ntp'))]]);
+  assert.ok(JSON.parse(same[0].key).includes('facet:ntp'));
+  // 沒有 facet 的規則：鍵不變（跨版本比對與同版本相同）
+  const junk = (k) => Array.from({ length: k }, (_, j) => `### /foo bar${j}\nxyz${j}`).join('\n');
+  const a = build(`SW (10.0.0.1):\n${junk(1)}\n`); const b = build(`SW (10.0.0.1):\n${junk(2)}\n`);
+  const fd = (x, y) => S.compare.snapshots(S.query(x), S.query(y)).items.filter((i) => i.category === 'finding').map((i) => [i.change, i.key]);
+  assert.deepStrictEqual(fd(snapAt280(a), b), fd(a, b));
+});

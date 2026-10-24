@@ -8,7 +8,7 @@
  *   items: { '<findingKey>': {
  *     status, id, dev, devs?, firstSeen, lastSeen, // firstSeen／lastSeen：第一次／最後一次出現的基準鍵
  *     patch: string|null, waiver: { reason, until }|null, note,
- *     history: [{ at, from, to, by: 'user'|'advance', baseline, reason, waiver?, ack? }] } },   // baseline：當時最新一輪的基準鍵
+ *     history: [{ at, from, to, by: 'user'|'advance', baseline, reason, waiver?, ack?, fromKey?, superseded? }] } },   // baseline：當時最新一輪的基準鍵
  *   iterations: [{ baseline: { inputHash, baselineKey, createdAt }, at, counts, coverage: { collected, expected }, unknownPeers }]
  * }
  * 基準鍵：基準的 meta.baselineKey（輸入、程式 major.minor 版本、命名規則、預期資料的組合，見 pipeline.js），判斷是否同一份基準。
@@ -19,6 +19,8 @@
  * devs：只有 findingKey 推不出設備的項目（例如只涉及 IP、MAC 的 A01）才有。最後一次出現時，證據所在區塊的設備（排序）；
  *   [] 表示證據都在沒有設備標頭的區塊（收集檔本身的問題）；null 表示推不出來（沒有證據或區塊對不到）。用來判斷能不能觀察到（見 observer）。
  *   較早的紀錄沒有這個欄位，視為推不出來；同樣是新增選用欄位，不升 schema（ADR-010）。
+ * fromKey／superseded：舊鍵轉換（reason 為 facet-split 等，見 KEY_MIGRATIONS）的那一筆 history 才有。fromKey 是轉換前的舊鍵；
+ *   superseded 只在新鍵已有項目時出現，保存被取代的舊項目完整內容。沒有這兩個欄位的 history 不是轉換；新增選用欄位，不升 schema（ADR-010）。
  * waiver 只在 accepted 時有值；離開 accepted 時，原本的 waiver 記在那一筆 history 的 waiver，不遺失。
  * 狀態轉換規則見 advance 與 set 的說明。
  */
@@ -132,6 +134,7 @@
         if (!BY.includes(h.by)) err(hp + '.by', `必須是 ${BY.join('／')}，目前是 ${JSON.stringify(h.by)}`);
         if (!isStrOrNull(h.baseline)) err(hp + '.baseline', '必須是字串（基準鍵；舊紀錄為 inputHash）或 null');
         if (h.reason !== undefined && !isStrOrNull(h.reason)) err(hp + '.reason', '必須是字串或 null');
+        if (h.fromKey !== undefined && !parseKey(h.fromKey)) err(hp + '.fromKey', '必須是 findingKey（轉換前的舊鍵）');
       });
     });
     if (!Array.isArray(obj.iterations)) err('iterations', '必須是陣列');
@@ -213,6 +216,53 @@
   }
   const unknownPeersOf = (Q) => Q.unknownDevices().reduce((n, d) => n + Q.unknownPeers(d).length, 0);
 
+  // ---- 舊鍵轉換（findingKey 的組成改變時，把舊鍵的決定帶到新鍵）
+  /**
+   * 鍵的組成改變（ADR-003）後，一個舊鍵可能對應到新基準中的多個新鍵（「舊鍵分裂」）。
+   * 每條規則：{ reason, oldKeys(Q, f) → string[] }，給新基準的一筆 finding，回傳它可能對應到的舊鍵（可以是空陣列）。
+   *   reason 寫進新項目那一筆 history 的 reason，用來說明是哪一種轉換。
+   * 擴充方式：在這裡加一條規則即可，轉換流程（migrateKeys）不用改。例如之後 VRF（ssot-snapshot/3）讓實體鍵多了 @VRF：
+   *   { reason: 'vrf-split', oldKeys: (Q, f) => [去掉實體鍵的 @VRF 後的鍵] }；或對 A07／A08／A09／R06 這類依 VRF 拆開、
+   *   實體變少的規則，回傳「實體是它的超集合」的舊鍵（需要時可在規則內參考處理紀錄現有的鍵，由 data-model 提供鍵的拆解函式）。
+   * 規則依陣列順序套用；同一筆 finding 的新鍵與舊鍵相同時不算轉換。
+   */
+  const KEY_MIGRATIONS = [
+    // 2.9.0：有 facet 的規則，鍵多了 "facet:…"；舊鍵就是不含 facet 的鍵（一個舊鍵對應到 facet 不同的每一筆）
+    { reason: 'facet-split', oldKeys: (Q, f) => (f.facet != null ? [Q.findingBaseKey(f)] : []) },
+  ];
+  /**
+   * 依 KEY_MIGRATIONS 把舊鍵的項目轉換到新鍵（直接修改 items，呼叫端傳入的是複本）。回傳 [{ from: 舊鍵, to: [新鍵…], reason }]，依舊鍵排序。
+   * 只轉換「處理紀錄有這個舊鍵、而且舊鍵不在新基準中」的項目（舊鍵仍出現在基準時它本身就是現行的項目）。
+   *   新鍵還沒有項目：複製整個舊項目（狀態、note、waiver、patch、firstSeen、歷程與不認得的欄位），
+   *     歷程加一筆 { from: 狀態, to: 狀態, by: 'advance', reason, fromKey: 舊鍵 }。
+   *   新鍵已有項目（只有混用新舊版本時會發生）：以新鍵的項目為準，歷程加一筆同樣的紀錄，並在 superseded 保存舊項目的完整內容。
+   *   處理完的舊項目移除：它的內容已在每一筆新項目裡，留著會被判為「消失 → fixed」或重複計數。
+   * 冪等：舊項目轉換後就移除，之後的基準不會再轉換；同一份基準再推進時依基準鍵略過。
+   */
+  function migrateKeys(items, Q, present, step) {
+    const targets = new Map(); // 舊鍵 → Map(新鍵 → reason)
+    Q.findings().forEach((f) => {
+      const nk = Q.findingKey(f);
+      KEY_MIGRATIONS.forEach((m) => m.oldKeys(Q, f).forEach((ok) => {
+        if (ok === nk || !items[ok] || present.has(ok)) return;
+        const t = U.getOr(targets, ok, () => new Map());
+        if (!t.has(nk)) t.set(nk, m.reason);
+      }));
+    });
+    const out = [];
+    Array.from(targets.keys()).sort(U.cmp).forEach((ok) => {
+      const old = items[ok]; const t = targets.get(ok); const to = Array.from(t.keys()).sort(U.cmp);
+      to.forEach((nk) => {
+        const entry = (status) => ({ at: step.at, from: status, to: status, by: 'advance', baseline: step.baseline, reason: t.get(nk), fromKey: ok });
+        if (items[nk]) items[nk].history.push(Object.assign(entry(items[nk].status), { superseded: clone(old) }));
+        else { const it = clone(old); it.dev = devOfKey(nk); it.history.push(entry(it.status)); items[nk] = it; }
+      });
+      delete items[ok];
+      out.push({ from: ok, to, reason: U.uniq(to.map((nk) => t.get(nk))).join('、') });
+    });
+    return out;
+  }
+
   function moveTo(it, to, h) {
     const entry = Object.assign({ at: h.at, from: it.status, to, by: h.by, baseline: h.baseline, reason: h.reason || null }, h.extra || {});
     if (it.status === 'accepted' && to !== 'accepted' && it.waiver) { entry.waiver = it.waiver; it.waiver = null; }
@@ -221,10 +271,12 @@
   }
 
   /**
-   * 以新基準推進一輪，回傳 { ledger, changes, unobserved, skipped }：
+   * 以新基準推進一輪，回傳 { ledger, changes, unobserved, split, skipped }：
    *   changes   ：[{ key, from, to, reason }]，依 key 排序；reason 為 new／disappeared／reappeared／waiver-expired
    *   unobserved：基準中沒有、但無法判斷是否已修好的待處理項目鍵（狀態不變，見 observer）
-   *   skipped   ：這份基準（基準鍵相同）已經推進過時為 true，ledger 原樣回傳、不新增一輪
+   *   split     ：[{ from: 舊鍵, to: [新鍵…], reason }]，這一輪由舊鍵轉換到新鍵的項目（見 KEY_MIGRATIONS、migrateKeys），依舊鍵排序。
+   *               轉換在判定之前進行：新項目沿用舊狀態再照下列規則判定，舊項目移除，不會被判為 fixed
+   *   skipped   ：這份基準（基準鍵相同）已經推進過時為 true，ledger 原樣回傳、不新增一輪（split 為 []）
    * 轉換（present＝基準中有這個 findingKey；absent＝沒有且可以判斷；unobserved＝沒有但無法判斷）：
    *   （無）        present → open（new）
    *   open／scheduled／regressed：present 不變；absent → fixed（disappeared）；unobserved 不變
@@ -240,15 +292,17 @@
     if (typeof meta.inputHash !== 'string' || !meta.inputHash) throw new Error('基準沒有 inputHash，無法推進處理紀錄');
     if (meta.baselineKey != null && (typeof meta.baselineKey !== 'string' || !meta.baselineKey)) throw new Error('基準的 baselineKey 必須是非空字串');
     const hash = baseOf(meta);
-    if (out.iterations.some((r) => baseOf(r.baseline) === hash)) return { ledger: out, changes: [], unobserved: [], skipped: true };
+    if (out.iterations.some((r) => baseOf(r.baseline) === hash)) return { ledger: out, changes: [], unobserved: [], split: [], skipped: true };
     const present = new Map(); const byKey = new Map();
     Q.findings().forEach((f) => { const k = Q.findingKey(f); if (!present.has(k)) present.set(k, f); U.getOr(byKey, k, () => []).push(f); });
+    const step = { at: now, by: 'advance', baseline: hash };
+    // 先把舊鍵轉換到新鍵，舊項目才不會在下面被判為消失
+    const split = migrateKeys(out.items, Q, present, step);
     const devsOf = (key) => (devicesOfKey(key).length ? undefined : evidenceDevs(Q, byKey.get(key)));
     const canJudge = observer(Q);
     const changes = []; const unobserved = [];
     const delta = { new: 0, fixed: 0, waiverExpired: 0 };
     const tNow = Date.parse(now);
-    const step = { at: now, by: 'advance', baseline: hash };
     const change = (key, it, to, reason) => {
       changes.push({ key, from: it.status, to, reason });
       moveTo(it, to, Object.assign({ reason }, step));
@@ -287,7 +341,7 @@
         falsePositive: tally['false-positive'], waiverExpired: delta.waiverExpired, unobserved: unobserved.length },
       coverage: coverageOf(Q), unknownPeers: unknownPeersOf(Q),
     });
-    return { ledger: out, changes, unobserved, skipped: false };
+    return { ledger: out, changes, unobserved, split, skipped: false };
   };
 
   function byStatus(ledger) {
@@ -341,7 +395,8 @@
   // ---- 從舊確認標記轉換
   /**
    * 把 app-acks 的確認標記（{ findingKey: { at, kind, note } }，或同內容的 Map）轉成處理紀錄，接著以 Q 推進一輪。
-   * 回傳與 advance 相同的 { ledger, changes, unobserved, skipped }。
+   * 回傳與 advance 相同的 { ledger, changes, unobserved, split, skipped }。
+   * 舊確認標記用的是當時的鍵：推進時依 KEY_MIGRATIONS 轉換到新鍵（例如 2.9.0 以前的 A12 鍵轉成 dns／ntp 兩筆），規則與 advance 相同。
    *   kind：accepted→accepted、scheduled→scheduled、false-positive→false-positive；未分類（null）與不認得的分類→accepted。
    *   accepted 的豁免原因取 note，到期日為 now＋182 天（從轉換時起算，避免很久以前的確認一轉換就到期）。
    *   每筆的第一筆 history 是 { at: 確認時間, from: null, to, by: 'user', baseline: null, reason: 'from-ack', ack: 原始紀錄 }，原始內容不遺失。
@@ -404,6 +459,6 @@
       .map((r) => Object.assign(r, { falsePositive: r.byStatus['false-positive'], rate: r.byStatus['false-positive'] / r.total }));
   };
 
-  Object.assign(L, { SCHEMA, STATUS, WAIVER_DAYS, USER_TO, devicesOfKey });
+  Object.assign(L, { SCHEMA, STATUS, WAIVER_DAYS, USER_TO, KEY_MIGRATIONS, devicesOfKey });
   S.ledger = L;
 })(globalThis.SSOT = globalThis.SSOT || {});

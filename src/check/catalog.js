@@ -33,6 +33,16 @@
       ],
       action: '確認最後一份是想要的資料（較早的不會進入基準）；若是合併多次收集造成的，刪除舊的那段。',
     },
+    I03: {
+      severity: 'warn', cat: '輸入', title: '已解析的區塊中有無法辨識的行',
+      causes: [
+        '收集檔中混入了其他文字，例如手動編輯時貼入的說明、markdown 標記或另一段輸出。',
+        'RouterOS 回傳錯誤訊息（`bad command name`、`syntax error`、`expected end of command`、`no such item`、`failure:` 等），指令可能沒有完整執行。',
+        '`print` 沒有加 `without-paging`，輸出夾帶分頁提示。',
+        'RouterOS 版本的輸出格式與解析器預期不同，例如某一列缺少必要欄位。',
+      ],
+      action: '依證據的行號打開收集檔核對：混入的文字刪除後重新載入；RouterOS 錯誤訊息要確認該指令在這個版本可以執行，修正後重新收集。確認是正常的 RouterOS 輸出卻被列出時，把那幾行去識別化後回報給維護者。同一區塊其他已解析的內容仍會進入基準。',
+    },
     // ---- 覆蓋
     C01: {
       severity: 'info', cat: '覆蓋', title: '網路設備僅由鄰居發現、沒有收集資料',

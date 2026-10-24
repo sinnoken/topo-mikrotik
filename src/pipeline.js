@@ -34,14 +34,13 @@
       b.how = r.how;
       b.adapters = r.adapters.map((a) => a.id);
       if (!r.adapters.length) { unrecognized.push(b); continue; }
-      const facts = [];
-      r.adapters.forEach((a) => {
-        const before = facts.length;
-        a.parse(b, (f) => { f.dev = b.devKey; f.adapter = a.id; f.dataType = a.dataType; f.vendor = a.vendor; f.block = b.id; facts.push(f); });
-        usage[a.id] = (usage[a.id] || 0) + (facts.length - before);
-      });
+      const p = S.adapters.parse(b, r.adapters, (f, a) => { f.dev = b.devKey; f.adapter = a.id; f.dataType = a.dataType; f.vendor = a.vendor; f.block = b.id; });
+      const facts = p.facts;
+      Object.keys(p.usage).forEach((id) => { usage[id] = (usage[id] || 0) + p.usage[id]; });
       // 有標記指令、辨識成功但完全沒有解析出內容 → 也算無法辨識（避免靜默得到空結果）
       if (!facts.length && b.lines.some((l) => l.trim())) { b.empty = true; unrecognized.push(b); continue; }
+      // 已解析區塊中認不得的行（I03）；整段認不得的區塊已列為 I01，不在這裡重複
+      b.unrecognizedLines = p.unrecognized;
       factsByBlock.set(b.id, facts);
       if (i % 200 === 199) yield { stage: '解析設備輸出', done: i + 1, total: blocks.length };
     }
@@ -183,7 +182,7 @@
     const blocks = c.blocks.map((b) => ({
       id: b.id, device: b.device, devKey: b.devKey, command: b.command, reader: b.reader, adapters: b.adapters || [], how: b.how,
       file: b.origin.file, start: b.origin.startLine, end: b.origin.endLine, empty: !!b.empty,
-      collectedAt: b.collectedAt || null, failure: b.failure || null,
+      collectedAt: b.collectedAt || null, failure: b.failure || null, unrecognizedLines: (b.unrecognizedLines || []).slice(),
     }));
 
     const sev = { error: 0, warn: 0, info: 0 };

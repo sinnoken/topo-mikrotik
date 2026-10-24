@@ -55,6 +55,18 @@
     };
     ctx.blocks.forEach((b) => (b.issues || []).forEach((x) => add('I01', `${b.origin.file} 第 ${x.line} 行：${ISSUE[x.kind](x)}`,
       b.devKey ? [{ type: 'device', key: b.devKey }] : [], [{ block: b.id, line: x.line }])));
+    // 已解析區塊中認不得的行（adapters.parse）：其餘內容照常進入基準，這幾行沒有；RouterOS 錯誤訊息另外點出，代表輸出可能不完整
+    const I03_SAMPLE = 3; // 訊息中列出前幾行的原文
+    ctx.blocks.forEach((b) => {
+      const ls = b.unrecognizedLines || []; if (!ls.length) return;
+      const text = (n) => { const t = (b.lines[n - b.origin.startLine] || '').trim(); return t.length > 60 ? t.slice(0, 60) + '…' : t; };
+      const quote = (n) => `第 ${n} 行「${text(n)}」`;
+      const errs = ls.filter((n) => S.adapters.util.rosError(b.lines[n - b.origin.startLine]));
+      const sample = ls.slice(0, I03_SAMPLE).map(quote).join('、') + (ls.length > I03_SAMPLE ? ' 等' : '');
+      const err = errs.length ? `；其中 ${errs.length} 行是 RouterOS 錯誤訊息（${quote(errs[0])}），指令可能沒有完整執行，資料可能不完整` : '';
+      add('I03', `${b.origin.file} 第 ${b.origin.startLine}–${b.origin.endLine} 行（${b.command || '沒有指令標記'}）：${ls.length} 行無法辨識，沒有進入基準：${sample}${err}`,
+        b.devKey ? [{ type: 'device', key: b.devKey }] : [], ls.map((line) => ({ block: b.id, line })));
+    });
     ctx.duplicates.forEach((d) => add('I02', `${name(d.dev)} 的「${S.adapters[d.adapter].label}」出現 ${d.blocks.length} 次，採用最後一次`,
       [{ type: 'device', key: d.dev }], d.blocks.map((b) => ({ block: b, line: ctx.blocks[b].origin.startLine }))));
 

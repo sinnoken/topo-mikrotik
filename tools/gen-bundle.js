@@ -66,6 +66,7 @@ function exportText(name, board, entries, compact) {
   return lines.join('\n');
 }
 const sort = (entries) => { const order = ['/interface bridge', '/interface ethernet', '/interface bonding', '/interface vlan', '/interface vrrp', '/interface bridge port', '/interface bridge vlan', '/ip address', '/ip dhcp-server network', '/routing id', '/routing ospf instance', '/ip route',
+  '/ip pool', '/ip dhcp-server lease', '/ip dns', '/ip dns static', '/ip firewall address-list', '/system ntp client',
   '/interface list', '/interface list member', '/ip firewall filter', '/ip firewall nat', '/ip firewall raw', '/ipv6 firewall filter', '/ip service']; return entries.sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])); };
 
 const bridgeHostText = (rows) => table(rows.map((m) => ({ flags: m.local ? 'DL' : m.static ? '' : 'D', kvs: [['mac-address', m.mac], ['on-interface', m.ifc], ['bridge', 'bridge1'], ['vid', m.vid], ['age', pick(['3s', '12s', '45s', '1m2s'])]] })), 'Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external ');
@@ -109,11 +110,15 @@ for (let s = 1; s <= SITES; s++) {
     const e = sw.entries; const slaves = ['sfp-sfpplus1', 'sfp-sfpplus2'].concat(F && a === 4 ? ['ether20'] : []);            // K03：ACC_04 的聚合多一個成員
     e.push(['/interface bridge', 'add', 'name=bridge1 vlan-filtering=yes']);
     e.push(['/interface bonding', 'add', `mode=802.3ad name=${bond} slaves=${slaves.join(',')} transmit-hash-policy=layer-2-and-3 comment="to ${core[0].name}"`]);
-    e.push(['/interface vlan', 'add', 'interface=bridge1 name=vlan10 vlan-id=10']);
+    e.push(['/interface vlan', 'add', `interface=bridge1 name=vlan10 vlan-id=10${F && a === 1 ? ' comment=Management' : ''}`]);           // V06：ACC_01 的 VLAN 10 說明與核心不同
     e.push(['/interface bridge port', 'add', `bridge=bridge1 interface=${bond}`]);
     e.push(['/interface bridge port', 'add', `bridge=bridge1 interface=ether24${F && a === 8 ? ' pvid=10' : ''} comment="to ${core[1].name}"`]);   // V04：ACC_08 與 CORE_02 的 native VLAN 不同
-    if (F && a === 12) e.push(['/interface vlan', 'add', 'interface=bridge1 name=vlan99 vlan-id=99']);
-    if (F && a === 10) e.push(['/ip firewall filter', 'add', 'action=drop chain=input dst-port=23 protocol=tcp']);           // F08：有防火牆規則但沒有 WAN interface list                                       // V05：VLAN 99 沒有任何成員埠
+    if (F && a === 12) e.push(['/interface vlan', 'add', 'interface=bridge1 name=vlan99 vlan-id=99 comment=MGMT']);                          // V05：VLAN 99 沒有任何成員埠；V07：說明 MGMT 在核心是 VLAN 10
+    if (F && a === 11) {                                                                                               // A07：10.1.20.0/24 在核心是 VLAN 20，在 ACC_11 是 VLAN 40
+      e.push(['/interface vlan', 'add', 'interface=ether19 name=vlan40 vlan-id=40']);
+      e.push(['/ip address', 'add', `address=10.${s}.20.250/24 interface=vlan40 network=10.${s}.20.0`]);
+    }
+    if (F && a === 10) e.push(['/ip firewall filter', 'add', 'action=drop chain=input dst-port=23 protocol=tcp']);           // F08：有防火牆規則但沒有 WAN interface list
     const srvPorts = []; const userPorts = [];
     for (let k = 1; k <= SRV; k++) {
       const port = `ether${k}`; const m = mac(pick(OUI_SRV)); const ip = `10.${s}.20.${(a - 1) * SRV + k + 10}`; const nm = `${C}-SRV-${pad(a)}${k}`;
@@ -138,9 +143,10 @@ for (let s = 1; s <= SITES; s++) {
     if (F && a === 1) sw.macs[0].static = true;                                                                                  // 靜態 MAC 項目
     e.push(['/interface bridge vlan', 'add', 'bridge=bridge1 tagged=bond1,ether24,bridge1 vlan-ids=10'.replace('bond1', bond)]);
     e.push(['/interface bridge vlan', 'add', `bridge=bridge1 tagged=${bond},ether24 untagged=${srvPorts.join(',')} vlan-ids=20`]);
-    const v30Untagged = userPorts.concat(F && a === 11 ? ['ether24'] : []);                                                     // V06：ACC_11 的 ether24 把 VLAN 30 設成 untagged（CORE_02 是 tagged）
+    const v30Untagged = userPorts.concat(F && a === 11 ? ['ether24'] : []);                                                     // V08：ACC_11 的 ether24 把 VLAN 30 設成 untagged（CORE_02 是 tagged）
     e.push(['/interface bridge vlan', 'add', `bridge=bridge1 tagged=${bond}${F && (a === 3 || a === 11) ? '' : ',ether24'} untagged=${v30Untagged.join(',')} vlan-ids=30`]); // V01：ACC_03 的 ether24 少了 VLAN 30
-    e.push(['/ip address', 'add', `address=${sw.ip}/24 interface=vlan10 network=10.${s}.10.0`]);
+    e.push(['/ip address', 'add', `address=${sw.ip}/${F && a === 10 ? 25 : 24} interface=vlan10 network=10.${s}.10.0`]);       // A06／A08：ACC_10 的 VLAN 10 遮罩是 /25
+    if (F && (a === 11 || a === 12)) e.push(['/ip address', 'add', `address=10.${s}.10.99/24 interface=vlan10 network=10.${s}.10.0`]); // A09：同一 IP 設定在兩台
     acc.push(sw);
   }
   acc.forEach((sw) => {                       // 上行學到的其他 MAC
@@ -166,7 +172,7 @@ for (let s = 1; s <= SITES; s++) {
     e.push(['/interface bridge', 'add', 'name=bridge1 vlan-filtering=yes']);
     if (ci === 0) acc.forEach((sw, i) => e.push(['/interface bonding', 'add', `mode=802.3ad name=bond${i + 1} slaves=sfp-sfpplus${2 * i + 1},sfp-sfpplus${2 * i + 2} transmit-hash-policy=layer-2-and-3 comment="to ${sw.name}"`]));
     e.push(['/interface bonding', 'add', 'mode=802.3ad name=bond100 slaves=qsfpplus1-1,qsfpplus2-1 comment="core interconnect"']);
-    VL.forEach((v) => e.push(['/interface vlan', 'add', `interface=bridge1 name=vlan${v.id} vlan-id=${v.id}`]));
+    VL.forEach((v) => e.push(['/interface vlan', 'add', `interface=bridge1 name=vlan${v.id} vlan-id=${v.id}${F && v.id === 10 ? ' comment=MGMT' : ''}`]));
     const trunk = acc.map((_, i) => (ci === 0 ? `bond${i + 1}` : `ether${i + 1}`));
     trunk.forEach((p) => e.push(['/interface bridge port', 'add', `bridge=bridge1 interface=${p}${F && ci === 1 && p === 'ether8' ? ' pvid=20' : ''}`])); // V04 e.push(['/interface bridge port', 'add', 'bridge=bridge1 interface=bond100']);
     VL.forEach((v) => e.push(['/interface bridge vlan', 'add', `bridge=bridge1 tagged=${trunk.join(',')},bond100,bridge1 vlan-ids=${v.id}`]));
@@ -195,12 +201,23 @@ for (let s = 1; s <= SITES; s++) {
     if (F && ci === 0) {                                                                                                // VRRP 閘道與正常的 DHCP 網路；R03：互相指向的兩條靜態路由
       e.push(['/interface vrrp', 'add', 'interface=vlan30 name=vrrp30 vrid=30']);
       e.push(['/ip address', 'add', `address=10.${s}.30.1/32 interface=vrrp30 network=10.${s}.30.1`]);
-      e.push(['/ip dhcp-server network', 'add', `address=10.${s}.30.0/24 gateway=10.${s}.30.1`]);
+      e.push(['/ip dhcp-server network', 'add', `address=10.${s}.30.0/24 dns-server=10.${s}.10.2 gateway=10.${s}.30.1 ntp-server=10.${s}.10.2`]);
       rt.push({ flags: 'As', dst: '10.97.0.0/16', gw: '10.96.0.1', dist: 1, scope: 30 }, { flags: 'As', dst: '10.96.0.0/16', gw: '10.97.0.1', dist: 1, scope: 30 });
     }
     if (F && ci === 1) {                                                                                                // R04：下一跳落入黑洞路由；R05：DHCP 閘道不在網段內
       rt.push({ flags: 'As', dst: '10.94.0.0/16', blackhole: true, dist: 1 }, { flags: 'As', dst: '10.95.0.0/16', gw: '10.94.0.1', dist: 1, scope: 30 });
       e.push(['/ip dhcp-server network', 'add', `address=10.${s}.20.0/24 gateway=10.${s}.21.1`]);
+      e.push(['/ip dhcp-server network', 'add', `address=10.${s}.30.0/24 dns-server=10.${s}.10.2 gateway=10.${s}.30.3`]);               // R06：同一 DHCP 網段的閘道與核心 01 不同
+    }
+    if (F) {                                                                                                           // 名稱 ↔ IP 設定與 DNS／NTP 伺服器
+      e.push(['/ip pool', 'add', `name=pool-user ranges=10.${s}.30.100-10.${s}.30.200`]);
+      if (ci === 0) e.push(['/ip dhcp-server lease', 'add', `address=10.${s}.30.20 mac-address=6C:FE:54:00:AA:01 server=dhcp-user`]);
+      e.push(['/ip dns', 'set', `allow-remote-requests=yes servers=${ci === 0 ? '1.1.1.1,8.8.8.8' : '8.8.8.8'}`]);                    // A12：DNS 伺服器不同（NTP 相同）
+      e.push(['/ip dns static', 'add', `address=10.${s}.10.2 name=ntp.${C.toLowerCase()}.lan`]);
+      e.push(['/ip dns static', 'add', `address=10.${s}.20.50 name=${ci === 0 ? 'nas' : 'storage'}.${C.toLowerCase()}.lan`]);          // A11：同一 IP 兩個名稱
+      e.push(['/ip firewall address-list', 'add', `address=10.${s}.10.0/24 list=MGMT`]);
+      if (ci === 1) e.push(['/ip firewall address-list', 'add', `address=10.${s}.99.0/24 list=MGMT`]);                                  // A10：MGMT 清單內容不同
+      e.push(['/system ntp client', 'set', 'enabled=yes servers=time.cloudflare.com']);
     }
     if (F && ci === 0) {                                                                                                // R02：核心 01 有一個無法對應的 OSPF 鄰居
       e.push(['/ip address', 'add', `address=172.31.1.1/30 interface=ether46 network=172.31.1.0`]);

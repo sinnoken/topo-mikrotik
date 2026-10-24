@@ -342,6 +342,21 @@ async function buildInput(input) {
     if (other >= 0) { App.selectFinding(other); if (!text('#detail').includes('原文 第 ')) throw new Error('其他檢查的證據應維持「原文 第 N 行」'); }
   });
   await step('點選每一筆檢查結果', () => { App.snap.findings.forEach((f, i) => { App.selectFinding(i); App.graph.draw(); }); });
+  await step('跨設備一致性：多數決推定偏離的設備列在檢查結果，VLAN 實體可開啟', () => {
+    const all = App.snap.findings;
+    const dev = all.map((f, i) => i).filter((i) => all[i].deviation && all[i].deviation.deviating.length);
+    if (!dev.length && !process.env.SMOKE_INPUT) throw new Error('範例資料應有多數決推定偏離設備的檢查結果');
+    dev.forEach((i) => {
+      const f = all[i]; App.selectFinding(i);
+      const box = $('#detail').querySelectorAll('.finding').find((x) => x.textContent.includes(f.message));
+      if (!box || !box.textContent.includes('依多數決推定偏離')) throw new Error(`${f.id} 應列出推定偏離的設備`);
+      if (!f.deviation.deviating.every((k) => box.textContent.includes(App.Q.devName(k)))) throw new Error(`${f.id} 推定偏離的設備不完整`);
+    });
+    // VLAN 實體的檢查結果開啟 VLAN 詳情；有不相連區塊時可切換區塊並回到全部
+    const vi = all.findIndex((f) => f.entities[0] && f.entities[0].type === 'vlan');
+    if (vi >= 0) { App.selectFinding(vi); if (App.sel.type !== 'vlan' || !text('#detail').includes('VLAN ' + all[vi].entities[0].key)) throw new Error('VLAN 的檢查結果應開啟 VLAN 詳情'); }
+    App.select(null);
+  });
   await step('點選每台設備、每條鏈路、部分介面', () => {
     App.snap.model.devices.slice(0, 300).forEach((d) => App.select({ type: 'device', key: d.key }, { focus: true }));
     const endpointDev = App.snap.model.interfaces.find((i) => i.unknownPeer);
@@ -362,6 +377,9 @@ async function buildInput(input) {
     ['10.1.20.11', '10.1.30.11', '10.255.1.1', '9.9.9.9'].forEach((ip) => App.select({ type: 'ip', key: ip }));
     App.select({ type: 'vlan', key: '30' }); App.graph.draw();
     if (!process.env.SMOKE_INPUT && !text('#detail').includes('只有一端有此 VLAN 的鏈路')) throw new Error('VLAN 不一致未顯示');
+    const ds = App.Q.vlan(30).domains;
+    App.select({ type: 'vlan', key: '30', domain: ds[0].key }); App.graph.draw();
+    if (!text('#detail').includes(`區塊 1／${ds.length}`)) throw new Error('選取 VLAN 區塊時標題未標示區塊');
   });
   await step('搜尋框', async () => {
     const inp = $('#search'); inp.value = 'acc_sw_0'; inp.dispatch('input'); await new Promise((r) => setTimeout(r, 150));
@@ -793,6 +811,21 @@ async function buildInput(input) {
     const inp = $('#pane-compare').querySelector('input');
     inp.files = [{ name: files[0].name, text: async () => files[0].text }]; inp.dispatch('change', { target: inp }); await new Promise((r) => setTimeout(r, 20));
     if (!text('#pane-compare').includes('有差異 0')) throw new Error('匯出的預期資料和同一份基準比對應全部一致');
+  });
+  await step('VLAN 不相連區塊：詳情標示區塊、可切換區塊並回到全部，圖上只標該區塊', async () => {
+    const dev = (n, ip) => `${n} (${ip}):\n### /export terse\n/interface bridge add name=bridge1\n/interface vlan add interface=bridge1 name=vlan50 vlan-id=50\n`;
+    await buildInput(dev('VA', '10.0.0.1') + '_____\n' + dev('VB', '10.0.0.2'));
+    const ds = App.Q.vlan(50).domains;
+    if (ds.length < 2) throw new Error('測試資料應有不相連的 VLAN 區塊');
+    App.select({ type: 'vlan', key: '50' });
+    if (!text('#detail').includes(`${ds.length} 個不相連區塊（推論）`)) throw new Error('應標示不相連區塊');
+    const link = $('#detail').querySelectorAll('a').find((x) => x.textContent.startsWith('區塊 2：'));
+    if (!link) throw new Error('應可點選其他區塊');
+    link.click();
+    if (App.sel.domain !== ds[1].key || !text('#detail').includes(`（區塊 2／${ds.length}）`)) throw new Error('點區塊應切換到該區塊');
+    if (Array.from(App.graph.hl.nodes.keys()).join() !== ds[1].devices.join()) throw new Error('圖上應只標出該區塊的設備');
+    $('#detail').querySelectorAll('a').find((x) => x.textContent === '顯示所有區塊').click();
+    if (App.sel.domain != null || App.graph.hl.nodes.size !== App.Q.vlan(50).devices.length) throw new Error('應可回到所有區塊');
   });
   await step('只有 MNDP 的設備對不畫線；詳情仍說明是廣播網域可達、非直連', async () => {
     const input = 'A (10.0.0.1):\n### /ip neighbor print detail\n'

@@ -42,8 +42,8 @@
     });
     m.devices.forEach((d) => { if (d.mgmtIp && !ipOwner.has(d.mgmtIp)) ipOwner.set(d.mgmtIp, d.key + '|'); });
     const arpsByIp = new Map(); m.arps.forEach((a) => U.getOr(arpsByIp, a.ip, () => []).push(a));
-    const vlansById = new Map(); const vlansByDev = new Map();
-    m.vlans.forEach((v) => { if (v.id != null) U.getOr(vlansById, v.id, () => []).push(v); U.getOr(vlansByDev, v.dev, () => []).push(v); });
+    const vlansByDev = new Map();
+    m.vlans.forEach((v) => U.getOr(vlansByDev, v.dev, () => []).push(v));
     const routesByDev = new Map(); m.routes.forEach((r) => U.getOr(routesByDev, r.dev, () => []).push(r));
     const inferredByDev = new Map(); const inferredByEp = new Map(); const inferredByKey = new Map();
     (m.inferredLinks || []).forEach((l) => {
@@ -104,6 +104,7 @@
     const ctxOf = (d) => U.getOr(fwCtx, d, () => S.infer.fw.fwContext(d, listsByDev.get(d) || [], (ifcsByDev.get(d) || []).map((i) => i.key), fwByDev.get(d) || []));
     const findingsBy = new Map();
     snap.findings.forEach((f, idx) => f.entities.forEach((e) => U.getOr(findingsBy, e.type + ':' + e.key, () => []).push(idx)));
+    const vlanSrc = { vlans: m.vlans, interfaces: m.interfaces, links: m.links, inferred: m.inferredLinks || [], ifc: (ep) => ifc.get(ep), collected: (d) => !!(dev.get(d) || {}).collected };
     // 介面也會繼承其鏈路、設備的檢查結果：在查詢時合併
     const Q = {
       snapshot: snap,
@@ -348,24 +349,22 @@
         macs.forEach((mk) => { const x = mac.get(mk); if (x) x.edge.forEach((ep) => locations.push({ mac: mk, ep })); });
         return { ip, owner: ipOwner.get(ip) || null, arps, macs, subnets: nets, locations };
       },
-      vlan(id) {
+      /**
+       * VLAN id 在整個基準的承載情況；domains 依承載此 VLAN 的鏈路與推論鏈路分成互不相連的區塊（推論，見設計說明 §5.3）。
+       * 給 domain（區塊的 key）時，devices／entries／carry／partial／inferred 只含那個區塊。
+       */
+      vlan(id, domain) {
         id = +id;
-        const entries = vlansById.get(id) || [];
-        const carry = []; const partial = [];
-        m.links.forEach((l) => {
-          if (l.layer !== 'l2') return;
-          const inA = l.vlansA.includes(id); const inB = l.vlansB.includes(id);
-          if (inA && inB) carry.push(l); else if ((inA || inB) && l.vlanComparable !== false && l.vlanMismatch) partial.push(l);
-        });
-        const devs = U.uniq(entries.map((v) => v.dev));
-        m.interfaces.forEach((i) => { if (U.ifcVlans(i).includes(id) && !devs.includes(i.dev)) devs.push(i.dev); });
-        // 推論鏈路：已收集的每一端（或其所屬聚合）都帶這個 VLAN；未收集的一端無從得知，屬推論
-        const hasVlan = (ep) => { const i = ifc.get(ep); return !!i && U.ifcVlans(i).includes(id); };
-        const inferred = (m.inferredLinks || []).filter((l) => {
-          const known = [l.a, l.b].filter((ep) => ifc.has(ep) && (dev.get(K.splitEp(ep)[0]) || {}).collected);
-          return known.length && known.every((ep) => hasVlan(ep) || (ifc.get(ep).lagMembers || []).some(hasVlan));
-        });
-        return { id, entries, devices: devs.sort(U.natural), carry, partial, inferred, names: U.uniq(entries.map((e) => e.name).filter(Boolean)) };
+        const all = S.infer.vlanSpan(vlanSrc, id);
+        const pick = (d) => {
+          const set = new Set(d.devices); const has = (l) => set.has(K.splitEp(l.a)[0]) || set.has(K.splitEp(l.b)[0]);
+          return Object.assign({}, d, { entries: all.entries.filter((e) => set.has(e.dev)), carry: all.carry.filter(has), partial: all.partial.filter(has), inferred: all.inferred.filter(has) });
+        };
+        const domains = all.domains.map(pick);
+        const one = domain != null && domains.find((d) => d.key === domain);
+        const scope = one || all;
+        return { id, domain: one ? one.key : null, domains, entries: scope.entries, devices: scope.devices, carry: scope.carry, partial: scope.partial, inferred: scope.inferred,
+          names: U.uniq(scope.entries.map((e) => e.name).filter(Boolean)) };
       },
 
       /** 一個搜尋框搜所有東西：MAC、IP、VLAN、設備、介面描述。 */
@@ -374,7 +373,7 @@
         if (!q) return out;
         if (K.isMacText(q)) { const r = Q.findMac(q); out.push({ type: 'mac', key: r.mac, label: K.macPretty(r.mac), sub: r.found ? (r.vendor || '') + (r.ips.length ? ' · ' + r.ips.join(', ') : '') : '基準中沒有這個 MAC' }); }
         if (S.ip.isIp(q)) { const r = Q.findIp(q); out.push({ type: 'ip', key: q, label: q, sub: r.owner ? '介面位址 · ' + Q.epName(r.owner.endsWith('|') ? r.owner + 'mgmt' : r.owner) : r.macs.length ? 'ARP：' + r.macs.map(K.macPretty).join(', ') : r.subnets.length ? '屬於 ' + Q.epName(r.subnets[0].ep) + ' 的網段' : '基準中沒有這個 IP' }); }
-        if (/^\d{1,4}$/.test(q) && +q >= 1 && +q <= 4094) { const v = Q.vlan(+q); out.push({ type: 'vlan', key: q, label: 'VLAN ' + q, sub: v.devices.length ? `${v.devices.length} 台設備 · ${v.names.join(' / ')}` : '基準中沒有這個 VLAN' }); }
+        if (/^\d{1,4}$/.test(q) && +q >= 1 && +q <= 4094) { const v = Q.vlan(+q); out.push({ type: 'vlan', key: q, label: 'VLAN ' + q, sub: v.devices.length ? `${v.devices.length} 台設備${v.domains.length > 1 ? `（${v.domains.length} 個不相連區塊）` : ''} · ${v.names.join(' / ')}` : '基準中沒有這個 VLAN' }); }
         const uq = q.toUpperCase();
         for (const d of m.devices) {
           if (out.length >= max) break;

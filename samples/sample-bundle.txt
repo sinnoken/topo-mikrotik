@@ -43,7 +43,7 @@ add mode=802.3ad name=bond12 slaves=sfp-sfpplus23,sfp-sfpplus24 \
 add mode=802.3ad name=bond100 slaves=qsfpplus1-1,qsfpplus2-1 \
     comment="core interconnect"
 /interface vlan
-add interface=bridge1 name=vlan10 vlan-id=10
+add interface=bridge1 name=vlan10 vlan-id=10 comment=MGMT
 add interface=bridge1 name=vlan20 vlan-id=20
 add interface=bridge1 name=vlan30 vlan-id=30
 /interface vrrp
@@ -79,13 +79,27 @@ add address=203.0.113.2/30 interface=ether47 network=203.0.113.0
 add address=10.1.30.1/32 interface=vrrp30 network=10.1.30.1
 add address=172.31.1.1/30 interface=ether46 network=172.31.1.0
 /ip dhcp-server network
-add address=10.1.30.0/24 gateway=10.1.30.1
+add address=10.1.30.0/24 dns-server=10.1.10.2 gateway=10.1.30.1 \
+    ntp-server=10.1.10.2
 /routing id
 add disabled=no id=10.1.255.1 name=main select-dynamic-id=""
 /routing ospf instance
 add disabled=no name=default router-id=main
 /ip route
 add dst-address=0.0.0.0/0 gateway=203.0.113.1
+/ip pool
+add name=pool-user ranges=10.1.30.100-10.1.30.200
+/ip dhcp-server lease
+add address=10.1.30.20 mac-address=6C:FE:54:00:AA:01 server=dhcp-user
+/ip dns
+set allow-remote-requests=yes servers=1.1.1.1,8.8.8.8
+/ip dns static
+add address=10.1.10.2 name=ntp.tpe.lan
+add address=10.1.20.50 name=nas.tpe.lan
+/ip firewall address-list
+add address=10.1.10.0/24 list=MGMT
+/system ntp client
+set enabled=yes servers=time.cloudflare.com
 /interface list
 add comment=defconf name=WAN
 add comment=defconf name=LAN
@@ -870,7 +884,7 @@ TPE_CORE_RT_02 (10.1.10.3):
 # serial number = HF644356096
 /interface bridge add name=bridge1 vlan-filtering=yes
 /interface bonding add mode=802.3ad name=bond100 slaves=qsfpplus1-1,qsfpplus2-1 comment="core interconnect"
-/interface vlan add interface=bridge1 name=vlan10 vlan-id=10
+/interface vlan add interface=bridge1 name=vlan10 vlan-id=10 comment=MGMT
 /interface vlan add interface=bridge1 name=vlan20 vlan-id=20
 /interface vlan add interface=bridge1 name=vlan30 vlan-id=30
 /interface bridge port add bridge=bridge1 interface=ether1
@@ -893,8 +907,16 @@ TPE_CORE_RT_02 (10.1.10.3):
 /ip address add address=10.1.30.3/24 interface=vlan30 network=10.1.30.0
 /ip address add address=203.0.113.6/30 interface=ether47 network=203.0.113.4
 /ip dhcp-server network add address=10.1.20.0/24 gateway=10.1.21.1
+/ip dhcp-server network add address=10.1.30.0/24 dns-server=10.1.10.2 gateway=10.1.30.3
 /routing ospf instance set [ find default=yes ] router-id=10.1.255.2
 /ip route add dst-address=0.0.0.0/0 gateway=203.0.113.5
+/ip pool add name=pool-user ranges=10.1.30.100-10.1.30.200
+/ip dns set allow-remote-requests=yes servers=8.8.8.8
+/ip dns static add address=10.1.10.2 name=ntp.tpe.lan
+/ip dns static add address=10.1.20.50 name=storage.tpe.lan
+/ip firewall address-list add address=10.1.10.0/24 list=MGMT
+/ip firewall address-list add address=10.1.99.0/24 list=MGMT
+/system ntp client set enabled=yes servers=time.cloudflare.com
 /interface list add comment=defconf name=WAN
 /interface list add comment=defconf name=LAN
 /interface list member add comment=defconf interface=bridge1 list=LAN
@@ -1587,7 +1609,7 @@ TPE_ACC_SW_01 (10.1.10.21):
 /interface ethernet set [ find default-name=ether2 ] comment=TPE-SRV-012
 /interface ethernet set [ find default-name=ether3 ] comment=TPE-SRV-013
 /interface bonding add mode=802.3ad name=bond1 slaves=sfp-sfpplus1,sfp-sfpplus2 transmit-hash-policy=layer-2-and-3 comment="to TPE_CORE_RT_01"
-/interface vlan add interface=bridge1 name=vlan10 vlan-id=10
+/interface vlan add interface=bridge1 name=vlan10 vlan-id=10 comment=Management
 /interface bridge port add bridge=bridge1 interface=bond1
 /interface bridge port add bridge=bridge1 interface=ether24 comment="to TPE_CORE_RT_02"
 /interface bridge port add bridge=bridge1 interface=ether1 pvid=20
@@ -3177,7 +3199,7 @@ TPE_ACC_SW_10 (10.1.10.30):
 /interface bridge vlan add bridge=bridge1 tagged=bond10,ether24,bridge1 vlan-ids=10
 /interface bridge vlan add bridge=bridge1 tagged=bond10,ether24 untagged=ether1,ether2,ether3 vlan-ids=20
 /interface bridge vlan add bridge=bridge1 tagged=bond10,ether24 untagged=ether9,ether10,ether11,ether12,ether13,ether14,ether15,ether16 vlan-ids=30
-/ip address add address=10.1.10.30/24 interface=vlan10 network=10.1.10.0
+/ip address add address=10.1.10.30/25 interface=vlan10 network=10.1.10.0
 /ip firewall filter add action=drop chain=input dst-port=23 protocol=tcp
 /system identity set name=TPE_ACC_SW_10
 
@@ -3349,6 +3371,7 @@ TPE_ACC_SW_11 (10.1.10.31):
 /interface ethernet set [ find default-name=ether3 ] comment=TPE-SRV-113
 /interface bonding add mode=802.3ad name=bond11 slaves=sfp-sfpplus1,sfp-sfpplus2 transmit-hash-policy=layer-2-and-3 comment="to TPE_CORE_RT_01"
 /interface vlan add interface=bridge1 name=vlan10 vlan-id=10
+/interface vlan add interface=ether19 name=vlan40 vlan-id=40
 /interface bridge port add bridge=bridge1 interface=bond11
 /interface bridge port add bridge=bridge1 interface=ether24 comment="to TPE_CORE_RT_02"
 /interface bridge port add bridge=bridge1 interface=ether1 pvid=20
@@ -3365,7 +3388,9 @@ TPE_ACC_SW_11 (10.1.10.31):
 /interface bridge vlan add bridge=bridge1 tagged=bond11,ether24,bridge1 vlan-ids=10
 /interface bridge vlan add bridge=bridge1 tagged=bond11,ether24 untagged=ether1,ether2,ether3 vlan-ids=20
 /interface bridge vlan add bridge=bridge1 tagged=bond11 untagged=ether9,ether10,ether11,ether12,ether13,ether14,ether15,ether16,ether24 vlan-ids=30
+/ip address add address=10.1.20.250/24 interface=vlan40 network=10.1.20.0
 /ip address add address=10.1.10.31/24 interface=vlan10 network=10.1.10.0
+/ip address add address=10.1.10.99/24 interface=vlan10 network=10.1.10.0
 /system identity set name=TPE_ACC_SW_11
 
 [admin@TPE_ACC_SW_11] > /ip neighbor print detail without-paging
@@ -3618,7 +3643,7 @@ TPE_ACC_SW_12 (10.1.10.32):
 /interface ethernet set [ find default-name=ether3 ] comment=TPE-SRV-123
 /interface bonding add mode=802.3ad name=bond12 slaves=sfp-sfpplus1,sfp-sfpplus2 transmit-hash-policy=layer-2-and-3 comment="to TPE_CORE_RT_01"
 /interface vlan add interface=bridge1 name=vlan10 vlan-id=10
-/interface vlan add interface=bridge1 name=vlan99 vlan-id=99
+/interface vlan add interface=bridge1 name=vlan99 vlan-id=99 comment=MGMT
 /interface bridge port add bridge=bridge1 interface=bond12
 /interface bridge port add bridge=bridge1 interface=ether24 comment="to TPE_CORE_RT_02"
 /interface bridge port add bridge=bridge1 interface=ether1 pvid=20
@@ -3636,6 +3661,7 @@ TPE_ACC_SW_12 (10.1.10.32):
 /interface bridge vlan add bridge=bridge1 tagged=bond12,ether24 untagged=ether1,ether2,ether3 vlan-ids=20
 /interface bridge vlan add bridge=bridge1 tagged=bond12,ether24 untagged=ether9,ether10,ether11,ether12,ether13,ether14,ether15,ether16 vlan-ids=30
 /ip address add address=10.1.10.32/24 interface=vlan10 network=10.1.10.0
+/ip address add address=10.1.10.99/24 interface=vlan10 network=10.1.10.0
 /system identity set name=TPE_ACC_SW_12
 
 [admin@TPE_ACC_SW_12] > /ip neighbor print detail without-paging

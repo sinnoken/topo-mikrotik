@@ -46,6 +46,19 @@
   /** 介面承載的所有 VLAN（PVID ∪ untagged ∪ tagged），由小到大；模型（Set）與 Snapshot（陣列）皆可用。 */
   util.ifcVlans = (i) => util.numSort(util.uniq([i.pvid, ...i.untaggedVlans, ...i.taggedVlans].filter((v) => v != null)));
 
+  /**
+   * 連通元件：nodes 為鍵的清單，pairs 為 [a, b]；端點不在 nodes 的邊略過。
+   * 回傳元件陣列，元件內與元件之間都依 nodes 的順序（取決於輸入，不受 Map 雜湊影響）。
+   */
+  util.components = function (nodes, pairs) {
+    const parent = new Map(nodes.map((n) => [n, n]));
+    const find = (x) => { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; };
+    pairs.forEach(([a, b]) => { if (parent.has(a) && parent.has(b)) parent.set(find(a), find(b)); });
+    const comps = new Map();
+    nodes.forEach((n) => util.getOr(comps, find(n), () => []).push(n));
+    return Array.from(comps.values());
+  };
+
   /** 以 Map 取得或建立。 */
   util.getOr = function (map, key, make) {
     let v = map.get(key);

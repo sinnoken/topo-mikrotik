@@ -14,7 +14,7 @@
   function newModel() {
     return {
       devices: new Map(), ifcs: new Map(), links: new Map(), vlans: new Map(), macs: new Map(),
-      arps: [], routes: [], claims: [], ospf: [], ospfAdjacencies: [], vmems: [], assocs: [], dhcpNets: [],
+      arps: [], routes: [], claims: [], ospf: [], ospfAdjacencies: [], vmems: [], assocs: [], dhcpNets: [], ipBinds: [],
       // 防火牆（事實）：規則依輸入順序；interface list 以「設備|名稱」為鍵；/ip service 只有 export 有寫的（預設值由 infer 補上）
       fw: { rules: [], lists: new Map(), services: new Map(), peers: [], policies: [] },
     };
@@ -24,6 +24,7 @@
     const d = getOr(M.devices, key, () => ({
       key, names: new Set(), mgmtIp: null, vendors: new Set(), collected: false, data: new Set(),
       hostname: null, routerId: null, collectedAt: null, ownMacs: new Set(), stp: null, seenBy: new Set(), src: [], deviceType: null, softwareVersion: null, platform: null, caps: null,
+      dnsServers: null, ntpServers: null, // { values: [], src: [[區塊, 行號]] }；只在內部模型，供跨設備比對
     }));
     if (name) d.names.add(name);
     return d;
@@ -81,7 +82,15 @@
           break;
         }
         case 'collectedAt': if (!d.collectedAt || f.at > d.collectedAt) d.collectedAt = f.at; break; // 多份 export 取最新
-        case 'dhcpNet': M.dhcpNets.push({ dev: f.dev, network: f.network, gateways: f.gateways, block: f.block, line: f.line }); break;
+        case 'dhcpNet': M.dhcpNets.push({ dev: f.dev, network: f.network, gateways: f.gateways, dns: f.dns || [], ntp: f.ntp || [], block: f.block, line: f.line }); break;
+        case 'dnsServers': case 'ntpServers': {
+          if (!f.servers.length) break;
+          const k = f.t; if (!d[k]) d[k] = { values: [], src: [] };
+          f.servers.forEach((v) => { if (!d[k].values.includes(v)) d[k].values.push(v); });
+          d[k].src.push([f.block, f.line]);
+          break;
+        }
+        case 'ipBind': M.ipBinds.push({ dev: f.dev, section: f.section, name: f.name, nameKey: bindNameKey(f), value: f.value, valueKey: bindValueKey(f.value), block: f.block, line: f.line }); break;
         case 'ifc': onIfc(M, f); break;
         case 'lldp': {
           const i = iface(M, f.dev, f.ifc); addSrc(i, f);
@@ -186,6 +195,18 @@
       const n = (sigCount.get(r.signature) || 0) + 1; sigCount.set(r.signature, n);
       r.key = `${ck}|${S.util.hash(r.signature)}${n > 1 ? '#' + n : ''}`;
     });
+  }
+
+  /** 名稱 ↔ IP 綁定的比對鍵：名稱 trim＋不分大小寫（靜態租約的名稱是 MAC，用 MAC 鍵）；IP 去掉 /32、網段取網路位址。 */
+  function bindNameKey(f) {
+    if (f.section === '/ip dhcp-server lease') { const mk = K.mac(f.name); if (mk) return mk; }
+    return String(f.name).trim().toLowerCase();
+  }
+  function bindValueKey(v) {
+    const s = String(v).trim().toLowerCase();
+    const p = /^[\d.]+(\/\d{1,2})?$/.test(s) ? S.ip.parseCidr(s) : null;
+    if (!p) return s; // 範圍、IPv6、DNS 名稱：原值比對
+    return p.len === 32 ? p.ip : `${p.net}/${p.len}`;
   }
 
   function onIfc(M, f) {

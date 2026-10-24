@@ -1468,6 +1468,82 @@ async function buildInput(input) {
     if (!$('#patch-body').querySelectorAll('.patch-item').length && !$('#patch-body').querySelector('.patch-skipped')) throw new Error('勾選後應產生計畫');
     $('#dlg-patch').close();
   });
+  await step('修正計畫的選擇（A12）：NTP 預設採多數（推論）並修改偏離的設備，DNS 沒有多數時提示選擇，選了某一組才產生指令，選「不修改」寫入處理紀錄；畫面與總表沒有 undefined', async () => {
+    const Q = App.Q; const RM = S.remediate; const RV = S.view.remediation; const PV = S.view.patchView; const VA = S.view.app;
+    const a12 = new Map(Q.findings().filter((f) => f.id === 'A12').map((f) => [f.facet, f]));
+    if (!a12.has('dns') || !a12.has('ntp')) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有 A12 的 DNS 與 NTP'); }
+    const dnsF = a12.get('dns'); const dnsKey = Q.findingKey(dnsF); const ntpKey = Q.findingKey(a12.get('ntp'));
+    // 前面的步驟（匯入與還原處理紀錄）留下的狀態不一定允許改為可接受：以空白的處理紀錄進行，結束時還原
+    const savedLedger = VA.ledgerJson();
+    App.importLedger('empty.json', JSON.stringify(S.ledger.empty())); await App.confirmImport();
+    if (VA.ledgerStatus(dnsF) !== 'open') throw new Error('前提：空白的處理紀錄推進後 DNS 這筆是待處理');
+    try {
+      PV.open(App, [dnsKey, ntpKey]);
+      const body = () => $('#patch-body');
+      const block = (k) => body().querySelectorAll('.patch-choice').find((b) => b.getAttribute('data-finding') === k);
+      const radio = (k, id) => block(k).querySelectorAll('.patch-choice-opt').find((r) => r.value === id);
+      const noUndefined = (where) => { if (text('#patch-body').includes('undefined')) throw new Error(where + '：修正計畫不應出現 undefined'); };
+      /** 計畫中這筆選擇產生的 item 都顯示在所屬設備下：對象是伺服器（不是規則）、修改前→後、警告與核心產生的指令 */
+      const checkItems = (plan, c) => c.items.map((k) => {
+        const it = plan.items.find((i) => i.key === k);
+        const box = body().querySelectorAll('.patch-dev').find((b) => b.getAttribute('data-dev') === it.dev).querySelectorAll('.patch-item').find((b) => b.getAttribute('data-key') === k);
+        if (!box) throw new Error('選擇產生的指令應列在 ' + it.dev + ' 下');
+        const tgt = box.querySelector('.patch-target').textContent;
+        if (tgt !== RV.targetText(it.target) || !tgt.includes(RV.FACET_ITEM[c.facet]) || !tgt.includes(it.target.menu)) throw new Error('對象應顯示伺服器的項目與設定選單：' + tgt);
+        if (!box.textContent.includes(it.note) || !it.warnings.every((w) => box.textContent.includes(w))) throw new Error('應顯示修改前→後（note）與警告');
+        if (box.querySelector('.patch-cmd').textContent !== RV.itemApplyLines(plan, it)) throw new Error('指令應由核心產生');
+        return it.dev;
+      });
+      noUndefined('開啟時');
+      // NTP：有多數時預設採多數，標示推論與依據，修改不在多數組的設備
+      const plan0 = PV.state.plan; const ntp = plan0.choices.find((c) => c.findingKey === ntpKey);
+      const maj = ntp.options.find((o) => o.id === 'majority');
+      if (!maj || ntp.chosen !== 'majority' || ntp.chosenBy !== 'default' || !radio(ntpKey, 'majority').checked) throw new Error('有多數時預設應選多數');
+      const majRow = block(ntpKey).querySelectorAll('.patch-choice-row').find((r) => r.getAttribute('data-option') === 'majority');
+      if (!majRow.querySelector('.patch-inferred') || !majRow.textContent.includes('推論') || !majRow.textContent.includes(`${maj.basis.total} 台中 ${maj.basis.agree} 台`)) throw new Error('多數選項應標示推論與依據');
+      if (!block(ntpKey).querySelector('.patch-choice-default')) throw new Error('預設採多數時應說明');
+      const ntpDevs = checkItems(plan0, ntp);
+      if (!ntpDevs.length || ntpDevs.some((d) => maj.basis.devs.includes(d))) throw new Error('採多數時應修改不在多數組的設備');
+      if (!ntpDevs.includes('TPE_ACC_SW_12')) throw new Error('範例資料的 NTP 應修改偏離的 TPE_ACC_SW_12');
+      // DNS：沒有多數時明確提示，沒有預設的選擇，也不產生指令
+      const dns0 = plan0.choices.find((c) => c.findingKey === dnsKey);
+      if (dns0.reason !== 'needs-choice') throw new Error('範例資料的 DNS 應沒有多數');
+      if (!block(dnsKey).querySelector('.patch-choice-need').textContent.includes('沒有多數') || block(dnsKey).querySelectorAll('.patch-choice-opt').some((r) => r.checked)) throw new Error('沒有多數時應提示選擇，且沒有預選');
+      if (plan0.items.some((i) => i.findingKey === dnsKey)) throw new Error('選擇前不應產生 DNS 的指令');
+      // 選一組（不含 RT_01 的那組）：其他組的設備（含 RT_01）產生指令；焦點留在剛選的 radio
+      const pick = dns0.options.find((o) => o.devs && !o.devs.includes('TPE_CORE_RT_01'));
+      const r = radio(dnsKey, pick.id); r.checked = true; r.dispatch('change');
+      if (PV.state.choices.get(dnsKey) !== pick.id) throw new Error('選擇應存在修正計畫的檢視狀態');
+      const plan1 = PV.state.plan; const dns1 = plan1.choices.find((c) => c.findingKey === dnsKey);
+      if (dns1.chosenBy !== 'user' || dns1.chosen !== pick.id || !radio(dnsKey, pick.id).checked) throw new Error('應以選擇重新產生計畫');
+      if (document.activeElement !== radio(dnsKey, pick.id)) throw new Error('重新產生後焦點應留在剛選的 radio（鍵盤操作）');
+      const dnsDevs = checkItems(plan1, dns1);
+      const others = dns0.options.filter((o) => o.devs && o.id !== pick.id).flatMap((o) => o.devs);
+      if (dnsDevs.slice().sort().join() !== others.slice().sort().join() || !dnsDevs.includes('TPE_CORE_RT_01')) throw new Error('選一組後應修改其他組的設備（範例資料是 TPE_CORE_RT_01）');
+      // 預覽與下載都跟著選擇：每台設備的檔案就是 files(plan) 的內容，總表列出選擇
+      const files = RM.files(plan1);
+      files.forEach((f) => { if (body().querySelectorAll('.patch-dev').find((b) => b.getAttribute('data-dev') === f.dev).querySelector('.patch-file').textContent !== f.apply) throw new Error('預覽應是依選擇產生的檔案'); });
+      noUndefined('選擇後');
+      const md = S.view.exporter.patchSummaryMarkdown(plan1, files, Q);
+      if (md.includes('undefined') || !md.includes('需要選擇的項目') || !md.includes(RV.choiceText(dns1).text)) throw new Error('總表應列出目前的選擇，且沒有 undefined');
+      // 選「不修改」：不產生指令，畫面填原因後以 S.ledger 標為可接受
+      const acc = radio(dnsKey, 'accept'); acc.checked = true; acc.dispatch('change');
+      const plan2 = PV.state.plan;
+      if (plan2.choices.find((c) => c.findingKey === dnsKey).reason !== 'accepted-choice' || plan2.items.some((i) => i.findingKey === dnsKey)) throw new Error('選不修改時不應產生指令');
+      const ledgerBefore = JSON.stringify(VA.ledger());
+      block(dnsKey).querySelector('.patch-accept-save').click(); await new Promise((res) => setTimeout(res, 10));
+      if (JSON.stringify(VA.ledger()) !== ledgerBefore || block(dnsKey).querySelector('.ledger-error').classList.contains('hidden')) throw new Error('沒有原因時應顯示錯誤，處理紀錄不變');
+      block(dnsKey).querySelector('.patch-accept-reason').value = '兩台各自使用不同的上游 DNS';
+      block(dnsKey).querySelector('.patch-accept-save').click(); await new Promise((res) => setTimeout(res, 10));
+      const it = VA.ledgerItem(dnsF);
+      if (it.status !== 'accepted' || it.waiver.reason !== '兩台各自使用不同的上游 DNS' || (await S.store.get('ledger')).items[dnsKey].status !== 'accepted') throw new Error('選不修改後處理紀錄應變成可接受並存進 store');
+      if (!$('#dlg-patch').open || !block(dnsKey).querySelector('.patch-accept-done')) throw new Error('標為可接受後修正計畫應維持開啟並顯示處理紀錄的狀態');
+      noUndefined('標為可接受後');
+    } finally {
+      PV.state.choices.clear(); $('#dlg-patch').close();
+      App.importLedger('restore.json', savedLedger); await App.confirmImport();
+    }
+  });
   await step('原始輸出：已解析但有認不得的行時標示「部分無法辨識（N 行）」，點一下開啟第一行', () => {
     const b = App.snap.blocks.find((x) => x.adapters.length && !x.empty && x.unrecognizedLines.length && x.devKey && App.Q.getDevice(x.devKey));
     if (!b) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有部分無法辨識的區塊'); }

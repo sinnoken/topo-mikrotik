@@ -394,6 +394,17 @@ pre.raw .hl { background: #fff3c4; display: block; }
 .patch-skip { font-size: var(--fs-md); padding: 3px 0 3px 10px; }
 .patch-skip .finding-ref, .fw-fix .finding-ref { overflow-wrap: anywhere; }
 .patch-skip-detail { font-size: var(--fs-sm); margin: 1px 0 0; }
+.patch-choices { margin: 12px 0; }
+.patch-choice { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; }
+.patch-choice p { margin: 4px 0; }
+.patch-choice .finding-ref { overflow-wrap: anywhere; }
+.patch-choice-set { margin: 6px 0 2px; padding: 4px 8px 6px; border: 1px solid var(--line-soft); border-radius: var(--radius-sm); }
+.patch-choice-set legend { padding: 0 4px; font-size: var(--fs-sm); font-weight: 600; color: var(--muted); }
+.patch-choice-row { display: block; padding: 3px 0; font-size: var(--fs-md); cursor: pointer; }
+.patch-choice-row.on { font-weight: 600; }
+.patch-accept .row { gap: 6px; }
+.patch-accept .patch-accept-reason { flex: 1; min-width: 160px; }
+.patch-accept input[type=date] { min-height: 28px; padding: 3px 6px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font-size: var(--fs-sm); }
 .diff-warnings { margin: 8px 0; }
 .diff-warning { font-size: var(--fs-md); padding: 2px 0; }
 .partial-unrecognized { margin-left: 6px; color: var(--warn-text); }

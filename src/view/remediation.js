@@ -3,7 +3,7 @@
  *   - 處理紀錄的狀態文字（STATUS_TEXT）：狀態本身與轉換規則在核心 S.ledger（見 app-ledger.js）
  *   - advice：規則的常見原因與處理（每次從 CATALOG 讀取）
  *   - sortByDevice：檢查結果依所屬設備（Q.findingDevice）排序，檢查結果分頁的「依設備」分組與匯出共用
- *   - 修正計畫的文字（LEVEL_TEXT、RISK_TEXT）與單一項目的套用指令（itemApplyLines，取自 S.remediate.renderRsc）
+ *   - 修正計畫的文字（LEVEL_TEXT、RISK_TEXT、targetText、choiceText）與單一項目的套用指令（itemApplyLines，取自 S.remediate.renderRsc）
  *   - matchFindings／findingRef：未產生指令的項目以 findingKey 對回檢查結果，列出訊息並可點擊開啟
  *   - facetText：檢查結果的檢查項目（finding.facet）的顯示文字，詳情與修正計畫的逐筆勾選共用
  *   - devicesCsvDraft：由 C01 產生 tools/collect.sh 的設備清單草稿
@@ -48,7 +48,7 @@
   }
 
   // ---------------------------------------------------------------- 修正計畫（S.remediate）
-  const LEVEL_TEXT = { auto: '可產生指令', choice: '需選擇處理方式（第二階段）', manual: '需人工判斷' };
+  const LEVEL_TEXT = { auto: '可產生指令', choice: '需選擇處理方式（已支援的規則在修正計畫中選擇要採用的值；其他規則尚未產生指令）', manual: '需人工判斷' };
   const RISK_TEXT = { low: '低', medium: '中', high: '高' };
   const RISK_CHIP = { low: 'ok', medium: 'warn', high: 'err' };
   const RISK_ORDER = ['low', 'medium', 'high'];
@@ -64,6 +64,24 @@
     const at = lines.indexOf('# ---- apply');
     if (at < 0) throw new Error('S.remediate.renderRsc 的輸出缺少「# ---- apply」段落');
     return lines.slice(at + 1).filter((l) => l && !l.startsWith('#')).join('\n');
+  }
+
+  /**
+   * item 的修改對象（plan.items[].target）的顯示文字，修正計畫與總表共用：
+   *   rule（F 系列）：「ip filter input 第 6 條」；servers（A12）：「NTP 伺服器（/system ntp client servers）」。
+   * 不認得的 type 原樣顯示 type 與 key，不顯示 undefined。
+   */
+  function targetText(t) {
+    if (t.type === 'rule') return `${t.family} ${t.table} ${t.chain} 第 ${t.position} 條`;
+    if (t.type === 'servers') return `${FACET_ITEM[t.facet] || t.facet}（${t.menu}）`;
+    return `${t.type} ${t.key}`;
+  }
+  /** plan.choices 的一筆目前的選擇：{ option（選到的選項或 null）, text（顯示文字） }；總表與畫面共用 */
+  function choiceText(c) {
+    const option = c.options.find((o) => o.id === c.chosen) || null;
+    if (!option) return { option, text: '沒有多數，尚未選擇（不產生指令）' };
+    const by = c.chosenBy === 'default' ? '（預設：多數決，推論）' : '（使用者選擇）';
+    return { option, text: option.label + by };
   }
 
   /** findingKey 對不到目前基準的檢查結果時的說明（例如 skipped 的 not-found） */
@@ -173,6 +191,6 @@
     return { text: out.join('\n') + '\n', rows };
   }
 
-  V.remediation = { STATUS_TEXT, statusText, STATUS_CHIP, isPendingStatus, advice, sortByDevice, LEVEL_TEXT, RISK_TEXT, RISK_CHIP, maxRisk, itemApplyLines,
+  V.remediation = { STATUS_TEXT, statusText, STATUS_CHIP, isPendingStatus, advice, sortByDevice, LEVEL_TEXT, RISK_TEXT, RISK_CHIP, maxRisk, itemApplyLines, targetText, choiceText,
     MISSING_FINDING_TEXT, FINDING_TEXT_MAX, clipText, matchFindings, findingRef, FACET_ITEM, FACET_RULES: Object.keys(FACET_FORMAT), facetText, devicesCsvDraft, USER_PLACEHOLDER };
 })(globalThis.SSOT = globalThis.SSOT || {});

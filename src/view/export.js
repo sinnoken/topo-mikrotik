@@ -170,7 +170,7 @@
   }
 
   /**
-   * 修正計畫的總表（Markdown）：多台設備逐檔下載時一起下載，列出每台設備的檔名、項目與風險，以及沒有產生指令的項目與原因。
+   * 修正計畫的總表（Markdown）：多台設備逐檔下載時一起下載，列出每台設備的檔名、項目與風險、需要選擇的項目目前的選擇，以及沒有產生指令的項目與原因。
    * plan 是 S.remediate.plan 的結果，files 是 S.remediate.files(plan)（檔名用它的 base）；Q 用來顯示設備名稱。
    * 第二階段的變更說明文件由核心產生後，這份總表改由它取代。
    */
@@ -197,13 +197,17 @@
     files.forEach((x) => {
       out.push('', `## ${mdText(x.name)}`, '');
       plan.items.filter((i) => i.dev === x.dev).forEach((it, n) => {
-        const t = it.target;
-        out.push(`${n + 1}. ${it.id} ${mdText(`${t.family} ${t.table} ${t.chain}`)} 第 ${t.position} 條（風險：${risk(it.risk.level)}）：${mdText(it.note)}`);
+        out.push(`${n + 1}. ${it.id} ${mdText(RM.targetText(it.target))}（風險：${risk(it.risk.level)}）：${mdText(it.note)}`);
         out.push(`   - 風險說明：${mdText(it.risk.text)}`);
         it.warnings.forEach((w) => out.push(`   - 警告：${mdText(w)}`));
         it.evidence.forEach((e) => out.push(`   - 修改前：${mdText(e.file)} 第 ${e.line} 行：${mdCode(e.text)}`));
       });
     });
+    // 需要選擇的項目（plan.choices）：每筆目前的選擇，與預設（多數決，推論）或使用者選擇
+    if ((plan.choices || []).length) {
+      out.push('', '## 需要選擇的項目', '');
+      plan.choices.forEach((c) => out.push(`- ${c.id} ${mdText(c.title)}：${mdText(RM.choiceText(c).text)}`));
+    }
     if (plan.skipped.length) {
       out.push('', '## 未產生指令的項目', '');
       plan.skipped.forEach((x) => out.push(`- ${x.id || '（基準中沒有）'} ${name(x.dev)}：${mdText(x.detail)}`));

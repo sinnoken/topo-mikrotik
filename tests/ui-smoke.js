@@ -105,7 +105,11 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     if (!App.snap) throw new Error('基準未建立：' + text('#input-status'));
     await App.layoutJob;
     await new Promise((r) => setTimeout(r, 20));
-    if (!process.env.SMOKE_INPUT && !text('#pane-findings').includes('LLDP 單向')) throw new Error('檢查結果未顯示');
+    // 依輸入判斷：範例資料刻意含 K01（LLDP 單向），乾淨的大型網路可能沒有
+    const k01 = App.snap.findings.find((f) => f.id === 'K01');
+    if (!process.env.SMOKE_INPUT && !k01) throw new Error('範例資料應有 K01（LLDP 單向）');
+    if (k01 && !text('#pane-findings').includes(k01.title)) throw new Error('檢查結果未顯示');
+    if (!k01 && text('#pane-findings').includes(S.check.CATALOG.K01.title)) throw new Error('沒有 K01 時不應列出 LLDP 單向');
     if (!$('#welcome').classList.contains('hidden')) throw new Error('歡迎畫面未隱藏');
     const collected = App.snap.model.devices.find((device) => device.collected);
     App.select({ type: 'device', key: collected.key });
@@ -284,6 +288,18 @@ const step = async (name, fn) => { try { await fn(); steps.push('  ✓ ' + name)
     head().querySelector('.head').click();
     if (head().querySelectorAll('.rule').length !== pass.length || !text('#pane-findings').includes(pass[0].title)) throw new Error('展開後應列出每一條通過的規則');
     head().querySelector('.head').click();
+  });
+  await step('C02 的證據標示為已收集的指令，而不是缺少的資料', () => {
+    const i = App.snap.findings.findIndex((f) => f.id === 'C02' && f.evidence.length);
+    if (i < 0) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有帶證據的 C02'); }
+    const f = App.snap.findings[i]; App.selectFinding(i);
+    const t = text('#detail');
+    if (!t.includes('已收集：')) throw new Error('C02 詳情應標示「已收集：」');
+    const cmds = f.evidence.map((e) => App.Q.block(e.block)).filter((b) => b && b.command).map((b) => b.command);
+    if (!cmds.length || !cmds.some((c) => t.includes(c))) throw new Error('C02 詳情應顯示已收集區塊的指令');
+    if (f.evidence.length > 3 && !f.evidence.every((e) => t.includes(`第 ${e.line} 行`))) throw new Error('C02 的證據應全部列出');
+    const other = App.snap.findings.findIndex((x) => x.id !== 'C02' && x.evidence.length && x.entities.length && x.entities.every((e) => !App.Q.findingsFor(e.type, e.key).some((y) => y.id === 'C02')));
+    if (other >= 0) { App.selectFinding(other); if (!text('#detail').includes('原文 第 ')) throw new Error('其他檢查的證據應維持「原文 第 N 行」'); }
   });
   await step('點選每一筆檢查結果', () => { App.snap.findings.forEach((f, i) => { App.selectFinding(i); App.graph.draw(); }); });
   await step('點選每台設備、每條鏈路、部分介面', () => {

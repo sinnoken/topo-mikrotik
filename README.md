@@ -96,7 +96,7 @@ cp tools/devices.csv devices.csv
 ```
 
 - 收集器預設使用既有 SSH key 或 ssh-agent，並保留系統的 host-key 驗證；不要略過 host-key 檢查。
-- 不要在 CSV 或收集檔放入密碼、私鑰或 `show-sensitive` 輸出。
+- 不要在 CSV 放入密碼或私鑰。RouterOS 6.x 設備的收集檔會含密碼與金鑰（收集器不加 `hide-sensitive`）；收集檔請自行保管，分享或當測試資料前先去識別化，見[收集清單的「安全」](docs/收集清單與輸入格式.md#1-每台設備要收集的指令)。
 - 沒有設定 SSH key 時，可加 `--ask-password`：每台設備互動連線一次（輸入密碼、確認 host key），其餘命令共用該連線；密碼不會寫入任何檔案。
 - 每次執行都會覆蓋輸出檔，要保留舊結果請用 `-o` 指定其他檔名。
 

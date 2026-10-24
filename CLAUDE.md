@@ -25,6 +25,8 @@ npm run test:docs        # 只跑文件與分工一致性（tests/docs.js）
 npm run test:collector   # 只跑 SSH 收集器測試（tests/collect.sh）
 npm run test:ui          # 只跑畫面冒煙測試（tests/ui-smoke.js，模擬 DOM）
 npm run test:large       # 核心測試＋約 1000 台壓力測試
+npm run test:core -- --grep A02   # 只跑名稱含 A02 的測試（可與 --large 並用；沒有符合的測試時以失敗結束）
+SSOT_LARGE_MAX_MS=30000 npm run test:large   # 覆寫壓力測試時間上限（預設 20000 ms；非數字或 ≤0 直接失敗）
 npm run golden:update    # 刻意改變 Snapshot 後更新黃金基準（tests/golden/），提交前用 git diff 檢視
 node tools/anonymize.js 收集檔.txt -o tests/fixtures/real/<版本>-<型號>.txt   # 真實輸出去識別化後當測試資料
 npm run sample           # 重新產生 samples/sample-bundle.txt 並嵌入成 sample-bundle.js
@@ -33,8 +35,9 @@ npm run oui -- <index.json>      # 重新產生 src/data/oui-data.js（來源：
 git diff --check         # 提交前檢查
 ```
 
-`tests/run.js` 沒有篩選單一測試的參數；它是自製的 `test(name, fn)` 清單，要單跑某項時可暫時只保留該測試，
-或在 Node REPL 以 `require('./tests/load.js')()` 取得 `SSOT` 命名空間直接呼叫 `S.build(...)`。
+`tests/run.js` 是自製的 `test(name, fn)` 清單，可用 `--grep <文字>` 只跑名稱含該文字的測試（區分大小寫），
+結尾會註明「已篩選：N／總數」；沒有任何測試符合或參數不認得時以失敗結束。
+也可在 Node REPL 以 `require('./tests/load.js')()` 取得 `SSOT` 命名空間直接呼叫 `S.build(...)`。
 新增測試使用既有 `build(text)` helper（固定 `now: '2026-01-01T00:00:00Z'`）。
 
 ## 架構
@@ -79,8 +82,8 @@ git diff --check         # 提交前檢查
   範例資料刻意含問題；新增檢查時要在產生器放對應問題並加測試。
 - 解析器依 RouterOS 文件撰寫，測試資料為手寫／產生，尚未以真實設備驗證；欄位語意以官方手冊
   <https://manual.mikrotik.com/llms.txt> 為準。
-- 大型冒煙測試（`SMOKE_INPUT=samples/large-1000.txt node tests/ui-smoke.js`）的「基準摘要與行動入口」一項本來就會失敗：
-  它檢查範例資料才有的「LLDP 單向」，乾淨的大型網路沒有這個問題。
+- 大型冒煙測試：先 `npm run gen:large`，再 `SMOKE_INPUT=samples/large-1000.txt node tests/ui-smoke.js`，應全部通過。
+  依範例資料才有的問題（例如 K01「LLDP 單向」）所寫的斷言，都依 Snapshot 是否有該 finding 判斷；範例資料必須含 K01。
 
 ## Agent 分工（`.claude/agents/`）
 

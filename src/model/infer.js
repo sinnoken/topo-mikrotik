@@ -6,7 +6,8 @@
  *   - 分群（profile 有 group 用 profile，否則依拓樸鏈路連通元件）
  *   - 套用 profile 註解
  *   - 推論鏈路（inferLinks：沒有 LLDP／CDP 時的替代證據）
- *   - Wi-Fi 客戶端位置（wifiLocations）與未收集交換器底下的終端（behindLocations），須在 check.run 之後呼叫
+ *   - 終端埠（edgeLocations：M.edge、m.edge；介面鄰接索引 M.adjacency 供 check 使用）
+ *   - Wi-Fi 客戶端位置（wifiLocations）與未收集交換器底下的終端（behindLocations），使用終端埠結果，須在 infer 之後呼叫
  */
 (function (S) {
   'use strict';
@@ -22,6 +23,7 @@
     inferLinks(M);
     if (profile) applyProfile(M, profile);
     groups(M);
+    edgeLocations(M); // 用到 profile 覆寫後的設備類型與推論鏈路，放在最後
   }
 
   /** 型號 → 類型：CRS／CSS 是交換器；CCR、RB、hAP、hEX、CHR 等是路由器。 */
@@ -100,7 +102,7 @@
     M.links.forEach((l) => {
       if (l.layer !== 'l2') return;
       if (l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN) {
-        l.vlansA = []; l.vlansB = []; l.vlansCommon = []; l.vlanComparable = false;
+        l.vlansA = []; l.vlansB = []; l.vlansCommon = []; l.vlanComparable = false; l.vlanMismatch = false;
         return;
       }
       l.vlansA = effVlans(M, l.a); l.vlansB = effVlans(M, l.b);
@@ -109,6 +111,8 @@
       const da = M.devices.get(K.splitEp(l.a)[0]); const db = M.devices.get(K.splitEp(l.b)[0]);
       const hasData = (d) => d && VLAN_DATA.some((t) => d.data.has(t));
       l.vlanComparable = hasData(da) && hasData(db) && !l.hearsay;
+      // 兩端都有 VLAN 資料時，任一端有對方沒有的 VLAN 就是不一致（V01）；effVlans 已去重
+      l.vlanMismatch = l.vlanComparable && (l.vlansCommon.length < l.vlansA.length || l.vlansCommon.length < l.vlansB.length);
     });
   }
 
@@ -219,7 +223,7 @@
       m.seen.forEach((_, ep) => {
         if (devOf(ep) === owner) return;
         S.util.getOr(seenOn, ep, () => new Set()).add(owner);
-        if (!seenSrc.has(ep + '>' + owner)) seenSrc.set(ep + '>' + owner, m.seenSrc && m.seenSrc.get(ep));
+        if (!seenSrc.has(ep + '>' + owner)) seenSrc.set(ep + '>' + owner, S.model.firstSeenSrc(m, ep));
         const ports = S.util.getOr(portsOf, devOf(ep) + '>' + owner, () => []); if (!ports.includes(ep)) ports.push(ep);
       });
     });
@@ -318,12 +322,77 @@
   }
 
   /**
+   * 虛擬介面（不會是終端埠，也不列入 A04）：有 RouterOS 原始 type 時依事實判斷；沒有介面資料時才退回名稱推論。
+   * 名稱規則包含 bridge，與 rawType=bridge 的結果一致（bridge 介面上學到的是 bridge 本身或本機項目，不是外部終端）。
+   * 只讀 rawType 與 name，內部模型 M 與序列化後的 Snapshot 介面都適用（query 的 Wi-Fi 區段也用它）。
+   */
+  const NON_EDGE_TYPES = new Set(['bridge', 'vlan', 'loopback', 'vrrp']);
+  const VIRTUAL_NAME = /^(irb|vlan|lo\d|bridge)/;
+  function isVirtualIfc(i) {
+    return i.rawType ? NON_EDGE_TYPES.has(i.rawType) : VIRTUAL_NAME.test(i.name);
+  }
+  /** 各設備自己的介面 MAC（/interface print 的 mac-address）：Map(dev → Set(mac))；出現在轉發表時不是外部終端。 */
+  function hwMacsByDev(M) {
+    const out = new Map();
+    M.ifcs.forEach((i) => { const m = i.hwMac && K.mac(i.hwMac); if (m) S.util.getOr(out, i.dev, () => new Set()).add(m); });
+    return out;
+  }
+  /** 介面鄰接索引：ep → 經過該埠的 L2 鏈路，不含只證明廣播網域可達的 MNDP 鏈路（終端埠、K02、A04 共用）。 */
+  function adjacencyByEp(M) {
+    const out = new Map();
+    M.links.forEach((l) => {
+      if (l.layer !== 'l2' || l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN) return;
+      [l.a, l.b].forEach((ep) => S.util.getOr(out, ep, () => []).push(l));
+    });
+    return out;
+  }
+  /**
+   * 終端埠（推論）：M.edge＝Map(ep → { linked })，m.edge＝該 MAC 出現的終端埠（排序）。
+   * 介面鄰接索引存成 M.adjacency 供 check（K02、A04）直接讀：edgeLocations 是 infer 最後一步，之後 M.links 不再變動。
+   */
+  function edgeLocations(M) {
+    M.adjacency = adjacencyByEp(M);
+    const edge = edgePorts(M, M.adjacency);
+    M.edge = edge;
+    M.macs.forEach((m) => { m.edge = Array.from(m.seen.keys()).filter((ep) => edge.has(ep)).sort(); });
+  }
+  /**
+   * 終端埠：已收集設備上、恰好學到一個 MAC、非 Wi-Fi、狀態不是 down 的介面，
+   * 且沒有連到其他「已收集的網路設備」（連到主機或未收集設備的埠仍算終端），也沒有推論鏈路。
+   * adjacencyLinksByEp（adjacencyByEp）僅包含介面鄰接證據；廣播網域（MNDP）可達不代表該埠有 LLDP／CDP 鄰接。
+   * 回傳 Map(ep → { linked: 是否有任何 LLDP／CDP 鄰接 })
+   */
+  function edgePorts(M, adjacencyLinksByEp) {
+    const out = new Map();
+    const toInfra = (ep) => (adjacencyLinksByEp.get(ep) || []).some((l) => {
+      const peer = M.devices.get(K.splitEp(l.a === ep ? l.b : l.a)[0]);
+      return peer && peer.collected && peer.kind !== 'host';
+    });
+    const hasAdjacency = (ep) => adjacencyLinksByEp.has(ep);
+    // 已推論接到網路設備（例如底下沒有其他終端的 CSS106，MAC 表只剩它自己）的埠不是終端埠
+    const inferredEps = new Set((M.inferred || []).flatMap((r) => [r.a, r.b]));
+    const ownMacs = hwMacsByDev(M);
+    M.ifcs.forEach((i, ep) => {
+      if (i.macs.size !== 1 || i.type === 'wireless' || i.status === 'down' || i.enabled === false || isVirtualIfc(i)) return;
+      if (!M.devices.get(i.dev).collected) return;
+      const own = ownMacs.get(i.dev);
+      if (own && own.has(Array.from(i.macs)[0])) return;
+      const group = [ep];
+      if (i.lag) { const p = M.ifcs.get(i.lag); if (p) group.push(p.key, ...p.lagMembers); }
+      group.push(...i.lagMembers);
+      if (group.some((g) => toInfra(g) || inferredEps.has(g))) return;
+      out.set(ep, { linked: group.some(hasAdjacency) });
+    });
+    return out;
+  }
+
+  /**
    * Wi-Fi 客戶端位置（推論）：依證據強度選一個位置，其餘列為候選。
    *   registration：關聯表（最強）。多台 AP 都有時取 last-activity 最小（最近有活動）者，其餘視為可能漫遊
    *   bridge-wifi ：已收集設備的 MAC 表在無線介面學到
    *   via-ap-port ：交換器埠的鄰居是 AP（鄰居回報 wlan-ap 功能，或型號為 cAP／wAP）且 AP 沒有收集資料；無法區分有線或無線
    * 只有出現 Wi-Fi 證據的 MAC 才有 wifi；已判定為有線終端埠的 MAC、AP 自己的 MAC 不套用 via-ap-port。
-   * 使用 check.run 算出的 m.edge，所以必須在檢查之後呼叫。
+   * 使用 edgeLocations 算出的 m.edge，所以必須在 infer 之後呼叫。
    */
   const AP_BOARD = /^(cAP|wAP)/i;
   function wifiLocations(M) {
@@ -364,7 +433,7 @@
    *   - 不是已知設備自己的 MAC、沒有已確定的位置（終端埠、Wi-Fi）
    *   - 沒有在錨點那一側其他已收集交換器「不朝向錨點設備」的埠出現（否則在那台交換器後面）
    * 錨點那一側只有一台未收集設備時 dev 為該設備；有多台（例如 CSS106 再串 CSS610）時 dev 為 null，via 列出全部。
-   * 同一 MAC 有多個錨點時，取那一側已收集交換器最少者（最靠近終端）。使用 check.run 算出的 m.edge。
+   * 同一 MAC 有多個錨點時，取那一側已收集交換器最少者（最靠近終端）。使用 edgeLocations 算出的 m.edge。
    */
   function behindLocations(M) {
     const { portsOf, macOwner } = M.fdbIndex || {};
@@ -386,5 +455,5 @@
     return d.key;
   }
 
-  S.infer = { infer, displayName, effVlans, wifiLocations, behindLocations };
+  S.infer = { infer, displayName, effVlans, isVirtualIfc, hwMacsByDev, wifiLocations, behindLocations };
 })(globalThis.SSOT = globalThis.SSOT || {});

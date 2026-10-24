@@ -1,5 +1,7 @@
 /*
- * 測試：node tests/run.js        （加 --large 會另外跑約 1000 台的壓力測試）
+ * 測試：node tests/run.js [--large] [--grep <文字>]
+ *   --large        另外跑約 1000 台的壓力測試；時間上限預設 20000 ms，可用環境變數 SSOT_LARGE_MAX_MS 覆寫
+ *   --grep <文字>  只跑名稱含該文字的測試（區分大小寫）；沒有任何測試符合時以失敗結束
  * 不需要任何套件。每個測試都在 Node 上直接載入與瀏覽器相同的核心檔案。
  * 注意：測試用的 RouterOS 輸出是依文件與慣例撰寫，不是從真實設備擷取；真實輸出請另外驗證。
  */
@@ -10,6 +12,27 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const load = require('./load.js');
 const S = load();
+
+// 命令列參數與環境變數：不合法時直接結束，不靜默改用預設
+const usage = (msg) => { console.error(`tests/run.js：${msg}\n用法：node tests/run.js [--large] [--grep <文字>]`); process.exit(1); };
+const ARGS = { large: false, grep: null };
+for (let k = 2; k < process.argv.length; k++) {
+  const a = process.argv[k];
+  if (a === '--large') ARGS.large = true;
+  else if (a === '--grep' || a.startsWith('--grep=')) {
+    const v = a === '--grep' ? process.argv[++k] : a.slice('--grep='.length);
+    if (v == null || v === '') usage('--grep 需要指定要篩選的測試名稱文字');
+    if (ARGS.grep != null) usage('--grep 只能指定一次');
+    ARGS.grep = v;
+  } else usage(`不認得的參數「${a}」`);
+}
+const LARGE_MAX_MS = (() => {
+  const raw = process.env.SSOT_LARGE_MAX_MS;
+  if (raw == null) return 20000;
+  const n = Number(raw);
+  if (raw.trim() === '' || !Number.isFinite(n) || n <= 0) usage(`環境變數 SSOT_LARGE_MAX_MS 必須是大於 0 的毫秒數，目前是「${raw}」`);
+  return n;
+})();
 const ROOT = path.join(__dirname, '..');
 const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
 const build = (text, opt) => S.build([{ name: 't.txt', text }], Object.assign({ now: '2026-01-01T00:00:00Z' }, opt));
@@ -304,6 +327,19 @@ test('interface print 缺漏：改用 export 的 bridge／vlan 定義判斷，�
   assert.deepStrictEqual(['br-mgmt', 'v-10', 'irb9'].map((n) => iface(s, 'SW_A|' + n).edge), [false, false, false]);
   assert.strictEqual(iface(s, 'SW_A|ether1').edge, true);
 });
+test('沒有介面資料時，名稱 bridge* 的介面依名稱規則視為虛擬：不是終端埠、不列入 A03／A04（與 rawType=bridge 一致）', () => {
+  const many = Array.from({ length: 6 }, (_, k) => ` ${k + 2} D mac-address=02:AA:BB:00:01:0${k} on-interface=bridge2 bridge=bridge1\n`).join('');
+  const s = build('SW_A (10.0.0.1):\n### /interface bridge host print detail\n'
+    + ' 0 D mac-address=02:AA:BB:00:00:01 on-interface=bridge1 bridge=bridge1\n'
+    + ' 1 D mac-address=02:AA:BB:00:00:02 on-interface=ether1 bridge=bridge1\n' + many);
+  assert.deepStrictEqual(['bridge1', 'bridge2'].map((n) => [iface(s, 'SW_A|' + n).rawType, iface(s, 'SW_A|' + n).edge, iface(s, 'SW_A|' + n).unknownPeer]),
+    [[null, false, false], [null, false, false]]);
+  assert.strictEqual(iface(s, 'SW_A|ether1').edge, true);
+  const a03 = s.findings.filter((f) => f.id === 'A03');
+  assert.strictEqual(a03.length, 1);
+  assert.ok(!/bridge1/.test(a03[0].message), a03[0].message);
+  assert.strictEqual(count(s, 'A04'), 0);
+});
 test('LLDP interface-name 為 bridge/port：取實體埠配對，雙向確認且不產生 bridge/ 假介面', () => {
   const nb = (local, ip, mac, id, name) => ` 0 interface=${local} address=${ip} mac-address=${mac} identity="${id}" platform="MikroTik" interface-name="${name}" discovered-by=lldp,mndp\n`;
   const s = build('A (192.168.77.1):\n### /ip neighbor print detail without-paging\n' + nb('ether3,bridge', '192.168.77.9', 'D4:01:C3:4E:2D:04', 'B', 'bridge/ether2')
@@ -484,6 +520,17 @@ test('未知對端：Wi-Fi 介面不列為終端，但每個 MAC 觀察位置列
     ['wifi1', 'AABBCC000001'], ['wifi2', 'AABBCC000001'],
   ], 'Wi-Fi 每個 MAC 觀察位置都應列入終端清單');
 });
+test('查詢的 Wi-Fi 區段與終端埠共用 isVirtualIfc：有 rawType 時依類型，不再以名稱排除', () => {
+  // rawType=wifi 的介面即使名稱以 vlan 開頭也是無線介面（舊版查詢以名稱排除它）
+  const s = build('SW_A (10.0.0.1):\n### /interface print detail\n'
+    + 'Flags: D - DYNAMIC; R - RUNNING\n 0 R name="vlan30-guest" type="wifi"\n'
+    + '### /interface bridge host print detail\n'
+    + ' 0 D mac-address=AA:BB:CC:00:00:01 on-interface=vlan30-guest bridge=bridge1 vid=30\n');
+  const i = iface(s, 'SW_A|vlan30-guest');
+  assert.strictEqual(i.type, 'wireless');
+  assert.strictEqual(S.infer.isVirtualIfc(i), false, '序列化後的介面也能直接套用');
+  assert.deepStrictEqual(S.query(s).visualUnknownPeers('SW_A').filter((p) => p.visualOnly).map((p) => p.name), ['vlan30-guest']);
+});
 test('A02：不同 VLAN 的終端埠不視為同一 MAC 重複位置', () => {
   const mac = 'AA:BB:CC:00:00:01';
   const s = build('SW_A (10.0.0.1):\n### /interface bridge host print detail\n'
@@ -506,6 +553,27 @@ test('A02：同介面多 VLAN 觀察完整保留，並只比較相同 VLAN 的�
   const finding = s.findings.find((f) => f.id === 'A02');
   assert.ok(finding && finding.message.includes('VLAN 20'), finding && finding.message);
   assert.deepStrictEqual(finding.entities.filter((e) => e.type === 'interface').map((e) => e.key), ['SW_A|ether1', 'SW_A|ether2']);
+});
+test('A02／A03／A04／C02 的證據指回 MAC 表觀察與設備區塊（A02 取同一 VLAN 的那一行，最多 6 筆）', () => {
+  const many = Array.from({ length: 7 }, (_, k) => ` ${k + 4} D mac-address=02:AA:BB:00:01:0${k} vid=10 on-interface=ether3 bridge=bridge1\n`).join('');
+  const s = build('SW_A (10.0.0.1):\n### /interface bridge host print detail\n'
+    + ' 0 D mac-address=02:AA:BB:00:00:01 vid=20 on-interface=ether1 bridge=bridge1\n'
+    + ' 1 D mac-address=02:AA:BB:00:00:01 vid=10 on-interface=ether1 bridge=bridge1\n'
+    + ' 2 D mac-address=02:AA:BB:00:00:01 vid=10 on-interface=ether2 bridge=bridge1\n'
+    + ' 3 D mac-address=02:AA:BB:00:00:05 vid=10 on-interface=ether9 bridge=bridge1\n' + many
+    + '### /ip arp print detail\n 0 address=10.0.0.9 mac-address=02:AA:BB:00:00:05 interface=bridge1\n');
+  const ev = (id) => { const f = s.findings.find((x) => x.id === id); assert.ok(f, `應有 ${id}`); return f.evidence; };
+  const lines = (id) => ev(id).map((e) => e.line);
+  // A02：VLAN 10 的兩個終端埠，ether1 指向 vid=10 那一行（第 4 行），不是先出現的 vid=20（第 3 行）
+  assert.deepStrictEqual(lines('A02'), [4, 5]);
+  assert.ok(ev('A02').every((e) => / vid=10 /.test(e.text) && e.file === 't.txt'));
+  // A03：每個未知對端的終端埠一筆，依埠名排序
+  assert.deepStrictEqual(lines('A03'), [3, 5, 6]);
+  // A04：該埠學到的外部 MAC，依輸入順序取前 6 筆
+  assert.deepStrictEqual(lines('A04'), [7, 8, 9, 10, 11, 12]);
+  assert.ok(ev('A04').every((e) => /on-interface=ether3/.test(e.text)));
+  // C02：設備在輸入中的各區塊開頭
+  assert.deepStrictEqual(ev('C02').map((e) => [e.block, e.line]), [[0, 3], [1, 15]]);
 });
 test('未知對端不進基準的設備、鏈路（只是檢視）', () => {
   const s = build(read('samples/sample-bundle.txt'));
@@ -974,20 +1042,25 @@ test('index.html 載入的核心檔案與測試相同、順序一致', () => {
   assert.deepStrictEqual(scripts.slice(0, core.length), core);
 });
 
-if (process.argv.includes('--large')) {
+if (ARGS.large) {
   test('壓力：約 1000 台設備在時間內完成，且乾淨網路沒有誤報', () => {
     const text = gen(['--sites', '40', '--access', '24']);
     const t = Date.now(); const s = build(text); const ms = Date.now() - t;
     console.log(`      ${s.meta.stats.collected} 台已收集、${s.meta.stats.devices} 個節點、${s.meta.stats.links} 條鏈路、${s.meta.stats.macs} 個 MAC：${ms} ms`);
     assert.ok(s.meta.stats.collected >= 1000);
-    assert.ok(ms < 20000);
+    assert.ok(ms < LARGE_MAX_MS, `耗時 ${ms} ms，超過上限 ${LARGE_MAX_MS} ms（SSOT_LARGE_MAX_MS）`);
     assert.strictEqual(s.meta.stats.findings.error + s.meta.stats.findings.warn, 0);
   });
 }
 
+const selected = ARGS.grep == null ? tests : tests.filter((t) => t.name.includes(ARGS.grep));
+if (!selected.length) {
+  console.error(`沒有任何測試名稱含「${ARGS.grep}」（共 ${tests.length} 項${ARGS.large ? '' : '；壓力測試需另加 --large'}），視為失敗`);
+  process.exit(1);
+}
 let fail = 0;
-for (const t of tests) {
+for (const t of selected) {
   try { t.fn(); console.log('  ✓ ' + t.name); } catch (e) { fail++; console.log('  ✗ ' + t.name + '\n      ' + String(e.message).split('\n').join('\n      ')); }
 }
-console.log(`\n${tests.length - fail} 通過，${fail} 失敗`);
+console.log(`\n${selected.length - fail} 通過，${fail} 失敗${ARGS.grep == null ? '' : `（已篩選：${selected.length}／${tests.length}）`}`);
 process.exit(fail ? 1 : 0);

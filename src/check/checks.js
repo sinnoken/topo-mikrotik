@@ -70,15 +70,17 @@
 
     // ---- 覆蓋
     const expected = Object.assign({}, EXPECTED, ctx.expectedData || {});
+    // C02 的證據：該設備在輸入中的各區塊（依輸入順序），可對照實際收集了哪些指令
+    const blocksOf = new Map();
+    ctx.blocks.forEach((b) => { if (b.devKey) S.util.getOr(blocksOf, b.devKey, () => []).push({ block: b.id, line: b.origin.startLine }); });
     M.devices.forEach((d) => {
       if (!d.collected) {
         if (d.kind === 'host') return; // 主機本來就不在收集範圍
         add('C01', `${name(d.key)}：由 ${Array.from(d.seenBy).map(name).join('、')} 發現`, [{ type: 'device', key: d.key }]);
         return;
       }
-      const miss = (expected[d.kind] || []).filter((t) => !d.data.has(t));
-      d.missing = miss;
-      if (miss.length) add('C02', `${name(d.key)}（${S.KIND_LABEL[d.kind] || d.kind}）缺少：${miss.map((t) => DATA_LABEL[t] || t).join('、')}`, [{ type: 'device', key: d.key }]);
+      const miss = missingData(d, expected);
+      if (miss.length) add('C02', `${name(d.key)}（${S.KIND_LABEL[d.kind] || d.kind}）缺少：${miss.map((t) => DATA_LABEL[t] || t).join('、')}`, [{ type: 'device', key: d.key }], blocksOf.get(d.key));
     });
 
     // ---- 鏈路
@@ -88,14 +90,7 @@
     M.notes.k04.forEach((n) => add('K04', `${name(n.dev)} 說對端是「${n.said}」，對端自己的介面是「${n.actual}」`,
       [{ type: 'link', key: n.link }], [{ block: n.block, line: n.line }]));
 
-    const linksByEp = new Map(); const interfaceLinksByEp = new Map();
-    M.links.forEach((l) => {
-      if (l.layer !== 'l2') return;
-      [l.a, l.b].forEach((ep) => {
-        S.util.getOr(linksByEp, ep, () => []).push(l);
-        if (l.evidenceScope !== LINK_SCOPE.BROADCAST_DOMAIN) S.util.getOr(interfaceLinksByEp, ep, () => []).push(l);
-      });
-    });
+    const interfaceLinksByEp = M.adjacency; // 介面鄰接索引，由 infer.edgeLocations 算出（之後 M.links 不再變動）
     interfaceLinksByEp.forEach((ls, ep) => {
       if (ls.length < 2) return;
       const peers = ls.map((l) => epName(l.a === ep ? l.b : l.a));
@@ -129,12 +124,9 @@
 
     // ---- VLAN
     M.links.forEach((l) => {
-      if (l.layer !== 'l2' || !l.vlanComparable) return;
-      if (!l.vlansA.length && !l.vlansB.length) return;
+      if (!l.vlanMismatch) return; // 由 infer.linkVlans 判定
       const sb = new Set(l.vlansB); const sa = new Set(l.vlansA);
       const onlyA = l.vlansA.filter((v) => !sb.has(v)); const onlyB = l.vlansB.filter((v) => !sa.has(v));
-      if (!onlyA.length && !onlyB.length) return;
-      l.vlanMismatch = true;
       const parts = [];
       if (onlyA.length) parts.push(`只在 ${epName(l.a)}：${fmtVlans(onlyA)}`);
       if (onlyB.length) parts.push(`只在 ${epName(l.b)}：${fmtVlans(onlyB)}`);
@@ -172,20 +164,24 @@
         Array.from(macs.values()).map((a) => ({ block: a.block, line: a.line })));
     });
 
-    const edge = edgePorts(M, interfaceLinksByEp);
-    M.edge = edge;
+    const edge = M.edge; // 終端埠是推論，由 infer.edgeLocations 算出
+    // MAC 表觀察的來源（每個埠第一次學到的那一行；指定 VLAN 時取該 VLAN 的那一行）
+    const toEv = (s) => (s ? { block: s[0], line: s[1] } : null);
+    const macSrc = (mac, ep) => toEv(S.model.firstSeenSrc(M.macs.get(mac), ep));
+    const macVlanSrc = (m, ep, vlan) => toEv(m.seen.get(ep).get(vlan));
+    const byLine = (a, b) => a.block - b.block || a.line - b.line;
     M.macs.forEach((m) => {
-      m.edge = Array.from(m.seen.keys()).filter((ep) => edge.has(ep)).sort();
       const edgeByVlan = new Map();
       m.seen.forEach((vlans, ep) => {
         if (!edge.has(ep)) return;
-        vlans.forEach((vlan) => S.util.getOr(edgeByVlan, vlan, () => new Set()).add(ep));
+        vlans.forEach((_, vlan) => S.util.getOr(edgeByVlan, vlan, () => new Set()).add(ep));
       });
       edgeByVlan.forEach((eps, vlan) => {
         if (eps.size < 2) return;
         const locations = Array.from(eps).sort(S.util.natural);
         add('A02', `${K.macPretty(m.mac)} 在 ${vlan ? `VLAN ${vlan}` : 'VLAN 不明'} 的多個終端埠出現：${locations.map(epName).join('、')}`,
-          [{ type: 'mac', key: m.mac }].concat(locations.map((ep) => ({ type: 'interface', key: ep }))));
+          [{ type: 'mac', key: m.mac }].concat(locations.map((ep) => ({ type: 'interface', key: ep }))),
+          locations.map((ep) => macVlanSrc(m, ep, vlan)).filter(Boolean));
       });
     });
     const edgeByDev = new Map();
@@ -193,9 +189,12 @@
     edgeByDev.forEach((eps, dev) => {
       eps.sort(S.util.natural);
       const desc = eps.slice(0, 8).map((ep) => `${M.ifcs.get(ep).name}（${M.ifcs.get(ep).macs.size}）`).join('、');
-      add('A03', `${name(dev)}：${eps.length} 個介面，${desc}${eps.length > 8 ? '…' : ''}`, [{ type: 'device', key: dev }]);
+      // 終端埠恰好學到一個 MAC：證據是該 MAC 在這個埠的觀察
+      add('A03', `${name(dev)}：${eps.length} 個介面，${desc}${eps.length > 8 ? '…' : ''}`, [{ type: 'device', key: dev }],
+        eps.map((ep) => macSrc(Array.from(M.ifcs.get(ep).macs)[0], ep)).filter(Boolean));
     });
-    manyMacPorts(M, interfaceLinksByEp).forEach(({ ep, n }) => add('A04', `${epName(ep)}：${n} 個 MAC，且沒有 LLDP／CDP 鄰接`, [{ type: 'interface', key: ep }]));
+    manyMacPorts(M, interfaceLinksByEp).forEach(({ ep, n, macs }) => add('A04', `${epName(ep)}：${n} 個 MAC，且沒有 LLDP／CDP 鄰接`, [{ type: 'interface', key: ep }],
+      macs.map((mac) => macSrc(mac, ep)).filter(Boolean).sort(byLine)));
     // ARP 位址不在該設備任何直連網段（只看有介面位址資料的設備）
     const netsOf = new Map();
     M.ifcs.forEach((i) => { if (!i.hearsay) i.ips.forEach((_, c) => { const p = S.ip.parseCidr(c); if (p && p.len < 32) S.util.getOr(netsOf, i.dev, () => []).push(p); }); });
@@ -239,61 +238,24 @@
   }
 
   /**
-   * 終端埠：已收集設備上、恰好學到一個 MAC、非 Wi-Fi、狀態不是 down 的介面，
-   * 且沒有連到其他「已收集的網路設備」（連到主機或未收集設備的埠仍算終端），也沒有推論鏈路。
-   * linksByEp 僅包含介面鄰接證據；廣播網域（MNDP）可達不代表該埠有 LLDP／CDP 鄰接。
-   * 回傳 Map(ep → { linked: 是否有任何 LLDP／CDP 鄰接 })
-   */
-  const NON_EDGE_TYPES = new Set(['bridge', 'vlan', 'loopback', 'vrrp']);
-  function edgePorts(M, adjacencyLinksByEp) {
-    const out = new Map();
-    const toInfra = (ep) => (adjacencyLinksByEp.get(ep) || []).some((l) => {
-      const peer = M.devices.get(K.splitEp(l.a === ep ? l.b : l.a)[0]);
-      return peer && peer.collected && peer.kind !== 'host';
-    });
-    const hasAdjacency = (ep) => adjacencyLinksByEp.has(ep);
-    // 已推論接到網路設備（例如底下沒有其他終端的 CSS106，MAC 表只剩它自己）的埠不是終端埠
-    const inferredEps = new Set((M.inferred || []).flatMap((r) => [r.a, r.b]));
-    // 設備自己的介面 MAC（/interface print 的 mac-address）出現在轉發表時不是外部終端
-    const ownMacs = new Map();
-    M.ifcs.forEach((i) => { const m = i.hwMac && K.mac(i.hwMac); if (m) { if (!ownMacs.has(i.dev)) ownMacs.set(i.dev, new Set()); ownMacs.get(i.dev).add(m); } });
-    M.ifcs.forEach((i, ep) => {
-      // 有 RouterOS 原始 type 時依事實排除虛擬介面；無介面資料才退回名稱推論
-      const virtual = i.rawType ? NON_EDGE_TYPES.has(i.rawType) : /^(irb|vlan|lo\d)/.test(i.name);
-      if (i.macs.size !== 1 || i.type === 'wireless' || i.status === 'down' || i.enabled === false || virtual) return;
-      if (!M.devices.get(i.dev).collected) return;
-      const own = ownMacs.get(i.dev);
-      if (own && own.has(Array.from(i.macs)[0])) return;
-      const group = [ep];
-      if (i.lag) { const p = M.ifcs.get(i.lag); if (p) group.push(p.key, ...p.lagMembers); }
-      group.push(...i.lagMembers);
-      if (group.some((g) => toInfra(g) || inferredEps.has(g))) return;
-      out.set(ep, { linked: group.some(hasAdjacency) });
-    });
-    return out;
-  }
-
-  /**
    * 單一埠學到過多 MAC：已收集設備上的有線、非虛擬、非中斷介面，學到超過 MANY_MACS 個外部 MAC，
    * 且本身（含所屬聚合與成員）沒有任何 LLDP／CDP 介面鄰接，通常是下掛未管理交換器或 hypervisor。
    */
   const MANY_MACS = 5; // 規格書建議的門檻
   function manyMacPorts(M, adjacencyLinksByEp) {
-    const ownMacs = new Map();
-    M.ifcs.forEach((i) => { const m = i.hwMac && K.mac(i.hwMac); if (m) S.util.getOr(ownMacs, i.dev, () => new Set()).add(m); });
+    const ownMacs = S.infer.hwMacsByDev(M);
     const out = [];
     M.ifcs.forEach((i, ep) => {
-      const virtual = i.rawType ? NON_EDGE_TYPES.has(i.rawType) : /^(irb|vlan|lo\d|bridge)/.test(i.name);
-      if (virtual || i.type === 'wireless' || i.type === 'bridge' || i.type === 'lag' || i.status === 'down' || i.enabled === false) return;
+      if (S.infer.isVirtualIfc(i) || i.type === 'wireless' || i.type === 'bridge' || i.type === 'lag' || i.status === 'down' || i.enabled === false) return;
       if (!M.devices.get(i.dev).collected) return;
       const own = ownMacs.get(i.dev) || new Set();
-      const n = Array.from(i.macs).filter((m) => !own.has(m)).length;
+      const macs = Array.from(i.macs).filter((m) => !own.has(m)); const n = macs.length;
       if (n <= MANY_MACS) return;
       const group = [ep];
       if (i.lag) { const p = M.ifcs.get(i.lag); if (p) group.push(p.key, ...p.lagMembers); }
       if (group.some((x) => adjacencyLinksByEp.has(x))) return;
       if (group.some((x) => M.behindAnchors && M.behindAnchors.has(x))) return; // 下面接的是已知的未收集交換器（例如 SwOS），不是不明設備
-      out.push({ ep, n });
+      out.push({ ep, n, macs });
     });
     return out.sort((a, b) => S.util.natural(a.ep, b.ep));
   }
@@ -305,13 +267,20 @@
     return out.join(',');
   }
 
-  function coverage(M) {
+  /** 已收集設備依類型應有、但沒有收集到的資料類別（C02 與 coverage 共用）。 */
+  function missingData(d, expected) {
+    return (expected[d.kind] || []).filter((t) => !d.data.has(t));
+  }
+
+  /** expectedData：build 選項，覆寫 EXPECTED 的部分類型。 */
+  function coverage(M, expectedData) {
+    const expected = Object.assign({}, EXPECTED, expectedData || {});
     const linkCount = new Map();
     M.links.forEach((l) => [l.a, l.b].forEach((ep) => { const d = K.splitEp(ep)[0]; linkCount.set(d, (linkCount.get(d) || 0) + 1); }));
     const ifCount = new Map(); const macCount = new Map();
     M.ifcs.forEach((i) => { ifCount.set(i.dev, (ifCount.get(i.dev) || 0) + 1); macCount.set(i.dev, (macCount.get(i.dev) || 0) + i.macs.size); });
     return Array.from(M.devices.values()).map((d) => ({
-      dev: d.key, collected: d.collected, kind: d.kind, data: Array.from(d.data).sort(), missing: d.missing || [],
+      dev: d.key, collected: d.collected, kind: d.kind, data: Array.from(d.data).sort(), missing: d.collected ? missingData(d, expected) : [],
       interfaces: ifCount.get(d.key) || 0, links: linkCount.get(d.key) || 0, macs: macCount.get(d.key) || 0,
     })).sort((a, b) => S.util.natural(a.dev, b.dev));
   }

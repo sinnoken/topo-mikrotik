@@ -58,8 +58,20 @@
     return section('檢查結果', uniq.map((f) => h('div', { class: 'finding' }, [
       V.sevDot(f.severity),
       h('div', null, [h('div', null, [h('b', null, f.title)]), h('div', null, f.message),
-        f.evidence.length ? h('div', { class: 'ev' }, f.evidence.slice(0, 3).map((e) => h('a', { class: 'link mono', onclick: () => App.openRaw(e.file, e.line) }, `原文 第 ${e.line} 行`))) : null]),
+        f.evidence.length ? h('div', { class: f.id === 'C02' ? 'ev stack' : 'ev' }, evidenceLinks(App, f)) : null]),
     ])), { count: uniq.length });
+  }
+  /*
+   * C02 的證據是「已收集到的區塊」而非缺少的資料，標示指令以免誤解；且要能對照收集了哪些指令，
+   * 所以不截成 3 筆，全部逐行列出（核心已限制每筆 finding 的證據數）。其他檢查維持「原文 第 N 行」最多 3 筆。
+   */
+  function evidenceLinks(App, f) {
+    const link = (e, label) => h('a', { class: 'link mono', onclick: () => App.openRaw(e.file, e.line) }, label);
+    if (f.id !== 'C02') return f.evidence.slice(0, 3).map((e) => link(e, `原文 第 ${e.line} 行`));
+    return f.evidence.map((e) => {
+      const blk = App.Q.block(e.block);
+      return link(e, blk && blk.command ? `已收集：${blk.command}（第 ${e.line} 行）` : `已收集：第 ${e.line} 行`);
+    });
   }
   function sourcesBlock(App, src, title) {
     if (!src || !src.length) return null;

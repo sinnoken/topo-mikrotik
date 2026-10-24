@@ -105,10 +105,12 @@
           const mk = K.mac(f.mac); if (!mk) break;
           const i = iface(M, f.dev, f.ifc); i.macs.add(mk); if (!i.status) i.status = 'up'; addSrc(i, f);
           const m = getOr(M.macs, mk, () => ({ mac: mk, seen: new Map(), ips: new Set(), src: [] }));
-          const vlans = getOr(m.seen, i.key, () => new Set());
-          vlans.add(f.vlan || null); addSrc(m, f);
-          if (!m.seenSrc) m.seenSrc = new Map();
-          if (!m.seenSrc.has(i.key)) m.seenSrc.set(i.key, [f.block, f.line]);
+          // m.seen：ep → Map(VLAN → 該（埠、VLAN）第一次出現的來源)；A02 的證據指向該 VLAN 的那一行，
+          // 埠層的第一個來源由 firstSeenSrc 依插入順序取得。來源只供檢查使用，序列化時只輸出 ep／VLAN。
+          const vlans = getOr(m.seen, i.key, () => new Map());
+          const vlan = f.vlan || null;
+          if (!vlans.has(vlan)) vlans.set(vlan, [f.block, f.line]);
+          addSrc(m, f);
           if (f.static) (m.staticOn || (m.staticOn = new Set())).add(i.key);
           break;
         }
@@ -358,5 +360,11 @@
     });
   }
 
-  S.model = { build };
+  /** MAC 在某埠第一次被學到的來源 [block, line]：m.seen 的 VLAN Map 依插入順序，第一筆就是該埠第一次出現的那一行。 */
+  function firstSeenSrc(m, ep) {
+    const vlans = m && m.seen.get(ep);
+    return vlans ? vlans.values().next().value : undefined;
+  }
+
+  S.model = { build, firstSeenSrc };
 })(globalThis.SSOT = globalThis.SSOT || {});

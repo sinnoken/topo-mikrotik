@@ -36299,7 +36299,20 @@
      "key": "TPE_ACC_SW_02|ether23"
     }
    ],
-   "evidence": []
+   "evidence": [
+    {
+     "block": 21,
+     "line": 1612,
+     "text": "4 D mac-address=10:BF:48:00:00:08 on-interface=ether9 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 26,
+     "line": 1805,
+     "text": "12 D mac-address=10:BF:48:00:00:08 on-interface=ether23 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    }
+   ]
   },
   {
    "id": "C02",
@@ -36313,7 +36326,32 @@
      "key": "TPE_ACC_SW_09"
     }
    ],
-   "evidence": []
+   "evidence": [
+    {
+     "block": 57,
+     "line": 2988,
+     "text": "# 2026-10-13 10:00:00 by RouterOS 7.12.1",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 58,
+     "line": 3019,
+     "text": "Flags:",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 59,
+     "line": 3059,
+     "text": "interface: bond9                    ether24",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 60,
+     "line": 3072,
+     "text": "name: bridge1",
+     "file": "sample-bundle.txt"
+    }
+   ]
   },
   {
    "id": "I02",
@@ -36525,7 +36563,44 @@
      "key": "TPE_ACC_SW_01"
     }
    ],
-   "evidence": []
+   "evidence": [
+    {
+     "block": 21,
+     "line": 1612,
+     "text": "4 D mac-address=10:BF:48:00:00:08 on-interface=ether9 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 21,
+     "line": 1614,
+     "text": "5 D mac-address=04:42:1A:00:00:09 on-interface=ether10 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 21,
+     "line": 1616,
+     "text": "6 D mac-address=04:42:1A:00:00:0A on-interface=ether11 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 21,
+     "line": 1618,
+     "text": "7 D mac-address=04:42:1A:00:00:0B on-interface=ether12 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 21,
+     "line": 1620,
+     "text": "8 D mac-address=6C:FE:54:00:00:0C on-interface=ether13 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 21,
+     "line": 1622,
+     "text": "9 D mac-address=04:42:1A:00:00:0D on-interface=ether14 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    }
+   ]
   },
   {
    "id": "A03",
@@ -36539,7 +36614,44 @@
      "key": "TPE_ACC_SW_02"
     }
    ],
-   "evidence": []
+   "evidence": [
+    {
+     "block": 26,
+     "line": 1789,
+     "text": "4 D mac-address=6C:FE:54:00:00:14 on-interface=ether9 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 26,
+     "line": 1791,
+     "text": "5 D mac-address=04:42:1A:00:00:15 on-interface=ether10 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 26,
+     "line": 1793,
+     "text": "6 D mac-address=6C:FE:54:00:00:16 on-interface=ether11 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 26,
+     "line": 1795,
+     "text": "7 D mac-address=04:42:1A:00:00:17 on-interface=ether12 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 26,
+     "line": 1797,
+     "text": "8 D mac-address=6C:FE:54:00:00:18 on-interface=ether13 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 26,
+     "line": 1799,
+     "text": "9 D mac-address=10:BF:48:00:00:19 on-interface=ether14 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    }
+   ]
   },
   {
    "id": "A03",
@@ -36553,7 +36665,44 @@
      "key": "TPE_ACC_SW_03"
     }
    ],
-   "evidence": []
+   "evidence": [
+    {
+     "block": 31,
+     "line": 1973,
+     "text": "4 D mac-address=6C:FE:54:00:00:20 on-interface=ether9 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 31,
+     "line": 1975,
+     "text": "5 D mac-address=04:42:1A:00:00:21 on-interface=ether10 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 31,
+     "line": 1977,
+     "text": "6 D mac-address=10:BF:48:00:00:22 on-interface=ether11 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 31,
+     "line": 1979,
+     "text": "7 D mac-address=6C:FE:54:00:00:23 on-interface=ether12 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 31,
+     "line": 1981,
+     "text": "8 D mac-address=10:BF:48:00:00:24 on-interface=ether13 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 31,
+     "line": 1983,
+     "text": "9 D mac-address=04:42:1A:00:00:25 on-interface=ether14 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    }
+   ]
   },
   {
    "id": "A03",
@@ -36567,7 +36716,44 @@
      "key": "TPE_ACC_SW_04"
     }
    ],
-   "evidence": []
+   "evidence": [
+    {
+     "block": 36,
+     "line": 2155,
+     "text": "4 D mac-address=10:BF:48:00:00:2C on-interface=ether9 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 36,
+     "line": 2157,
+     "text": "5 D mac-address=6C:FE:54:00:00:2D on-interface=ether10 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 36,
+     "line": 2159,
+     "text": "6 D mac-address=6C:FE:54:00:00:2E on-interface=ether11 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 36,
+     "line": 2161,
+     "text": "7 D mac-address=04:42:1A:00:00:2F on-interface=ether12 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 36,
+     "line": 2163,
+     "text": "8 D mac-address=04:42:1A:00:00:30 on-interface=ether13 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 36,
+     "line": 2165,
+     "text": "9 D mac-address=6C:FE:54:00:00:31 on-interface=ether14 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    }
+   ]
   },
   {
    "id": "A03",
@@ -36581,7 +36767,44 @@
      "key": "TPE_ACC_SW_05"
     }
    ],
-   "evidence": []
+   "evidence": [
+    {
+     "block": 41,
+     "line": 2342,
+     "text": "4 D mac-address=10:BF:48:00:00:39 on-interface=ether9 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 41,
+     "line": 2344,
+     "text": "5 D mac-address=10:BF:48:00:00:3A on-interface=ether10 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 41,
+     "line": 2346,
+     "text": "6 D mac-address=10:BF:48:00:00:3B on-interface=ether11 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 41,
+     "line": 2348,
+     "text": "7 D mac-address=6C:FE:54:00:00:3C on-interface=ether12 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 41,
+     "line": 2350,
+     "text": "8 D mac-address=04:42:1A:00:00:3D on-interface=ether13 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 41,
+     "line": 2352,
+     "text": "9 D mac-address=6C:FE:54:00:00:3E on-interface=ether14 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    }
+   ]
   },
   {
    "id": "A03",
@@ -36595,7 +36818,44 @@
      "key": "TPE_ACC_SW_06"
     }
    ],
-   "evidence": []
+   "evidence": [
+    {
+     "block": 46,
+     "line": 2540,
+     "text": "8 D mac-address=10:BF:48:00:00:49 on-interface=ether9 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 46,
+     "line": 2542,
+     "text": "9 D mac-address=04:42:1A:00:00:4A on-interface=ether10 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 46,
+     "line": 2544,
+     "text": "10 D mac-address=10:BF:48:00:00:4B on-interface=ether11 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 46,
+     "line": 2546,
+     "text": "11 D mac-address=04:42:1A:00:00:4C on-interface=ether12 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 46,
+     "line": 2548,
+     "text": "12 D mac-address=10:BF:48:00:00:4D on-interface=ether13 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 46,
+     "line": 2550,
+     "text": "13 D mac-address=6C:FE:54:00:00:4E on-interface=ether14 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    }
+   ]
   },
   {
    "id": "A03",
@@ -36609,7 +36869,44 @@
      "key": "TPE_ACC_SW_07"
     }
    ],
-   "evidence": []
+   "evidence": [
+    {
+     "block": 51,
+     "line": 2726,
+     "text": "4 D mac-address=04:42:1A:00:00:55 on-interface=ether9 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 51,
+     "line": 2728,
+     "text": "5 D mac-address=10:BF:48:00:00:56 on-interface=ether10 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 51,
+     "line": 2730,
+     "text": "6 D mac-address=10:BF:48:00:00:57 on-interface=ether11 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 51,
+     "line": 2732,
+     "text": "7 D mac-address=04:42:1A:00:00:58 on-interface=ether12 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 51,
+     "line": 2734,
+     "text": "8 D mac-address=10:BF:48:00:00:59 on-interface=ether13 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 51,
+     "line": 2736,
+     "text": "9 D mac-address=6C:FE:54:00:00:5A on-interface=ether14 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    }
+   ]
   },
   {
    "id": "A03",
@@ -36623,7 +36920,44 @@
      "key": "TPE_ACC_SW_08"
     }
    ],
-   "evidence": []
+   "evidence": [
+    {
+     "block": 56,
+     "line": 2908,
+     "text": "4 D mac-address=10:BF:48:00:00:61 on-interface=ether9 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 56,
+     "line": 2910,
+     "text": "5 D mac-address=04:42:1A:00:00:62 on-interface=ether10 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 56,
+     "line": 2912,
+     "text": "6 D mac-address=10:BF:48:00:00:63 on-interface=ether11 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 56,
+     "line": 2914,
+     "text": "7 D mac-address=04:42:1A:00:00:64 on-interface=ether12 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 56,
+     "line": 2916,
+     "text": "8 D mac-address=04:42:1A:00:00:65 on-interface=ether13 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 56,
+     "line": 2918,
+     "text": "9 D mac-address=10:BF:48:00:00:66 on-interface=ether14 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    }
+   ]
   },
   {
    "id": "A03",
@@ -36637,7 +36971,44 @@
      "key": "TPE_ACC_SW_10"
     }
    ],
-   "evidence": []
+   "evidence": [
+    {
+     "block": 65,
+     "line": 3185,
+     "text": "4 D mac-address=10:BF:48:00:00:79 on-interface=ether9 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 65,
+     "line": 3187,
+     "text": "5 D mac-address=04:42:1A:00:00:7A on-interface=ether10 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 65,
+     "line": 3189,
+     "text": "6 D mac-address=10:BF:48:00:00:7B on-interface=ether11 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 65,
+     "line": 3191,
+     "text": "7 D mac-address=6C:FE:54:00:00:7C on-interface=ether12 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 65,
+     "line": 3193,
+     "text": "8 D mac-address=10:BF:48:00:00:7D on-interface=ether13 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 65,
+     "line": 3195,
+     "text": "9 D mac-address=04:42:1A:00:00:7E on-interface=ether14 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    }
+   ]
   },
   {
    "id": "A03",
@@ -36651,7 +37022,44 @@
      "key": "TPE_ACC_SW_11"
     }
    ],
-   "evidence": []
+   "evidence": [
+    {
+     "block": 72,
+     "line": 3459,
+     "text": "4 D mac-address=10:BF:48:00:00:85 on-interface=ether9 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 72,
+     "line": 3461,
+     "text": "5 D mac-address=10:BF:48:00:00:86 on-interface=ether10 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 72,
+     "line": 3463,
+     "text": "6 D mac-address=04:42:1A:00:00:87 on-interface=ether11 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 72,
+     "line": 3465,
+     "text": "7 D mac-address=10:BF:48:00:00:88 on-interface=ether12 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 72,
+     "line": 3467,
+     "text": "8 D mac-address=04:42:1A:00:00:89 on-interface=ether13 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 72,
+     "line": 3469,
+     "text": "9 D mac-address=10:BF:48:00:00:8A on-interface=ether14 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    }
+   ]
   },
   {
    "id": "A03",
@@ -36665,7 +37073,44 @@
      "key": "TPE_ACC_SW_12"
     }
    ],
-   "evidence": []
+   "evidence": [
+    {
+     "block": 77,
+     "line": 3642,
+     "text": "4 D mac-address=10:BF:48:00:00:91 on-interface=ether9 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 77,
+     "line": 3644,
+     "text": "5 D mac-address=6C:FE:54:00:00:92 on-interface=ether10 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 77,
+     "line": 3646,
+     "text": "6 D mac-address=04:42:1A:00:00:93 on-interface=ether11 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 77,
+     "line": 3648,
+     "text": "7 D mac-address=04:42:1A:00:00:94 on-interface=ether12 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 77,
+     "line": 3650,
+     "text": "8 D mac-address=04:42:1A:00:00:95 on-interface=ether13 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 77,
+     "line": 3652,
+     "text": "9 D mac-address=6C:FE:54:00:00:96 on-interface=ether14 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    }
+   ]
   },
   {
    "id": "A04",
@@ -36679,7 +37124,44 @@
      "key": "TPE_ACC_SW_12|ether23"
     }
    ],
-   "evidence": []
+   "evidence": [
+    {
+     "block": 77,
+     "line": 3658,
+     "text": "12 D mac-address=04:42:1A:00:00:99 on-interface=ether23 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 77,
+     "line": 3660,
+     "text": "13 D mac-address=6C:FE:54:00:00:9A on-interface=ether23 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 77,
+     "line": 3662,
+     "text": "14 D mac-address=6C:FE:54:00:00:9B on-interface=ether23 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 77,
+     "line": 3664,
+     "text": "15 D mac-address=6C:FE:54:00:00:9C on-interface=ether23 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 77,
+     "line": 3666,
+     "text": "16 D mac-address=6C:FE:54:00:00:9D on-interface=ether23 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 77,
+     "line": 3668,
+     "text": "17 D mac-address=6C:FE:54:00:00:9E on-interface=ether23 bridge=bridge1 vid=30",
+     "file": "sample-bundle.txt"
+    }
+   ]
   },
   {
    "id": "A05",

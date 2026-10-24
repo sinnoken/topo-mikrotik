@@ -71,7 +71,7 @@
     m.interfaces.forEach((i) => {
       const owner = dev.get(i.dev);
       if (i.type !== 'wireless' || !wifiMacsOf(i).length || i.status === 'down' || i.enabled === false || !owner || !owner.collected) return;
-      if (/^(irb|vlan|lo\d)/.test(i.name)) return;
+      if (S.infer.isVirtualIfc(i)) return;
       const group = [i.key];
       if (i.lag) {
         const p = ifc.get(i.lag);

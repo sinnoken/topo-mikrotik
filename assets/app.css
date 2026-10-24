@@ -173,6 +173,8 @@ table.t tr.click { cursor: pointer; }
 .finding .ev { margin-top: 2px; }
 .finding > .sev { margin-top: 5px; }
 .ev .link + .link { margin-left: 10px; }
+.ev.stack .link { display: block; }
+.ev.stack .link + .link { margin-left: 0; }
 .hop .mono { font-size: var(--fs-sm); }
 .detail h3 .link { margin-left: 8px; font-weight: 400; }
 .files .chip { cursor: pointer; }

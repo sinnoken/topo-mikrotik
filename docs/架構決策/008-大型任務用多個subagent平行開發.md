@@ -45,6 +45,17 @@
 
 - **`tests/run.js` 依模組拆檔**（例如解析、建模、檢查、比對、patch、處理紀錄各一個檔案），減少合併衝突。要同時調整 `npm run test:core` 與 `tests/load.js` 的用法，由 data-model 與 lead（`package.json`）一起處理。
 
+## 修訂
+
+### 2026-10-24：新增 workflow agent，依上下游分工
+
+- **原因**：data-model 負責的範圍太大；同時開了 3 個 data-model（I03、修正 patch、處理紀錄），合併時在 `tests/run.js` 與 `tools/core-files.js` 互相衝突。
+- **修改**：見 [ADR-013](013-新增workflow-agent依上下游分工.md)。
+  - 新增第五個 agent `workflow`，負責下游模組（`src/compare/`、`src/remediate/`、`src/ledger/`）、patch 黃金檔、`tests/workflow/` 與之後的 CLI。
+  - data-model 只負責上游；`src/query/` 仍歸 data-model，是上下游之間的介面。
+  - 上面「之後要回頭看的」`tests/run.js` 拆檔改由 data-model 與 workflow 各自搬移測試（`tests/core/`、`tests/workflow/`），lead 調整執行器與 `package.json`。
+- **不變的部分**：依檔案分工、所有權只定義在 `ownership.json`、以 worktree 隔離、由 lead 合併，以及「改介面時依序執行、docs 最後執行」的原則都不變。順序中的「data-model → frontend → docs」，改下游介面時加入 workflow（data-model → workflow → frontend → docs）。
+
 ## 待辦
 
 - data-model＋lead：評估 `tests/run.js` 拆檔。

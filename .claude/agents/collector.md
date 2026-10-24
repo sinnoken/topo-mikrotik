@@ -4,7 +4,7 @@ description: SSH 批次收集器（tools/collect.sh、collector-commands.sh、de
 tools: Read, Edit, Write, Bash, Grep, Glob
 ---
 
-你負責 topo-mikrotik 的 SSH 收集器。開始前先讀 `CLAUDE.md`（含匯入的 `.github/copilot-instructions.md`）。
+你負責 topo-mikrotik 的 SSH 收集器。開始前先讀 `CLAUDE.md`（含匯入的 `.github/copilot-instructions.md`）。修改相關設計前，先讀 `docs/架構決策/` 中對應的 ADR。
 
 ## 可以修改的檔案
 
@@ -25,11 +25,18 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 - 失敗要明確呈現：在輸出檔標記、以非零結束碼結束、印出摘要，不要吞掉錯誤。
 - 收集器是本機的 Bash CLI，SSH 或帳密相關的邏輯不可進入瀏覽器端。
 
+## Git
+
+- 在獨立的 worktree 工作時，建立指定的分支並 commit，不要 push；在主工作區工作時，不要 commit。
+- 不要用 `git rm` 或 `git add`。暫存區由主對話管理；曾經發生 agent 先暫存了刪除，結果被主對話的 commit 一起帶走的事故。
+
 ## 驗證
 
 `npm run test:collector`，並用 `tools/collect.sh tools/devices.csv --dry-run` 確認要執行的指令。
 
 ## 最後報告格式
+
+回報必須直接寫出完整內容，不可以只寫「同上」或「見前一則」。
 
 1. 做了什麼
 2. 指令或設備清單格式的變更

@@ -43,11 +43,14 @@
    * 檢查結果 CSV：一筆 finding 一列；多個相關實體、多筆證據各自合在同一格，以「; 」分隔。
    * acknowledged 欄是確認時間（UTC ISO），ack_kind 是分類（accepted／scheduled／false-positive，未分類為空白），
    * ack_note 是原因；未確認時三欄都是空白。device 是所屬設備鍵（V.remediation.findingDevice；不屬於任何設備為空白）。
+   * action 是規則的處理建議（CATALOG，V.remediation.advice），原文照錄（反引號保留）；規則沒有處理建議時為空白。
+   * 常見原因不放進 CSV：每列都會重複同一段多句文字，合在一格也不好篩選；Markdown 報表與畫面上有。
+   * 新欄位一律加在最後，既有欄位的位置不變。
    * 開頭加 UTF-8 BOM，Excel 才會以 UTF-8 讀取中文；換行用 CRLF。
    */
   function findingsCsv(snap, opts) {
     const acked = ackOf(opts);
-    const head = ['severity', 'id', 'title', 'message', 'entities', 'evidence', 'acknowledged', 'ack_kind', 'ack_note', 'device'];
+    const head = ['severity', 'id', 'title', 'message', 'entities', 'evidence', 'acknowledged', 'ack_kind', 'ack_note', 'device', 'action'];
     const rows = ordered(snap, opts).map(({ f, dev }) => {
       const a = acked(f) || {};
       return [
@@ -55,6 +58,7 @@
         f.entities.map(entityText).join('; '),
         f.evidence.map(evidenceText).join('; '),
         a.at || '', a.at ? a.kind || '' : '', a.at ? a.note || '' : '', dev || '',
+        R().advice(f.id).action || '',
       ];
     });
     return '\uFEFF' + [head].concat(rows).map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
@@ -73,15 +77,13 @@
     return fence + pad + t + pad + fence;
   };
 
-  /**
-   * 規則的處理建議與常見原因（CATALOG 的 action／causes）：欄位不存在時不輸出。
-   * causes 可以是字串或字串陣列。
-   */
+  /** CATALOG 文字：反引號內的指令與欄位轉成行內程式碼（V.codeParts，與畫面同一個切法），其餘照 mdText 跳脫 */
+  const mdRich = (s) => V.codeParts(s).map((p) => (p.code ? mdCode(p.text) : mdText(p.text))).join('');
+  /** 規則的處理建議與常見原因（V.remediation.advice，文字來自 CATALOG）：欄位不存在時不輸出 */
   const catalogLines = (id) => {
-    const c = S.check.CATALOG[id] || {}; const out = [];
-    if (typeof c.action === 'string' && c.action) out.push(`- 處理建議：${mdText(c.action)}`);
-    const causes = Array.isArray(c.causes) ? c.causes : typeof c.causes === 'string' && c.causes ? [c.causes] : [];
-    if (causes.length) out.push(`- 常見原因：${causes.map(mdText).join('；')}`);
+    const a = R().advice(id); const out = [];
+    if (a.action) out.push(`- 處理建議：${mdRich(a.action)}`);
+    if (a.causes.length) out.push('- 常見原因：', ...a.causes.map((c) => `  - ${mdRich(c)}`));
     return out.length ? out.concat('') : out;
   };
 
@@ -89,6 +91,7 @@
    * 檢查結果 Markdown 報表。已確認的項目加註確認時間、分類與原因。
    *   預設：依嚴重度分組，組內依規則代碼分段，保留 Snapshot 的排列順序。
    *   opts.byDevice（需要 opts.Q）：依設備分組（V.remediation.findingDevice），不屬於任何設備的最後一組；組內保留原順序。
+   *     同一條規則會出現在很多台設備，處理建議與常見原因只在報表最後的附錄列一次（依 CATALOG 的順序）。
    */
   function findingsMarkdown(snap, opts) {
     const acked = ackOf(opts);
@@ -121,6 +124,13 @@
         fs.forEach((f) => item(f, `${V.SEV[f.severity]} ${f.id} ${mdText(f.title)}：`));
       });
       if (!groups.size) out.push('', '沒有檢查結果。');
+      const used = new Set(snap.findings.map((f) => f.id));
+      const ids = Object.keys(S.check.CATALOG).filter((id) => used.has(id) && catalogLines(id).length);
+      if (ids.length) {
+        if (out[out.length - 1] !== '') out.push('');
+        out.push('## 附錄：處理建議與常見原因', '');
+        ids.forEach((id) => out.push(`### ${id} ${mdText(S.check.CATALOG[id].title)}`, '', ...catalogLines(id)));
+      }
       return out.join('\n').replace(/\n+$/, '') + '\n';
     }
     SEV_ORDER.forEach((sev) => {

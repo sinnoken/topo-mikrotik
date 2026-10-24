@@ -1,6 +1,7 @@
 /*
  * 分診 → 修 → 驗證 的畫面輔助：都是純函式，只透過查詢介面（Q）讀取基準，不改寫 Snapshot。
  *   - 確認的分類（ACK_KIND）：檢視狀態，存在 store 的 'acks'（見 app-acks.js）
+ *   - advice：規則的常見原因與處理（每次從 CATALOG 讀取）
  *   - findingDevice：檢查結果歸到哪台設備（檢查結果分頁的「依設備」分組與匯出排序共用）
  *   - disableRuleFix：防火牆規則的停用指令範例（只產生文字，不連線、不寫回設備）
  *   - devicesCsvDraft：由 C01 產生 tools/collect.sh 的設備清單草稿
@@ -15,6 +16,18 @@
   const ACK_KIND = { accepted: '可接受（設計如此）', scheduled: '已排程修復', 'false-positive': '誤報' };
   /** 未知的分類（例如較新版本寫入的值）原樣顯示，不當成未分類 */
   const ackKindText = (kind) => (kind ? ACK_KIND[kind] || kind : '未分類');
+
+  // ---------------------------------------------------------------- 規則的常見原因與處理
+  /**
+   * 規則的處理建議與常見原因：每次都從 S.check.CATALOG 讀取，不複製文字（詳情、規則清單與匯出共用）。
+   * 回傳 { action: 字串或 null, causes: 字串陣列 }；欄位不存在時 action 為 null、causes 為空陣列。
+   * causes 寫成單一字串時視為一條。
+   */
+  function advice(id) {
+    const c = S.check.CATALOG[id] || {};
+    const causes = Array.isArray(c.causes) ? c.causes.filter((x) => typeof x === 'string' && x) : typeof c.causes === 'string' && c.causes ? [c.causes] : [];
+    return { action: typeof c.action === 'string' && c.action ? c.action : null, causes };
+  }
 
   // ---------------------------------------------------------------- 檢查結果所屬設備
   /**
@@ -184,5 +197,5 @@
     return out;
   }
 
-  V.remediation = { ACK_KIND, ackKindText, findingDevice, sortByDevice, DISABLE_FIX, disableRuleFix, quote, devicesCsvDraft, USER_PLACEHOLDER, fixTracking };
+  V.remediation = { ACK_KIND, ackKindText, advice, findingDevice, sortByDevice, DISABLE_FIX, disableRuleFix, quote, devicesCsvDraft, USER_PLACEHOLDER, fixTracking };
 })(globalThis.SSOT = globalThis.SSOT || {});

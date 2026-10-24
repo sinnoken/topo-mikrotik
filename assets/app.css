@@ -205,6 +205,15 @@ table.t tr.click { cursor: pointer; }
 .finding { display: flex; gap: 9px; align-items: flex-start; padding: 9px 10px; border: 1px solid var(--line-soft); border-radius: var(--radius); margin-bottom: 7px; font-size: var(--fs-md); background: var(--surface); }
 .finding .ev { margin-top: 2px; }
 .finding > .sev { margin-top: 5px; }
+/* 規則的常見原因與處理（CATALOG）：檢查結果與規則清單共用，預設收合 */
+.advice { margin-top: 4px; font-size: var(--fs-sm); }
+.advice > summary { cursor: pointer; color: var(--accent); width: max-content; max-width: 100%; }
+.advice > summary:hover { text-decoration: underline; }
+.advice-body { margin-top: 4px; padding: 6px 8px; border-left: 2px solid var(--line-strong); background: var(--surface-hover); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.advice-label { color: var(--muted); font-weight: 600; }
+.advice-causes { margin-top: 4px; }
+.advice-causes ul { margin: 2px 0 0; padding-left: 18px; }
+.advice code { padding: 0 3px; border-radius: 3px; background: var(--neutral-soft); overflow-wrap: anywhere; }
 .ev .link + .link { margin-left: 10px; }
 .ev.stack .link { display: block; }
 .ev.stack .link + .link { margin-left: 0; }

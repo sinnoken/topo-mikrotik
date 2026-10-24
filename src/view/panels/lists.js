@@ -152,7 +152,10 @@
         h('span', null, open ? '▾' : '▸'), h('span', { class: 'title' }, label), V.chip(String(list.length), st === 'pass' ? 'ok' : ''),
       ])]);
       if (open) g.appendChild(h('div', { class: 'items' }, list.map((r) => h('div', { class: 'rule', title: note(r) }, [
-        h('span', { class: 'mark' }, mark), h('span', { class: 'title' }, [r.title, st === 'nodata' ? h('div', { class: 'muted note' }, note(r)) : null]), h('span', { class: 'id' }, r.id),
+        h('span', { class: 'mark' }, mark), h('span', { class: 'title' }, [r.title, st === 'nodata' ? h('div', { class: 'muted note' }, note(r)) : null,
+          // 處理建議（CATALOG）：預設收合，展開狀態跨重繪保留
+          V.details.parts.adviceBlock(r.id, { open: state.open.has('advice:' + r.id),
+            ontoggle: (on) => (on ? state.open.add('advice:' + r.id) : state.open.delete('advice:' + r.id)) })]), h('span', { class: 'id' }, r.id),
       ]))));
       root.appendChild(g);
     });

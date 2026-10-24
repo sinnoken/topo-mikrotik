@@ -55,6 +55,22 @@
   // 鄰居發現協定（LLDP／MNDP／CDP）；L3 鏈路沒有發現協定時退回 via（如 OSPF）
   V.protoText = (l) => ((l.protocols && l.protocols.length ? l.protocols : l.via) || []).map((p) => p.toUpperCase()).join('、');
 
+  /**
+   * 反引號標出的 RouterOS 指令與欄位（CATALOG 的 causes／action 的寫法）：切成 [{ text, code }]。
+   * 沒有成對的反引號保留為一般文字，不吞掉。
+   */
+  V.codeParts = (s) => {
+    const str = String(s); const out = []; const re = /`([^`]+)`/g; let at = 0; let m;
+    while ((m = re.exec(str))) {
+      if (m.index > at) out.push({ text: str.slice(at, m.index), code: false });
+      out.push({ text: m[1], code: true }); at = re.lastIndex;
+    }
+    if (at < str.length) out.push({ text: str.slice(at), code: false });
+    return out;
+  };
+  /** 同上，組成 DOM 節點：一般文字是文字節點，反引號內是 <code>（等寬字型），都以 textContent 寫入 */
+  V.codeText = (s) => V.codeParts(s).map((p) => (p.code ? V.h('code', { class: 'mono' }, p.text) : p.text));
+
   V.chip = (text, cls, attrs) => V.h('span', Object.assign({ class: 'chip ' + (cls || '') }, attrs || {}), text);
   V.kindChip = (k) => V.chip(V.KIND[k] || k, 'kind-' + k);
   V.sevDot = (s) => V.h('span', { class: 'sev ' + s, title: V.SEV[s] });

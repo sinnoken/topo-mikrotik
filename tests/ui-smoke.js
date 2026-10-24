@@ -327,7 +327,33 @@ async function buildInput(input) {
     if (head().querySelectorAll('.rule').length) throw new Error('「通過」區塊預設應收合');
     head().querySelector('.head').click();
     if (head().querySelectorAll('.rule').length !== pass.length || !text('#pane-findings').includes(pass[0].title)) throw new Error('展開後應列出每一條通過的規則');
+    // 每一條規則都能看到 CATALOG 的處理建議（預設收合，反引號內是等寬元素）
+    const plain = (t) => String(t).replace(/`([^`]+)`/g, '$1');
+    const rows = () => head().querySelectorAll('.rule');
+    rows().forEach((row, n) => {
+      const id = pass[n].id; const adv = row.querySelector('.advice');
+      if (row.querySelector('.id').textContent !== id) throw new Error('通過的規則應依 ruleStatus 的順序列出');
+      if (!adv || adv.getAttribute('open') !== null || !adv.textContent.includes(plain(S.check.CATALOG[id].action))) throw new Error('通過的 ' + id + ' 應附上預設收合的處理建議');
+      if (S.check.CATALOG[id].action.includes('`') && !adv.querySelector('code')) throw new Error(id + ' 的處理建議應以等寬元素顯示指令');
+    });
+    // 展開狀態跨重繪保留，收合後也保留
+    const toggleAdvice = (on) => { const d = rows()[0].querySelector('.advice'); d.open = on; d.dispatch('toggle'); };
+    const reopen = () => { head().querySelector('.head').click(); head().querySelector('.head').click(); };
+    toggleAdvice(true); reopen();
+    if (rows()[0].querySelector('.advice').getAttribute('open') === null) throw new Error('展開的處理建議重繪後應保持展開');
+    toggleAdvice(false); reopen();
+    if (rows()[0].querySelector('.advice').getAttribute('open') !== null) throw new Error('收合的處理建議重繪後應保持收合');
     head().querySelector('.head').click();
+    const nodata = App.Q.ruleStatus().filter((r) => r.status === 'nodata');
+    const nd = () => document.querySelectorAll('#pane-findings .fgroup').find((g) => g.className.split(' ').includes('nodata'));
+    if (nodata.length) {
+      nd().querySelector('.head').click();
+      nd().querySelectorAll('.rule').forEach((row, n) => {
+        const adv = row.querySelector('.advice');
+        if (!adv || !adv.textContent.includes(plain(S.check.CATALOG[nodata[n].id].action))) throw new Error('沒有資料可檢查的 ' + nodata[n].id + ' 也應附上處理建議');
+      });
+      nd().querySelector('.head').click();
+    }
   });
   await step('C02 的證據標示為已收集的指令，而不是缺少的資料', () => {
     const i = App.snap.findings.findIndex((f) => f.id === 'C02' && f.evidence.length);
@@ -342,6 +368,38 @@ async function buildInput(input) {
     if (other >= 0) { App.selectFinding(other); if (!text('#detail').includes('原文 第 ')) throw new Error('其他檢查的證據應維持「原文 第 N 行」'); }
   });
   await step('點選每一筆檢查結果', () => { App.snap.findings.forEach((f, i) => { App.selectFinding(i); App.graph.draw(); }); });
+  await step('詳情的檢查結果附上 CATALOG 的常見原因與處理：預設收合，反引號內的指令以等寬元素顯示', () => {
+    const all = App.snap.findings; const C = S.check.CATALOG;
+    // 反引號內的片段與去掉反引號後看到的文字（以正規式另外取出，不經過畫面的切法）
+    const codes = (t) => Array.from(String(t).matchAll(/`([^`]+)`/g)).map((m) => m[1]);
+    const plain = (t) => String(t).replace(/`([^`]+)`/g, '$1');
+    const ids = S.util.uniq(all.map((f) => f.id));
+    if (!process.env.SMOKE_INPUT && !ids.some((id) => codes(C[id].action).length)) throw new Error('範例資料應有處理建議含反引號指令的檢查結果');
+    ids.forEach((id) => {
+      // 沒有相關實體的檢查結果沒有詳情畫面可顯示（選取後是總覽），取第一筆有實體的
+      const i = all.findIndex((f) => f.id === id && f.entities.length); if (i < 0) return;
+      const f = all[i]; App.selectFinding(i);
+      if (!text('#detail').includes(f.message)) throw new Error(id + ' 的詳情應列出這筆檢查結果');
+      const blocks = $('#detail').querySelectorAll('.advice').filter((d) => d.getAttribute('data-rule-id') === id);
+      if (!blocks.length) throw new Error(id + ' 的詳情應有常見原因與處理');
+      blocks.forEach((d) => {
+        if (d.tagName !== 'DETAILS' || d.getAttribute('open') !== null) throw new Error(id + ' 的常見原因與處理應預設收合');
+        const t = d.textContent;
+        if (!t.includes(plain(C[id].action))) throw new Error(id + ' 的詳情應顯示 CATALOG 的 action：' + C[id].action);
+        if (!C[id].causes.every((c) => d.querySelectorAll('li').some((li) => li.textContent === plain(c)))) throw new Error(id + ' 的常見原因應逐條列出');
+        if (t.includes('`')) throw new Error(id + ' 的處理建議不應顯示反引號');
+        const shown = d.querySelectorAll('code').map((c) => c.textContent);
+        const want = codes(C[id].action).concat(...C[id].causes.map(codes));
+        if (shown.join('\n') !== want.join('\n')) throw new Error(id + ' 反引號內的片段應依序成為等寬元素：' + JSON.stringify(shown) + ' / ' + JSON.stringify(want));
+        if (d.querySelectorAll('code').some((c) => !c.classList.contains('mono') || c.childNodes.some((n) => n instanceof El))) throw new Error(id + ' 的等寬元素應為純文字的 code.mono');
+      });
+    });
+    // 反引號沒有成對時保留原樣，不吞掉文字；內容以文字寫入，不解析 HTML
+    const parts = S.view.codeParts('a `b` c `d');
+    if (JSON.stringify(parts) !== JSON.stringify([{ text: 'a ', code: false }, { text: 'b', code: true }, { text: ' c `d', code: false }])) throw new Error('codeParts 切法不符：' + JSON.stringify(parts));
+    const nodes = S.view.codeText('<b>x</b> `<i>`');
+    if (nodes[0] !== '<b>x</b> ' || nodes[1].tagName !== 'CODE' || nodes[1].textContent !== '<i>' || nodes[1].childNodes.some((n) => n instanceof El)) throw new Error('codeText 應以文字寫入，不解析 HTML');
+  });
   await step('跨設備一致性：多數決推定偏離的設備列在檢查結果，VLAN 實體可開啟', () => {
     const all = App.snap.findings;
     const dev = all.map((f, i) => i).filter((i) => all[i].deviation && all[i].deviation.deviating.length);
@@ -473,7 +531,7 @@ async function buildInput(input) {
     // CSV：UTF-8 BOM 開頭（bytes EF BB BF），內容依 RFC 4180 解析回來要和每筆 finding 對得上
     if (bytes[1].subarray(0, 3).toString('hex') !== 'efbbbf') throw new Error('CSV 應以 UTF-8 BOM 開頭');
     const rows = parseCsv(csv.replace(/^\uFEFF/, ''));
-    if (rows[0].join() !== 'severity,id,title,message,entities,evidence,acknowledged,ack_kind,ack_note,device') throw new Error('CSV 標頭不符：' + rows[0]);
+    if (rows[0].join() !== 'severity,id,title,message,entities,evidence,acknowledged,ack_kind,ack_note,device,action') throw new Error('CSV 標頭不符：' + rows[0]);
     if (rows.length - 1 !== App.snap.findings.length) throw new Error('CSV 每筆檢查結果應恰好一列');
     App.snap.findings.forEach((f, i) => {
       const r = rows[i + 1]; const ack = S.view.app.ackOf(f) || {};
@@ -482,7 +540,21 @@ async function buildInput(input) {
       if (r[5] !== f.evidence.map((e) => `${e.file}:${e.line}`).join('; ')) throw new Error(`CSV ${f.id} 的證據應合在同一格`);
       if (r[6] !== (ack.at || '')) throw new Error(`CSV ${f.id} 的 acknowledged 應為確認時間（未確認為空白）`);
       if (r[7] !== (ack.kind || '') || r[8].replace(/^'/, '') !== (ack.note || '')) throw new Error(`CSV ${f.id} 的 ack_kind／ack_note 應為確認的分類與原因`);
-      if (r[9] !== (S.view.remediation.findingDevice(App.Q, f) || '')) throw new Error(`CSV ${f.id} 的 device 應為所屬設備`);
+      if (r[9] !== (S.view.remediation.findingDevice(App.Q, f) || '')) throw new Error('CSV ' + f.id + ' 的 device 應為所屬設備');
+      if (r[10].replace(/^'/, '') !== S.check.CATALOG[f.id].action) throw new Error('CSV ' + f.id + ' 的 action 應與 CATALOG 一致（原文照錄）');
+      if (r.length !== rows[0].length) throw new Error('CSV 第 ' + (i + 2) + ' 列的欄數應與標頭相同');
+    });
+    // Markdown（依規則）：每條出現的規則附處理建議與逐條的常見原因，反引號內是行內程式碼（不被跳脫）
+    S.util.uniq(App.snap.findings.map((f) => f.id)).forEach((id) => {
+      const sec = md.slice(md.indexOf('\n### ' + id + ' ')); const c = S.check.CATALOG[id];
+      const line = sec.split('\n').find((x) => x.startsWith('- 處理建議：'));
+      if (!line) throw new Error('Markdown 的 ' + id + ' 應附處理建議');
+      Array.from(c.action.matchAll(/`[^`]+`/g)).forEach((m) => { if (!line.includes(m[0])) throw new Error('Markdown 的 ' + id + ' 應以行內程式碼呈現 ' + m[0] + '：' + line); });
+      if (line.includes('\\`')) throw new Error('Markdown 的 ' + id + ' 處理建議不應跳脫指令的反引號');
+      const lines = sec.split('\n'); const from = lines.indexOf('- 常見原因：');
+      const causeLines = from < 0 ? [] : lines.slice(from + 1, from + 1 + c.causes.length);
+      if (causeLines.length !== c.causes.length || causeLines.some((x, n) => !x.startsWith('  - ')
+        || !Array.from(c.causes[n].matchAll(/`[^`]+`/g)).every((m) => x.includes(m[0])))) throw new Error('Markdown 的 ' + id + ' 應逐條列出常見原因（指令為行內程式碼）');
     });
     // 跳脫：逗號、引號、換行、公式開頭；以人工 finding 走一次完整組字再解析回來
     const X = S.view.exporter;
@@ -674,6 +746,14 @@ async function buildInput(input) {
     const md = files[1].text;
     const heads = allKeys.map((d) => md.indexOf(`\n## ${d === null ? '不屬於任何設備' : Q.devName(d)}（`));
     if (heads.some((x) => x < 0) || heads.some((x, n) => n && heads[n - 1] > x)) throw new Error('Markdown 應依設備分組並依序排列');
+    // 處理建議只在最後的附錄列一次：每條出現的規則一段，依 CATALOG 的順序，設備分組內不重複
+    const appendix = md.indexOf('\n## 附錄：處理建議與常見原因');
+    if (appendix < 0 || appendix < Math.max(...heads)) throw new Error('依設備分組的 Markdown 應在最後附上處理建議的附錄');
+    const usedIds = Object.keys(S.check.CATALOG).filter((id) => all.some((f) => f.id === id));
+    const at = usedIds.map((id) => md.indexOf('\n### ' + id + ' ', appendix));
+    if (at.some((x) => x < 0) || at.some((x, n) => n && at[n - 1] > x)) throw new Error('附錄應依 CATALOG 的順序列出每條出現的規則');
+    if (usedIds.some((id) => md.split('\n### ' + id + ' ').length !== 2)) throw new Error('每條規則在附錄只列一次');
+    if (md.split('\n- 處理建議：').length - 1 !== usedIds.length || md.lastIndexOf('\n- 處理建議：', appendix) >= 0) throw new Error('處理建議只應出現在附錄，每條規則一次');
     toggle().click();
     const { files: f2 } = await captureDownloads(() => button('CSV').click());
     const plain = parseCsv(f2[0].text.replace(/^﻿/, '')).slice(1);

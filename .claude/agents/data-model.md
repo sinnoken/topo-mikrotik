@@ -17,6 +17,8 @@ tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch
 ## 與其他 agent 的介面（契約）
 
 - **query 是對 workflow 和 frontend 的介面**：Snapshot（`docs/設計說明.md` §5.2）與 `SSOT.query(snapshot)` 的函式，是畫面與下游模組唯一的資料來源。`workflow` 或 `frontend` 需要新的查詢函式時，由你加入。
+  - `src/query` 是畫面與下游唯一的讀取介面（ADR-018）：畫面不讀 Snapshot 的欄位與 `S.check`、`S.adapters`，靜態資料（規則目錄、顯示名稱）放在 `S.query.*`。
+  - 新增查詢函式要考慮 1000 台的效能：索引在第一次呼叫時才建立，不在 `S.query(snap)` 時預先建好全部；回傳的衍生陣列（Q 自己的索引）要凍結，Snapshot 本身不凍結、不複製。
   - 新增欄位或查詢函式屬於相容修改，可以直接做，並在報告列出名稱與意義。
   - 改名、刪除或改變欄位意義屬於破壞性修改，先依 `snapshot-contract-change` skill 評估；必要時調整 `S.SCHEMA`／`S.VERSION`，並在報告中逐項列出受影響的畫面位置與下游模組。
 - **對 docs**：finding 的 ID、標題、嚴重度，以及常見原因與處理（`CATALOG` 的 `causes`／`action`），要和 `docs/基準檢查規則.md` 一致，由 `tests/docs.js` 檢查。改了就在報告的「文件影響」寫出要怎麼改。

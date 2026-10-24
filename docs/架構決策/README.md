@@ -25,6 +25,7 @@
 | [015](015-支援VRF並升級ssot-snapshot-3.md) | 支援 VRF：位址、路由、ARP 加上 vrf，升級為 ssot-snapshot/3 | 提議 |
 | [016](016-文件分工每個主題只有一個說明處.md) | 文件分工：每個主題只有一個說明處 | 已接受 |
 | [017](017-工作包ssot-workpack-1.md) | 工作包 ssot-workpack/1：不壓縮 ZIP 加 manifest | 已接受 |
+| [018](018-畫面只透過Q與S.query讀資料.md) | 畫面只透過 Q 與 S.query.* 讀資料，並以守門測試強制 | 已接受 |
 
 ## 狀態
 

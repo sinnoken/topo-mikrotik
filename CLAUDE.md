@@ -62,7 +62,8 @@ git diff --check         # 提交前檢查
   下游（`compare/` 比對、`remediate/` 修正 patch、`ledger/` 處理紀錄、`workpack/` 的 `S.zip` 與工作包 `S.workpack`）也是核心檔案，
   但只透過 `SSOT.query(snapshot)` 讀基準、不修改基準，上游也不呼叫它們；`S.workpack` 只在呼叫時使用 `S.build`、`S.ledger` 與 `S.profile`。所有核心都不得碰 DOM、Canvas、IndexedDB。View 與下游只透過 `SSOT.query(snapshot)`（[src/query/query.js](src/query/query.js)）讀取，不讀原始 model、不改寫 Snapshot。
   `src/view/theme.js` 是顏色／線型／透明度的唯一來源；持久化集中在 `src/view/store.js`。
-  畫面讀 `CATALOG` 的 `causes`／`action` 只透過 `V.remediation.advice(id)`；含反引號的文字以 `V.codeText` 組成 DOM，不用 innerHTML。
+  `src/view` 只透過 `S.query(snapshot)`／`S.query.*` 讀資料與規則目錄，不讀 Snapshot 的欄位；允許的 `S.*` 成員由 `tests/ui-smoke.js` 的邊界掃描強制（[ADR-018](docs/架構決策/018-畫面只透過Q與S.query讀資料.md)）。
+  畫面讀 `CATALOG` 的 `causes`／`action` 只透過 `V.remediation.advice(id)`（advice 內部經 `S.query.rule`）；含反引號的文字以 `V.codeText` 組成 DOM，不用 innerHTML。
 - **比對與檢視狀態**：`compare/` 有預期資料比對（`S.compare`）、由基準產生預期資料（`S.compare.expectedFrom`）與
   新舊基準比對（`S.compare.snapshots`，`ssot-snapdiff/1`）。finding 的穩定鍵是 `Q.findingKey(f)`；
   處理紀錄（`S.ledger`，`ssot-ledger/1`）以它為鍵存在 store 的 `'ledger'`，是使用者的資料，不進 Snapshot；

@@ -27,6 +27,15 @@ command_for_id() {
   esac
 }
 
+# 由指令文字找回 ID（--retry-failed 讀上次收集檔的 ### 標記用）；不是收集器的指令時回傳非零
+id_for_command() {
+  local id
+  for id in "${COLLECT_COMMAND_IDS[@]}" "${OPTIONAL_COMMAND_IDS[@]}"; do
+    [[ "$(command_for_id "$id")" == "$1" ]] && { printf '%s\n' "$id"; return 0; }
+  done
+  return 1
+}
+
 # 自動加上選用指令的判斷，依據：
 # - 介面 type：/interface print 中 wifi 套件的介面 type=wifi
 #   （https://manual.mikrotik.com/docs/developer-guides/rest-api.md 的 /interface/print 範例），

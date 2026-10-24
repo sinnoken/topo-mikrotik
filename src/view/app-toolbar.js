@@ -90,12 +90,15 @@
 
   // ================================================================ 圖例
   function buildLegend() {
-    const lg = $('#legend');
+    const lg = $('#legend'); const T = V.theme; const M = T.mark; const EDGE = V.EDGE_STYLE;
     // 圖例的外形、顏色、線寬、虛線與透明度全部取自 theme，與 Canvas 繪圖同一來源
-    // 分四類，預設收合只顯示標題列；細節說明放 title，避免圖例太長
-    const head = h('button', { class: 'legend-head', title: '展開／收合圖例' }, '圖例 ▸');
+    // 分五類，預設收合只顯示標題列；細節說明放 title，避免圖例太長
+    const head = h('button', { class: 'legend-head', title: '展開／收合圖例', 'aria-expanded': 'false' }, '圖例 ▸');
     const body = h('div', { class: 'legend-body hidden' });
-    head.onclick = () => { const open = body.classList.contains('hidden'); body.classList.toggle('hidden', !open); head.textContent = open ? '圖例 ▾' : '圖例 ▸'; };
+    head.onclick = () => {
+      const open = body.classList.contains('hidden'); body.classList.toggle('hidden', !open);
+      head.textContent = open ? '圖例 ▾' : '圖例 ▸'; head.setAttribute('aria-expanded', String(open));
+    };
     lg.appendChild(head); lg.appendChild(body);
     let grp = null;
     const group = (title) => { grp = h('div', { class: 'lg-group' }, [h('div', { class: 'lg-title' }, title)]); body.appendChild(grp); };
@@ -112,36 +115,59 @@
       triangle: { borderRadius: '0', clipPath: 'polygon(50% 0, 100% 100%, 0 100%)' },
     };
     const dot = (style, attrs) => h('span', Object.assign({ class: 'sev', style: Object.assign({ width: LEG + 'px', height: LEG + 'px' }, style) }, attrs || {}));
-    const line = (color, w, dash, alpha) => h('span', { class: 'ln', style: {
-      borderTopWidth: '0', height: Math.max(2, Math.round(w)) + 'px', opacity: String(alpha == null ? 1 : alpha),
+    const line = (color, w, dash, alpha, attrs) => h('span', Object.assign({ class: 'ln', style: {
+      borderTopWidth: '0', height: V.legendLineHeight(w), opacity: String(alpha == null ? 1 : alpha),
       background: dash ? `repeating-linear-gradient(90deg, ${dash.reduce((stops, n, i) => {
         const next = (stops.pos || 0) + n; const shade = i % 2 ? 'transparent' : color;
         stops.parts.push(`${shade} ${stops.pos || 0}px`, `${shade} ${next}px`); stops.pos = next; return stops;
       }, { parts: [], pos: 0 }).parts.join(', ')})` : color,
-    } });
+    } }, attrs || {}));
+    const ring = (color, width, mark) => dot({ background: 'transparent', border: `${width}px solid ${color}` }, { 'data-mark': mark });
     group('設備');
-    Object.entries(V.KIND).forEach(([k, label]) => item([dot(Object.assign({ background: V.KIND_COLOR[k] }, SHAPE_CSS[V.theme.shape[k]]))], label));
+    Object.entries(V.KIND).forEach(([k, label]) => item([dot(Object.assign({ background: V.KIND_COLOR[k] }, SHAPE_CSS[T.shape[k]]))], label));
     item([dot(Object.assign({ background: CV.uncollectedFill, border: '2px dashed ' + V.KIND_COLOR.unknown }, SHAPE_CSS.circle))], '未收集', '基準裡沒有收集檔的設備（虛線外框）');
     group('終端');
-    item([dot({ background: EP.vendorFallback, border: '1.5px solid ' + CV.outline })], '單一 MAC', '未知對端：一個埠一個 MAC，依廠商上色');
+    // 前 8 個廠商各一色（依基準計算，載入基準後由 renderVendorLegend 填入），其餘與不明廠商用中性色
+    vendorBox = h('div', { class: 'lg-vendors' }); grp.appendChild(vendorBox); A.renderVendorLegend();
     item([dot({ background: EP.downstream.fill, border: '2px dashed ' + EP.downstream.stroke, transform: 'rotate(45deg)', borderRadius: '0' })],
       'Wi-Fi 多 MAC', 'Wi-Fi MAC 觀察位置列入終端清單；Wi-Fi 介面不算終端埠，且不參與 A02');
     item([dot({
       background: EP.cluster.fill, border: '1.5px solid ' + EP.cluster.stroke,
       width: Math.round(LEG * 1.3) + 'px', height: Math.round(LEG * 0.8) + 'px', borderRadius: '3px',
     })], '群組 ×N', '同一台設備終端過多時收合，雙擊展開');
-    // 嚴重度：外形與畫布的 sevMark 相同（theme.sevShape），不只靠顏色
-    Object.entries(V.theme.sevShape).forEach(([k, shape]) => item([dot(Object.assign({ background: V.theme.sev[k] }, SEV_CSS[shape]), { 'data-shape': shape })],
-      V.SEV[k], `有${V.SEV[k]}的設備在右上角、連線在中點標示${shape === 'square' ? '方形' : '三角形'}`));
     group('連線');
-    Object.entries(V.EDGE_STYLE).forEach(([k, st]) => item([line(st.c, st.w, st.dash)], V.CLS[k],
-      k === '1g' ? '推論分類：ether、sfp1、combo 等介面名稱歸為 1G；不代表實際協商速率，ether 也可能是 2.5G 或 10G。' : null));
+    Object.entries(EDGE).forEach(([k, st]) => item([line(st.c, st.w, st.dash, 1, { 'data-edge': k })], V.CLS[k],
+      k === '1g' ? '推論分類：ether、sfp1、combo 等介面名稱歸為 1G；不代表實際協商速率，ether 也可能是 2.5G 或 10G。線寬隨速率遞增。' : null));
+    const mw = EDGE['1g'].w * T.multi.widen; const g0 = Math.round((1 - T.multi.gap) * 50); const g1 = 100 - g0;
+    item([h('span', { class: 'ln', 'data-multi': '', style: {
+      borderTopWidth: '0', height: V.legendLineHeight(mw), background: `linear-gradient(${CV.keyInk} 0 ${g0}%, ${CV.surface} ${g0}% ${g1}%, ${CV.keyInk} ${g1}%)`,
+    } })], '多條鏈路（雙線）', '同一對設備之間有多條鏈路：線加寬並在中間留一條細縫；顏色仍是該連線類別');
     group('連線註記');
-    item([line(WEAK.hearsay.c, V.EDGE_STYLE.other.w, WEAK.hearsay.dash, WEAK.hearsay.alpha)], '單側觀察', '紫色點線：對端沒有提供 LLDP 鄰居資料，屬單向觀察');
-    item([line(WEAK.inferred.c, V.EDGE_STYLE.other.w, WEAK.inferred.dash, WEAK.inferred.alpha)], '推論鏈路',
-      '綠色長虛線：沒有 LLDP 的設備（例如只支援 MNDP 的 SwOS 交換器），依 MAC 表、MNDP、點對點網段推定相鄰；是直接相連或中間只有未管理設備');
-    Object.values(EP.byType).forEach((t) => item([line(t.c, V.EDGE_STYLE.other.w, WEAK.hearsay.dash, WEAK.hearsay.alpha)], t.label, '連到 ' + t.label + ' 介面終端的連線'));
+    const noteW = EDGE['1g'].w;
+    item([line(CV.keyInk, noteW, WEAK.hearsay.dash, WEAK.hearsay.alpha)], '單側觀察', '點線（顏色依連線類別）：對端沒有提供 LLDP 鄰居資料，屬單向觀察');
+    item([line(CV.keyInk, noteW, WEAK.inferred.dash, WEAK.inferred.alpha)], '推論鏈路',
+      '長虛線（顏色依連線類別）：沒有 LLDP 的設備（例如只支援 MNDP 的 SwOS 交換器），依 MAC 表、MNDP、點對點網段推定相鄰；是直接相連或中間只有未管理設備');
+    Object.values(EP.byType).forEach((t) => item([line(CV.keyInk, noteW, t.dash, WEAK.hearsay.alpha)], t.label, '連到 ' + t.label + ' 介面終端的連線（專用線型）'));
+    group('標示');
+    // 嚴重度：外形與畫布的 sevMark 相同（theme.sevShape），不只靠顏色
+    Object.entries(T.sevShape).forEach(([k, shape]) => item([dot(Object.assign({ background: T.sev[k] }, SEV_CSS[shape]), { 'data-shape': shape })],
+      V.SEV[k], `有${V.SEV[k]}的設備在右上角、連線在中點標示${shape === 'square' ? '方形' : '三角形'}`));
+    item([ring(M.select, 3, 'select')], '選取', '目前選取的設備（藍色粗環）與連線');
+    item([ring(M.hover, 2, 'hover')], '滑過', '指標所在的設備（深色細環）；相連的線一起標示');
+    item([ring(M.find, 3, 'find')], '搜尋結果', '搜尋 MAC／IP 時，標出所在位置的設備與連線');
+    item([line(M.trace, 4, null, T.alpha.overlay, { 'data-mark': 'trace' }), h('span', { class: 'lg-arrow', style: { color: M.trace } }, '▶')], '路由追蹤', '逐跳路徑，箭頭表示方向');
   }
+  /** 圖例的線寬：依 theme 的線寬等比放大到圖例可辨識，保持速率越高越粗的順序 */
+  V.legendLineHeight = (w) => Math.max(1, Math.round(w * 1.2)) + 'px';
+  let vendorBox = null;
+  /** 圖例的終端廠商色：前 8 個廠商（依目前基準）＋「其他」；沒有終端時只列中性色的「單一 MAC」 */
+  A.renderVendorLegend = function renderVendorLegend() {
+    if (!vendorBox) return; V.clear(vendorBox);
+    const sw = (c) => h('span', { class: 'sev', style: { width: '12px', height: '12px', background: c, border: '1.5px solid ' + CV.outline } });
+    App.vendorColors.forEach((c, v) => vendorBox.appendChild(h('div', { class: 'li lg-vendor', title: '終端廠商：' + v }, [sw(c), h('span', { class: 'lg-name' }, v)])));
+    vendorBox.appendChild(h('div', { class: 'li', title: '未知對端：一個埠一個 MAC，依廠商上色；前 8 個以外的廠商與不明廠商用這個顏色' },
+      [sw(EP.vendorFallback), App.vendorColors.size ? `其他廠商${App.vendorOthers ? `（${App.vendorOthers} 家）` : ''}／不明` : '單一 MAC']));
+  };
 
   // ================================================================ 匯出
   /** 匯出目前的基準或檢查結果（種類見 V.exporter.KINDS）；只讀 App.snap，不改寫。extra 例如 { byDevice: true } */

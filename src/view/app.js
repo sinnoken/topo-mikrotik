@@ -22,6 +22,8 @@
     pairOfLink: new Map(), pairs: new Map(), sel: null, showHosts: true,
     // 未知對端（沒有 LLDP／CDP 介面鄰接、只由 MAC 推論出來的終端）：只存在於畫面，不寫進基準
     showUnknown: true, expanded: new Set(), virtual: new Map(), vOfEp: new Map(), virtualByDev: new Map(),
+    // 終端的廠商色（前 8 個廠商；其餘歸「其他」），由 app-graph.js 依基準計算，只用於畫面與圖例
+    vendorColors: new Map(), vendorOthers: 0,
     UNKNOWN_EXPAND_MAX: 8, UNKNOWN_TOTAL_CAP: 800,
     // 版面模式：elk（分層，預設）或 builtin（快速）；網路設備超過 ELK_MAX 台時分層版面不執行
     layoutMode: 'elk', layoutJob: Promise.resolve(), ELK_MAX: 1500,

@@ -150,19 +150,22 @@
       const drawEdge = (e, override) => {
         const a = this.pos.get(e.a); const b = this.pos.get(e.b); if (!a || !b) return;
         if (!inView(a) && !inView(b) && !segInView(a, b, view)) return;
-        const st = EDGE[e.cls] || EDGE.other; let col = st.c; let w = st.w * (e.count > 1 ? 1.25 : 1); let alpha = 1;
-        // 證據強度（query 的 devicePairs 決定）對應 theme 的弱邊樣式；終端連線保留介面類型顏色
+        const st = EDGE[e.cls] || EDGE.other; let col = st.c; const multi = e.count > 1; let w = st.w * (multi ? T.multi.widen : 1); let alpha = 1;
+        // 證據強度（query 的 devicePairs 決定）只改線型與透明度，保留速率色；連到終端的連線依介面類型換線型
         const weak = WEAK[e.evidence];
-        if (weak) { col = e.evidence === 'hearsay' && e.ifStyle ? e.ifStyle.c : weak.c; alpha = weak.alpha; }
-        else if (e.ifStyle) col = e.ifStyle.c;
+        if (weak) alpha = weak.alpha;
         const hc = hl && hl.edges.get(e.id);
         if (dim && !hc && !override) alpha = ALPHA.dimEdge;
         if (hc) { col = hc; w = Math.max(w, 3.5, 2.5 / s); }
         if (override) { col = override; w = Math.max(w, 3.5, 2.5 / s); alpha = 1; }
         c.globalAlpha = alpha; c.strokeStyle = col; c.lineWidth = Math.max(w, 0.8 / s);
-        const dash = weak ? weak.dash : st.dash;
+        const dash = (e.ifStyle && e.ifStyle.dash) || (weak ? weak.dash : st.dash);
         c.setLineDash(dash ? dash.map((d) => d / Math.min(s, 1)) : []);
-        c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke(); c.setLineDash([]);
+        c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+        if (multi) { // 多條鏈路：中間一條底色細縫，看起來是雙線
+          c.strokeStyle = CV.surface; c.lineWidth = Math.max(w, 0.8 / s) * T.multi.gap; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+        }
+        c.setLineDash([]);
         if (e.sev && !dim && !override) { // 有問題的連線：中點標記（外形同節點）
           c.globalAlpha = 1; sevMark(c, e.sev, (a.x + b.x) / 2, (a.y + b.y) / 2, Math.max(4.5, 3.5 / s));
         }

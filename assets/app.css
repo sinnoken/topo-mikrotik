@@ -5,7 +5,7 @@
   /* 狀態文字色：對白底、狀態淺底與表面色都 ≥ 4.5:1；與 theme.js 的 text 一致（有測試比對）。--err 等飽和色只用於圖形標記 */
   --err-text: #b3261e; --warn-text: #8a5300; --ok-text: #17692f; --info-text: #315d8a;
   /* 設備類型色：與 theme.js 的 kind 一致（有測試比對）；不用狀態色的色相 */
-  --fw: #7b208e; --sw: #3398b5; --rt: #335dcd; --host: #977af8; --unk: #535d62;
+  --fw: #7b208e; --sw: #2795b5; --rt: #335dcd; --host: #977af8; --unk: #535d62;
   /* 嚴重度標記：與 theme.js 的 sev 一致（有測試比對）；外形與畫布相同：錯誤方形、警告三角形 */
   --sev-error: #d93025; --sev-warn: #f29900;
   /* 中性底色：表面（表頭、斑馬列、說明框）、hover、標籤底色；強調色的 hover */
@@ -112,10 +112,11 @@ footer { display: flex; align-items: center; gap: 16px; padding: 0 12px; font-si
 .chip.btn.off { opacity: .45; cursor: default; }
 .chip.btn.off:hover { filter: none; box-shadow: none; transform: none; }
 .sev { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
-/* 嚴重度不只靠顏色：錯誤方形、警告三角形、提醒圓形（與畫布、圖例相同） */
+/* 嚴重度不只靠顏色：錯誤方形、警告三角形、提醒與正常圓形（與畫布、圖例相同） */
 .sev.error { background: var(--sev-error); border-radius: 1px; }
 .sev.warn { background: var(--sev-warn); border-radius: 0; width: 10px; height: 9px; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
-.sev.info { background: var(--info); }
+.sev.info { background: var(--info); } .sev.ok { background: var(--ok); }
+.chip .sev { margin-right: 1px; }
 
 /* ---------- 檢查結果 ---------- */
 .summary { display: flex; gap: 7px; padding: 11px 10px; flex-wrap: wrap; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, #fff, var(--surface)); }
@@ -253,7 +254,11 @@ table.t tr.click { cursor: pointer; }
 .legend .lg-group { display: grid; gap: 3px; align-content: start; }
 .legend .lg-title { color: var(--muted); font-size: var(--fs-xs); border-bottom: 1px solid var(--line); padding-bottom: 1px; }
 .legend .li { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
-.legend .ln { width: 22px; height: 0; border-top-width: 3px; border-top-style: solid; }
+.legend .ln { width: 22px; height: 0; border-top-width: 3px; border-top-style: solid; flex: none; }
+.legend .lg-vendors { display: grid; gap: 3px; }
+/* 廠商名稱可能很長：截斷，完整名稱在 title */
+.legend .lg-name { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+.legend .lg-arrow { font-size: var(--fs-xs); margin-left: -4px; }
 .hint { position: absolute; right: 10px; bottom: 10px; font-size: var(--fs-sm); color: var(--muted); background: rgba(255,255,255,.9); padding: 4px 8px; border-radius: var(--radius); z-index: 5; }
 .banner { position: absolute; top: 10px; right: 10px; z-index: 6; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px; box-shadow: var(--shadow-md); display: flex; gap: 8px; align-items: center; font-size: var(--fs-md); }
 .tooltip { position: absolute; pointer-events: none; background: #1f2933; color: #fff; font-size: var(--fs-sm); padding: 4px 8px; border-radius: var(--radius-sm); z-index: 20; white-space: nowrap; }

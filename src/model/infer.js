@@ -15,7 +15,8 @@
   const K = S.keys;
   const LINK_SCOPE = S.LINK_SCOPE;
   const HOST_PORT = /^(eth\d|ens\d|eno\d|enp\d|bond\d|em\d+$|nic|vmnic|team|ethernet\s?\d|local area connection)/i;
-  const VLAN_DATA = ['config', 'vlans'];
+  /** 有 VLAN 設定資料的資料類別：兩端都有其一，鏈路的 VLAN 才能比較（vlanComparable）。查詢層判斷「這一端的 VLAN 是否已知」也用它。 */
+  const VLAN_DATA = Object.freeze(['config', 'vlans']);
 
   function infer(M, profile) {
     inferKinds(M);
@@ -132,8 +133,8 @@
       const inA = l.vlansA.includes(id); const inB = l.vlansB.includes(id);
       if (inA && inB) carry.push(l); else if ((inA || inB) && l.vlanComparable !== false && l.vlanMismatch) partial.push(l);
     }
-    const devs = S.util.uniq(entries.map((v) => v.dev));
-    for (const i of src.interfaces) if (S.util.ifcVlans(i).includes(id) && !devs.includes(i.dev)) devs.push(i.dev);
+    const devs = S.util.uniq(entries.map((v) => v.dev)); const seen = new Set(devs); // 1000 台時 includes 是 O(介面×設備)
+    for (const i of src.interfaces) if (!seen.has(i.dev) && S.util.ifcVlans(i).includes(id)) { seen.add(i.dev); devs.push(i.dev); }
     // 推論鏈路：已收集的每一端（或其所屬聚合）都帶這個 VLAN；未收集的一端無從得知，屬推論
     const hasVlan = (ep) => { const i = src.ifc(ep); return !!i && S.util.ifcVlans(i).includes(id); };
     const inferred = Array.from(src.inferred).filter((l) => {
@@ -782,7 +783,7 @@
     return d.key;
   }
 
-  S.infer = { infer, displayName, effVlans, effVlanModes, vlanSpan, isVirtualIfc, hwMacsByDev, wifiLocations, behindLocations };
+  S.infer = { infer, displayName, effVlans, effVlanModes, vlanSpan, VLAN_DATA, isVirtualIfc, hwMacsByDev, wifiLocations, behindLocations };
   S.infer.fw = { canonMatch, covers, sameMatch, evalChain, evalFilter, packetFor, fwContext, parseVal, splitNeg, protoName,
     TERMINAL: FW_TERMINAL, BUILTIN: FW_BUILTIN, NONDET: FW_NONDET, PORT_PROTOCOLS };
 })(globalThis.SSOT = globalThis.SSOT || {});

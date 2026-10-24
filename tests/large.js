@@ -1,7 +1,7 @@
 // 壓力測試：只在 node tests/run.js --large 時載入，排在所有測試之後。時間上限由 run.js 依 SSOT_LARGE_MAX_MS 決定後傳入。
 'use strict';
 const assert = require('assert');
-const { build, count, gen, test } = require('./lib.js');
+const { S, build, count, gen, test } = require('./lib.js');
 
 module.exports = function registerLarge(LARGE_MAX_MS) {
   test('壓力：約 1000 台設備在時間內完成，且乾淨網路沒有誤報', () => {
@@ -16,5 +16,18 @@ module.exports = function registerLarge(LARGE_MAX_MS) {
     assert.ok(s.meta.stats.firewallRules >= 80 * 9, `防火牆規則 ${s.meta.stats.firewallRules} 條`);
     assert.deepStrictEqual(s.findings.filter((f) => f.id.startsWith('F')).map((f) => f.id), []);
     assert.ok(s.model.firewallZones.filter((z) => z.status === 'ok').length >= 80, '每台核心路由器都判斷得出 WAN');
+    // L2／L3 視圖的查詢（M1）：建立 Q 不預先算，第一次呼叫才算；各自都要在畫面可接受的時間內
+    const time = (fn) => { const t0 = Date.now(); const r = fn(); return [r, Date.now() - t0]; };
+    const [Q, qMs] = time(() => S.query(s));
+    const [ids, idMs] = time(() => Q.vlanIds());
+    const [vc, vcMs] = time(() => Q.vlanCarriers(ids.includes(20) ? 20 : ids[0]));
+    const [pg, pgMs] = time(() => Q.portGraph());
+    const [pa, paMs] = time(() => Q.portGraph({ ports: 'all' }));
+    const [sg, sgMs] = time(() => Q.subnetGraph({ routes: true }));
+    console.log(`      S.query ${qMs} ms；vlanIds ${idMs} ms（${ids.length} 個）；vlanCarriers ${vcMs} ms（${vc.links.length} 條）；`
+      + `portGraph ${pgMs} ms（${pg.ports.length} 埠、${pg.edges.length} 邊）；ports: all ${paMs} ms（${pa.ports.length} 埠）；`
+      + `subnetGraph＋routes ${sgMs} ms（${sg.subnets.length} 子網、${sg.nodes.length} 節點、${sg.edges.length} 邊、${sg.routes.length} 路由）`);
+    [vcMs, pgMs, paMs, sgMs].forEach((x) => assert.ok(x < LARGE_MAX_MS / 4, `L2／L3 查詢耗時 ${x} ms`));
+    assert.ok(pg.edges.length > 1000 && sg.subnets.length > 100);
   });
 };

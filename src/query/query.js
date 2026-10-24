@@ -25,6 +25,20 @@
    * 給處理紀錄等轉換舊鍵用：舊鍵等於這個值的項目，對應到 facet 不同的每一筆。沒有 facet 的 finding 與 findingKey 相同。
    */
   const findingBaseKey = (f) => JSON.stringify([f.id].concat(entityKeys(f)));
+  /** 鏈路類別的強弱（一條線併了多條鏈路時取最前面的）：devicePairs 與 portGraph 共用。 */
+  const CLS_RANK = ['lag', '40g', '10g', '1g', 'oob', 'other'];
+  const clsRank = (c) => { const i = CLS_RANK.indexOf(c); return i < 0 ? CLS_RANK.length : i; };
+  /** Q 自己建立的衍生物件（不含 Snapshot 的物件）整個凍結，呼叫端改不壞快取。 */
+  const deepFreeze = (o) => {
+    if (o && typeof o === 'object' && !Object.isFrozen(o)) { Object.freeze(o); Object.values(o).forEach(deepFreeze); }
+    return o;
+  };
+  const copySrc = (src) => (src || []).map((x) => x.slice());
+  const oneOf = (name, v, allowed) => {
+    if (v === undefined) return allowed[0];
+    if (!allowed.includes(v)) throw new TypeError(`${name} 只能是 ${allowed.map((x) => JSON.stringify(x)).join('、')}，收到 ${JSON.stringify(v)}`);
+    return v;
+  };
 
   S.query = function (snap) {
     const m = snap.model;
@@ -121,6 +135,41 @@
     const findingKeyIndex = () => byFindingKey || (byFindingKey = freezeAll(snap.findings.reduce((out, f, idx) => { U.getOr(out, findingKey(f), () => []).push(idx); return out; }, new Map())));
     const EMPTY = Object.freeze([]);
     const vlanSrc = { vlans: m.vlans, interfaces: m.interfaces, links: m.links, inferred: m.inferredLinks || [], ifc: (ep) => ifc.get(ep), collected: (d) => !!(dev.get(d) || {}).collected };
+
+    // ---- L2／L3 視圖（M1）：第一次呼叫時才建立，依參數快取；回傳的物件都是這裡新建的，深層凍結
+    let vlanIdList = null; let subIfcsOf = null;
+    const carriersCache = new Map(); const portCache = new Map(); const subnetCache = new Map();
+    const effM = { ifcs: ifc }; // S.infer 的 VLAN helper 只用 M.ifcs.get，Snapshot 的介面（陣列欄位）可以直接套用
+    const collectedDev = (d) => !!(dev.get(d) || {}).collected;
+    // 這一端的 VLAN 是否已知：已收集且有 VLAN 設定資料（同 vlanComparable 的判斷）
+    const vlanDataMemo = new Map();
+    const vlanDataDev = (d) => U.getOr(vlanDataMemo, d, () => { const x = dev.get(d); return !!x && !!x.collected && S.infer.VLAN_DATA.some((t) => x.data.includes(t)); });
+    const isUnknownPort = (ep) => K.splitEp(ep)[1].startsWith('?(');
+    const portName = (ep) => { const i = ifc.get(ep); return i ? i.name : isUnknownPort(ep) ? '?' : K.splitEp(ep)[1]; };
+    const vlanModeOf = (ep, id) => {
+      const md = S.infer.effVlanModes(effM, ep); const t = md.tagged.has(id); const u = md.untagged.has(id);
+      return t && u ? 'both' : t ? 'tagged' : u ? 'untagged' : null;
+    };
+    /**
+     * 鏈路一端對某 VLAN 的狀態。has：true／false 是事實（這台設備有 VLAN 設定資料），null 是無從得知（未收集或沒有 VLAN 資料）。
+     * via：self（介面本身）、lag（所屬聚合介面，同 effVlans）、member（推論鏈路記在聚合上，由成員埠帶這個 VLAN，同 vlanSpan）。
+     */
+    const vlanSide = (ep, id, has, viaMember) => {
+      const d = K.splitEp(ep)[0]; const i = ifc.get(ep); const known = vlanDataDev(d);
+      let via = null; let mode = null;
+      if (has && i) {
+        const p = i.lag ? ifc.get(i.lag) : null;
+        if (S.util.ifcVlans(i).includes(id)) { via = 'self'; mode = vlanModeOf(ep, id); }
+        else if (p && S.util.ifcVlans(p).includes(id)) { via = 'lag'; mode = vlanModeOf(ep, id); }
+        else if (viaMember) {
+          via = 'member';
+          const modes = U.uniq(i.lagMembers.map((k) => vlanModeOf(k, id)).filter(Boolean));
+          mode = modes.length === 1 ? modes[0] : 'both';
+        }
+      }
+      return { ep, dev: d, port: portName(ep), has: has ? true : known ? false : null, via, mode, collected: collectedDev(d), vlanData: known };
+    };
+    const STATUS_ORDER = ['carry', 'partial', 'oneSide', 'inferred'];
     // 介面也會繼承其鏈路、設備的檢查結果：在查詢時合併
     const Q = {
       snapshot: snap,
@@ -258,7 +307,6 @@
        */
       devicePairs() {
         const pairs = new Map();
-        const CLS_RANK = ['lag', '40g', '10g', '1g', 'oob', 'other'];
         const pairOf = (epA, epB) => {
           const da = K.splitEp(epA)[0]; const db = K.splitEp(epB)[0]; if (da === db) return null;
           const [a, b] = da < db ? [da, db] : [db, da]; const id = a + '~' + b;
@@ -435,6 +483,287 @@
         const scope = one || all;
         return { id, domain: one ? one.key : null, domains, entries: scope.entries, devices: scope.devices, carry: scope.carry, partial: scope.partial, inferred: scope.inferred,
           names: U.uniq(scope.entries.map((e) => e.name).filter(Boolean)) };
+      },
+      /** 基準中出現的所有 VLAN ID（VLAN 定義與介面的 PVID／untagged／tagged），由小到大（凍結的陣列）。VLAN 篩選的選項用。 */
+      vlanIds() {
+        if (vlanIdList) return vlanIdList;
+        const ids = new Set();
+        m.vlans.forEach((v) => { if (v.id != null) ids.add(v.id); });
+        m.interfaces.forEach((i) => U.ifcVlans(i).forEach((v) => ids.add(v)));
+        vlanIdList = Object.freeze(U.numSort(Array.from(ids)));
+        return vlanIdList;
+      },
+      /**
+       * 承載 VLAN id 的鏈路（VLAN 篩選時高亮用）；給 domain（Q.vlan 的區塊鍵）時只含那一塊。結果深層凍結。
+       * 回傳 { id, domain, devices, links, counts: { carry, partial, oneSide, inferred }, eps }：
+       *   links[]：{ key, kind: 'link'|'inferred', status, inferred, hearsay, reason, a, b, src }，a／b 見 vlanSide。
+       *     kind 是 key 的種類：link 用 Q.getLink(key)、inferred 用 Q.getInferredLink(key) 取回原始實體。
+       *     status（判斷依據與 Q.vlan 相同：兩端的 effVlans，即介面本身 ∪ 所屬聚合的 PVID／untagged／tagged）：
+       *       carry    兩端都帶這個 VLAN（事實）
+       *       partial  兩端都有 VLAN 資料、只有一端帶（事實；兩端不一致，V01）
+       *       oneSide  只有一端帶，另一端無從得知（推論：未收集、沒有 VLAN 資料，或鏈路是單側觀察）；reason 為
+       *                peer-uncollected、peer-no-vlan-data 或 hearsay。不參與 Q.vlan 的區塊劃分
+       *       inferred 推論鏈路，已收集的各端都帶這個 VLAN（推論，同 Q.vlan(id).inferred）
+       *     inferred 為 true 表示這一列是推論（oneSide、inferred）；hearsay 為 true 表示鏈路本身只有單側觀察。
+       *     只算介面鄰接（LLDP／CDP）；MNDP 只證明同一廣播網域，不列入。
+       *   eps：帶這個 VLAN 的鏈路端點（has 為 true），排序後的 ep 鍵。
+       * 依 status（carry、partial、oneSide、inferred）再依鍵排序。VLAN 子介面（parent＋encapVlan）不算進 parent 的 VLAN，與 V01 相同。
+       */
+      vlanCarriers(id, domain) {
+        id = +id;
+        const ck = JSON.stringify([id, domain == null ? null : String(domain)]);
+        if (carriersCache.has(ck)) return carriersCache.get(ck);
+        const v = Q.vlan(id, domain);
+        const inScope = new Set(v.devices);
+        const rows = [];
+        const add = (l, kind, status, sideA, sideB, extra) => rows.push(Object.assign({
+          key: l.key, kind, status, inferred: status === 'oneSide' || status === 'inferred', hearsay: !!l.hearsay, reason: null, a: sideA, b: sideB, src: copySrc(l.src),
+        }, extra));
+        v.carry.forEach((l) => add(l, 'link', 'carry', vlanSide(l.a, id, true), vlanSide(l.b, id, true)));
+        v.partial.forEach((l) => add(l, 'link', 'partial', vlanSide(l.a, id, l.vlansA.includes(id)), vlanSide(l.b, id, l.vlansB.includes(id))));
+        m.links.forEach((l) => {
+          if (l.layer !== 'l2' || l.evidenceScope !== S.LINK_SCOPE.INTERFACE_ADJACENCY || l.vlanComparable) return;
+          const inA = l.vlansA.includes(id); const inB = l.vlansB.includes(id);
+          if (inA === inB) return;
+          if (v.domain != null && !inScope.has(K.splitEp(inA ? l.a : l.b)[0])) return;
+          const a = vlanSide(l.a, id, inA); const b = vlanSide(l.b, id, inB); const peer = inA ? b : a;
+          add(l, 'link', 'oneSide', a, b, { reason: !peer.collected ? 'peer-uncollected' : !peer.vlanData ? 'peer-no-vlan-data' : 'hearsay' });
+        });
+        // 推論鏈路：已收集的一端（記在聚合上時看成員埠）帶這個 VLAN；未收集的一端無從得知
+        v.inferred.forEach((l) => {
+          const side = (ep) => {
+            const i = ifc.get(ep); const known = !!i && collectedDev(K.splitEp(ep)[0]);
+            const has = known && (U.ifcVlans(i).includes(id) || i.lagMembers.some((k) => { const x = ifc.get(k); return !!x && U.ifcVlans(x).includes(id); }));
+            return vlanSide(ep, id, has, true);
+          };
+          add(l, 'inferred', 'inferred', side(l.a), side(l.b), { src: [] });
+        });
+        rows.sort((x, y) => STATUS_ORDER.indexOf(x.status) - STATUS_ORDER.indexOf(y.status) || U.cmp(x.key, y.key));
+        const counts = {}; STATUS_ORDER.forEach((s) => { counts[s] = rows.filter((r) => r.status === s).length; });
+        const eps = U.uniq(rows.flatMap((r) => [r.a, r.b]).filter((s) => s.has).map((s) => s.ep)).sort(U.cmp);
+        const out = deepFreeze({ id, domain: v.domain, devices: v.devices.slice(), links: rows, counts, eps });
+        carriersCache.set(ck, out);
+        return out;
+      },
+      /**
+       * 埠層級的 L2 圖（給 ELK 的 port）：設備、埠與埠對埠的邊。結果依參數快取並深層凍結。
+       * opts：
+       *   lag：'collapse'（預設，聚合成員併進聚合介面，成員列在 members）或 'expand'（成員各自是埠，lag 指向所屬聚合）
+       *   ports：'linked'（預設，只列有邊的埠）或 'all'（另列範圍內已收集設備的實體、聚合、無線介面）
+       *   inferred：true（預設）／false，是否包含推論鏈路
+       *   devices：設備鍵的陣列；給了就只取至少一端在其中的邊（另一端的設備也會出現，focus 為 false）
+       * 回傳 { devices, ports, edges, omitted }：
+       *   devices[]：{ id, label, kind, collected, focus, ports（埠 id，依名稱）, bridges: [{ ep, name, ports, vlanIfcs }] }
+       *   ports[]：{ id（ep 鍵）, dev, name, ifc（介面鍵；推論鏈路未收集端的未知埠為 null）, unknown, type, rawType, status, enabled, hearsay,
+       *             lag（expand 時成員所屬的聚合）, members（collapse 時聚合的成員）, bridge, mode, pvid, vlans（含所屬聚合）,
+       *             subIfcs（掛在這個埠或其成員上的 VLAN 子介面 ep）, unknownPeer, macCount, edges（邊數） }
+       *   edges[]：{ id, a, b（埠 id，a < b）, aDev, bDev, links（鏈路鍵）, inferredLinks（推論鏈路鍵）, count, evidence, inferred, cls, vlansCommon, src }
+       *     evidence：adjacency（有雙側的 LLDP／CDP 介面鄰接）> hearsay（只有單側觀察，推論）> inferred（只有推論鏈路，推論）；inferred 為 evidence !== 'adjacency'。
+       *   omitted：{ domainOnly（MNDP 鏈路，只證明同一廣播網域，不當直連）, sameDevice（同一台設備兩埠之間的鏈路，collapse 後兩端相同的不畫）, inferred（opts.inferred 為 false 時略過的推論鏈路） }
+       */
+      portGraph(opts) {
+        const o = opts || {};
+        const lagMode = oneOf('lag', o.lag, ['collapse', 'expand']);
+        const portsMode = oneOf('ports', o.ports, ['linked', 'all']);
+        const withInferred = oneOf('inferred', o.inferred, [true, false]);
+        if (o.devices != null && !Array.isArray(o.devices)) throw new TypeError('devices 必須是設備鍵的陣列');
+        const focus = o.devices ? new Set(o.devices.map(String)) : null;
+        const ck = JSON.stringify([lagMode, portsMode, withInferred, focus ? Array.from(focus).sort(U.cmp) : null]);
+        if (portCache.has(ck)) return portCache.get(ck);
+        if (!subIfcsOf) { subIfcsOf = new Map(); m.interfaces.forEach((i) => { if (i.parent) U.getOr(subIfcsOf, i.parent, () => []).push(i.key); }); }
+        const portOf = (ep) => { if (lagMode === 'expand') return ep; const i = ifc.get(ep); return i && i.lag && ifc.get(i.lag) ? i.lag : ep; };
+        const touches = (a, b) => !focus || focus.has(K.splitEp(a)[0]) || focus.has(K.splitEp(b)[0]);
+        const edges = new Map(); const omitted = { domainOnly: 0, sameDevice: 0, inferred: 0 };
+        const edgeOf = (a, b) => {
+          const id = K.link(a, b); const [x, y] = a < b ? [a, b] : [b, a];
+          return U.getOr(edges, id, () => ({ id, a: x, b: y, aDev: K.splitEp(x)[0], bDev: K.splitEp(y)[0], links: [], inferredLinks: [], adjacency: 0, hearsay: 0, cls: null, vlansCommon: new Set(), src: [] }));
+        };
+        m.links.forEach((l) => {
+          if (!touches(l.a, l.b)) return;
+          if (l.evidenceScope === S.LINK_SCOPE.BROADCAST_DOMAIN) { omitted.domainOnly++; return; }
+          if (l.evidenceScope !== S.LINK_SCOPE.INTERFACE_ADJACENCY) return;
+          const pa = portOf(l.a); const pb = portOf(l.b);
+          if (pa === pb) { omitted.sameDevice++; return; }
+          const e = edgeOf(pa, pb);
+          e.links.push(l.key); if (l.hearsay) e.hearsay++; else e.adjacency++;
+          if (!e.cls || clsRank(l.cls) < clsRank(e.cls)) e.cls = l.cls;
+          l.vlansCommon.forEach((x) => e.vlansCommon.add(x));
+          e.src.push(...copySrc(l.src));
+        });
+        (m.inferredLinks || []).forEach((l) => {
+          if (!touches(l.a, l.b)) return;
+          if (!withInferred) { omitted.inferred++; return; }
+          const pa = portOf(l.a); const pb = portOf(l.b);
+          if (pa === pb) { omitted.sameDevice++; return; }
+          edgeOf(pa, pb).inferredLinks.push(l.key);
+        });
+        const edgeList = Array.from(edges.values()).sort((x, y) => U.cmp(x.id, y.id)).map(({ adjacency, hearsay, vlansCommon, ...e }) => {
+          const evidence = adjacency ? 'adjacency' : hearsay ? 'hearsay' : 'inferred';
+          return Object.assign(e, { count: e.links.length + e.inferredLinks.length, evidence, inferred: evidence !== 'adjacency', cls: e.cls || 'other', vlansCommon: U.numSort(Array.from(vlansCommon)) });
+        });
+        const edgeCount = new Map();
+        edgeList.forEach((e) => [e.a, e.b].forEach((p) => edgeCount.set(p, (edgeCount.get(p) || 0) + 1)));
+        const portIds = new Set(edgeCount.keys());
+        if (portsMode === 'all') {
+          const PORT_TYPES = ['physical', 'lag', 'wireless'];
+          m.interfaces.forEach((i) => {
+            if (!PORT_TYPES.includes(i.type) || !collectedDev(i.dev) || (focus && !focus.has(i.dev))) return;
+            portIds.add(portOf(i.key));
+          });
+        }
+        const ports = Array.from(portIds).map((p) => {
+          const i = ifc.get(p); const d = K.splitEp(p)[0];
+          const members = lagMode === 'collapse' && i ? i.lagMembers.slice() : [];
+          return {
+            id: p, dev: d, name: portName(p), ifc: i ? i.key : null, unknown: !i && isUnknownPort(p),
+            type: i ? i.type : null, rawType: i ? i.rawType : null, status: i ? i.status : null, enabled: i ? i.enabled : null, hearsay: i ? !!i.hearsay : false,
+            lag: lagMode === 'expand' && i && i.lag ? i.lag : null, members, bridge: i ? i.bridge : null,
+            mode: i ? i.mode : null, pvid: i ? i.pvid : null, vlans: i ? S.infer.effVlans(effM, p) : [],
+            subIfcs: U.uniq([p].concat(members).flatMap((k) => subIfcsOf.get(k) || [])).sort(U.natural),
+            unknownPeer: i ? !!i.unknownPeer : false, macCount: i ? i.macs.length : 0, edges: edgeCount.get(p) || 0,
+          };
+        }).sort((x, y) => U.natural(x.dev, y.dev) || U.natural(x.name, y.name) || U.cmp(x.id, y.id));
+        const byDev = new Map();
+        ports.forEach((p) => U.getOr(byDev, p.dev, () => []).push(p));
+        if (focus) focus.forEach((d) => { if (dev.get(d)) U.getOr(byDev, d, () => []); });
+        const devices = Array.from(byDev.keys()).sort(U.natural).map((d) => {
+          const x = dev.get(d); const ps = byDev.get(d);
+          const bridges = new Map();
+          ps.forEach((p) => { if (p.bridge) U.getOr(bridges, p.bridge, () => []).push(p.id); });
+          return {
+            id: d, label: x ? x.label || x.name : d, kind: x ? x.kind : null, collected: !!(x && x.collected), focus: focus ? focus.has(d) : true,
+            ports: ps.map((p) => p.id),
+            bridges: Array.from(bridges.keys()).sort(U.natural).map((b) => ({ ep: b, name: portName(b), ports: bridges.get(b), vlanIfcs: (subIfcsOf.get(b) || []).slice().sort(U.natural) })),
+          };
+        });
+        const out = deepFreeze({ devices, ports, edges: edgeList, omitted });
+        portCache.set(ck, out);
+        return out;
+      },
+      /**
+       * L3 子網圖：子網（prefixes）節點、設備或介面節點，以及「在這個子網有位址」的邊。結果依參數快取並深層凍結。
+       * 每個節點與邊都有 vrf（M3 之前固定為 null，即全部視為 main；不同 VRF 的同一網段目前併成一個節點，見 ADR-015）。
+       * opts：
+       *   nodes：'device'（預設，每台設備一個節點）或 'interface'（每個介面一個節點；管理 IP 的節點 id 為「設備鍵|」）
+       *   hearsay：true（預設）／false，是否加入推論的邊：鄰居宣告的位址（basis neighbor）與未列在介面位址的管理 IP（basis mgmt），
+       *            都只接到已知網段（最長相符），不產生新網段
+       *   routes：false（預設）／true，是否加入靜態路由與預設路由的邊（routes[]）；目的網段不是已知網段時新增 basis 為 route 的節點
+       * 回傳 { subnets, nodes, edges, routes }：
+       *   subnets[]：{ id（網段字串，M3 起非 main 加上 @VRF）, prefix, net, len, family, vrf, basis（connected／route）, vlan, vlans, eps, devices,
+       *               routers（接在這裡的路由設備）, gateways（DHCP 網路設定的閘道）, overlaps（包含或被包含的其他網段 id）, duplicateIps（同一 IP 設在多個介面，VRRP 除外） }
+       *   nodes[]：{ id, type: 'device'|'interface', dev, ep, name, label, kind, collected, vrf, subnets, router, routerBasis, multihomed, hostAddresses }
+       *     router（推論）：接到 2 個以上子網，而且有路由表資料（routerBasis 'routes'）或設備類型是路由器／防火牆（'kind'）；
+       *     只是多張網卡的主機不算（multihomed 為 true、router 為 false）。interface 節點的 router 是所屬設備的值。
+       *     hostAddresses：/32 的自有位址（loopback 等，不形成網段）。
+       *   edges[]：{ id, subnet, node, dev, eps, addresses: [{ address, ip, ep, role, hearsay, seenBy, src }], basis（address／neighbor／mgmt）, inferred, vrf }
+       *     管理 IP（mgmt）在 Snapshot 沒有來源行：src 為設備的 src（只由鄰居看到的設備為空），seenBy 列出看到這台設備的已收集設備。
+       *   routes[]：{ id, dev（路由所在的設備；interface 模式也接在設備上）, subnet（目的網段 id）, prefix, len, default, proto, distance, blackhole, nh, via（下一跳所在、這台設備直連的網段 id）, vrf, src }
+       */
+      subnetGraph(opts) {
+        const o = opts || {};
+        const nodeMode = oneOf('nodes', o.nodes, ['device', 'interface']);
+        const withHearsay = oneOf('hearsay', o.hearsay, [true, false]);
+        const withRoutes = oneOf('routes', o.routes, [false, true]);
+        const ck = JSON.stringify([nodeMode, withHearsay, withRoutes]);
+        if (subnetCache.has(ck)) return subnetCache.get(ck);
+        const VRF = null; // M3 前全部視為 main
+        const ipNet = (ip, len) => S.ip.fromInt((S.ip.toInt(ip) & S.ip.maskOf(len)) >>> 0);
+        const subnets = new Map(); const lens = new Set();
+        const subnetNode = (p, basis) => ({
+          id: p.prefix, prefix: p.prefix, net: p.net, len: p.len, family: p.family || 4, vrf: p.vrf == null ? VRF : p.vrf, basis,
+          vlan: p.vlan == null ? null : p.vlan, vlans: (p.vlans || []).slice(), eps: (p.eps || []).slice(), devices: [], routers: [], gateways: [], overlaps: [], duplicateIps: [],
+        });
+        m.prefixes.forEach((p) => { subnets.set(p.prefix, subnetNode(p, 'connected')); lens.add(p.len); });
+        const lensDesc = Array.from(lens).sort((a, b) => b - a);
+        const longest = (ip) => { for (const len of lensDesc) { const s = subnets.get(ipNet(ip, len) + '/' + len); if (s) return s; } return null; };
+        // 邊：自有位址一定接到自己的網段；推論的邊只接到已知網段
+        const edges = new Map();
+        const nodeIdOf = (d, ep) => (nodeMode === 'device' ? d : ep || d + '|');
+        const edgeOf = (s, d, ep, basis) => {
+          const node = nodeIdOf(d, ep); const id = s.id + '~' + node;
+          return U.getOr(edges, id, () => ({ id, subnet: s.id, node, dev: d, eps: [], addresses: [], basis, inferred: basis !== 'address', vrf: VRF }));
+        };
+        const hostAddrs = new Map();
+        m.ipAddresses.forEach((a) => {
+          if (a.hearsay || a.ip === null) return;
+          if (a.len >= 32) { U.getOr(hostAddrs, a.dev, () => []).push({ address: a.address, ep: a.ep }); return; }
+          const s = subnets.get(ipNet(a.ip, a.len) + '/' + a.len); if (!s) return;
+          const e = edgeOf(s, a.dev, a.ep, 'address');
+          if (!e.eps.includes(a.ep)) e.eps.push(a.ep);
+          e.addresses.push({ address: a.address, ip: a.ip, ep: a.ep, role: a.role, hearsay: false, seenBy: null, src: copySrc(a.src) });
+        });
+        const ownDevSubnet = new Set(Array.from(edges.values(), (e) => e.subnet + '~' + e.dev));
+        if (withHearsay) {
+          const addInferred = (ip, d, ep, basis, address, src, seenBy) => {
+            const s = longest(ip); if (!s || ownDevSubnet.has(s.id + '~' + d)) return;
+            const e = edgeOf(s, d, ep, basis);
+            if (ep && !e.eps.includes(ep)) e.eps.push(ep);
+            if (!e.addresses.some((x) => x.ip === ip)) e.addresses.push({ address, ip, ep, role: null, hearsay: true, seenBy: seenBy || null, src });
+          };
+          m.ipAddresses.forEach((a) => { if (a.hearsay && a.ip !== null) addInferred(a.ip, a.dev, a.ep, 'neighbor', a.address, copySrc(a.src)); });
+          const own = new Set(m.ipAddresses.filter((a) => !a.hearsay && a.ip !== null).map((a) => a.dev + '|' + a.ip));
+          m.devices.forEach((d) => { if (d.mgmtIp && !own.has(d.key + '|' + d.mgmtIp)) addInferred(d.mgmtIp, d.key, null, 'mgmt', d.mgmtIp + '/32', copySrc(d.src), d.seenBy.slice()); });
+        }
+        const edgeList = Array.from(edges.values()).map((e) => Object.assign(e, { eps: e.eps.sort(U.natural) })).sort((x, y) => U.cmp(x.id, y.id));
+        // 節點與路由設備
+        const subnetsOfDev = new Map(); const nodes = new Map();
+        edgeList.forEach((e) => {
+          U.getOr(subnetsOfDev, e.dev, () => new Set()).add(e.subnet);
+          const n = U.getOr(nodes, e.node, () => ({ id: e.node, dev: e.dev, ep: nodeMode === 'interface' && !e.node.endsWith('|') ? e.node : null, subnets: [] }));
+          if (!n.subnets.includes(e.subnet)) n.subnets.push(e.subnet);
+        });
+        const routerOf = new Map();
+        subnetsOfDev.forEach((set, d) => {
+          const x = dev.get(d); const multi = set.size >= 2;
+          const basis = !multi ? null : (routesByDev.get(d) || []).length ? 'routes' : x && (x.kind === 'router' || x.kind === 'firewall') ? 'kind' : null;
+          routerOf.set(d, { router: !!basis, routerBasis: basis, multihomed: multi });
+        });
+        const nodeList = Array.from(nodes.values()).map((n) => {
+          const x = dev.get(n.dev); const i = n.ep ? ifc.get(n.ep) : null;
+          return Object.assign({
+            id: n.id, type: nodeMode, dev: n.dev, ep: n.ep, name: nodeMode === 'device' ? null : i ? i.name : n.ep ? K.splitEp(n.ep)[1] : null,
+            label: x ? x.label || x.name : n.dev, kind: x ? x.kind : null, collected: !!(x && x.collected), vrf: VRF, subnets: n.subnets.sort(U.natural),
+          }, routerOf.get(n.dev), { hostAddresses: nodeMode === 'device' ? (hostAddrs.get(n.dev) || []).slice() : (hostAddrs.get(n.dev) || []).filter((h) => h.ep === n.ep) });
+        }).sort((x, y) => U.natural(x.dev, y.dev) || U.natural(x.id, y.id));
+        // 子網的設備、路由設備、閘道、重疊與重複 IP
+        edgeList.forEach((e) => { const s = subnets.get(e.subnet); if (!s.devices.includes(e.dev)) s.devices.push(e.dev); });
+        (m.dhcpNetworks || []).forEach((n) => {
+          const p = S.ip.parseCidr(n.network); const s = p && subnets.get(ipNet(p.ip, p.len) + '/' + p.len);
+          if (s) n.gateways.forEach((g) => { if (!s.gateways.some((x) => x.ip === g && x.dev === n.dev)) s.gateways.push({ ip: g, dev: n.dev, src: copySrc(n.src) }); });
+        });
+        subnets.forEach((s) => {
+          for (const len of lensDesc) {
+            if (len >= s.len) continue;
+            const big = subnets.get(ipNet(s.net, len) + '/' + len);
+            if (big) { s.overlaps.push(big.id); big.overlaps.push(s.id); }
+          }
+        });
+        const seenIp = new Map();
+        edgeList.forEach((e) => e.addresses.forEach((a) => { if (!a.hearsay && a.role !== 'vrrp') U.getOr(seenIp, e.subnet + ' ' + a.ip, () => new Set()).add(a.ep); }));
+        seenIp.forEach((eps, k) => { if (eps.size > 1) { const [sid, ip] = k.split(' '); subnets.get(sid).duplicateIps.push(ip); } });
+        // 路由（選用）：靜態路由與預設路由
+        const routes = [];
+        if (withRoutes) {
+          m.routes.forEach((r, idx) => {
+            if (r.proto === 'Direct' || !(r.proto === 'Static' || r.proto === 'Blackhole' || r.len === 0)) return;
+            const prefix = r.prefix + '/' + r.len;
+            if (!subnets.has(prefix)) { subnets.set(prefix, subnetNode({ prefix, net: r.prefix, len: r.len, family: 4, vrf: null }, 'route')); }
+            const mine = subnetsOfDev.get(r.dev) || new Set();
+            const via = U.uniq(r.nh.filter((h) => h.ip && S.ip.isIp(h.ip)).map((h) => longest(h.ip)).filter((s) => s && mine.has(s.id)).map((s) => s.id));
+            const src = copySrc(r.src);
+            routes.push({
+              id: r.dev + '|' + prefix + '#' + (src.length ? src[0].join(':') : idx), dev: r.dev, subnet: prefix, prefix: r.prefix, len: r.len, default: r.len === 0,
+              proto: r.proto, distance: r.distance == null ? null : r.distance, blackhole: !!r.blackhole, nh: r.nh.map((h) => ({ ip: h.ip || null, ifc: h.ifc || null })), via, vrf: VRF, src,
+            });
+          });
+        }
+        const subnetList = Array.from(subnets.values()).map((s) => Object.assign(s, {
+          devices: s.devices.sort(U.natural), routers: s.devices.filter((d) => (routerOf.get(d) || {}).router).sort(U.natural),
+          overlaps: U.uniq(s.overlaps).sort(U.natural), duplicateIps: s.duplicateIps.sort(U.natural),
+        })).sort((x, y) => U.natural(x.net, y.net) || x.len - y.len);
+        const out = deepFreeze({ subnets: subnetList, nodes: nodeList, edges: edgeList, routes });
+        subnetCache.set(ck, out);
+        return out;
       },
 
       /** 一個搜尋框搜所有東西：MAC、IP、VLAN、設備、介面描述。 */

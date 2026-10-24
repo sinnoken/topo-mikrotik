@@ -162,6 +162,33 @@ function withGraph(graph, nodes, edges, pos, fn) {
 /** 路徑的頂點數（arc 記為 0，代表圓形） */
 const vertices = (path) => (path.some((p) => p.t === 'A') ? 0 : path.filter((p) => p.t === 'M' || p.t === 'L').length);
 const near = (path, q, d) => path.length && path.every((p) => p.t === 'Z' || Math.hypot(p.x - q.x, p.y - q.y) <= d);
+/** 畫在 a→b 上、垂直於線的短刻度（每段 M→L 垂直於線、中點落在線上），顏色為 color */
+function tickStrokes(ops, a, b, color) {
+  const dx = b.x - a.x; const dy = b.y - a.y; const L = Math.hypot(dx, dy); if (!L) return [];
+  return ops.filter((o) => o.op === 'stroke' && o.style === color && o.path.length >= 2 && o.path.length % 2 === 0 && o.path.every((p, i) => p.t === (i % 2 ? 'L' : 'M')) &&
+    o.path.every((p, i) => {
+      if (i % 2) return true; const q = o.path[i + 1]; const sx = q.x - p.x; const sy = q.y - p.y; const sl = Math.hypot(sx, sy);
+      const mx = (p.x + q.x) / 2; const my = (p.y + q.y) / 2; const t = ((mx - a.x) * dx + (my - a.y) * dy) / (L * L);
+      const off = Math.abs((mx - a.x) * dy - (my - a.y) * dx) / L;
+      return sl > 0 && Math.abs(sx * dx + sy * dy) / (sl * L) < 0.02 && t >= 0 && t <= 1 && off < 0.01 * L + 0.5;
+    }));
+}
+/** VLAN 只有一端（partial）的線在縮小、100%、200% 時都有刻度，螢幕上的刻度長度比線寬明顯長（看得出來） */
+function checkTicks(g, a, b, where) {
+  const T = S.view.theme; const st = T.vlan.partial; const t = st.ticks; const old = { s: g.s, tx: g.tx, ty: g.ty };
+  try {
+    for (const s of [0.5, 1, 2]) {
+      g.s = s; g.tx = g.w / 2 - ((a.x + b.x) / 2) * s; g.ty = g.h / 2 - ((a.y + b.y) / 2) * s;
+      const ops = recordCanvas(g.ctx, () => g.draw()); const ts = tickStrokes(ops, a, b, st.c);
+      if (!ts.length) throw new Error(`${where}：縮放 ${s * 100}% 時，只有一端的鏈路應畫垂直短刻度`);
+      const k = Math.max(s, 1); const o = ts[0]; const seg = Math.hypot(o.path[1].x - o.path[0].x, o.path[1].y - o.path[0].y);
+      if (Math.abs(o.width * s - t.w * k) > 1e-6 || Math.abs(seg * s - t.len * k) > 1e-6) throw new Error(`${where}：縮放 ${s * 100}% 時刻度大小應同 theme.vlan.partial.ticks（縮小時維持螢幕大小）`);
+      const line = ops.find((x) => x.op === 'stroke' && x.style === st.c && x.path.length === 2 && x.path[0].t === 'M' && near(x.path.slice(0, 1), a, 1e-6) && near(x.path.slice(1), b, 1e-6));
+      if (!line || line.dash.length) throw new Error(`${where}：只有一端的鏈路本身應是實線`);
+      if (seg * s < line.width * s * 1.5) throw new Error(`${where}：縮放 ${s * 100}% 時刻度應明顯長於線寬`);
+    }
+  } finally { Object.assign(g, old); g.redraw(); }
+}
 
 /** 在輸入框貼上文字並建立基準，等到新的基準載入 */
 async function buildInput(input) {
@@ -712,7 +739,19 @@ function viewBoundaryViolations(file, src) {
       const pid = App.pairOfLink.get(partial.key); const p = App.pairs.get(pid); const a = g.at(p.a); const b = g.at(p.b);
       const ops = recordCanvas(g.ctx, () => g.draw());
       if (!ops.some((o) => o.op === 'fill' && o.style === T.sev.error && near(o.path, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, 20) && vertices(o.path) === 4)) throw new Error('只有一端的鏈路應在中點畫錯誤的方形');
+      // 紅綠色盲分不出 partial 與 carry 的顏色：partial 另有垂直短刻度，縮小、100%、200% 時在螢幕上都看得到
+      checkTicks(g, a, b, 'device');
+      const cp = [...g.hl.edges].find(([, st]) => st === T.vlan.carry);
+      if (cp) {
+        const e = g.edges.find((x) => x.id === cp[0]); const ca = g.at(e.a); const cb = g.at(e.b);
+        if (tickStrokes(recordCanvas(g.ctx, () => g.draw()), ca, cb, T.vlan.carry.c, null).length) throw new Error('承載（carry）的線不應有刻度');
+      }
     }
+    // 四種狀態的線型兩兩不同：partial 是實線加刻度，carry 是實線，inferred、oneSide 是不同的虛線／點線
+    const vk = (st) => JSON.stringify([st.dash || null, st.ticks || null]);
+    const vkeys = Object.values(T.vlan).map(vk);
+    if (new Set(vkeys).size !== vkeys.length) throw new Error('VLAN 狀態的線型應兩兩不同：' + vkeys.join(' / '));
+    if (!T.vlan.partial.ticks || T.vlan.partial.dash || ['carry', 'inferred', 'oneSide'].some((k) => T.vlan[k].ticks)) throw new Error('只有 partial 有刻度（實線加垂直短刻度）');
     if (T.vlan.inferred.dash === undefined || T.vlan.oneSide.dash === undefined || T.vlan.carry.dash) throw new Error('推論（inferred、oneSide）應以線型與承載區分');
     // 選其他東西：沒有自己的標示時仍標出 VLAN
     const dev = c30.devices[0]; App.select({ type: 'device', key: dev });
@@ -736,6 +775,7 @@ function viewBoundaryViolations(file, src) {
     if (partial && g.hl.edges.get(E.edgeOfLink.get(partial.key)) !== T.vlan.partial) throw new Error('L2 埠圖應以 partial 樣式標出只有一端的鏈路');
     if (carry && E.edgeOfLink.get(carry.key) && ![T.vlan.carry, T.vlan.partial].includes(g.hl.edges.get(E.edgeOfLink.get(carry.key)))) throw new Error('L2 埠圖應標出承載的鏈路');
     if (partial) {
+      const pe = g.edges.find((x) => x.id === E.edgeOfLink.get(partial.key)); checkTicks(g, g.at(pe.a), g.at(pe.b), 'L2');
       App.graph.emit('hover', { item: { type: 'edge', id: E.edgeOfLink.get(partial.key) }, x: 0, y: 0 });
       if (!text('#tooltip').includes(S.view.VLAN_STATUS.partial)) throw new Error('L2 的提示應寫出只有一端帶這個 VLAN');
     }
@@ -752,7 +792,11 @@ function viewBoundaryViolations(file, src) {
       const li = lg.find((x) => x.childNodes.some((c) => c.attrs && c.attrs['data-vlan'] === k));
       if (!li) throw new Error('圖例缺少 VLAN 狀態：' + k);
       const ln = li.childNodes.find((c) => c.attrs && c.attrs['data-vlan'] === k);
-      if (!ln.style.background.includes(st.c) || !!st.dash !== ln.style.background.includes('repeating-linear-gradient')) throw new Error('VLAN 圖例的顏色或線型與 theme 不一致：' + k);
+      if (!ln.style.background.includes(st.c) || !!(st.dash || st.ticks) !== ln.style.background.includes('repeating-linear-gradient')) throw new Error('VLAN 圖例的顏色或線型與 theme 不一致：' + k);
+      if (st.ticks) { // 刻度的樣本：高度是刻度全長，間距與粗細同 theme（畫布 100% 時的大小）
+        const t = st.ticks; const x0 = (t.gap - t.w) / 2;
+        if (ln.style.height !== t.len + 'px' || !ln.style.background.includes(`${st.c} ${x0}px ${x0 + t.w}px, transparent ${x0 + t.w}px ${t.gap}px`)) throw new Error('VLAN 只有一端的圖例刻度應與 theme.vlan.partial.ticks 一致');
+      }
       if (st.sev && !li.childNodes.some((c) => c.attrs && c.attrs['data-shape'] === T.sevShape[st.sev])) throw new Error('VLAN 只有一端的圖例應有錯誤外形');
     });
     // 介面在沒開 vlan-filtering 的 bridge 上：詳情標出 vlan-filtering 與 VLAN 埠設定沒有作用

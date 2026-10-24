@@ -44,12 +44,15 @@
     // 圖上的標示：選取（藍色實線環）、滑過（深色細環）、搜尋結果、路由追蹤（含箭頭）各用不同顏色；bad／good 是狀態
     mark,
     // VLAN 承載的高亮（鍵與 Q.vlanCarriers 的 status 相同；設備圖與 L2 埠圖共用）。只用既有的狀態色，另以線型與外形區分：
-    //   carry 承載（實線）、inferred 推論鏈路承載（長虛線，同推論鏈路）、partial 只有一端帶（狀態色＋中點的錯誤外形）、
+    //   carry 承載（實線）、inferred 推論鏈路承載（長虛線，同推論鏈路）、partial 只有一端帶（實線加垂直短刻度＋中點的錯誤外形）、
     //   oneSide 只有一端可確認（點線＋淡化，推論）
+    // partial 與 carry 的紅綠在紅綠色盲下分不出來（validator 的 CVD 檢查不通過），所以 partial 另有專屬線型：
+    // 沿線每 gap 一道垂直於線的短刻度（全長 len、粗 w）。其他線型都是沿線方向的虛線／點線／雙線，刻度不會和它們混淆。
+    // 單位與 dash 相同：放大到 100% 以上隨縮放變大，縮小時維持螢幕上的大小
     vlan: {
       carry: { c: mark.good },
       inferred: { c: mark.good, dash: weakEdge.inferred.dash },
-      partial: { c: mark.bad, sev: 'error' },
+      partial: { c: mark.bad, sev: 'error', ticks: { gap: 8, len: 12, w: 2 } },
       oneSide: { c: mark.good, dash: [2, 4], alpha: 0.55 },
     },
     // L2 埠層級圖：設備是容器框（外框用設備類型色），埠是框邊上的小方塊；聚合埠較寬。未收集設備與推論鏈路未收集端的埠用虛線

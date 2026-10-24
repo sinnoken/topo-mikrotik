@@ -8,7 +8,7 @@
  *  - node.box { w, h }：容器框（L2 的設備）或長條（L3 的子網，kind 'subnet'），命中範圍與標示環是矩形
  *  - node.anchor { parent, dx, dy }：位置跟著 parent（L2 的埠）；pos 不存它，拖曳它等於拖曳 parent
  *  - edge.style { c, w, dash }：取代依 cls 的連線樣式；edge.arrow：在 b 端附近畫箭頭（L3 的路由）
- *  - 高亮 hl.edges 的值可以是顏色，或 { c, dash, alpha, sev }（VLAN 承載：線型與中點外形，不只靠顏色）
+ *  - 高亮 hl.edges 的值可以是顏色，或 { c, dash, alpha, sev, ticks }（VLAN 承載：線型、垂直短刻度與中點外形，不只靠顏色）
  */
 (function (S) {
   'use strict';
@@ -250,7 +250,7 @@
         // 證據強度（query 的 devicePairs 決定）只改線型與透明度，保留速率色；連到終端的連線依介面類型換線型
         const weak = WEAK[e.evidence];
         if (weak) alpha = weak.alpha;
-        // 高亮可以是顏色，或 { c, dash, alpha, sev }（VLAN 承載：線型與中點外形）
+        // 高亮可以是顏色，或 { c, dash, alpha, sev, ticks }（VLAN 承載：線型、刻度與中點外形）
         const hv = hl && hl.edges.get(e.id); const hc = hv ? (typeof hv === 'string' ? { c: hv } : hv) : null;
         if (dim && !hc && !override) alpha = ALPHA.dimEdge;
         if (hc) { col = hc.c; w = Math.max(w, 3.5, 2.5 / s); if (hc.alpha != null) alpha = hc.alpha; }
@@ -263,6 +263,7 @@
           c.strokeStyle = CV.surface; c.lineWidth = Math.max(w, 0.8 / s) * T.multi.gap; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
         }
         c.setLineDash([]);
+        if (hc && hc.ticks && !override) ticks(c, a, b, hc.ticks, 1 / Math.min(s, 1)); // VLAN 只有一端帶：垂直短刻度（不只靠顏色）
         if (e.arrow) arrow(c, a, b, Math.max(8, 6 / s), col, 0.8);
         const midSev = hc && hc.sev && !override ? hc.sev : e.sev && !dim && !override ? e.sev : null;
         if (midSev) { // 有問題的連線（或 VLAN 只有一端帶）：中點標記（外形同節點）
@@ -518,6 +519,17 @@
     const ang = Math.atan2(b.y - a.y, b.x - a.x); const mx = a.x + (b.x - a.x) * k; const my = a.y + (b.y - a.y) * k;
     c.fillStyle = col; c.beginPath(); c.moveTo(mx + Math.cos(ang) * size, my + Math.sin(ang) * size);
     c.lineTo(mx + Math.cos(ang + 2.5) * size, my + Math.sin(ang + 2.5) * size); c.lineTo(mx + Math.cos(ang - 2.5) * size, my + Math.sin(ang - 2.5) * size); c.closePath(); c.fill();
+  }
+  /**
+   * 沿 a→b 每 t.gap 畫一道垂直於線的短刻度（全長 t.len、粗 t.w），顏色與透明度沿用目前的 strokeStyle／globalAlpha。
+   * k 與 dash 的縮放相同：縮小時乘上 1/s，讓刻度在螢幕上維持大小；第一道從半個間距開始，兩端留給節點。
+   */
+  function ticks(c, a, b, t, k) {
+    const dx = b.x - a.x; const dy = b.y - a.y; const len = Math.hypot(dx, dy); const gap = t.gap * k; if (!len || !(gap > 0)) return;
+    const ux = dx / len; const uy = dy / len; const hx = -uy * t.len * k / 2; const hy = ux * t.len * k / 2;
+    c.lineWidth = t.w * k; c.beginPath();
+    for (let d = gap / 2; d < len; d += gap) { const x = a.x + ux * d; const y = a.y + uy * d; c.moveTo(x - hx, y - hy); c.lineTo(x + hx, y + hy); }
+    c.stroke();
   }
   function roundRect(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
   function shade(hex) { const n = parseInt(hex.slice(1), 16); const f = (v) => Math.max(0, Math.floor(v * 0.75)); return '#' + ((f(n >> 16) << 16) | (f((n >> 8) & 255) << 8) | f(n & 255)).toString(16).padStart(6, '0'); }

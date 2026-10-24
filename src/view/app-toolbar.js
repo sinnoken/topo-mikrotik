@@ -133,6 +133,15 @@
         stops.parts.push(`${shade} ${stops.pos || 0}px`, `${shade} ${next}px`); stops.pos = next; return stops;
       }, { parts: [], pos: 0 }).parts.join(', ')})` : color,
     } }, attrs || {}));
+    // 實線加垂直短刻度（theme.vlan.partial.ticks）：與畫布 100% 時的大小相同；刻度與線是兩層背景，強制色彩模式下 .ln 保留原色
+    const tickLine = (color, w, t, alpha, attrs) => {
+      const lh = parseFloat(V.legendLineHeight(w)); const y0 = (t.len - lh) / 2; const x0 = (t.gap - t.w) / 2;
+      return h('span', Object.assign({ class: 'ln', style: {
+        borderTopWidth: '0', height: t.len + 'px', opacity: String(alpha == null ? 1 : alpha),
+        background: `repeating-linear-gradient(90deg, transparent 0 ${x0}px, ${color} ${x0}px ${x0 + t.w}px, transparent ${x0 + t.w}px ${t.gap}px), ` +
+          `linear-gradient(transparent 0 ${y0}px, ${color} ${y0}px ${y0 + lh}px, transparent ${y0 + lh}px)`,
+      } }, attrs || {}));
+    };
     const ring = (color, width, mark) => dot({ background: 'transparent', border: `${width}px solid ${color}` }, { 'data-mark': mark });
     group('設備');
     Object.entries(V.KIND).forEach(([k, label]) => item([dot(Object.assign({ background: V.KIND_COLOR[k] }, SHAPE_CSS[T.shape[k]]))], label));
@@ -177,8 +186,8 @@
     item([line(M.trace, 4, null, T.alpha.overlay, { 'data-mark': 'trace' }), h('span', { class: 'lg-arrow', style: { color: M.trace } }, '▶')], '路由追蹤', '逐跳路徑，箭頭表示方向');
     // VLAN 篩選：承載狀態（Q.vlanCarriers），線型與外形取自 theme.vlan，不只靠顏色
     const VL = { carry: ['VLAN 承載', '兩端都帶這個 VLAN（實線）'], inferred: ['VLAN 推論承載', '推論鏈路，已收集的各端都帶這個 VLAN（長虛線，推論）'],
-      partial: ['VLAN 只有一端', '兩端都有 VLAN 資料，只有一端帶這個 VLAN（中點有錯誤外形，V01）'], oneSide: ['VLAN 一端未知', '只有一端可確認：對端未收集、沒有 VLAN 資料或只有單側觀察（點線、淡色，推論）'] };
-    Object.entries(T.vlan).forEach(([k, st]) => item([line(st.c, 4, st.dash, st.alpha, { 'data-vlan': k }),
+      partial: ['VLAN 只有一端', '兩端都有 VLAN 資料，只有一端帶這個 VLAN（實線加垂直短刻度，中點有錯誤外形，V01）'], oneSide: ['VLAN 一端未知', '只有一端可確認：對端未收集、沒有 VLAN 資料或只有單側觀察（點線、淡色，推論）'] };
+    Object.entries(T.vlan).forEach(([k, st]) => item([st.ticks ? tickLine(st.c, 4, st.ticks, st.alpha, { 'data-vlan': k }) : line(st.c, 4, st.dash, st.alpha, { 'data-vlan': k }),
       st.sev ? dot(Object.assign({ background: T.sev[st.sev] }, SEV_CSS[T.sevShape[st.sev]]), { 'data-shape': T.sevShape[st.sev] }) : null].filter(Boolean), VL[k][0], VL[k][1]));
   }
   /** 圖例的線寬：依 theme 的線寬等比放大到圖例可辨識，保持速率越高越粗的順序 */

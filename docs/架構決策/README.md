@@ -21,8 +21,8 @@
 | [011](011-I03轉成fixture的回歸流程.md) | I03 → fixture 的回歸流程 | 提議 |
 | [012](012-多廠牌的防火牆模型策略.md) | 多廠牌的防火牆模型策略 | 提議 |
 | [013](013-新增workflow-agent依上下游分工.md) | 新增 workflow agent，依上下游分工 | 已接受 |
-| [014](014-L4-zone矩陣在查詢時計算.md) | L4 zone 矩陣在查詢時計算，不使用外部圖表元件 | 提議 |
-| [015](015-支援VRF並升級ssot-snapshot-3.md) | 支援 VRF：位址、路由、ARP 加上 vrf，升級為 ssot-snapshot/3 | 提議 |
+| [014](014-L4-zone矩陣在查詢時計算.md) | L4 zone 矩陣在查詢時計算，不使用外部圖表元件 | 已接受 |
+| [015](015-支援VRF並升級ssot-snapshot-3.md) | 支援 VRF：位址、路由、ARP 加上 vrf，升級為 ssot-snapshot/3 | 已接受 |
 | [016](016-文件分工每個主題只有一個說明處.md) | 文件分工：每個主題只有一個說明處 | 已接受 |
 | [017](017-工作包ssot-workpack-1.md) | 工作包 ssot-workpack/1：不壓縮 ZIP 加 manifest | 已接受 |
 | [018](018-畫面只透過Q與S.query讀資料.md) | 畫面只透過 Q 與 S.query.* 讀資料，並以守門測試強制 | 已接受 |

@@ -1,6 +1,6 @@
 # ADR-015：支援 VRF：位址、路由、ARP 加上 vrf，升級為 ssot-snapshot/3
 
-- **狀態**：提議
+- **狀態**：已接受
 - **日期**：2026-10-24
 - **決策者**：使用者
 
@@ -27,7 +27,7 @@ RouterOS 的 VRF 語意（[RouterOS 手冊：VRF](https://manual.mikrotik.com/do
 - VRF 以介面劃分：位址與 ARP 依所在的介面屬於該 VRF，`/ip address`、`/ip arp` 本身不指定 VRF。
 - 沒有指定 VRF 時，服務與閘道都屬於 `main`；`gateway=<IP>@<VRF>` 表示在另一個 VRF 解析閘道（路由洩漏）。`/ip service` 另有 `vrf` 屬性。
 
-## 決策（建議）
+## 決策
 
 - **收集**：export 已含 `/ip vrf` 的設定，adapter 改為解析它（data-model）。collector 評估是否另收 `/ip vrf print detail without-paging` 或 `/routing table print detail without-paging`，取得動態項目與路由表的狀態。目前的 `/ip route print detail without-paging` 已包含其他路由表的路由，不必另收。
 - **事實**：

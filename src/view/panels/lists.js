@@ -36,7 +36,7 @@
    */
   const filterChip = (label, n, opt) => {
     const o = opt || {}; const off = !n && !o.on;
-    return V.chip([label + ' ', h('span', { class: 'n' }, String(n))], `btn ${n ? o.cls || '' : ''} ${o.on ? 'on' : ''} ${off ? 'off' : ''}`,
+    return V.chipButton([label + ' ', h('span', { class: 'n' }, String(n))], `btn ${n ? o.cls || '' : ''} ${o.on ? 'on' : ''} ${off ? 'off' : ''}`,
       { onclick: off ? null : o.onclick, title: o.title || null, 'aria-pressed': String(!!o.on), 'aria-disabled': off ? 'true' : null });
   };
   function findings(App) {
@@ -63,7 +63,7 @@
         onclick: () => { state.groupBy = k; findings(App); } }, label))),
       base ? filterChip('只看新出現的', nNew, { cls: 'info', on: state.onlyNew, title: `與舊基準（${base.name}）比對後新出現的檢查結果`,
         onclick: () => { state.onlyNew = !state.onlyNew; findings(App); } })
-        : V.chip('只看新出現的', 'btn off only-new', { 'aria-disabled': 'true', 'aria-pressed': 'false', title: '需要先在「比對」分頁載入舊基準' }),
+        : V.chipButton('只看新出現的', 'btn off only-new', { 'aria-disabled': 'true', 'aria-pressed': 'false', title: '需要先在「比對」分頁載入舊基準' }),
       base ? null : h('span', { class: 'muted note only-new-why' }, '在「比對」分頁載入舊基準後，才能只看新出現的'),
     ]));
     // 匯出不受上方篩選影響：一律輸出全部檢查結果（含已確認，另有欄位標示）；可選擇依設備排序

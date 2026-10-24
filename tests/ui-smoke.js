@@ -1587,9 +1587,113 @@ async function buildInput(input) {
     rgrip.dispatch('dblclick'); if (App.layout.right !== 400) throw new Error('雙擊應還原預設寬度');
     grip.dispatch('dblclick');
   });
+  await step('鍵盤：畫布可聚焦，N 輪流移到設備、Enter 開啟詳情、Esc 取消選取，方向鍵平移、+／- 縮放', () => {
+    const g = App.graph; const cv = $('#graph');
+    if (cv.getAttribute('tabindex') !== '0' || !/Enter/.test(cv.getAttribute('aria-label') || '')) throw new Error('畫布應可聚焦，aria-label 說明按鍵');
+    const key = (k, extra) => cv.dispatch('keydown', Object.assign({ key: k }, extra || {}));
+    cv.focus(); App.select(null);
+    const visible = g.nodes.filter((n) => g.visible(n));
+    if (visible.length < 2) throw new Error('測試前提：至少兩個可見節點');
+    key('n'); const first = g.kbd;
+    if (!first || !g.hover || g.hover.id !== first) throw new Error('按 N 應移到一台設備，並以滑過樣式標示');
+    if ($('#tooltip').classList.contains('hidden') || !text('#graph-live')) throw new Error('鍵盤移到設備時應顯示提示，並讀給螢幕閱讀器');
+    key('n'); const second = g.kbd;
+    if (second === first) throw new Error('再按 N 應移到下一台');
+    key('N', { shiftKey: true }); if (g.kbd !== first) throw new Error('Shift+N 應回到上一台');
+    const seen = new Set(); for (let i = 0; i < visible.length; i++) { key('n'); seen.add(g.kbd); }
+    if (seen.size !== visible.length) throw new Error('N 應能輪流走過每一台可見的設備');
+    key('Enter');
+    const n = g.nodeById.get(g.kbd);
+    if (!App.sel) throw new Error('Enter 應選取設備並開啟詳情');
+    if (!n.virtual && (App.sel.type !== 'device' || App.sel.key !== n.id || !text('#detail').includes(App.Q.getDevice(n.id).name))) throw new Error('Enter 應開啟這台設備的詳情');
+    key('Escape'); if (App.sel || g.kbd || g.hover) throw new Error('Esc 應取消選取');
+    const t0 = { tx: g.tx, ty: g.ty, s: g.s };
+    key('ArrowRight'); if (!(g.tx < t0.tx)) throw new Error('方向鍵應平移畫面');
+    key('ArrowDown'); if (!(g.ty < t0.ty)) throw new Error('方向鍵應平移畫面');
+    key('+'); if (!(g.s > t0.s)) throw new Error('+ 應放大'); const s1 = g.s;
+    key('-'); if (!(g.s < s1)) throw new Error('- 應縮小');
+    let prevented = false; cv.dispatch('keydown', { key: 'n', ctrlKey: true, preventDefault() { prevented = true; } });
+    if (prevented) throw new Error('帶 Ctrl 的按鍵應交給瀏覽器');
+    key('0');
+  });
+  await step('Pointer 事件：滑鼠拖曳節點與平移、觸控點選與點兩下', () => {
+    const g = App.graph; const cv = $('#graph');
+    const fire = (t, target, p, extra) => (winListeners[t] || []).forEach((f) => f(Object.assign({ target, clientX: p.x, clientY: p.y, pointerId: 1, pointerType: 'mouse', button: 0, preventDefault() {} }, extra || {})));
+    const down = (p, extra) => cv.dispatch('pointerdown', Object.assign({ clientX: p.x, clientY: p.y, pointerId: 1, pointerType: 'mouse', button: 0 }, extra || {}));
+    const n = g.nodes.find((x) => g.visible(x) && !x.virtual); const p0 = g.toScreen(g.pos.get(n.id)); const w0 = Object.assign({}, g.pos.get(n.id));
+    let moved = null; const oldMoved = g.handlers.moved; g.on('moved', (id) => { moved = id; });
+    try {
+      down(p0); fire('pointermove', cv, { x: p0.x + 50, y: p0.y + 30 }); fire('pointerup', cv, { x: p0.x + 50, y: p0.y + 30 });
+      const w1 = g.pos.get(n.id);
+      if (moved !== n.id || Math.abs(w1.x - w0.x - 50 / g.s) > 0.01 || Math.abs(w1.y - w0.y - 30 / g.s) > 0.01) throw new Error('拖曳節點應移動節點並通知儲存位置');
+      g.pos.set(n.id, w0);
+      const empty = { x: -5000, y: -5000 }; const tx = g.tx; moved = null;
+      down(empty); fire('pointermove', cv, { x: empty.x + 40, y: empty.y }); fire('pointerup', cv, { x: empty.x + 40, y: empty.y });
+      if (Math.abs(g.tx - tx - 40) > 0.01 || moved) throw new Error('拖曳背景應平移畫面，不移動節點');
+      // 觸控：點一下選取（命中範圍較大），點兩下等同雙擊；沒有 hover
+      App.select(null); const touch = { pointerType: 'touch', pointerId: 7 };
+      const near = { x: p0.x + g.radius(n) * g.s + 8, y: p0.y };
+      fire('pointermove', cv, near, touch); if (g.hover && g.hover.id === n.id) throw new Error('觸控不應觸發 hover');
+      down(near, touch); fire('pointerup', cv, near, Object.assign({ timeStamp: 1000 }, touch));
+      if (!App.sel || App.sel.key !== n.id) throw new Error('觸控點一下應選取設備（命中範圍包含節點外側一點）');
+      let dbl = null; const oldDbl = g.handlers.dblclick; g.on('dblclick', (it) => { dbl = it; });
+      try {
+        down(near, touch); fire('pointerup', cv, near, Object.assign({ timeStamp: 1200 }, touch));
+        if (!dbl || dbl.id !== n.id) throw new Error('觸控快速點兩下應等同雙擊');
+      } finally { g.on('dblclick', oldDbl); }
+      App.select(null);
+    } finally { g.on('moved', oldMoved); }
+  });
+  await step('焦點框、篩選選項按鈕、強制色彩與減少動態效果', () => {
+    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8'); const v = cssVars(css);
+    // 焦點框的顏色（var() 展開後）對白底與表面色 ≥ 3:1
+    const ring = v['focus-ring'].replace(/var\(--([\w-]+)\)/g, (_, n) => v[n]);
+    const colors = (ring.match(/#[0-9a-fA-F]{6}|rgba?\([^)]*\)/g) || []);
+    const outer = colors[colors.length - 1];
+    if (!outer || ['#ffffff', v.surface].some((bg) => contrastOf(outer, bg) < 3)) throw new Error('焦點框對底色應 ≥ 3:1：' + ring);
+    if (!/#graph:focus-visible\s*\{[^}]*outline:/.test(css)) throw new Error('畫布取得焦點時應有明顯的焦點框');
+    if (!/@media \(forced-colors: active\)/.test(css)) throw new Error('應支援強制色彩模式');
+    if (!/#graph\s*\{[^}]*touch-action:\s*none/.test(css)) throw new Error('畫布應自己處理觸控拖曳');
+    // 篩選選項是可聚焦的按鈕
+    App.select(null); document.querySelectorAll('#left .tabs button')[0].click();
+    const chips = $('#pane-findings').querySelector('.summary').querySelectorAll('.chip');
+    if (!chips.length || !chips.every((c) => c.tagName === 'BUTTON' && c.getAttribute('type') === 'button')) throw new Error('篩選選項應是 <button>');
+    // 減少動態效果：力導向一次算完，不排動畫
+    const g = App.graph; const before = JSON.stringify(Array.from(g.pos)); const oldMM = window.matchMedia;
+    window.matchMedia = (q) => ({ matches: /prefers-reduced-motion:\s*reduce/.test(q) });
+    try {
+      rafQ = []; $('#btn-force').click();
+      if ($('#btn-force').classList.contains('on') || rafQ.length) throw new Error('減少動態效果時不應播放力導向動畫');
+      if (JSON.stringify(Array.from(g.pos)) === before) throw new Error('減少動態效果時應直接套用力導向的結果');
+    } finally { if (oldMM) window.matchMedia = oldMM; else delete window.matchMedia; }
+  });
+  await step('畫布：先填滿 theme 的底色（PNG 不透明）、字型與 CSS 一致、過長標籤截斷', async () => {
+    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8'); const v = cssVars(css); const T = S.view.theme; const g = App.graph;
+    if (v.surface !== T.canvas.surface) throw new Error('theme.canvas.surface 應與 --surface 相同');
+    const bodyFont = (css.match(/(?:^|\n)body\s*\{[^}]*font:\s*\S+\s+([^;]+);/) || [])[1]; // font: 字級/行高 字型清單
+    if (!bodyFont || bodyFont.trim() !== T.font.ui) throw new Error('畫布字型應與 body 相同：' + bodyFont);
+    if (v.mono !== T.font.mono) throw new Error('畫布等寬字型應與 --mono 相同');
+    const long = '很長的設備名稱'.repeat(8) + '-END';
+    const nodes = [{ id: 'fx-a', label: long, kind: 'router', collected: true, group: 't' }, { id: 'fx-b', label: 'short', kind: 'router', collected: true, group: 't' }];
+    withGraph(g, nodes, [{ id: 'fx-e', a: 'fx-a', b: 'fx-b', cls: '1g', count: 1, evidence: 'adjacency', labelA: 'ether1', labelB: 'ether2' }],
+      new Map([['fx-a', { x: 0, y: 0 }], ['fx-b', { x: 600, y: 0 }]]), () => {
+        g.s = 1.5; const ops = recordCanvas(g.ctx, () => g.draw());
+        const bg = ops.find((o) => o.op === 'rect');
+        if (!bg || ops.indexOf(bg) !== 0 || bg.style !== T.canvas.surface || bg.w < g.w || bg.h < g.h) throw new Error('繪圖應先以 theme 的畫布底色填滿畫面');
+        const texts = ops.filter((o) => o.op === 'text');
+        const cut = texts.find((o) => o.text.endsWith('…'));
+        if (!cut || cut.text.length >= long.length || !long.startsWith(cut.text.slice(0, -1))) throw new Error('過長的標籤應截斷並加上「…」');
+        if (!texts.some((o) => o.text === 'short')) throw new Error('短標籤不應截斷');
+        if (!texts.every((o) => String(o.font).includes(T.font.ui) || String(o.font).includes(T.font.mono))) throw new Error('畫布文字應使用 theme 的字型清單');
+      });
+    // 匯出 PNG：匯出前重畫（畫面已有底色）
+    let drew = 0; const oldDraw = g.draw; g.draw = function () { drew++; return oldDraw.call(this); };
+    try { await captureDownloads(() => $('#btn-png').click()); } finally { g.draw = oldDraw; }
+    if (!drew) throw new Error('匯出 PNG 前應重畫畫布');
+  });
   await step('滑過左右欄與工具列時不會穿透觸發拓樸圖 hover', () => {
     const g = App.graph; const cv = $('#graph');
-    const move = (target, p) => (winListeners.mousemove || []).forEach((f) => f({ target, clientX: p.x, clientY: p.y }));
+    const move = (target, p) => (winListeners.pointermove || []).forEach((f) => f({ target, clientX: p.x, clientY: p.y, pointerType: 'mouse' }));
     const n = g.nodes.find((x) => g.visible(x)); const p = g.toScreen(g.pos.get(n.id));
     move(cv, p); if (!g.hover || g.hover.id !== n.id) throw new Error('畫布上的節點應可 hover');
     [$('#left'), $('#right'), $('#btn-fit')].forEach((el) => {

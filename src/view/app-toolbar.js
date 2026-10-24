@@ -69,6 +69,11 @@
       if (running) { cancelAnimationFrame(running); running = null; $('#btn-force').classList.remove('on'); A.savePositions(); return; }
       const nodes = App.graph.nodes.filter((n) => App.graph.visible(n)); const ids = new Set(nodes.map((n) => n.id));
       const edges = App.graph.edges.filter((e) => ids.has(e.a) && ids.has(e.b)); let temp = 60; let it = 0;
+      // 使用者偏好減少動態效果時不播動畫：同樣的迭代一次算完，直接顯示結果
+      if (A.reducedMotion()) {
+        while (it < 360 && temp > 1) { V.layout.forceStep(nodes, edges, App.graph.pos, temp); temp *= 0.985; it++; }
+        App.graph.computeGroups(); A.savePositions(); return;
+      }
       $('#btn-force').classList.add('on');
       const step = () => {
         const per = nodes.length > 1500 ? 1 : 3;
@@ -83,10 +88,14 @@
     $('#btn-groups').onclick = () => {
       App.graph.showGroups = !App.graph.showGroups; $('#btn-groups').classList.toggle('on', App.graph.showGroups); App.graph.redraw();
     };
-    $('#btn-png').onclick = () => { const a = document.createElement('a'); a.download = 'topology.png'; a.href = $('#graph').toDataURL('image/png'); a.click(); };
+    // 畫布每次繪圖都先填滿 theme 的畫布底色，匯出前同步重畫一次，PNG 才是目前畫面且不透明
+    $('#btn-png').onclick = () => { App.graph.draw(); const a = document.createElement('a'); a.download = 'topology.png'; a.href = $('#graph').toDataURL('image/png'); a.click(); };
     $('#btn-json').onclick = () => App.exportAs('snapshot');
     buildLegend();
   };
+
+  /** 使用者的「減少動態效果」偏好（瀏覽器沒有 matchMedia 時視為沒有偏好） */
+  A.reducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
   // ================================================================ 圖例
   function buildLegend() {
@@ -153,7 +162,7 @@
     Object.entries(T.sevShape).forEach(([k, shape]) => item([dot(Object.assign({ background: T.sev[k] }, SEV_CSS[shape]), { 'data-shape': shape })],
       V.SEV[k], `有${V.SEV[k]}的設備在右上角、連線在中點標示${shape === 'square' ? '方形' : '三角形'}`));
     item([ring(M.select, 3, 'select')], '選取', '目前選取的設備（藍色粗環）與連線');
-    item([ring(M.hover, 2, 'hover')], '滑過', '指標所在的設備（深色細環）；相連的線一起標示');
+    item([ring(M.hover, 2, 'hover')], '滑過', '指標或鍵盤（N 鍵）目前所在的設備（深色細環）；相連的線一起標示');
     item([ring(M.find, 3, 'find')], '搜尋結果', '搜尋 MAC／IP 時，標出所在位置的設備與連線');
     item([line(M.trace, 4, null, T.alpha.overlay, { 'data-mark': 'trace' }), h('span', { class: 'lg-arrow', style: { color: M.trace } }, '▶')], '路由追蹤', '逐跳路徑，箭頭表示方向');
   }

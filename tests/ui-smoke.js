@@ -752,6 +752,73 @@ async function buildInput(input) {
     if (svc.length && !svc.every((x) => t.includes(x.name))) throw new Error('應列出 /ip service');
     if (svc.some((x) => x.basis === 'default') && !t.includes('預設值')) throw new Error('basis 為 default 的服務應標示「預設值」');
   });
+  await step('防火牆修正範例：F01／F02／F06（與 F03）產生停用指令，以 comment 或屬性 find，附驗證、回復與多條符合的警告', () => {
+    const Q = App.Q; const all = App.snap.findings; const R = S.view.remediation;
+    const idxs = all.map((f, i) => i).filter((i) => R.DISABLE_FIX[all[i].id] && all[i].entities.some((e) => e.type === 'rule'));
+    if (!process.env.SMOKE_INPUT && !['F01', 'F02', 'F03', 'F06'].every((id) => idxs.some((i) => all[i].id === id))) throw new Error('範例資料應有 F01、F02、F03、F06');
+    let warnedOnce = false;
+    idxs.forEach((i) => {
+      const f = all[i]; const rule = Q.getFirewallRule(f.entities.find((e) => e.type === 'rule').key);
+      App.selectFinding(i);
+      if (!text('#detail').includes('修正範例（停用規則）')) throw new Error(`${f.id} 的防火牆畫面應有修正範例`);
+      const box = $('#detail').querySelectorAll('.fw-fix').find((b) => b.getAttribute('data-rule') === rule.key);
+      if (!box) throw new Error(`${f.id} 的修正範例應對應它指向的規則`);
+      const cmd = box.querySelector('.fix-cmd').textContent;
+      const path = `/${rule.family} firewall ${rule.table}`;
+      const lines = cmd.split('\n').filter((l) => l && !l.startsWith('#'));
+      if (!cmd.startsWith('# 範例，執行前請核對')) throw new Error('指令應標示「範例，執行前請核對」');
+      if (lines.length !== 3) throw new Error('應有停用、驗證、回復三行指令：' + cmd);
+      const where = lines[1].slice((path + ' print where ').length);
+      if (!lines[1].startsWith(path + ' print where ')) throw new Error('驗證應是 print where，路徑依位址族與表：' + lines[1]);
+      if (lines[0] !== `${path} set [find where ${where}] disabled=yes`) throw new Error('停用應以 find 設定 disabled=yes：' + lines[0]);
+      if (lines[2] !== `${path} set [find where ${where}] disabled=no`) throw new Error('回復應以同一個 find 設定 disabled=no：' + lines[2]);
+      if (lines.some((l) => /numbers=|\bset \d/.test(l)) || where.includes('position')) throw new Error('不可用規則編號');
+      if (!where.startsWith('chain=' + R.quote(rule.chain) + ' ')) throw new Error('find 應限定 chain');
+      // find 的條件來自規則本身：comment，或比對條件（action＋match）
+      const byComment = where.includes(' comment='); const byMatch = where.includes(' action=');
+      if (!byComment && !byMatch) throw new Error('find 應用 comment 或比對條件');
+      if (byComment && !where.includes('comment=' + R.quote(rule.comment))) throw new Error('comment find 應使用規則的註解');
+      if (byMatch && !Object.entries(rule.match).every(([k, v]) => where.includes(`${k}=${R.quote(v)}`))) throw new Error('沒有 comment 時應以規則的 match 欄位組 find');
+      if (!rule.comment && !byMatch) throw new Error('沒有 comment 的規則應以比對條件 find');
+      // 多條符合的警告：與用 Q.firewallRulesOf 自行檢查的結果一致
+      const others = Q.firewallRulesOf(rule.dev, { family: rule.family, table: rule.table, chain: rule.chain }).filter((r) => r.key !== rule.key
+        && (!byComment || r.comment === rule.comment)
+        && (!byMatch || (r.action === rule.action && Object.entries(rule.match).every(([k, v]) => r.match[k] === v) && Object.entries(rule.params).every(([k, v]) => r.params[k] === v))));
+      const warned = box.textContent.includes('這個 find 可能符合多條規則');
+      if (warned !== others.length > 0) throw new Error(`${f.id} 的多條符合警告應與同 chain 的規則一致（另有 ${others.length} 條）`);
+      if (warned && !others.every((r) => box.textContent.includes(`第 ${r.position} 條`))) throw new Error('警告應列出也符合的規則');
+      warnedOnce = warnedOnce || warned;
+      if ((f.id === 'F03') !== box.textContent.includes('確認 WAN 已不需要')) throw new Error('只有 F03 需要註明先確認不需要再停用');
+    });
+    if (!process.env.SMOKE_INPUT && !warnedOnce) throw new Error('範例資料的 F02（重複規則）應警告 find 可能符合多條規則');
+    // 不適用停用處理的檢查不產生指令
+    const other = all.find((f) => f.entities.some((e) => e.type === 'rule') && !R.DISABLE_FIX[f.id]);
+    if (other && R.disableRuleFix(Q, other) !== null) throw new Error(`${other.id} 不應產生停用指令`);
+    if (idxs.length) {
+      // 複製：模擬環境沒有剪貼簿，應說明請手動複製（不靜默失敗）
+      $('#detail').querySelector('.copy-fix').click();
+      if (!text('#banner').includes('複製')) throw new Error('複製後應有提示：' + text('#banner'));
+      // 設備的防火牆畫面：收合列出這台設備全部的修正範例
+      const dev = Q.getFirewallRule(all[idxs[0]].entities.find((e) => e.type === 'rule').key).dev;
+      App.select({ type: 'firewall', dev, key: dev });
+      const n = Q.findingsFor('device', dev).filter((f) => R.disableRuleFix(Q, f)).length;
+      const fold = $('#detail').querySelectorAll('details').find((d) => d.querySelector('summary').textContent.startsWith('修正範例'));
+      if (!fold || fold.querySelector('summary .chip').textContent !== String(n)) throw new Error('設備的防火牆畫面應收合列出全部修正範例與筆數');
+    }
+    // 跳脫與路徑：IPv6 raw、含引號與 $ 的註解、否定與逗號清單的值
+    const r6 = { key: 'X|ipv6|raw|prerouting|a', dev: 'X', family: 'ipv6', table: 'raw', chain: 'prerouting', position: 2, action: 'drop',
+      match: { 'in-interface-list': '!LAN', 'dst-port': '80,443', protocol: 'tcp' }, params: {}, comment: 'say "hi" $x', commentEncoding: 'utf-8', src: [] };
+    const wider = Object.assign({}, r6, { key: 'X|ipv6|raw|prerouting|b', position: 1, comment: 'other', match: Object.assign({ 'src-address': '2001:db8::/32' }, r6.match) });
+    const stub = { getFirewallRule: (k) => [r6, wider].find((r) => r.key === k) || null, firewallRulesOf: () => [wider, r6], devName: (k) => k, block: () => null };
+    const x = R.disableRuleFix(stub, { id: 'F01', entities: [{ type: 'rule', key: r6.key }] });
+    if (x.path !== '/ipv6 firewall raw' || !x.text.includes('/ipv6 firewall raw set [find where chain=prerouting comment="say \\"hi\\" \\$x"] disabled=yes')) throw new Error('IPv6 raw 的路徑與註解跳脫不正確：\n' + x.text);
+    if (x.warnings.length) throw new Error('註解唯一時不應警告');
+    r6.commentEncoding = 'big5';
+    const y = R.disableRuleFix(stub, { id: 'F01', entities: [{ type: 'rule', key: r6.key }] });
+    if (y.by !== 'match' || !y.where.includes('in-interface-list="!LAN"') || !y.where.includes('dst-port="80,443"')) throw new Error('無法比對的註解應改用比對條件，否定與清單的值要加引號：' + y.where);
+    if (y.others.length !== 1 || !y.text.includes('可能符合多條規則')) throw new Error('條件更寬的規則也符合 find 時應警告');
+    App.select(null);
+  });
   await step('覆蓋率：由 C01 匯出 tools/collect.sh 的 devices.csv 草稿（格式與 collect.sh 的讀法一致）', async () => {
     const Q = App.Q; const all = App.snap.findings; const R = S.view.remediation;
     // 依 tools/collect.sh 的 load_inventory：略過空白與 # 開頭的列，第一個資料列是標題列，其餘逐欄檢查

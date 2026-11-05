@@ -18,7 +18,7 @@ test('範例資料：每項刻意放入的問題都被找到，且沒有多餘�
   const css = s.model.inferredLinks.find((l) => l.a.startsWith('TPE_CSS_01|') || l.b.startsWith('TPE_CSS_01|'));
   assert.ok(css && css.confidence === 'high' && css.bases.join('+') === 'fdb+mndp-unique', '範例的 CSS610 應以 MAC 表＋MNDP 推論到 ACC_06 ether21');
   assert.deepStrictEqual(s.findings.filter((f) => f.severity === 'error').map((f) => f.id).sort(), ['I01']);
-  assert.strictEqual(s.findings.find((f) => f.id === 'K02').severity, 'warn', 'K02 是警告：可能是鄰居表過時或中間有未管理交換器，不一定是資料矛盾');
+  assert.strictEqual(s.findings.find((f) => f.id === 'K02').severity, 'warn', 'K02 是警告：可能是鄰居表過時或中間有非網管型交換器，不一定是資料矛盾');
   s.findings.forEach((f) => f.evidence.forEach((e) => assert.ok(typeof e.text === 'string')));
   const v01 = s.findings.find((f) => f.id === 'V01').entities.find((e) => e.type === 'link');
   assert.strictEqual(s.model.links.find((l) => l.key === v01.key).vlanComparable, true, 'vlanComparable 必須序列化，查詢層才能判斷是否可比對');
@@ -72,4 +72,17 @@ test('輸入指紋：S.inputHashOf 與 meta.inputHash 相同（不重建也能�
   const two = cases[2];
   assert.notStrictEqual(S.inputHashOf(two), S.inputHashOf(two.slice().reverse()), '順序有意義');
   [null, 'x', [{}], [{ name: 'a', text: 1 }], [null]].forEach((bad) => assert.throws(() => S.inputHashOf(bad), TypeError, JSON.stringify(bad)));
+});
+// ------------------------------------------------------------------ 用字：核心產生給人看的文字不用已淘汰的說法
+test('用字：規則目錄的標題、常見原因、處理與範例資料的 finding 訊息、群名不出現已淘汰的說法', () => {
+  // 畫面層另有 tests/ui-smoke.js 的淘汰用詞檢查；這裡只管核心產生、會原樣顯示在畫面與匯出的文字
+  const RETIRED = { 未管理交換器: '非網管型交換器', 自動群組: '分群', 推定偏離: '與多數不同', 未知對端: '未識別的終端' };
+  const hits = [];
+  const scan = (where, t) => Object.keys(RETIRED).filter((w) => String(t || '').includes(w)).forEach((w) => hits.push(`${where}：「${w}」→「${RETIRED[w]}」`));
+  Object.entries(S.check.CATALOG).forEach(([id, c]) => { scan(id + ' 標題', c.title); (c.causes || []).forEach((x) => scan(id + ' 常見原因', x)); scan(id + ' 處理', c.action); });
+  const s = build(read('samples/sample-bundle.txt'));
+  s.findings.forEach((f) => { scan(f.id + ' 訊息', f.message); scan(f.id + ' 標題', f.title); });
+  s.model.devices.forEach((d) => scan(d.key + ' 群名', d.group));
+  assert.ok(s.model.devices.some((d) => /^分群 \d+$/.test(d.group || '')), '範例資料應有自動分群的設備（「分群 N」）');
+  assert.deepStrictEqual(hits, []);
 });

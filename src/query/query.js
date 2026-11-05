@@ -588,7 +588,7 @@
       findingsFor(type, key) { return (findingsBy.get(type + ':' + key) || []).map((i) => snap.findings[i]); },
       findingIndexesFor(type, key) { return findingsBy.get(type + ':' + key) || []; },
       /**
-       * 這台設備被多數決推定偏離（列在 finding.deviation.deviating，推論）的 finding 索引，依 Snapshot 順序（凍結的陣列）；沒有時為空陣列。
+       * 這台設備被多數決判定與多數不同（列在 finding.deviation.deviating，推論）的 finding 索引，依 Snapshot 順序（凍結的陣列）；沒有時為空陣列。
        * deviating 不是 entities（偏離的設備不一定是這筆的實體），所以另建索引，不併入 findingsFor。
        */
       deviationsOf(devKey) {

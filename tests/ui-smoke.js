@@ -845,24 +845,24 @@ function viewBoundaryViolations(file, src) {
     if (!shown || !shown.forced || shown.text !== ob.name) throw new Error('滑過只有一台的群的設備應顯示全名');
     cv.dispatch('pointerleave', { pointerType: 'mouse' }); g.draw();
   });
-  await step('推定偏離：選多數決的檢查結果時以虛線外圈標出偏離設備；其他選取、清除時清掉，展開與切換層級保留；圖例取自 theme', () => {
+  await step('與多數不同：選多數決的檢查結果時以虛線外圈標出偏離設備；其他選取、清除時清掉，展開與切換層級保留；圖例取自 theme', () => {
     const g = App.graph; const D = S.view.theme.canvas.deviation; const Q = App.Q;
     const row = $('#legend').testAll('.li').find((li) => li.textContent === D.label);
-    if (!row || row.getAttribute('title') !== D.tip || !row.all().some((e) => e.getAttribute('data-mark') === 'deviation' && String(e.style.background).includes(D.c))) throw new Error('圖例應有推定偏離（文字、說明與顏色取自 theme.canvas.deviation）');
-    if (D.c === S.view.theme.mark.select || !D.dash.length || !(D.gap > 6)) throw new Error('推定偏離應是與選取不同色、比選取環更外圈的虛線');
+    if (!row || row.getAttribute('title') !== D.tip || !row.all().some((e) => e.getAttribute('data-mark') === 'deviation' && String(e.style.background).includes(D.c))) throw new Error('圖例應有與多數不同（文字、說明與顏色取自 theme.canvas.deviation）');
+    if (D.c === S.view.theme.mark.select || !D.dash.length || !(D.gap > 6)) throw new Error('與多數不同應是與選取不同色、比選取環更外圈的虛線');
     const idx = Q.findings().findIndex((f) => f.deviation && f.deviation.basis === 'majority' && f.deviation.deviating.length);
     if (idx < 0) { if (process.env.SMOKE_INPUT) return; throw new Error('測試前提：範例應有多數決的檢查結果'); }
     const devs = Q.finding(idx).deviation.deviating;
     App.selectFinding(idx);
-    if (!g.emphasis || !devs.every((d) => g.emphasis.has(d))) throw new Error('選多數決的檢查結果應標出推定偏離的設備');
+    if (!g.emphasis || !devs.every((d) => g.emphasis.has(d))) throw new Error('選多數決的檢查結果應標出與多數不同的設備');
     [0.05, 0.5, 2].forEach((s) => { g.s = s; g.draw(); });
-    App.select(App.sel, { refresh: true }); if (!g.emphasis) throw new Error('只重新標示（切換層級）時應保留推定偏離');
-    App.select({ type: 'device', key: devs[0] }); if (g.emphasis !== null) throw new Error('選其他東西應清除推定偏離');
-    App.selectFinding(idx); App.select(null); if (g.emphasis !== null) throw new Error('取消選取應清除推定偏離');
+    App.select(App.sel, { refresh: true }); if (!g.emphasis) throw new Error('只重新標示（切換層級）時應保留與多數不同');
+    App.select({ type: 'device', key: devs[0] }); if (g.emphasis !== null) throw new Error('選其他東西應清除與多數不同');
+    App.selectFinding(idx); App.select(null); if (g.emphasis !== null) throw new Error('取消選取應清除與多數不同');
     const tie = Q.findings().findIndex((f) => f.deviation && !f.deviation.deviating.length);
-    if (tie >= 0) { App.selectFinding(idx); App.selectFinding(tie); if (g.emphasis !== null) throw new Error('沒有多數時不應標出推定偏離'); }
+    if (tie >= 0) { App.selectFinding(idx); App.selectFinding(tie); if (g.emphasis !== null) throw new Error('沒有多數時不應標出與多數不同'); }
     const plain = Q.findings().findIndex((f) => !f.deviation && f.entities.length);
-    if (plain >= 0) { App.selectFinding(idx); App.selectFinding(plain); if (g.emphasis !== null) throw new Error('沒有 deviation 的檢查結果不應標出推定偏離'); }
+    if (plain >= 0) { App.selectFinding(idx); App.selectFinding(plain); if (g.emphasis !== null) throw new Error('沒有 deviation 的檢查結果不應標出與多數不同'); }
     App.select(null); g.fit();
   });
   await step('聚焦：選設備含一跳鄰居且倍率不超過上限；選鏈路聚焦兩端；路由追蹤聚焦去程與回程', () => {
@@ -1029,7 +1029,7 @@ function viewBoundaryViolations(file, src) {
     } finally { EP.vendor = old; App.toggleExpand('TPE_ACC_SW_01'); App.toggleExpand('TPE_ACC_SW_01'); }
     check();
   });
-  await step('檢查結果：沒有發現的規則分成「通過」與「沒有資料可檢查」，預設收合', () => {
+  await step('檢查結果：沒有發現的檢查分成「通過」與「沒有資料可檢查」，預設收合', () => {
     const pass = App.Q.ruleStatus().filter((r) => r.status === 'pass'); if (!pass.length) return;
     const head = () => document.testAll('#pane-findings .fgroup').find((g) => g.className.split(' ').includes('pass'));
     if (!head()) throw new Error('應有「通過」區塊');
@@ -1084,7 +1084,7 @@ function viewBoundaryViolations(file, src) {
     }
   });
   await step('點選每一筆檢查結果', () => { App.snap.findings.forEach((f, i) => { App.selectFinding(i); App.graph.draw(); }); });
-  await step('從其他入口選取檢查結果：③ 的清單展開到那條規則（含被篩掉的嚴重度與超過顯示筆數的位置），標出選取那一筆並捲到看得見', () => {
+  await step('從其他入口選取檢查結果：③ 的清單展開到那項檢查（含被篩掉的嚴重度與超過顯示筆數的位置），標出選取那一筆並捲到看得見', () => {
     const all = App.snap.findings; const VA = S.view.app;
     goStep('triage');
     const selected = () => $('#pane-findings').testAll('.fitem').filter((e) => e.classList.contains('sel'));
@@ -1144,7 +1144,7 @@ function viewBoundaryViolations(file, src) {
     const nodes = S.view.codeText('<b>x</b> `<i>`');
     if (nodes[0] !== '<b>x</b> ' || nodes[1].tagName !== 'CODE' || nodes[1].textContent !== '<i>' || nodes[1].childNodes.some((n) => n instanceof El)) throw new Error('codeText 應以文字寫入，不解析 HTML');
   });
-  await step('處理提示：③ 分診展開規則後在結果列表上方顯示「處理：」，詳情的檢查結果卡片同一句', () => {
+  await step('處理提示：③ 研判展開檢查後在結果列表上方顯示「處理：」，詳情的檢查結果卡片同一句', () => {
     goStep('triage'); const L = S.view.lists.findings; L.showProblems(App);
     const ruleGroups = () => $('#pane-findings').testAll('.fgroup').filter((g) => g.className === 'fgroup');
     const g0 = ruleGroups()[0]; if (!g0) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有錯誤或警告的規則群組'); }
@@ -1165,25 +1165,25 @@ function viewBoundaryViolations(file, src) {
     });
     L.showProblems(App); App.select(null);
   });
-  await step('跨設備一致性：多數決推定偏離的設備列在檢查結果，VLAN 實體可開啟', () => {
+  await step('跨設備一致性：多數決判定與多數不同的設備列在檢查結果，VLAN 實體可開啟', () => {
     const all = App.snap.findings;
     const dev = all.map((f, i) => i).filter((i) => all[i].deviation && all[i].deviation.deviating.length);
-    if (!dev.length && !process.env.SMOKE_INPUT) throw new Error('範例資料應有多數決推定偏離設備的檢查結果');
+    if (!dev.length && !process.env.SMOKE_INPUT) throw new Error('範例資料應有多數決判定與多數不同設備的檢查結果');
     dev.forEach((i) => {
       const f = all[i]; App.selectFinding(i);
       const box = $('#detail').testAll('.finding').find((x) => x.textContent.includes(f.message));
-      if (!box || !box.textContent.includes('推定偏離（多數決）：')) throw new Error(`${f.id} 應列出推定偏離的設備`);
+      if (!box || !box.textContent.includes('與多數不同（推論）：')) throw new Error(`${f.id} 應列出與多數不同的設備`);
       // 設備名可點，選取該設備（V.deviationLine 單一來源）
       const a = box.querySelector('.deviation').testAll('a').find((x) => x.getAttribute('data-dev') === f.deviation.deviating[0]);
-      if (!a) throw new Error(`${f.id} 推定偏離的設備應可點`);
-      if (!f.deviation.deviating.every((k) => box.textContent.includes(App.Q.devName(k)))) throw new Error(`${f.id} 推定偏離的設備不完整`);
+      if (!a) throw new Error(`${f.id} 與多數不同的設備應可點`);
+      if (!f.deviation.deviating.every((k) => box.textContent.includes(App.Q.devName(k)))) throw new Error(`${f.id} 與多數不同的設備不完整`);
     });
     // VLAN 實體的檢查結果開啟 VLAN 詳情；有不相連區塊時可切換區塊並回到全部
     const vi = all.findIndex((f) => f.entities[0] && f.entities[0].type === 'vlan');
     if (vi >= 0) { App.selectFinding(vi); if (App.sel.type !== 'vlan' || !text('#detail').includes('VLAN ' + all[vi].entities[0].key)) throw new Error('VLAN 的檢查結果應開啟 VLAN 詳情'); }
     App.select(null);
   });
-  await step('③ 分診依規則：類別 → 規則 → 結果，類別標題寫出各嚴重度筆數，順序取自規則目錄；推定偏離列在結果下方', () => {
+  await step('③ 研判依檢查：類別 → 檢查 → 結果，類別標題寫出各嚴重度筆數，順序取自規則目錄；與多數不同列在結果下方', () => {
     const L = S.view.lists.findings; const VA = S.view.app; const all = App.snap.findings;
     goStep('triage'); L.reset(); L(App);
     const P = $('#pane-findings');
@@ -1225,9 +1225,9 @@ function viewBoundaryViolations(file, src) {
       if (catOf(c0).querySelector('.head').getAttribute('aria-expanded') === was) throw new Error('類別應可切換展開，並跨重繪保留');
       catOf(c0).querySelector('.head').click();
     }
-    // 推定偏離（多數決）：結果下方列出可點的設備；平手不列
+    // 與多數不同（推論）：結果下方列出可點的設備；平手不列
     const dev = pending.filter((f) => f.deviation && f.deviation.basis === 'majority' && f.deviation.deviating.length);
-    if (!dev.length && !process.env.SMOKE_INPUT) throw new Error('範例資料應有推定偏離設備的待處理結果');
+    if (!dev.length && !process.env.SMOKE_INPUT) throw new Error('範例資料應有與多數不同設備的待處理結果');
     dev.slice(0, 5).forEach((f) => {
       const box = catOf(S.query.rule(f.id).cat); const ch = box.querySelector('.head');
       if (ch.getAttribute('aria-expanded') !== 'true') ch.click();
@@ -1235,12 +1235,12 @@ function viewBoundaryViolations(file, src) {
       if (rg().querySelector('.head').getAttribute('aria-expanded') !== 'true') rg().querySelector('.head').click();
       const wrap = rg().testAll('.fitem-wrap').find((w) => w.querySelector('.fitem').textContent.includes(f.message));
       const line = wrap && wrap.querySelector('.deviation');
-      if (!line || !line.textContent.startsWith('推定偏離（多數決）：')) throw new Error(`${f.id} 的結果下方應列推定偏離`);
+      if (!line || !line.textContent.startsWith('與多數不同（推論）：')) throw new Error(`${f.id} 的結果下方應列與多數不同`);
       const links = line.testAll('.link');
-      if (links.map((a) => a.textContent).join() !== f.deviation.deviating.map((k) => App.Q.devName(k)).join()) throw new Error(`${f.id} 推定偏離的設備不符`);
+      if (links.map((a) => a.textContent).join() !== f.deviation.deviating.map((k) => App.Q.devName(k)).join()) throw new Error(`${f.id} 與多數不同的設備不符`);
       if (wrap.querySelector('.fitem').testAll('.link').length) throw new Error('設備連結不應包在可點的結果列裡');
       links[0].click();
-      if (!App.sel || App.sel.type !== 'device' || App.sel.key !== f.deviation.deviating[0]) throw new Error('點推定偏離的設備應選取它');
+      if (!App.sel || App.sel.type !== 'device' || App.sel.key !== f.deviation.deviating[0]) throw new Error('點與多數不同的設備應選取它');
     });
     // 單一 helper（V.deviationLine）：平手預設不顯示（詳情與列表一致），只有明確傳 { tie: true } 才寫「沒有多數」；不是多數決的不顯示
     const tie = { basis: 'majority', deviating: [], groups: [], main: null };
@@ -1385,7 +1385,7 @@ function viewBoundaryViolations(file, src) {
     // 每個數字只出現一次：已收集台數只在數字卡，不在收集完整度那一行
     if (cov.textContent.includes(`${NUM(cs.networkCollected)}／`) || cov.textContent.includes(`${NUM(cs.network)} 台`)) throw new Error('收集完整度那一行不重複已收集台數：' + cov.textContent);
   });
-  await step('詳情：設備先列身分再列檢查結果、超過 3 筆先顯示 3 筆；推定偏離的設備有 chip；平手不多一行；長表格預設收合', () => {
+  await step('詳情：設備先列身分再列檢查結果、超過 3 筆先顯示 3 筆；與多數不同的設備有 chip；平手不多一行；長表格預設收合', () => {
     const Q = App.Q; const SHOWN = 3;
     // 檢查結果超過 3 筆的設備：先顯示 3 筆，其餘在「再顯示 N 筆」（預設收合）
     const many = Q.devices().find((d) => { App.select({ type: 'device', key: d.key }); const sec = $('#detail').querySelector('.findings-section'); return sec && sec.testAll('.finding').length > SHOWN; });
@@ -1403,23 +1403,23 @@ function viewBoundaryViolations(file, src) {
     if (fi < 0 || ki < 0 || ki > fi) throw new Error('設備的屬性（身分）應在檢查結果之前');
     if (d0.mgmtIp && !kids[ki].textContent.includes(d0.mgmtIp)) throw new Error('設備屬性的第一段應有管理 IP');
     if (!kids[ki].textContent.includes('收集的資料')) throw new Error('設備屬性應列收集的資料');
-    // 推定偏離：設備在任何 finding.deviation.deviating 中時，標題下有「推定偏離 N 項」
+    // 與多數不同：設備在任何 finding.deviation.deviating 中時，標題下有「與多數不同 N 項」
     const devs = S.util.uniq(Q.findings().flatMap((f) => (f.deviation ? f.deviation.deviating : [])));
     devs.forEach((k) => {
       App.select({ type: 'device', key: k });
       const n = Q.deviationsOf(k).length;
-      if (!$('#detail').testAll('.chip').some((c) => c.textContent === `推定偏離 ${n} 項`)) throw new Error(`${k} 應有「推定偏離 ${n} 項」`);
-      if (!Q.deviationsOf(k).every((i) => text('#detail').includes(Q.finding(i).message))) throw new Error(`${k} 的檢查結果應包含推定偏離的那幾筆`);
+      if (!$('#detail').testAll('.chip').some((c) => c.textContent === `與多數不同 ${n} 項`)) throw new Error(`${k} 應有「與多數不同 ${n} 項」`);
+      if (!Q.deviationsOf(k).every((i) => text('#detail').includes(Q.finding(i).message))) throw new Error(`${k} 的檢查結果應包含與多數不同的那幾筆`);
     });
-    if (!devs.length && !process.env.SMOKE_INPUT) throw new Error('範例資料應有被推定偏離的設備');
+    if (!devs.length && !process.env.SMOKE_INPUT) throw new Error('範例資料應有與多數不同的設備');
     const clean = Q.devices().find((d) => !devs.includes(d.key)); App.select({ type: 'device', key: clean.key });
-    if ($('#detail').testAll('.chip').some((c) => c.textContent.startsWith('推定偏離'))) throw new Error('沒有被推定偏離的設備不應有 chip');
+    if ($('#detail').testAll('.chip').some((c) => c.textContent.startsWith('與多數不同'))) throw new Error('沒有與多數不同的設備不應有 chip');
     // 平手：詳情和左欄一樣不顯示額外的「沒有多數」行（訊息本身仍在）
     const tie = Q.findings().findIndex((f) => f.deviation && f.deviation.basis === 'majority' && !f.deviation.deviating.length && f.entities.length);
     if (tie >= 0) {
       App.selectFinding(tie);
       const box = $('#detail').testAll('.finding').find((x) => x.textContent.includes(Q.finding(tie).message));
-      if (!box || box.querySelector('.deviation')) throw new Error('平手時詳情不應多一行推定偏離');
+      if (!box || box.querySelector('.deviation')) throw new Error('平手時詳情不應多一行與多數不同');
     }
     if (!process.env.SMOKE_INPUT && tie < 0) throw new Error('範例資料應有多數決平手的檢查結果');
     if (Q.devices().some((d) => { App.select({ type: 'device', key: d.key }); return text('#detail').includes('沒有多數'); })) throw new Error('設備詳情不應出現「沒有多數」');
@@ -1466,6 +1466,9 @@ function viewBoundaryViolations(file, src) {
       'ADR-': '（不寫內部編號）', 'facet：': '原值：', '（L0）': 'zone 矩陣', 'L1：': '位址組', 'L2：牽涉': '牽涉的規則', 'L3：': '逐跳路徑', 連線類別: '鏈路類別',
       '開啟詳情': '開啟詳細資料', 'Enter 詳情': 'Enter 開啟詳細資料', '非直連確認': '未確認直連', 'broadcast domain 可達': 'L2 廣播網域可達',
       全通: 'V.L4_STATUS.allow（允許）', 全擋: 'V.L4_STATUS.deny（拒絕）', 'V.VERDICT': 'V.L4_STATUS',
+      // 用字調整：步驟、處理狀態、多數決與檢查代碼的稱呼（畫面的「回歸」都是處理狀態，沒有「回歸測試」這類用法）
+      分診: '研判', 回歸: '復發', 推定偏離: S.view.DEVIATION_LABEL, '可接受（豁免）': '接受風險', 標為可接受: '標為接受風險', 未管理交換器: '非網管型交換器', 自動群組: S.view.TERMS.group,
+      依規則: '依檢查', 誤報率最高的規則: '誤報率最高的檢查', 未登錄的規則: '未登錄的檢查', '檢查項目：': '比對對象：',
     };
     const noComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\'"`])\/\/.*$/gm, '$1');
     const sources = jsFiles('src/view').map((f) => [f.split(path.sep).join('/'), noComments(fs.readFileSync(path.join(ROOT, f), 'utf8'))])
@@ -2754,7 +2757,7 @@ function viewBoundaryViolations(file, src) {
     // CSV：UTF-8 BOM 開頭（bytes EF BB BF），內容依 RFC 4180 解析回來要和每筆 finding 對得上
     if (bytes[1].subarray(0, 3).toString('hex') !== 'efbbbf') throw new Error('CSV 應以 UTF-8 BOM 開頭');
     const rows = parseCsv(csv.replace(/^\uFEFF/, ''));
-    if (rows[0].join() !== 'severity,id,title,message,entities,evidence,acknowledged,ack_kind,ack_note,device,action,status,note,waiver_reason,waiver_until,facet,推定偏離（多數決）') throw new Error('CSV 標頭不符：' + rows[0]);
+    if (rows[0].join() !== 'severity,id,title,message,entities,evidence,acknowledged,ack_kind,ack_note,device,action,status,note,waiver_reason,waiver_until,facet,與多數不同（推論）') throw new Error('CSV 標頭不符：' + rows[0]);
     if (rows.length - 1 !== App.snap.findings.length) throw new Error('CSV 每筆檢查結果應恰好一列');
     App.snap.findings.forEach((f, i) => {
       const r = rows[i + 1]; const lg = S.view.app.ledgerExport(f); const ack = lg && !S.ledger.isPending(lg.status) ? lg : {};
@@ -2766,11 +2769,11 @@ function viewBoundaryViolations(file, src) {
       if (r[11] !== (lg ? lg.status : '')) throw new Error(`CSV ${f.id} 的 status 應為處理紀錄的狀態`);
       if (r[9] !== (App.Q.findingDevice(f) || '')) throw new Error('CSV ' + f.id + ' 的 device 應為所屬設備');
       if (r[10].replace(/^'/, '') !== S.check.CATALOG[f.id].action) throw new Error('CSV ' + f.id + ' 的 action 應與 CATALOG 一致（原文照錄）');
-      if (r[15].replace(/^'/, '') !== (f.facet != null ? String(f.facet) : '')) throw new Error('CSV ' + f.id + ' 的 facet 應為檢查項目的原值（沒有時空白）');
-      // 推定偏離（推論，與畫面同一個標籤）：多數決偏離的設備名；平手寫「沒有多數」；不是多數決或沒有 deviation 為空白
+      if (r[15].replace(/^'/, '') !== (f.facet != null ? String(f.facet) : '')) throw new Error('CSV ' + f.id + ' 的 facet 應為比對對象的原值（沒有時空白）');
+      // 與多數不同（推論，與畫面同一個標籤）：多數決偏離的設備名；平手寫「沒有多數」；不是多數決或沒有 deviation 為空白
       const dvs = f.deviation && f.deviation.basis === 'majority' ? f.deviation.deviating : null;
       const wantDv = !dvs ? '' : dvs.length ? dvs.map((k) => App.Q.devName(k)).join('; ') : '沒有多數';
-      if (r[16] !== wantDv) throw new Error('CSV ' + f.id + ' 的推定偏離應為「' + wantDv + '」：' + r[16]);
+      if (r[16] !== wantDv) throw new Error('CSV ' + f.id + ' 的與多數不同應為「' + wantDv + '」：' + r[16]);
       if (r.length !== rows[0].length) throw new Error('CSV 第 ' + (i + 2) + ' 列的欄數應與標頭相同');
     });
     // Markdown（依規則）：每條出現的規則附處理建議與逐條的常見原因，反引號內是行內程式碼（不被跳脫）
@@ -2809,18 +2812,18 @@ function viewBoundaryViolations(file, src) {
     tricky.findings[0].message = '<b>*x*</b>'; tricky.findings[0].evidence[0].text = 'a`b';
     const emd = X.findingsMarkdown(S.query(tricky));
     if (!emd.includes('\\<b\\>\\*x\\*\\</b\\>') || !emd.includes('`` a`b ``')) throw new Error('Markdown 應跳脫格式字元與行內程式碼的反引號');
-    // 推定偏離（多數決，推論）：CSV 最後一欄、Markdown 在該筆下另起一行；平手寫「沒有多數」，沒有 deviation 不輸出
+    // 與多數不同（推論）：CSV 最後一欄、Markdown 在該筆下另起一行；平手寫「沒有多數」，沒有 deviation 不輸出
     const dk = App.snap.model.devices.slice(0, 2).map((d) => d.key);
     tricky.findings[0].deviation = { basis: 'majority', deviating: dk, groups: [], main: null };
     const dq = S.query(tricky); const dnames = dk.map((k) => dq.devName(k));
     const dcsv = parseCsv(X.findingsCsv(dq).replace(/^\uFEFF/, ''));
-    if (dcsv[0][16] !== '推定偏離（多數決）' || dcsv[1][16] !== dnames.join('; ')) throw new Error('CSV 應有推定偏離的設備名：' + dcsv[1][16]);
-    if (!X.findingsMarkdown(dq).includes('  - 推定偏離（多數決）：' + dnames.join('、'))) throw new Error('Markdown 應列出推定偏離的設備');
+    if (dcsv[0][16] !== '與多數不同（推論）' || dcsv[1][16] !== dnames.join('; ')) throw new Error('CSV 應有與多數不同的設備名：' + dcsv[1][16]);
+    if (!X.findingsMarkdown(dq).includes('  - 與多數不同（推論）：' + dnames.join('、'))) throw new Error('Markdown 應列出與多數不同的設備');
     tricky.findings[0].deviation = { basis: 'majority', deviating: [], groups: [], main: null };
     const tq = S.query(tricky);
-    if (parseCsv(X.findingsCsv(tq).replace(/^\uFEFF/, ''))[1][16] !== '沒有多數' || !X.findingsMarkdown(tq).includes('  - 推定偏離（多數決）：沒有多數')) throw new Error('平手時應寫「沒有多數」');
+    if (parseCsv(X.findingsCsv(tq).replace(/^\uFEFF/, ''))[1][16] !== '沒有多數' || !X.findingsMarkdown(tq).includes('  - 與多數不同（推論）：沒有多數')) throw new Error('平手時應寫「沒有多數」');
     delete tricky.findings[0].deviation;
-    if (X.findingsMarkdown(S.query(tricky)).includes('推定偏離') || parseCsv(X.findingsCsv(S.query(tricky)).replace(/^\uFEFF/, ''))[1][16] !== '') throw new Error('沒有 deviation 時不應輸出推定偏離');
+    if (X.findingsMarkdown(S.query(tricky)).includes('與多數不同') || parseCsv(X.findingsCsv(S.query(tricky)).replace(/^\uFEFF/, ''))[1][16] !== '') throw new Error('沒有 deviation 時不應輸出與多數不同');
   });
   let ackedKey = null; // 處理紀錄中已處理的 finding 鍵：清除基準後要仍然存在
   await step('處理紀錄取代確認：每筆檢查結果都在處理紀錄中，可變更狀態與備註，不合法的變更顯示錯誤，已處理另列分組並從摘要排除，匯出對應欄位', async () => {
@@ -2862,15 +2865,15 @@ function viewBoundaryViolations(file, src) {
     await fill('fixed', { note: '' });
     if (!errText().includes('不能手動標為 fixed')) throw new Error('S.ledger.set 的錯誤應顯示在欄位下方：' + errText());
     if (JSON.stringify(VA.ledger()) !== ledgerBefore || VA.ledgerStatus(f) !== it0.status) throw new Error('不合法的變更不可改動處理紀錄');
-    // 可接受沒有原因：畫面要求填寫
+    // 接受風險沒有原因：畫面要求填寫
     await fill('accepted', { reason: '  ' });
-    if (!errText().includes('原因')) throw new Error('可接受沒有原因時應提示');
-    // 可接受：原因與預設到期日（WAIVER_DAYS 天後）
+    if (!errText().includes('原因')) throw new Error('接受風險沒有原因時應提示');
+    // 接受風險：原因與預設到期日（WAIVER_DAYS 天後）
     const reason1 = '設計如此, 見 "變更單" 123';
     await fill('accepted', { reason: reason1, note: '備註一' });
     if (editor()) throw new Error('儲存成功後應關閉欄位');
     const it1 = VA.ledgerItem(f);
-    if (it1.status !== 'accepted' || it1.waiver.reason !== reason1 || it1.note !== '備註一') throw new Error('應設為可接受並記下原因與備註：' + JSON.stringify(it1));
+    if (it1.status !== 'accepted' || it1.waiver.reason !== reason1 || it1.note !== '備註一') throw new Error('應設為接受風險並記下原因與備註：' + JSON.stringify(it1));
     const days = (Date.parse(it1.waiver.until) - Date.now()) / 86400000;
     if (days < LG.WAIVER_DAYS - 2 || days > LG.WAIVER_DAYS + 1) throw new Error('豁免到期日預設應約 WAIVER_DAYS 天後：' + it1.waiver.until);
     if (JSON.stringify(App.snap) !== snapBefore) throw new Error('處理紀錄不可改寫基準');
@@ -2878,7 +2881,7 @@ function viewBoundaryViolations(file, src) {
     if (!saved.items[key] || saved.items[key].status !== 'accepted') throw new Error('變更應存進 store 的 ledger');
     // 已處理分組：依狀態，預設收合
     const handled = (s) => document.testAll('#pane-findings .fgroup').find((x) => x.className.includes('handled') && x.getAttribute('data-status') === s);
-    if (!handled('accepted')) throw new Error('應有「可接受」的已處理分組');
+    if (!handled('accepted')) throw new Error('應有「接受風險」的已處理分組');
     if (handled('accepted').testAll('.fitem').length) throw new Error('已處理分組預設應收合');
     handled('accepted').querySelector('.head').click();
     const gt = handled('accepted').textContent;
@@ -2900,7 +2903,7 @@ function viewBoundaryViolations(file, src) {
     if (text('#detail').includes(f.message) && !text('#detail').includes(RV.statusText('false-positive'))) throw new Error('詳情的檢查結果應標出處理狀態');
     goStep('triage');
     const fp = document.testAll('#pane-findings .fgroup').find((x) => x.className.includes('fp-rules'));
-    if (!fp) throw new Error('有誤報時應列出誤報率最高的規則');
+    if (!fp) throw new Error('有誤報時應列出誤報率最高的檢查');
     fp.querySelector('.head').click();
     const fpRow = document.testAll('#pane-findings .fp-rules .rule').find((r) => r.getAttribute('data-rule-id') === f.id);
     const st = LG.ruleStats(VA.ledger()).find((r) => r.id === f.id);
@@ -2993,7 +2996,7 @@ function viewBoundaryViolations(file, src) {
     if (plain.some((r, n) => r[1] !== all[n].id || r[3].replace(/^'/, '') !== all[n].message)) throw new Error('取消依設備排序後應回到基準的順序');
     seg('rule').click();
     // 依規則是 類別 → 規則；只有提醒的類別預設收合（例如大型乾淨網路），所以類別標題或規則標題出現即算恢復
-    if (groups().length || !($('#pane-findings').testAll('.fgroup').some((g) => g.className.split(' ').includes('fcat')) || $('#pane-findings').testAll('.fgroup .head .id').length)) throw new Error('切回「依規則」應恢復依規則代碼分組');
+    if (groups().length || !($('#pane-findings').testAll('.fgroup').some((g) => g.className.split(' ').includes('fcat')) || $('#pane-findings').testAll('.fgroup .head .id').length)) throw new Error('切回「依檢查」應恢復依檢查代碼分組');
   });
   await step('防火牆：點選指向規則或服務的檢查結果，定位到該設備防火牆畫面的那一列', () => {
     const Q = App.Q; const all = App.snap.findings;
@@ -3436,7 +3439,7 @@ function viewBoundaryViolations(file, src) {
     if (onlyNew() || versionHint()) throw new Error('舊基準不可用時篩選應關閉並隱藏');
     App.showView('graph');
   });
-  await step('處理紀錄多輪推進：修好判定已修好、又出現標為回歸並醒目提示，收集不到的設備列為無法判斷，趨勢圖與表格', async () => {
+  await step('處理紀錄多輪推進：修好判定已修好、又出現標為復發並醒目提示，收集不到的設備列為無法判斷，趨勢圖與表格', async () => {
     const VA = S.view.app; const sample = S.samples['sample-bundle.txt'];
     // 範例的 F06（TPE_CORE_RT_02 以來源埠放行）：拿掉那一行就會消失
     const F06_LINE = '/ip firewall filter add action=accept chain=input protocol=udp src-port=53';
@@ -3453,26 +3456,26 @@ function viewBoundaryViolations(file, src) {
     if (!fixedList || !fixedList.testAll('.ledger-item').some((x) => x.getAttribute('data-key') === key)) throw new Error('本輪變化應列出已修好的項目');
     const fixedTrack = $('#tracking-body').testAll('.ledger-list').find((l) => l.getAttribute('data-status') === 'fixed');
     if (!fixedTrack || !fixedTrack.testAll('.ledger-item').some((x) => x.getAttribute('data-key') === key)) throw new Error('修復追蹤應列出累計已修好的項目');
-    // 第三輪：又出現 → 回歸
+    // 第三輪：又出現 → 復發
     await buildInput(sample + '\n# round-3\n'); await App.ledgerJob;
-    if (VA.ledger().items[key].status !== 'regressed') throw new Error('已修好又出現時應標為回歸');
+    if (VA.ledger().items[key].status !== 'regressed') throw new Error('已修好又出現時應標為復發');
     const nReg = Object.values(VA.ledger().items).filter((it) => it.status === 'regressed' && App.snap.findings.some((f) => App.Q.findingKey(f) === key)).length;
-    // 回歸的提示在右側的基準狀態卡（.ledger-alert），步驟列 ⑤ 的狀態也寫出筆數
+    // 復發的提示在右側的基準狀態卡（.ledger-alert），步驟列 ⑤ 的狀態也寫出筆數
     goStep('triage'); App.select(null);
     const alert = $('#detail').testAll('.ledger-alert').find((b) => b.getAttribute('data-alert') === 'regressed');
-    if (!alert || !alert.textContent.includes(`回歸 ${nReg} 項`) || !alert.className.includes('err')) throw new Error('基準狀態應醒目提示回歸筆數：' + text('#detail').slice(0, 300));
+    if (!alert || !alert.textContent.includes(`復發 ${nReg} 項`) || !alert.className.includes('err')) throw new Error('基準狀態應醒目提示復發筆數：' + text('#detail').slice(0, 300));
     alert.click();
-    if (App.step !== 'verify' || $('#view-verify').classList.contains('hidden') || document.activeElement !== $('#round-title')) throw new Error('點回歸提示應到「⑤ 驗證」並聚焦本輪變化');
-    if (!stepBtn('verify').textContent.includes(`回歸 ${nReg}`)) throw new Error('⑤ 的狀態應寫出回歸筆數：' + stepBtn('verify').textContent);
+    if (App.step !== 'verify' || $('#view-verify').classList.contains('hidden') || document.activeElement !== $('#round-title')) throw new Error('點復發提示應到「⑤ 驗證」並聚焦本輪變化');
+    if (!stepBtn('verify').textContent.includes(`復發 ${nReg}`)) throw new Error('⑤ 的狀態應寫出復發筆數：' + stepBtn('verify').textContent);
     const reList = $('#round-body').testAll('.ledger-list').find((l) => l.getAttribute('data-reason') === 'reappeared');
-    if (!reList || !reList.textContent.includes(f06.message)) throw new Error('本輪變化應列出回歸的項目');
+    if (!reList || !reList.textContent.includes(f06.message)) throw new Error('本輪變化應列出復發的項目');
     reList.querySelector('.ledger-item').click();
-    if (!App.sel || App.step !== 'verify') throw new Error('點回歸的項目應定位到那筆檢查結果（詳情在右側，留在驗證）');
-    // 回歸的項目在檢查結果也有標示
+    if (!App.sel || App.step !== 'verify') throw new Error('點復發的項目應定位到那筆檢查結果（詳情在右側，留在驗證）');
+    // 復發的項目在檢查結果也有標示
     goStep('triage');
     const g06 = document.testAll('#pane-findings .fgroup').find((x) => { const el = x.querySelector('.head .id'); return el && el.textContent === 'F06'; });
     if (g06.querySelector('.head').getAttribute('aria-expanded') === 'false') g06.querySelector('.head').click();
-    if (!$('#pane-findings').testAll('.ledger-chip').some((c) => c.getAttribute('data-status') === 'regressed')) throw new Error('檢查結果應標示回歸');
+    if (!$('#pane-findings').testAll('.ledger-chip').some((c) => c.getAttribute('data-status') === 'regressed')) throw new Error('檢查結果應標示復發');
     // 同一份基準再開一次：skipped，不顯示變化
     const iters = VA.ledger().iterations.length;
     A_load: { S.view.app.load(App.snap, null); await App.ledgerJob; }
@@ -3509,7 +3512,7 @@ function viewBoundaryViolations(file, src) {
       if (!sw || !sw.all().some((x) => x.getAttribute('data-shape') === T.marker[k])) throw new Error('圖例的樣本應畫出 ' + k + ' 的外形');
     });
     const ends = charts[0].testAll('text').filter((t) => t.className.includes('trend-end'));
-    if (ends.length !== 3 || !ends.every((e) => e.textContent.startsWith({ pending: '未結案（含提醒）', regressed: '回歸', accepted: '已豁免' }[e.getAttribute('data-series')]))) throw new Error('線尾應寫出名稱與數值');
+    if (ends.length !== 3 || !ends.every((e) => e.textContent.startsWith({ pending: '未結案（含提醒）', regressed: '復發', accepted: '已豁免' }[e.getAttribute('data-series')]))) throw new Error('線尾應寫出名稱與數值');
     const ys = ends.map((e) => +e.getAttribute('y')).sort((a, b) => a - b);
     if (ys.some((y, i) => i && y - ys[i - 1] < 11)) throw new Error('線尾的文字不應重疊：' + ys.join());
     // 文字（座標軸、線尾、tooltip）對圖的底色 ≥ 4.5:1
@@ -3545,7 +3548,7 @@ function viewBoundaryViolations(file, src) {
     try {
       if ($('#trend-body').testAll('.trend-chart').length || !$('#trend-body').querySelector('.trend-single')) throw new Error('只有一輪時不應畫圖');
       const tiles = $('#trend-body').testAll('.trend-tile').map((x) => x.getAttribute('data-tile'));
-      if (tiles.join() !== 'pending,info,accepted,coverage,unknownPeers') throw new Error('應列出待處理、提醒、已豁免、覆蓋率、未知對端（回歸只在本輪變化）：' + tiles.join());
+      if (tiles.join() !== 'pending,info,accepted,coverage,unknownPeers') throw new Error('應列出待處理、提醒、已豁免、覆蓋率、未知對端（復發只在本輪變化）：' + tiles.join());
     } finally { st.ledger = keep; S.view.ledgerPane.render(App); S.view.ledgerPane.renderTrend(App); }
   });
   await step('舊的確認標記轉換成處理紀錄：寫入成功後才刪 acks；轉換失敗或寫入失敗時保留 acks 並說明', async () => {
@@ -3625,7 +3628,7 @@ function viewBoundaryViolations(file, src) {
     $('#hub').querySelector('.ledger-confirm-import').click(); await new Promise((r) => setTimeout(r, 10));
     S.view.app.closeHub();
   });
-  await step('修正計畫：依規則、依設備或逐筆選取，依設備列出修改前（原文行號）與修改後（指令），三份 .rsc 與核心一致，下載檔名用 files() 的 base', async () => {
+  await step('修正計畫：依檢查、依設備或逐筆選取，依設備列出修改前（原文行號）與修改後（指令），三份 .rsc 與核心一致，下載檔名用 files() 的 base', async () => {
     const Q = App.Q; const RM = S.remediate; const RV = S.view.remediation; const PV = S.view.patchView;
     goStep('triage');
     $('#pane-findings').querySelector('.open-patch').click();
@@ -3771,7 +3774,7 @@ function viewBoundaryViolations(file, src) {
     const a12 = new Map(Q.findings().filter((f) => f.id === 'A12').map((f) => [f.facet, f]));
     if (!a12.has('dns') || !a12.has('ntp')) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有 A12 的 DNS 與 NTP'); }
     const dnsF = a12.get('dns'); const dnsKey = Q.findingKey(dnsF); const ntpKey = Q.findingKey(a12.get('ntp'));
-    // 前面的步驟（匯入與還原處理紀錄）留下的狀態不一定允許改為可接受：以空白的處理紀錄進行，結束時還原
+    // 前面的步驟（匯入與還原處理紀錄）留下的狀態不一定允許改為接受風險：以空白的處理紀錄進行，結束時還原
     const savedLedger = VA.ledgerJson();
     App.importLedger('empty.json', JSON.stringify(S.ledger.empty())); await App.confirmImport();
     if (VA.ledgerStatus(dnsF) !== 'open') throw new Error('前提：空白的處理紀錄推進後 DNS 這筆是待處理');
@@ -3824,7 +3827,7 @@ function viewBoundaryViolations(file, src) {
       noUndefined('選擇後');
       const md = S.view.exporter.patchSummaryMarkdown(plan1, files, Q);
       if (md.includes('undefined') || !md.includes('需要選擇的項目') || !md.includes(RV.choiceText(dns1).text)) throw new Error('總表應列出目前的選擇，且沒有 undefined');
-      // 選「不修改」：不產生指令，畫面填原因後以 S.ledger 標為可接受
+      // 選「不修改」：不產生指令，畫面填原因後以 S.ledger 標為接受風險
       const acc = radio(dnsKey, 'accept'); acc.checked = true; acc.dispatch('change');
       const plan2 = PV.state.plan;
       if (plan2.choices.find((c) => c.findingKey === dnsKey).reason !== 'accepted-choice' || plan2.items.some((i) => i.findingKey === dnsKey)) throw new Error('選不修改時不應產生指令');
@@ -3834,9 +3837,9 @@ function viewBoundaryViolations(file, src) {
       block(dnsKey).querySelector('.patch-accept-reason').value = '兩台各自使用不同的上游 DNS';
       block(dnsKey).querySelector('.patch-accept-save').click(); await new Promise((res) => setTimeout(res, 10));
       const it = VA.ledgerItem(dnsF);
-      if (it.status !== 'accepted' || it.waiver.reason !== '兩台各自使用不同的上游 DNS' || (await S.store.get('ledger')).items[dnsKey].status !== 'accepted') throw new Error('選不修改後處理紀錄應變成可接受並存進 store');
-      if (!PV.isOpen(App) || !block(dnsKey).querySelector('.patch-accept-done')) throw new Error('標為可接受後修正計畫應維持開啟並顯示處理紀錄的狀態');
-      noUndefined('標為可接受後');
+      if (it.status !== 'accepted' || it.waiver.reason !== '兩台各自使用不同的上游 DNS' || (await S.store.get('ledger')).items[dnsKey].status !== 'accepted') throw new Error('選不修改後處理紀錄應變成接受風險並存進 store');
+      if (!PV.isOpen(App) || !block(dnsKey).querySelector('.patch-accept-done')) throw new Error('標為接受風險後修正計畫應維持開啟並顯示處理紀錄的狀態');
+      noUndefined('標為接受風險後');
     } finally {
       PV.state.choices.clear(); App.showView('graph');
       App.importLedger('restore.json', savedLedger); await App.confirmImport();
@@ -3899,37 +3902,37 @@ function viewBoundaryViolations(file, src) {
     if (V.traceEndWorst([]) !== 'reached' || V.traceEndWorst([{ status: 'unverified' }, { status: 'loop' }]) !== 'bad' || V.traceEndKind({ status: 'unverified' }) !== 'unverified') throw new Error('V.traceEndKind／traceEndWorst 分類不符');
     App.select(null);
   });
-  await step('修正計畫：A12 的 DNS 與 NTP 依 facet 是不同的 findingKey，各自列出自己的訊息、各自可以勾選，詳情標示檢查項目', async () => {
+  await step('修正計畫：A12 的 DNS 與 NTP 依 facet 是不同的 findingKey，各自列出自己的訊息、各自可以勾選，詳情標示比對對象', async () => {
     const RM = S.remediate; const RV = S.view.remediation; const PV = S.view.patchView;
-    // 兩台的 DNS 與 NTP 都不一致：同一組設備有兩筆 A12（choice），實體相同、檢查項目（facet）不同
+    // 兩台的 DNS 與 NTP 都不一致：同一組設備有兩筆 A12（choice），實體相同、比對對象（facet）不同
     const dev = (n, ip, dns, ntp) => `${n} (${ip}):\n### /export terse\n/ip dns set servers=${dns}\n/system ntp client set enabled=yes servers=${ntp}\n`;
     await buildInput(dev('VA', '10.0.0.1', '1.1.1.1', '10.9.9.1') + '_____\n' + dev('VB', '10.0.0.2', '8.8.8.8', '10.9.9.2'));
     const Q = App.Q; const all = Q.findings();
     const a12 = all.map((f, idx) => ({ f, idx, key: Q.findingKey(f) })).filter((x) => x.f.id === 'A12');
     if (a12.length < 2) throw new Error('測試資料應有同一組設備的多筆 A12');
     if (new Set(a12.map((x) => Q.findingBaseKey(x.f))).size !== 1) throw new Error('前提：這幾筆 A12 的規則與實體相同（不含 facet 的鍵相同）');
-    if (new Set(a12.map((x) => x.key)).size !== a12.length) throw new Error('檢查項目不同的 A12 應是不同的 findingKey');
-    // 檢查項目的顯示文字：有對應的轉成可讀文字，沒有對應或格式不符時顯示原值，沒有 facet 時不顯示
+    if (new Set(a12.map((x) => x.key)).size !== a12.length) throw new Error('比對對象不同的 A12 應是不同的 findingKey');
+    // 比對對象的顯示文字：有對應的轉成可讀文字，沒有對應或格式不符時顯示原值，沒有 facet 時不顯示
     const byFacet = new Map(a12.map((x) => [x.f.facet, x]));
     if (!byFacet.has('dns') || !byFacet.has('ntp')) throw new Error('A12 應各有 DNS 與 NTP 一筆');
     if (RV.facetText(byFacet.get('dns').f) !== 'DNS 伺服器' || RV.facetText(byFacet.get('ntp').f) !== 'NTP 伺服器') throw new Error('A12 的 dns／ntp 應顯示成「DNS 伺服器」「NTP 伺服器」');
     if (RV.facetText({ id: 'ZZ99', facet: 'raw|value' }) !== 'raw|value' || RV.facetText({ id: 'R06', facet: 'dns' }) !== 'dns') throw new Error('沒有對應或格式不符的 facet 應顯示原值');
-    if (RV.facetText({ id: 'I03' }) !== null) throw new Error('沒有 facet 時不應有檢查項目');
+    if (RV.facetText({ id: 'I03' }) !== null) throw new Error('沒有 facet 時不應有比對對象');
     const declared = Object.keys(S.check.CATALOG).filter((id) => S.check.CATALOG[id].facet !== undefined);
     if (!declared.length || declared.some((id) => !RV.FACET_RULES.includes(id))) throw new Error('CATALOG 宣告 facet 的規則都應有顯示格式：' + declared.filter((id) => !RV.FACET_RULES.includes(id)).join('、'));
-    // 詳情：每一筆在標題旁標示自己的檢查項目，title 是原值
+    // 詳情：每一筆在標題旁標示自己的比對對象，title 是原值
     a12.forEach(({ f, idx }) => {
       App.selectFinding(idx);
       const box = $('#detail').testAll('.finding').find((el) => el.textContent.includes(f.message));
       const chip = box && box.querySelector('.facet');
-      if (!chip || chip.textContent !== '檢查項目：' + RV.facetText(f) || chip.getAttribute('title') !== '原值：' + f.facet) throw new Error('詳情應在 ' + f.message + ' 的標題旁標示檢查項目');
-      if (a12.some((o) => o.f !== f && box.textContent.includes('檢查項目：' + RV.facetText(o.f)))) throw new Error('每一筆只標示自己的檢查項目');
+      if (!chip || chip.textContent !== '比對對象：' + RV.facetText(f) || chip.getAttribute('title') !== '原值：' + f.facet) throw new Error('詳情應在 ' + f.message + ' 的標題旁標示比對對象');
+      if (a12.some((o) => o.f !== f && box.textContent.includes('比對對象：' + RV.facetText(o.f)))) throw new Error('每一筆只標示自己的比對對象');
     });
     const plain = all.findIndex((f) => f.facet == null);
     if (plain >= 0) {
       App.selectFinding(plain);
       const box = $('#detail').testAll('.finding').find((el) => el.textContent.includes(all[plain].message));
-      if (box && box.querySelector('.facet')) throw new Error('沒有 facet 的檢查結果不應標示檢查項目');
+      if (box && box.querySelector('.facet')) throw new Error('沒有 facet 的檢查結果不應標示比對對象');
     }
     App.select(null);
     // 未產生指令：每一個鍵各一列，列出自己的訊息，點了（或按 Enter）開啟自己那一筆
@@ -3962,7 +3965,7 @@ function viewBoundaryViolations(file, src) {
     const nf = $('#patch-body').testAll('.patch-skip').find((r) => r.getAttribute('data-finding') === MISSING_KEY);
     if (!nf || !nf.querySelector('.finding-missing') || nf.querySelector('.finding-missing').textContent !== RV.MISSING_FINDING_TEXT) throw new Error('基準中沒有的鍵應說明「' + RV.MISSING_FINDING_TEXT + '」');
     if (nf.querySelector('.finding-ref')) throw new Error('基準中沒有的鍵不應有連結');
-    // 逐筆勾選：每一筆 A12 各一個勾選框，標示檢查項目；勾一個只加入那一筆
+    // 逐筆勾選：每一筆 A12 各一個勾選框，標示比對對象；勾一個只加入那一筆
     $('#patch-body').querySelector('.patch-clear').click();
     const g = $('#patch-body').testAll('.patch-group').find((x) => x.getAttribute('data-rule-id') === 'A12');
     g.open = true; g.dispatch('toggle');
@@ -3970,7 +3973,7 @@ function viewBoundaryViolations(file, src) {
     if (picks.map((cb) => cb.getAttribute('data-key')).sort().join('\n') !== a12.map((x) => x.key).sort().join('\n')) throw new Error('每一筆 A12 應各有一個勾選框');
     a12.forEach((x) => {
       const row = g.testAll('.patch-pick-row').find((r) => r.querySelector('.patch-pick').getAttribute('data-key') === x.key);
-      if (!row.textContent.includes(x.f.message) || !row.querySelector('.facet') || row.querySelector('.facet').textContent !== RV.facetText(x.f)) throw new Error('勾選列應列出自己的訊息與檢查項目');
+      if (!row.textContent.includes(x.f.message) || !row.querySelector('.facet') || row.querySelector('.facet').textContent !== RV.facetText(x.f)) throw new Error('勾選列應列出自己的訊息與比對對象');
     });
     const ntp = byFacet.get('ntp').key;
     const pick = picks.find((cb) => cb.getAttribute('data-key') === ntp);
@@ -4583,7 +4586,7 @@ function viewBoundaryViolations(file, src) {
     const g = App.graph; const VA = S.view.app;
     const nav = $('#steps'); const btns = document.testAll('#steps button');
     if (nav.tagName !== 'NAV' || nav.getAttribute('aria-label') !== '流程步驟' || !nav.querySelector('ol')) throw new Error('流程步驟應是有名稱的 nav（ol 列出步驟）');
-    if (btns.map((b) => b.dataset.step).join() !== 'input,view,triage,fix,verify') throw new Error('步驟應依序是 ① 輸入 ② 檢視 ③ 分診 ④ 修正 ⑤ 驗證：' + btns.map((b) => b.textContent).join('、'));
+    if (btns.map((b) => b.dataset.step).join() !== 'input,view,triage,fix,verify') throw new Error('步驟應依序是 ① 輸入 ② 檢視 ③ 研判 ④ 修正 ⑤ 驗證：' + btns.map((b) => b.textContent).join('、'));
     if (!btns.every((b) => b.getAttribute('type') === 'button' && b.getAttribute('tabindex') === null && /^[①②③④⑤]/.test(b.textContent))) throw new Error('每一步是可以 Tab 到的按鈕，文字以步驟號碼開頭');
     if (document.testAll('#center-views').length || document.testAll('#left .tabs').length) throw new Error('左側五個分頁與中間的分頁已由流程步驟取代');
     // 每一步的左側清單與中間的工作畫面（④、⑤ 沒有左側清單，中間全寬）
@@ -4736,10 +4739,10 @@ function viewBoundaryViolations(file, src) {
     const info = $('#trend-body').testAll('.trend-tile').find((x) => x.getAttribute('data-tile') === 'info');
     if (VA.ledgerState().blocked) { /* 處理紀錄停用時沒有趨勢 */ } else if (!tile || tile.querySelector('.trend-value').textContent !== NUM(ps.total)) throw new Error('⑤ 的待處理應與 ③ 相同：' + (tile && tile.textContent));
     else if (!info || info.querySelector('.trend-value').textContent !== NUM(ps.info)) throw new Error('⑤ 應另列提醒的筆數：' + (info && info.textContent));
-    // ⑤ 同一屏「回歸」的狀態 chip 只在本輪變化出現
+    // ⑤ 同一屏「復發」的狀態 chip 只在本輪變化出現
     const shown = (el) => { for (let x = el.parentNode; x && x !== document.body; x = x.parentNode) if (String(x.tagName).toLowerCase() === 'details' && !x.open && x.getAttribute('open') == null) return false; return true; };
-    const reg = ['#trend-body', '#ledger-body', '#tracking-body'].map((sel) => $(sel).testAll('.chip').filter((c) => c.textContent.startsWith('回歸') && shown(c)).length);
-    if (reg.some((n) => n)) throw new Error('「回歸」的狀態 chip 只在本輪變化出現：' + reg.join());
+    const reg = ['#trend-body', '#ledger-body', '#tracking-body'].map((sel) => $(sel).testAll('.chip').filter((c) => c.textContent.startsWith('復發') && shown(c)).length);
+    if (reg.some((n) => n)) throw new Error('「復發」的狀態 chip 只在本輪變化出現：' + reg.join());
     App.showView('graph');
     if (!st('verify').startsWith(`第 ${NUM(VA.ledgerRoundIndex() + 1)} 輪`)) throw new Error('⑤ 應寫出處理紀錄的第幾輪：' + st('verify'));
     // ②：拓樸圖的層級
@@ -5025,7 +5028,7 @@ function viewBoundaryViolations(file, src) {
   await step('清除基準（處理紀錄不受影響）；沒有基準時 ④、⑤ 停用，中間只有拓樸圖（歡迎畫面）', async () => {
     App.showView('patch');
     $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20)); if (App.snap) throw new Error('未清除');
-    if (App.step !== 'triage' || App.centerView !== 'graph' || !$('#view-patch').classList.contains('hidden') || $('#view-graph').inert) throw new Error('清除基準後應回到「③ 分診」的拓樸圖');
+    if (App.step !== 'triage' || App.centerView !== 'graph' || !$('#view-patch').classList.contains('hidden') || $('#view-graph').inert) throw new Error('清除基準後應回到「③ 研判」的拓樸圖');
     if (!['fix', 'verify'].every((s) => stepBtn(s).getAttribute('aria-disabled') === 'true') || ['input', 'view', 'triage'].some((s) => stepBtn(s).getAttribute('aria-disabled') !== 'false')) throw new Error('沒有基準時只有 ④、⑤ 停用（aria-disabled，仍可聚焦）');
     if (!stepBtn('input').textContent.includes('未載入') || !stepBtn('fix').textContent.includes('建立基準後')) throw new Error('沒有基準時步驟的狀態應說明：' + text('#steps'));
     goStep('verify'); if (App.step !== 'triage' || !text('#banner').includes('建立基準後')) throw new Error('停用的步驟按了不切換，並說明原因');

@@ -61,7 +61,7 @@
       this.s = 1; this.tx = 0; this.ty = 0; this.dirty = true;
       this.sel = { nodes: new Set(), edges: new Set() };
       this.hl = null; // { nodes: Map(id→color), edges: Map(id→color) }
-      this.emphasis = null; // 推定偏離的設備 Set(id)；唯讀，用 setEmphasis 設定
+      this.emphasis = null; // 與多數不同的設備 Set(id)；唯讀，用 setEmphasis 設定
       this.overlay = []; // [{a,b,color,label}]
       this.hover = null; this.kbd = null; this.handlers = {}; this.visible = () => true; this.showGroups = true;
       this.occluders = []; // [{ el, max, when }]：疊在畫布上方或下方的元素，全圖與聚焦時讓開（見 viewport）
@@ -106,7 +106,7 @@
     setVisible(fn) { this.visible = fn; this.dirty = true; }
     setSelection(nodes, edges) { this.sel = { nodes: new Set(nodes || []), edges: new Set(edges || []) }; this.dirty = true; }
     setHighlight(h) { this.hl = h; this.dirty = true; }
-    /** 額外標出推定偏離的設備（devKeys：設備鍵陣列；null 或空陣列清除）。與選取、高亮並存，以 theme.canvas.deviation 的虛線外圈區分。 */
+    /** 額外標出與多數不同的設備（devKeys：設備鍵陣列；null 或空陣列清除）。與選取、高亮並存，以 theme.canvas.deviation 的虛線外圈區分。 */
     setEmphasis(devKeys) { this.emphasis = devKeys && devKeys.length ? new Set(devKeys) : null; this.dirty = true; }
     setOverlay(o) { this.overlay = o || []; this.dirty = true; }
     redraw() { this.dirty = true; }
@@ -470,7 +470,7 @@
         drawShape(c, n, p, r, col, s);
         if (hcol) { c.strokeStyle = hcol; c.lineWidth = 3.5; ring(n, p, r, n.kind === 'port' ? 3 : 5); }
         if (this.sel.nodes.has(n.id)) { c.strokeStyle = MARK.select; c.lineWidth = 3; ring(n, p, r, n.kind === 'port' ? 4 : 6); }
-        if (emph) { // 推定偏離：比選取與高亮更外圈的虛線；縮小時線寬與虛線保持螢幕上可見
+        if (emph) { // 與多數不同：比選取與高亮更外圈的虛線；縮小時線寬與虛線保持螢幕上可見
           const D = CV.deviation; const k = Math.max(1, 1 / s);
           c.strokeStyle = D.c; c.lineWidth = D.w * k; c.setLineDash(D.dash.map((d) => d * k)); ring(n, p, r, D.gap * k); c.setLineDash([]);
         }

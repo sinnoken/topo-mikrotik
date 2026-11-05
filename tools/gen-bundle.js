@@ -186,7 +186,7 @@ for (let s = 1; s <= SITES; s++) {
       e.push(['/interface bridge port', 'add', `bridge=bridge1 interface=${port} pvid=30`]); userPorts.push(port); sw.macs.push({ vid: 30, mac: m, ifc: port }); siteMacs.push({ vlan: 30, mac: m, ip });
     }
     if (F && a === 2) sw.macs.push({ vid: 30, mac: acc[0].macs.find((x) => x.vid === 30).mac, ifc: 'ether23' });                // A02
-    if (F && a === 12) for (let k = 0; k < 8; k++) sw.macs.push({ vid: 30, mac: mac(pick(OUI_PC)), ifc: 'ether23' });            // A04：ether23 下掛未管理交換器
+    if (F && a === 12) for (let k = 0; k < 8; k++) sw.macs.push({ vid: 30, mac: mac(pick(OUI_PC)), ifc: 'ether23' });            // A04：ether23 下掛非網管型交換器
     if (F && a === 1) sw.macs[0].static = true;                                                                                  // 靜態 MAC 項目
     e.push(['/interface bridge vlan', 'add', 'bridge=bridge1 tagged=bond1,ether24,bridge1 vlan-ids=10'.replace('bond1', bond)]);
     e.push(['/interface bridge vlan', 'add', `bridge=bridge1 tagged=${bond},ether24 untagged=${srvPorts.join(',')} vlan-ids=20`]);
@@ -194,7 +194,7 @@ for (let s = 1; s <= SITES; s++) {
     e.push(['/interface bridge vlan', 'add', `bridge=bridge1 tagged=${bond}${F && (a === 3 || a === 11) ? '' : ',ether24'} untagged=${v30Untagged.join(',')} vlan-ids=30`]); // V01：ACC_03 的 ether24 少了 VLAN 30
     e.push(['/ip address', 'add', `address=${sw.ip}/${F && a === 10 ? 25 : 24} interface=vlan10 network=10.${s}.10.0`]);       // A06／A08：ACC_10 的 VLAN 10 遮罩是 /25
     if (F && (a === 11 || a === 12)) e.push(['/ip address', 'add', `address=10.${s}.10.99/24 interface=vlan10 network=10.${s}.10.0`]); // A09：同一 IP 設定在兩台
-    if (F && a === 12) e.push(['/system ntp client', 'set', 'enabled=yes'], ['/system ntp client servers', 'add', `address=10.${s}.10.2`]); // A12：ACC_12 的 NTP 伺服器與兩台核心不同（RouterOS 7 的 servers 子選單寫法），依多數推定偏離
+    if (F && a === 12) e.push(['/system ntp client', 'set', 'enabled=yes'], ['/system ntp client servers', 'add', `address=10.${s}.10.2`]); // A12：ACC_12 的 NTP 伺服器與兩台核心不同（RouterOS 7 的 servers 子選單寫法），依多數決判定與多數不同
     acc.push(sw);
   }
   acc.forEach((sw) => {                       // 上行學到的其他 MAC

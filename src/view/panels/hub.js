@@ -197,7 +197,7 @@
       card('device', '給設備', `修正 patch：每台的套用、回復、驗證 .rsc 與總表。本工具只產生文字，不會連線設備。${nPatch ? `目前選取 ${V.num(nPatch)} 項，會放進工作包。` : ''}`, [
         btn('開啟修正計畫', 'open-patch', () => App.openPatch(), { class: 'open-patch', disabled: off }),
       ]),
-      card('report', '給報告或紀錄', '檢查結果 Markdown／CSV（含處理狀態，不受「③ 分診」檢查結果的篩選影響）・拓樸 PNG', [
+      card('report', '給報告或紀錄', '檢查結果 Markdown／CSV（含處理狀態，不受「③ 研判」檢查結果的篩選影響）・拓樸 PNG', [
         btn('Markdown', 'export-markdown', () => A().exportReport('markdown'), { disabled: off, title: '依嚴重度（或依設備）分組的報表，含證據行號，已處理的項目會標示狀態與備註' }),
         btn('CSV', 'export-csv', () => A().exportReport('csv'), { disabled: off, title: '每筆一列，含相關實體、證據行號、處理狀態、時間與備註（Excel 可直接開啟）' }),
         btn('依設備排序', 'by-device', () => A().toggleByDevice(), { class: 'ghost export-by-device' + (hub.byDevice ? ' on' : ''), 'aria-pressed': String(hub.byDevice),

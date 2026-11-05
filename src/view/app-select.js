@@ -12,8 +12,8 @@
   /**
    * 選取：圖上的標示依目前的層級（設備圖在這裡，L2／L3 在 app-layers.js 的 A.layerMarks），詳情在右側。
    * opt.focus：圖移到選取的位置；opt.findingEntities：標出檢查結果的實體；
-   * opt.refresh：只在圖上重新標示（切換層級、取消 VLAN 篩選時），不重繪詳情、不切換工作區，也保留推定偏離標示；
-   * opt.emphasis：推定偏離的設備鍵（檢查結果的 deviation，推論），以虛線外圈另外標出；其他選取與清除時清掉
+   * opt.refresh：只在圖上重新標示（切換層級、取消 VLAN 篩選時），不重繪詳情、不切換工作區，也保留與多數不同的標示；
+   * opt.emphasis：與多數不同的設備鍵（檢查結果的 deviation，推論），以虛線外圈另外標出；其他選取與清除時清掉
    * opt.pinFilter：工具列的 VLAN 選單選的，VLAN 篩選保留到取消
    * 選了 VLAN 時同時設為 VLAN 篩選（App.vlanFilter）：之後選其他東西，沒有自己的標示時仍標出這個 VLAN。
    * 只有在工具列的 VLAN 選單選的（pinned）會保留到取消；由檢查結果、搜尋或詳情的連結選 VLAN 順帶設的篩選不是使用者主動要的，
@@ -156,7 +156,7 @@
     // 指向防火牆規則或服務的檢查結果，定位到該設備防火牆畫面的那一列（第一個實體通常是設備）
     const e = f.entities.find((x) => x.type === 'rule' || x.type === 'service') || f.entities[0];
     const sel = !e ? null : f.id === 'A03' ? { type: 'endpoints', dev: e.key } : e.type === 'ip' ? V.ipSel(e.key) : { type: e.type, key: e.key };
-    // 多數決推定偏離的設備（推論）另以虛線外圈標出；平手（basis 不是 majority）或 deviating 為空時不標
+    // 多數決判定與多數不同的設備（推論）另以虛線外圈標出；平手（basis 不是 majority）或 deviating 為空時不標
     const emphasis = V.majorityDeviating(f.deviation);
     App.select(sel, { focus: true, findingEntities: f.id === 'A03' ? null : f.entities, emphasis });
     // 不論從哪個入口選取，③ 的檢查結果清單都展開到這一筆並標出選取

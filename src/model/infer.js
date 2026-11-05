@@ -245,7 +245,7 @@
     const comps = S.util.components(keys, Array.from(M.links.values(), (l) => [K.splitEp(l.a)[0], K.splitEp(l.b)[0]]))
       .map((ks) => ks.map((k) => M.devices.get(k)));
     const sorted = comps.sort((x, y) => y.length - x.length || S.util.natural(x[0].key, y[0].key));
-    sorted.forEach((members, idx) => members.forEach((d) => { d.component = idx + 1; if (!d.group) d.group = '自動群組 ' + (idx + 1); }));
+    sorted.forEach((members, idx) => members.forEach((d) => { d.component = idx + 1; if (!d.group) d.group = '分群 ' + (idx + 1); }));
   }
 
   /**
@@ -254,8 +254,8 @@
    *   mndp-mutual：兩台已收集設備的 MNDP 互相回報對方的埠，且兩個埠都只看到對方
    *   mndp-unique：已收集設備的某埠只看到一台 MNDP 鄰居 X（X 未收集），X 也只出現在這個埠
    *   fdb        ：MAC 表。A 的 p 埠學到 X 的 MAC，且 p 這側其他已知設備都可由已收集交換器的 MAC 表證明在 X 後面或兩者之間
-   * MNDP 會穿過未管理交換器，只證明 L2 可達，所以 MNDP 只當佐證：至少要有一項非 MNDP 的證據（fdb、subnet-p2p）才成立推論；
-   * MNDP 同時成立時提高信心。推論的意義都是「直接相連，或中間只有未管理設備」。
+   * MNDP 會穿過非網管型交換器，只證明 L2 可達，所以 MNDP 只當佐證：至少要有一項非 MNDP 的證據（fdb、subnet-p2p）才成立推論；
+   * MNDP 同時成立時提高信心。推論的意義都是「直接相連，或中間只有非網管型設備」。
    * 已有 LLDP／CDP 鏈路的設備對不推論；埠（含所屬聚合）已有 LLDP／CDP 鄰接到已收集設備時，不推論該埠後面的設備直接相連。
    */
   function inferLinks(M) {
@@ -367,7 +367,7 @@
     });
 
     // stp：埠的 RSTP 角色是 root／alternate／backup 時，designated-bridge 是這段網路的上游橋接器（BPDU 不會穿過 STP 橋接器，
-    // 但會穿過不跑 STP 的未管理交換器，所以同樣是「直接相連，或中間只有未管理設備」）。對端也有 STP 資料時以 designated port 編號對回確切的埠。
+    // 但會穿過不跑 STP 的非網管型交換器，所以同樣是「直接相連，或中間只有非網管型設備」）。對端也有 STP 資料時以 designated port 編號對回確切的埠。
     M.ifcs.forEach((i) => {
       const st = i.stp; if (!st || !st.designatedBridge || !/^(root|alternate|backup)/.test(st.role || '') || !collected(i.dev) || lldpToCollected(i.key)) return;
       const x = macOwner.get(st.designatedBridge); if (!x || x === i.dev) return;

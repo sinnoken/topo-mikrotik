@@ -137,7 +137,7 @@
         '各設備各自命名，沒有統一的命名方式。',
         '改名或修改說明時只改了部分設備。',
       ],
-      action: '統一各設備上這個 VLAN 的名稱與說明。包括 `/interface vlan` 的 `name`、`comment` 與 `/interface bridge vlan` 的 `comment`，讓維運人員在每台設備看到同一個名稱。有推定偏離時，先從偏離的設備查起。',
+      action: '統一各設備上這個 VLAN 的名稱與說明。包括 `/interface vlan` 的 `name`、`comment` 與 `/interface bridge vlan` 的 `comment`，讓維運人員在每台設備看到同一個名稱。有與多數不同的設備時，先從那幾台查起。',
     },
     V07: {
       severity: 'warn', cat: 'VLAN', title: '同一名稱在不同設備對應到不同 VLAN', data: [['config']],
@@ -146,7 +146,7 @@
         '某台設備的 VLAN ID 設錯。',
         '不同站點刻意沿用同一個名稱。',
       ],
-      action: '確認是 VLAN ID 設錯，還是不同站點刻意沿用同一個名稱；後者可改用帶站點的名稱。有推定偏離時，先從偏離的設備查起。',
+      action: '確認是 VLAN ID 設錯，還是不同站點刻意沿用同一個名稱；後者可改用帶站點的名稱。有與多數不同的設備時，先從那幾台查起。',
     },
     V08: {
       severity: 'warn', cat: 'VLAN', title: '鏈路兩端同一 VLAN 的 tagged／untagged 不一致', data: [['lldp'], ['config', 'vlans']],
@@ -187,7 +187,7 @@
       action: '查看訊息列出的每個位置，確認是否為同一台設備。位置來自 `/interface bridge host`；這只是可能的重複或迴圈，需要人工核實。',
     },
     A03: {
-      severity: 'info', cat: '位址', title: '介面有學到 MAC 但沒有 LLDP／CDP 鄰接（未知對端）', data: [['mac']],
+      severity: 'info', cat: '位址', title: '介面有學到 MAC 但沒有 LLDP／CDP 鄰接（未識別的終端）', data: [['mac']],
       causes: [
         '接的是 PC、印表機、IoT 等不送 LLDP 的設備，屬於正常情況。',
         '對端是網路設備，但沒有開啟 LLDP。',
@@ -195,7 +195,7 @@
       action: '若該埠應接網路設備，在對端開啟 LLDP；終端屬於正常。RouterOS 在 `/ip neighbor discovery-settings` 設定。',
     },
     A04: {
-      severity: 'info', cat: '位址', title: '單一埠學到過多 MAC（可能下掛未管理交換器或 hypervisor）', data: [['mac']],
+      severity: 'info', cat: '位址', title: '單一埠學到過多 MAC（可能下掛非網管型交換器或 hypervisor）', data: [['mac']],
       causes: [
         '埠下掛了非網管型交換器。',
         '埠下接了 AP。',
@@ -218,7 +218,7 @@
         '某台設備 VLAN 介面上的網段或遮罩設錯。',
         '調整網段時只改了部分設備。',
       ],
-      action: '比對各設備 VLAN 介面的 `/ip address`，修正設錯的網段或遮罩。遮罩不同時，兩台設備對廣播位址與直連範圍的認定不同。有推定偏離時，先從偏離的設備查起。',
+      action: '比對各設備 VLAN 介面的 `/ip address`，修正設錯的網段或遮罩。遮罩不同時，兩台設備對廣播位址與直連範圍的認定不同。有與多數不同的設備時，先從那幾台查起。',
     },
     A07: {
       severity: 'warn', cat: '位址', title: '同一網段在不同設備屬於不同 VLAN', data: [['config']],
@@ -228,7 +228,7 @@
         '位址設在錯的 VLAN 介面上。',
         '各站點刻意重用同一個私有網段（不同 VRF 已分開比較；同一個 VRF 內重用仍會列出）。',
       ],
-      action: '確認 `/interface vlan` 的 `vlan-id` 或 `/ip address` 是否設錯。同一個網段跨在兩個 VLAN，兩邊的主機無法在 L2 互通。有推定偏離時，先從偏離的設備查起。',
+      action: '確認 `/interface vlan` 的 `vlan-id` 或 `/ip address` 是否設錯。同一個網段跨在兩個 VLAN，兩邊的主機無法在 L2 互通。有與多數不同的設備時，先從那幾台查起。',
     },
     A08: {
       severity: 'warn', cat: '位址', title: '重疊網段在不同設備的遮罩不同', data: [['config', 'ipaddr']],
@@ -237,7 +237,7 @@
         '交換器管理位址的遮罩和閘道不一致。',
         '調整網段大小時只改了部分設備。',
       ],
-      action: '確認正確的遮罩並修正 `/ip address`。有推定偏離時，先從偏離的設備查起。',
+      action: '確認正確的遮罩並修正 `/ip address`。有與多數不同的設備時，先從那幾台查起。',
     },
     A09: {
       severity: 'warn', cat: '位址', title: '同一 IP 位址設定在多台設備', data: [['config', 'ipaddr']],
@@ -254,7 +254,7 @@
         'HA 成對設備或同一角色的設備之間，清單漏同步。',
         '各設備刻意設定不同的值。',
       ],
-      action: '確認是漏同步還是刻意不同；HA 成對或同角色的設備應有相同清單。比對各設備的 address-list、DNS static、pool 或 DHCP 靜態租約。有推定偏離時，先從偏離的設備查起。',
+      action: '確認是漏同步還是刻意不同；HA 成對或同角色的設備應有相同清單。比對各設備的 address-list、DNS static、pool 或 DHCP 靜態租約。有與多數不同的設備時，先從那幾台查起。',
     },
     A11: {
       severity: 'info', cat: '位址', title: '同一 IP 在不同設備以不同名稱設定', data: [['config']],
@@ -263,7 +263,7 @@
         '各設備各自為同一個位址命名，沒有共同的名稱。',
         '改名時只改了部分設備。',
       ],
-      action: '統一名稱，避免兩台設備的防火牆規則或 DNS 對同一個位址有不同認定。有推定偏離時，先從偏離的設備查起。',
+      action: '統一名稱，避免兩台設備的防火牆規則或 DNS 對同一個位址有不同認定。有與多數不同的設備時，先從那幾台查起。',
     },
     A12: {
       severity: 'warn', cat: '位址', title: '各設備的 DNS／NTP 伺服器設定不同', data: [['config']],
@@ -272,7 +272,7 @@
         '更換 DNS 或 NTP 伺服器時只改了部分設備。',
         '分層設定（交換器指向核心、核心指向 ISP），可能是刻意的。',
       ],
-      action: '統一 `/ip dns` 的 `servers` 與 `/system ntp client` 的伺服器。分層設定需人工判斷是否刻意。NTP 不一致會讓各設備的日誌時間難以對照。有推定偏離時，先從偏離的設備查起。',
+      action: '統一 `/ip dns` 的 `servers` 與 `/system ntp client` 的伺服器。分層設定需人工判斷是否刻意。NTP 不一致會讓各設備的日誌時間難以對照。有與多數不同的設備時，先從那幾台查起。',
     },
     // ---- 路由
     R01: {
@@ -327,7 +327,7 @@
         'HA 成對的 DHCP 伺服器設定沒有同步。',
         '只改了其中一台的閘道或伺服器。',
       ],
-      action: '讓同一網段的各 DHCP 伺服器送出相同的閘道、DNS 與 NTP。設定在 `/ip dhcp-server network` 的 `gateway`、`dns-server`、`ntp-server`；不一致時，用戶端拿到的設定取決於哪一台先回應。有推定偏離時，先從偏離的設備查起。',
+      action: '讓同一網段的各 DHCP 伺服器送出相同的閘道、DNS 與 NTP。設定在 `/ip dhcp-server network` 的 `gateway`、`dns-server`、`ntp-server`；不一致時，用戶端拿到的設定取決於哪一台先回應。有與多數不同的設備時，先從那幾台查起。',
     },
     // ---- 防火牆
     F01: {

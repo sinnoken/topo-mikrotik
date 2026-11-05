@@ -310,7 +310,7 @@
     item([ring(M.select, 3, 'select')], '選取', '目前選取的設備（藍色粗環）與鏈路');
     item([ring(M.hover, 2, 'hover')], '滑過', '指標或鍵盤（N 鍵）目前所在的設備（深色細環）；相連的線一起標示');
     item([ring(M.find, 3, 'find')], '搜尋結果', '搜尋 MAC／IP 時，標出所在位置的設備與鏈路');
-    { // 推定偏離：節點外的虛線圓圈（theme.canvas.deviation）；圓周依 LEG 換算虛線長度
+    { // 與多數不同：節點外的虛線圓圈（theme.canvas.deviation）；圓周依 LEG 換算虛線長度
       const D = CV.deviation; const r = LEG / 2; const per = 360 / (Math.PI * LEG); let deg = 0;
       const stops = D.dash.map((n, i) => { const from = deg; deg += n * per; return `${i % 2 ? 'transparent' : D.c} ${from.toFixed(1)}deg ${deg.toFixed(1)}deg`; });
       const mask = `radial-gradient(circle, transparent ${(r - D.w).toFixed(1)}px, ${D.c} ${(r - D.w).toFixed(1)}px)`; // 遮罩只看不透明度

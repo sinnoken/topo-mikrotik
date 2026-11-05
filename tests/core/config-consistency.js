@@ -93,7 +93,7 @@ test('A12：有設定 DNS／NTP 伺服器的設備之間不同；順序不同、
 // 三台設備各自只有 /export（不需要鏈路：A08、A12 不分 VLAN 區塊）
 const cfgTrio = (a, b, c) => build([['SW_A', '10.0.0.1', a], ['SW_B', '10.0.0.2', b], ['SW_C', '10.0.0.3', c]]
   .map(([n, ip, lines]) => [`${n} (${ip}):`, '### /export terse', ...lines].join('\n')).join('\n'));
-test('多數決：最多的一組至少 2 台且多於其他每一組才推定偏離；平手時 deviating 為空；推定結果只在 deviation、不寫進訊息；A09 不套用', () => {
+test('多數決：最多的一組至少 2 台且多於其他每一組才與多數不同；平手時 deviating 為空；推定結果只在 deviation、不寫進訊息；A09 不套用', () => {
   const dns = (v) => [`/ip dns set servers=${v}`];
   const two = cfgTrio(dns('8.8.8.8'), dns('1.1.1.1'), dns('8.8.8.8'));
   assert.deepStrictEqual(msgs(two, 'A12'), ['DNS 伺服器：SW_A、SW_C 8.8.8.8；SW_B 1.1.1.1']);

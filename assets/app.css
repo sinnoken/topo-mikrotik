@@ -242,7 +242,7 @@ button.chip { box-shadow: none; line-height: inherit; text-align: left; }
 .fcat-rules > .fgroup > .head { padding-left: 22px; font-size: var(--fs-md); }
 .fcat-rules .fitem { padding-left: 38px; }
 .fcat-rules .fhint { padding-left: 38px; }
-/* 推定偏離（多數決）：結果下方、可點的設備；在可點的結果列之外，避免連結包在按鈕裡 */
+/* 與多數不同（推論）：結果下方、可點的設備；在可點的結果列之外，避免連結包在按鈕裡 */
 .fitem-wrap > .deviation { padding: 0 10px 6px 29px; font-size: var(--fs-sm); }
 .fcat-rules .fitem-wrap > .deviation { padding-left: 41px; }
 /* 規則的處理提示（V.remediation.hintLine）：展開規則後在結果列表上方，詳情卡片在訊息下方 */
@@ -326,11 +326,11 @@ table.t tr.click { cursor: pointer; }
 .finding { display: flex; gap: 9px; align-items: flex-start; padding: 9px 10px; border: 1px solid var(--line-soft); border-radius: var(--radius); margin-bottom: 7px; font-size: var(--fs-md); background: var(--surface); }
 .finding .ev { margin-top: 2px; }
 .finding > .sev { margin-top: 5px; }
-/* 多數決推定偏離（推論，V.deviationLine）：訊息下方一行，設備名可點；平手時淡色說明無法推定 */
+/* 多數決判定與多數不同（推論，V.deviationLine）：訊息下方一行，設備名可點；平手時淡色說明無法推定 */
 .finding .deviation { font-size: var(--fs-sm); line-height: var(--lh-body); }
 .finding .deviation .link { overflow-wrap: anywhere; }
 .finding .deviation.none { color: var(--muted); }
-/* 標題下的可點 chip（推定偏離 N 項）：點了捲到檢查結果 */
+/* 標題下的可點 chip（與多數不同 N 項）：點了捲到檢查結果 */
 .chip-link { text-decoration: none; cursor: pointer; }
 .chip-link:hover { text-decoration: none; }
 .chip-link:hover .chip { border-color: var(--line-hover); }

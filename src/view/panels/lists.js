@@ -1,5 +1,5 @@
 /*
- * 依流程步驟分配的清單：檢查結果（③ 分診的左側）、清單（② 檢視的左側）、覆蓋率（① 輸入，資料中心裡的 #pane-coverage）；
+ * 依流程步驟分配的清單：檢查結果（③ 研判的左側）、清單（② 檢視的左側）、覆蓋率（① 輸入，資料中心裡的 #pane-coverage）；
  * 以及「⑤ 驗證」裡的比對（預期資料比對＋新舊基準比對，#compare-body）。
  */
 (function (S) {
@@ -18,7 +18,7 @@
   /** 已處理的狀態依這個順序各列一組（open、regressed 是待處理，留在上方的分組） */
   const HANDLED = ['scheduled', 'accepted', 'false-positive', 'fixed'];
   /**
-   * 處理狀態的編輯欄位：狀態（目前的狀態＋S.ledger.USER_TO 允許的轉換）、備註；可接受另填豁免原因與到期日（預設 WAIVER_DAYS 天後）。
+   * 處理狀態的編輯欄位：狀態（目前的狀態＋S.ledger.USER_TO 允許的轉換）、備註；接受風險另填豁免原因與到期日（預設 WAIVER_DAYS 天後）。
    * 儲存交給 App.setLedger（S.ledger.set）；不合法時在欄位下方顯示核心的錯誤訊息，欄位保留。
    */
   function ledgerEditor(App, f, it, idx) {
@@ -29,7 +29,7 @@
     const note = h('input', { type: 'text', class: 'ledger-note', maxlength: '500', 'aria-label': '備註',
       placeholder: '備註（選填），例如：11/30 維護時段處理', value: it.note || '' });
     const w = it.waiver;
-    const reason = h('input', { type: 'text', class: 'ledger-waiver-reason', maxlength: '500', 'aria-label': '豁免原因', placeholder: '可接受的原因（必填）', value: w ? w.reason : '' });
+    const reason = h('input', { type: 'text', class: 'ledger-waiver-reason', maxlength: '500', 'aria-label': '豁免原因', placeholder: '接受風險的原因（必填）', value: w ? w.reason : '' });
     const until = h('input', { type: 'date', class: 'ledger-waiver-until', 'aria-label': '豁免到期日',
       value: dateOf(w ? w.until : new Date(Date.now() + LG.WAIVER_DAYS * DAY_MS).toISOString()) });
     const waiverBox = h('div', { class: 'ledger-waiver' }, [reason, h('label', null, ['到期日 ', until])]);
@@ -41,7 +41,7 @@
     const save = async () => {
       const change = { status: status.value, note: note.value };
       if (status.value === 'accepted') {
-        if (!reason.value.trim()) { fail('可接受需要填寫原因'); return; }
+        if (!reason.value.trim()) { fail('接受風險需要填寫原因'); return; }
         // 到期日沒改時沿用原本的時間（含時分秒），避免只因格式不同就寫一筆歷程
         const untilIso = w && until.value === dateOf(w.until) ? w.until : until.value ? until.value + 'T00:00:00Z' : undefined;
         change.waiver = { reason: reason.value, until: untilIso };
@@ -88,7 +88,7 @@
     const nNew = base ? all.filter(isNew).length : 0;
     const versionWarn = base ? (base.report.warnings || []).find((w) => w.kind === 'version') : null;
     root.appendChild(h('div', { class: 'summary sub findings-view' }, [
-      h('div', { class: 'seg', role: 'group', 'aria-label': '分組方式' }, [['rule', '依規則'], ['device', '依設備']].map(([k, label]) => h('button', {
+      h('div', { class: 'seg', role: 'group', 'aria-label': '分組方式' }, [['rule', '依檢查'], ['device', '依設備']].map(([k, label]) => h('button', {
         class: `btn ${state.groupBy === k ? 'on' : ''}`, 'aria-pressed': String(state.groupBy === k), 'data-group-by': k,
         onclick: () => { state.groupBy = k; findings(App); } }, label))),
       // 沒有舊基準時不顯示（停用的 chip 加兩行說明，每次都佔位置）；載入舊基準的入口在「⑤ 驗證」的比對與資料中心
@@ -125,7 +125,7 @@
         ]),
         h('button', {
           class: 'ghost ack ledger-edit', 'aria-label': '處理：' + f.message, disabled: !it || null,
-          title: it ? '變更處理狀態（待處理、已排定修正、可接受、誤報…）與備註；只存在這個瀏覽器的處理紀錄，不改變基準' : '處理紀錄沒有這一筆（處理紀錄無法使用）',
+          title: it ? '變更處理狀態（待處理、已排定修正、接受風險、誤報…）與備註；只存在這個瀏覽器的處理紀錄，不改變基準' : '處理紀錄沒有這一筆（處理紀錄無法使用）',
           onclick: edit,
         }, '處理'),
       ]), V.deviationLine(App, f.deviation), state.editing === i && it ? ledgerEditor(App, f, it, i) : null]);
@@ -207,9 +207,9 @@
       const key = '#fp'; const open = state.open.has(key);
       const toggle = () => { open ? state.open.delete(key) : state.open.add(key); findings(App); };
       const g = h('div', { class: 'fgroup rules fp-rules' }, [h('div', { class: 'head', role: 'button', tabindex: '0', 'aria-expanded': String(open), onclick: toggle, onkeydown: V.activateByKey(toggle) }, [
-        h('span', { 'aria-hidden': 'true' }, open ? '▾' : '▸'), h('span', { class: 'title' }, '誤報率最高的規則'), V.chip(String(fp.length)),
+        h('span', { 'aria-hidden': 'true' }, open ? '▾' : '▸'), h('span', { class: 'title' }, '誤報率最高的檢查'), V.chip(String(fp.length)),
       ])]);
-      if (open) g.appendChild(h('div', { class: 'items' }, fp.map((r) => h('div', { class: 'rule', 'data-rule-id': r.id, title: '依處理紀錄：標為誤報的筆數／這條規則在處理紀錄中的總筆數' }, [
+      if (open) g.appendChild(h('div', { class: 'items' }, fp.map((r) => h('div', { class: 'rule', 'data-rule-id': r.id, title: '依處理紀錄：標為誤報的筆數／這項檢查在處理紀錄中的總筆數' }, [
         h('span', { class: 'mark' }, '!'),
         h('span', { class: 'title' }, [(S.query.rule(r.id) || {}).title || r.id,
           h('div', { class: 'muted note' }, `誤報 ${V.num(r.falsePositive)} / ${V.num(r.total)}（${Math.round(r.rate * 100)}%）`)]),

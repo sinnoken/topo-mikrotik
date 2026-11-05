@@ -1,5 +1,5 @@
 /*
- * 版面框架：上方的流程步驟（① 輸入 ② 檢視 ③ 分診 ④ 修正 ⑤ 驗證）、左側的清單、中間的工作畫面、窄螢幕工作區切換、左右欄寬度（拖曳與還原）。
+ * 版面框架：上方的流程步驟（① 輸入 ② 檢視 ③ 研判 ④ 修正 ⑤ 驗證）、左側的清單、中間的工作畫面、窄螢幕工作區切換、左右欄寬度（拖曳與還原）。
  * 欄寬是檢視狀態，存在 store 的 'layout' 鍵；目前在哪一步、中間顯示哪一個工作畫面也是檢視狀態，不存進 store。
  */
 (function (S) {
@@ -25,13 +25,13 @@
     fix: { left: null, center: 'patch' },
     verify: { left: null, center: 'verify' },
   };
-  A.STEP_LABEL = { input: '① 輸入', view: '② 檢視', triage: '③ 分診', fix: '④ 修正', verify: '⑤ 驗證' };
+  A.STEP_LABEL = { input: '① 輸入', view: '② 檢視', triage: '③ 研判', fix: '④ 修正', verify: '⑤ 驗證' };
   const STEP_TITLE = {
     input: '資料中心：本輪的輸入（收集檔、工作包、處理紀錄、命名規則、預期現況）、覆蓋率與輸出',
     view: '左邊是清單（設備、介面、IP、網段、MAC、VLAN），中間是拓樸圖（設備、L2 埠、L3 網段）或 L4 可達性（zone 矩陣）',
     triage: '左邊是檢查結果（決定修、接受或標為誤報），中間是拓樸圖，右邊是證據與處理建議',
     fix: '中間是修正計畫：選取檢查結果，預覽修改前後，下載套用、回復與驗證的 .rsc',
-    verify: '中間是本輪變化、修正追蹤、改善趨勢與比對：確認哪些已修好、哪些回歸',
+    verify: '中間是本輪變化、修正追蹤、改善趨勢與比對：確認哪些已修好、哪些復發',
   };
   const CENTER_LABEL = { graph: '拓樸圖', patch: '修正計畫', verify: '驗證' };
   const needsSnap = (s) => s === 'fix' || s === 'verify';
@@ -119,7 +119,7 @@
     const ls = A.ledgerState();
     if (ls.blocked) return '處理紀錄停用';
     const idx = A.ledgerRoundIndex(); const pc = A.problemCounts();
-    return (idx >= 0 ? `第 ${V.num(idx + 1)} 輪` : '—') + (pc.regressed ? `・回歸 ${V.num(pc.regressed)}` : '');
+    return (idx >= 0 ? `第 ${V.num(idx + 1)} 輪` : '—') + (pc.regressed ? `・復發 ${V.num(pc.regressed)}` : '');
   }
   /** 步驟列：目前的一步（aria-current="step"）、停用的步驟與每一步的狀態 */
   A.renderSteps = function renderSteps() {

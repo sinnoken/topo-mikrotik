@@ -113,7 +113,7 @@
 
   // ---------------------------------------------------------------- 未知對端
   /**
-   * 終端埠與 Wi-Fi MAC 觀察 → 畫成「未知對端」節點。
+   * 終端埠與 Wi-Fi MAC 觀察 → 畫成「終端」節點。
    * 單一 MAC：圓形；多 MAC 的 Wi-Fi：菱形（僅為圖面提示，不視為終端或參與 A02）。
    *  - 一台設備上超過 UNKNOWN_EXPAND_MAX 個（或全網超過上限）：收合成一個群組節點，雙擊展開
    */
@@ -221,7 +221,7 @@
     fresh.forEach((n) => { if (!pos.has(n.id)) pos.set(n.id, { x: 0, y: 0 }); });
     A.setDeviceGraph(g.nodes, g.edges, pos);
     A.applyVisibility();
-    App.select(App.sel, { emphasis: App.graph.emphasis && Array.from(App.graph.emphasis) }); // 展開不是新的選取：保留推定偏離標示
+    App.select(App.sel, { emphasis: App.graph.emphasis && Array.from(App.graph.emphasis) }); // 展開不是新的選取：保留與多數不同的標示
     A.savePositions();
   }
   /** 展開／收合未知對端是設備圖的操作：看的是 L2／L3 時先切回設備圖 */

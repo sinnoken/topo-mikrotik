@@ -113,7 +113,8 @@
   function statusOf(s) {
     const has = !!App.snap;
     if (s === 'input') return has ? `${V.num(App.Q.meta().stats.collected)} 台` : '未載入';
-    if (!has) return s === 'view' || s === 'triage' ? '—' : '建立基準後';
+    // 窄螢幕五格等寬，「建立基準後」會斷成三行：改用短字，完整說法在按鈕的 title（renderSteps）
+    if (!has) return s === 'view' || s === 'triage' || A.isNarrowScreen() ? '—' : '建立基準後';
     if (s === 'view') return V.LAYER[App.layer] || App.layer;
     if (s === 'triage') return `待處理 ${V.num(A.problemCounts().total)}`; // 錯誤＋警告，不含提醒（Q.pendingSummary）
     if (s === 'fix') return `已選 ${V.num(V.patchView.selectedCount(App))}`;

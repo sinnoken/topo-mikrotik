@@ -106,7 +106,7 @@
     else if (state.onlyNew && !nNew) root.appendChild(h('div', { class: 'muted pane-note' }, `與舊基準（${base.name}）比對，沒有新出現的檢查結果。`));
     const ledgerBlocked = A().ledgerState().blocked;
     if (ledgerBlocked) root.appendChild(h('div', { class: 'pane-note warn-line ledger-blocked' }, '處理紀錄目前無法使用：' + ledgerBlocked.reason + `（見「${A().STEP_LABEL.verify}」的處理紀錄）`));
-    /** 一筆檢查結果：點文字定位；旁邊的「處理」變更處理紀錄的狀態與備註 */
+    /** 一筆檢查結果：點文字定位；下方的「處理狀態」變更處理紀錄的狀態與備註 */
     const item = (i, showId) => {
       const f = all[i]; const it = A().ledgerItem(f); const s = it ? it.status : null;
       const done = handledSet.has(i); const at = done ? A().ledgerUserAt(it) : null;
@@ -123,12 +123,14 @@
           it && it.waiver ? h('div', { class: 'muted note ledger-waiver-line' }, `豁免原因：${it.waiver.reason || '（未填）'}・到期 ${V.fmtUtc(it.waiver.until)}`) : null,
           it && it.note ? h('div', { class: 'muted note ack-reason' }, '備註：' + it.note) : null,
         ]),
-        h('button', {
-          class: 'ghost ack ledger-edit', 'aria-label': '處理：' + f.message, disabled: !it || null,
-          title: it ? '變更處理狀態（待處理、已排定修正、接受風險、誤報…）與備註；只存在這個瀏覽器的處理紀錄，不改變基準' : '處理紀錄沒有這一筆（處理紀錄無法使用）',
-          onclick: edit,
-        }, '處理'),
-      ]), V.deviationLine(App, f.deviation), state.editing === i && it ? ledgerEditor(App, f, it, i) : null]);
+      ]), V.deviationLine(App, f.deviation),
+      // 「處理狀態」放在訊息下方（不和訊息擠同一列），字也和上方的「處理：…」提示（怎麼修）區分
+      h('div', { class: 'ack-editor ledger-actions' }, [h('button', {
+        class: 'ack ledger-edit', 'aria-label': '處理狀態：' + f.message, disabled: !it || null,
+        'aria-expanded': it ? String(state.editing === i) : null,
+        title: it ? '變更處理狀態（待處理、已排定修正、接受風險、誤報…）與備註；只存在這個瀏覽器的處理紀錄，不改變基準' : '處理紀錄沒有這一筆（處理紀錄無法使用）',
+        onclick: edit,
+      }, '處理狀態')]), state.editing === i && it ? ledgerEditor(App, f, it, i) : null]);
     };
     /** 一個可展開的分組：key 是展開狀態的鍵，head 是標題列的內容 */
     const group = (key, head, idxs, cls, showId, ruleId) => {
@@ -287,24 +289,25 @@
     const root = V.clear(V.$('#pane-coverage'));
     if (!App.snap) return root.appendChild(h('div', { class: 'empty-detail' }, '建立基準後，可以在這裡看到每台設備收集了哪些資料。'));
     const Q = App.Q; const rows = Q.coverage();
-    // 有缺漏：缺少應收集的資料，或有指令收集失敗（V.coverageGap，與基準摘要同一個判斷）
-    const collected = rows.filter((r) => r.collected); const missing = collected.filter(V.coverageGap);
+    // 有缺漏：缺少應收集的資料，或有指令收集失敗（Q.coverageGap，與基準摘要同一個判斷）
+    const gap = Q.coverageGap;
+    const collected = rows.filter((r) => r.collected); const missing = collected.filter(gap);
     const seenOnly = rows.filter((r) => !r.collected && r.kind !== 'host'); const hosts = rows.filter((r) => !r.collected && r.kind === 'host');
     const F = { all: ['全部已收集', collected], missing: ['有缺漏', missing], seen: ['未收集的網路設備', seenOnly], hosts: [V.TERMS.host, hosts, V.HOST_DEF] };
     // 篩選選項；devices.csv 草稿（C01）的匯出在資料中心同一頁的「本輪的輸入」與「給收集器」
     root.appendChild(h('div', { class: 'summary' }, Object.entries(F).map(([k, [label, list, tip]]) => filterChip(label, list.length, { cls: k === 'missing' ? 'err' : '', title: tip, on: cov.filter === k, onclick: () => { cov.filter = k; coverage(App); } }))));
     // 每台一列：缺少的資料與收集失敗以 chip 列在同一格（已收集的寫在提示文字），有缺漏的排在前面（穩定排序，其餘維持原順序）
-    const gapN = (r) => r.missing.length + (r.failures || []).length;
-    const list = F[cov.filter][1].slice().sort((a, b) => (gapN(b) > 0) - (gapN(a) > 0));
+    const gapN = (r) => (gap(r) ? r.missing.length + (r.failures || []).length : 0);
+    const list = F[cov.filter][1].slice().sort((a, b) => gap(b) - gap(a));
     const has = (r) => (r.data.length ? '已收集：' + r.data.map(S.query.dataLabel).join('、') : '沒有收集資料');
     root.appendChild(V.table([
       { t: '設備', f: (r) => Q.devLabel(r.dev), s: (r) => Q.devLabel(r.dev) },
       { t: '類型', f: (r) => V.kindChip(r.kind), s: (r) => V.KIND[r.kind] || r.kind },
-      { t: '缺少的資料', s: (r) => -gapN(r), f: (r) => (gapN(r)
+      { t: '缺少的資料', s: (r) => -gapN(r), f: (r) => (gap(r)
         ? h('div', { class: 'chip-list cov-gaps', title: has(r) }, [...r.missing.map((t) => V.chip('缺 ' + S.query.dataLabel(t), 'err')), ...failureChips(App, r.failures || [])])
         : h('span', { class: 'muted', title: has(r) }, r.collected ? '—' : '未收集')) },
       { t: '鏈路', f: (r) => String(r.links), s: (r) => r.links },
-    ], list, { onRow: (r) => App.select({ type: 'device', key: r.dev }, { focus: true }), limit: 600, bad: V.coverageGap }));
+    ], list, { onRow: (r) => App.select({ type: 'device', key: r.dev }, { focus: true }), limit: 600, bad: gap }));
   }
   coverage.showMissing = (App) => { cov.filter = 'missing'; coverage(App); };
   /** 收集失敗：每筆一個 chip（指令與原因；標頭層級的失敗沒有指令），提示寫出影響的資料類別；點一下開啟原文的失敗行 */

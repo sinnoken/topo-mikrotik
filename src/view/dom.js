@@ -64,6 +64,16 @@
   });
   /** 主機的定義（與 S.check.expectsCollection 相同：沒有收集、依鄰居回報判斷為主機的設備不算應收集）：顯示選單、覆蓋率篩選與狀態卡共用這一句 */
   V.HOST_DEF = '沒有收集、依鄰居（LLDP／CDP／MNDP）回報判斷為主機的設備，不在收集範圍';
+  /** 主機的一行說明（狀態卡）：「另有 N 台主機不在收集範圍（依 LLDP／CDP／MNDP 回報判斷）」，不括號套括號；完整定義放 title（V.HOST_DEF） */
+  V.hostsText = (n) => `另有 ${V.num(n)} 台${V.TERMS.host}不在收集範圍（依 LLDP／CDP／MNDP 回報判斷）`;
+  /**
+   * 覆蓋率的缺漏（Q.coverageSummary 的結果）：「N 台缺資料、M 台未收集」，基準狀態卡與資料中心同一句。
+   * 缺資料是已收集但缺少應收集的資料或有收集失敗（Q.coverageGap），未收集是只被鄰居發現的網路設備（C01）。
+   */
+  V.COVERAGE_GAP_TIP = { missing: '已收集，但缺少應收集的資料或有指令收集失敗', uncollected: '只被鄰居發現、沒有收集輸出的網路設備' };
+  V.coverageGapParts = (cs) => [cs.missing ? `${V.num(cs.missing)} 台缺資料` : null,
+    cs.network > cs.networkCollected ? `${V.num(cs.network - cs.networkCollected)} 台未收集` : null];
+  V.coverageGapText = (cs) => { const p = V.coverageGapParts(cs).filter(Boolean); return p.length ? p.join('、') : `已收集的${V.TERMS.network}資料齊全`; };
   /** 鏈路只有一端資料（hearsay）的完整說法；「LLDP 單向」只用於對端有鄰居資料但沒回報（K01） */
   V.HEARSAY_TEXT = V.TERMS.hearsay + '（對端沒有鄰居資料）';
   V.ONE_WAY = 'LLDP 單向';
@@ -242,8 +252,6 @@
   // 收集失敗（blocks[].failure、coverage[].failures[]）的原因
   V.FAILURE = { timeout: '逾時', 'exit-code': '指令失敗', connection: '連線失敗', other: '其他錯誤' };
   V.failureText = (f) => (V.FAILURE[f.reason] || f.reason) + (f.exitCode == null ? '' : `（結束碼 ${f.exitCode}）`);
-  /** 覆蓋率的「有缺漏」：已收集的設備缺少應收集的資料，或有指令收集失敗（只有失敗、沒有缺少也算） */
-  V.coverageGap = (row) => !!row.collected && (row.missing.length > 0 || (row.failures || []).length > 0);
   /** UTC ISO 時間 → 「2026-10-24 03:00:00 UTC」（收集時間是 UTC，不轉成本機時區） */
   V.fmtUtc = (iso) => (iso ? String(iso).replace('T', ' ').replace(/\.\d+Z$|Z$/, '') + ' UTC' : '');
   // 鄰居發現協定（LLDP／MNDP／CDP）；L3 鏈路沒有發現協定時退回 via（如 OSPF）

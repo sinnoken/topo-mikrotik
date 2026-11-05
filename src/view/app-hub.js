@@ -119,8 +119,8 @@
     const r = App.round; const blocked = A.ledgerState().blocked; const exp = r.expected;
     const nPatch = V.patchView.selectedCount(App);
     const list = [
-      { role: 'source', label: '收集檔', required: true, available: r.sources.length > 0, note: `${V.num(r.sources.length)} 份；可能含有設備機密，請自行保管` },
-      { role: 'snapshot', label: '基準（Snapshot JSON）', required: true, available: !!r.snapshot, note: '' },
+      { role: 'source', label: '收集檔', required: true, available: r.sources.length > 0, note: `${V.num(r.sources.length)} 份` },
+      { role: 'snapshot', label: '基準（JSON）', required: true, available: !!r.snapshot, note: '' },
       { role: 'ledger', key: 'ledger', label: '處理紀錄', available: !blocked, note: blocked ? '處理紀錄停用中，不放進工作包' : '' },
       { role: 'profile', label: '命名規則', required: !!r.profile, available: !!r.profile,
         note: r.profile ? '基準用了命名規則，一定要附上（讀回時要用同一份才能重建同一個基準）' : '這份基準沒有用命名規則' },
@@ -129,8 +129,8 @@
       { role: 'expected', key: 'expected', label: '預期現況', available: !!(exp && exp.data && !exp.error),
         note: !exp ? '沒有載入預期現況' : exp.error ? '預期現況無法讀取，不放進工作包' : exp.name },
       { role: 'report', key: 'report', label: '報表（CSV、Markdown）', available: !!r.snapshot, note: hub.byDevice ? '依設備排序' : '' },
-      { role: 'patch', key: 'patch', label: '修正 patch（.rsc 與總表）', available: nPatch > 0,
-        note: nPatch ? `修正計畫目前選取 ${V.num(nPatch)} 項` : '修正計畫沒有選取項目；先在「開啟修正計畫」選取' },
+      { role: 'patch', key: 'patch', label: '修正指令（.rsc）', available: nPatch > 0,
+        note: nPatch ? `每台的 .rsc 與總表；修正計畫目前選取 ${V.num(nPatch)} 項` : '修正計畫沒有選取項目；先在「開啟修正計畫」選取' },
     ];
     list.forEach((x) => { x.on = x.available && (x.required || !!hub.pack[x.key]); });
     return list;

@@ -206,20 +206,25 @@
         first >= 0 ? h('span', null, ['。建議先看：', suggestLink(App, first)]) : null,
       ]),
     ]);
-    // 處理紀錄的提示（復發、因收集失敗而無法判斷、豁免到期）：點一下到「驗證」的本輪變化
+    // 處理紀錄的提示（復發、因收集失敗而無法判斷、接受風險到期）：點一下到「驗證」的本輪變化
     const alerts = [['regressed', 'err', '復發', '已修好的問題又出現（依處理紀錄）'],
       ['unobserved', 'warn', '無法判斷', '本輪消失的待處理項目，所屬設備有收集失敗或沒有收集，因收集失敗而無法判斷是否已修好'],
-      ['waiverExpired', 'warn', '豁免到期', '「接受風險」的豁免已到期，改回待處理']].filter(([k]) => pc[k]);
+      ['waiverExpired', 'warn', '接受風險到期', '「接受風險」已到期，改回待處理']].filter(([k]) => pc[k]);
     const alertRow = alerts.length ? h('div', { class: 'row status-alerts' }, alerts.map(([k, cls, label, title]) =>
       V.chipButton(`${label} ${V.num(pc[k])} 項`, 'btn ' + cls + ' ledger-alert', { 'data-alert': k, title: `${title}；在「${A.STEP_LABEL.verify}」的本輪變化`, onclick: () => App.showStep('verify', { focus: 'round' }) }))) : null;
-    // 覆蓋率只寫缺資料的台數（已收集台數在數字卡）；點一下在「輸入」的覆蓋率只列有缺漏的設備
-    const coverage = h('p', { class: 'status-coverage' }, ['覆蓋率：',
-      cs.missing ? h('a', { class: 'link', title: `在「${A.STEP_LABEL.input}」的覆蓋率只列有缺漏的設備`, onclick: () => { V.lists.coverage.showMissing(App); App.openHub('coverage'); } },
-        `${V.num(cs.missing)} 台${T.network}缺資料或收集失敗`) : `已收集的${T.network}資料齊全`]);
-    const hostNote = cs.hosts ? h('p', { class: 'status-hosts muted' }, `另有 ${V.num(cs.hosts)} 台${T.host}（${V.HOST_DEF}）`) : null;
+    // 覆蓋率只寫缺漏的台數（已收集／應收集在數字卡），和資料中心同一句（V.coverageGapText）；
+    // 缺資料可點：在資料中心的覆蓋率只列有缺漏的設備
+    const [gapMissing, gapUnc] = V.coverageGapParts(cs);
+    const coverage = h('p', { class: 'status-coverage' }, ['覆蓋率：'].concat(gapMissing || gapUnc ? [
+      gapMissing ? h('a', { class: 'link', title: `${V.COVERAGE_GAP_TIP.missing}；在資料中心的覆蓋率只列有缺漏的設備`, onclick: () => { V.lists.coverage.showMissing(App); App.openHub('coverage'); } }, gapMissing) : null,
+      gapMissing && gapUnc ? '、' : null,
+      gapUnc ? h('span', { title: V.COVERAGE_GAP_TIP.uncollected }, gapUnc) : null,
+    ] : [V.coverageGapText(cs)]));
+    const hostNote = cs.hosts ? h('p', { class: 'status-hosts muted', title: V.HOST_DEF }, V.hostsText(cs.hosts)) : null;
     const stat = (label, value) => h('div', { class: 'stat' }, [h('div', { class: 'stat-num' }, value), h('div', { class: 'stat-label' }, label)]);
     const meta = [`建立 ${V.fmtTime(m.createdAt)}`, `命名規則 ${m.profile ? `${m.profile.id} v${m.profile.version}` : '未套用'}`,
-      `來源 ${m.sources.map((x) => V.fileName(x.name)).join('、')}`].join('・');
+      // 全形括號開頭的名稱（貼上的內容）前不留空白
+      ('來源 ' + m.sources.map((x) => V.fileName(x.name)).join('、')).replace(/^來源 （/, '來源（')].join('・');
     return h('div', { class: 'detail status-card' }, [
       h('h2', null, '基準狀態'),
       status, alertRow, coverage, hostNote,
@@ -301,11 +306,11 @@
       kv([['管理 IP', d.mgmtIp], ['型號', d.deviceType], ['RouterOS', d.softwareVersion],
         ['廠商', d.manufacturer ? V.vendorName(d.manufacturer) : null],
         ['平台', d.manufacturer === 'mikrotik' ? null : d.platform],
-        ['鄰居回報的功能', d.caps ? h('span', { class: 'caps', title: '原值：' + d.caps }, V.capsText(d.caps)) : null],
+        ['鄰居回報功能', d.caps ? h('span', { class: 'caps', title: '原值：' + d.caps }, V.capsText(d.caps)) : null],
         // 設備類型依據：依命名規則是使用者指定，其餘是推定
         ['類型依據', d.kindBasis === 'profile' ? V.KIND_BASIS[d.kindBasis] : inferred(V.KIND_BASIS[d.kindBasis] || d.kindBasis, '設備類型是依型號、收集的資料或鄰居回報推定的結果，不是設備直接回報')],
-        ['收集時間', d.collectedAt ? `${d.collectedAt.replace('T', ' ')}（設備時間，取自 export）` : null],
-        ['其他名稱', d.names.length > 1 ? d.names.join('、') : null], ['Router ID', d.routerId],
+        ['收集時間', d.collectedAt ? `${d.collectedAt.replace('T', ' ')}（設備時間，取自設定匯出）` : null],
+        ['其他名稱', d.names.length > 1 ? d.names.join('、') : null], ['路由器 ID', d.routerId],
         ['看到它的設備', d.seenBy.length && d.seenBy.length <= SEEN_INLINE ? seenByLinks(App, d.seenBy) : null],
         ['收集的資料', d.collected ? h('div', { class: 'chip-list' }, [
           ...(cov ? cov.data : []).map((t) => V.chip(S.query.dataLabel(t), 'ok')),
@@ -315,7 +320,13 @@
       // 設備的身分（管理 IP、型號、版本、收集的資料）在首屏；核心設備常有十幾二十筆檢查結果，只先列 DEVICE_FINDINGS_SHOWN 筆
       findingsBlock(App, fl, { shown: DEVICE_FINDINGS_SHOWN }),
       section('看到它的設備', d.seenBy.length > SEEN_INLINE ? seenByLinks(App, d.seenBy) : null, { count: d.seenBy.length, fold: true }),
-      section('介面', table([
+      // 未收集的設備：介面只來自鄰居的回報（名稱可能是對端回報的埠名，或 OSPF 鄰居的位址），狀態一律不明
+      d.collected ? null : section('鄰居看到的介面與位址', table([
+        { t: '介面', f: (i) => (i.name === '?' || Q.addressesOf(i.key).some((x) => x.split('/')[0] === i.name) ? h('span', { class: 'muted', title: '鄰居沒有回報介面名稱（原值：' + i.name + '）' }, '—') : h('span', { class: 'mono' }, i.name)), s: (i) => i.name },
+        { t: '位址', f: (i) => Q.addressesOf(i.key).join('  '), s: (i) => Q.addressesOf(i.key)[0] || null },
+        { t: '描述', f: (i) => i.desc || '', s: (i) => i.desc || null },
+      ], ifs.slice().sort((a, b) => S.util.natural(a.name, b.name)), { onRow: (i) => App.select({ type: 'interface', key: i.key }), limit: 300 }), { count: ifs.length, long: true }),
+      !d.collected ? null : section('介面', table([
         { t: '介面', f: (i) => h('span', { class: 'mono' }, i.name + (i.lag ? ` → ${Q.getInterface(i.lag).name}` : '')), s: (i) => i.name },
         { t: '狀態', f: V.ifcState, s: V.ifcState },
         { t: '描述／IP', f: (i) => [i.desc, ...Q.addressesOf(i.key)].filter(Boolean).join('  '), s: (i) => Q.addressesOf(i.key)[0] || i.desc },
@@ -351,7 +362,7 @@
       section('OSPF L3 鄰接（非實體直連）', ospfAdjacencies.length ? table([
           { t: '本機介面', f: (a) => epLink(App, a.localEp), s: (a) => K.splitEp(a.localEp)[1] },
           { t: '鄰居', f: (a) => devLink(App, a.peerDev), s: (a) => Q.devName(a.peerDev) },
-          { t: '鄰居位址／Router ID', f: (a) => [a.peerIp, a.peerId].filter(Boolean).join('／'), s: (a) => a.peerIp || a.peerId },
+          { t: '鄰居位址／路由器 ID', f: (a) => [a.peerIp, a.peerId].filter(Boolean).join('／'), s: (a) => a.peerIp || a.peerId },
           { t: '回報', f: (a) => a.reciprocal ? '雙向 OSPF 鄰接' : '單向 OSPF 觀察', s: (a) => (a.reciprocal ? '雙向' : '單向') },
           { t: '來源', f: (a) => srcLink(App, a.src) },
         ], ospfAdjacencies) : null, { count: ospfAdjacencies.length, fold: true }),

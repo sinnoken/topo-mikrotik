@@ -154,9 +154,19 @@
     V.clear(root).appendChild(h('div', { class: 'work-inner l4-inner' }, [
       h('div', { class: 'work-head' }, [h('h2', { id: 'l4-title', class: 'work-title', tabindex: '-1' }, 'L4 可達性'),
         h('span', { class: 'muted' }, '來源 zone × 目的 zone 的防火牆與 NAT 結果；點格子往下看位址組、牽涉的規則與逐跳路徑。全部是依基準的路由與規則推論出來的，不寫進基準')]),
+      // 判斷的前提：預設收合（摘要一句），不把矩陣推到首屏之外；每一條的文字取自查詢層（S.query.reachAssumptions）
       h('section', { class: 'work-card l4-card l4-assume', 'aria-labelledby': 'l4-assume-title' }, [
         h('h3', { id: 'l4-assume-title', class: 'work-card-title' }, ['判斷的前提 ', V.chip('推論', 'info')]),
-        h('ul', { class: 'l4-assume-list' }, assumptions.map((a) => h('li', { 'data-code': a.code }, a.message))),
+        h('p', { class: 'muted l4-note' }, '只判斷 IPv4 的新連線，只套用 RouterOS 的防火牆與 NAT；條件無法判斷時結果為不明。'),
+        h('details', { class: 'l4-fold' }, [
+          h('summary', null, `看全部 ${V.num(assumptions.length)} 條前提`),
+          h('ul', { class: 'l4-assume-list' }, assumptions.map((a) => h('li', { 'data-code': a.code }, a.message))),
+        ]),
+      ]),
+      h('section', { class: 'work-card l4-card', 'aria-labelledby': 'l4-matrix-title' }, [
+        h('div', { class: 'l4-card-head' }, [h('h3', { id: 'l4-matrix-title', class: 'work-card-title' }, 'zone 矩陣'),
+          h('label', { for: 'l4-service', class: 'muted' }, '服務'), serviceSel, vrfFilterBox, modes, els.csv]),
+        els.status, els.legend, els.box,
       ]),
       h('section', { class: 'work-card l4-card', 'aria-labelledby': 'l4-reach-title' }, [
         h('h3', { id: 'l4-reach-title', class: 'work-card-title' }, '可達性查詢'),
@@ -166,11 +176,6 @@
           h('label', { for: 'l4-proto' }, '協定'), proto, h('label', { for: 'l4-port' }, '埠'), port, vrfBox,
           h('button', { type: 'button', class: 'primary', id: 'l4-run', onclick: run }, '查詢'),
         ]),
-      ]),
-      h('section', { class: 'work-card l4-card', 'aria-labelledby': 'l4-matrix-title' }, [
-        h('div', { class: 'l4-card-head' }, [h('h3', { id: 'l4-matrix-title', class: 'work-card-title' }, 'zone 矩陣'),
-          h('label', { for: 'l4-service', class: 'muted' }, '服務'), serviceSel, vrfFilterBox, modes, els.csv]),
-        els.status, els.legend, els.box,
       ]),
       els.drill, els.zones, els.live,
     ]));

@@ -109,7 +109,7 @@
   A.ledgerRoundIndex = () => (App.Q ? st.ledger.iterations.findIndex((r) => baseOf(r.baseline) === baseOf(App.Q.meta())) : -1);
 
   /**
-   * 目前基準的「待處理」：Q.pendingSummary(A.isPending) 的 { error, warn, info, total, handled }，另加復發、無法判斷、豁免到期（基準摘要用）。
+   * 目前基準的「待處理」：Q.pendingSummary(A.isPending) 的 { error, warn, info, total, handled }，另加復發、無法判斷、接受風險到期（基準摘要用）。
    * 全站的「待處理」都是 total（錯誤＋警告，不含提醒）；提醒另列 info。
    */
   A.problemCounts = function problemCounts() {

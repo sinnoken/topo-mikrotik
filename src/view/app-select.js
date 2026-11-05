@@ -224,7 +224,7 @@
   // ================================================================ 原文檢視
   // 標題寫出該行所屬的設備與指令（Q.blockAt、V.blockWhere）；opt.list 給多處證據（[{ file, line }]）時，
   // 可用「上一處／下一處」或左右方向鍵切換（頭尾相接）
-  // 顯示的範圍：標出的那一行往上 RAW_BEFORE、往下 RAW_AFTER 行；「顯示前面／後面」每次多 RAW_MORE 行（切換到另一處時回到預設）
+  // 顯示的範圍：標出的那一行往上 RAW_BEFORE、往下 RAW_AFTER 行；「往前／往後顯示」每次多 RAW_MORE 行（切換到另一處時回到預設）
   const RAW_BEFORE = 12; const RAW_AFTER = 25; const RAW_MORE = 100;
   let rawNav = { list: [], at: 0, before: RAW_BEFORE, after: RAW_AFTER, copy: null };
   App.openRaw = function (file, line, opt) {
@@ -273,15 +273,18 @@
     rawNav.copy = { text: lines.slice(cf - 1, ct).join('\n'), lines: ct - cf + 1 };
     $('#raw-copy').setAttribute('title', `複製${blk ? V.blockWhere(App.Q, blk) : V.fileName(file)} 第 ${cf}–${ct} 行的原文`);
     // 按下後重畫：焦點回到同一側的按鈕（已經全部顯示時落在對話框的標題列）
-    const more = (side, count) => h('button', { type: 'button', class: 'ghost raw-more', 'data-side': side, onclick: () => {
+    // 按鈕寫出按下後多顯示的實際範圍（不寫「前面 N 行」：容易和畫面上的行號對不上）
+    const more = (side) => h('button', { type: 'button', class: 'ghost raw-more', 'data-side': side, onclick: () => {
       rawNav[side] += RAW_MORE; showRaw();
       const next = Array.from($('#raw-body').querySelectorAll('.raw-more')).find((x) => x.dataset.side === side); (next || $('#raw-copy')).focus();
-    } }, `${side === 'before' ? '顯示前面' : '顯示後面'} ${Math.min(RAW_MORE, count)} 行` + (count > RAW_MORE ? `（還有 ${count} 行）` : ''));
-    if (from > 1) body.appendChild(more('before', from - 1));
+    } }, side === 'before'
+      ? `往前顯示第 ${Math.max(1, from - RAW_MORE)}–${from - 1} 行（全部 ${V.num(lines.length)} 行）`
+      : `往後顯示第 ${to + 1}–${Math.min(lines.length, to + RAW_MORE)} 行（全部 ${V.num(lines.length)} 行）`);
+    if (from > 1) body.appendChild(more('before'));
     const pre = h('pre', { class: 'raw' });
     for (let i = from; i <= to; i++) pre.appendChild(h('span', { class: i === line ? 'hl' : null }, [h('span', { class: 'ln' }, String(i)), lines[i - 1] + '\n']));
     body.appendChild(pre);
-    if (to < lines.length) body.appendChild(more('after', lines.length - to));
+    if (to < lines.length) body.appendChild(more('after'));
   }
 
   // ================================================================ 路由追蹤

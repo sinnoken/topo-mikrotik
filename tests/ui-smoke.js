@@ -3930,6 +3930,9 @@ function viewBoundaryViolations(file, src) {
     const traceEntries = document.testAll('button').filter((b) => /路由追蹤/.test(b.textContent) && !$('#detail').contains(b) && !$('#hub').contains(b));
     if (traceEntries.length !== 1 || traceEntries[0] !== $('#btn-trace')) throw new Error('頁首只留一個路由追蹤入口：' + traceEntries.map((b) => b.textContent).join('、'));
     if ($('#toolbar').contains($('#btn-png'))) throw new Error('匯出 PNG 不在工具列');
+    // 程式版本在「⋯」最下方，沒有基準時也看得到；不是選單項目（方向鍵不會停在這裡）
+    const ver = $('#app-version');
+    if (!menu.contains(ver) || ver.textContent !== '版本 ' + S.VERSION || ver.getAttribute('role') !== 'none' || ver.tagName === 'BUTTON') throw new Error('「⋯」應在最下方顯示程式版本（非選單項目）');
     // 鍵盤：開啟時焦點到第一項，↓／End 移動並循環，Esc 關閉並還焦點
     more.click();
     if (menu.classList.contains('hidden') || more.getAttribute('aria-expanded') !== 'true' || document.activeElement !== $('#btn-trace')) throw new Error('開啟「⋯」後焦點應在第一項');

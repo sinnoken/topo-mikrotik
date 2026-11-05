@@ -90,6 +90,7 @@ header .spacer { flex: 1; }
 .menu .menu-item[aria-checked="true"]::before { content: "✓"; position: absolute; left: 10px; color: var(--accent); font-weight: 600; }
 .menu .menu-item[role="menuitemradio"][aria-checked="true"]::before { content: "•"; left: 12px; }
 .menu-sep { height: 1px; margin: 4px 2px; background: var(--line); }
+.menu-meta { padding: 4px 12px 4px 28px; color: var(--muted); font-size: var(--fs-sm); white-space: nowrap; user-select: text; }
 .menu-label { padding: 4px 12px 2px 28px; color: var(--muted); font-size: var(--fs-xs); }
 .menu-wrap .popover { right: 0; top: calc(100% + 6px); }
 /* 流程步驟（app-panes.js）：導覽，目前的一步除了顏色，還有粗體與底線（aria-current="step"）；每一步有狀態文字 */

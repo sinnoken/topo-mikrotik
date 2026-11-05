@@ -1,11 +1,11 @@
 /*
- * 分診 → 修 → 驗證 的畫面輔助：都是純函式，只透過查詢介面（Q）與核心（S.ledger、S.remediate）讀取，不改寫 Snapshot。
+ * 研判 → 修 → 驗證 的畫面輔助：都是純函式，只透過查詢介面（Q）與核心（S.ledger、S.remediate）讀取，不改寫 Snapshot。
  *   - 處理紀錄的狀態文字（STATUS_TEXT）：狀態本身與轉換規則在核心 S.ledger（見 app-ledger.js）
  *   - advice：規則的常見原因與處理（每次從規則目錄 S.query.rule 讀取）；hintLine：一句處理提示
  *   - sortByDevice：檢查結果依所屬設備（Q.findingDevice）排序，檢查結果分頁的「依設備」分組與匯出共用
  *   - 修正計畫的文字（LEVEL_TEXT、RISK_TEXT、targetText、choiceText）與單一項目的套用指令（itemApplyLines，取自 S.remediate.renderRsc）
  *   - matchFindings／findingRef：未產生指令的項目以 findingKey 對回檢查結果，列出訊息並可點擊開啟
- *   - facetText：檢查結果的檢查項目（finding.facet）的顯示文字，詳情與修正計畫的逐筆勾選共用
+ *   - facetText：檢查結果的比對對象（finding.facet）的顯示文字，詳情與修正計畫的逐筆勾選共用
  *   - devicesCsvDraft：由 C01 產生 tools/collect.sh 的設備清單草稿
  */
 (function (S) {
@@ -14,7 +14,7 @@
 
   // ---------------------------------------------------------------- 處理紀錄的狀態
   /** 狀態鍵（S.ledger.STATUS）→ 顯示文字；不認得的狀態（例如較新版本寫入的）原樣顯示 */
-  const STATUS_TEXT = { open: '待處理', scheduled: '已排定修正', accepted: '可接受（豁免）', 'false-positive': '誤報', fixed: '已修好', regressed: '回歸' };
+  const STATUS_TEXT = { open: '待處理', scheduled: '已排定修正', accepted: '接受風險', 'false-positive': '誤報', fixed: '已修好', regressed: '復發' };
   const statusText = (s) => (s ? STATUS_TEXT[s] || s : '待處理');
   /** 狀態的標籤色（DOM 的 .chip.err 等） */
   const STATUS_CHIP = { open: '', scheduled: 'info', accepted: 'ok', 'false-positive': '', fixed: 'ok', regressed: 'err' };
@@ -32,7 +32,7 @@
     return { action: typeof c.action === 'string' && c.action ? c.action : null, hint: typeof c.hint === 'string' && c.hint ? c.hint : null, causes };
   }
   /**
-   * 規則的一句處理提示「處理：…」（advice(id).hint）：③ 分診展開的規則群組與詳情的檢查結果卡片共用。
+   * 規則的一句處理提示「處理：…」（advice(id).hint）：③ 研判展開的規則群組與詳情的檢查結果卡片共用。
    * 反引號內以 <code> 顯示（V.codeText）；沒有提示時為 null。cls 是額外的 class。
    */
   function hintLine(id, cls) {
@@ -55,7 +55,7 @@
   }
 
   // ---------------------------------------------------------------- 修正計畫（S.remediate）
-  const LEVEL_TEXT = { auto: '可產生指令', choice: '需選擇處理方式（已支援的規則在修正計畫中選擇要採用的值；其他規則尚未產生指令）', manual: '需人工判斷' };
+  const LEVEL_TEXT = { auto: '可產生指令', choice: '需選擇處理方式（已支援的檢查在修正計畫中選擇要採用的值；其他檢查尚未產生指令）', manual: '需人工判斷' };
   const RISK_TEXT = { low: '低', medium: '中', high: '高' };
   const RISK_CHIP = { low: 'ok', medium: 'warn', high: 'err' };
   const RISK_ORDER = ['low', 'medium', 'high'];
@@ -98,7 +98,7 @@
   const clipText = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
   /**
    * 修正計畫的 skipped（或 items）逐筆對回 Q.findings() 中的檢查結果：回傳與 list 等長的陣列，每筆是 { idx, f } 或 null（基準中沒有，例如 not-found）。
-   * idx 與 App.selectFinding 的索引相同。檢查項目不同的已經以 facet 區分（例如 A12 的 DNS 與 NTP 是不同的鍵），
+   * idx 與 App.selectFinding 的索引相同。比對對象不同的已經以 facet 區分（例如 A12 的 DNS 與 NTP 是不同的鍵），
    * 但依輸入區塊產生的 I01、I03 不帶 facet，同一台設備的多段仍共用一個 findingKey（ADR-003）。
    * 這種情況的退路是依位置對應：同一個鍵的第 n 筆對到基準中這個鍵的第 n 筆（S.remediate.plan 對同一個鍵的列依 finding 在基準中的順序排列）。
    */
@@ -122,7 +122,7 @@
       onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); App.selectFinding(hit.idx); } }, clipText(msg, FINDING_TEXT_MAX));
   }
 
-  // ---------------------------------------------------------------- 檢查項目（finding.facet）
+  // ---------------------------------------------------------------- 比對對象（finding.facet）
   /** facet 中項目代碼的顯示文字（A12、R06 的 dns／ntp／gateway，V06、V07 比較的屬性） */
   const FACET_ITEM = { dns: 'DNS 伺服器', ntp: 'NTP 伺服器', gateway: '閘道',
     'vlan-interface-name': 'VLAN 介面名稱', 'vlan-interface-comment': 'VLAN 介面說明', 'bridge-vlan-comment': 'bridge VLAN 說明' };
@@ -145,7 +145,7 @@
     R06: (v) => { const [a, b] = facetSplit(v); return b ? `${facetItem(a)}（${b}）` : null; },
   };
   /**
-   * 檢查結果的檢查項目（finding.facet）的顯示文字：同一組規則＋實體可能有多筆時，標示這筆檢查的是哪一個項目。
+   * 檢查結果的比對對象（finding.facet）的顯示文字：同一組規則＋實體可能有多筆時，標示這筆檢查的是哪一個項目。
    * 沒有 facet 時為 null；規則沒有對應的格式或格式不符時顯示原值，不隱藏。
    */
   function facetText(f) {

@@ -76,7 +76,7 @@
       <ol>
         <li><button type="button" id="step-input" data-step="input" aria-current="false" aria-disabled="false"><span class="step-n">①</span> <span class="step-name">輸入</span> <span class="step-st"></span></button></li>
         <li><button type="button" id="step-view" data-step="view" aria-current="false" aria-disabled="false"><span class="step-n">②</span> <span class="step-name">檢視</span> <span class="step-st"></span></button></li>
-        <li><button type="button" id="step-triage" data-step="triage" aria-current="step" aria-disabled="false" class="on"><span class="step-n">③</span> <span class="step-name">分診</span> <span class="step-st"></span></button></li>
+        <li><button type="button" id="step-triage" data-step="triage" aria-current="step" aria-disabled="false" class="on"><span class="step-n">③</span> <span class="step-name">研判</span> <span class="step-st"></span></button></li>
         <li><button type="button" id="step-fix" data-step="fix" aria-current="false" aria-disabled="true"><span class="step-n">④</span> <span class="step-name">修正</span> <span class="step-st"></span></button></li>
         <li><button type="button" id="step-verify" data-step="verify" aria-current="false" aria-disabled="true"><span class="step-n">⑤</span> <span class="step-name">驗證</span> <span class="step-st"></span></button></li>
       </ol>
@@ -121,7 +121,7 @@
   </nav>
 
   <div id="main" data-workspace="graph" data-step="triage">
-    <!-- 左側的清單依步驟：② 檢視是清單（設備、介面、IP…），③ 分診是檢查結果；④ 修正、⑤ 驗證沒有左側，中間全寬 -->
+    <!-- 左側的清單依步驟：② 檢視是清單（設備、介面、IP…），③ 研判是檢查結果；④ 修正、⑤ 驗證沒有左側，中間全寬 -->
     <aside id="left" aria-labelledby="left-title">
       <div class="left-head"><h2 id="left-title" class="left-title" tabindex="-1">檢查結果</h2></div>
       <div id="pane-findings" class="pane"></div>
@@ -129,7 +129,7 @@
     </aside>
 
     <section id="center" data-view="graph" aria-label="工作畫面">
-      <!-- 中間的工作畫面依步驟：拓樸圖（② 檢視、③ 分診）、修正計畫（④ 修正）、驗證（⑤ 驗證；src/view/app-panes.js 的 App.showStep）。
+      <!-- 中間的工作畫面依步驟：拓樸圖（② 檢視、③ 研判）、修正計畫（④ 修正）、驗證（⑤ 驗證；src/view/app-panes.js 的 App.showStep）。
            工作畫面疊在拓樸圖上面（同一格），畫布的大小、位置、縮放與選取都不變 -->
       <div id="stage" class="stage">
       <div id="view-graph" class="view-graph" role="region" aria-label="拓樸圖">
@@ -209,7 +209,7 @@
       <!-- ⑤ 驗證：左欄是本輪變化與處理紀錄（工作畫面夠寬時固定），右欄是修正追蹤、改善趨勢與比對 -->
       <section id="view-verify" class="work hidden" aria-labelledby="verify-title">
         <div class="work-inner">
-          <div class="work-head"><h2 id="verify-title" class="work-title" tabindex="-1">驗證</h2><span class="muted">重新收集、建立基準後，確認哪些已修好、哪些回歸；數字來自處理紀錄，比對只讀取基準，不會修改它</span></div>
+          <div class="work-head"><h2 id="verify-title" class="work-title" tabindex="-1">驗證</h2><span class="muted">重新收集、建立基準後，確認哪些已修好、哪些復發；數字來自處理紀錄，比對只讀取基準，不會修改它</span></div>
           <div id="verify-body" class="verify-layout">
             <div class="verify-side">
               <section class="work-card verify-card" aria-labelledby="round-title"><h3 id="round-title" class="work-card-title" tabindex="-1">本輪變化</h3><div id="round-body"></div></section>

@@ -248,7 +248,7 @@ test('patch A12：選 accept 不產生指令並說明；DNS 與 NTP 各自選擇
   assert.deepStrictEqual(p.choices.map((c) => [c.facet, c.chosen, c.reason]), [['dns', 'device:SW_A', null], ['ntp', 'accept', 'accepted-choice']]);
   assert.deepStrictEqual(p.items.map((i) => [i.dev, i.target.facet]), [['SW_C', 'dns'], ['SW_D', 'dns']]);
   assert.deepStrictEqual(p.skipped.map((x) => [x.findingKey, x.level, x.reason]), [[ntp, 'choice', 'accepted-choice']]);
-  assert.ok(/可接受/.test(p.skipped[0].detail));
+  assert.ok(/接受風險/.test(p.skipped[0].detail));
   // 反過來：DNS accept、NTP 預設多數
   const r = P().plan(Q, { ids: ['A12'] }, { choices: { [dns]: 'accept' } });
   assert.deepStrictEqual(r.items.map((i) => [i.dev, i.target.facet]), [['SW_B', 'ntp']]);

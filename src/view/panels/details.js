@@ -100,10 +100,10 @@
     return el;
   }
   const FINDINGS_SHOWN = 5; const DEVICE_FINDINGS_SHOWN = 3;
-  /** 檢查項目（finding.facet，V.remediation.facetText）：標題旁的標籤（回傳子節點陣列，展開放入標題列），title 是原值；沒有 facet 時為空陣列 */
+  /** 比對對象（finding.facet，V.remediation.facetText）：標題旁的標籤（回傳子節點陣列，展開放入標題列），title 是原值；沒有 facet 時為空陣列 */
   function facetChip(f) {
     const t = V.remediation.facetText(f);
-    return t ? [' ', V.chip('檢查項目：' + t, 'facet', { title: '原值：' + f.facet })] : [];
+    return t ? [' ', V.chip('比對對象：' + t, 'facet', { title: '原值：' + f.facet })] : [];
   }
   /** 處理紀錄的狀態與備註（使用者的決定，不在基準裡，見 app-ledger.js）；待處理（open）且沒有備註時不顯示 */
   function ledgerLine(f) {
@@ -196,20 +196,20 @@
     const cs = Q.coverageSummary(); const vs = Q.vlanSummary(); const pc = V.app.problemCounts();
     const problems = pc.total; const first = firstProblem(App);
     const counts = [pc.error ? `${V.num(pc.error)} 項錯誤` : null, pc.warn ? `${V.num(pc.warn)} 項警告` : null].filter(Boolean).join('、');
-    // 錯誤／警告數連到「③ 分診」只列錯誤與警告；建議先看連到那一筆
+    // 錯誤／警告數連到「③ 研判」只列錯誤與警告；建議先看連到那一筆
     const status = h('p', { class: 'status-line' }, [
       V.sevDot(pc.error ? 'error' : pc.warn ? 'warn' : 'info'),
       h('span', null, [
-        problems ? h('span', null, ['待處理：', h('a', { class: 'link status-problems', title: '在「③ 分診」只列錯誤與警告',
-          onclick: () => { V.lists.findings.showProblems(App); App.showStep('triage'); } }, counts)]) : '目前規則未發現待處理的錯誤或警告',
+        problems ? h('span', null, ['待處理：', h('a', { class: 'link status-problems', title: '在「③ 研判」只列錯誤與警告',
+          onclick: () => { V.lists.findings.showProblems(App); App.showStep('triage'); } }, counts)]) : '目前的檢查未發現待處理的錯誤或警告',
         pc.handled ? h('span', { class: 'muted' }, `（另有 ${V.num(pc.handled)} 項已處理）`) : null,
         first >= 0 ? h('span', null, ['。建議先看：', suggestLink(App, first)]) : null,
       ]),
     ]);
-    // 處理紀錄的提示（回歸、因收集失敗而無法判斷、豁免到期）：點一下到「⑤ 驗證」的本輪變化
-    const alerts = [['regressed', 'err', '回歸', '已修好的問題又出現（依處理紀錄）'],
+    // 處理紀錄的提示（復發、因收集失敗而無法判斷、豁免到期）：點一下到「⑤ 驗證」的本輪變化
+    const alerts = [['regressed', 'err', '復發', '已修好的問題又出現（依處理紀錄）'],
       ['unobserved', 'warn', '無法判斷', '本輪消失的待處理項目，所屬設備有收集失敗或沒有收集，因收集失敗而無法判斷是否已修好'],
-      ['waiverExpired', 'warn', '豁免到期', '「可接受」的豁免已到期，改回待處理']].filter(([k]) => pc[k]);
+      ['waiverExpired', 'warn', '豁免到期', '「接受風險」的豁免已到期，改回待處理']].filter(([k]) => pc[k]);
     const alertRow = alerts.length ? h('div', { class: 'row status-alerts' }, alerts.map(([k, cls, label, title]) =>
       V.chipButton(`${label} ${V.num(pc[k])} 項`, 'btn ' + cls + ' ledger-alert', { 'data-alert': k, title: title + '；在「⑤ 驗證」的本輪變化', onclick: () => App.showStep('verify', { focus: 'round' }) }))) : null;
     // 覆蓋率只寫缺資料的台數（已收集台數在數字卡）；點一下在「① 輸入」的覆蓋率只列有缺漏的設備
@@ -269,7 +269,7 @@
           : h('button', { disabled: true, title: '這台設備的終端都已逐一畫在圖上' }, '已顯示全部')) : null]),
       aboutSection(['一般終端埠只學到一個 MAC，且沒有 LLDP／CDP 介面鄰接。Wi-Fi 是一對多介面：每個觀察到的 MAC 位置會列入終端清單，但不把 Wi-Fi 介面判為終端，'
         + '也不參與「同一 MAC 出現在多個終端埠」的檢查，因為 MAC 可能隨使用者漫遊而移動。MNDP 只代表同一 L2 廣播網域可達，不算直連鄰接。']),
-      // 點選 A03（未知對端）會來到這裡：列出這台設備的 A03，處理建議才看得到
+      // 點選 A03（未識別的終端）會來到這裡：列出這台設備的 A03，處理建議才看得到
       findingsBlock(App, Q.findingsFor('device', sel.dev).filter((f) => f.id === 'A03')),
       section('終端埠', rows.length ? unknownTable(App, rows) : null, { count: rows.length, long: true }),
       section('Wi-Fi MAC 觀察（列入終端清單，不檢查重複 MAC）', wifi.length ? unknownTable(App, wifi, () => false) : null, { count: wifi.length, long: true }),
@@ -284,7 +284,7 @@
     const ospfAdjacencies = Q.ospfAdjacenciesOf(d.key);
     const cov = App.Q.coverageOf(d.key);
     const ifs = Q.interfacesOf(d.key).filter((i) => !i.hearsay || !d.collected);
-    // 推定偏離（finding.deviation，推論）：這台設備列在 deviating 的檢查結果也放進來，即使實體不是它
+    // 與多數不同（finding.deviation，推論）：這台設備列在 deviating 的檢查結果也放進來，即使實體不是它
     const dev = Q.deviationsOf(d.key).map(Q.finding);
     const fl = Q.findingsFor('device', d.key).concat(...links.map((l) => Q.findingsFor('link', l.key)), ...ifs.map((i) => Q.findingsFor('interface', i.key)), dev);
     const peerRows = Q.neighborRows(d.key).sort((x, y) => S.util.natural(x.mine, y.mine));
@@ -297,7 +297,7 @@
       h('h2', null, d.label || d.name),
       h('div', { class: 'row' }, [V.kindChip(d.kind), d.collected ? V.chip('已收集', 'ok') : V.chip('未收集（僅由鄰居發現）', 'warn'), d.group ? V.chip(d.group, '', { title: V.TERMS.group + '（版面用，不代表實體位置或 IP 網段）' }) : null, d.role ? V.chip('角色：' + d.role) : null,
         dev.length ? h('a', { class: 'link chip-link deviation-chip', title: '依跨設備多數決推定這台的設定與其他設備不同（推論）；點一下捲到檢查結果',
-          onclick: () => { const sec = V.$('#detail .findings-section'); if (sec) sec.scrollIntoView({ block: 'start', behavior: 'smooth' }); } }, V.chip(`推定偏離 ${dev.length} 項`, 'warn')) : null]),
+          onclick: () => { const sec = V.$('#detail .findings-section'); if (sec) sec.scrollIntoView({ block: 'start', behavior: 'smooth' }); } }, V.chip(`與多數不同 ${dev.length} 項`, 'warn')) : null]),
       kv([['管理 IP', d.mgmtIp], ['型號', d.deviceType], ['RouterOS', d.softwareVersion],
         ['廠商', d.manufacturer ? V.vendorName(d.manufacturer) : null],
         ['平台', d.manufacturer === 'mikrotik' ? null : d.platform],

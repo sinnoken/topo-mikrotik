@@ -1,5 +1,5 @@
 /*
- * 處理紀錄（ssot-ledger/1）的畫面接線：使用者對每個 finding 的決定（排定修正、可接受、誤報…）與每一輪的歷程。
+ * 處理紀錄（ssot-ledger/1）的畫面接線：使用者對每個 finding 的決定（排定修正、接受風險、誤報…）與每一輪的歷程。
  * 資料模型、狀態轉換、驗證與統計都在核心 S.ledger（src/ledger/ledger.js）；這裡只負責：
  *   - 讀寫 store 的 'ledger' 鍵（與基準 'last' 分開：清除基準不影響處理紀錄）
  *   - 舊的確認標記（store 的 'acks'）第一次遇到基準時以 S.ledger.fromAcks 轉換；確認 'ledger' 寫入成功後才刪掉 'acks'
@@ -109,7 +109,7 @@
   A.ledgerRoundIndex = () => (App.Q ? st.ledger.iterations.findIndex((r) => baseOf(r.baseline) === baseOf(App.Q.meta())) : -1);
 
   /**
-   * 目前基準的「待處理」：Q.pendingSummary(A.isPending) 的 { error, warn, info, total, handled }，另加回歸、無法判斷、豁免到期（基準摘要用）。
+   * 目前基準的「待處理」：Q.pendingSummary(A.isPending) 的 { error, warn, info, total, handled }，另加復發、無法判斷、豁免到期（基準摘要用）。
    * 全站的「待處理」都是 total（錯誤＋警告，不含提醒）；提醒另列 info。
    */
   A.problemCounts = function problemCounts() {

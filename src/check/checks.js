@@ -353,7 +353,7 @@
    * 以 VLAN ID 為鍵的規則（V06、A06）只比同一個 VLAN 區塊；以網段、IP 為鍵的規則（A07、A08、A09、R06）只比同一個 VRF（不同設備上同名的 VRF
    * 視為同一個位址空間，ADR-015），鍵與 facet 用 K.inVrf（main 不加後綴）；以名稱為鍵的規則（V07、A10–A12）與 VRF 無關，整份基準一起比。
    * 訊息依設備名稱自然排序，相同設定的設備併成一組。
-   * 除 A09（重複 IP 本身就是衝突）外，各規則以多數決推定偏離的設備（推論），只寫在 finding.deviation；訊息只列各組設定，不附推定結果（畫面另起一行顯示，避免重複）。
+   * 除 A09（重複 IP 本身就是衝突）外，各規則以多數決判定與多數不同的設備（推論），只寫在 finding.deviation；訊息只列各組設定，不附推定結果（畫面另起一行顯示，避免重複）。
    */
   const MAX_SHOWN = 8; // 訊息中每台設備最多列出的值，避免大型 address-list 讓訊息過長
   function configConsistency(M, add, name, epName, byDomain) {
@@ -381,7 +381,7 @@
     };
     const devList = (devs) => (devs.length > MAX_SHOWN ? devs.slice(0, MAX_SHOWN).map(name).join('、') + `…（共 ${devs.length} 台）` : devs.map(name).join('、'));
     /**
-     * 多數決（推論）：台數最多的一組至少 2 台且多於其他每一組時成立，其餘各組的設備推定偏離。
+     * 多數決（推論）：台數最多的一組至少 2 台且多於其他每一組時成立，其餘各組的設備與多數不同。
      * 回傳 { main, deviating: [devKey，依名稱自然排序] }；平手或最多只有 1 台時回傳 null。
      */
     const majorityOf = (groups) => {
@@ -592,7 +592,7 @@
 
   /**
    * 單一埠學到過多 MAC：已收集設備上的有線、非虛擬、非中斷介面，學到超過 MANY_MACS 個外部 MAC，
-   * 且本身（含所屬聚合與成員）沒有任何 LLDP／CDP 介面鄰接，通常是下掛未管理交換器或 hypervisor。
+   * 且本身（含所屬聚合與成員）沒有任何 LLDP／CDP 介面鄰接，通常是下掛非網管型交換器或 hypervisor。
    */
   const MANY_MACS = 5; // 規格書建議的門檻
   function manyMacPorts(M, adjacencyLinksByEp) {

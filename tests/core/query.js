@@ -239,7 +239,7 @@ test('facet：同樣的輸入得到同樣的 facet 與鍵；設備改名、訊�
   });
 });
 
-test('facet：仍會碰撞的規則（I01、I03 依輸入區塊，不是檢查項目）不帶 facet，以多重集合處理', () => {
+test('facet：仍會碰撞的規則（I01、I03 依輸入區塊，不是比對對象）不帶 facet，以多重集合處理', () => {
   const s = build(['SW_A (10.0.0.1):', '### /ip arp print detail', ' 0 address=10.0.0.9 mac-address=AA:BB:CC:00:00:09 interface=ether1', 'GARBAGE LINE one',
     '### /ip address print detail', ' 0 address=10.0.0.1/24 network=10.0.0.0 interface=ether1', 'GARBAGE LINE two'].join('\n'));
   const i03 = of(s, 'I03');
@@ -660,10 +660,10 @@ test('L3 子網圖：範例資料的路由設備、多網段的交換器、鄰�
   assert.ok(off.edges.every((e) => !e.inferred));
 });
 
-test('推定偏離的索引：Q.deviationsOf 列出設備出現在 deviation.deviating 的 finding 索引（依 Snapshot 順序、凍結）', () => {
+test('與多數不同的索引：Q.deviationsOf 列出設備出現在 deviation.deviating 的 finding 索引（依 Snapshot 順序、凍結）', () => {
   const s = build(read('samples/sample-bundle.txt')); const Q = S.query(s);
   const devs = S.util.uniq(s.findings.flatMap((f) => (f.deviation ? f.deviation.deviating : [])));
-  assert.ok(devs.length, '範例資料應有被多數決推定偏離的設備');
+  assert.ok(devs.length, '範例資料應有被多數決判定與多數不同的設備');
   devs.forEach((d) => {
     const want = s.findings.map((f, i) => (f.deviation && f.deviation.deviating.includes(d) ? i : -1)).filter((i) => i >= 0);
     assert.deepStrictEqual(Array.from(Q.deviationsOf(d)), want, d);

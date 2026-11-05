@@ -6,7 +6,7 @@
  * 選取是檢視狀態（findingKey 的集合），只在記憶體，不存進 store；換基準時清空。展開的規則與焦點所在的按鈕跨重繪保留。
  * choice 等級的修正（目前是 A12）：plan.choices 每筆以 radio 列出選項，選擇（findingKey → 選項 id）同樣是記憶體中的檢視狀態，
  * 以 S.remediate.plan(Q, selection, { choices }) 重新產生計畫，預覽與下載都跟著更新；換基準時清空。
- * 選「不修改」時 remediate 不碰處理紀錄，由這裡以 App.setLedger（S.ledger.set）標為可接受（原因與到期日）。
+ * 選「不修改」時 remediate 不碰處理紀錄，由這裡以 App.setLedger（S.ledger.set）標為接受風險（原因與到期日）。
  */
 (function (S) {
   'use strict';
@@ -37,7 +37,7 @@
 
   /**
    * 目前基準的檢查結果，依 findingKey 去重複：[{ key, f, idx, dev }]（同一個鍵只取第一筆，計畫也以鍵為單位）。
-   * 檢查項目不同的（finding.facet，例如 A12 的 DNS 與 NTP）是不同的鍵，各自一列；仍共用鍵的只有依輸入區塊的 I01、I03。
+   * 比對對象不同的（finding.facet，例如 A12 的 DNS 與 NTP）是不同的鍵，各自一列；仍共用鍵的只有依輸入區塊的 I01、I03。
    */
   function rows(App) {
     const seen = new Set(); const out = [];
@@ -77,7 +77,7 @@
       const list = byId.get(id); const lv = RM().levelOf(id); const on = allIn(list);
       return V.chipButton([ruleOf(id).title, ' ', h('span', { class: 'n' }, String(list.length))], `btn patch-rule ${lv === 'auto' ? 'ok' : ''} ${on ? 'on' : ''}`, {
         'data-rule-id': id, 'data-level': lv, 'aria-pressed': String(!!on), 'data-patch-focus': 'rule:' + id,
-        title: `${ruleTip(id)}（${R().LEVEL_TEXT[lv] || lv}）。點一下選取或取消這條規則的全部`,
+        title: `${ruleTip(id)}（${R().LEVEL_TEXT[lv] || lv}）。點一下選取或取消這項檢查的全部`,
         onclick: () => toggleKeys(list.map((r) => r.key), !on),
       });
     };
@@ -86,7 +86,7 @@
       const keys = rids.flatMap((id) => byId.get(id).map((r) => r.key)); const nSel = keys.filter((k) => state.keys.has(k)).length;
       const open = !!state.cats.get(cat);
       const box = h('details', { class: 'patch-cat', 'data-cat': cat, open: open || null }, [
-        h('summary', null, [h('span', { class: 'patch-cat-name' }, cat), ' ', h('span', { class: 'muted', title: `${V.num(rids.length)} 條規則` }, `${V.num(rids.length)} 條`),
+        h('summary', null, [h('span', { class: 'patch-cat-name' }, cat), ' ', h('span', { class: 'muted', title: `${V.num(rids.length)} 項檢查` }, `${V.num(rids.length)} 項`),
           nSel ? ' ' : null, nSel ? V.chip(`已選 ${V.num(nSel)} 項`, 'info') : null]),
         h('div', { class: 'chip-list patch-cat-rules' }, rids.sort((a, b) => order[RM().levelOf(a)] - order[RM().levelOf(b)] || pos(a) - pos(b)).map(ruleChip))]);
       box.addEventListener('toggle', () => state.cats.set(cat, !!box.open));
@@ -116,7 +116,7 @@
           return h('label', { class: 'patch-pick-row' }, [cb, ' ', r.dev ? h('span', { class: 'muted' }, Q.devName(r.dev) + '：') : null,
             facet ? V.chip(facet, 'facet', { title: '原值：' + r.f.facet }) : null, facet ? ' ' : null, r.f.message]);
         })));
-        if (list.length > GROUP_MAX) box.appendChild(h('div', { class: 'muted' }, `只列出前 ${GROUP_MAX} 筆（共 ${list.length} 筆）；其餘請用「依規則」或「依設備」選取`));
+        if (list.length > GROUP_MAX) box.appendChild(h('div', { class: 'muted' }, `只列出前 ${GROUP_MAX} 筆（共 ${list.length} 筆）；其餘請用「依檢查」或「依設備」選取`));
       };
       box.addEventListener('toggle', () => {
         if (box.open) { state.open.add(id); fill(); } else state.open.delete(id);
@@ -126,7 +126,7 @@
     });
     return h('div', { class: 'patch-select', role: 'group', 'aria-labelledby': 'patch-select-title' }, [
       h('h3', { class: 'pane-title', id: 'patch-select-title' }, `要修正哪些（已選 ${V.num(state.keys.size)} 項）`),
-      h('div', { class: 'patch-label' }, '依規則'),
+      h('div', { class: 'patch-label' }, '依檢查'),
       h('div', { class: 'patch-cats' }, catBoxes),
       h('div', { class: 'row' }, [h('span', { class: 'muted' }, '依設備：'), devSel,
         h('button', Object.assign({ class: 'patch-add-device', disabled: !devs.length || null, onclick: () => toggleKeys(all.filter((r) => r.dev === devSel.value).map((r) => r.key), true) }, focusKey('add-device')), '加入這台的全部'),
@@ -138,8 +138,8 @@
   function picksBox(groups) {
     const open = state.picks === null ? state.open.size > 0 : state.picks;
     const box = h('details', { class: 'patch-picks-box', open: open || null }, [
-      h('summary', null, `逐筆勾選（${V.num(groups.length)} 條規則）`),
-      h('div', { class: 'muted patch-select-note' }, '展開規則可以逐筆勾選；要選擇處理方式的項目（例如 DNS、NTP 不一致），在計畫的「需要選擇的項目」選擇要採用的值。'),
+      h('summary', null, `逐筆勾選（${V.num(groups.length)} 項檢查）`),
+      h('div', { class: 'muted patch-select-note' }, '展開檢查可以逐筆勾選；要選擇處理方式的項目（例如 DNS、NTP 不一致），在計畫的「需要選擇的項目」選擇要採用的值。'),
       h('div', { class: 'patch-groups' }, groups)]);
     // 以 open 屬性建立 <details> 時瀏覽器也會排入 toggle 事件：展開狀態真的變了才記成使用者的選擇
     let cur = open;
@@ -191,43 +191,43 @@
     const r = Array.from($('#patch-body').querySelectorAll('.patch-choice-opt')).find((x) => x.getAttribute('data-finding') === key && x.value === id);
     if (r) r.focus();
   }
-  /** 選「不修改」時：處理紀錄已是可接受就顯示豁免內容，否則填原因與到期日後標為可接受（App.setLedger → S.ledger.set） */
+  /** 選「不修改」時：處理紀錄已是接受風險就顯示豁免內容，否則填原因與到期日後標為接受風險（App.setLedger → S.ledger.set） */
   function acceptBox(App, c, hit) {
     const A = V.app; const LG = S.ledger;
     const blocked = A.ledgerState().blocked;
-    if (blocked) return h('p', { class: 'warn-line patch-accept-blocked' }, '處理紀錄目前無法使用，不能標為可接受：' + blocked.reason);
+    if (blocked) return h('p', { class: 'warn-line patch-accept-blocked' }, '處理紀錄目前無法使用，不能標為接受風險：' + blocked.reason);
     if (!hit) return h('p', { class: 'warn-line' }, R().MISSING_FINDING_TEXT + '，無法寫入處理紀錄');
     const it = A.ledgerItem(hit.f);
     if (it && it.status === 'accepted') {
       return h('p', { class: 'patch-accept-done' }, [V.chip(R().statusText('accepted'), R().STATUS_CHIP.accepted), ' ',
-        `處理紀錄已標為可接受，到期日 ${String(it.waiver.until).slice(0, 10)}：${it.waiver.reason}`]);
+        `處理紀錄已標為接受風險，到期日 ${String(it.waiver.until).slice(0, 10)}：${it.waiver.reason}`]);
     }
     // 轉換規則在核心（S.ledger.USER_TO）：不允許時先說明，不顯示會失敗的表單
     if (it && !(LG.USER_TO[it.status] || []).includes('accepted')) {
-      return h('p', { class: 'warn-line patch-accept-blocked' }, `處理紀錄中這筆目前是「${R().statusText(it.status)}」，不能手動改為可接受。`);
+      return h('p', { class: 'warn-line patch-accept-blocked' }, `處理紀錄中這筆目前是「${R().statusText(it.status)}」，不能手動改為接受風險。`);
     }
-    const reason = h('input', { type: 'text', class: 'patch-accept-reason', maxlength: '500', 'aria-label': '可接受的原因', placeholder: '可接受的原因（必填），例如：兩台各自使用 ISP 的 DNS' });
+    const reason = h('input', { type: 'text', class: 'patch-accept-reason', maxlength: '500', 'aria-label': '接受風險的原因', placeholder: '接受風險的原因（必填），例如：兩台各自使用 ISP 的 DNS' });
     const until = h('input', { type: 'date', class: 'patch-accept-until', 'aria-label': '豁免到期日',
       value: new Date(Date.now() + LG.WAIVER_DAYS * DAY_MS).toISOString().slice(0, 10) });
     const err = h('div', { class: 'ledger-error hidden', role: 'alert' });
     const fail = (msg) => { err.textContent = msg; err.classList.remove('hidden'); };
     const save = async () => {
-      if (!reason.value.trim()) { fail('可接受需要填寫原因'); return; }
+      if (!reason.value.trim()) { fail('接受風險需要填寫原因'); return; }
       const r = await App.setLedger(hit.f, { status: 'accepted', waiver: { reason: reason.value, until: until.value ? until.value + 'T00:00:00Z' : undefined } });
       if (!r.ok) { fail('無法變更：' + r.error); return; }
-      V.app.banner(`已把這筆${c.title}的檢查結果標為可接受（處理紀錄）`, 4000);
+      V.app.banner(`已把這筆${c.title}的檢查結果標為接受風險（處理紀錄）`, 4000);
     };
     reason.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
     return h('div', { class: 'patch-accept' }, [
-      h('p', { class: 'muted' }, `不產生指令；在處理紀錄把這筆標為可接受（目前：${R().statusText(it ? it.status : null)}）。`),
+      h('p', { class: 'muted' }, `不產生指令；在處理紀錄把這筆標為接受風險（目前：${R().statusText(it ? it.status : null)}）。`),
       h('div', { class: 'row' }, [reason, h('label', null, ['到期日 ', until]),
-        h('button', { class: 'primary patch-accept-save', onclick: save }, '標為可接受')]),
+        h('button', { class: 'primary patch-accept-save', onclick: save }, '標為接受風險')]),
       err]);
   }
   /** plan.choices 的一筆：標題（規則、項目、檢查結果的訊息）、狀態說明、選項的 radio 群組；選不修改時加上處理紀錄的欄位 */
   function choiceBlock(App, c, hit, n) {
     const status = c.reason === 'needs-choice'
-      ? h('p', { class: 'warn-line patch-choice-need', role: 'status' }, '沒有多數，請選擇要採用的值，或選「不修改」標為可接受；選擇前不會產生指令。')
+      ? h('p', { class: 'warn-line patch-choice-need', role: 'status' }, '沒有多數，請選擇要採用的值，或選「不修改」標為接受風險；選擇前不會產生指令。')
       : c.chosenBy === 'default' ? h('p', { class: 'muted patch-choice-default' }, '預設採用多數設備的值（推論）；可以改選其他組，或選「不修改」。') : null;
     const rows = c.options.map((o) => {
       const on = c.chosen === o.id;
@@ -261,7 +261,7 @@
 
   function planView(App) {
     const plan = state.plan;
-    if (!plan) return h('p', { class: 'muted patch-empty' }, '先在「要修正哪些」選取檢查結果；可以依規則、依設備一次選取，或展開規則逐筆勾選。');
+    if (!plan) return h('p', { class: 'muted patch-empty' }, '先在「要修正哪些」選取檢查結果；可以依檢查、依設備一次選取，或展開檢查逐筆勾選。');
     const files = state.files;
     const all = () => {
       files.forEach((f) => Object.keys(KIND).forEach((k) => download(fileName(f, k), f[k])));

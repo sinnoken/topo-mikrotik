@@ -50,8 +50,8 @@
     'not-found': '基準中沒有這個 findingKey',
     'unsafe-property': '規則的屬性名稱不是 RouterOS 的屬性格式，無法安全地寫成 find 條件',
     'ambiguous-find': 'find 條件可能符合多條規則，無法確定只停用這一條；先為這條規則加上可區分的 comment，再重新收集',
-    'needs-choice': '沒有多數，無法推定要改成哪一組；請選擇要採用的值，或標為可接受',
-    'accepted-choice': '已選擇不修改；請在處理紀錄把這筆檢查結果標為可接受',
+    'needs-choice': '沒有多數，無法推定要改成哪一組；請選擇要採用的值，或標為接受風險',
+    'accepted-choice': '已選擇不修改；請在處理紀錄把這筆檢查結果標為接受風險',
     'ntp-v6': '這台設備以 RouterOS 6 的 primary-ntp／secondary-ntp 設定 NTP，目前的官方手冊無法查證這個寫法，沒有自動修正',
     'unsafe-value': '伺服器的值含有無法確認寫法的字元（例如 @vrf、%介面），沒有自動修正',
     'no-servers': '基準中沒有這台設備的伺服器設定來源，無法產生指令',
@@ -184,7 +184,7 @@
         value: g.value.slice(), basis: { agree: g.devs.length, total, devs: g.devs.slice() }, inferred: true });
     }
     dv.groups.forEach((g) => out.push({ id: 'device:' + g.devs[0], label: `改成 ${devListText(Q, g.devs)} 的值：${g.value.join('、')}`, value: g.value.slice(), devs: g.devs.slice() }));
-    out.push({ id: 'accept', label: '不修改，標為可接受' });
+    out.push({ id: 'accept', label: '不修改，標為接受風險' });
     return out;
   }
   /** 選項 id → 目標組在 deviation.groups 的索引；device:<dev> 可以是組內任一台。沒有多數時的 majority、不認得的 id 為 -1 */

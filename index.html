@@ -95,7 +95,7 @@
         <datalist id="trace-ips"></datalist>
         <div class="form-row hidden" id="trace-vrf-row"><label for="trace-vrf">VRF</label><select id="trace-vrf" aria-label="追蹤的 VRF"></select></div>
         <div id="trace-msg" class="trace-msg warn-line hidden" role="alert"></div>
-        <div class="form-row" style="margin:0"><span class="muted" style="flex:1;font-size:12px">依各設備路由表逐跳追蹤（含 ECMP）</span><button class="primary" id="trace-run">追蹤</button></div>
+        <div class="form-row" style="margin:0"><span class="muted" style="flex:1;font-size:var(--fs-sm)">依各設備路由表逐跳追蹤（含 ECMP）</span><button class="primary" id="trace-run">追蹤</button></div>
       </div>
     </div>
     <button id="btn-hub" class="hub-btn" aria-controls="hub" aria-expanded="false" title="這一輪的輸入與輸出：收集檔、工作包、處理紀錄、命名規則、預期資料、報表與 patch">資料中心</button>
@@ -170,7 +170,7 @@
             <button class="primary" onclick="App.openInput()">建立基準…</button>
             <button onclick="App.loadSample()">用範例資料試試看</button>
           </div>
-          <p class="muted" style="margin-bottom:0;font-size:12px">目前只支援 MikroTik RouterOS（7.x 為主）。資料只在這個瀏覽器處理，不會上傳。</p>
+          <p class="muted" style="margin-bottom:0;font-size:var(--fs-sm)">目前只支援 MikroTik RouterOS（7.x 為主）。資料只在這個瀏覽器處理，不會上傳。</p>
         </div>
       </div>
       </div>
@@ -242,11 +242,11 @@ TPE_ACC_SW_01 (10.1.10.21):
       <div class="form-row" style="margin-top:12px">
         <label for="input-profile">命名規則</label>
         <select id="input-profile"></select>
-        <span class="muted" style="font-size:12px">只用來加上站點、角色等註解，不會改變事實；可不套用</span>
+        <span class="muted" style="font-size:var(--fs-sm)">只用來加上站點、角色等註解，不會改變事實；可不套用</span>
       </div>
       <div class="form-row hidden" id="input-xd-row">
         <label><input type="checkbox" id="input-xd" checked> 使用建立選項 expectedData（由工作包帶回）</label>
-        <span class="muted" style="font-size:12px" id="input-xd-note"></span>
+        <span class="muted" style="font-size:var(--fs-sm)" id="input-xd-note"></span>
       </div>
     </div>
     <div class="df">

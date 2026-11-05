@@ -2139,7 +2139,8 @@ function viewBoundaryViolations(file, src) {
   await step('樣式單一來源：CSS 設備類型變數與 theme 一致，圖例取自 theme', async () => {
     const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8'); const T = S.view.theme;
     [
-      ['共用控制項高度', /--control-h:\s*34px/],
+      ['共用控制項高度（至少 36px）', /--control-h:\s*(3[6-9]|[4-9]\d)px/],
+      ['觸控裝置的控制項高度 44px', /@media \(pointer: coarse\)\s*\{[^}]*--control-h:\s*44px/],
       ['鍵盤焦點樣式', /button:focus-visible/],
       ['清除操作風險提示', /#btn-clear:hover/],
       ['表格交錯列', /table\.t tbody tr:nth-child\(even\) td/],
@@ -3290,9 +3291,13 @@ function viewBoundaryViolations(file, src) {
   await step('畫布：先填滿 theme 的底色（PNG 不透明）、字型與 CSS 一致、過長標籤截斷', async () => {
     const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8'); const v = cssVars(css); const T = S.view.theme; const g = App.graph;
     if (v.surface !== T.canvas.surface) throw new Error('theme.canvas.surface 應與 --surface 相同');
-    const bodyFont = (css.match(/(?:^|\n)body\s*\{[^}]*font:\s*\S+\s+([^;]+);/) || [])[1]; // font: 字級/行高 字型清單
-    if (!bodyFont || bodyFont.trim() !== T.font.ui) throw new Error('畫布字型應與 body 相同：' + bodyFont);
-    if (v.mono !== T.font.mono) throw new Error('畫布等寬字型應與 --mono 相同');
+    // 字型堆疊單一來源：CSS 的 --font-sans／--font-mono 與 theme.font 同一串，body 用 --font-sans；canvas.js 不寫死字族或 bold
+    if (v['font-sans'] !== T.font.sans) throw new Error('--font-sans 與 theme.font.sans 不一致：' + v['font-sans']);
+    if (v['font-mono'] !== T.font.mono) throw new Error('--font-mono 與 theme.font.mono 不一致：' + v['font-mono']);
+    if (!/(?:^|\n)body\s*\{[^}]*font:\s*var\(--fs-base\)\/var\(--lh-body\)\s+var\(--font-sans\)/.test(css)) throw new Error('body 應使用 --fs-base／--lh-body／--font-sans');
+    if (v.mono !== 'var(--font-mono)') throw new Error('--mono 應指向 --font-mono');
+    const canvasSrc = fs.readFileSync(path.join(ROOT, 'src/view/graph/canvas.js'), 'utf8');
+    if (/sans-serif|monospace|JhengHei|PingFang|Consolas|\bbold\b|font\.ui\b/.test(canvasSrc)) throw new Error('canvas.js 的字型應取自 theme.font');
     const long = '很長的設備名稱'.repeat(8) + '-END';
     const nodes = [{ id: 'fx-a', label: long, kind: 'router', collected: true, group: 't' }, { id: 'fx-b', label: 'short', kind: 'router', collected: true, group: 't' }];
     withGraph(g, nodes, [{ id: 'fx-e', a: 'fx-a', b: 'fx-b', cls: '1g', count: 1, evidence: 'adjacency', labelA: 'ether1', labelB: 'ether2' }],
@@ -3304,12 +3309,56 @@ function viewBoundaryViolations(file, src) {
         const cut = texts.find((o) => o.text.endsWith('…'));
         if (!cut || cut.text.length >= long.length || !long.startsWith(cut.text.slice(0, -1))) throw new Error('過長的標籤應截斷並加上「…」');
         if (!texts.some((o) => o.text === 'short')) throw new Error('短標籤不應截斷');
-        if (!texts.every((o) => String(o.font).includes(T.font.ui) || String(o.font).includes(T.font.mono))) throw new Error('畫布文字應使用 theme 的字型清單');
+        if (!texts.every((o) => String(o.font).endsWith(T.font.sans) || String(o.font).endsWith(T.font.mono))) throw new Error('畫布文字應使用 theme 的字型清單');
+        const name = texts.find((o) => o.text === 'short'); const px = name && parseFloat(String(name.font).match(/([\d.]+)px/)[1]) * g.s;
+        if (!px || Math.abs(px - T.font.labelPx) > 0.01) throw new Error('設備名稱在螢幕上應為 theme.font.labelPx：' + px);
       });
     // 匯出 PNG：匯出前重畫（畫面已有底色）
     let drew = 0; const oldDraw = g.draw; g.draw = function () { drew++; return oldDraw.call(this); };
     try { await captureDownloads(() => $('#btn-png').click()); } finally { g.draw = oldDraw; }
     if (!drew) throw new Error('匯出 PNG 前應重畫畫布');
+  });
+  await step('字級與 CJK 排版：字級階梯、行高、斷行規則、窄螢幕不縮小、畫面不寫死字級', async () => {
+    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8'); const v = cssVars(css);
+    const want = { 'fs-xs': '13px', 'fs-sm': '14px', 'fs-md': '14px', 'fs-base': '15px', 'fs-lg': '17px', 'fs-xl': '20px', 'fs-2xl': '24px', 'lh-body': '1.65', 'lh-prose': '1.7', 'lh-heading': '1.4' };
+    Object.entries(want).forEach(([k, x]) => { if (v[k] !== x) throw new Error(`--${k} 應為 ${x}：${v[k]}`); });
+    const body = (css.match(/(?:^|\n)body\s*\{([^}]*)\}/) || [])[1] || '';
+    ['line-break:\\s*strict', 'word-break:\\s*normal', 'overflow-wrap:\\s*break-word', 'text-autospace:', 'text-spacing-trim:'].forEach((r) => {
+      if (!new RegExp(r).test(body)) throw new Error('body 缺少 CJK 排版規則 ' + r);
+    });
+    if (/break-all/.test(css)) throw new Error('不用 word-break: break-all（中文與識別字都會被逐字拆開）');
+    if (/letter-spacing:\s*-/.test(css)) throw new Error('不用負字距（中文會擠在一起）');
+    if (/font-weight:\s*(500|700|bold)/.test(css)) throw new Error('中文粗體只用 600（400／600 兩階）');
+    if (!/(?:^|\n)h1, h2, h3, h4 \{[^}]*line-height:\s*var\(--lh-heading\)[^}]*font-weight:\s*600/.test(css)) throw new Error('標題應使用 --lh-heading 與 600');
+    if (!/\.note-box[^{]*\{[^}]*line-height:\s*var\(--lh-prose\)/.test(css)) throw new Error('說明段落應使用 --lh-prose');
+    // 字級只用變數（:root 之外沒有數字字級）
+    const rest = css.replace(/:root\s*\{[^}]*\}/, '');
+    const lits = rest.match(/font(?:-size)?:\s*\d[^;]*;/g);
+    if (lits) throw new Error('字級應使用 --fs-* 變數：' + lits.join(' '));
+    // 窄螢幕不縮小字級：max-width 媒體查詢內不設 font-size
+    let i = 0;
+    while ((i = css.indexOf('@media (max-width', i)) >= 0) {
+      let d = 0; let j = css.indexOf('{', i);
+      for (let k = j; k < css.length; k++) { if (css[k] === '{') d++; else if (css[k] === '}' && !--d) { j = k; break; } }
+      const block = css.slice(i, j);
+      if (/font-size:/.test(block)) throw new Error('窄螢幕不應改變字級：' + block.match(/[^{}]*\{[^}]*font-size:[^;]*;/)[0].trim());
+      i = j;
+    }
+    // 表格內的識別字（.mono、VLAN 清單）不逐字斷行，表格在自己的框內橫向捲動
+    if (!/table\.t \.mono, table\.t \.vlanlist \{[^}]*white-space:\s*nowrap/.test(css)) throw new Error('表格內的識別字應 nowrap');
+    if (!/\.table-scroll \{[^}]*overflow-x:\s*auto/.test(css)) throw new Error('表格外層應可橫向捲動');
+    const t = S.view.table([{ t: 'a', f: (r) => r }], ['x'], {});
+    if (!t.classList.contains('table-scroll') || !t.querySelector('table')) throw new Error('V.table 應包在可橫向捲動的外框裡');
+    // 畫面程式與 index.html 不寫死字級
+    const sizeLits = [];
+    const walk = (dir) => fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.js') ? [path.join(dir, e.name)] : []));
+    walk('src/view').forEach((f) => {
+      const code = fs.readFileSync(path.join(ROOT, f), 'utf8');
+      for (const m of code.matchAll(/font-size['"]?\s*:\s*['"]?\d+|fontSize\s*[:=]\s*['"]?\d+/g)) sizeLits.push(`${f}：${m[0]}`);
+    });
+    const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+    for (const m of html.matchAll(/font-size:\s*\d+px/g)) sizeLits.push('index.html：' + m[0]);
+    if (sizeLits.length) throw new Error('字級應使用 CSS 變數：' + sizeLits.join('；'));
   });
   await step('滑過左右欄與工具列時不會穿透觸發拓樸圖 hover', () => {
     const g = App.graph; const cv = $('#graph');
@@ -3418,7 +3467,7 @@ function viewBoundaryViolations(file, src) {
       if (contrastOf(fg, bg) < 4.5) throw new Error(`步驟的文字 ${fg} 對 ${bg} 只有 ${contrastOf(fg, bg).toFixed(2)}:1`);
     });
     // 目前的一步不只靠顏色：粗體與底線
-    if (!/\.steps button\[aria-current="step"\] \{[^}]*font-weight: 700[^}]*box-shadow: inset 0 -2px/.test(css)) throw new Error('目前的一步除了顏色，還要有粗體與底線');
+    if (!/\.steps button\[aria-current="step"\] \{[^}]*font-weight: 600[^}]*box-shadow: inset 0 -2px/.test(css)) throw new Error('目前的一步除了顏色，還要有粗體與底線');
     if (!/\.patch-layout \{ display: grid; grid-template-columns: minmax\(0, 1fr\);/.test(css) || !/\.verify-layout \{ display: grid; grid-template-columns: minmax\(0, 1fr\);/.test(css) || !/@container \(min-width: \d+px\)/.test(css)) throw new Error('修正計畫與驗證預設單欄，工作畫面夠寬時才分兩欄');
     // 窄螢幕的步驟列：五步等寬、可以換行（不出現水平捲動），放在一般樣式之後
     const narrow = css.slice(css.indexOf('@media (max-width: 900px)'));

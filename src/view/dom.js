@@ -209,7 +209,9 @@
         cols.map((c) => V.h('td', { class: c.cls || null, style }, c.f(r)))));
     });
     const t = V.h('table', { class: 't' }, [V.h('thead', null, V.h('tr', null, cols.map((c, n) => V.h('th', c.s && o.onSort ? { class: 'sortable', title: '點一下排序', onclick: () => o.onSort(n) } : null, c.t + (o.sortBy === n ? (o.sortDir < 0 ? ' ▼' : ' ▲') : ''))))), tb]);
-    if (o.limit && rows.length > o.limit) return V.h('div', null, [t, V.h('div', { class: 'muted table-more' }, `只顯示前 ${o.limit} 筆，共 ${V.num(rows.length)} 筆`)]);
-    return t;
+    // 識別字（IP、MAC、VLAN 清單）在表格內不斷行，寬於畫面時表格在自己的框內橫向捲動
+    const box = V.h('div', { class: 'table-scroll' }, t);
+    if (o.limit && rows.length > o.limit) return V.h('div', null, [box, V.h('div', { class: 'muted table-more' }, `只顯示前 ${o.limit} 筆，共 ${V.num(rows.length)} 筆`)]);
+    return box;
   }
 })(globalThis.SSOT = globalThis.SSOT || {});

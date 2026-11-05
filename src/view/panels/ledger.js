@@ -34,8 +34,8 @@
 
   // ---------------------------------------------------------------- 趨勢圖
   // 中間的「收斂趨勢」工作畫面用：一張圖的大小固定（px，不縮放，字級不會變小）；畫面比圖窄時，圖在自己的框內水平捲動
-  const H = 200; const PAD = { l: 40, r: 96, t: 14, b: 26 };
-  const END_GAP = 12; // 線尾文字的最小垂直間距（數值相同的線不會疊在一起）
+  const H = 200; const PAD = { l: 44, r: 112, t: 14, b: 28 }; // 軸與線尾文字的字級由 CSS（.trend-plot svg text）決定
+  const END_GAP = 15; // 線尾文字的最小垂直間距（數值相同的線不會疊在一起）
   /** 刻度上限：取 1、2、5 × 10^n 中不小於 max 的最小值（max 為 0 時 1） */
   const niceMax = (max) => { if (max <= 0) return 1; const p = 10 ** Math.floor(Math.log10(max)); return [1, 2, 5, 10].map((m) => m * p).find((x) => x >= max); };
   /** 外形標記：圓、方、三角，外圈是底色環；大小與線寬取自 theme.trend */
@@ -73,11 +73,11 @@
     const kids = [];
     [0, top / 2, top].forEach((v) => {
       kids.push(V.svg('line', { x1: PAD.l, x2: PAD.l + iw, y1: Y(v), y2: Y(v), stroke: v ? T.grid : T.axis, 'stroke-width': 1 }));
-      kids.push(V.svg('text', { x: PAD.l - 5, y: Y(v) + 4, 'text-anchor': 'end', fill: TX.muted, 'font-size': 11 }, fmt(v)));
+      kids.push(V.svg('text', { x: PAD.l - 5, y: Y(v) + 4, 'text-anchor': 'end', fill: TX.muted }, fmt(v)));
     });
     // x 軸標籤：輪次多時只標頭尾與等距的幾個，避免重疊
     const every = Math.max(1, Math.ceil(xs.length / Math.max(2, Math.floor(iw / 56))));
-    xs.forEach((x, i) => { if (i === 0 || i === xs.length - 1 || i % every === 0) kids.push(V.svg('text', { x: X(i), y: H - 7, 'text-anchor': 'middle', fill: TX.muted, 'font-size': 11 }, x)); });
+    xs.forEach((x, i) => { if (i === 0 || i === xs.length - 1 || i % every === 0) kids.push(V.svg('text', { x: X(i), y: H - 7, 'text-anchor': 'middle', fill: TX.muted }, x)); });
     const ends = [];
     lines.forEach((l) => {
       const pts = l.values.map((v, i) => (v == null ? null : [X(i), Y(v)]));
@@ -88,7 +88,7 @@
       if (last) ends.push({ l, x: last[0][0], y: last[0][1], v: l.values[last[1]] });
     });
     // 線尾的名稱與數值：文字用文字色（對底色 ≥ 4.5:1），身分由前面的外形標記表示
-    spreadEnds(ends, PAD.t, PAD.t + ih).forEach((e) => kids.push(V.svg('text', { x: e.x + 9, y: e.ty + 4, fill: TX.body, 'font-size': 11, class: 'trend-end', 'data-series': e.l.key },
+    spreadEnds(ends, PAD.t, PAD.t + ih).forEach((e) => kids.push(V.svg('text', { x: e.x + 9, y: e.ty + 4, fill: TX.body, class: 'trend-end', 'data-series': e.l.key },
       lines.length > 1 ? `${e.l.label} ${fmt(e.v)}` : fmt(e.v))));
     const cross = V.svg('line', { x1: 0, x2: 0, y1: PAD.t, y2: PAD.t + ih, stroke: T.crosshair, 'stroke-width': 1, class: 'trend-cross', visibility: 'hidden' });
     kids.push(cross);

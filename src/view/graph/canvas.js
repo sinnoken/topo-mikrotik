@@ -15,6 +15,12 @@
   const V = (S.view = S.view || {});
   const T = V.theme; const KIND_COLOR = T.kind; const EDGE = T.edge; const SEV_COLOR = T.sev; const MARK = T.mark; const ALPHA = T.alpha;
   const EP = T.endpoint; const WEAK = T.weakEdge; const CV = T.canvas;
+  const F = T.font; const W = F.weight;
+  /** Canvas 字型字串（字級以目前座標單位計）；字族一律取自 theme.font */
+  const font = (px, weight, mono) => `${weight || W.normal} ${px}px ${mono ? F.mono : F.sans}`;
+  // 節點內的小字（廠商縮寫、數量）字級固定（世界座標），螢幕上小於 minPx 時不畫
+  const INNER = { endpoint: 7, downstream: 8, cluster: 9 };
+  const innerShown = (kind, s) => INNER[kind] * s >= F.minPx;
 
   class GraphView {
     constructor(canvas) {
@@ -238,7 +244,7 @@
         this.groupBoxes.forEach((g) => {
           c.fillStyle = CV.group.fill; c.strokeStyle = CV.group.stroke; c.lineWidth = 1 / s;
           roundRect(c, g.x0, g.y0, g.x1 - g.x0, g.y1 - g.y0, 18); c.fill(); c.stroke();
-          if (s > 0.04) { const gf = 13 / s; c.fillStyle = CV.group.text; c.font = `600 ${gf}px ${T.font.ui}`; c.fillText(fitText(c, g.name, Math.max(g.x1 - g.x0 - 8 / s, gf * 4)), g.x0 + 4 / s, g.y0 - 5 / s); }
+          if (s > 0.04) { const gf = F.groupPx / s; c.fillStyle = CV.group.text; c.font = font(gf, W.strong); c.fillText(fitText(c, g.name, Math.max(g.x1 - g.x0 - 8 / s, gf * 4)), g.x0 + 4 / s, g.y0 - 5 / s); }
         });
       }
 
@@ -334,11 +340,12 @@
         cand.push({ n, p, pri: forced ? -1 : (marked ? 0 : 10) + (n.collected ? 0 : 5) + (RANKL[n.kind] ?? 3) });
       }
       cand.sort((a, b) => a.pri - b.pri);
-      const fs = Math.max(9, Math.min(13, 12 * s)) / s; const placed = [];
+      // 設備名稱在螢幕上固定 labelPx，不隨縮小變成小字；太擠時由下方的重疊檢查與上方的縮放門檻略過
+      const fs = F.labelPx / s; const placed = [];
       c.textAlign = 'center';
       for (const { n, p, pri } of cand) {
         // 過長的名稱截斷加「…」，完整名稱在滑過提示與詳情
-        c.font = `${n.collected ? 600 : 400} ${fs}px ${T.font.ui}`; const label = fitText(c, n.label, fs * CV.label.maxEm);
+        c.font = font(fs, n.collected ? W.strong : W.normal); const label = fitText(c, n.label, fs * CV.label.maxEm);
         const tw = c.measureText(label).width; const r = this.radius(n);
         const box = { x0: p.x - tw / 2 - fs * 0.3, x1: p.x + tw / 2 + fs * 0.3, y0: p.y + r + fs * 0.2, y1: p.y + r + fs * 1.5 };
         if (pri >= 0 && placed.some((b) => b.x0 < box.x1 && box.x0 < b.x1 && b.y0 < box.y1 && box.y0 < b.y1)) continue;
@@ -355,7 +362,7 @@
         const a = this.at(e.a); const b = this.at(e.b);
         if (!a || !b || (!inView(a) && !inView(b))) return;
         const k = force ? Math.max(1, 1.25 / s) : 1; // 縮小時放大字級，保持螢幕上可讀
-        c.font = `${10 * k}px ${T.font.mono}`;
+        c.font = font(10 * k, W.normal, true);
         if (e.labelA) portLabel(c, a, b, e.labelA, this.radius(this.nodeById.get(e.a)) + 26 * k, placed, force ? k : 0);
         if (e.labelB) portLabel(c, b, a, e.labelB, this.radius(this.nodeById.get(e.b)) + 26 * k, placed, force ? k : 0);
       };
@@ -427,24 +434,24 @@
   function boxText(c, n, p, s) {
     const w = n.box.w; const h = n.box.h;
     if (n.kind === 'subnet') {
-      const N = T.l3.subnet; c.font = `600 11px ${T.font.mono}`; c.fillStyle = N.text; c.textAlign = 'center';
+      const N = T.l3.subnet; c.font = font(11, W.strong, true); c.fillStyle = N.text; c.textAlign = 'center';
       c.fillText(fitText(c, n.label, w - 10), p.x, p.y + 4); c.textAlign = 'left';
       (n.badges || []).forEach((b, i) => {
-        const B = T.l3.badge; c.font = `600 10px ${T.font.ui}`; const tw = c.measureText(b).width + 18; const y = p.y + h / 2 + 4 + i * 16; const x = p.x - tw / 2;
+        const B = T.l3.badge; c.font = font(10, W.strong); const tw = c.measureText(b).width + 18; const y = p.y + h / 2 + 4 + i * 16; const x = p.x - tw / 2;
         c.fillStyle = B.bg; c.strokeStyle = B.border; c.lineWidth = 1; roundRect(c, x, y, tw, 14, 3); c.fill(); c.stroke();
         sevMark(c, 'warn', x + 7, y + 7, 3.5);
         c.fillStyle = B.text; c.fillText(b, x + 13, y + 10.5);
       });
       return;
     }
-    const B = T.l2.box; c.font = `${n.collected ? 600 : 400} 12px ${T.font.ui}`;
+    const B = T.l2.box; c.font = font(12, n.collected ? W.strong : W.normal);
     c.fillStyle = n.collected ? CV.label.text : CV.label.textUncollected;
     c.fillText(fitText(c, n.label, w - 16), p.x - w / 2 + 9, p.y - h / 2 + B.labelH - 5);
-    if (n.sub && s > 0.5) { c.font = `10px ${T.font.ui}`; c.fillStyle = CV.label.textUncollected; c.fillText(fitText(c, n.sub, w - 16), p.x - w / 2 + 9, p.y - h / 2 + B.labelH + 9); }
+    if (n.sub && s > 0.5) { c.font = font(10); c.fillStyle = CV.label.textUncollected; c.fillText(fitText(c, n.sub, w - 16), p.x - w / 2 + 9, p.y - h / 2 + B.labelH + 9); }
   }
   /** 埠名：放在埠往框外的方向（依它在框上的位置），等寬字型 */
   function portName(c, n, p, s, forced) {
-    const k = forced ? Math.max(1, 1 / s) : 1; c.font = `${9 * k}px ${T.font.mono}`;
+    const k = forced ? Math.max(1, 1 / s) : 1; c.font = font(9 * k, W.normal, true);
     const text = fitText(c, n.label, 9 * k * CV.port.maxEm); const tw = c.measureText(text).width;
     const len = Math.hypot(n.anchor.dx, n.anchor.dy) || 1; const ux = n.anchor.dx / len; const uy = n.anchor.dy / len;
     const vertical = Math.abs(n.anchor.dy) >= Math.abs(n.anchor.dx) * 0.4;
@@ -471,15 +478,15 @@
     if (n.kind === 'endpoint') { // 單一 MAC：圓形，顏色依廠商，近看顯示廠商縮寫
       c.fillStyle = n.color || EP.vendorFallback; c.strokeStyle = CV.outline; c.lineWidth = 1.5;
       c.beginPath(); c.arc(p.x, p.y, r, 0, Math.PI * 2); c.fill(); c.stroke();
-      if (s > 1.3 && n.ini) { c.fillStyle = CV.outline; c.font = `bold 7px ${T.font.ui}`; c.textAlign = 'center'; c.fillText(n.ini, p.x, p.y + 2.6); c.textAlign = 'left'; }
+      if (innerShown('endpoint', s) && n.ini) { c.fillStyle = CV.outline; c.font = font(INNER.endpoint, W.strong); c.textAlign = 'center'; c.fillText(n.ini, p.x, p.y + 2.6); c.textAlign = 'left'; }
     } else if (n.kind === 'downstream') { // Wi-Fi 多 MAC：菱形只作圖面提示
       c.fillStyle = EP.downstream.fill; c.strokeStyle = EP.downstream.stroke; c.lineWidth = 2; c.setLineDash(EP.dash);
       c.beginPath(); c.moveTo(p.x, p.y - r); c.lineTo(p.x + r, p.y); c.lineTo(p.x, p.y + r); c.lineTo(p.x - r, p.y); c.closePath(); c.fill(); c.stroke(); c.setLineDash([]);
-      if (s > 0.9) { c.fillStyle = EP.downstream.text; c.font = `bold 8px ${T.font.ui}`; c.textAlign = 'center'; c.fillText(String(n.count || ''), p.x, p.y + 3); c.textAlign = 'left'; }
+      if (innerShown('downstream', s)) { c.fillStyle = EP.downstream.text; c.font = font(INNER.downstream, W.strong); c.textAlign = 'center'; c.fillText(String(n.count || ''), p.x, p.y + 3); c.textAlign = 'left'; }
     } else { // cluster：同一台設備上很多終端，收合成一個
       c.fillStyle = EP.cluster.fill; c.strokeStyle = EP.cluster.stroke; c.lineWidth = 1.5;
       roundRect(c, p.x - r * 1.3, p.y - r * 0.8, r * 2.6, r * 1.6, 5); c.fill(); c.stroke();
-      if (s > 0.35) { c.fillStyle = EP.cluster.text; c.font = `bold 9px ${T.font.ui}`; c.textAlign = 'center'; c.fillText('×' + (n.count || ''), p.x, p.y + 3.2); c.textAlign = 'left'; }
+      if (innerShown('cluster', s)) { c.fillStyle = EP.cluster.text; c.font = font(INNER.cluster, W.strong); c.textAlign = 'center'; c.fillText('×' + (n.count || ''), p.x, p.y + 3.2); c.textAlign = 'left'; }
     }
   }
   /** force（縮放倍率 k）不做重疊檢查，且兩端太近時把標籤往線中間收，確保一定看得到。 */

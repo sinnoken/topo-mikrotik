@@ -96,7 +96,8 @@ CLI 輸入轉成可追溯的純 JSON Snapshot，畫面只是 Snapshot 的檢視�
   格式與新增方式見該目錄的 `README.md`）。程式與文件一起改，不另寫一份與程式脫節的規格。
 - **專用 skill**：改 adapter／解析使用 `routeros-parser-fixtures`；改 Snapshot 欄位、
   檢查代碼或版本使用 `snapshot-contract-change`；改鄰居與拓樸使用
-  `mikrotik-neighbor-topology`；改防火牆規則解析與檢查使用 `routeros-acl-audit`。
+  `mikrotik-neighbor-topology`；改防火牆規則解析與檢查使用 `routeros-acl-audit`；
+  開工、開分支、平行 worktree、PR 與清理分支使用 `branch-maintenance`。
 
 ## 驗證底線
 

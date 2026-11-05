@@ -36,7 +36,9 @@
       r.pos.forEach((p, id) => App.devicePos.set(id, p));
       if (App.layer === 'device') { App.graph.computeGroups(); App.graph.fit(); } else A.forgetView('device');
       A.savePositions();
-      // 台數和基準狀態卡、資料中心同一個口徑（Q.coverageSummary 的網路設備）；耗時不顯示
+      // 台數刻意用 Q.coverageSummary().network（和基準狀態卡、資料中心同一個口徑），不用 ELK 的 r.stats.coreNodes：
+      // coreNodes 是版面引擎內部排的節點數（可能含主機、不含之後掛上的終端），換一種版面或展開終端就會變，
+      // 使用者無從對照；banner 要說的是「整個網路已換成分層版面」，同一份基準在各處看到的設備數應該一致。耗時不顯示
       A.banner(`已套用分層版面（${V.num(App.Q.coverageSummary().network)} 台網路設備）`, 4000);
     } catch (e) {
       if (e.code === 'stale') return;

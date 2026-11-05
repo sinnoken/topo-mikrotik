@@ -215,8 +215,11 @@
         const re = by('reappeared'); const ex = by('waiver-expired'); const fixed = by('disappeared'); const neu = by('new');
         // 和上一輪的基準版本不同時，新出現的可能只是新版才有的檢查（新舊基準比對的提醒）
         const prev = V.baselineDiff.status(); const ver = prev ? (prev.report.warnings || []).find((w) => w.kind === 'version') : null;
+        // 「新出現」含提醒，「待處理」（Q.pendingSummary）只算錯誤與警告：有提醒時寫明，避免同一屏兩個數字對不上
+        const neuInfo = neu.filter((c) => { const i = App.Q.findingIndexByKey(c.key); return i >= 0 && App.Q.finding(i).severity === 'info'; }).length;
         roundBox.appendChild(h('div', { class: 'summary sub ledger-round-summary' }, [
-          V.chip(`新出現 ${V.num(neu.length)}`, neu.length ? 'info' : ''), V.chip(`已修好 ${V.num(fixed.length)}`, fixed.length ? 'ok' : ''),
+          V.chip(`新出現 ${V.num(neu.length)}` + (neuInfo ? `（含提醒 ${V.num(neuInfo)}）` : ''), neu.length ? 'info' : '',
+            neuInfo ? { title: `新出現的 ${V.num(neu.length)} 項含 ${V.num(neuInfo)} 項提醒；待處理只算錯誤與警告，提醒不算進待處理` } : null), V.chip(`已修好 ${V.num(fixed.length)}`, fixed.length ? 'ok' : ''),
           V.chip(`回歸 ${V.num(re.length)}`, re.length ? 'err' : '', { 'data-reason': 'reappeared' }),
           V.chip(`豁免到期 ${V.num(ex.length)}`, ex.length ? 'warn' : '', { 'data-reason': 'waiver-expired' }),
           V.chip(`無法判斷 ${V.num(st.round.unobserved.length)}`, st.round.unobserved.length ? 'warn' : '', { 'data-reason': 'unobserved' }),

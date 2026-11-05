@@ -19,6 +19,19 @@ test('生成檔：samples/sample-bundle.js 是 tools/embed-sample.js 對 sample-
   const { embed } = require('../../tools/embed-sample.js');
   assert.ok(lf(read('samples/sample-bundle.js')) === embed(lf(read('samples/sample-bundle.txt'))), SAMPLE_FIX);
 });
+test('生成檔：samples/collect-commands.js 是 tools/embed-sample.js 對 tools/collector-commands.sh 的輸出；每個指令都有解析器認得', () => {
+  const E = require('../../tools/embed-sample.js');
+  const sh = lf(read('tools/collector-commands.sh'));
+  assert.ok(lf(read('samples/collect-commands.js')) === E.collectCommandsJs(sh), '收集指令與 tools/collector-commands.sh 不一致：請執行 node tools/embed-sample.js（或 npm run sample）重新產生');
+  const cmds = E.collectorCommands(sh);
+  assert.ok(cmds.default.length > 0 && cmds.optional.length > 0);
+  assert.ok(cmds.default.some((c) => c.command === '/export terse'));
+  [...cmds.default, ...cmds.optional].forEach((c) => {
+    const { blocks } = S.readers.readAll([{ name: 't.txt', text: 'SW_A (10.0.0.1):\n### ' + c.command + '\n' }]);
+    assert.strictEqual(S.adapters.recognize(blocks[0]).how, 'command', `${c.id}（${c.command}）沒有解析器認得`);
+  });
+  assert.throws(() => E.collectorCommands('COLLECT_COMMAND_IDS=(a)\nOPTIONAL_COMMAND_IDS=()\n'), /a 沒有對應的指令/);
+});
 test('黃金基準：範例資料建出的 Snapshot 與 tests/golden/sample-snapshot.json 完全相同', () => {
   const G = require('../golden.js');
   const want = JSON.parse(read('tests/golden/sample-snapshot.json'));

@@ -247,6 +247,7 @@ function stripJs(src) {
 }
 /** 畫面可以使用的 SSOT 成員：查詢介面、輸入 API、常數、下游 API 與畫面自己的命名空間 */
 const VIEW_S_ALLOW = new Set(['query', 'trace', 'util', 'keys', 'VERSION', 'SCHEMA', 'LINK_SCOPE', 'KIND_LABEL', 'build', 'buildAsync', 'inputHashOf',
+  'preflight', 'collectCommands', // 建立前的預檢；由 tools/collector-commands.sh 產生的收集指令清單
   'profiles', 'samples', 'compare', 'remediate', 'ledger', 'workpack', 'zip', 'view', 'store']);
 /** 只允許其中一個成員的核心命名空間 */
 const VIEW_S_ONLY = { readers: 'PASTE', profile: 'compile' };
@@ -327,6 +328,61 @@ function viewBoundaryViolations(file, src) {
     if (Array.isArray(nl) || typeof nl.find === 'function' || typeof nl.forEach !== 'function' || typeof body.children.forEach === 'function') throw new Error('模擬 DOM 應回傳 NodeList（有 forEach、沒有 find）與 HTMLCollection（沒有 forEach）');
   });
   await step('ELK 不在啟動時載入', () => { if (globalThis.ELK || loadedScripts.length) throw new Error('ELK 應在第一次需要分層版面時才載入'); });
+  await step('歡迎畫面：收集指引可展開，指令清單取自收集器定義（samples/collect-commands.js）且可複製；說明 collect.sh', async () => {
+    const w = $('#welcome');
+    if ($('#welcome-collect').tagName !== 'DETAILS') throw new Error('收集指引應為可展開的區塊');
+    const cmds = S.collectCommands.default.map((c) => c.command);
+    if (text('#welcome-commands') !== cmds.join('\n') || !cmds.includes('/export terse')) throw new Error('指令清單應取自 samples/collect-commands.js：' + text('#welcome-commands'));
+    if (!S.collectCommands.optional.every((c) => text('#welcome-optional').includes(c.command))) throw new Error('應列出選用指令');
+    if (!w.textContent.includes('collect.sh')) throw new Error('歡迎畫面應說明收集腳本 collect.sh');
+    if ($('#welcome-copy').tagName !== 'BUTTON' || !$('#welcome-copy').textContent.includes('複製')) throw new Error('複製指令清單應是按鈕');
+    const nav = Object.getOwnPropertyDescriptor(globalThis, 'navigator'); let copied = null;
+    Object.defineProperty(globalThis, 'navigator', { value: { clipboard: { writeText: async (t) => { copied = t; } } }, configurable: true, writable: true });
+    try {
+      $('#welcome-copy').click(); await new Promise((r) => setTimeout(r, 5));
+      if (copied !== cmds.join('\n') || !text('#welcome-copy-status').includes('已複製')) throw new Error('複製指令清單應寫入剪貼簿並提示');
+      $('#input-format-copy').click(); await new Promise((r) => setTimeout(r, 5));
+      if (copied !== text('#input-format-example') || !text('#input-format-copy-status').includes('已複製')) throw new Error('複製範例應寫入格式範例全文');
+      globalThis.navigator = {}; $('#welcome-copy').click(); await new Promise((r) => setTimeout(r, 5));
+      if (!text('#welcome-copy-status').includes('無法自動複製')) throw new Error('不能複製時應明確告知：' + text('#welcome-copy-status'));
+    } finally { if (nav) Object.defineProperty(globalThis, 'navigator', nav); else delete globalThis.navigator; }
+  });
+  await step('輸入對話框：格式說明是可展開、可複製的範例，範例本身認得；placeholder 只是提示', async () => {
+    await App.openInput();
+    if (($('#input-text').getAttribute('placeholder') || '').includes('_____')) throw new Error('placeholder 不應再放格式範例');
+    if (!$('#input-text').getAttribute('aria-label')) throw new Error('文字框應有 aria 名稱');
+    if ($('#input-format').tagName !== 'DETAILS' || !$('#input-format-copy')) throw new Error('格式說明應為可展開、可複製的區塊');
+    const p = S.preflight([{ name: S.readers.PASTE, text: text('#input-format-example') }]);
+    if (p.devices.length !== 2 || p.unrecognized.length || p.partial.length) throw new Error('格式範例本身應完全認得：' + JSON.stringify([p.unrecognized, p.partial]));
+  });
+  await step('輸入對話框：預檢即時顯示認到幾台、哪些段落無法辨識（可展開清單）；0 台時停用建立並說明', async () => {
+    const t = $('#input-text'); const btn = $('#input-build'); const pf = () => text('#input-preflight');
+    const type = async (v) => { t.value = v; t.dispatch('input'); await new Promise((r) => setTimeout(r, 450)); };
+    if (!btn.disabled || !pf().includes('尚未輸入')) throw new Error('沒有輸入時應停用建立：' + pf());
+    await type('隨便一段文字');
+    if (!pf().includes('認到 0 台設備') || !pf().includes('1 段無法辨識') || !btn.disabled) throw new Error('0 台設備時應停用並說明：' + pf());
+    if (!pf().includes('設備名 (管理 IP):') || !pf().includes(`${S.readers.PASTE} 第 1–1 行：沒有設備標頭`)) throw new Error('應說明原因並列出檔名與行號：' + pf());
+    if ($('#input-preflight-list').tagName !== 'DETAILS') throw new Error('清單應可展開');
+    await type(text('#input-format-example') + '\n### /foo bar print\nxyz\n');
+    if (!pf().includes('認到 2 台設備') || !pf().includes('1 段無法辨識') || btn.disabled) throw new Error('有設備時應可建立：' + pf());
+    if (!pf().includes('TPE_CORE_RT_01') || !pf().includes(S.query.dataLabel('system')) || !pf().includes('/foo bar print')) throw new Error('清單應列出設備、資料種類與無法辨識的段落：' + pf());
+    // 展開狀態跨重算保留
+    const list = $('#input-preflight-list'); list.open = true; list.dispatch('toggle');
+    await type(text('#input-format-example'));
+    if ($('#input-preflight-list').getAttribute('open') === null || !pf().includes('沒有無法辨識的段落')) throw new Error('重算後清單應保持展開：' + pf());
+    t.value = '還是沒有標頭'; btn.click(); await new Promise((r) => setTimeout(r, 20)); // 程式直接改文字、沒有 input 事件：建立時也要重新預檢
+    if (App.snap || !text('#input-status').includes('沒有認到任何設備')) throw new Error('0 台設備時不應建立：' + text('#input-status'));
+    await type('');
+    $('#input-file').dispatch('change', { target: { files: [{ name: 'EDGE_SW_9.txt', text: async () => '### /ip arp print detail without-paging\n 0 address=10.0.0.2 mac-address=AA:BB:CC:00:00:01 interface=bridge1\n' }] } });
+    await new Promise((r) => setTimeout(r, 20));
+    if (!pf().includes('認到 1 台設備') || !pf().includes('EDGE_SW_9')) throw new Error('選檔後應立即預檢：' + pf());
+    $('#input-files').querySelector('.chip').click();
+    if (!pf().includes('尚未輸入')) throw new Error('移除檔案後應重新預檢：' + pf());
+    await App.loadSample();
+    const sp = S.preflight([{ name: S.readers.PASTE, text: S.samples['sample-bundle.txt'] }]);
+    if (!pf().includes(`認到 ${S.view.num(sp.devices.length)} 台設備`) || !pf().includes(`${S.view.num(sp.unrecognized.length)} 段無法辨識`) || btn.disabled) throw new Error('載入範例後應立即預檢：' + pf());
+    $('#dlg-input').close();
+  });
   await step('載入範例並建立基準', async () => {
     await App.loadSample(); if (!$('#input-text').value.includes('TPE_CORE_RT_01')) throw new Error('範例未載入');
     if (process.env.SMOKE_INPUT) $('#input-text').value = fs.readFileSync(process.env.SMOKE_INPUT, 'utf8');

@@ -31,6 +31,27 @@
     ospf: 'OSPF', ipaddr: 'IP 位址', ifstatus: '介面狀態', system: '系統資訊', wifireg: 'Wi-Fi 關聯表', stp: 'RSTP 狀態', fwstats: '防火牆命中次數', vrf: 'VRF',
   });
 
+  // 訊息中引用原文時的長度上限（I01 的錯誤訊息、I03 的無法辨識行）
+  const clip = (t) => { t = String(t == null ? '' : t).trim(); return t.length > 60 ? t.slice(0, 60) + '…' : t; };
+  /** 整段無法辨識的原因（I01 與建立前的預檢 S.preflight 共用同一段文字）。b：已辨識過的區塊（how、adapters、empty）。 */
+  function unrecognizedReason(b) {
+    // 整段只有 RouterOS 錯誤訊息：沒有內容是因為指令執行失敗，不是輸出格式不對
+    const content = b.lines.filter((l) => l.trim());
+    const rosErr = b.device !== null && content.length && content.every(S.adapters.util.rosError);
+    return b.device === null ? '沒有設備標頭'
+      : rosErr ? `指令執行錯誤：${clip(content[0])}${b.command ? `（指令：${b.command}）` : ''}；請確認 RouterOS 版本與已安裝的套件是否支援這個指令，或改用正確的指令重新收集`
+      : b.empty ? `解析器已辨識（${(b.adapters || []).map((a) => S.adapters[a].label).join('、')}），但解析不出任何內容；RouterOS 的 print 指令請加上 detail without-paging`
+        : '沒有任何解析器認得這段內容' + (b.command ? `（指令：${b.command}）` : '');
+  }
+  // 收集器註解（readers/common.js）格式或位置不對：不能確定收集時間或失敗原因，列為無法辨識
+  const ISSUE = {
+    'collected-at-invalid': (x) => `收集時間「${x.text}」不是 UTC ISO 8601 格式（應為 2026-10-24T03:00:00Z 這種秒精度的 UTC 時間）`,
+    'collected-at-misplaced': (x) => `收集時間「${x.text}」不在指令標記的下一行，無法判斷屬於哪個指令`,
+    'failure-duplicate': (x) => `同一段指令輸出有第二個收集失敗註解「${x.text}」，採用第一個`,
+  };
+  /** 收集器註解問題的原因（I01 與 S.preflight 共用）。x：區塊的 issues 之一 { kind, line, text }。 */
+  const issueReason = (x) => ISSUE[x.kind](x);
+
   function run(M, ctx) {
     const out = [];
     // extra：個別規則附加的欄位（例如跨設備一致性的 deviation），不可覆寫上列共通欄位；facet 另外處理（放在 entities 之後）
@@ -50,26 +71,11 @@
     const epName = (ep) => { const [d] = K.splitEp(ep); const i = M.ifcs.get(ep); return name(d) + ' ' + (i ? i.name : K.splitEp(ep)[1]); };
 
     // ---- 輸入
-    // 訊息中引用原文時的長度上限（I01 的錯誤訊息、I03 的無法辨識行）
-    const clip = (t) => { t = String(t == null ? '' : t).trim(); return t.length > 60 ? t.slice(0, 60) + '…' : t; };
     ctx.unrecognized.forEach((b) => {
-      // 整段只有 RouterOS 錯誤訊息：沒有內容是因為指令執行失敗，不是輸出格式不對
-      const content = b.lines.filter((l) => l.trim());
-      const rosErr = b.device !== null && content.length && content.every(S.adapters.util.rosError);
-      const why = b.device === null ? '沒有設備標頭'
-        : rosErr ? `指令執行錯誤：${clip(content[0])}${b.command ? `（指令：${b.command}）` : ''}；請確認 RouterOS 版本與已安裝的套件是否支援這個指令，或改用正確的指令重新收集`
-        : b.empty ? `解析器已辨識（${(b.adapters || []).map((a) => S.adapters[a].label).join('、')}），但解析不出任何內容；RouterOS 的 print 指令請加上 detail without-paging`
-          : '沒有任何解析器認得這段內容' + (b.command ? `（指令：${b.command}）` : '');
-      add('I01', `${b.origin.file} 第 ${b.origin.startLine}–${b.origin.endLine} 行：${why}`,
+      add('I01', `${b.origin.file} 第 ${b.origin.startLine}–${b.origin.endLine} 行：${unrecognizedReason(b)}`,
         b.device ? [{ type: 'device', key: b.devKey }] : [], [{ block: b.id, line: b.origin.startLine }]);
     });
-    // 收集器註解（readers/common.js）格式或位置不對：不能確定收集時間或失敗原因，列為無法辨識
-    const ISSUE = {
-      'collected-at-invalid': (x) => `收集時間「${x.text}」不是 UTC ISO 8601 格式（應為 2026-10-24T03:00:00Z 這種秒精度的 UTC 時間）`,
-      'collected-at-misplaced': (x) => `收集時間「${x.text}」不在指令標記的下一行，無法判斷屬於哪個指令`,
-      'failure-duplicate': (x) => `同一段指令輸出有第二個收集失敗註解「${x.text}」，採用第一個`,
-    };
-    ctx.blocks.forEach((b) => (b.issues || []).forEach((x) => add('I01', `${b.origin.file} 第 ${x.line} 行：${ISSUE[x.kind](x)}`,
+    ctx.blocks.forEach((b) => (b.issues || []).forEach((x) => add('I01', `${b.origin.file} 第 ${x.line} 行：${issueReason(x)}`,
       b.devKey ? [{ type: 'device', key: b.devKey }] : [], [{ block: b.id, line: x.line }])));
     // 已解析區塊中認不得的行（adapters.parse）：其餘內容照常進入基準，這幾行沒有；RouterOS 錯誤訊息另外點出，代表輸出可能不完整
     const I03_SAMPLE = 3; // 訊息中列出前幾行的原文
@@ -888,5 +894,5 @@
     });
   }
 
-  S.check = { run, coverage, CATALOG, EXPECTED, DATA_LABEL, fmtVlans, resolveNextHop, hopOwner };
+  S.check = { run, coverage, CATALOG, EXPECTED, DATA_LABEL, fmtVlans, resolveNextHop, hopOwner, unrecognizedReason, issueReason };
 })(globalThis.SSOT = globalThis.SSOT || {});

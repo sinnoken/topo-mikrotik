@@ -340,6 +340,19 @@ dialog::backdrop { background: rgba(15,23,32,.45); }
 .files { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 .drop { border: 2px dashed var(--line-strong); border-radius: var(--radius); padding: 14px 10px; text-align: center; color: var(--muted); background: var(--surface); margin-top: 8px; transition: background-color .14s ease, border-color .14s ease; }
 .drop.over { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+/* 收合的說明區（歡迎畫面的收集指引、對話框的格式說明、預檢清單） */
+details.collect { margin: 6px 0 10px; }
+details.collect > summary { cursor: pointer; color: var(--accent); font-size: var(--fs-md); }
+details.collect[open] > summary { margin-bottom: 6px; }
+details.collect p { margin: 6px 0; }
+pre.cmd-list { margin: 6px 0; padding: 8px 10px; max-height: 220px; overflow: auto; font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.5; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); white-space: pre; }
+.welcome .card { max-height: calc(100% - 32px); overflow: auto; }
+/* 建立前的預檢（S.preflight） */
+.preflight { margin-top: 10px; font-size: var(--fs-md); }
+.preflight .pf-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.preflight .pf-why { color: var(--err-text); margin: 6px 0 0; }
+.preflight .pf-bad { margin: 6px 0 0; padding-left: 20px; }
+.preflight .pf-bad li { margin-bottom: 2px; }
 .progress { height: 6px; background: var(--neutral-soft); border-radius: 999px; overflow: hidden; flex: 1; }
 .progress > div { height: 100%; background: var(--accent); width: 0; transition: width .15s; }
 pre.raw { margin: 0; font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.5; }

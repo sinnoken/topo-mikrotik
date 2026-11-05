@@ -36,6 +36,7 @@
 <script src="src/workpack/workpack.js"></script>
 <script src="profiles/site-naming.js"></script>
 <script src="samples/sample-bundle.js"></script>
+<script src="samples/collect-commands.js"></script>
 <script src="src/view/dom.js"></script>
 <script src="src/view/theme.js"></script>
 <script src="src/view/store.js"></script>
@@ -150,7 +151,17 @@
           <h1>建立網路基準</h1>
           <div class="muted">把設備的 CLI 輸出一次貼上，產生一份可追溯、可檢查的網路現況基準。</div>
           <ol>
-            <li>依「收集清單」在每台 RouterOS 下指令（<code>/export terse</code>、<code>/ip neighbor print detail</code> 等），合併成一個收集檔（設備名 (IP): 開頭，以 _____ 分隔）</li>
+            <li>收集每台 RouterOS 的輸出，合併成一個收集檔
+              <!-- 收集指引：指令清單由 tools/collector-commands.sh 產生（samples/collect-commands.js），內容由 src/view/app-input.js 填入 -->
+              <details id="welcome-collect" class="collect">
+                <summary>怎麼收集？指令清單與收集腳本</summary>
+                <p><b>推薦：</b>在 WSL／Linux 執行收集腳本 <code>./tools/collect.sh devices.csv --output collection.txt</code>，以 SSH 逐台收集並產生收集檔（用法見 README）。</p>
+                <p><b>手動：</b>在每台設備的終端機執行下列指令，把輸出存成一個檔案，每台設備前加一行「設備名 (管理 IP):」。格式範例在「建立基準」對話框的「格式說明」。</p>
+                <pre id="welcome-commands" class="cmd-list" tabindex="0" aria-label="收集指令清單"></pre>
+                <div class="form-row"><button type="button" id="welcome-copy">複製指令清單</button><span id="welcome-copy-status" class="muted" role="status"></span></div>
+                <p id="welcome-optional" class="muted"></p>
+              </details>
+            </li>
             <li>按「建立基準」，貼上內容或選擇檔案</li>
             <li>左側看資料之間的矛盾與缺漏，點選後在圖上定位，右側看詳細資料與原文</li>
           </ol>
@@ -207,9 +218,26 @@
         <button id="input-sample">載入範例資料</button>
         <span class="muted">可以貼上、選擇檔案，或兩者都用（一次全部讀入）</span>
       </div>
-      <textarea id="input-text" spellcheck="false" placeholder="TPE_CORE_RT_01 (10.1.10.2):&#10;[admin@TPE_CORE_RT_01] > /export terse&#10;…輸出…&#10;[admin@TPE_CORE_RT_01] > /ip neighbor print detail without-paging&#10;…輸出…&#10;_____&#10;TPE_ACC_SW_01 (10.1.10.21):&#10;### /interface bridge host print detail without-paging&#10;…輸出…"></textarea>
+      <details id="input-format" class="collect">
+        <summary>格式說明</summary>
+        <p>每台設備以「設備名 (管理 IP):」開頭；每段輸出前是指令標記，可以是終端機的提示字元（<code>[admin@設備名] > 指令</code>）或 <code>### 指令</code>。設備之間可以用一行底線（5 個以上）隔開，也可以省略。沒有設備標頭的檔案，以檔名當設備名。</p>
+        <pre id="input-format-example" class="cmd-list" tabindex="0" aria-label="收集檔格式範例">TPE_CORE_RT_01 (10.1.10.2):
+[admin@TPE_CORE_RT_01] > /system resource print
+            version: 7.12.1 (stable)
+         board-name: CCR2216-1G-12XS-2XQ
+[admin@TPE_CORE_RT_01] > /ip neighbor print detail without-paging
+ 0 interface=sfp-sfpplus1 address=10.1.10.21 mac-address=74:4D:28:00:00:21 identity="TPE_ACC_SW_01" platform="MikroTik" interface-name="sfp-sfpplus1"
+_____
+TPE_ACC_SW_01 (10.1.10.21):
+### /interface bridge host print detail without-paging
+ 0   D mac-address=00:11:22:33:44:55 vid=10 on-interface=ether5 bridge=bridge1</pre>
+        <div class="form-row"><button type="button" id="input-format-copy">複製範例</button><span id="input-format-copy-status" class="muted" role="status"></span></div>
+      </details>
+      <textarea id="input-text" spellcheck="false" placeholder="貼上收集檔內容（格式見上方「格式說明」）" aria-label="收集檔內容"></textarea>
       <div id="input-files" class="files"></div>
       <div id="input-drop" class="drop">也可以把檔案拖到這裡（沒有設備標頭的檔案，會以檔名當設備名）</div>
+      <!-- 建立前的預檢（S.preflight）：認到幾台設備、哪些段落無法辨識；內容由 src/view/app-input.js 產生 -->
+      <div id="input-preflight" class="preflight" role="status" aria-live="polite"></div>
       <div class="form-row" style="margin-top:12px">
         <label for="input-profile">命名規則</label>
         <select id="input-profile"></select>

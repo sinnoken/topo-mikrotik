@@ -171,6 +171,10 @@ header .spacer { flex: 1; }
 .pane-body > p:first-child { margin-top: 0; }
 .pane-section { padding: 0 10px; }
 .pane-filter { display: block; width: calc(100% - 20px); margin: 8px 10px; }
+/* 清單（② 檢視）：清單種類、種類內篩選與文字篩選同一列；窄欄時文字篩選換到下一行 */
+.inv-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.inv-bar select { flex: 0 1 auto; min-width: 0; max-width: 100%; font-size: var(--fs-sm); }
+.inv-bar .pane-filter { flex: 1 1 8em; width: auto; min-width: 8em; margin: 0; }
 .pane-note { padding: 4px 10px; }
 .note-box { white-space: pre-wrap; background: var(--surface); border: 1px solid var(--line); padding: 8px; border-radius: var(--radius-sm); }
 .table-more { padding: 6px 9px; }
@@ -261,8 +265,6 @@ button.chip { box-shadow: none; line-height: inherit; text-align: left; }
 .fitem-row .fitem .note { font-size: var(--fs-sm); }
 .fitem-row .ack { min-height: 0; padding: 3px 8px; margin: 3px 6px 0 0; font-size: var(--fs-sm); color: var(--muted); }
 .fgroup.acked > .head { color: var(--muted); }
-/* 收集失敗清單（覆蓋率） */
-.failure + .failure { margin-top: 3px; }
 /* 新舊基準比對 */
 .pane-title { margin: 14px 0 6px; font-size: var(--fs-md); }
 .diff-cat { margin-top: 10px; }
@@ -717,6 +719,10 @@ header .hub-btn.on { background: var(--accent-soft); color: var(--accent); borde
 /* 覆蓋率（① 輸入）：篩選選項與每台設備的表格；表格寬於畫面時在自己的框內捲動 */
 .hub-coverage { min-width: 0; }
 .hub-coverage .summary { padding-left: 0; padding-right: 0; background: none; }
+/* 每台一列：缺少的資料與收集失敗的 chip 不換行，表格寬於畫面時橫向捲動 */
+.hub-coverage table.t td { vertical-align: middle; }
+.cov-gaps { flex-wrap: nowrap; }
+.chip.failure { font-weight: 400; }
 .hub-pack { display: flex; flex-direction: column; gap: 8px; }
 .hub-pack .row { margin: 0; }
 .wp-choices { margin: 0; padding: 6px 10px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); display: flex; flex-direction: column; gap: 5px; min-width: 0; }

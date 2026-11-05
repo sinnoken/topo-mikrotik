@@ -208,6 +208,8 @@ const hubBtn = (action) => $('#hub').testAll('button').find((b) => b.getAttribut
 /** 流程步驟（#steps）的按鈕：input、view、triage、fix、verify；goStep 和使用者一樣點一下切換 */
 const stepBtn = (s) => document.testAll('#steps button').find((b) => b.dataset.step === s);
 const goStep = (s) => stepBtn(s).click();
+/** ② 清單的下拉（.inv-kind 清單種類、.inv-filter 種類內篩選）：選取 value 並觸發 change */
+const pickInv = (cls, value) => { const el = $('#pane-inventory .' + cls); if (!el) throw new Error('清單缺少下拉 ' + cls); el.value = value; el.dispatch('change'); };
 /** 等到條件成立（非同步的建立、讀入、重建）；逾時時丟錯並說明在等什麼 */
 async function until(cond, what) {
   for (let i = 0; i < 8000 && !cond(); i++) await new Promise((r) => setTimeout(r, 5));
@@ -2096,7 +2098,7 @@ function viewBoundaryViolations(file, src) {
       const kvKeys = () => $('#detail').testAll('.k').map((k) => k.textContent);
       if ($('#detail').querySelector('h2').textContent !== ipr.ip || $('#detail').testAll('.ip-vrf-row').length || kvKeys().includes('VRF') || text('#detail').includes('（VRF')) throw new Error('只有 main 時 IP 詳情沒有 VRF');
       // 清單：IP 與網段沒有 VRF 欄
-      goStep('view'); document.testAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('IP')).click();
+      goStep('view'); pickInv('inv-kind', 'ip');
       if (document.testAll('#pane-inventory th').some((th) => th.textContent.startsWith('VRF'))) throw new Error('只有 main 時 IP 清單沒有 VRF 欄');
       // 路由追蹤：沒有 VRF 選單，結果沒有 VRF
       App.openTrace(ipr.ip, '10.1.10.1');
@@ -2131,43 +2133,36 @@ function viewBoundaryViolations(file, src) {
     const t = text('#pane-inventory');
     [`設備 ${m.devices.length + App.Q.endpointEntries().length}`, `介面 ${m.interfaces.length}`, `IP ${ips.length}`, `網段 ${m.prefixes.length}`, `MAC ${new Set(rows.map((r) => r.mac)).size}`, `VLAN ${m.vlans.length}`].forEach((x) => { if (!t.includes(x)) throw new Error('清單缺少分類：' + x); });
     if (new Set(ips.map((r) => r.key)).size !== ips.length) throw new Error('IP 清單應依位址鍵去重複');
-    document.testAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('網段')).click();
+    pickInv('inv-kind', 'prefix');
     const pre = App.Q.inventory().rows.prefixes;
     if (!pre.length || document.testAll('#pane-inventory tbody tr').length !== pre.length) throw new Error('網段清單列數應等於推導出的網段數');
     pre.forEach((p) => { if (p.ipCount !== ips.filter((r) => r.vrf === p.vrf && S.ip.inNet(r.ip, p.net, p.len)).length) throw new Error('網段的 IP 數應等於清單中同一個 VRF、落在網段內的 IP'); });
     document.querySelector('#pane-inventory tbody tr').dispatch('keydown', { key: 'Enter' });
     if (App.sel.type !== 'interface' || !pre[0].eps.includes(App.sel.key)) throw new Error('點網段應選取設定該網段的介面');
-    const macChip = document.testAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('MAC'));
     if (new Set(rows.map((r) => r.mac)).size !== App.snap.meta.stats.macs) throw new Error('清單的不重複 MAC 數應等於總覽');
     const nEnd = App.Q.endpointEntries().length; const unk = App.snap.model.interfaces.filter((i) => i.unknownPeer).length;
     if (nEnd < unk || new Set(App.Q.endpointEntries().map((e) => e.key)).size !== unk) throw new Error('終端的不重複介面數應等於未知對端介面數，且不可少於它');
-    document.testAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('設備')).click();
+    pickInv('inv-kind', 'device');
     const t0 = text('#pane-inventory'); ['全部 ' + (m.devices.length + nEnd), '終端 ' + nEnd].forEach((x) => { if (!t0.includes(x)) throw new Error('設備清單缺少分類：' + x); });
-    // 兩層選項：清單種類是分段按鈕，種類內是篩選選項；0 筆的篩選停用
-    const seg = $('#pane-inventory .seg'); if (!seg || seg.testAll('button').length !== 6) throw new Error('清單種類應為分段按鈕');
-    const sub = document.testAll('#pane-inventory .summary').find((x) => x.className.split(' ').includes('sub'));
-    if (!sub) throw new Error('種類內的篩選應是第二層');
-    const zero = sub.testAll('.chip').find((c) => / 0$/.test(c.textContent));
-    if (zero && (!zero.className.includes('off') || zero.getAttribute('aria-disabled') !== 'true')) throw new Error('0 筆的篩選應停用');
+    // 最多兩層控制：資料分段之下只有一列——清單種類下拉、種類內篩選下拉與文字篩選；0 筆的篩選停用
+    const bar = $('#pane-inventory .inv-bar'); if (!bar) throw new Error('清單應有一列控制');
+    const kindOpts = bar.querySelector('.inv-kind').testAll('option');
+    if (kindOpts.length !== 6 || !bar.querySelector('.inv-filter') || !bar.querySelector('.pane-filter')) throw new Error('清單種類（6 種）、篩選與文字篩選應在同一列');
+    if (document.testAll('#pane-inventory .summary').length || $('#pane-inventory .seg')) throw new Error('清單不應再有分段按鈕或第二排篩選選項');
+    ['inv-kind', 'inv-filter', 'pane-filter'].forEach((c) => { if (!bar.querySelector('.' + c).getAttribute('aria-label')) throw new Error('清單控制應有 aria 名稱：' + c); });
+    bar.querySelector('.inv-filter').testAll('option').forEach((o) => {
+      if ((/ 0$/.test(o.textContent) && o.getAttribute('value') !== 'all') !== (o.getAttribute('disabled') != null)) throw new Error('只有 0 筆的篩選停用：' + o.textContent);
+    });
     const firstRow = document.querySelector('#pane-inventory tbody tr');
     if (!firstRow || firstRow.getAttribute('tabindex') !== '0') throw new Error('可點選清單列應可透過鍵盤聚焦');
     firstRow.dispatch('keydown', { key: 'Enter' });
     if (App.sel.type !== 'device') throw new Error('清單列按 Enter 應選取設備');
-    document.testAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('終端')).click();
-    if (document.testAll('#pane-inventory tbody tr').length !== Math.min(nEnd, 500)) throw new Error('終端篩選列數不符');
-    // 清單種類是 tabs：roving tabindex，←／→、Home／End 切換並把焦點留在分頁上，分頁內容是 tabpanel
-    const tabs = () => document.testAll('#pane-inventory .seg').find((x) => x.getAttribute('role') === 'tablist').testAll('button');
-    const selTab = () => tabs().find((b) => b.getAttribute('aria-selected') === 'true');
-    if (tabs().filter((b) => b.getAttribute('tabindex') === '0').length !== 1 || selTab().getAttribute('tabindex') !== '0') throw new Error('清單種類只有選取中的分頁在 Tab 順序裡');
-    const panel = $('#inv-panel');
-    if (!panel || panel.getAttribute('role') !== 'tabpanel' || panel.getAttribute('aria-labelledby') !== selTab().id || selTab().getAttribute('aria-controls') !== 'inv-panel') throw new Error('分頁內容應是 tabpanel 並互相關聯');
-    const tab0 = tabs().indexOf(selTab());
-    selTab().dispatch('keydown', { key: 'ArrowRight' });
-    if (tabs().indexOf(selTab()) !== (tab0 + 1) % tabs().length || document.activeElement !== selTab()) throw new Error('→ 應切到下一個分頁，焦點跟著移動');
-    selTab().dispatch('keydown', { key: 'End' }); if (tabs().indexOf(selTab()) !== tabs().length - 1) throw new Error('End 應切到最後一個分頁');
-    selTab().dispatch('keydown', { key: 'ArrowRight' }); if (tabs().indexOf(selTab()) !== 0) throw new Error('最後一個再按 → 應回到第一個');
-    selTab().dispatch('keydown', { key: 'Home' }); if (tabs().indexOf(selTab()) !== 0 || document.activeElement !== selTab()) throw new Error('Home 應切到第一個分頁');
-    const ipChip = document.testAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('IP')); ipChip.click();
+    if (nEnd) { pickInv('inv-filter', 'end'); if (document.testAll('#pane-inventory tbody tr').length !== Math.min(nEnd, 500)) throw new Error('終端篩選列數不符'); }
+    if (document.activeElement !== $('#pane-inventory .inv-filter')) throw new Error('換篩選後焦點應留在篩選下拉');
+    // 窄欄：表格在自己的框內橫向捲動，不截斷主要欄
+    if (!$('#pane-inventory table').parentNode.className.includes('table-scroll')) throw new Error('清單表格應在可橫向捲動的框內');
+    pickInv('inv-kind', 'ip');
+    if (document.activeElement !== $('#pane-inventory .inv-kind')) throw new Error('換清單種類後焦點應留在種類下拉');
     // 可排序的標頭是 th 裡的按鈕（鍵盤可操作），th 標 aria-sort
     const sortBtn = () => document.testAll('#pane-inventory th')[0].querySelector('.th-sort');
     if (!sortBtn() || document.testAll('#pane-inventory th')[0].getAttribute('aria-sort') !== 'none') throw new Error('可排序的標頭應是按鈕，未排序時 aria-sort=none');
@@ -2179,8 +2174,7 @@ function viewBoundaryViolations(file, src) {
     sortBtn().click();
     const desc = col(); if (asc.length > 1 && desc[0] === asc[0]) throw new Error('再點一次應反向排序');
     if (document.testAll('#pane-inventory th')[0].getAttribute('aria-sort') !== 'descending') throw new Error('降冪時 aria-sort=descending');
-    document.testAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('MAC')).click();
-    macChip.click(); const t2 = text('#pane-inventory'); if (!t2.includes('缺 IP ' + new Set(rows.filter((r) => r.noIp).map((r) => r.mac)).size) || !t2.includes('全部 ' + App.snap.meta.stats.macs)) throw new Error('缺 IP 摘要不正確');
+    pickInv('inv-kind', 'mac'); const t2 = text('#pane-inventory'); if (!t2.includes('缺 IP ' + new Set(rows.filter((r) => r.noIp).map((r) => r.mac)).size) || !t2.includes('全部 ' + App.snap.meta.stats.macs)) throw new Error('缺 IP 摘要不正確');
     App.select(null); const ov = text('#right'); const uniq = new Set(App.snap.model.arps.map((x) => x.ip)).size;
     if (!ov.includes('IP（ARP）' + uniq.toLocaleString()) && !ov.includes('IP（ARP）')) throw new Error('總覽缺少 IP（ARP）');
   });
@@ -2189,6 +2183,66 @@ function viewBoundaryViolations(file, src) {
     if ($('#hub').classList.contains('hidden') || !$('#hub').contains($('#pane-coverage'))) throw new Error('覆蓋率應在資料中心（① 輸入）');
     if (!text('#pane-coverage').includes(process.env.SMOKE_INPUT ? '有缺漏 0' : '有缺漏 1')) throw new Error('覆蓋率摘要不正確');
     S.view.app.closeHub();
+  });
+  await step('覆蓋率：每台一列，缺少的資料以 chip 列在同列、有缺漏的排前，欄位可排序，超過上限註明', () => {
+    goStep('input');
+    const pc = () => $('#pane-coverage');
+    pc().testAll('.chip').find((c) => c.textContent.startsWith('全部已收集')).click();
+    const list = App.Q.coverage().filter((r) => r.collected);
+    const gap = S.view.coverageGap; const LIMIT = 600;
+    // 有缺漏的排前（穩定排序，其餘維持原順序）
+    const want = list.filter(gap).concat(list.filter((r) => !gap(r))).slice(0, LIMIT);
+    const trs = pc().testAll('tbody tr');
+    if (trs.length !== want.length) throw new Error(`覆蓋率列數應為 ${want.length}：${trs.length}`);
+    trs.forEach((tr, n) => {
+      const r = want[n]; const td = tr.testAll('td');
+      if (td[0].textContent !== App.Q.devName(r.dev)) throw new Error('覆蓋率應有缺漏的排前、其餘維持原順序：' + td[0].textContent);
+      const chips = td[2].testAll('.chip');
+      if (chips.length !== r.missing.length + r.failures.length) throw new Error('缺少的資料與收集失敗應各一個 chip，列在同一列：' + td[0].textContent);
+      if (!gap(r) && td[2].textContent !== '—') throw new Error('沒有缺漏的設備寫「—」');
+    });
+    if (list.length > LIMIT && !text('#pane-coverage').includes(`只顯示前 ${LIMIT} 筆，共 ${S.view.num(list.length)} 筆`)) throw new Error('超過上限應註明只顯示前 N 筆');
+    const ths = pc().testAll('th');
+    if (ths.map((th) => th.textContent).join('|') !== '設備|類型|缺少的資料|鏈路' || ths.some((th) => !th.querySelector('.th-sort'))) throw new Error('覆蓋率四欄都可排序：' + ths.map((th) => th.textContent).join('|'));
+    ths[3].querySelector('.th-sort').click();
+    const links = pc().testAll('tbody tr').map((tr) => +tr.testAll('td')[3].textContent);
+    if (pc().testAll('th')[3].getAttribute('aria-sort') !== 'ascending' || links.some((x, i) => i && links[i - 1] > x)) throw new Error('依鏈路數排序');
+    // 收集失敗的 chip 是按鈕：點一下開啟原文，不選取所在列的設備
+    const fail = pc().querySelector('.failure');
+    if (fail && fail.tagName === 'BUTTON') {
+      const sel0 = App.sel; fail.click();
+      if (App.sel !== sel0) throw new Error('點收集失敗的 chip 不應選取設備');
+    }
+    S.view.app.closeHub();
+  });
+  await step('MAC 詳情：事實、位置（推論）、學到它的介面分開；非終端埠收合，全相同的欄位不重複列', () => {
+    const Q = App.Q;
+    const anchorOf = (m) => (r) => m.edge.includes(r.ep) || (m.behind && m.behind.anchor === r.ep) || (m.wifi && m.wifi.ep === r.ep);
+    const ms = App.snap.model.macs.map((x) => Q.findMac(x.mac));
+    const m = ms.find((x) => x.edge.length && x.seen.some((r) => !anchorOf(x)(r))) || ms.find((x) => x.seen.length);
+    if (!m) throw new Error('應有學到 MAC 的介面');
+    App.select({ type: 'mac', key: m.mac });
+    const d = $('#detail'); const heads = d.testAll('h3').concat(d.testAll('summary'));
+    const head = (t) => heads.find((x) => x.textContent.startsWith(t));
+    const kvs = d.testAll('.k').map((k) => k.textContent);
+    if (!kvs.includes('IP（ARP）') || kvs.includes('位置（終端埠）')) throw new Error('事實區列 IP（ARP），位置另成一區');
+    const place = head('位置');
+    if (!place) throw new Error('MAC 詳情應有「位置」區塊');
+    const inferred = m.edge.length || m.behind || (m.wifi && m.wifi.basis !== 'registration');
+    if (!!inferred !== place.textContent.includes(S.view.TERMS.inferred)) throw new Error('推定的位置應在區塊標題加推論標示');
+    const learnt = head('學到它的介面'); if (!learnt) throw new Error('應有「學到它的介面」區塊');
+    const rest = m.seen.filter((r) => !anchorOf(m)(r));
+    const fold = d.testAll('summary').find((x) => x.textContent.startsWith('另在 '));
+    if (rest.length ? !fold || fold.textContent !== `另在 ${rest.length} 個非終端埠學到` : fold) throw new Error('非終端埠應收合為「另在 N 個非終端埠學到」');
+    const th = d.testAll('th').map((x) => x.textContent);
+    const allSame = (f) => m.seen.every((r) => f(r) === f(m.seen[0]));
+    if (allSame((r) => !!r.static) === th.includes('類型')) throw new Error('類型全相同時不顯示類型欄');
+    if (allSame((r) => r.vlan || '') === th.includes('VLAN')) throw new Error('VLAN 全相同時不顯示 VLAN 欄');
+    if (allSame((r) => r.vlan || '') && m.seen[0].vlan && !learnt.textContent.includes('VLAN ' + m.seen[0].vlan)) throw new Error('VLAN 全相同時寫在區塊標題');
+    // 基準中沒有的 MAC 沒有位置區塊
+    App.select({ type: 'mac', key: '02:00:00:00:00:01' });
+    if (d.testAll('h3').some((x) => x.textContent.startsWith('位置')) || !text('#detail').includes('基準中沒有這個 MAC')) throw new Error('基準中沒有的 MAC 不列位置');
+    App.select(null);
   });
   await step('比對：在「⑤ 驗證」全寬顯示，資料中心的「預期資料」列出同一份比對的摘要', async () => {
     goStep('verify');
@@ -4090,7 +4144,7 @@ function viewBoundaryViolations(file, src) {
         const p = has('#pane-coverage', '覆蓋率');
         if (!$('#hub').contains(p) || !p.querySelector('table') || !hubBtn('devices-csv') || !hubBtn('open-coverage')) throw new Error('覆蓋率在資料中心，有表格與 devices.csv 草稿');
         return p; }],
-      ['左：清單（設備、介面、IP、網段、MAC、VLAN）', 'view', () => { const p = has('#pane-inventory', '清單'); if (p.querySelector('.seg').testAll('button').length !== 6) throw new Error('清單的六種'); return p; }],
+      ['左：清單（設備、介面、IP、網段、MAC、VLAN）', 'view', () => { const p = has('#pane-inventory', '清單'); if (p.querySelector('.inv-kind').testAll('option').length !== 6) throw new Error('清單的六種'); return p; }],
       ['左：比對（摘要與入口）→ 驗證的比對與資料中心的摘要', 'verify', () => {
         const p = has('#compare-body', '比對');
         if (!p.querySelector('.cmp-expected') || !p.querySelector('.cmp-baseline') || !p.querySelector('.cmp-load-expected') || !p.querySelector('.cmp-load-previous')) throw new Error('預期資料比對與新舊基準比對');

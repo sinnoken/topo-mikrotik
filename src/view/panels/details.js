@@ -585,28 +585,45 @@
   }
 
   // ---------------------------------------------------------------- MAC / IP
+  /*
+   * MAC：事實（ARP 的 IP、Wi-Fi 關聯表與 DHCP）→ 位置（推論：終端埠、Wi-Fi 位置、推定在未收集交換器底下）→ 學到它的介面。
+   * 學到它的介面只直接列出位置的錨點（終端埠、Wi-Fi 介面、推定位置的上一跳）；其餘是轉送路徑上的非終端埠，收合。
+   */
   function mac(App, sel) {
     const Q = App.Q; const m = Q.findMac(sel.key);
+    const place = [m.edge.length ? ['終端埠', h('span', null, m.edge.flatMap((ep, n) => [n ? '、' : '', epLink(App, ep)]))] : null,
+      ...wifiPlaceRows(App, m.wifi), ...behindRows(App, m.behind, m.mac)].filter((p) => p && p[1] != null);
+    const inferred = m.edge.length > 0 || !!m.behind || !!(m.wifi && m.wifi.basis !== 'registration');
+    const anchor = (r) => m.edge.includes(r.ep) || (m.behind && m.behind.anchor === r.ep) || (m.wifi && m.wifi.ep === r.ep);
+    const lead = m.seen.filter(anchor); const rest = m.seen.filter((r) => !anchor(r));
+    // 所有列都相同的欄位不重複列：VLAN 全相同時寫在區塊標題，全部動態學到（預設）時不顯示類型欄
+    const same = (f) => m.seen.every((r) => f(r) === f(m.seen[0]));
+    const vlanSame = same((r) => r.vlan || ''); const typeSame = same((r) => !!r.static);
+    const cols = (role) => [{ t: '設備介面', f: (r) => epLink(App, r.ep) }, vlanSame ? null : { t: 'VLAN', f: (r) => r.vlan || '' },
+      typeSame ? null : { t: '類型', f: (r) => (r.static ? '靜態' : '動態') }, role ? { t: '', f: (r) => portRole(App, m, r.ep) } : null].filter(Boolean);
+    const common = m.seen.length ? [vlanSame && m.seen[0].vlan ? V.chip('VLAN ' + m.seen[0].vlan) : null, typeSame && m.seen[0].static ? V.chip('靜態') : null] : [];
     return h('div', { class: 'detail' }, [
       h('h2', { class: 'mono' }, K.macPretty(m.mac)),
       h('div', { class: 'row' }, [m.found ? null : V.chip('基準中沒有這個 MAC', 'warn'), m.vendor ? V.chip(m.vendor) : V.chip('廠商不明')]),
       findingsBlock(App, Q.findingsFor('mac', m.mac)),
-      kv([['IP（ARP）', m.ips.length ? h('span', null, m.ips.flatMap((x, n) => [n ? '、' : '', ipLink(App, x)])) : '—'],
-        ['位置（終端埠）', m.edge.length ? h('span', null, m.edge.flatMap((ep, n) => [n ? '、' : '', epLink(App, ep)])) : '—'],
-        ...wifiRows(App, m.wifi), ...behindRows(App, m.behind, m.mac)]),
-      section('在哪些介面／VLAN 學到', m.seen.length ? table([
-        { t: '設備介面', f: (r) => epLink(App, r.ep) }, { t: 'VLAN', f: (r) => r.vlan || '' }, { t: '類型', f: (r) => (r.static ? '靜態' : '動態') }, { t: '', f: (r) => portRole(App, m, r.ep) },
-      ], m.seen) : null, { count: m.seen.length, long: true }),
+      kv([['IP（ARP）', m.ips.length ? h('span', null, m.ips.flatMap((x, n) => [n ? '、' : '', ipLink(App, x)])) : '—'], ...wifiFactRows(m.wifi)]),
+      m.found ? section('位置', kv(place.length ? place : [['位置', '無法推定（沒有學到它的終端埠）']]),
+        { extra: [inferred ? V.inferChip('依 MAC 表與鄰居資料推定，不是設備直接回報') : null] }) : null,
+      section('學到它的介面', m.seen.length ? [lead.length ? table(cols(true), lead) : null,
+        rest.length ? h('details', { class: 'detail-fold mac-rest' }, [h('summary', null, `另在 ${rest.length} 個非終端埠學到`),
+          h('p', { class: 'muted' }, '這些埠學到多個 MAC 或接到網路設備，是轉送路徑上的埠，不是它的位置；不代表方向。'), table(cols(false), rest)]) : null] : null,
+      { count: m.seen.length, extra: common }),
     ]);
   }
-  /** 推定位置：在未收集交換器（例如 SwOS 的 CSS106）底下，精確到設備、埠不明。 */
   /** MAC 學到的位置屬於哪種埠；沒有方向依據，不標上行／下行 */
   function portRole(App, m, ep) {
     if (m.edge.includes(ep)) return V.chip('終端', 'ok');
+    if (m.wifi && m.wifi.ep === ep) return V.chip('Wi-Fi', 'info');
     const b = m.behind;
     if (b && b.anchor === ep) return V.chip(`往 ${(b.dev ? [b.dev] : b.via).map((d) => App.Q.devName(d)).join('、')}（推定）`, 'info');
     return V.chip('非終端埠', '', { title: '這個埠學到多個 MAC 或接到網路設備，所以不是終端位置；不代表方向' });
   }
+  /** 推定位置：在未收集交換器（例如 SwOS 的 CSS106）底下，精確到設備、埠不明。 */
   function behindRows(App, b, mk) {
     if (!b) return [];
     const where = b.dev ? h('span', null, ['在 ', devLink(App, b.dev), ' 底下（埠不明）']) : h('span', null, ['在 ', ...b.via.flatMap((v, n) => [n ? '、' : '', devLink(App, v)]), ' 或其下游（無法確定是哪一台）']);
@@ -615,14 +632,18 @@
       ['推定依據', h('span', null, [epLink(App, b.anchor), ' 的 MAC 表學到它，且沒有在其他已收集交換器更下游出現；該交換器沒有收集資料，所以埠不明'])],
       ['經由', via.length ? h('span', null, via.flatMap((l, n) => [n ? '、' : '', inferredLink(App, l, K.splitEp(b.anchor)[0])])) : null]];
   }
-  /** Wi-Fi 位置：依證據強度標示信心；漫遊時列出其他候選位置。 */
-  function wifiRows(App, w) {
+  /** Wi-Fi 位置（位置區，推論）：依證據強度標示信心；漫遊時列出其他候選位置。 */
+  function wifiPlaceRows(App, w) {
     if (!w) return [];
     const where = w.basis === 'via-ap-port' ? h('span', null, ['經由 ', devLink(App, w.dev), '（', epLink(App, w.ep), '）']) : epLink(App, w.ep);
     return [['Wi-Fi 位置', where], ['位置依據', h('span', null, [V.WIFI_BASIS[w.basis], w.roaming ? V.chip('可能漫遊', 'warn') : null])],
-      ['SSID／頻段', [w.ssid, w.band].filter(Boolean).join('・') || null], ['主機名稱（DHCP）', w.hostname], ['位址（DHCP）', w.ip],
-      ['訊號', w.signal == null ? null : `${w.signal} dBm`],
       ['其他候選位置', w.candidates.length ? h('span', null, w.candidates.flatMap((ep, n) => [n ? '、' : '', epLink(App, ep)])) : null]];
+  }
+  /** Wi-Fi 關聯表與 DHCP 收集到的事實（事實區） */
+  function wifiFactRows(w) {
+    if (!w) return [];
+    return [['SSID／頻段', [w.ssid, w.band].filter(Boolean).join('・') || null], ['主機名稱（DHCP）', w.hostname], ['位址（DHCP）', w.ip],
+      ['訊號', w.signal == null ? null : `${w.signal} dBm`]];
   }
   /**
    * IP：sel.vrf 為 null 時不分 VRF（Q.findIp(ip)，例如搜尋）；同一個 IP 在多個 VRF（位址重疊）時列出每個 VRF，請使用者選擇。

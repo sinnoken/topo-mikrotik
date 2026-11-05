@@ -255,30 +255,29 @@
     const F = { all: ['全部已收集', collected], missing: ['有缺漏', missing], seen: ['未收集的網路設備', seenOnly], hosts: ['主機（只由 LLDP 看到）', hosts] };
     // 篩選選項；devices.csv 草稿（C01）的匯出在資料中心同一頁的「這一輪的輸入」與「給收集器」
     root.appendChild(h('div', { class: 'summary' }, Object.entries(F).map(([k, [label, list]]) => filterChip(label, list.length, { cls: k === 'missing' ? 'err' : '', on: cov.filter === k, onclick: () => { cov.filter = k; coverage(App); } }))));
-    const list = F[cov.filter][1];
+    // 每台一列：缺少的資料與收集失敗以 chip 列在同一格（已收集的寫在提示文字），有缺漏的排在前面（穩定排序，其餘維持原順序）
+    const gapN = (r) => r.missing.length + (r.failures || []).length;
+    const list = F[cov.filter][1].slice().sort((a, b) => (gapN(b) > 0) - (gapN(a) > 0));
+    const has = (r) => (r.data.length ? '已收集：' + r.data.map(S.query.dataLabel).join('、') : '沒有收集資料');
     root.appendChild(V.table([
-      { t: '設備', f: (r) => Q.devName(r.dev) },
-      { t: '類型', f: (r) => V.kindChip(r.kind) },
-      { t: '資料', f: (r) => h('div', { class: 'chip-list' }, [
-        ...r.data.map((t) => V.chip(S.query.dataLabel(t))),
-        ...r.missing.map((t) => V.chip('缺 ' + S.query.dataLabel(t), 'err')),
-      ]) },
-      { t: '收集失敗', f: (r) => failureList(App, r.failures || []) },
-      { t: '鏈路', f: (r) => String(r.links) },
+      { t: '設備', f: (r) => Q.devName(r.dev), s: (r) => Q.devName(r.dev) },
+      { t: '類型', f: (r) => V.kindChip(r.kind), s: (r) => V.KIND[r.kind] || r.kind },
+      { t: '缺少的資料', s: (r) => -gapN(r), f: (r) => (gapN(r)
+        ? h('div', { class: 'chip-list cov-gaps', title: has(r) }, [...r.missing.map((t) => V.chip('缺 ' + S.query.dataLabel(t), 'err')), ...failureChips(App, r.failures || [])])
+        : h('span', { class: 'muted', title: has(r) }, r.collected ? '—' : '未收集')) },
+      { t: '鏈路', f: (r) => String(r.links), s: (r) => r.links },
     ], list, { onRow: (r) => App.select({ type: 'device', key: r.dev }, { focus: true }), limit: 600, bad: V.coverageGap }));
   }
   coverage.showMissing = (App) => { cov.filter = 'missing'; coverage(App); };
-  /** 收集失敗清單：原因、指令（標頭層級的失敗沒有指令）與影響的資料類別；點一下開啟原文的失敗行 */
-  function failureList(App, list) {
-    if (!list.length) return '';
-    return h('div', null, list.map((x) => {
+  /** 收集失敗：每筆一個 chip（指令與原因；標頭層級的失敗沒有指令），提示寫出影響的資料類別；點一下開啟原文的失敗行 */
+  function failureChips(App, list) {
+    return list.map((x) => {
       const b = App.Q.block(x.block);
-      const what = (x.command || '整台設備') + (x.dataTypes.length ? `（影響：${x.dataTypes.map(S.query.dataLabel).join('、')}）` : '');
-      return h('div', { class: 'failure' }, [
-        V.chip(V.failureText(x), 'err', { title: x.text || null }), ' ', what, ' ',
-        b ? h('a', { class: 'link mono', onclick: (e) => { e.stopPropagation(); App.openRaw(b.file, x.line); } }, `第 ${x.line} 行`) : null,
-      ]);
-    }));
+      const label = `${x.command || '整台設備'} ${V.failureText(x)}`;
+      const tip = [x.text, x.dataTypes.length ? '影響：' + x.dataTypes.map(S.query.dataLabel).join('、') : null, b ? `開啟原文第 ${x.line} 行` : null].filter(Boolean).join('\n');
+      return b ? V.chipButton(label, 'btn err failure', { title: tip, 'aria-label': `${label}，開啟原文第 ${x.line} 行`, onclick: (e) => { e.stopPropagation(); App.openRaw(b.file, x.line); }, onkeydown: (e) => e.stopPropagation() }) // 不觸發所在列的 Enter（選取設備）
+        : V.chip(label, 'err failure', { title: tip || null });
+    });
   }
 
   // ---------------------------------------------------------------- 比對
@@ -390,18 +389,6 @@
         { t: '成員', f: (r) => String(r.members.length), s: (r) => r.members.length }],
       (r) => (r.id == null ? { type: 'device', key: r.dev } : { type: 'vlan', key: String(r.id) }), (r) => [dn(r.dev), r.id, r.name, r.desc]],
     };
-    // 兩層：清單種類用分段按鈕，種類內的篩選用篩選選項，避免兩排看起來是同一層
-    // 清單種類是 tabs：只有選取中的分頁在 Tab 順序裡（roving tabindex），←／→ 切換、Home／End 跳到頭尾，切換後焦點留在分頁上
-    const kinds = Object.keys(T);
-    const pick = (k, focus) => { inv.kind = k; inv.filter = 'all'; inv.sortBy = -1; inv.sortDir = 1; inventory(App); if (focus) { const b = V.$('#inv-tab-' + k); if (b) b.focus(); } };
-    const tabKey = (e) => {
-      const n = kinds.indexOf(inv.kind); const to = { ArrowRight: n + 1, ArrowLeft: n - 1, Home: 0, End: kinds.length - 1 }[e.key];
-      if (to === undefined) return; e.preventDefault(); pick(kinds[(to + kinds.length) % kinds.length], true);
-    };
-    root.appendChild(h('div', { class: 'summary' }, h('div', { class: 'seg', role: 'tablist', 'aria-label': '清單種類' }, Object.entries(T).map(([k, [label]]) => h('button', {
-      class: `btn ${inv.kind === k ? 'on' : ''}`, role: 'tab', id: 'inv-tab-' + k, 'aria-selected': String(inv.kind === k), 'aria-controls': 'inv-panel',
-      tabindex: inv.kind === k ? '0' : '-1', title: label + '清單', onkeydown: tabKey,
-      onclick: () => pick(k, false) }, [label + ' ', h('span', { class: 'n' }, String(TAB_COUNT[k]))])))));
     const [, rows0, cols, sel, text] = T[inv.kind];
     const FILTERS = {
       ip: [['all', '全部', () => true, C.ips], ['arp', 'ARP', (r) => r.from.includes('ARP'), C.arpIps], ['own', '設備自有', (r) => r.from.some((x) => x === '介面' || x === '管理'), C.ownIps], ['heard', '鄰居宣告', (r) => r.from.includes('鄰居宣告'), C.heardIps]],
@@ -409,10 +396,19 @@
       device: [['all', '全部', () => true, C.devices + C.endpoints], ['net', '網路設備', (r) => !r.end && r.kind !== 'host', C.devices - C.hosts], ['host', '主機', (r) => !r.end && r.kind === 'host', C.hosts], ['end', '終端', (r) => r.end, C.endpoints]],
     };
     const flt = FILTERS[inv.kind];
-    if (flt) {
-      root.appendChild(h('div', { class: 'summary sub' }, flt.map(([k, label, , c]) => filterChip(label, c, { cls: k === 'noip' ? 'warn' : '', on: inv.filter === k, onclick: () => { inv.filter = k; inventory(App); }, title: '點一下切換篩選' }))));
-    }
+    // 一列控制：清單種類、種類內篩選（下拉，「標籤 筆數」）與文字篩選；0 筆的篩選停用。重繪後焦點留在剛操作的下拉
+    const select = (cls, label, opts, value, onPick) => {
+      const el = h('select', { class: cls, 'aria-label': label, title: label }, opts.map(([k, name, n]) => h('option', { value: k, disabled: !n && k !== value ? true : null }, `${name} ${n}`)));
+      el.value = value;
+      el.addEventListener('change', () => { onPick(el.value); const again = V.$('#pane-inventory .' + cls); if (again) again.focus(); });
+      return el;
+    };
+    const kindSel = select('inv-kind', '清單種類', Object.entries(T).map(([k, [label]]) => [k, label, TAB_COUNT[k]]), inv.kind,
+      (k) => { inv.kind = k; inv.filter = 'all'; inv.sortBy = -1; inv.sortDir = 1; inventory(App); });
+    const fltSel = flt ? select('inv-filter', '篩選' + T[inv.kind][0], flt.map(([k, label, , c]) => [k, label, c]), inv.filter,
+      (k) => { inv.filter = k; inventory(App); }) : null;
     const box = h('input', { type: 'search', placeholder: '篩選：名稱、IP、MAC、VLAN…', 'aria-label': '篩選清單', value: inv.q, class: 'pane-filter' });
+    root.appendChild(h('div', { class: 'inv-bar' }, [kindSel, fltSel, box]));
     const body = h('div');
     const draw = () => {
       const t = inv.q.trim().toLowerCase();
@@ -427,8 +423,7 @@
         onSort: (n) => { inv.sortDir = inv.sortBy === n ? -inv.sortDir : 1; inv.sortBy = n; draw(); } }));
     };
     box.addEventListener('input', () => { inv.q = box.value; draw(); });
-    // 分頁內容：篩選選項之後的篩選框與表格
-    root.appendChild(h('div', { id: 'inv-panel', role: 'tabpanel', 'aria-labelledby': 'inv-tab-' + inv.kind }, [box, body])); draw();
+    root.appendChild(body); draw();
   }
   V.lists = { findings, coverage, compare, inventory };
 })(globalThis.SSOT = globalThis.SSOT || {});

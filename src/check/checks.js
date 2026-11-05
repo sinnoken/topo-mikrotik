@@ -353,7 +353,7 @@
    * 以 VLAN ID 為鍵的規則（V06、A06）只比同一個 VLAN 區塊；以網段、IP 為鍵的規則（A07、A08、A09、R06）只比同一個 VRF（不同設備上同名的 VRF
    * 視為同一個位址空間，ADR-015），鍵與 facet 用 K.inVrf（main 不加後綴）；以名稱為鍵的規則（V07、A10–A12）與 VRF 無關，整份基準一起比。
    * 訊息依設備名稱自然排序，相同設定的設備併成一組。
-   * 除 A09（重複 IP 本身就是衝突）外，各規則以多數決推定偏離的設備（推論），寫在訊息尾端與 finding.deviation。
+   * 除 A09（重複 IP 本身就是衝突）外，各規則以多數決推定偏離的設備（推論），只寫在 finding.deviation；訊息只列各組設定，不附推定結果（畫面另起一行顯示，避免重複）。
    */
   const MAX_SHOWN = 8; // 訊息中每台設備最多列出的值，避免大型 address-list 讓訊息過長
   function configConsistency(M, add, name, epName, byDomain) {
@@ -391,14 +391,13 @@
       return { main, deviating: groups.filter((g) => g !== main).flatMap((g) => g.devs).sort(byName) };
     };
     /**
-     * 附加在訊息尾端的推定結果與 finding 的 deviation 欄位（平手時 deviating 為空陣列、main 為 null）。
+     * finding 的 deviation 欄位（平手時 deviating 為空陣列、main 為 null）。
      * groups：多數決實際用的分組（groupDevs 的結果，順序相同）；value 是該組第一台設備的顯示值（依它的設定順序），
      * key 是同位置的正規化比對值，devs 依名稱自然排序。main 是多數組在 groups 的索引。
      */
     const judge = (groups) => {
       const m = majorityOf(groups);
       return {
-        note: m ? `；依多數推定偏離：${devList(m.deviating)}` : '；沒有多數，無法推定',
         extra: { deviation: { basis: 'majority', deviating: m ? m.deviating : [],
           groups: groups.map((g) => ({ value: g.vals.slice(), key: g.keys.slice(), devs: g.devs.slice() })), main: m ? groups.indexOf(m.main) : null } },
       };
@@ -438,7 +437,7 @@
           const groups = groupDevs(perDev);
           if (groups.length < 2) return;
           const j = judge(groups);
-          add('V06', `VLAN ${id} 的 ${attr}：${fmtGroups(groups, quote)}${j.note}`, entsOf(sel, [{ type: 'vlan', key: String(id) }]), evByGroups(groups, sel, (x) => x.dev, (x) => evsOf([x])), Object.assign({ facet: ATTR_FACET[attr] }, j.extra));
+          add('V06', `VLAN ${id} 的 ${attr}：${fmtGroups(groups, quote)}`, entsOf(sel, [{ type: 'vlan', key: String(id) }]), evByGroups(groups, sel, (x) => x.dev, (x) => evsOf([x])), Object.assign({ facet: ATTR_FACET[attr] }, j.extra));
         });
       });
     });
@@ -451,7 +450,7 @@
         if (groups.length < 2) return;
         const ids = U.uniq(sel.map((x) => x.id)).sort((a, b) => a - b);
         const j = judge(groups);
-        add('V07', `${attr}「${sel[0].val}」：${fmtGroups(groups, fmtVlanIds)}${j.note}`, entsOf(sel, ids.map((id) => ({ type: 'vlan', key: String(id) }))), evByGroups(groups, sel, (x) => x.dev, (x) => evsOf([x])), Object.assign({ facet: ATTR_FACET[attr] + '|' + k }, j.extra));
+        add('V07', `${attr}「${sel[0].val}」：${fmtGroups(groups, fmtVlanIds)}`, entsOf(sel, ids.map((id) => ({ type: 'vlan', key: String(id) }))), evByGroups(groups, sel, (x) => x.dev, (x) => evsOf([x])), Object.assign({ facet: ATTR_FACET[attr] + '|' + k }, j.extra));
       });
     });
 
@@ -468,7 +467,7 @@
         if (groups.length < 2) return;
         const mask = sel.some((a) => sel.some((b) => a.dev !== b.dev && a.p.len < b.p.len && S.ip.inNet(b.p.net, a.p.net, a.p.len)));
         const j = judge(groups);
-        add('A06', `VLAN ${id}：${fmtGroups(groups, show)}${mask ? '（網段重疊但遮罩不同）' : ''}${j.note}`,
+        add('A06', `VLAN ${id}：${fmtGroups(groups, show)}${mask ? '（網段重疊但遮罩不同）' : ''}`,
           [{ type: 'vlan', key: String(id) }].concat(U.uniq(sel.map((x) => x.ep)).map((key) => ({ type: 'interface', key }))), evByGroups(groups, sel, (x) => x.dev, (x) => [ev(x.src)]), j.extra);
       });
     });
@@ -481,7 +480,7 @@
       const groups = groupDevs(perDev);
       if (groups.length < 2) return;
       const j = judge(groups);
-      add('A07', `${net}：${fmtGroups(groups, fmtVlanIds)}${j.note}`, U.uniq(sel.map((x) => x.ep)).map((key) => ({ type: 'interface', key })), evByGroups(groups, sel, (x) => x.dev, (x) => [ev(x.src)]), Object.assign({ facet: net }, j.extra));
+      add('A07', `${net}：${fmtGroups(groups, fmtVlanIds)}`, U.uniq(sel.map((x) => x.ep)).map((key) => ({ type: 'interface', key })), evByGroups(groups, sel, (x) => x.dev, (x) => [ev(x.src)]), Object.assign({ facet: net }, j.extra));
     });
 
     // ---- A08／A09：所有直連位址（含非 VLAN 介面；同一個 VRF 內比較，鍵與 facet 用 K.inVrf）
@@ -513,7 +512,7 @@
       // 多數決以「設備 → 它設定的這些網段」分組：同一台設定多個網段時，以網段組合當成它的設定值
       const perDev = new Map(); list.forEach((x) => x.devs.forEach((_, d) => put(perDev, d, x.key, x.key)));
       const jd = judge(groupDevs(perDev));
-      add('A08', (parts.length === 2 ? parts.join('與 ') : parts.join('、')) + jd.note, locsBy.flat().map((l) => ({ type: 'interface', key: l.ep })), interleave(locsBy).map((l) => ev(l.src)), Object.assign({ facet: list[0].key }, jd.extra)); // facet：最外層的網段
+      add('A08', (parts.length === 2 ? parts.join('與 ') : parts.join('、')), locsBy.flat().map((l) => ({ type: 'interface', key: l.ep })), interleave(locsBy).map((l) => ev(l.src)), Object.assign({ facet: list[0].key }, jd.extra)); // facet：最外層的網段
     }
     const byIp = new Map();
     ownIfcs.forEach((i) => {
@@ -537,7 +536,7 @@
         const groups = groupDevs(perDev);
         if (groups.length < 2) return;
         const j = judge(groups);
-        add('R06', `${net} ${label}：${fmtGroups(groups, show)}${j.note}`, U.uniq(sel.map((n) => n.dev)).sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (n) => n.dev, (n) => [{ block: n.block, line: n.line }]), Object.assign({ facet: facet + '|' + net }, j.extra));
+        add('R06', `${net} ${label}：${fmtGroups(groups, show)}`, U.uniq(sel.map((n) => n.dev)).sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (n) => n.dev, (n) => [{ block: n.block, line: n.line }]), Object.assign({ facet: facet + '|' + net }, j.extra));
       });
     });
 
@@ -560,7 +559,7 @@
       const diff = Array.from(where.values()).sort((a, b) => nat(U.uniq(a.vals).sort(nat)[0], U.uniq(b.vals).sort(nat)[0]))
         .map((w) => `${show(w.vals)} 只在 ${devList(w.has)}`);
       const j = judge(groups);
-      add('A10', `${sel[0].section}「${sel[0].name}」：${fmtGroups(groups, show)}；${diff.join('；')}${j.note}`,
+      add('A10', `${sel[0].section}「${sel[0].name}」：${fmtGroups(groups, show)}；${diff.join('；')}`,
         devs.sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (b) => b.dev, (b) => [{ block: b.block, line: b.line }]), Object.assign({ facet: sel[0].section + '|' + sel[0].nameKey }, j.extra));
     });
     const byBindValue = new Map(); binds.forEach((b) => U.getOr(byBindValue, b.section + '\u0000' + b.valueKey, () => []).push(b));
@@ -574,7 +573,7 @@
       if (!disjoint) return;
       const groups = groupDevs(perDev);
       const j = judge(groups);
-      add('A11', `${sel[0].section} ${sel[0].value}：${fmtGroups(groups, quote)}${j.note}`,
+      add('A11', `${sel[0].section} ${sel[0].value}：${fmtGroups(groups, quote)}`,
         Array.from(perDev.keys()).sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (b) => b.dev, (b) => [{ block: b.block, line: b.line }]), Object.assign({ facet: sel[0].section + '|' + sel[0].valueKey }, j.extra));
     });
 
@@ -587,7 +586,7 @@
       if (groups.length < 2) return;
       sel.sort((a, b) => byName(a.key, b.key));
       const j = judge(groups);
-      add('A12', `${label}：${fmtGroups(groups, show)}${j.note}`, sel.map((d) => ({ type: 'device', key: d.key })), evByGroups(groups, sel, (d) => d.key, (d) => d[k].src.map(ev)), Object.assign({ facet }, j.extra));
+      add('A12', `${label}：${fmtGroups(groups, show)}`, sel.map((d) => ({ type: 'device', key: d.key })), evByGroups(groups, sel, (d) => d.key, (d) => d[k].src.map(ev)), Object.assign({ facet }, j.extra));
     });
   }
 

@@ -79,7 +79,7 @@
   };
   const verdictTag = (v) => statusTag(v, V.VERDICT[v] || v);
   /** 異質的徽章（文字，不只靠顏色）；顏色取自 theme.l4.badge */
-  const hetBadge = (text, cls) => { const b = TH().badge; return h('span', { class: 'l4-het' + (cls ? ' ' + cls : ''), style: { background: b.bg, color: b.text, borderColor: b.border } }, text || '≠ 異質'); };
+  const hetBadge = (text, cls) => { const b = TH().badge; return h('span', { class: 'l4-het' + (cls ? ' ' + cls : ''), style: { background: b.bg, color: b.text, borderColor: b.border } }, text || '≠ 結果不一'); };
   /** 對角線（zone 內）的虛線外框：顏色取自 theme.l4.diagonal */
   const diagStyle = () => ({ borderColor: TH().diagonal.border, borderStyle: TH().diagonal.dash });
 
@@ -111,7 +111,7 @@
     const k = c.counts;
     return `${zoneName(Q, c.src)} → ${zoneName(Q, c.dst)}${c.diagonal ? '（zone 內）' : ''}：${V.L4_STATUS[c.status]}。`
       + (k.total ? `允許 ${V.num(k.allow)}、拒絕 ${V.num(k.deny)}、無法判斷 ${V.num(k.unknown)}，共 ${V.num(k.total)} 組（位址 × 服務）` : V.L4_STATUS_TIP.empty)
-      + (c.heterogeneous ? '；異質：同一個 zone 的成員結果不一致' : '')
+      + (c.heterogeneous ? '；結果不一：同一個 zone 的成員結果不一致' : '')
       + (c.rule ? `；代表規則：${decisiveText(Q, c.rule)}${c.ruleCount > 1 ? `（另有 ${c.ruleCount - 1} 條）` : ''}` : '')
       + (c.reasons.length ? `；無法判斷的原因：${c.reasons.map((x) => `${V.reachReason(x.code)}（${V.num(x.count)}）`).join('、')}` : '');
   }
@@ -159,7 +159,7 @@
       ]),
       h('section', { class: 'work-card l4-card', 'aria-labelledby': 'l4-reach-title' }, [
         h('h3', { id: 'l4-reach-title', class: 'work-card-title' }, '可達性查詢'),
-        h('p', { class: 'muted l4-note' }, '輸入來源與目的 IP、協定與埠，沿各設備的路由逐跳套用 raw、dst-nat、filter 與 src-nat（Q.reach）；結果顯示在下方的 L3。'),
+        h('p', { class: 'muted l4-note' }, '輸入來源與目的 IP、協定與埠，沿各設備的路由逐跳套用 raw、dst-nat、filter 與 src-nat；結果顯示在下方的逐跳路徑。'),
         h('div', { class: 'form-row l4-form' }, [
           h('label', { for: 'l4-src' }, '來源'), src, h('label', { for: 'l4-dst' }, '目的'), dst,
           h('label', { for: 'l4-proto' }, '協定'), proto, h('label', { for: 'l4-port' }, '埠'), port, vrfBox,
@@ -167,7 +167,7 @@
         ]),
       ]),
       h('section', { class: 'work-card l4-card', 'aria-labelledby': 'l4-matrix-title' }, [
-        h('div', { class: 'l4-card-head' }, [h('h3', { id: 'l4-matrix-title', class: 'work-card-title' }, 'zone 矩陣（L0）'),
+        h('div', { class: 'l4-card-head' }, [h('h3', { id: 'l4-matrix-title', class: 'work-card-title' }, 'zone 矩陣'),
           h('label', { for: 'l4-service', class: 'muted' }, '服務'), serviceSel, vrfFilterBox, modes, els.csv]),
         els.status, els.legend, els.box,
       ]),
@@ -412,7 +412,7 @@
     const Q = App.Q; const k = c.counts; const tip = V.clear(els.tip);
     tip.appendChild(h('div', { class: 'l4-tip-head' }, [statusMark(c.status), ` ${zoneName(Q, c.src)} → ${zoneName(Q, c.dst)}${c.diagonal ? '（zone 內）' : ''}：${V.L4_STATUS[c.status]}`]));
     tip.appendChild(h('div', null, k.total ? `允許 ${V.num(k.allow)}・拒絕 ${V.num(k.deny)}・無法判斷 ${V.num(k.unknown)}（共 ${V.num(k.total)} 組位址 × 服務）` : V.L4_STATUS_TIP.empty));
-    if (c.heterogeneous) tip.appendChild(h('div', null, '≠ 異質：同一個 zone 的成員結果不一致'));
+    if (c.heterogeneous) tip.appendChild(h('div', null, '≠ 結果不一：同一個 zone 的成員結果不一致'));
     if (c.rule) tip.appendChild(h('div', null, `代表規則：${decisiveText(Q, c.rule)}${c.ruleCount > 1 ? `（共 ${V.num(c.ruleCount)} 條規則或預設）` : ''}`));
     if (c.reasons.length) tip.appendChild(h('div', null, '無法判斷：' + c.reasons.slice(0, 3).map((x) => `${V.reachReason(x.code)}（${V.num(x.count)}）`).join('、')));
     tip.appendChild(h('div', { class: 'muted' }, 'Enter 或點一下往下看'));
@@ -451,7 +451,7 @@
   function downloadCsv(App) {
     const mx = st.current; if (!mx) { V.app.banner('zone 矩陣還在計算，完成後再下載。', 4000); return; }
     const Q = App.Q; const C = V.exporter.csvCell; const mv = (mx.vrfs || []).length > 1;
-    const head = ['來源 zone', '目的 zone', 'zone 內', '狀態', '異質', '允許', '拒絕', '無法判斷', '總數', '代表規則', '無法判斷的原因'].concat(mv ? ['來源 VRF', '目的 VRF'] : []);
+    const head = ['來源 zone', '目的 zone', 'zone 內', '狀態', '結果不一', '允許', '拒絕', '無法判斷', '總數', '代表規則', '無法判斷的原因'].concat(mv ? ['來源 VRF', '目的 VRF'] : []);
     const rows = shownCells(mx).map((c) => [zoneName(Q, c.src), zoneName(Q, c.dst), c.diagonal ? '是' : '', V.L4_STATUS[c.status], c.heterogeneous ? '是' : '',
       c.counts.allow, c.counts.deny, c.counts.unknown, c.counts.total, c.rule ? decisiveText(Q, c.rule) : '', c.reasons.map((x) => `${V.reachReason(x.code)}（${x.count}）`).join('、')].concat(mv ? [zoneVrf(Q, c.src), zoneVrf(Q, c.dst)] : []));
     const text = '﻿' + [head].concat(rows).map((r) => r.map(C).join(',')).join('\r\n') + '\r\n';
@@ -492,7 +492,7 @@
     st.cell = { src, dst }; st.reach = null; st.reachReq = null; st.reachErr = null; st.reachVrfs = null; st.showAllGroups = false;
     st.cellData = App.Q.zoneCell(src, dst, optsOf(st.service));
     renderDrill(App);
-    announce(`已開啟 ${zoneName(App.Q, src)} → ${zoneName(App.Q, dst)} 的下鑽：${V.L4_STATUS[st.cellData.status]}`);
+    announce(`已開啟 ${zoneName(App.Q, src)} → ${zoneName(App.Q, dst)} 的明細：${V.L4_STATUS[st.cellData.status]}`);
     focusDrill();
   }
   /** L1 → L3：某一組（來源代表 → 目的）在某個服務的逐跳路徑 */
@@ -521,7 +521,7 @@
       if (r.ok) st.reach = r; else { st.reachErr = r.error; st.reachVrfs = r.vrfs || null; } // vrfs：來源在多個 VRF，請使用者選擇
     } catch (e) { st.reachErr = e.message; } // 參數不合法（例如 tcp 沒有埠、不存在的 VRF）：核心丟 TypeError，原文顯示
     renderDrill(App);
-    announce(st.reach ? `L3：${req.src} → ${req.dst} ${svcLabel(req)} ${V.VERDICT[st.reach.verdict]}` : st.reachVrfs ? `L3：來源 ${req.src} 在多個 VRF，請選擇 VRF` : `L3：查詢失敗，${st.reachErr}`);
+    announce(st.reach ? `逐跳路徑：${req.src} → ${req.dst} ${svcLabel(req)} ${V.VERDICT[st.reach.verdict]}` : st.reachVrfs ? `逐跳路徑：來源 ${req.src} 在多個 VRF，請選擇 VRF` : `逐跳路徑：查詢失敗，${st.reachErr}`);
     focusDrill(st.cell ? 'l3' : null);
   }
   /** 來源在多個 VRF 時，用選的 VRF 重新查詢（同一個請求，只換 VRF） */
@@ -545,11 +545,11 @@
     const Q = App.Q;
     if (st.cellData) {
       const c = st.cellData;
-      box.appendChild(h('h3', { id: 'l4-drill-title', class: 'work-card-title', tabindex: '-1' }, `下鑽：${zoneName(Q, c.src)} → ${zoneName(Q, c.dst)}`));
+      box.appendChild(h('h3', { id: 'l4-drill-title', class: 'work-card-title', tabindex: '-1' }, `明細：${zoneName(Q, c.src)} → ${zoneName(Q, c.dst)}`));
       box.appendChild(h('div', { class: 'row' }, [statusTag(c.status), c.heterogeneous ? hetBadge() : null, c.diagonal ? V.chip('zone 內') : null,
         V.chip(`允許 ${V.num(c.counts.allow)}・拒絕 ${V.num(c.counts.deny)}・無法判斷 ${V.num(c.counts.unknown)}／共 ${V.num(c.counts.total)}`),
         st.service ? V.chip('服務 ' + st.service) : V.chip('全部服務'),
-        h('button', { type: 'button', class: 'ghost l4-close', onclick: () => closeDrill(App) }, '關閉下鑽')]));
+        h('button', { type: 'button', class: 'ghost l4-close', onclick: () => closeDrill(App) }, '關閉明細')]));
       if (c.reasons.length) box.appendChild(h('div', { class: 'l4-reasons' }, [h('b', null, '無法判斷的原因：'), h('ul', null, c.reasons.map((x) => h('li', { class: 'l4-reason', 'data-code': x.code, title: reasonNote(x.code) }, `${V.reachReason(x.code)}（${V.num(x.count)} 組）`)))]));
       box.appendChild(groupsBlock(App, c));
       box.appendChild(rulesBlock(App, c));
@@ -584,7 +584,7 @@
           only ? `顯示全部（${V.num(all.length)} 組）` : `只顯示造成差異的組（${V.num(divN)}）`);
       }
       divNote = h('p', { class: 'l4-note l4-div-note' }, [hetBadge(), ' ',
-        only && divN < all.length ? `這一格異質：只列出造成差異的 ${V.num(divN)} 組（共 ${V.num(all.length)} 組）。` : `這一格異質：${V.num(all.length)} 組中有 ${V.num(divN)} 組造成差異。`,
+        only && divN < all.length ? `這一格結果不一：只列出造成差異的 ${V.num(divN)} 組（共 ${V.num(all.length)} 組）。` : `這一格結果不一：${V.num(all.length)} 組中有 ${V.num(divN)} 組造成差異。`,
         '造成差異是指某個服務的結果和同一個目的的其他來源、或同一批來源往其他目的的結果不同，而且是少數（平手時兩邊都算）；那個服務的按鈕標「≠ 差異」。']);
     } else {
       hidden = st.hideDeny && all.some((x) => x.g.status !== 'deny') ? all.filter((x) => x.g.status === 'deny').length : 0;
@@ -597,8 +597,8 @@
     const srcText = (g) => (g.srcs.length === 1 ? g.srcs[0].ip : `${g.srcs[0].ip} 等 ${V.num(g.srcs.length)} 個`);
     const srcTitle = (g) => g.srcs.map((s) => `${s.ip}（${s.range ? s.range.join('–') : s.subnet || ''}；${s.basis === 'arp' ? 'ARP 看到的位址' : '推算的位址'}）`).join('\n');
     return h('div', { class: 'l4-sub' }, [
-      h('h4', null, ['L1：位址組 ', V.chip(String(c.groups.length))]),
-      h('p', { class: 'muted l4-note' }, '每一列是一個目的與一組結果相同的來源代表；點一列或某個服務看逐跳路徑（L3）。代表位址是等價類的代表：同一個區段內的位址對所有規則的位址條件結果相同。'),
+      h('h4', null, ['位址組 ', V.chip(String(c.groups.length))]),
+      h('p', { class: 'muted l4-note' }, '每一列是一個目的與一組結果相同的來源代表；點一列或某個服務看逐跳路徑。代表位址是等價類的代表：同一個區段內的位址對所有規則的位址條件結果相同。'),
       divNote, toggle,
       c.groups.length ? V.table([
         { t: '目的', f: ({ g }) => h('span', null, [h('span', { class: 'mono' }, g.dst.ip), ' ',
@@ -609,7 +609,7 @@
           const dv = g.divergentServices.includes(s.service);
           return h('button', {
             type: 'button', class: 'l4-svc st-' + s.verdict + (dv ? ' div' : ''), 'data-service': s.service, 'data-group': String(i), 'data-divergent': dv ? 'true' : null,
-            title: dv ? `${s.service} 的結果造成這一格異質；看逐跳路徑` : `看 ${s.service} 的逐跳路徑`,
+            title: dv ? `${s.service} 的結果造成這一格結果不一；看逐跳路徑` : `看 ${s.service} 的逐跳路徑`,
             style: { background: cellBg(s.verdict), color: TH().text },
             onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); openGroup(App, i, s.service); },
           }, [statusMark(s.verdict), ` ${s.service} ${V.VERDICT[s.verdict]}`, s.final && (s.final.dst !== g.dst.ip || s.final.port !== svcOf(s.service).port) ? ` → ${s.final.dst}${s.final.port != null ? ':' + s.final.port : ''}` : '', dv ? divMark() : null]);
@@ -626,7 +626,7 @@
   function rulesBlock(App, c) {
     const rows = c.ruleDetails;
     return h('div', { class: 'l4-sub' }, [
-      h('h4', null, ['L2：牽涉的規則 ', V.chip(String(rows.length))]),
+      h('h4', null, ['牽涉的規則 ', V.chip(String(rows.length))]),
       rows.length ? V.table([
         { t: '規則', f: (x) => ruleLink(App, x) },
         { t: '允許', f: (x) => V.num(x.verdicts.allow), s: (x) => x.verdicts.allow, cls: 'num' },
@@ -641,7 +641,7 @@
   function reachBlock(App) {
     const Q = App.Q; const q = st.reachReq; const r = st.reach;
     const multi = Q.vrfs().length > 1;
-    const title = `L3：${q.src} → ${q.dst} ${svcLabel(q)}${multi && (r || q.vrf) ? `（${V.vrfText(r ? r.vrf : q.vrf)}）` : ''}`;
+    const title = `逐跳路徑：${q.src} → ${q.dst} ${svcLabel(q)}${multi && (r || q.vrf) ? `（${V.vrfText(r ? r.vrf : q.vrf)}）` : ''}`;
     const out = [h('h4', { id: 'l4-l3-title', tabindex: '-1' }, title)];
     if (!r && st.reachVrfs) {
       // 來源位址在多個 VRF（位址重疊）：查詢層不猜，列出可選的 VRF，選了就重新查詢

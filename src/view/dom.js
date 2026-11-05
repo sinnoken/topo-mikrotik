@@ -50,14 +50,23 @@
 
   /**
    * 畫面名詞的唯一來源：同一個概念全站只用一個詞。
-   *   network：應收集的網路設備（收集完整度的分母，同 Q.coverageSummary 的 network）；host：不在收集範圍、只由鄰居或 ARP 得知的主機。
-   *   endpoint：終端（只學到一個 MAC、沒有 LLDP／CDP 鄰接的埠所接的東西）。
-   *   group：依連線自動分出的版面分群，不代表實體位置或 IP 網段。vlanDomain：同一個 VLAN ID 依鏈路證據分出的不相連部分（推論）。
+   *   network：應收集的網路設備（覆蓋率的分母，同 Q.coverageSummary 的 network）；host：主機（定義見 V.HOST_DEF）。
+   *   endpoint：終端（只學到一個 MAC、沒有 LLDP／CDP 鄰接的埠所接的東西）。link：拓樸上的邊；「連線」只用於防火牆的 TCP 連線與 SSH 連線。
+   *   subnet：IP 網段（不說「子網」）。group：依鏈路自動分出的版面分群，不代表實體位置或 IP 網段（圖上的群名來自 Snapshot）。
+   *   vlanDomain：同一個 VLAN ID 依鏈路證據分出的不相連部分（推論；不叫「區塊」，避免和指令區塊撞名）。
+   *   hearsay：鏈路只有一端的資料（對端未收集，或收集了但沒有 LLDP／CDP 鄰居資料；build.js 的 pairing hearsay）；
+   *     和 LLDP 單向（對端有鄰居資料但沒有回報這條鏈路，K01）是不同的事。
    *   inferred：推論的標示（V.inferChip）。
    */
   V.TERMS = Object.freeze({
-    network: '網路設備', host: '主機', endpoint: '終端', group: '自動群組', vlanDomain: '區塊', inferred: '推論',
+    network: '網路設備', host: '主機', endpoint: '終端', link: '鏈路', subnet: '網段', group: '分群', vlanDomain: 'VLAN 片段',
+    hearsay: '只有一端資料', inferred: '推論',
   });
+  /** 主機的定義（與 S.check.expectsCollection 相同：沒有收集、依鄰居回報判斷為主機的設備不算應收集）：顯示選單、覆蓋率篩選與狀態卡共用這一句 */
+  V.HOST_DEF = '沒有收集、依鄰居（LLDP／CDP／MNDP）回報判斷為主機的設備，不在收集範圍';
+  /** 鏈路只有一端資料（hearsay）的完整說法；「LLDP 單向」只用於對端有鄰居資料但沒回報（K01） */
+  V.HEARSAY_TEXT = V.TERMS.hearsay + '（對端沒有鄰居資料）';
+  V.ONE_WAY_TEXT = 'LLDP 單向（對端沒回報）';
   /** 推論標示：和收集到的事實並列的推定結果一律加這個 chip；依據放 title。 */
   V.inferChip = (tip) => V.chip(V.TERMS.inferred, 'info', tip ? { title: tip } : null);
   /** 多數決推定偏離的設備鍵（finding.deviation，推論）：不是多數決（或沒有 deviation）時 null，平手時空陣列。詳情、③ 分診與圖上的虛線外圈共用 */
@@ -81,7 +90,7 @@
   V.KIND_BASIS = { board: '依設備型號', data: '依收集的資料', caps: '依鄰居回報的功能', vendor: '依廠牌推測', heuristic: '依對端埠名推測', profile: '依命名規則', none: '無法判斷' };
   V.SEV = { error: '錯誤', warn: '警告', info: '提醒' };
   V.CLS = { lag: '聚合', '40g': '40G 以上', '10g': '10G', '1g': '1G', oob: '管理', other: '其他' };
-  V.STATUS = { up: '連線', down: '中斷', unknown: '不明' };
+  V.STATUS = { up: 'up', down: 'down', unknown: '不明' };
   V.IFC_TYPE = { physical: '實體埠', lag: '聚合介面', bridge: 'Bridge', vlan: 'VLAN 介面', wireless: 'Wi-Fi', virtual: '虛擬介面', loopback: 'Loopback', other: '其他介面' };
   V.IFC_TYPE_BASIS = { rawType: '依 RouterOS 類型', member: '依聚合成員', name: '依介面名稱推測', default: '缺類型資料，預設為實體埠', assoc: '依 Wi-Fi 關聯表' };
   V.INFER_BASIS = { 'subnet-p2p': '/30／31 點對點網段', 'mndp-mutual': 'MNDP 雙向回報', 'mndp-unique': 'MNDP 唯一鄰居', fdb: 'MAC 表', stp: 'RSTP 指定橋接器' };
@@ -89,19 +98,19 @@
   V.WIFI_BASIS = { registration: '依關聯表（已確認）', 'bridge-wifi': '依 MAC 表的無線介面（推定）', 'via-ap-port': '經由 AP 所接的交換器埠（推定，無法區分有線或無線）' };
   V.MODE = { access: 'Access（untagged）', tagged: 'Tagged（trunk）' };
   // 拓樸圖的層級（App.layer）：L4 不是畫布，是疊在畫布上的 zone 矩陣與可達性（panels/l4.js）
-  V.LAYER = { device: '設備', l2: 'L2 埠', l3: 'L3 子網', l4: 'L4 可達性' };
+  V.LAYER = { device: '設備', l2: 'L2 埠', l3: 'L3 ' + V.TERMS.subnet, l4: 'L4 可達性' };
   // L4（M2）：格子狀態（Q.zoneMatrix 的 status）、可達性結果（Q.reach 的 verdict）、zone 的來源（Q.zones 的 source）
   V.L4_STATUS = { allow: '全通', deny: '全擋', partial: '部分', unknown: '不明', empty: '沒有組合' };
   V.L4_STATUS_TIP = {
     allow: '這一格算到的位址組合 × 服務全部允許',
     deny: '全部拒絕（被規則丟棄、沒有路由或黑洞路由）',
     partial: '有些允許、有些拒絕（不同的位址或服務結果不同）',
-    unknown: '有無法判斷的組合（原因見提示與下鑽），沒有允許與拒絕同時出現',
+    unknown: '有無法判斷的組合（原因見提示與明細），沒有允許與拒絕同時出現',
     empty: '沒有可算的位址組合（例如目的 zone 只有設備自己的位址，或沒有可當代表的位址）；不是「不明」',
   };
   V.VERDICT = { allow: '允許', deny: '拒絕', unknown: '無法判斷' };
   V.ZONE_SOURCE = { profile: '命名規則', 'interface-list': 'interface list', vlan: 'VLAN', subnet: '網段' };
-  // Q.reach 的原因代碼與結束代碼（src/query/trace.js 的 reason／end）；沒有對照的代碼原樣顯示並標「未翻譯」，不吞掉
+  // Q.reach 的原因代碼與結束代碼（src/query/trace.js 的 reason／end）；沒有對照的代碼原樣顯示並標「沒有說明」，不吞掉
   V.REACH_REASON = {
     'rule-condition': '規則的比對條件無法判斷', 'raw-notrack': 'raw 規則不追蹤連線（notrack），之後依連線狀態比對的規則結果不明',
     'nat-ambiguous': '目的 NAT 可能由不同的規則改寫，改寫後的目的不明', 'nat-target': 'NAT 改寫後的位址或埠不明（範圍、無法解析或不支援的動作）',
@@ -121,8 +130,10 @@
     reached: '抵達', noroute: '沒有路由', blackhole: '黑洞路由', loop: '路由迴圈', ttl: 'TTL 用盡', 'unknown-nh': '下一跳不在基準內',
     policy: '策略路由不明', 'policy-drop': '策略路由丟棄', unverified: '無法驗證',
   };
+  /** 來源檔名的顯示：貼上的內容（核心常數 S.readers.PASTE，半形括號）在畫面上用全形括號；其餘原樣 */
+  V.fileName = (name) => (name === S.readers.PASTE ? '（貼上的內容）' : name);
   /** 輸入區塊的位置「設備 › 指令」（blk 是 Q.block／Q.blockAt 的結果）：原文對話框標題與詳情的來源列共用同一寫法 */
-  V.blockWhere = (Q, blk) => `${blk.devKey ? Q.devName(blk.devKey) : blk.device || blk.file} › ${blk.command || '（未標記指令）'}`;
+  V.blockWhere = (Q, blk) => `${blk.devKey ? Q.devName(blk.devKey) : blk.device || V.fileName(blk.file)} › ${blk.command || '（未標記指令）'}`;
   /**
    * 路由追蹤終點的分類（圖上節點顏色與詳情的結果列共用）：reached 抵達、unverified 停在未收集的設備（只是無法驗證，不是錯誤）、
    * 其餘狀態（沒有路由、迴圈、黑洞…）都是 bad。整體結果（S.trace 的 status：reached／unverified／unreachable）也用同一個函式分類。
@@ -157,16 +168,16 @@
   V.IFC_VRF_INFERRED = new Set(['export']);
   /** 下一跳解析閘道的 VRF 依據（routes[].nh[].vrfBasis） */
   V.NH_VRF_BASIS = { explicit: '閘道寫了 @<VRF>', 'vrf-interface': '閘道是 VRF 介面，在那個 VRF 再查一次', interface: '閘道介面所屬的 VRF', default: '只有 IP、沒寫 @，在 main 解析' };
-  V.reachReason = (code) => V.REACH_REASON[code] || `${code}（未翻譯的原因代碼）`;
+  V.reachReason = (code) => V.REACH_REASON[code] || `${code}（沒有說明的原因代碼）`;
   V.REACH_START = { gateway: '來源網段的閘道', device: '來源是網路設備自己的位址（output）', 'same-subnet': '來源與目的在同一個網段', entry: '指定的入口介面', none: '找不到來源所在的網段' };
   V.REACH_START_BASIS = { dhcp: '依 DHCP 網路的閘道', routes: '依網段上有路由表的設備', subnet: '依網段上已收集的設備' };
   /** 十進位數字字串（可能超過 2^53，例如命中次數的位元組數）加上千分位；不是數字字串時原樣回傳 */
   V.bigNum = (s) => (/^\d+$/.test(String(s)) ? String(s).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : String(s));
   // VLAN 承載（Q.vlanCarriers 的 status 與 reason）；oneSide、inferred 是推論
   V.VLAN_STATUS = { carry: '兩端都帶這個 VLAN', partial: '只有一端帶這個 VLAN（兩端都有 VLAN 資料，V01）', oneSide: '只有一端可確認帶這個 VLAN（推論）', inferred: '推論鏈路，已收集的各端都帶這個 VLAN（推論）' };
-  V.VLAN_REASON = { unfiltered: '有一端在沒開 vlan-filtering 的 bridge 上，VLAN 原樣轉送、無法確認是否帶這個 VLAN', 'peer-uncollected': '對端設備沒有收集資料，無從得知是否帶這個 VLAN', 'peer-no-vlan-data': '對端設備沒有 VLAN 設定資料，無從得知是否帶這個 VLAN', hearsay: '鏈路只有單側觀察（對端沒有提供 LLDP），對端的 VLAN 無法對照' };
-  // L2 埠圖的邊（Q.portGraph 的 evidence）與 L3 子網圖的邊（Q.subnetGraph 的 basis）
-  V.PORT_EVIDENCE = { adjacency: 'LLDP／CDP 雙側介面鄰接', hearsay: '只有單側觀察（推論）', inferred: '推論鏈路（沒有 LLDP，推論）' };
+  V.VLAN_REASON = { unfiltered: '有一端在沒開 vlan-filtering 的 bridge 上，VLAN 原樣轉送、無法確認是否帶這個 VLAN', 'peer-uncollected': '對端設備沒有收集資料，無從得知是否帶這個 VLAN', 'peer-no-vlan-data': '對端設備沒有 VLAN 設定資料，無從得知是否帶這個 VLAN', hearsay: '鏈路' + V.HEARSAY_TEXT + '，對端的 VLAN 無法對照' };
+  // L2 埠圖的邊（Q.portGraph 的 evidence）與 L3 網段圖的邊（Q.subnetGraph 的 basis）
+  V.PORT_EVIDENCE = { adjacency: 'LLDP／CDP 雙側介面鄰接', hearsay: V.HEARSAY_TEXT + '（推論）', inferred: '推論鏈路（沒有 LLDP，推論）' };
   V.L3_BASIS = { address: '介面位址', neighbor: '鄰居回報的位址（推論）', mgmt: '管理 IP（推論，未列在介面位址）' };
   V.ifcState = (i) => (i.enabled === false ? '停用' : V.STATUS[i.status]);
   // 收集失敗（blocks[].failure、coverage[].failures[]）的原因

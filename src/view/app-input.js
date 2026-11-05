@@ -93,7 +93,7 @@
     if (!n) box.appendChild(h('p', { class: 'pf-why' }, '沒有認到任何設備，無法建立基準：收集檔的每台設備要以「設備名 (管理 IP):」這一行開頭（見上方「格式說明」），或選擇以設備名命名的檔案。'));
     const more = (len) => (len > LIST_MAX ? h('div', { class: 'muted table-more' }, `只顯示前 ${LIST_MAX} 筆，共 ${V.num(len)} 筆`) : null);
     // 位置的寫法與 I01、I03 的訊息相同：段落寫起訖行，收集器註解（kind: 'note'）只有一行
-    const at = (u) => `${u.file} 第 ${u.kind === 'note' ? u.startLine : `${u.startLine}–${u.endLine}`} 行`;
+    const at = (u) => `${V.fileName(u.file)} 第 ${u.kind === 'note' ? u.startLine : `${u.startLine}–${u.endLine}`} 行`;
     box.appendChild(h('details', { id: 'input-preflight-list', class: 'collect', open: input.pfOpen || null, ontoggle: (e) => { input.pfOpen = e.target.open; } }, [
       h('summary', null, '查看清單'),
       n ? V.table([{ t: '設備', f: (d) => d.name }, { t: '區塊', f: (d) => V.num(d.blocks) },
@@ -146,7 +146,7 @@
     const xd = App.round.expectedData;
     $('#input-xd-row').classList.toggle('hidden', !xd);
     $('#input-xd').checked = !!xd;
-    $('#input-xd-note').textContent = xd ? `（${V.num(Object.keys(xd).length)} 類設備；會改變基準鍵）` : '';
+    $('#input-xd-note').textContent = xd ? `（${V.num(Object.keys(xd).length)} 類設備；取消勾選會建立另一份基準）` : '';
     $('#input-progress').classList.add('hidden'); $('#input-status').textContent = '';
     $('#dlg-input').showModal();
   };

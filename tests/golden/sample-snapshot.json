@@ -43355,7 +43355,7 @@
    "severity": "warn",
    "cat": "位址",
    "title": "同一 VLAN 在不同設備設定不同網段",
-   "message": "VLAN 10：TPE_ACC_SW_01、TPE_ACC_SW_02、TPE_ACC_SW_03、TPE_ACC_SW_04、TPE_ACC_SW_05、TPE_ACC_SW_06、TPE_ACC_SW_07、TPE_ACC_SW_08…（共 13 台） 10.1.10.0/24；TPE_ACC_SW_10 10.1.10.0/25（網段重疊但遮罩不同）；依多數推定偏離：TPE_ACC_SW_10",
+   "message": "VLAN 10：TPE_ACC_SW_01、TPE_ACC_SW_02、TPE_ACC_SW_03、TPE_ACC_SW_04、TPE_ACC_SW_05、TPE_ACC_SW_06、TPE_ACC_SW_07、TPE_ACC_SW_08…（共 13 台） 10.1.10.0/24；TPE_ACC_SW_10 10.1.10.0/25（網段重疊但遮罩不同）",
    "entities": [
     {
      "type": "vlan",
@@ -43505,7 +43505,7 @@
    "severity": "warn",
    "cat": "位址",
    "title": "同一網段在不同設備屬於不同 VLAN",
-   "message": "10.1.20.0/24：TPE_ACC_SW_11 VLAN 40；TPE_BR_RT_01、TPE_CORE_RT_01、TPE_CORE_RT_02 VLAN 20；依多數推定偏離：TPE_ACC_SW_11",
+   "message": "10.1.20.0/24：TPE_ACC_SW_11 VLAN 40；TPE_BR_RT_01、TPE_CORE_RT_01、TPE_CORE_RT_02 VLAN 20",
    "entities": [
     {
      "type": "interface",
@@ -43590,7 +43590,7 @@
    "severity": "warn",
    "cat": "位址",
    "title": "重疊網段在不同設備的遮罩不同",
-   "message": "10.1.10.0/24（TPE_ACC_SW_01、TPE_ACC_SW_02、TPE_ACC_SW_03、TPE_ACC_SW_04、TPE_ACC_SW_05、TPE_ACC_SW_06、TPE_ACC_SW_07、TPE_ACC_SW_08…（共 16 台））與 10.1.10.0/25（TPE_ACC_SW_10）；依多數推定偏離：TPE_ACC_SW_10",
+   "message": "10.1.10.0/24（TPE_ACC_SW_01、TPE_ACC_SW_02、TPE_ACC_SW_03、TPE_ACC_SW_04、TPE_ACC_SW_05、TPE_ACC_SW_06、TPE_ACC_SW_07、TPE_ACC_SW_08…（共 16 台））與 10.1.10.0/25（TPE_ACC_SW_10）",
    "entities": [
     {
      "type": "interface",
@@ -43787,7 +43787,7 @@
    "severity": "warn",
    "cat": "位址",
    "title": "同一名稱在不同設備對應到不同 IP",
-   "message": "/ip firewall address-list「MGMT」：TPE_CORE_RT_01 10.1.10.0/24；TPE_CORE_RT_02 10.1.10.0/24、10.1.99.0/24；10.1.99.0/24 只在 TPE_CORE_RT_02；沒有多數，無法推定",
+   "message": "/ip firewall address-list「MGMT」：TPE_CORE_RT_01 10.1.10.0/24；TPE_CORE_RT_02 10.1.10.0/24、10.1.99.0/24；10.1.99.0/24 只在 TPE_CORE_RT_02",
    "entities": [
     {
      "type": "device",
@@ -43856,7 +43856,7 @@
    "severity": "warn",
    "cat": "位址",
    "title": "各設備的 DNS／NTP 伺服器設定不同",
-   "message": "DNS 伺服器：TPE_CORE_RT_01 1.1.1.1、8.8.8.8；TPE_CORE_RT_02 8.8.8.8；沒有多數，無法推定",
+   "message": "DNS 伺服器：TPE_CORE_RT_01 1.1.1.1、8.8.8.8；TPE_CORE_RT_02 8.8.8.8",
    "entities": [
     {
      "type": "device",
@@ -43919,7 +43919,7 @@
    "severity": "warn",
    "cat": "位址",
    "title": "各設備的 DNS／NTP 伺服器設定不同",
-   "message": "NTP 伺服器：TPE_ACC_SW_12 10.1.10.2；TPE_CORE_RT_01、TPE_CORE_RT_02 time.cloudflare.com；依多數推定偏離：TPE_ACC_SW_12",
+   "message": "NTP 伺服器：TPE_ACC_SW_12 10.1.10.2；TPE_CORE_RT_01、TPE_CORE_RT_02 time.cloudflare.com",
    "entities": [
     {
      "type": "device",
@@ -44383,7 +44383,7 @@
    "severity": "warn",
    "cat": "路由",
    "title": "同一 DHCP 網段在不同設備的閘道、DNS 或 NTP 不同",
-   "message": "10.1.30.0/24 閘道：TPE_CORE_RT_01 10.1.30.1；TPE_CORE_RT_02 10.1.30.3；沒有多數，無法推定",
+   "message": "10.1.30.0/24 閘道：TPE_CORE_RT_01 10.1.30.1；TPE_CORE_RT_02 10.1.30.3",
    "entities": [
     {
      "type": "device",
@@ -44486,7 +44486,7 @@
    "severity": "warn",
    "cat": "VLAN",
    "title": "同一名稱在不同設備對應到不同 VLAN",
-   "message": "VLAN 介面說明「MGMT」：TPE_ACC_SW_12 VLAN 99；TPE_CORE_RT_01、TPE_CORE_RT_02 VLAN 10；依多數推定偏離：TPE_ACC_SW_12",
+   "message": "VLAN 介面說明「MGMT」：TPE_ACC_SW_12 VLAN 99；TPE_CORE_RT_01、TPE_CORE_RT_02 VLAN 10",
    "entities": [
     {
      "type": "vlan",
@@ -45226,7 +45226,7 @@
    "severity": "info",
    "cat": "位址",
    "title": "同一 IP 在不同設備以不同名稱設定",
-   "message": "/ip dns static 10.1.20.50：TPE_CORE_RT_01「nas.tpe.lan」；TPE_CORE_RT_02「storage.tpe.lan」；沒有多數，無法推定",
+   "message": "/ip dns static 10.1.20.50：TPE_CORE_RT_01「nas.tpe.lan」；TPE_CORE_RT_02「storage.tpe.lan」",
    "entities": [
     {
      "type": "device",
@@ -45558,7 +45558,7 @@
    "severity": "info",
    "cat": "VLAN",
    "title": "同一 VLAN 在不同設備的名稱或說明不同",
-   "message": "VLAN 10 的 VLAN 介面說明：TPE_ACC_SW_01「Management」；TPE_CORE_RT_01、TPE_CORE_RT_02「MGMT」；依多數推定偏離：TPE_ACC_SW_01",
+   "message": "VLAN 10 的 VLAN 介面說明：TPE_ACC_SW_01「Management」；TPE_CORE_RT_01、TPE_CORE_RT_02「MGMT」",
    "entities": [
     {
      "type": "vlan",

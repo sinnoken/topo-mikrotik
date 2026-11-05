@@ -24,22 +24,26 @@
 
   // ---------------------------------------------------------------- 這一輪的輸入
   /** 一列：項目、來源、狀態、操作。id 給「在資料中心開啟」的區塊定位 */
-  const row = (item, label, src, status, actions, id) => h('div', { class: 'hub-row', 'data-item': item, role: 'group', 'aria-label': label, id: id || null, tabindex: id ? '-1' : null }, [
-    h('div', { class: 'hub-k' }, label), h('div', { class: 'hub-src' }, [h('span', { class: 'hub-cap' }, '來源：'), src]),
+  /** label 可以是 [名稱, 提示]：提示（例如格式名）放在名稱的 title，不寫進名稱 */
+  const row = (item, label, src, status, actions, id) => {
+    const [name, tip] = Array.isArray(label) ? label : [label, null];
+    return h('div', { class: 'hub-row', 'data-item': item, role: 'group', 'aria-label': name, id: id || null, tabindex: id ? '-1' : null }, [
+    h('div', { class: 'hub-k', title: tip }, name), h('div', { class: 'hub-src' }, [h('span', { class: 'hub-cap' }, '來源：'), src]),
     h('div', { class: 'hub-st-cell' }, [h('span', { class: 'hub-cap' }, '狀態：'), status]),
     h('div', { class: 'hub-act' }, actions || [])]);
+  };
 
   function inputRows(App, busy) {
     const r = App.round; const Q = App.Q; const m = Q ? Q.meta() : null;
     const fromPack = r.origin && r.origin.kind === 'workpack' ? r.origin : null;
     const rows = [];
     // 收集檔
-    const names = r.sources.map((s) => (s.name === S.readers.PASTE ? '（貼上的內容）' : s.name));
+    const names = r.sources.map((s) => V.fileName(s.name));
     const failures = Q ? Q.coverage().reduce((n, c) => n + (c.failures || []).length, 0) : 0;
     rows.push(row('sources', '收集檔',
       names.length ? `${names.slice(0, 3).join('、')}${names.length > 3 ? ` 等 ${V.num(names.length)} 份` : ''}${fromPack ? `（由工作包 ${fromPack.name} 帶回）` : ''}` : '—',
       !Q ? st('muted', '未載入') : h('span', null, [st('ok', `已收集 ${V.num(m.stats.collected)} 台`), failures ? st('warn', `・收集失敗 ${V.num(failures)} 段`) : null]),
-      [btn('讀入收集檔…', 'row-read-sources', () => App.openInput(), { disabled: busy || null })]));
+      [btn('載入收集檔…', 'row-read-sources', () => App.openInput(), { disabled: busy || null })]));
     // 上一輪的基準：工作包帶回的基準就是上一輪；讀入這一輪的收集檔後自動比對（也可以手動載入之前匯出的基準）
     const prev = V.baselineDiff.status();
     const prevFile = fileInput('hub-file-previous', '.json,application/json', (f) => V.baselineDiff.loadFile(App, f));
@@ -49,7 +53,7 @@
       prevSt = rep.errors.length ? st('err', '無法比對：' + rep.errors[0])
         : ver ? st('warn', '已比對；' + ver.message)
           : st('ok', `已比對：新增 ${V.num(rep.summary.added)}、移除 ${V.num(rep.summary.removed)}、變更 ${V.num(rep.summary.changed)}`);
-    } else prevSt = fromPack ? st('ok', '已載入為目前的基準；讀入這一輪的收集檔後會自動和它比對') : st('muted', '未載入');
+    } else prevSt = fromPack ? st('ok', '已載入為目前的基準；載入本輪的收集檔後會自動和它比對') : st('muted', '未載入');
     rows.push(row('previous', '上一輪的基準', prev ? prev.name : fromPack ? `工作包 ${fromPack.name}（${V.fmtUtc(fromPack.createdAt)} 建立）` : '—', prevSt,
       [prevFile, btn('載入舊基準（JSON）…', 'load-previous', () => prevFile.click(), { disabled: !Q || busy || null })]));
     // 處理紀錄
@@ -60,30 +64,30 @@
       ls.blocked ? st('err', '停用：' + ls.blocked.reason)
         : Q && idx >= 0 ? st('ok', `第 ${V.num(idx + 1)} 輪（共 ${V.num(lg.iterations.length)} 輪、${V.num(Object.keys(lg.items).length)} 項）`)
           : st('muted', `${V.num(lg.iterations.length)} 輪、${V.num(Object.keys(lg.items).length)} 項`),
-      [ledgerFile, btn('讀入處理紀錄…', 'import-ledger', () => ledgerFile.click(), { class: 'ledger-import', disabled: busy || null })], 'hub-sec-ledger'));
+      [ledgerFile, btn('匯入處理紀錄…', 'import-ledger', () => ledgerFile.click(), { class: 'ledger-import', disabled: busy || null })], 'hub-sec-ledger'));
     // 命名規則
     const p = r.profile; const used = m && m.profile;
     rows.push(row('profile', '命名規則', p ? `${p.id}${p.version != null ? ` v${p.version}` : ''}${p.label ? '：' + p.label : ''}` : '—',
       !Q ? st('muted', p ? '下次建立基準時使用' : '未選擇') : used ? st('ok', '已套用') : st('muted', '未套用（只依收集的資料判斷）'),
-      [btn('變更…', 'change-profile', () => App.openInput(), { title: '在「讀入收集檔」的對話框選擇命名規則，重新建立基準', disabled: busy || null })]));
+      [btn('變更…', 'change-profile', () => App.openInput(), { title: '在「建立基準」對話框選擇命名規則，重新建立基準', disabled: busy || null })]));
     // 建立選項 expectedData（和下一列的預期資料不同：它是建立基準的選項，會改變基準鍵）
     const xd = r.expectedData;
-    rows.push(row('expected-data', '建立選項 expectedData', xd ? `${V.num(Object.keys(xd).length)} 類設備${fromPack ? '（由工作包帶回）' : ''}` : '—',
+    rows.push(row('expected-data', ['各類設備應收資料', 'expectedData（建立基準的選項）：各類設備應收集哪些資料'], xd ? `${V.num(Object.keys(xd).length)} 類設備${fromPack ? '（由工作包帶回）' : ''}` : '—',
       xd ? st('ok', '建立基準時使用（會改變基準鍵）') : st('muted', '未使用'), []));
     // 預期資料（ssot-expected/1，和基準比對用）
     const exp = r.expected; const rep = V.lists.compare.report(App);
     const expFile = fileInput('hub-file-expected', '.json,application/json', (f) => V.lists.compare.loadFile(App, f));
-    rows.push(row('expected', '預期資料（ssot-expected/1）', exp ? exp.name : '—',
+    rows.push(row('expected', ['預期現況', '格式 ssot-expected/1：確認過的應有現況，和基準比對用'], exp ? exp.name : '—',
       !exp ? st('muted', '未載入') : rep && rep.errors.length ? st('err', rep.errors[0])
         : rep ? st(rep.items.some((i) => i.status !== 'ok') ? 'warn' : 'ok', `已比對：有差異 ${V.num(rep.items.filter((i) => i.status !== 'ok').length)} 項、一致 ${V.num(rep.summary.ok || 0)} 項`)
           : st('muted', '建立基準後比對'),
-      [expFile, btn('載入預期資料（JSON）…', 'load-expected', () => expFile.click(), { disabled: !Q || busy || null })]));
+      [expFile, btn('載入預期現況（JSON）…', 'load-expected', () => expFile.click(), { disabled: !Q || busy || null })]));
     // 覆蓋率
     const nC01 = Q ? Q.findingsByRule('C01').length : 0;
     const cs = Q ? Q.coverageSummary() : null;
     rows.push(row('coverage', '覆蓋率', cs ? `已收集 ${V.num(cs.networkCollected)}／${V.num(cs.network)} 台${V.TERMS.network}${nC01 ? `（${V.num(nC01)} 台只被鄰居發現）` : ''}${cs.hosts ? `；另有 ${V.num(cs.hosts)} 台${V.TERMS.host}不在收集範圍` : ''}` : '—',
       !Q ? st('muted', '建立基準後顯示') : nC01 ? st('warn', `有未收集的${V.TERMS.network}（C01）`) : st('ok', `沒有未收集的${V.TERMS.network}`),
-      [btn('每台設備的收集情形', 'open-coverage', () => { const sec = $('#hub-sec-coverage'); if (sec) { sec.focus(); if (sec.scrollIntoView) sec.scrollIntoView({ block: 'start' }); } }, { disabled: !Q || null, title: '下方的「覆蓋率」：每台設備收集了哪些資料、缺漏與收集失敗' }),
+      [btn('看覆蓋率明細', 'open-coverage', () => { const sec = $('#hub-sec-coverage'); if (sec) { sec.focus(); if (sec.scrollIntoView) sec.scrollIntoView({ block: 'start' }); } }, { disabled: !Q || null, title: '下方的「覆蓋率」：每台設備收集了哪些資料、缺漏與收集失敗' }),
         btn('匯出 devices.csv 草稿', 'devices-csv', () => App.exportAs('devicesCsv'), { disabled: !nC01 || null, title: '給 tools/collect.sh 的設備清單草稿；user 是佔位值，執行前請修改' })]));
     return h('div', { class: 'hub-rows' }, [
       h('div', { class: 'hub-row hub-row-head', 'aria-hidden': 'true' }, ['項目', '來源', '狀態', '操作'].map((t) => h('div', null, t))), ...rows]);
@@ -95,7 +99,7 @@
     const close = btn('關閉', 'cancel-workpack', () => App.cancelWorkpack(), { class: 'ghost' });
     if (w.errors && !w.pack) {
       return h('div', { class: 'wp-read wp-read-error', role: 'alert' }, [
-        h('p', { class: 'warn-line' }, `${w.name} 無法讀入（${V.num(w.errors.length)} 項問題），目前的資料不變：`),
+        h('p', { class: 'warn-line' }, `${w.name} 無法載入（${V.num(w.errors.length)} 項問題），目前的資料不變：`),
         issueList('wp-errors', w.errors), w.warnings.length ? h('p', { class: 'muted' }, '另有警告：') : null,
         w.warnings.length ? issueList('wp-warnings', w.warnings) : null, h('div', { class: 'row' }, [close])]);
     }
@@ -135,8 +139,8 @@
         h('label', { class: 'wp-option wp-profile-row' }, [h('span', null, '命名規則 '), sel,
           profChanged ? h('span', { class: 'warn-line wp-note' }, '和工作包不同：基準鍵會不同，處理紀錄會當成新的一輪') : h('span', { class: 'muted wp-note' }, pack.profile ? '會加入命名規則清單' : '')]),
         check('ledger', '處理紀錄', pack.ledger ? `${V.num(nItems)} 項、${V.num(pack.ledger.iterations.length)} 輪；整份取代目前的處理紀錄` : '工作包沒有處理紀錄', { disabled: !pack.ledger }),
-        check('expected', '預期資料（ssot-expected/1）', pack.expected ? '取代目前載入的預期資料' : '工作包沒有預期資料', { disabled: !pack.expected }),
-        pack.expectedData ? h('p', { class: 'muted wp-note' }, `建立選項 expectedData（${V.num(Object.keys(pack.expectedData).length)} 類設備）：重建時一定使用`) : null,
+        check('expected', '預期現況', pack.expected ? '取代目前載入的預期現況（ssot-expected/1）' : '工作包沒有預期現況', { disabled: !pack.expected }),
+        pack.expectedData ? h('p', { class: 'muted wp-note' }, `各類設備應收資料（${V.num(Object.keys(pack.expectedData).length)} 類設備）：重建時一定使用`) : null,
       ]),
       c.ledger && loss ? h('div', { class: 'wp-loss', role: 'alert' }, [
         h('p', { class: 'warn-line' }, lossText),
@@ -206,8 +210,8 @@
         failures ? h('p', { class: 'muted' }, `有 ${V.num(failures)} 段收集失敗，可以只重收失敗的指令：`) : null,
         failures ? h('code', { class: 'mono hub-cmd' }, `./tools/collect.sh devices.csv --retry-failed ${shQuote(first ? first.name : 'collection.txt')} -o collection-retry.txt`) : null,
       ]),
-      card('compare', '給之後的比對', '預期資料（ssot-expected/1）：把確認過的現況當作標準，之後和新的基準比對', [
-        btn('預期資料', 'export-expected', () => App.exportAs('expected'), { disabled: off, title: '由目前的基準產生（已收集的設備、雙向確認的鏈路、VLAN）' }),
+      card('compare', '給之後的比對', '預期現況（ssot-expected/1）：把確認過的現況當作標準，之後和新的基準比對', [
+        btn('預期現況', 'export-expected', () => App.exportAs('expected'), { disabled: off, title: '由目前的基準產生（已收集的設備、雙向確認的鏈路、VLAN）' }),
       ]),
     ]);
   }
@@ -234,10 +238,10 @@
           'aria-valuenow': hub.progress ? String(hub.progress.pct) : null }, h('div', { style: hub.progress ? { width: hub.progress.pct + '%' } : null })),
         h('span', null, hub.busy), h('span', { class: 'hub-progress-text' }, hub.progress ? hub.progress.text : '')] : []),
       h('section', { class: 'hub-card', id: 'hub-sec-inputs', tabindex: '-1', 'aria-labelledby': 'hub-in-title' }, [
-        h('div', { class: 'hub-card-head' }, [h('h2', { id: 'hub-in-title' }, '這一輪的輸入'), h('span', { class: 'hub-spacer' }), wpFile,
-          btn('讀入工作包…', 'read-workpack', () => wpFile.click(), { disabled: busy || null }),
-          btn('讀入收集檔…', 'read-sources', () => App.openInput(), { class: 'primary', disabled: busy || null })]),
-        h('p', { class: 'muted' }, '讀入上一輪的工作包，會一次帶回上一輪的基準、處理紀錄與命名規則；再讀入這一輪的收集檔，就會自動和上一輪的基準比對並推進處理紀錄。'),
+        h('div', { class: 'hub-card-head' }, [h('h2', { id: 'hub-in-title' }, '本輪的輸入'), h('span', { class: 'hub-spacer' }), wpFile,
+          btn('載入工作包…', 'read-workpack', () => wpFile.click(), { disabled: busy || null }),
+          btn('載入收集檔…', 'read-sources', () => App.openInput(), { class: 'primary', disabled: busy || null })]),
+        h('p', { class: 'muted' }, '載入上一輪的工作包，會一次帶回上一輪的基準、處理紀錄與命名規則；再載入本輪的收集檔，就會自動和上一輪的基準比對並推進處理紀錄。'),
         readBlock(App, hub),
         inputRows(App, busy),
         V.ledgerPane.importBlock(App),
@@ -249,7 +253,7 @@
         h('div', { id: 'pane-coverage', class: 'hub-coverage' }),
       ]),
       h('section', { class: 'hub-card', id: 'hub-sec-outputs', tabindex: '-1', 'aria-labelledby': 'hub-out-title' }, [
-        h('div', { class: 'hub-card-head' }, [h('h2', { id: 'hub-out-title' }, '這一輪的輸出')]),
+        h('div', { class: 'hub-card-head' }, [h('h2', { id: 'hub-out-title' }, '本輪的輸出')]),
         h('p', { class: 'muted' }, '工作包（不壓縮的 ZIP）包含收集檔、基準、處理紀錄、報表與 patch；下一輪讀回這一份就能接著做。收集檔可能含有設備機密，請自行保管。'),
         packBlock(App, hub),
         outputCards(App, hub),

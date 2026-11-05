@@ -24,7 +24,7 @@
     const filterMarks = () => (App.vlanFilter && Q ? A.vlanMarks(App.vlanFilter.id, App.vlanFilter.domain) : null);
     if (!sel) { g.setSelection([], []); g.setHighlight(filterMarks()); if (!o.refresh) { A.closeSheet(); V.details.render(App, null); } return; }
     if (!o.refresh) {
-      A.closeHub(); // 選取要在圖與詳情上看到結果（例如從搜尋或摘要進來）
+      A.closeHub(); // 選取要在圖與詳細資料上看到結果（例如從搜尋或摘要進來）
       // L2 只畫一台設備與鄰居時，選了不在圖上的設備就改看那一台
       const d = sel.type === 'device' ? sel.key : sel.type === 'interface' ? K.splitEp(sel.key)[0] : null;
       A.recenterL2(d);
@@ -190,7 +190,7 @@
     tip.textContent = text; tip.classList.remove('hidden');
     tip.style.left = (ev.x + 14) + 'px'; tip.style.top = (ev.y + 12) + 'px';
     // 鍵盤移到的設備也讀給螢幕閱讀器（aria-live）
-    if (ev.keyboard) $('#graph-live').textContent = text + '。按 Enter 開啟詳情';
+    if (ev.keyboard) $('#graph-live').textContent = text + '。按 Enter 開啟詳細資料';
   };
 
   // ================================================================ 原文檢視
@@ -223,7 +223,7 @@
     const body = V.clear($('#raw-body'));
     const blk = App.Q ? App.Q.blockAt(file, line) : null;
     const title = $('#raw-title');
-    title.textContent = `${blk ? V.blockWhere(App.Q, blk) : file}（第 ${line} 行）`; title.setAttribute('title', `${file} 第 ${line} 行`);
+    title.textContent = `${blk ? V.blockWhere(App.Q, blk) : V.fileName(file)}（第 ${line} 行）`; title.setAttribute('title', `${V.fileName(file)} 第 ${line} 行`);
     $('#raw-nav').classList.toggle('hidden', n < 2);
     $('#raw-pos').textContent = `${rawNav.at + 1}／${n}`;
     if (!src) body.appendChild(h('p', { class: 'muted' }, '找不到原始輸入（可能是從舊版本還原的基準）。'));

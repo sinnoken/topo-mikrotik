@@ -98,7 +98,7 @@
           cb.addEventListener('change', () => toggleKeys([r.key], cb.checked));
           const facet = R().facetText(r.f);
           return h('label', { class: 'patch-pick-row' }, [cb, ' ', r.dev ? h('span', { class: 'muted' }, Q.devName(r.dev) + '：') : null,
-            facet ? V.chip(facet, 'facet', { title: 'facet：' + r.f.facet }) : null, facet ? ' ' : null, r.f.message]);
+            facet ? V.chip(facet, 'facet', { title: '原值：' + r.f.facet }) : null, facet ? ' ' : null, r.f.message]);
         })));
         if (list.length > GROUP_MAX) box.appendChild(h('div', { class: 'muted' }, `只列出前 ${GROUP_MAX} 筆（共 ${list.length} 筆）；其餘請用「依規則」或「依設備」選取`));
       };
@@ -131,7 +131,7 @@
       ...it.warnings.map((w) => h('p', { class: 'warn-line' }, '警告：' + w)),
       h('div', { class: 'patch-before' }, [h('div', { class: 'patch-label' }, '修改前（基準的原文）'),
         ...it.evidence.map((e) => h('div', { class: 'patch-ev' }, [
-          h('a', { class: 'link mono', onclick: () => App.openRaw(e.file, e.line) }, `${e.file} 第 ${e.line} 行`), ' ',
+          h('a', { class: 'link mono', onclick: () => App.openRaw(e.file, e.line) }, `${V.fileName(e.file)} 第 ${e.line} 行`), ' ',
           h('code', { class: 'mono' }, e.text)]))]),
       h('div', { class: 'patch-after' }, [h('div', { class: 'patch-label' }, '修改後（套用指令）'), h('pre', { class: 'note-box patch-cmd' }, R().itemApplyLines(plan, it))]),
     ]);

@@ -74,15 +74,15 @@
       causes: [
         '對端的該埠關閉了 LLDP 收送。',
         '兩次收集之間鏈路異動。',
-        '中間有不轉送 LLDP 的設備，例如部分媒體轉換器、未管理交換器。',
+        '中間有不轉送 LLDP 的設備，例如部分媒體轉換器、非網管型交換器。',
       ],
       action: '檢查對端該埠的 neighbor discovery 設定，或重新收集兩端。設定在 `/ip neighbor discovery-settings` 的 `discover-interface-list`、`protocol`，鄰居表是 `/ip neighbor`。',
     },
     K02: {
       severity: 'warn', cat: '鏈路', title: '同一介面對應到多個鄰居', data: [['lldp']],
       causes: [
-        '埠下掛了未管理交換器或集線器。',
-        'hypervisor 的虛擬交換器把多台主機的 LLDP 轉出來。',
+        '埠下掛了非網管型交換器或集線器。',
+        '虛擬化主機（hypervisor）的虛擬交換器把多台主機的 LLDP 轉出來。',
         '資料在兩次收集之間改變。',
       ],
       action: '到現場或用 MAC 表（`/interface bridge host`）確認該埠下實際接了什麼。確認前，拓樸圖在這個埠的配對不可信。',
@@ -197,11 +197,11 @@
     A04: {
       severity: 'info', cat: '位址', title: '單一埠學到過多 MAC（可能下掛未管理交換器或 hypervisor）', data: [['mac']],
       causes: [
-        '埠下掛了未管理交換器。',
+        '埠下掛了非網管型交換器。',
         '埠下接了 AP。',
         '埠下接了虛擬化主機（hypervisor）。',
       ],
-      action: '到現場確認是否接了未管理交換器、AP 或虛擬化主機。若是網路設備，開啟它的 LLDP 並納入收集。',
+      action: '到現場確認是否接了非網管型交換器、AP 或虛擬化主機。若是網路設備，開啟它的 LLDP 並納入收集。',
     },
     A05: {
       severity: 'info', cat: '位址', title: 'ARP 位址不屬於該設備任何直連網段', data: [['arp'], ['config', 'ipaddr']],
@@ -327,7 +327,7 @@
         'HA 成對的 DHCP 伺服器設定沒有同步。',
         '只改了其中一台的閘道或伺服器。',
       ],
-      action: '讓同一網段的各 DHCP 伺服器送出相同的閘道、DNS 與 NTP。設定在 `/ip dhcp-server network` 的 `gateway`、`dns-server`、`ntp-server`；不一致時，客戶端拿到的設定取決於哪一台先回應。有推定偏離時，先從偏離的設備查起。',
+      action: '讓同一網段的各 DHCP 伺服器送出相同的閘道、DNS 與 NTP。設定在 `/ip dhcp-server network` 的 `gateway`、`dns-server`、`ntp-server`；不一致時，用戶端拿到的設定取決於哪一台先回應。有推定偏離時，先從偏離的設備查起。',
     },
     // ---- 防火牆
     F01: {

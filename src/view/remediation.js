@@ -14,7 +14,7 @@
 
   // ---------------------------------------------------------------- 處理紀錄的狀態
   /** 狀態鍵（S.ledger.STATUS）→ 顯示文字；不認得的狀態（例如較新版本寫入的）原樣顯示 */
-  const STATUS_TEXT = { open: '待處理', scheduled: '已排程修復', accepted: '可接受（豁免）', 'false-positive': '誤報', fixed: '已修好', regressed: '回歸' };
+  const STATUS_TEXT = { open: '待處理', scheduled: '已排定修正', accepted: '可接受（豁免）', 'false-positive': '誤報', fixed: '已修好', regressed: '回歸' };
   const statusText = (s) => (s ? STATUS_TEXT[s] || s : '待處理');
   /** 狀態的標籤色（DOM 的 .chip.err 等） */
   const STATUS_CHIP = { open: '', scheduled: 'info', accepted: 'ok', 'false-positive': '', fixed: 'ok', regressed: 'err' };

@@ -1,6 +1,6 @@
 ---
 name: workflow
-description: 下游模組：新舊基準比對與預期資料（src/compare/）、修正 patch（src/remediate/）、處理紀錄（src/ledger/）、工作包與不壓縮 ZIP（src/workpack/）、patch 黃金檔、tests/workflow/，以及之後的 CLI（tools/baseline.js、tools/patch.js）。這些模組只透過 SSOT.query 讀 Snapshot。修改比對、patch、處理紀錄、工作包時使用。不碰解析、建模、檢查、query、畫面與文件。
+description: 下游模組：新舊基準比對與預期現況（src/compare/）、修正 patch（src/remediate/）、處理紀錄（src/ledger/）、工作包與不壓縮 ZIP（src/workpack/）、patch 黃金檔、tests/workflow/，以及之後的 CLI（tools/baseline.js、tools/patch.js）。這些模組只透過 SSOT.query 讀 Snapshot。修改比對、patch、處理紀錄、工作包時使用。不碰解析、建模、檢查、query、畫面與文件。
 tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch
 ---
 
@@ -9,7 +9,7 @@ tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch
 ## 負責範圍
 
 下游模組只讀基準，不產生事實：
-- `src/compare/`：預期資料比對（`S.compare`）、由基準產生預期資料（`S.compare.expectedFrom`）、新舊基準比對（`S.compare.snapshots`）。
+- `src/compare/`：預期現況比對（`S.compare`）、由基準產生預期現況（`S.compare.expectedFrom`）、新舊基準比對（`S.compare.snapshots`）。
 - `src/remediate/`：修正 patch（`S.remediate`，`ssot-patch/1`）。
 - `src/ledger/`：處理紀錄（`S.ledger`，`ssot-ledger/1`）。
 - `src/workpack/`：不壓縮 ZIP（`S.zip`）與工作包（`S.workpack`，`ssot-workpack/1`，ADR-017）。工作包只在呼叫時使用 `S.build`、`S.ledger` 與 `S.profile`，不讀 store；放進工作包的內容由畫面提供。

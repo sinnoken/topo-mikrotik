@@ -65,10 +65,10 @@ git diff --check         # 提交前檢查
   `src/view/theme.js` 是顏色／線型／透明度的唯一來源；持久化集中在 `src/view/store.js`。
   `src/view` 只透過 `S.query(snapshot)`／`S.query.*` 讀資料與規則目錄，不讀 Snapshot 的欄位；允許的 `S.*` 成員由 `tests/ui-smoke.js` 的邊界掃描強制（[ADR-018](docs/架構決策/018-畫面只透過Q與S.query讀資料.md)）。
   畫面讀 `CATALOG` 的 `causes`／`action` 只透過 `V.remediation.advice(id)`（advice 內部經 `S.query.rule`）；含反引號的文字以 `V.codeText` 組成 DOM，不用 innerHTML。
-- **比對與檢視狀態**：`compare/` 有預期資料比對（`S.compare`）、由基準產生預期資料（`S.compare.expectedFrom`）與
+- **比對與檢視狀態**：`compare/` 有預期現況比對（`S.compare`）、由基準產生預期現況（`S.compare.expectedFrom`）與
   新舊基準比對（`S.compare.snapshots`，`ssot-snapdiff/1`）。finding 的穩定鍵是 `Q.findingKey(f)`；
   處理紀錄（`S.ledger`，`ssot-ledger/1`）以它為鍵存在 store 的 `'ledger'`，是使用者的資料，不進 Snapshot；
-  舊的 `'acks'` 第一次遇到基準時以 `S.ledger.fromAcks` 轉換。同一輪的判斷依 `meta.baselineKey`（輸入＋major.minor＋命名規則與預期資料）。
+  舊的 `'acks'` 第一次遇到基準時以 `S.ledger.fromAcks` 轉換。同一輪的判斷依 `meta.baselineKey`（輸入＋major.minor＋命名規則與預期現況）。
   修正 patch（`S.remediate`，`ssot-patch/1`）只產生 .rsc 文字，不連線設備（[ADR-001](docs/架構決策/001-工具維持唯讀.md)）。
 - **事實 vs 推論**：收集到的設備、介面、鏈路、VLAN、位址、路由是事實；推論需標示。命名 profile（`src/profile/`）
   只能 canonicalize 或加註解，不能新增／刪除／改寫事實。
@@ -118,7 +118,7 @@ git diff --check         # 提交前檢查
 | Agent | 負責 | 驗證 |
 |---|---|---|
 | `data-model` | 上游：解析、建模、推論、檢查、Snapshot、查詢介面、範例與 OUI 產生器 | `npm run test:core` |
-| `workflow` | 下游：比對與預期資料（`compare/`）、修正 patch（`remediate/`）、處理紀錄（`ledger/`）、工作包與 ZIP（`workpack/`）、patch 黃金檔、之後的 CLI | `npm run test:core` |
+| `workflow` | 下游：比對與預期現況（`compare/`）、修正 patch（`remediate/`）、處理紀錄（`ledger/`）、工作包與 ZIP（`workpack/`）、patch 黃金檔、之後的 CLI | `npm run test:core` |
 | `frontend` | 畫面、樣式、theme、`index.html`、`vendor/` | `npm run test:ui` |
 | `collector` | SSH 收集器 | `npm run test:collector` |
 | `docs` | README、`docs/`、開發原則、skills、agent 定義 | `npm run test:docs` |

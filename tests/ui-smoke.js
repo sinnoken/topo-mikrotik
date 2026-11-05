@@ -628,7 +628,7 @@ function viewBoundaryViolations(file, src) {
     $('#btn-hosts').click(); g.draw(); $('#btn-groups').click(); g.draw(); $('#btn-groups').click(); $('#btn-relayout').click(); g.draw();
     $('#btn-force').click(); flushRaf(5); $('#btn-force').click();
   });
-  await step('未知對端：畫在圖上、可點選、收合與展開', () => {
+  await step('終端：畫在圖上、可點選、收合與展開', () => {
     const g = App.graph; const v = g.nodes.filter((n) => n.virtual);
     if (!v.length) throw new Error('圖上沒有未知對端節點');
     if (process.env.SMOKE_INPUT) { // 大型網路：全網超過上限，全部收合成群組
@@ -1052,7 +1052,7 @@ function viewBoundaryViolations(file, src) {
     inp.dispatch('keydown', { key: 'Enter' });
     if (App.sel.type !== 'device') throw new Error('Enter 應選取設備');
   });
-  await step('收集完整度與 VLAN 數：網路設備為分母、主機另列，VLAN 以相異 ID 計（基準狀態卡同一口徑）', () => {
+  await step('覆蓋率與 VLAN 數：網路設備為分母、主機另列，VLAN 以相異 ID 計（基準狀態卡同一口徑）', () => {
     const NUM = S.view.num; const cs = App.Q.coverageSummary(); const vs = App.Q.vlanSummary();
     if (cs.network - cs.networkCollected !== App.Q.findingsByRule('C01').length) throw new Error('未收集的網路設備數應等於 C01 筆數');
     const sel = App.sel; App.select(null);
@@ -1068,7 +1068,7 @@ function viewBoundaryViolations(file, src) {
     if (!d.includes('VLAN 定義（各設備合計）' + NUM(vs.definitions))) throw new Error('技術細節應分開列出 VLAN 定義：' + d.slice(0, 300));
     App.select(sel);
   });
-  await step('基準狀態卡（未選取時）：一句話狀態只算待處理、建議先看、收集完整度可點、技術細節收合；每個數字只出現一次', () => {
+  await step('基準狀態卡（未選取時）：一句話狀態只算待處理、建議先看、覆蓋率可點、技術細節收合；每個數字只出現一次', () => {
     const Q = App.Q; const VA = S.view.app; const NUM = S.view.num; const cs = Q.coverageSummary();
     App.select(null);
     const card = $('#detail').querySelector('.status-card'); if (!card) throw new Error('未選取時右欄應是基準狀態卡');
@@ -1175,7 +1175,7 @@ function viewBoundaryViolations(file, src) {
     if (!/hosts: \[V\.TERMS\.host, hosts, V\.HOST_DEF\]/.test(fs.readFileSync(path.join(ROOT, 'src/view/panels/lists.js'), 'utf8'))) throw new Error('覆蓋率的「主機」篩選應以 V.HOST_DEF 為說明');
     if ($('#btn-unknown').textContent !== V.TERMS.endpoint || $('#btn-groups').textContent !== V.TERMS.group) throw new Error('顯示選單應寫「終端」「分群」（V.TERMS）');
   });
-  await step('用字：畫面程式與 index.html 不再出現已淘汰的說法（去掉註解後掃描字串）', () => {
+  await step('用字：畫面程式、index.html 與本檔的 step 名稱不再出現已淘汰的說法（去掉註解後掃描字串）', () => {
     // 舊說法 → 現行說法（V.TERMS 等）；只掃畫面層，核心的 finding 訊息與 Snapshot 字串不在這裡
     const RETIRED = {
       '群組 ×': '終端 ×N', 未知對端: '終端', 收斂趨勢: '改善趨勢', 修復追蹤: '修正追蹤', 已排程修復: '已排定修正', 子網: '網段', 單側觀察: S.view.TERMS.hearsay,
@@ -1188,7 +1188,16 @@ function viewBoundaryViolations(file, src) {
     const sources = jsFiles('src/view').map((f) => [f.split(path.sep).join('/'), noComments(fs.readFileSync(path.join(ROOT, f), 'utf8'))])
       .concat([['index.html', html.replace(/<!--[\s\S]*?-->/g, '')]]);
     const hits = sources.flatMap(([f, src]) => Object.keys(RETIRED).filter((w) => src.includes(w)).map((w) => `${f}：「${w}」→ 改用「${RETIRED[w]}」`));
-    if (hits.length) throw new Error('畫面仍有已淘汰的說法：\n        ' + hits.join('\n        '));
+    // 本檔的 step 名稱也是給人看的（發布前檢查表逐字引用）：只掃名稱，不掃斷言字串（斷言可能要寫出舊詞來確認它不存在）。
+    // 名稱另外不寫 L4 明細的舊層級代號，「連線」只用於網路／TCP／SSH 連線，拓樸的邊叫鏈路
+    const STEP_RETIRED = Object.assign({}, RETIRED, { 'L1／L2': '位址組與牽涉的規則', '開 L3': '逐跳路徑', '同一個 L3': '逐跳路徑' });
+    const names = [...fs.readFileSync(__filename, 'utf8').matchAll(/\bstep\('([^']+)'/g)].map((m) => m[1]);
+    if (names.length < 50) throw new Error('應讀到本檔的 step 名稱，只讀到 ' + names.length + ' 個');
+    names.forEach((n) => {
+      Object.keys(STEP_RETIRED).filter((w) => n.includes(w)).forEach((w) => hits.push(`step「${n.slice(0, 30)}…」：「${w}」→ 改用「${STEP_RETIRED[w]}」`));
+      if (/(?<!網路|TCP |SSH )連線/.test(n)) hits.push(`step「${n.slice(0, 30)}…」：拓樸的邊改用「${S.view.TERMS.link}」`);
+    });
+    if (hits.length) throw new Error('畫面或測試名稱仍有已淘汰的說法：\n        ' + hits.join('\n        '));
   });
   await step('搜尋框：IP／MAC 前綴與介面名有結果，選介面、網段結果會選到它；路由追蹤有 IP 自動完成', async () => {
     const inp = $('#search'); const dd = $('#search-dd');
@@ -1275,7 +1284,7 @@ function viewBoundaryViolations(file, src) {
   // ------------------------------------------------------------ M1：L2／L3 視圖
   const layerBtn = (l) => document.testAll('#layer-switch button').find((b) => b.getAttribute('data-layer') === l);
   const timed = async (label, fn) => { const t0 = Date.now(); await fn(); await App.layerJob; if (process.env.SMOKE_INPUT) console.log(`      ${label}：${Date.now() - t0} ms`); };
-  await step('拓樸圖的層級：設備、L2 埠、L3 子網、L4 可達性可切換（radiogroup，鍵盤可操作）；各層的位置與縮放互不干擾，設備圖的位置存檔不變', async () => {
+  await step('拓樸圖的層級：設備、L2 埠、L3 網段、L4 可達性可切換（radiogroup，鍵盤可操作）；各層的位置與縮放互不干擾，設備圖的位置存檔不變', async () => {
     const g = App.graph; App.select(null); await App.ledgerJob; await App.layoutJob; // 設備圖背景的分層版面完成後才記下狀態
     const btns = document.testAll('#layer-switch button');
     if ($('#layer-switch').getAttribute('role') !== 'radiogroup' || btns.map((b) => b.getAttribute('data-layer')).join() !== 'device,l2,l3,l4' || !btns.every((b) => b.getAttribute('role') === 'radio')) throw new Error('層級切換應是 radiogroup，依序是設備、L2、L3、L4');
@@ -1457,7 +1466,7 @@ function viewBoundaryViolations(file, src) {
     if (Math.abs(g.pos.get(parent).x - before.x - 40 / g.s) > 0.01 || g.pos.has(reached.id)) throw new Error('拖曳埠應移動它的設備框，埠本身不存位置');
     App.select(null); App.showLayer('device');
   });
-  await step('L3 子網圖：子網與設備是節點，推論的邊是弱線型；重疊網段與重複 IP 標在圖上、點選子網在右側列出位址、設備、重疊、重複 IP 與來源；可顯示路由（虛線箭頭）', async () => {
+  await step('L3 網段圖：網段與設備是節點，推論的邊是弱線型；重疊網段與重複 IP 標在圖上、點選網段在右側列出位址、設備、重疊、重複 IP 與來源；可顯示路由（虛線箭頭）', async () => {
     const g = App.graph; const Q = App.Q; const T = S.view.theme;
     await timed('L3', () => App.showLayer('l3'));
     const subnets = g.nodes.filter((n) => n.kind === 'subnet');
@@ -1554,7 +1563,7 @@ function viewBoundaryViolations(file, src) {
     if (!find()) throw new Error(`下鑽應有第 ${gi + 1} 組 ${svc} 的按鈕`);
     return find();
   };
-  await step('L4 zone 矩陣（L0）：每一格有狀態的符號與文字（不只靠顏色）、empty 和 unknown 分開、標出異質與 zone 內；圖例、提示、zone 的來源與推論、判斷的前提', async () => {
+  await step('L4 zone 矩陣：每一格有狀態的符號與文字（不只靠顏色）、empty 和 unknown 分開、標出結果不一與 zone 內；圖例、提示、zone 的來源與推論、判斷的前提', async () => {
     const Q = App.Q; const V = S.view; const G = V.theme.l4.status;
     App.select(null); layerBtn('l4').click();
     if (App.layer !== 'l4' || L4().classList.contains('hidden')) throw new Error('點 L4 應顯示 zone 矩陣');
@@ -1618,7 +1627,7 @@ function viewBoundaryViolations(file, src) {
       console.log(`      L4 矩陣第一次計算：${S.view.l4.timings(Q).get('')} ms（${mx.zones.length} 個 zone、${mx.stats.evaluations} 次判斷）；分 ${run.steps} 段，一段最久 ${run.maxStepMs} ms，兩段之間最長 ${run.maxGapMs} ms，總共 ${run.wallMs} ms`);
     }
   });
-  await step('L4 下鑽：方向鍵在格子間移動（roving tabindex），Enter 開 L1／L2，點一組的服務開 L3；焦點移到下鑽的標題，規則可點開詳情', async () => {
+  await step('L4 明細：方向鍵在格子間移動（roving tabindex），Enter 開位址組與牽涉的規則，點一組的服務開逐跳路徑；焦點移到明細的標題，規則可點開詳情', async () => {
     const Q = App.Q; const V = S.view; const mx = Q.zoneMatrix(); const n = mx.zones.length;
     const tds = l4Cells(); const roving = tds.filter((t) => t.getAttribute('tabindex') === '0');
     if (roving.length !== 1) throw new Error('矩陣只應有一個格子在 Tab 順序裡');
@@ -1690,7 +1699,7 @@ function viewBoundaryViolations(file, src) {
     if (!$('#l4-drill').classList.contains('hidden') || document.activeElement !== td) throw new Error('關閉下鑽後應收起並回到格子');
     App.select(null);
   });
-  await step('L4 可達性查詢：輸入來源、目的、協定與埠，結果用同一個 L3；NAT 改寫、拒絕、參數錯誤與無法判斷的原因（中文說明）', async () => {
+  await step('L4 可達性查詢：輸入來源、目的、協定與埠，結果用同一個逐跳路徑；NAT 改寫、拒絕、參數錯誤與無法判斷的原因（中文說明）', async () => {
     const Q = App.Q; const V = S.view;
     const run = (src, dst, proto, port) => { $('#l4-src').value = src; $('#l4-dst').value = dst; $('#l4-proto').value = proto; $('#l4-proto').dispatch('change'); $('#l4-port').value = port; $('#l4-run').click(); };
     if (!process.env.SMOKE_INPUT) {
@@ -1887,7 +1896,7 @@ function viewBoundaryViolations(file, src) {
   // ------------------------------------------------------------ M3：VRF（範例資料的 PE 有 VRF、與 main 重疊的位址與路由洩漏，CE 有策略路由）
   /** 範例資料中，非 main 的 VRF 裡也出現在 main 的 IP（位址重疊） */
   const overlapIp = (Q) => (Q.ipEntries().find((r) => r.vrf !== S.keys.MAIN_VRF && r.owner && Q.findIp(r.ip).vrfs.length > 1) || {}).ip;
-  await step('VRF：L3 每個 VRF 一個框（同一個網段在不同 VRF 是不同的子網，設備在每個 VRF 各一個節點）；說明寫出 VRF 與沒畫的策略路由；選取對到該 VRF 的節點', async () => {
+  await step('VRF：L3 每個 VRF 一個框（同一個前綴在不同 VRF 是不同的網段，設備在每個 VRF 各一個節點）；說明寫出 VRF 與沒畫的策略路由；選取對到該 VRF 的節點', async () => {
     if (process.env.SMOKE_INPUT) return; // 範例資料才有 PE／CE
     const Q = App.Q; const g = App.graph; const V = S.view; const K = S.keys; const MAIN = K.MAIN_VRF;
     const PE = 'TPE_PE_RT_01';
@@ -2267,7 +2276,7 @@ function viewBoundaryViolations(file, src) {
     if (d.testAll('h3').some((x) => x.textContent.startsWith('位置')) || !text('#detail').includes('基準中沒有這個 MAC')) throw new Error('基準中沒有的 MAC 不列位置');
     App.select(null);
   });
-  await step('比對：在「⑤ 驗證」全寬顯示，資料中心的「預期資料」列出同一份比對的摘要', async () => {
+  await step('比對：在「⑤ 驗證」全寬顯示，資料中心的「預期現況」列出同一份比對的摘要', async () => {
     goStep('verify');
     if (App.step !== 'verify' || App.centerView !== 'verify' || $('#view-verify').classList.contains('hidden') || document.activeElement !== $('#verify-title')) throw new Error('⑤ 驗證應在中間開啟並聚焦標題');
     if (!$('#view-verify').contains($('#compare-body')) || !$('#left').classList.contains('hidden')) throw new Error('比對在中間的驗證畫面，⑤ 沒有左側清單');
@@ -2860,7 +2869,7 @@ function viewBoundaryViolations(file, src) {
     App.select({ type: 'rule', key: r.key });
     if (!$('#detail').querySelector('.focus').textContent.includes('註解無法解碼')) throw new Error('commentEncoding 為 undecodable 時應標示');
   });
-  await step('新舊基準比對：依類別分組、摘要在上、新暴露醒目，schema 不同時顯示原因，可匯出預期資料', async () => {
+  await step('新舊基準比對：依類別分組、摘要在上、新暴露醒目，schema 不同時顯示原因，可匯出預期現況', async () => {
     const full = fs.readFileSync(path.join(ROOT, 'tests/fixtures/firewall/edge-router.txt'), 'utf8');
     // 舊基準少了幾條放行規則：新基準多出的 WAN 可連入規則應標成新暴露
     const oldInput = full.split('\n').filter((l) => !/dst-port=8291/.test(l) || /in-interface-list/.test(l)).join('\n');
@@ -3521,7 +3530,7 @@ function viewBoundaryViolations(file, src) {
     if (picks.join() !== key) throw new Error('共用鍵的 I03 應只有一個勾選框：' + picks.join('｜'));
     App.showView('graph');
   });
-  await step('只有 MNDP 的設備對不畫線；詳情仍說明是廣播網域可達、非直連', async () => {
+  await step('只有 MNDP 的設備對不畫線；詳情仍說明是 L2 廣播網域可達、未確認直連', async () => {
     const input = 'A (10.0.0.1):\n### /ip neighbor print detail\n'
       + ' 0 interface=ether1 mac-address=AA:00:00:00:00:02 identity=B interface-name=ether9 discovered-by=mndp\n';
     $('#input-text').value = input; $('#input-build').click();
@@ -3539,7 +3548,7 @@ function viewBoundaryViolations(file, src) {
     App.select({ type: 'interface', key: remoteEp });
     if (!text('#detail').includes('MNDP：L2 廣播網域可達，非直連')) throw new Error('MNDP 回報介面的細節不應呈現為直連線');
   });
-  await step('連線埠名：縮小時隱藏，滑過連線或節點時強制顯示', () => {
+  await step('鏈路埠名：縮小時隱藏，滑過鏈路或節點時強制顯示', () => {
     const graph = App.graph; const ctx = graph.ctx;
     const old = { nodes: graph.nodes, edges: graph.edges, pos: graph.pos, sel: graph.sel, hl: graph.hl, hover: graph.hover, fillText: ctx.fillText };
     const nodes = ['pa', 'pb'].map((id) => ({ id, label: id, kind: 'switch', collected: true, group: 'test' }));
@@ -3639,7 +3648,7 @@ function viewBoundaryViolations(file, src) {
       if (!re.test(css)) throw new Error('應使用文字色變數：' + re);
     });
   });
-  await step('嚴重度在畫布上有外形：錯誤與警告外形不同，主機與連線中點也顯示', () => {
+  await step('嚴重度在畫布上有外形：錯誤與警告外形不同，主機與鏈路中點也顯示', () => {
     const graph = App.graph; const T = S.view.theme;
     const nodes = [
       { id: 'sev-sw', label: 'sev-sw', kind: 'switch', collected: true, group: 't', sev: null },
@@ -3745,7 +3754,7 @@ function viewBoundaryViolations(file, src) {
     const detail = text('#detail');
     if (!detail.includes('14:63:93:c4:13:24') || !detail.includes('18:f0:e4:ff:ef:35')) throw new Error('設備詳情應逐筆顯示 Wi-Fi MAC 位置');
   });
-  await step('veth 與 Wi-Fi 連線以專用線型識別，顏色維持連線類別色', async () => {
+  await step('veth 與 Wi-Fi 鏈路以專用線型識別，顏色維持鏈路類別色', async () => {
     const input = 'SW_A (10.0.0.1):\n### /interface print detail\n'
       + 'Flags: D - DYNAMIC; R - RUNNING; S - SLAVE\n'
       + ' 0  R  name="veth1" type="veth" mtu=1500\n'
@@ -3814,7 +3823,7 @@ function viewBoundaryViolations(file, src) {
     rgrip.dispatch('dblclick'); if (App.layout.right !== 400) throw new Error('雙擊應還原預設寬度');
     grip.dispatch('dblclick');
   });
-  await step('鍵盤：畫布可聚焦，N 輪流移到設備、Enter 開啟詳情、Esc 取消選取，方向鍵平移、+／- 縮放', () => {
+  await step('鍵盤：畫布可聚焦，N 輪流移到設備、Enter 開啟詳細資料、Esc 取消選取，方向鍵平移、+／- 縮放', () => {
     const g = App.graph; const cv = $('#graph');
     if (cv.getAttribute('tabindex') !== '0' || !/Enter/.test(cv.getAttribute('aria-label') || '')) throw new Error('畫布應可聚焦，aria-label 說明按鍵');
     const key = (k, extra) => cv.dispatch('keydown', Object.assign({ key: k }, extra || {}));
@@ -4225,7 +4234,7 @@ function viewBoundaryViolations(file, src) {
     } else if (!process.env.SMOKE_INPUT) throw new Error('範例資料應有可標為誤報的待處理項目');
     App.showView('graph');
   });
-  await step('資料中心：列出這一輪所有的輸入與輸出與各自的狀態，鍵盤可開關（Esc 關閉後焦點回到按鈕），蓋住主畫面時主畫面不可聚焦', async () => {
+  await step('資料中心：列出本輪所有的輸入與輸出與各自的狀態，鍵盤可開關（Esc 關閉後焦點回到按鈕），蓋住主畫面時主畫面不可聚焦', async () => {
     const VA = S.view.app; const NUM = S.view.num; const btnHub = $('#btn-hub');
     if (!btnHub || $('#btn-input')) throw new Error('頁首應有「資料中心」，建立基準改由資料中心的「讀入收集檔…」進入');
     btnHub.click();
@@ -4282,7 +4291,7 @@ function viewBoundaryViolations(file, src) {
     if (base < 0 || narrow < base || !/\.hub-row \{ grid-template-columns: minmax\(0, 1fr\); \}/.test(tail) || !/\.hub-outs \{ grid-template-columns: minmax\(0, 1fr\); \}/.test(tail)) throw new Error('窄螢幕時資料中心應改成單欄，且規則要在一般樣式之後');
     if (!/\.hub \{[^}]*overflow-x: hidden/.test(css)) throw new Error('資料中心不應水平捲動');
   });
-  await step('工作包：下載後讀回，基準、處理紀錄、命名規則與預期資料都帶回；壞掉的工作包列出全部問題，目前的資料不變', async () => {
+  await step('工作包：下載後讀回，基準、處理紀錄、命名規則與預期現況都帶回；壞掉的工作包列出全部問題，目前的資料不變', async () => {
     const VA = S.view.app; const WP = S.workpack; const HS = () => VA.hubState(); const deep = require('assert').deepStrictEqual;
     // 這一輪：範例資料（或 SMOKE_INPUT）＋命名規則
     const input = process.env.SMOKE_INPUT ? fs.readFileSync(process.env.SMOKE_INPUT, 'utf8') : S.samples['sample-bundle.txt'];

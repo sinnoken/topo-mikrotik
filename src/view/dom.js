@@ -71,6 +71,9 @@
   V.inferChip = (tip) => V.chip(V.TERMS.inferred, 'info', tip ? { title: tip } : null);
   /** 多數決推定偏離的設備鍵（finding.deviation，推論）：不是多數決（或沒有 deviation）時 null，平手時空陣列。詳情、③ 分診與圖上的虛線外圈共用 */
   V.majorityDeviating = (dv) => (dv && dv.basis === 'majority' ? dv.deviating || [] : null);
+  /** 推定偏離的標籤與平手的說法：詳情、③ 分診（V.deviationLine）與匯出的 CSV 欄名、Markdown 共用 */
+  V.DEVIATION_LABEL = '推定偏離（多數決）';
+  V.NO_MAJORITY = '沒有多數';
   /**
    * 跨設備一致性規則的多數決結果（finding.deviation，推論）：一律經這裡產生，詳情的每筆檢查結果共用。
    * 列出推定偏離的設備，點設備名選取該設備（不觸發外層的點選）。
@@ -80,8 +83,8 @@
   V.deviationLine = function (App, dv, opts) {
     const devs = V.majorityDeviating(dv);
     if (!devs) return null;
-    const label = '推定偏離（多數決）：';
-    if (!devs.length) return opts && opts.tie === true ? V.h('div', { class: 'deviation none muted' }, label + '沒有多數，無法推定') : null;
+    const label = V.DEVIATION_LABEL + '：';
+    if (!devs.length) return opts && opts.tie === true ? V.h('div', { class: 'deviation none muted' }, label + V.NO_MAJORITY + '，無法推定') : null;
     const pick = (key) => (e) => { if (e && e.stopPropagation) e.stopPropagation(); App.select({ type: 'device', key }, { focus: true }); };
     // a.link 沒有 href 時 h() 已補 role、tabindex 與 Enter／空白鍵啟動
     const links = devs.map((key) => V.h('a', { class: 'link', 'data-dev': key, title: '選取這台設備', onclick: pick(key) }, App.Q.devName(key)));

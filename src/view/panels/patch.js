@@ -137,7 +137,9 @@
       h('summary', null, `逐筆勾選（${V.num(groups.length)} 條規則）`),
       h('div', { class: 'muted patch-select-note' }, '展開規則可以逐筆勾選；要選擇處理方式的項目（例如 DNS、NTP 不一致），在計畫的「需要選擇的項目」選擇要採用的值。'),
       h('div', { class: 'patch-groups' }, groups)]);
-    box.addEventListener('toggle', () => { state.picks = !!box.open; });
+    // 以 open 屬性建立 <details> 時瀏覽器也會排入 toggle 事件：展開狀態真的變了才記成使用者的選擇
+    let cur = open;
+    box.addEventListener('toggle', () => { if (!!box.open !== cur) { cur = !!box.open; state.picks = cur; } });
     return box;
   }
 

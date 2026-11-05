@@ -23,7 +23,10 @@
     App.sel = sel; const o = opt || {}; const g = App.graph; const Q = App.Q;
     g.setOverlay([]); g.setHighlight(null);
     if (!o.refresh) g.setEmphasis(o.emphasis || null);
-    if (sel && sel.type === 'vlan') {
+    // 清單上「已選取」的檢查結果：改選其他東西時拿掉（App.selectFinding 在這之後由 findings.reveal 重新標出）
+    if (!o.refresh) V.lists.findings.unmark();
+    // 基準中沒有的 VLAN（例如搜尋到「基準中沒有這個 VLAN」）只開詳情，不設成篩選：選單沒有這個選項，圖上也沒有可標的
+    if (sel && sel.type === 'vlan' && Q && Q.vlanIds().includes(+sel.key)) {
       const id = +sel.key; const prev = App.vlanFilter;
       // 由 VLAN 選單來的（opt.pinFilter）保留；其他來源選同一個 VLAN 時沿用原本的保留狀態
       const pinned = !!o.pinFilter || (!!prev && prev.id === id && prev.pinned);
@@ -230,6 +233,7 @@
     // 複製的結果寫在對話框的狀態列（同輸入對話框）：banner 在強制回應對話框底下，窄螢幕完全被蓋住
     $('#raw-copy').addEventListener('click', async () => {
       const c = rawNav.copy; const why = await V.copyText(c.text);
+      if (rawNav.copy !== c) return; // 複製期間換到另一段或重新開啟：結果屬於舊的那一段，不寫到新的狀態列
       $('#raw-copy-status').textContent = why ? `無法自動複製（${why}），請直接選取下面的文字複製` : `已複製 ${c.lines} 行`;
     });
     dlg.addEventListener('keydown', (e) => {

@@ -8,19 +8,8 @@
   const A = V.app; const App = window.App;
 
   const input = { files: [] };
-  /**
-   * 例外 → 給使用者看的中文原因（V.reason 尚不存在，先在這裡最小實作）。核心與命名規則丟出的錯誤本來就是中文，原樣使用；
-   * JSON 解析錯誤說明檔案格式；其他（程式錯誤，英文訊息）改用中文說明，原訊息放在括號內，方便回報與追查。
-   */
-  const CJK = /[㐀-鿿]/;
-  function reason(e) {
-    const msg = (e && e.message) || String(e);
-    if (e instanceof SyntaxError) return `檔案不是有效的 JSON（${msg}）`;
-    if (CJK.test(msg)) return msg;
-    return `程式發生未預期的錯誤，請重新整理頁面後再試一次；若仍發生，請回報這段訊息：${msg}`;
-  }
   /** 對話框的狀態列（#input-status，role=status）顯示失敗原因；不用 alert（會擋住畫面，也無法被螢幕閱讀器以外的方式重看） */
-  function fail(what, e) { console.error(e); $('#input-status').textContent = `${what}：${reason(e)}`; }
+  function fail(what, e) { console.error(e); $('#input-status').textContent = `${what}：${V.reason(e)}`; }
   /**
    * S.buildAsync 的進度 { stage, done, total } → 文字與百分比（建立基準與資料中心重建工作包的基準共用）。
    * 讀取各區塊佔 5–75%，之後依階段：建立模型 80%、一致性檢查 92%、完成 100%。
@@ -88,7 +77,7 @@
     const sources = inputSources(); const profile = selectedProfile();
     input.sig = inputSig(sources, profile); input.pre = null; input.pfError = null;
     if (sources.length) {
-      try { input.pre = S.preflight(sources, { profile }); } catch (e) { input.pfError = reason(e); }
+      try { input.pre = S.preflight(sources, { profile }); } catch (e) { input.pfError = V.reason(e); }
     }
     renderPreflight(sources);
     return input.pre;
@@ -122,14 +111,10 @@
   }
 
   // ---- 收集指引（歡迎畫面）與格式範例（對話框）
-  /** 寫入剪貼簿；瀏覽器不支援或拒絕時明確告知改用手動選取（不靜默失敗）。status：顯示結果的 role=status 元素 */
+  /** 寫入剪貼簿（V.copyText），結果寫在 status（role=status 元素） */
   async function copyText(text, status) {
-    const c = globalThis.navigator && globalThis.navigator.clipboard;
-    try {
-      if (!c || !c.writeText) throw new Error('瀏覽器不支援剪貼簿');
-      await c.writeText(text);
-      status.textContent = '已複製';
-    } catch (e) { status.textContent = `無法自動複製（${e.message}），請直接選取上面的文字複製`; }
+    const why = await V.copyText(text);
+    status.textContent = why ? `無法自動複製（${why}），請直接選取上面的文字複製` : '已複製';
   }
   function bindCollectGuide() {
     $('#input-format-copy').onclick = () => copyText($('#input-format-example').textContent, $('#input-format-copy-status'));

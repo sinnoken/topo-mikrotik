@@ -56,7 +56,7 @@
     if (hit && hit.p === p) return hit.out;
     let out = { opts: {}, error: null };
     if (p && Array.isArray(p.zones) && p.zones.length) {
-      try { Q.zones({ profile: p }); out = { opts: { profile: p }, error: null }; } catch (e) { out = { opts: {}, error: e.message }; }
+      try { Q.zones({ profile: p }); out = { opts: { profile: p }, error: null }; } catch (e) { out = { opts: {}, error: V.reason(e) }; }
     }
     zoCache.set(Q, { p, out });
     return out;
@@ -77,7 +77,8 @@
     const s = TH().status[status] || TH().status.unknown;
     return s.hatch ? `repeating-linear-gradient(45deg, ${s.bg} 0 5px, ${s.hatch} 5px 6px)` : s.bg;
   };
-  const verdictTag = (v) => statusTag(v, V.VERDICT[v] || v);
+  /** 一格（或一組）的筆數「允許 N・拒絕 N・無法判斷 N」：用語取自 V.L4_STATUS */
+  const countsText = (k, sep) => ['allow', 'deny', 'unknown'].map((s) => `${V.L4_STATUS[s]} ${V.num(k[s])}`).join(sep || '・');
   /** 異質的徽章（文字，不只靠顏色）；顏色取自 theme.l4.badge */
   const hetBadge = (text, cls) => { const b = TH().badge; return h('span', { class: 'l4-het' + (cls ? ' ' + cls : ''), style: { background: b.bg, color: b.text, borderColor: b.border } }, text || '≠ 結果不一'); };
   /** 對角線（zone 內）的虛線外框：顏色取自 theme.l4.diagonal */
@@ -110,7 +111,7 @@
   function cellText(Q, c) {
     const k = c.counts;
     return `${zoneName(Q, c.src)} → ${zoneName(Q, c.dst)}${c.diagonal ? '（zone 內）' : ''}：${V.L4_STATUS[c.status]}。`
-      + (k.total ? `允許 ${V.num(k.allow)}、拒絕 ${V.num(k.deny)}、無法判斷 ${V.num(k.unknown)}，共 ${V.num(k.total)} 組（位址 × 服務）` : V.L4_STATUS_TIP.empty)
+      + (k.total ? `${countsText(k, '、')}，共 ${V.num(k.total)} 組（位址 × 服務）` : V.L4_STATUS_TIP.empty)
       + (c.heterogeneous ? '；結果不一：同一個 zone 的成員結果不一致' : '')
       + (c.rule ? `；代表規則：${decisiveText(Q, c.rule)}${c.ruleCount > 1 ? `（另有 ${c.ruleCount - 1} 條）` : ''}` : '')
       + (c.reasons.length ? `；無法判斷的原因：${c.reasons.map((x) => `${V.reachReason(x.code)}（${V.num(x.count)}）`).join('、')}` : '');
@@ -226,7 +227,7 @@
     j.promise = new Promise((resolve) => {
       const fail = (e) => {
         console.error(e);
-        st.error = e.message; setBusy(false); els.status.textContent = '無法計算 zone 矩陣：' + e.message;
+        st.error = V.reason(e); setBusy(false); els.status.textContent = '無法計算 zone 矩陣：' + st.error;
       };
       const tick = () => {
         if (job !== j) { resolve(); return; } // 換了 service 或基準：stopJob 已經放棄
@@ -411,7 +412,7 @@
   function showTip(App, c, td, ev) {
     const Q = App.Q; const k = c.counts; const tip = V.clear(els.tip);
     tip.appendChild(h('div', { class: 'l4-tip-head' }, [statusMark(c.status), ` ${zoneName(Q, c.src)} → ${zoneName(Q, c.dst)}${c.diagonal ? '（zone 內）' : ''}：${V.L4_STATUS[c.status]}`]));
-    tip.appendChild(h('div', null, k.total ? `允許 ${V.num(k.allow)}・拒絕 ${V.num(k.deny)}・無法判斷 ${V.num(k.unknown)}（共 ${V.num(k.total)} 組位址 × 服務）` : V.L4_STATUS_TIP.empty));
+    tip.appendChild(h('div', null, k.total ? `${countsText(k)}（共 ${V.num(k.total)} 組位址 × 服務）` : V.L4_STATUS_TIP.empty));
     if (c.heterogeneous) tip.appendChild(h('div', null, '≠ 結果不一：同一個 zone 的成員結果不一致'));
     if (c.rule) tip.appendChild(h('div', null, `代表規則：${decisiveText(Q, c.rule)}${c.ruleCount > 1 ? `（共 ${V.num(c.ruleCount)} 條規則或預設）` : ''}`));
     if (c.reasons.length) tip.appendChild(h('div', null, '無法判斷：' + c.reasons.slice(0, 3).map((x) => `${V.reachReason(x.code)}（${V.num(x.count)}）`).join('、')));
@@ -437,9 +438,9 @@
       { t: '來源 zone', f: (c) => zoneName(Q, c.src), s: (c) => zoneName(Q, c.src) },
       { t: '目的 zone', f: (c) => h('span', null, [zoneName(Q, c.dst), c.diagonal ? h('span', { class: 'muted' }, '（zone 內）') : null]), s: (c) => zoneName(Q, c.dst) },
       { t: '狀態', f: (c) => h('span', { class: 'l4-row-status', 'data-status': c.status }, [statusTag(c.status), c.heterogeneous ? hetBadge() : null]), s: (c) => c.status },
-      { t: '允許', f: (c) => V.num(c.counts.allow), s: (c) => c.counts.allow, cls: 'num' },
-      { t: '拒絕', f: (c) => V.num(c.counts.deny), s: (c) => c.counts.deny, cls: 'num' },
-      { t: '無法判斷', f: (c) => V.num(c.counts.unknown), s: (c) => c.counts.unknown, cls: 'num' },
+      { t: V.L4_STATUS.allow, f: (c) => V.num(c.counts.allow), s: (c) => c.counts.allow, cls: 'num' },
+      { t: V.L4_STATUS.deny, f: (c) => V.num(c.counts.deny), s: (c) => c.counts.deny, cls: 'num' },
+      { t: V.L4_STATUS.unknown, f: (c) => V.num(c.counts.unknown), s: (c) => c.counts.unknown, cls: 'num' },
       { t: '總數', f: (c) => V.num(c.counts.total), s: (c) => c.counts.total, cls: 'num' },
       { t: '代表規則', f: (c) => (c.rule ? decisiveText(Q, c.rule) : '—'), s: (c) => (c.rule ? decisiveText(Q, c.rule) : null) },
       { t: '無法判斷的原因', f: (c) => c.reasons.map((x) => `${V.reachReason(x.code)}（${V.num(x.count)}）`).join('、'), s: (c) => (c.reasons[0] || {}).code },
@@ -451,7 +452,7 @@
   function downloadCsv(App) {
     const mx = st.current; if (!mx) { V.app.banner('zone 矩陣還在計算，完成後再下載。', 4000); return; }
     const Q = App.Q; const C = V.exporter.csvCell; const mv = (mx.vrfs || []).length > 1;
-    const head = ['來源 zone', '目的 zone', 'zone 內', '狀態', '結果不一', '允許', '拒絕', '無法判斷', '總數', '代表規則', '無法判斷的原因'].concat(mv ? ['來源 VRF', '目的 VRF'] : []);
+    const head = ['來源 zone', '目的 zone', 'zone 內', '狀態', '結果不一', V.L4_STATUS.allow, V.L4_STATUS.deny, V.L4_STATUS.unknown, '總數', '代表規則', '無法判斷的原因'].concat(mv ? ['來源 VRF', '目的 VRF'] : []);
     const rows = shownCells(mx).map((c) => [zoneName(Q, c.src), zoneName(Q, c.dst), c.diagonal ? '是' : '', V.L4_STATUS[c.status], c.heterogeneous ? '是' : '',
       c.counts.allow, c.counts.deny, c.counts.unknown, c.counts.total, c.rule ? decisiveText(Q, c.rule) : '', c.reasons.map((x) => `${V.reachReason(x.code)}（${x.count}）`).join('、')].concat(mv ? [zoneVrf(Q, c.src), zoneVrf(Q, c.dst)] : []));
     const text = '﻿' + [head].concat(rows).map((r) => r.map(C).join(',')).join('\r\n') + '\r\n';
@@ -519,9 +520,9 @@
     try {
       const r = App.Q.reach(req.src, req.dst, Object.assign({ proto: req.proto, port: req.port }, req.vrf ? { vrf: req.vrf } : {}));
       if (r.ok) st.reach = r; else { st.reachErr = r.error; st.reachVrfs = r.vrfs || null; } // vrfs：來源在多個 VRF，請使用者選擇
-    } catch (e) { st.reachErr = e.message; } // 參數不合法（例如 tcp 沒有埠、不存在的 VRF）：核心丟 TypeError，原文顯示
+    } catch (e) { st.reachErr = V.reason(e); } // 參數不合法（例如 tcp 沒有埠、不存在的 VRF）：核心丟中文的 TypeError，V.reason 原樣顯示
     renderDrill(App);
-    announce(st.reach ? `逐跳路徑：${req.src} → ${req.dst} ${svcLabel(req)} ${V.VERDICT[st.reach.verdict]}` : st.reachVrfs ? `逐跳路徑：來源 ${req.src} 在多個 VRF，請選擇 VRF` : `逐跳路徑：查詢失敗，${st.reachErr}`);
+    announce(st.reach ? `逐跳路徑：${req.src} → ${req.dst} ${svcLabel(req)} ${V.L4_STATUS[st.reach.verdict]}` : st.reachVrfs ? `逐跳路徑：來源 ${req.src} 在多個 VRF，請選擇 VRF` : `逐跳路徑：查詢失敗，${st.reachErr}`);
     focusDrill(st.cell ? 'l3' : null);
   }
   /** 來源在多個 VRF 時，用選的 VRF 重新查詢（同一個請求，只換 VRF） */
@@ -547,7 +548,7 @@
       const c = st.cellData;
       box.appendChild(h('h3', { id: 'l4-drill-title', class: 'work-card-title', tabindex: '-1' }, `明細：${zoneName(Q, c.src)} → ${zoneName(Q, c.dst)}`));
       box.appendChild(h('div', { class: 'row' }, [statusTag(c.status), c.heterogeneous ? hetBadge() : null, c.diagonal ? V.chip('zone 內') : null,
-        V.chip(`允許 ${V.num(c.counts.allow)}・拒絕 ${V.num(c.counts.deny)}・無法判斷 ${V.num(c.counts.unknown)}／共 ${V.num(c.counts.total)}`),
+        V.chip(`${countsText(c.counts)}／共 ${V.num(c.counts.total)}`),
         st.service ? V.chip('服務 ' + st.service) : V.chip('全部服務'),
         h('button', { type: 'button', class: 'ghost l4-close', onclick: () => closeDrill(App) }, '關閉明細')]));
       if (c.reasons.length) box.appendChild(h('div', { class: 'l4-reasons' }, [h('b', null, '無法判斷的原因：'), h('ul', null, c.reasons.map((x) => h('li', { class: 'l4-reason', 'data-code': x.code, title: reasonNote(x.code) }, `${V.reachReason(x.code)}（${V.num(x.count)} 組）`)))]));
@@ -612,7 +613,7 @@
             title: dv ? `${s.service} 的結果造成這一格結果不一；看逐跳路徑` : `看 ${s.service} 的逐跳路徑`,
             style: { background: cellBg(s.verdict), color: TH().text },
             onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); openGroup(App, i, s.service); },
-          }, [statusMark(s.verdict), ` ${s.service} ${V.VERDICT[s.verdict]}`, s.final && (s.final.dst !== g.dst.ip || s.final.port !== svcOf(s.service).port) ? ` → ${s.final.dst}${s.final.port != null ? ':' + s.final.port : ''}` : '', dv ? divMark() : null]);
+          }, [statusMark(s.verdict), ` ${s.service} ${V.L4_STATUS[s.verdict]}`, s.final && (s.final.dst !== g.dst.ip || s.final.port !== svcOf(s.service).port) ? ` → ${s.final.dst}${s.final.port != null ? ':' + s.final.port : ''}` : '', dv ? divMark() : null]);
         })) },
         { t: '狀態', f: ({ g }) => statusTag(g.status), s: ({ g }) => g.status },
       ].concat(het ? [{ t: '造成差異的服務', f: ({ g }) => (g.divergent ? h('span', { class: 'l4-div-svcs' }, ['≠ ', h('span', { class: 'mono' }, g.divergentServices.join('、'))]) : '—'), s: ({ g }) => g.divergentServices.length }] : [], [
@@ -629,9 +630,9 @@
       h('h4', null, ['牽涉的規則 ', V.chip(String(rows.length))]),
       rows.length ? V.table([
         { t: '規則', f: (x) => ruleLink(App, x) },
-        { t: '允許', f: (x) => V.num(x.verdicts.allow), s: (x) => x.verdicts.allow, cls: 'num' },
-        { t: '拒絕', f: (x) => V.num(x.verdicts.deny), s: (x) => x.verdicts.deny, cls: 'num' },
-        { t: '無法判斷', f: (x) => V.num(x.verdicts.unknown), s: (x) => x.verdicts.unknown, cls: 'num' },
+        { t: V.L4_STATUS.allow, f: (x) => V.num(x.verdicts.allow), s: (x) => x.verdicts.allow, cls: 'num' },
+        { t: V.L4_STATUS.deny, f: (x) => V.num(x.verdicts.deny), s: (x) => x.verdicts.deny, cls: 'num' },
+        { t: V.L4_STATUS.unknown, f: (x) => V.num(x.verdicts.unknown), s: (x) => x.verdicts.unknown, cls: 'num' },
         { t: '條件無法判斷', f: (x) => (x.uncertain ? V.num(x.uncertain) : ''), s: (x) => x.uncertain, cls: 'num' },
         { t: '服務', f: (x) => h('span', { class: 'mono' }, x.services.join(' ')) },
       ], rows, { limit: ROW_LIMIT, rowClass: () => 'l4-ruledetail' }) : h('p', { class: 'muted' }, '沒有牽涉的規則。'),
@@ -651,7 +652,7 @@
     }
     if (!r) { out.push(h('p', { class: 'diffA l4-reach-error' }, '無法查詢：' + st.reachErr)); return h('div', { class: 'l4-sub l4-l3' }, out); }
     const start = r.start || {};
-    out.push(h('div', { class: 'row' }, [h('span', { class: 'l4-verdict', 'data-verdict': r.verdict }, verdictTag(r.verdict)),
+    out.push(h('div', { class: 'row' }, [h('span', { class: 'l4-verdict', 'data-verdict': r.verdict }, statusTag(r.verdict)),
       r.natApplied && r.final ? V.chip(`NAT 之後 ${r.final.dst}${r.final.port != null ? ':' + r.final.port : ''}`, 'info', { class: 'chip info l4-final' }) : null,
       q.from === 'cell' ? V.chip(`從 ${zoneName(Q, (st.cellData || {}).src)} → ${zoneName(Q, (st.cellData || {}).dst)} 的第 ${q.group + 1} 組`) : null]));
     out.push(P().kv([
@@ -683,11 +684,11 @@
     const addr = (ip, port) => (ip == null ? '（來源位址不明）' : ip + (port != null ? ':' + port : ''));
     const endRules = p.end ? (p.end.rules || []).concat(p.end.rule ? [p.end.rule] : []) : [];
     return h('div', { class: 'l4-path', 'data-verdict': p.verdict }, [
-      h('div', { class: 'l4-path-head' }, [total > 1 ? `路徑 ${n + 1}：` : '路徑：', verdictTag(p.verdict)]),
+      h('div', { class: 'l4-path-head' }, [total > 1 ? `路徑 ${n + 1}：` : '路徑：', statusTag(p.verdict)]),
       h('ol', { class: 'l4-hops' }, p.hops.map((hp) => h('li', { class: 'l4-hop', 'data-dev': hp.dev }, [
         h('div', null, [h('b', null, devLink(App, hp.dev)), multi && hp.vrf ? h('span', { class: 'mono muted l4-hop-vrf' }, ` @${hp.vrf}`) : null, hp.chain ? h('span', { class: 'muted' }, ` ${hp.chain}`) : null,
           hp.collected ? null : V.chip('未收集', 'warn'), hp.firewall === 'none' && hp.collected ? V.chip('沒有防火牆資料', 'warn') : null, ' ',
-          hp.verdict === 'pass' ? statusTag('allow', '這一跳通過') : verdictTag(hp.verdict)]),
+          hp.verdict === 'pass' ? statusTag('allow', '這一跳通過') : statusTag(hp.verdict)]),
         h('div', { class: 'mono l4-hop-addr' }, `${addr(hp.src, null)} → ${addr(hp.dst, hp.port)}${hp.dstOut !== hp.dst || hp.portOut !== hp.port ? `　改寫為 ${addr(hp.dstOut, hp.portOut)}` : ''}${hp.srcOut !== hp.src ? `　來源改寫為 ${addr(hp.srcOut, null)}` : ''}`),
         h('div', { class: 'muted' }, `入 ${hp.inKnown ? epText(Q, hp.in) : '不明'}・出 ${hp.outKnown ? epText(Q, hp.out) : '不明'}${routeText(hp.route, multi)}`),
         hp.stages.length ? h('ul', { class: 'l4-stages' }, hp.stages.map((sg) => h('li', { 'data-status': sg.status }, [

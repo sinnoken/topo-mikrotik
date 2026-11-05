@@ -22,8 +22,8 @@
     if (state.inputHash === App.Q.meta().inputHash) return;
     state.keys.clear(); state.view.clear(); state.choices.clear(); state.open.clear(); state.cats.clear(); state.picks = null; state.inputHash = App.Q.meta().inputHash;
   }
-  /** 規則的類別與標題（S.query.rule，即規則目錄）：畫面上寫標題，代碼只放在 title；目錄沒有的代碼原樣顯示 */
-  const ruleOf = (id) => S.query.rule(id) || { id, cat: '未登錄的規則', title: id };
+  /** 規則的類別與標題（V.ruleInfo）：畫面上寫標題，代碼只放在 title */
+  const ruleOf = V.ruleInfo;
   const ruleTip = (id) => `${id}：${ruleOf(id).cat} ▸ ${ruleOf(id).title}`;
   const ruleTag = (id) => V.chip(ruleOf(id).title, 'patch-rule-tag', { title: ruleTip(id), 'data-rule-id': id });
   /** 重繪後焦點回到同一個按鈕：有 data-patch-focus 的元素以它為鍵（重繪會重建全部的元素） */
@@ -34,12 +34,6 @@
   /** 總表的檔名：patch-summary-<建立時間>-<N>dev.md（修正計畫的下載與工作包共用） */
   const summaryName = (App) => `patch-summary-${V.exporter.baseName(App.Q)}.md`;
   const download = (name, text) => V.exporter.download(name, text, 'text/plain;charset=utf-8');
-  function copyText(text, what) {
-    const c = globalThis.navigator && globalThis.navigator.clipboard;
-    if (!c || !c.writeText) { V.app.banner('這個瀏覽器無法自動複製，請選取文字後手動複製。', 6000); return; }
-    c.writeText(text).then(() => V.app.banner(`已複製${what}；執行前請逐行核對。`, 3000),
-      (e) => V.app.banner('無法複製：' + e.message + '；請選取文字後手動複製。', 6000));
-  }
 
   /**
    * 目前基準的檢查結果，依 findingKey 去重複：[{ key, f, idx, dev }]（同一個鍵只取第一筆，計畫也以鍵為單位）。
@@ -61,7 +55,7 @@
     try { state.plan = RM().plan(App.Q, sel, { choices }); } catch (e) {
       if (!(e instanceof RangeError) || !Object.keys(choices).length) throw e;
       // 選項已不存在（例如核心的選項改變）：清掉選擇改回預設，並說明原因
-      state.choices.clear(); V.app.banner('先前的選擇已不適用，改回預設：' + e.message, 8000);
+      state.choices.clear(); V.app.banner('先前的選擇已不適用，改回預設：' + V.reason(e), 8000);
       state.plan = RM().plan(App.Q, sel);
     }
     state.files = RM().files(state.plan);
@@ -176,7 +170,7 @@
           h('div', { class: 'seg', role: 'group', 'aria-label': `${f.name} 檢視的檔案` }, Object.entries(KIND).map(([k, [label]]) => h('button', Object.assign({
             type: 'button', class: `btn ${kind === k ? 'on' : ''}`, 'aria-pressed': String(kind === k), 'data-kind': k,
             onclick: () => { state.view.set(f.dev, k); render(App); } }, focusKey(`kind:${f.dev}:${k}`)), label))),
-          h('button', { class: 'ghost patch-copy', onclick: () => copyText(f[kind], fileName(f, kind)) }, '複製'),
+          h('button', { class: 'ghost patch-copy', onclick: () => V.copyToBanner(f[kind], fileName(f, kind)) }, '複製'),
           // 只下載正在檢視的檔案；其他兩份用左邊的「套用／回復／驗證」切換後下載，或在上方一次下載全部
           h('button', { class: 'patch-download', 'data-file': fileName(f, kind), onclick: () => download(fileName(f, kind), f[kind]) }, '下載 ' + fileName(f, kind)),
         ]),

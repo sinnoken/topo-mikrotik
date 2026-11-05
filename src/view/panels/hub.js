@@ -18,8 +18,8 @@
   const fileInput = (cls, accept, onFile) => h('input', { type: 'file', accept, class: 'hidden ' + cls, tabindex: '-1', 'aria-hidden': 'true',
     onchange: (ev) => { const f = ev.target.files[0]; if (f) onFile(f); } });
   /** 錯誤或警告清單：全部列出（不截斷），每筆是「路徑：訊息（代碼）」 */
-  const issueList = (cls, list) => h('ul', { class: 'hub-issues ' + cls }, list.map((e) => h('li', { 'data-code': e.code || '' }, [
-    e.path ? h('span', { class: 'mono' }, e.path + '：') : null, e.message, e.code ? h('span', { class: 'muted mono' }, `（${e.code}）`) : null])));
+  const issueList = (cls, list) => h('ul', { class: 'hub-issues ' + cls }, list.map((x) => h('li', { 'data-code': x.code || '' }, [
+    x.path ? h('span', { class: 'mono' }, x.path + '：') : null, x.message, x.code ? h('span', { class: 'muted mono' }, `（${x.code}）`) : null])));
   const shQuote = (s) => (/^[\w./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, `'\\''`)}'`);
 
   // ---------------------------------------------------------------- 這一輪的輸入

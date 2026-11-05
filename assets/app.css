@@ -264,7 +264,6 @@ button.chip { box-shadow: none; line-height: inherit; text-align: left; }
 .fitem-row .fitem .id { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); }
 .fitem-row .fitem .note { font-size: var(--fs-sm); }
 .fitem-row .ack { min-height: 0; padding: 3px 8px; margin: 3px 6px 0 0; font-size: var(--fs-sm); color: var(--muted); }
-.fgroup.acked > .head { color: var(--muted); }
 /* 新舊基準比對 */
 .pane-title { margin: 14px 0 6px; font-size: var(--fs-md); }
 .diff-cat { margin-top: 10px; }

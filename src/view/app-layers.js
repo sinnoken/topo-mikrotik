@@ -254,7 +254,7 @@
     } catch (err) {
       if (err.code === 'stale') return;
       if (!err.code) console.error(err);
-      note(`分層版面未套用：${err.message}，維持快速版面。`);
+      note(`分層版面未套用：${V.reason(err)}，維持快速版面。`);
     }
   }
 

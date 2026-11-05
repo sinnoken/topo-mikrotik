@@ -208,6 +208,8 @@ const hubBtn = (action) => $('#hub').testAll('button').find((b) => b.getAttribut
 /** 流程步驟（#steps）的按鈕：input、view、triage、fix、verify；goStep 和使用者一樣點一下切換 */
 const stepBtn = (s) => document.testAll('#steps button').find((b) => b.dataset.step === s);
 const goStep = (s) => stepBtn(s).click();
+/** 在頁首搜尋框輸入並等下拉更新，回傳下拉的項目 */
+const searchFor = async (v) => { const inp = $('#search'); inp.value = v; inp.dispatch('input'); await new Promise((r) => setTimeout(r, 150)); return $('#search-dd').testAll('.item'); };
 /** ② 清單的下拉（.inv-kind 清單種類、.inv-filter 種類內篩選）：選取 value 並觸發 change */
 const pickInv = (cls, value) => { const el = $('#pane-inventory .' + cls); if (!el) throw new Error('清單缺少下拉 ' + cls); el.value = value; el.dispatch('change'); };
 /** 等到條件成立（非同步的建立、讀入、重建）；逾時時丟錯並說明在等什麼 */
@@ -402,11 +404,15 @@ function viewBoundaryViolations(file, src) {
     S.buildAsync = async () => { throw new Error('命名規則檔有誤：\n- id 必填'); }; console.error = () => {};
     try { btn.click(); await new Promise((r) => setTimeout(r, 20)); } finally { S.buildAsync = realBuild; console.error = ce; }
     if (text('#input-status') !== '無法建立基準：命名規則檔有誤：\n- id 必填') throw new Error('核心的中文錯誤應原樣顯示：' + text('#input-status'));
-    // 畫面層不用 alert（擋住畫面、不在狀態列留下紀錄）
+    // 畫面層不用 alert（擋住畫面、不在狀態列留下紀錄）；例外轉成使用者訊息只經 V.reason（dom.js），不直接把 e.message／String(e) 放進畫面
+    if (S.view.reason(new SyntaxError('Unexpected token')) !== '檔案不是有效的 JSON（Unexpected token）') throw new Error('V.reason 應說明 JSON 格式錯誤');
     ['src/view'].forEach((dir) => (function walk(d) {
       fs.readdirSync(path.join(ROOT, d), { withFileTypes: true }).forEach((e) => {
         const p = path.join(d, e.name); if (e.isDirectory()) return walk(p);
-        if (/\.js$/.test(e.name) && /(^|[^.\w])alert\(/.test(fs.readFileSync(path.join(ROOT, p), 'utf8'))) throw new Error('畫面不應使用 alert()：' + p);
+        if (!/\.js$/.test(e.name)) return;
+        const src = fs.readFileSync(path.join(ROOT, p), 'utf8');
+        if (/(^|[^.\w])alert\(/.test(src)) throw new Error('畫面不應使用 alert()：' + p);
+        if (p !== path.join('src', 'view', 'dom.js') && /\b(e|err|error|ex)\.message\b|String\((e|err|error|ex)\)/.test(src)) throw new Error('例外訊息應經 V.reason(e) 轉成中文：' + p);
       });
     })(dir));
     $('#dlg-input').close();
@@ -1212,7 +1218,7 @@ function viewBoundaryViolations(file, src) {
     if (!text('#detail').includes(`${S.view.TERMS.vlanDomain} 1／${ds.length}`)) throw new Error('選取 VLAN 片段時標題未標示片段');
   });
   await step('搜尋框', async () => {
-    const inp = $('#search'); inp.value = 'acc_sw_0'; inp.dispatch('input'); await new Promise((r) => setTimeout(r, 150));
+    await searchFor('acc_sw_0'); const inp = $('#search');
     if (!text('#search-dd').includes('_ACC_SW_0')) throw new Error('搜尋結果不正確');
     inp.dispatch('keydown', { key: 'Enter' });
     if (App.sel.type !== 'device') throw new Error('Enter 應選取設備');
@@ -1350,6 +1356,7 @@ function viewBoundaryViolations(file, src) {
       維護窗口: '維護時段', '建立選項 expectedData': '各類設備應收資料', 預期資料: '預期現況', 'Q.reach）': '（不寫內部 API）', 'Q.hopOwner': '（不寫內部 API）',
       'ADR-': '（不寫內部編號）', 'facet：': '原值：', '（L0）': 'zone 矩陣', 'L1：': '位址組', 'L2：牽涉': '牽涉的規則', 'L3：': '逐跳路徑', 連線類別: '鏈路類別',
       '開啟詳情': '開啟詳細資料', 'Enter 詳情': 'Enter 開啟詳細資料', '非直連確認': '未確認直連', 'broadcast domain 可達': 'L2 廣播網域可達',
+      全通: 'V.L4_STATUS.allow（允許）', 全擋: 'V.L4_STATUS.deny（拒絕）', 'V.VERDICT': 'V.L4_STATUS',
     };
     const noComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\'"`])\/\/.*$/gm, '$1');
     const sources = jsFiles('src/view').map((f) => [f.split(path.sep).join('/'), noComments(fs.readFileSync(path.join(ROOT, f), 'utf8'))])
@@ -1367,8 +1374,7 @@ function viewBoundaryViolations(file, src) {
     if (hits.length) throw new Error('畫面或測試名稱仍有已淘汰的說法：\n        ' + hits.join('\n        '));
   });
   await step('搜尋框：IP／MAC 前綴與介面名有結果，選介面、網段結果會選到它；路由追蹤有 IP 自動完成', async () => {
-    const inp = $('#search'); const dd = $('#search-dd');
-    const type = async (v) => { inp.value = v; inp.dispatch('input'); await new Promise((r) => setTimeout(r, 150)); return dd.testAll('.item'); };
+    const inp = $('#search'); const dd = $('#search-dd'); const type = searchFor;
     const pre = App.Q.ipEntries()[0].ip.split('.').slice(0, 2).join('.') + '.';
     if (!(await type(pre)).length || !text('#search-dd').includes(pre)) throw new Error('IP 前綴應有結果：' + pre);
     const first = App.Q.search(pre, 15)[0];
@@ -1393,8 +1399,7 @@ function viewBoundaryViolations(file, src) {
     App.select(null);
   });
   await step('搜尋下拉的副標由畫面組成：類型、狀態、設備種類與 VLAN 片段用畫面的名詞，不出現英文列舉與舊詞；「vlan 30」「VLAN30」也找得到', async () => {
-    const inp = $('#search'); const dd = $('#search-dd');
-    const type = async (v) => { inp.value = v; inp.dispatch('input'); await new Promise((r) => setTimeout(r, 150)); return text('#search-dd'); };
+    const inp = $('#search'); const dd = $('#search-dd'); const type = async (v) => { await searchFor(v); return text('#search-dd'); };
     if ((inp.getAttribute('placeholder') || '').length > 16) throw new Error('搜尋框的提示字應簡短：' + inp.getAttribute('placeholder'));
     const vid = App.Q.vlanIds()[0];
     for (const q of [`vlan ${vid}`, `VLAN${vid}`]) if (!(await type(q)).includes('VLAN ' + vid)) throw new Error(q + ' 應找到 VLAN ' + vid);
@@ -1407,7 +1412,7 @@ function viewBoundaryViolations(file, src) {
     if (!subs.some((t) => t.includes(S.view.KIND[dev.kind]))) throw new Error('設備的副標應寫出設備種類：' + S.view.KIND[dev.kind]);
     if (!subs.some((t) => t.includes(S.view.IFC_TYPE[ifc.type]))) throw new Error('介面的副標應寫出介面類型：' + S.view.IFC_TYPE[ifc.type]);
     if (multi && !subs.some((t) => t.includes(S.view.TERMS.vlanDomain))) throw new Error('有多個片段的 VLAN 應寫出「' + S.view.TERMS.vlanDomain + '」');
-    inp.value = ''; inp.dispatch('input'); await new Promise((r) => setTimeout(r, 150));
+    await searchFor('');
   });
   await step('路由追蹤', () => {
     $('#btn-trace').click(); $('#trace-src').value = '10.1.30.15'; $('#trace-dst').value = '8.8.8.8'; $('#trace-run').click();
@@ -1895,10 +1900,10 @@ function viewBoundaryViolations(file, src) {
       const r = l4State().reach;
       if (!r || r !== Q.reach('203.0.113.1', '203.0.113.2', { proto: 'tcp', port: 8443 }) || r.verdict !== 'allow' || r.final.dst !== '10.1.20.11' || r.final.port !== 443) throw new Error('203.0.113.1 → 203.0.113.2 tcp 8443 應允許，NAT 之後是 10.1.20.11:443');
       const d = text('#l4-drill');
-      if (!d.includes(V.VERDICT.allow) || !d.includes('NAT 之後 10.1.20.11:443') || !d.includes('dst-nat') || !d.includes('203.0.113.2:8443 → 10.1.20.11:443')) throw new Error('L3 應寫出允許與 NAT 改寫前後：' + d.slice(0, 300));
+      if (!d.includes(V.L4_STATUS.allow) || !d.includes('NAT 之後 10.1.20.11:443') || !d.includes('dst-nat') || !d.includes('203.0.113.2:8443 → 10.1.20.11:443')) throw new Error('L3 應寫出允許與 NAT 改寫前後：' + d.slice(0, 300));
       if (document.activeElement !== $('#l4-drill-title')) throw new Error('查詢後焦點應移到結果的標題');      run('10.1.30.11', '10.1.10.2', 'tcp', '22');
       const r2 = l4State().reach;
-      if (!r2 || r2.verdict !== 'deny' || !text('#l4-drill').includes(V.VERDICT.deny)) throw new Error('10.1.30.11 → 10.1.10.2 tcp 22 應拒絕');
+      if (!r2 || r2.verdict !== 'deny' || !text('#l4-drill').includes(V.L4_STATUS.deny)) throw new Error('10.1.30.11 → 10.1.10.2 tcp 22 應拒絕');
       if (!r2.decisive.some((x) => x.key) || !$('#l4-drill').testAll('.l4-rule').some((a) => r2.decisive.some((x) => x.key === a.dataset.rule))) throw new Error('拒絕時應列出決定的規則，可以點');
     }
     // 參數錯誤：核心的錯誤原文顯示，不靜默
@@ -2136,7 +2141,7 @@ function viewBoundaryViolations(file, src) {
     const Q = App.Q; const V = S.view; const K = S.keys; const MAIN = K.MAIN_VRF;
     const ip = overlapIp(Q); const all = ip && Q.findIp(ip);
     if (!ip || all.vrfs.length < 2) throw new Error('測試前提：範例資料有和 main 重疊的位址');
-    const inp = $('#search'); inp.value = ip; inp.dispatch('input'); await new Promise((r) => setTimeout(r, 150));
+    await searchFor(ip); const inp = $('#search');
     if (!text('#search-dd').includes(ip)) throw new Error('搜尋應列出這個 IP');
     inp.dispatch('keydown', { key: 'Enter' });
     if (App.sel.type !== 'ip' || App.sel.vrf != null) throw new Error('搜尋的 IP 不分 VRF');
@@ -2519,7 +2524,7 @@ function viewBoundaryViolations(file, src) {
     if (rows[0].join() !== 'severity,id,title,message,entities,evidence,acknowledged,ack_kind,ack_note,device,action,status,note,waiver_reason,waiver_until,facet') throw new Error('CSV 標頭不符：' + rows[0]);
     if (rows.length - 1 !== App.snap.findings.length) throw new Error('CSV 每筆檢查結果應恰好一列');
     App.snap.findings.forEach((f, i) => {
-      const r = rows[i + 1]; const lg = S.view.app.ledgerExport(f); const ack = lg && !S.view.remediation.isPendingStatus(lg.status) ? lg : {};
+      const r = rows[i + 1]; const lg = S.view.app.ledgerExport(f); const ack = lg && !S.ledger.isPending(lg.status) ? lg : {};
       if (r[0] !== f.severity || r[1] !== f.id || r[3].replace(/^'/, '') !== f.message) throw new Error(`CSV 第 ${i + 2} 列與 ${f.id} 不符`);
       if (!f.entities.every((e) => r[4].includes(e.type + ':' + e.key))) throw new Error(`CSV ${f.id} 缺少相關實體`);
       if (r[5] !== f.evidence.map((e) => `${e.file}:${e.line}`).join('; ')) throw new Error(`CSV ${f.id} 的證據應合在同一格`);
@@ -2820,7 +2825,7 @@ function viewBoundaryViolations(file, src) {
     if (svc.length && !svc.every((x) => t.includes(x.name))) throw new Error('應列出 /ip service');
     if (svc.some((x) => x.basis === 'default') && !t.includes('預設值')) throw new Error('basis 為 default 的服務應標示「預設值」');
   });
-  await step('防火牆修正：指令由 S.remediate 產生（畫面不自己組），F03 等不能產生指令的列出核心的原因', () => {
+  await step('防火牆修正：指令由 S.remediate 產生（畫面不自己組），F03 等不能產生指令的列出核心的原因', async () => {
     const Q = App.Q; const all = App.snap.findings; const RV = S.view.remediation; const RM = S.remediate;
     // 畫面不再自己組指令：舊的組字函式已移除，防火牆畫面的原始碼沒有 RouterOS 指令片段
     ['DISABLE_FIX', 'disableRuleFix', 'quote', 'findingDevice', 'fixTracking', 'ACK_KIND'].forEach((k) => { if (k in RV) throw new Error('V.remediation 不應再有 ' + k); });
@@ -2858,7 +2863,7 @@ function viewBoundaryViolations(file, src) {
     if (!process.env.SMOKE_INPUT && (!seen.item || !seen.skipped)) throw new Error('範例資料應同時有產生指令與未產生指令的修正');
     if (idxs.length) {
       const withCmd = $('#detail').querySelector('.copy-fix');
-      if (withCmd) { withCmd.click(); if (!text('#banner').includes('複製')) throw new Error('複製後應有提示：' + text('#banner')); }
+      if (withCmd) { withCmd.click(); await new Promise((r) => setTimeout(r, 5)); if (!text('#banner').includes('複製')) throw new Error('複製後應有提示：' + text('#banner')); }
       // 設備的防火牆畫面：收合列出這台設備全部的修正與筆數（items＋skipped）
       const dev = Q.getFirewallRule(all[idxs[0]].entities.find((e) => e.type === 'rule').key).dev;
       App.select({ type: 'firewall', dev, key: dev });
@@ -3357,7 +3362,7 @@ function viewBoundaryViolations(file, src) {
     if (!res || !res.textContent.includes('schema') || res.testAll('li').length < 2) throw new Error('不合法時應列出 validate 的錯誤');
     if (JSON.stringify(VA.ledger()) !== before) throw new Error('不合法時不可覆蓋現有的處理紀錄');
     await importText('broken.json', '{not json');
-    if (!text('#hub').includes('不是 JSON')) throw new Error('不是 JSON 時應說明');
+    if (!text('#hub').includes('不是有效的 JSON')) throw new Error('不是 JSON 時應說明');
     // 合法：先確認，按「覆蓋」才取代
     const k = Object.keys(exported.items)[0];
     const mod = JSON.parse(JSON.stringify(exported)); mod.items[k].note = '匯入的備註';
@@ -3422,7 +3427,7 @@ function viewBoundaryViolations(file, src) {
       $('#patch-body').testAll('.patch-dev')[0].testAll('button').find((b) => b.getAttribute('data-kind') === k).click();
       if (pre().textContent !== fn(plan, f0.dev)) throw new Error(k + ' 的內容應與核心相同');
     });
-    $('#patch-body').querySelector('.patch-copy').click();
+    $('#patch-body').querySelector('.patch-copy').click(); await new Promise((r) => setTimeout(r, 5));
     if (!text('#banner').includes('複製')) throw new Error('複製應有提示');
     // 多台：逐檔下載全部＋總表
     if (files.length > 1) {
@@ -4372,7 +4377,7 @@ function viewBoundaryViolations(file, src) {
     // 在工作畫面點選設備：詳情在右側，工作畫面不切換；搜尋是在圖上定位，會切回拓樸圖
     goStep('triage'); App.showStep('verify'); App.select({ type: 'device', key: dev.key });
     if (App.centerView !== 'verify' || !text('#detail').includes(dev.name)) throw new Error('在工作畫面選取時，右側顯示詳情、工作畫面不切換');
-    const inp = $('#search'); inp.value = dev.name; inp.dispatch('input'); await new Promise((r) => setTimeout(r, 150));
+    await searchFor(dev.name); const inp = $('#search');
     inp.dispatch('keydown', { key: 'Enter' });
     if (App.centerView !== 'graph' || App.step !== 'triage' || !App.sel) throw new Error('搜尋選取後應回到上一次看圖的 ③');
     // 資料中心開著時切換工作畫面：先關閉資料中心
@@ -4483,7 +4488,7 @@ function viewBoundaryViolations(file, src) {
     if (st('fix') !== '已選 0') throw new Error('清除選取後 ④ 的狀態應更新');
     // ③：把一筆待處理的錯誤／警告標為誤報後，待處理減一（處理紀錄是使用者的資料，結束後還原）
     const keep = JSON.parse(JSON.stringify(VA.ledger()));
-    const f = App.Q.findings().find((x) => x.severity !== 'info' && S.view.remediation.isPendingStatus(VA.ledgerStatus(x)) && (S.ledger.USER_TO[VA.ledgerItem(x).status] || []).includes('false-positive'));
+    const f = App.Q.findings().find((x) => x.severity !== 'info' && S.ledger.isPending(VA.ledgerStatus(x)) && (S.ledger.USER_TO[VA.ledgerItem(x).status] || []).includes('false-positive'));
     if (f) {
       const r = await App.setLedger(f, { status: 'false-positive' });
       if (!r.ok) throw new Error('應可標為誤報：' + r.error);

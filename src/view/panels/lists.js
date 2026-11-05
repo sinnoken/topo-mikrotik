@@ -78,7 +78,7 @@
     all.forEach((f, idx) => {
       if (!pass(f)) return;
       const s = A().ledgerStatus(f);
-      if (R().isPendingStatus(s)) st[f.severity]++; else S.util.getOr(handled, s, () => []).push(idx);
+      if (S.ledger.isPending(s)) st[f.severity]++; else S.util.getOr(handled, s, () => []).push(idx);
     });
     const handledSet = new Set(Array.from(handled.values()).flat());
     root.appendChild(h('div', { class: 'summary' }, ['error', 'warn', 'info'].map((s) => filterChip(V.SEV[s], st[s], { cls: s === 'error' ? 'err' : s, on: state.sev[s],
@@ -128,7 +128,7 @@
           title: it ? '變更處理狀態（待處理、已排定修正、可接受、誤報…）與備註；只存在這個瀏覽器的處理紀錄，不改變基準' : '處理紀錄沒有這一筆（處理紀錄無法使用）',
           onclick: edit,
         }, '處理'),
-      ]), V.deviationLine(App, f.deviation, { tie: false }), state.editing === i && it ? ledgerEditor(App, f, it, i) : null]);
+      ]), V.deviationLine(App, f.deviation), state.editing === i && it ? ledgerEditor(App, f, it, i) : null]);
     };
     /** 一個可展開的分組：key 是展開狀態的鍵，head 是標題列的內容 */
     const group = (key, head, idxs, cls, showId, ruleId) => {
@@ -181,11 +181,11 @@
       S.query.rules().forEach((r) => { if (byRule.has(r.id)) S.util.getOr(cats, r.cat, () => []).push(r); });
       // CATALOG 沒有的規則代碼（不應發生）不吞掉，另列一類
       const unknown = Array.from(byRule.keys()).filter((id) => !S.query.rule(id));
-      if (unknown.length) cats.set('#unknown', unknown.map((id) => ({ id, cat: '#unknown', severity: all[byRule.get(id)[0]].severity, title: id })));
+      if (unknown.length) cats.set(V.UNKNOWN_RULE_CAT, unknown.map((id) => ({ id, cat: V.UNKNOWN_RULE_CAT, severity: all[byRule.get(id)[0]].severity, title: id })));
       cats.forEach((rules, cat) => {
         const n = { error: 0, warn: 0, info: 0 };
         rules.forEach((r) => byRule.get(r.id).forEach((i) => { n[all[i].severity]++; }));
-        root.appendChild(category(cat === '#unknown' ? '未登錄的規則' : cat, n, rules.map((r) =>
+        root.appendChild(category(cat, n, rules.map((r) =>
           group(r.id, [V.sevDot(r.severity), h('span', { class: 'title' }, r.title), h('span', { class: 'id' }, r.id)], byRule.get(r.id), '', false, r.id))));
       });
     }
@@ -245,7 +245,7 @@
   findings.reveal = (App, idx) => {
     const Q = App.Q; const f = Q && Q.finding(idx); if (!f) return;
     state.selected = idx;
-    const s = A().ledgerStatus(f); const pending = R().isPendingStatus(s);
+    const s = A().ledgerStatus(f); const pending = S.ledger.isPending(s);
     const base = V.baselineDiff.loaded();
     if (state.onlyNew && !(base && base.addedFindingKeys.has(Q.findingKey(f)))) state.onlyNew = false;
     let key;
@@ -253,7 +253,7 @@
     else {
       state.sev[f.severity] = true;
       if (state.groupBy === 'device') { const dev = Q.findingDevice(f); key = dev == null ? '#nodev' : 'dev:' + dev; } else {
-        const rule = S.query.rule(f.id); state.cat.set('cat:' + (rule ? rule.cat : '未登錄的規則'), true); key = f.id;
+        state.cat.set('cat:' + V.ruleInfo(f.id).cat, true); key = f.id;
       }
     }
     state.open.add(key);
@@ -323,14 +323,14 @@
       c.Q = App.Q; c.expected = exp;
       const fail = (msg) => ({ errors: [msg], items: [], summary: {} });
       if (exp.error) c.report = fail(exp.error);
-      else { try { c.report = S.compare(App.Q, exp.data); } catch (e) { c.report = fail('無法比對：' + e.message); } }
+      else { try { c.report = S.compare(App.Q, exp.data); } catch (e) { c.report = fail('無法比對：' + V.reason(e)); } }
     }
     return c.report;
   }
   /** 讀入預期資料檔（ssot-expected/1）：「比對」工作畫面與資料中心共用。無法解析時記下原因（比對結果顯示），不丟例外 */
   async function loadExpectedFile(App, f) {
     let text = null; let data = null; let error = null;
-    try { text = await f.text(); data = JSON.parse(text); } catch (e) { error = '無法讀取：' + e.message; }
+    try { text = await f.text(); data = JSON.parse(text); } catch (e) { error = '無法讀取：' + V.reason(e); }
     App.round.expected = { name: f.name, data, error };
     A().renderAll();
   }

@@ -111,7 +111,7 @@
       if ((!sameSchema || savedMeta.version !== S.VERSION) && inputs.sources.length) { // 程式更新過：用儲存的輸入重建，欄位才會完整
         try { snap = await S.buildAsync(inputs.sources, { profile: inputs.profile, expectedData: inputs.expectedData }); msg = '程式已更新，已用儲存的輸入重新建立基準'; } catch (e) {
           console.error(e);
-          if (!sameSchema) msg = `上次的基準格式（${savedMeta.schema}）已不相容，重新建立失敗：${e.message}。請重新建立基準。`;
+          if (!sameSchema) msg = `上次的基準格式（${savedMeta.schema}）已不相容，重新建立失敗：${V.reason(e)}。請重新建立基準。`;
         }
       } else if (!sameSchema) msg = `上次的基準格式（${savedMeta.schema}）已不相容，且沒有儲存輸入，請重新建立基準。`;
       if (snap) A.load(snap, last.positions); else A.renderAll();

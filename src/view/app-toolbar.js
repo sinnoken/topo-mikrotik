@@ -348,7 +348,7 @@
     // 處理紀錄由畫面傳入：匯出內容的組字函式本身不讀全域狀態；整份基準只給基準 JSON 原樣序列化
     const opts = Object.assign({}, extra || {}, { ledgerOf: A.ledgerExport, snapshot: App.snap });
     try { V.exporter.download(k.name(App.Q), k.text(App.Q, opts), k.type); } catch (e) {
-      console.error(e); A.banner('匯出失敗：' + e.message, 10000);
+      console.error(e); A.banner('匯出失敗：' + V.reason(e), 10000);
     }
   };
 })(globalThis.SSOT = globalThis.SSOT || {});

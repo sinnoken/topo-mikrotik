@@ -113,16 +113,22 @@
   V.MODE = { access: 'Access（untagged）', tagged: 'Tagged（trunk）' };
   // 拓樸圖的層級（App.layer）：L4 不是畫布，是疊在畫布上的 zone 矩陣與可達性（panels/l4.js）
   V.LAYER = { device: '設備', l2: 'L2 埠', l3: 'L3 ' + V.TERMS.subnet, l4: 'L4 可達性' };
-  // L4（M2）：格子狀態（Q.zoneMatrix 的 status）、可達性結果（Q.reach 的 verdict）、zone 的來源（Q.zones 的 source）
-  V.L4_STATUS = { allow: '全通', deny: '全擋', partial: '部分', unknown: '不明', empty: '沒有組合' };
+  /**
+   * L4（M2）：格子狀態（Q.zoneMatrix 的 status）與可達性結果（Q.reach 的 verdict，allow／deny／unknown 是它的子集）共用同一組用語，
+   * 筆數欄（允許 N・拒絕 N・無法判斷 N）也取自這裡；格子的「全部」由提示說明（L4_STATUS_TIP），不另用「全通／全擋」。
+   */
+  V.L4_STATUS = { allow: '允許', deny: '拒絕', partial: '部分允許', unknown: '無法判斷', empty: '沒有組合' };
   V.L4_STATUS_TIP = {
     allow: '這一格算到的位址組合 × 服務全部允許',
     deny: '全部拒絕（被規則丟棄、沒有路由或黑洞路由）',
     partial: '有些允許、有些拒絕（不同的位址或服務結果不同）',
     unknown: '有無法判斷的組合（原因見提示與明細），沒有允許與拒絕同時出現',
-    empty: '沒有可算的位址組合（例如目的 zone 只有設備自己的位址，或沒有可當代表的位址）；不是「不明」',
+    empty: '沒有可算的位址組合（例如目的 zone 只有設備自己的位址，或沒有可當代表的位址）；不是「無法判斷」',
   };
-  V.VERDICT = { allow: '允許', deny: '拒絕', unknown: '無法判斷' };
+  /** 規則目錄（S.query.rule）的類別與標題；目錄沒有的代碼（不應發生）不吞掉，歸在 UNKNOWN_RULE_CAT、標題原樣寫代碼。③ 分診與修正計畫共用 */
+  V.UNKNOWN_RULE_CAT = '未登錄的規則';
+  V.ruleInfo = (id) => S.query.rule(id) || { id, cat: V.UNKNOWN_RULE_CAT, title: id };
+  // zone 的來源（Q.zones 的 source）
   V.ZONE_SOURCE = { profile: '命名規則', 'interface-list': 'interface list', vlan: 'VLAN', subnet: '網段' };
   // Q.reach 的原因代碼與結束代碼（src/query/trace.js 的 reason／end）；沒有對照的代碼原樣顯示並標「沒有說明」，不吞掉
   V.REACH_REASON = {
@@ -144,8 +150,42 @@
     reached: '抵達', noroute: '沒有路由', blackhole: '黑洞路由', loop: '路由迴圈', ttl: 'TTL 用盡', 'unknown-nh': '下一跳不在基準內',
     policy: '策略路由不明', 'policy-drop': '策略路由丟棄', unverified: '無法驗證',
   };
+  /**
+   * 例外 → 給使用者看的中文原因（畫面上所有錯誤訊息的單一來源）。核心與命名規則丟出的錯誤本來就是中文，原樣使用；
+   * JSON 解析錯誤說明檔案格式；其他（程式錯誤，英文訊息）改用中文說明，原訊息放在括號內，方便回報與追查。
+   */
+  const CJK = /[㐀-鿿]/;
+  V.reason = (e) => {
+    const msg = (e && e.message) || String(e);
+    if (e instanceof SyntaxError) return `檔案不是有效的 JSON（${msg}）`;
+    if (CJK.test(msg)) return msg;
+    return `程式發生未預期的錯誤，請重新整理頁面後再試一次；若仍發生，請回報這段訊息：${msg}`;
+  };
+  /**
+   * 寫入剪貼簿：成功回傳 null，失敗回傳中文原因（瀏覽器不支援或拒絕；原例外寫 console.error），由呼叫端告知改用手動選取（不靜默失敗）。
+   * 輸入對話框（狀態列）與面板（banner：V.copyToBanner）共用。
+   */
+  V.copyText = async (text) => {
+    const c = globalThis.navigator && globalThis.navigator.clipboard;
+    if (!c || !c.writeText) return '這個瀏覽器不支援自動複製';
+    try { await c.writeText(text); return null; } catch (e) { console.error(e); return '瀏覽器拒絕存取剪貼簿'; }
+  };
+  /** 面板的「複製」按鈕：結果以 banner 告知；what 是複製的內容（例如「套用指令」、檔名） */
+  V.copyToBanner = (text, what) => V.copyText(text).then((why) => (why
+    ? V.app.banner(`無法複製（${why}）；請選取文字後手動複製。`, 6000)
+    : V.app.banner(`已複製${what}；執行前請逐行核對。`, 3000)));
   /** 來源檔名的顯示：貼上的內容（核心常數 S.readers.PASTE，半形括號）在畫面上用全形括號；其餘原樣 */
   V.fileName = (name) => (name === S.readers.PASTE ? '（貼上的內容）' : name);
+  /**
+   * 來源（[[block, line]] 的第一筆）的原文連結「檔名 第 N 行」；opts.short 時只寫「第 N 行」（防火牆表格內，檔案不言自明）。
+   * 沒有來源時為空字串。點擊不往外層傳（表格列、可點的卡片）。詳細資料與防火牆共用。
+   */
+  V.srcLink = (App, src, opts) => {
+    const x = src && src[0]; const b = x && App.Q.block(x[0]);
+    if (!b) return '';
+    return V.h('a', { class: 'link mono', onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); App.openRaw(b.file, x[1]); } },
+      (opts && opts.short ? '' : V.fileName(b.file) + ' ') + `第 ${x[1]} 行`);
+  };
   /** 輸入區塊的位置「設備 › 指令」（blk 是 Q.block／Q.blockAt 的結果）：原文對話框標題與詳情的來源列共用同一寫法 */
   V.blockWhere = (Q, blk) => `${blk.devKey ? Q.devName(blk.devKey) : blk.device || V.fileName(blk.file)} › ${blk.command || '（未標記指令）'}`;
   /**

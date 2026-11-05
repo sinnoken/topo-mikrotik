@@ -27,11 +27,8 @@
   const P = () => V.details.parts;
 
   const kvText = (o) => Object.entries(o || {}).map(([k, v]) => `${k}=${v}`).join(' ');
-  /** 原文行號連結：src 是 [[block, line]]，取第一筆 */
-  const srcLink = (App, src) => {
-    const s = src && src[0]; const b = s && App.Q.block(s[0]);
-    return b ? h('a', { class: 'link mono', onclick: (e) => { e.stopPropagation(); App.openRaw(b.file, s[1]); } }, `第 ${s[1]} 行`) : '';
-  };
+  /** 原文行號連結（V.srcLink）：防火牆表格內只寫「第 N 行」 */
+  const srcLink = (App, src) => V.srcLink(App, src, { short: true });
   /** 與某實體有關的檢查結果：代碼標籤，點一下開啟該筆檢查結果 */
   const findingChips = (App, type, key) => App.Q.findingIndexesFor(type, key).map((i) => {
     const f = App.Q.finding(i);
@@ -99,13 +96,6 @@
   }
 
   const FIND_BY = { comment: '依註解 find', match: '依比對條件 find', 'comment+match': '依註解與比對條件 find' };
-  /** 複製到剪貼簿；瀏覽器不支援或拒絕時說明，請使用者手動選取（不靜默失敗） */
-  function copyText(text, what) {
-    const c = globalThis.navigator && globalThis.navigator.clipboard;
-    if (!c || !c.writeText) { V.app.banner('這個瀏覽器無法自動複製，請選取文字後手動複製。', 6000); return; }
-    c.writeText(text).then(() => V.app.banner(`已複製${what || '指令'}；執行前請核對。`, 3000),
-      (e) => V.app.banner('無法複製：' + e.message + '；請選取文字後手動複製。', 6000));
-  }
   /**
    * 修正（停用規則）：定位到某條規則時只列這條規則的，否則列這台設備全部（預設收合）。
    * 對象是指向規則、核心有修正方式（S.remediate.levelOf 不是 manual）的檢查結果；計畫與指令都由 S.remediate 產生，
@@ -131,7 +121,7 @@
         return h('div', { class: 'fw-fix', 'data-rule': it.target.key, 'data-finding': it.findingKey }, [
           h('div', { class: 'row' }, [V.chip(it.id, sevCls(it.id)), ' ', ruleLink(it.target.key), ' ', V.chip(FIND_BY[it.target.by] || it.target.by, 'info'), ' ',
             V.chip('風險 ' + (RM.RISK_TEXT[it.risk.level] || it.risk.level), RM.RISK_CHIP[it.risk.level] || '', { title: it.risk.text }), ' ',
-            h('button', { class: 'ghost copy-fix', title: '複製套用指令', onclick: () => copyText(cmd, '套用指令') }, '複製')]),
+            h('button', { class: 'ghost copy-fix', title: '複製套用指令', onclick: () => V.copyToBanner(cmd, '套用指令') }, '複製')]),
           h('p', { class: 'muted' }, it.note),
           ...it.warnings.map((w) => h('p', { class: 'warn-line fix-warning' }, '警告：' + w)),
           h('pre', { class: 'note-box fix-cmd' }, cmd),
@@ -194,7 +184,7 @@
             const r = Q.ruleImpact(key, V.l4.zoneOpts(App).opts);
             if (!impacts.has(Q)) impacts.set(Q, new Map());
             impacts.get(Q).set(key, r || { missing: true });
-          } catch (e) { console.error(e); V.app.banner('無法計算規則的影響：' + e.message, 8000); }
+          } catch (e) { console.error(e); V.app.banner('無法計算規則的影響：' + V.reason(e), 8000); }
           finally { resolve(); if (App.Q === Q && App.sel && App.sel.type === 'rule' && App.sel.key === key) V.details.render(App, App.sel); }
         }, 30));
       } }, '計算 L4 影響');
@@ -227,7 +217,7 @@
       body.appendChild(h('details', { class: 'fw-impact-changed' }, [h('summary', null, `停用後改變的路徑（${V.num(res.ifDisabled.total)}）`), V.table([
         { t: '來源', f: (x) => h('span', { class: 'mono' }, x.src) }, { t: '目的', f: (x) => h('span', { class: 'mono' }, x.dst) },
         { t: 'zone', f: (x) => `${name(x.srcZone)} → ${name(x.dstZone)}` }, { t: '服務', f: (x) => x.service },
-        { t: '變化', f: (x) => `${V.VERDICT[x.from] || x.from} → ${V.VERDICT[x.to] || x.to}` },
+        { t: '變化', f: (x) => `${V.L4_STATUS[x.from] || x.from} → ${V.L4_STATUS[x.to] || x.to}` },
       ], res.ifDisabled.changed)]));
     }
     return section('L4 影響（推論）', body);

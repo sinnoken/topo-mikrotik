@@ -28,11 +28,7 @@
   const ipLink = (App, ip, vrf) => L(App, ip, V.ipSel(ip, vrf === undefined ? null : vrf));
   /** 基準有兩個以上的 VRF：只用 main 的網路不顯示 VRF 欄位，畫面與加入 VRF 之前相同 */
   const multiVrf = (Q) => Q.vrfs().length > 1;
-  /** 來源（[[block, line]] 的第一筆）的連結；沒有時為空字串 */
-  const srcLink = (App, src) => {
-    const x = src && src[0]; const b = x && App.Q.block(x[0]);
-    return b ? h('a', { class: 'link mono', onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); App.openRaw(b.file, x[1]); } }, `${V.fileName(b.file)} 第 ${x[1]} 行`) : '';
-  };
+  const srcLink = V.srcLink;
   /** 下一跳的文字：閘道在路由所在的 VRF 以外解析（路由洩漏、VRF 介面）時以 RouterOS 的寫法標出 @VRF；依據在 title */
   const nhText = (r, n) => {
     const own = r.vrf || K.MAIN_VRF; const other = n.vrf && n.vrf !== own;
@@ -196,7 +192,7 @@
   function overview(App) {
     const Q = App.Q; const T = V.TERMS; const m = Q.meta(); const st = m.stats; const C = Q.inventory().counts;
     const cs = Q.coverageSummary(); const vs = Q.vlanSummary(); const pc = V.app.problemCounts();
-    const problems = pc.error + pc.warn; const first = firstProblem(App);
+    const problems = pc.total; const first = firstProblem(App);
     const counts = [pc.error ? `${V.num(pc.error)} 項錯誤` : null, pc.warn ? `${V.num(pc.warn)} 項警告` : null].filter(Boolean).join('、');
     // 錯誤／警告數連到「③ 分診」只列錯誤與警告；建議先看連到那一筆
     const status = h('p', { class: 'status-line' }, [
@@ -353,10 +349,7 @@
           { t: '鄰居', f: (a) => devLink(App, a.peerDev), s: (a) => Q.devName(a.peerDev) },
           { t: '鄰居位址／Router ID', f: (a) => [a.peerIp, a.peerId].filter(Boolean).join('／'), s: (a) => a.peerIp || a.peerId },
           { t: '回報', f: (a) => a.reciprocal ? '雙向 OSPF 鄰接' : '單向 OSPF 觀察', s: (a) => (a.reciprocal ? '雙向' : '單向') },
-          { t: '來源', f: (a) => {
-            const [block, line] = a.src[0]; const b = Q.block(block);
-            return b ? h('a', { class: 'link mono', onclick: () => App.openRaw(b.file, line) }, `${V.fileName(b.file)} 第 ${line} 行`) : '';
-          } },
+          { t: '來源', f: (a) => srcLink(App, a.src) },
         ], ospfAdjacencies) : null, { count: ospfAdjacencies.length, fold: true }),
       section('路由表', routes.length ? table([
         { t: '網段', f: (r) => h('span', { class: 'mono' }, `${r.prefix}/${r.len}`), s: (r) => `${r.prefix}/${r.len}` },
@@ -819,7 +812,7 @@
         { t: '設備／介面', f: (r) => (r.a.ep ? epLink(App, r.a.ep) : h('span', null, [devLink(App, r.e.dev), '（管理 IP）'])), s: (r) => Q.devName(r.e.dev) },
         { t: '依據', f: (r) => h('span', null, [V.L3_BASIS[r.e.basis], r.a.role ? `・${r.a.role.toUpperCase()}` : '', r.e.inferred ? ' ' : '', r.e.inferred ? V.chip('推論', 'info') : null,
           r.a.seenBy && r.a.seenBy.length ? h('span', { class: 'muted' }, `（由 ${r.a.seenBy.map((d) => Q.devName(d)).join('、')} 看到）`) : null]), s: (r) => r.e.basis },
-        { t: '來源', f: (r) => { const x = r.a.src[0]; const b = x && Q.block(x[0]); return b ? h('a', { class: 'link mono', onclick: () => App.openRaw(b.file, x[1]) }, `${V.fileName(b.file)} 第 ${x[1]} 行`) : ''; } },
+        { t: '來源', f: (r) => srcLink(App, r.a.src) },
       ], rows, { limit: 500, bad: (r) => dup.has(r.a.ip) }) : null, { count: rows.length, long: true }),
       section('設備', s.devices.length ? h('div', { class: 'chip-list' }, s.devices.map((d) => devLink(App, d))) : null, { count: s.devices.length, fold: true }),
       section('重疊網段', s.overlaps.length ? s.overlaps.map((o) => h('div', null, [subnetLink(App, o), h('span', { class: 'muted' }, '　' + relation(o))])) : null, { count: s.overlaps.length }),

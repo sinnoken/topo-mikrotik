@@ -41,7 +41,7 @@
     } catch (e) {
       if (e.code === 'stale') return;
       if (!e.code) console.error(e); // 超過上限、逾時是預期情況，只顯示提示
-      A.banner(`分層版面未套用：${e.message}，維持快速版面。可在工具列改用「快速（內建）」。`, 10000);
+      A.banner(`分層版面未套用：${V.reason(e)}，維持快速版面。可在工具列改用「快速（內建）」。`, 10000);
     }
   };
 

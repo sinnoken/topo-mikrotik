@@ -56,6 +56,7 @@
     if (App.layer === 'device') deviceView = g.nodes === App.deviceGraph.nodes ? saveView(g) : deviceView;
     else if (App.layer !== 'l4') { const cur = A.layerEntry(); if (cur && g.nodes === cur.nodes) cur.view = saveView(g); }
     App.layer = target;
+    A.closeMenus(); // 工具列選單的項目依層級顯示：換層級時收起
     g.hover = null; g.kbd = null; g.setOverlay([]); $('#tooltip').classList.add('hidden');
     if (target === 'l4') {
       A.syncLayerUi();
@@ -527,7 +528,8 @@
     const l4 = L === 'l4' && !!App.Q;
     $('#view-l4').classList.toggle('hidden', !l4);
     $('#graph').inert = l4;
-    ['#legend', '#hint'].forEach((s) => $(s).classList.toggle('hidden', !App.snap || l4));
+    $('#legend').classList.toggle('hidden', !App.snap || l4);
+    A.syncHint(l4);
     // VLAN 選單：選項來自 Q.vlanIds()，換基準時重建
     const sel = $('#vlan-filter');
     if (App.Q && vlanOptionsOf !== App.Q) {

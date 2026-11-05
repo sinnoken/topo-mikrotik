@@ -428,9 +428,12 @@ function viewBoundaryViolations(file, src) {
     try { $('#btn-relayout').click(); await App.layoutJob; } finally { App.ELK_MAX = max; }
     if (!text('#banner').includes('超過分層版面上限')) throw new Error('應說明分層版面未套用的原因：' + text('#banner'));
     if (JSON.stringify(Array.from(App.graph.pos)) !== before) throw new Error('未套用時不應改動現有位置');
-    const sel = $('#layout-mode'); sel.value = 'builtin'; sel.dispatch('change'); await App.layoutJob;
+    // 版面▾ 選單的單選項目（menuitemradio）：選了就依新的版面重新排列，aria-checked 跟著換
+    const mode = (k) => $('#layout-mode').testAll('.menu-item').find((b) => b.dataset.layout === k);
+    mode('builtin').click(); await App.layoutJob;
     if (App.layoutMode !== 'builtin') throw new Error('應可切換為快速版面');
-    sel.value = 'elk'; sel.dispatch('change'); await App.layoutJob;
+    if (mode('builtin').getAttribute('aria-checked') !== 'true' || mode('elk').getAttribute('aria-checked') !== 'false') throw new Error('版面的單選項目應標出目前的版面');
+    mode('elk').click(); await App.layoutJob;
   });
   await step('詳情區塊結構一致：標題只由 section() 產生，展開區塊內沒有額外標題', () => {
     const m = App.snap.model; const Q = App.Q;
@@ -498,27 +501,29 @@ function viewBoundaryViolations(file, src) {
     if (!text('#detail').includes('推定在這條推論鏈路後面的終端')) throw new Error('推論鏈路詳情應列出後面推定的終端');
     App.select(null);
   });
-  await step('基準摘要與行動入口', () => {
-    const summary = text('#baseline-summary');
-    if (!summary.includes('基準檢查') || !summary.includes('收集完整度')) throw new Error('缺少基準狀態與收集完整度摘要');
-    if (summary.includes('網路正常') || summary.includes('即時')) throw new Error('基準摘要不可宣稱即時網路健康');
+  await step('基準摘要列與頁尾已移除：待處理數在步驟列 ③，摘要在右側的基準狀態卡（收集缺漏、錯誤／警告入口仍可用）', () => {
+    if ($('#baseline-summary') || $('#footer')) throw new Error('基準摘要列與頁尾已移除：數字只在步驟列、左欄與右側的基準狀態卡');
+    const pc = S.view.app.problemCounts();
+    if (!stepBtn('triage').textContent.includes('待處理 ' + S.view.num(pc.error + pc.warn))) throw new Error('③ 的狀態應是待處理（錯誤＋警告）的筆數');
+    App.select(null);
+    const card = $('#detail').querySelector('.status-card'); if (!card) throw new Error('未選取時右欄應是基準狀態卡');
+    if (/網路正常|即時/.test(card.textContent)) throw new Error('基準狀態不可宣稱即時網路健康');
     // 斷言入口與資料的關係，而非範例才有的特定問題：大型乾淨網路（SMOKE_INPUT）可能沒有缺漏或錯誤
-    const button = (t) => $('#baseline-summary').testAll('button').find((b) => b.textContent === t);
-    const off = (b) => b.getAttribute('disabled') !== null; // 模擬 DOM 的 setAttribute 不會同步 .disabled
-    const missing = button('查看收集缺漏');
     const expectedMissing = App.snap.coverage.filter((row) => row.collected && (row.missing.length || row.failures.length)).length;
-    if (!missing || off(missing) !== !expectedMissing) throw new Error('收集缺漏入口應在有缺漏時才可用');
+    const gap = card.querySelector('.status-coverage').querySelector('a');
+    if (!!gap !== !!expectedMissing) throw new Error('收集缺漏入口應在有缺漏時才可用');
     if (expectedMissing) {
-      missing.click();
+      gap.click();
       if (!text('#pane-coverage').includes('有缺漏')) throw new Error('缺漏入口沒有切換至覆蓋率');
       if ($('#pane-coverage').testAll('tbody tr').length !== expectedMissing) throw new Error('缺漏入口應預先篩選有缺漏的設備');
+      S.view.app.closeHub(); App.select(null);
     }
-    const problems = button('查看錯誤／警告');
     const firstProblem = App.snap.findings.find((f) => f.severity !== 'info');
-    if (!problems || off(problems) !== !firstProblem) throw new Error('問題入口應在有錯誤／警告時才可用');
+    const problems = $('#detail').querySelector('.status-problems');
+    if (!!problems !== !!firstProblem) throw new Error('錯誤／警告入口應在有錯誤／警告時才有');
     if (firstProblem) {
       problems.click();
-      if (!text('#pane-findings').includes(firstProblem.title)) throw new Error('問題入口沒有切換至檢查結果');
+      if (App.step !== 'triage' || !text('#pane-findings').includes(firstProblem.title)) throw new Error('錯誤／警告入口應切到 ③ 的檢查結果');
     }
   });
   await step('窄螢幕工作區切換與詳情漸進展開', () => {
@@ -885,14 +890,14 @@ function viewBoundaryViolations(file, src) {
     inp.dispatch('keydown', { key: 'Enter' });
     if (App.sel.type !== 'device') throw new Error('Enter 應選取設備');
   });
-  await step('收集完整度與 VLAN 數：網路設備為分母、主機另列，VLAN 以相異 ID 計（基準摘要、總覽、頁尾同一口徑）', () => {
+  await step('收集完整度與 VLAN 數：網路設備為分母、主機另列，VLAN 以相異 ID 計（基準狀態卡同一口徑）', () => {
     const NUM = S.view.num; const cs = App.Q.coverageSummary(); const vs = App.Q.vlanSummary();
-    const summary = text('#baseline-summary');
-    if (!summary.includes(`${NUM(cs.networkCollected)} / ${NUM(cs.network)} 台網路設備已收集`) || !summary.includes(`${NUM(cs.missing)} 台有必要資料缺漏`)) throw new Error('基準摘要的收集完整度應以網路設備計：' + summary);
-    if (!!cs.hosts !== summary.includes(`另有 ${NUM(cs.hosts)} 台主機`)) throw new Error('有主機時另列，沒有時不寫：' + summary);
     if (cs.network - cs.networkCollected !== App.Q.findingsByRule('C01').length) throw new Error('未收集的網路設備數應等於 C01 筆數');
-    if (!text('#footer').includes(`網路設備 ${NUM(cs.network)}（已收集 ${NUM(cs.networkCollected)}）`)) throw new Error('頁尾應用網路設備口徑：' + text('#footer'));
     const sel = App.sel; App.select(null);
+    const covLine = $('#detail').querySelector('.status-coverage').textContent;
+    if (cs.missing ? !covLine.includes(`${NUM(cs.missing)} 台網路設備缺資料或收集失敗`) : !covLine.includes('資料齊全')) throw new Error('收集完整度應以網路設備計：' + covLine);
+    const hostLine = $('#detail').querySelector('.status-hosts');
+    if (!!cs.hosts !== !!(hostLine && hostLine.textContent.includes(`另有 ${NUM(cs.hosts)} 台主機`))) throw new Error('有主機時另列，沒有時不寫');
     // 基準狀態卡：數字卡是「數字＋名稱」，技術細節是 kv
     const stats = $('#detail').testAll('.stat').map((x) => [x.querySelector('.stat-label').textContent, x.querySelector('.stat-num').textContent]);
     const want = [['已收集網路設備', `${NUM(cs.networkCollected)}／${NUM(cs.network)}`], ['鏈路', NUM(App.Q.meta().stats.links)], ['VLAN（相異 ID）', NUM(vs.ids)], ['MAC', NUM(App.Q.meta().stats.macs)]];
@@ -2179,10 +2184,11 @@ function viewBoundaryViolations(file, src) {
     const gt = handled('accepted').textContent;
     if (!gt.includes(f.message) || !gt.includes('豁免原因：' + reason1) || !gt.includes('備註：備註一')) throw new Error('已處理的項目應顯示原因與備註');
     // 摘要：排除已處理並註明
-    const left = problems(); const summary = text('#baseline-summary');
+    const prevSel = App.sel; App.select(null);
+    const left = problems(); const summary = $('#detail').querySelector('.status-line').textContent; App.select(prevSel);
     if (left.length !== before.length - 1) throw new Error('處理一筆後，待處理的問題應少一筆');
     const nHandled = all.filter((x) => x.severity !== 'info' && !VA.isPending(x)).length;
-    if (!summary.includes(`另有 ${nHandled} 項已處理`)) throw new Error('基準摘要應註明已處理筆數：' + summary);
+    if (!summary.includes(`另有 ${nHandled} 項已處理`)) throw new Error('基準狀態應註明已處理筆數：' + summary);
     // 改為誤報：備註以公式開頭，CSV 要防公式注入；規則品質列出這條規則
     document.testAll('#pane-findings .ledger-edit').find((b) => b.getAttribute('aria-label') === '處理：' + f.message).click();
     const note2 = '=SUM(A1) 是誤判';
@@ -2483,7 +2489,7 @@ function viewBoundaryViolations(file, src) {
       ['狀態標籤層次', /\.chip\.err\s*\{[^}]*border-color:/],
       ['減少動態效果偏好', /prefers-reduced-motion:\s*reduce/],
       ['資料標籤間距與換行', /\.chip-list\s*\{[^}]*display:\s*flex[^}]*flex-wrap:\s*wrap[^}]*gap:\s*4px/],
-      ['首頁 Grid 明確指定主內容列', /#main\s*\{\s*grid-row:\s*4;/],
+      ['首頁 Grid 明確指定主內容列', /#main\s*\{\s*grid-row:\s*3;/],
     ].forEach(([label, pattern]) => { if (!pattern.test(css)) throw new Error('缺少 ' + label); });
     const vars = { firewall: 'fw', switch: 'sw', router: 'rt', host: 'host', unknown: 'unk' };
     Object.entries(vars).forEach(([k, v]) => {
@@ -2573,9 +2579,10 @@ function viewBoundaryViolations(file, src) {
     const gaps = clone.coverage.filter((r) => r.collected && (r.missing.length || r.failures.length));
     goStep('input');
     if (!text('#pane-coverage').includes('有缺漏 ' + gaps.length)) throw new Error('有缺漏應包含只有收集失敗的設備');
-    const b = $('#baseline-summary').testAll('button').find((x) => x.textContent === '查看收集缺漏');
-    if (b.getAttribute('disabled') !== null) throw new Error('只有收集失敗時，收集缺漏入口也應可用');
-    if (!text('#baseline-summary').includes(`${gaps.length} 台有必要資料缺漏`)) throw new Error('基準摘要的缺漏數應包含收集失敗');
+    App.select(null);
+    const b = $('#detail').querySelector('.status-coverage').querySelector('a');
+    if (!b) throw new Error('只有收集失敗時，收集缺漏入口也應可用');
+    if (!b.textContent.includes(`${gaps.length} 台`)) throw new Error('基準狀態的缺漏數應包含收集失敗：' + b.textContent);
     b.click();
     const tr = $('#pane-coverage').testAll('tbody tr');
     if (tr.length !== gaps.length) throw new Error('缺漏篩選列數應等於有缺漏的設備數');
@@ -2750,9 +2757,10 @@ function viewBoundaryViolations(file, src) {
     await buildInput(sample + '\n# round-3\n'); await App.ledgerJob;
     if (VA.ledger().items[key].status !== 'regressed') throw new Error('已修好又出現時應標為回歸');
     const nReg = Object.values(VA.ledger().items).filter((it) => it.status === 'regressed' && App.snap.findings.some((f) => App.Q.findingKey(f) === key)).length;
-    const alert = $('#baseline-summary').testAll('button').find((b) => b.getAttribute('data-alert') === 'regressed');
-    if (!alert || !alert.textContent.includes(`回歸 ${nReg} 項`) || !alert.className.includes('err')) throw new Error('基準摘要應醒目提示回歸筆數：' + text('#baseline-summary'));
-    goStep('triage');
+    // 回歸的提示在右側的基準狀態卡（.ledger-alert），步驟列 ⑤ 的狀態也寫出筆數
+    goStep('triage'); App.select(null);
+    const alert = $('#detail').testAll('.ledger-alert').find((b) => b.getAttribute('data-alert') === 'regressed');
+    if (!alert || !alert.textContent.includes(`回歸 ${nReg} 項`) || !alert.className.includes('err')) throw new Error('基準狀態應醒目提示回歸筆數：' + text('#detail').slice(0, 300));
     alert.click();
     if (App.step !== 'verify' || $('#view-verify').classList.contains('hidden') || document.activeElement !== $('#round-title')) throw new Error('點回歸提示應到「⑤ 驗證」並聚焦本輪變化');
     if (!stepBtn('verify').textContent.includes(`回歸 ${nReg}`)) throw new Error('⑤ 的狀態應寫出回歸筆數：' + stepBtn('verify').textContent);
@@ -2775,8 +2783,9 @@ function viewBoundaryViolations(file, src) {
     const st = VA.ledgerState();
     if (!st.round || !st.round.unobserved.length) throw new Error('沒有收集的設備，消失的待處理項目應列為無法判斷');
     if (st.round.unobserved.some((k) => VA.ledger().items[k].status === 'fixed')) throw new Error('無法判斷的項目不可判定為已修好');
-    const un = $('#baseline-summary').testAll('button').find((b) => b.getAttribute('data-alert') === 'unobserved');
-    if (!un || !un.textContent.includes(`無法判斷 ${st.round.unobserved.length} 項`)) throw new Error('基準摘要應提示無法判斷的筆數');
+    App.select(null);
+    const un = $('#detail').testAll('.ledger-alert').find((b) => b.getAttribute('data-alert') === 'unobserved');
+    if (!un || !un.textContent.includes(`無法判斷 ${S.view.num(st.round.unobserved.length)} 項`)) throw new Error('基準狀態應提示無法判斷的筆數');
     goStep('verify');
     const unList = $('#round-body').testAll('.ledger-list').find((l) => l.getAttribute('data-reason') === 'unobserved');
     if (!unList || !unList.parentNode.textContent.includes('因收集失敗而無法判斷') || unList.testAll('.ledger-item').length !== Math.min(300, st.round.unobserved.length)) throw new Error('本輪變化應說明因收集失敗而無法判斷');
@@ -3744,6 +3753,59 @@ function viewBoundaryViolations(file, src) {
       if (g.hover) throw new Error(`指標在 #${el.id} 上時不應 hover 到底下的節點`);
       if (!$('#tooltip').classList.contains('hidden')) throw new Error('指標離開畫布時提示應隱藏');
     });
+  });
+  await step('頁首「⋯」與工具列的選單：只有一個路由追蹤入口；方向鍵移動、Esc 關閉並還焦點、點外面關閉；勾選與單選以 aria-checked 標示；通知不遮工具列', () => {
+    const more = $('#btn-more'); const menu = $('#more-menu'); const pop = $('#trace-pop');
+    const esc = () => (docListeners.keydown || []).forEach((f) => f({ key: 'Escape', preventDefault() {} }));
+    const outside = (target) => (docListeners.mousedown || []).forEach((f) => f({ target }));
+    App.showStep('triage'); App.showLayer('device');
+    if (more.getAttribute('aria-haspopup') !== 'menu' || !more.getAttribute('aria-label') || menu.getAttribute('role') !== 'menu') throw new Error('「⋯」應是有名稱的選單按鈕');
+    if (!['#btn-trace', '#btn-png', '#btn-clear'].every((x) => menu.contains($(x)) && $(x).getAttribute('role') === 'menuitem')) throw new Error('路由追蹤、匯出 PNG、清除基準應在「⋯」選單裡');
+    const traceEntries = document.testAll('button').filter((b) => /路由追蹤/.test(b.textContent) && !$('#detail').contains(b) && !$('#hub').contains(b));
+    if (traceEntries.length !== 1 || traceEntries[0] !== $('#btn-trace')) throw new Error('頁首只留一個路由追蹤入口：' + traceEntries.map((b) => b.textContent).join('、'));
+    if ($('#toolbar').contains($('#btn-png'))) throw new Error('匯出 PNG 不在工具列');
+    // 鍵盤：開啟時焦點到第一項，↓／End 移動並循環，Esc 關閉並還焦點
+    more.click();
+    if (menu.classList.contains('hidden') || more.getAttribute('aria-expanded') !== 'true' || document.activeElement !== $('#btn-trace')) throw new Error('開啟「⋯」後焦點應在第一項');
+    menu.dispatch('keydown', { key: 'ArrowDown' }); if (document.activeElement !== $('#btn-png')) throw new Error('↓ 應移到下一項');
+    menu.dispatch('keydown', { key: 'End' }); if (document.activeElement !== $('#btn-clear')) throw new Error('End 應移到最後一項');
+    menu.dispatch('keydown', { key: 'ArrowDown' }); if (document.activeElement !== $('#btn-trace')) throw new Error('↓ 在最後一項時應繞回第一項');
+    menu.dispatch('keydown', { key: 'Escape' });
+    if (!menu.classList.contains('hidden') || more.getAttribute('aria-expanded') !== 'false' || document.activeElement !== more) throw new Error('Esc 應關閉選單並把焦點還給「⋯」');
+    more.click(); outside($('#graph')); if (!menu.classList.contains('hidden')) throw new Error('點選單外面應關閉');
+    more.click(); esc(); if (!menu.classList.contains('hidden') || document.activeElement !== more) throw new Error('文件層級的 Esc 也應關閉選單並還焦點');
+    // 從選單開路由追蹤：選單收起、表單開啟；Esc 關閉後焦點回到「⋯」，點外面也關閉
+    more.click(); $('#btn-trace').click();
+    if (!menu.classList.contains('hidden') || pop.classList.contains('hidden') || ![$('#trace-src'), $('#trace-dst')].includes(document.activeElement)) throw new Error('路由追蹤應收起選單並開啟表單');
+    esc(); if (!pop.classList.contains('hidden') || document.activeElement !== more) throw new Error('Esc 應關閉路由追蹤並還焦點');
+    App.openTrace(); outside($('#graph')); if (!pop.classList.contains('hidden')) throw new Error('點外面應關閉路由追蹤');
+    // 版面▾：↑ 開啟時焦點到最後一項；單選的版面與力導向都是選單項目
+    const lb = $('#btn-layout-menu'); const lm = $('#layout-menu');
+    lb.dispatch('keydown', { key: 'ArrowUp' });
+    if (lm.classList.contains('hidden') || document.activeElement !== $('#btn-force')) throw new Error('↑ 開啟版面選單時焦點應在最後一項');
+    if ($('#layout-mode').testAll('.menu-item').some((b) => b.getAttribute('role') !== 'menuitemradio')) throw new Error('版面應是單選的選單項目');
+    lm.dispatch('keydown', { key: 'Escape' }); if (document.activeElement !== lb || !lm.classList.contains('hidden')) throw new Error('Esc 應關閉版面選單並還焦點');
+    // 顯示▾：勾選項目（data-keep）按了不關閉，aria-checked 跟著狀態
+    const vb = $('#btn-view-menu'); const vm_ = $('#view-menu'); const hosts = $('#btn-hosts');
+    vb.click(); const was = App.showHosts;
+    if (hosts.getAttribute('aria-checked') !== String(was)) throw new Error('主機的勾選狀態應與畫面一致');
+    hosts.click(); vm_.dispatch('click', { target: hosts });
+    if (App.showHosts === was || hosts.getAttribute('aria-checked') !== String(!was) || vm_.classList.contains('hidden')) throw new Error('勾選項目按了應切換並保持選單開啟');
+    hosts.click(); if (App.showHosts !== was) throw new Error('再按一次應還原');
+    $('#btn-fit').click(); vm_.dispatch('click', { target: $('#btn-fit') });
+    // 換層級時選單收起；L2 只有主機（未知對端、分群只在設備圖）
+    App.showLayer('l2'); if (!vm_.classList.contains('hidden')) throw new Error('換層級時應收起選單');
+    if (!$('#btn-unknown').classList.contains('hidden') || !$('#btn-groups').classList.contains('hidden') || $('#btn-hosts').classList.contains('hidden')) throw new Error('L2 的顯示選單只有主機');
+    App.showLayer('device');
+    if ($('#btn-unknown').classList.contains('hidden')) throw new Error('設備圖的顯示選單應有未知對端');
+    // 通知在圖的下方中央（不遮左上角的工具列），數秒後淡出；操作提示也會淡出
+    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
+    const bannerRule = (css.match(/\n\.banner \{([^}]*)\}/) || [])[1] || '';
+    if (/(^|;)\s*top:/.test(bannerRule) || !/bottom:/.test(bannerRule)) throw new Error('通知應在圖的下方，不遮工具列：' + bannerRule);
+    if (!/\.banner\.fading, \.hint\.fading \{[^}]*opacity: 0/.test(css)) throw new Error('通知與操作提示應淡出');
+    // 窄螢幕：品牌與按鈕同一列、搜尋一列，清除不再單獨佔一列
+    const narrow = css.slice(css.indexOf('@media (max-width: 900px) {\n  #app'));
+    if (!/\.header-actions \{ order: 2;/.test(narrow) || !/\.search \{ order: 3; flex: 1 1 100%;/.test(narrow) || /#btn-clear \{ margin-left/.test(css)) throw new Error('窄螢幕的頁首應是品牌＋按鈕、搜尋兩列');
   });
   await step('流程步驟：①–⑤ 都能切換（nav、aria-current="step"），左側清單與中間的工作畫面跟著換、焦點移到這一步的標題；切換不丟失畫布的位置、縮放與選取，也不重新排列；PNG 照常', async () => {
     const g = App.graph; const VA = S.view.app;

@@ -210,7 +210,9 @@
   A.bindSheet = function bindSheet() {
     const handle = $('#sheet-handle'); const right = $('#right'); const main = $('#main');
     // 窄螢幕的工具列換行後佔掉圖的上方好幾列，也要讓開；桌面的全圖與聚焦維持原本的範圍
-    App.graph.setOccluders([{ el: right, max: SHEET.occluderMax }, { el: $('#toolbar'), max: SHEET.occluderMax, when: A.isNarrowScreen }]);
+    // 通知（#banner）在圖的下方：窄螢幕時佔滿寬度，也讓開（隱藏時不計）
+    App.graph.setOccluders([{ el: right, max: SHEET.occluderMax }, { el: $('#toolbar'), max: SHEET.occluderMax, when: A.isNarrowScreen },
+      { el: $('#banner'), max: SHEET.occluderMax, when: A.isNarrowScreen }]);
     const toggle = () => setSheet(A.sheetState() === 'full' ? 'half' : 'full');
     $('#sheet-expand').onclick = toggle;
     $('#sheet-close').onclick = () => A.closeSheet();

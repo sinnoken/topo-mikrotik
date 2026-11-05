@@ -64,18 +64,34 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 
 /* ---------- 版面 ---------- */
 /* 頁首的高度依內容（流程步驟放不下時換行），至少 48px */
-#app { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) 26px; height: 100vh; }
+/* 三列：頁首、窄螢幕的工作區列、主畫面。基準的摘要在步驟列與右側的總覽，沒有另外的摘要列與頁尾 */
+#app { display: grid; grid-template-rows: auto auto minmax(0, 1fr); height: 100vh; }
 #app > header { grid-row: 1; }
-#baseline-summary { grid-row: 2; }
-#mobile-workspaces { grid-row: 3; }
-#main { grid-row: 4; }
-#app > footer { grid-row: 5; }
+#mobile-workspaces { grid-row: 2; }
+#main { grid-row: 3; }
 /* 資料中心（#hub）和 #main 疊在同一格（也蓋住窄螢幕的工作區列）：明確指定欄，避免自動放置另開一欄 */
 #app > * { grid-column: 1; }
 header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-height: 48px; padding: 6px 12px; background: var(--panel); border-bottom: 1px solid var(--line); box-shadow: 0 1px 4px rgba(22, 37, 54, .035); z-index: 7; }
 header .brand { font-weight: 600; font-size: var(--fs-lg); letter-spacing: .02em; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 header .brand svg { width: 22px; height: 22px; }
 header .spacer { flex: 1; }
+/* 頁首右側：資料中心與「⋯」更多操作（路由追蹤、匯出 PNG、清除基準） */
+.header-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.icon-btn { width: var(--control-h); padding: 0; font-size: var(--fs-xl); line-height: 1; }
+.menu-wrap { position: relative; }
+/* 下拉選單（A.bindMenu）：勾選項目以 ✓、單選以 • 標示（不只靠顏色），危險的操作用錯誤色 */
+.menu { position: absolute; top: calc(100% + 4px); left: 0; min-width: 210px; display: flex; flex-direction: column; padding: 4px; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-md); z-index: 60; }
+.menu.menu-end { left: auto; right: 0; }
+.menu .menu-item { position: relative; display: flex; align-items: center; width: 100%; min-height: var(--control-h); padding: 5px 12px 5px 28px; border: 0; border-radius: var(--radius-sm); background: none; box-shadow: none; text-align: left; white-space: nowrap; }
+.menu .menu-item:hover:not(:disabled), .menu .menu-item:focus-visible { background: var(--accent-soft); }
+.menu .menu-item:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.menu .menu-item:active { transform: none; }
+.menu .menu-item:disabled { color: var(--muted); cursor: not-allowed; }
+.menu .menu-item[aria-checked="true"]::before { content: "✓"; position: absolute; left: 10px; color: var(--accent); font-weight: 600; }
+.menu .menu-item[role="menuitemradio"][aria-checked="true"]::before { content: "•"; left: 12px; }
+.menu-sep { height: 1px; margin: 4px 2px; background: var(--line); }
+.menu-label { padding: 4px 12px 2px 28px; color: var(--muted); font-size: var(--fs-xs); }
+.menu-wrap .popover { right: 0; top: calc(100% + 6px); }
 /* 流程步驟（app-panes.js）：導覽，目前的一步除了顏色，還有粗體與底線（aria-current="step"）；每一步有狀態文字 */
 .steps ol { display: flex; flex-wrap: wrap; gap: 2px; margin: 0; padding: 0; list-style: none; }
 .steps button { display: inline-flex; align-items: baseline; gap: 5px; min-height: var(--control-h); padding: 5px 10px; border: 1px solid transparent; border-radius: var(--radius); background: transparent; color: var(--muted); box-shadow: none; white-space: nowrap; }
@@ -132,14 +148,6 @@ header .spacer { flex: 1; }
   .verify-layout { grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); }
   .verify-side { position: sticky; top: 0; max-height: calc(100vh - 200px); overflow: auto; }
 }
-footer { display: flex; align-items: center; gap: 16px; padding: 0 12px; font-size: var(--fs-sm); color: var(--muted); background: var(--panel); border-top: 1px solid var(--line); white-space: nowrap; overflow: hidden; }
-.baseline-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; background: #fff; border-bottom: 1px solid var(--line); }
-.baseline-state { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; min-width: 0; }
-.baseline-state strong { font-size: var(--fs-md); }
-.baseline-message { font-weight: 600; }
-.baseline-coverage { color: var(--muted); }
-.baseline-actions { display: flex; flex-wrap: wrap; gap: 6px; flex: none; }
-.baseline-actions button { min-height: var(--control-h); padding: 4px 9px; font-size: var(--fs-sm); }
 .mobile-workspaces { display: none; }
 /* 詳情抽屜的操作列：只在窄螢幕的抽屜模式顯示（見下方 max-width: 900px） */
 .sheet-bar { display: none; }
@@ -401,8 +409,10 @@ table.t .mono, table.t .vlanlist { white-space: nowrap; overflow-wrap: normal; }
 /* 廠商名稱可能很長：截斷，完整名稱在 title */
 .legend .lg-name { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
 .legend .lg-arrow { font-size: var(--fs-xs); margin-left: -4px; }
-.hint { position: absolute; right: 10px; bottom: 10px; font-size: var(--fs-sm); color: var(--muted); background: rgba(255,255,255,.9); padding: 4px 8px; border-radius: var(--radius); z-index: 5; }
-.banner { position: absolute; top: 10px; right: 10px; z-index: 7; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px; box-shadow: var(--shadow-md); display: flex; gap: 8px; align-items: center; font-size: var(--fs-md); }
+.hint { position: absolute; right: 10px; bottom: 10px; font-size: var(--fs-sm); color: var(--muted); background: rgba(255,255,255,.9); padding: 4px 8px; border-radius: var(--radius); z-index: 5; transition: opacity .4s ease; }
+/* 通知在圖的下方中央，不遮工具列；數秒後淡出（.fading，A.banner） */
+.banner { position: absolute; left: 50%; bottom: 48px; transform: translateX(-50%); width: max-content; max-width: min(560px, calc(100% - 40px)); z-index: 7; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px; box-shadow: var(--shadow-md); display: flex; gap: 8px; align-items: center; font-size: var(--fs-md); transition: opacity .4s ease; }
+.banner.fading, .hint.fading { opacity: 0; }
 .tooltip { position: absolute; pointer-events: none; background: #1f2933; color: #fff; font-size: var(--fs-sm); padding: 4px 8px; border-radius: var(--radius-sm); z-index: 20; white-space: nowrap; }
 .welcome { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 4; }
 .welcome .card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 30px 34px; max-width: 560px; box-shadow: 0 14px 42px rgba(22, 37, 54, .1); }
@@ -558,21 +568,21 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
 }
 
 @media (max-width: 900px) {
-  #app { height: 100dvh; grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
+  #app { height: 100dvh; grid-template-rows: auto auto minmax(0, 1fr); }
+  /* 頁首：品牌與按鈕（資料中心、⋯）一列，搜尋一列，流程步驟一列 */
   header { min-height: 48px; padding: 6px 10px; flex-wrap: wrap; gap: 7px; }
   header .spacer { display: none; }
-  .search { order: 5; flex: 1 1 100%; max-width: none; }
+  header .brand { order: 1; flex: 1 1 auto; min-width: 0; }
+  .header-actions { order: 2; margin-left: auto; }
+  .search { order: 3; flex: 1 1 100%; max-width: none; min-width: 0; }
   .search input { min-height: max(40px, var(--control-h)); }
   /* 流程步驟：自己一列，五步等寬；號碼與名稱在上、狀態在下，文字可以換行，不出現水平捲動 */
   .steps { order: 4; flex: 1 1 100%; min-width: 0; }
   .steps ol { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 3px; }
   .steps button { width: 100%; min-width: 0; min-height: 44px; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0 3px; padding: 4px 2px; white-space: normal; text-align: center; line-height: 1.3; }
   .steps .step-st { flex-basis: 100%; overflow-wrap: anywhere; }
-  #btn-clear { margin-left: auto; }
-  .baseline-summary { align-items: flex-start; flex-direction: column; gap: 8px; padding: 9px 10px; }
-  .baseline-state { gap: 4px 9px; }
-  .baseline-coverage { flex-basis: 100%; }
-  .baseline-actions { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .menu .menu-item { min-height: 44px; }
+  .banner { bottom: 72px; }
   .mobile-workspaces { display: flex; gap: 4px; padding: 5px 8px; background: #fff; border-bottom: 1px solid var(--line); }
   .mobile-workspaces button { flex: 1; min-height: max(40px, var(--control-h)); border-color: transparent; background: transparent; color: var(--muted); }
   .mobile-workspaces button.on { border-color: var(--line); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
@@ -592,7 +602,6 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
   #main[data-workspace="graph"][data-sheet] .sheet-bar { display: flex; flex: none; align-items: center; gap: 4px; padding: 2px 6px 2px 4px; border-bottom: 1px solid var(--line); }
   #main[data-workspace="graph"][data-sheet] > #right > #detail { flex: 1; min-height: 0; overflow: auto; }
   .toolbar { max-width: calc(100% - 20px); }
-  footer { min-height: 24px; padding: 3px 8px; gap: 10px; }
 }
 
 /* ---------- 處理紀錄（app-ledger.js、panels/ledger.js） ---------- */
@@ -678,11 +687,11 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
 .partial-unrecognized { margin-left: 6px; color: var(--warn-text); }
 
 /* ---------- 資料中心（panels/hub.js、app-hub.js） ---------- */
-.hub { grid-row: 3 / 5; z-index: 6; min-height: 0; overflow: auto; overflow-x: hidden; background: var(--bg); }
+.hub { grid-row: 2 / 4; z-index: 6; min-height: 0; overflow: auto; overflow-x: hidden; background: var(--bg); }
 header .hub-btn { font-weight: 600; }
 header .hub-btn.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 /* 提示列在 #center 裡，會被資料中心蓋住：開啟時改成固定在視窗右上角 */
-#app.hub-open #banner { position: fixed; top: 56px; right: 12px; z-index: 9; max-width: calc(100vw - 24px); }
+#app.hub-open #banner { position: fixed; bottom: 16px; z-index: 9; max-width: calc(100vw - 24px); }
 .hub-inner { max-width: 1180px; margin: 0 auto; padding: 22px; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
 .hub-head, .hub-card-head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; min-width: 0; }
 .hub-head h1 { margin: 0; font-size: var(--fs-2xl); }
@@ -740,7 +749,7 @@ header .hub-btn.on { background: var(--accent-soft); color: var(--accent); borde
   .hub-cap { display: inline; }
   .hub-act { justify-content: flex-start; }
   .hub-outs { grid-template-columns: minmax(0, 1fr); }
-  #app.hub-open #banner { left: 10px; right: 10px; top: auto; bottom: 34px; }
+  #app.hub-open #banner { left: 10px; right: 10px; transform: none; width: auto; bottom: 16px; }
   /* 中間的工作畫面：內距縮小；內容不出現整頁的水平捲動（寬的表格、指令與圖在自己的框內捲動） */
   .work-inner { padding: 12px 10px 24px; gap: 12px; }
   .patch-select, .patch-main, .verify-card { padding: 10px; }

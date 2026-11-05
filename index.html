@@ -87,22 +87,29 @@
       <input id="search" type="search" placeholder="搜尋設備、MAC、IP、VLAN、介面（按 / 開始）" title="設備名稱、MAC 或 IP（也可只打前綴，例如 10.1. 或 04:42）、VLAN ID、介面名稱或描述" autocomplete="off">
       <div id="search-dd" class="dropdown hidden"></div>
     </div>
-    <div style="position:relative">
-      <button id="btn-trace">路由追蹤</button>
-      <div id="trace-pop" class="popover hidden">
-        <div class="form-row"><label>來源 IP</label><input id="trace-src" type="text" placeholder="10.1.30.15" list="trace-ips" autocomplete="off"></div>
-        <div class="form-row"><label>目的 IP</label><input id="trace-dst" type="text" placeholder="10.1.20.11" list="trace-ips" autocomplete="off"></div>
-        <datalist id="trace-ips"></datalist>
-        <div class="form-row hidden" id="trace-vrf-row"><label for="trace-vrf">VRF</label><select id="trace-vrf" aria-label="追蹤的 VRF"></select></div>
-        <div id="trace-msg" class="trace-msg warn-line hidden" role="alert"></div>
-        <div class="form-row" style="margin:0"><span class="muted" style="flex:1;font-size:var(--fs-sm)">依各設備路由表逐跳追蹤（含 ECMP）</span><button class="primary" id="trace-run">追蹤</button></div>
+    <div class="header-actions">
+      <button id="btn-hub" class="hub-btn" aria-controls="hub" aria-expanded="false" title="這一輪的輸入與輸出：收集檔、工作包、處理紀錄、命名規則、預期資料、報表與 patch">資料中心</button>
+      <!-- 「⋯」更多操作（src/view/app-toolbar.js 的 A.bindMenu）：方向鍵移動、Esc 關閉並回到按鈕、點外面關閉 -->
+      <div class="menu-wrap">
+        <button type="button" class="icon-btn" id="btn-more" title="更多操作：路由追蹤、匯出 PNG、清除基準" aria-label="更多操作" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu">⋯</button>
+        <div id="more-menu" class="menu menu-end hidden" role="menu" aria-label="更多操作">
+          <button type="button" class="menu-item" role="menuitem" id="btn-trace" title="依各設備路由表逐跳追蹤兩個 IP 之間的路徑">路由追蹤…</button>
+          <button type="button" class="menu-item" role="menuitem" id="btn-png" title="把目前的拓樸圖畫面匯出 PNG（目前的層級；其他匯出在資料中心）">匯出 PNG</button>
+          <div class="menu-sep" role="separator"></div>
+          <button type="button" class="menu-item danger" role="menuitem" id="btn-clear" title="清除這個工具儲存的基準與輸入">清除基準…</button>
+        </div>
+        <div id="trace-pop" class="popover hidden" role="dialog" aria-label="路由追蹤">
+          <div class="form-row"><label for="trace-src">來源 IP</label><input id="trace-src" type="text" placeholder="10.1.30.15" list="trace-ips" autocomplete="off"></div>
+          <div class="form-row"><label for="trace-dst">目的 IP</label><input id="trace-dst" type="text" placeholder="10.1.20.11" list="trace-ips" autocomplete="off"></div>
+          <datalist id="trace-ips"></datalist>
+          <div class="form-row hidden" id="trace-vrf-row"><label for="trace-vrf">VRF</label><select id="trace-vrf" aria-label="追蹤的 VRF"></select></div>
+          <div id="trace-msg" class="trace-msg warn-line hidden" role="alert"></div>
+          <div class="form-row" style="margin:0"><span class="muted" style="flex:1;font-size:var(--fs-sm)">依各設備路由表逐跳追蹤（含 ECMP）</span><button class="primary" id="trace-run">追蹤</button></div>
+        </div>
       </div>
     </div>
-    <button id="btn-hub" class="hub-btn" aria-controls="hub" aria-expanded="false" title="這一輪的輸入與輸出：收集檔、工作包、處理紀錄、命名規則、預期資料、報表與 patch">資料中心</button>
-    <button class="ghost" id="btn-clear" title="清除這個工具儲存的基準與輸入">清除</button>
   </header>
 
-  <section id="baseline-summary" class="baseline-summary hidden" aria-live="polite"></section>
   <!-- 窄螢幕的三個工作區，依流程排列：左側的清單 → 中間的工作畫面 → 詳細資料（標籤依目前的步驟，見 A.syncWorkspaces） -->
   <nav id="mobile-workspaces" class="mobile-workspaces" aria-label="工作區">
     <button data-workspace="checks" aria-pressed="false">檢查結果</button>
@@ -136,10 +143,24 @@
         <div class="grp layer-only" data-layers="device l2 l3"><select id="vlan-filter" aria-label="VLAN 篩選" title="在設備圖與 L2 埠圖標出承載這個 VLAN 的鏈路（L3 標出這個 VLAN 的子網）；選其他東西時仍保留，選「不篩選」取消"><option value="">VLAN：不篩選</option></select></div>
         <div class="grp layer-only hidden" data-layers="l2"><button type="button" id="btn-l2-lag" aria-pressed="false" title="聚合介面的成員各自畫成一個埠（預設收合：成員併進聚合介面）">展開聚合</button><button type="button" id="btn-l2-ports" aria-pressed="false" title="也畫沒有連線的實體、聚合與無線介面">全部的埠</button><select id="l2-scope" aria-label="L2 埠圖的範圍" title="整張圖，或只畫選取的設備與它的鄰居（設備太多時只能選後者）"><option value="all">整張圖</option><option value="focus">選取的設備與鄰居</option></select></div>
         <div class="grp layer-only hidden" data-layers="l3"><button type="button" id="btn-l3-routes" aria-pressed="false" title="以虛線箭頭畫出靜態路由與預設路由，指到目的網段">顯示路由</button></div>
-        <div class="grp layer-only" data-layers="device l2 l3"><button id="btn-fit" title="整張圖放進畫面">全圖</button><button id="btn-relayout" title="依分群與層級重新排列（只排目前的層級）">重新排列</button><select id="layout-mode" title="重新排列使用的版面"><option value="elk">分層（ELK）</option><option value="builtin">快速（內建）</option></select><button id="btn-force" title="用力導向微調位置（再按一次停止）">力導向排列</button></div>
-        <div class="grp layer-only" data-layers="device l2 l3"><button id="btn-hosts" title="顯示只由 LLDP 看到的主機">主機</button></div>
-        <div class="grp layer-only" data-layers="device"><button id="btn-unknown" class="on" title="顯示沒有 LLDP 鄰居、只由 MAC 推論出來的終端">未知對端</button><button id="btn-groups" class="on" title="顯示分群底框">分群</button></div>
-        <div class="grp layer-only" data-layers="device l2 l3"><button id="btn-png" title="把目前畫面匯出 PNG（目前的層級；其他匯出在資料中心）">匯出 PNG</button></div>
+        <!-- 圖的操作：全圖、版面▾（重新排列、分層／快速、力導向）、顯示▾（主機、未知對端、分群）；選單在 .grp 外面才不會被裁切 -->
+        <div class="grp layer-only" data-layers="device l2 l3"><button type="button" id="btn-fit" title="整張圖放進畫面">全圖</button><button type="button" id="btn-layout-menu" title="重新排列與版面" aria-haspopup="menu" aria-expanded="false" aria-controls="layout-menu">版面 ▾</button><button type="button" id="btn-view-menu" title="圖上要顯示的內容" aria-haspopup="menu" aria-expanded="false" aria-controls="view-menu">顯示 ▾</button></div>
+        <div id="layout-menu" class="menu hidden" role="menu" aria-label="版面">
+          <button type="button" class="menu-item" role="menuitem" id="btn-relayout" title="依分群與層級重新排列（只排目前的層級）">重新排列</button>
+          <div class="menu-sep" role="separator"></div>
+          <div class="menu-label" id="layout-mode-label">重新排列使用的版面</div>
+          <div id="layout-mode" role="group" aria-labelledby="layout-mode-label">
+            <button type="button" class="menu-item" role="menuitemradio" data-layout="elk" aria-checked="true" title="分層版面（ELK.js）">分層（ELK）</button>
+            <button type="button" class="menu-item" role="menuitemradio" data-layout="builtin" aria-checked="false" title="內建的快速版面">快速（內建）</button>
+          </div>
+          <div class="menu-sep" role="separator"></div>
+          <button type="button" class="menu-item" role="menuitemcheckbox" id="btn-force" data-keep aria-checked="false" title="用力導向微調位置（再按一次停止）">力導向排列</button>
+        </div>
+        <div id="view-menu" class="menu hidden" role="menu" aria-label="顯示">
+          <button type="button" class="menu-item layer-only" data-layers="device l2 l3" role="menuitemcheckbox" id="btn-hosts" data-keep aria-checked="true" title="顯示只由 LLDP 看到的主機">主機</button>
+          <button type="button" class="menu-item layer-only on" data-layers="device" role="menuitemcheckbox" id="btn-unknown" data-keep aria-checked="true" title="顯示沒有 LLDP 鄰居、只由 MAC 推論出來的終端">未知對端</button>
+          <button type="button" class="menu-item layer-only on" data-layers="device" role="menuitemcheckbox" id="btn-groups" data-keep aria-checked="true" title="顯示分群底框">分群</button>
+        </div>
       </div>
       <!-- L4（src/view/panels/l4.js）：zone 矩陣、下鑽與可達性查詢。不是畫布：選了 L4 時疊在畫布上、工具列下面（層級切換仍在工具列，Tab 順序在矩陣之前），內容由 V.l4 產生 -->
       <section id="view-l4" class="l4 hidden" aria-labelledby="l4-title"></section>
@@ -215,7 +236,6 @@
   </div>
   <!-- 資料中心：和 #main 疊在同一格，開啟時蓋住主畫面（畫布大小不變），內容由 src/view/panels/hub.js 產生 -->
   <section id="hub" class="hub hidden" aria-labelledby="hub-title"></section>
-  <footer id="footer"></footer>
 </div>
 
 <dialog id="dlg-input">

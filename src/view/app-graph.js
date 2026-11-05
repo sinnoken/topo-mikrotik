@@ -219,8 +219,8 @@
 
   A.applyVisibility = function applyVisibility() {
     App.graph.setVisible((n) => (App.showHosts || n.kind !== 'host') && (App.showUnknown || !n.virtual));
-    $('#btn-unknown').classList.toggle('on', App.showUnknown);
+    A.setChecked($('#btn-unknown'), App.showUnknown);
     App.graph.computeGroups();
-    $('#btn-hosts').classList.toggle('on', App.showHosts);
+    A.setChecked($('#btn-hosts'), App.showHosts);
   };
 })(globalThis.SSOT = globalThis.SSOT || {});

@@ -239,7 +239,7 @@
   const traceMsg = (text) => { const m = $('#trace-msg'); m.textContent = text || ''; m.classList.toggle('hidden', !text); };
   /** 開啟路由追蹤。vrf：預先選好的 VRF（例如從某個 VRF 的 IP 詳情來）；省略時保留選單目前的值 */
   App.openTrace = function (src, dst, vrf) {
-    A.closeHub();
+    A.closeHub(); A.closeMenus();
     const pop = $('#trace-pop'); pop.classList.remove('hidden');
     if (src !== undefined) $('#trace-src').value = src; if (dst !== undefined) $('#trace-dst').value = dst;
     A.syncTraceVrf(vrf === undefined ? undefined : vrf || ''); traceMsg('');

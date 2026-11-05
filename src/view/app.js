@@ -7,7 +7,7 @@
  *   app-graph.js   基準 → 圖資料、未知對端、版面排程（ELK／內建）
  *   app-layers.js  拓樸圖的層級（設備、L2 埠、L3 子網）、VLAN 篩選，以及 L2／L3 的圖資料、版面與標示
  *   app-select.js  選取、圖上互動、原文檢視、路由追蹤
- *   app-toolbar.js 頁首（搜尋、追蹤、清除）、工具列、圖例、匯出
+ *   app-toolbar.js 頁首（搜尋、資料中心、「⋯」選單：路由追蹤、匯出 PNG、清除）、工具列與下拉選單、圖例、匯出
  *   app-panes.js   流程步驟（App.showStep）、左側的清單、中間的工作畫面（App.showView）、窄螢幕工作區、左右欄寬度
  *   app-input.js   輸入對話框與建立基準
  *   app-ledger.js  處理紀錄（S.ledger；store 的 'ledger'，並轉換舊的 'acks'）
@@ -162,25 +162,30 @@
   };
 
   // ================================================================ 重繪與提示
+  // 拓樸圖上的通知（banner）在下方中央，不遮工具列；有 ms 時數秒後淡出。操作提示（#hint）只在第一次看到圖時顯示，數秒後淡出
+  const FADE_MS = 400; const HINT_MS = 6000; const fadeT = {};
+  function fadeOut(el, key) {
+    clearTimeout(fadeT[key]); el.classList.add('fading');
+    fadeT[key] = setTimeout(() => { el.classList.add('hidden'); el.classList.remove('fading'); }, FADE_MS);
+  }
   A.banner = function banner(text, ms) {
-    const b = $('#banner'); b.textContent = text; b.classList.remove('hidden');
-    clearTimeout(banner.t); if (ms) banner.t = setTimeout(() => b.classList.add('hidden'), ms);
+    const b = $('#banner'); b.textContent = text; b.classList.remove('hidden'); b.classList.remove('fading');
+    clearTimeout(banner.t); clearTimeout(fadeT.banner);
+    if (ms) banner.t = setTimeout(() => fadeOut(b, 'banner'), ms);
+  };
+  const hint = { done: false, t: null };
+  /** 操作提示：有基準且看的是拓樸圖（不是 L4）時顯示；第一次顯示後 HINT_MS 淡出，之後不再出現（同一次開啟頁面） */
+  A.syncHint = function syncHint(l4) {
+    const el = $('#hint'); const show = !!App.snap && !l4 && !hint.done;
+    el.classList.toggle('hidden', !show);
+    if (show && !hint.t) hint.t = setTimeout(() => { hint.done = true; fadeOut(el, 'hint'); }, HINT_MS);
   };
   A.renderAll = function renderAll() {
     const has = !!App.snap;
     $('#welcome').classList.toggle('hidden', has);
-    ['#toolbar', '#legend', '#hint'].forEach((s) => $(s).classList.toggle('hidden', !has));
-    renderBaselineSummary();
-    $('#btn-trace').disabled = !has; $('#search').disabled = !has; $('#btn-clear').disabled = !has;
-    const f = V.clear($('#footer'));
-    if (has) {
-      const m = App.Q.meta(); const cs = App.Q.coverageSummary();
-      f.appendChild(h('span', null, `建立：${V.fmtTime(m.createdAt)}`));
-      f.appendChild(h('span', null, `網路設備 ${V.num(cs.network)}（已收集 ${V.num(cs.networkCollected)}）・主機 ${V.num(cs.hosts)}・鏈路 ${V.num(m.stats.links)}・MAC ${V.num(m.stats.macs)}`));
-      f.appendChild(h('span', null, `命名規則：${m.profile ? m.profile.id : '未套用'}`));
-      f.appendChild(h('span', { class: 'mono' }, `輸入指紋 ${m.inputHash}`));
-      f.appendChild(h('span', null, `版本 ${m.version}`));
-    } else f.appendChild(h('span', null, `RouterOS 網路基準 ${S.VERSION}・資料只在這個瀏覽器處理，不會傳到任何地方`));
+    // 圖例與操作提示依層級（A.syncLayerUi）；基準的摘要在步驟列的狀態與右側的基準狀態卡（未選取時）
+    $('#toolbar').classList.toggle('hidden', !has);
+    ['#btn-trace', '#btn-png', '#btn-clear', '#search'].forEach((s) => { $(s).disabled = !has; });
     syncTraceIps();
     // 覆蓋率在資料中心（① 輸入），由 V.hub.render 一起畫
     V.lists.findings(App); V.lists.inventory(App);
@@ -206,49 +211,5 @@
       dl.appendChild(h('option', { value: ip }, where + (vs.length > 1 || vs[0] !== S.keys.MAIN_VRF ? `（${vs.map(V.vrfText).join('、')}）` : '')));
     });
   }
-  function renderBaselineSummary() {
-    const root = V.clear($('#baseline-summary'));
-    const has = !!App.snap;
-    root.classList.toggle('hidden', !has);
-    if (!has) return;
-    const cs = App.Q.coverageSummary();
-    // 已處理（排程修復、可接受、誤報、已修好）的錯誤／警告不算在待處理的問題裡，但註明筆數
-    const pc = A.problemCounts(); const problems = pc.error + pc.warn;
-    const ackNote = pc.handled ? `（另有 ${V.num(pc.handled)} 項已處理）` : '';
-    root.appendChild(h('div', { class: 'baseline-state' }, [
-      h('strong', null, '基準檢查'),
-      h('span', { class: 'baseline-message' }, (problems
-        ? `目前規則找到 ${V.num(pc.error)} 項錯誤、${V.num(pc.warn)} 項警告`
-        : '目前規則未發現待處理的錯誤或警告') + ackNote),
-      // 分母只算應收集的網路設備（與 C01／C02 同一個判斷）；主機本來就不收集，另外註明
-      h('span', { class: 'baseline-coverage' }, `收集完整度：${V.num(cs.networkCollected)} / ${V.num(cs.network)} 台網路設備已收集；${V.num(cs.missing)} 台有必要資料缺漏`
-        + (cs.hosts ? `；另有 ${V.num(cs.hosts)} 台主機（只由鄰居或 ARP 得知，不在收集範圍）` : '')),
-      // 處理紀錄的提示：回歸（修好後又出現）、因收集失敗而無法判斷、豁免到期；點一下到「⑤ 驗證」的本輪變化
-      ...[['regressed', 'err', (n) => `回歸 ${V.num(n)} 項`, '已修好的問題又出現（依處理紀錄）'],
-        ['unobserved', 'warn', (n) => `無法判斷 ${V.num(n)} 項`, '這一輪消失的待處理項目，所屬設備有收集失敗或沒有收集，因收集失敗而無法判斷是否已修好'],
-        ['waiverExpired', 'warn', (n) => `豁免到期 ${V.num(n)} 項`, '「可接受」的豁免已到期，改回待處理']]
-        .filter(([k]) => pc[k]).map(([k, cls, label, title]) => V.chipButton(label(pc[k]), 'btn ' + cls + ' ledger-alert', { 'data-alert': k, title: title + '；在「⑤ 驗證」的本輪變化',
-          onclick: () => App.showStep('verify', { focus: 'round' }) })),
-    ]));
-    const actions = h('div', { class: 'baseline-actions' });
-    actions.appendChild(h('button', {
-      disabled: !problems, title: '在「③ 分診」的檢查結果只列錯誤與警告',
-      onclick: () => {
-        V.lists.findings.showProblems(App);
-        App.showStep('triage');
-      },
-    }, '查看錯誤／警告'));
-    actions.appendChild(h('button', {
-      disabled: !cs.missing, title: '在「① 輸入」的覆蓋率只列有缺漏的設備',
-      onclick: () => {
-        V.lists.coverage.showMissing(App);
-        App.openHub('coverage');
-      },
-    }, '查看收集缺漏'));
-    actions.appendChild(h('button', { onclick: () => App.openTrace() }, '路由追蹤'));
-    actions.appendChild(h('button', { onclick: () => $('#search').focus() }, '搜尋定位'));
-    root.appendChild(actions);
-  }
-
   document.addEventListener('DOMContentLoaded', init);
 })(globalThis.SSOT = globalThis.SSOT || {});

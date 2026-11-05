@@ -136,6 +136,17 @@ const luminance = (rgb) => { const [r, g, b] = rgb.map((v) => { v /= 255; return
 const contrastOf = (fg, bg, base) => { const [a, b] = [luminance(rgbOf(fg, base)), luminance(rgbOf(bg, base))].sort((x, y) => y - x); return (a + 0.05) / (b + 0.05); };
 /** 讀 app.css 的 :root 變數 */
 const cssVars = (css) => Object.fromEntries(Array.from(css.match(/:root\s*\{([^}]*)\}/)[1].matchAll(/--([\w-]+):\s*([^;]+);/g)).map((m) => [m[1], m[2].trim()]));
+/** 深色的 :root 變數（@media (prefers-color-scheme: dark) 內的 :root），沒有覆寫的沿用亮色 */
+const cssDarkRoot = (css) => { const m = css.match(/@media \(prefers-color-scheme: dark\)\s*\{\s*:root\s*\{([^}]*)\}/); if (!m) throw new Error('app.css 應有 @media (prefers-color-scheme: dark) 的 :root'); return m[1]; };
+const cssVarsOf = (css, mode) => (mode === 'dark'
+  ? Object.assign(cssVars(css), Object.fromEntries(Array.from(cssDarkRoot(css).matchAll(/--([\w-]+):\s*([^;]+);/g)).map((m) => [m[1], m[2].trim()])))
+  : cssVars(css));
+const SCHEMES = ['light', 'dark'];
+/** 依序套用亮、暗兩組配色執行 fn(mode)（只改 theme 的值，不重畫），結束後一定回到原本的配色 */
+function forSchemes(fn) {
+  const T = globalThis.SSOT.view.theme; const prev = T.mode;
+  try { SCHEMES.forEach((m) => { T.apply(m); fn(m); }); } finally { T.apply(prev); }
+}
 /** dir（相對於專案根目錄）底下所有 .js 檔的相對路徑（靜態掃描用） */
 const jsFiles = (dir) => fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? jsFiles(path.join(dir, e.name)) : e.name.endsWith('.js') ? [path.join(dir, e.name)] : []));
 /** CATALOG 文字去掉反引號（畫面把反引號內的指令改成 <code>，textContent 不含反引號） */
@@ -2143,12 +2154,14 @@ function viewBoundaryViolations(file, src) {
     // 判斷的前提
     S.query.reachAssumptions().forEach((a) => { if (!text('#view-l4').includes(a.message)) throw new Error('畫面應寫出判斷的前提：' + a.message); });
     if (/\bms\b|快取/.test(text('#l4-status')) || !text('#l4-status').includes('個 zone')) throw new Error('L4 的狀態列出 zone 等數字，不寫計算耗時與快取：' + text('#l4-status'));
-    // 配色：文字對格子底色 ≥ 4.5:1，符號對格子底色與畫布底色 ≥ 3:1
-    Object.entries(G).forEach(([k, s]) => {
-      if (contrastOf(V.theme.l4.text, s.bg) < 4.5) throw new Error(`L4 ${k} 的文字對底色不足 4.5:1`);
-      if (contrastOf(s.mark, s.bg) < 3 || contrastOf(s.mark, V.theme.canvas.surface) < 3) throw new Error(`L4 ${k} 的符號對底色不足 3:1`);
+    // 配色（亮、暗兩組）：文字對格子底色 ≥ 4.5:1，符號對格子底色與畫布底色 ≥ 3:1
+    forSchemes((mode) => {
+      Object.entries(G).forEach(([k, s]) => {
+        if (contrastOf(V.theme.l4.text, s.bg) < 4.5) throw new Error(`${mode}：L4 ${k} 的文字對底色不足 4.5:1`);
+        if (contrastOf(s.mark, s.bg) < 3 || contrastOf(s.mark, V.theme.canvas.surface) < 3) throw new Error(`${mode}：L4 ${k} 的符號對底色不足 3:1`);
+      });
+      if (contrastOf(V.theme.l4.badge.text, V.theme.l4.badge.bg) < 4.5) throw new Error(`${mode}：異質徽章的文字對底色不足 4.5:1`);
     });
-    if (contrastOf(V.theme.l4.badge.text, V.theme.l4.badge.bg) < 4.5) throw new Error('異質徽章的文字對底色不足 4.5:1');
     // 強制色彩：格子有系統色外框，焦點用 Highlight
     const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8'); const forced = css.slice(css.indexOf('@media (forced-colors: active)'));
     if (!/\.l4-cell:focus[^{]*\{[^}]*Highlight/.test(forced) || !/\.l4-cell,[^{]*\{[^}]*CanvasText/.test(forced)) throw new Error('強制色彩模式下 L4 的格子要有系統色外框與焦點');
@@ -3308,14 +3321,12 @@ function viewBoundaryViolations(file, src) {
       ['資料標籤間距與換行', /\.chip-list\s*\{[^}]*display:\s*flex[^}]*flex-wrap:\s*wrap[^}]*gap:\s*4px/],
       ['首頁 Grid 明確指定主內容列', /#main\s*\{\s*grid-row:\s*3;/],
     ].forEach(([label, pattern]) => { if (!pattern.test(css)) throw new Error('缺少 ' + label); });
+    // 設備類型色與嚴重度色：亮、暗兩組都與 CSS 對應的 :root 一致
     const vars = { firewall: 'fw', switch: 'sw', router: 'rt', host: 'host', unknown: 'unk' };
-    Object.entries(vars).forEach(([k, v]) => {
-      const m = css.match(new RegExp('--' + v + ':\\s*(#[0-9a-fA-F]{6})'));
-      if (!m || m[1].toLowerCase() !== T.kind[k].toLowerCase()) throw new Error('--' + v + ' 與 theme.kind.' + k + ' 不一致');
-    });
-    ['error', 'warn'].forEach((k) => {
-      const m = css.match(new RegExp('--sev-' + k + ':\\s*(#[0-9a-fA-F]{6})'));
-      if (!m || m[1].toLowerCase() !== T.sev[k].toLowerCase()) throw new Error('--sev-' + k + ' 與 theme.sev.' + k + ' 不一致');
+    SCHEMES.forEach((mode) => {
+      const cv = cssVarsOf(css, mode); const P = T.palettes[mode];
+      Object.entries(vars).forEach(([k, v]) => { if ((cv[v] || '').toLowerCase() !== P.kind[k].toLowerCase()) throw new Error(`${mode}：--${v} 與 theme.kind.${k} 不一致`); });
+      ['error', 'warn'].forEach((k) => { if ((cv['sev-' + k] || '').toLowerCase() !== P.sev[k].toLowerCase()) throw new Error(`${mode}：--sev-${k} 與 theme.sev.${k} 不一致`); });
     });
     // 樣式一致性：畫面用到的 class 都要有定義；字重只用 400／600／700（中文字型沒有 550／650）
     ['pane-filter', 'pane-body', 'pane-section', 'pane-note', 'note-box', 'table-more', 'row'].forEach((c) => {
@@ -3630,7 +3641,7 @@ function viewBoundaryViolations(file, src) {
     if (ys.some((y, i) => i && y - ys[i - 1] < 11)) throw new Error('線尾的文字不應重疊：' + ys.join());
     // 文字（座標軸、線尾、tooltip）對圖的底色 ≥ 4.5:1
     const TX = S.view.theme.text;
-    [TX.body, TX.muted].forEach((c) => ['#ffffff', S.view.theme.canvas.surface].forEach((bg) => { if (contrastOf(c, bg) < 4.5) throw new Error(`趨勢圖的文字 ${c} 對 ${bg} 只有 ${contrastOf(c, bg).toFixed(2)}:1`); }));
+    forSchemes((mode) => [TX.body, TX.muted].forEach((c) => [S.view.theme.l2.box.fill, S.view.theme.canvas.surface].forEach((bg) => { if (contrastOf(c, bg) < 4.5) throw new Error(`${mode}：趨勢圖的文字 ${c} 對 ${bg} 只有 ${contrastOf(c, bg).toFixed(2)}:1`); })));
     if (!charts[0].testAll('text').every((t) => [TX.body, TX.muted].includes(t.getAttribute('fill')))) throw new Error('趨勢圖的文字應用 theme.text 的文字色，不用資料色');
     const hits = charts[0].testAll('rect').filter((r) => r.className.includes('trend-hit'));
     if (hits.length !== series.length) throw new Error('每一輪應有一個 hover 區');
@@ -3993,11 +4004,13 @@ function viewBoundaryViolations(file, src) {
     $('#dlg-raw').close(); App.select(null);
   });
   await step('趨勢圖的顏色：theme.trend 對畫布底色 ≥ 3:1，與嚴重度色不同', () => {
-    const T = S.view.theme.trend; const surface = S.view.theme.canvas.surface;
-    ['pending', 'regressed', 'accepted', 'single'].forEach((k) => {
-      const c = contrastOf(T[k], surface); if (c < 3) throw new Error(`trend.${k} 對底色只有 ${c.toFixed(2)}:1`);
+    forSchemes((mode) => {
+      const T = S.view.theme.trend; const surface = S.view.theme.canvas.surface;
+      ['pending', 'regressed', 'accepted', 'single'].forEach((k) => {
+        const c = contrastOf(T[k], surface); if (c < 3) throw new Error(`${mode}：trend.${k} 對底色只有 ${c.toFixed(2)}:1`);
+      });
+      if (Object.values(S.view.theme.sev).some((c) => [T.pending, T.regressed, T.accepted].includes(c))) throw new Error(`${mode}：趨勢圖的類別色不應使用嚴重度色`);
     });
-    if (Object.values(S.view.theme.sev).some((c) => [T.pending, T.regressed, T.accepted].includes(c))) throw new Error('趨勢圖的類別色不應使用嚴重度色');
   });
   await step('VLAN 不相連的片段：詳情標示 VLAN 片段、可切換片段並回到全部，圖上只標該片段', async () => {
     const dev = (n, ip) => `${n} (${ip}):\n### /export terse\n/interface bridge add name=bridge1\n/interface vlan add interface=bridge1 name=vlan50 vlan-id=50\n`;
@@ -4016,8 +4029,10 @@ function viewBoundaryViolations(file, src) {
   });
   await step('路由追蹤停在未收集的設備：結果是「無法驗證」（灰色），不是無法抵達；圖上與詳情用同一個終點分類', async () => {
     const V = S.view; const M = V.theme.mark;
-    if (contrastOf(M.unverified, V.theme.canvas.surface) < 3) throw new Error('mark.unverified 對畫布底色應 ≥ 3:1');
-    if ([M.bad, M.trace].includes(M.unverified)) throw new Error('無法驗證不應與錯誤色或追蹤色相同');
+    forSchemes((mode) => {
+      if (contrastOf(M.unverified, V.theme.canvas.surface) < 3) throw new Error(`${mode}：mark.unverified 對畫布底色應 ≥ 3:1`);
+      if ([M.bad, M.trace].includes(M.unverified)) throw new Error(`${mode}：無法驗證不應與錯誤色或追蹤色相同`);
+    });
     await buildInput('R_A (10.0.0.1):\n### /export terse\n/ip address add address=10.0.0.1/24 interface=ether1\n/ip address add address=10.1.0.1/24 interface=ether2\n'
       + '### /ip route print detail\nFlags: A - ACTIVE; s - STATIC\n 0 As dst-address=0.0.0.0/0 gateway=10.0.0.2 distance=1\n 1 As dst-address=10.94.0.0/16 blackhole\n'
       + '### /ip neighbor print detail\n 0 interface=ether1 identity=ISP_GW address=10.0.0.2 mac-address=AA:BB:CC:00:00:02 interface-name=ge0 discovered-by=lldp\n');
@@ -4250,19 +4265,51 @@ function viewBoundaryViolations(file, src) {
     const rest = css.replace(/:root\s*\{[^}]*\}/g, '');
     const bodies = Array.from(rest.matchAll(/([^{}]*)\{([^{}]*)\}/g)).map((m) => ({ sel: m[1].trim(), body: m[2] }));
     const bad = [];
+    // 具名色（CSS Color 4 的 148 個；transparent、currentColor、inherit 與強制色彩的系統色 Canvas、Highlight 等不是具名色，可以用）
+    const NAMED = new Set(('aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet brown burlywood cadetblue chartreuse chocolate coral '
+      + 'cornflowerblue cornsilk crimson cyan darkblue darkcyan darkgoldenrod darkgray darkgreen darkgrey darkkhaki darkmagenta darkolivegreen darkorange darkorchid darkred '
+      + 'darksalmon darkseagreen darkslateblue darkslategray darkslategrey darkturquoise darkviolet deeppink deepskyblue dimgray dimgrey dodgerblue firebrick floralwhite '
+      + 'forestgreen fuchsia gainsboro ghostwhite gold goldenrod gray green greenyellow grey honeydew hotpink indianred indigo ivory khaki lavender lavenderblush lawngreen '
+      + 'lemonchiffon lightblue lightcoral lightcyan lightgoldenrodyellow lightgray lightgreen lightgrey lightpink lightsalmon lightseagreen lightskyblue lightslategray '
+      + 'lightslategrey lightsteelblue lightyellow lime limegreen linen magenta maroon mediumaquamarine mediumblue mediumorchid mediumpurple mediumseagreen mediumslateblue '
+      + 'mediumspringgreen mediumturquoise mediumvioletred midnightblue mintcream mistyrose moccasin navajowhite navy oldlace olive olivedrab orange orangered orchid '
+      + 'palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff peru pink plum powderblue purple rebeccapurple red rosybrown royalblue saddlebrown salmon '
+      + 'sandybrown seagreen seashell sienna silver skyblue slateblue slategray slategrey snow springgreen steelblue tan teal thistle tomato turquoise violet wheat white '
+      + 'whitesmoke yellow yellowgreen').split(' '));
+    const COLOR_LIT = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(/gi;
     bodies.forEach(({ sel, body }) => {
-      for (const m of body.matchAll(/#[0-9a-fA-F]{3,8}\b|rgba?\(/g)) bad.push(`${sel}：${m[0]}`);
-      // z-index 只用 --z-*；transition／animation 的時長只用 --dur-*；圓角只用 --radius-*、0 或 50%（圓形）
+      for (const m of body.matchAll(COLOR_LIT)) bad.push(`${sel}：${m[0]}`);
+      for (const m of body.matchAll(/(?:^|;)\s*([\w-]+):\s*([^;]+)/g)) {
+        // var(--*) 的名稱與字串、url() 不算；其餘的字詞是具名色就擋
+        const words = m[2].replace(/var\(--[\w-]+/g, '').replace(/"[^"]*"|'[^']*'|url\([^)]*\)/g, '').match(/[a-zA-Z]+/g) || [];
+        words.filter((w) => NAMED.has(w.toLowerCase())).forEach((w) => bad.push(`${sel}：${m[1]}: ${w}`));
+      }
+      // z-index 只用 --z-*；transition／animation 的時長與延遲只用 --dur-*；圓角（含分邊寫法）只用 --radius-*、0 或 50%（圓形）
       for (const m of body.matchAll(/(?:^|;)\s*z-index:\s*([^;]+)/g)) if (!/^var\(--z-[\w-]+\)$/.test(m[1].trim())) bad.push(`${sel}：z-index: ${m[1].trim()}`);
-      for (const m of body.matchAll(/(?:^|;)\s*((?:transition|animation)(?:-duration)?):\s*([^;]+)/g)) if (/(?:^|[\s,(])\d*\.?\d+m?s\b/.test(m[2])) bad.push(`${sel}：${m[1]}: ${m[2].trim()}`);
-      for (const m of body.matchAll(/(?:^|;)\s*border-radius:\s*([^;]+)/g)) if (m[1].trim().split(/\s+/).some((x) => !/^(var\(--radius[\w-]*\)|0|50%)$/.test(x))) bad.push(`${sel}：border-radius: ${m[1].trim()}`);
+      for (const m of body.matchAll(/(?:^|;)\s*((?:transition|animation)(?:-duration|-delay)?):\s*([^;]+)/g)) if (/(?:^|[\s,(])\d*\.?\d+m?s\b/.test(m[2])) bad.push(`${sel}：${m[1]}: ${m[2].trim()}`);
+      for (const m of body.matchAll(/(?:^|;)\s*(border(?:-(?:top|bottom|start|end)-(?:left|right|start|end))?-radius):\s*([^;]+)/g)) if (m[2].trim().split(/[\s/]+/).some((x) => !/^(var\(--radius[\w-]*\)|0|50%)$/.test(x))) bad.push(`${sel}：${m[1]}: ${m[2].trim()}`);
     });
+    // index.html：inline style 與 SVG 的 fill／stroke（等顏色屬性）不寫色碼；分頁圖示（<link rel="icon"> 的 data URI）在頁面之外、不跟配色，不算
+    const htmlSrc = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8').replace(/<link rel="icon"[^>]*>/, '');
+    for (const m of htmlSrc.matchAll(/\b(fill|stroke|stop-color|flood-color|lighting-color|color)="([^"]*)"/g)) if (!/^(none|currentColor|inherit)?$/.test(m[2])) bad.push(`index.html：${m[1]}="${m[2]}"`);
+    for (const m of htmlSrc.matchAll(/style="([^"]*)"/g)) for (const c of m[1].matchAll(COLOR_LIT)) bad.push(`index.html：style 的 ${c[0]}`);
     if (bad.length) throw new Error(':root 之外應只用變數：\n' + bad.join('\n'));
+    // 深色：@media (prefers-color-scheme: dark) 的 :root 重新定義亮色 :root 的每個顏色變數（--fixed-light-* 刻意不變），且只放顏色
+    const isColor = (x) => /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\(/.test(x);
+    const lightColors = Object.entries(cssVars(css)).filter(([n, x]) => isColor(x) && !n.startsWith('fixed-light-')).map(([n]) => n);
+    const darkVars = Object.fromEntries(Array.from(cssDarkRoot(css).matchAll(/--([\w-]+):\s*([^;]+);/g)).map((m) => [m[1], m[2].trim()]));
+    const missing = lightColors.filter((n) => !(n in darkVars)); const extra = Object.keys(darkVars).filter((n) => !lightColors.includes(n));
+    if (missing.length || extra.length) throw new Error(`深色 :root 應正好重新定義亮色的顏色變數（缺 ${missing.join('、') || '無'}；多 ${extra.join('、') || '無'}）`);
+    if (!/:root\s*\{[^}]*color-scheme:\s*light dark/.test(css)) throw new Error(':root 應宣告 color-scheme: light dark（原生控制項跟著深淺）');
+    if (!/<meta name="color-scheme" content="light dark">/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'))) throw new Error('index.html 應有 color-scheme 的 meta');
     // 每個變數至少被 var() 用到一次（app.css、index.html、畫面程式）；只供測試與 theme.js 比對的變數列在例外清單
     const ONLY_COMPARED = ['fw', 'sw', 'rt', 'host', 'unk'];
     const defined = new Set(roots.flatMap((r) => Array.from(r.matchAll(/--([\w-]+):/g)).map((m) => m[1])));
-    const sources = [css, fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), ...jsFiles('src/view').map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8'))].join('\n');
-    const used = new Set(Array.from(sources.matchAll(/var\(--([\w-]+)/g)).map((m) => m[1]));
+    // 只在 :root 內被別的變數引用不算：從 :root 之外（樣式規則、index.html、畫面程式）的 var() 出發，沿著變數的定義往下找
+    const sources = [rest, fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), ...jsFiles('src/view').map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8'))].join('\n');
+    const refs = new Map(); roots.forEach((r) => { for (const m of r.matchAll(/--([\w-]+):\s*([^;]+);/g)) refs.set(m[1], (refs.get(m[1]) || []).concat(Array.from(m[2].matchAll(/var\(--([\w-]+)/g)).map((x) => x[1]))); });
+    const used = new Set(); const todo = Array.from(sources.matchAll(/var\(--([\w-]+)/g)).map((m) => m[1]);
+    while (todo.length) { const n = todo.pop(); if (used.has(n)) continue; used.add(n); todo.push(...(refs.get(n) || [])); }
     const unused = [...defined].filter((n) => !used.has(n) && !ONLY_COMPARED.includes(n));
     if (unused.length) throw new Error('沒有用到的 CSS 變數：' + unused.map((n) => '--' + n).join('、'));
     const stale = ONLY_COMPARED.filter((n) => !defined.has(n) || used.has(n));
@@ -4280,12 +4327,15 @@ function viewBoundaryViolations(file, src) {
       if (!xs.length || xs.some((b) => !b.getAttribute('aria-label'))) throw new Error(`#${d.id} 的 ✕ 關閉鈕應有 aria-label`);
     });
   });
-  await step('文字對比：每個文字色對它的底色 ≥ 4.5:1（CSS 變數、狀態標籤、theme 的文字色）', () => {
-    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8'); const v = cssVars(css); const T = S.view.theme;
-    const white = '#ffffff';
-    // 狀態文字色的單一來源：theme.text 與 CSS 的 --*-text、--muted、--text 相同
-    [['err', 'err-text'], ['warn', 'warn-text'], ['ok', 'ok-text'], ['info', 'info-text'], ['muted', 'muted'], ['body', 'text']].forEach(([k, n]) => {
-      if ((v[n] || '').toLowerCase() !== T.text[k].toLowerCase()) throw new Error(`--${n} 與 theme.text.${k} 不一致`);
+  await step('文字對比：每個文字色對它的底色 ≥ 4.5:1（CSS 變數、狀態標籤、theme 的文字色；亮、暗兩組）', () => {
+    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8'); const T = S.view.theme;
+    forSchemes((mode) => {
+      // 亮色的白底是 --panel（暗色換成深色的 --panel）
+      const v = cssVarsOf(css, mode); const white = v.panel;
+      if (mode === 'light' && white !== '#ffffff') throw new Error('亮色的 --panel 應是白色：' + white);
+      // 狀態文字色的單一來源：theme.text 與 CSS 的 --*-text、--muted、--text 相同
+      [['err', 'err-text'], ['warn', 'warn-text'], ['ok', 'ok-text'], ['info', 'info-text'], ['muted', 'muted'], ['body', 'text']].forEach(([k, n]) => {
+        if ((v[n] || '').toLowerCase() !== T.text[k].toLowerCase()) throw new Error(`${mode}：--${n} 與 theme.text.${k} 不一致`);
     });
     const pairs = [
       ['--text', v.text, [white, v.surface, v.bg]],
@@ -4315,7 +4365,8 @@ function viewBoundaryViolations(file, src) {
       if (!fg) throw new Error('找不到文字色：' + name);
       bgs.forEach((bg) => { if (!bg) throw new Error('找不到底色：' + name); const r = contrastOf(fg, bg); if (r < 4.5) low.push(`${name} ${fg} 對 ${bg} 只有 ${r.toFixed(2)}:1`); });
     });
-    if (low.length) throw new Error('文字對比不足：\n' + low.join('\n'));
+    if (low.length) throw new Error(`${mode}：文字對比不足：\n` + low.join('\n'));
+    });
     // 這些文字改用文字色變數，不寫死色值：修正範例的警告列、原文行號、比對差異
     [/\.fw-fix \.warn-line\s*\{[^}]*color:\s*var\(--warn-text\)/, /pre\.raw \.ln\s*\{[^}]*color:\s*var\(--muted\)/, /\.diffA\s*\{[^}]*color:\s*var\(--err-text\)/].forEach((re) => {
       if (!re.test(css)) throw new Error('應使用文字色變數：' + re);
@@ -4355,9 +4406,11 @@ function viewBoundaryViolations(file, src) {
   });
   await step('高亮不重複：滑過、搜尋、選取、追蹤各自不同，滑過時節點本身有回饋', () => {
     const graph = App.graph; const M = S.view.theme.mark;
-    if (M.hover === M.find) throw new Error('滑過與搜尋結果不應同色');
-    if (M.select === M.trace) throw new Error('選取與路由追蹤不應同色');
-    if ([M.select, M.hover, M.find, M.trace].some((c) => c === M.bad || c === M.good || Object.values(S.view.theme.sev).includes(c))) throw new Error('標示色不應使用狀態色');
+    forSchemes((mode) => {
+      if (M.hover === M.find) throw new Error(`${mode}：滑過與搜尋結果不應同色`);
+      if (M.select === M.trace) throw new Error(`${mode}：選取與路由追蹤不應同色`);
+      if ([M.select, M.hover, M.find, M.trace].some((c) => c === M.bad || c === M.good || Object.values(S.view.theme.sev).includes(c))) throw new Error(`${mode}：標示色不應使用狀態色`);
+    });
     const nodes = ['hv-a', 'hv-b'].map((id) => ({ id, label: id, kind: 'router', collected: true, group: 't' }));
     const pos = new Map([['hv-a', { x: 0, y: 0 }], ['hv-b', { x: 200, y: 0 }]]);
     withGraph(graph, nodes, [{ id: 'hv-e', a: 'hv-a', b: 'hv-b', cls: '1g', count: 1, evidence: 'adjacency' }], pos, () => {
@@ -4554,24 +4607,28 @@ function viewBoundaryViolations(file, src) {
     } finally { g.on('moved', oldMoved); }
   });
   await step('焦點框、篩選選項按鈕、強制色彩與減少動態效果', () => {
-    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8'); const v = cssVars(css);
-    // 焦點框的顏色（var() 展開後）對白底與表面色 ≥ 3:1
-    const ring = v['focus-ring'].replace(/var\(--([\w-]+)\)/g, (_, n) => v[n]);
-    const colors = (ring.match(/#[0-9a-fA-F]{6}|rgba?\([^)]*\)/g) || []);
-    const outer = colors[colors.length - 1];
-    if (!outer || ['#ffffff', v.surface].some((bg) => contrastOf(outer, bg) < 3)) throw new Error('焦點框對底色應 ≥ 3:1：' + ring);
+    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
+    SCHEMES.forEach((mode) => {
+      // 亮色的白底是 --panel（暗色換成深色的 --panel）
+      const v = cssVarsOf(css, mode); const bgs = [v.panel, v.surface];
+      // 焦點框的顏色（var() 展開後）對白底與表面色 ≥ 3:1
+      const ring = v['focus-ring'].replace(/var\(--([\w-]+)\)/g, (_, n) => v[n]);
+      const colors = (ring.match(/#[0-9a-fA-F]{6}|rgba?\([^)]*\)/g) || []);
+      const outer = colors[colors.length - 1];
+      if (!outer || bgs.some((bg) => contrastOf(outer, bg) < 3)) throw new Error(`${mode}：焦點框對底色應 ≥ 3:1：` + ring);
+      // 按鈕、連結、清單列與表格列：2px 實線 outline（tr 的 box-shadow 在 Chrome／Safari 不會畫），顏色對白底與表面色 ≥ 3:1
+      const fo = (v['focus-outline'] || '').match(/^2px solid var\(--([\w-]+)\)$/);
+      if (!fo || bgs.some((bg) => contrastOf(v[fo[1]], bg) < 3)) throw new Error(`${mode}：--focus-outline 應是 2px 實線且對底色 ≥ 3:1：` + v['focus-outline']);
+      // 圖形與欄位邊框（1.4.11）：警告外形、輸入框邊框對白底與表面色 ≥ 3:1
+      [['--sev-warn', v['sev-warn']], ['--sev-error', v['sev-error']], ['--line-input', v['line-input']]].forEach(([n, c]) => {
+        if (!c || bgs.some((bg) => contrastOf(c, bg) < 3)) throw new Error(`${mode}：${n} ${c} 對底色應 ≥ 3:1`);
+      });
+      if (v['sev-warn'].toLowerCase() !== S.view.theme.palettes[mode].sev.warn.toLowerCase()) throw new Error(`${mode}：--sev-warn 與 theme.sev.warn 不一致`);
+    });
     if (!/#graph:focus-visible\s*\{[^}]*outline:/.test(css)) throw new Error('畫布取得焦點時應有明顯的焦點框');
-    // 按鈕、連結、清單列與表格列：2px 實線 outline（tr 的 box-shadow 在 Chrome／Safari 不會畫），顏色對白底與表面色 ≥ 3:1
-    const fo = (v['focus-outline'] || '').match(/^2px solid var\(--([\w-]+)\)$/);
-    if (!fo || ['#ffffff', v.surface].some((bg) => contrastOf(v[fo[1]], bg) < 3)) throw new Error('--focus-outline 應是 2px 實線且對底色 ≥ 3:1：' + v['focus-outline']);
     const ruleFor = (sel) => Array.from(css.replace(/@media[^{]*\{(?:[^{}]*\{[^}]*\})*[^{}]*\}/g, '').matchAll(/([^{}]+)\{([^}]*)\}/g)).filter((m) => m[1].split(',').map((x) => x.trim()).includes(sel)).map((m) => m[2]).join(';');
     ['tr.click:focus-visible', '.fitem:focus-visible', 'button:focus-visible', 'a:focus-visible'].forEach((sel) => { if (!/outline:\s*var\(--focus-outline\)/.test(ruleFor(sel))) throw new Error(sel + ' 聚焦應用 2px 實線 outline'); });
     if (!/\.chip\.btn:focus-visible\s*\{[^}]*outline:\s*var\(--focus-outline\)/.test(css)) throw new Error('篩選選項聚焦應用 outline');
-    // 圖形與欄位邊框（1.4.11）：警告外形、輸入框邊框對白底與表面色 ≥ 3:1
-    [['--sev-warn', v['sev-warn']], ['--sev-error', v['sev-error']], ['--line-input', v['line-input']]].forEach(([n, c]) => {
-      if (!c || ['#ffffff', v.surface].some((bg) => contrastOf(c, bg) < 3)) throw new Error(`${n} ${c} 對底色應 ≥ 3:1`);
-    });
-    if (v['sev-warn'].toLowerCase() !== S.view.theme.sev.warn.toLowerCase()) throw new Error('--sev-warn 與 theme.sev.warn 不一致');
     if (!/input\[type=text\], input\[type=search\], select, textarea \{[^}]*border: 1px solid var\(--line-input\)/.test(css)) throw new Error('輸入框邊框應用 --line-input');
     if (/\.chip \.n[^{]*\{[^}]*opacity/.test(css)) throw new Error('chip 內的筆數不應降低不透明度（對比不足）');
     // 狀態訊息讓輔助科技念出
@@ -4593,7 +4650,7 @@ function viewBoundaryViolations(file, src) {
   });
   await step('畫布：先填滿 theme 的底色（PNG 不透明）、字型與 CSS 一致、過長標籤截斷', async () => {
     const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8'); const v = cssVars(css); const T = S.view.theme; const g = App.graph;
-    if (v.surface !== T.canvas.surface) throw new Error('theme.canvas.surface 應與 --surface 相同');
+    SCHEMES.forEach((mode) => { if (cssVarsOf(css, mode).surface !== T.palettes[mode].canvas.surface) throw new Error(`${mode}：theme.canvas.surface 應與 --surface 相同`); });
     // 字型堆疊單一來源：CSS 的 --font-sans／--font-mono 與 theme.font 同一串，body 用 --font-sans；canvas.js 不寫死字族或 bold
     if (v['font-sans'] !== T.font.sans) throw new Error('--font-sans 與 theme.font.sans 不一致：' + v['font-sans']);
     if (v['font-mono'] !== T.font.mono) throw new Error('--font-mono 與 theme.font.mono 不一致：' + v['font-mono']);
@@ -4680,8 +4737,11 @@ function viewBoundaryViolations(file, src) {
     for (const m of html.matchAll(/style="[^"]*(#[0-9a-fA-F]{3,6}\b|rgba?\()/g)) colorLits.push('index.html：' + m[1]);
     if (colorLits.length) throw new Error('顏色應取自 theme 或 CSS 變數：' + colorLits.join('；'));
   });
-  await step('配色跟隨系統深淺：亮暗兩組形狀相同、原地套用、change 只重畫一次、PNG 固定亮色', async () => {
+  await step('配色跟隨系統深淺：亮暗兩組形狀相同、原地套用、change 只重畫一次、圖上的標示與廠商色跟著換、PNG 固定亮色', async () => {
     const T = S.view.theme; const VA = S.view.app; const g = App.graph; const P = T.palettes;
+    // 用範例資料（有 IP 位址與依廠商上色的終端），結束後換回原本的輸入，後面的步驟不受影響
+    const prevInput = $('#input-text').value; const restore = App.snap && App.snap.meta.inputHash === S.util.hash(S.readers.PASTE + '\n' + prevInput);
+    await buildInput(S.samples['sample-bundle.txt']);
     if (!P || !P.light || !P.dark || typeof T.apply !== 'function') throw new Error('theme 應有 palettes.light／dark 與 apply(mode)');
     // 兩組的葉節點路徑集合相同；每個葉節點都是顏色，且就是 theme 上同一路徑的值（啟動時沒有 matchMedia，視為亮色）
     const leaves = (o, pre) => Object.entries(o).flatMap(([k, v]) => (v && typeof v === 'object' ? leaves(v, pre + k + '.') : [[pre + k, v]]));
@@ -4727,6 +4787,9 @@ function viewBoundaryViolations(file, src) {
       if (VA.bindColorScheme() !== false || listeners.length !== 1) throw new Error('配色的監聽只綁一次');
       flushRaf();
       const head0 = $('#legend').firstChild; head0.click(); const legendText = text('#legend'); draws = 0; g.dirty = false;
+      // 圖例的色塊取自目前的配色（以錯誤的嚴重度色塊為代表）
+      const sevSwatch = () => { const li = Array.from(document.testAll('#legend .li')).find((x) => x.textContent === S.view.SEV.error); const sw = li && li.childNodes.find((c) => c.attrs && c.attrs['data-shape']); return sw && sw.style.background; };
+      if (sevSwatch() !== P.dark.sev.error) throw new Error('暗色時圖例的色塊應是暗色：' + sevSwatch());
       mq.matches = false; listeners.forEach((f) => f({ matches: false, media: mq.media }));
       if (T.mode !== 'light') throw new Error('系統改成亮色時應套用亮色');
       // 重畫一次：change 當下不同步繪圖，只標記 dirty，由畫布的 rAF 迴圈在下一個畫格畫一次（多次 redraw() 合併）
@@ -4735,11 +4798,12 @@ function viewBoundaryViolations(file, src) {
       if (draws !== 1) throw new Error('系統深淺改變時拓樸圖應重畫一次：' + draws);
       const head1 = $('#legend').firstChild;
       if (head1 === head0 || text('#legend') !== legendText) throw new Error('系統深淺改變時應以新的配色重建圖例（內容相同）');
+      if (sevSwatch() !== P.light.sev.error) throw new Error('改成亮色後圖例的色塊應是亮色：' + sevSwatch());
       if (head1.getAttribute('aria-expanded') !== 'true') throw new Error('重建圖例應保留展開狀態');
       head1.click();
       // 深淺改變時，打到一半的處理紀錄（備註）不會因重畫而消失：清單不重建，編輯器與輸入保留
       goStep('triage');
-      if (!$('#pane-findings').querySelector('.ledger-edit')) { const hd = $('#pane-findings').querySelector('.fgroup .head'); if (hd) hd.click(); }
+      if (!$('#pane-findings').querySelector('.ledger-edit')) $('#pane-findings').testAll('.head').filter((hd) => hd.getAttribute('aria-expanded') === 'false').forEach((hd) => { if (!$('#pane-findings').querySelector('.ledger-edit')) hd.click(); });
       const eb = $('#pane-findings').querySelector('.ledger-edit');
       if (eb) {
         eb.click(); const ed0 = $('#pane-findings').querySelector('.ledger-editor');
@@ -4758,25 +4822,76 @@ function viewBoundaryViolations(file, src) {
         if (T.mode !== 'dark') throw new Error('匯出換色失敗後應還原成目前的深淺：' + T.mode);
         if (!text('#banner').includes('匯出失敗')) throw new Error('匯出換色失敗時應以通知說明：' + text('#banner'));
         flushRaf(); }
-      // PNG 固定用亮色：暗色時匯出，畫 PNG 的那一次是亮色（底色、終端廠商色、圖上標示），之後畫面回到暗色
+      mq.matches = false; listeners.forEach((f) => f({ matches: false, media: mq.media })); flushRaf();
+      // 圖上存下的標示色（g.hl）：亮色時搜尋 IP，切到暗色後換成暗色的 mark；暗色時重新搜尋也是暗色的 mark。
+      // 兩組 mark 沒有共同的值，所以「屬於哪一組」可以直接判斷
+      const lightMarks = Object.values(P.light.mark); const darkMarks = Object.values(P.dark.mark);
+      if (lightMarks.some((c) => darkMarks.includes(c))) throw new Error('亮、暗兩組的 mark 不應有相同的值（才分得出圖上的標示屬於哪一組）');
+      const addr = App.Q.ipAddresses().find((x) => g.nodeById.has(x.dev)); if (!addr) throw new Error('測試前提：圖上的設備應有 IP 位址');
+      const search = () => App.select({ type: 'ip', key: addr.ip });
+      const hlColors = () => (g.hl ? [...g.hl.nodes.values(), ...g.hl.edges.values()].map((x) => (typeof x === 'string' ? x : x.c)) : []);
+      search();
+      if (!hlColors().length || !hlColors().every((c) => lightMarks.includes(c))) throw new Error('亮色時搜尋的標示應是亮色的 mark：' + hlColors().join());
       mq.matches = true; listeners.forEach((f) => f({ matches: true, media: mq.media })); flushRaf();
+      if (!hlColors().length || !hlColors().every((c) => darkMarks.includes(c))) throw new Error('切到暗色後，圖上的選取標示應換成暗色的 mark：' + hlColors().join());
+      App.select(null); search();
+      if (!hlColors().length || !hlColors().every((c) => darkMarks.includes(c))) throw new Error('暗色時搜尋的標示應是暗色的 mark：' + hlColors().join());
+      // PNG 固定用亮色：暗色時匯出，畫 PNG 的那一次是亮色（底色、終端廠商色、圖上標示），之後畫面回到暗色
       const modes = []; const ends = () => g.nodes.filter((n) => n.kind === 'endpoint' && n.vendor && App.vendorColors.has(n.vendor));
-      const drawMode = g.draw; g.draw = function () { modes.push({ mode: T.mode, surface: T.canvas.surface, ends: ends().map((n) => n.color) }); return drawMode.call(this); };
+      if (!ends().length) throw new Error('測試前提：圖上應有依廠商上色的終端');
+      if (!ends().every((n) => P.dark.endpoint.vendor.includes(n.color) && !P.light.endpoint.vendor.includes(n.color))) throw new Error('暗色時終端的廠商色應是暗色');
+      const drawMode = g.draw; g.draw = function () { modes.push({ mode: T.mode, surface: T.canvas.surface, ends: ends().map((n) => n.color), hl: hlColors() }); return drawMode.call(this); };
       let ops = []; const made = []; const oldCreate = document.createElement;
       document.createElement = (t) => { const el = oldCreate(t); if (t === 'a') made.push(el); return el; };
       try { ops = recordCanvas(g.ctx, () => VA.exportPng()); } finally { document.createElement = oldCreate; g.draw = drawMode; }
       if (made.length !== 1) throw new Error('暗色時也應匯出 PNG');
       if (!modes.length || modes[0].mode !== 'light' || modes[0].surface !== P.light.canvas.surface) throw new Error('匯出 PNG 時應以亮色繪製');
       const lightVendors = P.light.endpoint.vendor;
-      if (!modes[0].ends.every((c) => lightVendors.includes(c))) throw new Error('匯出 PNG 時終端的廠商色應是亮色');
+      if (!modes[0].ends.length || !modes[0].ends.every((c) => lightVendors.includes(c))) throw new Error('匯出 PNG 時終端的廠商色應是亮色');
+      if (!modes[0].hl.length || !modes[0].hl.every((c) => lightMarks.includes(c))) throw new Error('匯出 PNG 時圖上的標示應是亮色的 mark');
+      const last = modes[modes.length - 1];
+      if (!last.ends.every((c) => P.dark.endpoint.vendor.includes(c)) || !last.hl.every((c) => darkMarks.includes(c))) throw new Error('匯出後畫面的廠商色與標示應回到暗色');
       const bg = ops.find((o) => o.op === 'rect'); if (!bg || bg.style !== P.light.canvas.surface) throw new Error('PNG 的底色應是亮色的畫布底色');
       if (T.mode !== 'dark' || modes[modes.length - 1].mode !== 'dark') throw new Error('匯出後應還原成目前的深淺並重畫');
     } finally {
-      g.draw = oldDraw;
+      g.draw = oldDraw; App.select(null);
       if (T.mode !== 'light') { mq.matches = false; listeners.forEach((f) => f({ matches: false, media: mq.media })); }
       if (oldMM) window.matchMedia = oldMM; else delete window.matchMedia;
       flushRaf();
     }
+    if (restore) await buildInput(prevInput);
+  });
+  await step('暗色配色：亮色中共用的值在暗色也相等、與亮色不同、速率色階反轉（越快越亮）、線寬不變', () => {
+    const P = S.view.theme.palettes; const at = (o, p) => p.split('.').reduce((x, k) => x[k], o);
+    // 別名：亮色以參照共用同一個值的葉節點（vlan 承載 ＝ 狀態色、重疊 ＝ 警告文字色、動作與 effect ＝ 文字色、中性框線 ＝ keyInk）
+    const ALIAS = [
+      ['mark.good', 'vlan.carry.c', 'vlan.inferred.c', 'vlan.oneSide.c'], ['mark.bad', 'vlan.partial.c', 'sev.error'],
+      ['text.warn', 'l3.overlap.c', 'l3.badge.text', 'l3.badge.border', 'diff.effect.less-restrictive'],
+      ['text.err', 'firewall.action.drop', 'firewall.action.reject', 'firewall.action.tarpit', 'diff.effect.new-exposure'],
+      ['text.ok', 'firewall.action.accept', 'diff.effect.more-restrictive'], ['text.info', 'firewall.action.jump'], ['text.muted', 'firewall.action.return', 'canvas.label.textUncollected'],
+      ['text.body', 'l3.subnet.text', 'canvas.label.text', 'l4.text', 'l4.badge.text'],
+      ['canvas.keyInk', 'l2.port.stroke', 'l3.subnet.stroke', 'l3.route.c', 'l4.badge.border', 'l4.diagonal.border'],
+      ['mark.select', 'trend.single', 'l4.focus', 'firewall.focus.border'], ['canvas.surface'],
+      ['l2.box.fill', 'l2.port.fill', 'l3.subnet.fill', 'l3.badge.bg', 'l4.badge.bg', 'canvas.uncollectedFill'],
+    ];
+    SCHEMES.forEach((mode) => ALIAS.forEach(([head, ...rest]) => rest.forEach((p) => {
+      if (at(P[mode], p) !== at(P[mode], head)) throw new Error(`${mode}：${p} 應與 ${head} 相同（${at(P[mode], p)} ≠ ${at(P[mode], head)}）`);
+    })));
+    // 每組別名在暗色都有自己的值（暗色不是亮色的複本）
+    ALIAS.forEach(([head]) => { if (at(P.dark, head) === at(P.light, head)) throw new Error(`暗色的 ${head} 應重新給值`); });
+    // 速率色階：亮色越快越深，暗色越快越亮（相對亮度）；線寬是結構，兩組相同
+    const lum = (c) => luminance(rgbOf(c)); const E = (m) => ['1g', '10g', '40g'].map((k) => lum(P[m].edge[k].c));
+    const [l1, l10, l40] = E('light'); const [d1, d10, d40] = E('dark');
+    if (!(l1 > l10 && l10 > l40)) throw new Error('亮色的速率色階應越快越深');
+    if (!(d1 < d10 && d10 < d40)) throw new Error('暗色的速率色階應越快越亮');
+    const W = S.view.theme.edge; if (!(W['1g'].w < W['10g'].w && W['10g'].w < W['40g'].w && W['40g'].w < W.lag.w)) throw new Error('線寬隨速率遞增（兩組共用）');
+    // 圖形標記對暗色畫布底色 ≥ 3:1（設備類型、連線、嚴重度、標示、廠商、L4 符號）
+    const d = P.dark; const s = d.canvas.surface; const low = [];
+    const graphic = [...Object.entries(d.kind).map(([k, c]) => ['kind.' + k, c]), ...Object.entries(d.edge).map(([k, v]) => ['edge.' + k, v.c]),
+      ...Object.entries(d.sev).map(([k, c]) => ['sev.' + k, c]), ...Object.entries(d.mark).map(([k, c]) => ['mark.' + k, c]),
+      ...d.endpoint.vendor.map((c, i) => [`endpoint.vendor[${i}]`, c]), ['canvas.deviation.c', d.canvas.deviation.c], ['canvas.keyInk', d.canvas.keyInk]];
+    graphic.forEach(([n, c]) => { const r = contrastOf(c, s); if (r < 3) low.push(`${n} ${c} 只有 ${r.toFixed(2)}:1`); });
+    if (low.length) throw new Error('暗色的圖形標記對畫布底色不足 3:1：\n' + low.join('\n'));
   });
   await step('滑過左右欄與工具列時不會穿透觸發拓樸圖 hover', () => {
     const g = App.graph; const cv = $('#graph');
@@ -4961,9 +5076,11 @@ function viewBoundaryViolations(file, src) {
     const forced = css.slice(css.indexOf('@media (forced-colors: active)'));
     if (!/\.steps button\[aria-current="step"\]/.test(forced.slice(0, forced.indexOf('\n}')))) throw new Error('強制色彩模式下目前的一步應有系統色外框');
     // 步驟的文字色對底色 ≥ 4.5:1：目前的一步（強調色／淺強調底）、其他步驟（次要文字色／頁首白底）
-    const cv = cssVars(css);
-    [[cv.accent, cv['accent-soft']], [cv.muted, '#ffffff'], [cv.text, cv['surface-hover']]].forEach(([fg, bg]) => {
-      if (contrastOf(fg, bg) < 4.5) throw new Error(`步驟的文字 ${fg} 對 ${bg} 只有 ${contrastOf(fg, bg).toFixed(2)}:1`);
+    SCHEMES.forEach((mode) => {
+      const cv = cssVarsOf(css, mode);
+      [[cv.accent, cv['accent-soft']], [cv.muted, cv.panel], [cv.text, cv['surface-hover']]].forEach(([fg, bg]) => {
+        if (contrastOf(fg, bg) < 4.5) throw new Error(`${mode}：步驟的文字 ${fg} 對 ${bg} 只有 ${contrastOf(fg, bg).toFixed(2)}:1`);
+      });
     });
     // 目前的一步不只靠顏色：粗體與底線
     if (!/\.steps button\[aria-current="step"\] \{[^}]*font-weight: 600[^}]*box-shadow: inset 0 -2px/.test(css)) throw new Error('目前的一步除了顏色，還要有粗體與底線');

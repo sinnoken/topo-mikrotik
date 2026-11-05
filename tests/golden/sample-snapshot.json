@@ -1,10 +1,10 @@
 {
  "meta": {
   "schema": "ssot-snapshot/3",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "createdAt": "2026-01-01T00:00:00Z",
   "inputHash": "83a376c2f1dcdd12",
-  "baselineKey": "e43015c59b50a50e",
+  "baselineKey": "f5e79004fce37b21",
   "sources": [
    {
     "name": "sample-bundle.txt",

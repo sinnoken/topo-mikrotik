@@ -73,12 +73,13 @@
     alpha: { dimEdge: 0.12, dimNode: 0.15, dimLabel: 0.25, overlay: 0.9 },
     text,
     // 字型清單與 app.css 的 --font-sans／--font-mono 同一串（有測試）：拉丁字型在前、繁中字型在後。
-    // 畫布字級是螢幕 px：設備名稱 labelPx、分群名稱 groupPx；節點內的小字在螢幕上小於 minPx 時不畫
+    // 畫布字級是螢幕 px：設備名稱 labelPx、分群名稱 groupPx、埠名 portPx（比設備名小，任何縮放都不會比設備名大）；
+    // 節點內的小字在螢幕上小於 minPx 時不畫
     font: {
       sans: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif',
       mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
       weight: { normal: 400, strong: 600 },
-      labelPx: 13, groupPx: 13, minPx: 11,
+      labelPx: 13, groupPx: 13, portPx: 12, minPx: 11,
     },
     // 畫布上的中性色：底色（與 --surface 相同；每次繪圖先填滿，匯出 PNG 與多條鏈路的中縫也用它）、分群底框、標籤、埠名、節點描邊
     canvas: {

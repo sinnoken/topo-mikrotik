@@ -736,9 +736,47 @@ function viewBoundaryViolations(file, src) {
     if (!full || full.name !== l.name || full.text !== l.name) throw new Error('滑過的分群應顯示全名');
     cv.dispatch('pointerleave', { pointerType: 'mouse' }); if (g.hoverGroup) throw new Error('指標離開畫布後應取消分群的滑過');
     // 滑過群框（不在標籤、節點上）也顯示全名
-    const gb = g.groupBoxes.find((x) => x.name === l.name); const corner = g.toScreen({ x: gb.x1 - 2, y: gb.y1 - 2 });
-    if (g.hitGroup(corner) !== l.name) throw new Error('群框內應命中這個分群');
+    const gb = g.groupBoxes.find((x) => x.frame); const corner = g.toScreen({ x: gb.x1 - 2, y: gb.y1 - 2 });
+    if (g.hitGroup(corner) !== gb.name) throw new Error('群框內應命中這個分群');
     g.hoverGroup = null; g.draw();
+  });
+  await step('全圖看得清楚：分群標籤與設備名稱不出畫布、不被工具列蓋住；只有一台的群不畫框（標籤仍可滑過看全名）', () => {
+    const g = App.graph; const cv = $('#graph'); App.select(null);
+    g.computeGroups(); g.fit(); const base = { s: g.s, tx: g.tx, ty: g.ty };
+    [1, 0.5, 2, 4].forEach((k) => {
+      Object.assign(g, base); g.zoomAt(k); g.draw(); const v = g.viewport();
+      g.groupLabels.forEach((l) => {
+        if (l.x0 < 0 || l.x1 > g.w || l.y0 < v.y0 || l.y1 > g.h) throw new Error(`分群標籤應在畫布內、工具列之下（縮放 ${k}）：${l.text} ${Math.round(l.x0)},${Math.round(l.y0)}–${Math.round(l.x1)}，可用上緣 ${Math.round(v.y0)}`);
+      });
+      g.nodeLabels.forEach((l) => { if (l.x0 < -0.5 || l.x1 > g.w + 0.5) throw new Error(`設備名稱不應超出畫布左右（縮放 ${k}）：${l.text} ${Math.round(l.x0)}–${Math.round(l.x1)}／${g.w}`); });
+    });
+    Object.assign(g, base); g.draw();
+    if (!g.nodeLabels.length) throw new Error('全圖應畫出設備名稱');
+    // 滑過連線最多的設備：它的埠名彼此不重疊，也不蓋住設備名稱
+    const hub = g.nodes.filter((n) => g.isVisible(n) && !n.box).sort((a, b) => (g.edgesByNode.get(b.id) || []).length - (g.edgesByNode.get(a.id) || []).length)[0];
+    const ov = (a, b) => a.x0 < b.x1 - 0.5 && b.x0 < a.x1 - 0.5 && a.y0 < b.y1 - 0.5 && b.y0 < a.y1 - 0.5;
+    [1, 3].forEach((k) => {
+      Object.assign(g, base); g.zoomAt(k); g.hover = { type: 'node', id: hub.id }; g.draw();
+      const ps = g.portLabels.filter((p) => p.forced);
+      if (!ps.length) throw new Error('滑過設備應畫出它的埠名');
+      ps.forEach((a, i) => ps.slice(i + 1).forEach((b) => { if (ov(a, b)) throw new Error(`滑過時埠名不應重疊（縮放 ${k}）：${a.text} / ${b.text}`); }));
+      ps.forEach((a) => g.nodeLabels.forEach((b) => { if (ov(a, b)) throw new Error(`滑過時埠名不應蓋住設備名稱（縮放 ${k}）：${a.text} / ${b.text}`); }));
+    });
+    g.hover = null; Object.assign(g, base); g.draw();
+    // 群框照成員數決定：一台不畫框，兩台以上畫框
+    const one = (g.groupBoxes || []).filter((b) => b.n === 1);
+    if ((g.groupBoxes || []).some((b) => b.frame !== (b.n > 1))) throw new Error('只有一台的群不畫框，其他群要畫框');
+    if (!one.length) { if (process.env.SMOKE_INPUT) return; throw new Error('測試前提：範例資料應有只有一台的群'); }
+    const ops = recordCanvas(g.ctx, () => g.draw());
+    const fills = ops.filter((o) => o.op === 'fill' && o.style === S.view.theme.canvas.group.fill).length;
+    if (fills !== g.groupBoxes.length - one.length) throw new Error(`群框數應等於兩台以上的群數：${fills}／${g.groupBoxes.length - one.length}`);
+    const lb = g.groupLabels.find((x) => one.some((b) => b.name === x.name));
+    if (!lb) throw new Error('只有一台的群仍應有標籤');
+    const ob = one.find((b) => b.name === lb.name); const corner = g.toScreen({ x: ob.x1 - 2, y: ob.y1 - 2 });
+    if (g.hitGroup(corner)) throw new Error('沒畫框的群不應以框的範圍命中滑過');
+    (winListeners.pointermove || []).forEach((f) => f({ pointerId: 1, pointerType: 'mouse', clientX: (lb.x0 + lb.x1) / 2, clientY: (lb.y0 + lb.y1) / 2, target: cv }));
+    if (g.hoverGroup !== lb.name) throw new Error('滑過只有一台的群的標籤應顯示全名');
+    cv.dispatch('pointerleave', { pointerType: 'mouse' }); g.draw();
   });
   await step('推定偏離：選多數決的檢查結果時以虛線外圈標出偏離設備；其他選取、清除時清掉，展開與切換層級保留；圖例取自 theme', () => {
     const g = App.graph; const D = S.view.theme.canvas.deviation; const Q = App.Q;
@@ -859,8 +897,28 @@ function viewBoundaryViolations(file, src) {
     const ratio = (pos) => { const ps = Array.from(pos.values()); const xs = ps.map((p) => p.x); const ys = ps.map((p) => p.y); return (Math.max(...ys) - Math.min(...ys)) / Math.max(1, Math.max(...xs) - Math.min(...xs)); };
     const land = ratio(S.view.layout.layout(gd.nodes, gd.edges)); const port = ratio(S.view.layout.layout(gd.nodes, gd.edges, { portrait: true }));
     if (!(port > land)) throw new Error(`直式的內建版面應比橫式直長：高寬比 ${land.toFixed(2)} → ${port.toFixed(2)}`);
-    if (process.env.SMOKE_INPUT) return; // 大型網路超過分層版面上限，不在這裡重算
+    // 同一層太多台時折成多列：一台路由器接 30 台交換器（各帶終端），兩種版面的寬高都不應懸殊
+    const star = [{ id: 'st-r', label: 'R', kind: 'router', collected: true, group: '' }]; const se = [];
+    for (let i = 0; i < 30; i++) {
+      star.push({ id: 'st-s' + i, label: 'S' + i, kind: 'switch', collected: true, group: '' }); se.push({ a: 'st-r', b: 'st-s' + i });
+      for (let j = 0; j < 3; j++) { star.push({ id: `st-h${i}-${j}`, label: 'h', kind: 'host', collected: false, group: '' }); se.push({ a: 'st-s' + i, b: `st-h${i}-${j}` }); }
+    }
+    const rowsOf = (pos) => new Set(Array.from({ length: 30 }, (_, i) => Math.round(pos.get('st-s' + i).y))).size;
+    const checkWrap = (pos, what, lo, hi) => {
+      const r = ratio(pos); const rows = rowsOf(pos);
+      if (rows < 2) throw new Error(`${what}：30 台同層的交換器應折成多列`);
+      if (!(r >= lo && r <= hi)) throw new Error(`${what}：折行後的高寬比應在 ${lo}–${hi}：${r.toFixed(2)}（${rows} 列）`);
+      return rows;
+    };
+    const rl = checkWrap(S.view.layout.layout(star, se), '內建版面', 0.35, 2);
+    const rp = checkWrap(S.view.layout.layout(star, se, { portrait: true }), '內建直式版面', 0.6, 4);
+    if (!(rp > rl)) throw new Error(`直式應折成較多列：${rl} → ${rp}`);
+    const few = S.view.layout.wrapRows([1, 2, 3], () => 200, () => 100, false);
+    if (few.length !== 1) throw new Error('只有幾台的層不應折行');
     const opt = { radius: (n) => g.radius(n) };
+    const es = await S.view.layout.elk(star, se, opt); const esp = await S.view.layout.elk(star, se, Object.assign({ portrait: true }, opt));
+    checkWrap(es.pos, '分層版面', 0.35, 2); checkWrap(esp.pos, '分層直式版面', 0.6, 4);
+    if (process.env.SMOKE_INPUT) return; // 大型網路超過分層版面上限，不在這裡重算
     const e0 = await S.view.layout.elk(gd.nodes, gd.edges, opt); const e1 = await S.view.layout.elk(gd.nodes, gd.edges, Object.assign({ portrait: true }, opt));
     if (Array.from(e1.pos.values()).some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y)) || e1.pos.size !== e0.pos.size) throw new Error('直式的分層版面每個節點都應有座標');
     if (!(ratio(e1.pos) > ratio(e0.pos))) throw new Error(`直式的分層版面應比橫式直長：${ratio(e0.pos).toFixed(2)} → ${ratio(e1.pos).toFixed(2)}`);
@@ -4058,6 +4116,14 @@ function viewBoundaryViolations(file, src) {
         if (!texts.every((o) => String(o.font).endsWith(T.font.sans) || String(o.font).endsWith(T.font.mono))) throw new Error('畫布文字應使用 theme 的字型清單');
         const name = texts.find((o) => o.text === 'short'); const px = name && parseFloat(String(name.font).match(/([\d.]+)px/)[1]) * g.s;
         if (!px || Math.abs(px - T.font.labelPx) > 0.01) throw new Error('設備名稱在螢幕上應為 theme.font.labelPx：' + px);
+        // 埠名在螢幕上固定 portPx（比設備名小），放大、縮小、滑過都一樣
+        if (!(T.font.portPx < T.font.labelPx)) throw new Error('埠名字級應比設備名稱小');
+        [[1.5, null], [4, null], [0.4, { type: 'node', id: 'fx-a' }]].forEach(([sc, hv]) => {
+          g.s = sc; g.tx = g.w / 2 - 100 * sc; g.ty = g.h / 2; g.hover = hv; const t2 = recordCanvas(g.ctx, () => g.draw()).filter((o) => o.op === 'text' && /^eth/.test(o.text));
+          if (!t2.length) throw new Error(`縮放 ${sc} 應畫出埠名`);
+          t2.forEach((o) => { const ppx = parseFloat(String(o.font).match(/([\d.]+)px/)[1]) * sc; if (Math.abs(ppx - T.font.portPx) > 0.01) throw new Error(`埠名在螢幕上應固定為 theme.font.portPx（縮放 ${sc}）：${ppx}`); });
+        });
+        g.hover = null;
       });
     // 匯出 PNG：匯出前重畫（畫面已有底色）
     let drew = 0; const oldDraw = g.draw; g.draw = function () { drew++; return oldDraw.call(this); };

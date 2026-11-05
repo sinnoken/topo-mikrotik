@@ -2,7 +2,7 @@
  * 版面配置（不跑物理模擬，1000 台以上也能一次算完）：
  *  1. 依分群（命名規則的 group，或連通元件）切開
  *  2. 每群做分層：防火牆／路由器在最上層，往下依 BFS 距離排；同層依上層位置的重心排序，減少交叉
- *  3. 太寬的層自動折行；各群以「書架」方式排成接近正方形
+ *  3. 太寬的層依目標長寬比折成多列（wrapRows，內建與 ELK 共用）；各群以「書架」方式排成接近正方形
  * forceStep() 提供選用的力導向微調（逐步執行，可看到動畫）。
  */
 (function (S) {
@@ -11,9 +11,12 @@
   const DX = 185; const DY = 130; const ROW = 24; const WRAP_DY = 80; const GAP = 220;
   const LCOLS = 4; const LDX = 44; const LDY = 40; const LEAF_DY = 64; // 終端（主機）排列
   const RANK = { firewall: 0, router: 1, switch: 2, unknown: 3, host: 4 };
-  // 書架寬度係數（各群總面積開根號的倍數）。直式畫面（窄螢幕、高大於寬）時一層最多 PORTRAIT.row 台就折行、書架寬度係數改小，
+  // 書架寬度係數（各群總面積開根號的倍數）。直式畫面（窄螢幕、高大於寬）時書架寬度係數改小，
   // 圖接近直長：全圖時以寬度為限，又扁又寬的圖在直式手機上會縮到看不清
-  const SHELF_W = 1.4; const PORTRAIT = { row: 6, shelfW: 0.8 };
+  const SHELF_W = 1.4; const PORTRAIT = { shelfW: 0.8 };
+  // 同一層的折行（wrapRows）：每列台數讓這一層接近目標寬高比 aspect，但至少 min 台、至多 max 台。
+  // 橫式至少 6 台才折（只有兩三台的上層不會被拆開）；直式目標接近手機圖區（約 390×490），每列 2～6 台
+  const WRAP = { land: { aspect: 1.4, min: 6, max: ROW }, portrait: { aspect: 0.8, min: 2, max: 6 } };
 
   /**
    * 分群與終端：每群拆成「核心」與「終端」（只連到一台已收集設備、本身沒有收集資料，之後排在該設備下方），
@@ -80,6 +83,20 @@
     });
   }
 
+  /**
+   * 同一層太多台時折成多列：items 依原順序（重心或 ELK 的交叉最小化結果）切成幾段，每段台數平均。
+   * w(item)、h(item) 是每台佔的寬與列高（含間距）；回傳 [[item…]…]。
+   */
+  function wrapRows(items, w, h, portrait) {
+    const n = items.length; if (n < 2) return [items.slice()];
+    const R = portrait ? WRAP.portrait : WRAP.land;
+    const avgW = items.reduce((s, x) => s + w(x), 0) / n; const rowH = Math.max(...items.map(h));
+    const cols = Math.max(R.min, Math.min(R.max, Math.round(Math.sqrt((n * R.aspect * rowH) / Math.max(avgW, 1)))));
+    const rows = Math.ceil(n / cols); const per = Math.ceil(n / rows); const out = [];
+    for (let i = 0; i < n; i += per) out.push(items.slice(i, i + per));
+    return out;
+  }
+
   /** 各群以「書架」方式排成接近正方形（opt.portrait 時偏直長）；box：{ name, pos（群內座標，x 以 0 為中心）, w, h, n }。 */
   function shelf(boxes, opt) {
     boxes.sort((a, b) => b.n - a.n || S.util.natural(a.name, b.name));
@@ -96,7 +113,7 @@
 
   /** 內建版面：BFS 分層＋一輪重心排序＋太寬折行（同步，1000 台以上也能一次算完）。opt.portrait：直式畫面，改直長排列。 */
   function layout(nodes, edges, opt) {
-    const rowMax = opt && opt.portrait ? PORTRAIT.row : ROW;
+    const portrait = !!(opt && opt.portrait);
     return shelf(prepare(nodes, edges).map((g) => {
       const { core, level, byId, adj } = g;
       const layers = [];
@@ -116,14 +133,13 @@
       const pos = new Map(); let y = 0; let width = 0;
       layers.forEach((ids) => {
         if (!ids || !ids.length) return;
-        for (let r = 0; r * rowMax < ids.length; r++) {
-          const row = ids.slice(r * rowMax, (r + 1) * rowMax);
+        wrapRows(ids, (id) => slotW(g, id), (id) => WRAP_DY + leafRows(g, id) * LDY, portrait).forEach((row) => {
           const total = row.reduce((s2, id) => s2 + slotW(g, id), 0); let x = -total / 2;
           row.forEach((id) => { pos.set(id, { x: x + slotW(g, id) / 2, y }); x += slotW(g, id); });
           width = Math.max(width, total);
           const extra = Math.max(0, ...row.map((id) => leafRows(g, id))) * LDY;
           y += WRAP_DY + extra;
-        }
+        });
         y += DY - WRAP_DY;
       });
       placeLeaves(g, pos);
@@ -224,7 +240,7 @@
     return { pos, anchor };
   }
 
-  V.layout = { layout, forceStep, prepare, placeLeaves, shelf, slotW, leafRows, RANK, GAP, LDY, LEAF_DY, portPrepare, placePorts, portLayout };
+  V.layout = { layout, forceStep, prepare, placeLeaves, shelf, wrapRows, slotW, leafRows, RANK, GAP, LDY, LEAF_DY, portPrepare, placePorts, portLayout };
 })(globalThis.SSOT = globalThis.SSOT || {});
 
 /*

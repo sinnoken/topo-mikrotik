@@ -39,7 +39,7 @@
       const got = Q.getDevice(k);
       if (!got) return push('missing', 'device', k, `基準中沒有 ${o.name}`);
       if (!got.collected) return push('different', 'device', k, `${o.name} 僅由鄰居發現，沒有收集資料`);
-      if (o.kind && got.kind !== o.kind) return push('different', 'device', k, `${o.name} 類型預期 ${o.kind}，基準為 ${got.kind}`);
+      if (o.kind && got.kind !== o.kind) return push('different', 'device', k, `${o.name} 類型預期 ${kindText(o.kind)}，基準為 ${kindText(got.kind)}`);
       push('ok', 'device', k, o.name);
     });
     if (expected.devices && expected.strictDevices) {

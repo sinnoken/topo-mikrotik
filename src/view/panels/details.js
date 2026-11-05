@@ -70,6 +70,7 @@
    * 每個詳情頁的區塊順序一致：
    *   標題 → 標籤 → 檢查結果 → 屬性 → 說明 → 主題區塊（同一主題先事實、後推論，例如鏈路 → 推論鏈路）→ 來源
    * 檢查結果放在屬性之前：選取物件多半是為了看它的問題。
+   * 例外是設備：先列身分（管理 IP、型號、版本、收集的資料），再列檢查結果的前 3 筆，否則核心設備的身分會被推到首屏外。
    * 推論的區塊一律用 inferredSection 等共用元件，標題與說明只寫一次；列表類區塊加 long，超過 LONG_ROWS 筆時預設收合。
    */
   /** kv 中的推定值：值後面加「推論」chip，和同一張表裡收集到的事實區分 */
@@ -79,8 +80,9 @@
     return section('推論鏈路（沒有 LLDP）', list.length ? [h('p', { class: 'muted' }, '依 MAC 表、MNDP、RSTP 或點對點網段推定相鄰：是直接相連，或中間只有非網管型設備。不影響任何檢查。'),
       inferredTable(App, list, from)] : null, Object.assign({ count: list.length }, opt || {}));
   }
-  function findingsBlock(App, list) {
+  function findingsBlock(App, list, opt) {
     if (!list.length) return null;
+    const shown = (opt && opt.shown) || FINDINGS_SHOWN;
     const seen = new Set(); const uniq = list.filter((f) => (seen.has(f) ? false : seen.add(f)));
     const order = { error: 0, warn: 1, info: 2 };
     uniq.sort((a, b) => order[a.severity] - order[b.severity]);
@@ -91,13 +93,13 @@
         f.evidence.length ? h('div', { class: f.id === 'C02' ? 'ev stack' : 'ev' }, evidenceLinks(App, f)) : null]),
     ]);
     // 先顯示最嚴重的幾筆，其餘收進同一個 section() 展開機制，避免檢查結果把屬性推到很下面
-    const rest = uniq.slice(FINDINGS_SHOWN);
-    const el = section('檢查結果', [...uniq.slice(0, FINDINGS_SHOWN).map(item),
+    const rest = uniq.slice(shown);
+    const el = section('檢查結果', [...uniq.slice(0, shown).map(item),
       rest.length ? section(`再顯示 ${rest.length} 筆`, rest.map(item), { fold: true }) : null], { count: uniq.length });
     el.classList.add('findings-section');
     return el;
   }
-  const FINDINGS_SHOWN = 5;
+  const FINDINGS_SHOWN = 5; const DEVICE_FINDINGS_SHOWN = 3;
   /** 檢查項目（finding.facet，V.remediation.facetText）：標題旁的標籤（回傳子節點陣列，展開放入標題列），title 是原值；沒有 facet 時為空陣列 */
   function facetChip(f) {
     const t = V.remediation.facetText(f);
@@ -296,7 +298,6 @@
       h('div', { class: 'row' }, [V.kindChip(d.kind), d.collected ? V.chip('已收集', 'ok') : V.chip('未收集（僅由鄰居發現）', 'warn'), d.group ? V.chip(d.group, '', { title: V.TERMS.group + '（版面用，不代表實體位置或 IP 網段）' }) : null, d.role ? V.chip('角色：' + d.role) : null,
         dev.length ? h('a', { class: 'link chip-link deviation-chip', title: '依跨設備多數決推定這台的設定與其他設備不同（推論）；點一下捲到檢查結果',
           onclick: () => { const sec = V.$('#detail .findings-section'); if (sec) sec.scrollIntoView({ block: 'start', behavior: 'smooth' }); } }, V.chip(`推定偏離 ${dev.length} 項`, 'warn')) : null]),
-      findingsBlock(App, fl),
       kv([['管理 IP', d.mgmtIp], ['型號', d.deviceType], ['RouterOS', d.softwareVersion],
         ['廠商', d.manufacturer ? V.vendorName(d.manufacturer) : null],
         ['平台', d.manufacturer === 'mikrotik' ? null : d.platform],
@@ -311,6 +312,8 @@
           ...(cov ? cov.missing : []).map((t) => V.chip('缺 ' + S.query.dataLabel(t), 'err')),
           ...(cov && cov.failures ? cov.failures : []).map((x) => V.chip(`收集失敗：${x.command || '整台設備'}`, 'err', { title: V.failureText(x) })),
         ]) : null]]),
+      // 設備的身分（管理 IP、型號、版本、收集的資料）在首屏；核心設備常有十幾二十筆檢查結果，只先列 DEVICE_FINDINGS_SHOWN 筆
+      findingsBlock(App, fl, { shown: DEVICE_FINDINGS_SHOWN }),
       section('看到它的設備', d.seenBy.length > SEEN_INLINE ? seenByLinks(App, d.seenBy) : null, { count: d.seenBy.length, fold: true }),
       section('介面', table([
         { t: '介面', f: (i) => h('span', { class: 'mono' }, i.name + (i.lag ? ` → ${Q.getInterface(i.lag).name}` : '')), s: (i) => i.name },
@@ -329,14 +332,15 @@
           ? h('span', { class: 'mono' }, r.observations.length ? r.observations.map((o) => o.ifc).join('、') : '對端回報')
           : h('span', { class: 'mono' }, ifName(Q, r.mine)),
         s: (r) => (r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? (r.observations[0] ? r.observations[0].ifc : '') : ifName(Q, r.mine)) },
-        { t: '對端', f: (r) => r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN
-          ? Q.devName(K.splitEp(r.other)[0])
-          : h('span', null, [Q.devName(K.splitEp(r.other)[0]), h('span', { class: 'mono muted' }, ' ' + ifName(Q, r.other))]),
-        s: (r) => Q.devName(K.splitEp(r.other)[0]) },
+        // 類別不換行，放第二欄：窄的右欄不必橫捲就看得到（對端名稱較長，放後面）
         { t: '類別', f: (r) => r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN
           ? 'MNDP・同一 L2 廣播網域可達（未確認直連）'
           : V.protoText(r.l) + '・' + V.CLS[r.l.cls] + (r.l.hearsay ? '・' + V.TERMS.hearsay : '') + (!r.l.verified && !r.l.hearsay ? '・LLDP 單向' : ''),
         s: (r) => (r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? 'MNDP' : V.protoText(r.l)), cls: 'nowrap' },
+        { t: '對端', f: (r) => r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN
+          ? Q.devName(K.splitEp(r.other)[0])
+          : h('span', null, [Q.devName(K.splitEp(r.other)[0]), h('span', { class: 'mono muted' }, ' ' + ifName(Q, r.other))]),
+        s: (r) => Q.devName(K.splitEp(r.other)[0]) },
         { t: 'VLAN', f: (r) => r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? '—'
           : (r.l.vlanMismatch ? h('span', { class: 'diffA' }, '不一致') : h('span', { class: 'vlanlist' }, vlanText(r.l.vlansCommon))),
         s: (r) => (r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? null : r.l.vlanMismatch ? '不一致' : vlanText(r.l.vlansCommon)) },

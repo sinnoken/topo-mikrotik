@@ -358,13 +358,22 @@
     const exp = App.round.expected;
     root.appendChild(h('div', { class: 'pane-body' }, [
       h('h4', { class: 'work-card-title', id: 'cmp-expected-title' }, '預期現況比對'),
-      h('p', { class: 'muted' }, '把確認過的應有現況（格式 ssot-expected/1，獨立於基準）和目前基準比對。比對只讀取基準，不會修改它。'
+      h('p', { class: 'muted', title: '檔案格式：ssot-expected/1' }, '把確認過的應有現況（獨立於基準的 JSON 檔）和目前基準比對。比對只讀取基準，不會修改它。'
         + '預期現況是本輪的輸入，換了基準會重新比對；由基準產生預期現況在資料中心的「本輪的輸出」。'),
       h('div', { class: 'row' }, [
         file, h('button', { class: 'cmp-load-expected', disabled: !App.Q || null, onclick: () => file.click() }, '載入預期現況（JSON）…'),
         exp ? h('span', { class: 'muted' }, exp.name) : null,
       ]),
-      h('details', null, [h('summary', { class: 'muted' }, '格式說明'), h('pre', { class: 'raw note-box' },
+      // 範例是檔案本身的內容（欄位名與值要照寫），先用中文列出每個欄位的意思
+      h('details', { class: 'expected-format' }, [h('summary', { class: 'muted' }, '格式說明'),
+        h('ul', { class: 'muted expected-fields' }, [
+          ['schema', '格式代碼，固定寫 "ssot-expected/1"'],
+          ['devices', '應有的設備：寫名稱，或寫 { name, kind } 一併指定設備類型（kind，例如 firewall 是防火牆、switch 是交換器）'],
+          ['links', '應有的鏈路：兩端各寫「設備名稱 介面」'],
+          ['vlans', '應有的 VLAN：設備、VLAN ID 與名稱'],
+          ['strictDevices／strictLinks', '是否嚴格：true 時基準多出的設備或鏈路也列為差異；false 只檢查缺少與不同'],
+        ].map(([k, t]) => h('li', null, [h('code', null, k), '：', t]))),
+        h('pre', { class: 'raw note-box' },
         '{\n  "schema": "ssot-expected/1",\n  "devices": ["TPE_CORE_SW_01", {"name": "TPE_FW_01", "kind": "firewall"}],\n  "links": [{"a": "TPE_CORE_SW_01 xe-0/0/0", "b": "TPE_FW_01 port1"}],\n  "vlans": [{"device": "TPE_ACC_SW_01", "id": 20, "name": "SRV"}],\n  "strictDevices": false,\n  "strictLinks": false\n}')]),
     ]));
     const r = expectedReport(App); if (!r) return;

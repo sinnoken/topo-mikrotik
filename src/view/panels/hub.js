@@ -140,7 +140,7 @@
         h('label', { class: 'wp-option wp-profile-row' }, [h('span', null, '命名規則 '), sel,
           profChanged ? h('span', { class: 'warn-line wp-note' }, '和工作包不同：基準鍵會不同，處理紀錄會當成新的一輪') : h('span', { class: 'muted wp-note' }, pack.profile ? '會加入命名規則清單' : '')]),
         check('ledger', '處理紀錄', pack.ledger ? `${V.num(nItems)} 項、${V.num(pack.ledger.iterations.length)} 輪；整份取代目前的處理紀錄` : '工作包沒有處理紀錄', { disabled: !pack.ledger }),
-        check('expected', '預期現況', pack.expected ? '取代目前載入的預期現況（ssot-expected/1）' : '工作包沒有預期現況', { disabled: !pack.expected }),
+        check('expected', '預期現況', pack.expected ? '取代目前載入的預期現況' : '工作包沒有預期現況', { disabled: !pack.expected }),
         pack.expectedData ? h('p', { class: 'muted wp-note' }, `各類設備應收資料（${V.num(Object.keys(pack.expectedData).length)} 類設備）：重建時一定使用`) : null,
       ]),
       c.ledger && loss ? h('div', { class: 'wp-loss', role: 'alert' }, [
@@ -211,7 +211,7 @@
         failures ? h('p', { class: 'muted' }, `有 ${V.num(failures)} 段收集失敗，可以只重收失敗的指令：`) : null,
         failures ? h('code', { class: 'mono hub-cmd' }, `./tools/collect.sh devices.csv --retry-failed ${shQuote(first ? first.name : 'collection.txt')} -o collection-retry.txt`) : null,
       ]),
-      card('compare', '給之後的比對', '預期現況（ssot-expected/1）：把確認過的現況當作標準，之後和新的基準比對', [
+      card('compare', '給之後的比對', '預期現況：把確認過的現況當作標準，之後和新的基準比對', [
         btn('預期現況', 'export-expected', () => App.exportAs('expected'), { disabled: off, title: '由目前的基準產生（已收集的設備、雙向確認的鏈路、VLAN）' }),
       ]),
     ]);

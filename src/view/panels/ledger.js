@@ -187,7 +187,8 @@
     const st = A().ledgerState(); const lg = st.ledger;
     body.classList.add('ledger-pane');
     // 機制說明與各狀態的筆數收合（狀態 chip 只在本輪變化出現一次）；匯出與匯入的入口在下方，不收合
-    const about = h('p', { class: 'muted' }, '處理紀錄是你對每個檢查結果的決定與歷程（ssot-ledger/1），存在這個瀏覽器、不放進基準。每次建立基準都會推進一輪：'
+    // 格式代碼只放 title（匯出檔裡也有），可見文字不出現內部代碼
+    const about = h('p', { class: 'muted', title: '檔案格式：ssot-ledger/1' }, '處理紀錄是你對每個檢查結果的決定與歷程，存在這個瀏覽器、不放進基準。每次建立基準都會推進一輪：'
       + '排定修正的項目消失時判定為已修好，又出現時標為回歸。請定期匯出保存。');
     if (st.blocked) {
       const why = () => h('p', { class: 'warn-line' }, '處理紀錄目前無法使用（見「處理紀錄」）：' + st.blocked.reason);

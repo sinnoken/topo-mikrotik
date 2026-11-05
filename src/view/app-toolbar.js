@@ -146,7 +146,7 @@
       results.forEach((r, i) => dd.appendChild(h('div', {
         class: 'item' + (i === active ? ' active' : ''),
         onmousedown: (e) => { e.preventDefault(); pick(r); },
-      }, [V.chip(T[r.type]), h('span', null, r.label), h('span', { class: 'sub' }, A.searchSub(App.Q, r))])));
+      }, [V.chip(T[r.type]), h('span', null, r.type === 'device' ? App.Q.devLabel(r.key) : r.label), h('span', { class: 'sub' }, A.searchSub(App.Q, r))])));
       dd.classList.remove('hidden');
     };
     // 搜尋是「在圖上定位」：在「修正」、「驗證」時回到上一次看圖的「檢視」或「研判」，再選取

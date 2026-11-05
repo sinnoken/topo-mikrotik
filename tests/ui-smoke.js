@@ -2671,7 +2671,7 @@ function viewBoundaryViolations(file, src) {
     if (trs.length !== want.length) throw new Error(`覆蓋率列數應為 ${want.length}：${trs.length}`);
     trs.forEach((tr, n) => {
       const r = want[n]; const td = tr.testAll('td');
-      if (td[0].textContent !== App.Q.devName(r.dev)) throw new Error('覆蓋率應有缺漏的排前、其餘維持原順序：' + td[0].textContent);
+      if (td[0].textContent !== App.Q.devLabel(r.dev)) throw new Error('覆蓋率應有缺漏的排前、其餘維持原順序：' + td[0].textContent);
       const chips = td[2].testAll('.chip');
       if (chips.length !== r.missing.length + r.failures.length) throw new Error('缺少的資料與收集失敗應各一個 chip，列在同一列：' + td[0].textContent);
       if (!gap(r) && td[2].textContent !== '—') throw new Error('沒有缺漏的設備寫「—」');
@@ -2953,7 +2953,7 @@ function viewBoundaryViolations(file, src) {
     const gs = groups();
     if (gs.length !== want.size) throw new Error(`依設備的分組數應等於設備數：${gs.length} / ${want.size}`);
     gs.forEach((g, n) => {
-      const name = keys[n] === null ? '不屬於任何設備' : Q.devName(keys[n]);
+      const name = keys[n] === null ? '不屬於任何設備' : Q.devLabel(keys[n]); // 畫面用 Q.devLabel（匯出仍用 devName）
       if (g.querySelector('.head .title').textContent !== name) throw new Error('分組應依設備名稱排列：' + g.querySelector('.head .title').textContent);
       const chips = g.querySelector('.head').testAll('.chip');
       if (chips[chips.length - 1].textContent !== String(want.get(keys[n]).length)) throw new Error(`${name} 的筆數不符`);
@@ -3721,7 +3721,16 @@ function viewBoundaryViolations(file, src) {
     const opts = Array.from(sel.querySelectorAll('option')).map((o) => ({ d: Q.getDevice(o.getAttribute('value')), t: o.textContent }));
     const firstUn = opts.findIndex((o) => o.d && !o.d.collected);
     if (firstUn >= 0 && opts.slice(firstUn).some((o) => o.d && o.d.collected)) throw new Error('依設備應先列已收集的設備');
-    opts.forEach((o) => { if (!o.t.startsWith(Q.devName(o.d.key)) || (!o.d.collected) !== o.t.includes('未收集')) throw new Error('依設備的選項應寫設備名稱，未收集的標出：' + o.t); });
+    opts.forEach((o) => { if (!o.t.startsWith(Q.devLabel(o.d.key)) || (!o.d.collected) !== o.t.includes('未收集')) throw new Error('依設備的選項應寫設備名稱（Q.devLabel），未收集的標出：' + o.t); });
+    // 只由 OSPF 得知、名稱是 IP 的設備：選項與詳情標題都寫出來源，不只是一個位址
+    const ipOnly = opts.find((o) => !o.d.collected && S.ip.isIp(Q.devName(o.d.key)));
+    if (App.snap.model.devices.some((d) => d.key === '172.31.255.2') && (!ipOnly || !opts.some((o) => o.t.startsWith('172.31.255.2（OSPF 鄰居）')))) throw new Error('依設備應以「位址（OSPF 鄰居）」列出只由 OSPF 得知的設備：' + opts.map((o) => o.t).join(' | '));
+    if (ipOnly) {
+      const back = App.sel; App.select({ type: 'device', key: ipOnly.d.key });
+      const h2 = $('#detail').querySelector('h2').textContent;
+      if (h2 !== Q.devLabel(ipOnly.d.key) || h2 === Q.devName(ipOnly.d.key)) throw new Error('只由鄰居得知、名稱是 IP 的設備，詳情標題應帶來源：' + h2);
+      App.select(back);
+    }
     if (opts.some((o) => o.d.collected) && !opts[0].d.collected) throw new Error('預設選項應是已收集的設備');
     sel.value = f0.dev;
     $('#patch-body').querySelector('.patch-add-device').click();

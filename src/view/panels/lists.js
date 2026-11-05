@@ -170,7 +170,7 @@
       const SEVS = ['error', 'warn', 'info'];
       groups.forEach((idxs, dev) => {
         const worst = SEVS.find((s) => idxs.some((i) => all[i].severity === s));
-        root.appendChild(group(dev === null ? '#nodev' : 'dev:' + dev, [V.sevDot(worst), h('span', { class: 'title' }, dev === null ? '不屬於任何設備' : Q.devName(dev))],
+        root.appendChild(group(dev === null ? '#nodev' : 'dev:' + dev, [V.sevDot(worst), h('span', { class: 'title' }, dev === null ? '不屬於任何設備' : Q.devLabel(dev))],
           idxs, 'by-device' + (dev === null ? ' no-device' : ''), true));
       });
     } else {
@@ -298,7 +298,7 @@
     const list = F[cov.filter][1].slice().sort((a, b) => (gapN(b) > 0) - (gapN(a) > 0));
     const has = (r) => (r.data.length ? '已收集：' + r.data.map(S.query.dataLabel).join('、') : '沒有收集資料');
     root.appendChild(V.table([
-      { t: '設備', f: (r) => Q.devName(r.dev), s: (r) => Q.devName(r.dev) },
+      { t: '設備', f: (r) => Q.devLabel(r.dev), s: (r) => Q.devLabel(r.dev) },
       { t: '類型', f: (r) => V.kindChip(r.kind), s: (r) => V.KIND[r.kind] || r.kind },
       { t: '缺少的資料', s: (r) => -gapN(r), f: (r) => (gapN(r)
         ? h('div', { class: 'chip-list cov-gaps', title: has(r) }, [...r.missing.map((t) => V.chip('缺 ' + S.query.dataLabel(t), 'err')), ...failureChips(App, r.failures || [])])
@@ -402,9 +402,9 @@
     const Q = App.Q; const { rows: R, counts: C } = Q.inventory(); // 列與數字都來自 Q.inventory()，這裡不重算
     const devRows = R.devices.concat(R.endpoints);
     // 終端的名稱：埠描述（只有一個 MAC 時才代表這台）或 MAC；廠商已有自己的一欄，不拿來當名稱（同一列不重複）
-    const nameOf = (r) => (r.end ? (!r.wifi && r.portMacs < 2 && r.desc) || (r.mac ? K.macPretty(r.mac) : '?') : Q.devName(r.key));
+    const nameOf = (r) => (r.end ? (!r.wifi && r.portMacs < 2 && r.desc) || (r.mac ? K.macPretty(r.mac) : '?') : Q.devLabel(r.key));
     const ipOf = (r) => (r.end ? r.ips[0] : r.mgmtIp); const vendorOf = (r) => (r.end ? r.vendors.join(' / ') : r.manufacturer ? V.vendorName(r.manufacturer) : null);
-    const dn = (d) => (d ? Q.devName(d) : '—'); const mono = (t) => h('span', { class: 'mono' }, t || '—');
+    const dn = (d) => (d ? Q.devLabel(d) : '—'); const mono = (t) => h('span', { class: 'mono' }, t || '—');
     const TAB_COUNT = { device: C.devices + C.endpoints, interface: C.interfaces, ip: C.ips, prefix: C.prefixes, mac: C.macs, vlan: C.vlans };
     const multiVrf = Q.vrfs().length > 1;
     const vrfCol = multiVrf ? [{ t: 'VRF', f: (r) => mono(r.vrf), s: (r) => (r.vrf === K.MAIN_VRF ? '' : r.vrf) }] : [];

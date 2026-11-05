@@ -130,7 +130,7 @@
     M.claims.forEach((c) => {
       const p = c.pairing; if (!p) return; // 只有 MNDP 的觀察沒有配對
       if (p.status === 'one-way') add('K01',
-        `${name(c.dev)} ${M.ifcs.get(K.ep(c.dev, c.ifc)).name} 看到 ${name(c.peer)} ${c.peerIfc}，但 ${name(c.peer)} 的 LLDP 沒有回報 ${name(c.dev)}`,
+        `${name(c.peer)} 的 LLDP 沒有回報 ${name(c.dev)}：${name(c.dev)} ${M.ifcs.get(K.ep(c.dev, c.ifc)).name} 看到 ${name(c.peer)} ${c.peerIfc}`,
         [{ type: 'link', key: p.link }], [{ block: c.block, line: c.line }]);
       // 對端埠名不明（RouterOS 6 沒有 interface-name）時無從比較
       else if (p.status === 'reciprocal' && c.peerIfc !== '?' && K.ifc(c.peerIfc) !== p.remoteIfc) add('K04',
@@ -162,7 +162,7 @@
         const lagSide = p.pa || p.pb; const other = p.pa ? p.lb : p.la;
         const od = M.devices.get(K.splitEp(other)[0]);
         if (od && od.collected && od.data.has('config')) // 聚合成員關係只來自 export（/interface bonding）
-          add('K03', `${epName(lagSide)} 的成員連到 ${epName(other)}，但對端不是聚合介面成員`, ents, ev);
+          add('K03', `${epName(lagSide)} 的對端不是聚合介面成員：成員連到 ${epName(other)}`, ents, ev);
         return;
       }
       const ma = M.ifcs.get(p.pa).lagMembers.size; const mb = M.ifcs.get(p.pb).lagMembers.size;
@@ -290,7 +290,7 @@
       eps.sort(S.util.natural);
       const desc = eps.slice(0, 8).map((ep) => `${M.ifcs.get(ep).name}（${M.ifcs.get(ep).macs.size}）`).join('、');
       // 終端埠恰好學到一個 MAC：證據是該 MAC 在這個埠的觀察
-      add('A03', `${name(dev)}：${eps.length} 個介面，${desc}${eps.length > 8 ? '…' : ''}`, [{ type: 'device', key: dev }],
+      add('A03', `${name(dev)}：${eps.length} 個介面學到 MAC 但沒有 LLDP／CDP 鄰接，${desc}${eps.length > 8 ? '…' : ''}`, [{ type: 'device', key: dev }],
         eps.map((ep) => macSrc(Array.from(M.ifcs.get(ep).macs)[0], ep)).filter(Boolean));
     });
     manyMacPorts(M, interfaceLinksByEp).forEach(({ ep, n, macs }) => add('A04', `${epName(ep)}：${n} 個 MAC，且沒有 LLDP／CDP 鄰接`, [{ type: 'interface', key: ep }],
@@ -467,7 +467,7 @@
         if (groups.length < 2) return;
         const mask = sel.some((a) => sel.some((b) => a.dev !== b.dev && a.p.len < b.p.len && S.ip.inNet(b.p.net, a.p.net, a.p.len)));
         const j = judge(groups);
-        add('A06', `VLAN ${id}：${fmtGroups(groups, show)}${mask ? '（網段重疊但遮罩不同）' : ''}`,
+        add('A06', `VLAN ${id}${mask ? ' 網段重疊但遮罩不同' : ''}：${fmtGroups(groups, show)}`,
           [{ type: 'vlan', key: String(id) }].concat(U.uniq(sel.map((x) => x.ep)).map((key) => ({ type: 'interface', key }))), evByGroups(groups, sel, (x) => x.dev, (x) => [ev(x.src)]), j.extra);
       });
     });
@@ -559,7 +559,7 @@
       const diff = Array.from(where.values()).sort((a, b) => nat(U.uniq(a.vals).sort(nat)[0], U.uniq(b.vals).sort(nat)[0]))
         .map((w) => `${show(w.vals)} 只在 ${devList(w.has)}`);
       const j = judge(groups);
-      add('A10', `${sel[0].section}「${sel[0].name}」：${fmtGroups(groups, show)}；${diff.join('；')}`,
+      add('A10', `${sel[0].section}「${sel[0].name}」的 ${diff.join('，')}：${fmtGroups(groups, show)}`,
         devs.sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (b) => b.dev, (b) => [{ block: b.block, line: b.line }]), Object.assign({ facet: sel[0].section + '|' + sel[0].nameKey }, j.extra));
     });
     const byBindValue = new Map(); binds.forEach((b) => U.getOr(byBindValue, b.section + '\u0000' + b.valueKey, () => []).push(b));
@@ -662,7 +662,7 @@
         const r = t.reason; const e = [r.row, r.rule].filter(Boolean).map(([block, line]) => ({ block, line }));
         ev.push(...(e.length ? e : t.line !== null ? [{ block: t.block, line: t.line }] : []));
       });
-      add('F09', `${name(dev)}：${ts.map((t) => `${FAM[t.family]} ${t.table}（${STAT_WHY[t.reason.code](t.reason)}）`).join('；')}；${ts.length > 1 ? '這些表' : '這個表'}的命中次數全部不採用`,
+      add('F09', `${name(dev)}：${ts.map((t) => `${FAM[t.family]} ${t.table} 的命中次數全部不採用（${STAT_WHY[t.reason.code](t.reason)}）`).join('；')}`,
         [{ type: 'device', key: dev }], ev);
     });
   }
@@ -785,14 +785,14 @@
           const dup = before.find((i) => i.action === j.action && JSON.stringify(i.params) === JSON.stringify(j.params) && fw.sameMatch(i, j));
           if (dup) { add('F02', `${ruleWhere(name, j)}與第 ${dup.position} 條的比對條件與動作相同（${ruleText(j)}）`, ents(j), [ruleEv(j), ruleEv(dup)]); return; }
           const cov = before.find((i) => fw.TERMINAL.has(i.action) && fw.covers(ctx, i, j));
-          if (cov) add('F01', `${ruleWhere(name, j)}（${ruleText(j)}）被第 ${cov.position} 條（${ruleText(cov)}）完全涵蓋，永遠不會命中`, ents(j), [ruleEv(j), ruleEv(cov)]);
+          if (cov) add('F01', `${ruleWhere(name, j)}（${ruleText(j)}）永遠不會命中：被第 ${cov.position} 條（${ruleText(cov)}）完全涵蓋`, ents(j), [ruleEv(j), ruleEv(cov)]);
         });
       });
       const active = rules.filter((r) => !r.disabled && (r.table === 'filter' || (r.table === 'nat' && r.chain === 'dstnat')));
       // F08：有規則但無法判斷 WAN；F03／F04／F07 都需要 WAN，不猜；F05 改為只看沒有限制入介面的 forward 規則（見下方 F05）
       if (!ctx.wan && active.length) {
         const why = ctx.status === 'no-wan-list' ? '沒有名稱含 WAN 的 interface list' : `WAN 清單（${ctx.wanLists.join('、')}）沒有成員`;
-        add('F08', `${name(dev)}：有 ${active.length} 條防火牆規則，但${why}，無法判斷哪些介面對外；F03、F04、F07 未檢查，F05 只檢查沒有限制入介面的 forward 規則`, [{ type: 'device', key: dev }], [ruleEv(active[0])]);
+        add('F08', `${name(dev)}：無法判斷哪些介面對外（有 ${active.length} 條防火牆規則，但${why}）；F03、F04、F07 未檢查，F05 只檢查沒有限制入介面的 forward 規則`, [{ type: 'device', key: dev }], [ruleEv(active[0])]);
       }
       const wans = ctx.wan ? Array.from(ctx.wan).sort(S.util.natural) : [];
       const ipsecUp = M.fw.peers.some((p) => p.dev === dev && !p.disabled) || M.fw.policies.some((p) => p.dev === dev && !p.disabled && !p.template);

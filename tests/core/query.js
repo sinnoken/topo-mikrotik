@@ -674,3 +674,20 @@ test('與多數不同的索引：Q.deviationsOf 列出設備出現在 deviation.
   const clean = s.model.devices.find((d) => !devs.includes(d.key));
   assert.ok(clean && Q.deviationsOf(clean.key).length === 0);
 });
+test('Q.devLabel：只由鄰居得知、名稱是 IP 的設備加上來源協定；其他維持 Q.devName', () => {
+  const Q = S.query(sampleSnap());
+  assert.strictEqual(Q.devLabel('TPE_CORE_RT_01'), Q.devName('TPE_CORE_RT_01'), '已收集的設備維持原名');
+  assert.strictEqual(Q.getDevice('172.31.255.2').collected, false);
+  assert.strictEqual(Q.devLabel('172.31.255.2'), '172.31.255.2（OSPF 鄰居）', '只由 OSPF 得知');
+  assert.strictEqual(Q.devName('172.31.255.2'), '172.31.255.2', 'devName 維持原值');
+  const Q2 = S.query(build(['SW_A (10.0.0.1):', NB([
+    ' 0 interface=ether1 mac-address=AA:00:00:00:00:02 identity=SW_B interface-name=ether1 discovered-by=lldp',
+    ' 1 interface=ether2 mac-address=AA:00:00:00:00:03 identity=10.9.9.9 interface-name=ether1 discovered-by=lldp,mndp',
+    ' 2 interface=ether3 mac-address=AA:00:00:00:00:04 identity=10.9.9.8 interface-name=ether1 discovered-by=mndp']),
+  ].join('\n')));
+  assert.strictEqual(Q2.getDevice('SW_B').collected, false);
+  assert.strictEqual(Q2.devLabel('SW_B'), 'SW_B', '未收集但名稱不是位址：維持原名');
+  assert.strictEqual(Q2.devLabel('10.9.9.9'), '10.9.9.9（LLDP／MNDP 鄰居）', '多種來源依固定順序列出');
+  assert.strictEqual(Q2.devLabel('10.9.9.8'), '10.9.9.8（MNDP 鄰居）');
+  assert.strictEqual(Q2.devLabel('NOPE'), 'NOPE', '找不到設備時回傳鍵（同 devName）');
+});

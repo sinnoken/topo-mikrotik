@@ -39,6 +39,16 @@ test('黃金基準：範例資料建出的 Snapshot 與 tests/golden/sample-snap
   const diff = G.diffPaths(want, got, 10);
   assert.deepStrictEqual(diff, [], 'Snapshot 與黃金基準不同。若是刻意的變更，執行 npm run golden:update 並檢視 git diff：\n' + diff.join('\n'));
 });
+test('黃金基準：範例資料的 findingKey 集合與黃金檔相同，也與 3.1.0 改寫訊息（結論在前）之前相同', () => {
+  // findingKey 不含訊息：改寫 message 不可讓處理紀錄對不上。釘住的雜湊是改寫前 57 筆 findingKey 排序後以換行串接的 SHA-256；
+  // 刻意新增、刪除 finding 或改變實體時才更新這個值（與 golden:update 一起檢視）
+  const G = require('../golden.js');
+  const keysOf = (snap) => { const Q = S.query(snap); return snap.findings.map((f) => Q.findingKey(f)).sort(); };
+  const got = keysOf(G.goldenSnapshot(S));
+  assert.deepStrictEqual(got, keysOf(JSON.parse(read('tests/golden/sample-snapshot.json'))));
+  const sha = require('crypto').createHash('sha256').update(got.join('\n')).digest('hex');
+  assert.deepStrictEqual([got.length, sha], [57, 'da132cf19feeb45e18f7de6dd0db3d8f30d44b25320fc00549365dcca69c3faa']);
+});
 test('index.html 載入的核心檔案與測試相同、順序一致', () => {
   const html = read('index.html');
   const scripts = Array.from(html.matchAll(/<script src="([^"]+)"/g)).map((m) => m[1]);

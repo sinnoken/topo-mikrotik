@@ -226,6 +226,56 @@
   /** 使用者的「減少動態效果」偏好（瀏覽器沒有 matchMedia 時視為沒有偏好） */
   A.reducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
+  // ================================================================ 配色（跟隨系統的深淺）
+  // CSS 由 @media (prefers-color-scheme: dark) 自己切換；這裡只負責 theme（Canvas、圖例與面板的 inline 顏色），兩邊用同一個 media query。
+  // 不提供手動切換。強制色彩模式（forced-colors）由 CSS 處理，與這裡無關。
+  const SCHEME_QUERY = '(prefers-color-scheme: dark)';
+  let schemeBound = false;
+  /**
+   * 圖上存下的顏色（終端的廠商色、選取與高亮的標示、路由追蹤的疊加線）換成目前 theme 的值。
+   * 標示的顏色都取自 theme.mark，同一組的值互不相同（有測試），所以可依「舊值 → 新值」換算，不必重新計算選取。
+   */
+  function recolorGraph(from, to) {
+    A.recolorVendors();
+    const g = App.graph; if (!g) return;
+    const map = new Map(Object.keys(from.mark).map((k) => [from.mark[k], to.mark[k]]));
+    const swap = (m) => { if (m) m.forEach((c, k) => { if (typeof c === 'string' && map.has(c)) m.set(k, map.get(c)); }); };
+    if (g.hl) { swap(g.hl.nodes); swap(g.hl.edges); }
+    g.overlay.forEach((o) => { if (map.has(o.color)) o.color = map.get(o.color); });
+    g.redraw();
+  }
+  /** 套用配色並更新所有由 theme 產生的畫面：拓樸圖、圖例、面板（防火牆、L4、基準比對、收斂趨勢）。回傳是否有改變 */
+  A.applyColorScheme = function applyColorScheme(mode) {
+    const T = V.theme; if (T.mode === mode) return false;
+    const from = T.palettes[T.mode]; T.apply(mode);
+    recolorGraph(from, T.palettes[mode]);
+    rebuildLegend();
+    if (App.snap) A.renderAll(); // 面板的 inline 顏色在渲染時從 theme 讀；沒有基準時只有歡迎畫面（CSS）
+    return true;
+  };
+  /**
+   * 跟隨系統的深淺：套用目前的設定並監聽 change。只綁一次（再呼叫回傳 false）；
+   * 瀏覽器沒有 matchMedia（例如測試的模擬 DOM）時維持亮色、回傳 false。
+   */
+  A.bindColorScheme = function bindColorScheme() {
+    if (schemeBound || typeof window.matchMedia !== 'function') return false;
+    const mq = window.matchMedia(SCHEME_QUERY);
+    const onChange = (e) => A.applyColorScheme(e.matches ? 'dark' : 'light');
+    if (typeof mq.addEventListener === 'function') mq.addEventListener('change', onChange);
+    else if (typeof mq.addListener === 'function') mq.addListener(onChange); // Safari 13 以前
+    else throw new Error('瀏覽器的 matchMedia 不支援監聽變更，無法跟隨系統深淺');
+    schemeBound = true;
+    A.applyColorScheme(mq.matches ? 'dark' : 'light');
+    return true;
+  };
+  /** 匯出時暫時換成 mode 的配色（含圖上存下的顏色），fn 結束後一定還原 */
+  function withScheme(mode, fn) {
+    const T = V.theme; const prev = T.mode;
+    if (prev === mode) return fn();
+    T.apply(mode); recolorGraph(T.palettes[prev], T.palettes[mode]);
+    try { return fn(); } finally { T.apply(prev); recolorGraph(T.palettes[mode], T.palettes[prev]); App.graph.draw(); }
+  }
+
   // ================================================================ 圖例
   function buildLegend() {
     const lg = $('#legend'); const T = V.theme; const M = T.mark; const EDGE = V.EDGE_STYLE;
@@ -323,6 +373,15 @@
     Object.entries(T.vlan).forEach(([k, st]) => item([st.ticks ? tickLine(st.c, 4, st.ticks, st.alpha, { 'data-vlan': k }) : line(st.c, 4, st.dash, st.alpha, { 'data-vlan': k }),
       st.sev ? dot(Object.assign({ background: T.sev[st.sev] }, SEV_CSS[T.sevShape[st.sev]]), { 'data-shape': T.sevShape[st.sev] }) : null].filter(Boolean), VL[k][0], VL[k][1]));
   }
+  /** 配色換了：以目前的 theme 重建圖例，保留展開狀態與焦點（焦點在圖例標題時移到新的標題） */
+  function rebuildLegend() {
+    const lg = $('#legend'); const old = lg.querySelector('.legend-head'); if (!old) return;
+    const open = old.getAttribute('aria-expanded') === 'true'; const focused = document.activeElement === old;
+    V.clear(lg); buildLegend();
+    const head = lg.querySelector('.legend-head');
+    if (open) head.click();
+    if (focused) head.focus();
+  }
   /** 圖例的線寬：依 theme 的線寬等比放大到圖例可辨識，保持速率越高越粗的順序 */
   V.legendLineHeight = (w) => Math.max(1, Math.round(w * 1.2)) + 'px';
   let vendorBox = null;
@@ -345,7 +404,9 @@
     if (!App.snap) return;
     // L4 是矩陣不是畫布：PNG 只匯出拓樸圖的層級，矩陣改用 L4 畫面的「下載 CSV」
     if (App.layer === 'l4') { A.banner('L4 可達性沒有 PNG：請在 L4 畫面用「下載 CSV」匯出矩陣，或切到設備、L2、L3 再匯出 PNG。', 8000); return; }
-    App.graph.draw(); const a = document.createElement('a'); a.download = A.layerPngName(); a.href = $('#graph').toDataURL('image/png'); a.click();
+    // PNG 固定用亮色（多半貼進報告或列印）：暫時套亮色畫一次，取得圖檔後還原目前的深淺並重畫
+    const url = withScheme('light', () => { App.graph.draw(); return $('#graph').toDataURL('image/png'); });
+    const a = document.createElement('a'); a.download = A.layerPngName(); a.href = url; a.click();
   };
   /** 匯出目前的基準或檢查結果（種類見 V.exporter.KINDS）；透過 App.Q 讀取，不改寫。extra 例如 { byDevice: true } */
   App.exportAs = function (kind, extra) {

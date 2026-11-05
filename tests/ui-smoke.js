@@ -4517,6 +4517,76 @@ function viewBoundaryViolations(file, src) {
     for (const m of html.matchAll(/style="[^"]*(#[0-9a-fA-F]{3,6}\b|rgba?\()/g)) colorLits.push('index.html：' + m[1]);
     if (colorLits.length) throw new Error('顏色應取自 theme 或 CSS 變數：' + colorLits.join('；'));
   });
+  await step('配色跟隨系統深淺：亮暗兩組形狀相同、原地套用、change 只重畫一次、PNG 固定亮色', async () => {
+    const T = S.view.theme; const VA = S.view.app; const g = App.graph; const P = T.palettes;
+    if (!P || !P.light || !P.dark || typeof T.apply !== 'function') throw new Error('theme 應有 palettes.light／dark 與 apply(mode)');
+    // 兩組的葉節點路徑集合相同；每個葉節點都是顏色，且就是 theme 上同一路徑的值（啟動時沒有 matchMedia，視為亮色）
+    const leaves = (o, pre) => Object.entries(o).flatMap(([k, v]) => (v && typeof v === 'object' ? leaves(v, pre + k + '.') : [[pre + k, v]]));
+    const at = (o, p) => p.split('.').reduce((x, k) => x[k], o);
+    const lk = leaves(P.light, '').map(([p]) => p).sort(); const dk = leaves(P.dark, '').map(([p]) => p).sort();
+    if (!lk.length || lk.join('|') !== dk.join('|')) throw new Error('亮、暗兩組配色的鍵集合應相同');
+    ['light', 'dark'].forEach((m) => leaves(P[m], '').forEach(([p, c]) => { if (!/^(#[0-9a-f]{3,8}|rgba?\([^)]*\))$/i.test(c)) throw new Error(`palettes.${m}.${p} 應是顏色：${c}`); }));
+    if (!Object.isFrozen(P.light) || !Object.isFrozen(P.light.canvas)) throw new Error('配色應凍結，只能經 apply 套到 theme');
+    if (T.mode !== 'light') throw new Error('沒有 matchMedia 時應是亮色：' + T.mode);
+    lk.forEach((p) => { if (at(T, p) !== at(P.light, p)) throw new Error('亮色時 theme.' + p + ' 應等於 palettes.light'); });
+    try { T.mode = 'dark'; } catch (e) { /* 唯讀：嚴格模式下指定會丟錯 */ }
+    if (T.mode !== 'light') throw new Error('theme.mode 應唯讀，只能經 apply 改變');
+    try { T.apply('sepia'); throw new Error('未知的模式應丟出 RangeError'); } catch (e) { if (!(e instanceof RangeError)) throw e; }
+    // 圖上標示的顏色由 mark 的值換算：同一組 mark 的值不可重複，換算才不會混淆
+    ['light', 'dark'].forEach((m) => { const vs = Object.values(P[m].mark); if (new Set(vs).size !== vs.length) throw new Error(`palettes.${m}.mark 的值應互不相同`); });
+    // apply 原地改寫葉節點：子物件的參考不變（canvas.js 等在載入時存下子物件），值等於該組配色
+    const refs = ['kind', 'edge', 'mark', 'canvas', 'endpoint', 'text', 'sev', 'vlan', 'l2', 'l3', 'l4', 'firewall', 'diff', 'trend'].map((k) => [k, T[k]])
+      .concat([['edge.lag', T.edge.lag], ['canvas.group', T.canvas.group], ['endpoint.vendor', T.endpoint.vendor], ['l4.status.allow', T.l4.status.allow]]);
+    const surface = T.canvas.surface;
+    try {
+      T.apply('dark');
+      if (T.mode !== 'dark') throw new Error('apply("dark") 後 mode 應是 dark');
+      refs.forEach(([k, r]) => { if (at(T, k) !== r) throw new Error('apply 不應換掉 theme.' + k + ' 物件'); });
+      lk.forEach((p) => { if (at(T, p) !== at(P.dark, p)) throw new Error('暗色時 theme.' + p + ' 應等於 palettes.dark'); });
+      T.canvas.surface = '#000000'; T.apply('light');
+      if (T.canvas.surface !== P.light.canvas.surface) throw new Error('apply 應覆寫每個顏色葉節點');
+    } finally { T.canvas.surface = surface; T.apply('light'); }
+    // matchMedia：監聽只綁一次；change 時套用配色、重建圖例、只重畫一次
+    const listeners = []; const mq = { matches: true, media: '(prefers-color-scheme: dark)', addEventListener: (t, f) => { if (t === 'change') listeners.push(f); } };
+    const oldMM = window.matchMedia;
+    window.matchMedia = (q) => (/prefers-color-scheme:\s*dark/.test(q) ? mq : { matches: false, media: q, addEventListener() {} });
+    let draws = 0; const oldDraw = g.draw; g.draw = function () { draws++; return oldDraw.call(this); };
+    try {
+      flushRaf();
+      if (VA.bindColorScheme() !== true || T.mode !== 'dark') throw new Error('有 matchMedia 時應綁定監聽並套用系統的深淺');
+      if (VA.bindColorScheme() !== false || listeners.length !== 1) throw new Error('配色的監聽只綁一次');
+      flushRaf();
+      const head0 = $('#legend').firstChild; head0.click(); const legendText = text('#legend'); draws = 0; g.dirty = false;
+      mq.matches = false; listeners.forEach((f) => f({ matches: false, media: mq.media }));
+      if (T.mode !== 'light') throw new Error('系統改成亮色時應套用亮色');
+      // 重畫一次：change 當下不同步繪圖，只標記 dirty，由畫布的 rAF 迴圈在下一個畫格畫一次（多次 redraw() 合併）
+      if (draws !== 0 || !g.dirty) throw new Error(`系統深淺改變時應標記重畫、在下一個畫格畫一次（同步繪圖 ${draws} 次、dirty=${g.dirty}）`);
+      const tick = () => { if (g.dirty) { g.dirty = false; g.draw(); } }; tick(); tick();
+      if (draws !== 1) throw new Error('系統深淺改變時拓樸圖應重畫一次：' + draws);
+      const head1 = $('#legend').firstChild;
+      if (head1 === head0 || text('#legend') !== legendText) throw new Error('系統深淺改變時應以新的配色重建圖例（內容相同）');
+      if (head1.getAttribute('aria-expanded') !== 'true') throw new Error('重建圖例應保留展開狀態');
+      head1.click();
+      // PNG 固定用亮色：暗色時匯出，畫 PNG 的那一次是亮色（底色、終端廠商色、圖上標示），之後畫面回到暗色
+      mq.matches = true; listeners.forEach((f) => f({ matches: true, media: mq.media })); flushRaf();
+      const modes = []; const ends = () => g.nodes.filter((n) => n.kind === 'endpoint' && n.vendor && App.vendorColors.has(n.vendor));
+      const drawMode = g.draw; g.draw = function () { modes.push({ mode: T.mode, surface: T.canvas.surface, ends: ends().map((n) => n.color) }); return drawMode.call(this); };
+      let ops = []; const made = []; const oldCreate = document.createElement;
+      document.createElement = (t) => { const el = oldCreate(t); if (t === 'a') made.push(el); return el; };
+      try { ops = recordCanvas(g.ctx, () => VA.exportPng()); } finally { document.createElement = oldCreate; g.draw = drawMode; }
+      if (made.length !== 1) throw new Error('暗色時也應匯出 PNG');
+      if (!modes.length || modes[0].mode !== 'light' || modes[0].surface !== P.light.canvas.surface) throw new Error('匯出 PNG 時應以亮色繪製');
+      const lightVendors = P.light.endpoint.vendor;
+      if (!modes[0].ends.every((c) => lightVendors.includes(c))) throw new Error('匯出 PNG 時終端的廠商色應是亮色');
+      const bg = ops.find((o) => o.op === 'rect'); if (!bg || bg.style !== P.light.canvas.surface) throw new Error('PNG 的底色應是亮色的畫布底色');
+      if (T.mode !== 'dark' || modes[modes.length - 1].mode !== 'dark') throw new Error('匯出後應還原成目前的深淺並重畫');
+    } finally {
+      g.draw = oldDraw;
+      if (T.mode !== 'light') { mq.matches = false; listeners.forEach((f) => f({ matches: false, media: mq.media })); }
+      if (oldMM) window.matchMedia = oldMM; else delete window.matchMedia;
+      flushRaf();
+    }
+  });
   await step('滑過左右欄與工具列時不會穿透觸發拓樸圖 hover', () => {
     const g = App.graph; const cv = $('#graph');
     const move = (target, p) => (winListeners.pointermove || []).forEach((f) => f({ target, clientX: p.x, clientY: p.y, pointerType: 'mouse' }));

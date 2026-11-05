@@ -159,4 +159,43 @@
     },
   };
   V.EDGE_STYLE = V.theme.edge; V.KIND_COLOR = kind;
+
+  // ---------------------------------------------------------------- 亮色／暗色配色
+  // 結構（外形、線寬、虛線、透明度、字型、尺寸）只寫在上面一次；顏色另成兩組形狀相同的配色（palettes.light／dark），
+  // 葉節點路徑與 V.theme 相同。亮色就是上面寫的值；暗色目前先與亮色相同（深色的正式值另一輪調整，用 dataviz validator 驗證）。
+  // apply(mode) 原地改寫 V.theme 的顏色葉節點、不換掉任何物件：canvas.js 等檔案在載入時把子物件存成常數，換物件會讓它們停在舊值。
+  // 跟隨系統的 prefers-color-scheme 由畫面（app-toolbar.js 的 A.bindColorScheme）監聽；PNG 匯出固定用亮色。
+  const COLOR = /^(#[0-9a-f]{3,8}|rgba?\([^)]*\))$/i;
+  /** 取出物件樹中所有顏色字串，保留相同的路徑（陣列保留索引）；沒有顏色的分支不列入 */
+  function colorsOf(o) {
+    const out = Array.isArray(o) ? [] : {}; let any = false;
+    Object.keys(o).forEach((k) => {
+      const v = o[k];
+      if (typeof v === 'string' && COLOR.test(v)) { out[k] = v; any = true; } else if (v && typeof v === 'object') { const c = colorsOf(v); if (c) { out[k] = c; any = true; } }
+    });
+    return any ? out : null;
+  }
+  const deepFreeze = (o) => { Object.values(o).forEach((v) => { if (v && typeof v === 'object') deepFreeze(v); }); return Object.freeze(o); };
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+  const light = colorsOf(V.theme);
+  const PALETTES = deepFreeze({ light: clone(light), dark: clone(light) });
+  /** 把配色的葉節點寫進 target 的同一路徑（target 的物件與陣列保持原參照） */
+  function assign(target, pal, path) {
+    Object.keys(pal).forEach((k) => {
+      const v = pal[k];
+      if (typeof v === 'string') { target[k] = v; return; }
+      if (!target[k] || typeof target[k] !== 'object') throw new Error(`theme.${path}${k} 不是物件，無法套用配色`);
+      assign(target[k], v, path + k + '.');
+    });
+  }
+  let mode = 'light';
+  Object.defineProperties(V.theme, {
+    palettes: { value: PALETTES },
+    // 目前套用的配色（'light'／'dark'），唯讀；只經 apply 改變
+    mode: { get: () => mode },
+    apply: { value: function apply(m) {
+      if (!Object.prototype.hasOwnProperty.call(PALETTES, m)) throw new RangeError('未知的配色模式：' + m);
+      assign(V.theme, PALETTES[m], ''); mode = m;
+    } },
+  });
 })(globalThis.SSOT = globalThis.SSOT || {});

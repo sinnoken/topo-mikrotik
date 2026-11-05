@@ -194,7 +194,7 @@
     if (App.layer !== 'device') text = A.layerTip(ev.item);
     else if (ev.item.type === 'node') {
       const vn = App.graph.nodeById.get(ev.item.id);
-      if (vn && vn.virtual) text = vn.tip; else { const d = App.Q.getDevice(ev.item.id); text = `${d.label || d.name}・${V.KIND[d.kind]}${d.collected ? '' : '・未收集'}`; }
+      if (vn && vn.virtual) text = vn.tip; else { const d = App.Q.getDevice(ev.item.id); text = `${App.Q.devLabel(d.key)}・${V.KIND[d.kind]}${d.collected ? '' : '・未收集'}`; }
     } else {
       const p = App.pairs.get(ev.item.id);
       const ends = () => `${App.Q.devName(p.a)} ${p.labelA} ⇄ ${App.Q.devName(p.b)} ${p.labelB}`;

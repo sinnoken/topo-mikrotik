@@ -21,7 +21,7 @@
 
   // ---------------------------------------------------------------- 共用片段
   const L = (App, text, sel) => h('a', { class: 'link', onclick: () => App.select(sel, { focus: true }) }, text);
-  const devLink = (App, k) => L(App, App.Q.devName(k), { type: 'device', key: k });
+  const devLink = (App, k) => L(App, App.Q.devLabel(k), { type: 'device', key: k });
   const epLink = (App, ep) => L(App, App.Q.epName(ep), { type: 'interface', key: ep });
   const macLink = (App, m) => L(App, K.macPretty(m), { type: 'mac', key: m });
   /** IP 的連結：vrf 省略時不分 VRF（詳情列出所有 VRF 的結果，在多個 VRF 時請使用者選擇） */
@@ -294,7 +294,7 @@
     const neighborHasFinding = peerRows.some((r) => r.links.some((l) =>
       l.vlanMismatch || Q.findingsFor('link', l.key).some((f) => f.severity !== 'info')));
     return h('div', { class: 'detail' }, [
-      h('h2', null, d.label || d.name),
+      h('h2', null, Q.devLabel(d.key)),
       h('div', { class: 'row' }, [V.kindChip(d.kind), d.collected ? V.chip('已收集', 'ok') : V.chip('未收集（僅由鄰居發現）', 'warn'), d.group ? V.chip(d.group, '', { title: V.TERMS.group + '（版面用，不代表實體位置或 IP 網段）' }) : null, d.role ? V.chip('角色：' + d.role) : null,
         dev.length ? h('a', { class: 'link chip-link deviation-chip', title: '依跨設備多數決推定這台的設定與其他設備不同（推論）；點一下捲到檢查結果',
           onclick: () => { const sec = V.$('#detail .findings-section'); if (sec) sec.scrollIntoView({ block: 'start', behavior: 'smooth' }); } }, V.chip(`與多數不同 ${dev.length} 項`, 'warn')) : null]),

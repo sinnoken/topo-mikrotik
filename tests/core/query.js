@@ -606,3 +606,18 @@ test('L3 子網圖：範例資料的路由設備、多網段的交換器、鄰�
   const off = Q.subnetGraph({ hearsay: false });
   assert.ok(off.edges.every((e) => !e.inferred));
 });
+
+test('推定偏離的索引：Q.deviationsOf 列出設備出現在 deviation.deviating 的 finding 索引（依 Snapshot 順序、凍結）', () => {
+  const s = build(read('samples/sample-bundle.txt')); const Q = S.query(s);
+  const devs = S.util.uniq(s.findings.flatMap((f) => (f.deviation ? f.deviation.deviating : [])));
+  assert.ok(devs.length, '範例資料應有被多數決推定偏離的設備');
+  devs.forEach((d) => {
+    const want = s.findings.map((f, i) => (f.deviation && f.deviation.deviating.includes(d) ? i : -1)).filter((i) => i >= 0);
+    assert.deepStrictEqual(Array.from(Q.deviationsOf(d)), want, d);
+    assert.ok(Object.isFrozen(Q.deviationsOf(d)), '回傳 Q 自己的索引，凍結');
+  });
+  // 不在任何 deviating 的設備（含平手的 finding 的實體）為空陣列
+  assert.deepStrictEqual(Array.from(Q.deviationsOf('NO_SUCH_DEV')), []);
+  const clean = s.model.devices.find((d) => !devs.includes(d.key));
+  assert.ok(clean && Q.deviationsOf(clean.key).length === 0);
+});

@@ -168,7 +168,7 @@
     const findingsBy = new Map();
     snap.findings.forEach((f, idx) => f.entities.forEach((e) => U.getOr(findingsBy, e.type + ':' + e.key, () => []).push(idx)));
     // 第一次查詢時才建立的索引（1000 台規模下多數畫面用不到）；回傳的陣列是 Q 自己的索引，凍結以免呼叫端改壞
-    let byFindingKey = null; let byRule = null; let blocksByDev = null; let covByDev = null;
+    let byFindingKey = null; let byRule = null; let blocksByDev = null; let covByDev = null; let deviationsBy = null;
     const freezeAll = (map) => { map.forEach((v) => Object.freeze(v)); return map; };
     const findingKeyIndex = () => byFindingKey || (byFindingKey = freezeAll(snap.findings.reduce((out, f, idx) => { U.getOr(out, findingKey(f), () => []).push(idx); return out; }, new Map())));
     const EMPTY = Object.freeze([]);
@@ -569,6 +569,20 @@
       },
       findingsFor(type, key) { return (findingsBy.get(type + ':' + key) || []).map((i) => snap.findings[i]); },
       findingIndexesFor(type, key) { return findingsBy.get(type + ':' + key) || []; },
+      /**
+       * 這台設備被多數決推定偏離（列在 finding.deviation.deviating，推論）的 finding 索引，依 Snapshot 順序（凍結的陣列）；沒有時為空陣列。
+       * deviating 不是 entities（偏離的設備不一定是這筆的實體），所以另建索引，不併入 findingsFor。
+       */
+      deviationsOf(devKey) {
+        if (!deviationsBy) {
+          deviationsBy = new Map();
+          snap.findings.forEach((f, idx) => {
+            if (f.deviation && Array.isArray(f.deviation.deviating)) f.deviation.deviating.forEach((d) => U.getOr(deviationsBy, d, () => []).push(idx));
+          });
+          freezeAll(deviationsBy);
+        }
+        return deviationsBy.get(devKey) || EMPTY;
+      },
       block: (id) => snap.blocks[id] || null,
       /** 包含 file 第 line 行的輸入區塊（同 block(id) 的物件）；不在任何區塊內（例如設備標頭、註解行）或沒有這個檔案時為 null。 */
       blockAt: (file, line) => snap.blocks.find((b) => b.file === file && b.start <= line && line <= b.end) || null,

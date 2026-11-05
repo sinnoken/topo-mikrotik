@@ -48,6 +48,32 @@
   V.$ = (sel, root) => (root || document).querySelector(sel);
   V.clear = (el) => { while (el.firstChild) el.removeChild(el.firstChild); return el; };
 
+  /**
+   * 畫面名詞的唯一來源：同一個概念全站只用一個詞。
+   *   network：應收集的網路設備（收集完整度的分母，同 Q.coverageSummary 的 network）；host：不在收集範圍、只由鄰居或 ARP 得知的主機。
+   *   endpoint：終端（只學到一個 MAC、沒有 LLDP／CDP 鄰接的埠所接的東西）。
+   *   group：依連線自動分出的版面分群，不代表實體位置或 IP 網段。vlanDomain：同一個 VLAN ID 依鏈路證據分出的不相連部分（推論）。
+   *   inferred：推論的標示（V.inferChip）。
+   */
+  V.TERMS = Object.freeze({
+    network: '網路設備', host: '主機', endpoint: '終端', group: '自動群組', vlanDomain: '區塊', inferred: '推論',
+  });
+  /** 推論標示：和收集到的事實並列的推定結果一律加這個 chip；依據放 title。 */
+  V.inferChip = (tip) => V.chip(V.TERMS.inferred, 'info', tip ? { title: tip } : null);
+  /**
+   * 跨設備一致性規則的多數決結果（finding.deviation，推論）：一律經這裡產生，詳情的每筆檢查結果共用。
+   * 列出推定偏離的設備，點設備名選取該設備（不觸發外層的點選）；沒有多數（平手）時明說無法推定，不留白。
+   * 不是多數決的 deviation（或沒有）時為 null。
+   */
+  V.deviationLine = function (App, dv) {
+    if (!dv || dv.basis !== 'majority') return null;
+    const label = '推定偏離（多數決）：';
+    if (!dv.deviating || !dv.deviating.length) return V.h('div', { class: 'deviation none muted' }, label + '沒有多數，無法推定');
+    const pick = (key) => (e) => { if (e && e.stopPropagation) e.stopPropagation(); App.select({ type: 'device', key }, { focus: true }); };
+    // a.link 沒有 href 時 h() 已補 role、tabindex 與 Enter／空白鍵啟動
+    const links = dv.deviating.map((key) => V.h('a', { class: 'link', 'data-dev': key, title: '選取這台設備', onclick: pick(key) }, App.Q.devName(key)));
+    return V.h('div', { class: 'deviation' }, [label, ...links.flatMap((a, n) => (n ? ['、', a] : [a]))]);
+  };
   V.KIND = S.KIND_LABEL;
   V.KIND_BASIS = { board: '依設備型號', data: '依收集的資料', caps: '依鄰居回報的功能', vendor: '依廠牌推測', heuristic: '依對端埠名推測', profile: '依命名規則', none: '無法判斷' };
   V.SEV = { error: '錯誤', warn: '警告', info: '提醒' };

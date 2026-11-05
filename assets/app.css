@@ -292,6 +292,29 @@ table.t tr.click { cursor: pointer; }
 .finding { display: flex; gap: 9px; align-items: flex-start; padding: 9px 10px; border: 1px solid var(--line-soft); border-radius: var(--radius); margin-bottom: 7px; font-size: var(--fs-md); background: var(--surface); }
 .finding .ev { margin-top: 2px; }
 .finding > .sev { margin-top: 5px; }
+/* 多數決推定偏離（推論，V.deviationLine）：訊息下方一行，設備名可點；平手時淡色說明無法推定 */
+.finding .deviation { font-size: var(--fs-sm); line-height: var(--lh-body); }
+.finding .deviation .link { overflow-wrap: anywhere; }
+.finding .deviation.none { color: var(--muted); }
+/* 標題下的可點 chip（推定偏離 N 項）：點了捲到檢查結果 */
+.chip-link { text-decoration: none; cursor: pointer; }
+.chip-link:hover { text-decoration: none; }
+.chip-link:hover .chip { border-color: var(--line-hover); }
+/* 基準狀態卡（未選取時的右欄）：一句話狀態、收集完整度、四個數字、其餘收在技術細節 */
+.status-card .status-line { display: flex; gap: 9px; align-items: flex-start; margin: 0 0 8px; font-size: var(--fs-lg); line-height: var(--lh-body); }
+.status-card .status-line > .sev { margin-top: 8px; flex: none; }
+.status-card .status-line .link { font-weight: 600; overflow-wrap: anywhere; }
+.status-card .status-alerts { margin: 0 0 8px; }
+.status-card .status-coverage { margin: 0 0 4px; font-size: var(--fs-md); line-height: var(--lh-body); }
+.status-card .status-coverage .link { font-weight: 600; }
+.status-card .status-hosts { margin: 0 0 14px; font-size: var(--fs-sm); line-height: var(--lh-body); }
+.stat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 14px 0 12px; }
+.stat { padding: 9px 10px; border: 1px solid var(--line-soft); border-radius: var(--radius); background: var(--surface); min-width: 0; }
+.stat-num { font-size: var(--fs-xl); font-weight: 600; line-height: var(--lh-heading); overflow-wrap: anywhere; }
+.stat-label { font-size: var(--fs-sm); color: var(--muted); line-height: var(--lh-heading); }
+.status-card .status-meta { margin: 0 0 6px; font-size: var(--fs-sm); line-height: var(--lh-body); overflow-wrap: anywhere; }
+.status-card .kv .mono { overflow-wrap: anywhere; }
+.status-card .status-hint { margin-top: 14px; font-size: var(--fs-sm); line-height: var(--lh-body); }
 /* 規則的常見原因與處理（CATALOG）：檢查結果與規則清單共用，預設收合 */
 .advice { margin-top: 4px; font-size: var(--fs-sm); }
 .advice > summary { cursor: pointer; color: var(--accent); width: max-content; max-width: 100%; }

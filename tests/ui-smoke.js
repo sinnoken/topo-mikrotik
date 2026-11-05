@@ -775,7 +775,10 @@ function viewBoundaryViolations(file, src) {
     dev.forEach((i) => {
       const f = all[i]; App.selectFinding(i);
       const box = $('#detail').testAll('.finding').find((x) => x.textContent.includes(f.message));
-      if (!box || !box.textContent.includes('依多數決推定偏離')) throw new Error(`${f.id} 應列出推定偏離的設備`);
+      if (!box || !box.textContent.includes('推定偏離（多數決）：')) throw new Error(`${f.id} 應列出推定偏離的設備`);
+      // 設備名可點，選取該設備（V.deviationLine 單一來源）
+      const a = box.querySelector('.deviation').testAll('a').find((x) => x.getAttribute('data-dev') === f.deviation.deviating[0]);
+      if (!a) throw new Error(`${f.id} 推定偏離的設備應可點`);
       if (!f.deviation.deviating.every((k) => box.textContent.includes(App.Q.devName(k)))) throw new Error(`${f.id} 推定偏離的設備不完整`);
     });
     // VLAN 實體的檢查結果開啟 VLAN 詳情；有不相連區塊時可切換區塊並回到全部
@@ -821,10 +824,112 @@ function viewBoundaryViolations(file, src) {
     if (cs.network - cs.networkCollected !== App.Q.findingsByRule('C01').length) throw new Error('未收集的網路設備數應等於 C01 筆數');
     if (!text('#footer').includes(`網路設備 ${NUM(cs.network)}（已收集 ${NUM(cs.networkCollected)}）`)) throw new Error('頁尾應用網路設備口徑：' + text('#footer'));
     const sel = App.sel; App.select(null);
+    // 基準狀態卡：數字卡是「數字＋名稱」，技術細節是 kv
+    const stats = $('#detail').testAll('.stat').map((x) => [x.querySelector('.stat-label').textContent, x.querySelector('.stat-num').textContent]);
+    const want = [['已收集網路設備', `${NUM(cs.networkCollected)}／${NUM(cs.network)}`], ['鏈路', NUM(App.Q.meta().stats.links)], ['VLAN（相異 ID）', NUM(vs.ids)], ['MAC', NUM(App.Q.meta().stats.macs)]];
+    if (JSON.stringify(stats) !== JSON.stringify(want)) throw new Error('狀態卡的四個數字卡不符：' + JSON.stringify(stats));
     const d = text('#detail');
-    if (!d.includes('VLAN（相異 ID）' + NUM(vs.ids)) || !d.includes('VLAN 定義（各設備合計）' + NUM(vs.definitions))) throw new Error('總覽應分開列出相異 VLAN ID 與 VLAN 定義：' + d.slice(0, 300));
-    if (!d.includes('網路設備' + NUM(cs.network) + '（已收集 ' + NUM(cs.networkCollected) + '）')) throw new Error('總覽應以網路設備計：' + d.slice(0, 300));
+    if (!d.includes('VLAN 定義（各設備合計）' + NUM(vs.definitions))) throw new Error('技術細節應分開列出 VLAN 定義：' + d.slice(0, 300));
     App.select(sel);
+  });
+  await step('基準狀態卡（未選取時）：一句話狀態只算待處理、建議先看、收集完整度可點、技術細節收合；每個數字只出現一次', () => {
+    const Q = App.Q; const VA = S.view.app; const NUM = S.view.num; const cs = Q.coverageSummary();
+    App.select(null);
+    const card = $('#detail').querySelector('.status-card'); if (!card) throw new Error('未選取時右欄應是基準狀態卡');
+    const t = card.textContent;
+    ['網路正常', '即時'].forEach((w) => { if (t.includes(w)) throw new Error(`狀態卡不應出現「${w}」`); });
+    const pc = VA.problemCounts();
+    const line = card.querySelector('.status-line').textContent;
+    if (pc.error && !line.includes(`${NUM(pc.error)} 項錯誤`)) throw new Error('狀態句應寫出待處理的錯誤數：' + line);
+    if (pc.warn && !line.includes(`${NUM(pc.warn)} 項警告`)) throw new Error('狀態句應寫出待處理的警告數：' + line);
+    // 建議先看：待處理的錯誤／警告中嚴重度最高、規則順序最前、再取 Snapshot 順序
+    const rank = new Map(S.query.rules().map((r, n) => [r.id, n])); const sev = { error: 0, warn: 1 };
+    const cand = Q.findings().map((f, i) => ({ f, i })).filter((x) => x.f.severity in sev && VA.isPending(x.f))
+      .sort((a, b) => sev[a.f.severity] - sev[b.f.severity] || rank.get(a.f.id) - rank.get(b.f.id) || a.i - b.i);
+    const sug = card.querySelector('.status-suggest');
+    if (cand.length ? !sug || sug.textContent !== cand[0].f.title : sug) throw new Error('「建議先看」應連到嚴重度最高、規則順序最前的待處理結果：' + (sug && sug.textContent));
+    if (cand.length) {
+      const first = cand.find((x) => x.f.entities.length);
+      if (first && first === cand[0]) { sug.click(); if (!App.sel) throw new Error('點「建議先看」應選取那一筆的物件'); App.select(null); }
+    }
+    // 收集完整度：缺資料台數可點，開資料中心的覆蓋率（只列有缺漏）
+    const cov = $('#detail').querySelector('.status-coverage');
+    if (cs.missing) {
+      const a = cov.querySelector('a'); if (!a || !a.textContent.includes(`${NUM(cs.missing)} 台`)) throw new Error('收集完整度應寫出缺資料的台數並可點：' + cov.textContent);
+      a.click();
+      if ($('#hub').classList.contains('hidden')) throw new Error('點缺資料台數應開啟資料中心的覆蓋率');
+      if (!text('#pane-coverage').includes('有缺漏')) throw new Error('覆蓋率應切到「有缺漏」');
+      goStep('triage'); App.select(null);
+    }
+    if (!!cs.hosts !== !!$('#detail').querySelector('.status-hosts')) throw new Error('有主機時另起一行淡色說明，沒有時不寫');
+    // 技術細節預設收合，內含指紋、基準鍵、版本與解析器使用量
+    const tech = $('#detail').testAll('.detail-fold').find((x) => x.querySelector('summary').textContent.startsWith('技術細節'));
+    if (!tech || tech.getAttribute('open') !== null) throw new Error('技術細節應預設收合');
+    const m = Q.meta();
+    [m.inputHash, '解析器使用量', '版本', 'IP（ARP）', '路由', '介面'].forEach((w) => { if (!tech.textContent.includes(w)) throw new Error('技術細節應有 ' + w); });
+    if (t.indexOf(m.inputHash) !== t.lastIndexOf(m.inputHash)) throw new Error('輸入指紋只出現一次');
+    // 每個數字只出現一次：已收集台數只在數字卡，不在收集完整度那一行
+    if (cov.textContent.includes(`${NUM(cs.networkCollected)}／`) || cov.textContent.includes(`${NUM(cs.network)} 台`)) throw new Error('收集完整度那一行不重複已收集台數：' + cov.textContent);
+  });
+  await step('詳情：檢查結果在最上面、超過 5 筆先顯示 5 筆；推定偏離的設備有 chip；平手寫出無法推定；長表格預設收合', () => {
+    const Q = App.Q;
+    // 檢查結果超過 5 筆的設備：先顯示 5 筆，其餘在「再顯示 N 筆」
+    const many = Q.devices().find((d) => { App.select({ type: 'device', key: d.key }); const sec = $('#detail').querySelector('.findings-section'); return sec && sec.testAll('.finding').length > 5; });
+    if (many) {
+      const sec = $('#detail').querySelector('.findings-section');
+      const more = sec.testAll('.detail-fold').find((x) => x.querySelector('summary').textContent.startsWith('再顯示'));
+      const total = sec.testAll('.finding').length;
+      if (!more || more.getAttribute('open') !== null || more.testAll('.finding').length !== total - 5 || !more.querySelector('summary').textContent.startsWith(`再顯示 ${total - 5} 筆`)) throw new Error('超過 5 筆時其餘應收在「再顯示 N 筆」');
+    } else if (!process.env.SMOKE_INPUT) throw new Error('範例資料應有檢查結果超過 5 筆的設備');
+    // 檢查結果在屬性（kv）之前
+    const d0 = Q.devices().find((d) => d.collected && Q.findingsFor('device', d.key).length);
+    App.select({ type: 'device', key: d0.key });
+    const kids = $('#detail').querySelector('.detail').childNodes;
+    const fi = kids.findIndex((x) => x.classList && x.classList.contains('findings-section')); const ki = kids.findIndex((x) => x.classList && x.classList.contains('kv'));
+    if (fi < 0 || ki < 0 || fi > ki) throw new Error('檢查結果應在屬性之前');
+    // 推定偏離：設備在任何 finding.deviation.deviating 中時，標題下有「推定偏離 N 項」
+    const devs = S.util.uniq(Q.findings().flatMap((f) => (f.deviation ? f.deviation.deviating : [])));
+    devs.forEach((k) => {
+      App.select({ type: 'device', key: k });
+      const n = Q.deviationsOf(k).length;
+      if (!$('#detail').testAll('.chip').some((c) => c.textContent === `推定偏離 ${n} 項`)) throw new Error(`${k} 應有「推定偏離 ${n} 項」`);
+      if (!Q.deviationsOf(k).every((i) => text('#detail').includes(Q.finding(i).message))) throw new Error(`${k} 的檢查結果應包含推定偏離的那幾筆`);
+    });
+    if (!devs.length && !process.env.SMOKE_INPUT) throw new Error('範例資料應有被推定偏離的設備');
+    const clean = Q.devices().find((d) => !devs.includes(d.key)); App.select({ type: 'device', key: clean.key });
+    if ($('#detail').testAll('.chip').some((c) => c.textContent.startsWith('推定偏離'))) throw new Error('沒有被推定偏離的設備不應有 chip');
+    // 平手：詳情寫出「沒有多數，無法推定」
+    const tie = Q.findings().findIndex((f) => f.deviation && f.deviation.basis === 'majority' && !f.deviation.deviating.length && f.entities.length);
+    if (tie >= 0) {
+      App.selectFinding(tie);
+      const box = $('#detail').testAll('.finding').find((x) => x.textContent.includes(Q.finding(tie).message));
+      if (!box || !box.textContent.includes('推定偏離（多數決）：沒有多數，無法推定')) throw new Error('平手時應寫出沒有多數，無法推定');
+    }
+    // 長表格：超過 8 列預設收合，只在展開列顯示筆數
+    const big = Q.devices().find((d) => d.collected && Q.interfacesOf(d.key).filter((i) => !i.hearsay).length > 8);
+    App.select({ type: 'device', key: big.key });
+    const ifSec = $('#detail').testAll('.detail-fold').find((x) => x.querySelector('summary').textContent.startsWith('介面'));
+    if (!ifSec || ifSec.getAttribute('open') !== null) throw new Error('超過 8 列的介面表應預設收合');
+    const small = Q.devices().find((d) => d.collected && Q.interfacesOf(d.key).filter((i) => !i.hearsay).length > 0 && Q.interfacesOf(d.key).filter((i) => !i.hearsay).length <= 8);
+    if (small) { App.select({ type: 'device', key: small.key }); if (!$('#detail').testAll('h3').some((x) => x.textContent.startsWith('介面'))) throw new Error('8 列以內的介面表不收合'); }
+    App.select(null);
+  });
+  await step('名詞與推論：V.TERMS 是畫面名詞的單一來源；推定欄位標「推論」；VLAN 鏈路數用中性色', () => {
+    const V = S.view; const Q = App.Q;
+    if (!Object.isFrozen(V.TERMS) || V.TERMS.network !== '網路設備' || V.TERMS.inferred !== '推論') throw new Error('V.TERMS 應凍結並定義網路設備、推論等名詞');
+    const c = V.inferChip('依據'); if (c.textContent !== V.TERMS.inferred || c.getAttribute('title') !== '依據') throw new Error('V.inferChip 應寫「推論」並把依據放在 title');
+    App.select({ type: 'vlan', key: '30' });
+    const v = Q.vlan(30); const chip = $('#detail').testAll('.chip').find((x) => x.textContent === `${v.carry.length} 條鏈路兩端都有`);
+    if (!chip || chip.classList.contains('ok')) throw new Error('VLAN 詳情應寫中性色的「N 條鏈路兩端都有」');
+    if ($('#detail').testAll('.chip').some((x) => x.textContent.startsWith('通過 '))) throw new Error('VLAN 詳情不應寫「通過 N 條鏈路」');
+    const d = Q.devices().find((x) => x.kindBasis && x.kindBasis !== 'profile');
+    App.select({ type: 'device', key: d.key });
+    const kvEl = $('#detail').querySelector('.kv'); const ks = kvEl.childNodes;
+    const at = ks.findIndex((x) => x.textContent === '類型依據');
+    if (at < 0 || !ks[at + 1].testAll('.chip').some((x) => x.textContent === V.TERMS.inferred)) throw new Error('設備類型依據應標「推論」');
+    const i = App.snap.model.interfaces.find((x) => x.typeBasis && x.typeBasis !== 'rawType');
+    if (i) { App.select({ type: 'interface', key: i.key }); if (!$('#detail').querySelector('.row').testAll('.chip').some((x) => x.textContent === V.TERMS.inferred)) throw new Error('推定的介面類型應標「推論」'); }
+    App.select(null);
   });
   await step('搜尋框：IP／MAC 前綴與介面名有結果，選介面、網段結果會選到它；路由追蹤有 IP 自動完成', async () => {
     const inp = $('#search'); const dd = $('#search-dd');

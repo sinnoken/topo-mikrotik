@@ -21,6 +21,8 @@
   // 節點內的小字（廠商縮寫、數量）字級固定（世界座標），螢幕上小於 minPx 時不畫
   const INNER = { endpoint: 7, downstream: 8, cluster: 9 };
   const innerShown = (kind, s) => INNER[kind] * s >= F.minPx;
+  // reveal：節點中心離可見範圍邊緣不到這麼多（px）也算被遮住，標籤與選取環才看得到
+  const REVEAL_MARGIN = 24;
 
   class GraphView {
     constructor(canvas) {
@@ -31,6 +33,7 @@
       this.hl = null; // { nodes: Map(id→color), edges: Map(id→color) }
       this.overlay = []; // [{a,b,color,label}]
       this.hover = null; this.kbd = null; this.handlers = {}; this.visible = () => true; this.showGroups = true;
+      this.occluders = []; // [{ el, max }]：疊在畫布上方或下方的元素，全圖與聚焦時讓開（見 viewport）
       this._bind(); this._loop();
       new ResizeObserver(() => this.resize()).observe(canvas);
       this.resize();
@@ -42,6 +45,8 @@
       this.w = r.width; this.h = r.height; this.cv.width = Math.max(1, r.width * dpr); this.cv.height = Math.max(1, r.height * dpr);
       this.dpr = dpr; this.dirty = true;
     }
+    /** 畫布剛從隱藏變成顯示（例如窄螢幕切回工作畫面）時 ResizeObserver 還沒通知：全圖、聚焦前先同步大小 */
+    syncSize() { const r = this.cv.getBoundingClientRect(); if (r.width !== this.w || r.height !== this.h) this.resize(); }
     setData(nodes, edges, pos) {
       this.nodes = nodes; this.edges = edges; this.pos = pos; this.nodeById = new Map(nodes.map((n) => [n.id, n]));
       this.edgesByNode = new Map(); edges.forEach((e) => { [e.a, e.b].forEach((x) => S.util.getOr(this.edgesByNode, x, () => []).push(e)); });
@@ -70,6 +75,26 @@
     // ---------------- 座標
     toScreen(p) { return { x: p.x * this.s + this.tx, y: p.y * this.s + this.ty }; }
     toWorld(x, y) { return { x: (x - this.tx) / this.s, y: (y - this.ty) / this.s }; }
+    /**
+     * 疊在畫布上的元素（例如窄螢幕的詳情抽屜）：[{ el, max, when }]。全圖、聚焦與 reveal 依它們目前的位置讓出空間；
+     * 元素隱藏、沒有大小、when() 為 false，或高度超過畫布的 max 倍（例如全高的抽屜，整張圖本來就被蓋住）時不計。
+     */
+    setOccluders(list) { this.occluders = (list || []).filter((o) => o && o.el); }
+    /** 畫面上沒被遮住的範圍（螢幕座標）：上半部的遮擋物推下上緣，下半部的推上下緣 */
+    viewport() {
+      let top = 0; let bottom = this.h;
+      if (this.occluders.length) {
+        const cr = this.cv.getBoundingClientRect();
+        this.occluders.forEach(({ el, max, when }) => {
+          if (el.classList.contains('hidden') || (when && !when())) return;
+          const r = el.getBoundingClientRect(); const y0 = r.top - cr.top; const y1 = y0 + r.height;
+          if (!r.width || !r.height || r.height > this.h * max || y1 <= 0 || y0 >= this.h) return;
+          if (y0 + r.height / 2 < this.h / 2) top = Math.max(top, y1); else bottom = Math.min(bottom, y0);
+        });
+      }
+      if (bottom - top < 1) { top = 0; bottom = this.h; }
+      return { x0: 0, y0: top, x1: this.w, y1: bottom };
+    }
     fit(ids, pad) {
       // 容器框（box）以四個角計算，整個框才會在畫面內
       const list = (ids && ids.length ? ids : this.nodes.filter((n) => this.isVisible(n)).map((n) => n.id)).flatMap((id) => {
@@ -77,15 +102,30 @@
         return n && n.box ? [{ x: p.x - n.box.w / 2, y: p.y - n.box.h / 2 }, { x: p.x + n.box.w / 2, y: p.y + n.box.h / 2 }] : [p];
       });
       if (!list.length) return;
+      this.syncSize();
       const xs = list.map((p) => p.x); const ys = list.map((p) => p.y);
       const minX = Math.min(...xs); const maxX = Math.max(...xs); const minY = Math.min(...ys); const maxY = Math.max(...ys);
-      const p = pad == null ? 60 : pad;
-      const s = Math.min((this.w - p * 2) / Math.max(maxX - minX, 1), (this.h - p * 2) / Math.max(maxY - minY, 1));
+      const v = this.viewport(); const vw = v.x1 - v.x0; const vh = v.y1 - v.y0;
+      const p = Math.min(pad == null ? 60 : pad, vw / 4, vh / 4);
+      const s = Math.min((vw - p * 2) / Math.max(maxX - minX, 1), (vh - p * 2) / Math.max(maxY - minY, 1));
       this.s = Math.max(0.03, Math.min(list.length === 1 ? 1.6 : 2.2, s));
-      this.tx = this.w / 2 - ((minX + maxX) / 2) * this.s; this.ty = this.h / 2 - ((minY + maxY) / 2) * this.s;
+      this.tx = (v.x0 + v.x1) / 2 - ((minX + maxX) / 2) * this.s; this.ty = (v.y0 + v.y1) / 2 - ((minY + maxY) / 2) * this.s;
       this.dirty = true;
     }
-    focus(ids) { this.fit(ids, Math.min(this.w, this.h) * (ids.length > 1 ? 0.1 : 0.25)); }
+    focus(ids) { this.syncSize(); const v = this.viewport(); this.fit(ids, Math.min(v.x1 - v.x0, v.y1 - v.y0) * (ids.length > 1 ? 0.1 : 0.25)); }
+    /** 只平移、不縮放：ids 有任一個在沒被遮住的範圍外（例如被詳情抽屜蓋住）時，把它們的中心移到該範圍中央 */
+    reveal(ids) {
+      this.syncSize();
+      if (this.w < 1 || this.h < 1) return;
+      const list = (ids || []).map((id) => this.at(id)).filter(Boolean).map((p) => this.toScreen(p));
+      if (!list.length) return;
+      const v = this.viewport(); const m = REVEAL_MARGIN;
+      if (list.every((p) => p.x >= v.x0 + m && p.x <= v.x1 - m && p.y >= v.y0 + m && p.y <= v.y1 - m)) return;
+      const xs = list.map((p) => p.x); const ys = list.map((p) => p.y);
+      this.tx += (v.x0 + v.x1) / 2 - (Math.min(...xs) + Math.max(...xs)) / 2;
+      this.ty += (v.y0 + v.y1) / 2 - (Math.min(...ys) + Math.max(...ys)) / 2;
+      this.dirty = true;
+    }
 
     // ---------------- 互動
     // 指標事件（pointer）同時處理滑鼠、觸控與觸控筆；滑鼠行為與原本相同（拖背景平移、拖節點、點選、雙擊）。

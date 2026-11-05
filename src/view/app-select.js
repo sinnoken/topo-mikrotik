@@ -20,7 +20,7 @@
     g.setOverlay([]); g.setHighlight(null);
     if (sel && sel.type === 'vlan') { App.vlanFilter = { id: +sel.key, domain: sel.domain == null ? null : sel.domain }; if (!o.refresh) A.syncLayerUi(); }
     const filterMarks = () => (App.vlanFilter && Q ? A.vlanMarks(App.vlanFilter.id, App.vlanFilter.domain) : null);
-    if (!sel) { g.setSelection([], []); g.setHighlight(filterMarks()); if (!o.refresh) V.details.render(App, null); return; }
+    if (!sel) { g.setSelection([], []); g.setHighlight(filterMarks()); if (!o.refresh) { A.closeSheet(); V.details.render(App, null); } return; }
     if (!o.refresh) {
       A.closeHub(); // 選取要在圖與詳情上看到結果（例如從搜尋或摘要進來）
       // L2 只畫一台設備與鄰居時，選了不在圖上的設備就改看那一台
@@ -36,10 +36,13 @@
     if (!App.showHosts && focus.some((k) => { const d = Q.getDevice(k); return d && d.kind === 'host'; })) { App.showHosts = true; A.applyVisibility(); }
     if (!App.showUnknown && focus.some((k) => String(k).startsWith('?'))) { App.showUnknown = true; A.applyVisibility(); }
     g.setSelection(r.nodes, r.edges);
+    // 窄螢幕：在拓樸圖選取時開底部抽屜（先開，聚焦與 reveal 才會讓開它）；中間是修正計畫或驗證、或已在「詳細資料」時切到詳細資料
+    const sheet = !o.refresh && A.openSheetFor();
     if (o.focus && focus.length) g.focus(focus);
+    else if (sheet) g.reveal(focus);
     if (o.refresh) return;
     V.details.render(App, sel);
-    if (sel && A.isNarrowScreen()) A.setWorkspace('details');
+    if (!sheet && A.isNarrowScreen()) A.setWorkspace('details');
   };
   /** 設備圖上的標示：回傳 { nodes, edges, focus, hl, overlay } */
   function deviceMarks(sel, o) {

@@ -524,7 +524,7 @@ function viewBoundaryViolations(file, src) {
     workspaces.find((b) => b.dataset.workspace === 'checks').click();
     if ($('#main').dataset.workspace !== 'checks') throw new Error('工作區切換未顯示檢查面板');
     App.select({ type: 'device', key: App.snap.model.devices[0].key });
-    if ($('#main').dataset.workspace !== 'details') throw new Error('選取資料後應切換至詳細資料工作區');
+    if ($('#main').dataset.workspace !== 'graph' || $('#main').dataset.sheet !== 'half') throw new Error('窄螢幕從清單工作區選取應切回拓樸圖並開啟半高抽屜：' + $('#main').dataset.workspace + '／' + $('#main').dataset.sheet);
     const folds = $('#detail').testAll('details');
     if (!folds.length || !folds.some((d) => d.querySelector('summary').textContent.includes('鄰居'))) throw new Error('設備詳細資訊未提供可漸進展開的區塊');
     // 檢查兩種設備：未收集的與已收集的（已收集才有「收集到的原始輸出」等區塊）
@@ -536,8 +536,81 @@ function viewBoundaryViolations(file, src) {
     App.select({ type: 'device', key: App.snap.model.devices.find((x) => x.collected && x.data.includes('route')).key });
     if (!$('#detail').testAll('summary').some((x) => x.textContent.startsWith('收集到的原始輸出'))) throw new Error('已收集設備應有原始輸出區塊');
     noDupTitle();
+    App.select(null);
     window.innerWidth = 1200;
     workspaces.find((b) => b.dataset.workspace === 'graph').click();
+  });
+  await step('窄螢幕底部抽屜：點設備仍在拓樸圖、抽屜含詳情且可展開／收起／拖曳；Esc 收起；全圖讓開抽屜；④ 與詳細資料工作區維持原行為；桌面不出現', () => {
+    const main = $('#main'); const right = $('#right'); const g = App.graph;
+    const ws = (w) => document.testAll('#mobile-workspaces button').find((b) => b.dataset.workspace === w);
+    const esc = () => (docListeners.keydown || []).forEach((f) => f({ key: 'Escape', target: document.activeElement, preventDefault() {}, stopPropagation() {} }));
+    const dev = App.Q.devices().find((d) => d.collected && g.pos.has(d.key));
+    if (!right.querySelector('#sheet-bar') || !right.querySelector('#detail')) throw new Error('抽屜的操作列應在 #right 內，與 #detail 共用同一個詳情節點');
+    if (right.getAttribute('role') !== 'region' || !right.getAttribute('aria-label')) throw new Error('抽屜應為有名稱的 region（非強制回應，圖仍可操作）');
+    ['#sheet-handle', '#sheet-expand', '#sheet-close'].forEach((x) => { const b = $(x); if (b.tagName !== 'BUTTON' || !(b.getAttribute('aria-label') || b.textContent.trim())) throw new Error(x + ' 應是有名稱的按鈕'); });
+    try {
+      window.innerWidth = 390; App.showStep('triage'); ws('graph').click();
+      const before = document.activeElement;
+      g.emit('click', { type: 'node', id: dev.key });
+      if (main.dataset.workspace !== 'graph') throw new Error('窄螢幕在拓樸圖點設備後應留在工作畫面：' + main.dataset.workspace);
+      if (main.dataset.sheet !== 'half') throw new Error('點設備後應開啟半高抽屜');
+      if (!text('#detail').includes(App.Q.devName(dev.key))) throw new Error('抽屜應顯示所選設備的詳情');
+      if (document.activeElement !== before) throw new Error('從圖上點選開抽屜時不應搶走焦點');
+      if (g.sel.nodes.size !== 1 || !g.sel.nodes.has(dev.key)) throw new Error('圖上應保留選取標示');
+      const ex = $('#sheet-expand');
+      ex.click(); if (main.dataset.sheet !== 'full' || ex.getAttribute('aria-expanded') !== 'true') throw new Error('展開鈕應切到全高');
+      ex.click(); if (main.dataset.sheet !== 'half' || ex.getAttribute('aria-expanded') !== 'false') throw new Error('再按一次應回到半高');
+      // 抽屜上緣在 480：全圖與聚焦扣掉它，被蓋住的選取節點只平移露出
+      const rr = right.getBoundingClientRect; right.getBoundingClientRect = () => ({ left: 0, top: 480, width: 1200, height: 320 });
+      try {
+        if (g.viewport().y1 > 480) throw new Error('可用範圍應扣掉抽屜：' + g.viewport().y1);
+        g.fit(); const ys = g.nodes.filter((n) => g.isVisible(n)).map((n) => g.toScreen(g.at(n.id)).y);
+        if (Math.max(...ys) > 480) throw new Error('全圖不應把節點放到抽屜下方：' + Math.round(Math.max(...ys)));
+        const s0 = g.s; const p = g.at(dev.key); g.ty = 700 - p.y * g.s; // 把設備移到抽屜下
+        App.select({ type: 'device', key: dev.key });
+        const y = g.toScreen(g.at(dev.key)).y;
+        if (y > 480 || g.s !== s0) throw new Error('被抽屜蓋住的選取節點應只平移露出：y=' + Math.round(y) + '、縮放 ' + s0 + '→' + g.s);
+        g.focus([dev.key]); if (g.toScreen(g.at(dev.key)).y > 480) throw new Error('聚焦應讓開抽屜');
+        // 拖曳：上拉超過門檻成全高，點一下切回半高，下拉到底收起
+        const hd = $('#sheet-handle');
+        const drag = (y0, y1) => { hd.dispatch('pointerdown', { pointerId: 9, pointerType: 'touch', button: 0, clientX: 0, clientY: y0 }); const ev = { pointerId: 9, pointerType: 'touch', target: hd, clientX: 0, clientY: y1 }; (winListeners.pointermove || []).forEach((f) => f(ev)); (winListeners.pointerup || []).forEach((f) => f(ev)); };
+        drag(490, 190); if (main.dataset.sheet !== 'full' || right.style.height) throw new Error('上拉抽屜應展開成全高並清掉拖曳中的高度：' + main.dataset.sheet);
+        hd.click(); if (main.dataset.sheet !== 'full') throw new Error('剛拖曳完的 click 不應再切換高度');
+        hd.click(); if (main.dataset.sheet !== 'half') throw new Error('點一下拖曳把手應在全高與半高間切換');
+        drag(490, 760); if (main.dataset.sheet) throw new Error('下拉到底應收起抽屜');
+        if (!App.sel) throw new Error('收起抽屜只是檢視狀態，不應清除選取');
+      } finally { right.getBoundingClientRect = rr; }
+      // Esc 收起，焦點不留在收起的抽屜內；輸入框裡的 Esc 不收
+      App.select({ type: 'device', key: dev.key });
+      $('#search').focus(); esc(); if (main.dataset.sheet !== 'half') throw new Error('搜尋框裡的 Esc 不應收起抽屜');
+      $('#sheet-title').focus(); esc();
+      if (main.dataset.sheet) throw new Error('Esc 應收起抽屜');
+      if (right.contains(document.activeElement)) throw new Error('收起後焦點不應留在抽屜內');
+      // 從清單工作區點檢查結果：切回工作畫面、開抽屜，焦點移到抽屜（原本的列已隱藏）
+      const fi = App.snap.findings.findIndex((f) => f.entities.some((e) => e.type === 'device'));
+      if (fi >= 0) {
+        ws('checks').click(); App.selectFinding(fi);
+        if (main.dataset.workspace !== 'graph' || main.dataset.sheet !== 'half') throw new Error('從清單工作區點檢查結果應切回工作畫面並開抽屜');
+        if (document.activeElement !== $('#sheet-title')) throw new Error('從其他工作區開抽屜時焦點應移到抽屜');
+      }
+      $('#sheet-close').click(); if (main.dataset.sheet) throw new Error('收起鈕應關閉抽屜');
+      if (right.contains(document.activeElement)) throw new Error('按收起後焦點不應留在抽屜內');
+      App.select({ type: 'device', key: dev.key }); App.select(null);
+      if (main.dataset.sheet) throw new Error('取消選取時抽屜應收起');
+      // 「詳細資料」工作區內選取維持原行為
+      ws('details').click(); App.select({ type: 'device', key: dev.key });
+      if (main.dataset.workspace !== 'details' || main.dataset.sheet) throw new Error('在詳細資料工作區選取應留在詳細資料、不開抽屜');
+      // ④ 修正：中間不是拓樸圖，選取維持原行為（切到詳細資料）；換步時抽屜收起
+      App.showStep('triage', { workspace: 'graph' }); App.select({ type: 'device', key: dev.key });
+      App.showStep('fix'); if (main.dataset.sheet) throw new Error('換到沒有拓樸圖的一步時抽屜應收起');
+      App.select({ type: 'device', key: dev.key });
+      if (main.dataset.workspace !== 'details' || main.dataset.sheet) throw new Error('④ 選取應切到詳細資料，不開抽屜');
+      App.select(null);
+      // 桌面：不出現抽屜
+      window.innerWidth = 1200; App.showStep('triage'); ws('graph').click();
+      g.emit('click', { type: 'node', id: dev.key });
+      if (main.dataset.sheet || main.dataset.workspace !== 'graph') throw new Error('桌面版不應出現抽屜');
+    } finally { window.innerWidth = 1200; App.select(null); App.showStep('triage'); ws('graph').click(); }
   });
   await step('繪圖：不同縮放程度、分群、主機切換', () => {
     const g = App.graph; [0.05, 0.3, 0.8, 1.6, 3].forEach((s) => { g.s = s; g.draw(); });

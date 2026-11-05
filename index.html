@@ -202,7 +202,16 @@
       </div>
     </section>
 
-    <aside id="right"><div id="detail" class="pane"></div></aside>
+    <!-- 窄螢幕在拓樸圖選取時，#right 變成底部抽屜（非強制回應的 region，圖仍可操作）；#sheet-bar 只在抽屜時顯示 -->
+    <aside id="right" role="region" aria-label="詳細資料">
+      <div id="sheet-bar" class="sheet-bar">
+        <button id="sheet-handle" class="sheet-handle ghost" aria-label="拖曳調整詳細資料的高度，點一下展開或還原" title="拖曳調整高度"><span></span></button>
+        <h2 id="sheet-title" class="sheet-title" tabindex="-1">詳細資料</h2>
+        <button id="sheet-expand" class="ghost" aria-expanded="false" aria-controls="right">展開</button>
+        <button id="sheet-close" class="ghost" aria-controls="right" title="收起（Esc）" aria-keyshortcuts="Escape">收起</button>
+      </div>
+      <div id="detail" class="pane"></div>
+    </aside>
   </div>
   <!-- 資料中心：和 #main 疊在同一格，開啟時蓋住主畫面（畫布大小不變），內容由 src/view/panels/hub.js 產生 -->
   <section id="hub" class="hub hidden" aria-labelledby="hub-title"></section>

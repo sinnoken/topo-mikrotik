@@ -63,7 +63,7 @@
     ['patch', 'verify'].forEach((x) => $('#view-' + x).classList.toggle('hidden', x !== w.center));
     // 工作畫面蓋住拓樸圖時，鍵盤不會移到底下的畫布；鍵盤 N 移到設備時顯示的提示也不留在工作畫面上
     $('#view-graph').inert = w.center !== 'graph';
-    if (w.center !== 'graph') $('#tooltip').classList.add('hidden');
+    if (w.center !== 'graph') { $('#tooltip').classList.add('hidden'); A.closeSheet(); }
     A.applyColumns(); A.syncWorkspaces(); A.renderSteps();
     A.renderCenter();
   }
@@ -157,6 +157,7 @@
   };
   A.setWorkspace = function setWorkspace(workspace) {
     const ws = workspace === 'checks' && !WORK[App.step].left ? 'graph' : workspace;
+    if (ws !== 'graph') A.closeSheet(); // 抽屜只在工作畫面工作區；切到「詳細資料」時 #right 本來就整頁顯示
     $('#main').dataset.workspace = ws;
     document.querySelectorAll('#mobile-workspaces button').forEach((button) => {
       const active = button.dataset.workspace === ws;
@@ -169,6 +170,80 @@
       A.setWorkspace(button.dataset.workspace);
     }));
     A.syncWorkspaces();
+  };
+
+  // ================================================================ 窄螢幕的詳情抽屜
+  /**
+   * 窄螢幕在拓樸圖（工作畫面工作區）選取時，#right 以底部抽屜疊在圖上，圖仍可看見與操作；詳情仍是同一個 #detail。
+   * 狀態存在 #main[data-sheet]（'half'／'full'），是檢視狀態；抽屜是 role=region，不鎖焦點。
+   * SHEET.occluderMax：半高抽屜（#main 的 40%）要讓開，全高時整張圖被蓋住，不計。
+   * 拖曳放開時高度低於 closeBelow 收起、高於 fullAbove 展開成全高，其餘回到半高（比例皆相對於 #main 的高度）；移動不到 tapPx 算點一下。
+   */
+  const SHEET = { occluderMax: 0.75, closeBelow: 0.2, fullAbove: 0.65, tapPx: 6 };
+  A.SHEET = SHEET;
+  A.sheetState = () => $('#main').dataset.sheet || null;
+  function setSheet(state) {
+    const main = $('#main');
+    if (state) main.dataset.sheet = state; else delete main.dataset.sheet;
+    $('#right').style.height = '';
+    const ex = $('#sheet-expand'); ex.setAttribute('aria-expanded', String(state === 'full')); ex.textContent = state === 'full' ? '半高' : '展開';
+  }
+  /** 收起抽屜（只是檢視狀態，選取不變）；焦點在抽屜內時移到「工作畫面」工作區按鈕，不留在隱藏的元素上 */
+  A.closeSheet = function closeSheet() {
+    if (!A.sheetState()) return;
+    const a = document.activeElement; const inside = !!a && $('#right').contains(a);
+    setSheet(null);
+    if (inside) Array.from(document.querySelectorAll('#mobile-workspaces button')).find((b) => b.dataset.workspace === 'graph').focus();
+  };
+  /**
+   * 選取後由 App.select 呼叫：窄螢幕、中間是拓樸圖、且不在「詳細資料」工作區時，切到工作畫面並開抽屜（已開時維持高度），回傳是否開著。
+   * 從清單工作區來時原本的觸發元素已隱藏，焦點移到抽屜標題；在圖上點選時不搶焦點。
+   */
+  A.openSheetFor = function openSheetFor() {
+    if (!A.isNarrowScreen() || App.centerView !== 'graph') return false;
+    const ws = $('#main').dataset.workspace;
+    if (ws === 'details') return false;
+    A.setWorkspace('graph'); setSheet(A.sheetState() || 'half');
+    if (ws !== 'graph') $('#sheet-title').focus();
+    return true;
+  };
+  A.bindSheet = function bindSheet() {
+    const handle = $('#sheet-handle'); const right = $('#right'); const main = $('#main');
+    // 窄螢幕的工具列換行後佔掉圖的上方好幾列，也要讓開；桌面的全圖與聚焦維持原本的範圍
+    App.graph.setOccluders([{ el: right, max: SHEET.occluderMax }, { el: $('#toolbar'), max: SHEET.occluderMax, when: A.isNarrowScreen }]);
+    const toggle = () => setSheet(A.sheetState() === 'full' ? 'half' : 'full');
+    $('#sheet-expand').onclick = toggle;
+    $('#sheet-close').onclick = () => A.closeSheet();
+    // 點一下（或鍵盤 Enter／空白鍵）把手：全高與半高互換；剛拖曳完的 click 不算
+    let drag = null; let dragged = false;
+    handle.onclick = () => { if (dragged) { dragged = false; return; } toggle(); };
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.button) return;
+      drag = { id: e.pointerId, y0: e.clientY, h0: right.getBoundingClientRect().height, total: main.getBoundingClientRect().height, moved: false };
+      dragged = false;
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const dy = e.clientY - drag.y0; if (Math.abs(dy) > SHEET.tapPx) drag.moved = true;
+      if (drag.moved) right.style.height = Math.round(Math.max(0, Math.min(drag.total, drag.h0 - dy))) + 'px';
+    });
+    const end = (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const d = drag; drag = null; if (!d.moved) return;
+      dragged = true;
+      const r = (d.h0 - (e.clientY - d.y0)) / Math.max(1, d.total);
+      if (r < SHEET.closeBelow) A.closeSheet(); else setSheet(r > SHEET.fullAbove ? 'full' : 'half');
+    };
+    window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end);
+    // Esc 收起：最後才輪到抽屜，輸入框、對話框、資料中心、路由追蹤與搜尋選單的 Esc 先由它們處理
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || !A.sheetState() || A.hubOpen()) return;
+      const t = e.target && e.target.tagName;
+      if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') return;
+      if (['#dlg-input', '#dlg-raw'].some((x) => $(x) && $(x).open)) return;
+      if (!$('#trace-pop').classList.contains('hidden') || !$('#search-dd').classList.contains('hidden')) return;
+      A.closeSheet();
+    });
   };
 
   // ================================================================ 左右欄寬度

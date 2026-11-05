@@ -91,7 +91,7 @@
     // 只有設備圖的位置存進 store；L2／L3 拖曳後的位置留在記憶體（App.layers）
     App.graph.on('moved', () => { if (App.layer === 'device') { clearTimeout(saveT); saveT = setTimeout(A.savePositions, 600); } App.graph.computeGroups(); });
     App.layoutMode = (await S.store.get('layoutMode').catch(() => null)) || 'elk';
-    A.bindHeader(); A.bindToolbar(); A.bindLayers(); A.bindInputDialog(); A.bindHub(); A.bindSteps(); A.bindMobileWorkspaces(); await A.bindResizers();
+    A.bindHeader(); A.bindToolbar(); A.bindLayers(); A.bindInputDialog(); A.bindHub(); A.bindSteps(); A.bindMobileWorkspaces(); A.bindSheet(); await A.bindResizers();
     if (!(await S.store.available())) A.banner('這個瀏覽器無法使用本機儲存，關閉頁面後基準不會保留。');
     await A.loadLedger();
     await App.restore();
@@ -134,7 +134,7 @@
   A.load = function load(snap, positions, inputs) {
     const Q = S.query(snap);
     if (inputs) A.setRoundInputs(inputs);
-    App.round.snapshot = snap; App.round.Q = Q; App.sel = null; App.expanded = new Set();
+    App.round.snapshot = snap; App.round.Q = Q; App.sel = null; App.expanded = new Set(); A.closeSheet();
     // 處理紀錄推進一輪（目前時間由畫面傳入）；寫入 store 是非同步的，App.ledgerJob 讓呼叫端可以等待
     App.ledgerJob = A.advanceLedger(App.Q);
     V.lists.findings.reset(); V.lists.compare.reset(); V.lists.findings.openFirst(App.Q);

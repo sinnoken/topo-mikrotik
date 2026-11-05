@@ -135,6 +135,12 @@ footer { display: flex; align-items: center; gap: 16px; padding: 0 12px; font-si
 .baseline-actions { display: flex; flex-wrap: wrap; gap: 6px; flex: none; }
 .baseline-actions button { min-height: var(--control-h); padding: 4px 9px; font-size: var(--fs-sm); }
 .mobile-workspaces { display: none; }
+/* 詳情抽屜的操作列：只在窄螢幕的抽屜模式顯示（見下方 max-width: 900px） */
+.sheet-bar { display: none; }
+.sheet-handle { width: 56px; min-height: 40px; padding: 0; display: flex; align-items: center; justify-content: center; cursor: ns-resize; touch-action: none; }
+.sheet-handle span { display: block; width: 32px; height: 4px; border-radius: 2px; background: var(--line-strong); }
+.sheet-title { flex: 1; margin: 0; font-size: var(--fs-base); }
+.sheet-title:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
 /* ---------- 搜尋 ---------- */
 .search { position: relative; flex: 1 1 220px; max-width: 340px; min-width: 200px; }
@@ -528,6 +534,12 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
   #left, #right { position: absolute; inset: 0; }
   #left .grip, #right .grip { display: none; }
   .detail { padding: 14px 12px 28px; }
+  /* 底部抽屜：在拓樸圖選取時 #right 疊在圖的下方（半高 40%、全高蓋滿 #main），圖仍可操作 */
+  #main[data-workspace="graph"][data-sheet] > #right { display: flex; flex-direction: column; top: auto; height: 40%; max-height: 100%; z-index: 6; background: var(--panel);
+    border-top: 1px solid var(--line-strong); border-radius: var(--radius-lg) var(--radius-lg) 0 0; box-shadow: var(--shadow-md); }
+  #main[data-workspace="graph"][data-sheet="full"] > #right { height: 100%; border-radius: 0; }
+  #main[data-workspace="graph"][data-sheet] .sheet-bar { display: flex; flex: none; align-items: center; gap: 4px; padding: 2px 6px 2px 4px; border-bottom: 1px solid var(--line); }
+  #main[data-workspace="graph"][data-sheet] > #right > #detail { flex: 1; min-height: 0; overflow: auto; }
   .toolbar { max-width: calc(100% - 20px); }
   footer { min-height: 24px; padding: 3px 8px; gap: 10px; }
 }

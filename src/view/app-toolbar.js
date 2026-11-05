@@ -18,7 +18,7 @@
     }));
     $('#btn-clear').onclick = async () => {
       if (!App.snap || !confirm('清除目前的基準與輸入？（只清除這個工具的資料）')) return;
-      await S.store.del('last'); A.clearRound(); App.sel = null;
+      await S.store.del('last'); A.clearRound(); App.sel = null; A.closeSheet();
       // 沒有基準時只有設備圖（歡迎畫面）：L2／L3 的資料與 VLAN 篩選一起清掉
       App.vlanFilter = null; A.resetLayers(); App.layer = 'device'; A.setDeviceGraph([], [], new Map()); A.renderAll();
     };

@@ -41,7 +41,7 @@ test('CLI：第一輪（沒有處理紀錄）有新的待處理錯誤／警告�
   try {
     const r = run([SAMPLE, '--now', NOW, '-o', out]);
     assert.strictEqual(r.code, CODES().NOTIFY, r.stderr);
-    ['baseline.json', 'ledger.json', 'findings.json', 'summary.json'].forEach((f) => assert.ok(fs.existsSync(path.join(out, f)), `應輸出 ${f}`));
+    ['baseline.json', 'ledger.json', 'findings.json', 'findings.csv', 'findings.md', 'summary.json'].forEach((f) => assert.ok(fs.existsSync(path.join(out, f)), `應輸出 ${f}`));
     assert.ok(!fs.existsSync(path.join(out, 'compare.json')), '沒有 --expected 時不輸出 compare.json');
     const snap = readJson(path.join(out, 'baseline.json'));
     assert.strictEqual(snap.meta.createdAt, NOW);
@@ -135,9 +135,32 @@ test('CLI：相同輸入與選項的輸出完全相同', () => {
   try {
     run([SAMPLE, '--now', NOW, '-o', a]); run([SAMPLE, '--now', NOW, '-o', b]);
     const files = fs.readdirSync(a).sort();
-    assert.deepStrictEqual(files, ['baseline.json', 'findings.json', 'ledger.json', 'summary.json']);
+    assert.deepStrictEqual(files, ['baseline.json', 'findings.csv', 'findings.json', 'findings.md', 'ledger.json', 'summary.json']);
     assert.deepStrictEqual(fs.readdirSync(b).sort(), files);
     files.forEach((f) => assert.ok(fs.readFileSync(path.join(a, f)).equals(fs.readFileSync(path.join(b, f))), `${f} 兩次輸出不同`));
+  } finally { rm(a); rm(b); }
+});
+
+test('CLI：findings.csv／findings.md 與畫面匯出同一份核心文字（S.report），處理紀錄欄位是推進後的狀態（含使用者的變更時間與備註）', () => {
+  const a = tmp(); const b = tmp();
+  try {
+    assert.strictEqual(run([SAMPLE, '--now', NOW, '-o', a]).code, CODES().NOTIFY);
+    const Q0 = S.query(readJson(path.join(a, 'baseline.json')));
+    const lg0 = readJson(path.join(a, 'ledger.json'));
+    const report = (dir) => [fs.readFileSync(path.join(dir, 'findings.csv'), 'utf8'), fs.readFileSync(path.join(dir, 'findings.md'), 'utf8')];
+    const expect = (Q, lg) => [S.report.findingsCsv(Q, { ledgerOf: S.report.ledgerOfItems(lg, Q) }), S.report.findingsMarkdown(Q, { ledgerOf: S.report.ledgerOfItems(lg, Q) })];
+    assert.deepStrictEqual(report(a), expect(Q0, lg0), '第一輪：都是待處理');
+    assert.ok(report(a)[0].startsWith('\uFEFFseverity,') && report(a)[0].endsWith('\r\n'), 'CSV 有 BOM、換行 CRLF（與畫面相同）');
+    // 使用者把一筆標為誤報並寫備註：下一輪（不同時間、同一份基準 skipped）報表的已處理欄位帶出變更時間與備註
+    const key = Q0.findingKey(Q0.findings()[0]);
+    const lg1 = S.ledger.set(lg0, key, { status: 'false-positive', note: '測試備註' }, { now: '2026-01-01T12:00:00Z' });
+    writeJson(path.join(b, 'in.json'), lg1);
+    run([SAMPLE, '--ledger', path.join(b, 'in.json'), '--now', '2026-01-02T00:00:00Z', '-o', path.join(b, 'out')]);
+    const got = report(path.join(b, 'out'));
+    assert.deepStrictEqual(got, expect(S.query(readJson(path.join(b, 'out', 'baseline.json'))), readJson(path.join(b, 'out', 'ledger.json'))));
+    const row = got[0].split('\r\n')[1].split(',');
+    assert.deepStrictEqual([row[6], row[7], row[8]], ['2026-01-01T12:00:00.000Z', 'false-positive', '測試備註'], '第一列的 acknowledged／ack_kind／ack_note');
+    assert.ok(got[1].includes('**誤報**（2026-01-01T12:00:00.000Z）') && got[1].includes('  - 備註：測試備註'));
   } finally { rm(a); rm(b); }
 });
 

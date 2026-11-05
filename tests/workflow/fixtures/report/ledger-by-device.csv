@@ -1,0 +1,9 @@
+﻿severity,id,title,message,entities,evidence,acknowledged,ack_kind,ack_note,device,action,status,note,waiver_reason,waiver_until,facet,與多數不同（推論）
+info,T03,平手," 前後空白 ",device:R_C,,2026-01-04T00:00:00Z,weird,,R_C,,weird,,原因 *x*,2026-07-01T00:00:00Z,,沒有多數
+error,I01,無法辨識的內容,'-負號開頭,device:R_C,t.txt:7,2026-01-05T00:00:00Z,fixed,,R_C,依訊息補上設備標頭或指令標記，或改用 `detail without-paging` 重新收集。指令寫成 `print detail without-paging`，格式見收集清單 §2。修正前這段資料不會進入基準。,fixed,,,,,
+warn,I02,同一設備重複提供同類資料（以後者為準）,<b>*x*</b> [連結](u) | 管線 \ 反斜線 TPE_ACC_SW_01,device:SW_A,t.txt:5,,accepted,,SW_A,確認最後一份是想要的資料；若是合併多次收集造成的，刪除舊的那段。較早的不會進入基準。,accepted,,,2026-06-01T00:00:00Z,mikrotik.arp,
+warn,T02,多數決,'=1+1 與多數不同,device:SW_A; device:SW_B,,,,,SW_A,,regressed,復發備註,,,,R_C; SW_B
+warn,T01,"標題, ""引號""","第一行
+第二行, ""x""",device:SW_B,"t.txt:3; b ""x"".txt:9",2026-01-02T00:00:00Z,false-positive,"'=備註, ""引號""",SW_B,,false-positive,"'=備註, ""引號""",,,,
+error,I01,無法辨識的內容,無法辨識的內容：t.txt 第 1–2 行（指令：/foo）,,t.txt:1,,,,,依訊息補上設備標頭或指令標記，或改用 `detail without-paging` 重新收集。指令寫成 `print detail without-paging`，格式見收集清單 §2。修正前這段資料不會進入基準。,,,,,,
+info,T03,平手,不是多數決,"device:A,B",,,,,,,open,待處理備註,,,,

@@ -12,4 +12,6 @@ module.exports = [
   'src/ledger/ledger.js',
   // 不壓縮 ZIP（S.zip）與工作包（ssot-workpack/1）：工作包讀寫時呼叫 S.build、S.ledger、S.profile
   'src/workpack/zip.js', 'src/workpack/workpack.js',
+  // 檢查結果報表（CSV、Markdown）：只讀查詢介面，處理狀態用 S.ledger
+  'src/report/report.js',
 ];

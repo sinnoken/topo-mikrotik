@@ -4,3 +4,6 @@
 samples/** -whitespace
 tests/fixtures/** -whitespace
 vendor/** -whitespace
+# 報表的逐字預期輸出：CSV 的 CRLF 與 Markdown 的行尾空白都是被測的內容，不轉換行尾、不檢查空白
+tests/workflow/fixtures/report/*.csv -text -whitespace
+tests/workflow/fixtures/report/*.md -text -whitespace

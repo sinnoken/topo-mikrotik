@@ -35,24 +35,47 @@
 
   // 訊息中引用原文時的長度上限（I01 的錯誤訊息、I03 的無法辨識行）
   const clip = (t) => { t = String(t == null ? '' : t).trim(); return t.length > 60 ? t.slice(0, 60) + '…' : t; };
-  /** 整段無法辨識的原因（I01 與建立前的預檢 S.preflight 共用同一段文字）。b：已辨識過的區塊（how、adapters、empty）。 */
-  function unrecognizedReason(b) {
+  /**
+   * 訊息中的來源名稱：貼上的內容（S.readers.PASTE，半形括號，是 Snapshot 的檔名原值）在訊息中寫成全形括號；其餘原樣。
+   * 這是核心訊息的唯一寫法（畫面的 V.fileName 是同一個轉換）。
+   */
+  const PASTE_TEXT = '（貼上的內容）';
+  const sourceName = (file) => (file === S.readers.PASTE ? PASTE_TEXT : file);
+  /** 訊息中的位置「檔名 第 a–b 行」：全形括號結尾的名稱後不加空白 */
+  const placeText = (file, start, end) => {
+    const n = sourceName(file);
+    return `${n}${n.endsWith('）') ? '' : ' '}第 ${start === end ? start : `${start}–${end}`} 行`;
+  };
+  /**
+   * 結論在前的訊息：「結論：位置＋補充」。parts 是 { what（結論）, rest（補充，接在位置後面，可為空字串）}。
+   * I01 的訊息與建立前的預檢（S.preflight 的 reason＝what＋rest）由同一組 parts 產生，
+   * 所以訊息去掉「：位置」就是預檢的原因。
+   */
+  const withPlace = (p, place) => `${p.what}：${place}${p.rest}`;
+  const joinParts = (p) => p.what + p.rest;
+  /** 整段無法辨識的結論與補充。b：已辨識過的區塊（how、adapters、empty）。 */
+  function unrecognizedParts(b) {
     // 整段只有 RouterOS 錯誤訊息：沒有內容是因為指令執行失敗，不是輸出格式不對
     const content = b.lines.filter((l) => l.trim());
     const rosErr = b.device !== null && content.length && content.every(S.adapters.util.rosError);
-    return b.device === null ? '沒有設備標頭'
-      : rosErr ? `指令執行錯誤：${clip(content[0])}${b.command ? `（指令：${b.command}）` : ''}；請確認 RouterOS 版本與已安裝的套件是否支援這個指令，或改用正確的指令重新收集`
-      : b.empty ? `解析器已辨識（${(b.adapters || []).map((a) => S.adapters[a].label).join('、')}），但解析不出任何內容；RouterOS 的 print 指令請加上 detail without-paging`
-        : '沒有任何解析器認得這段內容' + (b.command ? `（指令：${b.command}）` : '');
+    const cmd = b.command ? `（指令：${b.command}）` : '';
+    return b.device === null ? { what: '沒有設備標頭', rest: '' }
+      : rosErr ? { what: '指令執行錯誤', rest: `，設備回應「${clip(content[0])}」${cmd}；請確認 RouterOS 版本與已安裝的套件是否支援這個指令，或改用正確的指令重新收集` }
+      : b.empty ? { what: '解析不出任何內容', rest: `（已辨識為${(b.adapters || []).map((a) => `「${S.adapters[a].label}」`).join('、')}）；RouterOS 的 print 指令請加上 detail without-paging` }
+        : { what: '無法辨識的內容', rest: cmd };
   }
+  /** 整段無法辨識的原因（建立前的預檢 S.preflight 用；I01 的訊息是同一段文字加上位置） */
+  const unrecognizedReason = (b) => joinParts(unrecognizedParts(b));
   // 收集器註解（readers/common.js）格式或位置不對：不能確定收集時間或失敗原因，列為無法辨識
   const ISSUE = {
     'collected-at-invalid': (x) => `收集時間「${x.text}」不是 UTC ISO 8601 格式（應為 2026-10-24T03:00:00Z 這種秒精度的 UTC 時間）`,
     'collected-at-misplaced': (x) => `收集時間「${x.text}」不在指令標記的下一行，無法判斷屬於哪個指令`,
     'failure-duplicate': (x) => `同一段指令輸出有第二個收集失敗註解「${x.text}」，採用第一個`,
   };
-  /** 收集器註解問題的原因（I01 與 S.preflight 共用）。x：區塊的 issues 之一 { kind, line, text }。 */
-  const issueReason = (x) => ISSUE[x.kind](x);
+  /** 收集器註解問題的結論與補充。x：區塊的 issues 之一 { kind, line, text }。 */
+  const issueParts = (x) => ({ what: '收集器註解有誤', rest: '，' + ISSUE[x.kind](x) });
+  /** 收集器註解問題的原因（S.preflight 用；I01 的訊息是同一段文字加上位置） */
+  const issueReason = (x) => joinParts(issueParts(x));
 
   function run(M, ctx) {
     const out = [];
@@ -74,10 +97,10 @@
 
     // ---- 輸入
     ctx.unrecognized.forEach((b) => {
-      add('I01', `${b.origin.file} 第 ${b.origin.startLine}–${b.origin.endLine} 行：${unrecognizedReason(b)}`,
+      add('I01', withPlace(unrecognizedParts(b), placeText(b.origin.file, b.origin.startLine, b.origin.endLine)),
         b.device ? [{ type: 'device', key: b.devKey }] : [], [{ block: b.id, line: b.origin.startLine }]);
     });
-    ctx.blocks.forEach((b) => (b.issues || []).forEach((x) => add('I01', `${b.origin.file} 第 ${x.line} 行：${issueReason(x)}`,
+    ctx.blocks.forEach((b) => (b.issues || []).forEach((x) => add('I01', withPlace(issueParts(x), placeText(b.origin.file, x.line, x.line)),
       b.devKey ? [{ type: 'device', key: b.devKey }] : [], [{ block: b.id, line: x.line }])));
     // 已解析區塊中認不得的行（adapters.parse）：其餘內容照常進入基準，這幾行沒有；RouterOS 錯誤訊息另外點出，代表輸出可能不完整
     const I03_SAMPLE = 3; // 訊息中列出前幾行的原文
@@ -88,7 +111,7 @@
       const errs = ls.filter((n) => S.adapters.util.rosError(b.lines[n - b.origin.startLine]));
       const sample = ls.slice(0, I03_SAMPLE).map(quote).join('、') + (ls.length > I03_SAMPLE ? ' 等' : '');
       const err = errs.length ? `；其中 ${errs.length} 行是 RouterOS 錯誤訊息（${quote(errs[0])}），指令可能沒有完整執行，資料可能不完整` : '';
-      add('I03', `${b.origin.file} 第 ${b.origin.startLine}–${b.origin.endLine} 行（${b.command || '沒有指令標記'}）：${ls.length} 行無法辨識，沒有進入基準：${sample}${err}`,
+      add('I03', `${ls.length} 行無法辨識，沒有進入基準：${placeText(b.origin.file, b.origin.startLine, b.origin.endLine)}（${b.command || '沒有指令標記'}）中的${sample}${err}`,
         b.devKey ? [{ type: 'device', key: b.devKey }] : [], ls.map((line) => ({ block: b.id, line })));
     });
     ctx.duplicates.forEach((d) => add('I02', `${name(d.dev)} 的「${S.adapters[d.adapter].label}」出現 ${d.blocks.length} 次，採用最後一次`,
@@ -895,5 +918,5 @@
     });
   }
 
-  S.check = { run, coverage, CATALOG, EXPECTED, DATA_LABEL, fmtVlans, resolveNextHop, hopOwner, unrecognizedReason, issueReason, expectsCollection };
+  S.check = { run, coverage, CATALOG, EXPECTED, DATA_LABEL, fmtVlans, resolveNextHop, hopOwner, unrecognizedReason, issueReason, sourceName, placeText, expectsCollection };
 })(globalThis.SSOT = globalThis.SSOT || {});

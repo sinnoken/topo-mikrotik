@@ -267,7 +267,7 @@ function stripJs(src) {
 /** 畫面可以使用的 SSOT 成員：查詢介面、輸入 API、常數、下游 API 與畫面自己的命名空間 */
 const VIEW_S_ALLOW = new Set(['query', 'trace', 'util', 'keys', 'VERSION', 'SCHEMA', 'LINK_SCOPE', 'KIND_LABEL', 'build', 'buildAsync', 'inputHashOf',
   'preflight', 'collectCommands', // 建立前的預檢；由 tools/collector-commands.sh 產生的收集指令清單
-  'profiles', 'samples', 'compare', 'remediate', 'ledger', 'workpack', 'zip', 'view', 'store']);
+  'profiles', 'samples', 'compare', 'remediate', 'ledger', 'workpack', 'zip', 'report', 'view', 'store']);
 /** 只允許其中一個成員的核心命名空間 */
 const VIEW_S_ONLY = { readers: 'PASTE', profile: 'compile' };
 const VIEW_S_HINT = {

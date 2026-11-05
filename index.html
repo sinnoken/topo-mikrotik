@@ -242,9 +242,9 @@
   <section id="hub" class="hub hidden" aria-labelledby="hub-title"></section>
 </div>
 
-<dialog id="dlg-input">
+<dialog id="dlg-input" aria-labelledby="input-title">
   <div class="dlg" style="width:min(1000px,94vw)">
-    <div class="dh">建立基準<button class="ghost x" id="input-close">✕</button></div>
+    <div class="dh"><span id="input-title">建立基準</span><button class="ghost x" id="input-close" aria-label="關閉">✕</button></div>
     <div class="db">
       <div class="form-row">
         <button id="input-pick">選擇檔案…</button>
@@ -291,9 +291,9 @@ TPE_ACC_SW_01 (10.1.10.21):
   </div>
 </dialog>
 
-<dialog id="dlg-raw">
+<dialog id="dlg-raw" aria-labelledby="raw-title">
   <div class="dlg" style="width:min(1100px,94vw)">
-    <div class="dh"><span id="raw-title">原文</span><span id="raw-nav" class="raw-nav hidden"><button id="raw-prev" class="ghost" aria-keyshortcuts="ArrowLeft" title="上一處（←）">上一處</button><span id="raw-pos" class="mono muted" aria-live="polite"></span><button id="raw-next" class="ghost" aria-keyshortcuts="ArrowRight" title="下一處（→）">下一處</button></span><label class="raw-wrap-toggle" title="長行在視窗內換行；取消勾選改為不換行、橫向捲動"><input type="checkbox" id="raw-wrap" checked onchange="document.getElementById('dlg-raw').classList.toggle('raw-nowrap', !this.checked)"> 自動換行</label><button type="button" id="raw-copy">複製這段</button><span id="raw-copy-status" class="muted" role="status" aria-live="polite"></span><button class="ghost x" onclick="document.getElementById('dlg-raw').close()">✕</button></div>
+    <div class="dh"><span id="raw-title">原文</span><span id="raw-nav" class="raw-nav hidden"><button id="raw-prev" class="ghost" aria-keyshortcuts="ArrowLeft" title="上一處（←）">上一處</button><span id="raw-pos" class="mono muted" aria-live="polite"></span><button id="raw-next" class="ghost" aria-keyshortcuts="ArrowRight" title="下一處（→）">下一處</button></span><label class="raw-wrap-toggle" title="長行在視窗內換行；取消勾選改為不換行、橫向捲動"><input type="checkbox" id="raw-wrap" checked onchange="document.getElementById('dlg-raw').classList.toggle('raw-nowrap', !this.checked)"> 自動換行</label><button type="button" id="raw-copy">複製這段</button><span id="raw-copy-status" class="muted" role="status" aria-live="polite"></span><button class="ghost x" aria-label="關閉" onclick="document.getElementById('dlg-raw').close()">✕</button></div>
     <div class="db" id="raw-body" style="max-height:70vh"></div>
   </div>
 </dialog>

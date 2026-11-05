@@ -131,6 +131,17 @@
     if (A.renderVendorLegend) A.renderVendorLegend();
   }
 
+  /**
+   * 配色換了（系統深淺、匯出 PNG 暫用亮色）：廠商的排名不變，只把每個名次換成目前 theme 的顏色，
+   * 再更新設備圖上終端節點存下的顏色與圖例
+   */
+  A.recolorVendors = function recolorVendors() {
+    if (!App.vendorColors) return;
+    App.vendorColors = new Map(Array.from(App.vendorColors.keys()).map((v, i) => [v, EP.vendor[i]]));
+    if (App.deviceGraph) App.deviceGraph.nodes.forEach((n) => { if (Object.prototype.hasOwnProperty.call(n, 'color')) n.color = vendorColor(n.vendor); });
+    if (A.renderVendorLegend) A.renderVendorLegend();
+  };
+
   function addUnknownPeers(Q, nodes, pairs) {
     App.virtual = new Map(); App.vOfEp = new Map(); App.virtualByDev = new Map();
     vendorPalette(Q);

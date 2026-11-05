@@ -4,6 +4,15 @@ on:
   push:
     branches:
       - main
+    # 只有網站會發布的檔案（見下方 Assemble site）或本流程改變時才部署；只改文件不重新部署
+    paths:
+      - index.html
+      - assets/**
+      - src/**
+      - profiles/**
+      - samples/**
+      - vendor/**
+      - .github/workflows/deploy-pages.yml
   workflow_dispatch:
 
 permissions:

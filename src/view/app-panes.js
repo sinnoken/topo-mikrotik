@@ -176,11 +176,9 @@
   /**
    * 窄螢幕在拓樸圖（工作畫面工作區）選取時，#right 以底部抽屜疊在圖上，圖仍可看見與操作；詳情仍是同一個 #detail。
    * 狀態存在 #main[data-sheet]（'half'／'full'），是檢視狀態；抽屜是 role=region，不鎖焦點。
-   * SHEET.occluderMax：半高抽屜（#main 的 40%）要讓開，全高時整張圖被蓋住，不計。
    * 拖曳放開時高度低於 closeBelow 收起、高於 fullAbove 展開成全高，其餘回到半高（比例皆相對於 #main 的高度）；移動不到 tapPx 算點一下。
    */
-  const SHEET = { occluderMax: 0.75, closeBelow: 0.2, fullAbove: 0.65, tapPx: 6 };
-  A.SHEET = SHEET;
+  const SHEET = { closeBelow: 0.2, fullAbove: 0.65, tapPx: 6 };
   A.sheetState = () => $('#main').dataset.sheet || null;
   function setSheet(state) {
     const main = $('#main');
@@ -209,9 +207,10 @@
   };
   A.bindSheet = function bindSheet() {
     const handle = $('#sheet-handle'); const right = $('#right'); const main = $('#main');
-    // 全圖、聚焦與 reveal 讓開疊在畫布上的元素：窄螢幕的詳情抽屜、工具列（窄螢幕換行後佔掉上方好幾列）、
-    // 通知（#banner，窄螢幕時在圖的下方、佔滿寬度）；圖例、操作提示與這一層的說明沒有指定 max，用 GraphView 的預設（太高時不讓，例如展開的圖例）
-    App.graph.setOccluders([{ el: right, max: SHEET.occluderMax }, { el: $('#toolbar'), max: SHEET.occluderMax }, { el: $('#banner'), max: SHEET.occluderMax },
+    // 全圖、聚焦與 reveal 讓開疊在畫布上的元素（桌面與窄螢幕都是）：工具列、通知（#banner，在圖的下方）、窄螢幕的詳情抽屜（半高時讓開，
+    // 全高時整張圖被蓋住、不計），三者用 OCCLUDER.pinned；圖例、操作提示與這一層的說明沒有指定 max，用 GraphView 的預設（太高時不讓，例如展開的圖例）
+    const pinned = V.GraphView.LIMITS.OCCLUDER.pinned;
+    App.graph.setOccluders([{ el: right, max: pinned }, { el: $('#toolbar'), max: pinned }, { el: $('#banner'), max: pinned },
       ...['#legend', '#hint', '#layer-note'].map((s) => ({ el: $(s) }))]);
     const toggle = () => setSheet(A.sheetState() === 'full' ? 'half' : 'full');
     $('#sheet-expand').onclick = toggle;

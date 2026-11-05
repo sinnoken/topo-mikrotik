@@ -60,19 +60,21 @@
     });
     return m;
   };
+  /** 收起路由追蹤表單；refocus 時焦點回到開啟它的「⋯」按鈕（Esc 收起時） */
+  A.closeTrace = function closeTrace(refocus) { $('#trace-pop').classList.add('hidden'); if (refocus) $('#btn-more').focus(); };
   /** 點選單、路由追蹤以外的地方關閉它們；Esc 關閉開著的選單或路由追蹤，焦點回到開啟它的按鈕 */
   function bindDismiss() {
-    const trace = $('#trace-pop'); const more = $('#btn-more');
+    const trace = $('#trace-pop');
     document.addEventListener('mousedown', (e) => {
       const t = e.target;
       menus.forEach((m) => { if (!m.btn.contains(t) && !m.menu.contains(t)) m.close(false); });
-      if (!trace.contains(t) && !$('#more-menu').contains(t)) trace.classList.add('hidden');
+      if (!trace.contains(t) && !$('#more-menu').contains(t)) A.closeTrace(false);
     });
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
       const open = menus.find((m) => m.isOpen());
       if (open) { open.close(true); return; }
-      if (!trace.classList.contains('hidden')) { trace.classList.add('hidden'); more.focus(); }
+      if (!trace.classList.contains('hidden')) A.closeTrace(true);
     });
   }
 
@@ -85,7 +87,7 @@
     $('#trace-run').onclick = A.runTrace;
     ['#trace-src', '#trace-dst', '#trace-vrf'].forEach((s) => $(s).addEventListener('keydown', (e) => {
       if (e.key === 'Enter') A.runTrace();
-      if (e.key === 'Escape') { e.stopPropagation(); $('#trace-pop').classList.add('hidden'); $('#btn-more').focus(); }
+      if (e.key === 'Escape') { e.stopPropagation(); A.closeTrace(true); }
     }));
     // 畫布每次繪圖都先填滿 theme 的畫布底色，匯出前同步重畫一次，PNG 才是目前畫面且不透明
     $('#btn-png').onclick = () => A.exportPng();

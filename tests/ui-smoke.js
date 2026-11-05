@@ -136,6 +136,10 @@ const luminance = (rgb) => { const [r, g, b] = rgb.map((v) => { v /= 255; return
 const contrastOf = (fg, bg, base) => { const [a, b] = [luminance(rgbOf(fg, base)), luminance(rgbOf(bg, base))].sort((x, y) => y - x); return (a + 0.05) / (b + 0.05); };
 /** 讀 app.css 的 :root 變數 */
 const cssVars = (css) => Object.fromEntries(Array.from(css.match(/:root\s*\{([^}]*)\}/)[1].matchAll(/--([\w-]+):\s*([^;]+);/g)).map((m) => [m[1], m[2].trim()]));
+/** dir（相對於專案根目錄）底下所有 .js 檔的相對路徑（靜態掃描用） */
+const jsFiles = (dir) => fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? jsFiles(path.join(dir, e.name)) : e.name.endsWith('.js') ? [path.join(dir, e.name)] : []));
+/** CATALOG 文字去掉反引號（畫面把反引號內的指令改成 <code>，textContent 不含反引號） */
+const unticked = (t) => String(t).replace(/`([^`]+)`/g, '$1');
 /** 記錄 Canvas 的路徑與填色／描邊（模擬 context 的方法本身不做事）：回傳每次 fill／stroke 的樣式與路徑點 */
 function recordCanvas(ctx, fn) {
   const names = ['beginPath', 'moveTo', 'lineTo', 'arc', 'closePath', 'fill', 'stroke', 'fillText', 'fillRect', 'setLineDash'];
@@ -289,8 +293,7 @@ function viewBoundaryViolations(file, src) {
     const csp = (html.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)"/) || [])[1] || '';
     ["connect-src 'none'", "form-action 'none'", "object-src 'none'", "worker-src 'none'"].forEach((d) => { if (!csp.includes(d)) throw new Error('CSP 缺少 ' + d); });
     if (html.indexOf('Content-Security-Policy') > html.indexOf('<script')) throw new Error('CSP 必須在第一個 <script> 之前');
-    const walk = (dir) => fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.js') ? [path.join(dir, e.name)] : []));
-    walk('src').forEach((f) => {
+    jsFiles('src').forEach((f) => {
       const code = fs.readFileSync(path.join(ROOT, f), 'utf8');
       const hit = code.match(/\bfetch\(|XMLHttpRequest|new WebSocket|sendBeacon|EventSource/);
       if (hit) throw new Error(`${f} 使用了網路 API：${hit[0]}`);
@@ -308,8 +311,7 @@ function viewBoundaryViolations(file, src) {
     const lines = got.map((v) => v.line).join();
     if (lines !== '3,4,4,6,6,6,6,6') throw new Error('邊界掃描器的判斷不符（行號 ' + lines + '）：\n' + got.map((v) => v.text).join('\n'));
     if (!got[0].text.includes('probe.js:3') || !got[0].text.includes('S.query.rule')) throw new Error('違規訊息應列出檔案、行號與建議的寫法：' + got[0].text);
-    const walk = (dir) => fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.js') ? [path.join(dir, e.name)] : []));
-    const files = walk('src/view');
+    const files = jsFiles('src/view');
     if (!files.length) throw new Error('應掃描到 src/view 的檔案');
     const bad = files.flatMap((f) => viewBoundaryViolations(f.split(path.sep).join('/'), fs.readFileSync(path.join(ROOT, f), 'utf8')));
     if (bad.length) throw new Error(`畫面直接讀核心內部或 Snapshot 欄位 ${bad.length} 處：\n` + bad.map((v) => '        ' + v.text).join('\n'));
@@ -321,8 +323,7 @@ function viewBoundaryViolations(file, src) {
       ...Array.from(line.matchAll(/(querySelectorAll\s*\([^()]*\)|\.children|\.childNodes)\s*\.\s*(find|findIndex|filter|map|flatMap|some|every|reduce|indexOf|includes|slice|concat|join|sort)\b/g)).map((m) => `${n + 1}：${m[0]}`),
       ...(/\.testAll\s*\(/.test(line) ? [`${n + 1}：testAll`] : [])]);
     if (scan(probe).length !== 3) throw new Error('掃描器的判斷不符：' + scan(probe).join('、'));
-    const walk = (dir) => fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.js') ? [path.join(dir, e.name)] : []));
-    const bad = walk('src/view').flatMap((f) => scan(fs.readFileSync(path.join(ROOT, f), 'utf8')).map((x) => `${f.split(path.sep).join('/')}:${x}`));
+    const bad = jsFiles('src/view').flatMap((f) => scan(fs.readFileSync(path.join(ROOT, f), 'utf8')).map((x) => `${f.split(path.sep).join('/')}:${x}`));
     if (bad.length) throw new Error('瀏覽器的 NodeList／HTMLCollection 沒有這些陣列方法，請先 Array.from：\n        ' + bad.join('\n        '));
     const nl = document.querySelectorAll('button');
     if (Array.isArray(nl) || typeof nl.find === 'function' || typeof nl.forEach !== 'function' || typeof body.children.forEach === 'function') throw new Error('模擬 DOM 應回傳 NodeList（有 forEach、沒有 find）與 HTMLCollection（沒有 forEach）');
@@ -751,7 +752,7 @@ function viewBoundaryViolations(file, src) {
       lg.getBoundingClientRect = () => ({ left: 10, top: 760, width: 90, height: 30 });
       g.fit(); const ys = g.nodes.filter((n) => g.isVisible(n)).map((n) => g.toScreen(g.at(n.id)).y);
       if (Math.min(...ys) < 50 || Math.max(...ys) > 760) throw new Error(`全圖應避開工具列（下緣 50）與圖例（上緣 760）：${Math.round(Math.min(...ys))}–${Math.round(Math.max(...ys))}`);
-      // 展開的圖例太高（超過 OCCLUDER_MAX）時不讓出空間，避免圖被壓扁
+      // 展開的圖例太高（超過 LIMITS.OCCLUDER.max）時不讓出空間，避免圖被壓扁
       lg.getBoundingClientRect = () => ({ left: 10, top: 300, width: 900, height: 490 });
       g.fit(); const ys2 = g.nodes.filter((n) => g.isVisible(n)).map((n) => g.toScreen(g.at(n.id)).y);
       if (Math.max(...ys2) < 400) throw new Error('太高的覆蓋層不應讓出空間');
@@ -844,12 +845,11 @@ function viewBoundaryViolations(file, src) {
     head().querySelector('.head').click();
     if (head().testAll('.rule').length !== pass.length || !text('#pane-findings').includes(pass[0].title)) throw new Error('展開後應列出每一條通過的規則');
     // 每一條規則都能看到 CATALOG 的處理建議（預設收合，反引號內是等寬元素）
-    const plain = (t) => String(t).replace(/`([^`]+)`/g, '$1');
     const rows = () => head().testAll('.rule');
     rows().forEach((row, n) => {
       const id = pass[n].id; const adv = row.querySelector('.advice');
       if (row.querySelector('.id').textContent !== id) throw new Error('通過的規則應依 ruleStatus 的順序列出');
-      if (!adv || adv.getAttribute('open') !== null || !adv.textContent.includes(plain(S.check.CATALOG[id].action))) throw new Error('通過的 ' + id + ' 應附上預設收合的處理建議');
+      if (!adv || adv.getAttribute('open') !== null || !adv.textContent.includes(unticked(S.check.CATALOG[id].action))) throw new Error('通過的 ' + id + ' 應附上預設收合的處理建議');
       if (S.check.CATALOG[id].action.includes('`') && !adv.querySelector('code')) throw new Error(id + ' 的處理建議應以等寬元素顯示指令');
     });
     // 展開狀態跨重繪保留，收合後也保留
@@ -866,7 +866,7 @@ function viewBoundaryViolations(file, src) {
       nd().querySelector('.head').click();
       nd().testAll('.rule').forEach((row, n) => {
         const adv = row.querySelector('.advice');
-        if (!adv || !adv.textContent.includes(plain(S.check.CATALOG[nodata[n].id].action))) throw new Error('沒有資料可檢查的 ' + nodata[n].id + ' 也應附上處理建議');
+        if (!adv || !adv.textContent.includes(unticked(S.check.CATALOG[nodata[n].id].action))) throw new Error('沒有資料可檢查的 ' + nodata[n].id + ' 也應附上處理建議');
       });
       nd().querySelector('.head').click();
     }
@@ -888,7 +888,6 @@ function viewBoundaryViolations(file, src) {
     const all = App.snap.findings; const C = S.check.CATALOG;
     // 反引號內的片段與去掉反引號後看到的文字（以正規式另外取出，不經過畫面的切法）
     const codes = (t) => Array.from(String(t).matchAll(/`([^`]+)`/g)).map((m) => m[1]);
-    const plain = (t) => String(t).replace(/`([^`]+)`/g, '$1');
     const ids = S.util.uniq(all.map((f) => f.id));
     if (!process.env.SMOKE_INPUT && !ids.some((id) => codes(C[id].action).length)) throw new Error('範例資料應有處理建議含反引號指令的檢查結果');
     ids.forEach((id) => {
@@ -901,8 +900,8 @@ function viewBoundaryViolations(file, src) {
       blocks.forEach((d) => {
         if (d.tagName !== 'DETAILS' || d.getAttribute('open') !== null) throw new Error(id + ' 的常見原因與處理應預設收合');
         const t = d.textContent;
-        if (!t.includes(plain(C[id].action))) throw new Error(id + ' 的詳情應顯示 CATALOG 的 action：' + C[id].action);
-        if (!C[id].causes.every((c) => d.testAll('li').some((li) => li.textContent === plain(c)))) throw new Error(id + ' 的常見原因應逐條列出');
+        if (!t.includes(unticked(C[id].action))) throw new Error(id + ' 的詳情應顯示 CATALOG 的 action：' + C[id].action);
+        if (!C[id].causes.every((c) => d.testAll('li').some((li) => li.textContent === unticked(c)))) throw new Error(id + ' 的常見原因應逐條列出');
         if (t.includes('`')) throw new Error(id + ' 的處理建議不應顯示反引號');
         const shown = d.testAll('code').map((c) => c.textContent);
         const want = codes(C[id].action).concat(...C[id].causes.map(codes));
@@ -917,12 +916,11 @@ function viewBoundaryViolations(file, src) {
     if (nodes[0] !== '<b>x</b> ' || nodes[1].tagName !== 'CODE' || nodes[1].textContent !== '<i>' || nodes[1].childNodes.some((n) => n instanceof El)) throw new Error('codeText 應以文字寫入，不解析 HTML');
   });
   await step('處理提示：③ 分診展開規則後在結果列表上方顯示「處理：」，詳情的檢查結果卡片同一句', () => {
-    const plain = (t) => String(t).replace(/`([^`]+)`/g, '$1');
     goStep('triage'); const L = S.view.lists.findings; L.showProblems(App);
     const ruleGroups = () => $('#pane-findings').testAll('.fgroup').filter((g) => g.className === 'fgroup');
     const g0 = ruleGroups()[0]; if (!g0) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有錯誤或警告的規則群組'); }
     if ($('#pane-findings').testAll('.fhint').length) throw new Error('規則收合時不應顯示處理提示');
-    const id = g0.querySelector('.head .id').textContent; const want = '處理：' + plain(S.query.rule(id).hint);
+    const id = g0.querySelector('.head .id').textContent; const want = '處理：' + unticked(S.query.rule(id).hint);
     g0.querySelector('.head').click();
     const g = ruleGroups().find((x) => x.querySelector('.head .id').textContent === id);
     const hint = g.querySelector('.fhint'); const items = g.querySelector('.items');
@@ -933,7 +931,7 @@ function viewBoundaryViolations(file, src) {
     S.util.uniq(all.map((f) => f.id)).forEach((rid) => {
       const i = all.findIndex((f) => f.id === rid && f.entities.length); if (i < 0) return;
       App.selectFinding(i);
-      const w = '處理：' + plain(S.query.rule(rid).hint);
+      const w = '處理：' + unticked(S.query.rule(rid).hint);
       if (!$('#detail').testAll('.finding .rule-hint').some((x) => x.getAttribute('data-rule-id') === rid && x.textContent === w)) throw new Error(`${rid} 的詳情卡片應顯示「${w}」`);
     });
     L.showProblems(App); App.select(null);
@@ -3897,14 +3895,19 @@ function viewBoundaryViolations(file, src) {
     if (!t.classList.contains('table-scroll') || !t.querySelector('table')) throw new Error('V.table 應包在可橫向捲動的外框裡');
     // 畫面程式與 index.html 不寫死字級
     const sizeLits = [];
-    const walk = (dir) => fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.js') ? [path.join(dir, e.name)] : []));
-    walk('src/view').forEach((f) => {
+    jsFiles('src/view').forEach((f) => {
       const code = fs.readFileSync(path.join(ROOT, f), 'utf8');
       for (const m of code.matchAll(/font-size['"]?\s*:\s*['"]?\d+|fontSize\s*[:=]\s*['"]?\d+/g)) sizeLits.push(`${f}：${m[0]}`);
     });
     const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
     for (const m of html.matchAll(/font-size:\s*\d+px/g)) sizeLits.push('index.html：' + m[0]);
     if (sizeLits.length) throw new Error('字級應使用 CSS 變數：' + sizeLits.join('；'));
+    // 顏色只在 theme.js（與 app.css 的變數）：其他畫面程式去掉註解後（字串保留，色碼多半寫在字串裡）不寫色碼，index.html 的 inline style 也不寫
+    const noComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\])\/\/.*$/gm, '$1');
+    const colorLits = jsFiles('src/view').filter((f) => path.basename(f) !== 'theme.js').flatMap((f) =>
+      Array.from(noComments(fs.readFileSync(path.join(ROOT, f), 'utf8')).matchAll(/#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b|rgba?\(/g)).map((m) => `${f}：${m[0]}`));
+    for (const m of html.matchAll(/style="[^"]*(#[0-9a-fA-F]{3,6}\b|rgba?\()/g)) colorLits.push('index.html：' + m[1]);
+    if (colorLits.length) throw new Error('顏色應取自 theme 或 CSS 變數：' + colorLits.join('；'));
   });
   await step('滑過左右欄與工具列時不會穿透觸發拓樸圖 hover', () => {
     const g = App.graph; const cv = $('#graph');
@@ -4054,10 +4057,9 @@ function viewBoundaryViolations(file, src) {
     VA.setWorkspace('details'); App.showView('compare');
     if ($('#main').dataset.workspace !== 'graph' || ws()[1].textContent !== '驗證') throw new Error('窄螢幕切到工作畫面時應顯示中間的工作區');
     window.innerWidth = 1200; goStep('triage'); VA.setWorkspace('graph'); App.showView('graph');
-    // CSS：工作畫面疊在拓樸圖上、不水平捲動；寬表格在自己的框內捲動；強制色彩下目前的一步有系統色外框
+    // CSS：工作畫面疊在拓樸圖上、不水平捲動（寬表格在 V.table 的 .table-scroll 內捲動，另有測試）；強制色彩下目前的一步有系統色外框
     const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
     if (!/\.work \{[^}]*position: absolute[^}]*overflow-x: hidden/.test(css)) throw new Error('工作畫面應疊在拓樸圖上，且不水平捲動');
-    if (!/\.work-table \{[^}]*overflow-x: auto/.test(css)) throw new Error('寬的表格應在自己的框內捲動');
     const forced = css.slice(css.indexOf('@media (forced-colors: active)'));
     if (!/\.steps button\[aria-current="step"\]/.test(forced.slice(0, forced.indexOf('\n}')))) throw new Error('強制色彩模式下目前的一步應有系統色外框');
     // 步驟的文字色對底色 ≥ 4.5:1：目前的一步（強調色／淺強調底）、其他步驟（次要文字色／頁首白底）

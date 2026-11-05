@@ -141,7 +141,7 @@
       box.appendChild(h('div', { class: 'diff-cat', 'data-category': cat }, [
         h('div', { class: 'diff-head' }, [h('b', null, CATEGORY[cat]), ' ',
           ...Object.entries(CHANGE).filter(([k]) => c[k]).map(([k, [label, cls]]) => V.chip(`${label} ${V.num(c[k])}`, cls))]),
-        h('div', { class: 'work-table' }, V.table([
+        V.table([
           { t: '', f: (i) => V.chip(CHANGE[i.change][0], CHANGE[i.change][1]) },
           { t: '項目', f: (i) => i.message },
           { t: '影響', f: (i) => effectChip(i.effect) },
@@ -149,7 +149,7 @@
           limit: 300, onRow: (i) => open(App, i),
           rowClass: (i) => (i.effect === 'new-exposure' ? 'exposure' : ''),
           rowStyle: (i) => (i.effect === 'new-exposure' ? { background: T.exposureBg } : null),
-        })),
+        }),
       ]));
     });
     return box;

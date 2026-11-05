@@ -138,8 +138,10 @@
    * 要能對照收了哪些指令，所以不截短、全部逐行列出（核心對 C02 不限證據筆數）。
    * 失敗註解那一行標「收集失敗」，其餘標「已收集」。其他檢查維持「原文 第 N 行」最多 3 筆。
    */
+  /** 一筆檢查結果的各處證據（App.openRaw 的 opt.list）：原文對話框可在這些位置之間前後切換 */
+  const evidenceNav = (f) => f.evidence.map((e) => ({ file: e.file, line: e.line }));
   function evidenceLinks(App, f) {
-    const list = f.evidence.map((e) => ({ file: e.file, line: e.line })); // 原文對話框可在這筆的各處證據之間前後切換
+    const list = evidenceNav(f);
     const link = (e, label) => h('a', { class: 'link mono', onclick: () => App.openRaw(e.file, e.line, { list }) }, label);
     if (f.id !== 'C02') return f.evidence.slice(0, 3).map((e) => link(e, `原文 第 ${e.line} 行`));
     return f.evidence.map((e) => {
@@ -179,7 +181,7 @@
   /** 有對應物件時選取它；沒有（例如無法辨識的輸入區塊）就直接開原文，避免點了沒反應 */
   function suggestLink(App, idx) {
     const f = App.Q.finding(idx); const e = f.evidence[0];
-    const go = () => (!f.entities.length && e ? App.openRaw(e.file, e.line, { list: f.evidence.map((x) => ({ file: x.file, line: x.line })) }) : App.selectFinding(idx));
+    const go = () => (!f.entities.length && e ? App.openRaw(e.file, e.line, { list: evidenceNav(f) }) : App.selectFinding(idx));
     return h('a', { class: 'link status-suggest', title: f.message, onclick: go }, f.title);
   }
   function overview(App) {
@@ -702,7 +704,7 @@
         { t: '成員介面', f: (d) => String((v.entries.find((e) => e.dev === d) || { members: [] }).members.length) },
       ], v.devices),
         { count: v.devices.length, long: true }),
-      section('不相連區塊（推論）', split ? [
+      section(`不相連${V.TERMS.vlanDomain}（${V.TERMS.inferred}）`, split ? [
         ...v.domains.map((d, idx) => h('div', null, d.key === v.domain
           ? h('b', null, domainName(d, idx))
           : L(App, domainName(d, idx), { type: 'vlan', key: String(v.id), domain: d.key }))),

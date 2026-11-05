@@ -131,8 +131,6 @@ header .spacer { flex: 1; }
 .work-title:focus-visible { box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
 .work-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); min-width: 0; }
 .work-card-title { margin: 0 0 8px; font-size: var(--fs-xl); }
-/* 表格寬於畫面時在自己的框內捲動，整頁不出現水平捲動 */
-.work-table { max-width: 100%; overflow-x: auto; }
 #compare-body { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 #compare-body .work-card > .pane-body, #compare-body .baseline-diff { padding: 14px; }
 #compare-body .summary { padding-left: 0; padding-right: 0; background: none; }
@@ -272,11 +270,8 @@ button.chip { box-shadow: none; line-height: inherit; text-align: left; }
 /* 修復追蹤（比對結果上方） */
 .fix-tracking { margin: 10px 0 4px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
 .fix-summary { padding-left: 0; padding-right: 0; border-bottom: none; background: none; }
-.fix-group { margin-top: 8px; }
-.fix-group .clear-fixed { min-height: 0; padding: 3px 8px; font-size: var(--fs-sm); }
 /* 檢查結果：確認的分類與原因、分組方式 */
 .ack-editor { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 4px 10px 8px 26px; }
-.ack-editor .ack-note-input { flex: 1; min-width: 160px; }
 .ack-editor button, .ack-editor select, .ack-editor input { min-height: var(--control-h); padding: 3px 8px; font-size: var(--fs-sm); }
 .findings-view { align-items: center; }
 .findings-view .seg button { min-height: 26px; padding: 2px 10px; border: none; border-radius: 0; box-shadow: none; font-size: var(--fs-sm); }

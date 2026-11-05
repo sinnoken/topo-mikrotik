@@ -224,7 +224,7 @@
     return { pos, anchor };
   }
 
-  V.layout = { layout, forceStep, prepare, placeLeaves, shelf, slotW, leafRows, RANK, LDY, LEAF_DY, portPrepare, placePorts, portLayout };
+  V.layout = { layout, forceStep, prepare, placeLeaves, shelf, slotW, leafRows, RANK, GAP, LDY, LEAF_DY, portPrepare, placePorts, portLayout };
 })(globalThis.SSOT = globalThis.SSOT || {});
 
 /*
@@ -260,10 +260,7 @@
     // 未收集的終端跟著鄰居
     ids.forEach((id) => { if (!byId.get(id).collected) { const nb = Array.from(w.get(id).keys()).find((x) => byId.get(x).collected); if (nb) label.set(id, label.get(nb)); } });
     // 依大小命名：以群內層級最高的設備當名稱
-    const RANK = { firewall: 0, router: 1, switch: 2, unknown: 3, host: 4 };
-  // 書架寬度係數（各群總面積開根號的倍數）。直式畫面（窄螢幕、高大於寬）時一層最多 PORTRAIT.row 台就折行、書架寬度係數改小，
-  // 圖接近直長：全圖時以寬度為限，又扁又寬的圖在直式手機上會縮到看不清
-  const SHELF_W = 1.4; const PORTRAIT = { row: 6, shelfW: 0.8 };
+    const RANK = V.layout.RANK;
     const groups = new Map();
     ids.forEach((id) => S.util.getOr(groups, label.get(id), () => []).push(id));
     if (groups.size < 2 || nodes.length < minSize) return null;

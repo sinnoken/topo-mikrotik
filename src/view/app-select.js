@@ -139,7 +139,7 @@
     const e = f.entities.find((x) => x.type === 'rule' || x.type === 'service') || f.entities[0];
     const sel = !e ? null : f.id === 'A03' ? { type: 'endpoints', dev: e.key } : e.type === 'ip' ? V.ipSel(e.key) : { type: e.type, key: e.key };
     // 多數決推定偏離的設備（推論）另以虛線外圈標出；平手（basis 不是 majority）或 deviating 為空時不標
-    const emphasis = f.deviation && f.deviation.basis === 'majority' ? f.deviation.deviating : null;
+    const emphasis = V.majorityDeviating(f.deviation);
     App.select(sel, { focus: true, findingEntities: f.id === 'A03' ? null : f.entities, emphasis });
   };
 
@@ -273,7 +273,7 @@
     const reached = r.ok ? S.util.uniq(r.ends.filter((e) => e.status === 'reached').map((e) => e.vrf)) : [];
     const backVrf = reached.length === 1 ? reached[0] : vrf;
     const reverse = r.ok ? S.trace(App.Q, dst, src, backVrf ? { vrf: backVrf } : undefined) : null;
-    $('#trace-pop').classList.add('hidden');
+    A.closeTrace(false);
     App.showView('graph'); // 路由追蹤的路徑畫在拓樸圖上：工作畫面開著時切回拓樸圖
     App.select({ type: 'trace', result: r, reverse, vrf: vrf || null }, { focus: true });
   };

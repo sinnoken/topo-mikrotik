@@ -27,7 +27,7 @@
     const dev = it && it.dev ? (App.Q && App.Q.getDevice(it.dev) ? App.Q.devName(it.dev) : it.dev) : null;
     const go = idx >= 0 ? () => App.selectFinding(idx) : null;
     return h('div', { class: 'ledger-item' + (go ? ' click' : ''), 'data-key': key, role: go ? 'button' : null, tabindex: go ? '0' : null, onclick: go,
-      onkeydown: go ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } } : null }, [
+      onkeydown: go ? V.activateByKey(go) : null }, [
       h('span', { class: 'id mono' }, (it && it.id) || '?'), ' ', dev ? h('span', { class: 'muted' }, dev + '：') : null,
       f ? f.message : h('span', { class: 'mono muted' }, key), extra || null]);
   }
@@ -142,11 +142,11 @@
     const xs = series.map((r, i) => `第 ${i + 1} 輪`);
     const subs = series.map((r) => V.fmtUtc(r.at));
     const num = (v) => V.num(Math.round(v));
-    const table = h('details', { class: 'trend-table' }, [h('summary', null, '表格檢視'), h('div', { class: 'work-table' }, V.table([
+    const table = h('details', { class: 'trend-table' }, [h('summary', null, '表格檢視'), V.table([
       { t: '輪次', f: (r) => xs[series.indexOf(r)] }, { t: '時間', f: (r) => h('span', { class: 'mono' }, V.fmtUtc(r.at)) },
       { t: '待處理', f: (r) => V.num(r.pending) }, { t: '回歸', f: (r) => V.num(r.counts.regressed || 0) }, { t: '已豁免', f: (r) => V.num(r.counts.accepted || 0) },
       { t: '覆蓋率', f: (r) => `${pct(r.coverage.ratio)}（${V.num(r.coverage.collected)}/${V.num(r.coverage.expected)}）` }, { t: '未知對端', f: (r) => V.num(r.unknownPeers) },
-    ], series))]);
+    ], series)]);
     return h('div', { class: 'trend' }, [tileBox,
       h('div', { class: 'trend-charts' }, [
         lineChart('待處理、回歸與已豁免（筆數）', [

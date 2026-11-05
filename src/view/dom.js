@@ -5,6 +5,8 @@
   'use strict';
   const V = (S.view = S.view || {});
 
+  /** 非 button 的可操作元素（role=button／link、可點的表格列）共用的鍵盤觸發：Enter 或空白鍵執行 fn（空白鍵不捲動頁面） */
+  V.activateByKey = (fn) => (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); } };
   /** h('div', {class:'x', onclick: fn}, [child, '文字']) */
   V.h = function h(tag, attrs, children) {
     const el = document.createElement(tag);
@@ -20,9 +22,7 @@
     }
     if (tag === 'a' && attrs && String(attrs.class || '').split(/\s+/).includes('link') && !Object.prototype.hasOwnProperty.call(attrs, 'href')) {
       el.setAttribute('role', 'link'); el.setAttribute('tabindex', '0');
-      el.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); }
-      });
+      el.addEventListener('keydown', V.activateByKey(() => el.click()));
     }
     (Array.isArray(children) ? children : children === undefined ? [] : [children]).forEach((c) => {
       if (c === null || c === undefined || c === false) return;
@@ -60,18 +60,21 @@
   });
   /** 推論標示：和收集到的事實並列的推定結果一律加這個 chip；依據放 title。 */
   V.inferChip = (tip) => V.chip(V.TERMS.inferred, 'info', tip ? { title: tip } : null);
+  /** 多數決推定偏離的設備鍵（finding.deviation，推論）：不是多數決（或沒有 deviation）時 null，平手時空陣列。詳情、③ 分診與圖上的虛線外圈共用 */
+  V.majorityDeviating = (dv) => (dv && dv.basis === 'majority' ? dv.deviating || [] : null);
   /**
    * 跨設備一致性規則的多數決結果（finding.deviation，推論）：一律經這裡產生，詳情的每筆檢查結果共用。
    * 列出推定偏離的設備，點設備名選取該設備（不觸發外層的點選）；沒有多數（平手）時明說無法推定，不留白。
    * 不是多數決的 deviation（或沒有）時為 null。opts.tie 為 false 時平手不顯示（③ 分診的結果列表），回傳 null。
    */
   V.deviationLine = function (App, dv, opts) {
-    if (!dv || dv.basis !== 'majority') return null;
+    const devs = V.majorityDeviating(dv);
+    if (!devs) return null;
     const label = '推定偏離（多數決）：';
-    if (!dv.deviating || !dv.deviating.length) return opts && opts.tie === false ? null : V.h('div', { class: 'deviation none muted' }, label + '沒有多數，無法推定');
+    if (!devs.length) return opts && opts.tie === false ? null : V.h('div', { class: 'deviation none muted' }, label + '沒有多數，無法推定');
     const pick = (key) => (e) => { if (e && e.stopPropagation) e.stopPropagation(); App.select({ type: 'device', key }, { focus: true }); };
     // a.link 沒有 href 時 h() 已補 role、tabindex 與 Enter／空白鍵啟動
-    const links = dv.deviating.map((key) => V.h('a', { class: 'link', 'data-dev': key, title: '選取這台設備', onclick: pick(key) }, App.Q.devName(key)));
+    const links = devs.map((key) => V.h('a', { class: 'link', 'data-dev': key, title: '選取這台設備', onclick: pick(key) }, App.Q.devName(key)));
     return V.h('div', { class: 'deviation' }, [label, ...links.flatMap((a, n) => (n ? ['、', a] : [a]))]);
   };
   V.KIND = S.KIND_LABEL;
@@ -243,7 +246,7 @@
         class: [activate ? 'click' : '', o.bad && o.bad(r) ? 'bad' : '', o.rowClass ? o.rowClass(r) || '' : ''].join(' '),
         onclick: activate,
         tabindex: activate ? '0' : null,
-        onkeydown: activate ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } } : null,
+        onkeydown: activate ? V.activateByKey(activate) : null,
       },
         cols.map((c) => V.h('td', { class: c.cls || null, style }, c.f(r)))));
     });

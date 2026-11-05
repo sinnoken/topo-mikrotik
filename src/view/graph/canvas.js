@@ -27,8 +27,10 @@
   // pad 是文字左右留白、inset 是標籤離群框左緣（放在框內時也離頂邊）的距離、h 是標籤高度、base 是文字基線離下緣的距離
   const GL = { pad: 4, inset: 4, h: F.groupPx + 7, base: 6 };
   const GL_FONT = font(F.groupPx, W.strong);
-  // 群框的最小寬度（世界座標）：只有一兩台的小群也有寬度放簡稱（「區域 2」）。等於版面的群間距（layout.js 的 GAP 220），兩個只有一台的鄰群往兩側各加寬後仍不重疊
-  const GROUP_MIN_W = 220;
+  // 群框的最小寬度（世界座標）：只有一兩台的小群也有寬度放簡稱（「區域 2」）。取版面的群間距（layout.js 的 GAP），兩個只有一台的鄰群往兩側各加寬後仍不重疊
+  const GROUP_MIN_W = V.layout.GAP;
+  // 標籤的優先順序：設備依版面的層級（layout.js 的 RANK），終端類節點排在後面
+  const LABEL_RANK = Object.assign({}, V.layout.RANK, { cluster: 5, downstream: 5, endpoint: 6 });
   // 縮放範圍（滾輪、雙指、鍵盤共用）
   const ZOOM = { min: 0.02, max: 6 };
   // 全圖：畫面邊緣留白（px，另扣工具列、圖例等覆蓋層實際佔用的高度）；節點很少時的倍率上限，避免一兩台設備被放得很大
@@ -36,8 +38,9 @@
   // 聚焦（選取、檢查結果、路由追蹤）：倍率上限 1.5。埠名在 s > 1.25 才畫，1.5 讀得到埠名，又不會把一跳鄰居推出畫面；
   // 留白 pad 容納節點下方的名稱標籤（常見名稱約 120px 寬）與埠名
   const FOCUS = { maxScale: 1.5, pad: 64 };
-  // 覆蓋層沒有指定 max 時的預設：高度超過畫布這個比例（例如展開的圖例）時不讓出空間，否則圖會被壓扁；使用者可收合它
-  const OCCLUDER_MAX = 0.4;
+  // 覆蓋層高度超過畫布的 max 倍時不讓出空間（setOccluders）。max：沒有指定時的預設，例如展開的圖例太高時不讓，否則圖會被壓扁，使用者可收合它；
+  // pinned：一定要讓開的元素（工具列、通知、半高的詳情抽屜）用這個，只有幾乎蓋滿整張圖時（全高的抽屜）才不計
+  const OCCLUDER = { max: 0.4, pinned: 0.75 };
   // 觸控：手指比滑鼠粗，節點點擊半徑在螢幕上至少 hitPx（約一個指尖的一半），且至少是節點半徑外加 slopPx（大節點與容器框也好點）；
   // 連線容差 edgePx；移動超過 movePx 才算拖曳；tapMs／tapPx 內在同一節點點兩下視為雙擊（觸控沒有可靠的 dblclick）。
   // 滑鼠的 hitPx 是節點半徑外加的容差
@@ -104,7 +107,7 @@
     toWorld(x, y) { return { x: (x - this.tx) / this.s, y: (y - this.ty) / this.s }; }
     /**
      * 疊在畫布上的元素（工具列、圖例、操作提示、通知、窄螢幕的詳情抽屜）：[{ el, max, when }]。全圖、聚焦與 reveal 依它們目前的位置讓出空間；
-     * 元素隱藏、沒有大小、when() 為 false，或高度超過畫布的 max 倍（省略時 OCCLUDER_MAX；例如全高的抽屜，整張圖本來就被蓋住）時不計。
+     * 元素隱藏、沒有大小、when() 為 false，或高度超過畫布的 max 倍（省略時 OCCLUDER.max；例如全高的抽屜，整張圖本來就被蓋住）時不計。
      */
     setOccluders(list) { this.occluders = (list || []).filter((o) => o && o.el); }
     /** 畫面上沒被遮住的範圍（螢幕座標）：上半部的遮擋物推下上緣，下半部的推上下緣 */
@@ -115,7 +118,7 @@
         this.occluders.forEach(({ el, max, when }) => {
           if (el.classList.contains('hidden') || (when && !when())) return;
           const r = el.getBoundingClientRect(); const y0 = r.top - cr.top; const y1 = y0 + r.height;
-          if (!r.width || !r.height || r.height > this.h * (max == null ? OCCLUDER_MAX : max) || y1 <= 0 || y0 >= this.h) return;
+          if (!r.width || !r.height || r.height > this.h * (max == null ? OCCLUDER.max : max) || y1 <= 0 || y0 >= this.h) return;
           if (y0 + r.height / 2 < this.h / 2) top = Math.max(top, y1); else bottom = Math.min(bottom, y0);
         });
       }
@@ -288,7 +291,7 @@
       else return;
       ev.preventDefault();
     }
-    /** 依畫面上的位置（由上而下、由左而右）輪流移到下一台可見的設備；移出畫面時平移到中央 */
+    /** 依畫面上的位置（由上而下、由左而右）輪流移到下一台可見的設備；在沒被遮住的範圍外時平移到中央（reveal） */
     cycle(dir) {
       // 容器依畫面位置排序，每個容器後面接著它的埠（依框上的位置）：L2 的埠也走得到
       const top = this.nodes.filter((n) => !n.anchor && this.isVisible(n) && this.pos.has(n.id));
@@ -300,8 +303,7 @@
       const i = list.findIndex((n) => n.id === this.kbd);
       const n = list[i < 0 ? (dir > 0 ? 0 : list.length - 1) : (i + dir + list.length) % list.length];
       this.kbd = n.id; this.hover = { type: 'node', id: n.id };
-      let sp = this.toScreen(this.at(n.id)); const m = 40;
-      if (sp.x < m || sp.y < m || sp.x > this.w - m || sp.y > this.h - m) { this.tx += this.w / 2 - sp.x; this.ty += this.h / 2 - sp.y; sp = this.toScreen(this.at(n.id)); }
+      this.reveal([n.id]); const sp = this.toScreen(this.at(n.id));
       this.dirty = true; this.emit('hover', { item: this.hover, x: sp.x, y: sp.y, keyboard: true });
     }
     /** 以畫面上的一點（預設中央）為中心縮放 f 倍 */
@@ -468,7 +470,6 @@
         c.globalAlpha = 1;
       }
       // 標籤：依重要性排序，與已畫的標籤重疊就略過（避免縮小時糊成一片）
-      const RANKL = { firewall: 0, router: 1, switch: 2, unknown: 3, host: 4, cluster: 5, downstream: 5, endpoint: 6 };
       const cand = [];
       for (const n of this.nodes) {
         if (n.box || n.kind === 'port' || !this.isVisible(n)) continue; const p = this.at(n.id); if (!inView(p)) continue;
@@ -477,7 +478,7 @@
         if (!forced && !marked && (n.kind === 'host' || n.kind === 'endpoint' || n.kind === 'downstream') && s < 0.9) continue;
         if (!forced && !marked && n.kind === 'cluster' && s < 0.45) continue;
         if (!forced && !marked && s < 0.18) continue;
-        cand.push({ n, p, pri: forced ? -1 : (marked ? 0 : 10) + (n.collected ? 0 : 5) + (RANKL[n.kind] ?? 3) });
+        cand.push({ n, p, pri: forced ? -1 : (marked ? 0 : 10) + (n.collected ? 0 : 5) + (LABEL_RANK[n.kind] ?? 3) });
       }
       cand.sort((a, b) => a.pri - b.pri);
       // 設備名稱在螢幕上固定 labelPx，不隨縮小變成小字；太擠時由下方的重疊檢查與上方的縮放門檻略過
@@ -747,6 +748,6 @@
   }
   function segInView(a, b, v) { return !(Math.max(a.x, b.x) < v.x0 || Math.min(a.x, b.x) > v.x1 || Math.max(a.y, b.y) < v.y0 || Math.min(a.y, b.y) > v.y1); }
 
-  GraphView.LIMITS = Object.freeze({ ZOOM, FIT, FOCUS, TOUCH, MOUSE }); // 唯讀，供測試核對縮放、聚焦與觸控的界線
+  GraphView.LIMITS = Object.freeze({ ZOOM, FIT, FOCUS, TOUCH, MOUSE, OCCLUDER }); // 唯讀：測試核對縮放、聚焦與觸控的界線；OCCLUDER.pinned 給 setOccluders 的呼叫端
   V.GraphView = GraphView; V.sevMark = sevMark; V.fitText = fitText;
 })(globalThis.SSOT = globalThis.SSOT || {});

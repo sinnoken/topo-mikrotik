@@ -142,9 +142,10 @@ agent 之間的介面：
 
 ## 專用流程（skills）
 
-四個 skill 放在 `.claude/skills/`，Claude Code 會自動載入；`.github/skills/` 是同內容的 GitHub Copilot 版。
+五個 skill 放在 `.claude/skills/`，Claude Code 會自動載入；`.github/skills/` 是同內容的 GitHub Copilot 版。
 修改時兩邊一起改，`tests/docs.js` 會檢查兩者一致。
 - `routeros-parser-fixtures`：改 adapter／解析、新收集指令（先寫失敗測試再修）
 - `snapshot-contract-change`：改 Snapshot 欄位、finding id、query API 或版本（逐層走完 adapter→model→infer/check→pipeline→query→view→compare）
 - `mikrotik-neighbor-topology`：改鄰居探索（LLDP／MNDP／CDP）與拓樸
+- `branch-maintenance`：lead 維護分支——每輪開工前 fetch 比對 main、開分支前查遠端同名、worktree 基準確認與合併、PR 與 CI、合併後清理分支
 - `routeros-acl-audit`：防火牆規則解析、WAN／LAN 分類、F01–F09 與比對（階段一已完成；規則來自既有的 `/export`，命中次數來自 `print stats`）

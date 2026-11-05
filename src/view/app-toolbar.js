@@ -81,6 +81,8 @@
   // ================================================================ 頁首
   A.bindHeader = function bindHeader() {
     A.bindMenu($('#btn-more'), $('#more-menu'));
+    // 程式版本：沒有基準時也看得到（基準狀態卡的版本是建立該基準時的版本，兩者意義不同）
+    $('#app-version').textContent = '版本 ' + S.VERSION;
     bindDismiss();
     // 路由追蹤表單是「⋯」旁邊的小對話框：從選單開啟（選單先關閉），也可由詳情的「追蹤路由」開啟（App.openTrace）
     $('#btn-trace').onclick = () => App.openTrace();

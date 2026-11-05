@@ -460,6 +460,52 @@ function viewBoundaryViolations(file, src) {
     });
     App.select(null);
   });
+  await step('詳細資料瘦身：廠商與鄰居功能用顯示名、長說明與「看到它的設備」收合、標題不用等寬字', () => {
+    const V = S.view; const Q = App.Q; const m = App.snap.model;
+    if (V.vendorName('mikrotik') !== 'MikroTik' || V.vendorName('Acme') !== 'Acme' || V.vendorName(null) !== '') throw new Error('V.vendorName：mikrotik → MikroTik，沒有對照的原樣');
+    if (V.capsText('bridge,router') !== '橋接、路由' || V.capsText('wlan-ap') !== '無線基地台' || V.capsText('bridge,foo') !== '橋接、foo' || V.capsText(null) !== '') throw new Error('V.capsText 應翻成中文、沒有對照的保留原值');
+    if (V.STATUS.unknown !== '不明') throw new Error('V.STATUS.unknown 應為「不明」');
+    const kvOf = (k) => { const ks = $('#detail').testAll('.k'); const n = ks.findIndex((x) => x.textContent === k); if (n < 0) return null; const sib = ks[n].parentNode.childNodes; return sib[sib.indexOf(ks[n]) + 1]; };
+    // 鄰居回報的功能：顯示中文，原值在 title
+    const capDev = Q.devices().find((d) => d.caps && V.capsText(d.caps) !== d.caps);
+    if (capDev) {
+      App.select({ type: 'device', key: capDev.key }); const cell = kvOf('鄰居回報的功能');
+      if (!cell || cell.textContent !== V.capsText(capDev.caps) || !String(cell.querySelector('.caps').getAttribute('title')).includes(capDev.caps)) throw new Error('鄰居回報的功能應顯示中文、原值放 title：' + (cell && cell.textContent));
+    } else if (!process.env.SMOKE_INPUT) throw new Error('範例資料應有鄰居回報功能的設備');
+    const mt = Q.devices().find((d) => d.manufacturer);
+    if (mt) { App.select({ type: 'device', key: mt.key }); const cell = kvOf('廠商'); if (!cell || cell.textContent !== V.vendorName(mt.manufacturer)) throw new Error('設備詳情的廠商應用顯示名'); }
+    // 看到它的設備：5 台以內在屬性表，超過時移到預設收合的區塊（同樣的連結，數量一致）
+    Q.devices().filter((d) => d.seenBy.length).forEach((d) => {
+      App.select({ type: 'device', key: d.key });
+      const inline = kvOf('看到它的設備'); const fold = $('#detail').testAll('.detail-fold').find((x) => x.querySelector('summary').textContent.startsWith('看到它的設備'));
+      const box = inline || fold;
+      if (!box || box.testAll('a').length !== d.seenBy.length) throw new Error(`${d.key} 應列出全部 ${d.seenBy.length} 台看到它的設備`);
+      if ((d.seenBy.length > 5) !== !!fold || (fold && fold.getAttribute('open') !== null)) throw new Error(`${d.key} 看到它的設備超過 5 台才收合，且預設收合`);
+    });
+    if (!process.env.SMOKE_INPUT && !Q.devices().some((d) => d.seenBy.length > 5)) throw new Error('範例資料應有被超過 5 台看到的設備');
+    // VLAN 與終端的長說明收進預設收合的「這是什麼？」；沒有名稱時不列「名稱 —」；終端說明不出現檢查代碼
+    const about = () => $('#detail').testAll('.detail-fold').find((x) => x.querySelector('summary').textContent === '這是什麼？');
+    const outsideMuted = () => $('#detail').testAll('p').filter((p) => /muted/.test(p.className) && !about().contains(p)).map((p) => p.textContent).join('');
+    Q.vlans().slice(0, 20).forEach((v) => {
+      if (v.id == null) return; App.select({ type: 'vlan', key: String(v.id) });
+      const a = about();
+      if (!a || a.getAttribute('open') !== null || outsideMuted().includes('圖上（設備圖')) throw new Error(`VLAN ${v.id} 的說明應預設收合`);
+      const named = Q.vlan(String(v.id)).names.length;
+      if (!named && kvOf('名稱')) throw new Error(`VLAN ${v.id} 沒有名稱時不應列「名稱」`);
+    });
+    const epDev = Q.devices().find((d) => Q.unknownPeers(d.key).length);
+    if (epDev) {
+      App.select({ type: 'endpoints', dev: epDev.key }); const a = about();
+      if (!a || a.getAttribute('open') !== null || outsideMuted().includes('一般終端埠') || /\bA0\d\b/.test(a.textContent)) throw new Error('終端詳情的說明應預設收合、不出現檢查代碼');
+    }
+    // h2 標題不用等寬字（IP、MAC、網段、介面、追蹤）
+    const sels = [{ type: 'ip', key: (Q.ipEntries()[0] || {}).ip }, { type: 'mac', key: (m.macs[0] || {}).mac }, { type: 'interface', key: (m.interfaces[0] || {}).key }];
+    sels.forEach((sel) => {
+      App.select(sel); const h2 = $('#detail').querySelector('h2');
+      if (!h2 || /\bmono\b/.test(h2.className) || h2.testAll('.mono').length) throw new Error(`${sel.type} 詳情的標題不應用等寬字`);
+    });
+    App.select(null);
+  });
   await step('推論鏈路：沒有 LLDP 的 CSS610 以推論樣式畫出，提示與詳情說明依據', () => {
     const il = App.Q.inferredLinks(); if (process.env.SMOKE_INPUT && !il.length) return; // 大型乾淨網路沒有 CSS610
     if (!il.length) throw new Error('範例資料應有推論鏈路');
@@ -883,7 +929,15 @@ function viewBoundaryViolations(file, src) {
     if (!cmds.length || !cmds.some((c) => t.includes(c))) throw new Error('C02 詳情應顯示已收集區塊的指令');
     if (f.evidence.length > 3 && !f.evidence.every((e) => t.includes(`第 ${e.line} 行`))) throw new Error('C02 的證據應全部列出');
     const other = App.snap.findings.findIndex((x) => x.id !== 'C02' && x.evidence.length && x.entities.length && x.entities.every((e) => !App.Q.findingsFor(e.type, e.key).some((y) => y.id === 'C02')));
-    if (other >= 0) { App.selectFinding(other); if (!text('#detail').includes('原文 第 ')) throw new Error('其他檢查的證據應維持「原文 第 N 行」'); }
+    if (other >= 0) {
+      App.selectFinding(other); const of = App.snap.findings[other];
+      // 其他檢查的證據合併成一行「原文：第 a、b、c 行」：「原文」只出現一次，每個行號各自是連結，不用等寬字
+      const ev = $('#detail').testAll('.ev-raw').find((x) => x.textContent.includes(`第 ${of.evidence[0].line}`));
+      if (!ev || !ev.textContent.startsWith('原文：第 ') || ev.textContent.split('原文').length !== 2) throw new Error('其他檢查的證據應合併成一行「原文：第 N 行」：' + (ev && ev.textContent));
+      const nums = ev.testAll('a');
+      if (nums.length !== Math.min(3, of.evidence.length) || !nums.every((a, n) => a.textContent === String(of.evidence[n].line) && a.getAttribute('aria-label') === `原文 第 ${of.evidence[n].line} 行`)) throw new Error('每個行號應各自可點並有 aria 名稱');
+      if (nums.some((a) => a.classList.contains('mono'))) throw new Error('原文行號不應用等寬字');
+    }
   });
   await step('點選每一筆檢查結果', () => { App.snap.findings.forEach((f, i) => { App.selectFinding(i); App.graph.draw(); }); });
   await step('詳情的檢查結果附上 CATALOG 的常見原因與處理：預設收合，反引號內的指令以等寬元素顯示', () => {
@@ -1015,10 +1069,10 @@ function viewBoundaryViolations(file, src) {
       links[0].click();
       if (!App.sel || App.sel.type !== 'device' || App.sel.key !== f.deviation.deviating[0]) throw new Error('點推定偏離的設備應選取它');
     });
-    // 單一 helper（V.deviationLine）：平手預設寫「沒有多數」（詳情），列表傳 { tie: false } 不顯示；不是多數決的不顯示
+    // 單一 helper（V.deviationLine）：平手預設不顯示（詳情與列表一致），只有明確傳 { tie: true } 才寫「沒有多數」；不是多數決的不顯示
     const tie = { basis: 'majority', deviating: [], groups: [], main: null };
-    if (S.view.deviationLine(App, tie, { tie: false }) !== null || S.view.deviationLine(App, null) !== null || S.view.deviationLine(App, { basis: 'other', deviating: ['x'] }) !== null) throw new Error('列表的平手或非多數決不應顯示');
-    if (!S.view.deviationLine(App, tie).textContent.includes('沒有多數')) throw new Error('預設平手應寫出沒有多數');
+    if (S.view.deviationLine(App, tie) !== null || S.view.deviationLine(App, tie, { tie: false }) !== null || S.view.deviationLine(App, null) !== null || S.view.deviationLine(App, { basis: 'other', deviating: ['x'] }) !== null) throw new Error('平手或非多數決預設不應顯示');
+    if (!S.view.deviationLine(App, tie, { tie: true }).textContent.includes('沒有多數')) throw new Error('明確要求時平手應寫出沒有多數');
     if (P.testAll('.deviation').some((x) => x.textContent.includes('沒有多數'))) throw new Error('列表不顯示平手');
     App.select(null); L.showProblems(App);
   });
@@ -1107,7 +1161,7 @@ function viewBoundaryViolations(file, src) {
     // 每個數字只出現一次：已收集台數只在數字卡，不在收集完整度那一行
     if (cov.textContent.includes(`${NUM(cs.networkCollected)}／`) || cov.textContent.includes(`${NUM(cs.network)} 台`)) throw new Error('收集完整度那一行不重複已收集台數：' + cov.textContent);
   });
-  await step('詳情：檢查結果在最上面、超過 5 筆先顯示 5 筆；推定偏離的設備有 chip；平手寫出無法推定；長表格預設收合', () => {
+  await step('詳情：檢查結果在最上面、超過 5 筆先顯示 5 筆；推定偏離的設備有 chip；平手不多一行；長表格預設收合', () => {
     const Q = App.Q;
     // 檢查結果超過 5 筆的設備：先顯示 5 筆，其餘在「再顯示 N 筆」
     const many = Q.devices().find((d) => { App.select({ type: 'device', key: d.key }); const sec = $('#detail').querySelector('.findings-section'); return sec && sec.testAll('.finding').length > 5; });
@@ -1134,13 +1188,15 @@ function viewBoundaryViolations(file, src) {
     if (!devs.length && !process.env.SMOKE_INPUT) throw new Error('範例資料應有被推定偏離的設備');
     const clean = Q.devices().find((d) => !devs.includes(d.key)); App.select({ type: 'device', key: clean.key });
     if ($('#detail').testAll('.chip').some((c) => c.textContent.startsWith('推定偏離'))) throw new Error('沒有被推定偏離的設備不應有 chip');
-    // 平手：詳情寫出「沒有多數，無法推定」
+    // 平手：詳情和左欄一樣不顯示額外的「沒有多數」行（訊息本身仍在）
     const tie = Q.findings().findIndex((f) => f.deviation && f.deviation.basis === 'majority' && !f.deviation.deviating.length && f.entities.length);
     if (tie >= 0) {
       App.selectFinding(tie);
       const box = $('#detail').testAll('.finding').find((x) => x.textContent.includes(Q.finding(tie).message));
-      if (!box || !box.textContent.includes('推定偏離（多數決）：沒有多數，無法推定')) throw new Error('平手時應寫出沒有多數，無法推定');
+      if (!box || box.querySelector('.deviation')) throw new Error('平手時詳情不應多一行推定偏離');
     }
+    if (!process.env.SMOKE_INPUT && tie < 0) throw new Error('範例資料應有多數決平手的檢查結果');
+    if (Q.devices().some((d) => { App.select({ type: 'device', key: d.key }); return text('#detail').includes('沒有多數'); })) throw new Error('設備詳情不應出現「沒有多數」');
     // 長表格：超過 8 列預設收合，只在展開列顯示筆數
     const big = Q.devices().find((d) => d.collected && Q.interfacesOf(d.key).filter((i) => !i.hearsay).length > 8);
     App.select({ type: 'device', key: big.key });
@@ -1164,7 +1220,7 @@ function viewBoundaryViolations(file, src) {
     const at = ks.findIndex((x) => x.textContent === '類型依據');
     if (at < 0 || !ks[at + 1].testAll('.chip').some((x) => x.textContent === V.TERMS.inferred)) throw new Error('設備類型依據應標「推論」');
     const i = App.snap.model.interfaces.find((x) => x.typeBasis && x.typeBasis !== 'rawType');
-    if (i) { App.select({ type: 'interface', key: i.key }); if (!$('#detail').querySelector('.row').testAll('.chip').some((x) => x.textContent === V.TERMS.inferred)) throw new Error('推定的介面類型應標「推論」'); }
+    if (i) { App.select({ type: 'interface', key: i.key }); if (!$('#detail').querySelector('.row').testAll('.chip').some((x) => x.textContent.endsWith(`（${V.TERMS.inferred}）`))) throw new Error('推定的介面類型應在同一個 chip 標「（推論）」'); }
     App.select(null);
     // 介面狀態用 up／down（「連線」只用於防火牆的 TCP 連線與 SSH 連線）
     if (V.STATUS.up !== 'up' || V.STATUS.down !== 'down') throw new Error('介面狀態應寫 up／down');
@@ -1242,7 +1298,7 @@ function viewBoundaryViolations(file, src) {
     const i = all.findIndex((f) => f.id !== 'C02' && f.entities.length && f.evidence.length >= 2);
     if (i < 0) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有多處證據的檢查結果'); }
     const f = all[i]; const n = f.evidence.length; App.selectFinding(i);
-    const link = $('#detail').testAll('.finding a').find((a) => a.textContent === `原文 第 ${f.evidence[1].line} 行`);
+    const link = $('#detail').testAll('.finding a').find((a) => a.getAttribute('aria-label') === `原文 第 ${f.evidence[1].line} 行`);
     if (!link) throw new Error('詳情應有第二處證據的原文連結');
     link.click();
     const blk = Q.blockAt(f.evidence[1].file, f.evidence[1].line);
@@ -1960,6 +2016,7 @@ function viewBoundaryViolations(file, src) {
     rows()[at].dispatch('keydown', { key: 'Enter' });
     if (App.sel.type !== 'ip' || App.sel.key !== ip || App.sel.vrf !== want) throw new Error('選了 VRF 應只看那個 VRF');
     if ($('#detail').querySelector('h2').textContent !== `${ip}@${want}` || rows().length) throw new Error('選了 VRF 的標題應是 位址@VRF，不再列選擇');
+    // 回到不分 VRF 的選擇表前先檢查：選擇表已列 VRF／設定在／所屬網段時，下方屬性不重複列（見下方「看所有 VRF」後）
     const own = Q.findIp(ip, want).owners[0];
     if (!text('#detail').includes(Q.epName(own.ep))) throw new Error('應列出這個 VRF 的擁有者');
     // 從這個 IP 追蹤：預先選好這個 VRF
@@ -1968,6 +2025,8 @@ function viewBoundaryViolations(file, src) {
     $('#trace-pop').classList.add('hidden');
     $('#detail').querySelector('.ip-all-vrfs').click();
     if (App.sel.vrf != null || rows().length !== all.vrfs.length) throw new Error('「看所有 VRF」應回到不分 VRF');
+    const ks = $('#detail').testAll('.k').map((k) => k.textContent);
+    if (['VRF', '設定在', '所屬網段'].some((k) => ks.includes(k))) throw new Error('在多個 VRF 時，選擇表已列出的 VRF／設定在／所屬網段不應在下方重複：' + ks.join());
     // 清單的 IP 每個 VRF 一列，點了只看那個 VRF
     const r0 = Q.inventory().rows.ips.find((r) => r.ip === ip && r.vrf === want);
     if (!r0) throw new Error('清單應有這個 IP 在 ' + want + ' 的列');

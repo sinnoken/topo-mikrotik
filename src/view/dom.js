@@ -73,14 +73,15 @@
   V.majorityDeviating = (dv) => (dv && dv.basis === 'majority' ? dv.deviating || [] : null);
   /**
    * 跨設備一致性規則的多數決結果（finding.deviation，推論）：一律經這裡產生，詳情的每筆檢查結果共用。
-   * 列出推定偏離的設備，點設備名選取該設備（不觸發外層的點選）；沒有多數（平手）時明說無法推定，不留白。
-   * 不是多數決的 deviation（或沒有）時為 null。opts.tie 為 false 時平手不顯示（③ 分診的結果列表），回傳 null。
+   * 列出推定偏離的設備，點設備名選取該設備（不觸發外層的點選）。
+   * 不是多數決的 deviation（或沒有）時為 null。沒有多數（平手）時預設也是 null（詳情與 ③ 分診一致，平手沒有可指出的設備，
+   * 不多佔一行）；opts.tie 為 true 時才寫出「沒有多數，無法推定」。
    */
   V.deviationLine = function (App, dv, opts) {
     const devs = V.majorityDeviating(dv);
     if (!devs) return null;
     const label = '推定偏離（多數決）：';
-    if (!devs.length) return opts && opts.tie === false ? null : V.h('div', { class: 'deviation none muted' }, label + '沒有多數，無法推定');
+    if (!devs.length) return opts && opts.tie === true ? V.h('div', { class: 'deviation none muted' }, label + '沒有多數，無法推定') : null;
     const pick = (key) => (e) => { if (e && e.stopPropagation) e.stopPropagation(); App.select({ type: 'device', key }, { focus: true }); };
     // a.link 沒有 href 時 h() 已補 role、tabindex 與 Enter／空白鍵啟動
     const links = devs.map((key) => V.h('a', { class: 'link', 'data-dev': key, title: '選取這台設備', onclick: pick(key) }, App.Q.devName(key)));
@@ -91,6 +92,19 @@
   V.SEV = { error: '錯誤', warn: '警告', info: '提醒' };
   V.CLS = { lag: '聚合', '40g': '40G 以上', '10g': '10G', '1g': '1G', oob: '管理', other: '其他' };
   V.STATUS = { up: 'up', down: 'down', unknown: '不明' };
+  /** 廠商的顯示名（devices[].manufacturer、清單的廠商欄）：Snapshot 存小寫鍵，畫面用正式寫法；沒有對照的原樣顯示，空值回傳空字串 */
+  V.VENDOR = { mikrotik: 'MikroTik', cisco: 'Cisco', ubiquiti: 'Ubiquiti', juniper: 'Juniper', aruba: 'Aruba', hpe: 'HPE', tplink: 'TP-Link', asus: 'ASUS' };
+  V.vendorName = (m) => (m == null ? '' : V.VENDOR[String(m).toLowerCase()] || String(m));
+  /**
+   * 鄰居回報的功能（LLDP system-caps-enabled、CDP capabilities，devices[].caps 是逗號或空白分隔的原值）→ 中文，以「、」連接。
+   * 沒有對照的項目原樣保留，不吞掉；原值要不要放 title 由呼叫端決定。
+   */
+  V.CAPS = {
+    bridge: '橋接', router: '路由', 'wlan-ap': '無線基地台', station: '終端', 'station-only': '終端', repeater: '中繼器', telephone: '電話', phone: '電話',
+    'docsis-cable-device': 'DOCSIS 纜線設備', other: '其他', 'c-vlan': 'C-VLAN', 's-vlan': 'S-VLAN', tpmr: 'TPMR', switch: '交換', host: '主機',
+    'trans-bridge': '透通橋接', 'source-route-bridge': '來源路由橋接', igmp: 'IGMP',
+  };
+  V.capsText = (caps) => String(caps || '').split(/[,\s]+/).filter(Boolean).map((c) => V.CAPS[c.toLowerCase()] || c).join('、');
   V.IFC_TYPE = { physical: '實體埠', lag: '聚合介面', bridge: 'Bridge', vlan: 'VLAN 介面', wireless: 'Wi-Fi', virtual: '虛擬介面', loopback: 'Loopback', other: '其他介面' };
   V.IFC_TYPE_BASIS = { rawType: '依 RouterOS 類型', member: '依聚合成員', name: '依介面名稱推測', default: '缺類型資料，預設為實體埠', assoc: '依 Wi-Fi 關聯表' };
   V.INFER_BASIS = { 'subnet-p2p': '/30／31 點對點網段', 'mndp-mutual': 'MNDP 雙向回報', 'mndp-unique': 'MNDP 唯一鄰居', fdb: 'MAC 表', stp: 'RSTP 指定橋接器' };

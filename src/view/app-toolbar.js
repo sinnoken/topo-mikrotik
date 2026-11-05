@@ -92,7 +92,7 @@
     $('#btn-clear').onclick = async () => {
       A.closeMenus();
       if (!App.snap || !confirm('清除目前的基準與輸入？（只清除這個工具的資料）')) return;
-      await S.store.del('last'); A.clearRound(); App.sel = null; A.closeSheet();
+      await S.store.del('last'); A.clearRound(); App.sel = null; App.graph.setEmphasis(null); A.closeSheet();
       // 沒有基準時只有設備圖（歡迎畫面）：L2／L3 的資料與 VLAN 篩選一起清掉
       App.vlanFilter = null; A.resetLayers(); App.layer = 'device'; A.setDeviceGraph([], [], new Map()); A.renderAll();
     };
@@ -265,6 +265,12 @@
     item([ring(M.select, 3, 'select')], '選取', '目前選取的設備（藍色粗環）與連線');
     item([ring(M.hover, 2, 'hover')], '滑過', '指標或鍵盤（N 鍵）目前所在的設備（深色細環）；相連的線一起標示');
     item([ring(M.find, 3, 'find')], '搜尋結果', '搜尋 MAC／IP 時，標出所在位置的設備與連線');
+    { // 推定偏離：節點外的虛線圓圈（theme.canvas.deviation）；圓周依 LEG 換算虛線長度
+      const D = CV.deviation; const r = LEG / 2; const per = 360 / (Math.PI * LEG); let deg = 0;
+      const stops = D.dash.map((n, i) => { const from = deg; deg += n * per; return `${i % 2 ? 'transparent' : D.c} ${from.toFixed(1)}deg ${deg.toFixed(1)}deg`; });
+      const mask = `radial-gradient(circle, transparent ${(r - D.w).toFixed(1)}px, ${D.c} ${(r - D.w).toFixed(1)}px)`; // 遮罩只看不透明度
+      item([dot({ background: `repeating-conic-gradient(${stops.join(', ')})`, maskImage: mask, webkitMaskImage: mask }, { 'data-mark': 'deviation' })], D.label, D.tip);
+    }
     item([line(M.trace, 4, null, T.alpha.overlay, { 'data-mark': 'trace' }), h('span', { class: 'lg-arrow', style: { color: M.trace } }, '▶')], '路由追蹤', '逐跳路徑，箭頭表示方向');
     // VLAN 篩選：承載狀態（Q.vlanCarriers），線型與外形取自 theme.vlan，不只靠顏色
     const VL = { carry: ['VLAN 承載', '兩端都帶這個 VLAN（實線）'], inferred: ['VLAN 推論承載', '推論鏈路，已收集的各端都帶這個 VLAN（長虛線，推論）'],

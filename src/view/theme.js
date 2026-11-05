@@ -83,7 +83,12 @@
     // 畫布上的中性色：底色（與 --surface 相同；每次繪圖先填滿，匯出 PNG 與多條鏈路的中縫也用它）、分群底框、標籤、埠名、節點描邊
     canvas: {
       surface: '#f8fafc',
-      group: { fill: 'rgba(11,107,203,0.035)', stroke: 'rgba(11,107,203,0.18)', text: '#1f5a96' },
+      // 分群標籤畫在螢幕座標，底色 labelBg 蓋住底下的連線，文字對它 ≥ 4.5:1；滑過時顯示全名並加 stroke 外框
+      group: { fill: 'rgba(11,107,203,0.035)', stroke: 'rgba(11,107,203,0.18)', text: '#1f5a96', labelBg: 'rgba(248,250,252,0.92)' },
+      // 推定偏離（跨設備一致性檢查依多數決推定與其他設備不同的那一台；是推論）：節點外再一圈虛線，
+      // 比選取（mark.select 實線、外擴 6）與高亮（實線、外擴 5）更外圈，顏色與狀態色、選取、滑過、搜尋、追蹤都不同。label／tip 給圖例用
+      deviation: { c: '#a21caf', w: 2.5, dash: [4, 3], gap: 10, label: '推定偏離（多數決，推論）',
+        tip: '跨設備一致性檢查依多數決推定與其他設備不同的設備；是推論，不代表一定是這台設錯' },
       label: { bg: 'rgba(255,255,255,0.88)', text: text.body, textUncollected: text.muted, maxEm: 14 },
       port: { bg: 'rgba(255,255,255,0.95)', border: 'rgba(120,130,140,0.5)', text: '#4a5560', maxEm: 12 },
       outline: '#ffffff', uncollectedFill: '#ffffff', sevFallback: '#7c8691',

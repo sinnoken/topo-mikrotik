@@ -134,7 +134,7 @@
   A.load = function load(snap, positions, inputs) {
     const Q = S.query(snap);
     if (inputs) A.setRoundInputs(inputs);
-    App.round.snapshot = snap; App.round.Q = Q; App.sel = null; App.expanded = new Set(); A.closeSheet();
+    App.round.snapshot = snap; App.round.Q = Q; App.sel = null; App.expanded = new Set(); App.graph.setEmphasis(null); A.closeSheet();
     // 處理紀錄推進一輪（目前時間由畫面傳入）；寫入 store 是非同步的，App.ledgerJob 讓呼叫端可以等待
     App.ledgerJob = A.advanceLedger(App.Q);
     V.lists.findings.reset(); V.lists.compare.reset(); V.lists.findings.openFirst(App.Q);
@@ -142,7 +142,7 @@
     const hostCount = g.nodes.filter((n) => n.kind === 'host').length;
     App.showHosts = hostCount <= 300;
     const pos = new Map();
-    const auto = V.layout.layout(g.nodes, g.edges);
+    const auto = V.layout.layout(g.nodes, g.edges, { portrait: A.isPortrait() });
     const fresh = [];
     g.nodes.forEach((n) => {
       const saved = positions && positions[n.id];

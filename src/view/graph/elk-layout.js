@@ -22,6 +22,8 @@
     'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
     'elk.separateConnectedComponents': 'true',
   };
+  // 直式畫面：層級改由左往右，同一層的設備上下排列，一台核心接很多台時圖不會又寬又扁
+  const PORTRAIT_OPTIONS = Object.assign({}, OPTIONS, { 'elk.direction': 'RIGHT' });
 
   /** 版面失敗的原因（畫面依 code 顯示說明）。 */
   class ElkLayoutError extends Error {
@@ -44,7 +46,7 @@
 
   /**
    * @param nodes, edges 與 layout() 相同的圖資料
-   * @param opt { radius(node) → 半徑, maxNodes, deadlineMs, isStale() → true 時中止 }
+   * @param opt { radius(node) → 半徑, maxNodes, deadlineMs, isStale() → true 時中止, portrait（直式畫面，改直長排列） }
    * @returns Promise<{ pos: Map(id→{x,y}), stats: { groups, coreNodes, ms } }>
    */
   async function elk(nodes, edges, opt) {
@@ -59,12 +61,12 @@
       await new Promise((r) => setTimeout(r, 0)); // 讓出主執行緒，畫面才能更新
       if (o.isStale()) throw new ElkLayoutError('stale', '基準已更換，取消分層版面');
       if (Date.now() - t0 > o.deadlineMs) throw new ElkLayoutError('timeout', `分層版面超過 ${Math.round(o.deadlineMs / 1000)} 秒`);
-      boxes.push(await layoutGroup(engine, g, o.radius));
+      boxes.push(await layoutGroup(engine, g, o.radius, o.portrait ? PORTRAIT_OPTIONS : OPTIONS));
     }
-    return { pos: L.shelf(boxes), stats: { groups: groups.length, coreNodes, ms: Date.now() - t0 } };
+    return { pos: L.shelf(boxes, { portrait: !!o.portrait }), stats: { groups: groups.length, coreNodes, ms: Date.now() - t0 } };
   }
 
-  async function layoutGroup(engine, g, radius) {
+  async function layoutGroup(engine, g, radius, options) {
     const size = new Map();
     const children = g.core.map((n) => {
       const r = radius(n); const rows = L.leafRows(g, n.id);
@@ -82,7 +84,7 @@
       const k = src + '\u0000' + dst; if (seen.has(k)) return;
       seen.add(k); elkEdges.push({ id: 'e' + elkEdges.length, sources: [src], targets: [dst] });
     }));
-    const res = await engine.layout({ id: 'g', layoutOptions: OPTIONS, children, edges: elkEdges });
+    const res = await engine.layout({ id: 'g', layoutOptions: options, children, edges: elkEdges });
     const w = res.width || 0; const pos = new Map();
     res.children.forEach((c) => { const s = size.get(c.id); pos.set(c.id, { x: c.x + s.width / 2 - w / 2, y: c.y + s.r }); });
     L.placeLeaves(g, pos);

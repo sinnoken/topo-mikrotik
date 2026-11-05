@@ -652,6 +652,168 @@ function viewBoundaryViolations(file, src) {
     // 檢查結果 A03 → 顯示終端清單
     const i = App.snap.findings.findIndex((f) => f.id === 'A03'); if (i >= 0) { App.selectFinding(i); if (App.sel.type !== 'endpoints') throw new Error('A03 應顯示終端清單'); }
   });
+  await step('分群標籤：各種縮放下互不重疊、不超出群框、縮短後兩兩不同（先留尾段再截斷）；滑過群框或標籤顯示全名', () => {
+    const g = App.graph; const cv = $('#graph'); App.select(null);
+    if (!g.showGroups) throw new Error('測試前提：分群底框應為開啟');
+    g.computeGroups(); if (!g.groupBoxes) throw new Error('測試前提：應有兩個以上的分群');
+    g.fit(); const base = { s: g.s, tx: g.tx, ty: g.ty }; let total = 0;
+    [0.25, 0.5, 1, 2, 4, 8].forEach((k) => {
+      Object.assign(g, base); g.zoomAt(k); g.hoverGroup = null; g.draw();
+      const ls = g.groupLabels; total += ls.length;
+      if (ls.some((l) => l.forced)) throw new Error('沒有滑過時不應有強制顯示的標籤');
+      ls.forEach((l) => {
+        const vx0 = Math.max(l.box.x0, 0); const vx1 = Math.min(l.box.x1, g.w);
+        if (l.x0 < vx0 - 0.01 || l.x1 > vx1 + 0.01) throw new Error(`分群標籤超出群框寬度（縮放 ${k}）：${l.text} ${Math.round(l.x0)}–${Math.round(l.x1)}，框 ${Math.round(vx0)}–${Math.round(vx1)}`);
+        const short = l.name.replace(/\s*[（(].*$/, '') || l.name; const tail = short.split(/\s+/).pop();
+        const ok = [l.name, short, tail].includes(l.text) || (l.text.endsWith('…') && short.startsWith(l.text.slice(0, -1)) && Array.from(l.text).length >= 3);
+        if (!ok) throw new Error(`分群標籤應是全名、簡稱、尾段或字元截斷：${l.name} → ${l.text}`);
+        if (l.text.endsWith('…') && tail !== short && !ls.some((b) => b !== l && b.text === tail)) throw new Error(`短名放不下時應保留尾段「${tail}」而不是截斷：${l.text}`);
+      });
+      ls.forEach((a, i) => ls.slice(i + 1).forEach((b) => {
+        if (a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1) throw new Error(`分群標籤重疊（縮放 ${k}）：${a.text} / ${b.text}`);
+      }));
+      if (new Set(ls.map((l) => l.text)).size !== ls.length) throw new Error(`縮短後的分群標籤應兩兩不同（縮放 ${k}）：${ls.map((l) => l.text).join('、')}`);
+    });
+    if (!total) throw new Error('應畫出分群標籤');
+    // 滑過標籤：顯示全名（不受群框寬度限制），蓋在最上層；移開畫布後恢復
+    Object.assign(g, base); g.draw();
+    const l = g.groupLabels.find((x) => x.text !== x.name) || g.groupLabels[0];
+    const mouse = (p) => (winListeners.pointermove || []).forEach((f) => f({ pointerId: 1, pointerType: 'mouse', clientX: p.x, clientY: p.y, target: cv }));
+    mouse({ x: (l.x0 + l.x1) / 2, y: (l.y0 + l.y1) / 2 });
+    if (g.hoverGroup !== l.name) throw new Error('滑過分群標籤應標記這個分群：' + g.hoverGroup);
+    g.draw(); const full = g.groupLabels.find((x) => x.forced);
+    if (!full || full.name !== l.name || full.text !== l.name) throw new Error('滑過的分群應顯示全名');
+    cv.dispatch('pointerleave', { pointerType: 'mouse' }); if (g.hoverGroup) throw new Error('指標離開畫布後應取消分群的滑過');
+    // 滑過群框（不在標籤、節點上）也顯示全名
+    const gb = g.groupBoxes.find((x) => x.name === l.name); const corner = g.toScreen({ x: gb.x1 - 2, y: gb.y1 - 2 });
+    if (g.hitGroup(corner) !== l.name) throw new Error('群框內應命中這個分群');
+    g.hoverGroup = null; g.draw();
+  });
+  await step('推定偏離：選多數決的檢查結果時以虛線外圈標出偏離設備；其他選取、清除時清掉，展開與切換層級保留；圖例取自 theme', () => {
+    const g = App.graph; const D = S.view.theme.canvas.deviation; const Q = App.Q;
+    const row = $('#legend').testAll('.li').find((li) => li.textContent === D.label);
+    if (!row || row.getAttribute('title') !== D.tip || !row.all().some((e) => e.getAttribute('data-mark') === 'deviation' && String(e.style.background).includes(D.c))) throw new Error('圖例應有推定偏離（文字、說明與顏色取自 theme.canvas.deviation）');
+    if (D.c === S.view.theme.mark.select || !D.dash.length || !(D.gap > 6)) throw new Error('推定偏離應是與選取不同色、比選取環更外圈的虛線');
+    const idx = Q.findings().findIndex((f) => f.deviation && f.deviation.basis === 'majority' && f.deviation.deviating.length);
+    if (idx < 0) { if (process.env.SMOKE_INPUT) return; throw new Error('測試前提：範例應有多數決的檢查結果'); }
+    const devs = Q.finding(idx).deviation.deviating;
+    App.selectFinding(idx);
+    if (!g.emphasis || !devs.every((d) => g.emphasis.has(d))) throw new Error('選多數決的檢查結果應標出推定偏離的設備');
+    [0.05, 0.5, 2].forEach((s) => { g.s = s; g.draw(); });
+    App.select(App.sel, { refresh: true }); if (!g.emphasis) throw new Error('只重新標示（切換層級）時應保留推定偏離');
+    App.select({ type: 'device', key: devs[0] }); if (g.emphasis !== null) throw new Error('選其他東西應清除推定偏離');
+    App.selectFinding(idx); App.select(null); if (g.emphasis !== null) throw new Error('取消選取應清除推定偏離');
+    const tie = Q.findings().findIndex((f) => f.deviation && !f.deviation.deviating.length);
+    if (tie >= 0) { App.selectFinding(idx); App.selectFinding(tie); if (g.emphasis !== null) throw new Error('沒有多數時不應標出推定偏離'); }
+    const plain = Q.findings().findIndex((f) => !f.deviation && f.entities.length);
+    if (plain >= 0) { App.selectFinding(idx); App.selectFinding(plain); if (g.emphasis !== null) throw new Error('沒有 deviation 的檢查結果不應標出推定偏離'); }
+    App.select(null); g.fit();
+  });
+  await step('聚焦：選設備含一跳鄰居且倍率不超過上限；選鏈路聚焦兩端；路由追蹤聚焦去程與回程', () => {
+    const g = App.graph; const L = S.view.GraphView.LIMITS; const Q = App.Q;
+    const inView = (ids, what) => ids.forEach((id) => {
+      const p = g.toScreen(g.at(id));
+      if (p.x < 0 || p.x > g.w || p.y < 0 || p.y > g.h) throw new Error(`${what}：${id} 不在可視範圍（${Math.round(p.x)},${Math.round(p.y)}）`);
+    });
+    const capped = (what) => { if (g.s > L.FOCUS.maxScale + 1e-9) throw new Error(`${what}的聚焦倍率 ${g.s} 超過上限 ${L.FOCUS.maxScale}`); };
+    const nb = (id) => (g.edgesByNode.get(id) || []).map((e) => (e.a === id ? e.b : e.a)).filter((m) => g.isVisible(g.nodeById.get(m)));
+    const devs = g.nodes.filter((n) => !n.virtual && g.isVisible(n) && nb(n.id).length).sort((a, b) => nb(a.id).length - nb(b.id).length || S.util.natural(a.id, b.id));
+    [devs[0], devs[devs.length - 1]].forEach((n) => {
+      App.select({ type: 'device', key: n.id }, { focus: true }); capped('選設備');
+      inView([n.id].concat(nb(n.id)), '選設備後的一跳鄰居');
+    });
+    const pair = Array.from(App.pairs.values()).find((p) => !p.virtual && p.links.length);
+    const link = Q.getLink(pair.links[0]);
+    App.select({ type: 'link', key: link.key }, { focus: true }); capped('選鏈路');
+    inView([link.a, link.b].map((ep) => S.keys.splitEp(ep)[0]), '選鏈路的兩端');
+    if (process.env.SMOKE_INPUT) { App.select(null); return; }
+    // 路由追蹤：找一組去程與回程起點不同的位址，回程的起點也要在畫面內
+    const ips = Q.ipEntries().map((x) => x.ip).slice(0, 60); let pick = null;
+    for (const a of ips) {
+      for (const b of ips) {
+        if (a === b) continue; const t = S.trace(Q, a, b); if (!t.ok) continue;
+        const r = S.trace(Q, b, a); if (r.ok && r.start && r.start !== t.start) { pick = [a, b]; break; }
+      }
+      if (pick) break;
+    }
+    if (!pick) throw new Error('測試前提：應有去程與回程起點不同的追蹤');
+    App.openTrace(pick[0], pick[1], ''); $('#trace-run').click();
+    const tr = App.sel.result; const back = App.sel.reverse; capped('路由追蹤');
+    inView(S.util.uniq([tr.start, ...tr.hops.map((x) => x.dev), ...tr.edges.flat(), back.start, ...back.hops.map((x) => x.dev)]).filter((d) => g.nodeById.has(d)), '路由追蹤的去程與回程');
+    App.select(null);
+  });
+  await step('全圖：扣掉工具列、圖例等覆蓋層佔用的高度；畫布沒有尺寸時延後到有尺寸再套用', () => {
+    const g = App.graph; const tb = $('#toolbar'); const lg = $('#legend');
+    ['#toolbar', '#legend', '#hint', '#banner'].forEach((s) => { if (!g.occluders.some((o) => o.el === $(s))) throw new Error('全圖應避開覆蓋層：' + s); });
+    const old = [tb.getBoundingClientRect, lg.getBoundingClientRect];
+    try {
+      tb.getBoundingClientRect = () => ({ left: 10, top: 10, width: 220, height: 40 });
+      lg.getBoundingClientRect = () => ({ left: 10, top: 760, width: 90, height: 30 });
+      g.fit(); const ys = g.nodes.filter((n) => g.isVisible(n)).map((n) => g.toScreen(g.at(n.id)).y);
+      if (Math.min(...ys) < 50 || Math.max(...ys) > 760) throw new Error(`全圖應避開工具列（下緣 50）與圖例（上緣 760）：${Math.round(Math.min(...ys))}–${Math.round(Math.max(...ys))}`);
+      // 展開的圖例太高（超過 OCCLUDER_MAX）時不讓出空間，避免圖被壓扁
+      lg.getBoundingClientRect = () => ({ left: 10, top: 300, width: 900, height: 490 });
+      g.fit(); const ys2 = g.nodes.filter((n) => g.isVisible(n)).map((n) => g.toScreen(g.at(n.id)).y);
+      if (Math.max(...ys2) < 400) throw new Error('太高的覆蓋層不應讓出空間');
+    } finally { tb.getBoundingClientRect = old[0]; lg.getBoundingClientRect = old[1]; }
+    const cv = $('#graph'); const rect = cv.getBoundingClientRect;
+    try {
+      cv.getBoundingClientRect = () => ({ left: 0, top: 0, width: 0, height: 0 }); g.resize();
+      const before = g.s; g.focus([g.nodes.find((n) => g.isVisible(n)).id]);
+      if (g.s !== before || !g.pendingFit) throw new Error('畫布沒有尺寸時應延後聚焦');
+    } finally { cv.getBoundingClientRect = rect; g.resize(); }
+    if (g.pendingFit || g.s > S.view.GraphView.LIMITS.FOCUS.maxScale + 1e-9) throw new Error('畫布恢復尺寸後應套用延後的聚焦');
+    g.fit();
+  });
+  await step('觸控：雙指以中點縮放並平移、放開一指接著平移且不觸發點選；觸控點擊半徑至少 22px', () => {
+    const g = App.graph; const cv = $('#graph'); const L = S.view.GraphView.LIMITS;
+    if (L.TOUCH.hitPx < 22) throw new Error('觸控點擊半徑應至少 22px');
+    const ev = (id, x, y) => ({ pointerId: id, pointerType: 'touch', button: 0, clientX: x, clientY: y, target: cv, timeStamp: 9000 + id, preventDefault() {} });
+    const move = (id, x, y) => (winListeners.pointermove || []).forEach((f) => f(ev(id, x, y)));
+    const up = (id, x, y) => (winListeners.pointerup || []).forEach((f) => f(ev(id, x, y)));
+    g.fit(); App.select(null); g.zoomTo(0.5, { x: g.w / 2, y: g.h / 2 });
+    let clicks = 0; const oldClick = g.handlers.click; g.on('click', () => { clicks++; });
+    try {
+      const s0 = g.s; const w0 = g.toWorld(600, 400);
+      cv.dispatch('pointerdown', ev(11, 550, 400)); cv.dispatch('pointerdown', ev(12, 650, 400));
+      move(12, 750, 400); // 兩指距離 100 → 200，中點 600 → 650
+      if (Math.abs(g.s - Math.min(L.ZOOM.max, s0 * 2)) > 1e-9) throw new Error(`雙指拉開一倍應放大一倍：${s0} → ${g.s}`);
+      const w1 = g.toWorld(650, 400); if (Math.abs(w1.x - w0.x) > 1e-6 || Math.abs(w1.y - w0.y) > 1e-6) throw new Error('雙指縮放時兩指開始時中點下的位置應跟著中點移動');
+      up(12, 750, 400); const tx = g.tx; move(11, 590, 400);
+      if (Math.abs(g.tx - tx - 40) > 1e-6) throw new Error('放開一指後，剩下的手指應接著平移');
+      up(11, 590, 400); if (clicks) throw new Error('雙指操作不應觸發點選');
+    } finally { g.on('click', oldClick); }
+    // 縮小時，節點在螢幕上很小：觸控仍可在 22px 內點中，滑鼠不行
+    g.zoomTo(0.5, { x: g.w / 2, y: g.h / 2 });
+    const vis = g.nodes.filter((n) => g.isVisible(n) && !n.box);
+    const lone = vis.find((n) => { const p = g.toScreen(g.at(n.id)); return p.x > 40 && p.x < g.w - 40 && vis.every((m) => m === n || Math.hypot(g.toScreen(g.at(m.id)).x - p.x, g.toScreen(g.at(m.id)).y - p.y) > 60); });
+    if (!lone) throw new Error('測試前提：應有一個附近沒有其他節點的節點');
+    const p = g.toScreen(g.at(lone.id)); const q = { x: p.x + L.TOUCH.hitPx - 1, y: p.y };
+    if (g.radius(lone) * g.s + L.TOUCH.slopPx >= L.TOUCH.hitPx - 1) throw new Error('測試前提：節點在螢幕上應小於觸控半徑');
+    if (g.hitNode(q, 'touch') !== lone) throw new Error('觸控在 22px 內應點中節點');
+    if (g.hitNode(q, 'mouse') === lone) throw new Error('滑鼠的命中範圍不應放大到觸控的大小');
+    g.fit();
+  });
+  await step('直式窄螢幕：內建與分層版面改直長排列', async () => {
+    const VA = S.view.app; const g = App.graph; const cv = $('#graph'); const ow = window.innerWidth; const oh = window.innerHeight; const rect = cv.getBoundingClientRect;
+    try {
+      // 依圖實際的區域判斷：窄螢幕上圖的區域是直的才算；畫布沒有尺寸時看視窗
+      window.innerWidth = 390; window.innerHeight = 844;
+      cv.getBoundingClientRect = () => ({ left: 0, top: 0, width: 390, height: 600 }); g.resize(); if (!VA.isPortrait()) throw new Error('390×600 的圖區應判定為直式');
+      cv.getBoundingClientRect = () => ({ left: 0, top: 0, width: 390, height: 300 }); g.resize(); if (VA.isPortrait()) throw new Error('視窗是直的、圖區是橫的時不應判定為直式');
+      cv.getBoundingClientRect = () => ({ left: 0, top: 0, width: 0, height: 0 }); g.resize(); if (!VA.isPortrait()) throw new Error('畫布沒有尺寸時應看視窗（390×844 是直式）');
+      window.innerWidth = 1200; window.innerHeight = 1600; if (VA.isPortrait()) throw new Error('寬螢幕不應判定為直式');
+    } finally { window.innerWidth = ow; window.innerHeight = oh; cv.getBoundingClientRect = rect; g.resize(); }
+    const gd = VA.graphData(App.Q);
+    const ratio = (pos) => { const ps = Array.from(pos.values()); const xs = ps.map((p) => p.x); const ys = ps.map((p) => p.y); return (Math.max(...ys) - Math.min(...ys)) / Math.max(1, Math.max(...xs) - Math.min(...xs)); };
+    const land = ratio(S.view.layout.layout(gd.nodes, gd.edges)); const port = ratio(S.view.layout.layout(gd.nodes, gd.edges, { portrait: true }));
+    if (!(port > land)) throw new Error(`直式的內建版面應比橫式直長：高寬比 ${land.toFixed(2)} → ${port.toFixed(2)}`);
+    if (process.env.SMOKE_INPUT) return; // 大型網路超過分層版面上限，不在這裡重算
+    const opt = { radius: (n) => g.radius(n) };
+    const e0 = await S.view.layout.elk(gd.nodes, gd.edges, opt); const e1 = await S.view.layout.elk(gd.nodes, gd.edges, Object.assign({ portrait: true }, opt));
+    if (Array.from(e1.pos.values()).some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y)) || e1.pos.size !== e0.pos.size) throw new Error('直式的分層版面每個節點都應有座標');
+    if (!(ratio(e1.pos) > ratio(e0.pos))) throw new Error(`直式的分層版面應比橫式直長：${ratio(e0.pos).toFixed(2)} → ${ratio(e1.pos).toFixed(2)}`);
+  });
   await step('廠商色最多 theme 的色數：依終端數量取前幾名，其餘歸「其他」，圖例列出同樣的對應', () => {
     const EP = S.view.theme.endpoint; const g = App.graph; const old = EP.vendor;
     const check = () => {

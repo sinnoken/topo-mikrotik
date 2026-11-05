@@ -11,6 +11,9 @@
   const DX = 185; const DY = 130; const ROW = 24; const WRAP_DY = 80; const GAP = 220;
   const LCOLS = 4; const LDX = 44; const LDY = 40; const LEAF_DY = 64; // 終端（主機）排列
   const RANK = { firewall: 0, router: 1, switch: 2, unknown: 3, host: 4 };
+  // 書架寬度係數（各群總面積開根號的倍數）。直式畫面（窄螢幕、高大於寬）時一層最多 PORTRAIT.row 台就折行、書架寬度係數改小，
+  // 圖接近直長：全圖時以寬度為限，又扁又寬的圖在直式手機上會縮到看不清
+  const SHELF_W = 1.4; const PORTRAIT = { row: 6, shelfW: 0.8 };
 
   /**
    * 分群與終端：每群拆成「核心」與「終端」（只連到一台已收集設備、本身沒有收集資料，之後排在該設備下方），
@@ -77,11 +80,11 @@
     });
   }
 
-  /** 各群以「書架」方式排成接近正方形；box：{ name, pos（群內座標，x 以 0 為中心）, w, h, n }。 */
-  function shelf(boxes) {
+  /** 各群以「書架」方式排成接近正方形（opt.portrait 時偏直長）；box：{ name, pos（群內座標，x 以 0 為中心）, w, h, n }。 */
+  function shelf(boxes, opt) {
     boxes.sort((a, b) => b.n - a.n || S.util.natural(a.name, b.name));
     const area = boxes.reduce((s, b) => s + (b.w + GAP) * (b.h + GAP), 0);
-    const maxW = Math.max(Math.sqrt(area) * 1.4, ...boxes.map((b) => b.w));
+    const maxW = Math.max(Math.sqrt(area) * (opt && opt.portrait ? PORTRAIT.shelfW : SHELF_W), ...boxes.map((b) => b.w));
     const out = new Map(); let cx = 0; let cy = 0; let shelfH = 0;
     boxes.forEach((b) => {
       if (cx > 0 && cx + b.w > maxW) { cx = 0; cy += shelfH + GAP; shelfH = 0; }
@@ -91,8 +94,9 @@
     return out;
   }
 
-  /** 內建版面：BFS 分層＋一輪重心排序＋太寬折行（同步，1000 台以上也能一次算完）。 */
-  function layout(nodes, edges) {
+  /** 內建版面：BFS 分層＋一輪重心排序＋太寬折行（同步，1000 台以上也能一次算完）。opt.portrait：直式畫面，改直長排列。 */
+  function layout(nodes, edges, opt) {
+    const rowMax = opt && opt.portrait ? PORTRAIT.row : ROW;
     return shelf(prepare(nodes, edges).map((g) => {
       const { core, level, byId, adj } = g;
       const layers = [];
@@ -112,8 +116,8 @@
       const pos = new Map(); let y = 0; let width = 0;
       layers.forEach((ids) => {
         if (!ids || !ids.length) return;
-        for (let r = 0; r * ROW < ids.length; r++) {
-          const row = ids.slice(r * ROW, (r + 1) * ROW);
+        for (let r = 0; r * rowMax < ids.length; r++) {
+          const row = ids.slice(r * rowMax, (r + 1) * rowMax);
           const total = row.reduce((s2, id) => s2 + slotW(g, id), 0); let x = -total / 2;
           row.forEach((id) => { pos.set(id, { x: x + slotW(g, id) / 2, y }); x += slotW(g, id); });
           width = Math.max(width, total);
@@ -124,7 +128,7 @@
       });
       placeLeaves(g, pos);
       return { name: g.name, pos, w: Math.max(width, DX), h: Math.max(y - (DY - WRAP_DY), DY / 2), n: g.members.length };
-    }));
+    }), opt);
   }
 
   /** 力導向微調一步（格網加速的 Fruchterman–Reingold）。回傳本步最大位移。 */
@@ -257,6 +261,9 @@
     ids.forEach((id) => { if (!byId.get(id).collected) { const nb = Array.from(w.get(id).keys()).find((x) => byId.get(x).collected); if (nb) label.set(id, label.get(nb)); } });
     // 依大小命名：以群內層級最高的設備當名稱
     const RANK = { firewall: 0, router: 1, switch: 2, unknown: 3, host: 4 };
+  // 書架寬度係數（各群總面積開根號的倍數）。直式畫面（窄螢幕、高大於寬）時一層最多 PORTRAIT.row 台就折行、書架寬度係數改小，
+  // 圖接近直長：全圖時以寬度為限，又扁又寬的圖在直式手機上會縮到看不清
+  const SHELF_W = 1.4; const PORTRAIT = { row: 6, shelfW: 0.8 };
     const groups = new Map();
     ids.forEach((id) => S.util.getOr(groups, label.get(id), () => []).push(id));
     if (groups.size < 2 || nodes.length < minSize) return null;

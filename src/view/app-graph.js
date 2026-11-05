@@ -12,13 +12,24 @@
   const vendorIni = (v) => (v ? v.replace(/[^A-Za-z0-9\u4e00-\u9fff]/g, '').slice(0, 2).toUpperCase() : '?');
 
   // ================================================================ 版面排程
+  /**
+   * 直式窄螢幕：設備圖的內建與分層版面改直長排列（layout.js 的 PORTRAIT、ELK 由左往右），全圖時才不會又扁又小。
+   * 依拓樸圖實際可放圖的範圍（扣掉工具列等覆蓋層）判斷高是否大於寬，不看整個視窗：窄螢幕上方還有標題列與摘要，
+   * 視窗是直的、圖的區域卻可能是橫的，那時直長的版面反而更小。畫布還沒有尺寸（切到其他工作區）時才看視窗。
+   */
+  A.isPortrait = function isPortrait() {
+    if (!A.isNarrowScreen()) return false;
+    const g = App.graph;
+    if (g && g.w >= 1 && g.h >= 1) { const v = g.viewport(); return v.y1 - v.y0 > v.x1 - v.x0; }
+    return Number(window.innerHeight) > Number(window.innerWidth);
+  };
   /** 分層版面（ELK）：在背景計算，完成後替換位置；超過上限、逾時或失敗時保留現有版面並說明原因。 */
   A.applyElk = async function applyElk(g) {
     const snap = App.snap; const token = (App.layoutToken = (App.layoutToken || 0) + 1);
     A.banner('分層版面計算中…');
     try {
       const r = await V.layout.elk(g.nodes, g.edges, {
-        radius: (n) => App.graph.radius(n), maxNodes: App.ELK_MAX, isStale: () => App.snap !== snap || App.layoutToken !== token,
+        radius: (n) => App.graph.radius(n), maxNodes: App.ELK_MAX, portrait: A.isPortrait(), isStale: () => App.snap !== snap || App.layoutToken !== token,
       });
       if (App.snap !== snap || App.layoutToken !== token) return;
       // 設備圖的位置（App.devicePos）：看的是 L2／L3 時也寫進設備圖，回到設備圖時再全圖
@@ -40,7 +51,7 @@
     const g = A.graphData(App.Q);
     if (App.layoutMode === 'elk') { App.layoutJob = A.applyElk(g); return; }
     App.layoutToken = (App.layoutToken || 0) + 1; // 取消進行中的分層版面
-    const auto = V.layout.layout(g.nodes, g.edges);
+    const auto = V.layout.layout(g.nodes, g.edges, { portrait: A.isPortrait() });
     auto.forEach((p, id) => App.devicePos.set(id, p)); App.graph.computeGroups(); App.graph.fit(); A.savePositions();
   };
 
@@ -207,7 +218,7 @@
     fresh.forEach((n) => { if (!pos.has(n.id)) pos.set(n.id, { x: 0, y: 0 }); });
     A.setDeviceGraph(g.nodes, g.edges, pos);
     A.applyVisibility();
-    App.select(App.sel, {});
+    App.select(App.sel, { emphasis: App.graph.emphasis && Array.from(App.graph.emphasis) }); // 展開不是新的選取：保留推定偏離標示
     A.savePositions();
   }
   /** 展開／收合未知對端是設備圖的操作：看的是 L2／L3 時先切回設備圖 */

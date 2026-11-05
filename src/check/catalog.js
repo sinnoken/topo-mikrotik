@@ -1,19 +1,19 @@
 /*
- * 檢查規則目錄（CATALOG）：每項規則的編號、嚴重度、類別、標題、需要的資料，以及給使用者看的常見原因與處理方式。
- * 判斷邏輯在 checks.js；兩者以規則編號對應，規則說明見 docs/基準檢查規則.md（tests/docs.js 檢查標題與嚴重度一致）。
+ * 檢查目錄（CATALOG）：每項檢查的編號、嚴重度、類別、標題、需要的資料，以及給使用者看的常見原因與處理方式。
+ * 判斷邏輯在 checks.js；兩者以檢查代碼對應，檢查說明見 docs/基準檢查.md（tests/docs.js 檢查標題與嚴重度一致）。
  * 必須在 checks.js 之前載入（tools/core-files.js）。
  *
  * 欄位：
  *   severity：error／warn／info；cat：類別；title：畫面上的標題。
- *   data：規則需要的資料類別（設備的 data）。外層每一組都要有，組內任一種即可；沒有 data 的規則（輸入、覆蓋）一律會檢查。
+ *   data：檢查需要的資料類別（設備的 data）。外層每一組都要有，組內任一種即可；沒有 data 的檢查（輸入、覆蓋）一律會檢查。
  *         只用來區分「通過」與「沒有資料可檢查」，不影響檢查本身。
  *   evidenceLimit：每筆 finding 最多附幾筆證據，沒寫時用 checks.js 的預設值。
- *   facet：只有「同一組 id＋實體可能產生多筆 finding」的規則才有，說明 finding.facet 的格式（檢查的是哪一個項目）。
- *         有宣告的規則每筆 finding 都帶 facet，沒宣告的都不帶（checks.js 的 add() 檢查）；facet 會進入 findingKey（query.js）。
+ *   facet：只有「同一組 id＋實體可能產生多筆 finding」的檢查才有，說明 finding.facet 的格式（檢查的是哪一個項目）。
+ *         有宣告的檢查每筆 finding 都帶 facet，沒宣告的都不帶（checks.js 的 add() 檢查）；facet 會進入 findingKey（query.js）。
  *         格式中的 <…> 是取自設定的值（已正規化），其餘是固定字樣；多段以「|」分隔，固定字樣在前。
  *   causes：常見原因，每條一句。action：怎麼處理，可以照著做的步驟。
  *         action 的第一句是畫面上的處理提示（S.query.rule(id).hint）：一句可動手的話、約 40 字寬、不放連結，
- *         與 docs/基準檢查規則.md 該章「處理」的第一句相同（tests/core/query.js、tests/docs.js 檢查）；細節接在第一句之後。
+ *         與 docs/基準檢查.md 該章「處理」的第一句相同（tests/core/query.js、tests/docs.js 檢查）；細節接在第一句之後。
  *         這兩項只放在 CATALOG（S.check.CATALOG[f.id]），不複製到 finding，也不進 Snapshot。
  */
 (function (S) {

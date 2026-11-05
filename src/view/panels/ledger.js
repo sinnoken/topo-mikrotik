@@ -27,7 +27,7 @@
     el.addEventListener('toggle', () => (el.open ? ui.open.add(key) : ui.open.delete(key)));
     return el;
   };
-  /** 處理紀錄項目的一列：規則、設備、目前基準中的訊息（沒有時列出 findingKey）；目前基準有這筆時點一下定位 */
+  /** 處理紀錄項目的一列：檢查、設備、目前基準中的訊息（沒有時列出 findingKey）；目前基準有這筆時點一下定位 */
   function itemRow(App, key, it, extra) {
     const idx = App.Q ? App.Q.findingIndexByKey(key) : -1;
     const f = idx >= 0 ? App.Q.finding(idx) : null;

@@ -77,7 +77,7 @@
   V.DEVIATION_LABEL = V.DEVIATION + '（推論）';
   V.NO_MAJORITY = '沒有多數';
   /**
-   * 跨設備一致性規則的多數決結果（finding.deviation，推論）：一律經這裡產生，詳情的每筆檢查結果共用。
+   * 跨設備一致性檢查的多數決結果（finding.deviation，推論）：一律經這裡產生，詳情的每筆檢查結果共用。
    * 列出與多數不同的設備，點設備名選取該設備（不觸發外層的點選）。
    * 不是多數決的 deviation（或沒有）時為 null。沒有多數（平手）時預設也是 null（詳情與「研判」一致，平手沒有可指出的設備，
    * 不多佔一行）；opts.tie 為 true 時才寫出「沒有多數，無法推定」。
@@ -130,7 +130,7 @@
     unknown: '有無法判斷的組合（原因見提示與明細），沒有允許與拒絕同時出現',
     empty: '沒有可算的位址組合（例如目的 zone 只有設備自己的位址，或沒有可當代表的位址）；不是「無法判斷」',
   };
-  /** 規則目錄（S.query.rule）的類別與標題；目錄沒有的代碼（不應發生）不吞掉，歸在 UNKNOWN_RULE_CAT、標題原樣寫代碼。「研判」與修正計畫共用 */
+  /** 檢查目錄（S.query.rule）的類別與標題；目錄沒有的代碼（不應發生）不吞掉，歸在 UNKNOWN_RULE_CAT、標題原樣寫代碼。「研判」與修正計畫共用 */
   V.UNKNOWN_RULE_CAT = '未登錄的檢查';
   V.ruleInfo = (id) => S.query.rule(id) || { id, cat: V.UNKNOWN_RULE_CAT, title: id };
   // zone 的來源（Q.zones 的 source）

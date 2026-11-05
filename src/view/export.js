@@ -61,11 +61,11 @@
    *   status      ：處理紀錄的狀態（open／scheduled／accepted／false-positive／fixed／regressed）；不在處理紀錄中時空白
    *   note        ：備註（不論狀態）；waiver_reason／waiver_until：接受風險的豁免原因與到期日（UTC ISO）
    * device 是所屬設備鍵（Q.findingDevice；不屬於任何設備為空白）。
-   * action 是規則的處理建議（CATALOG，V.remediation.advice），原文照錄（反引號保留）；規則沒有處理建議時為空白。
-   * facet 是比對對象（finding.facet 原值，例如 A12 的 dns／ntp，會進入 findingKey）；規則沒有 facet 時空白。
+   * action 是檢查的處理建議（CATALOG，V.remediation.advice），原文照錄（反引號保留）；檢查沒有處理建議時為空白。
+   * facet 是比對對象（finding.facet 原值，例如 A12 的 dns／ntp，會進入 findingKey）；檢查沒有 facet 時空白。
    *   放原值而不是畫面的顯示文字：給試算表篩選與對照 findingKey 用，訊息本身已經寫出項目。
    * 常見原因不放進 CSV：每列都會重複同一段多句文字，合在一格也不好篩選；Markdown 報表與畫面上有。
-   * 最後一欄（欄名 V.DEVIATION_LABEL）是與多數不同的設備名（推論，以「; 」分隔）；平手寫 V.NO_MAJORITY，不是多數決的規則空白。
+   * 最後一欄（欄名 V.DEVIATION_LABEL）是與多數不同的設備名（推論，以「; 」分隔）；平手寫 V.NO_MAJORITY，不是多數決的檢查空白。
    * 新欄位一律加在最後，既有欄位的位置不變。
    * 開頭加 UTF-8 BOM，Excel 才會以 UTF-8 讀取中文；換行用 CRLF。
    */
@@ -104,7 +104,7 @@
 
   /** CATALOG 文字：反引號內的指令與欄位轉成行內程式碼（V.codeParts，與畫面同一個切法），其餘照 mdText 跳脫 */
   const mdRich = (s) => V.codeParts(s).map((p) => (p.code ? mdCode(p.text) : mdText(p.text))).join('');
-  /** 規則的處理建議與常見原因（V.remediation.advice，文字來自 CATALOG）：欄位不存在時不輸出 */
+  /** 檢查的處理建議與常見原因（V.remediation.advice，文字來自 CATALOG）：欄位不存在時不輸出 */
   const catalogLines = (id) => {
     const a = R().advice(id); const out = [];
     if (a.action) out.push(`- 處理建議：${mdRich(a.action)}`);
@@ -114,9 +114,9 @@
 
   /**
    * 檢查結果 Markdown 報表。已處理的項目加註狀態與時間，豁免與備註另起一行；復發的項目標示「復發」。
-   *   預設：依嚴重度分組，組內依規則代碼分段，保留 Snapshot 的排列順序。
+   *   預設：依嚴重度分組，組內依檢查代碼分段，保留 Snapshot 的排列順序。
    *   opts.byDevice：依設備分組（Q.findingDevice），不屬於任何設備的最後一組；組內保留原順序。
-   *     同一條規則會出現在很多台設備，處理建議與常見原因只在報表最後的附錄列一次（依 CATALOG 的順序）。
+   *     同一項檢查會出現在很多台設備，處理建議與常見原因只在報表最後的附錄列一次（依 CATALOG 的順序）。
    */
   function findingsMarkdown(Q, opts) {
     const lgOf = ledgerOf(opts);

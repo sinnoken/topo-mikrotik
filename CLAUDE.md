@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 本專案文件、測試名稱、finding 訊息與 commit message 皆使用繁體中文；新增內容請沿用。
-`docs/` 下給人看的文件也用中文檔名（例如 `docs/基準檢查規則.md`）。
+`docs/` 下給人看的文件也用中文檔名（例如 `docs/基準檢查.md`）。
 開發原則（鐵則、工作習慣、針對性守則、驗證底線）與 GitHub Copilot 共用同一份，在此匯入：
 
 @.github/copilot-instructions.md
@@ -64,7 +64,7 @@ git diff --check         # 提交前檢查
   下游（`compare/` 比對、`remediate/` 修正 patch、`ledger/` 處理紀錄、`workpack/` 的 `S.zip` 與工作包 `S.workpack`）也是核心檔案，
   但只透過 `SSOT.query(snapshot)` 讀基準、不修改基準，上游也不呼叫它們；`S.workpack` 只在呼叫時使用 `S.build`、`S.ledger` 與 `S.profile`。所有核心都不得碰 DOM、Canvas、IndexedDB。View 與下游只透過 `SSOT.query(snapshot)`（[src/query/query.js](src/query/query.js)）讀取，不讀原始 model、不改寫 Snapshot。
   `src/view/theme.js` 是顏色／線型／透明度的唯一來源；持久化集中在 `src/view/store.js`。
-  `src/view` 只透過 `S.query(snapshot)`／`S.query.*` 讀資料與規則目錄，不讀 Snapshot 的欄位；允許的 `S.*` 成員由 `tests/ui-smoke.js` 的邊界掃描強制（[ADR-018](docs/架構決策/018-畫面只透過Q與S.query讀資料.md)）。
+  `src/view` 只透過 `S.query(snapshot)`／`S.query.*` 讀資料與檢查目錄，不讀 Snapshot 的欄位；允許的 `S.*` 成員由 `tests/ui-smoke.js` 的邊界掃描強制（[ADR-018](docs/架構決策/018-畫面只透過Q與S.query讀資料.md)）。
   畫面讀 `CATALOG` 的 `causes`／`action` 只透過 `V.remediation.advice(id)`（advice 內部經 `S.query.rule`）；含反引號的文字以 `V.codeText` 組成 DOM，不用 innerHTML。
 - **比對與檢視狀態**：`compare/` 有預期現況比對（`S.compare`）、由基準產生預期現況（`S.compare.expectedFrom`）與
   新舊基準比對（`S.compare.snapshots`，`ssot-snapdiff/1`）。finding 的穩定鍵是 `Q.findingKey(f)`；
@@ -101,7 +101,7 @@ git diff --check         # 提交前檢查
 - **擴充點**：新廠牌 → `src/adapters/` 新檔＋`S.adapters.register()`，加入 `tools/core-files.js` 與 `index.html`；
   adapter 要用 `parse(block, emit, ignore)` 宣告依格式不產生事實的行，否則會成為 I03；
   新輸入格式 → `src/readers/` 並加入 `ORDER`；新檢查 → `src/check/catalog.js` 的 `CATALOG` 加一筆（含常見原因 `causes` 1–4 條與處理方式 `action`），
-  在 `src/check/checks.js` 實作，並更新 [docs/基準檢查規則.md](docs/基準檢查規則.md)（有測試檢查標題、嚴重度、「常見原因」條數與「處理」段）。
+  在 `src/check/checks.js` 實作，並更新 [docs/基準檢查.md](docs/基準檢查.md)（有測試檢查標題、嚴重度、「常見原因」條數與「處理」段）。
 - **生成檔的指令**：`samples/sample-bundle.txt`／`.js` 用 `npm run sample`（`tests/core/generated.js` 會檢查它與產生器輸出一致），`src/data/oui-data.js` 用 `npm run oui`。
   範例資料刻意含問題；新增檢查時要在產生器放對應問題並加測試。
 - 解析器依 RouterOS 文件撰寫，測試資料為手寫／產生，尚未以真實設備驗證；欄位語意以官方手冊
@@ -132,7 +132,7 @@ agent 之間的介面：
 - **data-model ↔ frontend**：Snapshot 欄位（設計說明 §5.2）與 `SSOT.query()`。
 - **data-model ↔ workflow**：同樣是 Snapshot 欄位與 `SSOT.query()`；`src/query/` 歸 data-model。workflow 需要新的查詢函式時寫進報告，由 data-model 加入。
 - **workflow ↔ frontend**：`S.compare`、`S.remediate`、`S.ledger`、`S.workpack`（含 `S.zip`）。畫面的指令文字一律由 `S.remediate` 產生，處理紀錄只透過 `S.ledger` 存取，工作包只透過 `S.workpack` 讀寫。
-- **data-model → docs**：`CATALOG`（`src/check/catalog.js`）與 `docs/基準檢查規則.md` 必須一致，包括 `causes`／`action`。
+- **data-model → docs**：`CATALOG`（`src/check/catalog.js`）與 `docs/基準檢查.md` 必須一致，包括 `causes`／`action`。
 - **collector → data-model**：`bundle-v1` 格式與 `tools/collector-commands.sh` 的指令。
 
 排程：

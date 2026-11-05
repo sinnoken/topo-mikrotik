@@ -150,7 +150,7 @@ const host = (rows) => build('SW_A (10.0.0.1):\n### /interface bridge host print
   + rows.map(([ifc, vid], k) => ` ${k} D mac-address=${MAC} on-interface=${ifc} bridge=bridge1 vid=${vid}\n`).join(''));
 
 /**
- * 會碰撞的情況：每條規則一份輸入，在 2.9.0 之前（不含 facet）會有兩筆以上 id＋實體相同的 finding。
+ * 會碰撞的情況：每項檢查一份輸入，在 2.9.0 之前（不含 facet）會有兩筆以上 id＋實體相同的 finding。
  * facets 是這條規則在這份輸入中產生的 facet（依 finding 順序）。
  */
 const COLLISIONS = {
@@ -405,7 +405,7 @@ test('查詢：Q.blockAt 依檔案與行號取得所屬區塊', () => {
   assert.strictEqual(Q.blockAt('沒有這個檔案.txt', s.blocks[0].start), null);
 });
 
-test('查詢介面：規則目錄、資料類別、解析器名稱與 VLAN 文字（靜態，不需要 Snapshot）', () => {
+test('查詢介面：檢查目錄、資料類別、解析器名稱與 VLAN 文字（靜態，不需要 Snapshot）', () => {
   const C = S.check.CATALOG;
   assert.deepStrictEqual(S.query.rules().map((r) => r.id), Object.keys(C), '依 CATALOG 的宣告順序');
   S.query.rules().forEach((r) => {
@@ -420,7 +420,7 @@ test('查詢介面：規則目錄、資料類別、解析器名稱與 VLAN 文�
   assert.throws(() => { 'use strict'; k01.title = 'x'; }, TypeError);
   assert.throws(() => { 'use strict'; C.K01.causes.push('x'); }, TypeError);
   assert.ok(Object.values(C).every((c) => !c.data || (Object.isFrozen(c.data) && c.data.every(Object.isFrozen))));
-  // 資料類別：每條規則需要的資料都有名稱；不認得的原樣回傳
+  // 資料類別：每項檢查需要的資料都有名稱；不認得的原樣回傳
   Object.values(C).forEach((c) => (c.data || []).flat().forEach((t) => assert.notStrictEqual(S.query.dataLabel(t), t, t)));
   assert.strictEqual(S.query.dataLabel('lldp'), S.check.DATA_LABEL.lldp);
   assert.strictEqual(S.query.dataLabel('nope'), 'nope');

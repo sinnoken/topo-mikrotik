@@ -1054,12 +1054,12 @@ function viewBoundaryViolations(file, src) {
     if (!head()) throw new Error('應有「通過」區塊');
     if (head().testAll('.rule').length) throw new Error('「通過」區塊預設應收合');
     head().querySelector('.head').click();
-    if (head().testAll('.rule').length !== pass.length || !text('#pane-findings').includes(pass[0].title)) throw new Error('展開後應列出每一條通過的規則');
-    // 每一條規則都能看到 CATALOG 的處理建議（預設收合，反引號內是等寬元素）
+    if (head().testAll('.rule').length !== pass.length || !text('#pane-findings').includes(pass[0].title)) throw new Error('展開後應列出每一項通過的檢查');
+    // 每一項檢查都能看到 CATALOG 的處理建議（預設收合，反引號內是等寬元素）
     const rows = () => head().testAll('.rule');
     rows().forEach((row, n) => {
       const id = pass[n].id; const adv = row.querySelector('.advice');
-      if (row.querySelector('.id').textContent !== id) throw new Error('通過的規則應依 ruleStatus 的順序列出');
+      if (row.querySelector('.id').textContent !== id) throw new Error('通過的檢查應依 ruleStatus 的順序列出');
       if (!adv || adv.getAttribute('open') !== null || !adv.textContent.includes(unticked(S.check.CATALOG[id].action))) throw new Error('通過的 ' + id + ' 應附上預設收合的處理建議');
       if (S.check.CATALOG[id].action.includes('`') && !adv.querySelector('code')) throw new Error(id + ' 的處理建議應以等寬元素顯示指令');
     });
@@ -1118,8 +1118,8 @@ function viewBoundaryViolations(file, src) {
     if (!sel[0].textContent.includes(all[pick].message)) throw new Error('標出的應是選取的檢查結果');
     if (!scrolled.includes(sel[0])) throw new Error('選取的那一筆應捲到看得見');
     const head = $('#pane-findings').testAll('.fgroup').find((g) => g.testAll('.fitem').includes(sel[0]) && !g.classList.contains('fcat'));
-    if (!head || head.querySelector('.head').getAttribute('aria-expanded') !== 'true') throw new Error('所在的規則分組應展開');
-    // 同一條規則有很多筆時，超過預設顯示筆數的那一筆也要列出來
+    if (!head || head.querySelector('.head').getAttribute('aria-expanded') !== 'true') throw new Error('所在的檢查分組應展開');
+    // 同一項檢查有很多筆時，超過預設顯示筆數的那一筆也要列出來
     const big = Object.entries(all.reduce((o, f) => { o[f.id] = (o[f.id] || 0) + 1; return o; }, {})).find(([, n]) => n > 100);
     if (big) {
       const late = all.map((f, i) => i).filter((i) => all[i].id === big[0] && VA.isPending(all[i]))[100];
@@ -1166,8 +1166,8 @@ function viewBoundaryViolations(file, src) {
   await step('處理提示：「研判」展開檢查後在結果列表上方顯示「處理：」，詳情的檢查結果卡片同一句', () => {
     goStep('triage'); const L = S.view.lists.findings; L.showProblems(App);
     const ruleGroups = () => $('#pane-findings').testAll('.fgroup').filter((g) => g.className === 'fgroup');
-    const g0 = ruleGroups()[0]; if (!g0) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有錯誤或警告的規則群組'); }
-    if ($('#pane-findings').testAll('.fhint').length) throw new Error('規則收合時不應顯示處理提示');
+    const g0 = ruleGroups()[0]; if (!g0) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有錯誤或警告的檢查群組'); }
+    if ($('#pane-findings').testAll('.fhint').length) throw new Error('檢查收合時不應顯示處理提示');
     const id = g0.querySelector('.head .id').textContent; const want = '處理：' + unticked(S.query.rule(id).hint);
     g0.querySelector('.head').click();
     const g = ruleGroups().find((x) => x.querySelector('.head .id').textContent === id);
@@ -1202,7 +1202,7 @@ function viewBoundaryViolations(file, src) {
     if (vi >= 0) { App.selectFinding(vi); if (App.sel.type !== 'vlan' || !text('#detail').includes('VLAN ' + all[vi].entities[0].key)) throw new Error('VLAN 的檢查結果應開啟 VLAN 詳情'); }
     App.select(null);
   });
-  await step('「研判」依檢查：類別 → 檢查 → 結果，類別標題寫出各嚴重度筆數，順序取自規則目錄；與多數不同列在結果下方', () => {
+  await step('「研判」依檢查：類別 → 檢查 → 結果，類別標題寫出各嚴重度筆數，順序取自檢查目錄；與多數不同列在結果下方', () => {
     const L = S.view.lists.findings; const VA = S.view.app; const all = App.snap.findings;
     goStep('triage'); L.reset(); L(App);
     const P = $('#pane-findings');
@@ -1210,13 +1210,13 @@ function viewBoundaryViolations(file, src) {
     ['錯誤', '警告', '提醒'].forEach((t) => { const c = P.querySelector('.summary').testAll('.chip').find((x) => x.textContent.startsWith(t)); if (c && c.getAttribute('aria-pressed') !== 'true') c.click(); });
     const cats = () => P.testAll('.fcat');
     const catOf = (c) => cats().find((x) => x.getAttribute('data-cat') === c);
-    // 類別與規則的順序：S.query.rules()（CATALOG 的宣告順序）中有待處理結果的
+    // 類別與檢查的順序：S.query.rules()（CATALOG 的宣告順序）中有待處理結果的
     const pending = all.filter((f) => VA.isPending(f));
     const ids = new Set(pending.map((f) => f.id));
     const order = S.query.rules().filter((r) => ids.has(r.id));
     const wantCats = S.util.uniq(order.map((r) => r.cat));
-    if (cats().map((x) => x.getAttribute('data-cat')).join() !== wantCats.join()) throw new Error('類別順序應依規則目錄：' + cats().map((x) => x.getAttribute('data-cat')));
-    if (P.childNodes.some((n) => n.className === 'fgroup')) throw new Error('依規則時規則群組應在類別之下');
+    if (cats().map((x) => x.getAttribute('data-cat')).join() !== wantCats.join()) throw new Error('類別順序應依檢查目錄：' + cats().map((x) => x.getAttribute('data-cat')));
+    if (P.childNodes.some((n) => n.className === 'fgroup')) throw new Error('依檢查時檢查群組應在類別之下');
     wantCats.forEach((c) => {
       const box = catOf(c); const head = box.querySelector('.head');
       const n = { error: 0, warn: 0, info: 0 }; pending.filter((f) => S.query.rule(f.id).cat === c).forEach((f) => { n[f.severity]++; });
@@ -1225,15 +1225,15 @@ function viewBoundaryViolations(file, src) {
       const want = ['error', 'warn', 'info'].filter((s) => n[s]).map((s) => `${S.view.SEV[s]} ${S.view.num(n[s])}`);
       if (chips.join('|') !== want.join('|')) throw new Error(`${c} 的筆數應為 ${want.join('／')}：${chips.join('／')}`);
       if (!head.testAll('.fcat-n .sev').every((d) => d.getAttribute('role') === 'img' && d.getAttribute('aria-label'))) throw new Error('嚴重度外形應有可念出的名稱');
-      // 有錯誤或警告的類別預設展開到規則層，只有提醒的收合
+      // 有錯誤或警告的類別預設展開到檢查層，只有提醒的收合
       const open = n.error + n.warn > 0;
       if (head.getAttribute('aria-expanded') !== String(open) || !!box.querySelector('.fcat-rules') !== open) throw new Error(`${c} 預設應${open ? '展開' : '收合'}`);
       if (!head.getAttribute('aria-label').startsWith(c + '：')) throw new Error('類別標題的名稱應寫出類別與筆數');
       if (open) {
         const got = box.testAll('.fcat-rules .fgroup .head .id').map((x) => x.textContent);
         const exp = order.filter((r) => r.cat === c).map((r) => r.id);
-        if (got.join() !== exp.join()) throw new Error(`${c} 的規則順序應依規則目錄：${got} ≠ ${exp}`);
-        if (box.testAll('.fitem').length) throw new Error('類別展開時規則預設仍收合');
+        if (got.join() !== exp.join()) throw new Error(`${c} 的檢查順序應依檢查目錄：${got} ≠ ${exp}`);
+        if (box.testAll('.fitem').length) throw new Error('類別展開時檢查預設仍收合');
       }
     });
     // 切換類別的展開狀態跨重繪保留
@@ -1375,12 +1375,12 @@ function viewBoundaryViolations(file, src) {
     const line = card.querySelector('.status-line').textContent;
     if (pc.error && !line.includes(`${NUM(pc.error)} 項錯誤`)) throw new Error('狀態句應寫出待處理的錯誤數：' + line);
     if (pc.warn && !line.includes(`${NUM(pc.warn)} 項警告`)) throw new Error('狀態句應寫出待處理的警告數：' + line);
-    // 建議先看：待處理的錯誤／警告中嚴重度最高、規則順序最前、再取 Snapshot 順序
+    // 建議先看：待處理的錯誤／警告中嚴重度最高、檢查順序最前、再取 Snapshot 順序
     const rank = new Map(S.query.rules().map((r, n) => [r.id, n])); const sev = { error: 0, warn: 1 };
     const cand = Q.findings().map((f, i) => ({ f, i })).filter((x) => x.f.severity in sev && VA.isPending(x.f))
       .sort((a, b) => sev[a.f.severity] - sev[b.f.severity] || rank.get(a.f.id) - rank.get(b.f.id) || a.i - b.i);
     const sug = card.querySelector('.status-suggest');
-    if (cand.length ? !sug || sug.textContent !== cand[0].f.title : sug) throw new Error('「建議先看」應連到嚴重度最高、規則順序最前的待處理結果：' + (sug && sug.textContent));
+    if (cand.length ? !sug || sug.textContent !== cand[0].f.title : sug) throw new Error('「建議先看」應連到嚴重度最高、檢查順序最前的待處理結果：' + (sug && sug.textContent));
     if (cand.length) {
       const first = cand.find((x) => x.f.entities.length);
       if (first && first === cand[0]) { sug.click(); if (!App.sel) throw new Error('點「建議先看」應選取那一筆的物件'); App.select(null); }
@@ -1488,6 +1488,8 @@ function viewBoundaryViolations(file, src) {
       // 用字調整：步驟、處理狀態、多數決與檢查代碼的稱呼（畫面的「回歸」都是處理狀態，沒有「回歸測試」這類用法）
       分診: '研判', 回歸: '復發', 推定偏離: S.view.DEVIATION_LABEL, '可接受（豁免）': '接受風險', 標為可接受: '標為接受風險', 未管理交換器: '非網管型交換器', 自動群組: S.view.TERMS.group,
       依規則: '依檢查', 誤報率最高的規則: '誤報率最高的檢查', 未登錄的規則: '未登錄的檢查', '檢查項目：': '比對對象：',
+      // 指 CATALOG 的東西一律稱「檢查」（防火牆規則、命名規則、/routing rule 仍叫規則，所以只擋精確片語）
+      規則目錄: '檢查目錄', 規則代碼: '檢查代碼', 規則標題: '檢查標題', 規則品質: '檢查品質', 規則類別: '檢查類別', 每項規則: '每項檢查', 這項規則: '這項檢查', 規則的常見原因: '檢查的常見原因', 規則的處理建議: '檢查的處理建議',
       // 流程步驟不顯示序號（名稱引用 A.STEP_LABEL）
       '① 輸入': '輸入', '② 檢視': '檢視', '③ 研判': '研判', '④ 修正': '修正', '⑤ 驗證': '驗證',
     };
@@ -2902,7 +2904,7 @@ function viewBoundaryViolations(file, src) {
       if (r[16] !== wantDv) throw new Error('CSV ' + f.id + ' 的與多數不同應為「' + wantDv + '」：' + r[16]);
       if (r.length !== rows[0].length) throw new Error('CSV 第 ' + (i + 2) + ' 列的欄數應與標頭相同');
     });
-    // Markdown（依規則）：每條出現的規則附處理建議與逐條的常見原因，反引號內是行內程式碼（不被跳脫）
+    // Markdown（依檢查）：每項出現的檢查附處理建議與逐條的常見原因，反引號內是行內程式碼（不被跳脫）
     S.util.uniq(App.snap.findings.map((f) => f.id)).forEach((id) => {
       const sec = md.slice(md.indexOf('\n### ' + id + ' ')); const c = S.check.CATALOG[id];
       const line = sec.split('\n').find((x) => x.startsWith('- 處理建議：'));
@@ -2925,7 +2927,7 @@ function viewBoundaryViolations(file, src) {
     const tr = parseCsv(X.findingsCsv(S.query(tricky)).replace(/^\uFEFF/, ''));
     if (tr.length !== 2 || tr[1][2] !== '標題, "引號"' || tr[1][3] !== '第一行\r\n第二行, "x"' || tr[1][4] !== 'device:A,B'
       || tr[1][5] !== 'a.txt:3; b "x".txt:9') throw new Error('CSV 跳脫後應能完整解析回原值：' + JSON.stringify(tr[1]));
-    // Markdown：依嚴重度分組（錯誤 → 警告 → 提醒），每筆 finding 的規則與證據行號都在
+    // Markdown：依嚴重度分組（錯誤 → 警告 → 提醒），每筆 finding 的檢查代碼與證據行號都在
     const heads = ['error', 'warn', 'info'].map((s) => md.indexOf(`\n## ${S.view.SEV[s]}（`));
     if (heads.some((x) => x < 0) || heads.some((x, i) => i && heads[i - 1] > x)) throw new Error('Markdown 應依嚴重度分組並依序排列');
     App.snap.findings.forEach((f) => {
@@ -3018,7 +3020,7 @@ function viewBoundaryViolations(file, src) {
     if (left.length !== before.length - 1) throw new Error('處理一筆後，待處理的問題應少一筆');
     const nHandled = all.filter((x) => x.severity !== 'info' && !VA.isPending(x)).length;
     if (!summary.includes(`另有 ${nHandled} 項已處理`)) throw new Error('基準狀態應註明已處理筆數：' + summary);
-    // 改為誤報：備註以公式開頭，CSV 要防公式注入；規則品質列出這條規則
+    // 改為誤報：備註以公式開頭，CSV 要防公式注入；檢查品質列出這項檢查
     document.testAll('#pane-findings .ledger-edit').find((b) => b.getAttribute('aria-label') === '處理：' + f.message).click();
     const note2 = '=SUM(A1) 是誤判';
     await fill('false-positive', { note: note2 });
@@ -3084,13 +3086,13 @@ function viewBoundaryViolations(file, src) {
     });
     if (want.has(null) && !gs[gs.length - 1].className.includes('no-device')) throw new Error('不屬於任何設備的應在最後一組');
     if (!process.env.SMOKE_INPUT && !want.has(null)) throw new Error('範例資料應有不屬於任何設備的檢查結果（例如 A01）');
-    // 展開一組：每筆標出規則代碼，且都屬於這台設備
+    // 展開一組：每筆標出檢查代碼，且都屬於這台設備
     gs[0].querySelector('.head').click();
     const items = groups()[0].testAll('.fitem');
     if (items.length !== Math.min(100, want.get(keys[0]).length)) throw new Error('展開後應列出這台設備的檢查結果');
     items.forEach((it, n) => {
       const f = all[want.get(keys[0])[n]];
-      if (!it.querySelector('.id') || it.querySelector('.id').textContent.trim() !== f.id || !it.textContent.includes(f.message)) throw new Error('依設備分組時每筆應標出規則代碼與訊息');
+      if (!it.querySelector('.id') || it.querySelector('.id').textContent.trim() !== f.id || !it.textContent.includes(f.message)) throw new Error('依設備分組時每筆應標出檢查代碼與訊息');
     });
     groups()[0].querySelector('.head').click();
     // 匯出：可選依設備排序；CSV 的 device 欄依分組順序，Markdown 依設備分組
@@ -3108,20 +3110,20 @@ function viewBoundaryViolations(file, src) {
     const md = files[1].text;
     const heads = allKeys.map((d) => md.indexOf(`\n## ${d === null ? '不屬於任何設備' : Q.devName(d)}（`));
     if (heads.some((x) => x < 0) || heads.some((x, n) => n && heads[n - 1] > x)) throw new Error('Markdown 應依設備分組並依序排列');
-    // 處理建議只在最後的附錄列一次：每條出現的規則一段，依 CATALOG 的順序，設備分組內不重複
+    // 處理建議只在最後的附錄列一次：每項出現的檢查一段，依 CATALOG 的順序，設備分組內不重複
     const appendix = md.indexOf('\n## 附錄：處理建議與常見原因');
     if (appendix < 0 || appendix < Math.max(...heads)) throw new Error('依設備分組的 Markdown 應在最後附上處理建議的附錄');
     const usedIds = Object.keys(S.check.CATALOG).filter((id) => all.some((f) => f.id === id));
     const at = usedIds.map((id) => md.indexOf('\n### ' + id + ' ', appendix));
-    if (at.some((x) => x < 0) || at.some((x, n) => n && at[n - 1] > x)) throw new Error('附錄應依 CATALOG 的順序列出每條出現的規則');
-    if (usedIds.some((id) => md.split('\n### ' + id + ' ').length !== 2)) throw new Error('每條規則在附錄只列一次');
-    if (md.split('\n- 處理建議：').length - 1 !== usedIds.length || md.lastIndexOf('\n- 處理建議：', appendix) >= 0) throw new Error('處理建議只應出現在附錄，每條規則一次');
+    if (at.some((x) => x < 0) || at.some((x, n) => n && at[n - 1] > x)) throw new Error('附錄應依 CATALOG 的順序列出每項出現的檢查');
+    if (usedIds.some((id) => md.split('\n### ' + id + ' ').length !== 2)) throw new Error('每項檢查在附錄只列一次');
+    if (md.split('\n- 處理建議：').length - 1 !== usedIds.length || md.lastIndexOf('\n- 處理建議：', appendix) >= 0) throw new Error('處理建議只應出現在附錄，每項檢查一次');
     toggle().click();
     const { files: f2 } = await captureDownloads(() => button('CSV').click());
     const plain = parseCsv(f2[0].text.replace(/^﻿/, '')).slice(1);
     if (plain.some((r, n) => r[1] !== all[n].id || r[3].replace(/^'/, '') !== all[n].message)) throw new Error('取消依設備排序後應回到基準的順序');
     seg('rule').click();
-    // 依規則是 類別 → 規則；只有提醒的類別預設收合（例如大型乾淨網路），所以類別標題或規則標題出現即算恢復
+    // 依檢查是 類別 → 檢查；只有提醒的類別預設收合（例如大型乾淨網路），所以類別標題或檢查標題出現即算恢復
     if (groups().length || !($('#pane-findings').testAll('.fgroup').some((g) => g.className.split(' ').includes('fcat')) || $('#pane-findings').testAll('.fgroup .head .id').length)) throw new Error('切回「依檢查」應恢復依檢查代碼分組');
   });
   await step('防火牆：點選指向規則或服務的檢查結果，定位到該設備防火牆畫面的那一列', () => {
@@ -3767,15 +3769,15 @@ function viewBoundaryViolations(file, src) {
     const autoIds = S.util.uniq(App.snap.findings.map((f) => f.id)).filter((id) => RM.levelOf(id) === 'auto');
     if (!autoIds.length) { if (process.env.SMOKE_INPUT) { App.showView('graph'); return; } throw new Error('範例資料應有 auto 修正'); }
     const chip = (id) => $('#patch-body').testAll('.patch-rule').find((c) => c.getAttribute('data-rule-id') === id);
-    // 選取與計畫兩欄都在同一個工作畫面；用鍵盤按規則時，重繪後焦點留在同一個規則按鈕
+    // 選取與計畫兩欄都在同一個工作畫面；用鍵盤按檢查時，重繪後焦點留在同一個檢查按鈕
     if (!$('#patch-body').querySelector('.patch-layout') || !$('#patch-body').querySelector('.patch-select') || !$('#patch-body').querySelector('.patch-main')) throw new Error('修正計畫應有「要修正哪些」與計畫兩欄');
     chip(autoIds[0]).focus(); chip(autoIds[0]).click();
-    if (document.activeElement !== chip(autoIds[0])) throw new Error('重繪後焦點應留在剛按的規則按鈕');
+    if (document.activeElement !== chip(autoIds[0])) throw new Error('重繪後焦點應留在剛按的檢查按鈕');
     autoIds.slice(1).forEach((id) => chip(id).click());
     if (chip('F03')) chip('F03').click();
     const keys = Array.from(PV.state.keys).sort(S.util.cmp);
     const want = S.util.uniq(App.snap.findings.filter((f) => autoIds.includes(f.id) || f.id === 'F03').map((f) => Q.findingKey(f))).sort(S.util.cmp);
-    if (keys.join() !== want.join()) throw new Error('依規則選取應選到這些規則的全部檢查結果');
+    if (keys.join() !== want.join()) throw new Error('依檢查選取應選到這些檢查的全部檢查結果');
     const plan = RM.plan(Q, keys); const files = RM.files(plan);
     const devs = $('#patch-body').testAll('.patch-dev');
     if (devs.map((d) => d.getAttribute('data-dev')).join() !== plan.devices.map((d) => d.key).join()) throw new Error('應依 plan.devices 的順序分台列出');
@@ -3825,16 +3827,16 @@ function viewBoundaryViolations(file, src) {
     if (prim.length !== 1 || !more || more.tagName !== 'DETAILS' || !more.querySelector('summary').textContent.includes('其他格式') || !more.querySelector('.patch-download-summary')) throw new Error('上方應是一個主要下載加「其他格式 ▾」（總表在裡面）');
     if (dlAll.testAll('.patch-download').length) throw new Error('上方不應重複各設備的下載按鈕');
     if ($('#patch-body').testAll('.patch-dev').some((d) => d.testAll('.patch-download').length !== 1)) throw new Error('每台設備應只有一個下載按鈕');
-    // 依規則：類別 ▸ 規則標題；chip 寫標題（取自規則目錄），代碼只在 title
+    // 依檢查：類別 ▸ 檢查標題；chip 寫標題（取自檢查目錄），代碼只在 title
     $('#patch-body').testAll('.patch-rule').forEach((c) => {
       const id = c.getAttribute('data-rule-id'); const r = S.query.rule(id); const cat = c.closest ? c.closest('.patch-cat') : null;
-      if (!r || !c.textContent.startsWith(r.title) || c.textContent.includes(id) || !c.getAttribute('title').startsWith(id)) throw new Error(`規則 chip 應寫規則標題、代碼放 title：${id} ${c.textContent}`);
+      if (!r || !c.textContent.startsWith(r.title) || c.textContent.includes(id) || !c.getAttribute('title').startsWith(id)) throw new Error(`檢查 chip 應寫檢查標題、代碼放 title：${id} ${c.textContent}`);
       if (cat && cat.getAttribute('data-cat') !== r.cat) throw new Error(`${id} 應在類別「${r.cat}」之下`);
     });
     const cats = $('#patch-body').testAll('.patch-cat').map((d) => d.getAttribute('data-cat'));
     const wantCats = S.util.uniq(S.query.rules().filter((r) => App.snap.findings.some((f) => f.id === r.id)).map((r) => r.cat));
-    if (cats.join() !== wantCats.join()) throw new Error('依規則應依規則目錄的類別分組：' + cats);
-    if ($('#patch-body').testAll('.patch-item .chip').some((c) => /^[A-Z]\d\d$/.test(c.textContent))) throw new Error('計畫中的項目不應只寫規則代碼');
+    if (cats.join() !== wantCats.join()) throw new Error('依檢查應依檢查目錄的類別分組：' + cats);
+    if ($('#patch-body').testAll('.patch-item .chip').some((c) => /^[A-Z]\d\d$/.test(c.textContent))) throw new Error('計畫中的項目不應只寫檢查代碼');
     // 單台：依設備選取，三個 .rsc
     $('#patch-body').querySelector('.patch-clear').click();
     if (PV.state.keys.size) throw new Error('全部清除後選取應為空');
@@ -3895,14 +3897,14 @@ function viewBoundaryViolations(file, src) {
     const cb = grp.querySelector('.patch-pick'); cb.focus(); cb.checked = true; cb.dispatch('change');
     if (!PV.state.keys.has(cb.getAttribute('data-key')) || PV.state.keys.size !== 1) throw new Error('逐筆勾選應加入選取');
     if (!$('#patch-body').testAll('.patch-item').length && !$('#patch-body').querySelector('.patch-skipped')) throw new Error('勾選後應產生計畫');
-    // 重繪後展開的規則仍展開，焦點留在剛勾選的那一筆
+    // 重繪後展開的檢查仍展開，焦點留在剛勾選的那一筆
     const grp2 = $('#patch-body').testAll('.patch-group').find((g) => g.getAttribute('data-rule-id') === autoIds[0]);
     const cb2 = grp2.testAll('.patch-pick').find((x) => x.getAttribute('data-key') === cb.getAttribute('data-key'));
-    if (grp2.getAttribute('open') === null || !cb2 || !cb2.checked || document.activeElement !== cb2) throw new Error('勾選後展開的規則應保持展開，焦點留在同一筆');
+    if (grp2.getAttribute('open') === null || !cb2 || !cb2.checked || document.activeElement !== cb2) throw new Error('勾選後展開的檢查應保持展開，焦點留在同一筆');
     // 「逐筆勾選」整區：瀏覽器以 open 屬性建立 <details> 時也會排入 toggle 事件，狀態沒變時不算使用者切換
     const pb = () => $('#patch-body').querySelector('.patch-picks-box');
     PV.state.picks = null; PV.render(App);
-    if (pb().getAttribute('open') === null) throw new Error('測試前提：有展開的規則時「逐筆勾選」應展開');
+    if (pb().getAttribute('open') === null) throw new Error('測試前提：有展開的檢查時「逐筆勾選」應展開');
     pb().open = true; pb().dispatch('toggle'); // 模擬 DOM 不會把 open 屬性反映到 .open：照瀏覽器的行為設定
     if (PV.state.picks !== null) throw new Error('建立時排入的 toggle 不應被記成使用者的選擇');
     pb().open = false; pb().dispatch('toggle');
@@ -4062,7 +4064,7 @@ function viewBoundaryViolations(file, src) {
     const Q = App.Q; const all = Q.findings();
     const a12 = all.map((f, idx) => ({ f, idx, key: Q.findingKey(f) })).filter((x) => x.f.id === 'A12');
     if (a12.length < 2) throw new Error('測試資料應有同一組設備的多筆 A12');
-    if (new Set(a12.map((x) => Q.findingBaseKey(x.f))).size !== 1) throw new Error('前提：這幾筆 A12 的規則與實體相同（不含 facet 的鍵相同）');
+    if (new Set(a12.map((x) => Q.findingBaseKey(x.f))).size !== 1) throw new Error('前提：這幾筆 A12 的檢查與實體相同（不含 facet 的鍵相同）');
     if (new Set(a12.map((x) => x.key)).size !== a12.length) throw new Error('比對對象不同的 A12 應是不同的 findingKey');
     // 比對對象的顯示文字：有對應的轉成可讀文字，沒有對應或格式不符時顯示原值，沒有 facet 時不顯示
     const byFacet = new Map(a12.map((x) => [x.f.facet, x]));
@@ -4071,7 +4073,7 @@ function viewBoundaryViolations(file, src) {
     if (RV.facetText({ id: 'ZZ99', facet: 'raw|value' }) !== 'raw|value' || RV.facetText({ id: 'R06', facet: 'dns' }) !== 'dns') throw new Error('沒有對應或格式不符的 facet 應顯示原值');
     if (RV.facetText({ id: 'I03' }) !== null) throw new Error('沒有 facet 時不應有比對對象');
     const declared = Object.keys(S.check.CATALOG).filter((id) => S.check.CATALOG[id].facet !== undefined);
-    if (!declared.length || declared.some((id) => !RV.FACET_RULES.includes(id))) throw new Error('CATALOG 宣告 facet 的規則都應有顯示格式：' + declared.filter((id) => !RV.FACET_RULES.includes(id)).join('、'));
+    if (!declared.length || declared.some((id) => !RV.FACET_RULES.includes(id))) throw new Error('CATALOG 宣告 facet 的檢查都應有顯示格式：' + declared.filter((id) => !RV.FACET_RULES.includes(id)).join('、'));
     // 詳情：每一筆在標題旁標示自己的比對對象，title 是原值
     a12.forEach(({ f, idx }) => {
       App.selectFinding(idx);
@@ -5252,7 +5254,7 @@ function viewBoundaryViolations(file, src) {
     await until(() => App.snap && App.snap.meta.inputHash === hash && App.round.profile === S.profiles[pid], '建立有命名規則的基準');
     await App.layoutJob; await App.ledgerJob;
     if (!App.snap.meta.profile) throw new Error('測試前提：基準應套用命名規則');
-    // 處理紀錄改一筆備註；載入預期資料（比對用）；修正計畫選一條可產生指令的規則
+    // 處理紀錄改一筆備註；載入預期資料（比對用）；修正計畫選一項可產生指令的檢查
     const f0 = App.snap.findings.find((f) => VA.ledgerItem(f));
     if ((await App.setLedger(f0, { note: '工作包測試' })).ok !== true) throw new Error('應可寫入處理紀錄');
     App.openHub('inputs');
@@ -5383,7 +5385,7 @@ function viewBoundaryViolations(file, src) {
       App.select({ type: 'device', key: d0.key }, { focus: true });
       if (!text('#detail').includes(d0.name)) throw new Error('凍結的基準也應顯示設備詳情');
       Q.links().slice(0, 50).forEach((l) => App.select({ type: 'link', key: l.key }));
-      // 每條規則至少選一筆（大型資料只取前 200 筆再補上其他規則的第一筆）
+      // 每項檢查至少選一筆（大型資料只取前 200 筆再補上其他檢查的第一筆）
       const idxs = new Set(Q.findings().slice(0, 200).map((f, i) => i));
       S.util.uniq(Q.findings().map((f) => f.id)).forEach((id) => idxs.add(Q.findings().findIndex((f) => f.id === id)));
       idxs.forEach((i) => { App.selectFinding(i); App.graph.draw(); });

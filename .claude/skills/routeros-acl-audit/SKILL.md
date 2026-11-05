@@ -16,7 +16,7 @@ user-invocable: true
 不另外寫 Python 腳本、不產生獨立的 HTML 報表，也不接 CI 通知。
 
 **目前狀態**：階段一已完成（adapter → model → infer → check → query → view → compare，即下方「分層與分工」的 1–6）。
-防火牆規則、WAN／LAN 分類與 F01–F09 已在核心，判斷條件見 `docs/基準檢查規則.md` 的「防火牆」，
+防火牆規則、WAN／LAN 分類與 F01–F09 已在核心，判斷條件見 `docs/基準檢查.md` 的「防火牆」，
 資料欄位與比對語意見 `docs/設計說明.md` §5.2、§5.3、§8。命中次數（`print stats`，F09）與端到端可達性、zone 矩陣的查詢
 （`Q.reach`、`Q.zoneMatrix` 等，`src/query/trace.js`）在 2.11.0 加入，見設計說明 §5.3「L4 可達性與 zone」。
 之後的修改沿用既有的 `S.infer.fw`（`covers`、`evalChain`、`evalFilter`、`decide`），
@@ -67,7 +67,7 @@ user-invocable: true
 3. **infer**（`src/model/infer.js`）：「WAN 可連入」是推論，要明確標示。
    WAN 介面只從 `/interface list member` 的事實推得；沒有可辨識的 WAN 清單時不猜，由 F08 與 `coverage[].firewall.wan` 說明無法判斷。
    **不要寫死** `sfp1`、`lte1`、`all-ppp` 這類介面名稱。
-4. **check**（`src/check/checks.js`）：在 `CATALOG` 新增一個類別，同步 `docs/基準檢查規則.md`（`tests/docs.js` 會檢查兩者一致）。
+4. **check**（`src/check/checks.js`）：在 `CATALOG` 新增一個類別，同步 `docs/基準檢查.md`（`tests/docs.js` 會檢查兩者一致）。
    每筆 finding 的證據指向規則所在行；遮蔽與重複類的 finding 也要附上前面那條規則的行號。
    範例資料（`npm run sample` 的產生器）要放入對應的問題，並加上測試。
 5. **query → view**：畫面只透過 `SSOT.query()` 讀取，例如依 chain 順序列出規則並標示 finding。
@@ -77,7 +77,7 @@ user-invocable: true
 
 ## 檢查與代碼對照
 
-判斷條件、排除項與證據以 `docs/基準檢查規則.md` 為準，這裡只列對照；改檢查時兩邊與 `CATALOG` 一起改。
+判斷條件、排除項與證據以 `docs/基準檢查.md` 為準，這裡只列對照；改檢查時兩邊與 `CATALOG` 一起改。
 
 | 代碼 | 嚴重度 | 檢查 | 依據 |
 |---|---|---|---|
@@ -105,7 +105,7 @@ user-invocable: true
 
 ## 不納入本專案的部分
 
-- **主管摘要**：需要人工判斷，不放進核心。各檢查的「處理」寫在 `docs/基準檢查規則.md`。
+- **主管摘要**：需要人工判斷，不放進核心。各檢查的「處理」寫在 `docs/基準檢查.md`。
 - **修正 patch**：在 `src/remediate/`，只產生文字（`.rsc`），不連線、不套用到設備（`docs/架構決策/001-工具維持唯讀.md`）。目前只有 F01、F02、F06 能產生停用規則的指令；新增防火牆修正時改 `src/remediate/patch.js` 的 `LEVEL` 與對應的產生方式，並更新黃金檔（`npm run golden:update`）。
   需要給 RouterOS 指令範例時，以 `disabled=yes` 為主，用 comment 或屬性 `find`（不要用編號），並附上驗證與回復方式。
 - **寫回設備**：本工具是唯讀的基準工具，收集器只執行 print／export。

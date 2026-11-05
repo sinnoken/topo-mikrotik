@@ -68,7 +68,7 @@
   <header>
     <div class="brand">
       <svg viewBox="0 0 24 24"><circle cx="5" cy="5" r="3" fill="#0b6bcb"/><circle cx="19" cy="5" r="3" fill="#0b6bcb"/><circle cx="12" cy="19" r="3" fill="#22a338"/><path d="M5 5L19 5M5 5L12 19M19 5L12 19" stroke="#0b6bcb" stroke-width="1.5"/></svg>
-      RouterOS 網路基準
+      <span class="brand-name">RouterOS 網路基準</span>
     </div>
     <!-- 流程步驟（src/view/app-panes.js 的 App.showStep）：導覽，目前的一步是 aria-current="step"；狀態文字由 A.renderSteps 寫入。
          ① 是資料中心（蓋住主畫面的另一層），②–⑤ 切換左側清單與中間的工作畫面 -->
@@ -82,8 +82,9 @@
       </ol>
     </nav>
     <div class="spacer"></div>
+    <!-- 窄螢幕的搜尋收成圖示：輸入框縮成一格，聚焦時（點圖示或按 /）展開蓋住頁首這一列（assets/app.css，純 CSS） -->
     <div class="search">
-      <span class="icon">⌕</span>
+      <span class="icon" aria-hidden="true">⌕</span>
       <input id="search" type="search" placeholder="搜尋設備、IP、MAC、VLAN" aria-label="搜尋" aria-keyshortcuts="/" title="按 / 開始搜尋：設備名稱、MAC 或 IP（也可只打前綴，例如 10.1. 或 04:42）、VLAN（30 或 vlan 30）、介面名稱或描述" autocomplete="off">
       <div id="search-dd" class="dropdown hidden"></div>
     </div>
@@ -168,7 +169,8 @@
       <section id="view-l4" class="l4 hidden" aria-labelledby="l4-title"></section>
       <div id="layer-note" class="layer-note hidden" aria-live="polite"></div>
       <div id="legend" class="legend hidden"></div>
-      <div id="hint" class="hint hidden">滾輪縮放・拖曳移動・點選看詳細資料・雙擊聚焦・鍵盤：N 切換設備、Enter 開啟詳細資料</div>
+      <!-- 操作提示：滑鼠與觸控各一份，依 pointer 媒體查詢顯示其中一份（assets/app.css 的 .for-mouse／.for-touch） -->
+      <div id="hint" class="hint hidden"><span class="for-mouse">滾輪縮放・拖曳移動・點選看詳細資料・雙擊聚焦・鍵盤：N 切換設備、Enter 開啟詳細資料</span><span class="for-touch">雙指縮放・拖曳移動・點一下看詳細資料・點兩下聚焦</span></div>
       <div id="tooltip" class="tooltip hidden"></div>
       <div id="welcome" class="welcome">
         <div class="card">
@@ -187,7 +189,7 @@
               </details>
             </li>
             <li>按「建立基準」，貼上內容或選擇檔案</li>
-            <li>左側看資料之間的矛盾與缺漏，點選後在圖上定位，右側看詳細資料與原文</li>
+            <li><span class="for-mouse">在「檢查結果」看資料之間的矛盾與缺漏，點選後在圖上定位，在「詳細資料」看內容與原文</span><span class="for-touch">在「檢查結果」看資料之間的矛盾與缺漏，點一下就在圖上定位；在圖上拖曳移動、雙指縮放，在「詳細資料」看內容與原文</span></li>
           </ol>
           <div class="row" style="display:flex;gap:8px">
             <button class="primary" onclick="App.openInput()">建立基準…</button>
@@ -200,7 +202,7 @@
       <!-- 工作畫面的內容由 panels/patch.js（修正計畫）、panels/ledger.js（本輪變化、處理紀錄、修正追蹤、改善趨勢）、panels/lists.js（比對）產生 -->
       <section id="view-patch" class="work hidden" aria-labelledby="patch-title">
         <div class="work-inner">
-          <div class="work-head"><h2 id="patch-title" class="work-title" tabindex="-1">修正計畫</h2><span class="muted">選取檢查結果，產生每台設備的 RouterOS .rsc；本工具只產生文字，不會連線或改動任何設備</span></div>
+          <div class="work-head"><h2 id="patch-title" class="work-title" tabindex="-1">修正計畫</h2><span class="muted">選取檢查結果，產生每台設備的 RouterOS .rsc</span></div>
           <div id="patch-body"></div>
         </div>
       </section>
@@ -291,7 +293,7 @@ TPE_ACC_SW_01 (10.1.10.21):
 
 <dialog id="dlg-raw">
   <div class="dlg" style="width:min(1100px,94vw)">
-    <div class="dh"><span id="raw-title">原文</span><span id="raw-nav" class="raw-nav hidden"><button id="raw-prev" class="ghost" aria-keyshortcuts="ArrowLeft" title="上一處（←）">上一處</button><span id="raw-pos" class="mono muted" aria-live="polite"></span><button id="raw-next" class="ghost" aria-keyshortcuts="ArrowRight" title="下一處（→）">下一處</button></span><button class="ghost x" onclick="document.getElementById('dlg-raw').close()">✕</button></div>
+    <div class="dh"><span id="raw-title">原文</span><span id="raw-nav" class="raw-nav hidden"><button id="raw-prev" class="ghost" aria-keyshortcuts="ArrowLeft" title="上一處（←）">上一處</button><span id="raw-pos" class="mono muted" aria-live="polite"></span><button id="raw-next" class="ghost" aria-keyshortcuts="ArrowRight" title="下一處（→）">下一處</button></span><label class="raw-wrap-toggle" title="長行在視窗內換行；取消勾選改為不換行、橫向捲動"><input type="checkbox" id="raw-wrap" checked onchange="document.getElementById('dlg-raw').classList.toggle('raw-nowrap', !this.checked)"> 自動換行</label><button class="ghost x" onclick="document.getElementById('dlg-raw').close()">✕</button></div>
     <div class="db" id="raw-body" style="max-height:70vh"></div>
   </div>
 </dialog>

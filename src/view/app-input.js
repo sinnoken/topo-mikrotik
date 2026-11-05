@@ -9,6 +9,19 @@
 
   const input = { files: [] };
   /**
+   * 例外 → 給使用者看的中文原因（V.reason 尚不存在，先在這裡最小實作）。核心與命名規則丟出的錯誤本來就是中文，原樣使用；
+   * JSON 解析錯誤說明檔案格式；其他（程式錯誤，英文訊息）改用中文說明，原訊息放在括號內，方便回報與追查。
+   */
+  const CJK = /[㐀-鿿]/;
+  function reason(e) {
+    const msg = (e && e.message) || String(e);
+    if (e instanceof SyntaxError) return `檔案不是有效的 JSON（${msg}）`;
+    if (CJK.test(msg)) return msg;
+    return `程式發生未預期的錯誤，請重新整理頁面後再試一次；若仍發生，請回報這段訊息：${msg}`;
+  }
+  /** 對話框的狀態列（#input-status，role=status）顯示失敗原因；不用 alert（會擋住畫面，也無法被螢幕閱讀器以外的方式重看） */
+  function fail(what, e) { console.error(e); $('#input-status').textContent = `${what}：${reason(e)}`; }
+  /**
    * S.buildAsync 的進度 { stage, done, total } → 文字與百分比（建立基準與資料中心重建工作包的基準共用）。
    * 讀取各區塊佔 5–75%，之後依階段：建立模型 80%、一致性檢查 92%、完成 100%。
    */
@@ -34,7 +47,8 @@
         const j = JSON.parse(await f.text()); S.profile.compile(j); S.profiles[j.id] = j;
         const saved = (await S.store.get('profiles')) || {}; saved[j.id] = j; await S.store.set('profiles', saved);
         await fillProfiles(j.id);
-      } catch (err) { alert(err.message); e.target.value = ''; }
+        $('#input-status').textContent = `已載入命名規則「${j.id}」`;
+      } catch (err) { fail(`無法載入命名規則檔「${f.name}」`, err); e.target.value = ''; }
       runPreflight();
     };
     $('#input-build').onclick = runBuild;
@@ -74,7 +88,7 @@
     const sources = inputSources(); const profile = selectedProfile();
     input.sig = inputSig(sources, profile); input.pre = null; input.pfError = null;
     if (sources.length) {
-      try { input.pre = S.preflight(sources, { profile }); } catch (e) { input.pfError = e.message; }
+      try { input.pre = S.preflight(sources, { profile }); } catch (e) { input.pfError = reason(e); }
     }
     renderPreflight(sources);
     return input.pre;
@@ -176,7 +190,7 @@
       A.banner(`已建立基準：${V.num(st.collected)} 台已收集設備、${V.num(st.links)} 條鏈路；`
         + `錯誤 ${st.findings.error}、警告 ${st.findings.warn}（${(m.timing.ms / 1000).toFixed(1)} 秒）`, 8000);
     } catch (e) {
-      $('#input-status').textContent = '建立失敗：' + e.message; console.error(e);
+      fail('無法建立基準', e);
     } finally { btn.disabled = false; }
   }
 

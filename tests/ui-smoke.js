@@ -338,6 +338,13 @@ function viewBoundaryViolations(file, src) {
     if (text('#welcome-commands') !== cmds.join('\n') || !cmds.includes('/export terse')) throw new Error('指令清單應取自 samples/collect-commands.js：' + text('#welcome-commands'));
     if (!S.collectCommands.optional.every((c) => text('#welcome-optional').includes(c.command))) throw new Error('應列出選用指令');
     if (!w.textContent.includes('collect.sh')) throw new Error('歡迎畫面應說明收集腳本 collect.sh');
+    // 觸控用語：歡迎畫面與操作提示各有滑鼠與觸控兩份，觸控（pointer: coarse）只顯示「點一下、拖曳、雙指縮放」那份；不寫只適用寬螢幕的「左側／右側」
+    const touch = (sel) => $(sel).querySelector('.for-touch'); const mouse = (sel) => $(sel).querySelector('.for-mouse');
+    if (!touch('#welcome') || !mouse('#welcome') || !/點一下/.test(touch('#welcome').textContent) || !/雙指縮放/.test(touch('#welcome').textContent)) throw new Error('歡迎畫面應有觸控用語');
+    if (!touch('#hint') || !mouse('#hint') || !/雙指縮放/.test(touch('#hint').textContent) || /滾輪|鍵盤|雙擊/.test(touch('#hint').textContent) || !/滾輪/.test(mouse('#hint').textContent)) throw new Error('操作提示的觸控版應寫雙指縮放，不寫滾輪、鍵盤');
+    if (/左側|右側/.test(w.textContent)) throw new Error('歡迎畫面不應寫只適用寬螢幕的左側／右側');
+    const css0 = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
+    if (!/\n\.for-touch \{ display: none; \}/.test(css0) || !/@media \(pointer: coarse\) \{[^}]*\}\s*\.for-mouse \{ display: none; \}\s*\.for-touch \{ display: inline; \}/.test(css0)) throw new Error('觸控裝置應改顯示觸控用語');
     if ($('#welcome-copy').tagName !== 'BUTTON' || !$('#welcome-copy').textContent.includes('複製')) throw new Error('複製指令清單應是按鈕');
     const nav = Object.getOwnPropertyDescriptor(globalThis, 'navigator'); let copied = null;
     Object.defineProperty(globalThis, 'navigator', { value: { clipboard: { writeText: async (t) => { copied = t; } } }, configurable: true, writable: true });
@@ -387,6 +394,21 @@ function viewBoundaryViolations(file, src) {
     await App.loadSample();
     const sp = S.preflight([{ name: S.readers.PASTE, text: S.samples['sample-bundle.txt'] }]);
     if (!pf().includes(`認到 ${S.view.num(sp.devices.length)} 台設備`) || !pf().includes(`${S.view.num(sp.unrecognized.length)} 段無法辨識`) || btn.disabled) throw new Error('載入範例後應立即預檢：' + pf());
+    // 建立失敗：在對話框的狀態列以中文說明（程式錯誤的英文訊息只放在括號說明內），不用 alert（模擬的 alert 會丟例外）
+    const realBuild = S.buildAsync; S.buildAsync = async () => { throw new TypeError('x is not a function'); };
+    const ce = console.error; console.error = () => {};
+    try { btn.click(); await new Promise((r) => setTimeout(r, 20)); } finally { S.buildAsync = realBuild; console.error = ce; }
+    if (!text('#input-status').startsWith('無法建立基準：程式發生未預期的錯誤') || !text('#input-status').includes('x is not a function')) throw new Error('建立失敗應以中文說明：' + text('#input-status'));
+    S.buildAsync = async () => { throw new Error('命名規則檔有誤：\n- id 必填'); }; console.error = () => {};
+    try { btn.click(); await new Promise((r) => setTimeout(r, 20)); } finally { S.buildAsync = realBuild; console.error = ce; }
+    if (text('#input-status') !== '無法建立基準：命名規則檔有誤：\n- id 必填') throw new Error('核心的中文錯誤應原樣顯示：' + text('#input-status'));
+    // 畫面層不用 alert（擋住畫面、不在狀態列留下紀錄）
+    ['src/view'].forEach((dir) => (function walk(d) {
+      fs.readdirSync(path.join(ROOT, d), { withFileTypes: true }).forEach((e) => {
+        const p = path.join(d, e.name); if (e.isDirectory()) return walk(p);
+        if (/\.js$/.test(e.name) && /(^|[^.\w])alert\(/.test(fs.readFileSync(path.join(ROOT, p), 'utf8'))) throw new Error('畫面不應使用 alert()：' + p);
+      });
+    })(dir));
     $('#dlg-input').close();
   });
   await step('載入範例並建立基準', async () => {
@@ -1397,6 +1419,10 @@ function viewBoundaryViolations(file, src) {
   await step('原文檢視', () => {
     App.openRaw(S.readers.PASTE, 10); if (!$('#dlg-raw').open || !text('#raw-body').includes('/export')) throw new Error('原文未顯示');
     if (!$('#raw-nav').classList.contains('hidden') || !text('#raw-title').includes('（第 10 行）')) throw new Error('只有一處時不顯示前後切換，標題寫出行號：' + text('#raw-title'));
+    // 長行預設自動換行（窄螢幕不必橫捲），可切回不換行、橫向捲動（#raw-wrap → #dlg-raw.raw-nowrap，純 CSS）
+    const wrap = $('#raw-wrap'); const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
+    if (!wrap || wrap.getAttribute('type') !== 'checkbox' || wrap.getAttribute('checked') === null || !/classList\.toggle\('raw-nowrap', !this\.checked\)/.test(wrap.getAttribute('onchange') || '')) throw new Error('原文應有預設勾選的「自動換行」切換');
+    if (!/pre\.raw \{[^}]*white-space: pre-wrap;/.test(css) || !/#dlg-raw\.raw-nowrap pre\.raw \{ white-space: pre;/.test(css) || !/pre\.raw > span \{[^}]*text-indent: -56px/.test(css)) throw new Error('原文預設換行（懸掛縮排），不換行時橫向捲動');
     $('#dlg-raw').close();
   });
   await step('原文對話框：標題是「設備 › 指令（第 N 行）」；多處證據可用上一處／下一處或 ←→ 切換（頭尾相接）', () => {
@@ -3410,6 +3436,24 @@ function viewBoundaryViolations(file, src) {
       if (!/^patch-summary-.*\.md$/.test(md.name) || !names.every((n) => md.text.includes(n)) || !md.text.includes('不會連線')) throw new Error('總表應列出每台設備的檔名');
       if (!plan.items.every((it) => md.text.includes(it.risk.text)) || !plan.skipped.every((x) => md.text.includes(x.detail))) throw new Error('總表應列出風險與未產生指令的原因');
     } else if (!process.env.SMOKE_INPUT) throw new Error('範例資料的 auto 修正應涵蓋多台設備');
+    // 精簡：免責句只出現一次；上方只有一個主要下載，總表收在「其他格式 ▾」；各設備只有一個下載
+    if (text('#view-patch').split('不會連線').length !== 2) throw new Error('「不會連線或改動任何設備」應只出現一次');
+    const dlAll = $('#patch-body').querySelector('.patch-download-all');
+    const prim = dlAll.testAll('button').filter((b) => b.className.split(' ').includes('primary'));
+    const more = dlAll.querySelector('.patch-more');
+    if (prim.length !== 1 || !more || more.tagName !== 'DETAILS' || !more.querySelector('summary').textContent.includes('其他格式') || !more.querySelector('.patch-download-summary')) throw new Error('上方應是一個主要下載加「其他格式 ▾」（總表在裡面）');
+    if (dlAll.testAll('.patch-download').length) throw new Error('上方不應重複各設備的下載按鈕');
+    if ($('#patch-body').testAll('.patch-dev').some((d) => d.testAll('.patch-download').length !== 1)) throw new Error('每台設備應只有一個下載按鈕');
+    // 依規則：類別 ▸ 規則標題；chip 寫標題（取自規則目錄），代碼只在 title
+    $('#patch-body').testAll('.patch-rule').forEach((c) => {
+      const id = c.getAttribute('data-rule-id'); const r = S.query.rule(id); const cat = c.closest ? c.closest('.patch-cat') : null;
+      if (!r || !c.textContent.startsWith(r.title) || c.textContent.includes(id) || !c.getAttribute('title').startsWith(id)) throw new Error(`規則 chip 應寫規則標題、代碼放 title：${id} ${c.textContent}`);
+      if (cat && cat.getAttribute('data-cat') !== r.cat) throw new Error(`${id} 應在類別「${r.cat}」之下`);
+    });
+    const cats = $('#patch-body').testAll('.patch-cat').map((d) => d.getAttribute('data-cat'));
+    const wantCats = S.util.uniq(S.query.rules().filter((r) => App.snap.findings.some((f) => f.id === r.id)).map((r) => r.cat));
+    if (cats.join() !== wantCats.join()) throw new Error('依規則應依規則目錄的類別分組：' + cats);
+    if ($('#patch-body').testAll('.patch-item .chip').some((c) => /^[A-Z]\d\d$/.test(c.textContent))) throw new Error('計畫中的項目不應只寫規則代碼');
     // 單台：依設備選取，三個 .rsc
     $('#patch-body').querySelector('.patch-clear').click();
     if (PV.state.keys.size) throw new Error('全部清除後選取應為空');
@@ -3419,10 +3463,18 @@ function viewBoundaryViolations(file, src) {
     if (Array.from(PV.state.keys).sort().join() !== devKeys.sort().join()) throw new Error('依設備應選到這台設備的全部檢查結果');
     const p1 = RM.plan(Q, Array.from(PV.state.keys).sort(S.util.cmp)); const fs1 = RM.files(p1);
     if (fs1.length === 1) {
-      const btns = $('#patch-body').querySelector('.patch-download-all').testAll('.patch-download');
-      const { files: got } = await captureDownloads(() => btns.forEach((b) => b.click()));
-      if (got.map((x) => x.name).join() !== [fs1[0].base + '.rsc', fs1[0].base + '-rollback.rsc', fs1[0].base + '-verify.rsc'].join()) throw new Error('單台應下載三個 .rsc：' + got.map((x) => x.name));
+      // 各設備只有一個下載：正在檢視的檔案（切換套用／回復／驗證後下載另一份）
+      const dev0 = () => $('#patch-body').testAll('.patch-dev')[0];
+      const got = [];
+      for (const k of ['apply', 'rollback', 'verify']) {
+        dev0().testAll('button').find((b) => b.getAttribute('data-kind') === k).click();
+        const btns = dev0().testAll('.patch-download');
+        if (btns.length !== 1) throw new Error('每台設備應只有一個下載按鈕（正在檢視的檔案）：' + btns.length);
+        got.push(...(await captureDownloads(() => btns[0].click())).files);
+      }
+      if (got.map((x) => x.name).join() !== [fs1[0].base + '.rsc', fs1[0].base + '-rollback.rsc', fs1[0].base + '-verify.rsc'].join()) throw new Error('單台應可下載三個 .rsc：' + got.map((x) => x.name));
       if (got[0].text !== RM.renderRsc(p1, fs1[0].dev)) throw new Error('單台下載的套用檔應與 renderRsc 相同');
+      dev0().testAll('button').find((b) => b.getAttribute('data-kind') === 'apply').click();
     }
     // 逐筆勾選
     $('#patch-body').querySelector('.patch-clear').click();
@@ -4240,9 +4292,18 @@ function viewBoundaryViolations(file, src) {
     const bannerRule = (css.match(/\n\.banner \{([^}]*)\}/) || [])[1] || '';
     if (/(^|;)\s*top:/.test(bannerRule) || !/bottom:/.test(bannerRule)) throw new Error('通知應在圖的下方，不遮工具列：' + bannerRule);
     if (!/\.banner\.fading, \.hint\.fading \{[^}]*opacity: 0/.test(css)) throw new Error('通知與操作提示應淡出');
-    // 窄螢幕：品牌與按鈕同一列、搜尋一列，清除不再單獨佔一列
-    const narrow = css.slice(css.indexOf('@media (max-width: 900px) {\n  #app'));
-    if (!/\.header-actions \{ order: 2;/.test(narrow) || !/\.search \{ order: 3; flex: 1 1 100%;/.test(narrow) || /#btn-clear \{ margin-left/.test(css)) throw new Error('窄螢幕的頁首應是品牌＋按鈕、搜尋兩列');
+    // 窄螢幕：圖上方最多兩列——頁首只有流程步驟（不換行），搜尋與「⋯」移到工作區列的右端；清除不再單獨佔一列
+    const narrow = css.slice(css.lastIndexOf('@media (max-width: 900px) {', css.indexOf('#app { height: 100dvh')));
+    if (!/\n {2}header \{[^}]*flex-wrap: nowrap;/.test(narrow) || !/\.steps \{ flex: 1 1 100%;/.test(narrow) || !/\.search, \.header-actions \{ position: absolute; top: calc\(100% \+ 6px\);/.test(narrow)
+      || !/\.mobile-workspaces \{ display: flex;[^}]*padding: 5px calc\(/.test(narrow) || /#btn-clear \{ margin-left/.test(css)) throw new Error('窄螢幕的頁首應只有步驟，搜尋與「⋯」在工作區列右端');
+    // 搜尋收成圖示：平常是一格寬、看不到 placeholder，聚焦時展開蓋住整列（純 CSS）；有無障礙名稱
+    if (!/\.search \{ flex: none; width: max\(40px, var\(--control-h\)\);/.test(narrow) || !/\.search input::placeholder \{ color: transparent; \}/.test(narrow) || !/\.search:focus-within \{ left: 8px; right: 8px;/.test(narrow)) throw new Error('窄螢幕的搜尋應收成圖示、聚焦時展開');
+    if ($('#search').getAttribute('aria-label') !== '搜尋') throw new Error('收成圖示的搜尋框應有無障礙名稱');
+    // 品牌只給螢幕閱讀器、資料中心按鈕由「① 輸入」取代；資料中心開啟時搜尋與「⋯」隱藏（不疊在資料中心上）
+    if (!/header \.brand \{ position: absolute; width: 1px;/.test(narrow) || !/header \.hub-btn \{ display: none; \}/.test(narrow) || !/#app\.hub-open header \.search, #app\.hub-open header \.header-actions \{ display: none; \}/.test(narrow)) throw new Error('窄螢幕的頁首應隱藏品牌與資料中心按鈕');
+    // 頁首可見的控制項：5 步＋搜尋＋⋯，加上工作區 3 個，共 10 個
+    const hdrCtrls = $('#steps').testAll('button').length + 1 + 1; const wsCtrls = $('#mobile-workspaces').testAll('button').length;
+    if (hdrCtrls + wsCtrls !== 10) throw new Error('窄螢幕圖上方的控制項應是 10 個：' + (hdrCtrls + wsCtrls));
   });
   await step('流程步驟：①–⑤ 都能切換（nav、aria-current="step"），左側清單與中間的工作畫面跟著換、焦點移到這一步的標題；切換不丟失畫布的位置、縮放與選取，也不重新排列；PNG 照常', async () => {
     const g = App.graph; const VA = S.view.app;
@@ -4341,7 +4402,7 @@ function viewBoundaryViolations(file, src) {
     // 目前的一步不只靠顏色：粗體與底線
     if (!/\.steps button\[aria-current="step"\] \{[^}]*font-weight: 600[^}]*box-shadow: inset 0 -2px/.test(css)) throw new Error('目前的一步除了顏色，還要有粗體與底線');
     if (!/\.patch-layout \{ display: grid; grid-template-columns: minmax\(0, 1fr\);/.test(css) || !/\.verify-layout \{ display: grid; grid-template-columns: minmax\(0, 1fr\);/.test(css) || !/@container \(min-width: \d+px\)/.test(css)) throw new Error('修正計畫與驗證預設單欄，工作畫面夠寬時才分兩欄');
-    // 窄螢幕的步驟列：五步等寬、可以換行（不出現水平捲動），放在一般樣式之後
+    // 窄螢幕的步驟列：五步等寬、可以換行（不出現水平捲動，目前的一步一定看得到），放在一般樣式之後
     const narrow = css.slice(css.indexOf('@media (max-width: 900px)'));
     if (!/\.steps ol \{ display: grid; grid-template-columns: repeat\(5, minmax\(0, 1fr\)\);/.test(narrow) || !/\.steps button \{[^}]*white-space: normal/.test(narrow)) throw new Error('窄螢幕時步驟列應五步等寬且可換行');
   });

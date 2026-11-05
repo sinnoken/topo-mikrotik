@@ -412,6 +412,8 @@ table.t .mono, table.t .vlanlist { white-space: nowrap; overflow-wrap: normal; }
 .banner { position: absolute; left: 50%; bottom: 48px; transform: translateX(-50%); width: max-content; max-width: min(560px, calc(100% - 40px)); z-index: 7; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px; box-shadow: var(--shadow-md); display: flex; gap: 8px; align-items: center; font-size: var(--fs-md); transition: opacity .4s ease; }
 .banner.fading, .hint.fading { opacity: 0; }
 .tooltip { position: absolute; pointer-events: none; background: #1f2933; color: #fff; font-size: var(--fs-sm); padding: 4px 8px; border-radius: var(--radius-sm); z-index: 20; white-space: nowrap; }
+/* 滑鼠與觸控各一份的說明（歡迎畫面、操作提示）：觸控裝置（pointer: coarse）改用「點一下、拖曳、雙指縮放」 */
+.for-touch { display: none; }
 .welcome { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 4; }
 .welcome .card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 30px 34px; max-width: 560px; box-shadow: 0 14px 42px rgba(22, 37, 54, .1); }
 .welcome h1 { font-size: var(--fs-2xl); margin: 0 0 8px; }
@@ -445,11 +447,16 @@ pre.cmd-list { margin: 6px 0; padding: 8px 10px; max-height: 220px; overflow: au
 .preflight .pf-bad li { margin-bottom: 2px; }
 .progress { height: 6px; background: var(--neutral-soft); border-radius: 999px; overflow: hidden; flex: 1; }
 .progress > div { height: 100%; background: var(--accent); width: 0; transition: width .15s; }
-/* 原文：長行不折行、在 pre 內橫向捲動；行號不換行且固定在左邊，不跟著捲走 */
-pre.raw { margin: 0; font-family: var(--mono); font-size: var(--fs-sm); line-height: var(--lh-body); white-space: pre; overflow-x: auto; }
-pre.raw .ln { color: var(--muted); display: inline-block; width: 56px; text-align: right; padding-right: 10px; user-select: none; white-space: nowrap; position: sticky; left: 0; background: var(--panel); }
-pre.raw .hl { background: #fff3c4; display: block; }
+/* 原文：預設長行自動換行（窄螢幕不必橫向捲動），換行的後續行縮排到行號之後（懸掛縮排）；
+   取消「自動換行」（#raw-wrap → #dlg-raw.raw-nowrap）時不折行、在 pre 內橫向捲動，行號固定在左邊不跟著捲走 */
+pre.raw { margin: 0; font-family: var(--mono); font-size: var(--fs-sm); line-height: var(--lh-body); white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: auto; }
+pre.raw > span { display: block; padding-left: 56px; text-indent: -56px; }
+pre.raw .ln { color: var(--muted); display: inline-block; width: 56px; text-indent: 0; text-align: right; padding-right: 10px; user-select: none; white-space: nowrap; position: sticky; left: 0; background: var(--panel); }
+#dlg-raw.raw-nowrap pre.raw { white-space: pre; overflow-wrap: normal; }
+pre.raw .hl { background: #fff3c4; }
 pre.raw .hl .ln { background: inherit; }
+.dlg .dh .raw-wrap-toggle { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; min-height: var(--control-h); font-weight: 400; font-size: var(--fs-sm); color: var(--muted); cursor: pointer; white-space: nowrap; }
+.dlg .dh .raw-wrap-toggle ~ .x { margin-left: 8px; }
 /* 原文對話框標題旁的「上一處／下一處」（多處證據時才顯示） */
 .dlg .dh .raw-nav { display: inline-flex; align-items: center; gap: 6px; margin-left: 16px; font-weight: 400; font-size: var(--fs-sm); }
 .form-row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
@@ -556,6 +563,8 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
 
 @media (pointer: coarse) {
   :root { --control-h: 44px; }
+  .for-mouse { display: none; }
+  .for-touch { display: inline; }
   .chip .chip-x { min-height: 44px; min-width: 44px; }
 }
 
@@ -566,22 +575,39 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
 }
 
 @media (max-width: 900px) {
-  #app { height: 100dvh; grid-template-rows: auto auto minmax(0, 1fr); }
-  /* 頁首：品牌與按鈕（資料中心、⋯）一列，搜尋一列，流程步驟一列 */
-  header { min-height: 48px; padding: 6px 10px; flex-wrap: wrap; gap: 7px; }
+  /* 欄寬固定為視窗寬：頁首是不換行的單列，不能讓它的內容把整個版面撐寬 */
+  #app { height: 100dvh; grid-template-rows: auto auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); }
+  /* 圖上方只有兩列：第一列是流程步驟（五步等寬、不捲動，目前的一步一定看得到）；第二列是工作區分頁，
+     搜尋（收成圖示）與「⋯」從頁首移到這一列的右端（絕對定位，頁首的 z-index 高於工作區列）。
+     品牌只留名稱給螢幕閱讀器；「資料中心」與「① 輸入」是同一個畫面，窄螢幕只留步驟 */
+  header { position: relative; min-height: 0; padding: 4px 6px; flex-wrap: nowrap; gap: 0; }
   header .spacer { display: none; }
-  header .brand { order: 1; flex: 1 1 auto; min-width: 0; }
-  .header-actions { order: 2; margin-left: auto; }
-  .search { order: 3; flex: 1 1 100%; max-width: none; min-width: 0; }
-  .search input { min-height: max(40px, var(--control-h)); }
-  /* 流程步驟：自己一列，五步等寬；號碼與名稱在上、狀態在下，文字可以換行，不出現水平捲動 */
-  .steps { order: 4; flex: 1 1 100%; min-width: 0; }
+  header .brand { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  header .hub-btn { display: none; }
+  .steps { flex: 1 1 100%; min-width: 0; }
+  /* 流程步驟：五步等寬；號碼與名稱在上、狀態在下，文字可以換行，不出現水平捲動 */
   .steps ol { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 3px; }
-  .steps button { width: 100%; min-width: 0; min-height: 44px; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0 3px; padding: 4px 2px; white-space: normal; text-align: center; line-height: 1.3; }
+  .steps button { width: 100%; min-width: 0; min-height: 44px; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0 3px; padding: 3px 2px; white-space: normal; text-align: center; line-height: 1.3; }
   .steps .step-st { flex-basis: 100%; overflow-wrap: anywhere; }
+  /* 第二列右端：搜尋圖示與「⋯」（top 對齊工作區列的內距 5px＋頁首的下框線 1px） */
+  .search, .header-actions { position: absolute; top: calc(100% + 6px); z-index: 1; }
+  .header-actions { right: 8px; }
+  .search { right: calc(14px + var(--control-h)); }
+  #app.hub-open header .search, #app.hub-open header .header-actions { display: none; }
+  /* 搜尋收成圖示：輸入框本身就是圖示（點了就聚焦，不需要 JS）；聚焦時展開蓋住整列，下拉清單跟著展開 */
+  .search { flex: none; width: max(40px, var(--control-h)); min-width: 0; max-width: none; }
+  .search input { width: 100%; min-height: max(40px, var(--control-h)); padding: 0 0 0 max(40px, var(--control-h)); cursor: pointer; }
+  .search input::placeholder { color: transparent; }
+  .search input::-webkit-search-cancel-button { display: none; }
+  .search .icon { left: 0; top: 50%; width: 100%; transform: translateY(-50%); text-align: center; color: var(--text); }
+  .search:focus-within { left: 8px; right: 8px; width: auto; z-index: 8; }
+  .search:focus-within input { padding: 6px 9px 6px 32px; cursor: text; }
+  .search:focus-within input::placeholder { color: var(--muted); }
+  .search:focus-within .icon { width: 32px; color: var(--muted); }
+  .search .dropdown { top: calc(100% + 4px); }
   .menu .menu-item { min-height: 44px; }
   .banner { bottom: 72px; }
-  .mobile-workspaces { display: flex; gap: 4px; padding: 5px 8px; background: #fff; border-bottom: 1px solid var(--line); }
+  .mobile-workspaces { display: flex; gap: 4px; padding: 5px calc(22px + 2 * max(40px, var(--control-h))) 5px 8px; background: #fff; border-bottom: 1px solid var(--line); }
   .mobile-workspaces button { flex: 1; min-height: max(40px, var(--control-h)); border-color: transparent; background: transparent; color: var(--muted); }
   .mobile-workspaces button.on { border-color: var(--line); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
   #main { display: block; position: relative; min-height: 0; }
@@ -653,6 +679,27 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
   .patch-select { position: sticky; top: 0; max-height: calc(100vh - 200px); overflow: auto; }
 }
 .patch-select .row { margin-bottom: 6px; }
+/* 依規則：類別 ▸ 規則標題。收合的類別是並排的小框（省高度），展開的類別佔滿一列、列出規則標題的 chip；規則標題較長，chip 可以換行 */
+.patch-cats { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.patch-cat { border: 1px solid var(--line); border-radius: var(--radius); background: #fff; }
+.patch-cat[open] { flex-basis: 100%; }
+.patch-cat > summary { padding: 2px 10px; }
+.patch-cat > summary, .patch-picks-box > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-height: var(--control-h); cursor: pointer; }
+.patch-picks-box > summary { padding: 4px 2px; }
+.patch-cat > summary::before, .patch-picks-box > summary::before { content: "▸"; color: var(--muted); }
+.patch-cat[open] > summary::before, .patch-picks-box[open] > summary::before { content: "▾"; }
+.patch-cat > summary::-webkit-details-marker, .patch-picks-box > summary::-webkit-details-marker { display: none; }
+.patch-cat > summary, .patch-picks-box > summary { list-style: none; }
+.patch-cat-name { font-weight: 600; }
+.patch-cat-rules { padding: 2px 10px 10px; gap: 6px; }
+.chip.patch-rule, .chip.patch-rule-tag { white-space: normal; text-align: left; }
+.patch-picks-box > summary { color: var(--accent); }
+/* 「其他格式 ▾」：主要下載旁的次要選項，展開後在下方列出 */
+.patch-more > summary { display: inline-flex; align-items: center; min-height: var(--control-h); padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: #fff; cursor: pointer; list-style: none; }
+.patch-more > summary::-webkit-details-marker { display: none; }
+.patch-more[open] { flex-basis: 100%; }
+.patch-more-list { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 6px; }
+.patch-more-list p { margin: 0; font-size: var(--fs-sm); }
 .patch-groups details { margin: 2px 0; }
 .patch-picks { padding: 4px 0 6px 18px; max-height: 260px; overflow: auto; }
 .patch-pick-row { display: block; font-size: var(--fs-md); padding: 2px 0; }

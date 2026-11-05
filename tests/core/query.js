@@ -33,7 +33,8 @@ test('VLAN 區塊：同一個 VLAN ID 依承載此 VLAN 的鏈路分成不相連
   assert.deepStrictEqual([c.domain, c.devices, c.carry, c.entries.map((e) => e.dev)], ['10@SW_C', ['SW_C'], [], ['SW_C']]);
   assert.strictEqual(Q.vlan(10, '10@SW_A').carry.length, 1);
   assert.strictEqual(Q.vlan(10, '10@NOPE').domain, null, '不存在的區塊回到整體結果');
-  assert.ok(Q.search('10').find((r) => r.type === 'vlan').sub.includes('2 個不相連區塊'));
+  const sv = Q.search('10').find((r) => r.type === 'vlan');
+  assert.deepStrictEqual([sv.id, sv.found, sv.devices, sv.vlanDomains], [10, true, 3, 2], '搜尋結果帶 VLAN 片段數（結構化欄位，文字由畫面組成）');
   assert.deepStrictEqual(Q.vlan(99).domains, []);
 });
 test('路由追蹤：直連抵達、下一跳不在基準內、跨站點 ECMP', () => {
@@ -366,6 +367,32 @@ test('查詢：搜尋支援 IP 前綴（先網段後 IP）、MAC 前綴（任一
   const ifcs = Q.search('ether10', 50).filter((r) => r.type === 'interface');
   assert.ok(ifcs.length > 0 && ifcs.every((r) => Q.getInterface(r.key) && Q.getInterface(r.key).name.toLowerCase().includes('ether10')), JSON.stringify(ifcs.slice(0, 3)));
   assert.ok(Q.search('to TPE_ACC_SW_01').some((r) => r.type === 'interface'), '介面描述仍可搜尋');
+});
+
+test('查詢：搜尋只回傳結構化欄位（不組顯示文字），VLAN 接受「vlan 30」「VLAN30」，以 0 開頭的數字不當 VLAN', () => {
+  const Q = S.query(build(read('samples/sample-bundle.txt')));
+  for (const q of ['30', 'vlan 30', 'VLAN30', 'Vlan  30']) {
+    const v = Q.search(q, 50).filter((r) => r.type === 'vlan');
+    assert.deepStrictEqual(v.map((r) => [r.key, r.label, r.id]), [['30', 'VLAN 30', 30]], q);
+    assert.strictEqual(v[0].devices, Q.vlan(30).devices.length, q);
+    assert.strictEqual(v[0].vlanDomains, Q.vlan(30).domains.length, q);
+  }
+  assert.deepStrictEqual(Q.search('0442').filter((r) => r.type === 'vlan'), [], '以 0 開頭（MAC 片段）不當 VLAN');
+  assert.deepStrictEqual(Q.search('vlan 4095').filter((r) => r.type === 'vlan'), [], '超出 1–4094 不當 VLAN');
+  const none = Q.search('3999').find((r) => r.type === 'vlan');
+  assert.strictEqual(none.found, false, '基準中沒有的 VLAN 仍列出、found 為 false');
+  const all = ['core_rt', 'ether10', '10.1.', '04:42', '10', '10.1.30.15', 'aa:aa:aa:aa:aa:aa', 'to TPE_ACC_SW_01'].flatMap((q) => Q.search(q, 50));
+  assert.ok(all.length && all.every((r) => !('sub' in r)), '不回傳 sub（顯示文字由畫面組成）');
+  const dev = Q.search('core_rt').find((r) => r.type === 'device');
+  assert.deepStrictEqual([dev.kind, dev.mgmtIp, dev.collected], [Q.getDevice(dev.key).kind, Q.getDevice(dev.key).mgmtIp, true]);
+  const ifc = Q.search('ether10').find((r) => r.type === 'interface'); const raw = Q.getInterface(ifc.key);
+  assert.deepStrictEqual([ifc.match, ifc.ifType, ifc.status], ['name', raw.type, raw.status]);
+  assert.strictEqual(Q.search('to TPE_ACC_SW_01').find((r) => r.type === 'interface').match, 'desc');
+  const mac = Q.search('aa:aa:aa:aa:aa:aa')[0];
+  assert.deepStrictEqual([mac.type, mac.found], ['mac', false]);
+  const ip = Q.search('10.1.30.15').find((r) => r.type === 'ip');
+  assert.ok(ip.found && Array.isArray(ip.macs) && Array.isArray(ip.vrfs), JSON.stringify(ip));
+  assert.strictEqual(Q.search('203.0.113.250')[0].found, false);
 });
 
 test('查詢：Q.blockAt 依檔案與行號取得所屬區塊', () => {

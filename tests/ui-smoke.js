@@ -942,6 +942,35 @@ function viewBoundaryViolations(file, src) {
     }
   });
   await step('點選每一筆檢查結果', () => { App.snap.findings.forEach((f, i) => { App.selectFinding(i); App.graph.draw(); }); });
+  await step('從其他入口選取檢查結果：③ 的清單展開到那條規則（含被篩掉的嚴重度與超過顯示筆數的位置），標出選取那一筆並捲到看得見', () => {
+    const all = App.snap.findings; const VA = S.view.app;
+    goStep('triage');
+    const selected = () => $('#pane-findings').testAll('.fitem').filter((e) => e.classList.contains('sel'));
+    // 狀態卡的「只看錯誤與警告」：全部收合、提醒被篩掉；再選一筆提醒（模擬狀態卡、詳細資料或防火牆的入口）
+    const pick = ['info', 'warn', 'error'].map((s) => all.findIndex((f) => f.severity === s && VA.isPending(f))).find((i) => i >= 0);
+    S.view.lists.findings.showProblems(App);
+    const proto = Object.getPrototypeOf($('#pane-findings')); const orig = proto.scrollIntoView; const scrolled = [];
+    proto.scrollIntoView = function () { scrolled.push(this); };
+    try { App.selectFinding(pick); } finally { proto.scrollIntoView = orig; }
+    const sel = selected();
+    if (sel.length !== 1 || sel[0].getAttribute('data-finding') !== String(pick) || sel[0].getAttribute('aria-current') !== 'true') throw new Error('應只標出選取的那一筆：' + sel.length);
+    if (!sel[0].textContent.includes(all[pick].message)) throw new Error('標出的應是選取的檢查結果');
+    if (!scrolled.includes(sel[0])) throw new Error('選取的那一筆應捲到看得見');
+    const head = $('#pane-findings').testAll('.fgroup').find((g) => g.testAll('.fitem').includes(sel[0]) && !g.classList.contains('fcat'));
+    if (!head || head.querySelector('.head').getAttribute('aria-expanded') !== 'true') throw new Error('所在的規則分組應展開');
+    // 同一條規則有很多筆時，超過預設顯示筆數的那一筆也要列出來
+    const big = Object.entries(all.reduce((o, f) => { o[f.id] = (o[f.id] || 0) + 1; return o; }, {})).find(([, n]) => n > 100);
+    if (big) {
+      const late = all.map((f, i) => i).filter((i) => all[i].id === big[0] && VA.isPending(all[i]))[100];
+      if (late != null) { App.selectFinding(late); if (!selected().some((e) => e.getAttribute('data-finding') === String(late))) throw new Error('超過顯示筆數的那一筆也應列出並標出'); }
+    }
+    // 依設備分組時展開那台設備的分組
+    $('#pane-findings').testAll('button').find((b) => b.getAttribute('data-group-by') === 'device').click();
+    App.selectFinding(pick);
+    if (selected().length !== 1 || selected()[0].getAttribute('data-finding') !== String(pick)) throw new Error('依設備分組時也應展開並標出');
+    $('#pane-findings').testAll('button').find((b) => b.getAttribute('data-group-by') === 'rule').click();
+    App.select(null); goStep('view');
+  });
   await step('詳情的檢查結果附上 CATALOG 的常見原因與處理：預設收合，反引號內的指令以等寬元素顯示', () => {
     const all = App.snap.findings; const C = S.check.CATALOG;
     // 反引號內的片段與去掉反引號後看到的文字（以正規式另外取出，不經過畫面的切法）
@@ -1282,6 +1311,23 @@ function viewBoundaryViolations(file, src) {
     const title = inp.getAttribute('title') || '';
     if (!title.includes('前綴') || !title.includes('介面名稱')) throw new Error('搜尋框的 title 應說明支援前綴與介面名稱');
     App.select(null);
+  });
+  await step('搜尋下拉的副標由畫面組成：類型、狀態、設備種類與 VLAN 片段用畫面的名詞，不出現英文列舉與舊詞；「vlan 30」「VLAN30」也找得到', async () => {
+    const inp = $('#search'); const dd = $('#search-dd');
+    const type = async (v) => { inp.value = v; inp.dispatch('input'); await new Promise((r) => setTimeout(r, 150)); return text('#search-dd'); };
+    if ((inp.getAttribute('placeholder') || '').length > 16) throw new Error('搜尋框的提示字應簡短：' + inp.getAttribute('placeholder'));
+    const vid = App.Q.vlanIds()[0];
+    for (const q of [`vlan ${vid}`, `VLAN${vid}`]) if (!(await type(q)).includes('VLAN ' + vid)) throw new Error(q + ' 應找到 VLAN ' + vid);
+    const dev = App.Q.devices().find((d) => d.collected); const ifc = App.Q.interfacesOf(dev.key).find((i) => i.name.length >= 3);
+    const multi = App.Q.vlanIds().find((id) => App.Q.vlan(id).domains.length > 1);
+    const subs = [];
+    for (const q of [dev.label || dev.key, ifc.name, String(vid), multi ? String(multi) : null].filter(Boolean)) { await type(q); subs.push(...dd.testAll('.sub').map((e) => e.textContent)); }
+    const bad = subs.filter((t) => /\b(switch|router|firewall|host|physical|lag|bridge|virtual|unknown)\b/.test(t) || t.includes('區塊'));
+    if (bad.length) throw new Error('副標不應出現英文列舉或「區塊」：' + bad.slice(0, 3).join('｜'));
+    if (!subs.some((t) => t.includes(S.view.KIND[dev.kind]))) throw new Error('設備的副標應寫出設備種類：' + S.view.KIND[dev.kind]);
+    if (!subs.some((t) => t.includes(S.view.IFC_TYPE[ifc.type]))) throw new Error('介面的副標應寫出介面類型：' + S.view.IFC_TYPE[ifc.type]);
+    if (multi && !subs.some((t) => t.includes(S.view.TERMS.vlanDomain))) throw new Error('有多個片段的 VLAN 應寫出「' + S.view.TERMS.vlanDomain + '」');
+    inp.value = ''; inp.dispatch('input'); await new Promise((r) => setTimeout(r, 150));
   });
   await step('路由追蹤', () => {
     $('#btn-trace').click(); $('#trace-src').value = '10.1.30.15'; $('#trace-dst').value = '8.8.8.8'; $('#trace-run').click();
@@ -2226,6 +2272,15 @@ function viewBoundaryViolations(file, src) {
     const t = text('#pane-inventory');
     [`設備 ${m.devices.length + App.Q.endpointEntries().length}`, `介面 ${m.interfaces.length}`, `IP ${ips.length}`, `網段 ${m.prefixes.length}`, `MAC ${new Set(rows.map((r) => r.mac)).size}`, `VLAN ${m.vlans.length}`].forEach((x) => { if (!t.includes(x)) throw new Error('清單缺少分類：' + x); });
     if (new Set(ips.map((r) => r.key)).size !== ips.length) throw new Error('IP 清單應依位址鍵去重複');
+    // 廠商與介面狀態用顯示名稱（V.vendorName、V.ifcState），不直接放原始列舉
+    const cells = (col) => { const ths = document.testAll('#pane-inventory th').map((x) => x.textContent); const n = ths.findIndex((x) => x.trim().startsWith(col)); if (n < 0) throw new Error('清單缺少欄位 ' + col + '：' + ths.join('、'));
+      return document.testAll('#pane-inventory tbody tr').map((tr) => tr.testAll('td')).filter((tds) => tds.length > n).map((tds) => tds[n].textContent); };
+    pickInv('inv-kind', 'device'); const vend = m.devices.find((d) => d.collected && d.manufacturer);
+    if (vend && !cells('廠商').includes(S.view.vendorName(vend.manufacturer))) throw new Error('設備清單的廠商應用顯示名稱');
+    if (cells('廠商').some((c) => /^mikrotik$/.test(c))) throw new Error('廠商欄不應出現小寫原值 mikrotik');
+    pickInv('inv-kind', 'interface');
+    const ifcSt = cells('狀態');
+    if (!ifcSt.length || ifcSt.some((c) => /^(unknown|disabled)$/.test(c)) || !ifcSt.every((c) => Object.values(S.view.STATUS).includes(c) || c === '停用')) throw new Error('介面狀態應用 V.ifcState：' + S.util.uniq(ifcSt).join('、'));
     pickInv('inv-kind', 'prefix');
     const pre = App.Q.inventory().rows.prefixes;
     if (!pre.length || document.testAll('#pane-inventory tbody tr').length !== pre.length) throw new Error('網段清單列數應等於推導出的網段數');
@@ -3002,10 +3057,9 @@ function viewBoundaryViolations(file, src) {
     const onlyNew = () => $('#pane-findings').testAll('.chip').find((c) => c.textContent.startsWith('只看新出現的'));
     const versionHint = () => $('#pane-findings').querySelector('.only-new-version');
     const diffWarnings = () => $('#compare-body').testAll('.diff-warning');
-    // 沒有可用的舊基準（上一步最後載入的是壞掉的 JSON）：停用並說明原因
+    // 沒有可用的舊基準（上一步最後載入的是壞掉的 JSON）：不顯示這個篩選，也不佔位置說明
     goStep('triage');
-    if (!onlyNew() || onlyNew().getAttribute('aria-disabled') !== 'true') throw new Error('沒有舊基準時「只看新出現的」應停用');
-    if (!text('#pane-findings').includes('載入舊基準後')) throw new Error('停用時應說明原因');
+    if (onlyNew()) throw new Error('沒有舊基準時不應顯示「只看新出現的」');
     const count = new Map(); all.forEach((f) => count.set(key(f), (count.get(key(f)) || 0) + 1));
     const addedF = all.find((f) => count.get(key(f)) === 1);
     const old = JSON.parse(JSON.stringify(App.snap));
@@ -3039,9 +3093,9 @@ function viewBoundaryViolations(file, src) {
     if (kids.indexOf($('#compare-body').querySelector('.diff-warnings')) > kids.indexOf($('#compare-body').querySelector('.diff-summary'))) throw new Error('提醒應在比對結果上方');
     goStep('triage');
     if (!versionHint() || !versionHint().textContent.includes('新出現的可能來自新版檢查')) throw new Error('只看新出現的應提示新出現的可能來自新版檢查');
-    // 舊基準變成不可用：篩選自動關閉並停用，提示一併消失
+    // 舊基準變成不可用：篩選自動關閉並隱藏，提示一併消失
     await loadOld('bad.json', '{not json');
-    if (onlyNew().getAttribute('aria-disabled') !== 'true' || versionHint()) throw new Error('舊基準不可用時篩選應關閉並停用');
+    if (onlyNew() || versionHint()) throw new Error('舊基準不可用時篩選應關閉並隱藏');
     App.showView('graph');
   });
   await step('處理紀錄多輪推進：修好判定已修好、又出現標為回歸並醒目提示，收集不到的設備列為無法判斷，趨勢圖與表格', async () => {

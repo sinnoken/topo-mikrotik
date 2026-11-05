@@ -161,21 +161,21 @@ test('VRF：只用 main 的網路，S.trace 與 Q.reach 的輸出和 2.11.0 相�
   assert.ok(fx.expected.some((e) => e.trace.ends && e.trace.ends.some((x) => x.status === 'loop')) && fx.expected.some((e) => !e.trace.ok), '涵蓋直連、迴圈與找不到起點');
 });
 
-test('VRF：Q.search 的 IP 副標，位址在多個 VRF 時寫出數量與名稱；只在 main 時與 2.11.0 相同', () => {
+test('VRF：Q.search 的 IP 結果帶擁有者、ARP、所屬網段與所在的 VRF（顯示文字由畫面組成）', () => {
   const Q = S.query(build(NET()));
-  const sub = (ip) => Q.search(ip).find((r) => r.type === 'ip').sub;
-  assert.strictEqual(sub('10.1.20.2'), '介面位址 · ' + Q.epName('CORE|vlan20') + ' · 在 2 個 VRF：main、cust-a', '重疊的位址');
-  assert.strictEqual(sub('10.1.20.11'), 'ARP：aa:00:00:00:00:01, aa:00:00:00:00:02 · 在 2 個 VRF：main、cust-a');
-  assert.strictEqual(sub('192.168.50.1'), '介面位址 · ' + Q.epName('PE|ether3') + ' · 在 2 個 VRF：main、cust-a', 'CE 的 main 也有這個網段（同 Q.findIp 的 vrfs；S.trace 也要指定 vrf）');
+  const ip = (q, x) => { const r = (x || Q).search(q).find((y) => y.type === 'ip'); return [r.owner, r.macs, r.subnetEp, r.vrfs, r.found]; };
+  assert.deepStrictEqual(ip('10.1.20.2'), ['CORE|vlan20', [], 'CORE|vlan20', ['main', 'cust-a'], true], '重疊的位址');
+  assert.deepStrictEqual(ip('10.1.20.11').slice(1, 2), [['AA0000000001', 'AA0000000002']]);
+  assert.deepStrictEqual(ip('10.1.20.11')[3], ['main', 'cust-a']);
+  assert.deepStrictEqual(ip('192.168.50.1')[3], ['main', 'cust-a'], 'CE 的 main 也有這個網段（同 Q.findIp 的 vrfs；S.trace 也要指定 vrf）');
   const only = S.query(build(['R (10.0.0.1):', '### /export terse', '/ip vrf add interfaces=ether2 name=cust-b',
     '/ip address add address=10.0.0.1/24 interface=ether1 network=10.0.0.0', '/ip address add address=10.8.0.1/24 interface=ether2 network=10.8.0.0'].join('\n') + '\n'));
-  assert.strictEqual(only.search('10.8.0.1')[0].sub, '介面位址 · ' + only.epName('R|ether2') + ' · VRF cust-b', '只在一個非 main 的 VRF');
-  assert.strictEqual(sub('10.0.0.254'), '介面位址 · ' + Q.epName('CORE|ether1'), '只在 main：不寫 VRF');
-  assert.strictEqual(sub('203.0.113.1'), '基準中沒有這個 IP');
+  assert.deepStrictEqual(ip('10.8.0.1', only).slice(0, 1).concat([ip('10.8.0.1', only)[3]]), ['R|ether2', ['cust-b']], '只在一個非 main 的 VRF');
+  assert.deepStrictEqual(ip('10.0.0.254')[3], ['main'], '只在 main');
+  assert.deepStrictEqual(ip('203.0.113.1'), [null, [], null, [], false]);
   const fx = JSON.parse(read('tests/fixtures/vrf/trace-2.11-main-only.json'));
   const main = S.query(build(fx.input.join('\n') + '\n'));
-  // 2.11.0 的文字
-  assert.deepStrictEqual(['10.0.12.1', '192.168.1.10'].map((ip) => main.search(ip)[0].sub), ['介面位址 · A ether1', '屬於 A ether2 的網段']);
+  assert.deepStrictEqual(['10.0.12.1', '192.168.1.10'].map((q) => ip(q, main).slice(0, 3)), [['A|ether1', [], 'A|ether1'], [null, [], 'A|ether2']]);
 });
 
 test('VRF：IP 前綴搜尋，網段鍵含 VRF、同一個 IP 在多個 VRF 合成一筆並寫出 VRF', () => {
@@ -183,10 +183,10 @@ test('VRF：IP 前綴搜尋，網段鍵含 VRF、同一個 IP 在多個 VRF 合�
   const r = Q.search('10.1.', 50);
   const nets = r.filter((x) => x.type === 'subnet');
   assert.deepStrictEqual(nets.map((x) => x.key), ['10.1.20.0/24', '10.1.20.0/24@cust-a'], '各 VRF 的網段各一筆，key 是網段鍵');
-  assert.ok(nets[1].sub.endsWith(' · VRF cust-a') && !nets[0].sub.includes('VRF'), JSON.stringify(nets));
+  assert.deepStrictEqual(nets.map((x) => x.vrf), ['main', 'cust-a'], JSON.stringify(nets));
   const ip = r.filter((x) => x.type === 'ip' && x.key === '10.1.20.2');
   assert.strictEqual(ip.length, 1, '同一個位址只列一次（搜尋不分 VRF）');
-  assert.ok(ip[0].sub.endsWith(' · 在 2 個 VRF：main、cust-a'), ip[0].sub);
+  assert.deepStrictEqual(ip[0].vrfs, ['main', 'cust-a'], JSON.stringify(ip[0]));
 });
 
 test('VRF：Q.reach、zone、L3 子網圖依 VRF 分開', () => {

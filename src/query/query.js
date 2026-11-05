@@ -997,39 +997,50 @@
       },
 
       /**
-       * 一個搜尋框搜所有東西：MAC、IP、VLAN、設備、介面名稱與描述；IP 與 MAC 也接受前綴（10.1.、04:42）。
-       * 結果 { type, key, label, sub }：type 是 mac｜ip｜subnet｜vlan｜device｜interface；ip 的 key 是不含 VRF 的位址（不分 VRF），
-       * subnet 的 key 是網段鍵（K.inVrf，同 subnetGraph 的 id）。
+       * 一個搜尋框搜所有東西：MAC、IP、VLAN、設備、介面名稱與描述；IP 與 MAC 也接受前綴（10.1.、04:42），VLAN 也接受「vlan 30」「VLAN30」。
+       * 只回傳結構化欄位，顯示文字（副標）由畫面組成（app-toolbar.js，名詞用 V.TERMS／V.KIND／V.IFC_TYPE）。每筆 { type, key, label, ... }：
+       *   mac       { found, vendor, ips }（found 為 false：基準中沒有這個 MAC）
+       *   ip        { found, owner（擁有這個位址的介面 ep；管理 IP 是「dev|」）, macs（ARP）, heard（只有鄰居宣告）, subnetEp（所屬網段的第一個介面）, vrfs }
+       *   subnet    { eps（設定在哪些介面）, vrf }
+       *   vlan      { id, found, devices（台數）, vlanDomains（VLAN 片段數，推論）, names }
+       *   device    { kind, mgmtIp, collected }
+       *   interface { match（name｜desc）, ifType, status, enabled, desc }
+       * ip 的 key 是不含 VRF 的位址（不分 VRF），subnet 的 key 是網段鍵（K.inVrf，同 subnetGraph 的 id）。
        */
       search(text, limit) {
         const q = String(text || '').trim(); const max = limit || 20; const out = [];
         if (!q) return out;
-        // VRF 在 main 時不寫（與 K.inVrf 相同）；在多個 VRF 時寫出數量與名稱，下拉選單就看得出位址重疊
-        const NAMES = 4;
-        const inVrfs = (vs) => (vs.length > 1 ? ` · 在 ${vs.length} 個 VRF：${vs.slice(0, NAMES).join('、')}${vs.length > NAMES ? '…' : ''}` : vs.length === 1 && vs[0] !== MAIN ? ` · VRF ${vs[0]}` : '');
-        const macSub = (x) => (x.vendor || '') + (x.ips.length ? ' · ' + x.ips.join(', ') : '');
-        if (K.isMacText(q)) { const r = Q.findMac(q); out.push({ type: 'mac', key: r.mac, label: K.macPretty(r.mac), sub: r.found ? macSub(r) : '基準中沒有這個 MAC' }); }
+        const macRes = (x, found) => ({ type: 'mac', key: x.mac, label: K.macPretty(x.mac), found, vendor: x.vendor || null, ips: x.ips || [] });
+        const ipRes = (ip, o) => Object.assign({ type: 'ip', key: ip, label: ip, found: false, owner: null, macs: [], heard: false, subnetEp: null, vrfs: [] }, o);
+        if (K.isMacText(q)) { const r = Q.findMac(q); out.push(macRes(r, r.found)); }
         if (S.ip.isIp(q)) {
           const r = Q.findIp(q);
-          out.push({ type: 'ip', key: q, label: q, sub: (r.owner ? '介面位址 · ' + Q.epName(r.owner.endsWith('|') ? r.owner + 'mgmt' : r.owner) : r.macs.length ? 'ARP：' + r.macs.map(K.macPretty).join(', ') : r.subnets.length ? '屬於 ' + Q.epName(r.subnets[0].ep) + ' 的網段' : '基準中沒有這個 IP') + inVrfs(r.vrfs) });
+          // 只有鄰居宣告的位址（Q.findIp 不列）：同 ipEntries 的「鄰居宣告」
+          const hv = r.owner ? [] : vrfList().filter((v) => heard.has(K.inVrf(q, v)));
+          out.push(ipRes(q, { found: !!(r.owner || r.macs.length || r.subnets.length || hv.length), owner: r.owner, macs: r.macs, heard: hv.length > 0,
+            subnetEp: r.subnets.length ? r.subnets[0].ep : null, vrfs: U.uniq(r.vrfs.concat(hv)) }));
         }
-        if (/^\d{1,4}$/.test(q) && +q >= 1 && +q <= 4094) { const v = Q.vlan(+q); out.push({ type: 'vlan', key: q, label: 'VLAN ' + q, sub: v.devices.length ? `${v.devices.length} 台設備${v.domains.length > 1 ? `（${v.domains.length} 個不相連區塊）` : ''} · ${v.names.join(' / ')}` : '基準中沒有這個 VLAN' }); }
+        // VLAN：純數字（不以 0 開頭，避免「0442」這種 MAC 片段被當成 VLAN），或「vlan 30」「VLAN30」
+        const vm = /^(?:vlan\s*)?([1-9]\d{0,3})$/i.exec(q);
+        if (vm && +vm[1] <= 4094) {
+          const v = Q.vlan(+vm[1]);
+          out.push({ type: 'vlan', key: vm[1], label: 'VLAN ' + vm[1], id: +vm[1], found: v.devices.length > 0, devices: v.devices.length, vlanDomains: v.domains.length, names: v.names });
+        }
         // IP 前綴（10.1. 或 10.1）：先列以它開頭的直連網段（少而概括），再列 IP；完整 IP 已在上面處理
         const ipPrefix = !S.ip.isIp(q) && q.includes('.') && /^\d{1,3}(\.\d{1,3}){0,2}\.?$/.test(q);
         if (ipPrefix) {
           const head = q.endsWith('.') ? q : q + '.';
-          const EPS = 3; const epList = (eps) => eps.slice(0, EPS).map(Q.epName).join(', ') + (eps.length > EPS ? ` 等 ${eps.length} 個介面` : '');
           for (const p of m.prefixes) {
             if (out.length >= max) break;
-            if (p.net.startsWith(head)) out.push({ type: 'subnet', key: p.key, label: p.prefix, sub: '網段 · ' + epList(p.eps) + inVrfs([K.vrf(p.vrf)]) });
+            if (p.net.startsWith(head)) out.push({ type: 'subnet', key: p.key, label: p.prefix, eps: p.eps, vrf: K.vrf(p.vrf) });
           }
-          // ipEntries 每個 VRF 一列；搜尋的 IP 不分 VRF（同完整 IP），同一個位址合成一筆、副標寫出所在的 VRF
+          // ipEntries 每個 VRF 一列；搜尋的 IP 不分 VRF（同完整 IP），同一個位址合成一筆、vrfs 列出所在的 VRF
           const byIp = new Map();
           Q.ipEntries().forEach((e) => { if (e.ip.startsWith(head)) U.getOr(byIp, e.ip, () => []).push(e); });
           for (const [ip, es] of byIp) {
             if (out.length >= max) break;
             const e = es[0];
-            out.push({ type: 'ip', key: ip, label: ip, sub: [e.from.join('／'), e.dev ? Q.devName(e.dev) + (e.ifc ? ' ' + e.ifc : '') : ''].filter(Boolean).join(' · ') + inVrfs(es.map((x) => x.vrf)) });
+            out.push(ipRes(ip, { found: true, owner: e.owner, macs: e.macs, heard: !e.owner && heard.has(e.key), vrfs: es.map((x) => x.vrf) }));
           }
         }
         // MAC 前綴：去掉分隔符後以十六進位前綴比對；純數字留給 VLAN／IP，避免「10」也變成 MAC 搜尋
@@ -1038,20 +1049,21 @@
           const head = q.replace(/[^0-9a-f]/gi, '').toUpperCase();
           for (const x of m.macs) {
             if (out.length >= max) break;
-            if (x.mac.startsWith(head)) out.push({ type: 'mac', key: x.mac, label: K.macPretty(x.mac), sub: macSub(x) });
+            if (x.mac.startsWith(head)) out.push(macRes(x, true));
           }
         }
         const uq = q.toUpperCase();
         for (const d of m.devices) {
           if (out.length >= max) break;
-          if (d.key.includes(uq) || (d.label && d.label.toUpperCase().includes(uq)) || (d.mgmtIp && d.mgmtIp === q)) out.push({ type: 'device', key: d.key, label: d.label || d.name, sub: [d.kind, d.mgmtIp, d.collected ? '' : '未收集'].filter(Boolean).join(' · ') });
+          if (d.key.includes(uq) || (d.label && d.label.toUpperCase().includes(uq)) || (d.mgmtIp && d.mgmtIp === q)) out.push({ type: 'device', key: d.key, label: d.label || d.name, kind: d.kind || null, mgmtIp: d.mgmtIp || null, collected: !!d.collected });
         }
         if (out.length < max && q.length >= 3) {
           const lq = q.toLowerCase();
+          const ifcRes = (i, match) => ({ type: 'interface', key: i.key, label: Q.epName(i.key), match, ifType: i.type || null, status: i.status || null, enabled: i.enabled !== false, desc: i.desc || null });
           for (const i of m.interfaces) {
             if (out.length >= max) break;
-            if (i.name.toLowerCase().includes(lq)) out.push({ type: 'interface', key: i.key, label: Q.epName(i.key), sub: [i.type, i.status, i.desc ? '描述：' + i.desc : ''].filter(Boolean).join(' · ') });
-            else if (i.desc && i.desc.toLowerCase().includes(lq)) out.push({ type: 'interface', key: i.key, label: Q.epName(i.key), sub: '描述：' + i.desc });
+            if (i.name.toLowerCase().includes(lq)) out.push(ifcRes(i, 'name'));
+            else if (i.desc && i.desc.toLowerCase().includes(lq)) out.push(ifcRes(i, 'desc'));
           }
         }
         return out;

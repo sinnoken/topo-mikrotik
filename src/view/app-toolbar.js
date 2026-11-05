@@ -78,6 +78,40 @@
     });
   }
 
+  /**
+   * 搜尋下拉的副標：Q.search 只回傳結構化欄位，顯示文字在這裡組成（名詞用 V.TERMS、V.KIND、V.IFC_TYPE、V.ifcState）。
+   * VRF 在 main 時不寫；在多個 VRF 時寫出數量與名稱（前 VRF_NAMES 個），下拉選單就看得出位址重疊。
+   */
+  const VRF_NAMES = 4; const SUB_EPS = 3;
+  const inVrfs = (vs) => (vs.length > 1 ? ` · 在 ${vs.length} 個 VRF：${vs.slice(0, VRF_NAMES).join('、')}${vs.length > VRF_NAMES ? '…' : ''}`
+    : vs.length === 1 && vs[0] !== S.keys.MAIN_VRF ? ` · VRF ${vs[0]}` : '');
+  A.searchSub = function searchSub(Q, r) {
+    const join = (parts) => parts.filter(Boolean).join(' · ');
+    if (r.type === 'mac') return r.found ? join([r.vendor, r.ips.join(', ')]) : '基準中沒有這個 MAC';
+    if (r.type === 'ip') {
+      const mgmt = r.owner && r.owner.endsWith('|');
+      const what = r.owner ? (mgmt ? '管理 IP · ' + Q.devName(r.owner.slice(0, -1)) : '介面位址 · ' + Q.epName(r.owner))
+        : r.macs.length ? 'ARP：' + r.macs.map(S.keys.macPretty).join(', ')
+          : r.heard ? '鄰居宣告的位址'
+            : r.subnetEp ? `屬於 ${Q.epName(r.subnetEp)} 的${V.TERMS.subnet}` : '基準中沒有這個 IP';
+      return what + inVrfs(r.vrfs);
+    }
+    if (r.type === 'subnet') {
+      const eps = r.eps.slice(0, SUB_EPS).map(Q.epName).join(', ') + (r.eps.length > SUB_EPS ? ` 等 ${r.eps.length} 個介面` : '');
+      return V.TERMS.subnet + ' · ' + eps + inVrfs([r.vrf]);
+    }
+    if (r.type === 'vlan') {
+      if (!r.found) return '基準中沒有這個 VLAN';
+      return join([`${r.devices} 台設備${r.vlanDomains > 1 ? `（${r.vlanDomains} 個${V.TERMS.vlanDomain}）` : ''}`, r.names.join(' / ')]);
+    }
+    if (r.type === 'device') return join([V.KIND[r.kind] || r.kind, r.mgmtIp, r.collected ? '' : '未收集']);
+    if (r.type === 'interface') {
+      const desc = r.desc ? '描述：' + r.desc : '';
+      return r.match === 'desc' ? desc : join([V.IFC_TYPE[r.ifType] || r.ifType, V.ifcState(r), desc]);
+    }
+    return '';
+  };
+
   // ================================================================ 頁首
   A.bindHeader = function bindHeader() {
     A.bindMenu($('#btn-more'), $('#more-menu'));
@@ -106,11 +140,11 @@
       V.clear(dd); if (!App.Q || !inp.value.trim()) { dd.classList.add('hidden'); return; }
       results = App.Q.search(inp.value, 15); active = 0;
       if (!results.length) dd.appendChild(h('div', { class: 'empty' }, '找不到符合的設備、MAC、IP、網段、VLAN 或介面'));
-      const T = { device: '設備', mac: 'MAC', ip: 'IP', subnet: '網段', vlan: 'VLAN', interface: '介面' };
+      const T = { device: '設備', mac: 'MAC', ip: 'IP', subnet: V.TERMS.subnet, vlan: 'VLAN', interface: '介面' };
       results.forEach((r, i) => dd.appendChild(h('div', {
         class: 'item' + (i === active ? ' active' : ''),
         onmousedown: (e) => { e.preventDefault(); pick(r); },
-      }, [V.chip(T[r.type]), h('span', null, r.label), h('span', { class: 'sub' }, r.sub || '')])));
+      }, [V.chip(T[r.type]), h('span', null, r.label), h('span', { class: 'sub' }, A.searchSub(App.Q, r))])));
       dd.classList.remove('hidden');
     };
     // 搜尋是「在圖上定位」：在 ④ 修正、⑤ 驗證時回到上一次看圖的 ② 或 ③，再選取

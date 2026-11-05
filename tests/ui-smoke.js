@@ -2398,6 +2398,18 @@ function viewBoundaryViolations(file, src) {
     if (document.activeElement !== $('#pane-inventory .inv-filter')) throw new Error('換篩選後焦點應留在篩選下拉');
     // 窄欄：表格在自己的框內橫向捲動，不截斷主要欄
     if (!$('#pane-inventory table').parentNode.className.includes('table-scroll')) throw new Error('清單表格應在可橫向捲動的框內');
+    // 窄螢幕：每種清單的關鍵欄在前三欄（先看到），其餘依內容寬度橫向捲動並有滑動提示；終端的名稱不重複廠商欄
+    const head3 = () => document.testAll('#pane-inventory th').slice(0, 3).map((x) => x.textContent.replace(/[▲▼]/g, '').trim()).join('|');
+    [['device', '設備|類型|管理 IP'], ['interface', '設備|介面|狀態'], ['mac', 'MAC|廠商|IP']].forEach(([k, want]) => {
+      pickInv('inv-kind', k); if (head3() !== want) throw new Error(`${k} 清單的前三欄應是關鍵欄 ${want}：${head3()}`);
+      if (!$('#pane-inventory .inv-table .inv-scroll-hint')) throw new Error('清單應有窄螢幕的滑動提示');
+    });
+    pickInv('inv-kind', 'device'); pickInv('inv-filter', 'end');
+    const endRows = document.testAll('#pane-inventory tbody tr').map((tr) => tr.testAll('td').map((td) => td.textContent));
+    const vCol = document.testAll('#pane-inventory th').findIndex((x) => x.textContent.trim().startsWith('廠商'));
+    if (endRows.some((tds) => tds[vCol] && tds[0] === tds[vCol])) throw new Error('終端的名稱欄不應重複廠商欄');
+    const invCss = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8'); const invNarrow = invCss.slice(invCss.indexOf('@media (max-width: 900px)'));
+    if (!/\.inv-scroll-hint \{ display: none; \}/.test(invCss) || !/\.inv-scroll-hint \{ display: block; \}/.test(invNarrow) || !/\.inv-table table\.t \{ width: max-content;/.test(invNarrow)) throw new Error('窄螢幕的清單表格應依內容寬度橫向捲動並顯示提示');
     pickInv('inv-kind', 'ip');
     if (document.activeElement !== $('#pane-inventory .inv-kind')) throw new Error('換清單種類後焦點應留在種類下拉');
     // 可排序的標頭是 th 裡的按鈕（鍵盤可操作），th 標 aria-sort
@@ -4196,7 +4208,11 @@ function viewBoundaryViolations(file, src) {
       if (!new RegExp(r).test(body)) throw new Error('body 缺少 CJK 排版規則 ' + r);
     });
     if (/break-all/.test(css)) throw new Error('不用 word-break: break-all（中文與識別字都會被逐字拆開）');
-    if (/letter-spacing:\s*-/.test(css)) throw new Error('不用負字距（中文會擠在一起）');
+    if (/letter-spacing:(?!\s*0[;\s}])/.test(css)) throw new Error('CJK 不加字距：letter-spacing 只能是 0（不用正負字距）');
+    // chip 與 tooltip 可以換行（長文字不撐破版面）；chip 不被擠窄（flex-shrink: 0），短的仍是單列
+    const rule = (sel) => (css.match(new RegExp('(?:^|\\n)' + sel.replace(/\./g, '\\.') + ' \\{([^}]*)\\}')) || [])[1] || '';
+    if (/nowrap/.test(rule('.chip')) || !/flex-shrink: 0/.test(rule('.chip')) || !/max-width: 100%/.test(rule('.chip'))) throw new Error('chip 應可換行且不被擠窄：' + rule('.chip'));
+    if (/nowrap/.test(rule('.tooltip')) || !/max-width:/.test(rule('.tooltip'))) throw new Error('tooltip 應可換行並有最大寬度：' + rule('.tooltip'));
     if (/font-weight:\s*(500|700|bold)/.test(css)) throw new Error('中文粗體只用 600（400／600 兩階）');
     if (!/(?:^|\n)h1, h2, h3, h4 \{[^}]*line-height:\s*var\(--lh-heading\)[^}]*font-weight:\s*600/.test(css)) throw new Error('標題應使用 --lh-heading 與 600');
     if (!/\.note-box[^{]*\{[^}]*line-height:\s*var\(--lh-prose\)/.test(css)) throw new Error('說明段落應使用 --lh-prose');
@@ -4531,6 +4547,13 @@ function viewBoundaryViolations(file, src) {
     if (!row('coverage').textContent.includes(`已收集 ${NUM(cs.networkCollected)}／${NUM(cs.network)} 台網路設備`)) throw new Error('覆蓋率應以網路設備為分母：' + row('coverage').textContent);
     if (cs.hosts && !row('coverage').textContent.includes(`另有 ${NUM(cs.hosts)} 台主機`)) throw new Error('覆蓋率應另列主機：' + row('coverage').textContent);
     if ((hubBtn('devices-csv').getAttribute('disabled') !== null) !== !nC01) throw new Error('沒有 C01 時 devices.csv 草稿應停用');
+    // 狀態文字不露出檢查代碼（代碼只放 title）；各列共用同一組欄（subgrid），來源與狀態靠左和項目欄對齊
+    ['sources', 'previous', 'ledger', 'profile', 'expected-data', 'expected', 'coverage'].forEach((k) => {
+      const cell = row(k).querySelector('.hub-st-cell'); if (/\b[A-Z]\d{2}\b/.test(cell.textContent)) throw new Error(`${k} 的狀態不應出現檢查代碼：${cell.textContent}`);
+    });
+    if (nC01 && !row('coverage').querySelector('.hub-st-cell').testAll('span').some((x) => /^C01 /.test(x.getAttribute('title') || ''))) throw new Error('覆蓋率的代碼應保留在 title');
+    const hubCss = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
+    if (!/\.hub-row \{[^}]*grid-template-columns: subgrid;[^}]*text-align: left;/.test(hubCss) || !/\.hub-rows \{ display: grid;/.test(hubCss)) throw new Error('資料中心各列應共用同一組欄並靠左對齊');
     // 工作包的角色：收集檔與基準一定放（不能取消）；命名規則用過就一定放
     const roleBox = (r) => $('#hub').testAll('.hub-pack-role').find((x) => x.getAttribute('data-role') === r);
     ['source', 'snapshot'].forEach((r) => { const cb = roleBox(r); if (!cb || !cb.checked || !cb.disabled) throw new Error(r + ' 是工作包的必要內容，應勾選且不能取消'); });

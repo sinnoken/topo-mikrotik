@@ -336,7 +336,7 @@
         { t: '類別', f: (r) => r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN
           ? 'MNDP・同一 L2 廣播網域可達（未確認直連）'
           : V.protoText(r.l) + '・' + V.CLS[r.l.cls] + (r.l.hearsay ? '・' + V.TERMS.hearsay : '') + (!r.l.verified && !r.l.hearsay ? '・LLDP 單向' : ''),
-        s: (r) => (r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? 'MNDP' : V.protoText(r.l)) },
+        s: (r) => (r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? 'MNDP' : V.protoText(r.l)), cls: 'nowrap' },
         { t: 'VLAN', f: (r) => r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? '—'
           : (r.l.vlanMismatch ? h('span', { class: 'diffA' }, '不一致') : h('span', { class: 'vlanlist' }, vlanText(r.l.vlansCommon))),
         s: (r) => (r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? null : r.l.vlanMismatch ? '不一致' : vlanText(r.l.vlansCommon)) },
@@ -525,7 +525,7 @@
           : h('span', { class: 'mono' }, ifName(Q, K.splitEp(l.a)[0] === a ? l.b : l.a)) },
         { t: '類別', f: (l) => l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN
           ? 'MNDP・同一 L2 廣播網域可達（未確認直連）'
-          : V.CLS[l.cls] + (l.verified ? '' : l.hearsay ? '・' + V.TERMS.hearsay : '・LLDP 單向') },
+          : V.CLS[l.cls] + (l.verified ? '' : l.hearsay ? '・' + V.TERMS.hearsay : '・LLDP 單向') , cls: 'nowrap' },
         { t: '協定', f: (l) => V.protoText(l) },
         { t: 'VLAN', f: (l) => l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? '—'
           : (l.vlanMismatch ? h('span', { class: 'diffA' }, '不一致') : h('span', { class: 'vlanlist' }, vlanText(l.vlansCommon))) },

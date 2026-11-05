@@ -235,7 +235,8 @@
           const n = ev.target === cv ? this.hitNode(p) : null; const e = n || ev.target !== cv ? null : this.hitEdge(p);
           const hv = n ? { type: 'node', id: n.id } : e ? { type: 'edge', id: e.id } : null;
           // 沒有指到節點與連線時，指到的分群（標籤或群框）顯示全名；只是檢視狀態，不經 emit
-          const hg = !hv && ev.target === cv ? this.hitGroup(p) : null;
+          // 只有一台的群沒有框也平常不標：滑過那台設備時顯示群名
+          const hg = ev.target !== cv ? null : n ? this.soloGroupOf(n) : !hv ? this.hitGroup(p) : null;
           if (hg !== this.hoverGroup) { this.hoverGroup = hg; this.dirty = true; }
           if (JSON.stringify(hv) !== JSON.stringify(this.hover)) { this.hover = hv; this.dirty = true; this.emit('hover', { item: hv, x: p.x, y: p.y }); }
           else if (hv) this.emit('hover', { item: hv, x: p.x, y: p.y });
@@ -370,7 +371,13 @@
       });
       return best;
     }
-    _edgeVisible(e) { const a = this.nodeById.get(e.a); const b = this.nodeById.get(e.b); return a && b && this.isVisible(a) && this.isVisible(b); }
+    /** n 所屬的群只有它一台（不畫框）時回傳群名，否則 null */
+    soloGroupOf(n) {
+      if (!this.showGroups || !this.groupBoxes) return null;
+      const g = this.groupBoxes.find((x) => x.name && x.name === (n.group || ''));
+      return g && !g.frame ? g.name : null;
+    }
+        _edgeVisible(e) { const a = this.nodeById.get(e.a); const b = this.nodeById.get(e.b); return a && b && this.isVisible(a) && this.isVisible(b); }
 
     // ---------------- 繪圖
     _loop() { const tick = () => { if (this.dirty) { this.dirty = false; this.draw(); } requestAnimationFrame(tick); }; requestAnimationFrame(tick); }
@@ -392,7 +399,7 @@
       this.groupLabels = this.showGroups && this.groupBoxes ? this._layoutGroupLabels(c) : [];
       if (this.showGroups && this.groupBoxes) {
         this.groupBoxes.forEach((g) => {
-          if (!g.frame) return; // 只有一台的群不畫框（看起來像空框）；標籤仍在原位，可滑過看全名
+          if (!g.frame) return; // 只有一台的群不畫框（看起來像空框），平常也不標；滑過那台設備時顯示群名
           c.fillStyle = CV.group.fill; c.strokeStyle = CV.group.stroke; c.lineWidth = 1 / s;
           roundRect(c, g.x0, g.y0, g.x1 - g.x0, g.y1 - g.y0, 18); c.fill(); c.stroke();
         });
@@ -555,9 +562,12 @@
       for (const g of list) {
         const box = { x0: g.x0 * s + this.tx, y0: g.y0 * s + this.ty, x1: g.x1 * s + this.tx, y1: g.y1 * s + this.ty };
         if (box.x1 < ex0 || box.x0 > ex1 || box.y1 < ey0 || box.y0 - GL.h > ey1) continue; // 畫面外或被覆蓋層蓋住
-        // 群框只露出一部分（放大後，或頂端在工具列底下）時，標籤貼在可見部分的左上，不跟著框外的頂邊消失
-        const vx0 = Math.max(box.x0, ex0); const vx1 = Math.min(box.x1, ex1); const vy0 = Math.max(box.y0, ey0);
         const forced = g.name === hovered;
+        // 只有一台的群（沒畫框）平常不標，否則像一個空群；滑過那台設備時才顯示群名。
+        // 群框頂邊在工具列底下或畫面外（放大、聚焦後）也不標：標籤只能貼著工具列下緣，會壓在節點與埠名上；滑過群框時才顯示
+        if (!forced && (!g.frame || box.y0 < ey0)) continue;
+        // 滑過時群框可能只露出一部分：標籤貼在可見部分的左上
+        const vx0 = Math.max(box.x0, ex0); const vx1 = Math.min(box.x1, ex1); const vy0 = Math.max(box.y0, ey0);
         const text = forced ? g.name : fitLabels(c, g.name, vx1 - vx0 - 2 * GL.inset - 2 * GL.pad).find((t) => !used.has(t));
         if (!text) continue;
         // 滑過的全名不受群框寬度限制，但仍不出畫布右緣（往左挪）

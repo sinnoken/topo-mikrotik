@@ -436,6 +436,17 @@ function viewBoundaryViolations(file, src) {
     App.select({ type: 'device', key: collected.key });
     if (!$('#detail .chip-list') || !$('#detail .chip-list').testAll('.chip').length) throw new Error('設備收集資料標籤應使用可間隔換行的 chip-list');
   });
+  await step('⑤ 本輪變化：「新出現」含提醒時寫明（和只算錯誤與警告的「待處理」口徑不同），title 說明', () => {
+    const VA = S.view.app; const round = VA.ledgerState().round; goStep('verify');
+    const neu = round ? round.changes.filter((c) => c.reason === 'new') : [];
+    const nInfo = neu.filter((c) => { const i = App.Q.findingIndexByKey(c.key); return i >= 0 && App.Q.finding(i).severity === 'info'; }).length;
+    const chip = $('#round-body').testAll('.chip').find((c) => c.textContent.startsWith('新出現'));
+    if (!chip) throw new Error('本輪變化應有「新出現」');
+    if (nInfo && (!chip.textContent.includes(`（含提醒 ${nInfo}）`) || !String(chip.getAttribute('title')).includes('提醒不算進待處理'))) throw new Error('「新出現」含提醒時應寫明並在 title 說明：' + chip.textContent);
+    if (!nInfo && chip.textContent.includes('提醒')) throw new Error('沒有提醒時不應標示含提醒：' + chip.textContent);
+    if (!process.env.SMOKE_INPUT && !nInfo) throw new Error('測試前提：範例第一輪的新出現應含提醒');
+    App.showView('graph');
+  });
   await step('分層版面（ELK）：所有節點都有座標、各群外框不重疊、完成後有提示', async () => {
     if (App.layoutMode !== 'elk') throw new Error('預設應為分層版面');
     if (loadedScripts.join() !== S.view.layout.ELK_SRC) throw new Error('需要分層版面時應載入一次 ELK：' + loadedScripts.join());
@@ -513,6 +524,19 @@ function viewBoundaryViolations(file, src) {
       if ((d.seenBy.length > 5) !== !!fold || (fold && fold.getAttribute('open') !== null)) throw new Error(`${d.key} 看到它的設備超過 5 台才收合，且預設收合`);
     });
     if (!process.env.SMOKE_INPUT && !Q.devices().some((d) => d.seenBy.length > 5)) throw new Error('範例資料應有被超過 5 台看到的設備');
+    // 鄰居表與鏈路表的「類別」（例如「LLDP・聚合」）不折行撐高列：該欄 td.nowrap，表格本來就在 .table-scroll 內可橫捲
+    const appCss = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
+    if (!/table\.t td\.nowrap\s*\{[^}]*white-space:\s*nowrap/.test(appCss)) throw new Error('app.css 應有 table.t td.nowrap 不換行');
+    const classCells = () => $('#detail').testAll('table').flatMap((t) => {
+      const n = t.testAll('th').findIndex((th) => th.textContent.startsWith('類別')); if (n < 0) return [];
+      return t.testAll('tbody tr').map((tr) => tr.testAll('td')[n]);
+    });
+    let seen = 0;
+    Q.devices().slice(0, 30).forEach((d) => {
+      App.select({ type: 'device', key: d.key });
+      classCells().forEach((td) => { seen++; if (!/\bnowrap\b/.test(td.className)) throw new Error('鄰居表的「類別」欄應不換行（td.nowrap）：' + td.textContent); });
+    });
+    if (!seen) throw new Error('測試前提：應有設備的鄰居表');
     // VLAN 與終端的長說明收進預設收合的「這是什麼？」；沒有名稱時不列「名稱 —」；終端說明不出現檢查代碼
     const about = () => $('#detail').testAll('.detail-fold').find((x) => x.querySelector('summary').textContent === '這是什麼？');
     const outsideMuted = () => $('#detail').testAll('p').filter((p) => /muted/.test(p.className) && !about().contains(p)).map((p) => p.textContent).join('');
@@ -775,13 +799,16 @@ function viewBoundaryViolations(file, src) {
     if (g.hitGroup(corner) !== gb.name) throw new Error('群框內應命中這個分群');
     g.hoverGroup = null; g.draw();
   });
-  await step('全圖看得清楚：分群標籤與設備名稱不出畫布、不被工具列蓋住；只有一台的群不畫框（標籤仍可滑過看全名）', () => {
+  await step('全圖看得清楚：分群標籤與設備名稱不出畫布、不被工具列蓋住，群框頂邊被蓋住時不標；只有一台的群不畫框也不標（滑過設備才顯示群名）', () => {
     const g = App.graph; const cv = $('#graph'); App.select(null);
-    g.computeGroups(); g.fit(); const base = { s: g.s, tx: g.tx, ty: g.ty };
+    g.computeGroups(); g.fit(); const base = { s: g.s, tx: g.tx, ty: g.ty }; const one0 = (g.groupBoxes || []).filter((b) => b.n === 1);
     [1, 0.5, 2, 4].forEach((k) => {
       Object.assign(g, base); g.zoomAt(k); g.draw(); const v = g.viewport();
       g.groupLabels.forEach((l) => {
         if (l.x0 < 0 || l.x1 > g.w || l.y0 < v.y0 || l.y1 > g.h) throw new Error(`分群標籤應在畫布內、工具列之下（縮放 ${k}）：${l.text} ${Math.round(l.x0)},${Math.round(l.y0)}–${Math.round(l.x1)}，可用上緣 ${Math.round(v.y0)}`);
+        // 放大、聚焦後群框頂邊在工具列底下或畫面外時不標（否則標籤貼著工具列、壓在節點與埠名上），滑過群框才顯示
+        if (l.box.y0 < v.y0 - 0.5) throw new Error(`群框頂邊被蓋住時不應標分群（縮放 ${k}）：${l.text} 框頂 ${Math.round(l.box.y0)}，可用上緣 ${Math.round(v.y0)}`);
+        if (one0.some((b) => b.name === l.name)) throw new Error(`只有一台的群平常不標（看起來像空群）（縮放 ${k}）：${l.text}`);
       });
       g.nodeLabels.forEach((l) => { if (l.x0 < -0.5 || l.x1 > g.w + 0.5) throw new Error(`設備名稱不應超出畫布左右（縮放 ${k}）：${l.text} ${Math.round(l.x0)}–${Math.round(l.x1)}／${g.w}`); });
     });
@@ -805,12 +832,15 @@ function viewBoundaryViolations(file, src) {
     const ops = recordCanvas(g.ctx, () => g.draw());
     const fills = ops.filter((o) => o.op === 'fill' && o.style === S.view.theme.canvas.group.fill).length;
     if (fills !== g.groupBoxes.length - one.length) throw new Error(`群框數應等於兩台以上的群數：${fills}／${g.groupBoxes.length - one.length}`);
-    const lb = g.groupLabels.find((x) => one.some((b) => b.name === x.name));
-    if (!lb) throw new Error('只有一台的群仍應有標籤');
-    const ob = one.find((b) => b.name === lb.name); const corner = g.toScreen({ x: ob.x1 - 2, y: ob.y1 - 2 });
+    if (g.groupLabels.some((x) => one.some((b) => b.name === x.name))) throw new Error('只有一台的群平常不標');
+    const ob = one[0]; const corner = g.toScreen({ x: ob.x1 - 2, y: ob.y1 - 2 });
     if (g.hitGroup(corner)) throw new Error('沒畫框的群不應以框的範圍命中滑過');
-    (winListeners.pointermove || []).forEach((f) => f({ pointerId: 1, pointerType: 'mouse', clientX: (lb.x0 + lb.x1) / 2, clientY: (lb.y0 + lb.y1) / 2, target: cv }));
-    if (g.hoverGroup !== lb.name) throw new Error('滑過只有一台的群的標籤應顯示全名');
+    // 滑過那一台設備時才顯示群名（全名）
+    const solo = g.nodes.find((n) => g.isVisible(n) && !n.anchor && (n.group || '') === ob.name); const sp = g.toScreen(g.at(solo.id));
+    (winListeners.pointermove || []).forEach((f) => f({ pointerId: 1, pointerType: 'mouse', clientX: sp.x, clientY: sp.y, target: cv }));
+    if (g.hoverGroup !== ob.name) throw new Error('滑過只有一台的群的設備應顯示群名：' + g.hoverGroup);
+    g.draw(); const shown = g.groupLabels.find((x) => x.name === ob.name);
+    if (!shown || !shown.forced || shown.text !== ob.name) throw new Error('滑過只有一台的群的設備應顯示全名');
     cv.dispatch('pointerleave', { pointerType: 'mouse' }); g.draw();
   });
   await step('推定偏離：選多數決的檢查結果時以虛線外圈標出偏離設備；其他選取、清除時清掉，展開與切換層級保留；圖例取自 theme', () => {

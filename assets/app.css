@@ -371,6 +371,8 @@ table.t tr.click { cursor: pointer; }
 .table-scroll { max-width: 100%; overflow-x: auto; }
 .inv-scroll-hint { display: none; }
 table.t .mono, table.t .vlanlist { white-space: nowrap; overflow-wrap: normal; }
+/* 短的類別字串（例如「LLDP・聚合」）不折成兩行撐高列；寬於畫面時由 .table-scroll 橫捲 */
+table.t td.nowrap { white-space: nowrap; }
 .diffA { color: var(--err-text); font-weight: 600; }
 .hop { border-left: 2px solid var(--line); margin-left: 6px; padding: 2px 0 8px 12px; position: relative; }
 .hop::before { content: ""; position: absolute; left: -6px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }

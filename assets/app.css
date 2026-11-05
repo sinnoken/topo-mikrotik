@@ -132,6 +132,8 @@ button:focus-visible, a:focus-visible, summary:focus-visible, .fgroup > .head:fo
 tr.click:focus-visible, .fitem:focus-visible, .fgroup > .head:focus-visible { outline-offset: -2px; }
 /* 停用：一律 --disabled-opacity 與 not-allowed（按鈕、篩選選項、流程步驟、輸入框） */
 button:disabled { opacity: var(--disabled-opacity); cursor: not-allowed; transform: none; box-shadow: none; }
+/* 原生勾選框與單選鈕：勾選色用強調色，深色時跟著 :root 的 color-scheme 畫成深色控件 */
+input[type=checkbox], input[type=radio] { accent-color: var(--accent); color-scheme: inherit; }
 input[type=date], input[type=text], input[type=search], select, textarea { min-height: var(--control-h); border: 1px solid var(--line-input); border-radius: var(--radius-sm); padding: 6px 9px; background: var(--panel); transition: border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease; }
 input:hover, select:hover, textarea:hover { border-color: var(--muted); }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
@@ -368,6 +370,8 @@ button.chip { box-shadow: none; line-height: inherit; text-align: left; }
 .findings-view .seg button { min-height: 26px; padding: 2px 10px; border: none; border-radius: 0; box-shadow: none; font-size: var(--fs-sm); }
 .findings-view .seg button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .findings-view .note { font-size: var(--fs-sm); }
+/* 「依設備排序」是切換鈕（ghost 按鈕預設沒有框線，深色時看起來像一般文字）：平時也畫框線 */
+button.ghost.export-by-device { border-color: var(--line-strong); }
 .export-by-device.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 /* 防火牆修正範例 */
 .fw-fix { margin-bottom: 10px; }
@@ -486,10 +490,15 @@ table.t td.nowrap { white-space: nowrap; }
 .layer-switch [role="radio"]:disabled { color: var(--muted); cursor: not-allowed; background: var(--panel); }
 .toolbar .grp button:disabled { color: var(--muted); cursor: not-allowed; }
 /* 這一層畫了什麼、沒畫什麼（L2 的 MNDP、只畫一台設備的原因，L3 的路由與重疊） */
-.layer-note { position: absolute; right: 10px; bottom: 40px; max-width: min(460px, calc(100% - 20px)); font-size: var(--fs-sm); color: var(--text); background: var(--overlay); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 9px; z-index: var(--z-overlay); box-shadow: var(--shadow-sm); }
-.legend { position: absolute; left: 10px; bottom: 10px; background: var(--overlay); border: 1px solid var(--line); border-radius: var(--radius); padding: 5px 9px; font-size: var(--fs-sm); z-index: var(--z-overlay); max-width: calc(100% - 20px); box-shadow: var(--shadow-sm); backdrop-filter: blur(8px); }
-.legend .legend-head { border: 0; background: none; padding: 2px 0; font-weight: 600; font-size: var(--fs-sm); }
-.legend .legend-body { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 6px 0 4px; }
+/* 層級說明在圖例按鈕（高度 --control-h，外加圖例的內距與框線）與操作提示的上方，窄螢幕時也不被圖例蓋住；太長時在框內捲動 */
+.layer-note { position: absolute; right: 10px; bottom: calc(var(--control-h) + 28px); max-width: min(460px, calc(100% - 20px)); max-height: 30%; overflow: auto; font-size: var(--fs-sm); color: var(--text); background: var(--overlay); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 9px; z-index: var(--z-overlay); box-shadow: var(--shadow-sm); }
+.legend { position: absolute; left: 10px; bottom: 10px; background: var(--overlay); border: 1px solid var(--line); border-radius: var(--radius); padding: 5px 9px; font-size: var(--fs-sm); z-index: var(--z-overlay); max-width: calc(100% - 20px); box-shadow: var(--shadow-sm); backdrop-filter: blur(8px);
+  /* 展開時不蓋滿整張圖：最多約半張圖高（也讓開上方的工具列），分類橫向並排成多欄，其餘在框內捲動 */
+  max-height: min(55%, calc(100% - 130px)); display: flex; flex-direction: column; }
+.legend .legend-head { border: 0; background: none; padding: 2px 0; font-weight: 600; font-size: var(--fs-sm); align-self: flex-start; }
+.legend .legend-body { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 6px 0 4px; min-height: 0; overflow: auto; }
+/* 圖例展開時，右下的操作提示讓位（兩者不疊在一起） */
+.legend.open ~ .hint { visibility: hidden; }
 .legend .lg-group { display: grid; gap: 3px; align-content: start; }
 .legend .lg-title { color: var(--muted); font-size: var(--fs-xs); border-bottom: 1px solid var(--line); padding-bottom: 1px; }
 .legend .li { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
@@ -523,7 +532,8 @@ dialog::backdrop { background: var(--backdrop); }
 #raw-copy-status { margin-left: 6px; font-weight: 400; font-size: var(--fs-sm); }
 .dlg .db { padding: 14px 18px; overflow: auto; }
 .dlg .df { padding: 12px 18px; border-top: 1px solid var(--line); display: flex; gap: 8px; align-items: center; }
-#input-text { width: 100%; height: 46vh; font-family: var(--mono); font-size: var(--fs-sm); white-space: pre; resize: vertical; }
+/* 高度扣掉對話框的其他列（選檔、拖放區、預檢、命名規則與按鈕列約 480px），命名規則那一列不被按鈕列切掉 */
+#input-text { width: 100%; height: min(46vh, calc(90vh - 480px)); min-height: 140px; font-family: var(--mono); font-size: var(--fs-sm); white-space: pre; resize: vertical; }
 .files { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 .drop { border: 2px dashed var(--line-strong); border-radius: var(--radius); padding: 14px 10px; text-align: center; color: var(--muted); background: var(--surface); margin-top: 8px; transition: background-color var(--dur-fast) ease, border-color var(--dur-fast) ease; }
 .drop.over { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
@@ -720,7 +730,10 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
   #main[data-workspace="graph"][data-sheet="full"] > #right { height: 100%; border-radius: 0; }
   #main[data-workspace="graph"][data-sheet] .sheet-bar { display: flex; flex: none; align-items: center; gap: 4px; padding: 2px 6px 2px 4px; border-bottom: 1px solid var(--line); }
   #main[data-workspace="graph"][data-sheet] > #right > #detail { flex: 1; min-height: 0; overflow: auto; }
-  .toolbar { max-width: calc(100% - 20px); }
+  /* 窄螢幕的工具列會折成兩列：加一層底色，圖上的文字不會從按鈕之間露出來 */
+  .toolbar { max-width: calc(100% - 20px); background: var(--overlay); border-radius: var(--radius); padding: 4px; top: 6px; left: 6px; box-shadow: var(--shadow-sm); }
+  /* 歡迎卡左右各留 16px，圓角不被畫面邊緣切掉 */
+  .welcome .card { margin-inline: 16px; padding: 22px 20px; }
 }
 
 /* ---------- 處理紀錄（app-ledger.js、panels/ledger.js） ---------- */

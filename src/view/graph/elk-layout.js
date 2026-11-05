@@ -123,7 +123,7 @@
    * L2 埠圖的分層版面：設備是 ELK 的節點、埠是它的 ports（固定在 portPrepare 決定的上、下緣，同一邊由 ELK 排序以減少交叉），
    * 邊接在埠上。分群與內建版面相同，各群各算一次再以書架排列。
    * @param devs, ports, edges 同 V.layout.portLayout
-   * @param opt { maxNodes, deadlineMs, isStale() }
+   * @param opt { maxNodes, deadlineMs, isStale(), portrait（直式畫面，折行偏直長） }
    * @returns Promise<{ pos: Map(dev→{x,y}), anchor: Map(port→{dx,dy}), stats: { groups, nodes, ports, ms } }>
    */
   async function elkPorts(devs, ports, edges, opt) {
@@ -154,15 +154,20 @@
         elkEdges.push({ id: 'e' + elkEdges.length, sources: [src], targets: [dst] });
       });
       const res = await engine.layout({ id: 'g', layoutOptions: OPTIONS, children, edges: elkEdges });
-      const w = res.width || 0; const pos = new Map();
+      // ELK 的埠座標相對於框，先記下，再折行（太多台的一層依目標寬高比折成多列，同設備圖）：埠跟著框移動
       res.children.forEach((c) => {
-        const b = box.get(c.id); pos.set(c.id, { x: c.x + b.w / 2 - w / 2, y: c.y + b.h / 2 });
+        const b = box.get(c.id);
         // ELK 把埠放在框外緣：y 改成框的上、下緣（邊在 portPrepare 已決定），x 用 ELK 排好的順序
         (c.ports || []).forEach((p) => anchor.set(p.id, { dx: Math.max(-b.w / 2, Math.min(b.w / 2, p.x + PS / 2 - b.w / 2)), dy: P.side.get(p.id) === 'north' ? -b.h / 2 : b.h / 2 }));
       });
-      boxes.push({ name: g.name, pos, w: Math.max(w, 1), h: Math.max(res.height || 0, 1), n: g.members.length });
+      const kids = res.children; foldLayers(kids, !!o.portrait);
+      const x0 = Math.min(...kids.map((c) => c.x)); const x1 = Math.max(...kids.map((c) => c.x + c.width));
+      const y0 = Math.min(...kids.map((c) => c.y)); const y1 = Math.max(...kids.map((c) => c.y + c.height));
+      const pos = new Map();
+      kids.forEach((c) => { const b = box.get(c.id); pos.set(c.id, { x: c.x + b.w / 2 - (x0 + x1) / 2, y: c.y - y0 + b.h / 2 }); });
+      boxes.push({ name: g.name, pos, w: Math.max(x1 - x0, 1), h: Math.max(y1 - y0, 1), n: g.members.length });
     }
-    return { pos: L.shelf(boxes), anchor, stats: { groups: P.groups.length, nodes: devs.length, ports: ports.length, ms: Date.now() - t0 } };
+    return { pos: L.shelf(boxes, { portrait: !!o.portrait }), anchor, stats: { groups: P.groups.length, nodes: devs.length, ports: ports.length, ms: Date.now() - t0 } };
   }
 
   L.elk = elk;

@@ -290,6 +290,7 @@
     const body = h('div', { class: 'legend-body hidden' });
     head.onclick = () => {
       const open = body.classList.contains('hidden'); body.classList.toggle('hidden', !open);
+      lg.classList.toggle('open', open); // 展開時操作提示讓位（assets/app.css 的 .legend.open ~ .hint）
       head.textContent = open ? '圖例 ▾' : '圖例 ▸'; head.setAttribute('aria-expanded', String(open));
     };
     lg.appendChild(head); lg.appendChild(body);

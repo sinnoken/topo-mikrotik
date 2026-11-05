@@ -103,7 +103,7 @@
   /** 核心丟出的錯誤 → [{ code, path, message }]：WorkpackError／ZipError 用它的 errors（全部問題），其他錯誤一筆 */
   const errorsOf = (e) => (e && Array.isArray(e.errors) && e.errors.length
     ? e.errors.map((x) => ({ code: x.code || null, path: x.path || null, message: x.message || String(x) }))
-    : [{ code: (e && e.name) || null, path: null, message: (e && e.message) || String(e) }]);
+    : [{ code: (e && e.name) || null, path: null, message: V.reason(e) }]);
   /** 時間估計用：收集檔的總字元數（約 1400 萬字元是 1000 台） */
   const sizeOf = (sources) => sources.reduce((n, s) => n + s.text.length, 0);
   const slowNote = (chars) => (chars > 2e6 ? `資料較大（約 ${V.num(Math.round(chars / 1e4) / 100)} 百萬字元），可能要數秒；完成前畫面會暫停回應。` : '');
@@ -250,7 +250,7 @@
     if (c.profileId === 'pack' && pack.profile && pack.profile.id) {
       S.profiles[pack.profile.id] = pack.profile;
       const saved = (await S.store.get('profiles').catch(() => null)) || {}; saved[pack.profile.id] = pack.profile;
-      await S.store.set('profiles', saved).catch((e) => A.banner('無法儲存命名規則：' + e.message, 8000));
+      await S.store.set('profiles', saved).catch((e) => A.banner('無法儲存命名規則：' + V.reason(e), 8000));
       brought.push('命名規則');
     }
     if (c.expected && pack.expected) {

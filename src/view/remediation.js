@@ -18,8 +18,6 @@
   const statusText = (s) => (s ? STATUS_TEXT[s] || s : '待處理');
   /** 狀態的標籤色（DOM 的 .chip.err 等） */
   const STATUS_CHIP = { open: '', scheduled: 'info', accepted: 'ok', 'false-positive': '', fixed: 'ok', regressed: 'err' };
-  /** 仍待處理的狀態：與 S.ledger.summary 的 pending（open＋regressed）相同；不在處理紀錄中的也算待處理 */
-  const isPendingStatus = (s) => !s || s === 'open' || s === 'regressed';
 
   // ---------------------------------------------------------------- 規則的常見原因與處理
   /**
@@ -199,6 +197,6 @@
     return { text: out.join('\n') + '\n', rows };
   }
 
-  V.remediation = { STATUS_TEXT, statusText, STATUS_CHIP, isPendingStatus, advice, hintLine, sortByDevice, LEVEL_TEXT, RISK_TEXT, RISK_CHIP, maxRisk, itemApplyLines, targetText, choiceText,
+  V.remediation = { STATUS_TEXT, statusText, STATUS_CHIP, advice, hintLine, sortByDevice, LEVEL_TEXT, RISK_TEXT, RISK_CHIP, maxRisk, itemApplyLines, targetText, choiceText,
     MISSING_FINDING_TEXT, FINDING_TEXT_MAX, clipText, matchFindings, findingRef, FACET_ITEM, FACET_RULES: Object.keys(FACET_FORMAT), facetText, devicesCsvDraft, USER_PLACEHOLDER };
 })(globalThis.SSOT = globalThis.SSOT || {});

@@ -141,6 +141,8 @@
     // 多數決推定偏離的設備（推論）另以虛線外圈標出；平手（basis 不是 majority）或 deviating 為空時不標
     const emphasis = V.majorityDeviating(f.deviation);
     App.select(sel, { focus: true, findingEntities: f.id === 'A03' ? null : f.entities, emphasis });
+    // 不論從哪個入口選取，③ 的檢查結果清單都展開到這一筆並標出選取
+    V.lists.findings.reveal(App, idx);
   };
 
   // ================================================================ 圖上互動

@@ -31,6 +31,12 @@
   const GROUP_MIN_W = V.layout.GAP;
   // 標籤的優先順序：設備依版面的層級（layout.js 的 RANK），終端類節點排在後面
   const LABEL_RANK = Object.assign({}, V.layout.RANK, { cluster: 5, downstream: 5, endpoint: 6 });
+  // 設備名稱、分群標籤離畫布左右邊緣至少 EDGE_INSET（px）
+  const EDGE_INSET = 4;
+  // 設備名稱的縮放門檻：倍率低於 all 時只畫核心（LABEL_RANK ≤ coreRank：防火牆、路由器）的名稱，低於 core 時都不畫
+  const LABEL_MIN = { all: 0.18, core: 0.06, coreRank: 1 };
+  // 埠名離節點邊緣的距離（螢幕 px）；滑過時與其他埠名重疊就沿線往外挪 PORT_SLIDE px，最多 PORT_TRIES 次
+  const PORT_GAP = 26; const PORT_SLIDE = 14; const PORT_TRIES = 6;
   // 縮放範圍（滾輪、雙指、鍵盤共用）
   const ZOOM = { min: 0.02, max: 6 };
   // 全圖：畫面邊緣留白（px，另扣工具列、圖例等覆蓋層實際佔用的高度）；節點很少時的倍率上限，避免一兩台設備被放得很大
@@ -60,6 +66,8 @@
       this.occluders = []; // [{ el, max, when }]：疊在畫布上方或下方的元素，全圖與聚焦時讓開（見 viewport）
       // 分群標籤：hoverGroup 是滑過的群名（強制顯示全名）；groupLabels 是上次繪製的標籤矩形（螢幕座標，唯讀，供 hover 與測試）
       this.hoverGroup = null; this.groupLabels = [];
+      // 上次繪製的設備名稱與埠名矩形（螢幕座標，唯讀，供測試）：{ id／text, x0, y0, x1, y1, px }
+      this.nodeLabels = []; this.portLabels = [];
       this.pendingFit = null; // 畫布尚未有尺寸（例如窄螢幕切到其他工作區）時延後的 fit 參數
       this._bind(); this._loop();
       new ResizeObserver(() => this.resize()).observe(canvas);
@@ -133,19 +141,23 @@
       this.syncSize();
       if (this.w < 1 || this.h < 1) { this.pendingFit = [ids, pad, maxScale]; return; }
       this.pendingFit = null;
-      const list = (ids && ids.length ? ids : this.nodes.filter((n) => this.isVisible(n)).map((n) => n.id)).flatMap((id) => {
+      const all = !(ids && ids.length);
+      const list = (all ? this.nodes.filter((n) => this.isVisible(n)).map((n) => n.id) : ids).flatMap((id) => {
         const p = this.at(id); const n = this.nodeById.get(id); if (!p) return [];
         return n && n.box ? [{ x: p.x - n.box.w / 2, y: p.y - n.box.h / 2 }, { x: p.x + n.box.w / 2, y: p.y + n.box.h / 2 }] : [p];
       });
       if (!list.length) return;
+      // 全圖且畫分群時：群框整個放進來，上緣另留一列分群標籤的高度（標籤放在框上方，不必擠進框內蓋住設備名稱）
+      const groups = all && this.showGroups && this.groupBoxes; const one = list.length === 1;
+      if (groups) this.groupBoxes.forEach((g) => list.push({ x: g.x0, y: g.y0 }, { x: g.x1, y: g.y1 }));
       const xs = list.map((p) => p.x); const ys = list.map((p) => p.y);
       const minX = Math.min(...xs); const maxX = Math.max(...xs); const minY = Math.min(...ys); const maxY = Math.max(...ys);
-      const v = this.viewport(); const vw = v.x1 - v.x0; const vh = v.y1 - v.y0;
+      const v = this.viewport(); const vw = v.x1 - v.x0; const top = groups ? GL.h + 2 : 0; const vh = v.y1 - v.y0 - top;
       const p = Math.min(pad == null ? FIT.pad : pad, vw / 4, vh / 4);
       const s = Math.min((vw - p * 2) / Math.max(maxX - minX, 1), (vh - p * 2) / Math.max(maxY - minY, 1));
-      const max = maxScale || (list.length === 1 ? FIT.maxOne : FIT.max);
+      const max = maxScale || (one ? FIT.maxOne : FIT.max);
       this.s = Math.max(ZOOM.min, Math.min(max, s));
-      this.tx = (v.x0 + v.x1) / 2 - ((minX + maxX) / 2) * this.s; this.ty = (v.y0 + v.y1) / 2 - ((minY + maxY) / 2) * this.s;
+      this.tx = (v.x0 + v.x1) / 2 - ((minX + maxX) / 2) * this.s; this.ty = (v.y0 + top + v.y1) / 2 - ((minY + maxY) / 2) * this.s;
       this.dirty = true;
     }
     /**
@@ -353,7 +365,7 @@
       if (lb) return lb.name;
       const w = this.toWorld(p.x, p.y); let best = null; let ba = Infinity;
       this.groupBoxes.forEach((g) => {
-        if (!g.name || w.x < g.x0 || w.x > g.x1 || w.y < g.y0 || w.y > g.y1) return;
+        if (!g.name || !g.frame || w.x < g.x0 || w.x > g.x1 || w.y < g.y0 || w.y > g.y1) return;
         const a = (g.x1 - g.x0) * (g.y1 - g.y0); if (a < ba) { ba = a; best = g.name; }
       });
       return best;
@@ -380,6 +392,7 @@
       this.groupLabels = this.showGroups && this.groupBoxes ? this._layoutGroupLabels(c) : [];
       if (this.showGroups && this.groupBoxes) {
         this.groupBoxes.forEach((g) => {
+          if (!g.frame) return; // 只有一台的群不畫框（看起來像空框）；標籤仍在原位，可滑過看全名
           c.fillStyle = CV.group.fill; c.strokeStyle = CV.group.stroke; c.lineWidth = 1 / s;
           roundRect(c, g.x0, g.y0, g.x1 - g.x0, g.y1 - g.y0, 18); c.fill(); c.stroke();
         });
@@ -477,35 +490,45 @@
         const marked = (hl && hl.nodes.has(n.id)) || (em && em.has(n.id));
         if (!forced && !marked && (n.kind === 'host' || n.kind === 'endpoint' || n.kind === 'downstream') && s < 0.9) continue;
         if (!forced && !marked && n.kind === 'cluster' && s < 0.45) continue;
-        if (!forced && !marked && s < 0.18) continue;
+        // 縮得很小時只留核心（防火牆／路由器）的名稱，窄螢幕全圖仍讀得到主幹；其他設備放大才出現
+        if (!forced && !marked && s < LABEL_MIN.all && !(n.collected && (LABEL_RANK[n.kind] ?? 3) <= LABEL_MIN.coreRank && s >= LABEL_MIN.core)) continue;
         cand.push({ n, p, pri: forced ? -1 : (marked ? 0 : 10) + (n.collected ? 0 : 5) + (LABEL_RANK[n.kind] ?? 3) });
       }
       cand.sort((a, b) => a.pri - b.pri);
       // 設備名稱在螢幕上固定 labelPx，不隨縮小變成小字；太擠時由下方的重疊檢查與上方的縮放門檻略過
-      const fs = F.labelPx / s; const placed = [];
+      const fs = F.labelPx / s; const placed = []; this.nodeLabels = [];
+      // 標籤不出畫布左右邊緣：靠邊的節點把名稱往內推
+      const wx0 = (EDGE_INSET - this.tx) / s; const wx1 = (this.w - EDGE_INSET - this.tx) / s;
       c.textAlign = 'center';
       for (const { n, p, pri } of cand) {
         // 過長的名稱截斷加「…」，完整名稱在滑過提示與詳情
         c.font = font(fs, n.collected ? W.strong : W.normal); const label = fitText(c, n.label, fs * CV.label.maxEm);
-        const tw = c.measureText(label).width; const r = this.radius(n);
-        const box = { x0: p.x - tw / 2 - fs * 0.3, x1: p.x + tw / 2 + fs * 0.3, y0: p.y + r + fs * 0.2, y1: p.y + r + fs * 1.5 };
+        const tw = c.measureText(label).width; const r = this.radius(n); const half = tw / 2 + fs * 0.3;
+        const cx = wx1 - wx0 > half * 2 ? Math.min(Math.max(p.x, wx0 + half), wx1 - half) : p.x;
+        const box = { x0: cx - half, x1: cx + half, y0: p.y + r + fs * 0.2, y1: p.y + r + fs * 1.5 };
         if (pri >= 0 && placed.some((b) => b.x0 < box.x1 && box.x0 < b.x1 && b.y0 < box.y1 && box.y0 < b.y1)) continue;
         placed.push(box);
+        this.nodeLabels.push({ id: n.id, text: label, x0: box.x0 * s + this.tx, x1: box.x1 * s + this.tx, y0: box.y0 * s + this.ty, y1: box.y1 * s + this.ty, px: F.labelPx });
         c.globalAlpha = dim && pri >= 10 ? ALPHA.dimLabel : 1;
         c.fillStyle = CV.label.bg; c.fillRect(box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
-        c.fillStyle = n.collected ? CV.label.text : CV.label.textUncollected; c.fillText(label, p.x, box.y1 - fs * 0.32);
+        c.fillStyle = n.collected ? CV.label.text : CV.label.textUncollected; c.fillText(label, cx, box.y1 - fs * 0.32);
       }
       c.textAlign = 'left'; c.globalAlpha = 1;
-      // 埠名：一般只在放大時畫，且與已畫標籤重疊就略過；滑過、選取的連線（及滑過節點的連線）強制顯示，不受縮放與重疊限制
+      // 埠名：螢幕上固定 portPx（比設備名小），任何縮放都一樣大。一般只在放大時畫，與已畫標籤重疊就略過；
+      // 滑過、選取的連線（及滑過節點的連線）不受縮放門檻限制，彼此之間另做重疊檢查（沿線往外挪，仍重疊才略過）
       const isForced = (e) => this.sel.edges.has(e.id) || e.id === hoverE || hoverAdj.has(e.id);
       const edgesToLabel = this.edges.filter((e) => this._edgeVisible(e) && (portLabels || isForced(e)));
+      // 強制顯示的埠名彼此不重疊，也不蓋住設備名稱（placed 此時只有設備名稱）
+      const k = 1 / s; const forcedPlaced = placed.slice(); this.portLabels = [];
       const drawPort = (e, force) => {
         const a = this.at(e.a); const b = this.at(e.b);
         if (!a || !b || (!inView(a) && !inView(b))) return;
-        const k = force ? Math.max(1, 1.25 / s) : 1; // 縮小時放大字級，保持螢幕上可讀
-        c.font = font(10 * k, W.normal, true);
-        if (e.labelA) portLabel(c, a, b, e.labelA, this.radius(this.nodeById.get(e.a)) + 26 * k, placed, force ? k : 0);
-        if (e.labelB) portLabel(c, b, a, e.labelB, this.radius(this.nodeById.get(e.b)) + 26 * k, placed, force ? k : 0);
+        c.font = font(F.portPx * k, W.normal, true);
+        [[a, b, e.labelA, e.a], [b, a, e.labelB, e.b]].forEach(([from, to, text, id]) => {
+          if (!text) return;
+          const box = portLabel(c, from, to, text, this.radius(this.nodeById.get(id)) + PORT_GAP * k, force ? forcedPlaced : placed, k, force);
+          if (box) this.portLabels.push({ text: box.text, x0: box.x0 * s + this.tx, x1: box.x1 * s + this.tx, y0: box.y0 * s + this.ty, y1: box.y1 * s + this.ty, px: F.portPx, forced: force });
+        });
       };
       edgesToLabel.filter((e) => !isForced(e)).forEach((e) => drawPort(e, false));
       edgesToLabel.filter(isForced).forEach((e) => drawPort(e, true));
@@ -520,20 +543,23 @@
     _layoutGroupLabels(c) {
       const s = this.s; c.font = GL_FONT;
       const hovered = this.hoverGroup;
+      // 可用範圍：畫布左右各留 EDGE_INSET，上緣在工具列等覆蓋層之下（viewport），標籤不被切到或蓋住
+      const v = this.viewport(); const ex0 = EDGE_INSET; const ex1 = this.w - EDGE_INSET; const ey0 = v.y0 + EDGE_INSET; const ey1 = v.y1;
       const list = this.groupBoxes.filter((g) => g.name)
         .sort((a, b) => (b.name === hovered) - (a.name === hovered) || b.n - a.n || S.util.natural(a.name, b.name));
       const out = []; const used = new Set();
       const free = (r) => !out.some((o) => o.x0 < r.x1 && r.x0 < o.x1 && o.y0 < r.y1 && r.y0 < o.y1);
       for (const g of list) {
         const box = { x0: g.x0 * s + this.tx, y0: g.y0 * s + this.ty, x1: g.x1 * s + this.tx, y1: g.y1 * s + this.ty };
-        if (box.x1 < 0 || box.x0 > this.w || box.y1 < 0 || box.y0 - GL.h > this.h) continue; // 畫面外
-        // 群框只露出一部分（放大後）時，標籤貼在可見部分的左上，不跟著框外的頂邊消失
-        const vx0 = Math.max(box.x0, 0); const vx1 = Math.min(box.x1, this.w); const vy0 = Math.max(box.y0, 0);
+        if (box.x1 < ex0 || box.x0 > ex1 || box.y1 < ey0 || box.y0 - GL.h > ey1) continue; // 畫面外或被覆蓋層蓋住
+        // 群框只露出一部分（放大後，或頂端在工具列底下）時，標籤貼在可見部分的左上，不跟著框外的頂邊消失
+        const vx0 = Math.max(box.x0, ex0); const vx1 = Math.min(box.x1, ex1); const vy0 = Math.max(box.y0, ey0);
         const forced = g.name === hovered;
         const text = forced ? g.name : fitLabels(c, g.name, vx1 - vx0 - 2 * GL.inset - 2 * GL.pad).find((t) => !used.has(t));
         if (!text) continue;
-        const x0 = vx0 + GL.inset; const x1 = x0 + c.measureText(text).width + 2 * GL.pad;
-        const above = box.y0 - 2 - GL.h >= 0 ? { x0, x1, y0: box.y0 - 2 - GL.h, y1: box.y0 - 2 } : null;
+        // 滑過的全名不受群框寬度限制，但仍不出畫布右緣（往左挪）
+        const tw = c.measureText(text).width + 2 * GL.pad; const x0 = Math.max(ex0, Math.min(vx0 + GL.inset, ex1 - tw)); const x1 = x0 + tw;
+        const above = box.y0 - 2 - GL.h >= ey0 ? { x0, x1, y0: box.y0 - 2 - GL.h, y1: box.y0 - 2 } : null;
         const inside = { x0, x1, y0: vy0 + GL.inset, y1: vy0 + GL.inset + GL.h };
         const r = above && (forced || free(above)) ? above : inside.y1 <= box.y1 - GL.inset && (forced || free(inside)) ? inside : null;
         if (!r) continue;
@@ -559,7 +585,8 @@
         const g = S.util.getOr(boxes, n.group || '', () => ({ name: n.group || '', x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, n: 0 }));
         g.x0 = Math.min(g.x0, p.x - 50); g.y0 = Math.min(g.y0, p.y - 50); g.x1 = Math.max(g.x1, p.x + 50); g.y1 = Math.max(g.y1, p.y + 40); g.n++;
       });
-      boxes.forEach((g) => { const d = GROUP_MIN_W - (g.x1 - g.x0); if (d > 0) { g.x0 -= d / 2; g.x1 += d / 2; } });
+      // frame：只有一台的群不畫框，也不以框命中滑過（hitGroup 只看標籤）
+      boxes.forEach((g) => { const d = GROUP_MIN_W - (g.x1 - g.x0); if (d > 0) { g.x0 -= d / 2; g.x1 += d / 2; } g.frame = g.n > 1; });
       this.groupBoxes = boxes.size > 1 ? Array.from(boxes.values()).filter((g) => g.n > 0) : null;
       this.dirty = true;
     }
@@ -652,7 +679,8 @@
   }
   /** 埠名：放在埠往框外的方向（依它在框上的位置），等寬字型 */
   function portName(c, n, p, s, forced) {
-    const k = forced ? Math.max(1, 1 / s) : 1; c.font = font(9 * k, W.normal, true);
+    // 世界座標 9（隨縮放），螢幕上不超過 portPx；強制顯示（滑過、選取）時螢幕上固定 portPx
+    const k = forced ? F.portPx / 9 / s : Math.min(1, F.portPx / 9 / s); c.font = font(9 * k, W.normal, true);
     const text = fitText(c, n.label, 9 * k * CV.port.maxEm); const tw = c.measureText(text).width;
     const len = Math.hypot(n.anchor.dx, n.anchor.dy) || 1; const ux = n.anchor.dx / len; const uy = n.anchor.dy / len;
     const vertical = Math.abs(n.anchor.dy) >= Math.abs(n.anchor.dx) * 0.4;
@@ -690,19 +718,28 @@
       if (innerShown('cluster', s)) { c.fillStyle = EP.cluster.text; c.font = font(INNER.cluster, W.strong); c.textAlign = 'center'; c.fillText('×' + (n.count || ''), p.x, p.y + 3.2); c.textAlign = 'left'; }
     }
   }
-  /** force（縮放倍率 k）不做重疊檢查，且兩端太近時把標籤往線中間收，確保一定看得到。 */
-  function portLabel(c, from, to, text, dist, placed, force) {
-    const len = Math.hypot(to.x - from.x, to.y - from.y);
-    if (force) dist = Math.min(dist, len * 0.3); else if (len < dist * 2.2) return;
-    const k = force || 1;
-    const x = from.x + ((to.x - from.x) / len) * dist; const y = from.y + ((to.y - from.y) / len) * dist;
-    text = fitText(c, text, 10 * k * CV.port.maxEm); const tw = c.measureText(text).width;
-    const box = { x0: x - tw / 2 - 3 * k, x1: x + tw / 2 + 3 * k, y0: y - 7 * k, y1: y + 6 * k };
-    if (!force && placed.some((b) => b.x0 < box.x1 && box.x0 < b.x1 && b.y0 < box.y1 && box.y0 < b.y1)) return;
+  /**
+   * 埠名標籤（目前字型已是 portPx / s；k = 1 / s，尺寸都是螢幕 px × k）。與 placed 裡的矩形重疊時：
+   * 一般埠名直接略過；force（滑過、選取）時兩端太近就往線中間收，並沿線往外挪 PORT_SLIDE 再試，仍重疊才略過。回傳畫出的矩形或 null。
+   */
+  function portLabel(c, from, to, text, dist, placed, k, force) {
+    const len = Math.hypot(to.x - from.x, to.y - from.y); if (!len) return null;
+    if (force) dist = Math.min(dist, len * 0.3); else if (len < dist * 2.2) return null;
+    text = fitText(c, text, F.portPx * k * CV.port.maxEm); const tw = c.measureText(text).width;
+    const hit = (b) => placed.some((o) => o.x0 < b.x1 && b.x0 < o.x1 && o.y0 < b.y1 && b.y0 < o.y1);
+    let box = null; let x = 0; let y = 0;
+    for (let i = 0; i <= (force ? PORT_TRIES : 0); i++) {
+      const d = force ? Math.min(dist + i * PORT_SLIDE * k, len * 0.45) : dist;
+      x = from.x + ((to.x - from.x) / len) * d; y = from.y + ((to.y - from.y) / len) * d;
+      const b = { x0: x - tw / 2 - 3 * k, x1: x + tw / 2 + 3 * k, y0: y - 8 * k, y1: y + 7 * k };
+      if (!hit(b)) { box = b; break; }
+    }
+    if (!box) return null;
     placed.push(box);
     c.fillStyle = CV.port.bg; c.strokeStyle = CV.port.border; c.lineWidth = 0.6 * k;
     roundRect(c, box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0, 3 * k); c.fill(); c.stroke();
-    c.fillStyle = CV.port.text; c.textAlign = 'center'; c.fillText(text, x, y + 3.5 * k); c.textAlign = 'left';
+    c.fillStyle = CV.port.text; c.textAlign = 'center'; c.fillText(text, x, y + 4 * k); c.textAlign = 'left';
+    return Object.assign(box, { text });
   }
   /**
    * 文字超過 maxW（目前字型下的寬度）時截斷並加「…」。以二分搜尋找最長前綴；結果依字型與寬度快取，

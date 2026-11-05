@@ -78,7 +78,7 @@
     all.forEach((f, idx) => {
       if (!pass(f)) return;
       const s = A().ledgerStatus(f);
-      if (R().isPendingStatus(s)) st[f.severity]++; else S.util.getOr(handled, s, () => []).push(idx);
+      if (S.ledger.isPending(s)) st[f.severity]++; else S.util.getOr(handled, s, () => []).push(idx);
     });
     const handledSet = new Set(Array.from(handled.values()).flat());
     root.appendChild(h('div', { class: 'summary' }, ['error', 'warn', 'info'].map((s) => filterChip(V.SEV[s], st[s], { cls: s === 'error' ? 'err' : s, on: state.sev[s],
@@ -91,10 +91,9 @@
       h('div', { class: 'seg', role: 'group', 'aria-label': '分組方式' }, [['rule', '依規則'], ['device', '依設備']].map(([k, label]) => h('button', {
         class: `btn ${state.groupBy === k ? 'on' : ''}`, 'aria-pressed': String(state.groupBy === k), 'data-group-by': k,
         onclick: () => { state.groupBy = k; findings(App); } }, label))),
+      // 沒有舊基準時不顯示（停用的 chip 加兩行說明，每次都佔位置）；載入舊基準的入口在「⑤ 驗證」的比對與資料中心
       base ? filterChip('只看新出現的', nNew, { cls: 'info', on: state.onlyNew, title: `與舊基準（${base.name}）比對後新出現的檢查結果`,
-        onclick: () => { state.onlyNew = !state.onlyNew; findings(App); } })
-        : V.chipButton('只看新出現的', 'btn off only-new', { 'aria-disabled': 'true', 'aria-pressed': 'false', title: '需要先在「⑤ 驗證」的比對或資料中心載入舊基準' }),
-      base ? null : h('span', { class: 'muted note only-new-why' }, '在「⑤ 驗證」的比對或資料中心載入舊基準後，才能只看新出現的'),
+        onclick: () => { state.onlyNew = !state.onlyNew; findings(App); } }) : null,
       versionWarn ? h('span', { class: 'note warn-line only-new-version', title: versionWarn.message }, '新出現的可能來自新版檢查：' + versionWarn.message) : null,
     ]));
     // 報表（CSV、Markdown）的匯出集中在資料中心；這裡只放入口
@@ -111,10 +110,12 @@
     const item = (i, showId) => {
       const f = all[i]; const it = A().ledgerItem(f); const s = it ? it.status : null;
       const done = handledSet.has(i); const at = done ? A().ledgerUserAt(it) : null;
-      const select = () => { state.selected = i; App.selectFinding(i); findings(App); };
+      // App.selectFinding 會呼叫 findings.reveal（標出並重繪），這裡不另外重繪
+      const select = () => App.selectFinding(i);
       const edit = (e) => { e.stopPropagation(); state.editing = state.editing === i ? -1 : i; findings(App); };
       return h('div', { class: 'fitem-wrap' }, [h('div', { class: 'fitem-row' }, [
-        h('div', { class: 'fitem' + (state.selected === i ? ' sel' : ''), role: 'button', tabindex: '0', onclick: select, onkeydown: V.activateByKey(select) }, [
+        h('div', { class: 'fitem' + (state.selected === i ? ' sel' : ''), role: 'button', tabindex: '0', 'data-finding': String(i),
+          'aria-current': state.selected === i ? 'true' : null, onclick: select, onkeydown: V.activateByKey(select) }, [
           done || showId ? h('span', { class: 'id' }, f.id + ' ') : null,
           s && s !== 'open' ? V.chip(R().statusText(s), R().STATUS_CHIP[s] + ' ledger-chip', { 'data-status': s }) : null, s && s !== 'open' ? ' ' : null,
           !state.onlyNew && isNew(f) ? V.chip('新出現', 'info', { title: `舊基準（${base.name}）沒有這筆` }) : null, f.message,
@@ -127,7 +128,7 @@
           title: it ? '變更處理狀態（待處理、已排定修正、可接受、誤報…）與備註；只存在這個瀏覽器的處理紀錄，不改變基準' : '處理紀錄沒有這一筆（處理紀錄無法使用）',
           onclick: edit,
         }, '處理'),
-      ]), V.deviationLine(App, f.deviation, { tie: false }), state.editing === i && it ? ledgerEditor(App, f, it, i) : null]);
+      ]), V.deviationLine(App, f.deviation), state.editing === i && it ? ledgerEditor(App, f, it, i) : null]);
     };
     /** 一個可展開的分組：key 是展開狀態的鍵，head 是標題列的內容 */
     const group = (key, head, idxs, cls, showId, ruleId) => {
@@ -180,11 +181,11 @@
       S.query.rules().forEach((r) => { if (byRule.has(r.id)) S.util.getOr(cats, r.cat, () => []).push(r); });
       // CATALOG 沒有的規則代碼（不應發生）不吞掉，另列一類
       const unknown = Array.from(byRule.keys()).filter((id) => !S.query.rule(id));
-      if (unknown.length) cats.set('#unknown', unknown.map((id) => ({ id, cat: '#unknown', severity: all[byRule.get(id)[0]].severity, title: id })));
+      if (unknown.length) cats.set(V.UNKNOWN_RULE_CAT, unknown.map((id) => ({ id, cat: V.UNKNOWN_RULE_CAT, severity: all[byRule.get(id)[0]].severity, title: id })));
       cats.forEach((rules, cat) => {
         const n = { error: 0, warn: 0, info: 0 };
         rules.forEach((r) => byRule.get(r.id).forEach((i) => { n[all[i].severity]++; }));
-        root.appendChild(category(cat === '#unknown' ? '未登錄的規則' : cat, n, rules.map((r) =>
+        root.appendChild(category(cat, n, rules.map((r) =>
           group(r.id, [V.sevDot(r.severity), h('span', { class: 'title' }, r.title), h('span', { class: 'id' }, r.id)], byRule.get(r.id), '', false, r.id))));
       });
     }
@@ -236,6 +237,36 @@
   }
   findings.reset = () => { state.open = new Set(); state.cat = new Map(); state.shown = new Map(); state.selected = -1; state.editing = -1; state.onlyNew = false; };
   findings.openFirst = (Q) => { const f = Q.findings().find((x) => x.severity !== 'info'); if (f) state.open.add(f.id); };
+  /**
+   * 從任何入口選取一筆檢查結果時（App.selectFinding：狀態卡、詳細資料、防火牆、本輪變化，或清單本身）：
+   * 打開它所在的類別與分組（依規則或依設備；已處理的打開該狀態的分組），確保嚴重度篩選與「只看新出現的」不會把它藏起來，
+   * 分組只顯示前 N 筆時放寬到包含它，標為選取並捲到看得見的位置。
+   */
+  findings.reveal = (App, idx) => {
+    const Q = App.Q; const f = Q && Q.finding(idx); if (!f) return;
+    state.selected = idx;
+    const s = A().ledgerStatus(f); const pending = S.ledger.isPending(s);
+    const base = V.baselineDiff.loaded();
+    if (state.onlyNew && !(base && base.addedFindingKeys.has(Q.findingKey(f)))) state.onlyNew = false;
+    let key;
+    if (!pending) key = '#handled:' + s;
+    else {
+      state.sev[f.severity] = true;
+      if (state.groupBy === 'device') { const dev = Q.findingDevice(f); key = dev == null ? '#nodev' : 'dev:' + dev; } else {
+        state.cat.set('cat:' + V.ruleInfo(f.id).cat, true); key = f.id;
+      }
+    }
+    state.open.add(key);
+    // 在分組內的位置（與 findings() 的順序相同）超過已顯示的筆數時放寬；依設備時用 sortByDevice 的順序
+    const all = Q.findings();
+    const pos = pending && state.groupBy === 'device'
+      ? R().sortByDevice(Q, all).filter((r) => (r.dev == null ? '#nodev' : 'dev:' + r.dev) === key).findIndex((r) => r.idx === idx)
+      : all.slice(0, idx).filter((x) => (pending ? x.id === f.id : A().ledgerStatus(x) === s)).length;
+    if (pos >= (state.shown.get(key) || 100)) state.shown.set(key, pos + 1);
+    findings(App);
+    const el = Array.from(V.$('#pane-findings').querySelectorAll('.fitem')).find((x) => x.getAttribute('data-finding') === String(idx));
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+  };
   findings.showProblems = (App) => {
     state.sev = { error: true, warn: true, info: false };
     state.open = new Set(); state.cat = new Map();
@@ -292,14 +323,14 @@
       c.Q = App.Q; c.expected = exp;
       const fail = (msg) => ({ errors: [msg], items: [], summary: {} });
       if (exp.error) c.report = fail(exp.error);
-      else { try { c.report = S.compare(App.Q, exp.data); } catch (e) { c.report = fail('無法比對：' + e.message); } }
+      else { try { c.report = S.compare(App.Q, exp.data); } catch (e) { c.report = fail('無法比對：' + V.reason(e)); } }
     }
     return c.report;
   }
   /** 讀入預期資料檔（ssot-expected/1）：「比對」工作畫面與資料中心共用。無法解析時記下原因（比對結果顯示），不丟例外 */
   async function loadExpectedFile(App, f) {
     let text = null; let data = null; let error = null;
-    try { text = await f.text(); data = JSON.parse(text); } catch (e) { error = '無法讀取：' + e.message; }
+    try { text = await f.text(); data = JSON.parse(text); } catch (e) { error = '無法讀取：' + V.reason(e); }
     App.round.expected = { name: f.name, data, error };
     A().renderAll();
   }
@@ -355,7 +386,7 @@
     const Q = App.Q; const { rows: R, counts: C } = Q.inventory(); // 列與數字都來自 Q.inventory()，這裡不重算
     const devRows = R.devices.concat(R.endpoints);
     const nameOf = (r) => (r.end ? (r.wifi && r.mac ? K.macPretty(r.mac) : (!r.wifi && r.portMacs < 2 && r.desc) || r.vendors[0] || (r.mac ? K.macPretty(r.mac) : '?')) : Q.devName(r.key));
-    const ipOf = (r) => (r.end ? r.ips[0] : r.mgmtIp); const vendorOf = (r) => (r.end ? r.vendors.join(' / ') : r.manufacturer);
+    const ipOf = (r) => (r.end ? r.ips[0] : r.mgmtIp); const vendorOf = (r) => (r.end ? r.vendors.join(' / ') : r.manufacturer ? V.vendorName(r.manufacturer) : null);
     const dn = (d) => (d ? Q.devName(d) : '—'); const mono = (t) => h('span', { class: 'mono' }, t || '—');
     const TAB_COUNT = { device: C.devices + C.endpoints, interface: C.interfaces, ip: C.ips, prefix: C.prefixes, mac: C.macs, vlan: C.vlans };
     const multiVrf = Q.vrfs().length > 1;
@@ -368,7 +399,7 @@
         { t: '收集', f: (r) => (r.end ? '' : r.collected ? '是' : '否'), s: (r) => (r.end ? null : r.collected ? '是' : '否') }],
       (r) => (r.end ? { type: 'interface', key: r.key } : { type: 'device', key: r.key }), (r) => [nameOf(r), ipOf(r), vendorOf(r), r.kind, r.end ? dn(r.dev) + ' ' + r.ifc : null]],
       interface: ['介面', R.interfaces, [
-        { t: '設備', f: (r) => dn(r.dev), s: (r) => dn(r.dev) }, { t: '介面', f: (r) => mono(r.name), s: (r) => r.name }, { t: '狀態', f: (r) => r.status, s: (r) => r.status },
+        { t: '設備', f: (r) => dn(r.dev), s: (r) => dn(r.dev) }, { t: '介面', f: (r) => mono(r.name), s: (r) => r.name }, { t: '狀態', f: (r) => V.chip(V.ifcState(r) || r.status || '—', r.status === 'up' && r.enabled !== false ? 'ok' : ''), s: (r) => V.ifcState(r) || r.status },
         { t: 'IP', f: (r) => mono(App.Q.addressesOf(r.key).slice(0, 2).join(' ')), s: (r) => App.Q.addressesOf(r.key)[0] }, { t: 'VLAN', f: (r) => h('span', { class: 'vlanlist' }, S.util.ifcVlans(r).length ? S.util.fmtVlans(S.util.ifcVlans(r)) : '—'), s: (r) => S.util.ifcVlans(r).join(' ') }],
       (r) => ({ type: 'interface', key: r.key }), (r) => [dn(r.dev), r.name, r.desc, App.Q.addressesOf(r.key).join(' '), S.util.ifcVlans(r).join(' ')]],
       // IP 與網段：每個 VRF 各一列（鍵是位址鍵／網段鍵）；基準有多個 VRF 時加一欄 VRF，只用 main 時與加入 VRF 之前相同
@@ -407,7 +438,7 @@
       (k) => { inv.kind = k; inv.filter = 'all'; inv.sortBy = -1; inv.sortDir = 1; inventory(App); });
     const fltSel = flt ? select('inv-filter', '篩選' + T[inv.kind][0], flt.map(([k, label, , c]) => [k, label, c]), inv.filter,
       (k) => { inv.filter = k; inventory(App); }) : null;
-    const box = h('input', { type: 'search', placeholder: '篩選：名稱、IP、MAC、VLAN…', 'aria-label': '篩選清單', value: inv.q, class: 'pane-filter' });
+    const box = h('input', { type: 'search', placeholder: '篩選…', 'aria-label': '篩選清單', title: '依名稱、IP、MAC、VLAN 等文字篩選', value: inv.q, class: 'pane-filter' });
     root.appendChild(h('div', { class: 'inv-bar' }, [kindSel, fltSel, box]));
     const body = h('div');
     const draw = () => {

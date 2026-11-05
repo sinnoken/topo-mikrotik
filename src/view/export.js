@@ -38,7 +38,7 @@
   const ledgerOf = (opts) => (opts && opts.ledgerOf ? opts.ledgerOf : () => null);
   const R = () => V.remediation;
   /** 已處理（不是待處理）時的處理紀錄，否則 null：舊欄位 acknowledged／ack_kind／ack_note 與 Markdown 的已處理標示用 */
-  const handledOf = (lg) => (lg && !R().isPendingStatus(lg.status) ? lg : null);
+  const handledOf = (lg) => (lg && !S.ledger.isPending(lg.status) ? lg : null);
   /** 匯出的順序：預設保留 Snapshot 的順序；依設備時用 V.remediation.sortByDevice（與畫面分組同一個判斷） */
   const ordered = (Q, opts) => (opts && opts.byDevice
     ? R().sortByDevice(Q, Q.findings())

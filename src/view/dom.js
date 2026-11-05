@@ -73,14 +73,15 @@
   V.majorityDeviating = (dv) => (dv && dv.basis === 'majority' ? dv.deviating || [] : null);
   /**
    * 跨設備一致性規則的多數決結果（finding.deviation，推論）：一律經這裡產生，詳情的每筆檢查結果共用。
-   * 列出推定偏離的設備，點設備名選取該設備（不觸發外層的點選）；沒有多數（平手）時明說無法推定，不留白。
-   * 不是多數決的 deviation（或沒有）時為 null。opts.tie 為 false 時平手不顯示（③ 分診的結果列表），回傳 null。
+   * 列出推定偏離的設備，點設備名選取該設備（不觸發外層的點選）。
+   * 不是多數決的 deviation（或沒有）時為 null。沒有多數（平手）時預設也是 null（詳情與 ③ 分診一致，平手沒有可指出的設備，
+   * 不多佔一行）；opts.tie 為 true 時才寫出「沒有多數，無法推定」。
    */
   V.deviationLine = function (App, dv, opts) {
     const devs = V.majorityDeviating(dv);
     if (!devs) return null;
     const label = '推定偏離（多數決）：';
-    if (!devs.length) return opts && opts.tie === false ? null : V.h('div', { class: 'deviation none muted' }, label + '沒有多數，無法推定');
+    if (!devs.length) return opts && opts.tie === true ? V.h('div', { class: 'deviation none muted' }, label + '沒有多數，無法推定') : null;
     const pick = (key) => (e) => { if (e && e.stopPropagation) e.stopPropagation(); App.select({ type: 'device', key }, { focus: true }); };
     // a.link 沒有 href 時 h() 已補 role、tabindex 與 Enter／空白鍵啟動
     const links = devs.map((key) => V.h('a', { class: 'link', 'data-dev': key, title: '選取這台設備', onclick: pick(key) }, App.Q.devName(key)));
@@ -91,6 +92,19 @@
   V.SEV = { error: '錯誤', warn: '警告', info: '提醒' };
   V.CLS = { lag: '聚合', '40g': '40G 以上', '10g': '10G', '1g': '1G', oob: '管理', other: '其他' };
   V.STATUS = { up: 'up', down: 'down', unknown: '不明' };
+  /** 廠商的顯示名（devices[].manufacturer、清單的廠商欄）：Snapshot 存小寫鍵，畫面用正式寫法；沒有對照的原樣顯示，空值回傳空字串 */
+  V.VENDOR = { mikrotik: 'MikroTik', cisco: 'Cisco', ubiquiti: 'Ubiquiti', juniper: 'Juniper', aruba: 'Aruba', hpe: 'HPE', tplink: 'TP-Link', asus: 'ASUS' };
+  V.vendorName = (m) => (m == null ? '' : V.VENDOR[String(m).toLowerCase()] || String(m));
+  /**
+   * 鄰居回報的功能（LLDP system-caps-enabled、CDP capabilities，devices[].caps 是逗號或空白分隔的原值）→ 中文，以「、」連接。
+   * 沒有對照的項目原樣保留，不吞掉；原值要不要放 title 由呼叫端決定。
+   */
+  V.CAPS = {
+    bridge: '橋接', router: '路由', 'wlan-ap': '無線基地台', station: '終端', 'station-only': '終端', repeater: '中繼器', telephone: '電話', phone: '電話',
+    'docsis-cable-device': 'DOCSIS 纜線設備', other: '其他', 'c-vlan': 'C-VLAN', 's-vlan': 'S-VLAN', tpmr: 'TPMR', switch: '交換', host: '主機',
+    'trans-bridge': '透通橋接', 'source-route-bridge': '來源路由橋接', igmp: 'IGMP',
+  };
+  V.capsText = (caps) => String(caps || '').split(/[,\s]+/).filter(Boolean).map((c) => V.CAPS[c.toLowerCase()] || c).join('、');
   V.IFC_TYPE = { physical: '實體埠', lag: '聚合介面', bridge: 'Bridge', vlan: 'VLAN 介面', wireless: 'Wi-Fi', virtual: '虛擬介面', loopback: 'Loopback', other: '其他介面' };
   V.IFC_TYPE_BASIS = { rawType: '依 RouterOS 類型', member: '依聚合成員', name: '依介面名稱推測', default: '缺類型資料，預設為實體埠', assoc: '依 Wi-Fi 關聯表' };
   V.INFER_BASIS = { 'subnet-p2p': '/30／31 點對點網段', 'mndp-mutual': 'MNDP 雙向回報', 'mndp-unique': 'MNDP 唯一鄰居', fdb: 'MAC 表', stp: 'RSTP 指定橋接器' };
@@ -99,16 +113,22 @@
   V.MODE = { access: 'Access（untagged）', tagged: 'Tagged（trunk）' };
   // 拓樸圖的層級（App.layer）：L4 不是畫布，是疊在畫布上的 zone 矩陣與可達性（panels/l4.js）
   V.LAYER = { device: '設備', l2: 'L2 埠', l3: 'L3 ' + V.TERMS.subnet, l4: 'L4 可達性' };
-  // L4（M2）：格子狀態（Q.zoneMatrix 的 status）、可達性結果（Q.reach 的 verdict）、zone 的來源（Q.zones 的 source）
-  V.L4_STATUS = { allow: '全通', deny: '全擋', partial: '部分', unknown: '不明', empty: '沒有組合' };
+  /**
+   * L4（M2）：格子狀態（Q.zoneMatrix 的 status）與可達性結果（Q.reach 的 verdict，allow／deny／unknown 是它的子集）共用同一組用語，
+   * 筆數欄（允許 N・拒絕 N・無法判斷 N）也取自這裡；格子的「全部」由提示說明（L4_STATUS_TIP），不另用「全通／全擋」。
+   */
+  V.L4_STATUS = { allow: '允許', deny: '拒絕', partial: '部分允許', unknown: '無法判斷', empty: '沒有組合' };
   V.L4_STATUS_TIP = {
     allow: '這一格算到的位址組合 × 服務全部允許',
     deny: '全部拒絕（被規則丟棄、沒有路由或黑洞路由）',
     partial: '有些允許、有些拒絕（不同的位址或服務結果不同）',
     unknown: '有無法判斷的組合（原因見提示與明細），沒有允許與拒絕同時出現',
-    empty: '沒有可算的位址組合（例如目的 zone 只有設備自己的位址，或沒有可當代表的位址）；不是「不明」',
+    empty: '沒有可算的位址組合（例如目的 zone 只有設備自己的位址，或沒有可當代表的位址）；不是「無法判斷」',
   };
-  V.VERDICT = { allow: '允許', deny: '拒絕', unknown: '無法判斷' };
+  /** 規則目錄（S.query.rule）的類別與標題；目錄沒有的代碼（不應發生）不吞掉，歸在 UNKNOWN_RULE_CAT、標題原樣寫代碼。③ 分診與修正計畫共用 */
+  V.UNKNOWN_RULE_CAT = '未登錄的規則';
+  V.ruleInfo = (id) => S.query.rule(id) || { id, cat: V.UNKNOWN_RULE_CAT, title: id };
+  // zone 的來源（Q.zones 的 source）
   V.ZONE_SOURCE = { profile: '命名規則', 'interface-list': 'interface list', vlan: 'VLAN', subnet: '網段' };
   // Q.reach 的原因代碼與結束代碼（src/query/trace.js 的 reason／end）；沒有對照的代碼原樣顯示並標「沒有說明」，不吞掉
   V.REACH_REASON = {
@@ -130,8 +150,42 @@
     reached: '抵達', noroute: '沒有路由', blackhole: '黑洞路由', loop: '路由迴圈', ttl: 'TTL 用盡', 'unknown-nh': '下一跳不在基準內',
     policy: '策略路由不明', 'policy-drop': '策略路由丟棄', unverified: '無法驗證',
   };
+  /**
+   * 例外 → 給使用者看的中文原因（畫面上所有錯誤訊息的單一來源）。核心與命名規則丟出的錯誤本來就是中文，原樣使用；
+   * JSON 解析錯誤說明檔案格式；其他（程式錯誤，英文訊息）改用中文說明，原訊息放在括號內，方便回報與追查。
+   */
+  const CJK = /[㐀-鿿]/;
+  V.reason = (e) => {
+    const msg = (e && e.message) || String(e);
+    if (e instanceof SyntaxError) return `檔案不是有效的 JSON（${msg}）`;
+    if (CJK.test(msg)) return msg;
+    return `程式發生未預期的錯誤，請重新整理頁面後再試一次；若仍發生，請回報這段訊息：${msg}`;
+  };
+  /**
+   * 寫入剪貼簿：成功回傳 null，失敗回傳中文原因（瀏覽器不支援或拒絕；原例外寫 console.error），由呼叫端告知改用手動選取（不靜默失敗）。
+   * 輸入對話框（狀態列）與面板（banner：V.copyToBanner）共用。
+   */
+  V.copyText = async (text) => {
+    const c = globalThis.navigator && globalThis.navigator.clipboard;
+    if (!c || !c.writeText) return '這個瀏覽器不支援自動複製';
+    try { await c.writeText(text); return null; } catch (e) { console.error(e); return '瀏覽器拒絕存取剪貼簿'; }
+  };
+  /** 面板的「複製」按鈕：結果以 banner 告知；what 是複製的內容（例如「套用指令」、檔名） */
+  V.copyToBanner = (text, what) => V.copyText(text).then((why) => (why
+    ? V.app.banner(`無法複製（${why}）；請選取文字後手動複製。`, 6000)
+    : V.app.banner(`已複製${what}；執行前請逐行核對。`, 3000)));
   /** 來源檔名的顯示：貼上的內容（核心常數 S.readers.PASTE，半形括號）在畫面上用全形括號；其餘原樣 */
   V.fileName = (name) => (name === S.readers.PASTE ? '（貼上的內容）' : name);
+  /**
+   * 來源（[[block, line]] 的第一筆）的原文連結「檔名 第 N 行」；opts.short 時只寫「第 N 行」（防火牆表格內，檔案不言自明）。
+   * 沒有來源時為空字串。點擊不往外層傳（表格列、可點的卡片）。詳細資料與防火牆共用。
+   */
+  V.srcLink = (App, src, opts) => {
+    const x = src && src[0]; const b = x && App.Q.block(x[0]);
+    if (!b) return '';
+    return V.h('a', { class: 'link mono', onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); App.openRaw(b.file, x[1]); } },
+      (opts && opts.short ? '' : V.fileName(b.file) + ' ') + `第 ${x[1]} 行`);
+  };
   /** 輸入區塊的位置「設備 › 指令」（blk 是 Q.block／Q.blockAt 的結果）：原文對話框標題與詳情的來源列共用同一寫法 */
   V.blockWhere = (Q, blk) => `${blk.devKey ? Q.devName(blk.devKey) : blk.device || V.fileName(blk.file)} › ${blk.command || '（未標記指令）'}`;
   /**

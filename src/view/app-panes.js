@@ -108,13 +108,13 @@
     if (view === 'graph' && App.layer === 'l4') A.showLayer('device');
   };
 
-  /** 每一步的狀態文字（不只靠顏色）：① 已收集台數、② 拓樸圖的層級、③ 待處理筆數、④ 已選項目、⑤ 處理紀錄的第幾輪 */
+  /** 每一步的狀態文字（不只靠顏色）：① 已收集台數、② 拓樸圖的層級、③ 待處理筆數（錯誤＋警告）、④ 已選項目、⑤ 處理紀錄的第幾輪 */
   function statusOf(s) {
     const has = !!App.snap;
     if (s === 'input') return has ? `${V.num(App.Q.meta().stats.collected)} 台` : '未載入';
     if (!has) return s === 'view' || s === 'triage' ? '—' : '建立基準後';
     if (s === 'view') return V.LAYER[App.layer] || App.layer;
-    if (s === 'triage') { const pc = A.problemCounts(); return `待處理 ${V.num(pc.error + pc.warn)}`; }
+    if (s === 'triage') return `待處理 ${V.num(A.problemCounts().total)}`; // 錯誤＋警告，不含提醒（Q.pendingSummary）
     if (s === 'fix') return `已選 ${V.num(V.patchView.selectedCount(App))}`;
     const ls = A.ledgerState();
     if (ls.blocked) return '處理紀錄停用';

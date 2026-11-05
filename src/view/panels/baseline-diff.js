@@ -20,7 +20,7 @@
   /** 讀入的文字 → { report, qOld }；JSON 或基準格式不對時，報告的 errors 說明原因、qOld 為 null，不硬比 */
   function loadOld(App, text) {
     let old;
-    try { old = JSON.parse(text); } catch (e) { return { report: empty('無法讀取：' + e.message), qOld: null }; }
+    try { old = JSON.parse(text); } catch (e) { return { report: empty('無法讀取：' + V.reason(e)), qOld: null }; }
     return compareWith(App, old);
   }
   /** 已解析的基準物件 → { report, qOld }（loadOld 與 setOld 共用） */
@@ -30,11 +30,10 @@
     // schema 不同時欄位意義不同，舊檔可能連查詢介面都建不起來：只把 meta 交給核心，由核心回報不比對的原因
     if (oldMeta.schema !== App.Q.meta().schema) return { report: S.compare.snapshots({ meta: () => oldMeta }, App.Q), qOld: null };
     let qOld;
-    try { qOld = S.query(old); } catch (e) { console.error(e); return { report: empty('舊基準的內容不完整，無法比對：' + e.message), qOld: null }; }
+    try { qOld = S.query(old); } catch (e) { console.error(e); return { report: empty('舊基準的內容不完整，無法比對：' + V.reason(e)), qOld: null }; }
     const report = S.compare.snapshots(qOld, App.Q);
     return { report, qOld: report.errors.length ? null : qOld };
   }
-  const diffFrom = (App, text) => loadOld(App, text).report;
   /**
    * 目前載入、可用的舊基準：{ name, report, qOld, addedFindingKeys（新出現的 finding 的 findingKey） }；沒有或比對失敗時為 null。
    */
@@ -99,7 +98,7 @@
   /** 讀入舊基準檔（「比對」工作畫面與資料中心共用） */
   async function loadFile(App, f) {
     let r;
-    try { r = loadOld(App, await f.text()); } catch (e) { console.error(e); r = { report: empty('無法讀取：' + e.message), qOld: null }; }
+    try { r = loadOld(App, await f.text()); } catch (e) { console.error(e); r = { report: empty('無法讀取：' + V.reason(e)), qOld: null }; }
     adopt(App, f.name, r);
   }
   /** 以已經在記憶體中的基準當舊基準（例如由工作包帶回的上一輪基準）；只讀，不修改它 */
@@ -155,5 +154,5 @@
     return box;
   }
 
-  V.baselineDiff = { render, diffFrom, loaded, loadFile, setOld, status, reset: () => { state.report = null; state.qOld = null; state.addedFindingKeys = null; state.name = ''; state.filter = 'all'; } };
+  V.baselineDiff = { render, loaded, loadFile, setOld, status, reset: () => { state.report = null; state.qOld = null; state.addedFindingKeys = null; state.name = ''; state.filter = 'all'; } };
 })(globalThis.SSOT = globalThis.SSOT || {});

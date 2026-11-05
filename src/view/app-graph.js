@@ -36,11 +36,12 @@
       r.pos.forEach((p, id) => App.devicePos.set(id, p));
       if (App.layer === 'device') { App.graph.computeGroups(); App.graph.fit(); } else A.forgetView('device');
       A.savePositions();
-      A.banner(`已套用分層版面（${r.stats.coreNodes} 台網路設備，${r.stats.ms} ms）`, 4000);
+      // 台數和基準狀態卡、資料中心同一個口徑（Q.coverageSummary 的網路設備）；耗時不顯示
+      A.banner(`已套用分層版面（${V.num(App.Q.coverageSummary().network)} 台網路設備）`, 4000);
     } catch (e) {
       if (e.code === 'stale') return;
       if (!e.code) console.error(e); // 超過上限、逾時是預期情況，只顯示提示
-      A.banner(`分層版面未套用：${e.message}，維持快速版面。可在工具列改用「快速（內建）」。`, 10000);
+      A.banner(`分層版面未套用：${V.reason(e)}，維持快速版面。可在工具列改用「快速（內建）」。`, 10000);
     }
   };
 

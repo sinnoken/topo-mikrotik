@@ -221,7 +221,7 @@
   // ================================================================ 版面
   /** 內建版面（同步）：L2 用 portLayout（埠排在框的上、下緣），L3 用設備圖的分層版面 */
   function layout(e) {
-    e.token++;
+    e.token++; e.layoutNote = null; // 進行中的分層版面作廢，它的計算中訊息也一起拿掉
     if (e.layer === 'l2') {
       const r = V.layout.portLayout(e.boxes, e.ports, e.pg.edges);
       e.pos.clear(); r.pos.forEach((p, id) => e.pos.set(id, p)); setAnchors(e, r.anchor);
@@ -230,29 +230,31 @@
     }
   }
   function setAnchors(e, anchor) { e.ports.forEach((p) => { const a = anchor.get(p.id); if (a) { p.anchor.dx = a.dx; p.anchor.dy = a.dy; } }); }
-  /** 分層版面（ELK）在背景計算；超過上限、逾時或失敗時保留內建版面並說明原因 */
+  /**
+   * 分層版面（ELK）在背景計算；超過上限、逾時或失敗時保留內建版面並說明原因。
+   * 計算中與未套用的訊息寫在這一層的說明（#layer-note 的 e.layoutNote），不另開通知，兩段文字不會疊在畫布底部；套用成功不通知。
+   */
   async function applyElk(e) {
     const snap = App.snap; const token = ++e.token; const reset = layoutToken;
     const stale = () => App.snap !== snap || e.token !== token || layoutToken !== reset;
-    const name = e.layer === 'l2' ? 'L2 埠圖' : 'L3 網段圖';
-    A.banner(`${name}的分層版面計算中…`);
+    const note = (t) => { e.layoutNote = t; if (A.layerEntry() === e) renderNote(); };
+    note('分層版面計算中…');
     try {
       if (e.layer === 'l2') {
         const r = await V.layout.elkPorts(e.boxes, e.ports, e.pg.edges, { maxNodes: App.ELK_MAX, isStale: stale });
         if (stale()) return;
         e.pos.clear(); r.pos.forEach((p, id) => e.pos.set(id, p)); setAnchors(e, r.anchor);
-        A.banner(`已套用${name}的分層版面（${r.stats.nodes} 台設備、${r.stats.ports} 個埠，${r.stats.ms} ms）`, 4000);
       } else {
         const r = await V.layout.elk(e.nodes, e.edges, { radius: (n) => App.graph.radius(n), maxNodes: App.ELK_MAX, isStale: stale });
         if (stale()) return;
         r.pos.forEach((p, id) => e.pos.set(id, p));
-        A.banner(`已套用${name}的分層版面（${r.stats.coreNodes} 個節點，${r.stats.ms} ms）`, 4000);
       }
+      note(null);
       if (A.layerEntry() === e) { App.graph.computeGroups(); App.graph.fit(); } else e.view = null;
     } catch (err) {
       if (err.code === 'stale') return;
       if (!err.code) console.error(err);
-      A.banner(`${name}的分層版面未套用：${err.message}，維持快速版面。`, 10000);
+      note(`分層版面未套用：${V.reason(err)}，維持快速版面。`);
     }
   }
 
@@ -562,7 +564,8 @@
       note.textContent = `L2 埠圖：${n(e.boxes.length)} 台設備、${n(e.ports.length)} 個埠、${n(e.edges.length)} 條鏈路（聚合${i.lag === 'collapse' ? '收合' : '展開'}、${i.portsMode === 'all' ? '全部的埠' : '只有接線的埠'}）。`
         + (i.scope === 'focus' ? `只畫 ${Q.devName(i.focus)} 與它的鄰居${i.tooBig ? `（整張 ${n(i.total)} 台，超過上限 ${n(App.L2_MAX)} 台）` : ''}；選取其他設備或雙擊鄰居可改看那一台。` : '')
         + (omit.domainOnly ? `另有 ${n(omit.domainOnly)} 條只有 MNDP 的鏈路沒有畫（MNDP 只證明同一廣播網域，不是直連）。` : '')
-        + (omit.sameDevice ? `${n(omit.sameDevice)} 條同一台設備兩埠之間的鏈路沒有畫。` : '');
+        + (omit.sameDevice ? `${n(omit.sameDevice)} 條同一台設備兩埠之間的鏈路沒有畫。` : '')
+        + (e.layoutNote ? e.layoutNote : '');
     } else {
       const ss = e.sg.subnets; const ov = ss.filter((s) => s.overlaps.length).length; const dup = ss.reduce((k, s) => k + s.duplicateIps.length, 0);
       note.textContent = `L3 網段圖：${n(ss.length)} 個網段、${n(e.sg.nodes.length)} 個設備節點；點線是推論的位址（鄰居回報、管理 IP）`
@@ -570,7 +573,8 @@
         + (ov || dup ? `有 ${n(ov)} 個網段重疊、${n(dup)} 個重複 IP（點選網段看詳細資料）。` : '')
         // VRF 是容器：每個 VRF 一個框；同一個網段在不同 VRF 是不同的網段，一台設備在每個 VRF 各一個節點（@<VRF>）
         + (e.info.byVrf ? `每個 VRF 一個框（${e.info.vrfs.join('、')}）：同一個網段在不同 VRF 各自獨立，設備在 main 以外的 VRF 標 @<VRF>。` : '')
-        + (e.info.routes && e.info.omitted.policyRoutes ? `另有 ${n(e.info.omitted.policyRoutes)} 條只用於策略路由的路由表（不屬於任何 VRF）的路由沒有畫，見設備詳細資料的路由表。` : '');
+        + (e.info.routes && e.info.omitted.policyRoutes ? `另有 ${n(e.info.omitted.policyRoutes)} 條只用於策略路由的路由表（不屬於任何 VRF）的路由沒有畫，見設備詳細資料的路由表。` : '')
+        + (e.layoutNote ? e.layoutNote : '');
     }
   }
   /** 匯出 PNG 的檔名：目前的層級（L4 沒有 PNG，見 A.exportPng） */

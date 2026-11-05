@@ -8,6 +8,8 @@
   const A = V.app; const App = window.App;
 
   const input = { files: [] };
+  /** 對話框的狀態列（#input-status，role=status）顯示失敗原因；不用 alert（會擋住畫面，也無法被螢幕閱讀器以外的方式重看） */
+  function fail(what, e) { console.error(e); $('#input-status').textContent = `${what}：${V.reason(e)}`; }
   /**
    * S.buildAsync 的進度 { stage, done, total } → 文字與百分比（建立基準與資料中心重建工作包的基準共用）。
    * 讀取各區塊佔 5–75%，之後依階段：建立模型 80%、一致性檢查 92%、完成 100%。
@@ -34,7 +36,8 @@
         const j = JSON.parse(await f.text()); S.profile.compile(j); S.profiles[j.id] = j;
         const saved = (await S.store.get('profiles')) || {}; saved[j.id] = j; await S.store.set('profiles', saved);
         await fillProfiles(j.id);
-      } catch (err) { alert(err.message); e.target.value = ''; }
+        $('#input-status').textContent = `已載入命名規則「${j.id}」`;
+      } catch (err) { fail(`無法載入命名規則檔「${f.name}」`, err); e.target.value = ''; }
       runPreflight();
     };
     $('#input-build').onclick = runBuild;
@@ -74,7 +77,7 @@
     const sources = inputSources(); const profile = selectedProfile();
     input.sig = inputSig(sources, profile); input.pre = null; input.pfError = null;
     if (sources.length) {
-      try { input.pre = S.preflight(sources, { profile }); } catch (e) { input.pfError = e.message; }
+      try { input.pre = S.preflight(sources, { profile }); } catch (e) { input.pfError = V.reason(e); }
     }
     renderPreflight(sources);
     return input.pre;
@@ -108,14 +111,10 @@
   }
 
   // ---- 收集指引（歡迎畫面）與格式範例（對話框）
-  /** 寫入剪貼簿；瀏覽器不支援或拒絕時明確告知改用手動選取（不靜默失敗）。status：顯示結果的 role=status 元素 */
+  /** 寫入剪貼簿（V.copyText），結果寫在 status（role=status 元素） */
   async function copyText(text, status) {
-    const c = globalThis.navigator && globalThis.navigator.clipboard;
-    try {
-      if (!c || !c.writeText) throw new Error('瀏覽器不支援剪貼簿');
-      await c.writeText(text);
-      status.textContent = '已複製';
-    } catch (e) { status.textContent = `無法自動複製（${e.message}），請直接選取上面的文字複製`; }
+    const why = await V.copyText(text);
+    status.textContent = why ? `無法自動複製（${why}），請直接選取上面的文字複製` : '已複製';
   }
   function bindCollectGuide() {
     $('#input-format-copy').onclick = () => copyText($('#input-format-example').textContent, $('#input-format-copy-status'));
@@ -176,7 +175,7 @@
       A.banner(`已建立基準：${V.num(st.collected)} 台已收集設備、${V.num(st.links)} 條鏈路；`
         + `錯誤 ${st.findings.error}、警告 ${st.findings.warn}（${(m.timing.ms / 1000).toFixed(1)} 秒）`, 8000);
     } catch (e) {
-      $('#input-status').textContent = '建立失敗：' + e.message; console.error(e);
+      fail('無法建立基準', e);
     } finally { btn.disabled = false; }
   }
 

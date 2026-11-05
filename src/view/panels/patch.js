@@ -16,12 +16,16 @@
   const GROUP_MAX = 200; // 逐筆勾選時每條規則最多列出的筆數
   const KIND = { apply: ['套用', ''], rollback: ['回復', '-rollback'], verify: ['驗證', '-verify'] };
   const DAY_MS = 86400000;
-  const state = { keys: new Set(), view: new Map(), choices: new Map(), open: new Set(), inputHash: null, plan: null, files: null };
+  const state = { keys: new Set(), view: new Map(), choices: new Map(), open: new Set(), cats: new Map(), picks: null, inputHash: null, plan: null, files: null };
   /** 換基準時清空所有檢視狀態（選取、每台設備檢視的檔案、選擇、展開的規則） */
   function resetFor(App) {
     if (state.inputHash === App.Q.meta().inputHash) return;
-    state.keys.clear(); state.view.clear(); state.choices.clear(); state.open.clear(); state.inputHash = App.Q.meta().inputHash;
+    state.keys.clear(); state.view.clear(); state.choices.clear(); state.open.clear(); state.cats.clear(); state.picks = null; state.inputHash = App.Q.meta().inputHash;
   }
+  /** 規則的類別與標題（V.ruleInfo）：畫面上寫標題，代碼只放在 title */
+  const ruleOf = V.ruleInfo;
+  const ruleTip = (id) => `${id}：${ruleOf(id).cat} ▸ ${ruleOf(id).title}`;
+  const ruleTag = (id) => V.chip(ruleOf(id).title, 'patch-rule-tag', { title: ruleTip(id), 'data-rule-id': id });
   /** 重繪後焦點回到同一個按鈕：有 data-patch-focus 的元素以它為鍵（重繪會重建全部的元素） */
   const focusKey = (k) => ({ 'data-patch-focus': k });
 
@@ -30,12 +34,6 @@
   /** 總表的檔名：patch-summary-<建立時間>-<N>dev.md（修正計畫的下載與工作包共用） */
   const summaryName = (App) => `patch-summary-${V.exporter.baseName(App.Q)}.md`;
   const download = (name, text) => V.exporter.download(name, text, 'text/plain;charset=utf-8');
-  function copyText(text, what) {
-    const c = globalThis.navigator && globalThis.navigator.clipboard;
-    if (!c || !c.writeText) { V.app.banner('這個瀏覽器無法自動複製，請選取文字後手動複製。', 6000); return; }
-    c.writeText(text).then(() => V.app.banner(`已複製${what}；執行前請逐行核對。`, 3000),
-      (e) => V.app.banner('無法複製：' + e.message + '；請選取文字後手動複製。', 6000));
-  }
 
   /**
    * 目前基準的檢查結果，依 findingKey 去重複：[{ key, f, idx, dev }]（同一個鍵只取第一筆，計畫也以鍵為單位）。
@@ -57,7 +55,7 @@
     try { state.plan = RM().plan(App.Q, sel, { choices }); } catch (e) {
       if (!(e instanceof RangeError) || !Object.keys(choices).length) throw e;
       // 選項已不存在（例如核心的選項改變）：清掉選擇改回預設，並說明原因
-      state.choices.clear(); V.app.banner('先前的選擇已不適用，改回預設：' + e.message, 8000);
+      state.choices.clear(); V.app.banner('先前的選擇已不適用，改回預設：' + V.reason(e), 8000);
       state.plan = RM().plan(App.Q, sel);
     }
     state.files = RM().files(state.plan);
@@ -70,15 +68,29 @@
     const ids = Array.from(byId.keys()).sort(S.util.natural);
     const toggleKeys = (keys, on) => { keys.forEach((k) => (on ? state.keys.add(k) : state.keys.delete(k))); refreshOpen(App); };
     const allIn = (list) => list.length && list.every((r) => state.keys.has(r.key));
-    // 依規則：可產生指令的排前面
+    // 依規則：類別 ▸ 規則標題（類別依規則目錄的順序，收合；類別內可產生指令的排前面）。chip 寫規則標題，代碼在 title
     const order = { auto: 0, choice: 1, manual: 2 };
-    const ruleChips = ids.slice().sort((a, b) => order[RM().levelOf(a)] - order[RM().levelOf(b)] || S.util.natural(a, b)).map((id) => {
+    const at = new Map(S.query.rules().map((r, n) => [r.id, n])); const pos = (id) => (at.has(id) ? at.get(id) : Infinity);
+    const byCat = new Map();
+    ids.slice().sort((a, b) => pos(a) - pos(b) || S.util.natural(a, b)).forEach((id) => S.util.getOr(byCat, ruleOf(id).cat, () => []).push(id));
+    const ruleChip = (id) => {
       const list = byId.get(id); const lv = RM().levelOf(id); const on = allIn(list);
-      return V.chipButton([id + ' ', h('span', { class: 'n' }, String(list.length))], `btn patch-rule ${lv === 'auto' ? 'ok' : ''} ${on ? 'on' : ''}`, {
+      return V.chipButton([ruleOf(id).title, ' ', h('span', { class: 'n' }, String(list.length))], `btn patch-rule ${lv === 'auto' ? 'ok' : ''} ${on ? 'on' : ''}`, {
         'data-rule-id': id, 'data-level': lv, 'aria-pressed': String(!!on), 'data-patch-focus': 'rule:' + id,
-        title: `${(S.query.rule(id) || {}).title || id}：${R().LEVEL_TEXT[lv] || lv}。點一下選取或取消這條規則的全部`,
+        title: `${ruleTip(id)}（${R().LEVEL_TEXT[lv] || lv}）。點一下選取或取消這條規則的全部`,
         onclick: () => toggleKeys(list.map((r) => r.key), !on),
       });
+    };
+    // 類別預設收合（標題寫出已選幾項，窄螢幕首屏才看得到計畫）；使用者展開或收合後依 state.cats 保留
+    const catBoxes = Array.from(byCat.entries()).map(([cat, rids]) => {
+      const keys = rids.flatMap((id) => byId.get(id).map((r) => r.key)); const nSel = keys.filter((k) => state.keys.has(k)).length;
+      const open = !!state.cats.get(cat);
+      const box = h('details', { class: 'patch-cat', 'data-cat': cat, open: open || null }, [
+        h('summary', null, [h('span', { class: 'patch-cat-name' }, cat), ' ', h('span', { class: 'muted', title: `${V.num(rids.length)} 條規則` }, `${V.num(rids.length)} 條`),
+          nSel ? ' ' : null, nSel ? V.chip(`已選 ${V.num(nSel)} 項`, 'info') : null]),
+        h('div', { class: 'chip-list patch-cat-rules' }, rids.sort((a, b) => order[RM().levelOf(a)] - order[RM().levelOf(b)] || pos(a) - pos(b)).map(ruleChip))]);
+      box.addEventListener('toggle', () => state.cats.set(cat, !!box.open));
+      return box;
     });
     // 依設備
     const devs = S.util.uniq(all.map((r) => r.dev).filter(Boolean)).sort((a, b) => S.util.natural(Q.devName(a), Q.devName(b)));
@@ -110,20 +122,30 @@
     });
     return h('div', { class: 'patch-select', role: 'group', 'aria-labelledby': 'patch-select-title' }, [
       h('h3', { class: 'pane-title', id: 'patch-select-title' }, `要修正哪些（已選 ${V.num(state.keys.size)} 項）`),
-      h('div', { class: 'row' }, [h('span', { class: 'muted' }, '依規則：'), ...ruleChips]),
+      h('div', { class: 'patch-label' }, '依規則'),
+      h('div', { class: 'patch-cats' }, catBoxes),
       h('div', { class: 'row' }, [h('span', { class: 'muted' }, '依設備：'), devSel,
         h('button', Object.assign({ class: 'patch-add-device', disabled: !devs.length || null, onclick: () => toggleKeys(all.filter((r) => r.dev === devSel.value).map((r) => r.key), true) }, focusKey('add-device')), '加入這台的全部'),
         h('button', Object.assign({ class: 'ghost patch-clear', disabled: !state.keys.size || null, onclick: () => { state.keys.clear(); refreshOpen(App); } }, focusKey('clear')), '全部清除')]),
-      h('div', { class: 'muted patch-select-note' }, '展開規則可以逐筆勾選；A12 等要選擇處理方式的項目，在計畫的「需要選擇的項目」選擇要採用的值。'),
-      h('div', { class: 'patch-groups' }, groups),
+      picksBox(groups),
     ]);
+  }
+  /** 逐筆勾選（每條規則一個可展開的清單）：整區預設收合，有展開的規則時展開；使用者切換後依 state.picks 保留 */
+  function picksBox(groups) {
+    const open = state.picks === null ? state.open.size > 0 : state.picks;
+    const box = h('details', { class: 'patch-picks-box', open: open || null }, [
+      h('summary', null, `逐筆勾選（${V.num(groups.length)} 條規則）`),
+      h('div', { class: 'muted patch-select-note' }, '展開規則可以逐筆勾選；要選擇處理方式的項目（例如 DNS、NTP 不一致），在計畫的「需要選擇的項目」選擇要採用的值。'),
+      h('div', { class: 'patch-groups' }, groups)]);
+    box.addEventListener('toggle', () => { state.picks = !!box.open; });
+    return box;
   }
 
   // ---------------------------------------------------------------- 計畫
   function itemBlock(App, plan, it) {
     const t = it.target;
     return h('div', { class: 'patch-item', 'data-key': it.key, 'data-finding': it.findingKey }, [
-      h('div', { class: 'row' }, [V.chip(it.id), ' ', h('span', { class: 'mono patch-target' }, R().targetText(t)), ' ',
+      h('div', { class: 'row' }, [ruleTag(it.id), ' ', h('span', { class: 'mono patch-target' }, R().targetText(t)), ' ',
         it.level === 'choice' ? V.chip('依選擇', 'info', { title: '這項指令依「需要選擇的項目」中的選擇產生' }) : null, it.level === 'choice' ? ' ' : null,
         V.chip('風險 ' + (R().RISK_TEXT[it.risk.level] || it.risk.level), R().RISK_CHIP[it.risk.level] || '', { class: 'chip patch-risk ' + (R().RISK_CHIP[it.risk.level] || '') })]),
       h('p', null, it.note),
@@ -148,8 +170,9 @@
           h('div', { class: 'seg', role: 'group', 'aria-label': `${f.name} 檢視的檔案` }, Object.entries(KIND).map(([k, [label]]) => h('button', Object.assign({
             type: 'button', class: `btn ${kind === k ? 'on' : ''}`, 'aria-pressed': String(kind === k), 'data-kind': k,
             onclick: () => { state.view.set(f.dev, k); render(App); } }, focusKey(`kind:${f.dev}:${k}`)), label))),
-          h('button', { class: 'ghost patch-copy', onclick: () => copyText(f[kind], fileName(f, kind)) }, '複製'),
-          ...Object.keys(KIND).map((k) => h('button', { class: 'patch-download', 'data-file': fileName(f, k), onclick: () => download(fileName(f, k), f[k]) }, '下載 ' + fileName(f, k))),
+          h('button', { class: 'ghost patch-copy', onclick: () => V.copyToBanner(f[kind], fileName(f, kind)) }, '複製'),
+          // 只下載正在檢視的檔案；其他兩份用左邊的「套用／回復／驗證」切換後下載，或在上方一次下載全部
+          h('button', { class: 'patch-download', 'data-file': fileName(f, kind), onclick: () => download(fileName(f, kind), f[kind]) }, '下載 ' + fileName(f, kind)),
         ]),
         h('pre', { class: 'note-box patch-file', 'data-kind': kind }, f[kind]),
       ]),
@@ -246,12 +269,14 @@
         V.chip(`未產生指令 ${V.num(plan.skipped.length)} 項`, plan.skipped.length ? 'warn' : ''),
       ]),
       choicesView(App, plan),
-      files.length ? h('div', { class: 'row patch-download-all' }, files.length === 1
-        ? [h('span', { class: 'muted' }, '單台設備：下載三個 .rsc')].concat(Object.keys(KIND).map((k) => h('button', { class: 'patch-download', 'data-file': fileName(files[0], k),
-          onclick: () => download(fileName(files[0], k), files[0][k]) }, '下載 ' + fileName(files[0], k))))
-        : [h('button', { class: 'primary patch-download-every', onclick: all }, `逐檔下載全部（${files.length * 3 + 1} 個檔案）`),
-          h('button', { class: 'patch-download-summary', onclick: () => download(summaryName(App), V.exporter.patchSummaryMarkdown(plan, files, App.Q)) }, '只下載總表（Markdown）'),
-          h('span', { class: 'muted' }, '瀏覽器可能會詢問是否允許下載多個檔案；要一個檔案帶走，可以在資料中心匯出工作包（ZIP，含這裡選取的 patch 與總表）。總表列出每台設備的檔名、項目與風險。')]) : null,
+      // 下載：一個主要按鈕（全部的 .rsc 與總表），其他格式收在「其他格式 ▾」；單一檔案在各設備的區塊
+      files.length ? h('div', { class: 'row patch-download-all' }, [
+        h('button', { class: 'primary patch-download-every', onclick: all,
+          title: '每台設備的套用、回復、驗證 .rsc，加上總表；瀏覽器可能會詢問是否允許下載多個檔案' }, `下載全部（${files.length * 3 + 1} 個檔案）`),
+        h('details', { class: 'patch-more' }, [h('summary', null, '其他格式 ▾'), h('div', { class: 'patch-more-list' }, [
+          h('button', { class: 'ghost patch-download-summary', onclick: () => download(summaryName(App), V.exporter.patchSummaryMarkdown(plan, files, App.Q)),
+            title: '總表列出每台設備的檔名、項目與風險' }, '只下載總表（Markdown）'),
+          h('p', { class: 'muted' }, '要一個檔案帶走：在資料中心匯出工作包（ZIP，含這裡選取的 patch 與總表）。')])])]) : null,
       ...files.map((f) => deviceBlock(App, plan, f)),
       plan.skipped.length ? h('div', { class: 'patch-skipped' }, [
         h('h4', null, ['沒有產生指令的項目 ', V.chip(String(plan.skipped.length), 'warn')]),
@@ -259,7 +284,7 @@
           h('div', { class: 'patch-label' }, RM().SKIP_TEXT[reason] || reason),
           // 每一筆列出檢查結果的訊息（同一台設備可能有多筆相同規則），點了在右側開啟該筆；原因已在分組標題，detail 不同時才另外列出
           ...list.map(({ x, hit }) => h('div', { class: 'patch-skip', 'data-finding': x.findingKey }, [
-            V.chip(x.id || '—'), ' ', x.dev ? h('span', { class: 'muted' }, App.Q.devName(x.dev) + '：') : null,
+            x.id ? ruleTag(x.id) : V.chip('—'), ' ', x.dev ? h('span', { class: 'muted' }, App.Q.devName(x.dev) + '：') : null,
             R().findingRef(App, hit, x.findingKey),
             x.detail && x.detail !== (RM().SKIP_TEXT[reason] || reason) ? h('div', { class: 'muted patch-skip-detail' }, x.detail) : null])),
         ])),

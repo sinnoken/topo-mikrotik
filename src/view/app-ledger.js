@@ -29,7 +29,7 @@
     Object.assign(st, { ledger: LG.empty(), blocked: null, pendingAcks: null, acksToDelete: false, round: null, saveError: null });
     let saved;
     try { saved = await S.store.get(KEY); } catch (e) {
-      console.error(e); st.blocked = { reason: '無法讀取處理紀錄：' + e.message, errors: [] };
+      console.error(e); st.blocked = { reason: '無法讀取處理紀錄：' + V.reason(e), errors: [] };
       A.banner(st.blocked.reason, 10000); return;
     }
     if (saved != null) {
@@ -42,7 +42,7 @@
     }
     let acks;
     try { acks = await S.store.get(ACKS); } catch (e) {
-      console.error(e); st.blocked = { reason: '無法讀取舊的確認標記（acks）：' + e.message, errors: [] };
+      console.error(e); st.blocked = { reason: '無法讀取舊的確認標記（acks）：' + V.reason(e), errors: [] };
       A.banner(st.blocked.reason, 10000); return;
     }
     if (acks && typeof acks === 'object' && Object.keys(acks).length) st.pendingAcks = acks;
@@ -51,14 +51,14 @@
   /** 寫入 'ledger'；成功後才刪掉已轉換的 'acks'。失敗時保留 acks 並提示（記憶體中的處理紀錄照常使用，下次變更再寫入） */
   async function persist() {
     try { await S.store.set(KEY, st.ledger); } catch (e) {
-      console.error(e); st.saveError = e.message;
-      A.banner('無法儲存處理紀錄：' + e.message + (st.acksToDelete ? '。舊的確認標記（acks）保留不刪，下次開啟時會再轉換一次' : ''), 10000);
+      console.error(e); st.saveError = V.reason(e);
+      A.banner('無法儲存處理紀錄：' + V.reason(e) + (st.acksToDelete ? '。舊的確認標記（acks）保留不刪，下次開啟時會再轉換一次' : ''), 10000);
       return false;
     }
     st.saveError = null;
     if (st.acksToDelete) {
       try { await S.store.del(ACKS); st.acksToDelete = false; } catch (e) {
-        console.error(e); A.banner('處理紀錄已儲存，但無法刪除舊的確認標記（acks）：' + e.message, 10000);
+        console.error(e); A.banner('處理紀錄已儲存，但無法刪除舊的確認標記（acks）：' + V.reason(e), 10000);
       }
     }
     return true;
@@ -75,14 +75,14 @@
     if (st.pendingAcks) {
       try { r = LG.fromAcks(st.pendingAcks, Q, { now: nowIso() }); } catch (e) {
         console.error(e);
-        st.blocked = { reason: '舊的確認標記（acks）無法轉換成處理紀錄，原資料保留不動：' + e.message, errors: [], acks: true };
+        st.blocked = { reason: '舊的確認標記（acks）無法轉換成處理紀錄，原資料保留不動：' + V.reason(e), errors: [], acks: true };
         A.banner(st.blocked.reason, 12000); return Promise.resolve(false);
       }
       st.pendingAcks = null; st.acksToDelete = true;
       A.banner(`已把舊的確認標記轉換成處理紀錄（${Object.keys(r.ledger.items).length} 項）`, 6000);
     } else {
       try { r = LG.advance(st.ledger, Q, { now: nowIso() }); } catch (e) {
-        console.error(e); A.banner('無法以這份基準推進處理紀錄：' + e.message, 10000); return Promise.resolve(false);
+        console.error(e); A.banner('無法以這份基準推進處理紀錄：' + V.reason(e), 10000); return Promise.resolve(false);
       }
     }
     st.ledger = r.ledger;
@@ -98,8 +98,8 @@
   /** 這筆 finding 的處理紀錄項目；沒有（或處理紀錄停用）時為 null */
   A.ledgerItem = (f) => (App.Q && !st.blocked ? st.ledger.items[App.Q.findingKey(f)] || null : null);
   A.ledgerStatus = (f) => (A.ledgerItem(f) || {}).status || null;
-  /** 仍待處理（open、regressed，或不在處理紀錄中） */
-  A.isPending = (f) => V.remediation.isPendingStatus(A.ledgerStatus(f));
+  /** 仍待處理（open、regressed，或不在處理紀錄中；規則在 S.ledger.isPending） */
+  A.isPending = (f) => S.ledger.isPending(A.ledgerStatus(f));
   /** 使用者最後一次變更的時間（歷程中最後一筆 by user）；沒有時為 null */
   A.ledgerUserAt = (it) => { const h = (it && it.history || []).filter((x) => x.by === 'user'); return h.length ? h[h.length - 1].at : null; };
   /** 匯出用（V.exporter 的 opts.ledgerOf）：{ status, at（使用者最後一次變更）, note, waiver }；不在處理紀錄中時為 null */
@@ -108,16 +108,14 @@
   const baseOf = (b) => (b && b.baselineKey != null ? b.baselineKey : b && b.inputHash);
   A.ledgerRoundIndex = () => (App.Q ? st.ledger.iterations.findIndex((r) => baseOf(r.baseline) === baseOf(App.Q.meta())) : -1);
 
-  /** 目前基準中待處理／已處理的錯誤與警告筆數，與回歸、無法判斷、豁免到期（基準摘要用） */
+  /**
+   * 目前基準的「待處理」：Q.pendingSummary(A.isPending) 的 { error, warn, info, total, handled }，另加回歸、無法判斷、豁免到期（基準摘要用）。
+   * 全站的「待處理」都是 total（錯誤＋警告，不含提醒）；提醒另列 info。
+   */
   A.problemCounts = function problemCounts() {
-    const out = { error: 0, warn: 0, handled: 0, regressed: 0, unobserved: 0, waiverExpired: 0 };
+    const out = Object.assign({ regressed: 0, unobserved: 0, waiverExpired: 0 }, App.Q.pendingSummary(A.isPending));
     const regressed = new Set();
-    App.Q.findings().forEach((f) => {
-      const s = A.ledgerStatus(f);
-      if (s === 'regressed') regressed.add(App.Q.findingKey(f));
-      if (f.severity === 'info') return;
-      if (V.remediation.isPendingStatus(s)) out[f.severity]++; else out.handled++;
-    });
+    App.Q.findings().forEach((f) => { if (A.ledgerStatus(f) === 'regressed') regressed.add(App.Q.findingKey(f)); });
     out.regressed = regressed.size;
     if (st.round) {
       out.unobserved = st.round.unobserved.length;
@@ -134,7 +132,7 @@
   App.setLedger = async function (f, change) {
     if (st.blocked) return { ok: false, error: '處理紀錄目前無法使用：' + st.blocked.reason };
     let next;
-    try { next = LG.set(st.ledger, App.Q.findingKey(f), change, { now: nowIso() }); } catch (e) { return { ok: false, error: e.message }; }
+    try { next = LG.set(st.ledger, App.Q.findingKey(f), change, { now: nowIso() }); } catch (e) { return { ok: false, error: V.reason(e) }; }
     st.ledger = next;
     A.renderAll();
     await persist();
@@ -148,13 +146,13 @@
   A.ledgerFileName = (now) => `ledger-${String(now || nowIso()).replace(/\.\d+Z$/, 'Z').replace(/[^0-9A-Za-z]/g, '')}.json`;
   App.exportLedger = function () {
     try { V.exporter.download(A.ledgerFileName(), A.ledgerJson(), 'application/json'); } catch (e) {
-      console.error(e); A.banner('匯出失敗：' + e.message, 10000);
+      console.error(e); A.banner('匯出失敗：' + V.reason(e), 10000);
     }
   };
   /** 讀入處理紀錄：先 S.ledger.validate；不合法時列出錯誤、不動現有的；合法時等使用者確認覆蓋 */
   App.importLedger = function (name, text) {
     let obj;
-    try { obj = JSON.parse(text); } catch (e) { st.imported = { name, errors: ['不是 JSON：' + e.message] }; A.renderAll(); return st.imported; }
+    try { obj = JSON.parse(text); } catch (e) { st.imported = { name, errors: [V.reason(e)] }; A.renderAll(); return st.imported; }
     const v = LG.validate(obj);
     st.imported = v.ok ? { name, ledger: obj } : { name, errors: v.errors };
     A.renderAll();

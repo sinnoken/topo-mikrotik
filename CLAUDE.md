@@ -17,6 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 指令
 
 只需要 Node.js（CI 使用 Node 22／24），沒有 build、lint 或 format script。
+CI（`.github/workflows/ci.yml`）依 PR 改動範圍分流：只改 Markdown、`.claude/`、`.github/skills/` 時只跑 `test:docs`；改到其他檔案跑全套；改到 `src/`、`samples/`、`tools/`、`tests/`、`profiles/`、`index.html`、`package*.json` 或 workflow 才跑大型資料測試。GitHub Pages 只在網站會發布的檔案改變時部署。
 
 ```bash
 npm test                 # 全部：核心、文件、收集器、畫面

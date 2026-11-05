@@ -11,16 +11,41 @@
   const K = S.keys;
   const U = S.util;
 
+  /** ① 讀取：切成區塊並算出設備鍵（build 與 preflight 共用，設備名的正規化才會一致）。 */
+  function readBlocks(sources, profile) {
+    const canon = profile ? (n) => profile.canon(n) : (n) => String(n || '').trim();
+    const { blocks, readersUsed } = S.readers.readAll(sources);
+    blocks.forEach((b) => { b.devKey = b.device === null ? null : K.dev(canon(b.device)); });
+    return { blocks, readersUsed, canon };
+  }
+
+  /**
+   * ②③ 辨識並解析一個區塊（build 與 preflight 共用）；b.how、b.adapters、b.empty、b.unrecognizedLines 記錄結果。
+   * 回傳 { status: 'skip'|'unrecognized'|'parsed', facts, usage }；usage：各 adapter 產生的事實數。
+   */
+  function parseBlock(b) {
+    // 只有收集器註解、沒有指令也沒有內容的區塊（例如連線失敗）：沒有東西可辨識，也不算無法辨識
+    if (!b.command && (b.failure || b.issues) && !b.lines.some((l) => l.trim())) { b.how = 'none'; b.adapters = []; return { status: 'skip', facts: [], usage: {} }; }
+    const r = S.adapters.recognize(b);
+    b.how = r.how;
+    b.adapters = r.adapters.map((a) => a.id);
+    if (!r.adapters.length) return { status: 'unrecognized', facts: [], usage: {} };
+    const p = S.adapters.parse(b, r.adapters, (f, a) => { f.dev = b.devKey; f.adapter = a.id; f.dataType = a.dataType; f.vendor = a.vendor; f.block = b.id; });
+    // 有標記指令、辨識成功但完全沒有解析出內容 → 也算無法辨識（避免靜默得到空結果）
+    if (!p.facts.length && b.lines.some((l) => l.trim())) { b.empty = true; return { status: 'unrecognized', facts: [], usage: p.usage }; }
+    // 已解析區塊中認不得的行（I03）；整段認不得的區塊已列為 I01，不在這裡重複
+    b.unrecognizedLines = p.unrecognized;
+    return { status: 'parsed', facts: p.facts, usage: p.usage };
+  }
+
   function* steps(sources, options) {
     const opt = options || {};
     const t0 = Date.now();
     const profile = opt.profile ? S.profile.compile(opt.profile) : null;
-    const canon = profile ? (n) => profile.canon(n) : (n) => String(n || '').trim();
 
     // ① 讀取
     yield { stage: '讀取輸入', done: 0, total: 1 };
-    const { blocks, readersUsed } = S.readers.readAll(sources);
-    blocks.forEach((b) => { b.devKey = b.device === null ? null : K.dev(canon(b.device)); });
+    const { blocks, readersUsed, canon } = readBlocks(sources, profile);
 
     // ②③ 辨識與解析
     const factsByBlock = new Map();
@@ -28,20 +53,11 @@
     const usage = {};
     for (let i = 0; i < blocks.length; i++) {
       const b = blocks[i];
-      // 只有收集器註解、沒有指令也沒有內容的區塊（例如連線失敗）：沒有東西可辨識，也不算無法辨識
-      if (!b.command && (b.failure || b.issues) && !b.lines.some((l) => l.trim())) { b.how = 'none'; b.adapters = []; continue; }
-      const r = S.adapters.recognize(b);
-      b.how = r.how;
-      b.adapters = r.adapters.map((a) => a.id);
-      if (!r.adapters.length) { unrecognized.push(b); continue; }
-      const p = S.adapters.parse(b, r.adapters, (f, a) => { f.dev = b.devKey; f.adapter = a.id; f.dataType = a.dataType; f.vendor = a.vendor; f.block = b.id; });
-      const facts = p.facts;
+      const p = parseBlock(b);
+      if (p.status === 'skip') continue;
       Object.keys(p.usage).forEach((id) => { usage[id] = (usage[id] || 0) + p.usage[id]; });
-      // 有標記指令、辨識成功但完全沒有解析出內容 → 也算無法辨識（避免靜默得到空結果）
-      if (!facts.length && b.lines.some((l) => l.trim())) { b.empty = true; unrecognized.push(b); continue; }
-      // 已解析區塊中認不得的行（I03）；整段認不得的區塊已列為 I01，不在這裡重複
-      b.unrecognizedLines = p.unrecognized;
-      factsByBlock.set(b.id, facts);
+      if (p.status === 'unrecognized') { unrecognized.push(b); continue; }
+      factsByBlock.set(b.id, p.facts);
       if (i % 200 === 199) yield { stage: '解析設備輸出', done: i + 1, total: blocks.length };
     }
 
@@ -266,6 +282,42 @@
     return U.hash(sources.map((x) => (x.name || '') + '\n' + x.text).join('\n\u0000\n'));
   }
   S.inputHashOf = inputHashOf;
+
+  /**
+   * 預檢（不建模）：只做 ①②③，讓輸入畫面在建立前就能顯示認到哪些設備、哪些段落無法辨識。
+   * sources、options.profile 同 build。devices 與完整 build 的已收集設備（key、data）相同；
+   * unrecognized 與 I01 一一對應：kind 'block' 是整段無法辨識，'note' 是收集器註解的問題（startLine＝endLine＝該行）；
+   * partial 與 I03 一一對應（已解析的區塊中有幾行認不得）。依輸入順序列出。
+   * @returns {{ blockCount:number,
+   *   devices:{ key, name, blocks:number, dataTypes:string[], dataLabels:string[] }[],
+   *   unrecognized:{ kind:'block'|'note', file, startLine, endLine, device:string|null, command:string|null, reason:string }[],
+   *   partial:{ file, startLine, endLine, device:string|null, command:string|null, lines:number }[] }}
+   */
+  S.preflight = function (sources, options) {
+    const opt = options || {};
+    const profile = opt.profile ? S.profile.compile(opt.profile) : null;
+    const { blocks } = readBlocks(sources, profile);
+    const devs = new Map(); const unrecognized = []; const partial = [];
+    const where = (b) => ({ file: b.origin.file, startLine: b.origin.startLine, endLine: b.origin.endLine, device: b.device, command: b.command || null });
+    blocks.forEach((b) => {
+      const p = parseBlock(b);
+      if (b.device !== null) {
+        const d = U.getOr(devs, b.devKey, () => ({ key: b.devKey, name: b.device, blocks: 0, types: new Set() }));
+        d.blocks++;
+        p.facts.forEach((f) => d.types.add(f.dataType));
+        S.model.emptyStatAdapters(b).forEach((a) => d.types.add(a.dataType));
+      }
+      if (p.status === 'unrecognized') unrecognized.push(Object.assign({ kind: 'block' }, where(b), { reason: S.check.unrecognizedReason(b) }));
+      (b.issues || []).forEach((x) => unrecognized.push(Object.assign({ kind: 'note' }, where(b), { startLine: x.line, endLine: x.line, reason: S.check.issueReason(x) })));
+      if (b.unrecognizedLines && b.unrecognizedLines.length) partial.push(Object.assign(where(b), { lines: b.unrecognizedLines.length }));
+    });
+    // 收集到的設備依鍵排序（同 Snapshot 的 devices）
+    const devices = Array.from(devs.values()).map((d) => {
+      const dataTypes = Array.from(d.types).sort();
+      return { key: d.key, name: d.name, blocks: d.blocks, dataTypes, dataLabels: dataTypes.map((t) => S.check.DATA_LABEL[t] || t) };
+    }).sort((a, b) => U.natural(a.key, b.key));
+    return { blockCount: blocks.length, devices, unrecognized, partial };
+  };
 
   /** 同步建立（Node、測試用）。 */
   S.build = function (sources, options) {

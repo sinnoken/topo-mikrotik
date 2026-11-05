@@ -15,6 +15,37 @@
   const V = (S.view = S.view || {});
   const T = V.theme; const KIND_COLOR = T.kind; const EDGE = T.edge; const SEV_COLOR = T.sev; const MARK = T.mark; const ALPHA = T.alpha;
   const EP = T.endpoint; const WEAK = T.weakEdge; const CV = T.canvas;
+  const F = T.font; const W = F.weight;
+  /** Canvas 字型字串（字級以目前座標單位計）；字族一律取自 theme.font */
+  const font = (px, weight, mono) => `${weight || W.normal} ${px}px ${mono ? F.mono : F.sans}`;
+  // 節點內的小字（廠商縮寫、數量）字級固定（世界座標），螢幕上小於 minPx 時不畫
+  const INNER = { endpoint: 7, downstream: 8, cluster: 9 };
+  const innerShown = (kind, s) => INNER[kind] * s >= F.minPx;
+  // reveal：節點中心離可見範圍邊緣不到這麼多（px）也算被遮住，標籤與選取環才看得到
+  const REVEAL_MARGIN = 24;
+  // 分群標籤的螢幕尺寸（px）：以螢幕座標排版，任何縮放程度下字級、截斷與防重疊都一致。
+  // pad 是文字左右留白、inset 是標籤離群框左緣（放在框內時也離頂邊）的距離、h 是標籤高度、base 是文字基線離下緣的距離
+  const GL = { pad: 4, inset: 4, h: F.groupPx + 7, base: 6 };
+  const GL_FONT = font(F.groupPx, W.strong);
+  // 群框的最小寬度（世界座標）：只有一兩台的小群也有寬度放簡稱（「區域 2」）。取版面的群間距（layout.js 的 GAP），兩個只有一台的鄰群往兩側各加寬後仍不重疊
+  const GROUP_MIN_W = V.layout.GAP;
+  // 標籤的優先順序：設備依版面的層級（layout.js 的 RANK），終端類節點排在後面
+  const LABEL_RANK = Object.assign({}, V.layout.RANK, { cluster: 5, downstream: 5, endpoint: 6 });
+  // 縮放範圍（滾輪、雙指、鍵盤共用）
+  const ZOOM = { min: 0.02, max: 6 };
+  // 全圖：畫面邊緣留白（px，另扣工具列、圖例等覆蓋層實際佔用的高度）；節點很少時的倍率上限，避免一兩台設備被放得很大
+  const FIT = { pad: 32, maxOne: 1.6, max: 2.2 };
+  // 聚焦（選取、檢查結果、路由追蹤）：倍率上限 1.5。埠名在 s > 1.25 才畫，1.5 讀得到埠名，又不會把一跳鄰居推出畫面；
+  // 留白 pad 容納節點下方的名稱標籤（常見名稱約 120px 寬）與埠名
+  const FOCUS = { maxScale: 1.5, pad: 64 };
+  // 覆蓋層高度超過畫布的 max 倍時不讓出空間（setOccluders）。max：沒有指定時的預設，例如展開的圖例太高時不讓，否則圖會被壓扁，使用者可收合它；
+  // pinned：一定要讓開的元素（工具列、通知、半高的詳情抽屜）用這個，只有幾乎蓋滿整張圖時（全高的抽屜）才不計
+  const OCCLUDER = { max: 0.4, pinned: 0.75 };
+  // 觸控：手指比滑鼠粗，節點點擊半徑在螢幕上至少 hitPx（約一個指尖的一半），且至少是節點半徑外加 slopPx（大節點與容器框也好點）；
+  // 連線容差 edgePx；移動超過 movePx 才算拖曳；tapMs／tapPx 內在同一節點點兩下視為雙擊（觸控沒有可靠的 dblclick）。
+  // 滑鼠的 hitPx 是節點半徑外加的容差
+  const TOUCH = { hitPx: 22, slopPx: 14, edgePx: 14, movePx: 8, tapMs: 400, tapPx: 24 };
+  const MOUSE = { hitPx: 4, edgePx: 6, movePx: 3 };
 
   class GraphView {
     constructor(canvas) {
@@ -23,8 +54,13 @@
       this.s = 1; this.tx = 0; this.ty = 0; this.dirty = true;
       this.sel = { nodes: new Set(), edges: new Set() };
       this.hl = null; // { nodes: Map(id→color), edges: Map(id→color) }
+      this.emphasis = null; // 推定偏離的設備 Set(id)；唯讀，用 setEmphasis 設定
       this.overlay = []; // [{a,b,color,label}]
       this.hover = null; this.kbd = null; this.handlers = {}; this.visible = () => true; this.showGroups = true;
+      this.occluders = []; // [{ el, max, when }]：疊在畫布上方或下方的元素，全圖與聚焦時讓開（見 viewport）
+      // 分群標籤：hoverGroup 是滑過的群名（強制顯示全名）；groupLabels 是上次繪製的標籤矩形（螢幕座標，唯讀，供 hover 與測試）
+      this.hoverGroup = null; this.groupLabels = [];
+      this.pendingFit = null; // 畫布尚未有尺寸（例如窄螢幕切到其他工作區）時延後的 fit 參數
       this._bind(); this._loop();
       new ResizeObserver(() => this.resize()).observe(canvas);
       this.resize();
@@ -35,7 +71,10 @@
       const r = this.cv.getBoundingClientRect(); const dpr = window.devicePixelRatio || 1;
       this.w = r.width; this.h = r.height; this.cv.width = Math.max(1, r.width * dpr); this.cv.height = Math.max(1, r.height * dpr);
       this.dpr = dpr; this.dirty = true;
+      if (this.pendingFit && this.w >= 1 && this.h >= 1) { const a = this.pendingFit; this.pendingFit = null; this.fit(...a); }
     }
+    /** 畫布剛從隱藏變成顯示（例如窄螢幕切回工作畫面）時 ResizeObserver 還沒通知：全圖、聚焦前先同步大小 */
+    syncSize() { const r = this.cv.getBoundingClientRect(); if (r.width !== this.w || r.height !== this.h) this.resize(); }
     setData(nodes, edges, pos) {
       this.nodes = nodes; this.edges = edges; this.pos = pos; this.nodeById = new Map(nodes.map((n) => [n.id, n]));
       this.edgesByNode = new Map(); edges.forEach((e) => { [e.a, e.b].forEach((x) => S.util.getOr(this.edgesByNode, x, () => []).push(e)); });
@@ -58,14 +97,42 @@
     setVisible(fn) { this.visible = fn; this.dirty = true; }
     setSelection(nodes, edges) { this.sel = { nodes: new Set(nodes || []), edges: new Set(edges || []) }; this.dirty = true; }
     setHighlight(h) { this.hl = h; this.dirty = true; }
+    /** 額外標出推定偏離的設備（devKeys：設備鍵陣列；null 或空陣列清除）。與選取、高亮並存，以 theme.canvas.deviation 的虛線外圈區分。 */
+    setEmphasis(devKeys) { this.emphasis = devKeys && devKeys.length ? new Set(devKeys) : null; this.dirty = true; }
     setOverlay(o) { this.overlay = o || []; this.dirty = true; }
     redraw() { this.dirty = true; }
 
     // ---------------- 座標
     toScreen(p) { return { x: p.x * this.s + this.tx, y: p.y * this.s + this.ty }; }
     toWorld(x, y) { return { x: (x - this.tx) / this.s, y: (y - this.ty) / this.s }; }
-    fit(ids, pad) {
-      // 容器框（box）以四個角計算，整個框才會在畫面內
+    /**
+     * 疊在畫布上的元素（工具列、圖例、操作提示、通知、窄螢幕的詳情抽屜）：[{ el, max, when }]。全圖、聚焦與 reveal 依它們目前的位置讓出空間；
+     * 元素隱藏、沒有大小、when() 為 false，或高度超過畫布的 max 倍（省略時 OCCLUDER.max；例如全高的抽屜，整張圖本來就被蓋住）時不計。
+     */
+    setOccluders(list) { this.occluders = (list || []).filter((o) => o && o.el); }
+    /** 畫面上沒被遮住的範圍（螢幕座標）：上半部的遮擋物推下上緣，下半部的推上下緣 */
+    viewport() {
+      let top = 0; let bottom = this.h;
+      if (this.occluders.length) {
+        const cr = this.cv.getBoundingClientRect();
+        this.occluders.forEach(({ el, max, when }) => {
+          if (el.classList.contains('hidden') || (when && !when())) return;
+          const r = el.getBoundingClientRect(); const y0 = r.top - cr.top; const y1 = y0 + r.height;
+          if (!r.width || !r.height || r.height > this.h * (max == null ? OCCLUDER.max : max) || y1 <= 0 || y0 >= this.h) return;
+          if (y0 + r.height / 2 < this.h / 2) top = Math.max(top, y1); else bottom = Math.min(bottom, y0);
+        });
+      }
+      if (bottom - top < 1) { top = 0; bottom = this.h; }
+      return { x0: 0, y0: top, x1: this.w, y1: bottom };
+    }
+    /**
+     * 把 ids（省略時為所有可見節點）放進沒被遮住的範圍；pad 省略時用 FIT.pad，maxScale 省略時用全圖的上限。
+     * 畫布還沒有尺寸時延到 resize。容器框（box）以四個角計算，整個框才會在畫面內。
+     */
+    fit(ids, pad, maxScale) {
+      this.syncSize();
+      if (this.w < 1 || this.h < 1) { this.pendingFit = [ids, pad, maxScale]; return; }
+      this.pendingFit = null;
       const list = (ids && ids.length ? ids : this.nodes.filter((n) => this.isVisible(n)).map((n) => n.id)).flatMap((id) => {
         const p = this.at(id); const n = this.nodeById.get(id); if (!p) return [];
         return n && n.box ? [{ x: p.x - n.box.w / 2, y: p.y - n.box.h / 2 }, { x: p.x + n.box.w / 2, y: p.y + n.box.h / 2 }] : [p];
@@ -73,54 +140,110 @@
       if (!list.length) return;
       const xs = list.map((p) => p.x); const ys = list.map((p) => p.y);
       const minX = Math.min(...xs); const maxX = Math.max(...xs); const minY = Math.min(...ys); const maxY = Math.max(...ys);
-      const p = pad == null ? 60 : pad;
-      const s = Math.min((this.w - p * 2) / Math.max(maxX - minX, 1), (this.h - p * 2) / Math.max(maxY - minY, 1));
-      this.s = Math.max(0.03, Math.min(list.length === 1 ? 1.6 : 2.2, s));
-      this.tx = this.w / 2 - ((minX + maxX) / 2) * this.s; this.ty = this.h / 2 - ((minY + maxY) / 2) * this.s;
+      const v = this.viewport(); const vw = v.x1 - v.x0; const vh = v.y1 - v.y0;
+      const p = Math.min(pad == null ? FIT.pad : pad, vw / 4, vh / 4);
+      const s = Math.min((vw - p * 2) / Math.max(maxX - minX, 1), (vh - p * 2) / Math.max(maxY - minY, 1));
+      const max = maxScale || (list.length === 1 ? FIT.maxOne : FIT.max);
+      this.s = Math.max(ZOOM.min, Math.min(max, s));
+      this.tx = (v.x0 + v.x1) / 2 - ((minX + maxX) / 2) * this.s; this.ty = (v.y0 + v.y1) / 2 - ((minY + maxY) / 2) * this.s;
       this.dirty = true;
     }
-    focus(ids) { this.fit(ids, Math.min(this.w, this.h) * (ids.length > 1 ? 0.1 : 0.25)); }
+    /**
+     * 聚焦：ids 全部放進沒被遮住的範圍，倍率不超過 FOCUS.maxScale。
+     * opt.neighbors 時一併納入可見的一跳鄰居，選一台設備時看得出它接在哪裡。
+     */
+    focus(ids, opt) {
+      const set = new Set(ids);
+      if (opt && opt.neighbors && this.edgesByNode) {
+        ids.forEach((id) => (this.edgesByNode.get(id) || []).forEach((e) => {
+          const m = e.a === id ? e.b : e.a; const n = this.nodeById.get(m); if (n && this.isVisible(n)) set.add(m);
+        }));
+      }
+      this.fit(Array.from(set), FOCUS.pad, FOCUS.maxScale);
+    }
+    /** 只平移、不縮放：ids 有任一個在沒被遮住的範圍外（例如被詳情抽屜蓋住）時，把它們的中心移到該範圍中央 */
+    reveal(ids) {
+      this.syncSize();
+      if (this.w < 1 || this.h < 1) return;
+      const list = (ids || []).map((id) => this.at(id)).filter(Boolean).map((p) => this.toScreen(p));
+      if (!list.length) return;
+      const v = this.viewport(); const m = REVEAL_MARGIN;
+      if (list.every((p) => p.x >= v.x0 + m && p.x <= v.x1 - m && p.y >= v.y0 + m && p.y <= v.y1 - m)) return;
+      const xs = list.map((p) => p.x); const ys = list.map((p) => p.y);
+      this.tx += (v.x0 + v.x1) / 2 - (Math.min(...xs) + Math.max(...xs)) / 2;
+      this.ty += (v.y0 + v.y1) / 2 - (Math.min(...ys) + Math.max(...ys)) / 2;
+      this.dirty = true;
+    }
 
     // ---------------- 互動
     // 指標事件（pointer）同時處理滑鼠、觸控與觸控筆；滑鼠行為與原本相同（拖背景平移、拖節點、點選、雙擊）。
     // 觸控沒有 hover：點一下選取，快速點兩下等同雙擊；觸控的命中範圍較大。
     _bind() {
-      const cv = this.cv; let drag = null; let lastTap = null;
+      // pts：目前按著的觸控指標（pointerId → 螢幕座標）；兩指同時按著時是雙指縮放（pinch），不做拖曳與點選
+      const cv = this.cv; let drag = null; let pinch = null; let lastTap = null; const pts = new Map();
       const at = (ev) => { const r = cv.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top }; };
       const mine = (ev) => drag && (ev.pointerId == null || drag.id == null || ev.pointerId === drag.id);
+      const pinchState = () => {
+        const [a, b] = Array.from(pts.values());
+        return { d: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)), mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
+      };
       cv.addEventListener('wheel', (ev) => {
         ev.preventDefault(); const p = at(ev); this.zoomAt(Math.exp(-ev.deltaY * 0.0015), p);
       }, { passive: false });
       cv.addEventListener('pointerdown', (ev) => {
         const type = ev.pointerType || 'mouse';
         if (type === 'mouse' && ev.button) return; // 只用主按鍵
-        const p = at(ev); const n = this.hitNode(p, type);
+        const p = at(ev);
+        if (cv.setPointerCapture && ev.pointerId != null) { try { cv.setPointerCapture(ev.pointerId); } catch (e) { /* 指標已不存在：仍以 window 事件追蹤 */ } }
+        if (type !== 'mouse' && ev.pointerId != null) {
+          pts.set(ev.pointerId, p);
+          if (pts.size === 2) { // 第二指：取消單指拖曳，改為雙指縮放（以兩指中點為中心，同時平移）
+            const st = pinchState(); pinch = { d0: st.d, s0: this.s, w0: this.toWorld(st.mid.x, st.mid.y) };
+            drag = null; cv.classList.add('dragging'); return;
+          }
+          if (pts.size > 2) return;
+        }
+        const n = this.hitNode(p, type);
         // 拖曳掛在容器上的節點（埠）等於拖曳容器；記下指標與節點中心的差，大的容器才不會跳到指標位置
         const target = n && n.anchor ? this.nodeById.get(n.anchor.parent) : n;
         const w = this.toWorld(p.x, p.y); const c = target ? this.at(target.id) : null;
         drag = { id: ev.pointerId, type, start: p, last: p, node: n, target, off: c ? { x: w.x - c.x, y: w.y - c.y } : null, moved: false };
         cv.classList.add('dragging');
-        if (cv.setPointerCapture && ev.pointerId != null) { try { cv.setPointerCapture(ev.pointerId); } catch (e) { /* 指標已不存在：仍以 window 事件追蹤 */ } }
       });
       window.addEventListener('pointermove', (ev) => {
         const p = at(ev);
+        if (pts.has(ev.pointerId)) pts.set(ev.pointerId, p);
+        if (pinch) {
+          if (pts.size >= 2) { const st = pinchState(); this.zoomTo(pinch.s0 * (st.d / pinch.d0), st.mid, pinch.w0); }
+          return;
+        }
         if (!drag) {
           if (ev.pointerType === 'touch') return;
           // 只有指標直接在畫布上才做 hover；在左右欄、工具列、圖例等上面時不可穿透到底下（或畫面外）的節點
           const n = ev.target === cv ? this.hitNode(p) : null; const e = n || ev.target !== cv ? null : this.hitEdge(p);
           const hv = n ? { type: 'node', id: n.id } : e ? { type: 'edge', id: e.id } : null;
+          // 沒有指到節點與連線時，指到的分群（標籤或群框）顯示全名；只是檢視狀態，不經 emit
+          const hg = !hv && ev.target === cv ? this.hitGroup(p) : null;
+          if (hg !== this.hoverGroup) { this.hoverGroup = hg; this.dirty = true; }
           if (JSON.stringify(hv) !== JSON.stringify(this.hover)) { this.hover = hv; this.dirty = true; this.emit('hover', { item: hv, x: p.x, y: p.y }); }
           else if (hv) this.emit('hover', { item: hv, x: p.x, y: p.y });
           return;
         }
         if (!mine(ev)) return;
-        if (Math.abs(p.x - drag.start.x) + Math.abs(p.y - drag.start.y) > (drag.type === 'mouse' ? 3 : 8)) drag.moved = true;
+        if (Math.abs(p.x - drag.start.x) + Math.abs(p.y - drag.start.y) > (drag.type === 'mouse' ? MOUSE.movePx : TOUCH.movePx)) drag.moved = true;
         if (!drag.moved) return;
         if (drag.target) { const w = this.toWorld(p.x, p.y); this.pos.set(drag.target.id, { x: w.x - drag.off.x, y: w.y - drag.off.y }); }
         else { this.tx += p.x - drag.last.x; this.ty += p.y - drag.last.y; }
         drag.last = p; this.dirty = true;
       });
       const end = (ev, cancelled) => {
+        const had = pts.delete(ev.pointerId);
+        if (pinch && had) { // 雙指結束：剩下的手指接著平移，不觸發點選
+          if (pts.size < 2) pinch = null;
+          if (pts.size === 1) { const [id, q] = Array.from(pts.entries())[0]; drag = { id, type: 'touch', start: q, last: q, node: null, target: null, off: null, moved: true }; }
+          else if (!pts.size) { drag = null; cv.classList.remove('dragging'); }
+          return;
+        }
         if (!mine(ev)) return; cv.classList.remove('dragging');
         const d = drag; drag = null;
         if (d.moved) { if (d.target) this.emit('moved', d.target.id); return; }
@@ -128,8 +251,8 @@
         const p = at(ev); const n = this.hitNode(p, d.type);
         if (n) {
           if (d.type !== 'mouse') { // 觸控：同一個節點快速點兩下等同雙擊（滑鼠由瀏覽器的 dblclick 處理）
-            const twice = lastTap && lastTap.id === n.id && ev.timeStamp - lastTap.t < 400;
-            lastTap = twice ? null : { id: n.id, t: ev.timeStamp };
+            const twice = lastTap && lastTap.id === n.id && ev.timeStamp - lastTap.t < TOUCH.tapMs && Math.hypot(p.x - lastTap.p.x, p.y - lastTap.p.y) < TOUCH.tapPx;
+            lastTap = twice ? null : { id: n.id, t: ev.timeStamp, p };
             if (twice) return this.emit('dblclick', { type: 'node', id: n.id });
           }
           return this.emit('click', { type: 'node', id: n.id, shift: ev.shiftKey || ev.ctrlKey });
@@ -141,7 +264,11 @@
       window.addEventListener('pointerup', (ev) => end(ev, false));
       window.addEventListener('pointercancel', (ev) => end(ev, true));
       cv.addEventListener('dblclick', (ev) => { const n = this.hitNode(at(ev)); if (n) this.emit('dblclick', { type: 'node', id: n.id }); });
-      cv.addEventListener('pointerleave', (ev) => { if (ev.pointerType !== 'touch' && this.hover && !this.kbd) { this.hover = null; this.dirty = true; this.emit('hover', { item: null }); } });
+      cv.addEventListener('pointerleave', (ev) => {
+        if (ev.pointerType === 'touch') return;
+        if (this.hoverGroup) { this.hoverGroup = null; this.dirty = true; }
+        if (this.hover && !this.kbd) { this.hover = null; this.dirty = true; this.emit('hover', { item: null }); }
+      });
       cv.addEventListener('keydown', (ev) => this._key(ev));
     }
     /**
@@ -164,7 +291,7 @@
       else return;
       ev.preventDefault();
     }
-    /** 依畫面上的位置（由上而下、由左而右）輪流移到下一台可見的設備；移出畫面時平移到中央 */
+    /** 依畫面上的位置（由上而下、由左而右）輪流移到下一台可見的設備；在沒被遮住的範圍外時平移到中央（reveal） */
     cycle(dir) {
       // 容器依畫面位置排序，每個容器後面接著它的埠（依框上的位置）：L2 的埠也走得到
       const top = this.nodes.filter((n) => !n.anchor && this.isVisible(n) && this.pos.has(n.id));
@@ -176,15 +303,15 @@
       const i = list.findIndex((n) => n.id === this.kbd);
       const n = list[i < 0 ? (dir > 0 ? 0 : list.length - 1) : (i + dir + list.length) % list.length];
       this.kbd = n.id; this.hover = { type: 'node', id: n.id };
-      let sp = this.toScreen(this.at(n.id)); const m = 40;
-      if (sp.x < m || sp.y < m || sp.x > this.w - m || sp.y > this.h - m) { this.tx += this.w / 2 - sp.x; this.ty += this.h / 2 - sp.y; sp = this.toScreen(this.at(n.id)); }
+      this.reveal([n.id]); const sp = this.toScreen(this.at(n.id));
       this.dirty = true; this.emit('hover', { item: this.hover, x: sp.x, y: sp.y, keyboard: true });
     }
-    /** 以畫面上的一點（預設中央）為中心縮放 */
-    zoomAt(f, at) {
-      const p = at || { x: this.w / 2, y: this.h / 2 };
-      const ns = Math.max(0.02, Math.min(6, this.s * f)); const w = this.toWorld(p.x, p.y);
-      this.s = ns; this.tx = p.x - w.x * ns; this.ty = p.y - w.y * ns; this.dirty = true;
+    /** 以畫面上的一點（預設中央）為中心縮放 f 倍 */
+    zoomAt(f, at) { this.zoomTo(this.s * f, at || { x: this.w / 2, y: this.h / 2 }); }
+    /** 縮放到 ns（夾在 ZOOM 範圍內），讓世界座標 w0（省略時為 p 目前指到的點）落在螢幕點 p；雙指縮放以開始時的中點為 w0，同時完成平移 */
+    zoomTo(ns, p, w0) {
+      const w = w0 || this.toWorld(p.x, p.y); const s = Math.max(ZOOM.min, Math.min(ZOOM.max, ns));
+      this.s = s; this.tx = p.x - w.x * s; this.ty = p.y - w.y * s; this.dirty = true;
     }
     radius(n) {
       if (n.box) return Math.max(n.box.w, n.box.h) / 2;
@@ -192,27 +319,43 @@
       if (n.kind === 'endpoint') return 7; if (n.kind === 'cluster') return 12; if (n.kind === 'downstream') return 9;
       return n.kind === 'host' ? 6 : n.collected ? 13 : 9;
     }
-    /** type 是指標種類：觸控的命中範圍較大（螢幕上約多 10px）。容器框（box）只在沒有點到其他節點（例如框上的埠）時命中 */
+    /**
+     * type 是指標種類：觸控與觸控筆的點擊半徑在螢幕上至少 TOUCH.hitPx，滑鼠是節點半徑外加 MOUSE.hitPx。
+     * 容器框（box）只在沒有點到其他節點（例如框上的埠）時命中
+     */
     hitNode(p, type) {
-      const w = this.toWorld(p.x, p.y); let best = null; let bd = Infinity; let box = null; let area = Infinity; const slop = (type === 'touch' ? 14 : 4) / this.s;
+      const touch = !!type && type !== 'mouse';
+      const w = this.toWorld(p.x, p.y); let best = null; let bd = Infinity; let box = null; let area = Infinity; const slop = (touch ? TOUCH.slopPx : MOUSE.hitPx) / this.s;
       for (const n of this.nodes) {
         if (!this.isVisible(n)) continue; const q = this.at(n.id); if (!q) continue;
         if (n.box) {
           if (Math.abs(q.x - w.x) <= n.box.w / 2 + slop && Math.abs(q.y - w.y) <= n.box.h / 2 + slop && n.box.w * n.box.h < area) { box = n; area = n.box.w * n.box.h; }
           continue;
         }
-        const d = Math.hypot(q.x - w.x, q.y - w.y); const r = this.radius(n) + slop;
+        const d = Math.hypot(q.x - w.x, q.y - w.y); const r = touch ? Math.max(this.radius(n) + TOUCH.slopPx / this.s, TOUCH.hitPx / this.s) : this.radius(n) + slop;
         if (d < r && d < bd) { best = n; bd = d; }
       }
       return best || box;
     }
     hitEdge(p, type) {
-      const w = this.toWorld(p.x, p.y); const tol = (type === 'touch' ? 14 : 6) / this.s; let best = null; let bd = tol;
+      const w = this.toWorld(p.x, p.y); const tol = (type && type !== 'mouse' ? TOUCH.edgePx : MOUSE.edgePx) / this.s; let best = null; let bd = tol;
       for (const e of this.edges) {
         if (!this._edgeVisible(e)) continue;
         const a = this.at(e.a); const b = this.at(e.b); if (!a || !b) continue;
         const d = segDist(w, a, b); if (d < bd) { bd = d; best = e; }
       }
+      return best;
+    }
+    /** 指標下的分群（先看標籤，再看群框；巢狀時取面積最小者），回傳群名 */
+    hitGroup(p) {
+      if (!this.showGroups || !this.groupBoxes) return null;
+      const lb = this.groupLabels.find((r) => p.x >= r.x0 && p.x <= r.x1 && p.y >= r.y0 && p.y <= r.y1);
+      if (lb) return lb.name;
+      const w = this.toWorld(p.x, p.y); let best = null; let ba = Infinity;
+      this.groupBoxes.forEach((g) => {
+        if (!g.name || w.x < g.x0 || w.x > g.x1 || w.y < g.y0 || w.y > g.y1) return;
+        const a = (g.x1 - g.x0) * (g.y1 - g.y0); if (a < ba) { ba = a; best = g.name; }
+      });
       return best;
     }
     _edgeVisible(e) { const a = this.nodeById.get(e.a); const b = this.nodeById.get(e.b); return a && b && this.isVisible(a) && this.isVisible(b); }
@@ -226,20 +369,21 @@
       if (!this.nodes.length) return;
       const s = this.s; const view = { x0: -this.tx / s - 50, y0: -this.ty / s - 50, x1: (this.w - this.tx) / s + 50, y1: (this.h - this.ty) / s + 50 };
       const inView = (p) => p && p.x > view.x0 && p.x < view.x1 && p.y > view.y0 && p.y < view.y1;
-      const hl = this.hl; const dim = hl && (hl.nodes.size || hl.edges.size);
+      const hl = this.hl; const em = this.emphasis; const dim = hl && (hl.nodes.size || hl.edges.size);
       const hoverN = this.hover && this.hover.type === 'node' ? this.hover.id : null;
       const hoverE = this.hover && this.hover.type === 'edge' ? this.hover.id : null;
       const hoverAdj = new Set();
       if (hoverN) [hoverN].concat((this.childrenOf.get(hoverN) || []).map((x) => x.id)).forEach((id) => (this.edgesByNode.get(id) || []).forEach((e) => hoverAdj.add(e.id)));
       c.save(); c.translate(this.tx, this.ty); c.scale(s, s);
 
-      // 分群底色
+      // 分群底色；標籤在螢幕座標另外排版（壓在連線下方，滑過的那一個最後畫在最上層）
+      this.groupLabels = this.showGroups && this.groupBoxes ? this._layoutGroupLabels(c) : [];
       if (this.showGroups && this.groupBoxes) {
         this.groupBoxes.forEach((g) => {
           c.fillStyle = CV.group.fill; c.strokeStyle = CV.group.stroke; c.lineWidth = 1 / s;
           roundRect(c, g.x0, g.y0, g.x1 - g.x0, g.y1 - g.y0, 18); c.fill(); c.stroke();
-          if (s > 0.04) { const gf = 13 / s; c.fillStyle = CV.group.text; c.font = `600 ${gf}px ${T.font.ui}`; c.fillText(fitText(c, g.name, Math.max(g.x1 - g.x0 - 8 / s, gf * 4)), g.x0 + 4 / s, g.y0 - 5 / s); }
         });
+        this._drawGroupLabels(c, (l) => !l.forced);
       }
 
       // 連線
@@ -298,11 +442,15 @@
       for (const n of this.nodes) {
         if (!this.isVisible(n)) continue; const p = this.at(n.id); if (!inViewNode(n, p)) continue;
         const r = n.box ? 0 : this.radius(n); const col = KIND_COLOR[n.kind] || KIND_COLOR.unknown;
-        const hcol = hl && hl.nodes.get(n.id);
-        c.globalAlpha = dim && !hcol && !this.sel.nodes.has(n.id) ? ALPHA.dimNode : 1;
+        const hcol = hl && hl.nodes.get(n.id); const emph = em && em.has(n.id);
+        c.globalAlpha = dim && !hcol && !emph && !this.sel.nodes.has(n.id) ? ALPHA.dimNode : 1;
         drawShape(c, n, p, r, col, s);
         if (hcol) { c.strokeStyle = hcol; c.lineWidth = 3.5; ring(n, p, r, n.kind === 'port' ? 3 : 5); }
         if (this.sel.nodes.has(n.id)) { c.strokeStyle = MARK.select; c.lineWidth = 3; ring(n, p, r, n.kind === 'port' ? 4 : 6); }
+        if (emph) { // 推定偏離：比選取與高亮更外圈的虛線；縮小時線寬與虛線保持螢幕上可見
+          const D = CV.deviation; const k = Math.max(1, 1 / s);
+          c.strokeStyle = D.c; c.lineWidth = D.w * k; c.setLineDash(D.dash.map((d) => d * k)); ring(n, p, r, D.gap * k); c.setLineDash([]);
+        }
         // 滑過：節點本身也有回饋（深色細環，與選取的藍色粗環、搜尋結果的顏色環不同）
         if (n.id === hoverN) { c.strokeStyle = MARK.hover; c.lineWidth = 2; ring(n, p, r, this.sel.nodes.has(n.id) ? 9.5 : 3.5); }
         // 嚴重度：主機與終端（較小的節點）也顯示，外形區分錯誤與警告；容器框標在右上角
@@ -322,23 +470,23 @@
         c.globalAlpha = 1;
       }
       // 標籤：依重要性排序，與已畫的標籤重疊就略過（避免縮小時糊成一片）
-      const RANKL = { firewall: 0, router: 1, switch: 2, unknown: 3, host: 4, cluster: 5, downstream: 5, endpoint: 6 };
       const cand = [];
       for (const n of this.nodes) {
         if (n.box || n.kind === 'port' || !this.isVisible(n)) continue; const p = this.at(n.id); if (!inView(p)) continue;
         const forced = this.sel.nodes.has(n.id) || n.id === hoverN;
-        const marked = hl && hl.nodes.has(n.id);
+        const marked = (hl && hl.nodes.has(n.id)) || (em && em.has(n.id));
         if (!forced && !marked && (n.kind === 'host' || n.kind === 'endpoint' || n.kind === 'downstream') && s < 0.9) continue;
         if (!forced && !marked && n.kind === 'cluster' && s < 0.45) continue;
         if (!forced && !marked && s < 0.18) continue;
-        cand.push({ n, p, pri: forced ? -1 : (marked ? 0 : 10) + (n.collected ? 0 : 5) + (RANKL[n.kind] ?? 3) });
+        cand.push({ n, p, pri: forced ? -1 : (marked ? 0 : 10) + (n.collected ? 0 : 5) + (LABEL_RANK[n.kind] ?? 3) });
       }
       cand.sort((a, b) => a.pri - b.pri);
-      const fs = Math.max(9, Math.min(13, 12 * s)) / s; const placed = [];
+      // 設備名稱在螢幕上固定 labelPx，不隨縮小變成小字；太擠時由下方的重疊檢查與上方的縮放門檻略過
+      const fs = F.labelPx / s; const placed = [];
       c.textAlign = 'center';
       for (const { n, p, pri } of cand) {
         // 過長的名稱截斷加「…」，完整名稱在滑過提示與詳情
-        c.font = `${n.collected ? 600 : 400} ${fs}px ${T.font.ui}`; const label = fitText(c, n.label, fs * CV.label.maxEm);
+        c.font = font(fs, n.collected ? W.strong : W.normal); const label = fitText(c, n.label, fs * CV.label.maxEm);
         const tw = c.measureText(label).width; const r = this.radius(n);
         const box = { x0: p.x - tw / 2 - fs * 0.3, x1: p.x + tw / 2 + fs * 0.3, y0: p.y + r + fs * 0.2, y1: p.y + r + fs * 1.5 };
         if (pri >= 0 && placed.some((b) => b.x0 < box.x1 && box.x0 < b.x1 && b.y0 < box.y1 && box.y0 < b.y1)) continue;
@@ -355,12 +503,53 @@
         const a = this.at(e.a); const b = this.at(e.b);
         if (!a || !b || (!inView(a) && !inView(b))) return;
         const k = force ? Math.max(1, 1.25 / s) : 1; // 縮小時放大字級，保持螢幕上可讀
-        c.font = `${10 * k}px ${T.font.mono}`;
+        c.font = font(10 * k, W.normal, true);
         if (e.labelA) portLabel(c, a, b, e.labelA, this.radius(this.nodeById.get(e.a)) + 26 * k, placed, force ? k : 0);
         if (e.labelB) portLabel(c, b, a, e.labelB, this.radius(this.nodeById.get(e.b)) + 26 * k, placed, force ? k : 0);
       };
       edgesToLabel.filter((e) => !isForced(e)).forEach((e) => drawPort(e, false));
       edgesToLabel.filter(isForced).forEach((e) => drawPort(e, true));
+      c.restore();
+      if (this.showGroups && this.groupBoxes) this._drawGroupLabels(c, (l) => l.forced); // 滑過的分群全名蓋在最上層
+    }
+    /**
+     * 分群標籤排版（螢幕座標）：依群大小排序，先放群框上方、與已放的標籤重疊（或頂邊在畫面外）時改放框內左上，兩處都不行就略過；
+     * 寬度不超過群框（只露出一部分時是可見的部分），放不下全名時依 fitLabels 的順序縮短（簡稱 → 尾段 → 截斷），
+     * 並跳過畫面上別的群已用的文字，縮短後仍兩兩不同。滑過的群（hoverGroup）最先放、顯示全名、不受寬度限制。
+     */
+    _layoutGroupLabels(c) {
+      const s = this.s; c.font = GL_FONT;
+      const hovered = this.hoverGroup;
+      const list = this.groupBoxes.filter((g) => g.name)
+        .sort((a, b) => (b.name === hovered) - (a.name === hovered) || b.n - a.n || S.util.natural(a.name, b.name));
+      const out = []; const used = new Set();
+      const free = (r) => !out.some((o) => o.x0 < r.x1 && r.x0 < o.x1 && o.y0 < r.y1 && r.y0 < o.y1);
+      for (const g of list) {
+        const box = { x0: g.x0 * s + this.tx, y0: g.y0 * s + this.ty, x1: g.x1 * s + this.tx, y1: g.y1 * s + this.ty };
+        if (box.x1 < 0 || box.x0 > this.w || box.y1 < 0 || box.y0 - GL.h > this.h) continue; // 畫面外
+        // 群框只露出一部分（放大後）時，標籤貼在可見部分的左上，不跟著框外的頂邊消失
+        const vx0 = Math.max(box.x0, 0); const vx1 = Math.min(box.x1, this.w); const vy0 = Math.max(box.y0, 0);
+        const forced = g.name === hovered;
+        const text = forced ? g.name : fitLabels(c, g.name, vx1 - vx0 - 2 * GL.inset - 2 * GL.pad).find((t) => !used.has(t));
+        if (!text) continue;
+        const x0 = vx0 + GL.inset; const x1 = x0 + c.measureText(text).width + 2 * GL.pad;
+        const above = box.y0 - 2 - GL.h >= 0 ? { x0, x1, y0: box.y0 - 2 - GL.h, y1: box.y0 - 2 } : null;
+        const inside = { x0, x1, y0: vy0 + GL.inset, y1: vy0 + GL.inset + GL.h };
+        const r = above && (forced || free(above)) ? above : inside.y1 <= box.y1 - GL.inset && (forced || free(inside)) ? inside : null;
+        if (!r) continue;
+        used.add(text);
+        out.push(Object.assign(r, { name: g.name, text, forced, inside: r === inside, box }));
+      }
+      return out;
+    }
+    _drawGroupLabels(c, which) {
+      const ls = this.groupLabels.filter(which); if (!ls.length) return;
+      c.save(); c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0); c.font = GL_FONT; c.textAlign = 'left'; c.globalAlpha = 1;
+      ls.forEach((l) => {
+        c.fillStyle = CV.group.labelBg; roundRect(c, l.x0, l.y0, l.x1 - l.x0, l.y1 - l.y0, 4); c.fill();
+        if (l.forced) { c.strokeStyle = CV.group.stroke; c.lineWidth = 1; c.stroke(); }
+        c.fillStyle = CV.group.text; c.fillText(l.text, l.x0 + GL.pad, l.y1 - GL.base);
+      });
       c.restore();
     }
     computeGroups() {
@@ -370,11 +559,30 @@
         const g = S.util.getOr(boxes, n.group || '', () => ({ name: n.group || '', x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, n: 0 }));
         g.x0 = Math.min(g.x0, p.x - 50); g.y0 = Math.min(g.y0, p.y - 50); g.x1 = Math.max(g.x1, p.x + 50); g.y1 = Math.max(g.y1, p.y + 40); g.n++;
       });
+      boxes.forEach((g) => { const d = GROUP_MIN_W - (g.x1 - g.x0); if (d > 0) { g.x0 -= d / 2; g.x1 += d / 2; } });
       this.groupBoxes = boxes.size > 1 ? Array.from(boxes.values()).filter((g) => g.n > 0) : null;
       this.dirty = true;
     }
   }
 
+  /**
+   * 寬度 avail 內放得下的分群標籤文字，依優先順序：全名 → 簡稱（全形／半形括號前）→ 簡稱的尾段（空白分隔的最後一段，
+   * 例如「區域 2」→「2」：短名放不下時優先保留能區分的尾段）→ 字元截斷加「…」（以 Array.from 切字元，不切壞字；至少留兩個字）。
+   * 回傳候選陣列（可能為空），呼叫端挑第一個畫面上沒用過的。
+   */
+  function fitLabels(c, name, avail) {
+    const fits = (t) => c.measureText(t).width <= avail;
+    const out = [];
+    if (fits(name)) out.push(name);
+    const short = name.replace(/\s*[（(].*$/, '') || name;
+    if (short !== name && fits(short)) out.push(short);
+    const last = short.split(/\s+/).pop();
+    if (last !== short && fits(last)) out.push(last);
+    const chars = Array.from(short); let lo = 0; let hi = chars.length - 1; // 二分搜尋可保留的最多字數
+    while (lo < hi) { const mid = Math.ceil((lo + hi) / 2); if (fits(chars.slice(0, mid).join('') + '…')) lo = mid; else hi = mid - 1; }
+    if (lo >= 2) out.push(chars.slice(0, lo).join('') + '…');
+    return out;
+  }
   function drawShape(c, n, p, r, col, s) {
     if (n.virtual) return drawVirtual(c, n, p, r, s);
     if (n.kind === 'subnet') return drawSubnet(c, n, p);
@@ -427,24 +635,24 @@
   function boxText(c, n, p, s) {
     const w = n.box.w; const h = n.box.h;
     if (n.kind === 'subnet') {
-      const N = T.l3.subnet; c.font = `600 11px ${T.font.mono}`; c.fillStyle = N.text; c.textAlign = 'center';
+      const N = T.l3.subnet; c.font = font(11, W.strong, true); c.fillStyle = N.text; c.textAlign = 'center';
       c.fillText(fitText(c, n.label, w - 10), p.x, p.y + 4); c.textAlign = 'left';
       (n.badges || []).forEach((b, i) => {
-        const B = T.l3.badge; c.font = `600 10px ${T.font.ui}`; const tw = c.measureText(b).width + 18; const y = p.y + h / 2 + 4 + i * 16; const x = p.x - tw / 2;
+        const B = T.l3.badge; c.font = font(10, W.strong); const tw = c.measureText(b).width + 18; const y = p.y + h / 2 + 4 + i * 16; const x = p.x - tw / 2;
         c.fillStyle = B.bg; c.strokeStyle = B.border; c.lineWidth = 1; roundRect(c, x, y, tw, 14, 3); c.fill(); c.stroke();
         sevMark(c, 'warn', x + 7, y + 7, 3.5);
         c.fillStyle = B.text; c.fillText(b, x + 13, y + 10.5);
       });
       return;
     }
-    const B = T.l2.box; c.font = `${n.collected ? 600 : 400} 12px ${T.font.ui}`;
+    const B = T.l2.box; c.font = font(12, n.collected ? W.strong : W.normal);
     c.fillStyle = n.collected ? CV.label.text : CV.label.textUncollected;
     c.fillText(fitText(c, n.label, w - 16), p.x - w / 2 + 9, p.y - h / 2 + B.labelH - 5);
-    if (n.sub && s > 0.5) { c.font = `10px ${T.font.ui}`; c.fillStyle = CV.label.textUncollected; c.fillText(fitText(c, n.sub, w - 16), p.x - w / 2 + 9, p.y - h / 2 + B.labelH + 9); }
+    if (n.sub && s > 0.5) { c.font = font(10); c.fillStyle = CV.label.textUncollected; c.fillText(fitText(c, n.sub, w - 16), p.x - w / 2 + 9, p.y - h / 2 + B.labelH + 9); }
   }
   /** 埠名：放在埠往框外的方向（依它在框上的位置），等寬字型 */
   function portName(c, n, p, s, forced) {
-    const k = forced ? Math.max(1, 1 / s) : 1; c.font = `${9 * k}px ${T.font.mono}`;
+    const k = forced ? Math.max(1, 1 / s) : 1; c.font = font(9 * k, W.normal, true);
     const text = fitText(c, n.label, 9 * k * CV.port.maxEm); const tw = c.measureText(text).width;
     const len = Math.hypot(n.anchor.dx, n.anchor.dy) || 1; const ux = n.anchor.dx / len; const uy = n.anchor.dy / len;
     const vertical = Math.abs(n.anchor.dy) >= Math.abs(n.anchor.dx) * 0.4;
@@ -471,15 +679,15 @@
     if (n.kind === 'endpoint') { // 單一 MAC：圓形，顏色依廠商，近看顯示廠商縮寫
       c.fillStyle = n.color || EP.vendorFallback; c.strokeStyle = CV.outline; c.lineWidth = 1.5;
       c.beginPath(); c.arc(p.x, p.y, r, 0, Math.PI * 2); c.fill(); c.stroke();
-      if (s > 1.3 && n.ini) { c.fillStyle = CV.outline; c.font = `bold 7px ${T.font.ui}`; c.textAlign = 'center'; c.fillText(n.ini, p.x, p.y + 2.6); c.textAlign = 'left'; }
+      if (innerShown('endpoint', s) && n.ini) { c.fillStyle = CV.outline; c.font = font(INNER.endpoint, W.strong); c.textAlign = 'center'; c.fillText(n.ini, p.x, p.y + 2.6); c.textAlign = 'left'; }
     } else if (n.kind === 'downstream') { // Wi-Fi 多 MAC：菱形只作圖面提示
       c.fillStyle = EP.downstream.fill; c.strokeStyle = EP.downstream.stroke; c.lineWidth = 2; c.setLineDash(EP.dash);
       c.beginPath(); c.moveTo(p.x, p.y - r); c.lineTo(p.x + r, p.y); c.lineTo(p.x, p.y + r); c.lineTo(p.x - r, p.y); c.closePath(); c.fill(); c.stroke(); c.setLineDash([]);
-      if (s > 0.9) { c.fillStyle = EP.downstream.text; c.font = `bold 8px ${T.font.ui}`; c.textAlign = 'center'; c.fillText(String(n.count || ''), p.x, p.y + 3); c.textAlign = 'left'; }
+      if (innerShown('downstream', s)) { c.fillStyle = EP.downstream.text; c.font = font(INNER.downstream, W.strong); c.textAlign = 'center'; c.fillText(String(n.count || ''), p.x, p.y + 3); c.textAlign = 'left'; }
     } else { // cluster：同一台設備上很多終端，收合成一個
       c.fillStyle = EP.cluster.fill; c.strokeStyle = EP.cluster.stroke; c.lineWidth = 1.5;
       roundRect(c, p.x - r * 1.3, p.y - r * 0.8, r * 2.6, r * 1.6, 5); c.fill(); c.stroke();
-      if (s > 0.35) { c.fillStyle = EP.cluster.text; c.font = `bold 9px ${T.font.ui}`; c.textAlign = 'center'; c.fillText('×' + (n.count || ''), p.x, p.y + 3.2); c.textAlign = 'left'; }
+      if (innerShown('cluster', s)) { c.fillStyle = EP.cluster.text; c.font = font(INNER.cluster, W.strong); c.textAlign = 'center'; c.fillText('×' + (n.count || ''), p.x, p.y + 3.2); c.textAlign = 'left'; }
     }
   }
   /** force（縮放倍率 k）不做重疊檢查，且兩端太近時把標籤往線中間收，確保一定看得到。 */
@@ -540,5 +748,6 @@
   }
   function segInView(a, b, v) { return !(Math.max(a.x, b.x) < v.x0 || Math.min(a.x, b.x) > v.x1 || Math.max(a.y, b.y) < v.y0 || Math.min(a.y, b.y) > v.y1); }
 
+  GraphView.LIMITS = Object.freeze({ ZOOM, FIT, FOCUS, TOUCH, MOUSE, OCCLUDER }); // 唯讀：測試核對縮放、聚焦與觸控的界線；OCCLUDER.pinned 給 setOccluders 的呼叫端
   V.GraphView = GraphView; V.sevMark = sevMark; V.fitText = fitText;
 })(globalThis.SSOT = globalThis.SSOT || {});

@@ -433,7 +433,7 @@
   /** 表格檢視：每一格一列（和矩陣同一份 Q.zoneMatrix 的結果），可排序，點一列往下看 */
   function matrixTable(App, mx) {
     const Q = App.Q; const mv = (mx.vrfs || []).length > 1;
-    return h('div', { class: 'work-table l4-table' }, V.table([
+    return h('div', { class: 'l4-table' }, V.table([
       { t: '來源 zone', f: (c) => zoneName(Q, c.src), s: (c) => zoneName(Q, c.src) },
       { t: '目的 zone', f: (c) => h('span', null, [zoneName(Q, c.dst), c.diagonal ? h('span', { class: 'muted' }, '（zone 內）') : null]), s: (c) => zoneName(Q, c.dst) },
       { t: '狀態', f: (c) => h('span', { class: 'l4-row-status', 'data-status': c.status }, [statusTag(c.status), c.heterogeneous ? hetBadge() : null]), s: (c) => c.status },
@@ -468,21 +468,21 @@
     const mv = S.util.uniq(z.zones.map((x) => x.vrf)).length > 1;
     const vrfCol = mv ? [{ t: 'VRF', f: (x) => h('span', { class: 'mono' }, x.vrf || ''), s: (x) => x.vrf }] : [];
     if (mv) box.appendChild(h('p', { class: 'muted l4-note' }, '每個 VRF 的 zone 分開計算（不同 VRF 是不同的位址空間）：main 以外的 zone 名稱標出 VRF。'));
-    box.appendChild(h('div', { class: 'work-table' }, V.table([
+    box.appendChild(V.table([
       { t: 'zone', f: (x) => h('span', { class: 'l4-zone-row', 'data-zone': x.id }, zoneLabel(x)), s: (x) => x.name }, ...vrfCol,
       { t: '來源', f: (x) => V.ZONE_SOURCE[x.source] || x.source, s: (x) => x.source },
       { t: '依據', f: (x) => x.basis || '' },
       { t: '網段', f: (x) => h('span', { class: 'mono' }, x.subnets.join('、')), s: (x) => x.subnets.length },
       { t: '設備', f: (x) => V.num(x.devices.length), s: (x) => x.devices.length, cls: 'num' },
-    ], z.zones)));
+    ], z.zones));
     const zi = zoneIndex(Q);
-    box.appendChild(h('details', { class: 'l4-fold' }, [h('summary', null, `每個網段的依據（${V.num(z.subnets.length)}）`), h('div', { class: 'work-table' }, V.table([
+    box.appendChild(h('details', { class: 'l4-fold' }, [h('summary', null, `每個網段的依據（${V.num(z.subnets.length)}）`), V.table([
       { t: '網段', f: (s) => h('span', { class: 'mono' }, s.prefix), s: (s) => s.prefix }, ...vrfCol,
       { t: 'zone', f: (s) => (zi.get(s.zone) || { name: s.zone }).name, s: (s) => (zi.get(s.zone) || { name: s.zone }).name },
       { t: '來源', f: (s) => h('span', null, [V.ZONE_SOURCE[s.source] || s.source, s.inferred ? ' ' : '', s.inferred ? V.chip('推論', 'info') : null]) },
       { t: '依據', f: (s) => s.basis || '' },
       { t: '其他來源的結果', f: (s) => s.alternatives.map((a) => `${V.ZONE_SOURCE[a.source] || a.source}：${(zi.get(a.zone) || { name: a.zone.replace(/^[a-z-]+:/, '') }).name}`).join('、') },
-    ], z.subnets, { limit: 500 }))]));
+    ], z.subnets, { limit: 500 })]));
   }
 
   // ---------------------------------------------------------------- 下鑽
@@ -600,7 +600,7 @@
       h('h4', null, ['L1：位址組 ', V.chip(String(c.groups.length))]),
       h('p', { class: 'muted l4-note' }, '每一列是一個目的與一組結果相同的來源代表；點一列或某個服務看逐跳路徑（L3）。代表位址是等價類的代表：同一個區段內的位址對所有規則的位址條件結果相同。'),
       divNote, toggle,
-      c.groups.length ? h('div', { class: 'work-table' }, V.table([
+      c.groups.length ? V.table([
         { t: '目的', f: ({ g }) => h('span', null, [h('span', { class: 'mono' }, g.dst.ip), ' ',
           g.dst.via === 'nat' ? V.chip(`dst-nat 入口 → ${g.dst.natTo}`, 'info', { title: `${Q.devName(g.dst.dev)} 的 dst-nat 規則把這個位址改寫到 ${g.dst.natTo}` }) : null,
           h('span', { class: 'muted' }, ` ${zoneName(Q, g.dst.zone)}`)]) },
@@ -617,7 +617,7 @@
         { t: '狀態', f: ({ g }) => statusTag(g.status), s: ({ g }) => g.status },
       ].concat(het ? [{ t: '造成差異的服務', f: ({ g }) => (g.divergent ? h('span', { class: 'l4-div-svcs' }, ['≠ ', h('span', { class: 'mono' }, g.divergentServices.join('、'))]) : '—'), s: ({ g }) => g.divergentServices.length }] : [], [
         { t: '閘道／入口', f: ({ g }) => g.srcDevices.map((x) => (x.includes('|') ? Q.epName(x) : Q.devName(x))).join('、') || '—' },
-      ]), rows, { onRow: ({ i }) => openGroup(App, i), limit: ROW_LIMIT, rowClass: ({ g }) => 'l4-group st-' + g.status + (g.divergent ? ' div' : '') })) : h('p', { class: 'muted' }, '這一格沒有可算的位址組合。'),
+      ]), rows, { onRow: ({ i }) => openGroup(App, i), limit: ROW_LIMIT, rowClass: ({ g }) => 'l4-group st-' + g.status + (g.divergent ? ' div' : '') }) : h('p', { class: 'muted' }, '這一格沒有可算的位址組合。'),
       hidden ? h('p', { class: 'muted' }, `另有 ${V.num(hidden)} 組全部拒絕，已收起。`) : null,
       het && rows.length < all.length ? h('p', { class: 'muted' }, `另有 ${V.num(all.length - rows.length)} 組沒有造成差異，已收起。`) : null,
     ]);
@@ -627,14 +627,14 @@
     const rows = c.ruleDetails;
     return h('div', { class: 'l4-sub' }, [
       h('h4', null, ['L2：牽涉的規則 ', V.chip(String(rows.length))]),
-      rows.length ? h('div', { class: 'work-table' }, V.table([
+      rows.length ? V.table([
         { t: '規則', f: (x) => ruleLink(App, x) },
         { t: '允許', f: (x) => V.num(x.verdicts.allow), s: (x) => x.verdicts.allow, cls: 'num' },
         { t: '拒絕', f: (x) => V.num(x.verdicts.deny), s: (x) => x.verdicts.deny, cls: 'num' },
         { t: '無法判斷', f: (x) => V.num(x.verdicts.unknown), s: (x) => x.verdicts.unknown, cls: 'num' },
         { t: '條件無法判斷', f: (x) => (x.uncertain ? V.num(x.uncertain) : ''), s: (x) => x.uncertain, cls: 'num' },
         { t: '服務', f: (x) => h('span', { class: 'mono' }, x.services.join(' ')) },
-      ], rows, { limit: ROW_LIMIT, rowClass: () => 'l4-ruledetail' })) : h('p', { class: 'muted' }, '沒有牽涉的規則。'),
+      ], rows, { limit: ROW_LIMIT, rowClass: () => 'l4-ruledetail' }) : h('p', { class: 'muted' }, '沒有牽涉的規則。'),
     ]);
   }
   /** L3：Q.reach 的結果：結論、起點、NAT 之後的目的、決定的規則、無法判斷的原因與每條路徑的逐跳 */

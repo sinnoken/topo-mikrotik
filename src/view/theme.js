@@ -16,7 +16,8 @@
   const kind = { firewall: '#7b208e', switch: '#2795b5', router: '#335dcd', host: '#977af8', unknown: '#535d62' };
   // 狀態文字色：對白底、淺色狀態底與畫布底都 ≥ 4.5:1（與 app.css 的 --err-text 等一致，有測試）
   const text = { body: '#1f2933', muted: '#5f6d7e', err: '#b3261e', warn: '#8a5300', ok: '#17692f', info: '#315d8a' };
-  const mark = { select: '#0b6bcb', hover: '#1f2933', find: '#a44a88', trace: '#622fa6', bad: '#d93025', good: '#1e8e3e' };
+  // unverified：路由追蹤停在未收集的設備（無法驗證，不是錯誤），中性灰
+  const mark = { select: '#0b6bcb', hover: '#1f2933', find: '#a44a88', trace: '#622fa6', bad: '#d93025', good: '#1e8e3e', unverified: '#687789' };
   const weakEdge = {
     hearsay: { alpha: 0.85, dash: [2, 3] },
     // 推論鏈路：沒有 LLDP 時由 MAC 表、MNDP、點對點網段推定相鄰（證據強於純 MNDP，弱於 LLDP）
@@ -39,7 +40,7 @@
     // 只改線型與透明度，保留速率色
     weakEdge,
     // 嚴重度：顏色之外一律有外形（錯誤方形、警告三角形），節點右上角與連線中點共用
-    sev: { error: '#d93025', warn: '#f29900' },
+    sev: { error: '#d93025', warn: '#c27a00' },
     sevShape: { error: 'square', warn: 'triangle' },
     // 圖上的標示：選取（藍色實線環）、滑過（深色細環）、搜尋結果、路由追蹤（含箭頭）各用不同顏色；bad／good 是狀態
     mark,
@@ -71,16 +72,27 @@
     },
     alpha: { dimEdge: 0.12, dimNode: 0.15, dimLabel: 0.25, overlay: 0.9 },
     text,
-    // 字型清單與 app.css 的 body、--mono 相同（有測試）
+    // 字型清單與 app.css 的 --font-sans／--font-mono 同一串（有測試）：拉丁字型在前、繁中字型在後。
+    // 畫布字級是螢幕 px：設備名稱 labelPx、分群名稱 groupPx；節點內的小字在螢幕上小於 minPx 時不畫
     font: {
-      ui: '"Microsoft JhengHei", "PingFang TC", "Noto Sans TC", "Segoe UI", sans-serif',
-      mono: 'Consolas, "Cascadia Mono", "Courier New", monospace',
+      sans: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif',
+      mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+      weight: { normal: 400, strong: 600 },
+      labelPx: 13, groupPx: 13, minPx: 11,
     },
     // 畫布上的中性色：底色（與 --surface 相同；每次繪圖先填滿，匯出 PNG 與多條鏈路的中縫也用它）、分群底框、標籤、埠名、節點描邊
     canvas: {
       surface: '#f8fafc',
-      group: { fill: 'rgba(11,107,203,0.035)', stroke: 'rgba(11,107,203,0.18)', text: '#1f5a96' },
+      // 分群標籤畫在螢幕座標，底色 labelBg 蓋住底下的連線，文字對它 ≥ 4.5:1；滑過時顯示全名並加 stroke 外框。
+      // stroke（對畫布底色約 1.3:1）刻意淡：群框只是版面的視覺分區（自動群組不代表實體位置），辨識靠標籤文字與詳情的群組 chip，
+      // 不靠框線，屬裝飾性圖形，不受 1.4.11 的 3:1 約束；加深會和連線搶視線
+      group: { fill: 'rgba(11,107,203,0.035)', stroke: 'rgba(11,107,203,0.18)', text: '#1f5a96', labelBg: 'rgba(248,250,252,0.92)' },
+      // 推定偏離（跨設備一致性檢查依多數決推定與其他設備不同的那一台；是推論）：節點外再一圈虛線，
+      // 比選取（mark.select 實線、外擴 6）與高亮（實線、外擴 5）更外圈，顏色與狀態色、選取、滑過、搜尋、追蹤都不同。label／tip 給圖例用
+      deviation: { c: '#a21caf', w: 2.5, dash: [4, 3], gap: 10, label: '推定偏離（多數決，推論）',
+        tip: '跨設備一致性檢查依多數決推定與其他設備不同的設備；是推論，不代表一定是這台設錯' },
       label: { bg: 'rgba(255,255,255,0.88)', text: text.body, textUncollected: text.muted, maxEm: 14 },
+      // 埠名標籤：border 是文字底塊的細邊（對畫布底色約 1.8:1），只是裝飾，可讀性由 text 對 bg 的對比負責（≥ 4.5:1）
       port: { bg: 'rgba(255,255,255,0.95)', border: 'rgba(120,130,140,0.5)', text: '#4a5560', maxEm: 12 },
       outline: '#ffffff', uncollectedFill: '#ffffff', sevFallback: '#7c8691',
       // 圖例中只表達線型（證據強度、介面類型）時用的中性線色

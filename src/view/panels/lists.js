@@ -11,7 +11,7 @@
   // groupBy：rule（依規則代碼）或 device（依設備，Q.findingDevice）；onlyNew：只看與舊基準比對後新出現的；
   // editing：正在變更處理狀態的那一筆（findings 的索引）。匯出報表的「依設備排序」在資料中心（app-hub.js）
   const state = { sev: { error: true, warn: true, info: true }, open: new Set(), shown: new Map(), selected: -1,
-    groupBy: 'rule', onlyNew: false, editing: -1 };
+    groupBy: 'rule', onlyNew: false, editing: -1, cat: new Map() };
   const R = () => V.remediation;
   const DAY_MS = 86400000;
   const dateOf = (iso) => String(iso).slice(0, 10);
@@ -55,7 +55,6 @@
       h('button', { class: 'primary', 'aria-label': '儲存處理狀態：' + f.message, onclick: save }, '儲存'),
       h('button', { class: 'ghost', onclick: cancel }, '取消'), err]);
   }
-  const activateByKey = (fn) => (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); } };
   /**
    * 篩選列的選項（所有分頁共用）：「標籤 筆數」，選取時以強調色填滿；筆數為 0 且未選取時停用。
    * cls 是狀態色（err／warn…），只在有內容時使用。
@@ -115,7 +114,7 @@
       const select = () => { state.selected = i; App.selectFinding(i); findings(App); };
       const edit = (e) => { e.stopPropagation(); state.editing = state.editing === i ? -1 : i; findings(App); };
       return h('div', { class: 'fitem-wrap' }, [h('div', { class: 'fitem-row' }, [
-        h('div', { class: 'fitem' + (state.selected === i ? ' sel' : ''), role: 'button', tabindex: '0', onclick: select, onkeydown: activateByKey(select) }, [
+        h('div', { class: 'fitem' + (state.selected === i ? ' sel' : ''), role: 'button', tabindex: '0', onclick: select, onkeydown: V.activateByKey(select) }, [
           done || showId ? h('span', { class: 'id' }, f.id + ' ') : null,
           s && s !== 'open' ? V.chip(R().statusText(s), R().STATUS_CHIP[s] + ' ledger-chip', { 'data-status': s }) : null, s && s !== 'open' ? ' ' : null,
           !state.onlyNew && isNew(f) ? V.chip('新出現', 'info', { title: `舊基準（${base.name}）沒有這筆` }) : null, f.message,
@@ -128,20 +127,38 @@
           title: it ? '變更處理狀態（待處理、已排程修復、可接受、誤報…）與備註；只存在這個瀏覽器的處理紀錄，不改變基準' : '處理紀錄沒有這一筆（處理紀錄無法使用）',
           onclick: edit,
         }, '處理'),
-      ]), state.editing === i && it ? ledgerEditor(App, f, it, i) : null]);
+      ]), V.deviationLine(App, f.deviation, { tie: false }), state.editing === i && it ? ledgerEditor(App, f, it, i) : null]);
     };
     /** 一個可展開的分組：key 是展開狀態的鍵，head 是標題列的內容 */
-    const group = (key, head, idxs, cls, showId) => {
+    const group = (key, head, idxs, cls, showId, ruleId) => {
       const open = state.open.has(key);
       const toggle = () => { open ? state.open.delete(key) : state.open.add(key); findings(App); };
-      const g = h('div', { class: 'fgroup' + (cls ? ' ' + cls : '') }, [h('div', { class: 'head', role: 'button', tabindex: '0', 'aria-expanded': String(open), onclick: toggle, onkeydown: activateByKey(toggle) }, [
-        h('span', null, open ? '▾' : '▸'), ...head, V.chip(String(idxs.length)),
+      const g = h('div', { class: 'fgroup' + (cls ? ' ' + cls : '') }, [h('div', { class: 'head', role: 'button', tabindex: '0', 'aria-expanded': String(open), onclick: toggle, onkeydown: V.activateByKey(toggle) }, [
+        h('span', { 'aria-hidden': 'true' }, open ? '▾' : '▸'), ...head, V.chip(String(idxs.length)),
       ])]);
       if (open) {
         const n = state.shown.get(key) || 100;
+        // 依規則分組時，展開後在結果列表上方列出這條規則的處理提示（與詳情卡片同一個 helper）
+        const hint = ruleId ? R().hintLine(ruleId, 'fhint') : null; if (hint) g.appendChild(hint);
         g.appendChild(h('div', { class: 'items' }, idxs.slice(0, n).map((i) => item(i, showId))));
         if (idxs.length > n) g.appendChild(h('a', { class: 'link more', onclick: () => { state.shown.set(key, n + 200); findings(App); } }, `再顯示 200 筆（共 ${idxs.length} 筆）`));
       }
+      return g;
+    };
+    /**
+     * 一個規則類別（CATALOG 的 cat）：標題寫出這一類待處理的「錯誤 N／警告 N／提醒 N」（文字＋外形，不只靠顏色）。
+     * 有錯誤或警告的類別預設展開到規則層，只有提醒的預設收合；使用者切換後依 state.cat 保留。
+     */
+    const category = (cat, n, rules) => {
+      const key = 'cat:' + cat; const sevs = ['error', 'warn', 'info'].filter((s) => n[s]);
+      const open = state.cat.has(key) ? state.cat.get(key) : n.error + n.warn > 0;
+      const toggle = () => { state.cat.set(key, !open); findings(App); };
+      const counts = sevs.map((s) => V.chip([V.sevDot(s), `${V.SEV[s]} ${V.num(n[s])}`], (s === 'error' ? 'err' : s) + ' fcat-n', { 'data-sev': s }));
+      const g = h('div', { class: 'fgroup fcat', 'data-cat': cat }, [h('div', { class: 'head', role: 'button', tabindex: '0', 'aria-expanded': String(open),
+        'aria-label': `${cat}：` + sevs.map((s) => `${V.SEV[s]} ${n[s]} 筆`).join('、'), onclick: toggle, onkeydown: V.activateByKey(toggle) }, [
+        h('span', { 'aria-hidden': 'true' }, open ? '▾' : '▸'), h('span', { class: 'title' }, cat), h('span', { class: 'fcat-counts' }, counts),
+      ])]);
+      if (open) g.appendChild(h('div', { class: 'fcat-rules' }, rules));
       return g;
     };
     const shown = (idx) => state.sev[all[idx].severity] && !handledSet.has(idx) && pass(all[idx]);
@@ -156,11 +173,19 @@
           idxs, 'by-device' + (dev === null ? ' no-device' : ''), true));
       });
     } else {
-      const groups = new Map();
-      all.forEach((f, idx) => { if (shown(idx)) S.util.getOr(groups, f.id, () => []).push(idx); });
-      groups.forEach((idxs, id) => {
-        const c = S.query.rule(id);
-        root.appendChild(group(id, [V.sevDot(c.severity), h('span', { class: 'title' }, c.title), h('span', { class: 'id' }, id)], idxs, '', false));
+      // 依規則：類別 → 規則 → 結果。類別與規則的順序取自 S.query.rules()（CATALOG 的宣告順序）；結果維持基準的順序
+      const byRule = new Map();
+      all.forEach((f, idx) => { if (shown(idx)) S.util.getOr(byRule, f.id, () => []).push(idx); });
+      const cats = new Map();
+      S.query.rules().forEach((r) => { if (byRule.has(r.id)) S.util.getOr(cats, r.cat, () => []).push(r); });
+      // CATALOG 沒有的規則代碼（不應發生）不吞掉，另列一類
+      const unknown = Array.from(byRule.keys()).filter((id) => !S.query.rule(id));
+      if (unknown.length) cats.set('#unknown', unknown.map((id) => ({ id, cat: '#unknown', severity: all[byRule.get(id)[0]].severity, title: id })));
+      cats.forEach((rules, cat) => {
+        const n = { error: 0, warn: 0, info: 0 };
+        rules.forEach((r) => byRule.get(r.id).forEach((i) => { n[all[i].severity]++; }));
+        root.appendChild(category(cat === '#unknown' ? '未登錄的規則' : cat, n, rules.map((r) =>
+          group(r.id, [V.sevDot(r.severity), h('span', { class: 'title' }, r.title), h('span', { class: 'id' }, r.id)], byRule.get(r.id), '', false, r.id))));
       });
     }
     // 已處理：依狀態各一組，不受上方嚴重度篩選影響，預設收合
@@ -168,8 +193,8 @@
       const idxs = handled.get(s); if (!idxs || !idxs.length) return;
       const key = '#handled:' + s; const open = state.open.has(key);
       const toggle = () => { open ? state.open.delete(key) : state.open.add(key); findings(App); };
-      const g = h('div', { class: 'fgroup handled', 'data-status': s }, [h('div', { class: 'head', role: 'button', tabindex: '0', 'aria-expanded': String(open), onclick: toggle, onkeydown: activateByKey(toggle) }, [
-        h('span', null, open ? '▾' : '▸'), h('span', { class: 'title' }, R().statusText(s)), V.chip(String(idxs.length)),
+      const g = h('div', { class: 'fgroup handled', 'data-status': s }, [h('div', { class: 'head', role: 'button', tabindex: '0', 'aria-expanded': String(open), onclick: toggle, onkeydown: V.activateByKey(toggle) }, [
+        h('span', { 'aria-hidden': 'true' }, open ? '▾' : '▸'), h('span', { class: 'title' }, R().statusText(s)), V.chip(String(idxs.length)),
       ])]);
       if (open) g.appendChild(h('div', { class: 'items' }, idxs.map((i) => item(i, true))));
       root.appendChild(g);
@@ -180,8 +205,8 @@
     if (fp.length) {
       const key = '#fp'; const open = state.open.has(key);
       const toggle = () => { open ? state.open.delete(key) : state.open.add(key); findings(App); };
-      const g = h('div', { class: 'fgroup rules fp-rules' }, [h('div', { class: 'head', role: 'button', tabindex: '0', 'aria-expanded': String(open), onclick: toggle, onkeydown: activateByKey(toggle) }, [
-        h('span', null, open ? '▾' : '▸'), h('span', { class: 'title' }, '誤報率最高的規則'), V.chip(String(fp.length)),
+      const g = h('div', { class: 'fgroup rules fp-rules' }, [h('div', { class: 'head', role: 'button', tabindex: '0', 'aria-expanded': String(open), onclick: toggle, onkeydown: V.activateByKey(toggle) }, [
+        h('span', { 'aria-hidden': 'true' }, open ? '▾' : '▸'), h('span', { class: 'title' }, '誤報率最高的規則'), V.chip(String(fp.length)),
       ])]);
       if (open) g.appendChild(h('div', { class: 'items' }, fp.map((r) => h('div', { class: 'rule', 'data-rule-id': r.id, title: '依處理紀錄：標為誤報的筆數／這條規則在處理紀錄中的總筆數' }, [
         h('span', { class: 'mark' }, '!'),
@@ -197,8 +222,8 @@
       const list = rules.filter((r) => r.status === st); if (!list.length) return;
       const key = '#' + st; const open = state.open.has(key);
       const toggle = () => { open ? state.open.delete(key) : state.open.add(key); findings(App); };
-      const g = h('div', { class: 'fgroup rules ' + st }, [h('div', { class: 'head', role: 'button', tabindex: '0', 'aria-expanded': String(open), onclick: toggle, onkeydown: activateByKey(toggle) }, [
-        h('span', null, open ? '▾' : '▸'), h('span', { class: 'title' }, label), V.chip(String(list.length), st === 'pass' ? 'ok' : ''),
+      const g = h('div', { class: 'fgroup rules ' + st }, [h('div', { class: 'head', role: 'button', tabindex: '0', 'aria-expanded': String(open), onclick: toggle, onkeydown: V.activateByKey(toggle) }, [
+        h('span', { 'aria-hidden': 'true' }, open ? '▾' : '▸'), h('span', { class: 'title' }, label), V.chip(String(list.length), st === 'pass' ? 'ok' : ''),
       ])]);
       if (open) g.appendChild(h('div', { class: 'items' }, list.map((r) => h('div', { class: 'rule', title: note(r) }, [
         h('span', { class: 'mark' }, mark), h('span', { class: 'title' }, [r.title, st === 'nodata' ? h('div', { class: 'muted note' }, note(r)) : null,
@@ -209,11 +234,11 @@
       root.appendChild(g);
     });
   }
-  findings.reset = () => { state.open = new Set(); state.shown = new Map(); state.selected = -1; state.editing = -1; state.onlyNew = false; };
+  findings.reset = () => { state.open = new Set(); state.cat = new Map(); state.shown = new Map(); state.selected = -1; state.editing = -1; state.onlyNew = false; };
   findings.openFirst = (Q) => { const f = Q.findings().find((x) => x.severity !== 'info'); if (f) state.open.add(f.id); };
   findings.showProblems = (App) => {
     state.sev = { error: true, warn: true, info: false };
-    state.open = new Set();
+    state.open = new Set(); state.cat = new Map();
     state.selected = -1;
     findings(App);
   };
@@ -231,7 +256,7 @@
     // 篩選選項；devices.csv 草稿（C01）的匯出在資料中心同一頁的「這一輪的輸入」與「給收集器」
     root.appendChild(h('div', { class: 'summary' }, Object.entries(F).map(([k, [label, list]]) => filterChip(label, list.length, { cls: k === 'missing' ? 'err' : '', on: cov.filter === k, onclick: () => { cov.filter = k; coverage(App); } }))));
     const list = F[cov.filter][1];
-    root.appendChild(h('div', { class: 'work-table' }, V.table([
+    root.appendChild(V.table([
       { t: '設備', f: (r) => Q.devName(r.dev) },
       { t: '類型', f: (r) => V.kindChip(r.kind) },
       { t: '資料', f: (r) => h('div', { class: 'chip-list' }, [
@@ -240,7 +265,7 @@
       ]) },
       { t: '收集失敗', f: (r) => failureList(App, r.failures || []) },
       { t: '鏈路', f: (r) => String(r.links) },
-    ], list, { onRow: (r) => App.select({ type: 'device', key: r.dev }, { focus: true }), limit: 600, bad: V.coverageGap })));
+    ], list, { onRow: (r) => App.select({ type: 'device', key: r.dev }, { focus: true }), limit: 600, bad: V.coverageGap }));
   }
   coverage.showMissing = (App) => { cov.filter = 'missing'; coverage(App); };
   /** 收集失敗清單：原因、指令（標頭層級的失敗沒有指令）與影響的資料類別；點一下開啟原文的失敗行 */
@@ -310,13 +335,13 @@
     root.appendChild(h('div', { class: 'summary' }, [filterChip('有差異', r.items.filter((i) => i.status !== 'ok').length, { on: cmp.filter === 'problem', onclick: () => { cmp.filter = 'problem'; compare(App); } }),
       ...Object.entries(CMP_ST).map(([k, [label, cls]]) => filterChip(label, r.summary[k] || 0, { cls, on: cmp.filter === k, onclick: () => { cmp.filter = k; compare(App); } }))]));
     const items = r.items.filter((i) => (cmp.filter === 'problem' ? i.status !== 'ok' : i.status === cmp.filter));
-    root.appendChild(h('div', { class: 'work-table' }, V.table([{ t: '', f: (i) => V.chip(CMP_ST[i.status][0], CMP_ST[i.status][1]) }, { t: '項目', f: (i) => i.message }], items, {
+    root.appendChild(V.table([{ t: '', f: (i) => V.chip(CMP_ST[i.status][0], CMP_ST[i.status][1]) }, { t: '項目', f: (i) => i.message }], items, {
       onRow: (i) => {
         if (i.type === 'device' && App.Q.getDevice(i.ref)) App.select({ type: 'device', key: i.ref }, { focus: true });
         else if (i.type === 'link' && App.Q.getLink(i.ref)) App.select({ type: 'link', key: i.ref }, { focus: true });
         else if (i.type === 'link') { const ep = i.ref.split('~')[0]; if (App.Q.getInterface(ep)) App.select({ type: 'interface', key: ep }, { focus: true }); }
       },
-    })));
+    }));
   }
   // 換基準時：新舊基準比對清空（舊基準要重新載入）；預期資料保留，下一次重繪時和新的基準重新比對
   compare.reset = () => { V.baselineDiff.reset(); };
@@ -366,9 +391,17 @@
       (r) => (r.id == null ? { type: 'device', key: r.dev } : { type: 'vlan', key: String(r.id) }), (r) => [dn(r.dev), r.id, r.name, r.desc]],
     };
     // 兩層：清單種類用分段按鈕，種類內的篩選用篩選選項，避免兩排看起來是同一層
-    root.appendChild(h('div', { class: 'summary' }, h('div', { class: 'seg', role: 'tablist' }, Object.entries(T).map(([k, [label]]) => h('button', {
-      class: `btn ${inv.kind === k ? 'on' : ''}`, role: 'tab', 'aria-selected': String(inv.kind === k), title: label + '清單',
-      onclick: () => { inv.kind = k; inv.filter = 'all'; inv.sortBy = -1; inv.sortDir = 1; inventory(App); } }, [label + ' ', h('span', { class: 'n' }, String(TAB_COUNT[k]))])))));
+    // 清單種類是 tabs：只有選取中的分頁在 Tab 順序裡（roving tabindex），←／→ 切換、Home／End 跳到頭尾，切換後焦點留在分頁上
+    const kinds = Object.keys(T);
+    const pick = (k, focus) => { inv.kind = k; inv.filter = 'all'; inv.sortBy = -1; inv.sortDir = 1; inventory(App); if (focus) { const b = V.$('#inv-tab-' + k); if (b) b.focus(); } };
+    const tabKey = (e) => {
+      const n = kinds.indexOf(inv.kind); const to = { ArrowRight: n + 1, ArrowLeft: n - 1, Home: 0, End: kinds.length - 1 }[e.key];
+      if (to === undefined) return; e.preventDefault(); pick(kinds[(to + kinds.length) % kinds.length], true);
+    };
+    root.appendChild(h('div', { class: 'summary' }, h('div', { class: 'seg', role: 'tablist', 'aria-label': '清單種類' }, Object.entries(T).map(([k, [label]]) => h('button', {
+      class: `btn ${inv.kind === k ? 'on' : ''}`, role: 'tab', id: 'inv-tab-' + k, 'aria-selected': String(inv.kind === k), 'aria-controls': 'inv-panel',
+      tabindex: inv.kind === k ? '0' : '-1', title: label + '清單', onkeydown: tabKey,
+      onclick: () => pick(k, false) }, [label + ' ', h('span', { class: 'n' }, String(TAB_COUNT[k]))])))));
     const [, rows0, cols, sel, text] = T[inv.kind];
     const FILTERS = {
       ip: [['all', '全部', () => true, C.ips], ['arp', 'ARP', (r) => r.from.includes('ARP'), C.arpIps], ['own', '設備自有', (r) => r.from.some((x) => x === '介面' || x === '管理'), C.ownIps], ['heard', '鄰居宣告', (r) => r.from.includes('鄰居宣告'), C.heardIps]],
@@ -379,7 +412,7 @@
     if (flt) {
       root.appendChild(h('div', { class: 'summary sub' }, flt.map(([k, label, , c]) => filterChip(label, c, { cls: k === 'noip' ? 'warn' : '', on: inv.filter === k, onclick: () => { inv.filter = k; inventory(App); }, title: '點一下切換篩選' }))));
     }
-    const box = h('input', { type: 'search', placeholder: '篩選：名稱、IP、MAC、VLAN…', value: inv.q, class: 'pane-filter' });
+    const box = h('input', { type: 'search', placeholder: '篩選：名稱、IP、MAC、VLAN…', 'aria-label': '篩選清單', value: inv.q, class: 'pane-filter' });
     const body = h('div');
     const draw = () => {
       const t = inv.q.trim().toLowerCase();
@@ -394,7 +427,8 @@
         onSort: (n) => { inv.sortDir = inv.sortBy === n ? -inv.sortDir : 1; inv.sortBy = n; draw(); } }));
     };
     box.addEventListener('input', () => { inv.q = box.value; draw(); });
-    root.appendChild(box); root.appendChild(body); draw();
+    // 分頁內容：篩選選項之後的篩選框與表格
+    root.appendChild(h('div', { id: 'inv-panel', role: 'tabpanel', 'aria-labelledby': 'inv-tab-' + inv.kind }, [box, body])); draw();
   }
   V.lists = { findings, coverage, compare, inventory };
 })(globalThis.SSOT = globalThis.SSOT || {});

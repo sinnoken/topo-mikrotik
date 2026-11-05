@@ -1,5 +1,6 @@
 /*
- * 輸入對話框與建立基準：貼上／選擇／拖放檔案、命名規則選單、建立進度，完成後載入並存入 store。
+ * 輸入對話框與建立基準：貼上／選擇／拖放檔案、命名規則選單、建立前的預檢（S.preflight）、建立進度，完成後載入並存入 store。
+ * 也負責歡迎畫面的收集指引（指令清單取自 S.collectCommands，由 tools/collector-commands.sh 產生）。
  */
 (function (S) {
   'use strict';
@@ -16,6 +17,8 @@
   A.bindInputDialog = function bindInputDialog() {
     const dlg = $('#dlg-input');
     $('#input-close').onclick = () => dlg.close();
+    $('#input-text').addEventListener('input', schedulePreflight);
+    bindCollectGuide();
     $('#input-file').onchange = (e) => addFiles(e.target.files);
     $('#input-pick').onclick = () => $('#input-file').click();
     $('#input-sample').onclick = () => { $('#input-text').value = S.samples['sample-bundle.txt']; input.files = []; renderFiles(); };
@@ -23,14 +26,16 @@
     drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
     drop.addEventListener('dragleave', () => drop.classList.remove('over'));
     drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); addFiles(e.dataTransfer.files); });
+    // 命名規則會合併設備名（例如去掉網域），換了就重新預檢
     $('#input-profile').onchange = async (e) => {
-      if (e.target.value !== '__file') return;
-      const f = await pickFile('.json,application/json'); if (!f) { e.target.value = ''; return; }
+      if (e.target.value !== '__file') { runPreflight(); return; }
+      const f = await pickFile('.json,application/json'); if (!f) { e.target.value = ''; runPreflight(); return; }
       try {
         const j = JSON.parse(await f.text()); S.profile.compile(j); S.profiles[j.id] = j;
         const saved = (await S.store.get('profiles')) || {}; saved[j.id] = j; await S.store.set('profiles', saved);
-        fillProfiles(j.id);
+        await fillProfiles(j.id);
       } catch (err) { alert(err.message); e.target.value = ''; }
+      runPreflight();
     };
     $('#input-build').onclick = runBuild;
   };
@@ -41,9 +46,87 @@
   }
   function renderFiles() {
     const box = V.clear($('#input-files'));
-    input.files.forEach((f, i) => box.appendChild(V.chip(`${f.name}（${V.num(f.text.length)} 字元）  ✕`, '', {
-      title: '點一下移除', onclick: () => { input.files.splice(i, 1); renderFiles(); },
-    })));
+    // 已選的檔案：名稱是文字，移除是獨立的按鈕（鍵盤可操作、有名稱）；移除後焦點回到下一個移除鈕或檔案選擇
+    input.files.forEach((f, i) => box.appendChild(V.chip([`${f.name}（${V.num(f.text.length)} 字元）`,
+      h('button', { type: 'button', class: 'ghost chip-x', 'aria-label': '移除 ' + f.name, title: '移除這個檔案',
+        onclick: () => { input.files.splice(i, 1); renderFiles(); const xs = box.querySelectorAll('.chip-x'); const next = xs[Math.min(i, xs.length - 1)] || $('#input-pick'); next.focus(); } },
+      h('span', { 'aria-hidden': 'true' }, '✕'))], 'file-chip')));
+    runPreflight();
+  }
+  /** 對話框目前的輸入（貼上的文字在前、檔案依加入順序），建立與預檢共用 */
+  function inputSources() {
+    const text = $('#input-text').value;
+    const sources = [];
+    if (text.trim()) sources.push({ name: S.readers.PASTE, text });
+    input.files.forEach((f) => sources.push({ name: f.name, text: f.text }));
+    return sources;
+  }
+  function selectedProfile() { const pid = $('#input-profile').value; return pid && pid !== '__file' ? S.profiles[pid] : null; }
+
+  // ---- 建立前的預檢（S.preflight：只切塊、辨識與解析，不建模）：打字時延遲重算，選檔、載入範例、換命名規則時立即重算
+  const PREFLIGHT_MS = 400; // 打字停下多久才重算：約 1000 台的收集檔預檢約需數百毫秒，不在每個按鍵都跑
+  const LIST_MAX = 200; // 清單最多列出的筆數，其餘只寫總數
+  // 輸入的簡短指紋：建立時若輸入在預檢後被改過（例如程式直接寫入文字框、沒有 input 事件），就重新預檢
+  const inputSig = (sources, profile) => sources.map((x) => `${x.name}:${x.text.length}:${x.text.slice(0, 64)}:${x.text.slice(-64)}`).join('|') + '|' + (profile ? profile.id : '');
+  function schedulePreflight() { clearTimeout(input.pfTimer); input.pfTimer = setTimeout(runPreflight, PREFLIGHT_MS); }
+  function runPreflight() {
+    clearTimeout(input.pfTimer);
+    const sources = inputSources(); const profile = selectedProfile();
+    input.sig = inputSig(sources, profile); input.pre = null; input.pfError = null;
+    if (sources.length) {
+      try { input.pre = S.preflight(sources, { profile }); } catch (e) { input.pfError = e.message; }
+    }
+    renderPreflight(sources);
+    return input.pre;
+  }
+  function renderPreflight(sources) {
+    const box = V.clear($('#input-preflight')); const btn = $('#input-build');
+    const block = (why) => { btn.disabled = !!why; btn.title = why || ''; };
+    if (!sources.length) { box.appendChild(h('div', { class: 'muted' }, '尚未輸入：貼上收集檔內容，或選擇檔案。')); block('還沒有輸入'); return; }
+    // 預檢本身失敗（例如命名規則有誤）不擋建立：建立時會以同樣的錯誤明確回報
+    if (input.pfError) { box.appendChild(h('div', { class: 'pf-why' }, '預檢失敗：' + input.pfError)); block(''); return; }
+    const p = input.pre; const n = p.devices.length; const m = p.unrecognized.length; const k = p.partial.length;
+    box.appendChild(h('div', { class: 'pf-head' }, [
+      V.chip(`認到 ${V.num(n)} 台設備`, n ? 'ok' : 'err'), V.chip(`${V.num(p.blockCount)} 個指令區塊`),
+      V.chip(m ? `${V.num(m)} 段無法辨識` : '沒有無法辨識的段落', m ? 'err' : 'ok'),
+      k ? V.chip(`${V.num(k)} 段有認不得的行`, 'warn') : null]));
+    if (!n) box.appendChild(h('p', { class: 'pf-why' }, '沒有認到任何設備，無法建立基準：收集檔的每台設備要以「設備名 (管理 IP):」這一行開頭（見上方「格式說明」），或選擇以設備名命名的檔案。'));
+    const more = (len) => (len > LIST_MAX ? h('div', { class: 'muted table-more' }, `只顯示前 ${LIST_MAX} 筆，共 ${V.num(len)} 筆`) : null);
+    // 位置的寫法與 I01、I03 的訊息相同：段落寫起訖行，收集器註解（kind: 'note'）只有一行
+    const at = (u) => `${u.file} 第 ${u.kind === 'note' ? u.startLine : `${u.startLine}–${u.endLine}`} 行`;
+    box.appendChild(h('details', { id: 'input-preflight-list', class: 'collect', open: input.pfOpen || null, ontoggle: (e) => { input.pfOpen = e.target.open; } }, [
+      h('summary', null, '查看清單'),
+      n ? V.table([{ t: '設備', f: (d) => d.name }, { t: '區塊', f: (d) => V.num(d.blocks) },
+        { t: '資料種類', f: (d) => h('div', { class: 'chip-list' }, d.dataLabels.length ? d.dataLabels.map((l) => V.chip(l)) : [V.chip('沒有可用的資料', 'err')]) }], p.devices, { limit: LIST_MAX }) : null,
+      m ? h('div', null, '無法辨識的段落（建立後列為 I01）') : null,
+      m ? h('ul', { class: 'pf-bad' }, p.unrecognized.slice(0, LIST_MAX).map((u) => h('li', null, `${at(u)}：${u.reason}`))) : null,
+      m ? more(m) : null,
+      k ? h('div', null, '有認不得的行的段落（其餘內容照常建立；建立後列為 I03）') : null,
+      k ? h('ul', { class: 'pf-bad' }, p.partial.slice(0, LIST_MAX).map((u) => h('li', null, `${at(u)}（${u.command || '沒有指令標記'}）：${V.num(u.lines)} 行`))) : null,
+      k ? more(k) : null]));
+    block(n ? '' : '沒有認到任何設備');
+  }
+
+  // ---- 收集指引（歡迎畫面）與格式範例（對話框）
+  /** 寫入剪貼簿；瀏覽器不支援或拒絕時明確告知改用手動選取（不靜默失敗）。status：顯示結果的 role=status 元素 */
+  async function copyText(text, status) {
+    const c = globalThis.navigator && globalThis.navigator.clipboard;
+    try {
+      if (!c || !c.writeText) throw new Error('瀏覽器不支援剪貼簿');
+      await c.writeText(text);
+      status.textContent = '已複製';
+    } catch (e) { status.textContent = `無法自動複製（${e.message}），請直接選取上面的文字複製`; }
+  }
+  function bindCollectGuide() {
+    $('#input-format-copy').onclick = () => copyText($('#input-format-example').textContent, $('#input-format-copy-status'));
+    // 指令清單由 tools/collector-commands.sh 產生（samples/collect-commands.js），畫面不另寫一份
+    const C = S.collectCommands;
+    if (!C) { $('#welcome-commands').textContent = '指令清單未載入（samples/collect-commands.js）'; $('#welcome-copy').disabled = true; return; }
+    const list = C.default.map((c) => c.command).join('\n');
+    $('#welcome-commands').textContent = list;
+    $('#welcome-copy').onclick = () => copyText(list, $('#welcome-copy-status'));
+    V.clear($('#welcome-optional')).appendChild(h('span', null, ['只有部分設備才有的選單（Wi-Fi AP、CAPsMAN 控制器、RouterOS 7 的 VRF）另加：',
+      ...C.optional.flatMap((c, n) => [n ? '、' : '', h('code', null, c.command)])]));
   }
   async function fillProfiles(selected) {
     const saved = (await S.store.get('profiles').catch(() => null)) || {};
@@ -58,7 +141,7 @@
     const pasted = App.sources.find((s) => s.name === S.readers.PASTE);
     $('#input-text').value = pasted ? pasted.text : '';
     input.files = App.sources.filter((s) => s.name !== S.readers.PASTE).map((s) => ({ ...s }));
-    renderFiles(); await fillProfiles(App.profileJson ? App.profileJson.id : '');
+    await fillProfiles(App.profileJson ? App.profileJson.id : ''); renderFiles();
     // 建立選項 expectedData（目前只會由工作包帶入）：有時才顯示，預設沿用；取消勾選後這次建立不使用
     const xd = App.round.expectedData;
     $('#input-xd-row').classList.toggle('hidden', !xd);
@@ -68,12 +151,11 @@
     $('#dlg-input').showModal();
   };
   async function runBuild() {
-    const text = $('#input-text').value;
-    const sources = [];
-    if (text.trim()) sources.push({ name: S.readers.PASTE, text });
-    input.files.forEach((f) => sources.push({ name: f.name, text: f.text }));
+    const sources = inputSources();
     if (!sources.length) { $('#input-status').textContent = '請貼上收集檔內容，或選擇檔案。'; return; }
-    const pid = $('#input-profile').value; const profile = pid && pid !== '__file' ? S.profiles[pid] : null;
+    const profile = selectedProfile();
+    if (input.sig !== inputSig(sources, profile)) runPreflight();
+    if (input.pre && !input.pre.devices.length) { $('#input-status').textContent = '沒有認到任何設備，請依預檢的說明修正輸入。'; return; }
     const expectedData = App.round.expectedData && $('#input-xd').checked ? App.round.expectedData : null;
     const btn = $('#input-build'); btn.disabled = true;
     const bar = $('#input-progress'); bar.classList.remove('hidden'); const fill = bar.firstElementChild;

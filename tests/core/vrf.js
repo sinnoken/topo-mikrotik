@@ -148,7 +148,14 @@ test('VRF：只用 main 的網路，S.trace 與 Q.reach 的輸出和 2.11.0 相�
     return out;
   };
   fx.cases.forEach(([src, dst], n) => {
-    assert.deepStrictEqual(strip(S.trace(Q, src, dst), `${src}→${dst}`), fx.expected[n].trace, `trace ${src}→${dst}`);
+    // 之後新增的整體結果（status、unverified）由 reached 與 ends 推得，檢查一致後拿掉再比
+    const t = Object.assign({}, S.trace(Q, src, dst));
+    if (t.ok) {
+      assert.strictEqual(t.status, t.reached ? 'reached' : t.ends.every((e) => e.status === 'unverified') ? 'unverified' : 'unreachable', `${src}→${dst} 的 status`);
+      assert.deepStrictEqual(t.unverified, S.util.uniq(t.ends.filter((e) => e.status === 'unverified').map((e) => e.dev)), `${src}→${dst} 的 unverified`);
+      delete t.status; delete t.unverified;
+    }
+    assert.deepStrictEqual(strip(t, `${src}→${dst}`), fx.expected[n].trace, `trace ${src}→${dst}`);
     assert.deepStrictEqual(texts(Q.reach(src, dst, { proto: 'tcp', port: 22 }), []), fx.expected[n].reach, `reach ${src}→${dst}`);
   });
   assert.ok(fx.expected.some((e) => e.trace.ends && e.trace.ends.some((x) => x.status === 'loop')) && fx.expected.some((e) => !e.trace.ok), '涵蓋直連、迴圈與找不到起點');
@@ -169,6 +176,17 @@ test('VRF：Q.search 的 IP 副標，位址在多個 VRF 時寫出數量與名�
   const main = S.query(build(fx.input.join('\n') + '\n'));
   // 2.11.0 的文字
   assert.deepStrictEqual(['10.0.12.1', '192.168.1.10'].map((ip) => main.search(ip)[0].sub), ['介面位址 · A ether1', '屬於 A ether2 的網段']);
+});
+
+test('VRF：IP 前綴搜尋，網段鍵含 VRF、同一個 IP 在多個 VRF 合成一筆並寫出 VRF', () => {
+  const Q = S.query(build(NET()));
+  const r = Q.search('10.1.', 50);
+  const nets = r.filter((x) => x.type === 'subnet');
+  assert.deepStrictEqual(nets.map((x) => x.key), ['10.1.20.0/24', '10.1.20.0/24@cust-a'], '各 VRF 的網段各一筆，key 是網段鍵');
+  assert.ok(nets[1].sub.endsWith(' · VRF cust-a') && !nets[0].sub.includes('VRF'), JSON.stringify(nets));
+  const ip = r.filter((x) => x.type === 'ip' && x.key === '10.1.20.2');
+  assert.strictEqual(ip.length, 1, '同一個位址只列一次（搜尋不分 VRF）');
+  assert.ok(ip[0].sub.endsWith(' · 在 2 個 VRF：main、cust-a'), ip[0].sub);
 });
 
 test('VRF：Q.reach、zone、L3 子網圖依 VRF 分開', () => {

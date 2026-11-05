@@ -1,6 +1,7 @@
 /*
- * 頁首與工具列：資料中心、搜尋、路由追蹤、清除；圖的操作（全圖、重新排列、力導向、顯示切換）、圖例與匯出。
- * 輸入與輸出的入口集中在資料中心（app-hub.js）；工具列只留和圖有關的「匯出 PNG」（資料中心也有，呼叫同一個 A.exportPng）。
+ * 頁首與工具列：搜尋、資料中心、「⋯」更多操作（路由追蹤、匯出 PNG、清除基準）；圖的操作（全圖、版面▾、顯示▾）、圖例與匯出。
+ * 輸入與輸出的入口集中在資料中心（app-hub.js）；「⋯」只留和圖有關的「匯出 PNG」（資料中心也有，呼叫同一個 A.exportPng）。
+ * 下拉選單（⋯、版面、顯示）共用 A.bindMenu：方向鍵、Home／End 移動，Esc 關閉並把焦點還給按鈕，Tab 或點外面關閉。
  */
 (function (S) {
   'use strict';
@@ -8,17 +9,92 @@
   const A = V.app; const App = window.App;
   const EP = V.theme.endpoint; const WEAK = V.theme.weakEdge; const CV = V.theme.canvas;
 
+  // ================================================================ 下拉選單
+  const menus = [];
+  /** 選單項目可以操作：沒有停用，也沒有因為層級而隱藏 */
+  const usable = (b) => !b.disabled && !b.classList.contains('hidden');
+  /** 勾選與單選的選單項目：aria-checked 與 class on 一起改（外觀與朗讀同一個狀態） */
+  A.setChecked = function setChecked(el, on) { el.classList.toggle('on', on); el.setAttribute('aria-checked', String(on)); };
+  /** 關閉所有下拉選單（不移焦點）；路由追蹤、切換層級等操作先呼叫 */
+  A.closeMenus = function closeMenus() { menus.forEach((m) => m.close(false)); };
+  /**
+   * 下拉選單：btn 開關 menu（aria-expanded），開啟時焦點到第一個（↑ 開啟時到最後一個）可操作的項目。
+   * 有 data-keep 的項目（勾選項目）按了不關閉，方便連續切換；其他項目按了就關閉。place(btn, menu) 開啟前定位。
+   */
+  A.bindMenu = function bindMenu(btn, menu, place) {
+    const items = () => Array.from(menu.querySelectorAll('.menu-item')).filter(usable);
+    const isOpen = () => !menu.classList.contains('hidden');
+    const m = {
+      btn, menu, isOpen,
+      open(at) {
+        menus.forEach((x) => { if (x !== m) x.close(false); });
+        menu.classList.remove('hidden'); btn.setAttribute('aria-expanded', 'true');
+        if (place) place(btn, menu); // 顯示後才量得到選單的寬度
+        const list = items(); if (at !== undefined && list.length) list[at < 0 ? list.length - 1 : Math.min(at, list.length - 1)].focus();
+      },
+      close(refocus) {
+        if (!isOpen()) return;
+        menu.classList.add('hidden'); btn.setAttribute('aria-expanded', 'false');
+        if (refocus) btn.focus();
+      },
+    };
+    menus.push(m);
+    btn.addEventListener('click', () => (isOpen() ? m.close(false) : m.open(0)));
+    btn.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); m.open(e.key === 'ArrowDown' ? 0 : -1); }
+    });
+    menu.addEventListener('keydown', (e) => {
+      const list = items(); const i = list.indexOf(document.activeElement);
+      const go = (n) => { e.preventDefault(); if (list.length) list[(n + list.length) % list.length].focus(); };
+      if (e.key === 'ArrowDown') go(i + 1);
+      else if (e.key === 'ArrowUp') go(i < 0 ? -1 : i - 1);
+      else if (e.key === 'Home') go(0);
+      else if (e.key === 'End') go(-1);
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); m.close(true); }
+      else if (e.key === 'Tab') m.close(false);
+    });
+    // 事件冒泡到選單：項目自己的 onclick 先執行，再依 data-keep 決定要不要關閉
+    menu.addEventListener('click', (e) => {
+      const item = Array.from(menu.querySelectorAll('.menu-item')).find((x) => x.contains(e.target));
+      if (item && item.dataset.keep === undefined) m.close(false);
+    });
+    return m;
+  };
+  /** 收起路由追蹤表單；refocus 時焦點回到開啟它的「⋯」按鈕（Esc 收起時） */
+  A.closeTrace = function closeTrace(refocus) { $('#trace-pop').classList.add('hidden'); if (refocus) $('#btn-more').focus(); };
+  /** 點選單、路由追蹤以外的地方關閉它們；Esc 關閉開著的選單或路由追蹤，焦點回到開啟它的按鈕 */
+  function bindDismiss() {
+    const trace = $('#trace-pop');
+    document.addEventListener('mousedown', (e) => {
+      const t = e.target;
+      menus.forEach((m) => { if (!m.btn.contains(t) && !m.menu.contains(t)) m.close(false); });
+      if (!trace.contains(t) && !$('#more-menu').contains(t)) A.closeTrace(false);
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      const open = menus.find((m) => m.isOpen());
+      if (open) { open.close(true); return; }
+      if (!trace.classList.contains('hidden')) A.closeTrace(true);
+    });
+  }
+
   // ================================================================ 頁首
   A.bindHeader = function bindHeader() {
-    $('#btn-trace').onclick = () => { const p = $('#trace-pop'); p.classList.toggle('hidden'); if (!p.classList.contains('hidden')) { A.syncTraceVrf(); $('#trace-src').focus(); } };
+    A.bindMenu($('#btn-more'), $('#more-menu'));
+    bindDismiss();
+    // 路由追蹤表單是「⋯」旁邊的小對話框：從選單開啟（選單先關閉），也可由詳情的「追蹤路由」開啟（App.openTrace）
+    $('#btn-trace').onclick = () => App.openTrace();
     $('#trace-run').onclick = A.runTrace;
     ['#trace-src', '#trace-dst', '#trace-vrf'].forEach((s) => $(s).addEventListener('keydown', (e) => {
       if (e.key === 'Enter') A.runTrace();
-      if (e.key === 'Escape') $('#trace-pop').classList.add('hidden');
+      if (e.key === 'Escape') { e.stopPropagation(); A.closeTrace(true); }
     }));
+    // 畫布每次繪圖都先填滿 theme 的畫布底色，匯出前同步重畫一次，PNG 才是目前畫面且不透明
+    $('#btn-png').onclick = () => A.exportPng();
     $('#btn-clear').onclick = async () => {
+      A.closeMenus();
       if (!App.snap || !confirm('清除目前的基準與輸入？（只清除這個工具的資料）')) return;
-      await S.store.del('last'); A.clearRound(); App.sel = null;
+      await S.store.del('last'); A.clearRound(); App.sel = null; App.graph.setEmphasis(null); A.closeSheet();
       // 沒有基準時只有設備圖（歡迎畫面）：L2／L3 的資料與 VLAN 篩選一起清掉
       App.vlanFilter = null; A.resetLayers(); App.layer = 'device'; A.setDeviceGraph([], [], new Map()); A.renderAll();
     };
@@ -27,8 +103,8 @@
     const show = () => {
       V.clear(dd); if (!App.Q || !inp.value.trim()) { dd.classList.add('hidden'); return; }
       results = App.Q.search(inp.value, 15); active = 0;
-      if (!results.length) dd.appendChild(h('div', { class: 'empty' }, '找不到符合的設備、MAC、IP 或 VLAN'));
-      const T = { device: '設備', mac: 'MAC', ip: 'IP', vlan: 'VLAN', interface: '介面' };
+      if (!results.length) dd.appendChild(h('div', { class: 'empty' }, '找不到符合的設備、MAC、IP、網段、VLAN 或介面'));
+      const T = { device: '設備', mac: 'MAC', ip: 'IP', subnet: '網段', vlan: 'VLAN', interface: '介面' };
       results.forEach((r, i) => dd.appendChild(h('div', {
         class: 'item' + (i === active ? ' active' : ''),
         onmousedown: (e) => { e.preventDefault(); pick(r); },
@@ -59,17 +135,27 @@
 
   // ================================================================ 工具列
   A.bindToolbar = function bindToolbar() {
+    // 選單放在 .grp 外面（.grp 會裁切），開啟時對齊按鈕的位置；窄螢幕放不下時往左移，不超出圖的右緣
+    const under = (btn, menu) => {
+      const tb = $('#toolbar'); const room = (tb.parentNode.clientWidth || 0) - (tb.offsetLeft || 0) - (menu.offsetWidth || 0) - 10;
+      menu.style.left = Math.max(0, Math.min(btn.offsetLeft || 0, room > 0 ? room : Infinity)) + 'px';
+    };
+    A.bindMenu($('#btn-layout-menu'), $('#layout-menu'), under);
+    A.bindMenu($('#btn-view-menu'), $('#view-menu'), under);
     $('#btn-fit').onclick = () => App.graph.fit();
     $('#btn-relayout').onclick = () => A.relayout();
-    $('#layout-mode').value = App.layoutMode;
-    $('#layout-mode').onchange = () => {
-      App.layoutMode = $('#layout-mode').value;
+    // 版面：分層（ELK）或快速（內建），單選；選了就依新的版面重新排列
+    const modes = Array.from($('#layout-mode').querySelectorAll('.menu-item'));
+    A.syncLayoutMode = () => modes.forEach((b) => A.setChecked(b, b.dataset.layout === App.layoutMode));
+    A.syncLayoutMode();
+    modes.forEach((b) => { b.onclick = () => {
+      App.layoutMode = b.dataset.layout; A.syncLayoutMode(); A.closeMenus();
       S.store.set('layoutMode', App.layoutMode).catch(() => {});
       $('#btn-relayout').click();
-    };
-    let running = null;
-    $('#btn-force').onclick = () => {
-      if (running) { cancelAnimationFrame(running); running = null; $('#btn-force').classList.remove('on'); A.savePositions(); return; }
+    }; });
+    let running = null; const force = $('#btn-force');
+    force.onclick = () => {
+      if (running) { cancelAnimationFrame(running); running = null; A.setChecked(force, false); A.savePositions(); return; }
       const nodes = App.graph.nodes.filter((n) => App.graph.visible(n)); const ids = new Set(nodes.map((n) => n.id));
       const edges = App.graph.edges.filter((e) => ids.has(e.a) && ids.has(e.b)); let temp = 60; let it = 0;
       // 使用者偏好減少動態效果時不播動畫：同樣的迭代一次算完，直接顯示結果
@@ -77,22 +163,20 @@
         while (it < 360 && temp > 1) { V.layout.forceStep(nodes, edges, App.graph.pos, temp); temp *= 0.985; it++; }
         App.graph.computeGroups(); A.savePositions(); return;
       }
-      $('#btn-force').classList.add('on');
+      A.setChecked(force, true);
       const step = () => {
         const per = nodes.length > 1500 ? 1 : 3;
         for (let k = 0; k < per; k++) { V.layout.forceStep(nodes, edges, App.graph.pos, temp); temp *= 0.985; it++; }
         App.graph.computeGroups();
-        if (it < 360 && temp > 1) running = requestAnimationFrame(step); else { running = null; $('#btn-force').classList.remove('on'); A.savePositions(); }
+        if (it < 360 && temp > 1) running = requestAnimationFrame(step); else { running = null; A.setChecked(force, false); A.savePositions(); }
       };
       running = requestAnimationFrame(step);
     };
     $('#btn-hosts').onclick = () => { App.showHosts = !App.showHosts; A.applyVisibility(); };
     $('#btn-unknown').onclick = () => { App.showUnknown = !App.showUnknown; A.applyVisibility(); };
     $('#btn-groups').onclick = () => {
-      App.graph.showGroups = !App.graph.showGroups; $('#btn-groups').classList.toggle('on', App.graph.showGroups); App.graph.redraw();
+      App.graph.showGroups = !App.graph.showGroups; A.setChecked($('#btn-groups'), App.graph.showGroups); App.graph.redraw();
     };
-    // 畫布每次繪圖都先填滿 theme 的畫布底色，匯出前同步重畫一次，PNG 才是目前畫面且不透明
-    $('#btn-png').onclick = () => A.exportPng();
     buildLegend();
   };
 
@@ -183,6 +267,12 @@
     item([ring(M.select, 3, 'select')], '選取', '目前選取的設備（藍色粗環）與連線');
     item([ring(M.hover, 2, 'hover')], '滑過', '指標或鍵盤（N 鍵）目前所在的設備（深色細環）；相連的線一起標示');
     item([ring(M.find, 3, 'find')], '搜尋結果', '搜尋 MAC／IP 時，標出所在位置的設備與連線');
+    { // 推定偏離：節點外的虛線圓圈（theme.canvas.deviation）；圓周依 LEG 換算虛線長度
+      const D = CV.deviation; const r = LEG / 2; const per = 360 / (Math.PI * LEG); let deg = 0;
+      const stops = D.dash.map((n, i) => { const from = deg; deg += n * per; return `${i % 2 ? 'transparent' : D.c} ${from.toFixed(1)}deg ${deg.toFixed(1)}deg`; });
+      const mask = `radial-gradient(circle, transparent ${(r - D.w).toFixed(1)}px, ${D.c} ${(r - D.w).toFixed(1)}px)`; // 遮罩只看不透明度
+      item([dot({ background: `repeating-conic-gradient(${stops.join(', ')})`, maskImage: mask, webkitMaskImage: mask }, { 'data-mark': 'deviation' })], D.label, D.tip);
+    }
     item([line(M.trace, 4, null, T.alpha.overlay, { 'data-mark': 'trace' }), h('span', { class: 'lg-arrow', style: { color: M.trace } }, '▶')], '路由追蹤', '逐跳路徑，箭頭表示方向');
     // VLAN 篩選：承載狀態（Q.vlanCarriers），線型與外形取自 theme.vlan，不只靠顏色
     const VL = { carry: ['VLAN 承載', '兩端都帶這個 VLAN（實線）'], inferred: ['VLAN 推論承載', '推論鏈路，已收集的各端都帶這個 VLAN（長虛線，推論）'],

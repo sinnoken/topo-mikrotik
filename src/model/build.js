@@ -316,13 +316,16 @@
     if (line !== null && t.line === null) t.line = line;
     return t;
   }
+  /** 沒有任何輸出、仍算已收集的命中次數 adapter（收集失敗除外）；emptyStatTables 與 S.preflight 共用，資料種類才會一致。 */
+  function emptyStatAdapters(b) {
+    if (b.device === null || b.failure || b.empty || b.lines.some((l) => l.trim())) return [];
+    return (b.adapters || []).map((id) => S.adapters[id]).filter((a) => a && a.dataType === 'fwstats');
+  }
   /** 有標記指令、但完全沒有輸出的命中次數區塊（收集失敗除外）：這個表已收集、0 列。同一設備同一個表有多個區塊時，已有事實的表不覆寫。 */
   function emptyStatTables(M, blocks) {
     blocks.forEach((b) => {
-      if (b.device === null || b.failure || b.empty || b.lines.some((l) => l.trim())) return;
-      (b.adapters || []).forEach((id) => {
-        const a = S.adapters[id];
-        if (!a || a.dataType !== 'fwstats' || M.fw.stats.has(b.devKey + '|' + a.family + '|' + a.table)) return;
+      emptyStatAdapters(b).forEach((a) => {
+        if (M.fw.stats.has(b.devKey + '|' + a.family + '|' + a.table)) return;
         statTable(M, b.devKey, a.family, a.table, b.id, null);
         device(M, b.devKey).data.add('fwstats');
       });
@@ -607,5 +610,5 @@
     return vlans ? vlans.values().next().value : undefined;
   }
 
-  S.model = { build, firstSeenSrc };
+  S.model = { build, firstSeenSrc, emptyStatAdapters };
 })(globalThis.SSOT = globalThis.SSOT || {});

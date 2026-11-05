@@ -36,6 +36,7 @@
 <script src="src/workpack/workpack.js"></script>
 <script src="profiles/site-naming.js"></script>
 <script src="samples/sample-bundle.js"></script>
+<script src="samples/collect-commands.js"></script>
 <script src="src/view/dom.js"></script>
 <script src="src/view/theme.js"></script>
 <script src="src/view/store.js"></script>
@@ -83,24 +84,32 @@
     <div class="spacer"></div>
     <div class="search">
       <span class="icon">⌕</span>
-      <input id="search" type="search" placeholder="搜尋設備、MAC、IP、VLAN、介面描述（按 / 開始）" autocomplete="off">
+      <input id="search" type="search" placeholder="搜尋設備、MAC、IP、VLAN、介面（按 / 開始）" title="設備名稱、MAC 或 IP（也可只打前綴，例如 10.1. 或 04:42）、VLAN ID、介面名稱或描述" autocomplete="off">
       <div id="search-dd" class="dropdown hidden"></div>
     </div>
-    <div style="position:relative">
-      <button id="btn-trace">路由追蹤</button>
-      <div id="trace-pop" class="popover hidden">
-        <div class="form-row"><label>來源 IP</label><input id="trace-src" type="text" placeholder="10.1.30.15"></div>
-        <div class="form-row"><label>目的 IP</label><input id="trace-dst" type="text" placeholder="10.1.20.11"></div>
-        <div class="form-row hidden" id="trace-vrf-row"><label for="trace-vrf">VRF</label><select id="trace-vrf" aria-label="追蹤的 VRF"></select></div>
-        <div id="trace-msg" class="trace-msg warn-line hidden" role="alert"></div>
-        <div class="form-row" style="margin:0"><span class="muted" style="flex:1;font-size:12px">依各設備路由表逐跳追蹤（含 ECMP）</span><button class="primary" id="trace-run">追蹤</button></div>
+    <div class="header-actions">
+      <button id="btn-hub" class="hub-btn" aria-controls="hub" aria-expanded="false" title="這一輪的輸入與輸出：收集檔、工作包、處理紀錄、命名規則、預期資料、報表與 patch">資料中心</button>
+      <!-- 「⋯」更多操作（src/view/app-toolbar.js 的 A.bindMenu）：方向鍵移動、Esc 關閉並回到按鈕、點外面關閉 -->
+      <div class="menu-wrap">
+        <button type="button" class="icon-btn" id="btn-more" title="更多操作：路由追蹤、匯出 PNG、清除基準" aria-label="更多操作" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu">⋯</button>
+        <div id="more-menu" class="menu menu-end hidden" role="menu" aria-label="更多操作">
+          <button type="button" class="menu-item" role="menuitem" id="btn-trace" title="依各設備路由表逐跳追蹤兩個 IP 之間的路徑">路由追蹤…</button>
+          <button type="button" class="menu-item" role="menuitem" id="btn-png" title="把目前的拓樸圖畫面匯出 PNG（目前的層級；其他匯出在資料中心）">匯出 PNG</button>
+          <div class="menu-sep" role="separator"></div>
+          <button type="button" class="menu-item danger" role="menuitem" id="btn-clear" title="清除這個工具儲存的基準與輸入">清除基準…</button>
+        </div>
+        <div id="trace-pop" class="popover hidden" role="dialog" aria-label="路由追蹤">
+          <div class="form-row"><label for="trace-src">來源 IP</label><input id="trace-src" type="text" placeholder="10.1.30.15" list="trace-ips" autocomplete="off"></div>
+          <div class="form-row"><label for="trace-dst">目的 IP</label><input id="trace-dst" type="text" placeholder="10.1.20.11" list="trace-ips" autocomplete="off"></div>
+          <datalist id="trace-ips"></datalist>
+          <div class="form-row hidden" id="trace-vrf-row"><label for="trace-vrf">VRF</label><select id="trace-vrf" aria-label="追蹤的 VRF"></select></div>
+          <div id="trace-msg" class="trace-msg warn-line hidden" role="alert"></div>
+          <div class="form-row" style="margin:0"><span class="muted" style="flex:1;font-size:var(--fs-sm)">依各設備路由表逐跳追蹤（含 ECMP）</span><button class="primary" id="trace-run">追蹤</button></div>
+        </div>
       </div>
     </div>
-    <button id="btn-hub" class="hub-btn" aria-controls="hub" aria-expanded="false" title="這一輪的輸入與輸出：收集檔、工作包、處理紀錄、命名規則、預期資料、報表與 patch">資料中心</button>
-    <button class="ghost" id="btn-clear" title="清除這個工具儲存的基準與輸入">清除</button>
   </header>
 
-  <section id="baseline-summary" class="baseline-summary hidden" aria-live="polite"></section>
   <!-- 窄螢幕的三個工作區，依流程排列：左側的清單 → 中間的工作畫面 → 詳細資料（標籤依目前的步驟，見 A.syncWorkspaces） -->
   <nav id="mobile-workspaces" class="mobile-workspaces" aria-label="工作區">
     <button data-workspace="checks" aria-pressed="false">檢查結果</button>
@@ -134,10 +143,24 @@
         <div class="grp layer-only" data-layers="device l2 l3"><select id="vlan-filter" aria-label="VLAN 篩選" title="在設備圖與 L2 埠圖標出承載這個 VLAN 的鏈路（L3 標出這個 VLAN 的子網）；選其他東西時仍保留，選「不篩選」取消"><option value="">VLAN：不篩選</option></select></div>
         <div class="grp layer-only hidden" data-layers="l2"><button type="button" id="btn-l2-lag" aria-pressed="false" title="聚合介面的成員各自畫成一個埠（預設收合：成員併進聚合介面）">展開聚合</button><button type="button" id="btn-l2-ports" aria-pressed="false" title="也畫沒有連線的實體、聚合與無線介面">全部的埠</button><select id="l2-scope" aria-label="L2 埠圖的範圍" title="整張圖，或只畫選取的設備與它的鄰居（設備太多時只能選後者）"><option value="all">整張圖</option><option value="focus">選取的設備與鄰居</option></select></div>
         <div class="grp layer-only hidden" data-layers="l3"><button type="button" id="btn-l3-routes" aria-pressed="false" title="以虛線箭頭畫出靜態路由與預設路由，指到目的網段">顯示路由</button></div>
-        <div class="grp layer-only" data-layers="device l2 l3"><button id="btn-fit" title="整張圖放進畫面">全圖</button><button id="btn-relayout" title="依分群與層級重新排列（只排目前的層級）">重新排列</button><select id="layout-mode" title="重新排列使用的版面"><option value="elk">分層（ELK）</option><option value="builtin">快速（內建）</option></select><button id="btn-force" title="用力導向微調位置（再按一次停止）">力導向排列</button></div>
-        <div class="grp layer-only" data-layers="device l2 l3"><button id="btn-hosts" title="顯示只由 LLDP 看到的主機">主機</button></div>
-        <div class="grp layer-only" data-layers="device"><button id="btn-unknown" class="on" title="顯示沒有 LLDP 鄰居、只由 MAC 推論出來的終端">未知對端</button><button id="btn-groups" class="on" title="顯示分群底框">分群</button></div>
-        <div class="grp layer-only" data-layers="device l2 l3"><button id="btn-png" title="把目前畫面匯出 PNG（目前的層級；其他匯出在資料中心）">匯出 PNG</button></div>
+        <!-- 圖的操作：全圖、版面▾（重新排列、分層／快速、力導向）、顯示▾（主機、未知對端、分群）；選單在 .grp 外面才不會被裁切 -->
+        <div class="grp layer-only" data-layers="device l2 l3"><button type="button" id="btn-fit" title="整張圖放進畫面">全圖</button><button type="button" id="btn-layout-menu" title="重新排列與版面" aria-haspopup="menu" aria-expanded="false" aria-controls="layout-menu">版面 ▾</button><button type="button" id="btn-view-menu" title="圖上要顯示的內容" aria-haspopup="menu" aria-expanded="false" aria-controls="view-menu">顯示 ▾</button></div>
+        <div id="layout-menu" class="menu hidden" role="menu" aria-label="版面">
+          <button type="button" class="menu-item" role="menuitem" id="btn-relayout" title="依分群與層級重新排列（只排目前的層級）">重新排列</button>
+          <div class="menu-sep" role="separator"></div>
+          <div class="menu-label" id="layout-mode-label">重新排列使用的版面</div>
+          <div id="layout-mode" role="group" aria-labelledby="layout-mode-label">
+            <button type="button" class="menu-item" role="menuitemradio" data-layout="elk" aria-checked="true" title="分層版面（ELK.js）">分層（ELK）</button>
+            <button type="button" class="menu-item" role="menuitemradio" data-layout="builtin" aria-checked="false" title="內建的快速版面">快速（內建）</button>
+          </div>
+          <div class="menu-sep" role="separator"></div>
+          <button type="button" class="menu-item" role="menuitemcheckbox" id="btn-force" data-keep aria-checked="false" title="用力導向微調位置（再按一次停止）">力導向排列</button>
+        </div>
+        <div id="view-menu" class="menu hidden" role="menu" aria-label="顯示">
+          <button type="button" class="menu-item layer-only" data-layers="device l2 l3" role="menuitemcheckbox" id="btn-hosts" data-keep aria-checked="true" title="顯示只由 LLDP 看到的主機">主機</button>
+          <button type="button" class="menu-item layer-only on" data-layers="device" role="menuitemcheckbox" id="btn-unknown" data-keep aria-checked="true" title="顯示沒有 LLDP 鄰居、只由 MAC 推論出來的終端">未知對端</button>
+          <button type="button" class="menu-item layer-only on" data-layers="device" role="menuitemcheckbox" id="btn-groups" data-keep aria-checked="true" title="顯示分群底框">分群</button>
+        </div>
       </div>
       <!-- L4（src/view/panels/l4.js）：zone 矩陣、下鑽與可達性查詢。不是畫布：選了 L4 時疊在畫布上、工具列下面（層級切換仍在工具列，Tab 順序在矩陣之前），內容由 V.l4 產生 -->
       <section id="view-l4" class="l4 hidden" aria-labelledby="l4-title"></section>
@@ -150,7 +173,17 @@
           <h1>建立網路基準</h1>
           <div class="muted">把設備的 CLI 輸出一次貼上，產生一份可追溯、可檢查的網路現況基準。</div>
           <ol>
-            <li>依「收集清單」在每台 RouterOS 下指令（<code>/export terse</code>、<code>/ip neighbor print detail</code> 等），合併成一個收集檔（設備名 (IP): 開頭，以 _____ 分隔）</li>
+            <li>收集每台 RouterOS 的輸出，合併成一個收集檔
+              <!-- 收集指引：指令清單由 tools/collector-commands.sh 產生（samples/collect-commands.js），內容由 src/view/app-input.js 填入 -->
+              <details id="welcome-collect" class="collect">
+                <summary>怎麼收集？指令清單與收集腳本</summary>
+                <p><b>推薦：</b>在 WSL／Linux 執行收集腳本 <code>./tools/collect.sh devices.csv --output collection.txt</code>，以 SSH 逐台收集並產生收集檔（用法見 README）。</p>
+                <p><b>手動：</b>在每台設備的終端機執行下列指令，把輸出存成一個檔案，每台設備前加一行「設備名 (管理 IP):」。格式範例在「建立基準」對話框的「格式說明」。</p>
+                <pre id="welcome-commands" class="cmd-list" tabindex="0" aria-label="收集指令清單"></pre>
+                <div class="form-row"><button type="button" id="welcome-copy">複製指令清單</button><span id="welcome-copy-status" class="muted" role="status"></span></div>
+                <p id="welcome-optional" class="muted"></p>
+              </details>
+            </li>
             <li>按「建立基準」，貼上內容或選擇檔案</li>
             <li>左側看資料之間的矛盾與缺漏，點選後在圖上定位，右側看詳細資料與原文</li>
           </ol>
@@ -158,7 +191,7 @@
             <button class="primary" onclick="App.openInput()">建立基準…</button>
             <button onclick="App.loadSample()">用範例資料試試看</button>
           </div>
-          <p class="muted" style="margin-bottom:0;font-size:12px">目前只支援 MikroTik RouterOS（7.x 為主）。資料只在這個瀏覽器處理，不會上傳。</p>
+          <p class="muted" style="margin-bottom:0;font-size:var(--fs-sm)">目前只支援 MikroTik RouterOS（7.x 為主）。資料只在這個瀏覽器處理，不會上傳。</p>
         </div>
       </div>
       </div>
@@ -186,15 +219,23 @@
           </div>
         </div>
       </section>
-      <div id="banner" class="banner hidden"></div>
+      <div id="banner" class="banner hidden" role="status" aria-live="polite"></div>
       </div>
     </section>
 
-    <aside id="right"><div id="detail" class="pane"></div></aside>
+    <!-- 窄螢幕在拓樸圖選取時，#right 變成底部抽屜（非強制回應的 region，圖仍可操作）；#sheet-bar 只在抽屜時顯示 -->
+    <aside id="right" role="region" aria-label="詳細資料">
+      <div id="sheet-bar" class="sheet-bar">
+        <button id="sheet-handle" class="sheet-handle ghost" aria-label="拖曳調整詳細資料的高度，點一下展開或還原" title="拖曳調整高度"><span></span></button>
+        <h2 id="sheet-title" class="sheet-title" tabindex="-1">詳細資料</h2>
+        <button id="sheet-expand" class="ghost" aria-expanded="false" aria-controls="right">展開</button>
+        <button id="sheet-close" class="ghost" aria-controls="right" title="收起（Esc）" aria-keyshortcuts="Escape">收起</button>
+      </div>
+      <div id="detail" class="pane"></div>
+    </aside>
   </div>
   <!-- 資料中心：和 #main 疊在同一格，開啟時蓋住主畫面（畫布大小不變），內容由 src/view/panels/hub.js 產生 -->
   <section id="hub" class="hub hidden" aria-labelledby="hub-title"></section>
-  <footer id="footer"></footer>
 </div>
 
 <dialog id="dlg-input">
@@ -207,22 +248,39 @@
         <button id="input-sample">載入範例資料</button>
         <span class="muted">可以貼上、選擇檔案，或兩者都用（一次全部讀入）</span>
       </div>
-      <textarea id="input-text" spellcheck="false" placeholder="TPE_CORE_RT_01 (10.1.10.2):&#10;[admin@TPE_CORE_RT_01] > /export terse&#10;…輸出…&#10;[admin@TPE_CORE_RT_01] > /ip neighbor print detail without-paging&#10;…輸出…&#10;_____&#10;TPE_ACC_SW_01 (10.1.10.21):&#10;### /interface bridge host print detail without-paging&#10;…輸出…"></textarea>
+      <details id="input-format" class="collect">
+        <summary>格式說明</summary>
+        <p>每台設備以「設備名 (管理 IP):」開頭；每段輸出前是指令標記，可以是終端機的提示字元（<code>[admin@設備名] > 指令</code>）或 <code>### 指令</code>。設備之間可以用一行底線（5 個以上）隔開，也可以省略。沒有設備標頭的檔案，以檔名當設備名。</p>
+        <pre id="input-format-example" class="cmd-list" tabindex="0" aria-label="收集檔格式範例">TPE_CORE_RT_01 (10.1.10.2):
+[admin@TPE_CORE_RT_01] > /system resource print
+            version: 7.12.1 (stable)
+         board-name: CCR2216-1G-12XS-2XQ
+[admin@TPE_CORE_RT_01] > /ip neighbor print detail without-paging
+ 0 interface=sfp-sfpplus1 address=10.1.10.21 mac-address=74:4D:28:00:00:21 identity="TPE_ACC_SW_01" platform="MikroTik" interface-name="sfp-sfpplus1"
+_____
+TPE_ACC_SW_01 (10.1.10.21):
+### /interface bridge host print detail without-paging
+ 0   D mac-address=00:11:22:33:44:55 vid=10 on-interface=ether5 bridge=bridge1</pre>
+        <div class="form-row"><button type="button" id="input-format-copy">複製範例</button><span id="input-format-copy-status" class="muted" role="status"></span></div>
+      </details>
+      <textarea id="input-text" spellcheck="false" placeholder="貼上收集檔內容（格式見上方「格式說明」）" aria-label="收集檔內容"></textarea>
       <div id="input-files" class="files"></div>
       <div id="input-drop" class="drop">也可以把檔案拖到這裡（沒有設備標頭的檔案，會以檔名當設備名）</div>
+      <!-- 建立前的預檢（S.preflight）：認到幾台設備、哪些段落無法辨識；內容由 src/view/app-input.js 產生 -->
+      <div id="input-preflight" class="preflight" role="status" aria-live="polite"></div>
       <div class="form-row" style="margin-top:12px">
         <label for="input-profile">命名規則</label>
         <select id="input-profile"></select>
-        <span class="muted" style="font-size:12px">只用來加上站點、角色等註解，不會改變事實；可不套用</span>
+        <span class="muted" style="font-size:var(--fs-sm)">只用來加上站點、角色等註解，不會改變事實；可不套用</span>
       </div>
       <div class="form-row hidden" id="input-xd-row">
         <label><input type="checkbox" id="input-xd" checked> 使用建立選項 expectedData（由工作包帶回）</label>
-        <span class="muted" style="font-size:12px" id="input-xd-note"></span>
+        <span class="muted" style="font-size:var(--fs-sm)" id="input-xd-note"></span>
       </div>
     </div>
     <div class="df">
       <div id="input-progress" class="progress hidden"><div></div></div>
-      <span id="input-status" class="muted"></span>
+      <span id="input-status" class="muted" role="status"></span>
       <span style="flex:1"></span>
       <button class="primary" id="input-build">建立基準</button>
     </div>
@@ -231,7 +289,7 @@
 
 <dialog id="dlg-raw">
   <div class="dlg" style="width:min(1100px,94vw)">
-    <div class="dh"><span id="raw-title">原文</span><button class="ghost x" onclick="document.getElementById('dlg-raw').close()">✕</button></div>
+    <div class="dh"><span id="raw-title">原文</span><span id="raw-nav" class="raw-nav hidden"><button id="raw-prev" class="ghost" aria-keyshortcuts="ArrowLeft" title="上一處（←）">上一處</button><span id="raw-pos" class="mono muted" aria-live="polite"></span><button id="raw-next" class="ghost" aria-keyshortcuts="ArrowRight" title="下一處（→）">下一處</button></span><button class="ghost x" onclick="document.getElementById('dlg-raw').close()">✕</button></div>
     <div class="db" id="raw-body" style="max-height:70vh"></div>
   </div>
 </dialog>

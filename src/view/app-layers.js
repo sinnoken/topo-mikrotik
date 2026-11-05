@@ -56,6 +56,7 @@
     if (App.layer === 'device') deviceView = g.nodes === App.deviceGraph.nodes ? saveView(g) : deviceView;
     else if (App.layer !== 'l4') { const cur = A.layerEntry(); if (cur && g.nodes === cur.nodes) cur.view = saveView(g); }
     App.layer = target;
+    A.closeMenus(); // 工具列選單的項目依層級顯示：換層級時收起
     g.hover = null; g.kbd = null; g.setOverlay([]); $('#tooltip').classList.add('hidden');
     if (target === 'l4') {
       A.syncLayerUi();
@@ -364,12 +365,13 @@
           }));
         }
         const at = (d, v) => (l2 ? (has(d) ? d : null) : nodeAt(d, v));
-        const marks = new Map();
+        // 節點顏色依終點分類（V.traceEndWorst，同 app-select）；同一個節點有多台設備或多個 VRF 時，合併它們的終點取最差的一類
+        const devsAt = new Map();
         [{ dev: t.start, vrf: t.vrf }].concat(t.hops, t.ends).forEach((x) => {
           const id = at(x.dev, x.vrf); if (!id) return;
-          const bad = t.ends.some((y) => y.dev === x.dev && y.status !== 'reached');
-          if (!marks.has(id) || bad) marks.set(id, bad ? MARK.bad : MARK.trace);
+          S.util.getOr(devsAt, id, () => new Set()).add(x.dev);
         });
+        const marks = new Map(Array.from(devsAt, ([id, devs]) => [id, MARK[V.TRACE_END_STYLE[V.traceEndWorst(t.ends.filter((y) => devs.has(y.dev)))].mark]]));
         out.hl = { nodes: marks, edges: new Map() };
         out.focus = Array.from(marks.keys()); break;
       }
@@ -525,7 +527,8 @@
     const l4 = L === 'l4' && !!App.Q;
     $('#view-l4').classList.toggle('hidden', !l4);
     $('#graph').inert = l4;
-    ['#legend', '#hint'].forEach((s) => $(s).classList.toggle('hidden', !App.snap || l4));
+    $('#legend').classList.toggle('hidden', !App.snap || l4);
+    A.syncHint(l4);
     // VLAN 選單：選項來自 Q.vlanIds()，換基準時重建
     const sel = $('#vlan-filter');
     if (App.Q && vlanOptionsOf !== App.Q) {

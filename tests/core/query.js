@@ -46,6 +46,38 @@ test('路由追蹤：直連抵達、下一跳不在基準內、跨站點 ECMP', 
   assert.ok(t3.reached, JSON.stringify(t3.ends));
   assert.ok(t3.hops.some((h) => h.ecmp));
 });
+test('Q.blockAt：依檔案與行號找到所屬的輸入區塊（設備、指令）', () => {
+  const s = build(['SW_A (10.0.0.1):', '### /ip neighbor print detail without-paging', 'X', 'Y', 'SW_B (10.0.0.2):', '### /ip route print detail', 'Z'].join('\n'));
+  const Q = S.query(s);
+  const b = Q.blockAt('t.txt', 4);
+  assert.deepStrictEqual([b.devKey, b.command, b.start <= 4 && 4 <= b.end], ['SW_A', '/ip neighbor print detail without-paging', true]);
+  assert.strictEqual(b, Q.block(b.id), '回傳的就是 Q.block 的同一個物件');
+  assert.strictEqual(Q.blockAt('t.txt', 7).devKey, 'SW_B');
+  assert.strictEqual(Q.blockAt('t.txt', 1), null, '設備標頭不屬於任何區塊');
+  assert.strictEqual(Q.blockAt('其他.txt', 4), null);
+});
+test('路由追蹤：終點或起點是未收集的設備時是「無法驗證」，不是無法抵達；已收集設備上斷掉仍是無法抵達', () => {
+  const a = 'R_A (10.0.0.1):\n### /export terse\n/ip address add address=10.0.0.1/24 interface=ether1\n/ip address add address=10.1.0.1/24 interface=ether2\n'
+    + '### /ip route print detail\nFlags: A - ACTIVE; s - STATIC\n 0 As dst-address=0.0.0.0/0 gateway=10.0.0.2 distance=1\n 1 As dst-address=10.94.0.0/16 blackhole\n'
+    + '### /ip neighbor print detail\n 0 interface=ether1 identity=ISP_GW address=10.0.0.2 mac-address=AA:BB:CC:00:00:02 interface-name=ge0 discovered-by=lldp\n';
+  const Q = S.query(build(a));
+  // 中途／終點：預設路由的下一跳是未收集的 ISP_GW，查不到它的路由表
+  const t = S.trace(Q, '10.1.0.5', '8.8.8.8');
+  assert.deepStrictEqual([t.reached, t.status, t.ends.map((e) => [e.dev, e.status])], [false, 'unverified', [['ISP_GW', 'unverified']]]);
+  assert.deepStrictEqual(t.unverified, ['ISP_GW']);
+  assert.ok(t.ends[0].note.includes('ISP_GW') && t.ends[0].note.includes('未收集'), t.ends[0].note);
+  // 起點（回程常見）：來源 IP 屬於未收集的設備
+  const back = S.trace(Q, '10.0.0.2', '10.1.0.5');
+  assert.deepStrictEqual([back.start, back.status, back.ends.map((e) => e.status)], ['ISP_GW', 'unverified', ['unverified']]);
+  // 已收集的設備上斷掉：黑洞、直連抵達維持原狀態
+  const bh = S.trace(Q, '10.1.0.5', '10.94.1.1');
+  assert.deepStrictEqual([bh.status, bh.ends.map((e) => e.status), bh.unverified], ['unreachable', ['blackhole'], []]);
+  const ok = S.trace(Q, '10.1.0.5', '10.0.0.9');
+  assert.deepStrictEqual([ok.status, ok.reached, ok.unverified], ['reached', true, []]);
+  // 範例：下一跳不在基準內仍是無法抵達
+  const QS = S.query(build(read('samples/sample-bundle.txt')));
+  assert.strictEqual(S.trace(QS, '10.1.30.15', '8.8.8.8').status, 'unreachable');
+});
 test('遞迴路由：gateway 是對端 loopback 時沿路由表解析；R01 只提醒解析後仍到不了已知設備的下一跳', () => {
   const a = 'R_A (10.0.0.1):\n### /export terse\n/ip address add address=10.254.0.1/30 interface=ether48\n/ip address add address=10.9.9.1/32 interface=lo\n'
     + '### /ip route print detail\nFlags: A - ACTIVE; s - STATIC\n'
@@ -255,12 +287,78 @@ test('查詢介面：findingsByRule、blocksOf、coverageOf 與直接讀 Snapsho
   assert.strictEqual(Q.meta(), s.meta); assert.strictEqual(Q.coverage(), s.coverage); assert.strictEqual(Q.devices(), s.model.devices);
 });
 
+test('收集完整度：Q.coverageSummary 的網路設備口徑與 C01／C02 一致，主機另計', () => {
+  const s = build(read('samples/sample-bundle.txt')); const Q = S.query(s); const sum = Q.coverageSummary();
+  const by = (id) => s.findings.filter((f) => f.id === id).length;
+  assert.strictEqual(sum.devices, s.meta.stats.devices); assert.strictEqual(sum.collected, s.meta.stats.collected);
+  assert.strictEqual(sum.network - sum.networkCollected, by('C01'), '未收集的網路設備數應等於 C01 筆數');
+  assert.strictEqual(sum.missing, by('C02'), '缺必要資料或收集失敗的台數應等於 C02 筆數');
+  assert.strictEqual(sum.networkCollected, sum.collected, '已收集的設備都屬應收集的範圍');
+  assert.strictEqual(sum.network + sum.hosts, sum.devices);
+  assert.ok(sum.hosts > 0 && by('C01') > 0, '範例資料有主機與未收集的網路設備');
+  assert.ok(s.coverage.filter((r) => !S.check.expectsCollection(r)).every((r) => r.kind === 'host' && !r.collected), '不在收集範圍的只有未收集的主機');
+  assert.ok(Object.isFrozen(sum) && Q.coverageSummary() === sum);
+  // 由命名規則判為主機、但已收集的設備仍算應收集（C02 會檢查它）
+  const text = 'SW_A (10.0.0.1):\n### /interface print detail\n 0 R name=ether1 type=ether\n'
+    + 'HOST_B (10.0.0.2):\n### /interface print detail\n 0 R name=eth0 type=ether\n';
+  const h = S.query(build(text, { profile: { id: 'test-host', classify: [{ match: '^HOST_B$', kind: 'host' }] } })).coverageSummary();
+  assert.deepStrictEqual([h.network, h.networkCollected, h.hosts], [2, 2, 0]);
+});
+
+test('VLAN 摘要：Q.vlanSummary 的相異 ID、不相連區塊與定義筆數分開計', () => {
+  const s = build(read('samples/sample-bundle.txt')); const Q = S.query(s); const v = Q.vlanSummary();
+  const ids = new Set(s.model.vlans.map((x) => x.id));
+  assert.deepStrictEqual(Object.assign({}, v), { ids: ids.size, domains: Array.from(ids).reduce((n, id) => n + Q.vlan(id).domains.length, 0), definitions: s.meta.stats.vlans });
+  assert.strictEqual(v.ids, Q.inventory().counts.vlanIds);
+  assert.ok(v.ids < v.definitions && v.ids <= v.domains, '範例的 VLAN 定義分散在多台設備');
+  assert.ok(Object.isFrozen(v));
+});
+
+test('查詢：搜尋支援 IP 前綴（先網段後 IP）、MAC 前綴（任一分隔符）與介面名稱', () => {
+  const Q = S.query(build(read('samples/sample-bundle.txt')));
+  const ips = Q.ipEntries();
+  const r1 = Q.search('10.1.', 200);
+  assert.ok(r1.length > 0 && r1.every((r) => r.type === 'ip' || r.type === 'subnet'), JSON.stringify(r1.slice(0, 3)));
+  assert.ok(r1.every((r) => r.key.startsWith('10.1.')), '只列出以 10.1. 開頭的 IP／網段');
+  const firstIp = r1.findIndex((r) => r.type === 'ip');
+  assert.ok(firstIp > 0 && r1.slice(firstIp).every((r) => r.type === 'ip'), '網段排在 IP 前面');
+  const graph = Q.subnetGraph().subnets.map((x) => x.id);
+  assert.ok(r1.filter((r) => r.type === 'subnet').every((r) => graph.includes(r.key)), '網段結果的 key 是子網 id');
+  const want = S.util.uniq(ips.filter((e) => e.ip.startsWith('10.1.')).map((e) => e.ip));
+  assert.deepStrictEqual(r1.filter((r) => r.type === 'ip').map((r) => r.key), want, 'IP 結果與 IP 清單相同（同一個位址不分 VRF 只列一次）');
+  assert.strictEqual(Q.search('10.1.', 5).length, 5, '數量上限沿用');
+  assert.deepStrictEqual(Q.search('10.9.').filter((r) => r.type === 'ip' || r.type === 'subnet'), [], '沒有符合的前綴時不列 IP');
+  assert.deepStrictEqual(Q.search('10.1').map((r) => r.key), Q.search('10.1.').map((r) => r.key), '結尾的點可省略');
+  const macs = Q.macEntries().filter((e) => e.mac.startsWith('04421A'));
+  assert.ok(macs.length > 0);
+  for (const q of ['04:42', '04-42-1a', '0442.1a', '04421A']) {
+    const r = Q.search(q, 50).filter((x) => x.type === 'mac');
+    assert.ok(r.length > 0 && r.every((x) => x.key.startsWith('04421A')), q + ' 應以正規化後的前綴比對 MAC');
+    assert.ok(macs.some((e) => e.mac === r[0].key), q);
+  }
+  assert.deepStrictEqual(Q.search('10').filter((r) => r.type === 'mac'), [], '純數字不當 MAC 前綴（保留給 VLAN／IP）');
+  const ifcs = Q.search('ether10', 50).filter((r) => r.type === 'interface');
+  assert.ok(ifcs.length > 0 && ifcs.every((r) => Q.getInterface(r.key) && Q.getInterface(r.key).name.toLowerCase().includes('ether10')), JSON.stringify(ifcs.slice(0, 3)));
+  assert.ok(Q.search('to TPE_ACC_SW_01').some((r) => r.type === 'interface'), '介面描述仍可搜尋');
+});
+
+test('查詢：Q.blockAt 依檔案與行號取得所屬區塊', () => {
+  const s = build(read('samples/sample-bundle.txt')); const Q = S.query(s);
+  s.blocks.slice(0, 20).forEach((b) => {
+    assert.strictEqual(Q.blockAt(b.file, b.start), b); assert.strictEqual(Q.blockAt(b.file, b.end), b);
+    assert.strictEqual(Q.blockAt(b.file, b.start), Q.block(b.id), '與 block(id) 是同一個物件');
+  });
+  assert.strictEqual(Q.blockAt('t.txt', 1), null, '第 1 行是設備標頭，不在區塊內');
+  assert.strictEqual(Q.blockAt('沒有這個檔案.txt', s.blocks[0].start), null);
+});
+
 test('查詢介面：規則目錄、資料類別、解析器名稱與 VLAN 文字（靜態，不需要 Snapshot）', () => {
   const C = S.check.CATALOG;
   assert.deepStrictEqual(S.query.rules().map((r) => r.id), Object.keys(C), '依 CATALOG 的宣告順序');
   S.query.rules().forEach((r) => {
     assert.strictEqual(S.query.rule(r.id), r);
-    const { id, ...rest } = r; assert.deepStrictEqual(rest, C[id], `${id} 的內容與 CATALOG 相同`);
+    const { id, hint, ...rest } = r; assert.deepStrictEqual(rest, C[id], `${id} 的內容與 CATALOG 相同`);
+    assert.ok(C[id].action.startsWith(hint), `${id} 的 hint 是 action 的第一句`);
   });
   assert.strictEqual(S.query.rule('ZZ99'), null); assert.strictEqual(S.query.rule('toString'), null);
   // 凍結：呼叫端改不到目錄（含巢狀的 data、causes）
@@ -282,6 +380,20 @@ test('查詢介面：規則目錄、資料類別、解析器名稱與 VLAN 文�
   assert.strictEqual(S.util.fmtVlans([1, 2, 3, 5, 7, 8, 4094]), '1-3,5,7-8,4094');
   assert.strictEqual(S.util.fmtVlans([]), '');
   assert.strictEqual(S.util.fmtVlans([10]), '10');
+});
+
+test('檢查規則的處理提示：hint 是 action 的第一句，約 40 字寬、無連結，ruleStatus 帶出同一句', () => {
+  // 寬度：全形字算 1、半形（ASCII）算 0.5，反引號不算；上限 40。hint 只有句尾一個「。」，與文件「處理」第一句一致（tests/docs.js）
+  const width = (s) => Array.from(s.replace(/`/g, '')).reduce((n, c) => n + (c.charCodeAt(0) < 128 ? 0.5 : 1), 0);
+  S.query.rules().forEach((r) => {
+    assert.strictEqual(typeof r.hint, 'string', `${r.id} 缺少 hint（action 的第一句）`);
+    assert.strictEqual(r.hint, r.action.slice(0, r.action.indexOf('。') + 1), `${r.id} 的 hint 應為 action 到第一個「。」`);
+    assert.ok(width(r.hint) <= 40, `${r.id} 的處理提示太長（寬度 ${width(r.hint)}）：${r.hint}`);
+    assert.ok(!/https?:|\]\(|\n/.test(r.hint), `${r.id} 的處理提示不放連結`);
+    assert.strictEqual((r.hint.match(/`/g) || []).length % 2, 0, `${r.id} 的處理提示反引號要成對`);
+  });
+  const Q = S.query(build(read('samples/sample-bundle.txt')));
+  Q.ruleStatus().forEach((r) => assert.strictEqual(r.hint, S.query.rule(r.id).hint, r.id));
 });
 
 test('查詢介面：metaOf 只在 JSON 像 Snapshot 時回傳 meta', () => {
@@ -493,4 +605,19 @@ test('L3 子網圖：範例資料的路由設備、多網段的交換器、鄰�
   s.model.prefixes.forEach((p) => assert.deepStrictEqual(g.edges.filter((e) => e.subnet === p.key && e.basis === 'address').flatMap((e) => e.eps).sort(), p.eps.slice().sort(), p.key));
   const off = Q.subnetGraph({ hearsay: false });
   assert.ok(off.edges.every((e) => !e.inferred));
+});
+
+test('推定偏離的索引：Q.deviationsOf 列出設備出現在 deviation.deviating 的 finding 索引（依 Snapshot 順序、凍結）', () => {
+  const s = build(read('samples/sample-bundle.txt')); const Q = S.query(s);
+  const devs = S.util.uniq(s.findings.flatMap((f) => (f.deviation ? f.deviation.deviating : [])));
+  assert.ok(devs.length, '範例資料應有被多數決推定偏離的設備');
+  devs.forEach((d) => {
+    const want = s.findings.map((f, i) => (f.deviation && f.deviation.deviating.includes(d) ? i : -1)).filter((i) => i >= 0);
+    assert.deepStrictEqual(Array.from(Q.deviationsOf(d)), want, d);
+    assert.ok(Object.isFrozen(Q.deviationsOf(d)), '回傳 Q 自己的索引，凍結');
+  });
+  // 不在任何 deviating 的設備（含平手的 finding 的實體）為空陣列
+  assert.deepStrictEqual(Array.from(Q.deviationsOf('NO_SUCH_DEV')), []);
+  const clean = s.model.devices.find((d) => !devs.includes(d.key));
+  assert.ok(clean && Q.deviationsOf(clean.key).length === 0);
 });

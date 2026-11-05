@@ -12,15 +12,17 @@
   /**
    * 選取：圖上的標示依目前的層級（設備圖在這裡，L2／L3 在 app-layers.js 的 A.layerMarks），詳情在右側。
    * opt.focus：圖移到選取的位置；opt.findingEntities：標出檢查結果的實體；
-   * opt.refresh：只在圖上重新標示（切換層級、取消 VLAN 篩選時），不重繪詳情、不切換工作區
+   * opt.refresh：只在圖上重新標示（切換層級、取消 VLAN 篩選時），不重繪詳情、不切換工作區，也保留推定偏離標示；
+   * opt.emphasis：推定偏離的設備鍵（檢查結果的 deviation，推論），以虛線外圈另外標出；其他選取與清除時清掉
    * 選了 VLAN 時同時設為 VLAN 篩選（App.vlanFilter）：之後選其他東西，沒有自己的標示時仍標出這個 VLAN，直到在選單取消。
    */
   App.select = function (sel, opt) {
     App.sel = sel; const o = opt || {}; const g = App.graph; const Q = App.Q;
     g.setOverlay([]); g.setHighlight(null);
+    if (!o.refresh) g.setEmphasis(o.emphasis || null);
     if (sel && sel.type === 'vlan') { App.vlanFilter = { id: +sel.key, domain: sel.domain == null ? null : sel.domain }; if (!o.refresh) A.syncLayerUi(); }
     const filterMarks = () => (App.vlanFilter && Q ? A.vlanMarks(App.vlanFilter.id, App.vlanFilter.domain) : null);
-    if (!sel) { g.setSelection([], []); g.setHighlight(filterMarks()); if (!o.refresh) V.details.render(App, null); return; }
+    if (!sel) { g.setSelection([], []); g.setHighlight(filterMarks()); if (!o.refresh) { A.closeSheet(); V.details.render(App, null); } return; }
     if (!o.refresh) {
       A.closeHub(); // 選取要在圖與詳情上看到結果（例如從搜尋或摘要進來）
       // L2 只畫一台設備與鄰居時，選了不在圖上的設備就改看那一台
@@ -36,20 +38,24 @@
     if (!App.showHosts && focus.some((k) => { const d = Q.getDevice(k); return d && d.kind === 'host'; })) { App.showHosts = true; A.applyVisibility(); }
     if (!App.showUnknown && focus.some((k) => String(k).startsWith('?'))) { App.showUnknown = true; A.applyVisibility(); }
     g.setSelection(r.nodes, r.edges);
-    if (o.focus && focus.length) g.focus(focus);
+    // 窄螢幕：在拓樸圖選取時開底部抽屜（先開，聚焦與 reveal 才會讓開它）；中間是修正計畫或驗證、或已在「詳細資料」時切到詳細資料
+    const sheet = !o.refresh && A.openSheetFor();
+    if (o.focus && focus.length) g.focus(focus, { neighbors: !!r.neighbors });
+    else if (sheet) g.reveal(focus);
     if (o.refresh) return;
     V.details.render(App, sel);
-    if (sel && A.isNarrowScreen()) A.setWorkspace('details');
+    if (!sheet && A.isNarrowScreen()) A.setWorkspace('details');
   };
   /** 設備圖上的標示：回傳 { nodes, edges, focus, hl, overlay } */
   function deviceMarks(sel, o) {
     const g = App.graph; const Q = App.Q;
-    let nodes = []; let edges = []; let focus = []; let hl = null; let overlay = [];
+    // neighbors：聚焦時一併納入一跳鄰居（只選一台設備時，看得出它接在哪裡）
+    let nodes = []; let edges = []; let focus = []; let hl = null; let overlay = []; let neighbors = false;
     const setHl = (x) => { hl = x; };
     const pairsOf = (linkKeys) => S.util.uniq(linkKeys.map((k) => App.pairOfLink.get(k)).filter(Boolean));
     const devOf = (ep) => K.splitEp(ep)[0];
     switch (sel.type) {
-      case 'device': nodes = [sel.key]; focus = [sel.key]; break;
+      case 'device': nodes = [sel.key]; focus = [sel.key]; neighbors = true; break;
       case 'link': { const l = Q.getLink(sel.key); if (l) { edges = pairsOf([l.key]); focus = [devOf(l.a), devOf(l.b)]; } break; }
       case 'pair': edges = [sel.id]; focus = sel.devs; break;
       case 'interface': {
@@ -103,7 +109,12 @@
         const t = sel.result; if (t.ok) {
           overlay = t.edges.map(([a, b]) => ({ a, b, color: MARK.trace }));
           const ds = S.util.uniq([t.start, ...t.hops.map((x) => x.dev), ...t.ends.map((e) => e.dev)]);
-          setHl({ nodes: new Map(ds.map((d) => [d, t.ends.some((e) => e.dev === d && e.status !== 'reached') ? MARK.bad : MARK.trace])), edges: new Map() }); focus = ds;
+          // 設備的顏色依它的終點分類（V.traceEndKind，與詳情的結果列同一來源）：停在未收集設備只是無法驗證，用灰色而不是錯誤色
+          setHl({ nodes: new Map(ds.map((d) => [d, MARK[V.TRACE_END_STYLE[V.traceEndWorst(t.ends.filter((e) => e.dev === d))].mark]])), edges: new Map() });
+          // 聚焦整條路徑：去程的每一跳與疊加線段兩端，加上回程的起點與經過的設備（來回兩端都在畫面內）
+          const rv = sel.reverse && sel.reverse.ok ? sel.reverse : null;
+          const back = rv ? [rv.start, ...rv.hops.map((x) => x.dev), ...rv.ends.map((e) => e.dev)] : [];
+          focus = S.util.uniq(ds.concat(t.edges.flat(), back)).filter((d) => g.nodeById.has(d));
         }
         break;
       }
@@ -117,9 +128,9 @@
         if (e.type === 'rule') { const r = Q.getFirewallRule(e.key); if (r) nm.set(r.dev, MARK.bad); }
         if (e.type === 'link') { const l = Q.getLink(e.key); if (l) { em.set(App.pairOfLink.get(l.key), MARK.bad); nm.set(devOf(l.a), MARK.bad); nm.set(devOf(l.b), MARK.bad); } }
       });
-      if (nm.size || em.size) { setHl({ nodes: nm, edges: em }); focus = Array.from(nm.keys()); }
+      if (nm.size || em.size) { setHl({ nodes: nm, edges: em }); focus = Array.from(nm.keys()); neighbors = nm.size === 1; }
     }
-    return { nodes, edges, focus, hl, overlay };
+    return { nodes, edges, focus, hl, overlay, neighbors };
   }
 
   App.selectFinding = function (idx) {
@@ -127,7 +138,9 @@
     // 指向防火牆規則或服務的檢查結果，定位到該設備防火牆畫面的那一列（第一個實體通常是設備）
     const e = f.entities.find((x) => x.type === 'rule' || x.type === 'service') || f.entities[0];
     const sel = !e ? null : f.id === 'A03' ? { type: 'endpoints', dev: e.key } : e.type === 'ip' ? V.ipSel(e.key) : { type: e.type, key: e.key };
-    App.select(sel, { focus: true, findingEntities: f.id === 'A03' ? null : f.entities });
+    // 多數決推定偏離的設備（推論）另以虛線外圈標出；平手（basis 不是 majority）或 deviating 為空時不標
+    const emphasis = V.majorityDeviating(f.deviation);
+    App.select(sel, { focus: true, findingEntities: f.id === 'A03' ? null : f.entities, emphasis });
   };
 
   // ================================================================ 圖上互動
@@ -181,10 +194,38 @@
   };
 
   // ================================================================ 原文檢視
-  App.openRaw = function (file, line) {
+  // 標題寫出該行所屬的設備與指令（Q.blockAt、V.blockWhere）；opt.list 給多處證據（[{ file, line }]）時，
+  // 可用「上一處／下一處」或左右方向鍵切換（頭尾相接）
+  let rawNav = { list: [], at: 0 };
+  App.openRaw = function (file, line, opt) {
+    const list = opt && opt.list && opt.list.length ? opt.list : [{ file, line }];
+    rawNav = { list, at: Math.max(0, list.findIndex((e) => e.file === file && e.line === line)) };
+    bindRawNav(); showRaw();
+    $('#dlg-raw').showModal();
+    scrollRawHl();
+  };
+  const scrollRawHl = () => { const hl = $('#raw-body').querySelector('.hl'); if (hl) hl.scrollIntoView({ block: 'center' }); };
+  function bindRawNav() {
+    const dlg = $('#dlg-raw'); if (dlg.dataset.nav) return; dlg.setAttribute('data-nav', '1');
+    $('#raw-prev').addEventListener('click', () => stepRaw(-1)); $('#raw-next').addEventListener('click', () => stepRaw(1));
+    dlg.addEventListener('keydown', (e) => {
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || rawNav.list.length < 2) return;
+      if (e.key === 'ArrowLeft') { e.preventDefault(); stepRaw(-1); } else if (e.key === 'ArrowRight') { e.preventDefault(); stepRaw(1); }
+    });
+  }
+  function stepRaw(d) {
+    const n = rawNav.list.length; if (n < 2) return;
+    rawNav.at = (rawNav.at + d + n) % n; showRaw(); scrollRawHl();
+  }
+  function showRaw() {
+    const { file, line } = rawNav.list[rawNav.at]; const n = rawNav.list.length;
     const src = App.sources.find((s) => s.name === file);
-    const dlg = $('#dlg-raw'); const body = V.clear($('#raw-body'));
-    $('#raw-title').textContent = `${file}　第 ${line} 行`;
+    const body = V.clear($('#raw-body'));
+    const blk = App.Q ? App.Q.blockAt(file, line) : null;
+    const title = $('#raw-title');
+    title.textContent = `${blk ? V.blockWhere(App.Q, blk) : file}（第 ${line} 行）`; title.setAttribute('title', `${file} 第 ${line} 行`);
+    $('#raw-nav').classList.toggle('hidden', n < 2);
+    $('#raw-pos').textContent = `${rawNav.at + 1}／${n}`;
     if (!src) body.appendChild(h('p', { class: 'muted' }, '找不到原始輸入（可能是從舊版本還原的基準）。'));
     else {
       const lines = src.text.split(/\r?\n/); const from = Math.max(1, line - 12); const to = Math.min(lines.length, line + 25);
@@ -192,9 +233,7 @@
       for (let i = from; i <= to; i++) pre.appendChild(h('span', { class: i === line ? 'hl' : null }, [h('span', { class: 'ln' }, String(i)), lines[i - 1] + '\n']));
       body.appendChild(pre);
     }
-    dlg.showModal();
-    const hl = body.querySelector('.hl'); if (hl) hl.scrollIntoView({ block: 'center' });
-  };
+  }
 
   // ================================================================ 路由追蹤
   /**
@@ -209,7 +248,7 @@
   const traceMsg = (text) => { const m = $('#trace-msg'); m.textContent = text || ''; m.classList.toggle('hidden', !text); };
   /** 開啟路由追蹤。vrf：預先選好的 VRF（例如從某個 VRF 的 IP 詳情來）；省略時保留選單目前的值 */
   App.openTrace = function (src, dst, vrf) {
-    A.closeHub();
+    A.closeHub(); A.closeMenus();
     const pop = $('#trace-pop'); pop.classList.remove('hidden');
     if (src !== undefined) $('#trace-src').value = src; if (dst !== undefined) $('#trace-dst').value = dst;
     A.syncTraceVrf(vrf === undefined ? undefined : vrf || ''); traceMsg('');
@@ -234,7 +273,7 @@
     const reached = r.ok ? S.util.uniq(r.ends.filter((e) => e.status === 'reached').map((e) => e.vrf)) : [];
     const backVrf = reached.length === 1 ? reached[0] : vrf;
     const reverse = r.ok ? S.trace(App.Q, dst, src, backVrf ? { vrf: backVrf } : undefined) : null;
-    $('#trace-pop').classList.add('hidden');
+    A.closeTrace(false);
     App.showView('graph'); // 路由追蹤的路徑畫在拓樸圖上：工作畫面開著時切回拓樸圖
     App.select({ type: 'trace', result: r, reverse, vrf: vrf || null }, { focus: true });
   };

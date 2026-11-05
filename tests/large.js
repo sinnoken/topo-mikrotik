@@ -66,4 +66,13 @@ module.exports = function registerLarge(LARGE_MAX_MS) {
     assert.ok(p95 <= Math.max(50, LARGE_MAX_MS / 100), `分段計算的 p95 是 ${p95} ms`);
     assert.ok(segs.length > 10, `只有 ${segs.length} 段`);
   });
+  test('壓力：約 1000 台的預檢（S.preflight）比完整建立快，且設備數與無法辨識段落相同', () => {
+    const src = [{ name: 'large.txt', text: gen(['--sites', '40', '--access', '24']) }];
+    let t = Date.now(); const p = S.preflight(src); const pm = Date.now() - t;
+    t = Date.now(); const s = S.build(src); const bm = Date.now() - t;
+    console.log(`      預檢 ${pm} ms、完整建立 ${bm} ms（${p.devices.length} 台、${p.blockCount} 個區塊）`);
+    assert.strictEqual(p.devices.length, s.meta.stats.collected);
+    assert.strictEqual(p.unrecognized.length, count(s, 'I01'));
+    assert.ok(pm < bm, `預檢 ${pm} ms 應比完整建立 ${bm} ms 快`);
+  });
 };

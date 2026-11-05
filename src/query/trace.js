@@ -168,7 +168,10 @@
 
   /**
    * 路由追蹤。opt：{ ttl, vrf（選用；省略時依來源位址決定，見 pickVrf） }。
-   * 回傳 { ok, src, dst, vrf, start, reached, hops: [{ dev, vrf, via, route, proto, ecmp, next: [{ ip, ifc, dev, vrf, crossVrf, status, note }] }], ends: [{ dev, vrf, status, note, path }], edges }；
+   * 走到未收集的設備（起點、中途或終點）時以 ends[].status 'unverified' 停下：沒有它的路由表，不能判斷是否抵達，不算斷掉。
+   * status：'reached'（至少一個分支抵達）｜'unverified'（沒有抵達，且每個分支都停在未收集的設備）｜'unreachable'（其他）；
+   * unverified 是停在未收集設備的設備鍵（去重、依出現順序）。
+   * 回傳 { ok, src, dst, vrf, start, reached, status, unverified, hops: [{ dev, vrf, via, route, proto, ecmp, next: [{ ip, ifc, dev, vrf, crossVrf, status, note }] }], ends: [{ dev, vrf, status, note, path }], edges }；
    * 位址無效或來源在多個 VRF 時 { ok: false, error（, vrfs） }。vrf 不是基準中的 VRF 時 TypeError。
    * 每一跳在它的 VRF 查路由；下一跳寫了 @<VRF>（路由洩漏）時在那個 VRF 解析閘道，下一台從擁有閘道位址的 VRF 繼續。
    */
@@ -201,6 +204,8 @@
       const tableNote = lk.rule ? `（依 /routing rule 第 ${lk.rule.order} 條查路由表 ${lk.table}）` : '';
       const lv = lk.vrf; const leakNote = lk.via.length > 1 ? `（經 VRF 介面從 ${lk.via.join(' → ')}）` : '';
       if (lk.kind === 'connected') { ends.push({ dev, vrf: lv, status: 'reached', note: `目的位於直連網段 ${lk.conn.net}/${lk.conn.len}（${Q.epName(lk.conn.ep)}${notMain(lv) ? `，VRF ${lv}` : ''}）${leakNote}`, path }); continue; }
+      // 未收集的設備沒有路由表：不能判斷是否抵達，以「無法驗證」停下，不算斷掉
+      if (!(Q.getDevice(dev) || {}).collected) { ends.push({ dev, vrf, status: 'unverified', note: `${Q.devName(dev)} 未收集，無法再查它的路由表`, path }); continue; }
       if (lk.kind === 'no-route-data') { ends.push({ dev, vrf, status: 'noroute', note: '這台設備沒有路由表資料', path }); continue; }
       if (lk.kind === 'no-match') { ends.push({ dev, vrf: lv, status: 'noroute', note: `${lk.table && lk.table !== lv ? `路由表 ${lk.table} ` : notMain(lv) ? `VRF ${lv} ` : ''}沒有符合 ${dst} 的路由${tableNote}${leakNote}`, path }); continue; }
       if (lk.kind === 'blackhole') {
@@ -229,7 +234,9 @@
       });
     }
     const reached = ends.some((e) => e.status === 'reached');
-    return { ok: true, src, dst, vrf: vrf0, start: startDev, reached, hops, ends, edges: Array.from(edges).map((e) => e.split('>')) };
+    const unverified = U.uniq(ends.filter((e) => e.status === 'unverified').map((e) => e.dev));
+    const status = reached ? 'reached' : ends.length && ends.every((e) => e.status === 'unverified') ? 'unverified' : 'unreachable';
+    return { ok: true, src, dst, vrf: vrf0, start: startDev, reached, status, unverified, hops, ends, edges: Array.from(edges).map((e) => e.split('>')) };
   };
   S.trace.lookup = lookup;
   S.trace.nextOwner = nextOwner;

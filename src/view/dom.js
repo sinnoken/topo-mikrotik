@@ -5,6 +5,8 @@
   'use strict';
   const V = (S.view = S.view || {});
 
+  /** 非 button 的可操作元素（role=button／link、可點的表格列）共用的鍵盤觸發：Enter 或空白鍵執行 fn（空白鍵不捲動頁面） */
+  V.activateByKey = (fn) => (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); } };
   /** h('div', {class:'x', onclick: fn}, [child, '文字']) */
   V.h = function h(tag, attrs, children) {
     const el = document.createElement(tag);
@@ -20,9 +22,7 @@
     }
     if (tag === 'a' && attrs && String(attrs.class || '').split(/\s+/).includes('link') && !Object.prototype.hasOwnProperty.call(attrs, 'href')) {
       el.setAttribute('role', 'link'); el.setAttribute('tabindex', '0');
-      el.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); }
-      });
+      el.addEventListener('keydown', V.activateByKey(() => el.click()));
     }
     (Array.isArray(children) ? children : children === undefined ? [] : [children]).forEach((c) => {
       if (c === null || c === undefined || c === false) return;
@@ -48,6 +48,35 @@
   V.$ = (sel, root) => (root || document).querySelector(sel);
   V.clear = (el) => { while (el.firstChild) el.removeChild(el.firstChild); return el; };
 
+  /**
+   * 畫面名詞的唯一來源：同一個概念全站只用一個詞。
+   *   network：應收集的網路設備（收集完整度的分母，同 Q.coverageSummary 的 network）；host：不在收集範圍、只由鄰居或 ARP 得知的主機。
+   *   endpoint：終端（只學到一個 MAC、沒有 LLDP／CDP 鄰接的埠所接的東西）。
+   *   group：依連線自動分出的版面分群，不代表實體位置或 IP 網段。vlanDomain：同一個 VLAN ID 依鏈路證據分出的不相連部分（推論）。
+   *   inferred：推論的標示（V.inferChip）。
+   */
+  V.TERMS = Object.freeze({
+    network: '網路設備', host: '主機', endpoint: '終端', group: '自動群組', vlanDomain: '區塊', inferred: '推論',
+  });
+  /** 推論標示：和收集到的事實並列的推定結果一律加這個 chip；依據放 title。 */
+  V.inferChip = (tip) => V.chip(V.TERMS.inferred, 'info', tip ? { title: tip } : null);
+  /** 多數決推定偏離的設備鍵（finding.deviation，推論）：不是多數決（或沒有 deviation）時 null，平手時空陣列。詳情、③ 分診與圖上的虛線外圈共用 */
+  V.majorityDeviating = (dv) => (dv && dv.basis === 'majority' ? dv.deviating || [] : null);
+  /**
+   * 跨設備一致性規則的多數決結果（finding.deviation，推論）：一律經這裡產生，詳情的每筆檢查結果共用。
+   * 列出推定偏離的設備，點設備名選取該設備（不觸發外層的點選）；沒有多數（平手）時明說無法推定，不留白。
+   * 不是多數決的 deviation（或沒有）時為 null。opts.tie 為 false 時平手不顯示（③ 分診的結果列表），回傳 null。
+   */
+  V.deviationLine = function (App, dv, opts) {
+    const devs = V.majorityDeviating(dv);
+    if (!devs) return null;
+    const label = '推定偏離（多數決）：';
+    if (!devs.length) return opts && opts.tie === false ? null : V.h('div', { class: 'deviation none muted' }, label + '沒有多數，無法推定');
+    const pick = (key) => (e) => { if (e && e.stopPropagation) e.stopPropagation(); App.select({ type: 'device', key }, { focus: true }); };
+    // a.link 沒有 href 時 h() 已補 role、tabindex 與 Enter／空白鍵啟動
+    const links = devs.map((key) => V.h('a', { class: 'link', 'data-dev': key, title: '選取這台設備', onclick: pick(key) }, App.Q.devName(key)));
+    return V.h('div', { class: 'deviation' }, [label, ...links.flatMap((a, n) => (n ? ['、', a] : [a]))]);
+  };
   V.KIND = S.KIND_LABEL;
   V.KIND_BASIS = { board: '依設備型號', data: '依收集的資料', caps: '依鄰居回報的功能', vendor: '依廠牌推測', heuristic: '依對端埠名推測', profile: '依命名規則', none: '無法判斷' };
   V.SEV = { error: '錯誤', warn: '警告', info: '提醒' };
@@ -90,8 +119,19 @@
   // S.trace 的結束狀態（ends[].status）
   V.TRACE_END = {
     reached: '抵達', noroute: '沒有路由', blackhole: '黑洞路由', loop: '路由迴圈', ttl: 'TTL 用盡', 'unknown-nh': '下一跳不在基準內',
-    policy: '策略路由不明', 'policy-drop': '策略路由丟棄',
+    policy: '策略路由不明', 'policy-drop': '策略路由丟棄', unverified: '無法驗證',
   };
+  /** 輸入區塊的位置「設備 › 指令」（blk 是 Q.block／Q.blockAt 的結果）：原文對話框標題與詳情的來源列共用同一寫法 */
+  V.blockWhere = (Q, blk) => `${blk.devKey ? Q.devName(blk.devKey) : blk.device || blk.file} › ${blk.command || '（未標記指令）'}`;
+  /**
+   * 路由追蹤終點的分類（圖上節點顏色與詳情的結果列共用）：reached 抵達、unverified 停在未收集的設備（只是無法驗證，不是錯誤）、
+   * 其餘狀態（沒有路由、迴圈、黑洞…）都是 bad。整體結果（S.trace 的 status：reached／unverified／unreachable）也用同一個函式分類。
+   */
+  V.traceEndKind = (end) => (end.status === 'reached' ? 'reached' : end.status === 'unverified' ? 'unverified' : 'bad');
+  /** 分類 → theme.mark 的鍵（圖上顏色）與 .hop 的 class（詳情） */
+  V.TRACE_END_STYLE = { reached: { mark: 'trace', cls: 'end-reached' }, unverified: { mark: 'unverified', cls: 'end-unverified' }, bad: { mark: 'bad', cls: 'end-bad' } };
+  /** 同一台設備有多個終點時取最差的一類（bad > unverified > reached）；沒有終點（只是中途經過）視為 reached */
+  V.traceEndWorst = (ends) => ['bad', 'unverified'].find((k) => ends.some((e) => V.traceEndKind(e) === k)) || 'reached';
   /**
    * IP 的選取：{ type: 'ip', key: IP, vrf }。vrf 為 null 時不分 VRF（搜尋：列出所有 VRF 的結果），否則只看那個 VRF。
    * 從位址鍵（K.inVrf，例如檢查結果的實體、清單的列）建立時，沒有 @ 就是 main。
@@ -159,7 +199,8 @@
   /** 可操作的 chip（篩選選項）：用 <button>，鍵盤可以聚焦與按 Enter／空白鍵操作 */
   V.chipButton = (text, cls, attrs) => V.h('button', Object.assign({ type: 'button', class: 'chip ' + (cls || '') }, attrs || {}), text);
   V.kindChip = (k) => V.chip(V.KIND[k] || k, 'kind-' + k);
-  V.sevDot = (s) => V.h('span', { class: 'sev ' + s, title: V.SEV[s] });
+  /** 嚴重度標記（外形＋顏色）：輔助科技念出嚴重度名稱，不只靠顏色 */
+  V.sevDot = (s) => V.h('span', { class: 'sev ' + s, title: V.SEV[s], role: 'img', 'aria-label': V.SEV[s] });
   V.fmtTime = (iso) => { const d = new Date(iso); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
   V.num = (n) => Number(n).toLocaleString('zh-TW');
 
@@ -194,6 +235,7 @@
     return box;
   };
 
+  let sortFocus = null; // 剛按下排序的欄位標題（重繪後把焦點還給它）
   function renderTable(cols, rows, o) {
     const tb = V.h('tbody');
     rows.slice(0, o.limit || rows.length).forEach((r) => {
@@ -204,12 +246,25 @@
         class: [activate ? 'click' : '', o.bad && o.bad(r) ? 'bad' : '', o.rowClass ? o.rowClass(r) || '' : ''].join(' '),
         onclick: activate,
         tabindex: activate ? '0' : null,
-        onkeydown: activate ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } } : null,
+        onkeydown: activate ? V.activateByKey(activate) : null,
       },
         cols.map((c) => V.h('td', { class: c.cls || null, style }, c.f(r)))));
     });
-    const t = V.h('table', { class: 't' }, [V.h('thead', null, V.h('tr', null, cols.map((c, n) => V.h('th', c.s && o.onSort ? { class: 'sortable', title: '點一下排序', onclick: () => o.onSort(n) } : null, c.t + (o.sortBy === n ? (o.sortDir < 0 ? ' ▼' : ' ▲') : ''))))), tb]);
-    if (o.limit && rows.length > o.limit) return V.h('div', null, [t, V.h('div', { class: 'muted table-more' }, `只顯示前 ${o.limit} 筆，共 ${V.num(rows.length)} 筆`)]);
-    return t;
+    // 可排序的標頭：標頭內放 <button>（鍵盤可聚焦、Enter／空白鍵排序），th 標 aria-sort；▲▼ 只是視覺提示，不念出
+    const head = (c, n) => {
+      if (!(c.s && o.onSort)) return V.h('th', null, c.t);
+      const on = o.sortBy === n;
+      const btn = V.h('button', { type: 'button', class: 'th-sort', title: '點一下排序', onclick: () => { sortFocus = c.t; o.onSort(n); } },
+        [c.t, on ? V.h('span', { 'aria-hidden': 'true' }, o.sortDir < 0 ? ' ▼' : ' ▲') : null]);
+      // 排序後表格整個重繪：焦點回到同一欄的新按鈕（呼叫端同步插入表格後才移動焦點）
+      if (sortFocus === c.t) { sortFocus = null; Promise.resolve().then(() => btn.focus()); }
+      return V.h('th', { class: 'sortable', 'aria-sort': on ? (o.sortDir < 0 ? 'descending' : 'ascending') : 'none' },
+        btn);
+    };
+    const t = V.h('table', { class: 't' }, [V.h('thead', null, V.h('tr', null, cols.map(head))), tb]);
+    // 識別字（IP、MAC、VLAN 清單）在表格內不斷行，寬於畫面時表格在自己的框內橫向捲動
+    const box = V.h('div', { class: 'table-scroll' }, t);
+    if (o.limit && rows.length > o.limit) return V.h('div', null, [box, V.h('div', { class: 'muted table-more' }, `只顯示前 ${o.limit} 筆，共 ${V.num(rows.length)} 筆`)]);
+    return box;
   }
 })(globalThis.SSOT = globalThis.SSOT || {});

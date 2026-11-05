@@ -136,6 +136,10 @@ const luminance = (rgb) => { const [r, g, b] = rgb.map((v) => { v /= 255; return
 const contrastOf = (fg, bg, base) => { const [a, b] = [luminance(rgbOf(fg, base)), luminance(rgbOf(bg, base))].sort((x, y) => y - x); return (a + 0.05) / (b + 0.05); };
 /** 讀 app.css 的 :root 變數 */
 const cssVars = (css) => Object.fromEntries(Array.from(css.match(/:root\s*\{([^}]*)\}/)[1].matchAll(/--([\w-]+):\s*([^;]+);/g)).map((m) => [m[1], m[2].trim()]));
+/** dir（相對於專案根目錄）底下所有 .js 檔的相對路徑（靜態掃描用） */
+const jsFiles = (dir) => fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? jsFiles(path.join(dir, e.name)) : e.name.endsWith('.js') ? [path.join(dir, e.name)] : []));
+/** CATALOG 文字去掉反引號（畫面把反引號內的指令改成 <code>，textContent 不含反引號） */
+const unticked = (t) => String(t).replace(/`([^`]+)`/g, '$1');
 /** 記錄 Canvas 的路徑與填色／描邊（模擬 context 的方法本身不做事）：回傳每次 fill／stroke 的樣式與路徑點 */
 function recordCanvas(ctx, fn) {
   const names = ['beginPath', 'moveTo', 'lineTo', 'arc', 'closePath', 'fill', 'stroke', 'fillText', 'fillRect', 'setLineDash'];
@@ -247,6 +251,7 @@ function stripJs(src) {
 }
 /** 畫面可以使用的 SSOT 成員：查詢介面、輸入 API、常數、下游 API 與畫面自己的命名空間 */
 const VIEW_S_ALLOW = new Set(['query', 'trace', 'util', 'keys', 'VERSION', 'SCHEMA', 'LINK_SCOPE', 'KIND_LABEL', 'build', 'buildAsync', 'inputHashOf',
+  'preflight', 'collectCommands', // 建立前的預檢；由 tools/collector-commands.sh 產生的收集指令清單
   'profiles', 'samples', 'compare', 'remediate', 'ledger', 'workpack', 'zip', 'view', 'store']);
 /** 只允許其中一個成員的核心命名空間 */
 const VIEW_S_ONLY = { readers: 'PASTE', profile: 'compile' };
@@ -288,8 +293,7 @@ function viewBoundaryViolations(file, src) {
     const csp = (html.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)"/) || [])[1] || '';
     ["connect-src 'none'", "form-action 'none'", "object-src 'none'", "worker-src 'none'"].forEach((d) => { if (!csp.includes(d)) throw new Error('CSP 缺少 ' + d); });
     if (html.indexOf('Content-Security-Policy') > html.indexOf('<script')) throw new Error('CSP 必須在第一個 <script> 之前');
-    const walk = (dir) => fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.js') ? [path.join(dir, e.name)] : []));
-    walk('src').forEach((f) => {
+    jsFiles('src').forEach((f) => {
       const code = fs.readFileSync(path.join(ROOT, f), 'utf8');
       const hit = code.match(/\bfetch\(|XMLHttpRequest|new WebSocket|sendBeacon|EventSource/);
       if (hit) throw new Error(`${f} 使用了網路 API：${hit[0]}`);
@@ -307,8 +311,7 @@ function viewBoundaryViolations(file, src) {
     const lines = got.map((v) => v.line).join();
     if (lines !== '3,4,4,6,6,6,6,6') throw new Error('邊界掃描器的判斷不符（行號 ' + lines + '）：\n' + got.map((v) => v.text).join('\n'));
     if (!got[0].text.includes('probe.js:3') || !got[0].text.includes('S.query.rule')) throw new Error('違規訊息應列出檔案、行號與建議的寫法：' + got[0].text);
-    const walk = (dir) => fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.js') ? [path.join(dir, e.name)] : []));
-    const files = walk('src/view');
+    const files = jsFiles('src/view');
     if (!files.length) throw new Error('應掃描到 src/view 的檔案');
     const bad = files.flatMap((f) => viewBoundaryViolations(f.split(path.sep).join('/'), fs.readFileSync(path.join(ROOT, f), 'utf8')));
     if (bad.length) throw new Error(`畫面直接讀核心內部或 Snapshot 欄位 ${bad.length} 處：\n` + bad.map((v) => '        ' + v.text).join('\n'));
@@ -320,13 +323,70 @@ function viewBoundaryViolations(file, src) {
       ...Array.from(line.matchAll(/(querySelectorAll\s*\([^()]*\)|\.children|\.childNodes)\s*\.\s*(find|findIndex|filter|map|flatMap|some|every|reduce|indexOf|includes|slice|concat|join|sort)\b/g)).map((m) => `${n + 1}：${m[0]}`),
       ...(/\.testAll\s*\(/.test(line) ? [`${n + 1}：testAll`] : [])]);
     if (scan(probe).length !== 3) throw new Error('掃描器的判斷不符：' + scan(probe).join('、'));
-    const walk = (dir) => fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.js') ? [path.join(dir, e.name)] : []));
-    const bad = walk('src/view').flatMap((f) => scan(fs.readFileSync(path.join(ROOT, f), 'utf8')).map((x) => `${f.split(path.sep).join('/')}:${x}`));
+    const bad = jsFiles('src/view').flatMap((f) => scan(fs.readFileSync(path.join(ROOT, f), 'utf8')).map((x) => `${f.split(path.sep).join('/')}:${x}`));
     if (bad.length) throw new Error('瀏覽器的 NodeList／HTMLCollection 沒有這些陣列方法，請先 Array.from：\n        ' + bad.join('\n        '));
     const nl = document.querySelectorAll('button');
     if (Array.isArray(nl) || typeof nl.find === 'function' || typeof nl.forEach !== 'function' || typeof body.children.forEach === 'function') throw new Error('模擬 DOM 應回傳 NodeList（有 forEach、沒有 find）與 HTMLCollection（沒有 forEach）');
   });
   await step('ELK 不在啟動時載入', () => { if (globalThis.ELK || loadedScripts.length) throw new Error('ELK 應在第一次需要分層版面時才載入'); });
+  await step('歡迎畫面：收集指引可展開，指令清單取自收集器定義（samples/collect-commands.js）且可複製；說明 collect.sh', async () => {
+    const w = $('#welcome');
+    if ($('#welcome-collect').tagName !== 'DETAILS') throw new Error('收集指引應為可展開的區塊');
+    const cmds = S.collectCommands.default.map((c) => c.command);
+    if (text('#welcome-commands') !== cmds.join('\n') || !cmds.includes('/export terse')) throw new Error('指令清單應取自 samples/collect-commands.js：' + text('#welcome-commands'));
+    if (!S.collectCommands.optional.every((c) => text('#welcome-optional').includes(c.command))) throw new Error('應列出選用指令');
+    if (!w.textContent.includes('collect.sh')) throw new Error('歡迎畫面應說明收集腳本 collect.sh');
+    if ($('#welcome-copy').tagName !== 'BUTTON' || !$('#welcome-copy').textContent.includes('複製')) throw new Error('複製指令清單應是按鈕');
+    const nav = Object.getOwnPropertyDescriptor(globalThis, 'navigator'); let copied = null;
+    Object.defineProperty(globalThis, 'navigator', { value: { clipboard: { writeText: async (t) => { copied = t; } } }, configurable: true, writable: true });
+    try {
+      $('#welcome-copy').click(); await new Promise((r) => setTimeout(r, 5));
+      if (copied !== cmds.join('\n') || !text('#welcome-copy-status').includes('已複製')) throw new Error('複製指令清單應寫入剪貼簿並提示');
+      $('#input-format-copy').click(); await new Promise((r) => setTimeout(r, 5));
+      if (copied !== text('#input-format-example') || !text('#input-format-copy-status').includes('已複製')) throw new Error('複製範例應寫入格式範例全文');
+      globalThis.navigator = {}; $('#welcome-copy').click(); await new Promise((r) => setTimeout(r, 5));
+      if (!text('#welcome-copy-status').includes('無法自動複製')) throw new Error('不能複製時應明確告知：' + text('#welcome-copy-status'));
+    } finally { if (nav) Object.defineProperty(globalThis, 'navigator', nav); else delete globalThis.navigator; }
+  });
+  await step('輸入對話框：格式說明是可展開、可複製的範例，範例本身認得；placeholder 只是提示', async () => {
+    await App.openInput();
+    if (($('#input-text').getAttribute('placeholder') || '').includes('_____')) throw new Error('placeholder 不應再放格式範例');
+    if (!$('#input-text').getAttribute('aria-label')) throw new Error('文字框應有 aria 名稱');
+    if ($('#input-format').tagName !== 'DETAILS' || !$('#input-format-copy')) throw new Error('格式說明應為可展開、可複製的區塊');
+    const p = S.preflight([{ name: S.readers.PASTE, text: text('#input-format-example') }]);
+    if (p.devices.length !== 2 || p.unrecognized.length || p.partial.length) throw new Error('格式範例本身應完全認得：' + JSON.stringify([p.unrecognized, p.partial]));
+  });
+  await step('輸入對話框：預檢即時顯示認到幾台、哪些段落無法辨識（可展開清單）；0 台時停用建立並說明', async () => {
+    const t = $('#input-text'); const btn = $('#input-build'); const pf = () => text('#input-preflight');
+    const type = async (v) => { t.value = v; t.dispatch('input'); await new Promise((r) => setTimeout(r, 450)); };
+    if (!btn.disabled || !pf().includes('尚未輸入')) throw new Error('沒有輸入時應停用建立：' + pf());
+    await type('隨便一段文字');
+    if (!pf().includes('認到 0 台設備') || !pf().includes('1 段無法辨識') || !btn.disabled) throw new Error('0 台設備時應停用並說明：' + pf());
+    if (!pf().includes('設備名 (管理 IP):') || !pf().includes(`${S.readers.PASTE} 第 1–1 行：沒有設備標頭`)) throw new Error('應說明原因並列出檔名與行號：' + pf());
+    if ($('#input-preflight-list').tagName !== 'DETAILS') throw new Error('清單應可展開');
+    await type(text('#input-format-example') + '\n### /foo bar print\nxyz\n');
+    if (!pf().includes('認到 2 台設備') || !pf().includes('1 段無法辨識') || btn.disabled) throw new Error('有設備時應可建立：' + pf());
+    if (!pf().includes('TPE_CORE_RT_01') || !pf().includes(S.query.dataLabel('system')) || !pf().includes('/foo bar print')) throw new Error('清單應列出設備、資料種類與無法辨識的段落：' + pf());
+    // 展開狀態跨重算保留
+    const list = $('#input-preflight-list'); list.open = true; list.dispatch('toggle');
+    await type(text('#input-format-example'));
+    if ($('#input-preflight-list').getAttribute('open') === null || !pf().includes('沒有無法辨識的段落')) throw new Error('重算後清單應保持展開：' + pf());
+    t.value = '還是沒有標頭'; btn.click(); await new Promise((r) => setTimeout(r, 20)); // 程式直接改文字、沒有 input 事件：建立時也要重新預檢
+    if (App.snap || !text('#input-status').includes('沒有認到任何設備')) throw new Error('0 台設備時不應建立：' + text('#input-status'));
+    await type('');
+    $('#input-file').dispatch('change', { target: { files: [{ name: 'EDGE_SW_9.txt', text: async () => '### /ip arp print detail without-paging\n 0 address=10.0.0.2 mac-address=AA:BB:CC:00:00:01 interface=bridge1\n' }] } });
+    await new Promise((r) => setTimeout(r, 20));
+    if (!pf().includes('認到 1 台設備') || !pf().includes('EDGE_SW_9')) throw new Error('選檔後應立即預檢：' + pf());
+    const rm = $('#input-files').querySelector('.chip-x');
+    if (!rm || rm.tagName !== 'BUTTON' || rm.getAttribute('aria-label') !== '移除 EDGE_SW_9.txt') throw new Error('已選檔案的移除應是有名稱的按鈕');
+    rm.click();
+    if (!pf().includes('尚未輸入')) throw new Error('移除檔案後應重新預檢：' + pf());
+    if (document.activeElement !== $('#input-pick')) throw new Error('移除最後一個檔案後焦點應回到「選擇檔案…」');
+    await App.loadSample();
+    const sp = S.preflight([{ name: S.readers.PASTE, text: S.samples['sample-bundle.txt'] }]);
+    if (!pf().includes(`認到 ${S.view.num(sp.devices.length)} 台設備`) || !pf().includes(`${S.view.num(sp.unrecognized.length)} 段無法辨識`) || btn.disabled) throw new Error('載入範例後應立即預檢：' + pf());
+    $('#dlg-input').close();
+  });
   await step('載入範例並建立基準', async () => {
     await App.loadSample(); if (!$('#input-text').value.includes('TPE_CORE_RT_01')) throw new Error('範例未載入');
     if (process.env.SMOKE_INPUT) $('#input-text').value = fs.readFileSync(process.env.SMOKE_INPUT, 'utf8');
@@ -369,9 +429,12 @@ function viewBoundaryViolations(file, src) {
     try { $('#btn-relayout').click(); await App.layoutJob; } finally { App.ELK_MAX = max; }
     if (!text('#banner').includes('超過分層版面上限')) throw new Error('應說明分層版面未套用的原因：' + text('#banner'));
     if (JSON.stringify(Array.from(App.graph.pos)) !== before) throw new Error('未套用時不應改動現有位置');
-    const sel = $('#layout-mode'); sel.value = 'builtin'; sel.dispatch('change'); await App.layoutJob;
+    // 版面▾ 選單的單選項目（menuitemradio）：選了就依新的版面重新排列，aria-checked 跟著換
+    const mode = (k) => $('#layout-mode').testAll('.menu-item').find((b) => b.dataset.layout === k);
+    mode('builtin').click(); await App.layoutJob;
     if (App.layoutMode !== 'builtin') throw new Error('應可切換為快速版面');
-    sel.value = 'elk'; sel.dispatch('change'); await App.layoutJob;
+    if (mode('builtin').getAttribute('aria-checked') !== 'true' || mode('elk').getAttribute('aria-checked') !== 'false') throw new Error('版面的單選項目應標出目前的版面');
+    mode('elk').click(); await App.layoutJob;
   });
   await step('詳情區塊結構一致：標題只由 section() 產生，展開區塊內沒有額外標題', () => {
     const m = App.snap.model; const Q = App.Q;
@@ -439,27 +502,29 @@ function viewBoundaryViolations(file, src) {
     if (!text('#detail').includes('推定在這條推論鏈路後面的終端')) throw new Error('推論鏈路詳情應列出後面推定的終端');
     App.select(null);
   });
-  await step('基準摘要與行動入口', () => {
-    const summary = text('#baseline-summary');
-    if (!summary.includes('基準檢查') || !summary.includes('收集完整度')) throw new Error('缺少基準狀態與收集完整度摘要');
-    if (summary.includes('網路正常') || summary.includes('即時')) throw new Error('基準摘要不可宣稱即時網路健康');
+  await step('基準摘要列與頁尾已移除：待處理數在步驟列 ③，摘要在右側的基準狀態卡（收集缺漏、錯誤／警告入口仍可用）', () => {
+    if ($('#baseline-summary') || $('#footer')) throw new Error('基準摘要列與頁尾已移除：數字只在步驟列、左欄與右側的基準狀態卡');
+    const pc = S.view.app.problemCounts();
+    if (!stepBtn('triage').textContent.includes('待處理 ' + S.view.num(pc.error + pc.warn))) throw new Error('③ 的狀態應是待處理（錯誤＋警告）的筆數');
+    App.select(null);
+    const card = $('#detail').querySelector('.status-card'); if (!card) throw new Error('未選取時右欄應是基準狀態卡');
+    if (/網路正常|即時/.test(card.textContent)) throw new Error('基準狀態不可宣稱即時網路健康');
     // 斷言入口與資料的關係，而非範例才有的特定問題：大型乾淨網路（SMOKE_INPUT）可能沒有缺漏或錯誤
-    const button = (t) => $('#baseline-summary').testAll('button').find((b) => b.textContent === t);
-    const off = (b) => b.getAttribute('disabled') !== null; // 模擬 DOM 的 setAttribute 不會同步 .disabled
-    const missing = button('查看收集缺漏');
     const expectedMissing = App.snap.coverage.filter((row) => row.collected && (row.missing.length || row.failures.length)).length;
-    if (!missing || off(missing) !== !expectedMissing) throw new Error('收集缺漏入口應在有缺漏時才可用');
+    const gap = card.querySelector('.status-coverage').querySelector('a');
+    if (!!gap !== !!expectedMissing) throw new Error('收集缺漏入口應在有缺漏時才可用');
     if (expectedMissing) {
-      missing.click();
+      gap.click();
       if (!text('#pane-coverage').includes('有缺漏')) throw new Error('缺漏入口沒有切換至覆蓋率');
       if ($('#pane-coverage').testAll('tbody tr').length !== expectedMissing) throw new Error('缺漏入口應預先篩選有缺漏的設備');
+      S.view.app.closeHub(); App.select(null);
     }
-    const problems = button('查看錯誤／警告');
     const firstProblem = App.snap.findings.find((f) => f.severity !== 'info');
-    if (!problems || off(problems) !== !firstProblem) throw new Error('問題入口應在有錯誤／警告時才可用');
+    const problems = $('#detail').querySelector('.status-problems');
+    if (!!problems !== !!firstProblem) throw new Error('錯誤／警告入口應在有錯誤／警告時才有');
     if (firstProblem) {
       problems.click();
-      if (!text('#pane-findings').includes(firstProblem.title)) throw new Error('問題入口沒有切換至檢查結果');
+      if (App.step !== 'triage' || !text('#pane-findings').includes(firstProblem.title)) throw new Error('錯誤／警告入口應切到 ③ 的檢查結果');
     }
   });
   await step('窄螢幕工作區切換與詳情漸進展開', () => {
@@ -468,7 +533,7 @@ function viewBoundaryViolations(file, src) {
     workspaces.find((b) => b.dataset.workspace === 'checks').click();
     if ($('#main').dataset.workspace !== 'checks') throw new Error('工作區切換未顯示檢查面板');
     App.select({ type: 'device', key: App.snap.model.devices[0].key });
-    if ($('#main').dataset.workspace !== 'details') throw new Error('選取資料後應切換至詳細資料工作區');
+    if ($('#main').dataset.workspace !== 'graph' || $('#main').dataset.sheet !== 'half') throw new Error('窄螢幕從清單工作區選取應切回拓樸圖並開啟半高抽屜：' + $('#main').dataset.workspace + '／' + $('#main').dataset.sheet);
     const folds = $('#detail').testAll('details');
     if (!folds.length || !folds.some((d) => d.querySelector('summary').textContent.includes('鄰居'))) throw new Error('設備詳細資訊未提供可漸進展開的區塊');
     // 檢查兩種設備：未收集的與已收集的（已收集才有「收集到的原始輸出」等區塊）
@@ -480,8 +545,81 @@ function viewBoundaryViolations(file, src) {
     App.select({ type: 'device', key: App.snap.model.devices.find((x) => x.collected && x.data.includes('route')).key });
     if (!$('#detail').testAll('summary').some((x) => x.textContent.startsWith('收集到的原始輸出'))) throw new Error('已收集設備應有原始輸出區塊');
     noDupTitle();
+    App.select(null);
     window.innerWidth = 1200;
     workspaces.find((b) => b.dataset.workspace === 'graph').click();
+  });
+  await step('窄螢幕底部抽屜：點設備仍在拓樸圖、抽屜含詳情且可展開／收起／拖曳；Esc 收起；全圖讓開抽屜；④ 與詳細資料工作區維持原行為；桌面不出現', () => {
+    const main = $('#main'); const right = $('#right'); const g = App.graph;
+    const ws = (w) => document.testAll('#mobile-workspaces button').find((b) => b.dataset.workspace === w);
+    const esc = () => (docListeners.keydown || []).forEach((f) => f({ key: 'Escape', target: document.activeElement, preventDefault() {}, stopPropagation() {} }));
+    const dev = App.Q.devices().find((d) => d.collected && g.pos.has(d.key));
+    if (!right.querySelector('#sheet-bar') || !right.querySelector('#detail')) throw new Error('抽屜的操作列應在 #right 內，與 #detail 共用同一個詳情節點');
+    if (right.getAttribute('role') !== 'region' || !right.getAttribute('aria-label')) throw new Error('抽屜應為有名稱的 region（非強制回應，圖仍可操作）');
+    ['#sheet-handle', '#sheet-expand', '#sheet-close'].forEach((x) => { const b = $(x); if (b.tagName !== 'BUTTON' || !(b.getAttribute('aria-label') || b.textContent.trim())) throw new Error(x + ' 應是有名稱的按鈕'); });
+    try {
+      window.innerWidth = 390; App.showStep('triage'); ws('graph').click();
+      const before = document.activeElement;
+      g.emit('click', { type: 'node', id: dev.key });
+      if (main.dataset.workspace !== 'graph') throw new Error('窄螢幕在拓樸圖點設備後應留在工作畫面：' + main.dataset.workspace);
+      if (main.dataset.sheet !== 'half') throw new Error('點設備後應開啟半高抽屜');
+      if (!text('#detail').includes(App.Q.devName(dev.key))) throw new Error('抽屜應顯示所選設備的詳情');
+      if (document.activeElement !== before) throw new Error('從圖上點選開抽屜時不應搶走焦點');
+      if (g.sel.nodes.size !== 1 || !g.sel.nodes.has(dev.key)) throw new Error('圖上應保留選取標示');
+      const ex = $('#sheet-expand');
+      ex.click(); if (main.dataset.sheet !== 'full' || ex.getAttribute('aria-expanded') !== 'true') throw new Error('展開鈕應切到全高');
+      ex.click(); if (main.dataset.sheet !== 'half' || ex.getAttribute('aria-expanded') !== 'false') throw new Error('再按一次應回到半高');
+      // 抽屜上緣在 480：全圖與聚焦扣掉它，被蓋住的選取節點只平移露出
+      const rr = right.getBoundingClientRect; right.getBoundingClientRect = () => ({ left: 0, top: 480, width: 1200, height: 320 });
+      try {
+        if (g.viewport().y1 > 480) throw new Error('可用範圍應扣掉抽屜：' + g.viewport().y1);
+        g.fit(); const ys = g.nodes.filter((n) => g.isVisible(n)).map((n) => g.toScreen(g.at(n.id)).y);
+        if (Math.max(...ys) > 480) throw new Error('全圖不應把節點放到抽屜下方：' + Math.round(Math.max(...ys)));
+        const s0 = g.s; const p = g.at(dev.key); g.ty = 700 - p.y * g.s; // 把設備移到抽屜下
+        App.select({ type: 'device', key: dev.key });
+        const y = g.toScreen(g.at(dev.key)).y;
+        if (y > 480 || g.s !== s0) throw new Error('被抽屜蓋住的選取節點應只平移露出：y=' + Math.round(y) + '、縮放 ' + s0 + '→' + g.s);
+        g.focus([dev.key]); if (g.toScreen(g.at(dev.key)).y > 480) throw new Error('聚焦應讓開抽屜');
+        // 拖曳：上拉超過門檻成全高，點一下切回半高，下拉到底收起
+        const hd = $('#sheet-handle');
+        const drag = (y0, y1) => { hd.dispatch('pointerdown', { pointerId: 9, pointerType: 'touch', button: 0, clientX: 0, clientY: y0 }); const ev = { pointerId: 9, pointerType: 'touch', target: hd, clientX: 0, clientY: y1 }; (winListeners.pointermove || []).forEach((f) => f(ev)); (winListeners.pointerup || []).forEach((f) => f(ev)); };
+        drag(490, 190); if (main.dataset.sheet !== 'full' || right.style.height) throw new Error('上拉抽屜應展開成全高並清掉拖曳中的高度：' + main.dataset.sheet);
+        hd.click(); if (main.dataset.sheet !== 'full') throw new Error('剛拖曳完的 click 不應再切換高度');
+        hd.click(); if (main.dataset.sheet !== 'half') throw new Error('點一下拖曳把手應在全高與半高間切換');
+        drag(490, 760); if (main.dataset.sheet) throw new Error('下拉到底應收起抽屜');
+        if (!App.sel) throw new Error('收起抽屜只是檢視狀態，不應清除選取');
+      } finally { right.getBoundingClientRect = rr; }
+      // Esc 收起，焦點不留在收起的抽屜內；輸入框裡的 Esc 不收
+      App.select({ type: 'device', key: dev.key });
+      $('#search').focus(); esc(); if (main.dataset.sheet !== 'half') throw new Error('搜尋框裡的 Esc 不應收起抽屜');
+      $('#sheet-title').focus(); esc();
+      if (main.dataset.sheet) throw new Error('Esc 應收起抽屜');
+      if (right.contains(document.activeElement)) throw new Error('收起後焦點不應留在抽屜內');
+      // 從清單工作區點檢查結果：切回工作畫面、開抽屜，焦點移到抽屜（原本的列已隱藏）
+      const fi = App.snap.findings.findIndex((f) => f.entities.some((e) => e.type === 'device'));
+      if (fi >= 0) {
+        ws('checks').click(); App.selectFinding(fi);
+        if (main.dataset.workspace !== 'graph' || main.dataset.sheet !== 'half') throw new Error('從清單工作區點檢查結果應切回工作畫面並開抽屜');
+        if (document.activeElement !== $('#sheet-title')) throw new Error('從其他工作區開抽屜時焦點應移到抽屜');
+      }
+      $('#sheet-close').click(); if (main.dataset.sheet) throw new Error('收起鈕應關閉抽屜');
+      if (right.contains(document.activeElement)) throw new Error('按收起後焦點不應留在抽屜內');
+      App.select({ type: 'device', key: dev.key }); App.select(null);
+      if (main.dataset.sheet) throw new Error('取消選取時抽屜應收起');
+      // 「詳細資料」工作區內選取維持原行為
+      ws('details').click(); App.select({ type: 'device', key: dev.key });
+      if (main.dataset.workspace !== 'details' || main.dataset.sheet) throw new Error('在詳細資料工作區選取應留在詳細資料、不開抽屜');
+      // ④ 修正：中間不是拓樸圖，選取維持原行為（切到詳細資料）；換步時抽屜收起
+      App.showStep('triage', { workspace: 'graph' }); App.select({ type: 'device', key: dev.key });
+      App.showStep('fix'); if (main.dataset.sheet) throw new Error('換到沒有拓樸圖的一步時抽屜應收起');
+      App.select({ type: 'device', key: dev.key });
+      if (main.dataset.workspace !== 'details' || main.dataset.sheet) throw new Error('④ 選取應切到詳細資料，不開抽屜');
+      App.select(null);
+      // 桌面：不出現抽屜
+      window.innerWidth = 1200; App.showStep('triage'); ws('graph').click();
+      g.emit('click', { type: 'node', id: dev.key });
+      if (main.dataset.sheet || main.dataset.workspace !== 'graph') throw new Error('桌面版不應出現抽屜');
+    } finally { window.innerWidth = 1200; App.select(null); App.showStep('triage'); ws('graph').click(); }
   });
   await step('繪圖：不同縮放程度、分群、主機切換', () => {
     const g = App.graph; [0.05, 0.3, 0.8, 1.6, 3].forEach((s) => { g.s = s; g.draw(); });
@@ -515,6 +653,168 @@ function viewBoundaryViolations(file, src) {
     // 檢查結果 A03 → 顯示終端清單
     const i = App.snap.findings.findIndex((f) => f.id === 'A03'); if (i >= 0) { App.selectFinding(i); if (App.sel.type !== 'endpoints') throw new Error('A03 應顯示終端清單'); }
   });
+  await step('分群標籤：各種縮放下互不重疊、不超出群框、縮短後兩兩不同（先留尾段再截斷）；滑過群框或標籤顯示全名', () => {
+    const g = App.graph; const cv = $('#graph'); App.select(null);
+    if (!g.showGroups) throw new Error('測試前提：分群底框應為開啟');
+    g.computeGroups(); if (!g.groupBoxes) throw new Error('測試前提：應有兩個以上的分群');
+    g.fit(); const base = { s: g.s, tx: g.tx, ty: g.ty }; let total = 0;
+    [0.25, 0.5, 1, 2, 4, 8].forEach((k) => {
+      Object.assign(g, base); g.zoomAt(k); g.hoverGroup = null; g.draw();
+      const ls = g.groupLabels; total += ls.length;
+      if (ls.some((l) => l.forced)) throw new Error('沒有滑過時不應有強制顯示的標籤');
+      ls.forEach((l) => {
+        const vx0 = Math.max(l.box.x0, 0); const vx1 = Math.min(l.box.x1, g.w);
+        if (l.x0 < vx0 - 0.01 || l.x1 > vx1 + 0.01) throw new Error(`分群標籤超出群框寬度（縮放 ${k}）：${l.text} ${Math.round(l.x0)}–${Math.round(l.x1)}，框 ${Math.round(vx0)}–${Math.round(vx1)}`);
+        const short = l.name.replace(/\s*[（(].*$/, '') || l.name; const tail = short.split(/\s+/).pop();
+        const ok = [l.name, short, tail].includes(l.text) || (l.text.endsWith('…') && short.startsWith(l.text.slice(0, -1)) && Array.from(l.text).length >= 3);
+        if (!ok) throw new Error(`分群標籤應是全名、簡稱、尾段或字元截斷：${l.name} → ${l.text}`);
+        if (l.text.endsWith('…') && tail !== short && !ls.some((b) => b !== l && b.text === tail)) throw new Error(`短名放不下時應保留尾段「${tail}」而不是截斷：${l.text}`);
+      });
+      ls.forEach((a, i) => ls.slice(i + 1).forEach((b) => {
+        if (a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1) throw new Error(`分群標籤重疊（縮放 ${k}）：${a.text} / ${b.text}`);
+      }));
+      if (new Set(ls.map((l) => l.text)).size !== ls.length) throw new Error(`縮短後的分群標籤應兩兩不同（縮放 ${k}）：${ls.map((l) => l.text).join('、')}`);
+    });
+    if (!total) throw new Error('應畫出分群標籤');
+    // 滑過標籤：顯示全名（不受群框寬度限制），蓋在最上層；移開畫布後恢復
+    Object.assign(g, base); g.draw();
+    const l = g.groupLabels.find((x) => x.text !== x.name) || g.groupLabels[0];
+    const mouse = (p) => (winListeners.pointermove || []).forEach((f) => f({ pointerId: 1, pointerType: 'mouse', clientX: p.x, clientY: p.y, target: cv }));
+    mouse({ x: (l.x0 + l.x1) / 2, y: (l.y0 + l.y1) / 2 });
+    if (g.hoverGroup !== l.name) throw new Error('滑過分群標籤應標記這個分群：' + g.hoverGroup);
+    g.draw(); const full = g.groupLabels.find((x) => x.forced);
+    if (!full || full.name !== l.name || full.text !== l.name) throw new Error('滑過的分群應顯示全名');
+    cv.dispatch('pointerleave', { pointerType: 'mouse' }); if (g.hoverGroup) throw new Error('指標離開畫布後應取消分群的滑過');
+    // 滑過群框（不在標籤、節點上）也顯示全名
+    const gb = g.groupBoxes.find((x) => x.name === l.name); const corner = g.toScreen({ x: gb.x1 - 2, y: gb.y1 - 2 });
+    if (g.hitGroup(corner) !== l.name) throw new Error('群框內應命中這個分群');
+    g.hoverGroup = null; g.draw();
+  });
+  await step('推定偏離：選多數決的檢查結果時以虛線外圈標出偏離設備；其他選取、清除時清掉，展開與切換層級保留；圖例取自 theme', () => {
+    const g = App.graph; const D = S.view.theme.canvas.deviation; const Q = App.Q;
+    const row = $('#legend').testAll('.li').find((li) => li.textContent === D.label);
+    if (!row || row.getAttribute('title') !== D.tip || !row.all().some((e) => e.getAttribute('data-mark') === 'deviation' && String(e.style.background).includes(D.c))) throw new Error('圖例應有推定偏離（文字、說明與顏色取自 theme.canvas.deviation）');
+    if (D.c === S.view.theme.mark.select || !D.dash.length || !(D.gap > 6)) throw new Error('推定偏離應是與選取不同色、比選取環更外圈的虛線');
+    const idx = Q.findings().findIndex((f) => f.deviation && f.deviation.basis === 'majority' && f.deviation.deviating.length);
+    if (idx < 0) { if (process.env.SMOKE_INPUT) return; throw new Error('測試前提：範例應有多數決的檢查結果'); }
+    const devs = Q.finding(idx).deviation.deviating;
+    App.selectFinding(idx);
+    if (!g.emphasis || !devs.every((d) => g.emphasis.has(d))) throw new Error('選多數決的檢查結果應標出推定偏離的設備');
+    [0.05, 0.5, 2].forEach((s) => { g.s = s; g.draw(); });
+    App.select(App.sel, { refresh: true }); if (!g.emphasis) throw new Error('只重新標示（切換層級）時應保留推定偏離');
+    App.select({ type: 'device', key: devs[0] }); if (g.emphasis !== null) throw new Error('選其他東西應清除推定偏離');
+    App.selectFinding(idx); App.select(null); if (g.emphasis !== null) throw new Error('取消選取應清除推定偏離');
+    const tie = Q.findings().findIndex((f) => f.deviation && !f.deviation.deviating.length);
+    if (tie >= 0) { App.selectFinding(idx); App.selectFinding(tie); if (g.emphasis !== null) throw new Error('沒有多數時不應標出推定偏離'); }
+    const plain = Q.findings().findIndex((f) => !f.deviation && f.entities.length);
+    if (plain >= 0) { App.selectFinding(idx); App.selectFinding(plain); if (g.emphasis !== null) throw new Error('沒有 deviation 的檢查結果不應標出推定偏離'); }
+    App.select(null); g.fit();
+  });
+  await step('聚焦：選設備含一跳鄰居且倍率不超過上限；選鏈路聚焦兩端；路由追蹤聚焦去程與回程', () => {
+    const g = App.graph; const L = S.view.GraphView.LIMITS; const Q = App.Q;
+    const inView = (ids, what) => ids.forEach((id) => {
+      const p = g.toScreen(g.at(id));
+      if (p.x < 0 || p.x > g.w || p.y < 0 || p.y > g.h) throw new Error(`${what}：${id} 不在可視範圍（${Math.round(p.x)},${Math.round(p.y)}）`);
+    });
+    const capped = (what) => { if (g.s > L.FOCUS.maxScale + 1e-9) throw new Error(`${what}的聚焦倍率 ${g.s} 超過上限 ${L.FOCUS.maxScale}`); };
+    const nb = (id) => (g.edgesByNode.get(id) || []).map((e) => (e.a === id ? e.b : e.a)).filter((m) => g.isVisible(g.nodeById.get(m)));
+    const devs = g.nodes.filter((n) => !n.virtual && g.isVisible(n) && nb(n.id).length).sort((a, b) => nb(a.id).length - nb(b.id).length || S.util.natural(a.id, b.id));
+    [devs[0], devs[devs.length - 1]].forEach((n) => {
+      App.select({ type: 'device', key: n.id }, { focus: true }); capped('選設備');
+      inView([n.id].concat(nb(n.id)), '選設備後的一跳鄰居');
+    });
+    const pair = Array.from(App.pairs.values()).find((p) => !p.virtual && p.links.length);
+    const link = Q.getLink(pair.links[0]);
+    App.select({ type: 'link', key: link.key }, { focus: true }); capped('選鏈路');
+    inView([link.a, link.b].map((ep) => S.keys.splitEp(ep)[0]), '選鏈路的兩端');
+    if (process.env.SMOKE_INPUT) { App.select(null); return; }
+    // 路由追蹤：找一組去程與回程起點不同的位址，回程的起點也要在畫面內
+    const ips = Q.ipEntries().map((x) => x.ip).slice(0, 60); let pick = null;
+    for (const a of ips) {
+      for (const b of ips) {
+        if (a === b) continue; const t = S.trace(Q, a, b); if (!t.ok) continue;
+        const r = S.trace(Q, b, a); if (r.ok && r.start && r.start !== t.start) { pick = [a, b]; break; }
+      }
+      if (pick) break;
+    }
+    if (!pick) throw new Error('測試前提：應有去程與回程起點不同的追蹤');
+    App.openTrace(pick[0], pick[1], ''); $('#trace-run').click();
+    const tr = App.sel.result; const back = App.sel.reverse; capped('路由追蹤');
+    inView(S.util.uniq([tr.start, ...tr.hops.map((x) => x.dev), ...tr.edges.flat(), back.start, ...back.hops.map((x) => x.dev)]).filter((d) => g.nodeById.has(d)), '路由追蹤的去程與回程');
+    App.select(null);
+  });
+  await step('全圖：扣掉工具列、圖例等覆蓋層佔用的高度；畫布沒有尺寸時延後到有尺寸再套用', () => {
+    const g = App.graph; const tb = $('#toolbar'); const lg = $('#legend');
+    ['#toolbar', '#legend', '#hint', '#banner'].forEach((s) => { if (!g.occluders.some((o) => o.el === $(s))) throw new Error('全圖應避開覆蓋層：' + s); });
+    const old = [tb.getBoundingClientRect, lg.getBoundingClientRect];
+    try {
+      tb.getBoundingClientRect = () => ({ left: 10, top: 10, width: 220, height: 40 });
+      lg.getBoundingClientRect = () => ({ left: 10, top: 760, width: 90, height: 30 });
+      g.fit(); const ys = g.nodes.filter((n) => g.isVisible(n)).map((n) => g.toScreen(g.at(n.id)).y);
+      if (Math.min(...ys) < 50 || Math.max(...ys) > 760) throw new Error(`全圖應避開工具列（下緣 50）與圖例（上緣 760）：${Math.round(Math.min(...ys))}–${Math.round(Math.max(...ys))}`);
+      // 展開的圖例太高（超過 LIMITS.OCCLUDER.max）時不讓出空間，避免圖被壓扁
+      lg.getBoundingClientRect = () => ({ left: 10, top: 300, width: 900, height: 490 });
+      g.fit(); const ys2 = g.nodes.filter((n) => g.isVisible(n)).map((n) => g.toScreen(g.at(n.id)).y);
+      if (Math.max(...ys2) < 400) throw new Error('太高的覆蓋層不應讓出空間');
+    } finally { tb.getBoundingClientRect = old[0]; lg.getBoundingClientRect = old[1]; }
+    const cv = $('#graph'); const rect = cv.getBoundingClientRect;
+    try {
+      cv.getBoundingClientRect = () => ({ left: 0, top: 0, width: 0, height: 0 }); g.resize();
+      const before = g.s; g.focus([g.nodes.find((n) => g.isVisible(n)).id]);
+      if (g.s !== before || !g.pendingFit) throw new Error('畫布沒有尺寸時應延後聚焦');
+    } finally { cv.getBoundingClientRect = rect; g.resize(); }
+    if (g.pendingFit || g.s > S.view.GraphView.LIMITS.FOCUS.maxScale + 1e-9) throw new Error('畫布恢復尺寸後應套用延後的聚焦');
+    g.fit();
+  });
+  await step('觸控：雙指以中點縮放並平移、放開一指接著平移且不觸發點選；觸控點擊半徑至少 22px', () => {
+    const g = App.graph; const cv = $('#graph'); const L = S.view.GraphView.LIMITS;
+    if (L.TOUCH.hitPx < 22) throw new Error('觸控點擊半徑應至少 22px');
+    const ev = (id, x, y) => ({ pointerId: id, pointerType: 'touch', button: 0, clientX: x, clientY: y, target: cv, timeStamp: 9000 + id, preventDefault() {} });
+    const move = (id, x, y) => (winListeners.pointermove || []).forEach((f) => f(ev(id, x, y)));
+    const up = (id, x, y) => (winListeners.pointerup || []).forEach((f) => f(ev(id, x, y)));
+    g.fit(); App.select(null); g.zoomTo(0.5, { x: g.w / 2, y: g.h / 2 });
+    let clicks = 0; const oldClick = g.handlers.click; g.on('click', () => { clicks++; });
+    try {
+      const s0 = g.s; const w0 = g.toWorld(600, 400);
+      cv.dispatch('pointerdown', ev(11, 550, 400)); cv.dispatch('pointerdown', ev(12, 650, 400));
+      move(12, 750, 400); // 兩指距離 100 → 200，中點 600 → 650
+      if (Math.abs(g.s - Math.min(L.ZOOM.max, s0 * 2)) > 1e-9) throw new Error(`雙指拉開一倍應放大一倍：${s0} → ${g.s}`);
+      const w1 = g.toWorld(650, 400); if (Math.abs(w1.x - w0.x) > 1e-6 || Math.abs(w1.y - w0.y) > 1e-6) throw new Error('雙指縮放時兩指開始時中點下的位置應跟著中點移動');
+      up(12, 750, 400); const tx = g.tx; move(11, 590, 400);
+      if (Math.abs(g.tx - tx - 40) > 1e-6) throw new Error('放開一指後，剩下的手指應接著平移');
+      up(11, 590, 400); if (clicks) throw new Error('雙指操作不應觸發點選');
+    } finally { g.on('click', oldClick); }
+    // 縮小時，節點在螢幕上很小：觸控仍可在 22px 內點中，滑鼠不行
+    g.zoomTo(0.5, { x: g.w / 2, y: g.h / 2 });
+    const vis = g.nodes.filter((n) => g.isVisible(n) && !n.box);
+    const lone = vis.find((n) => { const p = g.toScreen(g.at(n.id)); return p.x > 40 && p.x < g.w - 40 && vis.every((m) => m === n || Math.hypot(g.toScreen(g.at(m.id)).x - p.x, g.toScreen(g.at(m.id)).y - p.y) > 60); });
+    if (!lone) throw new Error('測試前提：應有一個附近沒有其他節點的節點');
+    const p = g.toScreen(g.at(lone.id)); const q = { x: p.x + L.TOUCH.hitPx - 1, y: p.y };
+    if (g.radius(lone) * g.s + L.TOUCH.slopPx >= L.TOUCH.hitPx - 1) throw new Error('測試前提：節點在螢幕上應小於觸控半徑');
+    if (g.hitNode(q, 'touch') !== lone) throw new Error('觸控在 22px 內應點中節點');
+    if (g.hitNode(q, 'mouse') === lone) throw new Error('滑鼠的命中範圍不應放大到觸控的大小');
+    g.fit();
+  });
+  await step('直式窄螢幕：內建與分層版面改直長排列', async () => {
+    const VA = S.view.app; const g = App.graph; const cv = $('#graph'); const ow = window.innerWidth; const oh = window.innerHeight; const rect = cv.getBoundingClientRect;
+    try {
+      // 依圖實際的區域判斷：窄螢幕上圖的區域是直的才算；畫布沒有尺寸時看視窗
+      window.innerWidth = 390; window.innerHeight = 844;
+      cv.getBoundingClientRect = () => ({ left: 0, top: 0, width: 390, height: 600 }); g.resize(); if (!VA.isPortrait()) throw new Error('390×600 的圖區應判定為直式');
+      cv.getBoundingClientRect = () => ({ left: 0, top: 0, width: 390, height: 300 }); g.resize(); if (VA.isPortrait()) throw new Error('視窗是直的、圖區是橫的時不應判定為直式');
+      cv.getBoundingClientRect = () => ({ left: 0, top: 0, width: 0, height: 0 }); g.resize(); if (!VA.isPortrait()) throw new Error('畫布沒有尺寸時應看視窗（390×844 是直式）');
+      window.innerWidth = 1200; window.innerHeight = 1600; if (VA.isPortrait()) throw new Error('寬螢幕不應判定為直式');
+    } finally { window.innerWidth = ow; window.innerHeight = oh; cv.getBoundingClientRect = rect; g.resize(); }
+    const gd = VA.graphData(App.Q);
+    const ratio = (pos) => { const ps = Array.from(pos.values()); const xs = ps.map((p) => p.x); const ys = ps.map((p) => p.y); return (Math.max(...ys) - Math.min(...ys)) / Math.max(1, Math.max(...xs) - Math.min(...xs)); };
+    const land = ratio(S.view.layout.layout(gd.nodes, gd.edges)); const port = ratio(S.view.layout.layout(gd.nodes, gd.edges, { portrait: true }));
+    if (!(port > land)) throw new Error(`直式的內建版面應比橫式直長：高寬比 ${land.toFixed(2)} → ${port.toFixed(2)}`);
+    if (process.env.SMOKE_INPUT) return; // 大型網路超過分層版面上限，不在這裡重算
+    const opt = { radius: (n) => g.radius(n) };
+    const e0 = await S.view.layout.elk(gd.nodes, gd.edges, opt); const e1 = await S.view.layout.elk(gd.nodes, gd.edges, Object.assign({ portrait: true }, opt));
+    if (Array.from(e1.pos.values()).some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y)) || e1.pos.size !== e0.pos.size) throw new Error('直式的分層版面每個節點都應有座標');
+    if (!(ratio(e1.pos) > ratio(e0.pos))) throw new Error(`直式的分層版面應比橫式直長：${ratio(e0.pos).toFixed(2)} → ${ratio(e1.pos).toFixed(2)}`);
+  });
   await step('廠商色最多 theme 的色數：依終端數量取前幾名，其餘歸「其他」，圖例列出同樣的對應', () => {
     const EP = S.view.theme.endpoint; const g = App.graph; const old = EP.vendor;
     const check = () => {
@@ -545,12 +845,11 @@ function viewBoundaryViolations(file, src) {
     head().querySelector('.head').click();
     if (head().testAll('.rule').length !== pass.length || !text('#pane-findings').includes(pass[0].title)) throw new Error('展開後應列出每一條通過的規則');
     // 每一條規則都能看到 CATALOG 的處理建議（預設收合，反引號內是等寬元素）
-    const plain = (t) => String(t).replace(/`([^`]+)`/g, '$1');
     const rows = () => head().testAll('.rule');
     rows().forEach((row, n) => {
       const id = pass[n].id; const adv = row.querySelector('.advice');
       if (row.querySelector('.id').textContent !== id) throw new Error('通過的規則應依 ruleStatus 的順序列出');
-      if (!adv || adv.getAttribute('open') !== null || !adv.textContent.includes(plain(S.check.CATALOG[id].action))) throw new Error('通過的 ' + id + ' 應附上預設收合的處理建議');
+      if (!adv || adv.getAttribute('open') !== null || !adv.textContent.includes(unticked(S.check.CATALOG[id].action))) throw new Error('通過的 ' + id + ' 應附上預設收合的處理建議');
       if (S.check.CATALOG[id].action.includes('`') && !adv.querySelector('code')) throw new Error(id + ' 的處理建議應以等寬元素顯示指令');
     });
     // 展開狀態跨重繪保留，收合後也保留
@@ -567,7 +866,7 @@ function viewBoundaryViolations(file, src) {
       nd().querySelector('.head').click();
       nd().testAll('.rule').forEach((row, n) => {
         const adv = row.querySelector('.advice');
-        if (!adv || !adv.textContent.includes(plain(S.check.CATALOG[nodata[n].id].action))) throw new Error('沒有資料可檢查的 ' + nodata[n].id + ' 也應附上處理建議');
+        if (!adv || !adv.textContent.includes(unticked(S.check.CATALOG[nodata[n].id].action))) throw new Error('沒有資料可檢查的 ' + nodata[n].id + ' 也應附上處理建議');
       });
       nd().querySelector('.head').click();
     }
@@ -589,7 +888,6 @@ function viewBoundaryViolations(file, src) {
     const all = App.snap.findings; const C = S.check.CATALOG;
     // 反引號內的片段與去掉反引號後看到的文字（以正規式另外取出，不經過畫面的切法）
     const codes = (t) => Array.from(String(t).matchAll(/`([^`]+)`/g)).map((m) => m[1]);
-    const plain = (t) => String(t).replace(/`([^`]+)`/g, '$1');
     const ids = S.util.uniq(all.map((f) => f.id));
     if (!process.env.SMOKE_INPUT && !ids.some((id) => codes(C[id].action).length)) throw new Error('範例資料應有處理建議含反引號指令的檢查結果');
     ids.forEach((id) => {
@@ -602,8 +900,8 @@ function viewBoundaryViolations(file, src) {
       blocks.forEach((d) => {
         if (d.tagName !== 'DETAILS' || d.getAttribute('open') !== null) throw new Error(id + ' 的常見原因與處理應預設收合');
         const t = d.textContent;
-        if (!t.includes(plain(C[id].action))) throw new Error(id + ' 的詳情應顯示 CATALOG 的 action：' + C[id].action);
-        if (!C[id].causes.every((c) => d.testAll('li').some((li) => li.textContent === plain(c)))) throw new Error(id + ' 的常見原因應逐條列出');
+        if (!t.includes(unticked(C[id].action))) throw new Error(id + ' 的詳情應顯示 CATALOG 的 action：' + C[id].action);
+        if (!C[id].causes.every((c) => d.testAll('li').some((li) => li.textContent === unticked(c)))) throw new Error(id + ' 的常見原因應逐條列出');
         if (t.includes('`')) throw new Error(id + ' 的處理建議不應顯示反引號');
         const shown = d.testAll('code').map((c) => c.textContent);
         const want = codes(C[id].action).concat(...C[id].causes.map(codes));
@@ -617,6 +915,27 @@ function viewBoundaryViolations(file, src) {
     const nodes = S.view.codeText('<b>x</b> `<i>`');
     if (nodes[0] !== '<b>x</b> ' || nodes[1].tagName !== 'CODE' || nodes[1].textContent !== '<i>' || nodes[1].childNodes.some((n) => n instanceof El)) throw new Error('codeText 應以文字寫入，不解析 HTML');
   });
+  await step('處理提示：③ 分診展開規則後在結果列表上方顯示「處理：」，詳情的檢查結果卡片同一句', () => {
+    goStep('triage'); const L = S.view.lists.findings; L.showProblems(App);
+    const ruleGroups = () => $('#pane-findings').testAll('.fgroup').filter((g) => g.className === 'fgroup');
+    const g0 = ruleGroups()[0]; if (!g0) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有錯誤或警告的規則群組'); }
+    if ($('#pane-findings').testAll('.fhint').length) throw new Error('規則收合時不應顯示處理提示');
+    const id = g0.querySelector('.head .id').textContent; const want = '處理：' + unticked(S.query.rule(id).hint);
+    g0.querySelector('.head').click();
+    const g = ruleGroups().find((x) => x.querySelector('.head .id').textContent === id);
+    const hint = g.querySelector('.fhint'); const items = g.querySelector('.items');
+    if (!hint || hint.textContent !== want) throw new Error(`${id} 展開後應顯示「${want}」：${hint && hint.textContent}`);
+    if (g.childNodes.indexOf(hint) > g.childNodes.indexOf(items)) throw new Error('處理提示應在結果列表上方');
+    if (S.query.rule(id).hint.includes('`') && !hint.querySelector('code')) throw new Error('處理提示的反引號內應以等寬元素顯示');
+    const all = App.snap.findings;
+    S.util.uniq(all.map((f) => f.id)).forEach((rid) => {
+      const i = all.findIndex((f) => f.id === rid && f.entities.length); if (i < 0) return;
+      App.selectFinding(i);
+      const w = '處理：' + unticked(S.query.rule(rid).hint);
+      if (!$('#detail').testAll('.finding .rule-hint').some((x) => x.getAttribute('data-rule-id') === rid && x.textContent === w)) throw new Error(`${rid} 的詳情卡片應顯示「${w}」`);
+    });
+    L.showProblems(App); App.select(null);
+  });
   await step('跨設備一致性：多數決推定偏離的設備列在檢查結果，VLAN 實體可開啟', () => {
     const all = App.snap.findings;
     const dev = all.map((f, i) => i).filter((i) => all[i].deviation && all[i].deviation.deviating.length);
@@ -624,13 +943,82 @@ function viewBoundaryViolations(file, src) {
     dev.forEach((i) => {
       const f = all[i]; App.selectFinding(i);
       const box = $('#detail').testAll('.finding').find((x) => x.textContent.includes(f.message));
-      if (!box || !box.textContent.includes('依多數決推定偏離')) throw new Error(`${f.id} 應列出推定偏離的設備`);
+      if (!box || !box.textContent.includes('推定偏離（多數決）：')) throw new Error(`${f.id} 應列出推定偏離的設備`);
+      // 設備名可點，選取該設備（V.deviationLine 單一來源）
+      const a = box.querySelector('.deviation').testAll('a').find((x) => x.getAttribute('data-dev') === f.deviation.deviating[0]);
+      if (!a) throw new Error(`${f.id} 推定偏離的設備應可點`);
       if (!f.deviation.deviating.every((k) => box.textContent.includes(App.Q.devName(k)))) throw new Error(`${f.id} 推定偏離的設備不完整`);
     });
     // VLAN 實體的檢查結果開啟 VLAN 詳情；有不相連區塊時可切換區塊並回到全部
     const vi = all.findIndex((f) => f.entities[0] && f.entities[0].type === 'vlan');
     if (vi >= 0) { App.selectFinding(vi); if (App.sel.type !== 'vlan' || !text('#detail').includes('VLAN ' + all[vi].entities[0].key)) throw new Error('VLAN 的檢查結果應開啟 VLAN 詳情'); }
     App.select(null);
+  });
+  await step('③ 分診依規則：類別 → 規則 → 結果，類別標題寫出各嚴重度筆數，順序取自規則目錄；推定偏離列在結果下方', () => {
+    const L = S.view.lists.findings; const VA = S.view.app; const all = App.snap.findings;
+    goStep('triage'); L.reset(); L(App);
+    const P = $('#pane-findings');
+    // 三種嚴重度都顯示
+    ['錯誤', '警告', '提醒'].forEach((t) => { const c = P.querySelector('.summary').testAll('.chip').find((x) => x.textContent.startsWith(t)); if (c && c.getAttribute('aria-pressed') !== 'true') c.click(); });
+    const cats = () => P.testAll('.fcat');
+    const catOf = (c) => cats().find((x) => x.getAttribute('data-cat') === c);
+    // 類別與規則的順序：S.query.rules()（CATALOG 的宣告順序）中有待處理結果的
+    const pending = all.filter((f) => VA.isPending(f));
+    const ids = new Set(pending.map((f) => f.id));
+    const order = S.query.rules().filter((r) => ids.has(r.id));
+    const wantCats = S.util.uniq(order.map((r) => r.cat));
+    if (cats().map((x) => x.getAttribute('data-cat')).join() !== wantCats.join()) throw new Error('類別順序應依規則目錄：' + cats().map((x) => x.getAttribute('data-cat')));
+    if (P.childNodes.some((n) => n.className === 'fgroup')) throw new Error('依規則時規則群組應在類別之下');
+    wantCats.forEach((c) => {
+      const box = catOf(c); const head = box.querySelector('.head');
+      const n = { error: 0, warn: 0, info: 0 }; pending.filter((f) => S.query.rule(f.id).cat === c).forEach((f) => { n[f.severity]++; });
+      // 標題的筆數是文字 chip（不只色點），只列有筆數的嚴重度
+      const chips = head.testAll('.fcat-n').map((x) => x.textContent);
+      const want = ['error', 'warn', 'info'].filter((s) => n[s]).map((s) => `${S.view.SEV[s]} ${S.view.num(n[s])}`);
+      if (chips.join('|') !== want.join('|')) throw new Error(`${c} 的筆數應為 ${want.join('／')}：${chips.join('／')}`);
+      if (!head.testAll('.fcat-n .sev').every((d) => d.getAttribute('role') === 'img' && d.getAttribute('aria-label'))) throw new Error('嚴重度外形應有可念出的名稱');
+      // 有錯誤或警告的類別預設展開到規則層，只有提醒的收合
+      const open = n.error + n.warn > 0;
+      if (head.getAttribute('aria-expanded') !== String(open) || !!box.querySelector('.fcat-rules') !== open) throw new Error(`${c} 預設應${open ? '展開' : '收合'}`);
+      if (!head.getAttribute('aria-label').startsWith(c + '：')) throw new Error('類別標題的名稱應寫出類別與筆數');
+      if (open) {
+        const got = box.testAll('.fcat-rules .fgroup .head .id').map((x) => x.textContent);
+        const exp = order.filter((r) => r.cat === c).map((r) => r.id);
+        if (got.join() !== exp.join()) throw new Error(`${c} 的規則順序應依規則目錄：${got} ≠ ${exp}`);
+        if (box.testAll('.fitem').length) throw new Error('類別展開時規則預設仍收合');
+      }
+    });
+    // 切換類別的展開狀態跨重繪保留
+    const c0 = wantCats[0];
+    if (c0) {
+      const was = catOf(c0).querySelector('.head').getAttribute('aria-expanded');
+      catOf(c0).querySelector('.head').click(); L(App);
+      if (catOf(c0).querySelector('.head').getAttribute('aria-expanded') === was) throw new Error('類別應可切換展開，並跨重繪保留');
+      catOf(c0).querySelector('.head').click();
+    }
+    // 推定偏離（多數決）：結果下方列出可點的設備；平手不列
+    const dev = pending.filter((f) => f.deviation && f.deviation.basis === 'majority' && f.deviation.deviating.length);
+    if (!dev.length && !process.env.SMOKE_INPUT) throw new Error('範例資料應有推定偏離設備的待處理結果');
+    dev.slice(0, 5).forEach((f) => {
+      const box = catOf(S.query.rule(f.id).cat); const ch = box.querySelector('.head');
+      if (ch.getAttribute('aria-expanded') !== 'true') ch.click();
+      const rg = () => catOf(S.query.rule(f.id).cat).testAll('.fgroup').find((g) => g.className === 'fgroup' && g.querySelector('.head .id').textContent === f.id);
+      if (rg().querySelector('.head').getAttribute('aria-expanded') !== 'true') rg().querySelector('.head').click();
+      const wrap = rg().testAll('.fitem-wrap').find((w) => w.querySelector('.fitem').textContent.includes(f.message));
+      const line = wrap && wrap.querySelector('.deviation');
+      if (!line || !line.textContent.startsWith('推定偏離（多數決）：')) throw new Error(`${f.id} 的結果下方應列推定偏離`);
+      const links = line.testAll('.link');
+      if (links.map((a) => a.textContent).join() !== f.deviation.deviating.map((k) => App.Q.devName(k)).join()) throw new Error(`${f.id} 推定偏離的設備不符`);
+      if (wrap.querySelector('.fitem').testAll('.link').length) throw new Error('設備連結不應包在可點的結果列裡');
+      links[0].click();
+      if (!App.sel || App.sel.type !== 'device' || App.sel.key !== f.deviation.deviating[0]) throw new Error('點推定偏離的設備應選取它');
+    });
+    // 單一 helper（V.deviationLine）：平手預設寫「沒有多數」（詳情），列表傳 { tie: false } 不顯示；不是多數決的不顯示
+    const tie = { basis: 'majority', deviating: [], groups: [], main: null };
+    if (S.view.deviationLine(App, tie, { tie: false }) !== null || S.view.deviationLine(App, null) !== null || S.view.deviationLine(App, { basis: 'other', deviating: ['x'] }) !== null) throw new Error('列表的平手或非多數決不應顯示');
+    if (!S.view.deviationLine(App, tie).textContent.includes('沒有多數')) throw new Error('預設平手應寫出沒有多數');
+    if (P.testAll('.deviation').some((x) => x.textContent.includes('沒有多數'))) throw new Error('列表不顯示平手');
+    App.select(null); L.showProblems(App);
   });
   await step('點選每台設備、每條鏈路、部分介面', () => {
     App.snap.model.devices.slice(0, 300).forEach((d) => App.select({ type: 'device', key: d.key }, { focus: true }));
@@ -662,6 +1050,147 @@ function viewBoundaryViolations(file, src) {
     inp.dispatch('keydown', { key: 'Enter' });
     if (App.sel.type !== 'device') throw new Error('Enter 應選取設備');
   });
+  await step('收集完整度與 VLAN 數：網路設備為分母、主機另列，VLAN 以相異 ID 計（基準狀態卡同一口徑）', () => {
+    const NUM = S.view.num; const cs = App.Q.coverageSummary(); const vs = App.Q.vlanSummary();
+    if (cs.network - cs.networkCollected !== App.Q.findingsByRule('C01').length) throw new Error('未收集的網路設備數應等於 C01 筆數');
+    const sel = App.sel; App.select(null);
+    const covLine = $('#detail').querySelector('.status-coverage').textContent;
+    if (cs.missing ? !covLine.includes(`${NUM(cs.missing)} 台網路設備缺資料或收集失敗`) : !covLine.includes('資料齊全')) throw new Error('收集完整度應以網路設備計：' + covLine);
+    const hostLine = $('#detail').querySelector('.status-hosts');
+    if (!!cs.hosts !== !!(hostLine && hostLine.textContent.includes(`另有 ${NUM(cs.hosts)} 台主機`))) throw new Error('有主機時另列，沒有時不寫');
+    // 基準狀態卡：數字卡是「數字＋名稱」，技術細節是 kv
+    const stats = $('#detail').testAll('.stat').map((x) => [x.querySelector('.stat-label').textContent, x.querySelector('.stat-num').textContent]);
+    const want = [['已收集網路設備', `${NUM(cs.networkCollected)}／${NUM(cs.network)}`], ['鏈路', NUM(App.Q.meta().stats.links)], ['VLAN（相異 ID）', NUM(vs.ids)], ['MAC', NUM(App.Q.meta().stats.macs)]];
+    if (JSON.stringify(stats) !== JSON.stringify(want)) throw new Error('狀態卡的四個數字卡不符：' + JSON.stringify(stats));
+    const d = text('#detail');
+    if (!d.includes('VLAN 定義（各設備合計）' + NUM(vs.definitions))) throw new Error('技術細節應分開列出 VLAN 定義：' + d.slice(0, 300));
+    App.select(sel);
+  });
+  await step('基準狀態卡（未選取時）：一句話狀態只算待處理、建議先看、收集完整度可點、技術細節收合；每個數字只出現一次', () => {
+    const Q = App.Q; const VA = S.view.app; const NUM = S.view.num; const cs = Q.coverageSummary();
+    App.select(null);
+    const card = $('#detail').querySelector('.status-card'); if (!card) throw new Error('未選取時右欄應是基準狀態卡');
+    const t = card.textContent;
+    ['網路正常', '即時'].forEach((w) => { if (t.includes(w)) throw new Error(`狀態卡不應出現「${w}」`); });
+    const pc = VA.problemCounts();
+    const line = card.querySelector('.status-line').textContent;
+    if (pc.error && !line.includes(`${NUM(pc.error)} 項錯誤`)) throw new Error('狀態句應寫出待處理的錯誤數：' + line);
+    if (pc.warn && !line.includes(`${NUM(pc.warn)} 項警告`)) throw new Error('狀態句應寫出待處理的警告數：' + line);
+    // 建議先看：待處理的錯誤／警告中嚴重度最高、規則順序最前、再取 Snapshot 順序
+    const rank = new Map(S.query.rules().map((r, n) => [r.id, n])); const sev = { error: 0, warn: 1 };
+    const cand = Q.findings().map((f, i) => ({ f, i })).filter((x) => x.f.severity in sev && VA.isPending(x.f))
+      .sort((a, b) => sev[a.f.severity] - sev[b.f.severity] || rank.get(a.f.id) - rank.get(b.f.id) || a.i - b.i);
+    const sug = card.querySelector('.status-suggest');
+    if (cand.length ? !sug || sug.textContent !== cand[0].f.title : sug) throw new Error('「建議先看」應連到嚴重度最高、規則順序最前的待處理結果：' + (sug && sug.textContent));
+    if (cand.length) {
+      const first = cand.find((x) => x.f.entities.length);
+      if (first && first === cand[0]) { sug.click(); if (!App.sel) throw new Error('點「建議先看」應選取那一筆的物件'); App.select(null); }
+    }
+    // 收集完整度：缺資料台數可點，開資料中心的覆蓋率（只列有缺漏）
+    const cov = $('#detail').querySelector('.status-coverage');
+    if (cs.missing) {
+      const a = cov.querySelector('a'); if (!a || !a.textContent.includes(`${NUM(cs.missing)} 台`)) throw new Error('收集完整度應寫出缺資料的台數並可點：' + cov.textContent);
+      a.click();
+      if ($('#hub').classList.contains('hidden')) throw new Error('點缺資料台數應開啟資料中心的覆蓋率');
+      if (!text('#pane-coverage').includes('有缺漏')) throw new Error('覆蓋率應切到「有缺漏」');
+      goStep('triage'); App.select(null);
+    }
+    if (!!cs.hosts !== !!$('#detail').querySelector('.status-hosts')) throw new Error('有主機時另起一行淡色說明，沒有時不寫');
+    // 技術細節預設收合，內含指紋、基準鍵、版本與解析器使用量
+    const tech = $('#detail').testAll('.detail-fold').find((x) => x.querySelector('summary').textContent.startsWith('技術細節'));
+    if (!tech || tech.getAttribute('open') !== null) throw new Error('技術細節應預設收合');
+    const m = Q.meta();
+    [m.inputHash, '解析器使用量', '版本', 'IP（ARP）', '路由', '介面'].forEach((w) => { if (!tech.textContent.includes(w)) throw new Error('技術細節應有 ' + w); });
+    if (t.indexOf(m.inputHash) !== t.lastIndexOf(m.inputHash)) throw new Error('輸入指紋只出現一次');
+    // 每個數字只出現一次：已收集台數只在數字卡，不在收集完整度那一行
+    if (cov.textContent.includes(`${NUM(cs.networkCollected)}／`) || cov.textContent.includes(`${NUM(cs.network)} 台`)) throw new Error('收集完整度那一行不重複已收集台數：' + cov.textContent);
+  });
+  await step('詳情：檢查結果在最上面、超過 5 筆先顯示 5 筆；推定偏離的設備有 chip；平手寫出無法推定；長表格預設收合', () => {
+    const Q = App.Q;
+    // 檢查結果超過 5 筆的設備：先顯示 5 筆，其餘在「再顯示 N 筆」
+    const many = Q.devices().find((d) => { App.select({ type: 'device', key: d.key }); const sec = $('#detail').querySelector('.findings-section'); return sec && sec.testAll('.finding').length > 5; });
+    if (many) {
+      const sec = $('#detail').querySelector('.findings-section');
+      const more = sec.testAll('.detail-fold').find((x) => x.querySelector('summary').textContent.startsWith('再顯示'));
+      const total = sec.testAll('.finding').length;
+      if (!more || more.getAttribute('open') !== null || more.testAll('.finding').length !== total - 5 || !more.querySelector('summary').textContent.startsWith(`再顯示 ${total - 5} 筆`)) throw new Error('超過 5 筆時其餘應收在「再顯示 N 筆」');
+    } else if (!process.env.SMOKE_INPUT) throw new Error('範例資料應有檢查結果超過 5 筆的設備');
+    // 檢查結果在屬性（kv）之前
+    const d0 = Q.devices().find((d) => d.collected && Q.findingsFor('device', d.key).length);
+    App.select({ type: 'device', key: d0.key });
+    const kids = $('#detail').querySelector('.detail').childNodes;
+    const fi = kids.findIndex((x) => x.classList && x.classList.contains('findings-section')); const ki = kids.findIndex((x) => x.classList && x.classList.contains('kv'));
+    if (fi < 0 || ki < 0 || fi > ki) throw new Error('檢查結果應在屬性之前');
+    // 推定偏離：設備在任何 finding.deviation.deviating 中時，標題下有「推定偏離 N 項」
+    const devs = S.util.uniq(Q.findings().flatMap((f) => (f.deviation ? f.deviation.deviating : [])));
+    devs.forEach((k) => {
+      App.select({ type: 'device', key: k });
+      const n = Q.deviationsOf(k).length;
+      if (!$('#detail').testAll('.chip').some((c) => c.textContent === `推定偏離 ${n} 項`)) throw new Error(`${k} 應有「推定偏離 ${n} 項」`);
+      if (!Q.deviationsOf(k).every((i) => text('#detail').includes(Q.finding(i).message))) throw new Error(`${k} 的檢查結果應包含推定偏離的那幾筆`);
+    });
+    if (!devs.length && !process.env.SMOKE_INPUT) throw new Error('範例資料應有被推定偏離的設備');
+    const clean = Q.devices().find((d) => !devs.includes(d.key)); App.select({ type: 'device', key: clean.key });
+    if ($('#detail').testAll('.chip').some((c) => c.textContent.startsWith('推定偏離'))) throw new Error('沒有被推定偏離的設備不應有 chip');
+    // 平手：詳情寫出「沒有多數，無法推定」
+    const tie = Q.findings().findIndex((f) => f.deviation && f.deviation.basis === 'majority' && !f.deviation.deviating.length && f.entities.length);
+    if (tie >= 0) {
+      App.selectFinding(tie);
+      const box = $('#detail').testAll('.finding').find((x) => x.textContent.includes(Q.finding(tie).message));
+      if (!box || !box.textContent.includes('推定偏離（多數決）：沒有多數，無法推定')) throw new Error('平手時應寫出沒有多數，無法推定');
+    }
+    // 長表格：超過 8 列預設收合，只在展開列顯示筆數
+    const big = Q.devices().find((d) => d.collected && Q.interfacesOf(d.key).filter((i) => !i.hearsay).length > 8);
+    App.select({ type: 'device', key: big.key });
+    const ifSec = $('#detail').testAll('.detail-fold').find((x) => x.querySelector('summary').textContent.startsWith('介面'));
+    if (!ifSec || ifSec.getAttribute('open') !== null) throw new Error('超過 8 列的介面表應預設收合');
+    const small = Q.devices().find((d) => d.collected && Q.interfacesOf(d.key).filter((i) => !i.hearsay).length > 0 && Q.interfacesOf(d.key).filter((i) => !i.hearsay).length <= 8);
+    if (small) { App.select({ type: 'device', key: small.key }); if (!$('#detail').testAll('h3').some((x) => x.textContent.startsWith('介面'))) throw new Error('8 列以內的介面表不收合'); }
+    App.select(null);
+  });
+  await step('名詞與推論：V.TERMS 是畫面名詞的單一來源；推定欄位標「推論」；VLAN 鏈路數用中性色', () => {
+    const V = S.view; const Q = App.Q;
+    if (!Object.isFrozen(V.TERMS) || V.TERMS.network !== '網路設備' || V.TERMS.inferred !== '推論') throw new Error('V.TERMS 應凍結並定義網路設備、推論等名詞');
+    const c = V.inferChip('依據'); if (c.textContent !== V.TERMS.inferred || c.getAttribute('title') !== '依據') throw new Error('V.inferChip 應寫「推論」並把依據放在 title');
+    App.select({ type: 'vlan', key: '30' });
+    const v = Q.vlan(30); const chip = $('#detail').testAll('.chip').find((x) => x.textContent === `${v.carry.length} 條鏈路兩端都有`);
+    if (!chip || chip.classList.contains('ok')) throw new Error('VLAN 詳情應寫中性色的「N 條鏈路兩端都有」');
+    if ($('#detail').testAll('.chip').some((x) => x.textContent.startsWith('通過 '))) throw new Error('VLAN 詳情不應寫「通過 N 條鏈路」');
+    const d = Q.devices().find((x) => x.kindBasis && x.kindBasis !== 'profile');
+    App.select({ type: 'device', key: d.key });
+    const kvEl = $('#detail').querySelector('.kv'); const ks = kvEl.childNodes;
+    const at = ks.findIndex((x) => x.textContent === '類型依據');
+    if (at < 0 || !ks[at + 1].testAll('.chip').some((x) => x.textContent === V.TERMS.inferred)) throw new Error('設備類型依據應標「推論」');
+    const i = App.snap.model.interfaces.find((x) => x.typeBasis && x.typeBasis !== 'rawType');
+    if (i) { App.select({ type: 'interface', key: i.key }); if (!$('#detail').querySelector('.row').testAll('.chip').some((x) => x.textContent === V.TERMS.inferred)) throw new Error('推定的介面類型應標「推論」'); }
+    App.select(null);
+  });
+  await step('搜尋框：IP／MAC 前綴與介面名有結果，選介面、網段結果會選到它；路由追蹤有 IP 自動完成', async () => {
+    const inp = $('#search'); const dd = $('#search-dd');
+    const type = async (v) => { inp.value = v; inp.dispatch('input'); await new Promise((r) => setTimeout(r, 150)); return dd.testAll('.item'); };
+    const pre = App.Q.ipEntries()[0].ip.split('.').slice(0, 2).join('.') + '.';
+    if (!(await type(pre)).length || !text('#search-dd').includes(pre)) throw new Error('IP 前綴應有結果：' + pre);
+    const first = App.Q.search(pre, 15)[0];
+    inp.dispatch('keydown', { key: 'Enter' });
+    if (App.sel.type !== first.type || App.sel.key !== first.key) throw new Error('Enter 應選取第一筆前綴結果：' + JSON.stringify(App.sel));
+    if (first.type === 'subnet' && text('#detail').includes('基準中沒有這個網段')) throw new Error('網段結果應能開啟子網詳情');
+    const mac = App.Q.macEntries()[0].mac; const macPre = mac.slice(0, 2) + ':' + mac.slice(2, 4);
+    if (!(await type(macPre)).length || !text('#search-dd').toLowerCase().includes(macPre.toLowerCase())) throw new Error('MAC 前綴應有結果：' + macPre);
+    const ifc = App.Q.interfacesOf(App.Q.devices().find((x) => x.collected).key).find((i) => i.name.length >= 3);
+    if (!(await type(ifc.name)).length || dd.testAll('.empty').length) throw new Error('介面名應有結果：' + ifc.name);
+    const at = App.Q.search(ifc.name, 15).findIndex((r) => r.type === 'interface');
+    for (let k = 0; k < at; k++) inp.dispatch('keydown', { key: 'ArrowDown' });
+    inp.dispatch('keydown', { key: 'Enter' });
+    if (App.sel.type !== 'interface' || !App.Q.getInterface(App.sel.key) || !App.Q.getInterface(App.sel.key).name.includes(ifc.name)) throw new Error('應選取該介面：' + JSON.stringify(App.sel));
+    const dl = $('#trace-ips'); const ips = new Set(App.Q.ipEntries().map((e) => e.ip));
+    if (!dl || dl.tagName.toLowerCase() !== 'datalist') throw new Error('路由追蹤應有 IP 的 datalist');
+    const opts = dl.testAll('option').map((o) => o.getAttribute('value'));
+    if (opts.length !== ips.size || !opts.every((v) => ips.has(v))) throw new Error('datalist 每個 IP 一個選項（不分 VRF）');
+    ['trace-src', 'trace-dst'].forEach((id) => { if ($('#' + id).getAttribute('list') !== 'trace-ips') throw new Error(id + ' 應掛上 datalist'); });
+    const title = inp.getAttribute('title') || '';
+    if (!title.includes('前綴') || !title.includes('介面名稱')) throw new Error('搜尋框的 title 應說明支援前綴與介面名稱');
+    App.select(null);
+  });
   await step('路由追蹤', () => {
     $('#btn-trace').click(); $('#trace-src').value = '10.1.30.15'; $('#trace-dst').value = '8.8.8.8'; $('#trace-run').click();
     if (App.sel.result.ok && (!App.sel.reverse || !text('#detail').includes('回程（8.8.8.8 → 10.1.30.15）'))) throw new Error('去程成功時應同時顯示回程');
@@ -669,7 +1198,55 @@ function viewBoundaryViolations(file, src) {
     if (r.ok ? !text('#detail').includes('結果') : !text('#detail').includes(r.error)) throw new Error('追蹤結果未顯示');
     App.graph.draw();
   });
-  await step('原文檢視', () => { App.openRaw(S.readers.PASTE, 10); if (!$('#dlg-raw').open || !text('#raw-body').includes('/export')) throw new Error('原文未顯示'); });
+  await step('原文檢視', () => {
+    App.openRaw(S.readers.PASTE, 10); if (!$('#dlg-raw').open || !text('#raw-body').includes('/export')) throw new Error('原文未顯示');
+    if (!$('#raw-nav').classList.contains('hidden') || !text('#raw-title').includes('（第 10 行）')) throw new Error('只有一處時不顯示前後切換，標題寫出行號：' + text('#raw-title'));
+    $('#dlg-raw').close();
+  });
+  await step('原文對話框：標題是「設備 › 指令（第 N 行）」；多處證據可用上一處／下一處或 ←→ 切換（頭尾相接）', () => {
+    const Q = App.Q; const all = App.snap.findings;
+    const i = all.findIndex((f) => f.id !== 'C02' && f.entities.length && f.evidence.length >= 2);
+    if (i < 0) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有多處證據的檢查結果'); }
+    const f = all[i]; const n = f.evidence.length; App.selectFinding(i);
+    const link = $('#detail').testAll('.finding a').find((a) => a.textContent === `原文 第 ${f.evidence[1].line} 行`);
+    if (!link) throw new Error('詳情應有第二處證據的原文連結');
+    link.click();
+    const blk = Q.blockAt(f.evidence[1].file, f.evidence[1].line);
+    if (!$('#dlg-raw').open || !text('#raw-title').includes(`（第 ${f.evidence[1].line} 行）`) || (blk && !text('#raw-title').startsWith(S.view.blockWhere(Q, blk)))) throw new Error('原文標題應顯示「設備 › 指令（第 N 行）」：' + text('#raw-title'));
+    if (blk && !text('#raw-title').includes(' › ')) throw new Error('原文標題應有「設備 › 指令」');
+    const hlLine = () => $('#raw-body').querySelector('.hl').firstChild.textContent;
+    if ($('#raw-nav').classList.contains('hidden') || text('#raw-pos') !== `2／${n}` || hlLine() !== String(f.evidence[1].line)) throw new Error('多處證據應顯示位置 i／n 並高亮該行：' + text('#raw-pos'));
+    $('#dlg-raw').dispatch('keydown', { key: 'ArrowLeft' });
+    if (text('#raw-pos') !== `1／${n}` || hlLine() !== String(f.evidence[0].line) || !text('#raw-title').includes(`第 ${f.evidence[0].line} 行`)) throw new Error('← 應切到上一處');
+    $('#raw-prev').click();
+    if (text('#raw-pos') !== `${n}／${n}` || hlLine() !== String(f.evidence[n - 1].line)) throw new Error('上一處應從第一處繞到最後一處');
+    $('#raw-next').click(); if (text('#raw-pos') !== `1／${n}`) throw new Error('下一處應從最後一處繞回第一處');
+    $('#dlg-raw').dispatch('keydown', { key: 'ArrowRight', shiftKey: true });
+    if (text('#raw-pos') !== `1／${n}`) throw new Error('加了修飾鍵的方向鍵不應切換');
+    $('#dlg-raw').dispatch('keydown', { key: 'ArrowRight' }); if (text('#raw-pos') !== `2／${n}`) throw new Error('→ 應切到下一處');
+    if (!['raw-prev', 'raw-next'].every((id) => $('#' + id).tagName === 'BUTTON' && $('#' + id).textContent)) throw new Error('上一處／下一處應是有名稱的按鈕');
+    $('#dlg-raw').close();
+    // 長行在 pre 內橫向捲動，行號不換行且固定在左邊
+    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
+    if (!/pre\.raw\s*\{[^}]*overflow-x:\s*auto/.test(css) || !/pre\.raw \.ln\s*\{[^}]*white-space:\s*nowrap[^}]*position:\s*sticky[^}]*left:\s*0/.test(css)) throw new Error('原文長行應在 pre 內橫向捲動，行號不換行且固定在左邊');
+    App.select(null);
+  });
+  await step('詳情的表格包在 .table-scroll：識別字不逐字斷行，放不下時橫向捲動', () => {
+    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
+    if (/\.hscroll/.test(css)) throw new Error('表格捲動外框只用 V.table 的 .table-scroll，不另包一層');
+    const d0 = App.snap.model.devices.find((d) => d.collected);
+    const l = App.snap.model.links.find((x) => x.src && x.src.length);
+    [{ type: 'device', key: d0.key }, { type: 'link', key: l.key }].forEach((sel) => {
+      App.select(sel);
+      const tables = $('#detail').testAll('table'); const wrapped = $('#detail').testAll('.table-scroll table');
+      if (sel.type === 'device' && !tables.length) throw new Error('設備詳情應有表格');
+      if (tables.some((t) => !wrapped.includes(t))) throw new Error(`${sel.type} 詳情的表格應包在 .table-scroll 內`);
+    });
+    // 來源列與原文標題同一寫法（V.blockWhere）
+    const [b0, line0] = l.src[0]; const blk = App.Q.block(b0);
+    if (!text('#detail').includes(`${S.view.blockWhere(App.Q, blk)}・第 ${line0} 行`)) throw new Error('來源列應寫成「設備 › 指令・第 N 行」');
+    App.select(null);
+  });
   // ------------------------------------------------------------ M1：L2／L3 視圖
   const layerBtn = (l) => document.testAll('#layer-switch button').find((b) => b.getAttribute('data-layer') === l);
   const timed = async (label, fn) => { const t0 = Date.now(); await fn(); await App.layerJob; if (process.env.SMOKE_INPUT) console.log(`      ${label}：${Date.now() - t0} ms`); };
@@ -1578,13 +2155,30 @@ function viewBoundaryViolations(file, src) {
     if (App.sel.type !== 'device') throw new Error('清單列按 Enter 應選取設備');
     document.testAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('終端')).click();
     if (document.testAll('#pane-inventory tbody tr').length !== Math.min(nEnd, 500)) throw new Error('終端篩選列數不符');
+    // 清單種類是 tabs：roving tabindex，←／→、Home／End 切換並把焦點留在分頁上，分頁內容是 tabpanel
+    const tabs = () => document.testAll('#pane-inventory .seg').find((x) => x.getAttribute('role') === 'tablist').testAll('button');
+    const selTab = () => tabs().find((b) => b.getAttribute('aria-selected') === 'true');
+    if (tabs().filter((b) => b.getAttribute('tabindex') === '0').length !== 1 || selTab().getAttribute('tabindex') !== '0') throw new Error('清單種類只有選取中的分頁在 Tab 順序裡');
+    const panel = $('#inv-panel');
+    if (!panel || panel.getAttribute('role') !== 'tabpanel' || panel.getAttribute('aria-labelledby') !== selTab().id || selTab().getAttribute('aria-controls') !== 'inv-panel') throw new Error('分頁內容應是 tabpanel 並互相關聯');
+    const tab0 = tabs().indexOf(selTab());
+    selTab().dispatch('keydown', { key: 'ArrowRight' });
+    if (tabs().indexOf(selTab()) !== (tab0 + 1) % tabs().length || document.activeElement !== selTab()) throw new Error('→ 應切到下一個分頁，焦點跟著移動');
+    selTab().dispatch('keydown', { key: 'End' }); if (tabs().indexOf(selTab()) !== tabs().length - 1) throw new Error('End 應切到最後一個分頁');
+    selTab().dispatch('keydown', { key: 'ArrowRight' }); if (tabs().indexOf(selTab()) !== 0) throw new Error('最後一個再按 → 應回到第一個');
+    selTab().dispatch('keydown', { key: 'Home' }); if (tabs().indexOf(selTab()) !== 0 || document.activeElement !== selTab()) throw new Error('Home 應切到第一個分頁');
     const ipChip = document.testAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('IP')); ipChip.click();
-    document.testAll('#pane-inventory th')[0].dispatch('click');
+    // 可排序的標頭是 th 裡的按鈕（鍵盤可操作），th 標 aria-sort
+    const sortBtn = () => document.testAll('#pane-inventory th')[0].querySelector('.th-sort');
+    if (!sortBtn() || document.testAll('#pane-inventory th')[0].getAttribute('aria-sort') !== 'none') throw new Error('可排序的標頭應是按鈕，未排序時 aria-sort=none');
+    sortBtn().click();
+    if (document.testAll('#pane-inventory th')[0].getAttribute('aria-sort') !== 'ascending') throw new Error('升冪時 aria-sort=ascending');
     const col = () => document.testAll('#pane-inventory tbody tr').map((tr) => tr.testAll('td')[0].textContent);
     const asc = col(); const num = (x) => x.split('.').reduce((n, p) => n * 256 + +p, 0);
     if (!asc.length || asc.some((x, i) => i && num(asc[i - 1]) > num(x))) throw new Error('IP 清單應依 IP 數值升冪');
-    document.testAll('#pane-inventory th')[0].dispatch('click');
+    sortBtn().click();
     const desc = col(); if (asc.length > 1 && desc[0] === asc[0]) throw new Error('再點一次應反向排序');
+    if (document.testAll('#pane-inventory th')[0].getAttribute('aria-sort') !== 'descending') throw new Error('降冪時 aria-sort=descending');
     document.testAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('MAC')).click();
     macChip.click(); const t2 = text('#pane-inventory'); if (!t2.includes('缺 IP ' + new Set(rows.filter((r) => r.noIp).map((r) => r.mac)).size) || !t2.includes('全部 ' + App.snap.meta.stats.macs)) throw new Error('缺 IP 摘要不正確');
     App.select(null); const ov = text('#right'); const uniq = new Set(App.snap.model.arps.map((x) => x.ip)).size;
@@ -1750,10 +2344,11 @@ function viewBoundaryViolations(file, src) {
     const gt = handled('accepted').textContent;
     if (!gt.includes(f.message) || !gt.includes('豁免原因：' + reason1) || !gt.includes('備註：備註一')) throw new Error('已處理的項目應顯示原因與備註');
     // 摘要：排除已處理並註明
-    const left = problems(); const summary = text('#baseline-summary');
+    const prevSel = App.sel; App.select(null);
+    const left = problems(); const summary = $('#detail').querySelector('.status-line').textContent; App.select(prevSel);
     if (left.length !== before.length - 1) throw new Error('處理一筆後，待處理的問題應少一筆');
     const nHandled = all.filter((x) => x.severity !== 'info' && !VA.isPending(x)).length;
-    if (!summary.includes(`另有 ${nHandled} 項已處理`)) throw new Error('基準摘要應註明已處理筆數：' + summary);
+    if (!summary.includes(`另有 ${nHandled} 項已處理`)) throw new Error('基準狀態應註明已處理筆數：' + summary);
     // 改為誤報：備註以公式開頭，CSV 要防公式注入；規則品質列出這條規則
     document.testAll('#pane-findings .ledger-edit').find((b) => b.getAttribute('aria-label') === '處理：' + f.message).click();
     const note2 = '=SUM(A1) 是誤判';
@@ -1857,7 +2452,8 @@ function viewBoundaryViolations(file, src) {
     const plain = parseCsv(f2[0].text.replace(/^﻿/, '')).slice(1);
     if (plain.some((r, n) => r[1] !== all[n].id || r[3].replace(/^'/, '') !== all[n].message)) throw new Error('取消依設備排序後應回到基準的順序');
     seg('rule').click();
-    if (groups().length || !$('#pane-findings').testAll('.fgroup .head .id').length) throw new Error('切回「依規則」應恢復依規則代碼分組');
+    // 依規則是 類別 → 規則；只有提醒的類別預設收合（例如大型乾淨網路），所以類別標題或規則標題出現即算恢復
+    if (groups().length || !($('#pane-findings').testAll('.fgroup').some((g) => g.className.split(' ').includes('fcat')) || $('#pane-findings').testAll('.fgroup .head .id').length)) throw new Error('切回「依規則」應恢復依規則代碼分組');
   });
   await step('防火牆：點選指向規則或服務的檢查結果，定位到該設備防火牆畫面的那一列', () => {
     const Q = App.Q; const all = App.snap.findings;
@@ -2044,7 +2640,8 @@ function viewBoundaryViolations(file, src) {
   await step('樣式單一來源：CSS 設備類型變數與 theme 一致，圖例取自 theme', async () => {
     const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8'); const T = S.view.theme;
     [
-      ['共用控制項高度', /--control-h:\s*34px/],
+      ['共用控制項高度（至少 36px）', /--control-h:\s*(3[6-9]|[4-9]\d)px/],
+      ['觸控裝置的控制項高度 44px', /@media \(pointer: coarse\)\s*\{[^}]*--control-h:\s*44px/],
       ['鍵盤焦點樣式', /button:focus-visible/],
       ['清除操作風險提示', /#btn-clear:hover/],
       ['表格交錯列', /table\.t tbody tr:nth-child\(even\) td/],
@@ -2053,7 +2650,7 @@ function viewBoundaryViolations(file, src) {
       ['狀態標籤層次', /\.chip\.err\s*\{[^}]*border-color:/],
       ['減少動態效果偏好', /prefers-reduced-motion:\s*reduce/],
       ['資料標籤間距與換行', /\.chip-list\s*\{[^}]*display:\s*flex[^}]*flex-wrap:\s*wrap[^}]*gap:\s*4px/],
-      ['首頁 Grid 明確指定主內容列', /#main\s*\{\s*grid-row:\s*4;/],
+      ['首頁 Grid 明確指定主內容列', /#main\s*\{\s*grid-row:\s*3;/],
     ].forEach(([label, pattern]) => { if (!pattern.test(css)) throw new Error('缺少 ' + label); });
     const vars = { firewall: 'fw', switch: 'sw', router: 'rt', host: 'host', unknown: 'unk' };
     Object.entries(vars).forEach(([k, v]) => {
@@ -2143,9 +2740,10 @@ function viewBoundaryViolations(file, src) {
     const gaps = clone.coverage.filter((r) => r.collected && (r.missing.length || r.failures.length));
     goStep('input');
     if (!text('#pane-coverage').includes('有缺漏 ' + gaps.length)) throw new Error('有缺漏應包含只有收集失敗的設備');
-    const b = $('#baseline-summary').testAll('button').find((x) => x.textContent === '查看收集缺漏');
-    if (b.getAttribute('disabled') !== null) throw new Error('只有收集失敗時，收集缺漏入口也應可用');
-    if (!text('#baseline-summary').includes(`${gaps.length} 台有必要資料缺漏`)) throw new Error('基準摘要的缺漏數應包含收集失敗');
+    App.select(null);
+    const b = $('#detail').querySelector('.status-coverage').querySelector('a');
+    if (!b) throw new Error('只有收集失敗時，收集缺漏入口也應可用');
+    if (!b.textContent.includes(`${gaps.length} 台`)) throw new Error('基準狀態的缺漏數應包含收集失敗：' + b.textContent);
     b.click();
     const tr = $('#pane-coverage').testAll('tbody tr');
     if (tr.length !== gaps.length) throw new Error('缺漏篩選列數應等於有缺漏的設備數');
@@ -2320,9 +2918,10 @@ function viewBoundaryViolations(file, src) {
     await buildInput(sample + '\n# round-3\n'); await App.ledgerJob;
     if (VA.ledger().items[key].status !== 'regressed') throw new Error('已修好又出現時應標為回歸');
     const nReg = Object.values(VA.ledger().items).filter((it) => it.status === 'regressed' && App.snap.findings.some((f) => App.Q.findingKey(f) === key)).length;
-    const alert = $('#baseline-summary').testAll('button').find((b) => b.getAttribute('data-alert') === 'regressed');
-    if (!alert || !alert.textContent.includes(`回歸 ${nReg} 項`) || !alert.className.includes('err')) throw new Error('基準摘要應醒目提示回歸筆數：' + text('#baseline-summary'));
-    goStep('triage');
+    // 回歸的提示在右側的基準狀態卡（.ledger-alert），步驟列 ⑤ 的狀態也寫出筆數
+    goStep('triage'); App.select(null);
+    const alert = $('#detail').testAll('.ledger-alert').find((b) => b.getAttribute('data-alert') === 'regressed');
+    if (!alert || !alert.textContent.includes(`回歸 ${nReg} 項`) || !alert.className.includes('err')) throw new Error('基準狀態應醒目提示回歸筆數：' + text('#detail').slice(0, 300));
     alert.click();
     if (App.step !== 'verify' || $('#view-verify').classList.contains('hidden') || document.activeElement !== $('#round-title')) throw new Error('點回歸提示應到「⑤ 驗證」並聚焦本輪變化');
     if (!stepBtn('verify').textContent.includes(`回歸 ${nReg}`)) throw new Error('⑤ 的狀態應寫出回歸筆數：' + stepBtn('verify').textContent);
@@ -2345,8 +2944,9 @@ function viewBoundaryViolations(file, src) {
     const st = VA.ledgerState();
     if (!st.round || !st.round.unobserved.length) throw new Error('沒有收集的設備，消失的待處理項目應列為無法判斷');
     if (st.round.unobserved.some((k) => VA.ledger().items[k].status === 'fixed')) throw new Error('無法判斷的項目不可判定為已修好');
-    const un = $('#baseline-summary').testAll('button').find((b) => b.getAttribute('data-alert') === 'unobserved');
-    if (!un || !un.textContent.includes(`無法判斷 ${st.round.unobserved.length} 項`)) throw new Error('基準摘要應提示無法判斷的筆數');
+    App.select(null);
+    const un = $('#detail').testAll('.ledger-alert').find((b) => b.getAttribute('data-alert') === 'unobserved');
+    if (!un || !un.textContent.includes(`無法判斷 ${S.view.num(st.round.unobserved.length)} 項`)) throw new Error('基準狀態應提示無法判斷的筆數');
     goStep('verify');
     const unList = $('#round-body').testAll('.ledger-list').find((l) => l.getAttribute('data-reason') === 'unobserved');
     if (!unList || !unList.parentNode.textContent.includes('因收集失敗而無法判斷') || unList.testAll('.ledger-item').length !== Math.min(300, st.round.unobserved.length)) throw new Error('本輪變化應說明因收集失敗而無法判斷');
@@ -2692,6 +3292,31 @@ function viewBoundaryViolations(file, src) {
     $('#detail').testAll('a').find((x) => x.textContent === '顯示所有區塊').click();
     if (App.sel.domain != null || App.graph.hl.nodes.size !== App.Q.vlan(50).devices.length) throw new Error('應可回到所有區塊');
   });
+  await step('路由追蹤停在未收集的設備：結果是「無法驗證」（灰色），不是無法抵達；圖上與詳情用同一個終點分類', async () => {
+    const V = S.view; const M = V.theme.mark;
+    if (contrastOf(M.unverified, V.theme.canvas.surface) < 3) throw new Error('mark.unverified 對畫布底色應 ≥ 3:1');
+    if ([M.bad, M.trace].includes(M.unverified)) throw new Error('無法驗證不應與錯誤色或追蹤色相同');
+    await buildInput('R_A (10.0.0.1):\n### /export terse\n/ip address add address=10.0.0.1/24 interface=ether1\n/ip address add address=10.1.0.1/24 interface=ether2\n'
+      + '### /ip route print detail\nFlags: A - ACTIVE; s - STATIC\n 0 As dst-address=0.0.0.0/0 gateway=10.0.0.2 distance=1\n 1 As dst-address=10.94.0.0/16 blackhole\n'
+      + '### /ip neighbor print detail\n 0 interface=ether1 identity=ISP_GW address=10.0.0.2 mac-address=AA:BB:CC:00:00:02 interface-name=ge0 discovered-by=lldp\n');
+    App.openTrace('10.1.0.5', '8.8.8.8', ''); $('#trace-run').click();
+    const t = App.sel.result;
+    if (App.sel.type !== 'trace' || t.status !== 'unverified') throw new Error('前提：這條追蹤停在未收集的 ISP_GW');
+    const d = text('#detail');
+    if (!d.includes('無法驗證（ISP_GW 未收集）') || d.includes('無法完整抵達（') || d.split('回程')[0].includes('無法完整抵達')) throw new Error('去程應標示「無法驗證」，不是無法完整抵達：' + d.slice(0, 200));
+    const ends = $('#detail').testAll('.hop').filter((x) => x.dataset.status === 'unverified');
+    if (!ends.length || !ends.every((x) => x.className.split(' ').includes(V.TRACE_END_STYLE.unverified.cls))) throw new Error('無法驗證的結果列應用 end-unverified');
+    if (!ends[0].textContent.includes(V.TRACE_END.unverified)) throw new Error('結果列應寫出「無法驗證」');
+    const isp = App.graph.nodes.find((n) => n.id === 'ISP_GW');
+    if (isp && App.graph.hl.nodes.get('ISP_GW') !== M.unverified) throw new Error('圖上停在未收集設備的節點應用 mark.unverified');
+    if (App.graph.hl.nodes.get('R_A') !== M.trace) throw new Error('中途經過的設備維持追蹤色');
+    // 已收集的設備上斷掉（黑洞）仍是錯誤
+    App.openTrace('10.1.0.5', '10.94.1.1', ''); $('#trace-run').click();
+    if (App.sel.result.status !== 'unreachable' || !text('#detail').includes('無法完整抵達') || App.graph.hl.nodes.get('R_A') !== M.bad) throw new Error('黑洞仍是無法抵達（錯誤色）');
+    // 分類 helper 本身
+    if (V.traceEndWorst([]) !== 'reached' || V.traceEndWorst([{ status: 'unverified' }, { status: 'loop' }]) !== 'bad' || V.traceEndKind({ status: 'unverified' }) !== 'unverified') throw new Error('V.traceEndKind／traceEndWorst 分類不符');
+    App.select(null);
+  });
   await step('修正計畫：A12 的 DNS 與 NTP 依 facet 是不同的 findingKey，各自列出自己的訊息、各自可以勾選，詳情標示檢查項目', async () => {
     const RM = S.remediate; const RV = S.view.remediation; const PV = S.view.patchView;
     // 兩台的 DNS 與 NTP 都不一致：同一組設備有兩筆 A12（choice），實體相同、檢查項目（facet）不同
@@ -3008,10 +3633,10 @@ function viewBoundaryViolations(file, src) {
     App.select({ type: 'device', key: 'R_A' });
     const th = $('#detail').testAll('th').find((el) => el.textContent.startsWith('網段'));
     if (!th) throw new Error('路由表應有可排序的網段標頭');
-    th.dispatch('click');
+    th.querySelector('.th-sort').click();
     const order = () => $('#detail').testAll('tbody tr').map((tr) => tr.textContent).filter((s) => /^10\.\d+\.0\.0\/16/.test(s)).map((s) => s.split('/')[0]);
     if (order().join() !== '10.9.0.0,10.10.0.0,10.100.0.0') throw new Error('網段應依 IP 數值升冪：' + order());
-    $('#detail').testAll('th').find((el) => el.textContent.startsWith('網段')).dispatch('click');
+    $('#detail').testAll('th').find((el) => el.textContent.startsWith('網段')).querySelector('.th-sort').click();
     if (order().join() !== '10.100.0.0,10.10.0.0,10.9.0.0') throw new Error('再點一次應降冪：' + order());
   });
   await step('CAPsMAN Wi-Fi 多 MAC 保留菱形提示，MAC 位置列入終端清單', async () => {
@@ -3177,6 +3802,21 @@ function viewBoundaryViolations(file, src) {
     const outer = colors[colors.length - 1];
     if (!outer || ['#ffffff', v.surface].some((bg) => contrastOf(outer, bg) < 3)) throw new Error('焦點框對底色應 ≥ 3:1：' + ring);
     if (!/#graph:focus-visible\s*\{[^}]*outline:/.test(css)) throw new Error('畫布取得焦點時應有明顯的焦點框');
+    // 按鈕、連結、清單列與表格列：2px 實線 outline（tr 的 box-shadow 在 Chrome／Safari 不會畫），顏色對白底與表面色 ≥ 3:1
+    const fo = (v['focus-outline'] || '').match(/^2px solid var\(--([\w-]+)\)$/);
+    if (!fo || ['#ffffff', v.surface].some((bg) => contrastOf(v[fo[1]], bg) < 3)) throw new Error('--focus-outline 應是 2px 實線且對底色 ≥ 3:1：' + v['focus-outline']);
+    const ruleFor = (sel) => Array.from(css.replace(/@media[^{]*\{(?:[^{}]*\{[^}]*\})*[^{}]*\}/g, '').matchAll(/([^{}]+)\{([^}]*)\}/g)).filter((m) => m[1].split(',').map((x) => x.trim()).includes(sel)).map((m) => m[2]).join(';');
+    ['tr.click:focus-visible', '.fitem:focus-visible', 'button:focus-visible', 'a:focus-visible'].forEach((sel) => { if (!/outline:\s*var\(--focus-outline\)/.test(ruleFor(sel))) throw new Error(sel + ' 聚焦應用 2px 實線 outline'); });
+    if (!/\.chip\.btn:focus-visible\s*\{[^}]*outline:\s*var\(--focus-outline\)/.test(css)) throw new Error('篩選選項聚焦應用 outline');
+    // 圖形與欄位邊框（1.4.11）：警告外形、輸入框邊框對白底與表面色 ≥ 3:1
+    [['--sev-warn', v['sev-warn']], ['--sev-error', v['sev-error']], ['--line-input', v['line-input']]].forEach(([n, c]) => {
+      if (!c || ['#ffffff', v.surface].some((bg) => contrastOf(c, bg) < 3)) throw new Error(`${n} ${c} 對底色應 ≥ 3:1`);
+    });
+    if (v['sev-warn'].toLowerCase() !== S.view.theme.sev.warn.toLowerCase()) throw new Error('--sev-warn 與 theme.sev.warn 不一致');
+    if (!/input\[type=text\], input\[type=search\], select, textarea \{[^}]*border: 1px solid var\(--line-input\)/.test(css)) throw new Error('輸入框邊框應用 --line-input');
+    if (/\.chip \.n[^{]*\{[^}]*opacity/.test(css)) throw new Error('chip 內的筆數不應降低不透明度（對比不足）');
+    // 狀態訊息讓輔助科技念出
+    ['#banner', '#input-status'].forEach((id) => { if ($(id).getAttribute('role') !== 'status') throw new Error(id + ' 應有 role=status'); });
     if (!/@media \(forced-colors: active\)/.test(css)) throw new Error('應支援強制色彩模式');
     if (!/#graph\s*\{[^}]*touch-action:\s*none/.test(css)) throw new Error('畫布應自己處理觸控拖曳');
     // 篩選選項是可聚焦的按鈕
@@ -3195,9 +3835,13 @@ function viewBoundaryViolations(file, src) {
   await step('畫布：先填滿 theme 的底色（PNG 不透明）、字型與 CSS 一致、過長標籤截斷', async () => {
     const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8'); const v = cssVars(css); const T = S.view.theme; const g = App.graph;
     if (v.surface !== T.canvas.surface) throw new Error('theme.canvas.surface 應與 --surface 相同');
-    const bodyFont = (css.match(/(?:^|\n)body\s*\{[^}]*font:\s*\S+\s+([^;]+);/) || [])[1]; // font: 字級/行高 字型清單
-    if (!bodyFont || bodyFont.trim() !== T.font.ui) throw new Error('畫布字型應與 body 相同：' + bodyFont);
-    if (v.mono !== T.font.mono) throw new Error('畫布等寬字型應與 --mono 相同');
+    // 字型堆疊單一來源：CSS 的 --font-sans／--font-mono 與 theme.font 同一串，body 用 --font-sans；canvas.js 不寫死字族或 bold
+    if (v['font-sans'] !== T.font.sans) throw new Error('--font-sans 與 theme.font.sans 不一致：' + v['font-sans']);
+    if (v['font-mono'] !== T.font.mono) throw new Error('--font-mono 與 theme.font.mono 不一致：' + v['font-mono']);
+    if (!/(?:^|\n)body\s*\{[^}]*font:\s*var\(--fs-base\)\/var\(--lh-body\)\s+var\(--font-sans\)/.test(css)) throw new Error('body 應使用 --fs-base／--lh-body／--font-sans');
+    if (v.mono !== 'var(--font-mono)') throw new Error('--mono 應指向 --font-mono');
+    const canvasSrc = fs.readFileSync(path.join(ROOT, 'src/view/graph/canvas.js'), 'utf8');
+    if (/sans-serif|monospace|JhengHei|PingFang|Consolas|\bbold\b|font\.ui\b/.test(canvasSrc)) throw new Error('canvas.js 的字型應取自 theme.font');
     const long = '很長的設備名稱'.repeat(8) + '-END';
     const nodes = [{ id: 'fx-a', label: long, kind: 'router', collected: true, group: 't' }, { id: 'fx-b', label: 'short', kind: 'router', collected: true, group: 't' }];
     withGraph(g, nodes, [{ id: 'fx-e', a: 'fx-a', b: 'fx-b', cls: '1g', count: 1, evidence: 'adjacency', labelA: 'ether1', labelB: 'ether2' }],
@@ -3209,12 +3853,61 @@ function viewBoundaryViolations(file, src) {
         const cut = texts.find((o) => o.text.endsWith('…'));
         if (!cut || cut.text.length >= long.length || !long.startsWith(cut.text.slice(0, -1))) throw new Error('過長的標籤應截斷並加上「…」');
         if (!texts.some((o) => o.text === 'short')) throw new Error('短標籤不應截斷');
-        if (!texts.every((o) => String(o.font).includes(T.font.ui) || String(o.font).includes(T.font.mono))) throw new Error('畫布文字應使用 theme 的字型清單');
+        if (!texts.every((o) => String(o.font).endsWith(T.font.sans) || String(o.font).endsWith(T.font.mono))) throw new Error('畫布文字應使用 theme 的字型清單');
+        const name = texts.find((o) => o.text === 'short'); const px = name && parseFloat(String(name.font).match(/([\d.]+)px/)[1]) * g.s;
+        if (!px || Math.abs(px - T.font.labelPx) > 0.01) throw new Error('設備名稱在螢幕上應為 theme.font.labelPx：' + px);
       });
     // 匯出 PNG：匯出前重畫（畫面已有底色）
     let drew = 0; const oldDraw = g.draw; g.draw = function () { drew++; return oldDraw.call(this); };
     try { await captureDownloads(() => $('#btn-png').click()); } finally { g.draw = oldDraw; }
     if (!drew) throw new Error('匯出 PNG 前應重畫畫布');
+  });
+  await step('字級與 CJK 排版：字級階梯、行高、斷行規則、窄螢幕不縮小、畫面不寫死字級', async () => {
+    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8'); const v = cssVars(css);
+    const want = { 'fs-xs': '13px', 'fs-sm': '14px', 'fs-md': '14px', 'fs-base': '15px', 'fs-lg': '17px', 'fs-xl': '20px', 'fs-2xl': '24px', 'lh-body': '1.65', 'lh-prose': '1.7', 'lh-heading': '1.4' };
+    Object.entries(want).forEach(([k, x]) => { if (v[k] !== x) throw new Error(`--${k} 應為 ${x}：${v[k]}`); });
+    const body = (css.match(/(?:^|\n)body\s*\{([^}]*)\}/) || [])[1] || '';
+    ['line-break:\\s*strict', 'word-break:\\s*normal', 'overflow-wrap:\\s*break-word', 'text-autospace:', 'text-spacing-trim:'].forEach((r) => {
+      if (!new RegExp(r).test(body)) throw new Error('body 缺少 CJK 排版規則 ' + r);
+    });
+    if (/break-all/.test(css)) throw new Error('不用 word-break: break-all（中文與識別字都會被逐字拆開）');
+    if (/letter-spacing:\s*-/.test(css)) throw new Error('不用負字距（中文會擠在一起）');
+    if (/font-weight:\s*(500|700|bold)/.test(css)) throw new Error('中文粗體只用 600（400／600 兩階）');
+    if (!/(?:^|\n)h1, h2, h3, h4 \{[^}]*line-height:\s*var\(--lh-heading\)[^}]*font-weight:\s*600/.test(css)) throw new Error('標題應使用 --lh-heading 與 600');
+    if (!/\.note-box[^{]*\{[^}]*line-height:\s*var\(--lh-prose\)/.test(css)) throw new Error('說明段落應使用 --lh-prose');
+    // 字級只用變數（:root 之外沒有數字字級）
+    const rest = css.replace(/:root\s*\{[^}]*\}/, '');
+    const lits = rest.match(/font(?:-size)?:\s*\d[^;]*;/g);
+    if (lits) throw new Error('字級應使用 --fs-* 變數：' + lits.join(' '));
+    // 窄螢幕不縮小字級：max-width 媒體查詢內不設 font-size
+    let i = 0;
+    while ((i = css.indexOf('@media (max-width', i)) >= 0) {
+      let d = 0; let j = css.indexOf('{', i);
+      for (let k = j; k < css.length; k++) { if (css[k] === '{') d++; else if (css[k] === '}' && !--d) { j = k; break; } }
+      const block = css.slice(i, j);
+      if (/font-size:/.test(block)) throw new Error('窄螢幕不應改變字級：' + block.match(/[^{}]*\{[^}]*font-size:[^;]*;/)[0].trim());
+      i = j;
+    }
+    // 表格內的識別字（.mono、VLAN 清單）不逐字斷行，表格在自己的框內橫向捲動
+    if (!/table\.t \.mono, table\.t \.vlanlist \{[^}]*white-space:\s*nowrap/.test(css)) throw new Error('表格內的識別字應 nowrap');
+    if (!/\.table-scroll \{[^}]*overflow-x:\s*auto/.test(css)) throw new Error('表格外層應可橫向捲動');
+    const t = S.view.table([{ t: 'a', f: (r) => r }], ['x'], {});
+    if (!t.classList.contains('table-scroll') || !t.querySelector('table')) throw new Error('V.table 應包在可橫向捲動的外框裡');
+    // 畫面程式與 index.html 不寫死字級
+    const sizeLits = [];
+    jsFiles('src/view').forEach((f) => {
+      const code = fs.readFileSync(path.join(ROOT, f), 'utf8');
+      for (const m of code.matchAll(/font-size['"]?\s*:\s*['"]?\d+|fontSize\s*[:=]\s*['"]?\d+/g)) sizeLits.push(`${f}：${m[0]}`);
+    });
+    const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+    for (const m of html.matchAll(/font-size:\s*\d+px/g)) sizeLits.push('index.html：' + m[0]);
+    if (sizeLits.length) throw new Error('字級應使用 CSS 變數：' + sizeLits.join('；'));
+    // 顏色只在 theme.js（與 app.css 的變數）：其他畫面程式去掉註解後（字串保留，色碼多半寫在字串裡）不寫色碼，index.html 的 inline style 也不寫
+    const noComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\])\/\/.*$/gm, '$1');
+    const colorLits = jsFiles('src/view').filter((f) => path.basename(f) !== 'theme.js').flatMap((f) =>
+      Array.from(noComments(fs.readFileSync(path.join(ROOT, f), 'utf8')).matchAll(/#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b|rgba?\(/g)).map((m) => `${f}：${m[0]}`));
+    for (const m of html.matchAll(/style="[^"]*(#[0-9a-fA-F]{3,6}\b|rgba?\()/g)) colorLits.push('index.html：' + m[1]);
+    if (colorLits.length) throw new Error('顏色應取自 theme 或 CSS 變數：' + colorLits.join('；'));
   });
   await step('滑過左右欄與工具列時不會穿透觸發拓樸圖 hover', () => {
     const g = App.graph; const cv = $('#graph');
@@ -3226,6 +3919,59 @@ function viewBoundaryViolations(file, src) {
       if (g.hover) throw new Error(`指標在 #${el.id} 上時不應 hover 到底下的節點`);
       if (!$('#tooltip').classList.contains('hidden')) throw new Error('指標離開畫布時提示應隱藏');
     });
+  });
+  await step('頁首「⋯」與工具列的選單：只有一個路由追蹤入口；方向鍵移動、Esc 關閉並還焦點、點外面關閉；勾選與單選以 aria-checked 標示；通知不遮工具列', () => {
+    const more = $('#btn-more'); const menu = $('#more-menu'); const pop = $('#trace-pop');
+    const esc = () => (docListeners.keydown || []).forEach((f) => f({ key: 'Escape', preventDefault() {} }));
+    const outside = (target) => (docListeners.mousedown || []).forEach((f) => f({ target }));
+    App.showStep('triage'); App.showLayer('device');
+    if (more.getAttribute('aria-haspopup') !== 'menu' || !more.getAttribute('aria-label') || menu.getAttribute('role') !== 'menu') throw new Error('「⋯」應是有名稱的選單按鈕');
+    if (!['#btn-trace', '#btn-png', '#btn-clear'].every((x) => menu.contains($(x)) && $(x).getAttribute('role') === 'menuitem')) throw new Error('路由追蹤、匯出 PNG、清除基準應在「⋯」選單裡');
+    const traceEntries = document.testAll('button').filter((b) => /路由追蹤/.test(b.textContent) && !$('#detail').contains(b) && !$('#hub').contains(b));
+    if (traceEntries.length !== 1 || traceEntries[0] !== $('#btn-trace')) throw new Error('頁首只留一個路由追蹤入口：' + traceEntries.map((b) => b.textContent).join('、'));
+    if ($('#toolbar').contains($('#btn-png'))) throw new Error('匯出 PNG 不在工具列');
+    // 鍵盤：開啟時焦點到第一項，↓／End 移動並循環，Esc 關閉並還焦點
+    more.click();
+    if (menu.classList.contains('hidden') || more.getAttribute('aria-expanded') !== 'true' || document.activeElement !== $('#btn-trace')) throw new Error('開啟「⋯」後焦點應在第一項');
+    menu.dispatch('keydown', { key: 'ArrowDown' }); if (document.activeElement !== $('#btn-png')) throw new Error('↓ 應移到下一項');
+    menu.dispatch('keydown', { key: 'End' }); if (document.activeElement !== $('#btn-clear')) throw new Error('End 應移到最後一項');
+    menu.dispatch('keydown', { key: 'ArrowDown' }); if (document.activeElement !== $('#btn-trace')) throw new Error('↓ 在最後一項時應繞回第一項');
+    menu.dispatch('keydown', { key: 'Escape' });
+    if (!menu.classList.contains('hidden') || more.getAttribute('aria-expanded') !== 'false' || document.activeElement !== more) throw new Error('Esc 應關閉選單並把焦點還給「⋯」');
+    more.click(); outside($('#graph')); if (!menu.classList.contains('hidden')) throw new Error('點選單外面應關閉');
+    more.click(); esc(); if (!menu.classList.contains('hidden') || document.activeElement !== more) throw new Error('文件層級的 Esc 也應關閉選單並還焦點');
+    // 從選單開路由追蹤：選單收起、表單開啟；Esc 關閉後焦點回到「⋯」，點外面也關閉
+    more.click(); $('#btn-trace').click();
+    if (!menu.classList.contains('hidden') || pop.classList.contains('hidden') || ![$('#trace-src'), $('#trace-dst')].includes(document.activeElement)) throw new Error('路由追蹤應收起選單並開啟表單');
+    esc(); if (!pop.classList.contains('hidden') || document.activeElement !== more) throw new Error('Esc 應關閉路由追蹤並還焦點');
+    App.openTrace(); outside($('#graph')); if (!pop.classList.contains('hidden')) throw new Error('點外面應關閉路由追蹤');
+    // 版面▾：↑ 開啟時焦點到最後一項；單選的版面與力導向都是選單項目
+    const lb = $('#btn-layout-menu'); const lm = $('#layout-menu');
+    lb.dispatch('keydown', { key: 'ArrowUp' });
+    if (lm.classList.contains('hidden') || document.activeElement !== $('#btn-force')) throw new Error('↑ 開啟版面選單時焦點應在最後一項');
+    if ($('#layout-mode').testAll('.menu-item').some((b) => b.getAttribute('role') !== 'menuitemradio')) throw new Error('版面應是單選的選單項目');
+    lm.dispatch('keydown', { key: 'Escape' }); if (document.activeElement !== lb || !lm.classList.contains('hidden')) throw new Error('Esc 應關閉版面選單並還焦點');
+    // 顯示▾：勾選項目（data-keep）按了不關閉，aria-checked 跟著狀態
+    const vb = $('#btn-view-menu'); const vm_ = $('#view-menu'); const hosts = $('#btn-hosts');
+    vb.click(); const was = App.showHosts;
+    if (hosts.getAttribute('aria-checked') !== String(was)) throw new Error('主機的勾選狀態應與畫面一致');
+    hosts.click(); vm_.dispatch('click', { target: hosts });
+    if (App.showHosts === was || hosts.getAttribute('aria-checked') !== String(!was) || vm_.classList.contains('hidden')) throw new Error('勾選項目按了應切換並保持選單開啟');
+    hosts.click(); if (App.showHosts !== was) throw new Error('再按一次應還原');
+    $('#btn-fit').click(); vm_.dispatch('click', { target: $('#btn-fit') });
+    // 換層級時選單收起；L2 只有主機（未知對端、分群只在設備圖）
+    App.showLayer('l2'); if (!vm_.classList.contains('hidden')) throw new Error('換層級時應收起選單');
+    if (!$('#btn-unknown').classList.contains('hidden') || !$('#btn-groups').classList.contains('hidden') || $('#btn-hosts').classList.contains('hidden')) throw new Error('L2 的顯示選單只有主機');
+    App.showLayer('device');
+    if ($('#btn-unknown').classList.contains('hidden')) throw new Error('設備圖的顯示選單應有未知對端');
+    // 通知在圖的下方中央（不遮左上角的工具列），數秒後淡出；操作提示也會淡出
+    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
+    const bannerRule = (css.match(/\n\.banner \{([^}]*)\}/) || [])[1] || '';
+    if (/(^|;)\s*top:/.test(bannerRule) || !/bottom:/.test(bannerRule)) throw new Error('通知應在圖的下方，不遮工具列：' + bannerRule);
+    if (!/\.banner\.fading, \.hint\.fading \{[^}]*opacity: 0/.test(css)) throw new Error('通知與操作提示應淡出');
+    // 窄螢幕：品牌與按鈕同一列、搜尋一列，清除不再單獨佔一列
+    const narrow = css.slice(css.indexOf('@media (max-width: 900px) {\n  #app'));
+    if (!/\.header-actions \{ order: 2;/.test(narrow) || !/\.search \{ order: 3; flex: 1 1 100%;/.test(narrow) || /#btn-clear \{ margin-left/.test(css)) throw new Error('窄螢幕的頁首應是品牌＋按鈕、搜尋兩列');
   });
   await step('流程步驟：①–⑤ 都能切換（nav、aria-current="step"），左側清單與中間的工作畫面跟著換、焦點移到這一步的標題；切換不丟失畫布的位置、縮放與選取，也不重新排列；PNG 照常', async () => {
     const g = App.graph; const VA = S.view.app;
@@ -3311,10 +4057,9 @@ function viewBoundaryViolations(file, src) {
     VA.setWorkspace('details'); App.showView('compare');
     if ($('#main').dataset.workspace !== 'graph' || ws()[1].textContent !== '驗證') throw new Error('窄螢幕切到工作畫面時應顯示中間的工作區');
     window.innerWidth = 1200; goStep('triage'); VA.setWorkspace('graph'); App.showView('graph');
-    // CSS：工作畫面疊在拓樸圖上、不水平捲動；寬表格在自己的框內捲動；強制色彩下目前的一步有系統色外框
+    // CSS：工作畫面疊在拓樸圖上、不水平捲動（寬表格在 V.table 的 .table-scroll 內捲動，另有測試）；強制色彩下目前的一步有系統色外框
     const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
     if (!/\.work \{[^}]*position: absolute[^}]*overflow-x: hidden/.test(css)) throw new Error('工作畫面應疊在拓樸圖上，且不水平捲動');
-    if (!/\.work-table \{[^}]*overflow-x: auto/.test(css)) throw new Error('寬的表格應在自己的框內捲動');
     const forced = css.slice(css.indexOf('@media (forced-colors: active)'));
     if (!/\.steps button\[aria-current="step"\]/.test(forced.slice(0, forced.indexOf('\n}')))) throw new Error('強制色彩模式下目前的一步應有系統色外框');
     // 步驟的文字色對底色 ≥ 4.5:1：目前的一步（強調色／淺強調底）、其他步驟（次要文字色／頁首白底）
@@ -3323,7 +4068,7 @@ function viewBoundaryViolations(file, src) {
       if (contrastOf(fg, bg) < 4.5) throw new Error(`步驟的文字 ${fg} 對 ${bg} 只有 ${contrastOf(fg, bg).toFixed(2)}:1`);
     });
     // 目前的一步不只靠顏色：粗體與底線
-    if (!/\.steps button\[aria-current="step"\] \{[^}]*font-weight: 700[^}]*box-shadow: inset 0 -2px/.test(css)) throw new Error('目前的一步除了顏色，還要有粗體與底線');
+    if (!/\.steps button\[aria-current="step"\] \{[^}]*font-weight: 600[^}]*box-shadow: inset 0 -2px/.test(css)) throw new Error('目前的一步除了顏色，還要有粗體與底線');
     if (!/\.patch-layout \{ display: grid; grid-template-columns: minmax\(0, 1fr\);/.test(css) || !/\.verify-layout \{ display: grid; grid-template-columns: minmax\(0, 1fr\);/.test(css) || !/@container \(min-width: \d+px\)/.test(css)) throw new Error('修正計畫與驗證預設單欄，工作畫面夠寬時才分兩欄');
     // 窄螢幕的步驟列：五步等寬、可以換行（不出現水平捲動），放在一般樣式之後
     const narrow = css.slice(css.indexOf('@media (max-width: 900px)'));
@@ -3428,6 +4173,9 @@ function viewBoundaryViolations(file, src) {
     if (!!App.round.expected !== !row('expected').textContent.includes('未載入')) throw new Error('預期資料的狀態應依是否載入');
     if (rep && !rep.errors.length && !row('expected').textContent.includes('已比對')) throw new Error('預期資料載入後應列出比對結果');
     const nC01 = App.Q.findingsByRule('C01').length;
+    const cs = App.Q.coverageSummary();
+    if (!row('coverage').textContent.includes(`已收集 ${NUM(cs.networkCollected)}／${NUM(cs.network)} 台網路設備`)) throw new Error('覆蓋率應以網路設備為分母：' + row('coverage').textContent);
+    if (cs.hosts && !row('coverage').textContent.includes(`另有 ${NUM(cs.hosts)} 台主機`)) throw new Error('覆蓋率應另列主機：' + row('coverage').textContent);
     if ((hubBtn('devices-csv').getAttribute('disabled') !== null) !== !nC01) throw new Error('沒有 C01 時 devices.csv 草稿應停用');
     // 工作包的角色：收集檔與基準一定放（不能取消）；命名規則用過就一定放
     const roleBox = (r) => $('#hub').testAll('.hub-pack-role').find((x) => x.getAttribute('data-role') === r);

@@ -187,10 +187,10 @@
     $('#toolbar').classList.toggle('hidden', !has);
     ['#btn-trace', '#btn-png', '#btn-clear', '#search'].forEach((s) => { $(s).disabled = !has; });
     syncTraceIps();
-    // 覆蓋率在資料中心（① 輸入），由 V.hub.render 一起畫
+    // 覆蓋率在資料中心（「輸入」），由 V.hub.render 一起畫
     V.lists.findings(App); V.lists.inventory(App);
     V.ledgerPane.render(App); V.hub.render(App);
-    // 步驟與中間的工作畫面：沒有基準時 ④、⑤ 回到 ③；只重繪目前顯示的那一個
+    // 步驟與中間的工作畫面：沒有基準時「修正」、「驗證」回到「研判」；只重繪目前顯示的那一個
     A.syncSteps(); A.renderCenter(); A.syncLayerUi();
     V.details.render(App, App.sel);
   };

@@ -551,7 +551,7 @@
     const cv = $('#graph');
     if (L !== 'l4') cv.setAttribute('aria-label', `拓樸圖（${V.LAYER[L]}）。N 下一個${L === 'l2' ? '設備或埠' : L === 'l3' ? '網段或設備' : '設備'}、Shift+N 上一個、Enter 開啟詳細資料、Shift+Enter 聚焦、Esc 取消選取、方向鍵平移、+ 與 - 縮放、0 全圖`);
     renderNote();
-    A.renderSteps(); // 步驟列「② 檢視」的狀態是目前的層級
+    A.renderSteps(); // 步驟列「檢視」的狀態是目前的層級
   };
   /**
    * 工具列旁的 VLAN 篩選標示（#vlan-chip）：由選取帶入的篩選（沒有釘選）才顯示，寫出 VLAN，按它或在它上面按 Esc 取消（A.clearVlanFilter）。

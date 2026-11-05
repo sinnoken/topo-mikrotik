@@ -41,7 +41,7 @@
       const d = sel.type === 'device' ? sel.key : sel.type === 'interface' ? K.splitEp(sel.key)[0] : null;
       A.recenterL2(d);
     }
-    // 步驟與中間的工作畫面（④ 修正計畫、⑤ 驗證）不切換：詳情在右側顯示，圖的選取也更新，回到拓樸圖時就看得到
+    // 步驟與中間的工作畫面（修正計畫、「驗證」）不切換：詳情在右側顯示，圖的選取也更新，回到拓樸圖時就看得到
     const r = App.layer === 'device' ? deviceMarks(sel, o) : A.layerMarks(sel, o);
     if (r.overlay.length) g.setOverlay(r.overlay);
     g.setHighlight(r.hl || filterMarks());
@@ -159,7 +159,7 @@
     // 多數決判定與多數不同的設備（推論）另以虛線外圈標出；平手（basis 不是 majority）或 deviating 為空時不標
     const emphasis = V.majorityDeviating(f.deviation);
     App.select(sel, { focus: true, findingEntities: f.id === 'A03' ? null : f.entities, emphasis });
-    // 不論從哪個入口選取，③ 的檢查結果清單都展開到這一筆並標出選取
+    // 不論從哪個入口選取，「研判」的檢查結果清單都展開到這一筆並標出選取
     V.lists.findings.reveal(App, idx);
   };
 

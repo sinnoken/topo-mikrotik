@@ -32,7 +32,7 @@
     return { action: typeof c.action === 'string' && c.action ? c.action : null, hint: typeof c.hint === 'string' && c.hint ? c.hint : null, causes };
   }
   /**
-   * 規則的一句處理提示「處理：…」（advice(id).hint）：③ 研判展開的規則群組與詳情的檢查結果卡片共用。
+   * 規則的一句處理提示「處理：…」（advice(id).hint）：「研判」展開的規則群組與詳情的檢查結果卡片共用。
    * 反引號內以 <code> 顯示（V.codeText）；沒有提示時為 null。cls 是額外的 class。
    */
   function hintLine(id, cls) {

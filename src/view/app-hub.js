@@ -16,8 +16,8 @@
 
   /**
    * 資料中心的檢視狀態（不進基準，也不存進 store）：
-   *   open        是否開啟（開著時流程步驟的目前一步是「① 輸入」）
-   *   opener      開啟它的按鈕（步驟列的 ①）；鍵盤關閉時焦點回到它，null 時回到「資料中心」按鈕
+   *   open        是否開啟（開著時流程步驟的目前一步是「輸入」）
+   *   opener      開啟它的按鈕（步驟列的「輸入」）；鍵盤關閉時焦點回到它，null 時回到「資料中心」按鈕
    *   byDevice    匯出報表時依設備排序（Markdown 依設備分組）
    *   pack        工作包要放哪些可選的角色（收集檔與基準一定放；命名規則與 expectedData 用過就一定放）
    *   busy        進行中的長時間操作的說明（null 表示沒有）
@@ -48,8 +48,8 @@
     });
   };
   /**
-   * 開啟資料中心（流程步驟的「① 輸入」）；section 是要捲到並聚焦的區塊（inputs、coverage、outputs、ledger、reports），省略時聚焦標題。
-   * opt.opener 是開啟它的按鈕（步驟列的 ①）：用鍵盤關閉時焦點回到它，沒有時回到頁首的「資料中心」按鈕。
+   * 開啟資料中心（流程步驟的「輸入」）；section 是要捲到並聚焦的區塊（inputs、coverage、outputs、ledger、reports），省略時聚焦標題。
+   * opt.opener 是開啟它的按鈕（步驟列的「輸入」）：用鍵盤關閉時焦點回到它，沒有時回到頁首的「資料中心」按鈕。
    */
   App.openHub = function (section, opt) {
     hub.open = true; hub.opener = (opt && opt.opener) || null;

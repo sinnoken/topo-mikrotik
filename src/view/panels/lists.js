@@ -1,6 +1,6 @@
 /*
- * 依流程步驟分配的清單：檢查結果（③ 研判的左側）、清單（② 檢視的左側）、覆蓋率（① 輸入，資料中心裡的 #pane-coverage）；
- * 以及「⑤ 驗證」裡的比對（預期資料比對＋新舊基準比對，#compare-body）。
+ * 依流程步驟分配的清單：檢查結果（「研判」的左側）、清單（「檢視」的左側）、覆蓋率（「輸入」，資料中心裡的 #pane-coverage）；
+ * 以及「驗證」裡的比對（預期資料比對＋新舊基準比對，#compare-body）。
  */
 (function (S) {
   'use strict';
@@ -68,7 +68,7 @@
     const root = V.clear(V.$('#pane-findings'));
     if (!App.snap) return root.appendChild(h('div', { class: 'empty-detail' }, '建立基準後，資料之間的矛盾與缺漏會列在這裡。'));
     const Q = App.Q; const all = Q.findings();
-    // 只看新出現的：依「⑤ 驗證」的比對或資料中心載入的舊基準（S.compare.snapshots 的 finding added）；沒有舊基準時停用
+    // 只看新出現的：依「驗證」的比對或資料中心載入的舊基準（S.compare.snapshots 的 finding added）；沒有舊基準時停用
     const base = V.baselineDiff.loaded();
     if (!base) state.onlyNew = false;
     const isNew = (f) => !!base && base.addedFindingKeys.has(Q.findingKey(f));
@@ -91,7 +91,7 @@
       h('div', { class: 'seg', role: 'group', 'aria-label': '分組方式' }, [['rule', '依檢查'], ['device', '依設備']].map(([k, label]) => h('button', {
         class: `btn ${state.groupBy === k ? 'on' : ''}`, 'aria-pressed': String(state.groupBy === k), 'data-group-by': k,
         onclick: () => { state.groupBy = k; findings(App); } }, label))),
-      // 沒有舊基準時不顯示（停用的 chip 加兩行說明，每次都佔位置）；載入舊基準的入口在「⑤ 驗證」的比對與資料中心
+      // 沒有舊基準時不顯示（停用的 chip 加兩行說明，每次都佔位置）；載入舊基準的入口在「驗證」的比對與資料中心
       base ? filterChip('只看新出現的', nNew, { cls: 'info', on: state.onlyNew, title: `與舊基準（${base.name}）比對後新出現的檢查結果`,
         onclick: () => { state.onlyNew = !state.onlyNew; findings(App); } }) : null,
       versionWarn ? h('span', { class: 'note warn-line only-new-version', title: versionWarn.message }, '新出現的可能來自新版檢查：' + versionWarn.message) : null,
@@ -105,7 +105,7 @@
     if (!all.length) root.appendChild(h('div', { class: 'empty-detail' }, [h('div', { class: 'big' }, '沒有發現問題'), '所有資料彼此一致。']));
     else if (state.onlyNew && !nNew) root.appendChild(h('div', { class: 'muted pane-note' }, `與舊基準（${base.name}）比對，沒有新出現的檢查結果。`));
     const ledgerBlocked = A().ledgerState().blocked;
-    if (ledgerBlocked) root.appendChild(h('div', { class: 'pane-note warn-line ledger-blocked' }, '處理紀錄目前無法使用：' + ledgerBlocked.reason + '（見「⑤ 驗證」的處理紀錄）'));
+    if (ledgerBlocked) root.appendChild(h('div', { class: 'pane-note warn-line ledger-blocked' }, '處理紀錄目前無法使用：' + ledgerBlocked.reason + `（見「${A().STEP_LABEL.verify}」的處理紀錄）`));
     /** 一筆檢查結果：點文字定位；旁邊的「處理」變更處理紀錄的狀態與備註 */
     const item = (i, showId) => {
       const f = all[i]; const it = A().ledgerItem(f); const s = it ? it.status : null;
@@ -343,7 +343,7 @@
   }
   const CMP_ST = { ok: ['一致', 'ok'], missing: ['基準缺少', 'err'], different: ['不同', 'warn'], unexpected: ['基準多出', 'info'] };
   /**
-   * 「⑤ 驗證」的比對（#compare-body）：上方是預期資料比對，下方是新舊基準比對（panels/baseline-diff.js），各一張卡片。
+   * 「驗證」的比對（#compare-body）：上方是預期資料比對，下方是新舊基準比對（panels/baseline-diff.js），各一張卡片。
    * 點一列在右側的詳細資料開啟該項目（比對留在中間）。
    */
   function compare(App) {

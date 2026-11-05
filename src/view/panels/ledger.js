@@ -1,5 +1,5 @@
 /*
- * 「⑤ 驗證」裡處理紀錄的部分（index.html 的 #view-verify）：
+ * 「驗證」裡處理紀錄的部分（index.html 的 #view-verify）：
  *   render       本輪變化（新出現、已修好、復發、豁免到期、因收集失敗而無法判斷；#round-body）、
  *                處理紀錄的目前狀態與匯出／匯入的入口（在資料中心；#ledger-body）、修正追蹤（已排定修正與已修好；#tracking-body）
  *   renderTrend  改善趨勢：最新一輪的數字、每一輪的趨勢圖與表格檢視（#trend-body）
@@ -134,7 +134,7 @@
   }
   const pct = (r) => (r == null ? '—' : `${Math.round(r * 100)}%`);
   /**
-   * 改善趨勢上方的數字：待處理（目前基準的錯誤＋警告，與步驟列 ③、基準狀態卡同一個數字）、提醒，
+   * 改善趨勢上方的數字：待處理（目前基準的錯誤＋警告，與步驟列「研判」、基準狀態卡同一個數字）、提醒，
    * 以及最新一輪的已豁免、覆蓋率、未知對端。復發只在本輪變化顯示，這裡不重複。
    */
   function trendTiles(series) {
@@ -171,7 +171,7 @@
       ]),
       table]);
   }
-  /** 「⑤ 驗證」的改善趨勢（#trend-body；外框與標題在 index.html） */
+  /** 「驗證」的改善趨勢（#trend-body；外框與標題在 index.html） */
   function renderTrend(App) {
     const root = V.clear(V.$('#trend-body'));
     const st = A().ledgerState();
@@ -250,7 +250,7 @@
           sched.slice(0, 300).map((k) => itemRow(App, k, lg.items[k], present.has(k) ? V.chip('目前基準仍有', 'warn') : V.chip('目前基準沒有', 'info'))))) : null,
         fixedAll.length ? fold('fixed', '已修好', fixedAll.length, h('div', { class: 'ledger-list', 'data-status': 'fixed' },
           fixedAll.slice(0, 300).map((k) => itemRow(App, k, lg.items[k])))) : null,
-      ]) : h('p', { class: 'muted pane-note' }, '沒有「已排定修正」的項目。在「③ 研判」的檢查結果按「處理」選「已排定修正」，下一輪基準就會在這裡追蹤。'));
+      ]) : h('p', { class: 'muted pane-note' }, `沒有「已排定修正」的項目。在「${A().STEP_LABEL.triage}」的檢查結果按「處理」選「已排定修正」，下一輪基準就會在這裡追蹤。`));
     }
     // 匯出與匯入集中在資料中心（app-hub.js）；這裡只放入口
     body.appendChild(h('h4', { class: 'pane-title' }, '匯出與匯入'));

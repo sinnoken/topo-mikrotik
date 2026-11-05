@@ -97,14 +97,13 @@ header .spacer { flex: 1; }
 .steps ol { display: flex; flex-wrap: wrap; gap: 2px; margin: 0; padding: 0; list-style: none; }
 .steps button { display: inline-flex; align-items: baseline; gap: 5px; min-height: var(--control-h); padding: 5px 10px; border: 1px solid transparent; border-radius: var(--radius); background: transparent; color: var(--muted); box-shadow: none; white-space: nowrap; }
 .steps button:hover { background: var(--surface-hover); color: var(--text); border-color: transparent; }
-.steps .step-n { font-weight: 600; }
 .steps .step-st { font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .steps button[aria-current="step"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; box-shadow: inset 0 -2px var(--accent); }
 .steps button[aria-current="step"] .step-st { font-weight: 600; }
 .steps button[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
 .steps button[aria-disabled="true"]:hover { background: transparent; color: var(--muted); }
 #main { display: grid; grid-template-columns: 330px minmax(0, 1fr) 400px; min-height: 0; }
-/* 欄的位置固定：④、⑤ 沒有左側清單（#left 隱藏、寬度 0）時，中間仍在第二欄 */
+/* 欄的位置固定：「修正」、「驗證」沒有左側清單（#left 隱藏、寬度 0）時，中間仍在第二欄 */
 #main > #left { grid-column: 1; } #main > #center { grid-column: 2; } #main > #right { grid-column: 3; }
 #main > * { grid-row: 1; }
 #left, #right { background: var(--panel); min-height: 0; display: flex; flex-direction: column; }
@@ -135,7 +134,7 @@ header .spacer { flex: 1; }
 #compare-body { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 #compare-body .work-card > .pane-body, #compare-body .baseline-diff { padding: 14px; }
 #compare-body .summary { padding-left: 0; padding-right: 0; background: none; }
-/* ⑤ 驗證：窄的時候上下排；工作畫面夠寬時左欄是本輪變化與處理紀錄（捲動時固定），右欄是修復追蹤、收斂趨勢與比對 */
+/* 「驗證」：窄的時候上下排；工作畫面夠寬時左欄是本輪變化與處理紀錄（捲動時固定），右欄是修復追蹤、收斂趨勢與比對 */
 .verify-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
 .verify-side, .verify-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .verify-card { padding: 12px 14px; }
@@ -171,7 +170,7 @@ header .spacer { flex: 1; }
 .pane-body > p:first-child { margin-top: 0; }
 .pane-section { padding: 0 10px; }
 .pane-filter { display: block; width: calc(100% - 20px); margin: 8px 10px; }
-/* 清單（② 檢視）：清單種類、種類內篩選與文字篩選同一列；窄欄時文字篩選換到下一行 */
+/* 清單（「檢視」）：清單種類、種類內篩選與文字篩選同一列；窄欄時文字篩選換到下一行 */
 .inv-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); background: var(--surface); }
 .inv-bar select { flex: 0 1 auto; min-width: 0; max-width: 100%; font-size: var(--fs-sm); }
 .inv-bar .pane-filter { flex: 1 1 8em; width: auto; min-width: 8em; margin: 0; }
@@ -588,7 +587,7 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
   #app { height: 100dvh; grid-template-rows: auto auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); }
   /* 圖上方只有兩列：第一列是流程步驟（五步等寬、不捲動，目前的一步一定看得到）；第二列是工作區分頁，
      搜尋（收成圖示）與「⋯」從頁首移到這一列的右端（絕對定位，頁首的 z-index 高於工作區列）。
-     品牌只留名稱給螢幕閱讀器；「資料中心」與「① 輸入」是同一個畫面，窄螢幕只留步驟 */
+     品牌只留名稱給螢幕閱讀器；「資料中心」與「輸入」是同一個畫面，窄螢幕只留步驟 */
   header { position: relative; min-height: 0; padding: 4px 6px; flex-wrap: nowrap; gap: 0; }
   header .spacer { display: none; }
   header .brand { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -774,7 +773,7 @@ header .hub-btn.on { background: var(--accent-soft); color: var(--accent); borde
 .hub-out p { margin: 0; }
 .hub-out .row { margin: 0; }
 .hub-cmd { display: block; padding: 6px 8px; border-radius: var(--radius-sm); background: var(--neutral-soft); white-space: pre-wrap; overflow-wrap: anywhere; }
-/* 覆蓋率（① 輸入）：篩選選項與每台設備的表格；表格寬於畫面時在自己的框內捲動 */
+/* 覆蓋率（「輸入」）：篩選選項與每台設備的表格；表格寬於畫面時在自己的框內捲動 */
 .hub-coverage { min-width: 0; }
 .hub-coverage .summary { padding-left: 0; padding-right: 0; background: none; }
 /* 每台一列：缺少的資料與收集失敗的 chip 不換行，表格寬於畫面時橫向捲動 */
@@ -813,7 +812,7 @@ header .hub-btn.on { background: var(--accent-soft); color: var(--accent); borde
   #app.hub-open #banner { left: 10px; right: 10px; transform: none; width: auto; bottom: 16px; }
   /* 中間的工作畫面：內距縮小；內容不出現整頁的水平捲動（寬的表格、指令與圖在自己的框內捲動） */
   .work-inner { padding: 12px 10px 24px; gap: 12px; }
-  /* 清單（② 檢視）：關鍵欄排在前三欄；表格依內容寬度在 .table-scroll 內橫向捲動，廠商等欄不被擠窄截斷 */
+  /* 清單（「檢視」）：關鍵欄排在前三欄；表格依內容寬度在 .table-scroll 內橫向捲動，廠商等欄不被擠窄截斷 */
   .inv-scroll-hint { display: block; }
   .inv-table table.t { width: max-content; min-width: 100%; }
   .inv-table table.t td { white-space: nowrap; }

@@ -149,7 +149,7 @@
       }, [V.chip(T[r.type]), h('span', null, r.label), h('span', { class: 'sub' }, A.searchSub(App.Q, r))])));
       dd.classList.remove('hidden');
     };
-    // 搜尋是「在圖上定位」：在 ④ 修正、⑤ 驗證時回到上一次看圖的 ② 或 ③，再選取
+    // 搜尋是「在圖上定位」：在「修正」、「驗證」時回到上一次看圖的「檢視」或「研判」，再選取
     const pick = (r) => { dd.classList.add('hidden'); inp.blur(); App.showView('graph'); App.select({ type: r.type, key: r.key }, { focus: true }); };
     let t = null;
     inp.addEventListener('input', () => { clearTimeout(t); t = setTimeout(show, 120); });

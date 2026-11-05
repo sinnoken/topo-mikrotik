@@ -193,28 +193,28 @@
   }
   function overview(App) {
     const Q = App.Q; const T = V.TERMS; const m = Q.meta(); const st = m.stats; const C = Q.inventory().counts;
-    const cs = Q.coverageSummary(); const vs = Q.vlanSummary(); const pc = V.app.problemCounts();
+    const cs = Q.coverageSummary(); const vs = Q.vlanSummary(); const A = V.app; const pc = A.problemCounts();
     const problems = pc.total; const first = firstProblem(App);
     const counts = [pc.error ? `${V.num(pc.error)} 項錯誤` : null, pc.warn ? `${V.num(pc.warn)} 項警告` : null].filter(Boolean).join('、');
-    // 錯誤／警告數連到「③ 研判」只列錯誤與警告；建議先看連到那一筆
+    // 錯誤／警告數連到「研判」只列錯誤與警告；建議先看連到那一筆
     const status = h('p', { class: 'status-line' }, [
       V.sevDot(pc.error ? 'error' : pc.warn ? 'warn' : 'info'),
       h('span', null, [
-        problems ? h('span', null, ['待處理：', h('a', { class: 'link status-problems', title: '在「③ 研判」只列錯誤與警告',
+        problems ? h('span', null, ['待處理：', h('a', { class: 'link status-problems', title: `在「${A.STEP_LABEL.triage}」步驟只列錯誤與警告`,
           onclick: () => { V.lists.findings.showProblems(App); App.showStep('triage'); } }, counts)]) : '目前的檢查未發現待處理的錯誤或警告',
         pc.handled ? h('span', { class: 'muted' }, `（另有 ${V.num(pc.handled)} 項已處理）`) : null,
         first >= 0 ? h('span', null, ['。建議先看：', suggestLink(App, first)]) : null,
       ]),
     ]);
-    // 處理紀錄的提示（復發、因收集失敗而無法判斷、豁免到期）：點一下到「⑤ 驗證」的本輪變化
+    // 處理紀錄的提示（復發、因收集失敗而無法判斷、豁免到期）：點一下到「驗證」的本輪變化
     const alerts = [['regressed', 'err', '復發', '已修好的問題又出現（依處理紀錄）'],
       ['unobserved', 'warn', '無法判斷', '本輪消失的待處理項目，所屬設備有收集失敗或沒有收集，因收集失敗而無法判斷是否已修好'],
       ['waiverExpired', 'warn', '豁免到期', '「接受風險」的豁免已到期，改回待處理']].filter(([k]) => pc[k]);
     const alertRow = alerts.length ? h('div', { class: 'row status-alerts' }, alerts.map(([k, cls, label, title]) =>
-      V.chipButton(`${label} ${V.num(pc[k])} 項`, 'btn ' + cls + ' ledger-alert', { 'data-alert': k, title: title + '；在「⑤ 驗證」的本輪變化', onclick: () => App.showStep('verify', { focus: 'round' }) }))) : null;
-    // 覆蓋率只寫缺資料的台數（已收集台數在數字卡）；點一下在「① 輸入」的覆蓋率只列有缺漏的設備
+      V.chipButton(`${label} ${V.num(pc[k])} 項`, 'btn ' + cls + ' ledger-alert', { 'data-alert': k, title: `${title}；在「${A.STEP_LABEL.verify}」的本輪變化`, onclick: () => App.showStep('verify', { focus: 'round' }) }))) : null;
+    // 覆蓋率只寫缺資料的台數（已收集台數在數字卡）；點一下在「輸入」的覆蓋率只列有缺漏的設備
     const coverage = h('p', { class: 'status-coverage' }, ['覆蓋率：',
-      cs.missing ? h('a', { class: 'link', title: '在「① 輸入」的覆蓋率只列有缺漏的設備', onclick: () => { V.lists.coverage.showMissing(App); App.openHub('coverage'); } },
+      cs.missing ? h('a', { class: 'link', title: `在「${A.STEP_LABEL.input}」的覆蓋率只列有缺漏的設備`, onclick: () => { V.lists.coverage.showMissing(App); App.openHub('coverage'); } },
         `${V.num(cs.missing)} 台${T.network}缺資料或收集失敗`) : `已收集的${T.network}資料齊全`]);
     const hostNote = cs.hosts ? h('p', { class: 'status-hosts muted' }, `另有 ${V.num(cs.hosts)} 台${T.host}（${V.HOST_DEF}）`) : null;
     const stat = (label, value) => h('div', { class: 'stat' }, [h('div', { class: 'stat-num' }, value), h('div', { class: 'stat-label' }, label)]);

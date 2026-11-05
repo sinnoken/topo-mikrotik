@@ -527,8 +527,10 @@ function viewBoundaryViolations(file, src) {
     // 鄰居表與鏈路表的「類別」（例如「LLDP・聚合」）不折行撐高列：該欄 td.nowrap，表格本來就在 .table-scroll 內可橫捲
     const appCss = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
     if (!/table\.t td\.nowrap\s*\{[^}]*white-space:\s*nowrap/.test(appCss)) throw new Error('app.css 應有 table.t td.nowrap 不換行');
+    // 不換行的「類別」放在第二欄以內：1440 寬的右欄不必橫捲就看得到
     const classCells = () => $('#detail').testAll('table').flatMap((t) => {
       const n = t.testAll('th').findIndex((th) => th.textContent.startsWith('類別')); if (n < 0) return [];
+      if (n > 1) throw new Error(`「類別」應在第二欄以內，現在是第 ${n + 1} 欄`);
       return t.testAll('tbody tr').map((tr) => tr.testAll('td')[n]);
     });
     let seen = 0;
@@ -872,10 +874,27 @@ function viewBoundaryViolations(file, src) {
     const capped = (what) => { if (g.s > L.FOCUS.maxScale + 1e-9) throw new Error(`${what}的聚焦倍率 ${g.s} 超過上限 ${L.FOCUS.maxScale}`); };
     const nb = (id) => (g.edgesByNode.get(id) || []).map((e) => (e.a === id ? e.b : e.a)).filter((m) => g.isVisible(g.nodeById.get(m)));
     const devs = g.nodes.filter((n) => !n.virtual && g.isVisible(n) && nb(n.id).length).sort((a, b) => nb(a.id).length - nb(b.id).length || S.util.natural(a.id, b.id));
+    // 1440 寬時圖區約 710×850（左右欄各佔一部分），用同樣的大小核對
+    const cv = $('#graph'); const rect = cv.getBoundingClientRect;
+    cv.getBoundingClientRect = () => ({ left: 0, top: 0, width: 710, height: 850 }); g.resize();
+    try {
+    if (!(L.FOCUS.minScale > 0 && L.FOCUS.minScale < L.FOCUS.maxScale)) throw new Error('FOCUS.minScale 應介於 0 與 maxScale 之間');
+    g.fit(); const sAll = g.s;
     [devs[0], devs[devs.length - 1]].forEach((n) => {
       App.select({ type: 'device', key: n.id }, { focus: true }); capped('選設備');
-      inView([n.id].concat(nb(n.id)), '選設備後的一跳鄰居');
+      // 一定放大到看得清楚：倍率不低於 FOCUS.minScale（全圖已經比它大時不縮小）。鄰居散在整張圖（核心設備）時只聚焦設備本身
+      if (g.s < L.FOCUS.minScale - 1e-9) throw new Error(`選設備 ${n.id} 後應放大到至少 ${L.FOCUS.minScale}：${g.s}（全圖 ${sAll}）`);
+      inView([n.id], '選設備');
+      // 一跳鄰居都在畫面內；否則必須是「只聚焦設備本身」（倍率達上限）
+      const out = nb(n.id).filter((id) => { const p = g.toScreen(g.at(id)); return p.x < 0 || p.x > g.w || p.y < 0 || p.y > g.h; });
+      if (out.length && g.s < L.FOCUS.maxScale - 1e-9) throw new Error(`選設備 ${n.id} 時鄰居 ${out.join('、')} 不在畫面內，倍率卻沒有放大到上限：${g.s}`);
     });
+    // 回歸：鄰居最多的設備（範例的核心路由器）選取後要比全圖放大，鄰居散在整張圖時不能等於沒放大
+    if (!process.env.SMOKE_INPUT && sAll < L.FOCUS.minScale) {
+      App.select({ type: 'device', key: devs[devs.length - 1].id }, { focus: true });
+      if (g.s <= sAll * 1.5) throw new Error(`鄰居最多的設備選取後應放大：${g.s}（全圖 ${sAll}）`);
+    }
+    } finally { cv.getBoundingClientRect = rect; g.resize(); }
     const pair = Array.from(App.pairs.values()).find((p) => !p.virtual && p.links.length);
     const link = Q.getLink(pair.links[0]);
     App.select({ type: 'link', key: link.key }, { focus: true }); capped('選鏈路');
@@ -1366,22 +1385,24 @@ function viewBoundaryViolations(file, src) {
     // 每個數字只出現一次：已收集台數只在數字卡，不在收集完整度那一行
     if (cov.textContent.includes(`${NUM(cs.networkCollected)}／`) || cov.textContent.includes(`${NUM(cs.network)} 台`)) throw new Error('收集完整度那一行不重複已收集台數：' + cov.textContent);
   });
-  await step('詳情：檢查結果在最上面、超過 5 筆先顯示 5 筆；推定偏離的設備有 chip；平手不多一行；長表格預設收合', () => {
-    const Q = App.Q;
-    // 檢查結果超過 5 筆的設備：先顯示 5 筆，其餘在「再顯示 N 筆」
-    const many = Q.devices().find((d) => { App.select({ type: 'device', key: d.key }); const sec = $('#detail').querySelector('.findings-section'); return sec && sec.testAll('.finding').length > 5; });
+  await step('詳情：設備先列身分再列檢查結果、超過 3 筆先顯示 3 筆；推定偏離的設備有 chip；平手不多一行；長表格預設收合', () => {
+    const Q = App.Q; const SHOWN = 3;
+    // 檢查結果超過 3 筆的設備：先顯示 3 筆，其餘在「再顯示 N 筆」（預設收合）
+    const many = Q.devices().find((d) => { App.select({ type: 'device', key: d.key }); const sec = $('#detail').querySelector('.findings-section'); return sec && sec.testAll('.finding').length > SHOWN; });
     if (many) {
       const sec = $('#detail').querySelector('.findings-section');
       const more = sec.testAll('.detail-fold').find((x) => x.querySelector('summary').textContent.startsWith('再顯示'));
       const total = sec.testAll('.finding').length;
-      if (!more || more.getAttribute('open') !== null || more.testAll('.finding').length !== total - 5 || !more.querySelector('summary').textContent.startsWith(`再顯示 ${total - 5} 筆`)) throw new Error('超過 5 筆時其餘應收在「再顯示 N 筆」');
-    } else if (!process.env.SMOKE_INPUT) throw new Error('範例資料應有檢查結果超過 5 筆的設備');
-    // 檢查結果在屬性（kv）之前
+      if (!more || more.getAttribute('open') !== null || more.testAll('.finding').length !== total - SHOWN || !more.querySelector('summary').textContent.startsWith(`再顯示 ${total - SHOWN} 筆`)) throw new Error(`超過 ${SHOWN} 筆時其餘應收在「再顯示 N 筆」`);
+    } else if (!process.env.SMOKE_INPUT) throw new Error(`範例資料應有檢查結果超過 ${SHOWN} 筆的設備`);
+    // 設備的身分（管理 IP、型號、RouterOS、收集的資料）在檢查結果之前：核心設備的檢查結果很多，身分不能被推到首屏外
     const d0 = Q.devices().find((d) => d.collected && Q.findingsFor('device', d.key).length);
     App.select({ type: 'device', key: d0.key });
     const kids = $('#detail').querySelector('.detail').childNodes;
     const fi = kids.findIndex((x) => x.classList && x.classList.contains('findings-section')); const ki = kids.findIndex((x) => x.classList && x.classList.contains('kv'));
-    if (fi < 0 || ki < 0 || fi > ki) throw new Error('檢查結果應在屬性之前');
+    if (fi < 0 || ki < 0 || ki > fi) throw new Error('設備的屬性（身分）應在檢查結果之前');
+    if (d0.mgmtIp && !kids[ki].textContent.includes(d0.mgmtIp)) throw new Error('設備屬性的第一段應有管理 IP');
+    if (!kids[ki].textContent.includes('收集的資料')) throw new Error('設備屬性應列收集的資料');
     // 推定偏離：設備在任何 finding.deviation.deviating 中時，標題下有「推定偏離 N 項」
     const devs = S.util.uniq(Q.findings().flatMap((f) => (f.deviation ? f.deviation.deviating : [])));
     devs.forEach((k) => {
@@ -1460,6 +1481,16 @@ function viewBoundaryViolations(file, src) {
       if (/(?<!網路|TCP |SSH )連線/.test(n)) hits.push(`step「${n.slice(0, 30)}…」：拓樸的邊改用「${S.view.TERMS.link}」`);
     });
     if (hits.length) throw new Error('畫面或測試名稱仍有已淘汰的說法：\n        ' + hits.join('\n        '));
+  });
+  await step('用字：⑤ 驗證的可見文字不出現內部格式代碼（ssot-…/N 只在 title 與格式說明的檔案範例）', () => {
+    App.showStep('verify');
+    const body = $('#verify-body'); let t = body.textContent;
+    const fmt = body.querySelector('.expected-format');
+    if (!fmt || !fmt.querySelector('.expected-fields')) throw new Error('預期現況的格式說明應先用中文列出各欄位');
+    t = t.split(fmt.textContent).join('');
+    const codes = t.match(/ssot-[a-z]+\/\d+/g);
+    if (codes) throw new Error('驗證頁可見文字不應有格式代碼：' + S.util.uniq(codes).join('、'));
+    App.showStep('triage');
   });
   await step('搜尋框：IP／MAC 前綴與介面名有結果，選介面、網段結果會選到它；路由追蹤有 IP 自動完成', async () => {
     const inp = $('#search'); const dd = $('#search-dd'); const type = searchFor;
@@ -3680,7 +3711,14 @@ function viewBoundaryViolations(file, src) {
     // 單台：依設備選取，三個 .rsc
     $('#patch-body').querySelector('.patch-clear').click();
     if (PV.state.keys.size) throw new Error('全部清除後選取應為空');
-    const sel = $('#patch-body').querySelector('.patch-device'); sel.value = f0.dev;
+    const sel = $('#patch-body').querySelector('.patch-device');
+    // 依設備：已收集的設備排前面（預設選項是有設定可改的設備）；只由鄰居得知的設備名稱常是位址，標「未收集」
+    const opts = Array.from(sel.querySelectorAll('option')).map((o) => ({ d: Q.getDevice(o.getAttribute('value')), t: o.textContent }));
+    const firstUn = opts.findIndex((o) => o.d && !o.d.collected);
+    if (firstUn >= 0 && opts.slice(firstUn).some((o) => o.d && o.d.collected)) throw new Error('依設備應先列已收集的設備');
+    opts.forEach((o) => { if (!o.t.startsWith(Q.devName(o.d.key)) || (!o.d.collected) !== o.t.includes('未收集')) throw new Error('依設備的選項應寫設備名稱，未收集的標出：' + o.t); });
+    if (opts.some((o) => o.d.collected) && !opts[0].d.collected) throw new Error('預設選項應是已收集的設備');
+    sel.value = f0.dev;
     $('#patch-body').querySelector('.patch-add-device').click();
     const devKeys = S.util.uniq(App.snap.findings.filter((f) => Q.findingDevice(f) === f0.dev).map((f) => Q.findingKey(f)));
     if (Array.from(PV.state.keys).sort().join() !== devKeys.sort().join()) throw new Error('依設備應選到這台設備的全部檢查結果');

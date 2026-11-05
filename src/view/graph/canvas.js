@@ -43,7 +43,8 @@
   const FIT = { pad: 32, maxOne: 1.6, max: 2.2 };
   // 聚焦（選取、檢查結果、路由追蹤）：倍率上限 1.5。埠名在 s > 1.25 才畫，1.5 讀得到埠名，又不會把一跳鄰居推出畫面；
   // 留白 pad 容納節點下方的名稱標籤（常見名稱約 120px 寬）與埠名
-  const FOCUS = { maxScale: 1.5, pad: 64 };
+  // minScale：納入一跳鄰居後倍率低於它時（例如核心設備的鄰居散在整張圖），改為只聚焦選取的設備，否則等於沒有放大
+  const FOCUS = { maxScale: 1.5, pad: 64, minScale: 0.9 };
   // 覆蓋層高度超過畫布的 max 倍時不讓出空間（setOccluders）。max：沒有指定時的預設，例如展開的圖例太高時不讓，否則圖會被壓扁，使用者可收合它；
   // pinned：一定要讓開的元素（工具列、通知、半高的詳情抽屜）用這個，只有幾乎蓋滿整張圖時（全高的抽屜）才不計
   const OCCLUDER = { max: 0.4, pinned: 0.75 };
@@ -136,10 +137,11 @@
     /**
      * 把 ids（省略時為所有可見節點）放進沒被遮住的範圍；pad 省略時用 FIT.pad，maxScale 省略時用全圖的上限。
      * 畫布還沒有尺寸時延到 resize。容器框（box）以四個角計算，整個框才會在畫面內。
+     * fallback（{ ids, minScale }）：算出的倍率低於 minScale 時改放 fallback.ids（聚焦用）。
      */
-    fit(ids, pad, maxScale) {
+    fit(ids, pad, maxScale, fallback) {
       this.syncSize();
-      if (this.w < 1 || this.h < 1) { this.pendingFit = [ids, pad, maxScale]; return; }
+      if (this.w < 1 || this.h < 1) { this.pendingFit = [ids, pad, maxScale, fallback]; return; }
       this.pendingFit = null;
       const all = !(ids && ids.length);
       const list = (all ? this.nodes.filter((n) => this.isVisible(n)).map((n) => n.id) : ids).flatMap((id) => {
@@ -157,12 +159,13 @@
       const s = Math.min((vw - p * 2) / Math.max(maxX - minX, 1), (vh - p * 2) / Math.max(maxY - minY, 1));
       const max = maxScale || (one ? FIT.maxOne : FIT.max);
       this.s = Math.max(ZOOM.min, Math.min(max, s));
+      if (fallback && this.s < fallback.minScale) return this.fit(fallback.ids, pad, maxScale);
       this.tx = (v.x0 + v.x1) / 2 - ((minX + maxX) / 2) * this.s; this.ty = (v.y0 + top + v.y1) / 2 - ((minY + maxY) / 2) * this.s;
       this.dirty = true;
     }
     /**
      * 聚焦：ids 全部放進沒被遮住的範圍，倍率不超過 FOCUS.maxScale。
-     * opt.neighbors 時一併納入可見的一跳鄰居，選一台設備時看得出它接在哪裡。
+     * opt.neighbors 時一併納入可見的一跳鄰居，選一台設備時看得出它接在哪裡；鄰居散得太開、倍率會低於 FOCUS.minScale 時只聚焦 ids。
      */
     focus(ids, opt) {
       const set = new Set(ids);
@@ -171,7 +174,7 @@
           const m = e.a === id ? e.b : e.a; const n = this.nodeById.get(m); if (n && this.isVisible(n)) set.add(m);
         }));
       }
-      this.fit(Array.from(set), FOCUS.pad, FOCUS.maxScale);
+      this.fit(Array.from(set), FOCUS.pad, FOCUS.maxScale, set.size > ids.length ? { ids, minScale: FOCUS.minScale } : null);
     }
     /** 只平移、不縮放：ids 有任一個在沒被遮住的範圍外（例如被詳情抽屜蓋住）時，把它們的中心移到該範圍中央 */
     reveal(ids) {

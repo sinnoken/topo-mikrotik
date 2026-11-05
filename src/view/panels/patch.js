@@ -93,8 +93,12 @@
       return box;
     });
     // 依設備
-    const devs = S.util.uniq(all.map((r) => r.dev).filter(Boolean)).sort((a, b) => S.util.natural(Q.devName(a), Q.devName(b)));
-    const devSel = h('select', Object.assign({ class: 'patch-device', 'aria-label': '依設備選取' }, focusKey('device')), devs.map((d) => h('option', { value: d }, `${Q.devName(d)}（${all.filter((r) => r.dev === d).length}）`)));
+    // 已收集的設備排前面（預設選項是有設定可改的設備）；只由鄰居得知的設備名稱常只是位址，標「未收集」免得看起來像打錯
+    const collected = (d) => { const x = Q.getDevice(d); return !!(x && x.collected); };
+    const devs = S.util.uniq(all.map((r) => r.dev).filter(Boolean))
+      .sort((a, b) => Number(collected(b)) - Number(collected(a)) || S.util.natural(Q.devName(a), Q.devName(b)));
+    const devSel = h('select', Object.assign({ class: 'patch-device', 'aria-label': '依設備選取' }, focusKey('device')), devs.map((d) => h('option', { value: d },
+      `${Q.devName(d)}${collected(d) ? '' : '・未收集'}（${V.num(all.filter((r) => r.dev === d).length)}）`)));
     if (state.device && devs.includes(state.device)) devSel.value = state.device;
     devSel.addEventListener('change', () => { state.device = devSel.value; });
     const groups = ids.map((id) => {

@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <!-- 離線契約：禁止所有執行期網路連線（fetch／XHR／WebSocket／beacon）、表單送出、外嵌物件與 Worker。
      不限制 script-src／style-src：file:// 下 'self' 的行為在各瀏覽器不一致，且頁面使用內嵌事件與樣式屬性 -->
 <meta http-equiv="Content-Security-Policy" content="connect-src 'none'; form-action 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'">
@@ -67,7 +68,7 @@
 <div id="app">
   <header>
     <div class="brand">
-      <svg viewBox="0 0 24 24"><circle cx="5" cy="5" r="3" fill="#0b6bcb"/><circle cx="19" cy="5" r="3" fill="#0b6bcb"/><circle cx="12" cy="19" r="3" fill="#22a338"/><path d="M5 5L19 5M5 5L12 19M19 5L12 19" stroke="#0b6bcb" stroke-width="1.5"/></svg>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle class="brand-node" cx="5" cy="5" r="3"/><circle class="brand-node" cx="19" cy="5" r="3"/><circle class="brand-leaf" cx="12" cy="19" r="3"/><path class="brand-line" d="M5 5L19 5M5 5L12 19M19 5L12 19" stroke-width="1.5"/></svg>
       <span class="brand-name">RouterOS 網路基準</span>
     </div>
     <!-- 流程步驟（src/view/app-panes.js 的 App.showStep）：導覽，目前的一步是 aria-current="step"；狀態文字由 A.renderSteps 寫入。

@@ -4,7 +4,7 @@
  * Canvas 讀不到 CSS 變數，所以 DOM 用的 :root 變數（assets/app.css）與這裡的設備類型色、嚴重度色、
  * 文字色、畫布底色與字型以測試比對，避免漂移。Snapshot 不含任何樣式。
  *
- * 配色規則（以 dataviz validate_palette.js 實測，亮色、底色 #f8fafc）：
+ * 配色規則（以 dataviz validate_palette.js 實測，亮色、底色 #f8fafc；暗色見下方的 DARK 覆寫表）：
  *  - 狀態色（sev、mark.bad／good）只表示狀態，且一律搭配外形或文字；類別色（設備、連線、廠商）不用紅、橘黃、綠。
  *  - 文字色（text.*）對其底色 ≥ 4.5:1；圖形標記對畫布底色 ≥ 3:1。
  *  - unknown、edge.other、vendorFallback 是刻意的中性色：代表「未分類／其他」，不做類別識別，所以不受彩度下限約束。
@@ -89,8 +89,8 @@
       // 不靠框線，屬裝飾性圖形，不受 1.4.11 的 3:1 約束；加深會和連線搶視線
       group: { fill: 'rgba(11,107,203,0.035)', stroke: 'rgba(11,107,203,0.18)', text: '#1f5a96', labelBg: 'rgba(248,250,252,0.92)' },
       // 與多數不同（跨設備一致性檢查依多數決推定與其他設備不同的那一台；是推論）：節點外再一圈虛線，
-      // 比選取（mark.select 實線、外擴 6）與高亮（實線、外擴 5）更外圈，顏色與狀態色、選取、滑過、搜尋、追蹤都不同。label／tip 給圖例用
-      deviation: { c: '#a21caf', w: 2.5, dash: [4, 3], gap: 10, label: '與多數不同（推論）',
+      // 比選取（mark.select 實線、外擴 6）與高亮（實線、外擴 5）更外圈，顏色與狀態色、選取、滑過、搜尋、追蹤都不同。tip 給圖例用（圖例的名稱用 V.DEVIATION_LABEL）
+      deviation: { c: '#a21caf', w: 2.5, dash: [4, 3], gap: 10,
         tip: '跨設備一致性檢查依多數決推定與其他設備不同的設備；是推論，不代表一定是這台設錯' },
       label: { bg: 'rgba(255,255,255,0.88)', text: text.body, textUncollected: text.muted, maxEm: 14 },
       // 埠名標籤：border 是文字底塊的細邊（對畫布底色約 1.8:1），只是裝飾，可讀性由 text 對 bg 的對比負責（≥ 4.5:1）
@@ -160,9 +160,61 @@
   };
   V.EDGE_STYLE = V.theme.edge; V.KIND_COLOR = kind;
 
+  // ---------------------------------------------------------------- 暗色覆寫表
+  // 暗色＝亮色複本＋這張表：只寫要改的葉節點（陣列用索引當鍵），沒寫的沿用亮色。路徑寫錯或不是顏色時載入就丟錯。
+  // 規則（與 app.css 的 @media (prefers-color-scheme: dark) 一致，有測試）：
+  //  - 畫布底色 dSurface 等於深色的 --surface；亮色的白底（框、子網、徽章、未收集設備）改成深色的 --panel（dPanel）。
+  //  - 文字對其底色 ≥ 4.5:1、圖形標記對畫布底色 ≥ 3:1（兩組都有測試）。
+  //  - 連線速率色階反轉：亮色是越快越深，暗色是越快越亮（線寬編碼不變）。
+  //  - 亮色中以參照共用的值（vlan.*.c ＝ mark.good／bad、l3.overlap 與 l3.badge ＝ text.warn、firewall.action 與 diff.effect ＝ text.*、
+  //    l3.subnet.stroke 等 ＝ keyInk）在這裡也用同一個常數，兩組都相等（有測試）。
+  //  - mark 的值互不相同（app-toolbar.js 依「舊值 → 新值」換算圖上存下的標示色）。
+  const dSurface = '#151b23'; const dPanel = '#1c232c'; const dKeyInk = '#8d99a6';
+  const dText = { body: '#e6edf3', muted: '#9aa7b4', err: '#ff8a80', warn: '#f0b354', ok: '#6fcf8a', info: '#8ab8e8' };
+  const dMark = { select: '#539ce2', hover: '#e6edf3', find: '#f08cc4', trace: '#9472fd', bad: '#f56258', good: '#3cb672', unverified: '#8d9aab' };
+  const DARK = {
+    kind: { firewall: '#a148cc', switch: '#3296a9', router: '#92b1e0', host: '#9b83ff', unknown: '#a2a2a2' },
+    edge: { lag: { c: '#c097e2' }, '40g': { c: '#8ee0e6' }, '10g': { c: '#48b3bd' }, '1g': { c: '#2f8a94' }, oob: { c: '#9d87f9' }, other: { c: '#818181' } },
+    sev: { error: dMark.bad, warn: '#e0960f' },
+    mark: dMark,
+    vlan: { carry: { c: dMark.good }, inferred: { c: dMark.good }, partial: { c: dMark.bad }, oneSide: { c: dMark.good } },
+    l2: { box: { fill: dPanel }, port: { fill: dPanel, stroke: dKeyInk } },
+    l3: {
+      subnet: { fill: dPanel, stroke: dKeyInk, text: dText.body }, route: { c: dKeyInk },
+      overlap: { c: dText.warn }, badge: { bg: dPanel, text: dText.warn, border: dText.warn },
+    },
+    text: dText,
+    canvas: {
+      surface: dSurface,
+      group: { fill: 'rgba(76,155,232,0.06)', stroke: 'rgba(76,155,232,0.24)', text: '#8fbdf0', labelBg: 'rgba(21,27,35,0.92)' },
+      deviation: { c: '#e27ff0' },
+      label: { bg: 'rgba(21,27,35,0.88)', text: dText.body, textUncollected: dText.muted },
+      port: { bg: 'rgba(28,35,44,0.95)', border: 'rgba(140,150,160,0.5)', text: '#a9b4bf' },
+      outline: dSurface, uncollectedFill: dPanel, keyInk: dKeyInk,
+    },
+    endpoint: {
+      vendor: { 0: '#6a7bc5', 1: '#e1559c', 2: '#bf95f9', 3: '#9166fb', 4: '#94b6de', 5: '#c2457f', 6: '#4b9ecf', 7: '#b57fad' },
+      downstream: { fill: '#15303a', stroke: '#7cc8dc', text: '#7cc8dc' },
+      cluster: { fill: '#262e37', stroke: '#8a949e', text: '#c5ced6' },
+    },
+    firewall: {
+      action: { accept: dText.ok, drop: dText.err, reject: dText.err, tarpit: dText.err, jump: dText.info, return: dText.muted, other: '#a9b4bf' },
+      focus: { bg: '#17304a', border: dMark.select },
+    },
+    trend: { pending: '#4469e2', regressed: '#dc5a92', accepted: '#ae99f5', single: dMark.select, grid: '#2a333e', axis: '#3c4754', crosshair: dText.muted },
+    l4: {
+      status: {
+        allow: { mark: '#189e32', bg: '#16301f' }, deny: { mark: '#ff978f', bg: '#3a1d1c' }, partial: { mark: '#9d8cf0', bg: '#251f3d' },
+        unknown: { mark: dText.muted, bg: '#262e37' }, empty: { bg: dPanel, hatch: '#2a333e' },
+      },
+      text: dText.body, badge: { bg: dPanel, text: dText.body, border: dKeyInk }, diagonal: { border: dKeyInk }, focus: dMark.select,
+    },
+    diff: { effect: { 'new-exposure': dText.err, 'less-restrictive': dText.warn, 'more-restrictive': dText.ok }, exposureBg: '#3a1d1c' },
+  };
+
   // ---------------------------------------------------------------- 亮色／暗色配色
   // 結構（外形、線寬、虛線、透明度、字型、尺寸）只寫在上面一次；顏色另成兩組形狀相同的配色（palettes.light／dark），
-  // 葉節點路徑與 V.theme 相同。亮色就是上面寫的值；暗色目前先與亮色相同（深色的正式值另一輪調整，用 dataviz validator 驗證）。
+  // 葉節點路徑與 V.theme 相同。亮色就是上面寫的值；暗色是亮色複本套上 DARK 覆寫表。
   // apply(mode) 原地改寫 V.theme 的顏色葉節點、不換掉任何物件：canvas.js 等檔案在載入時把子物件存成常數，換物件會讓它們停在舊值。
   // 跟隨系統的 prefers-color-scheme 由畫面（app-toolbar.js 的 A.bindColorScheme）監聽；PNG 匯出固定用亮色。
   const COLOR = /^(#[0-9a-f]{3,8}|rgba?\([^)]*\))$/i;
@@ -178,7 +230,20 @@
   const deepFreeze = (o) => { Object.values(o).forEach((v) => { if (v && typeof v === 'object') deepFreeze(v); }); return Object.freeze(o); };
   const clone = (o) => JSON.parse(JSON.stringify(o));
   const light = colorsOf(V.theme);
-  const PALETTES = deepFreeze({ light: clone(light), dark: clone(light) });
+  /** 覆寫表寫進 base（亮色複本）：每個鍵都必須是 base 已有的路徑，葉節點必須是顏色 */
+  function override(base, over, path) {
+    Object.keys(over).forEach((k) => {
+      const v = over[k]; const p = path + k;
+      if (!Object.prototype.hasOwnProperty.call(base, k)) throw new Error(`暗色覆寫表的 ${p} 不是亮色配色的路徑`);
+      if (typeof v === 'string') {
+        if (typeof base[k] !== 'string' || !COLOR.test(v)) throw new Error(`暗色覆寫表的 ${p} 應是顏色葉節點：${v}`);
+        base[k] = v;
+      } else if (base[k] && typeof base[k] === 'object' && v && typeof v === 'object') override(base[k], v, p + '.');
+      else throw new Error(`暗色覆寫表的 ${p} 與亮色配色的形狀不同`);
+    });
+    return base;
+  }
+  const PALETTES = deepFreeze({ light: clone(light), dark: override(clone(light), DARK, '') });
   /** 把配色的葉節點寫進 target 的同一路徑（target 的物件與陣列保持原參照） */
   function assign(target, pal, path) {
     Object.keys(pal).forEach((k) => {

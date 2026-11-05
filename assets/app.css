@@ -69,9 +69,45 @@
   --dur-row: .12s; --dur-fast: .14s; --dur-progress: .15s; --dur-fade: .4s; --dur-loop: 1.2s; --dur-instant: .01ms;
   /* 焦點框：內圈白、外圈強調色實線（強調色對白底與表面色 ≥ 3:1，有測試）；強制色彩模式改用 outline */
   --focus-ring-inner: #ffffff;
+  /* 品牌圖示下方的節點 */
+  --brand-leaf: #22a338;
   --focus-ring: 0 0 0 2px var(--focus-ring-inner), 0 0 0 4px var(--accent);
   /* 按鈕、連結、清單列與表格列的焦點：2px 實線 outline（強調色，對白底與表面色 ≥ 3:1，有測試） */
   --focus-outline: 2px solid var(--accent);
+  /* 原生控制項（捲軸、date picker、select 下拉）跟著系統深淺 */
+  color-scheme: light dark;
+}
+/* 深色：跟隨系統的 prefers-color-scheme（不提供手動切換），只重新定義語意變數；--fixed-light-* 刻意不變。
+   --surface、--text、--muted、--*-text、--fw 等、--sev-* 與 theme.js 的 palettes.dark 一致（有測試），
+   文字對底色 ≥ 4.5:1、圖形與欄位邊框 ≥ 3:1（有測試）。亮色的「淺底配深字」在這裡是「深底配淺字」 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f141a; --panel: #1c232c; --surface: #151b23; --line: #2c3540; --line-strong: #3c4754; --text: #e6edf3; --muted: #9aa7b4; --accent: #539ce2; --accent-soft: #162a40;
+    --err: #f56258; --err-soft: #3a1d1c; --warn-soft: #33260f; --info: #6f9fd8; --info-soft: #172a40; --ok: #3cb672; --ok-soft: #15301e;
+    --err-text: #ff8a80; --warn-text: #f0b354; --ok-text: #6fcf8a; --info-text: #8ab8e8;
+    --err-line: #5c2a27; --warn-line: #574018; --info-line: #2a4566; --ok-line: #24502f;
+    --fw: #a148cc; --sw: #3296a9; --rt: #92b1e0; --host: #9b83ff; --unk: #a2a2a2;
+    --kind-firewall-bg: #33203d; --kind-firewall-fg: #e0b0f0; --kind-switch-bg: #12313b; --kind-switch-fg: #8fd3e8;
+    --kind-router-bg: #1c2a4d; --kind-router-fg: #b4c6f5; --kind-host-bg: #2a2346; --kind-host-fg: #c9bcfd;
+    --kind-unknown-bg: #262e37; --kind-unknown-fg: #c5ced6;
+    --accent-strong: #79b4ec; --on-accent: #0b1520;
+    --danger-text: #f0a39d; --danger-line: #6b3330;
+    --chip-text: #c5ced6; --th-text: #a9b5c2; --heading-text: #b8c4d0;
+    --row-bad: #26191a; --row-bad-hover: #321d1d; --hl-bg: #4a3d10;
+    --overlay: rgba(28, 35, 44, .96); --overlay-soft: rgba(28, 35, 44, .9);
+    --tooltip-bg: #e6edf3; --tooltip-fg: #11161c;
+    --dialog-line: rgba(60, 71, 84, .9); --backdrop: rgba(0, 0, 0, .6);
+    --l4-line: rgba(230, 237, 243, .16); --l4-line-strong: rgba(230, 237, 243, .22); --l4-line-hover: rgba(230, 237, 243, .4);
+    --sev-error: #f56258; --sev-warn: #e0960f;
+    --line-input: #6f7c8c;
+    --surface-hover: #1f2731; --neutral-soft: #262e37; --accent-hover: #182a3d; --line-hover: #4c5866; --line-soft: #232b35;
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, .4); --shadow-md: 0 8px 24px rgba(0, 0, 0, .5);
+    --shadow-xs: 0 1px 1px rgba(0, 0, 0, .3); --shadow-header: 0 1px 4px rgba(0, 0, 0, .4);
+    --shadow-lg: 0 14px 42px rgba(0, 0, 0, .5); --shadow-dialog: 0 20px 60px rgba(0, 0, 0, .6);
+    --shadow-primary: 0 2px 5px rgba(83, 156, 226, .25); --shadow-primary-hover: 0 3px 8px rgba(83, 156, 226, .3);
+    --focus-ring-inner: #0f141a;
+    --brand-leaf: #3cb672;
+  }
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -121,6 +157,10 @@ input:disabled:hover, select:disabled:hover, textarea:disabled:hover { border-co
 header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-height: 48px; padding: 6px 12px; background: var(--panel); border-bottom: 1px solid var(--line); box-shadow: var(--shadow-header); z-index: var(--z-header); }
 header .brand { font-weight: 600; font-size: var(--fs-lg); display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 header .brand svg { width: 22px; height: 22px; }
+/* 品牌圖示：顏色跟著配色（index.html 的 SVG 不寫色碼） */
+header .brand .brand-node { fill: var(--accent); }
+header .brand .brand-leaf { fill: var(--brand-leaf); }
+header .brand .brand-line { fill: none; stroke: var(--accent); }
 header .spacer { flex: 1; }
 /* 頁首右側：資料中心與「⋯」更多操作（路由追蹤、匯出 PNG、清除基準） */
 .header-actions { display: flex; align-items: center; gap: 6px; flex: none; }

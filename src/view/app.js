@@ -81,6 +81,24 @@
       .then(() => true, () => { A.banner('基準太大，無法存入瀏覽器；關閉頁面後需要重新建立。'); return false; });
   };
 
+  // ================================================================ Esc
+  /**
+   * 頁面層級的 Esc 一次只關最上層：各層以 A.onEscape(層, fn) 登記，fn 處理了這次 Esc 就回傳 true。
+   * 只有一個 document 監聽，依 ESC_ORDER 由上往下交給第一個處理的層，不依各 bind* 的註冊先後。
+   * 元素自己的 Esc（輸入框、選單、VLAN 標示、畫布、原生對話框）在元素上處理並停止傳遞，不經這裡。
+   */
+  const ESC_ORDER = ['menu', 'trace', 'hub', 'sheet']; const escHandlers = new Map();
+  A.onEscape = function onEscape(layer, fn) {
+    if (!ESC_ORDER.includes(layer)) throw new RangeError('未知的 Esc 層：' + layer);
+    escHandlers.set(layer, fn);
+  };
+  function bindEscape() {
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      ESC_ORDER.some((l) => { const f = escHandlers.get(l); return !!f && f(e) === true; });
+    });
+  }
+
   // ================================================================ 啟動
   async function init() {
     App.graph = new V.GraphView($('#graph'));
@@ -93,6 +111,7 @@
     App.layoutMode = (await S.store.get('layoutMode').catch(() => null)) || 'elk';
     // 配色跟隨系統深淺：在建立圖例之前套用，第一次畫面就是對的配色（沒有 matchMedia 時維持亮色）
     A.bindColorScheme();
+    bindEscape();
     A.bindHeader(); A.bindToolbar(); A.bindLayers(); A.bindInputDialog(); A.bindHub(); A.bindSteps(); A.bindMobileWorkspaces(); A.bindSheet(); await A.bindResizers();
     if (!(await S.store.available())) A.banner('這個瀏覽器無法使用本機儲存，關閉頁面後基準不會保留。');
     await A.loadLedger();
@@ -136,7 +155,8 @@
   A.load = function load(snap, positions, inputs) {
     const Q = S.query(snap);
     if (inputs) A.setRoundInputs(inputs);
-    App.round.snapshot = snap; App.round.Q = Q; App.sel = null; App.expanded = new Set(); App.graph.setEmphasis(null); A.closeSheet();
+    A.cancelElk(); // 上一份基準的分層版面不再套用，「計算中」的通知一起收起
+    App.round.snapshot = snap; App.round.Q = Q; App.sel = null; App.expanded = new Set();
     // 處理紀錄推進一輪（目前時間由畫面傳入）；寫入 store 是非同步的，App.ledgerJob 讓呼叫端可以等待
     App.ledgerJob = A.advanceLedger(App.Q);
     V.lists.findings.reset(); V.lists.compare.reset(); V.lists.findings.openFirst(App.Q);
@@ -158,6 +178,7 @@
     A.setDeviceGraph(g.nodes, g.edges, pos);
     A.applyVisibility();
     if (App.layer === 'device') App.graph.fit(); else A.showLayer(App.layer, { rebuild: true });
+    A.resetSelection(); // 新的圖資料換上之後：畫布不留上一份的選取與標示
     A.renderAll();
     // 先以內建版面立即出圖；沒有儲存位置時再於背景套用分層版面
     App.layoutJob = App.layoutMode === 'elk' && !(positions && Object.keys(positions).length) ? A.applyElk(g) : Promise.resolve();
@@ -170,10 +191,20 @@
     clearTimeout(fadeT[key]); el.classList.add('fading');
     fadeT[key] = setTimeout(() => { el.classList.add('hidden'); el.classList.remove('fading'); }, FADE_MS);
   }
+  // 回傳這則通知的 token：沒有 ms 的通知（例如「計算中」）由發出者在工作取消或結束時用 A.bannerClear(token) 收起；
+  // 之後已換成別的通知時 token 不同，不會收掉別人的
+  let bannerSeq = 0;
   A.banner = function banner(text, ms) {
     const b = $('#banner'); b.textContent = text; b.classList.remove('hidden'); b.classList.remove('fading');
     clearTimeout(banner.t); clearTimeout(fadeT.banner);
     if (ms) banner.t = setTimeout(() => fadeOut(b, 'banner'), ms);
+    return (bannerSeq += 1);
+  };
+  /** 收起 token 那一則通知（仍顯示著才收；馬上隱藏，全圖與聚焦不再替它讓位） */
+  A.bannerClear = function bannerClear(token) {
+    if (token == null || token !== bannerSeq) return;
+    clearTimeout(A.banner.t); clearTimeout(fadeT.banner);
+    const b = $('#banner'); b.classList.add('hidden'); b.classList.remove('fading');
   };
   const hint = { done: false, t: null };
   /** 操作提示：有基準且看的是拓樸圖（不是 L4）時顯示；第一次顯示後 HINT_MS 淡出，之後不再出現（同一次開啟頁面） */

@@ -101,7 +101,7 @@
     if (!key || !App.Q.getFirewallRule(key)) return h('span', null, text);
     return h('a', { class: 'link l4-rule', 'data-rule': key, onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); App.select({ type: 'rule', key }); } }, text);
   }
-  const devLink = (App, d) => h('a', { class: 'link', onclick: () => App.select({ type: 'device', key: d }) }, App.Q.devName(d));
+  const devLink = (App, d) => h('a', { class: 'link', onclick: () => App.select({ type: 'device', key: d }) }, App.Q.devLabel(d));
   const epText = (Q, ep) => (ep ? Q.epName(ep) : '不明');
   const reasonItem = (App, r) => h('li', { class: 'l4-reason', 'data-code': r.code, title: reasonNote(r.code) }, [
     h('b', null, V.reachReason(r.code)), r.message ? '：' + r.message : '',

@@ -256,6 +256,7 @@
         const had = pts.delete(ev.pointerId);
         if (pinch && had) { // 雙指結束：剩下的手指接著平移，不觸發點選
           if (pts.size < 2) pinch = null;
+          else { const st = pinchState(); pinch = { d0: st.d, s0: this.s, w0: this.toWorld(st.mid.x, st.mid.y) }; } // 三指以上放開一指：前兩指換了一組，以新的兩指重新開始，倍率不跳
           if (pts.size === 1) { const [id, q] = Array.from(pts.entries())[0]; drag = { id, type: 'touch', start: q, last: q, node: null, target: null, off: null, moved: true }; }
           else if (!pts.size) { drag = null; cv.classList.remove('dragging'); }
           return;

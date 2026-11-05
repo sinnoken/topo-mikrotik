@@ -24,14 +24,21 @@
     return Number(window.innerHeight) > Number(window.innerWidth);
   };
   /** 分層版面（ELK）：在背景計算，完成後替換位置；超過上限、逾時或失敗時保留現有版面並說明原因。 */
+  let elkNote = null; // 「計算中」通知的 token（A.banner）
+  /** 取消進行中的設備圖分層版面（改快速版面、換基準、清除）：結果不再套用，「計算中」的通知馬上收起 */
+  A.cancelElk = function cancelElk() {
+    App.layoutToken = (App.layoutToken || 0) + 1;
+    A.bannerClear(elkNote); elkNote = null;
+  };
   A.applyElk = async function applyElk(g) {
-    const snap = App.snap; const token = (App.layoutToken = (App.layoutToken || 0) + 1);
-    A.banner('分層版面計算中…');
+    A.cancelElk();
+    const snap = App.snap; const token = App.layoutToken;
+    elkNote = A.banner('分層版面計算中…');
     try {
       const r = await V.layout.elk(g.nodes, g.edges, {
         radius: (n) => App.graph.radius(n), maxNodes: App.ELK_MAX, portrait: A.isPortrait(), isStale: () => App.snap !== snap || App.layoutToken !== token,
       });
-      if (App.snap !== snap || App.layoutToken !== token) return;
+      if (App.snap !== snap || App.layoutToken !== token) return; // 已由 A.cancelElk 取消，通知也已收起
       // 設備圖的位置（App.devicePos）：看的是 L2／L3 時也寫進設備圖，回到設備圖時再全圖
       r.pos.forEach((p, id) => App.devicePos.set(id, p));
       if (App.layer === 'device') { App.graph.computeGroups(); App.graph.fit(); } else A.forgetView('device');
@@ -53,7 +60,7 @@
     if (App.layer !== 'device') { A.relayoutLayer(); return; } // L2／L3：只重排目前的層級（app-layers.js）
     const g = A.graphData(App.Q);
     if (App.layoutMode === 'elk') { App.layoutJob = A.applyElk(g); return; }
-    App.layoutToken = (App.layoutToken || 0) + 1; // 取消進行中的分層版面
+    A.cancelElk();
     const auto = V.layout.layout(g.nodes, g.edges, { portrait: A.isPortrait() });
     auto.forEach((p, id) => App.devicePos.set(id, p)); App.graph.computeGroups(); App.graph.fit(); A.savePositions();
   };

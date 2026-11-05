@@ -66,13 +66,15 @@
   V.HOST_DEF = '沒有收集、依鄰居（LLDP／CDP／MNDP）回報判斷為主機的設備，不在收集範圍';
   /** 鏈路只有一端資料（hearsay）的完整說法；「LLDP 單向」只用於對端有鄰居資料但沒回報（K01） */
   V.HEARSAY_TEXT = V.TERMS.hearsay + '（對端沒有鄰居資料）';
-  V.ONE_WAY_TEXT = 'LLDP 單向（對端沒回報）';
+  V.ONE_WAY = 'LLDP 單向';
+  V.ONE_WAY_TEXT = V.ONE_WAY + '（對端沒回報）';
   /** 推論標示：和收集到的事實並列的推定結果一律加這個 chip；依據放 title。 */
   V.inferChip = (tip) => V.chip(V.TERMS.inferred, 'info', tip ? { title: tip } : null);
   /** 多數決判定與多數不同的設備鍵（finding.deviation，推論）：不是多數決（或沒有 deviation）時 null，平手時空陣列。詳情、「研判」與圖上的虛線外圈共用 */
   V.majorityDeviating = (dv) => (dv && dv.basis === 'majority' ? dv.deviating || [] : null);
   /** 與多數不同的標籤與平手的說法：詳情、「研判」（V.deviationLine）與匯出的 CSV 欄名、Markdown 共用 */
-  V.DEVIATION_LABEL = '與多數不同（推論）';
+  V.DEVIATION = '與多數不同';
+  V.DEVIATION_LABEL = V.DEVIATION + '（推論）';
   V.NO_MAJORITY = '沒有多數';
   /**
    * 跨設備一致性規則的多數決結果（finding.deviation，推論）：一律經這裡產生，詳情的每筆檢查結果共用。
@@ -87,7 +89,7 @@
     if (!devs.length) return opts && opts.tie === true ? V.h('div', { class: 'deviation none muted' }, label + V.NO_MAJORITY + '，無法推定') : null;
     const pick = (key) => (e) => { if (e && e.stopPropagation) e.stopPropagation(); App.select({ type: 'device', key }, { focus: true }); };
     // a.link 沒有 href 時 h() 已補 role、tabindex 與 Enter／空白鍵啟動
-    const links = devs.map((key) => V.h('a', { class: 'link', 'data-dev': key, title: '選取這台設備', onclick: pick(key) }, App.Q.devName(key)));
+    const links = devs.map((key) => V.h('a', { class: 'link', 'data-dev': key, title: '選取這台設備', onclick: pick(key) }, App.Q.devLabel(key)));
     return V.h('div', { class: 'deviation' }, [label, ...links.flatMap((a, n) => (n ? ['、', a] : [a]))]);
   };
   V.KIND = S.KIND_LABEL;
@@ -231,7 +233,7 @@
   /** 十進位數字字串（可能超過 2^53，例如命中次數的位元組數）加上千分位；不是數字字串時原樣回傳 */
   V.bigNum = (s) => (/^\d+$/.test(String(s)) ? String(s).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : String(s));
   // VLAN 承載（Q.vlanCarriers 的 status 與 reason）；oneSide、inferred 是推論
-  V.VLAN_STATUS = { carry: '兩端都帶這個 VLAN', partial: '只有一端帶這個 VLAN（兩端都有 VLAN 資料，V01）', oneSide: '只有一端可確認帶這個 VLAN（推論）', inferred: '推論鏈路，已收集的各端都帶這個 VLAN（推論）' };
+  V.VLAN_STATUS = { carry: '兩端都帶這個 VLAN', partial: '只有一端帶這個 VLAN（兩端都有 VLAN 資料，V01）', oneSide: '至少一端無從得知是否帶這個 VLAN（推論）', inferred: '推論鏈路，已收集的各端都帶這個 VLAN（推論）' };
   V.VLAN_REASON = { unfiltered: '有一端在沒開 vlan-filtering 的 bridge 上，VLAN 原樣轉送、無法確認是否帶這個 VLAN', 'peer-uncollected': '對端設備沒有收集資料，無從得知是否帶這個 VLAN', 'peer-no-vlan-data': '對端設備沒有 VLAN 設定資料，無從得知是否帶這個 VLAN', hearsay: '鏈路' + V.HEARSAY_TEXT + '，對端的 VLAN 無法對照' };
   // L2 埠圖的邊（Q.portGraph 的 evidence）與 L3 網段圖的邊（Q.subnetGraph 的 basis）
   V.PORT_EVIDENCE = { adjacency: 'LLDP／CDP 雙側介面鄰接', hearsay: V.HEARSAY_TEXT + '（推論）', inferred: '推論鏈路（沒有 LLDP，推論）' };
@@ -246,6 +248,17 @@
   V.fmtUtc = (iso) => (iso ? String(iso).replace('T', ' ').replace(/\.\d+Z$|Z$/, '') + ' UTC' : '');
   // 鄰居發現協定（LLDP／MNDP／CDP）；L3 鏈路沒有發現協定時退回 via（如 OSPF）
   V.protoText = (l) => ((l.protocols && l.protocols.length ? l.protocols : l.via) || []).map((p) => p.toUpperCase()).join('、');
+  /** MNDP 的鏈路（broadcast-domain）只證明 L2 可達：詳情的 chip 與表格共用這一句 */
+  V.DOMAIN_TEXT = '同一 L2 廣播網域可達（MNDP，未確認直連）';
+  /**
+   * 鏈路的類別文字（詳情的鄰居表、鏈路表共用）：類別，加上確認狀態——雙向確認不寫、只有一端資料寫 V.TERMS.hearsay、
+   * 其他寫「LLDP 單向」（與 K01 的名稱相同；K01 依 LLDP／CDP 的配對判定，只有 CDP 的鏈路也用這個名稱）。opt.proto：前面加協定
+   */
+  V.linkClassText = (l, opt) => {
+    if (l.evidenceScope === S.LINK_SCOPE.BROADCAST_DOMAIN) return V.DOMAIN_TEXT;
+    const state = l.verified ? '' : '・' + (l.hearsay ? V.TERMS.hearsay : V.ONE_WAY);
+    return (opt && opt.proto ? V.protoText(l) + '・' : '') + V.CLS[l.cls] + state;
+  };
 
   /**
    * 反引號標出的 RouterOS 指令與欄位（CATALOG 的 causes／action 的寫法）：切成 [{ text, code }]。

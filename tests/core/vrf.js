@@ -38,7 +38,7 @@ test('VRF：鍵的寫法只在 src/core/keys.js（main 不加後綴，其他 VRF
   assert.deepStrictEqual([K.vrf(null), K.vrf(''), K.vrf(' cust-a ')], ['main', 'main', 'cust-a']);
   assert.deepStrictEqual([K.inVrf('10.0.0.1', 'main'), K.inVrf('10.0.0.1', null), K.inVrf('10.0.0.0/24', 'cust-a')], ['10.0.0.1', '10.0.0.1', '10.0.0.0/24@cust-a']);
   assert.deepStrictEqual([K.splitVrf('10.0.0.1'), K.splitVrf('10.0.0.0/24@cust-a')], [['10.0.0.1', 'main'], ['10.0.0.0/24', 'cust-a']]);
-  assert.deepStrictEqual([S.SCHEMA, S.VERSION], ['ssot-snapshot/3', '3.1.0']);
+  assert.deepStrictEqual([S.SCHEMA, S.VERSION], ['ssot-snapshot/3', '3.2.0']);
 });
 
 test('VRF（RouterOS 7）：/ip vrf 的介面、位址、網段、ARP 與路由都帶 vrf；非 main 路由表是事實；閘道的 @<VRF> 保留為下一跳的屬性', () => {

@@ -232,19 +232,21 @@
     const end = (e) => {
       if (!drag || e.pointerId !== drag.id) return;
       const d = drag; drag = null; if (!d.moved) return;
-      dragged = true;
+      // 只吞掉緊接著的 click（瀏覽器在 pointerup 後同一輪送出）；放開在把手外時 click 不會來，下一輪就清掉，之後鍵盤按把手不被吞
+      dragged = true; setTimeout(() => { dragged = false; }, 0);
       const r = (d.h0 - (e.clientY - d.y0)) / Math.max(1, d.total);
       if (r < SHEET.closeBelow) A.closeSheet(); else setSheet(r > SHEET.fullAbove ? 'full' : 'half');
     };
     window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end);
-    // Esc 收起：最後才輪到抽屜，輸入框、對話框、資料中心、路由追蹤與搜尋選單的 Esc 先由它們處理
-    document.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape' || !A.sheetState() || A.hubOpen()) return;
+    // Esc 收起：最後才輪到抽屜（A.onEscape 的 ESC_ORDER）；選單、路由追蹤、資料中心處理過的 Esc 不會再傳到這裡。
+    // 資料中心開著（焦點不在裡面）、輸入框、對話框與搜尋選單的 Esc 也不收抽屜
+    A.onEscape('sheet', (e) => {
+      if (!A.sheetState() || A.hubOpen()) return false;
       const t = e.target && e.target.tagName;
-      if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') return;
-      if (['#dlg-input', '#dlg-raw'].some((x) => $(x) && $(x).open)) return;
-      if (!$('#trace-pop').classList.contains('hidden') || !$('#search-dd').classList.contains('hidden')) return;
-      A.closeSheet();
+      if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') return false;
+      if (['#dlg-input', '#dlg-raw'].some((x) => $(x) && $(x).open)) return false;
+      if (!$('#search-dd').classList.contains('hidden')) return false;
+      A.closeSheet(); return true;
     });
   };
 

@@ -31,7 +31,7 @@
   function itemRow(App, key, it, extra) {
     const idx = App.Q ? App.Q.findingIndexByKey(key) : -1;
     const f = idx >= 0 ? App.Q.finding(idx) : null;
-    const dev = it && it.dev ? (App.Q && App.Q.getDevice(it.dev) ? App.Q.devName(it.dev) : it.dev) : null;
+    const dev = it && it.dev ? (App.Q && App.Q.getDevice(it.dev) ? App.Q.devLabel(it.dev) : it.dev) : null;
     const go = idx >= 0 ? () => App.selectFinding(idx) : null;
     return h('div', { class: 'ledger-item' + (go ? ' click' : ''), 'data-key': key, role: go ? 'button' : null, tabindex: go ? '0' : null, onclick: go,
       onkeydown: go ? V.activateByKey(go) : null }, [

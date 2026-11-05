@@ -70,12 +70,9 @@
       menus.forEach((m) => { if (!m.btn.contains(t) && !m.menu.contains(t)) m.close(false); });
       if (!trace.contains(t) && !$('#more-menu').contains(t)) A.closeTrace(false);
     });
-    document.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape') return;
-      const open = menus.find((m) => m.isOpen());
-      if (open) { open.close(true); return; }
-      if (!trace.classList.contains('hidden')) A.closeTrace(true);
-    });
+    // Esc 的先後由 A.onEscape（app.js）決定：選單、路由追蹤在資料中心與抽屜之前
+    A.onEscape('menu', () => { const open = menus.find((m) => m.isOpen()); if (open) open.close(true); return !!open; });
+    A.onEscape('trace', () => { if (trace.classList.contains('hidden')) return false; A.closeTrace(true); return true; });
   }
 
   /**
@@ -132,9 +129,9 @@
     $('#btn-clear').onclick = async () => {
       A.closeMenus();
       if (!App.snap || !confirm('清除目前的基準與輸入？（只清除這個工具的資料）')) return;
-      await S.store.del('last'); A.clearRound(); App.sel = null; App.graph.setEmphasis(null); A.closeSheet();
+      await S.store.del('last'); A.cancelElk(); A.clearRound();
       // 沒有基準時只有設備圖（歡迎畫面）：L2／L3 的資料與 VLAN 篩選一起清掉
-      App.vlanFilter = null; A.resetLayers(); App.layer = 'device'; A.setDeviceGraph([], [], new Map()); A.renderAll();
+      App.vlanFilter = null; A.resetLayers(); App.layer = 'device'; A.setDeviceGraph([], [], new Map()); A.resetSelection(); A.renderAll();
     };
     // 搜尋
     const inp = $('#search'); const dd = $('#search-dd'); let results = []; let active = 0;
@@ -250,12 +247,17 @@
     const from = T.palettes[T.mode]; T.apply(mode);
     recolorGraph(from, T.palettes[mode]);
     rebuildLegend();
-    if (App.snap) A.renderAll(); // 面板的 inline 顏色在渲染時從 theme 讀；沒有基準時只有歡迎畫面（CSS）
+    // 只重畫在渲染時從 theme 讀 inline 顏色的面板（詳情含防火牆、收斂趨勢、工作畫面的修正計畫與基準比對）；
+    // 左側清單不用 theme 的顏色，不重建，打到一半的處理紀錄（備註、豁免原因）與焦點才不會消失。沒有基準時只有歡迎畫面（CSS）
+    if (App.snap) { V.details.render(App, App.sel); V.ledgerPane.render(App); A.renderCenter(); }
+    // L4 的矩陣格子以 inline 顏色畫在畫布上方，不在 renderCenter 裡：重畫一次（用已算好的結果，不重算）
+    if (App.snap && App.layer === 'l4') App.l4Job = V.l4.show(App, { rebuild: false });
     return true;
   };
   /**
    * 跟隨系統的深淺：套用目前的設定並監聽 change。只綁一次（再呼叫回傳 false）；
    * 瀏覽器沒有 matchMedia（例如測試的模擬 DOM）時維持亮色、回傳 false。
+   * matchMedia 沒有監聽 API 時也維持亮色、回傳 false，以 console.warn 與通知告知，不中止啟動（這在啟動流程中、其他 bind 之前）。
    */
   A.bindColorScheme = function bindColorScheme() {
     if (schemeBound || typeof window.matchMedia !== 'function') return false;
@@ -263,7 +265,10 @@
     const onChange = (e) => A.applyColorScheme(e.matches ? 'dark' : 'light');
     if (typeof mq.addEventListener === 'function') mq.addEventListener('change', onChange);
     else if (typeof mq.addListener === 'function') mq.addListener(onChange); // Safari 13 以前
-    else throw new Error('瀏覽器的 matchMedia 不支援監聽變更，無法跟隨系統深淺');
+    else {
+      const msg = '這個瀏覽器無法偵測系統深淺的變更，畫面維持亮色。';
+      console.warn(msg); A.banner(msg, 8000); return false;
+    }
     schemeBound = true;
     A.applyColorScheme(mq.matches ? 'dark' : 'light');
     return true;
@@ -272,8 +277,8 @@
   function withScheme(mode, fn) {
     const T = V.theme; const prev = T.mode;
     if (prev === mode) return fn();
-    T.apply(mode); recolorGraph(T.palettes[prev], T.palettes[mode]);
-    try { return fn(); } finally { T.apply(prev); recolorGraph(T.palettes[mode], T.palettes[prev]); App.graph.draw(); }
+    // 換色也在 try 內：換色途中失敗時同樣還原成目前的深淺
+    try { T.apply(mode); recolorGraph(T.palettes[prev], T.palettes[mode]); return fn(); } finally { T.apply(prev); recolorGraph(T.palettes[mode], T.palettes[prev]); App.graph.draw(); }
   }
 
   // ================================================================ 圖例
@@ -364,7 +369,7 @@
       const D = CV.deviation; const r = LEG / 2; const per = 360 / (Math.PI * LEG); let deg = 0;
       const stops = D.dash.map((n, i) => { const from = deg; deg += n * per; return `${i % 2 ? 'transparent' : D.c} ${from.toFixed(1)}deg ${deg.toFixed(1)}deg`; });
       const mask = `radial-gradient(circle, transparent ${(r - D.w).toFixed(1)}px, ${D.c} ${(r - D.w).toFixed(1)}px)`; // 遮罩只看不透明度
-      item([dot({ background: `repeating-conic-gradient(${stops.join(', ')})`, maskImage: mask, webkitMaskImage: mask }, { 'data-mark': 'deviation' })], D.label, D.tip);
+      item([dot({ background: `repeating-conic-gradient(${stops.join(', ')})`, maskImage: mask, webkitMaskImage: mask }, { 'data-mark': 'deviation' })], V.DEVIATION_LABEL, D.tip); // 名稱和詳情、匯出同一個來源（V.DEVIATION_LABEL）
     }
     item([line(M.trace, 4, null, T.alpha.overlay, { 'data-mark': 'trace' }), h('span', { class: 'lg-arrow', style: { color: M.trace } }, '▶')], '路由追蹤', '逐跳路徑，箭頭表示方向');
     // VLAN 篩選：承載狀態（Q.vlanCarriers），線型與外形取自 theme.vlan，不只靠顏色
@@ -405,7 +410,10 @@
     // L4 是矩陣不是畫布：PNG 只匯出拓樸圖的層級，矩陣改用 L4 畫面的「下載 CSV」
     if (App.layer === 'l4') { A.banner('L4 可達性沒有 PNG：請在 L4 畫面用「下載 CSV」匯出矩陣，或切到設備、L2、L3 再匯出 PNG。', 8000); return; }
     // PNG 固定用亮色（多半貼進報告或列印）：暫時套亮色畫一次，取得圖檔後還原目前的深淺並重畫
-    const url = withScheme('light', () => { App.graph.draw(); return $('#graph').toDataURL('image/png'); });
+    let url;
+    try { url = withScheme('light', () => { App.graph.draw(); return $('#graph').toDataURL('image/png'); }); } catch (e) {
+      console.error(e); A.banner('匯出失敗：' + V.reason(e), 10000); return;
+    }
     const a = document.createElement('a'); a.download = A.layerPngName(); a.href = url; a.click();
   };
   /** 匯出目前的基準或檢查結果（種類見 V.exporter.KINDS）；透過 App.Q 讀取，不改寫。extra 例如 { byDevice: true } */

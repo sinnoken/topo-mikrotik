@@ -8,7 +8,7 @@
   ],
   "workflow": [
     "src/compare/", "src/remediate/", "src/ledger/", "src/workpack/",
-    "tests/workflow/", "tests/golden/sample-patch.json", "tests/golden/sample-patch/"
+    "tests/workflow/", "tests/golden/sample-patch.json", "tests/golden/sample-patch/", "tools/baseline.js"
   ],
   "frontend": ["src/view/", "assets/", "index.html", "vendor/", "tests/ui-smoke.js"],
   "collector": ["tools/collect.sh", "tools/collector-commands.sh", "tools/devices.csv", "tests/collect.sh"],

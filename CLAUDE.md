@@ -33,6 +33,7 @@ node tools/anonymize.js 收集檔.txt -o tests/fixtures/real/<版本>-<型號>.t
 npm run sample           # 重新產生 samples/sample-bundle.txt 並嵌入成 sample-bundle.js
 npm run gen:large        # 產生 samples/large-1000.txt（已 gitignore，大型冒煙測試前需先產生）
 npm run oui -- <index.json>      # 重新產生 src/data/oui-data.js（來源：npm pack oui-data@<版本>，見 README）
+npm run baseline -- 收集檔.txt --ledger ledger.json -o out/   # CLI：建立基準並推進處理紀錄（結束碼 0 無新問題、1 有新的待處理或復發、2 執行失敗）
 git diff --check         # 提交前檢查
 ```
 

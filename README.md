@@ -22,6 +22,20 @@
 
    設備清單格式、選項、只重收失敗的指令與安全注意事項見[收集清單 §0](docs/收集清單與輸入格式.md#0-批次-ssh-收集器wsllinux)。
 
+### 排程執行（CLI）
+
+`tools/baseline.js` 在 Node.js 上用和網頁相同的核心建立基準，並推進處理紀錄，適合排程定期執行。它只讀檔案，不連線設備。
+
+```bash
+node tools/baseline.js collection.txt -o out/                         # 第一次：從空的處理紀錄開始
+node tools/baseline.js collection.txt --ledger out/ledger.json -o out/ # 之後每一輪：傳入上一輪的處理紀錄
+```
+
+- 選項：`--profile <命名規則.json>`、`--expected-data <各類設備應收資料.json>`、`--expected <預期現況 ssot-expected/1>`、`--now <ISO 時間>`（指定時輸出可重現）。用 `--help` 查看全部說明。
+- 輸出到 `out/`：`baseline.json`（基準）、`ledger.json`（推進後的處理紀錄，可在網頁的資料中心匯入）、`findings.json`（檢查結果與處理狀態）、`summary.json`（新出現、復發、豁免到期與待處理的錯誤／警告數），有 `--expected` 時另有 `compare.json`。
+- 結束碼：`0` 成功，沒有復發，也沒有新的待處理錯誤／警告；`1` 成功，但有復發、新出現或豁免到期的待處理錯誤／警告（排程據此通知）；`2` 執行失敗（參數錯誤、輸入讀不到、處理紀錄／命名規則／預期現況格式錯誤），訊息寫到 stderr，不輸出任何檔案。
+- 同一份基準（基準鍵相同）再執行時，處理紀錄不變，結束碼是 `0`。處理紀錄的推進規則和網頁相同，見[設計說明 §10](docs/設計說明.md#10-處理紀錄ssot-ledger1)。
+
 ## 功能一覽
 
 頁首的流程步驟（輸入、檢視、研判、修正、驗證）切換左側的清單與中間的工作畫面，右側是詳細資料。每項功能的操作方式見[使用說明](docs/使用說明.md)。

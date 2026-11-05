@@ -187,3 +187,25 @@ test('CLI：執行失敗回 2，訊息寫到 stderr，out/ 不留半成品', () 
     assert.strictEqual(noOut.code, CODES().FAILED, '沒有 -o 時失敗');
   } finally { rm(d); }
 });
+
+test('CLI：同一個輸出目錄先帶 --expected、再不帶時，刪掉上一次的 compare.json', () => {
+  const d = tmp();
+  try {
+    assert.notStrictEqual(run([SAMPLE, '--expected', path.join(ROOT, 'samples', 'expected-sample.json'), '--now', NOW, '-o', d]).code, CODES().FAILED);
+    assert.ok(fs.existsSync(path.join(d, 'compare.json')), '帶 --expected 時應有 compare.json');
+    assert.notStrictEqual(run([SAMPLE, '--now', NOW, '-o', d]).code, CODES().FAILED);
+    assert.ok(!fs.existsSync(path.join(d, 'compare.json')), '不帶 --expected 時不應留下上一次的 compare.json');
+  } finally { rm(d); }
+});
+
+test('CLI：--now 正規化成 UTC、不存在的日期失敗；--expected／--expected-data 是 JSON null 時失敗', () => {
+  const d = tmp();
+  try {
+    assert.notStrictEqual(run([SAMPLE, '--now', '2026-01-01T08:00:00+08:00', '-o', d]).code, CODES().FAILED);
+    assert.strictEqual(readJson(path.join(d, 'baseline.json')).meta.createdAt, '2026-01-01T00:00:00.000Z', '帶時區的 --now 應正規化成 UTC');
+    assert.strictEqual(run([SAMPLE, '--now', '2026-02-30T00:00:00Z', '-o', path.join(d, 'x')]).code, CODES().FAILED, '不存在的日期應失敗');
+    writeJson(path.join(d, 'null.json'), null);
+    assert.strictEqual(run([SAMPLE, '--expected', path.join(d, 'null.json'), '--now', NOW, '-o', path.join(d, 'y')]).code, CODES().FAILED, '--expected 為 null 應失敗');
+    assert.strictEqual(run([SAMPLE, '--expected-data', path.join(d, 'null.json'), '--now', NOW, '-o', path.join(d, 'z')]).code, CODES().FAILED, '--expected-data 為 null 應失敗');
+  } finally { rm(d); }
+});

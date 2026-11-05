@@ -34,7 +34,7 @@ node tools/baseline.js collection.txt --ledger out/ledger.json -o out/ # 之後�
 - 選項：`--profile <命名規則.json>`、`--expected-data <各類設備應收資料.json>`、`--expected <預期現況 ssot-expected/1>`、`--now <ISO 時間>`（指定時輸出可重現）。用 `--help` 查看全部說明。
 - 輸出到 `out/`：`baseline.json`（基準）、`ledger.json`（推進後的處理紀錄，可在網頁的資料中心匯入）、`findings.json`（檢查結果與處理狀態）、`summary.json`（新出現、復發、豁免到期與待處理的錯誤／警告數），有 `--expected` 時另有 `compare.json`。
 - 結束碼：`0` 成功，沒有復發，也沒有新的待處理錯誤／警告；`1` 成功，但有復發、新出現或豁免到期的待處理錯誤／警告（排程據此通知）；`2` 執行失敗（參數錯誤、輸入讀不到、處理紀錄／命名規則／預期現況格式錯誤），訊息寫到 stderr，不輸出任何檔案。
-- 同一份基準（基準鍵相同）再執行時，處理紀錄不變，結束碼是 `0`。處理紀錄的推進規則和網頁相同，見[設計說明 §10](docs/設計說明.md#10-處理紀錄ssot-ledger1)。
+- 同一份基準（基準鍵相同）再執行時，處理紀錄不變，結束碼是 `0`；所以通知失敗後用同一份收集檔重試不會再得到 `1`，要以上一次的 `summary.json` 補發。沒有 `--expected` 時會刪掉輸出目錄中上一次的 `compare.json`；`--now` 帶時區位移時正規化成 UTC。處理紀錄的推進規則和網頁相同，見[設計說明 §10](docs/設計說明.md#10-處理紀錄ssot-ledger1)。
 
 ## 功能一覽
 

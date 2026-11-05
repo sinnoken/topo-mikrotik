@@ -250,6 +250,8 @@
     // 只重畫在渲染時從 theme 讀 inline 顏色的面板（詳情含防火牆、收斂趨勢、工作畫面的修正計畫與基準比對）；
     // 左側清單不用 theme 的顏色，不重建，打到一半的處理紀錄（備註、豁免原因）與焦點才不會消失。沒有基準時只有歡迎畫面（CSS）
     if (App.snap) { V.details.render(App, App.sel); V.ledgerPane.render(App); A.renderCenter(); }
+    // L4 的矩陣格子以 inline 顏色畫在畫布上方，不在 renderCenter 裡：重畫一次（用已算好的結果，不重算）
+    if (App.snap && App.layer === 'l4') App.l4Job = V.l4.show(App, { rebuild: false });
     return true;
   };
   /**

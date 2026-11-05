@@ -98,7 +98,13 @@ function compute(S, a) {
   if (!a.inputs.length) fail('至少要指定一個收集檔（用 --help 查看用法）');
   if (!a.out) fail('必須以 -o 指定輸出目錄');
   if (a.now !== undefined && !(ISO_RE.test(a.now) && Number.isFinite(Date.parse(a.now)))) fail(`--now 必須是 ISO 8601 時間（例如 2026-01-01T00:00:00Z），目前是「${a.now}」`);
-  const now = a.now !== undefined ? a.now : new Date().toISOString();
+  if (a.now !== undefined) {
+    // 不存在的日期（例如 2026-02-30）Date.parse 會自動進位，這裡要求年月日原樣成立
+    const [y, mo, d] = a.now.slice(0, 10).split('-').map(Number); const day = new Date(Date.UTC(y, mo - 1, d));
+    if (day.getUTCFullYear() !== y || day.getUTCMonth() !== mo - 1 || day.getUTCDate() !== d) fail(`--now 的日期不存在：「${a.now}」`);
+  }
+  // 帶時區位移的時間正規化成 UTC，基準、摘要與處理紀錄的時間才一致；已是 UTC（Z）的照原樣，與畫面傳入的值相同
+  const now = a.now === undefined ? new Date().toISOString() : /Z$/.test(a.now) ? a.now : new Date(a.now).toISOString();
 
   // 來源名稱用檔名（和畫面相同）；檔名重複時證據的檔案會分不清，直接失敗
   const sources = a.inputs.map((f) => ({ name: path.basename(f), text: readText(f, '收集檔') }));
@@ -120,17 +126,18 @@ function compute(S, a) {
     try { S.profile.compile(profile); } catch (e) { fail(`命名規則「${a.profile}」格式不正確：${e.message}`); }
   }
   const expectedData = a.expectedData !== undefined ? readJson(a.expectedData, '各類設備應收資料') : null;
-  if (expectedData !== null && !(expectedData && typeof expectedData === 'object' && !Array.isArray(expectedData)
+  if (a.expectedData !== undefined && !(expectedData && typeof expectedData === 'object' && !Array.isArray(expectedData)
     && Object.values(expectedData).every((v) => Array.isArray(v) && v.every((x) => typeof x === 'string')))) {
     fail(`各類設備應收資料「${a.expectedData}」必須是 { 設備類型: [資料類別…] }`);
   }
   const expected = a.expected !== undefined ? readJson(a.expected, '預期現況') : null;
+  if (a.expected !== undefined && (!expected || typeof expected !== 'object' || Array.isArray(expected))) fail(`預期現況「${a.expected}」必須是 JSON 物件`);
 
   const snap = S.build(sources, { profile, expectedData, now });
   delete snap.meta.timing; // 唯一與執行環境有關的欄位
   const Q = S.query(snap);
   let compare = null;
-  if (expected !== null) {
+  if (a.expected !== undefined) {
     compare = S.compare(Q, expected);
     if (compare.errors.length) fail(`預期現況「${a.expected}」格式不正確：\n  ${compare.errors.join('\n  ')}`);
   }
@@ -181,17 +188,19 @@ function compute(S, a) {
     ...(compare ? [{ name: FILES.compare, text: json(compare) }] : []),
     { name: FILES.summary, text: json(summary) },
   ];
-  return { files, code };
+  // 這一輪沒有預期現況時，刪掉上一次留下的比對結果，輸出目錄才和這一輪的基準一致
+  return { files, code, remove: compare ? [] : [FILES.compare] };
 }
 
 /** 寫檔：先寫成暫存檔，全部成功才改名；失敗時刪掉暫存檔（與這次建立的目錄） */
-function writeAll(dir, files) {
+function writeAll(dir, files, remove) {
   const created = !fs.existsSync(dir);
   const tmps = [];
   try {
     fs.mkdirSync(dir, { recursive: true });
     files.forEach((f) => { const t = path.join(dir, `.${f.name}.${process.pid}.tmp`); tmps.push(t); fs.writeFileSync(t, f.text); });
     files.forEach((f, i) => fs.renameSync(tmps[i], path.join(dir, f.name)));
+    (remove || []).forEach((n) => fs.rmSync(path.join(dir, n), { force: true }));
   } catch (e) {
     tmps.forEach((t) => { try { fs.rmSync(t, { force: true }); } catch (_) { /* 盡力清理 */ } });
     if (created) { try { fs.rmdirSync(dir); } catch (_) { /* 目錄不是空的就留著 */ } }
@@ -207,7 +216,7 @@ function main(argv, io) {
     if (a.help) { out.write(HELP); return EXIT.OK; }
     const S = require('../tests/load.js')();
     const r = compute(S, a);
-    writeAll(a.out, r.files);
+    writeAll(a.out, r.files, r.remove);
     const s = JSON.parse(r.files.find((f) => f.name === FILES.summary).text);
     out.write(`基準 ${s.baseline.baselineKey}：第 ${s.round + 1} 輪${s.skipped ? '（已推進過，處理紀錄不變）' : ''}；`
       + `待處理錯誤 ${s.pending.error}、警告 ${s.pending.warn}；新出現 ${s.notify.new.length}、復發 ${s.notify.regressed.length}、豁免到期 ${s.notify.waiverExpired.length}\n`);

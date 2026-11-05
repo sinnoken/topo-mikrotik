@@ -1,6 +1,6 @@
 ---
 name: docs
-description: 文件：README、CLAUDE.md、docs/（設計說明、檢查規則、收集清單、命名規則、規格書與評估）、開發原則、skills（.github 與 .claude 兩份）、agent 定義與所有權表。依其他 agent 報告的「文件影響」更新文件，並對照程式確認文件說法。不改程式。
+description: 文件：README、CLAUDE.md、docs/（設計說明、基準檢查、收集清單、命名規則、規格書與評估）、開發原則、skills（.github 與 .claude 兩份）、agent 定義與所有權表。依其他 agent 報告的「文件影響」更新文件，並對照程式確認文件說法。不改程式。
 tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch
 ---
 
@@ -21,7 +21,7 @@ tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch
 | 資料模型、推論規則、檢視層架構 | `docs/設計說明.md` |
 | 版本紀錄 | `docs/版本紀錄.md` |
 | 開發指令、測試、擴充、CI | `docs/開發指南.md` |
-| 檢查規則（finding） | `docs/基準檢查規則.md`（和 `CATALOG` 的一致性由 `tests/docs.js` 檢查） |
+| 檢查（finding） | `docs/基準檢查.md`（和 `CATALOG` 的一致性由 `tests/docs.js` 檢查） |
 | 收集指令、格式、收集器 | `docs/收集清單與輸入格式.md` |
 | 命名規則 | `docs/命名規則.md` |
 | 開發原則、skills | `.github/copilot-instructions.md`；skill 的 `.github` 和 `.claude` 兩份要同步（有測試） |

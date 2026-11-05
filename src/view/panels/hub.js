@@ -86,7 +86,7 @@
     const nC01 = Q ? Q.findingsByRule('C01').length : 0; const c01 = V.ruleInfo('C01');
     const cs = Q ? Q.coverageSummary() : null;
     rows.push(row('coverage', '覆蓋率', cs ? `已收集 ${V.num(cs.networkCollected)}／${V.num(cs.network)} 台${V.TERMS.network}${nC01 ? `（${V.num(nC01)} 台只被鄰居發現）` : ''}${cs.hosts ? `；另有 ${V.num(cs.hosts)} 台${V.TERMS.host}不在收集範圍` : ''}` : '—',
-      // 狀態文字不寫檢查代碼（使用者看標題就懂）；代碼與規則標題放在 title，給對照檢查結果的人
+      // 狀態文字不寫檢查代碼（使用者看標題就懂）；代碼與檢查標題放在 title，給對照檢查結果的人
       !Q ? st('muted', '建立基準後顯示') : nC01 ? h('span', { title: `${c01.id} ${c01.title}` }, st('warn', `有未收集的${V.TERMS.network}`)) : st('ok', `沒有未收集的${V.TERMS.network}`),
       [btn('看覆蓋率明細', 'open-coverage', () => { const sec = $('#hub-sec-coverage'); if (sec) { sec.focus(); if (sec.scrollIntoView) sec.scrollIntoView({ block: 'start' }); } }, { disabled: !Q || null, title: '下方的「覆蓋率」：每台設備收集了哪些資料、缺漏與收集失敗' }),
         btn('匯出 devices.csv 草稿', 'devices-csv', () => App.exportAs('devicesCsv'), { disabled: !nC01 || null, title: '給 tools/collect.sh 的設備清單草稿；user 是佔位值，執行前請修改' })]));

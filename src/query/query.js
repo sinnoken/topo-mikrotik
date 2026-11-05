@@ -13,7 +13,7 @@
    *   沒有 facet：["A09","interface:A|ether5","ip:10.0.10.1"]（與 2.9.0 之前相同）
    *   有 facet：  ["A12","facet:dns","device:VA","device:VB"]
    * facet 固定放在第 2 個元素、不參與排序，並以 "facet:" 開頭；entity 的 type 不會是 facet（有測試檢查），所以不會和實體鍵混淆。
-   * facet 只出現在同一組 id＋實體可能產生多筆的規則（CATALOG 有宣告 facet 的規則，例如 A12 的 dns／ntp），
+   * facet 只出現在同一組 id＋實體可能產生多筆的檢查（CATALOG 有宣告 facet 的檢查，例如 A12 的 dns／ntp），
    * 值取自設定的項目與正規化後的設定值，不取自訊息、設備名稱或行號（見 check/catalog.js）。
    * 仍可能碰撞（id、facet、entities 都相同、只差訊息）：例如同一台設備的多段 I01、I03，沒有設備的 I01（entities 為空）。
    * 需要逐筆對應時以鍵為多重集合處理（見 compare.snapshots）。
@@ -319,7 +319,7 @@
       findingIndexesByKey: (key) => findingKeyIndex().get(key) || EMPTY,
       /** findingKey 等於 key 的第一筆 finding 索引；沒有時為 -1（碰撞時取 Snapshot 順序的第一筆）。 */
       findingIndexByKey(key) { const a = findingKeyIndex().get(key); return a ? a[0] : -1; },
-      /** 某條規則（id，例如 'C01'）的 finding，依 Snapshot 的順序（凍結的陣列）。 */
+      /** 某項檢查（id，例如 'C01'）的 finding，依 Snapshot 的順序（凍結的陣列）。 */
       findingsByRule(id) {
         if (!byRule) byRule = freezeAll(snap.findings.reduce((out, f) => { U.getOr(out, f.id, () => []).push(f); return out; }, new Map()));
         return byRule.get(id) || EMPTY;
@@ -415,8 +415,8 @@
       },
       inferredLinksOf: (d) => inferredByDev.get(d) || [],
       /**
-       * 每條檢查規則的結果：found（有發現）、pass（需要的資料有收到且沒有發現）、nodata（需要的資料沒有任何已收集設備提供）。
-       * missing 是缺少的資料組，每組列出可提供的資料類別；hint 同 S.query.rule(id).hint。依規則編號排序。
+       * 每項檢查的結果：found（有發現）、pass（需要的資料有收到且沒有發現）、nodata（需要的資料沒有任何已收集設備提供）。
+       * missing 是缺少的資料組，每組列出可提供的資料類別；hint 同 S.query.rule(id).hint。依檢查代碼排序。
        */
       ruleStatus() {
         const have = new Set(m.devices.filter((d) => d.collected).flatMap((d) => d.data));
@@ -1094,20 +1094,20 @@
   S.query.findingKey = findingKey;
   S.query.findingBaseKey = findingBaseKey;
 
-  // ---- 不依賴 Snapshot 的靜態資訊：規則目錄與顯示名稱。
+  // ---- 不依賴 Snapshot 的靜態資訊：檢查目錄與顯示名稱。
   // 掛在 S.query 上（與 findingKey 相同），畫面與下游不必讀 S.check／S.adapters 的內部結構；
-  // 目前程式的規則目錄，不是建立該基準時的目錄（見 ADR-006 的「變困難的」）。
-  /** 處理提示：action 的第一句（到第一個「。」，含句號）；CATALOG 不另存一份，與 docs/基準檢查規則.md「處理」第一句相同（tests/docs.js）。 */
+  // 目前程式的檢查目錄，不是建立該基準時的目錄（見 ADR-006 的「變困難的」）。
+  /** 處理提示：action 的第一句（到第一個「。」，含句號）；CATALOG 不另存一份，與 docs/基準檢查.md「處理」第一句相同（tests/docs.js）。 */
   const hintOf = (action) => (typeof action === 'string' && (action.match(/^[^。]*。/) || [])[0]) || null;
   const RULES = Object.freeze(Object.keys(S.check.CATALOG).map((id) => Object.freeze(Object.assign({ id }, S.check.CATALOG[id], { hint: hintOf(S.check.CATALOG[id].action) }))));
   const RULE_BY_ID = new Map(RULES.map((r) => [r.id, r]));
   /**
-   * 一條規則的目錄資料（凍結）：{ id, severity, cat, title, data?, evidenceLimit?, facet?, causes, action, hint }；不認得的 id 為 null。
+   * 一項檢查的目錄資料（凍結）：{ id, severity, cat, title, data?, evidenceLimit?, facet?, causes, action, hint }；不認得的 id 為 null。
    * hint 是 action 的第一句（一句可動手的處理提示，反引號內是指令）；沒有 action 時為 null。
    * causes／action／hint 給 V.remediation.advice 用，其他畫面不直接讀。
    */
   S.query.rule = (id) => RULE_BY_ID.get(id) || null;
-  /** 所有規則（凍結的陣列），依 CATALOG 的宣告順序（I、K、V、A…，匯出附錄依這個順序）；依編號排序的結果見 Q.ruleStatus()。 */
+  /** 所有檢查（凍結的陣列），依 CATALOG 的宣告順序（I、K、V、A…，匯出附錄依這個順序）；依編號排序的結果見 Q.ruleStatus()。 */
   S.query.rules = () => RULES;
   /** 資料類別（設備的 data、coverage 的 data／missing、收集失敗的 dataTypes）的顯示名稱；不認得時原樣回傳。 */
   S.query.dataLabel = (t) => S.check.DATA_LABEL[t] || t;

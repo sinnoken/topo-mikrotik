@@ -3,7 +3,7 @@
  * 與修改後（套用指令），每台設備的套用、回復、驗證三份 .rsc 可以檢視、複製與下載；沒有產生指令的項目依原因分組，
  * 列出檢查結果的訊息（點了在右側的詳細資料開啟該筆，修正計畫留在中間）。
  * 計畫與指令文字全部由核心 S.remediate 產生，這裡只負責選取、預覽與下載。本工具只產生文字，不會連線設備（ADR-001）。
- * 選取是檢視狀態（findingKey 的集合），只在記憶體，不存進 store；換基準時清空。展開的規則與焦點所在的按鈕跨重繪保留。
+ * 選取是檢視狀態（findingKey 的集合），只在記憶體，不存進 store；換基準時清空。展開的檢查與焦點所在的按鈕跨重繪保留。
  * choice 等級的修正（目前是 A12）：plan.choices 每筆以 radio 列出選項，選擇（findingKey → 選項 id）同樣是記憶體中的檢視狀態，
  * 以 S.remediate.plan(Q, selection, { choices }) 重新產生計畫，預覽與下載都跟著更新；換基準時清空。
  * 選「不修改」時 remediate 不碰處理紀錄，由這裡以 App.setLedger（S.ledger.set）標為接受風險（原因與到期日）。
@@ -13,16 +13,16 @@
   const V = S.view; const h = V.h; const $ = V.$;
   const R = () => V.remediation;
   const RM = () => S.remediate;
-  const GROUP_MAX = 200; // 逐筆勾選時每條規則最多列出的筆數
+  const GROUP_MAX = 200; // 逐筆勾選時每項檢查最多列出的筆數
   const KIND = { apply: ['套用', ''], rollback: ['回復', '-rollback'], verify: ['驗證', '-verify'] };
   const DAY_MS = 86400000;
   const state = { keys: new Set(), view: new Map(), choices: new Map(), open: new Set(), cats: new Map(), picks: null, inputHash: null, plan: null, files: null };
-  /** 換基準時清空所有檢視狀態（選取、每台設備檢視的檔案、選擇、展開的規則） */
+  /** 換基準時清空所有檢視狀態（選取、每台設備檢視的檔案、選擇、展開的檢查） */
   function resetFor(App) {
     if (state.inputHash === App.Q.meta().inputHash) return;
     state.keys.clear(); state.view.clear(); state.choices.clear(); state.open.clear(); state.cats.clear(); state.picks = null; state.inputHash = App.Q.meta().inputHash;
   }
-  /** 規則的類別與標題（V.ruleInfo）：畫面上寫標題，代碼只放在 title */
+  /** 檢查的類別與標題（V.ruleInfo）：畫面上寫標題，代碼只放在 title */
   const ruleOf = V.ruleInfo;
   const ruleTip = (id) => `${id}：${ruleOf(id).cat} ▸ ${ruleOf(id).title}`;
   const ruleTag = (id) => V.chip(ruleOf(id).title, 'patch-rule-tag', { title: ruleTip(id), 'data-rule-id': id });
@@ -68,7 +68,7 @@
     const ids = Array.from(byId.keys()).sort(S.util.natural);
     const toggleKeys = (keys, on) => { keys.forEach((k) => (on ? state.keys.add(k) : state.keys.delete(k))); refreshOpen(App); };
     const allIn = (list) => list.length && list.every((r) => state.keys.has(r.key));
-    // 依規則：類別 ▸ 規則標題（類別依規則目錄的順序，收合；類別內可產生指令的排前面）。chip 寫規則標題，代碼在 title
+    // 依檢查：類別 ▸ 檢查標題（類別依檢查目錄的順序，收合；類別內可產生指令的排前面）。chip 寫檢查標題，代碼在 title
     const order = { auto: 0, choice: 1, manual: 2 };
     const at = new Map(S.query.rules().map((r, n) => [r.id, n])); const pos = (id) => (at.has(id) ? at.get(id) : Infinity);
     const byCat = new Map();
@@ -105,7 +105,7 @@
       const list = byId.get(id);
       const box = h('details', { class: 'patch-group', 'data-rule-id': id, open: state.open.has(id) || null }, [h('summary', null, [
         h('span', { class: 'mono' }, id), ' ', (S.query.rule(id) || {}).title || '', ' ', V.chip(`${list.filter((r) => state.keys.has(r.key)).length}/${list.length}`)])]);
-      // 展開時才產生清單（大型網路的檢查結果很多）；展開的規則記在 state.open，重繪後仍展開
+      // 展開時才產生清單（大型網路的檢查結果很多）；展開的檢查記在 state.open，重繪後仍展開
       const fill = () => {
         if (box.querySelector('.patch-pick')) return;
         box.appendChild(h('div', { class: 'patch-picks' }, list.slice(0, GROUP_MAX).map((r) => {
@@ -134,7 +134,7 @@
       picksBox(groups),
     ]);
   }
-  /** 逐筆勾選（每條規則一個可展開的清單）：整區預設收合，有展開的規則時展開；使用者切換後依 state.picks 保留 */
+  /** 逐筆勾選（每項檢查一個可展開的清單）：整區預設收合，有展開的檢查時展開；使用者切換後依 state.picks 保留 */
   function picksBox(groups) {
     const open = state.picks === null ? state.open.size > 0 : state.picks;
     const box = h('details', { class: 'patch-picks-box', open: open || null }, [
@@ -224,7 +224,7 @@
         h('button', { class: 'primary patch-accept-save', onclick: save }, '標為接受風險')]),
       err]);
   }
-  /** plan.choices 的一筆：標題（規則、項目、檢查結果的訊息）、狀態說明、選項的 radio 群組；選不修改時加上處理紀錄的欄位 */
+  /** plan.choices 的一筆：標題（檢查、項目、檢查結果的訊息）、狀態說明、選項的 radio 群組；選不修改時加上處理紀錄的欄位 */
   function choiceBlock(App, c, hit, n) {
     const status = c.reason === 'needs-choice'
       ? h('p', { class: 'warn-line patch-choice-need', role: 'status' }, '沒有多數，請選擇要採用的值，或選「不修改」標為接受風險；選擇前不會產生指令。')
@@ -288,7 +288,7 @@
         h('h4', null, ['沒有產生指令的項目 ', V.chip(String(plan.skipped.length), 'warn')]),
         ...Array.from(skippedByReason.entries()).map(([reason, list]) => h('div', { class: 'patch-skip-group', 'data-reason': reason }, [
           h('div', { class: 'patch-label' }, RM().SKIP_TEXT[reason] || reason),
-          // 每一筆列出檢查結果的訊息（同一台設備可能有多筆相同規則），點了在右側開啟該筆；原因已在分組標題，detail 不同時才另外列出
+          // 每一筆列出檢查結果的訊息（同一台設備可能有多筆相同檢查），點了在右側開啟該筆；原因已在分組標題，detail 不同時才另外列出
           ...list.map(({ x, hit }) => h('div', { class: 'patch-skip', 'data-finding': x.findingKey }, [
             x.id ? ruleTag(x.id) : V.chip('—'), ' ', x.dev ? h('span', { class: 'muted' }, App.Q.devName(x.dev) + '：') : null,
             R().findingRef(App, hit, x.findingKey),

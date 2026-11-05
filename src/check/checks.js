@@ -1,8 +1,8 @@
 /*
  * 一致性檢查：基準可不可信，由這裡回答。
  * 每筆 finding：{ id, severity, cat, title, message, entities:[{type,key}], facet?, evidence:[{block,line}], deviation? }
- * facet：同一組 id＋實體可能產生多筆的規則，標示這筆檢查的是哪一個項目（例如 A12 的 dns／ntp），會進入 findingKey。
- *        只有 CATALOG 宣告 facet 的規則才有，而且每筆都有；值只取自設定的項目與正規化後的設定值，不取自訊息、設備名稱或行號。
+ * facet：同一組 id＋實體可能產生多筆的檢查，標示這筆檢查的是哪一個項目（例如 A12 的 dns／ntp），會進入 findingKey。
+ *        只有 CATALOG 宣告 facet 的檢查才有，而且每筆都有；值只取自設定的項目與正規化後的設定值，不取自訊息、設備名稱或行號。
  * severity：error（資料互相矛盾）／warn（可能有問題）／info（提醒）
  */
 (function (S) {
@@ -10,11 +10,11 @@
   const K = S.keys;
   const LINK_SCOPE = S.LINK_SCOPE;
 
-  // 規則目錄（編號、嚴重度、標題、需要的資料、常見原因與處理）在 catalog.js，須先載入
+  // 檢查目錄（編號、嚴重度、標題、需要的資料、常見原因與處理）在 catalog.js，須先載入
   if (!S.check || !S.check.CATALOG) throw new Error('src/check/catalog.js 必須在 src/check/checks.js 之前載入');
   const CATALOG = S.check.CATALOG;
 
-  /** 每筆 finding 預設最多附幾筆證據；規則可用 CATALOG 的 evidenceLimit 覆寫。 */
+  /** 每筆 finding 預設最多附幾筆證據；檢查可用 CATALOG 的 evidenceLimit 覆寫。 */
   const EVIDENCE_LIMIT = 6;
 
   /** 各類設備預期要有的資料（C02），可由 build 選項 expectedData 覆寫。 */
@@ -56,8 +56,8 @@
 
   function run(M, ctx) {
     const out = [];
-    // extra：個別規則附加的欄位（例如跨設備一致性的 deviation），不可覆寫上列共通欄位；facet 另外處理（放在 entities 之後）
-    // facet 有沒有要和 CATALOG 的宣告一致：規則漏給或多給都是程式錯誤，直接丟錯，不產生 findingKey 不穩定的 finding
+    // extra：個別檢查附加的欄位（例如跨設備一致性的 deviation），不可覆寫上列共通欄位；facet 另外處理（放在 entities 之後）
+    // facet 有沒有要和 CATALOG 的宣告一致：檢查漏給或多給都是程式錯誤，直接丟錯，不產生 findingKey 不穩定的 finding
     const add = (id, message, entities, evidence, extra) => {
       const c = CATALOG[id];
       const { facet, ...rest } = extra || {};
@@ -350,10 +350,10 @@
   /**
    * 跨設備組態一致性：同質不同名（V06、A07、A11）與同名不同值（V07、A06、A08、A09、A10、A12、R06）。
    * 只看已收集設備自己的設定（排除鄰居宣告的介面）；名稱比對 trim＋不分大小寫，值以集合比較（順序不計）。
-   * 以 VLAN ID 為鍵的規則（V06、A06）只比同一個 VLAN 區塊；以網段、IP 為鍵的規則（A07、A08、A09、R06）只比同一個 VRF（不同設備上同名的 VRF
-   * 視為同一個位址空間，ADR-015），鍵與 facet 用 K.inVrf（main 不加後綴）；以名稱為鍵的規則（V07、A10–A12）與 VRF 無關，整份基準一起比。
+   * 以 VLAN ID 為鍵的檢查（V06、A06）只比同一個 VLAN 區塊；以網段、IP 為鍵的檢查（A07、A08、A09、R06）只比同一個 VRF（不同設備上同名的 VRF
+   * 視為同一個位址空間，ADR-015），鍵與 facet 用 K.inVrf（main 不加後綴）；以名稱為鍵的檢查（V07、A10–A12）與 VRF 無關，整份基準一起比。
    * 訊息依設備名稱自然排序，相同設定的設備併成一組。
-   * 除 A09（重複 IP 本身就是衝突）外，各規則以多數決判定與多數不同的設備（推論），只寫在 finding.deviation；訊息只列各組設定，不附推定結果（畫面另起一行顯示，避免重複）。
+   * 除 A09（重複 IP 本身就是衝突）外，各檢查以多數決判定與多數不同的設備（推論），只寫在 finding.deviation；訊息只列各組設定，不附推定結果（畫面另起一行顯示，避免重複）。
    */
   const MAX_SHOWN = 8; // 訊息中每台設備最多列出的值，避免大型 address-list 讓訊息過長
   function configConsistency(M, add, name, epName, byDomain) {

@@ -74,7 +74,7 @@ test('輸入指紋：S.inputHashOf 與 meta.inputHash 相同（不重建也能�
   [null, 'x', [{}], [{ name: 'a', text: 1 }], [null]].forEach((bad) => assert.throws(() => S.inputHashOf(bad), TypeError, JSON.stringify(bad)));
 });
 // ------------------------------------------------------------------ 用字：核心產生給人看的文字不用已淘汰的說法
-test('用字：規則目錄的標題、常見原因、處理與範例資料的 finding 訊息、群名不出現已淘汰的說法', () => {
+test('用字：檢查目錄的標題、常見原因、處理與範例資料的 finding 訊息、群名不出現已淘汰的說法', () => {
   // 畫面層另有 tests/ui-smoke.js 的淘汰用詞檢查；這裡只管核心產生、會原樣顯示在畫面與匯出的文字
   const RETIRED = { 未管理交換器: '非網管型交換器', 自動群組: '分群', 推定偏離: '與多數不同', 未知對端: '未識別的終端' };
   const hits = [];

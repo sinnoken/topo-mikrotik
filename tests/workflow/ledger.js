@@ -284,7 +284,7 @@ test('處理紀錄：validate 對錯誤的格式逐項回報、不修改資料',
   const copy = JSON.stringify(bad);
   const v = L.validate(bad);
   assert.strictEqual(v.ok, false);
-  [/^schema：/, new RegExp(`^items\\[${keys[0].replace(/[[\]|.]/g, '\\$&')}\\]\\.status：`), /\.id：與鍵的規則 id/, /\.history\[0\]\.by：/, /accepted 必須有豁免/,
+  [/^schema：/, new RegExp(`^items\\[${keys[0].replace(/[[\]|.]/g, '\\$&')}\\]\\.status：`), /\.id：與鍵的檢查代碼/, /\.history\[0\]\.by：/, /accepted 必須有豁免/,
     /^items\[oops\]：鍵不是 findingKey/, /^iterations\[1\]\.baseline\.baselineKey：與前面的一輪重複/, /^iterations\[2\]\.counts\.open：必須是非負整數/]
     .forEach((re) => assert.ok(v.errors.some((e) => re.test(e)), `${re} 沒有回報：\n${v.errors.join('\n')}`));
   assert.strictEqual(JSON.stringify(bad), copy, 'validate 不修改資料');

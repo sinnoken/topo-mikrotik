@@ -111,11 +111,11 @@
     else Object.keys(obj.items).forEach((key) => {
       const p = `items[${key}]`; const it = obj.items[key];
       const a = parseKey(key);
-      if (!a) err(p, '鍵不是 findingKey 的形式（JSON 字串陣列，第一個元素是規則 id）');
+      if (!a) err(p, '鍵不是 findingKey 的形式（JSON 字串陣列，第一個元素是檢查代碼）');
       if (!isObj(it)) { err(p, '必須是物件'); return; }
       if (!STATUS.includes(it.status)) err(p + '.status', `必須是 ${STATUS.join('／')} 之一，目前是 ${JSON.stringify(it.status)}`);
       if (typeof it.id !== 'string' || !it.id) err(p + '.id', '必須是非空字串');
-      else if (a && a[0] !== it.id) err(p + '.id', `與鍵的規則 id（${a[0]}）不一致`);
+      else if (a && a[0] !== it.id) err(p + '.id', `與鍵的檢查代碼（${a[0]}）不一致`);
       if (!isStrOrNull(it.dev)) err(p + '.dev', '必須是字串或 null');
       if (it.devs !== undefined && it.devs !== null && (!Array.isArray(it.devs) || it.devs.some((d) => typeof d !== 'string' || !d))) err(p + '.devs', '必須是設備鍵（非空字串）的陣列或 null');
       ['firstSeen', 'lastSeen', 'patch'].forEach((f) => { if (!isStrOrNull(it[f])) err(`${p}.${f}`, '必須是字串或 null'); });
@@ -214,7 +214,7 @@
     }
     return U.uniq(out).sort(U.cmp);
   }
-  /** 這一輪的覆蓋：collected＝已收集設備數，expected＝已收集＋應收集但未收集（C01，與檢查規則同一個來源） */
+  /** 這一輪的覆蓋：collected＝已收集設備數，expected＝已收集＋應收集但未收集（C01，與檢查同一個來源） */
   function coverageOf(Q) {
     const collected = Q.devices().filter((d) => d.collected).length;
     const c01 = U.uniq(Q.findings().filter((f) => f.id === 'C01').map(Q.findingKey)).length;
@@ -230,14 +230,14 @@
    *   before（選用，Snapshot 的 schema，例如 'ssot-snapshot/3'）：鍵的寫法在這個 schema 改變。設定時，只有新基準是這個 schema 以後、
    *     而且舊項目最後一次出現在更早的 schema 的一輪（iterations[].baseline.schema；沒有這個欄位的一輪是 3.0.0 以前），
    *     或從未出現過（fromAcks 的舊確認標記）時才轉換。這樣同一個 schema 之內的正常變化（例如重複 IP 少了一台）不會被當成鍵的轉換。
-   *   cands：這條規則可以轉換的舊鍵，Map(「規則 id＋\0＋facet（沒有時為空字串）」→ [{ key, ents: Set(實體) }])，給以「實體是舊鍵的子集合」
+   *   cands：這條規則可以轉換的舊鍵，Map(「檢查代碼＋\0＋facet（沒有時為空字串）」→ [{ key, ents: Set(實體) }])，給以「實體是舊鍵的子集合」
    *     對應的規則用；舊鍵仍要通過 migrateKeys 的條件（處理紀錄有、不在新基準中、符合 before）。
    * 擴充方式：在這裡加一條規則即可，轉換流程（migrateKeys）不用改。
    * 規則依陣列順序套用；同一筆 finding 的新鍵與舊鍵相同時不算轉換。
    */
-  /** facet 含網段鍵（K.inVrf，main 不加後綴）的規則：A07、A08 的 facet 是網段鍵，R06 是「項目|網段鍵」（check/checks.js 的 configConsistency） */
+  /** facet 含網段鍵（K.inVrf，main 不加後綴）的檢查：A07、A08 的 facet 是網段鍵，R06 是「項目|網段鍵」（check/checks.js 的 configConsistency） */
   const VRF_FACET = new Set(['A07', 'A08', 'R06']);
-  /** 以群組為實體、依 VRF 分開比較後實體可能變少的規則（ADR-015 的「findingKey 與處理紀錄」）：新鍵的實體是舊鍵的子集合時對應 */
+  /** 以群組為實體、依 VRF 分開比較後實體可能變少的檢查（ADR-015 的「findingKey 與處理紀錄」）：新鍵的實體是舊鍵的子集合時對應 */
   const VRF_GROUP = new Set(['A01', 'A07', 'A08', 'A09', 'R06']);
   /** 新鍵去掉 VRF 後的形式：ip 實體與 VRF_FACET 的 facet 去掉 @<VRF>（K.splitVrf），其餘照舊。回傳 { facet, ents（排序）, key } */
   function withoutVrf(f) {
@@ -246,12 +246,12 @@
     return { facet, ents, key: JSON.stringify([f.id].concat(facet != null ? ['facet:' + facet] : [], ents)) };
   }
   const KEY_MIGRATIONS = [
-    // 2.9.0：有 facet 的規則，鍵多了 "facet:…"；舊鍵就是不含 facet 的鍵（一個舊鍵對應到 facet 不同的每一筆）
+    // 2.9.0：有 facet 的檢查，鍵多了 "facet:…"；舊鍵就是不含 facet 的鍵（一個舊鍵對應到 facet 不同的每一筆）
     { reason: 'facet-split', oldKeys: (Q, f) => (f.facet != null ? [Q.findingBaseKey(f)] : []) },
     // 3.0.0（ssot-snapshot/3，ADR-015）：以 IP 或網段為鍵的地方加上 VRF，main 不加後綴、其他 VRF 加 @<VRF>。
     //   ip 實體（A01、A05、A09）與 A07／A08／R06 的 facet：新鍵去掉 @<VRF> 就是舊鍵。
-    //   VRF_GROUP 的規則依 VRF 分開比較後，一組可能拆成幾組（不帶後綴的 main 那一組也是）：新鍵的實體是舊鍵的子集合、
-    //   規則 id 與（去掉 @<VRF> 的）facet 相同時對應。拆開後只剩一個位置的組不再產生，沒有新鍵可對應，舊項目照常判定（ADR-015 的表）。
+    //   VRF_GROUP 的檢查依 VRF 分開比較後，一組可能拆成幾組（不帶後綴的 main 那一組也是）：新鍵的實體是舊鍵的子集合、
+    //   檢查代碼與（去掉 @<VRF> 的）facet 相同時對應。拆開後只剩一個位置的組不再產生，沒有新鍵可對應，舊項目照常判定（ADR-015 的表）。
     { reason: 'vrf-split', before: 'ssot-snapshot/3', oldKeys: (Q, f, cands) => {
       const w = withoutVrf(f); const out = [];
       if (w.key !== Q.findingKey(f)) out.push(w.key);
@@ -342,7 +342,7 @@
    *   open／scheduled／regressed：present 不變；absent → fixed（disappeared）；unobserved 不變
    *   fixed         present → regressed（reappeared）；其餘不變
    *   accepted      waiver.until < now → open（waiver-expired，不論是否出現）；否則不變
-   *   false-positive 不變（判斷的是規則本身，不是網路現況；保留以供規則品質統計）
+   *   false-positive 不變（判斷的是檢查本身，不是網路現況；保留以供檢查品質統計）
    * 出現在基準中的項目更新 lastSeen（第一次出現時也補 firstSeen），記的是基準鍵。
    */
   L.advance = function advance(ledger, Q, opt) {
@@ -552,7 +552,7 @@
     return { series, current: { total: items.length, byStatus: byStatus(lg), waivers: { total: waived.length, missingReason: waived.filter((it) => !it.waiver.reason).length } } };
   };
   /**
-   * 各規則的處理結果（規則品質閉環的依據），依規則編號排序：
+   * 各檢查的處理結果（檢查品質閉環的依據），依檢查代碼排序：
    * [{ id, total, byStatus: { 狀態: 筆數 }, falsePositive, rate }]；rate＝目前標為 false-positive 的比率（falsePositive／total）。
    */
   L.ruleStats = function ruleStats(ledger) {

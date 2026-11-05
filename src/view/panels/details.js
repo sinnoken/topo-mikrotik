@@ -115,7 +115,7 @@
       it.note ? (it.waiver ? '；' : '') + '備註：' + it.note : '']);
   }
   /**
-   * 規則的常見原因與處理（V.remediation.advice，文字來自 CATALOG）：預設收合的展開列，檢查結果與規則清單共用。
+   * 檢查的常見原因與處理（V.remediation.advice，文字來自 CATALOG）：預設收合的展開列，檢查結果與檢查清單共用。
    * 反引號內的指令與欄位以 <code> 顯示（V.codeText，不用 innerHTML）。兩個欄位都沒有時不顯示。
    * opt.open：預設展開；opt.ontoggle：展開狀態改變時呼叫（呼叫端要跨重繪保留時用）。
    */
@@ -174,7 +174,7 @@
    * 解析器使用量等）預設收合。錯誤／警告只算待處理的（處理紀錄，V.app.problemCounts），已處理的另註筆數。
    */
   const SEV_ORDER = { error: 0, warn: 1 };
-  /** 建議先看的 finding 索引：待處理的錯誤與警告中，嚴重度最高、規則順序（S.query.rules）最前、再取 Snapshot 順序最前；沒有時 -1 */
+  /** 建議先看的 finding 索引：待處理的錯誤與警告中，嚴重度最高、檢查順序（S.query.rules）最前、再取 Snapshot 順序最前；沒有時 -1 */
   function firstProblem(App) {
     const A = V.app; const rank = new Map(S.query.rules().map((r, n) => [r.id, n]));
     const r = (id) => (rank.has(id) ? rank.get(id) : Infinity);

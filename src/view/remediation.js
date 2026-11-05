@@ -1,7 +1,7 @@
 /*
  * 研判 → 修 → 驗證 的畫面輔助：都是純函式，只透過查詢介面（Q）與核心（S.ledger、S.remediate）讀取，不改寫 Snapshot。
  *   - 處理紀錄的狀態文字（STATUS_TEXT）：狀態本身與轉換規則在核心 S.ledger（見 app-ledger.js）
- *   - advice：規則的常見原因與處理（每次從規則目錄 S.query.rule 讀取）；hintLine：一句處理提示
+ *   - advice：檢查的常見原因與處理（每次從檢查目錄 S.query.rule 讀取）；hintLine：一句處理提示
  *   - sortByDevice：檢查結果依所屬設備（Q.findingDevice）排序，檢查結果分頁的「依設備」分組與匯出共用
  *   - 修正計畫的文字（LEVEL_TEXT、RISK_TEXT、targetText、choiceText）與單一項目的套用指令（itemApplyLines，取自 S.remediate.renderRsc）
  *   - matchFindings／findingRef：未產生指令的項目以 findingKey 對回檢查結果，列出訊息並可點擊開啟
@@ -19,9 +19,9 @@
   /** 狀態的標籤色（DOM 的 .chip.err 等） */
   const STATUS_CHIP = { open: '', scheduled: 'info', accepted: 'ok', 'false-positive': '', fixed: 'ok', regressed: 'err' };
 
-  // ---------------------------------------------------------------- 規則的常見原因與處理
+  // ---------------------------------------------------------------- 檢查的常見原因與處理
   /**
-   * 規則的處理建議與常見原因：每次都從規則目錄（S.query.rule）讀取，不複製文字（詳情、規則清單與匯出共用）。
+   * 檢查的處理建議與常見原因：每次都從檢查目錄（S.query.rule）讀取，不複製文字（詳情、檢查清單與匯出共用）。
    * 這是畫面讀 causes／action 的唯一入口。
    * 回傳 { action: 字串或 null, hint: 字串或 null, causes: 字串陣列 }；欄位不存在時 action／hint 為 null、causes 為空陣列。
    * hint 是 action 的第一句（S.query.rule 推導，畫面不自己切句）。causes 寫成單一字串時視為一條。
@@ -32,7 +32,7 @@
     return { action: typeof c.action === 'string' && c.action ? c.action : null, hint: typeof c.hint === 'string' && c.hint ? c.hint : null, causes };
   }
   /**
-   * 規則的一句處理提示「處理：…」（advice(id).hint）：「研判」展開的規則群組與詳情的檢查結果卡片共用。
+   * 檢查的一句處理提示「處理：…」（advice(id).hint）：「研判」展開的檢查群組與詳情的檢查結果卡片共用。
    * 反引號內以 <code> 顯示（V.codeText）；沒有提示時為 null。cls 是額外的 class。
    */
   function hintLine(id, cls) {
@@ -129,7 +129,7 @@
   const facetItem = (s) => FACET_ITEM[s] || s;
   /** 「a|b」格式的 facet 拆成第一段與其餘（其餘部分可能含 |，原樣保留） */
   const facetSplit = (v) => { const at = v.indexOf('|'); return at < 0 ? [v, ''] : [v.slice(0, at), v.slice(at + 1)]; };
-  /** 有格式的 facet 依規則轉成可讀文字（格式見 CATALOG 的 facet）；第二段缺少時回傳 null，改顯示原值 */
+  /** 有格式的 facet 依檢查轉成可讀文字（格式見 CATALOG 的 facet）；第二段缺少時回傳 null，改顯示原值 */
   const FACET_FORMAT = {
     I02: (v) => S.query.adapterLabel(v),
     V06: facetItem,
@@ -145,8 +145,8 @@
     R06: (v) => { const [a, b] = facetSplit(v); return b ? `${facetItem(a)}（${b}）` : null; },
   };
   /**
-   * 檢查結果的比對對象（finding.facet）的顯示文字：同一組規則＋實體可能有多筆時，標示這筆檢查的是哪一個項目。
-   * 沒有 facet 時為 null；規則沒有對應的格式或格式不符時顯示原值，不隱藏。
+   * 檢查結果的比對對象（finding.facet）的顯示文字：同一組檢查＋實體可能有多筆時，標示這筆檢查的是哪一個項目。
+   * 沒有 facet 時為 null；檢查沒有對應的格式或格式不符時顯示原值，不隱藏。
    */
   function facetText(f) {
     if (!f || f.facet == null) return null;

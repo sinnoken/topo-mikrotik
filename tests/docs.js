@@ -15,18 +15,18 @@ const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
 
-test('docs/基準檢查規則.md 與 CATALOG 一致：每項規則都有章節，總覽表的標題與嚴重度相同', () => {
-  const doc = read('docs/基準檢查規則.md'); const SEV = { error: '錯誤', warn: '警告', info: '提醒' };
+test('docs/基準檢查.md 與 CATALOG 一致：每項檢查都有章節，總覽表的標題與嚴重度相同', () => {
+  const doc = read('docs/基準檢查.md'); const SEV = { error: '錯誤', warn: '警告', info: '提醒' };
   const rows = new Map(Array.from(doc.matchAll(/^\| \[(\w\d\d)\]\(#\w\d\d\) \| [^|]+ \| ([^|]+) \| ([^|]+) \|/gm), (m) => [m[1], [m[2].trim(), m[3].trim()]]));
-  assert.deepStrictEqual(Array.from(rows.keys()), Object.keys(S.check.CATALOG), '總覽表的規則與順序應與 CATALOG 相同');
+  assert.deepStrictEqual(Array.from(rows.keys()), Object.keys(S.check.CATALOG), '總覽表的檢查與順序應與 CATALOG 相同');
   Object.entries(S.check.CATALOG).forEach(([id, c]) => {
     assert.deepStrictEqual(rows.get(id), [c.title, SEV[c.severity]], `${id} 的標題或嚴重度與程式不同`);
     assert.ok(new RegExp(`^### ${id}$`, 'm').test(doc), `${id} 缺少說明章節`);
   });
 });
-// 文字不要求逐字相同（文件可加連結與補充），只檢查結構：每條規則都有「常見原因」與「處理」，原因條數與 CATALOG 相同
-test('docs/基準檢查規則.md 每項規則都有「常見原因」（條數同 CATALOG 的 causes）與「處理」（對應 action）', () => {
-  const doc = read('docs/基準檢查規則.md');
+// 文字不要求逐字相同（文件可加連結與補充），只檢查結構：每項檢查都有「常見原因」與「處理」，原因條數與 CATALOG 相同
+test('docs/基準檢查.md 每項檢查都有「常見原因」（條數同 CATALOG 的 causes）與「處理」（對應 action）', () => {
+  const doc = read('docs/基準檢查.md');
   const problems = [];
   Object.entries(S.check.CATALOG).forEach(([id, c]) => {
     const m = new RegExp(`^### ${id}\\n([\\s\\S]*?)(?=^##)`, 'm').exec(doc);
@@ -46,13 +46,13 @@ test('docs/基準檢查規則.md 每項規則都有「常見原因」（條數�
   });
   assert.deepStrictEqual(problems, [], '請依 src/check/catalog.js 的 causes／action 更新文件');
 });
-test('docs/基準檢查規則.md 每項規則「處理」的第一句與處理提示（S.query.rule(id).hint，action 的第一句）相同', () => {
+test('docs/基準檢查.md 每項檢查「處理」的第一句與處理提示（S.query.rule(id).hint，action 的第一句）相同', () => {
   /*
    * 比較規則：取「- **處理**：」之後到第一個「。」（含）為文件的第一句。
    * 兩邊都先去掉 Markdown 標記（反引號；連結 [文字](網址) 只留文字）與空白，再要求完全相同；
    * 除此之外不做標點轉換，全形／半形標點要一致。文件第一句之後可以加連結與補充。
    */
-  const doc = read('docs/基準檢查規則.md');
+  const doc = read('docs/基準檢查.md');
   const plain = (s) => s.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/`/g, '').replace(/\s+/g, '');
   const problems = [];
   S.query.rules().forEach((r) => {

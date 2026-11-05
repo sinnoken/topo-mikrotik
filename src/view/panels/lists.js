@@ -8,7 +8,7 @@
   const A = () => V.app; // 畫面組裝的內部函式（app.js 在本檔之後才載入）
 
   // ---------------------------------------------------------------- 檢查結果
-  // groupBy：rule（依規則代碼）或 device（依設備，Q.findingDevice）；onlyNew：只看與舊基準比對後新出現的；
+  // groupBy：rule（依檢查代碼）或 device（依設備，Q.findingDevice）；onlyNew：只看與舊基準比對後新出現的；
   // editing：正在變更處理狀態的那一筆（findings 的索引）。匯出報表的「依設備排序」在資料中心（app-hub.js）
   const state = { sev: { error: true, warn: true, info: true }, open: new Set(), shown: new Map(), selected: -1,
     groupBy: 'rule', onlyNew: false, editing: -1, cat: new Map() };
@@ -139,7 +139,7 @@
       ])]);
       if (open) {
         const n = state.shown.get(key) || 100;
-        // 依規則分組時，展開後在結果列表上方列出這條規則的處理提示（與詳情卡片同一個 helper）
+        // 依檢查分組時，展開後在結果列表上方列出這項檢查的處理提示（與詳情卡片同一個 helper）
         const hint = ruleId ? R().hintLine(ruleId, 'fhint') : null; if (hint) g.appendChild(hint);
         g.appendChild(h('div', { class: 'items' }, idxs.slice(0, n).map((i) => item(i, showId))));
         if (idxs.length > n) g.appendChild(h('a', { class: 'link more', onclick: () => { state.shown.set(key, n + 200); findings(App); } }, `再顯示 200 筆（共 ${idxs.length} 筆）`));
@@ -147,8 +147,8 @@
       return g;
     };
     /**
-     * 一個規則類別（CATALOG 的 cat）：標題寫出這一類待處理的「錯誤 N／警告 N／提醒 N」（文字＋外形，不只靠顏色）。
-     * 有錯誤或警告的類別預設展開到規則層，只有提醒的預設收合；使用者切換後依 state.cat 保留。
+     * 一個檢查類別（CATALOG 的 cat）：標題寫出這一類待處理的「錯誤 N／警告 N／提醒 N」（文字＋外形，不只靠顏色）。
+     * 有錯誤或警告的類別預設展開到檢查層，只有提醒的預設收合；使用者切換後依 state.cat 保留。
      */
     const category = (cat, n, rules) => {
       const key = 'cat:' + cat; const sevs = ['error', 'warn', 'info'].filter((s) => n[s]);
@@ -164,7 +164,7 @@
     };
     const shown = (idx) => state.sev[all[idx].severity] && !handledSet.has(idx) && pass(all[idx]);
     if (state.groupBy === 'device') {
-      // 依設備：設備名稱順序，不屬於任何設備的最後一組；組內保留基準的順序，每筆標出規則代碼
+      // 依設備：設備名稱順序，不屬於任何設備的最後一組；組內保留基準的順序，每筆標出檢查代碼
       const groups = new Map();
       R().sortByDevice(Q, all).forEach((r) => { if (shown(r.idx)) S.util.getOr(groups, r.dev, () => []).push(r.idx); });
       const SEVS = ['error', 'warn', 'info'];
@@ -174,12 +174,12 @@
           idxs, 'by-device' + (dev === null ? ' no-device' : ''), true));
       });
     } else {
-      // 依規則：類別 → 規則 → 結果。類別與規則的順序取自 S.query.rules()（CATALOG 的宣告順序）；結果維持基準的順序
+      // 依檢查：類別 → 檢查 → 結果。類別與檢查的順序取自 S.query.rules()（CATALOG 的宣告順序）；結果維持基準的順序
       const byRule = new Map();
       all.forEach((f, idx) => { if (shown(idx)) S.util.getOr(byRule, f.id, () => []).push(idx); });
       const cats = new Map();
       S.query.rules().forEach((r) => { if (byRule.has(r.id)) S.util.getOr(cats, r.cat, () => []).push(r); });
-      // CATALOG 沒有的規則代碼（不應發生）不吞掉，另列一類
+      // CATALOG 沒有的檢查代碼（不應發生）不吞掉，另列一類
       const unknown = Array.from(byRule.keys()).filter((id) => !S.query.rule(id));
       if (unknown.length) cats.set(V.UNKNOWN_RULE_CAT, unknown.map((id) => ({ id, cat: V.UNKNOWN_RULE_CAT, severity: all[byRule.get(id)[0]].severity, title: id })));
       cats.forEach((rules, cat) => {
@@ -200,7 +200,7 @@
       if (open) g.appendChild(h('div', { class: 'items' }, idxs.map((i) => item(i, true))));
       root.appendChild(g);
     });
-    // 規則品質：誤報比率最高的規則（S.ledger.ruleStats），只列有誤報的，預設收合
+    // 檢查品質：誤報比率最高的檢查（S.ledger.ruleStats），只列有誤報的，預設收合
     const fp = ledgerBlocked ? [] : S.ledger.ruleStats(A().ledger()).filter((r) => r.falsePositive > 0)
       .sort((a, b) => b.rate - a.rate || b.falsePositive - a.falsePositive || S.util.natural(a.id, b.id)).slice(0, 5);
     if (fp.length) {
@@ -216,7 +216,7 @@
         h('span', { class: 'id' }, r.id)]))));
       root.appendChild(g);
     }
-    // 沒有發現的規則：分成「通過」與「沒有資料可檢查」，預設收合（不受上方嚴重度篩選影響）
+    // 沒有發現的檢查：分成「通過」與「沒有資料可檢查」，預設收合（不受上方嚴重度篩選影響）
     const rules = App.Q.ruleStatus();
     [['pass', '通過', '✓', (r) => '需要的資料都有收到，沒有發現問題'],
       ['nodata', '沒有資料可檢查', '–', (r) => '缺少：' + r.missing.map((g) => g.map(S.query.dataLabel).join(' 或 ')).join('、')]].forEach(([st, label, mark, note]) => {
@@ -239,7 +239,7 @@
   findings.openFirst = (Q) => { const f = Q.findings().find((x) => x.severity !== 'info'); if (f) state.open.add(f.id); };
   /**
    * 從任何入口選取一筆檢查結果時（App.selectFinding：狀態卡、詳細資料、防火牆、本輪變化，或清單本身）：
-   * 打開它所在的類別與分組（依規則或依設備；已處理的打開該狀態的分組），確保嚴重度篩選與「只看新出現的」不會把它藏起來，
+   * 打開它所在的類別與分組（依檢查或依設備；已處理的打開該狀態的分組），確保嚴重度篩選與「只看新出現的」不會把它藏起來，
    * 分組只顯示前 N 筆時放寬到包含它，標為選取並捲到看得見的位置。
    */
   findings.reveal = (App, idx) => {

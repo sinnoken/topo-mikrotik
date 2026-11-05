@@ -10,7 +10,7 @@
  *
  * level：auto（可直接產生指令）、choice（要使用者選擇）、manual（需要人工判斷）。
  * auto：F01／F02／F06 以 disabled=yes 停用規則。choice：目前實作 A12（DNS／NTP 伺服器，見 serversChoice），
- *   選擇由呼叫端以 plan(Q, selection, { choices: { findingKey: 選項 id } }) 傳入；其他 choice 規則與 manual 放進 skipped 並附原因。
+ *   選擇由呼叫端以 plan(Q, selection, { choices: { findingKey: 選項 id } }) 傳入；其他 choice 檢查與 manual 放進 skipped 並附原因。
  *
  * RouterOS 語法依據（官方手冊）：
  *   - find where／print where、set、:if、:len、:error：https://manual.mikrotik.com/docs/developer-guides/scripting.md
@@ -28,7 +28,7 @@
   const SCHEMA = 'ssot-patch/1';
 
   // ---------------------------------------------------------------- 等級與 auto 修正的說明
-  /** finding id → 等級。未列出的是 manual。choice 中已實作的規則見 CHOICE（目前是 A12），其他 choice 規則放進 skipped（reason: choice）。 */
+  /** finding id → 等級。未列出的是 manual。choice 中已實作的檢查見 CHOICE（目前是 A12），其他 choice 檢查放進 skipped（reason: choice）。 */
   const LEVEL = {
     F01: 'auto', F02: 'auto', F06: 'auto',
     F03: 'choice', V01: 'choice', V08: 'choice', R06: 'choice',
@@ -42,8 +42,8 @@
     F06: { why: '以固定來源埠放行可被繞過；停用後若有服務需要，改用連線狀態或目的埠放行', risk: { level: 'medium', text: '依賴這條放行的流量改由後面的規則處理，可能被擋下；先確認沒有服務需要它，或先加上以 connection-state 或 dst-port 放行的規則' } },
   };
   const SKIP_TEXT = {
-    choice: '這條規則尚未支援選擇修正，沒有產生指令；處理方式見規則的處理建議',
-    manual: '這項檢查需要人工判斷，沒有自動修正；處理方式見規則的處理建議',
+    choice: '這項檢查尚未支援選擇修正，沒有產生指令；處理方式見檢查的處理建議',
+    manual: '這項檢查需要人工判斷，沒有自動修正；處理方式見檢查的處理建議',
     'no-rule': '找不到這筆檢查結果指向的防火牆規則',
     'already-disabled': '基準中這條規則已經停用',
     'same-target': '同一條規則已由前面的修正停用',
@@ -254,7 +254,7 @@
     choice.items = items.map((it) => it.key);
     return { choice, items, skips };
   }
-  /** choice 等級中已實作的規則；其他 choice 規則仍放進 skipped（reason: choice） */
+  /** choice 等級中已實作的檢查；其他 choice 檢查仍放進 skipped（reason: choice） */
   const CHOICE = { A12: serversChoice };
 
 

@@ -15,7 +15,7 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 
 ## 與其他 agent 的介面（契約）
 
-- **資料**：只透過 `SSOT.query(snapshot)`（Q）與 `S.query.*` 的靜態函式（規則目錄 `S.query.rule`／`rules`、`dataLabel`、`adapterLabel`、`metaOf`）讀取，函式見 `docs/設計說明.md` §5.2（ADR-018）。
+- **資料**：只透過 `SSOT.query(snapshot)`（Q）與 `S.query.*` 的靜態函式（檢查目錄 `S.query.rule`／`rules`、`dataLabel`、`adapterLabel`、`metaOf`）讀取，函式見 `docs/設計說明.md` §5.2（ADR-018）。
   - 不讀 `snap.`／`snapshot.` 的欄位（`findings`、`meta`、`coverage`、`blocks`、`model`…），不用 `S.check`、`S.adapters`、`S[…]` 或從 `S` 解構。允許的 `S.*` 成員以 `tests/ui-smoke.js` 的 `VIEW_S_ALLOW`、`VIEW_S_ONLY` 為準（輸入 API 只允許 `S.readers.PASTE`、`S.profile.compile`、`S.inputHashOf` 等），由邊界掃描強制；冒煙測試另以深層凍結的基準確認畫面不改寫基準。
   - 需要新的資料時寫進報告的「需要其他 agent 處理」，由 data-model 新增 query 函式；不可以在 view 繞過，也不要放寬邊界掃描的允許清單來通過測試。
   - 選取 finding 用 idx（`Q.finding(idx)`）；跨基準時用 findingKey，再以 `Q.findingIndexByKey` 換回 idx。

@@ -730,6 +730,13 @@ function viewBoundaryViolations(file, src) {
     if (m) { App.select({ type: 'mac', key: m.mac }, { focus: true }); if (!g.hl.nodes.has(App.vOfEp.get(m.edge[0]))) throw new Error('MAC 搜尋應標出未知對端'); }
     // 檢查結果 A03 → 顯示終端清單
     const i = App.snap.findings.findIndex((f) => f.id === 'A03'); if (i >= 0) { App.selectFinding(i); if (App.sel.type !== 'endpoints') throw new Error('A03 應顯示終端清單'); }
+    // 已經逐一畫出（沒有收合、也不是手動展開）：按鈕停用並寫「已顯示全部」，不用括號包住狀態當按鈕文字
+    const many = g.nodes.find((n) => n.virtual && n.kind === 'endpoint' && !App.expanded.has(n.parent) && g.nodes.filter((x) => x.virtual && x.parent === n.parent).length > 1);
+    if (many) {
+      App.select({ type: 'endpoints', dev: many.parent });
+      const b = $('#detail').testAll('button').find((x) => x.textContent === '已顯示全部');
+      if (!b || !(b.disabled || b.getAttribute('disabled') != null) || text('#detail').includes('已全部展開')) throw new Error('全部終端都已畫出時按鈕應停用並寫「已顯示全部」');
+    }
   });
   await step('分群標籤：各種縮放下互不重疊、不超出群框、縮短後兩兩不同（先留尾段再截斷）；滑過群框或標籤顯示全名', () => {
     const g = App.graph; const cv = $('#graph'); App.select(null);
@@ -1193,6 +1200,57 @@ function viewBoundaryViolations(file, src) {
     if (P.testAll('.deviation').some((x) => x.textContent.includes('沒有多數'))) throw new Error('列表不顯示平手');
     App.select(null); L.showProblems(App);
   });
+  await step('③ 的選取標示跟著選取走：選了檢查結果後改選設備、VLAN 或取消選取，清單不再標示那一筆（aria-current 一起拿掉）', () => {
+    const all = App.snap.findings; const i = all.findIndex((f) => f.severity !== 'info');
+    if (i < 0) return;
+    goStep('triage');
+    const marked = () => $('#pane-findings').testAll('.fitem').filter((x) => x.className.split(' ').includes('sel') || x.getAttribute('aria-current') === 'true');
+    App.selectFinding(i);
+    if (marked().length !== 1 || marked()[0].getAttribute('data-finding') !== String(i)) throw new Error('選取檢查結果時清單應標出那一筆');
+    App.select(App.sel, { refresh: true });
+    if (marked().length !== 1) throw new Error('只重新標示（refresh）時應保留清單的選取標示');
+    const dev = App.snap.model.devices.find((d) => d.collected).key;
+    App.select({ type: 'device', key: dev });
+    if (marked().length) throw new Error('改選設備後清單不應仍標示檢查結果');
+    App.selectFinding(i); App.select({ type: 'vlan', key: String(App.Q.vlanIds()[0]) });
+    if (marked().length) throw new Error('改選 VLAN 後清單不應仍標示檢查結果');
+    App.selectFinding(i); App.select(null);
+    if (marked().length) throw new Error('取消選取後清單不應仍標示檢查結果');
+    $('#vlan-filter').value = ''; $('#vlan-filter').dispatch('change');
+  });
+  await step('樣式：chip 不用 overflow-wrap: anywhere（表格自動排版會把 chip 欄壓成一字寬），表格內的 chip 不換行', () => {
+    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const rules = Array.from(css.matchAll(/([^{}]+)\{([^{}]*)\}/g)).map((m) => ({ sels: m[1].split(',').map((x) => x.trim()), body: m[2] }));
+    if (rules.some((r) => r.sels.some((x) => /\.chip\b/.test(x)) && /overflow-wrap:\s*anywhere/.test(r.body))) throw new Error('.chip 不可用 overflow-wrap: anywhere');
+    const t = rules.find((r) => r.sels.includes('table.t .chip'));
+    if (!t || !/white-space:\s*nowrap/.test(t.body)) throw new Error('table.t .chip 應為 white-space: nowrap');
+  });
+  await step('埠名：選取的鏈路一定畫出兩端埠名（沿線都被設備名稱蓋住時仍畫），一般埠名讓給它、不互相重疊', () => {
+    const g = App.graph; const T = S.view.theme;
+    const ov = (a, b) => a.x0 < b.x1 - 0.5 && b.x0 < a.x1 - 0.5 && a.y0 < b.y1 - 0.5 && b.y0 < a.y1 - 0.5;
+    const at = (sc) => { g.s = sc; g.tx = g.w / 2; g.ty = g.h / 2; };
+    const edge = (id, a, b, la, lb) => ({ id, a, b, cls: '1g', count: 1, evidence: 'adjacency', labelA: la, labelB: lb });
+    // 和一般埠名同一個位置（平行的兩條鏈路，只選一條）：強制的優先，一般的略過
+    const nodes = [{ id: 'pl-a', label: 'A', kind: 'switch', collected: true, group: 't' }, { id: 'pl-b', label: 'B', kind: 'switch', collected: true, group: 't' }];
+    withGraph(g, nodes, [edge('pl-1', 'pl-a', 'pl-b', 'ether1', 'ether2'), edge('pl-2', 'pl-a', 'pl-b', 'ether3', 'ether4')],
+      new Map([['pl-a', { x: 0, y: 0 }], ['pl-b', { x: 200, y: 0 }]]), () => {
+        at(2); g.setSelection([], ['pl-1']); g.draw();
+        const forced = g.portLabels.filter((p) => p.forced).map((p) => p.text).sort();
+        if (forced.join() !== 'ether1,ether2') throw new Error('選取的鏈路應畫出兩端埠名：' + forced);
+        g.portLabels.forEach((a, i) => g.portLabels.slice(i + 1).forEach((b) => { if (ov(a, b)) throw new Error(`埠名不應重疊：${a.text} / ${b.text}`); }));
+      });
+    // 鏈路很短、整段都被第三台設備的名稱蓋住：沿線挪都不行時仍要畫
+    const fs = T.font.labelPx / 2;
+    const nodes2 = nodes.concat([{ id: 'pl-c', label: 'X'.repeat(40), kind: 'switch', collected: true, group: 't' }]);
+    withGraph(g, nodes2, [edge('pl-1', 'pl-a', 'pl-b', 'ether1', 'ether2')], new Map([['pl-a', { x: 0, y: 0 }], ['pl-b', { x: 60, y: 0 }], ['pl-c', { x: 30, y: 0 }]]), () => {
+        at(2); const rc = g.radius(g.nodeById.get('pl-c')); g.pos.set('pl-c', { x: 30, y: -(rc + 0.85 * fs) });
+        g.setSelection([], ['pl-1']); g.draw();
+        const cl = g.nodeLabels.find((l) => l.id === 'pl-c');
+        if (!cl) throw new Error('測試前提：第三台設備的名稱應畫出');
+        const forced = g.portLabels.filter((p) => p.forced).map((p) => p.text).sort();
+        if (forced.join() !== 'ether1,ether2') throw new Error('選取的鏈路沿線都被蓋住時仍應畫出兩端埠名：' + forced);
+      });
+  });
   await step('點選每台設備、每條鏈路、部分介面', () => {
     App.snap.model.devices.slice(0, 300).forEach((d) => App.select({ type: 'device', key: d.key }, { focus: true }));
     const endpointDev = App.snap.model.interfaces.find((i) => i.unknownPeer);
@@ -1458,6 +1516,7 @@ function viewBoundaryViolations(file, src) {
     App.openRaw(P, line); const blk = Q.blockAt(P, line);
     const copyBtn = $('#raw-copy');
     if (copyBtn.tagName !== 'BUTTON' || copyBtn.classList.contains('hidden') || !copyBtn.textContent.includes('複製這段')) throw new Error('原文應有「複製這段」按鈕');
+    if (copyBtn.classList.contains('ghost')) throw new Error('「複製這段」應用一般按鈕樣式（不是 ghost），看得出是按鈕');
     const nav = Object.getOwnPropertyDescriptor(globalThis, 'navigator'); let copied = null;
     Object.defineProperty(globalThis, 'navigator', { value: { clipboard: { writeText: async (t) => { copied = t; } } }, configurable: true, writable: true });
     try {
@@ -1466,6 +1525,13 @@ function viewBoundaryViolations(file, src) {
       if ($('#raw-copy-status').getAttribute('role') !== 'status') throw new Error('複製結果應寫在 role=status 的狀態列');
       globalThis.navigator = {}; copyBtn.click(); await new Promise((r) => setTimeout(r, 5));
       if (!text('#raw-copy-status').includes('無法自動複製')) throw new Error('不能複製時應明確告知：' + text('#raw-copy-status'));
+      // 複製還沒完成就換到另一段：舊的結果不可寫到新的一段
+      let done = null; globalThis.navigator = { clipboard: { writeText: () => new Promise((r) => { done = r; }) } };
+      copyBtn.click(); App.openRaw(P, line + 1);
+      if (text('#raw-copy-status') !== '') throw new Error('換到另一段時狀態列應清空');
+      done(); await new Promise((r) => setTimeout(r, 5));
+      if (text('#raw-copy-status') !== '') throw new Error('舊一段的複製結果不應寫到新的一段：' + text('#raw-copy-status'));
+      App.openRaw(P, line);
     } finally { if (nav) Object.defineProperty(globalThis, 'navigator', nav); else delete globalThis.navigator; }
     // 顯示更多：前後各有按鈕，按下後多顯示幾行，標出的那一行不變；切到另一處時回到預設範圍
     const shown = () => $('#raw-body').testAll('pre span.ln').map((x) => +x.textContent);
@@ -1580,37 +1646,49 @@ function viewBoundaryViolations(file, src) {
     if (!/\.layer-switch \[role="radio"\]\[aria-checked="true"\]/.test(fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8').split('@media (forced-colors: active)')[1])) throw new Error('強制色彩模式下選取的層級應有系統色外框');
     try { App.showLayer('l5'); throw new Error('不應能切到未知的層級'); } catch (e) { if (!(e instanceof RangeError)) throw e; }
   });
-  await step('VLAN 篩選的標示：啟用時工具列旁有「VLAN n ✕」，按下或 Esc 取消；檢查結果帶入的篩選在選其他東西時取消，選單選的保留', async () => {
-    const Q = App.Q; const chip = $('#vlan-chip'); const id = Q.vlanIds()[0]; const sel = $('#vlan-filter');
+  await step('VLAN 篩選的標示：由選取帶入的篩選在工具列旁有「VLAN n ✕」，按下或 Esc 取消、選其他東西或換基準時取消；選單選的由選單標示並保留；基準中沒有的 VLAN 不設篩選', async () => {
+    const Q = App.Q; const chip = $('#vlan-chip'); const id = Q.vlanIds()[0]; const sel = $('#vlan-filter'); const VA = S.view.app;
     const shown = () => !chip.classList.contains('hidden');
     const dev = App.snap.model.devices.find((d) => d.collected).key;
     App.select(null);
     if (App.vlanFilter || shown()) throw new Error('沒有 VLAN 篩選時不應顯示標示');
-    // 選單選的：標示寫出 VLAN，選其他東西時篩選與標示都保留
+    // 選單選的：選單本身就是標示，不另顯示「VLAN n ✕」（避免同一個狀態並排兩次）；選其他東西時保留，選單選「不篩選」取消
     sel.value = String(id); sel.dispatch('change');
-    if (!shown() || chip.tagName !== 'BUTTON' || !chip.textContent.includes(`VLAN ${id}`) || !chip.textContent.includes('✕') || !(chip.getAttribute('aria-label') || '').includes(`VLAN ${id}`)) throw new Error('VLAN 篩選啟用時應顯示可關閉的標示：' + chip.textContent);
+    if (!App.vlanFilter || !App.vlanFilter.pinned || shown() || sel.value !== String(id)) throw new Error('在選單選的 VLAN 篩選由選單標示，不另顯示 chip');
     App.select({ type: 'device', key: dev });
-    if (!App.vlanFilter || !shown()) throw new Error('在選單選的 VLAN 篩選，選其他東西時應保留');
-    chip.click();
-    if (App.vlanFilter || shown() || sel.value !== '' || !App.sel || App.sel.key !== dev || document.activeElement !== sel) throw new Error('按標示應取消篩選、保留選取，焦點移到 VLAN 選單');
-    sel.value = String(id); sel.dispatch('change');
-    chip.dispatch('keydown', { key: 'Escape' });
-    if (App.vlanFilter || shown() || App.sel) throw new Error('在標示上按 Esc 應取消篩選（選取的是 VLAN 時一起取消）');
+    if (!App.vlanFilter || shown() || sel.value !== String(id)) throw new Error('在選單選的 VLAN 篩選，選其他東西時應保留');
+    sel.value = ''; sel.dispatch('change');
+    if (App.vlanFilter || shown() || !App.sel || App.sel.key !== dev) throw new Error('選單選「不篩選」應取消篩選、保留選取');
+    // 基準中沒有的 VLAN（例如搜尋 4000 的「基準中沒有這個 VLAN」）：照樣開啟 VLAN 詳情，但不設成篩選
+    const missing = [4000, 4001, 4002, 4003].find((x) => !Q.vlanIds().includes(x));
+    App.select({ type: 'vlan', key: String(missing) });
+    if (App.vlanFilter || shown() || sel.value !== '' || !App.sel || App.sel.type !== 'vlan') throw new Error('基準中沒有的 VLAN 不應設成篩選');
+    App.select(null);
     // 檢查結果（或搜尋、詳情的連結）帶入的：標示出現，選其他東西時自動取消
     const vi = App.snap.findings.findIndex((f) => f.entities[0] && f.entities[0].type === 'vlan');
     if (vi < 0) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有指向 VLAN 的檢查結果'); }
     App.selectFinding(vi); const vid = App.snap.findings[vi].entities[0].key;
-    if (!App.vlanFilter || !shown() || !chip.textContent.includes(`VLAN ${vid}`)) throw new Error('檢查結果帶入的 VLAN 篩選也應顯示標示');
+    if (!App.vlanFilter || App.vlanFilter.pinned || !shown() || chip.tagName !== 'BUTTON' || !chip.textContent.includes(`VLAN ${vid}`) || !chip.textContent.includes('✕')
+      || !(chip.getAttribute('aria-label') || '').includes(`VLAN ${vid}`)) throw new Error('檢查結果帶入的 VLAN 篩選應顯示可關閉的標示：' + chip.textContent);
     App.select({ type: 'device', key: dev });
     if (App.vlanFilter || shown() || sel.value !== '') throw new Error('檢查結果帶入的 VLAN 篩選，選其他東西時應取消');
-    // 由選取帶入後，在選單再選同一個 VLAN：改為保留（來源由選單明確傳入，不看選單當下的值）
+    App.selectFinding(vi); chip.click();
+    if (App.vlanFilter || shown() || sel.value !== '' || document.activeElement !== sel) throw new Error('按標示應取消篩選，焦點移到 VLAN 選單');
+    App.selectFinding(vi); chip.dispatch('keydown', { key: 'Escape' });
+    if (App.vlanFilter || shown() || App.sel) throw new Error('在標示上按 Esc 應取消篩選（選取的是 VLAN 時一起取消）');
+    // 換基準：沒釘選的篩選隨選取一起取消；選單選的保留
+    const reload = async () => { VA.load(App.snap, null, { sources: App.round.sources, profile: App.round.profile }); await App.ledgerJob; await App.layoutJob; };
+    App.selectFinding(vi); await reload();
+    if (App.vlanFilter || shown() || sel.value !== '') throw new Error('換基準後，由選取帶入的 VLAN 篩選應取消');
+    // 由選取帶入後，在選單再選同一個 VLAN：改為保留（來源由選單明確傳入，不看選單當下的值），標示改由選單呈現
     App.selectFinding(vi);
-    if (App.vlanFilter.pinned) throw new Error('檢查結果帶入的 VLAN 篩選不應標為保留');
     sel.value = String(vid); sel.dispatch('change');
-    if (!App.vlanFilter || !App.vlanFilter.pinned) throw new Error('在選單再選同一個 VLAN 應改為保留');
+    if (!App.vlanFilter || !App.vlanFilter.pinned || shown()) throw new Error('在選單再選同一個 VLAN 應改為保留，chip 收起');
     App.select({ type: 'device', key: dev });
-    if (!App.vlanFilter || !shown()) throw new Error('改為保留的 VLAN 篩選，選其他東西時應保留');
-    chip.click(); App.select(null);
+    if (!App.vlanFilter) throw new Error('改為保留的 VLAN 篩選，選其他東西時應保留');
+    await reload();
+    if (!App.vlanFilter || !App.vlanFilter.pinned || String(App.vlanFilter.id) !== String(vid) || sel.value !== String(vid)) throw new Error('換基準後，選單選的 VLAN 篩選應保留');
+    sel.value = ''; sel.dispatch('change'); App.select(null);
   });
   await step('VLAN 篩選：設備圖與 L2 埠圖依 vlanCarriers 標出承載與只有一端（外形不只靠顏色），推論以線型區分，提示說明原因；選其他東西時保留，取消後拿掉', async () => {
     const g = App.graph; const T = S.view.theme; const Q = App.Q;
@@ -2615,7 +2693,7 @@ function viewBoundaryViolations(file, src) {
     // CSV：UTF-8 BOM 開頭（bytes EF BB BF），內容依 RFC 4180 解析回來要和每筆 finding 對得上
     if (bytes[1].subarray(0, 3).toString('hex') !== 'efbbbf') throw new Error('CSV 應以 UTF-8 BOM 開頭');
     const rows = parseCsv(csv.replace(/^\uFEFF/, ''));
-    if (rows[0].join() !== 'severity,id,title,message,entities,evidence,acknowledged,ack_kind,ack_note,device,action,status,note,waiver_reason,waiver_until,facet') throw new Error('CSV 標頭不符：' + rows[0]);
+    if (rows[0].join() !== 'severity,id,title,message,entities,evidence,acknowledged,ack_kind,ack_note,device,action,status,note,waiver_reason,waiver_until,facet,推定偏離（多數決）') throw new Error('CSV 標頭不符：' + rows[0]);
     if (rows.length - 1 !== App.snap.findings.length) throw new Error('CSV 每筆檢查結果應恰好一列');
     App.snap.findings.forEach((f, i) => {
       const r = rows[i + 1]; const lg = S.view.app.ledgerExport(f); const ack = lg && !S.ledger.isPending(lg.status) ? lg : {};
@@ -2628,6 +2706,10 @@ function viewBoundaryViolations(file, src) {
       if (r[9] !== (App.Q.findingDevice(f) || '')) throw new Error('CSV ' + f.id + ' 的 device 應為所屬設備');
       if (r[10].replace(/^'/, '') !== S.check.CATALOG[f.id].action) throw new Error('CSV ' + f.id + ' 的 action 應與 CATALOG 一致（原文照錄）');
       if (r[15].replace(/^'/, '') !== (f.facet != null ? String(f.facet) : '')) throw new Error('CSV ' + f.id + ' 的 facet 應為檢查項目的原值（沒有時空白）');
+      // 推定偏離（推論，與畫面同一個標籤）：多數決偏離的設備名；平手寫「沒有多數」；不是多數決或沒有 deviation 為空白
+      const dvs = f.deviation && f.deviation.basis === 'majority' ? f.deviation.deviating : null;
+      const wantDv = !dvs ? '' : dvs.length ? dvs.map((k) => App.Q.devName(k)).join('; ') : '沒有多數';
+      if (r[16] !== wantDv) throw new Error('CSV ' + f.id + ' 的推定偏離應為「' + wantDv + '」：' + r[16]);
       if (r.length !== rows[0].length) throw new Error('CSV 第 ' + (i + 2) + ' 列的欄數應與標頭相同');
     });
     // Markdown（依規則）：每條出現的規則附處理建議與逐條的常見原因，反引號內是行內程式碼（不被跳脫）
@@ -2666,6 +2748,18 @@ function viewBoundaryViolations(file, src) {
     tricky.findings[0].message = '<b>*x*</b>'; tricky.findings[0].evidence[0].text = 'a`b';
     const emd = X.findingsMarkdown(S.query(tricky));
     if (!emd.includes('\\<b\\>\\*x\\*\\</b\\>') || !emd.includes('`` a`b ``')) throw new Error('Markdown 應跳脫格式字元與行內程式碼的反引號');
+    // 推定偏離（多數決，推論）：CSV 最後一欄、Markdown 在該筆下另起一行；平手寫「沒有多數」，沒有 deviation 不輸出
+    const dk = App.snap.model.devices.slice(0, 2).map((d) => d.key);
+    tricky.findings[0].deviation = { basis: 'majority', deviating: dk, groups: [], main: null };
+    const dq = S.query(tricky); const dnames = dk.map((k) => dq.devName(k));
+    const dcsv = parseCsv(X.findingsCsv(dq).replace(/^\uFEFF/, ''));
+    if (dcsv[0][16] !== '推定偏離（多數決）' || dcsv[1][16] !== dnames.join('; ')) throw new Error('CSV 應有推定偏離的設備名：' + dcsv[1][16]);
+    if (!X.findingsMarkdown(dq).includes('  - 推定偏離（多數決）：' + dnames.join('、'))) throw new Error('Markdown 應列出推定偏離的設備');
+    tricky.findings[0].deviation = { basis: 'majority', deviating: [], groups: [], main: null };
+    const tq = S.query(tricky);
+    if (parseCsv(X.findingsCsv(tq).replace(/^\uFEFF/, ''))[1][16] !== '沒有多數' || !X.findingsMarkdown(tq).includes('  - 推定偏離（多數決）：沒有多數')) throw new Error('平手時應寫「沒有多數」');
+    delete tricky.findings[0].deviation;
+    if (X.findingsMarkdown(S.query(tricky)).includes('推定偏離') || parseCsv(X.findingsCsv(S.query(tricky)).replace(/^\uFEFF/, ''))[1][16] !== '') throw new Error('沒有 deviation 時不應輸出推定偏離');
   });
   let ackedKey = null; // 處理紀錄中已處理的 finding 鍵：清除基準後要仍然存在
   await step('處理紀錄取代確認：每筆檢查結果都在處理紀錄中，可變更狀態與備註，不合法的變更顯示錯誤，已處理另列分組並從摘要排除，匯出對應欄位', async () => {
@@ -3586,6 +3680,15 @@ function viewBoundaryViolations(file, src) {
     const grp2 = $('#patch-body').testAll('.patch-group').find((g) => g.getAttribute('data-rule-id') === autoIds[0]);
     const cb2 = grp2.testAll('.patch-pick').find((x) => x.getAttribute('data-key') === cb.getAttribute('data-key'));
     if (grp2.getAttribute('open') === null || !cb2 || !cb2.checked || document.activeElement !== cb2) throw new Error('勾選後展開的規則應保持展開，焦點留在同一筆');
+    // 「逐筆勾選」整區：瀏覽器以 open 屬性建立 <details> 時也會排入 toggle 事件，狀態沒變時不算使用者切換
+    const pb = () => $('#patch-body').querySelector('.patch-picks-box');
+    PV.state.picks = null; PV.render(App);
+    if (pb().getAttribute('open') === null) throw new Error('測試前提：有展開的規則時「逐筆勾選」應展開');
+    pb().open = true; pb().dispatch('toggle'); // 模擬 DOM 不會把 open 屬性反映到 .open：照瀏覽器的行為設定
+    if (PV.state.picks !== null) throw new Error('建立時排入的 toggle 不應被記成使用者的選擇');
+    pb().open = false; pb().dispatch('toggle');
+    if (PV.state.picks !== false) throw new Error('使用者收合「逐筆勾選」應記下');
+    PV.state.picks = null; PV.render(App);
     // 點未產生指令的一筆：在右側開啟該筆，修正計畫留在中間
     const ref = $('#patch-body').querySelector('.finding-ref');
     if (ref) {

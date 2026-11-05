@@ -179,7 +179,9 @@ header .spacer { flex: 1; }
 .note-box { white-space: pre-wrap; background: var(--surface); border: 1px solid var(--line); padding: 8px; border-radius: var(--radius-sm); }
 .table-more { padding: 6px 9px; }
 /* chip：短的單列（flex-shrink: 0，不會被擠成逐字直排）；長文字在容器寬度內換行，不撐破版面（圓角用半個列高，換行時仍是圓角矩形） */
-.chip { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; max-width: 100%; min-height: 22px; padding: 2px 8px; border: 1px solid transparent; border-radius: 11px; font-size: var(--fs-sm); font-weight: 600; background: var(--neutral-soft); color: #3c4650; overflow-wrap: anywhere; }
+.chip { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; max-width: 100%; min-height: 22px; padding: 2px 8px; border: 1px solid transparent; border-radius: 11px; font-size: var(--fs-sm); font-weight: 600; background: var(--neutral-soft); color: #3c4650; overflow-wrap: break-word; }
+/* 表格內的 chip（類型、狀態）不換行：表格自動排版以 min-content 決定欄寬，可斷行的 chip 會被壓成一字一行 */
+table.t .chip { white-space: nowrap; overflow-wrap: normal; }
 /* 篩選選項是 <button class="chip btn">：不套一般按鈕的高度、陰影與 hover 底色 */
 button.chip { box-shadow: none; line-height: inherit; text-align: left; }
 /* 已選檔案：名稱＋移除鈕（觸控時移除鈕至少 44px，見 pointer: coarse） */

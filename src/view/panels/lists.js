@@ -267,6 +267,13 @@
     const el = Array.from(V.$('#pane-findings').querySelectorAll('.fitem')).find((x) => x.getAttribute('data-finding') === String(idx));
     if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
   };
+  /** 拿掉「已選取」的標示（App.select 改選其他東西時）：只改那一列的 class 與 aria-current，不重繪清單 */
+  findings.unmark = () => {
+    if (state.selected < 0) return;
+    const el = Array.from(V.$('#pane-findings').querySelectorAll('.fitem')).find((x) => x.getAttribute('data-finding') === String(state.selected));
+    state.selected = -1;
+    if (el) { el.classList.remove('sel'); el.setAttribute('aria-current', 'false'); }
+  };
   findings.showProblems = (App) => {
     state.sev = { error: true, warn: true, info: false };
     state.open = new Set(); state.cat = new Map();

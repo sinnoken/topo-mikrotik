@@ -515,23 +515,26 @@
       }
       c.textAlign = 'left'; c.globalAlpha = 1;
       // 埠名：螢幕上固定 portPx（比設備名小），任何縮放都一樣大。一般只在放大時畫，與已畫標籤重疊就略過；
-      // 滑過、選取的連線（及滑過節點的連線）不受縮放門檻限制，彼此之間另做重疊檢查（沿線往外挪，仍重疊才略過）
-      const isForced = (e) => this.sel.edges.has(e.id) || e.id === hoverE || hoverAdj.has(e.id);
+      // 滑過、選取的連線（及滑過節點的連線）不受縮放門檻限制，先畫，避開設備名稱與彼此（沿線往外挪）；都不行時，
+      // 選取或滑過的那條仍畫在最後一個位置（一定看得到），滑過節點的其他連線（可能很多條）才略過。
+      // 之後才畫一般埠名，與設備名稱或強制顯示的埠名重疊就略過
+      const isMust = (e) => this.sel.edges.has(e.id) || e.id === hoverE;
+      const isForced = (e) => isMust(e) || hoverAdj.has(e.id);
       const edgesToLabel = this.edges.filter((e) => this._edgeVisible(e) && (portLabels || isForced(e)));
-      // 強制顯示的埠名彼此不重疊，也不蓋住設備名稱（placed 此時只有設備名稱）
-      const k = 1 / s; const forcedPlaced = placed.slice(); this.portLabels = [];
-      const drawPort = (e, force) => {
+      const k = 1 / s; this.portLabels = [];
+      const drawPort = (e, force, must) => {
         const a = this.at(e.a); const b = this.at(e.b);
         if (!a || !b || (!inView(a) && !inView(b))) return;
         c.font = font(F.portPx * k, W.normal, true);
         [[a, b, e.labelA, e.a], [b, a, e.labelB, e.b]].forEach(([from, to, text, id]) => {
           if (!text) return;
-          const box = portLabel(c, from, to, text, this.radius(this.nodeById.get(id)) + PORT_GAP * k, force ? forcedPlaced : placed, k, force);
+          const box = portLabel(c, from, to, text, this.radius(this.nodeById.get(id)) + PORT_GAP * k, placed, k, force, must);
           if (box) this.portLabels.push({ text: box.text, x0: box.x0 * s + this.tx, x1: box.x1 * s + this.tx, y0: box.y0 * s + this.ty, y1: box.y1 * s + this.ty, px: F.portPx, forced: force });
         });
       };
+      edgesToLabel.filter(isMust).forEach((e) => drawPort(e, true, true));
+      edgesToLabel.filter((e) => isForced(e) && !isMust(e)).forEach((e) => drawPort(e, true, false));
       edgesToLabel.filter((e) => !isForced(e)).forEach((e) => drawPort(e, false));
-      edgesToLabel.filter(isForced).forEach((e) => drawPort(e, true));
       c.restore();
       if (this.showGroups && this.groupBoxes) this._drawGroupLabels(c, (l) => l.forced); // 滑過的分群全名蓋在最上層
     }
@@ -720,9 +723,11 @@
   }
   /**
    * 埠名標籤（目前字型已是 portPx / s；k = 1 / s，尺寸都是螢幕 px × k）。與 placed 裡的矩形重疊時：
-   * 一般埠名直接略過；force（滑過、選取）時兩端太近就往線中間收，並沿線往外挪 PORT_SLIDE 再試，仍重疊才略過。回傳畫出的矩形或 null。
+   * 一般埠名直接略過；force（滑過、選取）時兩端太近就往線中間收，並沿線往外挪 PORT_SLIDE 再試，仍重疊就略過；
+   * must（選取或滑過的那條）時仍畫在最後一個位置（一定看得到）。
+   * 回傳畫出的矩形或 null。
    */
-  function portLabel(c, from, to, text, dist, placed, k, force) {
+  function portLabel(c, from, to, text, dist, placed, k, force, must) {
     const len = Math.hypot(to.x - from.x, to.y - from.y); if (!len) return null;
     if (force) dist = Math.min(dist, len * 0.3); else if (len < dist * 2.2) return null;
     text = fitText(c, text, F.portPx * k * CV.port.maxEm); const tw = c.measureText(text).width;
@@ -732,7 +737,7 @@
       const d = force ? Math.min(dist + i * PORT_SLIDE * k, len * 0.45) : dist;
       x = from.x + ((to.x - from.x) / len) * d; y = from.y + ((to.y - from.y) / len) * d;
       const b = { x0: x - tw / 2 - 3 * k, x1: x + tw / 2 + 3 * k, y0: y - 8 * k, y1: y + 7 * k };
-      if (!hit(b)) { box = b; break; }
+      if (!hit(b) || (must && i === PORT_TRIES)) { box = b; break; }
     }
     if (!box) return null;
     placed.push(box);

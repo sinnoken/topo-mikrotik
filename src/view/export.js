@@ -18,6 +18,14 @@
   const baseName = (Q) => `${stamp(Q)}-${Q.meta().stats.devices}dev`;
 
   const entityText = (e) => `${e.type}:${e.key}`;
+  /**
+   * 推定偏離（finding.deviation，多數決的推論）的設備名，以 sep 連接：平手為 V.NO_MAJORITY；不是多數決或沒有 deviation 時 null。
+   * 和畫面同一個判斷（V.majorityDeviating）與用語（V.DEVIATION_LABEL）。
+   */
+  const deviationText = (Q, f, sep) => {
+    const devs = V.majorityDeviating(f.deviation);
+    return !devs ? null : devs.length ? devs.map((k) => Q.devName(k)).join(sep) : V.NO_MAJORITY;
+  };
   const evidenceText = (e) => `${e.file}:${e.line}`;
 
   /** 基準 JSON：原樣序列化，不增刪欄位 */
@@ -57,13 +65,14 @@
    * facet 是檢查項目（finding.facet 原值，例如 A12 的 dns／ntp，會進入 findingKey）；規則沒有 facet 時空白。
    *   放原值而不是畫面的顯示文字：給試算表篩選與對照 findingKey 用，訊息本身已經寫出項目。
    * 常見原因不放進 CSV：每列都會重複同一段多句文字，合在一格也不好篩選；Markdown 報表與畫面上有。
+   * 最後一欄（欄名 V.DEVIATION_LABEL）是推定偏離的設備名（推論，以「; 」分隔）；平手寫 V.NO_MAJORITY，不是多數決的規則空白。
    * 新欄位一律加在最後，既有欄位的位置不變。
    * 開頭加 UTF-8 BOM，Excel 才會以 UTF-8 讀取中文；換行用 CRLF。
    */
   function findingsCsv(Q, opts) {
     const lgOf = ledgerOf(opts);
     const head = ['severity', 'id', 'title', 'message', 'entities', 'evidence', 'acknowledged', 'ack_kind', 'ack_note', 'device', 'action',
-      'status', 'note', 'waiver_reason', 'waiver_until', 'facet'];
+      'status', 'note', 'waiver_reason', 'waiver_until', 'facet', V.DEVIATION_LABEL];
     const rows = ordered(Q, opts).map(({ f, dev }) => {
       const lg = lgOf(f); const done = handledOf(lg) || {}; const w = (lg && lg.waiver) || {};
       return [
@@ -74,6 +83,7 @@
         R().advice(f.id).action || '',
         lg ? lg.status : '', lg ? lg.note || '' : '', w.reason || '', w.until || '',
         f.facet != null ? String(f.facet) : '',
+        deviationText(Q, f, '; ') || '',
       ];
     });
     return '\uFEFF' + [head].concat(rows).map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
@@ -132,6 +142,8 @@
       out.push(`- ${mark}${prefix || ''}${mdText(f.message)}`);
       if (lg && lg.waiver) out.push(`  - 豁免：${mdText(lg.waiver.reason || '（未填原因）')}，到期 ${lg.waiver.until}`);
       if (lg && lg.note) out.push(`  - 備註：${mdText(lg.note)}`);
+      const dv = deviationText(Q, f, '、');
+      if (dv) out.push(`  - ${V.DEVIATION_LABEL}：${mdText(dv)}`);
       if (f.entities.length) out.push(`  - 相關實體：${f.entities.map((e) => mdCode(entityText(e))).join('、')}`);
       f.evidence.forEach((e) => out.push(`  - 證據：${mdText(e.file)} 第 ${e.line} 行：${mdCode(e.text)}`));
     };

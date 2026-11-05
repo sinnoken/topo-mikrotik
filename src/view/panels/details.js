@@ -262,7 +262,9 @@
       h('div', { class: 'row' }, [V.chip(`${rows.length} 個終端埠`), V.chip(`${macs + wifi.length} 個終端 MAC 位置`),
         wifi.length ? V.chip(`${wifi.length} 個 Wi-Fi MAC 位置`, 'info') : null,
         multi ? V.chip(`${multi} 個終端埠有多個 MAC`, 'warn') : null,
-        rows.length + wifi.length > 1 ? h('button', { onclick: () => App.toggleExpand(sel.dev) }, collapsed ? '在圖上展開' : (App.expanded.has(sel.dev) ? '在圖上收合' : '（已全部展開）')) : null]),
+        rows.length + wifi.length > 1 ? (collapsed || App.expanded.has(sel.dev)
+          ? h('button', { onclick: () => App.toggleExpand(sel.dev) }, collapsed ? '在圖上展開' : '在圖上收合')
+          : h('button', { disabled: true, title: '這台設備的終端都已逐一畫在圖上' }, '已顯示全部')) : null]),
       aboutSection(['一般終端埠只學到一個 MAC，且沒有 LLDP／CDP 介面鄰接。Wi-Fi 是一對多介面：每個觀察到的 MAC 位置會列入終端清單，但不把 Wi-Fi 介面判為終端，'
         + '也不參與「同一 MAC 出現在多個終端埠」的檢查，因為 MAC 可能隨使用者漫遊而移動。MNDP 只代表同一 L2 廣播網域可達，不算直連鄰接。']),
       // 點選 A03（未知對端）會來到這裡：列出這台設備的 A03，處理建議才看得到

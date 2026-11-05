@@ -34,10 +34,13 @@
     App.deviceGraph = { nodes, edges }; App.devicePos = pos;
     if (App.layer === 'device') App.graph.setData(nodes, edges, pos);
   };
-  /** 換基準或清除：清掉 L2／L3 的資料與各層的縮放；VLAN 篩選在新的基準沒有這個 VLAN 時取消 */
+  /**
+   * 換基準或清除：清掉 L2／L3 的資料與各層的縮放。VLAN 篩選：由選取帶入的（沒有釘選）隨選取一起取消；
+   * 選單選的在新的基準沒有這個 VLAN 時取消
+   */
   A.resetLayers = function resetLayers() {
     App.layers = new Map(); deviceView = null; layoutToken++; App.l2.focus = null; App.l2.scope = 'all'; App.l2.tooBig = false;
-    if (App.vlanFilter && !(App.Q && App.Q.vlanIds().includes(App.vlanFilter.id))) App.vlanFilter = null;
+    if (App.vlanFilter && (!App.vlanFilter.pinned || !(App.Q && App.Q.vlanIds().includes(App.vlanFilter.id)))) App.vlanFilter = null;
     if (App.vlanFilter) App.vlanFilter.domain = null;
   };
 
@@ -550,14 +553,17 @@
     renderNote();
     A.renderSteps(); // 步驟列「② 檢視」的狀態是目前的層級
   };
-  /** 工具列旁的 VLAN 篩選標示（#vlan-chip）：篩選啟用時寫出 VLAN，按它或在它上面按 Esc 取消（A.clearVlanFilter） */
+  /**
+   * 工具列旁的 VLAN 篩選標示（#vlan-chip）：由選取帶入的篩選（沒有釘選）才顯示，寫出 VLAN，按它或在它上面按 Esc 取消（A.clearVlanFilter）。
+   * 在選單選的（pinned）由選單本身標示、用選單的「不篩選」取消，不並排第二個標示
+   */
   function syncVlanChip() {
-    const c = $('#vlan-chip'); const f = App.Q ? App.vlanFilter : null;
+    const c = $('#vlan-chip'); const f = App.Q && App.vlanFilter && !App.vlanFilter.pinned ? App.vlanFilter : null;
     c.classList.toggle('hidden', !f || App.layer === 'l4'); // L4 沒有 VLAN 篩選（同工具列的 VLAN 選單）
     if (!f) { c.textContent = ''; return; }
     c.textContent = `VLAN ${f.id} ✕`;
     c.setAttribute('aria-label', `取消 VLAN ${f.id} 篩選`);
-    c.setAttribute('title', `圖上標出 VLAN ${f.id}（${f.pinned ? '在選單選的，選其他東西時仍保留' : '由選取帶入，選其他東西時自動取消'}）；按這裡或 Esc 取消篩選`);
+    c.setAttribute('title', `圖上標出 VLAN ${f.id}（由選取帶入，選其他東西時自動取消）；按這裡或 Esc 取消篩選`);
   }
   /** 這一層的說明：畫了多少、哪些沒畫（L2 的 MNDP、只畫一台設備時的原因），L3 的路由、重疊與 VRF */
   function renderNote() {

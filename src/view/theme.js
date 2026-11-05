@@ -40,7 +40,7 @@
     // 只改線型與透明度，保留速率色
     weakEdge,
     // 嚴重度：顏色之外一律有外形（錯誤方形、警告三角形），節點右上角與連線中點共用
-    sev: { error: '#d93025', warn: '#f29900' },
+    sev: { error: '#d93025', warn: '#c27a00' },
     sevShape: { error: 'square', warn: 'triangle' },
     // 圖上的標示：選取（藍色實線環）、滑過（深色細環）、搜尋結果、路由追蹤（含箭頭）各用不同顏色；bad／good 是狀態
     mark,

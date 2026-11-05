@@ -376,8 +376,11 @@ function viewBoundaryViolations(file, src) {
     $('#input-file').dispatch('change', { target: { files: [{ name: 'EDGE_SW_9.txt', text: async () => '### /ip arp print detail without-paging\n 0 address=10.0.0.2 mac-address=AA:BB:CC:00:00:01 interface=bridge1\n' }] } });
     await new Promise((r) => setTimeout(r, 20));
     if (!pf().includes('認到 1 台設備') || !pf().includes('EDGE_SW_9')) throw new Error('選檔後應立即預檢：' + pf());
-    $('#input-files').querySelector('.chip').click();
+    const rm = $('#input-files').querySelector('.chip-x');
+    if (!rm || rm.tagName !== 'BUTTON' || rm.getAttribute('aria-label') !== '移除 EDGE_SW_9.txt') throw new Error('已選檔案的移除應是有名稱的按鈕');
+    rm.click();
     if (!pf().includes('尚未輸入')) throw new Error('移除檔案後應重新預檢：' + pf());
+    if (document.activeElement !== $('#input-pick')) throw new Error('移除最後一個檔案後焦點應回到「選擇檔案…」');
     await App.loadSample();
     const sp = S.preflight([{ name: S.readers.PASTE, text: S.samples['sample-bundle.txt'] }]);
     if (!pf().includes(`認到 ${S.view.num(sp.devices.length)} 台設備`) || !pf().includes(`${S.view.num(sp.unrecognized.length)} 段無法辨識`) || btn.disabled) throw new Error('載入範例後應立即預檢：' + pf());
@@ -785,6 +788,72 @@ function viewBoundaryViolations(file, src) {
     const vi = all.findIndex((f) => f.entities[0] && f.entities[0].type === 'vlan');
     if (vi >= 0) { App.selectFinding(vi); if (App.sel.type !== 'vlan' || !text('#detail').includes('VLAN ' + all[vi].entities[0].key)) throw new Error('VLAN 的檢查結果應開啟 VLAN 詳情'); }
     App.select(null);
+  });
+  await step('③ 分診依規則：類別 → 規則 → 結果，類別標題寫出各嚴重度筆數，順序取自規則目錄；推定偏離列在結果下方', () => {
+    const L = S.view.lists.findings; const VA = S.view.app; const all = App.snap.findings;
+    goStep('triage'); L.reset(); L(App);
+    const P = $('#pane-findings');
+    // 三種嚴重度都顯示
+    ['錯誤', '警告', '提醒'].forEach((t) => { const c = P.querySelector('.summary').testAll('.chip').find((x) => x.textContent.startsWith(t)); if (c && c.getAttribute('aria-pressed') !== 'true') c.click(); });
+    const cats = () => P.testAll('.fcat');
+    const catOf = (c) => cats().find((x) => x.getAttribute('data-cat') === c);
+    // 類別與規則的順序：S.query.rules()（CATALOG 的宣告順序）中有待處理結果的
+    const pending = all.filter((f) => VA.isPending(f));
+    const ids = new Set(pending.map((f) => f.id));
+    const order = S.query.rules().filter((r) => ids.has(r.id));
+    const wantCats = S.util.uniq(order.map((r) => r.cat));
+    if (cats().map((x) => x.getAttribute('data-cat')).join() !== wantCats.join()) throw new Error('類別順序應依規則目錄：' + cats().map((x) => x.getAttribute('data-cat')));
+    if (P.childNodes.some((n) => n.className === 'fgroup')) throw new Error('依規則時規則群組應在類別之下');
+    wantCats.forEach((c) => {
+      const box = catOf(c); const head = box.querySelector('.head');
+      const n = { error: 0, warn: 0, info: 0 }; pending.filter((f) => S.query.rule(f.id).cat === c).forEach((f) => { n[f.severity]++; });
+      // 標題的筆數是文字 chip（不只色點），只列有筆數的嚴重度
+      const chips = head.testAll('.fcat-n').map((x) => x.textContent);
+      const want = ['error', 'warn', 'info'].filter((s) => n[s]).map((s) => `${S.view.SEV[s]} ${S.view.num(n[s])}`);
+      if (chips.join('|') !== want.join('|')) throw new Error(`${c} 的筆數應為 ${want.join('／')}：${chips.join('／')}`);
+      if (!head.testAll('.fcat-n .sev').every((d) => d.getAttribute('role') === 'img' && d.getAttribute('aria-label'))) throw new Error('嚴重度外形應有可念出的名稱');
+      // 有錯誤或警告的類別預設展開到規則層，只有提醒的收合
+      const open = n.error + n.warn > 0;
+      if (head.getAttribute('aria-expanded') !== String(open) || !!box.querySelector('.fcat-rules') !== open) throw new Error(`${c} 預設應${open ? '展開' : '收合'}`);
+      if (!head.getAttribute('aria-label').startsWith(c + '：')) throw new Error('類別標題的名稱應寫出類別與筆數');
+      if (open) {
+        const got = box.testAll('.fcat-rules .fgroup .head .id').map((x) => x.textContent);
+        const exp = order.filter((r) => r.cat === c).map((r) => r.id);
+        if (got.join() !== exp.join()) throw new Error(`${c} 的規則順序應依規則目錄：${got} ≠ ${exp}`);
+        if (box.testAll('.fitem').length) throw new Error('類別展開時規則預設仍收合');
+      }
+    });
+    // 切換類別的展開狀態跨重繪保留
+    const c0 = wantCats[0];
+    if (c0) {
+      const was = catOf(c0).querySelector('.head').getAttribute('aria-expanded');
+      catOf(c0).querySelector('.head').click(); L(App);
+      if (catOf(c0).querySelector('.head').getAttribute('aria-expanded') === was) throw new Error('類別應可切換展開，並跨重繪保留');
+      catOf(c0).querySelector('.head').click();
+    }
+    // 推定偏離（多數決）：結果下方列出可點的設備；平手不列
+    const dev = pending.filter((f) => f.deviation && f.deviation.basis === 'majority' && f.deviation.deviating.length);
+    if (!dev.length && !process.env.SMOKE_INPUT) throw new Error('範例資料應有推定偏離設備的待處理結果');
+    dev.slice(0, 5).forEach((f) => {
+      const box = catOf(S.query.rule(f.id).cat); const ch = box.querySelector('.head');
+      if (ch.getAttribute('aria-expanded') !== 'true') ch.click();
+      const rg = () => catOf(S.query.rule(f.id).cat).testAll('.fgroup').find((g) => g.className === 'fgroup' && g.querySelector('.head .id').textContent === f.id);
+      if (rg().querySelector('.head').getAttribute('aria-expanded') !== 'true') rg().querySelector('.head').click();
+      const wrap = rg().testAll('.fitem-wrap').find((w) => w.querySelector('.fitem').textContent.includes(f.message));
+      const line = wrap && wrap.querySelector('.deviation');
+      if (!line || !line.textContent.startsWith('推定偏離（多數決）：')) throw new Error(`${f.id} 的結果下方應列推定偏離`);
+      const links = line.testAll('.link');
+      if (links.map((a) => a.textContent).join() !== f.deviation.deviating.map((k) => App.Q.devName(k)).join()) throw new Error(`${f.id} 推定偏離的設備不符`);
+      if (wrap.querySelector('.fitem').testAll('.link').length) throw new Error('設備連結不應包在可點的結果列裡');
+      links[0].click();
+      if (!App.sel || App.sel.type !== 'device' || App.sel.key !== f.deviation.deviating[0]) throw new Error('點推定偏離的設備應選取它');
+    });
+    // 單一 helper（V.deviationLine）：平手預設寫「沒有多數」（詳情），列表傳 { tie: false } 不顯示；不是多數決的不顯示
+    const tie = { basis: 'majority', deviating: [], groups: [], main: null };
+    if (S.view.deviationLine(App, tie, { tie: false }) !== null || S.view.deviationLine(App, null) !== null || S.view.deviationLine(App, { basis: 'other', deviating: ['x'] }) !== null) throw new Error('列表的平手或非多數決不應顯示');
+    if (!S.view.deviationLine(App, tie).textContent.includes('沒有多數')) throw new Error('預設平手應寫出沒有多數');
+    if (P.testAll('.deviation').some((x) => x.textContent.includes('沒有多數'))) throw new Error('列表不顯示平手');
+    App.select(null); L.showProblems(App);
   });
   await step('點選每台設備、每條鏈路、部分介面', () => {
     App.snap.model.devices.slice(0, 300).forEach((d) => App.select({ type: 'device', key: d.key }, { focus: true }));
@@ -1921,13 +1990,30 @@ function viewBoundaryViolations(file, src) {
     if (App.sel.type !== 'device') throw new Error('清單列按 Enter 應選取設備');
     document.testAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('終端')).click();
     if (document.testAll('#pane-inventory tbody tr').length !== Math.min(nEnd, 500)) throw new Error('終端篩選列數不符');
+    // 清單種類是 tabs：roving tabindex，←／→、Home／End 切換並把焦點留在分頁上，分頁內容是 tabpanel
+    const tabs = () => document.testAll('#pane-inventory .seg').find((x) => x.getAttribute('role') === 'tablist').testAll('button');
+    const selTab = () => tabs().find((b) => b.getAttribute('aria-selected') === 'true');
+    if (tabs().filter((b) => b.getAttribute('tabindex') === '0').length !== 1 || selTab().getAttribute('tabindex') !== '0') throw new Error('清單種類只有選取中的分頁在 Tab 順序裡');
+    const panel = $('#inv-panel');
+    if (!panel || panel.getAttribute('role') !== 'tabpanel' || panel.getAttribute('aria-labelledby') !== selTab().id || selTab().getAttribute('aria-controls') !== 'inv-panel') throw new Error('分頁內容應是 tabpanel 並互相關聯');
+    const tab0 = tabs().indexOf(selTab());
+    selTab().dispatch('keydown', { key: 'ArrowRight' });
+    if (tabs().indexOf(selTab()) !== (tab0 + 1) % tabs().length || document.activeElement !== selTab()) throw new Error('→ 應切到下一個分頁，焦點跟著移動');
+    selTab().dispatch('keydown', { key: 'End' }); if (tabs().indexOf(selTab()) !== tabs().length - 1) throw new Error('End 應切到最後一個分頁');
+    selTab().dispatch('keydown', { key: 'ArrowRight' }); if (tabs().indexOf(selTab()) !== 0) throw new Error('最後一個再按 → 應回到第一個');
+    selTab().dispatch('keydown', { key: 'Home' }); if (tabs().indexOf(selTab()) !== 0 || document.activeElement !== selTab()) throw new Error('Home 應切到第一個分頁');
     const ipChip = document.testAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('IP')); ipChip.click();
-    document.testAll('#pane-inventory th')[0].dispatch('click');
+    // 可排序的標頭是 th 裡的按鈕（鍵盤可操作），th 標 aria-sort
+    const sortBtn = () => document.testAll('#pane-inventory th')[0].querySelector('.th-sort');
+    if (!sortBtn() || document.testAll('#pane-inventory th')[0].getAttribute('aria-sort') !== 'none') throw new Error('可排序的標頭應是按鈕，未排序時 aria-sort=none');
+    sortBtn().click();
+    if (document.testAll('#pane-inventory th')[0].getAttribute('aria-sort') !== 'ascending') throw new Error('升冪時 aria-sort=ascending');
     const col = () => document.testAll('#pane-inventory tbody tr').map((tr) => tr.testAll('td')[0].textContent);
     const asc = col(); const num = (x) => x.split('.').reduce((n, p) => n * 256 + +p, 0);
     if (!asc.length || asc.some((x, i) => i && num(asc[i - 1]) > num(x))) throw new Error('IP 清單應依 IP 數值升冪');
-    document.testAll('#pane-inventory th')[0].dispatch('click');
+    sortBtn().click();
     const desc = col(); if (asc.length > 1 && desc[0] === asc[0]) throw new Error('再點一次應反向排序');
+    if (document.testAll('#pane-inventory th')[0].getAttribute('aria-sort') !== 'descending') throw new Error('降冪時 aria-sort=descending');
     document.testAll('#pane-inventory .btn').find((c) => c.textContent.startsWith('MAC')).click();
     macChip.click(); const t2 = text('#pane-inventory'); if (!t2.includes('缺 IP ' + new Set(rows.filter((r) => r.noIp).map((r) => r.mac)).size) || !t2.includes('全部 ' + App.snap.meta.stats.macs)) throw new Error('缺 IP 摘要不正確');
     App.select(null); const ov = text('#right'); const uniq = new Set(App.snap.model.arps.map((x) => x.ip)).size;
@@ -3377,10 +3463,10 @@ function viewBoundaryViolations(file, src) {
     App.select({ type: 'device', key: 'R_A' });
     const th = $('#detail').testAll('th').find((el) => el.textContent.startsWith('網段'));
     if (!th) throw new Error('路由表應有可排序的網段標頭');
-    th.dispatch('click');
+    th.querySelector('.th-sort').click();
     const order = () => $('#detail').testAll('tbody tr').map((tr) => tr.textContent).filter((s) => /^10\.\d+\.0\.0\/16/.test(s)).map((s) => s.split('/')[0]);
     if (order().join() !== '10.9.0.0,10.10.0.0,10.100.0.0') throw new Error('網段應依 IP 數值升冪：' + order());
-    $('#detail').testAll('th').find((el) => el.textContent.startsWith('網段')).dispatch('click');
+    $('#detail').testAll('th').find((el) => el.textContent.startsWith('網段')).querySelector('.th-sort').click();
     if (order().join() !== '10.100.0.0,10.10.0.0,10.9.0.0') throw new Error('再點一次應降冪：' + order());
   });
   await step('CAPsMAN Wi-Fi 多 MAC 保留菱形提示，MAC 位置列入終端清單', async () => {
@@ -3546,6 +3632,21 @@ function viewBoundaryViolations(file, src) {
     const outer = colors[colors.length - 1];
     if (!outer || ['#ffffff', v.surface].some((bg) => contrastOf(outer, bg) < 3)) throw new Error('焦點框對底色應 ≥ 3:1：' + ring);
     if (!/#graph:focus-visible\s*\{[^}]*outline:/.test(css)) throw new Error('畫布取得焦點時應有明顯的焦點框');
+    // 按鈕、連結、清單列與表格列：2px 實線 outline（tr 的 box-shadow 在 Chrome／Safari 不會畫），顏色對白底與表面色 ≥ 3:1
+    const fo = (v['focus-outline'] || '').match(/^2px solid var\(--([\w-]+)\)$/);
+    if (!fo || ['#ffffff', v.surface].some((bg) => contrastOf(v[fo[1]], bg) < 3)) throw new Error('--focus-outline 應是 2px 實線且對底色 ≥ 3:1：' + v['focus-outline']);
+    const ruleFor = (sel) => Array.from(css.replace(/@media[^{]*\{(?:[^{}]*\{[^}]*\})*[^{}]*\}/g, '').matchAll(/([^{}]+)\{([^}]*)\}/g)).filter((m) => m[1].split(',').map((x) => x.trim()).includes(sel)).map((m) => m[2]).join(';');
+    ['tr.click:focus-visible', '.fitem:focus-visible', 'button:focus-visible', 'a:focus-visible'].forEach((sel) => { if (!/outline:\s*var\(--focus-outline\)/.test(ruleFor(sel))) throw new Error(sel + ' 聚焦應用 2px 實線 outline'); });
+    if (!/\.chip\.btn:focus-visible\s*\{[^}]*outline:\s*var\(--focus-outline\)/.test(css)) throw new Error('篩選選項聚焦應用 outline');
+    // 圖形與欄位邊框（1.4.11）：警告外形、輸入框邊框對白底與表面色 ≥ 3:1
+    [['--sev-warn', v['sev-warn']], ['--sev-error', v['sev-error']], ['--line-input', v['line-input']]].forEach(([n, c]) => {
+      if (!c || ['#ffffff', v.surface].some((bg) => contrastOf(c, bg) < 3)) throw new Error(`${n} ${c} 對底色應 ≥ 3:1`);
+    });
+    if (v['sev-warn'].toLowerCase() !== S.view.theme.sev.warn.toLowerCase()) throw new Error('--sev-warn 與 theme.sev.warn 不一致');
+    if (!/input\[type=text\], input\[type=search\], select, textarea \{[^}]*border: 1px solid var\(--line-input\)/.test(css)) throw new Error('輸入框邊框應用 --line-input');
+    if (/\.chip \.n[^{]*\{[^}]*opacity/.test(css)) throw new Error('chip 內的筆數不應降低不透明度（對比不足）');
+    // 狀態訊息讓輔助科技念出
+    ['#banner', '#input-status'].forEach((id) => { if ($(id).getAttribute('role') !== 'status') throw new Error(id + ' 應有 role=status'); });
     if (!/@media \(forced-colors: active\)/.test(css)) throw new Error('應支援強制色彩模式');
     if (!/#graph\s*\{[^}]*touch-action:\s*none/.test(css)) throw new Error('畫布應自己處理觸控拖曳');
     // 篩選選項是可聚焦的按鈕

@@ -63,12 +63,12 @@
   /**
    * 跨設備一致性規則的多數決結果（finding.deviation，推論）：一律經這裡產生，詳情的每筆檢查結果共用。
    * 列出推定偏離的設備，點設備名選取該設備（不觸發外層的點選）；沒有多數（平手）時明說無法推定，不留白。
-   * 不是多數決的 deviation（或沒有）時為 null。
+   * 不是多數決的 deviation（或沒有）時為 null。opts.tie 為 false 時平手不顯示（③ 分診的結果列表），回傳 null。
    */
-  V.deviationLine = function (App, dv) {
+  V.deviationLine = function (App, dv, opts) {
     if (!dv || dv.basis !== 'majority') return null;
     const label = '推定偏離（多數決）：';
-    if (!dv.deviating || !dv.deviating.length) return V.h('div', { class: 'deviation none muted' }, label + '沒有多數，無法推定');
+    if (!dv.deviating || !dv.deviating.length) return opts && opts.tie === false ? null : V.h('div', { class: 'deviation none muted' }, label + '沒有多數，無法推定');
     const pick = (key) => (e) => { if (e && e.stopPropagation) e.stopPropagation(); App.select({ type: 'device', key }, { focus: true }); };
     // a.link 沒有 href 時 h() 已補 role、tabindex 與 Enter／空白鍵啟動
     const links = dv.deviating.map((key) => V.h('a', { class: 'link', 'data-dev': key, title: '選取這台設備', onclick: pick(key) }, App.Q.devName(key)));
@@ -196,7 +196,8 @@
   /** 可操作的 chip（篩選選項）：用 <button>，鍵盤可以聚焦與按 Enter／空白鍵操作 */
   V.chipButton = (text, cls, attrs) => V.h('button', Object.assign({ type: 'button', class: 'chip ' + (cls || '') }, attrs || {}), text);
   V.kindChip = (k) => V.chip(V.KIND[k] || k, 'kind-' + k);
-  V.sevDot = (s) => V.h('span', { class: 'sev ' + s, title: V.SEV[s] });
+  /** 嚴重度標記（外形＋顏色）：輔助科技念出嚴重度名稱，不只靠顏色 */
+  V.sevDot = (s) => V.h('span', { class: 'sev ' + s, title: V.SEV[s], role: 'img', 'aria-label': V.SEV[s] });
   V.fmtTime = (iso) => { const d = new Date(iso); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
   V.num = (n) => Number(n).toLocaleString('zh-TW');
 
@@ -231,6 +232,7 @@
     return box;
   };
 
+  let sortFocus = null; // 剛按下排序的欄位標題（重繪後把焦點還給它）
   function renderTable(cols, rows, o) {
     const tb = V.h('tbody');
     rows.slice(0, o.limit || rows.length).forEach((r) => {
@@ -245,7 +247,18 @@
       },
         cols.map((c) => V.h('td', { class: c.cls || null, style }, c.f(r)))));
     });
-    const t = V.h('table', { class: 't' }, [V.h('thead', null, V.h('tr', null, cols.map((c, n) => V.h('th', c.s && o.onSort ? { class: 'sortable', title: '點一下排序', onclick: () => o.onSort(n) } : null, c.t + (o.sortBy === n ? (o.sortDir < 0 ? ' ▼' : ' ▲') : ''))))), tb]);
+    // 可排序的標頭：標頭內放 <button>（鍵盤可聚焦、Enter／空白鍵排序），th 標 aria-sort；▲▼ 只是視覺提示，不念出
+    const head = (c, n) => {
+      if (!(c.s && o.onSort)) return V.h('th', null, c.t);
+      const on = o.sortBy === n;
+      const btn = V.h('button', { type: 'button', class: 'th-sort', title: '點一下排序', onclick: () => { sortFocus = c.t; o.onSort(n); } },
+        [c.t, on ? V.h('span', { 'aria-hidden': 'true' }, o.sortDir < 0 ? ' ▼' : ' ▲') : null]);
+      // 排序後表格整個重繪：焦點回到同一欄的新按鈕（呼叫端同步插入表格後才移動焦點）
+      if (sortFocus === c.t) { sortFocus = null; Promise.resolve().then(() => btn.focus()); }
+      return V.h('th', { class: 'sortable', 'aria-sort': on ? (o.sortDir < 0 ? 'descending' : 'ascending') : 'none' },
+        btn);
+    };
+    const t = V.h('table', { class: 't' }, [V.h('thead', null, V.h('tr', null, cols.map(head))), tb]);
     // 識別字（IP、MAC、VLAN 清單）在表格內不斷行，寬於畫面時表格在自己的框內橫向捲動
     const box = V.h('div', { class: 'table-scroll' }, t);
     if (o.limit && rows.length > o.limit) return V.h('div', null, [box, V.h('div', { class: 'muted table-more' }, `只顯示前 ${o.limit} 筆，共 ${V.num(rows.length)} 筆`)]);

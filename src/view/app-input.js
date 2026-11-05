@@ -46,9 +46,11 @@
   }
   function renderFiles() {
     const box = V.clear($('#input-files'));
-    input.files.forEach((f, i) => box.appendChild(V.chip(`${f.name}（${V.num(f.text.length)} 字元）  ✕`, '', {
-      title: '點一下移除', onclick: () => { input.files.splice(i, 1); renderFiles(); },
-    })));
+    // 已選的檔案：名稱是文字，移除是獨立的按鈕（鍵盤可操作、有名稱）；移除後焦點回到下一個移除鈕或檔案選擇
+    input.files.forEach((f, i) => box.appendChild(V.chip([`${f.name}（${V.num(f.text.length)} 字元）`,
+      h('button', { type: 'button', class: 'ghost chip-x', 'aria-label': '移除 ' + f.name, title: '移除這個檔案',
+        onclick: () => { input.files.splice(i, 1); renderFiles(); const xs = box.querySelectorAll('.chip-x'); const next = xs[Math.min(i, xs.length - 1)] || $('#input-pick'); next.focus(); } },
+      h('span', { 'aria-hidden': 'true' }, '✕'))], 'file-chip')));
     runPreflight();
   }
   /** 對話框目前的輸入（貼上的文字在前、檔案依加入順序），建立與預檢共用 */

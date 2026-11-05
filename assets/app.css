@@ -7,7 +7,9 @@
   /* 設備類型色：與 theme.js 的 kind 一致（有測試比對）；不用狀態色的色相 */
   --fw: #7b208e; --sw: #2795b5; --rt: #335dcd; --host: #977af8; --unk: #535d62;
   /* 嚴重度標記：與 theme.js 的 sev 一致（有測試比對）；外形與畫布相同：錯誤方形、警告三角形 */
-  --sev-error: #d93025; --sev-warn: #f29900;
+  --sev-error: #d93025; --sev-warn: #c27a00;
+  /* 文字輸入框、select、textarea 的邊框：欄位只靠這條線辨識，對白底與表面色需 ≥ 3:1（有測試） */
+  --line-input: #7d8b9a;
   /* 中性底色：表面（表頭、斑馬列、說明框）、hover、標籤底色；強調色的 hover */
   --surface-hover: #f3f6f9; --neutral-soft: #eef1f4; --accent-hover: #edf4fb; --line-hover: #aebdcb; --line-soft: #edf0f3;
   /* 字型：拉丁字型在前、繁中字型在後，涵蓋 macOS／Windows／Linux；canvas 用 theme.js 的 font 同一串（有測試比對）。
@@ -25,6 +27,8 @@
   --shadow-sm: 0 1px 3px rgba(22, 37, 54, .08); --shadow-md: 0 8px 24px rgba(22, 37, 54, .12);
   /* 焦點框：內圈白、外圈強調色實線（強調色對白底與表面色 ≥ 3:1，有測試）；強制色彩模式改用 outline */
   --focus-ring: 0 0 0 2px #ffffff, 0 0 0 4px var(--accent);
+  /* 按鈕、連結、清單列與表格列的焦點：2px 實線 outline（強調色，對白底與表面色 ≥ 3:1，有測試） */
+  --focus-outline: 2px solid var(--accent);
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -43,10 +47,12 @@ button.ghost { border-color: transparent; background: transparent; box-shadow: n
 button.ghost:hover { background: var(--neutral-soft); }
 #btn-clear { color: #8c4a46; }
 #btn-clear:hover { color: var(--err-text); border-color: #f2c9c5; background: var(--err-soft); }
-button:focus-visible, a:focus-visible, summary:focus-visible, .fgroup > .head:focus-visible, .fitem:focus-visible, tr.click:focus-visible { outline: none; box-shadow: var(--focus-ring); position: relative; z-index: 2; }
+button:focus-visible, a:focus-visible, summary:focus-visible, .fgroup > .head:focus-visible, .fitem:focus-visible, tr.click:focus-visible { outline: var(--focus-outline); outline-offset: 2px; position: relative; z-index: 2; }
+/* 表格列與清單列貼著捲動框，外框畫在內側才不會被裁掉（tr 的 box-shadow 在 Chrome／Safari 不會畫） */
+tr.click:focus-visible, .fitem:focus-visible, .fgroup > .head:focus-visible { outline-offset: -2px; }
 button:disabled { opacity: .48; cursor: default; transform: none; box-shadow: none; }
-input[type=text], input[type=search], select, textarea { min-height: var(--control-h); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); padding: 6px 9px; background: #fff; transition: border-color .14s ease, box-shadow .14s ease; }
-input:hover, select:hover, textarea:hover { border-color: var(--line-hover); }
+input[type=text], input[type=search], select, textarea { min-height: var(--control-h); border: 1px solid var(--line-input); border-radius: var(--radius-sm); padding: 6px 9px; background: #fff; transition: border-color .14s ease, box-shadow .14s ease; }
+input:hover, select:hover, textarea:hover { border-color: var(--muted); }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
 .mono { font-family: var(--mono); font-size: var(--fs-sm); }
 /* 說明文字與長段落 */
@@ -164,6 +170,9 @@ footer { display: flex; align-items: center; gap: 16px; padding: 0 12px; font-si
 .chip { display: inline-flex; align-items: center; gap: 4px; min-height: 22px; padding: 2px 8px; border: 1px solid transparent; border-radius: 999px; font-size: var(--fs-sm); font-weight: 600; background: var(--neutral-soft); color: #3c4650; white-space: nowrap; }
 /* 篩選選項是 <button class="chip btn">：不套一般按鈕的高度、陰影與 hover 底色 */
 button.chip { box-shadow: none; line-height: inherit; text-align: left; }
+/* 已選檔案：名稱＋移除鈕（觸控時移除鈕至少 44px，見 pointer: coarse） */
+.chip.file-chip { padding-right: 2px; }
+.chip .chip-x { min-height: 22px; min-width: 22px; padding: 0 4px; border-radius: 999px; font-weight: 400; line-height: 1; }
 .chip-list { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
 .chip.err { background: var(--err-soft); color: var(--err-text); border-color: #f8d6d2; }
 .chip.warn { background: var(--warn-soft); color: var(--warn-text); border-color: #f3dfb9; }
@@ -178,11 +187,12 @@ button.chip { box-shadow: none; line-height: inherit; text-align: left; }
 .chip.kind-unknown { background: #eceff1; color: #46505a; }
 .chip.btn { cursor: pointer; transition: box-shadow .14s ease, transform .14s ease, filter .14s ease; }
 .chip.btn:hover { filter: saturate(1.15); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
-.chip.btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.chip.btn:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
 .chip.btn.on { border-color: currentColor; box-shadow: inset 0 0 0 1px currentColor; }
 /* 篩選選項：沒有狀態色的選取時以強調色填滿；筆數較淡；0 筆停用 */
 .chip.btn.on:not(.err):not(.warn):not(.info):not(.ok) { background: var(--accent-soft); color: var(--accent); }
-.chip .n, .seg .n { font-weight: 400; opacity: .75; font-variant-numeric: tabular-nums; }
+/* 筆數以字重區分層級，不降不透明度（淡化後在狀態底色上不到 4.5:1） */
+.chip .n, .seg .n { font-weight: 400; font-variant-numeric: tabular-nums; }
 .chip.btn.off { opacity: .45; cursor: default; }
 .chip.btn.off:hover { filter: none; box-shadow: none; transform: none; }
 .sev { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
@@ -202,13 +212,25 @@ button.chip { box-shadow: none; line-height: inherit; text-align: left; }
 .seg button:last-child { border-right: none; }
 .seg button:hover { background: var(--surface-hover); }
 .seg button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; box-shadow: inset 0 -2px var(--accent); }
-.seg button:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.seg button:focus-visible { outline-offset: -2px; }
 .fgroup { border-bottom: 1px solid var(--line); }
 .fgroup > .head { display: flex; align-items: center; gap: 8px; padding: 9px 10px; cursor: pointer; user-select: none; transition: background-color .12s ease; }
 .fgroup > .head:hover { background: var(--surface-hover); }
 .fgroup > .head .title { flex: 1; }
 .fgroup > .head .id { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); }
 .fgroup .items { padding: 0 0 6px; }
+/* 依規則分組的第一層：規則類別（標題列出各嚴重度的筆數），規則與結果往內縮一層 */
+.fgroup.fcat > .head { font-weight: 600; background: var(--surface); }
+.fgroup.fcat > .head:hover { background: var(--surface-hover); }
+.fcat-counts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.fcat-n { font-weight: 600; }
+.fcat-rules > .fgroup { border-bottom: 0; border-top: 1px solid var(--line-soft); }
+.fcat-rules > .fgroup > .head { padding-left: 22px; font-size: var(--fs-md); }
+.fcat-rules .fitem { padding-left: 38px; }
+.fcat-rules .fhint { padding-left: 38px; }
+/* 推定偏離（多數決）：結果下方、可點的設備；在可點的結果列之外，避免連結包在按鈕裡 */
+.fitem-wrap > .deviation { padding: 0 10px 6px 29px; font-size: var(--fs-sm); }
+.fcat-rules .fitem-wrap > .deviation { padding-left: 41px; }
 /* 規則的處理提示（V.remediation.hintLine）：展開規則後在結果列表上方，詳情卡片在訊息下方 */
 .rule-hint { font-size: var(--fs-sm); line-height: 1.6; }
 .fgroup .fhint { padding: 0 10px 4px 26px; }
@@ -262,8 +284,12 @@ button.chip { box-shadow: none; line-height: inherit; text-align: left; }
 /* ---------- 表格 ---------- */
 table.t { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--fs-md); }
 table.t th { text-align: left; font-weight: 600; color: #566678; padding: 8px 9px; border-bottom: 1px solid var(--line-strong); position: sticky; top: 0; background: var(--surface); z-index: 1; white-space: nowrap; }
-table.t th.sortable { cursor: pointer; user-select: none; }
-table.t th.sortable:hover { color: var(--accent); background: var(--accent-hover); }
+table.t th.sortable { padding: 0; user-select: none; }
+table.t th.sortable:hover { background: var(--accent-hover); }
+/* 可排序標頭內的按鈕：外觀同標頭文字，整格可點 */
+table.t th .th-sort { display: block; width: 100%; min-height: 0; padding: 8px 9px; border: 0; border-radius: 0; background: transparent; box-shadow: none; font-weight: inherit; color: inherit; text-align: inherit; white-space: nowrap; }
+table.t th .th-sort:hover { color: var(--accent); background: transparent; }
+table.t th .th-sort:focus-visible { outline-offset: -2px; }
 table.t td { padding: 6px 9px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
 table.t tbody tr:nth-child(even) td { background: var(--surface); }
 table.t tbody tr.click:hover td { background: var(--accent-hover); }
@@ -355,7 +381,8 @@ table.t .mono, table.t .vlanlist { white-space: nowrap; overflow-wrap: normal; }
 .toolbar .grp select:last-child { border-right: none; }
 /* 群組是 overflow: hidden 的連續按鈕列：外擴的焦點光暈會被裁成單邊直條，改用內縮框，且只在鍵盤操作時顯示 */
 .toolbar .grp select:focus { border-right-color: var(--line); box-shadow: none; }
-.toolbar .grp button:focus-visible, .toolbar .grp select:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.toolbar .grp button:focus-visible { outline-offset: -2px; }
+.toolbar .grp select:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
 .toolbar .grp button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; box-shadow: inset 0 -2px var(--accent); }
 /* 拓樸圖的層級（radiogroup）：選取的層級同 .on；停用的 L4 標示「M2」 */
 .layer-switch [role="radio"][aria-checked="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; box-shadow: inset 0 -2px var(--accent); }
@@ -521,6 +548,7 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
 
 @media (pointer: coarse) {
   :root { --control-h: 44px; }
+  .chip .chip-x { min-height: 44px; min-width: 44px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -570,7 +598,7 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
 /* ---------- 處理紀錄（app-ledger.js、panels/ledger.js） ---------- */
 .ledger-editor .ledger-note, .ledger-editor .ledger-waiver-reason { flex: 1; min-width: 140px; }
 .ledger-editor .ledger-waiver { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; flex-basis: 100%; }
-.ledger-editor input[type=date] { min-height: var(--control-h); padding: 3px 6px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font-size: var(--fs-sm); }
+.ledger-editor input[type=date] { min-height: var(--control-h); padding: 3px 6px; border: 1px solid var(--line-input); border-radius: var(--radius-sm); font-size: var(--fs-sm); }
 .ledger-error { flex-basis: 100%; color: var(--err-text); font-size: var(--fs-sm); }
 .fgroup.handled > .head { color: var(--muted); }
 .ledger-chip { margin-right: 2px; }
@@ -644,7 +672,7 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
 .patch-choice-row.on { font-weight: 600; }
 .patch-accept .row { gap: 6px; }
 .patch-accept .patch-accept-reason { flex: 1; min-width: 160px; }
-.patch-accept input[type=date] { min-height: var(--control-h); padding: 3px 6px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font-size: var(--fs-sm); }
+.patch-accept input[type=date] { min-height: var(--control-h); padding: 3px 6px; border: 1px solid var(--line-input); border-radius: var(--radius-sm); font-size: var(--fs-sm); }
 .diff-warnings { margin: 8px 0; }
 .diff-warning { font-size: var(--fs-md); padding: 2px 0; }
 .partial-unrecognized { margin-left: 6px; color: var(--warn-text); }

@@ -187,7 +187,7 @@
       action: '查看訊息列出的每個位置，確認是否為同一台設備。位置來自 `/interface bridge host`；這只是可能的重複或迴圈，需要人工核實。',
     },
     A03: {
-      severity: 'info', cat: '位址', title: '介面有學到 MAC 但沒有 LLDP／CDP 鄰接（未識別的終端）', data: [['mac']],
+      severity: 'info', cat: '位址', title: '未識別的終端', data: [['mac']],
       causes: [
         '接的是 PC、印表機、IoT 等不送 LLDP 的設備，屬於正常情況。',
         '對端是網路設備，但沒有開啟 LLDP。',
@@ -195,7 +195,7 @@
       action: '若該埠應接網路設備，在對端開啟 LLDP；終端屬於正常。RouterOS 在 `/ip neighbor discovery-settings` 設定。',
     },
     A04: {
-      severity: 'info', cat: '位址', title: '單一埠學到過多 MAC（可能下掛非網管型交換器或 hypervisor）', data: [['mac']],
+      severity: 'info', cat: '位址', title: '非網管型交換器', data: [['mac']],
       causes: [
         '埠下掛了非網管型交換器。',
         '埠下接了 AP。',

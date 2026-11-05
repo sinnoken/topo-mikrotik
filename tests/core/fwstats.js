@@ -96,7 +96,7 @@ test('命中次數對不上（F09）：列數、chain、action、停用、註解
     ['### /ip firewall filter print stats detail without-paging', LEGEND, ' 0    chain=input action=accept bytes=0 packets=0']);
   const f = two.findings.filter((x) => x.id === 'F09');
   assert.strictEqual(f.length, 1);
-  assert.ok(/IPv4 filter（.*）；IPv4 nat（/.test(f[0].message), f[0].message);
+  assert.ok(/^R：IPv4 filter 的命中次數全部不採用（.*）；IPv4 nat 的命中次數全部不採用（/.test(f[0].message), f[0].message);
   assert.deepStrictEqual(two.coverage[0].firewall.stats, { matched: 0, mismatch: 2 });
 });
 

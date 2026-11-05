@@ -36,7 +36,7 @@ test('A06：同一 VLAN 區塊內各設備 VLAN 介面的網段不同；同網�
   assert.deepStrictEqual(msgs(s, 'A06'), ['VLAN 10：SW_A 10.0.10.0/24；SW_B 10.0.20.0/24']);
   assert.ok(s.findings.find((f) => f.id === 'A06').entities.some((e) => e.type === 'interface' && e.key === 'SW_B|vlan10'));
   const m = cfgPair([VIF('vlan10', 10), ip('10.0.10.1/24')], [VIF('vlan10', 10), ip('10.0.10.2/25')]);
-  assert.deepStrictEqual(msgs(m, 'A06'), ['VLAN 10：SW_A 10.0.10.0/24；SW_B 10.0.10.0/25（網段重疊但遮罩不同）']);
+  assert.deepStrictEqual(msgs(m, 'A06'), ['VLAN 10 網段重疊但遮罩不同：SW_A 10.0.10.0/24；SW_B 10.0.10.0/25']);
   assert.deepStrictEqual(msgs(cfgPair([VIF('vlan10', 10), ip('10.0.10.1/24')], [VIF('vlan10', 10), ip('10.0.20.2/24')], false), 'A06'), [], '不同區塊不比');
   assert.deepStrictEqual(msgs(cfgPair([VIF('vlan10', 10), ip('10.0.10.1/24')], [VIF('vlan10', 10), ip('10.0.10.2/24')]), 'A06'), []);
 });
@@ -71,9 +71,9 @@ test('R06：同一 DHCP 網段在不同設備的閘道、DNS、NTP 不同；只�
 test('A10：同一選單內同一名稱在不同設備對應到不同 IP（名稱不分大小寫）；集合相同或只有一台不列', () => {
   const al = (list, addr) => `/ip firewall address-list add address=${addr} list=${list}`;
   const s = cfgPair([al('MGMT', '10.0.10.0/24')], [al('mgmt', '10.0.10.0/24'), al('mgmt', '10.0.99.0/24')]);
-  assert.deepStrictEqual(msgs(s, 'A10'), ['/ip firewall address-list「MGMT」：SW_A 10.0.10.0/24；SW_B 10.0.10.0/24、10.0.99.0/24；10.0.99.0/24 只在 SW_B']);
+  assert.deepStrictEqual(msgs(s, 'A10'), ['/ip firewall address-list「MGMT」的 10.0.99.0/24 只在 SW_B：SW_A 10.0.10.0/24；SW_B 10.0.10.0/24、10.0.99.0/24']);
   const dns = cfgPair(['/ip dns static add address=10.0.0.5 name=nas.lan'], ['/ip dns static add address=10.0.0.6 name=NAS.lan']);
-  assert.deepStrictEqual(msgs(dns, 'A10'), ['/ip dns static「nas.lan」：SW_A 10.0.0.5；SW_B 10.0.0.6；10.0.0.5 只在 SW_A；10.0.0.6 只在 SW_B']);
+  assert.deepStrictEqual(msgs(dns, 'A10'), ['/ip dns static「nas.lan」的 10.0.0.5 只在 SW_A，10.0.0.6 只在 SW_B：SW_A 10.0.0.5；SW_B 10.0.0.6']);
   assert.deepStrictEqual(msgs(cfgPair([al('MGMT', '10.0.10.0/24')], [al('MGMT', '10.0.10.0/24')]), 'A10'), []);
   assert.deepStrictEqual(msgs(cfgPair([al('MGMT', '10.0.10.0/24')], [al('OTHER', '10.0.20.0/24')]), 'A10'), []);
 });
@@ -126,7 +126,7 @@ test('多數決的分組（deviation.groups／main）：顯示值取該組第一
 test('多數決：範例資料中 A06 推定 TPE_ACC_SW_10 偏離；A12 的 DNS 兩台核心沒有多數，NTP 推定 TPE_ACC_SW_12 偏離', () => {
   const s = build(read('samples/sample-bundle.txt'));
   const a06 = s.findings.find((f) => f.id === 'A06');
-  assert.ok(a06.message.endsWith('（網段重疊但遮罩不同）'), a06.message);
+  assert.ok(a06.message.startsWith('VLAN 10 網段重疊但遮罩不同：'), a06.message);
   assert.deepStrictEqual([a06.deviation.basis, a06.deviation.deviating], ['majority', ['TPE_ACC_SW_10']]);
   const a12 = s.findings.find((f) => f.id === 'A12' && f.facet === 'dns');
   assert.strictEqual(a12.message, 'DNS 伺服器：TPE_CORE_RT_01 1.1.1.1、8.8.8.8；TPE_CORE_RT_02 8.8.8.8');

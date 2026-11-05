@@ -43355,7 +43355,7 @@
    "severity": "warn",
    "cat": "位址",
    "title": "同一 VLAN 在不同設備設定不同網段",
-   "message": "VLAN 10：TPE_ACC_SW_01、TPE_ACC_SW_02、TPE_ACC_SW_03、TPE_ACC_SW_04、TPE_ACC_SW_05、TPE_ACC_SW_06、TPE_ACC_SW_07、TPE_ACC_SW_08…（共 13 台） 10.1.10.0/24；TPE_ACC_SW_10 10.1.10.0/25（網段重疊但遮罩不同）",
+   "message": "VLAN 10 網段重疊但遮罩不同：TPE_ACC_SW_01、TPE_ACC_SW_02、TPE_ACC_SW_03、TPE_ACC_SW_04、TPE_ACC_SW_05、TPE_ACC_SW_06、TPE_ACC_SW_07、TPE_ACC_SW_08…（共 13 台） 10.1.10.0/24；TPE_ACC_SW_10 10.1.10.0/25",
    "entities": [
     {
      "type": "vlan",
@@ -43787,7 +43787,7 @@
    "severity": "warn",
    "cat": "位址",
    "title": "同一名稱在不同設備對應到不同 IP",
-   "message": "/ip firewall address-list「MGMT」：TPE_CORE_RT_01 10.1.10.0/24；TPE_CORE_RT_02 10.1.10.0/24、10.1.99.0/24；10.1.99.0/24 只在 TPE_CORE_RT_02",
+   "message": "/ip firewall address-list「MGMT」的 10.1.99.0/24 只在 TPE_CORE_RT_02：TPE_CORE_RT_01 10.1.10.0/24；TPE_CORE_RT_02 10.1.10.0/24、10.1.99.0/24",
    "entities": [
     {
      "type": "device",
@@ -44032,7 +44032,7 @@
    "severity": "warn",
    "cat": "防火牆",
    "title": "規則被前面的規則完全遮蔽，永遠不會命中",
-   "message": "TPE_CORE_RT_01 IPv4 filter input 第 6 條（accept dst-port=8291 in-interface=ether47 protocol=tcp）被第 5 條（accept dst-port=8291 protocol=tcp）完全涵蓋，永遠不會命中",
+   "message": "TPE_CORE_RT_01 IPv4 filter input 第 6 條（accept dst-port=8291 in-interface=ether47 protocol=tcp）永遠不會命中：被第 5 條（accept dst-port=8291 protocol=tcp）完全涵蓋",
    "entities": [
     {
      "type": "device",
@@ -44218,7 +44218,7 @@
    "severity": "warn",
    "cat": "鏈路",
    "title": "LLDP 單向（對端沒有回報這條鏈路）",
-   "message": "TPE_CORE_RT_02 ether2 看到 TPE_ACC_SW_02 ether24，但 TPE_ACC_SW_02 的 LLDP 沒有回報 TPE_CORE_RT_02",
+   "message": "TPE_ACC_SW_02 的 LLDP 沒有回報 TPE_CORE_RT_02：TPE_CORE_RT_02 ether2 看到 TPE_ACC_SW_02 ether24",
    "entities": [
     {
      "type": "link",
@@ -44588,8 +44588,8 @@
    "id": "A03",
    "severity": "info",
    "cat": "位址",
-   "title": "介面有學到 MAC 但沒有 LLDP／CDP 鄰接（未識別的終端）",
-   "message": "TPE_ACC_SW_01：8 個介面，ether9（1）、ether10（1）、ether11（1）、ether12（1）、ether13（1）、ether14（1）、ether15（1）、ether16（1）",
+   "title": "未識別的終端",
+   "message": "TPE_ACC_SW_01：8 個介面學到 MAC 但沒有 LLDP／CDP 鄰接，ether9（1）、ether10（1）、ether11（1）、ether12（1）、ether13（1）、ether14（1）、ether15（1）、ether16（1）",
    "entities": [
     {
      "type": "device",
@@ -44639,8 +44639,8 @@
    "id": "A03",
    "severity": "info",
    "cat": "位址",
-   "title": "介面有學到 MAC 但沒有 LLDP／CDP 鄰接（未識別的終端）",
-   "message": "TPE_ACC_SW_02：9 個介面，ether9（1）、ether10（1）、ether11（1）、ether12（1）、ether13（1）、ether14（1）、ether15（1）、ether16（1）…",
+   "title": "未識別的終端",
+   "message": "TPE_ACC_SW_02：9 個介面學到 MAC 但沒有 LLDP／CDP 鄰接，ether9（1）、ether10（1）、ether11（1）、ether12（1）、ether13（1）、ether14（1）、ether15（1）、ether16（1）…",
    "entities": [
     {
      "type": "device",
@@ -44690,8 +44690,8 @@
    "id": "A03",
    "severity": "info",
    "cat": "位址",
-   "title": "介面有學到 MAC 但沒有 LLDP／CDP 鄰接（未識別的終端）",
-   "message": "TPE_ACC_SW_03：8 個介面，ether9（1）、ether10（1）、ether11（1）、ether12（1）、ether13（1）、ether14（1）、ether15（1）、ether16（1）",
+   "title": "未識別的終端",
+   "message": "TPE_ACC_SW_03：8 個介面學到 MAC 但沒有 LLDP／CDP 鄰接，ether9（1）、ether10（1）、ether11（1）、ether12（1）、ether13（1）、ether14（1）、ether15（1）、ether16（1）",
    "entities": [
     {
      "type": "device",
@@ -44741,8 +44741,8 @@
    "id": "A03",
    "severity": "info",
    "cat": "位址",
-   "title": "介面有學到 MAC 但沒有 LLDP／CDP 鄰接（未識別的終端）",
-   "message": "TPE_ACC_SW_04：8 個介面，ether9（1）、ether10（1）、ether11（1）、ether12（1）、ether13（1）、ether14（1）、ether15（1）、ether16（1）",
+   "title": "未識別的終端",
+   "message": "TPE_ACC_SW_04：8 個介面學到 MAC 但沒有 LLDP／CDP 鄰接，ether9（1）、ether10（1）、ether11（1）、ether12（1）、ether13（1）、ether14（1）、ether15（1）、ether16（1）",
    "entities": [
     {
      "type": "device",
@@ -44792,8 +44792,8 @@
    "id": "A03",
    "severity": "info",
    "cat": "位址",
-   "title": "介面有學到 MAC 但沒有 LLDP／CDP 鄰接（未識別的終端）",
-   "message": "TPE_ACC_SW_05：8 個介面，ether9（1）、ether10（1）、ether11（1）、ether12（1）、ether13（1）、ether14（1）、ether15（1）、ether16（1）",
+   "title": "未識別的終端",
+   "message": "TPE_ACC_SW_05：8 個介面學到 MAC 但沒有 LLDP／CDP 鄰接，ether9（1）、ether10（1）、ether11（1）、ether12（1）、ether13（1）、ether14（1）、ether15（1）、ether16（1）",
    "entities": [
     {
      "type": "device",
@@ -44843,8 +44843,8 @@
    "id": "A03",
    "severity": "info",
    "cat": "位址",
-   "title": "介面有學到 MAC 但沒有 LLDP／CDP 鄰接（未識別的終端）",
-   "message": "TPE_ACC_SW_06：8 個介面，ether9（1）、ether10（1）、ether11（1）、ether12（1）、ether13（1）、ether14（1）、ether15（1）、ether16（1）",
+   "title": "未識別的終端",
+   "message": "TPE_ACC_SW_06：8 個介面學到 MAC 但沒有 LLDP／CDP 鄰接，ether9（1）、ether10（1）、ether11（1）、ether12（1）、ether13（1）、ether14（1）、ether15（1）、ether16（1）",
    "entities": [
     {
      "type": "device",
@@ -44894,8 +44894,8 @@
    "id": "A03",
    "severity": "info",
    "cat": "位址",
-   "title": "介面有學到 MAC 但沒有 LLDP／CDP 鄰接（未識別的終端）",
-   "message": "TPE_ACC_SW_07：8 個介面，ether9（1）、ether10（1）、ether11（1）、ether12（1）、ether13（1）、ether14（1）、ether15（1）、ether16（1）",
+   "title": "未識別的終端",
+   "message": "TPE_ACC_SW_07：8 個介面學到 MAC 但沒有 LLDP／CDP 鄰接，ether9（1）、ether10（1）、ether11（1）、ether12（1）、ether13（1）、ether14（1）、ether15（1）、ether16（1）",
    "entities": [
     {
      "type": "device",
@@ -44945,8 +44945,8 @@
    "id": "A03",
    "severity": "info",
    "cat": "位址",
-   "title": "介面有學到 MAC 但沒有 LLDP／CDP 鄰接（未識別的終端）",
-   "message": "TPE_ACC_SW_08：8 個介面，ether9（1）、ether10（1）、ether11（1）、ether12（1）、ether13（1）、ether14（1）、ether15（1）、ether16（1）",
+   "title": "未識別的終端",
+   "message": "TPE_ACC_SW_08：8 個介面學到 MAC 但沒有 LLDP／CDP 鄰接，ether9（1）、ether10（1）、ether11（1）、ether12（1）、ether13（1）、ether14（1）、ether15（1）、ether16（1）",
    "entities": [
     {
      "type": "device",
@@ -44996,8 +44996,8 @@
    "id": "A03",
    "severity": "info",
    "cat": "位址",
-   "title": "介面有學到 MAC 但沒有 LLDP／CDP 鄰接（未識別的終端）",
-   "message": "TPE_ACC_SW_10：8 個介面，ether9（1）、ether10（1）、ether11（1）、ether12（1）、ether13（1）、ether14（1）、ether15（1）、ether16（1）",
+   "title": "未識別的終端",
+   "message": "TPE_ACC_SW_10：8 個介面學到 MAC 但沒有 LLDP／CDP 鄰接，ether9（1）、ether10（1）、ether11（1）、ether12（1）、ether13（1）、ether14（1）、ether15（1）、ether16（1）",
    "entities": [
     {
      "type": "device",
@@ -45047,8 +45047,8 @@
    "id": "A03",
    "severity": "info",
    "cat": "位址",
-   "title": "介面有學到 MAC 但沒有 LLDP／CDP 鄰接（未識別的終端）",
-   "message": "TPE_ACC_SW_11：8 個介面，ether9（1）、ether10（1）、ether11（1）、ether12（1）、ether13（1）、ether14（1）、ether15（1）、ether16（1）",
+   "title": "未識別的終端",
+   "message": "TPE_ACC_SW_11：8 個介面學到 MAC 但沒有 LLDP／CDP 鄰接，ether9（1）、ether10（1）、ether11（1）、ether12（1）、ether13（1）、ether14（1）、ether15（1）、ether16（1）",
    "entities": [
     {
      "type": "device",
@@ -45098,8 +45098,8 @@
    "id": "A03",
    "severity": "info",
    "cat": "位址",
-   "title": "介面有學到 MAC 但沒有 LLDP／CDP 鄰接（未識別的終端）",
-   "message": "TPE_ACC_SW_12：8 個介面，ether9（1）、ether10（1）、ether11（1）、ether12（1）、ether13（1）、ether14（1）、ether15（1）、ether16（1）",
+   "title": "未識別的終端",
+   "message": "TPE_ACC_SW_12：8 個介面學到 MAC 但沒有 LLDP／CDP 鄰接，ether9（1）、ether10（1）、ether11（1）、ether12（1）、ether13（1）、ether14（1）、ether15（1）、ether16（1）",
    "entities": [
     {
      "type": "device",
@@ -45149,7 +45149,7 @@
    "id": "A04",
    "severity": "info",
    "cat": "位址",
-   "title": "單一埠學到過多 MAC（可能下掛非網管型交換器或 hypervisor）",
+   "title": "非網管型交換器",
    "message": "TPE_ACC_SW_12 ether23：8 個 MAC，且沒有 LLDP／CDP 鄰接",
    "entities": [
     {
@@ -45406,7 +45406,7 @@
    "severity": "info",
    "cat": "防火牆",
    "title": "無法判斷 WAN 介面（WAN 相關的防火牆檢查未執行）",
-   "message": "TPE_ACC_SW_10：有 1 條防火牆規則，但沒有名稱含 WAN 的 interface list，無法判斷哪些介面對外；F03、F04、F07 未檢查，F05 只檢查沒有限制入介面的 forward 規則",
+   "message": "TPE_ACC_SW_10：無法判斷哪些介面對外（有 1 條防火牆規則，但沒有名稱含 WAN 的 interface list）；F03、F04、F07 未檢查，F05 只檢查沒有限制入介面的 forward 規則",
    "entities": [
     {
      "type": "device",
@@ -45427,7 +45427,7 @@
    "severity": "info",
    "cat": "防火牆",
    "title": "防火牆命中次數對不上 export 的規則（這個表的命中次數不採用）",
-   "message": "TPE_CORE_RT_02：IPv4 nat（去掉動態（D）列後有 2 列，export 有 1 條規則）；這個表的命中次數全部不採用",
+   "message": "TPE_CORE_RT_02：IPv4 nat 的命中次數全部不採用（去掉動態（D）列後有 2 列，export 有 1 條規則）",
    "entities": [
     {
      "type": "device",

@@ -385,7 +385,8 @@
     if (!App.snap) return root.appendChild(h('div', { class: 'empty-detail' }, '建立基準後，所有設備、介面、IP、網段、MAC 與 VLAN 會列在這裡。'));
     const Q = App.Q; const { rows: R, counts: C } = Q.inventory(); // 列與數字都來自 Q.inventory()，這裡不重算
     const devRows = R.devices.concat(R.endpoints);
-    const nameOf = (r) => (r.end ? (r.wifi && r.mac ? K.macPretty(r.mac) : (!r.wifi && r.portMacs < 2 && r.desc) || r.vendors[0] || (r.mac ? K.macPretty(r.mac) : '?')) : Q.devName(r.key));
+    // 終端的名稱：埠描述（只有一個 MAC 時才代表這台）或 MAC；廠商已有自己的一欄，不拿來當名稱（同一列不重複）
+    const nameOf = (r) => (r.end ? (!r.wifi && r.portMacs < 2 && r.desc) || (r.mac ? K.macPretty(r.mac) : '?') : Q.devName(r.key));
     const ipOf = (r) => (r.end ? r.ips[0] : r.mgmtIp); const vendorOf = (r) => (r.end ? r.vendors.join(' / ') : r.manufacturer ? V.vendorName(r.manufacturer) : null);
     const dn = (d) => (d ? Q.devName(d) : '—'); const mono = (t) => h('span', { class: 'mono' }, t || '—');
     const TAB_COUNT = { device: C.devices + C.endpoints, interface: C.interfaces, ip: C.ips, prefix: C.prefixes, mac: C.macs, vlan: C.vlans };
@@ -411,10 +412,12 @@
         { t: '網段', f: (r) => mono(r.prefix), s: (r) => r.net }, ...vrfCol, { t: '設備', f: (r) => r.devs.map(dn).join('、'), s: (r) => dn(r.devs[0]) },
         { t: '介面', f: (r) => mono(r.eps.map((ep) => K.splitEp(ep)[1]).join(' ')), s: (r) => r.eps.length }, { t: 'IP 數', f: (r) => String(r.ipCount), s: (r) => r.ipCount }],
       (r) => ({ type: 'interface', key: r.eps[0] }), (r) => [r.prefix, r.key, ...r.devs.map(dn), ...r.eps]],
+      // 關鍵欄在前（MAC、廠商、IP），窄螢幕先看到這三欄，其餘橫向捲動
       mac: ['MAC', R.macs, [
-        { t: '設備', f: (r) => dn(r.dev), s: (r) => r.dev && dn(r.dev) }, { t: '介面', f: (r) => mono(r.ifc), s: (r) => r.ifc }, { t: 'MAC', f: (r) => mono(K.macPretty(r.mac)), s: (r) => r.mac },
-        { t: 'VLAN', f: (r) => r.vlan || '—', s: (r) => r.vlan }, { t: 'IP', f: (r) => (r.ips.length ? r.ips.slice(0, 2).join(' ') : V.chip('缺 IP', 'warn')), s: (r) => r.ips[0] }],
-      (r) => ({ type: 'mac', key: r.mac }), (r) => [dn(r.dev), r.ifc, K.macPretty(r.mac), r.vlan, r.ips.join(' ')]],
+        { t: 'MAC', f: (r) => mono(K.macPretty(r.mac)), s: (r) => r.mac }, { t: '廠商', f: (r) => r.vendor || '—', s: (r) => r.vendor },
+        { t: 'IP', f: (r) => (r.ips.length ? r.ips.slice(0, 2).join(' ') : V.chip('缺 IP', 'warn')), s: (r) => r.ips[0] },
+        { t: '設備', f: (r) => dn(r.dev), s: (r) => r.dev && dn(r.dev) }, { t: '介面', f: (r) => mono(r.ifc), s: (r) => r.ifc }, { t: 'VLAN', f: (r) => r.vlan || '—', s: (r) => r.vlan }],
+      (r) => ({ type: 'mac', key: r.mac }), (r) => [dn(r.dev), r.ifc, K.macPretty(r.mac), r.vendor, r.vlan, r.ips.join(' ')]],
       vlan: ['VLAN', R.vlans, [
         { t: '設備', f: (r) => dn(r.dev), s: (r) => dn(r.dev) }, { t: 'VLAN', f: (r) => (r.id == null ? '—' : String(r.id)), s: (r) => r.id }, { t: '名稱', f: (r) => r.name || r.desc || '', s: (r) => r.name || r.desc },
         { t: '成員', f: (r) => String(r.members.length), s: (r) => r.members.length }],
@@ -440,7 +443,7 @@
       (k) => { inv.filter = k; inventory(App); }) : null;
     const box = h('input', { type: 'search', placeholder: '篩選…', 'aria-label': '篩選清單', title: '依名稱、IP、MAC、VLAN 等文字篩選', value: inv.q, class: 'pane-filter' });
     root.appendChild(h('div', { class: 'inv-bar' }, [kindSel, fltSel, box]));
-    const body = h('div');
+    const body = h('div', { class: 'inv-table' });
     const draw = () => {
       const t = inv.q.trim().toLowerCase();
       const rows = rows0.filter((r) => (!flt || flt.find((x) => x[0] === inv.filter)[2](r)) && (!t || text(r).filter((x) => x != null).join(' ').toLowerCase().includes(t)));
@@ -450,6 +453,8 @@
         : inv.kind === 'prefix' ? `由設備自有的介面位址推導的直連網段（推論）${multiVrf ? '；每個 VRF 各一列，同一個網段在不同 VRF 是不同的位址空間' : ''}`
           : inv.kind === 'ip' && multiVrf ? '每個 VRF 各一列：同一個 IP 在不同 VRF 是不同的位址' : '';
       V.clear(body); if (note) body.appendChild(h('div', { class: 'muted pane-note' }, note));
+      // 每種清單的關鍵欄排在前三欄；窄螢幕（CSS）時表格依內容寬度橫向捲動，欄位不被擠窄截斷，並顯示滑動提示
+      body.appendChild(h('div', { class: 'muted pane-note inv-scroll-hint' }, '左右滑動表格看其他欄位；點一列看完整的詳細資料'));
       body.appendChild(V.table(cols, view, { onRow: (r) => App.select(sel(r), { focus: true }), limit: 500, sortBy: sc ? inv.sortBy : -1, sortDir: inv.sortDir,
         onSort: (n) => { inv.sortDir = inv.sortBy === n ? -inv.sortDir : 1; inv.sortBy = n; draw(); } }));
     };

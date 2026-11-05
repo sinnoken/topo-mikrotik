@@ -72,7 +72,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 /* 資料中心（#hub）和 #main 疊在同一格（也蓋住窄螢幕的工作區列）：明確指定欄，避免自動放置另開一欄 */
 #app > * { grid-column: 1; }
 header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-height: 48px; padding: 6px 12px; background: var(--panel); border-bottom: 1px solid var(--line); box-shadow: 0 1px 4px rgba(22, 37, 54, .035); z-index: 7; }
-header .brand { font-weight: 600; font-size: var(--fs-lg); letter-spacing: .02em; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+header .brand { font-weight: 600; font-size: var(--fs-lg); display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 header .brand svg { width: 22px; height: 22px; }
 header .spacer { flex: 1; }
 /* 頁首右側：資料中心與「⋯」更多操作（路由追蹤、匯出 PNG、清除基準） */
@@ -178,7 +178,8 @@ header .spacer { flex: 1; }
 .pane-note { padding: 4px 10px; }
 .note-box { white-space: pre-wrap; background: var(--surface); border: 1px solid var(--line); padding: 8px; border-radius: var(--radius-sm); }
 .table-more { padding: 6px 9px; }
-.chip { display: inline-flex; align-items: center; gap: 4px; min-height: 22px; padding: 2px 8px; border: 1px solid transparent; border-radius: 999px; font-size: var(--fs-sm); font-weight: 600; background: var(--neutral-soft); color: #3c4650; white-space: nowrap; }
+/* chip：短的單列（flex-shrink: 0，不會被擠成逐字直排）；長文字在容器寬度內換行，不撐破版面（圓角用半個列高，換行時仍是圓角矩形） */
+.chip { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; max-width: 100%; min-height: 22px; padding: 2px 8px; border: 1px solid transparent; border-radius: 11px; font-size: var(--fs-sm); font-weight: 600; background: var(--neutral-soft); color: #3c4650; overflow-wrap: anywhere; }
 /* 篩選選項是 <button class="chip btn">：不套一般按鈕的高度、陰影與 hover 底色 */
 button.chip { box-shadow: none; line-height: inherit; text-align: left; }
 /* 已選檔案：名稱＋移除鈕（觸控時移除鈕至少 44px，見 pointer: coarse） */
@@ -308,7 +309,7 @@ table.t tr.click { cursor: pointer; }
 .detail h2 .mono { font-size: inherit; }
 .detail-section { margin-top: 20px; }
 /* 右欄表格（details.js 的 table()）：識別字不逐字斷行，放不下時整個表格橫向捲動；一般文字欄仍可換行 */
-.detail h3 { font-size: var(--fs-md); margin: 0 0 8px; padding-bottom: 5px; color: #405164; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 7px; letter-spacing: .015em; }
+.detail h3 { font-size: var(--fs-md); margin: 0 0 8px; padding-bottom: 5px; color: #405164; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 7px; }
 .detail-fold { border-bottom: 1px solid var(--line); }
 .detail-section + .detail-fold, .detail .kv + .detail-fold { margin-top: 12px; }
 .detail-fold > summary { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 2px; cursor: pointer; list-style-position: inside; font-size: var(--fs-md); font-weight: 600; color: #405164; }
@@ -366,6 +367,7 @@ table.t tr.click { cursor: pointer; }
 .vlanlist { font-family: var(--mono); font-size: var(--fs-sm); overflow-wrap: anywhere; }
 /* 表格內的識別字（IP、MAC、VLAN 清單）不逐字斷行：表格寬於欄位時在 .table-scroll 內橫向捲動 */
 .table-scroll { max-width: 100%; overflow-x: auto; }
+.inv-scroll-hint { display: none; }
 table.t .mono, table.t .vlanlist { white-space: nowrap; overflow-wrap: normal; }
 .diffA { color: var(--err-text); font-weight: 600; }
 .hop { border-left: 2px solid var(--line); margin-left: 6px; padding: 2px 0 8px 12px; position: relative; }
@@ -410,7 +412,7 @@ table.t .mono, table.t .vlanlist { white-space: nowrap; overflow-wrap: normal; }
 /* 通知在圖的下方中央，不遮工具列；數秒後淡出（.fading，A.banner） */
 .banner { position: absolute; left: 50%; bottom: 48px; transform: translateX(-50%); width: max-content; max-width: min(560px, calc(100% - 40px)); z-index: 7; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px; box-shadow: var(--shadow-md); display: flex; gap: 8px; align-items: center; font-size: var(--fs-md); transition: opacity .4s ease; }
 .banner.fading, .hint.fading { opacity: 0; }
-.tooltip { position: absolute; pointer-events: none; background: #1f2933; color: #fff; font-size: var(--fs-sm); padding: 4px 8px; border-radius: var(--radius-sm); z-index: 20; white-space: nowrap; }
+.tooltip { position: absolute; pointer-events: none; background: #1f2933; color: #fff; font-size: var(--fs-sm); padding: 4px 8px; border-radius: var(--radius-sm); z-index: 20; width: max-content; max-width: min(320px, calc(100vw - 16px)); overflow-wrap: anywhere; }
 /* 滑鼠與觸控各一份的說明（歡迎畫面、操作提示）：觸控裝置（pointer: coarse）改用「點一下、拖曳、雙指縮放」 */
 .for-touch { display: none; }
 .welcome { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 4; }
@@ -425,6 +427,10 @@ dialog::backdrop { background: rgba(15,23,32,.45); }
 .dlg { display: flex; flex-direction: column; max-height: 90vh; }
 .dlg .dh { padding: 14px 18px; border-bottom: 1px solid var(--line); background: linear-gradient(#fff, var(--surface)); font-weight: 600; font-size: var(--fs-lg); display: flex; align-items: center; }
 .dlg .dh .x { margin-left: auto; }
+/* 原文對話框的標題列：窄螢幕時折成兩行（複製與自動換行移到第二行），按鈕文字不折 */
+#dlg-raw .dh { flex-wrap: wrap; row-gap: 6px; }
+#raw-copy { margin-left: 8px; white-space: nowrap; }
+#raw-copy-status { margin-left: 6px; font-weight: 400; font-size: var(--fs-sm); }
 .dlg .db { padding: 14px 18px; overflow: auto; }
 .dlg .df { padding: 12px 18px; border-top: 1px solid var(--line); display: flex; gap: 8px; align-items: center; }
 #input-text { width: 100%; height: 46vh; font-family: var(--mono); font-size: var(--fs-sm); white-space: pre; resize: vertical; }
@@ -745,10 +751,12 @@ header .hub-btn.on { background: var(--accent-soft); color: var(--accent); borde
 .hub-card > p { margin: 0; }
 #hub-title:focus, .hub-card:focus, .hub-row:focus, .hub-out:focus { outline: none; }
 #hub-title:focus-visible, .hub-card:focus-visible, .hub-row:focus-visible, .hub-out:focus-visible { box-shadow: var(--focus-ring); }
-.hub-rows { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-.hub-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 2fr) minmax(0, auto); gap: 4px 12px; align-items: center; padding: 9px 10px; border-top: 1px solid var(--line); font-size: var(--fs-md); }
+/* 各列共用同一組欄（subgrid）：項目、來源、狀態的左緣上下對齊，操作欄依最寬的按鈕；不支援 subgrid 時退回固定比例的欄 */
+.hub-rows { display: grid; grid-template-columns: minmax(7em, max-content) minmax(0, 2fr) minmax(0, 2fr) auto; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.hub-row { display: grid; grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 2fr) minmax(0, 1.4fr); grid-template-columns: subgrid; gap: 4px 12px; align-items: center; padding: 9px 10px; border-top: 1px solid var(--line); font-size: var(--fs-md); text-align: left; }
 .hub-row:first-child { border-top: none; }
 .hub-row-head { background: var(--surface); font-weight: 600; }
+.hub-row-head > :last-child { text-align: right; } /* 和操作欄靠右的按鈕對齊 */
 .hub-k { font-weight: 600; }
 .hub-src, .hub-st-cell { min-width: 0; overflow-wrap: anywhere; }
 .hub-cap { display: none; color: var(--muted); }
@@ -792,6 +800,7 @@ header .hub-btn.on { background: var(--accent-soft); color: var(--accent); borde
   /* 資料中心：單欄，各列的欄位改成上下排並加上「來源：」「狀態：」標示；不出現水平捲動 */
   .hub-inner { padding: 12px; gap: 12px; }
   .hub-card { padding: 12px; }
+  .hub-rows { display: block; }
   .hub-row { grid-template-columns: minmax(0, 1fr); }
   .hub-row-head { display: none !important; }
   .hub-cap { display: inline; }
@@ -800,5 +809,10 @@ header .hub-btn.on { background: var(--accent-soft); color: var(--accent); borde
   #app.hub-open #banner { left: 10px; right: 10px; transform: none; width: auto; bottom: 16px; }
   /* 中間的工作畫面：內距縮小；內容不出現整頁的水平捲動（寬的表格、指令與圖在自己的框內捲動） */
   .work-inner { padding: 12px 10px 24px; gap: 12px; }
+  /* 清單（② 檢視）：關鍵欄排在前三欄；表格依內容寬度在 .table-scroll 內橫向捲動，廠商等欄不被擠窄截斷 */
+  .inv-scroll-hint { display: block; }
+  .inv-table table.t { width: max-content; min-width: 100%; }
+  .inv-table table.t td { white-space: nowrap; }
+  .inv-table table.t td:first-child { white-space: normal; min-width: 7em; max-width: 45vw; overflow-wrap: anywhere; }
   .patch-select, .patch-main, .verify-card { padding: 10px; }
 }

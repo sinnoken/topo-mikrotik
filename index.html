@@ -107,7 +107,7 @@
           <datalist id="trace-ips"></datalist>
           <div class="form-row hidden" id="trace-vrf-row"><label for="trace-vrf">VRF</label><select id="trace-vrf" aria-label="追蹤的 VRF"></select></div>
           <div id="trace-msg" class="trace-msg warn-line hidden" role="alert"></div>
-          <div class="form-row" style="margin:0"><span class="muted" style="flex:1;font-size:var(--fs-sm)">依各設備路由表逐跳追蹤（含 ECMP）</span><button class="primary" id="trace-run">追蹤</button></div>
+          <div class="form-row" style="margin:0"><span class="muted" style="flex:1;font-size:var(--fs-sm)">依各設備的路由表逐跳追蹤，含等價多路徑</span><button type="button" id="trace-swap" aria-label="對調來源與目的" title="交換來源 IP 與目的 IP">⇅ 對調</button><button class="primary" id="trace-run">追蹤</button></div>
         </div>
       </div>
     </div>
@@ -143,7 +143,7 @@
           <button type="button" role="radio" data-layer="l3" aria-checked="false" tabindex="-1" title="L3 網段圖：網段與設備是節點，路由設備是跨網段的連接點">L3 網段</button>
           <button type="button" role="radio" data-layer="l4" aria-checked="false" tabindex="-1" title="L4 可達性：zone 矩陣（來源 zone × 目的 zone 的防火牆與 NAT 結果，推論）、展開位址與規則的明細、逐跳的可達性查詢">L4 可達性</button>
         </div>
-        <div class="grp layer-only" data-layers="device l2 l3"><select id="vlan-filter" aria-label="VLAN 篩選" title="在設備圖與 L2 埠圖標出承載這個 VLAN 的鏈路（L3 標出這個 VLAN 的網段）；選其他東西時仍保留，選「不篩選」取消"><option value="">VLAN：不篩選</option></select></div>
+        <div class="grp layer-only" data-layers="device l2 l3"><select id="vlan-filter" aria-label="VLAN 篩選" title="在設備圖與 L2 埠圖標出承載這個 VLAN 的鏈路（L3 標出這個 VLAN 的網段）；在選單選的會一直保留，選「不篩選」取消"><option value="">VLAN：不篩選</option></select></div><button type="button" id="vlan-chip" class="chip info hidden" aria-label="取消 VLAN 篩選"></button>
         <div class="grp layer-only hidden" data-layers="l2"><button type="button" id="btn-l2-lag" aria-pressed="false" title="聚合介面的成員各自畫成一個埠（預設收合：成員併進聚合介面）">展開聚合</button><button type="button" id="btn-l2-ports" aria-pressed="false" title="也畫沒有接線的實體、聚合與無線介面">全部的埠</button><select id="l2-scope" aria-label="L2 埠圖的範圍" title="整張圖，或只畫選取的設備與它的鄰居（設備太多時只能選後者）"><option value="all">整張圖</option><option value="focus">選取的設備與鄰居</option></select></div>
         <div class="grp layer-only hidden" data-layers="l3"><button type="button" id="btn-l3-routes" aria-pressed="false" title="以虛線箭頭畫出靜態路由與預設路由，指到目的網段">顯示路由</button></div>
         <!-- 圖的操作：全圖、版面▾（重新排列、分層／快速、力導向）、顯示▾（主機、終端、分群）；選單在 .grp 外面才不會被裁切 -->
@@ -293,7 +293,7 @@ TPE_ACC_SW_01 (10.1.10.21):
 
 <dialog id="dlg-raw">
   <div class="dlg" style="width:min(1100px,94vw)">
-    <div class="dh"><span id="raw-title">原文</span><span id="raw-nav" class="raw-nav hidden"><button id="raw-prev" class="ghost" aria-keyshortcuts="ArrowLeft" title="上一處（←）">上一處</button><span id="raw-pos" class="mono muted" aria-live="polite"></span><button id="raw-next" class="ghost" aria-keyshortcuts="ArrowRight" title="下一處（→）">下一處</button></span><label class="raw-wrap-toggle" title="長行在視窗內換行；取消勾選改為不換行、橫向捲動"><input type="checkbox" id="raw-wrap" checked onchange="document.getElementById('dlg-raw').classList.toggle('raw-nowrap', !this.checked)"> 自動換行</label><button class="ghost x" onclick="document.getElementById('dlg-raw').close()">✕</button></div>
+    <div class="dh"><span id="raw-title">原文</span><span id="raw-nav" class="raw-nav hidden"><button id="raw-prev" class="ghost" aria-keyshortcuts="ArrowLeft" title="上一處（←）">上一處</button><span id="raw-pos" class="mono muted" aria-live="polite"></span><button id="raw-next" class="ghost" aria-keyshortcuts="ArrowRight" title="下一處（→）">下一處</button></span><label class="raw-wrap-toggle" title="長行在視窗內換行；取消勾選改為不換行、橫向捲動"><input type="checkbox" id="raw-wrap" checked onchange="document.getElementById('dlg-raw').classList.toggle('raw-nowrap', !this.checked)"> 自動換行</label><button type="button" id="raw-copy" class="ghost">複製這段</button><span id="raw-copy-status" class="muted" role="status" aria-live="polite"></span><button class="ghost x" onclick="document.getElementById('dlg-raw').close()">✕</button></div>
     <div class="db" id="raw-body" style="max-height:70vh"></div>
   </div>
 </dialog>

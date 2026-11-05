@@ -121,6 +121,8 @@
     // 路由追蹤表單是「⋯」旁邊的小對話框：從選單開啟（選單先關閉），也可由詳情的「追蹤路由」開啟（App.openTrace）
     $('#btn-trace').onclick = () => App.openTrace();
     $('#trace-run').onclick = A.runTrace;
+    // 對調：交換來源與目的（例如看完去程再看回程），焦點留在按鈕
+    $('#trace-swap').onclick = () => { const s = $('#trace-src'); const d = $('#trace-dst'); [s.value, d.value] = [d.value, s.value]; };
     ['#trace-src', '#trace-dst', '#trace-vrf'].forEach((s) => $(s).addEventListener('keydown', (e) => {
       if (e.key === 'Enter') A.runTrace();
       if (e.key === 'Escape') { e.stopPropagation(); A.closeTrace(true); }
@@ -179,6 +181,11 @@
     A.bindMenu($('#btn-layout-menu'), $('#layout-menu'), under);
     A.bindMenu($('#btn-view-menu'), $('#view-menu'), under);
     $('#btn-fit').onclick = () => App.graph.fit();
+    // VLAN 篩選的標示：按下或按 Esc 取消篩選，焦點移到 VLAN 選單（標示隨即隱藏）；Esc 不往外傳（不會同時取消選取）
+    const chip = $('#vlan-chip');
+    const clearFilter = () => { A.clearVlanFilter(); $('#vlan-filter').focus(); };
+    chip.onclick = clearFilter;
+    chip.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); clearFilter(); } });
     $('#btn-relayout').onclick = () => A.relayout();
     // 版面：分層（ELK）或快速（內建），單選；選了就依新的版面重新排列
     const modes = Array.from($('#layout-mode').querySelectorAll('.menu-item'));

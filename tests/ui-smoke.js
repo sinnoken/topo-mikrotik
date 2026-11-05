@@ -1415,7 +1415,14 @@ function viewBoundaryViolations(file, src) {
     await searchFor('');
   });
   await step('路由追蹤', () => {
-    $('#btn-trace').click(); $('#trace-src').value = '10.1.30.15'; $('#trace-dst').value = '8.8.8.8'; $('#trace-run').click();
+    $('#btn-trace').click(); $('#trace-src').value = '8.8.8.8'; $('#trace-dst').value = '10.1.30.15';
+    // 對調：交換來源與目的；說明文字用使用者的話（不寫 ECMP）
+    const swap = $('#trace-swap');
+    if (swap.tagName !== 'BUTTON' || !swap.textContent.includes('對調') || !/來源.*目的/.test(swap.getAttribute('aria-label') || '')) throw new Error('路由追蹤應有「對調」按鈕並有 aria 名稱');
+    swap.click();
+    if ($('#trace-src').value !== '10.1.30.15' || $('#trace-dst').value !== '8.8.8.8') throw new Error('對調應交換來源與目的');
+    if (/ECMP/.test(text('#trace-pop')) || !text('#trace-pop').includes('等價多路徑')) throw new Error('路由追蹤的說明應寫「等價多路徑」而不是 ECMP：' + text('#trace-pop'));
+    $('#trace-run').click();
     if (App.sel.result.ok && (!App.sel.reverse || !text('#detail').includes('回程（8.8.8.8 → 10.1.30.15）'))) throw new Error('去程成功時應同時顯示回程');
     const r = App.sel.result; // 沒有任何逐跳時「逐跳」區塊不顯示，但一定有「結果」或錯誤說明
     if (r.ok ? !text('#detail').includes('結果') : !text('#detail').includes(r.error)) throw new Error('追蹤結果未顯示');
@@ -1428,6 +1435,49 @@ function viewBoundaryViolations(file, src) {
     const wrap = $('#raw-wrap'); const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
     if (!wrap || wrap.getAttribute('type') !== 'checkbox' || wrap.getAttribute('checked') === null || !/classList\.toggle\('raw-nowrap', !this\.checked\)/.test(wrap.getAttribute('onchange') || '')) throw new Error('原文應有預設勾選的「自動換行」切換');
     if (!/pre\.raw \{[^}]*white-space: pre-wrap;/.test(css) || !/#dlg-raw\.raw-nowrap pre\.raw \{ white-space: pre;/.test(css) || !/pre\.raw > span \{[^}]*text-indent: -56px/.test(css)) throw new Error('原文預設換行（懸掛縮排），不換行時橫向捲動');
+    $('#dlg-raw').close();
+  });
+  await step('原文對話框的標題：區塊之間的標記行用下一行的區塊，都對不到時寫「檔名 第 N 行」，不出現兩組括號；可複製這段、顯示更多', async () => {
+    const Q = App.Q; const P = S.readers.PASTE; const V = S.view;
+    const lines = App.sources.find((s) => s.name === P).text.split(/\r?\n/);
+    const nums = lines.map((_, i) => i + 1);
+    const marker = nums.find((l) => !Q.blockAt(P, l) && Q.blockAt(P, l + 1));
+    const orphan = nums.find((l) => !Q.blockAt(P, l) && !Q.blockAt(P, l + 1));
+    if (marker) {
+      App.openRaw(P, marker);
+      if (!text('#raw-title').startsWith(V.blockWhere(Q, Q.blockAt(P, marker + 1))) || !text('#raw-title').endsWith(`（第 ${marker} 行）`)) throw new Error('標記行的標題應用下一行所屬的區塊：' + text('#raw-title'));
+    }
+    if (orphan) {
+      App.openRaw(P, orphan);
+      if (text('#raw-title') !== `${V.fileName(P)} 第 ${orphan} 行`) throw new Error('對不到區塊時標題應寫「檔名 第 N 行」：' + text('#raw-title'));
+    }
+    [marker, orphan, 10].filter(Boolean).forEach((l) => { App.openRaw(P, l); if (/）（/.test(text('#raw-title'))) throw new Error('原文標題不應有兩組相連的括號：' + text('#raw-title')); });
+    // 複製這段：有所屬區塊時複製整個區塊的原文，結果寫在對話框的狀態列
+    const line = nums.find((l) => { const b = Q.blockAt(P, l); return b && l - b.start > 15 && lines.length - l > 40; });
+    if (!line) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有長的區塊'); }
+    App.openRaw(P, line); const blk = Q.blockAt(P, line);
+    const copyBtn = $('#raw-copy');
+    if (copyBtn.tagName !== 'BUTTON' || copyBtn.classList.contains('hidden') || !copyBtn.textContent.includes('複製這段')) throw new Error('原文應有「複製這段」按鈕');
+    const nav = Object.getOwnPropertyDescriptor(globalThis, 'navigator'); let copied = null;
+    Object.defineProperty(globalThis, 'navigator', { value: { clipboard: { writeText: async (t) => { copied = t; } } }, configurable: true, writable: true });
+    try {
+      copyBtn.click(); await new Promise((r) => setTimeout(r, 5));
+      if (copied !== lines.slice(blk.start - 1, blk.end).join('\n') || text('#raw-copy-status') !== `已複製 ${blk.end - blk.start + 1} 行`) throw new Error('複製這段應複製整個區塊的原文並在對話框提示：' + text('#raw-copy-status'));
+      if ($('#raw-copy-status').getAttribute('role') !== 'status') throw new Error('複製結果應寫在 role=status 的狀態列');
+      globalThis.navigator = {}; copyBtn.click(); await new Promise((r) => setTimeout(r, 5));
+      if (!text('#raw-copy-status').includes('無法自動複製')) throw new Error('不能複製時應明確告知：' + text('#raw-copy-status'));
+    } finally { if (nav) Object.defineProperty(globalThis, 'navigator', nav); else delete globalThis.navigator; }
+    // 顯示更多：前後各有按鈕，按下後多顯示幾行，標出的那一行不變；切到另一處時回到預設範圍
+    const shown = () => $('#raw-body').testAll('pre span.ln').map((x) => +x.textContent);
+    const more = (side) => $('#raw-body').testAll('.raw-more').find((b) => b.getAttribute('data-side') === side);
+    const before = shown();
+    if (!more('before') || !more('after') || before[0] <= 1 || before[before.length - 1] >= lines.length) throw new Error('只顯示部分時前後應有「顯示更多」');
+    more('after').click(); const a1 = shown();
+    if (a1[0] !== before[0] || a1[a1.length - 1] <= before[before.length - 1] || $('#raw-body').querySelector('.hl').firstChild.textContent !== String(line)) throw new Error('「顯示後面」應往後多顯示，標出的行不變');
+    more('before').click(); const a2 = shown();
+    if (a2[0] >= a1[0] || a2[a2.length - 1] !== a1[a1.length - 1]) throw new Error('「顯示前面」應往前多顯示');
+    if (!!more('before') !== (a2[0] > 1)) throw new Error('前面還有沒顯示的行時才有「顯示前面」');
+    App.openRaw(P, line); if (shown().length !== before.length) throw new Error('重新開啟時回到預設的範圍');
     $('#dlg-raw').close();
   });
   await step('原文對話框：標題是「設備 › 指令（第 N 行）」；多處證據可用上一處／下一處或 ←→ 切換（頭尾相接）', () => {
@@ -1529,6 +1579,38 @@ function viewBoundaryViolations(file, src) {
     if (JSON.stringify(await S.store.get('layout')) !== paneLayout) throw new Error('store 的 layout（欄寬）不受層級切換影響');
     if (!/\.layer-switch \[role="radio"\]\[aria-checked="true"\]/.test(fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8').split('@media (forced-colors: active)')[1])) throw new Error('強制色彩模式下選取的層級應有系統色外框');
     try { App.showLayer('l5'); throw new Error('不應能切到未知的層級'); } catch (e) { if (!(e instanceof RangeError)) throw e; }
+  });
+  await step('VLAN 篩選的標示：啟用時工具列旁有「VLAN n ✕」，按下或 Esc 取消；檢查結果帶入的篩選在選其他東西時取消，選單選的保留', async () => {
+    const Q = App.Q; const chip = $('#vlan-chip'); const id = Q.vlanIds()[0]; const sel = $('#vlan-filter');
+    const shown = () => !chip.classList.contains('hidden');
+    const dev = App.snap.model.devices.find((d) => d.collected).key;
+    App.select(null);
+    if (App.vlanFilter || shown()) throw new Error('沒有 VLAN 篩選時不應顯示標示');
+    // 選單選的：標示寫出 VLAN，選其他東西時篩選與標示都保留
+    sel.value = String(id); sel.dispatch('change');
+    if (!shown() || chip.tagName !== 'BUTTON' || !chip.textContent.includes(`VLAN ${id}`) || !chip.textContent.includes('✕') || !(chip.getAttribute('aria-label') || '').includes(`VLAN ${id}`)) throw new Error('VLAN 篩選啟用時應顯示可關閉的標示：' + chip.textContent);
+    App.select({ type: 'device', key: dev });
+    if (!App.vlanFilter || !shown()) throw new Error('在選單選的 VLAN 篩選，選其他東西時應保留');
+    chip.click();
+    if (App.vlanFilter || shown() || sel.value !== '' || !App.sel || App.sel.key !== dev || document.activeElement !== sel) throw new Error('按標示應取消篩選、保留選取，焦點移到 VLAN 選單');
+    sel.value = String(id); sel.dispatch('change');
+    chip.dispatch('keydown', { key: 'Escape' });
+    if (App.vlanFilter || shown() || App.sel) throw new Error('在標示上按 Esc 應取消篩選（選取的是 VLAN 時一起取消）');
+    // 檢查結果（或搜尋、詳情的連結）帶入的：標示出現，選其他東西時自動取消
+    const vi = App.snap.findings.findIndex((f) => f.entities[0] && f.entities[0].type === 'vlan');
+    if (vi < 0) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有指向 VLAN 的檢查結果'); }
+    App.selectFinding(vi); const vid = App.snap.findings[vi].entities[0].key;
+    if (!App.vlanFilter || !shown() || !chip.textContent.includes(`VLAN ${vid}`)) throw new Error('檢查結果帶入的 VLAN 篩選也應顯示標示');
+    App.select({ type: 'device', key: dev });
+    if (App.vlanFilter || shown() || sel.value !== '') throw new Error('檢查結果帶入的 VLAN 篩選，選其他東西時應取消');
+    // 由選取帶入後，在選單再選同一個 VLAN：改為保留（來源由選單明確傳入，不看選單當下的值）
+    App.selectFinding(vi);
+    if (App.vlanFilter.pinned) throw new Error('檢查結果帶入的 VLAN 篩選不應標為保留');
+    sel.value = String(vid); sel.dispatch('change');
+    if (!App.vlanFilter || !App.vlanFilter.pinned) throw new Error('在選單再選同一個 VLAN 應改為保留');
+    App.select({ type: 'device', key: dev });
+    if (!App.vlanFilter || !shown()) throw new Error('改為保留的 VLAN 篩選，選其他東西時應保留');
+    chip.click(); App.select(null);
   });
   await step('VLAN 篩選：設備圖與 L2 埠圖依 vlanCarriers 標出承載與只有一端（外形不只靠顏色），推論以線型區分，提示說明原因；選其他東西時保留，取消後拿掉', async () => {
     const g = App.graph; const T = S.view.theme; const Q = App.Q;
@@ -2398,6 +2480,18 @@ function viewBoundaryViolations(file, src) {
     if (document.activeElement !== $('#pane-inventory .inv-filter')) throw new Error('換篩選後焦點應留在篩選下拉');
     // 窄欄：表格在自己的框內橫向捲動，不截斷主要欄
     if (!$('#pane-inventory table').parentNode.className.includes('table-scroll')) throw new Error('清單表格應在可橫向捲動的框內');
+    // 窄螢幕：每種清單的關鍵欄在前三欄（先看到），其餘依內容寬度橫向捲動並有滑動提示；終端的名稱不重複廠商欄
+    const head3 = () => document.testAll('#pane-inventory th').slice(0, 3).map((x) => x.textContent.replace(/[▲▼]/g, '').trim()).join('|');
+    [['device', '設備|類型|管理 IP'], ['interface', '設備|介面|狀態'], ['mac', 'MAC|廠商|IP']].forEach(([k, want]) => {
+      pickInv('inv-kind', k); if (head3() !== want) throw new Error(`${k} 清單的前三欄應是關鍵欄 ${want}：${head3()}`);
+      if (!$('#pane-inventory .inv-table .inv-scroll-hint')) throw new Error('清單應有窄螢幕的滑動提示');
+    });
+    pickInv('inv-kind', 'device'); pickInv('inv-filter', 'end');
+    const endRows = document.testAll('#pane-inventory tbody tr').map((tr) => tr.testAll('td').map((td) => td.textContent));
+    const vCol = document.testAll('#pane-inventory th').findIndex((x) => x.textContent.trim().startsWith('廠商'));
+    if (endRows.some((tds) => tds[vCol] && tds[0] === tds[vCol])) throw new Error('終端的名稱欄不應重複廠商欄');
+    const invCss = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8'); const invNarrow = invCss.slice(invCss.indexOf('@media (max-width: 900px)'));
+    if (!/\.inv-scroll-hint \{ display: none; \}/.test(invCss) || !/\.inv-scroll-hint \{ display: block; \}/.test(invNarrow) || !/\.inv-table table\.t \{ width: max-content;/.test(invNarrow)) throw new Error('窄螢幕的清單表格應依內容寬度橫向捲動並顯示提示');
     pickInv('inv-kind', 'ip');
     if (document.activeElement !== $('#pane-inventory .inv-kind')) throw new Error('換清單種類後焦點應留在種類下拉');
     // 可排序的標頭是 th 裡的按鈕（鍵盤可操作），th 標 aria-sort
@@ -4196,7 +4290,11 @@ function viewBoundaryViolations(file, src) {
       if (!new RegExp(r).test(body)) throw new Error('body 缺少 CJK 排版規則 ' + r);
     });
     if (/break-all/.test(css)) throw new Error('不用 word-break: break-all（中文與識別字都會被逐字拆開）');
-    if (/letter-spacing:\s*-/.test(css)) throw new Error('不用負字距（中文會擠在一起）');
+    if (/letter-spacing:(?!\s*0[;\s}])/.test(css)) throw new Error('CJK 不加字距：letter-spacing 只能是 0（不用正負字距）');
+    // chip 與 tooltip 可以換行（長文字不撐破版面）；chip 不被擠窄（flex-shrink: 0），短的仍是單列
+    const rule = (sel) => (css.match(new RegExp('(?:^|\\n)' + sel.replace(/\./g, '\\.') + ' \\{([^}]*)\\}')) || [])[1] || '';
+    if (/nowrap/.test(rule('.chip')) || !/flex-shrink: 0/.test(rule('.chip')) || !/max-width: 100%/.test(rule('.chip'))) throw new Error('chip 應可換行且不被擠窄：' + rule('.chip'));
+    if (/nowrap/.test(rule('.tooltip')) || !/max-width:/.test(rule('.tooltip'))) throw new Error('tooltip 應可換行並有最大寬度：' + rule('.tooltip'));
     if (/font-weight:\s*(500|700|bold)/.test(css)) throw new Error('中文粗體只用 600（400／600 兩階）');
     if (!/(?:^|\n)h1, h2, h3, h4 \{[^}]*line-height:\s*var\(--lh-heading\)[^}]*font-weight:\s*600/.test(css)) throw new Error('標題應使用 --lh-heading 與 600');
     if (!/\.note-box[^{]*\{[^}]*line-height:\s*var\(--lh-prose\)/.test(css)) throw new Error('說明段落應使用 --lh-prose');
@@ -4531,6 +4629,13 @@ function viewBoundaryViolations(file, src) {
     if (!row('coverage').textContent.includes(`已收集 ${NUM(cs.networkCollected)}／${NUM(cs.network)} 台網路設備`)) throw new Error('覆蓋率應以網路設備為分母：' + row('coverage').textContent);
     if (cs.hosts && !row('coverage').textContent.includes(`另有 ${NUM(cs.hosts)} 台主機`)) throw new Error('覆蓋率應另列主機：' + row('coverage').textContent);
     if ((hubBtn('devices-csv').getAttribute('disabled') !== null) !== !nC01) throw new Error('沒有 C01 時 devices.csv 草稿應停用');
+    // 狀態文字不露出檢查代碼（代碼只放 title）；各列共用同一組欄（subgrid），來源與狀態靠左和項目欄對齊
+    ['sources', 'previous', 'ledger', 'profile', 'expected-data', 'expected', 'coverage'].forEach((k) => {
+      const cell = row(k).querySelector('.hub-st-cell'); if (/\b[A-Z]\d{2}\b/.test(cell.textContent)) throw new Error(`${k} 的狀態不應出現檢查代碼：${cell.textContent}`);
+    });
+    if (nC01 && !row('coverage').querySelector('.hub-st-cell').testAll('span').some((x) => /^C01 /.test(x.getAttribute('title') || ''))) throw new Error('覆蓋率的代碼應保留在 title');
+    const hubCss = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
+    if (!/\.hub-row \{[^}]*grid-template-columns: subgrid;[^}]*text-align: left;/.test(hubCss) || !/\.hub-rows \{ display: grid;/.test(hubCss)) throw new Error('資料中心各列應共用同一組欄並靠左對齊');
     // 工作包的角色：收集檔與基準一定放（不能取消）；命名規則用過就一定放
     const roleBox = (r) => $('#hub').testAll('.hub-pack-role').find((x) => x.getAttribute('data-role') === r);
     ['source', 'snapshot'].forEach((r) => { const cb = roleBox(r); if (!cb || !cb.checked || !cb.disabled) throw new Error(r + ' 是工作包的必要內容，應勾選且不能取消'); });

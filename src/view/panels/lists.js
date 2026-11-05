@@ -27,7 +27,7 @@
     const status = h('select', { class: 'ledger-status', 'aria-label': '處理狀態' }, opts.map((s) => h('option', { value: s }, R().statusText(s))));
     status.value = it.status;
     const note = h('input', { type: 'text', class: 'ledger-note', maxlength: '500', 'aria-label': '備註',
-      placeholder: '備註（選填），例如：維護窗口 11/30 處理', value: it.note || '' });
+      placeholder: '備註（選填），例如：11/30 維護時段處理', value: it.note || '' });
     const w = it.waiver;
     const reason = h('input', { type: 'text', class: 'ledger-waiver-reason', maxlength: '500', 'aria-label': '豁免原因', placeholder: '可接受的原因（必填）', value: w ? w.reason : '' });
     const until = h('input', { type: 'date', class: 'ledger-waiver-until', 'aria-label': '豁免到期日',
@@ -99,7 +99,7 @@
     ]));
     // 報表（CSV、Markdown）的匯出集中在資料中心；這裡只放入口
     root.appendChild(h('div', { class: 'row spaced pane-section' }, [
-      h('button', { class: 'open-hub', 'data-hub-section': 'reports', title: '檢查結果的 CSV／Markdown 報表（含處理狀態）在資料中心的「這一輪的輸出」',
+      h('button', { class: 'open-hub', 'data-hub-section': 'reports', title: '檢查結果的 CSV／Markdown 報表（含處理狀態）在資料中心的「本輪的輸出」',
         onclick: () => App.openHub('reports') }, '匯出報表…'),
       h('button', { class: 'open-patch', title: '選取檢查結果，產生每台設備的修正 .rsc（套用、回復、驗證）；只產生文字，不會連線設備', onclick: () => App.openPatch() }, '修正計畫…'),
     ]));
@@ -124,7 +124,7 @@
         ]),
         h('button', {
           class: 'ghost ack ledger-edit', 'aria-label': '處理：' + f.message, disabled: !it || null,
-          title: it ? '變更處理狀態（待處理、已排程修復、可接受、誤報…）與備註；只存在這個瀏覽器的處理紀錄，不改變基準' : '處理紀錄沒有這一筆（處理紀錄無法使用）',
+          title: it ? '變更處理狀態（待處理、已排定修正、可接受、誤報…）與備註；只存在這個瀏覽器的處理紀錄，不改變基準' : '處理紀錄沒有這一筆（處理紀錄無法使用）',
           onclick: edit,
         }, '處理'),
       ]), V.deviationLine(App, f.deviation, { tie: false }), state.editing === i && it ? ledgerEditor(App, f, it, i) : null]);
@@ -252,9 +252,9 @@
     // 有缺漏：缺少應收集的資料，或有指令收集失敗（V.coverageGap，與基準摘要同一個判斷）
     const collected = rows.filter((r) => r.collected); const missing = collected.filter(V.coverageGap);
     const seenOnly = rows.filter((r) => !r.collected && r.kind !== 'host'); const hosts = rows.filter((r) => !r.collected && r.kind === 'host');
-    const F = { all: ['全部已收集', collected], missing: ['有缺漏', missing], seen: ['未收集的網路設備', seenOnly], hosts: ['主機（只由 LLDP 看到）', hosts] };
-    // 篩選選項；devices.csv 草稿（C01）的匯出在資料中心同一頁的「這一輪的輸入」與「給收集器」
-    root.appendChild(h('div', { class: 'summary' }, Object.entries(F).map(([k, [label, list]]) => filterChip(label, list.length, { cls: k === 'missing' ? 'err' : '', on: cov.filter === k, onclick: () => { cov.filter = k; coverage(App); } }))));
+    const F = { all: ['全部已收集', collected], missing: ['有缺漏', missing], seen: ['未收集的網路設備', seenOnly], hosts: [V.TERMS.host, hosts, V.HOST_DEF] };
+    // 篩選選項；devices.csv 草稿（C01）的匯出在資料中心同一頁的「本輪的輸入」與「給收集器」
+    root.appendChild(h('div', { class: 'summary' }, Object.entries(F).map(([k, [label, list, tip]]) => filterChip(label, list.length, { cls: k === 'missing' ? 'err' : '', title: tip, on: cov.filter === k, onclick: () => { cov.filter = k; coverage(App); } }))));
     // 每台一列：缺少的資料與收集失敗以 chip 列在同一格（已收集的寫在提示文字），有缺漏的排在前面（穩定排序，其餘維持原順序）
     const gapN = (r) => r.missing.length + (r.failures || []).length;
     const list = F[cov.filter][1].slice().sort((a, b) => (gapN(b) > 0) - (gapN(a) > 0));
@@ -319,11 +319,11 @@
     } });
     const exp = App.round.expected;
     root.appendChild(h('div', { class: 'pane-body' }, [
-      h('h4', { class: 'work-card-title', id: 'cmp-expected-title' }, '預期資料比對'),
-      h('p', { class: 'muted' }, '把「預期應該長怎樣」的資料（格式 ssot-expected/1，獨立於基準）和目前基準比對。比對只讀取基準，不會修改它。'
-        + '預期資料是這一輪的輸入，換了基準會重新比對；由基準產生預期資料在資料中心的「這一輪的輸出」。'),
+      h('h4', { class: 'work-card-title', id: 'cmp-expected-title' }, '預期現況比對'),
+      h('p', { class: 'muted' }, '把確認過的應有現況（格式 ssot-expected/1，獨立於基準）和目前基準比對。比對只讀取基準，不會修改它。'
+        + '預期現況是本輪的輸入，換了基準會重新比對；由基準產生預期現況在資料中心的「本輪的輸出」。'),
       h('div', { class: 'row' }, [
-        file, h('button', { class: 'cmp-load-expected', disabled: !App.Q || null, onclick: () => file.click() }, '載入預期資料（JSON）…'),
+        file, h('button', { class: 'cmp-load-expected', disabled: !App.Q || null, onclick: () => file.click() }, '載入預期現況（JSON）…'),
         exp ? h('span', { class: 'muted' }, exp.name) : null,
       ]),
       h('details', null, [h('summary', { class: 'muted' }, '格式說明'), h('pre', { class: 'raw note-box' },

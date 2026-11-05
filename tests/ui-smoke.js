@@ -364,7 +364,7 @@ function viewBoundaryViolations(file, src) {
     if (!btn.disabled || !pf().includes('尚未輸入')) throw new Error('沒有輸入時應停用建立：' + pf());
     await type('隨便一段文字');
     if (!pf().includes('認到 0 台設備') || !pf().includes('1 段無法辨識') || !btn.disabled) throw new Error('0 台設備時應停用並說明：' + pf());
-    if (!pf().includes('設備名 (管理 IP):') || !pf().includes(`${S.readers.PASTE} 第 1–1 行：沒有設備標頭`)) throw new Error('應說明原因並列出檔名與行號：' + pf());
+    if (!pf().includes('設備名 (管理 IP):') || !pf().includes(`${S.view.fileName(S.readers.PASTE)} 第 1–1 行：沒有設備標頭`)) throw new Error('應說明原因並列出檔名與行號：' + pf());
     if ($('#input-preflight-list').tagName !== 'DETAILS') throw new Error('清單應可展開');
     await type(text('#input-format-example') + '\n### /foo bar print\nxyz\n');
     if (!pf().includes('認到 2 台設備') || !pf().includes('1 段無法辨識') || btn.disabled) throw new Error('有設備時應可建立：' + pf());
@@ -479,7 +479,7 @@ function viewBoundaryViolations(file, src) {
     if (!App.graph.sel.edges.has(p.id)) throw new Error('選取介面時應一併標示它的推論鏈路');
     if (!text('#detail').includes('推論鏈路')) throw new Error('介面詳情應列出推論鏈路');
     // 設備圖沒有 L3（OSPF）連線：圖例中標「L3」的只有 L3 子網圖自己的節點與線
-    const l3View = ['子網（L3）', '路由（L3）', '網段重疊（L3）'];
+    const l3View = ['網段（L3）', '路由（L3）', '網段重疊（L3）'];
     if (Array.from(document.testAll('#legend .li')).some((li) => li.textContent.includes('L3') && !l3View.some((x) => li.textContent.endsWith(x)))) throw new Error('圖上沒有 L3 連線，圖例不應列出');
     App.select(null);
   });
@@ -1044,7 +1044,7 @@ function viewBoundaryViolations(file, src) {
     if (!process.env.SMOKE_INPUT && !text('#detail').includes('只有一端有此 VLAN 的鏈路')) throw new Error('VLAN 不一致未顯示');
     const ds = App.Q.vlan(30).domains;
     App.select({ type: 'vlan', key: '30', domain: ds[0].key }); App.graph.draw();
-    if (!text('#detail').includes(`區塊 1／${ds.length}`)) throw new Error('選取 VLAN 區塊時標題未標示區塊');
+    if (!text('#detail').includes(`${S.view.TERMS.vlanDomain} 1／${ds.length}`)) throw new Error('選取 VLAN 片段時標題未標示片段');
   });
   await step('搜尋框', async () => {
     const inp = $('#search'); inp.value = 'acc_sw_0'; inp.dispatch('input'); await new Promise((r) => setTimeout(r, 150));
@@ -1155,8 +1155,8 @@ function viewBoundaryViolations(file, src) {
     if (!Object.isFrozen(V.TERMS) || V.TERMS.network !== '網路設備' || V.TERMS.inferred !== '推論') throw new Error('V.TERMS 應凍結並定義網路設備、推論等名詞');
     const c = V.inferChip('依據'); if (c.textContent !== V.TERMS.inferred || c.getAttribute('title') !== '依據') throw new Error('V.inferChip 應寫「推論」並把依據放在 title');
     App.select({ type: 'vlan', key: '30' });
-    const v = Q.vlan(30); const chip = $('#detail').testAll('.chip').find((x) => x.textContent === `${v.carry.length} 條鏈路兩端都有`);
-    if (!chip || chip.classList.contains('ok')) throw new Error('VLAN 詳情應寫中性色的「N 條鏈路兩端都有」');
+    const v = Q.vlan(30); const chip = $('#detail').testAll('.chip').find((x) => x.textContent === `兩端都有此 VLAN 的鏈路 ${v.carry.length} 條`);
+    if (!chip || chip.classList.contains('ok')) throw new Error('VLAN 詳情應寫中性色的「兩端都有此 VLAN 的鏈路 N 條」');
     if ($('#detail').testAll('.chip').some((x) => x.textContent.startsWith('通過 '))) throw new Error('VLAN 詳情不應寫「通過 N 條鏈路」');
     const d = Q.devices().find((x) => x.kindBasis && x.kindBasis !== 'profile');
     App.select({ type: 'device', key: d.key });
@@ -1166,6 +1166,29 @@ function viewBoundaryViolations(file, src) {
     const i = App.snap.model.interfaces.find((x) => x.typeBasis && x.typeBasis !== 'rawType');
     if (i) { App.select({ type: 'interface', key: i.key }); if (!$('#detail').querySelector('.row').testAll('.chip').some((x) => x.textContent === V.TERMS.inferred)) throw new Error('推定的介面類型應標「推論」'); }
     App.select(null);
+    // 介面狀態用 up／down（「連線」只用於防火牆的 TCP 連線與 SSH 連線）
+    if (V.STATUS.up !== 'up' || V.STATUS.down !== 'down') throw new Error('介面狀態應寫 up／down');
+    // 主機的定義只有一句（V.HOST_DEF）：顯示選單、覆蓋率篩選與狀態卡共用
+    if (!($('#btn-hosts').getAttribute('title') || '').includes(V.HOST_DEF)) throw new Error('顯示選單「主機」的說明應使用 V.HOST_DEF');
+    const hostsLine = $('#detail').querySelector('.status-hosts');
+    if (hostsLine && !hostsLine.textContent.includes(V.HOST_DEF)) throw new Error('狀態卡的主機說明應使用 V.HOST_DEF：' + hostsLine.textContent);
+    if (!/hosts: \[V\.TERMS\.host, hosts, V\.HOST_DEF\]/.test(fs.readFileSync(path.join(ROOT, 'src/view/panels/lists.js'), 'utf8'))) throw new Error('覆蓋率的「主機」篩選應以 V.HOST_DEF 為說明');
+    if ($('#btn-unknown').textContent !== V.TERMS.endpoint || $('#btn-groups').textContent !== V.TERMS.group) throw new Error('顯示選單應寫「終端」「分群」（V.TERMS）');
+  });
+  await step('用字：畫面程式與 index.html 不再出現已淘汰的說法（去掉註解後掃描字串）', () => {
+    // 舊說法 → 現行說法（V.TERMS 等）；只掃畫面層，核心的 finding 訊息與 Snapshot 字串不在這裡
+    const RETIRED = {
+      '群組 ×': '終端 ×N', 未知對端: '終端', 收斂趨勢: '改善趨勢', 修復追蹤: '修正追蹤', 已排程修復: '已排定修正', 子網: '網段', 單側觀察: S.view.TERMS.hearsay,
+      下鑽: '明細', 異質: '結果不一', 這一輪: '本輪', 讀入: '載入（整份取代用匯入）', 收集完整度: '覆蓋率', 收集情形: '覆蓋率', 未管理: '非網管型', 客戶端: '用戶端',
+      維護窗口: '維護時段', '建立選項 expectedData': '各類設備應收資料', 預期資料: '預期現況', 'Q.reach）': '（不寫內部 API）', 'Q.hopOwner': '（不寫內部 API）',
+      'ADR-': '（不寫內部編號）', 'facet：': '原值：', '（L0）': 'zone 矩陣', 'L1：': '位址組', 'L2：牽涉': '牽涉的規則', 'L3：': '逐跳路徑', 連線類別: '鏈路類別',
+      '開啟詳情': '開啟詳細資料', 'Enter 詳情': 'Enter 開啟詳細資料', '非直連確認': '未確認直連', 'broadcast domain 可達': 'L2 廣播網域可達',
+    };
+    const noComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\'"`])\/\/.*$/gm, '$1');
+    const sources = jsFiles('src/view').map((f) => [f.split(path.sep).join('/'), noComments(fs.readFileSync(path.join(ROOT, f), 'utf8'))])
+      .concat([['index.html', html.replace(/<!--[\s\S]*?-->/g, '')]]);
+    const hits = sources.flatMap(([f, src]) => Object.keys(RETIRED).filter((w) => src.includes(w)).map((w) => `${f}：「${w}」→ 改用「${RETIRED[w]}」`));
+    if (hits.length) throw new Error('畫面仍有已淘汰的說法：\n        ' + hits.join('\n        '));
   });
   await step('搜尋框：IP／MAC 前綴與介面名有結果，選介面、網段結果會選到它；路由追蹤有 IP 自動完成', async () => {
     const inp = $('#search'); const dd = $('#search-dd');
@@ -1544,7 +1567,7 @@ function viewBoundaryViolations(file, src) {
       const td = cellTd(c.src, c.dst); const where = `${c.src} → ${c.dst}`;
       if (!td || td.dataset.status !== c.status) throw new Error('格子的狀態應與 Q.zoneMatrix 相同：' + where);
       if (!td.textContent.includes(G[c.status].glyph) || !td.textContent.includes(V.L4_STATUS[c.status])) throw new Error('格子應有狀態的符號與文字：' + where);
-      if (c.heterogeneous !== td.textContent.includes('異質')) throw new Error('異質的格子應標出「異質」：' + where);
+      if (c.heterogeneous !== td.textContent.includes('結果不一')) throw new Error('成員結果不一致的格子應標出「結果不一」：' + where);
       if (c.diagonal !== td.classList.contains('diag')) throw new Error('zone 內（對角線）應另外標示：' + where);
       const label = td.getAttribute('aria-label');
       if (!label.includes(V.L4_STATUS[c.status]) || (c.counts.total && !label.includes(`共 ${V.num(c.counts.total)} 組`))) throw new Error('格子的 aria-label 應讀出狀態與筆數：' + where);
@@ -1555,13 +1578,13 @@ function viewBoundaryViolations(file, src) {
       const c = mx.cells.find((x) => x.src === 'list:WAN' && x.dst === 'vlan:20');
       if (!c || c.status !== 'partial' || !c.heterogeneous) throw new Error('範例資料的 WAN → VLAN 20 應是部分（partial）且異質');
       const td = cellTd(c.src, c.dst);
-      if (!td.textContent.includes('部分') || !td.textContent.includes('異質')) throw new Error('WAN → VLAN 20 的格子應顯示「部分」與「異質」');
+      if (!td.textContent.includes('部分') || !td.textContent.includes('結果不一')) throw new Error('WAN → VLAN 20 的格子應顯示「部分」與「結果不一」');
       if (!statuses.has('unknown') || !statuses.has('empty')) throw new Error('範例資料應同時有 unknown 與 empty 的格子');
     }
     // 圖例：五種狀態、異質、zone 內
     const lg = $('#l4-legend');
     Object.keys(V.L4_STATUS).forEach((k) => { const it = lg.testAll('.l4-legend-item').find((x) => x.dataset.status === k); if (!it || !it.textContent.includes(G[k].glyph) || !it.textContent.includes(V.L4_STATUS[k])) throw new Error('圖例缺少狀態：' + k); });
-    if (!lg.textContent.includes('異質') || !lg.textContent.includes('zone 內')) throw new Error('圖例應說明異質與 zone 內');
+    if (!lg.textContent.includes('結果不一') || !lg.textContent.includes('zone 內')) throw new Error('圖例應說明結果不一與 zone 內');
     // 提示：筆數與代表規則
     const wr = mx.cells.find((c) => c.rule && c.counts.total);
     if (wr) {
@@ -1614,16 +1637,16 @@ function viewBoundaryViolations(file, src) {
     const td = cellTd(target.src, target.dst); td.focus(); td.dispatch('keydown', { key: 'Enter' });
     const s0 = l4State();
     if (!s0.cell || s0.cell.src !== target.src || s0.cell.dst !== target.dst) throw new Error('Enter 應開啟這一格的下鑽');
-    if (document.activeElement !== $('#l4-drill-title') || !text('#l4-live').includes('下鑽')) throw new Error('下鑽後焦點應移到下鑽的標題，並讀出開啟了哪一格');
+    if (document.activeElement !== $('#l4-drill-title') || !text('#l4-live').includes('明細')) throw new Error('開啟明細後焦點應移到明細的標題，並讀出開啟了哪一格');
     const cell = Q.zoneCell(target.src, target.dst); const d = text('#l4-drill');
-    if (!d.includes('L1') || !d.includes('L2')) throw new Error('下鑽應有 L1（位址組）與 L2（牽涉的規則）');
+    if (!d.includes('位址組') || !d.includes('牽涉的規則') || /\bL[0-3]：/.test(d)) throw new Error('明細應有「位址組」與「牽涉的規則」，標題不寫 L1／L2 編號');
     const shown = () => $('#l4-drill').testAll('.l4-group').length; const denyAll = cell.groups.filter((g) => g.status === 'deny').length;
     const divCount = cell.groups.filter((g) => g.divergent).length;
     if (cell.heterogeneous !== (divCount > 0)) throw new Error('有 divergent 的組 ⇔ 格子異質');
     if (cell.heterogeneous) {
       // 異質（規格書 §5.7）：預設只列造成差異的組；「顯示全部（N 組）」可切換，焦點留在切換按鈕
       if (shown() !== Math.min(300, divCount)) throw new Error(`異質的格子預設只顯示造成差異的組（${shown()}／divergent ${divCount}）`);
-      if (!text('#l4-drill').includes('異質')) throw new Error('異質的下鑽應說明只列出造成差異的組');
+      if (!text('#l4-drill').includes('結果不一')) throw new Error('結果不一的明細應說明只列出造成差異的組');
       const sa = () => $('#l4-drill').querySelector('.l4-show-all');
       if (divCount < cell.groups.length) {
         if (!sa() || sa().getAttribute('aria-pressed') !== 'false' || !sa().textContent.includes(`顯示全部（${V.num(cell.groups.length)} 組）`)) throw new Error('異質的下鑽應有「顯示全部（N 組）」');
@@ -1708,7 +1731,7 @@ function viewBoundaryViolations(file, src) {
       if (!r || r.verdict !== 'unknown' || !r.reasons.length) throw new Error('L3 應是無法判斷並附原因');
       const t = text('#l4-drill');
       r.reasons.forEach((x) => { if (!t.includes(V.reachReason(x.code))) throw new Error('L3 應以中文說明原因：' + x.code); });
-      if (t.includes('未翻譯')) throw new Error('原因代碼都應有中文說明');
+      if (t.includes('沒有說明的原因代碼')) throw new Error('原因代碼都應有中文說明');
     }
     // 「在圖上定位」（搜尋、路由追蹤）從 L4 回到設備圖
     App.showView('graph');
@@ -2036,7 +2059,7 @@ function viewBoundaryViolations(file, src) {
     run(S.ip.fromInt(S.ip.toInt(lan.net) + 5), S.ip.fromInt(S.ip.toInt(odd.match['dst-address'].split('/')[0]) + 5), 'tcp', '443', '');
     const rp = l4State().reach; const pt = text('#l4-drill');
     if (!rp || rp.verdict !== 'unknown' || !rp.reasons.some((x) => x.code === 'policy-routing')) throw new Error('條件無法判斷的 /routing rule 應使可達性不明：' + JSON.stringify(rp && rp.reasons));
-    if (!pt.includes(V.REACH_REASON['policy-routing']) || pt.includes('未翻譯') || !pt.includes(`/routing rule 第 ${odd.order} 條`)) throw new Error('策略路由不明應以中文說明並列出規則：' + pt.slice(0, 300));
+    if (!pt.includes(V.REACH_REASON['policy-routing']) || pt.includes('沒有說明的原因代碼') || !pt.includes(`/routing rule 第 ${odd.order} 條`)) throw new Error('策略路由不明應以中文說明並列出規則：' + pt.slice(0, 300));
     $('#l4-vrf').value = '';
     // zone 矩陣：非 main 的 zone 名稱帶（VRF x）、id 帶 @VRF；依來源 zone 的 VRF 篩選
     const mx = Q.zoneMatrix();
@@ -2723,7 +2746,7 @@ function viewBoundaryViolations(file, src) {
     const legend = Array.from(document.testAll('#legend .li'));
     if (document.testAll('#legend .lg-group').length !== 5) throw new Error('圖例應分為五類');
     const groupTitles = document.testAll('#legend .lg-title').map((el) => el.textContent);
-    if (groupTitles.join('|') !== '設備|終端|連線|連線註記|標示') throw new Error('圖例分類順序應為設備、終端、連線、連線註記、標示');
+    if (groupTitles.join('|') !== '設備|終端|鏈路|鏈路註記|標示') throw new Error('圖例分類順序應為設備、終端、鏈路、鏈路註記、標示');
     if (!document.querySelector('#legend .legend-body').classList.contains('hidden')) throw new Error('圖例預設應收合');
     document.querySelector('#legend .legend-head').click();
     if (document.querySelector('#legend .legend-body').classList.contains('hidden')) throw new Error('點圖例標題應展開');
@@ -2760,8 +2783,8 @@ function viewBoundaryViolations(file, src) {
     if (keyboardLink.getAttribute('tabindex') !== '0' || keyboardLink.getAttribute('role') !== 'link') throw new Error('動態連結需具備鍵盤焦點與連結語意');
     keyboardLink.dispatch('keydown', { key: 'Enter' });
     if (!keyboardLinkActivated) throw new Error('動態連結按 Enter 應觸發操作');
-    const hearsay = legend.find((li) => li.textContent === '單側觀察'); const inferred = legend.find((li) => li.textContent === '推論鏈路');
-    if (!hearsay || !inferred) throw new Error('圖例缺少單側觀察或推論鏈路註記');
+    const hearsay = legend.find((li) => li.textContent === S.view.TERMS.hearsay); const inferred = legend.find((li) => li.textContent === '推論鏈路');
+    if (!hearsay || !inferred) throw new Error('圖例缺少「只有一端資料」或推論鏈路註記');
     if (legend.some((li) => li.textContent === 'MNDP')) throw new Error('MNDP 不畫在圖上，圖例不應列出');
     const hs = sw(hearsay)[0]; const is = sw(inferred)[0];
     // 證據強度只改線型與透明度（畫布保留速率色），圖例用中性線色只表達線型
@@ -3171,7 +3194,7 @@ function viewBoundaryViolations(file, src) {
       if (!box) throw new Error('每個 item 都應列出：' + it.key);
       if (box.querySelector('.patch-cmd').textContent !== RV.itemApplyLines(plan, it)) throw new Error('修改後應是核心產生的套用指令');
       const links = box.querySelector('.patch-before').testAll('a');
-      if (links.length !== it.evidence.length || !it.evidence.every((e, n) => links[n].textContent === `${e.file} 第 ${e.line} 行`)) throw new Error('修改前應列出 evidence 的原文行號');
+      if (links.length !== it.evidence.length || !it.evidence.every((e, n) => links[n].textContent === `${S.view.fileName(e.file)} 第 ${e.line} 行`)) throw new Error('修改前應列出 evidence 的原文行號');
     });
     // 修改前可點開原文
     const ev = plan.items[0].evidence[0];
@@ -3331,19 +3354,19 @@ function viewBoundaryViolations(file, src) {
     });
     if (Object.values(S.view.theme.sev).some((c) => [T.pending, T.regressed, T.accepted].includes(c))) throw new Error('趨勢圖的類別色不應使用嚴重度色');
   });
-  await step('VLAN 不相連區塊：詳情標示區塊、可切換區塊並回到全部，圖上只標該區塊', async () => {
+  await step('VLAN 不相連的片段：詳情標示 VLAN 片段、可切換片段並回到全部，圖上只標該片段', async () => {
     const dev = (n, ip) => `${n} (${ip}):\n### /export terse\n/interface bridge add name=bridge1\n/interface vlan add interface=bridge1 name=vlan50 vlan-id=50\n`;
     await buildInput(dev('VA', '10.0.0.1') + '_____\n' + dev('VB', '10.0.0.2'));
     const ds = App.Q.vlan(50).domains;
     if (ds.length < 2) throw new Error('測試資料應有不相連的 VLAN 區塊');
     App.select({ type: 'vlan', key: '50' });
-    if (!text('#detail').includes(`${ds.length} 個不相連區塊（推論）`)) throw new Error('應標示不相連區塊');
-    const link = $('#detail').testAll('a').find((x) => x.textContent.startsWith('區塊 2：'));
+    if (!text('#detail').includes(`${ds.length} 個不相連的 VLAN 片段（推論）`)) throw new Error('應標示不相連的 VLAN 片段');
+    const link = $('#detail').testAll('a').find((x) => x.textContent.startsWith('VLAN 片段 2：'));
     if (!link) throw new Error('應可點選其他區塊');
     link.click();
-    if (App.sel.domain !== ds[1].key || !text('#detail').includes(`（區塊 2／${ds.length}）`)) throw new Error('點區塊應切換到該區塊');
+    if (App.sel.domain !== ds[1].key || !text('#detail').includes(`（VLAN 片段 2／${ds.length}）`)) throw new Error('點片段應切換到該片段');
     if (Array.from(App.graph.hl.nodes.keys()).join() !== ds[1].devices.join()) throw new Error('圖上應只標出該區塊的設備');
-    $('#detail').testAll('a').find((x) => x.textContent === '顯示所有區塊').click();
+    $('#detail').testAll('a').find((x) => x.textContent === '顯示所有 VLAN 片段').click();
     if (App.sel.domain != null || App.graph.hl.nodes.size !== App.Q.vlan(50).devices.length) throw new Error('應可回到所有區塊');
   });
   await step('路由追蹤停在未收集的設備：結果是「無法驗證」（灰色），不是無法抵達；圖上與詳情用同一個終點分類', async () => {
@@ -3394,7 +3417,7 @@ function viewBoundaryViolations(file, src) {
       App.selectFinding(idx);
       const box = $('#detail').testAll('.finding').find((el) => el.textContent.includes(f.message));
       const chip = box && box.querySelector('.facet');
-      if (!chip || chip.textContent !== '檢查項目：' + RV.facetText(f) || chip.getAttribute('title') !== 'facet：' + f.facet) throw new Error('詳情應在 ' + f.message + ' 的標題旁標示檢查項目');
+      if (!chip || chip.textContent !== '檢查項目：' + RV.facetText(f) || chip.getAttribute('title') !== '原值：' + f.facet) throw new Error('詳情應在 ' + f.message + ' 的標題旁標示檢查項目');
       if (a12.some((o) => o.f !== f && box.textContent.includes('檢查項目：' + RV.facetText(o.f)))) throw new Error('每一筆只標示自己的檢查項目');
     });
     const plain = all.findIndex((f) => f.facet == null);
@@ -3509,9 +3532,9 @@ function viewBoundaryViolations(file, src) {
     if (!domainLink) throw new Error('MNDP 仍應保留在基準的鏈路中');
     if (Array.from(App.pairs.values()).some((x) => !x.virtual)) throw new Error('只有 MNDP 的設備對不應畫線');
     App.select({ type: 'device', key: 'A' });
-    if (!text('#detail').includes('非直連確認')) throw new Error('設備鄰居表仍應列出 MNDP，並說明非直連');
+    if (!text('#detail').includes('未確認直連')) throw new Error('設備鄰居表仍應列出 MNDP，並說明非直連');
     App.select({ type: 'link', key: domainLink.key });
-    if (!text('#detail').includes('非直連確認')) throw new Error('MNDP 細節未明示非直連語意');
+    if (!text('#detail').includes('未確認直連')) throw new Error('MNDP 細節未明示非直連語意');
     const remoteEp = S.keys.splitEp(domainLink.a)[0] === 'A' ? domainLink.b : domainLink.a;
     App.select({ type: 'interface', key: remoteEp });
     if (!text('#detail').includes('MNDP：L2 廣播網域可達，非直連')) throw new Error('MNDP 回報介面的細節不應呈現為直連線');

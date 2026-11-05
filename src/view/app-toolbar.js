@@ -235,8 +235,8 @@
     // L2 埠圖與 L3 子網圖的節點（中性外框，靠外形區分）
     item([dot({ background: T.l2.port.fill, border: '1.5px solid ' + T.l2.port.stroke, width: '9px', height: '9px', borderRadius: '1px' }, { 'data-l2': 'port' })], '埠（L2）',
       'L2 埠圖：設備是外框為類型色的方框，埠是框邊上的小方塊；較寬的是聚合埠，虛線的是推論鏈路未收集端的未知埠');
-    item([dot({ background: T.l3.subnet.fill, border: '1.6px solid ' + T.l3.subnet.stroke, width: '22px', height: '10px', borderRadius: '5px' }, { 'data-l3': 'subnet' })], '子網（L3）',
-      'L3 子網圖：圓角長條是網段；虛線外框是只由路由得知的目的網段。接到兩個以上子網、有路由表或是路由器／防火牆的設備是路由設備（推論）');
+    item([dot({ background: T.l3.subnet.fill, border: '1.6px solid ' + T.l3.subnet.stroke, width: '22px', height: '10px', borderRadius: '5px' }, { 'data-l3': 'subnet' })], '網段（L3）',
+      'L3 網段圖：圓角長條是網段；虛線外框是只由路由得知的目的網段。接到兩個以上網段、有路由表或是路由器／防火牆的設備是路由設備（推論）');
     group('終端');
     // 前 8 個廠商各一色（依基準計算，載入基準後由 renderVendorLegend 填入），其餘與不明廠商用中性色
     vendorBox = h('div', { class: 'lg-vendors' }); grp.appendChild(vendorBox); A.renderVendorLegend();
@@ -245,30 +245,30 @@
     item([dot({
       background: EP.cluster.fill, border: '1.5px solid ' + EP.cluster.stroke,
       width: Math.round(LEG * 1.3) + 'px', height: Math.round(LEG * 0.8) + 'px', borderRadius: '3px',
-    })], '群組 ×N', '同一台設備終端過多時收合，雙擊展開');
-    group('連線');
+    })], V.TERMS.endpoint + ' ×N', '同一台設備終端過多時收合，雙擊展開');
+    group(V.TERMS.link);
     Object.entries(EDGE).forEach(([k, st]) => item([line(st.c, st.w, st.dash, 1, { 'data-edge': k })], V.CLS[k],
       k === '1g' ? '推論分類：ether、sfp1、combo 等介面名稱歸為 1G；不代表實際協商速率，ether 也可能是 2.5G 或 10G。線寬隨速率遞增。' : null));
     const mw = EDGE['1g'].w * T.multi.widen; const g0 = Math.round((1 - T.multi.gap) * 50); const g1 = 100 - g0;
     item([h('span', { class: 'ln', 'data-multi': '', style: {
       borderTopWidth: '0', height: V.legendLineHeight(mw), background: `linear-gradient(${CV.keyInk} 0 ${g0}%, ${CV.surface} ${g0}% ${g1}%, ${CV.keyInk} ${g1}%)`,
-    } })], '多條鏈路（雙線）', '同一對設備之間有多條鏈路：線加寬並在中間留一條細縫；顏色仍是該連線類別');
-    group('連線註記');
+    } })], '多條鏈路（雙線）', '同一對設備之間有多條鏈路：線加寬並在中間留一條細縫；顏色仍是該鏈路類別');
+    group(V.TERMS.link + '註記');
     const noteW = EDGE['1g'].w;
-    item([line(CV.keyInk, noteW, WEAK.hearsay.dash, WEAK.hearsay.alpha)], '單側觀察', '點線（顏色依連線類別）：對端沒有提供 LLDP 鄰居資料，屬單向觀察');
+    item([line(CV.keyInk, noteW, WEAK.hearsay.dash, WEAK.hearsay.alpha)], V.TERMS.hearsay, '點線（顏色依鏈路類別）：' + V.HEARSAY_TEXT + '，只有本機這一端回報；不是「LLDP 單向」（K01，對端有鄰居資料但沒回報這條鏈路）');
     item([line(CV.keyInk, noteW, WEAK.inferred.dash, WEAK.inferred.alpha)], '推論鏈路',
-      '長虛線（顏色依連線類別）：沒有 LLDP 的設備（例如只支援 MNDP 的 SwOS 交換器），依 MAC 表、MNDP、點對點網段推定相鄰；是直接相連或中間只有未管理設備');
-    Object.values(EP.byType).forEach((t) => item([line(CV.keyInk, noteW, t.dash, WEAK.hearsay.alpha)], t.label, '連到 ' + t.label + ' 介面終端的連線（專用線型）'));
+      '長虛線（顏色依鏈路類別）：沒有 LLDP 的設備（例如只支援 MNDP 的 SwOS 交換器），依 MAC 表、MNDP、點對點網段推定相鄰；是直接相連或中間只有非網管型設備');
+    Object.values(EP.byType).forEach((t) => item([line(CV.keyInk, noteW, t.dash, WEAK.hearsay.alpha)], t.label, '連到 ' + t.label + ' 介面終端的鏈路（專用線型）'));
     item([line(T.l3.route.c, T.l3.route.w, T.l3.route.dash, 1, { 'data-l3': 'route' }), h('span', { class: 'lg-arrow', style: { color: T.l3.route.c } }, '▶')], '路由（L3）',
-      'L3 子網圖開啟「顯示路由」時：靜態路由與預設路由，從路由所在的設備以虛線箭頭指到目的網段');
-    item([line(T.l3.overlap.c, T.l3.overlap.w, T.l3.overlap.dash, 1, { 'data-l3': 'overlap' })], '網段重疊（L3）', 'L3 子網圖：互相包含的網段之間的虛線，中點有警告外形；子網下方另標「重疊網段」「重複 IP」');
+      'L3 網段圖開啟「顯示路由」時：靜態路由與預設路由，從路由所在的設備以虛線箭頭指到目的網段');
+    item([line(T.l3.overlap.c, T.l3.overlap.w, T.l3.overlap.dash, 1, { 'data-l3': 'overlap' })], '網段重疊（L3）', 'L3 網段圖：互相包含的網段之間的虛線，中點有警告外形；網段下方另標「重疊網段」「重複 IP」');
     group('標示');
     // 嚴重度：外形與畫布的 sevMark 相同（theme.sevShape），不只靠顏色
     Object.entries(T.sevShape).forEach(([k, shape]) => item([dot(Object.assign({ background: T.sev[k] }, SEV_CSS[shape]), { 'data-shape': shape })],
-      V.SEV[k], `有${V.SEV[k]}的設備在右上角、連線在中點標示${shape === 'square' ? '方形' : '三角形'}`));
-    item([ring(M.select, 3, 'select')], '選取', '目前選取的設備（藍色粗環）與連線');
+      V.SEV[k], `有${V.SEV[k]}的設備在右上角、鏈路在中點標示${shape === 'square' ? '方形' : '三角形'}`));
+    item([ring(M.select, 3, 'select')], '選取', '目前選取的設備（藍色粗環）與鏈路');
     item([ring(M.hover, 2, 'hover')], '滑過', '指標或鍵盤（N 鍵）目前所在的設備（深色細環）；相連的線一起標示');
-    item([ring(M.find, 3, 'find')], '搜尋結果', '搜尋 MAC／IP 時，標出所在位置的設備與連線');
+    item([ring(M.find, 3, 'find')], '搜尋結果', '搜尋 MAC／IP 時，標出所在位置的設備與鏈路');
     { // 推定偏離：節點外的虛線圓圈（theme.canvas.deviation）；圓周依 LEG 換算虛線長度
       const D = CV.deviation; const r = LEG / 2; const per = 360 / (Math.PI * LEG); let deg = 0;
       const stops = D.dash.map((n, i) => { const from = deg; deg += n * per; return `${i % 2 ? 'transparent' : D.c} ${from.toFixed(1)}deg ${deg.toFixed(1)}deg`; });
@@ -278,7 +278,7 @@
     item([line(M.trace, 4, null, T.alpha.overlay, { 'data-mark': 'trace' }), h('span', { class: 'lg-arrow', style: { color: M.trace } }, '▶')], '路由追蹤', '逐跳路徑，箭頭表示方向');
     // VLAN 篩選：承載狀態（Q.vlanCarriers），線型與外形取自 theme.vlan，不只靠顏色
     const VL = { carry: ['VLAN 承載', '兩端都帶這個 VLAN（實線）'], inferred: ['VLAN 推論承載', '推論鏈路，已收集的各端都帶這個 VLAN（長虛線，推論）'],
-      partial: ['VLAN 只有一端', '兩端都有 VLAN 資料，只有一端帶這個 VLAN（實線加垂直短刻度，中點有錯誤外形，V01）'], oneSide: ['VLAN 一端未知', '只有一端可確認：對端未收集、沒有 VLAN 資料或只有單側觀察（點線、淡色，推論）'] };
+      partial: ['VLAN 只有一端', '兩端都有 VLAN 資料，只有一端帶這個 VLAN（實線加垂直短刻度，中點有錯誤外形，V01）'], oneSide: ['VLAN 一端未知', '只有一端可確認：對端未收集、沒有 VLAN 資料或' + V.TERMS.hearsay + '（點線、淡色，推論）'] };
     Object.entries(T.vlan).forEach(([k, st]) => item([st.ticks ? tickLine(st.c, 4, st.ticks, st.alpha, { 'data-vlan': k }) : line(st.c, 4, st.dash, st.alpha, { 'data-vlan': k }),
       st.sev ? dot(Object.assign({ background: T.sev[st.sev] }, SEV_CSS[T.sevShape[st.sev]]), { 'data-shape': T.sevShape[st.sev] }) : null].filter(Boolean), VL[k][0], VL[k][1]));
   }
@@ -290,7 +290,7 @@
     if (!vendorBox) return; V.clear(vendorBox);
     const sw = (c) => h('span', { class: 'sev', style: { width: '12px', height: '12px', background: c, border: '1.5px solid ' + CV.outline } });
     App.vendorColors.forEach((c, v) => vendorBox.appendChild(h('div', { class: 'li lg-vendor', title: '終端廠商：' + v }, [sw(c), h('span', { class: 'lg-name' }, v)])));
-    vendorBox.appendChild(h('div', { class: 'li', title: '未知對端：一個埠一個 MAC，依廠商上色；前 8 個以外的廠商與不明廠商用這個顏色' },
+    vendorBox.appendChild(h('div', { class: 'li', title: V.TERMS.endpoint + '：一個埠一個 MAC，依廠商上色；前 8 個以外的廠商與不明廠商用這個顏色' },
       [sw(EP.vendorFallback), App.vendorColors.size ? `其他廠商${App.vendorOthers ? `（${App.vendorOthers} 家）` : ''}／不明` : '單一 MAC']));
   };
 

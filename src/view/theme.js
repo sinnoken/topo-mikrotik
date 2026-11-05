@@ -119,7 +119,7 @@
       disabledAlpha: 0.5,
       focus: { bg: '#e6f0fb', border: '#0b6bcb' },
     },
-    // 處理紀錄的收斂趨勢圖（折線，SVG）：以 dataviz validate_palette.js 驗證（亮色、底色 #f8fafc，三色全部通過，最差 ΔE 18.4）。
+    // 處理紀錄的改善趨勢圖（折線，SVG）：以 dataviz validate_palette.js 驗證（亮色、底色 #f8fafc，三色全部通過，最差 ΔE 18.4）。
     // 同一張圖的三條線另有外形（圓、方、三角）與線尾的名稱與數值，圖例與 tooltip 也畫出同樣的外形，不只靠顏色；
     // 只有一條線的圖（覆蓋率、未知對端）用 single。格線與座標軸用比底色深一階的中性色、1px 實線；文字一律用 text.*，不用資料色。
     // 線型：細線（lineWidth）、小標記（markerSize 是半徑，外圈 markerRing 是底色環）

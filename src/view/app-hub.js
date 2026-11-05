@@ -123,10 +123,10 @@
       { role: 'ledger', key: 'ledger', label: '處理紀錄', available: !blocked, note: blocked ? '處理紀錄停用中，不放進工作包' : '' },
       { role: 'profile', label: '命名規則', required: !!r.profile, available: !!r.profile,
         note: r.profile ? '基準用了命名規則，一定要附上（讀回時要用同一份才能重建同一個基準）' : '這份基準沒有用命名規則' },
-      { role: 'expected-data', label: '建立選項 expectedData', required: !!r.expectedData, available: !!r.expectedData,
-        note: r.expectedData ? '基準用了 expectedData，一定要附上（它是基準鍵的一部分）' : '這份基準沒有用 expectedData' },
-      { role: 'expected', key: 'expected', label: '預期資料（ssot-expected/1）', available: !!(exp && exp.data && !exp.error),
-        note: !exp ? '沒有載入預期資料' : exp.error ? '預期資料無法讀取，不放進工作包' : exp.name },
+      { role: 'expected-data', label: '各類設備應收資料', required: !!r.expectedData, available: !!r.expectedData,
+        note: r.expectedData ? '基準用了各類設備應收資料（expectedData），一定要附上（讀回時才能重建同一份基準）' : '這份基準沒有用各類設備應收資料' },
+      { role: 'expected', key: 'expected', label: '預期現況', available: !!(exp && exp.data && !exp.error),
+        note: !exp ? '沒有載入預期現況' : exp.error ? '預期現況無法讀取，不放進工作包' : exp.name },
       { role: 'report', key: 'report', label: '報表（CSV、Markdown）', available: !!r.snapshot, note: hub.byDevice ? '依設備排序' : '' },
       { role: 'patch', key: 'patch', label: '修正 patch（.rsc 與總表）', available: nPatch > 0,
         note: nPatch ? `修正計畫目前選取 ${V.num(nPatch)} 項` : '修正計畫沒有選取項目；先在「開啟修正計畫」選取' },
@@ -256,7 +256,7 @@
     if (c.expected && pack.expected) {
       const ex = pack.files.find((f) => f.role === 'expected');
       App.round.expected = { name: ex ? ex.name : 'expected.json', data: pack.expected, error: null };
-      brought.push('預期資料');
+      brought.push('預期現況');
     }
     if (c.ledger && pack.ledger) { A.adoptLedger(pack.ledger); brought.push('處理紀錄'); }
     if (res) {

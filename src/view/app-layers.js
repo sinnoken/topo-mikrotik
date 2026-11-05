@@ -234,7 +234,7 @@
   async function applyElk(e) {
     const snap = App.snap; const token = ++e.token; const reset = layoutToken;
     const stale = () => App.snap !== snap || e.token !== token || layoutToken !== reset;
-    const name = e.layer === 'l2' ? 'L2 埠圖' : 'L3 子網圖';
+    const name = e.layer === 'l2' ? 'L2 埠圖' : 'L3 網段圖';
     A.banner(`${name}的分層版面計算中…`);
     try {
       if (e.layer === 'l2') {
@@ -456,7 +456,7 @@
       }
       const d = Q.getDevice(n.dev || n.id);
       const base = (d ? `${d.label || d.name}・${V.KIND[d.kind]}${d.collected ? '' : '・未收集'}` : n.label) + vrfTip;
-      if (n.l3) return base + (n.l3.router ? `・路由設備（推論：${n.l3.routerBasis === 'routes' ? '有路由表' : '設備類型'}，接 ${n.l3.subnets.length} 個子網）` : n.l3.multihomed ? `・多個子網的主機（不算路由設備）` : '');
+      if (n.l3) return base + (n.l3.router ? `・路由設備（推論：${n.l3.routerBasis === 'routes' ? '有路由表' : '設備類型'}，接 ${n.l3.subnets.length} 個網段）` : n.l3.multihomed ? `・多個網段的主機（不算路由設備）` : '');
       return base + (n.sub ? '・' + n.sub : '');
     }
     const ed = e.index.edges.get(item.id); if (!ed) return '';
@@ -547,7 +547,7 @@
     $('#btn-force').disabled = L === 'l2';
     $('#btn-force').title = L === 'l2' ? 'L2 埠圖的埠固定在設備框上，不用力導向' : '用力導向微調位置（再按一次停止）';
     const cv = $('#graph');
-    if (L !== 'l4') cv.setAttribute('aria-label', `拓樸圖（${V.LAYER[L]}）。N 下一個${L === 'l2' ? '設備或埠' : L === 'l3' ? '子網或設備' : '設備'}、Shift+N 上一個、Enter 開啟詳情、Shift+Enter 聚焦、Esc 取消選取、方向鍵平移、+ 與 - 縮放、0 全圖`);
+    if (L !== 'l4') cv.setAttribute('aria-label', `拓樸圖（${V.LAYER[L]}）。N 下一個${L === 'l2' ? '設備或埠' : L === 'l3' ? '網段或設備' : '設備'}、Shift+N 上一個、Enter 開啟詳細資料、Shift+Enter 聚焦、Esc 取消選取、方向鍵平移、+ 與 - 縮放、0 全圖`);
     renderNote();
     A.renderSteps(); // 步驟列「② 檢視」的狀態是目前的層級
   };
@@ -559,18 +559,18 @@
     const Q = App.Q; const n = V.num;
     if (e.layer === 'l2') {
       const i = e.info; const omit = i.omitted;
-      note.textContent = `L2 埠圖：${n(e.boxes.length)} 台設備、${n(e.ports.length)} 個埠、${n(e.edges.length)} 條連線（聚合${i.lag === 'collapse' ? '收合' : '展開'}、${i.portsMode === 'all' ? '全部的埠' : '只有連線的埠'}）。`
+      note.textContent = `L2 埠圖：${n(e.boxes.length)} 台設備、${n(e.ports.length)} 個埠、${n(e.edges.length)} 條鏈路（聚合${i.lag === 'collapse' ? '收合' : '展開'}、${i.portsMode === 'all' ? '全部的埠' : '只有接線的埠'}）。`
         + (i.scope === 'focus' ? `只畫 ${Q.devName(i.focus)} 與它的鄰居${i.tooBig ? `（整張 ${n(i.total)} 台，超過上限 ${n(App.L2_MAX)} 台）` : ''}；選取其他設備或雙擊鄰居可改看那一台。` : '')
         + (omit.domainOnly ? `另有 ${n(omit.domainOnly)} 條只有 MNDP 的鏈路沒有畫（MNDP 只證明同一廣播網域，不是直連）。` : '')
         + (omit.sameDevice ? `${n(omit.sameDevice)} 條同一台設備兩埠之間的鏈路沒有畫。` : '');
     } else {
       const ss = e.sg.subnets; const ov = ss.filter((s) => s.overlaps.length).length; const dup = ss.reduce((k, s) => k + s.duplicateIps.length, 0);
-      note.textContent = `L3 子網圖：${n(ss.length)} 個網段、${n(e.sg.nodes.length)} 個設備節點；點線是推論的位址（鄰居回報、管理 IP）`
+      note.textContent = `L3 網段圖：${n(ss.length)} 個網段、${n(e.sg.nodes.length)} 個設備節點；點線是推論的位址（鄰居回報、管理 IP）`
         + (e.info.routes ? `，虛線箭頭是 ${n(e.sg.routes.length)} 條靜態／預設路由` : '') + '。'
-        + (ov || dup ? `有 ${n(ov)} 個網段重疊、${n(dup)} 個重複 IP（點選子網看詳情）。` : '')
-        // VRF 是容器：每個 VRF 一個框；同一個網段在不同 VRF 是不同的子網，一台設備在每個 VRF 各一個節點（@<VRF>）
-        + (e.info.byVrf ? `每個 VRF 一個框（${e.info.vrfs.join('、')}）：同一個網段在不同 VRF 是不同的子網，設備在 main 以外的 VRF 標 @<VRF>。` : '')
-        + (e.info.routes && e.info.omitted.policyRoutes ? `另有 ${n(e.info.omitted.policyRoutes)} 條只用於策略路由的路由表（不屬於任何 VRF）的路由沒有畫，見設備詳情的路由表。` : '');
+        + (ov || dup ? `有 ${n(ov)} 個網段重疊、${n(dup)} 個重複 IP（點選網段看詳細資料）。` : '')
+        // VRF 是容器：每個 VRF 一個框；同一個網段在不同 VRF 是不同的網段，一台設備在每個 VRF 各一個節點（@<VRF>）
+        + (e.info.byVrf ? `每個 VRF 一個框（${e.info.vrfs.join('、')}）：同一個網段在不同 VRF 各自獨立，設備在 main 以外的 VRF 標 @<VRF>。` : '')
+        + (e.info.routes && e.info.omitted.policyRoutes ? `另有 ${n(e.info.omitted.policyRoutes)} 條只用於策略路由的路由表（不屬於任何 VRF）的路由沒有畫，見設備詳細資料的路由表。` : '');
     }
   }
   /** 匯出 PNG 的檔名：目前的層級（L4 沒有 PNG，見 A.exportPng） */

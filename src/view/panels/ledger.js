@@ -1,8 +1,8 @@
 /*
  * 「⑤ 驗證」裡處理紀錄的部分（index.html 的 #view-verify）：
  *   render       本輪變化（新出現、已修好、回歸、豁免到期、因收集失敗而無法判斷；#round-body）、
- *                處理紀錄的目前狀態與匯出／匯入的入口（在資料中心；#ledger-body）、修復追蹤（已排程修復與已修好；#tracking-body）
- *   renderTrend  收斂趨勢：最新一輪的數字、每一輪的趨勢圖與表格檢視（#trend-body）
+ *                處理紀錄的目前狀態與匯出／匯入的入口（在資料中心；#ledger-body）、修正追蹤（已排定修正與已修好；#tracking-body）
+ *   renderTrend  改善趨勢：最新一輪的數字、每一輪的趨勢圖與表格檢視（#trend-body）
  * 數字全部來自核心（S.ledger.summary、advance 的結果）；這裡只排版與畫圖。
  * 圖的顏色與線型取自 theme.trend；一張圖只有一個軸：計數（待處理、回歸、已豁免）一張，覆蓋率（比例）與未知對端各一張（小倍數）。
  */
@@ -11,6 +11,8 @@
   const V = S.view; const h = V.h;
   const A = () => V.app;
   const R = () => V.remediation;
+  /** 趨勢的「沒有 LLDP／CDP 鄰接的終端埠」數（處理紀錄的 unknownPeers） */
+  const UNK = V.TERMS.endpoint + '埠';
   const ui = { open: new Set() };
 
   // ---------------------------------------------------------------- 共用
@@ -33,7 +35,7 @@
   }
 
   // ---------------------------------------------------------------- 趨勢圖
-  // 中間的「收斂趨勢」工作畫面用：一張圖的大小固定（px，不縮放，字級不會變小）；畫面比圖窄時，圖在自己的框內水平捲動
+  // 中間的「改善趨勢」工作畫面用：一張圖的大小固定（px，不縮放，字級不會變小）；畫面比圖窄時，圖在自己的框內水平捲動
   const H = 200; const PAD = { l: 44, r: 112, t: 14, b: 28 }; // 軸與線尾文字的字級由 CSS（.trend-plot svg text）決定
   const END_GAP = 15; // 線尾文字的最小垂直間距（數值相同的線不會疊在一起）
   /** 刻度上限：取 1、2、5 × 10^n 中不小於 max 的最小值（max 為 0 時 1） */
@@ -126,14 +128,14 @@
     ]);
   }
   const pct = (r) => (r == null ? '—' : `${Math.round(r * 100)}%`);
-  /** 最新一輪的數字（收斂趨勢的上方） */
+  /** 最新一輪的數字（改善趨勢的上方） */
   function trendTiles(series) {
     const last = series[series.length - 1];
     const tiles = [['待處理', V.num(last.pending)], ['回歸', V.num(last.counts.regressed || 0)], ['已豁免', V.num(last.counts.accepted || 0)],
-      ['覆蓋率', pct(last.coverage.ratio)], ['未知對端', V.num(last.unknownPeers)]];
+      ['覆蓋率', pct(last.coverage.ratio)], [UNK, V.num(last.unknownPeers)]];
     return h('div', { class: 'trend-tiles' }, tiles.map(([label, v]) => h('div', { class: 'trend-tile' }, [h('div', { class: 'muted' }, label), h('div', { class: 'trend-value' }, v)])));
   }
-  /** 收斂趨勢：只有一輪時列出目前的數字，不畫圖；兩輪以上畫三張小倍數折線圖（一張一個軸），並附表格檢視 */
+  /** 改善趨勢：只有一輪時列出目前的數字，不畫圖；兩輪以上畫三張小倍數折線圖（一張一個軸），並附表格檢視 */
   function trend(series) {
     if (!series.length) return h('div', { class: 'muted pane-note' }, '建立基準後，每一輪的待處理、回歸與覆蓋會記在這裡。');
     const T = V.theme.trend;
@@ -145,7 +147,7 @@
     const table = h('details', { class: 'trend-table' }, [h('summary', null, '表格檢視'), V.table([
       { t: '輪次', f: (r) => xs[series.indexOf(r)] }, { t: '時間', f: (r) => h('span', { class: 'mono' }, V.fmtUtc(r.at)) },
       { t: '待處理', f: (r) => V.num(r.pending) }, { t: '回歸', f: (r) => V.num(r.counts.regressed || 0) }, { t: '已豁免', f: (r) => V.num(r.counts.accepted || 0) },
-      { t: '覆蓋率', f: (r) => `${pct(r.coverage.ratio)}（${V.num(r.coverage.collected)}/${V.num(r.coverage.expected)}）` }, { t: '未知對端', f: (r) => V.num(r.unknownPeers) },
+      { t: '覆蓋率', f: (r) => `${pct(r.coverage.ratio)}（${V.num(r.coverage.collected)}/${V.num(r.coverage.expected)}）` }, { t: UNK, f: (r) => V.num(r.unknownPeers) },
     ], series)]);
     return h('div', { class: 'trend' }, [tileBox,
       h('div', { class: 'trend-charts' }, [
@@ -156,11 +158,11 @@
         ], xs, num, null, { width: 480, subs }),
         lineChart('覆蓋率（已收集／應收集）', [{ key: 'coverage', label: '覆蓋率', color: T.single, shape: 'circle', values: series.map((r) => r.coverage.ratio) }],
           xs, pct, 1, { subs }),
-        lineChart('未知對端（個）', [{ key: 'unknownPeers', label: '未知對端', color: T.single, shape: 'circle', values: series.map((r) => r.unknownPeers) }], xs, num, null, { subs }),
+        lineChart(UNK + '（個）', [{ key: 'unknownPeers', label: UNK, color: T.single, shape: 'circle', values: series.map((r) => r.unknownPeers) }], xs, num, null, { subs }),
       ]),
       table]);
   }
-  /** 「⑤ 驗證」的收斂趨勢（#trend-body；外框與標題在 index.html） */
+  /** 「⑤ 驗證」的改善趨勢（#trend-body；外框與標題在 index.html） */
   function renderTrend(App) {
     const root = V.clear(V.$('#trend-body'));
     const st = A().ledgerState();
@@ -169,13 +171,13 @@
     root.appendChild(trend(S.ledger.summary(st.ledger).series));
   }
 
-  // ---------------------------------------------------------------- 本輪變化、處理紀錄、修復追蹤
+  // ---------------------------------------------------------------- 本輪變化、處理紀錄、修正追蹤
   function render(App) {
     const roundBox = V.clear(V.$('#round-body')); const body = V.clear(V.$('#ledger-body')); const trackBox = V.clear(V.$('#tracking-body'));
     const st = A().ledgerState(); const lg = st.ledger;
     body.classList.add('ledger-pane');
     body.appendChild(h('p', { class: 'muted' }, '處理紀錄是你對每個檢查結果的決定與歷程（ssot-ledger/1），存在這個瀏覽器、不放進基準。每次建立基準都會推進一輪：'
-      + '排程修復的項目消失時判定為已修好，又出現時標為回歸。請定期匯出保存。'));
+      + '排定修正的項目消失時判定為已修好，又出現時標為回歸。請定期匯出保存。'));
     if (st.blocked) {
       const why = () => h('p', { class: 'warn-line' }, '處理紀錄目前無法使用（見「處理紀錄」）：' + st.blocked.reason);
       roundBox.appendChild(why()); trackBox.appendChild(why());
@@ -195,7 +197,7 @@
       if (cur.waivers.missingReason) body.appendChild(h('p', { class: 'warn-line' }, `${V.num(cur.waivers.missingReason)} 項豁免沒有寫原因（例如由舊的確認標記轉換而來），請補上。`));
       if (st.saveError) body.appendChild(h('p', { class: 'warn-line' }, '最近一次儲存失敗：' + st.saveError));
       // 本輪變化（advance 的結果；同一份基準重新開啟時不顯示）
-      if (!App.Q) roundBox.appendChild(h('p', { class: 'muted pane-note' }, '建立基準後，這一輪新出現、已修好、回歸的項目會列在這裡。'));
+      if (!App.Q) roundBox.appendChild(h('p', { class: 'muted pane-note' }, '建立基準後，本輪新出現、已修好、回歸的項目會列在這裡。'));
       else if (!st.round) roundBox.appendChild(h('p', { class: 'muted pane-note round-none' }, '這份基準已經推進過一輪（例如重新開啟頁面），沒有新的變化；重新收集、建立基準後才會更新。'));
       if (st.round && App.Q) {
         const by = (r) => st.round.changes.filter((c) => c.reason === r);
@@ -211,29 +213,29 @@
         if (ver) roundBox.appendChild(h('p', { class: 'warn-line round-version', title: ver.message }, '新出現的可能來自新版檢查，不代表網路改變：' + ver.message));
         const list = (key, title, cls, keys, note) => (keys.length ? fold(key, title, keys.length, h('div', { class: 'ledger-list', 'data-reason': key }, [
           note ? h('p', { class: 'muted' }, note) : null, ...keys.slice(0, 300).map((k) => itemRow(App, k, lg.items[k]))]), { open: true, cls }) : null);
-        [list('reappeared', '回歸：修好後又出現', 'err', re.map((c) => c.key), '上一輪判定為已修好，這一輪又出現。'),
+        [list('reappeared', '回歸：修好後又出現', 'err', re.map((c) => c.key), '上一輪判定為已修好，本輪又出現。'),
           list('unobserved', '因收集失敗而無法判斷', 'warn', st.round.unobserved,
-            '這些待處理項目這一輪沒有出現，但所屬設備有收集失敗或沒有收集，無法判斷是否已修好，狀態不變。補收集後再建立基準。'),
+            '這些待處理項目本輪沒有出現，但所屬設備有收集失敗或沒有收集，無法判斷是否已修好，狀態不變。補收集後再建立基準。'),
           list('waiver-expired', '豁免到期，改回待處理', 'warn', ex.map((c) => c.key), '「可接受」的到期日已過，請重新檢視。'),
-          list('disappeared', '這一輪已修好', 'ok', fixed.map((c) => c.key))].forEach((x) => { if (x) roundBox.appendChild(x); });
+          list('disappeared', '本輪已修好', 'ok', fixed.map((c) => c.key))].forEach((x) => { if (x) roundBox.appendChild(x); });
       }
-      // 修復追蹤：已排程修復的項目（標示目前基準仍有或沒有），以及累計已修好的
+      // 修正追蹤：已排定修正的項目（標示目前基準仍有或沒有），以及累計已修好的
       const keysOf = (s) => Object.keys(lg.items).filter((k) => lg.items[k].status === s);
       const sched = keysOf('scheduled'); const fixedAll = keysOf('fixed');
       const present = new Set(App.Q ? App.Q.findings().map((f) => App.Q.findingKey(f)) : []);
       const still = sched.filter((k) => present.has(k)).length;
       if (sched.length || fixedAll.length) {
         trackBox.appendChild(h('div', { class: 'summary sub fix-summary' }, [
-          V.chip(`已排程修復 ${V.num(sched.length)}`, sched.length ? R().STATUS_CHIP.scheduled : '', { 'data-status': 'scheduled' }),
-          V.chip(`目前基準仍有 ${V.num(still)}`, still ? 'warn' : '', { title: '已排程修復、這一輪仍出現：可能還沒執行 patch，或前置檢查中止了' }),
+          V.chip(`已排定修正 ${V.num(sched.length)}`, sched.length ? R().STATUS_CHIP.scheduled : '', { 'data-status': 'scheduled' }),
+          V.chip(`目前基準仍有 ${V.num(still)}`, still ? 'warn' : '', { title: '已排定修正、本輪仍出現：可能還沒套用 patch，或前置檢查中止了' }),
           V.chip(`累計已修好 ${V.num(fixedAll.length)}`, fixedAll.length ? 'ok' : '', { 'data-status': 'fixed' })]));
       }
       trackBox.appendChild(sched.length || fixedAll.length ? h('div', { class: 'fix-tracking' }, [
-        sched.length ? fold('scheduled', '已排程修復', sched.length, h('div', { class: 'ledger-list', 'data-status': 'scheduled' },
+        sched.length ? fold('scheduled', '已排定修正', sched.length, h('div', { class: 'ledger-list', 'data-status': 'scheduled' },
           sched.slice(0, 300).map((k) => itemRow(App, k, lg.items[k], present.has(k) ? V.chip('目前基準仍有', 'warn') : V.chip('目前基準沒有', 'info'))))) : null,
         fixedAll.length ? fold('fixed', '已修好', fixedAll.length, h('div', { class: 'ledger-list', 'data-status': 'fixed' },
           fixedAll.slice(0, 300).map((k) => itemRow(App, k, lg.items[k])))) : null,
-      ]) : h('p', { class: 'muted pane-note' }, '沒有「已排程修復」的項目。在「③ 分診」的檢查結果按「處理」選「已排程修復」，下一輪基準就會在這裡追蹤。'));
+      ]) : h('p', { class: 'muted pane-note' }, '沒有「已排定修正」的項目。在「③ 分診」的檢查結果按「處理」選「已排定修正」，下一輪基準就會在這裡追蹤。'));
     }
     // 匯出與匯入集中在資料中心（app-hub.js）；這裡只放入口
     body.appendChild(h('h4', { class: 'pane-title' }, '匯出與匯入'));

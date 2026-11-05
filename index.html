@@ -88,7 +88,7 @@
       <div id="search-dd" class="dropdown hidden"></div>
     </div>
     <div class="header-actions">
-      <button id="btn-hub" class="hub-btn" aria-controls="hub" aria-expanded="false" title="這一輪的輸入與輸出：收集檔、工作包、處理紀錄、命名規則、預期資料、報表與 patch">資料中心</button>
+      <button id="btn-hub" class="hub-btn" aria-controls="hub" aria-expanded="false" title="本輪的輸入與輸出：收集檔、工作包、處理紀錄、命名規則、預期現況、報表與 patch">資料中心</button>
       <!-- 「⋯」更多操作（src/view/app-toolbar.js 的 A.bindMenu）：方向鍵移動、Esc 關閉並回到按鈕、點外面關閉 -->
       <div class="menu-wrap">
         <button type="button" class="icon-btn" id="btn-more" title="更多操作：路由追蹤、匯出 PNG、清除基準" aria-label="更多操作" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu">⋯</button>
@@ -132,20 +132,20 @@
            工作畫面疊在拓樸圖上面（同一格），畫布的大小、位置、縮放與選取都不變 -->
       <div id="stage" class="stage">
       <div id="view-graph" class="view-graph" role="region" aria-label="拓樸圖">
-      <canvas id="graph" tabindex="0" aria-label="拓樸圖。N 下一台設備、Shift+N 上一台、Enter 開啟詳情、Shift+Enter 聚焦、Esc 取消選取、方向鍵平移、+ 與 - 縮放、0 全圖"></canvas>
+      <canvas id="graph" tabindex="0" aria-label="拓樸圖。N 下一台設備、Shift+N 上一台、Enter 開啟詳細資料、Shift+Enter 聚焦、Esc 取消選取、方向鍵平移、+ 與 - 縮放、0 全圖"></canvas>
       <div id="graph-live" class="sr-only" aria-live="polite"></div>
       <div id="toolbar" class="toolbar hidden">
         <!-- 拓樸圖的層級（src/view/app-layers.js）：radiogroup，←、→、Home、End 切換；各層的位置與縮放分開保存 -->
         <div class="grp layer-switch" id="layer-switch" role="radiogroup" aria-label="拓樸圖的層級">
           <button type="button" role="radio" data-layer="device" aria-checked="true" tabindex="0" class="on" title="設備與設備之間的鏈路（同兩台設備的多條鏈路併成一條線）">設備</button>
           <button type="button" role="radio" data-layer="l2" aria-checked="false" tabindex="-1" title="埠層級的 L2 圖：設備是方框，埠在框邊上，線接在埠上（只算 LLDP／CDP 介面鄰接與推論鏈路）">L2 埠</button>
-          <button type="button" role="radio" data-layer="l3" aria-checked="false" tabindex="-1" title="L3 子網圖：子網與設備是節點，路由設備是跨子網的連接點">L3 子網</button>
-          <button type="button" role="radio" data-layer="l4" aria-checked="false" tabindex="-1" title="L4 可達性：zone 矩陣（來源 zone × 目的 zone 的防火牆與 NAT 結果，推論）、下鑽到位址與規則、逐跳的可達性查詢">L4 可達性</button>
+          <button type="button" role="radio" data-layer="l3" aria-checked="false" tabindex="-1" title="L3 網段圖：網段與設備是節點，路由設備是跨網段的連接點">L3 網段</button>
+          <button type="button" role="radio" data-layer="l4" aria-checked="false" tabindex="-1" title="L4 可達性：zone 矩陣（來源 zone × 目的 zone 的防火牆與 NAT 結果，推論）、展開位址與規則的明細、逐跳的可達性查詢">L4 可達性</button>
         </div>
-        <div class="grp layer-only" data-layers="device l2 l3"><select id="vlan-filter" aria-label="VLAN 篩選" title="在設備圖與 L2 埠圖標出承載這個 VLAN 的鏈路（L3 標出這個 VLAN 的子網）；選其他東西時仍保留，選「不篩選」取消"><option value="">VLAN：不篩選</option></select></div>
-        <div class="grp layer-only hidden" data-layers="l2"><button type="button" id="btn-l2-lag" aria-pressed="false" title="聚合介面的成員各自畫成一個埠（預設收合：成員併進聚合介面）">展開聚合</button><button type="button" id="btn-l2-ports" aria-pressed="false" title="也畫沒有連線的實體、聚合與無線介面">全部的埠</button><select id="l2-scope" aria-label="L2 埠圖的範圍" title="整張圖，或只畫選取的設備與它的鄰居（設備太多時只能選後者）"><option value="all">整張圖</option><option value="focus">選取的設備與鄰居</option></select></div>
+        <div class="grp layer-only" data-layers="device l2 l3"><select id="vlan-filter" aria-label="VLAN 篩選" title="在設備圖與 L2 埠圖標出承載這個 VLAN 的鏈路（L3 標出這個 VLAN 的網段）；選其他東西時仍保留，選「不篩選」取消"><option value="">VLAN：不篩選</option></select></div>
+        <div class="grp layer-only hidden" data-layers="l2"><button type="button" id="btn-l2-lag" aria-pressed="false" title="聚合介面的成員各自畫成一個埠（預設收合：成員併進聚合介面）">展開聚合</button><button type="button" id="btn-l2-ports" aria-pressed="false" title="也畫沒有接線的實體、聚合與無線介面">全部的埠</button><select id="l2-scope" aria-label="L2 埠圖的範圍" title="整張圖，或只畫選取的設備與它的鄰居（設備太多時只能選後者）"><option value="all">整張圖</option><option value="focus">選取的設備與鄰居</option></select></div>
         <div class="grp layer-only hidden" data-layers="l3"><button type="button" id="btn-l3-routes" aria-pressed="false" title="以虛線箭頭畫出靜態路由與預設路由，指到目的網段">顯示路由</button></div>
-        <!-- 圖的操作：全圖、版面▾（重新排列、分層／快速、力導向）、顯示▾（主機、未知對端、分群）；選單在 .grp 外面才不會被裁切 -->
+        <!-- 圖的操作：全圖、版面▾（重新排列、分層／快速、力導向）、顯示▾（主機、終端、分群）；選單在 .grp 外面才不會被裁切 -->
         <div class="grp layer-only" data-layers="device l2 l3"><button type="button" id="btn-fit" title="整張圖放進畫面">全圖</button><button type="button" id="btn-layout-menu" title="重新排列與版面" aria-haspopup="menu" aria-expanded="false" aria-controls="layout-menu">版面 ▾</button><button type="button" id="btn-view-menu" title="圖上要顯示的內容" aria-haspopup="menu" aria-expanded="false" aria-controls="view-menu">顯示 ▾</button></div>
         <div id="layout-menu" class="menu hidden" role="menu" aria-label="版面">
           <button type="button" class="menu-item" role="menuitem" id="btn-relayout" title="依分群與層級重新排列（只排目前的層級）">重新排列</button>
@@ -159,16 +159,16 @@
           <button type="button" class="menu-item" role="menuitemcheckbox" id="btn-force" data-keep aria-checked="false" title="用力導向微調位置（再按一次停止）">力導向排列</button>
         </div>
         <div id="view-menu" class="menu hidden" role="menu" aria-label="顯示">
-          <button type="button" class="menu-item layer-only" data-layers="device l2 l3" role="menuitemcheckbox" id="btn-hosts" data-keep aria-checked="true" title="顯示只由 LLDP 看到的主機">主機</button>
-          <button type="button" class="menu-item layer-only on" data-layers="device" role="menuitemcheckbox" id="btn-unknown" data-keep aria-checked="true" title="顯示沒有 LLDP 鄰居、只由 MAC 推論出來的終端">未知對端</button>
+          <button type="button" class="menu-item layer-only" data-layers="device l2 l3" role="menuitemcheckbox" id="btn-hosts" data-keep aria-checked="true" title="顯示主機：沒有收集、依鄰居（LLDP／CDP／MNDP）回報判斷為主機的設備，不在收集範圍">主機</button>
+          <button type="button" class="menu-item layer-only on" data-layers="device" role="menuitemcheckbox" id="btn-unknown" data-keep aria-checked="true" title="顯示終端：沒有 LLDP／CDP 鄰接、只由 MAC 推論出來的對象">終端</button>
           <button type="button" class="menu-item layer-only on" data-layers="device" role="menuitemcheckbox" id="btn-groups" data-keep aria-checked="true" title="顯示分群底框">分群</button>
         </div>
       </div>
-      <!-- L4（src/view/panels/l4.js）：zone 矩陣、下鑽與可達性查詢。不是畫布：選了 L4 時疊在畫布上、工具列下面（層級切換仍在工具列，Tab 順序在矩陣之前），內容由 V.l4 產生 -->
+      <!-- L4（src/view/panels/l4.js）：zone 矩陣、明細與可達性查詢。不是畫布：選了 L4 時疊在畫布上、工具列下面（層級切換仍在工具列，Tab 順序在矩陣之前），內容由 V.l4 產生 -->
       <section id="view-l4" class="l4 hidden" aria-labelledby="l4-title"></section>
       <div id="layer-note" class="layer-note hidden" aria-live="polite"></div>
       <div id="legend" class="legend hidden"></div>
-      <div id="hint" class="hint hidden">滾輪縮放・拖曳移動・點選看詳細・雙擊聚焦・鍵盤：N 切換設備、Enter 詳情</div>
+      <div id="hint" class="hint hidden">滾輪縮放・拖曳移動・點選看詳細資料・雙擊聚焦・鍵盤：N 切換設備、Enter 開啟詳細資料</div>
       <div id="tooltip" class="tooltip hidden"></div>
       <div id="welcome" class="welcome">
         <div class="card">
@@ -197,14 +197,14 @@
         </div>
       </div>
       </div>
-      <!-- 工作畫面的內容由 panels/patch.js（修正計畫）、panels/ledger.js（本輪變化、處理紀錄、修復追蹤、收斂趨勢）、panels/lists.js（比對）產生 -->
+      <!-- 工作畫面的內容由 panels/patch.js（修正計畫）、panels/ledger.js（本輪變化、處理紀錄、修正追蹤、改善趨勢）、panels/lists.js（比對）產生 -->
       <section id="view-patch" class="work hidden" aria-labelledby="patch-title">
         <div class="work-inner">
           <div class="work-head"><h2 id="patch-title" class="work-title" tabindex="-1">修正計畫</h2><span class="muted">選取檢查結果，產生每台設備的 RouterOS .rsc；本工具只產生文字，不會連線或改動任何設備</span></div>
           <div id="patch-body"></div>
         </div>
       </section>
-      <!-- ⑤ 驗證：左欄是本輪變化與處理紀錄（工作畫面夠寬時固定），右欄是修復追蹤、收斂趨勢與比對 -->
+      <!-- ⑤ 驗證：左欄是本輪變化與處理紀錄（工作畫面夠寬時固定），右欄是修正追蹤、改善趨勢與比對 -->
       <section id="view-verify" class="work hidden" aria-labelledby="verify-title">
         <div class="work-inner">
           <div class="work-head"><h2 id="verify-title" class="work-title" tabindex="-1">驗證</h2><span class="muted">重新收集、建立基準後，確認哪些已修好、哪些回歸；數字來自處理紀錄，比對只讀取基準，不會修改它</span></div>
@@ -214,8 +214,8 @@
               <section class="work-card verify-card" aria-labelledby="ledger-title"><h3 id="ledger-title" class="work-card-title" tabindex="-1">處理紀錄</h3><div id="ledger-body"></div></section>
             </div>
             <div class="verify-main">
-              <section class="work-card verify-card" aria-labelledby="tracking-title"><h3 id="tracking-title" class="work-card-title" tabindex="-1">修復追蹤</h3><div id="tracking-body"></div></section>
-              <section class="work-card verify-card" aria-labelledby="trend-title"><h3 id="trend-title" class="work-card-title" tabindex="-1">收斂趨勢</h3><div id="trend-body"></div></section>
+              <section class="work-card verify-card" aria-labelledby="tracking-title"><h3 id="tracking-title" class="work-card-title" tabindex="-1">修正追蹤</h3><div id="tracking-body"></div></section>
+              <section class="work-card verify-card" aria-labelledby="trend-title"><h3 id="trend-title" class="work-card-title" tabindex="-1">改善趨勢</h3><div id="trend-body"></div></section>
               <section class="verify-compare" aria-labelledby="compare-title"><h3 id="compare-title" class="verify-sec-title" tabindex="-1">比對</h3><div id="compare-body"></div></section>
             </div>
           </div>
@@ -248,7 +248,7 @@
         <button id="input-pick">選擇檔案…</button>
         <input id="input-file" type="file" multiple class="hidden" accept=".txt,.log,.cfg,.conf,.out,text/plain">
         <button id="input-sample">載入範例資料</button>
-        <span class="muted">可以貼上、選擇檔案，或兩者都用（一次全部讀入）</span>
+        <span class="muted">可以貼上、選擇檔案，或兩者都用（一次全部載入）</span>
       </div>
       <details id="input-format" class="collect">
         <summary>格式說明</summary>
@@ -276,7 +276,7 @@ TPE_ACC_SW_01 (10.1.10.21):
         <span class="muted" style="font-size:var(--fs-sm)">只用來加上站點、角色等註解，不會改變事實；可不套用</span>
       </div>
       <div class="form-row hidden" id="input-xd-row">
-        <label><input type="checkbox" id="input-xd" checked> 使用建立選項 expectedData（由工作包帶回）</label>
+        <label title="expectedData（建立基準的選項）：各類設備應收集哪些資料"><input type="checkbox" id="input-xd" checked> 使用工作包帶回的各類設備應收資料</label>
         <span class="muted" style="font-size:var(--fs-sm)" id="input-xd-note"></span>
       </div>
     </div>

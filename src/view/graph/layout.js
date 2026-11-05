@@ -229,7 +229,7 @@
 
 /*
  * 社群偵測（標籤傳播）：沒有命名規則、而整張網路又連成一大片時，
- * 用連線密度自動切出「區域」，讓版面分區排列（只影響畫面，不寫回基準）。
+ * 用鏈路密度自動切出「分群」，讓版面分區排列（只影響畫面，不寫回基準）。
  */
 (function (S) {
   'use strict';
@@ -267,7 +267,7 @@
     const out = new Map(); let n = 0;
     Array.from(groups.values()).sort((a, b) => b.length - a.length).forEach((members) => {
       const top = members.slice().sort((a, b) => (RANK[byId.get(a).kind] ?? 3) - (RANK[byId.get(b).kind] ?? 3) || w.get(b).size - w.get(a).size || S.util.natural(a, b))[0];
-      const name = `區域 ${++n}（${byId.get(top).label}…）`;
+      const name = `${V.TERMS.group} ${++n}（${byId.get(top).label}…）`;
       members.forEach((id) => out.set(id, name));
     });
     return out;

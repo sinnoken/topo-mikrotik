@@ -6,7 +6,8 @@
  *  - 設備圖的位置是 App.devicePos（存進 store 的 'last'，與基準一起還原，格式不變）
  *  - L2／L3 的位置只在記憶體：App.layers 依「層級＋選項」各存一份（版面由 ELK 或內建版面重新算得出來；
  *    埠的 id 依聚合收合或展開而不同，存進 store 還要處理失效），換基準或清除時清空
- * VLAN 篩選（App.vlanFilter）在每一層都持續標示，直到在選單取消；資料一律來自 Q，結果是凍結的，畫面另建自己的節點物件。
+ * VLAN 篩選（App.vlanFilter）在每一層都標示：在工具列的 VLAN 選單選的（pinned）保留到選「不篩選」；由檢查結果、搜尋或詳情帶入的，
+ * 選其他東西、換基準或按「VLAN n ✕」時取消（App.select、A.resetLayers）。資料一律來自 Q，結果是凍結的，畫面另建自己的節點物件。
  */
 (function (S) {
   'use strict';
@@ -460,7 +461,7 @@
           + (s.overlaps.length ? `・與 ${s.overlaps.join('、')} 重疊` : '') + (s.duplicateIps.length ? `・重複 IP ${s.duplicateIps.join('、')}` : '');
       }
       const d = Q.getDevice(n.dev || n.id);
-      const base = (d ? `${d.label || d.name}・${V.KIND[d.kind]}${d.collected ? '' : '・未收集'}` : n.label) + vrfTip;
+      const base = (d ? `${Q.devLabel(d.key)}・${V.KIND[d.kind]}${d.collected ? '' : '・未收集'}` : n.label) + vrfTip;
       if (n.l3) return base + (n.l3.router ? `・路由設備（推論：${n.l3.routerBasis === 'routes' ? '有路由表' : '設備類型'}，接 ${n.l3.subnets.length} 個網段）` : n.l3.multihomed ? `・多個網段的主機（不算路由設備）` : '');
       return base + (n.sub ? '・' + n.sub : '');
     }
@@ -537,7 +538,8 @@
       sel.appendChild(h('option', { value: '' }, 'VLAN：不篩選'));
       App.Q.vlanIds().forEach((id) => sel.appendChild(h('option', { value: String(id) }, 'VLAN ' + id)));
     }
-    sel.value = App.vlanFilter ? String(App.vlanFilter.id) : '';
+    // 選單只顯示釘選的篩選：由選取帶入的由「VLAN n ✕」標示，選單維持「不篩選」，在選單選這個 VLAN 時值才會改變、觸發 change 而釘選
+    sel.value = App.vlanFilter && App.vlanFilter.pinned ? String(App.vlanFilter.id) : '';
     syncVlanChip();
     const lag = $('#btn-l2-lag'); const expanded = App.l2.lag === 'expand';
     lag.setAttribute('aria-pressed', String(expanded)); lag.classList.toggle('on', expanded);

@@ -66,13 +66,15 @@
   V.HOST_DEF = '沒有收集、依鄰居（LLDP／CDP／MNDP）回報判斷為主機的設備，不在收集範圍';
   /** 鏈路只有一端資料（hearsay）的完整說法；「LLDP 單向」只用於對端有鄰居資料但沒回報（K01） */
   V.HEARSAY_TEXT = V.TERMS.hearsay + '（對端沒有鄰居資料）';
-  V.ONE_WAY_TEXT = 'LLDP 單向（對端沒回報）';
+  V.ONE_WAY = 'LLDP 單向';
+  V.ONE_WAY_TEXT = V.ONE_WAY + '（對端沒回報）';
   /** 推論標示：和收集到的事實並列的推定結果一律加這個 chip；依據放 title。 */
   V.inferChip = (tip) => V.chip(V.TERMS.inferred, 'info', tip ? { title: tip } : null);
   /** 多數決判定與多數不同的設備鍵（finding.deviation，推論）：不是多數決（或沒有 deviation）時 null，平手時空陣列。詳情、「研判」與圖上的虛線外圈共用 */
   V.majorityDeviating = (dv) => (dv && dv.basis === 'majority' ? dv.deviating || [] : null);
   /** 與多數不同的標籤與平手的說法：詳情、「研判」（V.deviationLine）與匯出的 CSV 欄名、Markdown 共用 */
-  V.DEVIATION_LABEL = '與多數不同（推論）';
+  V.DEVIATION = '與多數不同';
+  V.DEVIATION_LABEL = V.DEVIATION + '（推論）';
   V.NO_MAJORITY = '沒有多數';
   /**
    * 跨設備一致性規則的多數決結果（finding.deviation，推論）：一律經這裡產生，詳情的每筆檢查結果共用。
@@ -87,7 +89,7 @@
     if (!devs.length) return opts && opts.tie === true ? V.h('div', { class: 'deviation none muted' }, label + V.NO_MAJORITY + '，無法推定') : null;
     const pick = (key) => (e) => { if (e && e.stopPropagation) e.stopPropagation(); App.select({ type: 'device', key }, { focus: true }); };
     // a.link 沒有 href 時 h() 已補 role、tabindex 與 Enter／空白鍵啟動
-    const links = devs.map((key) => V.h('a', { class: 'link', 'data-dev': key, title: '選取這台設備', onclick: pick(key) }, App.Q.devName(key)));
+    const links = devs.map((key) => V.h('a', { class: 'link', 'data-dev': key, title: '選取這台設備', onclick: pick(key) }, App.Q.devLabel(key)));
     return V.h('div', { class: 'deviation' }, [label, ...links.flatMap((a, n) => (n ? ['、', a] : [a]))]);
   };
   V.KIND = S.KIND_LABEL;
@@ -246,6 +248,17 @@
   V.fmtUtc = (iso) => (iso ? String(iso).replace('T', ' ').replace(/\.\d+Z$|Z$/, '') + ' UTC' : '');
   // 鄰居發現協定（LLDP／MNDP／CDP）；L3 鏈路沒有發現協定時退回 via（如 OSPF）
   V.protoText = (l) => ((l.protocols && l.protocols.length ? l.protocols : l.via) || []).map((p) => p.toUpperCase()).join('、');
+  /** MNDP 的鏈路（broadcast-domain）只證明 L2 可達：詳情的 chip 與表格共用這一句 */
+  V.DOMAIN_TEXT = '同一 L2 廣播網域可達（MNDP，未確認直連）';
+  /**
+   * 鏈路的類別文字（詳情的鄰居表、鏈路表共用）：類別，加上確認狀態——雙向確認不寫、只有一端資料寫 V.TERMS.hearsay、
+   * 其他寫「LLDP 單向」（與 K01 的名稱相同；K01 依 LLDP／CDP 的配對判定，只有 CDP 的鏈路也用這個名稱）。opt.proto：前面加協定
+   */
+  V.linkClassText = (l, opt) => {
+    if (l.evidenceScope === S.LINK_SCOPE.BROADCAST_DOMAIN) return V.DOMAIN_TEXT;
+    const state = l.verified ? '' : '・' + (l.hearsay ? V.TERMS.hearsay : V.ONE_WAY);
+    return (opt && opt.proto ? V.protoText(l) + '・' : '') + V.CLS[l.cls] + state;
+  };
 
   /**
    * 反引號標出的 RouterOS 指令與欄位（CATALOG 的 causes／action 的寫法）：切成 [{ text, code }]。

@@ -847,8 +847,8 @@ function viewBoundaryViolations(file, src) {
   });
   await step('與多數不同：選多數決的檢查結果時以虛線外圈標出偏離設備；其他選取、清除時清掉，展開與切換層級保留；圖例取自 theme', () => {
     const g = App.graph; const D = S.view.theme.canvas.deviation; const Q = App.Q;
-    const row = $('#legend').testAll('.li').find((li) => li.textContent === D.label);
-    if (!row || row.getAttribute('title') !== D.tip || !row.all().some((e) => e.getAttribute('data-mark') === 'deviation' && String(e.style.background).includes(D.c))) throw new Error('圖例應有與多數不同（文字、說明與顏色取自 theme.canvas.deviation）');
+    const row = $('#legend').testAll('.li').find((li) => li.textContent === S.view.DEVIATION_LABEL);
+    if (!row || row.getAttribute('title') !== D.tip || !row.all().some((e) => e.getAttribute('data-mark') === 'deviation' && String(e.style.background).includes(D.c))) throw new Error('圖例應有與多數不同（名稱同 V.DEVIATION_LABEL，說明與顏色取自 theme.canvas.deviation）');
     if (D.c === S.view.theme.mark.select || !D.dash.length || !(D.gap > 6)) throw new Error('與多數不同應是與選取不同色、比選取環更外圈的虛線');
     const idx = Q.findings().findIndex((f) => f.deviation && f.deviation.basis === 'majority' && f.deviation.deviating.length);
     if (idx < 0) { if (process.env.SMOKE_INPUT) return; throw new Error('測試前提：範例應有多數決的檢查結果'); }
@@ -955,6 +955,14 @@ function viewBoundaryViolations(file, src) {
       up(12, 750, 400); const tx = g.tx; move(11, 590, 400);
       if (Math.abs(g.tx - tx - 40) > 1e-6) throw new Error('放開一指後，剩下的手指應接著平移');
       up(11, 590, 400); if (clicks) throw new Error('雙指操作不應觸發點選');
+      // 三指：縮放中加第三指、放開最早的一指，剩下兩指換了一組，縮放倍率不跳（以新的兩指重新開始）
+      g.zoomTo(0.5, { x: g.w / 2, y: g.h / 2 });
+      cv.dispatch('pointerdown', ev(21, 500, 400)); cv.dispatch('pointerdown', ev(22, 600, 400)); cv.dispatch('pointerdown', ev(23, 900, 400));
+      const s1 = g.s; up(21, 500, 400); move(22, 600, 400);
+      if (Math.abs(g.s - s1) > 1e-9) throw new Error(`三指放開一指後，倍率不應突變：${s1} → ${g.s}`);
+      move(23, 1200, 400); // 新的兩指 300 → 600
+      if (Math.abs(g.s - Math.min(L.ZOOM.max, s1 * 2)) > 1e-9) throw new Error(`換一組兩指後應依新的兩指距離縮放：${s1} → ${g.s}`);
+      up(22, 600, 400); up(23, 1200, 400); if (clicks) throw new Error('多指操作不應觸發點選');
     } finally { g.on('click', oldClick); }
     // 縮小時，節點在螢幕上很小：觸控仍可在 22px 內點中，滑鼠不行
     g.zoomTo(0.5, { x: g.w / 2, y: g.h / 2 });
@@ -1555,6 +1563,10 @@ function viewBoundaryViolations(file, src) {
   await step('原文檢視', () => {
     App.openRaw(S.readers.PASTE, 10); if (!$('#dlg-raw').open || !text('#raw-body').includes('/export')) throw new Error('原文未顯示');
     if (!$('#raw-nav').classList.contains('hidden') || !text('#raw-title').includes('（第 10 行）')) throw new Error('只有一處時不顯示前後切換，標題寫出行號：' + text('#raw-title'));
+    // opt.list 不含指定的那一行：仍顯示呼叫者要的那一行（加進清單的第一處），不靜默改顯示清單的第一筆
+    $('#dlg-raw').close(); App.openRaw(S.readers.PASTE, 10, { list: [{ file: S.readers.PASTE, line: 12 }] });
+    if (!text('#raw-title').includes('（第 10 行）') || text('#raw-pos') !== '1／2') throw new Error('清單不含指定行時應顯示指定行並列入清單：' + text('#raw-title') + '／' + text('#raw-pos'));
+    $('#dlg-raw').close(); App.openRaw(S.readers.PASTE, 10);
     // 長行預設自動換行（窄螢幕不必橫捲），可切回不換行、橫向捲動（#raw-wrap → #dlg-raw.raw-nowrap，純 CSS）
     const wrap = $('#raw-wrap'); const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
     if (!wrap || wrap.getAttribute('type') !== 'checkbox' || wrap.getAttribute('checked') === null || !/classList\.toggle\('raw-nowrap', !this\.checked\)/.test(wrap.getAttribute('onchange') || '')) throw new Error('原文應有預設勾選的「自動換行」切換');
@@ -1736,6 +1748,12 @@ function viewBoundaryViolations(file, src) {
     App.selectFinding(vi); const vid = App.snap.findings[vi].entities[0].key;
     if (!App.vlanFilter || App.vlanFilter.pinned || !shown() || chip.tagName !== 'BUTTON' || !chip.textContent.includes(`VLAN ${vid}`) || !chip.textContent.includes('✕')
       || !(chip.getAttribute('aria-label') || '').includes(`VLAN ${vid}`)) throw new Error('檢查結果帶入的 VLAN 篩選應顯示可關閉的標示：' + chip.textContent);
+    // 沒有釘選時選單顯示「不篩選」：使用者在選單選這個 VLAN 才會真的改變值、觸發 change 而釘選（值沒變時瀏覽器不送 change）
+    if (sel.value !== '') throw new Error('由選取帶入（沒有釘選）的 VLAN 篩選，選單應顯示「不篩選」：' + sel.value);
+    // VLAN 詳情的說明與實際行為一致：選單選的保留，其他來源帶入的選別的東西或換基準時取消、可按標示取消
+    App.select({ type: 'vlan', key: String(vid) });
+    const about = text('#detail');
+    if (about.includes('持續標示') || !about.includes('不篩選') || !about.includes('✕') || !about.includes('換基準')) throw new Error('VLAN 詳情應說明現在的篩選行為（選單選的保留、其他來源的會取消、可按 ✕ 取消）');
     App.select({ type: 'device', key: dev });
     if (App.vlanFilter || shown() || sel.value !== '') throw new Error('檢查結果帶入的 VLAN 篩選，選其他東西時應取消');
     App.selectFinding(vi); chip.click();
@@ -1755,6 +1773,99 @@ function viewBoundaryViolations(file, src) {
     await reload();
     if (!App.vlanFilter || !App.vlanFilter.pinned || String(App.vlanFilter.id) !== String(vid) || sel.value !== String(vid)) throw new Error('換基準後，選單選的 VLAN 篩選應保留');
     sel.value = ''; sel.dispatch('change'); App.select(null);
+  });
+  await step('換基準：畫布不殘留上一份的選取環、高亮、疊加與外圈；釘選的 VLAN 篩選依新的基準重新標示', async () => {
+    const g = App.graph; const VA = S.view.app; const sel = $('#vlan-filter');
+    const reload = async () => { VA.load(App.snap, null, { sources: App.round.sources, profile: App.round.profile }); await App.ledgerJob; await App.layoutJob; };
+    const clean = (where) => {
+      if (App.sel) throw new Error(where + '：App.sel 應清空');
+      if (g.sel.nodes.size || g.sel.edges.size) throw new Error(where + '：畫布不應殘留選取環：' + Array.from(g.sel.nodes).slice(0, 3));
+      if (g.overlay.length) throw new Error(where + '：畫布不應殘留疊加');
+      if (g.emphasis) throw new Error(where + '：畫布不應殘留與多數不同的外圈');
+    };
+    App.showLayer('device');
+    const dev = App.Q.devices().find((d) => d.collected && g.pos.has(d.key));
+    App.select({ type: 'device', key: dev.key });
+    if (!g.sel.nodes.has(dev.key)) throw new Error('前置：選設備後畫布應有選取環');
+    await reload(); clean('選設備後換基準');
+    if (g.hl) throw new Error('沒有 VLAN 篩選時，換基準後畫布不應殘留高亮');
+    const fi = App.snap.findings.findIndex((f) => f.entities.length > 1);
+    if (fi >= 0) {
+      App.selectFinding(fi); if (!g.hl) throw new Error('前置：選檢查結果後畫布應有高亮');
+      await reload(); clean('選檢查結果後換基準');
+      if (g.hl) throw new Error('換基準後畫布不應殘留檢查結果的高亮');
+    }
+    // 釘選的 VLAN 篩選保留：高亮是新的基準算出的（和重新選一次 VLAN 篩選相同）
+    const id = App.Q.vlanIds()[0];
+    if (id != null) {
+      sel.value = String(id); sel.dispatch('change'); App.select({ type: 'device', key: dev.key });
+      await reload(); clean('釘選 VLAN 篩選後換基準');
+      const want = VA.vlanMarks(id, null);
+      if (!g.hl || JSON.stringify(Array.from(g.hl.nodes.keys()).sort()) !== JSON.stringify(Array.from(want.nodes.keys()).sort())) throw new Error('換基準後，釘選的 VLAN 篩選應依新的基準重新標示');
+      sel.value = ''; sel.dispatch('change');
+    }
+  });
+  await step('分層版面計算被取消（改快速版面、換基準）時，「計算中」的通知馬上收起，不再被當遮擋物；別的通知不受影響', async () => {
+    const VA = S.view.app; const b = $('#banner');
+    const mode = (k) => $('#layout-mode').testAll('.menu-item').find((x) => x.dataset.layout === k);
+    const computing = () => !b.classList.contains('hidden') && b.textContent.includes('計算中');
+    App.showLayer('device');
+    try {
+      // 1. 計算中改快速版面
+      VA.relayout(); const job = App.layoutJob;
+      if (!computing()) throw new Error('前置：分層版面計算中應有通知：' + b.textContent);
+      mode('builtin').click();
+      if (computing()) throw new Error('改用快速版面後，「計算中」的通知應收起');
+      await job; if (computing()) throw new Error('取消的計算結束後也不應再出現「計算中」');
+      // 2. 計算中換一份有儲存位置的基準（不再計算分層版面）
+      mode('elk').click(); const job2 = App.layoutJob;
+      if (!computing()) throw new Error('前置：切回分層版面應開始計算');
+      VA.load(App.snap, Object.fromEntries(App.devicePos), { sources: App.round.sources, profile: App.round.profile }); await App.ledgerJob;
+      if (computing()) throw new Error('換基準後，上一份的「計算中」通知應收起');
+      await job2; if (computing()) throw new Error('取消的計算結束後也不應再出現「計算中」');
+      // 3. 別的通知蓋過「計算中」後，取消不會收掉別人的通知
+      VA.relayout(); const job3 = App.layoutJob; VA.banner('其他通知');
+      mode('builtin').click();
+      if (b.classList.contains('hidden') || b.textContent !== '其他通知') throw new Error('取消分層版面不應收掉別的通知');
+      await job3; mode('elk').click(); await App.layoutJob;
+    } finally { App.layoutMode = 'elk'; }
+  });
+  await step('窄螢幕 Esc 一次只關最上層：路由追蹤或資料中心先關，抽屜留著，再按一次才收起抽屜；拖曳把手後鍵盤按把手仍有反應', async () => {
+    const main = $('#main'); const g = App.graph;
+    const ws = (w) => document.testAll('#mobile-workspaces button').find((x) => x.dataset.workspace === w);
+    const esc = () => (docListeners.keydown || []).forEach((f) => f({ key: 'Escape', target: document.activeElement, preventDefault() {}, stopPropagation() {} }));
+    const dev = App.Q.devices().find((d) => d.collected && g.pos.has(d.key));
+    try {
+      window.innerWidth = 390; App.showStep('triage'); ws('graph').click(); App.showLayer('device');
+      g.emit('click', { type: 'node', id: dev.key });
+      if (main.dataset.sheet !== 'half') throw new Error('前置：選設備後應開抽屜');
+      App.openTrace(); $('#trace-run').focus();
+      esc();
+      if (!$('#trace-pop').classList.contains('hidden')) throw new Error('Esc 應關閉路由追蹤');
+      if (main.dataset.sheet !== 'half') throw new Error('Esc 關閉路由追蹤時抽屜不應跟著收起');
+      esc(); if (main.dataset.sheet) throw new Error('再按一次 Esc 應收起抽屜');
+      g.emit('click', { type: 'node', id: dev.key });
+      App.openHub();
+      if (main.dataset.sheet === 'half') {
+        esc();
+        if (VA().hubOpen()) throw new Error('Esc 應關閉資料中心');
+        if (main.dataset.sheet !== 'half') throw new Error('Esc 關閉資料中心時抽屜不應跟著收起');
+        esc(); if (main.dataset.sheet) throw new Error('再按一次 Esc 應收起抽屜');
+      } else S.view.app.closeHub();
+      // 拖曳把手後放開在把手外（click 不會送到把手）：之後用鍵盤按把手（只有 click、沒有 pointerdown）仍要有反應
+      g.emit('click', { type: 'node', id: dev.key });
+      const right = $('#right'); const hd = $('#sheet-handle'); const rr = right.getBoundingClientRect;
+      right.getBoundingClientRect = () => ({ left: 0, top: 480, width: 1200, height: 320 });
+      try {
+        hd.dispatch('pointerdown', { pointerId: 9, pointerType: 'touch', button: 0, clientX: 0, clientY: 490 });
+        const ev = { pointerId: 9, pointerType: 'touch', target: main, clientX: 0, clientY: 190 };
+        (winListeners.pointermove || []).forEach((f) => f(ev)); (winListeners.pointerup || []).forEach((f) => f(ev));
+        if (main.dataset.sheet !== 'full') throw new Error('前置：上拉應展開成全高');
+        await new Promise((r) => setTimeout(r, 5));
+        hd.click(); if (main.dataset.sheet !== 'half') throw new Error('拖曳結束後，下一次用鍵盤按把手不應被吞掉');
+      } finally { right.getBoundingClientRect = rr; }
+    } finally { window.innerWidth = 1200; App.select(null); App.showStep('triage'); ws('graph').click(); }
+    function VA() { return S.view.app; }
   });
   await step('VLAN 篩選：設備圖與 L2 埠圖依 vlanCarriers 標出承載與只有一端（外形不只靠顏色），推論以線型區分，提示說明原因；選其他東西時保留，取消後拿掉', async () => {
     const g = App.graph; const T = S.view.theme; const Q = App.Q;
@@ -3729,6 +3840,21 @@ function viewBoundaryViolations(file, src) {
       const back = App.sel; App.select({ type: 'device', key: ipOnly.d.key });
       const h2 = $('#detail').querySelector('h2').textContent;
       if (h2 !== Q.devLabel(ipOnly.d.key) || h2 === Q.devName(ipOnly.d.key)) throw new Error('只由鄰居得知、名稱是 IP 的設備，詳情標題應帶來源：' + h2);
+      // 其他給人看的地方也用 Q.devLabel：L2／L3 的節點提示、鏈路與設備對詳情的標題、鄰居表的對端
+      const layer0 = App.layer;
+      for (const ly of ['l3', 'l2']) {
+        App.showLayer(ly); const node = App.graph.nodes.find((n) => (n.dev || n.id) === ipOnly.d.key);
+        if (node && !S.view.app.layerTip({ type: 'node', id: node.id }).startsWith(Q.devLabel(ipOnly.d.key))) throw new Error(`${ly} 的節點提示應用 Q.devLabel：` + S.view.app.layerTip({ type: 'node', id: node.id }));
+      }
+      App.showLayer(layer0);
+      const lk = Q.links().find((l) => [l.a, l.b].some((ep) => S.keys.splitEp(ep)[0] === ipOnly.d.key));
+      if (lk) {
+        App.select({ type: 'link', key: lk.key });
+        if (!$('#detail').querySelector('h2').textContent.includes(Q.devLabel(ipOnly.d.key))) throw new Error('鏈路詳情的標題應用 Q.devLabel');
+        const other = [lk.a, lk.b].map((ep) => S.keys.splitEp(ep)[0]).find((d) => d !== ipOnly.d.key);
+        App.select({ type: 'device', key: other });
+        if (!text('#detail').includes(Q.devLabel(ipOnly.d.key))) throw new Error('鄰居表的對端應用 Q.devLabel');
+      }
       App.select(back);
     }
     if (opts.some((o) => o.d.collected) && !opts[0].d.collected) throw new Error('預設選項應是已收集的設備');
@@ -4590,6 +4716,13 @@ function viewBoundaryViolations(file, src) {
     let draws = 0; const oldDraw = g.draw; g.draw = function () { draws++; return oldDraw.call(this); };
     try {
       flushRaf();
+      // matchMedia 沒有任何監聽 API：不中止啟動，維持亮色，並以通知告知（不靜默）
+      const noApi = { matches: true, media: mq.media }; window.matchMedia = () => noApi;
+      const warn = console.warn; let warned = 0; console.warn = () => { warned++; };
+      try {
+        if (VA.bindColorScheme() !== false || T.mode !== 'light') throw new Error('沒有監聽 API 時應維持亮色並回傳 false，不丟例外');
+        if ($('#banner').classList.contains('hidden') || !text('#banner').includes('深淺') || !warned) throw new Error('沒有監聽 API 時應以通知與 console.warn 告知：' + text('#banner'));
+      } finally { console.warn = warn; window.matchMedia = (q) => (/prefers-color-scheme:\s*dark/.test(q) ? mq : { matches: false, media: q, addEventListener() {} }); }
       if (VA.bindColorScheme() !== true || T.mode !== 'dark') throw new Error('有 matchMedia 時應綁定監聽並套用系統的深淺');
       if (VA.bindColorScheme() !== false || listeners.length !== 1) throw new Error('配色的監聽只綁一次');
       flushRaf();
@@ -4604,6 +4737,27 @@ function viewBoundaryViolations(file, src) {
       if (head1 === head0 || text('#legend') !== legendText) throw new Error('系統深淺改變時應以新的配色重建圖例（內容相同）');
       if (head1.getAttribute('aria-expanded') !== 'true') throw new Error('重建圖例應保留展開狀態');
       head1.click();
+      // 深淺改變時，打到一半的處理紀錄（備註）不會因重畫而消失：清單不重建，編輯器與輸入保留
+      goStep('triage');
+      if (!$('#pane-findings').querySelector('.ledger-edit')) { const hd = $('#pane-findings').querySelector('.fgroup .head'); if (hd) hd.click(); }
+      const eb = $('#pane-findings').querySelector('.ledger-edit');
+      if (eb) {
+        eb.click(); const ed0 = $('#pane-findings').querySelector('.ledger-editor');
+        const note0 = ed0.testAll('input').find((i) => i.className.includes('ledger-note')); note0.value = '打到一半的備註';
+        mq.matches = true; listeners.forEach((f) => f({ matches: true, media: mq.media }));
+        const ed1 = $('#pane-findings').querySelector('.ledger-editor');
+        const note1 = ed1 && ed1.testAll('input').find((i) => i.className.includes('ledger-note'));
+        if (!note1 || note1.value !== '打到一半的備註') throw new Error('深淺改變時，正在編輯的處理紀錄輸入不應消失');
+        ed1.testAll('button').find((b) => b.textContent === '取消').click();
+        mq.matches = false; listeners.forEach((f) => f({ matches: false, media: mq.media })); flushRaf();
+      } else if (!process.env.SMOKE_INPUT) throw new Error('範例資料的檢查結果應可編輯處理紀錄');
+      // 匯出時換色失敗（例如重畫丟例外）：配色仍還原成目前的深淺，並以通知說明失敗，不停在亮色
+      mq.matches = true; listeners.forEach((f) => f({ matches: true, media: mq.media })); flushRaf();
+      { const rd = g.redraw; let n = 0; g.redraw = function () { if (!n++) throw new Error('模擬重畫失敗'); return rd.call(this); };
+        try { VA.exportPng(); } catch (e) { throw new Error('換色失敗時 exportPng 不應丟出例外：' + e.message); } finally { g.redraw = rd; }
+        if (T.mode !== 'dark') throw new Error('匯出換色失敗後應還原成目前的深淺：' + T.mode);
+        if (!text('#banner').includes('匯出失敗')) throw new Error('匯出換色失敗時應以通知說明：' + text('#banner'));
+        flushRaf(); }
       // PNG 固定用亮色：暗色時匯出，畫 PNG 的那一次是亮色（底色、終端廠商色、圖上標示），之後畫面回到暗色
       mq.matches = true; listeners.forEach((f) => f({ matches: true, media: mq.media })); flushRaf();
       const modes = []; const ends = () => g.nodes.filter((n) => n.kind === 'endpoint' && n.vendor && App.vendorColors.has(n.vendor));
@@ -4689,16 +4843,33 @@ function viewBoundaryViolations(file, src) {
     if (!/\.banner\.fading, \.hint\.fading \{[^}]*opacity: 0/.test(css)) throw new Error('通知與操作提示應淡出');
     // 窄螢幕：圖上方最多兩列——頁首只有流程步驟（不換行），搜尋與「⋯」移到工作區列的右端；清除不再單獨佔一列
     const narrow = css.slice(css.lastIndexOf('@media (max-width: 900px) {', css.indexOf('#app { height: 100dvh')));
-    if (!/\n {2}header \{[^}]*flex-wrap: nowrap;/.test(narrow) || !/\.steps \{ flex: 1 1 100%;/.test(narrow) || !/\.search, \.header-actions \{ position: absolute; top: calc\(100% \+ 6px\);/.test(narrow)
-      || !/\.mobile-workspaces \{ display: flex;[^}]*padding: 5px calc\(/.test(narrow) || /#btn-clear \{ margin-left/.test(css)) throw new Error('窄螢幕的頁首應只有步驟，搜尋與「⋯」在工作區列右端');
+    // 依選擇器取出規則的宣告（屬性 → 值；同一個選擇器有多條規則時依先後合併），比對屬性與值，不比對空白與屬性的先後
+    const decl = (src, sel) => {
+      const ms = Array.from(src.matchAll(new RegExp('(?:^|[\\n}])\\s*' + sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}', 'g')));
+      if (!ms.length) throw new Error('窄螢幕的 CSS 缺少規則：' + sel);
+      return Object.assign({}, ...ms.map((m) => Object.fromEntries(m[1].split(';').map((s) => s.trim()).filter(Boolean).map((s) => { const i = s.indexOf(':'); return [s.slice(0, i).trim(), s.slice(i + 1).trim().replace(/\s+/g, ' ')]; }))));
+    };
+    const has = (sel, want, msg) => { const d = decl(narrow, sel); Object.entries(want).forEach(([k, v]) => { const got = d[k] || ''; if (v instanceof RegExp ? !v.test(got) : got !== v) throw new Error(`${msg}（${sel} 的 ${k}：${got || '沒有'}）`); }); };
+    const hdrMsg = '窄螢幕的頁首應只有步驟，搜尋與「⋯」在工作區列右端';
+    has('header', { 'flex-wrap': 'nowrap' }, hdrMsg); has('.steps', { flex: /^1 1 100%/ }, hdrMsg);
+    has('.search, .header-actions', { position: 'absolute', top: /^calc\(100% \+ 6px\)/ }, hdrMsg);
+    has('.mobile-workspaces', { display: 'flex', padding: /^5px calc\(/ }, hdrMsg);
+    if (/#btn-clear \{ margin-left/.test(css)) throw new Error(hdrMsg);
     // 搜尋收成圖示：平常是一格寬、看不到 placeholder，聚焦時展開蓋住整列（純 CSS）；有無障礙名稱
-    if (!/\.search \{ flex: none; width: max\(40px, var\(--control-h\)\);/.test(narrow) || !/\.search input::placeholder \{ color: transparent; \}/.test(narrow) || !/\.search:focus-within \{ left: 8px; right: 8px;/.test(narrow)) throw new Error('窄螢幕的搜尋應收成圖示、聚焦時展開');
+    const searchMsg = '窄螢幕的搜尋應收成圖示、聚焦時展開';
+    has('.search', { flex: 'none', width: /var\(--control-h\)/ }, searchMsg); has('.search input::placeholder', { color: 'transparent' }, searchMsg);
+    has('.search:focus-within', { left: '8px', right: '8px' }, searchMsg);
     if ($('#search').getAttribute('aria-label') !== '搜尋') throw new Error('收成圖示的搜尋框應有無障礙名稱');
     // 品牌只給螢幕閱讀器、資料中心按鈕由「輸入」取代；資料中心開啟時搜尋與「⋯」隱藏（不疊在資料中心上）
-    if (!/header \.brand \{ position: absolute; width: 1px;/.test(narrow) || !/header \.hub-btn \{ display: none; \}/.test(narrow) || !/#app\.hub-open header \.search, #app\.hub-open header \.header-actions \{ display: none; \}/.test(narrow)) throw new Error('窄螢幕的頁首應隱藏品牌與資料中心按鈕');
-    // 頁首可見的控制項：5 步＋搜尋＋⋯，加上工作區 3 個，共 10 個
-    const hdrCtrls = $('#steps').testAll('button').length + 1 + 1; const wsCtrls = $('#mobile-workspaces').testAll('button').length;
-    if (hdrCtrls + wsCtrls !== 10) throw new Error('窄螢幕圖上方的控制項應是 10 個：' + (hdrCtrls + wsCtrls));
+    const brandMsg = '窄螢幕的頁首應隱藏品牌與資料中心按鈕';
+    has('header .brand', { position: 'absolute', width: '1px' }, brandMsg); has('header .hub-btn', { display: 'none' }, brandMsg);
+    has('#app.hub-open header .search, #app.hub-open header .header-actions', { display: 'none' }, brandMsg);
+    // 頁首可見的控制項：每一步一個按鈕＋搜尋＋⋯；工作區列每個工作區一個按鈕（不重複）
+    const steps = $('#steps').testAll('button').map((b) => b.dataset.step);
+    const STEP_LABEL = S.view.app.STEP_LABEL;
+    if (steps.length !== Object.keys(STEP_LABEL).length || steps.some((s) => !STEP_LABEL[s])) throw new Error('步驟列應每一步一個按鈕：' + steps);
+    const wss = $('#mobile-workspaces').testAll('button').map((b) => b.dataset.workspace);
+    if (!wss.length || new Set(wss).size !== wss.length) throw new Error('工作區列應每個工作區一個按鈕：' + wss);
   });
   await step('流程步驟：五步都能切換（nav、aria-current="step"），左側清單與中間的工作畫面跟著換、焦點移到這一步的標題；切換不丟失畫布的位置、縮放與選取，也不重新排列；PNG 照常', async () => {
     const g = App.graph; const VA = S.view.app;

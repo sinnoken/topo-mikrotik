@@ -19,6 +19,14 @@
    * 只有在工具列的 VLAN 選單選的（pinned）會保留到取消；由檢查結果、搜尋或詳情的連結選 VLAN 順帶設的篩選不是使用者主動要的，
    * 選其他東西時一起取消（否則之後選的設備看起來像帶著自己的 VLAN 標示）。
    */
+  /**
+   * 換基準或清除（A.load、「清除」）：取消選取，畫布的選取環、高亮、疊加與與多數不同的外圈一起清掉，抽屜收起。
+   * 要在新的圖資料換上畫布之後呼叫：釘選的 VLAN 篩選由 App.select 依新的基準重新標示。L4 不換畫布，回到其他層級時 showLayer 會重新標示
+   */
+  A.resetSelection = function resetSelection() {
+    App.sel = null; App.graph.setEmphasis(null); A.closeSheet();
+    if (App.layer !== 'l4') App.select(null, { refresh: true });
+  };
   App.select = function (sel, opt) {
     App.sel = sel; const o = opt || {}; const g = App.graph; const Q = App.Q;
     g.setOverlay([]); g.setHighlight(null);
@@ -220,8 +228,10 @@
   const RAW_BEFORE = 12; const RAW_AFTER = 25; const RAW_MORE = 100;
   let rawNav = { list: [], at: 0, before: RAW_BEFORE, after: RAW_AFTER, copy: null };
   App.openRaw = function (file, line, opt) {
-    const list = opt && opt.list && opt.list.length ? opt.list : [{ file, line }];
-    rawNav = { list, at: Math.max(0, list.findIndex((e) => e.file === file && e.line === line)), before: RAW_BEFORE, after: RAW_AFTER, copy: null };
+    const given = opt && opt.list && opt.list.length ? opt.list : [];
+    // 清單不含指定的那一行時，把它加在最前面：顯示的一定是呼叫者要的那一行，不靜默改顯示清單的第一處
+    const list = given.some((e) => e.file === file && e.line === line) ? given : [{ file, line }, ...given];
+    rawNav = { list, at: list.findIndex((e) => e.file === file && e.line === line), before: RAW_BEFORE, after: RAW_AFTER, copy: null };
     bindRawNav(); showRaw();
     $('#dlg-raw').showModal();
     scrollRawHl();

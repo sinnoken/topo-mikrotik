@@ -3188,7 +3188,7 @@ function viewBoundaryViolations(file, src) {
       ['共用控制項高度（至少 36px）', /--control-h:\s*(3[6-9]|[4-9]\d)px/],
       ['觸控裝置的控制項高度 44px', /@media \(pointer: coarse\)\s*\{[^}]*--control-h:\s*44px/],
       ['鍵盤焦點樣式', /button:focus-visible/],
-      ['清除操作風險提示', /#btn-clear:hover/],
+      ['清除操作風險提示（.danger 修飾，不用 ID 規則）', /\.danger:hover/],
       ['表格交錯列', /table\.t tbody tr:nth-child\(even\) td/],
       ['表格互動高亮', /table\.t tbody tr\.click:hover td/],
       ['檢查結果卡片樣式', /\.finding\s*\{[^}]*border:/],
@@ -4116,6 +4116,43 @@ function viewBoundaryViolations(file, src) {
       graph.setData(old.nodes, old.edges, old.pos); graph.setSelection(old.sel.nodes, old.sel.edges);
       graph.setHighlight(old.hl); graph.hover = old.hover; graph.s = old.s; graph.tx = old.tx; graph.ty = old.ty; graph.redraw();
     }
+  });
+  await step('樣式 token：顏色、z-index、動效時長、圓角只用 :root 的變數；每個變數都有用到；對話框有名稱', () => {
+    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    // :root 區塊（含 @media 內的 :root，例如觸控、之後的 prefers-color-scheme）才可以寫色值；其他地方一律 var(--*)
+    const roots = Array.from(css.matchAll(/:root\s*\{([^}]*)\}/g)).map((m) => m[1]);
+    const rest = css.replace(/:root\s*\{[^}]*\}/g, '');
+    const bodies = Array.from(rest.matchAll(/([^{}]*)\{([^{}]*)\}/g)).map((m) => ({ sel: m[1].trim(), body: m[2] }));
+    const bad = [];
+    bodies.forEach(({ sel, body }) => {
+      for (const m of body.matchAll(/#[0-9a-fA-F]{3,8}\b|rgba?\(/g)) bad.push(`${sel}：${m[0]}`);
+      // z-index 只用 --z-*；transition／animation 的時長只用 --dur-*；圓角只用 --radius-*、0 或 50%（圓形）
+      for (const m of body.matchAll(/(?:^|;)\s*z-index:\s*([^;]+)/g)) if (!/^var\(--z-[\w-]+\)$/.test(m[1].trim())) bad.push(`${sel}：z-index: ${m[1].trim()}`);
+      for (const m of body.matchAll(/(?:^|;)\s*((?:transition|animation)(?:-duration)?):\s*([^;]+)/g)) if (/(?:^|[\s,(])\d*\.?\d+m?s\b/.test(m[2])) bad.push(`${sel}：${m[1]}: ${m[2].trim()}`);
+      for (const m of body.matchAll(/(?:^|;)\s*border-radius:\s*([^;]+)/g)) if (m[1].trim().split(/\s+/).some((x) => !/^(var\(--radius[\w-]*\)|0|50%)$/.test(x))) bad.push(`${sel}：border-radius: ${m[1].trim()}`);
+    });
+    if (bad.length) throw new Error(':root 之外應只用變數：\n' + bad.join('\n'));
+    // 每個變數至少被 var() 用到一次（app.css、index.html、畫面程式）；只供測試與 theme.js 比對的變數列在例外清單
+    const ONLY_COMPARED = ['fw', 'sw', 'rt', 'host', 'unk'];
+    const defined = new Set(roots.flatMap((r) => Array.from(r.matchAll(/--([\w-]+):/g)).map((m) => m[1])));
+    const sources = [css, fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), ...jsFiles('src/view').map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8'))].join('\n');
+    const used = new Set(Array.from(sources.matchAll(/var\(--([\w-]+)/g)).map((m) => m[1]));
+    const unused = [...defined].filter((n) => !used.has(n) && !ONLY_COMPARED.includes(n));
+    if (unused.length) throw new Error('沒有用到的 CSS 變數：' + unused.map((n) => '--' + n).join('、'));
+    const stale = ONLY_COMPARED.filter((n) => !defined.has(n) || used.has(n));
+    if (stale.length) throw new Error('例外清單的變數已不存在或已被使用，應移出清單：' + stale.join('、'));
+    // 危險操作用 .danger 修飾，不用 ID 規則上色
+    if (/#btn-clear\b[^{,]*\{/.test(rest)) throw new Error('清除基準的樣式應用 .danger，不用 #btn-clear');
+    // 對話框：有名稱（aria-labelledby 指向對話框內的標題）、✕ 關閉鈕有 aria-label
+    const dialogs = document.testAll('dialog');
+    if (!dialogs.length) throw new Error('找不到對話框');
+    dialogs.forEach((d) => {
+      const id = d.getAttribute('aria-labelledby');
+      const t = id && document.getElementById(id);
+      if (!t || !d.contains(t) || !t.textContent.trim()) throw new Error(`#${d.id} 應有 aria-labelledby 指向對話框內的標題`);
+      const xs = d.testAll('button').filter((b) => b.classList.contains('x'));
+      if (!xs.length || xs.some((b) => !b.getAttribute('aria-label'))) throw new Error(`#${d.id} 的 ✕ 關閉鈕應有 aria-label`);
+    });
   });
   await step('文字對比：每個文字色對它的底色 ≥ 4.5:1（CSS 變數、狀態標籤、theme 的文字色）', () => {
     const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8'); const v = cssVars(css); const T = S.view.theme;

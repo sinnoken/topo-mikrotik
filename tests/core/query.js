@@ -255,6 +255,71 @@ test('查詢介面：findingsByRule、blocksOf、coverageOf 與直接讀 Snapsho
   assert.strictEqual(Q.meta(), s.meta); assert.strictEqual(Q.coverage(), s.coverage); assert.strictEqual(Q.devices(), s.model.devices);
 });
 
+test('收集完整度：Q.coverageSummary 的網路設備口徑與 C01／C02 一致，主機另計', () => {
+  const s = build(read('samples/sample-bundle.txt')); const Q = S.query(s); const sum = Q.coverageSummary();
+  const by = (id) => s.findings.filter((f) => f.id === id).length;
+  assert.strictEqual(sum.devices, s.meta.stats.devices); assert.strictEqual(sum.collected, s.meta.stats.collected);
+  assert.strictEqual(sum.network - sum.networkCollected, by('C01'), '未收集的網路設備數應等於 C01 筆數');
+  assert.strictEqual(sum.missing, by('C02'), '缺必要資料或收集失敗的台數應等於 C02 筆數');
+  assert.strictEqual(sum.networkCollected, sum.collected, '已收集的設備都屬應收集的範圍');
+  assert.strictEqual(sum.network + sum.hosts, sum.devices);
+  assert.ok(sum.hosts > 0 && by('C01') > 0, '範例資料有主機與未收集的網路設備');
+  assert.ok(s.coverage.filter((r) => !S.check.expectsCollection(r)).every((r) => r.kind === 'host' && !r.collected), '不在收集範圍的只有未收集的主機');
+  assert.ok(Object.isFrozen(sum) && Q.coverageSummary() === sum);
+  // 由命名規則判為主機、但已收集的設備仍算應收集（C02 會檢查它）
+  const text = 'SW_A (10.0.0.1):\n### /interface print detail\n 0 R name=ether1 type=ether\n'
+    + 'HOST_B (10.0.0.2):\n### /interface print detail\n 0 R name=eth0 type=ether\n';
+  const h = S.query(build(text, { profile: { id: 'test-host', classify: [{ match: '^HOST_B$', kind: 'host' }] } })).coverageSummary();
+  assert.deepStrictEqual([h.network, h.networkCollected, h.hosts], [2, 2, 0]);
+});
+
+test('VLAN 摘要：Q.vlanSummary 的相異 ID、不相連區塊與定義筆數分開計', () => {
+  const s = build(read('samples/sample-bundle.txt')); const Q = S.query(s); const v = Q.vlanSummary();
+  const ids = new Set(s.model.vlans.map((x) => x.id));
+  assert.deepStrictEqual(Object.assign({}, v), { ids: ids.size, domains: Array.from(ids).reduce((n, id) => n + Q.vlan(id).domains.length, 0), definitions: s.meta.stats.vlans });
+  assert.strictEqual(v.ids, Q.inventory().counts.vlanIds);
+  assert.ok(v.ids < v.definitions && v.ids <= v.domains, '範例的 VLAN 定義分散在多台設備');
+  assert.ok(Object.isFrozen(v));
+});
+
+test('查詢：搜尋支援 IP 前綴（先網段後 IP）、MAC 前綴（任一分隔符）與介面名稱', () => {
+  const Q = S.query(build(read('samples/sample-bundle.txt')));
+  const ips = Q.ipEntries();
+  const r1 = Q.search('10.1.', 200);
+  assert.ok(r1.length > 0 && r1.every((r) => r.type === 'ip' || r.type === 'subnet'), JSON.stringify(r1.slice(0, 3)));
+  assert.ok(r1.every((r) => r.key.startsWith('10.1.')), '只列出以 10.1. 開頭的 IP／網段');
+  const firstIp = r1.findIndex((r) => r.type === 'ip');
+  assert.ok(firstIp > 0 && r1.slice(firstIp).every((r) => r.type === 'ip'), '網段排在 IP 前面');
+  const graph = Q.subnetGraph().subnets.map((x) => x.id);
+  assert.ok(r1.filter((r) => r.type === 'subnet').every((r) => graph.includes(r.key)), '網段結果的 key 是子網 id');
+  const want = S.util.uniq(ips.filter((e) => e.ip.startsWith('10.1.')).map((e) => e.ip));
+  assert.deepStrictEqual(r1.filter((r) => r.type === 'ip').map((r) => r.key), want, 'IP 結果與 IP 清單相同（同一個位址不分 VRF 只列一次）');
+  assert.strictEqual(Q.search('10.1.', 5).length, 5, '數量上限沿用');
+  assert.deepStrictEqual(Q.search('10.9.').filter((r) => r.type === 'ip' || r.type === 'subnet'), [], '沒有符合的前綴時不列 IP');
+  assert.deepStrictEqual(Q.search('10.1').map((r) => r.key), Q.search('10.1.').map((r) => r.key), '結尾的點可省略');
+  const macs = Q.macEntries().filter((e) => e.mac.startsWith('04421A'));
+  assert.ok(macs.length > 0);
+  for (const q of ['04:42', '04-42-1a', '0442.1a', '04421A']) {
+    const r = Q.search(q, 50).filter((x) => x.type === 'mac');
+    assert.ok(r.length > 0 && r.every((x) => x.key.startsWith('04421A')), q + ' 應以正規化後的前綴比對 MAC');
+    assert.ok(macs.some((e) => e.mac === r[0].key), q);
+  }
+  assert.deepStrictEqual(Q.search('10').filter((r) => r.type === 'mac'), [], '純數字不當 MAC 前綴（保留給 VLAN／IP）');
+  const ifcs = Q.search('ether10', 50).filter((r) => r.type === 'interface');
+  assert.ok(ifcs.length > 0 && ifcs.every((r) => Q.getInterface(r.key) && Q.getInterface(r.key).name.toLowerCase().includes('ether10')), JSON.stringify(ifcs.slice(0, 3)));
+  assert.ok(Q.search('to TPE_ACC_SW_01').some((r) => r.type === 'interface'), '介面描述仍可搜尋');
+});
+
+test('查詢：Q.blockAt 依檔案與行號取得所屬區塊', () => {
+  const s = build(read('samples/sample-bundle.txt')); const Q = S.query(s);
+  s.blocks.slice(0, 20).forEach((b) => {
+    assert.strictEqual(Q.blockAt(b.file, b.start), b); assert.strictEqual(Q.blockAt(b.file, b.end), b);
+    assert.strictEqual(Q.blockAt(b.file, b.start), Q.block(b.id), '與 block(id) 是同一個物件');
+  });
+  assert.strictEqual(Q.blockAt('t.txt', 1), null, '第 1 行是設備標頭，不在區塊內');
+  assert.strictEqual(Q.blockAt('沒有這個檔案.txt', s.blocks[0].start), null);
+});
+
 test('查詢介面：規則目錄、資料類別、解析器名稱與 VLAN 文字（靜態，不需要 Snapshot）', () => {
   const C = S.check.CATALOG;
   assert.deepStrictEqual(S.query.rules().map((r) => r.id), Object.keys(C), '依 CATALOG 的宣告順序');

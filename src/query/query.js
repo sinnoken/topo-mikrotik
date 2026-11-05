@@ -179,7 +179,7 @@
     const vlanSrc = { vlans: m.vlans, interfaces: m.interfaces, links: m.links, inferred: m.inferredLinks || [], ifc: (ep) => ifc.get(ep), collected: (d) => !!(dev.get(d) || {}).collected };
 
     // ---- L2／L3 視圖（M1）：第一次呼叫時才建立，依參數快取；回傳的物件都是這裡新建的，深層凍結
-    let vlanIdList = null; let subIfcsOf = null;
+    let vlanIdList = null; let subIfcsOf = null; let covSum = null; let vlanSum = null;
     const carriersCache = new Map(); const portCache = new Map(); const subnetCache = new Map();
     const effM = { ifcs: ifc }; // S.infer 的 VLAN helper 只用 M.ifcs.get，Snapshot 的介面（陣列欄位）可以直接套用
     const collectedDev = (d) => !!(dev.get(d) || {}).collected;
@@ -271,6 +271,22 @@
       coverageOf(d) {
         if (!covByDev) covByDev = new Map((snap.coverage || []).map((c) => [c.dev, c]));
         return covByDev.get(d) || null;
+      },
+      /**
+       * 收集完整度的唯一數字來源（凍結）：{ devices, collected, missing, network, networkCollected, hosts }。
+       * devices／collected 是全部設備與已收集台數；network／networkCollected 是應收集的網路設備（與 C01／C02 同用 S.check.expectsCollection），
+       * network − networkCollected 等於 C01 筆數；hosts 是不在收集範圍、只由鄰居或 ARP 得知的主機（network + hosts = devices）；
+       * missing 是已收集但缺必要資料或有收集失敗的台數（等於 C02 筆數）。
+       */
+      coverageSummary() {
+        if (covSum) return covSum;
+        const rows = snap.coverage || []; const net = rows.filter(S.check.expectsCollection);
+        covSum = Object.freeze({
+          devices: rows.length, collected: rows.filter((r) => r.collected).length,
+          missing: rows.filter((r) => r.collected && (r.missing.length > 0 || (r.failures || []).length > 0)).length,
+          network: net.length, networkCollected: net.filter((r) => r.collected).length, hosts: rows.length - net.length,
+        });
+        return covSum;
       },
       /** 全部 finding，依 Snapshot 的順序；陣列位置（idx）就是 finding(idx)、findingIndexesFor 等使用的索引。 */
       findings: () => snap.findings,
@@ -554,6 +570,8 @@
       findingsFor(type, key) { return (findingsBy.get(type + ':' + key) || []).map((i) => snap.findings[i]); },
       findingIndexesFor(type, key) { return findingsBy.get(type + ':' + key) || []; },
       block: (id) => snap.blocks[id] || null,
+      /** 包含 file 第 line 行的輸入區塊（同 block(id) 的物件）；不在任何區塊內（例如設備標頭、註解行）或沒有這個檔案時為 null。 */
+      blockAt: (file, line) => snap.blocks.find((b) => b.file === file && b.start <= line && line <= b.end) || null,
       /** 屬於某設備的輸入區塊（blocks[].devKey），依輸入順序（凍結的陣列）；沒有時為空陣列。 */
       blocksOf(d) {
         if (!blocksByDev) blocksByDev = freezeAll(snap.blocks.reduce((out, b) => { if (b.devKey) U.getOr(out, b.devKey, () => []).push(b); return out; }, new Map()));
@@ -645,6 +663,16 @@
         m.interfaces.forEach((i) => U.ifcVlans(i).forEach((v) => ids.add(v)));
         vlanIdList = Object.freeze(U.numSort(Array.from(ids)));
         return vlanIdList;
+      },
+      /**
+       * VLAN 的三種數法（凍結）：{ ids（VLAN 定義中相異的 VLAN ID 數，同 inventory().counts.vlanIds）,
+       *   domains（各 ID 的不相連區塊合計，同 Q.vlan(id).domains，推論）, definitions（各設備的 VLAN 定義筆數，同 meta.stats.vlans）}。
+       */
+      vlanSummary() {
+        if (vlanSum) return vlanSum;
+        const ids = U.uniq(m.vlans.map((v) => v.id));
+        vlanSum = Object.freeze({ ids: ids.length, domains: ids.reduce((n, id) => n + Q.vlan(id).domains.length, 0), definitions: m.vlans.length });
+        return vlanSum;
       },
       /**
        * 承載 VLAN id 的鏈路（VLAN 篩選時高亮用）；給 domain（Q.vlan 的區塊鍵）時只含那一塊。結果深層凍結。
@@ -936,19 +964,51 @@
         return out;
       },
 
-      /** 一個搜尋框搜所有東西：MAC、IP、VLAN、設備、介面描述。 */
+      /**
+       * 一個搜尋框搜所有東西：MAC、IP、VLAN、設備、介面名稱與描述；IP 與 MAC 也接受前綴（10.1.、04:42）。
+       * 結果 { type, key, label, sub }：type 是 mac｜ip｜subnet｜vlan｜device｜interface；ip 的 key 是不含 VRF 的位址（不分 VRF），
+       * subnet 的 key 是網段鍵（K.inVrf，同 subnetGraph 的 id）。
+       */
       search(text, limit) {
         const q = String(text || '').trim(); const max = limit || 20; const out = [];
         if (!q) return out;
-        if (K.isMacText(q)) { const r = Q.findMac(q); out.push({ type: 'mac', key: r.mac, label: K.macPretty(r.mac), sub: r.found ? (r.vendor || '') + (r.ips.length ? ' · ' + r.ips.join(', ') : '') : '基準中沒有這個 MAC' }); }
+        // VRF 在 main 時不寫（與 K.inVrf 相同）；在多個 VRF 時寫出數量與名稱，下拉選單就看得出位址重疊
+        const NAMES = 4;
+        const inVrfs = (vs) => (vs.length > 1 ? ` · 在 ${vs.length} 個 VRF：${vs.slice(0, NAMES).join('、')}${vs.length > NAMES ? '…' : ''}` : vs.length === 1 && vs[0] !== MAIN ? ` · VRF ${vs[0]}` : '');
+        const macSub = (x) => (x.vendor || '') + (x.ips.length ? ' · ' + x.ips.join(', ') : '');
+        if (K.isMacText(q)) { const r = Q.findMac(q); out.push({ type: 'mac', key: r.mac, label: K.macPretty(r.mac), sub: r.found ? macSub(r) : '基準中沒有這個 MAC' }); }
         if (S.ip.isIp(q)) {
           const r = Q.findIp(q);
-          // VRF 在 main 時不寫（與 K.inVrf 相同）；在多個 VRF 時寫出數量與名稱，下拉選單就看得出位址重疊
-          const vs = r.vrfs; const NAMES = 4;
-          const inVrfs = vs.length > 1 ? ` · 在 ${vs.length} 個 VRF：${vs.slice(0, NAMES).join('、')}${vs.length > NAMES ? '…' : ''}` : vs.length === 1 && vs[0] !== MAIN ? ` · VRF ${vs[0]}` : '';
-          out.push({ type: 'ip', key: q, label: q, sub: (r.owner ? '介面位址 · ' + Q.epName(r.owner.endsWith('|') ? r.owner + 'mgmt' : r.owner) : r.macs.length ? 'ARP：' + r.macs.map(K.macPretty).join(', ') : r.subnets.length ? '屬於 ' + Q.epName(r.subnets[0].ep) + ' 的網段' : '基準中沒有這個 IP') + inVrfs });
+          out.push({ type: 'ip', key: q, label: q, sub: (r.owner ? '介面位址 · ' + Q.epName(r.owner.endsWith('|') ? r.owner + 'mgmt' : r.owner) : r.macs.length ? 'ARP：' + r.macs.map(K.macPretty).join(', ') : r.subnets.length ? '屬於 ' + Q.epName(r.subnets[0].ep) + ' 的網段' : '基準中沒有這個 IP') + inVrfs(r.vrfs) });
         }
         if (/^\d{1,4}$/.test(q) && +q >= 1 && +q <= 4094) { const v = Q.vlan(+q); out.push({ type: 'vlan', key: q, label: 'VLAN ' + q, sub: v.devices.length ? `${v.devices.length} 台設備${v.domains.length > 1 ? `（${v.domains.length} 個不相連區塊）` : ''} · ${v.names.join(' / ')}` : '基準中沒有這個 VLAN' }); }
+        // IP 前綴（10.1. 或 10.1）：先列以它開頭的直連網段（少而概括），再列 IP；完整 IP 已在上面處理
+        const ipPrefix = !S.ip.isIp(q) && q.includes('.') && /^\d{1,3}(\.\d{1,3}){0,2}\.?$/.test(q);
+        if (ipPrefix) {
+          const head = q.endsWith('.') ? q : q + '.';
+          const EPS = 3; const epList = (eps) => eps.slice(0, EPS).map(Q.epName).join(', ') + (eps.length > EPS ? ` 等 ${eps.length} 個介面` : '');
+          for (const p of m.prefixes) {
+            if (out.length >= max) break;
+            if (p.net.startsWith(head)) out.push({ type: 'subnet', key: p.key, label: p.prefix, sub: '網段 · ' + epList(p.eps) + inVrfs([K.vrf(p.vrf)]) });
+          }
+          // ipEntries 每個 VRF 一列；搜尋的 IP 不分 VRF（同完整 IP），同一個位址合成一筆、副標寫出所在的 VRF
+          const byIp = new Map();
+          Q.ipEntries().forEach((e) => { if (e.ip.startsWith(head)) U.getOr(byIp, e.ip, () => []).push(e); });
+          for (const [ip, es] of byIp) {
+            if (out.length >= max) break;
+            const e = es[0];
+            out.push({ type: 'ip', key: ip, label: ip, sub: [e.from.join('／'), e.dev ? Q.devName(e.dev) + (e.ifc ? ' ' + e.ifc : '') : ''].filter(Boolean).join(' · ') + inVrfs(es.map((x) => x.vrf)) });
+          }
+        }
+        // MAC 前綴：去掉分隔符後以十六進位前綴比對；純數字留給 VLAN／IP，避免「10」也變成 MAC 搜尋
+        const macPrefix = !ipPrefix && !K.isMacText(q) && /^[0-9a-f]{2}([:\-.]?[0-9a-f]{2}){0,4}([:\-.]?[0-9a-f])?$/i.test(q) && /[a-f:\-.]/i.test(q);
+        if (macPrefix) {
+          const head = q.replace(/[^0-9a-f]/gi, '').toUpperCase();
+          for (const x of m.macs) {
+            if (out.length >= max) break;
+            if (x.mac.startsWith(head)) out.push({ type: 'mac', key: x.mac, label: K.macPretty(x.mac), sub: macSub(x) });
+          }
+        }
         const uq = q.toUpperCase();
         for (const d of m.devices) {
           if (out.length >= max) break;
@@ -958,7 +1018,8 @@
           const lq = q.toLowerCase();
           for (const i of m.interfaces) {
             if (out.length >= max) break;
-            if (i.desc && i.desc.toLowerCase().includes(lq)) out.push({ type: 'interface', key: i.key, label: Q.epName(i.key), sub: '描述：' + i.desc });
+            if (i.name.toLowerCase().includes(lq)) out.push({ type: 'interface', key: i.key, label: Q.epName(i.key), sub: [i.type, i.status, i.desc ? '描述：' + i.desc : ''].filter(Boolean).join(' · ') });
+            else if (i.desc && i.desc.toLowerCase().includes(lq)) out.push({ type: 'interface', key: i.key, label: Q.epName(i.key), sub: '描述：' + i.desc });
           }
         }
         return out;

@@ -27,8 +27,8 @@
     const show = () => {
       V.clear(dd); if (!App.Q || !inp.value.trim()) { dd.classList.add('hidden'); return; }
       results = App.Q.search(inp.value, 15); active = 0;
-      if (!results.length) dd.appendChild(h('div', { class: 'empty' }, '找不到符合的設備、MAC、IP 或 VLAN'));
-      const T = { device: '設備', mac: 'MAC', ip: 'IP', vlan: 'VLAN', interface: '介面' };
+      if (!results.length) dd.appendChild(h('div', { class: 'empty' }, '找不到符合的設備、MAC、IP、網段、VLAN 或介面'));
+      const T = { device: '設備', mac: 'MAC', ip: 'IP', subnet: '網段', vlan: 'VLAN', interface: '介面' };
       results.forEach((r, i) => dd.appendChild(h('div', {
         class: 'item' + (i === active ? ' active' : ''),
         onmousedown: (e) => { e.preventDefault(); pick(r); },

@@ -171,6 +171,17 @@ test('VRF：Q.search 的 IP 副標，位址在多個 VRF 時寫出數量與名�
   assert.deepStrictEqual(['10.0.12.1', '192.168.1.10'].map((ip) => main.search(ip)[0].sub), ['介面位址 · A ether1', '屬於 A ether2 的網段']);
 });
 
+test('VRF：IP 前綴搜尋，網段鍵含 VRF、同一個 IP 在多個 VRF 合成一筆並寫出 VRF', () => {
+  const Q = S.query(build(NET()));
+  const r = Q.search('10.1.', 50);
+  const nets = r.filter((x) => x.type === 'subnet');
+  assert.deepStrictEqual(nets.map((x) => x.key), ['10.1.20.0/24', '10.1.20.0/24@cust-a'], '各 VRF 的網段各一筆，key 是網段鍵');
+  assert.ok(nets[1].sub.endsWith(' · VRF cust-a') && !nets[0].sub.includes('VRF'), JSON.stringify(nets));
+  const ip = r.filter((x) => x.type === 'ip' && x.key === '10.1.20.2');
+  assert.strictEqual(ip.length, 1, '同一個位址只列一次（搜尋不分 VRF）');
+  assert.ok(ip[0].sub.endsWith(' · 在 2 個 VRF：main、cust-a'), ip[0].sub);
+});
+
 test('VRF：Q.reach、zone、L3 子網圖依 VRF 分開', () => {
   const s = build(NET()); const Q = S.query(s);
   const r = Q.reach('172.16.10.10', '10.1.20.50', { proto: 'tcp', port: 22 });

@@ -184,7 +184,10 @@
   App.openRaw = function (file, line) {
     const src = App.sources.find((s) => s.name === file);
     const dlg = $('#dlg-raw'); const body = V.clear($('#raw-body'));
-    $('#raw-title').textContent = `${file}　第 ${line} 行`;
+    // 標題寫出該行所屬的設備與指令（Q.blockAt）；檔名放在 title
+    const blk = App.Q ? App.Q.blockAt(file, line) : null;
+    const where = blk ? `${blk.devKey ? App.Q.devName(blk.devKey) : blk.device || file} › ${blk.command || '（未標記指令）'}` : file;
+    const title = $('#raw-title'); title.textContent = `${where}（第 ${line} 行）`; title.setAttribute('title', `${file} 第 ${line} 行`);
     if (!src) body.appendChild(h('p', { class: 'muted' }, '找不到原始輸入（可能是從舊版本還原的基準）。'));
     else {
       const lines = src.text.split(/\r?\n/); const from = Math.max(1, line - 12); const to = Math.min(lines.length, line + 25);

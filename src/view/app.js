@@ -174,13 +174,14 @@
     $('#btn-trace').disabled = !has; $('#search').disabled = !has; $('#btn-clear').disabled = !has;
     const f = V.clear($('#footer'));
     if (has) {
-      const m = App.Q.meta();
+      const m = App.Q.meta(); const cs = App.Q.coverageSummary();
       f.appendChild(h('span', null, `建立：${V.fmtTime(m.createdAt)}`));
-      f.appendChild(h('span', null, `設備 ${V.num(m.stats.devices)}（已收集 ${V.num(m.stats.collected)}）・鏈路 ${V.num(m.stats.links)}・MAC ${V.num(m.stats.macs)}`));
+      f.appendChild(h('span', null, `網路設備 ${V.num(cs.network)}（已收集 ${V.num(cs.networkCollected)}）・主機 ${V.num(cs.hosts)}・鏈路 ${V.num(m.stats.links)}・MAC ${V.num(m.stats.macs)}`));
       f.appendChild(h('span', null, `命名規則：${m.profile ? m.profile.id : '未套用'}`));
       f.appendChild(h('span', { class: 'mono' }, `輸入指紋 ${m.inputHash}`));
       f.appendChild(h('span', null, `版本 ${m.version}`));
     } else f.appendChild(h('span', null, `RouterOS 網路基準 ${S.VERSION}・資料只在這個瀏覽器處理，不會傳到任何地方`));
+    syncTraceIps();
     // 覆蓋率在資料中心（① 輸入），由 V.hub.render 一起畫
     V.lists.findings(App); V.lists.inventory(App);
     V.ledgerPane.render(App); V.hub.render(App);
@@ -188,13 +189,29 @@
     A.syncSteps(); A.renderCenter(); A.syncLayerUi();
     V.details.render(App, App.sel);
   };
+  /**
+   * 路由追蹤的 IP 自動完成（#trace-ips）：Q.ipEntries() 的每個 IP 一個選項；同一個位址在多個 VRF 只列一次並註明 VRF，
+   * 從哪個 VRF 追蹤由追蹤的 VRF 選單決定（同 App.runTrace）。只在換基準時重建。
+   */
+  let traceIpsQ;
+  function syncTraceIps() {
+    if (traceIpsQ === App.Q) return;
+    traceIpsQ = App.Q;
+    const dl = V.clear($('#trace-ips'));
+    if (!App.Q) return;
+    const byIp = new Map(); App.Q.ipEntries().forEach((e) => S.util.getOr(byIp, e.ip, () => []).push(e));
+    byIp.forEach((es, ip) => {
+      const e = es.find((x) => x.dev) || es[0]; const vs = es.map((x) => x.vrf);
+      const where = e.dev ? App.Q.devName(e.dev) + (e.ifc ? ' ' + e.ifc : '') : e.from.join('／');
+      dl.appendChild(h('option', { value: ip }, where + (vs.length > 1 || vs[0] !== S.keys.MAIN_VRF ? `（${vs.map(V.vrfText).join('、')}）` : '')));
+    });
+  }
   function renderBaselineSummary() {
     const root = V.clear($('#baseline-summary'));
     const has = !!App.snap;
     root.classList.toggle('hidden', !has);
     if (!has) return;
-    const stats = App.Q.meta().stats;
-    const missing = App.Q.coverage().filter(V.coverageGap).length;
+    const cs = App.Q.coverageSummary();
     // 已處理（排程修復、可接受、誤報、已修好）的錯誤／警告不算在待處理的問題裡，但註明筆數
     const pc = A.problemCounts(); const problems = pc.error + pc.warn;
     const ackNote = pc.handled ? `（另有 ${V.num(pc.handled)} 項已處理）` : '';
@@ -203,7 +220,9 @@
       h('span', { class: 'baseline-message' }, (problems
         ? `目前規則找到 ${V.num(pc.error)} 項錯誤、${V.num(pc.warn)} 項警告`
         : '目前規則未發現待處理的錯誤或警告') + ackNote),
-      h('span', { class: 'baseline-coverage' }, `收集完整度：${V.num(stats.collected)} / ${V.num(stats.devices)} 台設備已收集；${V.num(missing)} 台有必要資料缺漏`),
+      // 分母只算應收集的網路設備（與 C01／C02 同一個判斷）；主機本來就不收集，另外註明
+      h('span', { class: 'baseline-coverage' }, `收集完整度：${V.num(cs.networkCollected)} / ${V.num(cs.network)} 台網路設備已收集；${V.num(cs.missing)} 台有必要資料缺漏`
+        + (cs.hosts ? `；另有 ${V.num(cs.hosts)} 台主機（只由鄰居或 ARP 得知，不在收集範圍）` : '')),
       // 處理紀錄的提示：回歸（修好後又出現）、因收集失敗而無法判斷、豁免到期；點一下到「⑤ 驗證」的本輪變化
       ...[['regressed', 'err', (n) => `回歸 ${V.num(n)} 項`, '已修好的問題又出現（依處理紀錄）'],
         ['unobserved', 'warn', (n) => `無法判斷 ${V.num(n)} 項`, '這一輪消失的待處理項目，所屬設備有收集失敗或沒有收集，因收集失敗而無法判斷是否已修好'],
@@ -220,7 +239,7 @@
       },
     }, '查看錯誤／警告'));
     actions.appendChild(h('button', {
-      disabled: !missing, title: '在「① 輸入」的覆蓋率只列有缺漏的設備',
+      disabled: !cs.missing, title: '在「① 輸入」的覆蓋率只列有缺漏的設備',
       onclick: () => {
         V.lists.coverage.showMissing(App);
         App.openHub('coverage');

@@ -24,6 +24,8 @@
     firewall: ['lldp', 'config', 'route'],
     host: [], unknown: [],
   };
+  /** 應收集的設備（C01／C02 的範圍）：已收集的設備，加上未收集但不是主機的設備；主機本來就不在收集範圍。d 是設備或 coverage 列（有 collected、kind）。 */
+  const expectsCollection = (d) => !!d.collected || d.kind !== 'host';
   const fmtVlans = S.util.fmtVlans;
   // 資料類別的顯示名稱；畫面透過 S.query.dataLabel 讀取
   const DATA_LABEL = Object.freeze({
@@ -105,7 +107,7 @@
     sightings.forEach((list) => list.sort((a, b) => a.block - b.block || a.line - b.line));
     M.devices.forEach((d) => {
       if (!d.collected) {
-        if (d.kind === 'host') return; // 主機本來就不在收集範圍
+        if (!expectsCollection(d)) return;
         add('C01', `${name(d.key)}：由 ${Array.from(d.seenBy).map(name).join('、')} 發現`, [{ type: 'device', key: d.key }], sightings.get(d.key));
         return;
       }
@@ -894,5 +896,5 @@
     });
   }
 
-  S.check = { run, coverage, CATALOG, EXPECTED, DATA_LABEL, fmtVlans, resolveNextHop, hopOwner, unrecognizedReason, issueReason };
+  S.check = { run, coverage, CATALOG, EXPECTED, DATA_LABEL, fmtVlans, resolveNextHop, hopOwner, unrecognizedReason, issueReason, expectsCollection };
 })(globalThis.SSOT = globalThis.SSOT || {});

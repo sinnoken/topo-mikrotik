@@ -718,6 +718,45 @@ function viewBoundaryViolations(file, src) {
     inp.dispatch('keydown', { key: 'Enter' });
     if (App.sel.type !== 'device') throw new Error('Enter 應選取設備');
   });
+  await step('收集完整度與 VLAN 數：網路設備為分母、主機另列，VLAN 以相異 ID 計（基準摘要、總覽、頁尾同一口徑）', () => {
+    const NUM = S.view.num; const cs = App.Q.coverageSummary(); const vs = App.Q.vlanSummary();
+    const summary = text('#baseline-summary');
+    if (!summary.includes(`${NUM(cs.networkCollected)} / ${NUM(cs.network)} 台網路設備已收集`) || !summary.includes(`${NUM(cs.missing)} 台有必要資料缺漏`)) throw new Error('基準摘要的收集完整度應以網路設備計：' + summary);
+    if (!!cs.hosts !== summary.includes(`另有 ${NUM(cs.hosts)} 台主機`)) throw new Error('有主機時另列，沒有時不寫：' + summary);
+    if (cs.network - cs.networkCollected !== App.Q.findingsByRule('C01').length) throw new Error('未收集的網路設備數應等於 C01 筆數');
+    if (!text('#footer').includes(`網路設備 ${NUM(cs.network)}（已收集 ${NUM(cs.networkCollected)}）`)) throw new Error('頁尾應用網路設備口徑：' + text('#footer'));
+    const sel = App.sel; App.select(null);
+    const d = text('#detail');
+    if (!d.includes('VLAN（相異 ID）' + NUM(vs.ids)) || !d.includes('VLAN 定義（各設備合計）' + NUM(vs.definitions))) throw new Error('總覽應分開列出相異 VLAN ID 與 VLAN 定義：' + d.slice(0, 300));
+    if (!d.includes('網路設備' + NUM(cs.network) + '（已收集 ' + NUM(cs.networkCollected) + '）')) throw new Error('總覽應以網路設備計：' + d.slice(0, 300));
+    App.select(sel);
+  });
+  await step('搜尋框：IP／MAC 前綴與介面名有結果，選介面、網段結果會選到它；路由追蹤有 IP 自動完成', async () => {
+    const inp = $('#search'); const dd = $('#search-dd');
+    const type = async (v) => { inp.value = v; inp.dispatch('input'); await new Promise((r) => setTimeout(r, 150)); return dd.testAll('.item'); };
+    const pre = App.Q.ipEntries()[0].ip.split('.').slice(0, 2).join('.') + '.';
+    if (!(await type(pre)).length || !text('#search-dd').includes(pre)) throw new Error('IP 前綴應有結果：' + pre);
+    const first = App.Q.search(pre, 15)[0];
+    inp.dispatch('keydown', { key: 'Enter' });
+    if (App.sel.type !== first.type || App.sel.key !== first.key) throw new Error('Enter 應選取第一筆前綴結果：' + JSON.stringify(App.sel));
+    if (first.type === 'subnet' && text('#detail').includes('基準中沒有這個網段')) throw new Error('網段結果應能開啟子網詳情');
+    const mac = App.Q.macEntries()[0].mac; const macPre = mac.slice(0, 2) + ':' + mac.slice(2, 4);
+    if (!(await type(macPre)).length || !text('#search-dd').toLowerCase().includes(macPre.toLowerCase())) throw new Error('MAC 前綴應有結果：' + macPre);
+    const ifc = App.Q.interfacesOf(App.Q.devices().find((x) => x.collected).key).find((i) => i.name.length >= 3);
+    if (!(await type(ifc.name)).length || dd.testAll('.empty').length) throw new Error('介面名應有結果：' + ifc.name);
+    const at = App.Q.search(ifc.name, 15).findIndex((r) => r.type === 'interface');
+    for (let k = 0; k < at; k++) inp.dispatch('keydown', { key: 'ArrowDown' });
+    inp.dispatch('keydown', { key: 'Enter' });
+    if (App.sel.type !== 'interface' || !App.Q.getInterface(App.sel.key) || !App.Q.getInterface(App.sel.key).name.includes(ifc.name)) throw new Error('應選取該介面：' + JSON.stringify(App.sel));
+    const dl = $('#trace-ips'); const ips = new Set(App.Q.ipEntries().map((e) => e.ip));
+    if (!dl || dl.tagName.toLowerCase() !== 'datalist') throw new Error('路由追蹤應有 IP 的 datalist');
+    const opts = dl.testAll('option').map((o) => o.getAttribute('value'));
+    if (opts.length !== ips.size || !opts.every((v) => ips.has(v))) throw new Error('datalist 每個 IP 一個選項（不分 VRF）');
+    ['trace-src', 'trace-dst'].forEach((id) => { if ($('#' + id).getAttribute('list') !== 'trace-ips') throw new Error(id + ' 應掛上 datalist'); });
+    const title = inp.getAttribute('title') || '';
+    if (!title.includes('前綴') || !title.includes('介面名稱')) throw new Error('搜尋框的 title 應說明支援前綴與介面名稱');
+    App.select(null);
+  });
   await step('路由追蹤', () => {
     $('#btn-trace').click(); $('#trace-src').value = '10.1.30.15'; $('#trace-dst').value = '8.8.8.8'; $('#trace-run').click();
     if (App.sel.result.ok && (!App.sel.reverse || !text('#detail').includes('回程（8.8.8.8 → 10.1.30.15）'))) throw new Error('去程成功時應同時顯示回程');
@@ -3484,6 +3523,9 @@ function viewBoundaryViolations(file, src) {
     if (!!App.round.expected !== !row('expected').textContent.includes('未載入')) throw new Error('預期資料的狀態應依是否載入');
     if (rep && !rep.errors.length && !row('expected').textContent.includes('已比對')) throw new Error('預期資料載入後應列出比對結果');
     const nC01 = App.Q.findingsByRule('C01').length;
+    const cs = App.Q.coverageSummary();
+    if (!row('coverage').textContent.includes(`已收集 ${NUM(cs.networkCollected)}／${NUM(cs.network)} 台網路設備`)) throw new Error('覆蓋率應以網路設備為分母：' + row('coverage').textContent);
+    if (cs.hosts && !row('coverage').textContent.includes(`另有 ${NUM(cs.hosts)} 台主機`)) throw new Error('覆蓋率應另列主機：' + row('coverage').textContent);
     if ((hubBtn('devices-csv').getAttribute('disabled') !== null) !== !nC01) throw new Error('沒有 C01 時 devices.csv 草稿應停用');
     // 工作包的角色：收集檔與基準一定放（不能取消）；命名規則用過就一定放
     const roleBox = (r) => $('#hub').testAll('.hub-pack-role').find((x) => x.getAttribute('data-role') === r);

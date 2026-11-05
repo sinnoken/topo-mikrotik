@@ -148,13 +148,15 @@
   // ---------------------------------------------------------------- 總覽
   function overview(App) {
     const m = App.Q.meta(); const st = m.stats; const C = App.Q.inventory().counts;
+    const cs = App.Q.coverageSummary(); const vs = App.Q.vlanSummary();
     return h('div', { class: 'detail' }, [
       h('h2', null, '總覽'),
       kv([['建立時間', V.fmtTime(m.createdAt)], ['輸入指紋', h('span', { class: 'mono' }, m.inputHash)],
         // 基準鍵：輸入、程式版本、命名規則與預期資料的組合，處理紀錄以它判斷是不是同一輪（舊基準沒有）
         ['基準鍵', m.baselineKey ? h('span', { class: 'mono baseline-key', title: '處理紀錄以基準鍵判斷是不是同一輪：輸入、程式版本、命名規則或預期資料不同時就是新的一輪' }, m.baselineKey) : null], ['命名規則', m.profile ? `${m.profile.id} v${m.profile.version}` : '未套用'],
         ['來源', m.sources.map((s) => `${s.name}（${V.num(s.bytes)} 字元）`).join('、')]]),
-      section('內容', kv([['設備', `${V.num(st.devices)}（已收集 ${V.num(st.collected)}）`], ['介面', V.num(st.interfaces)], ['鏈路', V.num(st.links)], ['VLAN 定義', V.num(st.vlans)],
+      section('內容', kv([['網路設備', `${V.num(cs.network)}（已收集 ${V.num(cs.networkCollected)}）`], ['主機（不在收集範圍）', V.num(cs.hosts)], ['介面', V.num(st.interfaces)], ['鏈路', V.num(st.links)],
+        ['VLAN（相異 ID）', V.num(vs.ids)], ['VLAN 定義（各設備合計）', V.num(vs.definitions)], ['VLAN 不相連區塊（推論）', V.num(vs.domains)],
         ['MAC', V.num(st.macs)], ['終端 MAC 位置（含 Wi-Fi 漫遊觀察）', V.num(C.endpoints)], ['IP（ARP）', V.num(C.arpIps)], ['路由', V.num(st.routes)]])),
       section('檢查結果', h('div', { class: 'row' }, [V.chip(`錯誤 ${st.findings.error}`, 'err'), V.chip(`警告 ${st.findings.warn}`, 'warn'), V.chip(`提醒 ${st.findings.info}`, 'info')])),
       section('解析器使用量', V.table([{ t: '解析器', f: (r) => S.query.adapterLabel(r[0]) }, { t: '事實數', f: (r) => V.num(r[1]) }], Object.entries(m.adapters)),

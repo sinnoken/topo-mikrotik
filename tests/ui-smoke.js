@@ -2454,7 +2454,8 @@ function viewBoundaryViolations(file, src) {
     const plain = parseCsv(f2[0].text.replace(/^﻿/, '')).slice(1);
     if (plain.some((r, n) => r[1] !== all[n].id || r[3].replace(/^'/, '') !== all[n].message)) throw new Error('取消依設備排序後應回到基準的順序');
     seg('rule').click();
-    if (groups().length || !$('#pane-findings').testAll('.fgroup .head .id').length) throw new Error('切回「依規則」應恢復依規則代碼分組');
+    // 依規則是 類別 → 規則；只有提醒的類別預設收合（例如大型乾淨網路），所以類別標題或規則標題出現即算恢復
+    if (groups().length || !($('#pane-findings').testAll('.fgroup.fcat').length || $('#pane-findings').testAll('.fgroup .head .id').length)) throw new Error('切回「依規則」應恢復依規則代碼分組');
   });
   await step('防火牆：點選指向規則或服務的檢查結果，定位到該設備防火牆畫面的那一列', () => {
     const Q = App.Q; const all = App.snap.findings;

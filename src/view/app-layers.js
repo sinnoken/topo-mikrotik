@@ -496,14 +496,10 @@
         App.showLayer(t.dataset.layer); t.focus();
       });
     });
+    // 在選單選的 VLAN 篩選會保留到取消（pinFilter）；選「不篩選」同工具列標示的 ✕
     $('#vlan-filter').onchange = () => {
       const v = $('#vlan-filter').value;
-      if (!v) { // 取消篩選：選取的是 VLAN 時一起取消，否則保留選取、只拿掉標示
-        App.vlanFilter = null;
-        if (App.sel && App.sel.type === 'vlan') App.select(null); else App.select(App.sel, { refresh: true });
-        A.syncLayerUi(); return;
-      }
-      App.select({ type: 'vlan', key: v });
+      if (!v) A.clearVlanFilter(); else App.select({ type: 'vlan', key: v }, { pinFilter: true });
     };
     const toggle = (sel, fn) => { $(sel).onclick = () => { fn(); A.showLayer(App.layer); }; };
     toggle('#btn-l2-lag', () => { App.l2.lag = App.l2.lag === 'collapse' ? 'expand' : 'collapse'; });
@@ -539,6 +535,7 @@
       App.Q.vlanIds().forEach((id) => sel.appendChild(h('option', { value: String(id) }, 'VLAN ' + id)));
     }
     sel.value = App.vlanFilter ? String(App.vlanFilter.id) : '';
+    syncVlanChip();
     const lag = $('#btn-l2-lag'); const expanded = App.l2.lag === 'expand';
     lag.setAttribute('aria-pressed', String(expanded)); lag.classList.toggle('on', expanded);
     const pts = $('#btn-l2-ports'); const all = App.l2.ports === 'all';
@@ -553,6 +550,15 @@
     renderNote();
     A.renderSteps(); // 步驟列「② 檢視」的狀態是目前的層級
   };
+  /** 工具列旁的 VLAN 篩選標示（#vlan-chip）：篩選啟用時寫出 VLAN，按它或在它上面按 Esc 取消（A.clearVlanFilter） */
+  function syncVlanChip() {
+    const c = $('#vlan-chip'); const f = App.Q ? App.vlanFilter : null;
+    c.classList.toggle('hidden', !f || App.layer === 'l4'); // L4 沒有 VLAN 篩選（同工具列的 VLAN 選單）
+    if (!f) { c.textContent = ''; return; }
+    c.textContent = `VLAN ${f.id} ✕`;
+    c.setAttribute('aria-label', `取消 VLAN ${f.id} 篩選`);
+    c.setAttribute('title', `圖上標出 VLAN ${f.id}（${f.pinned ? '在選單選的，選其他東西時仍保留' : '由選取帶入，選其他東西時自動取消'}）；按這裡或 Esc 取消篩選`);
+  }
   /** 這一層的說明：畫了多少、哪些沒畫（L2 的 MNDP、只畫一台設備時的原因），L3 的路由、重疊與 VRF */
   function renderNote() {
     const note = $('#layer-note'); const e = A.layerEntry();

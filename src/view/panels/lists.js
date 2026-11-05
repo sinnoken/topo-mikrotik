@@ -443,7 +443,7 @@
       (k) => { inv.filter = k; inventory(App); }) : null;
     const box = h('input', { type: 'search', placeholder: '篩選…', 'aria-label': '篩選清單', title: '依名稱、IP、MAC、VLAN 等文字篩選', value: inv.q, class: 'pane-filter' });
     root.appendChild(h('div', { class: 'inv-bar' }, [kindSel, fltSel, box]));
-    const body = h('div', { class: 'inv-table', 'data-kind': inv.kind });
+    const body = h('div', { class: 'inv-table' });
     const draw = () => {
       const t = inv.q.trim().toLowerCase();
       const rows = rows0.filter((r) => (!flt || flt.find((x) => x[0] === inv.filter)[2](r)) && (!t || text(r).filter((x) => x != null).join(' ').toLowerCase().includes(t)));

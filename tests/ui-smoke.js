@@ -1452,7 +1452,7 @@ function viewBoundaryViolations(file, src) {
       if (text('#raw-title') !== `${V.fileName(P)} 第 ${orphan} 行`) throw new Error('對不到區塊時標題應寫「檔名 第 N 行」：' + text('#raw-title'));
     }
     [marker, orphan, 10].filter(Boolean).forEach((l) => { App.openRaw(P, l); if (/）（/.test(text('#raw-title'))) throw new Error('原文標題不應有兩組相連的括號：' + text('#raw-title')); });
-    // 複製這段：有所屬區塊時複製整個區塊的原文，結果以 banner 告知
+    // 複製這段：有所屬區塊時複製整個區塊的原文，結果寫在對話框的狀態列
     const line = nums.find((l) => { const b = Q.blockAt(P, l); return b && l - b.start > 15 && lines.length - l > 40; });
     if (!line) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有長的區塊'); }
     App.openRaw(P, line); const blk = Q.blockAt(P, line);
@@ -1603,7 +1603,14 @@ function viewBoundaryViolations(file, src) {
     if (!App.vlanFilter || !shown() || !chip.textContent.includes(`VLAN ${vid}`)) throw new Error('檢查結果帶入的 VLAN 篩選也應顯示標示');
     App.select({ type: 'device', key: dev });
     if (App.vlanFilter || shown() || sel.value !== '') throw new Error('檢查結果帶入的 VLAN 篩選，選其他東西時應取消');
-    App.select(null);
+    // 由選取帶入後，在選單再選同一個 VLAN：改為保留（來源由選單明確傳入，不看選單當下的值）
+    App.selectFinding(vi);
+    if (App.vlanFilter.pinned) throw new Error('檢查結果帶入的 VLAN 篩選不應標為保留');
+    sel.value = String(vid); sel.dispatch('change');
+    if (!App.vlanFilter || !App.vlanFilter.pinned) throw new Error('在選單再選同一個 VLAN 應改為保留');
+    App.select({ type: 'device', key: dev });
+    if (!App.vlanFilter || !shown()) throw new Error('改為保留的 VLAN 篩選，選其他東西時應保留');
+    chip.click(); App.select(null);
   });
   await step('VLAN 篩選：設備圖與 L2 埠圖依 vlanCarriers 標出承載與只有一端（外形不只靠顏色），推論以線型區分，提示說明原因；選其他東西時保留，取消後拿掉', async () => {
     const g = App.graph; const T = S.view.theme; const Q = App.Q;

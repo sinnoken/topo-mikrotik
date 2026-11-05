@@ -427,6 +427,10 @@ dialog::backdrop { background: rgba(15,23,32,.45); }
 .dlg { display: flex; flex-direction: column; max-height: 90vh; }
 .dlg .dh { padding: 14px 18px; border-bottom: 1px solid var(--line); background: linear-gradient(#fff, var(--surface)); font-weight: 600; font-size: var(--fs-lg); display: flex; align-items: center; }
 .dlg .dh .x { margin-left: auto; }
+/* 原文對話框的標題列：窄螢幕時折成兩行（複製與自動換行移到第二行），按鈕文字不折 */
+#dlg-raw .dh { flex-wrap: wrap; row-gap: 6px; }
+#raw-copy { margin-left: 8px; white-space: nowrap; }
+#raw-copy-status { margin-left: 6px; font-weight: 400; font-size: var(--fs-sm); }
 .dlg .db { padding: 14px 18px; overflow: auto; }
 .dlg .df { padding: 12px 18px; border-top: 1px solid var(--line); display: flex; gap: 8px; align-items: center; }
 #input-text { width: 100%; height: 46vh; font-family: var(--mono); font-size: var(--fs-sm); white-space: pre; resize: vertical; }

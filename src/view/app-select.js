@@ -14,6 +14,7 @@
    * opt.focus：圖移到選取的位置；opt.findingEntities：標出檢查結果的實體；
    * opt.refresh：只在圖上重新標示（切換層級、取消 VLAN 篩選時），不重繪詳情、不切換工作區，也保留推定偏離標示；
    * opt.emphasis：推定偏離的設備鍵（檢查結果的 deviation，推論），以虛線外圈另外標出；其他選取與清除時清掉
+   * opt.pinFilter：工具列的 VLAN 選單選的，VLAN 篩選保留到取消
    * 選了 VLAN 時同時設為 VLAN 篩選（App.vlanFilter）：之後選其他東西，沒有自己的標示時仍標出這個 VLAN。
    * 只有在工具列的 VLAN 選單選的（pinned）會保留到取消；由檢查結果、搜尋或詳情的連結選 VLAN 順帶設的篩選不是使用者主動要的，
    * 選其他東西時一起取消（否則之後選的設備看起來像帶著自己的 VLAN 標示）。
@@ -24,8 +25,8 @@
     if (!o.refresh) g.setEmphasis(o.emphasis || null);
     if (sel && sel.type === 'vlan') {
       const id = +sel.key; const prev = App.vlanFilter;
-      // 由 VLAN 選單來的：change 時選單已是這個 VLAN（A.syncLayerUi 之後才把選單改成目前的篩選）；同一個 VLAN 再選一次時沿用原本的來源
-      const pinned = prev && prev.id === id ? prev.pinned : $('#vlan-filter').value === String(id);
+      // 由 VLAN 選單來的（opt.pinFilter）保留；其他來源選同一個 VLAN 時沿用原本的保留狀態
+      const pinned = !!o.pinFilter || (!!prev && prev.id === id && prev.pinned);
       App.vlanFilter = { id, domain: sel.domain == null ? null : sel.domain, pinned };
       if (!o.refresh) A.syncLayerUi();
     } else if (!o.refresh && App.vlanFilter && !App.vlanFilter.pinned) { App.vlanFilter = null; A.syncLayerUi(); }
@@ -141,25 +142,12 @@
     return { nodes, edges, focus, hl, overlay, neighbors };
   }
 
-  /** 取消 VLAN 篩選（工具列的標示 ✕）：選取的是 VLAN 時一起取消，否則保留選取、只拿掉標示 */
+  /** 取消 VLAN 篩選（工具列的標示 ✕、VLAN 選單的「不篩選」）：選取的是 VLAN 時一起取消，否則保留選取、只拿掉標示 */
   A.clearVlanFilter = function clearVlanFilter() {
     App.vlanFilter = null;
     if (App.sel && App.sel.type === 'vlan') App.select(null); else App.select(App.sel, { refresh: true });
     A.syncLayerUi();
   };
-  /** 工具列旁的 VLAN 篩選標示（#vlan-chip）：篩選啟用時寫出 VLAN，按它或在它上面按 Esc 取消（A.clearVlanFilter） */
-  function syncVlanChip() {
-    const c = $('#vlan-chip'); const f = App.Q ? App.vlanFilter : null;
-    c.classList.toggle('hidden', !f || App.layer === 'l4'); // L4 沒有 VLAN 篩選（同工具列的 VLAN 選單）
-    if (!f) { c.textContent = ''; return; }
-    c.textContent = `VLAN ${f.id} ✕`;
-    c.setAttribute('aria-label', `取消 VLAN ${f.id} 篩選`);
-    c.setAttribute('title', `圖上標出 VLAN ${f.id}（${f.pinned ? '在選單選的，選其他東西時仍保留' : '由選取帶入，選其他東西時自動取消'}）；按這裡或 Esc 取消篩選`);
-  }
-  // 標示跟著工具列同步：VLAN 篩選改變的地方（選取、選單、換基準、清除）都會呼叫 A.syncLayerUi
-  const syncLayerUi = A.syncLayerUi;
-  A.syncLayerUi = function () { syncLayerUi(); syncVlanChip(); };
-
   App.selectFinding = function (idx) {
     const f = App.Q.finding(idx);
     // 指向防火牆規則或服務的檢查結果，定位到該設備防火牆畫面的那一列（第一個實體通常是設備）

@@ -14,13 +14,21 @@
    * opt.focus：圖移到選取的位置；opt.findingEntities：標出檢查結果的實體；
    * opt.refresh：只在圖上重新標示（切換層級、取消 VLAN 篩選時），不重繪詳情、不切換工作區，也保留推定偏離標示；
    * opt.emphasis：推定偏離的設備鍵（檢查結果的 deviation，推論），以虛線外圈另外標出；其他選取與清除時清掉
-   * 選了 VLAN 時同時設為 VLAN 篩選（App.vlanFilter）：之後選其他東西，沒有自己的標示時仍標出這個 VLAN，直到在選單取消。
+   * 選了 VLAN 時同時設為 VLAN 篩選（App.vlanFilter）：之後選其他東西，沒有自己的標示時仍標出這個 VLAN。
+   * 只有在工具列的 VLAN 選單選的（pinned）會保留到取消；由檢查結果、搜尋或詳情的連結選 VLAN 順帶設的篩選不是使用者主動要的，
+   * 選其他東西時一起取消（否則之後選的設備看起來像帶著自己的 VLAN 標示）。
    */
   App.select = function (sel, opt) {
     App.sel = sel; const o = opt || {}; const g = App.graph; const Q = App.Q;
     g.setOverlay([]); g.setHighlight(null);
     if (!o.refresh) g.setEmphasis(o.emphasis || null);
-    if (sel && sel.type === 'vlan') { App.vlanFilter = { id: +sel.key, domain: sel.domain == null ? null : sel.domain }; if (!o.refresh) A.syncLayerUi(); }
+    if (sel && sel.type === 'vlan') {
+      const id = +sel.key; const prev = App.vlanFilter;
+      // 由 VLAN 選單來的：change 時選單已是這個 VLAN（A.syncLayerUi 之後才把選單改成目前的篩選）；同一個 VLAN 再選一次時沿用原本的來源
+      const pinned = prev && prev.id === id ? prev.pinned : $('#vlan-filter').value === String(id);
+      App.vlanFilter = { id, domain: sel.domain == null ? null : sel.domain, pinned };
+      if (!o.refresh) A.syncLayerUi();
+    } else if (!o.refresh && App.vlanFilter && !App.vlanFilter.pinned) { App.vlanFilter = null; A.syncLayerUi(); }
     const filterMarks = () => (App.vlanFilter && Q ? A.vlanMarks(App.vlanFilter.id, App.vlanFilter.domain) : null);
     if (!sel) { g.setSelection([], []); g.setHighlight(filterMarks()); if (!o.refresh) { A.closeSheet(); V.details.render(App, null); } return; }
     if (!o.refresh) {
@@ -133,6 +141,25 @@
     return { nodes, edges, focus, hl, overlay, neighbors };
   }
 
+  /** 取消 VLAN 篩選（工具列的標示 ✕）：選取的是 VLAN 時一起取消，否則保留選取、只拿掉標示 */
+  A.clearVlanFilter = function clearVlanFilter() {
+    App.vlanFilter = null;
+    if (App.sel && App.sel.type === 'vlan') App.select(null); else App.select(App.sel, { refresh: true });
+    A.syncLayerUi();
+  };
+  /** 工具列旁的 VLAN 篩選標示（#vlan-chip）：篩選啟用時寫出 VLAN，按它或在它上面按 Esc 取消（A.clearVlanFilter） */
+  function syncVlanChip() {
+    const c = $('#vlan-chip'); const f = App.Q ? App.vlanFilter : null;
+    c.classList.toggle('hidden', !f || App.layer === 'l4'); // L4 沒有 VLAN 篩選（同工具列的 VLAN 選單）
+    if (!f) { c.textContent = ''; return; }
+    c.textContent = `VLAN ${f.id} ✕`;
+    c.setAttribute('aria-label', `取消 VLAN ${f.id} 篩選`);
+    c.setAttribute('title', `圖上標出 VLAN ${f.id}（${f.pinned ? '在選單選的，選其他東西時仍保留' : '由選取帶入，選其他東西時自動取消'}）；按這裡或 Esc 取消篩選`);
+  }
+  // 標示跟著工具列同步：VLAN 篩選改變的地方（選取、選單、換基準、清除）都會呼叫 A.syncLayerUi
+  const syncLayerUi = A.syncLayerUi;
+  A.syncLayerUi = function () { syncLayerUi(); syncVlanChip(); };
+
   App.selectFinding = function (idx) {
     const f = App.Q.finding(idx);
     // 指向防火牆規則或服務的檢查結果，定位到該設備防火牆畫面的那一列（第一個實體通常是設備）
@@ -198,10 +225,12 @@
   // ================================================================ 原文檢視
   // 標題寫出該行所屬的設備與指令（Q.blockAt、V.blockWhere）；opt.list 給多處證據（[{ file, line }]）時，
   // 可用「上一處／下一處」或左右方向鍵切換（頭尾相接）
-  let rawNav = { list: [], at: 0 };
+  // 顯示的範圍：標出的那一行往上 RAW_BEFORE、往下 RAW_AFTER 行；「顯示前面／後面」每次多 RAW_MORE 行（切換到另一處時回到預設）
+  const RAW_BEFORE = 12; const RAW_AFTER = 25; const RAW_MORE = 100;
+  let rawNav = { list: [], at: 0, before: RAW_BEFORE, after: RAW_AFTER, copy: null };
   App.openRaw = function (file, line, opt) {
     const list = opt && opt.list && opt.list.length ? opt.list : [{ file, line }];
-    rawNav = { list, at: Math.max(0, list.findIndex((e) => e.file === file && e.line === line)) };
+    rawNav = { list, at: Math.max(0, list.findIndex((e) => e.file === file && e.line === line)), before: RAW_BEFORE, after: RAW_AFTER, copy: null };
     bindRawNav(); showRaw();
     $('#dlg-raw').showModal();
     scrollRawHl();
@@ -210,6 +239,11 @@
   function bindRawNav() {
     const dlg = $('#dlg-raw'); if (dlg.dataset.nav) return; dlg.setAttribute('data-nav', '1');
     $('#raw-prev').addEventListener('click', () => stepRaw(-1)); $('#raw-next').addEventListener('click', () => stepRaw(1));
+    // 複製的結果寫在對話框的狀態列（同輸入對話框）：banner 在強制回應對話框底下，窄螢幕完全被蓋住
+    $('#raw-copy').addEventListener('click', async () => {
+      const c = rawNav.copy; const why = await V.copyText(c.text);
+      $('#raw-copy-status').textContent = why ? `無法自動複製（${why}），請直接選取下面的文字複製` : `已複製 ${c.lines} 行`;
+    });
     dlg.addEventListener('keydown', (e) => {
       if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || rawNav.list.length < 2) return;
       if (e.key === 'ArrowLeft') { e.preventDefault(); stepRaw(-1); } else if (e.key === 'ArrowRight') { e.preventDefault(); stepRaw(1); }
@@ -217,24 +251,35 @@
   }
   function stepRaw(d) {
     const n = rawNav.list.length; if (n < 2) return;
-    rawNav.at = (rawNav.at + d + n) % n; showRaw(); scrollRawHl();
+    Object.assign(rawNav, { at: (rawNav.at + d + n) % n, before: RAW_BEFORE, after: RAW_AFTER }); showRaw(); scrollRawHl();
   }
   function showRaw() {
     const { file, line } = rawNav.list[rawNav.at]; const n = rawNav.list.length;
     const src = App.sources.find((s) => s.name === file);
     const body = V.clear($('#raw-body'));
-    const blk = App.Q ? App.Q.blockAt(file, line) : null;
-    const title = $('#raw-title');
-    title.textContent = `${blk ? V.blockWhere(App.Q, blk) : V.fileName(file)}（第 ${line} 行）`; title.setAttribute('title', `${V.fileName(file)} 第 ${line} 行`);
+    // 區塊之間的標記行（例如設備或指令的分隔行）不屬於任何區塊：它標示的是下一個區塊，標題用下一行所屬的區塊
+    const blk = App.Q ? App.Q.blockAt(file, line) || App.Q.blockAt(file, line + 1) : null;
+    const title = $('#raw-title'); const at = `${V.fileName(file)} 第 ${line} 行`;
+    title.textContent = blk ? `${V.blockWhere(App.Q, blk)}（第 ${line} 行）` : at; title.setAttribute('title', at);
     $('#raw-nav').classList.toggle('hidden', n < 2);
     $('#raw-pos').textContent = `${rawNav.at + 1}／${n}`;
-    if (!src) body.appendChild(h('p', { class: 'muted' }, '找不到原始輸入（可能是從舊版本還原的基準）。'));
-    else {
-      const lines = src.text.split(/\r?\n/); const from = Math.max(1, line - 12); const to = Math.min(lines.length, line + 25);
-      const pre = h('pre', { class: 'raw' });
-      for (let i = from; i <= to; i++) pre.appendChild(h('span', { class: i === line ? 'hl' : null }, [h('span', { class: 'ln' }, String(i)), lines[i - 1] + '\n']));
-      body.appendChild(pre);
-    }
+    $('#raw-copy').classList.toggle('hidden', !src); $('#raw-copy-status').textContent = '';
+    if (!src) { body.appendChild(h('p', { class: 'muted' }, '找不到原始輸入（可能是從舊版本還原的基準）。')); return; }
+    const lines = src.text.split(/\r?\n/); const from = Math.max(1, line - rawNav.before); const to = Math.min(lines.length, line + rawNav.after);
+    // 「複製這段」：有所屬區塊時複製整個區塊（一個指令的輸出），否則複製畫面上顯示的這幾行
+    const [cf, ct] = blk ? [blk.start, Math.min(blk.end, lines.length)] : [from, to];
+    rawNav.copy = { text: lines.slice(cf - 1, ct).join('\n'), lines: ct - cf + 1 };
+    $('#raw-copy').setAttribute('title', `複製${blk ? V.blockWhere(App.Q, blk) : V.fileName(file)} 第 ${cf}–${ct} 行的原文`);
+    // 按下後重畫：焦點回到同一側的按鈕（已經全部顯示時落在對話框的標題列）
+    const more = (side, count) => h('button', { type: 'button', class: 'ghost raw-more', 'data-side': side, onclick: () => {
+      rawNav[side] += RAW_MORE; showRaw();
+      const next = Array.from($('#raw-body').querySelectorAll('.raw-more')).find((x) => x.dataset.side === side); (next || $('#raw-copy')).focus();
+    } }, `${side === 'before' ? '顯示前面' : '顯示後面'} ${Math.min(RAW_MORE, count)} 行` + (count > RAW_MORE ? `（還有 ${count} 行）` : ''));
+    if (from > 1) body.appendChild(more('before', from - 1));
+    const pre = h('pre', { class: 'raw' });
+    for (let i = from; i <= to; i++) pre.appendChild(h('span', { class: i === line ? 'hl' : null }, [h('span', { class: 'ln' }, String(i)), lines[i - 1] + '\n']));
+    body.appendChild(pre);
+    if (to < lines.length) body.appendChild(more('after', lines.length - to));
   }
 
   // ================================================================ 路由追蹤

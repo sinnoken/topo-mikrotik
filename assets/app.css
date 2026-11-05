@@ -163,6 +163,8 @@ button.chip { box-shadow: none; line-height: inherit; text-align: left; }
 .chip.warn { background: var(--warn-soft); color: var(--warn-text); border-color: #f3dfb9; }
 .chip.info { background: var(--info-soft); color: var(--info-text); border-color: #d5e3f2; }
 .chip.ok { background: var(--ok-soft); color: var(--ok-text); border-color: #d0ead7; }
+/* 路由追蹤「無法驗證」（停在未收集的設備）：中性灰，不是錯誤 */
+.chip.unverified { background: var(--neutral-soft); color: var(--muted); border-color: var(--line); }
 .chip.kind-firewall { background: #f3e6f6; color: #6a1b7b; }
 .chip.kind-switch { background: #e2f2f7; color: #1d6177; }
 .chip.kind-router { background: #e5ebfb; color: #2849a8; }
@@ -201,6 +203,10 @@ button.chip { box-shadow: none; line-height: inherit; text-align: left; }
 .fgroup > .head .title { flex: 1; }
 .fgroup > .head .id { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); }
 .fgroup .items { padding: 0 0 6px; }
+/* 規則的處理提示（V.remediation.hintLine）：展開規則後在結果列表上方，詳情卡片在訊息下方 */
+.rule-hint { font-size: var(--fs-sm); line-height: 1.6; }
+.fgroup .fhint { padding: 0 10px 4px 26px; }
+.rule-hint code { padding: 0 3px; border-radius: 3px; background: var(--neutral-soft); overflow-wrap: anywhere; }
 /* 沒有發現的規則清單（通過／沒有資料可檢查） */
 .fgroup.rules > .head { color: var(--muted); }
 .fgroup .rule { display: flex; align-items: flex-start; gap: 8px; padding: 5px 10px 5px 26px; font-size: var(--fs-md); }
@@ -264,6 +270,7 @@ table.t tr.click { cursor: pointer; }
 .detail h2 { font-size: var(--fs-xl); margin: 0 0 10px; overflow-wrap: anywhere; }
 .detail h2 .mono { font-size: inherit; }
 .detail-section { margin-top: 20px; }
+/* 右欄表格（details.js 的 table()）：識別字不逐字斷行，放不下時整個表格橫向捲動；一般文字欄仍可換行 */
 .detail h3 { font-size: var(--fs-md); margin: 0 0 8px; padding-bottom: 5px; color: #405164; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 7px; letter-spacing: .015em; }
 .detail-fold { border-bottom: 1px solid var(--line); }
 .detail-section + .detail-fold, .detail .kv + .detail-fold { margin-top: 12px; }
@@ -303,7 +310,7 @@ table.t .mono, table.t .vlanlist { white-space: nowrap; overflow-wrap: normal; }
 .diffA { color: var(--err-text); font-weight: 600; }
 .hop { border-left: 2px solid var(--line); margin-left: 6px; padding: 2px 0 8px 12px; position: relative; }
 .hop::before { content: ""; position: absolute; left: -6px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
-.hop.end-reached::before { background: var(--ok); } .hop.end-bad::before { background: var(--err); }
+.hop.end-reached::before { background: var(--ok); } .hop.end-bad::before { background: var(--err); } .hop.end-unverified::before { background: var(--muted); }
 
 /* ---------- 圖 ---------- */
 /* touch-action: none：觸控拖曳由畫布處理，不讓瀏覽器捲動或縮放頁面 */
@@ -374,9 +381,13 @@ pre.cmd-list { margin: 6px 0; padding: 8px 10px; max-height: 220px; overflow: au
 .preflight .pf-bad li { margin-bottom: 2px; }
 .progress { height: 6px; background: var(--neutral-soft); border-radius: 999px; overflow: hidden; flex: 1; }
 .progress > div { height: 100%; background: var(--accent); width: 0; transition: width .15s; }
-pre.raw { margin: 0; font-family: var(--mono); font-size: var(--fs-sm); line-height: var(--lh-body); }
-pre.raw .ln { color: var(--muted); display: inline-block; width: 56px; text-align: right; padding-right: 10px; user-select: none; }
+/* 原文：長行不折行、在 pre 內橫向捲動；行號不換行且固定在左邊，不跟著捲走 */
+pre.raw { margin: 0; font-family: var(--mono); font-size: var(--fs-sm); line-height: var(--lh-body); white-space: pre; overflow-x: auto; }
+pre.raw .ln { color: var(--muted); display: inline-block; width: 56px; text-align: right; padding-right: 10px; user-select: none; white-space: nowrap; position: sticky; left: 0; background: var(--panel); }
 pre.raw .hl { background: #fff3c4; display: block; }
+pre.raw .hl .ln { background: inherit; }
+/* 原文對話框標題旁的「上一處／下一處」（多處證據時才顯示） */
+.dlg .dh .raw-nav { display: inline-flex; align-items: center; gap: 6px; margin-left: 16px; font-weight: 400; font-size: var(--fs-sm); }
 .form-row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
 .form-row label { color: var(--muted); }
 .popover { position: absolute; top: 44px; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-md); padding: 14px; z-index: 60; width: 300px; }

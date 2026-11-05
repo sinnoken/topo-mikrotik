@@ -364,12 +364,14 @@
           }));
         }
         const at = (d, v) => (l2 ? (has(d) ? d : null) : nodeAt(d, v));
-        const marks = new Map();
+        // 節點顏色依終點分類（V.traceEndWorst，同 app-select）；同一個節點有多台設備或多個 VRF 時取最差的一類
+        const kinds = new Map(); const RANK = ['reached', 'unverified', 'bad'];
         [{ dev: t.start, vrf: t.vrf }].concat(t.hops, t.ends).forEach((x) => {
           const id = at(x.dev, x.vrf); if (!id) return;
-          const bad = t.ends.some((y) => y.dev === x.dev && y.status !== 'reached');
-          if (!marks.has(id) || bad) marks.set(id, bad ? MARK.bad : MARK.trace);
+          const k = V.traceEndWorst(t.ends.filter((y) => y.dev === x.dev));
+          if (!kinds.has(id) || RANK.indexOf(k) > RANK.indexOf(kinds.get(id))) kinds.set(id, k);
         });
+        const marks = new Map(Array.from(kinds, ([id, k]) => [id, MARK[V.TRACE_END_STYLE[k].mark]]));
         out.hl = { nodes: marks, edges: new Map() };
         out.focus = Array.from(marks.keys()); break;
       }

@@ -46,6 +46,24 @@ test('docs/基準檢查規則.md 每項規則都有「常見原因」（條數�
   });
   assert.deepStrictEqual(problems, [], '請依 src/check/catalog.js 的 causes／action 更新文件');
 });
+test('docs/基準檢查規則.md 每項規則「處理」的第一句與處理提示（S.query.rule(id).hint，action 的第一句）相同', () => {
+  /*
+   * 比較規則：取「- **處理**：」之後到第一個「。」（含）為文件的第一句。
+   * 兩邊都先去掉 Markdown 標記（反引號；連結 [文字](網址) 只留文字）與空白，再要求完全相同；
+   * 除此之外不做標點轉換，全形／半形標點要一致。文件第一句之後可以加連結與補充。
+   */
+  const doc = read('docs/基準檢查規則.md');
+  const plain = (s) => s.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/`/g, '').replace(/\s+/g, '');
+  const problems = [];
+  S.query.rules().forEach((r) => {
+    const sec = (doc.split(new RegExp(`^### ${r.id}$`, 'm'))[1] || '').split(/^#{2,3} /m)[0];
+    const line = sec.split('\n').find((l) => l.startsWith('- **處理**：'));
+    const m = line && /^- \*\*處理\*\*：([^。]*。)/.exec(line);
+    if (!m) problems.push(`${r.id}：找不到「- **處理**：第一句。」`);
+    else if (plain(m[1]) !== plain(r.hint || '')) problems.push(`${r.id}：文件「${m[1]}」／程式「${r.hint}」`);
+  });
+  assert.deepStrictEqual(problems, [], '「處理」的第一句是畫面上的處理提示，請與 src/check/catalog.js 的 action 第一句一致');
+});
 test('.claude/skills 與 .github/skills 的 skill 內容一致（Claude Code 版只多一行同步說明）', () => {
   const names = fs.readdirSync(path.join(ROOT, '.github/skills')).sort();
   assert.deepStrictEqual(fs.readdirSync(path.join(ROOT, '.claude/skills')).sort(), names);

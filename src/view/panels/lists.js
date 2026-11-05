@@ -131,7 +131,7 @@
       ]), state.editing === i && it ? ledgerEditor(App, f, it, i) : null]);
     };
     /** 一個可展開的分組：key 是展開狀態的鍵，head 是標題列的內容 */
-    const group = (key, head, idxs, cls, showId) => {
+    const group = (key, head, idxs, cls, showId, ruleId) => {
       const open = state.open.has(key);
       const toggle = () => { open ? state.open.delete(key) : state.open.add(key); findings(App); };
       const g = h('div', { class: 'fgroup' + (cls ? ' ' + cls : '') }, [h('div', { class: 'head', role: 'button', tabindex: '0', 'aria-expanded': String(open), onclick: toggle, onkeydown: activateByKey(toggle) }, [
@@ -139,6 +139,8 @@
       ])]);
       if (open) {
         const n = state.shown.get(key) || 100;
+        // 依規則分組時，展開後在結果列表上方列出這條規則的處理提示（與詳情卡片同一個 helper）
+        const hint = ruleId ? R().hintLine(ruleId, 'fhint') : null; if (hint) g.appendChild(hint);
         g.appendChild(h('div', { class: 'items' }, idxs.slice(0, n).map((i) => item(i, showId))));
         if (idxs.length > n) g.appendChild(h('a', { class: 'link more', onclick: () => { state.shown.set(key, n + 200); findings(App); } }, `再顯示 200 筆（共 ${idxs.length} 筆）`));
       }
@@ -160,7 +162,7 @@
       all.forEach((f, idx) => { if (shown(idx)) S.util.getOr(groups, f.id, () => []).push(idx); });
       groups.forEach((idxs, id) => {
         const c = S.query.rule(id);
-        root.appendChild(group(id, [V.sevDot(c.severity), h('span', { class: 'title' }, c.title), h('span', { class: 'id' }, id)], idxs, '', false));
+        root.appendChild(group(id, [V.sevDot(c.severity), h('span', { class: 'title' }, c.title), h('span', { class: 'id' }, id)], idxs, '', false, id));
       });
     }
     // 已處理：依狀態各一組，不受上方嚴重度篩選影響，預設收合

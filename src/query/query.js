@@ -395,7 +395,7 @@
       inferredLinksOf: (d) => inferredByDev.get(d) || [],
       /**
        * 每條檢查規則的結果：found（有發現）、pass（需要的資料有收到且沒有發現）、nodata（需要的資料沒有任何已收集設備提供）。
-       * missing 是缺少的資料組，每組列出可提供的資料類別。依規則編號排序。
+       * missing 是缺少的資料組，每組列出可提供的資料類別；hint 同 S.query.rule(id).hint。依規則編號排序。
        */
       ruleStatus() {
         const have = new Set(m.devices.filter((d) => d.collected).flatMap((d) => d.data));
@@ -403,7 +403,7 @@
         return Object.entries(S.check.CATALOG).map(([id, c]) => {
           const missing = (c.data || []).filter((g) => !g.some((t) => have.has(t)));
           const n = count.get(id) || 0;
-          return { id, severity: c.severity, cat: c.cat, title: c.title, count: n, missing, status: n ? 'found' : missing.length ? 'nodata' : 'pass' };
+          return { id, severity: c.severity, cat: c.cat, title: c.title, hint: RULE_BY_ID.get(id).hint, count: n, missing, status: n ? 'found' : missing.length ? 'nodata' : 'pass' };
         }).sort((a, b) => U.natural(a.id, b.id)); // 依編號排序，與檢查結果群組一致
       },
       inferredLinksOfEp: inferredOfEp,
@@ -1033,11 +1033,14 @@
   // ---- 不依賴 Snapshot 的靜態資訊：規則目錄與顯示名稱。
   // 掛在 S.query 上（與 findingKey 相同），畫面與下游不必讀 S.check／S.adapters 的內部結構；
   // 目前程式的規則目錄，不是建立該基準時的目錄（見 ADR-006 的「變困難的」）。
-  const RULES = Object.freeze(Object.keys(S.check.CATALOG).map((id) => Object.freeze(Object.assign({ id }, S.check.CATALOG[id]))));
+  /** 處理提示：action 的第一句（到第一個「。」，含句號）；CATALOG 不另存一份，與 docs/基準檢查規則.md「處理」第一句相同（tests/docs.js）。 */
+  const hintOf = (action) => (typeof action === 'string' && (action.match(/^[^。]*。/) || [])[0]) || null;
+  const RULES = Object.freeze(Object.keys(S.check.CATALOG).map((id) => Object.freeze(Object.assign({ id }, S.check.CATALOG[id], { hint: hintOf(S.check.CATALOG[id].action) }))));
   const RULE_BY_ID = new Map(RULES.map((r) => [r.id, r]));
   /**
-   * 一條規則的目錄資料（凍結）：{ id, severity, cat, title, data?, evidenceLimit?, facet?, causes, action }；不認得的 id 為 null。
-   * causes／action 給 V.remediation.advice 用，其他畫面不直接讀。
+   * 一條規則的目錄資料（凍結）：{ id, severity, cat, title, data?, evidenceLimit?, facet?, causes, action, hint }；不認得的 id 為 null。
+   * hint 是 action 的第一句（一句可動手的處理提示，反引號內是指令）；沒有 action 時為 null。
+   * causes／action／hint 給 V.remediation.advice 用，其他畫面不直接讀。
    */
   S.query.rule = (id) => RULE_BY_ID.get(id) || null;
   /** 所有規則（凍結的陣列），依 CATALOG 的宣告順序（I、K、V、A…，匯出附錄依這個順序）；依編號排序的結果見 Q.ruleStatus()。 */

@@ -1,7 +1,7 @@
 /*
  * 分診 → 修 → 驗證 的畫面輔助：都是純函式，只透過查詢介面（Q）與核心（S.ledger、S.remediate）讀取，不改寫 Snapshot。
  *   - 處理紀錄的狀態文字（STATUS_TEXT）：狀態本身與轉換規則在核心 S.ledger（見 app-ledger.js）
- *   - advice：規則的常見原因與處理（每次從規則目錄 S.query.rule 讀取）
+ *   - advice：規則的常見原因與處理（每次從規則目錄 S.query.rule 讀取）；hintLine：一句處理提示
  *   - sortByDevice：檢查結果依所屬設備（Q.findingDevice）排序，檢查結果分頁的「依設備」分組與匯出共用
  *   - 修正計畫的文字（LEVEL_TEXT、RISK_TEXT、targetText、choiceText）與單一項目的套用指令（itemApplyLines，取自 S.remediate.renderRsc）
  *   - matchFindings／findingRef：未產生指令的項目以 findingKey 對回檢查結果，列出訊息並可點擊開啟
@@ -25,13 +25,21 @@
   /**
    * 規則的處理建議與常見原因：每次都從規則目錄（S.query.rule）讀取，不複製文字（詳情、規則清單與匯出共用）。
    * 這是畫面讀 causes／action 的唯一入口。
-   * 回傳 { action: 字串或 null, causes: 字串陣列 }；欄位不存在時 action 為 null、causes 為空陣列。
-   * causes 寫成單一字串時視為一條。
+   * 回傳 { action: 字串或 null, hint: 字串或 null, causes: 字串陣列 }；欄位不存在時 action／hint 為 null、causes 為空陣列。
+   * hint 是 action 的第一句（S.query.rule 推導，畫面不自己切句）。causes 寫成單一字串時視為一條。
    */
   function advice(id) {
     const c = S.query.rule(id) || {};
     const causes = Array.isArray(c.causes) ? c.causes.filter((x) => typeof x === 'string' && x) : typeof c.causes === 'string' && c.causes ? [c.causes] : [];
-    return { action: typeof c.action === 'string' && c.action ? c.action : null, causes };
+    return { action: typeof c.action === 'string' && c.action ? c.action : null, hint: typeof c.hint === 'string' && c.hint ? c.hint : null, causes };
+  }
+  /**
+   * 規則的一句處理提示「處理：…」（advice(id).hint）：③ 分診展開的規則群組與詳情的檢查結果卡片共用。
+   * 反引號內以 <code> 顯示（V.codeText）；沒有提示時為 null。cls 是額外的 class。
+   */
+  function hintLine(id, cls) {
+    const t = advice(id).hint;
+    return t ? V.h('div', { class: 'rule-hint muted' + (cls ? ' ' + cls : ''), 'data-rule-id': id }, ['處理：', ...V.codeText(t)]) : null;
   }
 
   // ---------------------------------------------------------------- 檢查結果所屬設備
@@ -191,6 +199,6 @@
     return { text: out.join('\n') + '\n', rows };
   }
 
-  V.remediation = { STATUS_TEXT, statusText, STATUS_CHIP, isPendingStatus, advice, sortByDevice, LEVEL_TEXT, RISK_TEXT, RISK_CHIP, maxRisk, itemApplyLines, targetText, choiceText,
+  V.remediation = { STATUS_TEXT, statusText, STATUS_CHIP, isPendingStatus, advice, hintLine, sortByDevice, LEVEL_TEXT, RISK_TEXT, RISK_CHIP, maxRisk, itemApplyLines, targetText, choiceText,
     MISSING_FINDING_TEXT, FINDING_TEXT_MAX, clipText, matchFindings, findingRef, FACET_ITEM, FACET_RULES: Object.keys(FACET_FORMAT), facetText, devicesCsvDraft, USER_PLACEHOLDER };
 })(globalThis.SSOT = globalThis.SSOT || {});

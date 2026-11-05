@@ -90,8 +90,19 @@
   // S.trace 的結束狀態（ends[].status）
   V.TRACE_END = {
     reached: '抵達', noroute: '沒有路由', blackhole: '黑洞路由', loop: '路由迴圈', ttl: 'TTL 用盡', 'unknown-nh': '下一跳不在基準內',
-    policy: '策略路由不明', 'policy-drop': '策略路由丟棄',
+    policy: '策略路由不明', 'policy-drop': '策略路由丟棄', unverified: '無法驗證',
   };
+  /** 輸入區塊的位置「設備 › 指令」（blk 是 Q.block／Q.blockAt 的結果）：原文對話框標題與詳情的來源列共用同一寫法 */
+  V.blockWhere = (Q, blk) => `${blk.devKey ? Q.devName(blk.devKey) : blk.device || blk.file} › ${blk.command || '（未標記指令）'}`;
+  /**
+   * 路由追蹤終點的分類（圖上節點顏色與詳情的結果列共用）：reached 抵達、unverified 停在未收集的設備（只是無法驗證，不是錯誤）、
+   * 其餘狀態（沒有路由、迴圈、黑洞…）都是 bad。整體結果（S.trace 的 status：reached／unverified／unreachable）也用同一個函式分類。
+   */
+  V.traceEndKind = (end) => (end.status === 'reached' ? 'reached' : end.status === 'unverified' ? 'unverified' : 'bad');
+  /** 分類 → theme.mark 的鍵（圖上顏色）與 .hop 的 class（詳情） */
+  V.TRACE_END_STYLE = { reached: { mark: 'trace', cls: 'end-reached' }, unverified: { mark: 'unverified', cls: 'end-unverified' }, bad: { mark: 'bad', cls: 'end-bad' } };
+  /** 同一台設備有多個終點時取最差的一類（bad > unverified > reached）；沒有終點（只是中途經過）視為 reached */
+  V.traceEndWorst = (ends) => ['bad', 'unverified'].find((k) => ends.some((e) => V.traceEndKind(e) === k)) || 'reached';
   /**
    * IP 的選取：{ type: 'ip', key: IP, vrf }。vrf 為 null 時不分 VRF（搜尋：列出所有 VRF 的結果），否則只看那個 VRF。
    * 從位址鍵（K.inVrf，例如檢查結果的實體、清單的列）建立時，沒有 @ 就是 main。

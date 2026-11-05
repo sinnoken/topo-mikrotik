@@ -103,7 +103,8 @@
         const t = sel.result; if (t.ok) {
           overlay = t.edges.map(([a, b]) => ({ a, b, color: MARK.trace }));
           const ds = S.util.uniq([t.start, ...t.hops.map((x) => x.dev), ...t.ends.map((e) => e.dev)]);
-          setHl({ nodes: new Map(ds.map((d) => [d, t.ends.some((e) => e.dev === d && e.status !== 'reached') ? MARK.bad : MARK.trace])), edges: new Map() }); focus = ds;
+          // 設備的顏色依它的終點分類（V.traceEndKind，與詳情的結果列同一來源）：停在未收集設備只是無法驗證，用灰色而不是錯誤色
+          setHl({ nodes: new Map(ds.map((d) => [d, MARK[V.TRACE_END_STYLE[V.traceEndWorst(t.ends.filter((e) => e.dev === d))].mark]])), edges: new Map() }); focus = ds;
         }
         break;
       }
@@ -181,13 +182,38 @@
   };
 
   // ================================================================ 原文檢視
-  App.openRaw = function (file, line) {
+  // 標題寫出該行所屬的設備與指令（Q.blockAt、V.blockWhere）；opt.list 給多處證據（[{ file, line }]）時，
+  // 可用「上一處／下一處」或左右方向鍵切換（頭尾相接）
+  let rawNav = { list: [], at: 0 };
+  App.openRaw = function (file, line, opt) {
+    const list = opt && opt.list && opt.list.length ? opt.list : [{ file, line }];
+    rawNav = { list, at: Math.max(0, list.findIndex((e) => e.file === file && e.line === line)) };
+    bindRawNav(); showRaw();
+    $('#dlg-raw').showModal();
+    scrollRawHl();
+  };
+  const scrollRawHl = () => { const hl = $('#raw-body').querySelector('.hl'); if (hl) hl.scrollIntoView({ block: 'center' }); };
+  function bindRawNav() {
+    const dlg = $('#dlg-raw'); if (dlg.dataset.nav) return; dlg.setAttribute('data-nav', '1');
+    $('#raw-prev').addEventListener('click', () => stepRaw(-1)); $('#raw-next').addEventListener('click', () => stepRaw(1));
+    dlg.addEventListener('keydown', (e) => {
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || rawNav.list.length < 2) return;
+      if (e.key === 'ArrowLeft') { e.preventDefault(); stepRaw(-1); } else if (e.key === 'ArrowRight') { e.preventDefault(); stepRaw(1); }
+    });
+  }
+  function stepRaw(d) {
+    const n = rawNav.list.length; if (n < 2) return;
+    rawNav.at = (rawNav.at + d + n) % n; showRaw(); scrollRawHl();
+  }
+  function showRaw() {
+    const { file, line } = rawNav.list[rawNav.at]; const n = rawNav.list.length;
     const src = App.sources.find((s) => s.name === file);
-    const dlg = $('#dlg-raw'); const body = V.clear($('#raw-body'));
-    // 標題寫出該行所屬的設備與指令（Q.blockAt）；檔名放在 title
+    const body = V.clear($('#raw-body'));
     const blk = App.Q ? App.Q.blockAt(file, line) : null;
-    const where = blk ? `${blk.devKey ? App.Q.devName(blk.devKey) : blk.device || file} › ${blk.command || '（未標記指令）'}` : file;
-    const title = $('#raw-title'); title.textContent = `${where}（第 ${line} 行）`; title.setAttribute('title', `${file} 第 ${line} 行`);
+    const title = $('#raw-title');
+    title.textContent = `${blk ? V.blockWhere(App.Q, blk) : file}（第 ${line} 行）`; title.setAttribute('title', `${file} 第 ${line} 行`);
+    $('#raw-nav').classList.toggle('hidden', n < 2);
+    $('#raw-pos').textContent = `${rawNav.at + 1}／${n}`;
     if (!src) body.appendChild(h('p', { class: 'muted' }, '找不到原始輸入（可能是從舊版本還原的基準）。'));
     else {
       const lines = src.text.split(/\r?\n/); const from = Math.max(1, line - 12); const to = Math.min(lines.length, line + 25);
@@ -195,9 +221,7 @@
       for (let i = from; i <= to; i++) pre.appendChild(h('span', { class: i === line ? 'hl' : null }, [h('span', { class: 'ln' }, String(i)), lines[i - 1] + '\n']));
       body.appendChild(pre);
     }
-    dlg.showModal();
-    const hl = body.querySelector('.hl'); if (hl) hl.scrollIntoView({ block: 'center' });
-  };
+  }
 
   // ================================================================ 路由追蹤
   /**

@@ -260,7 +260,7 @@ TPE_ACC_SW_01 (10.1.10.21):
 
 <dialog id="dlg-raw">
   <div class="dlg" style="width:min(1100px,94vw)">
-    <div class="dh"><span id="raw-title">原文</span><button class="ghost x" onclick="document.getElementById('dlg-raw').close()">✕</button></div>
+    <div class="dh"><span id="raw-title">原文</span><span id="raw-nav" class="raw-nav hidden"><button id="raw-prev" class="ghost" aria-keyshortcuts="ArrowLeft" title="上一處（←）">上一處</button><span id="raw-pos" class="mono muted" aria-live="polite"></span><button id="raw-next" class="ghost" aria-keyshortcuts="ArrowRight" title="下一處（→）">下一處</button></span><button class="ghost x" onclick="document.getElementById('dlg-raw').close()">✕</button></div>
     <div class="db" id="raw-body" style="max-height:70vh"></div>
   </div>
 </dialog>

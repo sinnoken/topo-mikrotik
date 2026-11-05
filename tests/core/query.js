@@ -46,6 +46,38 @@ test('路由追蹤：直連抵達、下一跳不在基準內、跨站點 ECMP', 
   assert.ok(t3.reached, JSON.stringify(t3.ends));
   assert.ok(t3.hops.some((h) => h.ecmp));
 });
+test('Q.blockAt：依檔案與行號找到所屬的輸入區塊（設備、指令）', () => {
+  const s = build(['SW_A (10.0.0.1):', '### /ip neighbor print detail without-paging', 'X', 'Y', 'SW_B (10.0.0.2):', '### /ip route print detail', 'Z'].join('\n'));
+  const Q = S.query(s);
+  const b = Q.blockAt('t.txt', 4);
+  assert.deepStrictEqual([b.devKey, b.command, b.start <= 4 && 4 <= b.end], ['SW_A', '/ip neighbor print detail without-paging', true]);
+  assert.strictEqual(b, Q.block(b.id), '回傳的就是 Q.block 的同一個物件');
+  assert.strictEqual(Q.blockAt('t.txt', 7).devKey, 'SW_B');
+  assert.strictEqual(Q.blockAt('t.txt', 1), null, '設備標頭不屬於任何區塊');
+  assert.strictEqual(Q.blockAt('其他.txt', 4), null);
+});
+test('路由追蹤：終點或起點是未收集的設備時是「無法驗證」，不是無法抵達；已收集設備上斷掉仍是無法抵達', () => {
+  const a = 'R_A (10.0.0.1):\n### /export terse\n/ip address add address=10.0.0.1/24 interface=ether1\n/ip address add address=10.1.0.1/24 interface=ether2\n'
+    + '### /ip route print detail\nFlags: A - ACTIVE; s - STATIC\n 0 As dst-address=0.0.0.0/0 gateway=10.0.0.2 distance=1\n 1 As dst-address=10.94.0.0/16 blackhole\n'
+    + '### /ip neighbor print detail\n 0 interface=ether1 identity=ISP_GW address=10.0.0.2 mac-address=AA:BB:CC:00:00:02 interface-name=ge0 discovered-by=lldp\n';
+  const Q = S.query(build(a));
+  // 中途／終點：預設路由的下一跳是未收集的 ISP_GW，查不到它的路由表
+  const t = S.trace(Q, '10.1.0.5', '8.8.8.8');
+  assert.deepStrictEqual([t.reached, t.status, t.ends.map((e) => [e.dev, e.status])], [false, 'unverified', [['ISP_GW', 'unverified']]]);
+  assert.deepStrictEqual(t.unverified, ['ISP_GW']);
+  assert.ok(t.ends[0].note.includes('ISP_GW') && t.ends[0].note.includes('未收集'), t.ends[0].note);
+  // 起點（回程常見）：來源 IP 屬於未收集的設備
+  const back = S.trace(Q, '10.0.0.2', '10.1.0.5');
+  assert.deepStrictEqual([back.start, back.status, back.ends.map((e) => e.status)], ['ISP_GW', 'unverified', ['unverified']]);
+  // 已收集的設備上斷掉：黑洞、直連抵達維持原狀態
+  const bh = S.trace(Q, '10.1.0.5', '10.94.1.1');
+  assert.deepStrictEqual([bh.status, bh.ends.map((e) => e.status), bh.unverified], ['unreachable', ['blackhole'], []]);
+  const ok = S.trace(Q, '10.1.0.5', '10.0.0.9');
+  assert.deepStrictEqual([ok.status, ok.reached, ok.unverified], ['reached', true, []]);
+  // 範例：下一跳不在基準內仍是無法抵達
+  const QS = S.query(build(read('samples/sample-bundle.txt')));
+  assert.strictEqual(S.trace(QS, '10.1.30.15', '8.8.8.8').status, 'unreachable');
+});
 test('遞迴路由：gateway 是對端 loopback 時沿路由表解析；R01 只提醒解析後仍到不了已知設備的下一跳', () => {
   const a = 'R_A (10.0.0.1):\n### /export terse\n/ip address add address=10.254.0.1/30 interface=ether48\n/ip address add address=10.9.9.1/32 interface=lo\n'
     + '### /ip route print detail\nFlags: A - ACTIVE; s - STATIC\n'
@@ -325,7 +357,8 @@ test('查詢介面：規則目錄、資料類別、解析器名稱與 VLAN 文�
   assert.deepStrictEqual(S.query.rules().map((r) => r.id), Object.keys(C), '依 CATALOG 的宣告順序');
   S.query.rules().forEach((r) => {
     assert.strictEqual(S.query.rule(r.id), r);
-    const { id, ...rest } = r; assert.deepStrictEqual(rest, C[id], `${id} 的內容與 CATALOG 相同`);
+    const { id, hint, ...rest } = r; assert.deepStrictEqual(rest, C[id], `${id} 的內容與 CATALOG 相同`);
+    assert.ok(C[id].action.startsWith(hint), `${id} 的 hint 是 action 的第一句`);
   });
   assert.strictEqual(S.query.rule('ZZ99'), null); assert.strictEqual(S.query.rule('toString'), null);
   // 凍結：呼叫端改不到目錄（含巢狀的 data、causes）
@@ -347,6 +380,20 @@ test('查詢介面：規則目錄、資料類別、解析器名稱與 VLAN 文�
   assert.strictEqual(S.util.fmtVlans([1, 2, 3, 5, 7, 8, 4094]), '1-3,5,7-8,4094');
   assert.strictEqual(S.util.fmtVlans([]), '');
   assert.strictEqual(S.util.fmtVlans([10]), '10');
+});
+
+test('檢查規則的處理提示：hint 是 action 的第一句，約 40 字寬、無連結，ruleStatus 帶出同一句', () => {
+  // 寬度：全形字算 1、半形（ASCII）算 0.5，反引號不算；上限 40。hint 只有句尾一個「。」，與文件「處理」第一句一致（tests/docs.js）
+  const width = (s) => Array.from(s.replace(/`/g, '')).reduce((n, c) => n + (c.charCodeAt(0) < 128 ? 0.5 : 1), 0);
+  S.query.rules().forEach((r) => {
+    assert.strictEqual(typeof r.hint, 'string', `${r.id} 缺少 hint（action 的第一句）`);
+    assert.strictEqual(r.hint, r.action.slice(0, r.action.indexOf('。') + 1), `${r.id} 的 hint 應為 action 到第一個「。」`);
+    assert.ok(width(r.hint) <= 40, `${r.id} 的處理提示太長（寬度 ${width(r.hint)}）：${r.hint}`);
+    assert.ok(!/https?:|\]\(|\n/.test(r.hint), `${r.id} 的處理提示不放連結`);
+    assert.strictEqual((r.hint.match(/`/g) || []).length % 2, 0, `${r.id} 的處理提示反引號要成對`);
+  });
+  const Q = S.query(build(read('samples/sample-bundle.txt')));
+  Q.ruleStatus().forEach((r) => assert.strictEqual(r.hint, S.query.rule(r.id).hint, r.id));
 });
 
 test('查詢介面：metaOf 只在 JSON 像 Snapshot 時回傳 meta', () => {

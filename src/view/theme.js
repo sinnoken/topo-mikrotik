@@ -16,7 +16,8 @@
   const kind = { firewall: '#7b208e', switch: '#2795b5', router: '#335dcd', host: '#977af8', unknown: '#535d62' };
   // 狀態文字色：對白底、淺色狀態底與畫布底都 ≥ 4.5:1（與 app.css 的 --err-text 等一致，有測試）
   const text = { body: '#1f2933', muted: '#5f6d7e', err: '#b3261e', warn: '#8a5300', ok: '#17692f', info: '#315d8a' };
-  const mark = { select: '#0b6bcb', hover: '#1f2933', find: '#a44a88', trace: '#622fa6', bad: '#d93025', good: '#1e8e3e' };
+  // unverified：路由追蹤停在未收集的設備（無法驗證，不是錯誤），中性灰
+  const mark = { select: '#0b6bcb', hover: '#1f2933', find: '#a44a88', trace: '#622fa6', bad: '#d93025', good: '#1e8e3e', unverified: '#687789' };
   const weakEdge = {
     hearsay: { alpha: 0.85, dash: [2, 3] },
     // 推論鏈路：沒有 LLDP 時由 MAC 表、MNDP、點對點網段推定相鄰（證據強於純 MNDP，弱於 LLDP）

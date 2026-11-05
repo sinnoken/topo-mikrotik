@@ -148,7 +148,14 @@ test('VRF：只用 main 的網路，S.trace 與 Q.reach 的輸出和 2.11.0 相�
     return out;
   };
   fx.cases.forEach(([src, dst], n) => {
-    assert.deepStrictEqual(strip(S.trace(Q, src, dst), `${src}→${dst}`), fx.expected[n].trace, `trace ${src}→${dst}`);
+    // 之後新增的整體結果（status、unverified）由 reached 與 ends 推得，檢查一致後拿掉再比
+    const t = Object.assign({}, S.trace(Q, src, dst));
+    if (t.ok) {
+      assert.strictEqual(t.status, t.reached ? 'reached' : t.ends.every((e) => e.status === 'unverified') ? 'unverified' : 'unreachable', `${src}→${dst} 的 status`);
+      assert.deepStrictEqual(t.unverified, S.util.uniq(t.ends.filter((e) => e.status === 'unverified').map((e) => e.dev)), `${src}→${dst} 的 unverified`);
+      delete t.status; delete t.unverified;
+    }
+    assert.deepStrictEqual(strip(t, `${src}→${dst}`), fx.expected[n].trace, `trace ${src}→${dst}`);
     assert.deepStrictEqual(texts(Q.reach(src, dst, { proto: 'tcp', port: 22 }), []), fx.expected[n].reach, `reach ${src}→${dst}`);
   });
   assert.ok(fx.expected.some((e) => e.trace.ends && e.trace.ends.some((x) => x.status === 'loop')) && fx.expected.some((e) => !e.trace.ok), '涵蓋直連、迴圈與找不到起點');

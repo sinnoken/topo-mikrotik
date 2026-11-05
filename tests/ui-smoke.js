@@ -673,6 +673,28 @@ function viewBoundaryViolations(file, src) {
     const nodes = S.view.codeText('<b>x</b> `<i>`');
     if (nodes[0] !== '<b>x</b> ' || nodes[1].tagName !== 'CODE' || nodes[1].textContent !== '<i>' || nodes[1].childNodes.some((n) => n instanceof El)) throw new Error('codeText 應以文字寫入，不解析 HTML');
   });
+  await step('處理提示：③ 分診展開規則後在結果列表上方顯示「處理：」，詳情的檢查結果卡片同一句', () => {
+    const plain = (t) => String(t).replace(/`([^`]+)`/g, '$1');
+    goStep('triage'); const L = S.view.lists.findings; L.showProblems(App);
+    const ruleGroups = () => $('#pane-findings').testAll('.fgroup').filter((g) => g.className === 'fgroup');
+    const g0 = ruleGroups()[0]; if (!g0) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有錯誤或警告的規則群組'); }
+    if ($('#pane-findings').testAll('.fhint').length) throw new Error('規則收合時不應顯示處理提示');
+    const id = g0.querySelector('.head .id').textContent; const want = '處理：' + plain(S.query.rule(id).hint);
+    g0.querySelector('.head').click();
+    const g = ruleGroups().find((x) => x.querySelector('.head .id').textContent === id);
+    const hint = g.querySelector('.fhint'); const items = g.querySelector('.items');
+    if (!hint || hint.textContent !== want) throw new Error(`${id} 展開後應顯示「${want}」：${hint && hint.textContent}`);
+    if (g.childNodes.indexOf(hint) > g.childNodes.indexOf(items)) throw new Error('處理提示應在結果列表上方');
+    if (S.query.rule(id).hint.includes('`') && !hint.querySelector('code')) throw new Error('處理提示的反引號內應以等寬元素顯示');
+    const all = App.snap.findings;
+    S.util.uniq(all.map((f) => f.id)).forEach((rid) => {
+      const i = all.findIndex((f) => f.id === rid && f.entities.length); if (i < 0) return;
+      App.selectFinding(i);
+      const w = '處理：' + plain(S.query.rule(rid).hint);
+      if (!$('#detail').testAll('.finding .rule-hint').some((x) => x.getAttribute('data-rule-id') === rid && x.textContent === w)) throw new Error(`${rid} 的詳情卡片應顯示「${w}」`);
+    });
+    L.showProblems(App); App.select(null);
+  });
   await step('跨設備一致性：多數決推定偏離的設備列在檢查結果，VLAN 實體可開啟', () => {
     const all = App.snap.findings;
     const dev = all.map((f, i) => i).filter((i) => all[i].deviation && all[i].deviation.deviating.length);
@@ -764,7 +786,55 @@ function viewBoundaryViolations(file, src) {
     if (r.ok ? !text('#detail').includes('結果') : !text('#detail').includes(r.error)) throw new Error('追蹤結果未顯示');
     App.graph.draw();
   });
-  await step('原文檢視', () => { App.openRaw(S.readers.PASTE, 10); if (!$('#dlg-raw').open || !text('#raw-body').includes('/export')) throw new Error('原文未顯示'); });
+  await step('原文檢視', () => {
+    App.openRaw(S.readers.PASTE, 10); if (!$('#dlg-raw').open || !text('#raw-body').includes('/export')) throw new Error('原文未顯示');
+    if (!$('#raw-nav').classList.contains('hidden') || !text('#raw-title').includes('（第 10 行）')) throw new Error('只有一處時不顯示前後切換，標題寫出行號：' + text('#raw-title'));
+    $('#dlg-raw').close();
+  });
+  await step('原文對話框：標題是「設備 › 指令（第 N 行）」；多處證據可用上一處／下一處或 ←→ 切換（頭尾相接）', () => {
+    const Q = App.Q; const all = App.snap.findings;
+    const i = all.findIndex((f) => f.id !== 'C02' && f.entities.length && f.evidence.length >= 2);
+    if (i < 0) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有多處證據的檢查結果'); }
+    const f = all[i]; const n = f.evidence.length; App.selectFinding(i);
+    const link = $('#detail').testAll('.finding a').find((a) => a.textContent === `原文 第 ${f.evidence[1].line} 行`);
+    if (!link) throw new Error('詳情應有第二處證據的原文連結');
+    link.click();
+    const blk = Q.blockAt(f.evidence[1].file, f.evidence[1].line);
+    if (!$('#dlg-raw').open || !text('#raw-title').includes(`（第 ${f.evidence[1].line} 行）`) || (blk && !text('#raw-title').startsWith(S.view.blockWhere(Q, blk)))) throw new Error('原文標題應顯示「設備 › 指令（第 N 行）」：' + text('#raw-title'));
+    if (blk && !text('#raw-title').includes(' › ')) throw new Error('原文標題應有「設備 › 指令」');
+    const hlLine = () => $('#raw-body').querySelector('.hl').firstChild.textContent;
+    if ($('#raw-nav').classList.contains('hidden') || text('#raw-pos') !== `2／${n}` || hlLine() !== String(f.evidence[1].line)) throw new Error('多處證據應顯示位置 i／n 並高亮該行：' + text('#raw-pos'));
+    $('#dlg-raw').dispatch('keydown', { key: 'ArrowLeft' });
+    if (text('#raw-pos') !== `1／${n}` || hlLine() !== String(f.evidence[0].line) || !text('#raw-title').includes(`第 ${f.evidence[0].line} 行`)) throw new Error('← 應切到上一處');
+    $('#raw-prev').click();
+    if (text('#raw-pos') !== `${n}／${n}` || hlLine() !== String(f.evidence[n - 1].line)) throw new Error('上一處應從第一處繞到最後一處');
+    $('#raw-next').click(); if (text('#raw-pos') !== `1／${n}`) throw new Error('下一處應從最後一處繞回第一處');
+    $('#dlg-raw').dispatch('keydown', { key: 'ArrowRight', shiftKey: true });
+    if (text('#raw-pos') !== `1／${n}`) throw new Error('加了修飾鍵的方向鍵不應切換');
+    $('#dlg-raw').dispatch('keydown', { key: 'ArrowRight' }); if (text('#raw-pos') !== `2／${n}`) throw new Error('→ 應切到下一處');
+    if (!['raw-prev', 'raw-next'].every((id) => $('#' + id).tagName === 'BUTTON' && $('#' + id).textContent)) throw new Error('上一處／下一處應是有名稱的按鈕');
+    $('#dlg-raw').close();
+    // 長行在 pre 內橫向捲動，行號不換行且固定在左邊
+    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
+    if (!/pre\.raw\s*\{[^}]*overflow-x:\s*auto/.test(css) || !/pre\.raw \.ln\s*\{[^}]*white-space:\s*nowrap[^}]*position:\s*sticky[^}]*left:\s*0/.test(css)) throw new Error('原文長行應在 pre 內橫向捲動，行號不換行且固定在左邊');
+    App.select(null);
+  });
+  await step('詳情的表格包在 .table-scroll：識別字不逐字斷行，放不下時橫向捲動', () => {
+    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
+    if (/\.hscroll/.test(css)) throw new Error('表格捲動外框只用 V.table 的 .table-scroll，不另包一層');
+    const d0 = App.snap.model.devices.find((d) => d.collected);
+    const l = App.snap.model.links.find((x) => x.src && x.src.length);
+    [{ type: 'device', key: d0.key }, { type: 'link', key: l.key }].forEach((sel) => {
+      App.select(sel);
+      const tables = $('#detail').testAll('table'); const wrapped = $('#detail').testAll('.table-scroll table');
+      if (sel.type === 'device' && !tables.length) throw new Error('設備詳情應有表格');
+      if (tables.some((t) => !wrapped.includes(t))) throw new Error(`${sel.type} 詳情的表格應包在 .table-scroll 內`);
+    });
+    // 來源列與原文標題同一寫法（V.blockWhere）
+    const [b0, line0] = l.src[0]; const blk = App.Q.block(b0);
+    if (!text('#detail').includes(`${S.view.blockWhere(App.Q, blk)}・第 ${line0} 行`)) throw new Error('來源列應寫成「設備 › 指令・第 N 行」');
+    App.select(null);
+  });
   // ------------------------------------------------------------ M1：L2／L3 視圖
   const layerBtn = (l) => document.testAll('#layer-switch button').find((b) => b.getAttribute('data-layer') === l);
   const timed = async (label, fn) => { const t0 = Date.now(); await fn(); await App.layerJob; if (process.env.SMOKE_INPUT) console.log(`      ${label}：${Date.now() - t0} ms`); };
@@ -2787,6 +2857,31 @@ function viewBoundaryViolations(file, src) {
     if (Array.from(App.graph.hl.nodes.keys()).join() !== ds[1].devices.join()) throw new Error('圖上應只標出該區塊的設備');
     $('#detail').testAll('a').find((x) => x.textContent === '顯示所有區塊').click();
     if (App.sel.domain != null || App.graph.hl.nodes.size !== App.Q.vlan(50).devices.length) throw new Error('應可回到所有區塊');
+  });
+  await step('路由追蹤停在未收集的設備：結果是「無法驗證」（灰色），不是無法抵達；圖上與詳情用同一個終點分類', async () => {
+    const V = S.view; const M = V.theme.mark;
+    if (contrastOf(M.unverified, V.theme.canvas.surface) < 3) throw new Error('mark.unverified 對畫布底色應 ≥ 3:1');
+    if ([M.bad, M.trace].includes(M.unverified)) throw new Error('無法驗證不應與錯誤色或追蹤色相同');
+    await buildInput('R_A (10.0.0.1):\n### /export terse\n/ip address add address=10.0.0.1/24 interface=ether1\n/ip address add address=10.1.0.1/24 interface=ether2\n'
+      + '### /ip route print detail\nFlags: A - ACTIVE; s - STATIC\n 0 As dst-address=0.0.0.0/0 gateway=10.0.0.2 distance=1\n 1 As dst-address=10.94.0.0/16 blackhole\n'
+      + '### /ip neighbor print detail\n 0 interface=ether1 identity=ISP_GW address=10.0.0.2 mac-address=AA:BB:CC:00:00:02 interface-name=ge0 discovered-by=lldp\n');
+    App.openTrace('10.1.0.5', '8.8.8.8', ''); $('#trace-run').click();
+    const t = App.sel.result;
+    if (App.sel.type !== 'trace' || t.status !== 'unverified') throw new Error('前提：這條追蹤停在未收集的 ISP_GW');
+    const d = text('#detail');
+    if (!d.includes('無法驗證（ISP_GW 未收集）') || d.includes('無法完整抵達（') || d.split('回程')[0].includes('無法完整抵達')) throw new Error('去程應標示「無法驗證」，不是無法完整抵達：' + d.slice(0, 200));
+    const ends = $('#detail').testAll('.hop').filter((x) => x.dataset.status === 'unverified');
+    if (!ends.length || !ends.every((x) => x.className.split(' ').includes(V.TRACE_END_STYLE.unverified.cls))) throw new Error('無法驗證的結果列應用 end-unverified');
+    if (!ends[0].textContent.includes(V.TRACE_END.unverified)) throw new Error('結果列應寫出「無法驗證」');
+    const isp = App.graph.nodes.find((n) => n.id === 'ISP_GW');
+    if (isp && App.graph.hl.nodes.get('ISP_GW') !== M.unverified) throw new Error('圖上停在未收集設備的節點應用 mark.unverified');
+    if (App.graph.hl.nodes.get('R_A') !== M.trace) throw new Error('中途經過的設備維持追蹤色');
+    // 已收集的設備上斷掉（黑洞）仍是錯誤
+    App.openTrace('10.1.0.5', '10.94.1.1', ''); $('#trace-run').click();
+    if (App.sel.result.status !== 'unreachable' || !text('#detail').includes('無法完整抵達') || App.graph.hl.nodes.get('R_A') !== M.bad) throw new Error('黑洞仍是無法抵達（錯誤色）');
+    // 分類 helper 本身
+    if (V.traceEndWorst([]) !== 'reached' || V.traceEndWorst([{ status: 'unverified' }, { status: 'loop' }]) !== 'bad' || V.traceEndKind({ status: 'unverified' }) !== 'unverified') throw new Error('V.traceEndKind／traceEndWorst 分類不符');
+    App.select(null);
   });
   await step('修正計畫：A12 的 DNS 與 NTP 依 facet 是不同的 findingKey，各自列出自己的訊息、各自可以勾選，詳情標示檢查項目', async () => {
     const RM = S.remediate; const RV = S.view.remediation; const PV = S.view.patchView;

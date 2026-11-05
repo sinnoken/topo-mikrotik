@@ -413,6 +413,8 @@ function viewBoundaryViolations(file, src) {
     if (loadedScripts.join() !== S.view.layout.ELK_SRC) throw new Error('需要分層版面時應載入一次 ELK：' + loadedScripts.join());
     if (process.env.SMOKE_INPUT) console.log('      ' + text('#banner'));
     else if (!text('#banner').includes('已套用分層版面')) throw new Error('分層版面完成後應提示：' + text('#banner'));
+    // 通知不寫耗時；台數和基準狀態卡、資料中心同一個口徑（Q.coverageSummary 的網路設備）
+    if (!process.env.SMOKE_INPUT && (/\bms\b|毫秒/.test(text('#banner')) || !text('#banner').includes(`${S.view.num(App.Q.coverageSummary().network)} 台網路設備`))) throw new Error('分層版面的通知不寫耗時、台數用網路設備口徑：' + text('#banner'));
     const g = App.graph; const box = new Map();
     g.nodes.forEach((n) => {
       const p = g.pos.get(n.id);
@@ -1668,7 +1670,7 @@ function viewBoundaryViolations(file, src) {
     Q.zones().zones.forEach((z) => { if (!zt.includes(z.name) || (z.basis && !zt.includes(z.basis))) throw new Error('zone 的依據應列出：' + z.name); });
     // 判斷的前提
     S.query.reachAssumptions().forEach((a) => { if (!text('#view-l4').includes(a.message)) throw new Error('畫面應寫出判斷的前提：' + a.message); });
-    if (!/計算 [\d,]+ ms|使用快取/.test(text('#l4-status'))) throw new Error('應說明計算時間或使用快取：' + text('#l4-status'));
+    if (/\bms\b|快取/.test(text('#l4-status')) || !text('#l4-status').includes('個 zone')) throw new Error('L4 的狀態列出 zone 等數字，不寫計算耗時與快取：' + text('#l4-status'));
     // 配色：文字對格子底色 ≥ 4.5:1，符號對格子底色與畫布底色 ≥ 3:1
     Object.entries(G).forEach(([k, s]) => {
       if (contrastOf(V.theme.l4.text, s.bg) < 4.5) throw new Error(`L4 ${k} 的文字對底色不足 4.5:1`);
@@ -1806,7 +1808,7 @@ function viewBoundaryViolations(file, src) {
     const Q = App.Q; const V = S.view; const mx = Q.zoneMatrix();
     const zn = new Map(Q.zones().zones.map((z) => [z.id, z.name]));
     App.showLayer('l4'); await App.l4Job;
-    if (!text('#l4-status').includes('使用快取')) throw new Error('同一份基準再開矩陣時應直接使用快取');
+    if (text('#l4-status').includes('計算 zone 矩陣中') || $('#l4-matrix').getAttribute('aria-busy') === 'true') throw new Error('同一份基準再開矩陣時應直接使用快取（不顯示忙碌提示）');
     const modeBtn = (m) => L4().testAll('.l4-modes button').find((b) => b.dataset.mode === m);
     modeBtn('table').click(); await App.l4Job;
     if (modeBtn('table').getAttribute('aria-pressed') !== 'true' || modeBtn('matrix').getAttribute('aria-pressed') !== 'false') throw new Error('檢視方式的按鈕應標出目前的方式（aria-pressed）');
@@ -1885,7 +1887,7 @@ function viewBoundaryViolations(file, src) {
     if (notCached(svc) || !V.l4.timings(Q).has(svc)) throw new Error('跑完應寫進查詢層的快取');
     one.cells.forEach((c) => { const td = cellTd(c.src, c.dst); if (one.zones.length <= V.l4.MATRIX_MAX && (!td || td.dataset.status !== c.status)) throw new Error('分段計算的結果應與 Q.zoneMatrix 相同'); });
     const run = V.l4.runs(Q).get(svc);
-    if (!run || run.steps < 3 || !text('#l4-status').includes(`分 ${V.num(run.steps)} 段`)) throw new Error('應記錄並寫出分了幾段：' + text('#l4-status'));
+    if (!run || run.steps < 3) throw new Error('應記錄分了幾段（畫面不寫）：' + text('#l4-status'));
     if (process.env.SMOKE_INPUT) console.log(`      L4 分段計算（${svc}）：${run.ms} ms，分 ${run.steps} 段，一段最久 ${run.maxStepMs} ms，兩段之間最長 ${run.maxGapMs} ms，總共 ${run.wallMs} ms`);
     App.showLayer('device');
   });
@@ -3115,7 +3117,7 @@ function viewBoundaryViolations(file, src) {
       if (!sw || !sw.all().some((x) => x.getAttribute('data-shape') === T.marker[k])) throw new Error('圖例的樣本應畫出 ' + k + ' 的外形');
     });
     const ends = charts[0].testAll('text').filter((t) => t.className.includes('trend-end'));
-    if (ends.length !== 3 || !ends.every((e) => e.textContent.startsWith({ pending: '待處理', regressed: '回歸', accepted: '已豁免' }[e.getAttribute('data-series')]))) throw new Error('線尾應寫出名稱與數值');
+    if (ends.length !== 3 || !ends.every((e) => e.textContent.startsWith({ pending: '未結案（含提醒）', regressed: '回歸', accepted: '已豁免' }[e.getAttribute('data-series')]))) throw new Error('線尾應寫出名稱與數值');
     const ys = ends.map((e) => +e.getAttribute('y')).sort((a, b) => a - b);
     if (ys.some((y, i) => i && y - ys[i - 1] < 11)) throw new Error('線尾的文字不應重疊：' + ys.join());
     // 文字（座標軸、線尾、tooltip）對圖的底色 ≥ 4.5:1
@@ -3127,7 +3129,7 @@ function viewBoundaryViolations(file, src) {
     hits[hits.length - 1].dispatch('pointerenter');
     const tip = charts[0].querySelector('.trend-tip');
     const lastS = series[series.length - 1];
-    if (tip.classList.contains('hidden') || !tip.textContent.includes(S.view.num(lastS.pending)) || !tip.textContent.includes('待處理') || !tip.textContent.includes(S.view.fmtUtc(lastS.at))) throw new Error('hover 應顯示該輪的數值與時間：' + tip.textContent);
+    if (tip.classList.contains('hidden') || !tip.textContent.includes(S.view.num(lastS.pending)) || !tip.textContent.includes('未結案（含提醒）') || !tip.textContent.includes(S.view.fmtUtc(lastS.at))) throw new Error('hover 應顯示該輪的數值與時間：' + tip.textContent);
     if (tip.testAll('.trend-swatch').length !== 3) throw new Error('tooltip 的每一列應有和圖例相同的樣本');
     hits[hits.length - 1].dispatch('pointerleave');
     if (!tip.classList.contains('hidden')) throw new Error('離開時應隱藏 tooltip');
@@ -3150,7 +3152,8 @@ function viewBoundaryViolations(file, src) {
     st.ledger = one; S.view.ledgerPane.render(App); S.view.ledgerPane.renderTrend(App);
     try {
       if ($('#trend-body').testAll('.trend-chart').length || !$('#trend-body').querySelector('.trend-single')) throw new Error('只有一輪時不應畫圖');
-      if ($('#trend-body').testAll('.trend-tile').length !== 5) throw new Error('應列出待處理、回歸、已豁免、覆蓋率、未知對端');
+      const tiles = $('#trend-body').testAll('.trend-tile').map((x) => x.getAttribute('data-tile'));
+      if (tiles.join() !== 'pending,info,accepted,coverage,unknownPeers') throw new Error('應列出待處理、提醒、已豁免、覆蓋率、未知對端（回歸只在本輪變化）：' + tiles.join());
     } finally { st.ledger = keep; S.view.ledgerPane.render(App); S.view.ledgerPane.renderTrend(App); }
   });
   await step('舊的確認標記轉換成處理紀錄：寫入成功後才刪 acks；轉換失敗或寫入失敗時保留 acks 並說明', async () => {
@@ -4266,6 +4269,23 @@ function viewBoundaryViolations(file, src) {
     if (st('input') !== `${NUM(m.stats.collected)} 台`) throw new Error('① 應寫出已收集的台數：' + st('input'));
     const pc0 = VA.problemCounts();
     if (st('triage') !== `待處理 ${NUM(pc0.error + pc0.warn)}`) throw new Error('③ 應寫出待處理筆數：' + st('triage'));
+    // 「待處理」全站同一個數字：步驟列 ③、基準狀態卡、⑤ 改善趨勢都是 Q.pendingSummary 的 total（錯誤＋警告，不含提醒）
+    const ps = App.Q.pendingSummary(VA.isPending);
+    if (pc0.error + pc0.warn !== ps.total || ps.total !== ps.error + ps.warn) throw new Error('problemCounts 應等於 Q.pendingSummary');
+    App.select(null);
+    const line = $('#detail').querySelector('.status-line'); const lt = line ? line.textContent : '';
+    const cardSum = [/([\d,]+) 項錯誤/, /([\d,]+) 項警告/].reduce((n, re) => n + Number(((lt.match(re) || [])[1] || '0').replace(/,/g, '')), 0);
+    if (cardSum !== ps.total) throw new Error(`基準狀態卡的待處理（${cardSum}）應等於步驟列 ③（${ps.total}）：${lt}`);
+    App.showView('trend'); S.view.ledgerPane.renderTrend(App);
+    const tile = $('#trend-body').testAll('.trend-tile').find((x) => x.getAttribute('data-tile') === 'pending');
+    const info = $('#trend-body').testAll('.trend-tile').find((x) => x.getAttribute('data-tile') === 'info');
+    if (VA.ledgerState().blocked) { /* 處理紀錄停用時沒有趨勢 */ } else if (!tile || tile.querySelector('.trend-value').textContent !== NUM(ps.total)) throw new Error('⑤ 的待處理應與 ③ 相同：' + (tile && tile.textContent));
+    else if (!info || info.querySelector('.trend-value').textContent !== NUM(ps.info)) throw new Error('⑤ 應另列提醒的筆數：' + (info && info.textContent));
+    // ⑤ 同一屏「回歸」的狀態 chip 只在本輪變化出現
+    const shown = (el) => { for (let x = el.parentNode; x && x !== document.body; x = x.parentNode) if (String(x.tagName).toLowerCase() === 'details' && !x.open && x.getAttribute('open') == null) return false; return true; };
+    const reg = ['#trend-body', '#ledger-body', '#tracking-body'].map((sel) => $(sel).testAll('.chip').filter((c) => c.textContent.startsWith('回歸') && shown(c)).length);
+    if (reg.some((n) => n)) throw new Error('「回歸」的狀態 chip 只在本輪變化出現：' + reg.join());
+    App.showView('graph');
     if (!st('verify').startsWith(`第 ${NUM(VA.ledgerRoundIndex() + 1)} 輪`)) throw new Error('⑤ 應寫出處理紀錄的第幾輪：' + st('verify'));
     // ②：拓樸圖的層級
     if (st('view') !== S.view.LAYER[App.layer]) throw new Error('② 應寫出目前的層級：' + st('view'));

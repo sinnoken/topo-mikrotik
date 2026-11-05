@@ -33,6 +33,8 @@
     if (o && typeof o === 'object' && !Object.isFrozen(o)) { Object.freeze(o); Object.values(o).forEach(deepFreeze); }
     return o;
   };
+  /** finding 的嚴重度（CATALOG 的 severity） */
+  const SEVERITIES = ['error', 'warn', 'info'];
   const copySrc = (src) => (src || []).map((x) => x.slice());
   const oneOf = (name, v, allowed) => {
     if (v === undefined) return allowed[0];
@@ -287,6 +289,22 @@
           network: net.length, networkCollected: net.filter((r) => r.collected).length, hosts: rows.length - net.length,
         });
         return covSum;
+      },
+      /**
+       * 「待處理」的唯一數字來源（凍結）：{ error, warn, info, total, handled }。
+       * isPending(f) 判斷一筆 finding 是否仍待處理（畫面傳入處理紀錄的判斷 S.ledger.isPending；省略時全部算待處理）。
+       * error／warn／info 是各嚴重度仍待處理的筆數；total＝error＋warn（步驟列、狀態卡等所說的「待處理」，不含提醒）；
+       * handled 是已處理（isPending 為 false）的錯誤與警告筆數。提醒（info）只分開列，不算進 total 與 handled。
+       */
+      pendingSummary(isPending) {
+        if (isPending !== undefined && typeof isPending !== 'function') throw new TypeError('pendingSummary 的參數必須是函式或省略');
+        const out = { error: 0, warn: 0, info: 0, total: 0, handled: 0 };
+        snap.findings.forEach((f) => {
+          if (!SEVERITIES.includes(f.severity)) throw new RangeError('不認得的嚴重度：' + JSON.stringify(f.severity));
+          if (!isPending || isPending(f)) out[f.severity]++; else if (f.severity !== 'info') out.handled++;
+        });
+        out.total = out.error + out.warn;
+        return Object.freeze(out);
       },
       /** 全部 finding，依 Snapshot 的順序；陣列位置（idx）就是 finding(idx)、findingIndexesFor 等使用的索引。 */
       findings: () => snap.findings,

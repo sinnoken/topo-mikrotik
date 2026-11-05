@@ -33,6 +33,9 @@
   const L = {};
   const SCHEMA = 'ssot-ledger/1';
   const STATUS = ['open', 'scheduled', 'fixed', 'accepted', 'false-positive', 'regressed'];
+  /** 仍待處理的狀態（summary 的 pending 與畫面的「待處理」同一條規則）；不在處理紀錄中（null）也算待處理 */
+  const PENDING = ['open', 'regressed'];
+  const isPending = (status) => !status || PENDING.includes(status);
   const BY = ['user', 'advance'];
   const DAY_MS = 86400000;
   const WAIVER_DAYS = 182; // 豁免預設約半年，到期後重新檢視
@@ -540,7 +543,7 @@
     const lg = checked(ledger);
     const series = lg.iterations.map((r) => ({
       at: r.at, inputHash: r.baseline.inputHash, baselineKey: r.baseline.baselineKey ?? null, createdAt: r.baseline.createdAt, counts: r.counts,
-      pending: (r.counts.open || 0) + (r.counts.regressed || 0),
+      pending: PENDING.reduce((n, k) => n + (r.counts[k] || 0), 0),
       coverage: { collected: r.coverage.collected, expected: r.coverage.expected, ratio: r.coverage.expected ? r.coverage.collected / r.coverage.expected : null },
       unknownPeers: r.unknownPeers,
     }));
@@ -563,6 +566,6 @@
       .map((r) => Object.assign(r, { falsePositive: r.byStatus['false-positive'], rate: r.byStatus['false-positive'] / r.total }));
   };
 
-  Object.assign(L, { SCHEMA, STATUS, WAIVER_DAYS, USER_TO, KEY_MIGRATIONS, devicesOfKey });
+  Object.assign(L, { SCHEMA, STATUS, PENDING, isPending, WAIVER_DAYS, USER_TO, KEY_MIGRATIONS, devicesOfKey });
   S.ledger = L;
 })(globalThis.SSOT = globalThis.SSOT || {});

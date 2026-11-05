@@ -98,8 +98,8 @@
   /** 這筆 finding 的處理紀錄項目；沒有（或處理紀錄停用）時為 null */
   A.ledgerItem = (f) => (App.Q && !st.blocked ? st.ledger.items[App.Q.findingKey(f)] || null : null);
   A.ledgerStatus = (f) => (A.ledgerItem(f) || {}).status || null;
-  /** 仍待處理（open、regressed，或不在處理紀錄中） */
-  A.isPending = (f) => V.remediation.isPendingStatus(A.ledgerStatus(f));
+  /** 仍待處理（open、regressed，或不在處理紀錄中；規則在 S.ledger.isPending） */
+  A.isPending = (f) => S.ledger.isPending(A.ledgerStatus(f));
   /** 使用者最後一次變更的時間（歷程中最後一筆 by user）；沒有時為 null */
   A.ledgerUserAt = (it) => { const h = (it && it.history || []).filter((x) => x.by === 'user'); return h.length ? h[h.length - 1].at : null; };
   /** 匯出用（V.exporter 的 opts.ledgerOf）：{ status, at（使用者最後一次變更）, note, waiver }；不在處理紀錄中時為 null */
@@ -108,16 +108,14 @@
   const baseOf = (b) => (b && b.baselineKey != null ? b.baselineKey : b && b.inputHash);
   A.ledgerRoundIndex = () => (App.Q ? st.ledger.iterations.findIndex((r) => baseOf(r.baseline) === baseOf(App.Q.meta())) : -1);
 
-  /** 目前基準中待處理／已處理的錯誤與警告筆數，與回歸、無法判斷、豁免到期（基準摘要用） */
+  /**
+   * 目前基準的「待處理」：Q.pendingSummary(A.isPending) 的 { error, warn, info, total, handled }，另加回歸、無法判斷、豁免到期（基準摘要用）。
+   * 全站的「待處理」都是 total（錯誤＋警告，不含提醒）；提醒另列 info。
+   */
   A.problemCounts = function problemCounts() {
-    const out = { error: 0, warn: 0, handled: 0, regressed: 0, unobserved: 0, waiverExpired: 0 };
+    const out = Object.assign({ regressed: 0, unobserved: 0, waiverExpired: 0 }, App.Q.pendingSummary(A.isPending));
     const regressed = new Set();
-    App.Q.findings().forEach((f) => {
-      const s = A.ledgerStatus(f);
-      if (s === 'regressed') regressed.add(App.Q.findingKey(f));
-      if (f.severity === 'info') return;
-      if (V.remediation.isPendingStatus(s)) out[f.severity]++; else out.handled++;
-    });
+    App.Q.findings().forEach((f) => { if (A.ledgerStatus(f) === 'regressed') regressed.add(App.Q.findingKey(f)); });
     out.regressed = regressed.size;
     if (st.round) {
       out.unobserved = st.round.unobserved.length;

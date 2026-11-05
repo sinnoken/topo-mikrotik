@@ -305,6 +305,32 @@ test('收集完整度：Q.coverageSummary 的網路設備口徑與 C01／C02 一
   assert.deepStrictEqual([h.network, h.networkCollected, h.hosts], [2, 2, 0]);
 });
 
+test('待處理：Q.pendingSummary 只算錯誤＋警告，提醒另列，依處理紀錄排除已處理', () => {
+  const s = build(read('samples/sample-bundle.txt')); const Q = S.query(s);
+  const by = (sev) => s.findings.filter((f) => f.severity === sev).length;
+  const all = Q.pendingSummary();
+  assert.deepStrictEqual(Object.assign({}, all), { error: by('error'), warn: by('warn'), info: by('info'), total: by('error') + by('warn'), handled: 0 });
+  assert.ok(Object.isFrozen(all) && all.info > 0 && all.total > 0, '範例資料有錯誤、警告與提醒');
+  // 處理紀錄：剛推進的一輪全部是 open（待處理）；處理紀錄的 pending 不分嚴重度（含提醒）
+  const NOW = '2026-01-01T00:00:00Z';
+  let lg = S.ledger.advance(S.ledger.empty(), Q, { now: NOW }).ledger;
+  const statusOf = (l) => (f) => S.ledger.isPending((l.items[Q.findingKey(f)] || {}).status);
+  assert.deepStrictEqual(Q.pendingSummary(statusOf(lg)), all);
+  const keys = new Set(s.findings.map((f) => Q.findingKey(f)));
+  assert.strictEqual(S.ledger.summary(lg).series[0].pending, keys.size, '處理紀錄每一輪的 pending 含提醒（與 Q.pendingSummary().total 不同口徑）');
+  // 一筆警告標為誤報：total 減一、handled 加一；一筆提醒標為誤報：只有 info 減一
+  const w = s.findings.find((f) => f.severity === 'warn' && Q.findingIndexesByKey(Q.findingKey(f)).length === 1);
+  const inf = s.findings.find((f) => f.severity === 'info' && Q.findingIndexesByKey(Q.findingKey(f)).length === 1);
+  lg = S.ledger.set(lg, Q.findingKey(w), { status: 'false-positive' }, { now: NOW });
+  lg = S.ledger.set(lg, Q.findingKey(inf), { status: 'false-positive' }, { now: NOW });
+  const p = Q.pendingSummary(statusOf(lg));
+  assert.deepStrictEqual([p.total, p.warn, p.handled, p.info], [all.total - 1, all.warn - 1, 1, all.info - 1]);
+  // 待處理的規則只在 S.ledger.isPending
+  assert.deepStrictEqual(S.ledger.STATUS.filter((x) => S.ledger.isPending(x)), S.ledger.PENDING);
+  assert.ok(S.ledger.isPending(null) && S.ledger.isPending(undefined), '不在處理紀錄中也算待處理');
+  assert.throws(() => Q.pendingSummary('open'), TypeError);
+});
+
 test('VLAN 摘要：Q.vlanSummary 的相異 ID、不相連區塊與定義筆數分開計', () => {
   const s = build(read('samples/sample-bundle.txt')); const Q = S.query(s); const v = Q.vlanSummary();
   const ids = new Set(s.model.vlans.map((x) => x.id));

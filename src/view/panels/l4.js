@@ -217,7 +217,7 @@
     if (job && job.Q === Q && job.key === key && job.zo === st.zo) return job.promise;
     stopJob();
     const seen = computed.get(Q);
-    if (seen && seen.has(key)) { draw(App, Q.zoneMatrix(optsOf(key)), null); return Promise.resolve(); }
+    if (seen && seen.has(key)) { draw(App, Q.zoneMatrix(optsOf(key))); return Promise.resolve(); }
     // 舊的矩陣是別的 service 的結果：計算期間不顯示，也不能下載
     st.current = null; V.clear(els.matrix); gridCells = []; hideTip();
     setBusy(true, key);
@@ -250,7 +250,7 @@
         computed.get(Q).set(key, j.ms);
         if (!runs.has(Q)) runs.set(Q, new Map());
         runs.get(Q).set(key, { ms: j.ms, wallMs: Date.now() - j.t0, steps: j.steps, maxStepMs: j.maxStepMs, maxGapMs: j.maxGapMs });
-        try { draw(App, r.value, j.ms, j.steps); } catch (e) { fail(e); }
+        try { draw(App, r.value); } catch (e) { fail(e); }
         resolve();
       };
       setTimeout(tick, BUSY_DELAY);
@@ -313,12 +313,12 @@
       b.title = b.disabled ? `zone 超過 ${MATRIX_MAX} 個，只能用表格檢視` : b.dataset.mode === 'matrix' ? '來源 zone × 目的 zone 的格子（方向鍵移動，Enter 往下看）' : '每一格一列，可排序（和矩陣是同一份結果）';
     });
   }
-  function draw(App, mx, ms, steps) {
+  function draw(App, mx) {
     if (!st.service) st.mx = mx; // 服務選單的選項來自「全部服務」的矩陣
     st.error = null; setBusy(false);
     const Q = App.Q; const s = mx.stats;
-    els.status.textContent = `${V.num(s.zones)} 個 zone、${V.num(s.representatives)} 個代表位址、${V.num(s.natEntries)} 個 dst-nat 入口、${V.num(s.evaluations)} 次判斷；`
-      + (ms == null ? '使用快取' : `計算 ${V.num(ms)} ms${steps > 1 ? `，分 ${V.num(steps)} 段` : ''}（之後同一份基準直接使用快取）`) + '。'
+    // 計算耗時與是否使用快取是實作細節，不顯示（計算紀錄仍在 V.l4 的除錯介面）
+    els.status.textContent = `${V.num(s.zones)} 個 zone、${V.num(s.representatives)} 個代表位址、${V.num(s.natEntries)} 個 dst-nat 入口、${V.num(s.evaluations)} 次判斷。`
       + (st.zo && st.zo.error ? '命名規則的 zones 段沒有套用（原因見「zone 的依據」）。' : '');
     syncControls(App);
     st.current = mx;

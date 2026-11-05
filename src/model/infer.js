@@ -145,23 +145,49 @@
    *   src = { vlans, interfaces, links, inferred（推論鏈路）, ifc(ep), collected(dev) }，集合可為陣列或 Map/Set 的迭代器。
    * domains 依承載此 VLAN 的鏈路、推論鏈路與透通鏈路（transparent：一端帶、另一端在未開 vlan-filtering 的 bridge 上）相連；
    * 只經由未收集設備或未過濾的 bridge 相連也算同一塊，但那台設備（沒有這個 VLAN 時）不列入。
+   * 未過濾的 bridge 串接時，兩端都未過濾、接得到這個 VLAN 會進入的未過濾 bridge 的鏈路也算 transparent（推論）。
+   * linkDomain：transparent 鏈路 key → 區塊鍵（串接的鏈路兩端設備都可能不在 devices，Q.vlan(id, domain) 依它篩選）。
+   * 依據：vlan-filtering=no 時 bridge 不看也不改 VLAN 標籤 https://manual.mikrotik.com/docs/bridging-and-switching.md（Bridge VLAN Filtering）
    */
   function vlanSpan(src, id) {
     const devOf = (ep) => K.splitEp(ep)[0];
     const entries = Array.from(src.vlans).filter((v) => v.id === id);
-    const carry = []; const partial = []; const transparent = [];
+    const carry = []; const partial = []; const candidates = []; const chained = new Set();
     const unf = (ep) => { const i = src.ifc(ep); return !!(i && i.vlanUnfiltered); };
+    const bm = { ifcs: { get: src.ifc } }; const brKey = (ep) => { const b = bridgeOf(bm, ep); return b ? b.key : null; };
+    const seeds = new Set(); // 這個 VLAN 會進入的未過濾 bridge（串接的起點）
     for (const l of src.links) {
       if (l.layer !== 'l2') continue;
       const inA = l.vlansA.includes(id); const inB = l.vlansB.includes(id);
-      if (inA && inB) carry.push(l);
+      if (inA && inB) { carry.push(l); [l.a, l.b].filter(unf).forEach((ep) => seeds.add(brKey(ep))); }
       // 透通（推論）：只有一端帶，另一端在未開 vlan-filtering 的 bridge 上（原樣轉送，無從確認）；連接兩側的區塊
-      else if (inA !== inB && l.evidenceScope === LINK_SCOPE.INTERFACE_ADJACENCY && (unf(l.a) || unf(l.b))) transparent.push(l);
+      else if (inA !== inB && l.evidenceScope === LINK_SCOPE.INTERFACE_ADJACENCY && (unf(l.a) || unf(l.b))) { candidates.push(l); [l.a, l.b].filter(unf).forEach((ep) => seeds.add(brKey(ep))); }
+      // 串接（推論）：兩端都在未過濾的 bridge 上、都不帶；只有接到這個 VLAN 會進入的未過濾 bridge 時才算透通（下面的遍歷）
+      else if (!inA && !inB && l.evidenceScope === LINK_SCOPE.INTERFACE_ADJACENCY && unf(l.a) && unf(l.b)) { candidates.push(l); chained.add(l); }
       // vlansDiff：可比較時計入 V01 的 VLAN（舊版 Snapshot 沒有這個欄位時，沿用 vlanMismatch）
       else if ((inA || inB) && l.vlanComparable !== false && l.vlanMismatch && (!l.vlansDiff || l.vlansDiff.includes(id))) partial.push(l);
     }
     const devs = S.util.uniq(entries.map((v) => v.dev)); const seen = new Set(devs); // 1000 台時 includes 是 O(介面×設備)
-    for (const i of src.interfaces) if (!seen.has(i.dev) && S.util.ifcVlans(i).includes(id)) { seen.add(i.dev); devs.push(i.dev); }
+    for (const i of src.interfaces) {
+      const has = S.util.ifcVlans(i).includes(id);
+      if (has && i.type === 'bridge' && i.vlanUnfiltered) seeds.add(i.key); // 未過濾的 bridge 本身（CPU 埠）帶這個 VLAN
+      if (!seen.has(i.dev) && has) { seen.add(i.dev); devs.push(i.dev); }
+    }
+    // 未過濾的 bridge 串接（推論）：以 bridge 為節點、兩端都未過濾的鏈路為邊，從 seeds 遍歷；同一台設備的不同 bridge 之間不轉送。
+    // 每個 bridge 只進佇列一次，所以環狀串接也會結束；成本是串接鏈路數的線性。
+    const used = new Set();
+    if (chained.size && seeds.size) {
+      const adj = new Map(); chained.forEach((l) => [l.a, l.b].forEach((ep) => S.util.getOr(adj, brKey(ep), () => []).push(l)));
+      const reached = new Set(seeds); const queue = Array.from(seeds);
+      while (queue.length) {
+        for (const l of adj.get(queue.pop()) || []) {
+          if (used.has(l)) continue;
+          used.add(l);
+          [l.a, l.b].map(brKey).forEach((k) => { if (!reached.has(k)) { reached.add(k); queue.push(k); } });
+        }
+      }
+    }
+    const transparent = candidates.filter((l) => !chained.has(l) || used.has(l)); // 依鏈路順序
     // 推論鏈路：已收集的每一端（或其所屬聚合）都帶這個 VLAN；未收集的一端無從得知，屬推論
     const hasVlan = (ep) => { const i = src.ifc(ep); return !!i && S.util.ifcVlans(i).includes(id); };
     const inferred = Array.from(src.inferred).filter((l) => {
@@ -170,11 +196,20 @@
     });
     const devices = devs.sort(S.util.natural);
     const own = new Set(devices);
-    const bridging = S.util.uniq(inferred.concat(transparent).flatMap((l) => [devOf(l.a), devOf(l.b)])).filter((d) => !own.has(d));
-    const domains = S.util.components(devices.concat(bridging), carry.concat(inferred, transparent).map((l) => [devOf(l.a), devOf(l.b)]))
-      .map((ks) => ks.filter((d) => own.has(d))).filter((ks) => ks.length)
-      .map((ks) => ({ key: id + '@' + ks[0], devices: ks }));
-    return { entries, devices, carry, partial, inferred, transparent, domains };
+    // 區塊的節點：設備；但不帶這個 VLAN 的設備在未過濾 bridge 上的一端，以那個 bridge 為節點（同一台設備的不同 bridge 之間不轉送）
+    const node = (ep) => { const d = devOf(ep); return !own.has(d) && unf(ep) ? brKey(ep) : d; };
+    const edges = carry.concat(inferred, transparent);
+    const pairs = edges.map((l) => [node(l.a), node(l.b)]);
+    const bridging = S.util.uniq(pairs.flat()).filter((d) => !own.has(d));
+    // linkDomain：透通鏈路 key → 區塊鍵；串接的透通鏈路兩端設備都可能不在 devices，Q.vlan(id, domain) 依它歸屬區塊
+    const nodeDomain = new Map(); const domains = [];
+    S.util.components(devices.concat(bridging), pairs).forEach((all) => {
+      const ks = all.filter((d) => own.has(d)); if (!ks.length) return;
+      const key = id + '@' + ks[0]; all.forEach((n) => nodeDomain.set(n, key));
+      domains.push({ key, devices: ks });
+    });
+    const linkDomain = new Map(transparent.map((l) => [l.key, nodeDomain.get(node(l.a)) || null]));
+    return { entries, devices, carry, partial, inferred, transparent, domains, linkDomain };
   }
   /** 每個 VLAN ID 的承載情況與不相連區塊（M.vlanSpans：Map(id → vlanSpan 的結果)），check 的 A02、V06、A06 只讀這個結果。 */
   function vlanDomains(M) {

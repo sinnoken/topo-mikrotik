@@ -687,15 +687,17 @@
       },
       /**
        * VLAN id 在整個基準的承載情況；domains 依承載此 VLAN 的鏈路、推論鏈路與透通鏈路分成互不相連的區塊（推論，見設計說明 §5.3）。
-       * transparent：只有一端帶這個 VLAN、另一端在未開 vlan-filtering 的 bridge 上的介面鄰接鏈路（推論：原樣轉送，無從確認）。
-       * 給 domain（區塊的 key）時，devices／entries／carry／partial／inferred／transparent 只含那個區塊。
+       * transparent：只有一端帶這個 VLAN、另一端在未開 vlan-filtering 的 bridge 上的介面鄰接鏈路，以及接在這些 bridge 之後、
+       *   兩端都在未過濾的 bridge 上的串接鏈路（推論：原樣轉送，無從確認）。
+       * 給 domain（區塊的 key）時，devices／entries／carry／partial／inferred／transparent 只含那個區塊（transparent 依鏈路兩端設備所屬的區塊）。
        */
       vlan(id, domain) {
         id = +id;
         const all = S.infer.vlanSpan(vlanSrc, id);
         const pick = (d) => {
           const set = new Set(d.devices); const has = (l) => set.has(K.splitEp(l.a)[0]) || set.has(K.splitEp(l.b)[0]);
-          return Object.assign({}, d, { entries: all.entries.filter((e) => set.has(e.dev)), carry: all.carry.filter(has), partial: all.partial.filter(has), inferred: all.inferred.filter(has), transparent: all.transparent.filter(has) });
+          const inDomain = (l) => all.linkDomain.get(l.key) === d.key; // 串接的透通鏈路兩端設備都可能不在 devices
+          return Object.assign({}, d, { entries: all.entries.filter((e) => set.has(e.dev)), carry: all.carry.filter(has), partial: all.partial.filter(has), inferred: all.inferred.filter(has), transparent: all.transparent.filter(inDomain) });
         };
         const domains = all.domains.map(pick);
         const one = domain != null && domains.find((d) => d.key === domain);
@@ -731,7 +733,8 @@
        *       carry    兩端都帶這個 VLAN（事實）
        *       partial  兩端都有 VLAN 資料、只有一端帶（事實；兩端不一致，V01）
        *       oneSide  只有一端帶，另一端無從得知（推論）；reason 為
-       *                unfiltered（任一端在未開 vlan-filtering 的 bridge 上，VLAN 原樣轉送；即 Q.vlan(id).transparent，參與區塊劃分）、
+       *                unfiltered（任一端在未開 vlan-filtering 的 bridge 上，VLAN 原樣轉送；即 Q.vlan(id).transparent，參與區塊劃分。
+       *                  未過濾的 bridge 串接時，中間的鏈路兩端都無從得知，has 都是 null）、
        *                peer-uncollected、peer-no-vlan-data 或 hearsay（這三種不參與 Q.vlan 的區塊劃分）
        *       inferred 推論鏈路，已收集的各端都帶這個 VLAN（推論，同 Q.vlan(id).inferred）
        *     inferred 為 true 表示這一列是推論（oneSide、inferred）；hearsay 為 true 表示鏈路本身只有單側觀察。
@@ -756,13 +759,14 @@
         m.links.forEach((l) => {
           if (l.layer !== 'l2' || l.evidenceScope !== S.LINK_SCOPE.INTERFACE_ADJACENCY || l.vlanComparable) return;
           const inA = l.vlansA.includes(id); const inB = l.vlansB.includes(id);
-          if (inA === inB) return;
+          // 未過濾的一端：下面依 Q.vlan(id).transparent 列出（同一份 vlanSpan 判斷，含串接）
+          if (inA === inB || unfilteredEp(l.a) || unfilteredEp(l.b)) return;
           if (v.domain != null && !inScope.has(K.splitEp(inA ? l.a : l.b)[0])) return;
           const a = vlanSide(l.a, id, inA); const b = vlanSide(l.b, id, inB); const peer = inA ? b : a;
-          // unfiltered 與 Q.vlan(id).transparent 是同一組鏈路（同一份 vlanUnfiltered 判斷）
-          const reason = unfilteredEp(l.a) || unfilteredEp(l.b) ? 'unfiltered' : !peer.collected ? 'peer-uncollected' : !peer.vlanData ? 'peer-no-vlan-data' : 'hearsay';
+          const reason = !peer.collected ? 'peer-uncollected' : !peer.vlanData ? 'peer-no-vlan-data' : 'hearsay';
           add(l, 'link', 'oneSide', a, b, { reason });
         });
+        v.transparent.forEach((l) => add(l, 'link', 'oneSide', vlanSide(l.a, id, l.vlansA.includes(id)), vlanSide(l.b, id, l.vlansB.includes(id)), { reason: 'unfiltered' }));
         // 推論鏈路：已收集的一端（記在聚合上時看成員埠）帶這個 VLAN；未收集的一端無從得知
         v.inferred.forEach((l) => {
           const side = (ep) => {

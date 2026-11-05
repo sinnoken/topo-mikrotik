@@ -756,7 +756,7 @@
   function oneSideSection(App, c) {
     const Q = App.Q; const rows = c.links.filter((l) => l.status === 'oneSide');
     return section('只有一端可確認的鏈路（推論）', rows.length ? [
-      h('p', { class: 'muted' }, '一端帶這個 VLAN，另一端無從得知（原因見右欄）：不算 VLAN 不一致（V01）。'),
+      h('p', { class: 'muted' }, '至少一端無從得知是否帶這個 VLAN（原因見右欄；未開 vlan-filtering 的 bridge 串接時兩端都無從得知）：不算 VLAN 不一致（V01）。'),
       table([
         { t: '鏈路', f: (l) => L(App, `${Q.epName(l.a.ep)} ⇄ ${Q.epName(l.b.ep)}`, { type: 'link', key: l.key }) },
         { t: '原因', f: (l) => V.VLAN_REASON[l.reason] || l.reason },

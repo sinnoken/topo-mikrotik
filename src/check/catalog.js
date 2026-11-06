@@ -454,6 +454,17 @@
       ],
       action: '停用不需要的服務，或在輸入鏈擋下從 WAN 進來的連線。指令例如 `/ip proxy set enabled=no`、`/ip socks set enabled=no`、`/tool bandwidth-server set enabled=no`；UPnP 的 `internal` 只放內部介面。',
     },
+    // 狀態式骨架（回程的前提）：規則是事實，判斷在 S.infer.fw.policyBaseline
+    F15: {
+      severity: 'warn', cat: '防火牆', title: 'forward／input 沒有放行已建立的連線（回程不保證）', data: [['config']],
+      causes: [
+        '手寫的規則只放行新連線，最後加了全部丟棄，漏了放行 `connection-state=established,related` 的規則。',
+        '放行已建立連線的規則排在全部丟棄（drop）之後，或被停用。',
+        '放行已建立連線的規則加了介面、位址等條件，只涵蓋部分流量。',
+        '從預設組態（defconf）改寫時刪掉了 `defconf: accept established,related,untracked`。',
+      ],
+      action: '在這個 chain 的最前面放行已建立的連線，接著丟棄 invalid。指令例如 `/ip firewall filter add chain=forward action=accept connection-state=established,related,untracked place-before=0`，再加一條 `connection-state=invalid action=drop`。有非對稱路由時先確認回程走同一台（手冊提醒這種封包可能被當成 invalid）。',
+    },
     // ---- 生命週期
     L01: {
       severity: 'info', cat: '生命週期', title: 'RouterBOOT 韌體待升級（current 與 upgrade 不同）', data: [['routerboard']],

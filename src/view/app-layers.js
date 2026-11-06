@@ -72,6 +72,7 @@
     if (target === 'device') { g.setData(App.deviceGraph.nodes, App.deviceGraph.edges, App.devicePos); A.applyVisibility(); restoreView(g, deviceView); }
     else {
       const e = ensureEntry(target, o.rebuild);
+      resideL2(e); // 保留的位置（之前拖過）可能和上次選邊時不同：依位置重新選邊，邊不另外存
       g.setData(e.nodes, e.edges, e.pos); A.applyVisibility(); restoreView(g, e.view);
     }
     A.syncLayerUi();
@@ -225,17 +226,43 @@
   }
 
   // ================================================================ 版面
-  /** 內建版面（同步）：L2 用 portLayout（埠排在框的上、下緣），L3 用設備圖的分層版面 */
+  /** 內建版面（同步）：L2 用 portLayout（埠依鏈路方向排在框的四邊），L3 用設備圖的分層版面 */
   function layout(e) {
     e.token++; e.layoutNote = null; // 進行中的分層版面作廢，它的計算中訊息也一起拿掉
     if (e.layer === 'l2') {
       const r = V.layout.portLayout(e.boxes, e.ports, e.pg.edges, { portrait: A.isPortrait() });
-      e.pos.clear(); r.pos.forEach((p, id) => e.pos.set(id, p)); setAnchors(e, r.anchor);
+      e.pos.clear(); r.pos.forEach((p, id) => e.pos.set(id, p)); setAnchors(e, r);
     } else {
       const r = V.layout.layout(e.nodes, e.edges); e.pos.clear(); r.forEach((p, id) => e.pos.set(id, p));
     }
   }
-  function setAnchors(e, anchor) { e.ports.forEach((p) => { const a = anchor.get(p.id); if (a) { p.anchor.dx = a.dx; p.anchor.dy = a.dy; } }); }
+  /**
+   * 套用 portAnchors 的結果：埠的位置與所在的邊（畫布依邊放埠名）、框高（左右緣的埠多時加高），並記下這次的邊（下次選邊的遲滯）。
+   * ports／boxes 省略時是全部；只重算部分設備時，邊併入既有的 e.side。
+   */
+  function setAnchors(e, r, ports, boxes) {
+    (ports || e.ports).forEach((p) => { const a = r.anchor.get(p.id); if (a) { p.anchor.dx = a.dx; p.anchor.dy = a.dy; p.anchor.side = r.side.get(p.id); } });
+    (boxes || e.boxes).forEach((b) => { const x = r.box.get(b.id); if (x) b.box.h = x.h; });
+    if (ports && e.side) r.side.forEach((v, id) => e.side.set(id, v)); else e.side = r.side;
+  }
+  /**
+   * 依目前的設備位置重新選邊（拖曳設備框中與結束、回到保留位置的 L2 時）：沿用前一次的邊做遲滯。
+   * dev 指定時只重算這台與它的鄰居（拖曳中每個 frame 都會呼叫，不重算整張圖）；其他設備的埠方向不受它移動影響。
+   */
+  function resideL2(e, dev) {
+    if (!e || e.layer !== 'l2') return;
+    e.peers = e.peers || V.layout.portPeers(e.pg.edges);
+    if (dev == null || !e.side) {
+      setAnchors(e, V.layout.portAnchors(e.boxes, e.ports, e.peers, e.pos, { prev: e.side }));
+    } else {
+      if (!e.portsOf) { e.portsOf = new Map(); e.ports.forEach((p) => S.util.getOr(e.portsOf, p.dev, () => []).push(p)); }
+      const devs = new Set([dev]);
+      (e.portsOf.get(dev) || []).forEach((p) => (e.peers.get(p.id) || []).forEach((d) => devs.add(d)));
+      const boxes = e.boxes.filter((b) => devs.has(b.id)); const ports = boxes.flatMap((b) => e.portsOf.get(b.id) || []);
+      setAnchors(e, V.layout.portAnchors(boxes, ports, e.peers, e.pos, { prev: e.side }), ports, boxes);
+    }
+    App.graph.dirty = true;
+  }
   /**
    * 分層版面（ELK）在背景計算；超過上限、逾時或失敗時保留內建版面並說明原因。
    * 計算中與未套用的訊息寫在這一層的說明（#layer-note 的 e.layoutNote），不另開通知，兩段文字不會疊在畫布底部；套用成功不通知。
@@ -249,7 +276,7 @@
       if (e.layer === 'l2') {
         const r = await V.layout.elkPorts(e.boxes, e.ports, e.pg.edges, { maxNodes: App.ELK_MAX, isStale: stale, portrait: A.isPortrait() });
         if (stale()) return;
-        e.pos.clear(); r.pos.forEach((p, id) => e.pos.set(id, p)); setAnchors(e, r.anchor);
+        e.pos.clear(); r.pos.forEach((p, id) => e.pos.set(id, p)); setAnchors(e, r);
       } else {
         const r = await V.layout.elk(e.nodes, e.edges, { radius: (n) => App.graph.radius(n), maxNodes: App.ELK_MAX, isStale: stale });
         if (stale()) return;
@@ -491,6 +518,11 @@
   const layerBtns = () => Array.from(document.querySelectorAll('#layer-switch button'));
   A.bindLayers = function bindLayers() {
     new ResizeObserver(() => A.syncL4Top()).observe($('#toolbar'));
+    // 拖曳設備框中（畫布的 'moving'，每個 frame 最多一次）只重算這台與鄰居的邊；放開（'moved'）時整張圖再選一次。
+    // 畫布每個事件只有一個處理函式（app.js 已設定 'moved'；測試會暫時換掉再還原），這裡包住它、先選邊再交給它
+    App.graph.on('moving', (id) => { if (App.layer === 'l2') resideL2(A.layerEntry(), id); });
+    const moved = App.graph.handlers.moved;
+    App.graph.on('moved', (id) => { if (App.layer === 'l2') resideL2(A.layerEntry()); if (moved) moved(id); });
     const btns = layerBtns();
     btns.forEach((b) => {
       b.addEventListener('click', () => { if (!b.disabled) App.showLayer(b.dataset.layer); });

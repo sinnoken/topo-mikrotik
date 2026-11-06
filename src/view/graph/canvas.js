@@ -6,7 +6,9 @@
  * 資料：nodes [{id,label,kind,collected,group,sev}]、edges [{id,a,b,cls,layer,count,sev,hearsay,mismatch,labelA,labelB}]
  * L2 埠圖與 L3 子網圖（app-layers.js）另用：
  *  - node.box { w, h }：容器框（L2 的設備）或長條（L3 的子網，kind 'subnet'），命中範圍與標示環是矩形
- *  - node.anchor { parent, dx, dy }：位置跟著 parent（L2 的埠）；pos 不存它，拖曳它等於拖曳 parent
+ *  - node.anchor { parent, dx, dy, side? }：位置跟著 parent（L2 的埠）；pos 不存它，拖曳它等於拖曳 parent；
+ *    side（north／south／east／west）是埠所在的框邊，埠名依它放在框外，沒有時依 dx／dy 判斷
+ * 事件（on，每個事件一個處理函式）：click、dblclick、hover、moving（拖曳節點中，每個 animation frame 最多一次）、moved（拖曳節點放開）
  *  - edge.style { c, w, dash }：取代依 cls 的連線樣式；edge.arrow：在 b 端附近畫箭頭（L3 的路由）
  *  - 高亮 hl.edges 的值可以是顏色，或 { c, dash, alpha, sev, ticks }（VLAN 承載：線型、垂直短刻度與中點外形，不只靠顏色）
  */
@@ -230,6 +232,9 @@
     _bind() {
       // pts：目前按著的觸控指標（pointerId → 螢幕座標）；兩指同時按著時是雙指縮放（pinch），不做拖曳與點選
       const cv = this.cv; let drag = null; let pinch = null; let lastTap = null; const pts = new Map();
+      // 拖曳中的 'moving'：同一個 animation frame 內的多次 pointermove 只發一次（接收端可能要重算埠的位置）；放開後不再發
+      let movingId = null; let movingRaf = false;
+      const flushMoving = () => { movingRaf = false; const id = movingId; movingId = null; if (id != null) this.emit('moving', id); };
       const at = (ev) => { const r = cv.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top }; };
       const mine = (ev) => drag && (ev.pointerId == null || drag.id == null || ev.pointerId === drag.id);
       const pinchState = () => {
@@ -248,7 +253,7 @@
           pts.set(ev.pointerId, p);
           if (pts.size === 2) { // 第二指：取消單指拖曳，改為雙指縮放（以兩指中點為中心，同時平移）
             const st = pinchState(); pinch = { d0: st.d, s0: this.s, w0: this.toWorld(st.mid.x, st.mid.y) };
-            drag = null; cv.classList.add('dragging'); return;
+            drag = null; movingId = null; cv.classList.add('dragging'); return;
           }
           if (pts.size > 2) return;
         }
@@ -257,6 +262,7 @@
         const target = n && n.anchor ? this.nodeById.get(n.anchor.parent) : n;
         const w = this.toWorld(p.x, p.y); const c = target ? this.at(target.id) : null;
         drag = { id: ev.pointerId, type, start: p, last: p, node: n, target, off: c ? { x: w.x - c.x, y: w.y - c.y } : null, moved: false };
+        movingRaf = false; // 新的拖曳不等上一次可能沒執行到的 frame（例如分頁在背景時）
         cv.classList.add('dragging');
       });
       window.addEventListener('pointermove', (ev) => {
@@ -282,7 +288,10 @@
         if (!mine(ev)) return;
         if (Math.abs(p.x - drag.start.x) + Math.abs(p.y - drag.start.y) > (drag.type === 'mouse' ? MOUSE.movePx : TOUCH.movePx)) drag.moved = true;
         if (!drag.moved) return;
-        if (drag.target) { const w = this.toWorld(p.x, p.y); this.pos.set(drag.target.id, { x: w.x - drag.off.x, y: w.y - drag.off.y }); }
+        if (drag.target) {
+          const w = this.toWorld(p.x, p.y); this.pos.set(drag.target.id, { x: w.x - drag.off.x, y: w.y - drag.off.y });
+          movingId = drag.target.id; if (!movingRaf) { movingRaf = true; requestAnimationFrame(flushMoving); }
+        }
         else { this.tx += p.x - drag.last.x; this.ty += p.y - drag.last.y; }
         drag.last = p; this.dirty = true;
       });
@@ -296,7 +305,7 @@
           return;
         }
         if (!mine(ev)) return; cv.classList.remove('dragging');
-        const d = drag; drag = null;
+        const d = drag; drag = null; movingId = null;
         if (d.moved) { if (d.target) this.emit('moved', d.target.id); return; }
         if (cancelled || ev.target !== cv) return;
         const p = at(ev); const n = this.hitNode(p, d.type);
@@ -748,13 +757,19 @@
     c.fillText(fitText(c, n.label, w - 16), p.x - w / 2 + 9, p.y - h / 2 + B.labelH - 5);
     if (n.sub && s > 0.5) { c.font = font(10); c.fillStyle = CV.label.textUncollected; c.fillText(fitText(c, n.sub, w - 16), p.x - w / 2 + 9, p.y - h / 2 + B.labelH + 9); }
   }
-  /** 埠名：放在埠往框外的方向（依它在框上的位置），等寬字型 */
+  /** 埠所在框邊往外的方向：anchor.side 優先；沒有時依它在框上的位置（|dy| ≥ 0.4|dx| 算上下緣） */
+  const SIDE_OUT = { north: { ux: 0, uy: -1 }, south: { ux: 0, uy: 1 }, east: { ux: 1, uy: 0 }, west: { ux: -1, uy: 0 } };
+  function portOut(a) {
+    if (SIDE_OUT[a.side]) return SIDE_OUT[a.side];
+    const len = Math.hypot(a.dx, a.dy) || 1;
+    return Math.abs(a.dy) >= Math.abs(a.dx) * 0.4 ? { ux: 0, uy: a.dy / len >= 0 ? 1 : -1 } : { ux: a.dx / len, uy: 0 };
+  }
+  /** 埠名：放在埠往框外的方向（portOut），等寬字型 */
   function portName(c, n, p, s, forced) {
     // 世界座標 9（隨縮放），螢幕上不超過 portPx；強制顯示（滑過、選取）時螢幕上固定 portPx
     const k = forced ? F.portPx / 9 / s : Math.min(1, F.portPx / 9 / s); c.font = font(9 * k, W.normal, true);
     const text = fitText(c, n.label, 9 * k * CV.port.maxEm); const tw = c.measureText(text).width;
-    const len = Math.hypot(n.anchor.dx, n.anchor.dy) || 1; const ux = n.anchor.dx / len; const uy = n.anchor.dy / len;
-    const vertical = Math.abs(n.anchor.dy) >= Math.abs(n.anchor.dx) * 0.4;
+    const { ux, uy } = portOut(n.anchor); const vertical = !ux;
     const x = vertical ? p.x : p.x + ux * (tw / 2 + 9 * k); const y = vertical ? p.y + (uy >= 0 ? 15 * k : -9 * k) : p.y + 3 * k;
     c.fillStyle = CV.port.bg; c.fillRect(x - tw / 2 - 2, y - 9 * k, tw + 4, 11 * k);
     c.fillStyle = CV.port.text; c.textAlign = 'center'; c.fillText(text, x, y); c.textAlign = 'left';

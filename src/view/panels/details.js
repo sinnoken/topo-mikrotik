@@ -414,21 +414,27 @@
   // state 回傳 null＝決定狀態的欄位沒有資料（部分 export 沒有這個選單、版本不在預設值表範圍），顯示「無法判斷」
   const known = (...v) => v.every((x) => x !== null && x !== undefined);
   const onOff = (a) => (known(a.enabled) ? (a.enabled ? '開啟' : '關閉') : null);
-  // params 是畫面列出的參數（「預設」與「無法判斷」只算這些）；dns、socks 列出 vrf，因為 F10、F14 依 vrf 判斷 WAN 能不能連到
+  // label 只寫沒有 facet 的項目；params 是畫面列出的參數（「預設」與「無法判斷」只算這些）；dns、socks 列出 vrf，因為 F10、F14 依 vrf 判斷 WAN 能不能連到
   const MGMT_ITEMS = [
     { area: 'dns', label: 'DNS 遠端查詢', menu: '/ip dns', rule: 'F10', params: [['allowRemote', 'allow-remote-requests'], ['vrf', 'vrf']],
       state: (a) => (known(a.allowRemote) ? (a.allowRemote ? '允許' : '不允許') : null) },
-    { area: 'macServer', label: 'MAC Telnet', menu: '/tool mac-server', rule: 'F11', facet: 'mac-telnet', params: [['allowedList', 'allowed-interface-list']], state: (a) => (known(a.allowedList) ? `限清單 ${a.allowedList}` : null) },
-    { area: 'macWinbox', label: 'MAC WinBox', menu: '/tool mac-server mac-winbox', rule: 'F11', facet: 'mac-winbox', params: [['allowedList', 'allowed-interface-list']], state: (a) => (known(a.allowedList) ? `限清單 ${a.allowedList}` : null) },
+    { area: 'macServer', menu: '/tool mac-server', rule: 'F11', facet: 'mac-telnet', params: [['allowedList', 'allowed-interface-list']], state: (a) => (known(a.allowedList) ? `限清單 ${a.allowedList}` : null) },
+    { area: 'macWinbox', menu: '/tool mac-server mac-winbox', rule: 'F11', facet: 'mac-winbox', params: [['allowedList', 'allowed-interface-list']], state: (a) => (known(a.allowedList) ? `限清單 ${a.allowedList}` : null) },
     { area: 'discovery', label: '鄰居探索', menu: '/ip neighbor discovery-settings', rule: 'F12', params: [['list', 'discover-interface-list'], ['protocols', 'protocol'], ['mode', 'mode']],
       // 只要 protocol 是空的或 mode 是 rx-only 就確定不送出；其他情況三個欄位都要有資料
       state: (a) => ((a.protocols && !a.protocols.length) || a.mode === 'rx-only' ? '不送出' : known(a.protocols, a.mode, a.list) ? `在清單 ${a.list} 送出` : null) },
     { area: 'snmp', label: 'SNMP', menu: '/snmp', params: [['enabled', 'enabled']] },
-    { area: 'upnp', label: 'UPnP', menu: '/ip upnp', rule: 'F14', facet: 'upnp', params: [['enabled', 'enabled']] },
-    { area: 'proxy', label: 'Web Proxy', menu: '/ip proxy', rule: 'F14', facet: 'proxy', params: [['enabled', 'enabled'], ['ports', 'port']] },
-    { area: 'socks', label: 'SOCKS', menu: '/ip socks', rule: 'F14', facet: 'socks', params: [['enabled', 'enabled'], ['port', 'port'], ['vrf', 'vrf']] },
-    { area: 'bandwidthServer', label: 'Bandwidth Server', menu: '/tool bandwidth-server', rule: 'F14', facet: 'bandwidth-server', params: [['enabled', 'enabled'], ['authenticate', 'authenticate']] },
-  ];
+    { area: 'upnp', menu: '/ip upnp', rule: 'F14', facet: 'upnp', params: [['enabled', 'enabled']] },
+    { area: 'proxy', menu: '/ip proxy', rule: 'F14', facet: 'proxy', params: [['enabled', 'enabled'], ['ports', 'port']] },
+    { area: 'socks', menu: '/ip socks', rule: 'F14', facet: 'socks', params: [['enabled', 'enabled'], ['port', 'port'], ['vrf', 'vrf']] },
+    { area: 'bandwidthServer', menu: '/tool bandwidth-server', rule: 'F14', facet: 'bandwidth-server', params: [['enabled', 'enabled'], ['authenticate', 'authenticate']] },
+  ].map((it) => {
+    // 有 facet 的項目（F11、F14 的管理服務）名稱取自 V.remediation.FACET_ITEM，與檢查結果的比對對象同一份
+    if (it.facet === undefined) return it;
+    const label = V.remediation.FACET_ITEM[it.facet];
+    if (!label) throw new Error('管理面設定的 facet 在 V.remediation.FACET_ITEM 沒有名稱：' + it.facet);
+    return Object.assign({ label }, it);
+  });
   const MGMT_COMMUNITY = [['name', 'name'], ['addresses', 'addresses'], ['write', 'write-access'], ['security', 'security'], ['disabled', 'disabled']];
   const MGMT_RULES = new Set(MGMT_ITEMS.map((x) => x.rule).filter(Boolean).concat('F13'));
   /** 這一段相關的檢查「F10 標題」：標題取自檢查目錄（S.query.rule），依代碼排序 */

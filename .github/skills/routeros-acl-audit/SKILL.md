@@ -14,7 +14,7 @@ user-invocable: true
 不另外寫 Python 腳本、不產生獨立的 HTML 報表，也不接 CI 通知。
 
 **目前狀態**：階段一已完成（adapter → model → infer → check → query → view → compare，即下方「分層與分工」的 1–6）。
-防火牆規則、WAN／LAN 分類與 F01–F09 已在核心，判斷條件見 `docs/基準檢查.md` 的「防火牆」，
+防火牆規則、WAN／LAN 分類、F01–F09 與狀態式骨架的 F15（3.7.0）已在核心，判斷條件見 `docs/基準檢查.md` 的「防火牆」，
 資料欄位與比對語意見 `docs/設計說明.md` §5.2、§5.3、§8。命中次數（`print stats`，F09）與端到端可達性、zone 矩陣的查詢
 （`Q.reach`、`Q.zoneMatrix` 等，`src/query/reach.js`；L3 路由追蹤在 `src/query/trace.js`）在 2.11.0 加入，判斷規則見設計說明 §5.3「L4 可達性與 zone」，函式見 `docs/查詢介面.md`。
 之後的修改沿用既有的 `S.infer.fw`（`covers`、`evalChain`、`evalFilter`、`decide`），
@@ -88,6 +88,7 @@ user-invocable: true
 | F07 | 警告 | 管理服務啟用、沒有 available-from，且 WAN 可以連入 | 事實＋推論（`/ip service` 含預設值、WAN 分類） |
 | F08 | 提醒 | 無法判斷 WAN 介面（WAN 相關的防火牆檢查未執行） | 推論（WAN 分類的結果） |
 | F09 | 提醒 | 防火牆命中次數對不上 export 的規則（這個表的命中次數不採用） | 事實（`print stats` 的列對 export 的規則，不用 print 的編號） |
+| F15 | 警告 | forward／input 沒有放行已建立的連線（回程不保證） | 事實（IPv4 filter 的規則；狀態式骨架 `S.infer.fw.policyBaseline`，不看 WAN／LAN） |
 
 嚴重度依實際影響決定：ESP／AH 放行到沒有跑 IPsec 的主機，影響遠小於任意 TCP 埠放行。
 

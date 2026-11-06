@@ -38,7 +38,7 @@ test('VRF：鍵的寫法只在 src/core/keys.js（main 不加後綴，其他 VRF
   assert.deepStrictEqual([K.vrf(null), K.vrf(''), K.vrf(' cust-a ')], ['main', 'main', 'cust-a']);
   assert.deepStrictEqual([K.inVrf('10.0.0.1', 'main'), K.inVrf('10.0.0.1', null), K.inVrf('10.0.0.0/24', 'cust-a')], ['10.0.0.1', '10.0.0.1', '10.0.0.0/24@cust-a']);
   assert.deepStrictEqual([K.splitVrf('10.0.0.1'), K.splitVrf('10.0.0.0/24@cust-a')], [['10.0.0.1', 'main'], ['10.0.0.0/24', 'cust-a']]);
-  assert.deepStrictEqual([S.SCHEMA, S.VERSION], ['ssot-snapshot/3', '3.6.0']);
+  assert.deepStrictEqual([S.SCHEMA, S.VERSION], ['ssot-snapshot/3', '3.7.0']);
 });
 
 test('VRF（RouterOS 7）：/ip vrf 的介面、位址、網段、ARP 與路由都帶 vrf；非 main 路由表是事實；閘道的 @<VRF> 保留為下一跳的屬性', () => {
@@ -281,8 +281,8 @@ test('策略路由：封包在 VRF 時查那個 VRF，使用者的 rule 在 VRF 
 test('VRF：只用 main 的網路，findingKey 與加入 VRF 之前（2.11.0）相同；範例資料的 VRF 部分不產生誤報', () => {
   const s = sampleSnap(); const Q = S.query(s);
   const before = JSON.parse(read('tests/fixtures/vrf/sample-2.11-finding-keys.json')).keys;
-  // 3.4.0 新增的管理面檢查（F10–F14）不在 2.11.0 的集合裡，比對時去掉
-  assert.deepStrictEqual(keys(s).filter((k) => !/^\["(F1[0-4]|L0[12])"/.test(k)), before, '範例資料加入 VRF 路由器後，finding 與 2.11.0 完全相同（重疊的 IP 不是 A01／A09）');
+  // 3.4.0 新增的管理面檢查（F10–F14）、3.5.0 的 L01、L02 與 3.7.0 的 F15 不在 2.11.0 的集合裡，比對時去掉
+  assert.deepStrictEqual(keys(s).filter((k) => !/^\["(F1[0-5]|L0[12])"/.test(k)), before, '範例資料加入 VRF 路由器後，finding 與 2.11.0 完全相同（重疊的 IP 不是 A01／A09）');
   assert.ok(Q.vrfs().includes('cust-a'), '範例資料要有 VRF');
   const main = build(['A (10.0.0.1):', '### /export terse', '/ip address add address=10.0.10.1/24 interface=ether5',
     'B (10.0.0.2):', '### /export terse', '/ip address add address=10.0.10.1/24 interface=ether5'].join('\n') + '\n');

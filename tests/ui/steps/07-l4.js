@@ -145,7 +145,7 @@ module.exports = async () => {
     const btn = l4SvcBtn(gi, svc);
     btn.click();
     const s1 = l4State(); const p = svcParts(svc);
-    if (!s1.reach || s1.reach !== Q.reach(g.srcs[0].ip, g.dst.ip, { proto: p.proto, port: p.port })) throw new Error('L3 應是這一組代表位址的 Q.reach');
+    if (!s1.reach || s1.reach !== Q.reach(g.srcs[0].ip, g.dst.ip, Object.assign({ proto: p.proto, port: p.port }, g.srcs[0].entry ? { entry: g.srcs[0].entry } : g.srcs[0].vrf ? { vrf: g.srcs[0].vrf } : {}))) throw new Error('L3 應是這一組代表位址的 Q.reach');
     if (document.activeElement !== $('#l4-l3-title')) throw new Error('開 L3 後焦點應移到 L3 的標題');
     const l3 = text('#l4-drill');
     s1.reach.paths.forEach((pa) => pa.hops.forEach((hp) => { if (!l3.includes(Q.devName(hp.dev))) throw new Error('L3 應列出每一跳的設備：' + hp.dev); hp.stages.forEach((sg) => { if (!l3.includes(`${sg.table} ${sg.chain}`)) throw new Error('L3 應列出每一跳的 stage'); }); }));
@@ -157,6 +157,32 @@ module.exports = async () => {
     // 關閉下鑽：焦點回到格子
     $('#l4-drill').querySelector('.l4-close').click();
     if (!$('#l4-drill').classList.contains('hidden') || document.activeElement !== td) throw new Error('關閉下鑽後應收起並回到格子');
+    App.select(null);
+  });
+  await step('L4 位址組 → 逐跳路徑：與矩陣用同一個入口（外部來源的 entry），位址組的結果與逐跳路徑的結論一致', async () => {
+    const Q = App.Q;
+    // 外部來源的代表位址不在任何網段，矩陣以 WAN 介面當入口（srcs[].entry）；逐跳路徑沒帶入口時會變成「找不到包含來源的網段」
+    const mx = Q.zoneMatrix();
+    const ext = mx.cells.filter((c) => c.src === 'external' && c.counts.total && c.counts.allow);
+    if (!process.env.SMOKE_INPUT && !ext.length) throw new Error('範例資料應有外部來源允許的格子');
+    let checked = 0;
+    for (const c of ext.slice(0, 2)) {
+      const td = cellTd(c.src, c.dst); if (!td) throw new Error('矩陣應有外部來源的格子：' + c.dst);
+      td.click();
+      const cell = Q.zoneCell(c.src, c.dst);
+      cell.groups.forEach((g, gi) => g.services.forEach((s) => {
+        if (s.verdict !== 'allow' || checked >= 6) return;
+        if (!g.srcs[0].entry) throw new Error('外部來源的代表位址應有入口介面（entry）');
+        l4SvcBtn(gi, s.service).click();
+        const r = l4State().reach;
+        if (!r) throw new Error(`第 ${gi + 1} 組 ${s.service} 應能查詢逐跳路徑：${l4State().reachErr}`);
+        if (r.entry !== g.srcs[0].entry) throw new Error(`逐跳路徑應用矩陣同一個入口 ${g.srcs[0].entry}，實際 ${r.entry}`);
+        if (r.verdict !== s.verdict) throw new Error(`位址組寫 ${s.service} ${s.verdict}，逐跳路徑卻是 ${r.verdict}（${r.reasons.map((x) => x.code).join('、')}）`);
+        checked++;
+      }));
+      $('#l4-drill').querySelector('.l4-close').click();
+    }
+    if (!process.env.SMOKE_INPUT && !checked) throw new Error('應至少比對一組外部來源允許的服務');
     App.select(null);
   });
   await step('L4 可達性查詢：輸入來源、目的、協定與埠，結果用同一個逐跳路徑；NAT 改寫、拒絕、參數錯誤與無法判斷的原因（中文說明）', async () => {

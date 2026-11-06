@@ -952,6 +952,116 @@
   }
 
   /**
+   * 狀態式骨架（回程的前提，F15 與 Q.policyBaseline）：IPv4 filter 的 input、forward 各自對「已建立」與「invalid」的封包怎麼處理，以及 chain 的預設動作。
+   * 依據（https://manual.mikrotik.com/docs/firewall-and-quality-of-service/connection-tracking.md）：不是 new 的封包屬於 established、related，
+   *   或不屬於任何連線（invalid，多數情況應丟棄）；建議的基本規則是放行 established／related、丟棄 invalid，細部規則只看 new。
+   *   fasttrack-connection 標記的連線之後的封包繞過防火牆，所以搭配 established 也算放行（手冊另建議後面接一條相同條件的 accept）。
+   * 走法和 evalChain 相同（first-match、jump／return、內建 chain 沒有規則決定時放行），但封包是「任意一個該狀態的封包」：
+   *   規則只有 connection-state（以及 STATE_IGNORE）條件時才算一定命中；其他條件（介面、位址、協定…）的規則只對部分封包成立，不決定結果，
+   *   放行的另列為 conditional。這是事實（規則）推得的判斷，不看 WAN／LAN。
+   */
+  const STATE_IGNORE = new Set(['hw-offload']); // fasttrack-connection 的參數，adapter 把它放在 match，不是比對條件
+  const IFC_KEYS = new Set(['in-interface', 'in-interface-list', 'out-interface', 'out-interface-list']);
+  const DROP_ACTIONS = new Set(['drop', 'reject', 'tarpit']);
+  /** 規則對「任意一個 state 狀態的封包」：true（一定命中）／false（一定不命中）／null（只對部分封包成立）。 */
+  function stateMatch(rule, state) {
+    let res = true;
+    for (const k of Object.keys(rule.match)) {
+      if (STATE_IGNORE.has(k)) continue;
+      if (k === 'connection-state') {
+        const { neg, body } = splitNeg(rule.match[k]); const has = tokens(body).map((t) => t.toLowerCase()).includes(state);
+        if (has === neg) return false;
+        continue;
+      }
+      res = null;
+    }
+    return res;
+  }
+  /** 只以介面為條件（可另有不排除這個狀態的 connection-state）的規則。 */
+  const ifcOnly = (r) => { const keys = Object.keys(r.match).filter((k) => !STATE_IGNORE.has(k) && k !== 'connection-state'); return keys.length > 0 && keys.every((k) => IFC_KEYS.has(k)); };
+  /**
+   * 依序走 chain：{ verdict: accept|drop|null（沒有規則決定）, rule, path（jump 規則）, conditional: [{ rule, path }]（只對部分封包放行的規則）,
+   *   ifcDrops: [{ rule, path }]（決定之前、一定會走到的位置上只以介面為條件的丟棄：從那些介面進來的這種封包在這裡就被丟掉） }。
+   */
+  function walkState(ctx, family, chain, state) {
+    const conditional = []; const ifcDrops = [];
+    const walk = (ch, via, sure) => {
+      if (via.length > 16) return null;
+      for (const r of ctx.chain(family, 'filter', ch)) {
+        if (r.disabled) continue;
+        const m = stateMatch(r, state);
+        if (m === false) continue;
+        const definite = sure && m === true;
+        if (r.action === 'jump') {
+          const target = r.params['jump-target'];
+          if (!target || target === ch || via.some((x) => x.params['jump-target'] === target)) continue;
+          const sub = walk(target, via.concat(r), definite);
+          if (sub) return sub;
+          continue;
+        }
+        if (!definite) {
+          if (r.action === 'accept' || r.action === 'fasttrack-connection') conditional.push({ rule: r, path: via });
+          else if (sure && DROP_ACTIONS.has(r.action) && ifcOnly(r)) ifcDrops.push({ rule: r, path: via });
+          continue;
+        }
+        if (r.action === 'return') return null;
+        if (r.action === 'accept' || r.action === 'fasttrack-connection') return { verdict: 'accept', rule: r, path: via };
+        if (DROP_ACTIONS.has(r.action)) return { verdict: 'drop', rule: r, path: via };
+      }
+      return null;
+    };
+    const res = walk(chain, [], true) || { verdict: null, rule: null, path: [] };
+    return Object.assign(res, { conditional, ifcDrops });
+  }
+  /** 放行這個狀態的規則（connection-state 正向含這個狀態，動作是 accept 或 fasttrack-connection）。 */
+  const acceptsState = (r, state) => (r.action === 'accept' || r.action === 'fasttrack-connection') && r.match['connection-state'] !== undefined
+    && stateMatch(r, state) !== false && !splitNeg(r.match['connection-state']).neg;
+  /**
+   * 預設動作：chain 本身（不進 jump）第一條一定命中所有封包的 drop／reject／tarpit（scope all），沒有時最後一條只以介面為條件、
+   * 不限 connection-state 的丟棄（scope interface，例如 defconf 的「drop all not coming from LAN」）；都沒有時是內建 chain 的預設放行。
+   * 在無條件 drop 之前的無條件 accept 讓 chain 成為放行（scope all）。
+   */
+  function defaultAction(ctx, family, chain) {
+    let ifcDrop = null;
+    for (const r of ctx.chain(family, 'filter', chain)) {
+      if (r.disabled) continue;
+      const keys = Object.keys(r.match).filter((k) => !STATE_IGNORE.has(k));
+      if (!keys.length && (DROP_ACTIONS.has(r.action) || r.action === 'accept')) return { action: r.action, scope: 'all', policy: false, rule: r };
+      if (DROP_ACTIONS.has(r.action) && keys.length && keys.every((k) => IFC_KEYS.has(k))) ifcDrop = r;
+    }
+    return ifcDrop ? { action: ifcDrop.action, scope: 'interface', policy: false, rule: ifcDrop } : { action: 'accept', scope: null, policy: true, rule: null };
+  }
+  const POLICY_CHAINS = ['input', 'forward'];
+  /**
+   * 每個 chain 的狀態式骨架：[{ family, chain, rules（啟用中的規則數，不含 jump 進去的）, established, invalid, defaultAction, returnSafe }]。
+   *   established：{ status: accept（規則放行）|policy（沒有規則決定，預設放行）|drop（先被一定命中的丟棄規則擋下）, rule, path, conditional, shadowed }；
+   *     shadowed 是 status 為 drop 時，chain 中排在它之後、放行 established 的規則（走不到）；
+   *     blockedFrom：[{ rule, path, interfaces }] 排在決定之前、只以介面為條件的丟棄（status 不是 drop 時），從 interfaces 進來的回程不保證。
+   *   invalid：{ status: drop|accept|policy, rule, path, explicit（決定的規則是否明確比對 connection-state=invalid） }。
+   *   returnSafe：false 表示已建立連線的回程封包可能被丟棄（沒有一定走得到的 established 放行而且有丟棄，或有 blockedFrom）——F15 的條件。
+   * 物件內的 rule 是規則物件（呼叫端轉成鍵）。
+   */
+  function policyBaseline(ctx, family) {
+    const fam = family || 'ip';
+    return POLICY_CHAINS.map((chain) => {
+      const list = ctx.chain(fam, 'filter', chain).filter((r) => !r.disabled);
+      const e = walkState(ctx, fam, chain, 'established');
+      const shadowed = e.verdict === 'drop' ? list.filter((r) => r.position > (e.path[0] || e.rule).position && acceptsState(r, 'established')) : [];
+      // 介面條件的丟棄排在決定之前：從那些介面進來的回程不保證（in 方向的介面；只限 out 方向或清單無法展開時 interfaces 為 null）
+      const blockedFrom = e.verdict === 'drop' ? [] : e.ifcDrops.map(({ rule, path }) => {
+        const set = ifcSet(ctx, rule, 'in');
+        return { rule, path, interfaces: set && set !== UNKNOWN ? Array.from(set).sort(S.util.natural) : null };
+      });
+      const established = { status: e.verdict || 'policy', rule: e.rule, path: e.path, conditional: e.conditional.map((x) => x.rule), shadowed, blockedFrom };
+      const v = walkState(ctx, fam, chain, 'invalid');
+      const invalid = { status: v.verdict || 'policy', rule: v.rule, path: v.path, explicit: !!(v.rule && v.rule.match['connection-state'] !== undefined) };
+      const dflt = defaultAction(ctx, fam, chain);
+      const returnSafe = !blockedFrom.length && (established.status === 'accept' || (established.status === 'policy' && !DROP_ACTIONS.has(dflt.action)));
+      return { family: fam, chain, rules: list.length, established, invalid, defaultAction: dflt, returnSafe };
+    });
+  }
+
+  /**
    * IPv6 是否在用（推論）：/ipv6 settings 停用為 disabled；有 /ipv6 address、/ipv6 dhcp-client 或 /ipv6 firewall 規則為 used（src 是第一個證據行）；
    * 都沒有為 unknown（export 只列非預設值，無從判斷 IPv6 有沒有位址，不猜）。
    */
@@ -992,6 +1102,6 @@
   }
 
   S.infer = { infer, displayName, effVlans, effVlanModes, effPvid, bridgeOf, vlanSpan, VLAN_DATA, isVirtualIfc, hwMacsByDev, wifiLocations, behindLocations };
-  S.infer.fw = { canonMatch, covers, sameMatch, evalChain, evalFilter, decide, packetFor, fwContext, parseVal, splitNeg, protoName, listMembers,
-    TERMINAL: FW_TERMINAL, BUILTIN: FW_BUILTIN, NONDET: FW_NONDET, PORT_PROTOCOLS };
+  S.infer.fw = { canonMatch, covers, sameMatch, evalChain, evalFilter, decide, packetFor, fwContext, parseVal, splitNeg, protoName, listMembers, policyBaseline,
+    TERMINAL: FW_TERMINAL, BUILTIN: FW_BUILTIN, NONDET: FW_NONDET, PORT_PROTOCOLS, POLICY_CHAINS };
 })(globalThis.SSOT = globalThis.SSOT || {});

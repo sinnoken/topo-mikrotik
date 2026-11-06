@@ -112,10 +112,13 @@
   }
 
   // ---------------------------------------------------------------- 比對對象（finding.facet）
-  /** facet 中項目代碼的顯示文字（A12、R06 的 dns／ntp／gateway，V06、V07 比較的屬性，F11、F14 的管理服務；產品名稱沿用 RouterOS 的寫法） */
+  /**
+   * facet 中項目代碼的顯示文字（A12、R06 的 dns／ntp／gateway，V06、V07 比較的屬性，F11、F14 的管理服務；產品名稱沿用 RouterOS 的寫法）。
+   * F11、F14 的管理服務名稱也是設備詳情「管理面設定」的項目名稱（details.js 的 MGMT_ITEMS 依 facet 讀這裡），只寫在這裡。
+   */
   const FACET_ITEM = { dns: 'DNS 伺服器', ntp: 'NTP 伺服器', gateway: '閘道',
     'vlan-interface-name': 'VLAN 介面名稱', 'vlan-interface-comment': 'VLAN 介面說明', 'bridge-vlan-comment': 'bridge VLAN 說明',
-    'mac-telnet': 'MAC Telnet', 'mac-winbox': 'MAC WinBox', upnp: 'UPnP', proxy: 'web proxy', socks: 'SOCKS', 'bandwidth-server': '頻寬測試伺服器（bandwidth-server）' };
+    'mac-telnet': 'MAC Telnet', 'mac-winbox': 'MAC WinBox', upnp: 'UPnP', proxy: 'Web Proxy', socks: 'SOCKS', 'bandwidth-server': 'Bandwidth Server' };
   const facetItem = (s) => FACET_ITEM[s] || s;
   /** 「a|b」格式的 facet 拆成第一段與其餘（其餘部分可能含 |，原樣保留） */
   const facetSplit = (v) => { const at = v.indexOf('|'); return at < 0 ? [v, ''] : [v.slice(0, at), v.slice(at + 1)]; };

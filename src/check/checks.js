@@ -1089,7 +1089,7 @@
    * WAN 沿用 firewallZones 的推論（M.fwCtx）：沒有 WAN 時 F10、F11、F12、F14 不檢查（F08 說明），F13 不需要 WAN。
    * 「WAN 可以連到」與 F07 相同：從某個 WAN 介面送一個新連線，經 raw 與 filter input（S.infer.fw.evalFilter）會被放行；IPv6 只在確定有用時判斷。
    */
-  const MGMT_LABEL = { dns: 'DNS', macServer: 'MAC Telnet', macWinbox: 'MAC WinBox', discovery: '鄰居探索', snmp: 'SNMP', upnp: 'UPnP', proxy: 'web proxy', socks: 'SOCKS', bandwidthServer: 'bandwidth-server' };
+  const MGMT_LABEL = { dns: 'DNS', macServer: 'MAC Telnet', macWinbox: 'MAC WinBox', discovery: '鄰居探索', snmp: 'SNMP', upnp: 'UPnP', proxy: 'Web Proxy', socks: 'SOCKS', bandwidthServer: 'Bandwidth Server' };
   const MGMT_FAMILIES = [['ip', 'IPv4'], ['ipv6', 'IPv6']];
   // F13 的 facet 是 mgmtSettings 每個 community 的 facet（model/build.js 的 communityFacets）：F13 與畫面用同一個值對應
   // F10–F14 共用每台設備的管理面設定與 WAN 可達性判斷，合成一筆
@@ -1218,6 +1218,56 @@
     });
   }
 
+  // ---------------------------------------------------------------- 狀態式骨架（F15）
+  /*
+   * 回程的前提：IPv4 filter 的 input、forward 沒有一定走得到的 established 放行，而且 chain 會丟棄（無條件 drop、只以介面為條件的 drop，
+   * 或一定命中的丟棄排在 established 放行之前）。判斷在 S.infer.fw.policyBaseline（事實：規則），沒有丟棄時回程本來就放行，不報。
+   */
+  function statefulBaseline({ M, name }, add) {
+    const fw = S.infer.fw;
+    const where = (r) => `第 ${r.position} 條`;
+    const via = (path) => (path.length ? `（經由 ${path.map((x) => `${x.chain} ${where(x)} jump`).join('→')}）` : '');
+    M.fwCtx.forEach((ctx, dev) => {
+      fw.policyBaseline(ctx, 'ip').forEach((c) => {
+        if (c.returnSafe) return;
+        const e = c.established; const d = c.defaultAction;
+        const ev = [];
+        const push = (r) => { if (r && !ev.some((x) => x.block === r.block && x.line === r.line)) ev.push(ruleEv(r)); };
+        // 從哪些介面進來的回程不保證：介面名稱；清單無法展開或只限出介面時寫比對條件
+        const fromText = (bs) => S.util.uniq(bs.map((x) => (x.interfaces ? x.interfaces.map((ep) => K.splitEp(ep)[1]).join('、')
+          : fw.canonMatch(x.rule.match).filter(([k]) => /^(in|out)-interface/.test(k)).map(([k, v]) => `${k}=${v}`).join(' ')))).join('；');
+        let head = '沒有放行已建立的連線（connection-state=established），回程封包可能被丟棄'; let why; let anchor;
+        if (e.status === 'drop') {
+          why = `${e.rule.chain} ${where(e.rule)}（${ruleText(e.rule)}）${via(e.path)}先丟棄了已建立連線的封包`
+            + (e.shadowed.length ? `，放行 established 的${e.shadowed.map(where).join('、')}排在它之後，走不到` : '');
+          e.path.forEach(push); push(e.rule); e.shadowed.forEach(push);
+          anchor = e.path[0] || e.rule;
+        } else if (e.status === 'accept') {
+          // established 有放行，但前面先依介面丟棄：只有從那些介面進來的回程不保證
+          const bs = e.blockedFrom; const first = bs[0];
+          head = `放行已建立連線的規則之前先依介面丟棄，從 ${fromText(bs)} 進來的回程不保證`;
+          why = `${bs.map((x) => `${x.rule.chain} ${where(x.rule)}（${ruleText(x.rule)}）${via(x.path)}`).join('、')}排在放行 established 的 ${e.rule.chain} ${where(e.rule)}之前`;
+          bs.forEach((x) => { x.path.forEach(push); push(x.rule); }); push(e.rule);
+          anchor = first.path[0] || first.rule;
+        } else {
+          // 一定命中的全部丟棄會讓 established 的結果是 drop（上面），這裡只剩只以介面為條件的丟棄
+          // 預設動作是介面條件的丟棄時以它為準；不是時（例如丟棄另帶 connection-state）以第一條介面條件的丟棄為準
+          const bs = e.blockedFrom.length ? e.blockedFrom : [{ rule: d.rule, path: [], interfaces: null }];
+          const dr = d.rule && d.scope === 'interface' ? d.rule : bs[0].rule;
+          why = `${dr.chain} ${where(dr)}（${ruleText(dr)}）依介面丟棄封包，前面沒有一定會走到的 established 放行，從 ${fromText(bs)} 進來的回程不保證`;
+          bs.forEach((x) => { x.path.forEach(push); push(x.rule); }); push(dr);
+          anchor = dr;
+        }
+        const cond = e.conditional.filter((r) => fw.splitNeg(r.match['connection-state'] || '').body.split(',').includes('established'));
+        const condText = cond.length ? `；${cond.map((r) => `${r.chain} ${where(r)}`).join('、')}只在部分條件下放行 established` : '';
+        cond.forEach(push);
+        // entities：設備＋這個 chain 中決定丟棄的那一條（經 jump 時是 chain 本身的 jump 規則）；兩個 chain 各一筆、鍵不同，不需要 facet
+        add('F15', `${name(dev)}：IPv4 filter ${c.chain} ${head}：${why}${condText}`,
+          [{ type: 'device', key: dev }, { type: 'rule', key: anchor.key }], ev);
+      });
+    });
+  }
+
   // ---------------------------------------------------------------- 規則表
   /** 依 CATALOG 順序（每筆以第一個 id 排）；每個 CATALOG id 恰好屬於一筆，載入時檢查，漏列或重複都直接丟錯。 */
   const RULES = [
@@ -1253,6 +1303,7 @@
     [['F01', 'F02', 'F03', 'F04', 'F05', 'F06', 'F07', 'F08'], firewallRules],
     [['F09'], firewallStats],
     [['F10', 'F11', 'F12', 'F13', 'F14'], mgmtHardening],
+    [['F15'], statefulBaseline],
     [['L01'], firmwarePending],
     [['L02'], versionConsistency],
   ].map(([ids, fn]) => Object.freeze({ ids: Object.freeze(ids), name: fn.name, fn }));

@@ -178,8 +178,9 @@
   }
 
   /**
-   * L2 埠圖的共用步驟：設備層級（prepare 的分層，終端排在所屬設備的下一層）與每個埠在框的哪一邊。
-   * 對端在較上層的埠放在框的上緣（north），其餘放下緣（south）；內建版面與 ELK 共用，結果一致。
+   * L2 埠圖的共用步驟：設備層級（prepare 的分層，終端排在所屬設備的下一層）與層級規則的初始邊。
+   * 對端在較上層的埠放在框的上緣（north），其餘放下緣（south）。這個 side 只給 ELK 的 port 約束與排位置用；
+   * 埠最後在哪一邊由設備位置排好後的 portSides 決定（內建版面、ELK 與拖曳共用）。
    *   devs [{ id, kind, collected, group, box: { w, h } }]、ports [{ id, dev }]、edges [{ a, b, aDev, bDev }]
    * 回傳 { groups（prepare 的結果）, level: Map(dev→層), side: Map(port→'north'|'south'), peers: Map(port→[對端設備]) }
    */
@@ -189,8 +190,7 @@
     const groups = prepare(devs, devEdges);
     const level = new Map();
     groups.forEach((g) => { g.level.forEach((l, id) => level.set(id, l)); g.leaves.forEach((ids, p) => ids.forEach((id) => level.set(id, (g.level.get(p) || 0) + 1))); });
-    const peers = new Map();
-    edges.forEach((e) => { S.util.getOr(peers, e.a, () => []).push(e.bDev); S.util.getOr(peers, e.b, () => []).push(e.aDev); });
+    const peers = portPeers(edges);
     const side = new Map();
     ports.forEach((p) => {
       const mine = level.get(p.dev) || 0; const ps = peers.get(p.id) || [];
@@ -198,7 +198,46 @@
     });
     return { groups, level, side, peers };
   }
-  /** 依框的大小把埠平均排在上、下緣；order 決定同一邊的先後（預設依埠名） */
+  /** 每個埠的對端設備：edges [{ a, b, aDev, bDev }] → Map(port→[對端設備])（LAG、一埠看到多台時有多個） */
+  function portPeers(edges) {
+    const peers = new Map();
+    edges.forEach((e) => { S.util.getOr(peers, e.a, () => []).push(e.bDev); S.util.getOr(peers, e.b, () => []).push(e.aDev); });
+    return peers;
+  }
+  /** 對端的平均位置與自己框中心的向量；沒有對端（或對端都沒有位置、或就是自己）時為 null */
+  function peerVec(p, peers, pos) {
+    const c = pos.get(p.dev); if (!c) return null;
+    const ps = (peers.get(p.id) || []).filter((d) => d !== p.dev).map((d) => pos.get(d)).filter(Boolean);
+    if (!ps.length) return null;
+    const x = ps.reduce((s, q) => s + q.x, 0) / ps.length; const y = ps.reduce((s, q) => s + q.y, 0) / ps.length;
+    return x === c.x && y === c.y ? null : { dx: x - c.x, dy: y - c.y, x, y };
+  }
+  // 選邊的遲滯（弧度，約 8°）：埠已在某一邊時，對端方向要越過框的對角線這麼多才換邊，拖曳時埠不會在對角線附近來回跳
+  const SIDE_HYST = 0.14;
+  const VERTICAL = { north: true, south: true }; const HORIZONTAL = { east: true, west: true };
+  /**
+   * L2 埠依鏈路方向選邊（設備位置排好後）：框中心到對端框中心（多個對端取平均）的向量 (dx, dy)，
+   * 角度比框的對角線陡（|dy|/|dx| > h/w）放上下緣（依 dy），否則放左右緣（依 dx）；沒有對端的埠放下緣。
+   * 對角線的 h 用主題的基本框高（theme.l2.box.h），不用 portAnchors 加高後的框高：否則加高→對角線變陡→更多埠到左右→再加高，
+   * 同樣的位置重算會得到不同的邊。
+   * prev（選用，Map(port→邊)）：前一次的邊，越過對角線 SIDE_HYST 以上才換邊。內建版面、ELK 與拖曳共用。
+   *   devs [{ id, box: { w, h } }]、ports [{ id, dev }]、peers（portPeers 的結果）、pos Map(dev→{x,y})
+   * 回傳 Map(port→'north'|'south'|'east'|'west')
+   */
+  function portSides(devs, ports, peers, pos, prev) {
+    const box = new Map(devs.map((d) => [d.id, d.box])); const side = new Map();
+    const baseH = V.theme && V.theme.l2 && V.theme.l2.box && V.theme.l2.box.h;
+    ports.forEach((p) => {
+      const v = peerVec(p, peers, pos); const b = box.get(p.dev);
+      if (!v || !b) { side.set(p.id, 'south'); return; }
+      const was = prev && prev.get(p.id);
+      const diag = Math.atan2(baseH || b.h, b.w) + (VERTICAL[was] ? -SIDE_HYST : HORIZONTAL[was] ? SIDE_HYST : 0);
+      const vertical = Math.atan2(Math.abs(v.dy), Math.abs(v.dx)) > diag;
+      side.set(p.id, vertical ? (v.dy < 0 ? 'north' : 'south') : (v.dx < 0 ? 'west' : 'east'));
+    });
+    return side;
+  }
+  /** 依框的大小把埠平均排在各邊（上下緣沿 x、左右緣沿 y）；order 決定同一邊的先後（預設依埠名） */
   function placePorts(devs, ports, side, order) {
     const anchor = new Map(); const byDev = new Map();
     ports.forEach((p) => S.util.getOr(byDev, p.dev + '\u0000' + side.get(p.id), () => []).push(p));
@@ -206,13 +245,36 @@
     byDev.forEach((list, k) => {
       const [dev, sd] = k.split('\u0000'); const b = box.get(dev); if (!b) return;
       list.sort(order || ((x, y) => S.util.natural(x.name || x.id, y.name || y.id)));
-      list.forEach((p, i) => anchor.set(p.id, { dx: -b.w / 2 + ((i + 1) * b.w) / (list.length + 1), dy: sd === 'north' ? -b.h / 2 : b.h / 2 }));
+      const at = (i, len) => -len / 2 + ((i + 1) * len) / (list.length + 1);
+      list.forEach((p, i) => anchor.set(p.id, HORIZONTAL[sd]
+        ? { dx: sd === 'west' ? -b.w / 2 : b.w / 2, dy: at(i, b.h) }
+        : { dx: at(i, b.w), dy: sd === 'north' ? -b.h / 2 : b.h / 2 }));
     });
     return anchor;
   }
   /**
-   * L2 埠圖的內建版面（同步）：設備框依層級逐列排開（太寬時折行），各群以書架排列；埠排在框的上、下緣，
-   * 同一邊依對端設備的 x 排序，線比較少交叉。回傳 { pos: Map(dev→{x,y}), anchor: Map(port→{dx,dy}) }
+   * 選邊與埠的位置（portSides＋placePorts）：同一邊依對端在該邊的投影排序（上下緣依 x、左右緣依 y），線比較少交叉；
+   * 左右緣的埠多時框加高（至少 (埠數＋1)×portGap，不低於主題的框高）。
+   * opt { prev（前一次的邊，遲滯用）, minH, gap }。回傳 { side, anchor, box: Map(dev→{w,h}) }（box 是新的框大小，呼叫端套用）
+   */
+  function portAnchors(devs, ports, peers, pos, opt) {
+    const o = opt || {}; const B = (V.theme && V.theme.l2 && V.theme.l2.box) || {};
+    const minH = o.minH ?? B.h; const gap = o.gap ?? B.portGap;
+    const side = portSides(devs, ports, peers, pos, o.prev);
+    const sideN = new Map();
+    ports.forEach((p) => { const s = side.get(p.id); if (HORIZONTAL[s]) { const k = p.dev + '\u0000' + s; sideN.set(k, (sideN.get(k) || 0) + 1); } });
+    const box = new Map(devs.map((d) => {
+      const n = Math.max(sideN.get(d.id + '\u0000east') || 0, sideN.get(d.id + '\u0000west') || 0);
+      return [d.id, { w: d.box.w, h: Math.max(minH ?? d.box.h, n ? (n + 1) * gap : 0) }];
+    }));
+    const key = new Map(ports.map((p) => { const v = peerVec(p, peers, pos); return [p.id, v ? (HORIZONTAL[side.get(p.id)] ? v.y : v.x) : Infinity]; }));
+    const anchor = placePorts(devs.map((d) => ({ id: d.id, box: box.get(d.id) })), ports, side,
+      (a, b) => key.get(a.id) - key.get(b.id) || S.util.natural(a.name || a.id, b.name || b.id));
+    return { side, anchor, box };
+  }
+  /**
+   * L2 埠圖的內建版面（同步）：設備框依層級逐列排開（太寬時折行），各群以書架排列；排好後由 portAnchors 依鏈路方向選邊。
+   * 回傳 { pos: Map(dev→{x,y}), anchor: Map(port→{dx,dy}), side: Map(port→邊), box: Map(dev→{w,h}) }
    */
   function portLayout(devs, ports, edges, opt) {
     const portrait = !!(opt && opt.portrait);
@@ -242,12 +304,10 @@
       return { name: g.name, pos, w: Math.max(width, 1), h: Math.max(y - GAPY, 1), n: g.members.length };
     });
     const pos = shelf(boxes, { portrait });
-    const peerX = (p) => { const ps = P.peers.get(p.id) || []; return ps.length ? ps.reduce((s, d) => s + ((pos.get(d) || { x: 0 }).x), 0) / ps.length : Infinity; };
-    const anchor = placePorts(devs, ports, P.side, (a, b) => peerX(a) - peerX(b) || S.util.natural(a.name || a.id, b.name || b.id));
-    return { pos, anchor };
+    return Object.assign({ pos }, portAnchors(devs, ports, P.peers, pos));
   }
 
-  V.layout = { layout, forceStep, prepare, placeLeaves, shelf, wrapRows, slotW, leafRows, RANK, GAP, LDY, LEAF_DY, portPrepare, placePorts, portLayout };
+  V.layout = { layout, forceStep, prepare, placeLeaves, shelf, wrapRows, slotW, leafRows, RANK, GAP, LDY, LEAF_DY, portPrepare, placePorts, portLayout, portPeers, portSides, portAnchors, SIDE_HYST };
 })(globalThis.SSOT = globalThis.SSOT || {});
 
 /*

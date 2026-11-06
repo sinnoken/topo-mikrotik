@@ -89,7 +89,7 @@
     const item = (f) => h('div', { class: 'finding' }, [
       V.sevDot(f.severity),
       h('div', null, [h('div', null, [h('b', null, f.title), ...facetChip(f)]), h('div', null, f.message),
-        V.deviationLine(App, f.deviation), ledgerLine(f), V.remediation.hintLine(f.id), adviceBlock(f.id),
+        V.deviationLine(App, f.deviation), ledgerLine(f), mgmtGoto(App, f), V.remediation.hintLine(f.id), adviceBlock(f.id),
         f.evidence.length ? h('div', { class: f.id === 'C02' ? 'ev stack' : 'ev' }, evidenceLinks(App, f)) : null]),
     ]);
     // 先顯示最嚴重的幾筆，其餘收進同一個 section() 展開機制，避免檢查結果把屬性推到很下面
@@ -377,6 +377,7 @@
       vrfSection(App, d.key),
       policySection(App, d.key),
       firewallSummary(App, d.key),
+      d.collected ? mgmtSection(App, d.key) : null,
       section('收集到的原始輸出', blocks.length ? blocksTable(App, blocks) : null,
         { count: blocks.length, fold: true, open: blocks.some((b) => b.failure) }),
     ]);
@@ -398,6 +399,102 @@
       ]),
       h('div', null, h('a', { class: 'link', onclick: () => App.select({ type: 'firewall', dev }) }, '查看防火牆規則與服務')),
     ]);
+  }
+  /*
+   * 管理面設定（Q.mgmtOf，一台一筆；沒有 /export 的設備是 null）：每項列出狀態、值與依據。
+   *   依據：export 寫出的欄位連到原文那一行；沒寫出的欄位是依出廠預設值推定（S.query.mgmtDefaults，推論），提示寫出版本與手冊。
+   *   檢查結果：同一台設備的 F10–F14 依檢查與比對對象（facet）對到那一列，互相連結（mgmtGoto）。
+   * 欄位 → RouterOS 參數名稱只用於顯示（核心的轉換表在 model/build.js 的 MGMT_FIELDS）。
+   */
+  const MGMT_ITEMS = [
+    { area: 'dns', label: 'DNS 遠端查詢', menu: '/ip dns', rule: 'F10', params: [['allowRemote', 'allow-remote-requests']], state: (a) => (a.allowRemote ? '允許' : '不允許') },
+    { area: 'macServer', label: 'MAC Telnet', menu: '/tool mac-server', rule: 'F11', facet: 'mac-telnet', params: [['allowedList', 'allowed-interface-list']], state: (a) => `限清單 ${a.allowedList}` },
+    { area: 'macWinbox', label: 'MAC WinBox', menu: '/tool mac-server mac-winbox', rule: 'F11', facet: 'mac-winbox', params: [['allowedList', 'allowed-interface-list']], state: (a) => `限清單 ${a.allowedList}` },
+    { area: 'discovery', label: '鄰居探索', menu: '/ip neighbor discovery-settings', rule: 'F12', params: [['list', 'discover-interface-list'], ['protocols', 'protocol'], ['mode', 'mode']],
+      state: (a) => (!a.protocols.length || a.mode === 'rx-only' ? '不送出' : `在清單 ${a.list} 送出`) },
+    { area: 'snmp', label: 'SNMP', menu: '/snmp', params: [['enabled', 'enabled']] },
+    { area: 'upnp', label: 'UPnP', menu: '/ip upnp', rule: 'F14', facet: 'upnp', params: [['enabled', 'enabled']] },
+    { area: 'proxy', label: 'web proxy', menu: '/ip proxy', rule: 'F14', facet: 'proxy', params: [['enabled', 'enabled'], ['ports', 'port']] },
+    { area: 'socks', label: 'SOCKS', menu: '/ip socks', rule: 'F14', facet: 'socks', params: [['enabled', 'enabled'], ['port', 'port']] },
+    { area: 'bandwidthServer', label: 'bandwidth-server', menu: '/tool bandwidth-server', rule: 'F14', facet: 'bandwidth-server', params: [['enabled', 'enabled'], ['authenticate', 'authenticate']] },
+  ];
+  const MGMT_COMMUNITY = [['name', 'name'], ['addresses', 'addresses'], ['write', 'write-access'], ['security', 'security'], ['disabled', 'disabled']];
+  const MGMT_RULES = new Set(MGMT_ITEMS.map((x) => x.rule).filter(Boolean).concat('F13'));
+  const MGMT_DEFAULT_TEXT = '預設（未在 export 中，推論）';
+  const mgmtVal = (v) => (v === true ? 'yes' : v === false ? 'no' : Array.isArray(v) ? v.join(',') : v == null ? '?' : String(v));
+  /** 一列的依據：export 的原文行號（各自可點）＋沒寫出的欄位標預設（推論，提示寫出 S.query.mgmtDefaults 的版本與手冊） */
+  function mgmtBasis(App, x, params, manual) {
+    const D = S.query.mgmtDefaults();
+    const list = x.src.map(([b, line]) => ({ file: App.Q.block(b).file, line }));
+    const srcs = x.src.map(([b, line], n) => h('a', { class: 'link mgmt-src', title: '開啟原文', onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); App.openRaw(list[n].file, line, { list }); } },
+      (n ? '' : V.fileName(list[n].file) + ' ') + `第 ${line} 行`));
+    const def = x.defaulted.length ? V.chip(MGMT_DEFAULT_TEXT, 'info mgmt-default', {
+      title: `export 不寫出預設值：依 RouterOS ${D.routerOS} 的出廠預設值推定，設備版本不同時可能不同。手冊：${D.manual[manual]}` }) : null;
+    const partial = x.src.length && x.defaulted.length ? h('span', { class: 'muted' }, `　${params.filter(([f]) => x.defaulted.includes(f)).map(([, p]) => p).join('、')}：`) : null;
+    return h('span', { class: 'mgmt-basis' }, [...srcs.flatMap((a, n) => (n ? ['、', a] : [a])), partial, def]);
+  }
+  /** 一列對到的檢查結果（同一台設備、同一個檢查與比對對象）：連結開啟那一筆（滑鼠與鍵盤） */
+  function mgmtFindings(App, fl, rule, facet) {
+    const Q = App.Q;
+    return fl.filter((f) => f.id === rule && (facet === undefined || f.facet === facet)).map((f) => {
+      const idx = Q.findingIndexesByKey(Q.findingKey(f)).find((i) => Q.finding(i) === f);
+      return h('a', { class: 'link mgmt-finding', 'data-finding-idx': String(idx), title: f.message, onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); App.selectFinding(idx); } },
+        [V.sevDot(f.severity), ' ', `${f.id} ${f.title}`]);
+    });
+  }
+  function mgmtSection(App, dev) {
+    const Q = App.Q; const ms = Q.mgmtOf(dev);
+    const mark = (el) => { el.classList.add('mgmt-section'); return el; };
+    if (!ms) return mark(section('管理面設定', h('p', { class: 'muted' }, '沒有收集 /export，無法判斷 DNS、MAC server、鄰居探索、SNMP、UPnP、proxy、SOCKS 與 bandwidth-server 的設定。'), { fold: true }));
+    const fl = Q.findingsFor('device', dev).filter((f) => MGMT_RULES.has(f.id));
+    // 右欄很窄：每項一個區塊（名稱與狀態 → 值 → 依據 → 檢查結果），不用多欄表格
+    const row = (attrs, label, menu, state, params, x, manual, links) => h('div', Object.assign({ class: 'mgmt-row' + (links.length ? ' bad' : '') }, attrs), [
+      h('div', { class: 'mgmt-head' }, [].concat(h('b', null, label), ' ', V.chip(state), h('span', { class: 'muted mono mgmt-menu' }, menu))),
+      h('div', { class: 'mono mgmt-val' }, params.map(([f, p]) => `${p}=${mgmtVal(x[f])}`).join(' ')),
+      h('div', { class: 'mgmt-line' }, [h('span', { class: 'muted' }, '依據：'), mgmtBasis(App, x, params, manual)]),
+      links.length ? h('div', { class: 'mgmt-line' }, [h('span', { class: 'muted' }, '檢查結果：'), ...links.flatMap((a, n) => (n ? ['、', a] : [a]))]) : null,
+    ]);
+    const rows = [];
+    MGMT_ITEMS.forEach((it) => {
+      const a = ms[it.area];
+      const state = it.state ? it.state(a) : a.enabled ? '開啟' : '關閉';
+      const extra = it.area === 'upnp' && a.interfaces.length ? '　' + a.interfaces.map((i) => `${i.type}=${K.splitEp(i.ep)[1]}${i.disabled ? '（停用）' : ''}`).join(' ') : '';
+      rows.push(row({ 'data-mgmt': it.area }, it.label, it.menu, state + extra, it.params, a, it.area, it.rule ? mgmtFindings(App, fl, it.rule, it.facet) : []));
+      if (it.area === 'snmp') {
+        a.communities.forEach((c) => rows.push(row({ 'data-mgmt': 'community', 'data-community': c.name },
+          [`SNMP community「${c.name}」`, ...(c.isDefault ? [' ', V.chip('出廠')] : [])], '/snmp community', c.disabled ? '停用' : '啟用',
+          MGMT_COMMUNITY.filter(([f]) => f !== 'name' && f !== 'disabled'), c, 'community', mgmtFindings(App, fl, 'F13', c.name))));
+      }
+    });
+    const unmatched = ms.snmp.unmatched.length ? h('p', { class: 'warn-line' }, [`export 中有 ${ms.snmp.unmatched.length} 行 /snmp community set 找不到對象，沒有套用：`,
+      ...ms.snmp.unmatched.flatMap((s, n) => [n ? '、' : '', srcLink(App, [s])])]) : null;
+    return mark(section('管理面設定', [
+      h('p', { class: 'muted' }, 'export 只寫出改過的設定；沒寫出的項目依出廠預設值推定（推論）。檢查結果是 F10–F14。'),
+      unmatched,
+      h('div', { class: 'mgmt-list' }, rows),
+    ], { count: fl.length, fold: true, open: fl.some((f) => f.severity !== 'info') }));
+  }
+  /**
+   * F10–F14 的檢查結果 → 管理面設定的那一列：不在這台設備的詳情時先選取設備，再展開區塊、標出並捲到那一列。
+   * 沒有對應的列（例如沒有 export）時不顯示連結。
+   */
+  function mgmtGoto(App, f) {
+    if (!MGMT_RULES.has(f.id)) return null;
+    const e = f.entities.find((x) => x.type === 'device'); if (!e || !App.Q.mgmtOf(e.key)) return null;
+    const area = (MGMT_ITEMS.find((it) => it.rule === f.id && (it.facet === undefined || it.facet === f.facet)) || {}).area;
+    const match = (r) => (f.id === 'F13' ? r.getAttribute('data-mgmt') === 'community' && r.getAttribute('data-community') === f.facet : r.getAttribute('data-mgmt') === area);
+    const go = () => {
+      if (!App.sel || App.sel.type !== 'device' || App.sel.key !== e.key) App.select({ type: 'device', key: e.key }, { focus: true });
+      const sec = V.$('#detail').querySelector('.mgmt-section'); if (!sec) return;
+      sec.open = true;
+      const T = V.theme.firewall.focus;
+      Array.from(sec.querySelectorAll('.mgmt-row')).forEach((r) => {
+        const on = match(r); r.classList.toggle('focus', on);
+        r.style.background = on ? T.bg : ''; r.style.boxShadow = on ? `inset 3px 0 0 ${T.border}` : '';
+        if (on) r.scrollIntoView({ block: 'center' });
+      });
+    };
+    return h('div', null, h('a', { class: 'link mgmt-goto', onclick: go }, '查看管理面設定'));
   }
   /**
    * 設備的 VRF 設定（Q.vrfsOf，事實）：依設定順序，介面屬於第一個列出它（或 all）的 VRF。

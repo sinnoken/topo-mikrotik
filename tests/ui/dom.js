@@ -9,7 +9,8 @@ class ClassList { constructor(el) { this.el = el; } get set() { return new Set((
   _w(s) { this.el.attrs.class = Array.from(s).join(' '); } add(...c) { const s = this.set; c.forEach((x) => s.add(x)); this._w(s); } remove(...c) { const s = this.set; c.forEach((x) => s.delete(x)); this._w(s); }
   toggle(c, f) { const s = this.set; const on = f === undefined ? !s.has(c) : f; on ? s.add(c) : s.delete(c); this._w(s); return on; } contains(c) { return this.set.has(c); } }
 class Node_ { constructor() { this.childNodes = []; this.parentNode = null; }
-  appendChild(c) { if (c.parentNode) c.parentNode.removeChild(c); c.parentNode = this; this.childNodes.push(c); return c; }
+  // 和瀏覽器一樣只接受節點：陣列等其他值在瀏覽器會丟 TypeError，模擬 DOM 不能默默收下
+  appendChild(c) { if (!(c instanceof Node_)) throw new TypeError("Failed to execute 'appendChild' on 'Node': parameter 1 is not of type 'Node'."); if (c.parentNode) c.parentNode.removeChild(c); c.parentNode = this; this.childNodes.push(c); return c; }
   removeChild(c) { this.childNodes = this.childNodes.filter((x) => x !== c); c.parentNode = null; return c; }
   get firstChild() { return this.childNodes[0] || null; } get firstElementChild() { return this.childNodes.find((c) => c instanceof El) || null; }
   contains(n) { for (let x = n; x; x = x.parentNode) if (x === this) return true; return false; }

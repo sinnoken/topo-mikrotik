@@ -20,6 +20,15 @@
   /** 錯誤或警告清單：全部列出（不截斷），每筆是「路徑：訊息（代碼）」 */
   const issueList = (cls, list) => h('ul', { class: 'hub-issues ' + cls }, list.map((x) => h('li', { 'data-code': x.code || '' }, [
     x.path ? h('span', { class: 'mono' }, x.path + '：') : null, x.message, x.code ? h('span', { class: 'muted mono' }, `（${x.code}）`) : null])));
+  /**
+   * 匯出網路文件：zone 與 L4 畫面同一組選項（V.l4.zoneOpts）。命名規則的 zones 無法套用時說明原因、不匯出，
+   * 不靜默退回推論的 zone（CLI 遇到同樣的情況也不輸出）
+   */
+  const exportSite = (App, kind) => {
+    const zo = V.l4.zoneOpts(App);
+    if (zo.error) { A().banner(`無法匯出網路文件：命名規則的 zones 無法套用（${zo.error}）。請用建立基準時的命名規則，或重新建立基準。`, 10000); return; }
+    App.exportAs(kind, { zones: zo.opts });
+  };
   const shQuote = (s) => (/^[\w./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, `'\\''`)}'`);
 
   // ---------------------------------------------------------------- 這一輪的輸入
@@ -200,11 +209,16 @@
       card('device', '給設備', `修正指令：每台的套用、回復、驗證 .rsc 與總表。本工具只產生文字，不會連線設備。${nPatch ? `目前選取 ${V.num(nPatch)} 項，會放進工作包。` : ''}`, [
         btn('開啟修正計畫', 'open-patch', () => App.openPatch(), { class: 'open-patch', disabled: off }),
       ]),
-      card('report', '給報告或紀錄', `檢查結果 Markdown／CSV（含處理狀態，不受「${A().STEP_LABEL.triage}」檢查結果的篩選影響）・拓樸 PNG`, [
+      card('report', '給報告或紀錄', `檢查結果 Markdown／CSV（含處理狀態，不受「${A().STEP_LABEL.triage}」檢查結果的篩選影響）・網路文件・拓樸 PNG`, [
         btn('Markdown', 'export-markdown', () => A().exportReport('markdown'), { disabled: off, title: '依嚴重度（或依設備）分組的報表，含證據行號，已處理的項目會標示狀態與備註' }),
         btn('CSV', 'export-csv', () => A().exportReport('csv'), { disabled: off, title: '每筆一列，含相關實體、證據行號、處理狀態、時間與備註（Excel 可直接開啟）' }),
         btn('依設備排序', 'by-device', () => A().toggleByDevice(), { class: 'ghost export-by-device' + (hub.byDevice ? ' on' : ''), 'aria-pressed': String(hub.byDevice),
           title: '匯出時依設備排序（Markdown 依設備分組）；不屬於任何設備的排最後；工作包的報表也依這個設定' }),
+        // 網路文件（站點說明書）：zone 用與 L4 畫面相同的選項（命名規則有 zones 時套用）
+        btn('網路文件（Markdown）', 'export-site-markdown', () => exportSite(App, 'siteMarkdown'), { disabled: off,
+          title: '交接用的現況說明：設備清單、IP 規劃、VLAN 表、埠表、未結案事項與接受風險；推論的欄位或值標「（推論）」，命名規則給的值標「（命名規則）」' }),
+        btn('網路文件（CSV）', 'export-site-csv', () => exportSite(App, 'siteCsv'), { disabled: off,
+          title: '同網路文件，一個 CSV 檔分成多個區段（每段開頭是「[標題]」一列），Excel 可直接開啟' }),
         btn('拓樸 PNG', 'export-png', () => A().exportPng(), { disabled: off, title: '目前的拓樸圖畫面' }),
       ], 'hub-sec-reports'),
       h('div', { class: 'hub-out', 'data-output': 'collector', role: 'group', 'aria-label': '給收集器' }, [

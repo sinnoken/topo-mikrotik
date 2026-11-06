@@ -44,9 +44,12 @@ if (!selected.length) {
   console.error(`沒有任何測試名稱含「${ARGS.grep}」（共 ${tests.length} 項${ARGS.large ? '' : '；壓力測試需另加 --large'}），視為失敗`);
   process.exit(1);
 }
-let fail = 0;
-for (const t of selected) {
-  try { t.fn(); console.log('  ✓ ' + t.name); } catch (e) { fail++; console.log('  ✗ ' + t.name + '\n      ' + String(e.message).split('\n').join('\n      ')); }
-}
-console.log(`\n${selected.length - fail} 通過，${fail} 失敗${ARGS.grep == null ? '' : `（已篩選：${selected.length}／${tests.length}）`}`);
-process.exit(fail ? 1 : 0);
+// 測試可以是 async：一律 await，否則 Promise 裡的失敗會被當成通過
+(async () => {
+  let fail = 0;
+  for (const t of selected) {
+    try { await t.fn(); console.log('  ✓ ' + t.name); } catch (e) { fail++; console.log('  ✗ ' + t.name + '\n      ' + String(e && e.message).split('\n').join('\n      ')); }
+  }
+  console.log(`\n${selected.length - fail} 通過，${fail} 失敗${ARGS.grep == null ? '' : `（已篩選：${selected.length}／${tests.length}）`}`);
+  process.exit(fail ? 1 : 0);
+})();

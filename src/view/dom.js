@@ -107,7 +107,8 @@
   /** 嚴重度的顯示名稱（單一來源是 S.report.SEV_TEXT，匯出的報表共用） */
   V.SEV = S.report.SEV_TEXT;
   V.CLS = { lag: '聚合', '40g': '40G 以上', '10g': '10G', '1g': '1G', oob: '管理', other: '其他' };
-  V.STATUS = { up: 'up', down: 'down', unknown: '不明' };
+  /** 介面狀態的顯示文字（單一來源是 S.report.IFC_STATUS_TEXT，網路文件共用） */
+  V.STATUS = S.report.IFC_STATUS_TEXT;
   /** 廠商的顯示名（devices[].manufacturer、清單的廠商欄）：Snapshot 存小寫鍵，畫面用正式寫法；沒有對照的原樣顯示，空值回傳空字串 */
   V.VENDOR = { mikrotik: 'MikroTik', cisco: 'Cisco', ubiquiti: 'Ubiquiti', juniper: 'Juniper', aruba: 'Aruba', hpe: 'HPE', tplink: 'TP-Link', asus: 'ASUS' };
   V.vendorName = (m) => (m == null ? '' : V.VENDOR[String(m).toLowerCase()] || String(m));

@@ -36,7 +36,17 @@
 | [多層網路架構圖 實作規格書](多層網路架構圖_實作規格書.md) | 使用者的 L2／L3／L4 架構圖需求，每項的本工具對應與狀態 | 使用者 | 依使用者指示；實作完成時更新各項狀態 |
 | [多層網路架構圖 可行性評估](多層網路架構圖_可行性評估.md) | 規格書 v0.1 當時的可行性評估背景 | 想了解規格書修訂緣由的人 | 不再更新；狀態以規格書為準 |
 
-repo 根目錄的 [README](../README.md) 只有快速開始、功能一覽與文件連結；開發原則與 agent 分工見 [CLAUDE.md](../CLAUDE.md) 與 [.github/copilot-instructions.md](../.github/copilot-instructions.md)。
+`docs/` 以外的說明文件：
+
+| 文件 | 回答什麼問題 | 什麼時候更新 |
+|---|---|---|
+| [README](../README.md) | 快速開始、排程 CLI、功能一覽與文件連結 | 快速開始的步驟、CLI 或功能改變時 |
+| [CLAUDE.md](../CLAUDE.md) | 給 AI agent 的專案概要、最常用的指令、架構的要點、agent 分工與 skills | 架構、分工或 skill 改變時 |
+| [.github/copilot-instructions.md](../.github/copilot-instructions.md) | 開發原則（CLAUDE.md 匯入同一份） | 開發原則改變時 |
+| `.claude/skills/`、`.github/skills/` | 專用流程；兩份內容相同（`tests/docs.js` 檢查） | 流程改變時兩份一起改 |
+| `.claude/agents/*.md` 與 [ownership.json](../.claude/agents/ownership.json) | 各 agent 的職責與負責的檔案（每個檔案恰好一個負責者，`tests/docs.js` 檢查） | 分工改變或新增檔案時 |
+
+上面的「分工原則」「各份文件」與這張表，是「哪件事寫在哪份文件」的唯一對照；開發原則與 docs agent 的定義都連到這裡，不另寫一份。
 
 ## 文件整理
 

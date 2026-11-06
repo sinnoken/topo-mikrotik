@@ -303,6 +303,7 @@ test('workpack：build 的參數形狀不對時丟出 TypeError', () => {
   const R = ROUND(); const ok = clone(R.parts);
   assert.throws(() => S.workpack.build(ok), /now/);
   assert.throws(() => S.workpack.build(ok, { now: 'today' }), /ISO 8601/);
+  assert.throws(() => S.workpack.build(ok, { now: '2026-02-30T00:00:00Z' }), /ISO 8601/, '不存在的日期（與 S.util.isIso 同一個判斷）');
   assert.throws(() => S.workpack.build(ok, { now: NOW, x: 1 }), /不認得/);
   assert.throws(() => S.workpack.build(ok.concat({ role: 'secret', name: 'a', text: '' }), { now: NOW }), /role 必須是/);
   assert.throws(() => S.workpack.build(ok.concat({ role: 'report', name: '', text: '' }), { now: NOW }), /name/);

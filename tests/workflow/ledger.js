@@ -171,6 +171,7 @@ test('處理紀錄：set 寫入歷程、accepted 預設豁免半年，不合法�
   const gone = L.advance(L.set(r1.ledger, k.F06, { status: 'scheduled' }, now), LEDGER.q2(), { now: '2026-01-15T00:00:00Z' });
   assert.strictEqual(gone.ledger.items[k.F06].status, 'fixed');
   assert.throws(() => L.advance(L.empty(), q1, { now: 'yesterday' }), /now 必須是 ISO 8601/);
+  assert.throws(() => L.advance(L.empty(), q1, { now: '2026-02-30T00:00:00Z' }), /now 必須是 ISO 8601/, '不存在的日期（與 S.util.isIso 同一個判斷）');
 });
 test('處理紀錄：fromAcks 依分類轉換舊確認標記，保留原始紀錄並推進一輪', () => {
   const L = S.ledger; const q1 = LEDGER.q1();

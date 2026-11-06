@@ -39,6 +39,18 @@
   };
 
   util.cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  /**
+   * ISO 8601 時間字串（日期，或日期＋時間＋時區 Z／±hh:mm）：時間參數與欄位的唯一判斷（S.build 的 options.now、處理紀錄、工作包、CLI 的 --now）。
+   * 年月日、時分秒與時區位移逐欄比對要真的存在：Date.parse 會把 2026-02-30 進位成 3/2、接受 24:00，這裡都不接受。不正規化。
+   */
+  const ISO_RE = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-](\d{2}):(\d{2})))?$/;
+  util.isIso = (v) => {
+    const m = typeof v === 'string' && ISO_RE.exec(v); if (!m) return false;
+    const [y, mo, d, h, mi, s, oh, om] = m.slice(1).map((x) => (x === undefined ? 0 : Number(x)));
+    const day = new Date(0); day.setUTCFullYear(y, mo - 1, d); // 不用 Date.UTC：它把 0–99 年當成 1900 年代
+    if (day.getUTCFullYear() !== y || day.getUTCMonth() !== mo - 1 || day.getUTCDate() !== d) return false;
+    return h < 24 && mi < 60 && s < 60 && oh < 24 && om < 60 && Number.isFinite(Date.parse(v));
+  };
   /** 物件的鍵依字典序排列後的 JSON（陣列順序保留）：內容相同、只差鍵順序的物件得到同一個字串，用於計算雜湊。 */
   util.canonicalJson = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x)
     ? Object.keys(x).sort(util.cmp).reduce((o, key) => { o[key] = x[key]; return o; }, {}) : x));

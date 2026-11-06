@@ -70,6 +70,13 @@ run_collector() {
 }
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 
+# 靜態檢查：$名稱 後面緊接非 ASCII 字元（例如全形冒號）時，macOS 的 bash 3.2 在 UTF-8 locale 會把它算進變數名
+# （set -u 下報 unbound variable）；這種地方一律寫成 ${名稱}。以位元組比對（LC_ALL=C），0x80 以上的位元組都算非 ASCII。
+if bad=$(LC_ALL=C grep -nE '\$[A-Za-z_][A-Za-z0-9_]*[^ -~[:space:]]' "$ROOT"/tools/*.sh "$ROOT"/tests/*.sh); then
+  fail "變數名後面直接接非 ASCII 字元，請改成 \${名稱}：
+$bad"
+fi
+
 run_collector "$TMP_DIR/devices.csv" --commands config,neighbor --output "$TMP_DIR/success.txt" >"$TMP_DIR/success.log"
 grep -q '^TEST_ROUTER (192.0.2.1):$' "$TMP_DIR/success.txt"
 grep -q '^### /export terse$' "$TMP_DIR/success.txt"

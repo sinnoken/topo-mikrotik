@@ -41,7 +41,7 @@ test('CLI：第一輪（沒有處理紀錄）有新的待處理錯誤／警告�
   try {
     const r = run([SAMPLE, '--now', NOW, '-o', out]);
     assert.strictEqual(r.code, CODES().NOTIFY, r.stderr);
-    ['baseline.json', 'ledger.json', 'findings.json', 'findings.csv', 'findings.md', 'summary.json'].forEach((f) => assert.ok(fs.existsSync(path.join(out, f)), `應輸出 ${f}`));
+    ['baseline.json', 'ledger.json', 'findings.json', 'findings.csv', 'findings.md', 'sitedoc.md', 'sitedoc.csv', 'summary.json'].forEach((f) => assert.ok(fs.existsSync(path.join(out, f)), `應輸出 ${f}`));
     assert.ok(!fs.existsSync(path.join(out, 'compare.json')), '沒有 --expected 時不輸出 compare.json');
     const snap = readJson(path.join(out, 'baseline.json'));
     assert.strictEqual(snap.meta.createdAt, NOW);
@@ -135,7 +135,7 @@ test('CLI：相同輸入與選項的輸出完全相同', () => {
   try {
     run([SAMPLE, '--now', NOW, '-o', a]); run([SAMPLE, '--now', NOW, '-o', b]);
     const files = fs.readdirSync(a).sort();
-    assert.deepStrictEqual(files, ['baseline.json', 'findings.csv', 'findings.json', 'findings.md', 'ledger.json', 'summary.json']);
+    assert.deepStrictEqual(files, ['baseline.json', 'findings.csv', 'findings.json', 'findings.md', 'ledger.json', 'sitedoc.csv', 'sitedoc.md', 'summary.json']);
     assert.deepStrictEqual(fs.readdirSync(b).sort(), files);
     files.forEach((f) => assert.ok(fs.readFileSync(path.join(a, f)).equals(fs.readFileSync(path.join(b, f))), `${f} 兩次輸出不同`));
   } finally { rm(a); rm(b); }
@@ -226,9 +226,52 @@ test('CLI：--now 正規化成 UTC、不存在的日期失敗；--expected／--e
   try {
     assert.notStrictEqual(run([SAMPLE, '--now', '2026-01-01T08:00:00+08:00', '-o', d]).code, CODES().FAILED);
     assert.strictEqual(readJson(path.join(d, 'baseline.json')).meta.createdAt, '2026-01-01T00:00:00.000Z', '帶時區的 --now 應正規化成 UTC');
-    assert.strictEqual(run([SAMPLE, '--now', '2026-02-30T00:00:00Z', '-o', path.join(d, 'x')]).code, CODES().FAILED, '不存在的日期應失敗');
+    const bad = run([SAMPLE, '--now', '2026-02-30T00:00:00Z', '-o', path.join(d, 'x')]);
+    assert.strictEqual(bad.code, CODES().FAILED, '不存在的日期應失敗');
+    assert.ok(bad.stderr.includes('2026-01-01') && bad.stderr.includes('2026-01-01T00:00:00Z'), '訊息說明日期與時間兩種寫法（與核心 S.util.isIso 相同）：' + bad.stderr);
+    // 只有日期：與核心的規則相同（S.util.isIso 接受），正規化成 UTC 的午夜
+    assert.notStrictEqual(run([SAMPLE, '--now', '2026-01-01', '-o', path.join(d, 'w')]).code, CODES().FAILED, '只有日期的 --now 應接受');
+    assert.strictEqual(readJson(path.join(d, 'w', 'baseline.json')).meta.createdAt, '2026-01-01T00:00:00.000Z');
     writeJson(path.join(d, 'null.json'), null);
     assert.strictEqual(run([SAMPLE, '--expected', path.join(d, 'null.json'), '--now', NOW, '-o', path.join(d, 'y')]).code, CODES().FAILED, '--expected 為 null 應失敗');
     assert.strictEqual(run([SAMPLE, '--expected-data', path.join(d, 'null.json'), '--now', NOW, '-o', path.join(d, 'z')]).code, CODES().FAILED, '--expected-data 為 null 應失敗');
+  } finally { rm(d); }
+});
+
+test('CLI：收集檔沒有認到任何設備的資料（空檔、只有空白或註解、內容都認不得）時結束碼 2，stderr 說明原因，不輸出任何檔案', () => {
+  const d = tmp();
+  try {
+    const out = path.join(d, 'out');
+    const file = (name, text) => { const f = path.join(d, name); fs.writeFileSync(f, text); return f; };
+    const cases = [
+      ['空檔', [file('empty.txt', '')], /沒有內容/],
+      ['只有空白', [file('blank.txt', ' \n\n\t\n')], /沒有內容/],
+      ['兩個空檔', [file('e1.txt', ''), file('e2.txt', '\n')], /沒有內容/],
+      ['只有註解', [file('comments.txt', '# 收集檔\n# 這一輪沒有輸出\n')], /沒有認到任何設備的資料/],
+      ['內容都認不得', [file('junk.txt', 'hello\nworld\n')], /沒有認到任何設備的資料.*無法辨識/],
+    ];
+    cases.forEach(([name, inputs, why]) => {
+      const r = run([...inputs, '--now', NOW, '-o', out]);
+      assert.strictEqual(r.code, CODES().FAILED, `${name}：結束碼應為 2，得到 ${r.code}\n${r.stdout}${r.stderr}`);
+      assert.ok(why.test(r.stderr), `${name}：stderr 應說明原因：${r.stderr}`);
+      assert.ok(!/at .*\.js:\d+/.test(r.stderr), `${name}：是預期的失敗，不印堆疊：${r.stderr}`);
+      assert.ok(!fs.existsSync(out), `${name}：不應建立輸出目錄`);
+    });
+    // 只要有一份收集檔認到設備就照常執行（空檔只是不貢獻內容）；全部收集失敗也是有結果的一輪（由 C02 回報）
+    const allFailed = run([file('failed.txt', 'R_B (10.0.0.2):\n# collection failed: connection\n'), '--now', NOW, '-o', path.join(d, 'f')]);
+    assert.strictEqual(allFailed.code, CODES().NOTIFY, allFailed.stderr);
+    assert.notStrictEqual(run([SAMPLE, file('empty2.txt', ''), '--now', NOW, '-o', out]).code, CODES().FAILED);
+  } finally { rm(d); }
+});
+
+test('CLI：sitedoc.md／sitedoc.csv 與畫面的網路文件同一份核心文字（S.report.siteDoc*），處理紀錄是推進後的狀態', () => {
+  const d = tmp();
+  try {
+    assert.notStrictEqual(run([SAMPLE, '--now', NOW, '-o', d]).code, CODES().FAILED);
+    const ledger = readJson(path.join(d, 'ledger.json'));
+    const Q = S.query(readJson(path.join(d, 'baseline.json')));
+    const opts = { ledgerOf: S.report.ledgerOfItems(ledger, Q) };
+    assert.strictEqual(fs.readFileSync(path.join(d, 'sitedoc.md'), 'utf8'), S.report.siteDocMarkdown(Q, opts));
+    assert.strictEqual(fs.readFileSync(path.join(d, 'sitedoc.csv'), 'utf8'), S.report.siteDocCsv(Q, opts));
   } finally { rm(d); }
 });

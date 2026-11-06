@@ -96,18 +96,19 @@
     ]);
   }
 
+  /** 輸出清單與結束碼的文字與 tools/baseline.js 的 FILES、--help 一致（瀏覽器無法載入 CLI，由 tests/ui-smoke.js 核對） */
   function schedule() {
     return step('3. 排程（CLI）', [
       h('p', null, [h('code', null, 'tools/baseline.js'), ' 用和網頁相同的核心建立基準並推進處理紀錄，只讀檔案、不連線設備（需要 Node.js）。適合在收集腳本之後放進 cron 或 Windows 的工作排程器定期執行。']),
       pre(['npm run baseline -- collection.txt -o out/                          # 第一次：從空的處理紀錄開始',
         'npm run baseline -- collection.txt --ledger out/ledger.json -o out/  # 之後每一輪：傳入上一輪的處理紀錄'].join('\n'), '排程的指令'),
-      h('p', null, ['輸出到 ', h('code', null, 'out/'), '：基準 baseline.json、處理紀錄 ledger.json（可在資料中心匯入）、檢查結果 findings.json／.csv／.md、摘要 summary.json；有 ',
+      h('p', null, ['輸出到 ', h('code', null, 'out/'), '：基準 baseline.json、處理紀錄 ledger.json（可在資料中心匯入）、檢查結果 findings.json／findings.csv／findings.md、網路文件 sitedoc.md／sitedoc.csv、摘要 summary.json；有 ',
         h('code', null, '--expected'), ' 時另有比對結果 compare.json。']),
       h('div', null, '結束碼：'),
       h('dl', { class: 'settings-about settings-exit' }, [
         h('dt', { class: 'mono' }, '0'), h('dd', null, '成功，沒有復發，也沒有新的待處理錯誤／警告'),
         h('dt', { class: 'mono' }, '1'), h('dd', null, '成功，但有復發、新出現或豁免到期的待處理錯誤／警告（排程據此通知）'),
-        h('dt', { class: 'mono' }, '2'), h('dd', null, '執行失敗（參數錯誤、輸入讀不到、檔案格式錯誤）；訊息寫到 stderr，不輸出任何檔案'),
+        h('dt', { class: 'mono' }, '2'), h('dd', null, '執行失敗（參數錯誤、輸入讀不到、收集檔沒有認到任何設備的資料、檔案格式錯誤）；訊息寫到 stderr，不輸出任何檔案'),
       ]),
       seeAlso([docLink('README.md', '排程執行cli', 'README「排程執行（CLI）」')]),
     ]);

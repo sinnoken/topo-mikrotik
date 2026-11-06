@@ -11,7 +11,7 @@
 
 1. 開啟 `index.html`（`file://` 即可，不需伺服器）。`main` 分支也會由 [deploy-pages.yml](.github/workflows/deploy-pages.yml) 部署到 GitHub Pages（<https://sinnoken.github.io/topo-mikrotik/>），一樣只在瀏覽器內處理。
 2. 按 **建立基準…** → **載入範例資料**（已有基準時，從頁首的 **資料中心** → **載入收集檔…** 開啟同一個對話框）。範例刻意放了幾個問題，可以先看檢查結果長什麼樣子。
-3. 支援範圍是 **RouterOS 7 以上**（[ADR-019](docs/架構決策/019-支援範圍RouterOS7以上.md)）。要用自己的網路：依 [收集清單](docs/收集清單與輸入格式.md) 收集每台 RouterOS 的輸出（**所有 print 都要加 `detail without-paging`**），合併成一個收集檔後貼上或選擇檔案。
+3. 支援範圍是 **RouterOS 7 以上**（[ADR-019](docs/架構決策/019-支援範圍RouterOS7以上.md)）。要用自己的網路：依 [收集清單](docs/收集清單與輸入格式.md) 收集每台 RouterOS 的輸出（**`print` 要加 `detail without-paging`**，例外見收集清單開頭），合併成一個收集檔後貼上或選擇檔案。
 4. 多台設備可在 WSL／Linux 用 SSH 批次收集，產生可直接載入的收集檔：
 
    ```bash
@@ -22,6 +22,8 @@
 
    設備清單格式、選項、只重收失敗的指令與安全注意事項見[收集清單 §0](docs/收集清單與輸入格式.md#0-批次-ssh-收集器wsllinux)。
 
+   在 repo 根目錄產生的設備清單與收集檔（根目錄的 `*.csv`、`*.txt`）與下方 CLI 的 `out/` 含設備位址與設定，已由 `.gitignore` 排除，**不要提交**；放在子目錄時請放到 repo 以外。
+
 ### 排程執行（CLI）
 
 `tools/baseline.js` 在 Node.js 上用和網頁相同的核心建立基準，並推進處理紀錄，適合排程定期執行。它只讀檔案，不連線設備。
@@ -31,10 +33,10 @@ node tools/baseline.js collection.txt -o out/                         # 第一�
 node tools/baseline.js collection.txt --ledger out/ledger.json -o out/ # 之後每一輪：傳入上一輪的處理紀錄
 ```
 
-- 選項：`--profile <命名規則.json>`、`--expected-data <各類設備應收資料.json>`、`--expected <預期現況 ssot-expected/1>`、`--now <ISO 時間>`（指定時輸出可重現）。用 `--help` 查看全部說明。
-- 輸出到 `out/`：`baseline.json`（基準）、`ledger.json`（推進後的處理紀錄，可在網頁的資料中心匯入）、`findings.json`（檢查結果與處理狀態）、`findings.csv`／`findings.md`（檢查結果的 CSV 與 Markdown 報表，和網頁匯出的內容相同，處理狀態是推進後的）、`summary.json`（新出現、復發、豁免到期與待處理的錯誤／警告數），有 `--expected` 時另有 `compare.json`。
-- 結束碼：`0` 成功，沒有復發，也沒有新的待處理錯誤／警告；`1` 成功，但有復發、新出現或豁免到期的待處理錯誤／警告（排程據此通知）；`2` 執行失敗（參數錯誤、輸入讀不到、處理紀錄／命名規則／預期現況格式錯誤），訊息寫到 stderr，不輸出任何檔案。
-- 同一份基準（基準鍵相同）再執行時，處理紀錄不變，結束碼是 `0`；所以通知失敗後用同一份收集檔重試不會再得到 `1`，要以上一次的 `summary.json` 補發。沒有 `--expected` 時會刪掉輸出目錄中上一次的 `compare.json`；`--now` 帶時區位移時正規化成 UTC。處理紀錄的推進規則和網頁相同，見[設計說明 §10](docs/設計說明.md#10-處理紀錄ssot-ledger1)。
+- 選項：`--profile <命名規則.json>`、`--expected-data <各類設備應收資料.json>`、`--expected <預期現況 ssot-expected/1>`、`--now <ISO 日期或時間>`（指定時輸出可重現；只寫日期也可以，不存在的日期會失敗）。用 `--help` 查看全部說明。
+- 輸出到 `out/`：`baseline.json`（基準）、`ledger.json`（推進後的處理紀錄，可在網頁的資料中心匯入）、`findings.json`（檢查結果與處理狀態）、`findings.csv`／`findings.md`（檢查結果的 CSV 與 Markdown 報表，和網頁匯出的內容相同，處理狀態是推進後的）、`sitedoc.md`／`sitedoc.csv`（網路文件，和網頁資料中心的「網路文件」相同；有 `--profile` 時 zone 依它的 zones）、`summary.json`（新出現、復發、豁免到期與待處理的錯誤／警告數），有 `--expected` 時另有 `compare.json`。
+- 結束碼：`0` 成功，沒有復發，也沒有新的待處理錯誤／警告；`1` 成功，但有復發、新出現或豁免到期的待處理錯誤／警告（排程據此通知）；`2` 執行失敗（參數錯誤、輸入讀不到、收集檔沒有認到任何設備的資料、處理紀錄／命名規則／預期現況格式錯誤），訊息寫到 stderr，不輸出任何檔案。「沒有認到任何設備的資料」是收集檔都是空的，或沒有任何已收集的設備有資料或收集失敗的紀錄（例如只有註解、內容都認不得）；全部連線失敗仍算一次有結果的收集（C02 回報）。
+- 同一份基準（基準鍵相同）再執行時，處理紀錄不變，結束碼是 `0`；所以通知失敗後用同一份收集檔重試不會再得到 `1`，要以上一次的 `summary.json` 補發。沒有 `--expected` 時會刪掉輸出目錄中上一次的 `compare.json`；`--now` 只寫日期或帶時區位移時正規化成 UTC。處理紀錄的推進規則和網頁相同，見[設計說明 §10](docs/設計說明.md#10-處理紀錄ssot-ledger1)。
 
 ## 功能一覽
 
@@ -45,7 +47,7 @@ node tools/baseline.js collection.txt --ledger out/ledger.json -o out/ # 之後�
 | 輸入 | 資料中心與工作包 | 本輪的輸入（收集檔、上一輪基準、處理紀錄、命名規則、預期現況）、覆蓋率與輸出集中在一處；工作包是一個不壓縮的 ZIP，內含收集檔、基準、處理紀錄、命名規則、預期現況、報表與 patch，讀回時核對是不是同一輪，再一次帶回上一輪的基準與處理紀錄 |
 | 輸入 | 建立前的預檢 | 貼上或選擇收集檔時，建立前就列出認到幾台設備與無法辨識的段落；要收集的指令與收集腳本的用法在設定的「收集與建立基準」（歡迎畫面有開啟它的按鈕） |
 | 輸入 | 覆蓋率 | 每台設備收集了哪些資料、缺什麼、哪些指令收集失敗；可由未收集的設備產生 devices.csv 草稿 |
-| 輸入 | 匯出 | 基準 JSON、檢查結果 CSV／Markdown、預期現況、拓樸圖 PNG、處理紀錄、devices.csv 草稿（L4 矩陣的 CSV 在 L4 畫面） |
+| 輸入 | 匯出 | 基準 JSON、檢查結果 CSV／Markdown、網路文件（站點說明書：設備清單、IP 規劃、VLAN 表、埠表、未結案事項與接受風險，Markdown／CSV，推論的欄位另外標示）、預期現況、拓樸圖 PNG、處理紀錄、devices.csv 草稿（L4 矩陣的 CSV 在 L4 畫面） |
 | 檢視 | 清單 | 設備、介面、IP、網段、MAC、VLAN 的完整清單，可以篩選 |
 | 檢視、研判 | 拓樸圖 | 只畫 L2 鄰接（LLDP／CDP）；沒有 LLDP 的設備以推論鏈路表示，終端畫在所屬設備下；MNDP 只證明廣播網域可達，不畫線 |
 | 檢視、研判 | L2 埠圖與 L3 網段圖 | 工具列切換層級：L2 埠圖是設備框加埠，線接在埠上，可展開聚合；L3 網段圖畫網段、路由設備與（可選的）靜態與預設路由，標出重疊網段與重複 IP |

@@ -90,11 +90,9 @@ CLI 輸入轉成可追溯的純 JSON Snapshot，畫面只是 Snapshot 的檢視�
   證據來源（事實），推論要標示為推論；保留來源區塊與行號；訊息、id 與排序保持
   穩定，並同步 `docs/基準檢查.md` 的檢查說明。MNDP 只證明 L2 可達，不可當作
   LLDP／CDP 鄰接證據。
-- **文件同步對照**：快速開始、功能一覽 → `README.md`；畫面操作 → `docs/使用說明.md`（唯一的說明處）；
-  資料模型、推論規則、下游模組 → `docs/設計說明.md`；查詢函式（`SSOT.query`）→ `docs/查詢介面.md`；
-  檢視層架構 → `docs/畫面架構.md`；版本紀錄 → `docs/版本紀錄.md`；開發指令、測試、CI → `docs/開發指南.md`；檢查 → `docs/基準檢查.md`；收集指令與格式 → `docs/收集清單與輸入格式.md`；命名 profile →
-  `docs/命名規則.md`；影響整體的決策（背景、選項與取捨）→ `docs/架構決策/`（ADR，
-  格式與新增方式見該目錄的 `README.md`）。程式與文件一起改，不另寫一份與程式脫節的規格。
+- **文件同步對照**：哪件事寫在哪份文件，以 [docs/README.md](../docs/README.md) 的對照表為準
+  （唯一的一份，[ADR-016](../docs/架構決策/016-文件分工每個主題只有一個說明處.md)）；影響整體的決策寫成 ADR，
+  格式與新增方式見 `docs/架構決策/README.md`。程式與文件一起改，不另寫一份與程式脫節的規格。
 - **專用 skill**：改 adapter／解析使用 `routeros-parser-fixtures`；改 Snapshot 欄位、
   檢查代碼或版本使用 `snapshot-contract-change`；改鄰居與拓樸使用
   `mikrotik-neighbor-topology`；改防火牆規則解析與檢查使用 `routeros-acl-audit`；

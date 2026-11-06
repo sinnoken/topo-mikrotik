@@ -140,16 +140,16 @@ auto_optional_commands() {
   if (( interfaces_ok )); then
     if [[ -n "$wifi_names" ]]; then
       if wifi_menu_available "$version"; then
-        AUTO_COMMAND_IDS+=(wifi); AUTO_COMMAND_REASONS+=("interface type=$WIFI_INTERFACE_TYPE：$wifi_names")
+        AUTO_COMMAND_IDS+=(wifi); AUTO_COMMAND_REASONS+=("interface type=${WIFI_INTERFACE_TYPE}：$wifi_names")
       else
-        AUTO_SKIP_REASONS+=("interface type=$WIFI_INTERFACE_TYPE：$wifi_names；$WIFI_VERSION_REASON")
+        AUTO_SKIP_REASONS+=("interface type=${WIFI_INTERFACE_TYPE}：${wifi_names}；$WIFI_VERSION_REASON")
       fi
     fi
     if [[ -n "$wlan_names" ]]; then
-      AUTO_COMMAND_IDS+=(wireless); AUTO_COMMAND_REASONS+=("interface type=$WIRELESS_INTERFACE_TYPE：$wlan_names")
+      AUTO_COMMAND_IDS+=(wireless); AUTO_COMMAND_REASONS+=("interface type=${WIRELESS_INTERFACE_TYPE}：$wlan_names")
     fi
     if [[ -z "$wifi_names$wlan_names" && -n "$standard" ]]; then
-      AUTO_SKIP_REASONS+=("board-name=$board：沒有 type=$WIFI_INTERFACE_TYPE 或 $WIRELESS_INTERFACE_TYPE 的介面")
+      AUTO_SKIP_REASONS+=("board-name=${board}：沒有 type=$WIFI_INTERFACE_TYPE 或 $WIRELESS_INTERFACE_TYPE 的介面")
     fi
     return 0
   fi
@@ -158,10 +158,10 @@ auto_optional_commands() {
       if wifi_menu_available "$version"; then
         AUTO_COMMAND_IDS+=(wifi); AUTO_COMMAND_REASONS+=("board-name=$board")
       else
-        AUTO_SKIP_REASONS+=("board-name=$board：$WIFI_VERSION_REASON")
+        AUTO_SKIP_REASONS+=("board-name=${board}：$WIFI_VERSION_REASON")
       fi ;;
-    ac) AUTO_SKIP_REASONS+=("board-name=$board：802.11ac 可用 wifi 或 wireless，interface 未收集成功無法判斷，請在 extra 欄指定") ;;
-    n) AUTO_SKIP_REASONS+=("board-name=$board：802.11n 用 wireless 套件，interface 未收集成功無法判斷，請在 extra 欄指定 wireless") ;;
+    ac) AUTO_SKIP_REASONS+=("board-name=${board}：802.11ac 可用 wifi 或 wireless，interface 未收集成功無法判斷，請在 extra 欄指定") ;;
+    n) AUTO_SKIP_REASONS+=("board-name=${board}：802.11n 用 wireless 套件，interface 未收集成功無法判斷，請在 extra 欄指定 wireless") ;;
   esac
   return 0
 }

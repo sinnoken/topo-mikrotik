@@ -3292,6 +3292,23 @@ function viewBoundaryViolations(file, src) {
     delete tricky.findings[0].deviation;
     if (X.findingsMarkdown(S.query(tricky)).includes('與多數不同') || parseCsv(X.findingsCsv(S.query(tricky)).replace(/^\uFEFF/, ''))[1][16] !== '') throw new Error('沒有 deviation 時不應輸出與多數不同');
   });
+  await step('匯出：網路文件 Markdown／CSV（資料中心「給報告或紀錄」）的檔名與內容來自核心的 S.report，處理紀錄與檢查結果的匯出相同，不改寫基準', async () => {
+    const before = JSON.stringify(App.snap);
+    const { made, anchors, files } = await captureDownloads(() => {
+      if (!hubBtn('export-site-markdown') || !hubBtn('export-site-csv')) throw new Error('資料中心應有網路文件（Markdown、CSV）的匯出按鈕');
+      if (hubBtn('export-site-markdown').textContent !== '網路文件（Markdown）' || hubBtn('export-site-csv').textContent !== '網路文件（CSV）') throw new Error('網路文件按鈕的文字不符');
+      hubBtn('export-site-markdown').click(); hubBtn('export-site-csv').click();
+    });
+    if (made.length !== 2 || anchors.length !== 2) throw new Error('網路文件的兩種匯出各應產生一個下載');
+    const K = S.view.exporter.KINDS; const names = files.map((f) => f.name);
+    if (names.join() !== [K.siteMarkdown.name(App.Q), K.siteCsv.name(App.Q)].join()) throw new Error('網路文件的檔名應依 V.exporter.KINDS：' + names);
+    if (!/^sitedoc-\d{8}T\d{6}Z-\d+dev\.md$/.test(names[0]) || !/^sitedoc-\d{8}T\d{6}Z-\d+dev\.csv$/.test(names[1])) throw new Error('網路文件的檔名格式不符：' + names);
+    const opts = { ledgerOf: S.view.app.ledgerExport, zones: S.view.l4.zoneOpts(App).opts };
+    if (files[0].text !== S.report.siteDocMarkdown(App.Q, opts) || files[1].text !== S.report.siteDocCsv(App.Q, opts)) throw new Error('網路文件的內容應與 S.report 相同');
+    if (files[1].bytes.subarray(0, 3).toString('hex') !== 'efbbbf') throw new Error('網路文件 CSV 應以 UTF-8 BOM 開頭');
+    if (!files[0].text.startsWith('# 網路文件\n') || !files[0].text.includes('\n## 設備清單（')) throw new Error('網路文件 Markdown 的開頭不符');
+    if (JSON.stringify(App.snap) !== before) throw new Error('匯出不可改寫基準');
+  });
   let ackedKey = null; // 處理紀錄中已處理的 finding 鍵：清除基準後要仍然存在
   await step('處理紀錄取代確認：每筆檢查結果都在處理紀錄中，可變更狀態與備註，不合法的變更顯示錯誤，已處理另列分組並從摘要排除，匯出對應欄位', async () => {
     const Q = App.Q; const all = App.snap.findings; const VA = S.view.app; const RV = S.view.remediation; const LG = S.ledger;
@@ -5780,7 +5797,7 @@ function viewBoundaryViolations(file, src) {
       if (/hub-st-(ok|warn|err)/.test(stx.className) && !/^[✓!✗] /.test(stx.textContent)) throw new Error(`${k} 的狀態色應搭配符號`);
     });
     ['read-workpack', 'read-sources', 'load-previous', 'import-ledger', 'change-profile', 'load-expected', 'devices-csv',
-      'download-workpack', 'export-snapshot', 'export-ledger', 'open-patch', 'export-markdown', 'export-csv', 'by-device', 'export-png', 'export-devices-csv', 'export-expected']
+      'download-workpack', 'export-snapshot', 'export-ledger', 'open-patch', 'export-markdown', 'export-csv', 'export-site-markdown', 'export-site-csv', 'by-device', 'export-png', 'export-devices-csv', 'export-expected']
       .forEach((a) => { if (!hubBtn(a)) throw new Error('資料中心缺少入口：' + a); });
     // 狀態和目前的資料一致（依關係，不寫死筆數）
     const m = App.Q.meta();

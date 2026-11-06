@@ -14,4 +14,6 @@ module.exports = [
   'src/workpack/zip.js', 'src/workpack/workpack.js',
   // 檢查結果報表（CSV、Markdown）：只讀查詢介面，處理狀態用 S.ledger
   'src/report/report.js',
+  // 網路文件（站點說明書，Markdown、CSV）：只讀查詢介面，加在 S.report 上
+  'src/report/sitedoc.js',
 ];

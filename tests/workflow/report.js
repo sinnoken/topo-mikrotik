@@ -81,6 +81,7 @@ test('報表：單向依賴——只透過查詢介面與 S.query.rule／rules�
   assert.ok(!/\bsnap(shot)?\s*\./.test(src), '報表不讀 Snapshot 欄位，只用 Q');
   const core = require('../../tools/core-files.js');
   assert.ok(core.indexOf('src/report/report.js') > core.indexOf('src/ledger/ledger.js'), '報表要在 S.ledger 之後載入');
-  core.filter((f) => f !== 'src/report/report.js').forEach((f) => assert.ok(!/S\.report\b/.test(read(f)), `${f} 不可呼叫 S.report`));
+  // 同目錄的網路文件（src/report/sitedoc.js）是報表的一部分，可以用 S.report
+  core.filter((f) => !f.startsWith('src/report/')).forEach((f) => assert.ok(!/S\.report\b/.test(read(f)), `${f} 不可呼叫 S.report`));
   assert.ok(Object.isFrozen(S.report));
 });

@@ -1,5 +1,5 @@
 /*
- * 匯出：基準 Snapshot（JSON）、檢查結果（CSV、Markdown）、預期資料（ssot-expected/1 JSON）、未收集設備的 devices.csv 草稿、
+ * 匯出：基準 Snapshot（JSON）、檢查結果（CSV、Markdown）、網路文件（Markdown、CSV）、預期資料（ssot-expected/1 JSON）、未收集設備的 devices.csv 草稿、
  * 修正計畫的總表（Markdown）。
  * 組字邏輯都是純函式，透過傳入的查詢介面（Q）讀取基準、不改寫；只有基準 JSON 需要整份 Snapshot（原樣序列化）。
  * 下載只在本機以 Blob 產生，不經過網路。
@@ -95,6 +95,9 @@
       snapshot: { name: (Q) => `baseline-${baseName(Q)}.json`, text: (Q, opts) => snapshotJson(opts.snapshot), type: 'application/json' },
       csv: { name: (Q) => `findings-${baseName(Q)}.csv`, text: findingsCsv, type: 'text/csv;charset=utf-8' },
       markdown: { name: (Q) => `findings-${baseName(Q)}.md`, text: findingsMarkdown, type: 'text/markdown;charset=utf-8' },
+      // 網路文件（站點說明書）：設備清單、IP 規劃、VLAN 表、埠表、未結案事項；由核心的 S.report 產生（opts.ledgerOf 同檢查結果，opts.zones 是 Q.zones 的參數）
+      siteMarkdown: { name: (Q) => `sitedoc-${baseName(Q)}.md`, text: (Q, opts) => S.report.siteDocMarkdown(Q, opts), type: 'text/markdown;charset=utf-8' },
+      siteCsv: { name: (Q) => `sitedoc-${baseName(Q)}.csv`, text: (Q, opts) => S.report.siteDocCsv(Q, opts), type: 'text/csv;charset=utf-8' },
       // 預期資料（ssot-expected/1）由核心的 S.compare.expectedFrom 產生
       expected: {
         name: (Q) => `expected-${baseName(Q)}.json`,

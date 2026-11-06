@@ -200,11 +200,16 @@
       card('device', '給設備', `修正指令：每台的套用、回復、驗證 .rsc 與總表。本工具只產生文字，不會連線設備。${nPatch ? `目前選取 ${V.num(nPatch)} 項，會放進工作包。` : ''}`, [
         btn('開啟修正計畫', 'open-patch', () => App.openPatch(), { class: 'open-patch', disabled: off }),
       ]),
-      card('report', '給報告或紀錄', `檢查結果 Markdown／CSV（含處理狀態，不受「${A().STEP_LABEL.triage}」檢查結果的篩選影響）・拓樸 PNG`, [
+      card('report', '給報告或紀錄', `檢查結果 Markdown／CSV（含處理狀態，不受「${A().STEP_LABEL.triage}」檢查結果的篩選影響）・網路文件・拓樸 PNG`, [
         btn('Markdown', 'export-markdown', () => A().exportReport('markdown'), { disabled: off, title: '依嚴重度（或依設備）分組的報表，含證據行號，已處理的項目會標示狀態與備註' }),
         btn('CSV', 'export-csv', () => A().exportReport('csv'), { disabled: off, title: '每筆一列，含相關實體、證據行號、處理狀態、時間與備註（Excel 可直接開啟）' }),
         btn('依設備排序', 'by-device', () => A().toggleByDevice(), { class: 'ghost export-by-device' + (hub.byDevice ? ' on' : ''), 'aria-pressed': String(hub.byDevice),
           title: '匯出時依設備排序（Markdown 依設備分組）；不屬於任何設備的排最後；工作包的報表也依這個設定' }),
+        // 網路文件（站點說明書）：zone 用與 L4 畫面相同的選項（命名規則有 zones 時套用）
+        btn('網路文件（Markdown）', 'export-site-markdown', () => App.exportAs('siteMarkdown', { zones: V.l4.zoneOpts(App).opts }), { disabled: off,
+          title: '交接用的現況說明：設備清單、IP 規劃、VLAN 表、埠表、未結案事項與接受風險；推論的欄位標「（推論）」' }),
+        btn('網路文件（CSV）', 'export-site-csv', () => App.exportAs('siteCsv', { zones: V.l4.zoneOpts(App).opts }), { disabled: off,
+          title: '同網路文件，一個 CSV 檔分成多個區段（每段開頭是「[標題]」一列），Excel 可直接開啟' }),
         btn('拓樸 PNG', 'export-png', () => A().exportPng(), { disabled: off, title: '目前的拓樸圖畫面' }),
       ], 'hub-sec-reports'),
       h('div', { class: 'hub-out', 'data-output': 'collector', role: 'group', 'aria-label': '給收集器' }, [

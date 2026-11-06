@@ -33,19 +33,27 @@
   };
   const memStamp = (keys, at) => { const m = Object.assign({}, mem.get(META) || {}); keys.forEach((k) => { if (at) m[k] = at; else delete m[k]; }); mem.set(META, m); };
   const nowIso = () => new Date().toISOString();
+  /*
+   * 寫入的次數（這個頁面經 S.store 的寫入、刪除、還原與配色）：寫入完成後才加一，畫面據此判斷清單要不要重讀。
+   * sizes 是每個鍵的大小快取 { at, bytes }，at 是 META 記的更新時間；本頁寫入時刪掉該鍵的快取，其他分頁寫入時 META 的時間不同也會重算
+   */
+  let rev = 0; const sizes = new Map();
+  const changed = (keys) => { keys.forEach((k) => sizes.delete(k)); rev++; };
   S.store = {
     async available() { return !!(await open()); },
     async get(k) { const db = await open(); return db ? tx(db, 'readonly', (s) => s.get(k)) : mem.get(k); },
     async set(k, v) {
       const db = await open(); const at = nowIso();
-      if (!db) { mem.set(k, v); memStamp([k], at); return; }
-      return tx(db, 'readwrite', (s) => { const r = s.put(v, k); stamp(s, [k], at); return r; });
+      if (!db) { mem.set(k, v); memStamp([k], at); changed([k]); return; }
+      try { return await tx(db, 'readwrite', (s) => { const r = s.put(v, k); stamp(s, [k], at); return r; }); } finally { changed([k]); }
     },
     async del(k) {
       const db = await open();
-      if (!db) { mem.delete(k); memStamp([k], null); return; }
-      return tx(db, 'readwrite', (s) => { const r = s.delete(k); stamp(s, [k], null); return r; });
+      if (!db) { mem.delete(k); memStamp([k], null); changed([k]); return; }
+      try { return await tx(db, 'readwrite', (s) => { const r = s.delete(k); stamp(s, [k], null); return r; }); } finally { changed([k]); }
     },
+    /** 寫入的次數：數字不同表示這個頁面寫過資料（清單要重讀）；只讀不變 */
+    revision: () => rev,
   };
 
   /*
@@ -75,18 +83,36 @@
     /** 存偏好；不合法的值丟 RangeError。存不進 localStorage 時記在記憶體（這次有效）並回傳 false */
     set(v) {
       if (!THEMES.includes(v)) throw new RangeError('未知的配色偏好：' + v);
-      const st = ls();
+      const st = ls(); rev++;
       try { if (!st) throw new Error('localStorage 無法使用'); st.setItem(THEME_KEY, v); themeMem = null; return true; } catch (e) { themeMem = v; return false; }
     },
     /** 刪掉偏好（回到跟隨系統）；localStorage 無法使用時只清記憶體並回傳 false */
     clear() {
-      themeMem = null; const st = ls();
+      themeMem = null; const st = ls(); rev++;
       try { if (!st) return false; st.removeItem(THEME_KEY); return true; } catch (e) { return false; }
     },
   });
 
   // ================================================================ 本機資料的描述表（單一來源）
   const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  /**
+   * 儲存的「基準與輸入」（'last'）能不能還原：App.restore 與還原備份的檢查共用這一個判斷。
+   * 回傳 { ok, reason, meta, rebuild }：
+   *   meta     S.query.metaOf 讀到的 meta（沒有時 null）
+   *   rebuild  要用儲存的輸入重建（格式或程式版本不同、且有輸入）
+   *   reason   不能還原的原因（ok 為 false 時）
+   * 格式不同又沒有儲存輸入時不能還原（沒有東西可以重建）。重建本身可能失敗，那由 App.restore 說明。
+   */
+  function lastRestorable(v) {
+    if (!isObj(v) || !isObj(v.snapshot)) return { ok: false, reason: '應是含 snapshot 的物件', meta: null, rebuild: false };
+    if (v.sources !== undefined && !Array.isArray(v.sources)) return { ok: false, reason: 'sources 應是陣列', meta: null, rebuild: false };
+    const meta = S.query.metaOf(v.snapshot);
+    if (!meta) return { ok: false, reason: 'snapshot 沒有 meta，無法判斷是哪一版的基準', meta: null, rebuild: false };
+    const hasInputs = !!(v.sources && v.sources.length);
+    const sameSchema = meta.schema === S.SCHEMA;
+    if (!sameSchema && !hasInputs) return { ok: false, reason: `基準格式（${meta.schema}）已不相容，且沒有儲存輸入可以重新建立`, meta, rebuild: false };
+    return { ok: true, reason: null, meta, rebuild: hasInputs && (!sameSchema || meta.version !== S.VERSION) };
+  }
   /**
    * 這個工具存的每一個鍵：
    *   key       IndexedDB 的鍵（配色是 'theme'，實際在 localStorage 的 THEME_KEY）
@@ -99,7 +125,7 @@
     { key: 'last', label: '基準與輸入', kind: 'data', where: 'indexedDB',
       purpose: '最後一次建立的基準、收集檔、命名規則、預期現況與設備圖的節點位置；重新開啟頁面時還原。',
       loss: '目前的基準、收集檔與設備圖的節點位置（可以用原本的收集檔重新建立）。',
-      check: (v) => (!isObj(v) || !isObj(v.snapshot) ? '應是含 snapshot 的物件' : v.sources !== undefined && !Array.isArray(v.sources) ? 'sources 應是陣列' : null) },
+      check: (v) => lastRestorable(v).reason },
     { key: 'ledger', label: '處理紀錄', kind: 'data', where: 'indexedDB', critical: true,
       purpose: '每個問題的處理狀態、備註、接受風險的理由與每一輪的紀錄；跨輪保留，清除基準不影響。',
       loss: '所有問題的處理狀態、備註、接受風險的理由與歷次的紀錄。',
@@ -110,7 +136,7 @@
       check: (v) => (isObj(v) ? null : '應是物件') },
     { key: 'profiles', label: '載入的命名規則', kind: 'data', where: 'indexedDB',
       purpose: '你載入過的命名規則檔（內建的不在這裡）；建立基準時可以選用。',
-      loss: '載入過的命名規則（內建的不受影響）；這次開啟仍可使用，重新開啟頁面後要再載入檔案。',
+      loss: '載入過的命名規則（內建的不受影響，蓋過的內建規則恢復）；建立基準時不能再選用，需要時再載入檔案。已建立的基準不受影響。',
       check: (v) => (isObj(v) && Object.values(v).every(isObj) ? null : '應是「ID → 命名規則」的物件') },
     { key: 'layout', label: '欄寬', kind: 'pref', where: 'indexedDB',
       purpose: '左右欄調整過的寬度。',
@@ -154,16 +180,22 @@
    */
   async function inventory() {
     const db = await open(); const stored = await keys(); const meta = (await S.store.get(META)) || {};
+    // 大小快取到這個鍵改變時（本頁寫入，或 META 的時間不同）：大型基準每次讀出並序列化要數百 ms
+    const bytesOf = async (k) => {
+      const at = meta[k] || null; const c = sizes.get(k);
+      if (c && c.at === at) return c.bytes;
+      const bytes = sizeOf(await S.store.get(k)); sizes.set(k, { at, bytes }); return bytes;
+    };
     const items = [];
     for (const d of KEYS) {
-      let v; let present;
-      if (d.where === 'localStorage') { const raw = themeRaw(); present = raw !== null && raw !== undefined; v = present ? raw : undefined; } else { present = stored.includes(d.key); v = present ? await S.store.get(d.key) : undefined; }
+      let bytes = 0; let present;
+      if (d.where === 'localStorage') { const raw = themeRaw(); present = raw !== null && raw !== undefined; bytes = present ? sizeOf(raw) : 0; } else { present = stored.includes(d.key); bytes = present ? await bytesOf(d.key) : 0; }
       items.push({ key: d.key, label: d.label, purpose: d.purpose, loss: d.loss, kind: d.kind, where: d.where, critical: !!d.critical,
-        present, bytes: sizeOf(v), updatedAt: (d.where !== 'localStorage' && meta[d.key]) || null });
+        present, bytes, updatedAt: (d.where !== 'localStorage' && meta[d.key]) || null });
     }
     for (const k of stored.filter((x) => !descOf(x))) {
       items.push({ key: k, label: '其他：' + k, purpose: '這個版本不使用的鍵（可能來自其他版本）。', loss: '這個鍵的內容（這個版本不使用）。', kind: 'other', where: 'indexedDB', critical: false,
-        present: true, bytes: sizeOf(await S.store.get(k)), updatedAt: meta[k] || null });
+        present: true, bytes: await bytesOf(k), updatedAt: meta[k] || null });
     }
     let themeStorage = 'localStorage';
     { const st = ls(); if (!st || themeMem !== null) themeStorage = 'memory'; }
@@ -223,12 +255,14 @@
     const idbKeys = v.keys.filter((k) => descOf(k).where !== 'localStorage');
     const db = await open(); const at = nowIso();
     if (db) {
-      if (idbKeys.length) await tx(db, 'readwrite', (s) => { idbKeys.forEach((k) => s.put(obj.items[k], k)); stamp(s, idbKeys, at); return null; });
-    } else { idbKeys.forEach((k) => mem.set(k, obj.items[k])); memStamp(idbKeys, at); }
+      if (idbKeys.length) {
+        try { await tx(db, 'readwrite', (s) => { idbKeys.forEach((k) => s.put(obj.items[k], k)); stamp(s, idbKeys, at); return null; }); } finally { changed(idbKeys); }
+      }
+    } else { idbKeys.forEach((k) => mem.set(k, obj.items[k])); memStamp(idbKeys, at); changed(idbKeys); }
     const warnings = [];
     if (v.keys.includes('theme') && !S.store.theme.set(obj.items.theme)) warnings.push('這個瀏覽器無法保存配色設定：這次有效，關閉頁面後不會保留。');
     return { ok: true, keys: v.keys, warnings };
   }
 
-  Object.assign(S.store, { KEYS, BACKUP_SCHEMA, keys, sizeOf, inventory, clear, resetPrefs, exportAll, validateBackup, restore });
+  Object.assign(S.store, { KEYS, BACKUP_SCHEMA, keys, sizeOf, lastRestorable, inventory, clear, resetPrefs, exportAll, validateBackup, restore });
 })(globalThis.SSOT = globalThis.SSOT || {});

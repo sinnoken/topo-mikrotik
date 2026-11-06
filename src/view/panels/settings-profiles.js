@@ -2,7 +2,8 @@
  * 設定「命名規則」（外殼在 app-settings.js）：說明、目前可用的命名規則（內建與已載入分開列）、對目前基準的套用結果，
  * 以及載入命名規則檔、下載範本、匯出、移除已載入的。
  *   內建：index.html 以 <script> 載入的 profiles/*.js；這個檔案載入時 S.profiles 裡已有的就是內建（profiles 在 src/view 之前載入）。
- *   已載入：使用者載入的 JSON，存在 store 的 'profiles'，開啟這個分類時讀回並合併進 S.profiles（和建立基準對話框的做法相同）。
+ *   已載入：使用者載入的 JSON，存在 store 的 'profiles'，第一次開啟這個分類時讀回並合併進 S.profiles（和建立基準對話框的做法相同）；
+ *          「本機資料」還原或清除 'profiles' 後以 syncSaved 讓 S.profiles 跟上 store（store 沒有的移除）。
  *          和內建同 id 時蓋過內建的那一份；移除後恢復內建的。
  * 套用結果只經 S.profile.compile(json).coverage(Q) 計算（只讀 Q，不改寫基準）；選擇要看哪一份是檢視狀態，只在記憶體。
  * 建立基準時選擇命名規則仍在「建立基準」對話框；載入檔案的流程由 loadFile 提供，對話框也可以共用。
@@ -48,6 +49,24 @@
   const all = () => Object.values(S.profiles).filter((p) => p && p.id);
   const say = (msg, warn) => { st.status = msg; st.statusWarn = !!warn; };
   const rerender = () => { if (A().settingsOpen() && A().settingsSection() === 'profiles') A().renderSettings(); };
+
+  /**
+   * 讓 S.profiles 跟上 store 的 'profiles'（設定「本機資料」還原或清除命名規則後、第一次開啟這個分類時呼叫）：
+   * 已載入的換成 store 裡的那幾份，store 沒有了的移除（蓋過的內建恢復）；內建的不動。
+   * 讀不到 store 時不改 S.profiles，丟出錯誤由呼叫端說明。回傳 promise。
+   */
+  async function syncSaved() {
+    const saved = (await S.store.get('profiles')) || {};
+    merged = true;
+    Object.keys(S.profiles).forEach((id) => {
+      const p = S.profiles[id]; if (!p || !p.id || isBuiltin(p) || Object.prototype.hasOwnProperty.call(saved, id)) return;
+      if (BUILTIN.has(id)) S.profiles[id] = BUILTIN.get(id); else delete S.profiles[id];
+    });
+    Object.assign(S.profiles, saved);
+    if (st.cov && !S.profiles[st.cov]) st.cov = null;
+    cache = { Q: null, map: new Map() };
+    rerender();
+  }
 
   /** 套用結果，或 { error }（命名規則有誤、沒有基準時 null） */
   function coverageOf(App, p) {
@@ -166,16 +185,11 @@
 
   function render(App, el) {
     // 第一次開啟：讀回存過的命名規則；讀完且仍在這個分類時重畫（讀不到時照常列出內建的）
-    if (!merged) {
-      merged = true;
-      S.store.get('profiles').then((saved) => {
-        if (saved && Object.keys(saved).length) { Object.assign(S.profiles, saved); rerender(); }
-      }, () => {});
-    }
+    if (!merged) { merged = true; syncSaved().catch((e) => { console.error(e); say('無法讀取載入過的命名規則：' + V.reason(e), true); rerender(); }); }
     el.appendChild(h('p', null, ['命名規則是一份 JSON：依設備名稱把別名對應到正式名稱，並加上類型、角色、站點、分群與顯示名稱等註解。',
       '它不會新增、刪除或改寫收集到的事實（介面、鏈路、VLAN、位址）；不套用時工具照常可用，類型依收集到的資料判斷，分群依連線關係。',
       '設備名稱有固定格式（例如「站點_層級_類型_編號」），想依站點分群或修正判斷錯的類型時才需要。']));
-    el.appendChild(h('p', { class: 'muted' }, ['欄位、撰寫與維護流程見 ', h('a', { href: DOC, target: '_blank', rel: 'noopener' }, DOC),
+    el.appendChild(h('p', { class: 'muted' }, ['欄位、撰寫與維護流程見 ', V.settings.docLink(DOC, null, DOC),
       '。建立基準時在「建立基準」對話框的「命名規則」選擇要套用的一份。']));
 
     const file = h('input', { type: 'file', id: 'settings-profile-file', class: 'hidden', accept: '.json,application/json', 'aria-hidden': 'true', tabindex: '-1',
@@ -205,5 +219,5 @@
   }
 
   V.settings = V.settings || {};
-  V.settings.profiles = { render, loadFile, removeMessage, builtinIds: () => Array.from(BUILTIN.keys()), UNMATCHED_MAX, TEMPLATE };
+  V.settings.profiles = { render, loadFile, syncSaved, removeMessage, builtinIds: () => Array.from(BUILTIN.keys()), UNMATCHED_MAX, TEMPLATE };
 })(globalThis.SSOT = globalThis.SSOT || {});

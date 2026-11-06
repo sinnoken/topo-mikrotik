@@ -171,6 +171,14 @@
     Object.assign(st, { ledger, imported: null, blocked: null, pendingAcks: null, round: null });
   };
   A.persistLedger = () => persist();
+  /**
+   * 舊的確認標記（store 的 'acks'）被清除後呼叫：記憶體中等待轉換的與「轉換後要刪除」一起清掉，下一份基準不再把它轉換回來。
+   * 因為 acks 無法轉換而停用的處理紀錄，原因已不存在，改回可用（空白的處理紀錄，同啟動時沒有任何資料）。
+   */
+  A.resetPendingAcks = function resetPendingAcks() {
+    st.pendingAcks = null; st.acksToDelete = false;
+    if (st.blocked && st.blocked.acks) Object.assign(st, { blocked: null, ledger: LG.empty(), round: null });
+  };
   App.confirmImport = async function () {
     if (!st.imported || !st.imported.ledger) return false;
     const name = st.imported.name;

@@ -224,9 +224,7 @@
   App.clearBaseline = async function () {
     A.closeMenus();
     if (!App.snap || !confirm('清除目前的基準與輸入？（只清除這個工具的資料，處理紀錄保留）')) return false;
-    await S.store.del('last'); A.cancelElk(); A.clearRound();
-    // 沒有基準時只有設備圖（歡迎畫面）：L2／L3 的資料與 VLAN 篩選一起清掉
-    App.vlanFilter = null; A.resetLayers(); App.layer = 'device'; A.setDeviceGraph([], [], new Map()); A.resetSelection(); A.renderAll();
+    await S.store.del('last'); A.resetBaselineView(); A.renderAll(); // 收起畫面上的基準只有一份實作（app.js）
     return true;
   };
 

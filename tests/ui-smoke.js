@@ -5807,7 +5807,7 @@ function viewBoundaryViolations(file, src) {
     const VP = S.view.settings.profiles; const panel = () => $('#settings-panel'); const wait = () => new Promise((r) => setTimeout(r, 20));
     App.openSettings('profiles'); await wait();
     const body = () => text('#settings-panel');
-    if (!body().includes('不會新增、刪除或改寫') || !panel().testAll('a').some((a) => a.getAttribute('href') === 'docs/命名規則.md')) throw new Error('分類頂端應說明命名規則不改事實，並連到 docs/命名規則.md：' + body());
+    if (!body().includes('不會新增、刪除或改寫') || !panel().testAll('a').some((a) => a.classList.contains('doc-link') && decodeURI(a.getAttribute('href')).endsWith('/blob/main/docs/命名規則.md'))) throw new Error('分類頂端應說明命名規則不改事實，並連到 docs/命名規則.md：' + body());
     const rowsOf = (src) => { const t = panel().testAll('table').find((x) => x.dataset.source === src); return t ? t.testAll('tr').filter((r) => r.dataset.profile) : []; };
     const btnOf = (r, action) => r.testAll('button').find((b) => b.dataset.action === action);
     // 內建：profiles/*.js 載入的；顯示 id、名稱、說明（S.profile.describe）、來源；不能移除
@@ -6079,19 +6079,19 @@ function viewBoundaryViolations(file, src) {
     if ((await S.store.inventory()).storage !== 'memory') throw new Error('沒有 IndexedDB 時 inventory 應回報 storage: memory');
 
     // 另載一份 store.js，接上模擬的 IndexedDB（交易在全部完成時才寫入；失敗時整筆交易不寫入）與 localStorage
-    const data = new Map(); let failKey = null;
+    const data = new Map(); let failKey = null; const gets = [];
     const later = (f) => setTimeout(f, 0);
     const db = { createObjectStore() {}, transaction() {
       const staged = new Map(data); const t = { error: null }; let pending = 0; let failed = false;
       const finish = () => later(() => { if (pending || t.done) return; t.done = true; if (failed) { if (t.onerror) t.onerror(); } else { data.clear(); staged.forEach((v, k) => data.set(k, v)); if (t.oncomplete) t.oncomplete(); } });
       const op = (fn) => { const r = {}; pending++; later(() => { pending--; try { r.result = fn(); if (r.onsuccess) r.onsuccess(); } catch (e) { failed = true; t.error = e; } finish(); }); return r; };
-      const store = { get: (k) => op(() => structuredClone(staged.get(k))), getAllKeys: () => op(() => [...staged.keys()].sort()), delete: (k) => op(() => { staged.delete(k); }),
+      const store = { get: (k) => { gets.push(k); return op(() => structuredClone(staged.get(k))); }, getAllKeys: () => op(() => [...staged.keys()].sort()), delete: (k) => op(() => { staged.delete(k); }),
         put: (v, k) => op(() => { if (k === failKey) throw new Error('模擬寫入失敗'); staged.set(k, structuredClone(v)); return k; }) };
       t.objectStore = () => store; return t;
     } };
     const fakeIdb = { open: () => { const r = {}; later(() => { r.result = db; if (r.onupgradeneeded) r.onupgradeneeded(); if (r.onsuccess) r.onsuccess(); }); return r; } };
     const ls2 = new Map(); const fakeLs = { getItem: (k) => (ls2.has(k) ? ls2.get(k) : null), setItem: (k, v) => ls2.set(k, String(v)), removeItem: (k) => ls2.delete(k) };
-    const sandbox = { indexedDB: fakeIdb, localStorage: fakeLs, console, setTimeout, structuredClone, SSOT: { VERSION: S.VERSION, ledger: S.ledger, query: S.query } };
+    const sandbox = { indexedDB: fakeIdb, localStorage: fakeLs, console, setTimeout, structuredClone, SSOT: { VERSION: S.VERSION, SCHEMA: S.SCHEMA, ledger: S.ledger, query: S.query } };
     vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'src/view/store.js'), 'utf8'), sandbox, { filename: 'store.js（模擬 IndexedDB）' });
     const ST = sandbox.SSOT.store; const J = (x) => JSON.stringify(x);
     if (!(await ST.available()) || (await ST.inventory()).storage !== 'indexedDB') throw new Error('有 IndexedDB 時應回報 storage: indexedDB');
@@ -6140,6 +6140,33 @@ function viewBoundaryViolations(file, src) {
     if (J(cleared.slice().sort()) !== J(['layout', 'layoutMode', 'theme'])) throw new Error('resetPrefs 應只清偏好：' + J(cleared));
     if (await ST.get('layout') !== undefined || await ST.get('layoutMode') !== undefined || ST.theme.get() !== 'system') throw new Error('偏好應已清除');
     if (J(await ST.get('last')) !== J(last) || J(await ST.get('ledger')) !== J(ledger)) throw new Error('重設偏好不可動基準與處理紀錄');
+    // 「基準與輸入」能不能還原只有一個判斷（ST.lastRestorable，App.restore 也用它）：沒有 meta、格式不相容又沒有輸入時，整份備份都不寫入
+    {
+      const before2 = await snapshotOf();
+      const cant = [[{ snapshot: {} }, /meta/], [{ snapshot: { meta: { schema: 'ssot-snapshot/1' } }, sources: [] }, /不相容/], [{ snapshot: { meta: { schema: 'ssot-snapshot/1' } } }, /不相容/]];
+      for (const [lv, re] of cant) {
+        const why = ST.lastRestorable(lv); if (why.ok || !re.test(why.reason)) throw new Error('lastRestorable 應說明不能還原的原因：' + J(lv) + ' → ' + J(why));
+        const b = { schema: 'ssot-localdata/1', items: { last: lv, layout: { left: 222 } } };
+        const v = ST.validateBackup(b); if (v.ok || !v.errors.some((e) => e.includes('基準與輸入') && re.test(e))) throw new Error('備份的基準不能還原時驗證應擋下並說明：' + J(v.errors));
+        if ((await ST.restore(b)).ok || await snapshotOf() !== before2) throw new Error('基準不能還原時整份備份都不寫入（全有或全無）：' + J(lv));
+      }
+      const rebuild = ST.lastRestorable({ snapshot: { meta: { schema: 'ssot-snapshot/1' } }, sources: [{ name: 'a.txt', text: 'x' }] });
+      if (!rebuild.ok || !rebuild.rebuild) throw new Error('格式不相容但有輸入時可以還原（用輸入重建）：' + J(rebuild));
+      const same = ST.lastRestorable(last); if (!same.ok || same.meta !== last.snapshot.meta) throw new Error('相容的基準可以還原，並回傳 meta：' + J(same));
+    }
+    // 大小只在資料改變時重算：連續兩次 inventory 不再讀出整份資料；寫入後大小跟著變
+    {
+      await ST.set('last', last); await ST.inventory(); gets.length = 0;
+      const r0 = ST.revision(); const inv2 = await ST.inventory();
+      if (gets.includes('last') || gets.includes('ledger')) throw new Error('資料沒變時 inventory 不應再讀出整份資料：' + J(gets));
+      if (ST.revision() !== r0) throw new Error('只讀不應改變 revision');
+      const bigger = Object.assign({}, last, { sources: [{ name: 'b.txt', text: 'x'.repeat(100) }] });
+      await ST.set('last', bigger);
+      if (ST.revision() === r0) throw new Error('寫入後 revision 應改變（畫面據此判斷要不要重讀清單）');
+      const inv3 = await ST.inventory(); const b2 = inv3.items.find((r) => r.key === 'last').bytes;
+      if (b2 !== ST.sizeOf(bigger) || b2 === inv2.items.find((r) => r.key === 'last').bytes) throw new Error('寫入後大小應重算：' + b2);
+      await ST.set('last', last);
+    }
   });
   await step('設定「本機資料」：每項資料一列（名稱、用途、大小、更新時間）、個別清除先確認（處理紀錄特別警告）、下載全部與從備份還原（不合法時不寫入）、重設畫面偏好不動資料、只在記憶體時說明', async () => {
     const VA = S.view.app; const SD = S.view.settings.data; const J = (x) => JSON.stringify(x);
@@ -6198,6 +6225,81 @@ function viewBoundaryViolations(file, src) {
     await S.store.set('layout', { left: 300, right: 400 }); await SD.refresh();
     { const q2 = await ask(true, () => btn('layout').click()); const d = S.store.KEYS.find((x) => x.key === 'layout');
       if (q2.length !== 1 || !q2[0].includes(d.loss) || await S.store.get('layout') !== undefined) throw new Error('個別清除應先確認並寫出會失去什麼'); }
+    VA.closeSettings();
+  });
+  await step('本機資料的清除與還原讓畫面跟上：基準不能還原時不寫入、重建失敗時以 banner 說明並收起舊基準；清除舊確認標記不再轉換；命名規則即時更新；清單一次重繪只讀一次', async () => {
+    const VA = S.view.app; const SD = S.view.settings.data; const VP = S.view.settings.profiles; const J = (x) => JSON.stringify(x);
+    const wait = () => new Promise((r) => setTimeout(r, 30));
+    const withConfirm = async (fn) => { const c0 = window.confirm; window.confirm = () => true; try { return await fn(); } finally { window.confirm = c0; } };
+    const restore = (name, obj) => withConfirm(() => SD.restoreText(App, name, J(obj)));
+    if (!App.snap) throw new Error('前提：有基準');
+    const snap0 = App.snap; const last0 = J(await S.store.get('last')); const layout0 = J(await S.store.get('layout'));
+    // 1. 基準不能還原（沒有 meta）：驗證擋下，整份不寫入，畫面仍是原本的基準
+    App.openSettings('data'); await SD.refresh();
+    if (await restore('壞基準.json', { schema: 'ssot-localdata/1', items: { last: { snapshot: {} }, layout: { left: 260, right: 380 } } })) throw new Error('基準不能還原的備份不應還原');
+    if (J(await S.store.get('last')) !== last0 || J(await S.store.get('layout')) !== layout0 || App.snap !== snap0) throw new Error('基準不能還原時整份不寫入，畫面不變');
+    if (!text('#settings-panel').includes('沒有寫入任何資料') || !text('#settings-panel').includes('基準與輸入')) throw new Error('應說明基準與輸入不能還原：' + text('#settings-panel').slice(0, 300));
+    // 用輸入重建失敗：banner 明確說明，不可說「已還原」卻留著舊基準；之後的 savePositions 不寫進這份資料
+    const oldLast = { snapshot: { meta: { schema: 'ssot-snapshot/1', version: '0.0.1', createdAt: '2026-01-01T00:00:00Z' } }, sources: [{ name: 'x.txt', text: 'x' }], profile: null };
+    const b0 = S.buildAsync; S.buildAsync = async () => { throw new Error('模擬重建失敗'); };
+    try { await restore('舊基準.json', { schema: 'ssot-localdata/1', items: { last: oldLast } }); } finally { S.buildAsync = b0; }
+    if (App.snap === snap0) throw new Error('基準無法載入時不可留著舊基準');
+    if (!/無法載入|不相容/.test(text('#banner')) || !text('#banner').includes('模擬重建失敗')) throw new Error('基準無法載入時應以 banner 說明原因：' + text('#banner'));
+    await VA.savePositions();
+    if (J(await S.store.get('last')) !== J(oldLast)) throw new Error('savePositions 不可寫進無法載入的基準');
+    await S.store.set('last', JSON.parse(last0)); await App.restore(); await App.ledgerJob;
+    if (!App.snap) throw new Error('前提：還原原本的基準');
+    // 2. 清除「舊版的確認標記」：記憶體中等待轉換的也一起清掉，下一份基準不再轉換
+    const ledger0 = await S.store.get('ledger'); const fk = App.Q.findingKey(App.Q.findings()[0]);
+    try {
+      await S.store.del('ledger'); await S.store.set('acks', { [fk]: { at: '2025-01-02T00:00:00.000Z', kind: 'scheduled', note: '舊的' } });
+      await VA.loadLedger(); if (!VA.ledgerState().pendingAcks) throw new Error('前提：有等待轉換的舊確認標記');
+      App.openSettings('data'); await SD.refresh();
+      const btn = $('#settings-panel').testAll('button').find((b) => b.getAttribute('data-store-key') === 'acks' && b.classList.contains('settings-clear'));
+      await withConfirm(async () => { btn.click(); await wait(); });
+      if (VA.ledgerState().pendingAcks || VA.ledgerState().acksToDelete) throw new Error('清除舊確認標記後，記憶體中等待轉換的也要清掉');
+      await VA.advanceLedger(App.Q);
+      const lg = await S.store.get('ledger');
+      if (lg && lg.items[fk] && lg.items[fk].history.some((x) => x.by === 'user')) throw new Error('清除的舊確認標記不可在下一份基準被轉換回來');
+      // 還原含 acks 的備份（沒有處理紀錄時）：和啟動時一樣等第一份基準再轉換
+      await S.store.del('ledger');
+      await restore('acks.json', { schema: 'ssot-localdata/1', items: { acks: { [fk]: { at: '2025-01-02T00:00:00.000Z' } } } });
+      if (!VA.ledgerState().pendingAcks && !(VA.ledger().items[fk] && VA.ledger().items[fk].history.length)) throw new Error('還原舊確認標記後應等待或完成轉換');
+    } finally { await S.store.del('acks'); await S.store.set('ledger', ledger0); await VA.loadLedger(); }
+    // 3. 命名規則：還原與清除後 S.profiles、命名規則分類與建立基準對話框都即時更新
+    const builtinId = VP.builtinIds()[0]; const builtin = S.profiles[builtinId]; // 內容與內建的相同即可（之前的步驟可能載入過同 id 的複本）
+    const mine = { schema: 'ssot-profile/1', id: 'restored-naming', version: '1', label: '還原的', classify: [] };
+    const over = Object.assign({}, builtin, { label: '蓋過內建' });
+    App.openSettings('profiles'); await wait(); // 已合併過一次
+    await restore('profiles.json', { schema: 'ssot-localdata/1', items: { profiles: { [mine.id]: mine, [builtinId]: over } } });
+    if (!S.profiles[mine.id] || S.profiles[builtinId].label !== '蓋過內建') throw new Error('還原命名規則後 S.profiles 應即時更新');
+    App.openSettings('profiles'); await wait();
+    const rowIds = (src) => { const t = $('#settings-panel').testAll('table').find((x) => x.dataset.source === src); return t ? t.testAll('tr').filter((r) => r.dataset.profile).map((r) => r.dataset.profile) : []; };
+    if (!rowIds('saved').includes(mine.id)) throw new Error('還原後命名規則分類應列出備份裡的規則：' + rowIds('saved'));
+    App.openSettings('data'); await SD.refresh();
+    const pbtn = $('#settings-panel').testAll('button').find((b) => b.getAttribute('data-store-key') === 'profiles' && b.classList.contains('settings-clear'));
+    await withConfirm(async () => { pbtn.click(); await wait(); });
+    if (S.profiles[mine.id] || !S.profiles[builtinId] || S.profiles[builtinId].label === '蓋過內建') throw new Error('清除命名規則後應從 S.profiles 移除，內建的恢復');
+    App.openSettings('profiles'); await wait();
+    if (!rowIds('builtin').includes(builtinId) || rowIds('saved').length) throw new Error('清除後命名規則分類應只剩內建的：' + rowIds('saved'));
+    VA.closeSettings(); await App.openInput();
+    const opts = $('#input-profile').testAll('option').map((o) => o.getAttribute('value'));
+    $('#dlg-input').close();
+    if (opts.includes(mine.id) || !opts.includes(builtinId)) throw new Error('建立基準對話框的清單應跟著更新：' + opts);
+    // 文件連結與說明頁同一個做法（V.settings.docLink，連到 GitHub 上的 main）
+    App.openSettings('profiles'); await wait();
+    const dl = $('#settings-panel').testAll('a').find((a) => a.classList.contains('doc-link') && decodeURI(a.getAttribute('href')).endsWith('/blob/main/docs/命名規則.md'));
+    if (!dl) throw new Error('命名規則分類的文件連結應以 V.settings.docLink 產生（doc-link）');
+    // 5. 清單：一次重繪只讀一次 inventory；資料沒變時不重讀
+    App.openSettings('data'); await SD.refresh(); await wait();
+    const inv0 = S.store.inventory; let calls = 0; S.store.inventory = (...a) => { calls++; return inv0.apply(S.store, a); };
+    try {
+      VA.renderSettings(); await SD.refresh(); await wait();
+      if (calls > 0) throw new Error('資料沒變時重繪不應重讀清單：' + calls);
+      await S.store.set('layout', { left: 301, right: 401 }); VA.renderSettings(); await SD.refresh(); await wait();
+      if (calls !== 1) throw new Error('資料改變後重繪應只讀一次清單：' + calls);
+      if (!text('#settings-panel').includes('欄寬')) throw new Error('清單應照常顯示');
+    } finally { S.store.inventory = inv0; await S.store.set('layout', JSON.parse(layout0 || 'null') || { left: 330, right: 400 }); }
     VA.closeSettings();
   });
   await step('清除基準（處理紀錄不受影響）；沒有基準時「修正」、「驗證」停用，中間只有拓樸圖（歡迎畫面）', async () => {

@@ -119,32 +119,52 @@
     await App.restore();
   }
 
-  /** 還原上次的基準：schema 或版本不同時用儲存的輸入重建；無法還原時明確告知，不靜默略過。 */
+  /**
+   * 還原上次的基準：能不能還原只依 S.store.lastRestorable（還原備份的檢查用同一個）；schema 或版本不同時用儲存的輸入重建。
+   * 無法載入時明確告知，不靜默略過；畫面上若還有別的基準（例如從備份還原時）一起收起，畫面與 store 不會不一致。
+   * 回傳 { loaded, reason }：loaded 是否載入了基準；reason 是儲存的基準無法載入的原因（沒有儲存時兩者皆空）。
+   */
   App.restore = async function () {
-    const last = await S.store.get('last').catch(() => null);
-    // 儲存的基準還沒建立查詢介面：先用 S.query.metaOf 讀 meta 判斷相容，再決定直接載入或重建
-    const savedMeta = last ? S.query.metaOf(last.snapshot) : null;
-    const saved = savedMeta ? last.snapshot : null;
-    if (saved) {
-      const inputs = { sources: last.sources || [], profile: last.profile || null, expectedData: last.expectedData || null, origin: { kind: 'restore' } };
-      A.setRoundInputs(inputs); // 無法還原基準時，輸入對話框仍可帶出上次的收集檔
-      const sameSchema = savedMeta.schema === S.SCHEMA;
-      let snap = sameSchema ? saved : null; let msg = `已還原上次建立的基準（${V.fmtTime(savedMeta.createdAt)}）`;
-      if ((!sameSchema || savedMeta.version !== S.VERSION) && inputs.sources.length) { // 程式更新過：用儲存的輸入重建，欄位才會完整
-        try { snap = await S.buildAsync(inputs.sources, { profile: inputs.profile, expectedData: inputs.expectedData }); msg = '程式已更新，已用儲存的輸入重新建立基準'; } catch (e) {
-          console.error(e);
-          if (!sameSchema) msg = `上次的基準格式（${savedMeta.schema}）已不相容，重新建立失敗：${V.reason(e)}。請重新建立基準。`;
-        }
-      } else if (!sameSchema) msg = `上次的基準格式（${savedMeta.schema}）已不相容，且沒有儲存輸入，請重新建立基準。`;
-      if (snap) A.load(snap, last.positions); else A.renderAll();
-      A.banner(msg, 6000);
-    } else A.renderAll();
+    let last;
+    try { last = await S.store.get('last'); } catch (e) {
+      console.error(e); const reason = '無法讀取儲存的基準：' + V.reason(e);
+      A.renderAll(); A.banner(reason, 10000); return { loaded: false, reason };
+    }
+    if (last === undefined || last === null) { A.renderAll(); return { loaded: false, reason: null }; }
+    const chk = S.store.lastRestorable(last);
+    const fail = (reason) => {
+      if (App.snap) A.resetBaselineView();
+      // 無法還原基準時，輸入對話框仍可帶出上次的收集檔（格式正確時）
+      if (chk.meta) A.setRoundInputs(inputsOf(last));
+      A.renderAll(); A.banner(`上次的基準無法還原：${reason}。請重新建立基準。`, 10000);
+      return { loaded: false, reason };
+    };
+    if (!chk.ok) return fail(chk.reason);
+    const inputs = inputsOf(last);
+    let snap = chk.meta.schema === S.SCHEMA ? last.snapshot : null; let msg = `已還原上次建立的基準（${V.fmtTime(chk.meta.createdAt)}）`;
+    if (chk.rebuild) { // 程式更新過：用儲存的輸入重建，欄位才會完整
+      try { snap = await S.buildAsync(inputs.sources, { profile: inputs.profile, expectedData: inputs.expectedData }); msg = '程式已更新，已用儲存的輸入重新建立基準'; } catch (e) {
+        console.error(e);
+        if (!snap) return fail(`基準格式（${chk.meta.schema}）已不相容，用儲存的輸入重新建立失敗：${V.reason(e)}`);
+        msg += `；用儲存的輸入重新建立失敗（${V.reason(e)}），沿用儲存的基準，新版的欄位可能不完整`;
+      }
+    }
+    A.load(snap, last.positions, inputs);
+    A.banner(msg, 6000);
+    return { loaded: true, reason: null };
+  };
+  const inputsOf = (last) => ({ sources: last.sources || [], profile: last.profile || null, expectedData: last.expectedData || null, origin: { kind: 'restore' } });
+  /** 收起畫面上的基準（不動 store）：清除基準與無法還原時共用 */
+  A.resetBaselineView = function resetBaselineView() {
+    A.cancelElk(); A.clearRound();
+    // 沒有基準時只有設備圖（歡迎畫面）：L2／L3 的資料與 VLAN 篩選一起清掉
+    App.vlanFilter = null; A.resetLayers(); App.layer = 'device'; A.setDeviceGraph([], [], new Map()); A.resetSelection();
   };
 
-  /** 節點位置是檢視狀態：存回 store 的 'last'，與基準一起還原 */
+  /** 節點位置是檢視狀態：存回 store 的 'last'，與基準一起還原；儲存的基準無法還原時不寫（不把位置寫進壞掉的資料） */
   A.savePositions = async function savePositions() {
     if (!App.snap) return;
-    const last = await S.store.get('last'); if (!last) return;
+    const last = await S.store.get('last'); if (!last || !S.store.lastRestorable(last).ok) return;
     last.positions = Object.fromEntries(App.devicePos); await S.store.set('last', last);
   };
 

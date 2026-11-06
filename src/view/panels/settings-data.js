@@ -10,19 +10,24 @@
   const V = S.view; const h = V.h;
   const A = () => V.app;
 
-  /** 模組內的檢視狀態：inv 是最近一次的 inventory；restoreMsg 是最近一次還原的結果 { name, errors } 或 { name, keys } */
-  const st = { inv: null, job: null, restoreMsg: null };
+  /**
+   * 模組內的檢視狀態：inv 是最近一次的 inventory，rev 是讀它時的 S.store.revision()（相同時不重讀：大型基準每次讀要數百 ms）；
+   * restoreMsg 是最近一次還原的結果 { name, errors } 或 { name, keys, warn }
+   */
+  const st = { inv: null, rev: null, job: null, restoreMsg: null };
 
   /** 位元組換成 B／KB／MB（1024 進位，一位小數） */
   const fmtBytes = (n) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
   const descOf = (k) => S.store.KEYS.find((d) => d.key === k) || null;
 
-  /** 重新讀清單；和快取不同時重繪設定。回傳 promise（測試可以等） */
+  /** 重新讀清單（這個頁面沒有寫過資料時不重讀）；和快取不同時重繪設定。回傳 promise（測試可以等） */
   function refresh() {
     if (st.job) return st.job;
+    const rev = S.store.revision();
+    if (st.inv && st.rev === rev) return Promise.resolve();
     st.job = S.store.inventory().then((inv) => {
       const changed = JSON.stringify(inv) !== JSON.stringify(st.inv);
-      st.inv = inv; st.job = null;
+      st.inv = inv; st.rev = rev; st.job = null;
       if (changed && A().settingsOpen() && A().settingsSection() === 'data') A().renderSettings();
     }, (e) => { st.job = null; console.error(e); A().banner('無法讀取本機資料的清單：' + V.reason(e), 8000); });
     return st.job;
@@ -50,6 +55,8 @@
         VA.adoptLedger(S.ledger.empty());
         if (App.Q) await VA.advanceLedger(App.Q);
       }
+      if (key === 'acks') VA.resetPendingAcks(); // 記憶體中等待轉換的一起清掉，下一份基準不再轉換回來
+      if (key === 'profiles') await V.settings.profiles.syncSaved(); // 命名規則分類與建立基準對話框的清單即時跟上
       if (key === 'layoutMode') { App.layoutMode = App.LAYOUT_MODES[0]; VA.syncLayoutMode(); } // 沒有存值時的預設（app.js 啟動時同一個值）
     } catch (e) { console.error(e); VA.banner(`無法清除「${d.label}」：` + V.reason(e), 10000); await after(); return false; }
     VA.banner(`已清除「${d.label}」`, 5000);
@@ -104,13 +111,24 @@
     if (r.keys.includes('layoutMode')) { App.layoutMode = it.layoutMode; VA.syncLayoutMode(); }
     if (r.keys.includes('layout') && App.layout) { ['left', 'right'].forEach((s) => { if (Number.isFinite(it.layout[s])) App.layout[s] = it.layout[s]; }); VA.applyColumns(); }
     if (r.keys.includes('ledger')) VA.adoptLedger(it.ledger);
-    if (r.keys.includes('last')) { await App.restore(); await App.ledgerJob; } else if (r.keys.includes('ledger') && App.Q) await VA.advanceLedger(App.Q);
+    // 只還原舊確認標記時同啟動時的讀法：沒有處理紀錄才等第一份基準轉換（有處理紀錄時不用）
+    else if (r.keys.includes('acks')) await VA.loadLedger();
+    if (r.keys.includes('profiles')) {
+      try { await V.settings.profiles.syncSaved(); } catch (e) { console.error(e); VA.banner('命名規則已還原，但無法讀回：' + V.reason(e) + '。重新開啟頁面後可以使用。', 10000); }
+    }
+    let warn = null;
+    if (r.keys.includes('last')) {
+      const res = await App.restore(); await App.ledgerJob;
+      if (!res.loaded) warn = res.reason || '儲存的基準無法載入';
+    } else if ((r.keys.includes('ledger') || r.keys.includes('acks')) && App.Q) await VA.advanceLedger(App.Q);
     if (r.keys.includes('ledger')) await VA.persistLedger(); // 同一份基準已在備份的紀錄中時 advance 會略過，一律再寫一次
     r.warnings.forEach((w) => VA.banner(w, 8000));
-    st.restoreMsg = { name, keys: r.keys };
-    VA.banner(`已從 ${name} 還原 ${r.keys.length} 項`, 6000);
+    st.restoreMsg = { name, keys: r.keys, warn };
+    // 基準沒有載入時不說「已還原」就結束：寫明哪裡沒有跟上（畫面已收起原本的基準）
+    if (warn) VA.banner(`已從 ${name} 寫回 ${r.keys.length} 項，但其中的基準無法載入：${warn}。畫面上已沒有基準，請重新建立基準。`, 12000);
+    else VA.banner(`已從 ${name} 還原 ${r.keys.length} 項`, 6000);
     await after();
-    return true;
+    return !warn;
   }
 
   // ================================================================ 畫面
@@ -171,6 +189,8 @@
         h('p', null, `無法從 ${m.name} 還原，沒有寫入任何資料：`),
         h('ul', null, m.errors.map((e) => h('li', null, e))),
       ]));
+    } else if (m && m.keys && m.warn) {
+      el.appendChild(h('p', { class: 'warn-line', role: 'alert' }, `已從 ${m.name} 寫回：${m.keys.map((k) => descOf(k).label).join('、')}；但其中的基準無法載入（${m.warn}），請重新建立基準。`));
     } else if (m && m.keys) el.appendChild(h('p', { class: 'muted', role: 'status' }, `已從 ${m.name} 還原：${m.keys.map((k) => descOf(k).label).join('、')}。`));
     el.appendChild(h('p', { class: 'muted settings-note' }, '清除基準不影響處理紀錄；處理紀錄的匯出與匯入也在資料中心。'));
     refresh();

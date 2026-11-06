@@ -85,6 +85,21 @@ module.exports = function registerLarge(LARGE_MAX_MS) {
     assert.ok(p95 <= Math.max(50, LARGE_MAX_MS / 100), `分段計算的 p95 是 ${p95} ms`);
     assert.ok(segs.length > 10, `只有 ${segs.length} 段`);
   });
+  test('壓力：約 1000 台的暴露清單（Q.exposure）在時間內完成，且乾淨網路從 WAN 直接路由進不了內部', () => {
+    // 另起一個測試、從頭算（新的 Q，沒有矩陣的快取）：放在上一個測試裡時，矩陣與分段量測的快取加上暴露清單會超過 Node 預設的 heap 上限
+    // 上限預設 3600 ms（SSOT_LARGE_MAX_MS × 0.18，CI 較大時跟著放寬）：本機 80 個 WAN 入口、約 22 萬次判斷，
+    // 從頭算約 0.7–1.3 s、碰上 GC 時最慢 1.8 s；上限約為一般情況的 3 倍、最慢一次的 2 倍
+    const s = build(gen(['--sites', '40', '--access', '24']));
+    const Q = S.query(s);
+    const time = (fn) => { const t0 = Date.now(); const r = fn(); return [r, Date.now() - t0]; };
+    const exposureOf = (q) => (q.exposure ? q.exposure() : S.reach.of(q).exposure());
+    const [ex, eMs] = time(() => exposureOf(Q));
+    console.log(`      exposure ${eMs} ms（${ex.wan.entries.length} 個 WAN 入口、${ex.limits.evaluations} 次判斷；允許 本身 ${ex.self.counts.allow}、dst-nat ${ex.dnat.counts.allow}、路由 ${ex.routed.counts.allow}）`);
+    assert.deepStrictEqual([ex.status, ex.limits.truncated], ['ok', false]);
+    assert.ok(ex.wan.entries.length >= 80 && ex.limits.evaluations > 100000, `判斷次數 ${ex.limits.evaluations}`);
+    assert.strictEqual(ex.routed.counts.allow + ex.routed.counts.unknown, 0, '乾淨網路從 WAN 直接路由進不了內部');
+    assert.ok(eMs < LARGE_MAX_MS * 0.18, `exposure 耗時 ${eMs} ms，超過 ${Math.round(LARGE_MAX_MS * 0.18)} ms（SSOT_LARGE_MAX_MS × 0.18）`);
+  });
   test('壓力：約 1000 台的預檢（S.preflight）比完整建立快，且設備數與無法辨識段落相同', () => {
     const src = [{ name: 'large.txt', text: gen(['--sites', '40', '--access', '24']) }];
     let t = Date.now(); const p = S.preflight(src); const pm = Date.now() - t;

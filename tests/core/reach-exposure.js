@@ -98,7 +98,31 @@ test('Q.exposure：外部 → 內部（直接路由）：沒有 NAT 的公網網
   assert.strictEqual(x.routed.rows.some((r) => r.ip.startsWith('192.168.1.')), false, 'LAN 被 forward 的 drop 擋下，不列');
   assert.ok(x.routed.counts.deny > 0);
   assert.deepStrictEqual([x.ipv6.status, typeof x.ipv6.message], ['not-included', 'string']);
-  assert.deepStrictEqual(x.assumptions, JSON.parse(JSON.stringify(S.query.reachAssumptions())));
+  assert.deepStrictEqual(x.assumptions.slice(0, S.query.reachAssumptions().length), JSON.parse(JSON.stringify(S.query.reachAssumptions())), '先列 Q.reach 的前提');
+});
+
+test('Q.exposure 的前提：在 Q.reach 的前提之後附加暴露清單另有的兩條（只出現在暴露清單，Q.reach 與 S.query.reachAssumptions 不變）', () => {
+  const EXTRA = ['exposure-source-ranges', 'wan-member-no-interface'];
+  const base = S.query.reachAssumptions();
+  const Q = S.query(edge());
+  const x = exposureOf(Q);
+  assert.deepStrictEqual(x.assumptions.map((a) => a.code), base.map((a) => a.code).concat(EXTRA));
+  assert.deepStrictEqual(x.assumptions.slice(0, base.length), JSON.parse(JSON.stringify(base)));
+  assert.ok(Object.isFrozen(x.assumptions) && x.assumptions.every((a) => Object.isFrozen(a)), '凍結');
+  // 沒有 WAN 的提早結束也帶同一份前提
+  const none = exposureOf(S.query(build(R1.filter((l) => !l.includes('list=WAN') && !l.includes('name=WAN')).concat(SW1).join('\n'))));
+  assert.deepStrictEqual(none.assumptions, JSON.parse(JSON.stringify(x.assumptions)));
+  assert.ok(base.every((a) => !EXTRA.includes(a.code)), 'S.query.reachAssumptions 不含暴露清單的前提');
+  const rc = Q.reach('192.168.1.10', '203.0.113.2', { proto: 'tcp', port: 443 });
+  assert.deepStrictEqual(rc.assumptions.map((a) => a.code), base.map((a) => a.code), 'Q.reach 的前提不變');
+  // 寫法同 Q.reach 的前提：括號外不出現 RouterOS 的英文原值，原值保留在括號內
+  const ALLOWED = new Set(['RouterOS', 'IPv4', 'VRF', 'main']);
+  x.assumptions.filter((a) => EXTRA.includes(a.code)).forEach((a) => {
+    const words = (a.message.replace(/（[^（）]*）/g, '').match(/[A-Za-z@/][A-Za-z0-9_=@/.<>-]*/g) || []).filter((w) => !ALLOWED.has(w));
+    assert.deepStrictEqual(words, [], `${a.code}：括號外有英文原值 ${words.join('、')}`);
+  });
+  const text = x.assumptions.map((a) => a.message).join('\n');
+  ['src-address', 'available-from', '/routing rule', 'allowedFrom', '/ip address', '/interface list member'].forEach((w) => assert.ok(text.includes(w), '應保留原值 ' + w));
 });
 
 test('Q.exposure：沒有 WAN 時回傳說明（不靜默）', () => {

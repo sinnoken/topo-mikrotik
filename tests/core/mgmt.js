@@ -199,6 +199,18 @@ test('F13：同名的 community 各自一筆，findingKey 不同（facet 加上�
   assert.deepStrictEqual(fws(s2, 'F13').map((x) => x.facet).sort(), f.map((x) => x.facet).sort());
   assert.deepStrictEqual(fws(fwBox(['/snmp set enabled=yes']), 'F13').map((x) => x.facet), ['public']);
 });
+test('管理面設定：每個 community 都有 facet，與 F13 finding 的 facet 是同一個值（畫面直接比對）；停用的、沒有 finding 的也有', () => {
+  const s = fwBox(['/snmp set enabled=yes', '/snmp community add name=public addresses=10.0.0.0/8', '/snmp community add name=mon addresses=10.0.0.0/8',
+    '/snmp community add name=old disabled=yes']);
+  const cs = mg(s).snmp.communities;
+  assert.deepStrictEqual(cs.map((c) => c.name), ['public', 'public', 'mon', 'old']);
+  assert.ok(cs.slice(0, 2).every((c) => /^public#[0-9a-f]{8}$/.test(c.facet)) && cs[0].facet !== cs[1].facet, cs.map((c) => c.facet).join());
+  assert.deepStrictEqual(cs.slice(2).map((c) => c.facet), ['mon', 'old']);
+  assert.deepStrictEqual(fws(s, 'F13').map((f) => f.facet).sort(), cs.slice(0, 2).map((c) => c.facet).sort());
+  // 停用一個同名的之後只剩一個啟用中的 public：兩者的 facet 都回到名稱
+  const one = mg(fwBox(['/snmp set enabled=yes', '/snmp community set [ find default=yes ] disabled=yes', '/snmp community add name=public addresses=10.0.0.0/8'])).snmp.communities;
+  assert.deepStrictEqual(one.map((c) => [c.facet, c.disabled]), [['public', true], ['public', false]]);
+});
 
 test('管理面設定：出廠預設值只用在 RouterOS 7.24–7.26；版本在範圍外（含 v6）時沒寫的設定視為無法判斷（reason version），訊息寫出預設值的版本範圍', () => {
   const at = (ver, extra) => build(['R (10.0.0.1):', '### /export terse', `# 2026-10-13 10:00:00 by RouterOS ${ver}`, '/interface list add name=WAN',

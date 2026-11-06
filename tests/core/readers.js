@@ -113,10 +113,10 @@ test('指令有辨識但輸出不是 detail 格式 → I01，並提示加 detail
 test('I01：區塊內容全是 RouterOS 錯誤訊息時，訊息說明指令執行錯誤（列出第一行），不提示加 detail；id／標題／嚴重度不變', () => {
   const i01 = (text) => build(text).findings.filter((x) => x.id === 'I01');
   // 解析器認得指令、但輸出只有錯誤訊息（含空行與多行錯誤）
-  const known = i01('SW_A (10.0.0.1):\n### /interface wifi registration-table print detail without-paging\n\nbad command name registration-table (line 1 column 16)\nsyntax error (line 1 column 30)\n');
+  const known = i01('SW_A (10.0.0.1):\n### /interface wifi registration-table print detail without-paging\n\nbad command name registration-table (line 1 column 16)\nsyntax error (line 1 column 30)\n### /system resource print\n  version: 7.25.1 (stable)\n');
   assert.strictEqual(known.length, 1);
   assert.deepStrictEqual([known[0].severity, known[0].title, known[0].entities], [S.check.CATALOG.I01.severity, S.check.CATALOG.I01.title, [{ type: 'device', key: 'SW_A' }]]);
-  assert.ok(/^指令執行錯誤：t\.txt 第 3–6 行，設備回應「bad command name registration-table \(line 1 column 16\)」/.test(known[0].message), known[0].message);
+  assert.ok(/^指令執行錯誤：t\.txt 第 3–5 行，設備回應「bad command name registration-table \(line 1 column 16\)」/.test(known[0].message), known[0].message);
   assert.ok(/RouterOS 版本/.test(known[0].message) && /套件/.test(known[0].message), known[0].message);
   assert.ok(!/請加上 detail/.test(known[0].message), known[0].message);
   // 沒有解析器支援的指令、輸出只有錯誤訊息：同樣說明指令執行錯誤
@@ -152,10 +152,13 @@ test('S.build 入口：沒有輸入（0 個來源，或每個來源都只有空�
     assert.throws(() => S.build(src, { now: '2026-01-01T00:00:00Z' }), (e) => e instanceof RangeError && /沒有輸入/.test(e.message), JSON.stringify(src));
   });
   // 有內容、只是認不到設備的輸入不是「沒有輸入」：照常建立，以 I01 指出無法辨識的段落
-  //（沒有設備標頭時 files-v1 以檔名當設備名，所以這台設備存在但沒有任何資料）
+  //（沒有設備標頭時 files-v1 以檔名當設備名，但內容都認不得，沒有這台設備的任何資料，所以不建立設備）
   const s = S.build([{ name: 'a.txt', text: 'hello\n' }, { name: 'b.txt', text: '' }], { now: '2026-01-01T00:00:00Z' });
-  assert.deepStrictEqual(s.model.devices.map((d) => [d.key, d.data]), [['A', []]]);
+  assert.deepStrictEqual(s.model.devices.map((d) => [d.key, d.data]), []);
   assert.ok(ids(s).includes('I01'), JSON.stringify(ids(s)));
+  // I01 不指向沒有建立的設備（設備名仍寫在訊息的位置裡）
+  assert.deepStrictEqual(s.findings.filter((f) => f.id === 'I01').map((f) => f.entities), [[]]);
+  assert.deepStrictEqual(s.coverage, []);
   // 預檢不受影響：輸入畫面打字時會以空白或部分輸入呼叫
   assert.deepStrictEqual(S.preflight([{ name: 'a.txt', text: '' }]).devices, []);
 });

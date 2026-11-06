@@ -15,8 +15,11 @@ const preflightMatchesBuild = (sources, opt) => {
   const p = S.preflight(sources, opt);
   const s = S.build(sources, Object.assign({ now: '2026-01-01T00:00:00Z' }, opt));
   const collected = s.model.devices.filter((d) => d.collected);
-  assert.deepStrictEqual(p.devices.map((d) => d.key), collected.map((d) => d.key), '設備應與完整建立的已收集設備相同');
-  p.devices.forEach((d) => assert.deepStrictEqual(d.dataTypes, collected.find((c) => c.key === d.key).data, `${d.name} 的資料種類應與完整建立相同`));
+  // 預檢的設備＝完整建立的已收集設備＋內容都認不得的設備（沒有資料、沒有收集失敗；建立時不建立，輸入畫面標「沒有可用的資料」）
+  const keys = new Set(collected.map((d) => d.key));
+  assert.deepStrictEqual(p.devices.filter((d) => keys.has(d.key)).map((d) => d.key), collected.map((d) => d.key), '已收集的設備都應列在預檢');
+  p.devices.filter((d) => !keys.has(d.key)).forEach((d) => assert.deepStrictEqual([d.dataTypes, d.failures], [[], 0], `${d.name} 沒有建立，應是沒有資料的設備`));
+  p.devices.filter((d) => keys.has(d.key)).forEach((d) => assert.deepStrictEqual(d.dataTypes, collected.find((c) => c.key === d.key).data, `${d.name} 的資料種類應與完整建立相同`));
   assert.deepStrictEqual(p.unrecognized.map(msgOf).sort(), i01Of(s, p).sort(), '無法辨識的段落應與 I01 相同');
   assert.deepStrictEqual(p.partial.map((x) => `${x.file}:${x.startLine}:${x.lines}`).sort(),
     s.blocks.filter((b) => b.unrecognizedLines.length).map((b) => `${b.file}:${b.start}:${b.unrecognizedLines.length}`).sort(), '有認不得的行的區塊應與 I03 相同');
@@ -92,6 +95,13 @@ test('認到設備：Q.recognizedDevices 與 S.query.preflightRecognized 是同�
     const p = preflightMatchesBuild(sources);
     assert.deepStrictEqual(Q.recognizedDevices().map((d) => d.key), want, `${name}：Q.recognizedDevices`);
     assert.deepStrictEqual(S.query.preflightRecognized(p).map((d) => d.key), want, `${name}：預檢`);
+  });
+  // 建立後：認不到的設備不建立（已收集的設備就是認到的設備，覆蓋率也不算它們）
+  cases.forEach(([name, sources, want]) => {
+    const s = S.build(sources, { now: '2026-01-01T00:00:00Z' });
+    assert.deepStrictEqual(s.model.devices.filter((d) => d.collected).map((d) => d.key), want, `${name}：已收集的設備`);
+    assert.deepStrictEqual(s.coverage.map((c) => c.dev), want, `${name}：覆蓋率`);
+    assert.strictEqual(s.meta.stats.collected, want.length, `${name}：meta.stats.collected`);
   });
   // 範例資料：已收集的設備都認到
   const sample = [{ name: 'sample-bundle.txt', text: read('samples/sample-bundle.txt') }];

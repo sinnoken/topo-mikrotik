@@ -73,9 +73,11 @@
     const M = newModel();
     const { canon } = input;
 
-    // 1. 設備（每個有設備標頭的區塊都代表「有收集到這台」）
+    // 1. 設備：有設備標頭（或檔名）、而且至少有一個區塊有結果（解析成功或有收集失敗紀錄）才代表「有收集到這台」。
+    // 內容都認不得的設備只有名字、沒有資料，不建立（每個區塊各有 I01），也不算進覆蓋率；與 Q.recognizedDevices 一致
+    const withResult = new Set(); input.blocks.forEach((b) => { if (hasResult(b)) withResult.add(b.devKey); });
     input.blocks.forEach((b) => {
-      if (b.device === null) return;
+      if (b.device === null || !withResult.has(b.devKey)) return;
       const d = device(M, b.devKey, b.device);
       d.collected = true;
       if (b.mgmtIp && !d.mgmtIp) d.mgmtIp = b.mgmtIp;
@@ -345,6 +347,8 @@
     return t;
   }
   /** 沒有任何輸出、仍算已收集的命中次數 adapter（收集失敗除外）；emptyStatTables 與 S.preflight 共用，資料種類才會一致。 */
+  /** 區塊是否有結果：解析成功（pipeline 的 parseBlock 標記 parsed）或有收集失敗紀錄。建立模型與預檢以此決定要不要建立設備。 */
+  function hasResult(b) { return b.device !== null && (!!b.parsed || !!b.failure); }
   function emptyStatAdapters(b) {
     if (b.device === null || b.failure || b.empty || b.lines.some((l) => l.trim())) return [];
     return (b.adapters || []).map((id) => S.adapters[id]).filter((a) => a && a.dataType === 'fwstats');
@@ -417,6 +421,18 @@
     const cmp = (a, b) => a[0] - b[0] || a[1] - b[1];
     return cmp(v, R.from) >= 0 && cmp(v, R.to) <= 0;
   }
+  /*
+   * community 的 facet（F13 finding 的 facet，也是畫面對應 finding 的鍵；findingKey 的一部分）：community 名稱。
+   * 手冊沒有說名稱不能重複，export 也可能出現同名的 community（例如另外 add 了 public），
+   * 這時名稱不足以區分，啟用中的 community 有同名的才在名稱後加上「#內容雜湊」：是不是出廠的 community、addresses（排序後）、security、write-access。
+   * 只數啟用中的（停用的不產生 finding；停用出廠的 public 再 add 一個 public 是常見的改法，這時 facet 仍是 public）。
+   * 不用行號或 export 中的順序（插入別的設定、export 換順序都不會變）；代價是改了這幾個欄位時 facet 會變，處理紀錄要重新標記。
+   */
+  function communityFacets(comms) {
+    const count = new Map(); comms.forEach((c) => { if (c.disabled === false) count.set(c.name, (count.get(c.name) || 0) + 1); });
+    return comms.map((c) => (count.get(c.name) > 1
+      ? `${c.name}#${S.util.hash(JSON.stringify([!!c.isDefault, c.addresses ? c.addresses.slice().sort() : null, c.security, c.write])).slice(0, 8)}` : c.name));
+  }
   /** 有設定資料（export）的已收集設備，每台一筆管理面設定（含預設值）。沒有 export 的設備沒有這一筆（不猜）。 */
   function resolveMgmt(M) {
     const D = S.MGMT_DEFAULTS;
@@ -468,6 +484,7 @@
           c.basis = 'export'; c.src.push([f.block, f.line]);
         });
         comms.forEach((c) => { c.unknown = COMMUNITY_FIELDS.filter((k) => c[k] === null); });
+        communityFacets(comms).forEach((facet, i) => { comms[i].facet = facet; });
       }
       ent.snmp.communities = comms;
       ent.snmp.communitiesReason = comms ? cReason : 'not-exported';

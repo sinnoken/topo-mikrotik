@@ -28,7 +28,8 @@
   const SCHEMA_EXPECTED = 'ssot-expected/1'; const SCHEMA_DIFF = 'ssot-diff/1'; const SCHEMA_SNAPDIFF = 'ssot-snapdiff/1'; const SCHEMA_DRIFT = 'ssot-drift/1';
 
   function parseEp(s) {
-    const m = String(s).trim().match(/^(\S.*?)\s+(\S+)$/);
+    if (typeof s !== 'string') return null; // 物件、數字等不轉字串（"[object Object]" 不是端點），交給呼叫端報格式錯誤
+    const m = s.trim().match(/^(\S.*?)\s+(\S+)$/);
     return m ? K.ep(m[1], m[2]) : null;
   }
   // 錯誤與警告給人看：說明值的種類，不外露 JSON 原文
@@ -57,6 +58,7 @@
 
     const expLinks = new Set();
     (expected.links || []).forEach((l, i) => {
+      if (!l || typeof l !== 'object' || Array.isArray(l)) { errors.push(`預期現況的第 ${i + 1} 條鏈路格式錯誤：應為 { a: "設備 介面", b: "設備 介面" }，目前是${valueText(l)}`); return; }
       const a = parseEp(l.a); const b = parseEp(l.b);
       if (!a || !b) {
         const bad = [!a ? `a 端${valueText(l.a)}` : null, !b ? `b 端${valueText(l.b)}` : null].filter(Boolean).join('、');

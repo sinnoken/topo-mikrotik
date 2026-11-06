@@ -301,3 +301,11 @@ test('S.compare 的 schema 常數：匯出 ssot-expected／diff／snapdiff／dri
   const src = read('src/compare/compare.js').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\])\/\/.*$/gm, '$1');
   ['ssot-expected/1', 'ssot-diff/1', 'ssot-snapdiff/1', 'ssot-drift/1'].forEach((x) => assert.strictEqual(src.split(x).length - 1, 1, `${x} 在 compare.js 應只寫在常數的定義`));
 });
+
+test('S.compare：鏈路是 null 或端點不是文字時列入 errors，不丟例外、不把物件當成端點', () => {
+  const Q = S.query(build(read('samples/sample-bundle.txt')));
+  const r = S.compare(Q, { schema: S.compare.SCHEMA_EXPECTED, links: [null, { a: { x: 1 }, b: 'X ether1' }, 'X ether1'] });
+  assert.strictEqual(r.errors.length, 3, r.errors.join('\n'));
+  assert.ok(r.errors.every((e) => /^預期現況的第 \d 條鏈路格式錯誤/.test(e)));
+  assert.ok(!r.errors.some((e) => e.includes('[object Object]')));
+});

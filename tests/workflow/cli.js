@@ -249,6 +249,7 @@ test('CLI：收集檔沒有認到任何設備的資料（空檔、只有空白�
       ['兩個空檔', [file('e1.txt', ''), file('e2.txt', '\n')], /沒有內容/],
       ['只有註解', [file('comments.txt', '# 收集檔\n# 這一輪沒有輸出\n')], /沒有認到任何設備的資料/],
       ['內容都認不得', [file('junk.txt', 'hello\nworld\n')], /沒有認到任何設備的資料.*無法辨識/],
+      ['只有位置不對的收集時間註解', [file('R_X.txt', '# collected-at: 2026-10-24T03:00:00Z\n')], /沒有認到任何設備的資料.*（I01）/],
     ];
     cases.forEach(([name, inputs, why]) => {
       const r = run([...inputs, '--now', NOW, '-o', out]);

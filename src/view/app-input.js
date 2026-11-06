@@ -87,7 +87,8 @@
     if (!sources.length) { box.appendChild(h('div', { class: 'muted' }, '尚未輸入：貼上收集檔內容，或選擇檔案。')); block('還沒有輸入'); return; }
     // 預檢本身失敗（例如命名規則有誤）不擋建立：建立時會以同樣的錯誤明確回報
     if (input.pfError) { box.appendChild(h('div', { class: 'pf-why' }, '預檢失敗：' + input.pfError)); block(''); return; }
-    const p = input.pre; const n = p.devices.length; const m = p.unrecognized.length; const k = p.partial.length;
+    // 認到＝有資料或收集失敗紀錄（S.query.preflightRecognized，與 CLI、建立後的 Q.recognizedDevices 同一個判斷）；清單仍列出全部，沒有資料的標示出來
+    const p = input.pre; const n = S.query.preflightRecognized(p).length; const m = p.unrecognized.length; const k = p.partial.length;
     box.appendChild(h('div', { class: 'pf-head' }, [
       V.chip(`認到 ${V.num(n)} 台設備`, n ? 'ok' : 'err'), V.chip(`${V.num(p.blockCount)} 個指令區塊`),
       V.chip(m ? `${V.num(m)} 段無法辨識` : '沒有無法辨識的段落', m ? 'err' : 'ok'),
@@ -98,7 +99,7 @@
     const at = (u) => `${V.fileName(u.file)} 第 ${u.kind === 'note' ? u.startLine : `${u.startLine}–${u.endLine}`} 行`;
     box.appendChild(h('details', { id: 'input-preflight-list', class: 'collect', open: input.pfOpen || null, ontoggle: (e) => { input.pfOpen = e.target.open; } }, [
       h('summary', null, '查看清單'),
-      n ? V.table([{ t: '設備', f: (d) => d.name }, { t: '區塊', f: (d) => V.num(d.blocks) },
+      p.devices.length ? V.table([{ t: '設備', f: (d) => d.name }, { t: '區塊', f: (d) => V.num(d.blocks) },
         { t: '資料種類', f: (d) => h('div', { class: 'chip-list' }, d.dataLabels.length ? d.dataLabels.map((l) => V.chip(l)) : [V.chip('沒有可用的資料', 'err')]) }], p.devices, { limit: LIST_MAX }) : null,
       m ? h('div', null, '無法辨識的段落（建立後列為 I01）') : null,
       m ? h('ul', { class: 'pf-bad' }, p.unrecognized.slice(0, LIST_MAX).map((u) => h('li', null, `${at(u)}：${u.reason}`))) : null,
@@ -162,7 +163,7 @@
     if (!sources.length) { $('#input-status').textContent = '請貼上收集檔內容，或選擇檔案。'; return; }
     const profile = selectedProfile();
     if (input.sig !== inputSig(sources, profile)) runPreflight();
-    if (input.pre && !input.pre.devices.length) { $('#input-status').textContent = '沒有認到任何設備，請依預檢的說明修正輸入。'; return; }
+    if (input.pre && !S.query.preflightRecognized(input.pre).length) { $('#input-status').textContent = '沒有認到任何設備，請依預檢的說明修正輸入。'; return; }
     const expectedData = App.round.expectedData && $('#input-xd').checked ? App.round.expectedData : null;
     const btn = $('#input-build'); btn.disabled = true;
     const bar = $('#input-progress'); bar.classList.remove('hidden'); const fill = bar.firstElementChild;

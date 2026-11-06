@@ -32,6 +32,18 @@ test('生成檔：samples/collect-commands.js 是 tools/embed-sample.js 對 tool
   });
   assert.throws(() => E.collectorCommands('COLLECT_COMMAND_IDS=(a)\nOPTIONAL_COMMAND_IDS=()\n'), /a 沒有對應的指令/);
 });
+test('生成檔：samples/collector-files.js 是 tools/embed-sample.js 對 tools/ 的收集腳本的輸出；內容逐字相同、順序固定、陣列凍結', () => {
+  const E = require('../../tools/embed-sample.js');
+  const texts = E.COLLECTOR_FILES.map((f) => lf(read('tools/' + f.src)));
+  const FIX = '收集腳本與 tools/ 的 collect.sh、collector-commands.sh、devices.csv 不一致：請執行 npm run sample 重新產生（生成檔不要手動修改）';
+  const js = lf(read('samples/collector-files.js'));
+  assert.ok(js === E.collectorFilesJs(texts), FIX);
+  const ctx = {}; require('vm').runInNewContext(js, { globalThis: ctx });
+  const files = ctx.SSOT.samples.collectorFiles;
+  assert.deepStrictEqual(Array.from(files, (f) => f.path), ['topo-mikrotik-collector/collect.sh', 'topo-mikrotik-collector/collector-commands.sh', 'topo-mikrotik-collector/devices.csv']);
+  files.forEach((f, i) => assert.ok(f.text === texts[i] && f.text.endsWith('\n'), FIX + '：' + f.path));
+  assert.ok(Object.isFrozen(files) && files.every(Object.isFrozen));
+});
 test('黃金基準：範例資料建出的 Snapshot 與 tests/golden/sample-snapshot.json 完全相同', () => {
   const G = require('../golden.js');
   const want = JSON.parse(read('tests/golden/sample-snapshot.json'));

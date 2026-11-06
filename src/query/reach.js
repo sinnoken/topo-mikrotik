@@ -107,10 +107,13 @@
   };
   const keyWhy = (k) => KEY_WHY[k] || (S.infer.fw.NONDET.has(k) ? '依流量、速率或機率比對' : '這個條件不在可判斷的範圍');
 
+  const engines = new WeakMap();
   S.reach = {
     SERVICES, ZONE_SOURCES, ASSUMPTIONS, svcId,
     /** 每份基準一個（由 S.query 第一次呼叫 L4 函式時建立）；I：{ ctxOf(dev) }（查詢層的防火牆比對環境）。 */
-    engine(Q, I) { return makeEngine(Q, I); },
+    engine(Q, I) { const e = makeEngine(Q, I); engines.set(Q, e); return e; },
+    /** Q 的計算引擎（還沒建立時經 Q.zones() 建立，與 Q.reach／Q.zoneMatrix 共用同一個引擎與快取）；Q.exposure 接上 query.js 之前由這裡取用。 */
+    of(Q) { if (!engines.has(Q)) Q.zones(); return engines.get(Q); },
   };
 
   function makeEngine(Q, I) {
@@ -1031,8 +1034,16 @@
       const cells = new Map();
       const cellOf = (a, b) => U.getOr(cells, a + '\u0000' + b, () => ({ src: a, dst: b, recs: [] }));
       const classes = svcClasses(services);
+      // 目的是設備本身時，localService 依埠找那台設備的管理服務（/ip service：停用或 available-from 不含來源就拒絕），
+      // 規則沒提到的埠不一定行為相同：同一類再依「這台設備在這個埠的服務」（沒有、或啟用與允許的來源）分開
+      const devClassMemo = new Map();
+      const svcSig = (dev, s) => { if (s.proto !== 'tcp' || s.port == null) return '-'; const sv = Q.ipServicesOf(dev).find((x) => x.port === s.port); return sv ? (sv.enabled ? '1' : '0') + '|' + sv.addresses.slice().sort().join(',') : '-'; };
+      const classesFor = (t) => (t.via !== 'device' ? classes : U.getOr(devClassMemo, t.dev, () => classes.flatMap((sis) => {
+        const by = new Map(); sis.forEach((si) => U.getOr(by, svcSig(t.dev, services[si]), () => []).push(si));
+        return Array.from(by.values());
+      })));
       // 判斷次數的上限（來源代表 × 目的 × service 等價類，扣掉來源與目的相同的）只用來回報進度
-      const total = srcReps.length * targets.length * classes.length;
+      const total = srcReps.length * targets.reduce((n, t) => n + classesFor(t).length, 0);
       let done = 0;
       yield { stage: 'evaluate', done, total };
       const due = slicer();
@@ -1040,7 +1051,7 @@
         const a = srcReps[ai];
         for (let ti = 0; ti < targets.length; ti++) {
           const t = targets[ti];
-          for (const sis of classes) {
+          for (const sis of classesFor(t)) {
             done++;
             // 來源與目的是同一個代表位址：zone 內同網段的組合改用同一個區段的第二個位址（沒有就略過）
             const same = a.ip === t.ip && a.vrf === t.vrf;
@@ -1199,7 +1210,7 @@
       const rules = new Map();
       c.recs.forEach((r) => {
         r.sum.decisive.forEach((x, id) => {
-          const e = U.getOr(rules, id, () => ({ id, key: x.key, dev: x.dev, table: x.table, chain: x.chain, policy: !!x.policy, route: x.route || null, rule: x.key ? ref(Q.getFirewallRule(x.key)) : null, verdicts: { allow: 0, deny: 0, unknown: 0 }, services: [] }));
+          const e = U.getOr(rules, id, () => ({ id, key: x.key, dev: x.dev, table: x.table, chain: x.chain, policy: !!x.policy, route: x.route || null, rule: x.key ? ref(Q.getFirewallRule(x.key)) : null, verdict: x.verdict || null, verdicts: { allow: 0, deny: 0, unknown: 0 }, services: [] }));
           e.verdicts[r.sum.verdict]++; const sv = svcId(mx.services[r.si]); if (!e.services.includes(sv)) e.services.push(sv);
         });
         if (r.sum.verdict === 'unknown') r.sum.reasons.forEach((x) => {
@@ -1269,7 +1280,269 @@
       })));
     }
 
-    return { reach, zones: (o) => ({ zones: zones(o).zones, subnets: zones(o).subnets }), zoneOf, matrix, matrixSteps, cell, ruleImpact };
+    // ---- 暴露清單（由外而內）：從 WAN 進來，連得到哪些位址、哪些服務（推論，查詢時計算，ADR-014）
+    const exposureCache = new Map();
+    const SPECIAL_SRC = (n) => n < 0x01000000 || (n >= 0x7f000000 && n <= 0x7fffffff) || n >= 0xe0000000; // 0/8、127/8、224/3 不會是從 WAN 進來的新連線來源
+    /** WAN 入口：有 /export、WAN 清單可辨識（firewallZones 的 status ok）的設備，main VRF 的 WAN 清單成員。 */
+    const wanEntries = () => {
+      const out = [];
+      Q.devices().forEach((d) => {
+        if (!devInfo(d.key).config) return;
+        const c = I.ctxOf(d.key); if (!c || !c.wan) return;
+        // 沒有介面紀錄的 WAN 成員（只有 /ip address 與 interface list member）也算入口，VRF 視為 main（矩陣的外部 zone 只取有介面紀錄的）
+        Array.from(c.wan).sort(U.natural).forEach((ep) => { const i = Q.getInterface(ep); if (!i || K.vrf(i.vrf) === K.MAIN_VRF) out.push({ dev: d.key, ep }); });
+      });
+      return out;
+    };
+    /**
+     * 外部來源的代表位址（每台入口設備各自一份）：這台設備的規則（src-address）、/ip service 的 available-from 與 /routing rule 的 src-address 切出的區段，
+     * 每個區段取一個不在基準網段、也不屬於任何設備的位址。第一個是矩陣外部 zone 的代表位址所在的區段（用同一個位址）。超過 max 時截斷。
+     */
+    function extSources(dev, extIp, max) {
+      const b = new Set([0, 0x100000000]);
+      const add = (key, text) => {
+        if (text === undefined) return;
+        const p = F.parseVal(key, F.splitNeg(text).body);
+        if (p.kind === 'ranges' && p.bits === 32) p.items.forEach(([x, y]) => { b.add(Number(x)); b.add(Number(y) + 1); });
+      };
+      m.firewallRules.forEach((r) => { if (r.family === 'ip' && r.dev === dev) add('src-address', r.match['src-address']); });
+      Q.ipServicesOf(dev).forEach((sv) => sv.addresses.forEach((a) => add('src-address', a)));
+      (m.routingRules || []).forEach((r) => { if (r.dev === dev) add('src-address', r.match['src-address']); });
+      const arr = Array.from(b).sort((x, y) => x - y);
+      const outside = (n) => !SPECIAL_SRC(n) && !longest(IP.fromInt(n), K.MAIN_VRF) && !ownerOf(IP.fromInt(n), K.MAIN_VRF);
+      const atoms = [];
+      for (let i = 0; i + 1 < arr.length; i++) {
+        const lo = arr[i]; const hi = arr[i + 1] - 1;
+        const tries = EXTERNAL_CANDIDATES.map(intOf).filter((n) => n >= lo && n <= hi).concat([lo, lo + 1, lo + Math.floor((hi - lo) / 2), hi]);
+        const rep = tries.find((n) => n >= lo && n <= hi && outside(n));
+        if (rep !== undefined) atoms.push({ ip: IP.fromInt(rep), range: [IP.fromInt(lo), IP.fromInt(hi)], primary: extIp != null && intOf(extIp) >= lo && intOf(extIp) <= hi });
+      }
+      atoms.forEach((a) => { if (a.primary) a.ip = extIp; });
+      // 矩陣的代表位址所在的區段排第一，其餘依位址
+      atoms.sort((x, y) => (y.primary ? 1 : 0) - (x.primary ? 1 : 0) || intOf(x.ip) - intOf(y.ip));
+      return { list: atoms.slice(0, max), total: atoms.length, truncated: atoms.length > max };
+    }
+    /** 候選服務：預設服務 ∪ 從 WAN 進來的 input／forward 放行規則的 dst-port ∪ dst-nat 的 dst-port ∪ 入口設備 /ip service 的埠。埠範圍取第一個埠當代表，記下範圍。 */
+    function exposureServices(entries) {
+      const byId = new Map();
+      const addSvc = (proto, port, origin, range) => {
+        const s = { proto, port }; const id = svcId(s);
+        const e = U.getOr(byId, id, () => ({ id, proto, port, range: null, origins: [] }));
+        if (!e.origins.includes(origin)) e.origins.push(origin);
+        if (range && !e.range) e.range = range;
+      };
+      SERVICES.forEach((s) => addSvc(s.proto, s.port, 'default'));
+      const wanOf = new Map(); entries.forEach((w) => U.getOr(wanOf, w.dev, () => []).push(w.ep));
+      const fromWan = (r) => ['in-interface', 'in-interface-list'].every((k) => {
+        const v = r.match[k]; if (v === undefined) return true;
+        const { neg, body } = F.splitNeg(v);
+        const set = k === 'in-interface' ? new Set([K.ep(r.dev, body)]) : I.ctxOf(r.dev).resolve(body);
+        if (!set) return true; // 無法展開的清單：可能包含 WAN，候選服務寧多勿少（判斷交給引擎）
+        return wanOf.get(r.dev).some((ep) => (neg ? !set.has(ep) : set.has(ep)));
+      });
+      const portsOf = (r, origin) => {
+        if (r.match['dst-port'] === undefined) return;
+        const v = F.parseVal('dst-port', r.match['dst-port']);
+        if (v.kind !== 'ranges' || v.neg) return;
+        const pr = r.match.protocol !== undefined && !F.splitNeg(r.match.protocol).neg ? F.splitNeg(r.match.protocol).body.split(',').map((p) => F.protoName(p.trim().toLowerCase())) : ['tcp'];
+        pr.filter((p) => F.PORT_PROTOCOLS.has(p)).forEach((p) => v.items.forEach(([a, b2]) => addSvc(p, Number(a), origin, a === b2 ? null : [Number(a), Number(b2)])));
+      };
+      m.firewallRules.forEach((r) => {
+        if (r.family !== 'ip' || r.disabled) return;
+        if (r.table === 'nat' && r.chain === 'dstnat' && r.action === 'dst-nat') portsOf(r, 'dst-nat');
+        else if (r.table === 'filter' && (r.chain === 'input' || r.chain === 'forward') && r.action === 'accept' && wanOf.has(r.dev) && fromWan(r)) portsOf(r, 'filter');
+      });
+      wanOf.forEach((_, d) => Q.ipServicesOf(d).forEach((sv) => { if (Number.isInteger(sv.port)) addSvc('tcp', sv.port, 'ip-service'); }));
+      wanOf.forEach((_, d) => mgmtPorts(d).forEach((x) => addSvc(x.proto, x.port, 'mgmt')));
+      const PO = ['icmp', 'tcp', 'udp'];
+      return Array.from(byId.values()).sort((a, b) => (PO.indexOf(a.proto) + 1 || 9) - (PO.indexOf(b.proto) + 1 || 9) || U.cmp(a.proto, b.proto) || (a.port || 0) - (b.port || 0));
+    }
+    /**
+     * 設備本身的其他管理服務（Q.mgmtOf，F10、F13、F14 判斷過的埠）：開著的才列。name 是畫面顯示的服務名稱，finding 是對應的檢查（facet 為 null 時同 id 的都算）。
+     */
+    const mgmtPorts = (dev) => {
+      const g = Q.mgmtOf(dev); if (!g) return [];
+      const out = [];
+      if (g.dns && g.dns.allowRemote) out.push({ proto: 'udp', port: 53, name: 'dns', finding: ['F10', null] }, { proto: 'tcp', port: 53, name: 'dns', finding: ['F10', null] });
+      if (g.snmp && g.snmp.enabled) out.push({ proto: 'udp', port: 161, name: 'snmp', finding: ['F13', null] });
+      if (g.proxy && g.proxy.enabled) (g.proxy.ports || []).forEach((p) => { if (Number.isInteger(p)) out.push({ proto: 'tcp', port: p, name: 'web-proxy', finding: ['F14', 'proxy'] }); });
+      if (g.socks && g.socks.enabled && Number.isInteger(g.socks.port)) out.push({ proto: 'tcp', port: g.socks.port, name: 'socks', finding: ['F14', 'socks'] });
+      if (g.bandwidthServer && g.bandwidthServer.enabled && Number.isInteger(g.bandwidthServer.port)) out.push({ proto: 'tcp', port: g.bandwidthServer.port, name: 'bandwidth-server', finding: ['F14', 'bandwidth-server'] });
+      return out;
+    };
+    const EXPOSURE_FINDINGS = new Set(['F03', 'F04', 'F07', 'F10', 'F11', 'F12', 'F13', 'F14']);
+    /** 一列相關的檢查（findingKey）：決定結果的規則（F03、F04）、/ip service（F07）與設備的管理服務（F10、F13、F14）。 */
+    const rowFindings = (dev, sum, svcName, mg) => {
+      const fs = [];
+      sum.decisive.forEach((x) => { if (x.key) fs.push(...Q.findingsFor('rule', x.key)); });
+      if (svcName) fs.push(...Q.findingsFor('service', dev + '|' + svcName));
+      if (mg) fs.push(...Q.findingsFor('device', dev).filter((f) => f.id === mg.finding[0] && (mg.finding[1] == null || f.facet === mg.finding[1])));
+      return U.uniq(fs.filter((f) => EXPOSURE_FINDINGS.has(f.id)).map((f) => Q.findingKey(f))).sort(U.cmp);
+    };
+    const NAT_UNKNOWN = new Set(['nat-target', 'nat-ambiguous']);
+    /** 預設的判斷次數上限（入口 × 外部區段 × 目的 × 服務）；超過時其餘組合不算，結果標 truncated。 */
+    const EXPOSURE_MAX_EVALS = 400000;
+    const EXPOSURE_MAX_SOURCES = 16;
+    /**
+     * 暴露清單的分段計算（generator，yield { stage: 'prepare'|'evaluate'|'summary', done, total }）；回傳值與 exposure(opts) 相同，並寫進快取。
+     * opts：Q.zones 的參數，另加 maxEvaluations（判斷次數上限）、maxSources（外部區段數上限）。
+     */
+    function* exposureSteps(opts) {
+      const o = opts || {};
+      const zs = zones(o); zs.optsRaw = o;
+      const maxEvals = o.maxEvaluations == null ? EXPOSURE_MAX_EVALS : o.maxEvaluations;
+      const maxSrc = o.maxSources == null ? EXPOSURE_MAX_SOURCES : o.maxSources;
+      if (!Number.isInteger(maxEvals) || maxEvals < 1) throw new TypeError('maxEvaluations 必須是正整數');
+      if (!Number.isInteger(maxSrc) || maxSrc < 1) throw new TypeError('maxSources 必須是正整數');
+      const ck = JSON.stringify([zs.opts.profHash, zs.opts.sources, maxEvals, maxSrc]);
+      if (exposureCache.has(ck)) return exposureCache.get(ck);
+      yield { stage: 'prepare', done: 0, total: 1 };
+      bounds();
+      const entries = wanEntries();
+      const ipv6 = { status: 'not-included', message: '只算 IPv4；IPv6 從 WAN 進來能到哪些網段尚未納入（見 F05）', devices: ipv6Devices() };
+      const emptySec = () => ({ rows: [], counts: { candidates: 0, allow: 0, unknown: 0, deny: 0, natted: 0 } });
+      // noWan：有防火牆規則卻判斷不出 WAN 的設備（F08）；noFirewall：已收集、有預設路由（推論：可能是邊界路由器）卻沒有 /export 的網路設備
+      const noWan = Q.findingsByRule('F08').map((f) => ({ dev: Q.findingDevice(f), findingKey: Q.findingKey(f) })).sort((a, b) => U.natural(a.dev || '', b.dev || ''));
+      const noFirewall = Q.devices().filter((d) => devInfo(d.key).collected && !devInfo(d.key).host && !devInfo(d.key).config && Q.routesOf(d.key).some((r) => r.len === 0 && !r.blackhole))
+        .map((d) => d.key).sort(U.natural);
+      const base = { ok: true, noWan, noFirewall, wan: { entries: entries.map((w) => ({ dev: w.dev, ep: w.ep })), devices: U.uniq(entries.map((w) => w.dev)).sort(U.natural) }, ipv6, assumptions: ASSUMPTIONS };
+      const extIp = entries.length ? EXTERNAL_CANDIDATES.find((ip) => !longest(ip, K.MAIN_VRF) && !ownerOf(ip, K.MAIN_VRF)) || null : null;
+      const finishEarly = (status, message) => {
+        const out = deepFreeze(JSON.parse(JSON.stringify(Object.assign({ status, message, external: null, services: [], self: emptySec(), dnat: emptySec(), routed: emptySec(),
+          limits: { evaluations: 0, maxEvaluations: maxEvals, truncated: false }, denied: { self: 0, dnat: 0, routed: 0 } }, base))));
+        exposureCache.set(ck, out); return out;
+      };
+      if (!entries.length) return finishEarly('no-wan', '沒有可辨識的 WAN 入口：沒有設備有 /export 且有名稱含 WAN、成員不為空的 interface list（firewallZones），無法判斷從外部進得來什麼');
+      if (!extIp) return finishEarly('no-external-address', `外部的代表位址（${EXTERNAL_CANDIDATES.join('、')}）都在基準的網段內或屬於設備，無法代表基準以外的位址`);
+      const entryDevs = new Set(entries.map((w) => w.dev));
+      const srcsOf = new Map(Array.from(entryDevs).sort(U.natural).map((d) => [d, extSources(d, extIp, maxSrc)]));
+      const services = exposureServices(entries);
+      // 目的：入口設備自己的位址（main VRF）與 dst-nat 寫明的 dst-address → self／dnat；內部網段的代表位址（矩陣的 repsOf，main VRF） → routed
+      // front：從外部看得到的入口位址（WAN 介面上的位址與 dst-nat 寫明的 dst-address），dst-nat 只在這些位址列進 dnat；
+      // 設備其他介面的位址只看 input（經 dst-nat 改寫的計入 natted，同一條 dst-nat 已在 dnat 以入口位址列出）
+      const own = new Map(); const front = new Set();
+      entryDevs.forEach((d) => {
+        const list = [];
+        const wanSet = new Set(entries.filter((w) => w.dev === d).map((w) => w.ep));
+        Q.interfacesOf(d).forEach((i) => ownIps(i.key).forEach((a) => {
+          if (K.vrf(a.vrf) !== K.MAIN_VRF || !IP.isIp(a.ip)) return;
+          if (!list.includes(a.ip)) list.push(a.ip);
+          if (wanSet.has(i.key)) front.add(d + '|' + a.ip);
+        }));
+        m.firewallRules.forEach((r) => {
+          if (r.dev !== d || r.family !== 'ip' || r.table !== 'nat' || r.disabled || r.action !== 'dst-nat' || r.match['dst-address'] === undefined) return;
+          const { neg, body } = F.splitNeg(r.match['dst-address']); const ip = neg ? null : single(body.replace(/\/32$/, ''));
+          if (!ip) return;
+          if (!list.includes(ip)) list.push(ip);
+          front.add(d + '|' + ip);
+        });
+        own.set(d, list.sort((a, b) => intOf(a) - intOf(b)));
+      });
+      const reps = []; repsOf(zs).forEach((list) => list.forEach((r) => { if (r.vrf === K.MAIN_VRF) reps.push(r); }));
+      reps.sort((a, b) => intOf(a.ip) - intOf(b.ip));
+      const jobs = [];
+      entries.forEach((w) => own.get(w.dev).forEach((ip) => jobs.push({ kind: 'edge', w, ip })));
+      entries.forEach((w) => reps.forEach((r) => jobs.push({ kind: 'routed', w, ip: r.ip, rep: r })));
+      const total = jobs.reduce((n, j) => n + srcsOf.get(j.w.dev).list.length, 0) * services.length;
+      yield { stage: 'prepare', done: 1, total: 1 };
+      // 每個（區段, 入口設備, 目的, 服務）一個組合，跨入口與外部區段合併
+      const combos = new Map();
+      const comboOf = (sec, dev, ip, svc, extra) => U.getOr(combos, [sec, dev, ip, svc.id].join('\u0000'), () => Object.assign({ sec, dev, ip, svc, evals: [] }, extra));
+      let done = 0; let truncated = false;
+      yield { stage: 'evaluate', done, total };
+      const due = slicer();
+      outer: for (const j of jobs) {
+        for (const svc of services) {
+          for (const a of srcsOf.get(j.w.dev).list) {
+            if (done >= maxEvals) { truncated = true; break outer; }
+            done++;
+            const { sum } = evaluate(a.ip, j.ip, svc, 'exact', null, j.w.ep, K.MAIN_VRF);
+            const reasons = sum.verdict === 'unknown' ? U.uniq(sum.reasons.map((x) => x.code)) : [];
+            const ev = { src: a, ep: j.w.ep, verdict: sum.verdict, sum, reasons };
+            if (j.kind === 'edge') {
+              const natUnknown = reasons.some((c) => NAT_UNKNOWN.has(c));
+              const isOwn = ownerDev(j.ip, K.MAIN_VRF) === j.w.dev;
+              const isFront = front.has(j.w.dev + '|' + j.ip);
+              if ((sum.nat || natUnknown) && isFront) comboOf('dnat', j.w.dev, j.ip, svc, {}).evals.push(ev);
+              else if (sum.nat || natUnknown) comboOf('self', j.w.dev, j.ip, svc, {}).evals.push(Object.assign(ev, { natted: true }));
+              else if (isOwn) comboOf('self', j.w.dev, j.ip, svc, {}).evals.push(ev);
+              else comboOf('dnat', j.w.dev, j.ip, svc, {}).evals.push(Object.assign(ev, { verdict: 'deny' })); // dst-nat 寫明的位址、這個服務沒有被改寫：不算進得來
+            } else comboOf('routed', j.w.dev, j.ip, svc, { rep: j.rep }).evals.push(sum.nat || ev.reasons.some((c) => NAT_UNKNOWN.has(c)) ? Object.assign(ev, { natted: true }) : ev);
+            if (due() && done < total) yield { stage: 'evaluate', done, total };
+          }
+        }
+      }
+      yield { stage: 'summary', done, total };
+      const secs = { self: emptySec(), dnat: emptySec(), routed: emptySec() };
+      const fmt = (ip, pt) => ip + (pt != null ? ':' + pt : '');
+      const ruleOf = (sum) => {
+        const ds = Array.from(sum.decisive.values());
+        const pick = ds.find((x) => x.key && x.table === 'filter') || ds.find((x) => x.key) || ds[0] || null;
+        if (!pick) return null;
+        return pick.key ? Object.assign({ verdict: pick.verdict }, ref(Q.getFirewallRule(pick.key))) : { key: null, dev: pick.dev, table: pick.table, chain: pick.chain, policy: !!pick.policy, route: pick.route || null, verdict: pick.verdict };
+      };
+      combos.forEach((c) => {
+        const sec = secs[c.sec]; sec.counts.candidates++;
+        // 經 dst-nat 改寫的組合（不是這一段的路徑）：只計數，結果在 dnat 段以入口位址列出
+        const evs = c.evals.filter((e) => !e.natted);
+        if (!evs.length) { sec.counts.natted++; return; }
+        c.evals = evs;
+        const vs = c.evals.map((e) => e.verdict);
+        const verdict = vs.includes('allow') ? 'allow' : vs.includes('unknown') ? 'unknown' : 'deny';
+        sec.counts[verdict]++;
+        if (verdict === 'deny') return;
+        const hit = c.evals.filter((e) => e.verdict === verdict);
+        // 允許的來源：每個外部區段在任一入口的結果；全部區段都允許（且沒有截斷）就是 any
+        const bySrc = new Map(); c.evals.forEach((e) => { const k = e.src.ip; const v = bySrc.get(k); if (!v || e.verdict === 'allow' || (e.verdict === 'unknown' && v.verdict === 'deny')) bySrc.set(k, e); });
+        const srcs = srcsOf.get(c.dev);
+        const okSrc = srcs.list.filter((s) => bySrc.has(s.ip) && bySrc.get(s.ip).verdict === verdict);
+        const any = okSrc.length === srcs.list.length && !srcs.truncated;
+        const allowedFrom = any ? { kind: 'any', ranges: [], text: '任何外部位址' }
+          : { kind: 'limited', ranges: okSrc.map((s) => s.range.slice()), text: okSrc.map((s) => (s.range[0] === s.range[1] ? s.range[0] : `${s.range[0]}–${s.range[1]}`)).join('、') + (srcs.truncated ? '（外部區段超過上限，只列出前面的）' : '') };
+        const first = hit.find((e) => e.src.primary) || hit[0];
+        const ipSvc = c.sec === 'self' && c.svc.proto === 'tcp' ? Q.ipServicesOf(c.dev).find((x) => x.port === c.svc.port) : null;
+        const mg = c.sec === 'self' ? mgmtPorts(c.dev).find((x) => x.proto === c.svc.proto && x.port === c.svc.port) : null;
+        const ifc = Q.getInterface(first.ep);
+        const sum = first.sum;
+        const row = { dev: c.dev, entries: U.uniq(hit.map((e) => e.ep)).sort(U.natural), entry: first.ep, inInterface: ifc ? ifc.name : K.splitEp(first.ep)[1], src: first.src.ip,
+          dst: K.inVrf(c.ip, K.MAIN_VRF), ip: c.ip, vrf: K.MAIN_VRF, serviceName: ipSvc ? ipSvc.name : mg ? mg.name : null, dstAny: false,
+          findingKeys: rowFindings(c.dev, first.sum, ipSvc ? ipSvc.name : null, mg),
+          service: c.svc.id, proto: c.svc.proto, port: c.svc.port, portRange: c.svc.range, verdict, allowedFrom, rule: ruleOf(sum),
+          reasons: verdict === 'unknown' ? U.uniq(hit.flatMap((e) => e.reasons)).sort(U.cmp) : [], incomplete: verdict === 'allow' && vs.includes('unknown') };
+        const fin = sum.final;
+        const finIp = fin && fin.dst ? fin.dst : null; const finVrf = (fin && fin.vrf) || K.MAIN_VRF;
+        if (c.sec === 'self') { row.target = c.dev; row.zone = SELF_ZONE; }
+        else {
+          const tIp = c.sec === 'routed' ? c.ip : finIp;
+          const z = tIp ? zoneOf(tIp, o, finVrf) : null;
+          const od = tIp ? ownerDev(tIp, finVrf) : null;
+          row.target = od && netDev(od) ? od : z ? z.key : null; row.zone = z ? z.zone : null;
+          if (c.sec === 'dnat') {
+            const natRule = Array.from(sum.decisive.values()).find((x) => x.key && x.table === 'nat');
+            const nr = natRule ? Q.getFirewallRule(natRule.key) : null;
+            row.nat = { from: fmt(c.ip, c.svc.port), to: finIp ? fmt(K.inVrf(finIp, finVrf), fin.port) : null, rule: nr ? ref(nr) : null };
+            row.dstAny = !!nr && nr.match['dst-address'] === undefined && nr.match['dst-address-list'] === undefined; // dst-nat 沒限制目的位址：任何送到入口的目的都會改寫
+          } else if (sum.nat) row.nat = { from: fmt(c.ip, c.svc.port), to: finIp ? fmt(K.inVrf(finIp, finVrf), fin.port) : null, rule: null };
+          if (c.sec === 'routed') row.subnet = c.rep.subnet;
+        }
+        sec.rows.push(row);
+      });
+      const PO = new Map(services.map((s, i) => [s.id, i]));
+      Object.values(secs).forEach((sec) => sec.rows.sort((a, b) => U.natural(a.dev, b.dev) || intOf(a.ip) - intOf(b.ip) || PO.get(a.service) - PO.get(b.service)));
+      if (exposureCache.has(ck)) return exposureCache.get(ck);
+      const out = deepFreeze(JSON.parse(JSON.stringify(Object.assign({
+        status: 'ok', message: null,
+        external: { representative: extIp, byDevice: Array.from(srcsOf, ([dev, x]) => ({ dev, sources: x.list.map((s) => ({ ip: s.ip, range: s.range })), sourceCount: x.total, truncated: x.truncated })) },
+        services, self: secs.self, dnat: secs.dnat, routed: secs.routed,
+        limits: { evaluations: done, maxEvaluations: maxEvals, truncated },
+        denied: { self: secs.self.counts.deny, dnat: secs.dnat.counts.deny, routed: secs.routed.counts.deny },
+      }, base))));
+      exposureCache.set(ck, out);
+      return out;
+    }
+    const exposure = (opts) => runAll(exposureSteps(opts));
+
+    return { reach, zones: (o) => ({ zones: zones(o).zones, subnets: zones(o).subnets }), zoneOf, matrix, matrixSteps, cell, ruleImpact, exposure, exposureSteps };
   }
 
   // 靜態資訊（不依賴 Snapshot）：預設 service、zone 來源與可達性前提，畫面經 S.query.* 讀取

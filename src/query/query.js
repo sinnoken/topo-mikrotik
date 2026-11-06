@@ -553,6 +553,8 @@
        * 參數錯誤在第一次 next() 時丟出 TypeError。中途放棄不會留下快取。Q.zoneMatrix 就是把它跑完。
        */
       zoneMatrixSteps: (opts) => L4().matrixSteps(opts),
+      exposure: (opts) => L4().exposure(opts),
+      exposureSteps: (opts) => L4().exposureSteps(opts),
       /**
        * 矩陣下鑽 L1／L2：一格的摘要，加上 groups（目的 × 結果相同的來源代表）與 ruleDetails（牽涉的規則）。L3 是 Q.reach(來源代表, 目的, { proto, port })。
        * groups[].divergent：這一組造成格子異質（heterogeneous）——有某個 service，這組的結果和同一個目的的其他來源組、或同一批來源往其他目的的結果不同（定義見 reach.js 的 cell）。

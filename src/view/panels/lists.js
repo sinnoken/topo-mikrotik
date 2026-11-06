@@ -337,6 +337,70 @@
     }
     return c.report;
   }
+  /**
+   * 預期資料的漂移（S.compare.drift，ssot-drift/1）：和比對結果一樣是衍生結果，依目前基準、預期資料與上一輪的基準快取。
+   * 上一輪的基準只有一個來源：新舊基準比對載入的舊基準（V.baselineDiff.loaded()；手動載入，或由工作包帶回的基準在
+   * 建立這一輪後自動成為舊基準）。沒有時 history 為空，核心以 too-few-rounds 提醒。預期資料無法讀取或沒有基準時為 null。
+   */
+  const drf = { Q: null, expected: null, prev: null, report: null };
+  function driftReport(App) {
+    const exp = App.round.expected;
+    if (!exp || exp.error || !App.Q) return null;
+    const base = V.baselineDiff.loaded(); const prev = base ? base.qOld : null;
+    if (drf.Q !== App.Q || drf.expected !== exp || drf.prev !== prev) {
+      drf.Q = App.Q; drf.expected = exp; drf.prev = prev;
+      try { drf.report = S.compare.drift(App.Q, exp.data, { history: prev ? [prev] : [] }); } catch (e) {
+        drf.report = { errors: ['無法判斷漂移：' + V.reason(e)], warnings: [], basis: null, summary: { stale: 0, drifted: 0, unobserved: 0 }, stale: [], drifted: [], unobserved: [] };
+      }
+    }
+    return drf.report;
+  }
+  /** drift 的 ref（設備鍵、鏈路鍵、「設備|VLAN ID」）→ 顯示文字；unobserved 沒有 message，用這個列出項目 */
+  function driftRefText(App, type, ref) {
+    const dn = (d) => App.Q.devLabel(d);
+    if (type === 'device') return dn(ref);
+    if (type === 'link') return ref.split('~').map((ep) => { const [d, i] = K.splitEp(ep); return `${dn(d)} ${i}`; }).join(' ⇄ ');
+    const at = ref.lastIndexOf('|'); return `${dn(ref.slice(0, at))} VLAN ${ref.slice(at + 1)}`;
+  }
+  /** 預期現況比對的漂移提示：過時、偏離、無法判斷與核心的提醒；全部是推論（依連續幾輪的基準） */
+  function driftBlock(App) {
+    const d = driftReport(App);
+    if (!d || d.errors.length) return null; // 預期資料本身的錯誤已在比對結果列出
+    const base = V.baselineDiff.loaded();
+    const used = d.basis ? d.basis.history.filter((x) => x.used).length : 0;
+    const items = (list) => h('ul', { class: 'drift-items' }, list.map((i) => h('li', null, i.rounds ? `${i.message}（${V.num(i.rounds)} 輪）` : i.message)));
+    const kids = [h('p', null, [h('strong', null, '預期現況是否過時'), ' ', V.inferChip('依連續幾輪的基準和預期現況比對的結果推論，不是設備直接回報')]),
+      h('p', { class: 'muted' }, `依 ${V.num(used)} 輪基準判斷：${base ? `目前的基準與上一輪的基準（${base.name}）` : '只有目前的基準'}。`
+        + `連續 ${V.num(d.basis ? d.basis.rounds : 0)} 輪不符才推論為預期現況過時，較少輪是網路與預期不同。`)];
+    (d.warnings || []).forEach((w) => {
+      const more = w.kind === 'no-source' ? '這份預期現況沒有記錄來源基準，重新產生後才能完整判斷。'
+        : w.kind === 'too-few-rounds' && !base ? '找不到上一輪的基準：在資料中心載入上一輪的基準或工作包後，才能判斷連續幾輪。' : null;
+      kids.push(h('div', { class: 'drift-warning warn-line', 'data-kind': w.kind }, [w.message, more ? '。' + more : null]));
+    });
+    if (d.stale.length) {
+      const n = Math.min(...d.stale.map((i) => i.rounds)); const same = d.stale.every((i) => i.rounds === n);
+      kids.push(h('div', { class: 'finding drift-stale' }, h('div', null, [
+        h('strong', null, `預期現況可能已過時：連續 ${V.num(n)} 輪${same ? '' : '以上'}不符`), items(d.stale),
+        h('p', { class: 'muted' }, '網路可能已經改變而預期現況沒有跟上。確認目前的現況正確後，可以到資料中心由目前基準產生預期現況，再載入取代；這裡不會自動覆蓋。'),
+        h('button', { class: 'drift-regenerate', onclick: () => App.openHub('compare') }, '到資料中心重新產生預期現況…'),
+      ])));
+    }
+    if (d.drifted.length) {
+      kids.push(h('div', { class: 'finding drift-drifted' }, h('div', null, [
+        h('strong', null, '網路與預期不同'), items(d.drifted),
+        h('p', { class: 'muted' }, '可能是剛發生的改變或暫時狀態，請確認網路是否應該恢復成預期現況。'),
+      ])));
+    }
+    if (d.unobserved.length) {
+      kids.push(h('div', { class: 'finding drift-unobserved' }, h('div', null, [
+        h('strong', null, '有收集失敗，無法判斷'),
+        h('ul', { class: 'drift-items' }, d.unobserved.map((i) => h('li', null, driftRefText(App, i.type, i.ref)))),
+        h('p', { class: 'muted' }, '相關設備每一輪都有指令收集失敗；重收失敗的指令後再比對。'),
+      ])));
+    }
+    if (!d.stale.length && !d.drifted.length && !d.unobserved.length) kids.push(h('p', { class: 'muted drift-none' }, '沒有推論為過時或與預期不同的項目。'));
+    return h('div', { class: 'pane-section cmp-drift', role: 'group', 'aria-label': '預期現況是否過時' }, kids);
+  }
   /** 讀入預期資料檔（ssot-expected/1）：「比對」工作畫面與資料中心共用。無法解析時記下原因（比對結果顯示），不丟例外 */
   async function loadExpectedFile(App, f) {
     let text = null; let data = null; let error = null;
@@ -381,6 +445,7 @@
     ]));
     const r = expectedReport(App); if (!r) return;
     if (r.errors.length) root.appendChild(h('div', { class: 'pane-section' }, r.errors.map((e) => h('div', { class: 'finding' }, [V.sevDot('error'), e]))));
+    const drift = driftBlock(App); if (drift) root.appendChild(drift);
     root.appendChild(h('div', { class: 'summary' }, [filterChip('有差異', r.items.filter((i) => i.status !== 'ok').length, { on: cmp.filter === 'problem', onclick: () => { cmp.filter = 'problem'; compare(App); } }),
       ...Object.entries(CMP_ST).map(([k, [label, cls]]) => filterChip(label, r.summary[k] || 0, { cls, on: cmp.filter === k, onclick: () => { cmp.filter = k; compare(App); } }))]));
     const items = r.items.filter((i) => (cmp.filter === 'problem' ? i.status !== 'ok' : i.status === cmp.filter));
@@ -395,6 +460,7 @@
   // 換基準時：新舊基準比對清空（舊基準要重新載入）；預期資料保留，下一次重繪時和新的基準重新比對
   compare.reset = () => { V.baselineDiff.reset(); };
   compare.report = expectedReport;
+  compare.drift = driftReport;
   compare.loadFile = loadExpectedFile;
 
   // ---------------------------------------------------------------- 清單：設備、介面、IP、網段、MAC、VLAN

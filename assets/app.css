@@ -843,6 +843,9 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
 .patch-accept .patch-accept-reason { flex: 1; min-width: 160px; }
 .diff-warnings { margin: 8px 0; }
 .diff-warning { font-size: var(--fs-md); padding: 2px 0; }
+/* 預期現況的漂移提示（推論）：與新舊基準比對的提醒同一個字級 */
+.drift-warning { font-size: var(--fs-md); padding: 2px 0; }
+.drift-items { margin: 6px 0; }
 .partial-unrecognized { margin-left: 6px; color: var(--warn-text); }
 
 /* ---------- 資料中心（panels/hub.js、app-hub.js） ---------- */

@@ -14,6 +14,8 @@ usage() {
   --device NAME           只收集指定設備
   --commands ID,...       只執行指定命令 ID（指定時忽略設備清單的 extra 欄）
   --timeout SECONDS       單一 SSH 指令 timeout（預設 30）
+  --connect-timeout SECONDS
+                          SSH 建立連線的逾時（ssh -o ConnectTimeout；預設 10 與 --timeout 取小者）
   --retry COUNT           失敗後重試次數（預設 0）
   --ask-password          每台設備連線一次並手動輸入密碼／確認 host key
   --no-auto               不自動加上選用命令（依介面 type、型號與版本）
@@ -22,6 +24,8 @@ usage() {
   -h, --help              顯示說明
 
 設備清單：name,address,user,port[,extra]
+  address 必須是 IPv4（收集檔的設備標頭只接受 IPv4，網站要用它對回鄰居的 address）；
+  主機名或 IPv6 以結束碼 2 報錯並指出行號
   extra 為選填，列出該設備額外執行的選用命令 ID，以空白或分號分隔，例如：
     TPE_AP_01,192.0.2.31,admin,22,wifi
   選用命令 ID：wifi（RouterOS 7 Wi-Fi 關聯表）、wireless（舊版 wireless）、capsman（舊版 CAPsMAN 控制器）、
@@ -33,6 +37,20 @@ usage() {
   802.11ax／be 型號、7.13 以上加 wifi）。RouterOS 7 以上（版本取自 /system resource print）
   一律加 vrf。終端機會標示 AUTO 與依據。
 
+連不上的設備：第一個指令的 ssh 以 255 結束且沒有任何輸出時判定連線失敗，在設備標頭之後
+  記一次 # collection failed: connection，不再執行這台其餘的指令。
+
+輸出檔：先寫到同目錄的暫存檔（<輸出檔>.tmp.XXXXXX），完成後才改名成輸出檔；權限為 600。
+  被 Ctrl-C 或 SIGTERM 中斷時，已收集的部分改名成 <輸出檔>.partial（不完整：進行中的指令記為
+  # collection failed: interrupted，之後的設備沒有收集），原本的輸出檔不變。
+
+結束碼（一般收集）：
+  0    全部成功；--dry-run 列出完成
+  1    有指令或連線失敗（輸出檔仍會寫出，失敗記在檔中）
+  2    連線前就中止，不寫輸出檔：選項錯誤、設備清單錯誤（含 address 不是 IPv4）、
+       --device 指定的名稱不在設備清單
+  130  被 Ctrl-C（SIGINT）中斷；143 被 SIGTERM 中斷（已收集的部分在 <輸出檔>.partial）
+
 只重收失敗的指令：tools/collect.sh devices.csv --retry-failed 上次.txt -o 新檔.txt
   讀上次收集檔的 # collection failed: 紀錄，只對這些設備重跑這些指令（連線資訊仍取自設備清單），
   輸出合併後的新收集檔：失敗的區塊換成這次的結果，其他內容（含原本的 # collected-at）逐字保留；
@@ -43,7 +61,9 @@ usage() {
   --commands ID,...       只重收這些 ID 的失敗；連線失敗的設備只收這些 ID；
                           指定的 ID 在上次收集檔（選定的設備）沒有失敗紀錄時報錯
   --dry-run               列出會重收的指令與上次失敗原因，不連線，不需要 -o
-  --timeout、--retry、--ask-password、--no-auto 照常適用（--no-auto 只影響連線失敗的設備）
+  --timeout、--connect-timeout、--retry、--ask-password、--no-auto 照常適用（--no-auto 只影響連線失敗的設備）
+  已有其他區塊的設備連不上時，連線失敗記在重收的第一個指令區塊內，這台其餘要重收的指令也記 connection
+  中斷時同一般收集（130／143，<輸出檔>.partial）；尚未重收的部分照上次收集檔原樣保留
   結束碼：
     0  全部重收成功；沒有任何失敗紀錄（印出「沒有需要重收的指令」）；--dry-run 列出完成
     1  合併後仍有失敗（重收仍失敗，或失敗不在 --device／--commands 範圍而未重收）
@@ -89,7 +109,9 @@ load_inventory() {
     fi
     [[ -z "$address" || -z "$user" ]] && csv_error "$line_number" "name、address、user 不可為空"
     [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9_.:-]*$ ]] || csv_error "$line_number" "設備名稱無效：$name"
-    [[ "$address" != *[[:space:],]* ]] || csv_error "$line_number" "address 無效：$address"
+    # 與 src/readers/bundle-v1.js 的 HEADER 同規則（四段各 1–3 位數字）：寫出的設備標頭網站才讀得到
+    [[ "$address" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] ||
+      csv_error "$line_number" "address 必須是 IPv4（收集檔的設備標頭只接受 IPv4；不支援主機名與 IPv6）：$address"
     [[ "$user" != *[[:space:],]* ]] || csv_error "$line_number" "user 無效"
     port=${port:-22}
     [[ "$port" =~ ^[0-9]+$ && "$port" -ge 1 && "$port" -le 65535 ]] ||
@@ -185,18 +207,41 @@ selected_device() {
   [[ -z "$DEVICE_FILTER" || ",$DEVICE_FILTER," == *",$1,"* ]]
 }
 
+# --device 的每個名稱都要在設備清單；否則以結束碼 2 報錯並列出可用的名稱（不靜默收集出空檔）
+check_device_filter() {
+  local wanted d errors=0 names
+  [[ -n "$DEVICE_FILTER" ]] || return 0
+  IFS=, read -ra wanted <<< "$DEVICE_FILTER"
+  for d in "${wanted[@]}"; do
+    d=$(trim "$d"); [[ -n "$d" ]] || continue
+    device_index "$d" >/dev/null || { printf 'collect: --device %s 不在設備清單 %s\n' "$d" "$INVENTORY" >&2; errors=1; }
+  done
+  if (( errors )); then
+    names=$(printf '%s, ' "${DEVICE_NAMES[@]}"); names=${names%, }
+    printf 'collect: 可用的名稱：%s\n' "$names" >&2
+    exit 2
+  fi
+}
+
 run_command() {
   local address=$1 user=$2 port=$3 command=$4 stdout_file=$5 stderr_file=$6
   local attempt=0 code
   while :; do
     : > "$stdout_file"; : > "$stderr_file"
+    # 在背景執行再 wait：前景子程序執行時 bash 要等它結束才處理 trap，背景加 wait 才能立即回應 Ctrl-C／SIGTERM。
+    # 背景程序的 stdin 是 /dev/null（沒有 job control 時），ssh 不會讀走終端機的輸入
     timeout --signal=TERM --kill-after=5 "$TIMEOUT" \
-      ssh -o BatchMode=yes ${SSH_CONTROL_OPTS[@]+"${SSH_CONTROL_OPTS[@]}"} -p "$port" "$user@$address" "$command" \
-      >"$stdout_file" 2>"$stderr_file"
+      ssh -o BatchMode=yes -o ConnectTimeout="$CONNECT_TIMEOUT" ${SSH_CONTROL_OPTS[@]+"${SSH_CONTROL_OPTS[@]}"} -p "$port" "$user@$address" "$command" \
+      >"$stdout_file" 2>"$stderr_file" &
+    RUN_PID=$!
+    wait "$RUN_PID"
     code=$?
+    # 被訊號打斷時 wait 提早回傳；on_signal 已送出 TERM，再等一次取得指令實際的結束碼
+    if [[ -n "$INTERRUPTED" ]]; then wait "$RUN_PID"; code=$?; fi
+    RUN_PID=
     (( code == 0 )) && return 0
     attempt=$((attempt + 1))
-    (( attempt > RETRY )) && return "$code"
+    (( attempt > RETRY )) || [[ -n "$INTERRUPTED" ]] && return "$code"
     printf '  RETRY %s (%d/%d)\n' "$command" "$attempt" "$RETRY" >&2
   done
 }
@@ -213,7 +258,7 @@ open_connection() {
   control_path="$TMP_DIR/cm-$i"
   # 互動式建立共用連線；ControlPersist 讓 ssh 認證後轉入背景，後續命令不再詢問
   # -fN 認證後轉入背景且不執行遠端命令（RouterOS 沒有 true 等 shell 指令）
-  if ssh -fN -o ControlMaster=yes -o ControlPath="$control_path" -o ControlPersist=120 -p "$port" "$user@$address"; then
+  if ssh -fN -o ConnectTimeout="$CONNECT_TIMEOUT" -o ControlMaster=yes -o ControlPath="$control_path" -o ControlPersist=120 -p "$port" "$user@$address"; then
     SSH_CONTROL_OPTS=(-o ControlPath="$control_path")
     return 0
   fi
@@ -226,44 +271,91 @@ close_connection() {
   SSH_CONTROL_OPTS=()
 }
 
+# 收到 INT／TERM：只記下訊號並結束執行中的 ssh。輸出檔由主流程在指令或設備之間的固定位置收尾
+# （finish_interrupted），trap 不直接寫檔，避免在複製或寫入到一半時插入內容
+on_signal() {
+  [[ -n "$INTERRUPTED" ]] || INTERRUPTED=$1
+  if [[ -n "$RUN_PID" ]]; then kill -TERM "$RUN_PID" 2>/dev/null; fi
+}
+
+# 區塊先寫在 $TMP_DIR/block，完成後才附加到輸出檔
+flush_block() {
+  cat "$TMP_DIR/block" >> "$OUTPUT_TMP"
+}
+
+# 失敗紀錄前若輸出沒有以換行結尾，先補換行，失敗紀錄才會自成一行
+append_output_for_failure() {
+  cat "$TMP_DIR/stdout" >> "$TMP_DIR/block"
+  if [[ -s "$TMP_DIR/stdout" && $(tail -c 1 "$TMP_DIR/stdout" | od -An -c | tr -d ' ') != '\n' ]]; then
+    printf '\n' >> "$TMP_DIR/block"
+  fi
+}
+
 # 執行一個指令，把區塊（指令標記、收集時間、輸出、失敗原因）附加到輸出檔；
-# 輸出留在 $TMP_DIR/stdout 供自動判斷使用；失敗時回傳非零
+# 輸出留在 $TMP_DIR/stdout 供自動判斷使用。回傳 0 成功；1 失敗（含被中斷，記 interrupted）；
+# 2 這台還沒有成功連上過（DEVICE_REACHED=0）且 ssh 以 255 結束、沒有任何輸出：判定連線失敗，
+#   區塊記 connection 但不附加，由呼叫端決定寫成設備層級（設備標頭之後）或指令區塊內的紀錄
 collect_block() {
   local id=$1 command code
   command=$(command_for_id "$id")
   ATTEMPTED=$((ATTEMPTED + 1))
-  printf '### %s\n# collected-at: %s\n' "$command" "$(now_utc)" >> "$OUTPUT"
+  printf '### %s\n# collected-at: %s\n' "$command" "$(now_utc)" > "$TMP_DIR/block"
   run_command "$address" "$user" "$port" "$command" "$TMP_DIR/stdout" "$TMP_DIR/stderr"
   code=$?
   if (( code == 0 )); then
-    cat "$TMP_DIR/stdout" >> "$OUTPUT"
+    cat "$TMP_DIR/stdout" >> "$TMP_DIR/block"
+    flush_block
+    DEVICE_REACHED=1
     printf '  OK %s\n' "$id"
     return 0
   fi
   failures=$((failures + 1))
-  cat "$TMP_DIR/stdout" >> "$OUTPUT"
+  if [[ -n "$INTERRUPTED" ]]; then
+    # 已收到的輸出照樣保留，標成被中斷
+    append_output_for_failure
+    printf '# collection failed: interrupted\n' >> "$TMP_DIR/block"
+    flush_block
+    printf '  FAIL %s interrupted\n' "$id" >&2
+    return 1
+  fi
+  if (( code == 255 && ! DEVICE_REACHED )) && [[ ! -s "$TMP_DIR/stdout" ]]; then
+    printf '# collection failed: connection\n' >> "$TMP_DIR/block"
+    printf '  FAIL 連線失敗（ssh 結束碼 255，沒有任何輸出）：略過這台其餘的指令\n' >&2
+    if [[ -s "$TMP_DIR/stderr" ]]; then sed 's/^/    /' "$TMP_DIR/stderr" >&2; fi
+    return 2
+  fi
+  DEVICE_REACHED=1
+  append_output_for_failure
   if (( code == 124 )); then
-    printf '# collection failed: timeout\n' >> "$OUTPUT"
+    printf '# collection failed: timeout\n' >> "$TMP_DIR/block"
     printf '  FAIL %s timeout\n' "$id" >&2
   else
-    printf '# collection failed: exit code %s\n' "$code" >> "$OUTPUT"
+    printf '# collection failed: exit code %s\n' "$code" >> "$TMP_DIR/block"
     printf '  FAIL %s (exit %s)\n' "$id" "$code" >&2
   fi
+  flush_block
   if [[ -s "$TMP_DIR/stderr" ]]; then sed 's/^/    /' "$TMP_DIR/stderr" >&2; fi
   return 1
 }
 
-# 收集設備 $1 的全部指令（device_commands＋自動選用命令），區塊附加到輸出檔
+# 收集設備 $1 的全部指令（device_commands＋自動選用命令），區塊附加到輸出檔。
+# 第一個指令判定連線失敗時，在設備標頭之後記 connection（與 --ask-password 連不上相同），不再執行其餘指令
 collect_device() {
-  local i=$1 auto=0 c ok
+  local i=$1 auto=0 c ok id rc
   device_commands "$i"
-  AUTO_BOARD=; AUTO_VERSION=
+  AUTO_BOARD=; AUTO_VERSION=; DEVICE_REACHED=0
   (( AUTO )) && [[ -z "$COMMAND_FILTER" && -z "${DEVICE_EXTRAS[i]}" ]] && auto=1
   # 用索引走訪：interface 執行後可能在尾端追加自動選用命令。
   # 自動判斷只在用預設清單時發生，預設清單中 system 排在 interface 之前，判斷時已有 board-name 與版本
   for ((c = 0; c < ${#DEVICE_COMMAND_IDS[@]}; c++)); do
+    [[ -z "$INTERRUPTED" ]] || return
     id=${DEVICE_COMMAND_IDS[c]}
-    ok=1; collect_block "$id" || ok=0
+    ok=1; rc=0; collect_block "$id" || rc=$?
+    if (( rc == 2 )); then
+      printf '# collection failed: connection\n' >> "$OUTPUT_TMP"
+      return
+    fi
+    (( rc == 0 )) || ok=0
     (( auto )) || continue
     if (( ok )) && [[ "$id" == system ]]; then
       AUTO_BOARD=$(resource_field board-name "$TMP_DIR/stdout"); AUTO_VERSION=$(resource_field version "$TMP_DIR/stdout")
@@ -399,9 +491,9 @@ load_retry_plan() {
 # 把上次收集檔第 $1 行到第 $2 行（$ 為檔尾）原樣附加到輸出檔
 copy_lines() {
   local from=$1 to=$2
-  if [[ "$to" == '$' ]]; then sed -n "${from},\$p" "$RETRY_FROM" >> "$OUTPUT"; return; fi
+  if [[ "$to" == '$' ]]; then sed -n "${from},\$p" "$RETRY_FROM" >> "$OUTPUT_TMP"; return; fi
   (( from <= to )) || return 0
-  sed -n "${from},${to}p;${to}q" "$RETRY_FROM" >> "$OUTPUT"
+  sed -n "${from},${to}p;${to}q" "$RETRY_FROM" >> "$OUTPUT_TMP"
 }
 
 retry_dry_run() {
@@ -420,9 +512,12 @@ retry_dry_run() {
 }
 
 # 合併輸出：上次收集檔原樣複製，只把要重收的區塊（或連線失敗行）換成這次的結果
+# 中斷時在項目之間停下，其餘部分（含還沒重收的失敗紀錄）照上次收集檔原樣複製，合併檔仍完整可再重收；
+# 停下的項目若已開始重收，裡面進行中的指令記 interrupted
 retry_failed() {
-  local k i cursor=1 current=-1 connected=1
+  local k i cursor=1 current=-1 connected=1 rc
   for ((k = 0; k < ${#ITEM_KIND[@]}; k++)); do
+    [[ -z "$INTERRUPTED" ]] || break
     i=${ITEM_INDEX[k]}
     copy_lines "$cursor" $((ITEM_START[k] - 1))
     cursor=$((ITEM_END[k] + 1))
@@ -430,28 +525,35 @@ retry_failed() {
       (( current < 0 )) || close_connection
       current=$i; set_device "$i"
       printf '重收 %s (%s)\n' "$name" "$address"
+      DEVICE_REACHED=0
       connected=1; open_connection "$i" || connected=0
+      # 互動式連線時被中斷：這個項目沒有重收，保留它原本的失敗紀錄
+      if [[ -n "$INTERRUPTED" ]]; then cursor=${ITEM_START[k]}; break; fi
     fi
     if [[ "${ITEM_KIND[k]}" == N ]]; then
       if (( connected )); then collect_device "$i"; else
         ATTEMPTED=$((ATTEMPTED + 1)); failures=$((failures + 1))
-        printf '# collection failed: connection\n' >> "$OUTPUT"
+        printf '# collection failed: connection\n' >> "$OUTPUT_TMP"
       fi
     elif (( connected )); then
-      collect_block "${ITEM_ID[k]}" || true
+      # 設備已有其他區塊：第一個重收的指令判定連線失敗時，紀錄留在這個指令區塊內，其餘指令不再連線
+      rc=0; collect_block "${ITEM_ID[k]}" || rc=$?
+      if (( rc == 2 )); then flush_block; connected=0; fi
     else
       # 設備已有其他區塊，連線失敗記在這個指令區塊內
       ATTEMPTED=$((ATTEMPTED + 1)); failures=$((failures + 1))
-      printf '### %s\n# collected-at: %s\n# collection failed: connection\n' "$(command_for_id "${ITEM_ID[k]}")" "$(now_utc)" >> "$OUTPUT"
+      printf '### %s\n# collected-at: %s\n# collection failed: connection\n' "$(command_for_id "${ITEM_ID[k]}")" "$(now_utc)" >> "$OUTPUT_TMP"
     fi
   done
   (( current < 0 )) || close_connection
+  RETRY_DONE=$k
   copy_lines "$cursor" '$'
 }
 
 OUTPUT=collection.txt
 OUTPUT_SET=0
 TIMEOUT=30
+CONNECT_TIMEOUT=
 RETRY=0
 DEVICE_FILTER=
 COMMAND_FILTER=
@@ -473,6 +575,7 @@ while (($#)); do
     --commands) (($# >= 2)) || die "$1 需要值"; COMMAND_FILTER=$2; shift 2 ;;
     --retry-failed) (($# >= 2)) || die "$1 需要值"; RETRY_FROM=$2; shift 2 ;;
     --timeout) (($# >= 2)) || die "$1 需要值"; TIMEOUT=$2; shift 2 ;;
+    --connect-timeout) (($# >= 2)) || die "$1 需要值"; CONNECT_TIMEOUT=$2; shift 2 ;;
     --retry) (($# >= 2)) || die "$1 需要值"; RETRY=$2; shift 2 ;;
     --ask-password) ASK_PASSWORD=1; shift ;;
     --no-auto) AUTO=0; shift ;;
@@ -486,6 +589,12 @@ done
 [[ -n "$INVENTORY" ]] || { usage >&2; exit 2; }
 [[ "$TIMEOUT" =~ ^[0-9]+$ && "$TIMEOUT" -ge 1 ]] || die "--timeout 必須是正整數"
 [[ "$RETRY" =~ ^[0-9]+$ ]] || die "--retry 必須是非負整數"
+if [[ -n "$CONNECT_TIMEOUT" ]]; then
+  [[ "$CONNECT_TIMEOUT" =~ ^[0-9]+$ && "$CONNECT_TIMEOUT" -ge 1 ]] || die "--connect-timeout 必須是正整數"
+else
+  # 預設 10 秒，但不超過單一指令的 --timeout（超過時 timeout 會先結束 ssh，記成 timeout 而不是連線失敗）
+  CONNECT_TIMEOUT=10; (( TIMEOUT >= CONNECT_TIMEOUT )) || CONNECT_TIMEOUT=$TIMEOUT
+fi
 if [[ -n "$RETRY_FROM" ]] && (( ! DRY_RUN )); then
   (( OUTPUT_SET )) || die "--retry-failed 必須用 -o 指定新的輸出檔（不覆寫上次的收集檔）"
   [[ ! "$OUTPUT" -ef "$RETRY_FROM" ]] || die "-o 不可與 --retry-failed 的收集檔相同：$OUTPUT"
@@ -494,6 +603,7 @@ command -v ssh >/dev/null 2>&1 || die "找不到 ssh"
 command -v timeout >/dev/null 2>&1 || die "找不到 timeout（WSL 請安裝 coreutils）"
 
 load_inventory "$INVENTORY"
+check_device_filter
 select_commands
 [[ -z "$RETRY_FROM" ]] || load_retry_plan
 
@@ -509,13 +619,62 @@ if (( DRY_RUN )); then
   exit 0
 fi
 
+# 中斷時收尾：已收集的部分改名成 <輸出檔>.partial（原本的輸出檔不動），列出沒有收集的部分，以 128+訊號 結束。
+# $1 是沒有收集（或沒有重收）的設備名稱，以「, 」分隔
+finish_interrupted() {
+  local pending=$1 partial="${OUTPUT}.partial" code=130
+  [[ "$INTERRUPTED" == TERM ]] && code=143
+  if mv -f "$OUTPUT_TMP" "$partial"; then OUTPUT_TMP=; else partial=$OUTPUT_TMP; OUTPUT_TMP=; fi
+  printf '\ncollect: 收到 SIG%s，收集中斷。已收集的部分寫在 %s（不完整的收集：進行中的指令記為 # collection failed: interrupted）；%s 沒有更動\n' \
+    "$INTERRUPTED" "$partial" "$OUTPUT" >&2
+  if [[ -n "$RETRY_FROM" ]]; then
+    [[ -z "$pending" ]] || printf 'collect: 沒有重收的設備（上次的失敗紀錄原樣保留）：%s\n' "$pending" >&2
+  else
+    [[ -z "$pending" ]] || printf 'collect: 沒有收集的設備：%s\n' "$pending" >&2
+  fi
+  exit "$code"
+}
+
+# 「, 」分隔的名稱清單去掉重複（保留順序）
+join_names() {
+  local seen=" " out= n
+  for n in "$@"; do
+    [[ "$seen" == *" $n "* ]] && continue
+    seen+="$n "; out+="${out:+, }$n"
+  done
+  printf '%s' "$out"
+}
+
+# 收集檔含完整設定：本腳本建立的檔案只給擁有者讀寫
+umask 077
 TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/topo-mikrotik.XXXXXX") || die "無法建立暫存目錄"
-trap 'rm -rf "$TMP_DIR"' EXIT
-: > "$OUTPUT" || die "無法寫入輸出檔：$OUTPUT"
+OUTPUT_TMP=
+# 正常流程會把暫存檔改名成輸出檔；意外結束時保留暫存檔並說明，不靜默刪除
+trap 'rm -rf "$TMP_DIR"; if [[ -n "$OUTPUT_TMP" && -e "$OUTPUT_TMP" ]]; then printf "collect: 收集異常結束，未完成的輸出留在 %s\n" "$OUTPUT_TMP" >&2; fi' EXIT
+[[ ! -d "$OUTPUT" ]] || die "輸出檔是目錄：$OUTPUT"
+# 暫存檔放在輸出檔的同一個目錄，完成後 mv 才是同一個檔案系統內的改名
+OUTPUT_TMP=$(mktemp "${OUTPUT}.tmp.XXXXXX" 2>/dev/null) || die "無法寫入輸出檔：$OUTPUT"
+INTERRUPTED=
+RUN_PID=
+trap 'on_signal INT' INT
+trap 'on_signal TERM' TERM
 failures=0
 
+# 完成：暫存檔改名成輸出檔
+finish_output() {
+  mv -f "$OUTPUT_TMP" "$OUTPUT" || { printf 'collect: 無法把 %s 改名成輸出檔 %s\n' "$OUTPUT_TMP" "$OUTPUT" >&2; OUTPUT_TMP=; exit 2; }
+  OUTPUT_TMP=
+}
+
 if [[ -n "$RETRY_FROM" ]]; then
+  RETRY_DONE=0
   retry_failed
+  if [[ -n "$INTERRUPTED" ]]; then
+    pending=()
+    for ((k = RETRY_DONE; k < ${#ITEM_KIND[@]}; k++)); do pending+=("${DEVICE_NAMES[ITEM_INDEX[k]]}"); done
+    finish_interrupted "$(join_names ${pending[@]+"${pending[@]}"})"
+  fi
+  finish_output
   skipped=$((TOTAL_FAILED - ${#ITEM_KIND[@]}))
   printf '\n輸出：%s；重收 %d 個指令，仍失敗 %d 個' "$OUTPUT" "$ATTEMPTED" "$failures"
   (( skipped == 0 )) || printf '；另有 %d 個失敗不在 --device／--commands 範圍，未重收' "$skipped"
@@ -524,20 +683,34 @@ if [[ -n "$RETRY_FROM" ]]; then
   exit 0
 fi
 
+# 中斷時在設備之間停下（break 時 i 是最後處理的設備）
 for ((i = 0; i < ${#DEVICE_NAMES[@]}; i++)); do
   set_device "$i"
   selected_device "$name" || continue
   printf '收集 %s (%s)\n' "$name" "$address"
-  printf '%s (%s):\n' "$name" "$address" >> "$OUTPUT"
+  printf '%s (%s):\n' "$name" "$address" >> "$OUTPUT_TMP"
   if ! open_connection "$i"; then
-    printf '# collection failed: connection\n_____\n' >> "$OUTPUT"
+    # 互動式連線時被中斷（Ctrl-C 也會結束 ssh）不算連線失敗
+    if [[ -n "$INTERRUPTED" ]]; then printf '_____\n' >> "$OUTPUT_TMP"; break; fi
+    printf '# collection failed: connection\n_____\n' >> "$OUTPUT_TMP"
     failures=$((failures + 1))
+    [[ -z "$INTERRUPTED" ]] || break
     continue
   fi
   collect_device "$i"
   close_connection
-  printf '_____\n' >> "$OUTPUT"
+  printf '_____\n' >> "$OUTPUT_TMP"
+  [[ -z "$INTERRUPTED" ]] || break
 done
 
+if [[ -n "$INTERRUPTED" ]]; then
+  # 被中斷的設備已寫出（部分區塊或標頭），從下一台開始列為沒有收集
+  pending=()
+  for ((i = i + 1; i < ${#DEVICE_NAMES[@]}; i++)); do
+    selected_device "${DEVICE_NAMES[i]}" && pending+=("${DEVICE_NAMES[i]}")
+  done
+  finish_interrupted "$(join_names ${pending[@]+"${pending[@]}"})"
+fi
+finish_output
 printf '\n輸出：%s；失敗 %d 個指令\n' "$OUTPUT" "$failures"
 (( failures == 0 )) || exit 1

@@ -68,6 +68,27 @@ test('收集器註解：時間格式或位置不對列為 I01（指回該行）�
   assert.deepStrictEqual(ids(neu), ids(old));
   assert.deepStrictEqual(neu.model.arps.map((a) => [a.ip, a.mac]), old.model.arps.map((a) => [a.ip, a.mac]));
 });
+test('files-v1：只有收集器註解（位置不對的 collected-at、一般註解）的檔案沒有設備資料，不以檔名建立假設備，註解問題仍列為 I01', () => {
+  const t = (name, text) => S.build([{ name, text }], { now: '2026-01-01T00:00:00Z' });
+  [['R_X.txt', '# collected-at: 2026-10-24T03:00:00Z\n'], ['R_Y.txt', '# 收集檔\n\n# collected-at: 2026-10-24T03:00:00Z\n# collected-at: bad\n']].forEach(([name, text]) => {
+    const s = t(name, text);
+    assert.deepStrictEqual(s.model.devices.map((d) => d.key), [], `${name}：不應建立設備`);
+    assert.ok(!ids(s).includes('C02'), `${name}：沒有設備就沒有 C02：${ids(s)}`);
+    const i01 = s.findings.filter((f) => f.id === 'I01');
+    assert.ok(i01.length >= 1 && i01.every((f) => /^收集器註解有誤：/.test(f.message) && !f.entities.length), JSON.stringify(i01));
+    assert.ok(s.blocks.every((b) => b.device === null), '區塊沒有設備');
+    const p = S.preflight([{ name, text }]);
+    assert.deepStrictEqual([p.devices.length, p.unrecognized.length], [0, i01.length], `${name}：預檢與建立一致`);
+  });
+  // 只有收集失敗的檔案仍是一台收集失敗的設備（由 C02 回報），不受影響
+  const failed = t('R_F.txt', '# collection failed: connection\n');
+  assert.deepStrictEqual(failed.model.devices.map((d) => d.key), ['R_F']);
+  assert.ok(ids(failed).includes('C02'));
+  // 有指令標記的檔案（即使位置不對的註解在前面）照常以檔名當設備名
+  const ok = t('R_Z.txt', '# collected-at: 2026-10-24T03:00:00Z\n### /ip arp print detail\n 0 DC address=10.0.0.9 mac-address=AA:BB:CC:00:00:09 interface=ether1\n');
+  assert.deepStrictEqual(ok.model.devices.map((d) => d.key), ['R_Z']);
+  assert.ok(ids(ok).includes('I01'));
+});
 test('沒有設備標頭的內容列為無法辨識（不靜默丟棄）', () => {
   const s = build('隨便一段文字\nSW_A (10.0.0.1):\n### /ip neighbor print detail\n');
   assert.ok(ids(s).includes('I01'));

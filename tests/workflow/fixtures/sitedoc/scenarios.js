@@ -2,7 +2,7 @@
 // 刻意改變網路文件的格式時，以 regenerate() 重新產生並檢視 git diff。
 // CSV 的預期輸出以 LF 存放（.gitattributes 只對 tests/workflow/fixtures/report/ 保留 CRLF），比對時把 CRLF 換成 LF，另外檢查每一行都是 CRLF。
 // 情境：
-//   site：兩台已收集的設備（路由器、交換器），LLDP 介面鄰接、bridge VLAN、VLAN 介面的位址、DHCP 閘道、一台只由鄰居得知的設備，
+//   site：兩台已收集的設備（路由器、交換器；路由器的 RouterBOOT 韌體待升級），LLDP 介面鄰接、bridge VLAN、VLAN 介面的位址、DHCP 閘道、一台只由鄰居得知的設備，
 //         以及處理紀錄（待處理、復發、接受風險含豁免、已修好）；欄位內容含逗號與引號（CSV 跳脫）、| 與 *（Markdown 跳脫）。
 //   empty：只有 identity 的一台設備：沒有網段、沒有 VLAN、沒有埠，每個表格寫「沒有。」。
 'use strict';
@@ -15,6 +15,7 @@ const DIR = __dirname;
 const SITE = [
   'R1 (10.0.0.1):',
   '### /system resource print', '# collected-at: 2026-01-01T08:00:00Z', 'version: 7.15.3 (stable)', 'board-name: RB5009UG+S+',
+  '### /system routerboard print', 'routerboard: yes', 'model: RB5009UG+S+', 'current-firmware: 7.14', 'upgrade-firmware: 7.15.3',
   '### /export terse',
   '/interface vlan add interface=ether2 name=vlan10 vlan-id=10',
   '/interface ethernet set [ find default-name=ether3 ] comment="uplink, \\"ISP\\" | *A*"',

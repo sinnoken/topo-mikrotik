@@ -3478,10 +3478,10 @@ Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external
  41 D mac-address=10:BF:48:00:00:24 on-interface=bond10 bridge=bridge1 vid=30
     age=12s
 
-[admin@TPE_ACC_SW_10] > /system routerboard print
-routerboard: yes
-        model: CRS326-24G-2S+
- serial-number: HF1234567890
+[admin@TPE_ACC_SW_10] > /system clock print
+          time: 10:00:00
+          date: 2026-01-01
+ time-zone-name: Asia/Taipei
 
 _____
 TPE_ACC_SW_11 (10.1.10.31):
@@ -4041,7 +4041,7 @@ _____
 TPE_LAB_SW_01 (10.1.10.242):
 [admin@TPE_LAB_SW_01] > /system resource print
              uptime: 2w1d4h
-            version: 7.25.1 (stable)
+            version: 7.24.2 (stable)
          board-name: CRS326-24G-2S+
            platform: MikroTik
 
@@ -4183,5 +4183,14 @@ Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC, o - OSPF, b - BGP
     immediate-gw=192.168.50.1%ether1 distance=1 scope=30
  As  dst-address=0.0.0.0/0 routing-table=to-isp2 gateway=192.168.50.1
     immediate-gw=192.168.50.1%ether1 distance=1 scope=30
+
+[admin@TPE_CE_RT_01] > /system routerboard print
+       routerboard: yes
+             model: RB760iGS
+     serial-number: HF0000000001
+     firmware-type: mmipsr2
+  minimum-firmware: 6.45.9
+  current-firmware: 7.24.2
+  upgrade-firmware: 7.25.1
 
 _____

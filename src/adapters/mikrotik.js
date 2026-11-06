@@ -21,6 +21,7 @@
  *   mikrotik.wifireg    /interface wifi｜wireless registration-table、/caps-man registration-table print detail  Wi-Fi 關聯表
  *   mikrotik.stp        /interface bridge port monitor [find] once、/interface bridge monitor [find] once  RSTP 狀態
  *   mikrotik.system     /system resource print、/system identity print
+ *   mikrotik.routerboard /system routerboard print
  */
 (function (S) {
   'use strict';
@@ -739,11 +740,11 @@
   });
 
   // ================================================================ Wi-Fi 關聯表（客戶端關聯在哪個無線介面）
-  /** RouterOS 時間長度（1w2d3h4m5s120ms，或舊格式 01:02:03）→ 秒；格式不符回傳 null。 */
+  /** RouterOS 時間長度（1w2d3h4m5s120ms，或 hh:mm:ss 前面可加 w、d：01:02:03、15d04:05:06、1w2d03:04:05）→ 秒；格式不符回傳 null。 */
   function duration(text) {
     const t = String(text || '').trim(); if (!t) return null;
-    const hms = t.match(/^(?:(\d+)d\s*)?(\d+):(\d+):(\d+(?:\.\d+)?)$/);
-    if (hms) return (+hms[1] || 0) * 86400 + hms[2] * 3600 + hms[3] * 60 + +hms[4];
+    const hms = t.match(/^(?:(\d+)w\s*)?(?:(\d+)d\s*)?(\d+):(\d+):(\d+(?:\.\d+)?)$/);
+    if (hms) return (+hms[1] || 0) * 604800 + (+hms[2] || 0) * 86400 + hms[3] * 3600 + hms[4] * 60 + +hms[5];
     const UNIT = { w: 604800, d: 86400, h: 3600, m: 60, s: 1, ms: 0.001, us: 1e-6 };
     let sec = 0; let rest = t; let m;
     const re = /^(\d+(?:\.\d+)?)(ms|us|w|d|h|m|s)/;
@@ -860,8 +861,37 @@
         let m;
         if ((m = l.match(/^\s*board-name:\s*(.+?)\s*$/))) emit({ t: 'sys', board: m[1], line: at(b, i) });
         else if ((m = l.match(/^\s*version:\s*(.+?)\s*$/))) emit({ t: 'sys', version: m[1], line: at(b, i) });
+        else if (!identity && (m = l.match(/^\s*uptime:\s*(.+?)\s*$/))) { const sec = duration(m[1]); if (sec !== null) emit({ t: 'sys', uptime: sec, line: at(b, i) }); } // 認不得的格式留給 I03，不猜
         else if (identity && (m = l.match(/^\s*name:\s*(.+?)\s*$/))) emit({ t: 'hostname', name: m[1], line: at(b, i) });
-        else if (/^\s*[\w-]+:(\s|$)/.test(l)) ignore(at(b, i), '未使用的欄位'); // print 的「key: value」格式，其他欄位（uptime、cpu…）不需要
+        else if (/^\s*[\w-]+:(\s|$)/.test(l)) ignore(at(b, i), '未使用的欄位'); // print 的「key: value」格式，其他欄位（cpu、memory…）不需要
+      });
+    },
+  });
+
+  // ================================================================ RouterBOARD 韌體
+  // /system routerboard print（key: value，同 /system resource）。依據：
+  //   https://manual.mikrotik.com/docs/hardware/routerboard.md（print 範例；upgrade-firmware 比 current-firmware 新代表有待套用的 RouterBOOT）
+  //   https://manual.mikrotik.com/docs/cli-reference/system/routerboard.md（欄位；Conditions: !i386 —— x86／CHR 沒有這個選單）
+  // minimum-firmware 是出廠的韌體版本，RouterOS 6 稱為 factory-firmware。
+  // serial-number 不寫入基準：序號可識別實體設備，基準會隨工作包分享（隱私考量；畫面與報表都用不到）。
+  // 沒有這個選單時 RouterOS 回「bad command name routerboard」：這一行本身就是「不是 RouterBOARD」的事實，所以產生事實，
+  // 其他錯誤（權限不足、語法錯誤）不在此列，照常成為 I01／I03。
+  const RB_FIELDS = { routerboard: 'isRouterboard', model: 'model', 'firmware-type': 'firmwareType', 'minimum-firmware': 'factoryFirmware',
+    'factory-firmware': 'factoryFirmware', 'current-firmware': 'currentFirmware', 'upgrade-firmware': 'upgradeFirmware' };
+  reg({
+    id: 'mikrotik.routerboard', vendor: VENDOR, dataType: 'routerboard', label: 'RouterBOARD 韌體',
+    command: /^\/?system\s+routerboard\s+print\b/i,
+    detect: (lines) => lines.some((l) => /^\s*routerboard:\s*(yes|no)\s*$/.test(l)) && lines.some((l) => /^\s*(current-firmware|model):/.test(l)),
+    parse(b, emit, ignore = noop) {
+      b.lines.forEach((l, i) => {
+        let m;
+        if (/^\s*bad command name routerboard\b/i.test(l)) emit({ t: 'rb', field: 'isRouterboard', value: false, noMenu: true, line: at(b, i) });
+        else if ((m = l.match(/^\s*([\w-]+):\s*(.*?)\s*$/)) && RB_FIELDS[m[1]] && m[2]) {
+          const field = RB_FIELDS[m[1]];
+          if (field === 'isRouterboard') { if (/^(yes|no)$/.test(m[2])) emit({ t: 'rb', field, value: m[2] === 'yes', line: at(b, i) }); }
+          else emit({ t: 'rb', field, value: m[2], line: at(b, i) });
+        } else if (/^\s*serial-number:/.test(l)) ignore(at(b, i), '序號不寫入基準（隱私）');
+        else if (/^\s*[\w-]+:(\s|$)/.test(l)) ignore(at(b, i), '未使用的欄位'); // board-name、revision…
       });
     },
   });

@@ -75,3 +75,27 @@ test('預檢：已解析的區塊中有認不得的行時列在 partial（與 I0
   assert.deepStrictEqual(p.partial.map((x) => [x.file, x.device, x.command, x.lines]), [['g.txt', 'SW', '/ip arp print detail without-paging', 1]]);
   assert.deepStrictEqual(p.unrecognized, []);
 });
+
+test('認到設備：Q.recognizedDevices 與 S.query.preflightRecognized 是同一個判斷，排除只有檔名或標頭、沒有任何資料的設備', () => {
+  const ARP = '### /ip arp print detail\n 0 DC address=10.0.0.9 mac-address=AA:BB:CC:00:00:09 interface=ether1\n';
+  const cases = [
+    ['只有註解', [{ name: 'c.txt', text: '# 收集檔\n# 這一輪沒有輸出\n' }], []],
+    ['只有位置不對的 collected-at', [{ name: 'R_X.txt', text: '# collected-at: 2026-10-24T03:00:00Z\n' }], []],
+    ['沒有設備標頭、內容都認不得', [{ name: 'junk.txt', text: 'hello\nworld\n' }], []],
+    ['有設備標頭、沒有資料', [{ name: 'b.txt', text: 'R_A (10.0.0.1):\nhello\n' }], []],
+    ['只有收集失敗', [{ name: 'b.txt', text: 'R_B (10.0.0.2):\n# collection failed: connection\n' }], ['R_B']],
+    ['正常資料', [{ name: 'SW_F.txt', text: ARP }], ['SW_F']],
+    ['混合', [{ name: 'junk.txt', text: 'hello\n' }, { name: 'SW_F.txt', text: ARP }, { name: 'b.txt', text: 'R_A (10.0.0.1):\nhello\n' }], ['SW_F']],
+  ];
+  cases.forEach(([name, sources, want]) => {
+    const Q = S.query(S.build(sources, { now: '2026-01-01T00:00:00Z' }));
+    const p = preflightMatchesBuild(sources);
+    assert.deepStrictEqual(Q.recognizedDevices().map((d) => d.key), want, `${name}：Q.recognizedDevices`);
+    assert.deepStrictEqual(S.query.preflightRecognized(p).map((d) => d.key), want, `${name}：預檢`);
+  });
+  // 範例資料：已收集的設備都認到
+  const sample = [{ name: 'sample-bundle.txt', text: read('samples/sample-bundle.txt') }];
+  const Q = S.query(S.build(sample, { now: '2026-01-01T00:00:00Z' }));
+  assert.deepStrictEqual(Q.recognizedDevices().map((d) => d.key), Q.devices().filter((d) => d.collected).map((d) => d.key));
+  assert.deepStrictEqual(S.query.preflightRecognized(S.preflight(sample)).map((d) => d.key), Q.recognizedDevices().map((d) => d.key));
+});

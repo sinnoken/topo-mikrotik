@@ -6,7 +6,7 @@
  */
 (function (S) {
   'use strict';
-  S.VERSION = '3.4.0';
+  S.VERSION = '3.5.0';
   // ssot-snapshot/3（ADR-015）：位址、網段、ARP、路由加上 vrf，prefixes 改為每個 VRF 的每個網段一筆。
   // /2 不轉換（ADR-010：可以從輸入重建）；畫面還原時 schema 不同就用儲存的輸入重建（ADR-005）。
   S.SCHEMA = 'ssot-snapshot/3';

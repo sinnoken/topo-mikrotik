@@ -30,6 +30,12 @@
   const clsRank = (c) => { const i = CLS_RANK.indexOf(c); return i < 0 ? CLS_RANK.length : i; };
   /** 覆蓋列「已收集但有缺漏」的唯一判斷（Q.coverageGap、coverageSummary().missing）。 */
   const coverageGap = (row) => !!(row && row.collected) && ((row.missing || []).length > 0 || (row.failures || []).length > 0);
+  /**
+   * 「認到設備」的唯一判斷（Q.recognizedDevices、S.query.preflightRecognized）：有至少一類被辨識的資料，或有收集失敗的紀錄
+   * （全部連線失敗仍是一次有結果的收集，由 C02 回報）。沒有設備標頭的檔案以檔名當設備名（files-v1），內容都認不得時
+   * 這台設備只有名字、沒有資料，不算認到。
+   */
+  const recognized = (dataCount, failureCount) => dataCount > 0 || failureCount > 0;
   /** Q 自己建立的衍生物件（不含 Snapshot 的物件）整個凍結，呼叫端改不壞快取。 */
   const deepFreeze = (o) => {
     if (o && typeof o === 'object' && !Object.isFrozen(o)) { Object.freeze(o); Object.values(o).forEach(deepFreeze); }
@@ -281,6 +287,11 @@
         if (!covByDev) covByDev = new Map((snap.coverage || []).map((c) => [c.dev, c]));
         return covByDev.get(d) || null;
       },
+      /**
+       * 認到的設備（devices() 的子集合，順序相同）：已收集，且有至少一類資料或有收集失敗的紀錄。
+       * 排除只有檔名、內容都認不得的設備；與建立前的預檢（S.query.preflightRecognized）是同一個判斷。
+       */
+      recognizedDevices: () => m.devices.filter((d) => d.collected && recognized(d.data.length, ((Q.coverageOf(d.key) || {}).failures || []).length)),
       /**
        * 覆蓋列（coverage() 的元素）是否「已收集但有缺漏」：已收集，且缺少應收集的資料或有指令收集失敗（只有失敗、沒有缺少也算）。
        * 這是唯一的判斷：coverageSummary().missing、畫面的覆蓋率表與基準狀態卡都用它。
@@ -1115,6 +1126,11 @@
   S.query.rule = (id) => RULE_BY_ID.get(id) || null;
   /** 所有檢查（凍結的陣列），依 CATALOG 的宣告順序（I、K、V、A…，匯出附錄依這個順序）；依編號排序的結果見 Q.ruleStatus()。 */
   S.query.rules = () => RULES;
+  /**
+   * 建立前的預檢（S.preflight 的結果）中認到的設備（devices 的子集合，順序相同）；與建立後的 Q.recognizedDevices() 是同一個判斷。
+   * 預檢還沒有 Snapshot，所以是 S.query 的靜態函式。
+   */
+  S.query.preflightRecognized = (pre) => pre.devices.filter((d) => recognized(d.dataTypes.length, d.failures));
   /** 資料類別（設備的 data、coverage 的 data／missing、收集失敗的 dataTypes）的顯示名稱；不認得時原樣回傳。 */
   S.query.dataLabel = (t) => S.check.DATA_LABEL[t] || t;
   /** 解析器（adapter id，見 meta.adapters、blocks[].adapters）的顯示名稱；不認得時原樣回傳。 */

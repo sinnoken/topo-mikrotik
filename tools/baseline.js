@@ -139,10 +139,9 @@ function compute(S, a) {
   delete snap.meta.timing; // 唯一與執行環境有關的欄位
   const Q = S.query(snap);
   // 沒有認到任何設備的資料（只有註解、內容都認不得）：建得出基準，但排程會把它當成「沒有待處理項目」，所以視為執行失敗。
-  // 認到＝已收集的設備有任何一類資料，或有收集失敗的紀錄（全部連線失敗仍是一次有結果的收集，由 C02 回報）。
-  // 沒有設備標頭的檔案會以檔名當設備名（files-v1），所以不能只看 stats.collected。
-  const failed = new Set(Q.coverage().filter((r) => r.failures && r.failures.length).map((r) => r.dev));
-  if (!Q.devices().some((d) => d.collected && (d.data.length || failed.has(d.key)))) {
+  // 「認到」的判斷在查詢層（Q.recognizedDevices，與畫面的建立前預檢相同）：沒有設備標頭的檔案會以檔名當設備名（files-v1），
+  // 所以不能只看 stats.collected。全部連線失敗仍是一次有結果的收集（由 C02 回報）。
+  if (!Q.recognizedDevices().length) {
     const i01 = Q.findings().filter((f) => f.id === 'I01').length;
     fail(`收集檔沒有認到任何設備的資料（${sources.length} 個檔案${i01 ? `；無法辨識的段落 ${i01} 處（I01）` : ''}），不建立基準：`
       + '請確認收集檔是 tools/collect.sh 的輸出，或含設備標頭（名稱 (位址):）與 ### 指令標記的 RouterOS 輸出');

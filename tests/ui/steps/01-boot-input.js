@@ -24,7 +24,16 @@ module.exports = async () => {
   });
   await step('離線契約：CSP 禁止網路連線，程式碼不使用網路 API', () => {
     const csp = (html.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)"/) || [])[1] || '';
-    ["connect-src 'none'", "form-action 'none'", "object-src 'none'", "worker-src 'none'"].forEach((d) => { if (!csp.includes(d)) throw new Error('CSP 缺少 ' + d); });
+    // 逐項比對每個指令的完整來源清單：放寬（多一個來源）或漏掉指令都會失敗；要調整時同步改 index.html 的說明註解與開發原則第 11 條
+    const want = {
+      'default-src': "'none'", 'script-src': "'self' 'unsafe-inline'", 'style-src': "'self' 'unsafe-inline'", 'img-src': "'self' data: blob:",
+      'font-src': "'self'", 'connect-src': "'none'", 'media-src': "'none'", 'manifest-src': "'none'", 'form-action': "'none'",
+      'object-src': "'none'", 'frame-src': "'none'", 'worker-src': "'none'", 'base-uri': "'none'",
+    };
+    const got = Object.fromEntries(csp.split(';').map((d) => d.trim().split(/\s+/)).filter((d) => d[0]).map(([k, ...v]) => [k, v.join(' ')]));
+    Object.entries(want).forEach(([k, v]) => { if (got[k] !== v) throw new Error(`CSP 的 ${k} 應為「${v}」，目前是「${got[k]}」`); });
+    Object.keys(got).forEach((k) => { if (!(k in want)) throw new Error('CSP 多了沒有檢查的指令 ' + k); });
+    if (/https?:|wss?:|\*|'unsafe-eval'/.test(csp)) throw new Error('CSP 不可允許網路來源、萬用字元或 unsafe-eval：' + csp);
     if (html.indexOf('Content-Security-Policy') > html.indexOf('<script')) throw new Error('CSP 必須在第一個 <script> 之前');
     jsFiles('src').forEach((f) => {
       const code = fs.readFileSync(path.join(ROOT, f), 'utf8');
@@ -136,6 +145,11 @@ module.exports = async () => {
     rm.click();
     if (!pf().includes('尚未輸入')) throw new Error('移除檔案後應重新預檢：' + pf());
     if (document.activeElement !== $('#input-pick')) throw new Error('移除最後一個檔案後焦點應回到「選擇檔案…」');
+    // 沒有設備標頭、內容都認不得的檔案：以檔名當設備名，但沒有資料，不算認到（S.query.preflightRecognized，與 CLI 同一個判斷）
+    $('#input-file').dispatch('change', { target: { files: [{ name: 'junk.txt', text: async () => 'hello\nworld\n' }] } });
+    await new Promise((r) => setTimeout(r, 20));
+    if (!pf().includes('認到 0 台設備') || !btn.disabled || !pf().includes('沒有可用的資料')) throw new Error('只有檔名、沒有資料的設備不算認到：' + pf());
+    $('#input-files').querySelector('.chip-x').click();
     await App.loadSample();
     const sp = S.preflight([{ name: S.readers.PASTE, text: S.samples['sample-bundle.txt'] }]);
     if (!pf().includes(`認到 ${S.view.num(sp.devices.length)} 台設備`) || !pf().includes(`${S.view.num(sp.unrecognized.length)} 段無法辨識`) || btn.disabled) throw new Error('載入範例後應立即預檢：' + pf());

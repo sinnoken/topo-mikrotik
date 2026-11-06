@@ -125,7 +125,7 @@ function fwStats(name, entries, extra) {
     return [`${p} print stats detail without-paging`, statsText(rows)];
   });
 }
-const sysText = (board, name) => `             uptime: 2w1d4h\n            version: 7.25.1 (stable)\n         board-name: ${board}\n           platform: MikroTik\n`;
+const sysText = (board, name, version = '7.25.1 (stable)') => `             uptime: 2w1d4h\n            version: ${version}\n         board-name: ${board}\n           platform: MikroTik\n`;
 
 const out = [];
 const device = (name, ip, cmds) => {
@@ -353,7 +353,7 @@ for (let s = 1; s <= SITES; s++) {
       `            root-bridge: no`, `         root-bridge-id: 0x8000.${core[0].mac}`, `              root-port: bond${i + 1}`].join('\n')]);
     if (!(F && i === 8)) cmds.push([`/interface bridge host print ${D}`, bridgeHostText([{ local: true, vid: 0, mac: sw.mac, ifc: 'bridge1' }, ...sw.macs])       // C02：ACC_09 沒有 MAC 表
       + (F && i === 11 ? '\n```' : '')]);                                                                                // I03：ACC_12 的 MAC 表後面混入 markdown 標記（從聊天或文件貼上）；放在最後一台的最後，不移動其他行號
-    if (F && i === 9) cmds.push(['/system routerboard print', 'routerboard: yes\n        model: CRS326-24G-2S+\n serial-number: HF1234567890']);                  // I01
+    if (F && i === 9) cmds.push(['/system clock print', '          time: 10:00:00\n          date: 2026-01-01\n time-zone-name: Asia/Taipei']);                  // I01：沒有解析器的指令
     if (F && i === 10) cmds.push([`/interface bridge host print ${D}`, bridgeHostText([{ local: true, vid: 0, mac: sw.mac, ifc: 'bridge1' }, ...sw.macs])]);      // I02
     device(sw.name, sw.ip, cmds);
   });
@@ -405,7 +405,8 @@ if (FAULTS) {
     [sw.name]: [[`/interface bridge host print ${D}`, bridgeHostText([{ local: true, vid: 0, mac: sw.mac, ifc: 'bridge1' }, { vid: 10, mac: rt.mac, ifc: 'ether1' }, { vid: 10, mac: lab.mac, ifc: 'ether2' }])]],
     [lab.name]: [[`/interface bridge host print ${D}`, bridgeHostText([{ local: true, vid: 0, mac: lab.mac, ifc: 'bridge1' }, { vid: 0, mac: sw.mac, ifc: 'ether1' }])]],
   };
-  br.forEach((x) => device(x.name, x.ip, [['/system resource print', sysText(x.board, x.name)],
+  // L02：TPE_LAB_SW_01 與 TPE_BR_SW_01 同型號，LAB 還是 7.24.2（兩台各一個版本，沒有多數）
+  br.forEach((x) => device(x.name, x.ip, [['/system resource print', sysText(x.board, x.name, x === lab ? '7.24.2 (stable)' : undefined)],
     ['/export terse', exportText(x.name, x.board, sort(entries[x.name]), false)], [`/ip neighbor print ${D}`, neighborText(neighbors[x.name])], ...extra[x.name]]));
 }
 // VRF 與策略路由（只在 --faults，放在最後）：CE 有 /routing table to-isp2 與兩條 /routing rule；PE 路由器的 VRF cust-a（ether2、ether3）與 main 的網段重疊，CE 路由器在 main（VRF 名稱只在設備內有意義）
@@ -445,7 +446,10 @@ if (FAULTS) {
     [`/ip vrf print ${D}`, vrfText], [`/ip neighbor print ${D}`, neighborText(nrow('ether3', nb(ce, 'ether1')))],
     [`/ip address print ${D}`, addrText(peAddrs)], [`/ip arp print ${D}`, arpText(custArps)], [`/ip route print ${D}`, routeText(peRoutes)]]);
   device(ce.name, ce.ip, [['/system resource print', sysText(ce.board, ce.name)], ['/export terse', exportText(ce.name, ce.board, sort(ceEntries), false)],
-    [`/ip neighbor print ${D}`, neighborText(nrow('ether1', nb(pe, 'ether3')))], [`/ip route print ${D}`, routeText(ceRoutes)]]);
+    [`/ip neighbor print ${D}`, neighborText(nrow('ether1', nb(pe, 'ether3')))], [`/ip route print ${D}`, routeText(ceRoutes)],
+    // L01：升級 RouterOS 後沒有套用新的 RouterBOOT（依手冊 /system/routerboard/print 的排版；序號不進基準）
+    ['/system routerboard print', ['       routerboard: yes', '             model: RB760iGS', '     serial-number: HF0000000001', '     firmware-type: mmipsr2',
+      '  minimum-firmware: 6.45.9', '  current-firmware: 7.24.2', '  upgrade-firmware: 7.25.1'].join('\n')]]);
 }
 if (FAULTS) out.unshift('# 測試用收集檔：含刻意放入的問題，用來驗證一致性檢查', '');
 process.stdout.write(out.join('\n') + '\n');

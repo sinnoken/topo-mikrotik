@@ -16,6 +16,12 @@ set -euo pipefail
 DIR=$(cd "$(dirname "$0")" && pwd)
 command_name=
 for argument in "$@"; do target=${command_name:-}; command_name=$argument; done
+# FAKE_SSH_LOG：每次呼叫記一行全部參數（檢查 -o ConnectTimeout 與連線次數）
+if [[ -n "${FAKE_SSH_LOG:-}" ]]; then printf '%s\n' "$*" >> "$FAKE_SSH_LOG"; fi
+# FAKE_SSH_SLOW_ON：「user@位址 指令」符合這個 glob 時先輸出一行，建立 FAKE_SSH_STARTED 檔，再卡住（模擬收集中被中斷）
+if [[ -n "${FAKE_SSH_SLOW_ON:-}" && "$target $command_name" == $FAKE_SSH_SLOW_ON ]]; then
+  printf 'partial line before interrupt\r\n'; : > "$FAKE_SSH_STARTED"; exec sleep 30
+fi
 # FAKE_SSH_UNREACHABLE：這個位址連不上（OpenSSH 為 255），--ask-password 的 -fN 也失敗
 if [[ -n "${FAKE_SSH_UNREACHABLE:-}" && "$command_name $target" == *"@$FAKE_SSH_UNREACHABLE"* ]]; then
   printf 'ssh: connect to host %s port 22: No route to host\n' "$FAKE_SSH_UNREACHABLE" >&2; exit 255
@@ -68,7 +74,9 @@ chmod +x "$TMP_DIR/ssh"
 run_collector() {
   PATH="$TMP_DIR:$PATH" "$ROOT/tools/collect.sh" "$@"
 }
-fail() { printf '%s\n' "$*" >&2; exit 1; }
+# 失敗訊息寫到原本的 stderr（fd 3）：expect_exit 等呼叫常把 2> 導向記錄檔，訊息不可跟著被藏起來
+exec 3>&2
+fail() { printf '%s\n' "$*" >&3; exit 1; }
 
 # 靜態檢查：$名稱 後面緊接非 ASCII 字元（例如全形冒號）時，macOS 的 bash 3.2 在 UTF-8 locale 會把它算進變數名
 # （set -u 下報 unbound variable）；這種地方一律寫成 ${名稱}。以位元組比對（LC_ALL=C），0x80 以上的位元組都算非 ASCII。
@@ -475,5 +483,116 @@ expect_retry_error "$TMP_DIR/prev.txt" '-o 不可與 --retry-failed 的收集檔
 [[ $(cksum < "$TMP_DIR/prev.txt") == "$prev_sum" ]] || fail 'previous file must not be overwritten'
 expect_retry_error "$TMP_DIR/prev.txt" '--device RETRY_B 在上次收集檔沒有失敗紀錄' --device RETRY_A,RETRY_B
 expect_retry_error "$TMP_DIR/prev.txt" '--commands neighbor 在上次收集檔（選定的設備）沒有失敗紀錄' --device RETRY_A --commands route,neighbor
+
+# --device 的名稱不在設備清單：以 2 結束、列出可用的名稱，不產生輸出檔（一般收集與 --dry-run 都一樣）
+expect_exit 2 run_collector "$TMP_DIR/devices-retry.csv" --device RETRY_A,NOPE --output "$TMP_DIR/nope.txt" >/dev/null 2>"$TMP_DIR/err.log"
+grep -qF -- '--device NOPE 不在設備清單' "$TMP_DIR/err.log" || { cat "$TMP_DIR/err.log" >&2; fail 'unknown --device must be reported'; }
+grep -qF 'RETRY_A, RETRY_B, RETRY_C' "$TMP_DIR/err.log" || fail 'unknown --device must list the available names'
+[[ ! -e "$TMP_DIR/nope.txt" ]] || fail 'unknown --device must not create the output file'
+expect_exit 2 run_collector "$TMP_DIR/devices-retry.csv" --device NOPE --dry-run >"$TMP_DIR/nope-dry.txt" 2>"$TMP_DIR/err.log"
+grep -qF -- '--device NOPE 不在設備清單' "$TMP_DIR/err.log" || fail 'unknown --device must be reported in --dry-run'
+[[ ! -s "$TMP_DIR/nope-dry.txt" ]] || fail 'unknown --device must not list commands'
+
+# address 必須是設備標頭接受的 IPv4（與 src/readers/bundle-v1.js 的 HEADER 相同），否則網站讀不到這台；
+# 錯誤指出設備清單的行號（註解行也算行數）
+for bad_address in router1.example 2001:db8::1 192.0.2 192.0.2.1234; do
+  printf 'name,address,user,port\n# comment\nGOOD,192.0.2.1,admin,22\nBAD,%s,admin,22\n' "$bad_address" > "$TMP_DIR/devices-addr.csv"
+  expect_exit 2 run_collector "$TMP_DIR/devices-addr.csv" --output "$TMP_DIR/addr.txt" >/dev/null 2>"$TMP_DIR/err.log"
+  grep -qF "設備清單第 4 行：address 必須是 IPv4" "$TMP_DIR/err.log" || { cat "$TMP_DIR/err.log" >&2; fail "address $bad_address must be rejected with its line number"; }
+  [[ ! -e "$TMP_DIR/addr.txt" ]] || fail "address $bad_address must not create the output file"
+done
+
+# 連線逾時：預設 ConnectTimeout=min(10, --timeout)，可用 --connect-timeout 調整
+: > "$TMP_DIR/ssh-args.log"
+FAKE_SSH_LOG="$TMP_DIR/ssh-args.log" run_collector "$TMP_DIR/devices.csv" --commands config --output "$TMP_DIR/ct.txt" >/dev/null
+grep -qF -- '-o BatchMode=yes -o ConnectTimeout=10 ' "$TMP_DIR/ssh-args.log" || { cat "$TMP_DIR/ssh-args.log" >&2; fail 'default ConnectTimeout must be 10'; }
+: > "$TMP_DIR/ssh-args.log"
+FAKE_SSH_LOG="$TMP_DIR/ssh-args.log" run_collector "$TMP_DIR/devices.csv" --commands config --timeout 5 --output "$TMP_DIR/ct.txt" >/dev/null
+grep -qF -- '-o ConnectTimeout=5 ' "$TMP_DIR/ssh-args.log" || fail 'ConnectTimeout must not exceed --timeout'
+: > "$TMP_DIR/ssh-args.log"
+FAKE_SSH_LOG="$TMP_DIR/ssh-args.log" run_collector "$TMP_DIR/devices.csv" --commands config --connect-timeout 3 --output "$TMP_DIR/ct.txt" >/dev/null
+grep -qF -- '-o ConnectTimeout=3 ' "$TMP_DIR/ssh-args.log" || fail '--connect-timeout must set ConnectTimeout'
+expect_exit 2 run_collector "$TMP_DIR/devices.csv" --connect-timeout 0 --dry-run >/dev/null 2>"$TMP_DIR/err.log"
+grep -qF -- '--connect-timeout 必須是正整數' "$TMP_DIR/err.log" || fail 'invalid --connect-timeout must be reported'
+# 明確指定的連線逾時大於指令逾時：timeout 會先結束 ssh（124 不是連線失敗），所以直接以 2 報錯；相等時可以
+expect_exit 2 run_collector "$TMP_DIR/devices.csv" --connect-timeout 60 --timeout 30 --dry-run >/dev/null 2>"$TMP_DIR/err.log"
+grep -qF -- '--connect-timeout（60）不可大於 --timeout（30）' "$TMP_DIR/err.log" || { cat "$TMP_DIR/err.log" >&2; fail '--connect-timeout larger than --timeout must be reported'; }
+: > "$TMP_DIR/ssh-args.log"
+FAKE_SSH_LOG="$TMP_DIR/ssh-args.log" run_collector "$TMP_DIR/devices.csv" --commands config --connect-timeout 5 --timeout 5 --output "$TMP_DIR/ct.txt" >/dev/null
+grep -qF -- '-o ConnectTimeout=5 ' "$TMP_DIR/ssh-args.log" || fail '--connect-timeout equal to --timeout must be accepted'
+
+# 沒有 --ask-password 時連不上（第一個指令 255 且沒有輸出）：這台記一次 connection，不再逐一嘗試其餘指令
+: > "$TMP_DIR/ssh-args.log"
+FAKE_SSH_LOG="$TMP_DIR/ssh-args.log" FAKE_SSH_UNREACHABLE=192.0.2.4 expect_exit 1 run_collector "$TMP_DIR/devices-retry.csv" \
+  --commands "$RETRY_CMDS" --retry 1 --output "$TMP_DIR/unreach.txt" >"$TMP_DIR/unreach.log" 2>"$TMP_DIR/unreach.err"
+[[ $(grep -c '@192.0.2.4 ' "$TMP_DIR/ssh-args.log") == 2 ]] || fail 'unreachable device must be tried once plus --retry, not per command'
+[[ $(device_section RETRY_C "$TMP_DIR/unreach.txt") == $'RETRY_C (192.0.2.4):\n# collection failed: connection\n_____' ]] ||
+  { device_section RETRY_C "$TMP_DIR/unreach.txt" >&2; fail 'unreachable device must get one connection failure after its header'; }
+[[ $(grep -c '^### ' "$TMP_DIR/unreach.txt") == 6 ]] || fail 'reachable devices must still be collected'
+grep -qF '連線失敗' "$TMP_DIR/unreach.err" || fail 'connection failure must be reported'
+grep -qF 'No route to host' "$TMP_DIR/unreach.err" || fail 'ssh stderr must be shown'
+grep -qF '失敗 1 個指令' "$TMP_DIR/unreach.log" || fail 'summary must count the connection failure'
+run_collector "$TMP_DIR/devices-retry.csv" --retry-failed "$TMP_DIR/unreach.txt" --dry-run --commands "$RETRY_CMDS" >"$TMP_DIR/unreach-dry.txt"
+[[ $(grep -c '^RETRY_C: .*（上次失敗：connection）$' "$TMP_DIR/unreach-dry.txt") == 3 ]] || fail 'connection failure must be retried as a whole device'
+# 有輸出或不是 255 的失敗照舊記在指令區塊（只有第一個指令才判定連線失敗）
+FAKE_SSH_FAIL_ON='*@192.0.2.1 /export *' expect_exit 1 run_collector "$TMP_DIR/devices.csv" --commands config,route --output "$TMP_DIR/first-fail.txt" >/dev/null 2>&1
+grep -qxF '# collection failed: exit code 7' "$TMP_DIR/first-fail.txt" || fail 'non-255 failure must stay in the command block'
+grep -qxF '### /ip route print detail without-paging' "$TMP_DIR/first-fail.txt" || fail 'non-connection failure must not skip the remaining commands'
+# --retry-failed 沒有 --ask-password 時連不上：連線失敗記在重收的指令區塊內
+FAKE_SSH_UNREACHABLE=192.0.2.1 expect_exit 1 run_collector "$TMP_DIR/devices-retry.csv" \
+  --retry-failed "$TMP_DIR/prev.txt" --device RETRY_A --output "$TMP_DIR/merged-conn2.txt" >/dev/null 2>&1
+device_section RETRY_A "$TMP_DIR/merged-conn2.txt" | grep -A2 -xF "$ROUTE_COMMAND" | grep -qxF '# collection failed: connection' ||
+  fail 'retry without --ask-password must record connection in the retried block'
+
+# 輸出檔只有擁有者可讀寫（含完整設定）；不受呼叫者的 umask 影響
+(umask 022; run_collector "$TMP_DIR/devices.csv" --commands config --output "$TMP_DIR/perm.txt" >/dev/null)
+[[ $(ls -l "$TMP_DIR/perm.txt" | cut -c1-10) == '-rw-------' ]] || { ls -l "$TMP_DIR/perm.txt" >&2; fail 'output file must be mode 600'; }
+ls "$TMP_DIR"/perm.txt.tmp.* >/dev/null 2>&1 && fail 'temporary output must be renamed'
+
+# 中斷：已收集的部分寫到 <輸出檔>.partial，進行中的區塊記 interrupted；原本的輸出檔不動，以 128+訊號 結束
+interrupt_collector() { # 訊號 輸出檔
+  local signal=$1 out=$2 pid n code=0
+  rm -f "$TMP_DIR/slow.started"
+  # 沒有 job control 的背景程序會被 bash 設成忽略 SIGINT，而進入時就被忽略的訊號 bash 無法再 trap（bash 3.2 在 $(set -m; …) 裡也一樣；
+  # 測試本身在背景執行時亦同）。以 perl 把 SIGINT 恢復成預設再 exec（同一個 PID），模擬使用者在終端機按 Ctrl-C
+  command -v perl >/dev/null || fail 'interrupt test needs perl to restore SIGINT'
+  FAKE_SSH_SLOW_ON='*@192.0.2.1 /ip route *' FAKE_SSH_STARTED="$TMP_DIR/slow.started" PATH="$TMP_DIR:$PATH" \
+    perl -e '$SIG{INT} = "DEFAULT"; exec { $ARGV[0] } @ARGV or die "exec $ARGV[0]: $!\n"' "$ROOT/tools/collect.sh" "$TMP_DIR/devices-retry.csv" --commands "$RETRY_CMDS" --output "$out" >"$TMP_DIR/int.log" 2>"$TMP_DIR/int.err" &
+  pid=$!
+  for ((n = 0; n < 100; n++)); do [[ -e "$TMP_DIR/slow.started" ]] && break; sleep 0.1; done
+  [[ -e "$TMP_DIR/slow.started" ]] || { kill "$pid" 2>/dev/null; fail 'slow command did not start'; }
+  kill "-$signal" "$pid"
+  wait "$pid" || code=$?
+  printf '%s' "$code"
+}
+printf 'OLD\n' > "$TMP_DIR/int.txt"
+code=$(interrupt_collector TERM "$TMP_DIR/int.txt")
+[[ "$code" == 143 ]] || { cat "$TMP_DIR/int.err" >&2; fail "SIGTERM must exit 143, got $code"; }
+[[ $(cat "$TMP_DIR/int.txt") == OLD ]] || fail 'interrupted collection must not overwrite the output file'
+[[ -f "$TMP_DIR/int.txt.partial" ]] || fail 'interrupted collection must keep the partial file'
+[[ $(ls -l "$TMP_DIR/int.txt.partial" | cut -c1-10) == '-rw-------' ]] || fail 'partial file must be mode 600'
+ls "$TMP_DIR"/int.txt.tmp.* >/dev/null 2>&1 && fail 'temporary output must not be left behind'
+grep -qF "$TMP_DIR/int.txt.partial" "$TMP_DIR/int.err" || { cat "$TMP_DIR/int.err" >&2; fail 'interrupt must print the partial file path'; }
+grep -qF '不完整' "$TMP_DIR/int.err" || fail 'interrupt must say the file is incomplete'
+grep -qF 'RETRY_B, RETRY_C' "$TMP_DIR/int.err" || fail 'interrupt must list devices not collected'
+device_section RETRY_A "$TMP_DIR/int.txt.partial" | grep -A3 -xF "$ROUTE_COMMAND" | tr -d '\r' |
+  grep -qxF 'partial line before interrupt' || fail 'output collected before the interrupt must be kept'
+device_section RETRY_A "$TMP_DIR/int.txt.partial" | grep -A3 -xF "$ROUTE_COMMAND" | grep -qxF '# collection failed: interrupted' ||
+  { cat "$TMP_DIR/int.txt.partial" >&2; fail 'interrupted block must be marked'; }
+device_section RETRY_A "$TMP_DIR/int.txt.partial" | grep -q '^### /ip neighbor ' && fail 'commands after the interrupt must not run'
+grep -q '^RETRY_B ' "$TMP_DIR/int.txt.partial" && fail 'devices after the interrupt must not be collected'
+node -e '
+  const S = require(process.argv[1])();
+  const text = require("fs").readFileSync(process.argv[2], "utf8");
+  const s = S.build([{ name: "int.txt.partial", text }], { now: "2026-01-01T00:00:00Z" });
+  const failed = s.blocks.filter((b) => b.failure).map((b) => [b.device, b.command, b.failure.text]);
+  const want = [["RETRY_A", "/ip route print detail without-paging", "interrupted"]];
+  if (JSON.stringify(failed) !== JSON.stringify(want) || s.blocks.some((b) => b.issues)) { console.error(failed); process.exit(1); }
+' "$ROOT/tests/load.js" "$TMP_DIR/int.txt.partial" || fail 'partial file must read with the interrupted block as a failure'
+# Ctrl-C（SIGINT）同樣處理，以 130 結束（interrupt_collector 已把 SIGINT 恢復成預設）
+code=$(interrupt_collector INT "$TMP_DIR/int2.txt")
+[[ "$code" == 130 ]] || { cat "$TMP_DIR/int.err" >&2; fail "SIGINT must exit 130, got $code"; }
+[[ ! -e "$TMP_DIR/int2.txt" ]] || fail 'interrupted collection must not create the output file'
+grep -qxF '# collection failed: interrupted' "$TMP_DIR/int2.txt.partial" || fail 'SIGINT must mark the interrupted block'
 
 printf 'collector shell tests passed\n'

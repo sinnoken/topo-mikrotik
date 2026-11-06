@@ -53,3 +53,20 @@ test('去識別化：RouterOS export 的密碼、金鑰、SNMP community 都遮�
     .forEach((x) => assert.ok(a.includes(x), `${x} 應保留`));
   assert.strictEqual(anonymize(raw.replace(/\n/g, '\r\n')).text, a.replace(/\n/g, '\r\n'), 'CRLF 的結果相同');
 });
+test('去識別化：print 的「key: value」格式也遮蔽序號與授權識別碼（routerboard、license，大小寫與空白變化），一般欄位保留', () => {
+  const { anonymize } = require('../../tools/anonymize.js');
+  const rb = anonymize('R1 (10.0.0.1):\n/system routerboard print\n  routerboard: yes\n  model: RB5009UG+S+\n  serial-number: HF0123ABCD').text;
+  assert.ok(!rb.includes('HF0123ABCD'), `routerboard 的 serial-number 應被遮蔽：${rb}`);
+  assert.ok(rb.includes('serial-number: REDACTED') && rb.includes('model: RB5009UG+S+') && rb.includes('routerboard: yes'), '只遮蔽序號，其他欄位保留');
+  const raw = ['SW (10.0.0.2):', '### /system routerboard print',
+    '        Serial-Number :  HF9999ZZZZ  ', '  serial number: HFSPACE001', '  serial-number = HFEQ000001', 'serial-number=HFNOIND001',
+    '### /system license print', '  software-id: ABCD-EF12', '  system-id: SYSID12345', '  level: 6',
+    '### /system resource print', '  uptime: 1w2d03:04:05', '  board-name: CRS326',
+    '### /export terse', '# SERIAL-NUMBER = HFEXP00001', '#software id=SWID000001',
+    '# model = RB5009UG+S+'].join('\n');
+  const a = anonymize(raw).text;
+  ['HF9999ZZZZ', 'HFSPACE001', 'HFEQ000001', 'HFNOIND001', 'ABCD-EF12', 'SYSID12345', 'HFEXP00001', 'SWID000001']
+    .forEach((x) => assert.ok(!a.includes(x), `${x} 應被遮蔽：${a}`));
+  ['level: 6', 'uptime: 1w2d03:04:05', 'board-name: CRS326', '# model = RB5009UG+S+'].forEach((x) => assert.ok(a.includes(x), `${x} 應保留`));
+  assert.strictEqual(anonymize(raw.replace(/\n/g, '\r\n')).text, a.replace(/\n/g, '\r\n'), 'CRLF 的結果相同');
+});

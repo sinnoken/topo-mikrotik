@@ -454,6 +454,24 @@
       ],
       action: '停用不需要的服務，或在輸入鏈擋下從 WAN 進來的連線。指令例如 `/ip proxy set enabled=no`、`/ip socks set enabled=no`、`/tool bandwidth-server set enabled=no`；UPnP 的 `internal` 只放內部介面。',
     },
+    // ---- 生命週期
+    L01: {
+      severity: 'info', cat: '生命週期', title: 'RouterBOOT 韌體待升級（current 與 upgrade 不同）', data: [['routerboard']],
+      causes: [
+        '升級 RouterOS 後沒有接著升級 RouterBOOT（新的韌體檔隨 RouterOS 而來，要手動套用）。',
+        '已執行 `/system routerboard upgrade`，但還沒重新開機。',
+      ],
+      action: '執行 `/system routerboard upgrade` 後重新開機。開機後確認 `current-firmware` 與 `upgrade-firmware` 相同；也可以設 `/system routerboard settings set auto-upgrade=yes`。',
+    },
+    L02: {
+      severity: 'warn', cat: '生命週期', title: '同型號設備的 RouterOS 版本不同', data: [['system']],
+      causes: [
+        '分批升級還沒做完，部分設備仍是舊版。',
+        '個別設備升級失敗或被降版。',
+        '刻意讓部分設備先試用新版，可能是有意的。',
+      ],
+      action: '把落後的設備升級到同型號多數的版本。分批升級中可以暫時接受；同型號版本一致，行為與已知問題才容易對照。有與多數不同的設備時，先從那幾台查起。',
+    },
   };
 
   // 靜態目錄：載入後凍結（含 data、causes 等巢狀陣列），畫面經 S.query.rule() 取得的物件不會被改到

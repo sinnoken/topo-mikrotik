@@ -2,7 +2,7 @@
 
 # 防火牆命中次數（fwfilter…fw6raw）緊接在 config 之後：export 與計數器的收集時間越近，
 # 中間有人增刪規則而對不上的機會越小
-COLLECT_COMMAND_IDS=(config fwfilter fwnat fwraw fw6filter fw6raw neighbor bridgehost route arp system vlans interface ipaddr ospf stp stpbridge)
+COLLECT_COMMAND_IDS=(config fwfilter fwnat fwraw fw6filter fw6raw neighbor bridgehost route arp system routerboard vlans interface ipaddr ospf stp stpbridge)
 # 選用：只有部分設備才有的選單（Wi-Fi AP、CAPsMAN 控制器、RouterOS 7 的 /ip vrf），不在預設清單；
 # 用 --commands 或設備清單的 extra 欄指定，避免在沒有該選單的設備上執行而得到錯誤回應；
 # 確定支援的設備會依 auto_optional_commands 自動加上
@@ -16,6 +16,9 @@ OPTIONAL_COMMAND_IDS=(wifi wireless capsman vrf)
 # 加 detail without-paging 的理由同其他指令：key=value 不受欄寬影響
 # （https://manual.mikrotik.com/docs/developer-guides/scripting.md 的 print parameters）。
 # stats 與 detail 並用的輸出格式手冊沒有範例，尚未以真實設備確認。
+# routerboard：RouterBOOT 韌體（current-firmware／upgrade-firmware）與型號，key: value 格式同 /system resource，不加 detail。
+# 放在預設清單：x86／CHR 沒有這個選單（回 bad command name routerboard），解析器把這個回應當成「不是 RouterBOARD」，不是錯誤。
+# 依據：https://manual.mikrotik.com/docs/hardware/routerboard.md、https://manual.mikrotik.com/docs/cli-reference/system/routerboard.md（Conditions: !i386）
 command_for_id() {
   case "$1" in
     config) printf '%s\n' '/export terse' ;;
@@ -29,6 +32,7 @@ command_for_id() {
     route) printf '%s\n' '/ip route print detail without-paging' ;;
     arp) printf '%s\n' '/ip arp print detail without-paging' ;;
     system) printf '%s\n' '/system resource print' ;;
+    routerboard) printf '%s\n' '/system routerboard print' ;;
     vlans) printf '%s\n' '/interface bridge vlan print detail without-paging' ;;
     interface) printf '%s\n' '/interface print detail without-paging' ;;
     ipaddr) printf '%s\n' '/ip address print detail without-paging' ;;

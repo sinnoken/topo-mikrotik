@@ -160,6 +160,43 @@ module.exports = async () => {
     } finally { App.showLayer('device'); App.round.Q = realQ; App.showLayer('l4', { rebuild: true }); await App.l4Job; App.showLayer('device'); }
   });
 
+  await step('L4 結果分層：暴露清單的「結果」格第二行寫「路由 → 防火牆」；其餘拒絕依 deniedBy 拆成沒有路由、防火牆拒絕、沒被 dst-nat 改寫，沒判斷（上限）另寫', async () => {
+    const V = S.view;
+    // 純函式：只寫非 0 的部分；notEvaluated 另寫；都沒有時是空字串
+    const s1 = V.l4.deniedSentence(5, { noRoute: 2, filter: 3, notNatted: 0 }, 4);
+    if (!s1.includes('其餘 5 個組合') || !s1.includes('沒有路由 2') || !s1.includes('防火牆拒絕 3') || s1.includes('dst-nat') || !s1.includes('4 個沒判斷（上限）')) throw new Error('deniedSentence 應拆開拒絕並另寫沒判斷：' + s1);
+    const s2 = V.l4.deniedSentence(1, { noRoute: 0, filter: 0, notNatted: 1 }, 0);
+    if (!s2.includes('沒被 dst-nat 改寫 1') || s2.includes('沒判斷') || s2.includes('沒有路由')) throw new Error('deniedSentence 只寫非 0 的部分：' + s2);
+    if (V.l4.deniedSentence(0, { noRoute: 0, filter: 0, notNatted: 0 }, 0) !== '') throw new Error('沒有拒絕也沒有沒判斷時不寫');
+    if (!V.l4.deniedSentence(0, { noRoute: 0, filter: 0, notNatted: 0 }, 3).includes('3 個沒判斷（上限）')) throw new Error('只有沒判斷時也要寫');
+    App.select(null); App.showLayer('l4'); await App.l4Job;
+    const ex = App.Q.exposure(); if (ex.status !== 'ok') { App.showLayer('device'); return; }
+    let rowsSeen = 0;
+    for (const k of SECS) {
+      const sec = $('#l4-exposure').testAll('.l4-ex-sec').find((x) => x.dataset.sec === k);
+      const by = ex.deniedBy[k];
+      if (by.noRoute + by.filter + by.notNatted !== ex.denied[k]) throw new Error(`前提：${k} 段 deniedBy 的合計等於 denied`);
+      const want = V.l4.deniedSentence(ex.denied[k], by, ex[k].counts.notEvaluated || 0);
+      const p = sec.querySelector('.l4-ex-denied');
+      if (want ? !p || p.textContent !== want : p) throw new Error(`${k} 段的「其餘拒絕」應依 deniedBy 拆開：${p && p.textContent}／${want}`);
+      sec.testAll('tr').filter((tr) => /l4-ex-row/.test(tr.className || '')).forEach((tr) => {
+        const res = tr.querySelector('.l4-ex-res'); const ly = res && res.querySelector('.l4-layers');
+        if (!ly || !ly.textContent.includes('防火牆')) throw new Error(`${k} 段的列在結果格應有「路由 → 防火牆」：${tr.textContent.slice(0, 80)}`);
+        if (tr.dataset.family !== 'ipv6') {
+          if (!/路由 [✓✕?] → 防火牆 [✓✕?—]/.test(ly.textContent)) throw new Error('IPv4 的列寫「路由 ✓ → 防火牆 ✓」：' + ly.textContent);
+          const v = tr.querySelector('.l4-ex-verdict').dataset.verdict;
+          if (v === 'allow' && (ly.dataset.route !== 'reached' || ly.dataset.filter !== 'allow')) throw new Error('允許的列應是路由 ✓ → 防火牆 ✓');
+          if (v === 'unknown' && !(ly.dataset.route === 'unknown' || ly.dataset.filter === 'unknown')) throw new Error('無法判斷的列至少一層是 ?');
+        }
+        // 原因依 layer 分組，每組前面寫「路由：」「防火牆：」等
+        const rs = res.querySelector('.l4-ex-reasons');
+        if (rs && !Object.values(V.REACH_LAYER).some((l) => rs.textContent.trim().startsWith(l + '：'))) throw new Error('列的原因應依 layer 分組並寫出層名：' + rs.textContent);
+        rowsSeen++;
+      });
+    }
+    if (!process.env.SMOKE_INPUT && !rowsSeen) throw new Error('範例資料的暴露清單應有列');
+    App.showLayer('device');
+  });
   await step('L4 暴露清單的 IPv6 與回程：IPv6 的說明取自 exposure.ipv6（狀態、原因、缺少的設備）；IPv6 列寫位址或「整個網段 x 的主機」、沒有逐跳路徑；回程不保證的列與逐跳的跳標「⚠ 回程不保證」，規則可點', async () => {
     const VA = S.view.app; const V = S.view;
     // 範例資料：沒有 IPv6 位址的事實（no-ipv6-address），說明照列查詢層的 message 與缺少的設備

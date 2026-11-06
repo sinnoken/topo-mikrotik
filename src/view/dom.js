@@ -179,7 +179,7 @@
   // S.trace 的結束狀態（ends[].status）
   V.TRACE_END = {
     reached: '抵達', noroute: '沒有路由', blackhole: '黑洞路由', loop: '路由迴圈', ttl: 'TTL 用盡', 'unknown-nh': '下一跳不在基準內',
-    policy: '策略路由不明', 'policy-drop': '策略路由丟棄', unverified: '無法驗證',
+    policy: '策略路由不明', 'policy-drop': '策略路由丟棄', unverified: '無法驗證', egress: '送往外部（推論）',
   };
   /**
    * 例外 → 給使用者看的中文原因（畫面上所有錯誤訊息的單一來源）。核心與命名規則丟出的錯誤本來就是中文，原樣使用；
@@ -221,13 +221,15 @@
   V.blockWhere = (Q, blk) => `${blk.devKey ? Q.devName(blk.devKey) : blk.device || V.fileName(blk.file)} › ${blk.command || '（未標記指令）'}`;
   /**
    * 路由追蹤終點的分類（圖上節點顏色與詳情的結果列共用）：reached 抵達、unverified 停在未收集的設備（只是無法驗證，不是錯誤）、
-   * 其餘狀態（沒有路由、迴圈、黑洞…）都是 bad。整體結果（S.trace 的 status：reached／unverified／unreachable）也用同一個函式分類。
+   * external 經 WAN 送往基準以外（終點 egress、整體 external；之後由電信業者決定，推論，不是錯誤）、
+   * 其餘狀態（沒有路由、迴圈、黑洞…）都是 bad。整體結果（S.trace 的 status：reached／external／unverified／unreachable）也用同一個函式分類。
    */
-  V.traceEndKind = (end) => (end.status === 'reached' ? 'reached' : end.status === 'unverified' ? 'unverified' : 'bad');
-  /** 分類 → theme.mark 的鍵（圖上顏色）與 .hop 的 class（詳情） */
-  V.TRACE_END_STYLE = { reached: { mark: 'trace', cls: 'end-reached' }, unverified: { mark: 'unverified', cls: 'end-unverified' }, bad: { mark: 'bad', cls: 'end-bad' } };
-  /** 同一台設備有多個終點時取最差的一類（bad > unverified > reached）；沒有終點（只是中途經過）視為 reached */
-  V.traceEndWorst = (ends) => ['bad', 'unverified'].find((k) => ends.some((e) => V.traceEndKind(e) === k)) || 'reached';
+  const TRACE_EXTERNAL = new Set(['egress', 'external']);
+  V.traceEndKind = (end) => (end.status === 'reached' ? 'reached' : end.status === 'unverified' ? 'unverified' : TRACE_EXTERNAL.has(end.status) ? 'external' : 'bad');
+  /** 分類 → theme.mark 的鍵（圖上顏色）與 .hop 的 class（詳情）；送往外部沿用追蹤色（不新增顏色，詳情的圓點用 --info），靠文字「送往外部（推論）」區分 */
+  V.TRACE_END_STYLE = { reached: { mark: 'trace', cls: 'end-reached' }, external: { mark: 'trace', cls: 'end-external' }, unverified: { mark: 'unverified', cls: 'end-unverified' }, bad: { mark: 'bad', cls: 'end-bad' } };
+  /** 同一台設備有多個終點時取最差的一類（bad > unverified > external > reached）；沒有終點（只是中途經過）視為 reached */
+  V.traceEndWorst = (ends) => ['bad', 'unverified', 'external'].find((k) => ends.some((e) => V.traceEndKind(e) === k)) || 'reached';
   /**
    * IP 的選取：{ type: 'ip', key: IP, vrf }。vrf 為 null 時不分 VRF（搜尋：列出所有 VRF 的結果），否則只看那個 VRF。
    * 從位址鍵（K.inVrf，例如檢查結果的實體、清單的列）建立時，沒有 @ 就是 main。
@@ -258,6 +260,11 @@
   V.reachReason = (code) => V.REACH_REASON[code] || `${code}（沒有說明的原因代碼）`;
   V.REACH_START = { gateway: '來源網段的閘道', device: '來源是網路設備自己的位址（output）', 'same-subnet': '來源與目的在同一個網段', entry: '指定的入口介面', none: '找不到來源所在的網段' };
   V.REACH_START_BASIS = { dhcp: '依 DHCP 網路的閘道', 'next-hop': '依網段上其他設備預設路由的下一跳', 'default-route': '依網段上有預設路由的設備', routes: '依網段上有路由表的設備', subnet: '依網段上已收集的設備' };
+  /** 原因代碼的層級（S.query.reachReasonCodes() 的 layer）：顯示的順序就是鍵的順序 */
+  V.REACH_LAYER = { route: '路由', filter: '防火牆', nat: 'NAT', assumption: '前提' };
+  /** L4 分層結果：路由層（Q.reach paths[].route.status）與防火牆層（paths[].filter.status；路由沒到時 n/a） */
+  V.ROUTE_STATUS = { reached: '抵達', 'no-route': '沒有路由', blackhole: '黑洞路由', 'policy-drop': '策略路由丟棄', loop: '路由迴圈', unknown: '不明' };
+  V.FILTER_STATUS = { allow: '允許', deny: '拒絕', unknown: '無法判斷', 'n/a': '沒有判斷（路由沒到）' };
   /** 十進位數字字串（可能超過 2^53，例如命中次數的位元組數）加上千分位；不是數字字串時原樣回傳 */
   V.bigNum = (s) => (/^\d+$/.test(String(s)) ? String(s).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : String(s));
   // VLAN 承載（Q.vlanCarriers 的 status 與 reason）；oneSide、inferred 是推論

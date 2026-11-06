@@ -254,6 +254,35 @@ module.exports = async () => {
     if (r.ok ? !text('#detail').includes('結果') : !text('#detail').includes(r.error)) throw new Error('追蹤結果未顯示');
     App.graph.draw();
   });
+  await step('路由追蹤送往外部（egress／external）：結果是「送往外部（推論）」，不是無法完整抵達；起點列出全部閘道與依據', () => {
+    const V = S.view; const Q = App.Q;
+    // 分類 helper：egress（終點）與 external（整體）是同一類，最差的順序 bad > unverified > external > reached
+    if (V.traceEndKind({ status: 'egress' }) !== 'external' || V.traceEndKind({ status: 'external' }) !== 'external') throw new Error('egress／external 應分成「送往外部」一類');
+    if (V.traceEndWorst([{ status: 'reached' }, { status: 'egress' }]) !== 'external' || V.traceEndWorst([{ status: 'egress' }, { status: 'loop' }]) !== 'bad' || V.traceEndWorst([{ status: 'egress' }, { status: 'unverified' }]) !== 'unverified') throw new Error('V.traceEndWorst 的順序應是 bad > unverified > external > reached');
+    const sty = V.TRACE_END_STYLE.external;
+    if (!sty || !V.theme.mark[sty.mark] || !V.TRACE_END.egress || !V.TRACE_END.egress.includes('推論')) throw new Error('送往外部要有既有 theme.mark 的樣式與中文（標推論）');
+    App.openTrace('10.1.30.15', '8.8.8.8', ''); $('#trace-run').click();
+    const t = App.sel.result;
+    if (!process.env.SMOKE_INPUT && (!t.ok || t.status !== 'external')) throw new Error('前提：範例資料 10.1.30.15 → 8.8.8.8 經 WAN 送往外部（status external）');
+    if (t.ok && t.status === 'external') {
+      const d = text('#detail'); const go = d.split('回程')[0];
+      if (!go.includes('送往外部（推論）') || go.includes('無法完整抵達')) throw new Error('去程應寫「送往外部（推論）」，不是無法完整抵達：' + go.slice(0, 200));
+      const ends = $('#detail').testAll('.hop').filter((x) => x.dataset.status === 'egress');
+      if (!ends.length || !ends.every((x) => x.className.split(' ').includes(sty.cls) && x.textContent.includes(V.TRACE_END.egress))) throw new Error('送往外部的結果列應用 ' + sty.cls + ' 並寫出中文');
+      t.ends.filter((e) => e.status === 'egress').forEach((e) => {
+        if (App.graph.nodes.some((n) => n.id === e.dev) && App.graph.hl.nodes.get(e.dev) !== V.theme.mark[sty.mark] && t.ends.filter((x) => x.dev === e.dev).every((x) => V.traceEndKind(x) !== 'bad')) throw new Error('圖上送往外部的設備應用 mark.' + sty.mark);
+      });
+    }
+    // 起點：S.trace 的 starts 每一台都列出，並寫出依據（startBasis）
+    if (t.ok) {
+      const kvText = text('#detail').split('逐跳')[0];
+      const miss = t.starts.filter((d) => !kvText.includes(Q.devLabel(d)));
+      if (!t.starts.length || miss.length) throw new Error('起點應列出全部 starts：' + miss.join('、'));
+      const basisText = t.startBasis === 'device' ? V.REACH_START.device : V.REACH_START_BASIS[t.startBasis];
+      if (!basisText || !kvText.includes(basisText)) throw new Error('起點應寫出依據（startBasis）：' + t.startBasis);
+    }
+    App.select(null);
+  });
   await step('原文檢視', () => {
     App.openRaw(S.readers.PASTE, 10); if (!$('#dlg-raw').open || !text('#raw-body').includes('/export')) throw new Error('原文未顯示');
     if (!$('#raw-nav').classList.contains('hidden') || !text('#raw-title').includes('（第 10 行）')) throw new Error('只有一處時不顯示前後切換，標題寫出行號：' + text('#raw-title'));

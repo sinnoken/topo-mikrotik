@@ -1029,12 +1029,27 @@
       ])), { count: t.ends.length }),
     ];
   }
-  /** 整體結果的標籤：分類同 V.traceEndKind（S.trace 的 status），停在未收集的設備是「無法驗證」（灰色），不是錯誤。 */
+  /**
+   * 整體結果的標籤：分類同 V.traceEndKind（S.trace 的 status），停在未收集的設備是「無法驗證」（灰色），
+   * 經 WAN 送往基準以外是「送往外部（推論）」（之後由電信業者決定），兩者都不是錯誤。
+   */
   const traceChip = (App, t, prefix) => {
     const k = V.traceEndKind(t);
     return k === 'reached' ? V.chip(`${prefix}可抵達`, 'ok')
-      : k === 'unverified' ? V.chip(`${prefix}無法驗證（${t.unverified.map((d) => App.Q.devName(d)).join('、')} 未收集）`, 'unverified')
-        : V.chip(`${prefix}無法完整抵達`, 'err');
+      : k === 'external' ? V.chip(`${prefix}${V.TRACE_END.egress}`, 'info', { title: '經 WAN 介面送往基準以外的下一跳，之後由電信業者決定' })
+        : k === 'unverified' ? V.chip(`${prefix}無法驗證（${t.unverified.map((d) => App.Q.devName(d)).join('、')} 未收集）`, 'unverified')
+          : V.chip(`${prefix}無法完整抵達`, 'err');
+  };
+  /**
+   * 起點：S.trace 的 starts（同一個依據有多台閘道時每一台都是起點）與依據（startBasis；device 是來源設備自己的位址）。
+   * 舊的結果沒有 starts 時只寫 start。
+   */
+  const traceStart = (App, t) => {
+    const ds = t.starts && t.starts.length ? t.starts : [t.start];
+    const why = t.startBasis === 'device' ? V.REACH_START.device
+      : '來源所在網段的閘道' + (t.startBasis ? '，' + (V.REACH_START_BASIS[t.startBasis] || t.startBasis) : '');
+    return h('span', { class: 'trace-start' }, [...ds.flatMap((d, n) => [n ? '、' : '', devLink(App, d)]),
+      `（${why}${ds.length > 1 ? `；${V.num(ds.length)} 台都當起點` : ''}）`]);
   };
   /**
    * 追蹤失敗的說明：起點在多個 VRF（S.trace 回傳 vrfs）時改寫成要怎麼做（在路由追蹤的 VRF 選單指定）並附開啟表單的按鈕，
@@ -1059,10 +1074,10 @@
       h('div', { class: 'row' }, [traceChip(App, t, ''), t.hops.some((x) => x.ecmp) ? V.chip('含 ECMP', 'info') : null,
         back ? (back.ok ? traceChip(App, back, '回程') : back.vrfs ? V.chip('回程需要指定 VRF', 'warn') : V.chip('回程無法完整抵達', 'err')) : null, asym ? V.chip('非對稱路徑', 'warn') : null,
         t.ends.some((e) => e.status === 'policy') ? V.chip('策略路由不明', 'warn') : null]),
-      kv([['起點', h('span', null, [devLink(App, t.start), '（來源所在網段的閘道）'])],
+      kv([['起點', traceStart(App, t)],
         ['VRF', multi ? `${t.vrf}（${sel.vrf ? '指定' : '依來源位址決定'}）` : null]]),
       ...tracePath(App, t),
-      back ? section(`回程（${t.dst} → ${t.src}）`, back.ok ? kv([['起點', devLink(App, back.start)], ['VRF', multi ? back.vrf : null], ['說明', '無狀態的 ACL 需要確認回程也能通過']]) : traceError(App, back, '回程', t.dst)) : null,
+      back ? section(`回程（${t.dst} → ${t.src}）`, back.ok ? kv([['起點', traceStart(App, back)], ['VRF', multi ? back.vrf : null], ['說明', '無狀態的 ACL 需要確認回程也能通過']]) : traceError(App, back, '回程', t.dst)) : null,
       ...(back && back.ok ? tracePath(App, back, '回程') : []),
     ]);
   }

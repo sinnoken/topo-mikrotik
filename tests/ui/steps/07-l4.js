@@ -5,6 +5,23 @@ const { document, S, fs, path, ROOT, step, captureDownloads, parseCsv, contrastO
 
 /** 矩陣畫出來的格子：來源是虛擬 zone（外部）的列不畫（評審 D2：從外部進來的看上方三段），欄保留全部的 zone */
 const rowCells = (mx) => { const vz = new Set(mx.zones.filter((z) => z.virtual).map((z) => z.id)); return mx.cells.filter((c) => !vz.has(c.src)); };
+/**
+ * 明細的逐跳路徑：每條路徑的標頭有「路由 ✓／✕／? → 防火牆 ✓／✕／?／—」（paths[].route／filter），符號不只靠顏色；
+ * 路由沒到時防火牆寫「—」
+ */
+function checkLayers(r) {
+  const V = S.view;
+  const ps = $('#l4-drill').querySelector('.l4-l3').testAll('.l4-path');
+  if (ps.length !== r.paths.length) throw new Error(`逐跳路徑的數目應與 paths 相同（${ps.length}／${r.paths.length}）`);
+  ps.forEach((el, n) => {
+    const p = r.paths[n]; const ly = el.querySelector('.l4-layers');
+    if (!ly || ly.dataset.route !== p.route.status || ly.dataset.filter !== p.filter.status) throw new Error(`路徑 ${n + 1} 應標出路由 ${p.route.status} → 防火牆 ${p.filter.status}`);
+    const t = ly.textContent;
+    if (!/路由 [✓✕?]/.test(t) || !/防火牆 [✓✕?—]/.test(t) || t.indexOf('路由') > t.indexOf('防火牆')) throw new Error('路徑的分層結果應寫「路由 ✓ → 防火牆 ✓」：' + t);
+    if ((p.filter.status === 'n/a') !== t.includes('防火牆 —')) throw new Error('路由沒到時防火牆寫「—」：' + t);
+    if (!V.ROUTE_STATUS[p.route.status] || !(ly.getAttribute('title') || '').includes(V.ROUTE_STATUS[p.route.status])) throw new Error('分層結果的 title 應寫出路由結果的中文：' + p.route.status);
+  });
+}
 
 module.exports = async () => {
   // ------------------------------------------------------------ M2：L4 可達性（zone 矩陣、下鑽、可達性查詢）
@@ -67,6 +84,19 @@ module.exports = async () => {
       td.dispatch('mouseleave'); if (!tip.classList.contains('hidden')) throw new Error('移開後提示應收起');
       td.dispatch('focus'); if (tip.classList.contains('hidden')) throw new Error('鍵盤移到格子時也應顯示提示'); td.dispatch('blur');
     }
+    // 提示與 aria-label：拒絕依 deniedBy 拆成「沒有路由 a、防火牆拒絕 b」（只寫非 0 的）
+    { const dc = rowCells(mx).filter((c) => c.counts.deny);
+      if (!process.env.SMOKE_INPUT && !dc.length) throw new Error('範例資料應有拒絕的格子');
+      dc.slice(0, 5).forEach((c) => {
+        const by = c.deniedBy;
+        if (!by || by.noRoute + by.filter !== c.counts.deny) throw new Error('前提：deniedBy 的合計等於 counts.deny：' + c.src + ' → ' + c.dst);
+        const want = V.l4.deniedParts(by);
+        if (!want || (by.noRoute && !want.includes(`沒有路由 ${V.num(by.noRoute)}`)) || (by.filter && !want.includes(`防火牆拒絕 ${V.num(by.filter)}`)) || (!by.noRoute && want.includes('沒有路由'))) throw new Error('V.l4.deniedParts 應只寫非 0 的拒絕原因：' + want);
+        const td = cellTd(c.src, c.dst); td.dispatch('mouseenter', { clientX: 10, clientY: 10 });
+        const tip = $('#l4-tip').textContent; td.dispatch('mouseleave');
+        if (!tip.includes(want)) throw new Error('提示應依 deniedBy 拆開拒絕：' + tip);
+        if (!(td.getAttribute('aria-label') || '').includes(want)) throw new Error('格子的 aria-label 應依 deniedBy 拆開拒絕');
+      }); }
     // zone 的來源與推論：表頭與「zone 的依據」
     const heads = L4().testAll('th').map((x) => x.textContent);
     mx.zones.forEach((z) => {
@@ -141,6 +171,7 @@ module.exports = async () => {
       const anyAllow = cell.groups.some((g) => g.services.some((s) => s.verdict === 'allow'));
       if (anyAllow ? !/個服務允許：\S+ [\d.]+(:\d+)?/.test(sen) : !sen.includes('沒有允許')) throw new Error('明細的第一句應是結論（允許的服務寫 IP:埠）：' + sen);
       if (cell.counts.deny && !sen.includes(`其餘 ${V.num(cell.counts.deny)} 個組合拒絕`)) throw new Error('明細的結論應寫出其餘拒絕的組合數：' + sen);
+      if (cell.counts.deny && !sen.includes(V.l4.deniedParts(cell.deniedBy))) throw new Error('明細的結論應依 deniedBy 拆開拒絕（沒有路由／防火牆拒絕）：' + sen);
       if (!process.env.SMOKE_INPUT && target.src === 'list:WAN' && !sen.includes('10.1.20.11:443')) throw new Error('WAN → VLAN 20 的結論應寫出 NAT 之後的 10.1.20.11:443：' + sen);
       const how = $('#l4-drill').testAll('.l4-how')[0];
       if (!how || how.tagName !== 'DETAILS' || how.open || !how.textContent.includes('等價類')) throw new Error('等價類與「造成差異」的說明應收在「這一格怎麼算的」（預設收合，評審 M6）');
@@ -239,6 +270,11 @@ module.exports = async () => {
       const r2 = l4State().reach;
       if (!r2 || r2.verdict !== 'deny' || !text('#l4-drill').includes(V.L4_STATUS.deny)) throw new Error('10.1.30.11 → 10.1.10.2 tcp 22 應拒絕');
       if (!r2.decisive.some((x) => x.key) || !$('#l4-drill').testAll('.l4-rule').some((a) => r2.decisive.some((x) => x.key === a.dataset.rule))) throw new Error('拒絕時應列出決定的規則，可以點');
+      checkLayers(r2);
+      // 路由沒到（沒有路由）：防火牆寫「—」
+      run('10.1.30.11', '10.94.1.1', 'tcp', '22');
+      const r3 = l4State().reach;
+      if (r3 && r3.paths.some((p) => p.filter.status === 'n/a')) checkLayers(r3);
     }
     // 參數錯誤：核心的錯誤原文顯示，不靜默
     run('10.1.30.11', '10.1.10.2', 'tcp', '');
@@ -259,18 +295,14 @@ module.exports = async () => {
     if (!codes.length || !Object.isFrozen(codes)) throw new Error('S.query.reachReasonCodes() 應是凍結的非空陣列');
     const missing = codes.filter((x) => !V.REACH_REASON[x.code]).map((x) => x.code);
     if (!codes.every((x) => V.REACH_REASON[x.code])) throw new Error('原因代碼沒有中文說明：' + missing.join('、'));
-    // 閘道推定的依據（start.basis）：查詢層沒有匯出清單，掃描 reach.js 的 srcLocation（到 begin 之前）中指定給 basis 與和 basis 比較的字面值；
-    // 每一個都要有中文名稱（同檔另有代表位址的 basis（arp／synthetic），不在這個範圍）
-    { const all = fs.readFileSync(path.join(ROOT, 'src/query/reach.js'), 'utf8'); const i0 = all.indexOf('function srcLocation('); const i1 = all.indexOf('function begin(', i0);
-      if (i0 < 0 || i1 < 0) throw new Error('reach.js 找不到 srcLocation／begin（改名時要更新這個測試）');
-      const tr = all.slice(i0, i1);
-      const lits = (s) => Array.from(s.matchAll(/'([a-z][a-z-]*)'/g), (m) => m[1]);
-      const basis = new Set([...tr.matchAll(/\bbasis\s*=\s*([^;]+);/g)].flatMap((m) => lits(m[1])).concat([...tr.matchAll(/\bbasis\s*===\s*'([^']+)'/g)].map((m) => m[1])));
-      if (basis.size < 2) throw new Error('掃描不到 reach.js 的閘道推定依據（寫法改了時要更新這個測試）');
-      const noName = [...basis].filter((b) => !V.REACH_START_BASIS[b]);
+    // 閘道推定的依據（Q.reach 的 start.basis、S.trace 的 startBasis）：查詢層匯出的清單 S.query.reachStartBases()，每一個都要有中文名稱；
+    // S.trace 另有 device（來源是設備自己的位址），畫面另寫「來源設備」
+    { const bases = S.query.reachStartBases();
+      if (!bases.length || !Object.isFrozen(bases)) throw new Error('S.query.reachStartBases() 應是凍結的非空陣列');
+      const noName = bases.filter((b) => !V.REACH_START_BASIS[b]);
       if (noName.length) throw new Error('閘道推定的依據沒有中文名稱（V.REACH_START_BASIS）：' + noName.join('、'));
-      const extra = Object.keys(V.REACH_START_BASIS).filter((b) => !basis.has(b));
-      if (extra.length) throw new Error('V.REACH_START_BASIS 有 reach.js 不會產生的依據：' + extra.join('、')); }
+      const extra = Object.keys(V.REACH_START_BASIS).filter((b) => !bases.includes(b));
+      if (extra.length) throw new Error('V.REACH_START_BASIS 有查詢層不會產生的依據：' + extra.join('、')); }
     const u = mx.cells.find((c) => c.status === 'unknown');
     if (!u && !process.env.SMOKE_INPUT) throw new Error('範例資料應有無法判斷的格子');
     if (u) {
@@ -284,6 +316,19 @@ module.exports = async () => {
       const t = text('#l4-drill');
       r.reasons.forEach((x) => { if (!t.includes(V.reachReason(x.code))) throw new Error('L3 應以中文說明原因：' + x.code); });
       if (t.includes('沒有說明的原因代碼')) throw new Error('原因代碼都應有中文說明');
+      checkLayers(r);
+      // 原因依 layer 分組（路由／防火牆／NAT／前提），每組前面寫「路由：」等；每個原因在它的 layer 那一組
+      const LAY = new Map(S.query.reachReasonCodes().map((x) => [x.code, x.layer]));
+      const box = $('#l4-drill').querySelector('.l4-l3').querySelector('.l4-reasons');
+      const groups = box ? box.testAll('.l4-reason-layer') : [];
+      if (!groups.length) throw new Error('無法判斷的原因應依 layer 分組');
+      groups.forEach((g) => {
+        if (!V.REACH_LAYER[g.dataset.layer] || !g.textContent.startsWith(V.REACH_LAYER[g.dataset.layer] + '：')) throw new Error('原因的分組應以「路由：」等開頭：' + g.textContent.slice(0, 40));
+        g.testAll('.l4-reason').forEach((li) => { if ((LAY.get(li.dataset.code) || 'filter') !== g.dataset.layer) throw new Error(`原因 ${li.dataset.code} 應在 ${LAY.get(li.dataset.code)} 那一組，不在 ${g.dataset.layer}`); });
+      });
+      const order = Object.keys(V.REACH_LAYER); const seq = groups.map((g) => order.indexOf(g.dataset.layer));
+      if (seq.some((n, k) => k && n <= seq[k - 1])) throw new Error('原因的分組依 路由 → 防火牆 → NAT → 前提 排列，每層一組');
+      if (box.testAll('.l4-reason').length !== r.reasons.length) throw new Error('分組後每個原因仍各列一次');
     }
     // 「在圖上定位」（搜尋、路由追蹤）從 L4 回到設備圖
     App.showView('graph');

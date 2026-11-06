@@ -25,8 +25,8 @@ module.exports = async () => {
 
     // 比對對象（facet）的顯示文字：F11、F13、F14
     const ft = (id, facet, message) => RV.facetText({ id, facet, message });
-    const expect = [['F11', 'mac-telnet', 'MAC Telnet'], ['F11', 'mac-winbox', 'MAC WinBox'], ['F14', 'upnp', 'UPnP'], ['F14', 'proxy', 'web proxy'],
-      ['F14', 'socks', 'SOCKS'], ['F14', 'bandwidth-server', '頻寬測試伺服器（bandwidth-server）'], ['F13', 'public', 'community「public」']];
+    const expect = [['F11', 'mac-telnet', 'MAC Telnet'], ['F11', 'mac-winbox', 'MAC WinBox'], ['F14', 'upnp', 'UPnP'], ['F14', 'proxy', 'Web Proxy'],
+      ['F14', 'socks', 'SOCKS'], ['F14', 'bandwidth-server', 'Bandwidth Server'], ['F13', 'public', 'community「public」']];
     expect.forEach(([id, facet, t]) => { if (ft(id, facet) !== t) throw new Error(`${id} 的 ${facet} 應顯示成「${t}」，實際是「${ft(id, facet)}」`); });
     if (ft('F14', 'other') !== 'other') throw new Error('不認得的 facet 應顯示原值');
     if (RV.facetText(all[want.F13]) !== 'community「public」') throw new Error('F13 的比對對象應是 community 名稱');
@@ -172,6 +172,31 @@ module.exports = async () => {
       const on = $('#detail').testAll('.mgmt-row').filter((r) => r.classList.contains('focus'));
       if (on.length !== 1 || on[0].testAll('.mgmt-finding').map((x) => Number(x.getAttribute('data-finding-idx'))).join() !== String(i)) throw new Error('點了應只標出這筆 F13 的那一列');
     });
+    App.select(null);
+  });
+
+  await step('管理面設定：F11、F14 的比對對象名稱與設備詳情管理面設定的項目名稱一致（同一份 V.remediation.FACET_ITEM）', async () => {
+    const RV = S.view.remediation;
+    const lines = ['VA (10.0.0.1):', '### /export terse', '/interface list add name=WAN', '/interface list member add interface=ether1 list=WAN',
+      '/ip address add address=203.0.113.2/30 interface=ether1', '/ip proxy set enabled=yes', ''];
+    await buildInput(lines.join('\n') + '\n');
+    const Q = App.Q;
+    if (!Q.mgmtOf('VA')) throw new Error('前提：VA 有管理面設定');
+    App.select({ type: 'device', key: 'VA' });
+    const sec = $('#detail').testAll('.mgmt-section')[0];
+    if (!sec) throw new Error('設備詳情應有「管理面設定」一段');
+    const label = (area) => { const r = sec.testAll('.mgmt-row').find((x) => x.getAttribute('data-mgmt') === area); const b = r && r.testAll('.mgmt-head b')[0]; if (!b) throw new Error('管理面設定應有 ' + area + ' 一列'); return b.textContent; };
+    // 管理面設定的列（data-mgmt）↔ F11、F14 的 facet
+    const pairs = [['macServer', 'F11', 'mac-telnet'], ['macWinbox', 'F11', 'mac-winbox'], ['upnp', 'F14', 'upnp'], ['proxy', 'F14', 'proxy'],
+      ['socks', 'F14', 'socks'], ['bandwidthServer', 'F14', 'bandwidth-server']];
+    pairs.forEach(([area, id, facet]) => {
+      const t = RV.facetText({ id, facet });
+      if (label(area) !== t) throw new Error(`${area} 一列的名稱「${label(area)}」應與 ${id} 比對對象「${t}」相同`);
+    });
+    // 實際的檢查結果：F14 proxy 的比對對象標籤與那一列同名
+    const f = Q.findings().find((x) => x.id === 'F14' && x.facet === 'proxy');
+    if (!f) throw new Error('測試資料應產生 F14（proxy）');
+    if (RV.facetText(f) !== label('proxy')) throw new Error('F14 proxy 的比對對象應與管理面設定的列同名：' + RV.facetText(f));
     App.select(null);
   });
 };

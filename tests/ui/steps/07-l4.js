@@ -13,7 +13,7 @@ module.exports = async () => {
     const mx = Q.zoneMatrix(); const tds = l4Cells();
     if (!mx.zones.length) throw new Error('應有 zone');
     if (mx.zones.length <= V.l4.MATRIX_MAX && tds.length !== mx.cells.length) throw new Error(`每一格都應畫出（${tds.length}／${mx.cells.length}）`);
-    if (L4().querySelector('table').getAttribute('role') !== 'grid' || !tds.every((t) => t.getAttribute('role') === 'gridcell')) throw new Error('矩陣是 grid，格子是 gridcell');
+    if (L4().querySelector('.l4-grid').getAttribute('role') !== 'grid' || !tds.every((t) => t.getAttribute('role') === 'gridcell')) throw new Error('矩陣是 grid，格子是 gridcell');
     mx.cells.forEach((c) => {
       const td = cellTd(c.src, c.dst); const where = `${c.src} → ${c.dst}`;
       if (!td || td.dataset.status !== c.status) throw new Error('格子的狀態應與 Q.zoneMatrix 相同：' + where);

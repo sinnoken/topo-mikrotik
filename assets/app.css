@@ -591,6 +591,19 @@ pre.raw .hl .ln { background: inherit; }
 .l4-card .work-card-title:focus-visible, .l4-sub h4:focus-visible { box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
 .l4-note { margin: 2px 0 8px; font-size: var(--fs-sm); }
 .l4-assume-list { margin: 0; padding-left: 18px; font-size: var(--fs-md); }
+/* 由外而內：頁首的結論句、三段暴露清單；內部互通與可達性查詢收在 details（summary 就是段標題） */
+.l4-ex-summary { margin: 4px 0 0; font-size: var(--fs-md); line-height: 1.6; }
+.l4-ex-sec { margin-top: 12px; }
+.l4-ex-sec + .l4-ex-sec { border-top: 1px solid var(--line-soft); padding-top: 10px; }
+.l4-ex-title { margin: 0 0 4px; font-size: var(--fs-md); }
+.l4-ex-sentence { margin: 0 0 6px; }
+.l4-ex-denied, .l4-ex-notes, .l4-ex-nowan { margin: 4px 0 0; font-size: var(--fs-sm); }
+.l4-ex-reasons { font-size: var(--fs-sm); }
+.l4-ex-path { min-height: var(--control-h); white-space: nowrap; }
+.l4-card-fold > summary { cursor: pointer; list-style-position: inside; }
+.l4-card-fold > summary > .work-card-title { display: inline; margin: 0; }
+.l4-card-fold[open] > summary { margin-bottom: 8px; }
+.l4-assume .l4-fold > summary { margin: 0; }
 .l4-form input[type=text] { width: 140px; }
 .l4-form .l4-port { width: 80px; }
 .l4-modes button { min-height: var(--control-h); }

@@ -600,6 +600,12 @@ pre.raw .hl .ln { background: inherit; }
 .l4-ex-denied, .l4-ex-notes, .l4-ex-nowan { margin: 4px 0 0; font-size: var(--fs-sm); }
 .l4-ex-reasons { font-size: var(--fs-sm); }
 .l4-ex-path { min-height: var(--control-h); white-space: nowrap; }
+.l4-ex-entry, .l4-ex-findings, .l4-ex-res .l4-ex-path { display: block; width: max-content; max-width: 100%; }
+.l4-ex-entry { font-size: var(--fs-sm); margin-top: 2px; }
+.l4-ex-findings { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; width: auto; }
+.l4-ex-res .l4-ex-path { margin-top: 4px; }
+.l4-ex-sec table.t { width: 100%; }
+.l4-ex-sec table.t td { overflow-wrap: anywhere; }
 .l4-card-fold > summary { cursor: pointer; list-style-position: inside; }
 .l4-card-fold > summary > .work-card-title { display: inline; margin: 0; }
 .l4-card-fold[open] > summary { margin-bottom: 8px; }

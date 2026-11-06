@@ -102,11 +102,15 @@
     return x.key || x.id || '';
   }
   /** 規則的連結：點一下在右側開啟規則詳情（命中次數、影響）；規則已不在基準時只顯示文字 */
-  function ruleLink(App, x) {
+  function ruleLink(App, x, short) {
     const key = x && (x.key || (x.rule && x.rule.key));
-    const text = decisiveText(App.Q, x);
-    if (!key || !App.Q.getFirewallRule(key)) return h('span', null, text);
-    return h('a', { class: 'link l4-rule', 'data-rule': key, onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); App.select({ type: 'rule', key }); } }, text);
+    const full = decisiveText(App.Q, x);
+    // short：窄欄用「forward 第 N 條」「input 結尾預設」，完整說明放 title
+    const r = x && (x.rule && x.rule.position != null ? x.rule : x.position != null ? x : null);
+    const text = !short ? full : r ? `${r.chain} 第 ${r.position} 條` : x && x.policy ? `${x.chain} 結尾預設` : full;
+    const title = short && text !== full ? full : null;
+    if (!key || !App.Q.getFirewallRule(key)) return h('span', { title }, text);
+    return h('a', { class: 'link l4-rule', 'data-rule': key, title, onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); App.select({ type: 'rule', key }); } }, text);
   }
   const devLink = (App, d) => h('a', { class: 'link', onclick: () => App.select({ type: 'device', key: d }) }, App.Q.devLabel(d));
   const epText = (Q, ep) => (ep ? Q.epName(ep) : '不明');
@@ -166,10 +170,11 @@
       els.status, els.legend, els.box,
     ]);
     els.assumeFold = h('details', { class: 'l4-fold', id: 'l4-assume-fold' }, [
-      h('summary', null, `判斷的前提（${V.num(assumptions.length)} 條）`),
+      els.assumeSum = h('summary'),
       h('p', { class: 'muted l4-note' }, '只判斷 IPv4 的新連線，只套用 RouterOS 的防火牆與 NAT；條件無法判斷時結果為不明。'),
-      h('ul', { class: 'l4-assume-list' }, assumptions.map((a) => h('li', { 'data-code': a.code }, a.message))),
+      els.assumeList = h('ul', { class: 'l4-assume-list' }),
     ]);
+    fillAssume(assumptions);
     V.clear(root).appendChild(h('div', { class: 'work-inner l4-inner' }, [
       h('div', { class: 'work-head' }, [h('h2', { id: 'l4-title', class: 'work-title', tabindex: '-1' }, 'L4 可達性'), els.exHead]),
       // 由外而內：第一句結論與三段暴露清單（Q.exposure）在最上面；內部互通（zone 矩陣）與可達性查詢預設收合
@@ -366,10 +371,12 @@
     if (t) t.textContent = txt;
   }
   /** 檢查結果的連結：「代碼 標題」，點了開那一筆（findingKey → idx） */
-  function findingLink(App, key) {
+  function findingLink(App, key, chip) {
     const Q = App.Q; const idx = Q.findingIndexByKey(key); if (idx < 0) return null;
-    const f = Q.finding(idx); const r = S.query.rule(f.id);
-    return h('a', { class: 'link l4-finding', 'data-finding': key, onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); App.selectFinding(idx); } }, `${f.id} ${r ? r.title : ''}`.trim());
+    const f = Q.finding(idx); const r = S.query.rule(f.id); const full = `${f.id} ${r ? r.title : ''}`.trim();
+    // chip：只寫代碼，標題在 title 與 aria-label（依據欄下面一行）
+    return h('a', { class: 'link l4-finding' + (chip ? ' chip' : ''), 'data-finding': key, href: '#', title: chip ? full : null, 'aria-label': chip ? full : null,
+      onclick: (e) => { if (e && e.preventDefault) e.preventDefault(); if (e && e.stopPropagation) e.stopPropagation(); App.selectFinding(idx); } }, chip ? f.id : full);
   }
   const exPort = (x) => (x.portRange ? `${x.portRange[0]}–${x.portRange[1]}` : x.port != null ? String(x.port) : '');
   const exSvc = (x) => x.proto + (exPort(x) ? ' ' + exPort(x) : '');
@@ -403,7 +410,7 @@
     let out = exGroupsCache.get(rows); if (out) return out;
     const m = new Map(); out = [];
     rows.forEach((x, i) => {
-      const k = [x.dev, x.service, x.verdict, x.incomplete, x.allowedFrom.text, x.rule ? x.rule.key || `${x.rule.table}|${x.rule.chain}` : '', x.entry, x.target || '', x.subnet || '', x.nat ? x.nat.to : '', x.serviceName || '', x.reasons.join(','), x.findingKeys.join(',')].join('\u0000');
+      const k = [x.dev, x.src, x.entries.join(','), x.service, x.verdict, x.incomplete, x.allowedFrom.text, x.rule ? x.rule.key || `${x.rule.table}|${x.rule.chain}` : '', x.entry, x.target || '', x.subnet || '', x.nat ? x.nat.to : '', x.serviceName || '', x.reasons.join(','), x.findingKeys.join(',')].join('\u0000');
       const g = m.get(k); if (g) { g.ips.push(x.ip); return; }
       const ng = { x, i, ips: [x.ip] }; m.set(k, ng); out.push(ng);
     });
@@ -420,17 +427,24 @@
       h('h4', { id, class: 'l4-ex-title' }, [def.title, ' ', V.chip(V.num(gs.length))]),
       h('p', { class: 'l4-ex-sentence' }, sentence),
       s.rows.length ? V.table([
-        { t: '目的', f: ({ x, ips }) => h('span', { title: ips.length > 1 ? ips.join('\n') : null }, [exDst(App, def.key, x), ips.length > 1 ? h('span', { class: 'muted l4-ex-more' }, ` 等 ${V.num(ips.length)} 個位址`) : null]), s: ({ x }) => x.ip },
+        // 5 欄（1440 不水平捲動）：怎麼進來是目的的第二行；相關檢查是依據下面一行的代碼 chip（標題在 title）；看路徑在結果下方
+        { t: '目的', f: ({ x, ips }) => h('span', { class: 'l4-ex-dst', title: ips.length > 1 ? ips.join('\n') : null }, [exDst(App, def.key, x), ips.length > 1 ? h('span', { class: 'muted l4-ex-more' }, ` 等 ${V.num(ips.length)} 個位址`) : null,
+          h('span', { class: 'muted l4-ex-entry' }, `${App.Q.devName(x.dev)} · ${x.inInterface}${x.entries.length > 1 ? ` 等 ${V.num(x.entries.length)} 個介面` : ''}`)]), s: ({ x }) => x.ip },
         { t: '服務', f: ({ x }) => h('span', { class: 'mono' }, exSvc(x)), s: ({ x }) => x.service },
-        { t: '怎麼進來', f: ({ x }) => `${App.Q.devName(x.dev)}・${x.inInterface}${x.entries.length > 1 ? ` 等 ${V.num(x.entries.length)} 個介面` : ''}`, s: ({ x }) => x.dev },
         { t: '允許來源', f: ({ x }) => (x.allowedFrom.kind === 'any' ? V.chip('⚠ ' + x.allowedFrom.text, 'warn') : h('span', { class: 'mono' }, x.allowedFrom.text)), s: ({ x }) => x.allowedFrom.kind },
-        { t: '結果', f: ({ x }) => exResult(x), s: ({ x }) => x.verdict },
-        { t: '依據', f: ({ x }) => (x.rule ? ruleLink(App, x.rule) : '—') },
-        { t: '相關檢查', f: ({ x }) => { const ls = x.findingKeys.map((k) => findingLink(App, k)).filter(Boolean); return ls.length ? h('span', { class: 'l4-ex-findings' }, ls.flatMap((l, k) => (k ? ['、', l] : [l]))) : '—'; } },
-        { t: '路徑', f: ({ i }) => h('button', { type: 'button', class: 'ghost l4-ex-path', 'data-sec': def.key, 'data-row': String(i), onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); openExposure(App, def.key, i); } }, '看路徑') },
+        { t: '結果', f: ({ x, i }) => h('span', { class: 'l4-ex-res' }, [exResult(x),
+          h('button', { type: 'button', class: 'ghost l4-ex-path', 'data-sec': def.key, 'data-row': String(i), onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); openExposure(App, def.key, i); } }, '看路徑')]), s: ({ x }) => x.verdict },
+        { t: '依據', f: ({ x }) => { const ls = x.findingKeys.map((k) => findingLink(App, k, true)).filter(Boolean);
+          return h('span', { class: 'l4-ex-basis' }, [x.rule ? ruleLink(App, x.rule, true) : h('span', null, '—'), ls.length ? h('span', { class: 'l4-ex-findings' }, ls) : null]); } },
       ], gs, { stack: true, limit: ROW_LIMIT, rowClass: ({ x }) => 'l4-ex-row st-' + x.verdict }) : null,
       denied ? h('p', { class: 'muted l4-ex-denied' }, `其餘 ${V.num(denied)} 個組合（服務 × 位址）拒絕。`) : null,
     ]);
+  }
+  /** 頁尾的判斷的前提：有暴露清單時用它的 assumptions（含暴露清單另加的前提），否則用 S.query.reachAssumptions */
+  function fillAssume(list) {
+    els.assumeSum.textContent = `判斷的前提（${V.num(list.length)} 條）`;
+    V.clear(els.assumeList);
+    list.forEach((a) => els.assumeList.appendChild(h('li', { 'data-code': a.code }, a.message)));
   }
   function openAssume() {
     els.assumeFold.setAttribute('open', ''); els.assumeFold.open = true;
@@ -455,6 +469,7 @@
       return;
     }
     const xr = st.ex;
+    fillAssume(Array.isArray(xr.assumptions) && xr.assumptions.length ? xr.assumptions : S.query.reachAssumptions());
     if (xr.status !== 'ok') {
       const nw = (xr.noWan || []).map((x) => findingLink(App, x.findingKey)).filter(Boolean);
       head([xr.status === 'no-wan' ? '找不到 WAN 介面，無法判斷從外部進得來什麼。' : xr.message || '無法判斷從外部進得來什麼。']);
@@ -765,9 +780,16 @@
     }
     if (st.reach || st.reachErr) box.appendChild(reachBlock(App));
   }
+  const isOpen = (d) => !!(d && (d.open || d.getAttribute('open') != null));
   function closeDrill(App) {
+    const req = st.reachReq;
     st.cell = null; st.cellData = null; st.reach = null; st.reachReq = null; st.reachErr = null; st.reachVrfs = null; renderDrill(App);
-    const td = gridCells[st.focus[0]] && gridCells[st.focus[0]][st.focus[1]];
+    // 焦點回到觸發的地方：暴露清單的「看路徑」、矩陣的格子（矩陣收合時是它的標題）、可達性查詢的按鈕
+    if (req && req.from === 'exposure') {
+      const btn = Array.from(els.ex.querySelectorAll('.l4-ex-path')).find((x) => x.dataset.sec === req.sec && x.dataset.row === String(req.row));
+      if (btn) { btn.focus(); return; }
+    }
+    const td = isOpen(els.matrixFold) && gridCells[st.focus[0]] && gridCells[st.focus[0]][st.focus[1]];
     if (td) td.focus(); else { const t = $('#l4-matrix-title'); if (t) t.focus(); }
   }
   /** 重畫下鑽後把焦點放回同一個切換按鈕（按鈕是重新建立的） */

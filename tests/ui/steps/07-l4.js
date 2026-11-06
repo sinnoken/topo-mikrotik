@@ -10,6 +10,10 @@ module.exports = async () => {
     App.select(null); layerBtn('l4').click();
     if (App.layer !== 'l4' || L4().classList.contains('hidden')) throw new Error('點 L4 應顯示 zone 矩陣');
     await App.l4Job;
+    // 內部互通（zone 矩陣）在有 WAN 時預設收合；以下的步驟是使用者展開它之後的操作
+    { const fold = $('#l4-matrix-fold');
+      if (Q.exposure().status === 'ok' && (fold.open || fold.getAttribute('open') != null)) throw new Error('有 WAN 時內部互通應預設收合');
+      fold.setAttribute('open', ''); fold.open = true; }
     const mx = Q.zoneMatrix(); const tds = l4Cells();
     if (!mx.zones.length) throw new Error('應有 zone');
     if (mx.zones.length <= V.l4.MATRIX_MAX && tds.length !== mx.cells.length) throw new Error(`每一格都應畫出（${tds.length}／${mx.cells.length}）`);

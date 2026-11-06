@@ -1,7 +1,7 @@
 // 畫面冒煙測試的 step：L4 由外而內：頁首的結論句、三段暴露清單（Q.exposure）、看路徑、內部互通與可達性查詢預設收合。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { S, step, $, text, layerBtn, L4, l4State } = require('../helpers.js');
+const { document, S, step, $, text, layerBtn, L4, l4State } = require('../helpers.js');
 
 const SECS = ['self', 'dnat', 'routed'];
 
@@ -27,7 +27,6 @@ module.exports = async () => {
     if (!(iEx >= 0 && iEx < iMx && iMx < iRun && iRun < iAs)) throw new Error(`順序應是暴露清單 → 內部互通 → 可達性查詢 → 判斷的前提（${iEx}、${iMx}、${iRun}、${iAs}）`);
     const reachFold = $('#l4-reach-fold'); const mxFold = $('#l4-matrix-fold');
     if (!reachFold || reachFold.open || (reachFold.getAttribute("open") != null)) throw new Error('可達性查詢應預設收合');
-    if (ex.status === 'ok' && (!mxFold || mxFold.open || (mxFold.getAttribute("open") != null))) throw new Error('有 WAN 時內部互通（zone 矩陣）應預設收合');
     if (ex.status === 'no-wan') {
       if (!(mxFold.getAttribute("open") != null)) throw new Error('沒有 WAN 時內部互通應展開');
       if (!st.includes('找不到 WAN')) throw new Error('沒有 WAN 時結論句應說明');
@@ -50,6 +49,14 @@ module.exports = async () => {
         if (miss.length) throw new Error(`${k} 段應列出每個位址（缺 ${miss.map((x) => x.ip).join('、')}）`);
       }
       const byBtn = rows.map((tr) => ex[k].rows[Number(tr.querySelector('.l4-ex-path').dataset.row)]);
+      // 1440 不水平捲動（模擬 DOM 量不到寬度，改斷言欄數）：5 欄，入口在目的的第二行，相關檢查是依據下面的代碼 chip（標題在 title）
+      if (rows.length) {
+        const ths = sec.testAll('th').map((x) => x.textContent);
+        if (ths.join('|') !== '目的|服務|允許來源|結果|依據') throw new Error(`暴露清單應只有 5 欄：${ths.join('、')}`);
+        if (rows.some((tr) => tr.testAll('td').length !== 5 || !tr.querySelector('.l4-ex-entry'))) throw new Error('每列 5 格，目的格有入口的第二行');
+        sec.testAll('.l4-finding').forEach((a) => { if (!/^[A-Z]\d+$/.test(a.textContent) || !(a.getAttribute('title') || '').startsWith(a.textContent + ' ')) throw new Error('相關檢查是代碼 chip，標題在 title：' + a.textContent); });
+        sec.testAll('.l4-rule').forEach((a) => { if (a.textContent.length > 24 || !a.getAttribute('title')) throw new Error('依據的規則連結用短文字，完整說明在 title：' + a.textContent); });
+      }
       if (rows.some((tr) => /st-deny/.test(tr.className))) throw new Error('拒絕的組合不列出');
       const t = sec.textContent;
       if (!ex[k].rows.length && !t.includes('沒有')) throw new Error(k + ' 段沒有列時應寫「沒有」');
@@ -80,10 +87,21 @@ module.exports = async () => {
         if (!s.reach) throw new Error(`看路徑應有結果：${s.reachErr}`);
         if (s.reachReq.entry !== x.entry || s.reachReq.src !== x.src || s.reach.verdict !== x.verdict) throw new Error(`看路徑應與列一致（${k} ${x.ip} ${x.service}：列 ${x.verdict}，逐跳 ${s.reach.verdict}）`);
         if ($('#l4-drill').classList.contains('hidden') || !$('#l4-l3-title')) throw new Error('看路徑應開逐跳路徑');
+        // 關閉後焦點回到同一個「看路徑」按鈕（不落到收合中的矩陣）
+        $('#l4-drill').querySelector('.l4-close').click();
+        const back = document.activeElement;
+        if (!$('#l4-drill').classList.contains('hidden') || !back || back.dataset.sec !== k || back.dataset.row !== b.dataset.row) throw new Error('從看路徑關閉後，焦點應回到那一列的「看路徑」');
         checked++;
       }
     }
     if (!process.env.SMOKE_INPUT && !checked) throw new Error('範例資料應能看至少一列的路徑');
+    // 矩陣收合時從格子的明細關閉：焦點落在矩陣的標題（不落到看不到的格子）
+    { const fold = $('#l4-matrix-fold'); const wasOpen = fold.getAttribute('open') != null;
+      fold.removeAttribute('open'); fold.open = false;
+      const c = Q.zoneMatrix().cells.find((x) => x.counts.total);
+      if (c) { S.view.l4.openCell(App, c.src, c.dst); $('#l4-drill').querySelector('.l4-close').click();
+        if (document.activeElement !== $('#l4-matrix-title')) throw new Error('矩陣收合時關閉明細，焦點應在矩陣的標題'); }
+      if (wasOpen) { fold.setAttribute('open', ''); fold.open = true; } }
     const link = $('#l4-exposure').testAll('.l4-rule')[0];
     if (link) { link.click(); if (!App.sel || App.sel.type !== 'rule' || App.sel.key !== link.dataset.rule) throw new Error('依據的規則連結應在右側開規則詳情'); }
     const fl = $('#l4-exposure').testAll('.l4-finding')[0];

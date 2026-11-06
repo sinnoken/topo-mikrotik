@@ -7,6 +7,8 @@
 'use strict';
 const fs = require('fs'); const path = require('path'); const vm = require('vm');
 const ROOT = path.join(__dirname, '..');
+// Markdown 錨點規則與淘汰用詞清單（tests/docs.js 共用；lib.js 用到時才載入核心，不影響本檔載入的 globalThis.SSOT）
+const MD = require('./lib.js');
 
 // ------------------------------------------------------------ 極簡 DOM
 class ClassList { constructor(el) { this.el = el; } get set() { return new Set((this.el.attrs.class || '').split(/\s+/).filter(Boolean)); }
@@ -1595,22 +1597,10 @@ function viewBoundaryViolations(file, src) {
     if ($('#btn-unknown').textContent !== V.TERMS.endpoint || $('#btn-groups').textContent !== V.TERMS.group) throw new Error('顯示選單應寫「終端」「分群」（V.TERMS）');
   });
   await step('用字：畫面程式、index.html 與本檔的 step 名稱不再出現已淘汰的說法（去掉註解後掃描字串）', () => {
-    // 舊說法 → 現行說法（V.TERMS 等）；只掃畫面層，核心的 finding 訊息與 Snapshot 字串不在這裡
-    const RETIRED = {
-      '群組 ×': '終端 ×N', 未知對端: '終端', 收斂趨勢: '改善趨勢', 修復追蹤: '修正追蹤', 已排程修復: '已排定修正', 子網: '網段', 單側觀察: S.view.TERMS.hearsay,
-      下鑽: '明細', 異質: '結果不一', 這一輪: '本輪', 讀入: '載入（整份取代用匯入）', 收集完整度: '覆蓋率', 收集情形: '覆蓋率', 未管理: '非網管型', 客戶端: '用戶端',
-      維護窗口: '維護時段', '建立選項 expectedData': '各類設備應收資料', 預期資料: '預期現況', 'Q.reach）': '（不寫內部 API）', 'Q.hopOwner': '（不寫內部 API）',
-      'ADR-': '（不寫內部編號）', 'facet：': '原值：', '（L0）': 'zone 矩陣', 'L1：': '位址組', 'L2：牽涉': '牽涉的規則', 'L3：': '逐跳路徑', 連線類別: '鏈路類別',
-      '開啟詳情': '開啟詳細資料', 'Enter 詳情': 'Enter 開啟詳細資料', '非直連確認': '未確認直連', 'broadcast domain 可達': 'L2 廣播網域可達',
-      全通: 'V.L4_STATUS.allow（允許）', 全擋: 'V.L4_STATUS.deny（拒絕）', 'V.VERDICT': 'V.L4_STATUS',
-      // 用字調整：步驟、處理狀態、多數決與檢查代碼的稱呼（畫面的「回歸」都是處理狀態，沒有「回歸測試」這類用法）
-      分診: '研判', 回歸: '復發', 推定偏離: S.view.DEVIATION_LABEL, '可接受（豁免）': '接受風險', 標為可接受: '標為接受風險', 未管理交換器: '非網管型交換器', 自動群組: S.view.TERMS.group,
-      依規則: '依檢查', 誤報率最高的規則: '誤報率最高的檢查', 未登錄的規則: '未登錄的檢查', '檢查項目：': '比對對象：',
-      // 指 CATALOG 的東西一律稱「檢查」（防火牆規則、命名規則、/routing rule 仍叫規則，所以只擋精確片語）
-      規則目錄: '檢查目錄', 規則代碼: '檢查代碼', 規則標題: '檢查標題', 規則品質: '檢查品質', 規則類別: '檢查類別', 每項規則: '每項檢查', 這項規則: '這項檢查', 規則的常見原因: '檢查的常見原因', 規則的處理建議: '檢查的處理建議',
-      // 流程步驟不顯示序號（名稱引用 A.STEP_LABEL）
-      '① 輸入': '輸入', '② 檢視': '檢視', '③ 研判': '研判', '④ 修正': '修正', '⑤ 驗證': '驗證',
-    };
+    // 舊說法 → 現行說法（V.TERMS 等）；只掃畫面層，核心的 finding 訊息與 Snapshot 字串不在這裡。清單在 tests/lib.js（文件的檢查 tests/docs.js 共用 RETIRED_TERMS）
+    const RETIRED = MD.RETIRED_UI_TERMS;
+    // 清單裡的現行說法是字面文字，要和畫面的單一來源相同
+    if (RETIRED.單側觀察 !== S.view.TERMS.hearsay || RETIRED.自動群組 !== S.view.TERMS.group || RETIRED.推定偏離 !== S.view.DEVIATION_LABEL) throw new Error('tests/lib.js 的 RETIRED_TERMS 現行說法應與 V.TERMS／V.DEVIATION_LABEL 相同');
     const noComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\'"`])\/\/.*$/gm, '$1');
     const sources = jsFiles('src/view').map((f) => [f.split(path.sep).join('/'), noComments(fs.readFileSync(path.join(ROOT, f), 'utf8'))])
       .concat([['index.html', html.replace(/<!--[\s\S]*?-->/g, '')]]);
@@ -2399,7 +2389,16 @@ function viewBoundaryViolations(file, src) {
         if (contrastOf(s.mark, s.bg) < 3 || contrastOf(s.mark, V.theme.canvas.surface) < 3) throw new Error(`${mode}：L4 ${k} 的符號對底色不足 3:1`);
       });
       if (contrastOf(V.theme.l4.badge.text, V.theme.l4.badge.bg) < 4.5) throw new Error(`${mode}：異質徽章的文字對底色不足 4.5:1`);
+      // 部分允許是琥珀色系（色相 25–50°、彩度高），和拒絕（紅）、無法判斷（中性灰）分開；符號與文字標籤仍是主要的區分
+      const hueSat = (c) => { const [r, g, b] = [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16) / 255); const mx = Math.max(r, g, b); const mn = Math.min(r, g, b); const d = mx - mn;
+        const l = (mx + mn) / 2; const s = d ? d / (1 - Math.abs(2 * l - 1)) : 0;
+        const hh = !d ? 0 : mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; return [(hh * 60 + 360) % 360, s]; };
+      [G.partial.mark, G.partial.bg].forEach((c) => { const [hu, sa] = hueSat(c); if (hu < 25 || hu > 50 || sa < 0.5) throw new Error(`${mode}：部分允許應是琥珀色系：${c}（色相 ${hu.toFixed(0)}°、彩度 ${sa.toFixed(2)}）`); });
+      if (G.partial.mark === G.deny.mark || G.partial.mark === G.unknown.mark || G.partial.bg === G.deny.bg || G.partial.bg === G.unknown.bg) throw new Error(`${mode}：部分允許不可和拒絕、無法判斷同色`);
     });
+    // 「＋?」（部分無法判斷）、IPv6 提示、連線追蹤的說明有各自的樣式
+    { const css4 = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
+      ['.l4-inc', '.l4-ipv6-note', '.l4-ct'].forEach((c) => { if (!new RegExp('(^|[\\s,}])' + c.replace('.', '\\.') + '[\\s,{]').test(css4)) throw new Error('app.css 應有 ' + c + ' 的樣式'); }); }
     // 強制色彩：格子有系統色外框，焦點用 Highlight
     const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8'); const forced = css.slice(css.indexOf('@media (forced-colors: active)'));
     if (!/\.l4-cell:focus[^{]*\{[^}]*Highlight/.test(forced) || !/\.l4-cell,[^{]*\{[^}]*CanvasText/.test(forced)) throw new Error('強制色彩模式下 L4 的格子要有系統色外框與焦點');
@@ -2509,6 +2508,18 @@ function viewBoundaryViolations(file, src) {
     if (!codes.length || !Object.isFrozen(codes)) throw new Error('S.query.reachReasonCodes() 應是凍結的非空陣列');
     const missing = codes.filter((x) => !V.REACH_REASON[x.code]).map((x) => x.code);
     if (!codes.every((x) => V.REACH_REASON[x.code])) throw new Error('原因代碼沒有中文說明：' + missing.join('、'));
+    // 閘道推定的依據（start.basis）：查詢層沒有匯出清單，掃描 trace.js 的 srcLocation（到 begin 之前）中指定給 basis 與和 basis 比較的字面值；
+    // 每一個都要有中文名稱（同檔另有代表位址的 basis（arp／synthetic），不在這個範圍）
+    { const all = fs.readFileSync(path.join(ROOT, 'src/query/trace.js'), 'utf8'); const i0 = all.indexOf('function srcLocation('); const i1 = all.indexOf('function begin(', i0);
+      if (i0 < 0 || i1 < 0) throw new Error('trace.js 找不到 srcLocation／begin（改名時要更新這個測試）');
+      const tr = all.slice(i0, i1);
+      const lits = (s) => Array.from(s.matchAll(/'([a-z][a-z-]*)'/g), (m) => m[1]);
+      const basis = new Set([...tr.matchAll(/\bbasis\s*=\s*([^;]+);/g)].flatMap((m) => lits(m[1])).concat([...tr.matchAll(/\bbasis\s*===\s*'([^']+)'/g)].map((m) => m[1])));
+      if (basis.size < 2) throw new Error('掃描不到 trace.js 的閘道推定依據（寫法改了時要更新這個測試）');
+      const noName = [...basis].filter((b) => !V.REACH_START_BASIS[b]);
+      if (noName.length) throw new Error('閘道推定的依據沒有中文名稱（V.REACH_START_BASIS）：' + noName.join('、'));
+      const extra = Object.keys(V.REACH_START_BASIS).filter((b) => !basis.has(b));
+      if (extra.length) throw new Error('V.REACH_START_BASIS 有 trace.js 不會產生的依據：' + extra.join('、')); }
     const u = mx.cells.find((c) => c.status === 'unknown');
     if (!u && !process.env.SMOKE_INPUT) throw new Error('範例資料應有無法判斷的格子');
     if (u) {
@@ -5488,14 +5499,14 @@ function viewBoundaryViolations(file, src) {
     if (order.some((i) => i < 0) || order.some((i, n) => n && i <= order[n - 1])) throw new Error('應依序列出一輪的流程：' + flowT.join(' / '));
     if (!/\.rsc/.test(helpT) || !/不(會)?連線(任何)?設備/.test(helpT) || !helpT.includes('工作包')) throw new Error('應說明修正只產生 .rsc、不連線設備，以及工作包');
     // 每段的詳細規格以連結到文件（檔案存在、錨點對得到標題），新分頁開啟
-    const ghSlug = (s) => s.trim().toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s/g, '-');
+    // 錨點依 GitHub 的規則（tests/lib.js 的 markdownAnchors，和 tests/docs.js 的連結檢查同一份）
     const checkDocLinks = (root, need) => {
       const links = root.testAll('a').filter((a) => a.classList.contains('doc-link'));
       need.forEach((f) => { if (!links.some((a) => decodeURI(a.getAttribute('href')).includes('/' + f))) throw new Error('應連到 ' + f); });
       links.forEach((a) => {
         const href = decodeURI(a.getAttribute('href')); const m = href.match(/\/blob\/main\/([^#]+)(?:#(.+))?$/);
         if (!m || !fs.existsSync(path.join(ROOT, m[1]))) throw new Error('文件連結應指向 repo 裡的檔案：' + href);
-        if (m[2] && !fs.readFileSync(path.join(ROOT, m[1]), 'utf8').split('\n').some((l) => /^#+ /.test(l) && ghSlug(l.replace(/^#+ /, '')) === m[2])) throw new Error('文件連結的錨點對不到標題：' + href);
+        if (m[2] && m[1].endsWith('.md') && !MD.hasAnchor(MD.anchorsOf(m[1]), m[2])) throw new Error('文件連結的錨點對不到標題：' + href);
         if (a.getAttribute('target') !== '_blank' || !/noopener/.test(a.getAttribute('rel') || '')) throw new Error('文件連結應在新分頁開啟（rel=noopener）：' + href);
       });
       return links;
@@ -5515,6 +5526,24 @@ function viewBoundaryViolations(file, src) {
     if (!csp.includes("connect-src 'none'")) throw new Error('index.html 的 CSP 應含 connect-src none');
     const srcLink = checkDocLinks($('#settings-panel'), ['README.md']);
     if (!$('#settings-panel').testAll('a').some((a) => /^https:\/\/github\.com\/sinnoken\/topo-mikrotik\/?$/.test(a.getAttribute('href') || '')) || !srcLink.length) throw new Error('「關於」應連到文件與原始碼');
+    [S.compare.SCHEMA_EXPECTED].forEach((x) => { if (typeof x !== 'string' || !aboutT.includes(x)) throw new Error('「關於」應列出預期現況的格式（S.compare.SCHEMA_EXPECTED）：' + x); });
+    // 從 file:// 開啟（離線）：文件連結改連 repo 內的相對路徑（以 index.html 所在的 repo 根目錄為準），檔案存在；線上（https）仍連 GitHub 的 main
+    { const loc0 = Object.getOwnPropertyDescriptor(globalThis, 'location');
+      const offlineLinks = (cat) => { settingsTab(cat).click(); return $('#settings-panel').testAll('a').filter((a) => a.classList.contains('doc-link')); };
+      try {
+        Object.defineProperty(globalThis, 'location', { value: { protocol: 'file:', href: 'file://' + path.join(ROOT, 'index.html') }, configurable: true, writable: true });
+        ['help', 'about', 'profiles'].forEach((cat) => {
+          const ls = offlineLinks(cat); if (!ls.length) throw new Error(`離線時「${cat}」也應有文件連結`);
+          ls.forEach((a) => {
+            const href = a.getAttribute('href'); const file = decodeURI(href.split('#')[0]);
+            if (/^[a-z]+:/i.test(href) || href.startsWith('/') || !fs.existsSync(path.join(ROOT, file))) throw new Error('離線時文件連結應是 repo 內存在的相對路徑：' + href);
+            if (a.getAttribute('target') !== '_blank' || !/noopener/.test(a.getAttribute('rel') || '')) throw new Error('離線的文件連結也在新分頁開啟：' + href);
+          });
+        });
+        globalThis.location = { protocol: 'https:', href: 'https://sinnoken.github.io/topo-mikrotik/' };
+        offlineLinks('help').forEach((a) => { if (!a.getAttribute('href').startsWith('https://github.com/sinnoken/topo-mikrotik/blob/main/')) throw new Error('線上時文件連結應連到 GitHub 的 main：' + a.getAttribute('href')); });
+      } finally { if (loc0) Object.defineProperty(globalThis, 'location', loc0); else delete globalThis.location; }
+      settingsTab('about').click(); }
     // 搜尋框的 Esc 不關設定（只收起搜尋）；設定內的 Esc 關閉，焦點回到 ⚙
     esc($('#search')); if (box.classList.contains('hidden')) throw new Error('設定外的元素的 Esc 不應關閉設定');
     esc(settingsTab('about'));
@@ -5759,6 +5788,8 @@ function viewBoundaryViolations(file, src) {
     const idx = VA.ledgerRoundIndex();
     if (idx < 0 || !row('ledger').textContent.includes(`第 ${NUM(idx + 1)} 輪`)) throw new Error('處理紀錄應列出目前是第幾輪：' + row('ledger').textContent);
     if (!row('profile').textContent.includes(m.profile ? '已套用' : '未套用')) throw new Error('命名規則的狀態應依基準');
+    { const rp = App.round.profile; const nm = rp && S.view.settings.profiles.nameOf(rp);
+      if (/object Object/.test(row('profile').textContent) || (nm && !row('profile').textContent.includes(nm))) throw new Error('命名規則列應顯示規則名稱（V.settings.profiles.nameOf）：' + row('profile').textContent); }
     const rep = S.view.lists.compare.report(App);
     if (!!App.round.expected !== !row('expected').textContent.includes('未載入')) throw new Error('預期資料的狀態應依是否載入');
     if (rep && !rep.errors.length && !row('expected').textContent.includes('已比對')) throw new Error('預期資料載入後應列出比對結果');
@@ -5807,6 +5838,9 @@ function viewBoundaryViolations(file, src) {
     const VP = S.view.settings.profiles; const panel = () => $('#settings-panel'); const wait = () => new Promise((r) => setTimeout(r, 20));
     App.openSettings('profiles'); await wait();
     const body = () => text('#settings-panel');
+    // 窄螢幕：6 欄的表格包在可橫向捲動的 .table-scroll，不撐寬整頁
+    { const ts = panel().testAll('table'); const wrapped = panel().testAll('.table-scroll table');
+      if (!ts.length || ts.some((t) => !wrapped.includes(t))) throw new Error('命名規則的表格應包在 .table-scroll 內'); }
     if (!body().includes('不會新增、刪除或改寫') || !panel().testAll('a').some((a) => a.classList.contains('doc-link') && decodeURI(a.getAttribute('href')).endsWith('/blob/main/docs/命名規則.md'))) throw new Error('分類頂端應說明命名規則不改事實，並連到 docs/命名規則.md：' + body());
     const rowsOf = (src) => { const t = panel().testAll('table').find((x) => x.dataset.source === src); return t ? t.testAll('tr').filter((r) => r.dataset.profile) : []; };
     const btnOf = (r, action) => r.testAll('button').find((b) => b.dataset.action === action);
@@ -5843,6 +5877,9 @@ function viewBoundaryViolations(file, src) {
     if (!text('#settings-profiles-status').includes('正規表示式') || S.profiles.bad) throw new Error('compile 失敗時應列出錯誤且不加入：' + text('#settings-profiles-status'));
     const r0 = await VP.loadFile({ name: 'noid.json', text: async () => '{}' });
     if (r0.ok || !/缺少 id/.test(r0.error)) throw new Error('loadFile 應回傳 compile 的錯誤：' + JSON.stringify(r0));
+    // 重複的鍵（JSON.parse 只留最後一個）：由 S.profile.compile 的解析擋下，錯誤含檔名，不加入
+    await pick('dup.json', '{ "id": "dup-key", "label": "名稱", "label": { "match": "^(.+)$", "value": "$1" } }');
+    if (!text('#settings-profiles-status').includes('dup.json') || !text('#settings-profiles-status').includes('重複的鍵') || S.profiles['dup-key']) throw new Error('重複的鍵應報錯（含檔名）且不加入：' + text('#settings-profiles-status'));
     // 載入成功：存進 store 的 'profiles'，列在「已載入」
     const floor = fs.readFileSync(path.join(ROOT, 'profiles/floor-device-naming.json'), 'utf8');
     await pick('floor-device-naming.json', floor);
@@ -5850,6 +5887,13 @@ function viewBoundaryViolations(file, src) {
     if (!S.profiles[fid] || !((await S.store.get('profiles')) || {})[fid]) throw new Error('載入的命名規則應加入並存進 store');
     const savedRow = rowsOf('saved').find((r) => r.dataset.profile === fid);
     if (!savedRow || !savedRow.textContent.includes('已載入') || !text('#settings-profiles-status').includes(fid)) throw new Error('載入的命名規則應列在「已載入」');
+    // 名稱取自 S.profile.compile(…).name（name 欄位）；設定、建立基準對話框的選單與資料中心用同一個取法
+    { const nm = S.profile.compile(floor).name;
+      if (!nm || VP.nameOf(S.profiles[fid]) !== nm || !savedRow.textContent.includes(nm)) throw new Error('已載入的列應顯示規則名稱：' + savedRow.textContent);
+      if (VP.nameOf({ id: 'x', label: { match: '^(.+)$', value: '$1' } }) !== null) throw new Error('物件的 label 是顯示名稱規則，不是名稱');
+      await App.openInput(); const opt = $('#input-profile').testAll('option').find((o) => o.value === fid);
+      if (!opt || !opt.textContent.includes(nm) || /object Object/.test(opt.textContent)) throw new Error('建立基準對話框的選單應顯示規則名稱：' + (opt && opt.textContent));
+      $('#dlg-input').close(); }
     // 匯出某一份與下載範本：JSON，範本可直接編譯
     const ex = await captureDownloads(() => btnOf(rowsOf('saved').find((r) => r.dataset.profile === fid), 'export').click());
     if (ex.files.length !== 1 || ex.files[0].name !== fid + '.json') throw new Error('匯出的檔名應是 id.json：' + ex.files.map((f) => f.name));
@@ -5857,6 +5901,7 @@ function viewBoundaryViolations(file, src) {
     const tp = await captureDownloads(() => panel().testAll('button').find((b) => b.dataset.action === 'template').click());
     const tj = JSON.parse(tp.files[0].text);
     if (!tp.files[0].name.endsWith('.json') || !S.profile.compile(tj) || typeof tj.description !== 'string') throw new Error('範本應是可編譯、含 description 的 JSON');
+    if (!S.profile.compile(tp.files[0].text).name || S.profile.compile(tp.files[0].text).name !== tj.name) throw new Error('範本應有規則名稱（name），經 compile 取得：' + tj.name);
     // 移除：先確認（取消時不變）；確認後從清單與 store 移除
     const asked = []; const c0 = window.confirm;
     try {
@@ -6176,6 +6221,10 @@ function viewBoundaryViolations(file, src) {
     if (!App.snap) throw new Error('前提：有基準');
     App.openSettings('data'); await SD.refresh();
     const t0 = text('#settings-panel');
+    { const ts = panel().testAll('table'); const wrapped = panel().testAll('.table-scroll table');
+      if (!ts.length || ts.some((t) => !wrapped.includes(t))) throw new Error('本機資料的表格應包在 .table-scroll 內（窄螢幕橫向捲動，不撐寬整頁）'); }
+    { const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
+      ['settings-data', 'settings-profiles'].forEach((c) => { if (!new RegExp('\\.' + c + ' \\{[^}]*min-width:\\s*\\d+px').test(css)) throw new Error(`.${c} 應有最小寬度（窄螢幕在 .table-scroll 內橫捲，不擠成一字一行）`); }); }
     const present = S.store.KEYS.filter((d) => d.key === 'last' || d.key === 'ledger');
     if (present.some((d) => !t0.includes(d.label) || !t0.includes(d.purpose))) throw new Error('每一項資料都要列出中文名稱與用途：' + t0.slice(0, 300));
     if (!/\d+(\.\d)? (B|KB|MB)/.test(t0)) throw new Error('應顯示大小（B／KB／MB）');
@@ -6216,15 +6265,23 @@ function viewBoundaryViolations(file, src) {
     // 重設畫面偏好：只清欄寬、版面與配色，基準與處理紀錄不動
     const mode0 = App.layoutMode; VA.setLayoutMode(App.LAYOUT_MODES.find((m) => m !== mode0)); VA.setThemePref('dark');
     const keep = J([await S.store.get('last'), await S.store.get('ledger'), await S.store.get('profiles')]);
+    const cols = () => [App.layout.left, App.layout.right]; const def = () => [VA.COLUMN_DEFAULT.left, VA.COLUMN_DEFAULT.right];
+    const gridOk = () => $('#main').style.gridTemplateColumns.endsWith(App.layout.right + 'px');
+    if (typeof VA.resetColumns !== 'function' || !VA.COLUMN_DEFAULT) throw new Error('app-panes 應提供 A.resetColumns 與 A.COLUMN_DEFAULT');
+    App.layout.left = VA.COLUMN_DEFAULT.left + 17; App.layout.right = VA.COLUMN_DEFAULT.right + 23; VA.applyColumns();
     const q = await ask(true, () => act('localdata-reset-prefs').click());
+    if (J(cols()) !== J(def()) || !gridOk()) throw new Error('重設畫面偏好後欄寬應馬上回到預設：' + J(cols()) + ' ' + $('#main').style.gridTemplateColumns);
+    if (/下次開啟|重新開啟/.test(text('#banner'))) throw new Error('欄寬即時生效，banner 不應說下次開啟才生效：' + text('#banner'));
     if (q.length !== 1 || !/處理紀錄/.test(q[0]) || !/不受影響/.test(q[0])) throw new Error('重設偏好應先確認並說明不影響資料：' + q[0]);
     if (await S.store.get('layoutMode') !== undefined || await S.store.get('layout') !== undefined || S.store.theme.get() !== 'system' || VA.themePref() !== 'system') throw new Error('重設偏好應清除版面、欄寬與配色');
     if (App.layoutMode !== mode0) throw new Error('重設後的版面應回到預設：' + App.layoutMode);
     if (J([await S.store.get('last'), await S.store.get('ledger'), await S.store.get('profiles')]) !== keep) throw new Error('重設偏好不可動基準、處理紀錄與命名規則');
     // 偏好的個別清除也先確認並說明會失去什麼
     await S.store.set('layout', { left: 300, right: 400 }); await SD.refresh();
+    App.layout.left = VA.COLUMN_DEFAULT.left + 11; VA.applyColumns();
     { const q2 = await ask(true, () => btn('layout').click()); const d = S.store.KEYS.find((x) => x.key === 'layout');
-      if (q2.length !== 1 || !q2[0].includes(d.loss) || await S.store.get('layout') !== undefined) throw new Error('個別清除應先確認並寫出會失去什麼'); }
+      if (q2.length !== 1 || !q2[0].includes(d.loss) || await S.store.get('layout') !== undefined) throw new Error('個別清除應先確認並寫出會失去什麼');
+      if (J(cols()) !== J(def()) || !gridOk()) throw new Error('清除欄寬後應馬上回到預設寬度：' + J(cols())); }
     VA.closeSettings();
   });
   await step('本機資料的清除與還原讓畫面跟上：基準不能還原時不寫入、重建失敗時以 banner 說明並收起舊基準；清除舊確認標記不再轉換；命名規則即時更新；清單一次重繪只讀一次', async () => {

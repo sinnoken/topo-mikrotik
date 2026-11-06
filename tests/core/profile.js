@@ -50,6 +50,38 @@ test('附帶的 JSON 命名規則範例可載入，分隔符號 _ 與 - 一致�
     ['2F-RB5009', { kind: 'router', role: 'RTR', group: '2F', label: 'RB5009' }], ['2F_RB5009_02', { kind: 'router', role: 'RTR', group: '2F', label: 'RB5009_02' }],
     ['B1F_wAP_02', { role: 'AP', group: 'B1F', label: 'wAP_02' }], ['3F_CRS326', { group: '3F', label: 'CRS326' }]]
     .forEach(([n, want]) => assert.deepStrictEqual(at(n), want, n));
+  // 規則名稱在 name，顯示名稱規則在 label：兩者都要留下（字串 label 與 label 規則並存時 JSON.parse 只留後者）
+  const text = read('profiles/floor-device-naming.json');
+  assert.strictEqual(c.name, '樓層_設備型號_編號（例：3F_hAP_01、B1F-RB5009）');
+  assert.strictEqual(S.profile.nameOf(JSON.parse(text)), c.name);
+  assert.deepStrictEqual(S.profile.parse(text), JSON.parse(text), '範本沒有重複的鍵');
+  assert.strictEqual(S.profile.compile(text).name, c.name, 'compile 也接受文字（經 parse）');
+  assert.strictEqual(S.profile.describe(JSON.parse(text)), '去掉網域、分類規則 2 條、分群、顯示名稱');
+});
+test('命名規則的名稱：name 優先，舊寫法的字串 label 仍可用；物件的 label 不是名稱', () => {
+  const vm = require('vm');
+  vm.runInThisContext(read('profiles/site-naming.js'));
+  const site = S.profiles['site-naming'];
+  assert.strictEqual(S.profile.compile(site).name, site.label, '內建規則仍以字串 label 當名稱');
+  assert.strictEqual(S.profile.compile(site).annotate('TPE_CORE_RT_01').label, undefined, '字串 label 不是顯示名稱規則');
+  assert.strictEqual(S.profile.nameOf({ id: 'x', name: ' 名稱 ' }), '名稱');
+  assert.strictEqual(S.profile.nameOf({ id: 'x', label: { match: '(.*)' } }), null);
+  assert.strictEqual(S.profile.nameOf({ id: 'x' }), null);
+  assert.strictEqual(S.profile.compile({ id: 'x', name: 'n', label: { match: '^A_(.+)$' } }).annotate('A_B').label, 'B');
+});
+test('命名規則：名稱與顯示名稱規則衝突時明確回報錯誤', () => {
+  // JSON 文字中同一個物件有重複的鍵：parse／compile(文字) 丟錯並列出位置，不靜默留下最後一個
+  const dup = '{ "id": "x", "label": "名稱", "classify": [{ "match": "a", "role": "R", "role": "S" }], "label": { "match": "(.*)" } }';
+  assert.throws(() => S.profile.parse(dup), (e) => /重複的鍵「label」/.test(e.message) && /重複的鍵「classify\[0\]\.role」/.test(e.message));
+  assert.throws(() => S.profile.compile(dup), /重複的鍵「label」/);
+  assert.throws(() => S.profile.parse('{ nope'), SyntaxError);
+  // 字串裡的括號、跳脫的引號不影響判斷；不同物件的同名鍵不算重複
+  assert.doesNotThrow(() => S.profile.parse('{ "id": "a\\"{,", "group": { "match": "[{]", "value": "$1" }, "label": { "match": "x", "value": "$1" } }'));
+  // 物件形式：name 與字串 label 並存、label 型別不對、name 不是字串
+  assert.throws(() => S.profile.compile({ id: 'x', name: 'n', label: '名稱' }), /同時有 name 與字串的 label/);
+  assert.throws(() => S.profile.compile({ id: 'x', label: ['a'] }), /label 必須是/);
+  assert.throws(() => S.profile.compile({ id: 'x', label: 3 }), /label 必須是/);
+  assert.throws(() => S.profile.compile({ id: 'x', name: 3 }), /name（規則名稱）必須是字串/);
 });
 // ------------------------------------------------------------------ 套用結果（設定畫面的「命名規則」）：只讀 Q，不改寫基準
 test('命名規則套用結果：對上台數、沒對上的名稱與各欄位分布；可重現、不改寫基準', () => {

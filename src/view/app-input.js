@@ -140,7 +140,7 @@
     Object.assign(S.profiles, saved);
     const sel = V.clear($('#input-profile'));
     sel.appendChild(h('option', { value: '' }, '不套用（只依收集的資料判斷）'));
-    Object.values(S.profiles).filter((p) => p && p.id).forEach((p) => sel.appendChild(h('option', { value: p.id }, `${p.id}${typeof p.label === 'string' && p.label ? '：' + p.label : ''}`)));
+    Object.values(S.profiles).filter((p) => p && p.id).forEach((p) => sel.appendChild(h('option', { value: p.id }, `${p.id}${V.settings.profiles.nameOf(p) ? '：' + V.settings.profiles.nameOf(p) : ''}`)));
     sel.appendChild(h('option', { value: '__file' }, '載入命名規則檔（JSON）…'));
     sel.value = selected || '';
   }

@@ -67,7 +67,7 @@
       [ledgerFile, btn('匯入處理紀錄…', 'import-ledger', () => ledgerFile.click(), { class: 'ledger-import', disabled: busy || null })], 'hub-sec-ledger'));
     // 命名規則
     const p = r.profile; const used = m && m.profile;
-    rows.push(row('profile', '命名規則', p ? `${p.id}${p.version != null ? ` v${p.version}` : ''}${p.label ? '：' + p.label : ''}` : '—',
+    rows.push(row('profile', '命名規則', p ? `${p.id}${p.version != null ? ` v${p.version}` : ''}${V.settings.profiles.nameOf(p) ? '：' + V.settings.profiles.nameOf(p) : ''}` : '—',
       !Q ? st('muted', p ? '下次建立基準時使用' : '未選擇') : used ? st('ok', '已套用') : st('muted', '未套用（只依收集的資料判斷）'),
       [btn('變更…', 'change-profile', () => App.openInput(), { title: '在「建立基準」對話框選擇命名規則，重新建立基準', disabled: busy || null })]));
     // 建立選項 expectedData（和下一列的預期資料不同：它是建立基準的選項，會改變基準鍵）

@@ -18,11 +18,14 @@
  *   S.compare.snapshots(qOld, qNew) → 兩份基準的差異（ssot-snapdiff/1）
  *   S.compare.expectedFrom(q, opts) → 由基準產生預期資料（ssot-expected/1），之後拿來和新的基準比對
  *   S.compare.drift(q, expected, opts) → 連續幾輪基準和預期資料的偏離：預期資料可能已過時，或網路偏離預期（ssot-drift/1）
+ *   S.compare.SCHEMA_EXPECTED／SCHEMA_DIFF／SCHEMA_SNAPDIFF／SCHEMA_DRIFT → 上述格式的 schema 字串（唯讀常數）
  */
 (function (S) {
   'use strict';
   const K = S.keys;
   const LINK_SCOPE = S.LINK_SCOPE;
+  // 輸出與讀取的 schema（ADR-010）：程式內一律用這幾個常數，也匯出成 S.compare.SCHEMA_*（「關於」等處列出）
+  const SCHEMA_EXPECTED = 'ssot-expected/1'; const SCHEMA_DIFF = 'ssot-diff/1'; const SCHEMA_SNAPDIFF = 'ssot-snapdiff/1'; const SCHEMA_DRIFT = 'ssot-drift/1';
 
   function parseEp(s) {
     const m = String(s).trim().match(/^(\S.*?)\s+(\S+)$/);
@@ -31,8 +34,8 @@
 
   S.compare = function (Q, expected) {
     const errors = [];
-    if (!expected || expected.schema !== 'ssot-expected/1') errors.push('預期資料的 schema 必須是 "ssot-expected/1"');
-    const report = { schema: 'ssot-diff/1', errors, items: [], summary: { ok: 0, missing: 0, different: 0, unexpected: 0 } };
+    if (!expected || expected.schema !== SCHEMA_EXPECTED) errors.push(`預期資料的 schema 必須是 "${SCHEMA_EXPECTED}"`);
+    const report = { schema: SCHEMA_DIFF, errors, items: [], summary: { ok: 0, missing: 0, different: 0, unexpected: 0 } };
     if (errors.length) return report;
     const push = (status, type, ref, message) => { report.items.push({ status, type, ref, message }); report.summary[status]++; };
 
@@ -119,7 +122,7 @@
     const errors = [];
     const byCategory = {}; CATEGORIES.forEach((c) => { byCategory[c] = { added: 0, removed: 0, changed: 0 }; });
     const warnings = [];
-    const report = { schema: 'ssot-snapdiff/1', errors, warnings, summary: { added: 0, removed: 0, changed: 0, byCategory }, items: [] };
+    const report = { schema: SCHEMA_SNAPDIFF, errors, warnings, summary: { added: 0, removed: 0, changed: 0, byCategory }, items: [] };
     const metaOf = (q) => (q && typeof q.meta === 'function' ? q.meta() || {} : null);
     const mo = metaOf(qOld); const mn = metaOf(qNew);
     if (!mo || !mn) { errors.push('需要兩份基準的查詢介面（SSOT.query(snapshot)）'); return report; }
@@ -328,7 +331,7 @@
       .sort((x, y) => U.natural(x.device, y.device) || x.id - y.id);
     const meta = q.meta();
     const source = { baselineKey: nil(meta.baselineKey), inputHash: nil(meta.inputHash), schema: nil(meta.schema), createdAt: nil(meta.createdAt) };
-    const out = { schema: 'ssot-expected/1', _說明: `由基準產生（輸入指紋 ${meta.inputHash}，${meta.schema}）`, source, devices, links, vlans };
+    const out = { schema: SCHEMA_EXPECTED, _說明: `由基準產生（輸入指紋 ${meta.inputHash}，${meta.schema}）`, source, devices, links, vlans };
     if (o.strict) { out.strictDevices = true; out.strictLinks = true; }
     return out;
   };
@@ -390,7 +393,7 @@
   S.compare.drift = function (q, expected, opts) {
     const o = opts || {};
     const errors = []; const warnings = [];
-    const report = { schema: 'ssot-drift/1', errors, warnings, basis: null, summary: { stale: 0, drifted: 0, unobserved: 0 }, stale: [], drifted: [], unobserved: [] };
+    const report = { schema: SCHEMA_DRIFT, errors, warnings, basis: null, summary: { stale: 0, drifted: 0, unobserved: 0 }, stale: [], drifted: [], unobserved: [] };
     const N = o.rounds === undefined ? DRIFT_ROUNDS : o.rounds;
     if (!Number.isInteger(N) || N < 1) errors.push(`rounds 必須是 ≥ 1 的整數（收到 ${JSON.stringify(N)}）`);
     const history = o.history === undefined ? [] : o.history;
@@ -472,4 +475,7 @@
     report.summary = { stale: report.stale.length, drifted: report.drifted.length, unobserved: report.unobserved.length };
     return report;
   };
+
+  // schema 常數唯讀（不可寫、不可重新設定）
+  Object.entries({ SCHEMA_EXPECTED, SCHEMA_DIFF, SCHEMA_SNAPDIFF, SCHEMA_DRIFT }).forEach(([k, v]) => Object.defineProperty(S.compare, k, { value: v, enumerable: true }));
 })(globalThis.SSOT = globalThis.SSOT || {});

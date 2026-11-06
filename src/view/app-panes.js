@@ -254,6 +254,13 @@
   // ================================================================ 左右欄寬度
   // 左右欄寬度是檢視狀態：存在獨立的 'layout' 鍵，清除基準時不受影響。「修正」、「驗證」沒有左側清單時左欄寬度為 0（記住的寬度不變）
   const PANE = { min: 240, centerMin: 320, def: { left: 330, right: 400 } };
+  /** 預設欄寬（唯讀）：拖曳把手雙擊、清除欄寬、重設畫面偏好都回到它 */
+  A.COLUMN_DEFAULT = Object.freeze(Object.assign({}, PANE.def));
+  /** 欄寬回到預設並馬上套用（不寫 store：清除欄寬的呼叫端負責清 store 的 'layout'） */
+  A.resetColumns = function resetColumns() {
+    if (!App.layout) return;
+    App.layout.left = PANE.def.left; App.layout.right = PANE.def.right; A.applyColumns();
+  };
   A.applyColumns = function applyColumns() {
     if (!App.layout) return;
     const left = WORK[App.step].left ? App.layout.left : 0;

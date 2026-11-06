@@ -5,6 +5,8 @@
  *
  * {
  *   "schema": "ssot-profile/1", "id": "site-naming", "version": "1",
+ *   "name": "站點_類型_編號",              ← 選用：規則名稱，只用於顯示（舊寫法是字串的 label，見 nameOf）
+ *   "description": "一句說明",             ← 選用：只用於顯示（見 describe）
  *   "stripDomain": true,
  *   "alias": { "OLD-NAME": "NEW_NAME" },
  *   "classify": [ { "match": "_FW_", "flags": "i", "kind": "firewall", "role": "fw" } ],
@@ -19,11 +21,19 @@
 
   function tmpl(m, value) { return String(value).replace(/\$(\d)/g, (_, n) => m[+n] || ''); }
 
-  /** 驗證並編譯 profile；有錯時丟出 Error（訊息列出所有問題）。 */
+  /** 驗證並編譯 profile；有錯時丟出 Error（訊息列出所有問題）。json 是字串時先經 parse（會擋下重複的鍵）。 */
   function compile(json) {
+    if (typeof json === 'string') json = parse(json);
     if (!json) return null;
     const errs = [];
     if (!json.id) errs.push('缺少 id');
+    if (json.name != null && typeof json.name !== 'string') errs.push('name（規則名稱）必須是字串');
+    if (json.description != null && typeof json.description !== 'string') errs.push('description 必須是字串');
+    // label 是顯示名稱規則 { match, value }；字串的 label 是舊寫法的規則名稱（內建 site-naming.js 仍用）。
+    // 兩者寫在同一個 JSON 物件時只會留下一個，所以新的規則名稱寫在 name，並擋下 name 與字串 label 並存
+    const labelRule = json.label != null && typeof json.label === 'object' && !Array.isArray(json.label);
+    if (json.label != null && !labelRule && typeof json.label !== 'string') errs.push('label 必須是 { match, value }（顯示名稱規則）；規則名稱請寫在 name');
+    if (typeof json.label === 'string' && json.name != null) errs.push('同時有 name 與字串的 label：規則名稱只寫在 name，label 只用於顯示名稱規則 { match, value }');
     const rx = (o, where) => {
       try { return new RegExp(o.match, o.flags || 'i'); } catch (e) { errs.push(`${where} 的 match 不是有效的正規表示式：${e.message}`); return null; }
     };
@@ -32,7 +42,7 @@
       return { re: rx(r, `classify[${i}]`), kind: r.kind, role: r.role, site: r.site };
     });
     const group = json.group ? { re: rx(json.group, 'group'), value: json.group.value || '$1' } : null;
-    const label = json.label ? { re: rx(json.label, 'label'), value: json.label.value || '$1' } : null;
+    const label = labelRule ? { re: rx(json.label, 'label'), value: json.label.value || '$1' } : null;
     // zones（選用）：L4 zone 的標籤，只在查詢時使用（Q.zones），不寫進 Snapshot；on 是比對的對象
     const ZONE_ON = ['vlan', 'interface', 'subnet'];
     if (json.zones != null && !Array.isArray(json.zones)) errs.push('zones 必須是陣列');
@@ -45,7 +55,7 @@
     if (errs.length) throw new Error('命名規則檔有誤：\n- ' + errs.join('\n- '));
 
     const compiled = {
-      id: json.id, version: String(json.version || '1'), source: json,
+      id: json.id, version: String(json.version || '1'), name: nameOf(json), source: json,
       /** 建模前：原始名稱 → 正式名稱 */
       canon(name) {
         let n = String(name || '').trim();
@@ -87,6 +97,50 @@
       coverage(Q) { return coverageOf(this, Q); },
     };
     return compiled;
+  }
+
+  /**
+   * 規則名稱（只用於顯示）：name；沒有時用舊寫法的字串 label（例如內建的 site-naming.js）；都沒有時為 null。
+   * 物件的 label 是顯示名稱規則，不是名稱。
+   */
+  function nameOf(json) {
+    const j = json || {};
+    if (typeof j.name === 'string' && j.name.trim()) return j.name.trim();
+    if (typeof j.label === 'string' && j.label.trim()) return j.label.trim();
+    return null;
+  }
+
+  /**
+   * 解析命名規則檔的文字。JSON.parse 遇到同一個物件裡重複的鍵只留最後一個（例如規則名稱的字串 label 被 label 規則蓋過），
+   * 所以另外找出重複的鍵，有就丟出 Error 列出全部位置，不靜默取其中一個。JSON 不合法時丟出 JSON.parse 的 SyntaxError。
+   */
+  function parse(text) {
+    const json = JSON.parse(text);
+    const dups = duplicateKeys(String(text));
+    if (dups.length) throw new Error('命名規則檔有誤：\n- ' + dups.map((p) => `重複的鍵「${p}」（JSON 只會保留最後一個）`).join('\n- '));
+    return json;
+  }
+  /** 合法 JSON 文字中，同一個物件內重複出現的鍵的路徑（例如 label、classify[0].role），依出現順序 */
+  function duplicateKeys(text) {
+    const out = []; const stack = []; // 物件：{ obj, keys, path, last（目前的鍵）, wantKey }；陣列：{ path, idx }
+    const at = (top) => (!top ? '' : top.obj ? (top.path ? top.path + '.' : '') + top.last : `${top.path}[${top.idx}]`);
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i]; const top = stack[stack.length - 1];
+      if (c === '"') {
+        let j = i + 1;
+        while (text[j] !== '"') j += text[j] === '\\' ? 2 : 1;
+        if (top && top.obj && top.wantKey) {
+          const k = JSON.parse(text.slice(i, j + 1));
+          if (top.keys.has(k)) out.push((top.path ? top.path + '.' : '') + k);
+          top.keys.add(k); top.last = k; top.wantKey = false;
+        }
+        i = j;
+      } else if (c === '{') stack.push({ obj: true, keys: new Set(), path: at(top), wantKey: true });
+      else if (c === '[') stack.push({ obj: false, path: at(top), idx: 0 });
+      else if (c === '}' || c === ']') stack.pop();
+      else if (c === ',' && top) { if (top.obj) top.wantKey = true; else top.idx++; }
+    }
+    return out;
   }
 
   /**
@@ -148,5 +202,5 @@
    */
   const hash = (json) => S.util.hash(S.util.canonicalJson(json));
 
-  S.profile = { compile, hash, describe, coverage, FIELDS, KINDS };
+  S.profile = { compile, parse, nameOf, hash, describe, coverage, FIELDS, KINDS };
 })(globalThis.SSOT = globalThis.SSOT || {});

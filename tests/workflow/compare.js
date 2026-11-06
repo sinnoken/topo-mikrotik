@@ -286,3 +286,18 @@ test('基準比對 facet：跨版本（一邊沒有 facet）的規則改用 find
   const fd = (x, y) => S.compare.snapshots(S.query(x), S.query(y)).items.filter((i) => i.category === 'finding').map((i) => [i.change, i.key]);
   assert.deepStrictEqual(fd(snapAt280(a), b), fd(a, b));
 });
+test('S.compare 的 schema 常數：匯出 ssot-expected／diff／snapdiff／drift，輸出與讀取都用它，compare.js 不另寫字串', () => {
+  const C = S.compare;
+  assert.deepStrictEqual([C.SCHEMA_EXPECTED, C.SCHEMA_DIFF, C.SCHEMA_SNAPDIFF, C.SCHEMA_DRIFT], ['ssot-expected/1', 'ssot-diff/1', 'ssot-snapdiff/1', 'ssot-drift/1']);
+  ['SCHEMA_EXPECTED', 'SCHEMA_DIFF', 'SCHEMA_SNAPDIFF', 'SCHEMA_DRIFT'].forEach((k) => assert.strictEqual(Object.getOwnPropertyDescriptor(C, k).writable, false, k + ' 應唯讀'));
+  const Q = S.query(build(read('samples/sample-bundle.txt')));
+  const e = C.expectedFrom(Q);
+  assert.strictEqual(e.schema, C.SCHEMA_EXPECTED);
+  assert.strictEqual(C(Q, e).schema, C.SCHEMA_DIFF);
+  assert.strictEqual(C.snapshots(Q, Q).schema, C.SCHEMA_SNAPDIFF);
+  assert.strictEqual(C.drift(Q, e).schema, C.SCHEMA_DRIFT);
+  assert.ok(C(Q, { schema: 'x' }).errors.some((m) => m.includes(C.SCHEMA_EXPECTED)), '讀取時以常數檢查並寫在錯誤訊息');
+  // 程式碼（去掉註解）中每個 schema 字面值只出現一次（常數的定義）
+  const src = read('src/compare/compare.js').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\])\/\/.*$/gm, '$1');
+  ['ssot-expected/1', 'ssot-diff/1', 'ssot-snapdiff/1', 'ssot-drift/1'].forEach((x) => assert.strictEqual(src.split(x).length - 1, 1, `${x} 在 compare.js 應只寫在常數的定義`));
+});

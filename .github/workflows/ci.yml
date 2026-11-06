@@ -2,6 +2,8 @@ name: CI
 
 on:
   pull_request:
+  push:
+    branches: [main]
   schedule:
     - cron: "0 3 * * 1"
   workflow_dispatch:
@@ -15,7 +17,7 @@ concurrency:
 
 jobs:
   # 依改動範圍分流：只改文件、skill、agent 定義時只跑文件測試；改到程式才跑全套；
-  # 改到核心、範例、工具或測試才跑大型資料測試。排程與手動執行一律全跑。
+  # 改到核心、範例、工具、測試或 vendor 才跑大型資料測試。合併到 main、排程與手動執行一律全跑。
   # 版本一致性只在 PR、而且改到 src/ 或 tests/golden/ 時跑（要和 PR 的 base 比較）。
   changes:
     name: Detect changed scope
@@ -46,7 +48,7 @@ jobs:
           # 只算文件：Markdown、.claude/（agent、skill、hook 設定）、.github/skills/
           code=false; large=false; version=false
           if printf '%s\n' "$files" | grep -Ev '\.md$|^\.claude/|^\.github/skills/' | grep -q .; then code=true; fi
-          if printf '%s\n' "$files" | grep -Eq '^(src|samples|tools|tests|profiles)/|^index\.html$|^package(-lock)?\.json$|^\.github/workflows/'; then large=true; fi
+          if printf '%s\n' "$files" | grep -Eq '^(src|samples|tools|tests|profiles|vendor)/|^index\.html$|^package(-lock)?\.json$|^\.github/workflows/'; then large=true; fi
           if printf '%s\n' "$files" | grep -Eq '^(src|tests/golden)/'; then version=true; fi
           echo "code=$code" >> "$GITHUB_OUTPUT"; echo "large=$large" >> "$GITHUB_OUTPUT"; echo "version=$version" >> "$GITHUB_OUTPUT"
 
@@ -99,7 +101,7 @@ jobs:
     needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: github.event_name != 'schedule' && needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:

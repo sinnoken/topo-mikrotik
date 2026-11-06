@@ -234,7 +234,7 @@
    * 擴充方式：在這裡加一條規則即可，轉換流程（migrateKeys）不用改。
    * 規則依陣列順序套用；同一筆 finding 的新鍵與舊鍵相同時不算轉換。
    */
-  /** facet 含網段鍵（K.inVrf，main 不加後綴）的檢查：A07、A08 的 facet 是網段鍵，R06 是「項目|網段鍵」（check/checks.js 的 configConsistency） */
+  /** facet 含網段鍵（K.inVrf，main 不加後綴）的檢查：A07、A08 的 facet 是網段鍵，R06 是「項目|網段鍵」（check/checks.js 的 vlanSubnetConsistency、overlappingPrefixes、dhcpOptionConsistency） */
   const VRF_FACET = new Set(['A07', 'A08', 'R06']);
   /** 以群組為實體、依 VRF 分開比較後實體可能變少的檢查（ADR-015 的「findingKey 與處理紀錄」）：新鍵的實體是舊鍵的子集合時對應 */
   const VRF_GROUP = new Set(['A01', 'A07', 'A08', 'A09', 'R06']);

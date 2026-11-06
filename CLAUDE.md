@@ -46,8 +46,8 @@ git diff --check         # 提交前檢查
   產生 findings，只讀模型、不寫回；`catalog.js` 必須在 `checks.js` 之前載入。
   `steps()` 是 generator，讓 UI 可顯示進度。
 - **單向依賴**：核心分成上游與下游。上游（core/readers/adapters/model/check/profile/query/pipeline）產生並查詢 Snapshot；
-  下游（`compare/` 比對、`remediate/` 修正 patch、`ledger/` 處理紀錄、`workpack/` 的 `S.zip` 與工作包 `S.workpack`、`report/` 的檢查結果報表 `S.report`）也是核心檔案，
-  但只透過 `SSOT.query(snapshot)` 讀基準、不修改基準，上游也不呼叫它們；`S.workpack` 只在呼叫時使用 `S.build`、`S.ledger` 與 `S.profile`。所有核心都不得碰 DOM、Canvas、IndexedDB。View 與下游只透過 `SSOT.query(snapshot)`（[src/query/query.js](src/query/query.js)）讀取，不讀原始 model、不改寫 Snapshot。
+  下游（`compare/` 比對、`remediate/` 修正 patch、`ledger/` 處理紀錄、`workpack/` 的 `S.zip` 與工作包 `S.workpack`、`report/` 的檢查結果報表與網路文件 `S.report`，[ADR-021](docs/架構決策/021-報表與網路文件移到核心S.report.md)）也是核心檔案，
+  但只透過 `SSOT.query(snapshot)` 讀基準、不修改基準，上游也不呼叫它們；`S.workpack` 只在呼叫時使用 `S.build`、`S.ledger` 與 `S.profile`，`S.report` 另用 `S.ledger.isPending`；畫面的匯出與 CLI 的報表都由 `S.report` 產生。所有核心都不得碰 DOM、Canvas、IndexedDB。View 與下游只透過 `SSOT.query(snapshot)`（[src/query/query.js](src/query/query.js)）讀取，不讀原始 model、不改寫 Snapshot。
   `src/view/theme.js` 是顏色／線型／透明度的唯一來源；持久化集中在 `src/view/store.js`。
   `src/view` 只透過 `S.query(snapshot)`／`S.query.*` 讀資料與檢查目錄，不讀 Snapshot 的欄位；允許的 `S.*` 成員由 `tests/ui/boundary.js` 的邊界掃描強制（[ADR-018](docs/架構決策/018-畫面只透過Q與S.query讀資料.md)）。
   畫面讀 `CATALOG` 的 `causes`／`action` 只透過 `V.remediation.advice(id)`（advice 內部經 `S.query.rule`）；含反引號的文字以 `V.codeText` 組成 DOM，不用 innerHTML。
@@ -104,7 +104,7 @@ git diff --check         # 提交前檢查
 | Agent | 負責 | 驗證 |
 |---|---|---|
 | `data-model` | 上游：解析、建模、推論、檢查、Snapshot、查詢介面、範例與 OUI 產生器 | `npm run test:core` |
-| `workflow` | 下游：比對與預期現況（`compare/`）、修正 patch（`remediate/`）、處理紀錄（`ledger/`）、工作包與 ZIP（`workpack/`）、檢查結果報表（`report/`）、patch 黃金檔、排程 CLI（`tools/baseline.js`） | `npm run test:core` |
+| `workflow` | 下游：比對與預期現況（`compare/`）、修正 patch（`remediate/`）、處理紀錄（`ledger/`）、工作包與 ZIP（`workpack/`）、檢查結果報表與網路文件（`report/`）、patch 黃金檔、排程 CLI（`tools/baseline.js`） | `npm run test:core` |
 | `frontend` | 畫面、樣式、theme、`index.html`、`vendor/` | `npm run test:ui` |
 | `collector` | SSH 收集器 | `npm run test:collector` |
 | `docs` | README、`docs/`、開發原則、skills、agent 定義 | `npm run test:docs` |

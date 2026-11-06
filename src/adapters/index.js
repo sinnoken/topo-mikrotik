@@ -8,7 +8,10 @@
  * 已解析區塊中的每個非空行，不是產生事實的行（fact.line），就是 adapter 列為可忽略的行；兩者都不是即為「無法辨識的行」（I03）。
  * 所以 adapter 只宣告可忽略的行，沒處理到的行一定會被列出，不會被靜默略過。
  * RouterOS 的錯誤訊息（util.rosError）一律算無法辨識，即使 adapter 列為可忽略。
- * 新增廠牌：新增一支 adapters/<vendor>-<what>.js 並呼叫 S.adapters.register()，核心其他部分不需修改。
+ * 新增廠牌：新增一支 adapters/<vendor>-<what>.js 並呼叫 S.adapters.register()（同時加入 tools/core-files.js 與 index.html）。
+ * 這只涵蓋解析：鄰居、介面、位址這類事實可以沿用既有的模型；但防火牆模型與檢查（family／table／chain、S.infer.fw）、
+ * 轉送決定（query/trace.js）、/ip service 的預設埠與修正 patch（.rsc）都是 RouterOS 語意，新廠牌要另外處理，
+ * 策略見 docs/架構決策/012-多廠牌的防火牆模型策略.md（提議）。
  */
 (function (S) {
   'use strict';

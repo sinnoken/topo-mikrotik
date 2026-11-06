@@ -167,6 +167,10 @@ for (let s = 1; s <= SITES; s++) {
       e.push(['/ip address', 'add', `address=10.${s}.20.250/24 interface=vlan40 network=10.${s}.20.0`]);
     }
     if (F && a === 10) e.push(['/ip firewall filter', 'add', 'action=drop chain=input dst-port=23 protocol=tcp']);           // F08：有防火牆規則但沒有 WAN interface list
+    if (F && a === 10) {                                                                                               // F15：forward 只放行管理網段的新連線，最後全部丟棄，漏了 established
+      e.push(['/ip firewall filter', 'add', 'action=accept chain=forward comment="allow mgmt" connection-state=new in-interface=vlan10']);
+      e.push(['/ip firewall filter', 'add', 'action=drop chain=forward comment="drop all"']);
+    }
     const srvPorts = []; const userPorts = [];
     for (let k = 1; k <= SRV; k++) {
       const port = `ether${k}`; const m = mac(pick(OUI_SRV)); const ip = `10.${s}.20.${(a - 1) * SRV + k + 10}`; const nm = `${C}-SRV-${pad(a)}${k}`;

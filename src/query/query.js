@@ -178,7 +178,7 @@
     const findingsBy = new Map();
     snap.findings.forEach((f, idx) => f.entities.forEach((e) => U.getOr(findingsBy, e.type + ':' + e.key, () => []).push(idx)));
     // 第一次查詢時才建立的索引（1000 台規模下多數畫面用不到）；回傳的陣列是 Q 自己的索引，凍結以免呼叫端改壞
-    let byFindingKey = null; let byRule = null; let blocksByDev = null; let covByDev = null; let deviationsBy = null; let mgmtByDev = null;
+    let byFindingKey = null; let byRule = null; let blocksByDev = null; let covByDev = null; let deviationsBy = null; let mgmtByDev = null; let policyByDev = null;
     const freezeAll = (map) => { map.forEach((v) => Object.freeze(v)); return map; };
     const findingKeyIndex = () => byFindingKey || (byFindingKey = freezeAll(snap.findings.reduce((out, f, idx) => { U.getOr(out, findingKey(f), () => []).push(idx); return out; }, new Map())));
     const EMPTY = Object.freeze([]);
@@ -269,6 +269,32 @@
        * 每一項有 basis（export／default）、defaulted（以出廠預設值補上的欄位，推論）與 src（export 的行）；沒有 export 的設備為 null。回傳 Snapshot 本身的那一筆，不要修改。
        */
       mgmtOf(d) { if (!mgmtByDev) mgmtByDev = new Map((m.mgmtSettings || EMPTY).map((x) => [x.dev, x])); return mgmtByDev.get(d) || null; },
+      /**
+       * 狀態式骨架（回程的前提，F15 的依據；判斷在 S.infer.fw.policyBaseline）：IPv4 filter 的 input、forward 各一列，
+       * [{ chain, rules, established, invalidDrop, defaultAction, returnSafe, src }]；沒有設定資料（export）的設備為 null。
+       *   established：{ status: accept|policy|drop, rule, path, conditional, shadowed }——accept 是一定走得到的放行（accept 或 fasttrack-connection），
+       *     policy 是沒有規則決定（內建 chain 預設放行），drop 是先被一定命中的丟棄擋下；shadowed 是排在那條丟棄之後的 established 放行。
+       *   invalidDrop：{ status: drop|accept|policy, rule, path, explicit（決定的規則是否明確比對 connection-state=invalid） }。
+       *   defaultAction：{ action: drop|reject|tarpit|accept, scope: all|interface|null, policy, rule }。
+       *   returnSafe：false 表示回程不保證（F15）。rule 是規則鍵（Q.getFirewallRule 取得），path／conditional／shadowed 是規則鍵陣列；
+       *   src：[[block, line]] 依據的規則行（依序、不重複）。第一次呼叫某台設備時才計算，結果深層凍結。
+       */
+      policyBaseline(d) {
+        if (!zoneByDev.has(d)) return null;
+        if (!policyByDev) policyByDev = new Map();
+        return U.getOr(policyByDev, d, () => deepFreeze(S.infer.fw.policyBaseline(ctxOf(d), 'ip').map((c) => {
+          const key = (r) => (r ? r.key : null); const keys = (rs) => rs.map((r) => r.key);
+          const src = []; const seen = new Set();
+          const add = (r) => { if (r && !seen.has(r.key)) { seen.add(r.key); src.push(r.src[0].slice()); } };
+          [...c.established.path, c.established.rule, ...c.established.shadowed, ...c.established.conditional, ...c.invalid.path, c.invalid.rule, c.defaultAction.rule].forEach(add);
+          src.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+          return { chain: c.chain, rules: c.rules,
+            established: { status: c.established.status, rule: key(c.established.rule), path: keys(c.established.path), conditional: keys(c.established.conditional), shadowed: keys(c.established.shadowed) },
+            invalidDrop: { status: c.invalid.status, rule: key(c.invalid.rule), path: keys(c.invalid.path), explicit: c.invalid.explicit },
+            defaultAction: { action: c.defaultAction.action, scope: c.defaultAction.scope, policy: c.defaultAction.policy, rule: key(c.defaultAction.rule) },
+            returnSafe: c.returnSafe, src };
+        })));
+      },
       interfaceListsOf: (d) => listsByDev.get(d) || [],
       ipsecOf: (d) => ({ peers: peersByDev.get(d) || [], policies: polByDev.get(d) || [] }),
       /** 規則 a 是否涵蓋 b（符合 b 的封包一定符合 a；以 a 所在設備的 interface list 判斷）。比對兩份基準的規則時使用。 */

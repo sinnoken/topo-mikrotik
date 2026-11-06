@@ -3327,6 +3327,8 @@ TPE_ACC_SW_10 (10.1.10.30):
 /interface bridge vlan add bridge=bridge1 tagged=bond10,ether24 untagged=ether9,ether10,ether11,ether12,ether13,ether14,ether15,ether16 vlan-ids=30
 /ip address add address=10.1.10.30/25 interface=vlan10 network=10.1.10.0
 /ip firewall filter add action=drop chain=input dst-port=23 protocol=tcp
+/ip firewall filter add action=accept chain=forward comment="allow mgmt" connection-state=new in-interface=vlan10
+/ip firewall filter add action=drop chain=forward comment="drop all"
 /system identity set name=TPE_ACC_SW_10
 
 [admin@TPE_ACC_SW_10] > /ip neighbor print detail without-paging

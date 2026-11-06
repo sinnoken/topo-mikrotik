@@ -250,7 +250,7 @@
   V.NH_VRF_BASIS = { explicit: '閘道寫了 @<VRF>', 'vrf-interface': '閘道是 VRF 介面，在那個 VRF 再查一次', interface: '閘道介面所屬的 VRF', default: '只有 IP、沒寫 @，在 main 解析' };
   V.reachReason = (code) => V.REACH_REASON[code] || `${code}（沒有說明的原因代碼）`;
   V.REACH_START = { gateway: '來源網段的閘道', device: '來源是網路設備自己的位址（output）', 'same-subnet': '來源與目的在同一個網段', entry: '指定的入口介面', none: '找不到來源所在的網段' };
-  V.REACH_START_BASIS = { dhcp: '依 DHCP 網路的閘道', routes: '依網段上有路由表的設備', subnet: '依網段上已收集的設備' };
+  V.REACH_START_BASIS = { dhcp: '依 DHCP 網路的閘道', 'next-hop': '依網段上其他設備預設路由的下一跳', 'default-route': '依網段上有預設路由的設備', routes: '依網段上有路由表的設備', subnet: '依網段上已收集的設備' };
   /** 十進位數字字串（可能超過 2^53，例如命中次數的位元組數）加上千分位；不是數字字串時原樣回傳 */
   V.bigNum = (s) => (/^\d+$/.test(String(s)) ? String(s).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : String(s));
   // VLAN 承載（Q.vlanCarriers 的 status 與 reason）；oneSide、inferred 是推論

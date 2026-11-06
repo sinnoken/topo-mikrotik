@@ -38,7 +38,7 @@ test('VRF：鍵的寫法只在 src/core/keys.js（main 不加後綴，其他 VRF
   assert.deepStrictEqual([K.vrf(null), K.vrf(''), K.vrf(' cust-a ')], ['main', 'main', 'cust-a']);
   assert.deepStrictEqual([K.inVrf('10.0.0.1', 'main'), K.inVrf('10.0.0.1', null), K.inVrf('10.0.0.0/24', 'cust-a')], ['10.0.0.1', '10.0.0.1', '10.0.0.0/24@cust-a']);
   assert.deepStrictEqual([K.splitVrf('10.0.0.1'), K.splitVrf('10.0.0.0/24@cust-a')], [['10.0.0.1', 'main'], ['10.0.0.0/24', 'cust-a']]);
-  assert.deepStrictEqual([S.SCHEMA, S.VERSION], ['ssot-snapshot/3', '3.7.0']);
+  assert.deepStrictEqual([S.SCHEMA, S.VERSION], ['ssot-snapshot/3', '3.8.0']);
 });
 
 test('VRF（RouterOS 7）：/ip vrf 的介面、位址、網段、ARP 與路由都帶 vrf；非 main 路由表是事實；閘道的 @<VRF> 保留為下一跳的屬性', () => {
@@ -144,7 +144,8 @@ test('VRF：只用 main 的網路，S.trace 與 Q.reach 的輸出和 2.11.0 相�
   const TEXT = new Set(['note', 'error', 'message', 'detail']);
   const texts = (o, out) => {
     if (Array.isArray(o)) o.forEach((x) => texts(x, out));
-    else if (o && typeof o === 'object') Object.keys(o).forEach((k) => { if (k !== 'assumptions') { if (typeof o[k] === 'string' && TEXT.has(k)) out.push(o[k]); else texts(o[k], out); } });
+    // paths[].route／filter（ADR-023 的分層結果）是之後新增、由同一份路徑推得的摘要，不在 2.11.0 的文字裡
+    else if (o && typeof o === 'object') Object.keys(o).forEach((k) => { if (k !== 'assumptions' && !(Array.isArray(o.hops) && (k === 'route' || k === 'filter'))) { if (typeof o[k] === 'string' && TEXT.has(k)) out.push(o[k]); else texts(o[k], out); } });
     return out;
   };
   fx.cases.forEach(([src, dst], n) => {
@@ -153,7 +154,10 @@ test('VRF：只用 main 的網路，S.trace 與 Q.reach 的輸出和 2.11.0 相�
     if (t.ok) {
       assert.strictEqual(t.status, t.reached ? 'reached' : t.ends.every((e) => e.status === 'unverified') ? 'unverified' : 'unreachable', `${src}→${dst} 的 status`);
       assert.deepStrictEqual(t.unverified, S.util.uniq(t.ends.filter((e) => e.status === 'unverified').map((e) => e.dev)), `${src}→${dst} 的 unverified`);
-      delete t.status; delete t.unverified;
+      // 共用展開之後新增的起點欄位（starts、startBasis）：start 是 starts 的第一台
+      assert.strictEqual(t.start, t.starts[0], `${src}→${dst} 的 starts`);
+      assert.ok(typeof t.startBasis === 'string', `${src}→${dst} 的 startBasis`);
+      delete t.status; delete t.unverified; delete t.starts; delete t.startBasis;
     }
     assert.deepStrictEqual(strip(t, `${src}→${dst}`), fx.expected[n].trace, `trace ${src}→${dst}`);
     assert.deepStrictEqual(texts(Q.reach(src, dst, { proto: 'tcp', port: 22 }), []), fx.expected[n].reach, `reach ${src}→${dst}`);
@@ -281,8 +285,8 @@ test('策略路由：封包在 VRF 時查那個 VRF，使用者的 rule 在 VRF 
 test('VRF：只用 main 的網路，findingKey 與加入 VRF 之前（2.11.0）相同；範例資料的 VRF 部分不產生誤報', () => {
   const s = sampleSnap(); const Q = S.query(s);
   const before = JSON.parse(read('tests/fixtures/vrf/sample-2.11-finding-keys.json')).keys;
-  // 3.4.0 新增的管理面檢查（F10–F14）、3.5.0 的 L01、L02 與 3.7.0 的 F15 不在 2.11.0 的集合裡，比對時去掉
-  assert.deepStrictEqual(keys(s).filter((k) => !/^\["(F1[0-5]|L0[12])"/.test(k)), before, '範例資料加入 VRF 路由器後，finding 與 2.11.0 完全相同（重疊的 IP 不是 A01／A09）');
+  // 3.4.0 新增的管理面檢查（F10–F14）、3.5.0 的 L01、L02、3.7.0 的 F15，與 3.8.0 的 R07–R15、CE 以邊界證據判定對外後的 F03、F07 不在 2.11.0 的集合裡，比對時去掉
+  assert.deepStrictEqual(keys(s).filter((k) => !/^\["(F1[0-5]|L0[12]|R0[7-9]|R1[0-5])"|^\["F0[37]","device:TPE_CE_RT_01"/.test(k)), before, '範例資料加入 VRF 路由器後，finding 與 2.11.0 完全相同（重疊的 IP 不是 A01／A09）');
   assert.ok(Q.vrfs().includes('cust-a'), '範例資料要有 VRF');
   const main = build(['A (10.0.0.1):', '### /export terse', '/ip address add address=10.0.10.1/24 interface=ether5',
     'B (10.0.0.2):', '### /export terse', '/ip address add address=10.0.10.1/24 interface=ether5'].join('\n') + '\n');

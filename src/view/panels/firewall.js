@@ -239,7 +239,10 @@
     const services = Q.ipServicesOf(dev); const lists = Q.interfaceListsOf(dev);
     const rules = Q.firewallRulesOf(dev);
     const openAll = rules.length <= OPEN_ALL_MAX;
-    const fwFindings = Q.findingsFor('device', dev).filter((f) => (S.query.rule(f.id) || {}).cat === '防火牆');
+    // 這台設備的檢查結果中，列在防火牆畫面的：實體指向防火牆規則或服務的（不限類別，例如路由類的 R09 指向 dst-nat 規則），
+    // 加上防火牆類別、只指向設備的（例如 F08 沒有 WAN 判斷）
+    const fwFindings = Q.findingsFor('device', dev).filter((f) => f.entities.some((e) => e.type === 'rule' || e.type === 'service')
+      || (S.query.rule(f.id) || {}).cat === '防火牆');
     // 位址族 → 表：一般區塊；其下每個 chain 是可展開區塊
     const tables = [];
     chains.forEach((c) => {
@@ -293,5 +296,5 @@
     ]);
   }
 
-  V.firewall = { render, zoneStatus };
+  V.firewall = { render, zoneStatus, ruleLabel };
 })(globalThis.SSOT = globalThis.SSOT || {});

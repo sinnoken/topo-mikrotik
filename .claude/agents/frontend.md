@@ -45,9 +45,10 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 
 1. **搜尋要限定範圍**：只找專案目錄、`"$TEMP"/claude`（`$TEMP` 要加引號：Windows 的 Git Bash 中它含反斜線，不加引號時萬用字元比對不到）與 `~/.claude`。不要用 `find /`，也不要掃整顆磁碟。專案內優先用 Grep／Glob 工具。
 2. **可能跑很久的指令要加 `timeout`**，例如 `timeout 120 …`。`| head` 不會讓前面的指令提早結束（前面的指令要等 head 收滿 N 行才會停），所以改用 `-quit`、`-maxdepth` 或 `timeout`。
-3. **改檔一律用 Edit／Write 工具**，不要用 `cat >`、heredoc、`sed -i` 的多行替換或 `node -e`。
+3. **改檔一律用 Edit／Write 工具**，不要用 `cat >`、`tee`、heredoc、`sed -i` 的多行替換、`node -e`，或 python 的 heredoc／`-c`（`.claude/hooks/check-shell.js` 會擋）。多處相同的替換用 Edit 的 `replace_all`。
 4. **不要開會等 stdin 的指令**。測試在前景跑。
 5. **結束前停掉自己開的背景指令**；停不掉時，在報告中列出 PID 和指令。
+6. **macOS 的收集器端到端測試**（`test:core` 裡的收集器端到端契約、`test:collector`）需要 `timeout` 或 `gtimeout`（`brew install coreutils`，或把 lead 提供的墊片路徑放到 PATH 前面）。都沒有時那一項失敗屬環境問題，在報告寫明，不當成程式錯誤。
 
 ## Git
 
@@ -55,16 +56,25 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 - 在主工作區不要用 `git add` 或 `git rm`：暫存區由主對話管理；曾經發生 agent 先暫存了刪除，結果被主對話的 commit 一起帶走的事故。
 - 在自己的 worktree 中，只能 stage 自己修改或新增的檔案（逐一指定路徑，不用 `git add -A`、`git add .`），再 commit。
 
+## 自我檢查
+
+- 換基準、離開畫面時，進行中的計算會停。
+- Promise 一定結束（成功、失敗、取消都有出口）。
+- 焦點與 aria：操作後焦點有去處，狀態有 aria 標示。
+- 排序與收合不會把重要項目藏起來。
+- 只透過 Q／`S.query` 讀資料。
+- 測試找不到元素就失敗，不用 `if` 略過。
+
 ## 驗證
 
-`npm run test:ui`。改了配色時，另附 validator 的結果。
+`npm run test:ui`。改了配色時，另附 validator 的結果。`test:large` 與大型冒煙由 lead 在合併前跑或交給 CI（以 CI 為準）。
 
 ## 最後報告格式
 
-回報必須直接寫出完整內容，不可以只寫「同上」或「見前一則」。
+回報硬性 ≤15 行，直接寫出完整內容（不可以只寫「同上」或「見前一則」）；細節寫到 scratchpad 的檔案，回報附路徑。依序：
 
-1. 做了什麼（檔案與重點）
-2. 畫面行為的變更（使用者會看到什麼不同）
-3. 需要其他 agent 處理（data-model／workflow／docs）
-4. 文件影響（`docs/畫面架構.md` 的檢視層架構、`docs/使用說明.md` 的畫面操作，README 的功能一覽等）
-5. 驗證結果（指令與通過數；改了配色時附 validator 結果）
+1. commit（sha 與一行說明；在主工作區時寫「未 commit」）
+2. 改動檔；畫面行為的變更（使用者會看到什麼不同）
+3. 測試（指令與通過數；改了配色時附 validator 結果）
+4. 需要 lead 處理（其他 agent 的事、超出範圍的改動、環境問題）
+5. 文件影響（`docs/畫面架構.md`、`docs/使用說明.md`、README 的功能一覽等，寫出哪一節）

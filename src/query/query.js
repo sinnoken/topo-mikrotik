@@ -84,7 +84,8 @@
     const arpsByIp = new Map(); m.arps.forEach((a) => U.getOr(arpsByIp, K.inVrf(a.ip, a.vrf), () => []).push(a));
     const vlansByDev = new Map();
     m.vlans.forEach((v) => U.getOr(vlansByDev, v.dev, () => []).push(v));
-    const routesByDev = new Map(); m.routes.forEach((r) => U.getOr(routesByDev, r.dev, () => []).push(r));
+    const routesByDev = new Map(); const allRoutesByDev = new Map(); // routesByDev 只有作用中的路由（active 不是 false；舊的 Snapshot 沒有這個欄位，全部是作用中）
+    m.routes.forEach((r) => { U.getOr(allRoutesByDev, r.dev, () => []).push(r); if (r.active !== false) U.getOr(routesByDev, r.dev, () => []).push(r); });
     // VRF：每台設備的設定（model.vrfs），以及基準中出現的所有 VRF 名稱（main 一定有）。第一次查詢時才建立
     const vrfDefsByDev = new Map(); (m.vrfs || []).forEach((v) => U.getOr(vrfDefsByDev, v.dev, () => []).push(v));
     let vrfNames = null;
@@ -182,6 +183,13 @@
     const freezeAll = (map) => { map.forEach((v) => Object.freeze(v)); return map; };
     const findingKeyIndex = () => byFindingKey || (byFindingKey = freezeAll(snap.findings.reduce((out, f, idx) => { U.getOr(out, findingKey(f), () => []).push(idx); return out; }, new Map())));
     const EMPTY = Object.freeze([]);
+    let cfgIx = null;
+    const cfgIndex = () => cfgIx || (cfgIx = Object.assign({ ospf: new Map() },
+      ...['dhcpClients', 'pppoeClients', 'ospfAreas', 'ospfInterfaceTemplates'].map((k) => ({ [k]: freezeAll(byDevOf(m[k])) }))));
+    // 對外邊界、對外入口、路由網域（ADR-023）：第一次呼叫時才建立
+    let bIx = null;
+    const boundaryIndex = () => bIx || (bIx = { all: Object.freeze((m.boundaries || EMPTY).slice()), byDev: freezeAll(byDevOf(m.boundaries || EMPTY)), byEp: new Map((m.boundaries || EMPTY).map((b) => [b.ep, b])) });
+    const wanEntryMemo = new Map(); let wanEntryAll = null; let domainByPrefix = null;
     let subnetsByDev = null;
     // L4（M2）：可達性、zone、zone 矩陣與規則影響。第一次呼叫時才建立（src/query/reach.js 的 S.reach.engine），結果都是推論、只在記憶體快取，不寫進 Snapshot（ADR-014）
     let l4 = null;
@@ -269,6 +277,49 @@
        * 每一項有 basis（export／default）、defaulted（以出廠預設值補上的欄位，推論）與 src（export 的行）；沒有 export 的設備為 null。回傳 Snapshot 本身的那一筆，不要修改。
        */
       mgmtOf(d) { if (!mgmtByDev) mgmtByDev = new Map((m.mgmtSettings || EMPTY).map((x) => [x.dev, x])); return mgmtByDev.get(d) || null; },
+      /**
+       * 對外與路由網域的設定（事實＋預設值，ADR-023；欄位見設計說明 §5.2）。依設定順序，沒有時為空陣列（凍結）；元素是 Snapshot 本身的那一筆，不要修改。
+       * 每一筆有 basis（export／set）、defaulted（以手冊預設值補上的欄位，推論）、unknown（export 沒寫、手冊也沒有預設值，值為 null）與 src。
+       *   dhcpClientsOf(d)：/ip dhcp-client { name, interface, ep, addDefaultRoute（yes／no／special-classless）, defaultRouteDistance, checkGateway, usePeerDns, disabled, comment, order }
+       *   pppoeClientsOf(d)：/interface pppoe-client { name, ep（PPPoE 介面）, interface, interfaceEp（底層介面）, addDefaultRoute, defaultRouteDistance, usePeerDns, disabled, comment, order }
+       *   ospfOf(d)：{ areas: /routing ospf area { name, areaId, instance, type, disabled }, templates: /routing ospf interface-template
+       *     { area, networks, interfaces（介面或 interface list 的名稱）, passive, auth（驗證類型，null 為不驗證）, authKey（有沒有設金鑰；金鑰不進 Snapshot）, cost, type, disabled } }
+       */
+      dhcpClientsOf: (d) => cfgIndex().dhcpClients.get(d) || EMPTY,
+      pppoeClientsOf: (d) => cfgIndex().pppoeClients.get(d) || EMPTY,
+      ospfOf(d) {
+        const ix = cfgIndex();
+        if (!ix.ospf.has(d)) ix.ospf.set(d, Object.freeze({ areas: ix.ospfAreas.get(d) || EMPTY, templates: ix.ospfInterfaceTemplates.get(d) || EMPTY }));
+        return ix.ospf.get(d);
+      },
+      /**
+       * 對外邊界（推論，ADR-023；判斷在 S.infer 的 boundaries）：有證據的介面 { dev, ep, vrf, hasIfc, status: external|possible|internal, evidence }；
+       * evidence：[{ kind, strength: strong|weak|none, src, ref }]（種類與強弱見設計說明 §5.3）。不給 d 時是全部設備，給 d 時是那台；沒有時為空陣列（凍結）。
+       * 沒有列出的介面沒有任何證據，視為 internal。元素是 Snapshot 本身的那一筆，不要修改。
+       */
+      boundaries(d) { const ix = boundaryIndex(); return d === undefined ? ix.all : ix.byDev.get(d) || EMPTY; },
+      /** 某個介面的對外邊界；沒有證據時為 null（internal）。 */
+      boundaryOf: (ep) => boundaryIndex().byEp.get(ep) || null,
+      /**
+       * 對外入口（S.infer.fw.wanEntries，檢查用同一份）：[{ dev, ep, vrf, hasIfc, wanList }]（凍結）；不給 d 時是全部設備（依設備；每台 WAN 清單成員在前）。
+       * 名稱含 WAN 的清單成員（firewallZones）與對外邊界判定為 external 的介面（Q.boundaries）的聯集，沒有介面紀錄的視為 main；VRF 的用法見 S.infer.fw.wanEntries 的說明。
+       */
+      wanEntries(d) {
+        if (d !== undefined) return U.getOr(wanEntryMemo, d, () => (zoneByDev.has(d) ? S.infer.fw.wanEntries(ctxOf(d), (ep) => { const i = ifc.get(ep); return i ? i.vrf : undefined; },
+          Q.boundaries(d).filter((b) => b.status === 'external').map((b) => b.ep)) : EMPTY));
+        if (!wanEntryAll) wanEntryAll = Object.freeze(m.firewallZones.map((z) => z.dev).flatMap((x) => Q.wanEntries(x)));
+        return wanEntryAll;
+      },
+      /**
+       * 路由網域（推論，ADR-023 決策 2）：[{ key, kind: ospf|static, vrf, group, area, areaId, devices, prefixes（網段鍵，同 prefixes[].key）, evidence, otherAreas }]（凍結）。
+       * 每個直連網段恰好屬於一個網域；分法見設計說明 §5.3。
+       */
+      routingDomains: () => m.routingDomains || EMPTY,
+      /** 網段鍵（K.inVrf(網段, vrf)）所屬的路由網域；不是直連網段時為 null。 */
+      routingDomainOf(prefixKey) {
+        if (!domainByPrefix) { domainByPrefix = new Map(); (m.routingDomains || EMPTY).forEach((x) => x.prefixes.forEach((p) => domainByPrefix.set(p, x))); }
+        return domainByPrefix.get(prefixKey) || null;
+      },
       /**
        * 狀態式骨架（回程的前提，F15 的依據；判斷在 S.infer.fw.policyBaseline）：IPv4 filter 的 input、forward 各一列，
        * [{ chain, rules, established, invalidDrop, defaultAction, returnSafe, src }]；沒有設定資料（export）的設備為 null。
@@ -406,7 +457,8 @@
       peerOf(l, ep) { return l.a === ep ? l.b : l.a; },
       vlansOf: (d) => vlansByDev.get(d) || [],
       /**
-       * 某設備的路由（所有路由表）；給 vrf 時只取 vrf 等於它的路由（那個 VRF 的路由表；只用於策略路由的路由表 vrf 為 null，不會被選到）。
+       * 某設備的作用中路由（所有路由表）；給 vrf 時只取 vrf 等於它的路由（那個 VRF 的路由表；只用於策略路由的路由表 vrf 為 null，不會被選到）。
+       * 非作用中的路由（routes[].active 為 false，例如備援的預設路由）不在這裡，見 allRoutesOf。routesInTable、subnetGraph 的路由也只有作用中的。
        * vrf 不是基準中的 VRF 時 TypeError。
        */
       routesOf(d, vrf) {
@@ -415,7 +467,9 @@
         if (!routesMemo.has(k)) routesMemo.set(k, Object.freeze((routesByDev.get(d) || []).filter((r) => r.vrf === v)));
         return routesMemo.get(k);
       },
-      /** 某設備某張路由表的路由（routes[].routingTable 等於 table，不論是不是 VRF）；沒有時為空陣列。 */
+      /** 某設備的所有路由，含非作用中的（active false），依 Snapshot 的順序；設備詳細資料的路由表與備援路由的檢查用。 */
+      allRoutesOf: (d) => allRoutesByDev.get(d) || EMPTY_LIST,
+      /** 某設備某張路由表的作用中路由（routes[].routingTable 等於 table，不論是不是 VRF）；沒有時為空陣列。 */
       routesInTable(d, table) {
         const k = d + '\u0001' + table;
         if (!routesMemo.has(k)) routesMemo.set(k, Object.freeze((routesByDev.get(d) || []).filter((r) => K.vrf(r.routingTable) === table)));
@@ -1028,7 +1082,7 @@
         const routes = []; const omitted = { policyRoutes: 0 };
         if (withRoutes) {
           m.routes.forEach((r, idx) => {
-            if (r.proto === 'Direct' || !(r.proto === 'Static' || r.proto === 'Blackhole' || r.len === 0)) return;
+            if (r.active === false || r.proto === 'Direct' || !(r.proto === 'Static' || r.proto === 'Blackhole' || r.len === 0)) return;
             if (r.vrf == null) { omitted.policyRoutes++; return; } // 只用於策略路由的路由表：不屬於任何 VRF 容器
             const prefix = r.prefix + '/' + r.len; const sid = K.inVrf(prefix, r.vrf);
             if (!subnets.has(sid)) { subnets.set(sid, subnetNode({ prefix, net: r.prefix, len: r.len, family: 4, vrf: r.vrf }, 'route')); }
@@ -1163,6 +1217,11 @@
   S.query.preflightRecognized = (pre) => pre.devices.filter((d) => recognized(d.dataTypes.length, d.failures));
   /** 資料類別（設備的 data、coverage 的 data／missing、收集失敗的 dataTypes）的顯示名稱；不認得時原樣回傳。 */
   S.query.dataLabel = (t) => S.check.DATA_LABEL[t] || t;
+  /**
+   * 對外邊界證據種類（Q.boundaries() 的 evidence[].kind）的顯示名稱，與檢查訊息用的是同一份（S.infer.BOUNDARY_LABEL）。
+   * 不認得的種類回傳 null（不以原值冒充說明，畫面自己標示「沒有說明」）。
+   */
+  S.query.boundaryLabel = (kind) => (Object.prototype.hasOwnProperty.call(S.infer.BOUNDARY_LABEL, kind) ? S.infer.BOUNDARY_LABEL[kind] : null);
   /** 解析器（adapter id，見 meta.adapters、blocks[].adapters）的顯示名稱；不認得時原樣回傳。 */
   S.query.adapterLabel = (id) => (Object.prototype.hasOwnProperty.call(S.adapters, id) && S.adapters[id] && S.adapters[id].label) || id;
   /** 管理面設定的出廠預設值表（凍結，S.MGMT_DEFAULTS）：export 沒寫的欄位依它補上；含適用的 RouterOS 版本（routerOS）與手冊網址（manual）。 */

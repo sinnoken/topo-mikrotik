@@ -4,6 +4,8 @@ const assert = require('assert');
 const { S, build, read, test, sampleSnap } = require('../lib.js');
 
 const RT = 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC';
+/** L4 引擎除了 reach.js 以外的檔案（依載入順序，跨檔經 S.reach._）。 */
+const REACH_PARTS = ['src/query/reach-eval.js', 'src/query/reach-zones.js', 'src/query/reach-matrix.js', 'src/query/reach-exposure.js'];
 /**
  * 手寫的兩台路由器：R1（LAN 192.168.1.0/24 在 bridge1、WAN 198.51.100.0/30 在 ether1）經 10.0.12.0/30 接 R2（192.168.2.0/24 在 bridge1）。
  * R1 的 forward：drop src-address-list=BLOCKED、放行到 192.168.2.10:22、drop 到 192.168.2.0/24；dst-nat 8080 → 192.168.2.20–21（範圍）、8081 → 192.168.2.10:22；masquerade 到 WAN。
@@ -94,12 +96,17 @@ test('Q.reach：無法判斷時回傳 unknown 與原因（address-list、未收�
   // 經 WAN 送往基準以外：路徑以 egress-wan 結束（不再是 next-hop-outside）；仍是 unknown，因為 R1 的 drop src-address-list=BLOCKED 不明
   const out = Q.reach('192.168.2.10', '8.8.8.8', { proto: 'tcp', port: 443 });
   assert.deepStrictEqual([out.verdict, codes(out).includes('next-hop-outside'), out.paths[0].end.code, codes(out)], ['unknown', false, 'egress-wan', ['rule-condition']]);
-  // 下一跳在基準外、但出介面不在 WAN 清單：仍是 next-hop-outside
-  const noWan = S.query(build(['R9 (10.9.0.1):', '### /export terse', '/ip address add address=10.9.0.1/24 interface=ether2 network=10.9.0.0',
+  // 沒有 WAN 清單：送往外部依對外邊界（Q.boundaryOf）。預設路由的出介面是強證據 → egress-wan；
+  // 只有非預設路由、出介面沒有對外證據 → 仍是 next-hop-outside
+  const r9 = (route) => S.query(build(['R9 (10.9.0.1):', '### /export terse', '/ip address add address=10.9.0.1/24 interface=ether2 network=10.9.0.0',
     '/ip address add address=10.8.0.2/30 interface=ether1 network=10.8.0.0', '### /ip route print detail without-paging', RT,
-    ' DAc dst-address=10.9.0.0/24 routing-table=main gateway=ether2 distance=0', ' As dst-address=0.0.0.0/0 routing-table=main gateway=10.8.0.1 distance=1'].join('\n')));
-  const lan = noWan.reach('10.9.0.50', '8.8.8.8', { proto: 'tcp', port: 443 });
-  assert.deepStrictEqual([lan.verdict, lan.paths[0].end.code], ['unknown', 'next-hop-outside'], '沒有 WAN 清單時不當成外部');
+    ' DAc dst-address=10.9.0.0/24 routing-table=main gateway=ether2 distance=0', route].join('\n')));
+  const dflt = r9(' As dst-address=0.0.0.0/0 routing-table=main gateway=10.8.0.1 distance=1');
+  assert.strictEqual(dflt.boundaryOf('R9|ether1').status, 'external');
+  const viaDefault = dflt.reach('10.9.0.50', '8.8.8.8', { proto: 'tcp', port: 443 });
+  assert.deepStrictEqual([viaDefault.verdict, viaDefault.paths[0].end.code], ['allow', 'egress-wan'], '預設路由的出介面是對外邊界');
+  const lan = r9(' As dst-address=8.0.0.0/8 routing-table=main gateway=10.8.0.1 distance=1').reach('10.9.0.50', '8.8.8.8', { proto: 'tcp', port: 443 });
+  assert.deepStrictEqual([lan.verdict, lan.paths[0].end.code], ['unknown', 'next-hop-outside'], '出介面沒有對外證據時不當成外部');
   const hop = out.paths[0].hops.find((h) => h.dev === 'R1');
   assert.deepStrictEqual([hop.nat[0].type, hop.srcOut], ['masquerade', '198.51.100.2'], 'masquerade 改寫來源為出介面的位址');
   // dst-nat 的 to-addresses 是範圍
@@ -205,7 +212,7 @@ test('zone 矩陣：L0 的格子狀態與代表規則；L1／L2 下鑽；相同�
   const d = Q.zoneCell('list:WAN', 'vlan:20');
   const vip = d.groups.find((g) => g.dst.via === 'nat');
   assert.deepStrictEqual([vip.dst.ip, vip.srcs.map((x) => x.ip), vip.services.map((x) => [x.service, x.verdict, x.final.dst])], ['203.0.113.2', ['203.0.113.1'], [['tcp/8443', 'allow', '10.1.20.11']]]);
-  const dnat = s.model.firewallRules.find((r) => r.action === 'dst-nat');
+  const dnat = s.model.firewallRules.find((r) => r.action === 'dst-nat' && r.dev === 'TPE_CORE_RT_01');
   assert.ok(d.ruleDetails.some((r) => r.key === dnat.key && r.verdicts.allow > 0));
   // L3：同一組來源與目的的完整路徑
   assert.strictEqual(Q.reach(vip.srcs[0].ip, vip.dst.ip, { proto: 'tcp', port: 8443 }).verdict, 'allow');
@@ -263,15 +270,16 @@ test('Q.zoneCell 的 groups[].divergent：只有異質的格子有，標出結�
   });
 });
 
-test('S.query.reachReasonCodes：涵蓋 reach.js 中所有 reason／end 代碼，且每個代碼都真的用到', () => {
+test('S.query.reachReasonCodes：涵蓋 reach.js 與共用路徑展開（trace.js）中所有 reason／end 代碼，且每個代碼都真的用到', () => {
   const list = S.query.reachReasonCodes();
   assert.ok(Object.isFrozen(list) && list.every((x) => Object.isFrozen(x)));
   assert.strictEqual(S.query.reachReasonCodes(), list);
   list.forEach((x) => assert.ok(typeof x.code === 'string' && ['reason', 'end'].includes(x.kind) && (x.note === undefined || typeof x.note === 'string'), JSON.stringify(x)));
   assert.strictEqual(new Set(list.map((x) => x.code)).size, list.length, '代碼不重複');
-  // 只掃引擎本身（makeEngine 之後）：清單與 ASSUMPTIONS 的 code 不算
-  const src = read('src/query/reach.js');
-  const body = src.slice(src.indexOf('function makeEngine'));
+  // 只掃引擎本身（reach.js 的 makeEngine 之後、其他 reach-*.js 全部）與共用的路徑展開（trace.js 的 walker 與 routeFrom 之間）：清單與 ASSUMPTIONS 的 code 不算
+  const src = read('src/query/reach.js'); const tr = read('src/query/trace.js');
+  const parts = REACH_PARTS.map((f) => read(f)).join('\n');
+  const body = src.slice(src.indexOf('function makeEngine')) + parts + tr.slice(tr.indexOf('function walker('), tr.indexOf('function routeFrom('));
   const found = new Set();
   const scan = (re, kind) => { for (const m of body.matchAll(re)) m.slice(1).filter(Boolean).forEach((c) => found.add(c + '|' + kind)); };
   // 代碼可以含數字（例如 no-ipv6-firewall）
@@ -291,9 +299,33 @@ test('S.query.reachReasonCodes：涵蓋 reach.js 中所有 reason／end 代碼�
   list.filter((x) => x.kind === 'reason').forEach((x) => assert.ok(!found.has(x.code + '|end'), `${x.code} 也是結束代碼，kind 應為 end`));
 });
 
+test('L4 引擎拆成多個檔案：Q 與 S.query 的 L4 成員與參數個數不變，各部分依序載入、只經 S.reach._ 共用', () => {
+  const Q = S.query(sampleSnap());
+  const qMembers = { reach: 3, zones: 1, zoneOf: 2, zoneMatrix: 1, zoneMatrixSteps: 1, zoneCell: 3, ruleImpact: 2, exposure: 1, exposureSteps: 1 };
+  Object.entries(qMembers).forEach(([k, n]) => {
+    assert.strictEqual(typeof Q[k], 'function', `Q.${k}`);
+    assert.strictEqual(Q[k].length, n, `Q.${k} 的參數個數`);
+  });
+  ['l4Services', 'zoneSources', 'reachAssumptions', 'reachReasonCodes', 'reachStartBases'].forEach((k) => {
+    assert.strictEqual(typeof S.query[k], 'function', `S.query.${k}`);
+    assert.strictEqual(S.query[k].length, 0, `S.query.${k} 不需要參數`);
+    assert.strictEqual(S.query[k](), S.query[k](), `S.query.${k} 每次回傳同一個凍結的物件`);
+  });
+  assert.deepStrictEqual(Object.keys(S.reach).sort(), ['ASSUMPTIONS', 'SERVICES', 'ZONE_SOURCES', '_', 'engine', 'svcId'].sort());
+  ['evalPart', 'zonesPart', 'matrixPart', 'exposurePart'].forEach((k) => assert.strictEqual(typeof S.reach._[k], 'function', `S.reach._.${k}`));
+  // 載入順序：reach.js 在 trace.js 之後，其他部分緊接在 reach.js 之後
+  const files = require('../../tools/core-files.js');
+  const at = files.indexOf('src/query/reach.js');
+  assert.ok(at > files.indexOf('src/query/trace.js'));
+  assert.deepStrictEqual(files.slice(at + 1, at + 1 + REACH_PARTS.length), REACH_PARTS);
+  // 引擎回傳的成員（query.js 的 L4() 呼叫的）
+  const eng = S.reach.engine(Q, { ctxOf: () => null });
+  assert.deepStrictEqual(Object.keys(eng), ['reach', 'zones', 'zoneOf', 'matrix', 'matrixSteps', 'cell', 'ruleImpact', 'exposure', 'exposureSteps']);
+});
+
 test('Q.ruleImpact：規則牽涉的 zone 對與路徑，停用後改變的結果；被遮蔽的規則沒有影響', () => {
   const s = sampleSnap(); const Q = S.query(s);
-  const dnat = s.model.firewallRules.find((r) => r.action === 'dst-nat');
+  const dnat = s.model.firewallRules.find((r) => r.action === 'dst-nat' && r.dev === 'TPE_CORE_RT_01');
   const im = Q.ruleImpact(dnat.key);
   assert.strictEqual(im.rule.key, dnat.key);
   assert.ok(im.cells.some((c) => c.src === 'list:WAN' && c.dst === 'vlan:20' && c.decides > 0));
@@ -301,7 +333,7 @@ test('Q.ruleImpact：規則牽涉的 zone 對與路徑，停用後改變的結�
   const f01 = s.findings.find((f) => f.id === 'F01');
   const shadow = Q.ruleImpact(f01.entities.find((e) => e.type === 'rule').key);
   assert.deepStrictEqual([shadow.shadowed, shadow.total.evaluations, shadow.ifDisabled.total], [true, 0, 0]);
-  const f03 = s.findings.find((f) => f.id === 'F03');
+  const f03 = s.findings.find((f) => f.id === 'F03' && f.entities[0].key === 'TPE_CORE_RT_01');
   const winbox = Q.ruleImpact(f03.entities.find((e) => e.type === 'rule').key);
   assert.ok(winbox.ifDisabled.changed.every((c) => c.service === 'tcp/8291' && c.to === 'deny'), '停用 winbox 放行：只影響 tcp/8291，改為 deny');
   assert.strictEqual(Q.ruleImpact('no-such-rule'), null);
@@ -331,4 +363,40 @@ test('S.query.reachAssumptions：前提以中文敘述，RouterOS 原值（參�
   const all = list.map((a) => a.message).join('\n');
   ['connection-state=new', 'raw', 'nat', 'filter', 'mangle', 'src-address', 'dst-address', 'mark-routing', 'policy-rules', '/routing rule', '/routing settings', 'bridge filter', 'src-port']
     .forEach((w) => assert.ok(all.includes(w), '應保留原值 ' + w));
+});
+
+test('判斷的前提依層級排列（ADR-023 決策 5）：路由層 → 防火牆層 → 推論假設；暴露清單另加的兩條是推論假設、接在最後；external 不再以名稱含 WAN 的清單判定', () => {
+  const ORDER = ['route', 'filter', 'assumption'];
+  const check = (list) => list.forEach((a, i) => {
+    assert.ok(ORDER.includes(a.layer), `${a.code} 的 layer`);
+    if (i) assert.ok(ORDER.indexOf(list[i - 1].layer) <= ORDER.indexOf(a.layer), `${list[i - 1].code} → ${a.code} 的層級順序`);
+  });
+  const base = S.query.reachAssumptions(); check(base);
+  check(S.query(sampleSnap()).exposure().assumptions);
+  assert.deepStrictEqual(base.map((a) => a.code), ['ipv4-vrf', 'policy-routing', 'mark-routing', 'bridge-ip-firewall', 'routeros-tables', 'new-connection', 'conditions', 'src-port', 'address-list',
+    'untracked', 'ip-service', 'static-only', 'external', 'return-path']);
+  const msg = (c) => base.find((a) => a.code === c).message;
+  assert.ok(/對外邊界/.test(msg('external')) && !/WAN|介面清單/.test(msg('external')), msg('external'));
+  assert.ok(/一律不展開/.test(msg('address-list')) && /靜態項目/.test(msg('address-list')));
+  assert.ok(/不看那條規則的比對條件/.test(msg('mark-routing')));
+  assert.ok(/F15/.test(msg('return-path')) && /SYN/.test(msg('new-connection')) && /output/.test(msg('untracked')) && /一定是拒絕/.test(msg('ip-service')));
+});
+
+test('L4 快取：協定種類多（第 16 種）時，不同目的與 service 的快取鍵不會相同（目的與 service 分層存）', () => {
+  const Q = S.query(twoRouters({ r1: [
+    '/ip firewall filter add action=accept chain=forward dst-address=192.168.2.10 dst-port=22 protocol=tcp',
+    '/ip firewall filter add action=drop chain=forward dst-address=192.168.2.0/24',
+  ] }));
+  assert.strictEqual(Q.reach('192.168.1.50', '192.168.2.200', { proto: 'tcp', port: 22 }).verdict, 'deny', 'tcp 是第一種協定');
+  for (let p = 100; p < 114; p++) Q.reach('192.168.1.50', '192.168.2.200', { proto: String(p) });
+  // 舊的鍵：目的 × 1e6 ＋ 協定序號 × 65536 ＋ 埠；第 16 種協定的 16982 埠到 .9 會等於 tcp/22 到 .10
+  assert.strictEqual(Q.reach('192.168.1.50', '192.168.2.9', { proto: 'sctp', port: 16982 }).verdict, 'deny');
+  assert.strictEqual(Q.reach('192.168.1.50', '192.168.2.10', { proto: 'tcp', port: 22 }).verdict, 'allow', '放行到 192.168.2.10:22 的規則');
+});
+
+test('TTL：L3 與 L4 共用一個常數（S.trace.TTL）；S.trace 的 ttl 必須是正整數，不靜默改用預設', () => {
+  assert.strictEqual(S.trace.TTL, 32);
+  const Q = S.query(twoRouters());
+  assert.throws(() => S.trace(Q, '192.168.1.50', '192.168.2.10', { ttl: 0 }), TypeError);
+  assert.deepStrictEqual(S.trace(Q, '192.168.1.50', '192.168.2.10', { ttl: 1 }).ends.map((e) => e.status), ['ttl']);
 });

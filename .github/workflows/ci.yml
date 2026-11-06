@@ -171,7 +171,7 @@ jobs:
           node-version: 24
 
       - name: Run large tests
-        run: npm run test:large
+        run: NODE_OPTIONS=--max-old-space-size=4096 npm run test:large
 
       - name: Run large UI smoke test
         run: |

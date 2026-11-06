@@ -65,7 +65,7 @@ function exportText(name, board, entries, compact) {
   else { let ctx = null; entries.forEach(([p, c, a]) => { if (p !== ctx) { lines.push(p); ctx = p; } lines.push(...wrapCmd(`${c} ${a}`)); }); }
   return lines.join('\n');
 }
-const sort = (entries) => { const order = ['/interface bridge', '/interface ethernet', '/interface bonding', '/interface vlan', '/interface vrrp', '/interface bridge port', '/interface bridge vlan', '/ip vrf', '/ip address', '/ip dhcp-server network', '/routing id', '/routing ospf instance', '/ip route', '/routing table', '/routing rule',
+const sort = (entries) => { const order = ['/interface bridge', '/interface ethernet', '/interface bonding', '/interface vlan', '/interface vrrp', '/interface bridge port', '/interface bridge vlan', '/ip vrf', '/ip address', '/ip dhcp-server network', '/ip dhcp-client', '/interface pppoe-client', '/routing id', '/routing ospf instance', '/routing ospf area', '/routing ospf interface-template', '/ip route', '/routing table', '/routing rule',
   '/ip pool', '/ip dhcp-server lease', '/ip dns', '/ip dns static', '/ip firewall address-list', '/system ntp client', '/system ntp client servers',
   '/interface list', '/interface list member', '/ip firewall filter', '/ip firewall nat', '/ip firewall raw', '/ipv6 firewall filter', '/ip service',
   '/ip neighbor discovery-settings', '/ip proxy', '/ip upnp', '/ip upnp interfaces', '/snmp', '/snmp community', '/tool bandwidth-server', '/tool mac-server', '/tool mac-server mac-winbox']; return entries.sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])); };
@@ -76,7 +76,7 @@ const addrText = (rows) => table(rows.map((r) => ({ flags: '', kvs: [['address',
 // r.table：路由表（預設 main）；VRF 的路由表與 VRF 同名，閘道可以帶 @<VRF>（手冊 VRF 的 print detail 範例）
 const routeText = (rows) => table(rows.map((r) => ({ flags: r.flags, kvs: r.blackhole
   ? [['dst-address', r.dst], ['routing-table', r.table || 'main'], ['blackhole', true], ['distance', r.dist], ['scope', r.scope || 30]]
-  : [['dst-address', r.dst], ['routing-table', r.table || 'main'], ['gateway', r.gw], ['immediate-gw', r.igw || r.gw], ['distance', r.dist], ['scope', r.scope || 10]] })), 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC, o - OSPF, b - BGP', false);
+  : [['dst-address', r.dst], ['routing-table', r.table || 'main'], ['gateway', r.gw], ['immediate-gw', r.igw || r.gw], ['check-gateway', r.cg], ['distance', r.dist], ['scope', r.scope || 10]] })), 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC, o - OSPF, b - BGP', false);
 const ospfText = (rows) => table(rows.map((r) => ({ flags: '', kvs: [['instance', 'default'], ['area', 'backbone'], ['address', r.addr], r.ifc ? ['interface', r.ifc] : null, ['priority', 1], ['router-id', r.id], ['state', 'Full'], ['state-changes', 5], ['adjacency', '1d2h']].filter(Boolean) })), 'Flags: ');
 const ifaceText = (rows) => ['Flags: D - DYNAMIC; R - RUNNING; S - SLAVE', ...rows.map((r, i) => [` ${i}  ${r.flags}  ;;; ${r.comment || ''}`.replace(/ ;;; $/, ''), detailRow('       ', [['name', `"${r.name}"`.replace(/^"|"$/g, '')], ['type', r.type], ['mtu', 1500]])].join('\n').replace(/name=(\S+)/, 'name="$1"').replace(/type=(\S+)/, 'type="$1"'))].join('\n');
 // 防火牆命中次數（print stats detail）：依 export 的規則順序一列一條，RouterOS 7 的數字以空白分千位。
@@ -246,9 +246,10 @@ for (let s = 1; s <= SITES; s++) {
     } else {
       const ispIp = `203.0.113.${ci * 4 + 2}`; const gw = `203.0.113.${ci * 4 + 1}`;
       e.push(['/ip address', 'add', `address=${ispIp}/30 interface=ether47 network=203.0.113.${ci * 4}`]);
-      e.push(['/ip route', 'add', `dst-address=0.0.0.0/0 gateway=${gw}`]);
+      const cg = F && ci === 0 ? 'ping' : undefined;                                                                 // R11 用：核心 01 的預設路由有 check-gateway，DHCP client 的沒有
+      e.push(['/ip route', 'add', `${cg ? `check-gateway=${cg} ` : ''}dst-address=0.0.0.0/0 gateway=${gw}`]);
       rt.push({ flags: 'DAc', dst: `203.0.113.${ci * 4}/30`, gw: 'ether47', igw: 'ether47', dist: 0 });
-      rt.push({ flags: 'As', dst: '0.0.0.0/0', gw, igw: `${gw}%ether47`, dist: 1, scope: 30 });
+      rt.push({ flags: 'As', dst: '0.0.0.0/0', gw, igw: `${gw}%ether47`, cg, dist: 1, scope: 30 });
       c.ospf = [];
     }
     if (F && ci === 0) {                                                                                                // VRRP 閘道與正常的 DHCP 網路；R03：互相指向的兩條靜態路由
@@ -276,6 +277,24 @@ for (let s = 1; s <= SITES; s++) {
       e.push(['/ip address', 'add', `address=172.31.1.1/30 interface=ether46 network=172.31.1.0`]);
       rt.push({ flags: 'DAc', dst: '172.31.1.0/30', gw: 'ether46', igw: 'ether46', dist: 0 });
       c.ospf.push({ addr: '172.31.1.2', id: '172.31.255.2', ifc: null });
+    }
+    if (F && ci === 0) {                                                                                                // ADR-023：對外與路由網域的設定（之後的 R13–R15 用）
+      e.push(['/ip dhcp-client', 'add', 'comment="ISP2 backup" default-route-distance=5 interface=ether45 use-peer-dns=no']);       // 第二個上網出口：DHCP 加預設路由（沒寫 add-default-route，預設 yes），沒設 check-gateway
+      rt.push({ flags: 'Dd', dst: '0.0.0.0/0', gw: '198.51.100.1', igw: '198.51.100.1%ether45', dist: 5, scope: 30 });          // DHCP 裝進來的備援預設路由（distance 5，非作用中）：下一跳不在基準，ether45 判定對外
+      e.push(['/interface pppoe-client', 'add', 'add-default-route=yes disabled=yes interface=ether44 name=pppoe-isp3 password=Pppoe-Pass-01 user=tpe-core@isp3']); // 停用的 PPPoE 備援
+      e.push(['/routing ospf area', 'add', 'area-id=0.0.0.0 instance=default name=backbone']);
+      e.push(['/routing ospf interface-template', 'add', 'area=backbone auth=md5 auth-id=1 auth-key=Ospf-Key-01 interfaces=bond100 type=ptp']);   // 核心互連：有驗證
+      e.push(['/routing ospf interface-template', 'add', 'area=backbone interfaces=ether46']);                                     // 往未知鄰居（R02）：沒有驗證
+      e.push(['/routing ospf interface-template', 'add', `area=backbone networks=10.${s}.10.0/24 passive`]);                       // 管理網段：passive
+      e.push(['/routing ospf interface-template', 'add', `area=backbone networks=10.${s}.30.0/24`]);                               // 使用者網段：沒有設 passive（R14、R15）
+    }
+    if (F) {                                                                                                           // R01：往合作單位的網段經伺服器網段上沒有收集的防火牆（ISP 閘道經對外介面，不再是 R01）
+      e.push(['/ip route', 'add', `dst-address=10.200.0.0/16 gateway=10.${s}.20.254`]);
+      rt.push({ flags: 'As', dst: '10.200.0.0/16', gw: `10.${s}.20.254`, igw: `10.${s}.20.254%vlan20`, dist: 1, scope: 30 });
+    }
+    if (F && ci === 1) {                                                                                                // R13：同一個使用者網段在核心 02 放進 area 0.0.0.1（passive），核心 01 是骨幹
+      e.push(['/routing ospf area', 'add', 'area-id=0.0.0.1 instance=default name=area1']);
+      e.push(['/routing ospf interface-template', 'add', `area=area1 networks=10.${s}.30.0/24 passive`]);
     }
     // 防火牆：defconf 風格（WAN 只放 ISP 上行；多站點時連到 WAN 路由器的 ether48 是內部鏈路，歸在 LAN），管理服務只開給管理網段
     const FF = (a) => e.push(['/ip firewall filter', 'add', a]);
@@ -364,6 +383,14 @@ for (let s = 1; s <= SITES; s++) {
 }
 if (SITES > 1) {
   wan.entries.push(['/ip route', 'add', 'dst-address=0.0.0.0/0 gateway=203.0.113.1']);
+  // ADR-023：WAN 路由器以預設路由與 masquerade 判定對外，另有 defconf 式的 WAN 清單與 input／forward（真實的邊界：從 WAN 進來的新連線丟棄）
+  wan.entries.push(['/ip firewall nat', 'add', 'action=masquerade chain=srcnat out-interface=ether47']);
+  wan.entries.push(['/interface list', 'add', 'comment=defconf name=WAN'], ['/interface list member', 'add', 'comment=defconf interface=ether47 list=WAN']);
+  [['input', 'accept', 'connection-state=established,related,untracked'], ['input', 'drop', 'connection-state=invalid'], ['input', 'accept', 'protocol=icmp'], ['input', 'drop', 'in-interface-list=WAN'],
+    ['forward', 'accept', 'connection-state=established,related,untracked'], ['forward', 'drop', 'connection-state=invalid'], ['forward', 'drop', 'connection-nat-state=!dstnat connection-state=new in-interface-list=WAN']]
+    .forEach(([chain, action, m]) => wan.entries.push(['/ip firewall filter', 'add', `action=${action} chain=${chain} ${m}`]));
+  // 管理面：MAC server、MAC WinBox 與鄰居探索不開在任何介面（乾淨網路不觸發 F11、F12）
+  wan.entries.push(['/tool mac-server', 'set', 'allowed-interface-list=none'], ['/tool mac-server mac-winbox', 'set', 'allowed-interface-list=none'], ['/ip neighbor discovery-settings', 'set', 'discover-interface-list=none']);
   wan.routes.push({ flags: 'As', dst: '0.0.0.0/0', gw: '203.0.113.1', igw: '203.0.113.1%ether47', dist: 1, scope: 30 });
   for (let s = 1; s <= SITES; s++) wan.routes.push({ flags: 'DAo+', dst: `10.${s}.0.0/16`, gw: `10.254.${s}.2,10.254.${s}.6`, igw: `10.254.${s}.2%ether${(s - 1) * 2 + 1},10.254.${s}.6%ether${(s - 1) * 2 + 2}`, dist: 110, scope: 20 });
   wan.addrs.forEach((a) => wan.entries.push(['/ip address', 'add', `address=${a.cidr} interface=${a.ifc} network=${a.net}`]));
@@ -390,7 +417,9 @@ if (FAULTS) {
   const entries = {
     [rt.name]: [['/interface vlan', 'add', 'interface=ether2 name=vlan10 vlan-id=10'], ['/interface vlan', 'add', 'interface=ether2 name=vlan20 vlan-id=20'],
       ['/interface vlan', 'add', 'disabled=yes interface=ether2 name=vlan30 vlan-id=30'],
-      ['/ip address', 'add', 'address=10.1.10.240/24 interface=vlan10 network=10.1.10.0'], ['/ip address', 'add', 'address=10.1.20.240/24 interface=vlan20 network=10.1.20.0']],
+      ['/ip address', 'add', 'address=10.1.10.240/24 interface=vlan10 network=10.1.10.0'], ['/ip address', 'add', 'address=10.1.20.240/24 interface=vlan20 network=10.1.20.0'],
+      // R10、R12：分支的實驗網段 10.1.50.0/24 只在這台；這台有到使用者網段的靜態路由，核心沒有回到 10.1.50.0/24 的路由（只有往 ISP 的預設路由）
+      ['/ip address', 'add', 'address=10.1.50.1/24 interface=ether3 network=10.1.50.0'], ['/ip route', 'add', 'dst-address=10.1.30.0/24 gateway=10.1.20.2']],
     [sw.name]: [['/interface bridge', 'add', 'name=bridge1 vlan-filtering=yes'], ['/interface vlan', 'add', 'interface=bridge1 name=vlan10 vlan-id=10'],
       ['/interface bridge port', 'add', `bridge=bridge1 interface=ether1 comment="to ${rt.name}"`], ['/interface bridge port', 'add', `bridge=bridge1 interface=ether2 comment="to ${lab.name}"`],
       ['/interface bridge vlan', 'add', 'bridge=bridge1 tagged=bridge1,ether1,ether2 vlan-ids=10'], ['/interface bridge vlan', 'add', 'bridge=bridge1 tagged=ether1,ether2 vlan-ids=20'],
@@ -405,7 +434,8 @@ if (FAULTS) {
     [lab.name]: nrow('ether1', nb(sw, 'ether2')),
   };
   const extra = {
-    [rt.name]: [[`/ip route print ${D}`, routeText([10, 20].map((v) => ({ flags: 'DAc', dst: `10.1.${v}.0/24`, gw: `vlan${v}`, igw: `vlan${v}`, dist: 0 })))]],
+    [rt.name]: [[`/ip route print ${D}`, routeText([10, 20].map((v) => ({ flags: 'DAc', dst: `10.1.${v}.0/24`, gw: `vlan${v}`, igw: `vlan${v}`, dist: 0 }))
+      .concat([{ flags: 'DAc', dst: '10.1.50.0/24', gw: 'ether3', igw: 'ether3', dist: 0 }, { flags: 'As', dst: '10.1.30.0/24', gw: '10.1.20.2', igw: '10.1.20.2%vlan20', dist: 1, scope: 30 }]))]],
     [sw.name]: [[`/interface bridge host print ${D}`, bridgeHostText([{ local: true, vid: 0, mac: sw.mac, ifc: 'bridge1' }, { vid: 10, mac: rt.mac, ifc: 'ether1' }, { vid: 10, mac: lab.mac, ifc: 'ether2' }])]],
     [lab.name]: [[`/interface bridge host print ${D}`, bridgeHostText([{ local: true, vid: 0, mac: lab.mac, ifc: 'bridge1' }, { vid: 0, mac: sw.mac, ifc: 'ether1' }])]],
   };
@@ -432,7 +462,18 @@ if (FAULTS) {
     // 策略路由：172.16.10.128/25 只查 to-isp2；往 203.0.113.0/24 的規則用了 min-prefix（無法判斷，trace／reach 為不明）
     ['/routing table', 'add', 'disabled=no fib name=to-isp2'], ['/ip route', 'add', 'gateway=192.168.50.1 routing-table=to-isp2'],
     ['/routing rule', 'add', 'action=lookup-only-in-table src-address=172.16.10.128/25 table=to-isp2'],
-    ['/routing rule', 'add', 'action=lookup dst-address=203.0.113.0/24 min-prefix=0 table=main']];
+    ['/routing rule', 'add', 'action=lookup dst-address=203.0.113.0/24 min-prefix=0 table=main'],
+    // ADR-023：CE 沒有 WAN 清單，以 masquerade 的出介面判定對外（預設路由的下一跳 PE 在基準內，不算）；另有一條閘道不通的備援預設路由（非作用中，R11 用）
+    ['/ip firewall nat', 'add', 'action=masquerade chain=srcnat out-interface=ether1'], ['/ip route', 'add', 'distance=10 gateway=10.255.0.1'],
+    // R09：轉送到不存在的伺服器 10.9.9.9（私有位址只符合經對外介面 ether1 的預設路由，會送回外部；F04 不列）
+    ['/ip firewall nat', 'add', 'action=dst-nat chain=dstnat dst-port=3389 in-interface=ether1 protocol=tcp to-addresses=10.9.9.9'],
+    // 沒有 WAN 清單、以邊界證據判定 ether1 對外：F03／F07 的 ssh 從 ether1 進得來；forward 漏了 established（F15，會轉送的路由器）
+    ['/ip firewall filter', 'add', 'action=accept chain=input connection-state=established,related,untracked'], ['/ip firewall filter', 'add', 'action=drop chain=input connection-state=invalid'],
+    ['/ip firewall filter', 'add', 'action=accept chain=input protocol=icmp'], ['/ip firewall filter', 'add', 'action=accept chain=input dst-port=22 protocol=tcp'],
+    ['/ip firewall filter', 'add', 'action=drop chain=input in-interface=ether1'],
+    ['/ip firewall filter', 'add', 'action=accept chain=forward comment="allow lan" connection-state=new in-interface=ether2'], ['/ip firewall filter', 'add', 'action=drop chain=forward comment="drop all"'],
+    ['/tool mac-server', 'set', 'allowed-interface-list=none'], ['/tool mac-server mac-winbox', 'set', 'allowed-interface-list=none'],
+    ['/ip neighbor discovery-settings', 'set', 'discover-interface-list=none']];
   const vrfText = ['Flags: X - disabled; * - builtin', ' 0    name="cust-a" interfaces=ether2,ether3', ' 1  * name="main" interfaces=all'].join('\n');
   const peRoutes = [
     { flags: 'DAc', dst: '10.1.30.0/24', gw: 'ether1', dist: 0 },
@@ -444,7 +485,8 @@ if (FAULTS) {
   ];
   const ceRoutes = [{ flags: 'DAc', dst: '172.16.10.0/24', gw: 'ether2', dist: 0 }, { flags: 'DAc', dst: '192.168.50.0/24', gw: 'ether1', dist: 0 },
     { flags: 'As', dst: '0.0.0.0/0', gw: '192.168.50.1', igw: '192.168.50.1%ether1', dist: 1, scope: 30 },
-    { flags: 'As', table: 'to-isp2', dst: '0.0.0.0/0', gw: '192.168.50.1', igw: '192.168.50.1%ether1', dist: 1, scope: 30 }];
+    { flags: 'As', table: 'to-isp2', dst: '0.0.0.0/0', gw: '192.168.50.1', igw: '192.168.50.1%ether1', dist: 1, scope: 30 },
+    { flags: ' s', dst: '0.0.0.0/0', gw: '10.255.0.1', dist: 10, scope: 30 }];
   const custArps = [{ ip: '10.1.20.11', mac: mac(pick(OUI_SRV)), ifc: 'ether2', vrf: 'cust-a' }, { ip: '192.168.50.254', mac: ce.mac, ifc: 'ether3', vrf: 'cust-a' }];
   device(pe.name, pe.ip, [['/system resource print', sysText(pe.board, pe.name)], ['/export terse', exportText(pe.name, pe.board, sort(peEntries), false)],
     [`/ip vrf print ${D}`, vrfText], [`/ip neighbor print ${D}`, neighborText(nrow('ether3', nb(ce, 'ether1')))],

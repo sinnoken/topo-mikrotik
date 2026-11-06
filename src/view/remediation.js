@@ -149,6 +149,13 @@
     A12: facetItem,
     R02: (v) => `本端介面 ${v}`,
     R05: (v) => `網段 ${v}`,
+    // R13：link|<網段>（同一網段不同 area）、area|<組名>|<area-id>（沒有接到骨幹；組名是設備鍵，可能含 |，area-id 取最後一段）
+    R13: (v) => {
+      const [kind, rest] = facetSplit(v);
+      if (kind === 'link') return rest ? `網段 ${rest}` : null;
+      const at = rest.lastIndexOf('|');
+      return kind === 'area' && at > 0 && at < rest.length - 1 ? `${rest.slice(0, at)} 一組的 area ${rest.slice(at + 1)}` : null;
+    },
     R06: (v) => { const [a, b] = facetSplit(v); return b ? `${facetItem(a)}（${b}）` : null; },
     F11: facetItem,
     F13: (v) => { const [name, tag] = communityFacet(v); return tag ? `community「${name}」（同名 #${tag}）` : `community「${name}」`; },

@@ -329,6 +329,85 @@
       ],
       action: '讓同一網段的各 DHCP 伺服器送出相同的閘道、DNS 與 NTP。設定在 `/ip dhcp-server network` 的 `gateway`、`dns-server`、`ntp-server`；不一致時，用戶端拿到的設定取決於哪一台先回應。有與多數不同的設備時，先從那幾台查起。',
     },
+    R07: {
+      severity: 'warn', cat: '路由', title: 'NAT 上網的出介面與預設路由的出介面不一致', data: [['config']],
+      causes: [
+        '加了第二條上網線路（DHCP client、PPPoE 或備援的預設路由），但 masquerade 只寫了原來的出介面。',
+        'masquerade 用 `out-interface-list=WAN`，新的出介面沒有加進 WAN 清單。',
+        '這個出口的上游直接路由公網網段，本來就不需要 NAT。',
+      ],
+      action: '在 `/ip firewall nat` 為這個出口加上 masquerade。也可以把它加進 masquerade 所用的介面清單；上游直接路由公網網段、不需要 NAT 時，可以忽略。',
+    },
+    R08: {
+      severity: 'warn', cat: '路由', title: 'WAN 清單與路由證據矛盾（推論）', data: [['config']],
+      causes: [
+        '新增的上網線路（DHCP client、PPPoE、預設路由）沒有加進 WAN 清單。',
+        'WAN 清單沿用出廠設定，實際的對外介面已經換了。',
+        '介面放進 WAN 清單，但預設路由其實指向內部的路由器。',
+      ],
+      action: '確認哪些介面真正對外，讓 `/interface list member` 的 WAN 清單與它一致。依 WAN 清單寫的防火牆規則（例如 defconf 的 drop）只套用到清單內的介面。',
+    },
+    R09: {
+      severity: 'warn', cat: '路由', title: 'dst-nat 的目標沒有路由', data: [['config']],
+      causes: [
+        '伺服器的位址或網段改了，`to-addresses` 沒有跟著改。',
+        '目標所在的網段沒有路由，或被黑洞路由涵蓋。',
+        '`to-addresses` 打錯。',
+      ],
+      action: '修正 `/ip firewall nat` 的 `to-addresses`，或補上到目標網段的路由。轉送後的連線目前到不了目標，這條規則不會讓服務對外開放。',
+    },
+    R10: {
+      severity: 'warn', cat: '路由', title: '只有去程、沒有回程的路由（推論）', data: [['route']],
+      causes: [
+        '只在一端加了靜態路由，另一端沒有回到來源網段的路由。',
+        '新增的網段沒有在路由協定中宣告。',
+        '回程原本靠預設路由，但預設路由指向外部。',
+      ],
+      action: '在對端補上回到來源網段的路由，或把來源網段加入路由協定。回程不通時，連線的第一個封包送得到，回應卻回不來。',
+    },
+    R11: {
+      severity: 'info', cat: '路由', title: '多條預設路由，但沒有設 check-gateway', data: [['route', 'config']],
+      causes: [
+        '設了備援的預設路由（distance 較大），但沒有設 `check-gateway`。',
+        'DHCP client 的 `add-default-route` 加了第二條預設路由，沒有設 `check-gateway`。',
+      ],
+      action: '在這些預設路由設定 `check-gateway=ping`，閘道失效時才會改用另一條。設定在 `/ip route` 或 `/ip dhcp-client`；沒有檢查時，只有介面中斷才會切換，閘道後面斷線時封包仍送往失效的閘道。',
+    },
+    R12: {
+      severity: 'info', cat: '路由', title: '網段沒有任何路由可以到達（推論）', data: [['route']],
+      causes: [
+        '新增的網段沒有在路由協定中宣告，也沒有靜態路由。',
+        '網段只在本機使用（例如實驗或管理用途），不需要從其他地方到達。',
+        '到這個網段的路由在沒有收集的設備上。',
+      ],
+      action: '確認這個網段是否需要從其他網段到達；需要時在上游加上路由，或在路由協定中宣告它。只在本機使用的網段可以忽略。',
+    },
+    R13: {
+      severity: 'warn', cat: '路由', title: 'OSPF area 不一致（同一網段不同 area，或非骨幹 area 沒有接到 area 0）', data: [['config']],
+      facet: 'link|<網段>（同一網段不同 area）／area|<組名>|<area-id>（沒有接到骨幹）',
+      causes: [
+        '兩端的 `/routing ospf interface-template` 寫了不同的 area。',
+        '新增 area 時，沒有任何路由器同時接在骨幹 area 0 與這個 area。',
+        '同一個網段在其中一台被放進其他 area 的 template。',
+      ],
+      action: '讓同一個網段兩端的 interface-template 使用同一個 area。非骨幹的 area 要經 ABR（同時在 area 0 的路由器）接到骨幹，無法直接相接時用 virtual link。',
+    },
+    R14: {
+      severity: 'warn', cat: '路由', title: 'OSPF 沒有設驗證', data: [['config']],
+      causes: [
+        '`/routing ospf interface-template` 沒有設 `auth`。',
+        '設了 `auth`，但沒有設 `auth-key`。',
+      ],
+      action: '在 interface-template 設定 `auth` 與 `auth-key`，同一網段的鄰居要相同。驗證方式建議用 sha256 等；沒有驗證時，網段上任何設備都可以送出 OSPF 封包、改變路由。',
+    },
+    R15: {
+      severity: 'info', cat: '路由', title: '使用者網段的介面沒有設 OSPF passive', data: [['config']],
+      causes: [
+        '用 `networks=` 把使用者網段加進 OSPF 時，沒有另外設 `passive`。',
+        '`interfaces=all` 的 template 也比對到使用者網段的介面。',
+      ],
+      action: '為使用者網段另建一條 `passive` 的 interface-template。passive 仍會宣告這個網段，但不在使用者網段送 OSPF 封包，用戶端無法加入路由。',
+    },
     // ---- 防火牆
     F01: {
       severity: 'warn', cat: '防火牆', title: '規則被前面的規則完全遮蔽，永遠不會命中', data: [['config']],
@@ -353,7 +432,6 @@
         '服務刻意對外開放。',
         '放行規則沒有限制來源位址或入介面。',
         '前面缺少擋下從 WAN 進來連線的丟棄（drop）規則。',
-        '前面的丟棄規則用了無法判斷的條件（例如 `dst-address-list`），檢查時當成不命中，可能多報。',
       ],
       action: '確認這個服務是否應該對外開放；不應開放時限制來源位址。可加上 `src-address` 或 `src-address-list`，或在它之前放一條丟棄從 WAN 進來連線的規則（drop）。',
     },
@@ -395,6 +473,7 @@
       causes: [
         '沒有名稱含 `WAN` 的介面清單（interface list），例如不是從預設組態（defconf）建立的組態。',
         'WAN 清單沒有成員，或 `include` 了無法展開的清單。',
+        '沒有收集路由表，或對外的預設路由與 NAT 規則不在這台設備上，無法由路由證據推論對外介面。',
       ],
       action: '建立名稱含 `WAN` 的介面清單（interface list），把對外介面加進去。指令是 `/interface list add name=WAN` 與 `/interface list member add list=WAN interface=<介面>`；RouterOS 的預設組態（defconf）就是 `WAN`／`LAN`。',
     },

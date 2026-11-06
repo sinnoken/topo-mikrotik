@@ -91,7 +91,7 @@ git diff --check         # 提交前檢查
   範例資料刻意含問題；新增檢查時要在產生器放對應問題並加測試。
 - 解析器依 RouterOS 文件撰寫，測試資料為手寫／產生，尚未以真實設備驗證；欄位語意以官方手冊
   <https://manual.mikrotik.com/llms.txt> 為準。
-- 大型冒煙測試：先 `npm run gen:large`，再 `SMOKE_INPUT=samples/large-1000.txt node tests/ui-smoke.js`，應全部通過。
+- 大型冒煙測試：先 `npm run gen:large`，再 `NODE_OPTIONS=--max-old-space-size=8192 SMOKE_INPUT=samples/large-1000.txt node tests/ui-smoke.js`，應全部通過；只在合併前由 lead 跑或交給 CI（[開發指南 §3](docs/開發指南.md#3-測試)的測試分工）。
   依範例資料才有的問題（例如 K01「LLDP 單向」）所寫的斷言，都依 Snapshot 是否有該 finding 判斷；範例資料必須含 K01。
 - **架構決策**：影響整體的決策（唯讀、處理紀錄、findingKey、版本規則、分工方式等）記錄在 [docs/架構決策/](docs/架構決策/README.md)。
   修改相關設計前先讀對應的 ADR；決定改變時新增一份 ADR，並把舊的標為「已取代」，不改寫已接受的 ADR。

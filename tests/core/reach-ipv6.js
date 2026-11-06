@@ -119,3 +119,19 @@ test('IPv6 暴露清單：沒有 IPv6 位址的事實時回傳說明（範例資
   const none = S.query(router([], { noAddress: true })).exposure();
   assert.deepStrictEqual([none.ipv6.status, none.ipv6.missing, none.ipv6.evaluated], ['no-ipv6-address', [], []]);
 });
+
+test('IPv6 暴露清單：判斷次數上限用完、沒有判斷到的組合另計（counts.notEvaluated），不算候選，也不算拒絕', () => {
+  const lines = [EST, F6('action=drop chain=forward in-interface-list=WAN'), EST_IN, F6('action=drop chain=input in-interface-list=WAN')];
+  const full = S.query(router(lines)).exposure();
+  const v4 = S.query(router(lines, { noAddress: true })).exposure(); // 只有 IPv4 的判斷次數
+  assert.ok(v6rows(full.self).length === 0 && full.self.counts.deny > v4.self.counts.deny, '完整計算時 IPv6 的組合都被丟棄');
+  assert.deepStrictEqual([full.self.counts.notEvaluated, full.routed.counts.notEvaluated], [0, 0]);
+  // 上限剛好用完 IPv4：IPv6 一個都沒有判斷
+  const cut = S.query(router(lines)).exposure({ maxEvaluations: v4.limits.evaluations });
+  assert.strictEqual(cut.limits.truncated, true);
+  ['self', 'routed'].forEach((k) => {
+    assert.deepStrictEqual([cut[k].counts.deny, cut[k].counts.candidates], [v4[k].counts.deny, v4[k].counts.candidates], `${k}：沒判斷的不算拒絕與候選`);
+    assert.strictEqual(cut[k].counts.notEvaluated, full[k].counts.candidates - v4[k].counts.candidates, `${k}：另計沒判斷的組合`);
+    assert.strictEqual(cut.denied[k], v4.denied[k]);
+  });
+});

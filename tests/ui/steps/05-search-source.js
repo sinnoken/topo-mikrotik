@@ -249,10 +249,65 @@ module.exports = async () => {
     if ($('#trace-src').value !== '10.1.30.15' || $('#trace-dst').value !== '8.8.8.8') throw new Error('對調應交換來源與目的');
     if (/ECMP/.test(text('#trace-pop')) || !text('#trace-pop').includes('等價多路徑')) throw new Error('路由追蹤的說明應寫「等價多路徑」而不是 ECMP：' + text('#trace-pop'));
     $('#trace-run').click();
-    if (App.sel.result.ok && (!App.sel.reverse || !text('#detail').includes('回程（8.8.8.8 → 10.1.30.15）'))) throw new Error('去程成功時應同時顯示回程');
+    // 去程成功時同時顯示回程；去程全部送往外部時不追回程（起點在基準外），改寫中性說明
+    const allOut = App.sel.result.ok && App.sel.result.ends.length && App.sel.result.ends.every((e) => e.status === 'egress');
+    if (App.sel.result.ok && !allOut && (!App.sel.reverse || !text('#detail').includes('回程（8.8.8.8 → 10.1.30.15）'))) throw new Error('去程成功時應同時顯示回程');
+    if (allOut && (App.sel.reverse || !text('#detail').includes(S.view.TRACE_RETURN_EXTERNAL))) throw new Error('去程全部送往外部時不追回程，寫中性說明');
     const r = App.sel.result; // 沒有任何逐跳時「逐跳」區塊不顯示，但一定有「結果」或錯誤說明
     if (r.ok ? !text('#detail').includes('結果') : !text('#detail').includes(r.error)) throw new Error('追蹤結果未顯示');
     App.graph.draw();
+  });
+  await step('路由追蹤送往外部（egress／external）：結果是「送往外部（推論）」，不是無法完整抵達；起點列出全部閘道與依據', () => {
+    const V = S.view; const Q = App.Q;
+    // 分類 helper：egress（終點）與 external（整體）是同一類，最差的順序 bad > unverified > external > reached
+    if (V.traceEndKind({ status: 'egress' }) !== 'external' || V.traceEndKind({ status: 'external' }) !== 'external') throw new Error('egress／external 應分成「送往外部」一類');
+    if (V.traceEndWorst([{ status: 'reached' }, { status: 'egress' }]) !== 'external' || V.traceEndWorst([{ status: 'egress' }, { status: 'loop' }]) !== 'bad' || V.traceEndWorst([{ status: 'egress' }, { status: 'unverified' }]) !== 'unverified') throw new Error('V.traceEndWorst 的順序應是 bad > unverified > external > reached');
+    const sty = V.TRACE_END_STYLE.external;
+    if (!sty || !V.theme.mark[sty.mark] || !V.TRACE_END.egress || !V.TRACE_END.egress.includes('推論')) throw new Error('送往外部要有既有 theme.mark 的樣式與中文（標推論）');
+    App.openTrace('10.1.30.15', '8.8.8.8', ''); $('#trace-run').click();
+    const t = App.sel.result;
+    if (!process.env.SMOKE_INPUT && (!t.ok || t.status !== 'external')) throw new Error('前提：範例資料 10.1.30.15 → 8.8.8.8 經 WAN 送往外部（status external）');
+    if (t.ok && t.status === 'external') {
+      const d = text('#detail'); const go = d.split('回程')[0];
+      if (!go.includes('送往外部（推論）') || go.includes('無法完整抵達')) throw new Error('去程應寫「送往外部（推論）」，不是無法完整抵達：' + go.slice(0, 200));
+      const ends = $('#detail').testAll('.hop').filter((x) => x.dataset.status === 'egress');
+      if (!ends.length || !ends.every((x) => x.className.split(' ').includes(sty.cls) && x.textContent.includes(V.TRACE_END.egress))) throw new Error('送往外部的結果列應用 ' + sty.cls + ' 並寫出中文');
+      // 去程的每個終點都送往外部：回程的起點在基準外，不追（不出現「回程無法完整抵達」的錯誤），寫中性說明（推論）
+      if (t.ends.every((e) => e.status === 'egress')) {
+        if (App.sel.reverse || d.includes('回程無法完整抵達') || !d.includes(V.TRACE_RETURN_EXTERNAL) || !V.TRACE_RETURN_EXTERNAL.includes('推論')) throw new Error('目的在基準外時回程不追，改寫中性說明：' + d.slice(0, 300));
+        const rc = $('#detail').testAll('.chip').find((c) => c.textContent.startsWith('回程'));
+        if (!rc || /\berr\b/.test(rc.className)) throw new Error('回程的標籤不應是錯誤樣式：' + (rc && rc.className));
+      }
+      // 逐跳的「送往基準以外」說明用 info 樣式，不用錯誤紅（diffA）
+      const eg = $('#detail').testAll('.trace-next').filter((x) => x.dataset.status === 'egress');
+      if (!eg.length || eg.some((x) => x.querySelector('.diffA') || !x.querySelector('.trace-egress'))) throw new Error('逐跳的送往外部說明應用 info 樣式（.trace-egress），不是 diffA');
+      t.ends.filter((e) => e.status === 'egress').forEach((e) => {
+        if (App.graph.nodes.some((n) => n.id === e.dev) && App.graph.hl.nodes.get(e.dev) !== V.theme.mark[sty.mark] && t.ends.filter((x) => x.dev === e.dev).every((x) => V.traceEndKind(x) !== 'bad')) throw new Error('圖上送往外部的設備應用 mark.' + sty.mark);
+      });
+    }
+    // 起點：S.trace 的 starts 每一台都列出，並寫出依據（startBasis）
+    if (t.ok) {
+      const kvText = text('#detail').split('逐跳')[0];
+      const miss = t.starts.filter((d) => !kvText.includes(Q.devLabel(d)));
+      if (!t.starts.length || miss.length) throw new Error('起點應列出全部 starts：' + miss.join('、'));
+      const basisText = t.startBasis === 'device' ? V.REACH_START.device : V.REACH_START_BASIS[t.startBasis];
+      if (!basisText || !kvText.includes(basisText)) throw new Error('起點應寫出依據（startBasis）：' + t.startBasis);
+      // 多起點：依起點分組，每個起點一段（標題寫起點與依據），各自的逐跳與結果；一個起點時不分組
+      const groups = $('#detail').testAll('.trace-group');
+      if (t.starts.length > 1) {
+        if (groups.length !== t.starts.length) throw new Error(`多起點應每個起點一段（${groups.length}／${t.starts.length}）`);
+        groups.forEach((gEl, n) => {
+          const s = t.starts[n]; const hd = gEl.querySelector('h3') || gEl.querySelector('summary');
+          if (gEl.dataset.start !== s || !hd || !hd.textContent.includes(Q.devName(s)) || !hd.textContent.includes(basisText)) throw new Error('每段的標題應寫起點與依據：' + (hd && hd.textContent));
+          const mine = t.ends.filter((e) => (e.path || [e.dev])[0] === s);
+          if (gEl.testAll('.hop').filter((x) => x.dataset.status).length !== mine.length) throw new Error('每段只列這個起點的結果');
+          const devs = new Set(mine.flatMap((e) => e.path || [e.dev]));
+          if (gEl.testAll('.hop').filter((x) => x.dataset.dev).some((x) => !devs.has(x.dataset.dev))) throw new Error('每段只列這個起點經過的設備');
+        });
+      } else if (groups.length) throw new Error('只有一個起點時不分組');
+      if (!process.env.SMOKE_INPUT && t.starts.length < 2) throw new Error('前提：範例資料 10.1.30.15 → 8.8.8.8 有兩個起點（VRRP 的兩台閘道）');
+    }
+    App.select(null);
   });
   await step('原文檢視', () => {
     App.openRaw(S.readers.PASTE, 10); if (!$('#dlg-raw').open || !text('#raw-body').includes('/export')) throw new Error('原文未顯示');

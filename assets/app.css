@@ -460,6 +460,8 @@ table.t tr.click { cursor: pointer; }
 .ev .link + .link { margin-left: 10px; }
 .ev.stack .link { display: block; }
 .ev.stack .link + .link { margin-left: 0; }
+/* L3 的外部（對外邊界）：每個介面的依據一行一筆 */
+.boundary-ev + .boundary-ev { margin-top: 2px; }
 .hop .mono { font-size: var(--fs-sm); }
 .detail h3 .link { margin-left: 8px; font-weight: 400; }
 .files .chip { cursor: pointer; }
@@ -476,6 +478,15 @@ table.t td.nowrap { white-space: nowrap; }
 .hop { border-left: 2px solid var(--line); margin-left: 6px; padding: 2px 0 8px 12px; position: relative; }
 .hop::before { content: ""; position: absolute; left: -6px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
 .hop.end-reached::before { background: var(--ok); } .hop.end-bad::before { background: var(--err); } .hop.end-unverified::before { background: var(--muted); }
+.hop.end-external::before { background: var(--info); }
+/* 逐跳的「送往基準以外」（推論，不是錯誤）用 info 文字色；多起點時每個起點一段的小標 */
+.trace-egress { color: var(--info-text); }
+.trace-sub { margin: 4px 0 2px; font-size: var(--fs-sm); font-weight: 600; color: var(--muted); }
+.trace-sub + .hop, .hop + .trace-sub { margin-top: 6px; }
+/* 路由表的非作用中路由：整列 muted（網段欄另有「非作用中」chip，不只靠顏色） */
+tr.route-off > td { color: var(--muted); }
+/* 從檢查結果選來的那一筆（.current）：外框與「目前選取」chip */
+.finding.current { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
 
 /* ---------- 圖 ---------- */
 /* touch-action: none：觸控拖曳由畫布處理，不讓瀏覽器捲動或縮放頁面 */
@@ -501,6 +512,11 @@ table.t td.nowrap { white-space: nowrap; }
 /* 這一層畫了什麼、沒畫什麼（L2 的 MNDP、只畫一台設備的原因，L3 的路由與重疊） */
 /* 層級說明在圖例按鈕（高度 --control-h，外加圖例的內距與框線）與操作提示的上方，窄螢幕時也不被圖例蓋住；太長時在框內捲動 */
 .layer-note { position: absolute; right: 10px; bottom: calc(var(--control-h) + 28px); max-width: min(460px, calc(100% - 20px)); max-height: 30%; overflow: auto; font-size: var(--fs-sm); color: var(--text); background: var(--overlay); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 9px; z-index: var(--z-overlay); box-shadow: var(--shadow-sm); }
+/* 平常只留第一句，「更多說明」展開其餘（展開後太長時仍在框內捲動） */
+/* 窄螢幕：展開的說明在 30% 高度內要捲動好幾行，放寬到 45%（收起時只有一行，不影響全圖讓出的高度） */
+@media (max-width: 600px) { .layer-note { max-height: 45%; } }
+.layer-note-toggle { margin-left: 6px; padding: 0 2px; border: 0; background: none; color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer; }
+.layer-note-more:not(.hidden)::before { content: ' '; }
 .legend { position: absolute; left: 10px; bottom: 10px; background: var(--overlay); border: 1px solid var(--line); border-radius: var(--radius); padding: 5px 9px; font-size: var(--fs-sm); z-index: var(--z-overlay); max-width: calc(100% - 20px); box-shadow: var(--shadow-sm); backdrop-filter: blur(8px);
   /* 展開時不蓋滿整張圖：最多約半張圖高（也讓開上方的工具列），分類橫向並排成多欄，其餘在框內捲動 */
   max-height: min(55%, calc(100% - 130px)); display: flex; flex-direction: column; }
@@ -599,13 +615,24 @@ pre.raw .hl .ln { background: inherit; }
 .l4-ex-sentence { margin: 0 0 6px; }
 .l4-ex-denied, .l4-ex-notes, .l4-ex-nowan { margin: 4px 0 0; font-size: var(--fs-sm); }
 .l4-ex-reasons { font-size: var(--fs-sm); }
-.l4-ex-path { min-height: var(--control-h); white-space: nowrap; }
-.l4-ex-entry, .l4-ex-findings, .l4-ex-res .l4-ex-path { display: block; width: max-content; max-width: 100%; }
-.l4-ex-entry { font-size: var(--fs-sm); margin-top: 2px; }
-.l4-ex-findings { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; width: auto; }
+/* 「看路徑」：ghost 按鈕用連結色並加 ▸，看得出可以點 */
+.l4-ex-path { min-height: var(--control-h); white-space: nowrap; color: var(--accent); padding-left: 4px; padding-right: 6px; }
+/* 結果格內的每一行都是 block、寬度跟著格子（不用 max-content：會把表格撐得比卡片寬） */
+.l4-ex-entry, .l4-ex-sub, .l4-ex-basis, .l4-ex-res .l4-ex-path { display: block; max-width: 100%; }
+.l4-ex-res .l4-ex-path { display: inline-block; }
+.l4-ex-entry, .l4-ex-sub { font-size: var(--fs-sm); margin-top: 2px; }
+/* 依據：結果格的一行（規則短連結＋相關檢查的代碼 chip）；「forward 結尾預設」不在詞中間斷行 */
+.l4-ex-basis { margin-top: 4px; font-size: var(--fs-sm); line-height: 1.7; }
+.l4-ex-basis .l4-rule { word-break: keep-all; }
 .l4-ex-res .l4-ex-path { margin-top: 4px; }
+/* 分層結果「路由 ✓ → 防火牆 ✕」：結果格的第二行（不加欄）；路徑標頭內接在結論後面 */
+.l4-ex-layers { display: block; margin-top: 2px; }
+.l4-layers { font-size: var(--fs-sm); font-weight: 400; white-space: nowrap; }
+.l4-reason-layer > b { font-weight: 600; }
 .l4-ex-sec table.t { width: 100%; }
-.l4-ex-sec table.t td { overflow-wrap: anywhere; }
+.l4-ex-sec table.t td { overflow-wrap: anywhere; min-width: 0; }
+/* 目的的「位址 → 位址」可在空白處換行（table.t .mono 預設不換行），識別字本身不從中間斷開 */
+.l4-ex-sec table.t td .mono { white-space: normal; overflow-wrap: normal; }
 .l4-card-fold > summary { cursor: pointer; list-style-position: inside; }
 .l4-card-fold > summary > .work-card-title { display: inline; margin: 0; }
 .l4-card-fold[open] > summary { margin-bottom: 8px; }
@@ -656,6 +683,9 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
 /* 暴露清單「看路徑」就地展開的那一列；「顯示全部（N）」 */
 .l4-ex-sec tr.l4-ex-pathrow > td { padding: 4px 8px 10px; background: var(--surface); }
 .l4-ex-pathbox .l4-sub { margin-top: 4px; }
+/* 第 1 段依設備分組的標題列（窄螢幕的 stack 排法也是一整列） */
+.l4-ex-sec tr.l4-ex-devrow > th { padding: 8px 8px 4px; text-align: left; font-weight: 600; background: var(--surface); border-bottom: 1px solid var(--line); }
+@media (max-width: 900px) { .l4-ex-sec table.t.stack tr.l4-ex-devrow > th { display: block; } }
 .l4-ex-all { min-height: var(--control-h); margin-top: 6px; }
 /* IPv6 的列沒有逐跳路徑（說明取代按鈕）；「⚠ 回程不保證」短標後的規則連結 */
 .l4-ex-nopath { display: block; margin-top: 4px; font-size: var(--fs-sm); }

@@ -81,6 +81,10 @@ module.exports = async () => {
     if (RV.facetText(byFacet.get('dns').f) !== 'DNS 伺服器' || RV.facetText(byFacet.get('ntp').f) !== 'NTP 伺服器') throw new Error('A12 的 dns／ntp 應顯示成「DNS 伺服器」「NTP 伺服器」');
     if (RV.facetText({ id: 'ZZ99', facet: 'raw|value' }) !== 'raw|value' || RV.facetText({ id: 'R06', facet: 'dns' }) !== 'dns') throw new Error('沒有對應或格式不符的 facet 應顯示原值');
     if (RV.facetText({ id: 'I03' }) !== null) throw new Error('沒有 facet 時不應有比對對象');
+    // R13 的兩種 facet：中文說法、不外露原始鍵；組名（設備鍵）含 | 時 area-id 取最後一段；格式不符時顯示原值
+    const r13 = (facet) => RV.facetText({ id: 'R13', facet });
+    if (r13('link|10.1.30.0/24') !== '網段 10.1.30.0/24' || r13('area|R_A|0.0.0.1') !== 'R_A 一組的 area 0.0.0.1' || r13('area|a|b|0.0.0.2') !== 'a|b 一組的 area 0.0.0.2') throw new Error('R13 的 facet 顯示不符：' + [r13('link|10.1.30.0/24'), r13('area|R_A|0.0.0.1')].join('／'));
+    if (r13('area|R_A') !== 'area|R_A' || r13('link|') !== 'link|' || r13('zzz|x') !== 'zzz|x') throw new Error('R13 格式不符的 facet 應顯示原值');
     const declared = Object.keys(S.check.CATALOG).filter((id) => S.check.CATALOG[id].facet !== undefined);
     if (!declared.length || declared.some((id) => !RV.FACET_RULES.includes(id))) throw new Error('CATALOG 宣告 facet 的檢查都應有顯示格式：' + declared.filter((id) => !RV.FACET_RULES.includes(id)).join('、'));
     // 詳情：每一筆在標題旁標示自己的比對對象，title 是原值

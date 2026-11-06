@@ -673,7 +673,7 @@ module.exports = async () => {
       ['text.err', 'firewall.action.drop', 'firewall.action.reject', 'firewall.action.tarpit', 'diff.effect.new-exposure'],
       ['text.ok', 'firewall.action.accept', 'diff.effect.more-restrictive'], ['text.info', 'firewall.action.jump'], ['text.muted', 'firewall.action.return', 'canvas.label.textUncollected'],
       ['text.body', 'l3.subnet.text', 'canvas.label.text', 'l4.text', 'l4.badge.text'],
-      ['canvas.keyInk', 'l2.port.stroke', 'l3.subnet.stroke', 'l3.route.c', 'l4.badge.border', 'l4.diagonal.border'],
+      ['canvas.keyInk', 'l2.port.stroke', 'l3.subnet.stroke', 'l3.route.c', 'l3.boundary.c', 'l3.possible.c', 'l4.badge.border', 'l4.diagonal.border'],
       ['mark.select', 'trend.single', 'l4.focus', 'firewall.focus.border'], ['canvas.surface'],
       ['l2.box.fill', 'l2.port.fill', 'l3.subnet.fill', 'l3.badge.bg', 'l4.badge.bg', 'canvas.uncollectedFill'],
     ];

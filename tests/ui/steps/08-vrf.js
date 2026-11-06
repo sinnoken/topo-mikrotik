@@ -17,8 +17,15 @@ module.exports = async () => {
     App.l3.routes = false; App.showLayer('l3'); await App.layerJob;
     const sg = Q.subnetGraph(); const e = App.layerEntry();
     if (!e.info.byVrf || e.info.vrfs[0] !== MAIN || !e.info.vrfs.includes(vrf)) throw new Error('L3 應依 VRF 分框（main 在最前）');
-    sg.subnets.forEach((s) => { const n = g.nodeById.get('net|' + s.id); if (!n || n.group !== V.vrfText(s.vrf)) throw new Error('子網應在自己 VRF 的框裡：' + s.id); });
-    sg.nodes.forEach((n) => { const x = g.nodeById.get(n.id); if (!x || x.group !== V.vrfText(n.vrf) || x.dev !== n.dev) throw new Error('設備節點應在自己 VRF 的框裡：' + n.id); });
+    // VRF 是外框（outer），框內依路由網域分群（group）；網段的群就是它的路由網域，不同 VRF 的群名不重複
+    sg.subnets.forEach((s) => { const n = g.nodeById.get('net|' + s.id); if (!n || n.outer !== V.vrfText(s.vrf)) throw new Error('子網應在自己 VRF 的框裡：' + s.id); });
+    sg.nodes.forEach((n) => { const x = g.nodeById.get(n.id); if (!x || x.outer !== V.vrfText(n.vrf) || x.dev !== n.dev) throw new Error('設備節點應在自己 VRF 的框裡：' + n.id); });
+    const groupsByOuter = new Map(); g.nodes.forEach((n) => S.util.getOr(groupsByOuter, n.group, () => new Set()).add(n.outer));
+    groupsByOuter.forEach((os, gname) => { if (os.size !== 1) throw new Error('分群不應跨 VRF 的框：' + gname); });
+    sg.subnets.filter((s) => s.basis === 'connected').forEach((s) => {
+      const d = Q.routingDomainOf(s.id); const n = g.nodeById.get('net|' + s.id);
+      if (!d || n.domain !== d.key || !n.group) throw new Error('直連網段應在自己的路由網域群裡：' + s.id);
+    });
     const peVrf = K.inVrf(PE, vrf);
     if (!g.nodeById.has(peVrf) || !g.nodeById.has(PE) || !g.nodeById.get(peVrf).label.endsWith(`（${vrf}）`)) throw new Error('PE 應在 main 與 ' + vrf + ' 各一個節點，非 main 的寫成「名稱（VRF）」');
     const same = sg.subnets.find((s) => s.vrf !== MAIN && sg.subnets.some((x) => x.vrf === MAIN && x.prefix === s.prefix));
@@ -230,11 +237,12 @@ module.exports = async () => {
       VA.load(snap, null, { sources, profile: orig.profile }); await App.ledgerJob; await App.layoutJob;
       const Q = App.Q; const g = App.graph;
       require('assert').deepStrictEqual(Array.from(Q.vrfs()), ['main']);
-      // L3：分群沿用設備圖，不畫 VRF 的框，說明不提 VRF
+      // L3：不畫 VRF 的框（沒有外框），直接依路由網域分群；設備節點的 id 和加入 VRF 之前相同；說明不提 VRF
       App.showLayer('l3', { rebuild: true }); await App.layerJob;
-      const groupOf = new Map(App.deviceGraph.nodes.map((n) => [n.id, n.group || '']));
-      if (App.layerEntry().info.byVrf || g.nodes.some((n) => String(n.group || '').startsWith('VRF '))) throw new Error('只有 main 時不依 VRF 分框');
-      g.nodes.filter((n) => n.kind !== 'subnet').forEach((n) => { if (n.id !== n.dev || n.group !== (groupOf.get(n.dev) || '')) throw new Error('只有 main 時設備節點的 id 與分群和加入 VRF 之前相同：' + n.id); });
+      if (App.layerEntry().info.byVrf || g.nodes.some((n) => n.outer || String(n.group || '').startsWith('VRF '))) throw new Error('只有 main 時不依 VRF 分框');
+      g.nodes.filter((n) => n.kind !== 'subnet' && n.kind !== 'external').forEach((n) => { if (n.id !== n.dev) throw new Error('只有 main 時設備節點的 id 和加入 VRF 之前相同：' + n.id); });
+      const dnames = new Set(g.nodes.filter((n) => n.domain).map((n) => n.group));
+      if (!Q.routingDomains().length || !dnames.size || g.nodes.filter((n) => n.kind === 'subnet' && !n.routeOnly).some((n) => n.domain !== (Q.routingDomainOf(n.subnet.id) || {}).key)) throw new Error('只有 main 時直接依路由網域分群');
       if ($('#layer-note').textContent.includes('VRF')) throw new Error('只有 main 時 L3 的說明不提 VRF');
       App.showLayer('device');
       // 詳情：介面、有路由的設備、IP 沒有 VRF 欄位

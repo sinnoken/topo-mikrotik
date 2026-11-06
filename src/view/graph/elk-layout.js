@@ -1,6 +1,7 @@
 /*
  * 分層版面（ELK.js，vendor/elkjs-*，EPL-2.0）：只當版面引擎，繪圖仍是 canvas.js 與 theme。
- *  - 分群、終端與層級沿用 layout.js 的 prepare()，與內建版面一致；終端不送進 ELK，仍排在所屬設備下方
+ *  - 分群、終端與層級沿用 layout.js 的 prepare()，與內建版面一致；終端不送進 ELK，仍排在所屬設備下方。
+ *    兩層分群（外框 outer＋內群）不用 ELK 的 compound node：每個內群各算一次，再由 layout.js 的 arrange 排內群與外框（與內建版面相同）
  *  - 每群各自用 ELK layered 做多輪交叉最小化與節點擺放；同一層太多台時依 ELK 排好的順序折成多列（layout.js 的 wrapRows，
  *    與內建版面同一規則，直式畫面也是由上往下、每列較少台），再沿用內建的書架排列
  *  - 節點框預留終端方陣與標籤的空間，ELK 擺放時就不會和其他設備重疊
@@ -63,7 +64,8 @@
       if (Date.now() - t0 > o.deadlineMs) throw new ElkLayoutError('timeout', `分層版面超過 ${Math.round(o.deadlineMs / 1000)} 秒`);
       boxes.push(await layoutGroup(engine, g, o.radius, !!o.portrait));
     }
-    return { pos: L.shelf(boxes, { portrait: !!o.portrait }), stats: { groups: groups.length, coreNodes, ms: Date.now() - t0 } };
+    // 先內群後外框：各內群由 ELK 排好，外框（outer）與由外而內的層次（tier）用內建版面同一個 arrange
+    return { pos: L.arrange(boxes, { portrait: !!o.portrait }), stats: { groups: groups.length, coreNodes, ms: Date.now() - t0 } };
   }
 
   /**
@@ -116,7 +118,7 @@
     const pos = new Map();
     kids.forEach((c) => { const s = size.get(c.id); pos.set(c.id, { x: c.x + s.width / 2 - (x0 + x1) / 2, y: c.y + s.r }); });
     L.placeLeaves(g, pos);
-    return { name: g.name, pos, w: Math.max(x1 - x0, 1), h: Math.max(y1 - y0, 1), n: g.members.length };
+    return L.groupBox(g, pos, Math.max(x1 - x0, 1), Math.max(y1 - y0, 1));
   }
 
   /**

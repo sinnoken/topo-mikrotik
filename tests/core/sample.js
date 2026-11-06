@@ -8,8 +8,8 @@ const { S, ROOT, read, build, count, test } = require('../lib.js');
 test('範例資料：每項刻意放入的問題都被找到，且沒有多餘的錯誤', () => {
   const s = build(read('samples/sample-bundle.txt'));
   const expect = { I01: 1, I02: 1, C02: 1, K01: 1, K02: 1, K03: 1, K04: 1, V01: 1, V04: 1, V05: 1, V06: 1, V07: 1, A01: 1, A02: 1, A04: 1, A05: 1,
-    A06: 1, A07: 1, A08: 1, A09: 1, A10: 1, A11: 1, A12: 2, R01: 2, R02: 1, R03: 1, R04: 1, R05: 1, R06: 1, C01: 3,
-    V08: 1, V09: 1, F01: 1, F02: 1, F03: 1, F04: 1, F05: 1, F06: 1, F07: 1, F08: 1, F10: 1, F11: 1, F12: 1, F13: 1, F14: 1, L01: 1, L02: 1 };
+    A06: 1, A07: 1, A08: 1, A09: 1, A10: 1, A11: 1, A12: 2, R01: 2, R02: 1, R03: 1, R04: 1, R05: 1, R06: 1, R07: 1, R08: 1, R09: 1, R10: 2, R11: 2, R12: 1, R13: 1, R14: 1, R15: 1, C01: 3,
+    V08: 1, V09: 1, F01: 1, F02: 1, F03: 2, F04: 1, F05: 1, F06: 1, F07: 2, F08: 1, F10: 1, F11: 1, F12: 1, F13: 1, F14: 1, F15: 1, L01: 1, L02: 1 };
   Object.entries(expect).forEach(([id, n]) => assert.strictEqual(count(s, id), n, `${id} 應有 ${n} 筆，實際 ${count(s, id)}`));
   assert.strictEqual(s.meta.stats.collected, 19); // 含 VRF 的 PE 與 CE 路由器
   // 分支站點：單臂路由的實體埠只靠 VLAN 子介面承載（停用的 VLAN 30 不算），交換器的 PVID 1 不算不一致；LAB 的 bridge 沒有開 vlan-filtering

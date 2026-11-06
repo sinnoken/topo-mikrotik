@@ -73,7 +73,8 @@
     else {
       const e = ensureEntry(target, o.rebuild);
       resideL2(e); // 保留的位置（之前拖過）可能和上次選邊時不同：依位置重新選邊，邊不另外存
-      g.setData(e.nodes, e.edges, e.pos); A.applyVisibility(); restoreView(g, e.view);
+      // 先寫好這一層的說明（#layer-note 是畫布的遮擋物）再全圖：fit 才會把說明的高度讓出來
+      g.setData(e.nodes, e.edges, e.pos); A.applyVisibility(); renderNote(); restoreView(g, e.view);
     }
     A.syncLayerUi();
     App.select(App.sel, { refresh: true });
@@ -96,9 +97,9 @@
     if (!rebuild && App.layers.has(key)) return App.layers.get(key);
     const e = Object.assign(layer === 'l2' ? buildL2() : buildL3(), { layer, key, view: null, token: 0 });
     App.layers.set(key, e);
-    const seeded = layer === 'l3' && seedL3(e);
-    if (!seeded) layout(e);
-    App.layerJob = App.layoutMode === 'elk' && !seeded ? applyElk(e) : Promise.resolve();
+    // 顯示路由時也重新排列：只由路由得知的網段屬於路由網域的群，要排進群裡（沿用另一個選項的位置再把新網段疊在設備上方，會壓到外部與群標籤）
+    layout(e);
+    App.layerJob = App.layoutMode === 'elk' ? applyElk(e) : Promise.resolve();
     return e;
   }
 
@@ -157,72 +158,136 @@
   }
 
   // ================================================================ L3 子網圖
-  const NET = 'net|';
-  /** L3 的 VRF 容器名稱（分群框的標題） */
-  const vrfGroup = (v) => V.vrfText(v);
+  const NET = 'net|'; const EXT = 'ext|';
   /**
-   * VRF 是容器（ADR-015）：Q.subnetGraph 的子網 id 是網段鍵、設備節點 id 是「設備鍵」或「設備鍵@VRF」（K.inVrf）。
-   * 基準有兩個以上的 VRF 時，每個 VRF（含 main）是一個分群框，分群改依 VRF（不再依設備圖的區域）；只有 main 時分群與加入 VRF 之前相同。
+   * 路由網域（Q.routingDomains，推論，ADR-023 決策 2）的分群名稱：OSPF 是「OSPF area 0（骨幹）」，靜態與直連是「靜態路由（<組名設備>）」
+   * （同一個結構：類別在前、限定在括號，群框窄時縮成「靜態路由」；組名設備在群框內本來就有名稱）。
+   * 同一個 VRF 中兩個不相連的 OSPF 網域 area 相同時加上組名設備；依 VRF 分框時 main 以外的 VRF 另寫 VRF（群名在整張圖唯一）。
+   */
+  function domainNames(Q, byVrf) {
+    const doms = Q.routingDomains();
+    const areaText = (d) => (d.areaId == null ? d.area : /^0\.0\.0\.\d+$/.test(d.areaId) ? d.areaId.split('.')[3] : d.areaId);
+    const base = (d) => (d.kind === 'ospf' ? `OSPF area ${areaText(d)}` : '靜態路由');
+    const seen = new Map(); doms.forEach((d) => { const k = d.vrf + '\u0000' + base(d); seen.set(k, (seen.get(k) || 0) + 1); });
+    return new Map(doms.map((d) => {
+      const ospf = d.kind === 'ospf';
+      const parts = [ospf ? null : Q.devName(d.group), ospf && d.areaId === '0.0.0.0' ? '骨幹' : null,
+        ospf && d.area && d.areaId != null && d.area !== 'backbone' && d.area !== d.areaId ? d.area : null,
+        ospf && seen.get(d.vrf + '\u0000' + base(d)) > 1 ? Q.devName(d.group) : null,
+        byVrf && d.vrf !== K.MAIN_VRF ? V.vrfText(d.vrf) : null].filter(Boolean);
+      return [d.key, base(d) + (parts.length ? `（${parts.join('・')}）` : '')];
+    }));
+  }
+  const DOMAIN_ORDER = { ospf: 0, static: 1 };
+  /**
+   * L3 網段圖（ADR-023 決策 6、「決定」第 6 項）：
+   *  - VRF 是容器（ADR-015）：Q.subnetGraph 的子網 id 是網段鍵、設備節點 id 是「設備鍵」或「設備鍵@VRF」（K.inVrf）。
+   *  - 分群是兩層：基準有兩個以上的 VRF 時 VRF 是外框（node.outer，含 main），裡面依路由網域分群（node.group）；只有 main 時直接依路由網域分群。
+   *    直連網段歸 Q.routingDomainOf 的網域；設備節點歸它接的網段最多的網域（同數時 OSPF 優先）；只由路由得知的網段歸路由所在的設備那一群。
+   *  - 對外邊界（Q.boundaries 的 external／possible，推論）：每個 VRF 一個「外部」節點，接到有對外介面的設備在那個 VRF 的節點。
+   *    判定對外是實線、可能對外是推論的長虛線並標「可能對外」；預設路由（強證據 default-route）經這裡出去時用路由的虛線，箭頭指向外部。
+   *  - 由外而內（node.tier，layout.js 的 arrange）：外部在最上（0），接著是有對外設備的路由網域（1），往內依網域之間共用的設備一層一層往下；
+   *    接不到的網域與沒有網域的「其他網段」排在最後。
    */
   function buildL3() {
-    const Q = App.Q; const N = T.l3.subnet; const MAIN = K.MAIN_VRF;
+    const Q = App.Q; const N = T.l3.subnet; const MAIN = K.MAIN_VRF; const nat = S.util.natural;
     const sg = Q.subnetGraph({ routes: App.l3.routes });
     const sv = A.severities(Q);
-    const used = new Set(sg.subnets.map((s) => s.vrf).concat(sg.nodes.map((n) => n.vrf)));
+    const bnds = Q.boundaries().filter((b) => b.status === 'external' || b.status === 'possible');
+    const used = new Set(sg.subnets.map((s) => s.vrf).concat(sg.nodes.map((n) => n.vrf), bnds.map((b) => b.vrf)));
     const vrfs = Q.vrfs().filter((v) => used.has(v)); // main 在最前（Q.vrfs 的順序）
     const byVrf = vrfs.length > 1;
-    // 分群沿用設備圖（命名規則的 group，或大型網路自動切出的區域）；子網歸到接在它上面最多設備的那一群
-    const devGroup = new Map(App.deviceGraph.nodes.map((n) => [n.id, n.group || '']));
-    const majority = (devs) => {
-      const c = new Map(); devs.forEach((d) => { const gname = devGroup.get(d) || ''; c.set(gname, (c.get(gname) || 0) + 1); });
-      return Array.from(c.entries()).sort((a, b) => b[1] - a[1] || S.util.natural(a[0], b[0])).map((x) => x[0])[0] || '';
-    };
+    const outerOf = (vrf) => (byVrf ? V.vrfText(vrf) : '');
+    const outerRank = (vrf) => (byVrf ? vrfs.indexOf(vrf) : null);
+    // 路由網域：網段 → 網域；設備節點 → 它接的網段最多的網域
+    const names = domainNames(Q, byVrf);
+    const domByKey = new Map(Q.routingDomains().map((d) => [d.key, d]));
+    const subnetDom = new Map(); sg.subnets.forEach((s) => { const d = Q.routingDomainOf(s.id); if (d) subnetDom.set(s.id, d.key); });
+    const tally = new Map();
+    const count = (id, dk) => { if (!dk) return; const m = S.util.getOr(tally, id, () => new Map()); m.set(dk, (m.get(dk) || 0) + 1); };
+    sg.edges.forEach((e) => count(e.node, subnetDom.get(e.subnet)));
+    // 路由經由的網段只給沒有位址邊的設備節點用：顯示路由與否，設備都在同一群（不因路由多寡換群）
+    const addressed = new Set(tally.keys());
+    sg.routes.forEach((r) => { const id = r.node || r.dev; if (!addressed.has(id)) (r.via || []).forEach((v) => count(id, subnetDom.get(v))); });
+    const nodeDom = new Map();
+    tally.forEach((m, id) => nodeDom.set(id, Array.from(m).sort((a, b) => b[1] - a[1]
+      || DOMAIN_ORDER[domByKey.get(a[0]).kind] - DOMAIN_ORDER[domByKey.get(b[0]).kind] || nat(a[0], b[0]))[0][0]));
+    // 只由路由得知的網段：路由所在設備的網域（多台時取節點 id 最小的）
+    sg.routes.slice().sort((a, b) => nat(a.node || a.dev, b.node || b.dev)).forEach((r) => {
+      if (!subnetDom.has(r.subnet) && nodeDom.has(r.node || r.dev)) subnetDom.set(r.subnet, nodeDom.get(r.node || r.dev));
+    });
+    const otherName = (vrf) => '其他網段' + (byVrf && vrf !== MAIN ? `（${V.vrfText(vrf)}）` : '');
+    const groupOf = (dk, vrf) => (dk ? names.get(dk) : otherName(vrf));
+    const place = (vrf, dk) => ({ group: groupOf(dk, vrf), outer: outerOf(vrf), outerRank: outerRank(vrf), domain: dk || null });
+
     const nodes = sg.subnets.map((s) => {
       const label = s.id + (s.vlan != null ? `・VLAN ${s.vlan}` : '');
       const badges = [s.overlaps.length ? `重疊網段 ${s.overlaps.length}` : null, s.duplicateIps.length ? `重複 IP ${s.duplicateIps.length}` : null].filter(Boolean);
-      return { id: NET + s.id, kind: 'subnet', label, collected: true, group: byVrf ? vrfGroup(s.vrf) : majority(s.devices.concat(s.routers)), vrf: s.vrf,
-        box: { w: Math.round(Math.max(N.minW, label.length * 7 + 26)), h: N.h }, routeOnly: s.basis === 'route', badges, subnet: s };
+      return Object.assign({ id: NET + s.id, kind: 'subnet', label, collected: true, vrf: s.vrf,
+        box: { w: Math.round(Math.max(N.minW, label.length * 7 + 26)), h: N.h }, routeOnly: s.basis === 'route', badges, subnet: s }, place(s.vrf, subnetDom.get(s.id)));
     });
     // 設備在 main 以外的 VRF 的節點：標籤寫「名稱（VRF）」。只改顯示：節點 id 仍是「設備鍵@VRF」（K.inVrf）
     const vrfLabel = (name, vrf) => (vrf && vrf !== MAIN ? `${name}（${vrf}）` : name);
-    const devNode = (n) => ({ id: n.id, dev: n.dev, label: vrfLabel(n.label, n.vrf), kind: n.kind || 'unknown', collected: n.collected,
-      group: byVrf ? vrfGroup(n.vrf) : devGroup.get(n.dev) || '', vrf: n.vrf, sev: sv.devSev.get(n.dev) || null, l3: n });
     const devIds = new Set();
-    sg.nodes.forEach((n) => { if (!devIds.has(n.id)) { devIds.add(n.id); nodes.push(devNode(n)); } });
+    /** 圖上還沒有的設備節點（只有路由、只有對外邊界、在那個 VRF 沒有位址的設備） */
+    const ensureDev = (id, dev, vrf) => {
+      if (devIds.has(id)) return; devIds.add(id);
+      const d = Q.getDevice(dev);
+      nodes.push(Object.assign({ id, dev, label: vrfLabel(d ? d.label || d.name : dev, vrf), kind: (d && d.kind) || 'unknown', collected: !!(d && d.collected),
+        vrf, sev: sv.devSev.get(dev) || null }, place(vrf, nodeDom.get(id))));
+    };
+    sg.nodes.forEach((n) => {
+      if (devIds.has(n.id)) return; devIds.add(n.id);
+      nodes.push(Object.assign({ id: n.id, dev: n.dev, label: vrfLabel(n.label, n.vrf), kind: n.kind || 'unknown', collected: n.collected,
+        vrf: n.vrf, sev: sv.devSev.get(n.dev) || null, l3: n }, place(n.vrf, nodeDom.get(n.id))));
+    });
     const edges = sg.edges.map((e) => ({ id: 'a|' + e.id, a: NET + e.subnet, b: e.node, cls: 'other', count: 1, evidence: e.inferred ? 'hearsay' : 'adjacency', l3: e }));
     sg.routes.forEach((r) => {
-      const id = r.node || r.dev;
-      if (!devIds.has(id)) {
-        const d = Q.getDevice(r.dev); devIds.add(id);
-        nodes.push({ id, dev: r.dev, label: vrfLabel(d ? d.label || d.name : r.dev, r.vrf), kind: (d && d.kind) || 'unknown', collected: !!(d && d.collected),
-          group: byVrf ? vrfGroup(r.vrf) : devGroup.get(r.dev) || '', vrf: r.vrf, sev: sv.devSev.get(r.dev) || null });
-      }
+      const id = r.node || r.dev; ensureDev(id, r.dev, r.vrf);
       edges.push({ id: 'r|' + r.id, a: id, b: NET + r.subnet, style: T.l3.route, arrow: true, count: 1, route: r });
     });
     const OV = T.l3.overlap;
-    sg.subnets.forEach((s) => s.overlaps.forEach((o) => { if (S.util.natural(s.id, o) < 0) edges.push({ id: 'o|' + s.id + '|' + o, a: NET + s.id, b: NET + o, style: OV, sev: OV.sev, count: 1, overlap: [s.id, o] }); }));
+    sg.subnets.forEach((s) => s.overlaps.forEach((o) => { if (nat(s.id, o) < 0) edges.push({ id: 'o|' + s.id + '|' + o, a: NET + s.id, b: NET + o, style: OV, sev: OV.sev, count: 1, overlap: [s.id, o] }); }));
+    // 對外邊界：每個 VRF 一個「外部」節點，每台設備（在那個 VRF 的節點）一條線
+    const extOf = new Map(); const boundaryEdges = new Map();
+    bnds.forEach((b) => {
+      const vrf = b.vrf || MAIN; const id = K.inVrf(b.dev, vrf); const xid = EXT + vrf;
+      if (!extOf.has(vrf)) {
+        const label = byVrf && vrf !== MAIN ? `外部（${vrf}，推論）` : '外部（推論）';
+        extOf.set(vrf, { id: xid, kind: 'external', label, collected: false, vrf, group: label, outer: outerOf(vrf), outerRank: outerRank(vrf), tier: 0,
+          box: { w: Math.round(Math.max(N.minW, label.length * 13 + 26)), h: N.h }, external: { vrf } });
+      }
+      ensureDev(id, b.dev, vrf);
+      S.util.getOr(boundaryEdges, id, () => ({ id, xid, vrf, dev: b.dev, list: [] })).list.push(b);
+    });
+    extOf.forEach((x) => nodes.push(x));
+    boundaryEdges.forEach((x) => {
+      const ext = x.list.some((b) => b.status === 'external');
+      const dflt = x.list.some((b) => b.evidence.some((ev) => ev.kind === 'default-route' && ev.strength === 'strong'));
+      const eps = x.list.map((b) => b.ep);
+      edges.push({ id: 'x|' + x.id, a: x.id, b: x.xid, style: dflt ? T.l3.route : ext ? T.l3.boundary : T.l3.possible, arrow: dflt, count: 1,
+        labelA: x.list.map((b) => K.splitEp(b.ep)[1] + (b.status === 'possible' ? '（可能對外）' : '')).join('、'), labelB: ext ? '' : '可能對外',
+        boundary: { vrf: x.vrf, dev: x.dev, node: x.id, status: ext ? 'external' : 'possible', defaultRoute: dflt, eps } });
+    });
+    // 由外而內的層次：有對外設備的網域是 1，往內依網域之間共用的設備（同一台設備接在兩個網域）一層一層往下
+    const domAdj = new Map();
+    tally.forEach((m) => { const ks = Array.from(m.keys()); ks.forEach((a) => ks.forEach((b) => { if (a !== b) S.util.getOr(domAdj, a, () => new Set()).add(b); })); });
+    const tierOf = new Map(); let frontier = S.util.uniq(Array.from(boundaryEdges.keys()).map((id) => nodeDom.get(id)).filter(Boolean)).sort(nat);
+    for (let t = 1; frontier.length; t++) {
+      frontier.forEach((k) => tierOf.set(k, t));
+      frontier = S.util.uniq(frontier.flatMap((k) => Array.from(domAdj.get(k) || []))).filter((k) => !tierOf.has(k)).sort(nat);
+    }
+    nodes.forEach((n) => { if (n.kind !== 'external' && n.domain && tierOf.has(n.domain)) n.tier = tierOf.get(n.domain); });
     const edgesOf = new Map(); edges.forEach((e) => [e.a, e.b].forEach((x) => S.util.getOr(edgesOf, x, () => []).push(e)));
     // 設備鍵 → 這台設備在圖上的節點（每個 VRF 一個）
-    const nodesOfDev = new Map(); nodes.forEach((n) => { if (n.kind !== 'subnet') S.util.getOr(nodesOfDev, n.dev || n.id, () => []).push(n.id); });
+    const nodesOfDev = new Map(); nodes.forEach((n) => { if (n.kind !== 'subnet' && n.kind !== 'external') S.util.getOr(nodesOfDev, n.dev || n.id, () => []).push(n.id); });
     return {
       nodes, edges, pos: new Map(), sg,
       index: { subnets: new Map(sg.subnets.map((s) => [s.id, s])), edgesOf, nodesOfDev, nodes: new Map(nodes.map((n) => [n.id, n])), edges: new Map(edges.map((e) => [e.id, e])) },
-      info: { routes: App.l3.routes, vrfs, byVrf, omitted: sg.omitted || { policyRoutes: 0 } },
+      info: { routes: App.l3.routes, vrfs, byVrf, omitted: sg.omitted || { policyRoutes: 0 },
+        external: Array.from(extOf.keys()), boundaries: { external: bnds.filter((b) => b.status === 'external').length, possible: bnds.filter((b) => b.status === 'possible').length },
+        domains: S.util.uniq(nodes.filter((n) => n.domain).map((n) => n.domain)).length },
     };
-  }
-  /** 顯示路由時沿用不顯示路由的位置，只把多出來的目的網段排在路由所在設備的上方（不重排整張圖） */
-  function seedL3(e) {
-    const other = App.layers.get('l3|' + JSON.stringify([!App.l3.routes]));
-    if (!other || !other.pos.size) return false;
-    other.pos.forEach((p, id) => { if (e.index.nodes.has(id)) e.pos.set(id, p); });
-    const fresh = e.nodes.filter((n) => !e.pos.has(n.id));
-    const byDev = new Map();
-    fresh.forEach((n) => { const r = e.edges.find((x) => x.route && x.b === n.id); S.util.getOr(byDev, r ? r.a : '', () => []).push(n); });
-    byDev.forEach((list, dev) => {
-      const p = e.pos.get(dev) || { x: 0, y: 0 };
-      list.forEach((n, i) => e.pos.set(n.id, { x: p.x + (i - (list.length - 1) / 2) * 190, y: p.y - 110 }));
-    });
-    return true;
   }
 
   // ================================================================ 版面
@@ -376,6 +441,15 @@
         break;
       }
       case 'vlan': { const m = A.vlanMarks(sel.key, sel.domain); out.hl = m; out.focus = Array.from(m.nodes.keys()); break; }
+      // 對外邊界：L3 標出這個 VRF 的外部節點與接到它的線（sel.dev 時只標那台設備的線）；L2 標出有對外介面的設備
+      case 'boundary': {
+        const bs = A.boundariesOf(Q, sel);
+        if (l2) { const ids = S.util.uniq(bs.map((b) => b.dev)).filter(has); out.hl = { nodes: finds(ids, MARK.find), edges: new Map() }; out.focus = ids; break; }
+        const xid = EXT + sel.key; const ls = (e.index.edgesOf.get(xid) || []).filter((x) => x.boundary && (!sel.dev || x.boundary.dev === sel.dev));
+        out.nodes = (sel.dev ? [] : [xid]).concat(ls.map((x) => x.a)).filter(has); out.edges = ls.map((x) => x.id);
+        out.focus = [xid].concat(ls.map((x) => x.a)).filter(has);
+        break;
+      }
       case 'mac': {
         const m = Q.findMac(sel.key);
         const ids = S.util.uniq(m.edge.map(devOf).concat(m.behind ? [devOf(m.behind.anchor)] : []).flatMap(nodesOf).concat(l2 ? m.edge.map(portOf).filter(Boolean) : []));
@@ -433,6 +507,12 @@
     }
     return out;
   };
+  /**
+   * 選取的對外邊界（{ type: 'boundary', key: VRF, dev? }）包含的介面：Q.boundaries 中 external／possible、在這個 VRF 的（給了 dev 時只取那台）。
+   * 圖上的標示（設備圖、L2、L3）與詳情共用
+   */
+  A.boundariesOf = (Q, sel) => (sel.dev ? Q.boundaries(sel.dev) : Q.boundaries())
+    .filter((b) => (b.status === 'external' || b.status === 'possible') && (b.vrf || K.MAIN_VRF) === sel.key);
   /** L2 只畫一台設備與鄰居時：選了不在圖上的設備，改以那一台為中心重畫（回傳是否重畫） */
   A.recenterL2 = function recenterL2(dev) {
     if (App.layer !== 'l2' || App.l2.scope !== 'focus' || !dev || App.graph.nodeById.has(dev) || !App.Q.getDevice(dev)) return false;
@@ -441,12 +521,16 @@
   };
 
   // ================================================================ 圖上互動（L2／L3）
-  /** 點選：L2 的設備框 → 設備、埠 → 介面（推論鏈路未收集端的未知埠 → 設備）、邊 → 鏈路或設備對；L3 的子網 → 子網、設備 → 設備、位址邊 → 介面 */
+  /**
+   * 點選：L2 的設備框 → 設備、埠 → 介面（推論鏈路未收集端的未知埠 → 設備）、邊 → 鏈路或設備對；L3 的子網 → 子網、設備 → 設備、位址邊 → 介面、
+   * 外部 → 對外邊界（{ type: 'boundary', key: VRF }）、設備到外部的線 → 那台設備的對外邊界（另帶 dev）
+   */
   A.layerClick = function layerClick(it) {
     const e = A.layerEntry(); if (!e) return;
     if (it.type === 'node') {
       const n = App.graph.nodeById.get(it.id); if (!n) return;
       if (n.kind === 'subnet') return App.select({ type: 'subnet', key: n.subnet.id });
+      if (n.kind === 'external') return App.select({ type: 'boundary', key: n.external.vrf });
       if (n.kind === 'port') return App.select(n.ifc ? { type: 'interface', key: n.ifc } : { type: 'device', key: n.dev });
       return App.select({ type: 'device', key: n.dev || n.id }); // L3 的「設備鍵@VRF」節點也開啟設備
     }
@@ -458,6 +542,7 @@
       return App.select({ type: 'pair', id: App.pairOfLink.get(first) || p.id, links: p.links.slice(), devs: [p.aDev, p.bDev] });
     }
     if (ed.route) return App.select({ type: 'subnet', key: ed.route.subnet });
+    if (ed.boundary) return App.select({ type: 'boundary', key: ed.boundary.vrf, dev: ed.boundary.dev });
     if (ed.overlap) return App.select({ type: 'subnet', key: ed.overlap[0] });
     if (ed.l3) return App.select(ed.l3.eps.length ? { type: 'interface', key: ed.l3.eps[0] } : { type: 'subnet', key: ed.l3.subnet });
     return undefined;
@@ -483,6 +568,11 @@
           + (p.vlans.length ? `・VLAN ${S.util.fmtVlans(p.vlans)}` : '');
       }
       const vrfTip = e.info.byVrf && n.vrf ? '・' + V.vrfText(n.vrf) : '';
+      if (n.kind === 'external') {
+        const ls = (e.index.edgesOf.get(n.id) || []).filter((x) => x.boundary);
+        return `外部（推論：依路由、NAT 與位址推論的對外邊界的另一側）${vrfTip}・接 ${ls.length} 台設備`
+          + `（對外 ${ls.filter((x) => x.boundary.status === 'external').length}、可能對外 ${ls.filter((x) => x.boundary.status === 'possible').length}）・點選看依據`;
+      }
       if (n.kind === 'subnet') {
         const s = n.subnet;
         return `${s.id}${vrfTip}${s.vlan != null ? `・VLAN ${s.vlan}` : ''}・${s.basis === 'route' ? '只由路由得知（不是直連網段）' : `${s.devices.length} 台設備`}`
@@ -505,6 +595,11 @@
       // 閘道在別的 VRF 解析（路由洩漏）時以 RouterOS 的寫法 位址@VRF 標出
       const nh = r.nh.map((x) => (x.ip ? (x.vrf && x.vrf !== r.vrf ? x.ip + '@' + x.vrf : x.ip) : x.ifc)).filter(Boolean);
       return `${Q.devName(r.dev)} 的${r.default ? '預設路由' : '路由'} ${r.subnet}（${r.proto}${e.info.byVrf || r.routingTable !== K.MAIN_VRF ? `，路由表 ${r.routingTable}` : ''}）・下一跳 ${nh.join('、') || '—'}${r.blackhole ? '・黑洞路由' : ''}`;
+    }
+    if (ed.boundary) {
+      const x = ed.boundary;
+      return `${Q.devName(x.dev)} 的對外邊界（推論）：` + x.eps.map((ep) => { const b = Q.boundaryOf(ep); return `${K.splitEp(ep)[1]} ${V.BOUNDARY_STATUS[b.status]}`; }).join('、')
+        + (x.defaultRoute ? '・預設路由經這裡出去（箭頭）' : '') + '・點選看依據';
     }
     if (ed.overlap) return `網段重疊：${ed.overlap.join(' 與 ')}`;
     if (ed.l3) {
@@ -627,24 +722,39 @@
     const note = $('#layer-note'); const e = A.layerEntry();
     note.classList.toggle('hidden', !e);
     if (!e) { note.textContent = ''; return; }
-    const Q = App.Q; const n = V.num;
+    const Q = App.Q; const n = V.num; let body = '';
     if (e.layer === 'l2') {
       const i = e.info; const omit = i.omitted;
-      note.textContent = `L2 埠圖：${n(e.boxes.length)} 台設備、${n(e.ports.length)} 個埠、${n(e.edges.length)} 條鏈路（聚合${i.lag === 'collapse' ? '收合' : '展開'}、${i.portsMode === 'all' ? '全部的埠' : '只有接線的埠'}）。`
+      body = `L2 埠圖：${n(e.boxes.length)} 台設備、${n(e.ports.length)} 個埠、${n(e.edges.length)} 條鏈路（聚合${i.lag === 'collapse' ? '收合' : '展開'}、${i.portsMode === 'all' ? '全部的埠' : '只有接線的埠'}）。`
         + (i.scope === 'focus' ? `只畫 ${Q.devName(i.focus)} 與它的鄰居${i.tooBig ? `（整張 ${n(i.total)} 台，超過上限 ${n(App.L2_MAX)} 台）` : ''}；選取其他設備或雙擊鄰居可改看那一台。` : '')
         + (omit.domainOnly ? `另有 ${n(omit.domainOnly)} 條只有 MNDP 的鏈路沒有畫（MNDP 只證明同一廣播網域，不是直連）。` : '')
         + (omit.sameDevice ? `${n(omit.sameDevice)} 條同一台設備兩埠之間的鏈路沒有畫。` : '')
-        + (e.layoutNote ? e.layoutNote : '');
+        ;
     } else {
       const ss = e.sg.subnets; const ov = ss.filter((s) => s.overlaps.length).length; const dup = ss.reduce((k, s) => k + s.duplicateIps.length, 0);
-      note.textContent = `L3 網段圖：${n(ss.length)} 個網段、${n(e.sg.nodes.length)} 個設備節點；點線是推論的位址（鄰居回報、管理 IP）`
+      body = `L3 網段圖：${n(ss.length)} 個網段、${n(e.sg.nodes.length)} 個設備節點；點線是推論的位址（鄰居回報、管理 IP）`
         + (e.info.routes ? `，虛線箭頭是 ${n(e.sg.routes.length)} 條靜態／預設路由` : '') + '。'
         + '縮小時網段長條不寫網段，放大或滑過網段可看。'
         + (ov || dup ? `有 ${n(ov)} 個網段重疊、${n(dup)} 個重複 IP（點選網段看詳細資料）。` : '')
         // VRF 是容器：每個 VRF 一個框；同一個網段在不同 VRF 是不同的網段，一台設備在每個 VRF 各一個節點（@<VRF>）
         + (e.info.byVrf ? `每個 VRF 一個框（${e.info.vrfs.join('、')}）：同一個網段在不同 VRF 各自獨立，設備在 main 以外的 VRF 寫成「名稱（VRF）」。` : '')
+        + `${e.info.byVrf ? '框內' : ''}依路由網域分群（${n(e.info.domains)} 個，OSPF area 或靜態路由所在的路由器，推論），由外而內排列。`
+        + (e.info.external.length
+          ? `「外部」是推論的對外邊界：接到 ${n(e.info.boundaries.external)} 個對外介面（實線）${e.info.boundaries.possible ? `、${n(e.info.boundaries.possible)} 個可能對外的介面（長虛線）` : ''}，預設路由經這裡出去時是箭頭；點選外部看依據。`
+          : '沒有判定對外的介面，不畫「外部」。')
         + (e.info.routes && e.info.omitted.policyRoutes ? `另有 ${n(e.info.omitted.policyRoutes)} 條只用於策略路由的路由表（不屬於任何 VRF）的路由沒有畫，見設備詳細資料的路由表。` : '')
-        + (e.layoutNote ? e.layoutNote : '');
+        ;
+    }
+    // 收成一行：第一句（加上分層版面的計算中／未套用）常駐，其餘按「更多說明」展開；說明是畫布的遮擋物，收起時全圖不必讓出大片空間
+    const cut = body.indexOf('。') + 1; const head = cut > 0 ? body.slice(0, cut) : body; const rest = cut > 0 ? body.slice(cut) : '';
+    V.clear(note);
+    note.appendChild(h('span', null, head + (e.layoutNote ? e.layoutNote : '')));
+    if (rest) {
+      const open = !!App.layerNoteOpen;
+      note.appendChild(h('span', { id: 'layer-note-more', class: 'layer-note-more' + (open ? '' : ' hidden') }, rest));
+      note.appendChild(h('button', { type: 'button', class: 'layer-note-toggle link', 'aria-expanded': String(open), 'aria-controls': 'layer-note-more',
+        // 焦點留在按鈕，但不讓瀏覽器把底部的按鈕捲進來而切掉說明的開頭（窄螢幕的說明框有捲動）：從開頭看起
+        onclick: () => { App.layerNoteOpen = !open; renderNote(); const b = $('#layer-note .layer-note-toggle'); if (b) b.focus({ preventScroll: true }); note.scrollTop = 0; } }, open ? '收起' : '更多說明'));
     }
   }
   /** 匯出 PNG 的檔名：目前的層級（L4 沒有 PNG，見 A.exportPng） */

@@ -146,7 +146,7 @@
     const req = { src: x.src, dst: x.ip, proto: x.proto, port: x.port, vrf: null, entry: x.entry, from: 'exposure', sec, row: i };
     st.exPath = Object.assign({ sec, row: i }, I.runQuery(App, req));
     // 那一列在收起的部分（超過 EX_LIMIT 列）時先展開那一段
-    if (exGroups(st.ex[sec].rows).findIndex((g) => g.i === i) >= EX_LIMIT) st.exAll.add(sec);
+    if (!exShown(exGroups(st.ex[sec].rows), EX_LIMIT).some((g) => g.i === i)) st.exAll.add(sec);
     renderExposure(App);
     const r = st.exPath.reach;
     announce(r ? `逐跳路徑：${req.src} → ${req.dst} ${I.svcLabel(req)} ${V.L4_STATUS[r.verdict]}` : `逐跳路徑：查詢失敗，${st.exPath.err}`);
@@ -174,17 +174,27 @@
     // 查詢層只依設備 → 位址族 → 位址 → 服務排序：先列允許、再列無法判斷（同結果內保留查詢層的順序），前 EX_LIMIT 列才不會把允許的收起來
     const rank = (v) => (v === 'allow' ? 0 : v === 'unknown' ? 1 : 2);
     out = out.map((g, n) => ({ g, n })).sort((a, b) => rank(a.g.x.verdict) - rank(b.g.x.verdict) || a.n - b.n).map((o) => o.g);
-    // 第 1 段（列有 via）：依目的設備分組，入口設備（有 via 為 null 的列）在前；設備之間依上面排序後第一次出現的位置
-    //（有允許的設備在前），設備內保留允許 → 無法判斷的順序
+    // 第 1 段（列有 via）：依目的設備分組。有允許的設備在前、只有無法判斷的在後；同一類裡入口設備（有 via 為 null 的列）在前，
+    // 再依上面排序後第一次出現的位置；設備內保留允許 → 無法判斷的順序。收合時顯示哪幾列另由 exShown 決定（允許優先）
     if (rows.some((x) => x.via !== undefined)) {
       const at = new Map(); out.forEach((g, n) => { if (!at.has(g.x.dev)) at.set(g.x.dev, n); });
       const entryDevs = new Set(rows.filter((x) => x.via === null).map((x) => x.dev));
-      const devRank = (d) => (entryDevs.has(d) ? 0 : 1);
+      const allowDevs = new Set(out.filter((g) => g.x.verdict === 'allow').map((g) => g.x.dev));
+      const devRank = (d) => (allowDevs.has(d) ? 0 : 2) + (entryDevs.has(d) ? 0 : 1);
       out = out.map((g, n) => ({ g, n })).sort((a, b) => devRank(a.g.x.dev) - devRank(b.g.x.dev) || at.get(a.g.x.dev) - at.get(b.g.x.dev) || a.n - b.n).map((o) => o.g);
       out.forEach((g) => { g.entryDev = entryDevs.has(g.x.dev); });
     }
     exGroupsCache.set(rows, out);
     return out;
+  }
+  /**
+   * 收合（limit 列）時顯示的分組：先挑允許、再挑無法判斷（各自保留 gs 的順序）取前 limit 個，再依 gs 的順序排列。
+   * 第 1 段依設備分組後允許可能排在別台設備的無法判斷之後，這樣挑才不會把允許的列收起來；其他段 gs 本來就允許在前，結果等於 gs.slice(0, limit)
+   */
+  function exShown(gs, limit) {
+    if (gs.length <= limit) return gs;
+    const pick = new Set(gs.filter((g) => g.x.verdict === 'allow').concat(gs.filter((g) => g.x.verdict !== 'allow')).slice(0, limit));
+    return gs.filter((g) => pick.has(g));
   }
   /**
    * 怎麼進來（目的的第二行）：入口就在目的設備上時寫「設備 · 介面」；第 1 段經別台入口設備進來的列（via 不是 null）寫「經 <入口設備> 的 <介面>」
@@ -216,7 +226,7 @@
         return h('span', { class: 'l4-ex-basis' }, [x.rule ? ruleLink(App, x.rule, true) : h('span', null, '—'), ls.length ? h('span', { class: 'l4-ex-findings' }, ls) : null]); } },
     ];
     // 每段最多先列 EX_LIMIT 列，其餘「顯示全部（N）」（同一段只有一個按鈕在 Tab 順序裡）
-    const all = st.exAll.has(def.key); let shown = all ? gs.slice(0, ROW_LIMIT) : gs.slice(0, EX_LIMIT);
+    const all = st.exAll.has(def.key); let shown = exShown(gs, all ? ROW_LIMIT : EX_LIMIT);
     // 看路徑的那一列在顯示上限（ROW_LIMIT）之後時，另外接在最後（路徑與焦點才有地方放）
     const op = st.exPath && st.exPath.sec === def.key ? gs.find((g) => g.i === st.exPath.row) : null;
     const extra = op && !shown.includes(op) ? op : null;

@@ -180,6 +180,32 @@ module.exports = async () => {
       const sec2 = $('#l4-exposure').testAll('.l4-ex-sec').find((x) => x.dataset.sec === 'dnat');
       const btn = sec2.testAll('.l4-ex-path').find((b) => b.dataset.row === '329');
       if (!btn || btn.getAttribute('aria-expanded') !== 'true' || document.activeElement !== $('#l4-ex-path-title') || !sec2.textContent.includes('另接在最後')) throw new Error('超過上限的列看路徑時應另接在最後並展開，焦點在路徑的標題');
+      // 第 1 段：入口設備 25 組全是無法判斷、非入口設備（經入口設備進來）1 組允許——允許的設備排在前面，收合時允許的列在前 20 列
+      const sb = real.self.rows.find((x) => x.via === null);
+      const other = App.Q.devices().map((d) => d.key).find((d) => sb && d !== sb.dev);
+      if (!sb || !other) throw new Error('測試前提：範例資料第 1 段有入口設備的列，且有別台設備');
+      V.l4.openExposure(App, 'dnat', 329); // 收起路徑
+      const selfRows = Array.from({ length: 25 }, (_, n) => Object.assign({}, sb, { service: `tcp/${3000 + n}`, port: 3000 + n, verdict: 'unknown', reasons: [], incomplete: false, returnUnsafe: [], findingKeys: [] }))
+        .concat([Object.assign({}, sb, { dev: other, target: other, via: { dev: sb.dev, ep: sb.entry }, ip: '10.250.0.1', service: 'tcp/22', port: 22, verdict: 'allow', reasons: [], incomplete: false, returnUnsafe: [], findingKeys: [] })]);
+      const sg = V.l4.exGroups(selfRows);
+      if (sg[0].x.dev !== other || sg[0].x.verdict !== 'allow') throw new Error('有允許的設備應排在只有無法判斷的入口設備之前');
+      const renderSelf = async (rs) => {
+        const fk = Object.assign({}, real, { self: Object.assign({}, real.self, { rows: rs }) });
+        await withQ(Object.assign(Object.create(realQ), { exposureSteps: function* () { return fk; } }));
+        const ssec = $('#l4-exposure').testAll('.l4-ex-sec').find((x) => x.dataset.sec === 'self');
+        const strs = ssec.testAll('tr').filter((tr) => /l4-ex-row/.test(tr.className));
+        const g = V.l4.exGroups(rs); const shownIdx = strs.map((tr) => Number(tr.getAttribute('data-row')));
+        // 收合 20 列：每一列允許都在顯示的列裡，顯示的列仍依設備分組的順序
+        if (strs.length !== 20 || !rs.every((x, i) => x.verdict !== 'allow' || shownIdx.includes(i))) throw new Error('收合時每一列允許都應在前 20 列');
+        if (shownIdx.some((v, k) => k && g.findIndex((y) => y.i === v) < g.findIndex((y) => y.i === shownIdx[k - 1]))) throw new Error('收合時顯示的列應依設備分組的順序');
+        return ssec.testAll('tr').filter((tr) => /l4-ex-devrow/.test(tr.className)).map((tr) => tr.getAttribute('data-dev'));
+      };
+      const heads = await renderSelf(selfRows);
+      if (heads.join('|') !== [other, sb.dev].join('|')) throw new Error('設備分組的順序應是有允許的設備在前：' + heads.join('、'));
+      // 兩台都有允許：入口設備在前，它的 25 組無法判斷不會把另一台的允許擠出前 20 列（收合以「允許優先」挑列）
+      const both = selfRows.concat([Object.assign({}, selfRows[0], { service: 'tcp/8291', port: 8291, verdict: 'allow' })]);
+      const heads2 = await renderSelf(both);
+      if (heads2.join('|') !== [sb.dev, other].join('|')) throw new Error('都有允許時入口設備在前：' + heads2.join('、'));
       // 畫面丟錯兩次（畫錯誤時又丟錯）：App.l4Job 仍會結束，兩次的原因都寫出來
       // 同步的部分（計算中的頁首、zone 的依據）畫完之後才讓 V.chip 丟錯：之後畫結果與畫錯誤都會失敗
       const chip0 = V.chip; try { await withQ(Object.assign(Object.create(realQ), { exposureSteps: function* () { return fake; } }), () => { V.chip = () => { throw new Error('模擬畫面錯誤'); }; }); } finally { V.chip = chip0; }

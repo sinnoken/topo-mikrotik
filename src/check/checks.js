@@ -632,7 +632,10 @@
         if (why && !missing.some((m) => m.prefix === s.prefix)) missing.push({ prefix: s.prefix, why });
       });
       if (!missing.length) return;
-      add('R10', `${name(p.x)} 有到 ${name(p.z)} 的 ${p.dsts.sort(S.util.natural).join('、')} 的路由（${p.routes.map((r) => K.inVrf(`${r.prefix}/${r.len}`, r.vrf)).join('、')}），但 ${name(p.z)} 回到 ${name(p.x)} 的 ${missing.map((m) => `${m.prefix}（${m.why}）`).join('、')}；這些網段之間的連線只有去程`,
+      // 去程的路由只列和目的網段不同的（例如涵蓋它的 10.1.0.0/16）；相同時不重複寫
+      const dsts = p.dsts.sort(S.util.natural);
+      const via = S.util.uniq(p.routes.map((r) => K.inVrf(`${r.prefix}/${r.len}`, r.vrf))).filter((x) => !dsts.includes(x));
+      add('R10', `${name(p.x)} 有到 ${name(p.z)} 的 ${dsts.join('、')} 的路由${via.length ? `（經 ${via.join('、')}）` : ''}，但 ${name(p.z)} 回到 ${name(p.x)} 的 ${missing.map((m) => `${m.prefix}（${m.why}）`).join('、')}；這些網段之間的連線只有去程`,
         [{ type: 'device', key: p.x }, { type: 'device', key: p.z }], p.routes.map((r) => ({ block: r.block, line: r.line })));
     });
   }

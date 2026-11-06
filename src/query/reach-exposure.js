@@ -301,12 +301,13 @@
         else row.via = null; // IPv6 只看邊界路由器本身：目的一定是入口設備
         s.rows.push({ row, n: c.job.n });
       });
-      const note = '只看邊界路由器：從 WAN 進入時，以 IPv6 的過濾規則（/ipv6 firewall filter 的 input／forward）判斷能到設備本身與它直連的 LAN 側網段；不做 IPv6 路由與 NAT66';
+      // 訊息：先寫結論，再寫原因；方法（只看邊界路由器、不做 IPv6 路由與 NAT66）只在有判斷時寫
       const name6 = (l) => l.map((x) => name(x.dev)).join('、');
       const noAddr = missing.filter((x) => x.reason === 'no-address');
+      const noAddrText = noAddr.length ? `${name6(noAddr)} 在用 IPv6，但基準中沒有它的 IPv6 位址（/ipv6 address），未判斷。` : '';
       res.info = evaluated.length
-        ? { status: 'edge-only', message: note + (noAddr.length ? `；${name6(noAddr)} 在用 IPv6，但基準中沒有它的 IPv6 位址（/ipv6 address），未判斷` : ''), devices: used, evaluated, missing }
-        : { status: 'no-ipv6-address', message: `基準中沒有 WAN 入口設備的 IPv6 位址（/ipv6 address），無法判斷從 WAN 進來的 IPv6 能到哪裡${noAddr.length ? `（${name6(noAddr)} 在用 IPv6）` : ''}；${note}`, devices: used, evaluated, missing };
+        ? { status: 'edge-only', message: `IPv6 只判斷邊界路由器：從 WAN 進入時，依 IPv6 的過濾規則（/ipv6 firewall filter 的 input／forward）判斷能否到達設備本身與它直連的 LAN 側網段，不做 IPv6 路由與 NAT66。${noAddrText}`, devices: used, evaluated, missing }
+        : { status: 'no-ipv6-address', message: `IPv6 未判斷：WAN 入口設備${noAddr.length ? ` ${name6(noAddr)} ` : ''}沒有 IPv6 位址的資料（/ipv6 address）。`, devices: used, evaluated, missing };
       return res;
     }
     /** 預設的判斷次數上限（入口 × 外部區段 × 目的 × 服務）；超過時其餘組合不算，結果標 truncated。 */

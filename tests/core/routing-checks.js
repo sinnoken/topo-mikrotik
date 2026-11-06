@@ -112,8 +112,11 @@ const AB = (bRoutes) => [dev('A', '10.0.0.1', [addr('10.0.0.1/30', 'ether1'), ad
 
 test('R10：只有去程、沒有回程（推論）；/30 鏈路不當來源；補上回程或預設路由指向基準內時不報', () => {
   const s = T(...AB());
-  assert.deepStrictEqual(msgs(s, 'R10'), ['A 有到 B 的 10.2.0.0/24 的路由（10.2.0.0/24），但 B 回到 A 的 10.1.0.0/24（沒有路由）；這些網段之間的連線只有去程']);
+  assert.deepStrictEqual(msgs(s, 'R10'), ['A 有到 B 的 10.2.0.0/24 的路由，但 B 回到 A 的 10.1.0.0/24（沒有路由）；這些網段之間的連線只有去程']);
   assert.deepStrictEqual(of(s, 'R10')[0].entities, [{ type: 'device', key: 'A' }, { type: 'device', key: 'B' }]);
+  // 去程的路由和目的網段不同（涵蓋它）時才另寫「經」
+  const [a, b] = AB(); a[a.length - 1] = R('10.2.0.0/16', '10.0.0.2', 'ether1');
+  assert.deepStrictEqual(msgs(T(a, b), 'R10'), ['A 有到 B 的 10.2.0.0/24 的路由（經 10.2.0.0/16），但 B 回到 A 的 10.1.0.0/24（沒有路由）；這些網段之間的連線只有去程']);
   assert.strictEqual(of(T(...AB([R('10.1.0.0/24', '10.0.0.1', 'ether1')])), 'R10').length, 0);
   assert.strictEqual(of(T(...AB([R('0.0.0.0/0', '10.0.0.1', 'ether1')])), 'R10').length, 0, '預設路由指向 A（基準內）也是回程');
 });

@@ -3,12 +3,12 @@
 TPE_CORE_RT_01 (10.1.10.2):
 [admin@TPE_CORE_RT_01] > /system resource print
              uptime: 2w1d4h
-            version: 7.12.1 (stable)
+            version: 7.25.1 (stable)
          board-name: CCR2216-1G-12XS-2XQ
            platform: MikroTik
 
 [admin@TPE_CORE_RT_01] > /export compact
-# 2026-10-13 10:00:00 by RouterOS 7.12.1
+# 2026-10-13 10:00:00 by RouterOS 7.25.1
 # software id = CD34-4989
 #
 # model = CCR2216-1G-12XS-2XQ
@@ -227,108 +227,108 @@ Flags: X - disabled, I - invalid; D - dynamic
 [admin@TPE_CORE_RT_01] > /ip neighbor print detail without-paging
 Flags: 
  0   interface=sfp-sfpplus1 address=10.1.10.21 mac-address=48:A9:8A:00:00:04
-    identity=TPE_ACC_SW_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=Uplink-to-CORE system-caps=bridge system-caps-enabled=bridge
  1   interface=sfp-sfpplus2 address=10.1.10.21 mac-address=48:A9:8A:00:00:04
-    identity=TPE_ACC_SW_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=sfp-sfpplus2 system-caps=bridge system-caps-enabled=bridge
  2   interface=sfp-sfpplus3 address=10.1.10.22 mac-address=48:A9:8A:00:00:10
-    identity=TPE_ACC_SW_02 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_02 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=sfp-sfpplus1 system-caps=bridge system-caps-enabled=bridge
  3   interface=sfp-sfpplus4 address=10.1.10.22 mac-address=48:A9:8A:00:00:10
-    identity=TPE_ACC_SW_02 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_02 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=sfp-sfpplus2 system-caps=bridge system-caps-enabled=bridge
  4   interface=sfp-sfpplus5 address=10.1.10.23 mac-address=48:A9:8A:00:00:1C
-    identity=TPE_ACC_SW_03 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_03 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=sfp-sfpplus1 system-caps=bridge system-caps-enabled=bridge
  5   interface=sfp-sfpplus6 address=10.1.10.23 mac-address=48:A9:8A:00:00:1C
-    identity=TPE_ACC_SW_03 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_03 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=sfp-sfpplus2 system-caps=bridge system-caps-enabled=bridge
  6   interface=sfp-sfpplus7 address=10.1.10.24 mac-address=48:A9:8A:00:00:28
-    identity=TPE_ACC_SW_04 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_04 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=sfp-sfpplus1 system-caps=bridge system-caps-enabled=bridge
  7   interface=sfp-sfpplus8 address=10.1.10.24 mac-address=48:A9:8A:00:00:28
-    identity=TPE_ACC_SW_04 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_04 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=sfp-sfpplus2 system-caps=bridge system-caps-enabled=bridge
  8   interface=sfp-sfpplus9 address=10.1.10.25 mac-address=48:A9:8A:00:00:34
-    identity=TPE_ACC_SW_05 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_05 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=sfp-sfpplus1 system-caps=bridge system-caps-enabled=bridge
  9   interface=sfp-sfpplus10 address=10.1.10.25 mac-address=48:A9:8A:00:00:34
-    identity=TPE_ACC_SW_05 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_05 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=sfp-sfpplus2 system-caps=bridge system-caps-enabled=bridge
  10  interface=sfp-sfpplus11 address=10.1.10.26 mac-address=48:A9:8A:00:00:41
-    identity=TPE_ACC_SW_06 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_06 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=sfp-sfpplus1 system-caps=bridge system-caps-enabled=bridge
  11  interface=sfp-sfpplus12 address=10.1.10.26 mac-address=48:A9:8A:00:00:41
-    identity=TPE_ACC_SW_06 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_06 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=sfp-sfpplus2 system-caps=bridge system-caps-enabled=bridge
  12  interface=sfp-sfpplus13 address=10.1.10.27 mac-address=48:A9:8A:00:00:51
-    identity=TPE_ACC_SW_07 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_07 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=sfp-sfpplus1 system-caps=bridge system-caps-enabled=bridge
  13  interface=sfp-sfpplus14 address=10.1.10.27 mac-address=48:A9:8A:00:00:51
-    identity=TPE_ACC_SW_07 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_07 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=sfp-sfpplus2 system-caps=bridge system-caps-enabled=bridge
  14  interface=sfp-sfpplus15 address=10.1.10.28 mac-address=48:A9:8A:00:00:5D
-    identity=TPE_ACC_SW_08 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_08 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=sfp-sfpplus1 system-caps=bridge system-caps-enabled=bridge
  15  interface=sfp-sfpplus16 address=10.1.10.28 mac-address=48:A9:8A:00:00:5D
-    identity=TPE_ACC_SW_08 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_08 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=sfp-sfpplus2 system-caps=bridge system-caps-enabled=bridge
  16  interface=sfp-sfpplus17 address=10.1.10.29 mac-address=48:A9:8A:00:00:69
-    identity=TPE_ACC_SW_09 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_09 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=sfp-sfpplus1 system-caps=bridge system-caps-enabled=bridge
  17  interface=sfp-sfpplus18 address=10.1.10.29 mac-address=48:A9:8A:00:00:69
-    identity=TPE_ACC_SW_09 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_09 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=sfp-sfpplus2 system-caps=bridge system-caps-enabled=bridge
  18  interface=sfp-sfpplus19 address=10.1.10.30 mac-address=48:A9:8A:00:00:75
-    identity=TPE_ACC_SW_10 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_10 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=sfp-sfpplus1 system-caps=bridge system-caps-enabled=bridge
  19  interface=sfp-sfpplus20 address=10.1.10.30 mac-address=48:A9:8A:00:00:75
-    identity=TPE_ACC_SW_10 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_10 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=sfp-sfpplus2 system-caps=bridge system-caps-enabled=bridge
  20  interface=sfp-sfpplus21 address=10.1.10.31 mac-address=48:A9:8A:00:00:81
-    identity=TPE_ACC_SW_11 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_11 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=sfp-sfpplus1 system-caps=bridge system-caps-enabled=bridge
  21  interface=sfp-sfpplus22 address=10.1.10.31 mac-address=48:A9:8A:00:00:81
-    identity=TPE_ACC_SW_11 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_11 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=sfp-sfpplus2 system-caps=bridge system-caps-enabled=bridge
  22  interface=sfp-sfpplus23 address=10.1.10.32 mac-address=48:A9:8A:00:00:8D
-    identity=TPE_ACC_SW_12 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_12 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=sfp-sfpplus1 system-caps=bridge system-caps-enabled=bridge
  23  interface=sfp-sfpplus24 address=10.1.10.32 mac-address=48:A9:8A:00:00:8D
-    identity=TPE_ACC_SW_12 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_12 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=sfp-sfpplus2 system-caps=bridge system-caps-enabled=bridge
  24  interface=qsfpplus1-1 address=10.1.10.3 mac-address=E4:8D:8C:00:00:03
-    identity=TPE_CORE_RT_02 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_02 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=qsfpplus1-1 system-caps=bridge,router
     system-caps-enabled=bridge,router
  25  interface=qsfpplus2-1 address=10.1.10.3 mac-address=E4:8D:8C:00:00:03
-    identity=TPE_CORE_RT_02 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_02 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=qsfpplus2-1 system-caps=bridge,router
     system-caps-enabled=bridge,router
@@ -945,12 +945,12 @@ _____
 TPE_CORE_RT_02 (10.1.10.3):
 [admin@TPE_CORE_RT_02] > /system resource print
              uptime: 2w1d4h
-            version: 7.12.1 (stable)
+            version: 7.25.1 (stable)
          board-name: CCR2216-1G-12XS-2XQ
            platform: MikroTik
 
 [admin@TPE_CORE_RT_02] > /export terse
-# 2026-10-13 10:00:00 by RouterOS 7.12.1
+# 2026-10-13 10:00:00 by RouterOS 7.25.1
 # software id = AB12-8397
 #
 # model = CCR2216-1G-12XS-2XQ
@@ -1070,60 +1070,60 @@ Flags: X - disabled, I - invalid; D - dynamic
 [admin@TPE_CORE_RT_02] > /ip neighbor print detail without-paging
 Flags: 
  0   interface=ether1 address=10.1.10.21 mac-address=48:A9:8A:00:00:04
-    identity=TPE_ACC_SW_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=ether24 system-caps=bridge system-caps-enabled=bridge
  1   interface=ether2 address=10.1.10.22 mac-address=48:A9:8A:00:00:10
-    identity=TPE_ACC_SW_02 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_02 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=ether24 system-caps=bridge system-caps-enabled=bridge
  2   interface=ether3 address=10.1.10.23 mac-address=48:A9:8A:00:00:1C
-    identity=TPE_ACC_SW_03 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_03 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=ether24 system-caps=bridge system-caps-enabled=bridge
  3   interface=ether4 address=10.1.10.24 mac-address=48:A9:8A:00:00:28
-    identity=TPE_ACC_SW_04 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_04 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=ether24 system-caps=bridge system-caps-enabled=bridge
  4   interface=ether5 address=10.1.10.25 mac-address=48:A9:8A:00:00:34
-    identity=TPE_ACC_SW_05 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_05 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=ether24 system-caps=bridge system-caps-enabled=bridge
  5   interface=ether6 address=10.1.10.26 mac-address=48:A9:8A:00:00:41
-    identity=TPE_ACC_SW_06 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_06 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=ether24 system-caps=bridge system-caps-enabled=bridge
  6   interface=ether7 address=10.1.10.27 mac-address=48:A9:8A:00:00:51
-    identity=TPE_ACC_SW_07 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_07 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=ether24 system-caps=bridge system-caps-enabled=bridge
  7   interface=ether8 address=10.1.10.28 mac-address=48:A9:8A:00:00:5D
-    identity=TPE_ACC_SW_08 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_08 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=ether24 system-caps=bridge system-caps-enabled=bridge
  8   interface=ether9 address=10.1.10.29 mac-address=48:A9:8A:00:00:69
-    identity=TPE_ACC_SW_09 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_09 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=ether24 system-caps=bridge system-caps-enabled=bridge
  9   interface=ether10 address=10.1.10.30 mac-address=48:A9:8A:00:00:75
-    identity=TPE_ACC_SW_10 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_10 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=ether24 system-caps=bridge system-caps-enabled=bridge
  10  interface=ether11 address=10.1.10.31 mac-address=48:A9:8A:00:00:81
-    identity=TPE_ACC_SW_11 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_11 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=ether24 system-caps=bridge system-caps-enabled=bridge
  11  interface=ether12 address=10.1.10.32 mac-address=48:A9:8A:00:00:8D
-    identity=TPE_ACC_SW_12 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_ACC_SW_12 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=ether24 system-caps=bridge system-caps-enabled=bridge
  12  interface=qsfpplus1-1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=qsfpplus1-1 system-caps=bridge,router
     system-caps-enabled=bridge,router
  13  interface=qsfpplus2-1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=qsfpplus2-1 system-caps=bridge,router
     system-caps-enabled=bridge,router
@@ -1725,7 +1725,7 @@ Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC, o - OSPF, b - BGP
 _____
 TPE_ACC_SW_01 (10.1.10.21):
 [admin@TPE_ACC_SW_01] > /export terse
-# 2026-10-13 10:00:00 by RouterOS 7.12.1
+# 2026-10-13 10:00:00 by RouterOS 7.25.1
 # software id = CD34-8247
 #
 # model = CRS326-24G-2S+
@@ -1758,27 +1758,27 @@ TPE_ACC_SW_01 (10.1.10.21):
 [admin@TPE_ACC_SW_01] > /ip neighbor print detail without-paging
 Flags: 
  0   interface=sfp-sfpplus1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus1 system-caps=bridge,router
     system-caps-enabled=bridge,router
  1   interface=bridge1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus1 system-caps=bridge,router
     system-caps-enabled=bridge,router
  2   interface=sfp-sfpplus2 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus2 system-caps=bridge,router
     system-caps-enabled=bridge,router
  3   interface=bridge1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus2 system-caps=bridge,router
     system-caps-enabled=bridge,router
  4   interface=ether24 address=10.1.10.3 mac-address=E4:8D:8C:00:00:03
-    identity=TPE_CORE_RT_02 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_02 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=ether1 system-caps=bridge,router
     system-caps-enabled=bridge,router
@@ -1907,7 +1907,7 @@ Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external
 _____
 TPE_ACC_SW_02 (10.1.10.22):
 [admin@TPE_ACC_SW_02] > /export terse
-# 2026-10-13 10:00:00 by RouterOS 7.12.1
+# 2026-10-13 10:00:00 by RouterOS 7.25.1
 # software id = EF56-0155
 #
 # model = CRS326-24G-2S+
@@ -1940,22 +1940,22 @@ TPE_ACC_SW_02 (10.1.10.22):
 [admin@TPE_ACC_SW_02] > /ip neighbor print detail without-paging
 Flags: 
  0   interface=sfp-sfpplus1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus3 system-caps=bridge,router
     system-caps-enabled=bridge,router
  1   interface=bridge1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus3 system-caps=bridge,router
     system-caps-enabled=bridge,router
  2   interface=sfp-sfpplus2 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus4 system-caps=bridge,router
     system-caps-enabled=bridge,router
  3   interface=bridge1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus4 system-caps=bridge,router
     system-caps-enabled=bridge,router
@@ -2086,7 +2086,7 @@ Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external
 _____
 TPE_ACC_SW_03 (10.1.10.23):
 [admin@TPE_ACC_SW_03] > /export terse
-# 2026-10-13 10:00:00 by RouterOS 7.12.1
+# 2026-10-13 10:00:00 by RouterOS 7.25.1
 # software id = AB12-4022
 #
 # model = CRS326-24G-2S+
@@ -2119,27 +2119,27 @@ TPE_ACC_SW_03 (10.1.10.23):
 [admin@TPE_ACC_SW_03] > /ip neighbor print detail without-paging
 Flags: 
  0   interface=sfp-sfpplus1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus5 system-caps=bridge,router
     system-caps-enabled=bridge,router
  1   interface=bridge1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus5 system-caps=bridge,router
     system-caps-enabled=bridge,router
  2   interface=sfp-sfpplus2 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus6 system-caps=bridge,router
     system-caps-enabled=bridge,router
  3   interface=bridge1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus6 system-caps=bridge,router
     system-caps-enabled=bridge,router
  4   interface=ether24 address=10.1.10.3 mac-address=E4:8D:8C:00:00:03
-    identity=TPE_CORE_RT_02 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_02 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=ether3 system-caps=bridge,router
     system-caps-enabled=bridge,router
@@ -2268,7 +2268,7 @@ Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external
 _____
 TPE_ACC_SW_04 (10.1.10.24):
 [admin@TPE_ACC_SW_04] > /export terse
-# 2026-10-13 10:00:00 by RouterOS 7.12.1
+# 2026-10-13 10:00:00 by RouterOS 7.25.1
 # software id = CD34-5443
 #
 # model = CRS326-24G-2S+
@@ -2301,27 +2301,27 @@ TPE_ACC_SW_04 (10.1.10.24):
 [admin@TPE_ACC_SW_04] > /ip neighbor print detail without-paging
 Flags: 
  0   interface=sfp-sfpplus1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus7 system-caps=bridge,router
     system-caps-enabled=bridge,router
  1   interface=bridge1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus7 system-caps=bridge,router
     system-caps-enabled=bridge,router
  2   interface=sfp-sfpplus2 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus8 system-caps=bridge,router
     system-caps-enabled=bridge,router
  3   interface=bridge1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus8 system-caps=bridge,router
     system-caps-enabled=bridge,router
  4   interface=ether24 address=10.1.10.3 mac-address=E4:8D:8C:00:00:03
-    identity=TPE_CORE_RT_02 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_02 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=ether4 system-caps=bridge,router
     system-caps-enabled=bridge,router
@@ -2450,7 +2450,7 @@ Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external
 _____
 TPE_ACC_SW_05 (10.1.10.25):
 [admin@TPE_ACC_SW_05] > /export terse
-# 2026-10-13 10:00:00 by RouterOS 7.12.1
+# 2026-10-13 10:00:00 by RouterOS 7.25.1
 # software id = CD34-6196
 #
 # model = CRS326-24G-2S+
@@ -2483,27 +2483,27 @@ TPE_ACC_SW_05 (10.1.10.25):
 [admin@TPE_ACC_SW_05] > /ip neighbor print detail without-paging
 Flags: 
  0   interface=sfp-sfpplus1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus9 system-caps=bridge,router
     system-caps-enabled=bridge,router
  1   interface=bridge1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus9 system-caps=bridge,router
     system-caps-enabled=bridge,router
  2   interface=sfp-sfpplus2 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus10 system-caps=bridge,router
     system-caps-enabled=bridge,router
  3   interface=bridge1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus10 system-caps=bridge,router
     system-caps-enabled=bridge,router
  4   interface=ether24 address=10.1.10.3 mac-address=E4:8D:8C:00:00:03
-    identity=TPE_CORE_RT_02 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_02 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=ether5 system-caps=bridge,router
     system-caps-enabled=bridge,router
@@ -2521,7 +2521,7 @@ Flags:
     system-caps-enabled=station-only
  8   interface=ether17 address=10.1.10.200 address4=10.1.10.200
     mac-address=D4:01:C3:00:00:38 identity=TPE_AP_01 platform=MikroTik
-    version="7.12.1 (stable)" unpack=none age=3m25s uptime=2w1d4h board="cAP ac"
+    version="7.25.1 (stable)" unpack=none age=3m25s uptime=2w1d4h board="cAP ac"
     ipv6=no interface-name=ether1 system-caps=bridge,wlan-ap
     system-caps-enabled=bridge,wlan-ap
 
@@ -2637,7 +2637,7 @@ Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external
 _____
 TPE_ACC_SW_06 (10.1.10.26):
 [admin@TPE_ACC_SW_06] > /export terse
-# 2026-10-13 10:00:00 by RouterOS 7.12.1
+# 2026-10-13 10:00:00 by RouterOS 7.25.1
 # software id = CD34-0923
 #
 # model = CRS326-24G-2S+
@@ -2670,27 +2670,27 @@ TPE_ACC_SW_06 (10.1.10.26):
 [admin@TPE_ACC_SW_06] > /ip neighbor print detail without-paging
 Flags: 
  0   interface=sfp-sfpplus1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus11 system-caps=bridge,router
     system-caps-enabled=bridge,router
  1   interface=bridge1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus11 system-caps=bridge,router
     system-caps-enabled=bridge,router
  2   interface=sfp-sfpplus2 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus12 system-caps=bridge,router
     system-caps-enabled=bridge,router
  3   interface=bridge1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus12 system-caps=bridge,router
     system-caps-enabled=bridge,router
  4   interface=ether24 address=10.1.10.3 mac-address=E4:8D:8C:00:00:03
-    identity=TPE_CORE_RT_02 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_02 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=ether6 system-caps=bridge,router
     system-caps-enabled=bridge,router
@@ -2707,7 +2707,7 @@ Flags:
     age=3m25s uptime=2w1d4h ipv6=no interface-name=eth0 system-caps=station-only
     system-caps-enabled=station-only
  8   interface=ether22 mac-address=AA:BB:CC:00:00:40 identity=TPE-SRV-SHARED
-    platform=Linux version="7.12.1 (stable)" unpack=none age=3m25s uptime=2w1d4h
+    platform=Linux version="7.25.1 (stable)" unpack=none age=3m25s uptime=2w1d4h
     ipv6=no interface-name=eth0 system-caps=station-only
     system-caps-enabled=station-only
  9   interface=ether21 address=10.1.10.210 address4=10.1.10.210
@@ -2835,7 +2835,7 @@ Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external
 _____
 TPE_ACC_SW_07 (10.1.10.27):
 [admin@TPE_ACC_SW_07] > /export terse
-# 2026-10-13 10:00:00 by RouterOS 7.12.1
+# 2026-10-13 10:00:00 by RouterOS 7.25.1
 # software id = AB12-8339
 #
 # model = CRS326-24G-2S+
@@ -2868,27 +2868,27 @@ TPE_ACC_SW_07 (10.1.10.27):
 [admin@TPE_ACC_SW_07] > /ip neighbor print detail without-paging
 Flags: 
  0   interface=sfp-sfpplus1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus13 system-caps=bridge,router
     system-caps-enabled=bridge,router
  1   interface=bridge1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus13 system-caps=bridge,router
     system-caps-enabled=bridge,router
  2   interface=sfp-sfpplus2 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus14 system-caps=bridge,router
     system-caps-enabled=bridge,router
  3   interface=bridge1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus14 system-caps=bridge,router
     system-caps-enabled=bridge,router
  4   interface=ether24 address=10.1.10.3 mac-address=E4:8D:8C:00:00:03
-    identity=TPE_CORE_RT_02 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_02 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=ether7 system-caps=bridge,router
     system-caps-enabled=bridge,router
@@ -2905,7 +2905,7 @@ Flags:
     age=3m25s uptime=2w1d4h ipv6=no interface-name=eth0 system-caps=station-only
     system-caps-enabled=station-only
  8   interface=ether22 mac-address=AA:BB:CC:00:00:40 identity=TPE-SRV-SHARED
-    platform=Linux version="7.12.1 (stable)" unpack=none age=3m25s uptime=2w1d4h
+    platform=Linux version="7.25.1 (stable)" unpack=none age=3m25s uptime=2w1d4h
     ipv6=no interface-name=eth0 system-caps=station-only
     system-caps-enabled=station-only
 
@@ -3021,7 +3021,7 @@ Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external
 _____
 TPE_ACC_SW_08 (10.1.10.28):
 [admin@TPE_ACC_SW_08] > /export terse
-# 2026-10-13 10:00:00 by RouterOS 7.12.1
+# 2026-10-13 10:00:00 by RouterOS 7.25.1
 # software id = AB12-5410
 #
 # model = CRS326-24G-2S+
@@ -3054,27 +3054,27 @@ TPE_ACC_SW_08 (10.1.10.28):
 [admin@TPE_ACC_SW_08] > /ip neighbor print detail without-paging
 Flags: 
  0   interface=sfp-sfpplus1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus15 system-caps=bridge,router
     system-caps-enabled=bridge,router
  1   interface=bridge1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus15 system-caps=bridge,router
     system-caps-enabled=bridge,router
  2   interface=sfp-sfpplus2 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus16 system-caps=bridge,router
     system-caps-enabled=bridge,router
  3   interface=bridge1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus16 system-caps=bridge,router
     system-caps-enabled=bridge,router
  4   interface=ether24 address=10.1.10.3 mac-address=E4:8D:8C:00:00:03
-    identity=TPE_CORE_RT_02 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_02 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=ether8 system-caps=bridge,router
     system-caps-enabled=bridge,router
@@ -3203,7 +3203,7 @@ Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external
 _____
 TPE_ACC_SW_09 (10.1.10.29):
 [admin@TPE_ACC_SW_09] > /export terse
-# 2026-10-13 10:00:00 by RouterOS 7.12.1
+# 2026-10-13 10:00:00 by RouterOS 7.25.1
 # software id = CD34-5625
 #
 # model = CRS326-24G-2S+
@@ -3236,27 +3236,27 @@ TPE_ACC_SW_09 (10.1.10.29):
 [admin@TPE_ACC_SW_09] > /ip neighbor print detail without-paging
 Flags: 
  0   interface=sfp-sfpplus1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus17 system-caps=bridge,router
     system-caps-enabled=bridge,router
  1   interface=bridge1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus17 system-caps=bridge,router
     system-caps-enabled=bridge,router
  2   interface=sfp-sfpplus2 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus18 system-caps=bridge,router
     system-caps-enabled=bridge,router
  3   interface=bridge1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus18 system-caps=bridge,router
     system-caps-enabled=bridge,router
  4   interface=ether24 address=10.1.10.3 mac-address=E4:8D:8C:00:00:03
-    identity=TPE_CORE_RT_02 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_02 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=ether9 system-caps=bridge,router
     system-caps-enabled=bridge,router
@@ -3298,7 +3298,7 @@ Flags:
 _____
 TPE_ACC_SW_10 (10.1.10.30):
 [admin@TPE_ACC_SW_10] > /export terse
-# 2026-10-13 10:00:00 by RouterOS 7.12.1
+# 2026-10-13 10:00:00 by RouterOS 7.25.1
 # software id = AB12-6796
 #
 # model = CRS326-24G-2S+
@@ -3332,27 +3332,27 @@ TPE_ACC_SW_10 (10.1.10.30):
 [admin@TPE_ACC_SW_10] > /ip neighbor print detail without-paging
 Flags: 
  0   interface=sfp-sfpplus1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus19 system-caps=bridge,router
     system-caps-enabled=bridge,router
  1   interface=bridge1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus19 system-caps=bridge,router
     system-caps-enabled=bridge,router
  2   interface=sfp-sfpplus2 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus20 system-caps=bridge,router
     system-caps-enabled=bridge,router
  3   interface=bridge1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus20 system-caps=bridge,router
     system-caps-enabled=bridge,router
  4   interface=ether24 address=10.1.10.3 mac-address=E4:8D:8C:00:00:03
-    identity=TPE_CORE_RT_02 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_02 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=ether10 system-caps=bridge,router
     system-caps-enabled=bridge,router
@@ -3486,7 +3486,7 @@ routerboard: yes
 _____
 TPE_ACC_SW_11 (10.1.10.31):
 [admin@TPE_ACC_SW_11] > /export terse
-# 2026-10-13 10:00:00 by RouterOS 7.12.1
+# 2026-10-13 10:00:00 by RouterOS 7.25.1
 # software id = AB12-0738
 #
 # model = CRS326-24G-2S+
@@ -3522,27 +3522,27 @@ TPE_ACC_SW_11 (10.1.10.31):
 [admin@TPE_ACC_SW_11] > /ip neighbor print detail without-paging
 Flags: 
  0   interface=sfp-sfpplus1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus21 system-caps=bridge,router
     system-caps-enabled=bridge,router
  1   interface=bridge1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus21 system-caps=bridge,router
     system-caps-enabled=bridge,router
  2   interface=sfp-sfpplus2 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus22 system-caps=bridge,router
     system-caps-enabled=bridge,router
  3   interface=bridge1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus22 system-caps=bridge,router
     system-caps-enabled=bridge,router
  4   interface=ether24 address=10.1.10.3 mac-address=E4:8D:8C:00:00:03
-    identity=TPE_CORE_RT_02 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_02 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=ether11 system-caps=bridge,router
     system-caps-enabled=bridge,router
@@ -3758,7 +3758,7 @@ Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external
 _____
 TPE_ACC_SW_12 (10.1.10.32):
 [admin@TPE_ACC_SW_12] > /export terse
-# 2026-10-13 10:00:00 by RouterOS 7.12.1
+# 2026-10-13 10:00:00 by RouterOS 7.25.1
 # software id = CD34-1827
 #
 # model = CRS326-24G-2S+
@@ -3795,27 +3795,27 @@ TPE_ACC_SW_12 (10.1.10.32):
 [admin@TPE_ACC_SW_12] > /ip neighbor print detail without-paging
 Flags: 
  0   interface=sfp-sfpplus1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus23 system-caps=bridge,router
     system-caps-enabled=bridge,router
  1   interface=bridge1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus23 system-caps=bridge,router
     system-caps-enabled=bridge,router
  2   interface=sfp-sfpplus2 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus24 system-caps=bridge,router
     system-caps-enabled=bridge,router
  3   interface=bridge1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02
-    identity=TPE_CORE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=sfp-sfpplus24 system-caps=bridge,router
     system-caps-enabled=bridge,router
  4   interface=ether24 address=10.1.10.3 mac-address=E4:8D:8C:00:00:03
-    identity=TPE_CORE_RT_02 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CORE_RT_02 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CCR2216-1G-12XS-2XQ ipv6=no
     interface-name=ether12 system-caps=bridge,router
     system-caps-enabled=bridge,router
@@ -3962,12 +3962,12 @@ _____
 TPE_BR_RT_01 (10.1.10.240):
 [admin@TPE_BR_RT_01] > /system resource print
              uptime: 2w1d4h
-            version: 7.12.1 (stable)
+            version: 7.25.1 (stable)
          board-name: RB5009UG+S+
            platform: MikroTik
 
 [admin@TPE_BR_RT_01] > /export terse
-# 2026-10-13 10:00:00 by RouterOS 7.12.1
+# 2026-10-13 10:00:00 by RouterOS 7.25.1
 # software id = EF56-1198
 #
 # model = RB5009UG+S+
@@ -3982,7 +3982,7 @@ TPE_BR_RT_01 (10.1.10.240):
 [admin@TPE_BR_RT_01] > /ip neighbor print detail without-paging
 Flags: 
  0   interface=ether2 address=10.1.10.241 mac-address=48:A9:8A:00:00:A4
-    identity=TPE_BR_SW_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_BR_SW_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=ether1 system-caps=bridge system-caps-enabled=bridge
 
@@ -3997,12 +3997,12 @@ _____
 TPE_BR_SW_01 (10.1.10.241):
 [admin@TPE_BR_SW_01] > /system resource print
              uptime: 2w1d4h
-            version: 7.12.1 (stable)
+            version: 7.25.1 (stable)
          board-name: CRS326-24G-2S+
            platform: MikroTik
 
 [admin@TPE_BR_SW_01] > /export terse
-# 2026-10-13 10:00:00 by RouterOS 7.12.1
+# 2026-10-13 10:00:00 by RouterOS 7.25.1
 # software id = EF56-5165
 #
 # model = CRS326-24G-2S+
@@ -4019,12 +4019,12 @@ TPE_BR_SW_01 (10.1.10.241):
 [admin@TPE_BR_SW_01] > /ip neighbor print detail without-paging
 Flags: 
  0   interface=ether1 address=10.1.10.240 mac-address=E4:8D:8C:00:00:A3
-    identity=TPE_BR_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_BR_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=RB5009UG+S+ ipv6=no
     interface-name=ether2 system-caps=bridge,router
     system-caps-enabled=bridge,router
  1   interface=ether2 address=10.1.10.242 mac-address=48:A9:8A:00:00:A5
-    identity=TPE_LAB_SW_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_LAB_SW_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=ether1 system-caps=bridge system-caps-enabled=bridge
 
@@ -4041,12 +4041,12 @@ _____
 TPE_LAB_SW_01 (10.1.10.242):
 [admin@TPE_LAB_SW_01] > /system resource print
              uptime: 2w1d4h
-            version: 7.12.1 (stable)
+            version: 7.25.1 (stable)
          board-name: CRS326-24G-2S+
            platform: MikroTik
 
 [admin@TPE_LAB_SW_01] > /export terse
-# 2026-10-13 10:00:00 by RouterOS 7.12.1
+# 2026-10-13 10:00:00 by RouterOS 7.25.1
 # software id = EF56-6044
 #
 # model = CRS326-24G-2S+
@@ -4061,7 +4061,7 @@ TPE_LAB_SW_01 (10.1.10.242):
 [admin@TPE_LAB_SW_01] > /ip neighbor print detail without-paging
 Flags: 
  0   interface=ether1 address=10.1.10.241 mac-address=48:A9:8A:00:00:A4
-    identity=TPE_BR_SW_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_BR_SW_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no
     interface-name=ether2 system-caps=bridge system-caps-enabled=bridge
 
@@ -4076,12 +4076,12 @@ _____
 TPE_PE_RT_01 (10.1.30.243):
 [admin@TPE_PE_RT_01] > /system resource print
              uptime: 2w1d4h
-            version: 7.12.1 (stable)
+            version: 7.25.1 (stable)
          board-name: RB5009UG+S+
            platform: MikroTik
 
 [admin@TPE_PE_RT_01] > /export terse
-# 2026-10-13 10:00:00 by RouterOS 7.12.1
+# 2026-10-13 10:00:00 by RouterOS 7.25.1
 # software id = AB12-0206
 #
 # model = RB5009UG+S+
@@ -4103,7 +4103,7 @@ Flags: X - disabled; * - builtin
 [admin@TPE_PE_RT_01] > /ip neighbor print detail without-paging
 Flags: 
  0   interface=ether3 address=192.168.50.254 mac-address=E4:8D:8C:00:00:A7
-    identity=TPE_CE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_CE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board="hEX S" ipv6=no
     interface-name=ether1 system-caps=bridge,router
     system-caps-enabled=bridge,router
@@ -4146,12 +4146,12 @@ _____
 TPE_CE_RT_01 (192.168.50.254):
 [admin@TPE_CE_RT_01] > /system resource print
              uptime: 2w1d4h
-            version: 7.12.1 (stable)
+            version: 7.25.1 (stable)
          board-name: hEX S
            platform: MikroTik
 
 [admin@TPE_CE_RT_01] > /export terse
-# 2026-10-13 10:00:00 by RouterOS 7.12.1
+# 2026-10-13 10:00:00 by RouterOS 7.25.1
 # software id = CD34-2918
 #
 # model = hEX S
@@ -4168,7 +4168,7 @@ TPE_CE_RT_01 (192.168.50.254):
 [admin@TPE_CE_RT_01] > /ip neighbor print detail without-paging
 Flags: 
  0   interface=ether1 address=10.1.30.243 mac-address=E4:8D:8C:00:00:A6
-    identity=TPE_PE_RT_01 platform=MikroTik version="7.12.1 (stable)"
+    identity=TPE_PE_RT_01 platform=MikroTik version="7.25.1 (stable)"
     unpack=none age=3m25s uptime=2w1d4h board=RB5009UG+S+ ipv6=no
     interface-name=ether3 system-caps=bridge,router
     system-caps-enabled=bridge,router

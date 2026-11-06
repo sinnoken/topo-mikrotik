@@ -43,7 +43,7 @@ const table = (rows, legend, indexed = true) => [legend, ...rows.map((r, i) => d
 const neighborText = (rows) => table(rows.map((r) => ({ flags: '', kvs: r })), 'Flags: ');
 function nrow(local, p, dupViaBridge) {
   const base = (iface) => [['interface', iface], p.ip ? ['address', p.ip] : null, p.ip && p.platform === 'MikroTik' ? ['address4', p.ip] : null, ['mac-address', p.mac], ['identity', p.name],
-    ['platform', p.platform || 'MikroTik'], ['version', p.version || '7.12.1 (stable)'], ['unpack', 'none'], ['age', '3m25s'], ['uptime', '2w1d4h'],
+    ['platform', p.platform || 'MikroTik'], ['version', p.version || '7.25.1 (stable)'], ['unpack', 'none'], ['age', '3m25s'], ['uptime', '2w1d4h'],
     p.board ? ['board', p.board] : null, ['ipv6', 'no'], p.port ? ['interface-name', p.port] : null, p.caps ? ['system-caps', p.caps] : null, p.caps ? ['system-caps-enabled', p.caps] : null,
     p.proto ? ['discovered-by', p.proto] : null].filter(Boolean);
   return dupViaBridge ? [base(local), base('bridge1')] : [base(local)];
@@ -59,7 +59,7 @@ function wrapCmd(text, width = 72) {
   out.push(line); return out;
 }
 function exportText(name, board, entries, compact) {
-  const lines = ['# 2026-10-13 10:00:00 by RouterOS 7.12.1', `# software id = ${pick(['AB12', 'CD34', 'EF56'])}-${pad(Math.floor(rnd() * 9999), 4)}`, '#', `# model = ${board}`, `# serial number = HF${Math.floor(rnd() * 1e9)}`];
+  const lines = ['# 2026-10-13 10:00:00 by RouterOS 7.25.1', `# software id = ${pick(['AB12', 'CD34', 'EF56'])}-${pad(Math.floor(rnd() * 9999), 4)}`, '#', `# model = ${board}`, `# serial number = HF${Math.floor(rnd() * 1e9)}`];
   entries.push(['/system identity', 'set', `name=${name}`]);
   if (!compact) entries.forEach(([p, c, a]) => lines.push(`${p} ${c} ${a}`));
   else { let ctx = null; entries.forEach(([p, c, a]) => { if (p !== ctx) { lines.push(p); ctx = p; } lines.push(...wrapCmd(`${c} ${a}`)); }); }
@@ -125,7 +125,7 @@ function fwStats(name, entries, extra) {
     return [`${p} print stats detail without-paging`, statsText(rows)];
   });
 }
-const sysText = (board, name) => `             uptime: 2w1d4h\n            version: 7.12.1 (stable)\n         board-name: ${board}\n           platform: MikroTik\n`;
+const sysText = (board, name) => `             uptime: 2w1d4h\n            version: 7.25.1 (stable)\n         board-name: ${board}\n           platform: MikroTik\n`;
 
 const out = [];
 const device = (name, ip, cmds) => {
@@ -181,7 +181,7 @@ for (let s = 1; s <= SITES; s++) {
       sw.macs.push({ vid: 30, mac: css.mac, ifc: 'ether21' });
       for (let k = 0; k < 3; k++) sw.macs.push({ vid: 30, mac: mac(pick(OUI_PC)), ifc: 'ether21' });
     }
-    if (F && a === 5) sw.neighbors.push(...nrow('ether17', { name: `${C}_AP_01`, ip: `10.${s}.10.200`, mac: mac(OUI_MT[0]), platform: 'MikroTik', version: '7.12.1 (stable)', board: 'cAP ac', port: 'ether1', caps: 'bridge,wlan-ap' })); // C01
+    if (F && a === 5) sw.neighbors.push(...nrow('ether17', { name: `${C}_AP_01`, ip: `10.${s}.10.200`, mac: mac(OUI_MT[0]), platform: 'MikroTik', version: '7.25.1 (stable)', board: 'cAP ac', port: 'ether1', caps: 'bridge,wlan-ap' })); // C01
     for (let k = 1; k <= USERS; k++) {
       const port = `ether${8 + k}`; const m = mac(pick(OUI_PC)); const ip = `10.${s}.30.${(a - 1) * USERS + k + 10}`;
       e.push(['/interface bridge port', 'add', `bridge=bridge1 interface=${port} pvid=30`]); userPorts.push(port); sw.macs.push({ vid: 30, mac: m, ifc: port }); siteMacs.push({ vlan: 30, mac: m, ip });

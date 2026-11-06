@@ -7,7 +7,8 @@
  *   mikrotik.neighbor   /ip neighbor print detail          鄰居（LLDP／MNDP／CDP）
  *   mikrotik.config     /export terse（或 compact）          介面、bridge、bridge VLAN、bonding、IP、router-id、
  *                       DHCP 網路、DNS／NTP 伺服器、名稱 ↔ IP 設定（IP_BINDS）、
- *                       防火牆（/ip|ipv6 firewall filter|nat|raw）、interface list、/ip service、/ip ipsec peer|policy
+ *                       防火牆（/ip|ipv6 firewall filter|nat|raw）、interface list、/ip service、/ip ipsec peer|policy、
+ *                       管理面設定（MGMT_MENUS）、export 的範圍與抬頭版本（exportScope）
  *   mikrotik.bridgehost /interface bridge host print detail  MAC 表
  *   mikrotik.vlans      /interface bridge vlan print detail  bridge VLAN 實際成員（含動態）
  *   mikrotik.interface  /interface print detail             介面狀態（running／停用）
@@ -256,21 +257,27 @@
    * 預設值由 model 依 S.MGMT_DEFAULTS 補上。選單 → [model 的 area, 參數]，參數語意見 S.MGMT_DEFAULTS.manual 的手冊頁。
    */
   const MGMT_MENUS = {
-    '/ip dns': ['dns', ['allow-remote-requests']],
+    '/ip dns': ['dns', ['allow-remote-requests', 'vrf']],
     '/tool mac-server': ['macServer', ['allowed-interface-list']],
     '/tool mac-server mac-winbox': ['macWinbox', ['allowed-interface-list']],
     '/ip neighbor discovery-settings': ['discovery', ['discover-interface-list', 'protocol', 'mode']],
     '/snmp': ['snmp', ['enabled']],
     '/ip upnp': ['upnp', ['enabled']],
     '/ip proxy': ['proxy', ['enabled', 'port']],
-    '/ip socks': ['socks', ['enabled', 'port']],
+    '/ip socks': ['socks', ['enabled', 'port', 'vrf']],
     '/tool bandwidth-server': ['bandwidthServer', ['enabled', 'authenticate']],
   };
+
+  /*
+   * 整機 export（/export、/export terse、/export compact…）才涵蓋所有選單：沒寫出的選單＝出廠預設值。
+   * 其他區塊（/ip firewall export 這類部分 export、沒有指令標記的段落）只涵蓋裡面出現的選單，依區塊的指令判斷，不看內容。
+   */
+  const FULL_EXPORT = /^\/?export\b/i;
 
   // ================================================================ 設定（/export）
   reg({
     id: 'mikrotik.config', vendor: VENDOR, dataType: 'config', label: 'RouterOS 設定',
-    command: /^\/?export\b/i,
+    command: FULL_EXPORT,
     detect: (lines) => lines.some((l) => /^\s*(\/[\w\- ]+?\s+)?add\s+[\w\-]+=/.test(l)) && lines.some((l) => /^\s*\/(interface|ip|system|routing)\b/.test(l)),
     parse(b, emit, ignore = noop) {
       // 還原斷行：行尾 \ 接到下一行（續行的前導空白去掉）；續行屬於同一個敘述
@@ -282,6 +289,11 @@
         lines.push(acc); acc = null;
       });
       if (acc) lines.push(acc);
+
+      // export 的範圍與 RouterOS 版本（抬頭的「by RouterOS 版本」）：model 判斷能不能用出廠預設值補沒寫出的設定
+      const verHdr = lines.find((x) => /^#.*\bby RouterOS\s+\S/i.test(x.text));
+      const firstLine = lines.find((x) => x.text);
+      if (firstLine) emit({ t: 'exportScope', full: FULL_EXPORT.test(b.command || ''), version: verHdr ? verHdr.text.match(/\bby RouterOS\s+(\S+)/i)[1] : null, line: (verHdr || firstLine).line });
 
       let ctx = '';
       const bridges = new Map(); const ports = []; const bvlans = []; const ridNames = new Map(); let ospfRid = null; let ospfLine = 0;

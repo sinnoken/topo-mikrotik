@@ -18,7 +18,7 @@ test('管理面設定：export 有寫的是事實（basis export、行號），�
     '/ip proxy set enabled=yes port=8080,3128', '/ip socks set port=1081', '/tool bandwidth-server set authenticate=no']);
   assert.ok(!ids(s).includes('I03'), JSON.stringify(s.findings.filter((f) => f.id === 'I03').map((f) => f.message)));
   const m = mg(s);
-  assert.deepStrictEqual([m.dns.allowRemote, m.dns.basis, m.dns.defaulted, m.dns.src.map((x) => x[1])], [true, 'export', [], [8]]);
+  assert.deepStrictEqual([m.dns.allowRemote, m.dns.vrf, m.dns.basis, m.dns.defaulted, m.dns.src.map((x) => x[1])], [true, 'main', 'export', ['vrf'], [8]]);
   assert.deepStrictEqual([m.macServer.allowedList, m.macServer.basis, m.macServer.src.map((x) => x[1])], ['LAN', 'export', [9]]);
   assert.deepStrictEqual([m.macWinbox.allowedList, m.macWinbox.src.map((x) => x[1])], ['none', [10]], 'RouterOS 7 的斜線路徑也認得');
   assert.deepStrictEqual([m.discovery.list, m.discovery.protocols, m.discovery.mode, m.discovery.defaulted], ['LAN', ['lldp'], 'tx-and-rx', ['mode']]);
@@ -28,7 +28,7 @@ test('管理面設定：export 有寫的是事實（basis export、行號），�
   assert.deepStrictEqual(m.snmp.communities[1].defaulted, ['addresses', 'security', 'disabled']);
   assert.deepStrictEqual(m.upnp.interfaces.map((x) => [x.ep, x.type]), [['R|ether1', 'external'], ['R|bridge1', 'internal']]);
   assert.deepStrictEqual([m.proxy.enabled, m.proxy.ports], [true, [8080, 3128]]);
-  assert.deepStrictEqual([m.socks.enabled, m.socks.port, m.socks.defaulted], [false, 1081, ['enabled']]);
+  assert.deepStrictEqual([m.socks.enabled, m.socks.port, m.socks.defaulted], [false, 1081, ['enabled', 'vrf']]);
   assert.deepStrictEqual([m.bandwidthServer.enabled, m.bandwidthServer.authenticate, m.bandwidthServer.defaulted, m.bandwidthServer.basis], [true, false, ['enabled'], 'export']);
   // 沒有任何管理面設定：全部是預設值
   const d = mg(fwBox([]));
@@ -137,4 +137,90 @@ test('F10／F11／F12／F14：沒有 WAN 判斷時不檢查（F08 說明），�
     assert.deepStrictEqual(['F10', 'F11', 'F12', 'F14'].filter((id) => fws(s, id).length), []);
     assert.strictEqual(fws(s, 'F08').length, 1);
   });
+});
+
+// ---- 審查 r19 的修正：部分 export、VRF、同名 community、預設值的版本範圍
+const F1x = (s) => s.findings.filter((f) => /^F1[0-4]$/.test(f.id));
+const partial = (hdr, extra = []) => build(['R (10.0.0.1):', `### ${hdr}`, '/interface list', 'add name=WAN', '/interface list member', 'add interface=ether1 list=WAN',
+  '/ip firewall filter', 'add action=accept chain=input', ...extra].join('\n'));
+const AREAS = ['dns', 'macServer', 'macWinbox', 'discovery', 'snmp', 'upnp', 'proxy', 'socks', 'bandwidthServer'];
+
+test('管理面設定：部分 export（/ip firewall export、/interface list export、/ip export、沒有指令標記）沒寫出的選單不補預設值（basis none、reason not-exported），不產生 F10–F14', () => {
+  ['/ip firewall export terse', '/interface list export', '/ip export'].forEach((hdr) => {
+    const s = partial(hdr);
+    assert.deepStrictEqual(F1x(s).map((f) => f.id + ':' + f.facet), [], hdr);
+    const m = mg(s);
+    assert.strictEqual(m.export, 'partial', hdr);
+    AREAS.forEach((k) => assert.deepStrictEqual([k, m[k].basis, m[k].reason, m[k].defaulted], [k, 'none', 'not-exported', []], hdr));
+    assert.deepStrictEqual([m.macServer.allowedList, m.macServer.unknown], [null, ['allowedList']]);
+    assert.strictEqual(m.snmp.communities, null, '沒有出廠 community 的推定');
+  });
+  // 沒有指令標記的區塊：看不出是整機 export，同樣不補
+  const u = build(['R (10.0.0.1):', '/interface list add name=WAN', '/interface list member add interface=ether1 list=WAN', '/ip firewall filter add action=accept chain=input'].join('\n'));
+  assert.strictEqual(mg(u).export, 'partial');
+  assert.deepStrictEqual(F1x(u), []);
+  // 部分 export 裡出現的選單：沒寫的參數仍以預設值補上（那個選單有被 export）
+  const p = partial('/ip export', ['/ip neighbor discovery-settings', 'set discover-interface-list=WAN']);
+  assert.deepStrictEqual([mg(p).discovery.basis, mg(p).discovery.defaulted, mg(p).discovery.protocols], ['export', ['protocols', 'mode'], ['cdp', 'lldp', 'mndp']]);
+  assert.deepStrictEqual(F1x(p).map((f) => f.id), ['F12']);
+  // 整機 export：/export、/export terse、/export compact 都算
+  ['/export', '/export terse', '/export compact', 'export verbose'].forEach((hdr) => assert.strictEqual(mg(partial(hdr)).export, 'full', hdr));
+  // 同一台另有完整 export 時以完整的為準
+  const both = build(['R (10.0.0.1):', '### /ip firewall export', '/ip firewall filter add action=accept chain=input', 'R (10.0.0.1):', '### /export terse',
+    '/interface list add name=WAN', '/interface list member add interface=ether1 list=WAN'].join('\n'));
+  assert.strictEqual(mg(both).export, 'full');
+  assert.ok(F1x(both).some((f) => f.id === 'F11'));
+});
+
+test('F10／F14：DNS、SOCKS 只在自己的 VRF（vrf=，預設 main）回應；WAN 在其他 VRF 時不報，vrf 指到 WAN 的 VRF 時報', () => {
+  const vrf = '/ip vrf add interfaces=ether1 name=wan';
+  assert.deepStrictEqual(fws(fwBox([vrf, '/ip dns set allow-remote-requests=yes']), 'F10'), []);
+  const inWan = fws(fwBox([vrf, '/ip dns set allow-remote-requests=yes vrf=wan']), 'F10');
+  assert.strictEqual(inWan.length, 1);
+  assert.ok(/vrf=wan/.test(inWan[0].message), inWan[0].message);
+  assert.strictEqual(mg(fwBox([vrf, '/ip dns set allow-remote-requests=yes'])).dns.vrf, 'main');
+  const off = '/tool bandwidth-server set enabled=no';
+  assert.deepStrictEqual(fws(fwBox([off, vrf, '/ip socks set enabled=yes']), 'F14'), []);
+  assert.deepStrictEqual(fws(fwBox([off, vrf, '/ip socks set enabled=yes vrf=wan']), 'F14').map((f) => f.facet), ['socks']);
+  // proxy、bandwidth-server 的手冊沒有 vrf 參數：照舊判斷
+  assert.deepStrictEqual(fws(fwBox([off, vrf, '/ip proxy set enabled=yes']), 'F14').map((f) => f.facet), ['proxy']);
+});
+
+test('F13：同名的 community 各自一筆，findingKey 不同（facet 加上內容的雜湊）；名稱不重複時 facet 仍是名稱', () => {
+  const s = fwBox(['/snmp set enabled=yes', '/snmp community add name=public addresses=10.0.0.0/8']);
+  const f = fws(s, 'F13');
+  assert.strictEqual(f.length, 2);
+  const keys = f.map((x) => JSON.stringify(S.query(s).findingKey(x)));
+  assert.notStrictEqual(keys[0], keys[1]);
+  assert.ok(f.every((x) => /^public#[0-9a-f]{8}$/.test(x.facet)), f.map((x) => x.facet).join());
+  assert.ok(f.every((x) => /同名的 community 有 2 個/.test(x.message)), f[0].message);
+  // 加在前面的設定行不影響 facet（不用行號、順序）
+  const s2 = fwBox(['/ip dns set servers=1.1.1.1', '/snmp set enabled=yes', '/snmp community add name=public addresses=10.0.0.0/8']);
+  assert.deepStrictEqual(fws(s2, 'F13').map((x) => x.facet).sort(), f.map((x) => x.facet).sort());
+  assert.deepStrictEqual(fws(fwBox(['/snmp set enabled=yes']), 'F13').map((x) => x.facet), ['public']);
+});
+
+test('管理面設定：出廠預設值只用在 RouterOS 7.24–7.26；版本在範圍外（含 v6）時沒寫的設定視為無法判斷（reason version），訊息寫出預設值的版本範圍', () => {
+  const at = (ver, extra) => build(['R (10.0.0.1):', '### /export terse', `# 2026-10-13 10:00:00 by RouterOS ${ver}`, '/interface list add name=WAN',
+    '/interface list member add interface=ether1 list=WAN', ...extra].join('\n'));
+  ['7.12.1', '6.49.10', '7.27'].forEach((ver) => {
+    const s = at(ver, ['/snmp set enabled=yes', '/tool mac-server mac-winbox set allowed-interface-list=all']);
+    const m = mg(s);
+    assert.deepStrictEqual([m.version, m.versionInRange, m.macServer.basis, m.macServer.reason, m.macServer.allowedList], [ver, false, 'none', 'version', null], ver);
+    assert.deepStrictEqual(F1x(s).map((f) => f.id + ':' + f.facet + ':' + f.basis), ['F11:mac-winbox:export'], ver);
+  });
+  // 範圍內：預設值照用，訊息寫出依據的版本範圍
+  const s = at('7.25.1', []);
+  assert.deepStrictEqual([mg(s).version, mg(s).versionInRange], ['7.25.1', true]);
+  const def = fws(s, 'F11');
+  assert.strictEqual(def.length, 2);
+  assert.ok(def.every((f) => /RouterOS 7\.24–7\.26/.test(f.message)), def[0].message);
+  // /system resource 的版本優先於 export 抬頭
+  const r = build(['R (10.0.0.1):', '### /system resource print', '    version: 7.12.1 (stable)', ' board-name: RB5009', '### /export terse', '# 2026-10-13 10:00:00 by RouterOS 7.25',
+    '/interface list add name=WAN', '/interface list member add interface=ether1 list=WAN'].join('\n'));
+  assert.deepStrictEqual([mg(r).version, mg(r).versionInRange], ['7.12.1 (stable)', false]);
+  // 版本不明：照用預設值，訊息註明版本不明
+  const u = fwBox([]);
+  assert.deepStrictEqual([mg(u).version, mg(u).versionInRange], [null, null]);
+  assert.ok(fws(u, 'F11').every((f) => /設備版本不明/.test(f.message)), fws(u, 'F11')[0].message);
 });

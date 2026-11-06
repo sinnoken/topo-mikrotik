@@ -27,14 +27,16 @@
    */
   S.MGMT_DEFAULTS = Object.freeze({
     routerOS: '7.24–7.26（線上手冊）',
-    dns: Object.freeze({ allowRemote: false }),
+    // 這張表適用的 RouterOS 版本（[主版號, 次版號]，含兩端）：設備版本在範圍外時不用表推定（model 的 resolveMgmt）
+    versions: Object.freeze({ text: '7.24–7.26', from: Object.freeze([7, 24]), to: Object.freeze([7, 26]) }),
+    dns: Object.freeze({ allowRemote: false, vrf: 'main' }),
     macServer: Object.freeze({ allowedList: 'all' }),
     macWinbox: Object.freeze({ allowedList: 'all' }),
     discovery: Object.freeze({ list: 'static', protocols: Object.freeze(['cdp', 'lldp', 'mndp']), mode: 'tx-and-rx' }),
     snmp: Object.freeze({ enabled: false, community: Object.freeze({ name: 'public', addresses: Object.freeze(['::/0']), write: false, security: 'none', disabled: false }) }),
     upnp: Object.freeze({ enabled: false }),
     proxy: Object.freeze({ enabled: false, ports: Object.freeze([8080]) }),
-    socks: Object.freeze({ enabled: false, port: 1080 }),
+    socks: Object.freeze({ enabled: false, port: 1080, vrf: 'main' }),
     bandwidthServer: Object.freeze({ enabled: true, authenticate: true, port: 2000 }),
     manual: Object.freeze({
       dns: 'https://manual.mikrotik.com/docs/cli-reference/ip/dns.md',

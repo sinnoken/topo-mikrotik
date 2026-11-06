@@ -3,19 +3,19 @@
   "schema": "ssot-snapshot/3",
   "version": "3.4.0",
   "createdAt": "2026-01-01T00:00:00Z",
-  "inputHash": "0effe7aed56de13a",
-  "baselineKey": "6ce59f82dc21b298",
+  "inputHash": "72de87da9bf20c60",
+  "baselineKey": "36c3d7fc9df42e06",
   "sources": [
    {
     "name": "sample-bundle.txt",
     "reader": "bundle-v1",
     "bytes": 223345,
-    "hash": "8dff4f6bd9175791"
+    "hash": "31dc6c8f90ddbbf4"
    }
   ],
   "adapters": {
    "mikrotik.system": 14,
-   "mikrotik.config": 1079,
+   "mikrotik.config": 1098,
    "mikrotik.fwstats.ip-filter": 23,
    "mikrotik.fwstats.ip-nat": 6,
    "mikrotik.fwstats.ip-raw": 2,
@@ -33,7 +33,7 @@
    "mikrotik.vrf": 2
   },
   "blockCount": 111,
-  "factCount": 2371,
+  "factCount": 2390,
   "profile": null,
   "stats": {
    "devices": 59,
@@ -131,7 +131,7 @@
     "site": null,
     "label": null,
     "deviceType": "CRS326-24G-2S+",
-    "softwareVersion": "7.12.1 (stable)",
+    "softwareVersion": "7.25.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
     "dnsServers": null,
@@ -148,15 +148,15 @@
      ],
      [
       27,
+      1728
+     ],
+     [
+      27,
       1733
      ],
      [
       27,
       1734
-     ],
-     [
-      27,
-      1735
      ]
     ],
     "srcNone": null
@@ -195,7 +195,7 @@
     "site": null,
     "label": null,
     "deviceType": "CRS326-24G-2S+",
-    "softwareVersion": "7.12.1 (stable)",
+    "softwareVersion": "7.25.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
     "dnsServers": null,
@@ -212,15 +212,15 @@
      ],
      [
       32,
+      1910
+     ],
+     [
+      32,
       1915
      ],
      [
       32,
       1916
-     ],
-     [
-      32,
-      1917
      ]
     ],
     "srcNone": null
@@ -259,7 +259,7 @@
     "site": null,
     "label": null,
     "deviceType": "CRS326-24G-2S+",
-    "softwareVersion": "7.12.1 (stable)",
+    "softwareVersion": "7.25.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
     "dnsServers": null,
@@ -276,15 +276,15 @@
      ],
      [
       37,
+      2089
+     ],
+     [
+      37,
       2094
      ],
      [
       37,
       2095
-     ],
-     [
-      37,
-      2096
      ]
     ],
     "srcNone": null
@@ -323,7 +323,7 @@
     "site": null,
     "label": null,
     "deviceType": "CRS326-24G-2S+",
-    "softwareVersion": "7.12.1 (stable)",
+    "softwareVersion": "7.25.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
     "dnsServers": null,
@@ -340,15 +340,15 @@
      ],
      [
       42,
+      2271
+     ],
+     [
+      42,
       2276
      ],
      [
       42,
       2277
-     ],
-     [
-      42,
-      2278
      ]
     ],
     "srcNone": null
@@ -387,7 +387,7 @@
     "site": null,
     "label": null,
     "deviceType": "CRS326-24G-2S+",
-    "softwareVersion": "7.12.1 (stable)",
+    "softwareVersion": "7.25.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
     "dnsServers": null,
@@ -404,15 +404,15 @@
      ],
      [
       47,
+      2453
+     ],
+     [
+      47,
       2458
      ],
      [
       47,
       2459
-     ],
-     [
-      47,
-      2460
      ]
     ],
     "srcNone": null
@@ -451,7 +451,7 @@
     "site": null,
     "label": null,
     "deviceType": "CRS326-24G-2S+",
-    "softwareVersion": "7.12.1 (stable)",
+    "softwareVersion": "7.25.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
     "dnsServers": null,
@@ -468,15 +468,15 @@
      ],
      [
       52,
+      2640
+     ],
+     [
+      52,
       2645
      ],
      [
       52,
       2646
-     ],
-     [
-      52,
-      2647
      ]
     ],
     "srcNone": null
@@ -515,7 +515,7 @@
     "site": null,
     "label": null,
     "deviceType": "CRS326-24G-2S+",
-    "softwareVersion": "7.12.1 (stable)",
+    "softwareVersion": "7.25.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
     "dnsServers": null,
@@ -532,15 +532,15 @@
      ],
      [
       57,
+      2838
+     ],
+     [
+      57,
       2843
      ],
      [
       57,
       2844
-     ],
-     [
-      57,
-      2845
      ]
     ],
     "srcNone": null
@@ -579,7 +579,7 @@
     "site": null,
     "label": null,
     "deviceType": "CRS326-24G-2S+",
-    "softwareVersion": "7.12.1 (stable)",
+    "softwareVersion": "7.25.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
     "dnsServers": null,
@@ -596,15 +596,15 @@
      ],
      [
       62,
+      3024
+     ],
+     [
+      62,
       3029
      ],
      [
       62,
       3030
-     ],
-     [
-      62,
-      3031
      ]
     ],
     "srcNone": null
@@ -642,7 +642,7 @@
     "site": null,
     "label": null,
     "deviceType": "CRS326-24G-2S+",
-    "softwareVersion": "7.12.1 (stable)",
+    "softwareVersion": "7.25.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
     "dnsServers": null,
@@ -659,15 +659,15 @@
      ],
      [
       67,
+      3206
+     ],
+     [
+      67,
       3211
      ],
      [
       67,
       3212
-     ],
-     [
-      67,
-      3213
      ]
     ],
     "srcNone": null
@@ -706,7 +706,7 @@
     "site": null,
     "label": null,
     "deviceType": "CRS326-24G-2S+",
-    "softwareVersion": "7.12.1 (stable)",
+    "softwareVersion": "7.25.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
     "dnsServers": null,
@@ -723,15 +723,15 @@
      ],
      [
       71,
+      3301
+     ],
+     [
+      71,
       3306
      ],
      [
       71,
       3307
-     ],
-     [
-      71,
-      3308
      ]
     ],
     "srcNone": null
@@ -770,7 +770,7 @@
     "site": null,
     "label": null,
     "deviceType": "CRS326-24G-2S+",
-    "softwareVersion": "7.12.1 (stable)",
+    "softwareVersion": "7.25.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
     "dnsServers": null,
@@ -787,15 +787,15 @@
      ],
      [
       77,
+      3489
+     ],
+     [
+      77,
       3494
      ],
      [
       77,
       3495
-     ],
-     [
-      77,
-      3496
      ]
     ],
     "srcNone": null
@@ -834,7 +834,7 @@
     "site": null,
     "label": null,
     "deviceType": "CRS326-24G-2S+",
-    "softwareVersion": "7.12.1 (stable)",
+    "softwareVersion": "7.25.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
     "dnsServers": null,
@@ -863,15 +863,15 @@
      ],
      [
       83,
+      3761
+     ],
+     [
+      83,
       3766
      ],
      [
       83,
       3767
-     ],
-     [
-      83,
-      3768
      ]
     ],
     "srcNone": null
@@ -899,7 +899,7 @@
     "site": null,
     "label": null,
     "deviceType": "cAP ac",
-    "softwareVersion": "7.12.1 (stable)",
+    "softwareVersion": "7.25.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge,wlan-ap",
     "dnsServers": null,
@@ -939,7 +939,7 @@
     "site": null,
     "label": null,
     "deviceType": "RB5009UG+S+",
-    "softwareVersion": "7.12.1 (stable)",
+    "softwareVersion": "7.25.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge,router",
     "dnsServers": null,
@@ -963,7 +963,7 @@
      ],
      [
       89,
-      3975
+      3970
      ]
     ],
     "srcNone": null
@@ -998,7 +998,7 @@
     "site": null,
     "label": null,
     "deviceType": "CRS326-24G-2S+",
-    "softwareVersion": "7.12.1 (stable)",
+    "softwareVersion": "7.25.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
     "dnsServers": null,
@@ -1023,7 +1023,7 @@
      ],
      [
       93,
-      4010
+      4005
      ]
     ],
     "srcNone": null
@@ -1056,7 +1056,7 @@
     "site": null,
     "label": null,
     "deviceType": "hEX S",
-    "softwareVersion": "7.12.1 (stable)",
+    "softwareVersion": "7.25.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge,router",
     "dnsServers": null,
@@ -1080,7 +1080,7 @@
      ],
      [
       108,
-      4159
+      4154
      ]
     ],
     "srcNone": null
@@ -1121,7 +1121,7 @@
     "site": null,
     "label": null,
     "deviceType": "CCR2216-1G-12XS-2XQ",
-    "softwareVersion": "7.12.1 (stable)",
+    "softwareVersion": "7.25.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge,router",
     "dnsServers": {
@@ -1182,7 +1182,7 @@
      ],
      [
       1,
-      17
+      11
      ]
     ],
     "srcNone": null
@@ -1222,7 +1222,7 @@
     "site": null,
     "label": null,
     "deviceType": "CCR2216-1G-12XS-2XQ",
-    "softwareVersion": "7.12.1 (stable)",
+    "softwareVersion": "7.25.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge,router",
     "dnsServers": {
@@ -1281,7 +1281,7 @@
      ],
      [
       15,
-      958
+      953
      ]
     ],
     "srcNone": null
@@ -1351,7 +1351,7 @@
     "site": null,
     "label": null,
     "deviceType": "CRS326-24G-2S+",
-    "softwareVersion": "7.12.1 (stable)",
+    "softwareVersion": "7.25.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
     "dnsServers": null,
@@ -1375,7 +1375,7 @@
      ],
      [
       97,
-      4054
+      4049
      ]
     ],
     "srcNone": null
@@ -1411,7 +1411,7 @@
     "site": null,
     "label": null,
     "deviceType": "RB5009UG+S+",
-    "softwareVersion": "7.12.1 (stable)",
+    "softwareVersion": "7.25.1 (stable)",
     "platform": "MikroTik",
     "caps": "bridge,router",
     "dnsServers": null,
@@ -1435,7 +1435,7 @@
      ],
      [
       101,
-      4089
+      4084
      ]
     ],
     "srcNone": null
@@ -2723,7 +2723,7 @@
     "site": null,
     "label": null,
     "deviceType": null,
-    "softwareVersion": "7.12.1 (stable)",
+    "softwareVersion": "7.25.1 (stable)",
     "platform": "Linux",
     "caps": "station-only",
     "dnsServers": null,
@@ -43259,12 +43259,19 @@
   "mgmtSettings": [
    {
     "dev": "TPE_ACC_SW_01",
+    "export": "full",
+    "version": "7.25.1 (stable)",
+    "versionInRange": true,
     "dns": {
      "allowRemote": false,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
-      "allowRemote"
+      "allowRemote",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macServer": {
@@ -43273,6 +43280,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macWinbox": {
@@ -43281,6 +43290,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "discovery": {
@@ -43297,6 +43308,8 @@
       "protocols",
       "mode"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "snmp": {
@@ -43305,6 +43318,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "communities": [
       {
@@ -43324,9 +43339,11 @@
         "security",
         "disabled"
        ],
-       "src": []
+       "src": [],
+       "unknown": []
       }
      ],
+     "communitiesReason": null,
      "unmatched": []
     },
     "upnp": {
@@ -43335,6 +43352,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "interfaces": []
     },
@@ -43348,16 +43367,22 @@
       "enabled",
       "ports"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "socks": {
      "enabled": false,
      "port": 1080,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
       "enabled",
-      "port"
+      "port",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "bandwidthServer": {
@@ -43368,18 +43393,27 @@
       "enabled",
       "authenticate"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "port": 2000
     }
    },
    {
     "dev": "TPE_ACC_SW_02",
+    "export": "full",
+    "version": "7.25.1 (stable)",
+    "versionInRange": true,
     "dns": {
      "allowRemote": false,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
-      "allowRemote"
+      "allowRemote",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macServer": {
@@ -43388,6 +43422,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macWinbox": {
@@ -43396,6 +43432,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "discovery": {
@@ -43412,6 +43450,8 @@
       "protocols",
       "mode"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "snmp": {
@@ -43420,6 +43460,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "communities": [
       {
@@ -43439,9 +43481,11 @@
         "security",
         "disabled"
        ],
-       "src": []
+       "src": [],
+       "unknown": []
       }
      ],
+     "communitiesReason": null,
      "unmatched": []
     },
     "upnp": {
@@ -43450,6 +43494,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "interfaces": []
     },
@@ -43463,16 +43509,22 @@
       "enabled",
       "ports"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "socks": {
      "enabled": false,
      "port": 1080,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
       "enabled",
-      "port"
+      "port",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "bandwidthServer": {
@@ -43483,18 +43535,27 @@
       "enabled",
       "authenticate"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "port": 2000
     }
    },
    {
     "dev": "TPE_ACC_SW_03",
+    "export": "full",
+    "version": "7.25.1 (stable)",
+    "versionInRange": true,
     "dns": {
      "allowRemote": false,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
-      "allowRemote"
+      "allowRemote",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macServer": {
@@ -43503,6 +43564,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macWinbox": {
@@ -43511,6 +43574,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "discovery": {
@@ -43527,6 +43592,8 @@
       "protocols",
       "mode"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "snmp": {
@@ -43535,6 +43602,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "communities": [
       {
@@ -43554,9 +43623,11 @@
         "security",
         "disabled"
        ],
-       "src": []
+       "src": [],
+       "unknown": []
       }
      ],
+     "communitiesReason": null,
      "unmatched": []
     },
     "upnp": {
@@ -43565,6 +43636,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "interfaces": []
     },
@@ -43578,16 +43651,22 @@
       "enabled",
       "ports"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "socks": {
      "enabled": false,
      "port": 1080,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
       "enabled",
-      "port"
+      "port",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "bandwidthServer": {
@@ -43598,18 +43677,27 @@
       "enabled",
       "authenticate"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "port": 2000
     }
    },
    {
     "dev": "TPE_ACC_SW_04",
+    "export": "full",
+    "version": "7.25.1 (stable)",
+    "versionInRange": true,
     "dns": {
      "allowRemote": false,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
-      "allowRemote"
+      "allowRemote",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macServer": {
@@ -43618,6 +43706,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macWinbox": {
@@ -43626,6 +43716,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "discovery": {
@@ -43642,6 +43734,8 @@
       "protocols",
       "mode"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "snmp": {
@@ -43650,6 +43744,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "communities": [
       {
@@ -43669,9 +43765,11 @@
         "security",
         "disabled"
        ],
-       "src": []
+       "src": [],
+       "unknown": []
       }
      ],
+     "communitiesReason": null,
      "unmatched": []
     },
     "upnp": {
@@ -43680,6 +43778,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "interfaces": []
     },
@@ -43693,16 +43793,22 @@
       "enabled",
       "ports"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "socks": {
      "enabled": false,
      "port": 1080,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
       "enabled",
-      "port"
+      "port",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "bandwidthServer": {
@@ -43713,18 +43819,27 @@
       "enabled",
       "authenticate"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "port": 2000
     }
    },
    {
     "dev": "TPE_ACC_SW_05",
+    "export": "full",
+    "version": "7.25.1 (stable)",
+    "versionInRange": true,
     "dns": {
      "allowRemote": false,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
-      "allowRemote"
+      "allowRemote",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macServer": {
@@ -43733,6 +43848,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macWinbox": {
@@ -43741,6 +43858,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "discovery": {
@@ -43757,6 +43876,8 @@
       "protocols",
       "mode"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "snmp": {
@@ -43765,6 +43886,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "communities": [
       {
@@ -43784,9 +43907,11 @@
         "security",
         "disabled"
        ],
-       "src": []
+       "src": [],
+       "unknown": []
       }
      ],
+     "communitiesReason": null,
      "unmatched": []
     },
     "upnp": {
@@ -43795,6 +43920,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "interfaces": []
     },
@@ -43808,16 +43935,22 @@
       "enabled",
       "ports"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "socks": {
      "enabled": false,
      "port": 1080,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
       "enabled",
-      "port"
+      "port",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "bandwidthServer": {
@@ -43828,18 +43961,27 @@
       "enabled",
       "authenticate"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "port": 2000
     }
    },
    {
     "dev": "TPE_ACC_SW_06",
+    "export": "full",
+    "version": "7.25.1 (stable)",
+    "versionInRange": true,
     "dns": {
      "allowRemote": false,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
-      "allowRemote"
+      "allowRemote",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macServer": {
@@ -43848,6 +43990,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macWinbox": {
@@ -43856,6 +44000,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "discovery": {
@@ -43872,6 +44018,8 @@
       "protocols",
       "mode"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "snmp": {
@@ -43880,6 +44028,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "communities": [
       {
@@ -43899,9 +44049,11 @@
         "security",
         "disabled"
        ],
-       "src": []
+       "src": [],
+       "unknown": []
       }
      ],
+     "communitiesReason": null,
      "unmatched": []
     },
     "upnp": {
@@ -43910,6 +44062,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "interfaces": []
     },
@@ -43923,16 +44077,22 @@
       "enabled",
       "ports"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "socks": {
      "enabled": false,
      "port": 1080,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
       "enabled",
-      "port"
+      "port",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "bandwidthServer": {
@@ -43943,18 +44103,27 @@
       "enabled",
       "authenticate"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "port": 2000
     }
    },
    {
     "dev": "TPE_ACC_SW_07",
+    "export": "full",
+    "version": "7.25.1 (stable)",
+    "versionInRange": true,
     "dns": {
      "allowRemote": false,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
-      "allowRemote"
+      "allowRemote",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macServer": {
@@ -43963,6 +44132,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macWinbox": {
@@ -43971,6 +44142,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "discovery": {
@@ -43987,6 +44160,8 @@
       "protocols",
       "mode"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "snmp": {
@@ -43995,6 +44170,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "communities": [
       {
@@ -44014,9 +44191,11 @@
         "security",
         "disabled"
        ],
-       "src": []
+       "src": [],
+       "unknown": []
       }
      ],
+     "communitiesReason": null,
      "unmatched": []
     },
     "upnp": {
@@ -44025,6 +44204,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "interfaces": []
     },
@@ -44038,16 +44219,22 @@
       "enabled",
       "ports"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "socks": {
      "enabled": false,
      "port": 1080,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
       "enabled",
-      "port"
+      "port",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "bandwidthServer": {
@@ -44058,18 +44245,27 @@
       "enabled",
       "authenticate"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "port": 2000
     }
    },
    {
     "dev": "TPE_ACC_SW_08",
+    "export": "full",
+    "version": "7.25.1 (stable)",
+    "versionInRange": true,
     "dns": {
      "allowRemote": false,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
-      "allowRemote"
+      "allowRemote",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macServer": {
@@ -44078,6 +44274,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macWinbox": {
@@ -44086,6 +44284,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "discovery": {
@@ -44102,6 +44302,8 @@
       "protocols",
       "mode"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "snmp": {
@@ -44110,6 +44312,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "communities": [
       {
@@ -44129,9 +44333,11 @@
         "security",
         "disabled"
        ],
-       "src": []
+       "src": [],
+       "unknown": []
       }
      ],
+     "communitiesReason": null,
      "unmatched": []
     },
     "upnp": {
@@ -44140,6 +44346,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "interfaces": []
     },
@@ -44153,16 +44361,22 @@
       "enabled",
       "ports"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "socks": {
      "enabled": false,
      "port": 1080,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
       "enabled",
-      "port"
+      "port",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "bandwidthServer": {
@@ -44173,18 +44387,27 @@
       "enabled",
       "authenticate"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "port": 2000
     }
    },
    {
     "dev": "TPE_ACC_SW_09",
+    "export": "full",
+    "version": "7.25.1 (stable)",
+    "versionInRange": true,
     "dns": {
      "allowRemote": false,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
-      "allowRemote"
+      "allowRemote",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macServer": {
@@ -44193,6 +44416,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macWinbox": {
@@ -44201,6 +44426,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "discovery": {
@@ -44217,6 +44444,8 @@
       "protocols",
       "mode"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "snmp": {
@@ -44225,6 +44454,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "communities": [
       {
@@ -44244,9 +44475,11 @@
         "security",
         "disabled"
        ],
-       "src": []
+       "src": [],
+       "unknown": []
       }
      ],
+     "communitiesReason": null,
      "unmatched": []
     },
     "upnp": {
@@ -44255,6 +44488,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "interfaces": []
     },
@@ -44268,16 +44503,22 @@
       "enabled",
       "ports"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "socks": {
      "enabled": false,
      "port": 1080,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
       "enabled",
-      "port"
+      "port",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "bandwidthServer": {
@@ -44288,18 +44529,27 @@
       "enabled",
       "authenticate"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "port": 2000
     }
    },
    {
     "dev": "TPE_ACC_SW_10",
+    "export": "full",
+    "version": "7.25.1 (stable)",
+    "versionInRange": true,
     "dns": {
      "allowRemote": false,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
-      "allowRemote"
+      "allowRemote",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macServer": {
@@ -44308,6 +44558,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macWinbox": {
@@ -44316,6 +44568,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "discovery": {
@@ -44332,6 +44586,8 @@
       "protocols",
       "mode"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "snmp": {
@@ -44340,6 +44596,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "communities": [
       {
@@ -44359,9 +44617,11 @@
         "security",
         "disabled"
        ],
-       "src": []
+       "src": [],
+       "unknown": []
       }
      ],
+     "communitiesReason": null,
      "unmatched": []
     },
     "upnp": {
@@ -44370,6 +44630,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "interfaces": []
     },
@@ -44383,16 +44645,22 @@
       "enabled",
       "ports"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "socks": {
      "enabled": false,
      "port": 1080,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
       "enabled",
-      "port"
+      "port",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "bandwidthServer": {
@@ -44403,18 +44671,27 @@
       "enabled",
       "authenticate"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "port": 2000
     }
    },
    {
     "dev": "TPE_ACC_SW_11",
+    "export": "full",
+    "version": "7.25.1 (stable)",
+    "versionInRange": true,
     "dns": {
      "allowRemote": false,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
-      "allowRemote"
+      "allowRemote",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macServer": {
@@ -44423,6 +44700,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macWinbox": {
@@ -44431,6 +44710,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "discovery": {
@@ -44447,6 +44728,8 @@
       "protocols",
       "mode"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "snmp": {
@@ -44455,6 +44738,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "communities": [
       {
@@ -44474,9 +44759,11 @@
         "security",
         "disabled"
        ],
-       "src": []
+       "src": [],
+       "unknown": []
       }
      ],
+     "communitiesReason": null,
      "unmatched": []
     },
     "upnp": {
@@ -44485,6 +44772,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "interfaces": []
     },
@@ -44498,16 +44787,22 @@
       "enabled",
       "ports"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "socks": {
      "enabled": false,
      "port": 1080,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
       "enabled",
-      "port"
+      "port",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "bandwidthServer": {
@@ -44518,18 +44813,27 @@
       "enabled",
       "authenticate"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "port": 2000
     }
    },
    {
     "dev": "TPE_ACC_SW_12",
+    "export": "full",
+    "version": "7.25.1 (stable)",
+    "versionInRange": true,
     "dns": {
      "allowRemote": false,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
-      "allowRemote"
+      "allowRemote",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macServer": {
@@ -44538,6 +44842,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macWinbox": {
@@ -44546,6 +44852,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "discovery": {
@@ -44562,6 +44870,8 @@
       "protocols",
       "mode"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "snmp": {
@@ -44570,6 +44880,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "communities": [
       {
@@ -44589,9 +44901,11 @@
         "security",
         "disabled"
        ],
-       "src": []
+       "src": [],
+       "unknown": []
       }
      ],
+     "communitiesReason": null,
      "unmatched": []
     },
     "upnp": {
@@ -44600,6 +44914,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "interfaces": []
     },
@@ -44613,16 +44929,22 @@
       "enabled",
       "ports"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "socks": {
      "enabled": false,
      "port": 1080,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
       "enabled",
-      "port"
+      "port",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "bandwidthServer": {
@@ -44633,18 +44955,27 @@
       "enabled",
       "authenticate"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "port": 2000
     }
    },
    {
     "dev": "TPE_BR_RT_01",
+    "export": "full",
+    "version": "7.25.1 (stable)",
+    "versionInRange": true,
     "dns": {
      "allowRemote": false,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
-      "allowRemote"
+      "allowRemote",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macServer": {
@@ -44653,6 +44984,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macWinbox": {
@@ -44661,6 +44994,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "discovery": {
@@ -44677,6 +45012,8 @@
       "protocols",
       "mode"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "snmp": {
@@ -44685,6 +45022,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "communities": [
       {
@@ -44704,9 +45043,11 @@
         "security",
         "disabled"
        ],
-       "src": []
+       "src": [],
+       "unknown": []
       }
      ],
+     "communitiesReason": null,
      "unmatched": []
     },
     "upnp": {
@@ -44715,6 +45056,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "interfaces": []
     },
@@ -44728,16 +45071,22 @@
       "enabled",
       "ports"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "socks": {
      "enabled": false,
      "port": 1080,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
       "enabled",
-      "port"
+      "port",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "bandwidthServer": {
@@ -44748,18 +45097,27 @@
       "enabled",
       "authenticate"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "port": 2000
     }
    },
    {
     "dev": "TPE_BR_SW_01",
+    "export": "full",
+    "version": "7.25.1 (stable)",
+    "versionInRange": true,
     "dns": {
      "allowRemote": false,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
-      "allowRemote"
+      "allowRemote",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macServer": {
@@ -44768,6 +45126,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macWinbox": {
@@ -44776,6 +45136,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "discovery": {
@@ -44792,6 +45154,8 @@
       "protocols",
       "mode"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "snmp": {
@@ -44800,6 +45164,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "communities": [
       {
@@ -44819,9 +45185,11 @@
         "security",
         "disabled"
        ],
-       "src": []
+       "src": [],
+       "unknown": []
       }
      ],
+     "communitiesReason": null,
      "unmatched": []
     },
     "upnp": {
@@ -44830,6 +45198,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "interfaces": []
     },
@@ -44843,16 +45213,22 @@
       "enabled",
       "ports"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "socks": {
      "enabled": false,
      "port": 1080,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
       "enabled",
-      "port"
+      "port",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "bandwidthServer": {
@@ -44863,18 +45239,27 @@
       "enabled",
       "authenticate"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "port": 2000
     }
    },
    {
     "dev": "TPE_CE_RT_01",
+    "export": "full",
+    "version": "7.25.1 (stable)",
+    "versionInRange": true,
     "dns": {
      "allowRemote": false,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
-      "allowRemote"
+      "allowRemote",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macServer": {
@@ -44883,6 +45268,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macWinbox": {
@@ -44891,6 +45278,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "discovery": {
@@ -44907,6 +45296,8 @@
       "protocols",
       "mode"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "snmp": {
@@ -44915,6 +45306,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "communities": [
       {
@@ -44934,9 +45327,11 @@
         "security",
         "disabled"
        ],
-       "src": []
+       "src": [],
+       "unknown": []
       }
      ],
+     "communitiesReason": null,
      "unmatched": []
     },
     "upnp": {
@@ -44945,6 +45340,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "interfaces": []
     },
@@ -44958,16 +45355,22 @@
       "enabled",
       "ports"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "socks": {
      "enabled": false,
      "port": 1080,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
       "enabled",
-      "port"
+      "port",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "bandwidthServer": {
@@ -44978,16 +45381,26 @@
       "enabled",
       "authenticate"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "port": 2000
     }
    },
    {
     "dev": "TPE_CORE_RT_01",
+    "export": "full",
+    "version": "7.25.1 (stable)",
+    "versionInRange": true,
     "dns": {
      "allowRemote": true,
+     "vrf": "main",
      "basis": "export",
-     "defaulted": [],
+     "defaulted": [
+      "vrf"
+     ],
+     "unknown": [],
+     "reason": null,
      "src": [
       [
        1,
@@ -44999,6 +45412,8 @@
      "allowedList": "LAN",
      "basis": "export",
      "defaulted": [],
+     "unknown": [],
+     "reason": null,
      "src": [
       [
        1,
@@ -45010,6 +45425,8 @@
      "allowedList": "all",
      "basis": "export",
      "defaulted": [],
+     "unknown": [],
+     "reason": null,
      "src": [
       [
        1,
@@ -45030,6 +45447,8 @@
       "protocols",
       "mode"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [
       [
        1,
@@ -45041,6 +45460,8 @@
      "enabled": true,
      "basis": "export",
      "defaulted": [],
+     "unknown": [],
+     "reason": null,
      "src": [
       [
        1,
@@ -45069,7 +45490,8 @@
          1,
          161
         ]
-       ]
+       ],
+       "unknown": []
       },
       {
        "name": "nms-ro",
@@ -45091,15 +45513,19 @@
          1,
          162
         ]
-       ]
+       ],
+       "unknown": []
       }
      ],
+     "communitiesReason": null,
      "unmatched": []
     },
     "upnp": {
      "enabled": true,
      "basis": "export",
      "defaulted": [],
+     "unknown": [],
+     "reason": null,
      "src": [
       [
        1,
@@ -45141,16 +45567,22 @@
       "enabled",
       "ports"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "socks": {
      "enabled": false,
      "port": 1080,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
       "enabled",
-      "port"
+      "port",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "bandwidthServer": {
@@ -45160,6 +45592,8 @@
      "defaulted": [
       "authenticate"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [
       [
        1,
@@ -45171,10 +45605,18 @@
    },
    {
     "dev": "TPE_CORE_RT_02",
+    "export": "full",
+    "version": "7.25.1 (stable)",
+    "versionInRange": true,
     "dns": {
      "allowRemote": true,
+     "vrf": "main",
      "basis": "export",
-     "defaulted": [],
+     "defaulted": [
+      "vrf"
+     ],
+     "unknown": [],
+     "reason": null,
      "src": [
       [
        15,
@@ -45186,6 +45628,8 @@
      "allowedList": "LAN",
      "basis": "export",
      "defaulted": [],
+     "unknown": [],
+     "reason": null,
      "src": [
       [
        15,
@@ -45197,6 +45641,8 @@
      "allowedList": "LAN",
      "basis": "export",
      "defaulted": [],
+     "unknown": [],
+     "reason": null,
      "src": [
       [
        15,
@@ -45218,6 +45664,8 @@
       "protocols",
       "mode"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "snmp": {
@@ -45226,6 +45674,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "communities": [
       {
@@ -45245,9 +45695,11 @@
         "security",
         "disabled"
        ],
-       "src": []
+       "src": [],
+       "unknown": []
       }
      ],
+     "communitiesReason": null,
      "unmatched": []
     },
     "upnp": {
@@ -45256,6 +45708,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "interfaces": []
     },
@@ -45266,6 +45720,8 @@
      ],
      "basis": "export",
      "defaulted": [],
+     "unknown": [],
+     "reason": null,
      "src": [
       [
        15,
@@ -45276,11 +45732,15 @@
     "socks": {
      "enabled": false,
      "port": 1080,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
       "enabled",
-      "port"
+      "port",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "bandwidthServer": {
@@ -45290,6 +45750,8 @@
      "defaulted": [
       "authenticate"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [
       [
        15,
@@ -45301,12 +45763,19 @@
    },
    {
     "dev": "TPE_LAB_SW_01",
+    "export": "full",
+    "version": "7.25.1 (stable)",
+    "versionInRange": true,
     "dns": {
      "allowRemote": false,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
-      "allowRemote"
+      "allowRemote",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macServer": {
@@ -45315,6 +45784,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macWinbox": {
@@ -45323,6 +45794,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "discovery": {
@@ -45339,6 +45812,8 @@
       "protocols",
       "mode"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "snmp": {
@@ -45347,6 +45822,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "communities": [
       {
@@ -45366,9 +45843,11 @@
         "security",
         "disabled"
        ],
-       "src": []
+       "src": [],
+       "unknown": []
       }
      ],
+     "communitiesReason": null,
      "unmatched": []
     },
     "upnp": {
@@ -45377,6 +45856,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "interfaces": []
     },
@@ -45390,16 +45871,22 @@
       "enabled",
       "ports"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "socks": {
      "enabled": false,
      "port": 1080,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
       "enabled",
-      "port"
+      "port",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "bandwidthServer": {
@@ -45410,18 +45897,27 @@
       "enabled",
       "authenticate"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "port": 2000
     }
    },
    {
     "dev": "TPE_PE_RT_01",
+    "export": "full",
+    "version": "7.25.1 (stable)",
+    "versionInRange": true,
     "dns": {
      "allowRemote": false,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
-      "allowRemote"
+      "allowRemote",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macServer": {
@@ -45430,6 +45926,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "macWinbox": {
@@ -45438,6 +45936,8 @@
      "defaulted": [
       "allowedList"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "discovery": {
@@ -45454,6 +45954,8 @@
       "protocols",
       "mode"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "snmp": {
@@ -45462,6 +45964,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "communities": [
       {
@@ -45481,9 +45985,11 @@
         "security",
         "disabled"
        ],
-       "src": []
+       "src": [],
+       "unknown": []
       }
      ],
+     "communitiesReason": null,
      "unmatched": []
     },
     "upnp": {
@@ -45492,6 +45998,8 @@
      "defaulted": [
       "enabled"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "interfaces": []
     },
@@ -45505,16 +46013,22 @@
       "enabled",
       "ports"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "socks": {
      "enabled": false,
      "port": 1080,
+     "vrf": "main",
      "basis": "default",
      "defaulted": [
       "enabled",
-      "port"
+      "port",
+      "vrf"
      ],
+     "unknown": [],
+     "reason": null,
      "src": []
     },
     "bandwidthServer": {
@@ -45525,6 +46039,8 @@
       "enabled",
       "authenticate"
      ],
+     "unknown": [],
+     "reason": null,
      "src": [],
      "port": 2000
     }
@@ -46278,7 +46794,7 @@
     {
      "block": 67,
      "line": 3206,
-     "text": "# 2026-10-13 10:00:00 by RouterOS 7.12.1",
+     "text": "# 2026-10-13 10:00:00 by RouterOS 7.25.1",
      "file": "sample-bundle.txt"
     },
     {
@@ -46512,7 +47028,7 @@
    "severity": "warn",
    "cat": "防火牆",
    "title": "SNMP community 使用 public 或不限來源位址",
-   "message": "TPE_CORE_RT_01：SNMP community「public」名稱是 public（預設值：export 沒有寫出名稱）",
+   "message": "TPE_CORE_RT_01：SNMP community「public」名稱是 public（預設值：export 沒有寫出名稱）；預設值依 RouterOS 7.24–7.26 手冊的出廠值",
    "entities": [
     {
      "type": "device",
@@ -47855,7 +48371,7 @@
    "severity": "info",
    "cat": "防火牆",
    "title": "WAN 介面上開著鄰居探索",
-   "message": "TPE_CORE_RT_02：鄰居探索（cdp,lldp,mndp）的 discover-interface-list 是「static」，預設值：export 沒有寫出，包含 WAN 介面 ether47",
+   "message": "TPE_CORE_RT_02：鄰居探索（cdp,lldp,mndp）的 discover-interface-list 是「static」，預設值：export 沒有寫出（依 RouterOS 7.24–7.26 手冊的出廠值），包含 WAN 介面 ether47",
    "entities": [
     {
      "type": "device",

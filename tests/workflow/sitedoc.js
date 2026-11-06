@@ -32,7 +32,7 @@ test('網路文件：範例資料的表格依序為設備、IP、VLAN、埠、�
   // 設備名與畫面相同（Q.devLabel）：只由 OSPF 得知、名稱是位址的設備加上協定
   assert.ok(devs.rows.some((r) => r[0] === Q.devLabel('172.31.255.2') && r[0] !== '172.31.255.2'));
   const core = devs.rows.find((r) => r[0] === 'TPE_CORE_RT_01');
-  assert.deepStrictEqual(core.slice(0, 5), ['TPE_CORE_RT_01', 'CCR2216-1G-12XS-2XQ', '7.12.1 (stable)', '10.1.10.2', '路由器（推論）']);
+  assert.deepStrictEqual(core.slice(0, 5), ['TPE_CORE_RT_01', 'CCR2216-1G-12XS-2XQ', '7.25.1 (stable)', '10.1.10.2', '路由器（推論）']);
   assert.strictEqual(ips.rows.length, Q.prefixes().filter((p) => p.basis === 'connected').length, '每個 VRF 的每個直連網段一列');
   assert.ok(ips.rows.some((r) => r[0] === '10.1.20.0/24' && r[1] === 'cust-a'), 'VRF 的網段另列');
   assert.ok(ips.rows.some((r) => r[0] === '10.1.30.0/24' && r[4].includes('10.1.30.1（TPE_CORE_RT_01）')), 'DHCP 閘道');

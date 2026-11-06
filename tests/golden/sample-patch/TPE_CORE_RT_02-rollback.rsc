@@ -1,6 +1,6 @@
 # topo-mikrotik ssot-patch/1 rollback
 # device: TPE_CORE_RT_02 (key TPE_CORE_RT_02)
-# baseline: inputHash=0effe7aed56de13a createdAt=2026-01-01T00:00:00Z version=3.4.0
+# baseline: inputHash=72de87da9bf20c60 createdAt=2026-01-01T00:00:00Z version=3.4.0
 # Text only: topo-mikrotik never connects to or changes a device. Review every line before use.
 # items: 1
 # Restores the values recorded in the baseline (before), in reverse order of the apply file.

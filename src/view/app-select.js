@@ -302,7 +302,9 @@
   /** 開啟路由追蹤。vrf：預先選好的 VRF（例如從某個 VRF 的 IP 詳情來）；省略時保留選單目前的值 */
   App.openTrace = function (src, dst, vrf) {
     A.closeHub(); A.closeMenus();
-    const pop = $('#trace-pop'); pop.classList.remove('hidden');
+    // 表單在拓樸圖的工具列：從「修正」、「驗證」或窄螢幕的其他工作區（例如詳細資料）開啟時先回到拓樸圖
+    if (App.centerView !== 'graph' || (A.isNarrowScreen() && $('#main').dataset.workspace !== 'graph')) App.showView('graph');
+    const pop = $('#trace-pop'); pop.classList.remove('hidden'); A.placeTrace();
     if (src !== undefined) $('#trace-src').value = src; if (dst !== undefined) $('#trace-dst').value = dst;
     A.syncTraceVrf(vrf === undefined ? undefined : vrf || ''); traceMsg('');
     ($('#trace-src').value ? $('#trace-dst') : $('#trace-src')).focus();

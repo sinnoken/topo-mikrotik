@@ -234,6 +234,11 @@ const hubBtn = (action) => $('#hub').testAll('button').find((b) => b.getAttribut
 /** 流程步驟（#steps）的按鈕：input、view、triage、fix、verify；goStep 和使用者一樣點一下切換 */
 const stepBtn = (s) => document.testAll('#steps button').find((b) => b.dataset.step === s);
 const goStep = (s) => stepBtn(s).click();
+/** 設定（#settings）的分頁；clearBaseline 和使用者一樣在設定「本機資料」按「清除基準…」（confirm 由模擬的 window 回答），之後關閉設定 */
+const settingsTab = (id) => $('#settings').testAll('.settings-tab').find((b) => b.dataset.section === id);
+const clearBaseline = async () => {
+  App.openSettings('data'); $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20)); S.view.app.closeSettings();
+};
 /** 在頁首搜尋框輸入並等下拉更新，回傳下拉的項目 */
 const searchFor = async (v) => { const inp = $('#search'); inp.value = v; inp.dispatch('input'); await new Promise((r) => setTimeout(r, 150)); return $('#search-dd').testAll('.item'); };
 /** 「檢視」清單的下拉（.inv-kind 清單種類、.inv-filter 種類內篩選）：選取 value 並觸發 change */
@@ -328,8 +333,10 @@ function viewBoundaryViolations(file, src) {
     if (bootWarns.filter((w) => w.includes('sepia')).length !== 1) throw new Error('不合法的配色偏好應 console.warn 一次（說明被忽略的值）：' + bootWarns.join('|'));
     if (ST.get() !== 'system' || VA.themePref() !== 'system') throw new Error('不合法的配色偏好應退回跟隨系統');
     if (document.documentElement.getAttribute('data-theme') !== T.mode) throw new Error('<html data-theme> 應與 theme.mode 一致：' + document.documentElement.getAttribute('data-theme'));
-    const checked = Array.from(document.testAll('#theme-mode .menu-item')).filter((b) => b.getAttribute('aria-checked') === 'true').map((b) => b.dataset.scheme);
-    if (checked.join() !== 'system') throw new Error('啟動後「⋯」選單應勾選跟隨系統：' + checked.join());
+    App.openSettings('general');
+    const checked = $('#settings').testAll('.settings-radio').filter((r) => r.dataset.setting === 'theme' && r.checked).map((r) => r.value);
+    S.view.app.closeSettings();
+    if (checked.join() !== 'system') throw new Error('啟動後設定「一般」的配色應勾選跟隨系統：' + checked.join());
     try { ST.set('sepia'); throw new Error('寫入不合法的偏好應丟出 RangeError'); } catch (e) { if (!(e instanceof RangeError)) throw e; }
     if (localStorage.getItem(ST.KEY) !== 'sepia') throw new Error('不合法的偏好只忽略，不改寫使用者的資料');
     localStorage.removeItem(ST.KEY);
@@ -5196,15 +5203,20 @@ function viewBoundaryViolations(file, src) {
       const bg = ops.find((o) => o.op === 'rect'); if (!bg || bg.style !== P.light.canvas.surface) throw new Error('PNG 的底色應是亮色的畫布底色');
       if (T.mode !== 'dark' || modes[modes.length - 1].mode !== 'dark') throw new Error('匯出後應還原成目前的深淺並重畫');
 
-      // 主題切換（「⋯」選單的單選群組）：跟隨系統／淺色／深色。CSS 跟著 <html data-theme>（＝ theme.mode），偏好存進 store
+      // 主題切換（設定「一般」的單選群組）：跟隨系統／淺色／深色。CSS 跟著 <html data-theme>（＝ theme.mode），偏好存進 store
       const root = document.documentElement; const ST = S.store.theme;
       const fire = (on) => { mq.matches = on; listeners.forEach((f) => f({ matches: on, media: mq.media })); flushRaf(); };
-      const items = Array.from(document.testAll('#theme-mode .menu-item'));
-      const item = (p) => items.find((b) => b.dataset.scheme === p);
-      if (items.length !== ST.VALUES.length || !ST.VALUES.every(item)) throw new Error('「⋯」選單應有每個配色偏好各一個選項');
-      if (!items.every((b) => b.getAttribute('role') === 'menuitemradio' && $('#more-menu').contains(b))) throw new Error('配色選項應是「⋯」選單內的 menuitemradio');
-      if ($('#theme-mode').getAttribute('role') !== 'group' || !$('#theme-mode').getAttribute('aria-labelledby')) throw new Error('配色選項應在有名稱的 group 內');
-      const checked = () => items.filter((b) => b.getAttribute('aria-checked') === 'true').map((b) => b.dataset.scheme).join();
+      App.openSettings('general');
+      const items = $('#settings').testAll('.settings-radio').filter((r) => r.dataset.setting === 'theme');
+      const radio = (p) => items.find((r) => r.value === p);
+      // 選一個選項：和瀏覽器一樣先勾選再觸發 change
+      const item = (p) => ({ click: () => { const r = radio(p); r.checked = true; r.dispatch('change'); } });
+      if (items.length !== ST.VALUES.length || !ST.VALUES.every(radio)) throw new Error('設定「一般」應有每個配色偏好各一個選項');
+      const group = items[0].parentNode.parentNode;
+      if (!items.every((r) => r.getAttribute('type') === 'radio' && r.getAttribute('name') === items[0].getAttribute('name') && group.contains(r)) || group.tagName !== 'FIELDSET'
+        || !group.firstElementChild || group.firstElementChild.tagName !== 'LEGEND' || !group.firstElementChild.textContent.includes('配色')) throw new Error('配色選項應是同一組的 radio，放在有 legend 的 fieldset 內');
+      if (items.some((r) => r.parentNode.tagName !== 'LABEL' || !r.parentNode.textContent.trim())) throw new Error('每個配色選項都應有標籤文字');
+      const checked = () => items.filter((r) => r.checked).map((r) => r.value).join();
       const state = () => `${checked()}／mode=${T.mode}／data-theme=${root.getAttribute('data-theme')}／store=${ST.get()}`;
       const expect = (pref, mode, why) => { if (checked() !== pref || VA.themePref() !== pref || T.mode !== mode || root.getAttribute('data-theme') !== mode || ST.get() !== pref) throw new Error(why + '：' + state()); };
       expect('system', 'dark', '系統是深色、偏好跟隨系統時');
@@ -5232,11 +5244,12 @@ function viewBoundaryViolations(file, src) {
         try { item('dark').click(); } finally { localStorage.setItem = set0; }
         if (T.mode !== 'dark' || !text('#banner').includes('配色')) throw new Error('偏好存不進去時仍應套用並以通知說明：' + text('#banner'));
         item('system').click(); expect('system', 'light', '選回跟隨系統'); }
-      // 鍵盤：選單內的配色選項可以用方向鍵移到（是可操作的 .menu-item）
-      $('#btn-more').click();
-      if (!Array.from($('#more-menu').querySelectorAll('.menu-item')).includes(item('light'))) throw new Error('配色選項應在選單的方向鍵順序內');
-      VA.closeMenus();
+      // 偏好在設定之外改變（A.setThemePref）時，設定裡的勾選跟著換
+      VA.setThemePref('light'); if (checked() !== 'light') throw new Error('偏好改變時設定裡的勾選應跟著換：' + checked());
+      VA.setThemePref('system');
+      VA.closeSettings();
     } finally {
+      VA.closeSettings();
       if (VA.themePref() !== 'system') VA.setThemePref('system');
       localStorage.removeItem(S.store.theme.KEY);
       g.draw = oldDraw; App.select(null);
@@ -5289,39 +5302,44 @@ function viewBoundaryViolations(file, src) {
       if (!$('#tooltip').classList.contains('hidden')) throw new Error('指標離開畫布時提示應隱藏');
     });
   });
-  await step('頁首「⋯」與工具列的選單：只有一個路由追蹤入口；方向鍵移動、Esc 關閉並還焦點、點外面關閉；勾選與單選以 aria-checked 標示；通知不遮工具列', () => {
-    const more = $('#btn-more'); const menu = $('#more-menu'); const pop = $('#trace-pop');
+  await step('工具列的路由追蹤、匯出 PNG 與選單：只有一個路由追蹤入口；方向鍵移動、Esc 關閉並還焦點、點外面關閉；勾選與單選以 aria-checked 標示；通知不遮工具列', () => {
+    const pop = $('#trace-pop'); const tr = $('#btn-trace');
     const esc = () => (docListeners.keydown || []).forEach((f) => f({ key: 'Escape', preventDefault() {} }));
     const outside = (target) => (docListeners.mousedown || []).forEach((f) => f({ target }));
     App.showStep('triage'); App.showLayer('device');
-    if (more.getAttribute('aria-haspopup') !== 'menu' || !more.getAttribute('aria-label') || menu.getAttribute('role') !== 'menu') throw new Error('「⋯」應是有名稱的選單按鈕');
-    if (!['#btn-trace', '#btn-png', '#btn-clear'].every((x) => menu.contains($(x)) && $(x).getAttribute('role') === 'menuitem')) throw new Error('路由追蹤、匯出 PNG、清除基準應在「⋯」選單裡');
+    // 頁首只有資料中心與 ⚙ 設定；路由追蹤與匯出 PNG 在拓樸圖的工具列（id 不變），表單也在工具列
+    if ($('#btn-more') || $('#more-menu')) throw new Error('頁首不應再有「⋯」選單');
+    if (!['#btn-trace', '#btn-png', '#trace-pop'].every((x) => $('#toolbar').contains($(x)))) throw new Error('路由追蹤、匯出 PNG 與追蹤表單應在拓樸圖的工具列');
     const traceEntries = document.testAll('button').filter((b) => /路由追蹤/.test(b.textContent) && !$('#detail').contains(b) && !$('#hub').contains(b));
-    if (traceEntries.length !== 1 || traceEntries[0] !== $('#btn-trace')) throw new Error('頁首只留一個路由追蹤入口：' + traceEntries.map((b) => b.textContent).join('、'));
-    if ($('#toolbar').contains($('#btn-png'))) throw new Error('匯出 PNG 不在工具列');
-    // 程式版本在「⋯」最下方，沒有基準時也看得到；不是選單項目（方向鍵不會停在這裡）
-    const ver = $('#app-version');
-    if (!menu.contains(ver) || ver.textContent !== '版本 ' + S.VERSION || ver.getAttribute('role') !== 'none' || ver.tagName === 'BUTTON') throw new Error('「⋯」應在最下方顯示程式版本（非選單項目）');
-    // 鍵盤：開啟時焦點到第一項，↓／End 移動並循環，Esc 關閉並還焦點
-    more.click();
-    if (menu.classList.contains('hidden') || more.getAttribute('aria-expanded') !== 'true' || document.activeElement !== $('#btn-trace')) throw new Error('開啟「⋯」後焦點應在第一項');
-    menu.dispatch('keydown', { key: 'ArrowDown' }); if (document.activeElement !== $('#btn-png')) throw new Error('↓ 應移到下一項');
-    // 最後一項是配色單選的最後一個（版本不是選單項目）
-    const lastItem = Array.from(menu.querySelectorAll('.menu-item')).pop();
-    if (!$('#theme-mode').contains(lastItem)) throw new Error('「⋯」的最後一個選單項目應是配色的選項');
-    menu.dispatch('keydown', { key: 'End' }); if (document.activeElement !== lastItem) throw new Error('End 應移到最後一項');
-    menu.dispatch('keydown', { key: 'ArrowDown' }); if (document.activeElement !== $('#btn-trace')) throw new Error('↓ 在最後一項時應繞回第一項');
-    menu.dispatch('keydown', { key: 'Escape' });
-    if (!menu.classList.contains('hidden') || more.getAttribute('aria-expanded') !== 'false' || document.activeElement !== more) throw new Error('Esc 應關閉選單並把焦點還給「⋯」');
-    more.click(); outside($('#graph')); if (!menu.classList.contains('hidden')) throw new Error('點選單外面應關閉');
-    more.click(); esc(); if (!menu.classList.contains('hidden') || document.activeElement !== more) throw new Error('文件層級的 Esc 也應關閉選單並還焦點');
-    // 從選單開路由追蹤：選單收起、表單開啟；Esc 關閉後焦點回到「⋯」，點外面也關閉
-    more.click(); $('#btn-trace').click();
-    if (!menu.classList.contains('hidden') || pop.classList.contains('hidden') || ![$('#trace-src'), $('#trace-dst')].includes(document.activeElement)) throw new Error('路由追蹤應收起選單並開啟表單');
-    esc(); if (!pop.classList.contains('hidden') || document.activeElement !== more) throw new Error('Esc 應關閉路由追蹤並還焦點');
-    App.openTrace(); outside($('#graph')); if (!pop.classList.contains('hidden')) throw new Error('點外面應關閉路由追蹤');
-    // 版面▾：↑ 開啟時焦點到最後一項；單選的版面與力導向都是選單項目
+    if (traceEntries.length !== 1 || traceEntries[0] !== tr) throw new Error('只留一個路由追蹤入口：' + traceEntries.map((b) => b.textContent).join('、'));
+    if (tr.getAttribute('aria-haspopup') !== 'dialog' || tr.getAttribute('aria-controls') !== 'trace-pop' || pop.getAttribute('role') !== 'dialog') throw new Error('「路由追蹤…」應是開啟對話框的按鈕');
+    // PNG 只有拓樸圖的層級（L4 是矩陣，有自己的 CSV）；路由追蹤每一層都可用
+    App.showLayer('l4'); if (!$('#btn-png').classList.contains('hidden') || tr.classList.contains('hidden')) throw new Error('L4 時隱藏匯出 PNG、保留路由追蹤');
+    App.showLayer('device'); if ($('#btn-png').classList.contains('hidden') || $('#btn-png').disabled || tr.disabled) throw new Error('設備圖時匯出 PNG 與路由追蹤可用');
+    // 開啟：焦點到輸入框、aria-expanded；Esc 關閉後焦點回到「路由追蹤…」；再按一次按鈕關閉；點外面也關閉
+    tr.click();
+    if (pop.classList.contains('hidden') || tr.getAttribute('aria-expanded') !== 'true' || ![$('#trace-src'), $('#trace-dst')].includes(document.activeElement)) throw new Error('「路由追蹤…」應開啟表單並聚焦輸入框');
+    esc(); if (!pop.classList.contains('hidden') || document.activeElement !== tr || tr.getAttribute('aria-expanded') !== 'false') throw new Error('Esc 應關閉路由追蹤並把焦點還給「路由追蹤…」');
+    tr.click(); tr.click(); if (!pop.classList.contains('hidden')) throw new Error('再按一次「路由追蹤…」應關閉表單');
+    App.openTrace(); outside(tr); if (pop.classList.contains('hidden')) throw new Error('按「路由追蹤…」本身不算點外面');
+    outside($('#graph')); if (!pop.classList.contains('hidden')) throw new Error('點外面應關閉路由追蹤');
+    // 從「修正」開啟（例如詳情的「追蹤路由」）：先回到拓樸圖，表單才看得到
+    App.showStep('fix'); App.openTrace();
+    if (App.centerView !== 'graph' || pop.classList.contains('hidden')) throw new Error('從工作畫面開啟路由追蹤時應回到拓樸圖');
+    S.view.app.closeTrace(false);
+    // 版面▾：開啟時焦點到第一項，↓／End 移動並循環，Esc 關閉並還焦點；點外面、文件層級的 Esc 也關閉
     const lb = $('#btn-layout-menu'); const lm = $('#layout-menu');
+    const lmItems = Array.from(lm.querySelectorAll('.menu-item'));
+    lb.click();
+    if (lm.classList.contains('hidden') || lb.getAttribute('aria-expanded') !== 'true' || document.activeElement !== lmItems[0]) throw new Error('開啟版面選單後焦點應在第一項');
+    lm.dispatch('keydown', { key: 'ArrowDown' }); if (document.activeElement !== lmItems[1]) throw new Error('↓ 應移到下一項');
+    lm.dispatch('keydown', { key: 'End' }); if (document.activeElement !== lmItems[lmItems.length - 1]) throw new Error('End 應移到最後一項');
+    lm.dispatch('keydown', { key: 'ArrowDown' }); if (document.activeElement !== lmItems[0]) throw new Error('↓ 在最後一項時應繞回第一項');
+    lm.dispatch('keydown', { key: 'Escape' });
+    if (!lm.classList.contains('hidden') || lb.getAttribute('aria-expanded') !== 'false' || document.activeElement !== lb) throw new Error('Esc 應關閉選單並把焦點還給按鈕');
+    lb.click(); outside($('#graph')); if (!lm.classList.contains('hidden')) throw new Error('點選單外面應關閉');
+    lb.click(); esc(); if (!lm.classList.contains('hidden') || document.activeElement !== lb) throw new Error('文件層級的 Esc 也應關閉選單並還焦點');
+    // ↑ 開啟時焦點到最後一項；單選的版面與力導向都是選單項目
     lb.dispatch('keydown', { key: 'ArrowUp' });
     if (lm.classList.contains('hidden') || document.activeElement !== $('#btn-force')) throw new Error('↑ 開啟版面選單時焦點應在最後一項');
     if ($('#layout-mode').testAll('.menu-item').some((b) => b.getAttribute('role') !== 'menuitemradio')) throw new Error('版面應是單選的選單項目');
@@ -5344,7 +5362,7 @@ function viewBoundaryViolations(file, src) {
     const bannerRule = (css.match(/\n\.banner \{([^}]*)\}/) || [])[1] || '';
     if (/(^|;)\s*top:/.test(bannerRule) || !/bottom:/.test(bannerRule)) throw new Error('通知應在圖的下方，不遮工具列：' + bannerRule);
     if (!/\.banner\.fading, \.hint\.fading \{[^}]*opacity: 0/.test(css)) throw new Error('通知與操作提示應淡出');
-    // 窄螢幕：圖上方最多兩列——頁首只有流程步驟（不換行），搜尋與「⋯」移到工作區列的右端；清除不再單獨佔一列
+    // 窄螢幕：圖上方最多兩列——頁首只有流程步驟（不換行），搜尋與 ⚙ 移到工作區列的右端；清除不再單獨佔一列
     const narrow = css.slice(css.lastIndexOf('@media (max-width: 900px) {', css.indexOf('#app { height: 100dvh')));
     // 依選擇器取出規則的宣告（屬性 → 值；同一個選擇器有多條規則時依先後合併），比對屬性與值，不比對空白與屬性的先後
     const decl = (src, sel) => {
@@ -5353,7 +5371,7 @@ function viewBoundaryViolations(file, src) {
       return Object.assign({}, ...ms.map((m) => Object.fromEntries(m[1].split(';').map((s) => s.trim()).filter(Boolean).map((s) => { const i = s.indexOf(':'); return [s.slice(0, i).trim(), s.slice(i + 1).trim().replace(/\s+/g, ' ')]; }))));
     };
     const has = (sel, want, msg) => { const d = decl(narrow, sel); Object.entries(want).forEach(([k, v]) => { const got = d[k] || ''; if (v instanceof RegExp ? !v.test(got) : got !== v) throw new Error(`${msg}（${sel} 的 ${k}：${got || '沒有'}）`); }); };
-    const hdrMsg = '窄螢幕的頁首應只有步驟，搜尋與「⋯」在工作區列右端';
+    const hdrMsg = '窄螢幕的頁首應只有步驟，搜尋與 ⚙ 在工作區列右端';
     has('header', { 'flex-wrap': 'nowrap' }, hdrMsg); has('.steps', { flex: /^1 1 100%/ }, hdrMsg);
     has('.search, .header-actions', { position: 'absolute', top: /^calc\(100% \+ 6px\)/ }, hdrMsg);
     has('.mobile-workspaces', { display: 'flex', padding: /^5px calc\(/ }, hdrMsg);
@@ -5363,16 +5381,109 @@ function viewBoundaryViolations(file, src) {
     has('.search', { flex: 'none', width: /var\(--control-h\)/ }, searchMsg); has('.search input::placeholder', { color: 'transparent' }, searchMsg);
     has('.search:focus-within', { left: '8px', right: '8px' }, searchMsg);
     if ($('#search').getAttribute('aria-label') !== '搜尋') throw new Error('收成圖示的搜尋框應有無障礙名稱');
-    // 品牌只給螢幕閱讀器、資料中心按鈕由「輸入」取代；資料中心開啟時搜尋與「⋯」隱藏（不疊在資料中心上）
+    // 品牌只給螢幕閱讀器、資料中心按鈕由「輸入」取代；資料中心或設定開啟時搜尋與 ⚙ 隱藏（不疊在上面）
     const brandMsg = '窄螢幕的頁首應隱藏品牌與資料中心按鈕';
     has('header .brand', { position: 'absolute', width: '1px' }, brandMsg); has('header .hub-btn', { display: 'none' }, brandMsg);
     has('#app.hub-open header .search, #app.hub-open header .header-actions', { display: 'none' }, brandMsg);
-    // 頁首可見的控制項：每一步一個按鈕＋搜尋＋⋯；工作區列每個工作區一個按鈕（不重複）
+    has('#app.settings-open header .search, #app.settings-open header .header-actions', { display: 'none' }, '窄螢幕的設定開著時，搜尋與 ⚙ 不疊在設定上');
+    // 頁首可見的控制項：每一步一個按鈕＋搜尋＋⚙；工作區列每個工作區一個按鈕（不重複）
     const steps = $('#steps').testAll('button').map((b) => b.dataset.step);
     const STEP_LABEL = S.view.app.STEP_LABEL;
     if (steps.length !== Object.keys(STEP_LABEL).length || steps.some((s) => !STEP_LABEL[s])) throw new Error('步驟列應每一步一個按鈕：' + steps);
     const wss = $('#mobile-workspaces').testAll('button').map((b) => b.dataset.workspace);
     if (!wss.length || new Set(wss).size !== wss.length) throw new Error('工作區列應每個工作區一個按鈕：' + wss);
+  });
+  await step('設定（⚙）：開關與焦點、五個分類可用滑鼠與鍵盤切換、Esc 關閉並還焦點、與資料中心互斥；一般、命名規則、本機資料、收集、關於各有實際內容', async () => {
+    const VA = S.view.app; const gear = $('#btn-settings'); const box = $('#settings');
+    const esc = (target) => (docListeners.keydown || []).forEach((f) => f({ key: 'Escape', target, preventDefault() {} }));
+    App.showStep('triage');
+    if (!gear || gear.textContent.trim() !== '⚙' || gear.getAttribute('aria-label') !== '設定' || !gear.getAttribute('title') || gear.getAttribute('aria-controls') !== 'settings') throw new Error('頁首應有 ⚙（aria-label「設定」、有 title、控制 #settings）');
+    if (!$('#app').querySelector('.header-actions').contains(gear)) throw new Error('⚙ 應在頁首右側');
+    // 開啟：蓋住主畫面（主畫面 inert）、焦點到「設定」標題
+    gear.click();
+    if (box.classList.contains('hidden') || gear.getAttribute('aria-expanded') !== 'true' || !$('#main').inert || !$('#app').classList.contains('settings-open')) throw new Error('按 ⚙ 應開啟設定並蓋住主畫面');
+    if (document.activeElement !== $('#settings-title')) throw new Error('開啟後焦點應移到「設定」標題');
+    // 五個分類：tablist，順序固定，一次只選一個；分類內容的標題與分頁同名
+    const tabs = box.testAll('.settings-tab');
+    const LABELS = ['一般', '命名規則', '本機資料', '收集與建立基準', '關於'];
+    if (tabs.map((b) => b.textContent).join() !== LABELS.join() || tabs.some((b) => b.getAttribute('role') !== 'tab') || tabs[0].parentNode.getAttribute('role') !== 'tablist') throw new Error('設定應有五個分類的分頁：' + tabs.map((b) => b.textContent).join());
+    if (JSON.stringify(VA.SETTINGS_SECTIONS) !== JSON.stringify(tabs.map((b) => b.dataset.section))) throw new Error('分頁應與 A.SETTINGS_SECTIONS 一致');
+    const selected = () => box.testAll('.settings-tab').filter((b) => b.getAttribute('aria-selected') === 'true');
+    const check = (id, why) => {
+      const sel = selected(); const panel = $('#settings-panel');
+      if (sel.length !== 1 || sel[0].dataset.section !== id || panel.getAttribute('aria-labelledby') !== sel[0].id || panel.getAttribute('role') !== 'tabpanel') throw new Error(why + '：' + sel.map((b) => b.dataset.section).join());
+      if (text('#settings-panel-title') !== sel[0].textContent) throw new Error('內容的標題應與分頁同名');
+      if (box.testAll('.settings-tab').some((b) => b.getAttribute('tabindex') !== (b === sel[0] ? '0' : '-1'))) throw new Error('只有選取的分頁在 Tab 順序內（roving tabindex）');
+      if (!$('#settings-panel').querySelector('.settings-content').childNodes.length) throw new Error(id + ' 應有內容');
+    };
+    check('general', '預設是「一般」');
+    // 鍵盤：↓／→ 下一個、↑／← 上一個（循環）、Home、End；焦點跟著選取的分頁
+    const key = (k) => { const cur = selected()[0]; cur.dispatch('keydown', { key: k }); };
+    key('ArrowDown'); check('profiles', '↓ 應換到下一個分類'); if (document.activeElement !== selected()[0]) throw new Error('鍵盤切換後焦點應在新的分頁');
+    key('ArrowRight'); check('data', '→ 也應換到下一個分類');
+    key('End'); check('about', 'End 應到最後一個分類');
+    key('ArrowDown'); check('general', '↓ 在最後一個時應繞回第一個');
+    key('ArrowUp'); check('about', '↑ 在第一個時應繞到最後一個');
+    key('Home'); check('general', 'Home 應到第一個分類');
+    // 滑鼠：點分頁換分類
+    LABELS.forEach((l, i) => { tabs[i] && settingsTab(VA.SETTINGS_SECTIONS[i]).click(); check(VA.SETTINGS_SECTIONS[i], '點「' + l + '」應換到該分類'); });
+    // 一般：預設版面（store 的 'layoutMode'，與工具列「版面 ▾」同一個值，不重新排列目前的圖）
+    settingsTab('general').click();
+    const lay = (v) => box.testAll('.settings-radio').find((r) => r.dataset.setting === 'layout' && r.value === v);
+    if (!App.LAYOUT_MODES.every(lay) || !lay(App.layoutMode).checked) throw new Error('「一般」應有每個版面各一個選項，勾選目前的版面');
+    const mode0 = App.layoutMode; const other = App.LAYOUT_MODES.find((m) => m !== mode0); const pos0 = JSON.stringify(Array.from(App.graph.pos.entries()));
+    lay(other).focus(); lay(other).checked = true; lay(other).dispatch('change'); await new Promise((r) => setTimeout(r, 5));
+    if (App.layoutMode !== other || (await S.store.get('layoutMode')) !== other) throw new Error('預設版面應存進 store 的 layoutMode');
+    const menuItem = $('#layout-mode').testAll('.menu-item').find((b) => b.dataset.layout === other);
+    if (menuItem.getAttribute('aria-checked') !== 'true') throw new Error('工具列「版面 ▾」的勾選應跟著預設版面');
+    if (JSON.stringify(Array.from(App.graph.pos.entries())) !== pos0) throw new Error('改預設版面不應重新排列目前的圖');
+    // 重繪後焦點留在同一個選項（data-settings-focus）
+    VA.renderSettings(); if (document.activeElement !== lay(other)) throw new Error('重繪後焦點應留在同一個選項');
+    // 工具列改版面時，設定裡的勾選跟著換
+    $('#layout-mode').testAll('.menu-item').find((b) => b.dataset.layout === mode0).click(); await App.layoutJob;
+    if (!lay(mode0).checked || lay(other).checked) throw new Error('工具列改版面時設定裡的勾選應跟著換');
+    // 命名規則：列出每一份 S.profiles 的 id 與名稱
+    settingsTab('profiles').click();
+    const rows = $('#settings-panel').testAll('tr').filter((r) => r.dataset.profile);
+    const ids = Object.values(S.profiles).filter((p) => p && p.id).map((p) => p.id);
+    if (!ids.length || rows.map((r) => r.dataset.profile).join() !== ids.join()) throw new Error('命名規則應列出每一份可用的命名規則：' + rows.map((r) => r.dataset.profile).join());
+    ids.forEach((id) => { const p = S.profiles[id]; const r = rows.find((x) => x.dataset.profile === id); if (p.label && !r.textContent.includes(p.label)) throw new Error('命名規則應列出名稱：' + id); });
+    // 收集與建立基準：指令清單與歡迎畫面同一份（S.collectCommands）
+    settingsTab('help').click();
+    const cmds = S.collectCommands.default.map((c) => c.command).join('\n');
+    if (text('#settings-commands') !== cmds || text('#settings-commands') !== text('#welcome-commands')) throw new Error('「收集與建立基準」的指令清單應與歡迎畫面相同');
+    if (!S.collectCommands.optional.every((c) => text('#settings-panel').includes(c.command))) throw new Error('應列出只有部分設備才有的選單');
+    // 關於：程式版本與 ELK.js 的授權（路徑取自 V.layout.ELK_SRC）
+    settingsTab('about').click();
+    if (!text('#app-version').includes(S.VERSION) || !text('#settings-panel').includes('EPL-2.0') || !text('#settings-panel').includes(S.view.layout.ELK_SRC.replace(/\/[^/]*$/, ''))) throw new Error('「關於」應列出版本與 ELK.js 的 EPL-2.0 授權：' + text('#settings-panel'));
+    // 搜尋框的 Esc 不關設定（只收起搜尋）；設定內的 Esc 關閉，焦點回到 ⚙
+    esc($('#search')); if (box.classList.contains('hidden')) throw new Error('設定外的元素的 Esc 不應關閉設定');
+    esc(settingsTab('about'));
+    if (!box.classList.contains('hidden') || document.activeElement !== gear || $('#main').inert || gear.getAttribute('aria-expanded') !== 'false' || $('#app').classList.contains('settings-open')) throw new Error('Esc 應關閉設定並把焦點還給 ⚙');
+    // 再開啟回到上次的分類；⚙ 再按一次關閉
+    gear.click(); check('about', '再開啟時應回到上次的分類'); gear.click();
+    if (!box.classList.contains('hidden') || document.activeElement !== gear) throw new Error('再按一次 ⚙ 應關閉設定並還焦點');
+    // 指定分類與 opener：焦點到分類的標題，關閉後回到 opener
+    const opener = $('#btn-fit');
+    App.openSettings('help', { opener });
+    if (document.activeElement !== $('#settings-panel-title')) throw new Error('指定分類開啟時焦點應到分類的標題');
+    box.querySelector('.settings-close').click(); if (document.activeElement !== opener) throw new Error('「關閉」應把焦點還給開啟它的按鈕');
+    try { App.openSettings('nope'); throw new Error('未知的分類應丟出 RangeError'); } catch (e) { if (!(e instanceof RangeError)) throw e; }
+    // 與資料中心互斥：開一個就關另一個；換步驟、選取時也關閉
+    App.openSettings(); App.openHub();
+    if (!box.classList.contains('hidden') || $('#hub').classList.contains('hidden') || !$('#main').inert) throw new Error('開啟資料中心時應關閉設定');
+    App.openSettings();
+    if (box.classList.contains('hidden') || !$('#hub').classList.contains('hidden') || !$('#main').inert || $('#btn-hub').getAttribute('aria-expanded') !== 'false') throw new Error('開啟設定時應關閉資料中心');
+    goStep('view'); if (!box.classList.contains('hidden') || $('#main').inert) throw new Error('換步驟時應關閉設定');
+    App.openSettings(); App.select({ type: 'device', key: App.Q.devices()[0].key });
+    if (!box.classList.contains('hidden')) throw new Error('選取時應關閉設定');
+    App.select(null); goStep('triage');
+    // 窄螢幕：單欄、分類改成上方一列（覆蓋一般樣式，寫在它之後）；不水平捲動
+    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
+    const base = css.indexOf('.settings-body { display: grid;'); const tail = css.slice(css.lastIndexOf('@media (max-width: 900px)'));
+    if (base < 0 || css.lastIndexOf('@media (max-width: 900px)') < base || !/\.settings-body \{ grid-template-columns: minmax\(0, 1fr\);/.test(tail) || !/\.settings-tabs \{ flex-direction: row;/.test(tail)) throw new Error('窄螢幕時設定應改成單欄、分類在上方一列，且規則要在一般樣式之後');
+    if (!/\.settings \{[^}]*overflow-x: hidden/.test(css)) throw new Error('設定不應水平捲動');
+    if (!/\.settings-tab\.on \{[^}]*font-weight: 600/.test(css)) throw new Error('選取的分類除了顏色還要有粗體');
   });
   await step('流程步驟：五步都能切換（nav、aria-current="step"），左側清單與中間的工作畫面跟著換、焦點移到這一步的標題；切換不丟失畫布的位置、縮放與選取，也不重新排列；PNG 照常', async () => {
     const g = App.graph; const VA = S.view.app;
@@ -5825,7 +5936,16 @@ function viewBoundaryViolations(file, src) {
   });
   await step('清除基準（處理紀錄不受影響）；沒有基準時「修正」、「驗證」停用，中間只有拓樸圖（歡迎畫面）', async () => {
     App.showView('patch');
-    $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20)); if (App.snap) throw new Error('未清除');
+    // 入口在設定「本機資料」，先確認：取消時什麼都不清
+    { const asked = []; const c0 = window.confirm; window.confirm = (m) => { asked.push(m); return false; };
+      try { App.openSettings('data'); $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20)); } finally { window.confirm = c0; }
+      if (asked.length !== 1 || !/清除/.test(asked[0]) || !App.snap) throw new Error('「清除基準…」應先確認，取消時不清除');
+      if (!$('#btn-clear').classList.contains('danger')) throw new Error('「清除基準…」應以 .danger 標示');
+      S.view.app.closeSettings(); }
+    await clearBaseline(); if (App.snap) throw new Error('未清除');
+    App.openSettings('data');
+    if ($('#btn-clear').getAttribute('disabled') === null ||!text('#settings-panel').includes('目前沒有基準')) throw new Error('沒有基準時「清除基準…」應停用並說明');
+    S.view.app.closeSettings();
     if (App.step !== 'triage' || App.centerView !== 'graph' || !$('#view-patch').classList.contains('hidden') || $('#view-graph').inert) throw new Error('清除基準後應回到「研判」的拓樸圖');
     if (!['fix', 'verify'].every((s) => stepBtn(s).getAttribute('aria-disabled') === 'true') || ['input', 'view', 'triage'].some((s) => stepBtn(s).getAttribute('aria-disabled') !== 'false')) throw new Error('沒有基準時只有「修正」、「驗證」停用（aria-disabled，仍可聚焦）');
     if (!stepBtn('input').textContent.includes('未載入') || !stepBtn('fix').textContent.includes('建立基準後')) throw new Error('沒有基準時步驟的狀態應說明：' + text('#steps'));
@@ -5848,12 +5968,12 @@ function viewBoundaryViolations(file, src) {
     await S.store.set('last', { snapshot: old, sources, profile: null });
     await App.restore();
     if (!App.snap || App.snap.meta.schema !== S.SCHEMA) throw new Error('舊 schema 應以儲存的輸入重建');
-    $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20));
+    await clearBaseline();
     await S.store.set('last', { snapshot: old, sources: [], profile: null });
     await App.restore();
     if (App.snap) throw new Error('沒有輸入時不應載入不相容的基準');
     if (!document.body.textContent.includes('已不相容')) throw new Error('應提示上次的基準格式不相容');
-    $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20));
+    await clearBaseline();
   });
   console.log(steps.join('\n'));
   setTimeout(() => process.exit(process.exitCode || 0), 10);

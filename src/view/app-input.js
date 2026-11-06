@@ -116,16 +116,27 @@
     const why = await V.copyText(text);
     status.textContent = why ? `無法自動複製（${why}），請直接選取上面的文字複製` : '已複製';
   }
+  A.copyText = copyText;
+  /**
+   * 收集指令清單（歡迎畫面與設定的「收集與建立基準」共用）：{ list（每行一個指令）, optional（只有部分設備才有的選單，DOM） }；
+   * 指令清單未載入時是 { error }。指令清單由 tools/collector-commands.sh 產生（samples/collect-commands.js），畫面不另寫一份
+   */
+  A.collectGuide = function collectGuide() {
+    const C = S.collectCommands;
+    if (!C) return { error: '指令清單未載入（samples/collect-commands.js）' };
+    return {
+      list: C.default.map((c) => c.command).join('\n'),
+      optional: h('span', null, ['只有部分設備才有的選單（Wi-Fi AP、CAPsMAN 控制器、RouterOS 7 的 VRF）另加：',
+        ...C.optional.flatMap((c, n) => [n ? '、' : '', h('code', null, c.command)])]),
+    };
+  };
   function bindCollectGuide() {
     $('#input-format-copy').onclick = () => copyText($('#input-format-example').textContent, $('#input-format-copy-status'));
-    // 指令清單由 tools/collector-commands.sh 產生（samples/collect-commands.js），畫面不另寫一份
-    const C = S.collectCommands;
-    if (!C) { $('#welcome-commands').textContent = '指令清單未載入（samples/collect-commands.js）'; $('#welcome-copy').disabled = true; return; }
-    const list = C.default.map((c) => c.command).join('\n');
-    $('#welcome-commands').textContent = list;
-    $('#welcome-copy').onclick = () => copyText(list, $('#welcome-copy-status'));
-    V.clear($('#welcome-optional')).appendChild(h('span', null, ['只有部分設備才有的選單（Wi-Fi AP、CAPsMAN 控制器、RouterOS 7 的 VRF）另加：',
-      ...C.optional.flatMap((c, n) => [n ? '、' : '', h('code', null, c.command)])]));
+    const g = A.collectGuide();
+    if (g.error) { $('#welcome-commands').textContent = g.error; $('#welcome-copy').disabled = true; return; }
+    $('#welcome-commands').textContent = g.list;
+    $('#welcome-copy').onclick = () => copyText(g.list, $('#welcome-copy-status'));
+    V.clear($('#welcome-optional')).appendChild(g.optional);
   }
   async function fillProfiles(selected) {
     const saved = (await S.store.get('profiles').catch(() => null)) || {};

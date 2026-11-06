@@ -53,6 +53,7 @@
    * opt.opener 是開啟它的按鈕（步驟列的「輸入」）：用鍵盤關閉時焦點回到它，沒有時回到頁首的「資料中心」按鈕。
    */
   App.openHub = function (section, opt) {
+    A.closeSettings(); // 設定與資料中心互斥（同一格的另一層）
     hub.open = true; hub.opener = (opt && opt.opener) || null;
     $('#hub').classList.remove('hidden'); $('#app').classList.add('hub-open');
     // 資料中心蓋在主畫面上（同一格，畫布大小不變）：主畫面不可聚焦，鍵盤只在資料中心內移動
@@ -62,8 +63,12 @@
     const target = (section && $('#hub-sec-' + section)) || $('#hub-title');
     if (target) { target.focus(); if (target.scrollIntoView) target.scrollIntoView({ block: 'start' }); }
   };
-  /** 關閉資料中心（回到 App.step 那一步）；opt.focus 為 true 時焦點回到開啟它的按鈕或頁首的「資料中心」按鈕（鍵盤關閉時） */
+  /**
+   * 關閉資料中心（回到 App.step 那一步）；opt.focus 為 true 時焦點回到開啟它的按鈕或頁首的「資料中心」按鈕（鍵盤關閉時）。
+   * 換步驟、選取、路由追蹤都經過這裡回到主畫面：蓋在主畫面上的設定（app-settings.js）也一起關（兩者互斥，最多只有一個開著）
+   */
   A.closeHub = function closeHub(opt) {
+    if (A.settingsOpen()) A.closeSettings(opt);
     if (!hub.open) return;
     hub.open = false;
     const back = hub.opener || $('#btn-hub'); hub.opener = null;

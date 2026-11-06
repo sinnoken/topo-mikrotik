@@ -54,6 +54,11 @@
 <script src="src/view/panels/baseline-diff.js"></script>
 <script src="src/view/panels/ledger.js"></script>
 <script src="src/view/panels/hub.js"></script>
+<script src="src/view/panels/settings-general.js"></script>
+<script src="src/view/panels/settings-profiles.js"></script>
+<script src="src/view/panels/settings-data.js"></script>
+<script src="src/view/panels/settings-help.js"></script>
+<script src="src/view/panels/settings-about.js"></script>
 <script src="src/view/app.js"></script>
 <script src="src/view/app-graph.js"></script>
 <script src="src/view/app-layers.js"></script>
@@ -63,6 +68,7 @@
 <script src="src/view/app-input.js"></script>
 <script src="src/view/app-ledger.js"></script>
 <script src="src/view/app-hub.js"></script>
+<script src="src/view/app-settings.js"></script>
 <script src="src/view/panels/patch.js"></script>
 <!-- 首次繪製前依儲存的配色偏好設好 <html data-theme>（CSS 的深淺），畫面不先以系統的深淺閃一下；偏好由 store.js 讀，見 app-toolbar.js 的 A.paintScheme -->
 <script>SSOT.view.app.paintScheme();</script>
@@ -94,33 +100,8 @@
     </div>
     <div class="header-actions">
       <button id="btn-hub" class="hub-btn" aria-controls="hub" aria-expanded="false" title="本輪的輸入與輸出：收集檔、工作包、處理紀錄、命名規則、預期現況、報表與 patch">資料中心</button>
-      <!-- 「⋯」更多操作（src/view/app-toolbar.js 的 A.bindMenu）：方向鍵移動、Esc 關閉並回到按鈕、點外面關閉 -->
-      <div class="menu-wrap">
-        <button type="button" class="icon-btn" id="btn-more" title="更多操作：路由追蹤、匯出 PNG、清除基準、配色" aria-label="更多操作" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu">⋯</button>
-        <div id="more-menu" class="menu menu-end hidden" role="menu" aria-label="更多操作">
-          <button type="button" class="menu-item" role="menuitem" id="btn-trace" title="依各設備路由表逐跳追蹤兩個 IP 之間的路徑">路由追蹤…</button>
-          <button type="button" class="menu-item" role="menuitem" id="btn-png" title="把目前的拓樸圖畫面匯出 PNG（目前的層級；其他匯出在資料中心）">匯出 PNG</button>
-          <div class="menu-sep" role="separator"></div>
-          <button type="button" class="menu-item danger" role="menuitem" id="btn-clear" title="清除這個工具儲存的基準與輸入">清除基準…</button>
-          <div class="menu-sep" role="separator"></div>
-          <div class="menu-label" id="theme-mode-label">配色</div>
-          <div id="theme-mode" role="group" aria-labelledby="theme-mode-label">
-            <button type="button" class="menu-item" role="menuitemradio" data-scheme="system" data-keep aria-checked="true" title="依作業系統的淺色／深色設定（預設）">跟隨系統</button>
-            <button type="button" class="menu-item" role="menuitemradio" data-scheme="light" data-keep aria-checked="false" title="固定淺色，不跟系統">淺色</button>
-            <button type="button" class="menu-item" role="menuitemradio" data-scheme="dark" data-keep aria-checked="false" title="固定深色，不跟系統">深色</button>
-          </div>
-          <div class="menu-sep" role="separator"></div>
-          <div class="menu-meta" id="app-version" role="none"></div>
-        </div>
-        <div id="trace-pop" class="popover hidden" role="dialog" aria-label="路由追蹤">
-          <div class="form-row"><label for="trace-src">來源 IP</label><input id="trace-src" type="text" placeholder="10.1.30.15" list="trace-ips" autocomplete="off"></div>
-          <div class="form-row"><label for="trace-dst">目的 IP</label><input id="trace-dst" type="text" placeholder="10.1.20.11" list="trace-ips" autocomplete="off"></div>
-          <datalist id="trace-ips"></datalist>
-          <div class="form-row hidden" id="trace-vrf-row"><label for="trace-vrf">VRF</label><select id="trace-vrf" aria-label="追蹤的 VRF"></select></div>
-          <div id="trace-msg" class="trace-msg warn-line hidden" role="alert"></div>
-          <div class="form-row" style="margin:0"><span class="muted" style="flex:1;font-size:var(--fs-sm)">依各設備的路由表逐跳追蹤，含等價多路徑</span><button type="button" id="trace-swap" aria-label="對調來源與目的" title="交換來源 IP 與目的 IP">⇅ 對調</button><button class="primary" id="trace-run">追蹤</button></div>
-        </div>
-      </div>
+      <!-- 設定（src/view/app-settings.js）：和資料中心一樣蓋住主畫面的另一層，左側分類、右側內容；Esc 關閉後焦點回到這個按鈕 -->
+      <button type="button" class="icon-btn" id="btn-settings" aria-label="設定" aria-controls="settings" aria-expanded="false" title="設定：配色、預設版面、命名規則、本機資料、收集說明與版本">⚙</button>
     </div>
   </header>
 
@@ -174,6 +155,17 @@
           <button type="button" class="menu-item layer-only" data-layers="device l2 l3" role="menuitemcheckbox" id="btn-hosts" data-keep aria-checked="true" title="顯示主機：沒有收集、依鄰居（LLDP／CDP／MNDP）回報判斷為主機的設備，不在收集範圍">主機</button>
           <button type="button" class="menu-item layer-only on" data-layers="device" role="menuitemcheckbox" id="btn-unknown" data-keep aria-checked="true" title="顯示終端：沒有 LLDP／CDP 鄰接、只由 MAC 推論出來的對象">終端</button>
           <button type="button" class="menu-item layer-only on" data-layers="device" role="menuitemcheckbox" id="btn-groups" data-keep aria-checked="true" title="顯示分群底框">分群</button>
+        </div>
+        <!-- 圖上的工具：路由追蹤（每一層都可用，路徑畫在拓樸圖上）、匯出 PNG（只有拓樸圖的層級；其他匯出在資料中心）。
+             路由追蹤的表單是按鈕下方的小對話框（A.bindTrace），Esc 或點外面關閉，焦點回到按鈕 -->
+        <div class="grp"><button type="button" id="btn-trace" aria-haspopup="dialog" aria-expanded="false" aria-controls="trace-pop" title="依各設備路由表逐跳追蹤兩個 IP 之間的路徑">路由追蹤…</button><button type="button" id="btn-png" class="layer-only" data-layers="device l2 l3" title="把目前的拓樸圖畫面匯出 PNG（目前的層級；其他匯出在資料中心）">匯出 PNG</button></div>
+        <div id="trace-pop" class="popover hidden" role="dialog" aria-label="路由追蹤">
+          <div class="form-row"><label for="trace-src">來源 IP</label><input id="trace-src" type="text" placeholder="10.1.30.15" list="trace-ips" autocomplete="off"></div>
+          <div class="form-row"><label for="trace-dst">目的 IP</label><input id="trace-dst" type="text" placeholder="10.1.20.11" list="trace-ips" autocomplete="off"></div>
+          <datalist id="trace-ips"></datalist>
+          <div class="form-row hidden" id="trace-vrf-row"><label for="trace-vrf">VRF</label><select id="trace-vrf" aria-label="追蹤的 VRF"></select></div>
+          <div id="trace-msg" class="trace-msg warn-line hidden" role="alert"></div>
+          <div class="form-row" style="margin:0"><span class="muted" style="flex:1;font-size:var(--fs-sm)">依各設備的路由表逐跳追蹤，含等價多路徑</span><button type="button" id="trace-swap" aria-label="對調來源與目的" title="交換來源 IP 與目的 IP">⇅ 對調</button><button class="primary" id="trace-run">追蹤</button></div>
         </div>
       </div>
       <!-- L4（src/view/panels/l4.js）：zone 矩陣、明細與可達性查詢。不是畫布：選了 L4 時疊在畫布上、工具列下面（層級切換仍在工具列，Tab 順序在矩陣之前），內容由 V.l4 產生 -->
@@ -251,6 +243,8 @@
   </div>
   <!-- 資料中心：和 #main 疊在同一格，開啟時蓋住主畫面（畫布大小不變），內容由 src/view/panels/hub.js 產生 -->
   <section id="hub" class="hub hidden" aria-labelledby="hub-title"></section>
+  <!-- 設定：和資料中心疊在同一格（兩者互斥），左側分類、右側內容；外殼在 src/view/app-settings.js，各分類的內容在 src/view/panels/settings-*.js -->
+  <section id="settings" class="settings hidden" aria-labelledby="settings-title"></section>
 </div>
 
 <dialog id="dlg-input" aria-labelledby="input-title">

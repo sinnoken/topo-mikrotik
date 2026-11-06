@@ -308,3 +308,17 @@ test('S.infer.fw.decide：條件無法判斷的規則不略過，列出所有可
   const e = S.infer.fw.decide(ctx, 'ip', 'filter', 'forward', Object.assign({}, pkt, { dst: BigInt(S.ip.toInt('192.168.2.11')) }));
   assert.deepStrictEqual([e.decided, e.verdict, e.rule.position], [true, 'drop', 3]);
 });
+test('S.query.reachAssumptions：前提以中文敘述，RouterOS 原值（參數、表、選單）只放在括號內', () => {
+  const list = S.query.reachAssumptions();
+  // 括號外不應出現 RouterOS 的英文原值；縮寫與產品名（RouterOS、IPv4、VRF、路由表名 main）除外
+  const ALLOWED = new Set(['RouterOS', 'IPv4', 'VRF', 'main']);
+  list.forEach((a) => {
+    const outside = a.message.replace(/（[^（）]*）/g, '');
+    const words = (outside.match(/[A-Za-z@/][A-Za-z0-9_=@/.<>-]*/g) || []).filter((w) => !ALLOWED.has(w));
+    assert.deepStrictEqual(words, [], `${a.code}：括號外有英文原值 ${words.join('、')}：${a.message}`);
+  });
+  // 原值仍保留（可追溯到 RouterOS）
+  const all = list.map((a) => a.message).join('\n');
+  ['connection-state=new', 'raw', 'nat', 'filter', 'mangle', 'src-address', 'dst-address', 'mark-routing', 'policy-rules', '/routing rule', '/routing settings', 'bridge filter', 'src-port']
+    .forEach((w) => assert.ok(all.includes(w), '應保留原值 ' + w));
+});

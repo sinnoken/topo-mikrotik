@@ -45287,7 +45287,7 @@
    "severity": "info",
    "cat": "覆蓋",
    "title": "網路設備僅由鄰居發現、沒有收集資料",
-   "message": "172.31.255.2：由 TPE_CORE_RT_01 發現",
+   "message": "172.31.255.2（OSPF 鄰居）：由 TPE_CORE_RT_01 發現",
    "entities": [
     {
      "type": "device",

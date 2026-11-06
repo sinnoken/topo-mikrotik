@@ -189,7 +189,8 @@ test('patch A12：有多數時預設改成多數的值（推論，寫出依據�
   assert.deepStrictEqual([c.id, c.facet, c.chosen, c.chosenBy, c.value, c.reason], ['A12', 'ntp', 'majority', 'default', ['10.0.0.123'], null]);
   const maj = c.options.find((o) => o.id === 'majority');
   assert.deepStrictEqual([maj.value, maj.basis, maj.inferred], [['10.0.0.123'], { agree: 2, total: 4, devs: ['SW_A', 'SW_C'] }, true], '多數決是推論，依據是 4 台中 2 台');
-  assert.ok(/4 台中 2 台/.test(maj.label), maj.label);
+  // 推論由 inferred 旗標表示，文字不再重複「推論：」（畫面直接顯示核心的 label，不另外改寫）
+  assert.strictEqual(maj.label, '改成多數設備的值：10.0.0.123（4 台中 2 台：SW_A、SW_C）');
   assert.deepStrictEqual(c.options.map((o) => o.id), ['majority', 'device:SW_A', 'device:SW_B', 'device:SW_D', 'accept']);
   const ob = c.options.find((o) => o.id === 'device:SW_B');
   assert.deepStrictEqual([ob.value, ob.devs, typeof ob.label], [['10.0.0.9'], ['SW_B'], 'string']);

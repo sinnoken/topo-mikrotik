@@ -249,9 +249,8 @@
       input.addEventListener('change', () => { if (input.checked) choose(App, c.findingKey, o.id); });
       const basis = o.inferred && o.basis ? `依多數決推定：${o.basis.total} 台中 ${o.basis.agree} 台的值相同` : null;
       return h('label', { class: 'patch-choice-row' + (on ? ' on' : ''), 'data-option': o.id }, [input, ' ',
-        // 推論只標一次（chip）：核心的選項文字「（推論：N 台中 M 台，…）」在有 chip 時省去「推論：」
-        o.inferred ? V.chip('推論', 'info', { class: 'chip info patch-inferred', title: basis }) : null, o.inferred ? ' ' : null,
-        o.inferred ? String(o.label).replace(/（推論：(\d[\d,]* 台中 [\d,]+ 台)，/, '（$1：') : o.label]);
+        // 推論由 chip 標示（依 inferred 旗標）；選項文字直接用核心的 label
+        o.inferred ? V.chip('推論', 'info', { class: 'chip info patch-inferred', title: basis }) : null, o.inferred ? ' ' : null, o.label]);
     });
     const items = c.items.length ? h('p', { class: 'muted patch-choice-items' }, `產生 ${c.items.length} 台設備的指令（見下方各設備）`)
       : c.reason === null ? h('p', { class: 'muted patch-choice-items' }, '沒有需要修改的設備，不產生指令') : null;

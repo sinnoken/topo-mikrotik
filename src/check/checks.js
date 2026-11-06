@@ -128,10 +128,13 @@
     M.claims.forEach((c) => S.util.getOr(sightings, c.peer, () => []).push({ block: c.block, line: c.line }));
     M.ospfAdjacencies.forEach((a) => S.util.getOr(sightings, a.peerDev, () => []).push({ block: a.block, line: a.line }));
     sightings.forEach((list) => list.sort((a, b) => a.block - b.block || a.line - b.line));
+    // C01 的設備名稱與畫面同一規則（discoveryLabel）：名稱只是位址時寫出由哪種協定得知
+    const linksOfDev = new Map(); const ospfPeers = new Set(M.ospfAdjacencies.map((a) => a.peerDev));
+    M.links.forEach((l) => [l.a, l.b].forEach((ep) => { const arr = S.util.getOr(linksOfDev, K.splitEp(ep)[0], () => []); if (!arr.includes(l)) arr.push(l); }));
     M.devices.forEach((d) => {
       if (!d.collected) {
         if (!expectsCollection(d)) return;
-        add('C01', `${name(d.key)}：由 ${Array.from(d.seenBy).map(name).join('、')} 發現`, [{ type: 'device', key: d.key }], sightings.get(d.key));
+        add('C01', `${discoveryLabel(name(d.key), false, linksOfDev.get(d.key) || [], ospfPeers.has(d.key))}：由 ${Array.from(d.seenBy).map(name).join('、')} 發現`, [{ type: 'device', key: d.key }], sightings.get(d.key));
         return;
       }
       const miss = missingData(d, expected);
@@ -725,6 +728,23 @@
    *      connected(dev, vrf) → [{ net, len }] }。
    * 回傳 { key, dev, vrf（擁有者所在的 VRF）, crossVrf } 或 null。
    */
+  /** 列出鄰居協定的固定順序：介面鄰接（LLDP、CDP）先於廣播網域（MNDP），最後是路由鄰接（OSPF）；其他依字母。 */
+  const DISCOVERY_ORDER = ['lldp', 'cdp', 'mndp', 'ospf'];
+  const discoveryRank = (p) => { const i = DISCOVERY_ORDER.indexOf(p); return i < 0 ? DISCOVERY_ORDER.length : i; };
+  /**
+   * 給人看的設備名稱（C01 的訊息與 Q.devLabel 共用這一份）：只由鄰居得知（未收集）且名稱是 IPv4 位址的設備，
+   * 單看位址認不出是什麼，加上得知它的協定（事實），例如「172.31.255.2（OSPF 鄰居）」；其他維持 name。
+   * links：碰到這台設備的鏈路（protocols 為陣列或 Set）；ospfPeer：是否為某個 OSPF 鄰接的對端。協定都沒有時寫「（鄰居）」。
+   * 放在 check 而不是 query：檢查訊息在 check 產生，query 已依賴 check（hopOwner），反過來會違反單向依賴。
+   */
+  function discoveryLabel(name, collected, links, ospfPeer) {
+    if (collected || !S.ip.isIp(name)) return name;
+    const seen = new Set();
+    links.forEach((l) => (l.protocols || []).forEach((p) => seen.add(p)));
+    if (ospfPeer) seen.add('ospf');
+    const protos = Array.from(seen).sort((a, b) => discoveryRank(a) - discoveryRank(b) || S.util.cmp(a, b)).map((p) => p.toUpperCase());
+    return `${name}（${protos.length ? protos.join('／') + ' ' : ''}鄰居）`;
+  }
   function hopOwner(I, dev, ip, vrf) {
     const own = I.owner(ip, vrf);
     if (own) return { key: own.key, dev: own.dev, vrf, crossVrf: false };
@@ -918,5 +938,5 @@
     });
   }
 
-  S.check = { run, coverage, CATALOG, EXPECTED, DATA_LABEL, fmtVlans, resolveNextHop, hopOwner, unrecognizedReason, issueReason, sourceName, placeText, expectsCollection };
+  S.check = { run, coverage, CATALOG, EXPECTED, DATA_LABEL, fmtVlans, resolveNextHop, hopOwner, discoveryLabel, unrecognizedReason, issueReason, sourceName, placeText, expectsCollection };
 })(globalThis.SSOT = globalThis.SSOT || {});

@@ -260,13 +260,16 @@
   const svcId = (s) => s.proto + (s.port != null ? '/' + s.port : '');
   /** zone 的來源，依優先順序（同一個網段取第一個有結果的來源）。 */
   const ZONE_SOURCES = Object.freeze(['profile', 'interface-list', 'vlan', 'subnet']);
-  /** 可達性的前提（每次 Q.reach 都附上，畫面照列）。 */
+  /**
+   * 可達性的前提（每次 Q.reach 都附上，畫面照列）。
+   * 句子以中文敘述；RouterOS 的原值（參數、表、選單）放在括號內，可對回手冊與設定（tests/core/reach.js 檢查）。
+   */
   const ASSUMPTIONS = deepFreeze([
-    { code: 'new-connection', message: '判斷的是新連線（connection-state=new）；回程由連線追蹤放行，不另外判斷' },
-    { code: 'routeros-tables', message: '只套用 RouterOS 的 raw、nat、filter；mangle（標記、策略路由）、bridge filter、主機與服務本身的防火牆不在範圍內' },
-    { code: 'ipv4-vrf', message: '只算 IPv4（RouterOS 7）；封包從入介面所屬的 VRF 查那個 VRF 的路由表，閘道寫了 @<VRF> 時在那個 VRF 解析（路由洩漏）' },
-    { code: 'policy-routing', message: '策略路由：main 的封包依 /routing rule 的順序決定查哪一張路由表（可判斷的條件是 src-address、dst-address、入介面）；有 mangle 的 mark-routing、改過 /routing settings 的 policy-rules，或條件無法判斷時結果為不明，不假設查 main' },
-    { code: 'src-port', message: '來源埠由用戶端自選，比對來源埠的條件無法判斷' },
+    { code: 'new-connection', message: '判斷的是新建立的連線（connection-state=new）；回程由連線追蹤放行，不另外判斷' },
+    { code: 'routeros-tables', message: '只套用 RouterOS 防火牆的原始表、位址轉換與過濾（raw、nat、filter）；封包標記與策略路由（mangle）、橋接過濾（bridge filter）、主機與服務本身的防火牆不在範圍內' },
+    { code: 'ipv4-vrf', message: '只算 IPv4（RouterOS 7）；封包依入介面所屬的 VRF 查那個 VRF 的路由表，閘道指定了其他 VRF（@<VRF>）時在那個 VRF 解析（路由洩漏）' },
+    { code: 'policy-routing', message: '策略路由：main 路由表的封包依路由規則（/routing rule）的順序決定查哪一張路由表，可判斷的條件是來源位址、目的位址與入介面（src-address、dst-address、interface）；有封包標記規則設定路由標記（mangle 的 mark-routing）、改過路由設定的策略規則（/routing settings 的 policy-rules），或條件無法判斷時，結果為不明，不假設查 main' },
+    { code: 'src-port', message: '來源埠由用戶端自選，比對來源埠（src-port）的條件無法判斷' },
   ]);
   /**
    * Q.reach 的原因代碼與結束代碼（靜態清單，S.query.reachReasonCodes() 回傳）：

@@ -2,7 +2,7 @@
 // 運作時間的來源、工具列一列、修正指令的用字、路由追蹤的錯誤說明、設定不整頁捲動、沒有基準時的步驟列、歡迎畫面的綁定時機。
 // 模擬 DOM 沒有版面：位置以 getBoundingClientRect 的關係與 CSS 規則斷言，實際的矩形另以截圖工具（rects.json）確認。
 'use strict';
-const { S, fs, path, ROOT, step, buildInput, clearBaseline, $, text, L4, stepBtn } = require('../helpers.js');
+const { S, fs, path, ROOT, step, buildInput, clearBaseline, $, text, L4, stepBtn, hubBtn } = require('../helpers.js');
 
 const css = () => fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
 /** 最後一個 @media (max-width: 900px) 區塊之外，所有窄螢幕區塊的內容（依序串起來） */
@@ -191,5 +191,101 @@ module.exports = async () => {
     if (bind < 0 || bind > wait) throw new Error('歡迎畫面的按鈕應在 init 的第一個 await 之前綁定（A.bindWelcome）');
     await buildInput(S.samples['sample-bundle.txt']);
     if (stepBtn('input').getAttribute('aria-current') === 'step') throw new Error('有基準後「輸入」不是目前的一步（資料中心沒開）');
+  });
+
+  await step('UX6 L1、L2、L3 的設定與用字：設定「一般」每個選項的說明都在名稱下一行；畫面文字用全形「／」；「本機資料」不寫技術用語', async () => {
+    App.openSettings('general');
+    const opts = $('#settings').testAll('.settings-option');
+    if (!opts.length) throw new Error('前提：設定「一般」有選項');
+    opts.forEach((o) => {
+      const t = o.testAll('.settings-option-text')[0];
+      const name = t && t.testAll('.settings-option-name')[0]; const tip = t && t.testAll('.settings-option-tip')[0];
+      if (!t || !name || !tip || !t.testAll('br').length || t.childNodes.indexOf(name) > t.childNodes.indexOf(tip)) throw new Error('每個選項的名稱與說明應排成同一種（說明在名稱的下一行）：' + o.textContent);
+    });
+    const halfSlash = (s) => (s.match(/.{0,8}\S \/ \S.{0,8}/) || [])[0];
+    const general = text('#settings'); S.view.app.closeSettings();
+    App.openHub(); const hubText = text('#hub'); S.view.app.closeHub();
+    App.showStep('view'); App.showLayer('l4'); await App.l4Job; const l4Text = text('#view-l4'); App.showLayer('device');
+    [['設定・一般', general], ['資料中心', hubText], ['L4', l4Text]].forEach(([k, s]) => { const hit = halfSlash(s); if (hit) throw new Error(`${k} 的畫面文字應用全形「／」：${hit}`); });
+    App.openSettings('data'); await S.view.settings.data.refresh();
+    const dt = text('#settings');
+    if (/localStorage）|JSON 序列化/.test(dt)) throw new Error('「本機資料」不應寫 localStorage、JSON 序列化等技術用語');
+    const cap = $('#settings').testAll('caption')[0];
+    if (!cap || !/^共 [\d.]+ (B|KB|MB)$/.test(cap.textContent.trim())) throw new Error('總大小只寫「共 N KB」：' + (cap && cap.textContent));
+    S.view.app.closeSettings();
+  });
+
+  await step('UX6 L4：命名規則「套用結果」的選單顯示規則名稱（和表格的主要欄位一致），值仍是 ID', () => {
+    App.openSettings('profiles');
+    const sel = $('#settings-profile-cov');
+    if (!sel) throw new Error('前提：有基準時有「套用結果」的選單');
+    const P = S.view.settings.profiles;
+    sel.testAll('option').forEach((o) => {
+      const p = S.profiles[o.value]; const nm = P.nameOf(p);
+      if (!p) throw new Error('選單的值應是命名規則的 ID：' + o.value);
+      if (nm && !o.textContent.startsWith(nm)) throw new Error(`選單應顯示名稱「${nm}」：${o.textContent}`);
+    });
+    S.view.app.closeSettings();
+  });
+
+  await step('UX6 L5、L6：L4 只在頁首標一次推論（表頭不逐一掛徽章，輔助科技仍念得到）；種類寫「介面清單」；圖例說明虛擬 zone 與只當目的的 zone', async () => {
+    App.showStep('view'); App.showLayer('l4'); await App.l4Job;
+    const grid = L4().testAll('.l4-grid')[0];
+    if (grid) {
+      if (grid.testAll('.l4-zone-inf').length) throw new Error('矩陣的表頭不應每個都掛「推論」徽章');
+      const inf = App.Q.zoneMatrix({}).zones.filter((z) => z.inferred);
+      if (inf.length && !grid.testAll('th').some((th) => th.testAll('.sr-only').some((x) => x.textContent.includes('推論')))) throw new Error('推論的 zone 仍應讓輔助科技念出「推論」');
+    }
+    const head = L4().testAll('.work-head')[0];
+    if (!head || !head.testAll('.chip').some((c) => c.textContent === '推論')) throw new Error('L4 的頁首應標一次「推論」');
+    if (S.view.ZONE_SOURCE['interface-list'] !== '介面清單') throw new Error('zone 種類應寫「介面清單」，不寫 RouterOS 原值 interface list');
+    if (L4().testAll('.l4-zone-src').some((x) => x.textContent === 'interface list')) throw new Error('zone 種類標籤不應寫 interface list');
+    const virt = App.Q.zoneMatrix({}).zones.filter((z) => z.virtual);
+    const leg = $('#l4-legend').testAll('.l4-legend-item').concat($('#l4-legend').testAll('.l4-note')).find((x) => x.getAttribute('data-legend') === 'virtual');
+    if (virt.length) {
+      if (!leg || !leg.textContent.includes(S.view.ZONE_SOURCE.virtual)) throw new Error('圖例應說明「' + S.view.ZONE_SOURCE.virtual + '」的 zone');
+      virt.forEach((z) => {
+        if (!leg.textContent.includes(z.name)) throw new Error('圖例應列出虛擬 zone：' + z.name);
+        if (z.dstOnly && !/只當目的/.test(leg.textContent)) throw new Error('圖例應說明「' + z.name + '」為什麼只在目的欄');
+      });
+    }
+    App.showLayer('device');
+  });
+
+  await step('UX6 L7：管理面設定的數量寫明是檢查結果、列出 F10–F14 的標題、項目名稱大小寫一致、「出廠」有說明', async () => {
+    const lines = ['PD (10.0.2.1):', '### /export terse', '/interface list add name=WAN', '/snmp set enabled=yes',
+      '/snmp community set [ find default=yes ] disabled=yes', '/snmp community add name=public addresses=10.0.0.0/8', ''];
+    await buildInput(lines.join('\n') + '\n');
+    App.select({ type: 'device', key: 'PD' });
+    const sec = $('#detail').testAll('.mgmt-section')[0];
+    const n = App.Q.findingsFor('device', 'PD').filter((f) => /^F1[0-4]$/.test(f.id)).length;
+    const sum = sec.testAll('summary')[0];
+    if (!sum || !sum.textContent.includes(`${n} 筆檢查結果`)) throw new Error('管理面設定標題旁的數量應寫明是檢查結果：' + (sum && sum.textContent));
+    ['F10', 'F11', 'F12', 'F13', 'F14'].forEach((id) => { const r = S.query.rule(id); if (!sec.textContent.includes(`${id} ${r.title}`)) throw new Error('應列出檢查的標題：' + id); });
+    const labels = sec.testAll('.mgmt-row').map((r) => r.testAll('b')[0].textContent);
+    const lower = labels.filter((l) => /^[a-z]/.test(l));
+    if (lower.length) throw new Error('項目名稱的大小寫應一致（不以小寫英文開頭）：' + lower.join('、'));
+    const chip = sec.testAll('.chip').find((c) => c.textContent === '出廠');
+    if (!chip) throw new Error('前提：PD 有出廠的 community');
+    if (!chip.getAttribute('title') || !/「出廠」/.test(sec.textContent.replace(chip.textContent, ''))) throw new Error('「出廠」徽章應有說明（提示與文字）');
+    App.select(null);
+    await buildInput(S.samples['sample-bundle.txt']);
+  });
+
+  await step('UX6 L8、L9：「依設備排序」看得出是選項（勾選框，不和匯出按鈕排在一起）；工作包內容沒用到的寫「未使用」', () => {
+    App.openHub();
+    const t = hubBtn('by-device'); const md = hubBtn('export-markdown');
+    if (t.parentNode === md.parentNode) throw new Error('「依設備排序」不應夾在匯出按鈕之間');
+    const box = () => hubBtn('by-device').testAll('.hub-check')[0];
+    const before = hubBtn('by-device').getAttribute('aria-pressed') === 'true';
+    if (!box() || box().textContent !== (before ? '☑' : '☐')) throw new Error('「依設備排序」應有勾選框的外形');
+    hubBtn('by-device').click();
+    if (box().textContent !== (before ? '☐' : '☑')) throw new Error('切換後勾選框應跟著改變');
+    hubBtn('by-device').click();
+    const roles = S.view.app.workpackRoles();
+    roles.filter((x) => (x.role === 'profile' || x.role === 'expected-data') && !x.available).forEach((x) => {
+      if (x.note !== '未使用') throw new Error(`工作包的「${x.label}」沒用到時寫「未使用」，不重複名稱：${x.note}`);
+    });
+    S.view.app.closeHub();
   });
 };

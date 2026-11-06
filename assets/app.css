@@ -78,7 +78,7 @@
   color-scheme: light;
 }
 /* 深色：<html data-theme="dark">，只重新定義語意變數；--fixed-light-* 刻意不變。
-   屬性由 app-toolbar.js 設定，等於 theme.mode：偏好是深色，或跟隨系統而 prefers-color-scheme 是 dark（JS 的 matchMedia 判斷）。
+   屬性由 app-scheme.js 設定，等於 theme.mode：偏好是深色，或跟隨系統而 prefers-color-scheme 是 dark（JS 的 matchMedia 判斷）。
    所以這裡不另寫 @media (prefers-color-scheme: dark) 的複本，深色變數只有這一份（有測試）；首次繪製前由 index.html 的 inline script 設好，不閃。
    --surface、--text、--muted、--*-text、--fw 等、--sev-* 與 theme.js 的 palettes.dark 一致（有測試），
    文字對底色 ≥ 4.5:1、圖形與欄位邊框 ≥ 3:1（有測試）。亮色的「淺底配深字」在這裡是「深底配淺字」 */

@@ -7,7 +7,9 @@
  *   app-graph.js   基準 → 圖資料、未知對端、版面排程（ELK／內建）
  *   app-layers.js  拓樸圖的層級（設備、L2 埠、L3 子網）、VLAN 篩選，以及 L2／L3 的圖資料、版面與標示
  *   app-select.js  選取、圖上互動、原文檢視、路由追蹤
- *   app-toolbar.js 頁首（搜尋）、工具列與下拉選單（含路由追蹤、匯出 PNG）、配色、清除基準、圖例、匯出
+ *   app-toolbar.js 頁首（搜尋）、工具列與下拉選單（含路由追蹤、匯出 PNG 的按鈕）、版面模式、清除基準
+ *   app-scheme.js  配色（跟隨系統、淺色、深色；首次繪製前的 A.paintScheme）、減少動態效果、匯出時暫換配色（A.withScheme）
+ *   app-legend.js  圖例、終端廠商色的圖例、匯出 PNG（A.exportPng）與匯出基準或檢查結果（App.exportAs）
  *   app-panes.js   流程步驟（App.showStep）、左側的清單、中間的工作畫面（App.showView）、窄螢幕工作區、左右欄寬度
  *   app-input.js   輸入對話框與建立基準
  *   app-ledger.js  處理紀錄（S.ledger；store 的 'ledger'，並轉換舊的 'acks'）
@@ -20,7 +22,7 @@
  * 讓既有的讀取不必改寫；處理紀錄仍由 app-ledger.js 管理（停用、轉換、寫入 store），App.round.ledger 是唯讀的存取器。
  * 檢視狀態（選取、展開、版面、縮放與位置）不放在這裡，留在 App 上。
  * 這些檔案在載入時只定義函式，實際執行都在 DOMContentLoaded 之後，所以彼此的載入先後不影響行為；
- * 只有這個檔案要最先載入，因為它建立 App 與 A。
+ * 只有這個檔案要最先載入，因為它建立 App 與 A；app-scheme.js 另要在 index.html 首次繪製配色的 inline script 之前載入（它呼叫 A.paintScheme）。
  */
 (function (S) {
   'use strict';

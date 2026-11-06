@@ -19,7 +19,10 @@
     builtin: ['快速（內建）', '馬上排好，不另外載入版面引擎'],
   };
 
-  /** 一組單選：fieldset＋legend 是組名，每個選項是 label 包著 radio，說明在名稱後面 */
+  /**
+   * 一組單選：fieldset＋legend 是組名，每個選項是 label 包著 radio 與文字；說明一律在名稱的下一行（換行固定，
+   * 不依說明長短一下在右邊、一下在下一行）
+   */
   function radios(setting, legend, values, names, onPick, note) {
     return h('fieldset', { class: 'settings-group', 'data-setting': setting }, [
       h('legend', null, legend),
@@ -27,7 +30,8 @@
         const [label, tip] = names[v] || [v, ''];
         const r = h('input', { type: 'radio', name: 'settings-' + setting, value: v, class: 'settings-radio', 'data-setting': setting, 'data-settings-focus': setting + '-' + v });
         r.addEventListener('change', () => { if (r.checked !== false) onPick(v); });
-        return h('label', { class: 'settings-option' }, [r, h('span', { class: 'settings-option-name' }, label), tip ? h('span', { class: 'muted' }, tip) : null]);
+        return h('label', { class: 'settings-option' }, [r, h('span', { class: 'settings-option-text' }, [h('span', { class: 'settings-option-name' }, label),
+          ...(tip ? [h('br'), h('span', { class: 'muted settings-option-tip' }, tip)] : [])])]);
       }),
       note ? h('p', { class: 'muted settings-note' }, note) : null,
     ]);

@@ -198,8 +198,12 @@
     const nC01 = has ? App.Q.findingsByRule('C01').length : 0;
     const failures = has ? App.Q.coverage().reduce((n, c) => n + (c.failures || []).length, 0) : 0;
     const first = App.round.sources.find((s) => s.name !== S.readers.PASTE);
-    const card = (key, title, desc, kids, id) => h('div', { class: 'hub-out', 'data-output': key, id: id || null, tabindex: id ? '-1' : null, role: 'group', 'aria-label': title },
-      [h('h3', null, title), h('p', { class: 'muted' }, desc), h('div', { class: 'row' }, kids)]);
+    // opts：匯出選項（例如「依設備排序」），和匯出按鈕分開排在下一列，看得出是選項而不是另一種匯出
+    const card = (key, title, desc, kids, id, opts) => h('div', { class: 'hub-out', 'data-output': key, id: id || null, tabindex: id ? '-1' : null, role: 'group', 'aria-label': title },
+      [h('h3', null, title), h('p', { class: 'muted' }, desc), h('div', { class: 'row' }, kids),
+        opts ? h('div', { class: 'row hub-opts' }, [h('span', { class: 'muted' }, '匯出選項：'), ...opts]) : null]);
+    // 切換鈕（aria-pressed）前面放勾選框的外形，和工作包內容的勾選一樣看得出是開關
+    const checkMark = (on) => h('span', { class: 'hub-check', 'aria-hidden': 'true' }, on ? '☑' : '☐');
     return h('div', { class: 'hub-outs' }, [
       card('next', '給下一輪的自己', '基準 JSON・處理紀錄 JSON（工作包裡也有）', [
         btn('基準 JSON', 'export-snapshot', () => App.exportAs('snapshot'), { disabled: off, title: '目前的基準（JSON），內容原樣不改寫；之後可當作舊基準比對' }),
@@ -212,15 +216,16 @@
       card('report', '給報告或紀錄', `檢查結果 Markdown／CSV（含處理狀態，不受「${A().STEP_LABEL.triage}」檢查結果的篩選影響）・網路文件・拓樸 PNG`, [
         btn('Markdown', 'export-markdown', () => A().exportReport('markdown'), { disabled: off, title: '依嚴重度（或依設備）分組的報表，含證據行號，已處理的項目會標示狀態與備註' }),
         btn('CSV', 'export-csv', () => A().exportReport('csv'), { disabled: off, title: '每筆一列，含相關實體、證據行號、處理狀態、時間與備註（Excel 可直接開啟）' }),
-        btn('依設備排序', 'by-device', () => A().toggleByDevice(), { class: 'ghost export-by-device' + (hub.byDevice ? ' on' : ''), 'aria-pressed': String(hub.byDevice),
-          title: '匯出時依設備排序（Markdown 依設備分組）；不屬於任何設備的排最後；工作包的報表也依這個設定' }),
         // 網路文件（站點說明書）：zone 用與 L4 畫面相同的選項（命名規則有 zones 時套用）
         btn('網路文件（Markdown）', 'export-site-markdown', () => exportSite(App, 'siteMarkdown'), { disabled: off,
           title: '交接用的現況說明：設備清單、IP 規劃、VLAN 表、埠表、未結案事項與接受風險；推論的欄位或值標「（推論）」，命名規則給的值標「（命名規則）」' }),
         btn('網路文件（CSV）', 'export-site-csv', () => exportSite(App, 'siteCsv'), { disabled: off,
           title: '同網路文件，一個 CSV 檔分成多個區段（每段開頭是「[標題]」一列），Excel 可直接開啟' }),
         btn('拓樸 PNG', 'export-png', () => A().exportPng(), { disabled: off, title: '目前的拓樸圖畫面' }),
-      ], 'hub-sec-reports'),
+      ], 'hub-sec-reports', [
+        btn([checkMark(hub.byDevice), ' 依設備排序'], 'by-device', () => A().toggleByDevice(), { class: 'ghost export-by-device' + (hub.byDevice ? ' on' : ''), 'aria-pressed': String(hub.byDevice),
+          title: '檢查結果的 Markdown／CSV 依設備排序（Markdown 依設備分組）；不屬於任何設備的排最後；工作包的報表也依這個設定' }),
+      ]),
       h('div', { class: 'hub-out', 'data-output': 'collector', role: 'group', 'aria-label': '給收集器' }, [
         h('h3', null, '給收集器'), h('p', { class: 'muted' }, 'devices.csv 草稿（未收集的網路設備）・只重收失敗的指令'),
         h('div', { class: 'row' }, [btn('devices.csv 草稿', 'export-devices-csv', () => App.exportAs('devicesCsv'), { disabled: !nC01 || busy || null,

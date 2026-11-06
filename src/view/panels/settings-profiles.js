@@ -165,7 +165,7 @@
     const cur = list.find((p) => p.id === st.cov) || used || list[0];
     const sel = h('select', { id: 'settings-profile-cov', 'data-settings-focus': 'cov', 'aria-label': '要看套用結果的命名規則',
       onchange: (e) => { st.cov = e.target.value; st.more = false; rerender(); } },
-    list.map((p) => h('option', { value: p.id }, p.id + (usedBy(App, p) ? '（目前的基準使用）' : ''))));
+    list.map((p) => h('option', { value: p.id }, (nameOf(p) || p.id) + (usedBy(App, p) ? '（目前的基準使用）' : ''))));
     sel.value = cur.id;
     box.appendChild(h('div', { class: 'form-row' }, [h('label', { for: 'settings-profile-cov' }, '命名規則'), sel]));
     const c = coverageOf(App, cur);

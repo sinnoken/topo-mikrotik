@@ -144,7 +144,7 @@
     if (isLast) Object.assign(attrs, { id: 'btn-clear', title: '清除這個工具儲存的基準與輸入（會先確認）' });
     return h('tr', { 'data-store-key': d.key }, [
       h('td', null, [
-        h('div', { class: 'settings-data-name' }, [d.label, d.critical ? h('strong', { class: 'settings-data-critical' }, '（無法從收集檔重建）') : null, d.where === 'localStorage' ? h('span', { class: 'muted' }, '（localStorage）') : null]),
+        h('div', { class: 'settings-data-name' }, [d.label, d.critical ? h('strong', { class: 'settings-data-critical' }, '（無法從收集檔重建）') : null]),
         h('div', { class: 'muted' }, d.purpose),
         status ? h('div', { class: 'muted' }, status) : null,
       ]),
@@ -165,7 +165,7 @@
     const total = items.reduce((n, i) => n + (i.present ? i.bytes : 0), 0);
     // 包在 .table-scroll：窄螢幕時表格自己橫向捲動，不撐寬整頁
     el.appendChild(h('div', { class: 'table-scroll' }, h('table', { class: 't settings-data' }, [
-      h('caption', { class: 'muted' }, inv ? `共 ${fmtBytes(total)}（JSON 序列化後的大小）` : '讀取中…'),
+      h('caption', { class: 'muted' }, inv ? `共 ${fmtBytes(total)}` : '讀取中…'),
       h('thead', null, h('tr', null, ['項目', '大小', '最後更新', ''].map((t, i) => h('th', i === 3 ? { 'aria-label': '操作' } : null, t)))),
       h('tbody', null, descs.map((d) => row(App, d, items.find((i) => i.key === d.key) || null))),
     ])));

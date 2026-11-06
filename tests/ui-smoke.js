@@ -2527,7 +2527,8 @@ function viewBoundaryViolations(file, src) {
   });
   await step('L4 表格檢視與矩陣內容一致；可選單一服務（第一次計算先顯示忙碌提示，算過的直接用快取）；下載 CSV', async () => {
     const Q = App.Q; const V = S.view; const mx = Q.zoneMatrix();
-    const zn = new Map(Q.zones().zones.map((z) => [z.id, z.name]));
+    // 矩陣的 zone 含虛擬 zone（外部、網路設備（管理）），只在 Q.zoneMatrix 的 zones
+    const zn = new Map(mx.zones.map((z) => [z.id, z.name]));
     App.showLayer('l4'); await App.l4Job;
     if (text('#l4-status').includes('計算 zone 矩陣中') || $('#l4-matrix').getAttribute('aria-busy') === 'true') throw new Error('同一份基準再開矩陣時應直接使用快取（不顯示忙碌提示）');
     const modeBtn = (m) => L4().testAll('.l4-modes button').find((b) => b.dataset.mode === m);
@@ -2597,7 +2598,7 @@ function viewBoundaryViolations(file, src) {
     if (l4State().computing || text('#l4-status').includes('計算 zone 矩陣中')) throw new Error('換到算過的服務時應放棄進行中的計算，直接畫');
     await job2;
     if (V.l4.timings(Q).has(svc) || !notCached(svc)) throw new Error('換服務時應放棄計算，查詢層不留下快取');
-    mx.cells.forEach((c) => { const td = cellTd(c.src, c.dst); if (mx.zones.length <= V.l4.MATRIX_MAX && (!td || td.dataset.status !== c.status)) throw new Error('放棄後畫的應是目前服務（全部服務）的矩陣'); });
+    mx.cells.forEach((c) => { const td = cellTd(c.src, c.dst); if (mx.zones.length <= V.l4.MATRIX_MAX && (!td || td.dataset.status !== c.status)) throw new Error(`放棄後畫的應是目前服務（全部服務）的矩陣（${c.src} → ${c.dst}：${td ? td.dataset.status : '沒有格子'}／${c.status}）`); });
     // 3. 跑完：每個階段的進度都更新過，結果與 Q.zoneMatrix 相同
     sel.value = svc; sel.dispatch('change'); const job3 = App.l4Job;
     let fin = false; job3.then(() => { fin = true; });

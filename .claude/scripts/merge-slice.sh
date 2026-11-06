@@ -43,7 +43,9 @@ prepare() { # <worktree> <base 或空字串>
   cd "$HERE" || die "無法進入 $HERE"
   TMP=$(mktemp -d "${TMPDIR:-/tmp}/merge-slice.XXXXXX") || die "無法建立暫存目錄"
   trap 'rm -rf "$TMP"' EXIT
-  git -C "$W" add -A -- . "$EXCLUDE" || die "git add -A 失敗：$W"
+  # 不在 add 加排除：被 gitignore 的檔（例如 gen:large 產生的大檔）本來就不會加入；
+  # 對被忽略的路徑下排除 pathspec 反而讓 git add 以錯誤結束。排除只用在後面的 diff。
+  git -C "$W" add -A || die "git add -A 失敗：$W"
   git -C "$W" -c core.quotepath=false diff --cached --no-renames --name-only -z "$BASE" -- . "$EXCLUDE" | nul_to_lines > "$TMP/changed"
   : > "$TMP/raw"
   if [ -s "$TMP/changed" ]; then

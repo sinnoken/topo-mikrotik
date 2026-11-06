@@ -57,7 +57,10 @@ module.exports = async () => {
     if (!tip.includes(D.routerOS) || !tip.includes(D.manual.macWinbox)) throw new Error('預設值的提示應寫出 S.query.mgmtDefaults() 的版本與手冊');
     if (win.testAll('.mgmt-src').length) throw new Error('預設值沒有原文行號');
     if (!win.textContent.includes('allowed-interface-list=all')) throw new Error('預設值也要列出推定的值');
-    if (row('dns').testAll('.mgmt-default').length) throw new Error('寫出的設定不應標預設');
+    if (row('macServer').testAll('.mgmt-default').length) throw new Error('寫出的設定不應標預設');
+    // 預設標記只算畫面列出的參數：DNS 寫了 allow-remote-requests、沒寫 vrf → 列出 vrf=main 並只把 vrf 標成預設
+    if (!dns.textContent.includes('vrf=main') || !dns.testAll('.mgmt-default').length || !dns.textContent.includes('vrf：')) throw new Error('DNS 沒寫 vrf：應列出 vrf=main 並標預設');
+    if (dns.textContent.includes('allow-remote-requests：')) throw new Error('寫出的 allow-remote-requests 不應列為預設');
     // 部分欄位是預設值：有原文連結，另標出哪些欄位是預設
     const px = row('proxy');
     if (!px.testAll('.mgmt-src').length || !px.testAll('.mgmt-default').length || !px.textContent.includes('port=8080')) throw new Error('proxy 寫了 enabled、沒寫 port：應有原文連結，port 標預設');
@@ -94,6 +97,73 @@ module.exports = async () => {
     const vb = $('#detail').testAll('.mgmt-section')[0];
     if (!vb || !vb.textContent.includes('沒有收集 /export，無法判斷') || vb.testAll('.mgmt-row').length) throw new Error('沒有 export 的設備應說明「沒有收集 /export，無法判斷」');
     if (text('#detail').includes(DEF)) throw new Error('沒有 export 的設備不應推定預設值');
+    App.select(null);
+  });
+
+  await step('管理面設定：部分 export、版本不在預設值表範圍時列出「無法判斷」與原因（不推定預設值、欄位沒有資料也不出錯），同名 community 各自連到自己的檢查結果', async () => {
+    const RV = S.view.remediation; const D = S.query.mgmtDefaults();
+    // PA：部分 export（/ip export），只有鄰居探索出現；PB：整機 export、RouterOS 7.12.1（不在表的範圍）；PC：整機 export、版本不明、兩個 public
+    const lines = ['PA (10.0.1.1):', '### /ip export', '/interface list add name=WAN', '/ip neighbor discovery-settings set discover-interface-list=WAN',
+      '_____', 'PB (10.0.1.2):', '### /export terse', '# 2026-10-13 10:00:00 by RouterOS 7.12.1', '/interface list add name=WAN',
+      '/snmp set enabled=yes', '/snmp community set [ find default=yes ] addresses=10.0.0.0/8', '/tool mac-server mac-winbox set allowed-interface-list=all',
+      '_____', 'PC (10.0.1.3):', '### /export terse', '/interface list add name=WAN', '/snmp set enabled=yes',
+      '/snmp community add name=public addresses=10.0.0.0/8', ''];
+    await buildInput(lines.join('\n') + '\n');
+    const Q = App.Q; const all = Q.findings();
+    const mA = Q.mgmtOf('PA'); const mB = Q.mgmtOf('PB'); const mC = Q.mgmtOf('PC');
+    if (!mA || mA.export !== 'partial' || mA.dns.reason !== 'not-exported' || mA.snmp.communities !== null) throw new Error('前提：PA 是部分 export，DNS 與 community 沒有資料');
+    if (!mB || mB.export !== 'full' || mB.versionInRange !== false || mB.discovery.protocols !== null) throw new Error('前提：PB 的版本不在範圍，鄰居探索的 protocol 沒有資料');
+    if (!mC || mC.versionInRange !== null) throw new Error('前提：PC 的版本不明');
+    const NOT_EXPORTED = 'export 沒有包含這個選單，無法判斷';
+    const OUT = `設備版本不在預設值表範圍（${D.versions.text}），不以預設值推定`;
+    const DEF = '預設（未在 export 中，推論）';
+    const rowsOf = (dev) => { App.select({ type: 'device', key: dev }); const sec = $('#detail').testAll('.mgmt-section')[0]; if (!sec) throw new Error(dev + ' 應有管理面設定'); return sec; };
+    const rowIn = (sec, k) => { const r = sec.testAll('.mgmt-row').find((x) => x.getAttribute('data-mgmt') === k); if (!r) throw new Error('管理面設定應有 ' + k + ' 一列'); return r; };
+
+    // 部分 export：設備層寫出範圍；沒出現的選單無法判斷、不標預設；出現的選單照常
+    const a = rowsOf('PA');
+    if (!a.textContent.includes('部分 export')) throw new Error('部分 export 的設備應在管理面設定寫出 export 是部分的');
+    const aDns = rowIn(a, 'dns');
+    if (!aDns.textContent.includes(NOT_EXPORTED) || !aDns.textContent.includes('無法判斷') || aDns.testAll('.mgmt-default').length) throw new Error('部分 export 沒有的選單應寫「' + NOT_EXPORTED + '」且不標預設');
+    const aDisc = rowIn(a, 'discovery');
+    if (aDisc.textContent.includes(NOT_EXPORTED) || !aDisc.testAll('.mgmt-src').length || !aDisc.testAll('.mgmt-default').length) throw new Error('部分 export 有的選單：寫出的連原文，沒寫的參數照常標預設');
+    if (!rowIn(a, 'snmp').textContent.includes(NOT_EXPORTED)) throw new Error('沒有資料的 community 也應說明無法判斷');
+    if (a.testAll('.mgmt-row').some((r) => r.getAttribute('data-mgmt') === 'community')) throw new Error('沒有資料時不應推定出廠的 community');
+
+    // 版本不在範圍：整機 export，沒寫出的欄位無法判斷（原因是版本），寫出的照常
+    const b = rowsOf('PB');
+    if (!b.textContent.includes('整機 export') || !b.textContent.includes('7.12.1')) throw new Error('設備層應寫出整機 export 與設備版本');
+    const bMac = rowIn(b, 'macServer');
+    if (!bMac.textContent.includes(OUT) || bMac.testAll('.mgmt-default').length || !bMac.textContent.includes('allowed-interface-list=?')) throw new Error('版本不在範圍：沒寫出的欄位應寫「' + OUT + '」，值顯示 ?，不標預設');
+    if (!rowIn(b, 'discovery').textContent.includes('無法判斷')) throw new Error('鄰居探索的欄位都沒有資料時狀態應是無法判斷');
+    const bWin = rowIn(b, 'macWinbox');
+    if (bWin.textContent.includes(OUT) || !bWin.textContent.includes('allowed-interface-list=all')) throw new Error('寫出的設定照常顯示');
+    if (text('#detail').includes(DEF)) throw new Error('版本不在範圍時不應推定預設值');
+    // 出廠 community 被 set 過、但名稱等欄位沒有資料：列出寫出的 addresses，其他欄位無法判斷
+    const bc = b.testAll('.mgmt-row').filter((r) => r.getAttribute('data-mgmt') === 'community');
+    if (bc.length !== 1 || !bc[0].textContent.includes('addresses=10.0.0.0/8') || !bc[0].textContent.includes('名稱沒有資料') || !bc[0].textContent.includes(OUT)) throw new Error('版本不在範圍：出廠 community 只列出寫出的欄位，其他無法判斷');
+
+    // 版本不明：照用預設值並註明
+    const c = rowsOf('PC');
+    if (!c.textContent.includes('設備版本不明') || !rowIn(c, 'macServer').testAll('.mgmt-default').length) throw new Error('版本不明時照用預設值並註明「設備版本不明」');
+    // 同名 community：facet 是「名稱#雜湊」，顯示名稱；兩列各自連到自己的那一筆
+    const f13 = all.map((f, i) => [f, i]).filter(([f]) => f.id === 'F13' && f.entities.some((e) => e.key === 'PC'));
+    if (f13.length !== 2 || !f13.every(([f]) => /^public#/.test(f.facet))) throw new Error('前提：PC 有兩筆 F13，facet 是 public#雜湊');
+    f13.forEach(([f]) => { const t = RV.facetText(f); if (!t.startsWith('community「public」') || t === RV.facetText(f13.find(([x]) => x !== f)[0])) throw new Error('同名 community 的比對對象應顯示名稱並可區分：' + t); });
+    if (RV.facetText({ id: 'F13', facet: 'a#b' }) !== 'community「a#b」') throw new Error('名稱本身含 # 時不應截斷');
+    const comm = c.testAll('.mgmt-row').filter((r) => r.getAttribute('data-mgmt') === 'community');
+    const linked = comm.map((r) => r.testAll('.mgmt-finding').map((x) => Number(x.getAttribute('data-finding-idx'))));
+    if (comm.length !== 2 || !linked.every((l) => l.length === 1) || linked[0][0] === linked[1][0]
+      || linked.map((l) => l[0]).sort().join() !== f13.map(([, i]) => i).sort().join()) throw new Error('兩個 public 應各自只連到自己的 F13：' + JSON.stringify(linked));
+    // 檢查結果 → 設定：標出的是自己那一列
+    f13.forEach(([f, i]) => {
+      App.select({ type: 'device', key: 'PC' });
+      const box = $('#detail').testAll('.finding').find((el) => el.textContent.includes(f.message) && el.textContent.includes(RV.facetText(f)));
+      const go = box && box.testAll('.mgmt-goto')[0]; if (!go) throw new Error('F13 應連到管理面設定');
+      go.click();
+      const on = $('#detail').testAll('.mgmt-row').filter((r) => r.classList.contains('focus'));
+      if (on.length !== 1 || on[0].testAll('.mgmt-finding').map((x) => Number(x.getAttribute('data-finding-idx'))).join() !== String(i)) throw new Error('點了應只標出這筆 F13 的那一列');
+    });
     App.select(null);
   });
 };

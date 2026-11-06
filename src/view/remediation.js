@@ -127,6 +127,11 @@
     const msg = String((f && f.message) || ''); const at = msg.toLowerCase().indexOf(`「${String(name).toLowerCase()}」`);
     return at < 0 ? name : msg.slice(at + 1, at + 1 + String(name).length);
   };
+  /**
+   * F13 的 facet：名稱不重複時是 community 名稱；同名時核心在後面加「#」與內容雜湊的前 8 碼（check/checks.js 的 communityFacets）。
+   * 只拆掉結尾的 #8 碼十六進位，名稱本身含 # 時不截斷。回傳 [名稱, 雜湊或空字串]。
+   */
+  const communityFacet = (v) => { const m = /^(.*)#([0-9a-f]{8})$/.exec(String(v)); return m ? [m[1], m[2]] : [String(v), '']; };
   const FACET_FORMAT = {
     I02: (v) => S.query.adapterLabel(v),
     V06: facetItem,
@@ -141,7 +146,7 @@
     R05: (v) => `網段 ${v}`,
     R06: (v) => { const [a, b] = facetSplit(v); return b ? `${facetItem(a)}（${b}）` : null; },
     F11: facetItem,
-    F13: (v) => `community「${v}」`,
+    F13: (v) => { const [name, tag] = communityFacet(v); return tag ? `community「${name}」（同名 #${tag}）` : `community「${name}」`; },
     F14: facetItem,
   };
   /**
@@ -198,5 +203,5 @@
   }
 
   V.remediation = { STATUS_TEXT, statusText, STATUS_CHIP, advice, hintLine, sortByDevice, LEVEL_TEXT, RISK_TEXT, RISK_CHIP, maxRisk, itemApplyLines, targetText, choiceText,
-    MISSING_FINDING_TEXT, FINDING_TEXT_MAX, clipText, matchFindings, findingRef, FACET_ITEM, FACET_RULES: Object.keys(FACET_FORMAT), facetText, devicesCsvDraft, USER_PLACEHOLDER };
+    MISSING_FINDING_TEXT, FINDING_TEXT_MAX, clipText, matchFindings, findingRef, FACET_ITEM, FACET_RULES: Object.keys(FACET_FORMAT), facetText, communityFacet,devicesCsvDraft, USER_PLACEHOLDER };
 })(globalThis.SSOT = globalThis.SSOT || {});

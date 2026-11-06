@@ -24,6 +24,7 @@ Work through each layer in order and record which ones the change touches:
    `onXxx` handler. Add the default value here so the field always exists.
 3. **Infer / check** (`src/model/infer.js`, `src/check/checks.js`): consume the field
    with a stated fallback when it is missing. Facts stay facts; inferences stay marked.
+   A new finding id also needs one entry in `RULES` in `checks.js` (a named function, in `CATALOG` order; ADR-022).
 4. **Pipeline** (`src/pipeline.js`): serialize it, with deterministic ordering.
 5. **Query** (`src/query/query.js`): expose it through `SSOT.query(snapshot)`; the UI
    must not read raw model structures.

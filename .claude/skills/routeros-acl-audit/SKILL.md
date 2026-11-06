@@ -67,7 +67,7 @@ user-invocable: true
 3. **infer**（`src/model/infer.js`）：「WAN 可連入」是推論，要明確標示。
    WAN 介面只從 `/interface list member` 的事實推得；沒有可辨識的 WAN 清單時不猜，由 F08 與 `coverage[].firewall.wan` 說明無法判斷。
    **不要寫死** `sfp1`、`lte1`、`all-ppp` 這類介面名稱。
-4. **check**（`src/check/checks.js`）：在 `CATALOG` 新增一個類別，同步 `docs/基準檢查.md`（`tests/docs.js` 會檢查兩者一致）。
+4. **check**（`src/check/checks.js`）：在 `CATALOG` 新增一個類別，判斷寫成具名函式並在 `RULES` 加一筆（[ADR-022](../../../docs/架構決策/022-檢查改為規則表每條檢查一個具名函式.md)），同步 `docs/基準檢查.md`（`tests/docs.js` 會檢查兩者一致）。
    每筆 finding 的證據指向規則所在行；遮蔽與重複類的 finding 也要附上前面那條規則的行號。
    範例資料（`npm run sample` 的產生器）要放入對應的問題，並加上測試。
 5. **query → view**：畫面只透過 `SSOT.query()` 讀取，例如依 chain 順序列出規則並標示 finding。

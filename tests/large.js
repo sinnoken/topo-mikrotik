@@ -92,8 +92,7 @@ module.exports = function registerLarge(LARGE_MAX_MS) {
     const s = build(gen(['--sites', '40', '--access', '24']));
     const Q = S.query(s);
     const time = (fn) => { const t0 = Date.now(); const r = fn(); return [r, Date.now() - t0]; };
-    const exposureOf = (q) => (q.exposure ? q.exposure() : S.reach.of(q).exposure());
-    const [ex, eMs] = time(() => exposureOf(Q));
+    const [ex, eMs] = time(() => Q.exposure());
     console.log(`      exposure ${eMs} ms（${ex.wan.entries.length} 個 WAN 入口、${ex.limits.evaluations} 次判斷；允許 本身 ${ex.self.counts.allow}、dst-nat ${ex.dnat.counts.allow}、路由 ${ex.routed.counts.allow}）`);
     assert.deepStrictEqual([ex.status, ex.limits.truncated], ['ok', false]);
     assert.ok(ex.wan.entries.length >= 80 && ex.limits.evaluations > 100000, `判斷次數 ${ex.limits.evaluations}`);

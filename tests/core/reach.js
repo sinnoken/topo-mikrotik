@@ -263,15 +263,15 @@ test('Q.zoneCell 的 groups[].divergent：只有異質的格子有，標出結�
   });
 });
 
-test('S.query.reachReasonCodes：涵蓋 reach.js 中所有 reason／end 代碼，且每個代碼都真的用到', () => {
+test('S.query.reachReasonCodes：涵蓋 reach.js 與共用路徑展開（trace.js）中所有 reason／end 代碼，且每個代碼都真的用到', () => {
   const list = S.query.reachReasonCodes();
   assert.ok(Object.isFrozen(list) && list.every((x) => Object.isFrozen(x)));
   assert.strictEqual(S.query.reachReasonCodes(), list);
   list.forEach((x) => assert.ok(typeof x.code === 'string' && ['reason', 'end'].includes(x.kind) && (x.note === undefined || typeof x.note === 'string'), JSON.stringify(x)));
   assert.strictEqual(new Set(list.map((x) => x.code)).size, list.length, '代碼不重複');
-  // 只掃引擎本身（makeEngine 之後）：清單與 ASSUMPTIONS 的 code 不算
-  const src = read('src/query/reach.js');
-  const body = src.slice(src.indexOf('function makeEngine'));
+  // 只掃引擎本身（makeEngine 之後）與共用的路徑展開（trace.js 的 walker 與 routeFrom 之間）：清單與 ASSUMPTIONS 的 code 不算
+  const src = read('src/query/reach.js'); const tr = read('src/query/trace.js');
+  const body = src.slice(src.indexOf('function makeEngine')) + tr.slice(tr.indexOf('function walker('), tr.indexOf('function routeFrom('));
   const found = new Set();
   const scan = (re, kind) => { for (const m of body.matchAll(re)) m.slice(1).filter(Boolean).forEach((c) => found.add(c + '|' + kind)); };
   // 代碼可以含數字（例如 no-ipv6-firewall）
@@ -331,4 +331,23 @@ test('S.query.reachAssumptions：前提以中文敘述，RouterOS 原值（參�
   const all = list.map((a) => a.message).join('\n');
   ['connection-state=new', 'raw', 'nat', 'filter', 'mangle', 'src-address', 'dst-address', 'mark-routing', 'policy-rules', '/routing rule', '/routing settings', 'bridge filter', 'src-port']
     .forEach((w) => assert.ok(all.includes(w), '應保留原值 ' + w));
+});
+
+test('L4 快取：協定種類多（第 16 種）時，不同目的與 service 的快取鍵不會相同（目的與 service 分層存）', () => {
+  const Q = S.query(twoRouters({ r1: [
+    '/ip firewall filter add action=accept chain=forward dst-address=192.168.2.10 dst-port=22 protocol=tcp',
+    '/ip firewall filter add action=drop chain=forward dst-address=192.168.2.0/24',
+  ] }));
+  assert.strictEqual(Q.reach('192.168.1.50', '192.168.2.200', { proto: 'tcp', port: 22 }).verdict, 'deny', 'tcp 是第一種協定');
+  for (let p = 100; p < 114; p++) Q.reach('192.168.1.50', '192.168.2.200', { proto: String(p) });
+  // 舊的鍵：目的 × 1e6 ＋ 協定序號 × 65536 ＋ 埠；第 16 種協定的 16982 埠到 .9 會等於 tcp/22 到 .10
+  assert.strictEqual(Q.reach('192.168.1.50', '192.168.2.9', { proto: 'sctp', port: 16982 }).verdict, 'deny');
+  assert.strictEqual(Q.reach('192.168.1.50', '192.168.2.10', { proto: 'tcp', port: 22 }).verdict, 'allow', '放行到 192.168.2.10:22 的規則');
+});
+
+test('TTL：L3 與 L4 共用一個常數（S.trace.TTL）；S.trace 的 ttl 必須是正整數，不靜默改用預設', () => {
+  assert.strictEqual(S.trace.TTL, 32);
+  const Q = S.query(twoRouters());
+  assert.throws(() => S.trace(Q, '192.168.1.50', '192.168.2.10', { ttl: 0 }), TypeError);
+  assert.deepStrictEqual(S.trace(Q, '192.168.1.50', '192.168.2.10', { ttl: 1 }).ends.map((e) => e.status), ['ttl']);
 });

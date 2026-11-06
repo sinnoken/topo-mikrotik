@@ -37,11 +37,12 @@ test('VLAN 區塊：同一個 VLAN ID 依承載此 VLAN 的鏈路分成不相連
   assert.deepStrictEqual([sv.id, sv.found, sv.devices, sv.vlanDomains], [10, true, 3, 2], '搜尋結果帶 VLAN 片段數（結構化欄位，文字由畫面組成）');
   assert.deepStrictEqual(Q.vlan(99).domains, []);
 });
-test('路由追蹤：直連抵達、下一跳不在基準內、跨站點 ECMP', () => {
+test('路由追蹤：直連抵達、經 WAN 送往外部（推論，與 L4 的 egress-wan 相同）、跨站點 ECMP', () => {
   let Q = S.query(build(read('samples/sample-bundle.txt')));
   assert.ok(S.trace(Q, '10.1.30.15', '10.1.20.11').reached);
   const t2 = S.trace(Q, '10.1.30.15', '8.8.8.8');
-  assert.ok(!t2.reached && t2.ends[0].status === 'unknown-nh', JSON.stringify(t2.ends));
+  assert.ok(!t2.reached && t2.status === 'external' && t2.ends.every((e) => e.status === 'egress'), JSON.stringify(t2.ends));
+  assert.ok(Q.reach('10.1.30.15', '8.8.8.8', { proto: 'tcp', port: 443 }).paths.every((p) => p.end.code === 'egress-wan'), 'L4 同樣是送往外部');
   Q = S.query(build(gen(['--sites', '3', '--access', '2'])));
   const t3 = S.trace(Q, '10.1.30.15', '10.3.20.11');
   assert.ok(t3.reached, JSON.stringify(t3.ends));
@@ -75,9 +76,6 @@ test('路由追蹤：終點或起點是未收集的設備時是「無法驗證�
   assert.deepStrictEqual([bh.status, bh.ends.map((e) => e.status), bh.unverified], ['unreachable', ['blackhole'], []]);
   const ok = S.trace(Q, '10.1.0.5', '10.0.0.9');
   assert.deepStrictEqual([ok.status, ok.reached, ok.unverified], ['reached', true, []]);
-  // 範例：下一跳不在基準內仍是無法抵達
-  const QS = S.query(build(read('samples/sample-bundle.txt')));
-  assert.strictEqual(S.trace(QS, '10.1.30.15', '8.8.8.8').status, 'unreachable');
 });
 test('遞迴路由：gateway 是對端 loopback 時沿路由表解析；R01 只提醒解析後仍到不了已知設備的下一跳', () => {
   const a = 'R_A (10.0.0.1):\n### /export terse\n/ip address add address=10.254.0.1/30 interface=ether48\n/ip address add address=10.9.9.1/32 interface=lo\n'

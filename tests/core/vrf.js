@@ -144,7 +144,8 @@ test('VRF：只用 main 的網路，S.trace 與 Q.reach 的輸出和 2.11.0 相�
   const TEXT = new Set(['note', 'error', 'message', 'detail']);
   const texts = (o, out) => {
     if (Array.isArray(o)) o.forEach((x) => texts(x, out));
-    else if (o && typeof o === 'object') Object.keys(o).forEach((k) => { if (k !== 'assumptions') { if (typeof o[k] === 'string' && TEXT.has(k)) out.push(o[k]); else texts(o[k], out); } });
+    // paths[].route／filter（ADR-023 的分層結果）是之後新增、由同一份路徑推得的摘要，不在 2.11.0 的文字裡
+    else if (o && typeof o === 'object') Object.keys(o).forEach((k) => { if (k !== 'assumptions' && !(Array.isArray(o.hops) && (k === 'route' || k === 'filter'))) { if (typeof o[k] === 'string' && TEXT.has(k)) out.push(o[k]); else texts(o[k], out); } });
     return out;
   };
   fx.cases.forEach(([src, dst], n) => {
@@ -153,7 +154,10 @@ test('VRF：只用 main 的網路，S.trace 與 Q.reach 的輸出和 2.11.0 相�
     if (t.ok) {
       assert.strictEqual(t.status, t.reached ? 'reached' : t.ends.every((e) => e.status === 'unverified') ? 'unverified' : 'unreachable', `${src}→${dst} 的 status`);
       assert.deepStrictEqual(t.unverified, S.util.uniq(t.ends.filter((e) => e.status === 'unverified').map((e) => e.dev)), `${src}→${dst} 的 unverified`);
-      delete t.status; delete t.unverified;
+      // 共用展開之後新增的起點欄位（starts、startBasis）：start 是 starts 的第一台
+      assert.strictEqual(t.start, t.starts[0], `${src}→${dst} 的 starts`);
+      assert.ok(typeof t.startBasis === 'string', `${src}→${dst} 的 startBasis`);
+      delete t.status; delete t.unverified; delete t.starts; delete t.startBasis;
     }
     assert.deepStrictEqual(strip(t, `${src}→${dst}`), fx.expected[n].trace, `trace ${src}→${dst}`);
     assert.deepStrictEqual(texts(Q.reach(src, dst, { proto: 'tcp', port: 22 }), []), fx.expected[n].reach, `reach ${src}→${dst}`);

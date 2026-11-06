@@ -3,9 +3,8 @@
 const assert = require('assert');
 const { S, build, test, sampleSnap } = require('../lib.js');
 
-// Q.exposure 接上 src/query/query.js 之前，經同一個計算引擎（S.reach.of）取用
-const exposureOf = (Q, o) => (Q.exposure ? Q.exposure(o) : S.reach.of(Q).exposure(o));
-const stepsOf = (Q, o) => (Q.exposureSteps ? Q.exposureSteps(o) : S.reach.of(Q).exposureSteps(o));
+const exposureOf = (Q, o) => Q.exposure(o);
+const stepsOf = (Q, o) => Q.exposureSteps(o);
 
 const RT = 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC';
 /**

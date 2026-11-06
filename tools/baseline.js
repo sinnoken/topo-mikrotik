@@ -28,7 +28,6 @@ const NOTIFY_SEVERITIES = ['error', 'warn'];
 const SEV_RANK = { error: 0, warn: 1, info: 2 };
 /** 會讓項目成為新的待處理的推進原因（S.ledger.advance 的 changes[].reason）→ summary.notify 的欄位 */
 const NOTIFY_REASONS = Object.freeze({ new: 'new', reappeared: 'regressed', 'waiver-expired': 'waiverExpired' });
-const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
 
 const HELP = `用法：node tools/baseline.js <收集檔…> -o <輸出目錄> [選項]
 
@@ -40,7 +39,7 @@ const HELP = `用法：node tools/baseline.js <收集檔…> -o <輸出目錄> [
   --profile <檔案>          命名規則（ssot-profile JSON）
   --expected-data <檔案>    各類設備應收資料（S.build 的 expectedData，{ 設備類型: [資料類別…] }）
   --expected <檔案>         預期現況（ssot-expected/1），輸出比對結果 ${FILES.compare}
-  --now <ISO 8601>          基準的建立時間與推進時間；省略時用目前時間（要可重現時指定）
+  --now <ISO 8601>          基準的建立時間與推進時間（日期或時間，例如 2026-01-01T00:00:00Z）；省略時用目前時間（要可重現時指定）
   -h, --help                顯示這段說明
 
 輸出：
@@ -102,13 +101,9 @@ const json = (v) => JSON.stringify(v, null, 2) + '\n';
 function compute(S, a) {
   if (!a.inputs.length) fail('至少要指定一個收集檔（用 --help 查看用法）');
   if (!a.out) fail('必須以 -o 指定輸出目錄');
-  if (a.now !== undefined && !(ISO_RE.test(a.now) && Number.isFinite(Date.parse(a.now)))) fail(`--now 必須是 ISO 8601 時間（例如 2026-01-01T00:00:00Z），目前是「${a.now}」`);
-  if (a.now !== undefined) {
-    // 不存在的日期（例如 2026-02-30）Date.parse 會自動進位，這裡要求年月日原樣成立
-    const [y, mo, d] = a.now.slice(0, 10).split('-').map(Number); const day = new Date(Date.UTC(y, mo - 1, d));
-    if (day.getUTCFullYear() !== y || day.getUTCMonth() !== mo - 1 || day.getUTCDate() !== d) fail(`--now 的日期不存在：「${a.now}」`);
-  }
-  // 帶時區位移的時間正規化成 UTC，基準、摘要與處理紀錄的時間才一致；已是 UTC（Z）的照原樣，與畫面傳入的值相同
+  // 與核心同一個判斷（S.util.isIso：日期或日期＋時間＋時區，年月日、時分秒要真的存在）
+  if (a.now !== undefined && !S.util.isIso(a.now)) fail(`--now 必須是存在的 ISO 8601 日期或時間（例如 2026-01-01 或 2026-01-01T00:00:00Z），目前是「${a.now}」`);
+  // 帶時區位移的時間與只有日期的寫法正規化成 UTC，基準、摘要與處理紀錄的時間才一致；已是 UTC（Z）的照原樣，與畫面傳入的值相同
   const now = a.now === undefined ? new Date().toISOString() : /Z$/.test(a.now) ? a.now : new Date(a.now).toISOString();
 
   // 來源名稱用檔名（和畫面相同）；檔名重複時證據的檔案會分不清，直接失敗

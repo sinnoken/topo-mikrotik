@@ -32,7 +32,7 @@ test('網路文件：範例資料的表格依序為設備、IP、VLAN、埠、�
   // 設備名與畫面相同（Q.devLabel）：只由 OSPF 得知、名稱是位址的設備加上協定
   assert.ok(devs.rows.some((r) => r[0] === Q.devLabel('172.31.255.2') && r[0] !== '172.31.255.2'));
   const core = devs.rows.find((r) => r[0] === 'TPE_CORE_RT_01');
-  assert.deepStrictEqual(core.slice(0, 5), ['TPE_CORE_RT_01', 'CCR2216-1G-12XS-2XQ', '7.12.1 (stable)', '10.1.10.2', '路由器']);
+  assert.deepStrictEqual(core.slice(0, 5), ['TPE_CORE_RT_01', 'CCR2216-1G-12XS-2XQ', '7.12.1 (stable)', '10.1.10.2', '路由器（推論）']);
   assert.strictEqual(ips.rows.length, Q.prefixes().filter((p) => p.basis === 'connected').length, '每個 VRF 的每個直連網段一列');
   assert.ok(ips.rows.some((r) => r[0] === '10.1.20.0/24' && r[1] === 'cust-a'), 'VRF 的網段另列');
   assert.ok(ips.rows.some((r) => r[0] === '10.1.30.0/24' && r[4].includes('10.1.30.1（TPE_CORE_RT_01）')), 'DHCP 閘道');
@@ -59,16 +59,38 @@ test('網路文件：可重現（同一份基準兩次、重新建立基準都�
   assert.strictEqual(JSON.stringify(snap), before, '不改寫 Snapshot');
 });
 
-test('網路文件：推論的欄位在欄名標「（推論）」，事實的欄位不標；開頭說明事實與推論', () => {
+test('網路文件：推論的欄位在欄名標「（推論）」，事實的欄位不標；來源依列而定的欄位（設備類型、zone）在值上標；開頭說明事實與推論', () => {
   const Q = S.query(sampleSnap());
-  const cols = Object.fromEntries(S.report.siteDocTables(Q).map((t) => [t.id, t.columns]));
+  const tables = Object.fromEntries(S.report.siteDocTables(Q).map((t) => [t.id, t]));
+  const cols = Object.fromEntries(Object.values(tables).map((t) => [t.id, t.columns]));
   const inferred = (id) => cols[id].filter((c) => c.endsWith('（推論）'));
-  assert.deepStrictEqual(inferred('devices'), ['設備類型（推論）']);
-  assert.deepStrictEqual(inferred('ip'), ['路由設備（推論）', 'zone（推論）']);
+  assert.deepStrictEqual(inferred('devices'), []);
+  assert.deepStrictEqual(inferred('ip'), ['路由設備（推論）']);
   assert.deepStrictEqual(inferred('vlans'), ['區塊（推論）']);
   assert.deepStrictEqual(inferred('ports'), ['對端（推論）']);
+  assert.ok(cols.devices.includes('設備類型') && cols.ip.includes('zone'));
+  // 沒有命名規則：設備類型與 zone 都是推論，值上標「（推論）」
+  const kindCol = cols.devices.indexOf('設備類型'); const zoneCol = cols.ip.indexOf('zone');
+  assert.ok(tables.devices.rows.every((r) => r[kindCol].endsWith('（推論）')));
+  assert.ok(tables.ip.rows.filter((r) => r[zoneCol]).every((r) => r[zoneCol].endsWith('（推論）')) && tables.ip.rows.some((r) => r[zoneCol]));
   assert.ok(cols.ports.includes('對端（LLDP／CDP）') && !cols.ports.some((c) => /MNDP/.test(c)), '對端只用介面鄰接，MNDP 不當直連');
   assert.ok(S.report.siteDocMarkdown(Q).includes('- 事實與推論：'));
+});
+
+test('網路文件：命名規則給的設備類型與 zone 標「（命名規則）」，不標推論；其他列仍標「（推論）」', () => {
+  const text = read('samples/sample-bundle.txt');
+  const profile = { schema: 'ssot-profile/1', id: 'sitedoc-test', version: '1',
+    classify: [{ match: '^TPE_CORE_RT_01$', kind: 'firewall' }], zones: [{ on: 'vlan', match: '^30$', zone: 'USER' }] };
+  const snap = S.build([{ name: 'sample-bundle.txt', text }], { now: '2026-01-01T00:00:00Z', profile });
+  const Q = S.query(snap);
+  const t = Object.fromEntries(S.report.siteDocTables(Q, { zones: { profile } }).map((x) => [x.id, x]));
+  const k = t.devices.columns.indexOf('設備類型'); const z = t.ip.columns.indexOf('zone');
+  const core = t.devices.rows.find((r) => r[0] === 'TPE_CORE_RT_01');
+  assert.strictEqual(core[k], S.KIND_LABEL.firewall + '（命名規則）');
+  assert.ok(t.devices.rows.filter((r) => r !== core).every((r) => r[k].endsWith('（推論）')));
+  const user = t.ip.rows.find((r) => r[0] === '10.1.30.0/24');
+  assert.strictEqual(user[z], 'USER（命名規則）');
+  assert.ok(t.ip.rows.filter((r) => r !== user && r[z]).every((r) => r[z].endsWith('（推論）')));
 });
 
 test('網路文件：處理紀錄——已處理的不列入未結案、復發仍列入；接受風險另列並附豁免；opts.ports 為 false 時不含埠表', () => {

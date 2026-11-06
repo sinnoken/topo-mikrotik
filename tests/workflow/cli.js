@@ -226,7 +226,12 @@ test('CLI：--now 正規化成 UTC、不存在的日期失敗；--expected／--e
   try {
     assert.notStrictEqual(run([SAMPLE, '--now', '2026-01-01T08:00:00+08:00', '-o', d]).code, CODES().FAILED);
     assert.strictEqual(readJson(path.join(d, 'baseline.json')).meta.createdAt, '2026-01-01T00:00:00.000Z', '帶時區的 --now 應正規化成 UTC');
-    assert.strictEqual(run([SAMPLE, '--now', '2026-02-30T00:00:00Z', '-o', path.join(d, 'x')]).code, CODES().FAILED, '不存在的日期應失敗');
+    const bad = run([SAMPLE, '--now', '2026-02-30T00:00:00Z', '-o', path.join(d, 'x')]);
+    assert.strictEqual(bad.code, CODES().FAILED, '不存在的日期應失敗');
+    assert.ok(bad.stderr.includes('2026-01-01') && bad.stderr.includes('2026-01-01T00:00:00Z'), '訊息說明日期與時間兩種寫法（與核心 S.util.isIso 相同）：' + bad.stderr);
+    // 只有日期：與核心的規則相同（S.util.isIso 接受），正規化成 UTC 的午夜
+    assert.notStrictEqual(run([SAMPLE, '--now', '2026-01-01', '-o', path.join(d, 'w')]).code, CODES().FAILED, '只有日期的 --now 應接受');
+    assert.strictEqual(readJson(path.join(d, 'w', 'baseline.json')).meta.createdAt, '2026-01-01T00:00:00.000Z');
     writeJson(path.join(d, 'null.json'), null);
     assert.strictEqual(run([SAMPLE, '--expected', path.join(d, 'null.json'), '--now', NOW, '-o', path.join(d, 'y')]).code, CODES().FAILED, '--expected 為 null 應失敗');
     assert.strictEqual(run([SAMPLE, '--expected-data', path.join(d, 'null.json'), '--now', NOW, '-o', path.join(d, 'z')]).code, CODES().FAILED, '--expected-data 為 null 應失敗');

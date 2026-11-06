@@ -92,8 +92,7 @@
 
   // ---------------------------------------------------------------- 共用
   const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
-  const ISO_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2}))?$/;
-  const isIso = (v) => typeof v === 'string' && ISO_RE.test(v) && Number.isFinite(Date.parse(v));
+  const isIso = U.isIso; // ISO 8601 的唯一判斷（S.util.isIso：年月日、時分秒要真的存在）
   const nowOf = (v, fn) => {
     if (!isIso(v)) throw new TypeError(`S.workpack.${fn}：now 必須是 ISO 8601 時間字串（例如 2026-01-01T00:00:00Z），目前是 ${JSON.stringify(v)}`);
     return new Date(Date.parse(v)).toISOString();

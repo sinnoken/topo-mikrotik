@@ -25,3 +25,9 @@ test('版本一致性：從 src/core/ns.js 讀出的版本就是 S.VERSION', () 
   assert.strictEqual(versionOf(read('src/core/ns.js')), S.VERSION);
   assert.throws(() => versionOf('S.VERSION = 3;'), /S\.VERSION/);
 });
+test('npm test 的彙總（tools/run-all.js）：被 signal 結束時寫出 signal 名稱，不寫「結束碼 null」；載入時不執行測試', () => {
+  const { failText } = require('../../tools/run-all.js');
+  assert.strictEqual(failText({ status: null, signal: 'SIGKILL' }), '被 signal SIGKILL 結束');
+  assert.strictEqual(failText({ status: 2, signal: null }), '結束碼 2');
+  assert.strictEqual(failText({ error: new Error('spawn bash ENOENT') }), '無法執行：spawn bash ENOENT');
+});

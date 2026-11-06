@@ -41,6 +41,11 @@ test('建立時間 options.now：必須是 ISO 8601（與處理紀錄、工作�
   [undefined, null].forEach((now) => assert.ok(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(S.build(src, { now }).meta.createdAt)));
   assert.ok(/Z$/.test(S.build(src).meta.createdAt));
   assert.deepStrictEqual(['2026-01-01T00:00:00Z', '2026-01-01', 'x', 1].map(S.util.isIso), [true, true, false, false]);
+  // 不存在的日期與時間（Date.parse 會自動進位）：逐欄比對，不接受
+  const bad = ['2026-02-30', '2026-02-29T00:00:00Z', '2026-04-31T00:00:00Z', '2026-01-01T24:00:00Z', '2026-01-01T23:60Z', '2026-01-01T00:00:60Z', '2026-01-01T00:00+24:00', '2026-00-10'];
+  assert.deepStrictEqual(bad.map(S.util.isIso), bad.map(() => false));
+  assert.deepStrictEqual(['2028-02-29', '2026-12-31T23:59:59.999Z', '2026-01-01T00:00-12:00', '2026-01-01T00:00+14:00'].map(S.util.isIso), [true, true, true, true]);
+  bad.slice(0, 2).forEach((now) => assert.throws(() => S.build(src, { now }), RangeError, now));
 });
 test('可重現：時區（TZ）與語系（LANG／LC_ALL）不同時，範例基準除 meta.createdAt、meta.timing 外完全相同', () => {
   // 子行程：環境變數只在行程啟動時生效。不傳 now，同時驗證 createdAt 一律是 UTC

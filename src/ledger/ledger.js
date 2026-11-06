@@ -57,8 +57,7 @@
   };
 
   // ---- 共用小工具
-  const ISO_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2}))?$/;
-  const isIso = (v) => typeof v === 'string' && ISO_RE.test(v) && Number.isFinite(Date.parse(v));
+  const isIso = U.isIso; // ISO 8601 的唯一判斷（S.util.isIso：年月日、時分秒要真的存在）
   const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
   const isStrOrNull = (v) => v === null || typeof v === 'string';
   const isCount = (v) => Number.isInteger(v) && v >= 0;

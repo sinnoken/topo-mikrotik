@@ -2,14 +2,17 @@
  * 網路文件（站點說明書）：設備清單、IP 規劃、VLAN 表、埠表與未結案事項，輸出 Markdown 與 CSV。畫面的匯出與 CLI 共用這裡的文字。
  * 下游模組：只透過查詢介面（Q＝S.query(snapshot)）讀基準，不改寫；上游不呼叫這裡。處理紀錄由呼叫端以 opts.ledgerOf 傳入（同 S.report）。
  * 表格只在 siteDocTables 組一次，Markdown 與 CSV 都由它轉出，兩者的欄位與列一致。
- * 欄名或內容加「（推論）」的是推論；其餘是收集到的事實（或命名規則的註解，欄名寫明）。
+ * 整欄都是推論的在欄名加「（推論）」；依列而定的（設備類型、zone：可能是推論，也可能是命名規則給的）在值上加「（推論）」或「（命名規則）」（sourced）。
+ * 其餘是收集到的事實（或命名規則的註解，欄名寫明）。
  * 不碰 DOM：都是純函式；相同的基準與選項輸出逐字相同。
  */
 (function (S) {
   'use strict';
   const U = S.util; const K = S.keys; const R = S.report;
-  const INFERRED = '（推論）';
-  /** 介面狀態的顯示文字（與畫面的 V.STATUS 相同）；停用的介面另寫「停用」 */
+  const INFERRED = '（推論）'; const BY_PROFILE = '（命名規則）';
+  /** 來源依列而定的值：推論加「（推論）」，命名規則給的加「（命名規則）」；空值不加 */
+  const sourced = (v, inferred, profile) => (v ? v + (inferred ? INFERRED : profile ? BY_PROFILE : '') : '');
+  /** 介面狀態的顯示文字（唯一來源，畫面的 V.STATUS 引用這一份）；停用的介面另寫「停用」 */
   const IFC_STATUS_TEXT = Object.freeze({ up: 'up', down: 'down', unknown: '不明' });
   /** 埠表收的介面類型：實體埠、聚合與無線（VLAN 介面、bridge 等邏輯介面不是埠） */
   const PORT_TYPES = Object.freeze(['physical', 'lag', 'wireless']);
@@ -26,22 +29,22 @@
       return [
         Q.devLabel(d.key), d.deviceType || '', d.softwareVersion || '',
         d.mgmtIp ? d.mgmtIp + (d.collected ? '' : '（鄰居宣告）') : '',
-        S.KIND_LABEL[d.kind] || d.kind || '',
+        sourced(S.KIND_LABEL[d.kind] || d.kind || '', d.kindBasis !== 'profile', d.kindBasis === 'profile'),
         d.role || '', d.site || '', state, d.collectedAt || '',
       ];
     });
-    return { id: 'devices', title: '設備清單', columns: ['設備', '型號', 'RouterOS 版本', '管理 IP', '設備類型' + INFERRED, '角色（命名規則）', '站點（命名規則）', '收集狀態', '收集時間'], rows };
+    return { id: 'devices', title: '設備清單', columns: ['設備', '型號', 'RouterOS 版本', '管理 IP', '設備類型', '角色（命名規則）', '站點（命名規則）', '收集狀態', '收集時間'], rows };
   }
 
   /**
    * IP 規劃：每個 VRF 的每個直連網段一列（Q.subnetGraph 的網段，順序同 Q.prefixes）。
-   * 介面位址是事實；路由設備與它在網段上的位址、zone 是推論；DHCP 閘道是 DHCP 網路設定（事實）。
+   * 介面位址是事實；路由設備與它在網段上的位址是推論；zone 依 Q.zones 每個網段的 inferred／source 在值上標推論或命名規則；DHCP 閘道是 DHCP 網路設定（事實）。
    */
   function ipTable(Q, opts) {
     const g = Q.subnetGraph();
     const zones = Q.zones((opts && opts.zones) || {});
     const zoneName = new Map(zones.zones.map((z) => [z.id, z.name]));
-    const zoneOf = new Map(zones.subnets.map((s) => [s.key, s.zone]));
+    const zoneOf = new Map(zones.subnets.map((s) => [s.key, s]));
     const own = (s, ep) => Q.ipsOf(ep).filter((a) => !a.hearsay && a.vrf === s.vrf && S.ip.inNet(a.ip, s.net, s.len)).map((a) => a.address);
     const rows = g.subnets.filter((s) => s.basis === 'connected').map((s) => {
       const routers = new Set(s.routers);
@@ -51,10 +54,10 @@
         s.prefix, s.vrf, s.vlan == null ? '' : String(s.vlan),
         s.eps.flatMap((ep) => own(s, ep).map((a) => `${epText(Q, ep)} ${a}`)).join('; '),
         s.gateways.map((x) => `${x.ip}（${Q.devLabel(x.dev)}）`).join('; '),
-        gw.join('; '), z ? zoneName.get(z) || z : '',
+        gw.join('; '), z ? sourced(zoneName.get(z.zone) || z.zone, z.inferred, z.source === 'profile') : '',
       ];
     });
-    return { id: 'ip', title: 'IP 規劃', columns: ['網段', 'VRF', 'VLAN', '介面位址', 'DHCP 閘道', '路由設備' + INFERRED, 'zone' + INFERRED], rows };
+    return { id: 'ip', title: 'IP 規劃', columns: ['網段', 'VRF', 'VLAN', '介面位址', 'DHCP 閘道', '路由設備' + INFERRED, 'zone'], rows };
   }
 
   /**
@@ -148,7 +151,7 @@
       `- 命名規則：${m.profile ? R.mdText(m.profile.id) : '未套用'}`,
       `- 設備：${st.devices}（已收集 ${st.collected}）`,
       `- 收集時間：${range ? R.mdText(range) : '沒有紀錄'}`,
-      `- 事實與推論：欄名或內容標「${INFERRED}」的是工具依收集資料的推論，其餘是收集到的事實；「（命名規則）」是命名規則加的註解。`,
+      `- 事實與推論：欄名或內容標「${INFERRED}」的是工具依收集資料的推論，其餘是收集到的事實；欄名或內容標「${BY_PROFILE}」的是命名規則加的註解。`,
     ];
     siteDocTables(Q, opts).forEach((t) => {
       out.push('', `## ${t.title}（${t.rows.length}）`, '');

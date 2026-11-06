@@ -578,6 +578,7 @@ function viewBoundaryViolations(file, src) {
     if (V.vendorName('mikrotik') !== 'MikroTik' || V.vendorName('Acme') !== 'Acme' || V.vendorName(null) !== '') throw new Error('V.vendorName：mikrotik → MikroTik，沒有對照的原樣');
     if (V.capsText('bridge,router') !== '橋接、路由' || V.capsText('wlan-ap') !== '無線基地台' || V.capsText('bridge,foo') !== '橋接、foo' || V.capsText(null) !== '') throw new Error('V.capsText 應翻成中文、沒有對照的保留原值');
     if (V.STATUS.unknown !== '不明') throw new Error('V.STATUS.unknown 應為「不明」');
+    if (V.STATUS !== S.report.IFC_STATUS_TEXT) throw new Error('V.STATUS 應引用 S.report.IFC_STATUS_TEXT（介面狀態文字只有一份，與網路文件共用）');
     const kvOf = (k) => { const ks = $('#detail').testAll('.k'); const n = ks.findIndex((x) => x.textContent === k); if (n < 0) return null; const sib = ks[n].parentNode.childNodes; return sib[sib.indexOf(ks[n]) + 1]; };
     // 鄰居回報的功能：顯示中文，原值在 title
     const capDev = Q.devices().find((d) => d.caps && V.capsText(d.caps) !== d.caps);
@@ -3308,6 +3309,16 @@ function viewBoundaryViolations(file, src) {
     if (files[1].bytes.subarray(0, 3).toString('hex') !== 'efbbbf') throw new Error('網路文件 CSV 應以 UTF-8 BOM 開頭');
     if (!files[0].text.startsWith('# 網路文件\n') || !files[0].text.includes('\n## 設備清單（')) throw new Error('網路文件 Markdown 的開頭不符');
     if (JSON.stringify(App.snap) !== before) throw new Error('匯出不可改寫基準');
+    // 命名規則的 zones 無法套用（與建立基準時的命名規則不同）：說明原因並不匯出，不靜默改用推論的 zone（與 CLI 一致）
+    const saved = App.profileJson;
+    S.view.app.setRoundInputs({ profile: { schema: 'ssot-profile/1', id: 'smoke-zones-mismatch', version: '1', zones: [{ on: 'subnet', match: '.', zone: 'ALL' }] } });
+    try {
+      const err = S.view.l4.zoneOpts(App).error;
+      if (!err) throw new Error('前提：不同的命名規則應讓 zoneOpts 回傳錯誤');
+      const r = await captureDownloads(() => { hubBtn('export-site-markdown').click(); hubBtn('export-site-csv').click(); });
+      if (r.made.length || r.files.length) throw new Error('命名規則的 zones 無法套用時不應匯出網路文件');
+      if (!text('#banner').includes('網路文件') || !text('#banner').includes(err)) throw new Error('應以 banner 說明無法匯出網路文件的原因：' + text('#banner'));
+    } finally { S.view.app.setRoundInputs({ profile: saved }); }
   });
   let ackedKey = null; // 處理紀錄中已處理的 finding 鍵：清除基準後要仍然存在
   await step('處理紀錄取代確認：每筆檢查結果都在處理紀錄中，可變更狀態與備註，不合法的變更顯示錯誤，已處理另列分組並從摘要排除，匯出對應欄位', async () => {
@@ -5508,6 +5519,16 @@ function viewBoundaryViolations(file, src) {
     if (!/npm run baseline -- \S+ --ledger \S+ -o \S+/.test(helpT)) throw new Error('應寫出排程用的 npm run baseline 指令');
     const exits = helpP.testAll('.settings-exit dt').map((d) => d.textContent.trim());
     if (exits.join() !== '0,1,2') throw new Error('應列出 baseline 的三種結束碼：' + exits.join());
+    // 輸出清單與結束碼 2 的說明與 CLI 同一份（tools/baseline.js 的 FILES 與 --help；瀏覽器無法載入 CLI，在這裡核對）
+    const CLI = require(path.join(ROOT, 'tools/baseline.js'));
+    const missing = Object.values(CLI.FILES).filter((f) => !helpT.includes(f));
+    if (missing.length) throw new Error('排程說明的輸出清單應列出 tools/baseline.js 的每個輸出檔：缺 ' + missing.join('、'));
+    if (!helpT.includes('網路文件')) throw new Error('排程說明應寫出 sitedoc.md／sitedoc.csv 是網路文件');
+    const exitDd = helpP.testAll('.settings-exit dd').map((d) => d.textContent);
+    const NO_DEVICE = '收集檔沒有認到任何設備的資料';
+    let helpOut = ''; CLI.main(['--help'], { stdout: { write: (x) => { helpOut += x; } }, stderr: { write: () => {} } });
+    if (!helpOut.includes(NO_DEVICE)) throw new Error('前提：baseline.js --help 的結束碼 2 說明應含「' + NO_DEVICE + '」');
+    if (!exitDd[2] || !exitDd[2].includes(NO_DEVICE)) throw new Error('結束碼 2 的說明應與 --help 一致，含「' + NO_DEVICE + '」：' + exitDd[2]);
     if (!/cron|工作排程器/.test(helpT)) throw new Error('應說明可以放進 cron／工作排程器');
     // 一輪的流程：收集 → 建立基準 → 研判 → 修正 → 下一輪收集 → 驗證，修正只產生 .rsc 不連線設備，工作包帶走帶回
     const flow = helpP.querySelector('.settings-flow');

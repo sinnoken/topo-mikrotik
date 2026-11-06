@@ -14,14 +14,22 @@ const SUITES = [
   ['畫面', process.execPath, ['tests/ui-smoke.js']],
 ];
 
-const results = SUITES.map(([name, cmd, args]) => {
-  console.log(`\n=== ${name}：${[path.basename(cmd), ...args].join(' ')} ===`);
-  const r = spawnSync(cmd, args, { cwd: ROOT, stdio: 'inherit' });
-  const ok = !r.error && r.status === 0;
-  if (r.error) console.error(`無法執行：${r.error.message}`);
-  return { name, ok, status: r.error ? '無法執行' : r.status };
-});
+/** 失敗原因（spawnSync 的結果）：無法執行、被 signal 結束（status 是 null）或結束碼 */
+const failText = (r) => (r.error ? `無法執行：${r.error.message}` : r.signal ? `被 signal ${r.signal} 結束` : `結束碼 ${r.status}`);
 
-console.log('\n=== 彙總 ===');
-results.forEach((r) => console.log(`  ${r.ok ? '✓' : '✗'} ${r.name}${r.ok ? '' : `（結束碼 ${r.status}）`}`));
-process.exit(results.every((r) => r.ok) ? 0 : 1);
+function main() {
+  const results = SUITES.map(([name, cmd, args]) => {
+    console.log(`\n=== ${name}：${[path.basename(cmd), ...args].join(' ')} ===`);
+    const r = spawnSync(cmd, args, { cwd: ROOT, stdio: 'inherit' });
+    const ok = !r.error && r.status === 0;
+    if (r.error) console.error(`無法執行：${r.error.message}`);
+    return { name, ok, why: ok ? '' : failText(r) };
+  });
+  console.log('\n=== 彙總 ===');
+  results.forEach((r) => console.log(`  ${r.ok ? '✓' : '✗'} ${r.name}${r.ok ? '' : `（${r.why}）`}`));
+  process.exit(results.every((r) => r.ok) ? 0 : 1);
+}
+
+// 測試只載入 failText，不執行四組測試
+if (require.main === module) main();
+module.exports = { failText };

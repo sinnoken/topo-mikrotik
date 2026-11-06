@@ -14,6 +14,7 @@
     "sample": "node tools/gen-bundle.js --sites 1 --access 12 --faults > samples/sample-bundle.txt && node tools/embed-sample.js",
     "gen:large": "node tools/gen-bundle.js --sites 40 --access 24 > samples/large-1000.txt",
     "oui": "node tools/build-oui.js",
-    "baseline": "node tools/baseline.js"
+    "baseline": "node tools/baseline.js",
+    "check:version": "node tools/check-version.js"
   }
 }

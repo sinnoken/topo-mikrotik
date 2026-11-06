@@ -7,6 +7,8 @@
 'use strict';
 const fs = require('fs'); const path = require('path'); const vm = require('vm');
 const ROOT = path.join(__dirname, '..');
+// Markdown 錨點規則與淘汰用詞清單（tests/docs.js 共用；lib.js 用到時才載入核心，不影響本檔載入的 globalThis.SSOT）
+const MD = require('./lib.js');
 
 // ------------------------------------------------------------ 極簡 DOM
 class ClassList { constructor(el) { this.el = el; } get set() { return new Set((this.el.attrs.class || '').split(/\s+/).filter(Boolean)); }
@@ -1595,22 +1597,10 @@ function viewBoundaryViolations(file, src) {
     if ($('#btn-unknown').textContent !== V.TERMS.endpoint || $('#btn-groups').textContent !== V.TERMS.group) throw new Error('顯示選單應寫「終端」「分群」（V.TERMS）');
   });
   await step('用字：畫面程式、index.html 與本檔的 step 名稱不再出現已淘汰的說法（去掉註解後掃描字串）', () => {
-    // 舊說法 → 現行說法（V.TERMS 等）；只掃畫面層，核心的 finding 訊息與 Snapshot 字串不在這裡
-    const RETIRED = {
-      '群組 ×': '終端 ×N', 未知對端: '終端', 收斂趨勢: '改善趨勢', 修復追蹤: '修正追蹤', 已排程修復: '已排定修正', 子網: '網段', 單側觀察: S.view.TERMS.hearsay,
-      下鑽: '明細', 異質: '結果不一', 這一輪: '本輪', 讀入: '載入（整份取代用匯入）', 收集完整度: '覆蓋率', 收集情形: '覆蓋率', 未管理: '非網管型', 客戶端: '用戶端',
-      維護窗口: '維護時段', '建立選項 expectedData': '各類設備應收資料', 預期資料: '預期現況', 'Q.reach）': '（不寫內部 API）', 'Q.hopOwner': '（不寫內部 API）',
-      'ADR-': '（不寫內部編號）', 'facet：': '原值：', '（L0）': 'zone 矩陣', 'L1：': '位址組', 'L2：牽涉': '牽涉的規則', 'L3：': '逐跳路徑', 連線類別: '鏈路類別',
-      '開啟詳情': '開啟詳細資料', 'Enter 詳情': 'Enter 開啟詳細資料', '非直連確認': '未確認直連', 'broadcast domain 可達': 'L2 廣播網域可達',
-      全通: 'V.L4_STATUS.allow（允許）', 全擋: 'V.L4_STATUS.deny（拒絕）', 'V.VERDICT': 'V.L4_STATUS',
-      // 用字調整：步驟、處理狀態、多數決與檢查代碼的稱呼（畫面的「回歸」都是處理狀態，沒有「回歸測試」這類用法）
-      分診: '研判', 回歸: '復發', 推定偏離: S.view.DEVIATION_LABEL, '可接受（豁免）': '接受風險', 標為可接受: '標為接受風險', 未管理交換器: '非網管型交換器', 自動群組: S.view.TERMS.group,
-      依規則: '依檢查', 誤報率最高的規則: '誤報率最高的檢查', 未登錄的規則: '未登錄的檢查', '檢查項目：': '比對對象：',
-      // 指 CATALOG 的東西一律稱「檢查」（防火牆規則、命名規則、/routing rule 仍叫規則，所以只擋精確片語）
-      規則目錄: '檢查目錄', 規則代碼: '檢查代碼', 規則標題: '檢查標題', 規則品質: '檢查品質', 規則類別: '檢查類別', 每項規則: '每項檢查', 這項規則: '這項檢查', 規則的常見原因: '檢查的常見原因', 規則的處理建議: '檢查的處理建議',
-      // 流程步驟不顯示序號（名稱引用 A.STEP_LABEL）
-      '① 輸入': '輸入', '② 檢視': '檢視', '③ 研判': '研判', '④ 修正': '修正', '⑤ 驗證': '驗證',
-    };
+    // 舊說法 → 現行說法（V.TERMS 等）；只掃畫面層，核心的 finding 訊息與 Snapshot 字串不在這裡。清單在 tests/lib.js（文件的檢查 tests/docs.js 共用 RETIRED_TERMS）
+    const RETIRED = MD.RETIRED_UI_TERMS;
+    // 清單裡的現行說法是字面文字，要和畫面的單一來源相同
+    if (RETIRED.單側觀察 !== S.view.TERMS.hearsay || RETIRED.自動群組 !== S.view.TERMS.group || RETIRED.推定偏離 !== S.view.DEVIATION_LABEL) throw new Error('tests/lib.js 的 RETIRED_TERMS 現行說法應與 V.TERMS／V.DEVIATION_LABEL 相同');
     const noComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\'"`])\/\/.*$/gm, '$1');
     const sources = jsFiles('src/view').map((f) => [f.split(path.sep).join('/'), noComments(fs.readFileSync(path.join(ROOT, f), 'utf8'))])
       .concat([['index.html', html.replace(/<!--[\s\S]*?-->/g, '')]]);
@@ -5488,14 +5478,14 @@ function viewBoundaryViolations(file, src) {
     if (order.some((i) => i < 0) || order.some((i, n) => n && i <= order[n - 1])) throw new Error('應依序列出一輪的流程：' + flowT.join(' / '));
     if (!/\.rsc/.test(helpT) || !/不(會)?連線(任何)?設備/.test(helpT) || !helpT.includes('工作包')) throw new Error('應說明修正只產生 .rsc、不連線設備，以及工作包');
     // 每段的詳細規格以連結到文件（檔案存在、錨點對得到標題），新分頁開啟
-    const ghSlug = (s) => s.trim().toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s/g, '-');
+    // 錨點依 GitHub 的規則（tests/lib.js 的 markdownAnchors，和 tests/docs.js 的連結檢查同一份）
     const checkDocLinks = (root, need) => {
       const links = root.testAll('a').filter((a) => a.classList.contains('doc-link'));
       need.forEach((f) => { if (!links.some((a) => decodeURI(a.getAttribute('href')).includes('/' + f))) throw new Error('應連到 ' + f); });
       links.forEach((a) => {
         const href = decodeURI(a.getAttribute('href')); const m = href.match(/\/blob\/main\/([^#]+)(?:#(.+))?$/);
         if (!m || !fs.existsSync(path.join(ROOT, m[1]))) throw new Error('文件連結應指向 repo 裡的檔案：' + href);
-        if (m[2] && !fs.readFileSync(path.join(ROOT, m[1]), 'utf8').split('\n').some((l) => /^#+ /.test(l) && ghSlug(l.replace(/^#+ /, '')) === m[2])) throw new Error('文件連結的錨點對不到標題：' + href);
+        if (m[2] && m[1].endsWith('.md') && !MD.hasAnchor(MD.anchorsOf(m[1]), m[2])) throw new Error('文件連結的錨點對不到標題：' + href);
         if (a.getAttribute('target') !== '_blank' || !/noopener/.test(a.getAttribute('rel') || '')) throw new Error('文件連結應在新分頁開啟（rel=noopener）：' + href);
       });
       return links;

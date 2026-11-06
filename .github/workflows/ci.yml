@@ -16,6 +16,7 @@ concurrency:
 jobs:
   # 依改動範圍分流：只改文件、skill、agent 定義時只跑文件測試；改到程式才跑全套；
   # 改到核心、範例、工具或測試才跑大型資料測試。排程與手動執行一律全跑。
+  # 版本一致性只在 PR、而且改到 src/ 或 tests/golden/ 時跑（要和 PR 的 base 比較）。
   changes:
     name: Detect changed scope
     runs-on: ubuntu-latest
@@ -23,6 +24,7 @@ jobs:
     outputs:
       code: ${{ steps.scope.outputs.code }}
       large: ${{ steps.scope.outputs.large }}
+      version: ${{ steps.scope.outputs.version }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -37,15 +39,39 @@ jobs:
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           if [ "$EVENT" != "pull_request" ]; then
-            echo "code=true" >> "$GITHUB_OUTPUT"; echo "large=true" >> "$GITHUB_OUTPUT"; exit 0
+            echo "code=true" >> "$GITHUB_OUTPUT"; echo "large=true" >> "$GITHUB_OUTPUT"; echo "version=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
           files=$(git diff --name-only "$BASE" "$HEAD")
           printf '%s\n' "$files"
           # 只算文件：Markdown、.claude/（agent、skill、hook 設定）、.github/skills/
-          code=false; large=false
+          code=false; large=false; version=false
           if printf '%s\n' "$files" | grep -Ev '\.md$|^\.claude/|^\.github/skills/' | grep -q .; then code=true; fi
           if printf '%s\n' "$files" | grep -Eq '^(src|samples|tools|tests|profiles)/|^index\.html$|^package(-lock)?\.json$|^\.github/workflows/'; then large=true; fi
-          echo "code=$code" >> "$GITHUB_OUTPUT"; echo "large=$large" >> "$GITHUB_OUTPUT"
+          if printf '%s\n' "$files" | grep -Eq '^(src|tests/golden)/'; then version=true; fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"; echo "large=$large" >> "$GITHUB_OUTPUT"; echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  # ADR-005：黃金基準（tests/golden/sample-snapshot.json）的內容改變時，S.VERSION 要升 minor
+  version:
+    name: Version check
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.version == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Check version bump against PR base
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: npm run check:version -- "$BASE"
 
   docs:
     name: Docs check

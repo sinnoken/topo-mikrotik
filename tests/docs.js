@@ -95,54 +95,64 @@ test('分工：repo 中每個檔案恰好屬於一個 agent，agent 定義與所
 /*
  * Markdown 的相對連結與錨點都要指得到東西。範圍是 git 的檔案（含尚未 add 的新檔，不含 .gitignore 排除的），
  * 不含 tests/workflow/fixtures/：那裡是報表的逐字預期輸出，括號裡的文字不是連結。
- * 錨點依 GitHub 的規則由標題產生：轉小寫、去掉字母／數字／組合記號／連接標點（_）／空白／連字號以外的字元
- * （中文保留，「」、（）：等全形標點去掉），空白換成 -，同名標題依序加 -1、-2；另認得 <a id|name="…">。
+ * 錨點規則與連結的取法在 tests/lib.js（githubSlug、markdownAnchors、linkTargets），tests/ui-smoke.js 的文件連結也用同一份。
  */
-const FENCE = /^\s*(```|~~~)/;
-const githubSlug = (text) => text
-  .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/<[^>]+>/g, '').trim().toLowerCase()
-  .replace(/[^\p{L}\p{M}\p{N}\p{Pc} -]/gu, '').replace(/ /g, '-');
-const anchorCache = new Map();
-function anchorsOf(file) {
-  if (anchorCache.has(file)) return anchorCache.get(file);
-  const set = new Set(); const seen = new Map(); let inCode = false;
-  for (const line of read(file).split('\n')) {
-    if (FENCE.test(line)) { inCode = !inCode; continue; }
-    if (inCode) continue;
-    for (const a of line.matchAll(/<a\s+(?:id|name)="([^"]+)"/g)) set.add(a[1]);
-    const h = /^#{1,6}\s+(.*?)\s*#*\s*$/.exec(line);
-    if (!h) continue;
-    const base = githubSlug(h[1]); const n = seen.get(base);
-    seen.set(base, n == null ? 0 : n + 1);
-    set.add(n == null ? base : `${base}-${n + 1}`);
-  }
-  anchorCache.set(file, set);
-  return set;
-}
+const { githubSlug, stripCodeSpans, proseLines, markdownAnchors, anchorsOf, hasAnchor, linkTargets, RETIRED_TERMS, retiredIn } = require('./lib.js');
+const mdFiles = () => execFileSync('git', ['-c', 'core.quotepath=false', 'ls-files', '--cached', '--others', '--exclude-standard', '-z', '--', '*.md'], { cwd: ROOT, encoding: 'utf8' })
+  .split('\0').filter(Boolean).filter((f) => !f.startsWith('tests/workflow/fixtures/') && fs.existsSync(path.join(ROOT, f)));
+
+test('連結檢查的規則：角括號連結、<a href>、網址中的括號、雙反引號、大寫錨點與 setext 標題', () => {
+  assert.deepStrictEqual(linkTargets('[a](<有 空白.md>) 與 [b](b.md "標題")'), ['有 空白.md', 'b.md'], '角括號連結取整段、標題不算目標');
+  assert.deepStrictEqual(linkTargets('見 <a href="docs/x.md#y">x</a>、<a class="k" href=\'z.md\'>'), ['docs/x.md#y', 'z.md'], 'Markdown 內的 <a href> 也是連結');
+  assert.deepStrictEqual(linkTargets('[w](https://e.org/wiki/Foo_(bar)) 之後（[c](c.md)）'), ['https://e.org/wiki/Foo_(bar)', 'c.md'], '網址中成對的括號不截斷，外層括號不算');
+  assert.deepStrictEqual(linkTargets('[r]: <有 空白.md>'), ['有 空白.md'], '參考式定義的角括號');
+  assert.strictEqual(stripCodeSpans('前 ``a ` [x](不是連結.md) `` 後 `b` 尾'), '前  後  尾', '雙反引號的 code span 裡可以有單一反引號');
+  assert.strictEqual(githubSlug('5.5 下鑽層級（M2）'), '55-下鑽層級m2');
+  assert.strictEqual(githubSlug('`S.query` 與 [Q](q.md)'), 'squery-與-q');
+  const a = markdownAnchors(['# Title One', '', 'Setext 標題', '===', '', '第二個', '---', '', '- 清單項目', '---', '```', '# 不是標題', '```', '# Title One', '<a id="Raw-ID"></a>'].join('\n'));
+  assert.deepStrictEqual([...a].sort(), ['Raw-ID', 'setext-標題', 'title-one', 'title-one-1', '第二個'].sort(), 'setext 標題、同名編號、程式碼區塊與清單後的 --- 不算標題');
+  assert.ok(hasAnchor(a, 'Title-One') && hasAnchor(a, 'Raw-ID') && !hasAnchor(a, 'raw-id'), '標題錨點不分大小寫，<a id> 原樣比對');
+  assert.deepStrictEqual(proseLines('---\nname: x\n---\n本文 `碼`\n```\n區塊\n```').map((r) => [r.no, r.line]), [[4, '本文 ']], 'front matter、程式碼區塊與行內程式碼不算本文');
+});
 test('Markdown 的相對連結都指得到檔案，錨點都對得到標題（GitHub 錨點規則）', () => {
-  const files = execFileSync('git', ['-c', 'core.quotepath=false', 'ls-files', '--cached', '--others', '--exclude-standard', '-z', '--', '*.md'], { cwd: ROOT, encoding: 'utf8' })
-    .split('\0').filter(Boolean).filter((f) => !f.startsWith('tests/workflow/fixtures/') && fs.existsSync(path.join(ROOT, f)));
   const problems = [];
-  files.forEach((f) => {
-    let inCode = false;
-    read(f).split('\n').forEach((line, i) => {
-      if (FENCE.test(line)) { inCode = !inCode; return; }
-      if (inCode) return;
-      const l = line.replace(/`[^`]*`/g, '');
-      const targets = Array.from(l.matchAll(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g), (m) => m[1]);
-      const ref = /^\s*\[[^\]]+\]:\s*(\S+)/.exec(l); if (ref) targets.push(ref[1]);
-      targets.forEach((u) => {
+  mdFiles().forEach((f) => {
+    proseLines(read(f)).forEach(({ line, no }) => {
+      linkTargets(line).forEach((u) => {
         if (/^[a-z][a-z0-9+.-]*:/i.test(u)) return;
         const at = u.indexOf('#');
         let p = at < 0 ? u : u.slice(0, at); let h = at < 0 ? '' : u.slice(at + 1);
-        try { p = decodeURIComponent(p); h = decodeURIComponent(h); } catch (e) { problems.push(`${f}:${i + 1}：無法解碼 ${u}`); return; }
+        try { p = decodeURIComponent(p); h = decodeURIComponent(h); } catch (e) { problems.push(`${f}:${no}：無法解碼 ${u}`); return; }
         const target = p ? path.posix.normalize(path.posix.join(path.posix.dirname(f), p)) : f;
-        if (!fs.existsSync(path.join(ROOT, target))) problems.push(`${f}:${i + 1}：找不到檔案 ${u}`);
-        else if (h && target.endsWith('.md') && !anchorsOf(target).has(h)) problems.push(`${f}:${i + 1}：${target} 沒有錨點 #${h}`);
+        if (!fs.existsSync(path.join(ROOT, target))) problems.push(`${f}:${no}：找不到檔案 ${u}`);
+        else if (h && target.endsWith('.md') && !hasAnchor(anchorsOf(target), h)) problems.push(`${f}:${no}：${target} 沒有錨點 #${h}`);
       });
     });
   });
   assert.deepStrictEqual(problems, [], '請修正連結或錨點（錨點由標題產生，改標題時要一起改引用）');
+});
+
+/*
+ * 文件不再出現畫面已淘汰的說法（清單在 tests/lib.js 的 RETIRED_TERMS，畫面的冒煙測試用同一份再加上只適用畫面的詞）。
+ * 範圍：docs/、README.md、CLAUDE.md、.github/copilot-instructions.md、skills。歷史敘述不掃：docs/版本紀錄.md、docs/架構決策/、
+ * docs/路線圖.md（已完成項目的紀錄）。不掃程式碼區塊、行內程式碼、連結網址、HTML 標籤（含舊錨點 <a id>）與刪除線；
+ * 同一行明寫是舊說法（原本、取代、改名、舊稱、已淘汰、拿掉）時也不算，例如「原本的『⋯』選單拿掉了」。
+ */
+const TERM_SCOPE = /^(docs\/|README\.md$|CLAUDE\.md$|\.github\/copilot-instructions\.md$|\.github\/skills\/|\.claude\/skills\/)/;
+const TERM_HISTORY = (f) => f === 'docs/版本紀錄.md' || f === 'docs/路線圖.md' || f.startsWith('docs/架構決策/');
+const HISTORY_LINE = /原本|取代|改名|舊稱|已淘汰|拿掉/;
+const prose = (line) => line.replace(/~~.*?~~/g, '').replace(/\]\([^)]*\)/g, ']').replace(/<[^>]+>/g, '');
+test('文件不再出現畫面已淘汰的說法（與冒煙測試共用 RETIRED_TERMS；歷史敘述除外）', () => {
+  assert.deepStrictEqual(retiredIn(prose(stripCodeSpans('頁首「⋯」選單、[a](規則目錄.md)、`規則目錄`、~~收斂趨勢~~、<a id="收斂趨勢"></a>')), RETIRED_TERMS).map((x) => x[0]), ['頁首「⋯」', '「⋯」選單'],
+    '只算本文：連結網址、刪除線與 HTML 標籤不算');
+  const hits = [];
+  mdFiles().filter((f) => TERM_SCOPE.test(f) && !TERM_HISTORY(f)).forEach((f) => {
+    proseLines(read(f)).forEach(({ line, no }) => {
+      const t = prose(line); if (HISTORY_LINE.test(t)) return;
+      retiredIn(t, RETIRED_TERMS).forEach(([w, now]) => hits.push(`${f}:${no}：「${w}」→ 改用「${now}」`));
+    });
+  });
+  assert.deepStrictEqual(hits, [], '文件仍有畫面已淘汰的說法（若是合理用法，把 tests/lib.js 的詞改成更精確的片語，或移到 RETIRED_UI_TERMS）');
 });
 
 let fail = 0;

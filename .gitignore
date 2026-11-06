@@ -4,3 +4,6 @@
 samples/large-1000.txt
 # Claude Code subagent 的 git worktree（本機工作目錄）
 .claude/worktrees/
+
+# agent 誤把 scratchpad 寫在 repo 根目錄時不進版本
+/scratchpad/

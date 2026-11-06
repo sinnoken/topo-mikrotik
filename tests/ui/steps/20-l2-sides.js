@@ -1,6 +1,6 @@
 // 畫面冒煙測試的 step：L2 埠依鏈路方向選邊（框的上下左右四邊；內建版面、ELK 與拖曳共用 V.layout.portSides）。
 'use strict';
-const { S, winListeners, step, $ } = require('../helpers.js');
+const { S, winListeners, step, $, flushRaf, recordCanvas, withGraph } = require('../helpers.js');
 const assert = require('assert');
 
 const L = () => S.view.layout;
@@ -85,6 +85,29 @@ module.exports = async () => {
     });
   });
 
+  await step('L2 埠選邊：埠名依 anchor 的邊放在框外（左右緣靠近角落的埠也在左右）；沒有邊時沿用依位置的判斷', async () => {
+    const g = App.graph;
+    // 框加高後，左右緣靠近角落的埠 |dy| 會超過 0.4|dx|：舊的判斷會把它的標籤當成上下緣放
+    const box = { w: 120, h: 220 };
+    const dev = { id: 'D', kind: 'switch', label: 'D', collected: true, box };
+    const mk = (id, dx, dy, side) => ({ id, kind: 'port', label: id, name: id, dev: 'D', anchor: Object.assign({ parent: 'D', dx, dy }, side ? { side } : {}) });
+    const ports = [mk('pe', 60, -90, 'east'), mk('pw', -60, 90, 'west'), mk('pn', 20, -110, 'north'), mk('ps', -20, 110, 'south'), mk('qx', 60, -90)];
+    const pos = new Map([['D', { x: 0, y: 0 }]]);
+    const ops = withGraph(g, [dev].concat(ports), [], pos, () => {
+      g.setSelection(ports.map((p) => p.id), []); g.s = 2; g.tx = g.w / 2; g.ty = g.h / 2;
+      return recordCanvas(g.ctx, () => g.draw());
+    });
+    const label = (id) => { const o = ops.find((x) => x.op === 'text' && x.text === id); assert.ok(o, '應畫出埠名：' + id); return o; };
+    const at = (id) => { const p = ports.find((x) => x.id === id).anchor; return { x: p.dx, y: p.dy }; };
+    assert.ok(label('pe').x > at('pe').x, '右緣的埠名在框的右邊');
+    assert.ok(Math.abs(label('pe').y - at('pe').y) < 10, '右緣的埠名與埠同高');
+    assert.ok(label('pw').x < at('pw').x, '左緣的埠名在框的左邊');
+    assert.ok(Math.abs(label('pw').y - at('pw').y) < 10, '左緣的埠名與埠同高');
+    assert.ok(label('pn').y < at('pn').y && Math.abs(label('pn').x - at('pn').x) < 1e-6, '上緣的埠名在上方');
+    assert.ok(label('ps').y > at('ps').y && Math.abs(label('ps').x - at('ps').x) < 1e-6, '下緣的埠名在下方');
+    assert.ok(label('qx').y < at('qx').y && Math.abs(label('qx').x - at('qx').x) < 1e-6, '沒有邊時沿用依位置的判斷（|dy| ≥ 0.4|dx| 放上下）');
+  });
+
   await step('L2 埠選邊：拖曳設備框後依新的位置重新選邊；切走再回來時依保留的位置選邊', async () => {
     // 前面的 step 可能把 L2 留在某台設備為中心或其他選項：回到預設（太大時由 busiest 選中心）
     const saved = Object.assign({}, App.l2);
@@ -116,6 +139,29 @@ module.exports = async () => {
     // 拖到對端正右方：這一端在左緣
     drag(edge.aDev, { x: bp.x + 3000, y: bp.y });
     assert.strictEqual(sideOf(port.anchor, hb), 'west', '對端在正左方時埠應換到左緣');
+    // 拖曳中（還沒放開）：每個 animation frame 最多發一次 'moving'，埠即時換到面向對端的邊
+    {
+      let n = 0; const ids = []; const h = g.handlers.moving;
+      assert.ok(h, '畫布應有拖曳中（moving）的處理函式');
+      g.on('moving', (id) => { n++; ids.push(id); h(id); });
+      try {
+        flushRaf(1);
+        const from = g.toScreen(g.pos.get(edge.aDev));
+        const ev = (pt) => ({ target: cv, clientX: pt.x, clientY: pt.y, pointerId: 8, pointerType: 'mouse', button: 0, preventDefault() {} });
+        const fire = (t, pt) => (winListeners[t] || []).forEach((f) => f(ev(pt)));
+        cv.dispatch('pointerdown', { clientX: from.x, clientY: from.y, pointerId: 8, pointerType: 'mouse', button: 0 });
+        const up = g.toScreen({ x: bp.x, y: bp.y - 3000 });
+        fire('pointermove', { x: (from.x + up.x) / 2, y: (from.y + up.y) / 2 }); fire('pointermove', up);
+        assert.strictEqual(n, 0, '移動當下不立即重算，等下一個 animation frame');
+        flushRaf(1);
+        assert.strictEqual(n, 1, '同一個 frame 內的多次移動只重算一次：' + n);
+        assert.deepStrictEqual(ids, [edge.aDev], 'moving 帶拖曳中的設備');
+        assert.strictEqual(sideOf(port.anchor, hb), 'south', '拖曳中（放開前）埠就換到面向對端的下緣');
+        if (both) assert.strictEqual(sideOf(peer.anchor, e.boxes.find((b) => b.id === edge.bDev).box), 'north', '拖曳中對端的埠也換到上緣');
+        fire('pointerup', up); flushRaf(1);
+        assert.strictEqual(n, 1, '放開後不再發 moving（由 moved 收尾）');
+      } finally { g.on('moving', h); }
+    }
     // 保留的位置：直接改位置（例如之前拖過）後切走再回來，依位置重新選邊
     g.pos.set(edge.aDev, { x: bp.x, y: bp.y + 3000 });
     App.showLayer('device'); App.showLayer('l2');

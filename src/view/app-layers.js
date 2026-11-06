@@ -236,17 +236,31 @@
       const r = V.layout.layout(e.nodes, e.edges); e.pos.clear(); r.forEach((p, id) => e.pos.set(id, p));
     }
   }
-  /** 套用 portAnchors 的結果：埠的位置、框高（左右緣的埠多時加高），並記下這次的邊（下次選邊的遲滯） */
-  function setAnchors(e, r) {
-    e.ports.forEach((p) => { const a = r.anchor.get(p.id); if (a) { p.anchor.dx = a.dx; p.anchor.dy = a.dy; } });
-    e.boxes.forEach((b) => { const x = r.box.get(b.id); if (x) b.box.h = x.h; });
-    e.side = r.side;
+  /**
+   * 套用 portAnchors 的結果：埠的位置與所在的邊（畫布依邊放埠名）、框高（左右緣的埠多時加高），並記下這次的邊（下次選邊的遲滯）。
+   * ports／boxes 省略時是全部；只重算部分設備時，邊併入既有的 e.side。
+   */
+  function setAnchors(e, r, ports, boxes) {
+    (ports || e.ports).forEach((p) => { const a = r.anchor.get(p.id); if (a) { p.anchor.dx = a.dx; p.anchor.dy = a.dy; p.anchor.side = r.side.get(p.id); } });
+    (boxes || e.boxes).forEach((b) => { const x = r.box.get(b.id); if (x) b.box.h = x.h; });
+    if (ports && e.side) r.side.forEach((v, id) => e.side.set(id, v)); else e.side = r.side;
   }
-  /** 依目前的設備位置重新選邊（拖曳設備框後、回到保留位置的 L2 時）：沿用前一次的邊做遲滯 */
-  function resideL2(e) {
+  /**
+   * 依目前的設備位置重新選邊（拖曳設備框中與結束、回到保留位置的 L2 時）：沿用前一次的邊做遲滯。
+   * dev 指定時只重算這台與它的鄰居（拖曳中每個 frame 都會呼叫，不重算整張圖）；其他設備的埠方向不受它移動影響。
+   */
+  function resideL2(e, dev) {
     if (!e || e.layer !== 'l2') return;
     e.peers = e.peers || V.layout.portPeers(e.pg.edges);
-    setAnchors(e, V.layout.portAnchors(e.boxes, e.ports, e.peers, e.pos, { prev: e.side }));
+    if (dev == null || !e.side) {
+      setAnchors(e, V.layout.portAnchors(e.boxes, e.ports, e.peers, e.pos, { prev: e.side }));
+    } else {
+      if (!e.portsOf) { e.portsOf = new Map(); e.ports.forEach((p) => S.util.getOr(e.portsOf, p.dev, () => []).push(p)); }
+      const devs = new Set([dev]);
+      (e.portsOf.get(dev) || []).forEach((p) => (e.peers.get(p.id) || []).forEach((d) => devs.add(d)));
+      const boxes = e.boxes.filter((b) => devs.has(b.id)); const ports = boxes.flatMap((b) => e.portsOf.get(b.id) || []);
+      setAnchors(e, V.layout.portAnchors(boxes, ports, e.peers, e.pos, { prev: e.side }), ports, boxes);
+    }
     App.graph.dirty = true;
   }
   /**
@@ -504,7 +518,9 @@
   const layerBtns = () => Array.from(document.querySelectorAll('#layer-switch button'));
   A.bindLayers = function bindLayers() {
     new ResizeObserver(() => A.syncL4Top()).observe($('#toolbar'));
-    // 拖曳設備框結束（畫布的 'moved'）後依新位置重新選邊。畫布每個事件只有一個處理函式（app.js 已設定），這裡包住它、先選邊再交給它
+    // 拖曳設備框中（畫布的 'moving'，每個 frame 最多一次）只重算這台與鄰居的邊；放開（'moved'）時整張圖再選一次。
+    // 畫布每個事件只有一個處理函式（app.js 已設定 'moved'；測試會暫時換掉再還原），這裡包住它、先選邊再交給它
+    App.graph.on('moving', (id) => { if (App.layer === 'l2') resideL2(A.layerEntry(), id); });
     const moved = App.graph.handlers.moved;
     App.graph.on('moved', (id) => { if (App.layer === 'l2') resideL2(A.layerEntry()); if (moved) moved(id); });
     const btns = layerBtns();

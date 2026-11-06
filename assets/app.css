@@ -661,6 +661,9 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
 /* 暴露清單「看路徑」就地展開的那一列；「顯示全部（N）」 */
 .l4-ex-sec tr.l4-ex-pathrow > td { padding: 4px 8px 10px; background: var(--surface); }
 .l4-ex-pathbox .l4-sub { margin-top: 4px; }
+/* 第 1 段依設備分組的標題列（窄螢幕的 stack 排法也是一整列） */
+.l4-ex-sec tr.l4-ex-devrow > th { padding: 8px 8px 4px; text-align: left; font-weight: 600; background: var(--surface); border-bottom: 1px solid var(--line); }
+@media (max-width: 900px) { .l4-ex-sec table.t.stack tr.l4-ex-devrow > th { display: block; } }
 .l4-ex-all { min-height: var(--control-h); margin-top: 6px; }
 /* IPv6 的列沒有逐跳路徑（說明取代按鈕）；「⚠ 回程不保證」短標後的規則連結 */
 .l4-ex-nopath { display: block; margin-top: 4px; font-size: var(--fs-sm); }

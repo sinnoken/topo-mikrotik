@@ -140,6 +140,53 @@ module.exports = async () => {
     });
     L.showProblems(App); App.select(null);
   });
+  await step('多個實體的檢查結果（R08 設備＋介面、R09 設備＋規則、R10／R13 兩台設備）：詳情列出訊息與「相關：」連結，圖上標出每台相關設備；指向規則的不限類別列在防火牆畫面', () => {
+    const Q = App.Q; const all = Q.findings();
+    const KINDS = ['device', 'interface', 'rule', 'link', 'service'];
+    const multi = all.map((f, i) => i).filter((i) => all[i].entities.filter((e) => KINDS.includes(e.type)).length >= 2);
+    if (!process.env.SMOKE_INPUT && !['R08', 'R09', 'R10', 'R13'].every((id) => multi.some((i) => all[i].id === id))) throw new Error('範例資料應有 R08、R09、R10、R13 的多實體檢查結果');
+    const devOf = (e) => (e.type === 'rule' ? Q.getFirewallRule(e.key).dev : e.type === 'device' ? e.key : S.keys.splitEp(e.key)[0]);
+    multi.forEach((i) => {
+      const f = all[i]; App.selectFinding(i);
+      const box = $('#detail').testAll('.finding').find((x) => x.textContent.includes(f.message));
+      if (!box) throw new Error(`${f.id} 的詳情應列出這筆檢查結果：${f.message}`);
+      const rel = box.querySelector('.finding-related');
+      if (!rel || !rel.textContent.startsWith('相關：')) throw new Error(`${f.id} 有多個實體，詳情應有「相關：」`);
+      const links = rel.testAll('a');
+      // 基準中有的物件是可用鍵盤操作的連結；沒有的（例如只出現在 DHCP client 的介面）寫成文字並註明
+      if (links.length + rel.testAll('.related-missing').length < 2 || links.some((a) => a.getAttribute('tabindex') !== '0')) throw new Error(`${f.id} 的相關實體應列出，可開啟的是可用鍵盤操作的連結`);
+      rel.testAll('.related-missing').forEach((x) => { if (!x.textContent.endsWith('（沒有詳細資料）')) throw new Error(`${f.id} 沒有詳細資料的實體應註明`); });
+      // 圖上：每台相關設備都標出（連結兩端的設備另由鏈路標出）
+      f.entities.filter((e) => e.type !== 'link' && KINDS.includes(e.type)).forEach((e) => {
+        if (!App.graph.hl || !App.graph.hl.nodes.has(devOf(e))) throw new Error(`${f.id} 的相關設備 ${devOf(e)} 應在圖上標出`);
+      });
+    });
+    // 指向規則的檢查結果（例如路由類的 R09）開啟防火牆畫面並列在那裡
+    const ri = multi.find((i) => all[i].entities.some((e) => e.type === 'rule') && (S.query.rule(all[i].id) || {}).cat !== '防火牆');
+    if (ri === undefined && !process.env.SMOKE_INPUT) throw new Error('範例資料應有指向規則、不是防火牆類別的檢查結果（R09）');
+    if (ri !== undefined) {
+      App.selectFinding(ri);
+      if (App.sel.type !== 'rule' || !text('#detail').includes(all[ri].message)) throw new Error(`${all[ri].id} 應在防火牆畫面列出`);
+      // 相關的設備連結開啟設備詳情，那裡也列出這筆
+      const rel = $('#detail').testAll('.finding').find((x) => x.textContent.includes(all[ri].message)).querySelector('.finding-related');
+      const d = all[ri].entities.find((e) => e.type === 'device');
+      rel.testAll('a').find((a) => a.textContent === Q.devLabel(d.key)).click();
+      if (App.sel.type !== 'device' || App.sel.key !== d.key || !text('#detail').includes(all[ri].message)) throw new Error('相關的設備連結應開啟設備詳情並列出這筆');
+    }
+    App.select(null);
+  });
+  await step('設備詳情的路由表列出非作用中的路由（標「非作用中」），與 R11 對照', () => {
+    const Q = App.Q;
+    const dev = Q.devices().map((d) => d.key).find((k) => Q.allRoutesOf(k).some((r) => r.active === false));
+    if (!dev) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有非作用中的路由（備援的預設路由）'); }
+    App.select({ type: 'device', key: dev });
+    const sec = $('#detail').testAll('details').find((d) => d.querySelector('summary') && d.querySelector('summary').textContent.startsWith('路由表'));
+    if (!sec) throw new Error('設備詳情應有路由表');
+    const n = Q.allRoutesOf(dev).filter((r) => r.active === false).length;
+    if (sec.testAll('.route-inactive').length !== Math.min(n, 200) || !sec.querySelector('summary').textContent.includes('非作用中 ' + n)) throw new Error('非作用中的路由應逐列標「非作用中」，標題寫出筆數');
+    if (Q.allRoutesOf(dev).length <= Q.routesOf(dev).length) throw new Error('路由表應包含作用中以外的路由');
+    App.select(null);
+  });
   await step('跨設備一致性：多數決判定與多數不同的設備列在檢查結果，VLAN 實體可開啟', () => {
     const all = App.snap.findings;
     const dev = all.map((f, i) => i).filter((i) => all[i].deviation && all[i].deviation.deviating.length);

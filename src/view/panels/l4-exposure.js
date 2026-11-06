@@ -174,8 +174,24 @@
     // 查詢層只依設備 → 位址族 → 位址 → 服務排序：先列允許、再列無法判斷（同結果內保留查詢層的順序），前 EX_LIMIT 列才不會把允許的收起來
     const rank = (v) => (v === 'allow' ? 0 : v === 'unknown' ? 1 : 2);
     out = out.map((g, n) => ({ g, n })).sort((a, b) => rank(a.g.x.verdict) - rank(b.g.x.verdict) || a.n - b.n).map((o) => o.g);
+    // 第 1 段（列有 via）：依目的設備分組，入口設備（有 via 為 null 的列）在前；設備之間依上面排序後第一次出現的位置
+    //（有允許的設備在前），設備內保留允許 → 無法判斷的順序
+    if (rows.some((x) => x.via !== undefined)) {
+      const at = new Map(); out.forEach((g, n) => { if (!at.has(g.x.dev)) at.set(g.x.dev, n); });
+      const entryDevs = new Set(rows.filter((x) => x.via === null).map((x) => x.dev));
+      const devRank = (d) => (entryDevs.has(d) ? 0 : 1);
+      out = out.map((g, n) => ({ g, n })).sort((a, b) => devRank(a.g.x.dev) - devRank(b.g.x.dev) || at.get(a.g.x.dev) - at.get(b.g.x.dev) || a.n - b.n).map((o) => o.g);
+      out.forEach((g) => { g.entryDev = entryDevs.has(g.x.dev); });
+    }
     exGroupsCache.set(rows, out);
     return out;
+  }
+  /**
+   * 怎麼進來（目的的第二行）：入口就在目的設備上時寫「設備 · 介面」；第 1 段經別台入口設備進來的列（via 不是 null）寫「經 <入口設備> 的 <介面>」
+   */
+  function entryText(App, x) {
+    const more = x.entries.length > 1 ? ` 等 ${V.num(x.entries.length)} 個介面` : '';
+    return x.via ? `經 ${App.Q.devName(x.via.dev)} 的 ${x.inInterface}${more}` : `${App.Q.devName(x.dev)} · ${x.inInterface}${more}`;
   }
   function exSection(App, def) {
     const xr = st.ex; const s = xr[def.key]; const denied = xr.denied ? xr.denied[def.key] : s.counts.deny;
@@ -187,7 +203,7 @@
     // 5 欄（1440 不水平捲動）：怎麼進來是目的的第二行；相關檢查是依據下面一行的代碼 chip（標題在 title）；看路徑在結果下方
     const cols = [
       { t: '目的', f: ({ x, ips }) => h('span', { class: 'l4-ex-dst', title: ips.length > 1 ? ips.join('\n') : null }, [exDst(App, def.key, x), ips.length > 1 ? h('span', { class: 'muted l4-ex-more' }, ` 等 ${V.num(ips.length)} 個位址`) : null,
-        h('span', { class: 'muted l4-ex-entry' }, `${App.Q.devName(x.dev)} · ${x.inInterface}${x.entries.length > 1 ? ` 等 ${V.num(x.entries.length)} 個介面` : ''}`)]) },
+        h('span', { class: 'muted l4-ex-entry' }, entryText(App, x))]) },
       { t: '服務', f: ({ x }) => h('span', { class: 'mono' }, exSvc(x)) },
       { t: '允許來源', f: ({ x }) => (x.allowedFrom.kind === 'any' ? V.chip('⚠ ' + x.allowedFrom.text, 'warn') : h('span', { class: 'mono' }, x.allowedFrom.text)) },
       { t: '結果', f: ({ x, i }) => { const on = !!(st.exPath && st.exPath.sec === def.key && st.exPath.row === i);
@@ -222,9 +238,15 @@
    * 看路徑的那一列下方多一列（colspan），放逐跳路徑
    */
   function exTable(App, def, cols, groups) {
-    const tb = h('tbody');
+    const tb = h('tbody'); let lastDev = null;
     groups.forEach((g) => {
-      tb.appendChild(h('tr', { class: 'l4-ex-row st-' + g.x.verdict, 'data-family': g.x.family || null }, cols.map((c) => h('td', { 'data-label': c.t }, c.f(g)))));
+      // 第 1 段依設備分組（exGroups 已排好）：每台設備前一列標題，寫出它是入口設備或要經別台入口設備
+      if (g.entryDev !== undefined && g.x.dev !== lastDev) {
+        lastDev = g.x.dev;
+        tb.appendChild(h('tr', { class: 'l4-ex-devrow', 'data-dev': g.x.dev }, h('th', { colspan: String(cols.length), scope: 'colgroup' },
+          [App.Q.devName(g.x.dev), ' ', V.chip(g.entryDev ? '入口設備' : '經其他入口設備', g.entryDev ? 'info' : '')])));
+      }
+      tb.appendChild(h('tr', { class: 'l4-ex-row st-' + g.x.verdict, 'data-family': g.x.family || null, 'data-row': String(g.i) }, cols.map((c) => h('td', { 'data-label': c.t }, c.f(g)))));
       const p = st.exPath;
       if (p && p.sec === def.key && p.row === g.i) {
         const onVrf = (v) => { st.exPath = Object.assign({ sec: p.sec, row: p.row }, I.runQuery(App, Object.assign({}, p.req, { vrf: v }))); renderExposure(App); const t = $('#l4-ex-path-title'); if (t) t.focus(); };

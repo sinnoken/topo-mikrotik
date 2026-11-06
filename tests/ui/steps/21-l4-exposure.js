@@ -62,7 +62,7 @@ module.exports = async () => {
       const byBtn = rows.map((tr) => ex[k].rows[Number(tr.querySelector('.l4-ex-path').dataset.row)]);
       // 1440 不水平捲動（模擬 DOM 量不到寬度，改斷言欄數）：5 欄，入口在目的的第二行，相關檢查是依據下面的代碼 chip（標題在 title）
       if (rows.length) {
-        const ths = sec.testAll('th').map((x) => x.textContent);
+        const ths = sec.testAll('thead th').map((x) => x.textContent);
         if (ths.join('|') !== '目的|服務|允許來源|結果|依據') throw new Error(`暴露清單應只有 5 欄：${ths.join('、')}`);
         if (rows.some((tr) => tr.testAll('td').length !== 5 || !tr.querySelector('.l4-ex-entry'))) throw new Error('每列 5 格，目的格有入口的第二行');
         sec.testAll('.l4-finding').forEach((a) => { if (!/^[A-Z]\d+$/.test(a.textContent) || !(a.getAttribute('title') || '').startsWith(a.textContent + ' ')) throw new Error('相關檢查是代碼 chip，標題在 title：' + a.textContent); });
@@ -84,6 +84,34 @@ module.exports = async () => {
       });
     });
     if (!process.env.SMOKE_INPUT && !SECS.some((k) => ex[k].rows.length)) throw new Error('範例資料應有從外部連得到的服務');
+    // 第 1 段依設備分組：每台設備一個標題列、列連續；入口設備（有 via 為 null 的列）在前；經別台入口設備的列寫「經 <入口設備> 的 <介面>」
+    if (ex.self.rows.length) {
+      const sec = secEl('self'); const entryDevs = new Set(ex.self.rows.filter((x) => x.via === null).map((x) => x.dev));
+      const trs = sec.testAll('tr').filter((tr) => /l4-ex-(row|devrow)/.test(tr.className || ''));
+      const order = []; let cur = null;
+      trs.forEach((tr) => {
+        if (/l4-ex-devrow/.test(tr.className)) {
+          cur = tr.getAttribute('data-dev'); order.push(cur);
+          const isEntry = entryDevs.has(cur);
+          if (!tr.textContent.includes(Q.devName(cur)) || !tr.textContent.includes(isEntry ? '入口設備' : '經其他入口設備')) throw new Error('設備標題列應寫出設備名與是否為入口設備：' + tr.textContent);
+          return;
+        }
+        const x = ex.self.rows[Number(tr.getAttribute('data-row'))];
+        if (!x || x.dev !== cur) throw new Error('第 1 段的列應在它的設備標題列之下');
+        const et = tr.querySelector('.l4-ex-entry').textContent;
+        if (x.via ? !et.startsWith(`經 ${Q.devName(x.via.dev)} 的 ${x.inInterface}`) : et.startsWith('經 ')) throw new Error('入口的寫法不符（via ' + JSON.stringify(x.via) + '）：' + et);
+      });
+      if (new Set(order).size !== order.length) throw new Error('同一台設備的列應連續（只有一個標題列）：' + order.join('、'));
+      const firstNon = order.findIndex((d) => !entryDevs.has(d));
+      if (firstNon >= 0 && order.slice(firstNon).some((d) => entryDevs.has(d))) throw new Error('入口設備應排在前面：' + order.join('、'));
+      if (!process.env.SMOKE_INPUT && !ex.self.rows.some((x) => x.via)) throw new Error('範例資料的第 1 段應有經別台入口設備的列');
+      // 分組的 helper（exGroups）不因 via 拿掉允許在前的規則：同一台設備內允許排在無法判斷之前
+      const gs = V.l4.exGroups(ex.self.rows);
+      order.forEach((d) => {
+        const vs = gs.filter((g) => g.x.dev === d).map((g) => g.x.verdict); const fn = vs.findIndex((v) => v !== 'allow');
+        if (fn >= 0 && vs.slice(fn).includes('allow')) throw new Error(d + ' 的允許應在無法判斷之前');
+      });
+    }
   });
 
   await step('L4 暴露清單：看路徑用同一個外部代表位址與入口介面查 Q.reach，結論與列一致；規則與檢查的連結開右側詳情', async () => {

@@ -90,7 +90,7 @@
     const item = (f) => h('div', { class: 'finding' }, [
       V.sevDot(f.severity),
       h('div', null, [h('div', null, [h('b', null, f.title), ...facetChip(f)]), h('div', null, f.message),
-        V.deviationLine(App, f.deviation), ledgerLine(f), mgmtGoto(App, f), V.remediation.hintLine(f.id), adviceBlock(f.id),
+        relatedLine(App, f), V.deviationLine(App, f.deviation), ledgerLine(f), mgmtGoto(App, f), V.remediation.hintLine(f.id), adviceBlock(f.id),
         f.evidence.length ? h('div', { class: f.id === 'C02' ? 'ev stack' : 'ev' }, evidenceLinks(App, f)) : null]),
     ]);
     // 先顯示最嚴重的幾筆，其餘收進同一個 section() 展開機制，避免檢查結果把屬性推到很下面
@@ -105,6 +105,32 @@
   function facetChip(f) {
     const t = V.remediation.facetText(f);
     return t ? [' ', V.chip('比對對象：' + t, 'facet', { title: '原值：' + f.facet })] : [];
+  }
+  /**
+   * 檢查結果有兩個以上實體時（例如 R10、R13 的兩台設備、R08 的設備＋介面、R09 的設備＋規則）列出「相關：」連結：
+   * 選取這筆時詳情只開第一個實體（App.selectFinding），其餘的從這裡開啟。只列設備、介面、鏈路、規則與服務，
+   * 超過 RELATED_SHOWN 個時其餘寫「等 N 個」（完整的實體在圖上一起標出）。
+   */
+  const RELATED_SHOWN = 6;
+  function relatedLine(App, f) {
+    const Q = App.Q;
+    // 基準中沒有那個物件時（例如只出現在 /ip dhcp-client 的介面）寫成一般文字並註明，不做成點了沒反應的連結
+    const missing = (t) => h('span', { class: 'related-missing', title: '基準中沒有這個物件的詳細資料' }, t + '（沒有詳細資料）');
+    const link = (e) => {
+      const [dk, rest] = e.type === 'device' ? [e.key, ''] : K.splitEp(e.key);
+      if (e.type === 'device') return Q.getDevice(e.key) ? devLink(App, e.key) : missing(e.key);
+      if (e.type === 'interface') return Q.getInterface(e.key) ? epLink(App, e.key) : missing(`${Q.devName(dk)} ${rest}`);
+      if (e.type === 'link') { const l = Q.getLink(e.key); return l ? L(App, `${Q.epName(l.a)} ⇄ ${Q.epName(l.b)}`, { type: 'link', key: l.key }) : missing(e.key); }
+      if (e.type === 'rule') return Q.getFirewallRule(e.key) ? L(App, `${Q.devName(dk)} ${V.firewall.ruleLabel(App, e.key)}`, { type: 'rule', key: e.key }) : missing(`${Q.devName(dk)} 的防火牆規則`);
+      if (e.type === 'service') return L(App, `${Q.devName(dk)} 服務 ${rest}`, { type: 'service', key: e.key });
+      return null;
+    };
+    if (f.entities.length < 2) return null;
+    const links = f.entities.map(link).filter(Boolean);
+    if (links.length < 2) return null;
+    const shown = links.slice(0, RELATED_SHOWN);
+    return h('div', { class: 'muted finding-related' }, ['相關：', ...shown.flatMap((a, n) => (n ? ['、', a] : [a])),
+      links.length > shown.length ? `等 ${V.num(links.length)} 個` : null]);
   }
   /** 處理紀錄的狀態與備註（使用者的決定，不在基準裡，見 app-ledger.js）；待處理（open）且沒有備註時不顯示 */
   function ledgerLine(f) {
@@ -294,7 +320,8 @@
     const dev = Q.deviationsOf(d.key).map(Q.finding);
     const fl = Q.findingsFor('device', d.key).concat(...links.map((l) => Q.findingsFor('link', l.key)), ...ifs.map((i) => Q.findingsFor('interface', i.key)), dev);
     const peerRows = Q.neighborRows(d.key).sort((x, y) => S.util.natural(x.mine, y.mine));
-    const vlans = Q.vlansOf(d.key); const routes = Q.routesOf(d.key); const unk = Q.unknownPeers(d.key);
+    const vlans = Q.vlansOf(d.key); const routes = Q.allRoutesOf(d.key); const unk = Q.unknownPeers(d.key);
+    const inactive = routes.filter((r) => r.active === false).length;
     const showTable = multiVrf(Q) || routes.some((r) => (r.routingTable || K.MAIN_VRF) !== K.MAIN_VRF);
     const blocks = App.Q.blocksOf(d.key);
     const neighborHasFinding = peerRows.some((r) => r.links.some((l) =>
@@ -378,7 +405,9 @@
         { t: '協定', f: (r) => (r.blackhole ? h('span', { class: 'diffA' }, '黑洞路由') : r.proto), s: (r) => r.proto },
         { t: '距離', f: (r) => (r.distance == null ? '' : String(r.distance)), s: (r) => r.distance },
         { t: '下一跳', f: (r) => nhCell(r, multiVrf(Q)), s: (r) => (r.nh[0] ? r.nh[0].ip || r.nh[0].ifc : '') },
-      ], routes, { limit: 200 }) : null, { count: routes.length, fold: true }),
+        // 非作用中（例如備援的預設路由）也列出，可與 R11 等檢查對照；路由追蹤與檢查的路由表只用作用中的
+        { t: '狀態', f: (r) => (r.active === false ? V.chip('非作用中', 'route-inactive', { title: '目前沒有被選用（例如備援路由）；路由追蹤只看作用中的路由' }) : '作用中'), s: (r) => (r.active === false ? 1 : 0) },
+      ], routes, { limit: 200 }) : null, { count: routes.length, fold: true, extra: inactive ? [V.chip(`非作用中 ${V.num(inactive)}`)] : [] }),
       vrfSection(App, d.key),
       policySection(App, d.key),
       firewallSummary(App, d.key),

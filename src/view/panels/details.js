@@ -306,13 +306,14 @@
       kv([['管理 IP', d.mgmtIp], ['型號', d.deviceType], ['RouterOS', d.softwareVersion],
         // RouterBOOT 韌體與運作時間（/system routerboard、/system resource 的事實）；文字與網路文件共用 S.report
         ['RouterBOOT 韌體', S.report.firmwareText(d.routerboard) || null],
-        ['運作時間', d.uptime ? `${S.report.uptimeText(d.uptime.seconds)}（${d.uptime.collectedAt ? '收集於 ' + d.uptime.collectedAt.replace('T', ' ') : '收集時間不明'}）` : null],
+        // 運作時間是收集 /system resource 那一刻的值；那段輸出有收集器的收集時間時寫出，沒有時說明（和下方取自設定匯出的「收集時間」是不同的來源）
+        ['運作時間', d.uptime ? `${S.report.uptimeText(d.uptime.seconds)}（${d.uptime.collectedAt ? '/system resource 收集於 ' + d.uptime.collectedAt.replace('T', ' ') : '收集 /system resource 時的值；那段輸出沒有記錄收集時間'}）` : null],
         ['廠商', d.manufacturer ? V.vendorName(d.manufacturer) : null],
         ['平台', d.manufacturer === 'mikrotik' ? null : d.platform],
         ['鄰居回報功能', d.caps ? h('span', { class: 'caps', title: '原值：' + d.caps }, V.capsText(d.caps)) : null],
         // 設備類型依據：依命名規則是使用者指定，其餘是推定
         ['類型依據', d.kindBasis === 'profile' ? V.KIND_BASIS[d.kindBasis] : inferred(V.KIND_BASIS[d.kindBasis] || d.kindBasis, '設備類型是依型號、收集的資料或鄰居回報推定的結果，不是設備直接回報')],
-        ['收集時間', d.collectedAt ? `${d.collectedAt.replace('T', ' ')}（設備時間，取自設定匯出）` : null],
+        ['收集時間', d.collectedAt ? `${d.collectedAt.replace('T', ' ')}（設備時間，取自設定匯出 /export 的開頭）` : null],
         ['其他名稱', d.names.length > 1 ? d.names.join('、') : null], ['路由器 ID', d.routerId],
         ['看到它的設備', d.seenBy.length && d.seenBy.length <= SEEN_INLINE ? seenByLinks(App, d.seenBy) : null],
         ['收集的資料', d.collected ? h('div', { class: 'chip-list' }, [
@@ -466,7 +467,9 @@
    * 一個 community 對到的 F13：核心在每個 community 給的 facet（Q.mgmtOf 的 communities[].facet）就是 F13 的 facet，直接以它對應；
    * 停用的與名稱沒有資料的不產生 F13。內容完全相同的同名 community 核心給同一個 facet、併成一筆，兩列都對到它。
    */
-  const communityFindings = (fl, c) => (c.disabled !== false || c.name === null ? [] : mgmtFindings(fl, 'F13', c.facet));
+  // 只有啟用中、有名稱的 community 會有 F13（停用的同名 community 的 facet 相同，不連）
+  const communityLinked = (c) => c.disabled === false && c.name !== null;
+  const communityFindings = (fl, c) => (communityLinked(c) ? mgmtFindings(fl, 'F13', c.facet) : []);
   /** 設備層：export 是整機或部分、設備版本與預設值表範圍 */
   function mgmtScope(ms) {
     const R = S.query.mgmtDefaults().versions.text;
@@ -481,10 +484,10 @@
     if (!ms) return mark(section('管理面設定', h('p', { class: 'muted' }, '沒有收集 /export，無法判斷 DNS、MAC server、鄰居探索、SNMP、UPnP、proxy、SOCKS 與 bandwidth-server 的設定。'), { fold: true }));
     const fl = Q.findingsFor('device', dev).filter((f) => MGMT_RULES.has(f.id));
     // 右欄很窄：每項一個區塊（名稱與狀態 → 值 → 依據 → 檢查結果），不用多欄表格
-    // data-finding-idxs：這一列對到的檢查結果，檢查結果 → 設定（mgmtGoto）以它找回這一列
+    // 檢查結果 → 設定（mgmtGoto）：一般項目以 data-mgmt 找回這一列；community 以 data-facet 加上 data-linked（啟用中、有名稱，communityLinked）
     const row = (attrs, label, menu, state, params, x, manual, reason, found, more) => {
       const links = found.map((f) => findingLink(App, f));
-      return h('div', Object.assign({ class: 'mgmt-row' + (links.length ? ' bad' : ''), 'data-finding-idxs': links.map((a) => a.getAttribute('data-finding-idx')).join(',') }, attrs), [
+      return h('div', Object.assign({ class: 'mgmt-row' + (links.length ? ' bad' : '') }, attrs), [
         h('div', { class: 'mgmt-head' }, [].concat(h('b', null, label), ' ', V.chip(state == null ? MGMT_UNKNOWN_STATE : state), h('span', { class: 'muted mono mgmt-menu' }, menu))),
         h('div', { class: 'mono mgmt-val' }, params.map(([f, p]) => `${p}=${mgmtVal(x[f])}`).join(' ')),
         h('div', { class: 'mgmt-line' }, [h('span', { class: 'muted' }, '依據：'), mgmtBasis(App, ms, x, params, manual, reason)]),
@@ -500,7 +503,7 @@
       const comms = it.area === 'snmp' ? a.communities : null;
       const more = it.area === 'snmp' && comms === null ? h('div', { class: 'mgmt-line' }, [h('span', { class: 'muted' }, 'community：'), h('span', { class: 'muted mgmt-unknown' }, mgmtReasonText(a.communitiesReason))]) : null;
       rows.push(row({ 'data-mgmt': it.area }, it.label, it.menu, state == null ? null : state + extra, it.params, a, it.area, a.reason, it.rule ? mgmtFindings(fl, it.rule, it.facet) : [], more));
-      (comms || []).forEach((c) => rows.push(row({ 'data-mgmt': 'community', 'data-community': c.name == null ? '' : c.name, 'data-facet': c.facet == null ? null : c.facet },
+      (comms || []).forEach((c) => rows.push(row({ 'data-mgmt': 'community', 'data-community': c.name == null ? '' : c.name, 'data-facet': c.facet == null ? null : c.facet, 'data-linked': String(communityLinked(c)) },
         [c.name == null ? 'SNMP community（名稱沒有資料）' : `SNMP community「${c.name}」`, ...(c.isDefault ? [' ', V.chip('出廠')] : [])], '/snmp community',
         c.disabled == null ? null : c.disabled ? '停用' : '啟用',
         MGMT_COMMUNITY.filter(([f]) => f !== 'name' && f !== 'disabled'), c, 'community', a.communitiesReason, communityFindings(fl, c))));
@@ -522,9 +525,8 @@
     if (!MGMT_RULES.has(f.id)) return null;
     const e = f.entities.find((x) => x.type === 'device'); if (!e || !App.Q.mgmtOf(e.key)) return null;
     const area = (MGMT_ITEMS.find((it) => it.rule === f.id && (it.facet === undefined || it.facet === f.facet)) || {}).area;
-    // F13：同名 community 的 facet 帶雜湊，名稱對不出是哪一列 → 找連到這一筆的列（mgmtSection 的 data-finding-idxs）
-    const Q = App.Q; const idx = String(Q.findingIndexesByKey(Q.findingKey(f)).find((i) => Q.finding(i) === f));
-    const match = (r) => (f.id === 'F13' ? r.getAttribute('data-mgmt') === 'community' && (r.getAttribute('data-finding-idxs') || '').split(',').includes(idx) : r.getAttribute('data-mgmt') === area);
+    // F13：以核心的 community.facet 對應（同名時帶雜湊）；停用的同名 community 的 facet 相同，只取 data-linked 的列
+    const match = (r) => (f.id === 'F13' ? r.getAttribute('data-mgmt') === 'community' && r.getAttribute('data-facet') === f.facet && r.getAttribute('data-linked') === 'true' : r.getAttribute('data-mgmt') === area);
     const go = () => {
       if (!App.sel || App.sel.type !== 'device' || App.sel.key !== e.key) App.select({ type: 'device', key: e.key }, { focus: true });
       const sec = V.$('#detail').querySelector('.mgmt-section'); if (!sec) return;
@@ -1020,21 +1022,33 @@
       : k === 'unverified' ? V.chip(`${prefix}無法驗證（${t.unverified.map((d) => App.Q.devName(d)).join('、')} 未收集）`, 'unverified')
         : V.chip(`${prefix}無法完整抵達`, 'err');
   };
+  /**
+   * 追蹤失敗的說明：起點在多個 VRF（S.trace 回傳 vrfs）時改寫成要怎麼做（在路由追蹤的 VRF 選單指定）並附開啟表單的按鈕，
+   * 不顯示查詢層的原始字串；其他原因照 S.trace 的中文訊息
+   */
+  function traceError(App, r, what, from) {
+    if (!r.vrfs) return h('p', { class: 'diffA' }, r.error);
+    return h('div', { class: 'trace-error' }, [
+      h('p', { class: 'warn-line' }, `${what}的起點${from ? ' ' + from : ''}在多個 VRF（${r.vrfs.map(V.vrfText).join('、')}，位址重疊），無法判斷從哪一個開始。請在路由追蹤的 VRF 選單指定 VRF，再追蹤一次。`),
+      // 表單保留上次的來源與目的，只要選 VRF
+      h('div', { class: 'row' }, h('button', { type: 'button', onclick: () => App.openTrace() }, '指定 VRF 再追蹤…')),
+    ]);
+  }
   function trace(App, sel) {
     const t = sel.result; const back = sel.reverse; const multi = multiVrf(App.Q);
-    if (!t.ok) return h('div', { class: 'detail' }, [h('h2', null, '路由追蹤'), h('p', { class: 'diffA' }, t.error)]);
+    if (!t.ok) return h('div', { class: 'detail' }, [h('h2', null, '路由追蹤'), traceError(App, t, '去程', '')]);
     // 非對稱：回程經過的設備順序和去程反過來不同
     const devs = (x) => x.hops.map((hp) => hp.dev);
     const asym = back && back.ok && devs(back).join('>') !== devs(t).slice().reverse().join('>');
     return h('div', { class: 'detail' }, [
       h('h2', null, `${t.src} → ${t.dst}`),
       h('div', { class: 'row' }, [traceChip(App, t, ''), t.hops.some((x) => x.ecmp) ? V.chip('含 ECMP', 'info') : null,
-        back ? (back.ok ? traceChip(App, back, '回程') : V.chip('回程無法完整抵達', 'err')) : null, asym ? V.chip('非對稱路徑', 'warn') : null,
+        back ? (back.ok ? traceChip(App, back, '回程') : back.vrfs ? V.chip('回程需要指定 VRF', 'warn') : V.chip('回程無法完整抵達', 'err')) : null, asym ? V.chip('非對稱路徑', 'warn') : null,
         t.ends.some((e) => e.status === 'policy') ? V.chip('策略路由不明', 'warn') : null]),
       kv([['起點', h('span', null, [devLink(App, t.start), '（來源所在網段的閘道）'])],
         ['VRF', multi ? `${t.vrf}（${sel.vrf ? '指定' : '依來源位址決定'}）` : null]]),
       ...tracePath(App, t),
-      back ? section(`回程（${t.dst} → ${t.src}）`, back.ok ? kv([['起點', devLink(App, back.start)], ['VRF', multi ? back.vrf : null], ['說明', '無狀態的 ACL 需要確認回程也能通過']]) : h('p', { class: 'diffA' }, back.error)) : null,
+      back ? section(`回程（${t.dst} → ${t.src}）`, back.ok ? kv([['起點', devLink(App, back.start)], ['VRF', multi ? back.vrf : null], ['說明', '無狀態的 ACL 需要確認回程也能通過']]) : traceError(App, back, '回程', t.dst)) : null,
       ...(back && back.ok ? tracePath(App, back, '回程') : []),
     ]);
   }

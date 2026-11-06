@@ -18,7 +18,9 @@ module.exports = async () => {
       const td = cellTd(c.src, c.dst); const where = `${c.src} → ${c.dst}`;
       if (!td || td.dataset.status !== c.status) throw new Error('格子的狀態應與 Q.zoneMatrix 相同：' + where);
       if (!td.textContent.includes(G[c.status].glyph) || !td.textContent.includes(V.L4_STATUS[c.status])) throw new Error('格子應有狀態的符號與文字：' + where);
-      if (c.heterogeneous !== td.textContent.includes('結果不一')) throw new Error('成員結果不一致的格子應標出「結果不一」：' + where);
+      // 格子很窄：結果不一是短標「≠」（完整說法在 title 與格子的 aria-label，UX6 M5）
+      const het = td.testAll('.l4-het')[0];
+      if (c.heterogeneous !== !!(het && het.textContent === '≠' && /結果不一/.test(het.getAttribute('title') || '') && /結果不一/.test(td.getAttribute('aria-label') || ''))) throw new Error('成員結果不一致的格子應標出「結果不一」：' + where);
       if (c.diagonal !== td.classList.contains('diag')) throw new Error('zone 內（對角線）應另外標示：' + where);
       const label = td.getAttribute('aria-label');
       if (!label.includes(V.L4_STATUS[c.status]) || (c.counts.total && !label.includes(`共 ${V.num(c.counts.total)} 組`))) throw new Error('格子的 aria-label 應讀出狀態與筆數：' + where);
@@ -29,7 +31,7 @@ module.exports = async () => {
       const c = mx.cells.find((x) => x.src === 'list:WAN' && x.dst === 'vlan:20');
       if (!c || c.status !== 'partial' || !c.heterogeneous) throw new Error('範例資料的 WAN → VLAN 20 應是部分（partial）且異質');
       const td = cellTd(c.src, c.dst);
-      if (!td.textContent.includes('部分') || !td.textContent.includes('結果不一')) throw new Error('WAN → VLAN 20 的格子應顯示「部分」與「結果不一」');
+      if (!td.textContent.includes('部分') || !td.testAll('.l4-het').some((b) => /結果不一/.test(b.getAttribute('title') || ''))) throw new Error('WAN → VLAN 20 的格子應顯示「部分」與「結果不一」');
       if (!statuses.has('unknown') || !statuses.has('empty')) throw new Error('範例資料應同時有 unknown 與 empty 的格子');
     }
     // 圖例：五種狀態、異質、zone 內

@@ -244,6 +244,8 @@
   };
   /** VRF 標示：main 也寫出（「VRF main」），只在需要和其他 VRF 區分時呼叫 */
   V.vrfText = (v) => 'VRF ' + S.keys.vrf(v);
+  /** 以 K.inVrf 組成的鍵（「位址@VRF」）給人看的寫法：「位址（VRF 名稱）」，main 不加（同 zone 名稱的寫法），畫面不外露 @ */
+  V.inVrfText = (key) => { const [a, v] = S.keys.splitVrf(key); return v === S.keys.MAIN_VRF ? a : `${a}（${V.vrfText(v)}）`; };
   /** 介面 VRF 的依據（interfaces[].vrfBasis，見 model/build.js 的 resolveVrfs）；export 是推論（export 不寫內建 main，假設 main 在最後） */
   V.IFC_VRF_BASIS = { reported: '設備回報的 vrf=', 'vrf-print': '依 /ip vrf print 的順序', export: '依 export 的 /ip vrf（推論：假設 main 在最後）', default: '沒有列在任何 VRF，屬於 main' };
   V.IFC_VRF_INFERRED = new Set(['export']);
@@ -311,6 +313,7 @@
    * 簡易表格：cols [{t:'標題', f:(row)=>內容, s?:(row)=>排序值}]，onRow(row) 可點擊。
    * 有 s 的欄位可點標頭排序；呼叫端不傳 onSort 時由表格自己儲存排序狀態（詳情表用），
    * 傳入 onSort／sortBy／sortDir 時由呼叫端管理（清單分頁需跨重繪保留）。
+   * stack：窄螢幕時每一列排成一塊、每格前面寫欄名（assets/app.css 的 table.t.stack；表頭不顯示，欄位多、右邊的欄會被切掉的表格用）。
    */
   V.table = function (cols, rows, opt) {
     const o = opt || {};
@@ -341,7 +344,7 @@
         tabindex: activate ? '0' : null,
         onkeydown: activate ? V.activateByKey(activate) : null,
       },
-        cols.map((c) => V.h('td', { class: c.cls || null, style }, c.f(r)))));
+        cols.map((c) => V.h('td', { class: c.cls || null, style, 'data-label': o.stack && typeof c.t === 'string' ? c.t : null }, c.f(r)))));
     });
     // 可排序的標頭：標頭內放 <button>（鍵盤可聚焦、Enter／空白鍵排序），th 標 aria-sort；▲▼ 只是視覺提示，不念出
     const head = (c, n) => {
@@ -354,7 +357,7 @@
       return V.h('th', { class: 'sortable', 'aria-sort': on ? (o.sortDir < 0 ? 'descending' : 'ascending') : 'none' },
         btn);
     };
-    const t = V.h('table', { class: 't' }, [V.h('thead', null, V.h('tr', null, cols.map(head))), tb]);
+    const t = V.h('table', { class: o.stack ? 't stack' : 't' }, [V.h('thead', null, V.h('tr', null, cols.map(head))), tb]);
     // 識別字（IP、MAC、VLAN 清單）在表格內不斷行，寬於畫面時表格在自己的框內橫向捲動
     const box = V.h('div', { class: 'table-scroll' }, t);
     if (o.limit && rows.length > o.limit) return V.h('div', null, [box, V.h('div', { class: 'muted table-more' }, `只顯示前 ${o.limit} 筆，共 ${V.num(rows.length)} 筆`)]);

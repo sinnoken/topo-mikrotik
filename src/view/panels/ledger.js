@@ -247,7 +247,7 @@
       if (sched.length || fixedAll.length) {
         trackBox.appendChild(h('div', { class: 'summary sub fix-summary' }, [
           V.chip(`已排定修正 ${V.num(sched.length)}`, sched.length ? R().STATUS_CHIP.scheduled : '', { 'data-status': 'scheduled' }),
-          V.chip(`目前基準仍有 ${V.num(still)}`, still ? 'warn' : '', { title: '已排定修正、本輪仍出現：可能還沒套用 patch，或前置檢查中止了' }),
+          V.chip(`目前基準仍有 ${V.num(still)}`, still ? 'warn' : '', { title: '已排定修正、本輪仍出現：可能還沒套用修正指令，或前置檢查中止了' }),
           V.chip(`累計已修好 ${V.num(fixedAll.length)}`, fixedAll.length ? 'ok' : '', { 'data-status': 'fixed' })]));
       }
       trackBox.appendChild(sched.length || fixedAll.length ? h('div', { class: 'fix-tracking' }, [

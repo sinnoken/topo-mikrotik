@@ -32,9 +32,9 @@
     const m = s.trim().match(/^(\S.*?)\s+(\S+)$/);
     return m ? K.ep(m[1], m[2]) : null;
   }
-  // 錯誤與警告給人看：說明值的種類，不外露 JSON 原文
+  // 錯誤與警告給人看：說明值的種類，不外露 JSON 原文。下游共用的單一來源（S.compare.valueText，workpack 也用）
   const valueText = (v) => (v === undefined || v === null || v === '' ? '沒有填' : typeof v === 'string' ? `「${v}」`
-    : typeof v === 'number' ? `數字 ${v}` : typeof v === 'boolean' ? '是非值' : Array.isArray(v) ? '陣列' : typeof v === 'object' ? '物件' : typeof v);
+    : typeof v === 'number' ? `數字 ${v}` : typeof v === 'boolean' ? String(v) : Array.isArray(v) ? '陣列' : typeof v === 'object' ? '物件' : typeof v);
 
   S.compare = function (Q, expected) {
     const errors = [];
@@ -491,4 +491,6 @@
 
   // schema 常數唯讀（不可寫、不可重新設定）
   Object.entries({ SCHEMA_EXPECTED, SCHEMA_DIFF, SCHEMA_SNAPDIFF, SCHEMA_DRIFT }).forEach(([k, v]) => Object.defineProperty(S.compare, k, { value: v, enumerable: true }));
+  /** S.compare.valueText(v) → 給人看的值說明（「文字」、數字 N、true／false、陣列、物件、沒有填），不外露 JSON 原文；唯讀 */
+  Object.defineProperty(S.compare, 'valueText', { value: valueText, enumerable: true });
 })(globalThis.SSOT = globalThis.SSOT || {});

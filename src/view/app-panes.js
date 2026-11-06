@@ -125,7 +125,8 @@
   }
   /** 步驟列：目前的一步（aria-current="step"）、停用的步驟與每一步的狀態 */
   A.renderSteps = function renderSteps() {
-    const cur = A.currentStep(); const has = !!App.snap;
+    // 還沒有基準時（歡迎畫面）要做的是「輸入」：標它是目前的一步，不標底下還不能用的「研判」
+    const has = !!App.snap; const cur = has ? A.currentStep() : 'input';
     STEPS.forEach((s) => {
       const b = stepBtn(s); if (!b) return;
       const on = s === cur; const off = needsSnap(s) && !has;

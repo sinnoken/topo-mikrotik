@@ -14,7 +14,7 @@
     ['基準（Snapshot）', S.SCHEMA],
     ['處理紀錄', S.ledger.SCHEMA],
     ['預期現況', S.compare.SCHEMA_EXPECTED],
-    ['修正 patch', S.remediate.SCHEMA],
+    ['修正指令', S.remediate.SCHEMA],
     ['工作包', S.workpack.SCHEMA],
   ];
 
@@ -25,7 +25,8 @@
       h('dt', null, '程式'), h('dd', { id: 'app-version' }, 'RouterOS 網路基準 版本 ' + S.VERSION),
       ...formats().flatMap(([name, schema]) => [h('dt', null, name + '格式'), h('dd', { class: 'mono' }, schema)]),
       h('dt', null, '離線'), h('dd', null, ['全部在這個瀏覽器處理，不會把資料傳到任何地方；可以直接用 file:// 開啟，不需要伺服器。頁面的 Content-Security-Policy 以 ',
-        h('code', null, "connect-src 'none'"), ' 禁止網路連線。']),
+        h('code', null, "connect-src 'none'"), ' 禁止網路連線；', h('code', null, 'script-src'),
+        ' 只放行同目錄的程式檔與首次繪製配色的那一段內嵌程式（以 sha256 雜湊指定），其他內嵌程式與事件屬性都不會執行。']),
       h('dt', null, '唯讀'), h('dd', null, '不連線設備，也不改動設備：修正只產生 .rsc 文字，由你自行套用；收集腳本只執行唯讀的 /export 與 print。'),
       h('dt', null, '第三方元件'), h('dd', null, [
         'ELK.js（分層版面，第一次用到時才載入）：Eclipse Public License 2.0（EPL-2.0）。授權全文在 ',

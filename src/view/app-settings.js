@@ -59,8 +59,10 @@
     $('#main').inert = true; $('#mobile-workspaces').inert = true;
     $('#btn-settings').setAttribute('aria-expanded', 'true'); $('#btn-settings').classList.add('on');
     render();
+    // 從頂端開始、聚焦時不捲動：捲到分類標題會把左側（窄螢幕是上方）的分類列推出頁首
+    $('#settings').scrollTop = 0;
     const target = $(section ? '#settings-panel-title' : '#settings-title');
-    if (target) { target.focus(); if (target.scrollIntoView) target.scrollIntoView({ block: 'start' }); }
+    if (target) target.focus({ preventScroll: true });
   };
   /** 關閉設定；opt.focus 為 true 時焦點回到開啟它的按鈕或頁首的 ⚙（鍵盤關閉時） */
   A.closeSettings = function closeSettings(opt) {

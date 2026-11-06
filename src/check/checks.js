@@ -33,12 +33,8 @@
     ospf: 'OSPF', ipaddr: 'IP 位址', ifstatus: '介面狀態', system: '系統資訊', wifireg: 'Wi-Fi 關聯表', stp: 'RSTP 狀態', fwstats: '防火牆命中次數', vrf: 'VRF', routerboard: 'RouterBOARD 韌體',
   });
 
-  // 對外邊界證據（model.boundaries 的 evidence[].kind）在訊息中的名稱
-  const BOUNDARY_LABEL = Object.freeze({
-    'default-route': '預設路由的出介面', 'dhcp-client': 'DHCP client 加入的預設路由', 'pppoe-client': 'PPPoE client 加入的預設路由',
-    'srcnat-out': 'srcnat 的出介面', 'dstnat-in': 'dst-nat 的入介面', 'wan-list': 'WAN 清單',
-    'public-address': '公網位址', 'cgnat-address': 'CGNAT 位址', 'dstnat-address': 'dst-nat 的目的位址',
-  });
+  // 對外邊界證據（model.boundaries 的 evidence[].kind）在訊息中的名稱：唯一來源在 S.infer.BOUNDARY_LABEL（畫面經 S.query.boundaryLabel）
+  const BOUNDARY_LABEL = S.infer.BOUNDARY_LABEL;
 
   // 訊息中引用原文時的長度上限（I01 的錯誤訊息、I03 的無法辨識行）
   const clip = (t) => { t = String(t == null ? '' : t).trim(); return t.length > 60 ? t.slice(0, 60) + '…' : t; };

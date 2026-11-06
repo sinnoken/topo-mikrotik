@@ -300,3 +300,21 @@ test('Q.exposure：每列帶畫面要的欄位（服務名稱、入口介面、d
   const e = exposureOf(S.query(edge()));
   assert.strictEqual(find(e.self, '198.51.100.2', 'tcp/8291').inInterface, 'ether1', '沒有介面紀錄時用介面鍵的名稱');
 });
+
+test('Q.exposure 的候選服務含目的設備自己開著的服務（啟用中的 /ip service 與管理服務，同矩陣「外部 → 網路設備」），停用的不加', () => {
+  const extra = ['/ip service set ssh port=2222', '/ip service set telnet port=2323 disabled=yes', '/snmp set enabled=yes', '/ip dns set allow-remote-requests=yes'];
+  const lines = R1.slice(); lines.splice(lines.indexOf('### /ip route print detail without-paging'), 0, ...extra);
+  const own = (x) => x.services.filter((v) => v.origins.includes('ip-service') || v.origins.includes('mgmt')).map((v) => v.id).sort();
+  [S.query(build(lines.concat(SW1).join('\n'))), S.query(sampleSnap())].forEach((Q, i) => {
+    const x = exposureOf(Q); const mx = Q.zoneMatrix();
+    const mids = new Set(mx.services.map((v) => v.id)); const xids = new Set(x.services.map((v) => v.id));
+    // 矩陣的 service（預設、dst-nat 的埠、目的設備開著的服務）都在暴露清單的候選中；暴露清單取自設備服務的也都在矩陣中
+    mids.forEach((id) => assert.ok(xids.has(id), `${i}：矩陣的 ${id} 不在暴露清單的候選`));
+    own(x).forEach((id) => assert.ok(mids.has(id), `${i}：暴露清單的設備服務 ${id} 不在矩陣`));
+    if (i === 0) {
+      ['tcp/2222', 'udp/161', 'tcp/53', 'udp/53'].forEach((id) => assert.ok(own(x).includes(id), `${id}：${own(x).join('、')}`));
+      assert.ok(!xids.has('tcp/2323'), '停用的 /ip service 不加');
+      assert.ok(x.services.find((v) => v.id === 'tcp/2222').origins.includes('ip-service'));
+    }
+  });
+});

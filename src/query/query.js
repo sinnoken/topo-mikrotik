@@ -1217,6 +1217,11 @@
   S.query.preflightRecognized = (pre) => pre.devices.filter((d) => recognized(d.dataTypes.length, d.failures));
   /** 資料類別（設備的 data、coverage 的 data／missing、收集失敗的 dataTypes）的顯示名稱；不認得時原樣回傳。 */
   S.query.dataLabel = (t) => S.check.DATA_LABEL[t] || t;
+  /**
+   * 對外邊界證據種類（Q.boundaries() 的 evidence[].kind）的顯示名稱，與檢查訊息用的是同一份（S.infer.BOUNDARY_LABEL）。
+   * 不認得的種類回傳 null（不以原值冒充說明，畫面自己標示「沒有說明」）。
+   */
+  S.query.boundaryLabel = (kind) => (Object.prototype.hasOwnProperty.call(S.infer.BOUNDARY_LABEL, kind) ? S.infer.BOUNDARY_LABEL[kind] : null);
   /** 解析器（adapter id，見 meta.adapters、blocks[].adapters）的顯示名稱；不認得時原樣回傳。 */
   S.query.adapterLabel = (id) => (Object.prototype.hasOwnProperty.call(S.adapters, id) && S.adapters[id] && S.adapters[id].label) || id;
   /** 管理面設定的出廠預設值表（凍結，S.MGMT_DEFAULTS）：export 沒寫的欄位依它補上；含適用的 RouterOS 版本（routerOS）與手冊網址（manual）。 */

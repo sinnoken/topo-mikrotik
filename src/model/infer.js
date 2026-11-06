@@ -1152,6 +1152,12 @@
    * status：有強證據 → external；只有弱證據但有 wan-list → external（維持名稱判斷的結果）；其他只有弱證據 → possible；證據都是 none → internal。
    * 沒有列出的介面沒有任何證據（internal）。停用的規則與停用的設定不列。firewallZones 的語意不變。
    */
+  /** 證據種類（evidence[].kind）的顯示名稱：檢查的訊息與畫面（S.query.boundaryLabel）共用的唯一來源。 */
+  const BOUNDARY_LABEL = Object.freeze({
+    'default-route': '預設路由的出介面', 'dhcp-client': 'DHCP client 加入的預設路由', 'pppoe-client': 'PPPoE client 加入的預設路由',
+    'srcnat-out': 'srcnat 的出介面', 'dstnat-in': 'dst-nat 的入介面', 'wan-list': 'WAN 清單',
+    'public-address': '公網位址', 'cgnat-address': 'CGNAT 位址', 'dstnat-address': 'dst-nat 的目的位址',
+  });
   const STRENGTH_ORDER = ['strong', 'weak', 'none'];
   const DEFAULT_ROUTE_ADD = new Set(['yes', 'special-classless']);
   function boundaries(M) {
@@ -1403,7 +1409,7 @@
     return d.key;
   }
 
-  S.infer = { infer, displayName, effVlans, effVlanModes, effPvid, bridgeOf, vlanSpan, VLAN_DATA, isVirtualIfc, hwMacsByDev, wifiLocations, behindLocations, boundaries, routingDomains, routingView };
+  S.infer = { infer, displayName, effVlans, effVlanModes, effPvid, bridgeOf, vlanSpan, VLAN_DATA, isVirtualIfc, hwMacsByDev, wifiLocations, behindLocations, boundaries, BOUNDARY_LABEL, routingDomains, routingView };
   S.infer.fw = { canonMatch, covers, sameMatch, evalChain, evalFilter, decide, packetFor, wanPacket, wanEntries, entriesIn, fwContext, parseVal, splitNeg, protoName, listMembers, policyBaseline,
     TERMINAL: FW_TERMINAL, BUILTIN: FW_BUILTIN, NONDET: FW_NONDET, PORT_PROTOCOLS, POLICY_CHAINS };
 })(globalThis.SSOT = globalThis.SSOT || {});

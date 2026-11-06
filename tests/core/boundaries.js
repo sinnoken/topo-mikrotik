@@ -66,6 +66,20 @@ test('對外邊界：dst-nat 的入介面是強證據、dst-address 是設備上
   assert.deepStrictEqual(build(t).model.boundaries, build(t).model.boundaries);
 });
 
+test('S.query.boundaryLabel：證據種類的顯示名稱與檢查訊息同一份（S.infer.BOUNDARY_LABEL）；出現的種類都有名稱，不認得的回傳 null', () => {
+  const L = S.infer.BOUNDARY_LABEL;
+  assert.ok(Object.isFrozen(L));
+  const seen = new Set();
+  [S.query(build(R.concat(R2).join('\n'))), S.query(sampleSnap())].forEach((Q) => Q.boundaries().forEach((b) => b.evidence.forEach((e) => seen.add(e.kind))));
+  ['default-route', 'dhcp-client', 'srcnat-out', 'wan-list', 'public-address', 'cgnat-address'].forEach((k) => assert.ok(seen.has(k), `測試資料要有 ${k}`));
+  seen.forEach((k) => { assert.strictEqual(typeof S.query.boundaryLabel(k), 'string', k); assert.strictEqual(S.query.boundaryLabel(k), L[k]); });
+  Object.keys(L).forEach((k) => assert.strictEqual(S.query.boundaryLabel(k), L[k]));
+  [undefined, 'nope', 'toString', '__proto__'].forEach((k) => assert.strictEqual(S.query.boundaryLabel(k), null, String(k)));
+  // 檢查的訊息用同一份名稱（R08：判定對外、不在 WAN 清單）
+  const r08 = sampleSnap().findings.filter((f) => f.id === 'R08');
+  assert.ok(r08.length && r08.every((f) => Object.values(L).some((v) => f.message.includes(v))), JSON.stringify(r08.map((f) => f.message)));
+});
+
 test('路由網域：OSPF interface-template（interfaces、networks）比對到的網段依「鄰接相連的設備 × area」分組；其他網段依共用網段的路由器分組；每個網段恰好一個網域', () => {
   const a = ['R_A (10.0.0.1):', '### /export terse',
     '/ip address add address=10.254.0.1/30 interface=ether48 network=10.254.0.0', '/ip address add address=10.1.1.1/24 interface=ether2 network=10.1.1.0',

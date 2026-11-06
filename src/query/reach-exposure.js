@@ -14,7 +14,7 @@
   /** E：reach.js 的 base 建立的 engine 物件；加上 exposure、exposureSteps。 */
   S.reach._.exposurePart = function exposurePart(E) {
     const { Q, I, m, F, name, ownerOf, intOf, ownerDev, longest, devInfo, netDev, ref, where, reason, bounds, externalRep, repInRange, single, ownIps, l4Entries, ipv6Devices,
-      evaluate, pathsOf, rowLayers, deniedByOf, unsafeOfSum, unsafeReason, dedupeReasons, zones, zoneOf, repsOf, virtualOf, svcClasses, devClasses } = E;
+      evaluate, pathsOf, rowLayers, deniedByOf, unsafeOfSum, unsafeReason, dedupeReasons, zones, zoneOf, repsOf, virtualOf, svcClasses, devClasses, mgmtPorts, deviceServices } = E;
 
     // ---- 暴露清單（由外而內）：從 WAN 進來，連得到哪些位址、哪些服務（推論，查詢時計算，ADR-014）
     const exposureCache = new Map();
@@ -64,8 +64,11 @@
       atoms.sort((x, y) => (y.primary ? 1 : 0) - (x.primary ? 1 : 0) || intOf(x.ip) - intOf(y.ip));
       return { list: atoms.slice(0, max), total: atoms.length, truncated: atoms.length > max };
     }
-    /** 候選服務：預設服務 ∪ 從 WAN 進來的 input／forward 放行規則的 dst-port ∪ dst-nat 的 dst-port ∪ 入口設備 /ip service 的埠。埠範圍取第一個埠當代表，記下範圍。 */
-    function exposureServices(entries) {
+    /**
+     * 候選服務：預設服務 ∪ 從 WAN 進來的 input／forward 放行規則的 dst-port ∪ dst-nat 的 dst-port ∪ self 段目的設備（selfDevs：入口設備與矩陣「網路設備（管理）」的設備）
+     * 自己開著的服務（E.deviceServices：啟用中的 /ip service 與 mgmt 埠，與矩陣相同）。埠範圍取第一個埠當代表，記下範圍。
+     */
+    function exposureServices(entries, selfDevs) {
       const byId = new Map();
       const addSvc = (proto, port, origin, range) => {
         const s = { proto, port }; const id = svcId(s);
@@ -95,24 +98,11 @@
         if (r.family === 'ip' && r.table === 'nat' && r.chain === 'dstnat' && r.action === 'dst-nat') portsOf(r, 'dst-nat');
         else if (r.table === 'filter' && (r.chain === 'input' || r.chain === 'forward') && r.action === 'accept' && wanOf.has(r.dev) && fromWan(r)) portsOf(r, 'filter');
       });
-      wanOf.forEach((_, d) => Q.ipServicesOf(d).forEach((sv) => { if (Number.isInteger(sv.port)) addSvc('tcp', sv.port, 'ip-service'); }));
-      wanOf.forEach((_, d) => mgmtPorts(d).forEach((x) => addSvc(x.proto, x.port, 'mgmt')));
+      selfDevs.forEach((d) => deviceServices(d).forEach((x) => addSvc(x.proto, x.port, x.origin)));
       const PO = ['icmp', 'tcp', 'udp'];
       return Array.from(byId.values()).sort((a, b) => (PO.indexOf(a.proto) + 1 || 9) - (PO.indexOf(b.proto) + 1 || 9) || U.cmp(a.proto, b.proto) || (a.port || 0) - (b.port || 0));
     }
-    /**
-     * 設備本身的其他管理服務（Q.mgmtOf，F10、F13、F14 判斷過的埠）：開著的才列。name 是畫面顯示的服務名稱，finding 是對應的檢查（facet 為 null 時同 id 的都算）。
-     */
-    const mgmtPorts = (dev) => {
-      const g = Q.mgmtOf(dev); if (!g) return [];
-      const out = [];
-      if (g.dns && g.dns.allowRemote) out.push({ proto: 'udp', port: 53, name: 'dns', finding: ['F10', null] }, { proto: 'tcp', port: 53, name: 'dns', finding: ['F10', null] });
-      if (g.snmp && g.snmp.enabled) out.push({ proto: 'udp', port: 161, name: 'snmp', finding: ['F13', null] });
-      if (g.proxy && g.proxy.enabled) (g.proxy.ports || []).forEach((p) => { if (Number.isInteger(p)) out.push({ proto: 'tcp', port: p, name: 'web-proxy', finding: ['F14', 'proxy'] }); });
-      if (g.socks && g.socks.enabled && Number.isInteger(g.socks.port)) out.push({ proto: 'tcp', port: g.socks.port, name: 'socks', finding: ['F14', 'socks'] });
-      if (g.bandwidthServer && g.bandwidthServer.enabled && Number.isInteger(g.bandwidthServer.port)) out.push({ proto: 'tcp', port: g.bandwidthServer.port, name: 'bandwidth-server', finding: ['F14', 'bandwidth-server'] });
-      return out;
-    };
+    // 設備的管理服務（mgmtPorts）與開著的服務（deviceServices）在 reach-matrix.js，矩陣與暴露清單共用
     const EXPOSURE_FINDINGS = new Set(['F03', 'F04', 'F05', 'F07', 'F10', 'F11', 'F12', 'F13', 'F14']);
     /** 一列相關的檢查（findingKey）：決定結果的規則（F03、F04；IPv6 列的 F05）、/ip service（F07）與設備的管理服務（F10、F13、F14）。 */
     const rowFindings = (dev, sum, svcName, mg) => {
@@ -363,7 +353,10 @@
       // 經其他入口連到設備本身：外部來源依入口設備與目的設備兩台的規則切區段（目的設備的 input 也可能限制來源）
       const pairSrcs = new Map();
       const srcsFor = (ed, td) => (ed === td ? srcsOf.get(ed) : U.getOr(pairSrcs, ed + '\u0000' + td, () => extSources([ed, td], extIp, maxSrc)));
-      const services = exposureServices(entries);
+      // self 段的目的設備（矩陣「網路設備（管理）」的目的，virtualOf 的 selfDst，只取 IPv4；IPv6 見 exposure6）：先算，候選服務含這些設備開著的服務
+      const reps = repsOf(zs);
+      const selfDst = virtualOf(reps).selfDst.filter((t) => IP.isIp(t.ip));
+      const services = exposureServices(entries, U.uniq(Array.from(entryDevs).concat(selfDst.map((t) => t.dev))).sort(U.natural));
       // 目的（各在入口的 VRF）：入口設備自己的位址與 dst-nat 寫明的 dst-address → self／dnat；內部網段的代表位址（矩陣的 repsOf） → routed
       // front：從外部看得到的入口位址（入口介面上的位址與 dst-nat 寫明的 dst-address；dst-nat 規則不分 VRF），dst-nat 只在這些位址列進 dnat；
       // 設備其他介面的位址只看 input（經 dst-nat 改寫的計入 natted，同一條 dst-nat 已在 dnat 以入口位址列出）。
@@ -388,7 +381,6 @@
         });
         own.set(dv, list.sort((a, b) => intOf(a) - intOf(b)));
       });
-      const reps = repsOf(zs);
       const repsByVrf = new Map(); reps.forEach((list) => list.forEach((r) => U.getOr(repsByVrf, r.vrf, () => []).push(r)));
       repsByVrf.forEach((list) => list.sort((a, b) => intOf(a.ip) - intOf(b.ip)));
       const jobs = [];
@@ -399,7 +391,6 @@
       // （判斷次數用完時先截掉這些）。service 依矩陣的等價類（devClasses）先以類的第一個 service 判斷，拒絕時同類都是拒絕；不是拒絕時同類逐一判斷（列與 Q.reach 相同）
       const covered = new Set(); entries.forEach((w) => { if (w.vrf === K.MAIN_VRF) own.get(devVrf(w.dev, w.vrf)).forEach((ip) => covered.add(devVrf(w.dev, K.MAIN_VRF) + '|' + ip)); });
       const mainEntries = entries.filter((w) => w.vrf === K.MAIN_VRF);
-      const selfDst = virtualOf(reps).selfDst.filter((t) => IP.isIp(t.ip)); // IPv4 的判斷（IPv6 見 exposure6）
       selfDst.forEach((t) => mainEntries.forEach((w) => {
         if (w.dev === t.dev && covered.has(devVrf(t.dev, t.vrf) + '|' + t.ip)) return;
         jobs.push({ kind: 'via', w, ip: t.ip, t });

@@ -55,7 +55,7 @@
       causes: [
         '這台設備還沒加入收集清單。',
         '這台設備不在管理範圍，例如 ISP 端設備。',
-        '設備的 identity 與收集檔標頭不同，同一台設備被當成兩台。',
+        '設備名稱（identity）與收集檔標頭不同，同一台設備被當成兩台。',
       ],
       action: '若它是應管理的網路設備，加入收集清單；不在管理範圍的可以忽略。ISP 端等設備不在管理範圍。名稱對不上時，讓 `/system identity` 與收集檔標頭一致（見收集清單 §3）。',
     },
@@ -76,7 +76,7 @@
         '兩次收集之間鏈路異動。',
         '中間有不轉送 LLDP 的設備，例如部分媒體轉換器、非網管型交換器。',
       ],
-      action: '檢查對端該埠的 neighbor discovery 設定，或重新收集兩端。設定在 `/ip neighbor discovery-settings` 的 `discover-interface-list`、`protocol`，鄰居表是 `/ip neighbor`。',
+      action: '檢查對端該埠的鄰居探索（neighbor discovery）設定，或重新收集兩端。設定在 `/ip neighbor discovery-settings` 的 `discover-interface-list`、`protocol`，鄰居表是 `/ip neighbor`。',
     },
     K02: {
       severity: 'warn', cat: '鏈路', title: '同一介面對應到多個鄰居', data: [['lldp']],
@@ -100,7 +100,7 @@
       severity: 'info', cat: '鏈路', title: '對端回報的埠名稱與本機不同', data: [['lldp']],
       causes: [
         '對端的埠改過名稱。',
-        '對端 LLDP 的 port ID 送的是描述或預設名稱。',
+        '對端 LLDP 的埠識別碼（port ID）送的是描述或預設名稱。',
       ],
       action: '鏈路已採用對端自己回報的埠，通常不需處理。若要確認，查看對端該埠的名稱與 LLDP 設定，再重新收集兩端的 `/ip neighbor`。',
     },
@@ -109,16 +109,16 @@
       severity: 'warn', cat: 'VLAN', title: '鏈路兩端 VLAN 不一致', data: [['lldp'], ['config', 'vlans']],
       causes: [
         '兩端 `/interface bridge vlan` 的成員設得不同，某些 VLAN 只在一端。',
-        '兩端 bridge port 的 `pvid` 不同。',
+        '兩端橋接埠（bridge port）的 `pvid` 不同。',
         '一端是路由器介面上的 VLAN 子介面（`/interface vlan`，例如單臂路由），少建、多建或停用了某個 VLAN。',
       ],
-      action: '比對兩端的 bridge VLAN 與 bridge port 的 `pvid`，修正只在一端的 VLAN。設定在 `/interface bridge vlan` 與 `/interface bridge port`。',
+      action: '比對兩端橋接器的 VLAN 成員與橋接埠的 `pvid`，修正只在一端的 VLAN。設定在 `/interface bridge vlan` 與 `/interface bridge port`。',
     },
     V04: {
       severity: 'warn', cat: 'VLAN', title: '鏈路兩端 native VLAN（PVID）不一致', data: [['lldp'], ['config']],
       causes: [
         '兩端 `/interface bridge port` 的 `pvid` 設得不同。',
-        '改了一端的 native VLAN，另一端沒有跟著改。',
+        '改了一端的原生 VLAN（native VLAN），另一端沒有跟著改。',
       ],
       action: '比對兩端 `/interface bridge port` 的 `pvid` 並改成一致。不一致時，未標記的流量會進到不同 VLAN。',
     },
@@ -126,7 +126,7 @@
       severity: 'info', cat: 'VLAN', title: 'VLAN 介面沒有任何成員埠（孤立 VLAN）', data: [['config', 'vlans']],
       causes: [
         'VLAN 已停用，但 `/interface vlan` 沒有刪除。',
-        '漏設 bridge VLAN 成員（`/interface bridge vlan` 的 `tagged`／`untagged`）。',
+        '漏設橋接器的 VLAN 成員（`/interface bridge vlan` 的 `tagged`／`untagged`）。',
       ],
       action: '確認這個 VLAN 是否還要用：不用就刪除，要用就補上成員埠。刪除的是該 `/interface vlan`，成員埠補在 `/interface bridge vlan`。',
     },
@@ -151,18 +151,18 @@
     V08: {
       severity: 'warn', cat: 'VLAN', title: '鏈路兩端同一 VLAN 的 tagged／untagged 不一致', data: [['lldp'], ['config', 'vlans']],
       causes: [
-        '一端把這個 VLAN 設成 untagged（access 或 PVID），另一端設成 tagged（trunk）。',
+        '一端把這個 VLAN 設成不加標記（untagged：access 或 PVID），另一端設成加標記（tagged：trunk）。',
         '只改了一端 `/interface bridge vlan` 的 `tagged`／`untagged` 清單。',
       ],
-      action: '比對兩端這個 VLAN 的 tagged／untagged，改成同一種標記方式。設定在 `/interface bridge vlan` 的 `tagged`／`untagged` 與 bridge port 的 `pvid`、`frame-types`；不一致時，這個 VLAN 的流量進到對端會被丟掉或進到 native VLAN。',
+      action: '比對兩端這個 VLAN 是否加標記（tagged／untagged），改成同一種標記方式。設定在 `/interface bridge vlan` 的 `tagged`／`untagged` 與橋接埠（bridge port）的 `pvid`、`frame-types`；不一致時，這個 VLAN 的流量進到對端會被丟掉或進到原生 VLAN（native VLAN）。',
     },
     V09: {
       severity: 'info', cat: 'VLAN', title: '鏈路一端在未開 vlan-filtering 的 bridge 上（VLAN 無法比較）', data: [['lldp'], ['config']],
       causes: [
-        '這台設備刻意不做 VLAN 過濾，只把 tagged 訊框原樣轉送。',
-        '忘了在 bridge 開啟 `vlan-filtering=yes`，`/interface bridge vlan` 與 bridge port 的 `pvid` 因此沒有作用。',
+        '這台設備刻意不做 VLAN 過濾，只把加標記（tagged）的訊框原樣轉送。',
+        '忘了在橋接器（bridge）開啟 `vlan-filtering=yes`，`/interface bridge vlan` 與橋接埠的 `pvid` 因此沒有作用。',
       ],
-      action: '確認這個 bridge 是否應該做 VLAN 過濾；刻意透通則不需處理。要的話先設好 `/interface bridge vlan` 的成員與 bridge port 的 `pvid`，再設定 `vlan-filtering=yes`；透通時這條鏈路的 VLAN 一致性無法由基準確認。',
+      action: '確認這個橋接器（bridge）是否應該做 VLAN 過濾；刻意透通則不需處理。要的話先設好 `/interface bridge vlan` 的成員與橋接埠的 `pvid`，再設定 `vlan-filtering=yes`；透通時這條鏈路的 VLAN 一致性無法由基準確認。',
     },
     // ---- 位址
     A01: {
@@ -170,7 +170,7 @@
       causes: [
         'IP 衝突。',
         'VRRP 或 HA 切換。',
-        'proxy ARP。',
+        '代理 ARP（proxy ARP）。',
         '兩次收集之間 DHCP 位址被重新分配。',
       ],
       action: '用 MAC 的廠商與所在位置（`/ip arp`、`/interface bridge host`）判斷是否為 IP 衝突。',
@@ -179,7 +179,7 @@
       severity: 'warn', cat: '位址', title: '同一 MAC 在同一 VLAN 出現在多個終端埠', data: [['mac']],
       facet: '<VLAN ID>，VLAN 不明時為 unknown',
       causes: [
-        '同一台主機的兩個網路卡共用 MAC，例如部分 bonding 模式。',
+        '同一台主機的兩個網路卡共用 MAC，例如部分鏈路聚合（bonding）模式。',
         '虛擬機遷移。',
         'L2 迴圈。',
         'MAC 表在兩次收集之間更新。',
@@ -208,7 +208,7 @@
       causes: [
         '主機設錯網段或遮罩。',
         'IP 漂移。',
-        'proxy ARP。',
+        '代理 ARP（proxy ARP）。',
       ],
       action: '用 ARP 的 MAC 找出主機，確認它的位址設定。',
     },
@@ -254,7 +254,7 @@
         'HA 成對設備或同一角色的設備之間，清單漏同步。',
         '各設備刻意設定不同的值。',
       ],
-      action: '確認是漏同步還是刻意不同；HA 成對或同角色的設備應有相同清單。比對各設備的 address-list、DNS static、pool 或 DHCP 靜態租約。有與多數不同的設備時，先從那幾台查起。',
+      action: '確認是漏同步還是刻意不同；HA 成對或同角色的設備應有相同清單。比對各設備的位址清單（address-list）、DNS 靜態項目（static）、位址池（pool）或 DHCP 靜態租約。有與多數不同的設備時，先從那幾台查起。',
     },
     A11: {
       severity: 'info', cat: '位址', title: '同一 IP 在不同設備以不同名稱設定', data: [['config']],
@@ -289,10 +289,10 @@
       facet: '<本端介面名稱>',
       causes: [
         'OSPF 鄰居設備沒有收集。',
-        '鄰居的 router-id 或介面位址沒有收集到。',
+        '鄰居的路由器 ID（router-id）或介面位址沒有收集到。',
         '鄰居是不在管理範圍的設備，例如 ISP 或其他單位的路由器。',
       ],
-      action: '把該鄰居設備加入收集清單，或確認它的 router-id 與位址已收集。介面位址來自 `/ip address`。',
+      action: '把該鄰居設備加入收集清單，或確認它的路由器 ID（router-id）與位址已收集。介面位址來自 `/ip address`。',
     },
     R03: {
       severity: 'warn', cat: '路由', title: '路由下一跳形成迴圈', data: [['route']],
@@ -342,7 +342,7 @@
     F02: {
       severity: 'info', cat: '防火牆', title: '重複的規則（比對條件與動作相同）', data: [['config']],
       causes: [
-        'defconf 被匯入兩次。',
+        '預設組態（defconf）被匯入兩次。',
         '手動新增時沒注意已經有相同的規則。',
       ],
       action: '刪除重複的那條。',
@@ -352,10 +352,10 @@
       causes: [
         '服務刻意對外開放。',
         '放行規則沒有限制來源位址或入介面。',
-        '前面缺少擋下從 WAN 進來連線的 drop 規則。',
-        '前面的 drop 用了無法判斷的條件（例如 `dst-address-list`），檢查時當成不命中，可能多報。',
+        '前面缺少擋下從 WAN 進來連線的丟棄（drop）規則。',
+        '前面的丟棄規則用了無法判斷的條件（例如 `dst-address-list`），檢查時當成不命中，可能多報。',
       ],
-      action: '確認這個服務是否應該對外開放；不應開放時限制來源位址。可加上 `src-address` 或 `src-address-list`，或在它之前放一條從 WAN 進來的 drop。',
+      action: '確認這個服務是否應該對外開放；不應開放時限制來源位址。可加上 `src-address` 或 `src-address-list`，或在它之前放一條丟棄從 WAN 進來連線的規則（drop）。',
     },
     F04: {
       severity: 'info', cat: '防火牆', title: 'WAN 可連入的 dst-nat（連接埠轉送）', data: [['config']],
@@ -363,7 +363,7 @@
         '刻意對外提供服務的連接埠轉送。',
         '已經不再使用、但沒有刪除的轉送。',
       ],
-      action: '確認 `/ip firewall nat` 的這個轉送是否仍需要；需要時考慮限制來源位址。訊息提醒可能是 hairpin NAT 需要的放行規則時，收緊前先確認。',
+      action: '確認 `/ip firewall nat` 的這個轉送是否仍需要；需要時考慮限制來源位址。訊息提醒可能是迴流 NAT（hairpin NAT）需要的放行規則時，收緊前先確認。',
     },
     F05: {
       severity: 'warn', cat: '防火牆', title: 'IPv6 forward 放行只限目的埠、沒有限目的位址', data: [['config']],
@@ -386,24 +386,24 @@
       causes: [
         '服務沿用出廠設定啟用，沒有設定 `available-from`。',
         '不需要的管理服務沒有停用。',
-        'input chain 沒有擋下從 WAN 進來的連線。',
+        '輸入鏈（input chain）沒有擋下從 WAN 進來的連線。',
       ],
-      action: '在 `/ip service` 停用不需要的服務，或用 `available-from` 限定來源。也可以在 input chain 擋下從 WAN 進來的連線。',
+      action: '在 `/ip service` 停用不需要的服務，或用 `available-from` 限定來源。也可以在輸入鏈（input chain）擋下從 WAN 進來的連線。',
     },
     F08: {
       severity: 'info', cat: '防火牆', title: '無法判斷 WAN 介面（WAN 相關的防火牆檢查未執行）', data: [['config']],
       causes: [
-        '沒有名稱含 `WAN` 的 interface list，例如不是從 defconf 建立的組態。',
+        '沒有名稱含 `WAN` 的介面清單（interface list），例如不是從預設組態（defconf）建立的組態。',
         'WAN 清單沒有成員，或 `include` 了無法展開的清單。',
       ],
-      action: '建立名稱含 `WAN` 的 interface list，把對外介面加進去。指令是 `/interface list add name=WAN` 與 `/interface list member add list=WAN interface=<介面>`；RouterOS 的 defconf 就是 `WAN`／`LAN`。',
+      action: '建立名稱含 `WAN` 的介面清單（interface list），把對外介面加進去。指令是 `/interface list add name=WAN` 與 `/interface list member add list=WAN interface=<介面>`；RouterOS 的預設組態（defconf）就是 `WAN`／`LAN`。',
     },
     F09: {
       severity: 'info', cat: '防火牆', title: '防火牆命中次數對不上 export 的規則（這個表的命中次數不採用）', data: [['fwstats']],
       causes: [
         '收集 `/export` 與 `print stats` 之間有人新增、刪除或搬動了規則。',
-        '有 export 沒有列出的靜態規則來源（例如腳本在收集時才加入規則）。',
-        '註解含特殊字元，print 與 export 的寫法不同。',
+        '有 `/export` 沒有列出的靜態規則來源（例如腳本在收集時才加入規則）。',
+        '註解含特殊字元，`print` 與 `/export` 的寫法不同。',
       ],
       action: '重新收集這台設備，`/export` 與 `print stats` 一起收。仍對不上時，對照訊息中的列與規則找出差異。對上之前，這個表的規則沒有命中次數。',
     },

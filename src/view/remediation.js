@@ -113,13 +113,13 @@
   /**
    * 修正計畫中「未產生指令」的一筆所對應的檢查結果（matchFindings 的一筆）：找得到時是可點擊（滑鼠與鍵盤）的訊息連結，
    * 過長時截斷、完整訊息在 title，點了在右側的詳細資料開啟該筆檢查結果（修正計畫留在中間）；
-   * 找不到時明確說明，findingKey 放在 title。
+   * 找不到時明確說明，findingKey 放在 title。label 有值時連結文字改用它（訊息已另外以一般文字列出時，例如修正計畫的選擇）。
    */
-  function findingRef(App, hit, key) {
+  function findingRef(App, hit, key, label) {
     if (!hit) return V.h('span', { class: 'warn-line finding-missing', title: key }, MISSING_FINDING_TEXT);
     const msg = String(hit.f.message || '');
     return V.h('a', { class: 'link finding-ref', title: msg, 'data-finding-idx': String(hit.idx),
-      onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); App.selectFinding(hit.idx); } }, clipText(msg, FINDING_TEXT_MAX));
+      onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); App.selectFinding(hit.idx); } }, label || clipText(msg, FINDING_TEXT_MAX));
   }
 
   // ---------------------------------------------------------------- 比對對象（finding.facet）
@@ -130,14 +130,21 @@
   /** 「a|b」格式的 facet 拆成第一段與其餘（其餘部分可能含 |，原樣保留） */
   const facetSplit = (v) => { const at = v.indexOf('|'); return at < 0 ? [v, ''] : [v.slice(0, at), v.slice(at + 1)]; };
   /** 有格式的 facet 依檢查轉成可讀文字（格式見 CATALOG 的 facet）；第二段缺少時回傳 null，改顯示原值 */
+  /**
+   * facet 的名稱是正規化後的小寫：訊息裡有同一個名稱（不分大小寫，在「」內）時改用訊息的寫法，避免看起來像兩個名稱。
+   */
+  const asInMessage = (f, name) => {
+    const msg = String((f && f.message) || ''); const at = msg.toLowerCase().indexOf(`「${String(name).toLowerCase()}」`);
+    return at < 0 ? name : msg.slice(at + 1, at + 1 + String(name).length);
+  };
   const FACET_FORMAT = {
     I02: (v) => S.query.adapterLabel(v),
     V06: facetItem,
-    V07: (v) => { const [a, b] = facetSplit(v); return b ? `${facetItem(a)}「${b}」` : null; },
+    V07: (v, f) => { const [a, b] = facetSplit(v); return b ? `${facetItem(a)}「${asInMessage(f, b)}」` : null; },
     A02: (v) => (v === 'unknown' ? 'VLAN 不明' : `VLAN ${v}`),
     A07: (v) => `網段 ${v}`,
     A08: (v) => `網段 ${v}（最外層）`,
-    A10: (v) => { const [a, b] = facetSplit(v); return b ? `${a}「${b}」` : null; },
+    A10: (v, f) => { const [a, b] = facetSplit(v); return b ? `${a}「${asInMessage(f, b)}」` : null; },
     A11: (v) => { const [a, b] = facetSplit(v); return b ? `${a} ${b}` : null; },
     A12: facetItem,
     R02: (v) => `本端介面 ${v}`,
@@ -151,7 +158,7 @@
   function facetText(f) {
     if (!f || f.facet == null) return null;
     const v = String(f.facet); const fmt = FACET_FORMAT[f.id];
-    return (fmt && fmt(v)) || v;
+    return (fmt && fmt(v, f)) || v;
   }
 
   // ---------------------------------------------------------------- C01 → devices.csv 草稿

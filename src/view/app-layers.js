@@ -59,8 +59,9 @@
     // 離開的那一層：記下縮放與平移（L4 沒有畫布的狀態）
     if (App.layer === 'device') deviceView = g.nodes === App.deviceGraph.nodes ? saveView(g) : deviceView;
     else if (App.layer !== 'l4') { const cur = A.layerEntry(); if (cur && g.nodes === cur.nodes) cur.view = saveView(g); }
+    // 工具列選單的項目依層級顯示：換層級時收起（同一層重畫時不收，「顯示 ▾」裡的 L2 選項可以連續切換）
+    if (App.layer !== target) A.closeMenus();
     App.layer = target;
-    A.closeMenus(); // 工具列選單的項目依層級顯示：換層級時收起
     g.hover = null; g.kbd = null; g.setOverlay([]); $('#tooltip').classList.add('hidden');
     if (target === 'l4') {
       A.syncLayerUi();
@@ -181,8 +182,9 @@
       return { id: NET + s.id, kind: 'subnet', label, collected: true, group: byVrf ? vrfGroup(s.vrf) : majority(s.devices.concat(s.routers)), vrf: s.vrf,
         box: { w: Math.round(Math.max(N.minW, label.length * 7 + 26)), h: N.h }, routeOnly: s.basis === 'route', badges, subnet: s };
     });
-    // 設備在 main 以外的 VRF 的節點：標籤加上 @<VRF>（與 id、網段鍵的寫法相同）
-    const devNode = (n) => ({ id: n.id, dev: n.dev, label: n.vrf && n.vrf !== MAIN ? n.label + '@' + n.vrf : n.label, kind: n.kind || 'unknown', collected: n.collected,
+    // 設備在 main 以外的 VRF 的節點：標籤寫「名稱（VRF）」。只改顯示：節點 id 仍是「設備鍵@VRF」（K.inVrf）
+    const vrfLabel = (name, vrf) => (vrf && vrf !== MAIN ? `${name}（${vrf}）` : name);
+    const devNode = (n) => ({ id: n.id, dev: n.dev, label: vrfLabel(n.label, n.vrf), kind: n.kind || 'unknown', collected: n.collected,
       group: byVrf ? vrfGroup(n.vrf) : devGroup.get(n.dev) || '', vrf: n.vrf, sev: sv.devSev.get(n.dev) || null, l3: n });
     const devIds = new Set();
     sg.nodes.forEach((n) => { if (!devIds.has(n.id)) { devIds.add(n.id); nodes.push(devNode(n)); } });
@@ -191,7 +193,7 @@
       const id = r.node || r.dev;
       if (!devIds.has(id)) {
         const d = Q.getDevice(r.dev); devIds.add(id);
-        nodes.push({ id, dev: r.dev, label: (d ? d.label || d.name : r.dev) + (r.vrf !== MAIN ? '@' + r.vrf : ''), kind: (d && d.kind) || 'unknown', collected: !!(d && d.collected),
+        nodes.push({ id, dev: r.dev, label: vrfLabel(d ? d.label || d.name : r.dev, r.vrf), kind: (d && d.kind) || 'unknown', collected: !!(d && d.collected),
           group: byVrf ? vrfGroup(r.vrf) : devGroup.get(r.dev) || '', vrf: r.vrf, sev: sv.devSev.get(r.dev) || null });
       }
       edges.push({ id: 'r|' + r.id, a: id, b: NET + r.subnet, style: T.l3.route, arrow: true, count: 1, route: r });
@@ -227,7 +229,7 @@
   function layout(e) {
     e.token++; e.layoutNote = null; // 進行中的分層版面作廢，它的計算中訊息也一起拿掉
     if (e.layer === 'l2') {
-      const r = V.layout.portLayout(e.boxes, e.ports, e.pg.edges);
+      const r = V.layout.portLayout(e.boxes, e.ports, e.pg.edges, { portrait: A.isPortrait() });
       e.pos.clear(); r.pos.forEach((p, id) => e.pos.set(id, p)); setAnchors(e, r.anchor);
     } else {
       const r = V.layout.layout(e.nodes, e.edges); e.pos.clear(); r.forEach((p, id) => e.pos.set(id, p));
@@ -245,7 +247,7 @@
     note('分層版面計算中…');
     try {
       if (e.layer === 'l2') {
-        const r = await V.layout.elkPorts(e.boxes, e.ports, e.pg.edges, { maxNodes: App.ELK_MAX, isStale: stale });
+        const r = await V.layout.elkPorts(e.boxes, e.ports, e.pg.edges, { maxNodes: App.ELK_MAX, isStale: stale, portrait: A.isPortrait() });
         if (stale()) return;
         e.pos.clear(); r.pos.forEach((p, id) => e.pos.set(id, p)); setAnchors(e, r.anchor);
       } else {
@@ -505,6 +507,13 @@
       const v = $('#vlan-filter').value;
       if (!v) A.clearVlanFilter(); else App.select({ type: 'vlan', key: v }, { pinFilter: true });
     };
+    // L2 的「展開聚合」「全部的埠」是次要選項：收進「顯示 ▾」成為只在 L2 顯示的勾選項目（窄螢幕的工具列才不會排成三列）
+    const viewMenu = $('#view-menu');
+    ['#btn-l2-lag', '#btn-l2-ports'].forEach((s) => {
+      const b = $(s); b.className = 'menu-item layer-only hidden';
+      b.removeAttribute('aria-pressed'); b.setAttribute('data-layers', 'l2'); b.setAttribute('role', 'menuitemcheckbox'); b.setAttribute('data-keep', ''); b.setAttribute('aria-checked', 'false');
+      viewMenu.appendChild(b);
+    });
     const toggle = (sel, fn) => { $(sel).onclick = () => { fn(); A.showLayer(App.layer); }; };
     toggle('#btn-l2-lag', () => { App.l2.lag = App.l2.lag === 'collapse' ? 'expand' : 'collapse'; });
     toggle('#btn-l2-ports', () => { App.l2.ports = App.l2.ports === 'linked' ? 'all' : 'linked'; });
@@ -541,10 +550,8 @@
     // 選單只顯示釘選的篩選：由選取帶入的由「VLAN n ✕」標示，選單維持「不篩選」，在選單選這個 VLAN 時值才會改變、觸發 change 而釘選
     sel.value = App.vlanFilter && App.vlanFilter.pinned ? String(App.vlanFilter.id) : '';
     syncVlanChip();
-    const lag = $('#btn-l2-lag'); const expanded = App.l2.lag === 'expand';
-    lag.setAttribute('aria-pressed', String(expanded)); lag.classList.toggle('on', expanded);
-    const pts = $('#btn-l2-ports'); const all = App.l2.ports === 'all';
-    pts.setAttribute('aria-pressed', String(all)); pts.classList.toggle('on', all);
+    A.setChecked($('#btn-l2-lag'), App.l2.lag === 'expand');
+    A.setChecked($('#btn-l2-ports'), App.l2.ports === 'all');
     const rt = $('#btn-l3-routes'); rt.setAttribute('aria-pressed', String(App.l3.routes)); rt.classList.toggle('on', App.l3.routes);
     const scope = $('#l2-scope'); scope.value = App.l2.scope;
     const allOpt = Array.from(scope.querySelectorAll('option')).find((x) => x.value === 'all'); if (allOpt) allOpt.disabled = !!App.l2.tooBig;
@@ -584,9 +591,10 @@
       const ss = e.sg.subnets; const ov = ss.filter((s) => s.overlaps.length).length; const dup = ss.reduce((k, s) => k + s.duplicateIps.length, 0);
       note.textContent = `L3 網段圖：${n(ss.length)} 個網段、${n(e.sg.nodes.length)} 個設備節點；點線是推論的位址（鄰居回報、管理 IP）`
         + (e.info.routes ? `，虛線箭頭是 ${n(e.sg.routes.length)} 條靜態／預設路由` : '') + '。'
+        + '縮小時網段長條不寫網段，放大或滑過網段可看。'
         + (ov || dup ? `有 ${n(ov)} 個網段重疊、${n(dup)} 個重複 IP（點選網段看詳細資料）。` : '')
         // VRF 是容器：每個 VRF 一個框；同一個網段在不同 VRF 是不同的網段，一台設備在每個 VRF 各一個節點（@<VRF>）
-        + (e.info.byVrf ? `每個 VRF 一個框（${e.info.vrfs.join('、')}）：同一個網段在不同 VRF 各自獨立，設備在 main 以外的 VRF 標 @<VRF>。` : '')
+        + (e.info.byVrf ? `每個 VRF 一個框（${e.info.vrfs.join('、')}）：同一個網段在不同 VRF 各自獨立，設備在 main 以外的 VRF 寫成「名稱（VRF）」。` : '')
         + (e.info.routes && e.info.omitted.policyRoutes ? `另有 ${n(e.info.omitted.policyRoutes)} 條只用於策略路由的路由表（不屬於任何 VRF）的路由沒有畫，見設備詳細資料的路由表。` : '')
         + (e.layoutNote ? e.layoutNote : '');
     }

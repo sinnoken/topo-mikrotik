@@ -85,7 +85,7 @@
     // 覆蓋率
     const nC01 = Q ? Q.findingsByRule('C01').length : 0; const c01 = V.ruleInfo('C01');
     const cs = Q ? Q.coverageSummary() : null;
-    rows.push(row('coverage', '覆蓋率', cs ? `已收集 ${V.num(cs.networkCollected)}／${V.num(cs.network)} 台${V.TERMS.network}${nC01 ? `（${V.num(nC01)} 台只被鄰居發現）` : ''}${cs.hosts ? `；另有 ${V.num(cs.hosts)} 台${V.TERMS.host}不在收集範圍` : ''}` : '—',
+    rows.push(row('coverage', '覆蓋率', cs ? `已收集 ${V.num(cs.networkCollected)}／${V.num(cs.network)} 台${V.TERMS.network}；${V.coverageGapText(cs)}${cs.hosts ? '；' + V.hostsText(cs.hosts) : ''}` : '—', // 與基準狀態卡同一句（沒有缺漏時寫「資料齊全」）
       // 狀態文字不寫檢查代碼（使用者看標題就懂）；代碼與檢查標題放在 title，給對照檢查結果的人
       !Q ? st('muted', '建立基準後顯示') : nC01 ? h('span', { title: `${c01.id} ${c01.title}` }, st('warn', `有未收集的${V.TERMS.network}`)) : st('ok', `沒有未收集的${V.TERMS.network}`),
       [btn('看覆蓋率明細', 'open-coverage', () => { const sec = $('#hub-sec-coverage'); if (sec) { sec.focus(); if (sec.scrollIntoView) sec.scrollIntoView({ block: 'start' }); } }, { disabled: !Q || null, title: '下方的「覆蓋率」：每台設備收集了哪些資料、缺漏與收集失敗' }),
@@ -190,11 +190,11 @@
       [h('h3', null, title), h('p', { class: 'muted' }, desc), h('div', { class: 'row' }, kids)]);
     return h('div', { class: 'hub-outs' }, [
       card('next', '給下一輪的自己', '基準 JSON・處理紀錄 JSON（工作包裡也有）', [
-        btn('基準 JSON', 'export-snapshot', () => App.exportAs('snapshot'), { disabled: off, title: '目前的基準（Snapshot JSON），內容原樣不改寫；之後可當作舊基準比對' }),
+        btn('基準 JSON', 'export-snapshot', () => App.exportAs('snapshot'), { disabled: off, title: '目前的基準（JSON），內容原樣不改寫；之後可當作舊基準比對' }),
         btn('處理紀錄 JSON', 'export-ledger', () => App.exportLedger(), { class: 'ledger-export', disabled: (ls.blocked && ls.blocked.raw === undefined) || busy || null,
           title: ls.blocked ? '處理紀錄停用中：匯出瀏覽器中格式不正確的原資料' : 'ssot-ledger/1' }),
       ]),
-      card('device', '給設備', `修正 patch：每台的套用、回復、驗證 .rsc 與總表。本工具只產生文字，不會連線設備。${nPatch ? `目前選取 ${V.num(nPatch)} 項，會放進工作包。` : ''}`, [
+      card('device', '給設備', `修正指令：每台的套用、回復、驗證 .rsc 與總表。本工具只產生文字，不會連線設備。${nPatch ? `目前選取 ${V.num(nPatch)} 項，會放進工作包。` : ''}`, [
         btn('開啟修正計畫', 'open-patch', () => App.openPatch(), { class: 'open-patch', disabled: off }),
       ]),
       card('report', '給報告或紀錄', `檢查結果 Markdown／CSV（含處理狀態，不受「${A().STEP_LABEL.triage}」檢查結果的篩選影響）・拓樸 PNG`, [
@@ -255,7 +255,7 @@
       ]),
       h('section', { class: 'hub-card', id: 'hub-sec-outputs', tabindex: '-1', 'aria-labelledby': 'hub-out-title' }, [
         h('div', { class: 'hub-card-head' }, [h('h2', { id: 'hub-out-title' }, '本輪的輸出')]),
-        h('p', { class: 'muted' }, '工作包（不壓縮的 ZIP）包含收集檔、基準、處理紀錄、報表與 patch；下一輪讀回這一份就能接著做。收集檔可能含有設備機密，請自行保管。'),
+        h('p', { class: 'muted' }, '工作包（不壓縮的 ZIP）包含收集檔、基準、處理紀錄、報表與修正指令；下一輪讀回這一份就能接著做。收集檔可能含有設備機密，請自行保管。'),
         packBlock(App, hub),
         outputCards(App, hub),
       ]),

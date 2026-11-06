@@ -96,3 +96,27 @@ test('A02：同一個 VLAN ID 只在同一個 VLAN 區塊內比較，不相連�
   assert.ok(f, '同一個區塊內照常比較');
   assert.deepStrictEqual(f.entities.filter((e) => e.type === 'interface').map((e) => e.key), ['SW_A|ether2', 'SW_B|ether2']);
 });
+test('CATALOG 的常見原因與處理：RouterOS 用語中文在前、原值放括號（例如「路由器 ID（router-id）」）', () => {
+  // 括號與程式碼樣式（反引號）之外，不應出現這些英文原值；縮寫（LLDP、VLAN、MAC…）不在此列
+  const TERMS = ['router-id', 'identity', 'neighbor discovery', 'port ID', 'bridge port', 'bridge VLAN', 'native VLAN', 'proxy ARP', 'bonding', 'address-list',
+    'static', 'pool', 'defconf', 'drop', 'hairpin', 'input chain', 'interface list', 'untagged', 'tagged', 'trunk', 'export', 'print', 'bridge'];
+  const problems = [];
+  Object.entries(S.check.CATALOG).forEach(([id, c]) => [...(c.causes || []), c.action || ''].forEach((t) => {
+    let out = t.replace(/`[^`]*`/g, ''); let prev;
+    do { prev = out; out = out.replace(/（[^（）]*）/g, ''); } while (out !== prev);
+    TERMS.filter((w) => new RegExp(`(^|[^A-Za-z-])${w}([^A-Za-z-]|$)`).test(out)).forEach((w) => problems.push(`${id}：「${w}」：${t}`));
+  }));
+  assert.deepStrictEqual(problems, []);
+});
+test('C01 的訊息與 Q.devLabel 同一規則：只由鄰居得知、名稱是位址的設備寫出來源協定', () => {
+  const s = build(['SW_A (10.0.0.1):', NB([
+    ' 0 interface=ether1 mac-address=AA:00:00:00:00:02 identity=SW_B interface-name=ether1 discovered-by=lldp',
+    ' 1 interface=ether2 mac-address=AA:00:00:00:00:03 identity=10.9.9.9 interface-name=ether1 discovered-by=lldp,mndp']),
+  ].join('\n'));
+  const Q = S.query(s);
+  const msg = (k) => s.findings.find((f) => f.id === 'C01' && f.entities[0].key === k).message;
+  assert.strictEqual(msg('10.9.9.9'), '10.9.9.9（LLDP／MNDP 鄰居）：由 SW_A 發現');
+  assert.ok(msg('10.9.9.9').startsWith(Q.devLabel('10.9.9.9') + '：'));
+  assert.strictEqual(msg('SW_B'), 'SW_B：由 SW_A 發現', '名稱不是位址時維持原名');
+  assert.strictEqual(typeof S.check.discoveryLabel, 'function', '共用的規則在 S.check.discoveryLabel（C01 與 Q.devLabel 都呼叫它）');
+});

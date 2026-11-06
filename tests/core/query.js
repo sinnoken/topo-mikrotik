@@ -306,6 +306,18 @@ test('收集完整度：Q.coverageSummary 的網路設備口徑與 C01／C02 一
   assert.deepStrictEqual([h.network, h.networkCollected, h.hosts], [2, 2, 0]);
 });
 
+test('收集完整度：Q.coverageGap 逐列判斷「已收集但有缺漏」，coverageSummary().missing 是它的台數', () => {
+  const s = build(read('samples/sample-bundle.txt')); const Q = S.query(s);
+  assert.strictEqual(Q.coverage().filter(Q.coverageGap).length, Q.coverageSummary().missing);
+  assert.ok(Q.coverageSummary().missing > 0, '範例資料有已收集但有缺漏的設備');
+  const row = (o) => Object.assign({ collected: true, missing: [], failures: [] }, o);
+  assert.strictEqual(Q.coverageGap(row({})), false, '資料齊全、沒有失敗');
+  assert.strictEqual(Q.coverageGap(row({ missing: ['vlan'] })), true, '缺少應收集的資料');
+  assert.strictEqual(Q.coverageGap(row({ failures: [{ reason: 'timeout' }] })), true, '只有收集失敗、沒有缺少也算');
+  assert.strictEqual(Q.coverageGap(row({ failures: undefined })), false, '沒有 failures 欄位時視為沒有失敗');
+  assert.strictEqual(Q.coverageGap(row({ collected: false, missing: ['vlan'] })), false, '未收集的設備不算「有缺漏」（屬 C01）');
+});
+
 test('待處理：Q.pendingSummary 只算錯誤＋警告，提醒另列，依處理紀錄排除已處理', () => {
   const s = build(read('samples/sample-bundle.txt')); const Q = S.query(s);
   const by = (sev) => s.findings.filter((f) => f.severity === sev).length;

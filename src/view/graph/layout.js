@@ -17,6 +17,8 @@
   // 同一層的折行（wrapRows）：每列台數讓這一層接近目標寬高比 aspect，但至少 min 台、至多 max 台。
   // 橫式至少 6 台才折（只有兩三台的上層不會被拆開）；直式目標接近手機圖區（約 390×490），每列 2～6 台
   const WRAP = { land: { aspect: 1.4, min: 6, max: ROW }, portrait: { aspect: 0.8, min: 2, max: 6 } };
+  // L2 埠圖：設備框上下列之間的距離（埠名與連線的空間）
+  const PORT_GAP_Y = 120;
 
   /**
    * 分群與終端：每群拆成「核心」與「終端」（只連到一台已收集設備、本身沒有收集資料，之後排在該設備下方），
@@ -212,8 +214,9 @@
    * L2 埠圖的內建版面（同步）：設備框依層級逐列排開（太寬時折行），各群以書架排列；埠排在框的上、下緣，
    * 同一邊依對端設備的 x 排序，線比較少交叉。回傳 { pos: Map(dev→{x,y}), anchor: Map(port→{dx,dy}) }
    */
-  function portLayout(devs, ports, edges) {
-    const P = portPrepare(devs, ports, edges); const GAPX = 60; const GAPY = 120; const MAXW = 2600;
+  function portLayout(devs, ports, edges, opt) {
+    const portrait = !!(opt && opt.portrait);
+    const P = portPrepare(devs, ports, edges); const GAPX = 60; const GAPY = PORT_GAP_Y; const MAXW = 2600;
     const byId = new Map(devs.map((d) => [d.id, d]));
     const boxes = P.groups.map((g) => {
       const layers = [];
@@ -222,19 +225,23 @@
       layers.forEach((ids) => {
         if (!ids || !ids.length) return;
         ids.sort((a, b) => (RANK[byId.get(a).kind] ?? 3) - (RANK[byId.get(b).kind] ?? 3) || S.util.natural(a, b));
-        let row = []; let rowW = 0;
-        const flush = () => {
-          if (!row.length) return;
+        // 一層太多台時依目標寬高比折行（與設備圖同一個 wrapRows），每列仍不超過 MAXW：整張圖才不會是一條扁平橫條
+        const rows = [];
+        wrapRows(ids, (id) => byId.get(id).box.w + GAPX, (id) => byId.get(id).box.h + GAPY, portrait).forEach((part) => {
+          let row = []; let rowW = 0;
+          part.forEach((id) => { const w = byId.get(id).box.w; if (row.length && rowW + w > MAXW) { rows.push(row); row = []; rowW = 0; } rowW += (row.length ? GAPX : 0) + w; row.push(id); });
+          if (row.length) rows.push(row);
+        });
+        rows.forEach((row) => {
+          const rowW = row.reduce((s, id) => s + byId.get(id).box.w, 0) + GAPX * (row.length - 1);
           let x = -rowW / 2; const h = Math.max(...row.map((id) => byId.get(id).box.h));
           row.forEach((id) => { const w = byId.get(id).box.w; pos.set(id, { x: x + w / 2, y: y + h / 2 }); x += w + GAPX; });
-          width = Math.max(width, rowW); y += h + GAPY; row = []; rowW = 0;
-        };
-        ids.forEach((id) => { const w = byId.get(id).box.w; if (row.length && rowW + w > MAXW) flush(); rowW += (row.length ? GAPX : 0) + w; row.push(id); });
-        flush();
+          width = Math.max(width, rowW); y += h + GAPY;
+        });
       });
       return { name: g.name, pos, w: Math.max(width, 1), h: Math.max(y - GAPY, 1), n: g.members.length };
     });
-    const pos = shelf(boxes);
+    const pos = shelf(boxes, { portrait });
     const peerX = (p) => { const ps = P.peers.get(p.id) || []; return ps.length ? ps.reduce((s, d) => s + ((pos.get(d) || { x: 0 }).x), 0) / ps.length : Infinity; };
     const anchor = placePorts(devs, ports, P.side, (a, b) => peerX(a) - peerX(b) || S.util.natural(a.name || a.id, b.name || b.id));
     return { pos, anchor };

@@ -174,13 +174,16 @@
     ntp: { level: 'low', text: '時間來源改變；新伺服器連不到時時間不再同步，依賴時間的憑證、排程與記錄會受影響。先確認這台設備連得到新伺服器' },
   };
   const devListText = (Q, devs) => devs.map((d) => Q.devName(d)).join('、');
-  /** finding 的選項，依序：majority（有多數時）、每一組一個 device:<該組第一台>、accept */
+  /**
+   * finding 的選項，依序：majority（有多數時）、每一組一個 device:<該組第一台>、accept。
+   * majority 是推論，由 inferred 旗標（與 basis）表示，label 不另寫「推論」；畫面直接顯示 label（文字只在這裡產生一次）。
+   */
   function serverOptions(Q, f) {
     const dv = f.deviation; const total = dv.groups.reduce((n, g) => n + g.devs.length, 0);
     const out = [];
     if (dv.main != null) {
       const g = dv.groups[dv.main];
-      out.push({ id: 'majority', label: `改成多數設備的值：${g.value.join('、')}（推論：${total} 台中 ${g.devs.length} 台，${devListText(Q, g.devs)}）`,
+      out.push({ id: 'majority', label: `改成多數設備的值：${g.value.join('、')}（${total} 台中 ${g.devs.length} 台：${devListText(Q, g.devs)}）`,
         value: g.value.slice(), basis: { agree: g.devs.length, total, devs: g.devs.slice() }, inferred: true });
     }
     dv.groups.forEach((g) => out.push({ id: 'device:' + g.devs[0], label: `改成 ${devListText(Q, g.devs)} 的值：${g.value.join('、')}`, value: g.value.slice(), devs: g.devs.slice() }));
@@ -246,7 +249,8 @@
           key: `set-servers:${f.facet}:${dev}`, findingKey: row.key, id: f.id, dev, level: 'choice', choice: choice.chosen,
           target: { type: 'servers', key: dev, facet: f.facet, menu: s.menu, param: s.param },
           ops: r.ops, evidence: evidenceOf(Q, f, dev), risk: Object.assign({}, SERVER_RISK[f.facet]),
-          note: `${Q.devName(dev)} 的 ${label}：${s.values.join('、')} → ${g.value.join('、')}（${opt.label}）`,
+          // note 是純文字、沒有 inferred 旗標：多數決的推論寫在文字裡
+          note: `${Q.devName(dev)} 的 ${label}：${s.values.join('、')} → ${g.value.join('、')}（${opt.label}${opt.inferred ? '，推論' : ''}）`,
           warnings,
         });
       });

@@ -16,7 +16,7 @@
   const GROUP_MAX = 200; // 逐筆勾選時每項檢查最多列出的筆數
   const KIND = { apply: ['套用', ''], rollback: ['回復', '-rollback'], verify: ['驗證', '-verify'] };
   const DAY_MS = 86400000;
-  const state = { keys: new Set(), view: new Map(), choices: new Map(), open: new Set(), cats: new Map(), picks: null, inputHash: null, plan: null, files: null };
+  const state = { keys: new Set(), view: new Map(), choices: new Map(), open: new Set(), cats: new Map(), picks: null, note: null, inputHash: null, plan: null, files: null };
   /** 換基準時清空所有檢視狀態（選取、每台設備檢視的檔案、選擇、展開的檢查） */
   function resetFor(App) {
     if (state.inputHash === App.Q.meta().inputHash) return;
@@ -134,6 +134,19 @@
       picksBox(groups),
     ]);
   }
+  /**
+   * 唯讀提示：摘要一行（不會連線設備），說明可展開。寬螢幕預設展開；窄螢幕預設收合，計畫不被擠到首屏之外。
+   * 使用者切換後依 state.note 保留（跨重繪；不隨基準清空）。
+   */
+  function readonlyNote() {
+    const open = state.note === null ? !V.app.isNarrowScreen() : state.note;
+    const box = h('details', { class: 'patch-readonly', open: open || null }, [
+      h('summary', null, h('b', null, '本工具只產生文字，不會連線或改動任何設備。')),
+      h('div', { class: 'patch-readonly-more' }, '指令依基準的事實產生；套用前請逐行審查，自行以 /import 執行（前置檢查不通過時不會改到任何設定），之後重新收集、建立基準確認結果。')]);
+    let cur = open; // 同 picksBox：展開狀態真的變了才記成使用者的選擇
+    box.addEventListener('toggle', () => { if (!!box.open !== cur) { cur = !!box.open; state.note = cur; } });
+    return box;
+  }
   /** 逐筆勾選（每項檢查一個可展開的清單）：整區預設收合，有展開的檢查時展開；使用者切換後依 state.picks 保留 */
   function picksBox(groups) {
     const open = state.picks === null ? state.open.size > 0 : state.picks;
@@ -236,12 +249,16 @@
       input.addEventListener('change', () => { if (input.checked) choose(App, c.findingKey, o.id); });
       const basis = o.inferred && o.basis ? `依多數決推定：${o.basis.total} 台中 ${o.basis.agree} 台的值相同` : null;
       return h('label', { class: 'patch-choice-row' + (on ? ' on' : ''), 'data-option': o.id }, [input, ' ',
+        // 推論由 chip 標示（依 inferred 旗標）；選項文字直接用核心的 label
         o.inferred ? V.chip('推論', 'info', { class: 'chip info patch-inferred', title: basis }) : null, o.inferred ? ' ' : null, o.label]);
     });
     const items = c.items.length ? h('p', { class: 'muted patch-choice-items' }, `產生 ${c.items.length} 台設備的指令（見下方各設備）`)
       : c.reason === null ? h('p', { class: 'muted patch-choice-items' }, '沒有需要修改的設備，不產生指令') : null;
     return h('div', { class: 'patch-choice', 'data-finding': c.findingKey, 'data-reason': c.reason || '' }, [
-      h('div', { class: 'row' }, [V.chip(c.id), ' ', h('b', null, c.title), ' ', R().findingRef(App, hit, c.findingKey)]),
+      // 標題只寫檢查名稱（代碼在 title）；檢查結果的訊息用一般文字色，另有明確的連結在右側開啟該筆（訊息本身不是連結，不用連結色）
+      h('div', { class: 'row patch-choice-head' }, [h('b', { title: ruleTip(c.id) }, c.title)]),
+      h('p', { class: 'patch-choice-msg' }, hit ? [h('span', { title: hit.f.message }, R().clipText(String(hit.f.message || ''), R().FINDING_TEXT_MAX)), ' ',
+        R().findingRef(App, hit, c.findingKey, '看這筆檢查結果')] : [R().findingRef(App, hit, c.findingKey)]),
       status,
       h('fieldset', { class: 'patch-choice-set' }, [h('legend', null, `${c.title}：要採用的值`), ...rows]),
       c.chosen === 'accept' ? acceptBox(App, c, hit) : items,
@@ -308,8 +325,7 @@
     const keep = ae && ae.getAttribute && body.contains && body.contains(ae) ? ae.getAttribute('data-patch-focus') : null;
     V.clear(body);
     if (!App.snap) { body.appendChild(h('p', { class: 'muted' }, '建立基準後才能產生修正計畫。')); return; }
-    body.appendChild(h('p', { class: 'patch-readonly' }, [h('b', null, '本工具只產生文字，不會連線或改動任何設備。'),
-      ' 指令依基準的事實產生；套用前請逐行審查，自行以 /import 執行（前置檢查不通過時不會改到任何設定），之後重新收集、建立基準確認結果。']));
+    body.appendChild(readonlyNote());
     body.appendChild(h('div', { class: 'patch-layout' }, [
       selection(App),
       h('div', { class: 'patch-main', role: 'group', 'aria-labelledby': 'patch-plan-title' }, [

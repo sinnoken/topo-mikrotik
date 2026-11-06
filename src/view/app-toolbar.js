@@ -1,5 +1,5 @@
 /*
- * 頁首與工具列：搜尋、資料中心、「⋯」更多操作（路由追蹤、匯出 PNG、清除基準）；圖的操作（全圖、版面▾、顯示▾）、圖例與匯出。
+ * 頁首與工具列：搜尋、資料中心、「⋯」更多操作（路由追蹤、匯出 PNG、清除基準、配色）；圖的操作（全圖、版面▾、顯示▾）、圖例與匯出。
  * 輸入與輸出的入口集中在資料中心（app-hub.js）；「⋯」只留和圖有關的「匯出 PNG」（資料中心也有，呼叫同一個 A.exportPng）。
  * 下拉選單（⋯、版面、顯示）共用 A.bindMenu：方向鍵、Home／End 移動，Esc 關閉並把焦點還給按鈕，Tab 或點外面關閉。
  */
@@ -114,7 +114,7 @@
     A.bindMenu($('#btn-more'), $('#more-menu'));
     // 程式版本：沒有基準時也看得到（基準狀態卡的版本是建立該基準時的版本，兩者意義不同）
     $('#app-version').textContent = '版本 ' + S.VERSION;
-    bindDismiss();
+    bindDismiss(); bindThemeMenu();
     // 路由追蹤表單是「⋯」旁邊的小對話框：從選單開啟（選單先關閉），也可由詳情的「追蹤路由」開啟（App.openTrace）
     $('#btn-trace').onclick = () => App.openTrace();
     $('#trace-run').onclick = A.runTrace;
@@ -223,11 +223,38 @@
   /** 使用者的「減少動態效果」偏好（瀏覽器沒有 matchMedia 時視為沒有偏好） */
   A.reducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
-  // ================================================================ 配色（跟隨系統的深淺）
-  // CSS 由 @media (prefers-color-scheme: dark) 自己切換；這裡只負責 theme（Canvas、圖例與面板的 inline 顏色），兩邊用同一個 media query。
-  // 不提供手動切換。強制色彩模式（forced-colors）由 CSS 處理，與這裡無關。
+  // ================================================================ 配色（跟隨系統、淺色、深色）
+  // 偏好（S.store.theme：system／light／dark）由「⋯」選單切換。實際的深淺（theme.mode）同時寫到 <html data-theme>，
+  // CSS 只跟著這個屬性（深色變數只寫一份，不另寫 prefers-color-scheme 的複本）；跟隨系統時由這裡的 matchMedia 決定。
+  // 首次繪製前 index.html 的 inline script 先呼叫 A.paintScheme 設好屬性，CSS 不閃。強制色彩模式（forced-colors）由 CSS 處理，與這裡無關。
   const SCHEME_QUERY = '(prefers-color-scheme: dark)';
-  let schemeBound = false;
+  let schemeBound = false; let schemePref = 'system';
+  /** 系統目前是深色（沒有 matchMedia 時視為淺色） */
+  const systemDark = () => typeof window.matchMedia === 'function' && !!window.matchMedia(SCHEME_QUERY).matches;
+  /** 偏好 → 實際的深淺 */
+  A.resolveScheme = (pref) => (pref === 'light' || pref === 'dark' ? pref : systemDark() ? 'dark' : 'light');
+  /** CSS 的深淺：<html data-theme>，與 theme.mode 一致 */
+  const setSchemeAttr = (mode) => document.documentElement.setAttribute('data-theme', mode);
+  /** 首次繪製前（index.html 的 inline script）：依儲存的偏好設好 CSS 的深淺；theme（Canvas）等啟動時的 A.bindColorScheme */
+  A.paintScheme = function paintScheme() { setSchemeAttr(A.resolveScheme(S.store.theme.get())); };
+  /** 目前的配色偏好（system／light／dark） */
+  A.themePref = () => schemePref;
+  /** 「⋯」選單的配色單選：aria-checked 跟著偏好 */
+  function syncThemeMenu() {
+    const box = $('#theme-mode'); if (!box) return;
+    Array.from(box.querySelectorAll('.menu-item')).forEach((b) => A.setChecked(b, b.dataset.scheme === schemePref));
+  }
+  /**
+   * 換配色偏好：存進 store、更新選單、套用（跟隨系統時套用系統目前的深淺）。
+   * 存不進去時這次仍套用，並以通知說明關閉頁面後不會保留（不靜默）。
+   */
+  A.setThemePref = function setThemePref(pref) {
+    if (!S.store.theme.VALUES.includes(pref)) throw new RangeError('未知的配色偏好：' + pref);
+    schemePref = pref;
+    const saved = S.store.theme.set(pref);
+    syncThemeMenu(); A.applyColorScheme(A.resolveScheme(pref));
+    if (!saved) A.banner('這個瀏覽器無法保存配色設定：這次有效，關閉頁面後不會保留。', 8000);
+  };
   /**
    * 圖上存下的顏色（終端的廠商色、選取與高亮的標示、路由追蹤的疊加線）換成目前 theme 的值。
    * 標示的顏色都取自 theme.mark，同一組的值互不相同（有測試），所以可依「舊值 → 新值」換算，不必重新計算選取。
@@ -243,7 +270,11 @@
   }
   /** 套用配色並更新所有由 theme 產生的畫面：拓樸圖、圖例、面板（防火牆、L4、基準比對、收斂趨勢）。回傳是否有改變 */
   A.applyColorScheme = function applyColorScheme(mode) {
-    const T = V.theme; if (T.mode === mode) return false;
+    const T = V.theme;
+    if (!T.palettes[mode]) throw new RangeError('未知的配色：' + mode);
+    // CSS 一律跟著（首次繪製前設的屬性可能和 theme 還沒套用的亮色不同）
+    setSchemeAttr(mode);
+    if (T.mode === mode) return false;
     const from = T.palettes[T.mode]; T.apply(mode);
     recolorGraph(from, T.palettes[mode]);
     rebuildLegend();
@@ -255,24 +286,34 @@
     return true;
   };
   /**
-   * 跟隨系統的深淺：套用目前的設定並監聽 change。只綁一次（再呼叫回傳 false）；
-   * 瀏覽器沒有 matchMedia（例如測試的模擬 DOM）時維持亮色、回傳 false。
+   * 讀回配色偏好並套用，監聽系統深淺的 change（只在偏好是跟隨系統時套用）。監聽只綁一次（再呼叫回傳 false）。
+   * 偏好是淺色或深色時直接固定該配色。跟隨系統而瀏覽器沒有 matchMedia（例如測試的模擬 DOM）時維持亮色、回傳 false；
    * matchMedia 沒有監聽 API 時也維持亮色、回傳 false，以 console.warn 與通知告知，不中止啟動（這在啟動流程中、其他 bind 之前）。
    */
   A.bindColorScheme = function bindColorScheme() {
-    if (schemeBound || typeof window.matchMedia !== 'function') return false;
+    if (schemeBound) return false;
+    schemePref = S.store.theme.get(); syncThemeMenu();
+    const fixed = schemePref !== 'system';
+    if (typeof window.matchMedia !== 'function') { A.applyColorScheme(fixed ? schemePref : 'light'); return false; }
     const mq = window.matchMedia(SCHEME_QUERY);
-    const onChange = (e) => A.applyColorScheme(e.matches ? 'dark' : 'light');
+    const onChange = (e) => { if (schemePref === 'system') A.applyColorScheme(e.matches ? 'dark' : 'light'); };
     if (typeof mq.addEventListener === 'function') mq.addEventListener('change', onChange);
     else if (typeof mq.addListener === 'function') mq.addListener(onChange); // Safari 13 以前
     else {
-      const msg = '這個瀏覽器無法偵測系統深淺的變更，畫面維持亮色。';
-      console.warn(msg); A.banner(msg, 8000); return false;
+      A.applyColorScheme(fixed ? schemePref : 'light');
+      const msg = '這個瀏覽器無法偵測系統深淺的變更，跟隨系統時畫面維持亮色（可在「⋯」選單改成固定的淺色或深色）。';
+      console.warn(msg); if (!fixed) A.banner(msg, 8000); return false;
     }
     schemeBound = true;
-    A.applyColorScheme(mq.matches ? 'dark' : 'light');
+    A.applyColorScheme(fixed ? schemePref : mq.matches ? 'dark' : 'light');
     return true;
   };
+  /** 「⋯」選單的配色單選（data-keep：按了不關閉選單，方便比較） */
+  function bindThemeMenu() {
+    const box = $('#theme-mode'); if (!box) return;
+    Array.from(box.querySelectorAll('.menu-item')).forEach((b) => { b.onclick = () => A.setThemePref(b.dataset.scheme); });
+    syncThemeMenu();
+  }
   /** 匯出時暫時換成 mode 的配色（含圖上存下的顏色），fn 結束後一定還原 */
   function withScheme(mode, fn) {
     const T = V.theme; const prev = T.mode;
@@ -290,6 +331,7 @@
     const body = h('div', { class: 'legend-body hidden' });
     head.onclick = () => {
       const open = body.classList.contains('hidden'); body.classList.toggle('hidden', !open);
+      lg.classList.toggle('open', open); // 展開時操作提示讓位（assets/app.css 的 .legend.open ~ .hint）
       head.textContent = open ? '圖例 ▾' : '圖例 ▸'; head.setAttribute('aria-expanded', String(open));
     };
     lg.appendChild(head); lg.appendChild(body);

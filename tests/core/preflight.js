@@ -4,14 +4,20 @@ const assert = require('assert');
 const { S, read, test } = require('../lib.js');
 
 // 預檢依輸入順序列出；findings 另有排序，比對時都排序
-const msgOf = (u) => `${u.file} 第 ${u.kind === 'note' ? u.startLine : `${u.startLine}–${u.endLine}`} 行：${u.reason}`;
+// I01 的訊息是「結論：位置＋補充」，預檢的 reason 是「結論＋補充」：訊息去掉「：位置」就是 reason
+const placeOf = (u) => S.check.placeText(u.file, u.startLine, u.endLine);
+const msgOf = (u) => `${placeOf(u)}｜${u.reason}`;
+const i01Of = (s, p) => s.findings.filter((f) => f.id === 'I01').map((f) => {
+  const u = p.unrecognized.find((x) => f.message.includes('：' + placeOf(x)) && f.message.replace('：' + placeOf(x), '') === x.reason);
+  return u ? msgOf(u) : f.message;
+});
 const preflightMatchesBuild = (sources, opt) => {
   const p = S.preflight(sources, opt);
   const s = S.build(sources, Object.assign({ now: '2026-01-01T00:00:00Z' }, opt));
   const collected = s.model.devices.filter((d) => d.collected);
   assert.deepStrictEqual(p.devices.map((d) => d.key), collected.map((d) => d.key), '設備應與完整建立的已收集設備相同');
   p.devices.forEach((d) => assert.deepStrictEqual(d.dataTypes, collected.find((c) => c.key === d.key).data, `${d.name} 的資料種類應與完整建立相同`));
-  assert.deepStrictEqual(p.unrecognized.map(msgOf).sort(), s.findings.filter((f) => f.id === 'I01').map((f) => f.message).sort(), '無法辨識的段落應與 I01 相同');
+  assert.deepStrictEqual(p.unrecognized.map(msgOf).sort(), i01Of(s, p).sort(), '無法辨識的段落應與 I01 相同');
   assert.deepStrictEqual(p.partial.map((x) => `${x.file}:${x.startLine}:${x.lines}`).sort(),
     s.blocks.filter((b) => b.unrecognizedLines.length).map((b) => `${b.file}:${b.start}:${b.unrecognizedLines.length}`).sort(), '有認不得的行的區塊應與 I03 相同');
   assert.strictEqual(p.partial.length, s.findings.filter((f) => f.id === 'I03').length);

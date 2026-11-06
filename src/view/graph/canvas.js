@@ -21,6 +21,8 @@
   // 節點內的小字（廠商縮寫、數量）字級固定（世界座標），螢幕上小於 minPx 時不畫
   const INNER = { endpoint: 7, downstream: 8, cluster: 9 };
   const innerShown = (kind, s) => INNER[kind] * s >= F.minPx;
+  // L3 網段長條的文字與「重疊網段」等標籤的字級（世界座標）；螢幕上小於 minPx 時不畫字
+  const SUBNET_PX = { label: 11, badge: 10 };
   // reveal：節點中心離可見範圍邊緣不到這麼多（px）也算被遮住，標籤與選取環才看得到
   const REVEAL_MARGIN = 24;
   // 分群標籤的螢幕尺寸（px）：以螢幕座標排版，任何縮放程度下字級、截斷與防重疊都一致。
@@ -44,7 +46,8 @@
   // 聚焦（選取、檢查結果、路由追蹤）：倍率上限 1.5。埠名在 s > 1.25 才畫，1.5 讀得到埠名，又不會把一跳鄰居推出畫面；
   // 留白 pad 容納節點下方的名稱標籤（常見名稱約 120px 寬）與埠名
   // minScale：納入一跳鄰居後倍率低於它時（例如核心設備的鄰居散在整張圖），改為只聚焦選取的設備，否則等於沒有放大
-  const FOCUS = { maxScale: 1.5, pad: 64, minScale: 0.9 };
+  // lean：只聚焦設備本身時，畫面往鄰居方向移動的上限（可視範圍的比例；節點離畫面邊緣至少留 0.5 - lean）
+  const FOCUS = { maxScale: 1.5, pad: 64, minScale: 0.9, lean: 0.3 };
   // 覆蓋層高度超過畫布的 max 倍時不讓出空間（setOccluders）。max：沒有指定時的預設，例如展開的圖例太高時不讓，否則圖會被壓扁，使用者可收合它；
   // pinned：一定要讓開的元素（工具列、通知、半高的詳情抽屜）用這個，只有幾乎蓋滿整張圖時（全高的抽屜）才不計
   const OCCLUDER = { max: 0.4, pinned: 0.75 };
@@ -159,8 +162,25 @@
       const s = Math.min((vw - p * 2) / Math.max(maxX - minX, 1), (vh - p * 2) / Math.max(maxY - minY, 1));
       const max = maxScale || (one ? FIT.maxOne : FIT.max);
       this.s = Math.max(ZOOM.min, Math.min(max, s));
-      if (fallback && this.s < fallback.minScale) return this.fit(fallback.ids, pad, maxScale);
+      if (fallback && this.s < fallback.minScale) {
+        this.fit(fallback.ids, pad, maxScale);
+        const keep = new Set(fallback.ids); this._lean(ids.filter((id) => !keep.has(id)), v);
+        return;
+      }
       this.tx = (v.x0 + v.x1) / 2 - ((minX + maxX) / 2) * this.s; this.ty = (v.y0 + top + v.y1) / 2 - ((minY + maxY) / 2) * this.s;
+      this.dirty = true;
+    }
+    /**
+     * 聚焦只放得下選取的節點時（鄰居散在整張圖）：把畫面往鄰居的方向（重心）移，最多 FOCUS.lean 倍的可視範圍，
+     * 選取的節點偏到另一側，鄰居那一側露出比較多（例如最上層的核心設備放在偏上方，下面的鄰居看得到）
+     */
+    _lean(others, v) {
+      const ps = others.map((id) => this.at(id)).filter(Boolean).map((p) => this.toScreen(p));
+      if (!ps.length) return;
+      const cx = (v.x0 + v.x1) / 2; const cy = (v.y0 + v.y1) / 2;
+      const mx = ps.reduce((s, p) => s + p.x, 0) / ps.length; const my = ps.reduce((s, p) => s + p.y, 0) / ps.length;
+      const kx = (v.x1 - v.x0) * FOCUS.lean; const ky = (v.y1 - v.y0) * FOCUS.lean;
+      this.tx -= Math.max(-kx, Math.min(kx, mx - cx)); this.ty -= Math.max(-ky, Math.min(ky, my - cy));
       this.dirty = true;
     }
     /**
@@ -423,6 +443,8 @@
         if (dim && !hc && !override) alpha = ALPHA.dimEdge;
         if (hc) { col = hc.c; w = Math.max(w, 3.5, 2.5 / s); if (hc.alpha != null) alpha = hc.alpha; }
         if (override) { col = override; w = Math.max(w, 3.5, 2.5 / s); alpha = 1; }
+        // 放大超過 100% 時線寬維持 100% 的螢幕粗細（聚焦時聚合的雙線才不會變成一整片）；縮小時至少 0.8px
+        if (s > 1) w /= s;
         c.globalAlpha = alpha; c.strokeStyle = col; c.lineWidth = Math.max(w, 0.8 / s);
         const dash = (hc && !override && hc.dash) || (e.ifStyle && e.ifStyle.dash) || (weak ? weak.dash : st.dash);
         c.setLineDash(dash ? dash.map((d) => d / Math.min(s, 1)) : []);
@@ -490,7 +512,7 @@
         const forced = this.sel.nodes.has(n.id) || n.id === hoverN || (hl && hl.nodes.has(n.id));
         c.globalAlpha = dim && !forced ? ALPHA.dimLabel : 1;
         if (n.kind === 'port') { if (s > 0.9 || forced) portName(c, n, p, s, forced); }
-        else if (s > 0.18 || forced) boxText(c, n, p, s);
+        else if (s > 0.18 || forced) boxText(c, n, p, s, forced);
         c.globalAlpha = 1;
       }
       // 標籤：依重要性排序，與已畫的標籤重疊就略過（避免縮小時糊成一片）
@@ -550,8 +572,9 @@
       if (this.showGroups && this.groupBoxes) this._drawGroupLabels(c, (l) => l.forced); // 滑過的分群全名蓋在最上層
     }
     /**
-     * 分群標籤排版（螢幕座標）：依群大小排序，先放群框上方、與已放的標籤重疊（或頂邊在畫面外）時改放框內左上，兩處都不行就略過；
-     * 寬度不超過群框（只露出一部分時是可見的部分），放不下全名時依 fitLabels 的順序縮短（簡稱 → 尾段 → 截斷），
+     * 分群標籤排版（螢幕座標）：依群大小排序，先放群框上方、與已放的標籤重疊（或頂邊在畫面外）時改放框內左上，兩處都不行就換下一個候選；
+     * 寬度不超過群框（只露出一部分時是可見的部分），放不下全名時依 fitLabels 的順序縮短（簡稱 → 尾段 → 截斷）；
+     * 群框窄到放不下簡稱時，簡稱可以超出群框（排在尾段之前，窄螢幕仍看得出「分群 2」），
      * 並跳過畫面上別的群已用的文字，縮短後仍兩兩不同。滑過的群（hoverGroup）最先放、顯示全名、不受寬度限制。
      */
     _layoutGroupLabels(c) {
@@ -569,19 +592,29 @@
         const forced = g.name === hovered;
         // 只有一台的群（沒畫框）平常不標，否則像一個空群；滑過那台設備時才顯示群名。
         // 群框頂邊在工具列底下或畫面外（放大、聚焦後）也不標：標籤只能貼著工具列下緣，會壓在節點與埠名上；滑過群框時才顯示
-        if (!forced && (!g.frame || box.y0 < ey0)) continue;
+        // 左緣在畫面外（放大、聚焦後只看到群的一部分）也不標：標籤會浮在圖的中間，看不出是哪一群的範圍
+        if (!forced && (!g.frame || box.y0 < ey0 || box.x0 < ex0)) continue;
         // 滑過時群框可能只露出一部分：標籤貼在可見部分的左上
         const vx0 = Math.max(box.x0, ex0); const vx1 = Math.min(box.x1, ex1); const vy0 = Math.max(box.y0, ey0);
-        const text = forced ? g.name : fitLabels(c, g.name, vx1 - vx0 - 2 * GL.inset - 2 * GL.pad).find((t) => !used.has(t));
-        if (!text) continue;
-        // 滑過的全名不受群框寬度限制，但仍不出畫布右緣（往左挪）
-        const tw = c.measureText(text).width + 2 * GL.pad; const x0 = Math.max(ex0, Math.min(vx0 + GL.inset, ex1 - tw)); const x1 = x0 + tw;
-        const above = box.y0 - 2 - GL.h >= ey0 ? { x0, x1, y0: box.y0 - 2 - GL.h, y1: box.y0 - 2 } : null;
-        const inside = { x0, x1, y0: vy0 + GL.inset, y1: vy0 + GL.inset + GL.h };
-        const r = above && (forced || free(above)) ? above : inside.y1 <= box.y1 - GL.inset && (forced || free(inside)) ? inside : null;
+        const texts = forced ? [g.name] : fitLabels(c, g.name, vx1 - vx0 - 2 * GL.inset - 2 * GL.pad);
+        // 群框太窄、放不下簡稱（「分群 2」）時，簡稱可以超出群框（仍在畫布內），排在尾段（「2」，看不出是分群）之前
+        const short = shortName(g.name);
+        if (!forced && !texts.includes(short) && c.measureText(short).width <= ex1 - ex0 - 2 * GL.pad) texts.splice(texts[0] === g.name ? 1 : 0, 0, short);
+        // 依序試每個候選：放得下（上方或框內）且畫面上別的群沒用過的第一個
+        let r = null; let text = null;
+        for (const t of texts) {
+          if (!forced && used.has(t)) continue;
+          // 滑過的全名、超出群框的簡稱不受群框寬度限制，但仍不出畫布右緣（往左挪）
+          const tw = c.measureText(t).width + 2 * GL.pad; const x0 = Math.max(ex0, Math.min(vx0 + GL.inset, ex1 - tw)); const x1 = x0 + tw;
+          const above = box.y0 - 2 - GL.h >= ey0 ? { x0, x1, y0: box.y0 - 2 - GL.h, y1: box.y0 - 2 } : null;
+          const inside = { x0, x1, y0: vy0 + GL.inset, y1: vy0 + GL.inset + GL.h };
+          r = above && (forced || free(above)) ? above : inside.y1 <= box.y1 - GL.inset && (forced || free(inside)) ? Object.assign(inside, { isInside: true }) : null;
+          if (r) { text = t; break; }
+        }
         if (!r) continue;
         used.add(text);
-        out.push(Object.assign(r, { name: g.name, text, forced, inside: r === inside, box }));
+        const isInside = !!r.isInside; delete r.isInside;
+        out.push(Object.assign(r, { name: g.name, text, forced, inside: isInside, box }));
       }
       return out;
     }
@@ -614,11 +647,13 @@
    * 例如「區域 2」→「2」：短名放不下時優先保留能區分的尾段）→ 字元截斷加「…」（以 Array.from 切字元，不切壞字；至少留兩個字）。
    * 回傳候選陣列（可能為空），呼叫端挑第一個畫面上沒用過的。
    */
+  /** 分群名稱的簡稱：全形／半形括號前的部分（「分群 2（TPE_CORE…）」→「分群 2」） */
+  const shortName = (name) => name.replace(/\s*[（(].*$/, '') || name;
   function fitLabels(c, name, avail) {
     const fits = (t) => c.measureText(t).width <= avail;
     const out = [];
     if (fits(name)) out.push(name);
-    const short = name.replace(/\s*[（(].*$/, '') || name;
+    const short = shortName(name);
     if (short !== name && fits(short)) out.push(short);
     const last = short.split(/\s+/).pop();
     if (last !== short && fits(last)) out.push(last);
@@ -676,16 +711,21 @@
     roundRect(c, p.x - w / 2, p.y - h / 2, w, h, 1.5); c.fill(); c.stroke(); c.setLineDash([]);
   }
   /** 容器框的設備名稱（左上角、框內）與子網長條的網段文字（置中）；子網的重疊、重複 IP 另在下方以警告外形加文字標示 */
-  function boxText(c, n, p, s) {
+  function boxText(c, n, p, s, forced) {
     const w = n.box.w; const h = n.box.h;
     if (n.kind === 'subnet') {
-      const N = T.l3.subnet; c.font = font(11, W.strong, true); c.fillStyle = N.text; c.textAlign = 'center';
-      c.fillText(fitText(c, n.label, w - 10), p.x, p.y + 4); c.textAlign = 'left';
+      // 網段文字與標籤的字級是世界座標：螢幕上小於 minPx 時不畫字（只剩長條與警告外形；網段在滑過提示與詳情），滑過、選取時照畫
+      const N = T.l3.subnet; const readable = (px) => forced || px * s >= F.minPx;
+      if (readable(SUBNET_PX.label)) {
+        c.font = font(SUBNET_PX.label, W.strong, true); c.fillStyle = N.text; c.textAlign = 'center';
+        c.fillText(fitText(c, n.label, w - 10), p.x, p.y + 4); c.textAlign = 'left';
+      }
       (n.badges || []).forEach((b, i) => {
-        const B = T.l3.badge; c.font = font(10, W.strong); const tw = c.measureText(b).width + 18; const y = p.y + h / 2 + 4 + i * 16; const x = p.x - tw / 2;
+        const B = T.l3.badge; c.font = font(SUBNET_PX.badge, W.strong); const show = readable(SUBNET_PX.badge);
+        const tw = show ? c.measureText(b).width + 18 : 14; const y = p.y + h / 2 + 4 + i * 16; const x = p.x - tw / 2;
         c.fillStyle = B.bg; c.strokeStyle = B.border; c.lineWidth = 1; roundRect(c, x, y, tw, 14, 3); c.fill(); c.stroke();
         sevMark(c, 'warn', x + 7, y + 7, 3.5);
-        c.fillStyle = B.text; c.fillText(b, x + 13, y + 10.5);
+        if (show) { c.fillStyle = B.text; c.fillText(b, x + 13, y + 10.5); }
       });
       return;
     }

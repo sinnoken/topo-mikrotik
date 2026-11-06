@@ -3,7 +3,7 @@
  "baseline": {
   "inputHash": "83a376c2f1dcdd12",
   "createdAt": "2026-01-01T00:00:00Z",
-  "version": "3.2.0"
+  "version": "3.3.0"
  },
  "devices": [
   {
@@ -62,7 +62,7 @@
     "level": "low",
     "text": "時間來源改變；新伺服器連不到時時間不再同步，依賴時間的憑證、排程與記錄會受影響。先確認這台設備連得到新伺服器"
    },
-   "note": "TPE_ACC_SW_12 的 NTP 伺服器：10.1.10.2 → time.cloudflare.com（改成多數設備的值：time.cloudflare.com（推論：3 台中 2 台，TPE_CORE_RT_01、TPE_CORE_RT_02））",
+   "note": "TPE_ACC_SW_12 的 NTP 伺服器：10.1.10.2 → time.cloudflare.com（改成多數設備的值：time.cloudflare.com（3 台中 2 台：TPE_CORE_RT_01、TPE_CORE_RT_02），推論）",
    "warnings": []
   },
   {
@@ -278,7 +278,7 @@
    "options": [
     {
      "id": "majority",
-     "label": "改成多數設備的值：time.cloudflare.com（推論：3 台中 2 台，TPE_CORE_RT_01、TPE_CORE_RT_02）",
+     "label": "改成多數設備的值：time.cloudflare.com（3 台中 2 台：TPE_CORE_RT_01、TPE_CORE_RT_02）",
      "value": [
       "time.cloudflare.com"
      ],

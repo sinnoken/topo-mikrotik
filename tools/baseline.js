@@ -19,6 +19,7 @@ const EXIT = Object.freeze({
 /** out/ 中的檔名 */
 const FILES = Object.freeze({
   baseline: 'baseline.json', ledger: 'ledger.json', findings: 'findings.json', summary: 'summary.json', compare: 'compare.json',
+  findingsCsv: 'findings.csv', findingsMd: 'findings.md',
 });
 const SUMMARY_SCHEMA = 'ssot-cli-summary/1';
 const FINDINGS_SCHEMA = 'ssot-cli-findings/1';
@@ -46,6 +47,8 @@ const HELP = `用法：node tools/baseline.js <收集檔…> -o <輸出目錄> [
   ${FILES.baseline}   基準（Snapshot，不含 meta.timing）
   ${FILES.ledger}     推進後的處理紀錄（下一輪以 --ledger 傳入）
   ${FILES.findings}   檢查結果與處理狀態（${FINDINGS_SCHEMA}）
+  ${FILES.findingsCsv}    檢查結果 CSV（與畫面「匯出 CSV」相同；處理紀錄欄位是推進後的狀態）
+  ${FILES.findingsMd}     檢查結果 Markdown 報表（與畫面「匯出 Markdown」的依檢查分組相同）
   ${FILES.summary}    摘要（${SUMMARY_SCHEMA}）：新出現、復發、豁免到期、待處理錯誤／警告數與結束碼
   ${FILES.compare}    預期現況比對（ssot-diff/1，只有 --expected 時）
 
@@ -185,6 +188,9 @@ function compute(S, a) {
     { name: FILES.baseline, text: json(snap) },
     { name: FILES.ledger, text: json(next) },
     { name: FILES.findings, text: json(findings) },
+    // 檢查結果報表：與畫面的匯出同一份核心文字（S.report），處理紀錄用推進後的這一份
+    { name: FILES.findingsCsv, text: S.report.findingsCsv(Q, { ledgerOf: S.report.ledgerOfItems(next, Q) }) },
+    { name: FILES.findingsMd, text: S.report.findingsMarkdown(Q, { ledgerOf: S.report.ledgerOfItems(next, Q) }) },
     ...(compare ? [{ name: FILES.compare, text: json(compare) }] : []),
     { name: FILES.summary, text: json(summary) },
   ];

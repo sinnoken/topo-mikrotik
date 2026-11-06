@@ -1,10 +1,10 @@
 {
  "meta": {
   "schema": "ssot-snapshot/3",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "createdAt": "2026-01-01T00:00:00Z",
   "inputHash": "83a376c2f1dcdd12",
-  "baselineKey": "f5e79004fce37b21",
+  "baselineKey": "cbdd4db3a1568d60",
   "sources": [
    {
     "name": "sample-bundle.txt",
@@ -43263,7 +43263,7 @@
    "severity": "error",
    "cat": "輸入",
    "title": "無法辨識的內容",
-   "message": "sample-bundle.txt 第 3460–3463 行：沒有任何解析器認得這段內容（指令：/system routerboard print）",
+   "message": "無法辨識的內容：sample-bundle.txt 第 3460–3463 行（指令：/system routerboard print）",
    "entities": [
     {
      "type": "device",
@@ -44197,7 +44197,7 @@
    "severity": "warn",
    "cat": "輸入",
    "title": "已解析的區塊中有無法辨識的行",
-   "message": "sample-bundle.txt 第 3836–3938 行（/interface bridge host print detail without-paging）：1 行無法辨識，沒有進入基準：第 3937 行「```」",
+   "message": "1 行無法辨識，沒有進入基準：sample-bundle.txt 第 3836–3938 行（/interface bridge host print detail without-paging）中的第 3937 行「```」",
    "entities": [
     {
      "type": "device",
@@ -45287,7 +45287,7 @@
    "severity": "info",
    "cat": "覆蓋",
    "title": "網路設備僅由鄰居發現、沒有收集資料",
-   "message": "172.31.255.2：由 TPE_CORE_RT_01 發現",
+   "message": "172.31.255.2（OSPF 鄰居）：由 TPE_CORE_RT_01 發現",
    "entities": [
     {
      "type": "device",

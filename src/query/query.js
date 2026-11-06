@@ -28,9 +28,8 @@
   /** 鏈路類別的強弱（一條線併了多條鏈路時取最前面的）：devicePairs 與 portGraph 共用。 */
   const CLS_RANK = ['lag', '40g', '10g', '1g', 'oob', 'other'];
   const clsRank = (c) => { const i = CLS_RANK.indexOf(c); return i < 0 ? CLS_RANK.length : i; };
-  /** Q.devLabel 列出鄰居協定的固定順序：介面鄰接（LLDP、CDP）先於廣播網域（MNDP），最後是路由鄰接（OSPF）；其他依字母。 */
-  const DISCOVERY_ORDER = ['lldp', 'cdp', 'mndp', 'ospf'];
-  const discoveryRank = (p) => { const i = DISCOVERY_ORDER.indexOf(p); return i < 0 ? DISCOVERY_ORDER.length : i; };
+  /** 覆蓋列「已收集但有缺漏」的唯一判斷（Q.coverageGap、coverageSummary().missing）。 */
+  const coverageGap = (row) => !!(row && row.collected) && ((row.missing || []).length > 0 || (row.failures || []).length > 0);
   /** Q 自己建立的衍生物件（不含 Snapshot 的物件）整個凍結，呼叫端改不壞快取。 */
   const deepFreeze = (o) => {
     if (o && typeof o === 'object' && !Object.isFrozen(o)) { Object.freeze(o); Object.values(o).forEach(deepFreeze); }
@@ -278,6 +277,11 @@
         return covByDev.get(d) || null;
       },
       /**
+       * 覆蓋列（coverage() 的元素）是否「已收集但有缺漏」：已收集，且缺少應收集的資料或有指令收集失敗（只有失敗、沒有缺少也算）。
+       * 這是唯一的判斷：coverageSummary().missing、畫面的覆蓋率表與基準狀態卡都用它。
+       */
+      coverageGap,
+      /**
        * 收集完整度的唯一數字來源（凍結）：{ devices, collected, missing, network, networkCollected, hosts }。
        * devices／collected 是全部設備與已收集台數；network／networkCollected 是應收集的網路設備（與 C01／C02 同用 S.check.expectsCollection），
        * network − networkCollected 等於 C01 筆數；hosts 是不在收集範圍、只由鄰居或 ARP 得知的主機（network + hosts = devices）；
@@ -288,7 +292,7 @@
         const rows = snap.coverage || []; const net = rows.filter(S.check.expectsCollection);
         covSum = Object.freeze({
           devices: rows.length, collected: rows.filter((r) => r.collected).length,
-          missing: rows.filter((r) => r.collected && (r.missing.length > 0 || (r.failures || []).length > 0)).length,
+          missing: rows.filter(coverageGap).length,
           network: net.length, networkCollected: net.filter((r) => r.collected).length, hosts: rows.length - net.length,
         });
         return covSum;
@@ -517,16 +521,13 @@
       devName(k) { const d = dev.get(k); return d ? (d.label || d.name) : k; },
       /**
        * 給人看的設備名稱：通常同 Q.devName。只由鄰居得知（未收集）且名稱是 IPv4 位址的設備，加上得知它的協定（事實），
-       * 例如「172.31.255.2（OSPF 鄰居）」：協定取自碰到它的鏈路的 protocols 與以它為對端的 OSPF 鄰接，依 DISCOVERY_ORDER 列出；
-       * 都沒有時寫「（鄰居）」。鍵比對、搜尋與匯出仍用 Q.devName（原值）。
+       * 例如「172.31.255.2（OSPF 鄰居）」；寫法由 S.check.discoveryLabel 決定（C01 的訊息共用同一份）。
+       * 鍵比對、搜尋與匯出仍用 Q.devName（原值）。
        */
       devLabel(k) {
-        const name = Q.devName(k); const d = dev.get(k);
-        if (!d || d.collected || !S.ip.isIp(name)) return name;
-        const seen = new Set((linksByDev.get(k) || []).flatMap((l) => l.protocols || []));
-        if ((m.ospfAdjacencies || []).some((a) => a.peerDev === k)) seen.add('ospf');
-        const protos = Array.from(seen).sort((a, b) => discoveryRank(a) - discoveryRank(b) || U.cmp(a, b)).map((p) => p.toUpperCase());
-        return `${name}（${protos.length ? protos.join('／') + ' ' : ''}鄰居）`;
+        const d = dev.get(k);
+        if (!d) return Q.devName(k);
+        return S.check.discoveryLabel(Q.devName(k), d.collected, linksByDev.get(k) || [], (m.ospfAdjacencies || []).some((a) => a.peerDev === k));
       },
       /**
        * 設備層級的 DNS／NTP 伺服器設定（事實）：{ dns, ntp }，各為 { values, menu, param, src } 或 null（沒有設定、或找不到設備）。

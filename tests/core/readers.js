@@ -47,7 +47,7 @@ test('收集器註解：時間格式或位置不對列為 I01（指回該行）�
     const s = t([`# collected-at: ${bad}`]);
     const i01 = s.findings.filter((x) => x.id === 'I01');
     assert.strictEqual(i01.length, 1, bad);
-    assert.ok(/第 3 行：收集時間「.*」不是 UTC ISO 8601/.test(i01[0].message), i01[0].message);
+    assert.ok(/^收集器註解有誤：t\.txt 第 3 行，收集時間「.*」不是 UTC ISO 8601/.test(i01[0].message), i01[0].message);
     assert.deepStrictEqual(i01[0].evidence.map((e) => [e.line, e.text]), [[3, `# collected-at: ${bad}`.trim()]]);
     assert.strictEqual(s.blocks[0].collectedAt, null);
     assert.strictEqual(s.model.arps.length, 1, '時間格式不對不影響區塊內容的解析');
@@ -72,6 +72,18 @@ test('沒有設備標頭的內容列為無法辨識（不靜默丟棄）', () =>
   const s = build('隨便一段文字\nSW_A (10.0.0.1):\n### /ip neighbor print detail\n');
   assert.ok(ids(s).includes('I01'));
 });
+test('I01／I03 的訊息結論在前、位置在後；貼上的內容寫成全形括號（核心的 S.check.sourceName），不寫「解析器」', () => {
+  const msgs = (text, id) => S.build([{ text }], { now: '2026-01-01T00:00:00Z' }).findings.filter((f) => f.id === id).map((f) => f.message);
+  assert.strictEqual(S.check.sourceName(S.readers.PASTE), '（貼上的內容）');
+  assert.strictEqual(S.check.sourceName('a.txt'), 'a.txt');
+  assert.deepStrictEqual(msgs('隨便一段文字\n', 'I01'), ['沒有設備標頭：（貼上的內容）第 1–2 行']);
+  assert.deepStrictEqual(msgs('SW_A (10.0.0.1):\n### /foo bar print\nx=1\n', 'I01'), ['無法辨識的內容：（貼上的內容）第 3–4 行（指令：/foo bar print）']);
+  const empty = msgs('SW_A (10.0.0.1):\n### /ip arp print\nFlags: X - disabled\n', 'I01');
+  assert.ok(/^解析不出任何內容：（貼上的內容）第 3–4 行（已辨識為「RouterOS ARP 表」）；RouterOS 的 print 指令請加上 detail without-paging$/.test(empty[0]), empty[0]);
+  const i03 = msgs('SW_A (10.0.0.1):\n### /ip arp print detail without-paging\n 0 DC address=10.0.0.9 mac-address=AA:BB:CC:00:00:09 interface=ether1\n垃圾\n', 'I03');
+  assert.deepStrictEqual(i03, ['1 行無法辨識，沒有進入基準：（貼上的內容）第 3–5 行（/ip arp print detail without-paging）中的第 4 行「垃圾」']);
+  assert.ok(![...empty, ...i03].some((m) => m.includes('解析器')));
+});
 test('指令有辨識但輸出不是 detail 格式 → I01，並提示加 detail', () => {
   const s = build('SW_A (10.0.0.1):\n### /ip arp print\nFlags: X - disabled\n #   ADDRESS       MAC-ADDRESS       INTERFACE\n 0 DC 10.0.0.2    AA:BB:CC:00:00:01 bridge1\n');
   const f = s.findings.find((x) => x.id === 'I01');
@@ -83,12 +95,12 @@ test('I01：區塊內容全是 RouterOS 錯誤訊息時，訊息說明指令執�
   const known = i01('SW_A (10.0.0.1):\n### /interface wifi registration-table print detail without-paging\n\nbad command name registration-table (line 1 column 16)\nsyntax error (line 1 column 30)\n');
   assert.strictEqual(known.length, 1);
   assert.deepStrictEqual([known[0].severity, known[0].title, known[0].entities], [S.check.CATALOG.I01.severity, S.check.CATALOG.I01.title, [{ type: 'device', key: 'SW_A' }]]);
-  assert.ok(/指令執行錯誤：bad command name registration-table \(line 1 column 16\)/.test(known[0].message), known[0].message);
+  assert.ok(/^指令執行錯誤：t\.txt 第 3–6 行，設備回應「bad command name registration-table \(line 1 column 16\)」/.test(known[0].message), known[0].message);
   assert.ok(/RouterOS 版本/.test(known[0].message) && /套件/.test(known[0].message), known[0].message);
   assert.ok(!/請加上 detail/.test(known[0].message), known[0].message);
   // 沒有解析器支援的指令、輸出只有錯誤訊息：同樣說明指令執行錯誤
   const unknown = i01('SW_A (10.0.0.1):\n### /foo bar print\nexpected end of command (line 1 column 6)\n');
-  assert.ok(/指令執行錯誤：expected end of command/.test(unknown[0].message) && /\/foo bar print/.test(unknown[0].message), unknown[0].message);
+  assert.ok(/^指令執行錯誤：.*設備回應「expected end of command/.test(unknown[0].message) && /\/foo bar print/.test(unknown[0].message), unknown[0].message);
   // 錯誤訊息之外還有其他文字：不是「全是錯誤訊息」，維持原本的說明
   const mixed = i01('SW_A (10.0.0.1):\n### /ip arp print\nbad command name arp\n隨便一段文字\n');
   assert.ok(!/指令執行錯誤/.test(mixed[0].message) && /請加上 detail without-paging/.test(mixed[0].message), mixed[0].message);

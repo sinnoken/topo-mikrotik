@@ -1,6 +1,7 @@
 /*
  * 輸入對話框與建立基準：貼上／選擇／拖放檔案、命名規則選單、建立前的預檢（S.preflight）、建立進度，完成後載入並存入 store。
- * 也負責歡迎畫面的收集指引（指令清單取自 S.collectCommands，由 tools/collector-commands.sh 產生）。
+ * 也提供收集指令清單（A.collectGuide，取自 S.collectCommands，由 tools/collector-commands.sh 產生；顯示在設定的「收集與建立基準」），
+ * 並把歡迎畫面的說明按鈕接到那個分類。
  */
 (function (S) {
   'use strict';
@@ -110,7 +111,7 @@
     block(n ? '' : '沒有認到任何設備');
   }
 
-  // ---- 收集指引（歡迎畫面）與格式範例（對話框）
+  // ---- 收集指令清單（設定的「收集與建立基準」）與格式範例（對話框）
   /** 寫入剪貼簿（V.copyText），結果寫在 status（role=status 元素） */
   async function copyText(text, status) {
     const why = await V.copyText(text);
@@ -118,7 +119,7 @@
   }
   A.copyText = copyText;
   /**
-   * 收集指令清單（歡迎畫面與設定的「收集與建立基準」共用）：{ list（每行一個指令）, optional（只有部分設備才有的選單，DOM） }；
+   * 收集指令清單（設定的「收集與建立基準」）：{ list（每行一個指令）, optional（只有部分設備才有的選單，DOM） }；
    * 指令清單未載入時是 { error }。指令清單由 tools/collector-commands.sh 產生（samples/collect-commands.js），畫面不另寫一份
    */
   A.collectGuide = function collectGuide() {
@@ -132,11 +133,9 @@
   };
   function bindCollectGuide() {
     $('#input-format-copy').onclick = () => copyText($('#input-format-example').textContent, $('#input-format-copy-status'));
-    const g = A.collectGuide();
-    if (g.error) { $('#welcome-commands').textContent = g.error; $('#welcome-copy').disabled = true; return; }
-    $('#welcome-commands').textContent = g.list;
-    $('#welcome-copy').onclick = () => copyText(g.list, $('#welcome-copy-status'));
-    V.clear($('#welcome-optional')).appendChild(g.optional);
+    // 歡迎畫面只開啟設定的「收集與建立基準」：指令清單只在那裡出現一次；關閉設定後焦點回到這個按鈕
+    const help = $('#welcome-help');
+    help.onclick = () => App.openSettings('help', { opener: help });
   }
   async function fillProfiles(selected) {
     const saved = (await S.store.get('profiles').catch(() => null)) || {};

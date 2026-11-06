@@ -381,13 +381,25 @@ function viewBoundaryViolations(file, src) {
     if (Array.isArray(nl) || typeof nl.find === 'function' || typeof nl.forEach !== 'function' || typeof body.children.forEach === 'function') throw new Error('模擬 DOM 應回傳 NodeList（有 forEach、沒有 find）與 HTMLCollection（沒有 forEach）');
   });
   await step('ELK 不在啟動時載入', () => { if (globalThis.ELK || loadedScripts.length) throw new Error('ELK 應在第一次需要分層版面時才載入'); });
-  await step('歡迎畫面：收集指引可展開，指令清單取自收集器定義（samples/collect-commands.js）且可複製；說明 collect.sh', async () => {
+  await step('歡迎畫面：三步驟的引導；收集只寫一句並以按鈕開啟設定的「收集與建立基準」（指令清單只在那裡出現一次）；複製指令清單', async () => {
     const w = $('#welcome');
-    if ($('#welcome-collect').tagName !== 'DETAILS') throw new Error('收集指引應為可展開的區塊');
     const cmds = S.collectCommands.default.map((c) => c.command);
-    if (text('#welcome-commands') !== cmds.join('\n') || !cmds.includes('/export terse')) throw new Error('指令清單應取自 samples/collect-commands.js：' + text('#welcome-commands'));
-    if (!S.collectCommands.optional.every((c) => text('#welcome-optional').includes(c.command))) throw new Error('應列出選用指令');
-    if (!w.textContent.includes('collect.sh')) throw new Error('歡迎畫面應說明收集腳本 collect.sh');
+    if (!cmds.includes('/export terse')) throw new Error('指令清單應取自 samples/collect-commands.js');
+    if (w.querySelector('ol').testAll('li').length !== 3) throw new Error('歡迎畫面應保留三步驟的引導');
+    if (!w.textContent.includes('collect.sh')) throw new Error('歡迎畫面應提到收集腳本 collect.sh');
+    // 單一來源：歡迎畫面不再有指令清單（也沒有收集指引的展開區塊）
+    const listShown = (root) => root.testAll('pre').filter((p) => p.textContent === cmds.join('\n'));
+    if (listShown(w).length || w.querySelector('details') || cmds.slice(1).some((c) => w.textContent.includes(c))) throw new Error('歡迎畫面不應再列出指令清單（只在設定的「收集與建立基準」）');
+    const helpBtn = $('#welcome-help');
+    if (!helpBtn || helpBtn.tagName !== 'BUTTON' || helpBtn.getAttribute('type') !== 'button' || !helpBtn.textContent.includes('收集與建立基準')) throw new Error('歡迎畫面應有「看收集與建立基準的說明」按鈕');
+    if (!w.querySelector('ol').testAll('li')[0].contains(helpBtn)) throw new Error('說明按鈕應在第一步（收集）');
+    helpBtn.focus(); helpBtn.click();
+    if ($('#settings').classList.contains('hidden') || S.view.app.settingsSection() !== 'help' || document.activeElement !== $('#settings-panel-title')) throw new Error('按鈕應開啟設定的「收集與建立基準」並聚焦它的標題');
+    if (document.testAll('pre').filter((p) => p.textContent === cmds.join('\n')).length !== 1) throw new Error('指令清單在整個畫面應只出現一次');
+    if (text('#settings-commands') !== cmds.join('\n')) throw new Error('「收集與建立基準」的指令清單應取自 samples/collect-commands.js：' + text('#settings-commands'));
+    if (!S.collectCommands.optional.every((c) => text('#settings-panel').includes(c.command))) throw new Error('應列出選用指令');
+    const copyBtn = $('#settings').testAll('button').find((b) => b.getAttribute('data-settings-focus') === 'copy-commands');
+    if (!copyBtn || !copyBtn.textContent.includes('複製')) throw new Error('複製指令清單應是按鈕');
     // 觸控用語：歡迎畫面與操作提示各有滑鼠與觸控兩份，觸控（pointer: coarse）只顯示「點一下、拖曳、雙指縮放」那份；不寫只適用寬螢幕的「左側／右側」
     const touch = (sel) => $(sel).querySelector('.for-touch'); const mouse = (sel) => $(sel).querySelector('.for-mouse');
     if (!touch('#welcome') || !mouse('#welcome') || !/點一下/.test(touch('#welcome').textContent) || !/雙指縮放/.test(touch('#welcome').textContent)) throw new Error('歡迎畫面應有觸控用語');
@@ -395,17 +407,19 @@ function viewBoundaryViolations(file, src) {
     if (/左側|右側/.test(w.textContent)) throw new Error('歡迎畫面不應寫只適用寬螢幕的左側／右側');
     const css0 = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
     if (!/\n\.for-touch \{ display: none; \}/.test(css0) || !/@media \(pointer: coarse\) \{[^}]*\}\s*\.for-mouse \{ display: none; \}\s*\.for-touch \{ display: inline; \}/.test(css0)) throw new Error('觸控裝置應改顯示觸控用語');
-    if ($('#welcome-copy').tagName !== 'BUTTON' || !$('#welcome-copy').textContent.includes('複製')) throw new Error('複製指令清單應是按鈕');
     const nav = Object.getOwnPropertyDescriptor(globalThis, 'navigator'); let copied = null;
     Object.defineProperty(globalThis, 'navigator', { value: { clipboard: { writeText: async (t) => { copied = t; } } }, configurable: true, writable: true });
     try {
-      $('#welcome-copy').click(); await new Promise((r) => setTimeout(r, 5));
-      if (copied !== cmds.join('\n') || !text('#welcome-copy-status').includes('已複製')) throw new Error('複製指令清單應寫入剪貼簿並提示');
+      copyBtn.click(); await new Promise((r) => setTimeout(r, 5));
+      if (copied !== cmds.join('\n') || !text('#settings-copy-status').includes('已複製')) throw new Error('複製指令清單應寫入剪貼簿並提示');
       $('#input-format-copy').click(); await new Promise((r) => setTimeout(r, 5));
       if (copied !== text('#input-format-example') || !text('#input-format-copy-status').includes('已複製')) throw new Error('複製範例應寫入格式範例全文');
-      globalThis.navigator = {}; $('#welcome-copy').click(); await new Promise((r) => setTimeout(r, 5));
-      if (!text('#welcome-copy-status').includes('無法自動複製')) throw new Error('不能複製時應明確告知：' + text('#welcome-copy-status'));
+      globalThis.navigator = {}; copyBtn.click(); await new Promise((r) => setTimeout(r, 5));
+      if (!text('#settings-copy-status').includes('無法自動複製')) throw new Error('不能複製時應明確告知：' + text('#settings-copy-status'));
     } finally { if (nav) Object.defineProperty(globalThis, 'navigator', nav); else delete globalThis.navigator; }
+    // 關閉後焦點回到歡迎畫面的按鈕
+    $('#settings').querySelector('.settings-close').click();
+    if (!$('#settings').classList.contains('hidden') || document.activeElement !== helpBtn) throw new Error('關閉設定後焦點應回到歡迎畫面的說明按鈕');
   });
   await step('輸入對話框：格式說明是可展開、可複製的範例，範例本身認得；placeholder 只是提示', async () => {
     await App.openInput();
@@ -5452,11 +5466,55 @@ function viewBoundaryViolations(file, src) {
     // 收集與建立基準：指令清單與歡迎畫面同一份（S.collectCommands）
     settingsTab('help').click();
     const cmds = S.collectCommands.default.map((c) => c.command).join('\n');
-    if (text('#settings-commands') !== cmds || text('#settings-commands') !== text('#welcome-commands')) throw new Error('「收集與建立基準」的指令清單應與歡迎畫面相同');
+    if (text('#settings-commands') !== cmds) throw new Error('「收集與建立基準」的指令清單應取自 S.collectCommands');
     if (!S.collectCommands.optional.every((c) => text('#settings-panel').includes(c.command))) throw new Error('應列出只有部分設備才有的選單');
-    // 關於：程式版本與 ELK.js 的授權（路徑取自 V.layout.ELK_SRC）
+    const helpP = $('#settings-panel'); const helpT = helpP.textContent;
+    // 收集：collect.sh 的用法與 devices.csv 範例；範例的標題列與每一列都取自 repo 的 tools/devices.csv（collect.sh 的實際格式）
+    const csvRepo = fs.readFileSync(path.join(ROOT, 'tools/devices.csv'), 'utf8').split('\n').map((l) => l.trim()).filter(Boolean);
+    const csv = $('#settings-devices-csv'); const csvLines = csv ? csv.textContent.split('\n').filter(Boolean) : [];
+    if (!csv || csvLines[0] !== csvRepo[0] || csvLines.length < 2 || !csvLines.every((l) => csvRepo.includes(l))) throw new Error('devices.csv 範例應取自 tools/devices.csv（標題列＋至少一列）：' + (csv && csv.textContent));
+    if (!/tools\/collect\.sh devices\.csv --dry-run/.test(helpT) || !/tools\/collect\.sh devices\.csv (-o|--output) \S+/.test(helpT)) throw new Error('應寫出 collect.sh 的 --dry-run 與輸出檔的用法');
+    ['--device', '--commands', '--ask-password', '--retry-failed'].forEach((o) => { if (!helpT.includes(o)) throw new Error('應列出 collect.sh 的常用選項 ' + o); });
+    if (!helpT.includes('bundle-v1') || !helpT.includes('設備名 (管理 IP):')) throw new Error('應說明輸出是 bundle-v1 收集檔與手動收集的「設備名 (管理 IP):」標頭');
+    // 排程：npm run baseline 與三種結束碼（每個結束碼各一列）
+    if (!/npm run baseline -- \S+ --ledger \S+ -o \S+/.test(helpT)) throw new Error('應寫出排程用的 npm run baseline 指令');
+    const exits = helpP.testAll('.settings-exit dt').map((d) => d.textContent.trim());
+    if (exits.join() !== '0,1,2') throw new Error('應列出 baseline 的三種結束碼：' + exits.join());
+    if (!/cron|工作排程器/.test(helpT)) throw new Error('應說明可以放進 cron／工作排程器');
+    // 一輪的流程：收集 → 建立基準 → 研判 → 修正 → 下一輪收集 → 驗證，修正只產生 .rsc 不連線設備，工作包帶走帶回
+    const flow = helpP.querySelector('.settings-flow');
+    const flowT = flow ? flow.testAll('li').map((l) => l.textContent) : [];
+    const order = ['收集', '建立基準', '研判', '修正', '下一輪', '驗證'].map((w) => flowT.findIndex((t) => t.startsWith(w)));
+    if (order.some((i) => i < 0) || order.some((i, n) => n && i <= order[n - 1])) throw new Error('應依序列出一輪的流程：' + flowT.join(' / '));
+    if (!/\.rsc/.test(helpT) || !/不(會)?連線(任何)?設備/.test(helpT) || !helpT.includes('工作包')) throw new Error('應說明修正只產生 .rsc、不連線設備，以及工作包');
+    // 每段的詳細規格以連結到文件（檔案存在、錨點對得到標題），新分頁開啟
+    const ghSlug = (s) => s.trim().toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s/g, '-');
+    const checkDocLinks = (root, need) => {
+      const links = root.testAll('a').filter((a) => a.classList.contains('doc-link'));
+      need.forEach((f) => { if (!links.some((a) => decodeURI(a.getAttribute('href')).includes('/' + f))) throw new Error('應連到 ' + f); });
+      links.forEach((a) => {
+        const href = decodeURI(a.getAttribute('href')); const m = href.match(/\/blob\/main\/([^#]+)(?:#(.+))?$/);
+        if (!m || !fs.existsSync(path.join(ROOT, m[1]))) throw new Error('文件連結應指向 repo 裡的檔案：' + href);
+        if (m[2] && !fs.readFileSync(path.join(ROOT, m[1]), 'utf8').split('\n').some((l) => /^#+ /.test(l) && ghSlug(l.replace(/^#+ /, '')) === m[2])) throw new Error('文件連結的錨點對不到標題：' + href);
+        if (a.getAttribute('target') !== '_blank' || !/noopener/.test(a.getAttribute('rel') || '')) throw new Error('文件連結應在新分頁開啟（rel=noopener）：' + href);
+      });
+      return links;
+    };
+    checkDocLinks(helpP, ['README.md', 'docs/收集清單與輸入格式.md', 'docs/使用說明.md']);
+    // 命名規則：連到設定的命名規則分類
+    const toProfiles = helpP.testAll('button').find((b) => b.getAttribute('data-settings-focus') === 'to-profiles');
+    if (!toProfiles) throw new Error('應有前往命名規則分類的按鈕');
+    toProfiles.click(); check('profiles', '按鈕應換到命名規則分類'); settingsTab('help').click();
+    // 關於：程式版本、各資料格式的版本（取自核心的常數）、離線與唯讀、ELK.js 的授權（路徑取自 V.layout.ELK_SRC）、文件與原始碼
     settingsTab('about').click();
-    if (!text('#app-version').includes(S.VERSION) || !text('#settings-panel').includes('EPL-2.0') || !text('#settings-panel').includes(S.view.layout.ELK_SRC.replace(/\/[^/]*$/, ''))) throw new Error('「關於」應列出版本與 ELK.js 的 EPL-2.0 授權：' + text('#settings-panel'));
+    const aboutT = text('#settings-panel');
+    if (!text('#app-version').includes(S.VERSION) || !aboutT.includes('EPL-2.0') || !aboutT.includes(S.view.layout.ELK_SRC.replace(/\/[^/]*$/, ''))) throw new Error('「關於」應列出版本與 ELK.js 的 EPL-2.0 授權：' + aboutT);
+    [S.SCHEMA, S.ledger.SCHEMA, S.remediate.SCHEMA, S.workpack.SCHEMA].forEach((x) => { if (!aboutT.includes(x)) throw new Error('「關於」應列出資料格式 ' + x); });
+    if (!aboutT.includes("connect-src 'none'") || !/不(會)?連線(任何)?設備/.test(aboutT)) throw new Error('「關於」應說明離線（CSP 禁止網路連線）與唯讀');
+    const csp = (html.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/) || [])[1] || '';
+    if (!csp.includes("connect-src 'none'")) throw new Error('index.html 的 CSP 應含 connect-src none');
+    const srcLink = checkDocLinks($('#settings-panel'), ['README.md']);
+    if (!$('#settings-panel').testAll('a').some((a) => /^https:\/\/github\.com\/sinnoken\/topo-mikrotik\/?$/.test(a.getAttribute('href') || '')) || !srcLink.length) throw new Error('「關於」應連到文件與原始碼');
     // 搜尋框的 Esc 不關設定（只收起搜尋）；設定內的 Esc 關閉，焦點回到 ⚙
     esc($('#search')); if (box.classList.contains('hidden')) throw new Error('設定外的元素的 Esc 不應關閉設定');
     esc(settingsTab('about'));

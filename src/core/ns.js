@@ -6,7 +6,7 @@
  */
 (function (S) {
   'use strict';
-  S.VERSION = '3.3.0';
+  S.VERSION = '3.4.0';
   // ssot-snapshot/3（ADR-015）：位址、網段、ARP、路由加上 vrf，prefixes 改為每個 VRF 的每個網段一筆。
   // /2 不轉換（ADR-010：可以從輸入重建）；畫面還原時 schema 不同就用儲存的輸入重建（ADR-005）。
   S.SCHEMA = 'ssot-snapshot/3';
@@ -19,6 +19,39 @@
   S.KIND_LABEL = Object.freeze({ firewall: '防火牆', switch: '交換器', router: '路由器', host: '主機', unknown: '未知' });
   /** 介面類型（封閉列舉，參考 NetBox Interface type 的分類層級）；原始 RouterOS 類型另存於 rawType。 */
   S.IFC_TYPES = Object.freeze(['physical', 'lag', 'bridge', 'vlan', 'wireless', 'virtual', 'loopback', 'other']);
+  /**
+   * 管理面設定（mgmtSettings，F10–F14）的出廠預設值：/export 只寫非預設值，export 沒寫的欄位以這張表補上，並標為預設值（推論）。
+   * 依線上手冊（RouterOS 7.24–7.26）各選單參數的 Default；較舊的 7.x 無法以手冊確認，待真機確認（路線圖「等使用者提供資料」）。
+   * 預設組態（defconf）會把 MAC server、MAC WinBox、鄰居探索設成 LAN，這些會寫進 export，不是這裡的預設值。
+   * snmp.community 是設備出廠就有的那一個 community（手冊：只要沒有改或刪掉，就是可從任何位址讀取的 public）。
+   */
+  S.MGMT_DEFAULTS = Object.freeze({
+    routerOS: '7.24–7.26（線上手冊）',
+    // 這張表適用的 RouterOS 版本（[主版號, 次版號]，含兩端）：設備版本在範圍外時不用表推定（model 的 resolveMgmt）
+    versions: Object.freeze({ text: '7.24–7.26', from: Object.freeze([7, 24]), to: Object.freeze([7, 26]) }),
+    dns: Object.freeze({ allowRemote: false, vrf: 'main' }),
+    macServer: Object.freeze({ allowedList: 'all' }),
+    macWinbox: Object.freeze({ allowedList: 'all' }),
+    discovery: Object.freeze({ list: 'static', protocols: Object.freeze(['cdp', 'lldp', 'mndp']), mode: 'tx-and-rx' }),
+    snmp: Object.freeze({ enabled: false, community: Object.freeze({ name: 'public', addresses: Object.freeze(['::/0']), write: false, security: 'none', disabled: false }) }),
+    upnp: Object.freeze({ enabled: false }),
+    proxy: Object.freeze({ enabled: false, ports: Object.freeze([8080]) }),
+    socks: Object.freeze({ enabled: false, port: 1080, vrf: 'main' }),
+    bandwidthServer: Object.freeze({ enabled: true, authenticate: true, port: 2000 }),
+    manual: Object.freeze({
+      dns: 'https://manual.mikrotik.com/docs/cli-reference/ip/dns.md',
+      macServer: 'https://manual.mikrotik.com/docs/cli-reference/tool/mac-server.md',
+      macWinbox: 'https://manual.mikrotik.com/docs/cli-reference/tool/mac-server/mac-winbox.md',
+      discovery: 'https://manual.mikrotik.com/docs/cli-reference/ip/neighbor/discovery-settings.md',
+      snmp: 'https://manual.mikrotik.com/docs/cli-reference/snmp.md',
+      community: 'https://manual.mikrotik.com/docs/cli-reference/snmp/community.md',
+      upnp: 'https://manual.mikrotik.com/docs/cli-reference/ip/upnp.md',
+      upnpInterfaces: 'https://manual.mikrotik.com/docs/cli-reference/ip/upnp/interfaces.md',
+      proxy: 'https://manual.mikrotik.com/docs/cli-reference/ip/proxy.md',
+      socks: 'https://manual.mikrotik.com/docs/cli-reference/ip/socks.md',
+      bandwidthServer: 'https://manual.mikrotik.com/docs/cli-reference/tool/bandwidth-server.md',
+    }),
+  });
   S.readers = S.readers || {};
   S.adapters = S.adapters || {};
   S.data = S.data || {};

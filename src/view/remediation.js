@@ -112,9 +112,10 @@
   }
 
   // ---------------------------------------------------------------- 比對對象（finding.facet）
-  /** facet 中項目代碼的顯示文字（A12、R06 的 dns／ntp／gateway，V06、V07 比較的屬性） */
+  /** facet 中項目代碼的顯示文字（A12、R06 的 dns／ntp／gateway，V06、V07 比較的屬性，F11、F14 的管理服務；產品名稱沿用 RouterOS 的寫法） */
   const FACET_ITEM = { dns: 'DNS 伺服器', ntp: 'NTP 伺服器', gateway: '閘道',
-    'vlan-interface-name': 'VLAN 介面名稱', 'vlan-interface-comment': 'VLAN 介面說明', 'bridge-vlan-comment': 'bridge VLAN 說明' };
+    'vlan-interface-name': 'VLAN 介面名稱', 'vlan-interface-comment': 'VLAN 介面說明', 'bridge-vlan-comment': 'bridge VLAN 說明',
+    'mac-telnet': 'MAC Telnet', 'mac-winbox': 'MAC WinBox', upnp: 'UPnP', proxy: 'web proxy', socks: 'SOCKS', 'bandwidth-server': '頻寬測試伺服器（bandwidth-server）' };
   const facetItem = (s) => FACET_ITEM[s] || s;
   /** 「a|b」格式的 facet 拆成第一段與其餘（其餘部分可能含 |，原樣保留） */
   const facetSplit = (v) => { const at = v.indexOf('|'); return at < 0 ? [v, ''] : [v.slice(0, at), v.slice(at + 1)]; };
@@ -126,6 +127,11 @@
     const msg = String((f && f.message) || ''); const at = msg.toLowerCase().indexOf(`「${String(name).toLowerCase()}」`);
     return at < 0 ? name : msg.slice(at + 1, at + 1 + String(name).length);
   };
+  /**
+   * F13 的 facet：名稱不重複時是 community 名稱；同名時核心在後面加「#」與內容雜湊的前 8 碼（check/checks.js 的 communityFacets）。
+   * 只拆掉結尾的 #8 碼十六進位，名稱本身含 # 時不截斷。回傳 [名稱, 雜湊或空字串]。
+   */
+  const communityFacet = (v) => { const m = /^(.*)#([0-9a-f]{8})$/.exec(String(v)); return m ? [m[1], m[2]] : [String(v), '']; };
   const FACET_FORMAT = {
     I02: (v) => S.query.adapterLabel(v),
     V06: facetItem,
@@ -139,6 +145,9 @@
     R02: (v) => `本端介面 ${v}`,
     R05: (v) => `網段 ${v}`,
     R06: (v) => { const [a, b] = facetSplit(v); return b ? `${facetItem(a)}（${b}）` : null; },
+    F11: facetItem,
+    F13: (v) => { const [name, tag] = communityFacet(v); return tag ? `community「${name}」（同名 #${tag}）` : `community「${name}」`; },
+    F14: facetItem,
   };
   /**
    * 檢查結果的比對對象（finding.facet）的顯示文字：同一組檢查＋實體可能有多筆時，標示這筆檢查的是哪一個項目。
@@ -194,5 +203,5 @@
   }
 
   V.remediation = { STATUS_TEXT, statusText, STATUS_CHIP, advice, hintLine, sortByDevice, LEVEL_TEXT, RISK_TEXT, RISK_CHIP, maxRisk, itemApplyLines, targetText, choiceText,
-    MISSING_FINDING_TEXT, FINDING_TEXT_MAX, clipText, matchFindings, findingRef, FACET_ITEM, FACET_RULES: Object.keys(FACET_FORMAT), facetText, devicesCsvDraft, USER_PLACEHOLDER };
+    MISSING_FINDING_TEXT, FINDING_TEXT_MAX, clipText, matchFindings, findingRef, FACET_ITEM, FACET_RULES: Object.keys(FACET_FORMAT), facetText, communityFacet,devicesCsvDraft, USER_PLACEHOLDER };
 })(globalThis.SSOT = globalThis.SSOT || {});

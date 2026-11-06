@@ -367,6 +367,7 @@
 
     firewallChecks(M, add, name);
     statsChecks(M, add, name);
+    mgmtChecks(M, add, name);
 
     const order = { error: 0, warn: 1, info: 2 };
     out.sort((a, b) => order[a.severity] - order[b.severity] || S.util.cmp(a.id, b.id) || S.util.natural(a.message, b.message));
@@ -935,6 +936,151 @@
         const how = hits.map((h) => `${h.label} 從 ${ifcName(h.ep)}，${h.res.rule ? `${h.res.rule.chain} 第 ${h.res.rule.position} 條放行` : 'input 沒有任何規則擋下'}`).join('；');
         add('F07', `${name(dev)}：${sv.name}（tcp/${sv.port}${sv.basis === 'default' ? '，預設值' : ''}）啟用、沒有限制來源位址（available-from），WAN 可以連入：${how}`,
           [{ type: 'device', key: dev }, { type: 'service', key: dev + '|' + sv.name }].concat(hits.filter((h) => h.res.rule).map((h) => ({ type: 'rule', key: h.res.rule.key }))), ev);
+      });
+    });
+  }
+
+  // ---------------------------------------------------------------- 管理面加固（F10–F14）
+  /*
+   * 設定是事實（mgmtSettings 的 basis export）；export 沒寫的欄位是出廠預設值（S.MGMT_DEFAULTS，推論），finding 的 basis 為 default，訊息註明。
+   * WAN 沿用 firewallZones 的推論（M.fwCtx）：沒有 WAN 時 F10、F11、F12、F14 不檢查（F08 說明），F13 不需要 WAN。
+   * 「WAN 可以連到」與 F07 相同：從某個 WAN 介面送一個新連線，經 raw 與 filter input（S.infer.fw.evalFilter）會被放行；IPv6 只在確定有用時判斷。
+   */
+  const MGMT_LABEL = { dns: 'DNS', macServer: 'MAC Telnet', macWinbox: 'MAC WinBox', discovery: '鄰居探索', snmp: 'SNMP', upnp: 'UPnP', proxy: 'web proxy', socks: 'SOCKS', bandwidthServer: 'bandwidth-server' };
+  const MGMT_FAMILIES = [['ip', 'IPv4'], ['ipv6', 'IPv6']];
+  /*
+   * F13 的 facet（findingKey 的一部分）：community 名稱。手冊沒有說名稱不能重複，export 也可能出現同名的 community（例如另外 add 了 public），
+   * 這時名稱不足以區分，啟用中的 community 有同名的才在名稱後加上「#內容雜湊」：是不是出廠的 community、addresses（排序後）、security、write-access。
+   * 只數啟用中的（停用的不產生 finding；停用出廠的 public 再 add 一個 public 是常見的改法，這時 facet 仍是 public）。
+   * 不用行號或 export 中的順序（插入別的設定、export 換順序都不會變）；代價是改了這幾個欄位時 facet 會變，處理紀錄要重新標記。
+   */
+  function communityFacets(comms) {
+    const count = new Map(); comms.forEach((c) => { if (c.disabled === false) count.set(c.name, (count.get(c.name) || 0) + 1); });
+    return comms.map((c) => (count.get(c.name) > 1
+      ? `${c.name}#${S.util.hash(JSON.stringify([!!c.isDefault, c.addresses ? c.addresses.slice().sort() : null, c.security, c.write])).slice(0, 8)}` : c.name));
+  }
+  function mgmtChecks(M, add, name) {
+    const fw = S.infer.fw;
+    const ifcName = (ep) => K.splitEp(ep)[1];
+    const lineEv = (src) => src.map(([block, line]) => ({ block, line }));
+    const anyAddr = (a) => { const p = fw.parseVal('src-address', a); return p.kind === 'ranges' && p.items.some(([x, y]) => x === 0n && y === (1n << BigInt(p.bits)) - 1n); };
+    const dflt = (area, fields) => fields.some((k) => area.defaulted.includes(k));
+    // 預設值的依據：表的版本範圍；設備版本不明時註明（版本在範圍外時 model 不補預設值，不會走到這裡）
+    const R = S.MGMT_DEFAULTS.versions.text;
+    const verNote = (ms) => `依 RouterOS ${R} 手冊的出廠值${ms.versionInRange === null ? '，設備版本不明' : ''}`;
+    // 證據依出現順序去掉重複的行（UDP、TCP 被同一條規則放行等）
+    const put = (id, message, entities, ev, extra) => add(id, message, entities, ev.filter((e, i) => ev.findIndex((x) => x.block === e.block && x.line === e.line) === i), extra);
+    M.mgmtSettings.forEach((ms, dev) => {
+      const basisText = (isDefault) => (isDefault ? `，預設值：export 沒有寫出（${verNote(ms)}）` : '');
+      const ents = [{ type: 'device', key: dev }];
+      // F13：SNMP 開著，啟用中的 community 名稱是 public 或不限來源（addresses 空白或含 0.0.0.0/0、::/0）。不需要 WAN
+      // 欄位是 null（沒有資料、版本不在預設值表範圍）時不判斷；同名的 community（export 裡可能出現）facet 另加內容的雜湊，見 communityFacets
+      if (ms.snmp.enabled && ms.snmp.communities) {
+        const facets = communityFacets(ms.snmp.communities);
+        const byFacet = new Map(); // facet → [訊息, 證據, basis]；同名且內容相同的 community 無法區分，併成一筆（證據列出全部的設定行）
+        ms.snmp.communities.forEach((c, ci) => {
+          if (c.disabled !== false || c.name === null) return;
+          const pub = c.name === 'public'; const open = c.addresses !== null && (!c.addresses.length || c.addresses.some(anyAddr));
+          if (!pub && !open) return;
+          const pubDefault = pub && c.defaulted.includes('name'); const openDefault = open && c.defaulted.includes('addresses');
+          const isDefault = dflt(ms.snmp, ['enabled']) || pubDefault || openDefault;
+          const what = [pub ? `名稱是 public${pubDefault ? '（預設值：export 沒有寫出名稱）' : ''}` : null,
+            open ? `不限來源位址（addresses=${c.addresses.join(',') || '空白'}${openDefault ? '，預設值：export 沒有寫出' : ''}）` : null].filter(Boolean).join('、');
+          const same = ms.snmp.communities.filter((x) => x.name === c.name && x.disabled === false).length;
+          const facet = facets[ci];
+          const ev = lineEv(ms.snmp.src.concat(c.src));
+          if (byFacet.has(facet)) { byFacet.get(facet)[1].push(...ev); return; }
+          byFacet.set(facet, [`${name(dev)}：SNMP community「${c.name}」${what}${c.write ? '，而且可以寫入（write-access=yes）' : ''}${c.security && c.security !== 'none' ? `（security=${c.security}，只接受 SNMPv3）` : ''}${c.isDefault && c.basis === 'default' ? '（出廠的預設 community，export 沒有寫出）' : ''}${same > 1 ? `（同名的 community 有 ${same} 個）` : ''}${isDefault ? `；預設值${verNote(ms)}` : ''}`,
+            ev, isDefault ? 'default' : 'export']);
+        });
+        byFacet.forEach(([message, ev, basis], facet) => put('F13', message, ents, ev, { facet, basis }));
+      }
+      const ctx = M.fwCtx.get(dev);
+      if (!ctx || !ctx.wan) return;
+      const zone = M.fwZones.get(dev);
+      const wans = Array.from(ctx.wan).sort(S.util.natural);
+      // WAN 介面在 interface list member 的那一行（WAN 推論的依據）
+      const wanEv = (ep) => { for (const n of ctx.wanLists) { const l = M.fw.lists.get(dev + '|' + n); const s = l && l.members.get(ep); if (s) return { block: s[0], line: s[1] }; } return null; };
+      /**
+       * 從 WAN 以 proto/port 建立新連線，各位址族第一個會被 input 放行的 WAN 介面：[{ label, ep, res }]。
+       * vrf：服務只在這個 VRF 回應（DNS、SOCKS 的 vrf=，手冊）時，只看在這個 VRF 的 WAN 介面（介面的 VRF 沿用 model 的 resolveVrfs）；undefined 表示服務沒有 VRF 參數。
+       */
+      const reach = (proto, port, vrf) => {
+        const hits = [];
+        const inVrf = vrf === undefined ? wans : wans.filter((ep) => ((M.ifcs.get(ep) || {}).vrf || K.MAIN_VRF) === vrf);
+        MGMT_FAMILIES.forEach(([fam, label]) => {
+          if (fam === 'ipv6' && zone.ipv6.status !== 'used') return;
+          for (const ep of inVrf) {
+            const res = fw.evalFilter(ctx, fam, 'input', { family: fam, in: ep, out: null, protocol: proto, dstPort: port, dst: undefined, state: 'new', natState: null });
+            if (res.verdict === 'accept') { hits.push({ fam, label, ep, proto, port, res }); break; }
+          }
+        });
+        return hits;
+      };
+      const reachText = (hits) => hits.map((h) => `${h.label} ${h.proto}/${h.port} 從 ${ifcName(h.ep)}，${h.res.rule ? `${h.res.rule.chain} 第 ${h.res.rule.position} 條放行` : 'input 沒有任何規則擋下'}`).join('；');
+      const reachEv = (hits) => {
+        const ev = [];
+        hits.forEach((h) => {
+          const w = wanEv(h.ep); if (w && !ev.some((e) => e.block === w.block && e.line === w.line)) ev.push(w);
+          if (h.res.rule) ev.push({ block: h.res.rule.block, line: h.res.rule.line });
+          h.res.path.forEach((r) => ev.push({ block: r.block, line: r.line }));
+          if (h.fam === 'ipv6') zone.ipv6.src.forEach(([block, line]) => ev.push({ block, line }));
+        });
+        return ev;
+      };
+      // entities 只有設備：放行的規則只列在證據，不進 findingKey（改了規則、設定的問題還在時，處理紀錄仍是同一筆）
+      // F10：DNS 允許遠端查詢，WAN 進來的 UDP 或 TCP 53 會被 input 放行（手冊：allow-remote-requests 在 UDP／TCP 53 回應其他設備）
+      // DNS 只在 vrf=（預設 main）的用戶端得到回應（手冊 ip/dns）：WAN 在別的 VRF 時查不到；vrf 沒有資料時不判斷
+      if (ms.dns.allowRemote && ms.dns.vrf !== null) {
+        const hits = reach('udp', 53, ms.dns.vrf).concat(reach('tcp', 53, ms.dns.vrf));
+        if (hits.length) {
+          const vrfText = ms.dns.vrf !== K.MAIN_VRF ? `（vrf=${ms.dns.vrf}）` : '';
+          put('F10', `${name(dev)}：DNS 允許遠端查詢（allow-remote-requests=yes）${vrfText}，WAN 可以查詢：${reachText(hits)}`, ents, lineEv(ms.dns.src).concat(reachEv(hits)), { basis: 'export' });
+        }
+      }
+      /** 介面清單值包含哪些 WAN 介面（WAN 埠所在的 bridge 在清單中也算，手冊：bridge 在清單中時，經由它的埠進來的也接受）。無法判斷時 null。 */
+      const wanIn = (value) => {
+        if (value === null) return null; // 沒有資料（部分 export、版本不在預設值表範圍）
+        const set = fw.listMembers(ctx, value); if (set === null) return null;
+        return wans.filter((ep) => { const i = M.ifcs.get(ep); return set.has(ep) || (i && i.bridge && set.has(i.bridge)); });
+      };
+      const listText = (v, isDefault) => `「${v}」${basisText(isDefault)}`;
+      // F11：MAC Telnet（/tool mac-server）、MAC WinBox 的 allowed-interface-list 含 WAN 介面（IP 防火牆擋不住 MAC 連線，所以不看 filter）
+      [['macServer', 'mac-telnet', '/tool mac-server'], ['macWinbox', 'mac-winbox', '/tool mac-server mac-winbox']].forEach(([k, facet, menu]) => {
+        const a = ms[k]; const hit = wanIn(a.allowedList); if (!hit || !hit.length) return;
+        const isDefault = dflt(a, ['allowedList']);
+        put('F11', `${name(dev)}：${MGMT_LABEL[k]}（${menu}）的 allowed-interface-list 是${listText(a.allowedList, isDefault)}，包含 WAN 介面 ${hit.map(ifcName).join('、')}`,
+          ents, lineEv(a.src).concat(hit.map(wanEv).filter(Boolean)), { facet, basis: isDefault ? 'default' : 'export' });
+      });
+      // F12：鄰居探索的 discover-interface-list 含 WAN 介面；protocol 空白（不跑任何協定）或 rx-only（只收不送）不算
+      const dsc = ms.discovery;
+      if (dsc.protocols !== null && dsc.mode !== null && dsc.protocols.length && dsc.mode !== 'rx-only') {
+        const hit = wanIn(dsc.list);
+        if (hit && hit.length) {
+          const isDefault = dflt(dsc, ['list']);
+          put('F12', `${name(dev)}：鄰居探索（${dsc.protocols.join(',')}）的 discover-interface-list 是${listText(dsc.list, isDefault)}，包含 WAN 介面 ${hit.map(ifcName).join('、')}`,
+            ents, lineEv(dsc.src).concat(hit.map(wanEv).filter(Boolean)), { basis: isDefault ? 'default' : 'export' });
+        }
+      }
+      // F14：UPnP 的 internal 介面是 WAN（服務在 internal 介面監聽，手冊）；web proxy、SOCKS、bandwidth-server 開著且 WAN 可以連到它的 TCP 埠
+      if (ms.upnp.enabled) {
+        const bad = ms.upnp.interfaces.filter((x) => !x.disabled && x.type === 'internal' && wans.includes(x.ep));
+        if (bad.length) {
+          put('F14', `${name(dev)}：UPnP 開著，internal 介面含 WAN 介面 ${bad.map((x) => ifcName(x.ep)).join('、')}（服務在 internal 介面監聽，WAN 上的主機可以要求開啟連接埠轉送）`,
+            ents, lineEv(ms.upnp.src).concat(...bad.map((x) => lineEv(x.src))), { facet: 'upnp', basis: 'export' });
+        }
+      }
+      // SOCKS 只在 vrf=（預設 main）監聽（手冊 ip/socks）；web proxy、bandwidth-server 的手冊沒有 vrf 參數
+      [['proxy', 'proxy', ms.proxy.ports, undefined], ['socks', 'socks', ms.socks.port ? [ms.socks.port] : [], ms.socks.vrf], ['bandwidthServer', 'bandwidth-server', [ms.bandwidthServer.port], undefined]].forEach(([k, facet, ports, vrf]) => {
+        const a = ms[k]; if (!a.enabled || !ports || vrf === null) return;
+        const hits = []; for (const p of ports) { hits.push(...reach('tcp', p, vrf)); if (hits.length) break; }
+        if (!hits.length) return;
+        const isDefault = dflt(a, ['enabled']);
+        const vrfText = vrf && vrf !== K.MAIN_VRF ? `（vrf=${vrf}）` : '';
+        const extra = k !== 'bandwidthServer' ? ''
+          : (a.authenticate === false ? '，而且不需要登入（authenticate=no）' : '') + (isDefault ? '；device-mode 為 home／basic 時這個服務不運作，export 看不出 device-mode' : '');
+        put('F14', `${name(dev)}：${MGMT_LABEL[k]} 開著${vrfText}${basisText(isDefault)}，WAN 可以連入：${reachText(hits)}${extra}`,
+          ents, lineEv(a.src).concat(reachEv(hits)), { facet, basis: isDefault ? 'default' : 'export' });
       });
     });
   }

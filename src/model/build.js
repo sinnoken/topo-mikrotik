@@ -29,6 +29,8 @@
       // 防火牆（事實）：規則依輸入順序；interface list 以「設備|名稱」為鍵；/ip service 只有 export 有寫的（預設值由 infer 補上）
       fw: { rules: [], lists: new Map(), services: new Map(), peers: [], policies: [], ipv6: new Map(), // ipv6：dev → { use: [[區塊, 行號]], disabled: [區塊, 行號]|null }
         stats: new Map() }, // 命中次數（print stats）：「設備|位址族|表」→ { dev, family, table, block, line, rows: [...] }，對應結果見 matchFirewallStats
+      // 管理面設定（事實，export 有寫的）：dev → { areas: { area: { values, src } }, communities: [依序的 add／set], upnpIfcs: [] }；預設值由 resolveMgmt 補上
+      mgmt: new Map(), mgmtSettings: new Map(),
     };
   }
 
@@ -176,6 +178,14 @@
           sv.src.push([f.block, f.line]);
           break;
         }
+        case 'mgmtSet': {
+          const a = getOr(mgmtOf(M, f.dev).areas, f.area, () => ({ values: {}, src: [] }));
+          Object.assign(a.values, f.values); a.src.push([f.block, f.line]);
+          break;
+        }
+        case 'snmpCommunity': mgmtOf(M, f.dev).communities.push(Object.assign({}, f)); break;
+        case 'exportScope': mgmtOf(M, f.dev).scopes.push({ full: f.full, version: f.version }); break;
+        case 'upnpIfc': mgmtOf(M, f.dev).upnpIfcs.push({ ep: K.ep(f.dev, f.ifc), type: f.type, disabled: f.disabled, src: [[f.block, f.line]] }); break;
         case 'ipsecPeer': M.fw.peers.push({ dev: f.dev, name: f.name, address: f.address, disabled: f.disabled, src: [[f.block, f.line]] }); break;
         case 'ipv6Use': case 'ipv6Disabled': {
           const v = getOr(M.fw.ipv6, f.dev, () => ({ use: [], disabled: null }));
@@ -208,6 +218,7 @@
     numberFirewallRules(M);
     emptyStatTables(M, input.blocks);
     matchFirewallStats(M);
+    resolveMgmt(M);
     resolveVlanMembers(M);
     buildAggregates(M);
     classifyInterfaces(M);
@@ -357,6 +368,95 @@
         if (text(x.comment) !== text(r.comment)) { bad('comment', i, r.comment, x.comment); return; }
       }
       rules.forEach((r, i) => { r.stats = { bytes: rows[i].bytes, packets: rows[i].packets, src: [[rows[i].block, rows[i].line]] }; });
+    });
+  }
+
+  function mgmtOf(M, dev) { return getOr(M.mgmt, dev, () => ({ areas: new Map(), communities: [], upnpIfcs: [], scopes: [] })); }
+  /*
+   * 管理面設定的欄位：Snapshot 欄位 ← export 參數（原值的轉換）。export 沒寫的欄位以 S.MGMT_DEFAULTS 補上，列進 defaulted（推論：預設值）。
+   * 每個 area 的 basis：至少一個欄位來自 export 為 export，全部是預設值為 default，沒有任何資料為 none；src 是 export 中那幾行（預設值沒有）。
+   * 只有在「export 只寫非預設值」成立、而且預設值表適用時才補預設值，否則沒寫的欄位是 null、列進 unknown，reason 說明原因：
+   *  - not-exported：這台只有部分 export（區塊指令不是整機的 /export），而這個選單沒有出現在任何 export 裡
+   *  - version：設備的 RouterOS 版本不在預設值表的範圍（S.MGMT_DEFAULTS.versions）；版本不明時照用預設值（versionInRange 為 null）
+   */
+  const yes = (v) => v === 'yes';
+  const MGMT_FIELDS = {
+    dns: [['allowRemote', 'allow-remote-requests', yes], ['vrf', 'vrf', (v) => K.vrf(v)]],
+    macServer: [['allowedList', 'allowed-interface-list', String]],
+    macWinbox: [['allowedList', 'allowed-interface-list', String]],
+    discovery: [['list', 'discover-interface-list', String], ['protocols', 'protocol', (v) => String(v).split(',').map((x) => x.trim()).filter(Boolean)], ['mode', 'mode', String]],
+    snmp: [['enabled', 'enabled', yes]],
+    upnp: [['enabled', 'enabled', yes]],
+    proxy: [['enabled', 'enabled', yes], ['ports', 'port', (v) => String(v).split(',').map((x) => x.trim()).filter((x) => /^\d+$/.test(x)).map(Number)]],
+    socks: [['enabled', 'enabled', yes], ['port', 'port', (v) => (/^\d+$/.test(String(v)) ? +v : null)], ['vrf', 'vrf', (v) => K.vrf(v)]],
+    bandwidthServer: [['enabled', 'enabled', yes], ['authenticate', 'authenticate', yes]],
+  };
+  const COMMUNITY_FIELDS = ['name', 'addresses', 'write', 'security', 'disabled'];
+  const copyVal = (v) => (Array.isArray(v) ? v.slice() : v);
+  /** RouterOS 版本字串（7.25.1 (stable)、6.49.10）是否在預設值表的範圍；看不出主次版號時 null。 */
+  function mgmtVersionInRange(ver) {
+    const m = ver && String(ver).match(/^\s*v?(\d+)\.(\d+)/); if (!m) return null;
+    const v = [+m[1], +m[2]]; const R = S.MGMT_DEFAULTS.versions;
+    const cmp = (a, b) => a[0] - b[0] || a[1] - b[1];
+    return cmp(v, R.from) >= 0 && cmp(v, R.to) <= 0;
+  }
+  /** 有設定資料（export）的已收集設備，每台一筆管理面設定（含預設值）。沒有 export 的設備沒有這一筆（不猜）。 */
+  function resolveMgmt(M) {
+    const D = S.MGMT_DEFAULTS;
+    M.devices.forEach((d) => {
+      if (!d.collected || !d.data.has('config')) return;
+      const raw = M.mgmt.get(d.key) || { areas: new Map(), communities: [], upnpIfcs: [], scopes: [] };
+      const full = raw.scopes.some((x) => x.full);
+      // 版本：設備自報（/system resource）優先，其次是 export 抬頭
+      const hdr = raw.scopes.find((x) => x.version);
+      const version = d.softwareVersion || (hdr ? hdr.version : null);
+      const inRange = version ? mgmtVersionInRange(version) : null;
+      const ent = { dev: d.key, export: full ? 'full' : 'partial', version, versionInRange: inRange };
+      /** 這個選單（有沒有出現在 export）能不能用預設值補：不能時回傳原因 */
+      const why = (seen) => (!full && !seen ? 'not-exported' : inRange === false ? 'version' : null);
+      Object.keys(MGMT_FIELDS).forEach((area) => {
+        const got = raw.areas.get(area); const out = {}; const defaulted = []; const unknown = [];
+        const reason = why(!!got);
+        MGMT_FIELDS[area].forEach(([field, param, conv]) => {
+          if (got && param in got.values) out[field] = conv(got.values[param]);
+          else if (reason) { out[field] = null; unknown.push(field); }
+          else { out[field] = copyVal(D[area][field]); defaulted.push(field); }
+        });
+        const n = MGMT_FIELDS[area].length;
+        out.basis = defaulted.length + unknown.length < n ? 'export' : unknown.length ? 'none' : 'default';
+        out.defaulted = defaulted;
+        out.unknown = unknown;
+        out.reason = unknown.length ? reason : null;
+        out.src = got ? got.src.slice() : [];
+        ent[area] = out;
+      });
+      if (ent.bandwidthServer) ent.bandwidthServer.port = D.bandwidthServer.port; // 固定的 TCP 2000（手冊），不是可設定的參數
+      // SNMP community：出廠的預設 community 先放進來，再依序套用 export 的 add／set；set 找不到對象時不套用（列在 unmatched，畫面與檢查看得到）。
+      // 不能用預設值時：部分 export 又沒有 community 的設定 → communities 為 null（沒有資料）；其他情況只列 export 寫到的 community，沒寫的欄位是 null
+      const cReason = why(raw.communities.length > 0);
+      const unmatched = [];
+      let comms = null;
+      if (cReason !== 'not-exported') {
+        const base = cReason ? null : D.snmp.community;
+        const blank = (isDefault) => ({ name: base ? base.name : null, addresses: base ? base.addresses.slice() : null, write: base ? base.write : null, security: base ? base.security : null,
+          disabled: base ? (isDefault ? base.disabled : false) : null, isDefault, basis: isDefault ? 'default' : 'export', defaulted: base ? COMMUNITY_FIELDS.slice() : [], src: [] });
+        comms = base ? [blank(true)] : [];
+        raw.communities.forEach((f) => {
+          let c;
+          if (f.cmd === 'add') { c = blank(false); comms.push(c); }
+          else if (f.target.default) { c = comms.find((x) => x.isDefault); if (!c && !base) { c = blank(true); comms.unshift(c); } }
+          else c = comms.slice().reverse().find((x) => x.name === f.target.name);
+          if (!c) { unmatched.push([f.block, f.line]); return; }
+          COMMUNITY_FIELDS.forEach((k) => { if (f[k] !== undefined) { c[k] = copyVal(f[k]); c.defaulted = c.defaulted.filter((x) => x !== k); } });
+          c.basis = 'export'; c.src.push([f.block, f.line]);
+        });
+        comms.forEach((c) => { c.unknown = COMMUNITY_FIELDS.filter((k) => c[k] === null); });
+      }
+      ent.snmp.communities = comms;
+      ent.snmp.communitiesReason = comms ? cReason : 'not-exported';
+      ent.snmp.unmatched = unmatched;
+      ent.upnp.interfaces = raw.upnpIfcs.map((x) => ({ ep: x.ep, type: x.type, disabled: x.disabled, src: x.src.slice() }));
+      M.mgmtSettings.set(d.key, ent);
     });
   }
 

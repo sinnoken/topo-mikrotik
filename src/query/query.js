@@ -172,7 +172,7 @@
     const findingsBy = new Map();
     snap.findings.forEach((f, idx) => f.entities.forEach((e) => U.getOr(findingsBy, e.type + ':' + e.key, () => []).push(idx)));
     // 第一次查詢時才建立的索引（1000 台規模下多數畫面用不到）；回傳的陣列是 Q 自己的索引，凍結以免呼叫端改壞
-    let byFindingKey = null; let byRule = null; let blocksByDev = null; let covByDev = null; let deviationsBy = null;
+    let byFindingKey = null; let byRule = null; let blocksByDev = null; let covByDev = null; let deviationsBy = null; let mgmtByDev = null;
     const freezeAll = (map) => { map.forEach((v) => Object.freeze(v)); return map; };
     const findingKeyIndex = () => byFindingKey || (byFindingKey = freezeAll(snap.findings.reduce((out, f, idx) => { U.getOr(out, findingKey(f), () => []).push(idx); return out; }, new Map())));
     const EMPTY = Object.freeze([]);
@@ -258,6 +258,11 @@
       firewallZone: (d) => zoneByDev.get(d) || null,
       /** /ip service（含 export 沒寫的預設值，basis 為 default）。 */
       ipServicesOf: (d) => svcByDev.get(d) || [],
+      /**
+       * 管理面設定（F10–F14 的依據）：{ dev, dns, macServer, macWinbox, discovery, snmp（含 communities、unmatched）, upnp（含 interfaces）, proxy, socks, bandwidthServer }。
+       * 每一項有 basis（export／default）、defaulted（以出廠預設值補上的欄位，推論）與 src（export 的行）；沒有 export 的設備為 null。回傳 Snapshot 本身的那一筆，不要修改。
+       */
+      mgmtOf(d) { if (!mgmtByDev) mgmtByDev = new Map((m.mgmtSettings || EMPTY).map((x) => [x.dev, x])); return mgmtByDev.get(d) || null; },
       interfaceListsOf: (d) => listsByDev.get(d) || [],
       ipsecOf: (d) => ({ peers: peersByDev.get(d) || [], policies: polByDev.get(d) || [] }),
       /** 規則 a 是否涵蓋 b（符合 b 的封包一定符合 a；以 a 所在設備的 interface list 判斷）。比對兩份基準的規則時使用。 */
@@ -1114,6 +1119,8 @@
   S.query.dataLabel = (t) => S.check.DATA_LABEL[t] || t;
   /** 解析器（adapter id，見 meta.adapters、blocks[].adapters）的顯示名稱；不認得時原樣回傳。 */
   S.query.adapterLabel = (id) => (Object.prototype.hasOwnProperty.call(S.adapters, id) && S.adapters[id] && S.adapters[id].label) || id;
+  /** 管理面設定的出廠預設值表（凍結，S.MGMT_DEFAULTS）：export 沒寫的欄位依它補上；含適用的 RouterOS 版本（routerOS）與手冊網址（manual）。 */
+  S.query.mgmtDefaults = () => S.MGMT_DEFAULTS;
   /**
    * 還沒建立查詢介面的 Snapshot JSON（瀏覽器儲存或使用者匯入的檔案）的 meta；不像 Snapshot（不是物件或沒有 meta 物件）時為 null。
    * 用來先判斷 schema／version 是否相容，再決定要 S.query 還是重建。

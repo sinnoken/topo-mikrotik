@@ -43,7 +43,7 @@ const table = (rows, legend, indexed = true) => [legend, ...rows.map((r, i) => d
 const neighborText = (rows) => table(rows.map((r) => ({ flags: '', kvs: r })), 'Flags: ');
 function nrow(local, p, dupViaBridge) {
   const base = (iface) => [['interface', iface], p.ip ? ['address', p.ip] : null, p.ip && p.platform === 'MikroTik' ? ['address4', p.ip] : null, ['mac-address', p.mac], ['identity', p.name],
-    ['platform', p.platform || 'MikroTik'], ['version', p.version || '7.12.1 (stable)'], ['unpack', 'none'], ['age', '3m25s'], ['uptime', '2w1d4h'],
+    ['platform', p.platform || 'MikroTik'], ['version', p.version || '7.25.1 (stable)'], ['unpack', 'none'], ['age', '3m25s'], ['uptime', '2w1d4h'],
     p.board ? ['board', p.board] : null, ['ipv6', 'no'], p.port ? ['interface-name', p.port] : null, p.caps ? ['system-caps', p.caps] : null, p.caps ? ['system-caps-enabled', p.caps] : null,
     p.proto ? ['discovered-by', p.proto] : null].filter(Boolean);
   return dupViaBridge ? [base(local), base('bridge1')] : [base(local)];
@@ -59,7 +59,7 @@ function wrapCmd(text, width = 72) {
   out.push(line); return out;
 }
 function exportText(name, board, entries, compact) {
-  const lines = ['# 2026-10-13 10:00:00 by RouterOS 7.12.1', `# software id = ${pick(['AB12', 'CD34', 'EF56'])}-${pad(Math.floor(rnd() * 9999), 4)}`, '#', `# model = ${board}`, `# serial number = HF${Math.floor(rnd() * 1e9)}`];
+  const lines = ['# 2026-10-13 10:00:00 by RouterOS 7.25.1', `# software id = ${pick(['AB12', 'CD34', 'EF56'])}-${pad(Math.floor(rnd() * 9999), 4)}`, '#', `# model = ${board}`, `# serial number = HF${Math.floor(rnd() * 1e9)}`];
   entries.push(['/system identity', 'set', `name=${name}`]);
   if (!compact) entries.forEach(([p, c, a]) => lines.push(`${p} ${c} ${a}`));
   else { let ctx = null; entries.forEach(([p, c, a]) => { if (p !== ctx) { lines.push(p); ctx = p; } lines.push(...wrapCmd(`${c} ${a}`)); }); }
@@ -67,7 +67,8 @@ function exportText(name, board, entries, compact) {
 }
 const sort = (entries) => { const order = ['/interface bridge', '/interface ethernet', '/interface bonding', '/interface vlan', '/interface vrrp', '/interface bridge port', '/interface bridge vlan', '/ip vrf', '/ip address', '/ip dhcp-server network', '/routing id', '/routing ospf instance', '/ip route', '/routing table', '/routing rule',
   '/ip pool', '/ip dhcp-server lease', '/ip dns', '/ip dns static', '/ip firewall address-list', '/system ntp client', '/system ntp client servers',
-  '/interface list', '/interface list member', '/ip firewall filter', '/ip firewall nat', '/ip firewall raw', '/ipv6 firewall filter', '/ip service']; return entries.sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])); };
+  '/interface list', '/interface list member', '/ip firewall filter', '/ip firewall nat', '/ip firewall raw', '/ipv6 firewall filter', '/ip service',
+  '/ip neighbor discovery-settings', '/ip proxy', '/ip upnp', '/ip upnp interfaces', '/snmp', '/snmp community', '/tool bandwidth-server', '/tool mac-server', '/tool mac-server mac-winbox']; return entries.sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])); };
 
 const bridgeHostText = (rows) => table(rows.map((m) => ({ flags: m.local ? 'DL' : m.static ? '' : 'D', kvs: [['mac-address', m.mac], ['on-interface', m.ifc], ['bridge', 'bridge1'], ['vid', m.vid], ['age', pick(['3s', '12s', '45s', '1m2s'])]] })), 'Flags: X - disabled, I - invalid, D - dynamic, L - local, E - external ');
 const arpText = (rows) => table(rows.map((r) => ({ flags: 'DC', kvs: [['address', r.ip], ['mac-address', r.mac], ['interface', r.ifc], ['published', 'no'], ['invalid', 'no'], ['DHCP', 'no'], ['dynamic', 'yes'], ['complete', 'yes'], ['disabled', 'no'], ['vrf', r.vrf]] })), FLAGS_ARP);
@@ -124,7 +125,7 @@ function fwStats(name, entries, extra) {
     return [`${p} print stats detail without-paging`, statsText(rows)];
   });
 }
-const sysText = (board, name) => `             uptime: 2w1d4h\n            version: 7.12.1 (stable)\n         board-name: ${board}\n           platform: MikroTik\n`;
+const sysText = (board, name) => `             uptime: 2w1d4h\n            version: 7.25.1 (stable)\n         board-name: ${board}\n           platform: MikroTik\n`;
 
 const out = [];
 const device = (name, ip, cmds) => {
@@ -180,7 +181,7 @@ for (let s = 1; s <= SITES; s++) {
       sw.macs.push({ vid: 30, mac: css.mac, ifc: 'ether21' });
       for (let k = 0; k < 3; k++) sw.macs.push({ vid: 30, mac: mac(pick(OUI_PC)), ifc: 'ether21' });
     }
-    if (F && a === 5) sw.neighbors.push(...nrow('ether17', { name: `${C}_AP_01`, ip: `10.${s}.10.200`, mac: mac(OUI_MT[0]), platform: 'MikroTik', version: '7.12.1 (stable)', board: 'cAP ac', port: 'ether1', caps: 'bridge,wlan-ap' })); // C01
+    if (F && a === 5) sw.neighbors.push(...nrow('ether17', { name: `${C}_AP_01`, ip: `10.${s}.10.200`, mac: mac(OUI_MT[0]), platform: 'MikroTik', version: '7.25.1 (stable)', board: 'cAP ac', port: 'ether1', caps: 'bridge,wlan-ap' })); // C01
     for (let k = 1; k <= USERS; k++) {
       const port = `ether${8 + k}`; const m = mac(pick(OUI_PC)); const ip = `10.${s}.30.${(a - 1) * USERS + k + 10}`;
       e.push(['/interface bridge port', 'add', `bridge=bridge1 interface=${port} pvid=30`]); userPorts.push(port); sw.macs.push({ vid: 30, mac: m, ifc: port }); siteMacs.push({ vlan: 30, mac: m, ip });
@@ -298,6 +299,20 @@ for (let s = 1; s <= SITES; s++) {
     ['telnet', 'ftp', 'www', 'api', 'api-ssl'].forEach((n) => e.push(['/ip service', 'set', `${n} disabled=yes`]));
     ['ssh', 'winbox'].forEach((n) => e.push(['/ip service', 'set', `${n} address=10.${s}.10.0/24`]));
     if (F && ci === 1) e.push(['/ip service', 'set', 'www-ssl disabled=no']);
+    // 管理面（F10–F14）：defconf 把 MAC server、MAC WinBox、鄰居探索限在 LAN；bandwidth-server 出廠是開的，這裡關掉。
+    // F10：核心 02 開了 DNS 遠端查詢（上面的 /ip dns），又少了 input 最後的 drop；以下各放一個問題與一個不觸發的對照
+    e.push(['/tool mac-server', 'set', 'allowed-interface-list=LAN']);
+    e.push(['/tool mac-server mac-winbox', 'set', `allowed-interface-list=${F && ci === 0 ? 'all' : 'LAN'}`]);                   // F11：核心 01 的 MAC WinBox 開在所有介面
+    if (!(F && ci === 1)) e.push(['/ip neighbor discovery-settings', 'set', 'discover-interface-list=LAN']);                  // F12：核心 02 沒有設定，沿用出廠預設 static（推論）
+    if (F && ci === 0) {                                                                                                // F13：public 沒有改名（限了來源仍算）；nms-ro 限了來源，不觸發
+      e.push(['/snmp', 'set', 'contact=noc@example.com enabled=yes']);
+      e.push(['/snmp community', 'set', `[ find default=yes ] addresses=10.${s}.10.0/24`]);
+      e.push(['/snmp community', 'add', `addresses=10.${s}.10.0/24 name=nms-ro`]);
+      e.push(['/ip upnp', 'set', 'enabled=yes']);                                                                       // UPnP internal 只放 LAN：不觸發 F14
+      e.push(['/ip upnp interfaces', 'add', 'interface=ether47 type=external'], ['/ip upnp interfaces', 'add', 'interface=bridge1 type=internal']);
+    }
+    if (F && ci === 1) e.push(['/ip proxy', 'set', 'enabled=yes port=8080']);                                            // F14：web proxy 開著，WAN 可以連入
+    e.push(['/tool bandwidth-server', 'set', 'enabled=no']);
     if (ci === 0) { e.push(['/routing id', 'add', `disabled=no id=${c.rid} name=main select-dynamic-id=""`]); e.push(['/routing ospf instance', 'add', 'disabled=no name=default router-id=main']); }
     else e.push(['/routing ospf instance', 'set', `[ find default=yes ] router-id=${c.rid}`]);
     c.routes = rt;

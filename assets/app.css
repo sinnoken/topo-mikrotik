@@ -418,6 +418,13 @@ table.t tr.click { cursor: pointer; }
 .finding { display: flex; gap: 9px; align-items: flex-start; padding: 9px 10px; border: 1px solid var(--line-soft); border-radius: var(--radius); margin-bottom: 7px; font-size: var(--fs-md); background: var(--surface); }
 .finding .ev { margin-top: 2px; }
 .finding > .sev { margin-top: 5px; }
+/* 設備詳情的管理面設定：每項一個區塊（右欄窄，不用多欄表格）；有檢查結果的項目用錯誤列的底色 */
+.mgmt-row { padding: 8px 10px; border-bottom: 1px solid var(--line-soft); font-size: var(--fs-md); }
+.mgmt-row.bad { background: var(--row-bad); }
+.mgmt-head { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.mgmt-menu { font-size: var(--fs-xs); }
+.mgmt-val { margin-top: 2px; overflow-wrap: anywhere; }
+.mgmt-line { margin-top: 2px; }
 /* 多數決判定與多數不同（推論，V.deviationLine）：訊息下方一行，設備名可點；平手時淡色說明無法推定 */
 .finding .deviation { font-size: var(--fs-sm); line-height: var(--lh-body); }
 .finding .deviation .link { overflow-wrap: anywhere; }

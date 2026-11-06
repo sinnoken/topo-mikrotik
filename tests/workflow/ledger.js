@@ -376,7 +376,7 @@ test('處理紀錄 facet：範例資料以 2.8.0 的紀錄推進 2.9.0，12 條�
   const L = S.ledger; const text = read('samples/sample-bundle.txt');
   const { q28, q29 } = facetQs(text);
   const facetIds = uniqSorted(q29.findings().filter((f) => f.facet != null).map((f) => f.id));
-  assert.deepStrictEqual(facetIds, ['A02', 'A07', 'A08', 'A10', 'A11', 'A12', 'I02', 'R02', 'R05', 'R06', 'V06', 'V07']);
+  assert.deepStrictEqual(facetIds, ['A02', 'A07', 'A08', 'A10', 'A11', 'A12', 'F11', 'F13', 'F14', 'I02', 'R02', 'R05', 'R06', 'V06', 'V07']);
   const r1 = L.advance(L.empty(), q28, { now: '2026-01-01T00:00:00Z' });
   const r2 = L.advance(r1.ledger, q29, { now: '2026-02-01T00:00:00Z' });
   assert.deepStrictEqual([r2.changes, r2.unobserved], [[], []], '同一份輸入升版：不出現新增、fixed 或無法判斷');

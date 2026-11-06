@@ -1,9 +1,9 @@
 {
  "schema": "ssot-patch/1",
  "baseline": {
-  "inputHash": "83a376c2f1dcdd12",
+  "inputHash": "72de87da9bf20c60",
   "createdAt": "2026-01-01T00:00:00Z",
-  "version": "3.3.0"
+  "version": "3.4.0"
  },
  "devices": [
   {
@@ -53,7 +53,7 @@
    "evidence": [
     {
      "block": 83,
-     "line": 3770,
+     "line": 3792,
      "text": "/system ntp client servers add address=10.1.10.2",
      "file": "sample-bundle.txt"
     }
@@ -203,7 +203,7 @@
    "evidence": [
     {
      "block": 15,
-     "line": 982,
+     "line": 1000,
      "text": "/ip firewall filter add action=accept chain=input protocol=udp src-port=53",
      "file": "sample-bundle.txt"
     }

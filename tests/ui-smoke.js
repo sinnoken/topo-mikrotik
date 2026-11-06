@@ -969,6 +969,27 @@ function viewBoundaryViolations(file, src) {
       App.select({ type: 'device', key: devs[devs.length - 1].id }, { focus: true });
       if (g.s <= sAll * 1.5) throw new Error(`鄰居最多的設備選取後應放大：${g.s}（全圖 ${sAll}）`);
     }
+    // 只聚焦設備本身時往鄰居方向偏移（FOCUS.lean），但寬的節點框（埠很多的 L2 交換器）整個框仍要在畫面內：
+    // 暫時把最左邊的節點換成寬框，其他節點當成鄰居（都在右邊），minScale 設為無限大一定走「只聚焦設備本身」
+    const vis = g.nodes.filter((n) => !n.virtual && g.isVisible(n)).sort((a, b) => g.at(a.id).x - g.at(b.id).x);
+    const wide = vis[0]; const others = vis.slice(1).map((n) => n.id); const hadBox = 'box' in wide; const oldBox = wide.box;
+    const restoreBox = () => { if (hadBox) wide.box = oldBox; else delete wide.box; };
+    try {
+      [{ w: 3000, h: 40 }, { w: 40, h: 3000 }, { w: 3000, h: 3000 }].forEach((box) => {
+        wide.box = box;
+        const boxIn = () => {
+          const p = g.toScreen(g.at(wide.id)); const v = g.viewport();
+          const x0 = p.x - (box.w * g.s) / 2; const x1 = p.x + (box.w * g.s) / 2; const y0 = p.y - (box.h * g.s) / 2; const y1 = p.y + (box.h * g.s) / 2;
+          return x0 >= v.x0 - 1e-6 && x1 <= v.x1 + 1e-6 && y0 >= v.y0 - 1e-6 && y1 <= v.y1 + 1e-6 ? null : `${Math.round(x0)}..${Math.round(x1)} × ${Math.round(y0)}..${Math.round(y1)}`;
+        };
+        g.fit([wide.id, ...others], L.FOCUS.pad, L.FOCUS.maxScale, { ids: [wide.id], minScale: Infinity });
+        const bad = boxIn(); if (bad) throw new Error(`寬框 ${box.w}×${box.h} 聚焦後應整個在畫面內（710×850）：${bad}`);
+      });
+      // 小節點仍會往鄰居方向偏（不是一律置中）
+      restoreBox();
+      g.fit([wide.id, ...others], L.FOCUS.pad, L.FOCUS.maxScale, { ids: [wide.id], minScale: Infinity });
+      if (others.length && !(g.toScreen(g.at(wide.id)).x < g.w / 2 - 1)) throw new Error('只聚焦設備本身時應往鄰居的方向偏（鄰居在右邊，設備偏左）');
+    } finally { restoreBox(); }
     } finally { cv.getBoundingClientRect = rect; g.resize(); }
     const pair = Array.from(App.pairs.values()).find((p) => !p.virtual && p.links.length);
     const link = Q.getLink(pair.links[0]);
@@ -3249,6 +3270,11 @@ function viewBoundaryViolations(file, src) {
     const X = S.view.exporter; const opts2 = { ledgerOf: VA.ledgerExport };
     const rows = parseCsv(X.findingsCsv(App.Q, opts2).replace(/^﻿/, ''));
     const row = rows[all.indexOf(f) + 1]; const userAt = VA.ledgerUserAt(it2);
+    // 畫面的對應與核心（CLI 也用）是同一份：userAt 是同一個函式，ledgerExport 與 S.report.ledgerOfItems 逐筆相同
+    if (VA.ledgerUserAt !== S.report.userAt) throw new Error('A.ledgerUserAt 應直接引用 S.report.userAt');
+    const coreOf = S.report.ledgerOfItems(VA.ledger(), App.Q);
+    if (!all.every((x) => JSON.stringify(VA.ledgerExport(x)) === JSON.stringify(coreOf(x)))) throw new Error('A.ledgerExport 應與 S.report.ledgerOfItems 逐筆相同');
+    if (!all.some((x) => VA.ledgerExport(x))) throw new Error('改過處理狀態後應有處理紀錄可匯出');
     if (row[6] !== userAt || row[7] !== 'false-positive' || row[8] !== "'" + note2 || row[11] !== 'false-positive' || row[12] !== "'" + note2) throw new Error('CSV 的處理紀錄欄位不符：' + row);
     if (all.filter((x) => VA.isPending(x)).some((x) => rows[all.indexOf(x) + 1][6] !== '' || rows[all.indexOf(x) + 1][7] !== '')) throw new Error('待處理的列 acknowledged／ack_kind 應為空白');
     const md = X.findingsMarkdown(App.Q, opts2);

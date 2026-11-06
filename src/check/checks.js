@@ -712,22 +712,6 @@
     })).sort((a, b) => S.util.natural(a.dev, b.dev));
   }
 
-  /**
-   * 遞迴下一跳解析（RouterOS 的 gateway 可以是要再查路由才能到的位址，例如對端的 loopback）。
-   * 先看 ip 是否為已知設備位址；否則在同一台設備的路由表以最長前綴找出它的下一跳，再往下解析。
-   * routes：該設備的路由（{ prefix, len, nh }）；ownerOf(ip)：回傳擁有該 IP 的設備 key 或 null。
-   * 回傳（ECMP 可有多筆）：{ status: 'known', owner, ip, chain } | { status: 'connected', ip, ifc, chain }
-   *   | { status: 'unresolved', ip, chain }（沒有路由可到）| { status: 'loop', ip, chain } | { status: 'blackhole', ip, chain, route }；chain 是經過的位址。
-   */
-  /**
-   * 下一跳（或直連網段上的目的）位址在 vrf 中屬於誰（ADR-015；檢查 R01／R03／R04 與路徑追蹤、可達性共用這一份）：
-   *  1. 同名 VRF 中擁有這個位址的設備（I.owner(ip, vrf)）。
-   *  2. 沒有時（推論）：dev 在這個 VRF 有包含此位址的直連網段，而其他設備上位址相同、網段（net/len）也相同的介面恰好一個，
-   *     取那個介面（VRF 名稱只在設備內有意義，例如 CE 在 main、PE 在 cust-a 的同一條鏈路）；有兩個以上時不猜，回傳 null。
-   * I：{ owner(ip, vrf) → { key（介面鍵；管理 IP 為「設備|」或設備鍵）, dev } 或 null, owners(ip) → [{ ep, dev, vrf, net, len }]（所有 VRF 的自有位址）,
-   *      connected(dev, vrf) → [{ net, len }] }。
-   * 回傳 { key, dev, vrf（擁有者所在的 VRF）, crossVrf } 或 null。
-   */
   /** 列出鄰居協定的固定順序：介面鄰接（LLDP、CDP）先於廣播網域（MNDP），最後是路由鄰接（OSPF）；其他依字母。 */
   const DISCOVERY_ORDER = ['lldp', 'cdp', 'mndp', 'ospf'];
   const discoveryRank = (p) => { const i = DISCOVERY_ORDER.indexOf(p); return i < 0 ? DISCOVERY_ORDER.length : i; };
@@ -745,6 +729,23 @@
     const protos = Array.from(seen).sort((a, b) => discoveryRank(a) - discoveryRank(b) || S.util.cmp(a, b)).map((p) => p.toUpperCase());
     return `${name}（${protos.length ? protos.join('／') + ' ' : ''}鄰居）`;
   }
+
+  /**
+   * 遞迴下一跳解析（RouterOS 的 gateway 可以是要再查路由才能到的位址，例如對端的 loopback）。
+   * 先看 ip 是否為已知設備位址；否則在同一台設備的路由表以最長前綴找出它的下一跳，再往下解析。
+   * routes：該設備的路由（{ prefix, len, nh }）；ownerOf(ip)：回傳擁有該 IP 的設備 key 或 null。
+   * 回傳（ECMP 可有多筆）：{ status: 'known', owner, ip, chain } | { status: 'connected', ip, ifc, chain }
+   *   | { status: 'unresolved', ip, chain }（沒有路由可到）| { status: 'loop', ip, chain } | { status: 'blackhole', ip, chain, route }；chain 是經過的位址。
+   */
+  /**
+   * 下一跳（或直連網段上的目的）位址在 vrf 中屬於誰（ADR-015；檢查 R01／R03／R04 與路徑追蹤、可達性共用這一份）：
+   *  1. 同名 VRF 中擁有這個位址的設備（I.owner(ip, vrf)）。
+   *  2. 沒有時（推論）：dev 在這個 VRF 有包含此位址的直連網段，而其他設備上位址相同、網段（net/len）也相同的介面恰好一個，
+   *     取那個介面（VRF 名稱只在設備內有意義，例如 CE 在 main、PE 在 cust-a 的同一條鏈路）；有兩個以上時不猜，回傳 null。
+   * I：{ owner(ip, vrf) → { key（介面鍵；管理 IP 為「設備|」或設備鍵）, dev } 或 null, owners(ip) → [{ ep, dev, vrf, net, len }]（所有 VRF 的自有位址）,
+   *      connected(dev, vrf) → [{ net, len }] }。
+   * 回傳 { key, dev, vrf（擁有者所在的 VRF）, crossVrf } 或 null。
+   */
   function hopOwner(I, dev, ip, vrf) {
     const own = I.owner(ip, vrf);
     if (own) return { key: own.key, dev: own.dev, vrf, crossVrf: false };

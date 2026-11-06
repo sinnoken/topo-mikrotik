@@ -13,24 +13,20 @@
   const V = S.view; const U = S.util;
 
   // ---------------------------------------------------------------- 處理紀錄的狀態
-  /** 狀態鍵（S.ledger.STATUS）→ 顯示文字；不認得的狀態（例如較新版本寫入的）原樣顯示 */
-  const STATUS_TEXT = { open: '待處理', scheduled: '已排定修正', accepted: '接受風險', 'false-positive': '誤報', fixed: '已修好', regressed: '復發' };
-  const statusText = (s) => (s ? STATUS_TEXT[s] || s : '待處理');
+  /** 狀態鍵（S.ledger.STATUS）→ 顯示文字；不認得的狀態（例如較新版本寫入的）原樣顯示。單一來源是 S.report（匯出的報表共用） */
+  const STATUS_TEXT = S.report.STATUS_TEXT;
+  const statusText = S.report.statusText;
   /** 狀態的標籤色（DOM 的 .chip.err 等） */
   const STATUS_CHIP = { open: '', scheduled: 'info', accepted: 'ok', 'false-positive': '', fixed: 'ok', regressed: 'err' };
 
   // ---------------------------------------------------------------- 檢查的常見原因與處理
   /**
    * 檢查的處理建議與常見原因：每次都從檢查目錄（S.query.rule）讀取，不複製文字（詳情、檢查清單與匯出共用）。
-   * 這是畫面讀 causes／action 的唯一入口。
+   * 畫面讀 causes／action 一律經這裡；實作就是 S.report.advice（匯出的報表用同一個）。
    * 回傳 { action: 字串或 null, hint: 字串或 null, causes: 字串陣列 }；欄位不存在時 action／hint 為 null、causes 為空陣列。
    * hint 是 action 的第一句（S.query.rule 推導，畫面不自己切句）。causes 寫成單一字串時視為一條。
    */
-  function advice(id) {
-    const c = S.query.rule(id) || {};
-    const causes = Array.isArray(c.causes) ? c.causes.filter((x) => typeof x === 'string' && x) : typeof c.causes === 'string' && c.causes ? [c.causes] : [];
-    return { action: typeof c.action === 'string' && c.action ? c.action : null, hint: typeof c.hint === 'string' && c.hint ? c.hint : null, causes };
-  }
+  const advice = S.report.advice;
   /**
    * 檢查的一句處理提示「處理：…」（advice(id).hint）：「研判」展開的檢查群組與詳情的檢查結果卡片共用。
    * 反引號內以 <code> 顯示（V.codeText）；沒有提示時為 null。cls 是額外的 class。
@@ -43,16 +39,9 @@
   // ---------------------------------------------------------------- 檢查結果所屬設備
   /**
    * 依設備排序（穩定）：所屬設備（Q.findingDevice）名稱的自然順序，不屬於任何設備的排最後；同一台設備內保留原順序。
-   * 回傳 [{ f, idx, dev }]。
+   * 回傳 [{ f, idx, dev }]。實作在 S.report（匯出依設備排序用同一個，畫面分組與報表順序才一致）。
    */
-  function sortByDevice(Q, findings) {
-    const rows = findings.map((f, idx) => ({ f, idx, dev: Q.findingDevice(f) }));
-    return rows.sort((a, b) => {
-      if (a.dev === b.dev) return a.idx - b.idx;
-      if (a.dev === null || b.dev === null) return a.dev === null ? 1 : -1;
-      return U.natural(Q.devName(a.dev), Q.devName(b.dev)) || U.cmp(a.dev, b.dev) || a.idx - b.idx;
-    });
-  }
+  const sortByDevice = S.report.sortByDevice;
 
   // ---------------------------------------------------------------- 修正計畫（S.remediate）
   const LEVEL_TEXT = { auto: '可產生指令', choice: '需選擇處理方式（已支援的檢查在修正計畫中選擇要採用的值；其他檢查尚未產生指令）', manual: '需人工判斷' };

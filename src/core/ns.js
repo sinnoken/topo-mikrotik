@@ -39,6 +39,12 @@
   };
 
   util.cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  /**
+   * ISO 8601 時間字串（日期，或日期＋時間＋時區 Z／±hh:mm）：核心入口驗證時間參數的唯一判斷（S.build 的 options.now）。
+   * 只看格式與 Date.parse 能否解析，不正規化；處理紀錄與工作包目前各有一份相同的判斷，之後改用這一份。
+   */
+  const ISO_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2}))?$/;
+  util.isIso = (v) => typeof v === 'string' && ISO_RE.test(v) && Number.isFinite(Date.parse(v));
   /** 物件的鍵依字典序排列後的 JSON（陣列順序保留）：內容相同、只差鍵順序的物件得到同一個字串，用於計算雜湊。 */
   util.canonicalJson = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x)
     ? Object.keys(x).sort(util.cmp).reduce((o, key) => { o[key] = x[key]; return o; }, {}) : x));

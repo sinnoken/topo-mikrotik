@@ -4,7 +4,8 @@
  * 同樣的輸入與選項，必定得到同樣的 Snapshot（meta.createdAt、meta.timing 除外）。
  *
  * sources : [{ name, text }]
- * options : { profile?: profile JSON, expectedData?: {kind:[dataType]}, now?: ISO 字串 }
+ * options : { profile?: profile JSON, expectedData?: {kind:[dataType]}, now?: ISO 8601 字串（S.util.isIso） }
+ * 入口驗證見 checkInput：sources 形狀不對 TypeError、沒有輸入 RangeError、now 不合法 TypeError／RangeError。
  */
 (function (S) {
   'use strict';
@@ -36,6 +37,28 @@
     // 已解析區塊中認不得的行（I03）；整段認不得的區塊已列為 I01，不在這裡重複
     b.unrecognizedLines = p.unrecognized;
     return { status: 'parsed', facts: p.facts, usage: p.usage };
+  }
+
+  /** sources 的形狀（build、buildAsync、inputHashOf 共用同一個檢查與說明）；fn 是寫在訊息開頭的呼叫名稱 */
+  function assertSources(sources, fn) {
+    if (!Array.isArray(sources) || sources.some((x) => !x || typeof x.text !== 'string')) throw new TypeError(`${fn}：sources 必須是 [{ name?, text: 字串 }]`);
+  }
+  /**
+   * 建立的入口驗證（build 與 buildAsync 共用），在開始任何工作之前執行：
+   * - sources 形狀不對 → TypeError（同 inputHashOf）
+   * - 沒有輸入（0 個來源，或每個來源都只有空白）→ RangeError。畫面沒有輸入或預檢認不到設備時不呼叫建立、工作包至少有一份收集檔，
+   *   CLI 以結束碼 2 回報；0 台的基準沒有呼叫端會用，當成成功會讓「什麼都沒收到」看起來像「網路乾淨」。
+   *   有內容但認不到設備的輸入照常建立，由 I01 指出無法辨識的段落。預檢（S.preflight）不做這項檢查：輸入畫面打字時會以空白呼叫。
+   * - options.now 有值（不是 undefined／null）時必須是 ISO 8601（S.util.isIso）：不是字串 → TypeError，格式不對 → RangeError
+   */
+  function checkInput(sources, options, fn) {
+    assertSources(sources, fn);
+    if (!sources.some((x) => x.text.trim())) throw new RangeError(`${fn}：沒有輸入（${sources.length ? '每個來源都只有空白' : '0 個來源'}），至少要有一份收集檔內容`);
+    const now = options ? options.now : undefined;
+    if (now != null && !U.isIso(now)) {
+      const msg = `${fn}：options.now 必須是 ISO 8601 時間字串（例如 2026-01-01T00:00:00Z），目前是 ${typeof now === 'string' ? JSON.stringify(now) : String(now)}`;
+      throw typeof now === 'string' ? new RangeError(msg) : new TypeError(msg);
+    }
   }
 
   function* steps(sources, options) {
@@ -278,7 +301,7 @@
    * 沒有 name 的來源以空字串計算（不是 S.readers.PASTE），所以不能用 meta.sources[].name 重組；要傳入與 build 相同的 sources。
    */
   function inputHashOf(sources) {
-    if (!Array.isArray(sources) || sources.some((x) => !x || typeof x.text !== 'string')) throw new TypeError('inputHashOf：sources 必須是 [{ name?, text: 字串 }]');
+    assertSources(sources, 'inputHashOf');
     return U.hash(sources.map((x) => (x.name || '') + '\n' + x.text).join('\n\u0000\n'));
   }
   S.inputHashOf = inputHashOf;
@@ -321,6 +344,7 @@
 
   /** 同步建立（Node、測試用）。 */
   S.build = function (sources, options) {
+    checkInput(sources, options, 'S.build');
     const it = steps(sources, options);
     let r = it.next();
     while (!r.done) r = it.next();
@@ -329,6 +353,7 @@
 
   /** 非同步建立（瀏覽器用）：每個階段讓出主執行緒並回報進度。 */
   S.buildAsync = async function (sources, options, onProgress) {
+    checkInput(sources, options, 'S.buildAsync');
     const it = steps(sources, options);
     let r = it.next();
     while (!r.done) {

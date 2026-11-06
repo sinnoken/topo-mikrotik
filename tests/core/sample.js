@@ -1,7 +1,9 @@
 // 範例資料的刻意問題、可重現、基準鍵 meta.baselineKey
 'use strict';
 const assert = require('assert');
-const { S, read, build, count, test } = require('../lib.js');
+const path = require('path');
+const { execFileSync } = require('child_process');
+const { S, ROOT, read, build, count, test } = require('../lib.js');
 // ------------------------------------------------------------------ 範例資料：每個刻意放入的問題都要被找到
 test('範例資料：每項刻意放入的問題都被找到，且沒有多餘的錯誤', () => {
   const s = build(read('samples/sample-bundle.txt'));
@@ -27,6 +29,76 @@ test('同樣輸入建立兩次，結果完全相同（建立時間除外）', ()
   const a = build(read('samples/sample-bundle.txt')); const b = build(read('samples/sample-bundle.txt'));
   delete a.meta.timing; delete b.meta.timing;
   assert.deepStrictEqual(a, b);
+});
+test('建立時間 options.now：必須是 ISO 8601（與處理紀錄、工作包同一個判斷 S.util.isIso），不合法時丟錯，不原樣寫進 meta.createdAt', () => {
+  const src = [{ name: 't.txt', text: 'SW_A (10.0.0.1):\n### /system identity print\nname: SW_A\n' }];
+  ['xx', '', '2026-01-01 00:00:00', '2026-13-01T00:00:00Z', '01/02/2026'].forEach((now) => {
+    assert.throws(() => S.build(src, { now }), (e) => e instanceof RangeError && /now 必須是 ISO 8601/.test(e.message) && e.message.includes(JSON.stringify(now)), now);
+  });
+  [123, {}, true].forEach((now) => assert.throws(() => S.build(src, { now }), TypeError, String(now)));
+  // 合法值原樣寫入（不正規化，與既有基準相同）；省略或 null 時用目前時間（UTC 的 toISOString）
+  ['2026-01-01T00:00:00Z', '2026-01-01T08:00:00+08:00', '2026-01-01'].forEach((now) => assert.strictEqual(S.build(src, { now }).meta.createdAt, now));
+  [undefined, null].forEach((now) => assert.ok(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(S.build(src, { now }).meta.createdAt)));
+  assert.ok(/Z$/.test(S.build(src).meta.createdAt));
+  assert.deepStrictEqual(['2026-01-01T00:00:00Z', '2026-01-01', 'x', 1].map(S.util.isIso), [true, true, false, false]);
+});
+test('可重現：時區（TZ）與語系（LANG／LC_ALL）不同時，範例基準除 meta.createdAt、meta.timing 外完全相同', () => {
+  // 子行程：環境變數只在行程啟動時生效。不傳 now，同時驗證 createdAt 一律是 UTC
+  const script = `const S = require(${JSON.stringify(path.join(ROOT, 'tests/load.js'))})();
+    const s = S.build([{ name: 'sample-bundle.txt', text: require('fs').readFileSync(${JSON.stringify(path.join(ROOT, 'samples/sample-bundle.txt'))}, 'utf8') }]);
+    const o = Intl.DateTimeFormat().resolvedOptions();
+    process.stdout.write(JSON.stringify({ tz: o.timeZone, locale: o.locale, snap: s }));`;
+  const envs = [
+    { TZ: 'UTC', LANG: 'C', LC_ALL: 'C' }, { TZ: 'Asia/Taipei', LANG: 'C', LC_ALL: 'C' },
+    { TZ: 'UTC', LANG: 'zh_TW.UTF-8', LC_ALL: 'zh_TW.UTF-8' }, { TZ: 'Asia/Taipei', LANG: 'zh_TW.UTF-8', LC_ALL: 'zh_TW.UTF-8' },
+  ];
+  const runs = envs.map((e) => JSON.parse(execFileSync(process.execPath, ['-e', script], { env: Object.assign({}, process.env, e), encoding: 'utf8', maxBuffer: 5e8 })));
+  // 環境確實生效（否則這個測試沒有意義）
+  assert.deepStrictEqual(runs.map((r) => r.tz), envs.map((e) => e.TZ));
+  assert.notStrictEqual(runs[0].locale, runs[2].locale, `語系應不同：${runs.map((r) => r.locale).join('、')}`);
+  runs.forEach((r) => {
+    assert.ok(/Z$/.test(r.snap.meta.createdAt), r.snap.meta.createdAt);
+    delete r.snap.meta.createdAt; delete r.snap.meta.timing;
+  });
+  runs.slice(1).forEach((r, i) => assert.ok(JSON.stringify(r.snap) === JSON.stringify(runs[0].snap), `${JSON.stringify(envs[i + 1])} 與 ${JSON.stringify(envs[0])} 的基準不同`));
+});
+test('可重現：來源檔案的順序反過來時，模型（去掉來源位置）與 findingKey 依序相同；只有來源位置與少數 finding 的列舉順序隨輸入順序改變', () => {
+  // 範例資料依設備標頭拆成多個檔案（開頭的註解併入第一個檔案）
+  const parts = [];
+  read('samples/sample-bundle.txt').split('\n').forEach((l) => {
+    const m = /^([A-Za-z0-9_.-]+) \([0-9.]+\):$/.exec(l);
+    if (m || !parts.length) parts.push({ name: (m ? m[1] : 'head') + '.txt', lines: [] });
+    parts[parts.length - 1].lines.push(l);
+  });
+  const src = parts.map((p) => ({ name: p.name, text: p.lines.join('\n') + '\n' }));
+  assert.ok(src.length >= 10, `應拆成多個檔案，實際 ${src.length}`);
+  const a = S.build(src, { now: '2026-01-01T00:00:00Z' }); const b = S.build(src.slice().reverse(), { now: '2026-01-01T00:00:00Z' });
+  const Qa = S.query(a); const Qb = S.query(b);
+  // 可變：輸入指紋與基準鍵（順序有意義，見 S.inputHashOf）、meta.sources 與 blocks 的順序、區塊編號
+  assert.notStrictEqual(a.meta.inputHash, b.meta.inputHash);
+  assert.deepStrictEqual(b.meta.sources.map((x) => x.name), src.map((x) => x.name).reverse());
+  // 不可變：去掉來源位置（src／srcNone 與 firewallStats 的 reason.row，內容是 [區塊編號, 行號]）後，模型的每個集合連順序都相同
+  const strip = (v) => JSON.parse(JSON.stringify(v, (k, x) => (k === 'src' || k === 'srcNone' || k === 'row' || k === 'block' ? undefined : x)));
+  assert.ok(JSON.stringify(strip(a.model)) === JSON.stringify(strip(b.model)), '去掉來源位置後模型應相同');
+  assert.deepStrictEqual(b.coverage, a.coverage);
+  assert.deepStrictEqual(b.meta.stats, a.meta.stats);
+  // 不可變：findings 的 findingKey、id、嚴重度依序相同，entities 的集合相同
+  assert.deepStrictEqual(b.findings.map((f) => [Qb.findingKey(f), f.id, f.severity]), a.findings.map((f) => [Qa.findingKey(f), f.id, f.severity]));
+  const ents = (f) => f.entities.map((e) => e.type + ':' + e.key).sort();
+  b.findings.forEach((f, i) => assert.deepStrictEqual(ents(f), ents(a.findings[i]), f.id));
+  // 可變（目前的行為，釘住範圍）：同一個問題涉及多台設備時，訊息與 entities 依觀察到的順序列舉（A01 的 MAC、K02 的鄰居）；
+  // 鏈路類 finding 的代表證據取先讀到的一側。訊息改變的 finding 只能是這些；列舉的內容（以「、」分隔的項目）相同
+  const ENUM_ORDER = ['A01', 'K02']; const EVIDENCE = ['A01', 'K02', 'K03', 'V01', 'V04', 'V08', 'V09'];
+  const items = (m) => m.split(/對應到 |[：、]/).sort();
+  b.findings.forEach((f, i) => {
+    const o = a.findings[i];
+    if (f.message !== o.message) {
+      assert.ok(ENUM_ORDER.includes(f.id), `${f.id} 的訊息隨來源順序改變：${o.message} → ${f.message}`);
+      assert.deepStrictEqual(items(f.message), items(o.message), f.id);
+    }
+    const ev = (x) => JSON.stringify(x.evidence.map((e) => [e.file, e.line]));
+    if (ev(f) !== ev(o)) assert.ok(EVIDENCE.includes(f.id), `${f.id} 的證據隨來源順序改變`);
+  });
 });
 test('鏈路配對：聚合成員雙向確認、沒有 LLDP 的鄰居為單側觀察', () => {
   const s = build(read('samples/sample-bundle.txt'));

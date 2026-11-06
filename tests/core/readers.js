@@ -115,3 +115,26 @@ test('RouterOS 7 的斜線路徑：指令標記與 export 選單路徑都視同�
   assert.ok(!ids(s).includes('I01'));
   assert.deepStrictEqual([iface(s, 'SW|ether3').bridge, iface(s, 'SW|ether3').pvid], ['SW|bridge1', 30]);
 });
+// ------------------------------------------------------------------ 建立的入口驗證（S.build／S.buildAsync）
+test('S.build 入口：sources 形狀不對時丟出 TypeError，說明與 S.inputHashOf 相同（同一個檢查）', () => {
+  const SHAPE = 'sources 必須是 [{ name?, text: 字串 }]';
+  [null, undefined, 'x', {}, [{}], [{ name: 'a', text: 1 }], [null]].forEach((bad) => {
+    const why = JSON.stringify(bad);
+    assert.throws(() => S.build(bad, { now: '2026-01-01T00:00:00Z' }), (e) => e instanceof TypeError && e.message === 'S.build：' + SHAPE, why);
+    assert.throws(() => S.inputHashOf(bad), (e) => e instanceof TypeError && e.message === 'inputHashOf：' + SHAPE, why);
+  });
+});
+test('S.build 入口：沒有輸入（0 個來源，或每個來源都只有空白）是錯誤（RangeError），不建立 0 台設備的基準', () => {
+  // 畫面在沒有輸入或預檢認不到設備時不呼叫建立、工作包至少一份收集檔、CLI 以結束碼 2 回報：0 台的基準沒有任何呼叫端會用，
+  // 當成成功只會讓「什麼都沒收到」看起來像「網路乾淨」（鐵則 4）
+  [[], [{ name: 'a.txt', text: '' }], [{ name: 'a.txt', text: ' \n\t\r\n' }, { text: '' }]].forEach((src) => {
+    assert.throws(() => S.build(src, { now: '2026-01-01T00:00:00Z' }), (e) => e instanceof RangeError && /沒有輸入/.test(e.message), JSON.stringify(src));
+  });
+  // 有內容、只是認不到設備的輸入不是「沒有輸入」：照常建立，以 I01 指出無法辨識的段落
+  //（沒有設備標頭時 files-v1 以檔名當設備名，所以這台設備存在但沒有任何資料）
+  const s = S.build([{ name: 'a.txt', text: 'hello\n' }, { name: 'b.txt', text: '' }], { now: '2026-01-01T00:00:00Z' });
+  assert.deepStrictEqual(s.model.devices.map((d) => [d.key, d.data]), [['A', []]]);
+  assert.ok(ids(s).includes('I01'), JSON.stringify(ids(s)));
+  // 預檢不受影響：輸入畫面打字時會以空白或部分輸入呼叫
+  assert.deepStrictEqual(S.preflight([{ name: 'a.txt', text: '' }]).devices, []);
+});

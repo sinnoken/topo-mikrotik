@@ -232,3 +232,29 @@ test('CLI：--now 正規化成 UTC、不存在的日期失敗；--expected／--e
     assert.strictEqual(run([SAMPLE, '--expected-data', path.join(d, 'null.json'), '--now', NOW, '-o', path.join(d, 'z')]).code, CODES().FAILED, '--expected-data 為 null 應失敗');
   } finally { rm(d); }
 });
+
+test('CLI：收集檔沒有認到任何設備的資料（空檔、只有空白或註解、內容都認不得）時結束碼 2，stderr 說明原因，不輸出任何檔案', () => {
+  const d = tmp();
+  try {
+    const out = path.join(d, 'out');
+    const file = (name, text) => { const f = path.join(d, name); fs.writeFileSync(f, text); return f; };
+    const cases = [
+      ['空檔', [file('empty.txt', '')], /沒有內容/],
+      ['只有空白', [file('blank.txt', ' \n\n\t\n')], /沒有內容/],
+      ['兩個空檔', [file('e1.txt', ''), file('e2.txt', '\n')], /沒有內容/],
+      ['只有註解', [file('comments.txt', '# 收集檔\n# 這一輪沒有輸出\n')], /沒有認到任何設備的資料/],
+      ['內容都認不得', [file('junk.txt', 'hello\nworld\n')], /沒有認到任何設備的資料.*無法辨識/],
+    ];
+    cases.forEach(([name, inputs, why]) => {
+      const r = run([...inputs, '--now', NOW, '-o', out]);
+      assert.strictEqual(r.code, CODES().FAILED, `${name}：結束碼應為 2，得到 ${r.code}\n${r.stdout}${r.stderr}`);
+      assert.ok(why.test(r.stderr), `${name}：stderr 應說明原因：${r.stderr}`);
+      assert.ok(!/at .*\.js:\d+/.test(r.stderr), `${name}：是預期的失敗，不印堆疊：${r.stderr}`);
+      assert.ok(!fs.existsSync(out), `${name}：不應建立輸出目錄`);
+    });
+    // 只要有一份收集檔認到設備就照常執行（空檔只是不貢獻內容）；全部收集失敗也是有結果的一輪（由 C02 回報）
+    const allFailed = run([file('failed.txt', 'R_B (10.0.0.2):\n# collection failed: connection\n'), '--now', NOW, '-o', path.join(d, 'f')]);
+    assert.strictEqual(allFailed.code, CODES().NOTIFY, allFailed.stderr);
+    assert.notStrictEqual(run([SAMPLE, file('empty2.txt', ''), '--now', NOW, '-o', out]).code, CODES().FAILED);
+  } finally { rm(d); }
+});

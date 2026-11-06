@@ -14,7 +14,7 @@ const path = require('path');
 const EXIT = Object.freeze({
   OK: 0, // 成功，沒有復發，也沒有新的待處理錯誤／警告
   NOTIFY: 1, // 成功，但有復發、新出現或豁免到期的待處理錯誤／警告
-  FAILED: 2, // 執行失敗：參數錯誤、輸入讀不到、處理紀錄／命名規則／預期資料格式錯誤；不輸出任何檔案
+  FAILED: 2, // 執行失敗：參數錯誤、輸入讀不到或沒有認到任何設備的資料、處理紀錄／命名規則／預期資料格式錯誤；不輸出任何檔案
 });
 /** out/ 中的檔名 */
 const FILES = Object.freeze({
@@ -55,7 +55,7 @@ const HELP = `用法：node tools/baseline.js <收集檔…> -o <輸出目錄> [
 結束碼：
   ${EXIT.OK}  成功，沒有復發，也沒有新的待處理錯誤／警告
   ${EXIT.NOTIFY}  成功，但有復發、新出現或豁免到期的待處理錯誤／警告（排程據此通知）
-  ${EXIT.FAILED}  執行失敗（參數錯誤、輸入讀不到、處理紀錄／命名規則／預期資料格式錯誤）；訊息寫到 stderr，不輸出任何檔案
+  ${EXIT.FAILED}  執行失敗（參數錯誤、輸入讀不到、收集檔沒有認到任何設備的資料、處理紀錄／命名規則／預期資料格式錯誤）；訊息寫到 stderr，不輸出任何檔案
 `;
 
 class CliError extends Error {}
@@ -113,6 +113,8 @@ function compute(S, a) {
   const sources = a.inputs.map((f) => ({ name: path.basename(f), text: readText(f, '收集檔') }));
   const dup = sources.map((s) => s.name).filter((n, i, all) => all.indexOf(n) !== i);
   if (dup.length) fail(`收集檔的檔名重複：${[...new Set(dup)].join('、')}（來源以檔名區分，請改名）`);
+  // 什麼都沒收到不是「網路乾淨」：先擋下沒有內容的輸入（S.build 也會以 RangeError 拒絕），訊息才指得出是哪些檔案
+  if (!sources.some((s) => s.text.trim())) fail(`收集檔沒有內容（${a.inputs.join('、')} 都是空的或只有空白），不建立基準`);
 
   const LG = S.ledger;
   let ledger = LG.empty();
@@ -139,6 +141,15 @@ function compute(S, a) {
   const snap = S.build(sources, { profile, expectedData, now });
   delete snap.meta.timing; // 唯一與執行環境有關的欄位
   const Q = S.query(snap);
+  // 沒有認到任何設備的資料（只有註解、內容都認不得）：建得出基準，但排程會把它當成「沒有待處理項目」，所以視為執行失敗。
+  // 認到＝已收集的設備有任何一類資料，或有收集失敗的紀錄（全部連線失敗仍是一次有結果的收集，由 C02 回報）。
+  // 沒有設備標頭的檔案會以檔名當設備名（files-v1），所以不能只看 stats.collected。
+  const failed = new Set(Q.coverage().filter((r) => r.failures && r.failures.length).map((r) => r.dev));
+  if (!Q.devices().some((d) => d.collected && (d.data.length || failed.has(d.key)))) {
+    const i01 = Q.findings().filter((f) => f.id === 'I01').length;
+    fail(`收集檔沒有認到任何設備的資料（${sources.length} 個檔案${i01 ? `；無法辨識的段落 ${i01} 處（I01）` : ''}），不建立基準：`
+      + '請確認收集檔是 tools/collect.sh 的輸出，或含設備標頭（名稱 (位址):）與 ### 指令標記的 RouterOS 輸出');
+  }
   let compare = null;
   if (a.expected !== undefined) {
     compare = S.compare(Q, expected);

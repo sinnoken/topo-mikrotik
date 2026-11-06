@@ -55,10 +55,13 @@ CLI 輸入轉成可追溯的純 JSON Snapshot，畫面只是 Snapshot 的檢視�
     `index.html` 必須能直接開啟。不要任意加入必需的後端、bundler、外部
     runtime 資產、執行期網路請求或只在真實瀏覽器存在的 API。
     `index.html` 的 Content-Security-Policy 以 `default-src 'none'` 起算：
-    script／style／img／font 只允許同目錄的檔案（`'self'`，另允許內嵌 script
-    與樣式屬性、`data:`／`blob:` 圖片），`connect-src 'none'` 禁止 fetch／XHR／
-    WebSocket，表單、外嵌物件、frame、Worker、媒體與 manifest 一律禁止。
-    不可放寬或加入網路來源，`tests/ui-smoke.js` 逐項檢查每個指令。
+    script／style／img／font 只允許同目錄的檔案（`'self'`；另允許樣式屬性與
+    `data:`／`blob:` 圖片），內嵌 script 只以 `sha256` 放行首次繪製配色那一段
+    （沒有 `'unsafe-inline'`：不可用 `onclick=` 等內嵌事件屬性，事件一律在
+    `src/view` 綁定；改了那段 script 要同步更新雜湊），`connect-src 'none'`
+    禁止 fetch／XHR／WebSocket，表單、外嵌物件、frame、Worker、媒體與 manifest
+    一律禁止。不可放寬或加入網路來源，`tests/ui-smoke.js` 逐項檢查每個指令，
+    並比對雜湊與實際的 inline script。
 
 12. **生成資料走生成流程**
     由工具產生的 sample、嵌入檔與 OUI 資料，不手動逐字修改；修改來源或

@@ -155,6 +155,14 @@ module.exports = async () => {
     const linked = comm.map((r) => r.testAll('.mgmt-finding').map((x) => Number(x.getAttribute('data-finding-idx'))));
     if (comm.length !== 2 || !linked.every((l) => l.length === 1) || linked[0][0] === linked[1][0]
       || linked.map((l) => l[0]).sort().join() !== f13.map(([, i]) => i).sort().join()) throw new Error('兩個 public 應各自只連到自己的 F13：' + JSON.stringify(linked));
+    // 對應的鍵是核心的 community.facet（與 F13 的 facet 同一個值），不以證據行比對
+    const facets = mC.snmp.communities.map((x) => x.facet);
+    comm.forEach((r, n) => {
+      const fc = r.getAttribute('data-facet');
+      if (fc !== facets[n]) throw new Error('community 列應標出核心的 facet（Q.mgmtOf 的 communities[].facet）：' + fc + '／' + facets[n]);
+      const want = f13.filter(([f]) => f.facet === fc).map(([, i]) => i).join();
+      if (linked[n].join() !== want) throw new Error('community 列連到的應是 facet 相同的 F13：' + linked[n].join() + '／' + want);
+    });
     // 檢查結果 → 設定：標出的是自己那一列
     f13.forEach(([f, i]) => {
       App.select({ type: 'device', key: 'PC' });

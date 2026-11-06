@@ -239,6 +239,9 @@
   const scrollRawHl = () => { const hl = $('#raw-body').querySelector('.hl'); if (hl) hl.scrollIntoView({ block: 'center' }); };
   function bindRawNav() {
     const dlg = $('#dlg-raw'); if (dlg.dataset.nav) return; dlg.setAttribute('data-nav', '1');
+    // 自動換行與關閉：CSP 不放行內嵌事件屬性，和其他控制項一起在第一次開啟前綁定（對話框只經 App.openRaw 開啟）
+    $('#raw-wrap').addEventListener('change', (e) => dlg.classList.toggle('raw-nowrap', !e.target.checked));
+    $('#raw-close').addEventListener('click', () => dlg.close());
     $('#raw-prev').addEventListener('click', () => stepRaw(-1)); $('#raw-next').addEventListener('click', () => stepRaw(1));
     // 複製的結果寫在對話框的狀態列（同輸入對話框）：banner 在強制回應對話框底下，窄螢幕完全被蓋住
     $('#raw-copy').addEventListener('click', async () => {

@@ -23,7 +23,45 @@ function checkLayers(r) {
   });
 }
 
+/** V.l4 的對外成員與函式的參數個數（拆成 l4.js／l4-exposure.js／l4-matrix.js／l4-trace.js 之前的清單；改成員時同步改這裡） */
+const L4_MEMBERS = { show: 2, MATRIX_MAX: null, zoneOpts: 1, state: 0, openCell: 3, openGroup: 3, runReach: 6, rerunWithVrf: 2, openExposure: 3,
+  deniedParts: 1, deniedSentence: 3, exposureRun: 1, exposure: 0, exGroups: 1, timings: 1, runs: 1 };
+const L4_FILES = ['l4.js', 'l4-exposure.js', 'l4-matrix.js', 'l4-trace.js'];
+
 module.exports = async () => {
+  await step('L4 拆檔：V.l4 的對外成員與參數個數不變、內部命名空間 V.l4._ 不列舉；四個檔依序載入，每個名稱只定義在一個檔，跨檔引用的 V.l4._ 成員都有定義', async () => {
+    const V = S.view; const I = V.l4._;
+    const keys = Object.keys(V.l4);
+    if (keys.join() !== Object.keys(L4_MEMBERS).join()) throw new Error('V.l4 的成員應與拆檔前相同：' + keys.join());
+    Object.entries(L4_MEMBERS).forEach(([k, n]) => {
+      if (n === null) { if (typeof V.l4[k] === 'function') throw new Error(`V.l4.${k} 不是函式`); return; }
+      if (typeof V.l4[k] !== 'function' || V.l4[k].length !== n) throw new Error(`V.l4.${k} 應是 ${n} 個參數的函式`);
+    });
+    if (!I || typeof I !== 'object') throw new Error('應有內部命名空間 V.l4._');
+    const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+    const at = L4_FILES.map((f) => html.indexOf(`<script src="src/view/panels/${f}"></script>`));
+    if (at.some((x) => x < 0) || at.some((x, n) => n && x < at[n - 1])) throw new Error('index.html 應依序載入 ' + L4_FILES.join('、'));
+    const IMPORTS = new Set(['V', 'h', '$', 'I']);
+    const where = new Map();
+    L4_FILES.forEach((f) => {
+      const src = fs.readFileSync(path.join(ROOT, 'src/view/panels', f), 'utf8');
+      // IIFE 第一層（兩格縮排）的宣告：function、const、let（同一行可有多個）
+      src.split('\n').filter((l) => /^ {2}\S/.test(l)).forEach((l) => {
+        for (const m of l.matchAll(/(?:^ {2}|;\s*)(?:function|const|let)\s+([\w$]+)/g)) {
+          if (IMPORTS.has(m[1])) continue;
+          if (where.has(m[1])) throw new Error(`${m[1]} 同時定義在 ${where.get(m[1])} 與 ${f}`);
+          where.set(m[1], f);
+        }
+      });
+      // 從 V.l4._ 解構的名稱與 I.xxx 的引用都要有定義（拼錯或忘了加進命名空間時，執行到才會丟錯）
+      const used = new Set();
+      for (const m of src.matchAll(/const \{([^}]+)\} = I;/g)) m[1].split(',').map((s) => s.trim()).filter(Boolean).forEach((k) => used.add(k));
+      for (const m of src.matchAll(/\bI\.([\w$]+)/g)) used.add(m[1]);
+      used.forEach((k) => { if (I[k] === undefined) throw new Error(`${f} 用到的 V.l4._.${k} 沒有定義`); });
+    });
+    if (where.size < 100) throw new Error('應掃到四個檔的宣告：' + where.size);
+  });
+
   // ------------------------------------------------------------ M2：L4 可達性（zone 矩陣、下鑽、可達性查詢）
   await step('L4 zone 矩陣：每一格有狀態的符號與文字（不只靠顏色）、empty 和 unknown 分開、標出結果不一與 zone 內；圖例、提示、zone 的來源與推論、判斷的前提', async () => {
     const Q = App.Q; const V = S.view; const G = V.theme.l4.status;

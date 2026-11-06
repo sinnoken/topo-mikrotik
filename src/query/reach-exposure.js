@@ -9,7 +9,7 @@
   const IP = S.ip;
   const K = S.keys;
   const U = S.util;
-  const { deepFreeze, SERVICES, SELF_ZONE, EXTERNAL_CANDIDATES, EXTERNAL6_CANDIDATES, EXPOSURE_ASSUMPTIONS, svcId, keyWhy, NAT_UNKNOWN, runAll, slicer } = S.reach._;
+  const { deepFreeze, SERVICES, SELF_ZONE, EXTERNAL_CANDIDATES, EXTERNAL6_CANDIDATES, EXPOSURE_ASSUMPTIONS, EXPOSURE_MAX_SOURCES, svcId, keyWhy, NAT_UNKNOWN, runAll, slicer } = S.reach._;
 
   /** E：reach.js 的 base 建立的 engine 物件；加上 exposure、exposureSteps。 */
   S.reach._.exposurePart = function exposurePart(E) {
@@ -312,7 +312,6 @@
     }
     /** 預設的判斷次數上限（入口 × 外部區段 × 目的 × 服務）；超過時其餘組合不算，結果標 truncated。 */
     const EXPOSURE_MAX_EVALS = 400000;
-    const EXPOSURE_MAX_SOURCES = 16;
     /**
      * 暴露清單的分段計算（generator，yield { stage: 'prepare'|'evaluate'|'summary', done, total }）；回傳值與 exposure(opts) 相同，並寫進快取。
      * opts：Q.zones 的參數，另加 maxEvaluations（判斷次數上限）、maxSources（外部區段數上限）。

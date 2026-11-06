@@ -99,12 +99,15 @@ test('Q.exposure：外部 → 內部（直接路由）：沒有 NAT 的公網網
   // 沒有 IPv6 位址的事實：回傳說明，不是空結果（IPv6 的列見 tests/core/reach-ipv6.js）
   assert.deepStrictEqual([x.ipv6.status, typeof x.ipv6.message, x.ipv6.evaluated], ['no-ipv6-address', 'string', []]);
   assert.ok(x.routed.rows.concat(x.self.rows, x.dnat.rows).every((r) => r.family === 'ipv4'));
-  assert.deepStrictEqual(x.assumptions.slice(0, S.query.reachAssumptions().length), JSON.parse(JSON.stringify(S.query.reachAssumptions())), '先列 Q.reach 的前提');
+  const reachAll = S.query.traceAssumptions().concat(S.query.reachAssumptions());
+  assert.deepStrictEqual(x.assumptions.slice(0, reachAll.length), JSON.parse(JSON.stringify(reachAll)), '先列 Q.reach 的前提（路由層＋L4）');
 });
 
 test('Q.exposure 的前提：在 Q.reach 的前提之後附加暴露清單另有的兩條（只出現在暴露清單，Q.reach 與 S.query.reachAssumptions 不變）', () => {
   const EXTRA = ['exposure-source-ranges', 'wan-member-no-interface'];
-  const base = S.query.reachAssumptions();
+  // Q.reach 的前提：路由層（L3 共用）＋ L4 自己的
+  const base = S.query.traceAssumptions().concat(S.query.reachAssumptions());
+  assert.deepStrictEqual(S.query.exposureAssumptions().map((a) => a.code), EXTRA);
   const Q = S.query(edge());
   const x = exposureOf(Q);
   assert.deepStrictEqual(x.assumptions.map((a) => a.code), base.map((a) => a.code).concat(EXTRA));
@@ -113,7 +116,7 @@ test('Q.exposure 的前提：在 Q.reach 的前提之後附加暴露清單另有
   // 沒有 WAN 的提早結束也帶同一份前提
   const none = exposureOf(S.query(build(R1.filter((l) => !l.includes('list=WAN') && !l.includes('name=WAN')).concat(SW1).join('\n'))));
   assert.deepStrictEqual(none.assumptions, JSON.parse(JSON.stringify(x.assumptions)));
-  assert.ok(base.every((a) => !EXTRA.includes(a.code)), 'S.query.reachAssumptions 不含暴露清單的前提');
+  assert.ok(base.every((a) => !EXTRA.includes(a.code)), 'S.query.reachAssumptions 與 traceAssumptions 不含暴露清單的前提');
   const rc = Q.reach('192.168.1.10', '203.0.113.2', { proto: 'tcp', port: 443 });
   assert.deepStrictEqual(rc.assumptions.map((a) => a.code), base.map((a) => a.code), 'Q.reach 的前提不變');
   // 寫法同 Q.reach 的前提：括號外不出現 RouterOS 的英文原值，原值保留在括號內

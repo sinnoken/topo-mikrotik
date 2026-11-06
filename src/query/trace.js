@@ -15,6 +15,46 @@
   const U = S.util;
   /** 最多走幾跳（L3 路由追蹤與 L4 可達性共用；設計說明 §5.3 的 TTL 32）。 */
   const TTL = 32;
+  const deepFreeze = (o) => {
+    if (o && typeof o === 'object' && !Object.isFrozen(o)) { Object.freeze(o); Object.values(o).forEach(deepFreeze); }
+    return o;
+  };
+  /** 中文的列舉：「甲、乙與丙」。 */
+  const zhList = (xs) => (xs.length < 2 ? xs.join('') : xs.slice(0, -1).join('、') + '與' + xs[xs.length - 1]);
+  /**
+   * /routing rule 可以判斷的條件（ruleMatches 只判斷這幾個，其他條件無法判斷；routing-mark 另見 ruleMatches）。
+   * 前提的文字由這份產生（ASSUMPTIONS 的 policy-routing）。
+   */
+  const RULE_CONDITIONS = deepFreeze([{ key: 'src-address', label: '來源位址' }, { key: 'dst-address', label: '目的位址' }, { key: 'interface', label: '入介面' }]);
+  const RULE_CONDITION_KEYS = new Set(RULE_CONDITIONS.map((c) => c.key));
+  /**
+   * 路由層的前提（L3 路由追蹤與 L4 可達性共用；L4 在 S.reach.ASSUMPTIONS 另列防火牆層與推論假設）：
+   *   code、layer 'route'、short（一句白話，畫面列表用）、detail（完整說明；RouterOS 原值放在括號內）、message（同 detail，相容舊的讀法）。
+   * 文字中的數字與條件清單由程式常數產生（TTL、RULE_CONDITIONS），改常數時文字跟著變（tests/core/assumptions.js）。
+   */
+  const assume = (code, layer, short, detail) => ({ code, layer, short, detail, message: detail });
+  const ASSUMPTIONS = deepFreeze([
+    assume('ipv4-vrf', 'route', '只算 IPv4，依入介面所屬的 VRF 查路由表',
+      `只算 IPv4（RouterOS 7）；封包依入介面所屬的 VRF 查那個 VRF 的路由表，閘道指定了其他 VRF（@<VRF>）時在那個 VRF 解析（路由洩漏）；最多逐跳走 ${TTL} 跳，超過時結果為不明（TTL）；不驗證設備的 RouterOS 版本`),
+    assume('policy-routing', 'route', '依路由規則決定查哪張路由表，條件判斷不了算不明',
+      `策略路由：main 路由表的封包依路由規則（/routing rule）的順序決定查哪一張路由表，可判斷的條件是${zhList(RULE_CONDITIONS.map((c) => c.label))}（${RULE_CONDITIONS.map((c) => c.key).join('、')}）；改過路由設定的策略規則（/routing settings 的 policy-rules），或條件無法判斷時，結果為不明，不假設查 main`),
+    assume('mark-routing', 'route', '有路由標記的設備，轉送算不明',
+      '設備只要有一條啟用中的封包標記規則設定路由標記（mangle 的 mark-routing），這台設備的轉送就是不明——不看那條規則的比對條件，不判斷哪些封包會被標記'),
+    assume('bridge-ip-firewall', 'route', '同一個網段的流量視為不經過路由器的防火牆',
+      '同一個網段的流量視為不經過路由器的防火牆；橋接設定讓橋接流量也走防火牆（/interface bridge settings 的 use-ip-firewall）時，橋接流量也會經過過濾規則，這種情況不在範圍內'),
+  ]);
+  /** 策略路由不明（routeDecision 的 policy-unknown）的原因 → 前提：mangle 的 mark-routing 是 mark-routing，其他（policy-rules、條件、action）是 policy-routing。 */
+  const policyAssumption = (why) => (why === 'mark-routing' ? 'mark-routing' : 'policy-routing');
+  /**
+   * S.trace 的 ends[].status（與 reason）對應的前提（null：由事實決定的結果，或資料不足，不是前提造成的）。
+   * policy 依 ends[].assumption（policyAssumption），這裡列出可能的前提。
+   */
+  const END_STATUSES = deepFreeze([
+    { status: 'reached', assumption: null }, { status: 'unverified', assumption: null }, { status: 'ttl', assumption: 'ipv4-vrf' },
+    { status: 'policy', assumption: ['policy-routing', 'mark-routing'] }, { status: 'policy-drop', assumption: null }, { status: 'noroute', assumption: null },
+    { status: 'blackhole', assumption: null }, { status: 'egress', assumption: 'external' }, { status: 'unknown-nh', assumption: null, reasons: { 'egress-possible': 'external' } },
+    { status: 'loop', assumption: null },
+  ]);
 
   /**
    * 單跳轉送決定（lookup、lookupTable、routeDecision、nextOwner）只透過這個最小介面（路由視圖 R）讀資料，不直接讀 Q 的其他成員：
@@ -119,14 +159,14 @@
     const inNet = (ip, v) => { const p = /^[\d.]+(\/\d{1,2})?$/.test(String(v)) ? S.ip.parseCidr(v) : null; return p ? IP.inNet(ip, p.net, p.len) : null; };
     Object.keys(r.match).forEach((k) => {
       const v = r.match[k];
-      if (k === 'src-address' || k === 'dst-address') {
+      if (!RULE_CONDITION_KEYS.has(k)) {
+        if (k === 'routing-mark') ok = false;
+        else if (!(k === 'chain' && v === 'user')) unknown.push(k); // 預設的 user chain 不是條件
+      } else if (k === 'src-address' || k === 'dst-address') {
         const ip = k === 'src-address' ? pkt.src : pkt.dst; const hit = ip == null ? null : inNet(ip, v);
         if (hit === null) unknown.push(k); else if (!hit) ok = false;
-      } else if (k === 'interface') {
-        if (!pkt.inEp) unknown.push(k); else if (K.ifc(v) !== K.splitEp(pkt.inEp)[1]) ok = false;
-      } else if (k === 'routing-mark') ok = false;
-      else if (k === 'chain' && v === 'user') { /* 預設的 user chain */ }
-      else unknown.push(k);
+      } else if (!pkt.inEp) unknown.push(k); // interface
+      else if (K.ifc(v) !== K.splitEp(pkt.inEp)[1]) ok = false;
     });
     return unknown.length ? (ok ? { match: null, keys: unknown } : { match: false, keys: [] }) : { match: ok, keys: [] };
   }
@@ -419,7 +459,7 @@
       const one = (e) => [mk(base, null, e, { lk, o: null, no: null, targets: null })];
       if (lk.kind === 'policy-unknown') {
         base.verdict = 'unknown';
-        return one(end('unknown', 'unknown', 'policy-routing', dev, `${name(dev)} 的策略路由：${lk.note}，查哪一張路由表無法判斷`, { rules: lk.rules || [] }));
+        return one(end('unknown', 'unknown', 'policy-routing', dev, `${name(dev)} 的策略路由：${lk.note}，查哪一張路由表無法判斷`, { rules: lk.rules || [], assumption: policyAssumption(lk.why) }));
       }
       if (lk.kind === 'policy-drop') {
         base.verdict = 'deny'; base.route = { prefix: null, proto: null, gateway: null, gatewayVrf: null, vrf: lk.vrf, via: lk.via, table: null, rule: lk.rule };
@@ -607,7 +647,7 @@
       }
       const lv = lk.vrf; const leakNote = leakOf(lk);
       const tableNote = lk.rule ? `（依 /routing rule 第 ${lk.rule.order} 條查路由表 ${lk.table}）` : '';
-      if (lk.kind === 'policy-unknown') { ends.push({ dev, vrf, status: 'policy', note: `策略路由：${lk.note}，查哪一張路由表無法判斷`, rules: lk.rules, path }); continue; }
+      if (lk.kind === 'policy-unknown') { ends.push({ dev, vrf, status: 'policy', note: `策略路由：${lk.note}，查哪一張路由表無法判斷`, rules: lk.rules, assumption: policyAssumption(lk.why), path }); continue; }
       if (lk.kind === 'policy-drop') { ends.push({ dev, vrf, status: 'policy-drop', note: `策略路由：${lk.note}，封包被丟棄`, rule: lk.rule, path }); continue; }
       if (lk.kind === 'connected') { ends.push({ dev, vrf: lv, status: 'reached', note: connectedNote(lk), path }); continue; }
       if (lk.kind === 'no-route-data') { ends.push({ dev, vrf, status: 'noroute', note: '這台設備沒有路由表資料', path }); continue; }
@@ -669,4 +709,12 @@
   S.trace.routeLeaves = (Q, nodes) => routeLeaves(routeWalker(Q), nodes);
   S.trace.ROUTE_DENY = ROUTE_DENY;
   S.trace.START_BASES = START_BASES;
+  /** 路由層的前提（凍結；L3 路由追蹤與 L4 共用，見上方 ASSUMPTIONS）、/routing rule 可判斷的條件、ends[].status 對應的前提。 */
+  S.trace.ASSUMPTIONS = ASSUMPTIONS;
+  S.trace.RULE_CONDITIONS = RULE_CONDITIONS;
+  S.trace.END_STATUSES = END_STATUSES;
+  S.trace.policyAssumption = policyAssumption;
+  S.trace.ruleMatches = ruleMatches;
+  /** 共用的小工具（S.reach 的前提文字也用）。 */
+  S.trace.zhList = zhList;
 })(globalThis.SSOT = globalThis.SSOT || {});

@@ -273,7 +273,7 @@ test('策略路由：src-address 的 rule 改查 isp2；條件無法判斷、mar
   assert.deepStrictEqual([mk.policyOf('R').marks.length, S.trace(mk, '192.168.1.10', '8.8.8.8').ends[0].status], [1, 'policy']);
   const ps = S.query(build(POL(['/routing settings set policy-rules=vrf-lookup,vrf-unreach,local,user,mangle,main'])));
   assert.deepStrictEqual([ps.policyOf('R').custom, ps.reach('192.168.1.10', '8.8.8.8', { proto: 'icmp' }).verdict], [true, 'unknown']);
-  assert.ok(S.query.reachReasonCodes().some((x) => x.code === 'policy-routing') && S.query.reachAssumptions().some((x) => x.code === 'policy-routing'));
+  assert.ok(S.query.reachReasonCodes().some((x) => x.code === 'policy-routing') && S.query.traceAssumptions().some((x) => x.code === 'policy-routing'));
 });
 test('策略路由：封包在 VRF 時查那個 VRF，使用者的 rule 在 VRF 之後（routing-decision 的預設順序）', () => {
   const s = build(NET(PE(['/ip vrf add interfaces=ether2,ether3 name=cust-a', '/routing rule add action=drop src-address=172.16.10.0/24']))); const Q = S.query(s);

@@ -605,6 +605,23 @@
    * WAN／LAN 是推論：只看名稱含 WAN／LAN 的 interface list 及其成員（/interface list member 的事實），不看介面名稱。
    */
   const FW_NONDET = new Set(['random', 'limit', 'dst-limit', 'connection-limit', 'psd', 'nth', 'per-connection-classifier']);
+  /**
+   * 比對條件的分類（ruleMatches 依它決定要不要交給 condition 判斷；查詢層的「判斷的前提」與 Q.assumptionUse 讀同一份，文字與程式不會脫節）：
+   *   CONDITIONS：condition 會判斷的條件（依封包仍可能無法判斷，例如來源埠、NAT 後的來源、設備有 IPsec policy 時的 ipsec-policy）；
+   *   IFC_CONDITIONS：介面條件（ruleMatches 自己判斷，清單無法展開或介面不明時無法判斷）；
+   *   ADDRESS_LIST：位址清單（內容不在基準中，一律無法判斷）；NONDET：依流量、速率或機率比對；其他鍵一律無法判斷。
+   */
+  const FW_CONDITIONS = Object.freeze(['protocol', 'dst-port', 'port', 'src-port', 'src-address', 'dst-address', 'src-address-type', 'dst-address-type',
+    'connection-state', 'connection-nat-state', 'tcp-flags', 'icmp-options', 'ipsec-policy']);
+  const FW_CONDITION_SET = new Set(FW_CONDITIONS);
+  const FW_IFC_CONDITIONS = Object.freeze(['in-interface', 'in-interface-list', 'out-interface', 'out-interface-list']);
+  const FW_ADDRESS_LIST = Object.freeze(['src-address-list', 'dst-address-list']);
+  /** 條件鍵的分類：'condition'｜'interface'｜'address-list'｜'nondet'｜'other'（見上）。 */
+  const condKind = (k) => (FW_CONDITION_SET.has(k) ? 'condition' : FW_IFC_CONDITIONS.includes(k) ? 'interface' : FW_ADDRESS_LIST.includes(k) ? 'address-list' : FW_NONDET.has(k) ? 'nondet' : 'other');
+  /** jump 到其他 chain 最多幾層（decide 與 walkState 共用；超過時當作那一層沒有決定）。 */
+  const FW_MAX_JUMP = 16;
+  /** 判斷的是新連線的第一個封包：連線狀態 new，TCP 只有 SYN 旗標，ICMP 是 echo request（type 8、code 0）。condition 與查詢層的前提文字讀同一份。 */
+  const FW_FIRST_PACKET = Object.freeze({ state: 'new', tcpFlag: 'syn', icmpType: 8, icmpCode: 0 });
   const FW_PORT_KEYS = new Set(['dst-port', 'src-port', 'port']);
   const FW_ADDR_KEYS = new Set(['src-address', 'dst-address']);
   const FW_SET_KEYS = new Set(['protocol', 'connection-state', 'connection-nat-state', 'connection-type']);
@@ -857,19 +874,20 @@
    */
   const TCP_FLAGS = new Set(['fin', 'syn', 'rst', 'psh', 'ack', 'urg', 'ece', 'cwr']);
   function reachTcpFlags(v, pkt) {
-    if (pkt.protocol !== 'tcp' || pkt.state !== 'new') return null;
+    if (pkt.protocol !== 'tcp' || pkt.state !== FW_FIRST_PACKET.state) return null;
     const { neg, body } = splitNeg(v); const ts = tokens(body);
     if (!ts.length || (neg && ts.length > 1)) return null;
-    const each = ts.map((t) => { const n = t.startsWith('!'); const f = n ? t.slice(1) : t; if (!TCP_FLAGS.has(f)) return null; return (f === 'syn') !== n; });
+    const each = ts.map((t) => { const n = t.startsWith('!'); const f = n ? t.slice(1) : t; if (!TCP_FLAGS.has(f)) return null; return (f === FW_FIRST_PACKET.tcpFlag) !== n; });
     if (each.includes(null)) return null;
     const res = each.every(Boolean) ? true : each.every((x) => !x) ? false : null;
     return res === null ? null : neg ? !res : res;
   }
   function reachIcmp(v, pkt) {
-    if (pkt.protocol !== 'icmp' || pkt.state !== 'new') return null;
+    if (pkt.protocol !== 'icmp' || pkt.state !== FW_FIRST_PACKET.state) return null;
     const { neg, body } = splitNeg(v); const r = String(body).trim().match(/^(\d+)(?::(\d+)(?:-(\d+))?)?$/);
     if (!r) return null;
-    const hit = +r[1] === 8 && (r[2] === undefined || (0 >= +r[2] && 0 <= +(r[3] === undefined ? r[2] : r[3])));
+    const c = FW_FIRST_PACKET.icmpCode;
+    const hit = +r[1] === FW_FIRST_PACKET.icmpType && (r[2] === undefined || (c >= +r[2] && c <= +(r[3] === undefined ? r[2] : r[3])));
     return neg ? !hit : hit;
   }
   /** why（選用）：結果為 null 時，收集無法判斷的條件鍵（介面不明時是 in-interface／out-interface，清單無法展開時是該清單的鍵）。 */
@@ -890,7 +908,7 @@
     }
     for (const k of Object.keys(rule.match)) {
       if (/^(in|out)-interface(-list)?$/.test(k)) continue;
-      const c = FW_NONDET.has(k) ? null : condition(ctx, rule, k, pkt);
+      const c = condKind(k) === 'condition' ? condition(ctx, rule, k, pkt) : null;
       if (c === false) return false;
       if (c === null) { res = null; if (why) why.push(k); }
     }
@@ -935,7 +953,7 @@
     const hits = []; const uncertain = [];
     const walk = (ch, via, sure) => {
       const outs = [];
-      if (via.length > 16) { outs.push({ cont: true }); return outs; }
+      if (via.length > FW_MAX_JUMP) { outs.push({ cont: true }); return outs; }
       const p = Object.assign({}, pkt, { chain: ch });
       for (const r of ctx.chain(family, table, ch)) {
         if (r.disabled || (skip && skip.has(r.key))) continue;
@@ -1025,7 +1043,7 @@
   function walkState(ctx, family, chain, state) {
     const conditional = []; const ifcDrops = [];
     const walk = (ch, via, sure) => {
-      if (via.length > 16) return null;
+      if (via.length > FW_MAX_JUMP) return null;
       for (const r of ctx.chain(family, 'filter', ch)) {
         if (r.disabled) continue;
         const m = stateMatch(r, state);
@@ -1430,5 +1448,6 @@
 
   S.infer = { infer, displayName, effVlans, effVlanModes, effPvid, bridgeOf, vlanSpan, VLAN_DATA, isVirtualIfc, hwMacsByDev, wifiLocations, behindLocations, boundaries, BOUNDARY_LABEL, routingDomains, routingView };
   S.infer.fw = { canonMatch, covers, sameMatch, evalChain, evalFilter, decide, packetFor, wanPacket, wanEntries, entriesIn, fwContext, parseVal, splitNeg, protoName, listMembers, policyBaseline,
-    TERMINAL: FW_TERMINAL, BUILTIN: FW_BUILTIN, NONDET: FW_NONDET, PORT_PROTOCOLS, POLICY_CHAINS };
+    TERMINAL: FW_TERMINAL, BUILTIN: FW_BUILTIN, NONDET: FW_NONDET, PORT_PROTOCOLS, POLICY_CHAINS,
+    condKind, CONDITIONS: FW_CONDITIONS, IFC_CONDITIONS: FW_IFC_CONDITIONS, ADDRESS_LIST: FW_ADDRESS_LIST, MAX_JUMP: FW_MAX_JUMP, FIRST_PACKET: FW_FIRST_PACKET };
 })(globalThis.SSOT = globalThis.SSOT || {});

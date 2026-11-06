@@ -612,6 +612,11 @@
       exposure: (opts) => L4().exposure(opts),
       exposureSteps: (opts) => L4().exposureSteps(opts),
       /**
+       * 這份基準用得到哪些判斷的前提（推論，查詢時計算並快取，不寫進 Snapshot）：路由層（S.query.traceAssumptions）、L4（reachAssumptions）與暴露清單的前提，依序每條一筆
+       * [{ code, layer, status: 'affects'|'missing-data'|'not-used'|'always', devices（設備鍵）, ruleKeys（防火牆規則鍵）, count }]（深層凍結）。判斷依據見 reach.js 的 assumePart。
+       */
+      assumptionUse: () => L4().assumptionUse(),
+      /**
        * 矩陣下鑽 L1／L2：一格的摘要，加上 groups（目的 × 結果相同的來源代表）與 ruleDetails（牽涉的規則）。L3 是 Q.reach(來源代表, 目的, { proto, port })。
        * groups[].divergent：這一組造成格子異質（heterogeneous）——有某個 service，這組的結果和同一個目的的其他來源組、或同一批來源往其他目的的結果不同（定義見 reach.js 的 cell）。
        */

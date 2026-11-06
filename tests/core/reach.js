@@ -4,6 +4,8 @@ const assert = require('assert');
 const { S, build, read, test, sampleSnap } = require('../lib.js');
 
 const RT = 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC';
+/** L4 引擎除了 reach.js 以外的檔案（依載入順序，跨檔經 S.reach._）。 */
+const REACH_PARTS = ['src/query/reach-eval.js', 'src/query/reach-zones.js', 'src/query/reach-matrix.js', 'src/query/reach-exposure.js'];
 /**
  * 手寫的兩台路由器：R1（LAN 192.168.1.0/24 在 bridge1、WAN 198.51.100.0/30 在 ether1）經 10.0.12.0/30 接 R2（192.168.2.0/24 在 bridge1）。
  * R1 的 forward：drop src-address-list=BLOCKED、放行到 192.168.2.10:22、drop 到 192.168.2.0/24；dst-nat 8080 → 192.168.2.20–21（範圍）、8081 → 192.168.2.10:22；masquerade 到 WAN。
@@ -274,9 +276,10 @@ test('S.query.reachReasonCodes：涵蓋 reach.js 與共用路徑展開（trace.j
   assert.strictEqual(S.query.reachReasonCodes(), list);
   list.forEach((x) => assert.ok(typeof x.code === 'string' && ['reason', 'end'].includes(x.kind) && (x.note === undefined || typeof x.note === 'string'), JSON.stringify(x)));
   assert.strictEqual(new Set(list.map((x) => x.code)).size, list.length, '代碼不重複');
-  // 只掃引擎本身（makeEngine 之後）與共用的路徑展開（trace.js 的 walker 與 routeFrom 之間）：清單與 ASSUMPTIONS 的 code 不算
+  // 只掃引擎本身（reach.js 的 makeEngine 之後、其他 reach-*.js 全部）與共用的路徑展開（trace.js 的 walker 與 routeFrom 之間）：清單與 ASSUMPTIONS 的 code 不算
   const src = read('src/query/reach.js'); const tr = read('src/query/trace.js');
-  const body = src.slice(src.indexOf('function makeEngine')) + tr.slice(tr.indexOf('function walker('), tr.indexOf('function routeFrom('));
+  const parts = REACH_PARTS.map((f) => read(f)).join('\n');
+  const body = src.slice(src.indexOf('function makeEngine')) + parts + tr.slice(tr.indexOf('function walker('), tr.indexOf('function routeFrom('));
   const found = new Set();
   const scan = (re, kind) => { for (const m of body.matchAll(re)) m.slice(1).filter(Boolean).forEach((c) => found.add(c + '|' + kind)); };
   // 代碼可以含數字（例如 no-ipv6-firewall）
@@ -294,6 +297,30 @@ test('S.query.reachReasonCodes：涵蓋 reach.js 與共用路徑展開（trace.j
   });
   list.forEach((x) => assert.ok(codes.has(x.code), `${x.code} 在清單裡，但 reach.js 沒有用到`));
   list.filter((x) => x.kind === 'reason').forEach((x) => assert.ok(!found.has(x.code + '|end'), `${x.code} 也是結束代碼，kind 應為 end`));
+});
+
+test('L4 引擎拆成多個檔案：Q 與 S.query 的 L4 成員與參數個數不變，各部分依序載入、只經 S.reach._ 共用', () => {
+  const Q = S.query(sampleSnap());
+  const qMembers = { reach: 3, zones: 1, zoneOf: 2, zoneMatrix: 1, zoneMatrixSteps: 1, zoneCell: 3, ruleImpact: 2, exposure: 1, exposureSteps: 1 };
+  Object.entries(qMembers).forEach(([k, n]) => {
+    assert.strictEqual(typeof Q[k], 'function', `Q.${k}`);
+    assert.strictEqual(Q[k].length, n, `Q.${k} 的參數個數`);
+  });
+  ['l4Services', 'zoneSources', 'reachAssumptions', 'reachReasonCodes', 'reachStartBases'].forEach((k) => {
+    assert.strictEqual(typeof S.query[k], 'function', `S.query.${k}`);
+    assert.strictEqual(S.query[k].length, 0, `S.query.${k} 不需要參數`);
+    assert.strictEqual(S.query[k](), S.query[k](), `S.query.${k} 每次回傳同一個凍結的物件`);
+  });
+  assert.deepStrictEqual(Object.keys(S.reach).sort(), ['ASSUMPTIONS', 'SERVICES', 'ZONE_SOURCES', '_', 'engine', 'svcId'].sort());
+  ['evalPart', 'zonesPart', 'matrixPart', 'exposurePart'].forEach((k) => assert.strictEqual(typeof S.reach._[k], 'function', `S.reach._.${k}`));
+  // 載入順序：reach.js 在 trace.js 之後，其他部分緊接在 reach.js 之後
+  const files = require('../../tools/core-files.js');
+  const at = files.indexOf('src/query/reach.js');
+  assert.ok(at > files.indexOf('src/query/trace.js'));
+  assert.deepStrictEqual(files.slice(at + 1, at + 1 + REACH_PARTS.length), REACH_PARTS);
+  // 引擎回傳的成員（query.js 的 L4() 呼叫的）
+  const eng = S.reach.engine(Q, { ctxOf: () => null });
+  assert.deepStrictEqual(Object.keys(eng), ['reach', 'zones', 'zoneOf', 'matrix', 'matrixSteps', 'cell', 'ruleImpact', 'exposure', 'exposureSteps']);
 });
 
 test('Q.ruleImpact：規則牽涉的 zone 對與路徑，停用後改變的結果；被遮蔽的規則沒有影響', () => {

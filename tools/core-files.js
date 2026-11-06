@@ -5,7 +5,10 @@ module.exports = [
   'src/adapters/index.js', 'src/adapters/mikrotik.js',
   'src/data/oui-data.js', 'src/data/oui.js',
   'src/profile/profile.js', 'src/model/build.js', 'src/model/infer.js', 'src/check/catalog.js', 'src/check/checks.js',
-  'src/pipeline.js', 'src/query/query.js', 'src/query/trace.js', 'src/query/reach.js', 'src/compare/compare.js',
+  'src/pipeline.js', 'src/query/query.js', 'src/query/trace.js',
+  // L4 引擎（S.reach）：reach.js 先載入（常數與 S.reach._），其餘各部分依序加在 S.reach._ 上
+  'src/query/reach.js', 'src/query/reach-eval.js', 'src/query/reach-zones.js', 'src/query/reach-matrix.js', 'src/query/reach-exposure.js',
+  'src/compare/compare.js',
   // 修正 patch（ssot-patch/1）：只讀查詢介面，產生文字
   'src/remediate/patch.js',
   // 處理紀錄（ssot-ledger/1），不屬於 Snapshot

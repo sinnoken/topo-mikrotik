@@ -176,4 +176,4 @@ jobs:
       - name: Run large UI smoke test
         run: |
           npm run gen:large
-          SMOKE_INPUT=samples/large-1000.txt node tests/ui-smoke.js
+          NODE_OPTIONS=--max-old-space-size=8192 SMOKE_INPUT=samples/large-1000.txt node tests/ui-smoke.js

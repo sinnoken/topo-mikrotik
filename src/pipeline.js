@@ -138,6 +138,9 @@
       // 設備層級 DNS／NTP 伺服器（事實，見 model/build.js 的 SERVER_SOURCE_RANK）；沒有設定為 null
       dnsServers: serverConf(d.dnsServers), ntpServers: serverConf(d.ntpServers),
       policyRules: d.policyRules ? { rules: d.policyRules.rules.slice(), src: [d.policyRules.src] } : null, // /routing settings 的 policy-rules；沒有寫出時為 null（預設順序）
+      // 生命週期（事實）：uptime 的 collectedAt 是該區塊的 # collected-at:（沒有時 null），兩次收集的 uptime 與時間差才能推論期間是否重開過
+      uptime: d.uptime ? { seconds: d.uptime.seconds, collectedAt: (c.blocks[d.uptime.block] || {}).collectedAt || null, src: [[d.uptime.block, d.uptime.line]] } : null,
+      routerboard: d.routerboard ? Object.assign({}, d.routerboard, { src: d.routerboard.src.map((x) => x.slice()) }) : null,
       seenBy: Array.from(d.seenBy).sort(), src: d.src, srcNone: d.src.length ? null : 'seen-only',
     })).sort((a, b) => nat(a.key, b.key));
 

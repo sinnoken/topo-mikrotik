@@ -30,7 +30,7 @@
   // 資料類別的顯示名稱；畫面透過 S.query.dataLabel 讀取
   const DATA_LABEL = Object.freeze({
     lldp: '鄰居', config: '設定', vlans: 'VLAN 成員', mac: 'MAC 表', arp: 'ARP', route: '路由表',
-    ospf: 'OSPF', ipaddr: 'IP 位址', ifstatus: '介面狀態', system: '系統資訊', wifireg: 'Wi-Fi 關聯表', stp: 'RSTP 狀態', fwstats: '防火牆命中次數', vrf: 'VRF',
+    ospf: 'OSPF', ipaddr: 'IP 位址', ifstatus: '介面狀態', system: '系統資訊', wifireg: 'Wi-Fi 關聯表', stp: 'RSTP 狀態', fwstats: '防火牆命中次數', vrf: 'VRF', routerboard: 'RouterBOARD 韌體',
   });
 
   // 訊息中引用原文時的長度上限（I01 的錯誤訊息、I03 的無法辨識行）
@@ -368,6 +368,13 @@
     firewallChecks(M, add, name);
     statsChecks(M, add, name);
     mgmtChecks(M, add, name);
+    // L01：RouterBOOT 韌體 current 與 upgrade 不同（手冊：upgrade-firmware 是設備上找到的最新韌體檔，要手動套用）
+    M.devices.forEach((d) => {
+      const rb = d.routerboard;
+      if (!d.collected || !rb || !rb.isRouterboard || !rb.currentFirmware || !rb.upgradeFirmware || rb.currentFirmware === rb.upgradeFirmware) return;
+      add('L01', `${name(d.key)}：RouterBOOT 韌體 ${rb.currentFirmware}，可套用 ${rb.upgradeFirmware}`, [{ type: 'device', key: d.key }],
+        ['currentFirmware', 'upgradeFirmware'].map((k) => d.routerboardLines[k]).map((x) => ({ block: x[0], line: x[1] })));
+    });
 
     const order = { error: 0, warn: 1, info: 2 };
     out.sort((a, b) => order[a.severity] - order[b.severity] || S.util.cmp(a.id, b.id) || S.util.natural(a.message, b.message));
@@ -602,6 +609,22 @@
       const j = judge(groups);
       add('A11', `${sel[0].section} ${sel[0].value}：${fmtGroups(groups, quote)}`,
         Array.from(perDev.keys()).sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (b) => b.dev, (b) => [{ block: b.block, line: b.line }]), Object.assign({ facet: sel[0].section + '|' + sel[0].valueKey }, j.extra));
+    });
+
+    // ---- L02：同型號（/system resource 的 board-name）的 RouterOS 版本；只比設備自報的型號與版本（鄰居回報的不算），
+    // 版本比較去掉發布頻道（7.25.1 (stable) 與 7.25.1 相同），顯示原值
+    const verKey = (v) => norm(String(v).replace(/\s*\([^)]*\)\s*$/, ''));
+    const byModel = new Map();
+    Array.from(M.devices.values()).filter((d) => d.collected && d.boardSrc && d.versionSrc && d.deviceType && d.softwareVersion)
+      .forEach((d) => U.getOr(byModel, norm(d.deviceType), () => []).push(d));
+    Array.from(byModel.keys()).sort(nat).forEach((mk) => {
+      const sel = byModel.get(mk).sort((a, b) => byName(a.key, b.key));
+      const perDev = new Map(); sel.forEach((d) => put(perDev, d.key, verKey(d.softwareVersion), d.softwareVersion));
+      const groups = groupDevs(perDev);
+      if (groups.length < 2) return;
+      const j = judge(groups);
+      add('L02', `型號 ${sel[0].deviceType} 的 RouterOS 版本：${fmtGroups(groups, show)}`, sel.map((d) => ({ type: 'device', key: d.key })),
+        evByGroups(groups, sel, (d) => d.key, (d) => [ev(d.versionSrc)]), j.extra);
     });
 
     // ---- A12：設備層級的 DNS／NTP 伺服器

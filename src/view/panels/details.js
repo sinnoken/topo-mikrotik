@@ -304,6 +304,9 @@
         dev.length ? h('a', { class: 'link chip-link deviation-chip', title: '依跨設備多數決推定這台的設定與其他設備不同（推論）；點一下捲到檢查結果',
           onclick: () => { const sec = V.$('#detail .findings-section'); if (sec) sec.scrollIntoView({ block: 'start', behavior: 'smooth' }); } }, V.chip(`${V.DEVIATION} ${dev.length} 項`, 'warn')) : null]),
       kv([['管理 IP', d.mgmtIp], ['型號', d.deviceType], ['RouterOS', d.softwareVersion],
+        // RouterBOOT 韌體與運作時間（/system routerboard、/system resource 的事實）；文字與網路文件共用 S.report
+        ['RouterBOOT 韌體', S.report.firmwareText(d.routerboard) || null],
+        ['運作時間', d.uptime ? `${S.report.uptimeText(d.uptime.seconds)}（${d.uptime.collectedAt ? '收集於 ' + d.uptime.collectedAt.replace('T', ' ') : '收集時間不明'}）` : null],
         ['廠商', d.manufacturer ? V.vendorName(d.manufacturer) : null],
         ['平台', d.manufacturer === 'mikrotik' ? null : d.platform],
         ['鄰居回報功能', d.caps ? h('span', { class: 'caps', title: '原值：' + d.caps }, V.capsText(d.caps)) : null],

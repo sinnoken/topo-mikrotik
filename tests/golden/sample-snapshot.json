@@ -1,20 +1,20 @@
 {
  "meta": {
   "schema": "ssot-snapshot/3",
-  "version": "3.4.0",
+  "version": "3.5.0",
   "createdAt": "2026-01-01T00:00:00Z",
-  "inputHash": "72de87da9bf20c60",
-  "baselineKey": "36c3d7fc9df42e06",
+  "inputHash": "69dc30af455b8c5e",
+  "baselineKey": "7a1d1d7c0c7be83f",
   "sources": [
    {
     "name": "sample-bundle.txt",
     "reader": "bundle-v1",
-    "bytes": 223345,
-    "hash": "31dc6c8f90ddbbf4"
+    "bytes": 223589,
+    "hash": "569c8ada74b6f93c"
    }
   ],
   "adapters": {
-   "mikrotik.system": 14,
+   "mikrotik.system": 21,
    "mikrotik.config": 1098,
    "mikrotik.fwstats.ip-filter": 23,
    "mikrotik.fwstats.ip-nat": 6,
@@ -30,10 +30,11 @@
    "mikrotik.ospf": 1,
    "mikrotik.stp": 25,
    "mikrotik.stpbridge": 12,
-   "mikrotik.vrf": 2
+   "mikrotik.vrf": 2,
+   "mikrotik.routerboard": 6
   },
-  "blockCount": 111,
-  "factCount": 2390,
+  "blockCount": 112,
+  "factCount": 2403,
   "profile": null,
   "stats": {
    "devices": 59,
@@ -55,8 +56,8 @@
    "routingRules": 2,
    "findings": {
     "error": 1,
-    "warn": 32,
-    "info": 29
+    "warn": 33,
+    "info": 30
    }
   }
  },
@@ -91,6 +92,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_CORE_RT_01"
     ],
@@ -137,6 +140,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -201,6 +206,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -265,6 +272,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -329,6 +338,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -393,6 +404,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -457,6 +470,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -521,6 +536,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -585,6 +602,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -648,6 +667,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -712,6 +733,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -776,6 +799,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -852,6 +877,8 @@
      ]
     },
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_CORE_RT_01",
      "TPE_CORE_RT_02"
@@ -905,6 +932,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_05"
     ],
@@ -945,10 +974,25 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": {
+     "seconds": 1310400,
+     "collectedAt": null,
+     "src": [
+      [
+       88,
+       3964
+      ]
+     ]
+    },
+    "routerboard": null,
     "seenBy": [
      "TPE_BR_SW_01"
     ],
     "src": [
+     [
+      88,
+      3964
+     ],
      [
       88,
       3965
@@ -956,10 +1000,6 @@
      [
       88,
       3966
-     ],
-     [
-      89,
-      3970
      ],
      [
       89,
@@ -1004,6 +1044,17 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": {
+     "seconds": 1310400,
+     "collectedAt": null,
+     "src": [
+      [
+       92,
+       3999
+      ]
+     ]
+    },
+    "routerboard": null,
     "seenBy": [
      "TPE_BR_RT_01",
      "TPE_LAB_SW_01"
@@ -1011,15 +1062,15 @@
     "src": [
      [
       92,
+      3999
+     ],
+     [
+      92,
       4000
      ],
      [
       92,
       4001
-     ],
-     [
-      93,
-      4005
      ],
      [
       93,
@@ -1046,6 +1097,7 @@
      "config",
      "lldp",
      "route",
+     "routerboard",
      "system"
     ],
     "hostname": "TPE_CE_RT_01",
@@ -1062,10 +1114,59 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": {
+     "seconds": 1310400,
+     "collectedAt": null,
+     "src": [
+      [
+       107,
+       4148
+      ]
+     ]
+    },
+    "routerboard": {
+     "isRouterboard": true,
+     "basis": "print",
+     "model": "RB760iGS",
+     "firmwareType": "mmipsr2",
+     "factoryFirmware": "6.45.9",
+     "currentFirmware": "7.24.2",
+     "upgradeFirmware": "7.25.1",
+     "src": [
+      [
+       111,
+       4188
+      ],
+      [
+       111,
+       4189
+      ],
+      [
+       111,
+       4191
+      ],
+      [
+       111,
+       4192
+      ],
+      [
+       111,
+       4193
+      ],
+      [
+       111,
+       4194
+      ]
+     ]
+    },
     "seenBy": [
      "TPE_PE_RT_01"
     ],
     "src": [
+     [
+      107,
+      4148
+     ],
      [
       107,
       4149
@@ -1073,10 +1174,6 @@
      [
       107,
       4150
-     ],
-     [
-      108,
-      4154
      ],
      [
       108,
@@ -1152,6 +1249,17 @@
      ]
     },
     "policyRules": null,
+    "uptime": {
+     "seconds": 1310400,
+     "collectedAt": null,
+     "src": [
+      [
+       0,
+       5
+      ]
+     ]
+    },
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_01",
      "TPE_ACC_SW_02",
@@ -1170,15 +1278,15 @@
     "src": [
      [
       0,
+      5
+     ],
+     [
+      0,
       6
      ],
      [
       0,
       7
-     ],
-     [
-      1,
-      11
      ],
      [
       1,
@@ -1252,6 +1360,17 @@
      ]
     },
     "policyRules": null,
+    "uptime": {
+     "seconds": 1310400,
+     "collectedAt": null,
+     "src": [
+      [
+       14,
+       947
+      ]
+     ]
+    },
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_01",
      "TPE_ACC_SW_03",
@@ -1269,15 +1388,15 @@
     "src": [
      [
       14,
+      947
+     ],
+     [
+      14,
       948
      ],
      [
       14,
       949
-     ],
-     [
-      15,
-      953
      ],
      [
       15,
@@ -1315,6 +1434,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_06"
     ],
@@ -1351,16 +1472,31 @@
     "site": null,
     "label": null,
     "deviceType": "CRS326-24G-2S+",
-    "softwareVersion": "7.25.1 (stable)",
+    "softwareVersion": "7.24.2 (stable)",
     "platform": "MikroTik",
     "caps": "bridge",
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": {
+     "seconds": 1310400,
+     "collectedAt": null,
+     "src": [
+      [
+       96,
+       4043
+      ]
+     ]
+    },
+    "routerboard": null,
     "seenBy": [
      "TPE_BR_SW_01"
     ],
     "src": [
+     [
+      96,
+      4043
+     ],
      [
       96,
       4044
@@ -1368,10 +1504,6 @@
      [
       96,
       4045
-     ],
-     [
-      97,
-      4049
      ],
      [
       97,
@@ -1417,10 +1549,25 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": {
+     "seconds": 1310400,
+     "collectedAt": null,
+     "src": [
+      [
+       100,
+       4078
+      ]
+     ]
+    },
+    "routerboard": null,
     "seenBy": [
      "TPE_CE_RT_01"
     ],
     "src": [
+     [
+      100,
+      4078
+     ],
      [
       100,
       4079
@@ -1428,10 +1575,6 @@
      [
       100,
       4080
-     ],
-     [
-      101,
-      4084
      ],
      [
       101,
@@ -1469,6 +1612,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_01"
     ],
@@ -1504,6 +1649,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_01"
     ],
@@ -1539,6 +1686,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_01"
     ],
@@ -1574,6 +1723,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_02"
     ],
@@ -1609,6 +1760,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_02"
     ],
@@ -1644,6 +1797,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_02"
     ],
@@ -1679,6 +1834,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_03"
     ],
@@ -1714,6 +1871,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_03"
     ],
@@ -1749,6 +1908,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_03"
     ],
@@ -1784,6 +1945,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_04"
     ],
@@ -1819,6 +1982,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_04"
     ],
@@ -1854,6 +2019,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_04"
     ],
@@ -1889,6 +2056,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_05"
     ],
@@ -1924,6 +2093,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_05"
     ],
@@ -1959,6 +2130,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_05"
     ],
@@ -1994,6 +2167,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_06"
     ],
@@ -2029,6 +2204,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_06"
     ],
@@ -2064,6 +2241,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_06"
     ],
@@ -2099,6 +2278,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_07"
     ],
@@ -2134,6 +2315,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_07"
     ],
@@ -2169,6 +2352,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_07"
     ],
@@ -2204,6 +2389,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_08"
     ],
@@ -2239,6 +2426,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_08"
     ],
@@ -2274,6 +2463,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_08"
     ],
@@ -2309,6 +2500,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_09"
     ],
@@ -2344,6 +2537,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_09"
     ],
@@ -2379,6 +2574,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_09"
     ],
@@ -2414,6 +2611,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_10"
     ],
@@ -2449,6 +2648,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_10"
     ],
@@ -2484,6 +2685,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_10"
     ],
@@ -2519,6 +2722,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_11"
     ],
@@ -2554,6 +2759,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_11"
     ],
@@ -2589,6 +2796,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_11"
     ],
@@ -2624,6 +2833,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_12"
     ],
@@ -2659,6 +2870,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_12"
     ],
@@ -2694,6 +2907,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_12"
     ],
@@ -2729,6 +2944,8 @@
     "dnsServers": null,
     "ntpServers": null,
     "policyRules": null,
+    "uptime": null,
+    "routerboard": null,
     "seenBy": [
      "TPE_ACC_SW_06",
      "TPE_ACC_SW_07"
@@ -45764,7 +45981,7 @@
    {
     "dev": "TPE_LAB_SW_01",
     "export": "full",
-    "version": "7.25.1 (stable)",
+    "version": "7.24.2 (stable)",
     "versionInRange": true,
     "dns": {
      "allowRemote": false,
@@ -46053,7 +46270,7 @@
    "severity": "error",
    "cat": "輸入",
    "title": "無法辨識的內容",
-   "message": "無法辨識的內容：sample-bundle.txt 第 3482–3485 行（指令：/system routerboard print）",
+   "message": "無法辨識的內容：sample-bundle.txt 第 3482–3485 行（指令：/system clock print）",
    "entities": [
     {
      "type": "device",
@@ -46064,7 +46281,7 @@
     {
      "block": 76,
      "line": 3482,
-     "text": "routerboard: yes",
+     "text": "time: 10:00:00",
      "file": "sample-bundle.txt"
     }
    ]
@@ -47230,6 +47447,66 @@
      "file": "sample-bundle.txt"
     }
    ]
+  },
+  {
+   "id": "L02",
+   "severity": "warn",
+   "cat": "生命週期",
+   "title": "同型號設備的 RouterOS 版本不同",
+   "message": "型號 CRS326-24G-2S+ 的 RouterOS 版本：TPE_BR_SW_01 7.25.1 (stable)；TPE_LAB_SW_01 7.24.2 (stable)",
+   "entities": [
+    {
+     "type": "device",
+     "key": "TPE_BR_SW_01"
+    },
+    {
+     "type": "device",
+     "key": "TPE_LAB_SW_01"
+    }
+   ],
+   "evidence": [
+    {
+     "block": 92,
+     "line": 4000,
+     "text": "version: 7.25.1 (stable)",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 96,
+     "line": 4044,
+     "text": "version: 7.24.2 (stable)",
+     "file": "sample-bundle.txt"
+    }
+   ],
+   "deviation": {
+    "basis": "majority",
+    "deviating": [],
+    "groups": [
+     {
+      "value": [
+       "7.25.1 (stable)"
+      ],
+      "key": [
+       "7.25.1"
+      ],
+      "devs": [
+       "TPE_BR_SW_01"
+      ]
+     },
+     {
+      "value": [
+       "7.24.2 (stable)"
+      ],
+      "key": [
+       "7.24.2"
+      ],
+      "devs": [
+       "TPE_LAB_SW_01"
+      ]
+     }
+    ],
+    "main": null
+   }
   },
   {
    "id": "R03",
@@ -48410,6 +48687,33 @@
    ]
   },
   {
+   "id": "L01",
+   "severity": "info",
+   "cat": "生命週期",
+   "title": "RouterBOOT 韌體待升級（current 與 upgrade 不同）",
+   "message": "TPE_CE_RT_01：RouterBOOT 韌體 7.24.2，可套用 7.25.1",
+   "entities": [
+    {
+     "type": "device",
+     "key": "TPE_CE_RT_01"
+    }
+   ],
+   "evidence": [
+    {
+     "block": 111,
+     "line": 4193,
+     "text": "current-firmware: 7.24.2",
+     "file": "sample-bundle.txt"
+    },
+    {
+     "block": 111,
+     "line": 4194,
+     "text": "upgrade-firmware: 7.25.1",
+     "file": "sample-bundle.txt"
+    }
+   ]
+  },
+  {
    "id": "R01",
    "severity": "info",
    "cat": "路由",
@@ -48936,6 +49240,7 @@
     "config",
     "lldp",
     "route",
+    "routerboard",
     "system"
    ],
    "missing": [],
@@ -50883,7 +51188,7 @@
    "id": 76,
    "device": "TPE_ACC_SW_10",
    "devKey": "TPE_ACC_SW_10",
-   "command": "/system routerboard print",
+   "command": "/system clock print",
    "reader": "bundle-v1",
    "adapters": [],
    "how": "none",
@@ -51504,6 +51809,24 @@
    "file": "sample-bundle.txt",
    "start": 4177,
    "end": 4186,
+   "empty": false,
+   "collectedAt": null,
+   "failure": null,
+   "unrecognizedLines": []
+  },
+  {
+   "id": 111,
+   "device": "TPE_CE_RT_01",
+   "devKey": "TPE_CE_RT_01",
+   "command": "/system routerboard print",
+   "reader": "bundle-v1",
+   "adapters": [
+    "mikrotik.routerboard"
+   ],
+   "how": "command",
+   "file": "sample-bundle.txt",
+   "start": 4188,
+   "end": 4195,
    "empty": false,
    "collectedAt": null,
    "failure": null,

@@ -140,7 +140,7 @@ test('多數決：範例資料中 A06 推定 TPE_ACC_SW_10 偏離；A12 的 DNS 
   const Q = S.query(s);
   assert.deepStrictEqual(['TPE_CORE_RT_01', 'TPE_ACC_SW_12'].map((k) => { const n = Q.serversOf(k).ntp; return [n.menu, n.param]; }),
     [['/system ntp client', 'servers'], ['/system ntp client servers', 'address']]);
-  const withDev = ['V06', 'V07', 'A06', 'A07', 'A08', 'A10', 'A11', 'A12', 'R06'];
+  const withDev = ['V06', 'V07', 'A06', 'A07', 'A08', 'A10', 'A11', 'A12', 'R06', 'L02'];
   s.findings.forEach((f) => assert.strictEqual('deviation' in f, withDev.includes(f.id), `${f.id} 的 deviation 欄位`));
   // 每條多數決規則的分組都一致：至少兩組、每台設備只在一組；有多數時 deviating 是其餘各組的設備，沒有多數時 main 為 null、deviating 為空
   s.findings.filter((f) => f.deviation).forEach((f) => {

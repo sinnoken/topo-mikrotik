@@ -21,19 +21,38 @@
   const portName = (Q, ep) => { const i = Q.getInterface(ep); const p = K.splitEp(ep)[1]; return i ? i.name : p.startsWith('?(') ? '（未知埠）' : p; };
   const epText = (Q, ep) => `${Q.devLabel(K.splitEp(ep)[0])} ${portName(Q, ep)}`;
 
+  /**
+   * RouterBOOT 韌體的顯示文字（設備的 routerboard，/system routerboard print 的事實；畫面的設備詳情共用）：
+   * 沒有收集為空字串；current 與 upgrade 不同時加上可套用的版本（L01）。
+   */
+  function firmwareText(rb) {
+    if (!rb) return '';
+    if (rb.isRouterboard === false) return rb.basis === 'no-menu' ? '不是 RouterBOARD（沒有 routerboard 選單）' : '不是 RouterBOARD';
+    if (!rb.currentFirmware) return '';
+    return rb.upgradeFirmware && rb.upgradeFirmware !== rb.currentFirmware ? `${rb.currentFirmware}（可套用 ${rb.upgradeFirmware}）` : rb.currentFirmware;
+  }
+  /** 運作時間（秒，/system resource 的 uptime）的顯示文字：「15 天 4 小時 5 分」，不到一分鐘寫秒數 */
+  function uptimeText(sec) {
+    if (typeof sec !== 'number' || !isFinite(sec) || sec < 0) return '';
+    const t = Math.floor(sec);
+    if (t < 60) return `${t} 秒`;
+    const parts = [[Math.floor(t / 86400), '天'], [Math.floor((t % 86400) / 3600), '小時'], [Math.floor((t % 3600) / 60), '分']];
+    return parts.filter(([n], k) => n || (k && parts.slice(0, k).some(([x]) => x))).map(([n, u]) => `${n} ${u}`).join(' ');
+  }
+
   /** 設備清單：所有設備，依名稱的自然順序 */
   function deviceTable(Q) {
     const rows = Q.devices().slice().sort((a, b) => byName(Q)(a.key, b.key)).map((d) => {
       const cov = Q.coverageOf(d.key);
       const state = !d.collected ? '未收集' : cov && Q.coverageGap(cov) ? '已收集（有缺漏）' : '已收集';
       return [
-        Q.devLabel(d.key), d.deviceType || '', d.softwareVersion || '',
+        Q.devLabel(d.key), d.deviceType || '', d.softwareVersion || '', firmwareText(d.routerboard),
         d.mgmtIp ? d.mgmtIp + (d.collected ? '' : '（鄰居宣告）') : '',
         sourced(S.KIND_LABEL[d.kind] || d.kind || '', d.kindBasis !== 'profile', d.kindBasis === 'profile'),
         d.role || '', d.site || '', state, d.collectedAt || '',
       ];
     });
-    return { id: 'devices', title: '設備清單', columns: ['設備', '型號', 'RouterOS 版本', '管理 IP', '設備類型', '角色（命名規則）', '站點（命名規則）', '收集狀態', '收集時間'], rows };
+    return { id: 'devices', title: '設備清單', columns: ['設備', '型號', 'RouterOS 版本', 'RouterBOOT 韌體', '管理 IP', '設備類型', '角色（命名規則）', '站點（命名規則）', '收集狀態', '收集時間'], rows };
   }
 
   /**
@@ -176,5 +195,5 @@
   }
 
   // S.report 已凍結（report.js），在原有成員之外加上網路文件的函式，再凍結一次；原有成員是同一個參考
-  S.report = Object.freeze(Object.assign({}, S.report, { siteDocTables, siteDocMarkdown, siteDocCsv, IFC_STATUS_TEXT }));
+  S.report = Object.freeze(Object.assign({}, S.report, { siteDocTables, siteDocMarkdown, siteDocCsv, IFC_STATUS_TEXT, firmwareText, uptimeText }));
 })(globalThis.SSOT = globalThis.SSOT || {});

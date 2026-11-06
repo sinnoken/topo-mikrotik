@@ -104,6 +104,17 @@ module.exports = async () => {
     if (fi < 0 || ki < 0 || ki > fi) throw new Error('設備的屬性（身分）應在檢查結果之前');
     if (d0.mgmtIp && !kids[ki].textContent.includes(d0.mgmtIp)) throw new Error('設備屬性的第一段應有管理 IP');
     if (!kids[ki].textContent.includes('收集的資料')) throw new Error('設備屬性應列收集的資料');
+    // RouterBOOT 韌體與運作時間（/system routerboard、/system resource 的事實）：文字與網路文件共用 S.report
+    const rbDev = Q.devices().find((d) => d.collected && d.routerboard && d.routerboard.currentFirmware && d.uptime);
+    if (rbDev) {
+      App.select({ type: 'device', key: rbDev.key });
+      const kv = $('#detail').querySelector('.kv').textContent;
+      if (!kv.includes('RouterBOOT 韌體') || !kv.includes(S.report.firmwareText(rbDev.routerboard))) throw new Error('設備屬性應列 RouterBOOT 韌體：' + kv);
+      if (!kv.includes('運作時間') || !kv.includes(S.report.uptimeText(rbDev.uptime.seconds))) throw new Error('設備屬性應列運作時間：' + kv);
+      if (rbDev.routerboard.upgradeFirmware !== rbDev.routerboard.currentFirmware && !kv.includes('可套用 ' + rbDev.routerboard.upgradeFirmware)) throw new Error('韌體待升級時應寫出可套用的版本');
+    } else if (!process.env.SMOKE_INPUT) throw new Error('範例資料應有收集了 /system routerboard 與 uptime 的設備');
+    const noRb = Q.devices().find((d) => d.collected && !d.routerboard && !d.uptime);
+    if (noRb) { App.select({ type: 'device', key: noRb.key }); const kv = $('#detail').querySelector('.kv').textContent; if (kv.includes('RouterBOOT 韌體') || kv.includes('運作時間')) throw new Error('沒有收集時不列 RouterBOOT 韌體與運作時間'); }
     // 與多數不同：設備在任何 finding.deviation.deviating 中時，標題下有「與多數不同 N 項」
     const devs = S.util.uniq(Q.findings().flatMap((f) => (f.deviation ? f.deviation.deviating : [])));
     devs.forEach((k) => {

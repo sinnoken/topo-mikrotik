@@ -40,6 +40,11 @@
       hostname: null, routerId: null, collectedAt: null, ownMacs: new Set(), stp: null, seenBy: new Set(), src: [], deviceType: null, softwareVersion: null, platform: null, caps: null,
       dnsServers: null, ntpServers: null, // { values: [], menu, param, src: [[區塊, 行號]] }（事實）；多個來源時的規則見 SERVER_SOURCE_RANK
       policyRules: null, // /routing settings 的 policy-rules（查表的順序）：{ rules, src }；export 沒有寫出（預設值）時為 null
+      // 設備自報（/system resource）的型號與版本的來源行 [區塊, 行號]（只在內部模型，L02 的證據）；鄰居回報的不算
+      boardSrc: null, versionSrc: null,
+      uptime: null, // /system resource 的 uptime：{ seconds, block, line }（事實）；collectedAt 在 serialize 取該區塊的 # collected-at:
+      routerboard: null, // /system routerboard print：{ isRouterboard, basis: 'print'|'no-menu', model, firmwareType, factoryFirmware, currentFirmware, upgradeFirmware, src }（事實）
+      routerboardLines: {}, // 欄位 → 該行 [區塊, 行號]（只在內部模型，L01 的證據）
     }));
     if (name) d.names.add(name);
     return d;
@@ -127,7 +132,19 @@
           M.claims.push({ dev: f.dev, ifc: K.ifc(f.ifc), peer: peerKey, peerIfc: f.peerIfc || '?', chassis: f.chassis, protocols: f.protocols || [], peerIfcAlt: f.peerIfcAlt || null, block: f.block, line: f.line });
           break;
         }
-        case 'sys': if (f.board) d.deviceType = f.board; if (f.version) d.softwareVersion = f.version; break; // 設備自報優先於鄰居回報
+        case 'sys': // 設備自報優先於鄰居回報
+          if (f.board) { d.deviceType = f.board; d.boardSrc = [f.block, f.line]; }
+          if (f.version) { d.softwareVersion = f.version; d.versionSrc = [f.block, f.line]; }
+          if (f.uptime != null) d.uptime = { seconds: f.uptime, block: f.block, line: f.line };
+          break;
+        case 'rb': {
+          if (!d.routerboard) d.routerboard = { isRouterboard: null, basis: 'print', model: null, firmwareType: null, factoryFirmware: null, currentFirmware: null, upgradeFirmware: null, src: [] };
+          d.routerboard[f.field] = f.value;
+          d.routerboardLines[f.field] = [f.block, f.line];
+          if (f.noMenu) d.routerboard.basis = 'no-menu';
+          d.routerboard.src.push([f.block, f.line]);
+          break;
+        }
         case 'ospf': M.ospf.push(f); if (f.ifc) iface(M, f.dev, f.ifc); break;
         case 'vlan': onVlan(M, f); break;
         case 'vmem': M.vmems.push(f); break;

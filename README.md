@@ -11,7 +11,7 @@
 
 1. 開啟 `index.html`（`file://` 即可，不需伺服器）。`main` 分支也會由 [deploy-pages.yml](.github/workflows/deploy-pages.yml) 部署到 GitHub Pages（<https://sinnoken.github.io/topo-mikrotik/>），一樣只在瀏覽器內處理。
 2. 按 **建立基準…** → **載入範例資料**（已有基準時，從頁首的 **資料中心** → **載入收集檔…** 開啟同一個對話框）。範例刻意放了幾個問題，可以先看檢查結果長什麼樣子。
-3. 支援範圍是 **RouterOS 7 以上**（[ADR-019](docs/架構決策/019-支援範圍RouterOS7以上.md)）。要用自己的網路：依 [收集清單](docs/收集清單與輸入格式.md) 收集每台 RouterOS 的輸出（**所有 print 都要加 `detail without-paging`**），合併成一個收集檔後貼上或選擇檔案。
+3. 支援範圍是 **RouterOS 7 以上**（[ADR-019](docs/架構決策/019-支援範圍RouterOS7以上.md)）。要用自己的網路：依 [收集清單](docs/收集清單與輸入格式.md) 收集每台 RouterOS 的輸出（**`print` 要加 `detail without-paging`**，例外見收集清單開頭），合併成一個收集檔後貼上或選擇檔案。
 4. 多台設備可在 WSL／Linux 用 SSH 批次收集，產生可直接載入的收集檔：
 
    ```bash
@@ -21,6 +21,8 @@
    ```
 
    設備清單格式、選項、只重收失敗的指令與安全注意事項見[收集清單 §0](docs/收集清單與輸入格式.md#0-批次-ssh-收集器wsllinux)。
+
+   在 repo 根目錄產生的設備清單與收集檔（根目錄的 `*.csv`、`*.txt`）與下方 CLI 的 `out/` 含設備位址與設定，已由 `.gitignore` 排除，**不要提交**；放在子目錄時請放到 repo 以外。
 
 ### 排程執行（CLI）
 

@@ -16,34 +16,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 指令
 
-只需要 Node.js（CI 使用 Node 22／24），沒有 build、lint 或 format script。
-CI（`.github/workflows/ci.yml`）依 PR 改動範圍分流：只改 Markdown、`.claude/`、`.github/skills/` 時只跑 `test:docs`；改到其他檔案跑全套；改到 `src/`、`samples/`、`tools/`、`tests/`、`profiles/`、`index.html`、`package*.json` 或 workflow 才跑大型資料測試。GitHub Pages 只在網站會發布的檔案改變時部署。
+只需要 Node.js，沒有 build、lint 或 format script。最常用的指令如下；完整清單（`--grep`、壓力測試上限、黃金基準、範例與 OUI 產生器、CLI、去識別化、lead 的維護工具）見[開發指南 §2](docs/開發指南.md#2-指令)，CI 的分流見[開發指南 §7](docs/開發指南.md#7-ci)。
 
 ```bash
 npm test                 # 全部：核心、文件、收集器、畫面
-npm run test:core        # 只跑核心測試（tests/core、tests/workflow；含收集器端到端測試，需要 bash 與 GNU timeout，Windows 用 Git Bash）
-npm run test:docs        # 只跑文件與分工一致性（tests/docs.js；含 Markdown 相對連結與錨點檢查）
-npm run test:collector   # 只跑 SSH 收集器測試（tests/collect.sh）
+npm run test:core        # 只跑核心測試（tests/core、tests/workflow）
+npm run test:docs        # 只跑文件與分工一致性（tests/docs.js）
 npm run test:ui          # 只跑畫面冒煙測試（tests/ui-smoke.js，模擬 DOM）
-npm run test:large       # 核心測試＋約 1000 台壓力測試
-npm run test:core -- --grep A02   # 只跑名稱含 A02 的測試（可與 --large 並用；沒有符合的測試時以失敗結束）
-SSOT_LARGE_MAX_MS=30000 npm run test:large   # 覆寫壓力測試時間上限（預設 20000 ms；非數字或 ≤0 直接失敗）
-npm run golden:update    # 刻意改變 Snapshot 後更新黃金基準（tests/golden/），提交前用 git diff 檢視
-node tools/anonymize.js 收集檔.txt -o tests/fixtures/real/<版本>-<型號>.txt   # 真實輸出去識別化後當測試資料
-npm run sample           # 重新產生 samples/sample-bundle.txt 並嵌入成 sample-bundle.js
-npm run gen:large        # 產生 samples/large-1000.txt（已 gitignore，大型冒煙測試前需先產生）
-npm run oui -- <index.json>      # 重新產生 src/data/oui-data.js（來源：npm pack oui-data@<版本>，見 README）
-npm run baseline -- 收集檔.txt --ledger ledger.json -o out/   # CLI：建立基準並推進處理紀錄（結束碼 0 無新問題、1 有新的待處理或復發、2 執行失敗）
 git diff --check         # 提交前檢查
-node .claude/scripts/slice-xref.js . slices.json        # lead 派工前：切片的檔案交集與跨切片成員（程式檔有交集時結束碼 1）
-.claude/scripts/merge-slice.sh <worktree> <基準>        # lead 合併切片（--cleanup 刪 worktree 與 worktree-agent-* 分支）
 ```
 
-`tests/run.js` 只是執行器：依檔名載入 `tests/core/*.js`（data-model）再載入 `tests/workflow/*.js`（workflow），
-`--large` 時最後載入 `tests/large.js`；共用 helper 在 `tests/lib.js`（`test`、`build` 等）。新增測試放進對應模組的檔案，
-從 `require('../lib.js')` 取得 helper。可用 `--grep <文字>` 只跑名稱含該文字的測試（區分大小寫），
-結尾會註明「已篩選：N／總數」；沒有任何測試符合或參數不認得時以失敗結束。
-也可在 Node REPL 以 `require('./tests/load.js')()` 取得 `SSOT` 命名空間直接呼叫 `S.build(...)`。
+新增測試放進對應模組的檔案：`tests/core/*.js` 歸 data-model，`tests/workflow/*.js` 歸 workflow，從 `require('../lib.js')` 取得 helper（`test`、`build` 等）。
 新增測試使用既有 `build(text)` helper（固定 `now: '2026-01-01T00:00:00Z'`）。
 
 ## 架構
@@ -54,7 +37,7 @@ node .claude/scripts/slice-xref.js . slices.json        # lead 派工前：切�
   與瀏覽器相同的檔案；`index.html` 的前段 `<script>` 必須與它完全一致（有測試檢查）。新增核心檔案要兩邊同步加。
   `index.html` 之後再載入 profiles、嵌入的範例與 `src/view/*`。`vendor/` 不在 `index.html` 裡，由畫面層需要時動態載入，也不列入核心載入順序。
   畫面起點是 `src/view/app.js`（建立 `App` 與 `S.view.app`，程式內稱 `A`），必須在其他 `app-*.js`
-  （graph／select／panes／toolbar／input／ledger／hub／layers）之前載入；這一輪的資料集中在 `App.round`，只經 `A.load`／`A.setRoundInputs`／`A.clearRound` 改變；這些檔案載入時只定義函式，DOMContentLoaded 後才執行。
+  （graph／layers／select／panes／toolbar／input／ledger／hub／settings）之前載入；這一輪的資料集中在 `App.round`，只經 `A.load`／`A.setRoundInputs`／`A.clearRound` 改變；這些檔案載入時只定義函式，DOMContentLoaded 後才執行。
 - **管線**（[src/pipeline.js](src/pipeline.js)，`S.build(sources, options) → Snapshot`）：
   ① `readers/`（bundle-v1、files-v1，依 `readers/index.js` 的 `ORDER` 選擇）切成區塊，保留檔案與行號
   → ② `adapters/` 辨識指令 → ③ `adapters/mikrotik.js` 解析為帶 `block`/`line` 的事實
@@ -63,7 +46,7 @@ node .claude/scripts/slice-xref.js . slices.json        # lead 派工前：切�
   產生 findings，只讀模型、不寫回；`catalog.js` 必須在 `checks.js` 之前載入。
   `steps()` 是 generator，讓 UI 可顯示進度。
 - **單向依賴**：核心分成上游與下游。上游（core/readers/adapters/model/check/profile/query/pipeline）產生並查詢 Snapshot；
-  下游（`compare/` 比對、`remediate/` 修正 patch、`ledger/` 處理紀錄、`workpack/` 的 `S.zip` 與工作包 `S.workpack`）也是核心檔案，
+  下游（`compare/` 比對、`remediate/` 修正 patch、`ledger/` 處理紀錄、`workpack/` 的 `S.zip` 與工作包 `S.workpack`、`report/` 的檢查結果報表 `S.report`）也是核心檔案，
   但只透過 `SSOT.query(snapshot)` 讀基準、不修改基準，上游也不呼叫它們；`S.workpack` 只在呼叫時使用 `S.build`、`S.ledger` 與 `S.profile`。所有核心都不得碰 DOM、Canvas、IndexedDB。View 與下游只透過 `SSOT.query(snapshot)`（[src/query/query.js](src/query/query.js)）讀取，不讀原始 model、不改寫 Snapshot。
   `src/view/theme.js` 是顏色／線型／透明度的唯一來源；持久化集中在 `src/view/store.js`。
   `src/view` 只透過 `S.query(snapshot)`／`S.query.*` 讀資料與檢查目錄，不讀 Snapshot 的欄位；允許的 `S.*` 成員由 `tests/ui-smoke.js` 的邊界掃描強制（[ADR-018](docs/架構決策/018-畫面只透過Q與S.query讀資料.md)）。
@@ -121,7 +104,7 @@ node .claude/scripts/slice-xref.js . slices.json        # lead 派工前：切�
 | Agent | 負責 | 驗證 |
 |---|---|---|
 | `data-model` | 上游：解析、建模、推論、檢查、Snapshot、查詢介面、範例與 OUI 產生器 | `npm run test:core` |
-| `workflow` | 下游：比對與預期現況（`compare/`）、修正 patch（`remediate/`）、處理紀錄（`ledger/`）、工作包與 ZIP（`workpack/`）、patch 黃金檔、之後的 CLI | `npm run test:core` |
+| `workflow` | 下游：比對與預期現況（`compare/`）、修正 patch（`remediate/`）、處理紀錄（`ledger/`）、工作包與 ZIP（`workpack/`）、檢查結果報表（`report/`）、patch 黃金檔、排程 CLI（`tools/baseline.js`） | `npm run test:core` |
 | `frontend` | 畫面、樣式、theme、`index.html`、`vendor/` | `npm run test:ui` |
 | `collector` | SSH 收集器 | `npm run test:collector` |
 | `docs` | README、`docs/`、開發原則、skills、agent 定義 | `npm run test:docs` |

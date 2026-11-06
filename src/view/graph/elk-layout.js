@@ -120,11 +120,12 @@
   }
 
   /**
-   * L2 埠圖的分層版面：設備是 ELK 的節點、埠是它的 ports（固定在 portPrepare 決定的上、下緣，同一邊由 ELK 排序以減少交叉），
-   * 邊接在埠上。分群與內建版面相同，各群各算一次再以書架排列。
+   * L2 埠圖的分層版面：設備是 ELK 的節點、埠是它的 ports（依 portPrepare 的層級規則固定在上、下緣，只影響設備的排列），
+   * 邊接在埠上。分群與內建版面相同，各群各算一次再以書架排列。ELK 只決定設備位置：
+   * 埠的邊與位置在位置排好後由 V.layout.portAnchors 算出，與內建版面、拖曳一致。
    * @param devs, ports, edges 同 V.layout.portLayout
    * @param opt { maxNodes, deadlineMs, isStale(), portrait（直式畫面，折行偏直長） }
-   * @returns Promise<{ pos: Map(dev→{x,y}), anchor: Map(port→{dx,dy}), stats: { groups, nodes, ports, ms } }>
+   * @returns Promise<{ pos: Map(dev→{x,y}), anchor: Map(port→{dx,dy}), side, box（同 portAnchors）, stats: { groups, nodes, ports, ms } }>
    */
   async function elkPorts(devs, ports, edges, opt) {
     const o = Object.assign({ maxNodes: 1500, deadlineMs: 20000, isStale: () => false }, opt);
@@ -132,7 +133,7 @@
     const P = L.portPrepare(devs, ports, edges);
     await loadEngine();
     const engine = new globalThis.ELK();
-    const t0 = Date.now(); const boxes = []; const anchor = new Map();
+    const t0 = Date.now(); const boxes = [];
     const byDev = new Map(); ports.forEach((p) => S.util.getOr(byDev, p.dev, () => []).push(p));
     const box = new Map(devs.map((d) => [d.id, d.box]));
     const PS = V.theme.l2.port.size;
@@ -154,12 +155,7 @@
         elkEdges.push({ id: 'e' + elkEdges.length, sources: [src], targets: [dst] });
       });
       const res = await engine.layout({ id: 'g', layoutOptions: OPTIONS, children, edges: elkEdges });
-      // ELK 的埠座標相對於框，先記下，再折行（太多台的一層依目標寬高比折成多列，同設備圖）：埠跟著框移動
-      res.children.forEach((c) => {
-        const b = box.get(c.id);
-        // ELK 把埠放在框外緣：y 改成框的上、下緣（邊在 portPrepare 已決定），x 用 ELK 排好的順序
-        (c.ports || []).forEach((p) => anchor.set(p.id, { dx: Math.max(-b.w / 2, Math.min(b.w / 2, p.x + PS / 2 - b.w / 2)), dy: P.side.get(p.id) === 'north' ? -b.h / 2 : b.h / 2 }));
-      });
+      // 太多台的一層依目標寬高比折成多列（同設備圖）；埠的座標不用 ELK 的，位置排好後再由 portAnchors 選邊
       const kids = res.children; foldLayers(kids, !!o.portrait);
       const x0 = Math.min(...kids.map((c) => c.x)); const x1 = Math.max(...kids.map((c) => c.x + c.width));
       const y0 = Math.min(...kids.map((c) => c.y)); const y1 = Math.max(...kids.map((c) => c.y + c.height));
@@ -167,7 +163,8 @@
       kids.forEach((c) => { const b = box.get(c.id); pos.set(c.id, { x: c.x + b.w / 2 - (x0 + x1) / 2, y: c.y - y0 + b.h / 2 }); });
       boxes.push({ name: g.name, pos, w: Math.max(x1 - x0, 1), h: Math.max(y1 - y0, 1), n: g.members.length });
     }
-    return { pos: L.shelf(boxes, { portrait: !!o.portrait }), anchor, stats: { groups: P.groups.length, nodes: devs.length, ports: ports.length, ms: Date.now() - t0 } };
+    const pos = L.shelf(boxes, { portrait: !!o.portrait });
+    return Object.assign({ pos }, L.portAnchors(devs, ports, P.peers, pos), { stats: { groups: P.groups.length, nodes: devs.length, ports: ports.length, ms: Date.now() - t0 } });
   }
 
   L.elk = elk;

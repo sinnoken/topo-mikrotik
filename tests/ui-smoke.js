@@ -5935,6 +5935,143 @@ function viewBoundaryViolations(file, src) {
       VA.load(orig, null); await App.ledgerJob; await App.layoutJob;
     }
   });
+  await step('store 的本機資料：描述表涵蓋所有用到的鍵、列舉與大小、更新時間、備份與還原全有或全無、重設偏好不動資料（另以模擬的 IndexedDB 載入 store.js）', async () => {
+    // 描述表是鍵的中文名稱與用途的唯一來源：src/view 裡以字面值存取的鍵都要在表裡
+    const D = S.store.KEYS; const known = new Set(D.map((d) => d.key));
+    const used = new Set(['ledger', 'acks']); // app-ledger.js 以常數存取
+    const viewDir = path.join(ROOT, 'src/view');
+    const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.js') ? [path.join(dir, e.name)] : []));
+    walk(viewDir).forEach((f) => { for (const m of fs.readFileSync(f, 'utf8').matchAll(/S\.store\.(?:get|set|del)\('([^']+)'/g)) used.add(m[1]); });
+    const missing = [...used].filter((k) => !known.has(k));
+    if (missing.length) throw new Error('store 的 KEYS 沒有描述這些鍵：' + missing.join('、'));
+    if (!known.has('theme') || D.some((d) => !d.label || !d.purpose || !d.loss || !['data', 'pref'].includes(d.kind))) throw new Error('每個鍵都要有中文名稱、用途、清除時會失去什麼與種類（data／pref）');
+    if (!D.find((d) => d.key === 'ledger').critical) throw new Error('處理紀錄應標為無法重建（critical）');
+    if (S.store.sizeOf('中') !== 5 || S.store.sizeOf(undefined) !== 0 || S.store.sizeOf({ a: 1 }) !== 7) throw new Error('sizeOf 是 JSON 序列化後的 UTF-8 位元組');
+    // 這個模擬環境沒有 IndexedDB：明確回報只在記憶體
+    if ((await S.store.inventory()).storage !== 'memory') throw new Error('沒有 IndexedDB 時 inventory 應回報 storage: memory');
+
+    // 另載一份 store.js，接上模擬的 IndexedDB（交易在全部完成時才寫入；失敗時整筆交易不寫入）與 localStorage
+    const data = new Map(); let failKey = null;
+    const later = (f) => setTimeout(f, 0);
+    const db = { createObjectStore() {}, transaction() {
+      const staged = new Map(data); const t = { error: null }; let pending = 0; let failed = false;
+      const finish = () => later(() => { if (pending || t.done) return; t.done = true; if (failed) { if (t.onerror) t.onerror(); } else { data.clear(); staged.forEach((v, k) => data.set(k, v)); if (t.oncomplete) t.oncomplete(); } });
+      const op = (fn) => { const r = {}; pending++; later(() => { pending--; try { r.result = fn(); if (r.onsuccess) r.onsuccess(); } catch (e) { failed = true; t.error = e; } finish(); }); return r; };
+      const store = { get: (k) => op(() => structuredClone(staged.get(k))), getAllKeys: () => op(() => [...staged.keys()].sort()), delete: (k) => op(() => { staged.delete(k); }),
+        put: (v, k) => op(() => { if (k === failKey) throw new Error('模擬寫入失敗'); staged.set(k, structuredClone(v)); return k; }) };
+      t.objectStore = () => store; return t;
+    } };
+    const fakeIdb = { open: () => { const r = {}; later(() => { r.result = db; if (r.onupgradeneeded) r.onupgradeneeded(); if (r.onsuccess) r.onsuccess(); }); return r; } };
+    const ls2 = new Map(); const fakeLs = { getItem: (k) => (ls2.has(k) ? ls2.get(k) : null), setItem: (k, v) => ls2.set(k, String(v)), removeItem: (k) => ls2.delete(k) };
+    const sandbox = { indexedDB: fakeIdb, localStorage: fakeLs, console, setTimeout, structuredClone, SSOT: { VERSION: S.VERSION, ledger: S.ledger, query: S.query } };
+    vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'src/view/store.js'), 'utf8'), sandbox, { filename: 'store.js（模擬 IndexedDB）' });
+    const ST = sandbox.SSOT.store; const J = (x) => JSON.stringify(x);
+    if (!(await ST.available()) || (await ST.inventory()).storage !== 'indexedDB') throw new Error('有 IndexedDB 時應回報 storage: indexedDB');
+    // 既有的 get／set／del 語意不變；keys 只列資料的鍵（store 自己記的更新時間不算）
+    const ledger = S.ledger.empty(); const last = { snapshot: { meta: { schema: S.SCHEMA } }, sources: [{ name: 'a.txt', text: '中文' }], profile: null };
+    await ST.set('last', last); await ST.set('ledger', ledger); await ST.set('layout', { left: 300, right: 420 }); await ST.set('layoutMode', 'builtin'); ST.theme.set('dark');
+    if (J(await ST.get('last')) !== J(last)) throw new Error('get 應讀回 set 的值');
+    if (J(await ST.keys()) !== J(['last', 'layout', 'layoutMode', 'ledger'])) throw new Error('keys 只列資料的鍵：' + J(await ST.keys()));
+    const inv = await ST.inventory(); const row = (k) => inv.items.find((r) => r.key === k);
+    if (inv.items.some((r) => !r.label || !r.purpose)) throw new Error('每一列都要有中文名稱與用途');
+    if (!row('last').present || row('last').bytes !== ST.sizeOf(last) || !row('last').updatedAt) throw new Error('有資料的列應有大小與最後更新時間：' + J(row('last')));
+    if (row('profiles').present || row('profiles').bytes !== 0) throw new Error('沒有資料的列 present 為 false、大小 0');
+    if (!row('theme').present || row('theme').where !== 'localStorage') throw new Error('配色偏好列在 localStorage');
+    await ST.set('legacy-x', 1);
+    { const r = (await ST.inventory()).items.find((x) => x.key === 'legacy-x'); if (!r || r.kind !== 'other' || !r.present) throw new Error('不認得的鍵也要列出（kind other），使用者才看得到'); }
+    await ST.clear('legacy-x'); if ((await ST.keys()).includes('legacy-x')) throw new Error('clear 應刪掉這個鍵');
+    // 備份
+    const now = '2026-11-06T00:00:00.000Z'; const backup = await ST.exportAll(now);
+    if (backup.schema !== 'ssot-localdata/1' || backup.version !== S.VERSION || backup.exportedAt !== now) throw new Error('備份要有 schema、版本與時間：' + J(backup).slice(0, 200));
+    if (J(backup.items.last) !== J(last) || backup.items.theme !== 'dark' || backup.items.layoutMode !== 'builtin') throw new Error('備份應包含所有存了的鍵（含配色）');
+    // 不合法的備份：列出原因，一筆都不寫
+    const snapshotOf = async () => J([...data.entries()].filter(([k]) => !k.startsWith('meta:'))) + J([...ls2.entries()]);
+    const before = await snapshotOf();
+    const bads = [[null, /物件/], [{ schema: 'ssot-ledger/1', items: {} }, /ssot-localdata\/1/], [{ schema: 'ssot-localdata/1', items: {} }, /沒有/],
+      [{ schema: 'ssot-localdata/1', items: { layout: { left: 1 }, ledger: { schema: 'x' } } }, /ledger/], [{ schema: 'ssot-localdata/1', items: { theme: 'sepia', layout: { left: 1 } } }, /theme/],
+      [{ schema: 'ssot-localdata/1', items: { nope: 1, layout: { left: 1 } } }, /nope/]];
+    for (const [b, re] of bads) {
+      const v = ST.validateBackup(b); if (v.ok || !v.errors.some((e) => re.test(e))) throw new Error('不合法的備份應說明原因：' + J(b) + ' → ' + J(v.errors));
+      const r = await ST.restore(b); if (r.ok) throw new Error('不合法的備份不可還原');
+      if (await snapshotOf() !== before) throw new Error('不合法的備份不可寫入任何資料：' + J(b));
+    }
+    // 寫入中途失敗：同一筆交易，整份不寫入
+    const changed = { schema: 'ssot-localdata/1', items: { layout: { left: 250, right: 380 }, layoutMode: 'elk', ledger } };
+    failKey = 'ledger';
+    { let err = null; try { await ST.restore(changed); } catch (e) { err = e; } if (!err) throw new Error('寫入失敗時應丟出錯誤');
+      if (await snapshotOf() !== before) throw new Error('寫入中途失敗時不可留下部分寫入'); }
+    failKey = null;
+    // 合法：逐項寫回，回傳覆蓋的鍵
+    await ST.del('last'); ST.theme.clear();
+    if (ST.theme.get() !== 'system' || ls2.has(ST.theme.KEY)) throw new Error('theme.clear 應刪除偏好、回到跟隨系統');
+    const ok = await ST.restore(backup);
+    if (!ok.ok || !ok.keys.includes('last') || !ok.keys.includes('theme')) throw new Error('合法的備份應還原：' + J(ok));
+    if (J(await ST.get('last')) !== J(last) || ST.theme.get() !== 'dark') throw new Error('還原後應讀回備份的內容');
+    // 重設畫面偏好：只清欄寬、版面與配色
+    const cleared = await ST.resetPrefs();
+    if (J(cleared.slice().sort()) !== J(['layout', 'layoutMode', 'theme'])) throw new Error('resetPrefs 應只清偏好：' + J(cleared));
+    if (await ST.get('layout') !== undefined || await ST.get('layoutMode') !== undefined || ST.theme.get() !== 'system') throw new Error('偏好應已清除');
+    if (J(await ST.get('last')) !== J(last) || J(await ST.get('ledger')) !== J(ledger)) throw new Error('重設偏好不可動基準與處理紀錄');
+  });
+  await step('設定「本機資料」：每項資料一列（名稱、用途、大小、更新時間）、個別清除先確認（處理紀錄特別警告）、下載全部與從備份還原（不合法時不寫入）、重設畫面偏好不動資料、只在記憶體時說明', async () => {
+    const VA = S.view.app; const SD = S.view.settings.data; const J = (x) => JSON.stringify(x);
+    const panel = () => $('#settings-panel'); const btn = (key) => panel().testAll('button').find((b) => b.getAttribute('data-store-key') === key && b.classList.contains('settings-clear'));
+    const act = (a) => panel().testAll('button').find((b) => b.getAttribute('data-action') === a);
+    const ask = async (answer, fn) => { const asked = []; const c0 = window.confirm; window.confirm = (m) => { asked.push(m); return answer; }; try { await fn(); await SD.refresh(); await new Promise((r) => setTimeout(r, 20)); } finally { window.confirm = c0; } return asked; };
+    if (!App.snap) throw new Error('前提：有基準');
+    App.openSettings('data'); await SD.refresh();
+    const t0 = text('#settings-panel');
+    const present = S.store.KEYS.filter((d) => d.key === 'last' || d.key === 'ledger');
+    if (present.some((d) => !t0.includes(d.label) || !t0.includes(d.purpose))) throw new Error('每一項資料都要列出中文名稱與用途：' + t0.slice(0, 300));
+    if (!/\d+(\.\d)? (B|KB|MB)/.test(t0)) throw new Error('應顯示大小（B／KB／MB）');
+    if (!t0.includes('只在記憶體')) throw new Error('沒有 IndexedDB 時應明確說明資料只在記憶體');
+    // 每列的清除都是按鈕，可用鍵盤操作；處理紀錄的清除要特別警告，取消時什麼都不變
+    const ledgerBefore = J(await S.store.get('ledger'));
+    const asked = await ask(false, () => btn('ledger').click());
+    if (asked.length !== 1 || !/無法從收集檔重建/.test(asked[0]) || !/備份/.test(asked[0])) throw new Error('清除處理紀錄應警告無法重建並建議先備份：' + asked[0]);
+    if (J(await S.store.get('ledger')) !== ledgerBefore) throw new Error('取消時不可清除');
+    // 下載全部（JSON）
+    const dl = await captureDownloads(() => act('localdata-export').click());
+    const file = dl.files[0]; const backup = file && JSON.parse(file.text);
+    if (!backup || backup.schema !== 'ssot-localdata/1' || !/\.json$/.test(file.name) || J(backup.items.ledger) !== ledgerBefore || !backup.items.last) throw new Error('下載全部應是含基準與處理紀錄的 ssot-localdata/1：' + (file && file.name));
+    // 清除處理紀錄（確認）：畫面與 store 的處理紀錄都沒有原本的項目
+    const byUser = (lg) => Object.values((lg && lg.items) || {}).some((it) => it.history.some((x) => x.by === 'user'));
+    if (!byUser(VA.ledger())) throw new Error('前提：處理紀錄有使用者的判斷');
+    await ask(true, () => btn('ledger').click());
+    if (byUser(VA.ledger()) || byUser(await S.store.get('ledger'))) throw new Error('確認後應清除處理紀錄（畫面與 store 都沒有使用者的判斷）');
+    if (!App.snap) throw new Error('清除處理紀錄不可動基準');
+    // 從備份還原：不合法時列出原因、不寫入；合法時列出將覆蓋的項目並確認
+    const restoreFile = async (name, body, answer) => ask(answer, async () => {
+      const inp = panel().querySelector('input'); inp.files = [{ name, text: async () => body }]; inp.dispatch('change', { target: inp }); await new Promise((r) => setTimeout(r, 30));
+    });
+    const mid = J(await S.store.get('ledger'));
+    for (const [name, body] of [['壞.json', '{不是 JSON'], ['錯.json', J({ schema: 'ssot-ledger/1', items: {} })], ['缺.json', J({ schema: 'ssot-localdata/1', items: { ledger: { schema: 'x' } } })]]) {
+      const q = await restoreFile(name, body, true);
+      if (q.length) throw new Error('不合法的備份不應詢問：' + name);
+      if (!text('#settings-panel').includes(name) || !text('#settings-panel').includes('沒有寫入任何資料')) throw new Error('不合法的備份應說明原因且沒有寫入：' + name);
+      if (J(await S.store.get('ledger')) !== mid) throw new Error('不合法的備份不可寫入：' + name);
+    }
+    { const q = await restoreFile('備份.json', file.text, false);
+      if (q.length !== 1 || !q[0].includes('處理紀錄') || !q[0].includes('基準與輸入')) throw new Error('還原前應列出將覆蓋的項目：' + q[0]);
+      if (J(await S.store.get('ledger')) !== mid) throw new Error('取消還原時不可寫入'); }
+    await restoreFile('備份.json', file.text, true); await App.ledgerJob;
+    const back = await S.store.get('ledger');
+    if (Object.keys(JSON.parse(ledgerBefore).items).some((k) => !back.items[k] || !VA.ledger().items[k])) throw new Error('還原後處理紀錄應回到備份的內容');
+    if (!App.snap) throw new Error('還原後應有基準');
+    // 重設畫面偏好：只清欄寬、版面與配色，基準與處理紀錄不動
+    const mode0 = App.layoutMode; VA.setLayoutMode(App.LAYOUT_MODES.find((m) => m !== mode0)); VA.setThemePref('dark');
+    const keep = J([await S.store.get('last'), await S.store.get('ledger'), await S.store.get('profiles')]);
+    const q = await ask(true, () => act('localdata-reset-prefs').click());
+    if (q.length !== 1 || !/處理紀錄/.test(q[0]) || !/不受影響/.test(q[0])) throw new Error('重設偏好應先確認並說明不影響資料：' + q[0]);
+    if (await S.store.get('layoutMode') !== undefined || await S.store.get('layout') !== undefined || S.store.theme.get() !== 'system' || VA.themePref() !== 'system') throw new Error('重設偏好應清除版面、欄寬與配色');
+    if (App.layoutMode !== mode0) throw new Error('重設後的版面應回到預設：' + App.layoutMode);
+    if (J([await S.store.get('last'), await S.store.get('ledger'), await S.store.get('profiles')]) !== keep) throw new Error('重設偏好不可動基準、處理紀錄與命名規則');
+    // 偏好的個別清除也先確認並說明會失去什麼
+    await S.store.set('layout', { left: 300, right: 400 }); await SD.refresh();
+    { const q2 = await ask(true, () => btn('layout').click()); const d = S.store.KEYS.find((x) => x.key === 'layout');
+      if (q2.length !== 1 || !q2[0].includes(d.loss) || await S.store.get('layout') !== undefined) throw new Error('個別清除應先確認並寫出會失去什麼'); }
+    VA.closeSettings();
+  });
   await step('清除基準（處理紀錄不受影響）；沒有基準時「修正」、「驗證」停用，中間只有拓樸圖（歡迎畫面）', async () => {
     App.showView('patch');
     // 入口在設定「本機資料」，先確認：取消時什麼都不清

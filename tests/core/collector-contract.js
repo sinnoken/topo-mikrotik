@@ -48,7 +48,7 @@ const bashPath = (p) => p.replace(/\\/g, '/'); // Git Bash 接受 C:/… 形式�
 /** 檢查 bash 與 GNU timeout；缺少時丟出說明原因的錯誤（測試失敗，不略過）。 */
 function requireBashTools() {
   const { spawnSync } = require('child_process');
-  const r = spawnSync('bash', ['-c', 'command -v timeout >/dev/null || { echo "找不到 timeout"; exit 3; }; timeout --version | head -n 1'], { encoding: 'utf8' });
+  const r = spawnSync('bash', ['-c', 'if command -v timeout >/dev/null && timeout --version 2>/dev/null | grep -q "GNU coreutils"; then timeout --version | head -n 1; elif command -v gtimeout >/dev/null; then gtimeout --version | head -n 1; else echo "找不到 timeout 或 gtimeout"; exit 3; fi'], { encoding: 'utf8' });
   if (r.error) assert.fail(`收集器端到端測試需要 bash（${r.error.code || r.error.message}）；Windows 請安裝 Git Bash 並放在 PATH 前面，WSL／Linux 請安裝 bash`);
   if (r.status !== 0 || !/GNU coreutils/.test(r.stdout)) assert.fail(`收集器端到端測試需要 GNU timeout（coreutils）：${(r.stdout + r.stderr).trim() || `bash 結束碼 ${r.status}`}`);
 }

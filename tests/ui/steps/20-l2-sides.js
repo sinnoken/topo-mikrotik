@@ -68,6 +68,24 @@ module.exports = async () => {
     assert.strictEqual(L().portSides(one, pp, pr, at(diag - 0.03), new Map([['a', 'north']])).get('a'), 'north', '往回也有遲滯');
   });
 
+  await step('L2 埠選邊：同樣的位置重算必得同樣的邊與框高（加高後的框不讓對角線變陡、把更多埠推到左右）', async () => {
+    // 一台核心接下一列 30 台：左右緣的埠多、框會加高；套用新框高後在同樣的位置重算多次，結果不變
+    const devs = [{ id: 'core', box: BOX() }]; const ports = []; const edges = []; const pos = new Map([['core', { x: 0, y: 0 }]]);
+    for (let i = 0; i < 30; i++) {
+      const id = 'a' + i; devs.push({ id, box: BOX() }); pos.set(id, { x: -1300 + i * 90, y: 166 });
+      ports.push({ id: 'core|p' + i, dev: 'core', name: 'p' + i }, { id: id + '|up', dev: id, name: 'up' });
+      edges.push({ a: 'core|p' + i, b: id + '|up', aDev: 'core', bDev: id });
+    }
+    const peers = L().portPeers(edges); let prev; const runs = [];
+    for (let k = 0; k < 4; k++) {
+      const r = L().portAnchors(devs, ports, peers, pos, { prev });
+      runs.push(JSON.stringify({ side: Array.from(r.side), h: r.box.get('core').h }));
+      devs.forEach((d) => { d.box.h = r.box.get(d.id).h; }); prev = r.side;
+    }
+    assert.ok(devs[0].box.h > S.view.theme.l2.box.h, '測試前提：核心的框有加高');
+    runs.forEach((x, k) => assert.strictEqual(x, runs[0], `第 ${k + 1} 次重算的邊或框高和第一次不同`));
+  });
+
   await step('L2 埠選邊：分層版面（ELK）只決定設備位置，埠的邊與位置和內建版面用同一個選邊函式算出', async () => {
     App.showLayer('l2'); await App.layerJob; const e = App.layerEntry();
     const r = await L().elkPorts(e.boxes, e.ports, e.pg.edges, {});

@@ -218,17 +218,20 @@
   /**
    * L2 埠依鏈路方向選邊（設備位置排好後）：框中心到對端框中心（多個對端取平均）的向量 (dx, dy)，
    * 角度比框的對角線陡（|dy|/|dx| > h/w）放上下緣（依 dy），否則放左右緣（依 dx）；沒有對端的埠放下緣。
+   * 對角線的 h 用主題的基本框高（theme.l2.box.h），不用 portAnchors 加高後的框高：否則加高→對角線變陡→更多埠到左右→再加高，
+   * 同樣的位置重算會得到不同的邊。
    * prev（選用，Map(port→邊)）：前一次的邊，越過對角線 SIDE_HYST 以上才換邊。內建版面、ELK 與拖曳共用。
    *   devs [{ id, box: { w, h } }]、ports [{ id, dev }]、peers（portPeers 的結果）、pos Map(dev→{x,y})
    * 回傳 Map(port→'north'|'south'|'east'|'west')
    */
   function portSides(devs, ports, peers, pos, prev) {
     const box = new Map(devs.map((d) => [d.id, d.box])); const side = new Map();
+    const baseH = V.theme && V.theme.l2 && V.theme.l2.box && V.theme.l2.box.h;
     ports.forEach((p) => {
       const v = peerVec(p, peers, pos); const b = box.get(p.dev);
       if (!v || !b) { side.set(p.id, 'south'); return; }
       const was = prev && prev.get(p.id);
-      const diag = Math.atan2(b.h, b.w) + (VERTICAL[was] ? -SIDE_HYST : HORIZONTAL[was] ? SIDE_HYST : 0);
+      const diag = Math.atan2(baseH || b.h, b.w) + (VERTICAL[was] ? -SIDE_HYST : HORIZONTAL[was] ? SIDE_HYST : 0);
       const vertical = Math.atan2(Math.abs(v.dy), Math.abs(v.dx)) > diag;
       side.set(p.id, vertical ? (v.dy < 0 ? 'north' : 'south') : (v.dx < 0 ? 'west' : 'east'));
     });

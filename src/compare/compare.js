@@ -31,10 +31,13 @@
     const m = String(s).trim().match(/^(\S.*?)\s+(\S+)$/);
     return m ? K.ep(m[1], m[2]) : null;
   }
+  // 錯誤與警告給人看：說明值的種類，不外露 JSON 原文
+  const valueText = (v) => (v === undefined || v === null || v === '' ? '沒有填' : typeof v === 'string' ? `「${v}」`
+    : typeof v === 'number' ? `數字 ${v}` : typeof v === 'boolean' ? '是非值' : Array.isArray(v) ? '陣列' : typeof v === 'object' ? '物件' : typeof v);
 
   S.compare = function (Q, expected) {
     const errors = [];
-    if (!expected || expected.schema !== SCHEMA_EXPECTED) errors.push(`預期資料的 schema 必須是 "${SCHEMA_EXPECTED}"`);
+    if (!expected || expected.schema !== SCHEMA_EXPECTED) errors.push(`預期現況的格式版本（schema）必須是 ${SCHEMA_EXPECTED}（目前：${!expected ? '沒有內容' : typeof expected === 'object' && !Array.isArray(expected) ? valueText(expected.schema) : `整份不是物件，是${valueText(expected)}`}）`);
     const report = { schema: SCHEMA_DIFF, errors, items: [], summary: { ok: 0, missing: 0, different: 0, unexpected: 0 } };
     if (errors.length) return report;
     const push = (status, type, ref, message) => { report.items.push({ status, type, ref, message }); report.summary[status]++; };
@@ -53,9 +56,12 @@
     if (expected.devices && expected.strictDevices) strictOf.device.forEach((x) => { if (!expDevs.has(x.key)) push('unexpected', 'device', x.key, x.text); });
 
     const expLinks = new Set();
-    (expected.links || []).forEach((l) => {
+    (expected.links || []).forEach((l, i) => {
       const a = parseEp(l.a); const b = parseEp(l.b);
-      if (!a || !b) { errors.push(`鏈路格式錯誤：${JSON.stringify(l)}（應為 "設備 介面"）`); return; }
+      if (!a || !b) {
+        const bad = [!a ? `a 端${valueText(l.a)}` : null, !b ? `b 端${valueText(l.b)}` : null].filter(Boolean).join('、');
+        errors.push(`預期現況的第 ${i + 1} 條鏈路格式錯誤：${bad}；兩端都應為「設備 介面」（以最後一個空白分隔）`); return;
+      }
       const key = K.link(a, b); expLinks.add(key);
       const got = Q.getLink(key);
       const devA = K.splitEp(a)[0]; const devB = K.splitEp(b)[0];
@@ -351,14 +357,19 @@
   /** expected.source 的正規化；沒有時為 null，格式不對時加 warning 並視為沒有。 */
   function sourceOf(e, warnings) {
     if (e.source === undefined || e.source === null) {
-      warnings.push({ kind: 'no-source', message: '預期資料沒有記錄由哪一份基準產生（手寫或較舊的檔案）：所有基準都列入判斷，多出的實體只在 strictDevices／strictLinks 開啟時檢查' });
+      warnings.push({ kind: 'no-source', message: '預期現況沒有記錄由哪一份基準產生（手寫或較舊的檔案）：所有基準都列入判斷；基準多出的設備或鏈路，只在開啟嚴格比對設備／鏈路（strictDevices／strictLinks）時檢查' });
       return null;
     }
     const s = e.source;
     const ok = s && typeof s === 'object' && !Array.isArray(s)
       && ['baselineKey', 'inputHash', 'schema', 'createdAt'].every((k) => s[k] == null || isStr(s[k])) && (isStr(s.baselineKey) || isStr(s.inputHash));
     if (!ok) {
-      warnings.push({ kind: 'source-invalid', message: `預期資料的 source 格式不對（應為 { baselineKey, inputHash, schema, createdAt }，至少要有 baselineKey 或 inputHash），視為沒有來源：${JSON.stringify(s)}` });
+      const isObj = s && typeof s === 'object' && !Array.isArray(s);
+      const FIELD = { baselineKey: '基準鍵', inputHash: '輸入雜湊', schema: '格式版本', createdAt: '建立時間' };
+      const why = !isObj ? [`應為含基準鍵、輸入雜湊、格式版本與建立時間的物件，目前是${valueText(s)}`]
+        : Object.keys(FIELD).filter((k) => s[k] != null && !isStr(s[k])).map((k) => `${FIELD[k]}（${k}）應為文字，目前是${valueText(s[k])}`)
+          .concat(isStr(s.baselineKey) || isStr(s.inputHash) ? [] : ['至少要有基準鍵（baselineKey）或輸入雜湊（inputHash）']);
+      warnings.push({ kind: 'source-invalid', message: `預期現況記錄的來源基準（source）格式不對，視為沒有來源：${why.join('；')}` });
       return null;
     }
     return { baselineKey: nil(s.baselineKey), inputHash: nil(s.inputHash), schema: nil(s.schema), createdAt: nil(s.createdAt) };
@@ -395,9 +406,9 @@
     const errors = []; const warnings = [];
     const report = { schema: SCHEMA_DRIFT, errors, warnings, basis: null, summary: { stale: 0, drifted: 0, unobserved: 0 }, stale: [], drifted: [], unobserved: [] };
     const N = o.rounds === undefined ? DRIFT_ROUNDS : o.rounds;
-    if (!Number.isInteger(N) || N < 1) errors.push(`rounds 必須是 ≥ 1 的整數（收到 ${JSON.stringify(N)}）`);
+    if (!Number.isInteger(N) || N < 1) errors.push(`判斷輪數（rounds）必須是 ≥ 1 的整數（目前：${valueText(N)}）`);
     const history = o.history === undefined ? [] : o.history;
-    if (!Array.isArray(history)) errors.push('history 必須是之前基準的查詢介面陣列（舊 → 新）');
+    if (!Array.isArray(history)) errors.push(`之前的基準（history）必須是查詢介面的陣列，由舊到新（目前：${valueText(history)}）`);
     const all = (Array.isArray(history) ? history : []).concat([q]);
     if (all.some((x) => !x || typeof x.meta !== 'function')) errors.push('需要基準的查詢介面（SSOT.query(snapshot)）');
     if (errors.length) return report;
@@ -420,8 +431,8 @@
     report.basis = { rounds: N, source, sourceInHistory: source ? at >= 0 : null, extras,
       history: rows.map((r) => ({ baselineKey: r.baselineKey, inputHash: r.inputHash, createdAt: r.createdAt, used: r.used, reason: r.reason })) };
     const used = rows.filter((r) => r.used);
-    if (!used.length) { warnings.push({ kind: 'no-rounds', message: '沒有可以判斷的基準：全部都早於預期資料的來源基準' }); return report; }
-    if (used.length < N) warnings.push({ kind: 'too-few-rounds', message: `只有 ${used.length} 輪基準可以判斷，少於 ${N} 輪：目前不會推論為「預期資料可能已過時」，只列出偏離` });
+    if (!used.length) { warnings.push({ kind: 'no-rounds', message: '沒有可以判斷的基準：全部都早於預期現況的來源基準' }); return report; }
+    if (used.length < N) warnings.push({ kind: 'too-few-rounds', message: `只有 ${used.length} 輪基準可以判斷，少於 ${N} 輪：目前不會推論為「預期現況可能已過時」，只列出網路與預期不同的項目` });
 
     // 預期的項目與所屬設備（鍵的寫法與 S.compare 相同）
     const expOwners = new Map(); const tk = (type, ref) => type + '\u0000' + ref;

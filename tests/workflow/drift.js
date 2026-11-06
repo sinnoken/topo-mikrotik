@@ -208,6 +208,33 @@ test('預期資料漂移：來源基準之前的基準不算；參數或預期�
   assert.deepStrictEqual(brief(S.compare.drift(q2, e, { history: [q1], rounds: 1 }).stale).map((x) => x[2]), ['C', AB, 'A|ether1~B|ether2', BC]);
 });
 
+test('用字：比對與漂移的錯誤、警告與項目訊息用「預期現況」，選項名稱中文在前、原值放括號，不外露 JSON 原文', () => {
+  const q0 = Q({ now: T(1) }); const gen = S.compare.expectedFrom(q0); const q1 = Q({ port: 'ether2', withC: false, now: T(2) });
+  const noSrc = Object.assign({}, gen); delete noSrc.source;
+  const strict = Object.assign({}, gen, { strictDevices: true, strictLinks: true, devices: ['A'] });
+  const drifts = [S.compare.drift(q1, noSrc), S.compare.drift(q1, noSrc, { history: [q0] }), S.compare.drift(q1, strict),
+    S.compare.drift(q0, Object.assign({}, gen, { source: { baselineKey: 'x', createdAt: '2099-01-01T00:00:00Z' } })),
+    ...[{ createdAt: 5 }, 'x', [1], { schema: 'ssot-snapshot/3' }, { baselineKey: { a: 1 } }].map((source) => S.compare.drift(q1, Object.assign({}, gen, { source }), { history: [q0] })),
+    ...[{ rounds: 0 }, { rounds: '2' }, { rounds: 1.5 }, { history: q0 }, { history: [{}] }].map((o) => S.compare.drift(q0, gen, o)),
+    S.compare.drift(q0, { schema: 'x' })];
+  const compares = [S.compare(q1, strict), S.compare(q0, null), S.compare(q0, 'x'), S.compare(q0, { schema: { v: 1 } }),
+    S.compare(q0, { schema: 'ssot-expected/1', links: [{ a: 'X', b: 'Y z' }, { a: 5 }, { a: 'A ether1', b: 'B ether1' }] })];
+  const msgs = [].concat(
+    ...drifts.map((d) => [...d.errors, ...d.warnings.map((w) => w.message), ...d.stale.map((i) => i.message), ...d.drifted.map((i) => i.message)]),
+    ...compares.map((r) => [...r.errors, ...r.items.map((i) => i.message)]));
+  const kinds = new Set([].concat(...drifts.map((d) => d.warnings.map((w) => w.kind))));
+  assert.deepStrictEqual([...kinds].sort(), ['no-rounds', 'no-source', 'source-invalid', 'too-few-rounds'], '每一種警告都要掃到');
+  const bad = msgs.filter((m) => /預期資料|[{}[\]]|"/.test(m) || /(^|[^（／])strict(Devices|Links)/.test(m));
+  assert.deepStrictEqual(bad, [], '訊息不應有「預期資料」、JSON 原文或沒有中文說明的選項名稱');
+  assert.ok(msgs.includes('只有 1 輪基準可以判斷，少於 2 輪：目前不會推論為「預期現況可能已過時」，只列出網路與預期不同的項目'), msgs.join('\n'));
+  assert.ok(msgs.includes('預期現況的第 1 條鏈路格式錯誤：a 端「X」；兩端都應為「設備 介面」（以最後一個空白分隔）'), msgs.join('\n'));
+  assert.ok(msgs.includes('預期現況的第 2 條鏈路格式錯誤：a 端數字 5、b 端沒有填；兩端都應為「設備 介面」（以最後一個空白分隔）'), msgs.join('\n'));
+  assert.ok(msgs.includes('預期現況記錄的來源基準（source）格式不對，視為沒有來源：建立時間（createdAt）應為文字，目前是數字 5；至少要有基準鍵（baselineKey）或輸入雜湊（inputHash）'), msgs.join('\n'));
+  assert.ok(msgs.includes('判斷輪數（rounds）必須是 ≥ 1 的整數（目前：「2」）'), msgs.join('\n'));
+  assert.ok(msgs.includes('預期現況的格式版本（schema）必須是 ssot-expected/1（目前：「x」）'), msgs.join('\n'));
+  assert.ok(msgs.some((m) => m.includes('嚴格比對設備／鏈路（strictDevices／strictLinks）')), '沒有來源時說明嚴格比對');
+});
+
 test('預期資料漂移：範例資料的 expectedFrom 再和重新建立的範例資料比對沒有漂移；strict 時多出的只有 S.compare 也列出的（未經雙向確認的鏈路）', () => {
   const text = read('samples/sample-bundle.txt');
   const q = S.query(build(text));

@@ -4,7 +4,7 @@
   "description": "由 MikroTik RouterOS CLI 輸出建立網路現況基準（SSOT）：拓樸、VLAN、MAC/IP、路由與一致性檢查。純前端、可離線、零相依套件。",
   "private": true,
   "scripts": {
-    "test": "node tests/run.js && node tests/docs.js && bash tests/collect.sh && node tests/ui-smoke.js",
+    "test": "node tools/run-all.js",
     "test:core": "node tests/run.js",
     "test:docs": "node tests/docs.js",
     "test:collector": "bash tests/collect.sh",

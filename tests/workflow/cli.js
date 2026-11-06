@@ -41,7 +41,7 @@ test('CLI：第一輪（沒有處理紀錄）有新的待處理錯誤／警告�
   try {
     const r = run([SAMPLE, '--now', NOW, '-o', out]);
     assert.strictEqual(r.code, CODES().NOTIFY, r.stderr);
-    ['baseline.json', 'ledger.json', 'findings.json', 'findings.csv', 'findings.md', 'summary.json'].forEach((f) => assert.ok(fs.existsSync(path.join(out, f)), `應輸出 ${f}`));
+    ['baseline.json', 'ledger.json', 'findings.json', 'findings.csv', 'findings.md', 'sitedoc.md', 'sitedoc.csv', 'summary.json'].forEach((f) => assert.ok(fs.existsSync(path.join(out, f)), `應輸出 ${f}`));
     assert.ok(!fs.existsSync(path.join(out, 'compare.json')), '沒有 --expected 時不輸出 compare.json');
     const snap = readJson(path.join(out, 'baseline.json'));
     assert.strictEqual(snap.meta.createdAt, NOW);
@@ -135,7 +135,7 @@ test('CLI：相同輸入與選項的輸出完全相同', () => {
   try {
     run([SAMPLE, '--now', NOW, '-o', a]); run([SAMPLE, '--now', NOW, '-o', b]);
     const files = fs.readdirSync(a).sort();
-    assert.deepStrictEqual(files, ['baseline.json', 'findings.csv', 'findings.json', 'findings.md', 'ledger.json', 'summary.json']);
+    assert.deepStrictEqual(files, ['baseline.json', 'findings.csv', 'findings.json', 'findings.md', 'ledger.json', 'sitedoc.csv', 'sitedoc.md', 'summary.json']);
     assert.deepStrictEqual(fs.readdirSync(b).sort(), files);
     files.forEach((f) => assert.ok(fs.readFileSync(path.join(a, f)).equals(fs.readFileSync(path.join(b, f))), `${f} 兩次輸出不同`));
   } finally { rm(a); rm(b); }
@@ -256,5 +256,17 @@ test('CLI：收集檔沒有認到任何設備的資料（空檔、只有空白�
     const allFailed = run([file('failed.txt', 'R_B (10.0.0.2):\n# collection failed: connection\n'), '--now', NOW, '-o', path.join(d, 'f')]);
     assert.strictEqual(allFailed.code, CODES().NOTIFY, allFailed.stderr);
     assert.notStrictEqual(run([SAMPLE, file('empty2.txt', ''), '--now', NOW, '-o', out]).code, CODES().FAILED);
+  } finally { rm(d); }
+});
+
+test('CLI：sitedoc.md／sitedoc.csv 與畫面的網路文件同一份核心文字（S.report.siteDoc*），處理紀錄是推進後的狀態', () => {
+  const d = tmp();
+  try {
+    assert.notStrictEqual(run([SAMPLE, '--now', NOW, '-o', d]).code, CODES().FAILED);
+    const ledger = readJson(path.join(d, 'ledger.json'));
+    const Q = S.query(readJson(path.join(d, 'baseline.json')));
+    const opts = { ledgerOf: S.report.ledgerOfItems(ledger, Q) };
+    assert.strictEqual(fs.readFileSync(path.join(d, 'sitedoc.md'), 'utf8'), S.report.siteDocMarkdown(Q, opts));
+    assert.strictEqual(fs.readFileSync(path.join(d, 'sitedoc.csv'), 'utf8'), S.report.siteDocCsv(Q, opts));
   } finally { rm(d); }
 });

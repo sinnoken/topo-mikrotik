@@ -1,9 +1,9 @@
 # topo-mikrotik ssot-patch/1 verify
 # device: TPE_ACC_SW_12 (key TPE_ACC_SW_12)
-# baseline: inputHash=1e268d8bbcadd286 createdAt=2026-01-01T00:00:00Z version=3.7.0
+# baseline: inputHash=f078ae811266be6f createdAt=2026-01-01T00:00:00Z version=3.8.0
 # Text only: topo-mikrotik never connects to or changes a device. Review every line before use.
 # items: 1
 # Run after the apply file. Each print must list exactly the number of rules stated.
 
-# [1] A12 ntp servers /system ntp client servers (sample-bundle.txt line 3794): expect 1 entry
+# [1] A12 ntp servers /system ntp client servers (sample-bundle.txt line 3808): expect 1 entry
 /system ntp client servers print where address="time.cloudflare.com"

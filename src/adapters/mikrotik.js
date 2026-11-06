@@ -242,6 +242,21 @@
   const FW_META = new Set(['chain', 'action', 'comment', 'disabled', 'log', 'log-prefix', 'place-before']);
   const FW_PARAMS = new Set(['jump-target', 'to-addresses', 'to-ports', 'reject-with', 'address-list', 'address-list-timeout']);
   /** 一條防火牆規則：比對條件原樣保留（否定是值前面的 !），chain 內順序由 model 依出現順序編號。 */
+  /*
+   * 對外與路由網域設定的選單（ADR-023）：kind 是 model 的種類，params 是要記的參數（原值），switches 是單獨一個字的參數，
+   * secret 是只記「有沒有設」的參數。參數依手冊：
+   *   https://manual.mikrotik.com/docs/cli-reference/ip/dhcp-client.md
+   *   https://manual.mikrotik.com/docs/cli-reference/interface/pppoe-client.md（不記 user、password）
+   *   https://manual.mikrotik.com/docs/cli-reference/routing/ospf/area.md
+   *   https://manual.mikrotik.com/docs/cli-reference/routing/ospf/interface-template.md（auth-key 不記值）
+   */
+  const CFG_MENUS = {
+    '/ip dhcp-client': { kind: 'dhcpClient', params: ['name', 'interface', 'add-default-route', 'default-route-distance', 'check-gateway', 'use-peer-dns', 'disabled', 'comment'] },
+    '/interface pppoe-client': { kind: 'pppoeClient', params: ['name', 'interface', 'add-default-route', 'default-route-distance', 'use-peer-dns', 'disabled', 'comment'] },
+    '/routing ospf area': { kind: 'ospfArea', params: ['name', 'area-id', 'instance', 'type', 'disabled', 'comment'] },
+    '/routing ospf interface-template': { kind: 'ospfTemplate', params: ['area', 'networks', 'interfaces', 'passive', 'auth', 'cost', 'type', 'disabled', 'comment'], switches: ['passive'], secret: 'auth-key' },
+  };
+
   function fwRule(family, table, argText, line) {
     const match = {}; const params = {}; let chain = null; let action = 'accept'; let disabled = false; let comment = null; let commentEncoding = null;
     kvPairs(argText).forEach(([k, raw]) => {
@@ -437,6 +452,25 @@
           case '/routing ospf instance':
             if (kv['router-id']) { ospfRid = kv['router-id']; ospfLine = line; }
             break;
+          // 對外與路由網域的設定（ADR-023）：DHCP client、PPPoE client、OSPF area、OSPF interface-template。
+          // 只記 export 寫出的參數原值（export 只寫非預設值），預設值由 model 補上（resolveRoutingCfg）；
+          // 金鑰與帳密（auth-key、password、user）不記，OSPF 驗證只記類型（auth）與有沒有設金鑰（authKey）
+          case '/ip dhcp-client': case '/interface pppoe-client': case '/routing ospf area': case '/routing ospf interface-template': {
+            if (cmd !== 'add' && cmd !== 'set') break;
+            const spec = CFG_MENUS[path];
+            const values = {}; spec.params.forEach((k) => { if (k in kv) values[k] = kv[k]; });
+            // switch 參數（passive）在 export 是單獨的字；去掉 key=value（含引號內的文字）後再找
+            const bare = args.replace(/^\[[^\]]*\]/, ' ').replace(KVRE, ' ');
+            (spec.switches || []).forEach((k) => { if (new RegExp(`(^|\\s)${k}(\\s|$)`).test(bare)) values[k] = 'yes'; });
+            if (spec.secret && spec.secret in kv) values[spec.secret] = true; // 只記有設，不記值
+            const f = { t: 'cfgItem', kind: spec.kind, cmd, values, line };
+            if (cmd === 'set') {
+              const pos = args.match(/^([^\s=\[]+)(?=\s|$)/);
+              if (sel) f.target = Object.assign({}, sel); else if (pos && !(spec.switches || []).includes(pos[1])) f.target = { name: pos[1] }; else break;
+              delete values.name; if (kv.name !== undefined) f.rename = kv.name;
+            }
+            emit(f); break;
+          }
           case '/interface list':
             if (cmd === 'add' && kv.name) emit({ t: 'ifList', name: kv.name, include: list(kv.include), exclude: list(kv.exclude), line });
             break;
@@ -680,7 +714,9 @@
           } else if (gip && !/^(blackhole|unreachable|prohibit)$/i.test(gip)) nh.push({ ip: null, ifc: gip, vrf });
         });
         if (!nh.length) return;
-        emit(Object.assign({ t: 'route', prefix: m[1], len: +m[2], proto, nh, distance, line: r.line }, table));
+        // check-gateway（arp／ping／bfd）：沒設定時不列出（手冊標為可 unset）；none 也視為沒設定
+        const cg = kv['check-gateway'] && kv['check-gateway'] !== 'none' ? kv['check-gateway'] : null;
+        emit(Object.assign({ t: 'route', prefix: m[1], len: +m[2], proto, nh, distance, checkGateway: cg, line: r.line }, table));
         settle(r, ignore);
       });
     },

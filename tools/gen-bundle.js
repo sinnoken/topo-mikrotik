@@ -65,7 +65,7 @@ function exportText(name, board, entries, compact) {
   else { let ctx = null; entries.forEach(([p, c, a]) => { if (p !== ctx) { lines.push(p); ctx = p; } lines.push(...wrapCmd(`${c} ${a}`)); }); }
   return lines.join('\n');
 }
-const sort = (entries) => { const order = ['/interface bridge', '/interface ethernet', '/interface bonding', '/interface vlan', '/interface vrrp', '/interface bridge port', '/interface bridge vlan', '/ip vrf', '/ip address', '/ip dhcp-server network', '/routing id', '/routing ospf instance', '/ip route', '/routing table', '/routing rule',
+const sort = (entries) => { const order = ['/interface bridge', '/interface ethernet', '/interface bonding', '/interface vlan', '/interface vrrp', '/interface bridge port', '/interface bridge vlan', '/ip vrf', '/ip address', '/ip dhcp-server network', '/ip dhcp-client', '/interface pppoe-client', '/routing id', '/routing ospf instance', '/routing ospf area', '/routing ospf interface-template', '/ip route', '/routing table', '/routing rule',
   '/ip pool', '/ip dhcp-server lease', '/ip dns', '/ip dns static', '/ip firewall address-list', '/system ntp client', '/system ntp client servers',
   '/interface list', '/interface list member', '/ip firewall filter', '/ip firewall nat', '/ip firewall raw', '/ipv6 firewall filter', '/ip service',
   '/ip neighbor discovery-settings', '/ip proxy', '/ip upnp', '/ip upnp interfaces', '/snmp', '/snmp community', '/tool bandwidth-server', '/tool mac-server', '/tool mac-server mac-winbox']; return entries.sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])); };
@@ -76,7 +76,7 @@ const addrText = (rows) => table(rows.map((r) => ({ flags: '', kvs: [['address',
 // r.table：路由表（預設 main）；VRF 的路由表與 VRF 同名，閘道可以帶 @<VRF>（手冊 VRF 的 print detail 範例）
 const routeText = (rows) => table(rows.map((r) => ({ flags: r.flags, kvs: r.blackhole
   ? [['dst-address', r.dst], ['routing-table', r.table || 'main'], ['blackhole', true], ['distance', r.dist], ['scope', r.scope || 30]]
-  : [['dst-address', r.dst], ['routing-table', r.table || 'main'], ['gateway', r.gw], ['immediate-gw', r.igw || r.gw], ['distance', r.dist], ['scope', r.scope || 10]] })), 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC, o - OSPF, b - BGP', false);
+  : [['dst-address', r.dst], ['routing-table', r.table || 'main'], ['gateway', r.gw], ['immediate-gw', r.igw || r.gw], ['check-gateway', r.cg], ['distance', r.dist], ['scope', r.scope || 10]] })), 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC, o - OSPF, b - BGP', false);
 const ospfText = (rows) => table(rows.map((r) => ({ flags: '', kvs: [['instance', 'default'], ['area', 'backbone'], ['address', r.addr], r.ifc ? ['interface', r.ifc] : null, ['priority', 1], ['router-id', r.id], ['state', 'Full'], ['state-changes', 5], ['adjacency', '1d2h']].filter(Boolean) })), 'Flags: ');
 const ifaceText = (rows) => ['Flags: D - DYNAMIC; R - RUNNING; S - SLAVE', ...rows.map((r, i) => [` ${i}  ${r.flags}  ;;; ${r.comment || ''}`.replace(/ ;;; $/, ''), detailRow('       ', [['name', `"${r.name}"`.replace(/^"|"$/g, '')], ['type', r.type], ['mtu', 1500]])].join('\n').replace(/name=(\S+)/, 'name="$1"').replace(/type=(\S+)/, 'type="$1"'))].join('\n');
 // 防火牆命中次數（print stats detail）：依 export 的規則順序一列一條，RouterOS 7 的數字以空白分千位。
@@ -246,9 +246,10 @@ for (let s = 1; s <= SITES; s++) {
     } else {
       const ispIp = `203.0.113.${ci * 4 + 2}`; const gw = `203.0.113.${ci * 4 + 1}`;
       e.push(['/ip address', 'add', `address=${ispIp}/30 interface=ether47 network=203.0.113.${ci * 4}`]);
-      e.push(['/ip route', 'add', `dst-address=0.0.0.0/0 gateway=${gw}`]);
+      const cg = F && ci === 0 ? 'ping' : undefined;                                                                 // R11 用：核心 01 的預設路由有 check-gateway，DHCP client 的沒有
+      e.push(['/ip route', 'add', `${cg ? `check-gateway=${cg} ` : ''}dst-address=0.0.0.0/0 gateway=${gw}`]);
       rt.push({ flags: 'DAc', dst: `203.0.113.${ci * 4}/30`, gw: 'ether47', igw: 'ether47', dist: 0 });
-      rt.push({ flags: 'As', dst: '0.0.0.0/0', gw, igw: `${gw}%ether47`, dist: 1, scope: 30 });
+      rt.push({ flags: 'As', dst: '0.0.0.0/0', gw, igw: `${gw}%ether47`, cg, dist: 1, scope: 30 });
       c.ospf = [];
     }
     if (F && ci === 0) {                                                                                                // VRRP 閘道與正常的 DHCP 網路；R03：互相指向的兩條靜態路由
@@ -276,6 +277,15 @@ for (let s = 1; s <= SITES; s++) {
       e.push(['/ip address', 'add', `address=172.31.1.1/30 interface=ether46 network=172.31.1.0`]);
       rt.push({ flags: 'DAc', dst: '172.31.1.0/30', gw: 'ether46', igw: 'ether46', dist: 0 });
       c.ospf.push({ addr: '172.31.1.2', id: '172.31.255.2', ifc: null });
+    }
+    if (F && ci === 0) {                                                                                                // ADR-023：對外與路由網域的設定（之後的 R13–R15 用）
+      e.push(['/ip dhcp-client', 'add', 'comment="ISP2 backup" default-route-distance=5 interface=ether45 use-peer-dns=no']);       // 第二個上網出口：DHCP 加預設路由（沒寫 add-default-route，預設 yes），沒設 check-gateway
+      e.push(['/interface pppoe-client', 'add', 'add-default-route=yes disabled=yes interface=ether44 name=pppoe-isp3 password=Pppoe-Pass-01 user=tpe-core@isp3']); // 停用的 PPPoE 備援
+      e.push(['/routing ospf area', 'add', 'area-id=0.0.0.0 instance=default name=backbone']);
+      e.push(['/routing ospf interface-template', 'add', 'area=backbone auth=md5 auth-id=1 auth-key=Ospf-Key-01 interfaces=bond100 type=ptp']);   // 核心互連：有驗證
+      e.push(['/routing ospf interface-template', 'add', 'area=backbone interfaces=ether46']);                                     // 往未知鄰居（R02）：沒有驗證
+      e.push(['/routing ospf interface-template', 'add', `area=backbone networks=10.${s}.10.0/24 passive`]);                       // 管理網段：passive
+      e.push(['/routing ospf interface-template', 'add', `area=backbone networks=10.${s}.30.0/24`]);                               // 使用者網段：沒有設 passive
     }
     // 防火牆：defconf 風格（WAN 只放 ISP 上行；多站點時連到 WAN 路由器的 ether48 是內部鏈路，歸在 LAN），管理服務只開給管理網段
     const FF = (a) => e.push(['/ip firewall filter', 'add', a]);

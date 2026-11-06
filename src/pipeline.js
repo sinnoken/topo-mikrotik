@@ -218,7 +218,7 @@
     const arps = M.arps.map((a) => ({ ip: a.ip, mac: a.mac, dev: a.dev, ifc: a.ifc, vrf: a.vrf, src: [[a.block, a.line]] }))
       .sort((a, b) => nat(a.ip, b.ip) || byVrf(a.vrf, b.vrf) || nat(a.dev, b.dev) || U.cmp(a.mac, b.mac));
     // 路由：routingTable 是路由表原值（main 也寫出），vrf 是它對應的 VRF（只用於策略路由的路由表為 null）；nh[].vrf 是解析閘道的 VRF，依據在 vrfBasis（見 model/build.js 的 resolveVrfs）
-    const routes = M.routes.map((r) => ({ dev: r.dev, prefix: r.prefix, len: r.len, proto: r.proto, distance: r.distance, blackhole: r.blackhole,
+    const routes = M.routes.map((r) => ({ dev: r.dev, prefix: r.prefix, len: r.len, proto: r.proto, distance: r.distance, blackhole: r.blackhole, checkGateway: r.checkGateway,
       routingTable: r.routingTable, vrf: r.vrf, nh: r.nh, src: [[r.block, r.line]] }))
       .sort((a, b) => nat(a.dev, b.dev) || nat(a.prefix, b.prefix) || a.len - b.len || byVrf(K.vrf(a.routingTable), K.vrf(b.routingTable)));
     const ospfAdjacencies = M.ospfAdjacencies.map((a) => ({
@@ -245,6 +245,10 @@
     const firewallZones = Array.from(M.fwZones.values()).map((z) => Object.assign({}, z)).sort((a, b) => nat(a.dev, b.dev));
     // 管理面設定（F10–F14）：每台有 export 的已收集設備一筆；export 沒寫的欄位是預設值（defaulted、basis，見 model/build.js 的 resolveMgmt）
     const mgmtSettings = Array.from(M.mgmtSettings.values()).sort((a, b) => nat(a.dev, b.dev));
+    // 對外與路由網域的設定（事實＋預設值，ADR-023）：依設備、設定順序（order）；export 沒寫的欄位見 defaulted／unknown（model/build.js 的 resolveRoutingCfg）
+    const cfgOut = (k) => M.routingCfgOut[k].slice().sort((a, b) => nat(a.dev, b.dev) || a.order - b.order);
+    const dhcpClients = cfgOut('dhcpClients'); const pppoeClients = cfgOut('pppoeClients');
+    const ospfAreas = cfgOut('ospfAreas'); const ospfInterfaceTemplates = cfgOut('ospfInterfaceTemplates');
     // 命中次數的表（事實＋對應結果）：每台設備、每個（位址族，表）一筆；collectedAt 取該區塊的收集時間
     const firewallStats = Array.from(M.fw.stats.values()).map((t) => ({
       dev: t.dev, family: t.family, table: t.table, status: t.status, rows: t.count, dynamic: t.dynamic, rules: t.rules, reason: t.reason,
@@ -281,7 +285,8 @@
         timing: { ms: Date.now() - c.t0 },
       },
       model: { devices, interfaces, links, inferredLinks, ospfAdjacencies, vlans, vrfs, ipAddresses, prefixes, macs, wifiAssociations, dhcpNetworks, arps, routes, routingTables, routingRules, routingMarkRules,
-        firewallRules, firewallZones, firewallStats, interfaceLists, ipServices, ipsecPeers, ipsecPolicies, mgmtSettings },
+        firewallRules, firewallZones, firewallStats, interfaceLists, ipServices, ipsecPeers, ipsecPolicies, mgmtSettings,
+        dhcpClients, pppoeClients, ospfAreas, ospfInterfaceTemplates },
       findings: c.findings,
       coverage: c.coverage,
       blocks,

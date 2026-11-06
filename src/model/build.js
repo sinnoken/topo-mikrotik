@@ -31,6 +31,8 @@
         stats: new Map() }, // 命中次數（print stats）：「設備|位址族|表」→ { dev, family, table, block, line, rows: [...] }，對應結果見 matchFirewallStats
       // 管理面設定（事實，export 有寫的）：dev → { areas: { area: { values, src } }, communities: [依序的 add／set], upnpIfcs: [] }；預設值由 resolveMgmt 補上
       mgmt: new Map(), mgmtSettings: new Map(),
+      // 對外與路由網域的設定（事實，export 的 add／set，依輸入順序）：kind → [cfgItem]；resolveRoutingCfg 補預設值後放進 routingCfgOut
+      routingCfg: new Map(), routingCfgOut: { dhcpClients: [], pppoeClients: [], ospfAreas: [], ospfInterfaceTemplates: [] },
     };
   }
 
@@ -214,7 +216,7 @@
         }
         case 'ipsecPolicy': M.fw.policies.push({ dev: f.dev, srcAddress: f.srcAddress, dstAddress: f.dstAddress, peer: f.peer, template: f.template, disabled: f.disabled, src: [[f.block, f.line]] }); break;
         case 'route':
-          M.routes.push({ dev: f.dev, prefix: f.prefix, len: f.len, proto: f.proto, distance: f.distance ?? null, blackhole: !!f.blackhole,
+          M.routes.push({ dev: f.dev, prefix: f.prefix, len: f.len, proto: f.proto, distance: f.distance ?? null, blackhole: !!f.blackhole, checkGateway: f.checkGateway || null,
             routingTable: f.routingTable || K.MAIN_VRF, vrf: null,
             nh: f.nh.map((n) => ({ ip: n.ip, ifc: n.ifc ? K.ifc(n.ifc) : null, written: n.vrf || null })), block: f.block, line: f.line });
           break;
@@ -222,6 +224,7 @@
         case 'routingTable': M.policy.tables.push({ dev: f.dev, name: f.name, fib: f.fib, disabled: f.disabled, src: [[f.block, f.line]] }); break;
         case 'routingRule': M.policy.rules.push({ dev: f.dev, action: f.action, table: f.table, match: Object.assign({}, f.match), disabled: f.disabled, comment: f.comment, src: [[f.block, f.line]] }); break;
         case 'markRouting': M.policy.marks.push({ dev: f.dev, chain: f.chain, mark: f.mark, match: Object.assign({}, f.match), disabled: f.disabled, src: [[f.block, f.line]] }); break;
+        case 'cfgItem': getOr(M.routingCfg, f.kind, () => []).push(Object.assign({}, f, { values: Object.assign({}, f.values) })); break;
         case 'policyRules': d.policyRules = { rules: f.rules.slice(), src: [f.block, f.line] }; break;
         case 'vrf': { // 依來源分開記（print 優先於 export，見 resolveVrfs）
           const by = getOr(M.vrfs, f.dev, () => ({ print: [], export: [] }));
@@ -239,6 +242,7 @@
     emptyStatTables(M, input.blocks);
     matchFirewallStats(M);
     resolveMgmt(M);
+    resolveRoutingCfg(M);
     resolveVlanMembers(M);
     buildAggregates(M);
     classifyInterfaces(M);
@@ -492,6 +496,80 @@
       ent.snmp.unmatched = unmatched;
       ent.upnp.interfaces = raw.upnpIfcs.map((x) => ({ ep: x.ep, type: x.type, disabled: x.disabled, src: x.src.slice() }));
       M.mgmtSettings.set(d.key, ent);
+    });
+  }
+
+  /*
+   * 對外與路由網域的設定（ADR-023）：DHCP client、PPPoE client、OSPF area、OSPF interface-template。
+   * 欄位：[Snapshot 欄位, export 參數, 轉換, 預設值]。export 只寫非預設值，所以 add 沒寫的參數：
+   *  - 手冊寫明預設值的，以預設值補上，列進 defaulted（推論：預設值）；
+   *  - 手冊沒寫預設值的（UNK），值為 null、列進 unknown（待真機確認，不猜）。
+   * 預設值的依據（手冊網址見 adapters/mikrotik.js 的 CFG_MENUS）：
+   *  - dhcp-client：add-default-route=yes、default-route-distance=1、check-gateway=none（記為 null）、use-peer-dns=yes 都是參數表寫明的預設值；
+   *    disabled=no 依 DHCP Client 使用說明的範例（add 只寫 interface，print 沒有 X 旗標、已取得位址）。
+   *  - pppoe-client：參數表沒有預設值；add-default-route=no、use-peer-dns=no 依 PPPoE 使用說明的範例（add 沒寫，print 顯示 no）。
+   *    default-route-distance 與 disabled 無法以手冊確認（範例的 add 特地寫了 disabled=no）。
+   *  - ospf area：area-id、type 的預設值無法以手冊確認；disabled=no 依 OSPF area 使用說明的範例。
+   *  - ospf interface-template：passive 是 switch，沒寫就是沒開；auth 沒設定時不驗證（參數表寫明）；networks、interfaces 沒設定時不比對（空陣列）；
+   *    cost 無法以手冊確認；type 沒寫時依介面決定（PtP 介面為 ptp、其他為 broadcast，參數表寫明），記為 null 並列進 unknown。
+   * set：依 [ find … ] 的條件（或第一個字是名稱）找最後一筆相符的 add 套用；找不到時另成一筆（basis 為 set），沒寫的欄位一律 unknown。
+   * basis：export（add，加上之後的 set）或 set（只有 set）；src 是 export 中那幾行。
+   */
+  const UNK = Symbol('unknown');
+  const yn = (v) => (v === 'yes' ? true : v === 'no' ? false : null);
+  const num = (v) => (/^\d+$/.test(String(v)) ? +v : null);
+  const csv = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const cg = (v) => (v && v !== 'none' ? String(v) : null);
+  const ROUTING_CFG = {
+    dhcpClient: { out: 'dhcpClients', fields: [
+      ['name', 'name', String, UNK], ['interface', 'interface', String, UNK], ['addDefaultRoute', 'add-default-route', String, 'yes'],
+      ['defaultRouteDistance', 'default-route-distance', num, 1], ['checkGateway', 'check-gateway', cg, null], ['usePeerDns', 'use-peer-dns', yn, true],
+      ['disabled', 'disabled', yn, false]] },
+    pppoeClient: { out: 'pppoeClients', fields: [
+      ['name', 'name', String, UNK], ['interface', 'interface', String, UNK], ['addDefaultRoute', 'add-default-route', yn, false],
+      ['defaultRouteDistance', 'default-route-distance', num, UNK], ['usePeerDns', 'use-peer-dns', yn, false], ['disabled', 'disabled', yn, UNK]] },
+    ospfArea: { out: 'ospfAreas', fields: [
+      ['name', 'name', String, UNK], ['areaId', 'area-id', String, UNK], ['instance', 'instance', String, UNK], ['type', 'type', String, UNK], ['disabled', 'disabled', yn, false]] },
+    ospfTemplate: { out: 'ospfInterfaceTemplates', fields: [
+      ['area', 'area', String, UNK], ['networks', 'networks', csv, []], ['interfaces', 'interfaces', csv, []], ['passive', 'passive', yn, false],
+      ['auth', 'auth', (v) => (v ? String(v) : null), null], ['authKey', 'auth-key', (v) => v === true, false], ['cost', 'cost', num, UNK], ['type', 'type', String, UNK],
+      ['disabled', 'disabled', yn, false]] },
+  };
+  function resolveRoutingCfg(M) {
+    Object.keys(ROUTING_CFG).forEach((kind) => {
+      const spec = ROUTING_CFG[kind]; const items = M.routingCfg.get(kind) || []; const out = M.routingCfgOut[spec.out];
+      const byDev = new Map(); // dev → 這台的項目（依設定順序）
+      const blank = (f, basis) => {
+        const x = { dev: f.dev }; spec.fields.forEach(([field]) => { x[field] = null; });
+        return Object.assign(x, { comment: null, basis, defaulted: [], unknown: [], src: [], _raw: {} });
+      };
+      items.forEach((f) => {
+        const list = getOr(byDev, f.dev, () => []);
+        let x;
+        if (f.cmd === 'add') { x = blank(f, 'export'); x._add = true; list.push(x); }
+        else {
+          // 以原值比對（不做轉換）；條件全部相符的最後一筆
+          const hit = (y) => Object.keys(f.target).every((k) => y._raw[k] === f.target[k]);
+          x = list.slice().reverse().find(hit);
+          if (!x) { x = blank(f, 'set'); list.push(x); }
+        }
+        Object.assign(x._raw, f.values);
+        if (f.rename !== undefined) x._raw.name = f.rename;
+        if (f.values.comment !== undefined) x.comment = f.values.comment;
+        x.src.push([f.block, f.line]);
+      });
+      byDev.forEach((list, dev) => list.forEach((x, i) => {
+        x.order = i + 1;
+        spec.fields.forEach(([field, param, conv, def]) => {
+          if (param in x._raw) x[field] = conv(x._raw[param]);
+          else if (def === UNK || !x._add) { x[field] = null; x.unknown.push(field); }
+          else { x[field] = Array.isArray(def) ? def.slice() : def; x.defaulted.push(field); }
+        });
+        if (kind === 'dhcpClient') x.ep = x.interface ? K.ep(dev, x.interface) : null;
+        if (kind === 'pppoeClient') { x.ep = x.name ? K.ep(dev, x.name) : null; x.interfaceEp = x.interface ? K.ep(dev, x.interface) : null; }
+        delete x._raw; delete x._add;
+        out.push(x);
+      }));
     });
   }
 

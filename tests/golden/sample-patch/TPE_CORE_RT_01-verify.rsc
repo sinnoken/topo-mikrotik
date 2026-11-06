@@ -1,11 +1,11 @@
 # topo-mikrotik ssot-patch/1 verify
 # device: TPE_CORE_RT_01 (key TPE_CORE_RT_01)
-# baseline: inputHash=1e268d8bbcadd286 createdAt=2026-01-01T00:00:00Z version=3.7.0
+# baseline: inputHash=f078ae811266be6f createdAt=2026-01-01T00:00:00Z version=3.8.0
 # Text only: topo-mikrotik never connects to or changes a device. Review every line before use.
 # items: 2
 # Run after the apply file. Each print must list exactly the number of rules stated.
 
-# [1] A12 dns servers /ip dns (sample-bundle.txt line 95): expect servers 8.8.8.8 (in this order)
+# [1] A12 dns servers /ip dns (sample-bundle.txt line 109): expect servers 8.8.8.8 (in this order)
 :put [/ip dns get servers]
-# [2] F01 ip filter input rule 6 (sample-bundle.txt line 121): expect 1 rule, flagged X (disabled)
+# [2] F01 ip filter input rule 6 (sample-bundle.txt line 135): expect 1 rule, flagged X (disabled)
 /ip firewall filter print where chain="input" action="accept" dst-port="8291" in-interface="ether47" protocol="tcp"

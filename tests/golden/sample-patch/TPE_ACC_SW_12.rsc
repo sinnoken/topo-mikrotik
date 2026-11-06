@@ -1,6 +1,6 @@
 # topo-mikrotik ssot-patch/1 apply
 # device: TPE_ACC_SW_12 (key TPE_ACC_SW_12)
-# baseline: inputHash=1e268d8bbcadd286 createdAt=2026-01-01T00:00:00Z version=3.7.0
+# baseline: inputHash=f078ae811266be6f createdAt=2026-01-01T00:00:00Z version=3.8.0
 # Text only: topo-mikrotik never connects to or changes a device. Review every line before use.
 # items: 1
 # Run: /import file-name=<this file> (add verbose=yes dry-run first to catch syntax errors).
@@ -10,5 +10,5 @@
 :if ([:len [/system ntp client servers find where address="10.1.10.2"]] != 1) do={ :error "topo-mikrotik pre-check failed: [1] A12 ntp servers /system ntp client servers must match exactly 1 entry(s)" }
 
 # ---- apply
-# [1] A12 ntp servers /system ntp client servers (sample-bundle.txt line 3794): before address=10.1.10.2
+# [1] A12 ntp servers /system ntp client servers (sample-bundle.txt line 3808): before address=10.1.10.2
 /system ntp client servers set [find where address="10.1.10.2"] address=time.cloudflare.com

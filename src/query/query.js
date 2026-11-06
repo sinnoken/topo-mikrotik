@@ -182,6 +182,9 @@
     const freezeAll = (map) => { map.forEach((v) => Object.freeze(v)); return map; };
     const findingKeyIndex = () => byFindingKey || (byFindingKey = freezeAll(snap.findings.reduce((out, f, idx) => { U.getOr(out, findingKey(f), () => []).push(idx); return out; }, new Map())));
     const EMPTY = Object.freeze([]);
+    let cfgIx = null;
+    const cfgIndex = () => cfgIx || (cfgIx = Object.assign({ ospf: new Map() },
+      ...['dhcpClients', 'pppoeClients', 'ospfAreas', 'ospfInterfaceTemplates'].map((k) => ({ [k]: freezeAll(byDevOf(m[k])) }))));
     let subnetsByDev = null;
     // L4（M2）：可達性、zone、zone 矩陣與規則影響。第一次呼叫時才建立（src/query/reach.js 的 S.reach.engine），結果都是推論、只在記憶體快取，不寫進 Snapshot（ADR-014）
     let l4 = null;
@@ -269,6 +272,21 @@
        * 每一項有 basis（export／default）、defaulted（以出廠預設值補上的欄位，推論）與 src（export 的行）；沒有 export 的設備為 null。回傳 Snapshot 本身的那一筆，不要修改。
        */
       mgmtOf(d) { if (!mgmtByDev) mgmtByDev = new Map((m.mgmtSettings || EMPTY).map((x) => [x.dev, x])); return mgmtByDev.get(d) || null; },
+      /**
+       * 對外與路由網域的設定（事實＋預設值，ADR-023；欄位見設計說明 §5.2）。依設定順序，沒有時為空陣列（凍結）；元素是 Snapshot 本身的那一筆，不要修改。
+       * 每一筆有 basis（export／set）、defaulted（以手冊預設值補上的欄位，推論）、unknown（export 沒寫、手冊也沒有預設值，值為 null）與 src。
+       *   dhcpClientsOf(d)：/ip dhcp-client { name, interface, ep, addDefaultRoute（yes／no／special-classless）, defaultRouteDistance, checkGateway, usePeerDns, disabled, comment, order }
+       *   pppoeClientsOf(d)：/interface pppoe-client { name, ep（PPPoE 介面）, interface, interfaceEp（底層介面）, addDefaultRoute, defaultRouteDistance, usePeerDns, disabled, comment, order }
+       *   ospfOf(d)：{ areas: /routing ospf area { name, areaId, instance, type, disabled }, templates: /routing ospf interface-template
+       *     { area, networks, interfaces（介面或 interface list 的名稱）, passive, auth（驗證類型，null 為不驗證）, authKey（有沒有設金鑰；金鑰不進 Snapshot）, cost, type, disabled } }
+       */
+      dhcpClientsOf: (d) => cfgIndex().dhcpClients.get(d) || EMPTY,
+      pppoeClientsOf: (d) => cfgIndex().pppoeClients.get(d) || EMPTY,
+      ospfOf(d) {
+        const ix = cfgIndex();
+        if (!ix.ospf.has(d)) ix.ospf.set(d, Object.freeze({ areas: ix.ospfAreas.get(d) || EMPTY, templates: ix.ospfInterfaceTemplates.get(d) || EMPTY }));
+        return ix.ospf.get(d);
+      },
       /**
        * 狀態式骨架（回程的前提，F15 的依據；判斷在 S.infer.fw.policyBaseline）：IPv4 filter 的 input、forward 各一列，
        * [{ chain, rules, established, invalidDrop, defaultAction, returnSafe, src }]；沒有設定資料（export）的設備為 null。

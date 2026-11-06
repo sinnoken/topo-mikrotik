@@ -53,6 +53,11 @@
     { code: 'static-only', message: '只看匯出設定（/export）裡的靜態規則；即插即用（UPnP、NAT-PMP）、熱點（hotspot）等功能產生的動態規則與動態位址清單不在範圍內' },
     { code: 'bridge-ip-firewall', message: '同一個網段的流量視為不經過路由器的防火牆；橋接設定讓橋接流量也走防火牆（/interface bridge settings 的 use-ip-firewall）時，橋接流量也會經過過濾規則，這種情況不在範圍內' },
   ]);
+  /** Q.exposure 另有的前提：附加在 ASSUMPTIONS 之後，只出現在暴露清單的結果（Q.reach 的前提不變）。 */
+  const EXPOSURE_ASSUMPTIONS = deepFreeze(ASSUMPTIONS.concat([
+    { code: 'exposure-source-ranges', message: '外部來源只依入口設備自己的規則切成區段（src-address、/ip service 的 available-from、/routing rule 的 src-address）；之後經過的設備依來源位址比對的規則不再切分，所以允許的外部來源（allowedFrom）可能比實際寬' },
+    { code: 'wan-member-no-interface', message: '對外介面清單的成員沒有介面紀錄、只出現在位址與清單成員的設定時（/ip address、/interface list member），也當作入口，所在的 VRF 視為 main' },
+  ]));
   /**
    * Q.reach 的原因代碼與結束代碼（靜態清單，S.query.reachReasonCodes() 回傳）：
    *   kind 'end'：路徑結束的代碼（paths[].end.code；結果不是允許時也會出現在 reasons，拒絕時出現在決定結果的 route）
@@ -565,7 +570,7 @@
         if (!devInfo(loc.dev).collected) return { start: { how: 'device', dev: loc.dev, ep: loc.ep, gateways: [] }, nodes: [], end: end('unknown', 'unknown', 'src-device-uncollected', loc.dev, `來源 ${src} 屬於沒有收集的 ${name(loc.dev)}，不知道它的路由與防火牆`) };
         return { start: { how: 'device', dev: loc.dev, ep: loc.ep, gateways: [] }, nodes: originate(loc.dev, st, ctx) };
       }
-      if (loc.how === 'none') return { start: { how: 'none', dev: null, ep: null, gateways: [] }, nodes: [], end: end('unknown', 'unknown', 'src-location-unknown', null, `找不到包含 ${src} 的網段，不知道封包從哪台設備進入（可用 entry 指定入口介面）`) };
+      if (loc.how === 'none') return { start: { how: 'none', dev: null, ep: null, gateways: [] }, nodes: [], end: end('unknown', 'unknown', 'src-location-unknown', null, `找不到包含 ${src} 的網段，不知道封包從哪台設備進入（可指定封包進入的介面）`) };
       const start = { how: 'gateway', prefix: loc.prefix, basis: loc.basis, dev: loc.gateways.length === 1 ? loc.gateways[0].dev : null, ep: loc.gateways.length === 1 ? loc.gateways[0].ep || null : null,
         gateways: loc.gateways.map((g) => ({ dev: g.dev, ep: g.ep || null, gateway: g.gateway })) };
       if (((intOf(dst) & loc.mask) >>> 0) === loc.netN) { // 同一個網段：不經過路由器（同 IP.inNet(dst, loc.net, loc.len)）
@@ -1405,7 +1410,7 @@
       const noWan = Q.findingsByRule('F08').map((f) => ({ dev: Q.findingDevice(f), findingKey: Q.findingKey(f) })).sort((a, b) => U.natural(a.dev || '', b.dev || ''));
       const noFirewall = Q.devices().filter((d) => devInfo(d.key).collected && !devInfo(d.key).host && !devInfo(d.key).config && Q.routesOf(d.key).some((r) => r.len === 0 && !r.blackhole))
         .map((d) => d.key).sort(U.natural);
-      const base = { ok: true, noWan, noFirewall, wan: { entries: entries.map((w) => ({ dev: w.dev, ep: w.ep })), devices: U.uniq(entries.map((w) => w.dev)).sort(U.natural) }, ipv6, assumptions: ASSUMPTIONS };
+      const base = { ok: true, noWan, noFirewall, wan: { entries: entries.map((w) => ({ dev: w.dev, ep: w.ep })), devices: U.uniq(entries.map((w) => w.dev)).sort(U.natural) }, ipv6, assumptions: EXPOSURE_ASSUMPTIONS };
       const extIp = entries.length ? EXTERNAL_CANDIDATES.find((ip) => !longest(ip, K.MAIN_VRF) && !ownerOf(ip, K.MAIN_VRF)) || null : null;
       const finishEarly = (status, message) => {
         const out = deepFreeze(JSON.parse(JSON.stringify(Object.assign({ status, message, external: null, services: [], self: emptySec(), dnat: emptySec(), routed: emptySec(),

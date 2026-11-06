@@ -155,7 +155,8 @@ module.exports = async () => {
     const Q = App.Q; const V = S.view; const K = S.keys; const MAIN = K.MAIN_VRF;
     App.showLayer('l4'); await App.l4Job;
     // 前提：照列查詢層的前提
-    const as = S.query.reachAssumptions(); const lis = L4().testAll('.l4-assume-list li');
+    // 有暴露清單時是它的 assumptions（S.query.reachAssumptions 加上暴露清單的前提）
+    const exA = App.Q.exposure().assumptions; const as = exA && exA.length ? exA : S.query.reachAssumptions(); const lis = L4().testAll('.l4-assume-list li');
     require('assert').deepStrictEqual(lis.map((x) => x.dataset.code), as.map((a) => a.code));
     if (!['ipv4-vrf', 'policy-routing'].every((c) => lis.some((x) => x.dataset.code === c && x.textContent === as.find((a) => a.code === c).message))) throw new Error('前提應有 ipv4-vrf 與 policy-routing，文字取自查詢層');
     if (L4().querySelector('.l4-vrf-box').classList.contains('hidden')) throw new Error('基準有多個 VRF 時應顯示 VRF 選單');

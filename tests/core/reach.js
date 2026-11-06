@@ -263,14 +263,14 @@ test('Q.zoneCell 的 groups[].divergent：只有異質的格子有，標出結�
   });
 });
 
-test('S.query.reachReasonCodes：涵蓋 trace.js 中所有 reason／end 代碼，且每個代碼都真的用到', () => {
+test('S.query.reachReasonCodes：涵蓋 reach.js 中所有 reason／end 代碼，且每個代碼都真的用到', () => {
   const list = S.query.reachReasonCodes();
   assert.ok(Object.isFrozen(list) && list.every((x) => Object.isFrozen(x)));
   assert.strictEqual(S.query.reachReasonCodes(), list);
   list.forEach((x) => assert.ok(typeof x.code === 'string' && ['reason', 'end'].includes(x.kind) && (x.note === undefined || typeof x.note === 'string'), JSON.stringify(x)));
   assert.strictEqual(new Set(list.map((x) => x.code)).size, list.length, '代碼不重複');
   // 只掃引擎本身（makeEngine 之後）：清單與 ASSUMPTIONS 的 code 不算
-  const src = read('src/query/trace.js');
+  const src = read('src/query/reach.js');
   const body = src.slice(src.indexOf('function makeEngine'));
   const found = new Set();
   const scan = (re, kind) => { for (const m of body.matchAll(re)) m.slice(1).filter(Boolean).forEach((c) => found.add(c + '|' + kind)); };
@@ -286,7 +286,7 @@ test('S.query.reachReasonCodes：涵蓋 trace.js 中所有 reason／end 代碼�
     assert.ok(byCode.has(code), `${code}（${kind}）不在 S.query.reachReasonCodes()`);
     if (kind === 'end') assert.strictEqual(byCode.get(code).kind, 'end', `${code} 是結束代碼`);
   });
-  list.forEach((x) => assert.ok(codes.has(x.code), `${x.code} 在清單裡，但 trace.js 沒有用到`));
+  list.forEach((x) => assert.ok(codes.has(x.code), `${x.code} 在清單裡，但 reach.js 沒有用到`));
   list.filter((x) => x.kind === 'reason').forEach((x) => assert.ok(!found.has(x.code + '|end'), `${x.code} 也是結束代碼，kind 應為 end`));
 });
 

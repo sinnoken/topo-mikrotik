@@ -186,18 +186,18 @@ module.exports = async () => {
     if (!codes.length || !Object.isFrozen(codes)) throw new Error('S.query.reachReasonCodes() 應是凍結的非空陣列');
     const missing = codes.filter((x) => !V.REACH_REASON[x.code]).map((x) => x.code);
     if (!codes.every((x) => V.REACH_REASON[x.code])) throw new Error('原因代碼沒有中文說明：' + missing.join('、'));
-    // 閘道推定的依據（start.basis）：查詢層沒有匯出清單，掃描 trace.js 的 srcLocation（到 begin 之前）中指定給 basis 與和 basis 比較的字面值；
+    // 閘道推定的依據（start.basis）：查詢層沒有匯出清單，掃描 reach.js 的 srcLocation（到 begin 之前）中指定給 basis 與和 basis 比較的字面值；
     // 每一個都要有中文名稱（同檔另有代表位址的 basis（arp／synthetic），不在這個範圍）
-    { const all = fs.readFileSync(path.join(ROOT, 'src/query/trace.js'), 'utf8'); const i0 = all.indexOf('function srcLocation('); const i1 = all.indexOf('function begin(', i0);
-      if (i0 < 0 || i1 < 0) throw new Error('trace.js 找不到 srcLocation／begin（改名時要更新這個測試）');
+    { const all = fs.readFileSync(path.join(ROOT, 'src/query/reach.js'), 'utf8'); const i0 = all.indexOf('function srcLocation('); const i1 = all.indexOf('function begin(', i0);
+      if (i0 < 0 || i1 < 0) throw new Error('reach.js 找不到 srcLocation／begin（改名時要更新這個測試）');
       const tr = all.slice(i0, i1);
       const lits = (s) => Array.from(s.matchAll(/'([a-z][a-z-]*)'/g), (m) => m[1]);
       const basis = new Set([...tr.matchAll(/\bbasis\s*=\s*([^;]+);/g)].flatMap((m) => lits(m[1])).concat([...tr.matchAll(/\bbasis\s*===\s*'([^']+)'/g)].map((m) => m[1])));
-      if (basis.size < 2) throw new Error('掃描不到 trace.js 的閘道推定依據（寫法改了時要更新這個測試）');
+      if (basis.size < 2) throw new Error('掃描不到 reach.js 的閘道推定依據（寫法改了時要更新這個測試）');
       const noName = [...basis].filter((b) => !V.REACH_START_BASIS[b]);
       if (noName.length) throw new Error('閘道推定的依據沒有中文名稱（V.REACH_START_BASIS）：' + noName.join('、'));
       const extra = Object.keys(V.REACH_START_BASIS).filter((b) => !basis.has(b));
-      if (extra.length) throw new Error('V.REACH_START_BASIS 有 trace.js 不會產生的依據：' + extra.join('、')); }
+      if (extra.length) throw new Error('V.REACH_START_BASIS 有 reach.js 不會產生的依據：' + extra.join('、')); }
     const u = mx.cells.find((c) => c.status === 'unknown');
     if (!u && !process.env.SMOKE_INPUT) throw new Error('範例資料應有無法判斷的格子');
     if (u) {

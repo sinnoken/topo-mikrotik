@@ -218,10 +218,9 @@ function consistent(s) {
   });
   const f04 = new Set(of(s, 'F04').map((f) => f.entities.find((e) => e.type === 'rule').key));
   const r09 = new Set(of(s, 'R09').map((f) => f.entities[1].key));
-  // TODO（查詢層，reach.js）：暴露清單把 dst-nat 之後經對外介面送回外部（route.code egress-wan）的列算成允許；檢查改報 R09（目標沒有路由，不是暴露）。
-  // 暴露清單改成不算允許之前，這種列只允許是 R09 的規則，其他一律要一致；改好後刪掉這個例外，並要求 R09 的規則不在允許的列中。
-  const known = (r) => r.route && r.route.code === 'egress-wan' && r09.has(r.rule.key);
-  const dnatAllowed = new Set(x.dnat.rows.filter((r) => r.verdict === 'allow' && r.rule && !known(r)).map((r) => r.rule.key));
+  // dst-nat 之後經對外介面送回外部的（R09）在暴露清單算路由沒到，不是允許
+  const dnatAllowed = new Set(x.dnat.rows.filter((r) => r.verdict === 'allow' && r.rule).map((r) => r.rule.key));
+  r09.forEach((k) => assert.ok(!x.dnat.rows.some((r) => r.nat && r.nat.rule && r.nat.rule.key === k), `R09 的 dst-nat 規則不在暴露清單 dnat 段：${k}`));
   assert.deepStrictEqual(Array.from(f04).sort(), Array.from(dnatAllowed).sort(), 'F04 與暴露清單 dnat 段允許的規則相同');
   r09.forEach((k) => assert.ok(!dnatAllowed.has(k), `R09 的規則不會是暴露清單的允許：${k}`));
   of(s, 'F03').forEach((f) => {

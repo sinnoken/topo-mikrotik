@@ -174,12 +174,58 @@ test('Q.exposure（範例資料）：與 zone 矩陣「外部」列一致（允�
     const c = mx.cells.find((y) => y.src === 'external' && y.dst === r.zone);
     assert.ok(c && c.services.find((v) => v.service === r.service).counts.allow > 0, `${r.dst} ${r.service} 允許，矩陣 external → ${r.zone} 也要允許`);
   });
-  // 暴露清單的 self 段只列入口設備自己的位址；矩陣的「網路設備（管理）」另有各網段閘道（入口以外的設備），只比對入口設備的
-  const selfCell = Q.zoneCell('external', 'self'); const entryDevs = new Set(x.wan.devices);
-  selfCell.groups.filter((g) => entryDevs.has(g.dst.dev)).forEach((g) => g.services.forEach((sv) => {
-    const row = find(x.self, g.dst.ip, sv.service);
-    if (sv.verdict === 'allow') assert.ok(row && row.verdict === 'allow', `矩陣允許 ${g.dst.ip} ${sv.service}`);
+  // 矩陣「外部 → 網路設備（管理）」允許的組合（含入口以外的設備，例如經 CE 連到的），self 段一定列出
+  const selfCell = Q.zoneCell('external', 'self'); let n = 0;
+  selfCell.groups.forEach((g) => g.services.forEach((sv) => {
+    if (sv.verdict !== 'allow') return;
+    const row = x.self.rows.find((r) => r.dev === g.dst.dev && r.ip === g.dst.ip && r.vrf === g.dst.vrf && r.service === sv.service);
+    assert.ok(row && row.verdict === 'allow', `矩陣允許 ${g.dst.dev} ${g.dst.ip} ${sv.service}`); n++;
   }));
+  assert.ok(n > 0 && selfCell.groups.some((g) => !x.wan.devices.includes(g.dst.dev) && g.services.some((sv) => sv.verdict === 'allow')), '範例資料：矩陣有經入口連到的其他設備');
+});
+
+test('Q.exposure self 段：經入口連到的其他網路設備（via 是經由的入口；入口設備本身為 null）；入口設備的列在前，排序穩定', () => {
+  const Q = S.query(sampleSnap()); const x = exposureOf(Q);
+  const entryDevs = new Set(x.wan.devices);
+  const other = x.self.rows.filter((r) => !entryDevs.has(r.dev));
+  assert.ok(other.length > 0, '有入口以外設備的列');
+  // 範例資料：外部經別台入口設備（不在 WAN 清單、沒有過濾的對外介面）連到存取交換器的管理位址
+  const sw = other.find((r) => r.dev === 'TPE_ACC_SW_10' && r.ip === '10.1.10.30' && r.service === 'tcp/22');
+  assert.ok(sw && sw.verdict === 'allow', JSON.stringify(other.map((r) => [r.dev, r.ip, r.service])));
+  assert.deepStrictEqual([sw.via, sw.target, sw.zone], [{ dev: S.keys.splitEp(sw.entry)[0], ep: sw.entry }, 'TPE_ACC_SW_10', 'self']);
+  assert.ok(entryDevs.has(sw.via.dev) && sw.entries.includes(sw.entry));
+  const rc = Q.reach(sw.src, sw.ip, { proto: 'tcp', port: 22, entry: sw.entry });
+  assert.strictEqual(rc.verdict, 'allow', '看路徑：以列的 src 與 entry 查 Q.reach');
+  x.self.rows.forEach((r) => {
+    if (r.via) assert.deepStrictEqual([r.via.ep, S.keys.splitEp(r.entry)[0], r.via.dev !== r.dev], [r.entry, r.via.dev, true]);
+    else assert.ok(entryDevs.has(r.dev) && S.keys.splitEp(r.entry)[0] === r.dev, `${r.dev} ${r.ip} ${r.service} 的 via 為 null 時入口在本身`);
+    assert.ok(r.route && r.filter, '帶分層結果');
+  });
+  // 入口設備的列在前，其餘依設備、位址、服務
+  const firstOther = x.self.rows.findIndex((r) => !entryDevs.has(r.dev));
+  assert.ok(x.self.rows.slice(firstOther).every((r) => !entryDevs.has(r.dev)));
+  const PO = new Map(x.services.map((s, i) => [s.id, i]));
+  for (let i = firstOther + 1; i < x.self.rows.length; i++) {
+    const a = x.self.rows[i - 1]; const b = x.self.rows[i];
+    const c = S.util.natural(a.dev, b.dev) || S.ip.toInt(a.ip) - S.ip.toInt(b.ip) || S.util.cmp(a.vrf, b.vrf) || PO.get(a.service) - PO.get(b.service);
+    assert.ok(c < 0, `排序：${a.dev} ${a.ip} ${a.service} → ${b.dev} ${b.ip} ${b.service}`);
+  }
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(exposureOf(S.query(sampleSnap())).self)), JSON.parse(JSON.stringify(x.self)), '重新計算結果相同');
+});
+
+test('Q.exposure dnat 段：dst-nat 改寫成私有位址、卻經對外介面送回外部（同 R09）時不算允許，計為路由沒到', () => {
+  const lines = R1.slice();
+  // 192.168.9.10 不在任何網段，只符合預設路由（經 WAN 送回外部）
+  lines.splice(lines.indexOf('/ip firewall nat add action=masquerade chain=srcnat out-interface-list=WAN'), 0,
+    '/ip firewall nat add action=dst-nat chain=dstnat dst-port=9090 in-interface-list=WAN protocol=tcp to-addresses=192.168.9.10');
+  const s = build(lines.concat(SW1).join('\n')); const Q = S.query(s);
+  const dn = s.model.firewallRules.find((r) => r.action === 'dst-nat' && r.params['to-addresses'] === '192.168.9.10');
+  assert.ok(s.findings.some((f) => f.id === 'R09' && f.entities.some((e) => e.key === dn.key)), '檢查報 R09');
+  const rc = Q.reach('192.0.2.10', '198.51.100.2', { proto: 'tcp', port: 9090, entry: 'R1|ether1' });
+  assert.ok(rc.paths.every((p) => p.route.code === 'egress-wan'), JSON.stringify(rc.paths.map((p) => p.route.code)));
+  const x = exposureOf(Q); const base = exposureOf(S.query(edge()));
+  assert.strictEqual(x.dnat.rows.some((r) => r.service === 'tcp/9090'), false, '不列為允許');
+  assert.deepStrictEqual([x.dnat.counts.deny - base.dnat.counts.deny, x.deniedBy.dnat.noRoute - base.deniedBy.dnat.noRoute], [1, 1], '計為路由沒到');
 });
 
 const reachOf = (Q, src, dst, service, entry) => {

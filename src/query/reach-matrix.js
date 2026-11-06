@@ -70,6 +70,14 @@
       services.forEach((s, i) => U.getOr(out, keyOf(s), () => []).push(i));
       return Array.from(out.values());
     }
+    // 目的是設備本身時，localService 依埠找那台設備的管理服務（/ip service：停用或 available-from 不含來源就拒絕），
+    // 規則沒提到的埠不一定行為相同：同一類再依「這台設備在這個埠的服務」（沒有、或啟用與允許的來源）分開（矩陣與暴露清單共用）
+    const svcSig = (dev, s) => { if (s.proto !== 'tcp' || s.port == null) return '-'; const sv = Q.ipServicesOf(dev).find((x) => x.port === s.port); return sv ? (sv.enabled ? '1' : '0') + '|' + sv.addresses.slice().sort().join(',') : '-'; };
+    /** svcClasses 的結果再依 dev 的 /ip service 分開（目的是那台設備本身時用）。 */
+    const devClasses = (classes, services, dev) => classes.flatMap((sis) => {
+      const by = new Map(); sis.forEach((si) => U.getOr(by, svcSig(dev, services[si]), () => []).push(si));
+      return Array.from(by.values());
+    });
     function* matrixRawSteps(opts) {
       const o = opts || {};
       const zs = zones(o); zs.optsRaw = o;
@@ -92,14 +100,9 @@
       const cells = new Map();
       const cellOf = (a, b) => U.getOr(cells, a + '\u0000' + b, () => ({ src: a, dst: b, recs: [] }));
       const classes = svcClasses(services);
-      // 目的是設備本身時，localService 依埠找那台設備的管理服務（/ip service：停用或 available-from 不含來源就拒絕），
-      // 規則沒提到的埠不一定行為相同：同一類再依「這台設備在這個埠的服務」（沒有、或啟用與允許的來源）分開
+      // 目的是設備本身時，同一類再依那台設備的 /ip service 分開（devClasses）
       const devClassMemo = new Map();
-      const svcSig = (dev, s) => { if (s.proto !== 'tcp' || s.port == null) return '-'; const sv = Q.ipServicesOf(dev).find((x) => x.port === s.port); return sv ? (sv.enabled ? '1' : '0') + '|' + sv.addresses.slice().sort().join(',') : '-'; };
-      const classesFor = (t) => (t.via !== 'device' ? classes : U.getOr(devClassMemo, t.dev, () => classes.flatMap((sis) => {
-        const by = new Map(); sis.forEach((si) => U.getOr(by, svcSig(t.dev, services[si]), () => []).push(si));
-        return Array.from(by.values());
-      })));
+      const classesFor = (t) => (t.via !== 'device' ? classes : U.getOr(devClassMemo, t.dev, () => devClasses(classes, services, t.dev)));
       // 判斷次數的上限（來源代表 × 目的 × service 等價類，扣掉來源與目的相同的）只用來回報進度
       const total = srcReps.length * targets.reduce((n, t) => n + classesFor(t).length, 0);
       let done = 0;
@@ -351,6 +354,6 @@
       })));
     }
 
-    Object.assign(E, { matrix, matrixSteps, cell, ruleImpact });
+    Object.assign(E, { matrix, matrixSteps, cell, ruleImpact, svcClasses, devClasses });
   };
 })(globalThis.SSOT = globalThis.SSOT || {});

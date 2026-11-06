@@ -180,6 +180,11 @@ const COLLISIONS = {
   R06: { input: (n) => pair([net('10.0.30.0/24', 'gateway=10.0.30.1 dns-server=1.1.1.1 ntp-server=10.0.0.1'), net('10.0.40.0/24', 'gateway=10.0.40.1')],
     [net('10.0.30.0/24', 'gateway=10.0.30.2 dns-server=8.8.8.8 ntp-server=10.0.0.2'), net('10.0.40.0/24', 'gateway=10.0.40.2')], true, n),
   facets: ['dns|10.0.30.0/24', 'gateway|10.0.30.0/24', 'gateway|10.0.40.0/24', 'ntp|10.0.30.0/24'] },
+  // R13：兩台設備共用兩個網段，各自放在不同的 OSPF area（同一組設備、兩個網段）
+  R13: { input: () => build(['A', 'B'].map((d, k) => [`${d} (10.0.1.${k + 1}):`, '### /export terse',
+    ip(`10.0.1.${k + 1}/24`, 'ether1'), ip(`10.0.2.${k + 1}/24`, 'ether2'), `/routing ospf area add area-id=0.0.0.${k} instance=default name=a${k}`,
+    `/routing ospf interface-template add area=a${k} networks=10.0.1.0/24,10.0.2.0/24 passive`].join('\n')).join('\n')),
+  facets: ['link|10.0.1.0/24', 'link|10.0.2.0/24'] },
   // 管理面（F11、F13、F14）：沒有寫出的 MAC server／MAC WinBox 都是預設 all；SNMP 的預設 public 與新增的 community；proxy 與預設開著的 bandwidth-server
   F11: { input: () => fwBox([]), facets: ['mac-telnet', 'mac-winbox'] },
   F13: { input: () => fwBox(['/snmp set enabled=yes', '/snmp community add name=nms']), facets: ['nms', 'public'] },

@@ -62,7 +62,7 @@ test('對外入口 S.infer.fw.wanEntries：沒有介面紀錄的成員視為 mai
   const fw = S.infer.fw;
   const ctx = fw.fwContext('R', [{ name: 'WAN', defined: true, include: [], exclude: [], members: ['R|ether2', 'R|ether1'] }], ['R|ether1'], []);
   assert.deepStrictEqual(fw.wanEntries(ctx, (ep) => (ep === 'R|ether1' ? 'cust' : undefined)),
-    [{ dev: 'R', ep: 'R|ether1', vrf: 'cust', hasIfc: true }, { dev: 'R', ep: 'R|ether2', vrf: 'main', hasIfc: false }]);
+    [{ dev: 'R', ep: 'R|ether1', vrf: 'cust', hasIfc: true, wanList: true }, { dev: 'R', ep: 'R|ether2', vrf: 'main', hasIfc: false, wanList: true }]);
   assert.deepStrictEqual(fw.wanEntries(fw.fwContext('R', [], [], []), () => undefined), [], '沒有 WAN 清單時沒有入口');
   // WAN（ether1）在 VRF cust：winbox 從 WAN 連不到（服務在 main），F03 的放行規則仍從 WAN 走得到
   const s = box(['/ip vrf add interfaces=ether1 name=cust', FF('action=accept chain=input dst-port=8291 protocol=tcp')]);

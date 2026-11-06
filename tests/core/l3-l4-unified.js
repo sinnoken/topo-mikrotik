@@ -263,7 +263,7 @@ test('對外入口：zone 矩陣的外部 zone 與暴露清單用同一組入口
   // CE ether1：只有 masquerade（srcnat 的出介面，強證據）、沒有 WAN 清單 → 現在是入口，矩陣與暴露清單都看得到
   const ce = 'TPE_CE_RT_01|ether1';
   assert.strictEqual(Q.boundaryOf(ce).status, 'external');
-  assert.strictEqual(Q.wanEntries('TPE_CE_RT_01').length, 0, 'CE 沒有 WAN 清單');
+  assert.deepStrictEqual(Q.wanEntries('TPE_CE_RT_01').map((w) => [w.ep, w.wanList]), [[ce, false]], 'CE 沒有 WAN 清單：入口來自邊界推論（檢查與 L4 同一份）');
   assert.ok(exEntries.includes(ce) && mxEntries.includes(ce));
   assert.ok(ext.devices.includes('TPE_CE_RT_01'));
   // 沒有介面紀錄的對外介面（CORE_01 ether45：DHCP client 加預設路由）也是入口，Q.reach 接受它當 entry

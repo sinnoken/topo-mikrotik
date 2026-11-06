@@ -212,7 +212,7 @@ test('zone 矩陣：L0 的格子狀態與代表規則；L1／L2 下鑽；相同�
   const d = Q.zoneCell('list:WAN', 'vlan:20');
   const vip = d.groups.find((g) => g.dst.via === 'nat');
   assert.deepStrictEqual([vip.dst.ip, vip.srcs.map((x) => x.ip), vip.services.map((x) => [x.service, x.verdict, x.final.dst])], ['203.0.113.2', ['203.0.113.1'], [['tcp/8443', 'allow', '10.1.20.11']]]);
-  const dnat = s.model.firewallRules.find((r) => r.action === 'dst-nat');
+  const dnat = s.model.firewallRules.find((r) => r.action === 'dst-nat' && r.dev === 'TPE_CORE_RT_01');
   assert.ok(d.ruleDetails.some((r) => r.key === dnat.key && r.verdicts.allow > 0));
   // L3：同一組來源與目的的完整路徑
   assert.strictEqual(Q.reach(vip.srcs[0].ip, vip.dst.ip, { proto: 'tcp', port: 8443 }).verdict, 'allow');
@@ -325,7 +325,7 @@ test('L4 引擎拆成多個檔案：Q 與 S.query 的 L4 成員與參數個數�
 
 test('Q.ruleImpact：規則牽涉的 zone 對與路徑，停用後改變的結果；被遮蔽的規則沒有影響', () => {
   const s = sampleSnap(); const Q = S.query(s);
-  const dnat = s.model.firewallRules.find((r) => r.action === 'dst-nat');
+  const dnat = s.model.firewallRules.find((r) => r.action === 'dst-nat' && r.dev === 'TPE_CORE_RT_01');
   const im = Q.ruleImpact(dnat.key);
   assert.strictEqual(im.rule.key, dnat.key);
   assert.ok(im.cells.some((c) => c.src === 'list:WAN' && c.dst === 'vlan:20' && c.decides > 0));
@@ -333,7 +333,7 @@ test('Q.ruleImpact：規則牽涉的 zone 對與路徑，停用後改變的結�
   const f01 = s.findings.find((f) => f.id === 'F01');
   const shadow = Q.ruleImpact(f01.entities.find((e) => e.type === 'rule').key);
   assert.deepStrictEqual([shadow.shadowed, shadow.total.evaluations, shadow.ifDisabled.total], [true, 0, 0]);
-  const f03 = s.findings.find((f) => f.id === 'F03');
+  const f03 = s.findings.find((f) => f.id === 'F03' && f.entities[0].key === 'TPE_CORE_RT_01');
   const winbox = Q.ruleImpact(f03.entities.find((e) => e.type === 'rule').key);
   assert.ok(winbox.ifDisabled.changed.every((c) => c.service === 'tcp/8291' && c.to === 'deny'), '停用 winbox 放行：只影響 tcp/8291，改為 deny');
   assert.strictEqual(Q.ruleImpact('no-such-rule'), null);

@@ -101,6 +101,7 @@ add area=backbone networks=10.1.10.0/24 passive
 add area=backbone networks=10.1.30.0/24
 /ip route
 add check-gateway=ping dst-address=0.0.0.0/0 gateway=203.0.113.1
+add dst-address=10.200.0.0/16 gateway=10.1.20.254
 /ip pool
 add name=pool-user ranges=10.1.30.100-10.1.30.200
 /ip dhcp-server lease
@@ -949,6 +950,8 @@ Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC, o - OSPF, b - BGP
     immediate-gw=10.97.0.1 distance=1 scope=30
  DAc dst-address=172.31.1.0/30 routing-table=main gateway=ether46
     immediate-gw=ether46 distance=0 scope=10
+ As  dst-address=10.200.0.0/16 routing-table=main gateway=10.1.20.254
+    immediate-gw=10.1.20.254%vlan20 distance=1 scope=30
 
 [admin@TPE_CORE_RT_01] > /routing ospf neighbor print detail without-paging
 Flags: 
@@ -996,7 +999,10 @@ TPE_CORE_RT_02 (10.1.10.3):
 /ip dhcp-server network add address=10.1.20.0/24 gateway=10.1.21.1
 /ip dhcp-server network add address=10.1.30.0/24 dns-server=10.1.10.2 gateway=10.1.30.3
 /routing ospf instance set [ find default=yes ] router-id=10.1.255.2
+/routing ospf area add area-id=0.0.0.1 instance=default name=area1
+/routing ospf interface-template add area=area1 networks=10.1.30.0/24 passive
 /ip route add dst-address=0.0.0.0/0 gateway=203.0.113.5
+/ip route add dst-address=10.200.0.0/16 gateway=10.1.20.254
 /ip pool add name=pool-user ranges=10.1.30.100-10.1.30.200
 /ip dns set allow-remote-requests=yes servers=8.8.8.8
 /ip dns static add address=10.1.10.2 name=ntp.tpe.lan
@@ -1735,6 +1741,8 @@ Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC, o - OSPF, b - BGP
  As  dst-address=10.94.0.0/16 routing-table=main blackhole distance=1 scope=30
  As  dst-address=10.95.0.0/16 routing-table=main gateway=10.94.0.1
     immediate-gw=10.94.0.1 distance=1 scope=30
+ As  dst-address=10.200.0.0/16 routing-table=main gateway=10.1.20.254
+    immediate-gw=10.1.20.254%vlan20 distance=1 scope=30
 
 _____
 TPE_ACC_SW_01 (10.1.10.21):
@@ -3993,6 +4001,8 @@ TPE_BR_RT_01 (10.1.10.240):
 /interface vlan add disabled=yes interface=ether2 name=vlan30 vlan-id=30
 /ip address add address=10.1.10.240/24 interface=vlan10 network=10.1.10.0
 /ip address add address=10.1.20.240/24 interface=vlan20 network=10.1.20.0
+/ip address add address=10.1.50.1/24 interface=ether3 network=10.1.50.0
+/ip route add dst-address=10.1.30.0/24 gateway=10.1.20.2
 /system identity set name=TPE_BR_RT_01
 
 [admin@TPE_BR_RT_01] > /ip neighbor print detail without-paging
@@ -4008,6 +4018,10 @@ Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC, o - OSPF, b - BGP
     immediate-gw=vlan10 distance=0 scope=10
  DAc dst-address=10.1.20.0/24 routing-table=main gateway=vlan20
     immediate-gw=vlan20 distance=0 scope=10
+ DAc dst-address=10.1.50.0/24 routing-table=main gateway=ether3
+    immediate-gw=ether3 distance=0 scope=10
+ As  dst-address=10.1.30.0/24 routing-table=main gateway=10.1.20.2
+    immediate-gw=10.1.20.2%vlan20 distance=1 scope=30
 
 _____
 TPE_BR_SW_01 (10.1.10.241):
@@ -4180,7 +4194,18 @@ TPE_CE_RT_01 (192.168.50.254):
 /routing table add disabled=no fib name=to-isp2
 /routing rule add action=lookup-only-in-table src-address=172.16.10.128/25 table=to-isp2
 /routing rule add action=lookup dst-address=203.0.113.0/24 min-prefix=0 table=main
+/ip firewall filter add action=accept chain=input connection-state=established,related,untracked
+/ip firewall filter add action=drop chain=input connection-state=invalid
+/ip firewall filter add action=accept chain=input protocol=icmp
+/ip firewall filter add action=accept chain=input dst-port=22 protocol=tcp
+/ip firewall filter add action=drop chain=input in-interface=ether1
+/ip firewall filter add action=accept chain=forward comment="allow lan" connection-state=new in-interface=ether2
+/ip firewall filter add action=drop chain=forward comment="drop all"
 /ip firewall nat add action=masquerade chain=srcnat out-interface=ether1
+/ip firewall nat add action=dst-nat chain=dstnat dst-port=3389 in-interface=ether1 protocol=tcp to-addresses=10.9.9.9
+/ip neighbor discovery-settings set discover-interface-list=none
+/tool mac-server set allowed-interface-list=none
+/tool mac-server mac-winbox set allowed-interface-list=none
 /system identity set name=TPE_CE_RT_01
 
 [admin@TPE_CE_RT_01] > /ip neighbor print detail without-paging

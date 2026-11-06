@@ -301,11 +301,12 @@
       /** 某個介面的對外邊界；沒有證據時為 null（internal）。 */
       boundaryOf: (ep) => boundaryIndex().byEp.get(ep) || null,
       /**
-       * 對外入口（S.infer.fw.wanEntries，檢查用同一份）：[{ dev, ep, vrf, hasIfc }]（凍結）；不給 d 時是全部設備（依設備、介面排序）。
-       * 現在是名稱含 WAN 的清單成員（firewallZones），沒有介面紀錄的視為 main；VRF 的用法見 S.infer.fw.wanEntries 的說明。
+       * 對外入口（S.infer.fw.wanEntries，檢查用同一份）：[{ dev, ep, vrf, hasIfc, wanList }]（凍結）；不給 d 時是全部設備（依設備；每台 WAN 清單成員在前）。
+       * 名稱含 WAN 的清單成員（firewallZones）與對外邊界判定為 external 的介面（Q.boundaries）的聯集，沒有介面紀錄的視為 main；VRF 的用法見 S.infer.fw.wanEntries 的說明。
        */
       wanEntries(d) {
-        if (d !== undefined) return U.getOr(wanEntryMemo, d, () => (zoneByDev.has(d) ? S.infer.fw.wanEntries(ctxOf(d), (ep) => { const i = ifc.get(ep); return i ? i.vrf : undefined; }) : EMPTY));
+        if (d !== undefined) return U.getOr(wanEntryMemo, d, () => (zoneByDev.has(d) ? S.infer.fw.wanEntries(ctxOf(d), (ep) => { const i = ifc.get(ep); return i ? i.vrf : undefined; },
+          Q.boundaries(d).filter((b) => b.status === 'external').map((b) => b.ep)) : EMPTY));
         if (!wanEntryAll) wanEntryAll = Object.freeze(m.firewallZones.map((z) => z.dev).flatMap((x) => Q.wanEntries(x)));
         return wanEntryAll;
       },

@@ -285,7 +285,15 @@ for (let s = 1; s <= SITES; s++) {
       e.push(['/routing ospf interface-template', 'add', 'area=backbone auth=md5 auth-id=1 auth-key=Ospf-Key-01 interfaces=bond100 type=ptp']);   // 核心互連：有驗證
       e.push(['/routing ospf interface-template', 'add', 'area=backbone interfaces=ether46']);                                     // 往未知鄰居（R02）：沒有驗證
       e.push(['/routing ospf interface-template', 'add', `area=backbone networks=10.${s}.10.0/24 passive`]);                       // 管理網段：passive
-      e.push(['/routing ospf interface-template', 'add', `area=backbone networks=10.${s}.30.0/24`]);                               // 使用者網段：沒有設 passive
+      e.push(['/routing ospf interface-template', 'add', `area=backbone networks=10.${s}.30.0/24`]);                               // 使用者網段：沒有設 passive（R14、R15）
+    }
+    if (F) {                                                                                                           // R01：往合作單位的網段經伺服器網段上沒有收集的防火牆（ISP 閘道經對外介面，不再是 R01）
+      e.push(['/ip route', 'add', `dst-address=10.200.0.0/16 gateway=10.${s}.20.254`]);
+      rt.push({ flags: 'As', dst: '10.200.0.0/16', gw: `10.${s}.20.254`, igw: `10.${s}.20.254%vlan20`, dist: 1, scope: 30 });
+    }
+    if (F && ci === 1) {                                                                                                // R13：同一個使用者網段在核心 02 放進 area 0.0.0.1（passive），核心 01 是骨幹
+      e.push(['/routing ospf area', 'add', 'area-id=0.0.0.1 instance=default name=area1']);
+      e.push(['/routing ospf interface-template', 'add', `area=area1 networks=10.${s}.30.0/24 passive`]);
     }
     // 防火牆：defconf 風格（WAN 只放 ISP 上行；多站點時連到 WAN 路由器的 ether48 是內部鏈路，歸在 LAN），管理服務只開給管理網段
     const FF = (a) => e.push(['/ip firewall filter', 'add', a]);
@@ -374,8 +382,14 @@ for (let s = 1; s <= SITES; s++) {
 }
 if (SITES > 1) {
   wan.entries.push(['/ip route', 'add', 'dst-address=0.0.0.0/0 gateway=203.0.113.1']);
-  // ADR-023：WAN 路由器沒有 WAN 清單、也沒有 filter 規則，以預設路由與 masquerade 判定對外（大型資料的邊界推論）
+  // ADR-023：WAN 路由器以預設路由與 masquerade 判定對外，另有 defconf 式的 WAN 清單與 input／forward（真實的邊界：從 WAN 進來的新連線丟棄）
   wan.entries.push(['/ip firewall nat', 'add', 'action=masquerade chain=srcnat out-interface=ether47']);
+  wan.entries.push(['/interface list', 'add', 'comment=defconf name=WAN'], ['/interface list member', 'add', 'comment=defconf interface=ether47 list=WAN']);
+  [['input', 'accept', 'connection-state=established,related,untracked'], ['input', 'drop', 'connection-state=invalid'], ['input', 'accept', 'protocol=icmp'], ['input', 'drop', 'in-interface-list=WAN'],
+    ['forward', 'accept', 'connection-state=established,related,untracked'], ['forward', 'drop', 'connection-state=invalid'], ['forward', 'drop', 'connection-nat-state=!dstnat connection-state=new in-interface-list=WAN']]
+    .forEach(([chain, action, m]) => wan.entries.push(['/ip firewall filter', 'add', `action=${action} chain=${chain} ${m}`]));
+  // 管理面：MAC server、MAC WinBox 與鄰居探索不開在任何介面（乾淨網路不觸發 F11、F12）
+  wan.entries.push(['/tool mac-server', 'set', 'allowed-interface-list=none'], ['/tool mac-server mac-winbox', 'set', 'allowed-interface-list=none'], ['/ip neighbor discovery-settings', 'set', 'discover-interface-list=none']);
   wan.routes.push({ flags: 'As', dst: '0.0.0.0/0', gw: '203.0.113.1', igw: '203.0.113.1%ether47', dist: 1, scope: 30 });
   for (let s = 1; s <= SITES; s++) wan.routes.push({ flags: 'DAo+', dst: `10.${s}.0.0/16`, gw: `10.254.${s}.2,10.254.${s}.6`, igw: `10.254.${s}.2%ether${(s - 1) * 2 + 1},10.254.${s}.6%ether${(s - 1) * 2 + 2}`, dist: 110, scope: 20 });
   wan.addrs.forEach((a) => wan.entries.push(['/ip address', 'add', `address=${a.cidr} interface=${a.ifc} network=${a.net}`]));
@@ -402,7 +416,9 @@ if (FAULTS) {
   const entries = {
     [rt.name]: [['/interface vlan', 'add', 'interface=ether2 name=vlan10 vlan-id=10'], ['/interface vlan', 'add', 'interface=ether2 name=vlan20 vlan-id=20'],
       ['/interface vlan', 'add', 'disabled=yes interface=ether2 name=vlan30 vlan-id=30'],
-      ['/ip address', 'add', 'address=10.1.10.240/24 interface=vlan10 network=10.1.10.0'], ['/ip address', 'add', 'address=10.1.20.240/24 interface=vlan20 network=10.1.20.0']],
+      ['/ip address', 'add', 'address=10.1.10.240/24 interface=vlan10 network=10.1.10.0'], ['/ip address', 'add', 'address=10.1.20.240/24 interface=vlan20 network=10.1.20.0'],
+      // R10、R12：分支的實驗網段 10.1.50.0/24 只在這台；這台有到使用者網段的靜態路由，核心沒有回到 10.1.50.0/24 的路由（只有往 ISP 的預設路由）
+      ['/ip address', 'add', 'address=10.1.50.1/24 interface=ether3 network=10.1.50.0'], ['/ip route', 'add', 'dst-address=10.1.30.0/24 gateway=10.1.20.2']],
     [sw.name]: [['/interface bridge', 'add', 'name=bridge1 vlan-filtering=yes'], ['/interface vlan', 'add', 'interface=bridge1 name=vlan10 vlan-id=10'],
       ['/interface bridge port', 'add', `bridge=bridge1 interface=ether1 comment="to ${rt.name}"`], ['/interface bridge port', 'add', `bridge=bridge1 interface=ether2 comment="to ${lab.name}"`],
       ['/interface bridge vlan', 'add', 'bridge=bridge1 tagged=bridge1,ether1,ether2 vlan-ids=10'], ['/interface bridge vlan', 'add', 'bridge=bridge1 tagged=ether1,ether2 vlan-ids=20'],
@@ -417,7 +433,8 @@ if (FAULTS) {
     [lab.name]: nrow('ether1', nb(sw, 'ether2')),
   };
   const extra = {
-    [rt.name]: [[`/ip route print ${D}`, routeText([10, 20].map((v) => ({ flags: 'DAc', dst: `10.1.${v}.0/24`, gw: `vlan${v}`, igw: `vlan${v}`, dist: 0 })))]],
+    [rt.name]: [[`/ip route print ${D}`, routeText([10, 20].map((v) => ({ flags: 'DAc', dst: `10.1.${v}.0/24`, gw: `vlan${v}`, igw: `vlan${v}`, dist: 0 }))
+      .concat([{ flags: 'DAc', dst: '10.1.50.0/24', gw: 'ether3', igw: 'ether3', dist: 0 }, { flags: 'As', dst: '10.1.30.0/24', gw: '10.1.20.2', igw: '10.1.20.2%vlan20', dist: 1, scope: 30 }]))]],
     [sw.name]: [[`/interface bridge host print ${D}`, bridgeHostText([{ local: true, vid: 0, mac: sw.mac, ifc: 'bridge1' }, { vid: 10, mac: rt.mac, ifc: 'ether1' }, { vid: 10, mac: lab.mac, ifc: 'ether2' }])]],
     [lab.name]: [[`/interface bridge host print ${D}`, bridgeHostText([{ local: true, vid: 0, mac: lab.mac, ifc: 'bridge1' }, { vid: 0, mac: sw.mac, ifc: 'ether1' }])]],
   };
@@ -446,7 +463,16 @@ if (FAULTS) {
     ['/routing rule', 'add', 'action=lookup-only-in-table src-address=172.16.10.128/25 table=to-isp2'],
     ['/routing rule', 'add', 'action=lookup dst-address=203.0.113.0/24 min-prefix=0 table=main'],
     // ADR-023：CE 沒有 WAN 清單，以 masquerade 的出介面判定對外（預設路由的下一跳 PE 在基準內，不算）；另有一條閘道不通的備援預設路由（非作用中，R11 用）
-    ['/ip firewall nat', 'add', 'action=masquerade chain=srcnat out-interface=ether1'], ['/ip route', 'add', 'distance=10 gateway=10.255.0.1']];
+    ['/ip firewall nat', 'add', 'action=masquerade chain=srcnat out-interface=ether1'], ['/ip route', 'add', 'distance=10 gateway=10.255.0.1'],
+    // R09：轉送到不存在的伺服器 10.9.9.9（私有位址只符合經對外介面 ether1 的預設路由，會送回外部；F04 不列）
+    ['/ip firewall nat', 'add', 'action=dst-nat chain=dstnat dst-port=3389 in-interface=ether1 protocol=tcp to-addresses=10.9.9.9'],
+    // 沒有 WAN 清單、以邊界證據判定 ether1 對外：F03／F07 的 ssh 從 ether1 進得來；forward 漏了 established（F15，會轉送的路由器）
+    ['/ip firewall filter', 'add', 'action=accept chain=input connection-state=established,related,untracked'], ['/ip firewall filter', 'add', 'action=drop chain=input connection-state=invalid'],
+    ['/ip firewall filter', 'add', 'action=accept chain=input protocol=icmp'], ['/ip firewall filter', 'add', 'action=accept chain=input dst-port=22 protocol=tcp'],
+    ['/ip firewall filter', 'add', 'action=drop chain=input in-interface=ether1'],
+    ['/ip firewall filter', 'add', 'action=accept chain=forward comment="allow lan" connection-state=new in-interface=ether2'], ['/ip firewall filter', 'add', 'action=drop chain=forward comment="drop all"'],
+    ['/tool mac-server', 'set', 'allowed-interface-list=none'], ['/tool mac-server mac-winbox', 'set', 'allowed-interface-list=none'],
+    ['/ip neighbor discovery-settings', 'set', 'discover-interface-list=none']];
   const vrfText = ['Flags: X - disabled; * - builtin', ' 0    name="cust-a" interfaces=ether2,ether3', ' 1  * name="main" interfaces=all'].join('\n');
   const peRoutes = [
     { flags: 'DAc', dst: '10.1.30.0/24', gw: 'ether1', dist: 0 },

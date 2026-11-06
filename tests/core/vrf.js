@@ -285,8 +285,8 @@ test('策略路由：封包在 VRF 時查那個 VRF，使用者的 rule 在 VRF 
 test('VRF：只用 main 的網路，findingKey 與加入 VRF 之前（2.11.0）相同；範例資料的 VRF 部分不產生誤報', () => {
   const s = sampleSnap(); const Q = S.query(s);
   const before = JSON.parse(read('tests/fixtures/vrf/sample-2.11-finding-keys.json')).keys;
-  // 3.4.0 新增的管理面檢查（F10–F14）、3.5.0 的 L01、L02 與 3.7.0 的 F15 不在 2.11.0 的集合裡，比對時去掉
-  assert.deepStrictEqual(keys(s).filter((k) => !/^\["(F1[0-5]|L0[12])"/.test(k)), before, '範例資料加入 VRF 路由器後，finding 與 2.11.0 完全相同（重疊的 IP 不是 A01／A09）');
+  // 3.4.0 新增的管理面檢查（F10–F14）、3.5.0 的 L01、L02、3.7.0 的 F15，與 3.8.0 的 R07–R15、CE 以邊界證據判定對外後的 F03、F07 不在 2.11.0 的集合裡，比對時去掉
+  assert.deepStrictEqual(keys(s).filter((k) => !/^\["(F1[0-5]|L0[12]|R0[7-9]|R1[0-5])"|^\["F0[37]","device:TPE_CE_RT_01"/.test(k)), before, '範例資料加入 VRF 路由器後，finding 與 2.11.0 完全相同（重疊的 IP 不是 A01／A09）');
   assert.ok(Q.vrfs().includes('cust-a'), '範例資料要有 VRF');
   const main = build(['A (10.0.0.1):', '### /export terse', '/ip address add address=10.0.10.1/24 interface=ether5',
     'B (10.0.0.2):', '### /export terse', '/ip address add address=10.0.10.1/24 interface=ether5'].join('\n') + '\n');

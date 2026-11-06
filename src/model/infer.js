@@ -32,6 +32,7 @@
     behindLocations(M);
     firewall(M);
     boundaries(M); // 用到 M.fwCtx（清單展開、WAN 清單）
+    entriesOf(M); // 對外入口：WAN 清單成員＋判定為對外的邊界（用到 M.boundaries）
     routingDomains(M);
   }
 
@@ -718,19 +719,24 @@
       chain: (family, table, chain) => chains.get(family + '|' + table + '|' + chain) || [] };
   }
   /**
-   * 對外入口（唯一的定義；檢查以模型、查詢層以 Snapshot 呼叫，各自傳入 vrfOf）：ctx.wan 的每個介面一筆，依介面鍵排序。
+   * 對外入口（唯一的定義；檢查以模型、查詢層以 Snapshot 呼叫，各自傳入 vrfOf 與 external）：ctx.wan（名稱含 WAN 的清單成員）
+   * 與 external（對外邊界判定為 external 的介面鍵，boundaries 的 status，ADR-023 決策 7）的聯集，每個介面一筆。
+   * 排序：WAN 清單的成員在前（依介面鍵），只由邊界證據判定的在後（依介面鍵）——檢查訊息取第一個入口時，有 WAN 清單的設備結果不變。
    * vrfOf(ep)：介面所在的 VRF；沒有介面紀錄（只出現在 /ip address 或 interface list member）時回 undefined。
-   * 回傳 [{ dev, ep, vrf, hasIfc }]（凍結）。VRF 的規則：
+   * 回傳 [{ dev, ep, vrf, hasIfc, wanList（是不是 WAN 清單的成員） }]（凍結）。VRF 的規則：
    *   - 沒有介面紀錄的成員也是入口，VRF 視為 main（hasIfc 為 false）。
    *   - 所有 VRF 的成員都是入口。封包只會到達入口所在 VRF 的位址與服務，所以連到設備本身的服務（F07、F10、F14、暴露清單「外部 → 網路設備」）
    *     只取服務所在 VRF 的入口（/ip service 有 vrf 參數，基準沒有解析，視為 main）；轉送與 dst-nat（F03、F04、F05）用全部入口，規則不分 VRF。
    *   - 只看介面清單、不經 IP 的設定（F11 MAC server、F12 鄰居探索、F14 UPnP 的介面）也用全部入口。
    */
-  function wanEntries(ctx, vrfOf) {
-    if (!ctx || !ctx.wan) return Object.freeze([]);
-    return Object.freeze(Array.from(ctx.wan).sort(S.util.natural).map((ep) => {
+  function wanEntries(ctx, vrfOf, external) {
+    if (!ctx) return Object.freeze([]);
+    const inList = ctx.wan || new Set();
+    const eps = S.util.uniq(Array.from(inList).concat(external || []))
+      .sort((a, b) => (inList.has(a) ? 0 : 1) - (inList.has(b) ? 0 : 1) || S.util.natural(a, b));
+    return Object.freeze(eps.map((ep) => {
       const v = vrfOf(ep);
-      return Object.freeze({ dev: ctx.dev, ep, vrf: v === undefined || v === null ? K.MAIN_VRF : K.vrf(v), hasIfc: v !== undefined });
+      return Object.freeze({ dev: ctx.dev, ep, vrf: v === undefined || v === null ? K.MAIN_VRF : K.vrf(v), hasIfc: v !== undefined, wanList: inList.has(ep) });
     }));
   }
   /** 入口中在 vrf 的介面鍵。 */
@@ -760,6 +766,16 @@
       eff = new Set(Array.from(base).filter((x) => (neg ? !set.has(x) : set.has(x))));
     }
     return eff;
+  }
+  /** 介面 at 是否符合規則在 dir 方向的介面條件（呼叫端已排除無法展開的清單）；all 清單包含任何介面。 */
+  function ifcIn(ctx, rule, dir, at) {
+    for (const [k, isList] of [[dir + '-interface', false], [dir + '-interface-list', true]]) {
+      const v = rule.match[k]; if (v === undefined) continue;
+      const { neg, body } = splitNeg(v);
+      const has = isList ? body === 'all' || ctx.resolve(body).has(at) : K.ep(ctx.dev, body) === at;
+      if (has === neg) return false;
+    }
+    return true;
   }
   /** 規則 i 是否涵蓋 j（同一個 chain；呼叫端負責 i 在 j 之前、動作會終止比對）。 */
   function covers(ctx, i, j) {
@@ -869,7 +885,8 @@
         const negOnly = [dir + '-interface', dir + '-interface-list'].every((k) => rule.match[k] === undefined || splitNeg(rule.match[k]).neg);
         if (!negOnly) return false; continue;
       }
-      if (!e.has(at)) return false;
+      // 介面不在比對環境的介面全集裡（例如只出現在 /ip dhcp-client 的對外介面）：逐一條件判斷，否定的條件對它成立
+      if (!ctx.universe.has(at) ? !ifcIn(ctx, rule, dir, at) : !e.has(at)) return false;
     }
     for (const k of Object.keys(rule.match)) {
       if (/^(in|out)-interface(-list)?$/.test(k)) continue;
@@ -1098,14 +1115,13 @@
   /** 推論：每台有設定資料的設備的 WAN／LAN 分類與有效的 /ip service（含預設值）。 */
   function firewall(M) {
     M.fwZones = new Map(); M.fwServices = new Map(); M.fwCtx = new Map(); M.wanEntries = new Map();
-    const vrfOf = (ep) => { const i = M.ifcs.get(ep); return i ? i.vrf : undefined; };
     const ifcsByDev = new Map(); M.ifcs.forEach((i) => S.util.getOr(ifcsByDev, i.dev, () => []).push(i.key));
     const listsByDev = new Map(); M.fw.lists.forEach((l) => S.util.getOr(listsByDev, l.dev, () => []).push({ name: l.name, defined: l.defined, include: l.include, exclude: l.exclude, members: Array.from(l.members.keys()) }));
     const rulesByDev = new Map(); M.fw.rules.forEach((r) => S.util.getOr(rulesByDev, r.dev, () => []).push(r));
     M.devices.forEach((d) => {
       if (!d.collected || !d.data.has('config')) return;
       const ctx = fwContext(d.key, listsByDev.get(d.key) || [], ifcsByDev.get(d.key) || [], rulesByDev.get(d.key) || []);
-      M.fwCtx.set(d.key, ctx); M.wanEntries.set(d.key, wanEntries(ctx, vrfOf));
+      M.fwCtx.set(d.key, ctx); // 對外入口 M.wanEntries 要等邊界推論完成（entriesOf）
       M.fwZones.set(d.key, { dev: d.key, basis: ctx.status === 'ok' ? 'interface-list' : null, status: ctx.status, wanLists: ctx.wanLists, wanInterfaces: ctx.wan ? Array.from(ctx.wan).sort(S.util.natural) : [],
         lanLists: ctx.lanLists, lanInterfaces: Array.from(ctx.lan).sort(S.util.natural), ipv6: ipv6Status(M, d.key, rulesByDev.get(d.key) || []) });
       const svcs = new Map(SERVICE_DEFAULTS.map(([name, port, enabled]) => [name, { dev: d.key, name, enabled, port, addresses: [], basis: 'default', src: [] }]));
@@ -1130,7 +1146,7 @@
    *     pppoe-client：/interface pppoe-client 的 add-default-route=yes、沒有停用；是否停用不明時為 weak（介面是 PPPoE 介面本身）。
    *     srcnat-out：srcnat 的 masquerade／src-nat 的 out-interface、out-interface-list（展開成員；否定、清單無法展開時不歸屬任何介面）。
    *       規則另限了 dst-address／dst-address-list（例如 hairpin NAT）時為 weak。
-   *     dstnat-in：dstnat 的 dst-nat／netmap 的 in-interface、in-interface-list（同上）。
+   *     dstnat-in：dstnat 的 dst-nat／netmap 的 in-interface、in-interface-list（同上）；入介面是 LAN 清單的成員時為 weak（ref.reason lan-list：從內部進來的轉送）。
    *   弱（weak）：public-address（介面上的位址是公網，S.ip.classify 為 public）、cgnat-address（100.64.0.0/10，電信業者那一側）、
    *     dstnat-address（dst-nat 的 dst-address 是這台設備介面上的公網位址）、wan-list（名稱含 WAN 的 interface list 的成員，firewallZones 的同一份判斷）。
    * status：有強證據 → external；只有弱證據但有 wan-list → external（維持名稱判斷的結果）；其他只有弱證據 → possible；證據都是 none → internal。
@@ -1151,16 +1167,12 @@
       const e = S.util.getOr(out, ep, () => { const i = M.ifcs.get(ep); return { dev, ep, vrf: K.vrf(i ? i.vrf : null), hasIfc: !!i, status: null, evidence: [] }; });
       e.evidence.push({ kind, strength, src: src.map((x) => x.slice()), ref });
     };
-    // 下一跳位址 → 出介面：直連網段包含它的介面（同一個 VRF）
-    const ifcFor = (dev, ip, vrf) => {
-      const hit = (ifcsByDev.get(dev) || []).filter((i) => K.vrf(i.vrf) === vrf && Array.from(i.ips.keys()).some((c) => { const p = S.ip.parseCidr(c); return p && p.len < 32 && S.ip.inNet(ip, p.net, p.len); }))
-        .sort((a, b) => S.util.natural(a.key, b.key));
-      return hit.length ? hit[0].key : null;
-    };
+    // 下一跳 → 出介面：路由視圖的 egress（寫了介面就是它，否則是同一個 VRF 中直連網段包含閘道的介面）
+    const RV = routingView(M);
     M.routes.forEach((r) => {
       if (r.len !== 0 || r.blackhole) return;
       r.nh.forEach((n) => {
-        const ep = n.ifc ? K.ep(r.dev, n.ifc) : n.ip ? ifcFor(r.dev, n.ip, K.vrf(n.vrf)) : null;
+        const ep = RV.egress(r.dev, n);
         const inside = !!(n.ip && owned.has(n.ip));
         add(r.dev, ep, 'default-route', inside ? 'none' : 'strong', [[r.block, r.line]],
           { prefix: '0.0.0.0/0', routingTable: r.routingTable, gateway: n.ip, active: r.active, distance: r.distance, reason: inside ? 'next-hop-in-baseline' : null });
@@ -1190,7 +1202,8 @@
         const narrow = r.match['dst-address'] !== undefined || r.match['dst-address-list'] !== undefined;
         natIfcs(ctx, r, 'out').forEach((ep) => add(r.dev, ep, 'srcnat-out', narrow ? 'weak' : 'strong', [[r.block, r.line]], { rule: r.key, action: r.action, reason: narrow ? 'restricted-destination' : null }));
       } else if (r.chain === 'dstnat' && (r.action === 'dst-nat' || r.action === 'netmap')) {
-        natIfcs(ctx, r, 'in').forEach((ep) => add(r.dev, ep, 'dstnat-in', 'strong', [[r.block, r.line]], { rule: r.key, action: r.action }));
+        // LAN 清單的成員：從 LAN 進來的 dst-nat（例如把內部的連線轉到伺服器）不是對外的證據，記為 weak（ref.reason lan-list）
+        natIfcs(ctx, r, 'in').forEach((ep) => { const lan = !!(ctx && ctx.lan.has(ep)); add(r.dev, ep, 'dstnat-in', lan ? 'weak' : 'strong', [[r.block, r.line]], { rule: r.key, action: r.action, reason: lan ? 'lan-list' : null }); });
         const da = r.match['dst-address'];
         if (da !== undefined && !splitNeg(da).neg && S.ip.isIp(da) && S.ip.classify(da) === 'public') {
           (ifcsByDev.get(r.dev) || []).filter((i) => Array.from(i.ips.keys()).some((c) => { const p = S.ip.parseCidr(c); return p && p.ip === da; }))
@@ -1221,6 +1234,91 @@
       e.status = has('strong') || e.evidence.some((x) => x.kind === 'wan-list') ? 'external' : has('weak') ? 'possible' : 'internal';
     });
     M.boundaries = Array.from(out.values()).sort((a, b) => S.util.natural(a.dev, b.dev) || S.util.natural(a.ep, b.ep));
+  }
+  /** 對外入口（M.wanEntries，dev → 凍結陣列）：每台有比對環境的設備，WAN 清單成員＋判定為 external 的邊界（S.infer.fw.wanEntries）。 */
+  function entriesOf(M) {
+    const vrfOf = (ep) => { const i = M.ifcs.get(ep); return i ? i.vrf : undefined; };
+    const ext = new Map(); M.boundaries.forEach((b) => { if (b.status === 'external') S.util.getOr(ext, b.dev, () => []).push(b.ep); });
+    M.fwCtx.forEach((ctx, dev) => M.wanEntries.set(dev, wanEntries(ctx, vrfOf, ext.get(dev) || [])));
+  }
+
+  /*
+   * 模型版的路由視圖（ADR-023「決定」第 7 項）：成員與 S.trace.ROUTING_VIEW 相同（vrfs、vrfsOf、subnetsOf、routesOf、routesInTable、hopOwner、policyOf），
+   * 語意與回傳形狀同 Q 的同名函式（docs/查詢介面.md），只是讀內部模型 M；檢查（⑥）把它交給 S.trace 的單跳轉送決定（lookup），
+   * 和 L3 路由追蹤、L4 可達性用同一套判斷，不呼叫查詢層。回傳的陣列每次相同（S.trace 依陣列快取數字形式）。每個 M 建立一次。
+   * 另有 egress(dev, nh)：下一跳（routes[].nh 的元素）的出介面鍵——寫了介面就是它，否則是同一個 VRF 中直連網段包含閘道的介面（依介面鍵取第一個）；
+   * 找不到時 null。對外邊界的預設路由證據、R01、R07、R09–R12 共用。
+   */
+  const rvMemo = new WeakMap();
+  function routingView(M) {
+    if (rvMemo.has(M)) return rvMemo.get(M);
+    const U = S.util; const MAIN = K.MAIN_VRF; const EMPTY = Object.freeze([]);
+    const own = Array.from(M.ifcs.values()).filter((i) => !i.hearsay).sort((a, b) => U.natural(a.key, b.key));
+    const subnets = []; const ipOwner = new Map(); const ownersByIp = new Map();
+    own.forEach((i) => Array.from(i.ips.keys()).sort(U.natural).forEach((c) => {
+      const p = S.ip.parseCidr(c); if (!p) return;
+      const vrf = K.vrf(i.vrf);
+      ipOwner.set(K.inVrf(p.ip, vrf), i.key);
+      U.getOr(ownersByIp, p.ip, () => []).push({ ep: i.key, dev: i.dev, vrf, net: p.len < 32 ? p.net : null, len: p.len });
+      if (p.len < 32) subnets.push(Object.freeze({ ep: i.key, dev: i.dev, net: p.net, len: p.len, ip: p.ip, vrf, prefix: K.inVrf(p.net + '/' + p.len, vrf) }));
+    }));
+    M.devices.forEach((d) => { if (d.mgmtIp && !ipOwner.has(d.mgmtIp)) ipOwner.set(d.mgmtIp, d.key + '|'); });
+    const subnetsByDev = new Map(); subnets.forEach((s) => U.getOr(subnetsByDev, s.dev, () => []).push(s));
+    subnetsByDev.forEach((v) => Object.freeze(v));
+    const routesByDev = new Map(); M.routes.forEach((r) => { if (r.active !== false) U.getOr(routesByDev, r.dev, () => []).push(r); });
+    routesByDev.forEach((v) => Object.freeze(v));
+    const memo = new Map();
+    const once = (k, f) => { if (!memo.has(k)) memo.set(k, f()); return memo.get(k); };
+    let vrfNames = null;
+    const vrfs = () => vrfNames || (vrfNames = (() => {
+      const set = new Set([MAIN]);
+      M.vrfs.forEach((defs) => defs.forEach((v) => { if (!v.disabled) set.add(v.name); }));
+      M.ifcs.forEach((i) => set.add(K.vrf(i.vrf)));
+      M.arps.forEach((a) => set.add(K.vrf(a.vrf)));
+      M.routes.forEach((r) => { if (r.vrf != null) set.add(r.vrf); });
+      return Object.freeze(Array.from(set).sort((a, b) => (a === MAIN ? -1 : b === MAIN ? 1 : U.natural(a, b))));
+    })());
+    const subnetsOf = (d, vrf) => (vrf === undefined ? subnetsByDev.get(d) || EMPTY
+      : once('s\u0000' + d + '\u0000' + K.vrf(vrf), () => Object.freeze((subnetsByDev.get(d) || EMPTY).filter((s) => s.vrf === K.vrf(vrf)))));
+    const hopI = {
+      owner: (ip, vrf) => { const k = ipOwner.get(K.inVrf(ip, vrf)); return k ? { key: k, dev: K.splitEp(k)[0] } : null; },
+      owners: (ip) => ownersByIp.get(ip) || EMPTY,
+      connected: (d, vrf) => subnetsOf(d, vrf),
+    };
+    const POLICY_DEFAULT = ['mangle', 'vrf-lookup', 'vrf-unreach', 'local', 'user', 'main'];
+    const rv = {
+      vrfs,
+      vrfsOf: (d) => M.vrfs.get(d) || EMPTY,
+      subnetsOf,
+      routesOf: (d, vrf) => (vrf === undefined ? routesByDev.get(d) || EMPTY
+        : once('r\u0000' + d + '\u0000' + K.vrf(vrf), () => Object.freeze((routesByDev.get(d) || EMPTY).filter((r) => r.vrf === K.vrf(vrf))))),
+      routesInTable: (d, table) => once('t\u0000' + d + '\u0000' + table, () => Object.freeze((routesByDev.get(d) || EMPTY).filter((r) => K.vrf(r.routingTable) === table))),
+      hopOwner: (d, ip, vrf) => S.check.hopOwner(hopI, d, ip, K.vrf(vrf)),
+      // 同 Q.policyOf：rules 的 order 與 Snapshot 的 routingRules 相同（每台設備依設定順序從 1 起算）
+      policyOf: (d) => once('p\u0000' + d, () => {
+        const order = new Map();
+        const rules = M.policy.rules.map((r) => { const n = (order.get(r.dev) || 0) + 1; order.set(r.dev, n); return Object.assign({ order: n }, r); }).filter((r) => r.dev === d && !r.disabled);
+        const marks = M.policy.marks.filter((x) => x.dev === d && !x.disabled);
+        const dev = M.devices.get(d); const set = dev && dev.policyRules ? dev.policyRules.rules : null;
+        const custom = !!set && set.join(',') !== POLICY_DEFAULT.join(',');
+        // tables：同 Snapshot 的 routingTables（export 的 /routing table，加上每個啟用中的 VRF 的同名表）
+        const tables = M.policy.tables.filter((t) => t.dev === d).map((t) => ({ dev: t.dev, name: t.name, fib: t.fib, disabled: t.disabled, source: 'export', vrf: null, src: t.src }))
+          .concat((M.vrfs.get(d) || []).filter((v) => !v.disabled && !v.builtin).map((v) => ({ dev: v.dev, name: v.name, fib: true, disabled: false, source: 'vrf', vrf: v.name, src: v.src })))
+          .sort((a, b) => U.natural(a.name, b.name) || U.cmp(a.source, b.source));
+        return Object.freeze({ tables: Object.freeze(tables), rules: Object.freeze(rules), marks: Object.freeze(marks),
+          policyRules: Object.freeze(set ? set.slice() : POLICY_DEFAULT.slice()), custom, any: !!(rules.length || marks.length || custom) });
+      }),
+      egress: (d, n) => {
+        if (n.ifc) return K.ep(d, n.ifc);
+        if (!n.ip) return null;
+        const v = K.vrf(n.vrf);
+        const hit = subnetsOf(d, v).filter((s) => S.ip.inNet(n.ip, s.net, s.len)).map((s) => s.ep).sort(U.natural);
+        return hit.length ? hit[0] : null;
+      },
+    };
+    Object.freeze(rv);
+    rvMemo.set(M, rv);
+    return rv;
   }
 
   /*
@@ -1259,9 +1357,15 @@
     const domains = new Map();
     const dom = (key, init) => S.util.getOr(domains, key, () => Object.assign({ key, devices: new Set(), prefixes: [], evidence: [], otherAreas: [] }, init));
     const rest = [];
+    // 每個網段比對到的 interface-template（只在內部模型，R13–R15 用；不進 Snapshot）：網段鍵 → [{ dev, ep, group, area, areaId, areaIdKnown, src, tpl }]
+    M.ospfHits = new Map();
+    const areaIdKnown = new Set(); M.routingCfgOut.ospfAreas.forEach((x) => { if (x.name && x.areaId) areaIdKnown.add(x.dev + '|' + x.name); });
     Array.from(nets.values()).sort((a, b) => S.util.natural(a.key, b.key)).forEach((n) => {
       const hits = [];
-      n.eps.forEach((e) => (tplByDev.get(e.dev) || []).forEach((t) => { if (tplMatches(t, e)) hits.push({ dev: e.dev, group: ospfGroup(e.dev), area: t.area, areaId: areaId.get(e.dev + '|' + t.area) || t.area, src: t.src }); }));
+      n.eps.forEach((e) => (tplByDev.get(e.dev) || []).forEach((t) => {
+        if (tplMatches(t, e)) hits.push({ dev: e.dev, ep: e.ep, group: ospfGroup(e.dev), area: t.area, areaId: areaId.get(e.dev + '|' + t.area) || t.area, areaIdKnown: areaIdKnown.has(e.dev + '|' + t.area), src: t.src, tpl: t });
+      }));
+      if (hits.length) M.ospfHits.set(n.key, hits);
       if (!hits.length) { rest.push(n); return; }
       const keyOf = (h) => K.inVrf(`ospf:${h.group}:${h.areaId}`, n.vrf);
       hits.sort((a, b) => S.util.natural(keyOf(a), keyOf(b)) || S.util.natural(a.dev, b.dev));
@@ -1299,7 +1403,7 @@
     return d.key;
   }
 
-  S.infer = { infer, displayName, effVlans, effVlanModes, effPvid, bridgeOf, vlanSpan, VLAN_DATA, isVirtualIfc, hwMacsByDev, wifiLocations, behindLocations, boundaries, routingDomains };
+  S.infer = { infer, displayName, effVlans, effVlanModes, effPvid, bridgeOf, vlanSpan, VLAN_DATA, isVirtualIfc, hwMacsByDev, wifiLocations, behindLocations, boundaries, routingDomains, routingView };
   S.infer.fw = { canonMatch, covers, sameMatch, evalChain, evalFilter, decide, packetFor, wanPacket, wanEntries, entriesIn, fwContext, parseVal, splitNeg, protoName, listMembers, policyBaseline,
     TERMINAL: FW_TERMINAL, BUILTIN: FW_BUILTIN, NONDET: FW_NONDET, PORT_PROTOCOLS, POLICY_CHAINS };
 })(globalThis.SSOT = globalThis.SSOT || {});

@@ -132,7 +132,7 @@ test('Q.exposure：沒有任何對外入口時回傳說明（不靜默）；沒�
   const Qd = S.query(build(noList.concat(SW1).join('\n')));
   const xd = exposureOf(Qd);
   assert.deepStrictEqual([xd.status, xd.wan.entries], ['ok', [{ dev: 'R1', ep: 'R1|ether1', vrf: 'main' }]]);
-  assert.deepStrictEqual(Qd.wanEntries(), [], '檢查用的 WAN 清單入口沒有（Q.wanEntries 不含邊界推論）');
+  assert.deepStrictEqual(Qd.wanEntries().map((w) => [w.ep, w.wanList]), [['R1|ether1', false]], '檢查用的入口與 L4 相同：WAN 清單成員＋邊界判定為 external 的介面');
   assert.deepStrictEqual(Qd.zoneMatrix().zones.find((z) => z.id === 'external').devices, ['R1']);
   // 也沒有預設路由：沒有任何證據
   const text = noList.filter((l) => !l.includes('dst-address=0.0.0.0/0')).concat(SW1).join('\n');

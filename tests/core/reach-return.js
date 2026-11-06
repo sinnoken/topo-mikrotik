@@ -94,11 +94,12 @@ test('回程未保證：Q.exposure 的允許列在 reasons 帶 return-not-guaran
   assert.ok(codes.has(CODE) && S.query.reachReasonCodes().find((c) => c.code === CODE).kind === 'reason');
 });
 
-test('回程未保證（範例資料）：TPE_ACC_SW_10 的 forward 不保證（F15）、input 有保證；送到它本身的路徑不標，其餘設備的路徑也不標', () => {
+test('回程未保證（範例資料）：TPE_ACC_SW_10 的 forward 不保證、input 有保證，但它不轉送（只有一個 L3 介面），不報 F15；會轉送的 TPE_CE_RT_01 報；送到 TPE_ACC_SW_10 本身的路徑不標', () => {
   const s = sampleSnap(); const Q = S.query(s);
   const pb = Q.policyBaseline('TPE_ACC_SW_10');
   assert.deepStrictEqual(pb.map((c) => [c.chain, c.returnSafe]), [['input', true], ['forward', false]]);
-  assert.ok(Q.findingsByRule('F15').some((f) => Q.findingDevice(f) === 'TPE_ACC_SW_10'));
+  const f15 = Q.findingsByRule('F15').map((f) => Q.findingDevice(f));
+  assert.ok(!f15.includes('TPE_ACC_SW_10') && f15.includes('TPE_CE_RT_01'), JSON.stringify(f15));
   const rc = Q.reach('10.1.10.20', '10.1.10.30', { proto: 'tcp', port: 22 });
   assert.ok(hopsOf(rc).every((h) => !('returnUnsafe' in h)) && !rc.notes.some((n) => n.code === CODE), JSON.stringify(rc.notes));
   // 範例資料中只有 TPE_ACC_SW_10 不保證，它只有一個 L3 介面、沒有路由（沒有經過它 forward 的路徑）：暴露清單沒有任何列帶這個代碼

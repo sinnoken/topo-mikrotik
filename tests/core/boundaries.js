@@ -51,7 +51,8 @@ test('對外邊界：強證據（預設路由、srcnat 的出介面）單獨判�
   assert.strictEqual(Q.boundaryOf('R|ether9'), null, '沒有證據的介面');
   // firewallZones 的語意不變：仍只看名稱含 WAN 的清單
   assert.deepStrictEqual(Q.firewallZone('R').wanInterfaces, ['R|ether4']);
-  assert.deepStrictEqual(Q.wanEntries('R').map((w) => w.ep), ['R|ether4']);
+  // 對外入口：WAN 清單的成員在前，再來是邊界判定為 external 的介面（ADR-023 決策 7）；possible（ether2、bridge1）不是入口
+  assert.deepStrictEqual(Q.wanEntries('R').map((w) => [w.ep, w.wanList]), [['R|ether4', true], ['R|ether1', false], ['R|ether3', false]]);
 });
 
 test('對外邊界：dst-nat 的入介面是強證據、dst-address 是設備上的公網位址是弱證據；WAN 清單展開成員；可重現', () => {
@@ -106,10 +107,10 @@ test('範例資料：核心 01 的 ether45（DHCP client 加預設路由）不�
   assert.deepStrictEqual([dflt(Q.allRoutesOf('TPE_CE_RT_01')), dflt(Q.routesOf('TPE_CE_RT_01'))], [[['192.168.50.1', true], ['10.255.0.1', false]], [['192.168.50.1', true]]]);
 });
 
-test('產生器的多站點資料：WAN 路由器沒有 WAN 清單，以預設路由與 masquerade 判定對外；核心往 WAN 路由器的 ether48 在 LAN 清單，不是對外', () => {
+test('產生器的多站點資料：WAN 路由器以預設路由與 masquerade（強證據）加上 WAN 清單判定對外；核心往 WAN 路由器的 ether48 在 LAN 清單，不是對外', () => {
   const s = S.build([{ name: 'g.txt', text: gen(['--sites', '2', '--access', '2']) }], { now: '2026-01-01T00:00:00Z' }); const Q = S.query(s);
-  // 沒有 WAN 清單的設備上判定對外的介面：只有 WAN 路由器的 ether47
-  const noList = Q.boundaries().filter((b) => b.status === 'external' && Q.firewallZone(b.dev).status === 'no-wan-list');
-  assert.deepStrictEqual(noList.map((b) => [b.ep, kinds(b)]), [['WAN_RT_01|ether47', ['default-route:strong', 'srcnat-out:strong']]]);
+  const wan = Q.boundaryOf('WAN_RT_01|ether47');
+  assert.deepStrictEqual([wan.status, kinds(wan)], ['external', ['default-route:strong', 'srcnat-out:strong', 'wan-list:weak']]);
+  assert.deepStrictEqual(Q.wanEntries('WAN_RT_01').map((w) => [w.ep, w.wanList]), [['WAN_RT_01|ether47', true]]);
   assert.ok(!Q.boundaries().some((b) => /\|ether48$/.test(b.ep) && b.status !== 'internal'));
 });

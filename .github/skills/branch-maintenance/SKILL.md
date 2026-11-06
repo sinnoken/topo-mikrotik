@@ -24,11 +24,30 @@ user-invocable: true
 
 ## 平行 agent 與 worktree
 
-- worktree 預設從 `origin/main` 開出，不一定是目前分支。派工時在任務說明寫明基準 commit，要求 agent 第一步 `git log --oneline -1` 確認，不符就在改檔前 `git reset --hard <基準>`。
+- 順序：開分支 → `git push origin <branch>` → 才派工。worktree 預設從 `origin/main` 開出，不一定是目前分支；任務說明寫明「worktree 建好後 `git fetch origin && git reset --hard origin/<branch>`，確認 HEAD 是 <sha>」，不符就在改檔前停下回報。
 - agent 回報的基準與預期不符時，追查來源（是不是 main 前進了），不要只叫它 reset。
-- 後合併的切片若改到先合併切片的區域，先把新基準 commit 告訴還在跑的 agent，請它重新疊上（WIP commit → reset → cherry-pick -n，或 stash）。
-- 派工時要求 agent 回報限 25 行，完整報告寫到 scratchpad 的檔案；回報只放結論、檔案清單與需要 lead 決定的事。
+- 每合併一次 main：進行中的分支都 `git merge origin/main` 並 push，再通知進行中的 agent「origin/<branch> 已前進到 <sha>」，請它重新疊上（WIP commit → reset → cherry-pick -n）。後合併的切片改到先合併切片的區域時也一樣。
+- 同時跑的重型 agent（會跑 `test:large` 或大型冒煙、或改大檔）最多 3 個。
+- 大重構前先派一個唯讀的技術債盤點，列出必須先還的項目，排在重構之前。
+- 審查問題優先用 SendMessage 交回原切片 agent，不另派新的。session 中斷時先查各 worktree 的 commit（`git -C <worktree> log --oneline <基準>..`）與未提交修改（`git -C <worktree> status --short`），再用 SendMessage 續行。
+- 收到回報後確認追加項有沒有做（例如 `git -C <worktree> show --stat`、grep commit 的內容）；訊息在 agent 回報前才送達時可能被略過，沒做就再送一次。
 - 進行中的細節（切片範圍、交接、待辦）只寫在 scratchpad 的交接檔，不進 git。
+
+## 派工模板
+
+每份任務說明都包含：
+
+1. 基準：分支與「確認 HEAD 是 <sha>」。
+2. 範圍：可改的檔案、凍結的名稱與簽章（見「切片範圍實測」）；超出範圍的改動另列在回報。
+3. 測試：只跑自己的 suite（見「測試與 commit」）。
+4. 自我檢查清單（挑適用的）：
+   - 換基準、離開畫面時，進行中的計算會停。
+   - Promise 一定結束（成功、失敗、取消都有出口）。
+   - 焦點與 aria：操作後焦點有去處，狀態有 aria 標示。
+   - 排序與收合不會把重要項目藏起來。
+   - view 只透過 Q／`S.query` 讀資料。
+   - 測試找不到元素就失敗，不用 `if` 略過。
+5. 回報硬性 ≤15 行：commit、改動檔、測試、需要 lead 處理、文件影響；細節寫到 scratchpad 的檔案。
 
 ## 切片範圍實測
 
@@ -46,10 +65,11 @@ user-invocable: true
 
 ## 測試與 commit
 
-- 合併後跑 `npm run test:core`、`npm run test:ui`、`npm run test:docs`、`git diff --check`；改到範例、效能或版面時加 `npm run test:large` 與 `SMOKE_INPUT=samples/large-1000.txt node tests/ui-smoke.js`。
+- 切片只跑自己的 suite：data-model 與 workflow 跑 `test:core`，frontend 跑 `test:ui`，docs 跑 `test:docs`，collector 跑 `test:collector`。
+- 合併後 lead 跑 `npm run test:core`、`npm run test:ui`、`npm run test:docs`、`git diff --check`。`test:large` 與大型冒煙只在合併前由 lead 跑一次，或交給 CI；兩者結果不同時以 CI 為準（指令與 heap 見[開發指南 §2](../../../docs/開發指南.md#2-指令)）。
 - 測試與 commit 不要用 `&&` 串成一行就送出：先看測試結果，確認沒有失敗再 commit。
-- 本機缺 GNU `timeout` 時收集器端到端測試會失敗，屬環境問題；以 CI 結果為準，回報時寫明。
-- 不要用 heredoc 加 `cat >`／`tee` 寫檔（`.claude/hooks/check-shell.js` 會擋）；PR 說明先用編輯工具寫到暫存檔，再 `gh pr create --body-file`。
+- 本機缺 `timeout`／`gtimeout` 時收集器端到端測試會失敗，屬環境問題；以 CI 結果為準，回報時寫明。
+- 改檔只用編輯工具（`.claude/hooks/check-shell.js` 會擋 heredoc 加 `cat >`／`tee`、`node -e` 與 python 的 heredoc／`-c` 寫檔）；lead 也一樣。PR 說明先用編輯工具寫到暫存檔，再 `gh pr create --body-file`。
 
 ## PR 與合併
 

@@ -17,10 +17,16 @@
     if (x.verdict === 'allow') return ['reached', 'allow'];
     return [x.reasons.some((c) => layerOf(c) === 'route') ? 'unknown' : 'reached', x.verdict];
   }
-  /** 暴露清單一段的「其餘 N 個組合拒絕：…」，判斷次數上限用完、沒判斷到的組合（counts.notEvaluated）另寫；都沒有時是空字串 */
+  /**
+   * 暴露清單一段的「其餘 N 個組合拒絕：…」，判斷次數上限用完、沒判斷到的組合（counts.notEvaluated）另寫；都沒有時是空字串。
+   * 只有一種原因、而且就是全部時不重複數字：「其餘 N 個組合都被防火牆拒絕。」
+   */
+  const DENIED_ALL = { noRoute: '都沒有路由', filter: '都被防火牆拒絕', notNatted: '都沒被 dst-nat 改寫' };
   function deniedSentence(denied, by, notEvaluated) {
     const dp = deniedParts(by);
-    return (denied ? `其餘 ${V.num(denied)} 個組合（服務 × 位址）拒絕${dp ? '：' + dp : ''}。` : '')
+    const only = by ? Object.keys(DENIED_ALL).filter((k) => by[k]) : [];
+    const one = only.length === 1 && by[only[0]] === denied ? DENIED_ALL[only[0]] : null;
+    return (denied ? (one ? `其餘 ${V.num(denied)} 個組合${one}。` : `其餘 ${V.num(denied)} 個組合（服務 × 位址）拒絕${dp ? '：' + dp : ''}。`) : '')
       + (notEvaluated ? `另有 ${V.num(notEvaluated)} 個沒判斷（上限）。` : '');
   }
 
@@ -101,14 +107,16 @@
    * 一列的目的：self 是設備的位址；dnat 是「公網:埠 → 內部:埠」（沒限制目的位址時寫入口介面上的任何位址）；routed 是內部位址與網段。
    * IPv6 的列（family 'ipv6'，只看邊界路由器）：dstAny 時是「整個網段 x 的主機」
    */
+  // 回傳 [第一行, 第二行（可為 null）]：「等 N 個位址」接在第一行的位址後面，設備與服務放第二行（不接在服務名稱之後，讀起來才不像在說服務）
   function exDst(App, sec, x) {
     const Q = App.Q;
-    if (sec === 'self') return h('span', null, [h('span', { class: 'mono' }, withPort(x.ip, x)), ' ', h('span', { class: 'muted' }, Q.devName(x.dev) + (x.serviceName ? '・' + x.serviceName : ''))]);
-    if (x.family === 'ipv6' && x.dstAny) return h('span', null, h('span', { class: 'mono' }, `整個網段 ${x.subnet} 的主機`));
+    if (sec === 'self') return [h('span', { class: 'mono' }, withPort(x.ip, x)), h('span', { class: 'muted l4-ex-sub' }, Q.devName(x.dev) + (x.serviceName ? '・' + x.serviceName : ''))];
+    if (x.family === 'ipv6' && x.dstAny) return [h('span', { class: 'mono' }, `整個網段 ${x.subnet} 的主機`), null];
     const to = x.nat && x.nat.to ? V.inVrfText(x.nat.to) : null;
-    const from = sec === 'dnat' && x.dstAny ? withPort(`${x.inInterface} 上的任何位址`, x) : withPort(x.ip, x);
+    // 沒限制目的位址的 dst-nat：中文後面不直接接「:埠」，寫「<介面> 的任何位址，埠 N」
+    const from = sec === 'dnat' && x.dstAny ? `${x.inInterface} 的任何位址${exPort(x) ? '，埠 ' + exPort(x) : ''}` : withPort(x.ip, x);
     const where = sec === 'routed' && x.subnet ? V.inVrfText(x.subnet) : '';
-    return h('span', null, [h('span', { class: 'mono' }, from + (to ? ' → ' + to : '')), where ? h('span', { class: 'muted' }, ' ' + where) : null]);
+    return [h('span', { class: 'mono' }, from + (to ? ' → ' + to : '')), where ? h('span', { class: 'muted l4-ex-sub' }, where) : null];
   }
   function exResult(App, x) {
     const t = V.L4_STATUS[x.verdict] + (x.incomplete ? `（${V.L4_INCOMPLETE}）` : '');
@@ -210,20 +218,23 @@
     const nAllow = gs.filter((g) => g.x.verdict === 'allow').length; const nUnk = gs.length - nAllow;
     const sentence = s.rows.length ? `${V.num(nAllow)} 個服務允許${nUnk ? `、${V.num(nUnk)} 個無法判斷` : ''}。` : '沒有。' + (def.noCand && !s.counts.candidates ? def.noCand : def.none);
     const id = 'l4-ex-' + def.key + '-title';
-    // 5 欄（1440 不水平捲動）：怎麼進來是目的的第二行；相關檢查是依據下面一行的代碼 chip（標題在 title）；看路徑在結果下方
+    // 4 欄（1440 時右側詳情固定存在，中間欄約 690px，5 欄會超出卡片）：怎麼進來是目的的第二、三行；
+    // 依據（規則短連結＋相關檢查的代碼 chip，標題在 title）併進結果格的一行；看路徑在結果格最後
+    const basis = (x) => { const ls = x.findingKeys.map((k) => findingLink(App, k, true)).filter(Boolean);
+      return h('span', { class: 'l4-ex-basis' }, [h('span', { class: 'muted l4-ex-basis-k' }, '依據 '), x.rule ? ruleLink(App, x.rule, true) : h('span', null, '—'), ...ls.flatMap((a) => [' ', a])]); };
     const cols = [
-      { t: '目的', f: ({ x, ips }) => h('span', { class: 'l4-ex-dst', title: ips.length > 1 ? ips.join('\n') : null }, [exDst(App, def.key, x), ips.length > 1 ? h('span', { class: 'muted l4-ex-more' }, ` 等 ${V.num(ips.length)} 個位址`) : null,
-        h('span', { class: 'muted l4-ex-entry' }, entryText(App, x))]) },
+      { t: '目的', f: ({ x, ips }) => { const [main, sub] = exDst(App, def.key, x);
+        return h('span', { class: 'l4-ex-dst', title: ips.length > 1 ? ips.join('\n') : null }, [main, ips.length > 1 ? h('span', { class: 'muted l4-ex-more' }, ` 等 ${V.num(ips.length)} 個位址`) : null,
+          sub, h('span', { class: 'muted l4-ex-entry' }, entryText(App, x))]); } },
       { t: '服務', f: ({ x }) => h('span', { class: 'mono' }, exSvc(x)) },
       { t: '允許來源', f: ({ x }) => (x.allowedFrom.kind === 'any' ? V.chip('⚠ ' + x.allowedFrom.text, 'warn') : h('span', { class: 'mono' }, x.allowedFrom.text)) },
       { t: '結果', f: ({ x, i }) => { const on = !!(st.exPath && st.exPath.sec === def.key && st.exPath.row === i);
         // IPv6 只看邊界路由器（查詢層不做 IPv6 路由）：沒有逐跳路徑，不呼叫 Q.reach
-        if (x.family === 'ipv6') return h('span', { class: 'l4-ex-res' }, [exResult(App, x), h('span', { class: 'muted l4-ex-nopath' }, 'IPv6 只看邊界路由器，沒有逐跳路徑')]);
-        return h('span', { class: 'l4-ex-res' }, [exResult(App, x),
+        if (x.family === 'ipv6') return h('span', { class: 'l4-ex-res' }, [exResult(App, x), basis(x), h('span', { class: 'muted l4-ex-nopath' }, 'IPv6 只看邊界路由器，沒有逐跳路徑')]);
+        // 看路徑：ghost 按鈕前加 ▸／▾（看得出可以展開），文字用連結色
+        return h('span', { class: 'l4-ex-res' }, [exResult(App, x), basis(x),
           h('button', { type: 'button', class: 'ghost l4-ex-path', 'data-sec': def.key, 'data-row': String(i), 'aria-expanded': String(on), 'aria-controls': on ? 'l4-ex-path-box' : null,
-            onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); openExposure(App, def.key, i); } }, on ? '收起路徑' : '看路徑')]); } },
-      { t: '依據', f: ({ x }) => { const ls = x.findingKeys.map((k) => findingLink(App, k, true)).filter(Boolean);
-        return h('span', { class: 'l4-ex-basis' }, [x.rule ? ruleLink(App, x.rule, true) : h('span', null, '—'), ls.length ? h('span', { class: 'l4-ex-findings' }, ls) : null]); } },
+            onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); openExposure(App, def.key, i); } }, [h('span', { 'aria-hidden': 'true' }, on ? '▾ ' : '▸ '), on ? '收起路徑' : '看路徑'])]); } },
     ];
     // 每段最多先列 EX_LIMIT 列，其餘「顯示全部（N）」（同一段只有一個按鈕在 Tab 順序裡）
     const all = st.exAll.has(def.key); let shown = exShown(gs, all ? ROW_LIMIT : EX_LIMIT);
@@ -235,7 +246,8 @@
       onclick: () => { if (all) st.exAll.delete(def.key); else st.exAll.add(def.key); renderExposure(App); const b = Array.from(els.ex.querySelectorAll('.l4-ex-all')).find((x) => x.dataset.sec === def.key); if (b) b.focus(); } },
     all ? `只顯示前 ${EX_LIMIT} 列` : `顯示全部（${V.num(gs.length)}）`) : null;
     return h('section', { class: 'l4-ex-sec', 'data-sec': def.key, 'aria-labelledby': id }, [
-      h('h4', { id, class: 'l4-ex-title' }, [def.title, ' ', V.chip(V.num(gs.length))]),
+      // 數量分開寫允許與無法判斷（和下面一句的「N 個服務允許」同一個數字，不加總）
+      h('h4', { id, class: 'l4-ex-title' }, [def.title, nAllow ? ' ' : null, nAllow ? V.chip(`${V.num(nAllow)} 允許`) : null, nUnk ? ' ' : null, nUnk ? V.chip(`${V.num(nUnk)} 無法判斷`) : null]),
       h('p', { class: 'l4-ex-sentence' }, sentence),
       s.rows.length ? exTable(App, def, cols, shown) : null,
       all && gs.length > ROW_LIMIT ? h('div', { class: 'muted table-more' }, `只顯示前 ${ROW_LIMIT} 列，共 ${V.num(gs.length)} 列${extra ? `；看路徑的第 ${V.num(gs.indexOf(extra) + 1)} 列另接在最後` : ''}`) : null,
@@ -275,8 +287,10 @@
     const Q = App.Q; const v = xr.ipv6;
     if (!v) return h('p', { id: 'l4-ex-ipv6', class: 'muted l4-ex-notes' }, '依 IPv4 的防火牆與 NAT 推論；IPv6 未納入。');
     const miss = (v.missing || []).map((m) => `${Q.devName(m.dev)}：${V.L4_IPV6_MISSING[m.reason] || m.reason}`);
-    return h('p', { id: 'l4-ex-ipv6', class: 'muted l4-ex-notes', 'data-status': v.status }, [v.message || '',
-      miss.length ? h('span', { class: 'l4-ex-ipv6-missing' }, `　沒有判斷 IPv6 的入口設備：${miss.join('；')}。`) : null]);
+    // 查詢層的 message 結尾沒有句號時補上，下一句才不會黏在一起
+    const msg = v.message ? v.message + (/[。！？]$/.test(v.message) ? '' : '。') : '';
+    return h('p', { id: 'l4-ex-ipv6', class: 'muted l4-ex-notes', 'data-status': v.status }, [h('b', { class: 'l4-ex-ipv6-k' }, 'IPv6：'), msg,
+      miss.length ? h('span', { class: 'l4-ex-ipv6-missing' }, `沒有判斷 IPv6 的入口設備：${miss.join('；')}。`) : null]);
   }
   /** 頁尾的判斷的前提：有暴露清單時用它的 assumptions（含暴露清單另加的前提），否則用 S.query.reachAssumptions */
   function fillAssume(list) {
@@ -325,9 +339,10 @@
     head([total ? `從外部進來，連得到 ${V.num(total)} 個服務：網路設備本身 ${part(allow('self'))}、轉送到內部 ${part(allow('dnat'))}、直接路由 ${part(allow('routed'))}。` : '從外部進來，連不到任何服務。',
       unk ? `另有 ${V.num(unk)} 個無法判斷。` : '',
       noFw.length ? `另有 ${noFw.join('、')} 無法判斷（沒有防火牆資料，缺 /export）。` : '']);
-    box.appendChild(ipv6Note(App, xr));
     if (xr.limits && xr.limits.truncated) box.appendChild(h('p', { class: 'muted l4-ex-notes' }, `判斷次數超過上限（${V.num(xr.limits.maxEvaluations)} 次），只算到一部分。`));
     EX_SECS.forEach((d) => box.appendChild(exSection(App, d)));
+    // IPv6 的說明在三段之後（窄螢幕不必先捲過它才看到 ①）
+    box.appendChild(ipv6Note(App, xr));
   }
 
   Object.assign(I, { deniedSentence, exRuns, stopEx, exposure, returnTag, openExposure, exGroups, fillAssume });

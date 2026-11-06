@@ -168,7 +168,9 @@
     const f = App.Q.finding(idx);
     // 指向防火牆規則或服務的檢查結果，定位到該設備防火牆畫面的那一列（第一個實體通常是設備）
     const e = f.entities.find((x) => x.type === 'rule' || x.type === 'service') || f.entities[0];
-    const sel = !e ? null : f.id === 'A03' ? { type: 'endpoints', dev: e.key } : e.type === 'ip' ? V.ipSel(e.key) : { type: e.type, key: e.key };
+    const sel0 = !e ? null : f.id === 'A03' ? { type: 'endpoints', dev: e.key } : e.type === 'ip' ? V.ipSel(e.key) : { type: e.type, key: e.key };
+    // finding：詳情在檢查結果中標出這一筆、排第一並捲過去（設備常有二三十筆，R13 這類多實體的檢查會埋在中間）
+    const sel = sel0 && Object.assign(sel0, { finding: App.Q.findingKey(f) });
     // 多數決判定與多數不同的設備（推論）另以虛線外圈標出；平手（basis 不是 majority）或 deviating 為空時不標
     const emphasis = V.majorityDeviating(f.deviation);
     App.select(sel, { focus: true, findingEntities: f.id === 'A03' ? null : f.entities, emphasis });
@@ -333,11 +335,14 @@
     traceMsg('');
     // 回程：無狀態的 ACL 需要確認反向路徑；起點找不到時一樣明確顯示原因。
     // 回程的 VRF：去程抵達的 VRF 只有一個時用它，否則用使用者選的（都沒有時依位址決定，位址在多個 VRF 時回程顯示原因）
+    // 去程的每個終點都送往外部（目的在基準外）：回程的起點不在基準內，從目的位址起算只會得到「找不到網段」的錯誤，不追，
+    // 詳情改寫中性說明（V.TRACE_RETURN_EXTERNAL）
+    const outside = r.ok && r.ends.length > 0 && r.ends.every((e) => e.status === 'egress');
     const reached = r.ok ? S.util.uniq(r.ends.filter((e) => e.status === 'reached').map((e) => e.vrf)) : [];
     const backVrf = reached.length === 1 ? reached[0] : vrf;
-    const reverse = r.ok ? S.trace(App.Q, dst, src, backVrf ? { vrf: backVrf } : undefined) : null;
+    const reverse = r.ok && !outside ? S.trace(App.Q, dst, src, backVrf ? { vrf: backVrf } : undefined) : null;
     A.closeTrace(false);
     App.showView('graph'); // 路由追蹤的路徑畫在拓樸圖上：工作畫面開著時切回拓樸圖
-    App.select({ type: 'trace', result: r, reverse, vrf: vrf || null }, { focus: true });
+    App.select({ type: 'trace', result: r, reverse, reverseSkip: outside ? 'external' : null, vrf: vrf || null }, { focus: true });
   };
 })(globalThis.SSOT = globalThis.SSOT || {});

@@ -1,7 +1,7 @@
 // 畫面冒煙測試的 step：L4 由外而內：頁首的結論句、三段暴露清單（Q.exposure）、看路徑、內部互通與可達性查詢預設收合。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { document, S, step, $, text, layerBtn, L4, l4State } = require('../helpers.js');
+const { document, S, fs, path, ROOT, step, $, text, layerBtn, L4, l4State } = require('../helpers.js');
 
 const SECS = ['self', 'dnat', 'routed'];
 
@@ -63,12 +63,19 @@ module.exports = async () => {
       // 1440 不水平捲動（模擬 DOM 量不到寬度，改斷言欄數）：5 欄，入口在目的的第二行，相關檢查是依據下面的代碼 chip（標題在 title）
       if (rows.length) {
         const ths = sec.testAll('thead th').map((x) => x.textContent);
-        if (ths.join('|') !== '目的|服務|允許來源|結果|依據') throw new Error(`暴露清單應只有 5 欄：${ths.join('、')}`);
-        if (rows.some((tr) => tr.testAll('td').length !== 5 || !tr.querySelector('.l4-ex-entry'))) throw new Error('每列 5 格，目的格有入口的第二行');
+        // 依據（規則短連結＋檢查代碼 chip）併進結果格，表格 4 欄（1440 時右側詳情固定存在，5 欄會超出卡片）
+        if (ths.join('|') !== '目的|服務|允許來源|結果') throw new Error(`暴露清單應只有 4 欄（依據併進結果）：${ths.join('、')}`);
+        if (rows.some((tr) => tr.testAll('td').length !== 4 || !tr.querySelector('.l4-ex-entry'))) throw new Error('每列 4 格，目的格有入口的第二行');
+        rows.forEach((tr) => { const res = tr.querySelector('.l4-ex-res'); const b = res && res.querySelector('.l4-ex-basis');
+          if (!b || !b.textContent.startsWith('依據')) throw new Error('結果格應有「依據」一行：' + tr.textContent.slice(0, 80));
+          if (tr.testAll('.l4-rule').concat(tr.testAll('.l4-finding')).some((a) => !b.contains(a))) throw new Error('規則與檢查的連結應在結果格的依據行內'); });
         sec.testAll('.l4-finding').forEach((a) => { if (!/^[A-Z]\d+$/.test(a.textContent) || !(a.getAttribute('title') || '').startsWith(a.textContent + ' ')) throw new Error('相關檢查是代碼 chip，標題在 title：' + a.textContent); });
         sec.testAll('.l4-rule').forEach((a) => { if (a.textContent.length > 24 || !a.getAttribute('title')) throw new Error('依據的規則連結用短文字，完整說明在 title：' + a.textContent); });
       }
       if (rows.some((tr) => /st-deny/.test(tr.className))) throw new Error('拒絕的組合不列出');
+      // 段標題的數量分開寫允許與無法判斷（和結論句的「N 個服務允許」一致，不把兩者加總成一個數字）
+      { const gs = V.l4.exGroups(ex[k].rows); const na = gs.filter((g) => g.x.verdict === 'allow').length; const tt = sec.querySelector('.l4-ex-title').textContent;
+        if (gs.length && ((na && !tt.includes(`${V.num(na)} 允許`)) ||(gs.length - na && !tt.includes(`${V.num(gs.length - na)} 無法判斷`)))) throw new Error('段標題應分開寫允許與無法判斷的數量：' + tt); }
       const t = sec.textContent;
       if (!ex[k].rows.length && !t.includes('沒有')) throw new Error(k + ' 段沒有列時應寫「沒有」');
       if (ex.denied[k] && !t.includes(`其餘 ${V.num(ex.denied[k])} 個組合`)) throw new Error(k + ' 段應寫出其餘拒絕的組合數');
@@ -112,6 +119,19 @@ module.exports = async () => {
         if (fn >= 0 && vs.slice(fn).includes('allow')) throw new Error(d + ' 的允許應在無法判斷之前');
       });
     }
+  });
+
+  await step('L4 暴露清單的寬度：結果格內的元素不用 max-content 撐寬表格、目的的等寬字可在空白處換行、dst-nat 沒限制目的時寫「的任何位址，埠 N」', () => {
+    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
+    const rules = css.split('}').map((r) => r.split('{')).filter((x) => x.length === 2 && /\.l4-ex-/.test(x[0]));
+    const wide = rules.filter(([sel, body]) => /width:\s*max-content/.test(body)).map(([sel]) => sel.trim());
+    if (wide.length) throw new Error('暴露清單的規則不應用 width: max-content（表格會比卡片寬）：' + wide.join('；'));
+    if (!rules.some(([sel, body]) => /\.l4-ex-sec table\.t[^,]*\.mono/.test(sel) && /white-space:\s*normal/.test(body))) throw new Error('暴露清單的等寬字（位址 → 位址）應可在空白處換行');
+    if (!rules.some(([sel, body]) => /\.l4-ex-sec table\.t td/.test(sel) && /min-width:\s*0/.test(body))) throw new Error('暴露清單的儲存格應可縮到卡片寬（min-width: 0）');
+    const Q = App.Q; const ex = Q.exposure(); if (ex.status !== 'ok') return;
+    const g = S.view.l4.exGroups(ex.dnat.rows).find((y) => y.x.dstAny && y.x.family !== 'ipv6'); const any = g && g.x;
+    if (any) { const tr = $('#l4-exposure').testAll('.l4-ex-sec').find((x) => x.dataset.sec === 'dnat').testAll('tr').find((t) => t.dataset.row === String(g.i) && /l4-ex-row/.test(t.className));
+      if (!tr || !tr.textContent.includes(`${any.inInterface} 的任何位址`)) throw new Error('dst-nat 沒限制目的位址時寫「<介面> 的任何位址，埠 N」：' + tr.textContent.slice(0, 80)); }
   });
 
   await step('L4 暴露清單：看路徑用同一個外部代表位址與入口介面查 Q.reach，結論與列一致；規則與檢查的連結開右側詳情', async () => {
@@ -219,8 +239,11 @@ module.exports = async () => {
     // 純函式：只寫非 0 的部分；notEvaluated 另寫；都沒有時是空字串
     const s1 = V.l4.deniedSentence(5, { noRoute: 2, filter: 3, notNatted: 0 }, 4);
     if (!s1.includes('其餘 5 個組合') || !s1.includes('沒有路由 2') || !s1.includes('防火牆拒絕 3') || s1.includes('dst-nat') || !s1.includes('4 個沒判斷（上限）')) throw new Error('deniedSentence 應拆開拒絕並另寫沒判斷：' + s1);
+    // 只有一種原因時不重複數字：「其餘 N 個組合都沒被 dst-nat 改寫。」
     const s2 = V.l4.deniedSentence(1, { noRoute: 0, filter: 0, notNatted: 1 }, 0);
-    if (!s2.includes('沒被 dst-nat 改寫 1') || s2.includes('沒判斷') || s2.includes('沒有路由')) throw new Error('deniedSentence 只寫非 0 的部分：' + s2);
+    if (s2 !== '其餘 1 個組合都沒被 dst-nat 改寫。') throw new Error('deniedSentence 只有一種原因時應寫「都…」：' + s2);
+    const s3 = V.l4.deniedSentence(99, { noRoute: 0, filter: 99, notNatted: 0 }, 0);
+    if (s3 !== '其餘 99 個組合都被防火牆拒絕。') throw new Error('deniedSentence 只有防火牆拒絕時：' + s3);
     if (V.l4.deniedSentence(0, { noRoute: 0, filter: 0, notNatted: 0 }, 0) !== '') throw new Error('沒有拒絕也沒有沒判斷時不寫');
     if (!V.l4.deniedSentence(0, { noRoute: 0, filter: 0, notNatted: 0 }, 3).includes('3 個沒判斷（上限）')) throw new Error('只有沒判斷時也要寫');
     App.select(null); App.showLayer('l4'); await App.l4Job;
@@ -258,7 +281,13 @@ module.exports = async () => {
       const v6 = App.Q.exposure().ipv6; const note = text('#l4-ex-ipv6');
       if (!v6 || !note.includes(v6.message)) throw new Error('IPv6 的說明應照列 exposure.ipv6.message：' + note);
       (v6.missing || []).forEach((m) => { if (!note.includes(App.Q.devName(m.dev)) || !note.includes(V.L4_IPV6_MISSING[m.reason])) throw new Error('缺少 IPv6 的設備應列出原因：' + m.dev); });
-      if ($('#l4-ex-ipv6').dataset.status !== v6.status) throw new Error('IPv6 說明應標狀態'); }
+      if ($('#l4-ex-ipv6').dataset.status !== v6.status) throw new Error('IPv6 說明應標狀態');
+      // 三段在前，IPv6 的說明在第 3 段之後（窄螢幕不必先捲過它）；句子之間有句號
+      if (App.Q.exposure().status === 'ok') {
+        const kids = $('#l4-exposure').childNodes; const iv = kids.indexOf($('#l4-ex-ipv6')); const secs = kids.filter((x) => /l4-ex-sec/.test(x.className || ''));
+        if (iv < 0 || secs.some((x) => kids.indexOf(x) > iv)) throw new Error('IPv6 的說明應在三段之後');
+      }
+      if (/[^。；]　沒有判斷/.test(note)) throw new Error('IPv6 說明的兩句之間應有句號：' + note); }
     if (process.env.SMOKE_INPUT) { App.showLayer('device'); return; }
     // 自建網路：R 的 ether1 是 WAN，ether2 是 LAN，ether3 是公網網段（沒有 NAT）；forward 放行到 203.0.113.2:443 後全部丟棄（回程不保證，F15）；
     // IPv6：forward 只限埠（F05），位址直接加進 ipAddresses（基準還沒有 IPv6 位址的事實，見 tests/core/reach-ipv6.js）

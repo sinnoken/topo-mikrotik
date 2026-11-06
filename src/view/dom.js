@@ -171,7 +171,7 @@
     'policy-drop': '/routing rule 的 drop 或 unreachable，封包被丟棄',
     'service-refused': '防火牆放行，但設備的管理服務（/ip service）停用或不接受這個來源（available-from）',
     'service-unknown': '設備的管理服務（/ip service）是否接受這個來源無法判斷',
-    'egress-wan': '從 WAN 介面送往基準以外的位址，之後由電信業者決定（推論）',
+    'egress-wan': '從對外介面（依路由證據判定，推論）送往基準以外的位址，之後由電信業者決定',
     'egress-possible': '出介面只有弱證據顯示可能對外（例如公網位址），無法確定是否送往外部',
     'hairpin-no-srcnat': '目的 NAT 後與來源同網段，但沒有來源 NAT（hairpin NAT），回應不經過路由器，連線通常建立不起來',
     'return-not-guaranteed': '回程不保證：路徑經過的設備沒有放行已建立的連線（established），回應封包可能被丟棄（F15）',
@@ -182,6 +182,8 @@
     reached: '抵達', noroute: '沒有路由', blackhole: '黑洞路由', loop: '路由迴圈', ttl: 'TTL 用盡', 'unknown-nh': '下一跳不在基準內',
     policy: '策略路由不明', 'policy-drop': '策略路由丟棄', unverified: '無法驗證', egress: '送往外部（推論）',
   };
+  /** 去程的每個終點都送往外部時不追回程（回程的起點在基準外）：回程一段的中性說明 */
+  V.TRACE_RETURN_EXTERNAL = '目的在基準外，回程由電信業者決定（推論）';
   /**
    * 例外 → 給使用者看的中文原因（畫面上所有錯誤訊息的單一來源）。核心與命名規則丟出的錯誤本來就是中文，原樣使用；
    * JSON 解析錯誤說明檔案格式；其他（程式錯誤，英文訊息）改用中文說明，原訊息放在括號內，方便回報與追查。

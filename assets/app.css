@@ -74,14 +74,16 @@
   --focus-ring: 0 0 0 2px var(--focus-ring-inner), 0 0 0 4px var(--accent);
   /* 按鈕、連結、清單列與表格列的焦點：2px 實線 outline（強調色，對白底與表面色 ≥ 3:1，有測試） */
   --focus-outline: 2px solid var(--accent);
-  /* 原生控制項（捲軸、date picker、select 下拉）跟著系統深淺 */
-  color-scheme: light dark;
+  /* 原生控制項（捲軸、date picker、select 下拉）跟著畫面的深淺 */
+  color-scheme: light;
 }
-/* 深色：跟隨系統的 prefers-color-scheme（不提供手動切換），只重新定義語意變數；--fixed-light-* 刻意不變。
+/* 深色：<html data-theme="dark">，只重新定義語意變數；--fixed-light-* 刻意不變。
+   屬性由 app-toolbar.js 設定，等於 theme.mode：偏好是深色，或跟隨系統而 prefers-color-scheme 是 dark（JS 的 matchMedia 判斷）。
+   所以這裡不另寫 @media (prefers-color-scheme: dark) 的複本，深色變數只有這一份（有測試）；首次繪製前由 index.html 的 inline script 設好，不閃。
    --surface、--text、--muted、--*-text、--fw 等、--sev-* 與 theme.js 的 palettes.dark 一致（有測試），
    文字對底色 ≥ 4.5:1、圖形與欄位邊框 ≥ 3:1（有測試）。亮色的「淺底配深字」在這裡是「深底配淺字」 */
-@media (prefers-color-scheme: dark) {
-  :root {
+:root[data-theme="dark"] {
+    color-scheme: dark;
     --bg: #0f141a; --panel: #1c232c; --surface: #151b23; --line: #2c3540; --line-strong: #3c4754; --text: #e6edf3; --muted: #9aa7b4; --accent: #539ce2; --accent-soft: #162a40;
     --err: #f56258; --err-soft: #3a1d1c; --warn-soft: #33260f; --info: #6f9fd8; --info-soft: #172a40; --ok: #3cb672; --ok-soft: #15301e;
     --err-text: #ff8a80; --warn-text: #f0b354; --ok-text: #6fcf8a; --info-text: #8ab8e8;
@@ -107,7 +109,6 @@
     --shadow-primary: 0 2px 5px rgba(83, 156, 226, .25); --shadow-primary-hover: 0 3px 8px rgba(83, 156, 226, .3);
     --focus-ring-inner: #0f141a;
     --brand-leaf: #3cb672;
-  }
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }

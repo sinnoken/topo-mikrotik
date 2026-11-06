@@ -76,7 +76,13 @@ head.appendChild = (c) => {
   }, 0);
   return c;
 };
-const document = { body, head, activeElement: body, createElement: (t) => new El(t), createElementNS: (ns, t) => Object.assign(new El(t), { namespaceURI: ns }), createTextNode: (t) => new Text_(t),
+// <html>：CSS 的深淺跟著它的 data-theme（index.html 的 inline script 在首次繪製前設一次）
+const documentElement = new El('html');
+// localStorage：只存配色偏好（store.js 的 S.store.theme）。Node 的 localStorage 需要旗標，這裡換成記憶體版本
+const lsData = new Map();
+const fakeLocalStorage = { getItem: (k) => (lsData.has(k) ? lsData.get(k) : null), setItem: (k, v) => { lsData.set(k, String(v)); }, removeItem: (k) => { lsData.delete(k); } };
+Object.defineProperty(globalThis, 'localStorage', { value: fakeLocalStorage, configurable: true, writable: true });
+const document = { body, head, documentElement, activeElement: body, createElement: (t) => new El(t), createElementNS: (ns, t) => Object.assign(new El(t), { namespaceURI: ns }), createTextNode: (t) => new Text_(t),
   getElementById: (id) => body.querySelector('#' + id), querySelector: (s) => body.querySelector(s), querySelectorAll: (s) => body.querySelectorAll(s), testAll: (s) => body.testAll(s),
   addEventListener: (t, f) => (docListeners[t] = docListeners[t] || []).push(f),
   removeEventListener: (t, f) => { docListeners[t] = (docListeners[t] || []).filter((x) => x !== f); } };
@@ -90,6 +96,15 @@ void ctx;
 delete globalThis.SSOT;
 const scripts = Array.from(html.matchAll(/<script src="([^"]+)"/g)).map((m) => m[1]);
 scripts.forEach((s) => vm.runInThisContext(fs.readFileSync(path.join(ROOT, s), 'utf8'), { filename: s }));
+// 首次繪製前的 inline script（index.html 唯一沒有 src 的 <script>）：和瀏覽器一樣在所有 <script src> 之後、DOMContentLoaded 之前執行。
+// 啟動前先放一個不合法的配色偏好：應被忽略（退回跟隨系統）並 console.warn，不靜默
+const inlineScripts = Array.from(html.matchAll(/<script>([\s\S]*?)<\/script>/g)).map((m) => m[1]);
+const bootWarns = [];
+{
+  globalThis.localStorage.setItem(globalThis.SSOT.store.theme.KEY, 'sepia');
+  const warn = console.warn; console.warn = (...a) => { bootWarns.push(a.join(' ')); };
+  try { inlineScripts.forEach((src) => vm.runInThisContext(src, { filename: 'index.html（inline）' })); } finally { console.warn = warn; }
+}
 const S = globalThis.SSOT; const $ = (s) => document.querySelector(s);
 const flushRaf = (n) => { for (let i = 0; i < (n || 3); i++) { const q = rafQ; rafQ = []; q.forEach((f) => f(0)); } };
 const text = (sel) => $(sel).textContent;
@@ -136,8 +151,8 @@ const luminance = (rgb) => { const [r, g, b] = rgb.map((v) => { v /= 255; return
 const contrastOf = (fg, bg, base) => { const [a, b] = [luminance(rgbOf(fg, base)), luminance(rgbOf(bg, base))].sort((x, y) => y - x); return (a + 0.05) / (b + 0.05); };
 /** 讀 app.css 的 :root 變數 */
 const cssVars = (css) => Object.fromEntries(Array.from(css.match(/:root\s*\{([^}]*)\}/)[1].matchAll(/--([\w-]+):\s*([^;]+);/g)).map((m) => [m[1], m[2].trim()]));
-/** 深色的 :root 變數（@media (prefers-color-scheme: dark) 內的 :root），沒有覆寫的沿用亮色 */
-const cssDarkRoot = (css) => { const m = css.match(/@media \(prefers-color-scheme: dark\)\s*\{\s*:root\s*\{([^}]*)\}/); if (!m) throw new Error('app.css 應有 @media (prefers-color-scheme: dark) 的 :root'); return m[1]; };
+/** 深色的 :root 變數（:root[data-theme="dark"]，由 A.applyColorScheme 設定），沒有覆寫的沿用亮色 */
+const cssDarkRoot = (css) => { const m = css.match(/:root\[data-theme="dark"\]\s*\{([^}]*)\}/); if (!m) throw new Error('app.css 應有 :root[data-theme="dark"]'); return m[1]; };
 const cssVarsOf = (css, mode) => (mode === 'dark'
   ? Object.assign(cssVars(css), Object.fromEntries(Array.from(cssDarkRoot(css).matchAll(/--([\w-]+):\s*([^;]+);/g)).map((m) => [m[1], m[2].trim()])))
   : cssVars(css));
@@ -304,6 +319,21 @@ function viewBoundaryViolations(file, src) {
 
 (async () => {
   await step('啟動、顯示歡迎畫面', async () => { (docListeners.DOMContentLoaded || []).forEach((f) => f()); await new Promise((r) => setTimeout(r, 20)); if ($('#welcome').classList.contains('hidden')) throw new Error('應顯示歡迎畫面'); });
+  await step('配色偏好的啟動：首次繪製前由 inline script 設定 data-theme；不合法的偏好忽略並警告一次、退回跟隨系統', () => {
+    const ST = S.store.theme; const VA = S.view.app; const T = S.view.theme;
+    if (!ST || JSON.stringify(ST.VALUES) !== '["system","light","dark"]' || typeof ST.KEY !== 'string') throw new Error('store 應集中定義配色偏好的鍵與值（S.store.theme.KEY／VALUES）');
+    // inline script 只呼叫畫面的函式，不自己寫鍵或讀 localStorage（store.js 是唯一來源）
+    if (inlineScripts.length !== 1 || inlineScripts[0].includes(ST.KEY) || /localStorage/.test(inlineScripts[0])) throw new Error('index.html 應只有一段首次繪製前的 inline script，經 store 讀偏好：' + inlineScripts.join('|'));
+    const ih = html.indexOf('<script>'); if (ih < html.lastIndexOf('<script src=') || ih > html.indexOf('</head>')) throw new Error('inline script 應在所有 <script src> 之後、</head> 之前（首次繪製前）');
+    if (bootWarns.filter((w) => w.includes('sepia')).length !== 1) throw new Error('不合法的配色偏好應 console.warn 一次（說明被忽略的值）：' + bootWarns.join('|'));
+    if (ST.get() !== 'system' || VA.themePref() !== 'system') throw new Error('不合法的配色偏好應退回跟隨系統');
+    if (document.documentElement.getAttribute('data-theme') !== T.mode) throw new Error('<html data-theme> 應與 theme.mode 一致：' + document.documentElement.getAttribute('data-theme'));
+    const checked = Array.from(document.testAll('#theme-mode .menu-item')).filter((b) => b.getAttribute('aria-checked') === 'true').map((b) => b.dataset.scheme);
+    if (checked.join() !== 'system') throw new Error('啟動後「⋯」選單應勾選跟隨系統：' + checked.join());
+    try { ST.set('sepia'); throw new Error('寫入不合法的偏好應丟出 RangeError'); } catch (e) { if (!(e instanceof RangeError)) throw e; }
+    if (localStorage.getItem(ST.KEY) !== 'sepia') throw new Error('不合法的偏好只忽略，不改寫使用者的資料');
+    localStorage.removeItem(ST.KEY);
+  });
   await step('離線契約：CSP 禁止網路連線，程式碼不使用網路 API', () => {
     const csp = (html.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)"/) || [])[1] || '';
     ["connect-src 'none'", "form-action 'none'", "object-src 'none'", "worker-src 'none'"].forEach((d) => { if (!csp.includes(d)) throw new Error('CSP 缺少 ' + d); });
@@ -4459,9 +4489,10 @@ function viewBoundaryViolations(file, src) {
   });
   await step('樣式 token：顏色、z-index、動效時長、圓角只用 :root 的變數；每個變數都有用到；對話框有名稱', () => {
     const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
-    // :root 區塊（含 @media 內的 :root，例如觸控、之後的 prefers-color-scheme）才可以寫色值；其他地方一律 var(--*)
-    const roots = Array.from(css.matchAll(/:root\s*\{([^}]*)\}/g)).map((m) => m[1]);
-    const rest = css.replace(/:root\s*\{[^}]*\}/g, '');
+    // :root 區塊（含 @media 內的 :root，例如觸控；以及深色的 :root[data-theme="dark"]）才可以寫色值；其他地方一律 var(--*)
+    const ROOT_RE = /:root(?:\[data-theme="dark"\])?\s*\{([^}]*)\}/g;
+    const roots = Array.from(css.matchAll(ROOT_RE)).map((m) => m[1]);
+    const rest = css.replace(ROOT_RE, '');
     const bodies = Array.from(rest.matchAll(/([^{}]*)\{([^{}]*)\}/g)).map((m) => ({ sel: m[1].trim(), body: m[2] }));
     const bad = [];
     // 具名色（CSS Color 4 的 148 個；transparent、currentColor、inherit 與強制色彩的系統色 Canvas、Highlight 等不是具名色，可以用）
@@ -4493,13 +4524,20 @@ function viewBoundaryViolations(file, src) {
     for (const m of htmlSrc.matchAll(/\b(fill|stroke|stop-color|flood-color|lighting-color|color)="([^"]*)"/g)) if (!/^(none|currentColor|inherit)?$/.test(m[2])) bad.push(`index.html：${m[1]}="${m[2]}"`);
     for (const m of htmlSrc.matchAll(/style="([^"]*)"/g)) for (const c of m[1].matchAll(COLOR_LIT)) bad.push(`index.html：style 的 ${c[0]}`);
     if (bad.length) throw new Error(':root 之外應只用變數：\n' + bad.join('\n'));
-    // 深色：@media (prefers-color-scheme: dark) 的 :root 重新定義亮色 :root 的每個顏色變數（--fixed-light-* 刻意不變），且只放顏色
+    // 深色：:root[data-theme="dark"] 重新定義亮色 :root 的每個顏色變數（--fixed-light-* 刻意不變），且只放顏色
     const isColor = (x) => /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\(/.test(x);
     const lightColors = Object.entries(cssVars(css)).filter(([n, x]) => isColor(x) && !n.startsWith('fixed-light-')).map(([n]) => n);
     const darkVars = Object.fromEntries(Array.from(cssDarkRoot(css).matchAll(/--([\w-]+):\s*([^;]+);/g)).map((m) => [m[1], m[2].trim()]));
     const missing = lightColors.filter((n) => !(n in darkVars)); const extra = Object.keys(darkVars).filter((n) => !lightColors.includes(n));
     if (missing.length || extra.length) throw new Error(`深色 :root 應正好重新定義亮色的顏色變數（缺 ${missing.join('、') || '無'}；多 ${extra.join('、') || '無'}）`);
-    if (!/:root\s*\{[^}]*color-scheme:\s*light dark/.test(css)) throw new Error(':root 應宣告 color-scheme: light dark（原生控制項跟著深淺）');
+    // 深色變數只定義一次：跟隨系統也由 JS（matchMedia）設定 data-theme，CSS 不另寫 prefers-color-scheme 的複本；
+    // 每個顏色變數正好在兩個 :root 區塊（亮色、深色）定義
+    if (/prefers-color-scheme/.test(css)) throw new Error('app.css 不應再用 prefers-color-scheme（深淺只跟著 data-theme，深色變數只寫一份）');
+    if ((css.match(/:root\[data-theme="dark"\]\s*\{/g) || []).length !== 1) throw new Error('app.css 應正好有一個 :root[data-theme="dark"] 區塊');
+    const twice = lightColors.filter((n) => roots.filter((r) => new RegExp('(^|[;\\s])--' + n + ':').test(r)).length !== 2);
+    if (twice.length) throw new Error('顏色變數應正好在亮色與深色兩個 :root 各定義一次：' + twice.join('、'));
+    // 原生控制項（捲軸、date picker）跟著 data-theme：亮色 :root 是 light，深色 :root 是 dark
+    if (!/:root\s*\{[^}]*color-scheme:\s*light\s*;/.test(css) || !/color-scheme:\s*dark\s*;/.test(cssDarkRoot(css))) throw new Error(':root 應宣告 color-scheme: light，:root[data-theme="dark"] 宣告 color-scheme: dark');
     if (!/<meta name="color-scheme" content="light dark">/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'))) throw new Error('index.html 應有 color-scheme 的 meta');
     // 每個變數至少被 var() 用到一次（app.css、index.html、畫面程式）；只供測試與 theme.js 比對的變數列在例外清單
     const ONLY_COMPARED = ['fw', 'sw', 'rt', 'host', 'unk'];
@@ -5052,7 +5090,50 @@ function viewBoundaryViolations(file, src) {
       if (!last.ends.every((c) => P.dark.endpoint.vendor.includes(c)) || !last.hl.every((c) => darkMarks.includes(c))) throw new Error('匯出後畫面的廠商色與標示應回到暗色');
       const bg = ops.find((o) => o.op === 'rect'); if (!bg || bg.style !== P.light.canvas.surface) throw new Error('PNG 的底色應是亮色的畫布底色');
       if (T.mode !== 'dark' || modes[modes.length - 1].mode !== 'dark') throw new Error('匯出後應還原成目前的深淺並重畫');
+
+      // 主題切換（「⋯」選單的單選群組）：跟隨系統／淺色／深色。CSS 跟著 <html data-theme>（＝ theme.mode），偏好存進 store
+      const root = document.documentElement; const ST = S.store.theme;
+      const fire = (on) => { mq.matches = on; listeners.forEach((f) => f({ matches: on, media: mq.media })); flushRaf(); };
+      const items = Array.from(document.testAll('#theme-mode .menu-item'));
+      const item = (p) => items.find((b) => b.dataset.scheme === p);
+      if (items.length !== ST.VALUES.length || !ST.VALUES.every(item)) throw new Error('「⋯」選單應有每個配色偏好各一個選項');
+      if (!items.every((b) => b.getAttribute('role') === 'menuitemradio' && $('#more-menu').contains(b))) throw new Error('配色選項應是「⋯」選單內的 menuitemradio');
+      if ($('#theme-mode').getAttribute('role') !== 'group' || !$('#theme-mode').getAttribute('aria-labelledby')) throw new Error('配色選項應在有名稱的 group 內');
+      const checked = () => items.filter((b) => b.getAttribute('aria-checked') === 'true').map((b) => b.dataset.scheme).join();
+      const state = () => `${checked()}／mode=${T.mode}／data-theme=${root.getAttribute('data-theme')}／store=${ST.get()}`;
+      const expect = (pref, mode, why) => { if (checked() !== pref || VA.themePref() !== pref || T.mode !== mode || root.getAttribute('data-theme') !== mode || ST.get() !== pref) throw new Error(why + '：' + state()); };
+      expect('system', 'dark', '系統是深色、偏好跟隨系統時');
+      // 切換時不重建左側清單（沿用部分重畫）
+      const pane0 = $('#pane-findings').firstChild;
+      fire(false); item('dark').click();
+      expect('dark', 'dark', '選了深色後應固定深色並存進 store');
+      if ($('#pane-findings').firstChild !== pane0) throw new Error('切換配色時不應重建左側清單');
+      fire(true); fire(false); expect('dark', 'dark', '固定深色時系統的變更不應影響');
+      // 重新載入（模擬）：首次繪製前的 inline script 由 store 讀回偏好，系統是淺色也套用深色
+      root.removeAttribute('data-theme'); inlineScripts.forEach((src) => vm.runInThisContext(src));
+      if (root.getAttribute('data-theme') !== 'dark') throw new Error('重新載入後首次繪製前應還原成深色：' + root.getAttribute('data-theme'));
+      // PNG 固定淺色；匯出時 CSS（data-theme）不跟著變，之後畫面仍是深色
+      { const seen = []; const d0 = g.draw; g.draw = function () { seen.push([T.mode, root.getAttribute('data-theme')]); return d0.call(this); };
+        try { VA.exportPng(); } finally { g.draw = d0; }
+        if (!seen.length || seen[0][0] !== 'light' || seen.some((x) => x[1] !== 'dark')) throw new Error('固定深色時匯出 PNG 應以淺色繪製、頁面不閃：' + JSON.stringify(seen));
+        expect('dark', 'dark', '匯出後應回到深色'); }
+      fire(true); item('light').click();
+      expect('light', 'light', '選了淺色後應固定淺色');
+      fire(false); fire(true); expect('light', 'light', '固定淺色時系統改成深色不應影響');
+      item('system').click(); expect('system', 'dark', '選回跟隨系統時應套用系統目前的深色');
+      fire(false); expect('system', 'light', '跟隨系統時應跟著系統變成淺色');
+      // 存不進 localStorage（例如被瀏覽器封鎖）：這次仍套用，並以通知說明關閉後不會保留（不靜默）
+      { const set0 = localStorage.setItem; localStorage.setItem = () => { throw new Error('模擬 QuotaExceededError'); };
+        try { item('dark').click(); } finally { localStorage.setItem = set0; }
+        if (T.mode !== 'dark' || !text('#banner').includes('配色')) throw new Error('偏好存不進去時仍應套用並以通知說明：' + text('#banner'));
+        item('system').click(); expect('system', 'light', '選回跟隨系統'); }
+      // 鍵盤：選單內的配色選項可以用方向鍵移到（是可操作的 .menu-item）
+      $('#btn-more').click();
+      if (!Array.from($('#more-menu').querySelectorAll('.menu-item')).includes(item('light'))) throw new Error('配色選項應在選單的方向鍵順序內');
+      VA.closeMenus();
     } finally {
+      if (VA.themePref() !== 'system') VA.setThemePref('system');
+      localStorage.removeItem(S.store.theme.KEY);
       g.draw = oldDraw; App.select(null);
       if (T.mode !== 'light') { mq.matches = false; listeners.forEach((f) => f({ matches: false, media: mq.media })); }
       if (oldMM) window.matchMedia = oldMM; else delete window.matchMedia;
@@ -5120,7 +5201,10 @@ function viewBoundaryViolations(file, src) {
     more.click();
     if (menu.classList.contains('hidden') || more.getAttribute('aria-expanded') !== 'true' || document.activeElement !== $('#btn-trace')) throw new Error('開啟「⋯」後焦點應在第一項');
     menu.dispatch('keydown', { key: 'ArrowDown' }); if (document.activeElement !== $('#btn-png')) throw new Error('↓ 應移到下一項');
-    menu.dispatch('keydown', { key: 'End' }); if (document.activeElement !== $('#btn-clear')) throw new Error('End 應移到最後一項');
+    // 最後一項是配色單選的最後一個（版本不是選單項目）
+    const lastItem = Array.from(menu.querySelectorAll('.menu-item')).pop();
+    if (!$('#theme-mode').contains(lastItem)) throw new Error('「⋯」的最後一個選單項目應是配色的選項');
+    menu.dispatch('keydown', { key: 'End' }); if (document.activeElement !== lastItem) throw new Error('End 應移到最後一項');
     menu.dispatch('keydown', { key: 'ArrowDown' }); if (document.activeElement !== $('#btn-trace')) throw new Error('↓ 在最後一項時應繞回第一項');
     menu.dispatch('keydown', { key: 'Escape' });
     if (!menu.classList.contains('hidden') || more.getAttribute('aria-expanded') !== 'false' || document.activeElement !== more) throw new Error('Esc 應關閉選單並把焦點還給「⋯」');

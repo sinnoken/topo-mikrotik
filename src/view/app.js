@@ -109,7 +109,7 @@
     // 只有設備圖的位置存進 store；L2／L3 拖曳後的位置留在記憶體（App.layers）
     App.graph.on('moved', () => { if (App.layer === 'device') { clearTimeout(saveT); saveT = setTimeout(A.savePositions, 600); } App.graph.computeGroups(); });
     App.layoutMode = (await S.store.get('layoutMode').catch(() => null)) || 'elk';
-    // 配色跟隨系統深淺：在建立圖例之前套用，第一次畫面就是對的配色（沒有 matchMedia 時維持亮色）
+    // 配色（「⋯」選單的偏好，預設跟隨系統）：在建立圖例之前套用 theme；CSS 的深淺已由 index.html 的 inline script 在首次繪製前設好
     A.bindColorScheme();
     bindEscape();
     A.bindHeader(); A.bindToolbar(); A.bindLayers(); A.bindInputDialog(); A.bindHub(); A.bindSteps(); A.bindMobileWorkspaces(); A.bindSheet(); await A.bindResizers();

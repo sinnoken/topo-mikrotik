@@ -64,6 +64,8 @@
 <script src="src/view/app-ledger.js"></script>
 <script src="src/view/app-hub.js"></script>
 <script src="src/view/panels/patch.js"></script>
+<!-- 首次繪製前依儲存的配色偏好設好 <html data-theme>（CSS 的深淺），畫面不先以系統的深淺閃一下；偏好由 store.js 讀，見 app-toolbar.js 的 A.paintScheme -->
+<script>SSOT.view.app.paintScheme();</script>
 </head>
 <body>
 <div id="app">
@@ -94,12 +96,19 @@
       <button id="btn-hub" class="hub-btn" aria-controls="hub" aria-expanded="false" title="本輪的輸入與輸出：收集檔、工作包、處理紀錄、命名規則、預期現況、報表與 patch">資料中心</button>
       <!-- 「⋯」更多操作（src/view/app-toolbar.js 的 A.bindMenu）：方向鍵移動、Esc 關閉並回到按鈕、點外面關閉 -->
       <div class="menu-wrap">
-        <button type="button" class="icon-btn" id="btn-more" title="更多操作：路由追蹤、匯出 PNG、清除基準" aria-label="更多操作" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu">⋯</button>
+        <button type="button" class="icon-btn" id="btn-more" title="更多操作：路由追蹤、匯出 PNG、清除基準、配色" aria-label="更多操作" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu">⋯</button>
         <div id="more-menu" class="menu menu-end hidden" role="menu" aria-label="更多操作">
           <button type="button" class="menu-item" role="menuitem" id="btn-trace" title="依各設備路由表逐跳追蹤兩個 IP 之間的路徑">路由追蹤…</button>
           <button type="button" class="menu-item" role="menuitem" id="btn-png" title="把目前的拓樸圖畫面匯出 PNG（目前的層級；其他匯出在資料中心）">匯出 PNG</button>
           <div class="menu-sep" role="separator"></div>
           <button type="button" class="menu-item danger" role="menuitem" id="btn-clear" title="清除這個工具儲存的基準與輸入">清除基準…</button>
+          <div class="menu-sep" role="separator"></div>
+          <div class="menu-label" id="theme-mode-label">配色</div>
+          <div id="theme-mode" role="group" aria-labelledby="theme-mode-label">
+            <button type="button" class="menu-item" role="menuitemradio" data-scheme="system" data-keep aria-checked="true" title="依作業系統的淺色／深色設定（預設）">跟隨系統</button>
+            <button type="button" class="menu-item" role="menuitemradio" data-scheme="light" data-keep aria-checked="false" title="固定淺色，不跟系統">淺色</button>
+            <button type="button" class="menu-item" role="menuitemradio" data-scheme="dark" data-keep aria-checked="false" title="固定深色，不跟系統">深色</button>
+          </div>
           <div class="menu-sep" role="separator"></div>
           <div class="menu-meta" id="app-version" role="none"></div>
         </div>

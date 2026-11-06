@@ -16,7 +16,7 @@
     { id: 'general', label: '一般', desc: '配色與拓樸圖的預設版面；只存在這個瀏覽器。' },
     { id: 'profiles', label: '命名規則', desc: '命名規則只依名稱加上站點、角色等註解，不會新增、刪除或改寫收集到的事實。' },
     { id: 'data', label: '本機資料', desc: '這個工具存在瀏覽器裡的資料；不會傳到任何地方。' },
-    { id: 'help', label: '收集與建立基準', desc: '怎麼收集 RouterOS 的輸出，以及收集檔的格式。' },
+    { id: 'help', label: '收集與建立基準', desc: '從收集設備輸出、建立基準到排程與一輪的流程，各步驟用的工具與做法。' },
     { id: 'about', label: '關於', desc: '' },
   ];
   A.SETTINGS_SECTIONS = SECTIONS.map((s) => s.id);

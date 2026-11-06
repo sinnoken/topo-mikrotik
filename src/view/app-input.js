@@ -33,12 +33,10 @@
     $('#input-profile').onchange = async (e) => {
       if (e.target.value !== '__file') { runPreflight(); return; }
       const f = await pickFile('.json,application/json'); if (!f) { e.target.value = ''; runPreflight(); return; }
-      try {
-        const j = JSON.parse(await f.text()); S.profile.compile(j); S.profiles[j.id] = j;
-        const saved = (await S.store.get('profiles')) || {}; saved[j.id] = j; await S.store.set('profiles', saved);
-        await fillProfiles(j.id);
-        $('#input-status').textContent = `已載入命名規則「${j.id}」`;
-      } catch (err) { fail(`無法載入命名規則檔「${f.name}」`, err); e.target.value = ''; }
+      // 載入命名規則檔只有一份實作（設定的命名規則分類）：驗證、加入清單、存進 store
+      const r = await V.settings.profiles.loadFile(f);
+      if (r.ok) { await fillProfiles(r.id); $('#input-status').textContent = `已載入命名規則「${r.id}」`; }
+      else { $('#input-status').textContent = r.error; e.target.value = ''; }
       runPreflight();
     };
     $('#input-build').onclick = runBuild;
@@ -142,7 +140,7 @@
     Object.assign(S.profiles, saved);
     const sel = V.clear($('#input-profile'));
     sel.appendChild(h('option', { value: '' }, '不套用（只依收集的資料判斷）'));
-    Object.values(S.profiles).filter((p) => p && p.id).forEach((p) => sel.appendChild(h('option', { value: p.id }, `${p.id}${p.label ? '：' + p.label : ''}`)));
+    Object.values(S.profiles).filter((p) => p && p.id).forEach((p) => sel.appendChild(h('option', { value: p.id }, `${p.id}${typeof p.label === 'string' && p.label ? '：' + p.label : ''}`)));
     sel.appendChild(h('option', { value: '__file' }, '載入命名規則檔（JSON）…'));
     sel.value = selected || '';
   }

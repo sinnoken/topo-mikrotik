@@ -160,7 +160,7 @@ module.exports = async () => {
     const rows = $('#settings-panel').testAll('tr').filter((r) => r.dataset.profile);
     const ids = Object.values(S.profiles).filter((p) => p && p.id).map((p) => p.id);
     if (!ids.length || rows.map((r) => r.dataset.profile).join() !== ids.join()) throw new Error('命名規則應列出每一份可用的命名規則：' + rows.map((r) => r.dataset.profile).join());
-    ids.forEach((id) => { const p = S.profiles[id]; const r = rows.find((x) => x.dataset.profile === id); if (p.label && !r.textContent.includes(p.label)) throw new Error('命名規則應列出名稱：' + id); });
+    ids.forEach((id) => { const p = S.profiles[id]; const r = rows.find((x) => x.dataset.profile === id); if (!r.textContent.includes(S.profile.nameOf(p))) throw new Error('命名規則應列出名稱：' + id); });
     // 收集與建立基準：指令清單與歡迎畫面同一份（S.collectCommands）
     settingsTab('help').click();
     const cmds = S.collectCommands.default.map((c) => c.command).join('\n');

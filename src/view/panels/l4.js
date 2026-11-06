@@ -160,7 +160,7 @@
     const assumptions = S.query.reachAssumptions();
     V.clear(root).appendChild(h('div', { class: 'work-inner l4-inner' }, [
       h('div', { class: 'work-head' }, [h('h2', { id: 'l4-title', class: 'work-title', tabindex: '-1' }, 'L4 可達性'),
-        h('span', { class: 'muted' }, '來源 zone × 目的 zone 的防火牆與 NAT 結果；點格子往下看位址組、牽涉的規則與逐跳路徑。全部是依基準的路由與規則推論出來的，不寫進基準')]),
+        h('span', { class: 'muted' }, [V.chip('推論', 'info'), ' 來源 zone × 目的 zone 的防火牆與 NAT 結果；點格子往下看位址組、牽涉的規則與逐跳路徑。全部是依基準的路由與規則推論出來的，不寫進基準'])]),
       // 判斷的前提：預設收合（摘要一句），不把矩陣推到首屏之外；每一條的文字取自查詢層（S.query.reachAssumptions）
       h('section', { class: 'work-card l4-card l4-assume', 'aria-labelledby': 'l4-assume-title' }, [
         h('h3', { id: 'l4-assume-title', class: 'work-card-title' }, ['判斷的前提 ', V.chip('推論', 'info')]),
@@ -200,6 +200,20 @@
       h('span', { class: 'l4-legend-item', 'data-legend': 'diagonal', title: '來源與目的是同一個 zone（zone 內的流量，主要受主機防火牆影響，不在範圍內）' }, [h('span', { class: 'l4-swatch diag', style: diagStyle() }), 'zone 內']),
     ])));
     L.appendChild(h('div', { class: 'muted l4-note' }, '格子的數字是「允許／總數」：每個 zone 取代表位址（ARP 看到的位址優先，否則推算），代表位址 × 目的 × 服務各算一次。滑過或用鍵盤移到格子會顯示詳細的筆數與代表規則；方向鍵移動，Enter 往下看。'));
+    els.legendVirtual = h('div', { class: 'muted l4-note hidden', 'data-legend': 'virtual' });
+    L.appendChild(els.legendVirtual);
+  }
+  /**
+   * 圖例的虛擬 zone：名稱與依據取自矩陣的 zones（查詢層，virtual: true），這裡只說明「虛擬」的意思與只當目的的 zone 為什麼沒有來源列。
+   * 矩陣沒有虛擬 zone 時收起
+   */
+  function legendVirtual(mx) {
+    const el = V.clear(els.legendVirtual); const vz = mx.zones.filter((z) => z.virtual);
+    el.classList.toggle('hidden', !vz.length);
+    if (!vz.length) return;
+    el.appendChild(h('span', null, `「${V.ZONE_SOURCE.virtual}」的 zone 不是基準中的直連網段，而是代表一類位址（推論）：`));
+    el.appendChild(h('ul', { class: 'l4-legend-virtual' }, vz.map((z) => h('li', { 'data-zone': z.id }, [h('b', null, z.name), '：', z.basis || '',
+      z.dstOnly ? '。只當目的：只判斷連進設備的流量（輸入規則與管理服務），設備自己發出的流量不在範圍內，所以只在目的欄，沒有來源列' : '']))));
   }
 
   // ---------------------------------------------------------------- 顯示與計算
@@ -336,6 +350,7 @@
       + (st.zo && st.zo.error ? '命名規則的 zones 段沒有套用（原因見「zone 的依據」）。' : '');
     syncControls(App);
     st.current = mx;
+    legendVirtual(mx);
     renderMatrix(App, mx);
     renderZones(App);
     // 下鑽的格子在新的 service 下重新取得（L1／L2）；L3 是一次查詢的結果，維持不變
@@ -358,7 +373,7 @@
     const byKey = new Map(mx.cells.map((c) => [c.src + '\u0000' + c.dst, c]));
     const n = mx.zones.length;
     const [fr, fc] = [Math.min(st.focus[0], srcZones.length - 1), Math.min(st.focus[1], n - 1)];
-    const head = h('tr', null, [h('th', { scope: 'col', class: 'l4-corner' }, '來源 ＼ 目的')].concat(mx.zones.map((z) => h('th', { scope: 'col', class: 'l4-colhead', title: z.basis }, zoneLabel(z)))));
+    const head = h('tr', null, [h('th', { scope: 'col', class: 'l4-corner' }, '來源 ＼ 目的')].concat(mx.zones.map((z) => h('th', { scope: 'col', class: 'l4-colhead', title: z.basis }, zoneLabel(z, true)))));
     const rows = srcZones.map((zs, r) => {
       const tds = mx.zones.map((zd, c) => {
         const cell = byKey.get(zs.id + '\u0000' + zd.id);
@@ -366,16 +381,20 @@
         (gridCells[r] = gridCells[r] || [])[c] = td;
         return td;
       });
-      return h('tr', null, [h('th', { scope: 'row', class: 'l4-rowhead', title: zs.basis }, zoneLabel(zs))].concat(tds));
+      return h('tr', null, [h('th', { scope: 'row', class: 'l4-rowhead', title: zs.basis }, zoneLabel(zs, true))].concat(tds));
     });
     box.appendChild(h('div', { class: 'l4-grid-wrap' }, h('table', { class: 'l4-grid', role: 'grid', 'aria-label': `zone 矩陣：列是來源 zone，欄是目的 zone（${st.service ? '服務 ' + st.service : '全部服務'}）。方向鍵移動，Enter 往下看`, 'aria-rowcount': String(srcZones.length + 1), 'aria-colcount': String(n + 1) }, [
       h('thead', null, head), h('tbody', null, rows),
     ])));
   }
-  /** zone 名稱，旁邊是來源（命名規則、interface list、VLAN、網段）與「推論」標示；依據在 title */
-  function zoneLabel(z) {
+  /**
+   * zone 名稱，旁邊是來源（命名規則、介面清單、VLAN、網段）與「推論」標示；依據在 title。
+   * quiet：矩陣的表頭（頁首已標一次推論，每個表頭再掛徽章太雜）只留給輔助科技念的「（推論）」
+   */
+  function zoneLabel(z, quiet) {
     return h('span', { class: 'l4-zone' }, [h('span', { class: 'l4-zone-name' }, z.name), ' ',
-      h('span', { class: 'l4-zone-src' }, V.ZONE_SOURCE[z.source] || z.source), z.inferred ? h('span', { class: 'l4-zone-inf' }, '推論') : null]);
+      h('span', { class: 'l4-zone-src' }, V.ZONE_SOURCE[z.source] || z.source),
+      z.inferred ? (quiet ? h('span', { class: 'sr-only' }, '（推論）') : h('span', { class: 'l4-zone-inf' }, '推論')) : null]);
   }
   function cellEl(App, c, r, col, focusable) {
     const Q = App.Q;
@@ -481,7 +500,7 @@
     const Q = App.Q; const z = Q.zones(zo()); const box = V.clear(els.zones);
     box.appendChild(h('h3', { id: 'l4-zones-title', class: 'work-card-title' }, ['zone 的依據 ', V.chip('推論', 'info')]));
     if (st.zo && st.zo.error) box.appendChild(h('p', { class: 'warn-line l4-profile-error' }, '命名規則的 zones 段沒有套用：' + st.zo.error));
-    box.appendChild(h('p', { class: 'muted l4-note' }, '每個 IPv4 直連網段依序取第一個有結果的來源：命名規則的 zones 標籤 → interface list → VLAN → 網段本身。命名規則的標籤是註解，其餘都是推論（同一個 VLAN ID 視為同一個 zone）。'));
+    box.appendChild(h('p', { class: 'muted l4-note' }, '每個 IPv4 直連網段依序取第一個有結果的來源：命名規則的 zones 標籤 → 介面清單（interface list）→ VLAN → 網段本身。命名規則的標籤是註解，其餘都是推論（同一個 VLAN ID 視為同一個 zone）。'));
     // zone 依 VRF 分開：main 以外的 zone id 帶 @<VRF>、名稱帶（VRF …）；有兩個以上的 VRF 時另列一欄
     const mv = S.util.uniq(z.zones.map((x) => x.vrf)).length > 1;
     const vrfCol = mv ? [{ t: 'VRF', f: (x) => h('span', { class: 'mono' }, x.vrf || ''), s: (x) => x.vrf }] : [];

@@ -152,7 +152,7 @@
   V.UNKNOWN_RULE_CAT = '未登錄的檢查';
   V.ruleInfo = (id) => S.query.rule(id) || { id, cat: V.UNKNOWN_RULE_CAT, title: id };
   // zone 的來源（Q.zones 的 source）
-  V.ZONE_SOURCE = { profile: '命名規則', 'interface-list': 'interface list', vlan: 'VLAN', subnet: '網段', virtual: '虛擬' };
+  V.ZONE_SOURCE = { profile: '命名規則', 'interface-list': '介面清單', vlan: 'VLAN', subnet: '網段', virtual: '虛擬' };
   // Q.reach 的原因代碼與結束代碼（src/query/reach.js 的 reason／end）；沒有對照的代碼原樣顯示並標「沒有說明」，不吞掉
   V.REACH_REASON = {
     'rule-condition': '規則的比對條件無法判斷', 'raw-notrack': 'raw 規則是否不追蹤連線（notrack）無法判斷，追蹤與不追蹤的結果不同',

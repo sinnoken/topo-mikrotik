@@ -54,7 +54,8 @@
     const fold = o.fold || (o.long && o.count > LONG_ROWS);
     // 展開列內的連結（例如「在圖上看」）只執行自己的動作，不順便切換展開
     const extra = (o.extra || []).map((x) => (fold && x ? h('span', { onclick: (e) => { if (e && e.preventDefault) e.preventDefault(); } }, x) : x));
-    const head = [title, o.count == null ? null : V.chip(String(o.count)), ...extra];
+    // unit：數量是什麼的數量看不出來時寫出單位（例如「2 筆檢查結果」）
+    const head = [title, o.count == null ? null : V.chip(o.unit ? `${V.num(o.count)} ${o.unit}` : String(o.count)), ...extra];
     const body = Array.isArray(content) ? h('div', null, content) : content;
     return fold
       ? h('details', { class: 'detail-fold', open: !!o.open }, [h('summary', null, head), body])
@@ -424,12 +425,16 @@
       state: (a) => ((a.protocols && !a.protocols.length) || a.mode === 'rx-only' ? '不送出' : known(a.protocols, a.mode, a.list) ? `在清單 ${a.list} 送出` : null) },
     { area: 'snmp', label: 'SNMP', menu: '/snmp', params: [['enabled', 'enabled']] },
     { area: 'upnp', label: 'UPnP', menu: '/ip upnp', rule: 'F14', facet: 'upnp', params: [['enabled', 'enabled']] },
-    { area: 'proxy', label: 'web proxy', menu: '/ip proxy', rule: 'F14', facet: 'proxy', params: [['enabled', 'enabled'], ['ports', 'port']] },
+    { area: 'proxy', label: 'Web Proxy', menu: '/ip proxy', rule: 'F14', facet: 'proxy', params: [['enabled', 'enabled'], ['ports', 'port']] },
     { area: 'socks', label: 'SOCKS', menu: '/ip socks', rule: 'F14', facet: 'socks', params: [['enabled', 'enabled'], ['port', 'port'], ['vrf', 'vrf']] },
-    { area: 'bandwidthServer', label: 'bandwidth-server', menu: '/tool bandwidth-server', rule: 'F14', facet: 'bandwidth-server', params: [['enabled', 'enabled'], ['authenticate', 'authenticate']] },
+    { area: 'bandwidthServer', label: 'Bandwidth Server', menu: '/tool bandwidth-server', rule: 'F14', facet: 'bandwidth-server', params: [['enabled', 'enabled'], ['authenticate', 'authenticate']] },
   ];
   const MGMT_COMMUNITY = [['name', 'name'], ['addresses', 'addresses'], ['write', 'write-access'], ['security', 'security'], ['disabled', 'disabled']];
   const MGMT_RULES = new Set(MGMT_ITEMS.map((x) => x.rule).filter(Boolean).concat('F13'));
+  /** 這一段相關的檢查「F10 標題」：標題取自檢查目錄（S.query.rule），依代碼排序 */
+  const mgmtRuleText = () => Array.from(MGMT_RULES).sort().map((id) => { const r = S.query.rule(id); return r ? `${id} ${r.title}` : id; }).join('、');
+  const MGMT_FACTORY_TEXT = '出廠';
+  const MGMT_FACTORY_TIP = 'RouterOS 出廠就有的 community（default=yes，名稱多半是 public）';
   const MGMT_DEFAULT_TEXT = '預設（未在 export 中，推論）';
   const MGMT_UNKNOWN_STATE = '無法判斷';
   /** 欄位沒有資料的原因（Q.mgmtOf 的 reason）→ 說明文字 */
@@ -481,7 +486,7 @@
   function mgmtSection(App, dev) {
     const Q = App.Q; const ms = Q.mgmtOf(dev);
     const mark = (el) => { el.classList.add('mgmt-section'); return el; };
-    if (!ms) return mark(section('管理面設定', h('p', { class: 'muted' }, '沒有收集 /export，無法判斷 DNS、MAC server、鄰居探索、SNMP、UPnP、proxy、SOCKS 與 bandwidth-server 的設定。'), { fold: true }));
+    if (!ms) return mark(section('管理面設定', h('p', { class: 'muted' }, `沒有收集 /export，無法判斷 ${MGMT_ITEMS.map((x) => x.label).join('、')} 的設定。`), { fold: true }));
     const fl = Q.findingsFor('device', dev).filter((f) => MGMT_RULES.has(f.id));
     // 右欄很窄：每項一個區塊（名稱與狀態 → 值 → 依據 → 檢查結果），不用多欄表格
     // 檢查結果 → 設定（mgmtGoto）：一般項目以 data-mgmt 找回這一列；community 以 data-facet 加上 data-linked（啟用中、有名稱，communityLinked）
@@ -504,18 +509,21 @@
       const more = it.area === 'snmp' && comms === null ? h('div', { class: 'mgmt-line' }, [h('span', { class: 'muted' }, 'community：'), h('span', { class: 'muted mgmt-unknown' }, mgmtReasonText(a.communitiesReason))]) : null;
       rows.push(row({ 'data-mgmt': it.area }, it.label, it.menu, state == null ? null : state + extra, it.params, a, it.area, a.reason, it.rule ? mgmtFindings(fl, it.rule, it.facet) : [], more));
       (comms || []).forEach((c) => rows.push(row({ 'data-mgmt': 'community', 'data-community': c.name == null ? '' : c.name, 'data-facet': c.facet == null ? null : c.facet, 'data-linked': String(communityLinked(c)) },
-        [c.name == null ? 'SNMP community（名稱沒有資料）' : `SNMP community「${c.name}」`, ...(c.isDefault ? [' ', V.chip('出廠')] : [])], '/snmp community',
+        [c.name == null ? 'SNMP community（名稱沒有資料）' : `SNMP community「${c.name}」`, ...(c.isDefault ? [' ', V.chip(MGMT_FACTORY_TEXT, '', { title: MGMT_FACTORY_TIP })] : [])], '/snmp community',
         c.disabled == null ? null : c.disabled ? '停用' : '啟用',
         MGMT_COMMUNITY.filter(([f]) => f !== 'name' && f !== 'disabled'), c, 'community', a.communitiesReason, communityFindings(fl, c))));
     });
     const unmatched = ms.snmp.unmatched.length ? h('p', { class: 'warn-line' }, [`export 中有 ${ms.snmp.unmatched.length} 行 /snmp community set 找不到對象，沒有套用：`,
       ...ms.snmp.unmatched.flatMap((s, n) => [n ? '、' : '', srcLink(App, [s])])]) : null;
+    const factory = (ms.snmp.communities || []).some((c) => c.isDefault);
     return mark(section('管理面設定', [
       mgmtScope(ms),
-      h('p', { class: 'muted' }, 'export 只寫出改過的設定；沒寫出的項目依出廠預設值推定（推論），export 沒有包含的選單與版本不在預設值表範圍時標「無法判斷」。檢查結果是 F10–F14。'),
+      h('p', { class: 'muted' }, 'export 只寫出改過的設定；沒寫出的項目依出廠預設值推定（推論），export 沒有包含的選單與版本不在預設值表範圍時標「無法判斷」。'
+        + (factory ? `「${MGMT_FACTORY_TEXT}」是${MGMT_FACTORY_TIP}。` : '')),
+      h('p', { class: 'muted mgmt-rules' }, `相關的檢查：${mgmtRuleText()}。`),
       unmatched,
       h('div', { class: 'mgmt-list' }, rows),
-    ], { count: fl.length, fold: true, open: fl.some((f) => f.severity !== 'info') }));
+    ], { count: fl.length, unit: '筆檢查結果', fold: true, open: fl.some((f) => f.severity !== 'info') }));
   }
   /**
    * F10–F14 的檢查結果 → 管理面設定的那一列：不在這台設備的詳情時先選取設備，再展開區塊、標出並捲到那一列。

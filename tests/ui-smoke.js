@@ -5803,6 +5803,76 @@ function viewBoundaryViolations(file, src) {
     if (base < 0 || narrow < base || !/\.hub-row \{ grid-template-columns: minmax\(0, 1fr\); \}/.test(tail) || !/\.hub-outs \{ grid-template-columns: minmax\(0, 1fr\); \}/.test(tail)) throw new Error('窄螢幕時資料中心應改成單欄，且規則要在一般樣式之後');
     if (!/\.hub \{[^}]*overflow-x: hidden/.test(css)) throw new Error('資料中心不應水平捲動');
   });
+  await step('設定「命名規則」：說明與文件連結、內建與已載入分開列、套用結果與沒對上的名稱、載入錯誤、下載範本、匯出、移除先確認且內建不可移除', async () => {
+    const VP = S.view.settings.profiles; const panel = () => $('#settings-panel'); const wait = () => new Promise((r) => setTimeout(r, 20));
+    App.openSettings('profiles'); await wait();
+    const body = () => text('#settings-panel');
+    if (!body().includes('不會新增、刪除或改寫') || !panel().testAll('a').some((a) => a.getAttribute('href') === 'docs/命名規則.md')) throw new Error('分類頂端應說明命名規則不改事實，並連到 docs/命名規則.md：' + body());
+    const rowsOf = (src) => { const t = panel().testAll('table').find((x) => x.dataset.source === src); return t ? t.testAll('tr').filter((r) => r.dataset.profile) : []; };
+    const btnOf = (r, action) => r.testAll('button').find((b) => b.dataset.action === action);
+    // 內建：profiles/*.js 載入的；顯示 id、名稱、說明（S.profile.describe）、來源；不能移除
+    const builtin = VP.builtinIds();
+    if (!builtin.length || rowsOf('builtin').map((r) => r.dataset.profile).join() !== builtin.join()) throw new Error('內建的命名規則應各一列：' + rowsOf('builtin').map((r) => r.dataset.profile));
+    rowsOf('builtin').forEach((r) => {
+      const p = S.profiles[r.dataset.profile];
+      if (!r.textContent.includes(p.label) || !r.textContent.includes(S.profile.describe(p)) || !r.textContent.includes('內建')) throw new Error('內建的列應有名稱、說明與來源：' + r.textContent);
+      if (btnOf(r, 'remove')) throw new Error('內建的命名規則不可移除');
+      if (!btnOf(r, 'export')) throw new Error('每一份都可以匯出');
+    });
+    if (!rowsOf('saved').length && !body().includes('還沒有載入')) throw new Error('沒有載入過的命名規則時應明確說明');
+    // 套用結果（對目前基準，S.profile.compile(…).coverage(Q)）：摘要與沒對上的名稱（最多 N 筆，可展開）
+    if (!App.Q) throw new Error('測試前提：應有基準');
+    const sel = $('#settings-profile-cov'); if (!sel) throw new Error('應可選擇要看套用結果的命名規則');
+    const pid = builtin[0]; sel.value = pid; sel.dispatch('change'); await wait();
+    const cov = S.profile.coverage(S.profiles[pid], App.Q); const box = () => $('#settings-profile-coverage');
+    if (!text('#settings-profile-coverage').includes(`${cov.matched}／${cov.total}`)) throw new Error('應顯示對上幾台：' + text('#settings-profile-coverage'));
+    const items = () => box().testAll('li').filter((li) => li.dataset.unmatched);
+    if (items().length !== Math.min(VP.UNMATCHED_MAX, cov.unmatched.length)) throw new Error('沒對上的名稱最多先列 ' + VP.UNMATCHED_MAX + ' 筆：' + items().length);
+    if (cov.unmatched.length > VP.UNMATCHED_MAX) {
+      box().testAll('button').find((b) => b.dataset.action === 'more').click(); await wait();
+      if (items().length !== cov.unmatched.length) throw new Error('展開後應列出全部沒對上的名稱');
+    }
+    cov.fields.group.slice(0, 1).forEach((g) => { if (!text('#settings-profile-coverage').includes(g.value)) throw new Error('應列出分群的分布'); });
+    if (App.round.profile && !rowsOf('builtin').concat(rowsOf('saved')).some((r) => r.dataset.profile === App.round.profile.id && r.textContent.includes('目前的基準使用'))) throw new Error('應標出目前基準用的命名規則');
+    // 載入錯誤：JSON 不合法、compile 的錯誤都明確說明，不加入清單
+    const file = $('#settings-profile-file');
+    const pick = async (name, content) => { file.files = [{ name, text: async () => content }]; file.dispatch('change', { target: file }); await wait(); };
+    await pick('broken.json', '{ nope');
+    if (!text('#settings-profiles-status').includes('broken.json') || !text('#settings-profiles-status').includes('JSON')) throw new Error('不是 JSON 時應說明：' + text('#settings-profiles-status'));
+    await pick('bad.json', JSON.stringify({ id: 'bad', classify: [{ match: '(' }] }));
+    if (!text('#settings-profiles-status').includes('正規表示式') || S.profiles.bad) throw new Error('compile 失敗時應列出錯誤且不加入：' + text('#settings-profiles-status'));
+    const r0 = await VP.loadFile({ name: 'noid.json', text: async () => '{}' });
+    if (r0.ok || !/缺少 id/.test(r0.error)) throw new Error('loadFile 應回傳 compile 的錯誤：' + JSON.stringify(r0));
+    // 載入成功：存進 store 的 'profiles'，列在「已載入」
+    const floor = fs.readFileSync(path.join(ROOT, 'profiles/floor-device-naming.json'), 'utf8');
+    await pick('floor-device-naming.json', floor);
+    const fid = JSON.parse(floor).id;
+    if (!S.profiles[fid] || !((await S.store.get('profiles')) || {})[fid]) throw new Error('載入的命名規則應加入並存進 store');
+    const savedRow = rowsOf('saved').find((r) => r.dataset.profile === fid);
+    if (!savedRow || !savedRow.textContent.includes('已載入') || !text('#settings-profiles-status').includes(fid)) throw new Error('載入的命名規則應列在「已載入」');
+    // 匯出某一份與下載範本：JSON，範本可直接編譯
+    const ex = await captureDownloads(() => btnOf(rowsOf('saved').find((r) => r.dataset.profile === fid), 'export').click());
+    if (ex.files.length !== 1 || ex.files[0].name !== fid + '.json') throw new Error('匯出的檔名應是 id.json：' + ex.files.map((f) => f.name));
+    require('assert').deepStrictEqual(JSON.parse(ex.files[0].text), JSON.parse(floor));
+    const tp = await captureDownloads(() => panel().testAll('button').find((b) => b.dataset.action === 'template').click());
+    const tj = JSON.parse(tp.files[0].text);
+    if (!tp.files[0].name.endsWith('.json') || !S.profile.compile(tj) || typeof tj.description !== 'string') throw new Error('範本應是可編譯、含 description 的 JSON');
+    // 移除：先確認（取消時不變）；確認後從清單與 store 移除
+    const asked = []; const c0 = window.confirm;
+    try {
+      window.confirm = (m) => { asked.push(m); return false; };
+      btnOf(rowsOf('saved').find((r) => r.dataset.profile === fid), 'remove').click(); await wait();
+      if (asked.length !== 1 || !asked[0].includes(fid) || !S.profiles[fid]) throw new Error('移除前應確認，取消時不變：' + asked);
+      window.confirm = (m) => { asked.push(m); return true; };
+      btnOf(rowsOf('saved').find((r) => r.dataset.profile === fid), 'remove').click(); await wait();
+    } finally { window.confirm = c0; }
+    if (S.profiles[fid] || ((await S.store.get('profiles')) || {})[fid] || rowsOf('saved').some((r) => r.dataset.profile === fid)) throw new Error('確認後應從清單與 store 移除');
+    // 目前基準正在用的命名規則：確認訊息說明已建立的基準不受影響
+    if (App.round.profile) { const m = VP.removeMessage(App, App.round.profile.id); if (!m.includes('已建立的基準不受影響')) throw new Error('移除目前基準用的規則時應說明：' + m); }
+    if (VP.removeMessage(App, '__none__').includes('已建立的基準不受影響')) throw new Error('不是目前基準用的規則時不必多說明');
+    VP.builtinIds().forEach((id) => { if (!S.profiles[id]) throw new Error('內建的命名規則不應被移除：' + id); });
+    S.view.app.closeSettings();
+  });
   await step('工作包：下載後讀回，基準、處理紀錄、命名規則與預期現況都帶回；壞掉的工作包列出全部問題，目前的資料不變', async () => {
     const VA = S.view.app; const WP = S.workpack; const HS = () => VA.hubState(); const deep = require('assert').deepStrictEqual;
     // 這一輪：範例資料（或 SMOKE_INPUT）＋命名規則

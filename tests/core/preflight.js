@@ -109,3 +109,29 @@ test('認到設備：Q.recognizedDevices 與 S.query.preflightRecognized 是同�
   assert.deepStrictEqual(Q.recognizedDevices().map((d) => d.key), Q.devices().filter((d) => d.collected).map((d) => d.key));
   assert.deepStrictEqual(S.query.preflightRecognized(S.preflight(sample)).map((d) => d.key), Q.recognizedDevices().map((d) => d.key));
 });
+test('認不得的設備被別台的鄰居資料看到：以鄰居建立（未收集），不報 C01（有收集檔，問題由 I01 說明），I01 指向這台設備', () => {
+  const X = 'X_RT (10.0.0.1):\n[admin@X_RT] > /ip neighbor print detail without-paging\nFlags:\n'
+    + ' 0   interface=ether1 address=10.0.0.2 mac-address=48:A9:8A:00:00:04\n'
+    + '    identity=Y_SW platform=MikroTik version="7.25.1 (stable)"\n'
+    + '    unpack=none age=3m25s uptime=2w1d4h board=CRS326-24G-2S+ ipv6=no\n'
+    + '    interface-name=ether9 system-caps=bridge system-caps-enabled=bridge\n';
+  const Y = 'Y_SW (10.0.0.2):\n[admin@Y_SW] > /system resource print\ngarbage garbage\ntotally not routeros\n';
+  // 同一個檔案與分成兩個檔案、正反兩種順序結果都一樣
+  [[{ name: 'a.txt', text: X + '\n' + Y }], [{ name: 'x.txt', text: X }, { name: 'y.txt', text: Y }], [{ name: 'y.txt', text: Y }, { name: 'x.txt', text: X }]].forEach((src) => {
+    const s = S.build(src, { now: '2026-01-01T00:00:00Z' });
+    const y = s.model.devices.find((d) => d.key === 'Y_SW');
+    assert.ok(y && !y.collected, '以鄰居身分建立、未收集');
+    assert.deepStrictEqual(s.findings.filter((f) => f.id === 'C01' || f.id === 'C02').map((f) => f.message).filter((m) => m.startsWith('Y_SW')), [], '不報 C01／C02');
+    const i01 = s.findings.filter((f) => f.id === 'I01');
+    assert.strictEqual(i01.length, 1);
+    assert.deepStrictEqual(i01[0].entities, [{ type: 'device', key: 'Y_SW' }], 'I01 指向鄰居建立的設備');
+    assert.ok(!s.coverage.some((c) => c.dev === 'Y_SW' && c.collected), '覆蓋率不算已收集');
+  });
+  // 沒有收集檔、只被看到的設備照常報 C01
+  const s = S.build([{ name: 'x.txt', text: X }], { now: '2026-01-01T00:00:00Z' });
+  assert.ok(s.findings.some((f) => f.id === 'C01' && f.message.startsWith('Y_SW')), '沒有收集檔時仍報 C01');
+  // 沒有被看到時不建立，I01 沒有 entities：findingKey 只有 id（兩個檔案的 I01 共用同一個鍵，見版本紀錄 3.6.0）
+  const lone = S.build([{ name: 'y.txt', text: Y }, { name: 'z.txt', text: Y.replace(/Y_SW/g, 'Z_SW') }], { now: '2026-01-01T00:00:00Z' });
+  const Ql = S.query(lone);
+  assert.deepStrictEqual(lone.findings.filter((f) => f.id === 'I01').map((f) => Ql.findingKey(f)), ['["I01"]', '["I01"]']);
+});

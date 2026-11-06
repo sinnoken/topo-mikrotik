@@ -217,6 +217,11 @@ test('內建命名規則 model-location：MikroTik 型號-位置，類型依型�
     ['CSS610-Rack1', { kind: 'switch', site: 'Rack1' }],
     ['RB260GS-Desk', { kind: 'switch', site: 'Desk' }], // RB260／RB250 是 SwOS 交換器，不依 RB 判成路由器
     ['CCR2116-Core-A', { kind: 'router', site: 'Core-A' }],
+    // 完整型號（含埠數段，以數字開頭、接 G／S／Q／P／X）整段算型號，位置從之後開始
+    ['CCR2004-1G-12S+2XS-Core', { kind: 'router', site: 'Core' }],
+    ['CRS326-24G-2S+RM-Rack2', { kind: 'switch', site: 'Rack2' }],
+    ['CRS354-48G-4S+2Q+RM-3F', { kind: 'switch', site: '3F' }],
+    ['CRS326-3F-East', { kind: 'switch', site: '3F-East' }], // 3F 不是埠數段，仍是位置
     ['RB5009', {}], ['Lobby-RB5009', {}], ['TPE_CORE_RT_01', {}],
   ]);
 });

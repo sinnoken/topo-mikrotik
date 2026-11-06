@@ -107,7 +107,8 @@
     };
 
     // ---- 輸入
-    // 區塊所屬的設備；內容都認不得的設備沒有建立（model/build.js），finding 不指向它（設備名仍在訊息的位置裡）
+    // 區塊所屬的設備；內容都認不得的設備沒有建立（model/build.js），finding 不指向它（設備名仍在訊息的位置裡）。
+    // 被別台的鄰居資料看到時，這台以鄰居身分建立（未收集），I01／I03 指向它，C01 不報（見覆蓋）
     const blockEnts = (b) => (b.devKey && M.devices.has(b.devKey) ? [{ type: 'device', key: b.devKey }] : []);
     ctx.unrecognized.forEach((b) => {
       add('I01', withPlace(unrecognizedParts(b), placeText(b.origin.file, b.origin.startLine, b.origin.endLine)),
@@ -146,7 +147,8 @@
     M.links.forEach((l) => [l.a, l.b].forEach((ep) => { const arr = S.util.getOr(linksOfDev, K.splitEp(ep)[0], () => []); if (!arr.includes(l)) arr.push(l); }));
     M.devices.forEach((d) => {
       if (!d.collected) {
-        if (!expectsCollection(d)) return;
+        // 有收集檔、但內容都認不得的設備（model/build.js 不當成已收集）：問題是輸出認不得、不是沒收集，已由 I01 指向它，不報 C01
+        if (!expectsCollection(d) || blocksOf.has(d.key)) return;
         add('C01', `${discoveryLabel(name(d.key), false, linksOfDev.get(d.key) || [], ospfPeers.has(d.key))}：由 ${Array.from(d.seenBy).map(name).join('、')} 發現`, [{ type: 'device', key: d.key }], sightings.get(d.key));
         return;
       }

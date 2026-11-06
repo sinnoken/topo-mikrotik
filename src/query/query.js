@@ -300,7 +300,7 @@
       /**
        * 收集完整度的唯一數字來源（凍結）：{ devices, collected, missing, network, networkCollected, hosts }。
        * devices／collected 是全部設備與已收集台數；network／networkCollected 是應收集的網路設備（與 C01／C02 同用 S.check.expectsCollection），
-       * network − networkCollected 等於 C01 筆數；hosts 是不在收集範圍、只由鄰居或 ARP 得知的主機（network + hosts = devices）；
+       * network − networkCollected 等於 C01 筆數（例外：有收集檔但內容都認不得、又被鄰居看到的設備算未收集，卻不報 C01，見 I01）；hosts 是不在收集範圍、只由鄰居或 ARP 得知的主機（network + hosts = devices）；
        * missing 是已收集但缺必要資料或有收集失敗的台數（等於 C02 筆數）。
        */
       coverageSummary() {

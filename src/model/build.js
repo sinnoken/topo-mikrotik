@@ -74,7 +74,8 @@
     const { canon } = input;
 
     // 1. 設備：有設備標頭（或檔名）、而且至少有一個區塊有結果（解析成功或有收集失敗紀錄）才代表「有收集到這台」。
-    // 內容都認不得的設備只有名字、沒有資料，不建立（每個區塊各有 I01），也不算進覆蓋率；與 Q.recognizedDevices 一致
+    // 內容都認不得的設備只有名字、沒有資料，不建立（每個區塊各有 I01），也不算進覆蓋率；與 Q.recognizedDevices 一致。
+    // 別台的鄰居資料看到它時，會在下面以鄰居身分建立（collected 仍是 false）；有收集檔，所以 C01 不報（check/checks.js）
     const withResult = new Set(); input.blocks.forEach((b) => { if (hasResult(b)) withResult.add(b.devKey); });
     input.blocks.forEach((b) => {
       if (b.device === null || !withResult.has(b.devKey)) return;

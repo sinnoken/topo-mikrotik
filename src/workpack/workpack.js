@@ -15,7 +15,7 @@
  *   ledger/<名稱>                   處理紀錄（ssot-ledger/1，最多一份）
  *   profile/<名稱>                  命名規則（ssot-profile，最多一份）
  *   build/<名稱>                    S.build 的 expectedData 選項（各類設備應有的資料，最多一份）
- *   expected/<名稱>                 預期資料（ssot-expected/1，S.compare 用，最多一份）
+ *   expected/<名稱>                 預期現況（ssot-expected/1，S.compare 用，最多一份）
  *   reports/<名稱>、patches/<名稱>  報表（CSV、Markdown…）與修正 patch（.rsc…），任意份數，不解讀內容
  *
  * manifest（格式見 docs/設計說明.md §10A）：
@@ -24,7 +24,7 @@
  *     files: [{ role, path, name, bytes, sha256 }] }
  *   name 是畫面提供的原始名稱（收集檔的 name 就是 S.build 的來源名稱）；path 是 ZIP 內的安全路徑（S.zip.safeSegment）。
  *
- * 版本（ADR-010）：工作包內有處理紀錄、命名規則與預期資料，無法從輸入重新產生，屬於「使用者長期保存的格式」：
+ * 版本（ADR-010）：工作包內有處理紀錄、命名規則與預期現況，無法從輸入重新產生，屬於「使用者長期保存的格式」：
  *   讀舊版、寫新版。目前只有 /1；讀到更新的 major 時明確拒絕。相容修改只新增選用欄位，讀取時保留不認得的欄位；
  *   不認得的角色列為警告、檔案仍驗證並保留在 files。
  */
@@ -44,7 +44,7 @@
     ledger: { dir: 'ledger', min: 0, max: 1, kind: 'json', label: '處理紀錄' },
     profile: { dir: 'profile', min: 0, max: 1, kind: 'json', label: '命名規則' },
     'expected-data': { dir: 'build', min: 0, max: 1, kind: 'json', label: '建立選項 expectedData' },
-    expected: { dir: 'expected', min: 0, max: 1, kind: 'json', label: '預期資料（ssot-expected/1）' },
+    expected: { dir: 'expected', min: 0, max: 1, kind: 'json', label: '預期現況（ssot-expected/1）' },
     report: { dir: 'reports', min: 0, max: Infinity, kind: 'bytes', label: '報表' },
     patch: { dir: 'patches', min: 0, max: Infinity, kind: 'bytes', label: '修正 patch' },
   });
@@ -92,6 +92,7 @@
 
   // ---------------------------------------------------------------- 共用
   const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+  const valueText = (v) => S.compare.valueText(v); // 給人看的值說明，與 S.compare 同一個來源（呼叫時才讀，不依載入時機）
   const isIso = U.isIso; // ISO 8601 的唯一判斷（S.util.isIso：年月日、時分秒要真的存在）
   const nowOf = (v, fn) => {
     if (!isIso(v)) throw new TypeError(`S.workpack.${fn}：now 必須是 ISO 8601 時間字串（例如 2026-01-01T00:00:00Z），目前是 ${JSON.stringify(v)}`);
@@ -180,11 +181,13 @@
     if (c.has['expected-data']) {
       const d = c.expectedData;
       if (!isObj(d) || Object.values(d).some((v) => !Array.isArray(v) || v.some((x) => typeof x !== 'string'))) {
-        E('expected-data', paths['expected-data'], 'expectedData 必須是 { 設備類型: [資料類別…] }');
+        E('expected-data', paths['expected-data'], '建立選項 expectedData 必須是物件，每個設備類型對應一組資料類別的文字');
       }
     }
-    if (c.has.expected && (!isObj(c.expected) || c.expected.schema !== 'ssot-expected/1')) {
-      E('expected', paths.expected, `預期資料的 schema 必須是 "ssot-expected/1"，目前是 ${JSON.stringify(isObj(c.expected) ? c.expected.schema : c.expected)}`);
+    const SE = S.compare.SCHEMA_EXPECTED;
+    if (c.has.expected && (!isObj(c.expected) || c.expected.schema !== SE)) {
+      const now = c.expected == null ? '沒有內容' : isObj(c.expected) ? valueText(c.expected.schema) : `整份不是物件，是${valueText(c.expected)}`;
+      E('expected', paths.expected, `預期現況的格式版本（schema）必須是 ${SE}（目前：${now}）`);
     }
     // 處理紀錄：格式正確，而且推進過這份基準（同一輪）。推進過、但之後又推進了其他基準（例如重新載入舊基準）時是警告
     if (c.has.ledger) {
@@ -293,12 +296,12 @@
     try { manifest = JSON.parse(S.zip.utf8.decode(me.bytes, MANIFEST)); } catch (e) { E('manifest', MANIFEST, `${MANIFEST} 不是合法的 UTF-8 JSON：${e.message}`); throw fail(); }
     if (!isObj(manifest)) { E('manifest', MANIFEST, 'manifest 必須是物件'); throw fail(); }
     const m = /^ssot-workpack\/(\d+)$/.exec(typeof manifest.schema === 'string' ? manifest.schema : '');
-    if (!m) { E('schema', MANIFEST, `schema 必須是 ssot-workpack/<版本>，目前是 ${JSON.stringify(manifest.schema)}`); throw fail(); }
+    if (!m) { E('schema', MANIFEST, `工作包的格式版本（schema）必須是 ssot-workpack/<版本>（目前：${valueText(manifest.schema)}）`); throw fail(); }
     if (Number(m[1]) > MAJOR) { E('schema-newer', MANIFEST, `這是較新版本的工作包（${manifest.schema}），本工具只能讀 ${SCHEMA}；請用新版工具開啟`); throw fail(); }
     if (Number(m[1]) !== MAJOR) { E('schema', MANIFEST, `不認得的工作包版本 ${manifest.schema}`); throw fail(); }
     // manifest 的欄位
     if (typeof manifest.toolVersion !== 'string' || !manifest.toolVersion) E('manifest', MANIFEST, 'toolVersion 必須是非空字串');
-    if (!isIso(manifest.createdAt)) E('manifest', MANIFEST, `createdAt 必須是 ISO 8601 時間，目前是 ${JSON.stringify(manifest.createdAt)}`);
+    if (!isIso(manifest.createdAt)) E('manifest', MANIFEST, `建立時間（createdAt）必須是 ISO 8601 時間（目前：${valueText(manifest.createdAt)}）`);
     if (typeof manifest.inputHash !== 'string' || !manifest.inputHash) E('manifest', MANIFEST, 'inputHash 必須是非空字串');
     if (manifest.baselineKey !== null && (typeof manifest.baselineKey !== 'string' || !manifest.baselineKey)) E('manifest', MANIFEST, 'baselineKey 必須是非空字串或 null');
     if (!isObj(manifest.baseline)) E('manifest', MANIFEST, 'baseline 必須是物件');
@@ -322,7 +325,7 @@
       if (!e) { E('missing-file', f.path, 'manifest 列出的檔案不在 ZIP 中'); return; }
       if (e.bytes.length !== f.bytes) { E('size', f.path, `大小是 ${e.bytes.length} bytes，manifest 記錄的是 ${f.bytes}`); return; }
       if (sha256(e.bytes) !== f.sha256) { E('hash', f.path, 'SHA-256 和 manifest 記錄的不同，內容被修改過'); return; }
-      if (!Object.prototype.hasOwnProperty.call(ROLES, f.role)) W('unknown-role', f.path, `不認得的角色 ${JSON.stringify(f.role)}（可能是較新版本寫入的），保留但不解讀`);
+      if (!Object.prototype.hasOwnProperty.call(ROLES, f.role)) W('unknown-role', f.path, `不認得的角色${valueText(f.role)}（可能是較新版本寫入的），保留但不解讀`);
       rows.push({ role: f.role, path: f.path, name: f.name, bytes: e.bytes });
     });
     zip.entries.filter((e) => !listed.has(e.path)).forEach((e) => W('unlisted-file', e.path, 'ZIP 中有 manifest 沒有列出的檔案，沒有讀入'));

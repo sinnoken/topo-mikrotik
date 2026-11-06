@@ -494,3 +494,29 @@ test('workpack：validateAsync 以 S.buildAsync 重建，結果和 validate 相�
     assert.deepStrictEqual([res.rejected, res.badCb], ['TypeError', 'TypeError'], '參數形狀不對時 Promise 以 TypeError 拒絕');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+test('workpack：給人看的錯誤與警告用「預期現況」與中文說法，不外露 JSON 原文；預期現況的格式版本訊息和 S.compare 相同', () => {
+  const R = ROUND(); const z = S.workpack.build(R.parts, { now: NOW });
+  const msgs = (fn) => { try { const p = fn(); return p.warnings.map((w) => w.message); } catch (e) { return (e.errors || []).concat(e.warnings || []).map((x) => x.message); } };
+  const expectedMsg = (v) => msgs(() => S.workpack.build(swap(R.parts, 'expected', JSON.stringify(v)), { now: NOW })).filter((m) => m.includes('ssot-expected'));
+  const Q = S.query(R.snap);
+  [{ schema: 'ssot-expected/9' }, { schema: 5 }, { schema: true }, {}, [], null, 'x'].forEach((v) => {
+    assert.deepStrictEqual(expectedMsg(v), S.compare(Q, v).errors.filter((m) => m.includes('ssot-expected')), `和 S.compare 相同：${JSON.stringify(v)}`);
+  });
+  assert.deepStrictEqual(expectedMsg({ schema: 'ssot-expected/9' }), ['預期現況的格式版本（schema）必須是 ssot-expected/1（目前：「ssot-expected/9」）']);
+  const all = [].concat(
+    [{ schema: 'ssot-expected/9' }, [], null].flatMap(expectedMsg),
+    msgs(() => S.workpack.build(R.parts.concat(R.parts.filter((p) => p.role === 'expected')), { now: NOW })),
+    msgs(() => S.workpack.build(swap(R.parts, 'expected-data', JSON.stringify({ switch: 'lldp' })), { now: NOW })),
+    msgs(() => S.workpack.read(repack(z, (m) => { m.schema = 7; }))),
+    msgs(() => S.workpack.read(repack(z, (m) => { m.createdAt = { t: 1 }; }))),
+    msgs(() => S.workpack.read(repack(z, (m, es) => { const b = enc('x'); es.push({ path: 'f/x', bytes: b }); m.files.push({ role: 'future-role', path: 'f/x', name: 'x', bytes: 1, sha256: S.workpack.sha256(b) }); }))));
+  assert.ok(all.length >= 8, all.join('\n'));
+  const bad = all.filter((m) => /預期資料|[{}[\]]|"/.test(m));
+  assert.deepStrictEqual(bad, [], '訊息不應有「預期資料」或 JSON 原文');
+});
+test('S.compare.valueText：說明值的種類，不外露 JSON 原文；布林值直接寫 true／false；compare 與 workpack 共用', () => {
+  const V = S.compare.valueText;
+  assert.deepStrictEqual([undefined, null, '', 'a', 5, true, false, [1], { a: 1 }].map(V), ['沒有填', '沒有填', '沒有填', '「a」', '數字 5', 'true', 'false', '陣列', '物件']);
+  const wp = read('src/workpack/workpack.js');
+  assert.ok(wp.includes('S.compare.valueText') && !wp.includes('沒有填') && !wp.includes('JSON.stringify(isObj'), 'workpack 不另寫一份 valueText');
+});

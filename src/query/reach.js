@@ -34,6 +34,8 @@
   const SELF_ZONE = 'self';
   /** 外部的代表位址：文件保留位址（RFC 5737 的 TEST-NET-1／2／3），取第一個不在基準網段內的；只代表與它同一個規則位址區段的公網位址。 */
   const EXTERNAL_CANDIDATES = Object.freeze(['192.0.2.10', '198.51.100.10', '203.0.113.10']);
+  /** IPv6 外部的代表位址：文件保留位址 2001:db8::/32（RFC 3849），取第一個不在基準 IPv6 網段內的（暴露清單的 IPv6 列）。 */
+  const EXTERNAL6_CANDIDATES = Object.freeze(['2001:db8::10', '2001:db8:ffff::10']);
   const svcId = (s) => s.proto + (s.port != null ? '/' + s.port : '');
   /** zone 的來源，依優先順序（同一個網段取第一個有結果的來源）。 */
   const ZONE_SOURCES = Object.freeze(['profile', 'interface-list', 'vlan', 'subnet']);
@@ -96,6 +98,8 @@
     { code: 'service-unknown', kind: 'end', note: '/ip service 是否接受這個來源無法判斷（來源經 NAT 後不明，或封包不在 main VRF）（不明）' },
     { code: 'egress-wan', kind: 'end', note: '從 WAN 介面送往基準以外的位址，之後由電信業者決定（允許）' },
     { code: 'hairpin-no-srcnat', kind: 'end', note: 'dst-nat 後的目的與來源在同一個網段，但沒有 srcnat 改寫來源（hairpin NAT），回應不經過路由器（不明）' },
+    { code: 'return-not-guaranteed', kind: 'reason', note: '新連線允許，但路徑上有設備的 input／forward 沒有保證放行已建立連線的封包（Q.policyBaseline 的 returnSafe 為 false，見 F15），回程可能被丟棄；結果仍是允許' },
+    { code: 'no-ipv6-firewall', kind: 'reason', note: '設備沒有 IPv6 的過濾規則（/ipv6 firewall filter），IPv6 的 input／forward 預設放行；結果是允許（暴露清單的 IPv6 列）' },
   ]);
   const REASON_CODE_SET = new Set(REASON_CODES.map((x) => x.code));
   const checkCode = (code) => { if (!REASON_CODE_SET.has(code)) throw new Error(`原因代碼 ${code} 不在 REASON_CODES（src/query/reach.js）`); return code; };
@@ -302,7 +306,56 @@
       dev: b.dev, name: b.name, vrf: b.vrf, collected: b.collected, firewall: b.firewall, chain: b.chain, in: b.in, inKnown: b.inKnown, out: b.out, outKnown: b.outKnown,
       src: b.src, dst: b.dst, proto: b.proto, port: b.port, srcOut: b.srcOut, dstOut: b.dstOut, portOut: b.portOut,
       route: b.route, stages: b.stages.slice(), nat: b.nat.slice(), service: b.service, reasons: b.reasons.slice(), verdict: b.verdict, conntrack: b.conntrack,
+      ...(b.returnUnsafe ? { returnUnsafe: b.returnUnsafe } : {}),
     });
+    /**
+     * 回程的前提（推論，Q.policyBaseline）：這一跳的 chain（input／forward）returnSafe 為 false，而且不保證的介面和這條路徑有關時，
+     * 回傳 { chain, rule, interfaces }，否則 null。同一條連線之後的封包（含回程）都是 established：
+     *   forward 的回程從出介面進來、同方向的後續封包從入介面進來；input 的後續封包從入介面進來（設備送出的回應走 output，不在 policyBaseline）。
+     *   blockedFrom 的 interfaces 為 null（只限出介面或清單展開不了）或包含這些介面（不明的介面也算）時才算；
+     *   established 被一定命中的丟棄擋下（或沒有規則決定而預設丟棄）時所有介面都算（interfaces 為 null）。
+     * rule：blockedFrom 的第一條相關規則；沒有 blockedFrom 時是擋下 established 的規則（established.rule），再沒有時是 defaultAction.rule。
+     */
+    const ruMemo = new Map();
+    // 多數設備的 input、forward 都有保證：先依設備排除，矩陣的每一跳不必組鍵
+    const ruDev = new Map();
+    const anyUnsafe = (dev) => U.getOr(ruDev, dev, () => { const pb = Q.policyBaseline(dev); return !!(pb && pb.some((c) => c.returnSafe === false)); });
+    function returnUnsafeOf(dev, chain, inEp, outEp) {
+      if (!devInfo(dev).config || (chain !== 'input' && chain !== 'forward') || !anyUnsafe(dev)) return null;
+      const k = [dev, chain, inEp === undefined ? '~' : String(inEp), outEp === undefined ? '~' : String(outEp)].join('\u0000');
+      return U.getOr(ruMemo, k, () => {
+        const pb = Q.policyBaseline(dev); const row = pb && pb.find((c) => c.chain === chain);
+        if (!row || row.returnSafe !== false) return null;
+        const est = row.established;
+        if (est.status === 'drop' || (est.status === 'policy' && row.defaultAction.action !== 'accept')) {
+          return deepFreeze({ chain, rule: (est.status === 'drop' && est.rule) || row.defaultAction.rule, interfaces: null });
+        }
+        const ifs = (chain === 'forward' ? [outEp, inEp] : [inEp]).filter((x) => x !== null).map((x) => (x === undefined ? undefined : realEp(x)));
+        const hits = est.blockedFrom.filter((b) => b.interfaces === null || ifs.some((x) => x === undefined || b.interfaces.includes(x)));
+        if (!hits.length) return null;
+        const all = hits.some((b) => b.interfaces === null) ? null : U.uniq(hits.flatMap((b) => b.interfaces)).sort(U.natural);
+        return deepFreeze({ chain, rule: hits[0].rule, interfaces: all });
+      });
+    }
+    /** 允許的路徑上回程不保證的跳（只走允許的子路徑）：[{ dev, chain, rule, interfaces }]，依出現順序、不重複。 */
+    const unsafeMemo = new WeakMap();
+    const unsafeOfNode = (node) => {
+      if (unsafeMemo.has(node)) return unsafeMemo.get(node);
+      const out = [];
+      if (summary(node).verdict === 'allow') {
+        if (node.hop.returnUnsafe) out.push(Object.assign({ dev: node.hop.dev }, node.hop.returnUnsafe));
+        (node.next || []).forEach((k) => unsafeOfNode(k).forEach((x) => out.push(x)));
+      }
+      const uniq = out.filter((x, i) => out.findIndex((y) => y.dev === x.dev && y.chain === x.chain && y.rule === x.rule) === i);
+      unsafeMemo.set(node, uniq);
+      return uniq;
+    };
+    const unsafeOfSum = (sum) => { const out = []; sum.nodes.forEach((n) => unsafeOfNode(n).forEach((x) => { if (!out.some((y) => y.dev === x.dev && y.chain === x.chain && y.rule === x.rule)) out.push(x); })); return out; };
+    const unsafeReason = (x) => {
+      const r = x.rule ? Q.getFirewallRule(x.rule) : null;
+      return reason('return-not-guaranteed', x.dev, `${name(x.dev)} 的 ${x.chain} 沒有保證放行已建立連線的封包${r ? `（${where(r)}）` : ''}${x.interfaces ? `，從 ${x.interfaces.map((ep) => Q.epName(ep)).join('、')} 進來的` : ''}：新連線允許，回程可能被丟棄（推論，見 F15）`,
+        { rule: r ? ref(r) : null, chain: x.chain, interfaces: x.interfaces ? x.interfaces.slice() : null });
+    };
 
     /** 封包從 inEp（undefined＝不明）進入 dev。mode：'exact'（Q.reach，鍵用實際位址）或 'atom'（矩陣，鍵用等價類）。 */
     // 快取分層（設備 → 入介面 → 來源 → 目的與 service 的數字鍵），避免每次組長字串；計算中的鍵存 BUSY，再遇到就是同一個封包繞回來（迴圈）
@@ -390,6 +443,7 @@
           const sg = stage(dev, 'filter', 'input', cur, inEp, null, natState, ctx.skip, ct);
           base.stages.push(sg.pub); base.reasons.push(...condReasons(dev, sg));
           if (sg.pub.status === 'decided' && sg.pub.verdict === 'drop') { base.verdict = 'deny'; return stop(base, end('dropped', 'deny', 'dropped', dev, sg.pub.note)); }
+          const ru = returnUnsafeOf(dev, 'input', inEp, null); if (ru) base.returnUnsafe = ru;
         }
         return localService(dev, base, cur);
       }
@@ -467,6 +521,7 @@
           const sg = stage(dev, 'filter', chain, st, inEp === undefined ? undefined : inEp, o.out, natState, ctx.skip, ct);
           hop.stages.push(sg.pub); hop.reasons.push(...condReasons(dev, sg));
           if (sg.pub.status === 'decided' && sg.pub.verdict === 'drop') { hop.verdict = 'deny'; return { hop, next: null, end: end('dropped', 'deny', 'dropped', dev, sg.pub.note) }; }
+          if (chain === 'forward') { const ru = returnUnsafeOf(dev, 'forward', inEp, hop.outKnown ? hop.out : undefined); if (ru) hop.returnUnsafe = ru; }
           if (ct !== 'untracked' && hasRules(ctxF, 'nat', 'srcnat')) {
             const sn = stage(dev, 'nat', 'srcnat', st, inEp, o.out, natState, ctx.skip, ct);
             hop.stages.push(sn.pub); hop.reasons.push(...condReasons(dev, sn));
@@ -721,6 +776,8 @@
       const reasons = sum.reasons.slice();
       if (paths.length >= MAX_PATHS) reasons.push(reason('branch-limit', null, `路徑超過 ${MAX_PATHS} 條，只列出前 ${MAX_PATHS} 條`));
       const verdict = paths.length >= MAX_PATHS && sum.verdict !== 'deny' ? 'unknown' : sum.verdict;
+      // 允許的結果：路徑上回程不保證的跳附在 notes（結論仍是允許）
+      if (verdict === 'allow') unsafeOfSum(sum).forEach((x) => reasons.push(unsafeReason(x)));
       const out = deepFreeze(JSON.parse(JSON.stringify({
         ok: true, src, dst, proto, port, vrf, entry, verdict,
         final: sum.final, natApplied: sum.nat, start: b.start,
@@ -1352,9 +1409,10 @@
         const pr = r.match.protocol !== undefined && !F.splitNeg(r.match.protocol).neg ? F.splitNeg(r.match.protocol).body.split(',').map((p) => F.protoName(p.trim().toLowerCase())) : ['tcp'];
         pr.filter((p) => F.PORT_PROTOCOLS.has(p)).forEach((p) => v.items.forEach(([a, b2]) => addSvc(p, Number(a), origin, a === b2 ? null : [Number(a), Number(b2)])));
       };
+      // IPv6 的放行規則也提供候選埠（暴露清單的 IPv6 列與 IPv4 共用同一份服務）；dst-nat 只有 IPv4
       m.firewallRules.forEach((r) => {
-        if (r.family !== 'ip' || r.disabled) return;
-        if (r.table === 'nat' && r.chain === 'dstnat' && r.action === 'dst-nat') portsOf(r, 'dst-nat');
+        if ((r.family !== 'ip' && r.family !== 'ipv6') || r.disabled) return;
+        if (r.family === 'ip' && r.table === 'nat' && r.chain === 'dstnat' && r.action === 'dst-nat') portsOf(r, 'dst-nat');
         else if (r.table === 'filter' && (r.chain === 'input' || r.chain === 'forward') && r.action === 'accept' && wanOf.has(r.dev) && fromWan(r)) portsOf(r, 'filter');
       });
       wanOf.forEach((_, d) => Q.ipServicesOf(d).forEach((sv) => { if (Number.isInteger(sv.port)) addSvc('tcp', sv.port, 'ip-service'); }));
@@ -1375,8 +1433,8 @@
       if (g.bandwidthServer && g.bandwidthServer.enabled && Number.isInteger(g.bandwidthServer.port)) out.push({ proto: 'tcp', port: g.bandwidthServer.port, name: 'bandwidth-server', finding: ['F14', 'bandwidth-server'] });
       return out;
     };
-    const EXPOSURE_FINDINGS = new Set(['F03', 'F04', 'F07', 'F10', 'F11', 'F12', 'F13', 'F14']);
-    /** 一列相關的檢查（findingKey）：決定結果的規則（F03、F04）、/ip service（F07）與設備的管理服務（F10、F13、F14）。 */
+    const EXPOSURE_FINDINGS = new Set(['F03', 'F04', 'F05', 'F07', 'F10', 'F11', 'F12', 'F13', 'F14']);
+    /** 一列相關的檢查（findingKey）：決定結果的規則（F03、F04；IPv6 列的 F05）、/ip service（F07）與設備的管理服務（F10、F13、F14）。 */
     const rowFindings = (dev, sum, svcName, mg) => {
       const fs = [];
       sum.decisive.forEach((x) => { if (x.key) fs.push(...Q.findingsFor('rule', x.key)); });
@@ -1384,6 +1442,195 @@
       if (mg) fs.push(...Q.findingsFor('device', dev).filter((f) => f.id === mg.finding[0] && (mg.finding[1] == null || f.facet === mg.finding[1])));
       return U.uniq(fs.filter((f) => EXPOSURE_FINDINGS.has(f.id)).map((f) => Q.findingKey(f))).sort(U.cmp);
     };
+    // ---- 暴露清單的 IPv6（第一階段，只看邊界路由器）：不做 IPv6 路由與 NAT66。
+    //   從 WAN 進入入口設備，以它的 /ipv6 firewall（raw prerouting、filter input／forward）判斷能到設備本身（self）與它直連的 LAN 側網段（routed）；
+    //   規則語意全部用 S.infer.fw.decide（family ipv6），/ip service 的 available-from 也接受 IPv6 前綴
+    //   （https://manual.mikrotik.com/docs/cli-reference/ip/service.md）。位址以 BigInt 表示，只在這一段使用。
+    const GUA_LO = 0x2n << 124n; const GUA_HI = (0x4n << 124n) - 1n; // 2000::/3：全球單播，從 WAN 進來的新連線來源取這個範圍
+    const range6 = (text) => { const p = F.parseVal('dst-address', String(text)); return p.kind === 'ranges' && p.bits === 128 && !p.neg ? p.items : null; };
+    /** BigInt → IPv6 文字（RFC 5952：小寫、省略前導 0、最長的連續 0（至少兩組）寫成 ::）。 */
+    const fmt6 = (n) => {
+      const g = []; for (let i = 7; i >= 0; i--) g.push(Number((n >> BigInt(i * 16)) & 0xffffn));
+      let bs = -1; let bl = 0;
+      for (let i = 0; i < 8;) { if (g[i] !== 0) { i++; continue; } let j = i; while (j < 8 && g[j] === 0) j++; if (j - i >= 2 && j - i > bl) { bs = i; bl = j - i; } i = j; }
+      const hex = g.map((x) => x.toString(16));
+      return bs < 0 ? hex.join(':') : hex.slice(0, bs).join(':') + '::' + hex.slice(bs + bl).join(':');
+    };
+    const cmpBig = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+    const linkLocal6 = (n) => (n >> 118n) === 0x3fan; // fe80::/10：只在同一個鏈路有效，不是從 WAN 進得來的目的
+    /** 基準中的 IPv6 位址（ipAddresses 的 family 6，main VRF、不含鄰居宣告的）：[{ dev, ep, n, ip, len, lo, hi, prefix, src }]。 */
+    let v6facts = null;
+    function v6Facts() {
+      if (v6facts) return v6facts;
+      const addrs = [];
+      (m.ipAddresses || []).forEach((a) => {
+        if (a.family !== 6 || a.hearsay || !a.ep || K.vrf(a.vrf) !== K.MAIN_VRF) return;
+        const t = String(a.address || ''); const cut = t.indexOf('/');
+        const len = cut < 0 ? 128 : Number(t.slice(cut + 1));
+        const one = range6(cut < 0 ? t : t.slice(0, cut)); const net = range6(t);
+        if (!one || !net || !Number.isInteger(len) || len < 0 || len > 128) return;
+        addrs.push({ dev: a.dev, ep: a.ep, n: one[0][0], ip: fmt6(one[0][0]), len, lo: net[0][0], hi: net[0][1], prefix: fmt6(net[0][0]) + '/' + len, src: (a.src || []).map((x) => x.slice()) });
+      });
+      addrs.sort((x, y) => U.natural(x.dev, y.dev) || U.natural(x.ep, y.ep) || cmpBig(x.n, y.n));
+      v6facts = { addrs, owned: new Set(addrs.map((a) => a.n)), nets: addrs.map((a) => [a.lo, a.hi]) };
+      return v6facts;
+    }
+    const inNets6 = (n, nets) => nets.some(([lo, hi]) => n >= lo && n <= hi);
+    /** IPv6 的外部來源：這台設備 IPv6 規則的 src-address 與 /ip service 的 available-from 切出的區段（同 extSources），每段取一個全球單播、不在基準網段的位址。 */
+    function extSources6(dev, max) {
+      const b = new Set([0n, 1n << 128n]);
+      const add = (text) => {
+        if (text === undefined) return;
+        const p = F.parseVal('src-address', F.splitNeg(text).body);
+        if (p.kind === 'ranges' && p.bits === 128) p.items.forEach(([x, y]) => { b.add(x); b.add(y + 1n); });
+      };
+      m.firewallRules.forEach((r) => { if (r.family === 'ipv6' && r.dev === dev) add(r.match['src-address']); });
+      Q.ipServicesOf(dev).forEach((sv) => sv.addresses.forEach(add));
+      const arr = Array.from(b).sort(cmpBig);
+      const nets = v6Facts().nets;
+      const outside = (n) => n >= GUA_LO && n <= GUA_HI && !inNets6(n, nets);
+      const cands = EXTERNAL6_CANDIDATES.map((c) => range6(c)[0][0]);
+      const primary = cands.find(outside);
+      const atoms = [];
+      for (let i = 0; i + 1 < arr.length; i++) {
+        const lo = arr[i]; const hi = arr[i + 1] - 1n;
+        const a = lo > GUA_LO ? lo : GUA_LO; const z = hi < GUA_HI ? hi : GUA_HI;
+        if (a > z) continue;
+        const tries = cands.filter((n) => n >= a && n <= z).concat([a, a + 1n, a + (z - a) / 2n, z]);
+        const rep = tries.find((n) => n >= a && n <= z && outside(n));
+        if (rep !== undefined) atoms.push({ n: rep, ip: fmt6(rep), range: [fmt6(lo), fmt6(hi)], primary: rep === primary });
+      }
+      atoms.sort((x, y) => (y.primary ? 1 : 0) - (x.primary ? 1 : 0) || cmpBig(x.n, y.n));
+      return { list: atoms.slice(0, max), total: atoms.length, truncated: atoms.length > max };
+    }
+    /** LAN 側網段內的目的：這台設備 IPv6 規則的 dst-address 在網段內切出的區段，每段取一個不屬於設備的位址（略過網段的第一個位址：subnet-router anycast）。 */
+    function targets6(dev, net) {
+      const b = new Set([net.lo, net.hi + 1n]);
+      m.firewallRules.forEach((r) => {
+        if (r.family !== 'ipv6' || r.dev !== dev || r.table !== 'filter' || r.match['dst-address'] === undefined) return;
+        const p = F.parseVal('dst-address', F.splitNeg(r.match['dst-address']).body);
+        if (p.kind === 'ranges' && p.bits === 128) p.items.forEach(([x, y]) => { if (x > net.lo && x <= net.hi) b.add(x); if (y >= net.lo && y < net.hi) b.add(y + 1n); });
+      });
+      const arr = Array.from(b).sort(cmpBig); const owned = v6Facts().owned; const out = [];
+      for (let i = 0; i + 1 < arr.length; i++) {
+        const lo = arr[i]; const hi = arr[i + 1] - 1n;
+        let rep = null;
+        for (let n = lo === net.lo && hi > lo ? lo + 1n : lo, c = 0; n <= hi && c < 64; n++, c++) if (!owned.has(n)) { rep = n; break; }
+        if (rep !== null) out.push({ n: rep, ip: fmt6(rep), range: [fmt6(lo), fmt6(hi)], whole: lo === net.lo && hi === net.hi });
+      }
+      return out;
+    }
+    const rc6 = (dev, d) => d.uncertain.map((u) => reason('rule-condition', dev, `${where(u.rule)}（IPv6）的條件 ${U.uniq(u.keys).join('、')} 無法判斷：${U.uniq(u.keys.map(keyWhy)).join('；')}`, { rule: ref(u.rule), keys: U.uniq(u.keys) }));
+    /**
+     * 一個 IPv6 組合的判斷：{ verdict, reasons, decisive（同 summary 的 decisive，給 rowFindings）, rule（決定的過濾規則或預設） }。
+     * ICMP 的服務以 ICMPv6（protocol icmpv6）比對。input 放行之後再看 /ip service（停用或 available-from 不含來源就是拒絕）。
+     */
+    function eval6(dev, inEp, outEp, chain, svc, src, dst, noFw) {
+      const ctx = I.ctxOf(dev);
+      const pkt = { family: 'ipv6', reach: true, in: inEp, out: chain === 'input' ? null : outEp, protocol: svc.proto === 'icmp' ? 'icmpv6' : svc.proto, dstPort: svc.port, srcPort: null,
+        src, dst, srcLocal: false, dstLocal: chain === 'input', state: 'new', natState: null, ipsec: devInfo(dev).ipsec ? null : 'none' };
+      const decisive = new Map();
+      const pick = (d, table, ch) => decisive.set(d.rule ? d.rule.key : `policy:${dev}|${table}|${ch}`, { key: d.rule ? d.rule.key : null, dev, table, chain: ch, policy: !d.rule, verdict: d.verdict });
+      const out = (verdict, reasons, rule) => ({ verdict, reasons, decisive, rule });
+      if (ctx.chain('ipv6', 'raw', 'prerouting').length) {
+        const d = F.decide(ctx, 'ipv6', 'raw', 'prerouting', Object.assign({}, pkt, { out: undefined }));
+        if (!d.decided) return out('unknown', rc6(dev, d), null);
+        if (d.verdict === 'drop') { pick(d, 'raw', 'prerouting'); return out('deny', [], d.rule); }
+        if (d.verdict === 'notrack') pkt.state = 'untracked';
+      }
+      const d = F.decide(ctx, 'ipv6', 'filter', chain, pkt);
+      if (!d.decided) return out('unknown', rc6(dev, d), null);
+      pick(d, 'filter', chain);
+      if (d.verdict === 'drop') return out('deny', [], d.rule);
+      const reasons = noFw ? [reason('no-ipv6-firewall', dev, `${name(dev)} 沒有 IPv6 的過濾規則（/ipv6 firewall filter），IPv6 的 ${chain} 預設放行`)] : [];
+      if (chain === 'input' && svc.proto === 'tcp' && svc.port != null) {
+        const sv = Q.ipServicesOf(dev).find((x) => x.port === svc.port);
+        if (sv && !sv.enabled) return out('deny', [], d.rule);
+        if (sv && sv.addresses.length) {
+          const rs = sv.addresses.map((a) => F.parseVal('src-address', a));
+          if (rs.some((p) => p.kind === 'ranges' && p.bits === 128 && p.items.some(([a, b]) => src >= a && src <= b))) return out('allow', reasons, d.rule);
+          if (rs.every((p) => p.kind === 'ranges')) return out('deny', [], d.rule);
+          return out('unknown', [reason('service-unknown', dev, `${name(dev)} 的 ${sv.name} 服務的 available-from（${sv.addresses.join('、')}）無法解析，是否接受 IPv6 來源無法判斷`)], d.rule);
+        }
+      }
+      return out('allow', reasons, d.rule);
+    }
+    /**
+     * 暴露清單的 IPv6 列：{ info（ipv6 欄）, self, routed（列與計數，併進同名的段）, evaluations, truncated }。
+     * entries：WAN 入口；services：候選服務；budget：剩下的判斷次數。
+     */
+    function exposure6(entries, services, maxSrc, budget) {
+      const used = ipv6Devices();
+      const f = v6Facts();
+      const fz = new Map((m.firewallZones || []).map((z) => [z.dev, z]));
+      const sec = () => ({ rows: [], counts: { candidates: 0, allow: 0, unknown: 0, deny: 0, natted: 0 } });
+      const res = { self: sec(), routed: sec(), evaluations: 0, truncated: false };
+      const devs = U.uniq(entries.map((w) => w.dev)).sort(U.natural);
+      const evaluated = []; const missing = [];
+      const combos = new Map();
+      for (const dev of devs) {
+        const z = fz.get(dev);
+        if (z && z.ipv6 && z.ipv6.status === 'disabled') { missing.push({ dev, reason: 'disabled' }); continue; }
+        const own = f.addrs.filter((a) => a.dev === dev && !linkLocal6(a.n));
+        if (!own.length) { if (z && z.ipv6 && z.ipv6.status === 'used') missing.push({ dev, reason: 'no-address' }); continue; }
+        evaluated.push(dev);
+        const wanEps = entries.filter((w) => w.dev === dev).map((w) => w.ep);
+        const noFw = !m.firewallRules.some((r) => r.dev === dev && r.family === 'ipv6' && r.table === 'filter' && !r.disabled);
+        const srcs = extSources6(dev, maxSrc);
+        const selfIps = U.uniq(own.map((a) => a.n)).sort(cmpBig);
+        const lans = own.filter((a) => !wanEps.includes(a.ep) && a.len < 128).filter((a, i, l) => l.findIndex((x) => x.prefix === a.prefix) === i);
+        const jobs = selfIps.map((n) => ({ sec: 'self', n, ip: fmt6(n), chain: 'input', out: null }))
+          .concat(lans.flatMap((a) => targets6(dev, a).map((t) => ({ sec: 'routed', n: t.n, ip: t.ip, chain: 'forward', out: a.ep, subnet: a.prefix, range: t.range, whole: t.whole }))));
+        for (const j of jobs) {
+          for (const svc of services) {
+            const c = U.getOr(combos, [j.sec, dev, j.ip, svc.id].join('\u0000'), () => ({ dev, job: j, svc, srcs, noFw, evals: [] }));
+            for (const ep of wanEps) {
+              for (const a of srcs.list) {
+                if (res.evaluations >= budget) { res.truncated = true; break; }
+                res.evaluations++;
+                c.evals.push(Object.assign({ src: a, ep }, eval6(dev, ep, j.out, j.chain, svc, a.n, j.n, noFw)));
+              }
+            }
+          }
+        }
+      }
+      combos.forEach((c) => {
+        const s = res[c.job.sec]; s.counts.candidates++;
+        const vs = c.evals.map((e) => e.verdict);
+        const verdict = vs.includes('allow') ? 'allow' : vs.includes('unknown') ? 'unknown' : 'deny';
+        s.counts[verdict]++;
+        if (verdict === 'deny' || !c.evals.length) return;
+        const hit = c.evals.filter((e) => e.verdict === verdict);
+        const ok = new Set(hit.map((e) => e.src.n));
+        const okSrc = c.srcs.list.filter((x) => ok.has(x.n));
+        const any = okSrc.length === c.srcs.list.length && !c.srcs.truncated;
+        const allowedFrom = any ? { kind: 'any', ranges: [], text: '任何外部位址' }
+          : { kind: 'limited', ranges: okSrc.map((x) => x.range.slice()), text: okSrc.map((x) => (x.range[0] === x.range[1] ? x.range[0] : `${x.range[0]}–${x.range[1]}`)).join('、') + (c.srcs.truncated ? '（外部區段超過上限，只列出前面的）' : '') };
+        const first = hit.find((e) => e.src.primary) || hit[0];
+        const ipSvc = c.job.sec === 'self' && c.svc.proto === 'tcp' ? Q.ipServicesOf(c.dev).find((x) => x.port === c.svc.port) : null;
+        const mg = c.job.sec === 'self' ? mgmtPorts(c.dev).find((x) => x.proto === c.svc.proto && x.port === c.svc.port) : null;
+        const ifc = Q.getInterface(first.ep);
+        const r = first.rule;
+        const rule = r ? Object.assign({ verdict: 'accept' }, ref(r)) : first.decisive.size ? { key: null, dev: c.dev, table: 'filter', chain: c.job.chain, policy: true, route: null, verdict: 'accept' } : null;
+        const row = { family: 'ipv6', dev: c.dev, entries: U.uniq(hit.map((e) => e.ep)).sort(U.natural), entry: first.ep, inInterface: ifc ? ifc.name : K.splitEp(first.ep)[1], src: first.src.ip,
+          dst: c.job.ip, ip: c.job.ip, vrf: K.MAIN_VRF, serviceName: ipSvc ? ipSvc.name : mg ? mg.name : null,
+          // routed：決定的放行沒有限制目的位址（或預設放行）時，整個區段（沒有規則切開時就是整個網段）的主機都暴露
+          dstAny: c.job.sec === 'routed' && (!r || (r.match['dst-address'] === undefined && r.match['dst-address-list'] === undefined)),
+          findingKeys: rowFindings(c.dev, { decisive: first.decisive }, ipSvc ? ipSvc.name : null, mg),
+          service: c.svc.id, proto: c.svc.proto, port: c.svc.port, portRange: c.svc.range, verdict, allowedFrom, rule,
+          reasons: U.uniq(hit.flatMap((e) => e.reasons.map((x) => x.code))).sort(U.cmp), returnUnsafe: [], incomplete: verdict === 'allow' && vs.includes('unknown'),
+          target: c.job.sec === 'self' ? c.dev : c.job.subnet, zone: c.job.sec === 'self' ? SELF_ZONE : null };
+        if (c.job.sec === 'routed') Object.assign(row, { subnet: c.job.subnet, dstRange: c.job.range.slice() });
+        s.rows.push({ row, n: c.job.n });
+      });
+      const note = '只看邊界路由器：從 WAN 進入時，以 IPv6 的過濾規則（/ipv6 firewall filter 的 input／forward）判斷能到設備本身與它直連的 LAN 側網段；不做 IPv6 路由與 NAT66';
+      const name6 = (l) => l.map((x) => name(x.dev)).join('、');
+      const noAddr = missing.filter((x) => x.reason === 'no-address');
+      res.info = evaluated.length
+        ? { status: 'edge-only', message: note + (noAddr.length ? `；${name6(noAddr)} 在用 IPv6，但基準中沒有它的 IPv6 位址（/ipv6 address），未判斷` : ''), devices: used, evaluated, missing }
+        : { status: 'no-ipv6-address', message: `基準中沒有 WAN 入口設備的 IPv6 位址（/ipv6 address），無法判斷從 WAN 進來的 IPv6 能到哪裡${noAddr.length ? `（${name6(noAddr)} 在用 IPv6）` : ''}；${note}`, devices: used, evaluated, missing };
+      return res;
+    }
     const NAT_UNKNOWN = new Set(['nat-target', 'nat-ambiguous']);
     /** 預設的判斷次數上限（入口 × 外部區段 × 目的 × 服務）；超過時其餘組合不算，結果標 truncated。 */
     const EXPOSURE_MAX_EVALS = 400000;
@@ -1404,7 +1651,8 @@
       yield { stage: 'prepare', done: 0, total: 1 };
       bounds();
       const entries = wanEntries();
-      const ipv6 = { status: 'not-included', message: '只算 IPv4；IPv6 從 WAN 進來能到哪些網段尚未納入（見 F05）', devices: ipv6Devices() };
+      // IPv6 只看邊界路由器（exposure6）；沒有 WAN 入口時不判斷
+      const ipv6 = { status: 'no-wan', message: '沒有可辨識的 WAN 入口，IPv6 從 WAN 進來能到哪裡也無法判斷', devices: ipv6Devices(), evaluated: [], missing: [] };
       const emptySec = () => ({ rows: [], counts: { candidates: 0, allow: 0, unknown: 0, deny: 0, natted: 0 } });
       // noWan：有防火牆規則卻判斷不出 WAN 的設備（F08）；noFirewall：已收集、有預設路由（推論：可能是邊界路由器）卻沒有 /export 的網路設備
       const noWan = Q.findingsByRule('F08').map((f) => ({ dev: Q.findingDevice(f), findingKey: Q.findingKey(f) })).sort((a, b) => U.natural(a.dev || '', b.dev || ''));
@@ -1418,6 +1666,7 @@
         exposureCache.set(ck, out); return out;
       };
       if (!entries.length) return finishEarly('no-wan', '沒有可辨識的 WAN 入口：沒有設備有 /export 且有名稱含 WAN、成員不為空的 interface list（firewallZones），無法判斷從外部進得來什麼');
+      if (!extIp) base.ipv6 = { status: 'not-evaluated', message: 'IPv4 的外部代表位址不可用，暴露清單沒有計算，IPv6 也沒有判斷', devices: ipv6.devices, evaluated: [], missing: [] };
       if (!extIp) return finishEarly('no-external-address', `外部的代表位址（${EXTERNAL_CANDIDATES.join('、')}）都在基準的網段內或屬於設備，無法代表基準以外的位址`);
       const entryDevs = new Set(entries.map((w) => w.dev));
       const srcsOf = new Map(Array.from(entryDevs).sort(U.natural).map((d) => [d, extSources(d, extIp, maxSrc)]));
@@ -1509,11 +1758,15 @@
         const mg = c.sec === 'self' ? mgmtPorts(c.dev).find((x) => x.proto === c.svc.proto && x.port === c.svc.port) : null;
         const ifc = Q.getInterface(first.ep);
         const sum = first.sum;
-        const row = { dev: c.dev, entries: U.uniq(hit.map((e) => e.ep)).sort(U.natural), entry: first.ep, inInterface: ifc ? ifc.name : K.splitEp(first.ep)[1], src: first.src.ip,
+        // 回程不保證（推論）：列的那一個判斷（first，與 Q.reach(src, ip, { entry }) 相同）路徑上的跳
+        const unsafe = verdict === 'allow' ? unsafeOfSum(sum) : [];
+        const row = { family: 'ipv4', dev: c.dev, entries: U.uniq(hit.map((e) => e.ep)).sort(U.natural), entry: first.ep, inInterface: ifc ? ifc.name : K.splitEp(first.ep)[1], src: first.src.ip,
           dst: K.inVrf(c.ip, K.MAIN_VRF), ip: c.ip, vrf: K.MAIN_VRF, serviceName: ipSvc ? ipSvc.name : mg ? mg.name : null, dstAny: false,
           findingKeys: rowFindings(c.dev, first.sum, ipSvc ? ipSvc.name : null, mg),
           service: c.svc.id, proto: c.svc.proto, port: c.svc.port, portRange: c.svc.range, verdict, allowedFrom, rule: ruleOf(sum),
-          reasons: verdict === 'unknown' ? U.uniq(hit.flatMap((e) => e.reasons)).sort(U.cmp) : [], incomplete: verdict === 'allow' && vs.includes('unknown') };
+          reasons: verdict === 'unknown' ? U.uniq(hit.flatMap((e) => e.reasons)).sort(U.cmp) : unsafe.length ? [unsafeReason(unsafe[0]).code] : [],
+          returnUnsafe: unsafe.map((x) => ({ dev: x.dev, chain: x.chain, rule: x.rule, interfaces: x.interfaces ? x.interfaces.slice() : null })),
+          incomplete: verdict === 'allow' && vs.includes('unknown') };
         const fin = sum.final;
         const finIp = fin && fin.dst ? fin.dst : null; const finVrf = (fin && fin.vrf) || K.MAIN_VRF;
         if (c.sec === 'self') { row.target = c.dev; row.zone = SELF_ZONE; }
@@ -1532,8 +1785,19 @@
         }
         sec.rows.push(row);
       });
+      // IPv6（只看邊界路由器）：列併進 self／routed（family 'ipv6'），判斷次數與 IPv4 共用上限
+      const v6 = exposure6(entries, services, maxSrc, Math.max(0, maxEvals - done));
+      done += v6.evaluations; if (v6.truncated) truncated = true;
+      base.ipv6 = v6.info;
+      const n6 = new Map();
+      ['self', 'routed'].forEach((k) => {
+        v6[k].rows.forEach((x) => { n6.set(x.row, x.n); secs[k].rows.push(x.row); });
+        Object.keys(v6[k].counts).forEach((c) => { secs[k].counts[c] += v6[k].counts[c]; });
+      });
       const PO = new Map(services.map((s, i) => [s.id, i]));
-      Object.values(secs).forEach((sec) => sec.rows.sort((a, b) => U.natural(a.dev, b.dev) || intOf(a.ip) - intOf(b.ip) || PO.get(a.service) - PO.get(b.service)));
+      // 依入口設備 → 位址族（IPv4 在前）→ 位址 → 服務
+      const byIp = (a, b) => (a.family !== b.family ? (a.family === 'ipv4' ? -1 : 1) : a.family === 'ipv4' ? intOf(a.ip) - intOf(b.ip) : cmpBig(n6.get(a), n6.get(b)));
+      Object.values(secs).forEach((sec) => sec.rows.sort((a, b) => U.natural(a.dev, b.dev) || byIp(a, b) || PO.get(a.service) - PO.get(b.service)));
       if (exposureCache.has(ck)) return exposureCache.get(ck);
       const out = deepFreeze(JSON.parse(JSON.stringify(Object.assign({
         status: 'ok', message: null,

@@ -274,10 +274,11 @@ test('S.query.reachReasonCodes：涵蓋 reach.js 中所有 reason／end 代碼�
   const body = src.slice(src.indexOf('function makeEngine'));
   const found = new Set();
   const scan = (re, kind) => { for (const m of body.matchAll(re)) m.slice(1).filter(Boolean).forEach((c) => found.add(c + '|' + kind)); };
-  scan(/\breason\('([a-z][a-z-]*)'/g, 'reason');
-  scan(/\bcode: '([a-z][a-z-]*)'/g, 'reason');
-  scan(/\bend\('[a-z-]+', '[a-z]+', '([a-z][a-z-]*)'/g, 'end');
-  scan(/\bend\('[a-z-]+', '[a-z]+', [^,'()]+\? '([a-z][a-z-]*)' : '([a-z][a-z-]*)'/g, 'end'); // 代碼是條件式（例如 host／segment）
+  // 代碼可以含數字（例如 no-ipv6-firewall）
+  scan(/\breason\('([a-z][a-z0-9-]*)'/g, 'reason');
+  scan(/\bcode: '([a-z][a-z0-9-]*)'/g, 'reason');
+  scan(/\bend\('[a-z-]+', '[a-z]+', '([a-z][a-z0-9-]*)'/g, 'end');
+  scan(/\bend\('[a-z-]+', '[a-z]+', [^,'()]+\? '([a-z][a-z0-9-]*)' : '([a-z][a-z0-9-]*)'/g, 'end'); // 代碼是條件式（例如 host／segment）
   assert.ok(found.size >= 20, `掃到 ${found.size} 個代碼，掃描的樣式可能失效`);
   const byCode = new Map(list.map((x) => [x.code, x]));
   const codes = new Set();

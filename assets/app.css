@@ -651,7 +651,15 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
 .l4-tip { position: absolute; z-index: var(--z-float); max-width: 420px; padding: 7px 10px; background: var(--panel); color: var(--text); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); box-shadow: var(--shadow-md); font-size: var(--fs-sm); pointer-events: none; white-space: normal; }
 .l4-tip-head { font-weight: 600; margin-bottom: 2px; }
 .l4-table td.num, .l4-sub td.num { text-align: right; font-variant-numeric: tabular-nums; }
-.l4-drill { scroll-margin-top: 8px; }
+/* 明細就地顯示：格子的明細在矩陣下面、查詢的結果在表單下面（同一張卡片裡，以分隔線分開） */
+.l4-drill { scroll-margin-top: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
+/* 暴露清單「看路徑」就地展開的那一列；「顯示全部（N）」 */
+.l4-ex-sec tr.l4-ex-pathrow > td { padding: 4px 8px 10px; background: var(--surface); }
+.l4-ex-pathbox .l4-sub { margin-top: 4px; }
+.l4-ex-all { min-height: var(--control-h); margin-top: 6px; }
+/* IPv6 的列沒有逐跳路徑（說明取代按鈕）；「⚠ 回程不保證」短標後的規則連結 */
+.l4-ex-nopath { display: block; margin-top: 4px; font-size: var(--fs-sm); }
+.l4-return-rules { font-size: var(--fs-sm); }
 .l4-sub { margin-top: 12px; }
 .l4-sub h4 { margin: 0 0 6px; font-size: var(--fs-lg); display: flex; align-items: center; gap: 6px; }
 .l4-svcs { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -672,6 +680,10 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
 .l4-fold > summary { cursor: pointer; color: var(--accent); font-weight: 600; width: max-content; max-width: 100%; margin: 8px 0 4px; }
 @media (max-width: 900px) {
   .l4-form input[type=text] { width: 120px; }
+}
+/* 窄螢幕：聚焦格子的提示不疊在格子上（會蓋住右下的格子），改成矩陣框下方固定一行（評審 L2；left／top 的 inline 值在 static 時不作用） */
+@media (max-width: 600px) {
+  .l4-matrix-box .l4-tip { position: static; max-width: none; margin-top: 6px; box-shadow: none; }
 }
 
 /* 強制色彩模式（Windows 高對比）：box-shadow 會被移除，焦點與「選取中」改用系統色的 outline；

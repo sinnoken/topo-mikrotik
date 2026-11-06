@@ -3,6 +3,7 @@
  * 建立基準、排程（CLI）。畫面只放要點，詳細規格以「詳見」連到文件（ADR-016），不在這裡另寫一份。
  * 指令清單取自 A.collectGuide（S.collectCommands，由 tools/collector-commands.sh 產生），整個畫面只在這裡出現一次（歡迎畫面以按鈕開啟這個分類）。
  * devices.csv 範例的每一列都取自 tools/devices.csv（冒煙測試核對），格式以 tools/collect.sh 的 --help 為準。
+ * 「下載收集腳本」把嵌入的 S.samples.collectorFiles（samples/collector-files.js，與 tools/ 逐字相同）以 S.zip 打包下載，離線可用；最新版連到 GitHub（需要網路）。
  * 文件連結（V.settings.docLink）也給「關於」與「命名規則」用：文件不隨網站發布（deploy-pages.yml 只發布畫面需要的檔案），所以線上連到 GitHub 上的 main；
  * 從 file:// 開啟時改連 repo 內的相對路徑（離線打得開）。連結是使用者點了才開新分頁，不是執行期的網路請求。
  */
@@ -37,6 +38,41 @@
     ['--retry-failed 上次.txt -o 新檔.txt', '只重收上次收集檔中失敗的指令'],
   ];
 
+  const COLLECTOR_ZIP = 'topo-mikrotik-collector.zip';
+  /** ZIP 內每個檔案的修改時間：固定值而不是目前時間，同一版網頁每次產生的 ZIP 逐位元相同（可重現；內容的版本由嵌入檔決定） */
+  const COLLECTOR_MTIME = '2026-01-01T00:00:00Z';
+  /** 收集腳本的嵌入檔（samples/collector-files.js，由 tools/embed-sample.js 產生）；沒有載入時是 null */
+  const collectorFiles = () => (S.samples && Array.isArray(S.samples.collectorFiles) && S.samples.collectorFiles.length ? S.samples.collectorFiles : null);
+  /** collect.sh、collector-commands.sh、devices.csv 打包成 ZIP（S.zip，不壓縮） */
+  function collectorZip(files) {
+    const enc = new TextEncoder();
+    return S.zip.write(files.map((f) => ({ path: f.path, bytes: enc.encode(f.text) })), { mtime: COLLECTOR_MTIME });
+  }
+  function downloadCollector(status) {
+    const files = collectorFiles();
+    if (!files) { status.textContent = '這一版網頁沒有收集腳本的嵌入檔，無法下載。'; return; }
+    try {
+      V.exporter.download(COLLECTOR_ZIP, collectorZip(files), 'application/zip');
+      status.textContent = `已下載 ${COLLECTOR_ZIP}（${files.length} 個檔案）`;
+    } catch (e) {
+      status.textContent = '無法建立收集腳本的 ZIP：' + V.reason(e);
+    }
+  }
+  /** 下載收集腳本（離線，內容和這一版網頁一致）與取得最新版（GitHub main，需要網路） */
+  function collectorDownload() {
+    const files = collectorFiles();
+    const status = h('span', { class: 'muted', role: 'status', id: 'settings-collector-status' });
+    const latest = h('a', { class: 'link', href: REPO + '/archive/refs/heads/main.zip', target: '_blank', rel: 'noopener noreferrer', 'data-latest-collector': '' }, '取得最新版（需要網路）');
+    return [
+      h('div', { class: 'form-row' }, [
+        h('button', { type: 'button', 'data-settings-focus': 'download-collector', disabled: files ? null : true, onclick: () => downloadCollector(status) }, '下載收集腳本（topo-mikrotik-collector.zip）'),
+        latest, status]),
+      h('p', { class: 'settings-note muted', id: 'settings-collector-note' }, files
+        ? ['內含 ', ...files.flatMap((f, i) => [i ? '、' : '', h('code', null, f.path.replace(/^.*\//, ''))]), '，內容和這一版網頁一致。解壓後先執行 ', h('code', null, 'chmod +x collect.sh'), '，再照下方的用法執行。']
+        : ['無法下載：這一版網頁沒有載入收集腳本的嵌入檔 ', h('code', null, 'samples/collector-files.js'), '（由 ', h('code', null, 'npm run sample'), ' 產生）。請改用「取得最新版」或 repo 裡的 ', h('code', null, 'tools/collect.sh'), '。']),
+    ];
+  }
+
   function flow() {
     return step('一輪的流程', [
       h('ol', { class: 'settings-list settings-flow' }, [
@@ -59,10 +95,14 @@
       h('p', null, [h('b', null, '推薦：收集腳本 '), h('code', null, 'tools/collect.sh'),
         '。在 WSL／Linux 用系統的 ssh 與既有的 SSH key／agent 逐台執行唯讀指令，不在瀏覽器裡連線，也不儲存密碼。需要 Bash、GNU timeout 與 OpenSSH client；先用 ',
         h('code', null, 'ssh 帳號@位址'), ' 確認可以免互動登入。']),
+      ...collectorDownload(),
       h('p', null, ['設備清單 ', h('code', null, 'devices.csv'), ' 每列是 ', h('code', null, 'name,address,user,port[,extra]'),
         '：port 預設 22；extra 是選用命令（wifi、wireless、capsman、vrf），留空時依介面類型與版本自動加上。']),
       pre(DEVICES_CSV, 'devices.csv 範例', 'settings-devices-csv'),
-      pre(['cp tools/devices.csv devices.csv            # 改成自己的設備清單', './tools/collect.sh devices.csv --dry-run', './tools/collect.sh devices.csv --output collection.txt'].join('\n'), '收集腳本的用法'),
+      h('div', null, '下載的 ZIP：解壓後在該目錄執行（devices.csv 直接改成自己的設備清單）'),
+      pre(['cd topo-mikrotik-collector', 'chmod +x collect.sh', './collect.sh devices.csv --dry-run', './collect.sh devices.csv --output collection.txt'].join('\n'), '收集腳本的用法（下載的 ZIP）'),
+      h('div', null, '在 repo 裡：'),
+      pre(['cp tools/devices.csv devices.csv            # 改成自己的設備清單', './tools/collect.sh devices.csv --dry-run', './tools/collect.sh devices.csv --output collection.txt'].join('\n'), '收集腳本的用法（在 repo 裡）'),
       h('div', null, [h('div', null, '常用選項：'), h('ul', { class: 'settings-list' }, COLLECT_OPTIONS.map(([o, t]) => h('li', null, [h('code', null, o), '：' + t])))]),
       h('p', null, ['輸出是一個 ', h('code', null, 'bundle-v1'), ' 收集檔：每個指令前寫收集時間，失敗的指令寫下原因（建立基準後列在 C02 與覆蓋率）。有設備失敗時腳本以非零結束碼結束，請看終端機的失敗摘要。']),
       h('p', null, [h('b', null, '手動：'), '在每台設備的終端機執行下列指令，把輸出存成一個檔案，每台設備前加一行「設備名 (管理 IP):」。格式範例在「建立基準」對話框的「格式說明」。']),

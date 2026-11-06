@@ -3,6 +3,9 @@
 'use strict';
 const { document, S, path, step, captureDownloads, parseCsv, goStep, searchFor, pickInv, $, text, L4, l4Cells, l4State, overlapIp } = require('../helpers.js');
 
+/** 展開 L4 的內部互通（矩陣只在展開時計算），等矩陣畫好 */
+const openMatrix = async () => { const f = $('#l4-matrix-fold'); if (!(f.open || f.getAttribute('open') != null)) { f.setAttribute('open', ''); f.open = true; f.dispatch('toggle'); } await App.l4MatrixJob; };
+
 module.exports = async () => {
   // ------------------------------------------------------------ M3：VRF（範例資料的 PE 有 VRF、與 main 重疊的位址與路由洩漏，CE 有策略路由）
   await step('VRF：L3 每個 VRF 一個框（同一個前綴在不同 VRF 是不同的網段，設備在每個 VRF 各一個節點）；說明寫出 VRF 與沒畫的策略路由；選取對到該 VRF 的節點', async () => {
@@ -153,7 +156,7 @@ module.exports = async () => {
   await step('VRF：L4 可達性查詢可選 VRF，來源在多個 VRF 時列出可選的 VRF；逐跳標出 VRF；策略路由不明的原因有中文說明；前提取自 S.query.reachAssumptions（ipv4-vrf、policy-routing）；zone 矩陣可依 VRF 篩選，表格與 CSV 一致', async () => {
     if (process.env.SMOKE_INPUT) return;
     const Q = App.Q; const V = S.view; const K = S.keys; const MAIN = K.MAIN_VRF;
-    App.showLayer('l4'); await App.l4Job;
+    App.showLayer('l4'); await App.l4Job; await openMatrix();
     // 前提：照列查詢層的前提
     // 有暴露清單時是它的 assumptions（S.query.reachAssumptions 加上暴露清單的前提）
     const exA = App.Q.exposure().assumptions; const as = exA && exA.length ? exA : S.query.reachAssumptions(); const lis = L4().testAll('.l4-assume-list li');
@@ -205,11 +208,13 @@ module.exports = async () => {
     const csv = parseCsv(files[0].text.replace(/^﻿/, ''));
     const ci = csv[0].indexOf('來源 VRF');
     if (ci < 0 || csv[0].indexOf('目的 VRF') < 0 || csv.length - 1 !== shown.length || !csv.slice(1).every((row) => row[ci] === want) || !files[0].name.includes(want)) throw new Error('CSV 應只有篩選後的格子，並有來源與目的 VRF 欄');
-    L4().testAll('.l4-modes button').find((b) => b.dataset.mode === 'table').click(); await App.l4Job;
+    L4().testAll('.l4-modes button').find((b) => b.dataset.mode === 'table').click(); await App.l4MatrixJob;
+    // 表格先只列有允許或無法判斷的格子；展開其餘的格子後比對全部
+    { const b = L4().querySelector('.l4-table-all'); if (b && b.getAttribute('aria-expanded') === 'false') b.click(); }
     if (L4().testAll('.l4-row').length !== shown.length || !L4().testAll('th').some((th) => th.textContent === '來源 VRF')) throw new Error('表格檢視也依 VRF 篩選，並有 VRF 欄');
-    L4().testAll('.l4-modes button').find((b) => b.dataset.mode === 'matrix').click(); await App.l4Job;
+    L4().testAll('.l4-modes button').find((b) => b.dataset.mode === 'matrix').click(); await App.l4MatrixJob;
     fsel.value = ''; fsel.dispatch('change');
-    if (l4Cells().length !== mx.cells.length) throw new Error('取消 VRF 篩選後列出全部的格子');
+    if (l4Cells().length !== mx.cells.filter((c) => !zi.get(c.src).virtual).length) throw new Error('取消 VRF 篩選後列出全部的格子（外部不當來源列）');
     App.showLayer('device');
   });
   await step('只有 main 的網路：畫面與加入 VRF 之前相同（L3 不依 VRF 分框、詳情與清單沒有 VRF 欄位、追蹤與可達性沒有 VRF 選單、矩陣與 CSV 沒有 VRF 欄）', async () => {
@@ -252,7 +257,7 @@ module.exports = async () => {
       // 結果的說明文字來自查詢層（直連網段的說明寫出 VRF main）；畫面自己不加 VRF 的欄位與標示
       if (App.sel.type !== 'trace' || kvKeys().includes('VRF') || $('#detail').testAll('.trace-vrf').length) throw new Error('只有 main 時追蹤結果不標 VRF：' + text('#detail').slice(0, 200));
       // L4：沒有 VRF 選單、沒有 VRF 篩選；表格與 CSV 沒有 VRF 欄
-      App.showLayer('l4', { rebuild: true }); await App.l4Job;
+      App.showLayer('l4', { rebuild: true }); await App.l4Job; await openMatrix();
       if (!L4().querySelector('.l4-vrf-box').classList.contains('hidden') || !L4().querySelector('.l4-vrf-filter').classList.contains('hidden')) throw new Error('只有 main 時 L4 沒有 VRF 選單與篩選');
       const { files } = await captureDownloads(() => L4().querySelector('.l4-csv').click());
       if (parseCsv(files[0].text.replace(/^﻿/, ''))[0].some((x) => x.includes('VRF'))) throw new Error('只有 main 時 CSV 沒有 VRF 欄');

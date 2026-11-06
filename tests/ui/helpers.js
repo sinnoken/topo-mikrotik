@@ -119,10 +119,18 @@ function checkTicks(g, a, b, where) {
 
 /** 在輸入框貼上文字並建立基準，等到新的基準載入 */
 async function buildInput(input) {
-  $('#input-text').value = input; $('#input-build').click();
+  // 建立進行中時 #input-build 是 disabled（runBuild 在第一個 await 前設定、finally 才解除）。模擬 DOM 的 click 不看 disabled，
+  // 所以先等前一次建立完成再按，並等這次建立完成才返回；否則前一次晚到的建立會在返回後換掉基準
+  const btn = $('#input-build');
+  const idle = async (what) => {
+    for (let i = 0; i < 4000 && btn.disabled; i++) await new Promise((r) => setTimeout(r, 5));
+    if (btn.disabled) throw new Error('逾時：' + what + '：' + text('#input-status'));
+  };
+  await idle('等前一次建立完成');
+  $('#input-text').value = input; btn.click();
+  await idle('等這次建立完成');
   const hash = S.util.hash(S.readers.PASTE + '\n' + input);
-  for (let i = 0; i < 4000 && (!App.snap || App.snap.meta.inputHash !== hash); i++) await new Promise((r) => setTimeout(r, 5));
-  if (App.snap.meta.inputHash !== hash) throw new Error('基準未建立：' + text('#input-status'));
+  if (!App.snap || App.snap.meta.inputHash !== hash) throw new Error('基準未建立：' + text('#input-status'));
   await App.layoutJob;
 }
 

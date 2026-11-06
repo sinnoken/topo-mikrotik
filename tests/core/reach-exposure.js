@@ -97,7 +97,9 @@ test('Q.exposure：外部 → 內部（直接路由）：沒有 NAT 的公網網
   assert.strictEqual(find(x.routed, '203.0.113.4', 'tcp/5000').portRange[1], 5010);
   assert.strictEqual(x.routed.rows.some((r) => r.ip.startsWith('192.168.1.')), false, 'LAN 被 forward 的 drop 擋下，不列');
   assert.ok(x.routed.counts.deny > 0);
-  assert.deepStrictEqual([x.ipv6.status, typeof x.ipv6.message], ['not-included', 'string']);
+  // 沒有 IPv6 位址的事實：回傳說明，不是空結果（IPv6 的列見 tests/core/reach-ipv6.js）
+  assert.deepStrictEqual([x.ipv6.status, typeof x.ipv6.message, x.ipv6.evaluated], ['no-ipv6-address', 'string', []]);
+  assert.ok(x.routed.rows.concat(x.self.rows, x.dnat.rows).every((r) => r.family === 'ipv4'));
   assert.deepStrictEqual(x.assumptions.slice(0, S.query.reachAssumptions().length), JSON.parse(JSON.stringify(S.query.reachAssumptions())), '先列 Q.reach 的前提');
 });
 
@@ -180,7 +182,8 @@ const reachOf = (Q, src, dst, service, entry) => {
 test('Q.exposure 與 Q.reach 不矛盾：每一列以它的來源代表與入口介面查 Q.reach，結果相同（範例資料與手寫資料）', () => {
   [S.query(sampleSnap()), S.query(edge())].forEach((Q) => {
     const x = exposureOf(Q);
-    ['self', 'dnat', 'routed'].forEach((k) => x[k].rows.forEach((r) => {
+    // Q.reach 只算 IPv4；IPv6 的列（只看邊界路由器）不經 Q.reach
+    ['self', 'dnat', 'routed'].forEach((k) => x[k].rows.filter((r) => r.family === 'ipv4').forEach((r) => {
       const rc = reachOf(Q, r.src, r.ip, r.service, r.entry);
       assert.strictEqual(rc.verdict, r.verdict, `${k} ${r.dev} ${r.ip} ${r.service}（入口 ${r.entry}）`);
     }));

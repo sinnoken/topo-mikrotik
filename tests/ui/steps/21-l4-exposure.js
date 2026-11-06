@@ -37,10 +37,21 @@ module.exports = async () => {
     sum.querySelector('.l4-ex-assume').click();
     if (!(af.getAttribute("open") != null)) throw new Error('點「前提」應展開判斷的前提');
     // 三段：每段的列與 Q.exposure 一致；拒絕的只寫數字；沒有時寫「沒有」
+    const secEl = (k) => $('#l4-exposure').testAll('.l4-ex-sec').find((x) => x.dataset.sec === k);
     SECS.forEach((k) => {
-      const sec = $('#l4-exposure').testAll('.l4-ex-sec').find((x) => x.dataset.sec === k);
-      if (!sec) throw new Error('應有這一段：' + k);
+      if (!secEl(k)) throw new Error('應有這一段：' + k);
+      // 每段超過 20 列時先列 20 列，其餘「顯示全部（N）」（aria-expanded）；按了列出全部，焦點留在按鈕
+      const ng = secEl(k).testAll('tr').filter((tr) => /l4-ex-row/.test(tr.className || '')).length;
+      const allBtn = () => secEl(k).querySelector('.l4-ex-all');
+      if (ng > 20) throw new Error(`${k} 段預設最多列 20 列（${ng}）`);
+      if (allBtn()) {
+        if (ng !== 20 || allBtn().getAttribute('aria-expanded') !== 'false' || !/^顯示全部（[\d,]+）$/.test(allBtn().textContent)) throw new Error(`${k} 段超過 20 列時應有「顯示全部（N）」：${allBtn().textContent}`);
+        allBtn().click();
+        if (allBtn().getAttribute('aria-expanded') !== 'true' || document.activeElement !== allBtn()) throw new Error('按「顯示全部」後應展開，焦點留在按鈕');
+      }
+      const sec = secEl(k);
       const rows = sec.testAll('tr').filter((tr) => /l4-ex-row/.test(tr.className || ''));
+      if (allBtn() && rows.length <= 20) throw new Error(`${k} 段按「顯示全部」後應列出超過 20 列`);
       // 同一台設備、同一個服務與結果的列併成一列（位址在 title）：列數不多於 Q.exposure，每個位址都看得到
       if (!!rows.length !== !!ex[k].rows.length || rows.length > ex[k].rows.length) throw new Error(`${k} 段的列應來自 Q.exposure（${rows.length}／${ex[k].rows.length}）`);
       if (rows.length < 300) {
@@ -81,16 +92,25 @@ module.exports = async () => {
     for (const k of SECS) {
       const btns = $('#l4-exposure').testAll('.l4-ex-path').filter((b) => b.dataset.sec === k);
       for (const b of btns.slice(0, 3)) {
-        const x = ex[k].rows[Number(b.dataset.row)];
+        const x = ex[k].rows[Number(b.dataset.row)]; const row = b.dataset.row;
+        const btnNow = () => $('#l4-exposure').testAll('.l4-ex-path').find((y) => y.dataset.sec === k && y.dataset.row === row);
+        const drillWas = $('#l4-drill').classList.contains('hidden');
         b.click();
-        const s = l4State();
-        if (!s.reach) throw new Error(`看路徑應有結果：${s.reachErr}`);
-        if (s.reachReq.entry !== x.entry || s.reachReq.src !== x.src || s.reach.verdict !== x.verdict) throw new Error(`看路徑應與列一致（${k} ${x.ip} ${x.service}：列 ${x.verdict}，逐跳 ${s.reach.verdict}）`);
-        if ($('#l4-drill').classList.contains('hidden') || !$('#l4-l3-title')) throw new Error('看路徑應開逐跳路徑');
-        // 關閉後焦點回到同一個「看路徑」按鈕（不落到收合中的矩陣）
-        $('#l4-drill').querySelector('.l4-close').click();
-        const back = document.activeElement;
-        if (!$('#l4-drill').classList.contains('hidden') || !back || back.dataset.sec !== k || back.dataset.row !== b.dataset.row) throw new Error('從看路徑關閉後，焦點應回到那一列的「看路徑」');
+        const s = l4State().exPath;
+        if (!s || !s.reach) throw new Error(`看路徑應有結果：${s && s.err}`);
+        if (s.sec !== k || String(s.row) !== row || s.req.entry !== x.entry || s.req.src !== x.src || s.reach.verdict !== x.verdict) throw new Error(`看路徑應與列一致（${k} ${x.ip} ${x.service}：列 ${x.verdict}，逐跳 ${s.reach.verdict}）`);
+        // 就地展開：路徑在那一列的正下方（同一個 tbody 的下一列），不開上方的明細；標題寫結論，焦點到標題
+        const tr = btnNow(); let p = tr; while (p && p.tagName !== 'TR') p = p.parentNode;
+        const tb = p.parentNode; const nx = tb.childNodes[tb.childNodes.indexOf(p) + 1];
+        if (!nx || !/l4-ex-pathrow/.test(nx.className) || !nx.querySelector('#l4-ex-path-title')) throw new Error('看路徑應在那一列的下方展開逐跳路徑');
+        if ($('#l4-drill').classList.contains('hidden') !== drillWas) throw new Error('看路徑不應開明細');
+        if (document.activeElement !== $('#l4-ex-path-title') || !$('#l4-ex-path-title').textContent.includes(S.view.L4_STATUS[x.verdict])) throw new Error('展開後焦點應在路徑的標題，標題寫出結論');
+        if (btnNow().getAttribute('aria-expanded') !== 'true' || $('#l4-exposure').testAll('.l4-ex-pathrow').length !== 1) throw new Error('看路徑的按鈕標 aria-expanded，同時只展開一列');
+        // 再按一次收起，焦點回到同一個按鈕；Esc 也收起
+        btnNow().click();
+        if (l4State().exPath || $('#l4-exposure').testAll('.l4-ex-pathrow').length || document.activeElement !== btnNow() || btnNow().getAttribute('aria-expanded') !== 'false') throw new Error('再按一次應收起，焦點回到那一列的「看路徑」');
+        btnNow().click(); $('#l4-ex-path-box').dispatch('keydown', { key: 'Escape' });
+        if (l4State().exPath || document.activeElement !== btnNow()) throw new Error('Esc 應收起路徑，焦點回到按鈕');
         checked++;
       }
     }
@@ -107,5 +127,100 @@ module.exports = async () => {
     const fl = $('#l4-exposure').testAll('.l4-finding')[0];
     if (fl) { const idx = Q.findingIndexByKey(fl.dataset.finding); fl.click(); if (!text('#detail').includes(Q.finding(idx).id)) throw new Error('檢查連結應開那一筆檢查結果'); }
     App.select(null);
+  });
+
+  await step('L4 暴露清單的排序與邊界：允許排在無法判斷之前（前 20 列都是無法判斷時也看得到允許）；看路徑的列超過 300 列上限時另接在最後；畫面丟錯時 App.l4Job 仍會結束並寫出原因', async () => {
+    if (process.env.SMOKE_INPUT) return; // 用範例資料的 dst-nat 列造資料
+    const V = S.view; const realQ = App.Q; const real = realQ.exposure(); const base = real.dnat.rows[0];
+    if (!base) throw new Error('測試前提：範例資料有 dst-nat 的列');
+    // 一段 330 組：前 25 組無法判斷、第 26 組允許，其餘無法判斷（查詢層只依設備、位址、服務排序，不依結果）
+    const rows = Array.from({ length: 330 }, (_, n) => Object.assign({}, base, { service: `tcp/${2000 + n}`, port: 2000 + n, verdict: n === 25 ? 'allow' : 'unknown', reasons: [], incomplete: false, returnUnsafe: [] }));
+    const fake = Object.assign({}, real, { dnat: Object.assign({}, real.dnat, { rows }) });
+    const gs = V.l4.exGroups(rows);
+    if (gs[0].x.verdict !== 'allow' || gs.slice(1).some((g) => g.x.verdict !== 'unknown') || gs.slice(1).some((g, k) => k && g.i < gs[k].i)) throw new Error('分組應允許在前、同結果內保留原順序');
+    // App.Q 是唯讀（App.round.Q）：測試暫時換成只改 exposureSteps 的查詢介面，結束時換回
+    const withQ = async (q, after) => { App.showLayer('device'); App.round.Q = q; App.showLayer('l4', { rebuild: true }); if (after) after();
+      const r = await Promise.race([App.l4Job.then(() => 'ok'), new Promise((res) => setTimeout(() => res('timeout'), 5000))]);
+      if (r !== 'ok') throw new Error('App.l4Job 應結束'); };
+    try {
+      await withQ(Object.assign(Object.create(realQ), { exposureSteps: function* () { return fake; } }));
+      const sec = $('#l4-exposure').testAll('.l4-ex-sec').find((x) => x.dataset.sec === 'dnat');
+      const trs = () => sec.testAll('tr').filter((tr) => /l4-ex-row/.test(tr.className));
+      if (trs().length !== 20 || !/st-allow/.test(trs()[0].className)) throw new Error('前 20 列應先列允許的那一組');
+      // 看路徑的列在 300 列之後：另接在最後、展開路徑、焦點到路徑的標題
+      V.l4.openExposure(App, 'dnat', 329);
+      const sec2 = $('#l4-exposure').testAll('.l4-ex-sec').find((x) => x.dataset.sec === 'dnat');
+      const btn = sec2.testAll('.l4-ex-path').find((b) => b.dataset.row === '329');
+      if (!btn || btn.getAttribute('aria-expanded') !== 'true' || document.activeElement !== $('#l4-ex-path-title') || !sec2.textContent.includes('另接在最後')) throw new Error('超過上限的列看路徑時應另接在最後並展開，焦點在路徑的標題');
+      // 畫面丟錯兩次（畫錯誤時又丟錯）：App.l4Job 仍會結束，兩次的原因都寫出來
+      // 同步的部分（計算中的頁首、zone 的依據）畫完之後才讓 V.chip 丟錯：之後畫結果與畫錯誤都會失敗
+      const chip0 = V.chip; try { await withQ(Object.assign(Object.create(realQ), { exposureSteps: function* () { return fake; } }), () => { V.chip = () => { throw new Error('模擬畫面錯誤'); }; }); } finally { V.chip = chip0; }
+      const al = $('#l4-exposure').querySelector('.l4-ex-error');
+      if (!al || al.getAttribute('role') !== 'alert' || (al.textContent.match(/模擬畫面錯誤/g) || []).length < 2) throw new Error('畫錯誤時又丟錯應寫出兩次的原因：' + text('#l4-exposure'));
+    } finally { App.showLayer('device'); App.round.Q = realQ; App.showLayer('l4', { rebuild: true }); await App.l4Job; App.showLayer('device'); }
+  });
+
+  await step('L4 暴露清單的 IPv6 與回程：IPv6 的說明取自 exposure.ipv6（狀態、原因、缺少的設備）；IPv6 列寫位址或「整個網段 x 的主機」、沒有逐跳路徑；回程不保證的列與逐跳的跳標「⚠ 回程不保證」，規則可點', async () => {
+    const VA = S.view.app; const V = S.view;
+    // 範例資料：沒有 IPv6 位址的事實（no-ipv6-address），說明照列查詢層的 message 與缺少的設備
+    { App.showLayer('l4'); await App.l4Job;
+      const v6 = App.Q.exposure().ipv6; const note = text('#l4-ex-ipv6');
+      if (!v6 || !note.includes(v6.message)) throw new Error('IPv6 的說明應照列 exposure.ipv6.message：' + note);
+      (v6.missing || []).forEach((m) => { if (!note.includes(App.Q.devName(m.dev)) || !note.includes(V.L4_IPV6_MISSING[m.reason])) throw new Error('缺少 IPv6 的設備應列出原因：' + m.dev); });
+      if ($('#l4-ex-ipv6').dataset.status !== v6.status) throw new Error('IPv6 說明應標狀態'); }
+    if (process.env.SMOKE_INPUT) { App.showLayer('device'); return; }
+    // 自建網路：R 的 ether1 是 WAN，ether2 是 LAN，ether3 是公網網段（沒有 NAT）；forward 放行到 203.0.113.2:443 後全部丟棄（回程不保證，F15）；
+    // IPv6：forward 只限埠（F05），位址直接加進 ipAddresses（基準還沒有 IPv6 位址的事實，見 tests/core/reach-ipv6.js）
+    const RT = 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC';
+    const text0 = ['R (192.168.1.1):', '### /export terse', '/interface list add name=WAN', '/interface list add name=LAN',
+      '/interface list member add interface=ether1 list=WAN', '/interface list member add interface=ether2 list=LAN',
+      '/ip address add address=198.51.100.2/30 interface=ether1 network=198.51.100.0', '/ip address add address=192.168.1.1/24 interface=ether2 network=192.168.1.0',
+      '/ip address add address=203.0.113.1/29 interface=ether3 network=203.0.113.0',
+      '/ip firewall filter add action=accept chain=forward dst-address=203.0.113.2 dst-port=443 in-interface-list=WAN protocol=tcp',
+      '/ip firewall filter add action=drop chain=forward',
+      '/ipv6 firewall filter add action=accept chain=forward connection-state=established,related', '/ipv6 firewall filter add action=accept chain=forward dst-port=443 protocol=tcp',
+      '/ipv6 firewall filter add action=drop chain=forward in-interface-list=WAN',
+      '/ipv6 firewall filter add action=accept chain=input connection-state=established,related', '/ipv6 firewall filter add action=drop chain=input in-interface-list=WAN',
+      '### /ip route print detail without-paging', RT,
+      ' DAc dst-address=198.51.100.0/30 routing-table=main gateway=ether1 distance=0', ' DAc dst-address=192.168.1.0/24 routing-table=main gateway=ether2 distance=0',
+      ' DAc dst-address=203.0.113.0/29 routing-table=main gateway=ether3 distance=0', ' As dst-address=0.0.0.0/0 routing-table=main gateway=198.51.100.1 distance=1', ''].join('\n');
+    const orig = { snap: App.snap, sources: App.round.sources, profile: App.round.profile };
+    const sources = [{ name: 'r.txt', text: text0 }];
+    try {
+      const snap = S.build(sources, { now: '2026-01-01T00:00:00Z' });
+      [['ether1', '3fff:0:1::2/64'], ['ether2', '3fff:0:2::1/64']].forEach(([ifc, address]) => { const [ip, len] = address.split('/');
+        snap.model.ipAddresses.push({ address, ip, len: +len, family: 6, vrf: 'main', role: null, dev: 'R', ep: 'R|' + ifc, hearsay: false, src: [[0, 0]] }); });
+      App.showLayer('device'); // 讀入新基準時不在 L4（否則讀入本身會重開 L4，這裡等到的是被取代的計算）
+      VA.load(snap, null, { sources }); await App.ledgerJob; await App.layoutJob;
+      App.showLayer('l4', { rebuild: true }); await App.l4Job;
+      const Q = App.Q; const ex = Q.exposure();
+      if (App.snap !== snap) throw new Error('測試前提：目前的基準應是這裡建立的（前面的步驟還有沒完成的建立）');
+      if (ex.ipv6.status !== 'edge-only' || $('#l4-ex-ipv6').dataset.status !== 'edge-only' || !text('#l4-ex-ipv6').includes(ex.ipv6.message)) throw new Error(`有 IPv6 位址時說明應是 edge-only 的 message（${ex.ipv6.status}／${$('#l4-ex-ipv6').dataset.status}）：${text('#l4-ex-ipv6')}`);
+      const secRows = (k) => $('#l4-exposure').testAll('.l4-ex-sec').find((x) => x.dataset.sec === k).testAll('tr').filter((tr) => /l4-ex-row/.test(tr.className));
+      // IPv6 列：位址或整個網段，沒有看路徑（不呼叫 Q.reach），寫明只看邊界路由器
+      const v6 = ex.routed.rows.find((r) => r.family === 'ipv6' && r.dstAny);
+      if (!v6) throw new Error('測試前提：應有 IPv6 的 dstAny 列');
+      const tr6 = secRows('routed').find((tr) => tr.dataset.family === 'ipv6');
+      if (!tr6 || !tr6.textContent.includes(`整個網段 ${v6.subnet} 的主機`)) throw new Error('IPv6 dstAny 的列應寫「整個網段 x 的主機」：' + (tr6 && tr6.textContent));
+      if (tr6.querySelector('.l4-ex-path') || !tr6.textContent.includes('沒有逐跳路徑')) throw new Error('IPv6 的列不提供看路徑，並說明只看邊界路由器');
+      // 回程不保證：列上有短標，title 寫 chain 與規則，規則可點
+      const ru = ex.routed.rows.find((r) => r.returnUnsafe.length);
+      if (!ru) throw new Error('測試前提：應有回程不保證的列');
+      const tr = secRows('routed').find((x) => x.dataset.family === 'ipv4' && x.textContent.includes(ru.ip));
+      const tag = tr && tr.querySelector('.l4-return');
+      if (!tag || !tag.textContent.includes('⚠ 回程不保證') || !/forward.*第 \d+ 條[\s\S]*F15/.test(tag.querySelector('.chip').getAttribute('title') || ''))throw new Error('回程不保證的列應有「⚠ 回程不保證」短標，title 寫 chain 與規則');
+      if (tr.textContent.includes(V.reachReason('return-not-guaranteed'))) throw new Error('回程不保證只用短標，不另寫長句');
+      const rl = tr.testAll('.l4-return-rule')[0];
+      if (!rl) throw new Error('回程不保證應附規則連結'); rl.click();
+      if (!App.sel || App.sel.type !== 'rule' || App.sel.key !== ru.returnUnsafe[0].rule) throw new Error('回程不保證的規則連結應開規則詳情');
+      // 看路徑：逐跳的那一跳也標
+      tr.querySelector('.l4-ex-path').click();
+      const hop = $('#l4-ex-path-box').testAll('.l4-hop').find((x) => x.dataset.dev === 'R');
+      if (!hop || !hop.querySelector('.l4-return')) throw new Error('逐跳路徑上回程不保證的跳應標「⚠ 回程不保證」');
+      App.select(null);
+    } finally {
+      App.showLayer('device');
+      VA.load(orig.snap, null, { sources: orig.sources, profile: orig.profile }); await App.ledgerJob; await App.layoutJob;
+    }
   });
 };

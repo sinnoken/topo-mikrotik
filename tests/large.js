@@ -43,7 +43,9 @@ module.exports = function registerLarge(LARGE_MAX_MS) {
       + `zoneMatrix ${mMs} ms（${mx.stats.representatives} 個代表位址、${mx.stats.evaluations} 次判斷）；zoneCell ${cMs} ms（${cell.groups.length} 列）；ruleImpact ${iMs} ms（${im.total.evaluations} 筆）`);
     assert.strictEqual(rc.verdict, 'allow');
     assert.ok(mx.stats.evaluations > 50000);
-    assert.ok(mx.cells.filter((c) => c.status !== 'empty').every((c) => c.status === 'allow'), '乾淨網路的內部 VLAN 之間全通');
+    // 只看實際的 zone 之間（虛擬 zone「網路設備（管理）」另依 /ip service 判斷，出廠停用的 www-ssl 是拒絕）
+    const virt = new Set(mx.zones.filter((z) => z.virtual).map((z) => z.id));
+    assert.ok(mx.cells.filter((c) => c.status !== 'empty' && !virt.has(c.src) && !virt.has(c.dst)).every((c) => c.status === 'allow'), '乾淨網路的內部 VLAN 之間全通');
     [zMs, rMs, mMs, cMs, iMs].forEach((x) => assert.ok(x < LARGE_MAX_MS / 4, `L4 查詢耗時 ${x} ms`));
     assert.strictEqual(s.model.zoneMatrix, undefined, '矩陣不寫進 Snapshot');
     // 分段計算（畫面用，不卡住主執行緒）：新的查詢介面從頭算，量每一段（兩次 next() 之間）的時間；目標每段 ≤ 50 ms

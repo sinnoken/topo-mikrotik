@@ -234,6 +234,11 @@ const hubBtn = (action) => $('#hub').testAll('button').find((b) => b.getAttribut
 /** 流程步驟（#steps）的按鈕：input、view、triage、fix、verify；goStep 和使用者一樣點一下切換 */
 const stepBtn = (s) => document.testAll('#steps button').find((b) => b.dataset.step === s);
 const goStep = (s) => stepBtn(s).click();
+/** 設定（#settings）的分頁；clearBaseline 和使用者一樣在設定「本機資料」按「清除基準…」（confirm 由模擬的 window 回答），之後關閉設定 */
+const settingsTab = (id) => $('#settings').testAll('.settings-tab').find((b) => b.dataset.section === id);
+const clearBaseline = async () => {
+  App.openSettings('data'); $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20)); S.view.app.closeSettings();
+};
 /** 在頁首搜尋框輸入並等下拉更新，回傳下拉的項目 */
 const searchFor = async (v) => { const inp = $('#search'); inp.value = v; inp.dispatch('input'); await new Promise((r) => setTimeout(r, 150)); return $('#search-dd').testAll('.item'); };
 /** 「檢視」清單的下拉（.inv-kind 清單種類、.inv-filter 種類內篩選）：選取 value 並觸發 change */
@@ -328,8 +333,10 @@ function viewBoundaryViolations(file, src) {
     if (bootWarns.filter((w) => w.includes('sepia')).length !== 1) throw new Error('不合法的配色偏好應 console.warn 一次（說明被忽略的值）：' + bootWarns.join('|'));
     if (ST.get() !== 'system' || VA.themePref() !== 'system') throw new Error('不合法的配色偏好應退回跟隨系統');
     if (document.documentElement.getAttribute('data-theme') !== T.mode) throw new Error('<html data-theme> 應與 theme.mode 一致：' + document.documentElement.getAttribute('data-theme'));
-    const checked = Array.from(document.testAll('#theme-mode .menu-item')).filter((b) => b.getAttribute('aria-checked') === 'true').map((b) => b.dataset.scheme);
-    if (checked.join() !== 'system') throw new Error('啟動後「⋯」選單應勾選跟隨系統：' + checked.join());
+    App.openSettings('general');
+    const checked = $('#settings').testAll('.settings-radio').filter((r) => r.dataset.setting === 'theme' && r.checked).map((r) => r.value);
+    S.view.app.closeSettings();
+    if (checked.join() !== 'system') throw new Error('啟動後設定「一般」的配色應勾選跟隨系統：' + checked.join());
     try { ST.set('sepia'); throw new Error('寫入不合法的偏好應丟出 RangeError'); } catch (e) { if (!(e instanceof RangeError)) throw e; }
     if (localStorage.getItem(ST.KEY) !== 'sepia') throw new Error('不合法的偏好只忽略，不改寫使用者的資料');
     localStorage.removeItem(ST.KEY);
@@ -374,13 +381,25 @@ function viewBoundaryViolations(file, src) {
     if (Array.isArray(nl) || typeof nl.find === 'function' || typeof nl.forEach !== 'function' || typeof body.children.forEach === 'function') throw new Error('模擬 DOM 應回傳 NodeList（有 forEach、沒有 find）與 HTMLCollection（沒有 forEach）');
   });
   await step('ELK 不在啟動時載入', () => { if (globalThis.ELK || loadedScripts.length) throw new Error('ELK 應在第一次需要分層版面時才載入'); });
-  await step('歡迎畫面：收集指引可展開，指令清單取自收集器定義（samples/collect-commands.js）且可複製；說明 collect.sh', async () => {
+  await step('歡迎畫面：三步驟的引導；收集只寫一句並以按鈕開啟設定的「收集與建立基準」（指令清單只在那裡出現一次）；複製指令清單', async () => {
     const w = $('#welcome');
-    if ($('#welcome-collect').tagName !== 'DETAILS') throw new Error('收集指引應為可展開的區塊');
     const cmds = S.collectCommands.default.map((c) => c.command);
-    if (text('#welcome-commands') !== cmds.join('\n') || !cmds.includes('/export terse')) throw new Error('指令清單應取自 samples/collect-commands.js：' + text('#welcome-commands'));
-    if (!S.collectCommands.optional.every((c) => text('#welcome-optional').includes(c.command))) throw new Error('應列出選用指令');
-    if (!w.textContent.includes('collect.sh')) throw new Error('歡迎畫面應說明收集腳本 collect.sh');
+    if (!cmds.includes('/export terse')) throw new Error('指令清單應取自 samples/collect-commands.js');
+    if (w.querySelector('ol').testAll('li').length !== 3) throw new Error('歡迎畫面應保留三步驟的引導');
+    if (!w.textContent.includes('collect.sh')) throw new Error('歡迎畫面應提到收集腳本 collect.sh');
+    // 單一來源：歡迎畫面不再有指令清單（也沒有收集指引的展開區塊）
+    const listShown = (root) => root.testAll('pre').filter((p) => p.textContent === cmds.join('\n'));
+    if (listShown(w).length || w.querySelector('details') || cmds.slice(1).some((c) => w.textContent.includes(c))) throw new Error('歡迎畫面不應再列出指令清單（只在設定的「收集與建立基準」）');
+    const helpBtn = $('#welcome-help');
+    if (!helpBtn || helpBtn.tagName !== 'BUTTON' || helpBtn.getAttribute('type') !== 'button' || !helpBtn.textContent.includes('收集與建立基準')) throw new Error('歡迎畫面應有「看收集與建立基準的說明」按鈕');
+    if (!w.querySelector('ol').testAll('li')[0].contains(helpBtn)) throw new Error('說明按鈕應在第一步（收集）');
+    helpBtn.focus(); helpBtn.click();
+    if ($('#settings').classList.contains('hidden') || S.view.app.settingsSection() !== 'help' || document.activeElement !== $('#settings-panel-title')) throw new Error('按鈕應開啟設定的「收集與建立基準」並聚焦它的標題');
+    if (document.testAll('pre').filter((p) => p.textContent === cmds.join('\n')).length !== 1) throw new Error('指令清單在整個畫面應只出現一次');
+    if (text('#settings-commands') !== cmds.join('\n')) throw new Error('「收集與建立基準」的指令清單應取自 samples/collect-commands.js：' + text('#settings-commands'));
+    if (!S.collectCommands.optional.every((c) => text('#settings-panel').includes(c.command))) throw new Error('應列出選用指令');
+    const copyBtn = $('#settings').testAll('button').find((b) => b.getAttribute('data-settings-focus') === 'copy-commands');
+    if (!copyBtn || !copyBtn.textContent.includes('複製')) throw new Error('複製指令清單應是按鈕');
     // 觸控用語：歡迎畫面與操作提示各有滑鼠與觸控兩份，觸控（pointer: coarse）只顯示「點一下、拖曳、雙指縮放」那份；不寫只適用寬螢幕的「左側／右側」
     const touch = (sel) => $(sel).querySelector('.for-touch'); const mouse = (sel) => $(sel).querySelector('.for-mouse');
     if (!touch('#welcome') || !mouse('#welcome') || !/點一下/.test(touch('#welcome').textContent) || !/雙指縮放/.test(touch('#welcome').textContent)) throw new Error('歡迎畫面應有觸控用語');
@@ -388,17 +407,19 @@ function viewBoundaryViolations(file, src) {
     if (/左側|右側/.test(w.textContent)) throw new Error('歡迎畫面不應寫只適用寬螢幕的左側／右側');
     const css0 = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
     if (!/\n\.for-touch \{ display: none; \}/.test(css0) || !/@media \(pointer: coarse\) \{[^}]*\}\s*\.for-mouse \{ display: none; \}\s*\.for-touch \{ display: inline; \}/.test(css0)) throw new Error('觸控裝置應改顯示觸控用語');
-    if ($('#welcome-copy').tagName !== 'BUTTON' || !$('#welcome-copy').textContent.includes('複製')) throw new Error('複製指令清單應是按鈕');
     const nav = Object.getOwnPropertyDescriptor(globalThis, 'navigator'); let copied = null;
     Object.defineProperty(globalThis, 'navigator', { value: { clipboard: { writeText: async (t) => { copied = t; } } }, configurable: true, writable: true });
     try {
-      $('#welcome-copy').click(); await new Promise((r) => setTimeout(r, 5));
-      if (copied !== cmds.join('\n') || !text('#welcome-copy-status').includes('已複製')) throw new Error('複製指令清單應寫入剪貼簿並提示');
+      copyBtn.click(); await new Promise((r) => setTimeout(r, 5));
+      if (copied !== cmds.join('\n') || !text('#settings-copy-status').includes('已複製')) throw new Error('複製指令清單應寫入剪貼簿並提示');
       $('#input-format-copy').click(); await new Promise((r) => setTimeout(r, 5));
       if (copied !== text('#input-format-example') || !text('#input-format-copy-status').includes('已複製')) throw new Error('複製範例應寫入格式範例全文');
-      globalThis.navigator = {}; $('#welcome-copy').click(); await new Promise((r) => setTimeout(r, 5));
-      if (!text('#welcome-copy-status').includes('無法自動複製')) throw new Error('不能複製時應明確告知：' + text('#welcome-copy-status'));
+      globalThis.navigator = {}; copyBtn.click(); await new Promise((r) => setTimeout(r, 5));
+      if (!text('#settings-copy-status').includes('無法自動複製')) throw new Error('不能複製時應明確告知：' + text('#settings-copy-status'));
     } finally { if (nav) Object.defineProperty(globalThis, 'navigator', nav); else delete globalThis.navigator; }
+    // 關閉後焦點回到歡迎畫面的按鈕
+    $('#settings').querySelector('.settings-close').click();
+    if (!$('#settings').classList.contains('hidden') || document.activeElement !== helpBtn) throw new Error('關閉設定後焦點應回到歡迎畫面的說明按鈕');
   });
   await step('輸入對話框：格式說明是可展開、可複製的範例，範例本身認得；placeholder 只是提示', async () => {
     await App.openInput();
@@ -2520,7 +2541,8 @@ function viewBoundaryViolations(file, src) {
   });
   await step('L4 表格檢視與矩陣內容一致；可選單一服務（第一次計算先顯示忙碌提示，算過的直接用快取）；下載 CSV', async () => {
     const Q = App.Q; const V = S.view; const mx = Q.zoneMatrix();
-    const zn = new Map(Q.zones().zones.map((z) => [z.id, z.name]));
+    // 矩陣的 zone 含虛擬 zone（外部、網路設備（管理）），只在 Q.zoneMatrix 的 zones
+    const zn = new Map(mx.zones.map((z) => [z.id, z.name]));
     App.showLayer('l4'); await App.l4Job;
     if (text('#l4-status').includes('計算 zone 矩陣中') || $('#l4-matrix').getAttribute('aria-busy') === 'true') throw new Error('同一份基準再開矩陣時應直接使用快取（不顯示忙碌提示）');
     const modeBtn = (m) => L4().testAll('.l4-modes button').find((b) => b.dataset.mode === m);
@@ -2590,7 +2612,7 @@ function viewBoundaryViolations(file, src) {
     if (l4State().computing || text('#l4-status').includes('計算 zone 矩陣中')) throw new Error('換到算過的服務時應放棄進行中的計算，直接畫');
     await job2;
     if (V.l4.timings(Q).has(svc) || !notCached(svc)) throw new Error('換服務時應放棄計算，查詢層不留下快取');
-    mx.cells.forEach((c) => { const td = cellTd(c.src, c.dst); if (mx.zones.length <= V.l4.MATRIX_MAX && (!td || td.dataset.status !== c.status)) throw new Error('放棄後畫的應是目前服務（全部服務）的矩陣'); });
+    mx.cells.forEach((c) => { const td = cellTd(c.src, c.dst); if (mx.zones.length <= V.l4.MATRIX_MAX && (!td || td.dataset.status !== c.status)) throw new Error(`放棄後畫的應是目前服務（全部服務）的矩陣（${c.src} → ${c.dst}：${td ? td.dataset.status : '沒有格子'}／${c.status}）`); });
     // 3. 跑完：每個階段的進度都更新過，結果與 Q.zoneMatrix 相同
     sel.value = svc; sel.dispatch('change'); const job3 = App.l4Job;
     let fin = false; job3.then(() => { fin = true; });
@@ -5196,15 +5218,20 @@ function viewBoundaryViolations(file, src) {
       const bg = ops.find((o) => o.op === 'rect'); if (!bg || bg.style !== P.light.canvas.surface) throw new Error('PNG 的底色應是亮色的畫布底色');
       if (T.mode !== 'dark' || modes[modes.length - 1].mode !== 'dark') throw new Error('匯出後應還原成目前的深淺並重畫');
 
-      // 主題切換（「⋯」選單的單選群組）：跟隨系統／淺色／深色。CSS 跟著 <html data-theme>（＝ theme.mode），偏好存進 store
+      // 主題切換（設定「一般」的單選群組）：跟隨系統／淺色／深色。CSS 跟著 <html data-theme>（＝ theme.mode），偏好存進 store
       const root = document.documentElement; const ST = S.store.theme;
       const fire = (on) => { mq.matches = on; listeners.forEach((f) => f({ matches: on, media: mq.media })); flushRaf(); };
-      const items = Array.from(document.testAll('#theme-mode .menu-item'));
-      const item = (p) => items.find((b) => b.dataset.scheme === p);
-      if (items.length !== ST.VALUES.length || !ST.VALUES.every(item)) throw new Error('「⋯」選單應有每個配色偏好各一個選項');
-      if (!items.every((b) => b.getAttribute('role') === 'menuitemradio' && $('#more-menu').contains(b))) throw new Error('配色選項應是「⋯」選單內的 menuitemradio');
-      if ($('#theme-mode').getAttribute('role') !== 'group' || !$('#theme-mode').getAttribute('aria-labelledby')) throw new Error('配色選項應在有名稱的 group 內');
-      const checked = () => items.filter((b) => b.getAttribute('aria-checked') === 'true').map((b) => b.dataset.scheme).join();
+      App.openSettings('general');
+      const items = $('#settings').testAll('.settings-radio').filter((r) => r.dataset.setting === 'theme');
+      const radio = (p) => items.find((r) => r.value === p);
+      // 選一個選項：和瀏覽器一樣先勾選再觸發 change
+      const item = (p) => ({ click: () => { const r = radio(p); r.checked = true; r.dispatch('change'); } });
+      if (items.length !== ST.VALUES.length || !ST.VALUES.every(radio)) throw new Error('設定「一般」應有每個配色偏好各一個選項');
+      const group = items[0].parentNode.parentNode;
+      if (!items.every((r) => r.getAttribute('type') === 'radio' && r.getAttribute('name') === items[0].getAttribute('name') && group.contains(r)) || group.tagName !== 'FIELDSET'
+        || !group.firstElementChild || group.firstElementChild.tagName !== 'LEGEND' || !group.firstElementChild.textContent.includes('配色')) throw new Error('配色選項應是同一組的 radio，放在有 legend 的 fieldset 內');
+      if (items.some((r) => r.parentNode.tagName !== 'LABEL' || !r.parentNode.textContent.trim())) throw new Error('每個配色選項都應有標籤文字');
+      const checked = () => items.filter((r) => r.checked).map((r) => r.value).join();
       const state = () => `${checked()}／mode=${T.mode}／data-theme=${root.getAttribute('data-theme')}／store=${ST.get()}`;
       const expect = (pref, mode, why) => { if (checked() !== pref || VA.themePref() !== pref || T.mode !== mode || root.getAttribute('data-theme') !== mode || ST.get() !== pref) throw new Error(why + '：' + state()); };
       expect('system', 'dark', '系統是深色、偏好跟隨系統時');
@@ -5232,11 +5259,12 @@ function viewBoundaryViolations(file, src) {
         try { item('dark').click(); } finally { localStorage.setItem = set0; }
         if (T.mode !== 'dark' || !text('#banner').includes('配色')) throw new Error('偏好存不進去時仍應套用並以通知說明：' + text('#banner'));
         item('system').click(); expect('system', 'light', '選回跟隨系統'); }
-      // 鍵盤：選單內的配色選項可以用方向鍵移到（是可操作的 .menu-item）
-      $('#btn-more').click();
-      if (!Array.from($('#more-menu').querySelectorAll('.menu-item')).includes(item('light'))) throw new Error('配色選項應在選單的方向鍵順序內');
-      VA.closeMenus();
+      // 偏好在設定之外改變（A.setThemePref）時，設定裡的勾選跟著換
+      VA.setThemePref('light'); if (checked() !== 'light') throw new Error('偏好改變時設定裡的勾選應跟著換：' + checked());
+      VA.setThemePref('system');
+      VA.closeSettings();
     } finally {
+      VA.closeSettings();
       if (VA.themePref() !== 'system') VA.setThemePref('system');
       localStorage.removeItem(S.store.theme.KEY);
       g.draw = oldDraw; App.select(null);
@@ -5289,39 +5317,44 @@ function viewBoundaryViolations(file, src) {
       if (!$('#tooltip').classList.contains('hidden')) throw new Error('指標離開畫布時提示應隱藏');
     });
   });
-  await step('頁首「⋯」與工具列的選單：只有一個路由追蹤入口；方向鍵移動、Esc 關閉並還焦點、點外面關閉；勾選與單選以 aria-checked 標示；通知不遮工具列', () => {
-    const more = $('#btn-more'); const menu = $('#more-menu'); const pop = $('#trace-pop');
+  await step('工具列的路由追蹤、匯出 PNG 與選單：只有一個路由追蹤入口；方向鍵移動、Esc 關閉並還焦點、點外面關閉；勾選與單選以 aria-checked 標示；通知不遮工具列', () => {
+    const pop = $('#trace-pop'); const tr = $('#btn-trace');
     const esc = () => (docListeners.keydown || []).forEach((f) => f({ key: 'Escape', preventDefault() {} }));
     const outside = (target) => (docListeners.mousedown || []).forEach((f) => f({ target }));
     App.showStep('triage'); App.showLayer('device');
-    if (more.getAttribute('aria-haspopup') !== 'menu' || !more.getAttribute('aria-label') || menu.getAttribute('role') !== 'menu') throw new Error('「⋯」應是有名稱的選單按鈕');
-    if (!['#btn-trace', '#btn-png', '#btn-clear'].every((x) => menu.contains($(x)) && $(x).getAttribute('role') === 'menuitem')) throw new Error('路由追蹤、匯出 PNG、清除基準應在「⋯」選單裡');
+    // 頁首只有資料中心與 ⚙ 設定；路由追蹤與匯出 PNG 在拓樸圖的工具列（id 不變），表單也在工具列
+    if ($('#btn-more') || $('#more-menu')) throw new Error('頁首不應再有「⋯」選單');
+    if (!['#btn-trace', '#btn-png', '#trace-pop'].every((x) => $('#toolbar').contains($(x)))) throw new Error('路由追蹤、匯出 PNG 與追蹤表單應在拓樸圖的工具列');
     const traceEntries = document.testAll('button').filter((b) => /路由追蹤/.test(b.textContent) && !$('#detail').contains(b) && !$('#hub').contains(b));
-    if (traceEntries.length !== 1 || traceEntries[0] !== $('#btn-trace')) throw new Error('頁首只留一個路由追蹤入口：' + traceEntries.map((b) => b.textContent).join('、'));
-    if ($('#toolbar').contains($('#btn-png'))) throw new Error('匯出 PNG 不在工具列');
-    // 程式版本在「⋯」最下方，沒有基準時也看得到；不是選單項目（方向鍵不會停在這裡）
-    const ver = $('#app-version');
-    if (!menu.contains(ver) || ver.textContent !== '版本 ' + S.VERSION || ver.getAttribute('role') !== 'none' || ver.tagName === 'BUTTON') throw new Error('「⋯」應在最下方顯示程式版本（非選單項目）');
-    // 鍵盤：開啟時焦點到第一項，↓／End 移動並循環，Esc 關閉並還焦點
-    more.click();
-    if (menu.classList.contains('hidden') || more.getAttribute('aria-expanded') !== 'true' || document.activeElement !== $('#btn-trace')) throw new Error('開啟「⋯」後焦點應在第一項');
-    menu.dispatch('keydown', { key: 'ArrowDown' }); if (document.activeElement !== $('#btn-png')) throw new Error('↓ 應移到下一項');
-    // 最後一項是配色單選的最後一個（版本不是選單項目）
-    const lastItem = Array.from(menu.querySelectorAll('.menu-item')).pop();
-    if (!$('#theme-mode').contains(lastItem)) throw new Error('「⋯」的最後一個選單項目應是配色的選項');
-    menu.dispatch('keydown', { key: 'End' }); if (document.activeElement !== lastItem) throw new Error('End 應移到最後一項');
-    menu.dispatch('keydown', { key: 'ArrowDown' }); if (document.activeElement !== $('#btn-trace')) throw new Error('↓ 在最後一項時應繞回第一項');
-    menu.dispatch('keydown', { key: 'Escape' });
-    if (!menu.classList.contains('hidden') || more.getAttribute('aria-expanded') !== 'false' || document.activeElement !== more) throw new Error('Esc 應關閉選單並把焦點還給「⋯」');
-    more.click(); outside($('#graph')); if (!menu.classList.contains('hidden')) throw new Error('點選單外面應關閉');
-    more.click(); esc(); if (!menu.classList.contains('hidden') || document.activeElement !== more) throw new Error('文件層級的 Esc 也應關閉選單並還焦點');
-    // 從選單開路由追蹤：選單收起、表單開啟；Esc 關閉後焦點回到「⋯」，點外面也關閉
-    more.click(); $('#btn-trace').click();
-    if (!menu.classList.contains('hidden') || pop.classList.contains('hidden') || ![$('#trace-src'), $('#trace-dst')].includes(document.activeElement)) throw new Error('路由追蹤應收起選單並開啟表單');
-    esc(); if (!pop.classList.contains('hidden') || document.activeElement !== more) throw new Error('Esc 應關閉路由追蹤並還焦點');
-    App.openTrace(); outside($('#graph')); if (!pop.classList.contains('hidden')) throw new Error('點外面應關閉路由追蹤');
-    // 版面▾：↑ 開啟時焦點到最後一項；單選的版面與力導向都是選單項目
+    if (traceEntries.length !== 1 || traceEntries[0] !== tr) throw new Error('只留一個路由追蹤入口：' + traceEntries.map((b) => b.textContent).join('、'));
+    if (tr.getAttribute('aria-haspopup') !== 'dialog' || tr.getAttribute('aria-controls') !== 'trace-pop' || pop.getAttribute('role') !== 'dialog') throw new Error('「路由追蹤…」應是開啟對話框的按鈕');
+    // PNG 只有拓樸圖的層級（L4 是矩陣，有自己的 CSV）；路由追蹤每一層都可用
+    App.showLayer('l4'); if (!$('#btn-png').classList.contains('hidden') || tr.classList.contains('hidden')) throw new Error('L4 時隱藏匯出 PNG、保留路由追蹤');
+    App.showLayer('device'); if ($('#btn-png').classList.contains('hidden') || $('#btn-png').disabled || tr.disabled) throw new Error('設備圖時匯出 PNG 與路由追蹤可用');
+    // 開啟：焦點到輸入框、aria-expanded；Esc 關閉後焦點回到「路由追蹤…」；再按一次按鈕關閉；點外面也關閉
+    tr.click();
+    if (pop.classList.contains('hidden') || tr.getAttribute('aria-expanded') !== 'true' || ![$('#trace-src'), $('#trace-dst')].includes(document.activeElement)) throw new Error('「路由追蹤…」應開啟表單並聚焦輸入框');
+    esc(); if (!pop.classList.contains('hidden') || document.activeElement !== tr || tr.getAttribute('aria-expanded') !== 'false') throw new Error('Esc 應關閉路由追蹤並把焦點還給「路由追蹤…」');
+    tr.click(); tr.click(); if (!pop.classList.contains('hidden')) throw new Error('再按一次「路由追蹤…」應關閉表單');
+    App.openTrace(); outside(tr); if (pop.classList.contains('hidden')) throw new Error('按「路由追蹤…」本身不算點外面');
+    outside($('#graph')); if (!pop.classList.contains('hidden')) throw new Error('點外面應關閉路由追蹤');
+    // 從「修正」開啟（例如詳情的「追蹤路由」）：先回到拓樸圖，表單才看得到
+    App.showStep('fix'); App.openTrace();
+    if (App.centerView !== 'graph' || pop.classList.contains('hidden')) throw new Error('從工作畫面開啟路由追蹤時應回到拓樸圖');
+    S.view.app.closeTrace(false);
+    // 版面▾：開啟時焦點到第一項，↓／End 移動並循環，Esc 關閉並還焦點；點外面、文件層級的 Esc 也關閉
     const lb = $('#btn-layout-menu'); const lm = $('#layout-menu');
+    const lmItems = Array.from(lm.querySelectorAll('.menu-item'));
+    lb.click();
+    if (lm.classList.contains('hidden') || lb.getAttribute('aria-expanded') !== 'true' || document.activeElement !== lmItems[0]) throw new Error('開啟版面選單後焦點應在第一項');
+    lm.dispatch('keydown', { key: 'ArrowDown' }); if (document.activeElement !== lmItems[1]) throw new Error('↓ 應移到下一項');
+    lm.dispatch('keydown', { key: 'End' }); if (document.activeElement !== lmItems[lmItems.length - 1]) throw new Error('End 應移到最後一項');
+    lm.dispatch('keydown', { key: 'ArrowDown' }); if (document.activeElement !== lmItems[0]) throw new Error('↓ 在最後一項時應繞回第一項');
+    lm.dispatch('keydown', { key: 'Escape' });
+    if (!lm.classList.contains('hidden') || lb.getAttribute('aria-expanded') !== 'false' || document.activeElement !== lb) throw new Error('Esc 應關閉選單並把焦點還給按鈕');
+    lb.click(); outside($('#graph')); if (!lm.classList.contains('hidden')) throw new Error('點選單外面應關閉');
+    lb.click(); esc(); if (!lm.classList.contains('hidden') || document.activeElement !== lb) throw new Error('文件層級的 Esc 也應關閉選單並還焦點');
+    // ↑ 開啟時焦點到最後一項；單選的版面與力導向都是選單項目
     lb.dispatch('keydown', { key: 'ArrowUp' });
     if (lm.classList.contains('hidden') || document.activeElement !== $('#btn-force')) throw new Error('↑ 開啟版面選單時焦點應在最後一項');
     if ($('#layout-mode').testAll('.menu-item').some((b) => b.getAttribute('role') !== 'menuitemradio')) throw new Error('版面應是單選的選單項目');
@@ -5344,7 +5377,7 @@ function viewBoundaryViolations(file, src) {
     const bannerRule = (css.match(/\n\.banner \{([^}]*)\}/) || [])[1] || '';
     if (/(^|;)\s*top:/.test(bannerRule) || !/bottom:/.test(bannerRule)) throw new Error('通知應在圖的下方，不遮工具列：' + bannerRule);
     if (!/\.banner\.fading, \.hint\.fading \{[^}]*opacity: 0/.test(css)) throw new Error('通知與操作提示應淡出');
-    // 窄螢幕：圖上方最多兩列——頁首只有流程步驟（不換行），搜尋與「⋯」移到工作區列的右端；清除不再單獨佔一列
+    // 窄螢幕：圖上方最多兩列——頁首只有流程步驟（不換行），搜尋與 ⚙ 移到工作區列的右端；清除不再單獨佔一列
     const narrow = css.slice(css.lastIndexOf('@media (max-width: 900px) {', css.indexOf('#app { height: 100dvh')));
     // 依選擇器取出規則的宣告（屬性 → 值；同一個選擇器有多條規則時依先後合併），比對屬性與值，不比對空白與屬性的先後
     const decl = (src, sel) => {
@@ -5353,7 +5386,7 @@ function viewBoundaryViolations(file, src) {
       return Object.assign({}, ...ms.map((m) => Object.fromEntries(m[1].split(';').map((s) => s.trim()).filter(Boolean).map((s) => { const i = s.indexOf(':'); return [s.slice(0, i).trim(), s.slice(i + 1).trim().replace(/\s+/g, ' ')]; }))));
     };
     const has = (sel, want, msg) => { const d = decl(narrow, sel); Object.entries(want).forEach(([k, v]) => { const got = d[k] || ''; if (v instanceof RegExp ? !v.test(got) : got !== v) throw new Error(`${msg}（${sel} 的 ${k}：${got || '沒有'}）`); }); };
-    const hdrMsg = '窄螢幕的頁首應只有步驟，搜尋與「⋯」在工作區列右端';
+    const hdrMsg = '窄螢幕的頁首應只有步驟，搜尋與 ⚙ 在工作區列右端';
     has('header', { 'flex-wrap': 'nowrap' }, hdrMsg); has('.steps', { flex: /^1 1 100%/ }, hdrMsg);
     has('.search, .header-actions', { position: 'absolute', top: /^calc\(100% \+ 6px\)/ }, hdrMsg);
     has('.mobile-workspaces', { display: 'flex', padding: /^5px calc\(/ }, hdrMsg);
@@ -5363,16 +5396,153 @@ function viewBoundaryViolations(file, src) {
     has('.search', { flex: 'none', width: /var\(--control-h\)/ }, searchMsg); has('.search input::placeholder', { color: 'transparent' }, searchMsg);
     has('.search:focus-within', { left: '8px', right: '8px' }, searchMsg);
     if ($('#search').getAttribute('aria-label') !== '搜尋') throw new Error('收成圖示的搜尋框應有無障礙名稱');
-    // 品牌只給螢幕閱讀器、資料中心按鈕由「輸入」取代；資料中心開啟時搜尋與「⋯」隱藏（不疊在資料中心上）
+    // 品牌只給螢幕閱讀器、資料中心按鈕由「輸入」取代；資料中心或設定開啟時搜尋與 ⚙ 隱藏（不疊在上面）
     const brandMsg = '窄螢幕的頁首應隱藏品牌與資料中心按鈕';
     has('header .brand', { position: 'absolute', width: '1px' }, brandMsg); has('header .hub-btn', { display: 'none' }, brandMsg);
     has('#app.hub-open header .search, #app.hub-open header .header-actions', { display: 'none' }, brandMsg);
-    // 頁首可見的控制項：每一步一個按鈕＋搜尋＋⋯；工作區列每個工作區一個按鈕（不重複）
+    has('#app.settings-open header .search, #app.settings-open header .header-actions', { display: 'none' }, '窄螢幕的設定開著時，搜尋與 ⚙ 不疊在設定上');
+    // 頁首可見的控制項：每一步一個按鈕＋搜尋＋⚙；工作區列每個工作區一個按鈕（不重複）
     const steps = $('#steps').testAll('button').map((b) => b.dataset.step);
     const STEP_LABEL = S.view.app.STEP_LABEL;
     if (steps.length !== Object.keys(STEP_LABEL).length || steps.some((s) => !STEP_LABEL[s])) throw new Error('步驟列應每一步一個按鈕：' + steps);
     const wss = $('#mobile-workspaces').testAll('button').map((b) => b.dataset.workspace);
     if (!wss.length || new Set(wss).size !== wss.length) throw new Error('工作區列應每個工作區一個按鈕：' + wss);
+  });
+  await step('設定（⚙）：開關與焦點、五個分類可用滑鼠與鍵盤切換、Esc 關閉並還焦點、與資料中心互斥；一般、命名規則、本機資料、收集、關於各有實際內容', async () => {
+    const VA = S.view.app; const gear = $('#btn-settings'); const box = $('#settings');
+    const esc = (target) => (docListeners.keydown || []).forEach((f) => f({ key: 'Escape', target, preventDefault() {} }));
+    App.showStep('triage');
+    if (!gear || gear.textContent.trim() !== '⚙' || gear.getAttribute('aria-label') !== '設定' || !gear.getAttribute('title') || gear.getAttribute('aria-controls') !== 'settings') throw new Error('頁首應有 ⚙（aria-label「設定」、有 title、控制 #settings）');
+    if (!$('#app').querySelector('.header-actions').contains(gear)) throw new Error('⚙ 應在頁首右側');
+    // 開啟：蓋住主畫面（主畫面 inert）、焦點到「設定」標題
+    gear.click();
+    if (box.classList.contains('hidden') || gear.getAttribute('aria-expanded') !== 'true' || !$('#main').inert || !$('#app').classList.contains('settings-open')) throw new Error('按 ⚙ 應開啟設定並蓋住主畫面');
+    if (document.activeElement !== $('#settings-title')) throw new Error('開啟後焦點應移到「設定」標題');
+    // 五個分類：tablist，順序固定，一次只選一個；分類內容的標題與分頁同名
+    const tabs = box.testAll('.settings-tab');
+    const LABELS = ['一般', '命名規則', '本機資料', '收集與建立基準', '關於'];
+    if (tabs.map((b) => b.textContent).join() !== LABELS.join() || tabs.some((b) => b.getAttribute('role') !== 'tab') || tabs[0].parentNode.getAttribute('role') !== 'tablist') throw new Error('設定應有五個分類的分頁：' + tabs.map((b) => b.textContent).join());
+    if (JSON.stringify(VA.SETTINGS_SECTIONS) !== JSON.stringify(tabs.map((b) => b.dataset.section))) throw new Error('分頁應與 A.SETTINGS_SECTIONS 一致');
+    const selected = () => box.testAll('.settings-tab').filter((b) => b.getAttribute('aria-selected') === 'true');
+    const check = (id, why) => {
+      const sel = selected(); const panel = $('#settings-panel');
+      if (sel.length !== 1 || sel[0].dataset.section !== id || panel.getAttribute('aria-labelledby') !== sel[0].id || panel.getAttribute('role') !== 'tabpanel') throw new Error(why + '：' + sel.map((b) => b.dataset.section).join());
+      if (text('#settings-panel-title') !== sel[0].textContent) throw new Error('內容的標題應與分頁同名');
+      if (box.testAll('.settings-tab').some((b) => b.getAttribute('tabindex') !== (b === sel[0] ? '0' : '-1'))) throw new Error('只有選取的分頁在 Tab 順序內（roving tabindex）');
+      if (!$('#settings-panel').querySelector('.settings-content').childNodes.length) throw new Error(id + ' 應有內容');
+    };
+    check('general', '預設是「一般」');
+    // 鍵盤：↓／→ 下一個、↑／← 上一個（循環）、Home、End；焦點跟著選取的分頁
+    const key = (k) => { const cur = selected()[0]; cur.dispatch('keydown', { key: k }); };
+    key('ArrowDown'); check('profiles', '↓ 應換到下一個分類'); if (document.activeElement !== selected()[0]) throw new Error('鍵盤切換後焦點應在新的分頁');
+    key('ArrowRight'); check('data', '→ 也應換到下一個分類');
+    key('End'); check('about', 'End 應到最後一個分類');
+    key('ArrowDown'); check('general', '↓ 在最後一個時應繞回第一個');
+    key('ArrowUp'); check('about', '↑ 在第一個時應繞到最後一個');
+    key('Home'); check('general', 'Home 應到第一個分類');
+    // 滑鼠：點分頁換分類
+    LABELS.forEach((l, i) => { tabs[i] && settingsTab(VA.SETTINGS_SECTIONS[i]).click(); check(VA.SETTINGS_SECTIONS[i], '點「' + l + '」應換到該分類'); });
+    // 一般：預設版面（store 的 'layoutMode'，與工具列「版面 ▾」同一個值，不重新排列目前的圖）
+    settingsTab('general').click();
+    const lay = (v) => box.testAll('.settings-radio').find((r) => r.dataset.setting === 'layout' && r.value === v);
+    if (!App.LAYOUT_MODES.every(lay) || !lay(App.layoutMode).checked) throw new Error('「一般」應有每個版面各一個選項，勾選目前的版面');
+    const mode0 = App.layoutMode; const other = App.LAYOUT_MODES.find((m) => m !== mode0); const pos0 = JSON.stringify(Array.from(App.graph.pos.entries()));
+    lay(other).focus(); lay(other).checked = true; lay(other).dispatch('change'); await new Promise((r) => setTimeout(r, 5));
+    if (App.layoutMode !== other || (await S.store.get('layoutMode')) !== other) throw new Error('預設版面應存進 store 的 layoutMode');
+    const menuItem = $('#layout-mode').testAll('.menu-item').find((b) => b.dataset.layout === other);
+    if (menuItem.getAttribute('aria-checked') !== 'true') throw new Error('工具列「版面 ▾」的勾選應跟著預設版面');
+    if (JSON.stringify(Array.from(App.graph.pos.entries())) !== pos0) throw new Error('改預設版面不應重新排列目前的圖');
+    // 重繪後焦點留在同一個選項（data-settings-focus）
+    VA.renderSettings(); if (document.activeElement !== lay(other)) throw new Error('重繪後焦點應留在同一個選項');
+    // 工具列改版面時，設定裡的勾選跟著換
+    $('#layout-mode').testAll('.menu-item').find((b) => b.dataset.layout === mode0).click(); await App.layoutJob;
+    if (!lay(mode0).checked || lay(other).checked) throw new Error('工具列改版面時設定裡的勾選應跟著換');
+    // 命名規則：列出每一份 S.profiles 的 id 與名稱
+    settingsTab('profiles').click();
+    const rows = $('#settings-panel').testAll('tr').filter((r) => r.dataset.profile);
+    const ids = Object.values(S.profiles).filter((p) => p && p.id).map((p) => p.id);
+    if (!ids.length || rows.map((r) => r.dataset.profile).join() !== ids.join()) throw new Error('命名規則應列出每一份可用的命名規則：' + rows.map((r) => r.dataset.profile).join());
+    ids.forEach((id) => { const p = S.profiles[id]; const r = rows.find((x) => x.dataset.profile === id); if (p.label && !r.textContent.includes(p.label)) throw new Error('命名規則應列出名稱：' + id); });
+    // 收集與建立基準：指令清單與歡迎畫面同一份（S.collectCommands）
+    settingsTab('help').click();
+    const cmds = S.collectCommands.default.map((c) => c.command).join('\n');
+    if (text('#settings-commands') !== cmds) throw new Error('「收集與建立基準」的指令清單應取自 S.collectCommands');
+    if (!S.collectCommands.optional.every((c) => text('#settings-panel').includes(c.command))) throw new Error('應列出只有部分設備才有的選單');
+    const helpP = $('#settings-panel'); const helpT = helpP.textContent;
+    // 收集：collect.sh 的用法與 devices.csv 範例；範例的標題列與每一列都取自 repo 的 tools/devices.csv（collect.sh 的實際格式）
+    const csvRepo = fs.readFileSync(path.join(ROOT, 'tools/devices.csv'), 'utf8').split('\n').map((l) => l.trim()).filter(Boolean);
+    const csv = $('#settings-devices-csv'); const csvLines = csv ? csv.textContent.split('\n').filter(Boolean) : [];
+    if (!csv || csvLines[0] !== csvRepo[0] || csvLines.length < 2 || !csvLines.every((l) => csvRepo.includes(l))) throw new Error('devices.csv 範例應取自 tools/devices.csv（標題列＋至少一列）：' + (csv && csv.textContent));
+    if (!/tools\/collect\.sh devices\.csv --dry-run/.test(helpT) || !/tools\/collect\.sh devices\.csv (-o|--output) \S+/.test(helpT)) throw new Error('應寫出 collect.sh 的 --dry-run 與輸出檔的用法');
+    ['--device', '--commands', '--ask-password', '--retry-failed'].forEach((o) => { if (!helpT.includes(o)) throw new Error('應列出 collect.sh 的常用選項 ' + o); });
+    if (!helpT.includes('bundle-v1') || !helpT.includes('設備名 (管理 IP):')) throw new Error('應說明輸出是 bundle-v1 收集檔與手動收集的「設備名 (管理 IP):」標頭');
+    // 排程：npm run baseline 與三種結束碼（每個結束碼各一列）
+    if (!/npm run baseline -- \S+ --ledger \S+ -o \S+/.test(helpT)) throw new Error('應寫出排程用的 npm run baseline 指令');
+    const exits = helpP.testAll('.settings-exit dt').map((d) => d.textContent.trim());
+    if (exits.join() !== '0,1,2') throw new Error('應列出 baseline 的三種結束碼：' + exits.join());
+    if (!/cron|工作排程器/.test(helpT)) throw new Error('應說明可以放進 cron／工作排程器');
+    // 一輪的流程：收集 → 建立基準 → 研判 → 修正 → 下一輪收集 → 驗證，修正只產生 .rsc 不連線設備，工作包帶走帶回
+    const flow = helpP.querySelector('.settings-flow');
+    const flowT = flow ? flow.testAll('li').map((l) => l.textContent) : [];
+    const order = ['收集', '建立基準', '研判', '修正', '下一輪', '驗證'].map((w) => flowT.findIndex((t) => t.startsWith(w)));
+    if (order.some((i) => i < 0) || order.some((i, n) => n && i <= order[n - 1])) throw new Error('應依序列出一輪的流程：' + flowT.join(' / '));
+    if (!/\.rsc/.test(helpT) || !/不(會)?連線(任何)?設備/.test(helpT) || !helpT.includes('工作包')) throw new Error('應說明修正只產生 .rsc、不連線設備，以及工作包');
+    // 每段的詳細規格以連結到文件（檔案存在、錨點對得到標題），新分頁開啟
+    const ghSlug = (s) => s.trim().toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s/g, '-');
+    const checkDocLinks = (root, need) => {
+      const links = root.testAll('a').filter((a) => a.classList.contains('doc-link'));
+      need.forEach((f) => { if (!links.some((a) => decodeURI(a.getAttribute('href')).includes('/' + f))) throw new Error('應連到 ' + f); });
+      links.forEach((a) => {
+        const href = decodeURI(a.getAttribute('href')); const m = href.match(/\/blob\/main\/([^#]+)(?:#(.+))?$/);
+        if (!m || !fs.existsSync(path.join(ROOT, m[1]))) throw new Error('文件連結應指向 repo 裡的檔案：' + href);
+        if (m[2] && !fs.readFileSync(path.join(ROOT, m[1]), 'utf8').split('\n').some((l) => /^#+ /.test(l) && ghSlug(l.replace(/^#+ /, '')) === m[2])) throw new Error('文件連結的錨點對不到標題：' + href);
+        if (a.getAttribute('target') !== '_blank' || !/noopener/.test(a.getAttribute('rel') || '')) throw new Error('文件連結應在新分頁開啟（rel=noopener）：' + href);
+      });
+      return links;
+    };
+    checkDocLinks(helpP, ['README.md', 'docs/收集清單與輸入格式.md', 'docs/使用說明.md']);
+    // 命名規則：連到設定的命名規則分類
+    const toProfiles = helpP.testAll('button').find((b) => b.getAttribute('data-settings-focus') === 'to-profiles');
+    if (!toProfiles) throw new Error('應有前往命名規則分類的按鈕');
+    toProfiles.click(); check('profiles', '按鈕應換到命名規則分類'); settingsTab('help').click();
+    // 關於：程式版本、各資料格式的版本（取自核心的常數）、離線與唯讀、ELK.js 的授權（路徑取自 V.layout.ELK_SRC）、文件與原始碼
+    settingsTab('about').click();
+    const aboutT = text('#settings-panel');
+    if (!text('#app-version').includes(S.VERSION) || !aboutT.includes('EPL-2.0') || !aboutT.includes(S.view.layout.ELK_SRC.replace(/\/[^/]*$/, ''))) throw new Error('「關於」應列出版本與 ELK.js 的 EPL-2.0 授權：' + aboutT);
+    [S.SCHEMA, S.ledger.SCHEMA, S.remediate.SCHEMA, S.workpack.SCHEMA].forEach((x) => { if (!aboutT.includes(x)) throw new Error('「關於」應列出資料格式 ' + x); });
+    if (!aboutT.includes("connect-src 'none'") || !/不(會)?連線(任何)?設備/.test(aboutT)) throw new Error('「關於」應說明離線（CSP 禁止網路連線）與唯讀');
+    const csp = (html.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/) || [])[1] || '';
+    if (!csp.includes("connect-src 'none'")) throw new Error('index.html 的 CSP 應含 connect-src none');
+    const srcLink = checkDocLinks($('#settings-panel'), ['README.md']);
+    if (!$('#settings-panel').testAll('a').some((a) => /^https:\/\/github\.com\/sinnoken\/topo-mikrotik\/?$/.test(a.getAttribute('href') || '')) || !srcLink.length) throw new Error('「關於」應連到文件與原始碼');
+    // 搜尋框的 Esc 不關設定（只收起搜尋）；設定內的 Esc 關閉，焦點回到 ⚙
+    esc($('#search')); if (box.classList.contains('hidden')) throw new Error('設定外的元素的 Esc 不應關閉設定');
+    esc(settingsTab('about'));
+    if (!box.classList.contains('hidden') || document.activeElement !== gear || $('#main').inert || gear.getAttribute('aria-expanded') !== 'false' || $('#app').classList.contains('settings-open')) throw new Error('Esc 應關閉設定並把焦點還給 ⚙');
+    // 再開啟回到上次的分類；⚙ 再按一次關閉
+    gear.click(); check('about', '再開啟時應回到上次的分類'); gear.click();
+    if (!box.classList.contains('hidden') || document.activeElement !== gear) throw new Error('再按一次 ⚙ 應關閉設定並還焦點');
+    // 指定分類與 opener：焦點到分類的標題，關閉後回到 opener
+    const opener = $('#btn-fit');
+    App.openSettings('help', { opener });
+    if (document.activeElement !== $('#settings-panel-title')) throw new Error('指定分類開啟時焦點應到分類的標題');
+    box.querySelector('.settings-close').click(); if (document.activeElement !== opener) throw new Error('「關閉」應把焦點還給開啟它的按鈕');
+    try { App.openSettings('nope'); throw new Error('未知的分類應丟出 RangeError'); } catch (e) { if (!(e instanceof RangeError)) throw e; }
+    // 與資料中心互斥：開一個就關另一個；換步驟、選取時也關閉
+    App.openSettings(); App.openHub();
+    if (!box.classList.contains('hidden') || $('#hub').classList.contains('hidden') || !$('#main').inert) throw new Error('開啟資料中心時應關閉設定');
+    App.openSettings();
+    if (box.classList.contains('hidden') || !$('#hub').classList.contains('hidden') || !$('#main').inert || $('#btn-hub').getAttribute('aria-expanded') !== 'false') throw new Error('開啟設定時應關閉資料中心');
+    goStep('view'); if (!box.classList.contains('hidden') || $('#main').inert) throw new Error('換步驟時應關閉設定');
+    App.openSettings(); App.select({ type: 'device', key: App.Q.devices()[0].key });
+    if (!box.classList.contains('hidden')) throw new Error('選取時應關閉設定');
+    App.select(null); goStep('triage');
+    // 窄螢幕：單欄、分類改成上方一列（覆蓋一般樣式，寫在它之後）；不水平捲動
+    const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
+    const base = css.indexOf('.settings-body { display: grid;'); const tail = css.slice(css.lastIndexOf('@media (max-width: 900px)'));
+    if (base < 0 || css.lastIndexOf('@media (max-width: 900px)') < base || !/\.settings-body \{ grid-template-columns: minmax\(0, 1fr\);/.test(tail) || !/\.settings-tabs \{ flex-direction: row;/.test(tail)) throw new Error('窄螢幕時設定應改成單欄、分類在上方一列，且規則要在一般樣式之後');
+    if (!/\.settings \{[^}]*overflow-x: hidden/.test(css)) throw new Error('設定不應水平捲動');
+    if (!/\.settings-tab\.on \{[^}]*font-weight: 600/.test(css)) throw new Error('選取的分類除了顏色還要有粗體');
   });
   await step('流程步驟：五步都能切換（nav、aria-current="step"），左側清單與中間的工作畫面跟著換、焦點移到這一步的標題；切換不丟失畫布的位置、縮放與選取，也不重新排列；PNG 照常', async () => {
     const g = App.graph; const VA = S.view.app;
@@ -5633,6 +5803,76 @@ function viewBoundaryViolations(file, src) {
     if (base < 0 || narrow < base || !/\.hub-row \{ grid-template-columns: minmax\(0, 1fr\); \}/.test(tail) || !/\.hub-outs \{ grid-template-columns: minmax\(0, 1fr\); \}/.test(tail)) throw new Error('窄螢幕時資料中心應改成單欄，且規則要在一般樣式之後');
     if (!/\.hub \{[^}]*overflow-x: hidden/.test(css)) throw new Error('資料中心不應水平捲動');
   });
+  await step('設定「命名規則」：說明與文件連結、內建與已載入分開列、套用結果與沒對上的名稱、載入錯誤、下載範本、匯出、移除先確認且內建不可移除', async () => {
+    const VP = S.view.settings.profiles; const panel = () => $('#settings-panel'); const wait = () => new Promise((r) => setTimeout(r, 20));
+    App.openSettings('profiles'); await wait();
+    const body = () => text('#settings-panel');
+    if (!body().includes('不會新增、刪除或改寫') || !panel().testAll('a').some((a) => a.classList.contains('doc-link') && decodeURI(a.getAttribute('href')).endsWith('/blob/main/docs/命名規則.md'))) throw new Error('分類頂端應說明命名規則不改事實，並連到 docs/命名規則.md：' + body());
+    const rowsOf = (src) => { const t = panel().testAll('table').find((x) => x.dataset.source === src); return t ? t.testAll('tr').filter((r) => r.dataset.profile) : []; };
+    const btnOf = (r, action) => r.testAll('button').find((b) => b.dataset.action === action);
+    // 內建：profiles/*.js 載入的；顯示 id、名稱、說明（S.profile.describe）、來源；不能移除
+    const builtin = VP.builtinIds();
+    if (!builtin.length || rowsOf('builtin').map((r) => r.dataset.profile).join() !== builtin.join()) throw new Error('內建的命名規則應各一列：' + rowsOf('builtin').map((r) => r.dataset.profile));
+    rowsOf('builtin').forEach((r) => {
+      const p = S.profiles[r.dataset.profile];
+      if (!r.textContent.includes(p.label) || !r.textContent.includes(S.profile.describe(p)) || !r.textContent.includes('內建')) throw new Error('內建的列應有名稱、說明與來源：' + r.textContent);
+      if (btnOf(r, 'remove')) throw new Error('內建的命名規則不可移除');
+      if (!btnOf(r, 'export')) throw new Error('每一份都可以匯出');
+    });
+    if (!rowsOf('saved').length && !body().includes('還沒有載入')) throw new Error('沒有載入過的命名規則時應明確說明');
+    // 套用結果（對目前基準，S.profile.compile(…).coverage(Q)）：摘要與沒對上的名稱（最多 N 筆，可展開）
+    if (!App.Q) throw new Error('測試前提：應有基準');
+    const sel = $('#settings-profile-cov'); if (!sel) throw new Error('應可選擇要看套用結果的命名規則');
+    const pid = builtin[0]; sel.value = pid; sel.dispatch('change'); await wait();
+    const cov = S.profile.coverage(S.profiles[pid], App.Q); const box = () => $('#settings-profile-coverage');
+    if (!text('#settings-profile-coverage').includes(`${cov.matched}／${cov.total}`)) throw new Error('應顯示對上幾台：' + text('#settings-profile-coverage'));
+    const items = () => box().testAll('li').filter((li) => li.dataset.unmatched);
+    if (items().length !== Math.min(VP.UNMATCHED_MAX, cov.unmatched.length)) throw new Error('沒對上的名稱最多先列 ' + VP.UNMATCHED_MAX + ' 筆：' + items().length);
+    if (cov.unmatched.length > VP.UNMATCHED_MAX) {
+      box().testAll('button').find((b) => b.dataset.action === 'more').click(); await wait();
+      if (items().length !== cov.unmatched.length) throw new Error('展開後應列出全部沒對上的名稱');
+    }
+    cov.fields.group.slice(0, 1).forEach((g) => { if (!text('#settings-profile-coverage').includes(g.value)) throw new Error('應列出分群的分布'); });
+    if (App.round.profile && !rowsOf('builtin').concat(rowsOf('saved')).some((r) => r.dataset.profile === App.round.profile.id && r.textContent.includes('目前的基準使用'))) throw new Error('應標出目前基準用的命名規則');
+    // 載入錯誤：JSON 不合法、compile 的錯誤都明確說明，不加入清單
+    const file = $('#settings-profile-file');
+    const pick = async (name, content) => { file.files = [{ name, text: async () => content }]; file.dispatch('change', { target: file }); await wait(); };
+    await pick('broken.json', '{ nope');
+    if (!text('#settings-profiles-status').includes('broken.json') || !text('#settings-profiles-status').includes('JSON')) throw new Error('不是 JSON 時應說明：' + text('#settings-profiles-status'));
+    await pick('bad.json', JSON.stringify({ id: 'bad', classify: [{ match: '(' }] }));
+    if (!text('#settings-profiles-status').includes('正規表示式') || S.profiles.bad) throw new Error('compile 失敗時應列出錯誤且不加入：' + text('#settings-profiles-status'));
+    const r0 = await VP.loadFile({ name: 'noid.json', text: async () => '{}' });
+    if (r0.ok || !/缺少 id/.test(r0.error)) throw new Error('loadFile 應回傳 compile 的錯誤：' + JSON.stringify(r0));
+    // 載入成功：存進 store 的 'profiles'，列在「已載入」
+    const floor = fs.readFileSync(path.join(ROOT, 'profiles/floor-device-naming.json'), 'utf8');
+    await pick('floor-device-naming.json', floor);
+    const fid = JSON.parse(floor).id;
+    if (!S.profiles[fid] || !((await S.store.get('profiles')) || {})[fid]) throw new Error('載入的命名規則應加入並存進 store');
+    const savedRow = rowsOf('saved').find((r) => r.dataset.profile === fid);
+    if (!savedRow || !savedRow.textContent.includes('已載入') || !text('#settings-profiles-status').includes(fid)) throw new Error('載入的命名規則應列在「已載入」');
+    // 匯出某一份與下載範本：JSON，範本可直接編譯
+    const ex = await captureDownloads(() => btnOf(rowsOf('saved').find((r) => r.dataset.profile === fid), 'export').click());
+    if (ex.files.length !== 1 || ex.files[0].name !== fid + '.json') throw new Error('匯出的檔名應是 id.json：' + ex.files.map((f) => f.name));
+    require('assert').deepStrictEqual(JSON.parse(ex.files[0].text), JSON.parse(floor));
+    const tp = await captureDownloads(() => panel().testAll('button').find((b) => b.dataset.action === 'template').click());
+    const tj = JSON.parse(tp.files[0].text);
+    if (!tp.files[0].name.endsWith('.json') || !S.profile.compile(tj) || typeof tj.description !== 'string') throw new Error('範本應是可編譯、含 description 的 JSON');
+    // 移除：先確認（取消時不變）；確認後從清單與 store 移除
+    const asked = []; const c0 = window.confirm;
+    try {
+      window.confirm = (m) => { asked.push(m); return false; };
+      btnOf(rowsOf('saved').find((r) => r.dataset.profile === fid), 'remove').click(); await wait();
+      if (asked.length !== 1 || !asked[0].includes(fid) || !S.profiles[fid]) throw new Error('移除前應確認，取消時不變：' + asked);
+      window.confirm = (m) => { asked.push(m); return true; };
+      btnOf(rowsOf('saved').find((r) => r.dataset.profile === fid), 'remove').click(); await wait();
+    } finally { window.confirm = c0; }
+    if (S.profiles[fid] || ((await S.store.get('profiles')) || {})[fid] || rowsOf('saved').some((r) => r.dataset.profile === fid)) throw new Error('確認後應從清單與 store 移除');
+    // 目前基準正在用的命名規則：確認訊息說明已建立的基準不受影響
+    if (App.round.profile) { const m = VP.removeMessage(App, App.round.profile.id); if (!m.includes('已建立的基準不受影響')) throw new Error('移除目前基準用的規則時應說明：' + m); }
+    if (VP.removeMessage(App, '__none__').includes('已建立的基準不受影響')) throw new Error('不是目前基準用的規則時不必多說明');
+    VP.builtinIds().forEach((id) => { if (!S.profiles[id]) throw new Error('內建的命名規則不應被移除：' + id); });
+    S.view.app.closeSettings();
+  });
   await step('工作包：下載後讀回，基準、處理紀錄、命名規則與預期現況都帶回；壞掉的工作包列出全部問題，目前的資料不變', async () => {
     const VA = S.view.app; const WP = S.workpack; const HS = () => VA.hubState(); const deep = require('assert').deepStrictEqual;
     // 這一輪：範例資料（或 SMOKE_INPUT）＋命名規則
@@ -5823,9 +6063,257 @@ function viewBoundaryViolations(file, src) {
       VA.load(orig, null); await App.ledgerJob; await App.layoutJob;
     }
   });
+  await step('store 的本機資料：描述表涵蓋所有用到的鍵、列舉與大小、更新時間、備份與還原全有或全無、重設偏好不動資料（另以模擬的 IndexedDB 載入 store.js）', async () => {
+    // 描述表是鍵的中文名稱與用途的唯一來源：src/view 裡以字面值存取的鍵都要在表裡
+    const D = S.store.KEYS; const known = new Set(D.map((d) => d.key));
+    const used = new Set(['ledger', 'acks']); // app-ledger.js 以常數存取
+    const viewDir = path.join(ROOT, 'src/view');
+    const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.js') ? [path.join(dir, e.name)] : []));
+    walk(viewDir).forEach((f) => { for (const m of fs.readFileSync(f, 'utf8').matchAll(/S\.store\.(?:get|set|del)\('([^']+)'/g)) used.add(m[1]); });
+    const missing = [...used].filter((k) => !known.has(k));
+    if (missing.length) throw new Error('store 的 KEYS 沒有描述這些鍵：' + missing.join('、'));
+    if (!known.has('theme') || D.some((d) => !d.label || !d.purpose || !d.loss || !['data', 'pref'].includes(d.kind))) throw new Error('每個鍵都要有中文名稱、用途、清除時會失去什麼與種類（data／pref）');
+    if (!D.find((d) => d.key === 'ledger').critical) throw new Error('處理紀錄應標為無法重建（critical）');
+    if (S.store.sizeOf('中') !== 5 || S.store.sizeOf(undefined) !== 0 || S.store.sizeOf({ a: 1 }) !== 7) throw new Error('sizeOf 是 JSON 序列化後的 UTF-8 位元組');
+    // 這個模擬環境沒有 IndexedDB：明確回報只在記憶體
+    if ((await S.store.inventory()).storage !== 'memory') throw new Error('沒有 IndexedDB 時 inventory 應回報 storage: memory');
+
+    // 另載一份 store.js，接上模擬的 IndexedDB（交易在全部完成時才寫入；失敗時整筆交易不寫入）與 localStorage
+    const data = new Map(); let failKey = null; const gets = [];
+    const later = (f) => setTimeout(f, 0);
+    const db = { createObjectStore() {}, transaction() {
+      const staged = new Map(data); const t = { error: null }; let pending = 0; let failed = false;
+      const finish = () => later(() => { if (pending || t.done) return; t.done = true; if (failed) { if (t.onerror) t.onerror(); } else { data.clear(); staged.forEach((v, k) => data.set(k, v)); if (t.oncomplete) t.oncomplete(); } });
+      const op = (fn) => { const r = {}; pending++; later(() => { pending--; try { r.result = fn(); if (r.onsuccess) r.onsuccess(); } catch (e) { failed = true; t.error = e; } finish(); }); return r; };
+      const store = { get: (k) => { gets.push(k); return op(() => structuredClone(staged.get(k))); }, getAllKeys: () => op(() => [...staged.keys()].sort()), delete: (k) => op(() => { staged.delete(k); }),
+        put: (v, k) => op(() => { if (k === failKey) throw new Error('模擬寫入失敗'); staged.set(k, structuredClone(v)); return k; }) };
+      t.objectStore = () => store; return t;
+    } };
+    const fakeIdb = { open: () => { const r = {}; later(() => { r.result = db; if (r.onupgradeneeded) r.onupgradeneeded(); if (r.onsuccess) r.onsuccess(); }); return r; } };
+    const ls2 = new Map(); const fakeLs = { getItem: (k) => (ls2.has(k) ? ls2.get(k) : null), setItem: (k, v) => ls2.set(k, String(v)), removeItem: (k) => ls2.delete(k) };
+    const sandbox = { indexedDB: fakeIdb, localStorage: fakeLs, console, setTimeout, structuredClone, SSOT: { VERSION: S.VERSION, SCHEMA: S.SCHEMA, ledger: S.ledger, query: S.query } };
+    vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'src/view/store.js'), 'utf8'), sandbox, { filename: 'store.js（模擬 IndexedDB）' });
+    const ST = sandbox.SSOT.store; const J = (x) => JSON.stringify(x);
+    if (!(await ST.available()) || (await ST.inventory()).storage !== 'indexedDB') throw new Error('有 IndexedDB 時應回報 storage: indexedDB');
+    // 既有的 get／set／del 語意不變；keys 只列資料的鍵（store 自己記的更新時間不算）
+    const ledger = S.ledger.empty(); const last = { snapshot: { meta: { schema: S.SCHEMA } }, sources: [{ name: 'a.txt', text: '中文' }], profile: null };
+    await ST.set('last', last); await ST.set('ledger', ledger); await ST.set('layout', { left: 300, right: 420 }); await ST.set('layoutMode', 'builtin'); ST.theme.set('dark');
+    if (J(await ST.get('last')) !== J(last)) throw new Error('get 應讀回 set 的值');
+    if (J(await ST.keys()) !== J(['last', 'layout', 'layoutMode', 'ledger'])) throw new Error('keys 只列資料的鍵：' + J(await ST.keys()));
+    const inv = await ST.inventory(); const row = (k) => inv.items.find((r) => r.key === k);
+    if (inv.items.some((r) => !r.label || !r.purpose)) throw new Error('每一列都要有中文名稱與用途');
+    if (!row('last').present || row('last').bytes !== ST.sizeOf(last) || !row('last').updatedAt) throw new Error('有資料的列應有大小與最後更新時間：' + J(row('last')));
+    if (row('profiles').present || row('profiles').bytes !== 0) throw new Error('沒有資料的列 present 為 false、大小 0');
+    if (!row('theme').present || row('theme').where !== 'localStorage') throw new Error('配色偏好列在 localStorage');
+    await ST.set('legacy-x', 1);
+    { const r = (await ST.inventory()).items.find((x) => x.key === 'legacy-x'); if (!r || r.kind !== 'other' || !r.present) throw new Error('不認得的鍵也要列出（kind other），使用者才看得到'); }
+    await ST.clear('legacy-x'); if ((await ST.keys()).includes('legacy-x')) throw new Error('clear 應刪掉這個鍵');
+    // 備份
+    const now = '2026-11-06T00:00:00.000Z'; const backup = await ST.exportAll(now);
+    if (backup.schema !== 'ssot-localdata/1' || backup.version !== S.VERSION || backup.exportedAt !== now) throw new Error('備份要有 schema、版本與時間：' + J(backup).slice(0, 200));
+    if (J(backup.items.last) !== J(last) || backup.items.theme !== 'dark' || backup.items.layoutMode !== 'builtin') throw new Error('備份應包含所有存了的鍵（含配色）');
+    // 不合法的備份：列出原因，一筆都不寫
+    const snapshotOf = async () => J([...data.entries()].filter(([k]) => !k.startsWith('meta:'))) + J([...ls2.entries()]);
+    const before = await snapshotOf();
+    const bads = [[null, /物件/], [{ schema: 'ssot-ledger/1', items: {} }, /ssot-localdata\/1/], [{ schema: 'ssot-localdata/1', items: {} }, /沒有/],
+      [{ schema: 'ssot-localdata/1', items: { layout: { left: 1 }, ledger: { schema: 'x' } } }, /ledger/], [{ schema: 'ssot-localdata/1', items: { theme: 'sepia', layout: { left: 1 } } }, /theme/],
+      [{ schema: 'ssot-localdata/1', items: { nope: 1, layout: { left: 1 } } }, /nope/]];
+    for (const [b, re] of bads) {
+      const v = ST.validateBackup(b); if (v.ok || !v.errors.some((e) => re.test(e))) throw new Error('不合法的備份應說明原因：' + J(b) + ' → ' + J(v.errors));
+      const r = await ST.restore(b); if (r.ok) throw new Error('不合法的備份不可還原');
+      if (await snapshotOf() !== before) throw new Error('不合法的備份不可寫入任何資料：' + J(b));
+    }
+    // 寫入中途失敗：同一筆交易，整份不寫入
+    const changed = { schema: 'ssot-localdata/1', items: { layout: { left: 250, right: 380 }, layoutMode: 'elk', ledger } };
+    failKey = 'ledger';
+    { let err = null; try { await ST.restore(changed); } catch (e) { err = e; } if (!err) throw new Error('寫入失敗時應丟出錯誤');
+      if (await snapshotOf() !== before) throw new Error('寫入中途失敗時不可留下部分寫入'); }
+    failKey = null;
+    // 合法：逐項寫回，回傳覆蓋的鍵
+    await ST.del('last'); ST.theme.clear();
+    if (ST.theme.get() !== 'system' || ls2.has(ST.theme.KEY)) throw new Error('theme.clear 應刪除偏好、回到跟隨系統');
+    const ok = await ST.restore(backup);
+    if (!ok.ok || !ok.keys.includes('last') || !ok.keys.includes('theme')) throw new Error('合法的備份應還原：' + J(ok));
+    if (J(await ST.get('last')) !== J(last) || ST.theme.get() !== 'dark') throw new Error('還原後應讀回備份的內容');
+    // 重設畫面偏好：只清欄寬、版面與配色
+    const cleared = await ST.resetPrefs();
+    if (J(cleared.slice().sort()) !== J(['layout', 'layoutMode', 'theme'])) throw new Error('resetPrefs 應只清偏好：' + J(cleared));
+    if (await ST.get('layout') !== undefined || await ST.get('layoutMode') !== undefined || ST.theme.get() !== 'system') throw new Error('偏好應已清除');
+    if (J(await ST.get('last')) !== J(last) || J(await ST.get('ledger')) !== J(ledger)) throw new Error('重設偏好不可動基準與處理紀錄');
+    // 「基準與輸入」能不能還原只有一個判斷（ST.lastRestorable，App.restore 也用它）：沒有 meta、格式不相容又沒有輸入時，整份備份都不寫入
+    {
+      const before2 = await snapshotOf();
+      const cant = [[{ snapshot: {} }, /meta/], [{ snapshot: { meta: { schema: 'ssot-snapshot/1' } }, sources: [] }, /不相容/], [{ snapshot: { meta: { schema: 'ssot-snapshot/1' } } }, /不相容/]];
+      for (const [lv, re] of cant) {
+        const why = ST.lastRestorable(lv); if (why.ok || !re.test(why.reason)) throw new Error('lastRestorable 應說明不能還原的原因：' + J(lv) + ' → ' + J(why));
+        const b = { schema: 'ssot-localdata/1', items: { last: lv, layout: { left: 222 } } };
+        const v = ST.validateBackup(b); if (v.ok || !v.errors.some((e) => e.includes('基準與輸入') && re.test(e))) throw new Error('備份的基準不能還原時驗證應擋下並說明：' + J(v.errors));
+        if ((await ST.restore(b)).ok || await snapshotOf() !== before2) throw new Error('基準不能還原時整份備份都不寫入（全有或全無）：' + J(lv));
+      }
+      const rebuild = ST.lastRestorable({ snapshot: { meta: { schema: 'ssot-snapshot/1' } }, sources: [{ name: 'a.txt', text: 'x' }] });
+      if (!rebuild.ok || !rebuild.rebuild) throw new Error('格式不相容但有輸入時可以還原（用輸入重建）：' + J(rebuild));
+      const same = ST.lastRestorable(last); if (!same.ok || same.meta !== last.snapshot.meta) throw new Error('相容的基準可以還原，並回傳 meta：' + J(same));
+    }
+    // 大小只在資料改變時重算：連續兩次 inventory 不再讀出整份資料；寫入後大小跟著變
+    {
+      await ST.set('last', last); await ST.inventory(); gets.length = 0;
+      const r0 = ST.revision(); const inv2 = await ST.inventory();
+      if (gets.includes('last') || gets.includes('ledger')) throw new Error('資料沒變時 inventory 不應再讀出整份資料：' + J(gets));
+      if (ST.revision() !== r0) throw new Error('只讀不應改變 revision');
+      const bigger = Object.assign({}, last, { sources: [{ name: 'b.txt', text: 'x'.repeat(100) }] });
+      await ST.set('last', bigger);
+      if (ST.revision() === r0) throw new Error('寫入後 revision 應改變（畫面據此判斷要不要重讀清單）');
+      const inv3 = await ST.inventory(); const b2 = inv3.items.find((r) => r.key === 'last').bytes;
+      if (b2 !== ST.sizeOf(bigger) || b2 === inv2.items.find((r) => r.key === 'last').bytes) throw new Error('寫入後大小應重算：' + b2);
+      await ST.set('last', last);
+    }
+  });
+  await step('設定「本機資料」：每項資料一列（名稱、用途、大小、更新時間）、個別清除先確認（處理紀錄特別警告）、下載全部與從備份還原（不合法時不寫入）、重設畫面偏好不動資料、只在記憶體時說明', async () => {
+    const VA = S.view.app; const SD = S.view.settings.data; const J = (x) => JSON.stringify(x);
+    const panel = () => $('#settings-panel'); const btn = (key) => panel().testAll('button').find((b) => b.getAttribute('data-store-key') === key && b.classList.contains('settings-clear'));
+    const act = (a) => panel().testAll('button').find((b) => b.getAttribute('data-action') === a);
+    const ask = async (answer, fn) => { const asked = []; const c0 = window.confirm; window.confirm = (m) => { asked.push(m); return answer; }; try { await fn(); await SD.refresh(); await new Promise((r) => setTimeout(r, 20)); } finally { window.confirm = c0; } return asked; };
+    if (!App.snap) throw new Error('前提：有基準');
+    App.openSettings('data'); await SD.refresh();
+    const t0 = text('#settings-panel');
+    const present = S.store.KEYS.filter((d) => d.key === 'last' || d.key === 'ledger');
+    if (present.some((d) => !t0.includes(d.label) || !t0.includes(d.purpose))) throw new Error('每一項資料都要列出中文名稱與用途：' + t0.slice(0, 300));
+    if (!/\d+(\.\d)? (B|KB|MB)/.test(t0)) throw new Error('應顯示大小（B／KB／MB）');
+    if (!t0.includes('只在記憶體')) throw new Error('沒有 IndexedDB 時應明確說明資料只在記憶體');
+    // 每列的清除都是按鈕，可用鍵盤操作；處理紀錄的清除要特別警告，取消時什麼都不變
+    const ledgerBefore = J(await S.store.get('ledger'));
+    const asked = await ask(false, () => btn('ledger').click());
+    if (asked.length !== 1 || !/無法從收集檔重建/.test(asked[0]) || !/備份/.test(asked[0])) throw new Error('清除處理紀錄應警告無法重建並建議先備份：' + asked[0]);
+    if (J(await S.store.get('ledger')) !== ledgerBefore) throw new Error('取消時不可清除');
+    // 下載全部（JSON）
+    const dl = await captureDownloads(() => act('localdata-export').click());
+    const file = dl.files[0]; const backup = file && JSON.parse(file.text);
+    if (!backup || backup.schema !== 'ssot-localdata/1' || !/\.json$/.test(file.name) || J(backup.items.ledger) !== ledgerBefore || !backup.items.last) throw new Error('下載全部應是含基準與處理紀錄的 ssot-localdata/1：' + (file && file.name));
+    // 清除處理紀錄（確認）：畫面與 store 的處理紀錄都沒有原本的項目
+    const byUser = (lg) => Object.values((lg && lg.items) || {}).some((it) => it.history.some((x) => x.by === 'user'));
+    if (!byUser(VA.ledger())) throw new Error('前提：處理紀錄有使用者的判斷');
+    await ask(true, () => btn('ledger').click());
+    if (byUser(VA.ledger()) || byUser(await S.store.get('ledger'))) throw new Error('確認後應清除處理紀錄（畫面與 store 都沒有使用者的判斷）');
+    if (!App.snap) throw new Error('清除處理紀錄不可動基準');
+    // 從備份還原：不合法時列出原因、不寫入；合法時列出將覆蓋的項目並確認
+    const restoreFile = async (name, body, answer) => ask(answer, async () => {
+      const inp = panel().querySelector('input'); inp.files = [{ name, text: async () => body }]; inp.dispatch('change', { target: inp }); await new Promise((r) => setTimeout(r, 30));
+    });
+    const mid = J(await S.store.get('ledger'));
+    for (const [name, body] of [['壞.json', '{不是 JSON'], ['錯.json', J({ schema: 'ssot-ledger/1', items: {} })], ['缺.json', J({ schema: 'ssot-localdata/1', items: { ledger: { schema: 'x' } } })]]) {
+      const q = await restoreFile(name, body, true);
+      if (q.length) throw new Error('不合法的備份不應詢問：' + name);
+      if (!text('#settings-panel').includes(name) || !text('#settings-panel').includes('沒有寫入任何資料')) throw new Error('不合法的備份應說明原因且沒有寫入：' + name);
+      if (J(await S.store.get('ledger')) !== mid) throw new Error('不合法的備份不可寫入：' + name);
+    }
+    { const q = await restoreFile('備份.json', file.text, false);
+      if (q.length !== 1 || !q[0].includes('處理紀錄') || !q[0].includes('基準與輸入')) throw new Error('還原前應列出將覆蓋的項目：' + q[0]);
+      if (J(await S.store.get('ledger')) !== mid) throw new Error('取消還原時不可寫入'); }
+    await restoreFile('備份.json', file.text, true); await App.ledgerJob;
+    const back = await S.store.get('ledger');
+    if (Object.keys(JSON.parse(ledgerBefore).items).some((k) => !back.items[k] || !VA.ledger().items[k])) throw new Error('還原後處理紀錄應回到備份的內容');
+    if (!App.snap) throw new Error('還原後應有基準');
+    // 重設畫面偏好：只清欄寬、版面與配色，基準與處理紀錄不動
+    const mode0 = App.layoutMode; VA.setLayoutMode(App.LAYOUT_MODES.find((m) => m !== mode0)); VA.setThemePref('dark');
+    const keep = J([await S.store.get('last'), await S.store.get('ledger'), await S.store.get('profiles')]);
+    const q = await ask(true, () => act('localdata-reset-prefs').click());
+    if (q.length !== 1 || !/處理紀錄/.test(q[0]) || !/不受影響/.test(q[0])) throw new Error('重設偏好應先確認並說明不影響資料：' + q[0]);
+    if (await S.store.get('layoutMode') !== undefined || await S.store.get('layout') !== undefined || S.store.theme.get() !== 'system' || VA.themePref() !== 'system') throw new Error('重設偏好應清除版面、欄寬與配色');
+    if (App.layoutMode !== mode0) throw new Error('重設後的版面應回到預設：' + App.layoutMode);
+    if (J([await S.store.get('last'), await S.store.get('ledger'), await S.store.get('profiles')]) !== keep) throw new Error('重設偏好不可動基準、處理紀錄與命名規則');
+    // 偏好的個別清除也先確認並說明會失去什麼
+    await S.store.set('layout', { left: 300, right: 400 }); await SD.refresh();
+    { const q2 = await ask(true, () => btn('layout').click()); const d = S.store.KEYS.find((x) => x.key === 'layout');
+      if (q2.length !== 1 || !q2[0].includes(d.loss) || await S.store.get('layout') !== undefined) throw new Error('個別清除應先確認並寫出會失去什麼'); }
+    VA.closeSettings();
+  });
+  await step('本機資料的清除與還原讓畫面跟上：基準不能還原時不寫入、重建失敗時以 banner 說明並收起舊基準；清除舊確認標記不再轉換；命名規則即時更新；清單一次重繪只讀一次', async () => {
+    const VA = S.view.app; const SD = S.view.settings.data; const VP = S.view.settings.profiles; const J = (x) => JSON.stringify(x);
+    const wait = () => new Promise((r) => setTimeout(r, 30));
+    const withConfirm = async (fn) => { const c0 = window.confirm; window.confirm = () => true; try { return await fn(); } finally { window.confirm = c0; } };
+    const restore = (name, obj) => withConfirm(() => SD.restoreText(App, name, J(obj)));
+    if (!App.snap) throw new Error('前提：有基準');
+    const snap0 = App.snap; const last0 = J(await S.store.get('last')); const layout0 = J(await S.store.get('layout'));
+    // 1. 基準不能還原（沒有 meta）：驗證擋下，整份不寫入，畫面仍是原本的基準
+    App.openSettings('data'); await SD.refresh();
+    if (await restore('壞基準.json', { schema: 'ssot-localdata/1', items: { last: { snapshot: {} }, layout: { left: 260, right: 380 } } })) throw new Error('基準不能還原的備份不應還原');
+    if (J(await S.store.get('last')) !== last0 || J(await S.store.get('layout')) !== layout0 || App.snap !== snap0) throw new Error('基準不能還原時整份不寫入，畫面不變');
+    if (!text('#settings-panel').includes('沒有寫入任何資料') || !text('#settings-panel').includes('基準與輸入')) throw new Error('應說明基準與輸入不能還原：' + text('#settings-panel').slice(0, 300));
+    // 用輸入重建失敗：banner 明確說明，不可說「已還原」卻留著舊基準；之後的 savePositions 不寫進這份資料
+    const oldLast = { snapshot: { meta: { schema: 'ssot-snapshot/1', version: '0.0.1', createdAt: '2026-01-01T00:00:00Z' } }, sources: [{ name: 'x.txt', text: 'x' }], profile: null };
+    const b0 = S.buildAsync; S.buildAsync = async () => { throw new Error('模擬重建失敗'); };
+    try { await restore('舊基準.json', { schema: 'ssot-localdata/1', items: { last: oldLast } }); } finally { S.buildAsync = b0; }
+    if (App.snap === snap0) throw new Error('基準無法載入時不可留著舊基準');
+    if (!/無法載入|不相容/.test(text('#banner')) || !text('#banner').includes('模擬重建失敗')) throw new Error('基準無法載入時應以 banner 說明原因：' + text('#banner'));
+    await VA.savePositions();
+    if (J(await S.store.get('last')) !== J(oldLast)) throw new Error('savePositions 不可寫進無法載入的基準');
+    await S.store.set('last', JSON.parse(last0)); await App.restore(); await App.ledgerJob;
+    if (!App.snap) throw new Error('前提：還原原本的基準');
+    // 2. 清除「舊版的確認標記」：記憶體中等待轉換的也一起清掉，下一份基準不再轉換
+    const ledger0 = await S.store.get('ledger'); const fk = App.Q.findingKey(App.Q.findings()[0]);
+    try {
+      await S.store.del('ledger'); await S.store.set('acks', { [fk]: { at: '2025-01-02T00:00:00.000Z', kind: 'scheduled', note: '舊的' } });
+      await VA.loadLedger(); if (!VA.ledgerState().pendingAcks) throw new Error('前提：有等待轉換的舊確認標記');
+      App.openSettings('data'); await SD.refresh();
+      const btn = $('#settings-panel').testAll('button').find((b) => b.getAttribute('data-store-key') === 'acks' && b.classList.contains('settings-clear'));
+      await withConfirm(async () => { btn.click(); await wait(); });
+      if (VA.ledgerState().pendingAcks || VA.ledgerState().acksToDelete) throw new Error('清除舊確認標記後，記憶體中等待轉換的也要清掉');
+      await VA.advanceLedger(App.Q);
+      const lg = await S.store.get('ledger');
+      if (lg && lg.items[fk] && lg.items[fk].history.some((x) => x.by === 'user')) throw new Error('清除的舊確認標記不可在下一份基準被轉換回來');
+      // 還原含 acks 的備份（沒有處理紀錄時）：和啟動時一樣等第一份基準再轉換
+      await S.store.del('ledger');
+      await restore('acks.json', { schema: 'ssot-localdata/1', items: { acks: { [fk]: { at: '2025-01-02T00:00:00.000Z' } } } });
+      if (!VA.ledgerState().pendingAcks && !(VA.ledger().items[fk] && VA.ledger().items[fk].history.length)) throw new Error('還原舊確認標記後應等待或完成轉換');
+    } finally { await S.store.del('acks'); await S.store.set('ledger', ledger0); await VA.loadLedger(); }
+    // 3. 命名規則：還原與清除後 S.profiles、命名規則分類與建立基準對話框都即時更新
+    const builtinId = VP.builtinIds()[0]; const builtin = S.profiles[builtinId]; // 內容與內建的相同即可（之前的步驟可能載入過同 id 的複本）
+    const mine = { schema: 'ssot-profile/1', id: 'restored-naming', version: '1', label: '還原的', classify: [] };
+    const over = Object.assign({}, builtin, { label: '蓋過內建' });
+    App.openSettings('profiles'); await wait(); // 已合併過一次
+    await restore('profiles.json', { schema: 'ssot-localdata/1', items: { profiles: { [mine.id]: mine, [builtinId]: over } } });
+    if (!S.profiles[mine.id] || S.profiles[builtinId].label !== '蓋過內建') throw new Error('還原命名規則後 S.profiles 應即時更新');
+    App.openSettings('profiles'); await wait();
+    const rowIds = (src) => { const t = $('#settings-panel').testAll('table').find((x) => x.dataset.source === src); return t ? t.testAll('tr').filter((r) => r.dataset.profile).map((r) => r.dataset.profile) : []; };
+    if (!rowIds('saved').includes(mine.id)) throw new Error('還原後命名規則分類應列出備份裡的規則：' + rowIds('saved'));
+    App.openSettings('data'); await SD.refresh();
+    const pbtn = $('#settings-panel').testAll('button').find((b) => b.getAttribute('data-store-key') === 'profiles' && b.classList.contains('settings-clear'));
+    await withConfirm(async () => { pbtn.click(); await wait(); });
+    if (S.profiles[mine.id] || !S.profiles[builtinId] || S.profiles[builtinId].label === '蓋過內建') throw new Error('清除命名規則後應從 S.profiles 移除，內建的恢復');
+    App.openSettings('profiles'); await wait();
+    if (!rowIds('builtin').includes(builtinId) || rowIds('saved').length) throw new Error('清除後命名規則分類應只剩內建的：' + rowIds('saved'));
+    VA.closeSettings(); await App.openInput();
+    const opts = $('#input-profile').testAll('option').map((o) => o.getAttribute('value'));
+    $('#dlg-input').close();
+    if (opts.includes(mine.id) || !opts.includes(builtinId)) throw new Error('建立基準對話框的清單應跟著更新：' + opts);
+    // 文件連結與說明頁同一個做法（V.settings.docLink，連到 GitHub 上的 main）
+    App.openSettings('profiles'); await wait();
+    const dl = $('#settings-panel').testAll('a').find((a) => a.classList.contains('doc-link') && decodeURI(a.getAttribute('href')).endsWith('/blob/main/docs/命名規則.md'));
+    if (!dl) throw new Error('命名規則分類的文件連結應以 V.settings.docLink 產生（doc-link）');
+    // 5. 清單：一次重繪只讀一次 inventory；資料沒變時不重讀
+    App.openSettings('data'); await SD.refresh(); await wait();
+    const inv0 = S.store.inventory; let calls = 0; S.store.inventory = (...a) => { calls++; return inv0.apply(S.store, a); };
+    try {
+      VA.renderSettings(); await SD.refresh(); await wait();
+      if (calls > 0) throw new Error('資料沒變時重繪不應重讀清單：' + calls);
+      await S.store.set('layout', { left: 301, right: 401 }); VA.renderSettings(); await SD.refresh(); await wait();
+      if (calls !== 1) throw new Error('資料改變後重繪應只讀一次清單：' + calls);
+      if (!text('#settings-panel').includes('欄寬')) throw new Error('清單應照常顯示');
+    } finally { S.store.inventory = inv0; await S.store.set('layout', JSON.parse(layout0 || 'null') || { left: 330, right: 400 }); }
+    VA.closeSettings();
+  });
   await step('清除基準（處理紀錄不受影響）；沒有基準時「修正」、「驗證」停用，中間只有拓樸圖（歡迎畫面）', async () => {
     App.showView('patch');
-    $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20)); if (App.snap) throw new Error('未清除');
+    // 入口在設定「本機資料」，先確認：取消時什麼都不清
+    { const asked = []; const c0 = window.confirm; window.confirm = (m) => { asked.push(m); return false; };
+      try { App.openSettings('data'); $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20)); } finally { window.confirm = c0; }
+      if (asked.length !== 1 || !/清除/.test(asked[0]) || !App.snap) throw new Error('「清除基準…」應先確認，取消時不清除');
+      if (!$('#btn-clear').classList.contains('danger')) throw new Error('「清除基準…」應以 .danger 標示');
+      S.view.app.closeSettings(); }
+    await clearBaseline(); if (App.snap) throw new Error('未清除');
+    App.openSettings('data');
+    if ($('#btn-clear').getAttribute('disabled') === null ||!text('#settings-panel').includes('目前沒有基準')) throw new Error('沒有基準時「清除基準…」應停用並說明');
+    S.view.app.closeSettings();
     if (App.step !== 'triage' || App.centerView !== 'graph' || !$('#view-patch').classList.contains('hidden') || $('#view-graph').inert) throw new Error('清除基準後應回到「研判」的拓樸圖');
     if (!['fix', 'verify'].every((s) => stepBtn(s).getAttribute('aria-disabled') === 'true') || ['input', 'view', 'triage'].some((s) => stepBtn(s).getAttribute('aria-disabled') !== 'false')) throw new Error('沒有基準時只有「修正」、「驗證」停用（aria-disabled，仍可聚焦）');
     if (!stepBtn('input').textContent.includes('未載入') || !stepBtn('fix').textContent.includes('建立基準後')) throw new Error('沒有基準時步驟的狀態應說明：' + text('#steps'));
@@ -5848,12 +6336,12 @@ function viewBoundaryViolations(file, src) {
     await S.store.set('last', { snapshot: old, sources, profile: null });
     await App.restore();
     if (!App.snap || App.snap.meta.schema !== S.SCHEMA) throw new Error('舊 schema 應以儲存的輸入重建');
-    $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20));
+    await clearBaseline();
     await S.store.set('last', { snapshot: old, sources: [], profile: null });
     await App.restore();
     if (App.snap) throw new Error('沒有輸入時不應載入不相容的基準');
     if (!document.body.textContent.includes('已不相容')) throw new Error('應提示上次的基準格式不相容');
-    $('#btn-clear').click(); await new Promise((r) => setTimeout(r, 20));
+    await clearBaseline();
   });
   console.log(steps.join('\n'));
   setTimeout(() => process.exit(process.exitCode || 0), 10);

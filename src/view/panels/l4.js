@@ -66,7 +66,11 @@
   // zone id → zone：依 Q.zones() 回傳的陣列（查詢層快取，同一份基準是同一個陣列）建一次
   const zoneIdx = new WeakMap();
   const zoneIndex = (Q) => { const zs = Q.zones(zo()).zones; let m = zoneIdx.get(zs); if (!m) { m = new Map(zs.map((z) => [z.id, z])); zoneIdx.set(zs, m); } return m; };
-  const zoneName = (Q, id) => { if (id == null) return '（不在任何 zone）'; const z = zoneIndex(Q).get(id); return z ? z.name : id; };
+  // 虛擬 zone（外部、網路設備（管理））只在 Q.zoneMatrix 的 zones，不在 Q.zones
+  const zoneById = (Q, id) => zoneIndex(Q).get(id) || (st.mx && st.mx.zones.find((z) => z.id === id)) || null;
+  const zoneName = (Q, id) => { if (id == null) return '（不在任何 zone）'; const z = zoneById(Q, id); return z ? z.name : id; };
+  /** 狀態文字：有確定的結果又有無法判斷的組合時接上「部分無法判斷」 */
+  const statusText = (x) => V.L4_STATUS[x.status] + (x.incomplete ? `（${V.L4_INCOMPLETE}）` : '');
   const statusMark = (status, extra) => {
     const s = TH().status[status] || TH().status.unknown;
     return h('span', Object.assign({ class: 'l4-glyph', 'aria-hidden': 'true', style: { color: s.mark } }, extra || {}), s.glyph);
@@ -89,7 +93,8 @@
   function decisiveText(Q, x) {
     if (!x) return '';
     const r = x.rule && x.rule.position != null ? x.rule : x.position != null ? x : null;
-    if (r) return `${Q.devName(r.dev)} ${r.table} ${r.chain} 第 ${r.position} 條 ${r.action}${r.comment ? `（${r.comment}）` : ''}`;
+    // position 是 chain 內的序號（從 1 起算），不是 print 的編號
+    if (r) return `${Q.devName(r.dev)} ${r.table} ${r.chain} chain 內第 ${r.position} 條 ${r.action}${r.comment ? `（${r.comment}）` : ''}`;
     if (x.route) return `${Q.devName(x.dev)}：${V.reachReason(x.route)}`;
     if (x.policy) return `${Q.devName(x.dev)} ${x.table} ${x.chain} 沒有規則決定，chain 結尾預設${x.verdict === 'accept' ? '放行' : x.verdict}`;
     return x.key || x.id || '';
@@ -110,7 +115,7 @@
   /** 格子的完整說明（aria-label 與提示共用） */
   function cellText(Q, c) {
     const k = c.counts;
-    return `${zoneName(Q, c.src)} → ${zoneName(Q, c.dst)}${c.diagonal ? '（zone 內）' : ''}：${V.L4_STATUS[c.status]}。`
+    return `${zoneName(Q, c.src)} → ${zoneName(Q, c.dst)}${c.diagonal ? '（zone 內）' : ''}：${statusText(c)}。`
       + (k.total ? `${countsText(k, '、')}，共 ${V.num(k.total)} 組（位址 × 服務）` : V.L4_STATUS_TIP.empty)
       + (c.heterogeneous ? '；結果不一：同一個 zone 的成員結果不一致' : '')
       + (c.rule ? `；代表規則：${decisiveText(Q, c.rule)}${c.ruleCount > 1 ? `（另有 ${c.ruleCount - 1} 條）` : ''}` : '')
@@ -343,6 +348,8 @@
     const tooBig = mx.zones.length > MATRIX_MAX;
     if (tooBig) box.appendChild(h('p', { class: 'muted' }, `zone 有 ${V.num(mx.zones.length)} 個（超過 ${MATRIX_MAX} 個），只用表格檢視。`));
     const srcZones = rowZones(mx);
+    // 矩陣只算 IPv4：有設備在用 IPv6（推論）時提示，避免把「全部拒絕」誤讀成安全
+    if (mx.ipv6 && mx.ipv6.length) box.appendChild(h('p', { class: 'muted l4-ipv6-note' }, `IPv6 未納入：${mx.ipv6.map((x) => App.Q.devName(x.dev)).join('、')} 有使用 IPv6（推論），IPv6 的防火牆見基準檢查的 F05／F07。`));
     if (st.vrf) box.appendChild(h('p', { class: 'muted l4-vrf-note' }, `只列來源在 ${V.vrfText(st.vrf)} 的 zone（${V.num(srcZones.length)} 個）；目的保留全部的 zone，跨 VRF 的格子（路由洩漏）照樣看得到。`));
     if (st.mode === 'table' || tooBig) { box.appendChild(matrixTable(App, mx)); return; }
     const byKey = new Map(mx.cells.map((c) => [c.src + '\u0000' + c.dst, c]));
@@ -378,6 +385,7 @@
     }, [
       statusMark(c.status),
       h('span', { class: 'l4-lab' }, V.L4_STATUS[c.status]),
+      c.incomplete ? h('span', { class: 'l4-inc', title: V.L4_INCOMPLETE }, '＋?') : null,
       c.counts.total ? h('span', { class: 'l4-cnt' }, `${V.num(c.counts.allow)}/${V.num(c.counts.total)}`) : null,
       c.heterogeneous ? hetBadge() : null,
     ]);
@@ -416,7 +424,7 @@
   /** 提示：狀態、筆數、異質、代表規則與無法判斷的原因（和格子的 aria-label 相同的內容，分行顯示） */
   function showTip(App, c, td, ev) {
     const Q = App.Q; const k = c.counts; const tip = V.clear(els.tip);
-    tip.appendChild(h('div', { class: 'l4-tip-head' }, [statusMark(c.status), ` ${zoneName(Q, c.src)} → ${zoneName(Q, c.dst)}${c.diagonal ? '（zone 內）' : ''}：${V.L4_STATUS[c.status]}`]));
+    tip.appendChild(h('div', { class: 'l4-tip-head' }, [statusMark(c.status), ` ${zoneName(Q, c.src)} → ${zoneName(Q, c.dst)}${c.diagonal ? '（zone 內）' : ''}：${statusText(c)}`]));
     tip.appendChild(h('div', null, k.total ? `${countsText(k)}（共 ${V.num(k.total)} 組位址 × 服務）` : V.L4_STATUS_TIP.empty));
     if (c.heterogeneous) tip.appendChild(h('div', null, '≠ 結果不一：同一個 zone 的成員結果不一致'));
     if (c.rule) tip.appendChild(h('div', null, `代表規則：${decisiveText(Q, c.rule)}${c.ruleCount > 1 ? `（共 ${V.num(c.ruleCount)} 條規則或預設）` : ''}`));
@@ -431,18 +439,19 @@
   function hideTip() { if (els) els.tip.classList.add('hidden'); }
 
   /** 矩陣的列（來源 zone）：有 VRF 篩選時只取來源在那個 VRF 的 zone；欄（目的 zone）一律是全部 */
-  const rowZones = (mx) => (st.vrf ? mx.zones.filter((z) => z.vrf === st.vrf) : mx.zones);
+  // 只當目的的虛擬 zone（網路設備（管理））不當列；外部（vrf main）照 VRF 篩選
+  const rowZones = (mx) => mx.zones.filter((z) => !z.dstOnly && (!st.vrf || z.vrf === st.vrf));
   /** 格子：VRF 篩選時只取來源 zone 在那個 VRF 的格子（表格檢視與 CSV 共用） */
   const shownCells = (mx) => { if (!st.vrf) return mx.cells; const ids = new Set(rowZones(mx).map((z) => z.id)); return mx.cells.filter((c) => ids.has(c.src)); };
   /** zone 的 VRF（zone 矩陣有兩個以上的 VRF 時，表格與 CSV 多兩欄） */
-  const zoneVrf = (Q, id) => { const z = zoneIndex(Q).get(id); return z ? z.vrf : ''; };
+  const zoneVrf = (Q, id) => { const z = zoneById(Q, id); return z && z.vrf ? z.vrf : ''; };
   /** 表格檢視：每一格一列（和矩陣同一份 Q.zoneMatrix 的結果），可排序，點一列往下看 */
   function matrixTable(App, mx) {
     const Q = App.Q; const mv = (mx.vrfs || []).length > 1;
     return h('div', { class: 'l4-table' }, V.table([
       { t: '來源 zone', f: (c) => zoneName(Q, c.src), s: (c) => zoneName(Q, c.src) },
       { t: '目的 zone', f: (c) => h('span', null, [zoneName(Q, c.dst), c.diagonal ? h('span', { class: 'muted' }, '（zone 內）') : null]), s: (c) => zoneName(Q, c.dst) },
-      { t: '狀態', f: (c) => h('span', { class: 'l4-row-status', 'data-status': c.status }, [statusTag(c.status), c.heterogeneous ? hetBadge() : null]), s: (c) => c.status },
+      { t: '狀態', f: (c) => h('span', { class: 'l4-row-status', 'data-status': c.status }, [statusTag(c.status, statusText(c)), c.heterogeneous ? hetBadge() : null]), s: (c) => c.status },
       { t: V.L4_STATUS.allow, f: (c) => V.num(c.counts.allow), s: (c) => c.counts.allow, cls: 'num' },
       { t: V.L4_STATUS.deny, f: (c) => V.num(c.counts.deny), s: (c) => c.counts.deny, cls: 'num' },
       { t: V.L4_STATUS.unknown, f: (c) => V.num(c.counts.unknown), s: (c) => c.counts.unknown, cls: 'num' },
@@ -458,7 +467,7 @@
     const mx = st.current; if (!mx) { V.app.banner('zone 矩陣還在計算，完成後再下載。', 4000); return; }
     const Q = App.Q; const C = V.exporter.csvCell; const mv = (mx.vrfs || []).length > 1;
     const head = ['來源 zone', '目的 zone', 'zone 內', '狀態', '結果不一', V.L4_STATUS.allow, V.L4_STATUS.deny, V.L4_STATUS.unknown, '總數', '代表規則', '無法判斷的原因'].concat(mv ? ['來源 VRF', '目的 VRF'] : []);
-    const rows = shownCells(mx).map((c) => [zoneName(Q, c.src), zoneName(Q, c.dst), c.diagonal ? '是' : '', V.L4_STATUS[c.status], c.heterogeneous ? '是' : '',
+    const rows = shownCells(mx).map((c) => [zoneName(Q, c.src), zoneName(Q, c.dst), c.diagonal ? '是' : '', statusText(c), c.heterogeneous ? '是' : '',
       c.counts.allow, c.counts.deny, c.counts.unknown, c.counts.total, c.rule ? decisiveText(Q, c.rule) : '', c.reasons.map((x) => `${V.reachReason(x.code)}（${x.count}）`).join('、')].concat(mv ? [zoneVrf(Q, c.src), zoneVrf(Q, c.dst)] : []));
     const text = '﻿' + [head].concat(rows).map((r) => r.map(C).join(',')).join('\r\n') + '\r\n';
     V.exporter.download(`l4-matrix-${V.exporter.baseName(Q)}${st.service ? '-' + st.service.replace('/', '-') : ''}${st.vrf ? '-vrf-' + st.vrf.replace(/[^\w.-]/g, '_') : ''}.csv`, text, 'text/csv;charset=utf-8');
@@ -620,7 +629,7 @@
             onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); openGroup(App, i, s.service); },
           }, [statusMark(s.verdict), ` ${s.service} ${V.L4_STATUS[s.verdict]}`, s.final && (s.final.dst !== g.dst.ip || s.final.port !== svcOf(s.service).port) ? ` → ${s.final.dst}${s.final.port != null ? ':' + s.final.port : ''}` : '', dv ? divMark() : null]);
         })) },
-        { t: '狀態', f: ({ g }) => statusTag(g.status), s: ({ g }) => g.status },
+        { t: '狀態', f: ({ g }) => statusTag(g.status, statusText(g)), s: ({ g }) => g.status },
       ].concat(het ? [{ t: '造成差異的服務', f: ({ g }) => (g.divergent ? h('span', { class: 'l4-div-svcs' }, ['≠ ', h('span', { class: 'mono' }, g.divergentServices.join('、'))]) : '—'), s: ({ g }) => g.divergentServices.length }] : [], [
         { t: '閘道／入口', f: ({ g }) => g.srcDevices.map((x) => (x.includes('|') ? Q.epName(x) : Q.devName(x))).join('、') || '—' },
       ]), rows, { onRow: ({ i }) => openGroup(App, i), limit: ROW_LIMIT, rowClass: ({ g }) => 'l4-group st-' + g.status + (g.divergent ? ' div' : '') }) : h('p', { class: 'muted' }, '這一格沒有可算的位址組合。'),
@@ -699,10 +708,11 @@
         hp.stages.length ? h('ul', { class: 'l4-stages' }, hp.stages.map((sg) => h('li', { 'data-status': sg.status }, [
           h('span', { class: 'mono' }, `${sg.table} ${sg.chain}`), '：',
           sg.status === 'decided' ? (sg.rule ? ruleLink(App, sg.rule) : (sg.note || '').replace(/^[^：]*：/, '')) : `無法判斷（可能 ${S.util.uniq(sg.outcomes.map((o) => o.verdict)).join('／')}）`,
-          sg.status === 'decided' && sg.verdict ? h('span', { class: 'muted' }, `　→ ${sg.verdict}`) : null,
+          sg.status === 'decided' && sg.verdict ? h('span', { class: 'muted' }, `　→ ${V.L4_VERDICT[sg.verdict] || sg.verdict}`) : null,
           sg.via.length ? h('span', { class: 'muted' }, ['　經由 ', ...sg.via.flatMap((x, k) => [k ? '、' : '', ruleLink(App, x)])]) : null,
         ]))) : null,
         hp.nat.length ? h('ul', { class: 'l4-nat' }, hp.nat.map((x) => h('li', null, [h('b', null, `${x.dir === 'dst' ? '目的' : '來源'} NAT（${x.type}）`), `：${x.before == null ? '不明' : x.before} → ${x.after == null ? '不明' : x.after}　`, ruleLink(App, x.rule)]))) : null,
+        hp.conntrack === 'untracked' ? h('div', { class: 'muted l4-ct' }, V.L4_CONNTRACK.untracked) : null,
         hp.service ? h('div', { class: 'muted' }, `設備的服務 ${hp.service.name}（埠 ${hp.service.port}）：${hp.service.enabled ? (hp.service.accepts === false ? '來源不在允許的位址內' : hp.service.accepts == null ? '來源位址不明' : '接受') : '停用'}`) : null,
         hp.reasons.length ? h('ul', { class: 'l4-reasons' }, hp.reasons.map((x) => reasonItem(App, x))) : null,
       ]))),

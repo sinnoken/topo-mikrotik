@@ -216,7 +216,7 @@
   // 結構（外形、線寬、虛線、透明度、字型、尺寸）只寫在上面一次；顏色另成兩組形狀相同的配色（palettes.light／dark），
   // 葉節點路徑與 V.theme 相同。亮色就是上面寫的值；暗色是亮色複本套上 DARK 覆寫表。
   // apply(mode) 原地改寫 V.theme 的顏色葉節點、不換掉任何物件：canvas.js 等檔案在載入時把子物件存成常數，換物件會讓它們停在舊值。
-  // 用哪一組由畫面決定（app-toolbar.js：「⋯」選單的配色偏好，跟隨系統時監聽 prefers-color-scheme）；PNG 匯出固定用亮色。
+  // 用哪一組由畫面決定（app-toolbar.js：設定「一般」的配色偏好，跟隨系統時監聽 prefers-color-scheme）；PNG 匯出固定用亮色。
   const COLOR = /^(#[0-9a-f]{3,8}|rgba?\([^)]*\))$/i;
   /** 取出物件樹中所有顏色字串，保留相同的路徑（陣列保留索引）；沒有顏色的分支不列入 */
   function colorsOf(o) {

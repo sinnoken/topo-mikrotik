@@ -51,3 +51,44 @@ test('附帶的 JSON 命名規則範例可載入，分隔符號 _ 與 - 一致�
     ['B1F_wAP_02', { role: 'AP', group: 'B1F', label: 'wAP_02' }], ['3F_CRS326', { group: '3F', label: 'CRS326' }]]
     .forEach(([n, want]) => assert.deepStrictEqual(at(n), want, n));
 });
+// ------------------------------------------------------------------ 套用結果（設定畫面的「命名規則」）：只讀 Q，不改寫基準
+test('命名規則套用結果：對上台數、沒對上的名稱與各欄位分布；可重現、不改寫基準', () => {
+  const prof = { id: 'cov', version: '3', classify: [{ match: '_FW_', kind: 'firewall', role: 'FW' }, { match: '^([A-Z]+)_SW_', role: 'SW', site: '$1' }],
+    group: { match: '^([A-Z]+)_', value: '$1' }, alias: { 'OLD-SW': 'TPE_SW_09' }, stripDomain: true };
+  const text = 'TPE_SW_01 (10.0.0.1):\n### /ip neighbor print detail\n'
+    + ' 0 interface=ether1 mac-address=AA:00:00:00:00:01 identity=TPE_FW_01.corp.local interface-name=port1\n'
+    + ' 1 interface=ether2 mac-address=AA:00:00:00:00:02 identity=old-sw interface-name=x\n'
+    + ' 2 interface=ether3 mac-address=AA:00:00:00:00:03 identity=lab-box interface-name=y\n';
+  const snap = build(text); const Q = S.query(snap); const before = JSON.stringify(snap);
+  const c = S.profile.coverage(prof, Q);
+  assert.strictEqual(JSON.stringify(snap), before, '統計不可改寫基準');
+  assert.deepStrictEqual(c, S.profile.coverage(JSON.parse(JSON.stringify(prof)), S.query(build(text))), '相同輸入得到相同結果');
+  assert.strictEqual(c.total, 4); assert.strictEqual(c.matched, 3);
+  assert.deepStrictEqual(c.collected, { total: 1, matched: 1 });
+  // 名稱先經這份規則的 alias／stripDomain（canon），再比對；沒對上的列出基準中的名稱
+  assert.deepStrictEqual(c.unmatched, [{ key: 'LAB-BOX', name: 'lab-box', collected: false }]);
+  assert.deepStrictEqual(c.renamed.map((r) => [r.name, r.canon]), [['old-sw', 'TPE_SW_09'], ['TPE_FW_01.corp.local', 'TPE_FW_01']].sort((a, b) => S.util.natural(a[0], b[0])));
+  assert.deepStrictEqual(c.fields.kind, [{ value: 'firewall', count: 1 }]);
+  assert.deepStrictEqual(c.fields.group, [{ value: 'TPE', count: 3 }]);
+  assert.deepStrictEqual(c.fields.site, [{ value: 'TPE', count: 2 }]);
+  assert.deepStrictEqual(c.fields.role, [{ value: 'SW', count: 2 }, { value: 'FW', count: 1 }], '依台數多到少，同數依名稱');
+  assert.deepStrictEqual(c.fields.label, []);
+  assert.strictEqual(c.applied, false, '建立基準時沒有套用這份規則');
+  // 用這份規則建立的基準：applied 為 true；同 id 但內容不同：false
+  const s2 = build(text, { profile: prof });
+  assert.strictEqual(S.profile.coverage(prof, S.query(s2)).applied, true);
+  assert.strictEqual(S.profile.coverage(Object.assign({}, prof, { stripDomain: false }), S.query(s2)).applied, false);
+  // 編譯後的物件也有同一個函式（畫面只用 S.profile.compile）
+  assert.deepStrictEqual(S.profile.compile(prof).coverage(Q), c);
+  assert.throws(() => S.profile.coverage({ classify: [] }, Q), /缺少 id/, '規則有錯時丟出 compile 的錯誤');
+  assert.throws(() => S.profile.coverage(prof, null), TypeError, '沒有基準時明確丟錯');
+});
+test('命名規則的說明：有 description 用它，沒有時依規則內容推出一句', () => {
+  assert.strictEqual(S.profile.describe({ id: 'x', description: '我的規則' }), '我的規則');
+  assert.strictEqual(S.profile.describe({ id: 'x', classify: [{ match: 'a' }, { match: 'b' }], group: { match: '^(.)' }, alias: { A: 'B' }, stripDomain: true }),
+    '去掉網域、別名 1 個、分類規則 2 條、分群');
+  assert.strictEqual(S.profile.describe({ id: 'x', zones: [{ on: 'vlan', match: '1', zone: 'Z' }], label: { match: '(.*)' } }), '顯示名稱、zone 標籤 1 條');
+  assert.strictEqual(S.profile.describe({ id: 'x' }), '沒有任何規則（只記錄 id）');
+  assert.strictEqual(S.profile.describe({ id: 'x', label: '名稱', group: { match: '(.)' } }), '分群', '字串的 label 是名稱，不是顯示名稱規則');
+  assert.strictEqual(S.profile.compile({ id: 'x', description: 'd' }).describe(), 'd');
+});

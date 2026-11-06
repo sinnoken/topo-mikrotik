@@ -91,9 +91,15 @@ test('Q.reach：無法判斷時回傳 unknown 與原因（address-list、未收�
   const r3 = Q.reach('192.168.1.50', '192.168.3.9', { proto: 'tcp', port: 443, disabledRules: [s.model.firewallRules[0].key] });
   assert.ok(codes(r3).includes('no-firewall-data'), JSON.stringify(r3.reasons));
   assert.strictEqual(r3.verdict, 'unknown');
-  // 下一跳在基準外
+  // 經 WAN 送往基準以外：路徑以 egress-wan 結束（不再是 next-hop-outside）；仍是 unknown，因為 R1 的 drop src-address-list=BLOCKED 不明
   const out = Q.reach('192.168.2.10', '8.8.8.8', { proto: 'tcp', port: 443 });
-  assert.deepStrictEqual([out.verdict, codes(out).includes('next-hop-outside')], ['unknown', true]);
+  assert.deepStrictEqual([out.verdict, codes(out).includes('next-hop-outside'), out.paths[0].end.code, codes(out)], ['unknown', false, 'egress-wan', ['rule-condition']]);
+  // 下一跳在基準外、但出介面不在 WAN 清單：仍是 next-hop-outside
+  const noWan = S.query(build(['R9 (10.9.0.1):', '### /export terse', '/ip address add address=10.9.0.1/24 interface=ether2 network=10.9.0.0',
+    '/ip address add address=10.8.0.2/30 interface=ether1 network=10.8.0.0', '### /ip route print detail without-paging', RT,
+    ' DAc dst-address=10.9.0.0/24 routing-table=main gateway=ether2 distance=0', ' As dst-address=0.0.0.0/0 routing-table=main gateway=10.8.0.1 distance=1'].join('\n')));
+  const lan = noWan.reach('10.9.0.50', '8.8.8.8', { proto: 'tcp', port: 443 });
+  assert.deepStrictEqual([lan.verdict, lan.paths[0].end.code], ['unknown', 'next-hop-outside'], '沒有 WAN 清單時不當成外部');
   const hop = out.paths[0].hops.find((h) => h.dev === 'R1');
   assert.deepStrictEqual([hop.nat[0].type, hop.srcOut], ['masquerade', '198.51.100.2'], 'masquerade 改寫來源為出介面的位址');
   // dst-nat 的 to-addresses 是範圍
@@ -131,8 +137,9 @@ test('Q.reach（範例資料）：WAN 經 dst-nat 連到伺服器、沒有 NAT �
   const direct = Q.reach('203.0.113.1', '10.1.20.11', { proto: 'tcp', port: 443 });
   assert.strictEqual(direct.verdict, 'deny');
   assert.strictEqual(direct.decisive[0].comment, 'defconf: drop all from WAN not DSTNATed');
+  // 經核心的 WAN 介面送往基準以外：允許（egress-wan，之後由電信業者決定）
   const internet = Q.reach('10.1.30.11', '8.8.8.8', { proto: 'tcp', port: 443 });
-  assert.deepStrictEqual([internet.verdict, codes(internet).includes('next-hop-outside')], ['unknown', true]);
+  assert.deepStrictEqual([internet.verdict, S.util.uniq(internet.paths.map((p) => p.end.code))], ['allow', ['egress-wan']]);
   assert.strictEqual(internet.start.basis, 'dhcp', 'VLAN 30 的閘道取自 DHCP 網路設定（兩台核心）');
   const css = Q.reach('10.1.30.11', '10.1.10.210', { proto: 'tcp', port: 22 });
   assert.deepStrictEqual([css.verdict, codes(css)], ['unknown', ['dst-device-uncollected']]);
@@ -181,7 +188,9 @@ test('zone 矩陣：L0 的格子狀態與代表規則；L1／L2 下鑽；相同�
   const s = sampleSnap(); const before = JSON.stringify(s);
   const Q = S.query(s);
   const mx = Q.zoneMatrix();
-  assert.strictEqual(mx.cells.length, mx.zones.length ** 2);
+  // 列是來源（不含只當目的的「網路設備（管理）」），欄是全部的 zone（含虛擬 zone）
+  assert.strictEqual(mx.cells.length, mx.zones.filter((z) => !z.dstOnly).length * mx.zones.length);
+  assert.deepStrictEqual(mx.zones.filter((z) => z.virtual).map((z) => [z.id, z.dstOnly, z.inferred]), [['external', false, true], ['self', true, true]]);
   const cell = (a, b) => mx.cells.find((c) => c.src === a && c.dst === b);
   const wanSrv = cell('list:WAN', 'vlan:20');
   assert.strictEqual(wanSrv.status, 'partial', 'WAN → VLAN 20：只有 dst-nat 的 tcp/8443 放行');

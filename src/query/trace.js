@@ -256,7 +256,14 @@
   const SERVICES = deepFreeze([
     { proto: 'icmp', port: null }, { proto: 'tcp', port: 22 }, { proto: 'tcp', port: 80 }, { proto: 'tcp', port: 443 },
     { proto: 'tcp', port: 3389 }, { proto: 'tcp', port: 8291 }, { proto: 'udp', port: 53 },
+    // RouterOS 自己的管理服務（/ip service 的預設埠，https://manual.mikrotik.com/docs/cli-reference/ip/service.md），配合「網路設備（管理）」的目的
+    { proto: 'tcp', port: 21 }, { proto: 'tcp', port: 23 }, { proto: 'tcp', port: 8728 }, { proto: 'tcp', port: 8729 },
   ]);
+  /** 矩陣的虛擬 zone（推論）：外部（基準以外、經 WAN 介面）與網路設備本身（只當目的，走 input）。 */
+  const EXTERNAL_ZONE = 'external';
+  const SELF_ZONE = 'self';
+  /** 外部的代表位址：文件保留位址（RFC 5737 的 TEST-NET-1／2／3），取第一個不在基準網段內的；只代表與它同一個規則位址區段的公網位址。 */
+  const EXTERNAL_CANDIDATES = Object.freeze(['192.0.2.10', '198.51.100.10', '203.0.113.10']);
   const svcId = (s) => s.proto + (s.port != null ? '/' + s.port : '');
   /** zone 的來源，依優先順序（同一個網段取第一個有結果的來源）。 */
   const ZONE_SOURCES = Object.freeze(['profile', 'interface-list', 'vlan', 'subnet']);
@@ -270,6 +277,11 @@
     { code: 'ipv4-vrf', message: '只算 IPv4（RouterOS 7）；封包依入介面所屬的 VRF 查那個 VRF 的路由表，閘道指定了其他 VRF（@<VRF>）時在那個 VRF 解析（路由洩漏）' },
     { code: 'policy-routing', message: '策略路由：main 路由表的封包依路由規則（/routing rule）的順序決定查哪一張路由表，可判斷的條件是來源位址、目的位址與入介面（src-address、dst-address、interface）；有封包標記規則設定路由標記（mangle 的 mark-routing）、改過路由設定的策略規則（/routing settings 的 policy-rules），或條件無法判斷時，結果為不明，不假設查 main' },
     { code: 'src-port', message: '來源埠由用戶端自選，比對來源埠（src-port）的條件無法判斷' },
+    { code: 'untracked', message: '原始表規則不追蹤連線（raw 的 notrack）時，這台設備之後的規則以連線狀態「不追蹤」（connection-state=untracked）比對，也不套用位址轉換（nat）；是否不追蹤無法判斷時，兩種情況都算，結果不同就是不明' },
+    { code: 'ip-service', message: '目的是網路設備本身時，除了輸入規則（input），也看設備的管理服務（/ip service）：服務停用或來源不在允許的位址內（available-from）就是拒絕；服務所在的 VRF（vrf 參數）不在模型中，封包不在 main 時結果不明' },
+    { code: 'external', message: '外部是基準以外的位址（推論）：代表位址取文件保留位址（TEST-NET），從對外介面（WAN 清單的成員）進入；送往外部的封包從對外介面送出、下一跳不在基準內時就算允許，之後由電信業者決定' },
+    { code: 'static-only', message: '只看匯出設定（/export）裡的靜態規則；即插即用（UPnP、NAT-PMP）、熱點（hotspot）等功能產生的動態規則與動態位址清單不在範圍內' },
+    { code: 'bridge-ip-firewall', message: '同一個網段的流量視為不經過路由器的防火牆；橋接設定讓橋接流量也走防火牆（/interface bridge settings 的 use-ip-firewall）時，橋接流量也會經過過濾規則，這種情況不在範圍內' },
   ]);
   /**
    * Q.reach 的原因代碼與結束代碼（靜態清單，S.query.reachReasonCodes() 回傳）：
@@ -279,7 +291,7 @@
    */
   const REASON_CODES = deepFreeze([
     { code: 'rule-condition', kind: 'reason', note: '規則的比對條件無法判斷（keys 列出條件）' },
-    { code: 'raw-notrack', kind: 'reason', note: 'raw 規則 notrack，之後依連線狀態比對的規則結果不明' },
+    { code: 'raw-notrack', kind: 'reason', note: 'raw 規則是否 notrack 無法判斷，追蹤與不追蹤連線（untracked）的結果不同' },
     { code: 'no-firewall-data', kind: 'reason', note: '設備沒有 /export，防火牆規則不明' },
     { code: 'srcnat-ambiguous', kind: 'reason', note: 'srcnat 可能由不同的規則改寫' },
     { code: 'srcnat-address-unknown', kind: 'reason', note: 'srcnat 改寫後的來源位址不明' },
@@ -305,6 +317,10 @@
     { code: 'no-gateway', kind: 'end', note: '來源網段沒有可當閘道的已收集設備（不明）' },
     { code: 'policy-routing', kind: 'end', note: '策略路由（mangle mark-routing、改過的 policy-rules，或無法判斷的 /routing rule 條件）使查哪一張路由表不明（不明）' },
     { code: 'policy-drop', kind: 'end', note: '/routing rule 的 drop 或 unreachable（拒絕）' },
+    { code: 'service-refused', kind: 'end', note: '防火牆放行，但 /ip service 停用或 available-from 不含來源（拒絕）' },
+    { code: 'service-unknown', kind: 'end', note: '/ip service 是否接受這個來源無法判斷（來源經 NAT 後不明，或封包不在 main VRF）（不明）' },
+    { code: 'egress-wan', kind: 'end', note: '從 WAN 介面送往基準以外的位址，之後由電信業者決定（允許）' },
+    { code: 'hairpin-no-srcnat', kind: 'end', note: 'dst-nat 後的目的與來源在同一個網段，但沒有 srcnat 改寫來源（hairpin NAT），回應不經過路由器（不明）' },
   ]);
   const REASON_CODE_SET = new Set(REASON_CODES.map((x) => x.code));
   const checkCode = (code) => { if (!REASON_CODE_SET.has(code)) throw new Error(`原因代碼 ${code} 不在 REASON_CODES（src/query/trace.js）`); return code; };
@@ -337,6 +353,8 @@
     const odMemo = new Map();
     const ownerDev = (ip, vrf) => { const k = K.inVrf(ip, vrf); let d = odMemo.get(k); if (d === undefined) { const o = ownerOf(ip, vrf); d = o ? devOfEp(o) : null; odMemo.set(k, d); } return d; };
     const realEp = (ep) => (ep && !ep.endsWith('|') ? ep : undefined); // 管理 IP（「設備|」）沒有介面
+    /** 介面是不是這台設備 WAN 清單的成員（事實：/interface list member；清單名稱含 WAN 是推論，見 S.infer.fw）。 */
+    const isWanEp = (dev, ep) => { if (!ep || !devInfo(dev).config) return false; const c = I.ctxOf(dev); return !!(c && c.wan && c.wan.has(ep)); };
     const infoMemo = new Map();
     const devInfo = (d) => U.getOr(infoMemo, d, () => {
       const x = Q.getDevice(d);
@@ -350,7 +368,8 @@
     const refMemo = new Map();
     const ref = (r) => (r ? U.getOr(refMemo, r.key, () => ({ key: r.key, dev: r.dev, family: r.family, table: r.table, chain: r.chain, position: r.position,
       action: r.action, comment: r.comment, src: r.src.map((x) => x.slice()) })) : null);
-    const where = (r) => `${name(r.dev)} ${r.table} ${r.chain} 第 ${r.position} 條（${r.action}）`;
+    // position 是 chain 內從 1 起算的序號（不是 /ip firewall … print 的編號：print 依整張表從 0 起算，插入規則會改變）
+    const where = (r) => `${name(r.dev)} ${r.table} ${r.chain} chain 內第 ${r.position} 條（${r.action}）`;
 
     // ---- 位址等價類：規則的位址邊界把位址空間切成區段，同一區段內的位址對所有規則的位址條件結果相同（規格書 §7）
     let ruleB = null; let repB = null;
@@ -404,18 +423,20 @@
     const hasRules = (ctx, table, chain) => ctx.chain('ip', table, chain).length > 0;
     // 節點的鍵：來源是網路設備的位址時用實際位址（之後的設備判斷 src-address-type=local 要用），否則用等價類
     const srcKey = (ip, vrf) => { if (ip == null) return 'n'; const d = ownerDev(ip, vrf); return d && netDev(d) ? 'o' + ip : 'a' + ruleAtom(ip); };
-    function stage(dev, table, chain, st, inEp, outEp, natState, skip) {
+    // ct：這台設備的連線追蹤狀態，'new'（預設）或 'untracked'（raw 的 notrack 之後，手冊 Connection tracking）
+    function stage(dev, table, chain, st, inEp, outEp, natState, skip, ct) {
       const srcLocal = st.src != null && ownerDev(st.src, st.vrf) === dev; const dstLocal = ownerDev(st.dst, st.vrf) === dev;
+      const untracked = ct === 'untracked';
       // 位址只透過等價類與「是不是這台設備的」影響判斷，所以鍵用這兩者，不用實際位址
       const lv = level(level(level(level(level(stageMemo, skip ? skip.id : ''), dev), table + chain), inEp === undefined ? '' : inEp), outEp === undefined ? '' : outEp === null ? '-' : outEp);
-      const leaf = level(lv, svcNum(st) * 16 + (natState ? 8 : 0) + (srcLocal ? 4 : 0) + (dstLocal ? 2 : 0));
+      const leaf = level(lv, svcNum(st) * 32 + (untracked ? 16 : 0) + (natState ? 8 : 0) + (srcLocal ? 4 : 0) + (dstLocal ? 2 : 0));
       const key = (st.src == null ? 0 : ruleAtom(st.src) + 1) * 1e7 + ruleAtom(st.dst);
       return U.getOr(leaf, key, () => {
         const ctx = I.ctxOf(dev);
         const pkt = {
           family: 'ip', reach: true, in: inEp, out: outEp, protocol: st.proto, dstPort: st.port, srcPort: null,
           src: st.src == null ? null : BigInt(IP.toInt(st.src)), dst: BigInt(IP.toInt(st.dst)), srcLocal, dstLocal,
-          state: 'new', natState, ipsec: devInfo(dev).ipsec ? null : 'none',
+          state: untracked ? 'untracked' : 'new', natState, ipsec: devInfo(dev).ipsec ? null : 'none',
         };
         const d = F.decide(ctx, 'ip', table, chain, pkt, skip ? skip.set : null);
         const pub = {
@@ -425,7 +446,7 @@
           outcomes: d.outcomes.map((o) => ({ verdict: o.verdict, rule: ref(o.rule), policy: o.policy })),
         };
         pub.note = `${table} ${chain}：${!d.decided ? `可能 ${U.uniq(d.outcomes.map((o) => o.verdict)).join('／')}，無法判斷`
-          : d.rule ? `第 ${d.rule.position} 條 ${d.rule.action}${d.rule.comment ? `（${d.rule.comment}）` : ''}` : table === 'nat' ? '沒有 NAT 規則命中' : '沒有規則決定，預設放行'}`;
+          : d.rule ? `chain 內第 ${d.rule.position} 條 ${d.rule.action}${d.rule.comment ? `（${d.rule.comment}）` : ''}` : table === 'nat' ? '沒有 NAT 規則命中' : '沒有規則決定，預設放行'}`;
         return { pub, d };
       });
     }
@@ -494,12 +515,12 @@
     const newHop = (dev, inEp, st, chain) => ({
       dev, name: name(dev), vrf: st.vrf, collected: devInfo(dev).collected, firewall: devInfo(dev).config ? 'export' : 'none', chain, in: inEp === undefined ? null : inEp, inKnown: inEp !== undefined,
       out: null, outKnown: true, src: st.src, dst: st.dst, proto: st.proto, port: st.port, srcOut: st.src, dstOut: st.dst, portOut: st.port,
-      route: null, stages: [], nat: [], service: null, reasons: [], verdict: 'pass',
+      route: null, stages: [], nat: [], service: null, reasons: [], verdict: 'pass', conntrack: 'new',
     });
     const cloneHop = (b) => ({
       dev: b.dev, name: b.name, vrf: b.vrf, collected: b.collected, firewall: b.firewall, chain: b.chain, in: b.in, inKnown: b.inKnown, out: b.out, outKnown: b.outKnown,
       src: b.src, dst: b.dst, proto: b.proto, port: b.port, srcOut: b.srcOut, dstOut: b.dstOut, portOut: b.portOut,
-      route: b.route, stages: b.stages.slice(), nat: b.nat.slice(), service: b.service, reasons: b.reasons.slice(), verdict: b.verdict,
+      route: b.route, stages: b.stages.slice(), nat: b.nat.slice(), service: b.service, reasons: b.reasons.slice(), verdict: b.verdict, conntrack: b.conntrack,
     });
 
     /** 封包從 inEp（undefined＝不明）進入 dev。mode：'exact'（Q.reach，鍵用實際位址）或 'atom'（矩陣，鍵用等價類）。 */
@@ -534,47 +555,89 @@
         base.verdict = 'unknown';
         return stop(base, end('unknown', 'unknown', 'device-uncollected', dev, `${name(dev)} 沒有收集，不知道它的路由與防火牆`));
       }
+      if (!info.config) {
+        base.reasons.push(reason('no-firewall-data', dev, `${name(dev)} 沒有設定資料（/export），防火牆規則不明`));
+        return afterRaw(dev, base, inEp, st, depth, ctx, 'new');
+      }
+      const ctxF = I.ctxOf(dev);
+      if (!hasRules(ctxF, 'raw', 'prerouting')) return afterRaw(dev, base, inEp, st, depth, ctx, 'new');
+      const sg = stage(dev, 'raw', 'prerouting', st, inEp, undefined, null, ctx.skip, 'new');
+      base.stages.push(sg.pub);
+      if (sg.pub.status === 'decided' && sg.pub.verdict === 'drop') { base.verdict = 'deny'; return stop(base, end('dropped', 'deny', 'dropped', dev, sg.pub.note)); }
+      // notrack：連線不追蹤，之後的規則以 connection-state=untracked 比對，也不做 NAT（NAT 依賴連線追蹤；手冊 Connection tracking、Packet Flow）
+      if (sg.pub.status === 'decided') return afterRaw(dev, base, inEp, st, depth, ctx, sg.pub.verdict === 'notrack' ? 'untracked' : 'new');
+      const vs = U.uniq(sg.d.outcomes.map((o) => o.verdict));
+      const reasons = condReasons(dev, sg);
+      if (!vs.includes('notrack') || vs.includes('drop')) { base.reasons.push(...reasons); return afterRaw(dev, base, inEp, st, depth, ctx, 'new'); }
+      // 只差在是否 notrack：兩種狀態各算一次，結果相同就是確定的，不同就是不明（不讓其中一邊的「拒絕」蓋過另一邊）
+      const tracked = afterRaw(dev, cloneHop(base), inEp, st, depth, ctx, 'new');
+      const untracked = afterRaw(dev, cloneHop(base), inEp, st, depth, ctx, 'untracked');
+      const vt = combine(tracked.map(summary)); const vu = combine(untracked.map(summary));
+      if (vt === vu && vt !== 'unknown') return tracked;
+      const why = reason('raw-notrack', dev, `${name(dev)} raw prerouting 是否不追蹤連線（notrack）無法判斷：追蹤時${V_TEXT[vt]}、不追蹤時${V_TEXT[vu]}`, { rule: (sg.pub.uncertain.find((u) => u.verdicts.includes('notrack')) || {}).rule || null });
+      tracked.forEach((n) => { n.hop.reasons.push(...reasons, why); n.hop.verdict = 'unknown'; n.hop.pinned = true; sumMemo.delete(n); });
+      return tracked;
+    }
+    const V_TEXT = { allow: '允許', deny: '拒絕', unknown: '無法判斷' };
+    /** raw prerouting 之後：dstnat（不追蹤時略過）→ 送給自己（input）或轉送（forward）。ct 是這台設備的連線追蹤狀態。 */
+    function afterRaw(dev, base, inEp, st, depth, ctx, ct) {
+      const info = devInfo(dev);
+      const stop = (hop, e) => [{ hop, next: null, end: e }];
       let cur = st; let natState = null;
-      if (info.config) {
-        const ctxF = I.ctxOf(dev);
-        if (hasRules(ctxF, 'raw', 'prerouting')) {
-          const sg = stage(dev, 'raw', 'prerouting', cur, inEp, undefined, null, ctx.skip);
-          base.stages.push(sg.pub);
-          if (sg.pub.status === 'decided' && sg.pub.verdict === 'drop') { base.verdict = 'deny'; return stop(base, end('dropped', 'deny', 'dropped', dev, sg.pub.note)); }
-          if (sg.pub.status === 'decided' && sg.pub.verdict === 'notrack') base.reasons.push(reason('raw-notrack', dev, `${where(sg.d.rule)} 不追蹤連線（notrack），之後以 connection-state 比對的規則結果不明`, { rule: sg.pub.rule }));
+      base.conntrack = ct;
+      if (info.config && ct !== 'untracked' && hasRules(I.ctxOf(dev), 'nat', 'dstnat')) {
+        const sg = stage(dev, 'nat', 'dstnat', cur, inEp, undefined, null, ctx.skip, ct);
+        base.stages.push(sg.pub);
+        if (sg.pub.status !== 'decided') {
           base.reasons.push(...condReasons(dev, sg));
-        }
-        if (hasRules(ctxF, 'nat', 'dstnat')) {
-          const sg = stage(dev, 'nat', 'dstnat', cur, inEp, undefined, null, ctx.skip);
-          base.stages.push(sg.pub);
-          if (sg.pub.status !== 'decided') {
-            base.reasons.push(...condReasons(dev, sg));
-            if (sg.d.outcomes.some((o) => o.verdict !== 'none')) {
-              base.verdict = 'unknown';
-              base.reasons.push(reason('nat-ambiguous', dev, `${name(dev)} dstnat 可能由不同的規則改寫（${sg.d.outcomes.map((o) => (o.rule ? `第 ${o.rule.position} 條 ${o.verdict}` : '不改寫')).join('、')}），改寫後的目的不明`));
-              return stop(base, end('unknown', 'unknown', 'nat-ambiguous', dev, '目的 NAT 的結果不明，之後的路徑無法判斷'));
-            }
-          } else if (sg.pub.verdict !== 'none') {
-            const res = applyDst(dev, inEp, sg.d.rule, cur);
-            if (res.unknown) { base.verdict = 'unknown'; base.reasons.push(res.unknown); return stop(base, end('unknown', 'unknown', res.unknown.code, dev, res.unknown.message)); }
-            base.nat.push(res.nat); cur = res.st; natState = 'dstnat';
-            base.dstOut = cur.dst; base.portOut = cur.port;
+          if (sg.d.outcomes.some((o) => o.verdict !== 'none')) {
+            base.verdict = 'unknown';
+            base.reasons.push(reason('nat-ambiguous', dev, `${name(dev)} dstnat 可能由不同的規則改寫（${sg.d.outcomes.map((o) => (o.rule ? `chain 內第 ${o.rule.position} 條 ${o.verdict}` : '不改寫')).join('、')}），改寫後的目的不明`));
+            return stop(base, end('unknown', 'unknown', 'nat-ambiguous', dev, '目的 NAT 的結果不明，之後的路徑無法判斷'));
           }
+        } else if (sg.pub.verdict !== 'none') {
+          const res = applyDst(dev, inEp, sg.d.rule, cur);
+          if (res.unknown) { base.verdict = 'unknown'; base.reasons.push(res.unknown); return stop(base, end('unknown', 'unknown', res.unknown.code, dev, res.unknown.message)); }
+          base.nat.push(res.nat); cur = res.st; natState = 'dstnat';
+          base.dstOut = cur.dst; base.portOut = cur.port;
         }
-      } else base.reasons.push(reason('no-firewall-data', dev, `${name(dev)} 沒有設定資料（/export），防火牆規則不明`));
-      // 目的是這台設備自己（在封包所在的 VRF）：input
+      }
+      // 目的是這台設備自己（在封包所在的 VRF）：input，再看管理服務（/ip service）是否接受
       if (ownerDev(cur.dst, cur.vrf) === dev) {
         base.chain = 'input';
         if (info.config) {
-          const sg = stage(dev, 'filter', 'input', cur, inEp, null, natState, ctx.skip);
+          const sg = stage(dev, 'filter', 'input', cur, inEp, null, natState, ctx.skip, ct);
           base.stages.push(sg.pub); base.reasons.push(...condReasons(dev, sg));
           if (sg.pub.status === 'decided' && sg.pub.verdict === 'drop') { base.verdict = 'deny'; return stop(base, end('dropped', 'deny', 'dropped', dev, sg.pub.note)); }
         }
-        base.service = serviceOf(dev, cur);
-        if (base.reasons.length) base.verdict = 'unknown';
-        return stop(base, end('delivered', 'allow', 'local', dev, `目的 ${cur.dst} 是 ${name(dev)} 自己的位址`, { vrf: cur.vrf }));
+        return localService(dev, base, cur);
       }
-      return egress(dev, base, inEp, cur, natState, 'forward', depth, ctx);
+      return egress(dev, base, inEp, cur, natState, 'forward', depth, ctx, ct);
+    }
+    /**
+     * 送到設備自己、防火牆沒有擋：依 /ip service 判斷（https://manual.mikrotik.com/docs/cli-reference/ip/service.md）。
+     * 停用的服務不監聽；available-from 不含來源時，TCP 連線可以建立，但設備隨即關閉、不提供服務（埠仍看得到）；兩者都算拒絕（end service-refused）。
+     * 來源不明（NAT 後）或封包不在 main（服務的 vrf 參數預設 main，模型沒有這個參數）時不明。沒有對應的服務時維持「防火牆允許」並註明。
+     */
+    function localService(dev, base, cur) {
+      const stop = (hop, e) => [{ hop, next: null, end: e }];
+      const sv = devInfo(dev).config ? serviceOf(dev, cur) : null;
+      base.service = sv;
+      if (sv && sv.accepts === false) {
+        base.verdict = 'deny';
+        return stop(base, end('refused', 'deny', 'service-refused', dev, !sv.enabled
+          ? `${name(dev)} 的 ${sv.name} 服務（/ip service）已停用，沒有監聽 tcp/${sv.port}`
+          : `${name(dev)} 的 ${sv.name} 服務只接受 ${sv.addresses.join('、')}（/ip service 的 available-from），來源 ${cur.src} 不在其中：連線建立後設備隨即關閉`, { service: sv.name, src: sv.src }));
+      }
+      if (sv && (sv.accepts === null || cur.vrf !== K.MAIN_VRF)) {
+        base.verdict = 'unknown';
+        return stop(base, end('unknown', 'unknown', 'service-unknown', dev, cur.vrf !== K.MAIN_VRF
+          ? `${name(dev)} 的 ${sv.name} 服務所在的 VRF 不在模型中（預設 main），封包在 VRF ${cur.vrf}，是否接受無法判斷`
+          : `${name(dev)} 的 ${sv.name} 服務只接受 ${sv.addresses.join('、')}，來源經 NAT 後不明，是否接受無法判斷`, { service: sv.name }));
+      }
+      if (base.reasons.length) base.verdict = 'unknown';
+      const svText = !sv && cur.proto === 'tcp' && cur.port != null && devInfo(dev).config ? '（防火牆允許；沒有已知的管理服務（/ip service）使用這個埠）' : '';
+      return stop(base, end('delivered', 'allow', 'local', dev, `目的 ${cur.dst} 是 ${name(dev)} 自己的位址${svText}`, { vrf: cur.vrf }));
     }
     /** 設備自己送出的封包（來源是設備的位址）：output。 */
     function originate(dev, st, ctx) {
@@ -584,7 +647,7 @@
       return egress(dev, base, null, st, null, 'output', 0, ctx);
     }
     /** 路由決定之後：依出介面分支，套用 filter（forward／output）與 srcnat，再交給下一台。 */
-    function egress(dev, base, inEp, cur, natState, chain, depth, ctx) {
+    function egress(dev, base, inEp, cur, natState, chain, depth, ctx, ct0) {
       const info = devInfo(dev);
       base.chain = chain;
       const stop = (hop, e) => [{ hop, next: null, end: e }];
@@ -609,18 +672,22 @@
       return outs.map((o) => {
         const hop = cloneHop(base); hop.out = o.out === undefined ? null : o.out; hop.outKnown = o.out !== undefined; hop.route = o.route;
         let st = cur.vrf === o.vrf ? cur : Object.assign({}, cur, { vrf: o.vrf }); // 之後（送出、交給下一台）在閘道的 VRF
+        let ct = ct0 || 'new';
         if (info.config) {
           const ctxF = I.ctxOf(dev);
           if (chain === 'output' && hasRules(ctxF, 'raw', 'output')) {
-            const sg = stage(dev, 'raw', 'output', st, null, o.out, null, ctx.skip);
+            const sg = stage(dev, 'raw', 'output', st, null, o.out, null, ctx.skip, ct);
             hop.stages.push(sg.pub); hop.reasons.push(...condReasons(dev, sg));
             if (sg.pub.status === 'decided' && sg.pub.verdict === 'drop') { hop.verdict = 'deny'; return { hop, next: null, end: end('dropped', 'deny', 'dropped', dev, sg.pub.note) }; }
+            if (sg.pub.status === 'decided' && sg.pub.verdict === 'notrack') ct = 'untracked';
+            else if (sg.pub.status !== 'decided' && sg.d.outcomes.some((x) => x.verdict === 'notrack')) hop.reasons.push(reason('raw-notrack', dev, `${name(dev)} raw output 是否不追蹤連線（notrack）無法判斷，之後的連線狀態不明`));
           }
-          const sg = stage(dev, 'filter', chain, st, inEp === undefined ? undefined : inEp, o.out, natState, ctx.skip);
+          hop.conntrack = ct;
+          const sg = stage(dev, 'filter', chain, st, inEp === undefined ? undefined : inEp, o.out, natState, ctx.skip, ct);
           hop.stages.push(sg.pub); hop.reasons.push(...condReasons(dev, sg));
           if (sg.pub.status === 'decided' && sg.pub.verdict === 'drop') { hop.verdict = 'deny'; return { hop, next: null, end: end('dropped', 'deny', 'dropped', dev, sg.pub.note) }; }
-          if (hasRules(ctxF, 'nat', 'srcnat')) {
-            const sn = stage(dev, 'nat', 'srcnat', st, inEp, o.out, natState, ctx.skip);
+          if (ct !== 'untracked' && hasRules(ctxF, 'nat', 'srcnat')) {
+            const sn = stage(dev, 'nat', 'srcnat', st, inEp, o.out, natState, ctx.skip, ct);
             hop.stages.push(sn.pub); hop.reasons.push(...condReasons(dev, sn));
             if (sn.pub.status !== 'decided' && sn.d.outcomes.some((x) => x.verdict !== 'none')) {
               hop.reasons.push(reason('srcnat-ambiguous', dev, `${name(dev)} srcnat 可能由不同的規則改寫，之後的來源位址不明`));
@@ -637,6 +704,8 @@
         // 交給下一台
         if (!o.nh || !o.nh.ip) return deliver(dev, hop, st, depth, ctx);
         const no = nextOwner(Q, dev, o.nh.ip, o.nh.vrf);
+        // 外部：從 WAN 清單的介面送出、目的不在基準的任何網段（推論：送往網際網路，之後由電信業者決定）
+        if (no.status === 'unknown' && isWanEp(dev, o.out) && !longest(st.dst, st.vrf)) return { hop, next: null, end: end('delivered', 'allow', 'egress-wan', dev, `從 ${Q.epName(o.out)}（WAN）送往下一跳 ${K.inVrf(o.nh.ip, o.nh.vrf)}，目的 ${st.dst} 在基準以外，之後由電信業者決定（推論）`, { ip: st.dst, vrf: st.vrf }) };
         if (no.status === 'unknown') return { hop, next: null, end: end('outside', 'unknown', 'next-hop-outside', dev, `${name(dev)} 的下一跳 ${K.inVrf(o.nh.ip, o.nh.vrf)} 不在基準內，之後的路徑無法判斷`, { ip: o.nh.ip, vrf: o.nh.vrf }) };
         const kids = no.status === 'direct' ? arrive(no.dev, realEp(no.ep), Object.assign({}, st, { vrf: no.vrf }), depth + 1, ctx)
           : no.hits.flatMap((x) => arrive(x.dev, undefined, Object.assign({}, st, { vrf: x.vrf }), depth + 1, ctx));
@@ -649,6 +718,15 @@
      */
     function deliver(dev, hop, st, depth, ctx) {
       const own = Q.hopOwner(dev, st.dst, st.vrf); const d2 = own ? own.dev : null;
+      // hairpin NAT（手冊 NAT 的 Hairpin NAT 一節，https://manual.mikrotik.com/docs/firewall-and-quality-of-service/firewall/nat.md）：
+      // 這一跳 dst-nat 改寫了目的，改寫後的目的與來源在同一個直連網段，來源又沒有被 srcnat 改寫 → 伺服器直接回給來源、不經過路由器，連線建立不起來
+      if (hop.nat.some((x) => x.dir === 'dst') && !hop.nat.some((x) => x.dir === 'src') && st.src != null && st.src === hop.src) {
+        const net = Q.subnetsOf(dev, st.vrf).filter((x) => IP.inNet(st.dst, x.net, x.len)).sort((a, b) => b.len - a.len)[0];
+        if (net && IP.inNet(st.src, net.net, net.len)) {
+          hop.verdict = 'unknown';
+          return { hop, next: null, end: end('unknown', 'unknown', 'hairpin-no-srcnat', dev, `dst-nat 後的目的 ${st.dst} 與來源 ${st.src} 同在 ${net.net}/${net.len}，但沒有 srcnat 改寫來源：回應會直接送回來源、不經過 ${name(dev)}，連線通常建立不起來（需要 hairpin NAT）`, { ip: st.dst, vrf: st.vrf }) };
+        }
+      }
       if (d2 && d2 !== dev && netDev(d2)) {
         if (!devInfo(d2).collected) return { hop, next: null, end: end('unknown', 'unknown', 'dst-device-uncollected', d2, `目的 ${st.dst} 屬於沒有收集的 ${name(d2)}，它自己的防火牆不明`, { ip: st.dst, vrf: own.vrf }) };
         return { hop, next: arrive(d2, realEp(own.key), Object.assign({}, st, { vrf: own.vrf }), depth + 1, ctx), end: null };
@@ -681,7 +759,21 @@
           .flatMap((n) => n.gateways).filter((g) => IP.isIp(g))).sort(U.natural);
         let gws = dhcp.map((g) => ({ ip: g, owner: ownerOf(g, vrf) })).filter((g) => g.owner && cands.includes(devOfEp(g.owner))).map((g) => ({ dev: devOfEp(g.owner), ep: realEp(g.owner), gateway: g.ip }));
         let basis = 'dhcp';
-        if (!gws.length) { basis = 'routes'; gws = cands.filter((d) => Q.routesOf(d).length).map((d) => ({ dev: d, ep: epOn(d), gateway: null })); }
+        if (!gws.length) {
+          // 預設路由的下一跳：網段上其他設備的預設路由指向這個網段內某台設備的位址 → 那台是這個網段的預設閘道（basis next-hop）。
+          // 預設路由經這個網段內的下一跳送出的設備（例如交換器的管理位址）是這個網段的用戶端，不當閘道。
+          const dflt = (d) => Q.routesOf(d, vrf).filter((r) => r.len === 0 && !r.blackhole).flatMap((r) => r.nh).filter((n) => n.ip);
+          const nhIn = (d) => dflt(d).filter((n) => IP.inNet(n.ip, net, len));
+          const pointed = U.uniq(cands.flatMap(nhIn).map((n) => { const o = ownerOf(n.ip, vrf); return o ? devOfEp(o) : null; }).filter((d) => d && cands.includes(d))).sort(U.natural);
+          const client = (d) => nhIn(d).length > 0;
+          if (pointed.length) { basis = 'next-hop'; gws = pointed.map((d) => ({ dev: d, ep: epOn(d), gateway: null })); }
+          else {
+            // 其餘有路由表、不是用戶端的設備；其中有預設路由的優先（主機的預設閘道要能送往任何地方，basis default-route）
+            const rt = cands.filter((d) => Q.routesOf(d).length && !client(d)); const withDefault = rt.filter((d) => dflt(d).length);
+            basis = withDefault.length && withDefault.length < rt.length ? 'default-route' : 'routes';
+            gws = (basis === 'default-route' ? withDefault : rt).map((d) => ({ dev: d, ep: epOn(d), gateway: null }));
+          }
+        }
         if (!gws.length) { basis = 'subnet'; gws = cands.filter((d) => devInfo(d).collected).map((d) => ({ dev: d, ep: epOn(d), gateway: null })); }
         gws = gws.filter((g, i) => gws.findIndex((x) => x.dev === g.dev && x.ep === g.ep) === i);
         return { how: 'subnet', prefix, net, len, gateways: gws, basis, vrf };
@@ -738,7 +830,8 @@
       const denyStage = h.stages.find((sg) => sg.status === 'decided' && sg.verdict === 'drop');
       if (h.verdict === 'deny' && denyStage) { pick(denyStage); verdict = 'deny'; }
       else {
-        h.stages.forEach((sg) => { if (sg.status === 'decided' && (sg.table === 'filter' || (sg.table === 'nat' && sg.verdict !== 'none'))) pick(sg); });
+        // srcnat 在 filter 之後（postrouting），只改寫來源、不決定允許或拒絕，不算決定結果的規則（逐跳的 nat 欄仍會列出）
+        h.stages.forEach((sg) => { if (sg.status === 'decided' && (sg.table === 'filter' || (sg.table === 'nat' && sg.chain === 'dstnat' && sg.verdict !== 'none'))) pick(sg); });
         let v;
         if (node.end) {
           v = node.end.verdict;
@@ -757,7 +850,8 @@
           kids.filter((k) => k.verdict === v || v === 'unknown').forEach((k) => { k.decisive.forEach((x, id) => decisive.set(id, x)); k.reasons.forEach((x) => reasons.push(x)); });
           if (v === 'deny') { decisive.forEach((x, id) => { if (x.verdict !== 'drop') decisive.delete(id); }); }
         }
-        verdict = h.verdict === 'unknown' ? (v === 'deny' ? 'deny' : 'unknown') : v;
+        // pinned：這一跳本身的結果不明（例如是否 notrack），之後確定的拒絕也不能決定結果
+        verdict = h.verdict === 'unknown' ? (v === 'deny' && !h.pinned ? 'deny' : 'unknown') : v;
         if (verdict === 'deny') { decisive.forEach((x, id) => { if (x.verdict !== 'drop') decisive.delete(id); }); }
       }
       const s = { verdict, reasons: dedupeReasons(reasons), decisive, nodes: [node], final, nat };
@@ -996,7 +1090,9 @@
           if (rep === null) { basis = 'synthetic'; for (let n = lo, c = 0; n <= hi && c < 4096; n++, c++) if (free(n)) { rep = n; break; } }
           if (rep === null) continue;
           const ip = IP.fromInt(rep);
-          U.getOr(out, s.zone, () => []).push({ ip, vrf: x.vrf, zone: s.zone, subnet: x.key, range: [IP.fromInt(a), IP.fromInt(b)], basis, via: 'member', dev: null });
+          // 同一個區段的第二個位址：zone 內（對角線）同網段的組合用它當目的
+          let peer = null; for (let n = lo, c = 0; n <= hi && c < 4096; n++, c++) if (n !== rep && free(n)) { peer = IP.fromInt(n); break; }
+          U.getOr(out, s.zone, () => []).push({ ip, vrf: x.vrf, zone: s.zone, subnet: x.key, range: [IP.fromInt(a), IP.fromInt(b)], basis, via: 'member', dev: null, peer });
         }
       });
       out.forEach((list) => list.sort((p, q) => IP.toInt(p.ip) - IP.toInt(q.ip)));
@@ -1030,6 +1126,47 @@
       });
       return out;
     }
+    /**
+     * 矩陣的虛擬 zone（推論，不在 Q.zones）：
+     *   外部（external）：基準以外的位址。來源從每台設備 WAN 清單的介面（entry）進入，目的經 WAN 介面送出（end egress-wan）；
+     *     代表位址是 EXTERNAL_CANDIDATES 中第一個不在基準網段、也不屬於任何設備的位址，只代表與它同一個規則位址區段的公網位址（range）。
+     *     沒有任何設備有可辨識的 WAN 清單時沒有這個 zone。
+     *   網路設備（管理）（self，只當目的）：已收集且有 /export 的設備自己的位址，走 input 與 /ip service；
+     *     取 WAN 介面上的位址，與每個網段的閘道介面上的位址（1000 台時不把每台設備的每個位址都算進來）。
+     */
+    function virtualOf(reps) {
+      bounds();
+      const wanEps = [];
+      Q.devices().forEach((d) => {
+        if (!devInfo(d.key).config) return;
+        const c = I.ctxOf(d.key); if (!c || !c.wan) return;
+        Array.from(c.wan).sort(U.natural).forEach((ep) => { const i = Q.getInterface(ep); if (i && K.vrf(i.vrf) === K.MAIN_VRF) wanEps.push({ dev: d.key, ep }); });
+      });
+      const extIp = wanEps.length ? EXTERNAL_CANDIDATES.find((ip) => !longest(ip, K.MAIN_VRF) && !ownerOf(ip, K.MAIN_VRF)) || null : null;
+      let range = null;
+      if (extIp) { const i = findAtom(ruleB, IP.toInt(extIp)); range = [IP.fromInt(ruleB[i]), IP.fromInt(i + 1 < ruleB.length ? ruleB[i + 1] - 1 : 0xffffffff)]; }
+      const extSrc = extIp ? wanEps.map((w) => ({ ip: extIp, vrf: K.MAIN_VRF, zone: EXTERNAL_ZONE, subnet: null, range, basis: 'documentation', via: 'external', dev: w.dev, entry: w.ep })) : [];
+      const extDst = extIp ? [{ ip: extIp, vrf: K.MAIN_VRF, zone: EXTERNAL_ZONE, subnet: null, range, basis: 'documentation', via: 'external', dev: null }] : [];
+      const selfMap = new Map();
+      const addSelf = (dev, ep, inNet) => {
+        if (!devInfo(dev).config || !realEp(ep)) return;
+        ownIps(ep).filter((a) => !inNet || inNet(a)).forEach((a) => { const v = K.vrf(a.vrf); const k = K.inVrf(a.ip, v); if (!selfMap.has(k)) selfMap.set(k, { ip: a.ip, vrf: v, zone: SELF_ZONE, subnet: null, range: null, basis: 'device', via: 'device', dev }); });
+      };
+      wanEps.forEach((w) => addSelf(w.dev, w.ep));
+      reps.forEach((list) => list.forEach((r) => {
+        const loc = srcLocation(r.ip, r.vrf); if (loc.how !== 'subnet') return;
+        loc.gateways.forEach((g) => addSelf(g.dev, g.ep, (a) => IP.inNet(a.ip, loc.net, loc.len)));
+      }));
+      const selfDst = Array.from(selfMap.values()).sort((a, b) => U.natural(a.dev, b.dev) || IP.toInt(a.ip) - IP.toInt(b.ip));
+      const zonesV = [];
+      if (extIp) zonesV.push({ id: EXTERNAL_ZONE, name: '外部（Internet）', source: 'virtual', inferred: true, virtual: true, dstOnly: false, vrf: K.MAIN_VRF, subnets: [],
+        devices: U.uniq(wanEps.map((w) => w.dev)).sort(U.natural), representative: extIp, range,
+        basis: `基準以外的位址（推論）：代表位址 ${extIp} 是文件保留位址，只代表 ${range[0]}–${range[1]}（同一個規則位址區段）；來源從 WAN 介面進入，目的經 WAN 介面送出` });
+      if (selfDst.length) zonesV.push({ id: SELF_ZONE, name: '網路設備（管理）', source: 'virtual', inferred: true, virtual: true, dstOnly: true, vrf: null, subnets: [],
+        devices: U.uniq(selfDst.map((x) => x.dev)).sort(U.natural), representative: null, range: null,
+        basis: '網路設備自己的位址（WAN 介面與各網段的閘道介面），走輸入規則（input）與管理服務（/ip service）' });
+      return { extSrc, extDst, selfDst, zones: zonesV };
+    }
     function servicesOf(list) {
       if (list != null) {
         if (!Array.isArray(list) || !list.length) throw new TypeError('services 必須是非空陣列，例如 [{ proto: "tcp", port: 443 }]');
@@ -1048,7 +1185,13 @@
       return all.filter((s, i, a) => a.findIndex((x) => svcId(x) === svcId(s)) === i)
         .sort((a, b) => (PO.indexOf(a.proto) + 1 || 9) - (PO.indexOf(b.proto) + 1 || 9) || U.cmp(a.proto, b.proto) || (a.port || 0) - (b.port || 0));
     }
-    const STATUS = (c) => (c.allow && c.deny ? 'partial' : c.unknown ? 'unknown' : c.allow ? 'allow' : c.deny ? 'deny' : 'empty');
+    /**
+     * 格子的狀態：確定的允許不被「無法判斷」藏起來（暴露存在就要看得到）。
+     *   允許與拒絕都有 → partial；只有允許（另有無法判斷）→ allow；沒有允許、有無法判斷 → unknown（無法判斷的可能是允許，拒絕不能當結論）。
+     * 有確定的結果又有無法判斷的組合時，另以 incomplete（incompleteOf）標示「部分無法判斷」。
+     */
+    const STATUS = (c) => (c.allow && c.deny ? 'partial' : c.allow ? 'allow' : c.unknown ? 'unknown' : c.deny ? 'deny' : 'empty');
+    const incompleteOf = (c) => c.unknown > 0 && c.allow > 0;
     const matrixCache = new Map();
     /**
      * service 的等價類：協定與埠對所有規則的條件結果相同的 service 只算一次（結果完全相同，只差最後的埠）。
@@ -1095,10 +1238,15 @@
       const ck = JSON.stringify([zs.opts.profHash, zs.opts.sources, services.map(svcId)]);
       if (matrixCache.has(ck)) return matrixCache.get(ck);
       yield { stage: 'reps', done: 0, total: 1 };
-      const reps = repsOf(zs); const vips = vipsOf(zs);
-      const zoneIds = zs.zones.map((z) => z.id);
-      const srcReps = []; zoneIds.forEach((z) => (reps.get(z) || []).forEach((r) => srcReps.push(r)));
-      const targets = srcReps.concat(vips);
+      const reps = repsOf(zs); const vips = vipsOf(zs); const vz = virtualOf(reps);
+      const realIds = zs.zones.map((z) => z.id);
+      const srcReps = []; realIds.forEach((z) => (reps.get(z) || []).forEach((r) => srcReps.push(r)));
+      const memberN = srcReps.length;
+      vz.extSrc.forEach((r) => srcReps.push(r));
+      const targets = srcReps.slice(0, memberN).concat(vips, vz.extDst, vz.selfDst);
+      // 列（來源）：實際的 zone＋外部；欄（目的）：再加網路設備（管理）
+      const allZones = zs.zones.concat(vz.zones);
+      const rowIds = allZones.filter((z) => !z.dstOnly).map((z) => z.id); const zoneIds = allZones.map((z) => z.id);
       const cells = new Map();
       const cellOf = (a, b) => U.getOr(cells, a + '\u0000' + b, () => ({ src: a, dst: b, recs: [] }));
       const classes = svcClasses(services);
@@ -1113,14 +1261,19 @@
           const t = targets[ti];
           for (const sis of classes) {
             done++;
-            if (a.ip === t.ip && a.vrf === t.vrf) continue;
+            // 來源與目的是同一個代表位址：zone 內同網段的組合改用同一個區段的第二個位址（沒有就略過）
+            const same = a.ip === t.ip && a.vrf === t.vrf;
+            if (same && !(t.via === 'member' && t.peer)) continue;
             const rp = services[sis[0]].port;
-            const { sum } = evaluate(a.ip, t.ip, services[sis[0]], 'atom', null, null, a.vrf);
-            if (!(t.via === 'nat' && !sum.nat)) { // dst-nat 的入口只算真的被改寫的
+            const { sum } = evaluate(a.ip, same ? t.peer : t.ip, services[sis[0]], 'atom', null, a.entry || null, a.vrf);
+            const fv0 = (sum.final && sum.final.vrf) || t.vrf;
+            // dst-nat 的入口只算真的被改寫的；設備本身的目的只算真的送到那台設備的（重疊位址在來源的 VRF 送達別處時不算）
+            if (!(t.via === 'nat' && !sum.nat) && !(t.via === 'device' && (fv0 !== t.vrf || (sum.final && sum.final.dst !== t.ip)))) {
               // 目的 zone：NAT 改寫了目的時依改寫後的位址；送達的 VRF 和目的代表的 VRF 不同時（重疊的位址在來源的 VRF 就送達了）依送達的 VRF
               let dz = t.zone;
               const fv = (sum.final && sum.final.vrf) || t.vrf;
-              if (sum.final && (sum.final.dst !== t.ip || (fv !== t.vrf && sum.verdict === 'allow'))) { const z = zoneOf(sum.final.dst, o, fv); if (z) dz = z.zone; }
+              const tip = same ? t.peer : t.ip;
+              if (sum.final && (sum.final.dst !== tip || (fv !== t.vrf && sum.verdict === 'allow'))) { const z = zoneOf(sum.final.dst, o, fv); if (z) dz = z.zone; }
               const c = cellOf(a.zone, dz);
               sis.forEach((si) => c.recs.push({ ai, ti, si, sum, rp }));
             }
@@ -1130,7 +1283,8 @@
       }
       // 跑完才寫進快取：中途放棄的 generator 不會留下不完整的結果
       if (matrixCache.has(ck)) return matrixCache.get(ck);
-      const res = { zs, services, srcReps, targets, cells, zoneIds, opts: o };
+      const byId = new Map(allZones.map((z) => [z.id, z]));
+      const res = { zs, services, srcReps, targets, cells, zoneIds, rowIds, allZones, byId, memberN, vz, natN: vips.length, opts: o };
       matrixCache.set(ck, res);
       return res;
     }
@@ -1154,12 +1308,14 @@
       const het = Array.from(byDst.values()).some((s) => s.size > 1) || Array.from(bySrc.values()).some((s) => s.size > 1);
       const ruleList = Array.from(rules.values()).sort((a, b) => b.count - a.count || U.cmp(a.id, b.id)).map(({ id, ...x }) => Object.assign({ id }, x, x.key ? { rule: ref(Q.getFirewallRule(x.key)) } : {}));
       return {
-        src: c.src, dst: c.dst, diagonal: c.src === c.dst, status: STATUS(counts), counts, heterogeneous: het,
-        services: mx.services.map((s, i) => ({ service: svcId(s), proto: s.proto, port: s.port, status: STATUS(bySvc[i]), counts: bySvc[i] })),
+        src: c.src, dst: c.dst, diagonal: c.src === c.dst, status: STATUS(counts), incomplete: incompleteOf(counts), counts, heterogeneous: het,
+        services: mx.services.map((s, i) => ({ service: svcId(s), proto: s.proto, port: s.port, status: STATUS(bySvc[i]), incomplete: incompleteOf(bySvc[i]), counts: bySvc[i] })),
         rule: ruleList.find((x) => x.key) || ruleList[0] || null, rules: ruleList.slice(0, 5), ruleCount: ruleList.length,
         reasons: Array.from(reasons.entries()).map(([code, count]) => ({ code, count })).sort((a, b) => b.count - a.count || U.cmp(a.code, b.code)),
       };
     }
+    /** IPv6 在用（推論，firewallZones[].ipv6）的設備：矩陣只算 IPv4，畫面據此提示 IPv6 未納入（F05／F07）。 */
+    const ipv6Devices = () => (m.firewallZones || []).filter((z) => z.ipv6 && z.ipv6.status === 'used').map((z) => ({ dev: z.dev, src: (z.ipv6.src || []).map((x) => x.slice()) })).sort((a, b) => U.natural(a.dev, b.dev));
     const l0Cache = new Map();
     /**
      * zone 矩陣 L0 的分段計算（generator）：每一段 yield { stage: 'reps'|'evaluate'|'summary', done, total }，
@@ -1171,16 +1327,16 @@
       if (l0Cache.has(ck)) return l0Cache.get(ck);
       const cells = [];
       // 進度以記錄數計（格子大小差很多）；空格子算一個單位
-      const total = mx.zoneIds.reduce((n, a) => n + mx.zoneIds.reduce((k, b) => { const c = mx.cells.get(a + '\u0000' + b); return k + (c ? Math.max(1, c.recs.length) : 1); }, 0), 0);
+      const total = mx.rowIds.reduce((n, a) => n + mx.zoneIds.reduce((k, b) => { const c = mx.cells.get(a + '\u0000' + b); return k + (c ? Math.max(1, c.recs.length) : 1); }, 0), 0);
       let done = 0;
       yield { stage: 'summary', done, total };
       const due = slicer();
-      for (const a of mx.zoneIds) {
+      for (const a of mx.rowIds) {
         for (const b of mx.zoneIds) {
           const c = mx.cells.get(a + '\u0000' + b);
           if (!c) {
-            cells.push({ src: a, dst: b, diagonal: a === b, status: 'empty', counts: { allow: 0, deny: 0, unknown: 0, total: 0 }, heterogeneous: false,
-              services: mx.services.map((s) => ({ service: svcId(s), proto: s.proto, port: s.port, status: 'empty', counts: { allow: 0, deny: 0, unknown: 0, total: 0 } })), rule: null, rules: [], ruleCount: 0, reasons: [] });
+            cells.push({ src: a, dst: b, diagonal: a === b, status: 'empty', incomplete: false, counts: { allow: 0, deny: 0, unknown: 0, total: 0 }, heterogeneous: false,
+              services: mx.services.map((s) => ({ service: svcId(s), proto: s.proto, port: s.port, status: 'empty', incomplete: false, counts: { allow: 0, deny: 0, unknown: 0, total: 0 } })), rule: null, rules: [], ruleCount: 0, reasons: [] });
             done++;
           } else {
             const acc = cellAcc(mx, c);
@@ -1195,10 +1351,11 @@
         }
       }
       if (l0Cache.has(ck)) return l0Cache.get(ck); // 兩個分段計算交錯時，先完成的為準（結果相同）
-      const reps = mx.srcReps.length; const evaluations = Array.from(mx.cells.values()).reduce((n, c) => n + c.recs.length, 0);
+      const reps = mx.memberN; const evaluations = Array.from(mx.cells.values()).reduce((n, c) => n + c.recs.length, 0);
       const out = deepFreeze({
-        vrf: null, vrfs: Q.vrfs().filter((v) => mx.zs.zones.some((z) => z.vrf === v)), zones: mx.zs.zones, services: mx.services.map((s) => ({ id: svcId(s), proto: s.proto, port: s.port })), cells,
-        stats: { zones: mx.zoneIds.length, representatives: reps, natEntries: mx.targets.length - reps, evaluations },
+        vrf: null, vrfs: Q.vrfs().filter((v) => mx.zs.zones.some((z) => z.vrf === v)), zones: mx.allZones, services: mx.services.map((s) => ({ id: svcId(s), proto: s.proto, port: s.port })), cells,
+        stats: { zones: mx.zoneIds.length, representatives: reps, natEntries: mx.natN, externalEntries: mx.vz.extSrc.length, deviceTargets: mx.vz.selfDst.length, evaluations },
+        ipv6: ipv6Devices(),
       });
       l0Cache.set(ck, out);
       return out;
@@ -1212,7 +1369,7 @@
     };
     function cell(srcZone, dstZone, opts) {
       const mx = matrixRaw(opts);
-      if (!mx.zs.byId.has(srcZone) || !mx.zs.byId.has(dstZone)) throw new TypeError(`沒有這個 zone：${!mx.zs.byId.has(srcZone) ? srcZone : dstZone}`);
+      if (!mx.byId.has(srcZone) || !mx.byId.has(dstZone)) throw new TypeError(`沒有這個 zone：${!mx.byId.has(srcZone) ? srcZone : dstZone}`);
       const c = mx.cells.get(srcZone + '\u0000' + dstZone) || { src: srcZone, dst: dstZone, recs: [] };
       const sm = cellSummary(mx, c);
       // L1：每個（來源代表、目的）一列，依 service 列出結果；結果相同的來源併成一組（規格書 §5.7）
@@ -1242,8 +1399,8 @@
       });
       const groups = Array.from(rows.values()).map((r) => {
         const c2 = { allow: 0, deny: 0, unknown: 0 }; r.services.forEach((s) => { c2[s.verdict]++; });
-        return { dst: r.dst, srcs: r.srcs, services: r.services, status: STATUS(c2), counts: c2,
-          srcDevices: U.uniq(r.srcs.flatMap((s) => { const l = srcLocation(s.ip, s.vrf); return l.how === 'subnet' ? l.gateways.map((g) => g.ep || g.dev) : l.dev ? [l.dev] : []; })).sort(U.natural),
+        return { dst: r.dst, srcs: r.srcs, services: r.services, status: STATUS(c2), incomplete: incompleteOf(c2), counts: c2,
+          srcDevices: U.uniq(r.srcs.flatMap((s) => { if (s.entry) return [s.entry]; const l = srcLocation(s.ip, s.vrf); return l.how === 'subnet' ? l.gateways.map((g) => g.ep || g.dev) : l.dev ? [l.dev] : []; })).sort(U.natural),
           divergent: r.div.size > 0, divergentServices: r.services.map((s) => s.service).filter((sv) => r.div.has(sv)) };
       });
       // L2：牽涉的規則
@@ -1282,13 +1439,13 @@
         const finalZone = (sum, ip, vrf) => (sum.final && sum.final.dst ? zoneOfIp(sum.final.dst, sum.final.vrf || vrf) : zoneOfIp(ip, vrf)); // zone 以 NAT 後的位址為準
         own.forEach(({ ip, vrf }) => mx.srcReps.forEach((a) => mx.services.forEach((svc) => {
           if (a.ip === ip && a.vrf === vrf) return;
-          const { sum } = evaluate(a.ip, ip, svc, 'atom', null, null, a.vrf);
+          const { sum } = evaluate(a.ip, ip, svc, 'atom', null, a.entry || null, a.vrf);
           if (involves(sum, key)) recs.push({ plane: 'device', src: a, dst: { ip, vrf, zone: zoneOfIp(ip, vrf), subnet: null, via: 'device', dev: rule.dev }, svc, sum, cell: [a.zone, finalZone(sum, ip, vrf)] });
         })));
         own.forEach(({ ip, vrf }) => mx.targets.forEach((t) => mx.services.forEach((svc) => {
           if (t.ip === ip && t.vrf === vrf) return;
           const { sum } = evaluate(ip, t.ip, svc, 'atom', null, null, vrf);
-          if (involves(sum, key)) recs.push({ plane: 'device', src: { ip, vrf, zone: zoneOfIp(ip, vrf), subnet: null, via: 'device', dev: rule.dev }, dst: t, svc, sum, cell: [zoneOfIp(ip, vrf), finalZone(sum, t.ip, t.vrf)] });
+          if (involves(sum, key)) recs.push({ plane: 'device', src: { ip, vrf, zone: zoneOfIp(ip, vrf), subnet: null, via: 'device', dev: rule.dev }, dst: t, svc, sum, cell: [zoneOfIp(ip, vrf), finalZone(sum, t.ip, t.vrf) || t.zone] });
         })));
       }
       const roleOf = (r) => {
@@ -1303,7 +1460,7 @@
         const role = roleOf(r);
         const e = U.getOr(cellMap, r.cell.join('\u0000'), () => ({ src: r.cell[0], dst: r.cell[1], plane: r.plane, services: [], decides: 0, uncertain: 0, passes: 0, verdicts: { allow: 0, deny: 0, unknown: 0 } }));
         e[role]++; e.verdicts[r.sum.verdict]++; if (!e.services.includes(svcId(r.svc))) e.services.push(svcId(r.svc));
-        const alt = evaluate(r.src.ip, r.dst.ip, r.svc, 'atom', skip, null, r.src.vrf).sum;
+        const alt = evaluate(r.src.ip, r.dst.via === 'member' && r.src.ip === r.dst.ip ? r.dst.peer : r.dst.ip, r.svc, 'atom', skip, r.src.entry || null, r.src.vrf).sum;
         if (alt.verdict !== r.sum.verdict) changed.push({ src: r.src.ip, dst: r.dst.ip, srcZone: r.cell[0], dstZone: r.cell[1], service: svcId(r.svc), from: r.sum.verdict, to: alt.verdict, plane: r.plane });
       });
       const sortRec = (a, b) => U.cmp(a.srcZone || '', b.srcZone || '') || U.cmp(a.dstZone || '', b.dstZone || '') || IP.toInt(a.src) - IP.toInt(b.src) || IP.toInt(a.dst) - IP.toInt(b.dst) || U.cmp(a.service, b.service);

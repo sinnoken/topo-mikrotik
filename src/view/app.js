@@ -7,11 +7,12 @@
  *   app-graph.js   基準 → 圖資料、未知對端、版面排程（ELK／內建）
  *   app-layers.js  拓樸圖的層級（設備、L2 埠、L3 子網）、VLAN 篩選，以及 L2／L3 的圖資料、版面與標示
  *   app-select.js  選取、圖上互動、原文檢視、路由追蹤
- *   app-toolbar.js 頁首（搜尋、資料中心、「⋯」選單：路由追蹤、匯出 PNG、清除）、工具列與下拉選單、圖例、匯出
+ *   app-toolbar.js 頁首（搜尋）、工具列與下拉選單（含路由追蹤、匯出 PNG）、配色、清除基準、圖例、匯出
  *   app-panes.js   流程步驟（App.showStep）、左側的清單、中間的工作畫面（App.showView）、窄螢幕工作區、左右欄寬度
  *   app-input.js   輸入對話框與建立基準
  *   app-ledger.js  處理紀錄（S.ledger；store 的 'ledger'，並轉換舊的 'acks'）
  *   app-hub.js     資料中心：這一輪的輸入與輸出、工作包（S.workpack）的下載與讀入
+ *   app-settings.js 設定（頁首的 ⚙）：和資料中心同一種蓋住主畫面的另一層，兩者互斥；各分類的內容在 panels/settings-*.js
  *
  * 「這一輪的資料」集中在 App.round（見下方 A.newRound）：收集檔、命名規則、建立選項 expectedData、基準與查詢介面、
  * 比對用的預期資料。工作包的讀寫、儲存（store 的 'last'）與畫面都從這裡讀；改變它只經過 A.load（換基準，可同時換輸入）、
@@ -87,7 +88,7 @@
    * 只有一個 document 監聽，依 ESC_ORDER 由上往下交給第一個處理的層，不依各 bind* 的註冊先後。
    * 元素自己的 Esc（輸入框、選單、VLAN 標示、畫布、原生對話框）在元素上處理並停止傳遞，不經這裡。
    */
-  const ESC_ORDER = ['menu', 'trace', 'hub', 'sheet']; const escHandlers = new Map();
+  const ESC_ORDER = ['menu', 'trace', 'hub', 'settings', 'sheet']; const escHandlers = new Map();
   A.onEscape = function onEscape(layer, fn) {
     if (!ESC_ORDER.includes(layer)) throw new RangeError('未知的 Esc 層：' + layer);
     escHandlers.set(layer, fn);
@@ -109,41 +110,61 @@
     // 只有設備圖的位置存進 store；L2／L3 拖曳後的位置留在記憶體（App.layers）
     App.graph.on('moved', () => { if (App.layer === 'device') { clearTimeout(saveT); saveT = setTimeout(A.savePositions, 600); } App.graph.computeGroups(); });
     App.layoutMode = (await S.store.get('layoutMode').catch(() => null)) || 'elk';
-    // 配色（「⋯」選單的偏好，預設跟隨系統）：在建立圖例之前套用 theme；CSS 的深淺已由 index.html 的 inline script 在首次繪製前設好
+    // 配色（設定「一般」的偏好，預設跟隨系統）：在建立圖例之前套用 theme；CSS 的深淺已由 index.html 的 inline script 在首次繪製前設好
     A.bindColorScheme();
     bindEscape();
-    A.bindHeader(); A.bindToolbar(); A.bindLayers(); A.bindInputDialog(); A.bindHub(); A.bindSteps(); A.bindMobileWorkspaces(); A.bindSheet(); await A.bindResizers();
+    A.bindHeader(); A.bindToolbar(); A.bindLayers(); A.bindInputDialog(); A.bindHub(); A.bindSettings(); A.bindSteps(); A.bindMobileWorkspaces(); A.bindSheet(); await A.bindResizers();
     if (!(await S.store.available())) A.banner('這個瀏覽器無法使用本機儲存，關閉頁面後基準不會保留。');
     await A.loadLedger();
     await App.restore();
   }
 
-  /** 還原上次的基準：schema 或版本不同時用儲存的輸入重建；無法還原時明確告知，不靜默略過。 */
+  /**
+   * 還原上次的基準：能不能還原只依 S.store.lastRestorable（還原備份的檢查用同一個）；schema 或版本不同時用儲存的輸入重建。
+   * 無法載入時明確告知，不靜默略過；畫面上若還有別的基準（例如從備份還原時）一起收起，畫面與 store 不會不一致。
+   * 回傳 { loaded, reason }：loaded 是否載入了基準；reason 是儲存的基準無法載入的原因（沒有儲存時兩者皆空）。
+   */
   App.restore = async function () {
-    const last = await S.store.get('last').catch(() => null);
-    // 儲存的基準還沒建立查詢介面：先用 S.query.metaOf 讀 meta 判斷相容，再決定直接載入或重建
-    const savedMeta = last ? S.query.metaOf(last.snapshot) : null;
-    const saved = savedMeta ? last.snapshot : null;
-    if (saved) {
-      const inputs = { sources: last.sources || [], profile: last.profile || null, expectedData: last.expectedData || null, origin: { kind: 'restore' } };
-      A.setRoundInputs(inputs); // 無法還原基準時，輸入對話框仍可帶出上次的收集檔
-      const sameSchema = savedMeta.schema === S.SCHEMA;
-      let snap = sameSchema ? saved : null; let msg = `已還原上次建立的基準（${V.fmtTime(savedMeta.createdAt)}）`;
-      if ((!sameSchema || savedMeta.version !== S.VERSION) && inputs.sources.length) { // 程式更新過：用儲存的輸入重建，欄位才會完整
-        try { snap = await S.buildAsync(inputs.sources, { profile: inputs.profile, expectedData: inputs.expectedData }); msg = '程式已更新，已用儲存的輸入重新建立基準'; } catch (e) {
-          console.error(e);
-          if (!sameSchema) msg = `上次的基準格式（${savedMeta.schema}）已不相容，重新建立失敗：${V.reason(e)}。請重新建立基準。`;
-        }
-      } else if (!sameSchema) msg = `上次的基準格式（${savedMeta.schema}）已不相容，且沒有儲存輸入，請重新建立基準。`;
-      if (snap) A.load(snap, last.positions); else A.renderAll();
-      A.banner(msg, 6000);
-    } else A.renderAll();
+    let last;
+    try { last = await S.store.get('last'); } catch (e) {
+      console.error(e); const reason = '無法讀取儲存的基準：' + V.reason(e);
+      A.renderAll(); A.banner(reason, 10000); return { loaded: false, reason };
+    }
+    if (last === undefined || last === null) { A.renderAll(); return { loaded: false, reason: null }; }
+    const chk = S.store.lastRestorable(last);
+    const fail = (reason) => {
+      if (App.snap) A.resetBaselineView();
+      // 無法還原基準時，輸入對話框仍可帶出上次的收集檔（格式正確時）
+      if (chk.meta) A.setRoundInputs(inputsOf(last));
+      A.renderAll(); A.banner(`上次的基準無法還原：${reason}。請重新建立基準。`, 10000);
+      return { loaded: false, reason };
+    };
+    if (!chk.ok) return fail(chk.reason);
+    const inputs = inputsOf(last);
+    let snap = chk.meta.schema === S.SCHEMA ? last.snapshot : null; let msg = `已還原上次建立的基準（${V.fmtTime(chk.meta.createdAt)}）`;
+    if (chk.rebuild) { // 程式更新過：用儲存的輸入重建，欄位才會完整
+      try { snap = await S.buildAsync(inputs.sources, { profile: inputs.profile, expectedData: inputs.expectedData }); msg = '程式已更新，已用儲存的輸入重新建立基準'; } catch (e) {
+        console.error(e);
+        if (!snap) return fail(`基準格式（${chk.meta.schema}）已不相容，用儲存的輸入重新建立失敗：${V.reason(e)}`);
+        msg += `；用儲存的輸入重新建立失敗（${V.reason(e)}），沿用儲存的基準，新版的欄位可能不完整`;
+      }
+    }
+    A.load(snap, last.positions, inputs);
+    A.banner(msg, 6000);
+    return { loaded: true, reason: null };
+  };
+  const inputsOf = (last) => ({ sources: last.sources || [], profile: last.profile || null, expectedData: last.expectedData || null, origin: { kind: 'restore' } });
+  /** 收起畫面上的基準（不動 store）：清除基準與無法還原時共用 */
+  A.resetBaselineView = function resetBaselineView() {
+    A.cancelElk(); A.clearRound();
+    // 沒有基準時只有設備圖（歡迎畫面）：L2／L3 的資料與 VLAN 篩選一起清掉
+    App.vlanFilter = null; A.resetLayers(); App.layer = 'device'; A.setDeviceGraph([], [], new Map()); A.resetSelection();
   };
 
-  /** 節點位置是檢視狀態：存回 store 的 'last'，與基準一起還原 */
+  /** 節點位置是檢視狀態：存回 store 的 'last'，與基準一起還原；儲存的基準無法還原時不寫（不把位置寫進壞掉的資料） */
   A.savePositions = async function savePositions() {
     if (!App.snap) return;
-    const last = await S.store.get('last'); if (!last) return;
+    const last = await S.store.get('last'); if (!last || !S.store.lastRestorable(last).ok) return;
     last.positions = Object.fromEntries(App.devicePos); await S.store.set('last', last);
   };
 
@@ -218,11 +239,11 @@
     $('#welcome').classList.toggle('hidden', has);
     // 圖例與操作提示依層級（A.syncLayerUi）；基準的摘要在步驟列的狀態與右側的基準狀態卡（未選取時）
     $('#toolbar').classList.toggle('hidden', !has);
-    ['#btn-trace', '#btn-png', '#btn-clear', '#search'].forEach((s) => { $(s).disabled = !has; });
+    ['#btn-trace', '#btn-png', '#search'].forEach((s) => { $(s).disabled = !has; });
     syncTraceIps();
-    // 覆蓋率在資料中心（「輸入」），由 V.hub.render 一起畫
+    // 覆蓋率在資料中心（「輸入」），由 V.hub.render 一起畫；設定只在開著時重畫（「清除基準…」依有沒有基準停用）
     V.lists.findings(App); V.lists.inventory(App);
-    V.ledgerPane.render(App); V.hub.render(App);
+    V.ledgerPane.render(App); V.hub.render(App); A.renderSettings();
     // 步驟與中間的工作畫面：沒有基準時「修正」、「驗證」回到「研判」；只重繪目前顯示的那一個
     A.syncSteps(); A.renderCenter(); A.syncLayerUi();
     V.details.render(App, App.sel);

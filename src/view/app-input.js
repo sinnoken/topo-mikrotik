@@ -1,6 +1,7 @@
 /*
  * 輸入對話框與建立基準：貼上／選擇／拖放檔案、命名規則選單、建立前的預檢（S.preflight）、建立進度，完成後載入並存入 store。
- * 也負責歡迎畫面的收集指引（指令清單取自 S.collectCommands，由 tools/collector-commands.sh 產生）。
+ * 也提供收集指令清單（A.collectGuide，取自 S.collectCommands，由 tools/collector-commands.sh 產生；顯示在設定的「收集與建立基準」），
+ * 並把歡迎畫面的說明按鈕接到那個分類。
  */
 (function (S) {
   'use strict';
@@ -32,12 +33,10 @@
     $('#input-profile').onchange = async (e) => {
       if (e.target.value !== '__file') { runPreflight(); return; }
       const f = await pickFile('.json,application/json'); if (!f) { e.target.value = ''; runPreflight(); return; }
-      try {
-        const j = JSON.parse(await f.text()); S.profile.compile(j); S.profiles[j.id] = j;
-        const saved = (await S.store.get('profiles')) || {}; saved[j.id] = j; await S.store.set('profiles', saved);
-        await fillProfiles(j.id);
-        $('#input-status').textContent = `已載入命名規則「${j.id}」`;
-      } catch (err) { fail(`無法載入命名規則檔「${f.name}」`, err); e.target.value = ''; }
+      // 載入命名規則檔只有一份實作（設定的命名規則分類）：驗證、加入清單、存進 store
+      const r = await V.settings.profiles.loadFile(f);
+      if (r.ok) { await fillProfiles(r.id); $('#input-status').textContent = `已載入命名規則「${r.id}」`; }
+      else { $('#input-status').textContent = r.error; e.target.value = ''; }
       runPreflight();
     };
     $('#input-build').onclick = runBuild;
@@ -110,29 +109,38 @@
     block(n ? '' : '沒有認到任何設備');
   }
 
-  // ---- 收集指引（歡迎畫面）與格式範例（對話框）
+  // ---- 收集指令清單（設定的「收集與建立基準」）與格式範例（對話框）
   /** 寫入剪貼簿（V.copyText），結果寫在 status（role=status 元素） */
   async function copyText(text, status) {
     const why = await V.copyText(text);
     status.textContent = why ? `無法自動複製（${why}），請直接選取上面的文字複製` : '已複製';
   }
+  A.copyText = copyText;
+  /**
+   * 收集指令清單（設定的「收集與建立基準」）：{ list（每行一個指令）, optional（只有部分設備才有的選單，DOM） }；
+   * 指令清單未載入時是 { error }。指令清單由 tools/collector-commands.sh 產生（samples/collect-commands.js），畫面不另寫一份
+   */
+  A.collectGuide = function collectGuide() {
+    const C = S.collectCommands;
+    if (!C) return { error: '指令清單未載入（samples/collect-commands.js）' };
+    return {
+      list: C.default.map((c) => c.command).join('\n'),
+      optional: h('span', null, ['只有部分設備才有的選單（Wi-Fi AP、CAPsMAN 控制器、RouterOS 7 的 VRF）另加：',
+        ...C.optional.flatMap((c, n) => [n ? '、' : '', h('code', null, c.command)])]),
+    };
+  };
   function bindCollectGuide() {
     $('#input-format-copy').onclick = () => copyText($('#input-format-example').textContent, $('#input-format-copy-status'));
-    // 指令清單由 tools/collector-commands.sh 產生（samples/collect-commands.js），畫面不另寫一份
-    const C = S.collectCommands;
-    if (!C) { $('#welcome-commands').textContent = '指令清單未載入（samples/collect-commands.js）'; $('#welcome-copy').disabled = true; return; }
-    const list = C.default.map((c) => c.command).join('\n');
-    $('#welcome-commands').textContent = list;
-    $('#welcome-copy').onclick = () => copyText(list, $('#welcome-copy-status'));
-    V.clear($('#welcome-optional')).appendChild(h('span', null, ['只有部分設備才有的選單（Wi-Fi AP、CAPsMAN 控制器、RouterOS 7 的 VRF）另加：',
-      ...C.optional.flatMap((c, n) => [n ? '、' : '', h('code', null, c.command)])]));
+    // 歡迎畫面只開啟設定的「收集與建立基準」：指令清單只在那裡出現一次；關閉設定後焦點回到這個按鈕
+    const help = $('#welcome-help');
+    help.onclick = () => App.openSettings('help', { opener: help });
   }
   async function fillProfiles(selected) {
     const saved = (await S.store.get('profiles').catch(() => null)) || {};
     Object.assign(S.profiles, saved);
     const sel = V.clear($('#input-profile'));
     sel.appendChild(h('option', { value: '' }, '不套用（只依收集的資料判斷）'));
-    Object.values(S.profiles).filter((p) => p && p.id).forEach((p) => sel.appendChild(h('option', { value: p.id }, `${p.id}${p.label ? '：' + p.label : ''}`)));
+    Object.values(S.profiles).filter((p) => p && p.id).forEach((p) => sel.appendChild(h('option', { value: p.id }, `${p.id}${typeof p.label === 'string' && p.label ? '：' + p.label : ''}`)));
     sel.appendChild(h('option', { value: '__file' }, '載入命名規則檔（JSON）…'));
     sel.value = selected || '';
   }

@@ -777,6 +777,8 @@
         case 'dst-address-type': return flip(addrType(body, pkt.dstLocal));
         case 'src-address-type': return flip(addrType(body, pkt.srcLocal));
         case 'ipsec-policy': if (pkt.ipsec !== 'none') return null; break;
+        case 'tcp-flags': return reachTcpFlags(v, pkt);
+        case 'icmp-options': return reachIcmp(v, pkt);
         default: break;
       }
     }
@@ -800,6 +802,29 @@
       case 'ipsec-policy': return /ipsec/.test(body) ? neg : /none/.test(body) ? !neg : null;
       default: return null;
     }
+  }
+  /**
+   * Q.reach 判斷的是新連線的第一個封包（state new）：TCP 只有 SYN 旗標，ICMP 服務是 echo request（type 8、code 0）。
+   * tcp-flags（https://manual.mikrotik.com/docs/cli-reference/ip/firewall/filter.md）：每個旗標各自對 SYN 封包判斷，全部成立才算符合、全部不成立才算不符合；
+   *   結果不一致（例如 syn,ack）時多個旗標是「且」還是「或」手冊沒有寫明，不猜（null）；開頭的 ! 與多個旗標並用時也一樣。
+   * icmp-options：type[:code[-code]]，開頭的 ! 是否定。只在新連線、而且協定相符時判斷，其他情況 null。
+   */
+  const TCP_FLAGS = new Set(['fin', 'syn', 'rst', 'psh', 'ack', 'urg', 'ece', 'cwr']);
+  function reachTcpFlags(v, pkt) {
+    if (pkt.protocol !== 'tcp' || pkt.state !== 'new') return null;
+    const { neg, body } = splitNeg(v); const ts = tokens(body);
+    if (!ts.length || (neg && ts.length > 1)) return null;
+    const each = ts.map((t) => { const n = t.startsWith('!'); const f = n ? t.slice(1) : t; if (!TCP_FLAGS.has(f)) return null; return (f === 'syn') !== n; });
+    if (each.includes(null)) return null;
+    const res = each.every(Boolean) ? true : each.every((x) => !x) ? false : null;
+    return res === null ? null : neg ? !res : res;
+  }
+  function reachIcmp(v, pkt) {
+    if (pkt.protocol !== 'icmp' || pkt.state !== 'new') return null;
+    const { neg, body } = splitNeg(v); const r = String(body).trim().match(/^(\d+)(?::(\d+)(?:-(\d+))?)?$/);
+    if (!r) return null;
+    const hit = +r[1] === 8 && (r[2] === undefined || (0 >= +r[2] && 0 <= +(r[3] === undefined ? r[2] : r[3])));
+    return neg ? !hit : hit;
   }
   /** why（選用）：結果為 null 時，收集無法判斷的條件鍵（介面不明時是 in-interface／out-interface，清單無法展開時是該清單的鍵）。 */
   function ruleMatches(ctx, rule, pkt, why) {

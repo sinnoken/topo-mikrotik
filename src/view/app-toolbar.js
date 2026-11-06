@@ -1,7 +1,7 @@
 /*
- * 頁首與工具列：搜尋、資料中心、「⋯」更多操作（路由追蹤、匯出 PNG、清除基準、配色）；圖的操作（全圖、版面▾、顯示▾）、圖例與匯出。
- * 輸入與輸出的入口集中在資料中心（app-hub.js）；「⋯」只留和圖有關的「匯出 PNG」（資料中心也有，呼叫同一個 A.exportPng）。
- * 下拉選單（⋯、版面、顯示）共用 A.bindMenu：方向鍵、Home／End 移動，Esc 關閉並把焦點還給按鈕，Tab 或點外面關閉。
+ * 頁首與工具列：搜尋；圖的操作（全圖、版面▾、顯示▾、路由追蹤、匯出 PNG）、圖例與匯出；配色偏好、預設版面與清除基準的動作
+ * （入口在設定，app-settings.js）。輸入與輸出的入口集中在資料中心（app-hub.js）；工具列只留和圖有關的「匯出 PNG」（資料中心也有，呼叫同一個 A.exportPng）。
+ * 下拉選單（版面、顯示）共用 A.bindMenu：方向鍵、Home／End 移動，Esc 關閉並把焦點還給按鈕，Tab 或點外面關閉。
  */
 (function (S) {
   'use strict';
@@ -60,15 +60,27 @@
     });
     return m;
   };
-  /** 收起路由追蹤表單；refocus 時焦點回到開啟它的「⋯」按鈕（Esc 收起時） */
-  A.closeTrace = function closeTrace(refocus) { $('#trace-pop').classList.add('hidden'); if (refocus) $('#btn-more').focus(); };
+  /**
+   * 工具列的選單與路由追蹤表單放在 .grp 外面（.grp 會裁切），開啟時對齊按鈕的位置；窄螢幕放不下時往左移，不超出圖的右緣
+   */
+  const placeUnder = (btn, menu) => {
+    const tb = $('#toolbar'); const room = (tb.parentNode.clientWidth || 0) - (tb.offsetLeft || 0) - (menu.offsetWidth || 0) - 10;
+    menu.style.left = Math.max(0, Math.min(btn.offsetLeft || 0, room > 0 ? room : Infinity)) + 'px';
+  };
+  /** 路由追蹤表單打開時（App.openTrace）：對齊工具列的「路由追蹤…」，按鈕的 aria-expanded 跟著 */
+  A.placeTrace = function placeTrace() { placeUnder($('#btn-trace'), $('#trace-pop')); $('#btn-trace').setAttribute('aria-expanded', 'true'); };
+  /** 收起路由追蹤表單；refocus 時焦點回到工具列的「路由追蹤…」（Esc 收起時） */
+  A.closeTrace = function closeTrace(refocus) {
+    $('#trace-pop').classList.add('hidden'); $('#btn-trace').setAttribute('aria-expanded', 'false');
+    if (refocus) $('#btn-trace').focus();
+  };
   /** 點選單、路由追蹤以外的地方關閉它們；Esc 關閉開著的選單或路由追蹤，焦點回到開啟它的按鈕 */
   function bindDismiss() {
     const trace = $('#trace-pop');
     document.addEventListener('mousedown', (e) => {
       const t = e.target;
       menus.forEach((m) => { if (!m.btn.contains(t) && !m.menu.contains(t)) m.close(false); });
-      if (!trace.contains(t) && !$('#more-menu').contains(t)) A.closeTrace(false);
+      if (!trace.contains(t) && !$('#btn-trace').contains(t)) A.closeTrace(false);
     });
     // Esc 的先後由 A.onEscape（app.js）決定：選單、路由追蹤在資料中心與抽屜之前
     A.onEscape('menu', () => { const open = menus.find((m) => m.isOpen()); if (open) open.close(true); return !!open; });
@@ -111,12 +123,9 @@
 
   // ================================================================ 頁首
   A.bindHeader = function bindHeader() {
-    A.bindMenu($('#btn-more'), $('#more-menu'));
-    // 程式版本：沒有基準時也看得到（基準狀態卡的版本是建立該基準時的版本，兩者意義不同）
-    $('#app-version').textContent = '版本 ' + S.VERSION;
-    bindDismiss(); bindThemeMenu();
-    // 路由追蹤表單是「⋯」旁邊的小對話框：從選單開啟（選單先關閉），也可由詳情的「追蹤路由」開啟（App.openTrace）
-    $('#btn-trace').onclick = () => App.openTrace();
+    bindDismiss();
+    // 路由追蹤表單是工具列「路由追蹤…」下方的小對話框：按鈕開關，也可由詳情的「追蹤路由」開啟（App.openTrace）
+    $('#btn-trace').onclick = () => ($('#trace-pop').classList.contains('hidden') ? App.openTrace() : A.closeTrace(false));
     $('#trace-run').onclick = A.runTrace;
     // 對調：交換來源與目的（例如看完去程再看回程），焦點留在按鈕
     $('#trace-swap').onclick = () => { const s = $('#trace-src'); const d = $('#trace-dst'); [s.value, d.value] = [d.value, s.value]; };
@@ -126,13 +135,6 @@
     }));
     // 畫布每次繪圖都先填滿 theme 的畫布底色，匯出前同步重畫一次，PNG 才是目前畫面且不透明
     $('#btn-png').onclick = () => A.exportPng();
-    $('#btn-clear').onclick = async () => {
-      A.closeMenus();
-      if (!App.snap || !confirm('清除目前的基準與輸入？（只清除這個工具的資料）')) return;
-      await S.store.del('last'); A.cancelElk(); A.clearRound();
-      // 沒有基準時只有設備圖（歡迎畫面）：L2／L3 的資料與 VLAN 篩選一起清掉
-      App.vlanFilter = null; A.resetLayers(); App.layer = 'device'; A.setDeviceGraph([], [], new Map()); A.resetSelection(); A.renderAll();
-    };
     // 搜尋
     const inp = $('#search'); const dd = $('#search-dd'); let results = []; let active = 0;
     const show = () => {
@@ -170,13 +172,8 @@
 
   // ================================================================ 工具列
   A.bindToolbar = function bindToolbar() {
-    // 選單放在 .grp 外面（.grp 會裁切），開啟時對齊按鈕的位置；窄螢幕放不下時往左移，不超出圖的右緣
-    const under = (btn, menu) => {
-      const tb = $('#toolbar'); const room = (tb.parentNode.clientWidth || 0) - (tb.offsetLeft || 0) - (menu.offsetWidth || 0) - 10;
-      menu.style.left = Math.max(0, Math.min(btn.offsetLeft || 0, room > 0 ? room : Infinity)) + 'px';
-    };
-    A.bindMenu($('#btn-layout-menu'), $('#layout-menu'), under);
-    A.bindMenu($('#btn-view-menu'), $('#view-menu'), under);
+    A.bindMenu($('#btn-layout-menu'), $('#layout-menu'), placeUnder);
+    A.bindMenu($('#btn-view-menu'), $('#view-menu'), placeUnder);
     $('#btn-fit').onclick = () => App.graph.fit();
     // VLAN 篩選的標示：按下或按 Esc 取消篩選，焦點移到 VLAN 選單（標示隨即隱藏）；Esc 不往外傳（不會同時取消選取）
     const chip = $('#vlan-chip');
@@ -184,15 +181,11 @@
     chip.onclick = clearFilter;
     chip.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); clearFilter(); } });
     $('#btn-relayout').onclick = () => A.relayout();
-    // 版面：分層（ELK）或快速（內建），單選；選了就依新的版面重新排列
+    // 版面：分層（ELK）或快速（內建），單選；選了就依新的版面重新排列。選擇就是預設版面（store 的 'layoutMode'，設定「一般」也改同一個）
     const modes = Array.from($('#layout-mode').querySelectorAll('.menu-item'));
-    A.syncLayoutMode = () => modes.forEach((b) => A.setChecked(b, b.dataset.layout === App.layoutMode));
+    A.syncLayoutMode = () => { modes.forEach((b) => A.setChecked(b, b.dataset.layout === App.layoutMode)); A.syncSettingsControls(); };
     A.syncLayoutMode();
-    modes.forEach((b) => { b.onclick = () => {
-      App.layoutMode = b.dataset.layout; A.syncLayoutMode(); A.closeMenus();
-      S.store.set('layoutMode', App.layoutMode).catch(() => {});
-      $('#btn-relayout').click();
-    }; });
+    modes.forEach((b) => { b.onclick = () => { A.closeMenus(); A.setLayoutMode(b.dataset.layout); $('#btn-relayout').click(); }; });
     let running = null; const force = $('#btn-force');
     force.onclick = () => {
       if (running) { cancelAnimationFrame(running); running = null; A.setChecked(force, false); A.savePositions(); return; }
@@ -220,11 +213,26 @@
     buildLegend();
   };
 
+  /** 版面的模式（App.LAYOUT_MODES 之一）：工具列「版面 ▾」與設定「一般」的「預設版面」共用。存進 store 的 'layoutMode'，下次開啟沿用；不重新排列 */
+  App.LAYOUT_MODES = ['elk', 'builtin'];
+  A.setLayoutMode = function setLayoutMode(mode) {
+    if (!App.LAYOUT_MODES.includes(mode)) throw new RangeError('未知的版面：' + mode);
+    App.layoutMode = mode; A.syncLayoutMode();
+    S.store.set('layoutMode', mode).catch((e) => A.banner('無法儲存預設版面：' + V.reason(e) + '。這次有效，關閉頁面後不會保留。', 8000));
+  };
+  /** 清除這個工具儲存的基準與輸入（設定「本機資料」的「清除基準…」，先確認）；處理紀錄不受影響。回傳是否清除了 */
+  App.clearBaseline = async function () {
+    A.closeMenus();
+    if (!App.snap || !confirm('清除目前的基準與輸入？（只清除這個工具的資料，處理紀錄保留）')) return false;
+    await S.store.del('last'); A.resetBaselineView(); A.renderAll(); // 收起畫面上的基準只有一份實作（app.js）
+    return true;
+  };
+
   /** 使用者的「減少動態效果」偏好（瀏覽器沒有 matchMedia 時視為沒有偏好） */
   A.reducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
   // ================================================================ 配色（跟隨系統、淺色、深色）
-  // 偏好（S.store.theme：system／light／dark）由「⋯」選單切換。實際的深淺（theme.mode）同時寫到 <html data-theme>，
+  // 偏好（S.store.theme：system／light／dark）由設定「一般」的「配色」切換。實際的深淺（theme.mode）同時寫到 <html data-theme>，
   // CSS 只跟著這個屬性（深色變數只寫一份，不另寫 prefers-color-scheme 的複本）；跟隨系統時由這裡的 matchMedia 決定。
   // 首次繪製前 index.html 的 inline script 先呼叫 A.paintScheme 設好屬性，CSS 不閃。強制色彩模式（forced-colors）由 CSS 處理，與這裡無關。
   const SCHEME_QUERY = '(prefers-color-scheme: dark)';
@@ -239,11 +247,8 @@
   A.paintScheme = function paintScheme() { setSchemeAttr(A.resolveScheme(S.store.theme.get())); };
   /** 目前的配色偏好（system／light／dark） */
   A.themePref = () => schemePref;
-  /** 「⋯」選單的配色單選：aria-checked 跟著偏好 */
-  function syncThemeMenu() {
-    const box = $('#theme-mode'); if (!box) return;
-    Array.from(box.querySelectorAll('.menu-item')).forEach((b) => A.setChecked(b, b.dataset.scheme === schemePref));
-  }
+  /** 設定「一般」的配色單選跟著偏好（設定開著時；關著時下次開啟才畫，畫的時候讀 A.themePref） */
+  const syncThemeMenu = () => A.syncSettingsControls();
   /**
    * 換配色偏好：存進 store、更新選單、套用（跟隨系統時套用系統目前的深淺）。
    * 存不進去時這次仍套用，並以通知說明關閉頁面後不會保留（不靜默）。
@@ -301,19 +306,13 @@
     else if (typeof mq.addListener === 'function') mq.addListener(onChange); // Safari 13 以前
     else {
       A.applyColorScheme(fixed ? schemePref : 'light');
-      const msg = '這個瀏覽器無法偵測系統深淺的變更，跟隨系統時畫面維持亮色（可在「⋯」選單改成固定的淺色或深色）。';
+      const msg = '這個瀏覽器無法偵測系統深淺的變更，跟隨系統時畫面維持亮色（可在「設定」的「一般」改成固定的淺色或深色）。';
       console.warn(msg); if (!fixed) A.banner(msg, 8000); return false;
     }
     schemeBound = true;
     A.applyColorScheme(fixed ? schemePref : mq.matches ? 'dark' : 'light');
     return true;
   };
-  /** 「⋯」選單的配色單選（data-keep：按了不關閉選單，方便比較） */
-  function bindThemeMenu() {
-    const box = $('#theme-mode'); if (!box) return;
-    Array.from(box.querySelectorAll('.menu-item')).forEach((b) => { b.onclick = () => A.setThemePref(b.dataset.scheme); });
-    syncThemeMenu();
-  }
   /** 匯出時暫時換成 mode 的配色（含圖上存下的顏色），fn 結束後一定還原 */
   function withScheme(mode, fn) {
     const T = V.theme; const prev = T.mode;

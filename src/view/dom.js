@@ -135,20 +135,26 @@
    */
   V.L4_STATUS = { allow: '允許', deny: '拒絕', partial: '部分允許', unknown: '無法判斷', empty: '沒有組合' };
   V.L4_STATUS_TIP = {
-    allow: '這一格算到的位址組合 × 服務全部允許',
-    deny: '全部拒絕（被規則丟棄、沒有路由或黑洞路由）',
+    allow: '算到的位址組合 × 服務中有允許、沒有拒絕（另有無法判斷的組合時標「部分無法判斷」）',
+    deny: '全部拒絕（被規則丟棄、沒有路由、黑洞路由，或設備的管理服務不接受）',
     partial: '有些允許、有些拒絕（不同的位址或服務結果不同）',
-    unknown: '有無法判斷的組合（原因見提示與明細），沒有允許與拒絕同時出現',
+    unknown: '沒有確定的允許，而且有無法判斷的組合（原因見提示與明細；無法判斷的可能是允許，所以不寫成拒絕）',
     empty: '沒有可算的位址組合（例如目的 zone 只有設備自己的位址，或沒有可當代表的位址）；不是「無法判斷」',
   };
+  /** 格子有確定的允許，又有無法判斷的組合（Q.zoneMatrix 的 incomplete）：接在狀態後面，確定的允許不被「無法判斷」藏起來 */
+  V.L4_INCOMPLETE = '部分無法判斷';
+  /** 逐跳的規則結果（stages[].verdict）：中文在前、RouterOS 原值在括號；nat 沒有命中（none）是「不改寫」 */
+  V.L4_VERDICT = { accept: '放行（accept）', drop: '丟棄（drop）', notrack: '不追蹤（notrack）', none: '不改寫' };
+  /** 逐跳的連線追蹤狀態（hops[].conntrack） */
+  V.L4_CONNTRACK = { untracked: '不追蹤連線（untracked）：之後的規則以 connection-state=untracked 比對，不套用 NAT' };
   /** 檢查目錄（S.query.rule）的類別與標題；目錄沒有的代碼（不應發生）不吞掉，歸在 UNKNOWN_RULE_CAT、標題原樣寫代碼。「研判」與修正計畫共用 */
   V.UNKNOWN_RULE_CAT = '未登錄的檢查';
   V.ruleInfo = (id) => S.query.rule(id) || { id, cat: V.UNKNOWN_RULE_CAT, title: id };
   // zone 的來源（Q.zones 的 source）
-  V.ZONE_SOURCE = { profile: '命名規則', 'interface-list': 'interface list', vlan: 'VLAN', subnet: '網段' };
+  V.ZONE_SOURCE = { profile: '命名規則', 'interface-list': 'interface list', vlan: 'VLAN', subnet: '網段', virtual: '虛擬' };
   // Q.reach 的原因代碼與結束代碼（src/query/trace.js 的 reason／end）；沒有對照的代碼原樣顯示並標「沒有說明」，不吞掉
   V.REACH_REASON = {
-    'rule-condition': '規則的比對條件無法判斷', 'raw-notrack': 'raw 規則不追蹤連線（notrack），之後依連線狀態比對的規則結果不明',
+    'rule-condition': '規則的比對條件無法判斷', 'raw-notrack': 'raw 規則是否不追蹤連線（notrack）無法判斷，追蹤與不追蹤的結果不同',
     'nat-ambiguous': '目的 NAT 可能由不同的規則改寫，改寫後的目的不明', 'nat-target': 'NAT 改寫後的位址或埠不明（範圍、無法解析或不支援的動作）',
     'no-firewall-data': '設備沒有設定資料（/export），防火牆規則不明', 'srcnat-ambiguous': '來源 NAT 可能由不同的規則改寫，之後的來源位址不明',
     'srcnat-address-unknown': '來源 NAT 改寫後的來源位址不明', 'branches-differ': '有多條路徑（ECMP 或多個閘道），結果不同，實際走哪一條無法判斷',
@@ -160,6 +166,10 @@
     host: '送達主機（主機本身的防火牆不在範圍內）', segment: '送達直連網段上的主機', 'same-subnet': '來源與目的在同一個網段，不經過路由器',
     'policy-routing': '策略路由（mangle 的 mark-routing、改過的 policy-rules，或無法判斷的 /routing rule 條件）使查哪一張路由表不明',
     'policy-drop': '/routing rule 的 drop 或 unreachable，封包被丟棄',
+    'service-refused': '防火牆放行，但設備的管理服務（/ip service）停用或不接受這個來源（available-from）',
+    'service-unknown': '設備的管理服務（/ip service）是否接受這個來源無法判斷',
+    'egress-wan': '從 WAN 介面送往基準以外的位址，之後由電信業者決定（推論）',
+    'hairpin-no-srcnat': '目的 NAT 後與來源同網段，但沒有來源 NAT（hairpin NAT），回應不經過路由器，連線通常建立不起來',
   };
   // S.trace 的結束狀態（ends[].status）
   V.TRACE_END = {
@@ -240,7 +250,7 @@
   V.NH_VRF_BASIS = { explicit: '閘道寫了 @<VRF>', 'vrf-interface': '閘道是 VRF 介面，在那個 VRF 再查一次', interface: '閘道介面所屬的 VRF', default: '只有 IP、沒寫 @，在 main 解析' };
   V.reachReason = (code) => V.REACH_REASON[code] || `${code}（沒有說明的原因代碼）`;
   V.REACH_START = { gateway: '來源網段的閘道', device: '來源是網路設備自己的位址（output）', 'same-subnet': '來源與目的在同一個網段', entry: '指定的入口介面', none: '找不到來源所在的網段' };
-  V.REACH_START_BASIS = { dhcp: '依 DHCP 網路的閘道', routes: '依網段上有路由表的設備', subnet: '依網段上已收集的設備' };
+  V.REACH_START_BASIS = { dhcp: '依 DHCP 網路的閘道', 'next-hop': '依網段上其他設備預設路由的下一跳', 'default-route': '依網段上有預設路由的設備', routes: '依網段上有路由表的設備', subnet: '依網段上已收集的設備' };
   /** 十進位數字字串（可能超過 2^53，例如命中次數的位元組數）加上千分位；不是數字字串時原樣回傳 */
   V.bigNum = (s) => (/^\d+$/.test(String(s)) ? String(s).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : String(s));
   // VLAN 承載（Q.vlanCarriers 的 status 與 reason）；oneSide、inferred 是推論

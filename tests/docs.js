@@ -92,6 +92,59 @@ test('分工：repo 中每個檔案恰好屬於一個 agent，agent 定義與所
   assert.deepStrictEqual(defined, owners.filter((o) => o !== 'lead').sort(), 'agent 定義檔要和所有權表的 agent 一一對應（lead 是主對話，不需定義檔）');
 });
 
+/*
+ * Markdown 的相對連結與錨點都要指得到東西。範圍是 git 的檔案（含尚未 add 的新檔，不含 .gitignore 排除的），
+ * 不含 tests/workflow/fixtures/：那裡是報表的逐字預期輸出，括號裡的文字不是連結。
+ * 錨點依 GitHub 的規則由標題產生：轉小寫、去掉字母／數字／組合記號／連接標點（_）／空白／連字號以外的字元
+ * （中文保留，「」、（）：等全形標點去掉），空白換成 -，同名標題依序加 -1、-2；另認得 <a id|name="…">。
+ */
+const FENCE = /^\s*(```|~~~)/;
+const githubSlug = (text) => text
+  .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/<[^>]+>/g, '').trim().toLowerCase()
+  .replace(/[^\p{L}\p{M}\p{N}\p{Pc} -]/gu, '').replace(/ /g, '-');
+const anchorCache = new Map();
+function anchorsOf(file) {
+  if (anchorCache.has(file)) return anchorCache.get(file);
+  const set = new Set(); const seen = new Map(); let inCode = false;
+  for (const line of read(file).split('\n')) {
+    if (FENCE.test(line)) { inCode = !inCode; continue; }
+    if (inCode) continue;
+    for (const a of line.matchAll(/<a\s+(?:id|name)="([^"]+)"/g)) set.add(a[1]);
+    const h = /^#{1,6}\s+(.*?)\s*#*\s*$/.exec(line);
+    if (!h) continue;
+    const base = githubSlug(h[1]); const n = seen.get(base);
+    seen.set(base, n == null ? 0 : n + 1);
+    set.add(n == null ? base : `${base}-${n + 1}`);
+  }
+  anchorCache.set(file, set);
+  return set;
+}
+test('Markdown 的相對連結都指得到檔案，錨點都對得到標題（GitHub 錨點規則）', () => {
+  const files = execFileSync('git', ['-c', 'core.quotepath=false', 'ls-files', '--cached', '--others', '--exclude-standard', '-z', '--', '*.md'], { cwd: ROOT, encoding: 'utf8' })
+    .split('\0').filter(Boolean).filter((f) => !f.startsWith('tests/workflow/fixtures/') && fs.existsSync(path.join(ROOT, f)));
+  const problems = [];
+  files.forEach((f) => {
+    let inCode = false;
+    read(f).split('\n').forEach((line, i) => {
+      if (FENCE.test(line)) { inCode = !inCode; return; }
+      if (inCode) return;
+      const l = line.replace(/`[^`]*`/g, '');
+      const targets = Array.from(l.matchAll(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g), (m) => m[1]);
+      const ref = /^\s*\[[^\]]+\]:\s*(\S+)/.exec(l); if (ref) targets.push(ref[1]);
+      targets.forEach((u) => {
+        if (/^[a-z][a-z0-9+.-]*:/i.test(u)) return;
+        const at = u.indexOf('#');
+        let p = at < 0 ? u : u.slice(0, at); let h = at < 0 ? '' : u.slice(at + 1);
+        try { p = decodeURIComponent(p); h = decodeURIComponent(h); } catch (e) { problems.push(`${f}:${i + 1}：無法解碼 ${u}`); return; }
+        const target = p ? path.posix.normalize(path.posix.join(path.posix.dirname(f), p)) : f;
+        if (!fs.existsSync(path.join(ROOT, target))) problems.push(`${f}:${i + 1}：找不到檔案 ${u}`);
+        else if (h && target.endsWith('.md') && !anchorsOf(target).has(h)) problems.push(`${f}:${i + 1}：${target} 沒有錨點 #${h}`);
+      });
+    });
+  });
+  assert.deepStrictEqual(problems, [], '請修正連結或錨點（錨點由標題產生，改標題時要一起改引用）');
+});
+
 let fail = 0;
 for (const t of tests) {
   try { t.fn(); console.log('  ✓ ' + t.name); } catch (e) { fail++; console.log('  ✗ ' + t.name + '\n      ' + String(e.message).split('\n').join('\n      ')); }

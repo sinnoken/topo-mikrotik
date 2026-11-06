@@ -147,6 +147,8 @@
   /** 逐跳的規則結果（stages[].verdict）：中文在前、RouterOS 原值在括號；nat 沒有命中（none）是「不改寫」 */
   V.L4_VERDICT = { accept: '放行（accept）', drop: '丟棄（drop）', notrack: '不追蹤（notrack）', none: '不改寫' };
   /** 逐跳的連線追蹤狀態（hops[].conntrack） */
+  /** 暴露清單的 IPv6：入口設備沒有判斷的原因（Q.exposure().ipv6.missing[].reason） */
+  V.L4_IPV6_MISSING = { 'no-address': '基準沒有它的 IPv6 位址（/ipv6 address）', disabled: 'IPv6 停用' };
   V.L4_CONNTRACK = { untracked: '不追蹤連線（untracked）：之後的規則以 connection-state=untracked 比對，不套用 NAT' };
   /** 檢查目錄（S.query.rule）的類別與標題；目錄沒有的代碼（不應發生）不吞掉，歸在 UNKNOWN_RULE_CAT、標題原樣寫代碼。「研判」與修正計畫共用 */
   V.UNKNOWN_RULE_CAT = '未登錄的檢查';

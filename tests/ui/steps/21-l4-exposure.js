@@ -37,10 +37,21 @@ module.exports = async () => {
     sum.querySelector('.l4-ex-assume').click();
     if (!(af.getAttribute("open") != null)) throw new Error('點「前提」應展開判斷的前提');
     // 三段：每段的列與 Q.exposure 一致；拒絕的只寫數字；沒有時寫「沒有」
+    const secEl = (k) => $('#l4-exposure').testAll('.l4-ex-sec').find((x) => x.dataset.sec === k);
     SECS.forEach((k) => {
-      const sec = $('#l4-exposure').testAll('.l4-ex-sec').find((x) => x.dataset.sec === k);
-      if (!sec) throw new Error('應有這一段：' + k);
+      if (!secEl(k)) throw new Error('應有這一段：' + k);
+      // 每段超過 20 列時先列 20 列，其餘「顯示全部（N）」（aria-expanded）；按了列出全部，焦點留在按鈕
+      const ng = secEl(k).testAll('tr').filter((tr) => /l4-ex-row/.test(tr.className || '')).length;
+      const allBtn = () => secEl(k).querySelector('.l4-ex-all');
+      if (ng > 20) throw new Error(`${k} 段預設最多列 20 列（${ng}）`);
+      if (allBtn()) {
+        if (ng !== 20 || allBtn().getAttribute('aria-expanded') !== 'false' || !/^顯示全部（[\d,]+）$/.test(allBtn().textContent)) throw new Error(`${k} 段超過 20 列時應有「顯示全部（N）」：${allBtn().textContent}`);
+        allBtn().click();
+        if (allBtn().getAttribute('aria-expanded') !== 'true' || document.activeElement !== allBtn()) throw new Error('按「顯示全部」後應展開，焦點留在按鈕');
+      }
+      const sec = secEl(k);
       const rows = sec.testAll('tr').filter((tr) => /l4-ex-row/.test(tr.className || ''));
+      if (allBtn() && rows.length <= 20) throw new Error(`${k} 段按「顯示全部」後應列出超過 20 列`);
       // 同一台設備、同一個服務與結果的列併成一列（位址在 title）：列數不多於 Q.exposure，每個位址都看得到
       if (!!rows.length !== !!ex[k].rows.length || rows.length > ex[k].rows.length) throw new Error(`${k} 段的列應來自 Q.exposure（${rows.length}／${ex[k].rows.length}）`);
       if (rows.length < 300) {
@@ -81,16 +92,25 @@ module.exports = async () => {
     for (const k of SECS) {
       const btns = $('#l4-exposure').testAll('.l4-ex-path').filter((b) => b.dataset.sec === k);
       for (const b of btns.slice(0, 3)) {
-        const x = ex[k].rows[Number(b.dataset.row)];
+        const x = ex[k].rows[Number(b.dataset.row)]; const row = b.dataset.row;
+        const btnNow = () => $('#l4-exposure').testAll('.l4-ex-path').find((y) => y.dataset.sec === k && y.dataset.row === row);
+        const drillWas = $('#l4-drill').classList.contains('hidden');
         b.click();
-        const s = l4State();
-        if (!s.reach) throw new Error(`看路徑應有結果：${s.reachErr}`);
-        if (s.reachReq.entry !== x.entry || s.reachReq.src !== x.src || s.reach.verdict !== x.verdict) throw new Error(`看路徑應與列一致（${k} ${x.ip} ${x.service}：列 ${x.verdict}，逐跳 ${s.reach.verdict}）`);
-        if ($('#l4-drill').classList.contains('hidden') || !$('#l4-l3-title')) throw new Error('看路徑應開逐跳路徑');
-        // 關閉後焦點回到同一個「看路徑」按鈕（不落到收合中的矩陣）
-        $('#l4-drill').querySelector('.l4-close').click();
-        const back = document.activeElement;
-        if (!$('#l4-drill').classList.contains('hidden') || !back || back.dataset.sec !== k || back.dataset.row !== b.dataset.row) throw new Error('從看路徑關閉後，焦點應回到那一列的「看路徑」');
+        const s = l4State().exPath;
+        if (!s || !s.reach) throw new Error(`看路徑應有結果：${s && s.err}`);
+        if (s.sec !== k || String(s.row) !== row || s.req.entry !== x.entry || s.req.src !== x.src || s.reach.verdict !== x.verdict) throw new Error(`看路徑應與列一致（${k} ${x.ip} ${x.service}：列 ${x.verdict}，逐跳 ${s.reach.verdict}）`);
+        // 就地展開：路徑在那一列的正下方（同一個 tbody 的下一列），不開上方的明細；標題寫結論，焦點到標題
+        const tr = btnNow(); let p = tr; while (p && p.tagName !== 'TR') p = p.parentNode;
+        const tb = p.parentNode; const nx = tb.childNodes[tb.childNodes.indexOf(p) + 1];
+        if (!nx || !/l4-ex-pathrow/.test(nx.className) || !nx.querySelector('#l4-ex-path-title')) throw new Error('看路徑應在那一列的下方展開逐跳路徑');
+        if ($('#l4-drill').classList.contains('hidden') !== drillWas) throw new Error('看路徑不應開明細');
+        if (document.activeElement !== $('#l4-ex-path-title') || !$('#l4-ex-path-title').textContent.includes(S.view.L4_STATUS[x.verdict])) throw new Error('展開後焦點應在路徑的標題，標題寫出結論');
+        if (btnNow().getAttribute('aria-expanded') !== 'true' || $('#l4-exposure').testAll('.l4-ex-pathrow').length !== 1) throw new Error('看路徑的按鈕標 aria-expanded，同時只展開一列');
+        // 再按一次收起，焦點回到同一個按鈕；Esc 也收起
+        btnNow().click();
+        if (l4State().exPath || $('#l4-exposure').testAll('.l4-ex-pathrow').length || document.activeElement !== btnNow() || btnNow().getAttribute('aria-expanded') !== 'false') throw new Error('再按一次應收起，焦點回到那一列的「看路徑」');
+        btnNow().click(); $('#l4-ex-path-box').dispatch('keydown', { key: 'Escape' });
+        if (l4State().exPath || document.activeElement !== btnNow()) throw new Error('Esc 應收起路徑，焦點回到按鈕');
         checked++;
       }
     }

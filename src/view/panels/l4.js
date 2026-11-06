@@ -380,18 +380,31 @@
         if (App.Q !== Q || App.layer !== 'l4') { stopEx(); renderExposure(App); resolve(); return; }
         const s0 = Date.now(); if (j.last) j.maxGapMs = Math.max(j.maxGapMs, s0 - j.last);
         let r;
-        try { if (!j.it) j.it = Q.exposureSteps(zo()); r = j.it.next(); } catch (e) { console.error(e); exJob = null; st.exErr = V.reason(e); renderExposure(App); resolve(); return; }
+        try { if (!j.it) j.it = Q.exposureSteps(zo()); r = j.it.next(); } catch (e) { console.error(e); exJob = null; st.exErr = V.reason(e); try { safeRender(App); } finally { resolve(); } return; }
         const ms = Date.now() - s0; j.last = Date.now(); j.steps++; j.ms += ms; j.maxStepMs = Math.max(j.maxStepMs, ms);
         if (!r.done) { j.progress = r.value; exProgress(r.value); setTimeout(tick, 0); return; }
         exJob = null;
         exRuns.set(Q, { ms: j.ms, wallMs: Date.now() - j.t0, steps: j.steps, maxStepMs: j.maxStepMs, maxGapMs: j.maxGapMs });
         st.ex = r.value; st.exQ = Q; st.exZo = j.zo;
-        try { renderExposure(App); } catch (e) { console.error(e); st.exErr = V.reason(e); renderExposure(App); }
-        resolve();
+        try { safeRender(App); } finally { resolve(); }
       };
       setTimeout(tick, BUSY_DELAY);
     });
     return j.promise;
+  }
+  /**
+   * 畫暴露清單；畫的時候丟出例外時改畫錯誤（st.exErr），連錯誤都畫不出來時直接在段落寫出兩次的原因（role=alert）。
+   * 不再往外丟：呼叫端的 Promise（App.l4Job）一定會結束
+   */
+  function safeRender(App) {
+    try { renderExposure(App); return; } catch (e) { console.error(e); st.exErr = V.reason(e); }
+    try { renderExposure(App); } catch (e2) {
+      console.error(e2);
+      if (els) {
+        V.clear(els.exHead).appendChild(h('span', null, '無法顯示從外部進得來什麼。'));
+        V.clear(els.ex).appendChild(h('p', { class: 'diffA l4-ex-error', role: 'alert' }, `無法顯示：${st.exErr}；顯示錯誤時又發生：${V.reason(e2)}`));
+      }
+    }
   }
   function exProgress(p) {
     const bar = $('#l4-ex-progress'); const t = $('#l4-ex-progress-text'); if (!bar) return;
@@ -484,6 +497,9 @@
       const g = m.get(k); if (g) { g.ips.push(x.ip); return; }
       const ng = { x, i, ips: [x.ip] }; m.set(k, ng); out.push(ng);
     });
+    // 查詢層只依設備 → 位址族 → 位址 → 服務排序：先列允許、再列無法判斷（同結果內保留查詢層的順序），前 EX_LIMIT 列才不會把允許的收起來
+    const rank = (v) => (v === 'allow' ? 0 : v === 'unknown' ? 1 : 2);
+    out = out.map((g, n) => ({ g, n })).sort((a, b) => rank(a.g.x.verdict) - rank(b.g.x.verdict) || a.n - b.n).map((o) => o.g);
     exGroupsCache.set(rows, out);
     return out;
   }
@@ -509,7 +525,11 @@
         return h('span', { class: 'l4-ex-basis' }, [x.rule ? ruleLink(App, x.rule, true) : h('span', null, '—'), ls.length ? h('span', { class: 'l4-ex-findings' }, ls) : null]); } },
     ];
     // 每段最多先列 EX_LIMIT 列，其餘「顯示全部（N）」（同一段只有一個按鈕在 Tab 順序裡）
-    const all = st.exAll.has(def.key); const shown = all ? gs.slice(0, ROW_LIMIT) : gs.slice(0, EX_LIMIT);
+    const all = st.exAll.has(def.key); let shown = all ? gs.slice(0, ROW_LIMIT) : gs.slice(0, EX_LIMIT);
+    // 看路徑的那一列在顯示上限（ROW_LIMIT）之後時，另外接在最後（路徑與焦點才有地方放）
+    const op = st.exPath && st.exPath.sec === def.key ? gs.find((g) => g.i === st.exPath.row) : null;
+    const extra = op && !shown.includes(op) ? op : null;
+    if (extra) shown = shown.concat([extra]);
     const more = gs.length > EX_LIMIT ? h('button', { type: 'button', class: 'ghost l4-ex-all', 'data-sec': def.key, 'aria-expanded': String(all),
       onclick: () => { if (all) st.exAll.delete(def.key); else st.exAll.add(def.key); renderExposure(App); const b = Array.from(els.ex.querySelectorAll('.l4-ex-all')).find((x) => x.dataset.sec === def.key); if (b) b.focus(); } },
     all ? `只顯示前 ${EX_LIMIT} 列` : `顯示全部（${V.num(gs.length)}）`) : null;
@@ -517,13 +537,13 @@
       h('h4', { id, class: 'l4-ex-title' }, [def.title, ' ', V.chip(V.num(gs.length))]),
       h('p', { class: 'l4-ex-sentence' }, sentence),
       s.rows.length ? exTable(App, def, cols, shown) : null,
-      all && gs.length > ROW_LIMIT ? h('div', { class: 'muted table-more' }, `只顯示前 ${ROW_LIMIT} 列，共 ${V.num(gs.length)} 列`) : null,
+      all && gs.length > ROW_LIMIT ? h('div', { class: 'muted table-more' }, `只顯示前 ${ROW_LIMIT} 列，共 ${V.num(gs.length)} 列${extra ? `；看路徑的第 ${V.num(gs.indexOf(extra) + 1)} 列另接在最後` : ''}`) : null,
       more,
       denied ? h('p', { class: 'muted l4-ex-denied' }, `其餘 ${V.num(denied)} 個組合（服務 × 位址）拒絕。`) : null,
     ]);
   }
   /**
-   * 暴露清單的表格（依查詢層的順序：允許 → 無法判斷，不另外排序）；和 V.table 的 stack 一樣窄螢幕時每列排成一塊、每格前面寫欄名。
+   * 暴露清單的表格（依 exGroups 的順序：允許 → 無法判斷，表頭不排序）；和 V.table 的 stack 一樣窄螢幕時每列排成一塊、每格前面寫欄名。
    * 看路徑的那一列下方多一列（colspan），放逐跳路徑
    */
   function exTable(App, def, cols, groups) {
@@ -1114,6 +1134,8 @@
     exposureRun: (Q) => exRuns.get(Q) || null,
     /** 目前畫的暴露清單（Q.exposure 的結果；還在算時為 null） */
     exposure: () => st.ex,
+    /** 暴露清單一段的顯示分組（[{ x, i, ips }]，允許在前、無法判斷在後）；測試用 */
+    exGroups: (rows) => exGroups(rows),
     /** 這個畫面在某份基準上算過的矩陣（service → 毫秒數）；大型冒煙測試讀計算時間 */
     timings: (Q) => new Map(computed.get(Q) || []),
     /** 分段計算的紀錄（service → { ms, wallMs, steps, maxStepMs：一段最久佔住主執行緒多久, maxGapMs：兩段之間最長的間隔 }） */

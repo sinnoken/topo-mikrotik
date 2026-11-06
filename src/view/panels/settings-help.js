@@ -65,7 +65,7 @@
     const latest = h('a', { class: 'link', href: REPO + '/archive/refs/heads/main.zip', target: '_blank', rel: 'noopener noreferrer', 'data-latest-collector': '' }, '取得最新版（需要網路）');
     return [
       h('div', { class: 'form-row' }, [
-        h('button', { type: 'button', 'data-settings-focus': 'download-collector', disabled: files ? null : true, onclick: () => downloadCollector(status) }, '下載收集腳本（collect.zip）'),
+        h('button', { type: 'button', 'data-settings-focus': 'download-collector', disabled: files ? null : true, onclick: () => downloadCollector(status) }, '下載收集腳本（topo-mikrotik-collector.zip）'),
         latest, status]),
       h('p', { class: 'settings-note muted', id: 'settings-collector-note' }, files
         ? ['內含 ', ...files.flatMap((f, i) => [i ? '、' : '', h('code', null, f.path.replace(/^.*\//, ''))]), '，內容和這一版網頁一致。解壓後先執行 ', h('code', null, 'chmod +x collect.sh'), '，再照下方的用法執行。']

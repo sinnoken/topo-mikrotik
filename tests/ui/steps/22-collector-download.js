@@ -1,4 +1,4 @@
-// 畫面冒煙測試的 step：⚙ 設定「收集與建立基準」下載收集腳本（collect.zip，內容是嵌入的 S.samples.collectorFiles）與取得最新版的連結。
+// 畫面冒煙測試的 step：⚙ 設定「收集與建立基準」下載收集腳本（topo-mikrotik-collector.zip，內容是嵌入的 S.samples.collectorFiles）與取得最新版的連結。
 'use strict';
 const { S, step, $, text, captureDownloads, settingsTab } = require('../helpers.js');
 const assert = require('assert');
@@ -14,7 +14,7 @@ module.exports = async () => {
     const btn = helpBtn('download-collector');
     assert.ok(btn, '「收集與建立基準」應有下載收集腳本的按鈕');
     assert.strictEqual(btn.getAttribute('disabled'), null, '有嵌入的收集腳本時按鈕可用');
-    assert.ok(btn.textContent.includes('collect.zip'), '按鈕文字應寫出 collect.zip：' + btn.textContent);
+    assert.ok(btn.textContent.includes('topo-mikrotik-collector.zip'), '按鈕文字應寫出實際的檔名 topo-mikrotik-collector.zip：' + btn.textContent);
     const once = async () => {
       const { files: got } = await captureDownloads(async () => { helpBtn('download-collector').click(); });
       assert.strictEqual(got.length, 1, '按一次應下載一個檔案');

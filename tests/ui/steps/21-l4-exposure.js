@@ -129,6 +129,37 @@ module.exports = async () => {
     App.select(null);
   });
 
+  await step('L4 暴露清單的排序與邊界：允許排在無法判斷之前（前 20 列都是無法判斷時也看得到允許）；看路徑的列超過 300 列上限時另接在最後；畫面丟錯時 App.l4Job 仍會結束並寫出原因', async () => {
+    if (process.env.SMOKE_INPUT) return; // 用範例資料的 dst-nat 列造資料
+    const V = S.view; const realQ = App.Q; const real = realQ.exposure(); const base = real.dnat.rows[0];
+    if (!base) throw new Error('測試前提：範例資料有 dst-nat 的列');
+    // 一段 330 組：前 25 組無法判斷、第 26 組允許，其餘無法判斷（查詢層只依設備、位址、服務排序，不依結果）
+    const rows = Array.from({ length: 330 }, (_, n) => Object.assign({}, base, { service: `tcp/${2000 + n}`, port: 2000 + n, verdict: n === 25 ? 'allow' : 'unknown', reasons: [], incomplete: false, returnUnsafe: [] }));
+    const fake = Object.assign({}, real, { dnat: Object.assign({}, real.dnat, { rows }) });
+    const gs = V.l4.exGroups(rows);
+    if (gs[0].x.verdict !== 'allow' || gs.slice(1).some((g) => g.x.verdict !== 'unknown') || gs.slice(1).some((g, k) => k && g.i < gs[k].i)) throw new Error('分組應允許在前、同結果內保留原順序');
+    // App.Q 是唯讀（App.round.Q）：測試暫時換成只改 exposureSteps 的查詢介面，結束時換回
+    const withQ = async (q, after) => { App.showLayer('device'); App.round.Q = q; App.showLayer('l4', { rebuild: true }); if (after) after();
+      const r = await Promise.race([App.l4Job.then(() => 'ok'), new Promise((res) => setTimeout(() => res('timeout'), 5000))]);
+      if (r !== 'ok') throw new Error('App.l4Job 應結束'); };
+    try {
+      await withQ(Object.assign(Object.create(realQ), { exposureSteps: function* () { return fake; } }));
+      const sec = $('#l4-exposure').testAll('.l4-ex-sec').find((x) => x.dataset.sec === 'dnat');
+      const trs = () => sec.testAll('tr').filter((tr) => /l4-ex-row/.test(tr.className));
+      if (trs().length !== 20 || !/st-allow/.test(trs()[0].className)) throw new Error('前 20 列應先列允許的那一組');
+      // 看路徑的列在 300 列之後：另接在最後、展開路徑、焦點到路徑的標題
+      V.l4.openExposure(App, 'dnat', 329);
+      const sec2 = $('#l4-exposure').testAll('.l4-ex-sec').find((x) => x.dataset.sec === 'dnat');
+      const btn = sec2.testAll('.l4-ex-path').find((b) => b.dataset.row === '329');
+      if (!btn || btn.getAttribute('aria-expanded') !== 'true' || document.activeElement !== $('#l4-ex-path-title') || !sec2.textContent.includes('另接在最後')) throw new Error('超過上限的列看路徑時應另接在最後並展開，焦點在路徑的標題');
+      // 畫面丟錯兩次（畫錯誤時又丟錯）：App.l4Job 仍會結束，兩次的原因都寫出來
+      // 同步的部分（計算中的頁首、zone 的依據）畫完之後才讓 V.chip 丟錯：之後畫結果與畫錯誤都會失敗
+      const chip0 = V.chip; try { await withQ(Object.assign(Object.create(realQ), { exposureSteps: function* () { return fake; } }), () => { V.chip = () => { throw new Error('模擬畫面錯誤'); }; }); } finally { V.chip = chip0; }
+      const al = $('#l4-exposure').querySelector('.l4-ex-error');
+      if (!al || al.getAttribute('role') !== 'alert' || (al.textContent.match(/模擬畫面錯誤/g) || []).length < 2) throw new Error('畫錯誤時又丟錯應寫出兩次的原因：' + text('#l4-exposure'));
+    } finally { App.showLayer('device'); App.round.Q = realQ; App.showLayer('l4', { rebuild: true }); await App.l4Job; App.showLayer('device'); }
+  });
+
   await step('L4 暴露清單的 IPv6 與回程：IPv6 的說明取自 exposure.ipv6（狀態、原因、缺少的設備）；IPv6 列寫位址或「整個網段 x 的主機」、沒有逐跳路徑；回程不保證的列與逐跳的跳標「⚠ 回程不保證」，規則可點', async () => {
     const VA = S.view.app; const V = S.view;
     // 範例資料：沒有 IPv6 位址的事實（no-ipv6-address），說明照列查詢層的 message 與缺少的設備

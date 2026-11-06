@@ -22,7 +22,7 @@ CI（`.github/workflows/ci.yml`）依 PR 改動範圍分流：只改 Markdown、
 ```bash
 npm test                 # 全部：核心、文件、收集器、畫面
 npm run test:core        # 只跑核心測試（tests/core、tests/workflow；含收集器端到端測試，需要 bash 與 GNU timeout，Windows 用 Git Bash）
-npm run test:docs        # 只跑文件與分工一致性（tests/docs.js）
+npm run test:docs        # 只跑文件與分工一致性（tests/docs.js；含 Markdown 相對連結與錨點檢查）
 npm run test:collector   # 只跑 SSH 收集器測試（tests/collect.sh）
 npm run test:ui          # 只跑畫面冒煙測試（tests/ui-smoke.js，模擬 DOM）
 npm run test:large       # 核心測試＋約 1000 台壓力測試
@@ -35,6 +35,8 @@ npm run gen:large        # 產生 samples/large-1000.txt（已 gitignore，大�
 npm run oui -- <index.json>      # 重新產生 src/data/oui-data.js（來源：npm pack oui-data@<版本>，見 README）
 npm run baseline -- 收集檔.txt --ledger ledger.json -o out/   # CLI：建立基準並推進處理紀錄（結束碼 0 無新問題、1 有新的待處理或復發、2 執行失敗）
 git diff --check         # 提交前檢查
+node .claude/scripts/slice-xref.js . slices.json        # lead 派工前：切片的檔案交集與跨切片成員（程式檔有交集時結束碼 1）
+.claude/scripts/merge-slice.sh <worktree> <基準>        # lead 合併切片（--cleanup 刪 worktree 與 worktree-agent-* 分支）
 ```
 
 `tests/run.js` 只是執行器：依檔名載入 `tests/core/*.js`（data-model）再載入 `tests/workflow/*.js`（workflow），
@@ -144,10 +146,11 @@ agent 之間的介面：
 
 ## 專用流程（skills）
 
-五個 skill 放在 `.claude/skills/`，Claude Code 會自動載入；`.github/skills/` 是同內容的 GitHub Copilot 版。
-修改時兩邊一起改，`tests/docs.js` 會檢查兩者一致。
+六個 skill 放在 `.claude/skills/`，Claude Code 會自動載入；`.github/skills/` 是同內容的 GitHub Copilot 版。
+修改時兩邊一起改，`tests/docs.js` 會檢查兩者一致。skill 用到的 lead 工具放在 `.claude/scripts/`（歸 lead，不進 CI）。
 - `routeros-parser-fixtures`：改 adapter／解析、新收集指令（先寫失敗測試再修）
 - `snapshot-contract-change`：改 Snapshot 欄位、finding id、query API 或版本（逐層走完 adapter→model→infer/check→pipeline→query→view→compare）
 - `mikrotik-neighbor-topology`：改鄰居探索（LLDP／MNDP／CDP）與拓樸
-- `branch-maintenance`：lead 維護分支——每輪開工前 fetch 比對 main、開分支前查遠端同名、worktree 基準確認與合併、PR 與 CI、合併後清理分支
+- `branch-maintenance`：lead 維護分支——每輪開工前 fetch 比對 main、開分支前查遠端同名、切片範圍實測（`slice-xref.js`）、worktree 基準確認與合併（`merge-slice.sh`）、code review、PR 與 CI、合併後清理分支
 - `routeros-acl-audit`：防火牆規則解析、WAN／LAN 分類、F01–F09 與比對（階段一已完成；規則來自既有的 `/export`，命中次數來自 `print stats`）
+- `ux-review`：UX 評審與截圖對照——亮／暗 × 1440／390 的截圖矩陣（`shot.js`，本機選用 puppeteer）、繁中排版、用字、推論標示、窄螢幕重疊

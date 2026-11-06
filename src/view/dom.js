@@ -277,14 +277,10 @@
   // 對外邊界（Q.boundaries，推論，ADR-023）：狀態、證據的強弱與種類（evidence[].kind；名稱與檢查訊息的用語相同）
   V.BOUNDARY_STATUS = { external: '對外（推論）', possible: '可能對外（推論）', internal: '不算對外' };
   V.BOUNDARY_STRENGTH = { strong: '強', weak: '弱', none: '不算' };
-  V.BOUNDARY_EVIDENCE = {
-    'default-route': '預設路由的出介面', 'dhcp-client': 'DHCP client 加入的預設路由', 'pppoe-client': 'PPPoE client 加入的預設路由',
-    'srcnat-out': 'srcnat 的出介面', 'dstnat-in': 'dst-nat 的入介面', 'wan-list': 'WAN 清單',
-    'public-address': '公網位址', 'cgnat-address': 'CGNAT 位址', 'dstnat-address': 'dst-nat 的目的位址',
-  };
   /** 證據不算的原因（evidence[].ref.reason） */
   V.BOUNDARY_REASON = { 'next-hop-in-baseline': '下一跳是基準內設備的位址（指向內部）', disabled: '已停用', 'disabled-unknown': '不知道是否停用', 'restricted-destination': '規則另限了目的位址（例如 hairpin NAT）', 'lan-list': '入介面是 LAN 清單的成員（從內部進來的轉送）' };
-  V.boundaryEvidenceText = (k) => V.BOUNDARY_EVIDENCE[k] || `${k}（沒有說明的證據種類）`;
+  /** 證據種類的說明：核心的單一來源（S.query.boundaryLabel，與檢查訊息同一份文字） */
+  V.boundaryEvidenceText = (k) => S.query.boundaryLabel(k) || `${k}（沒有說明的證據種類）`;
   V.ifcState = (i) => (i.enabled === false ? '停用' : V.STATUS[i.status]);
   // 收集失敗（blocks[].failure、coverage[].failures[]）的原因
   V.FAILURE = { timeout: '逾時', 'exit-code': '指令失敗', connection: '連線失敗', other: '其他錯誤' };

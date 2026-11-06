@@ -490,7 +490,9 @@ module.exports = async () => {
     const routes = g.edges.filter((e) => e.route);
     if (Q.subnetGraph({ routes: true }).routes.length && (!routes.length || !routes.every((e) => e.arrow && e.style === T.l3.route && T.l3.route.dash.length && g.nodeById.has(e.b)))) throw new Error('路由應以虛線箭頭畫到目的子網');
     if (!process.env.SMOKE_INPUT && !routes.some((e) => e.route.default)) throw new Error('範例資料應有預設路由');
-    before.forEach((p, id) => { const q = App.layerEntry().pos.get(id); if (q && (q.x !== p.x || q.y !== p.y)) throw new Error('顯示路由不應重排已有的節點'); });
+    // 顯示路由時重新排列（只由路由得知的網段要排進它的路由網域群）：每個節點都有位置，新網段和設備在同一個外框與群
+    if (!before.size || g.nodes.some((n) => !App.layerEntry().pos.has(n.id))) throw new Error('顯示路由後每個節點都要有位置');
+    routes.forEach((e) => { const a = g.nodeById.get(e.a); const b = g.nodeById.get(e.b); if (b.routeOnly && (a.outer || '') !== (b.outer || '')) throw new Error('只由路由得知的網段應在路由所在設備的外框裡：' + b.id); });
     // VRF 的說明只在基準有兩個以上的 VRF 時出現（只用 main 的網路與加入 VRF 之前相同）
     if (!$('#layer-note').textContent.includes('路由') || (Q.vrfs().length > 1 && !$('#layer-note').textContent.includes('VRF'))) throw new Error('L3 的說明應寫出路由（有多個 VRF 時也寫出 VRF）');
     if (routes.length) { g.emit('hover', { item: { type: 'edge', id: routes[0].id }, x: 0, y: 0 }); if (!text('#tooltip').includes('路由')) throw new Error('路由的提示應說明'); }

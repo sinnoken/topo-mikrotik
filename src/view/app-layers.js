@@ -73,7 +73,8 @@
     else {
       const e = ensureEntry(target, o.rebuild);
       resideL2(e); // 保留的位置（之前拖過）可能和上次選邊時不同：依位置重新選邊，邊不另外存
-      g.setData(e.nodes, e.edges, e.pos); A.applyVisibility(); restoreView(g, e.view);
+      // 先寫好這一層的說明（#layer-note 是畫布的遮擋物）再全圖：fit 才會把說明的高度讓出來
+      g.setData(e.nodes, e.edges, e.pos); A.applyVisibility(); renderNote(); restoreView(g, e.view);
     }
     A.syncLayerUi();
     App.select(App.sel, { refresh: true });
@@ -96,9 +97,9 @@
     if (!rebuild && App.layers.has(key)) return App.layers.get(key);
     const e = Object.assign(layer === 'l2' ? buildL2() : buildL3(), { layer, key, view: null, token: 0 });
     App.layers.set(key, e);
-    const seeded = layer === 'l3' && seedL3(e);
-    if (!seeded) layout(e);
-    App.layerJob = App.layoutMode === 'elk' && !seeded ? applyElk(e) : Promise.resolve();
+    // 顯示路由時也重新排列：只由路由得知的網段屬於路由網域的群，要排進群裡（沿用另一個選項的位置再把新網段疊在設備上方，會壓到外部與群標籤）
+    layout(e);
+    App.layerJob = App.layoutMode === 'elk' ? applyElk(e) : Promise.resolve();
     return e;
   }
 
@@ -204,7 +205,9 @@
     const tally = new Map();
     const count = (id, dk) => { if (!dk) return; const m = S.util.getOr(tally, id, () => new Map()); m.set(dk, (m.get(dk) || 0) + 1); };
     sg.edges.forEach((e) => count(e.node, subnetDom.get(e.subnet)));
-    sg.routes.forEach((r) => (r.via || []).forEach((v) => count(r.node || r.dev, subnetDom.get(v))));
+    // 路由經由的網段只給沒有位址邊的設備節點用：顯示路由與否，設備都在同一群（不因路由多寡換群）
+    const addressed = new Set(tally.keys());
+    sg.routes.forEach((r) => { const id = r.node || r.dev; if (!addressed.has(id)) (r.via || []).forEach((v) => count(id, subnetDom.get(v))); });
     const nodeDom = new Map();
     tally.forEach((m, id) => nodeDom.set(id, Array.from(m).sort((a, b) => b[1] - a[1]
       || DOMAIN_ORDER[domByKey.get(a[0]).kind] - DOMAIN_ORDER[domByKey.get(b[0]).kind] || nat(a[0], b[0]))[0][0]));
@@ -284,20 +287,6 @@
         external: Array.from(extOf.keys()), boundaries: { external: bnds.filter((b) => b.status === 'external').length, possible: bnds.filter((b) => b.status === 'possible').length },
         domains: S.util.uniq(nodes.filter((n) => n.domain).map((n) => n.domain)).length },
     };
-  }
-  /** 顯示路由時沿用不顯示路由的位置，只把多出來的目的網段排在路由所在設備的上方（不重排整張圖） */
-  function seedL3(e) {
-    const other = App.layers.get('l3|' + JSON.stringify([!App.l3.routes]));
-    if (!other || !other.pos.size) return false;
-    other.pos.forEach((p, id) => { if (e.index.nodes.has(id)) e.pos.set(id, p); });
-    const fresh = e.nodes.filter((n) => !e.pos.has(n.id));
-    const byDev = new Map();
-    fresh.forEach((n) => { const r = e.edges.find((x) => x.route && x.b === n.id); S.util.getOr(byDev, r ? r.a : '', () => []).push(n); });
-    byDev.forEach((list, dev) => {
-      const p = e.pos.get(dev) || { x: 0, y: 0 };
-      list.forEach((n, i) => e.pos.set(n.id, { x: p.x + (i - (list.length - 1) / 2) * 190, y: p.y - 110 }));
-    });
-    return true;
   }
 
   // ================================================================ 版面
@@ -732,17 +721,17 @@
     const note = $('#layer-note'); const e = A.layerEntry();
     note.classList.toggle('hidden', !e);
     if (!e) { note.textContent = ''; return; }
-    const Q = App.Q; const n = V.num;
+    const Q = App.Q; const n = V.num; let body = '';
     if (e.layer === 'l2') {
       const i = e.info; const omit = i.omitted;
-      note.textContent = `L2 埠圖：${n(e.boxes.length)} 台設備、${n(e.ports.length)} 個埠、${n(e.edges.length)} 條鏈路（聚合${i.lag === 'collapse' ? '收合' : '展開'}、${i.portsMode === 'all' ? '全部的埠' : '只有接線的埠'}）。`
+      body = `L2 埠圖：${n(e.boxes.length)} 台設備、${n(e.ports.length)} 個埠、${n(e.edges.length)} 條鏈路（聚合${i.lag === 'collapse' ? '收合' : '展開'}、${i.portsMode === 'all' ? '全部的埠' : '只有接線的埠'}）。`
         + (i.scope === 'focus' ? `只畫 ${Q.devName(i.focus)} 與它的鄰居${i.tooBig ? `（整張 ${n(i.total)} 台，超過上限 ${n(App.L2_MAX)} 台）` : ''}；選取其他設備或雙擊鄰居可改看那一台。` : '')
         + (omit.domainOnly ? `另有 ${n(omit.domainOnly)} 條只有 MNDP 的鏈路沒有畫（MNDP 只證明同一廣播網域，不是直連）。` : '')
         + (omit.sameDevice ? `${n(omit.sameDevice)} 條同一台設備兩埠之間的鏈路沒有畫。` : '')
-        + (e.layoutNote ? e.layoutNote : '');
+        ;
     } else {
       const ss = e.sg.subnets; const ov = ss.filter((s) => s.overlaps.length).length; const dup = ss.reduce((k, s) => k + s.duplicateIps.length, 0);
-      note.textContent = `L3 網段圖：${n(ss.length)} 個網段、${n(e.sg.nodes.length)} 個設備節點；點線是推論的位址（鄰居回報、管理 IP）`
+      body = `L3 網段圖：${n(ss.length)} 個網段、${n(e.sg.nodes.length)} 個設備節點；點線是推論的位址（鄰居回報、管理 IP）`
         + (e.info.routes ? `，虛線箭頭是 ${n(e.sg.routes.length)} 條靜態／預設路由` : '') + '。'
         + '縮小時網段長條不寫網段，放大或滑過網段可看。'
         + (ov || dup ? `有 ${n(ov)} 個網段重疊、${n(dup)} 個重複 IP（點選網段看詳細資料）。` : '')
@@ -753,7 +742,17 @@
           ? `「外部」是推論的對外邊界：接到 ${n(e.info.boundaries.external)} 個對外介面（實線）${e.info.boundaries.possible ? `、${n(e.info.boundaries.possible)} 個可能對外的介面（長虛線）` : ''}，預設路由經這裡出去時是箭頭；點選外部看依據。`
           : '沒有判定對外的介面，不畫「外部」。')
         + (e.info.routes && e.info.omitted.policyRoutes ? `另有 ${n(e.info.omitted.policyRoutes)} 條只用於策略路由的路由表（不屬於任何 VRF）的路由沒有畫，見設備詳細資料的路由表。` : '')
-        + (e.layoutNote ? e.layoutNote : '');
+        ;
+    }
+    // 收成一行：第一句（加上分層版面的計算中／未套用）常駐，其餘按「更多說明」展開；說明是畫布的遮擋物，收起時全圖不必讓出大片空間
+    const cut = body.indexOf('。') + 1; const head = cut > 0 ? body.slice(0, cut) : body; const rest = cut > 0 ? body.slice(cut) : '';
+    V.clear(note);
+    note.appendChild(h('span', null, head + (e.layoutNote ? e.layoutNote : '')));
+    if (rest) {
+      const open = !!App.layerNoteOpen;
+      note.appendChild(h('span', { id: 'layer-note-more', class: 'layer-note-more' + (open ? '' : ' hidden') }, rest));
+      note.appendChild(h('button', { type: 'button', class: 'layer-note-toggle link', 'aria-expanded': String(open), 'aria-controls': 'layer-note-more',
+        onclick: () => { App.layerNoteOpen = !open; renderNote(); const b = $('#layer-note .layer-note-toggle'); if (b) b.focus(); } }, open ? '收起' : '更多說明'));
     }
   }
   /** 匯出 PNG 的檔名：目前的層級（L4 沒有 PNG，見 A.exportPng） */

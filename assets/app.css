@@ -504,6 +504,9 @@ table.t td.nowrap { white-space: nowrap; }
 /* 這一層畫了什麼、沒畫什麼（L2 的 MNDP、只畫一台設備的原因，L3 的路由與重疊） */
 /* 層級說明在圖例按鈕（高度 --control-h，外加圖例的內距與框線）與操作提示的上方，窄螢幕時也不被圖例蓋住；太長時在框內捲動 */
 .layer-note { position: absolute; right: 10px; bottom: calc(var(--control-h) + 28px); max-width: min(460px, calc(100% - 20px)); max-height: 30%; overflow: auto; font-size: var(--fs-sm); color: var(--text); background: var(--overlay); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 9px; z-index: var(--z-overlay); box-shadow: var(--shadow-sm); }
+/* 平常只留第一句，「更多說明」展開其餘（展開後太長時仍在框內捲動） */
+.layer-note-toggle { margin-left: 6px; padding: 0 2px; border: 0; background: none; color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer; }
+.layer-note-more:not(.hidden)::before { content: ' '; }
 .legend { position: absolute; left: 10px; bottom: 10px; background: var(--overlay); border: 1px solid var(--line); border-radius: var(--radius); padding: 5px 9px; font-size: var(--fs-sm); z-index: var(--z-overlay); max-width: calc(100% - 20px); box-shadow: var(--shadow-sm); backdrop-filter: blur(8px);
   /* 展開時不蓋滿整張圖：最多約半張圖高（也讓開上方的工具列），分類橫向並排成多欄，其餘在框內捲動 */
   max-height: min(55%, calc(100% - 130px)); display: flex; flex-direction: column; }

@@ -34,8 +34,8 @@
   const GL_FONT = font(F.groupPx, W.strong);
   // 群框的最小寬度（世界座標）：只有一兩台的小群也有寬度放簡稱（「區域 2」）。取版面的群間距（layout.js 的 GAP），兩個只有一台的鄰群往兩側各加寬後仍不重疊
   const GROUP_MIN_W = V.layout.GAP;
-  // 外框（node.outer）比其中的內群框再往外留的距離（世界座標）；小於版面群間距的一半，相鄰兩個外框不重疊
-  const OUTER_PAD = 30;
+  // 外框（node.outer）比其中的內群框再往外留的距離，上緣另留內群的標題列（世界座標，layout.js 的 FRAME；arrange 依它拉開外框之間的距離）
+  const FRAME = V.layout.FRAME;
   // 標籤的優先順序：設備依版面的層級（layout.js 的 RANK），終端類節點排在後面
   const LABEL_RANK = Object.assign({}, V.layout.RANK, { cluster: 5, downstream: 5, endpoint: 6 });
   // 設備名稱、分群標籤離畫布左右邊緣至少 EDGE_INSET（px）
@@ -555,7 +555,9 @@
       }
       cand.sort((a, b) => a.pri - b.pri);
       // 設備名稱在螢幕上固定 labelPx，不隨縮小變成小字；太擠時由下方的重疊檢查與上方的縮放門檻略過
-      const fs = F.labelPx / s; const placed = []; this.nodeLabels = [];
+      // 已排好的群標籤（螢幕座標）換成世界座標放進 placed：設備名稱與埠名都避開它（同一套重疊就略過的讓位規則）
+      const fs = F.labelPx / s; this.nodeLabels = [];
+      const placed = this.groupLabels.map((l) => ({ x0: (l.x0 - this.tx) / s, x1: (l.x1 - this.tx) / s, y0: (l.y0 - this.ty) / s, y1: (l.y1 - this.ty) / s }));
       // 標籤不出畫布左右邊緣：靠邊的節點把名稱往內推
       const wx0 = (EDGE_INSET - this.tx) / s; const wx1 = (this.w - EDGE_INSET - this.tx) / s;
       c.textAlign = 'center';
@@ -609,9 +611,12 @@
       // 可用範圍：畫布左右各留 EDGE_INSET，上緣在工具列等覆蓋層之下（viewport），標籤不被切到或蓋住
       const v = this.viewport(); const ex0 = EDGE_INSET; const ex1 = this.w - EDGE_INSET; const ey0 = v.y0 + EDGE_INSET; const ey1 = v.y1;
       const list = this.groupBoxes.filter((g) => g.name)
-        .sort((a, b) => (b.name === hovered) - (a.name === hovered) || b.n - a.n || S.util.natural(a.name, b.name));
+        .sort((a, b) => (b.name === hovered) - (a.name === hovered) || !!b.outer - !!a.outer || b.n - a.n || S.util.natural(a.name, b.name));
       const out = []; const used = new Set();
-      const free = (r) => !out.some((o) => o.x0 < r.x1 && r.x0 < o.x1 && o.y0 < r.y1 && r.y0 < o.y1);
+      // 讓位：不和已放的群標籤重疊，也不壓在節點（設備、網段長條）上；節點名稱之後再避開群標籤（draw 的 placed）
+      const bodies = this._nodeRects(ex0, ey0, ex1, ey1);
+      const hit = (r, o) => o.x0 < r.x1 && r.x0 < o.x1 && o.y0 < r.y1 && r.y0 < o.y1;
+      const free = (r) => !out.some((o) => hit(r, o)) && !bodies.some((o) => hit(r, o));
       for (const g of list) {
         const box = { x0: g.x0 * s + this.tx, y0: g.y0 * s + this.ty, x1: g.x1 * s + this.tx, y1: g.y1 * s + this.ty };
         if (box.x1 < ex0 || box.x0 > ex1 || box.y1 < ey0 || box.y0 - GL.h > ey1) continue; // 畫面外或被覆蓋層蓋住
@@ -644,6 +649,17 @@
       }
       return out;
     }
+    /** 可見範圍內節點本體的螢幕矩形（容器框與長條用框，其他用外接正方形）：分群標籤讓位用 */
+    _nodeRects(x0, y0, x1, y1) {
+      const out = [];
+      for (const n of this.nodes) {
+        if (n.anchor || !this.isVisible(n)) continue; const p = this.at(n.id); if (!p) continue;
+        const hw = (n.box ? n.box.w / 2 : this.radius(n)) * this.s; const hh = (n.box ? n.box.h / 2 : this.radius(n)) * this.s;
+        const r = { x0: p.x * this.s + this.tx - hw, x1: p.x * this.s + this.tx + hw, y0: p.y * this.s + this.ty - hh, y1: p.y * this.s + this.ty + hh };
+        if (r.x1 >= x0 && r.x0 <= x1 && r.y1 >= y0 && r.y0 <= y1) out.push(r);
+      }
+      return out;
+    }
     _drawGroupLabels(c, which) {
       const ls = this.groupLabels.filter(which); if (!ls.length) return;
       c.save(); c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0); c.font = GL_FONT; c.textAlign = 'left'; c.globalAlpha = 1;
@@ -664,12 +680,12 @@
       });
       // frame：只有一台的群不畫框，也不以框命中滑過（hitGroup 只看標籤）
       boxes.forEach((g) => { const d = GROUP_MIN_W - (g.x1 - g.x0); if (d > 0) { g.x0 -= d / 2; g.x1 += d / 2; } g.frame = g.n > 1; });
-      // 外框：包住其中的內群框再留 OUTER_PAD；排在內群之前，先畫（在下層），標籤也先排（外框較大）
+      // 外框：包住其中的內群框再留 FRAME.pad、上緣另留 FRAME.title（內群的標題列在這一帶，不壓到外框的標題）；排在內群之前，先畫（在下層），標籤也先排
       const outers = new Map();
       boxes.forEach((g, name) => {
         const o = outerOf.get(name); if (!o) return;
         const x = S.util.getOr(outers, o, () => ({ name: o, x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, n: 0, outer: true }));
-        x.x0 = Math.min(x.x0, g.x0 - OUTER_PAD); x.y0 = Math.min(x.y0, g.y0 - OUTER_PAD); x.x1 = Math.max(x.x1, g.x1 + OUTER_PAD); x.y1 = Math.max(x.y1, g.y1 + OUTER_PAD); x.n += g.n;
+        x.x0 = Math.min(x.x0, g.x0 - FRAME.pad); x.y0 = Math.min(x.y0, g.y0 - FRAME.pad - FRAME.title); x.x1 = Math.max(x.x1, g.x1 + FRAME.pad); x.y1 = Math.max(x.y1, g.y1 + FRAME.pad); x.n += g.n;
       });
       outers.forEach((x) => { x.frame = x.n > 1; });
       const list = Array.from(outers.values()).concat(Array.from(boxes.values())).filter((g) => g.n > 0);

@@ -10,7 +10,9 @@
 (function (S) {
   'use strict';
   const V = (S.view = S.view || {});
-  const DX = 185; const DY = 130; const ROW = 24; const WRAP_DY = 80; const GAP = 220;
+  const DX = 185; const DY = 130; const ROW = 24; const WRAP_DY = 80; const GAP = 220; const GAP0 = GAP;
+  // 兩層分群的外框（canvas 的 computeGroups 依它畫）：比內群框往外留 pad，上緣另留 title 給內群的標題列（外框自己的標題在框外上方）。世界座標
+  const FRAME = { pad: 30, title: 60 };
   const LCOLS = 4; const LDX = 44; const LDY = 40; const LEAF_DY = 64; // 終端（主機）排列
   // external：L3 的「外部」虛擬節點（推論的對外邊界），排在最上層
   const RANK = { external: -1, firewall: 0, router: 1, switch: 2, unknown: 3, host: 4 };
@@ -113,6 +115,7 @@
   /** shelf 的本體：另回傳整個書架的寬高（左上是 0,0）。opt.ordered：依傳入的順序，不依大小重排 */
   function shelfPlace(boxes, opt) {
     if (!(opt && opt.ordered)) boxes.sort((a, b) => b.n - a.n || S.util.natural(a.name, b.name));
+    const GAP = (opt && opt.gap) || GAP0;
     const area = boxes.reduce((s, b) => s + (b.w + GAP) * (b.h + GAP), 0);
     const maxW = Math.max(Math.sqrt(area) * (opt && opt.portrait ? PORTRAIT.shelfW : SHELF_W), ...boxes.map((b) => b.w));
     const out = new Map(); let cx = 0; let cy = 0; let shelfH = 0; let w = 0;
@@ -142,7 +145,8 @@
       rows.forEach((r) => { r.pos.forEach((p, id) => pos.set(id, { x: p.x - r.w / 2, y: p.y + y })); y += r.h + GAP; });
       return { name, rank: rank(list), pos, w: Math.max(...rows.map((r) => r.w), 1), h: Math.max(y - GAP, 1), n: list.reduce((s, b) => s + b.n, 0) };
     }).sort((a, b) => a.rank - b.rank || S.util.natural(a.name, b.name));
-    return shelf(framed, Object.assign({}, opt, { ordered: true }));
+    // 外框之間：除了群間距，另留兩側的外框留白與外框上緣的標題列（canvas 依 FRAME 畫外框），外框不相貼、標題不壓到上一列
+    return shelf(framed, Object.assign({}, opt, { ordered: true, gap: GAP + 2 * FRAME.pad + FRAME.title }));
   }
 
   /** 內建版面：BFS 分層＋一輪重心排序＋太寬折行（同步，1000 台以上也能一次算完）。opt.portrait：直式畫面，改直長排列。 */
@@ -339,7 +343,7 @@
     return Object.assign({ pos }, portAnchors(devs, ports, P.peers, pos));
   }
 
-  V.layout = { layout, forceStep, prepare, groupBox, placeLeaves, shelf, arrange, wrapRows, slotW, leafRows, RANK, GAP, LDY, LEAF_DY, portPrepare, placePorts, portLayout, portPeers, portSides, portAnchors, SIDE_HYST };
+  V.layout = { layout, forceStep, prepare, groupBox, placeLeaves, shelf, arrange, wrapRows, slotW, leafRows, RANK, GAP, FRAME, LDY, LEAF_DY, portPrepare, placePorts, portLayout, portPeers, portSides, portAnchors, SIDE_HYST };
 })(globalThis.SSOT = globalThis.SSOT || {});
 
 /*

@@ -1,7 +1,7 @@
 // 畫面冒煙測試的 step：L3 網段圖的對外邊界與路由網域（ADR-023 決策 6）：外部節點、可能對外、預設路由的方向、由外而內、VRF 外框＋路由網域內群。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { S, step, $, text } = require('../helpers.js');
+const { document, S, step, $, text } = require('../helpers.js');
 
 const RT = 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC';
 /**
@@ -63,7 +63,53 @@ function checkTiers(g) {
   });
 }
 
+/** 畫一次後量測：群標籤兩兩不重疊、不壓在節點上；節點名稱與埠名不和群標籤重疊；外框之間不重疊 */
+function checkLabels(g, what) {
+  g.computeGroups(); g.draw();
+  const hit = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+  const gl = g.groupLabels.filter((l) => !l.forced);
+  if (!gl.length) throw new Error(what + '：全圖時應標出分群' + JSON.stringify({ s: g.s, tx: g.tx, ty: g.ty, w: g.w, h: g.h, vp: g.viewport(), boxes: (g.groupBoxes || []).map((b) => [b.name, Math.round(b.x0), Math.round(b.y0), b.frame]) }));
+  gl.forEach((a, i) => gl.slice(i + 1).forEach((b) => { if (hit(a, b)) throw new Error(`${what}：群標籤重疊「${a.text}」「${b.text}」`); }));
+  const bodies = g._nodeRects(-Infinity, -Infinity, Infinity, Infinity);
+  gl.forEach((l) => { if (bodies.some((r) => hit(l, r))) throw new Error(`${what}：群標籤「${l.text}」壓在節點上`); });
+  g.nodeLabels.concat(g.portLabels).forEach((n) => gl.forEach((l) => { if (hit(n, l)) throw new Error(`${what}：「${n.text}」和群標籤「${l.text}」重疊`); }));
+  const outers = (g.groupBoxes || []).filter((b) => b.outer);
+  outers.forEach((a, i) => outers.slice(i + 1).forEach((b) => { if (hit(a, b)) throw new Error(`${what}：外框「${a.name}」「${b.name}」重疊`); }));
+}
+
 module.exports = async () => {
+  await step('L3 版面：顯示路由開與關都重新排列；全圖時群標籤、外框、節點名稱與埠名互不重疊；全圖讓出層級說明的高度', async () => {
+    const g = App.graph; const note = $('#layer-note'); const rect = note.getBoundingClientRect;
+    try {
+      // 說明在畫布下方（top 600、高 180）：全圖後所有節點都在它上面
+      note.getBoundingClientRect = () => ({ left: 700, top: 600, width: 460, height: 180, right: 1160, bottom: 780 });
+      const groupOf = new Map();
+      for (const routes of [false, true]) {
+        App.select(null); App.l3.routes = routes; App.showLayer('l3', { rebuild: true }); await App.layerJob; g.fit();
+        const what = routes ? '顯示路由' : '不顯示路由';
+        if (note.classList.contains('hidden')) throw new Error('L3 應有層級說明');
+        // 設備節點的群不因顯示路由而改變
+        g.nodes.filter((n) => n.kind !== 'subnet' && n.kind !== 'external').forEach((n) => {
+          if (!routes) groupOf.set(n.id, n.group); else if (groupOf.has(n.id) && groupOf.get(n.id) !== n.group) throw new Error('顯示路由不應讓設備換群：' + n.id);
+        });
+        // 說明收成一行：其餘按「更多說明」展開（鍵盤可操作、aria-expanded 跟著變），再按收起
+        const more = $('#layer-note-more'); const tg = note.querySelector('.layer-note-toggle');
+        if (!more || !tg || !more.classList.contains('hidden') || tg.getAttribute('aria-expanded') !== 'false' || tg.getAttribute('type') !== 'button') throw new Error('層級說明預設只顯示第一句，其餘收起');
+        tg.click();
+        if ($('#layer-note-more').classList.contains('hidden') || note.querySelector('.layer-note-toggle').getAttribute('aria-expanded') !== 'true' || document.activeElement !== note.querySelector('.layer-note-toggle')) throw new Error('按「更多說明」展開，焦點留在按鈕');
+        note.querySelector('.layer-note-toggle').click();
+        if (!$('#layer-note-more').classList.contains('hidden')) throw new Error('再按一次收起');
+        g.nodes.forEach((n) => { const p = g.toScreen(g.at(n.id)); if (p.y > 600) throw new Error(`${what}：全圖應讓出層級說明，${n.id} 在 y=${Math.round(p.y)}`); });
+        checkLabels(g, what);
+        if (routes && g.edges.some((e) => e.route)) {
+          // 只由路由得知的網段排進群裡：與外部節點不在同一列之上
+          const ext = g.nodes.find((n) => n.kind === 'external');
+          if (ext) { const ey = g.pos.get(ext.id).y; g.nodes.filter((n) => n.routeOnly && n.outer === ext.outer).forEach((n) => { if (g.pos.get(n.id).y <= ey) throw new Error('路由網段不應排到外部那一列或更上面：' + n.id); }); }
+        }
+      }
+    } finally { note.getBoundingClientRect = rect; App.l3.routes = false; App.showLayer('device'); }
+  });
+
   await step('L3 對外邊界（範例資料）：每個 VRF 一個「外部」節點（推論），接到有對外介面的設備；預設路由的方向是箭頭；VRF 外框裡依路由網域分群，由外而內排列', async () => {
     const Q = App.Q; const g = App.graph; const V = S.view;
     App.select(null); App.l3.routes = false; App.showLayer('l3', { rebuild: true }); await App.layerJob;
@@ -157,7 +203,9 @@ module.exports = async () => {
       if (g.kbd !== ext.id) throw new Error('N 應先到最上面的外部：' + g.kbd);
       cv.dispatch('keydown', { key: 'Enter' });
       if (!App.sel || App.sel.type !== 'boundary' || !text('#detail').includes('可能對外')) throw new Error('Enter 應開啟外部的依據（含可能對外）：' + text('#detail').slice(0, 200));
-      if (!text('#detail').includes(S.view.BOUNDARY_EVIDENCE['public-address'])) throw new Error('可能對外的依據寫出公網位址');
+      const pub = S.query.boundaryLabel('public-address');
+      if (!pub || S.view.boundaryEvidenceText('public-address') !== pub || !text('#detail').includes(pub)) throw new Error('可能對外的依據寫出公網位址（文字取自 S.query.boundaryLabel）');
+      if (!S.view.boundaryEvidenceText('no-such-kind').includes('沒有說明的證據種類')) throw new Error('沒有說明的證據種類要寫明');
       App.select(null);
     } finally {
       App.showLayer('device');

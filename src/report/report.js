@@ -124,7 +124,7 @@
         deviationText(Q, f, '; ') || '',
       ];
     });
-    return '﻿' + [head].concat(rows).map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+    return '\uFEFF' + [head].concat(rows).map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
   }
 
   /**

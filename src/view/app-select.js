@@ -267,7 +267,8 @@
     $('#raw-pos').textContent = `${rawNav.at + 1}／${n}`;
     $('#raw-copy').classList.toggle('hidden', !src); $('#raw-copy-status').textContent = '';
     if (!src) { body.appendChild(h('p', { class: 'muted' }, '找不到原始輸入（可能是從舊版本還原的基準）。')); return; }
-    const lines = src.text.split(/\r?\n/); const from = Math.max(1, line - rawNav.before); const to = Math.min(lines.length, line + rawNav.after);
+    const lines = src.text.split(/\r?\n/); if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop(); // 檔尾的換行不算一行
+    const from = Math.max(1, line - rawNav.before); const to = Math.min(lines.length, line + rawNav.after);
     // 「複製這段」：有所屬區塊時複製整個區塊（一個指令的輸出），否則複製畫面上顯示的這幾行
     const [cf, ct] = blk ? [blk.start, Math.min(blk.end, lines.length)] : [from, to];
     rawNav.copy = { text: lines.slice(cf - 1, ct).join('\n'), lines: ct - cf + 1 };

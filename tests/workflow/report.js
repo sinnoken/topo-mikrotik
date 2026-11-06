@@ -17,7 +17,7 @@ test('報表：S.report 的 CSV／Markdown 與預期輸出（畫面版 src/view/
 test('報表：範例資料的 CSV 欄數一致、BOM 與 CRLF；Markdown 依嚴重度分組，每項出現的檢查都附處理建議', () => {
   const Q = S.query(sampleSnap());
   const csv = S.report.findingsCsv(Q);
-  assert.ok(csv.startsWith('﻿severity,id,title,') && csv.endsWith('\r\n'));
+  assert.ok(csv.startsWith('\uFEFFseverity,id,title,') && csv.endsWith('\r\n'));
   assert.strictEqual(csv.split('\r\n')[0].split(',').pop(), S.report.DEVIATION_LABEL);
   const md = S.report.findingsMarkdown(Q);
   const heads = S.report.SEV_ORDER.map((s) => md.indexOf(`\n## ${S.report.SEV_TEXT[s]}（`));

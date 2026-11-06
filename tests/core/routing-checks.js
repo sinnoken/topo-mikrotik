@@ -71,15 +71,16 @@ test('R01：出介面判定為對外的下一跳（ISP 閘道）不列，訊息�
 
 // ---------------------------------------------------------------- 新增路由檢查 R07–R15（決策 8）
 /** 邊界路由器：WAN 清單只有 ether1、masquerade 走 WAN 清單；ether2 有 DHCP client（加預設路由、沒有 check-gateway）。 */
-const EDGE = (extra, routes) => dev('E', '192.168.1.1', ['/interface bridge add name=bridge1', '/interface list add name=WAN', '/interface list add name=LAN',
+const EDGE = (extra, routes, dhcpRoute = true) => dev('E', '192.168.1.1', ['/interface bridge add name=bridge1', '/interface list add name=WAN', '/interface list add name=LAN',
   '/interface list member add interface=ether1 list=WAN', '/interface list member add interface=bridge1 list=LAN',
   addr('192.168.1.1/24', 'bridge1'), addr('81.2.3.2/30', 'ether1'), '/ip dhcp-client add interface=ether2',
   '/ip firewall nat add action=masquerade chain=srcnat out-interface-list=WAN', ...(extra || [])],
-[C('192.168.1.0/24', 'bridge1'), C('81.2.3.0/30', 'ether1'), R('0.0.0.0/0', '81.2.3.1', 'ether1', 'check-gateway=ping'), ...(routes || [])]);
+[C('192.168.1.0/24', 'bridge1'), C('81.2.3.0/30', 'ether1'), R('0.0.0.0/0', '81.2.3.1', 'ether1', 'check-gateway=ping'),
+  ...(dhcpRoute ? [' Dd  dst-address=0.0.0.0/0 routing-table=main gateway=100.64.9.1 immediate-gw=100.64.9.1%ether2 distance=5'] : []), ...(routes || [])]); // DHCP client 裝進來的備援預設路由（下一跳不在基準）
 
 test('R07：預設路由的出口（DHCP client）沒有 srcnat；不限出介面的 masquerade、沒有 NAT 時不報', () => {
   const s = T(EDGE());
-  assert.deepStrictEqual(msgs(s, 'R07'), ['E：預設路由的出口 ether2（DHCP client 加入的預設路由）沒有 srcnat，masquerade／src-nat 只在 ether1；改由這個出口上網時，私有位址不會轉換']);
+  assert.deepStrictEqual(msgs(s, 'R07'), ['E：預設路由的出口 ether2（預設路由的出介面、DHCP client 加入的預設路由）沒有 srcnat，masquerade／src-nat 只在 ether1；改由這個出口上網時，私有位址不會轉換']);
   assert.deepStrictEqual(of(s, 'R07')[0].entities, [{ type: 'device', key: 'E' }, { type: 'interface', key: 'E|ether2' }]);
   assert.strictEqual(of(T(EDGE(['/ip firewall nat add action=masquerade chain=srcnat'])), 'R07').length, 0, '不限出介面：全部出口都做 NAT');
   assert.strictEqual(of(T(EDGE(['/ip firewall nat add action=masquerade chain=srcnat out-interface=ether2'])), 'R07').length, 0);
@@ -87,7 +88,7 @@ test('R07：預設路由的出口（DHCP client）沒有 srcnat；不限出介�
 
 test('R08：有對外強證據卻不在 WAN 清單；在 WAN 清單、預設路由卻指向基準內的設備', () => {
   const s = T(EDGE());
-  assert.deepStrictEqual(msgs(s, 'R08'), ['E ether2：DHCP client 加入的預設路由（判定對外），但不在 WAN 清單（WAN）；依 WAN 清單的防火牆規則不會套用到這個介面']);
+  assert.deepStrictEqual(msgs(s, 'R08'), ['E ether2：預設路由的出介面、DHCP client 加入的預設路由（判定對外），但不在 WAN 清單（WAN）；依 WAN 清單的防火牆規則不會套用到這個介面']);
   // B 的 WAN 清單是 ether1，預設路由經 ether1 指向 E（基準內）
   const b = dev('B', '192.168.1.2', ['/interface list add name=WAN', '/interface list member add interface=ether1 list=WAN', addr('192.168.1.2/24', 'ether1')],
     [C('192.168.1.0/24', 'ether1'), R('0.0.0.0/0', '192.168.1.1', 'ether1')]);
@@ -102,7 +103,7 @@ test('R11：同一張路由表兩條以上預設路由，有沒設 check-gateway
     [C('10.0.0.0/30', 'ether1'), C('10.0.1.0/30', 'ether2'), R('0.0.0.0/0', '10.0.0.2', 'ether1'), '  s  dst-address=0.0.0.0/0 routing-table=main gateway=10.0.1.2 distance=10']));
   assert.deepStrictEqual(msgs(backup, 'R11'), ['R：路由表 main 有 2 條預設路由，gateway=10.0.0.2、gateway=10.0.1.2（非作用中）沒有設 check-gateway；閘道失效但介面仍在時，路由不會自動切換']);
   assert.strictEqual(of(T(EDGE(['/ip dhcp-client set [ find interface=ether2 ] check-gateway=ping'])), 'R11').length, 0);
-  assert.strictEqual(of(T(EDGE(['/ip dhcp-client set [ find interface=ether2 ] add-default-route=no'])), 'R11').length, 0, '只有一條');
+  assert.strictEqual(of(T(EDGE(['/ip dhcp-client set [ find interface=ether2 ] add-default-route=no'], [], false)), 'R11').length, 0, '只有一條');
 });
 
 /** 兩台路由器：A 有到 B 的 10.2.0.0/24 的靜態路由；B 只有直連（沒有回到 A 的 10.1.0.0/24）。 */
@@ -123,6 +124,41 @@ test('R12：網段沒有任何其他設備的路由（預設路由不算）；�
   assert.deepStrictEqual(msgs(s, 'R12'), ['A：10.1.0.0/24（ether2）；其他有路由表的設備都沒有到這些網段的路由（預設路由不算）']);
   assert.strictEqual(of(T(...AB([R('10.1.0.0/24', '10.0.0.1', 'ether1')])), 'R12').length, 0);
   assert.strictEqual(of(T(AB()[0]), 'R12').length, 0, '沒有其他有路由表的設備時不比較');
+});
+
+test('R12：雙重 NAT——A 對上游做 masquerade 時，A 後面的網段不需要上游的回程路由，不報；限了目的位址（hairpin 之類）、來源不含這個網段、停用的規則仍報', () => {
+  const up = R('0.0.0.0/0', '10.0.0.1', 'ether1');
+  // A 的 export 是 dev() 的第 3、4 行（兩個位址），NAT 規則插在它們之後
+  const nat = (r) => { const [a, b] = AB([up]); a.splice(4, 0, `/ip firewall nat add ${r}`); return T(a, b); };
+  assert.strictEqual(of(T(...AB([up])), 'R12').length, 1, '對照：沒有 NAT 時報');
+  assert.strictEqual(of(nat('action=masquerade chain=srcnat out-interface=ether1'), 'R12').length, 0);
+  assert.strictEqual(of(nat('action=src-nat chain=srcnat src-address=10.1.0.0/16 to-addresses=10.0.0.1'), 'R12').length, 0, '來源涵蓋這個網段');
+  assert.strictEqual(of(nat('action=masquerade chain=srcnat dst-address=10.2.0.10 out-interface=ether1'), 'R12').length, 1, '限了目的位址（hairpin 之類）不算');
+  assert.strictEqual(of(nat('action=masquerade chain=srcnat src-address=10.9.0.0/24 out-interface=ether1'), 'R12').length, 1, '來源不含這個網段');
+  assert.strictEqual(of(nat('action=masquerade chain=srcnat disabled=yes out-interface=ether1'), 'R12').length, 1, '停用的規則不算');
+});
+
+test('對外邊界（ADR-023 修訂 1）：以 DHCP client 取得管理位址的交換器，預設路由的下一跳是基準內的路由器——不是對外，F07／F11／F12／F14 不報；ISP 的 DHCP 仍判定對外', () => {
+  const gw = dev('GW', '192.168.88.1', ['/interface bridge add name=bridge1', '/interface list add name=WAN', '/interface list add name=LAN',
+    '/interface list member add interface=ether1 list=WAN', '/interface list member add interface=bridge1 list=LAN', addr('192.168.88.1/24', 'bridge1'), addr('81.2.3.2/30', 'ether1'),
+    '/ip firewall nat add action=masquerade chain=srcnat out-interface-list=WAN', '/ip firewall filter add action=drop chain=input in-interface-list=WAN'],
+  [C('192.168.88.0/24', 'bridge1'), R('0.0.0.0/0', '81.2.3.1', 'ether1')]);
+  const sw = (dhcpRoute, exp) => dev('SW', '192.168.88.2', ['/interface bridge add name=bridge', '/ip dhcp-client add interface=bridge', '/ip firewall filter add action=accept chain=input protocol=icmp', ...(exp || [])],
+    dhcpRoute === undefined ? undefined : [' DAc dst-address=192.168.88.0/24 routing-table=main gateway=bridge immediate-gw=bridge distance=0',
+      ...(dhcpRoute ? [` DAd dst-address=0.0.0.0/0 routing-table=main gateway=${dhcpRoute} immediate-gw=${dhcpRoute}%bridge distance=1`] : [])]);
+  const ev = (s) => { const b = S.query(s).boundaryOf('SW|bridge'); return b && [b.status, b.evidence.filter((e) => e.kind === 'dhcp-client').map((e) => `${e.strength}:${e.ref.reason}`)]; };
+  const mgmt = T(gw, sw('192.168.88.1', [addr('192.168.88.2/24', 'bridge')]));
+  assert.deepStrictEqual(ev(mgmt), ['internal', ['none:next-hop-in-baseline']]);
+  ['F07', 'F11', 'F12', 'F14'].forEach((id) => assert.deepStrictEqual(msgs(mgmt, id).filter((m) => m.startsWith('SW')), [], id));
+  // 沒有路由表資料、或路由表沒有 DHCP 的預設路由：只是可能對外，不是入口
+  assert.deepStrictEqual(ev(T(gw, sw(undefined))), ['possible', ['weak:no-route-data']]);
+  assert.deepStrictEqual(ev(T(gw, sw(null))), ['possible', ['weak:no-installed-route']]);
+  assert.deepStrictEqual(S.query(T(gw, sw(null))).wanEntries('SW'), []);
+  // ISP 的 DHCP：下一跳不在基準 → 強證據，判定對外
+  const isp = T(dev('E', '10.0.0.1', ['/ip dhcp-client add interface=ether1', addr('192.168.1.1/24', 'bridge1')],
+    [C('192.168.1.0/24', 'bridge1'), ' DAd dst-address=0.0.0.0/0 routing-table=main gateway=100.64.0.1 immediate-gw=100.64.0.1%ether1 distance=1']));
+  const e = S.query(isp).boundaryOf('E|ether1');
+  assert.deepStrictEqual([e.status, e.evidence.find((x) => x.kind === 'dhcp-client').strength, e.evidence.find((x) => x.kind === 'dhcp-client').ref.gateways], ['external', 'strong', ['100.64.0.1']]);
 });
 
 /** OSPF：A 與 B 在 10.0.0.0/30 相連（area-id 各自設定），A 另有使用者網段 10.1.0.0/24（DHCP server）。 */

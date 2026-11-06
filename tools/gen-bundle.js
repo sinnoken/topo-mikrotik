@@ -280,6 +280,7 @@ for (let s = 1; s <= SITES; s++) {
     }
     if (F && ci === 0) {                                                                                                // ADR-023：對外與路由網域的設定（之後的 R13–R15 用）
       e.push(['/ip dhcp-client', 'add', 'comment="ISP2 backup" default-route-distance=5 interface=ether45 use-peer-dns=no']);       // 第二個上網出口：DHCP 加預設路由（沒寫 add-default-route，預設 yes），沒設 check-gateway
+      rt.push({ flags: 'Dd', dst: '0.0.0.0/0', gw: '198.51.100.1', igw: '198.51.100.1%ether45', dist: 5, scope: 30 });          // DHCP 裝進來的備援預設路由（distance 5，非作用中）：下一跳不在基準，ether45 判定對外
       e.push(['/interface pppoe-client', 'add', 'add-default-route=yes disabled=yes interface=ether44 name=pppoe-isp3 password=Pppoe-Pass-01 user=tpe-core@isp3']); // 停用的 PPPoE 備援
       e.push(['/routing ospf area', 'add', 'area-id=0.0.0.0 instance=default name=backbone']);
       e.push(['/routing ospf interface-template', 'add', 'area=backbone auth=md5 auth-id=1 auth-key=Ospf-Key-01 interfaces=bond100 type=ptp']);   // 核心互連：有驗證

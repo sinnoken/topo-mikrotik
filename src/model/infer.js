@@ -1143,7 +1143,10 @@
    *     default-route：路由表中 0.0.0.0/0 的出介面（含非作用中的備援路由，ref.active）。下一跳是基準內設備的位址時指向內部（例如 PE 的預設路由指向核心），
    *       記為 none、不算（推論；ADR-023 沒有寫到這一點，避免內部路由器的預設路由都被當成對外）。
    *     dhcp-client：/ip dhcp-client 的 add-default-route 是 yes 或 special-classless、沒有停用（停用的記為 none）。
-   *     pppoe-client：/interface pppoe-client 的 add-default-route=yes、沒有停用；是否停用不明時為 weak（介面是 PPPoE 介面本身）。
+   *     pppoe-client：/interface pppoe-client 的 add-default-route=yes、沒有停用（介面是 PPPoE 介面本身）。
+   *     兩者的強度跟著它裝進來的預設路由（ADR-023 修訂 1）：add-default-route 的預設是 yes，以 DHCP 取得管理位址的交換器／AP 也有，所以設定本身不是對外的證據。
+   *       設備有路由表資料時，看出介面是這個介面的預設路由（DHCP client 只看 proto DHCP）：有下一跳不在基準內 → strong；下一跳都是基準內設備 → none（next-hop-in-baseline）；
+   *       沒有路由表資料、或路由表中沒有這條預設路由（例如還沒取得位址）→ weak（no-route-data／no-installed-route，只標可能對外、不算入口）。PPPoE 是否停用不明時最多 weak。
    *     srcnat-out：srcnat 的 masquerade／src-nat 的 out-interface、out-interface-list（展開成員；否定、清單無法展開時不歸屬任何介面）。
    *       規則另限了 dst-address／dst-address-list（例如 hairpin NAT）時為 weak。
    *     dstnat-in：dstnat 的 dst-nat／netmap 的 in-interface、in-interface-list（同上）；入介面是 LAN 清單的成員時為 weak（ref.reason lan-list：從內部進來的轉送）。
@@ -1184,14 +1187,30 @@
           { prefix: '0.0.0.0/0', routingTable: r.routingTable, gateway: n.ip, active: r.active, distance: r.distance, reason: inside ? 'next-hop-in-baseline' : null });
       });
     });
+    // DHCP／PPPoE client 裝進來的預設路由：{ strength, reason, gateways }（見上方說明）
+    const installed = (dev, ep, dhcpOnly) => {
+      const d = M.devices.get(dev);
+      if (!d || !d.data.has('route')) return { strength: 'weak', reason: 'no-route-data', gateways: [] };
+      const nhs = [];
+      M.routes.forEach((r) => {
+        if (r.dev !== dev || r.len !== 0 || r.blackhole || (dhcpOnly && r.proto !== 'DHCP')) return;
+        r.nh.forEach((n) => { if (RV.egress(dev, n) === ep) nhs.push(n); });
+      });
+      if (!nhs.length) return { strength: 'weak', reason: 'no-installed-route', gateways: [] };
+      const gateways = S.util.uniq(nhs.map((n) => n.ip).filter(Boolean));
+      const outside = nhs.some((n) => !n.ip || !owned.has(n.ip));
+      return { strength: outside ? 'strong' : 'none', reason: outside ? null : 'next-hop-in-baseline', gateways };
+    };
     M.routingCfgOut.dhcpClients.forEach((c) => {
       if (!c.ep || !DEFAULT_ROUTE_ADD.has(c.addDefaultRoute)) return;
-      add(c.dev, c.ep, 'dhcp-client', c.disabled === true ? 'none' : 'strong', c.src, { name: c.name, addDefaultRoute: c.addDefaultRoute, disabled: c.disabled, reason: c.disabled === true ? 'disabled' : null });
+      const r = c.disabled === true ? { strength: 'none', reason: 'disabled', gateways: [] } : installed(c.dev, c.ep, true);
+      add(c.dev, c.ep, 'dhcp-client', r.strength, c.src, { name: c.name, addDefaultRoute: c.addDefaultRoute, disabled: c.disabled, gateways: r.gateways, reason: r.reason });
     });
     M.routingCfgOut.pppoeClients.forEach((c) => {
       if (!c.ep || c.addDefaultRoute !== true) return;
-      const strength = c.disabled === true ? 'none' : c.disabled === false ? 'strong' : 'weak';
-      add(c.dev, c.ep, 'pppoe-client', strength, c.src, { name: c.name, interface: c.interface, disabled: c.disabled, reason: c.disabled === true ? 'disabled' : c.disabled === null ? 'disabled-unknown' : null });
+      let r = c.disabled === true ? { strength: 'none', reason: 'disabled', gateways: [] } : installed(c.dev, c.ep, false);
+      if (c.disabled === null && r.strength === 'strong') r = Object.assign({}, r, { strength: 'weak', reason: 'disabled-unknown' });
+      add(c.dev, c.ep, 'pppoe-client', r.strength, c.src, { name: c.name, interface: c.interface, disabled: c.disabled, gateways: r.gateways, reason: r.reason });
     });
     // NAT：介面或清單（展開成員）；否定與無法展開的清單不歸屬
     const natIfcs = (ctx, rule, dir) => {

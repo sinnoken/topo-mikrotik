@@ -676,7 +676,8 @@
   /**
    * R12：網段沒有任何路由可以到達（推論）。一台設備的直連網段，基準中其他有路由表資料的設備（同一個 VRF）都沒有直連、也沒有非預設的路由涵蓋它
    * （預設路由不算：只是「其他地方」，不代表知道這個網段；路由的閘道跨 VRF 對應到這台設備時算在它的 VRF）。
-   * 不檢查：其他設備也直連的網段（鏈路）、/31 與 /32、對外或可能對外的介面、有 OSPF 鄰接的介面，以及同一個 VRF 沒有其他設備有路由表資料時。
+   * 不檢查：其他設備也直連的網段（鏈路）、/31 與 /32、對外或可能對外的介面、有 OSPF 鄰接的介面、在這台設備 NAT 後面的網段（behindNat，雙重 NAT），
+   * 以及同一個 VRF 沒有其他設備有路由表資料時。
    */
   function unreachableSubnets(X, add) {
     const { M, name, RV, boundaryOf } = X;
@@ -693,9 +694,24 @@
     });
     const shared = new Map(); M.devices.forEach((_, d) => RV.subnetsOf(d).forEach((s) => S.util.getOr(shared, s.net + '/' + s.len, () => new Set()).add(d)));
     const ospfEps = new Set(M.ospfAdjacencies.map((a) => a.localEp));
+    // 在 NAT 後面的網段：這台設備有啟用中的 masquerade／src-nat（不限目的位址，不是 hairpin），來源不限或涵蓋這個網段，而且出介面不是網段所在的介面——
+    // 送出去的封包來源已改成設備自己的位址，上游不需要回到這個網段的路由（雙重 NAT 的下游路由器）。src-address-list 的內容不明，視為涵蓋（不報）
+    const natRules = new Map(); M.fw.rules.forEach((r) => {
+      if (!r.disabled && r.family === 'ip' && r.table === 'nat' && r.chain === 'srcnat' && (r.action === 'masquerade' || r.action === 'src-nat')
+        && r.match['dst-address'] === undefined && r.match['dst-address-list'] === undefined) S.util.getOr(natRules, r.dev, () => []).push(r);
+    });
+    const behindNat = (dev, s) => (natRules.get(dev) || []).some((r) => {
+      const out = r.match['out-interface'];
+      if (out !== undefined && !S.infer.fw.splitNeg(out).neg && K.ep(dev, out) === s.ep) return false;
+      const sa = r.match['src-address']; if (sa === undefined) return true;
+      const p = S.infer.fw.parseVal('src-address', sa); if (p.kind !== 'ranges' || p.bits !== 32) return false;
+      const lo = BigInt(S.ip.toInt(s.net)); const hi = lo + (1n << BigInt(32 - s.len)) - 1n;
+      const inside = p.items.some(([a, b]) => a <= lo && hi <= b);
+      return p.neg ? !p.items.some(([a, b]) => !(b < lo || a > hi)) : inside;
+    });
     Array.from(M.devices.values()).filter((d) => d.collected).map((d) => d.key).sort(S.util.natural).forEach((z) => {
       const hits = RV.subnetsOf(z).filter((s) => {
-        if (s.len > 30 || shared.get(s.net + '/' + s.len).size > 1 || boundaryOf.has(s.ep) && boundaryOf.get(s.ep).status !== 'internal' || ospfEps.has(s.ep)) return false;
+        if (s.len > 30 || shared.get(s.net + '/' + s.len).size > 1 || boundaryOf.has(s.ep) && boundaryOf.get(s.ep).status !== 'internal' || ospfEps.has(s.ep) || behindNat(z, s)) return false;
         const others = Array.from(routers.get(s.vrf) || []).filter((d) => d !== z);
         if (!others.length) return false;
         for (let len = s.len; len >= 1; len--) {

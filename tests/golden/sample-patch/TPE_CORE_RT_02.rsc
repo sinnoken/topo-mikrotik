@@ -1,6 +1,6 @@
 # topo-mikrotik ssot-patch/1 apply
 # device: TPE_CORE_RT_02 (key TPE_CORE_RT_02)
-# baseline: inputHash=e077b6b3df35fd2f createdAt=2026-01-01T00:00:00Z version=3.8.0
+# baseline: inputHash=5e5dd00116cc4a75 createdAt=2026-01-01T00:00:00Z version=3.8.0
 # Text only: topo-mikrotik never connects to or changes a device. Review every line before use.
 # items: 1
 # Run: /import file-name=<this file> (add verbose=yes dry-run first to catch syntax errors).
@@ -10,5 +10,5 @@
 :if ([:len [/ip firewall filter find where chain="input" action="accept" protocol="udp" src-port="53"]] != 1) do={ :error "topo-mikrotik pre-check failed: [1] F06 ip filter input rule 4 must match exactly 1 rule(s)" }
 
 # ---- apply
-# [1] F06 ip filter input rule 4 (sample-bundle.txt line 1020): before disabled=no
+# [1] F06 ip filter input rule 4 (sample-bundle.txt line 1022): before disabled=no
 /ip firewall filter set [find where chain="input" action="accept" protocol="udp" src-port="53"] disabled=yes

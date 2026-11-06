@@ -950,6 +950,8 @@ Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC, o - OSPF, b - BGP
     immediate-gw=10.97.0.1 distance=1 scope=30
  DAc dst-address=172.31.1.0/30 routing-table=main gateway=ether46
     immediate-gw=ether46 distance=0 scope=10
+ Dd  dst-address=0.0.0.0/0 routing-table=main gateway=198.51.100.1
+    immediate-gw=198.51.100.1%ether45 distance=5 scope=30
  As  dst-address=10.200.0.0/16 routing-table=main gateway=10.1.20.254
     immediate-gw=10.1.20.254%vlan20 distance=1 scope=30
 

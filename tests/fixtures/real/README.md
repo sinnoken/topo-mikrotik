@@ -16,7 +16,7 @@
    - MAC：保留前 3 碼（廠商），後 3 碼重新編號。
    - IP：前兩段換成 `10.101` 起的位址，後兩段保留。
    - 設備名、SSID、主機名、註解：換成代號。
-   - 帳號、密碼、金鑰、序號：換成 `REDACTED`。
+   - 帳號、密碼、金鑰、序號與授權識別碼（software-id、system-id）：換成 `REDACTED`，`key=value`、`key: value`（例如 `/system routerboard print` 的 `serial-number:`）與 export 抬頭的寫法都涵蓋。
    - 同一個值一定換成同一個代號，所以鄰居配對、網段等關係不變。
 3. 打開輸出檔再人工檢查一次：註解以外的自由文字、LLDP 描述等，不一定都能自動辨識。
 4. 對照表 `*.map.json` 只供自己查對，已列入 `.gitignore`，**不要提交**。

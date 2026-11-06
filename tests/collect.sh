@@ -514,6 +514,12 @@ FAKE_SSH_LOG="$TMP_DIR/ssh-args.log" run_collector "$TMP_DIR/devices.csv" --comm
 grep -qF -- '-o ConnectTimeout=3 ' "$TMP_DIR/ssh-args.log" || fail '--connect-timeout must set ConnectTimeout'
 expect_exit 2 run_collector "$TMP_DIR/devices.csv" --connect-timeout 0 --dry-run >/dev/null 2>"$TMP_DIR/err.log"
 grep -qF -- '--connect-timeout 必須是正整數' "$TMP_DIR/err.log" || fail 'invalid --connect-timeout must be reported'
+# 明確指定的連線逾時大於指令逾時：timeout 會先結束 ssh（124 不是連線失敗），所以直接以 2 報錯；相等時可以
+expect_exit 2 run_collector "$TMP_DIR/devices.csv" --connect-timeout 60 --timeout 30 --dry-run >/dev/null 2>"$TMP_DIR/err.log"
+grep -qF -- '--connect-timeout（60）不可大於 --timeout（30）' "$TMP_DIR/err.log" || { cat "$TMP_DIR/err.log" >&2; fail '--connect-timeout larger than --timeout must be reported'; }
+: > "$TMP_DIR/ssh-args.log"
+FAKE_SSH_LOG="$TMP_DIR/ssh-args.log" run_collector "$TMP_DIR/devices.csv" --commands config --connect-timeout 5 --timeout 5 --output "$TMP_DIR/ct.txt" >/dev/null
+grep -qF -- '-o ConnectTimeout=5 ' "$TMP_DIR/ssh-args.log" || fail '--connect-timeout equal to --timeout must be accepted'
 
 # 沒有 --ask-password 時連不上（第一個指令 255 且沒有輸出）：這台記一次 connection，不再逐一嘗試其餘指令
 : > "$TMP_DIR/ssh-args.log"
@@ -547,8 +553,11 @@ ls "$TMP_DIR"/perm.txt.tmp.* >/dev/null 2>&1 && fail 'temporary output must be r
 interrupt_collector() { # 訊號 輸出檔
   local signal=$1 out=$2 pid n code=0
   rm -f "$TMP_DIR/slow.started"
+  # 沒有 job control 的背景程序會被 bash 設成忽略 SIGINT，而進入時就被忽略的訊號 bash 無法再 trap（bash 3.2 在 $(set -m; …) 裡也一樣；
+  # 測試本身在背景執行時亦同）。以 perl 把 SIGINT 恢復成預設再 exec（同一個 PID），模擬使用者在終端機按 Ctrl-C
+  command -v perl >/dev/null || fail 'interrupt test needs perl to restore SIGINT'
   FAKE_SSH_SLOW_ON='*@192.0.2.1 /ip route *' FAKE_SSH_STARTED="$TMP_DIR/slow.started" PATH="$TMP_DIR:$PATH" \
-    "$ROOT/tools/collect.sh" "$TMP_DIR/devices-retry.csv" --commands "$RETRY_CMDS" --output "$out" >"$TMP_DIR/int.log" 2>"$TMP_DIR/int.err" &
+    perl -e '$SIG{INT} = "DEFAULT"; exec { $ARGV[0] } @ARGV or die "exec $ARGV[0]: $!\n"' "$ROOT/tools/collect.sh" "$TMP_DIR/devices-retry.csv" --commands "$RETRY_CMDS" --output "$out" >"$TMP_DIR/int.log" 2>"$TMP_DIR/int.err" &
   pid=$!
   for ((n = 0; n < 100; n++)); do [[ -e "$TMP_DIR/slow.started" ]] && break; sleep 0.1; done
   [[ -e "$TMP_DIR/slow.started" ]] || { kill "$pid" 2>/dev/null; fail 'slow command did not start'; }
@@ -580,8 +589,8 @@ node -e '
   const want = [["RETRY_A", "/ip route print detail without-paging", "interrupted"]];
   if (JSON.stringify(failed) !== JSON.stringify(want) || s.blocks.some((b) => b.issues)) { console.error(failed); process.exit(1); }
 ' "$ROOT/tests/load.js" "$TMP_DIR/int.txt.partial" || fail 'partial file must read with the interrupted block as a failure'
-# Ctrl-C（SIGINT）同樣處理，以 130 結束；背景程序要開 job control 才不會忽略 SIGINT
-code=$(set -m; interrupt_collector INT "$TMP_DIR/int2.txt")
+# Ctrl-C（SIGINT）同樣處理，以 130 結束（interrupt_collector 已把 SIGINT 恢復成預設）
+code=$(interrupt_collector INT "$TMP_DIR/int2.txt")
 [[ "$code" == 130 ]] || { cat "$TMP_DIR/int.err" >&2; fail "SIGINT must exit 130, got $code"; }
 [[ ! -e "$TMP_DIR/int2.txt" ]] || fail 'interrupted collection must not create the output file'
 grep -qxF '# collection failed: interrupted' "$TMP_DIR/int2.txt.partial" || fail 'SIGINT must mark the interrupted block'

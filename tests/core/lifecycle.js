@@ -53,6 +53,18 @@ test('system resource：uptime 解析成秒，連同該區塊的 collected-at；
   assert.strictEqual(i03(bad).length, 1, '認不得的 uptime 不可靜默略過');
   assert.strictEqual(dev(build(box('R', '10.0.0.1', [['/export terse', ['/system identity set name=R']]])), 'R').uptime, null);
 });
+test('RouterOS 時間長度：單位寫法、d＋hh:mm:ss、hh:mm:ss、w＋d＋hh:mm:ss 都解析成秒；格式不符回傳 null', () => {
+  const D = S.adapters.mikrotikDuration;
+  assert.strictEqual(D('1w2d3h4m5s'), 604800 + 2 * 86400 + 3 * 3600 + 4 * 60 + 5);
+  assert.strictEqual(D('15d04:05:06'), 15 * 86400 + 4 * 3600 + 5 * 60 + 6);
+  assert.strictEqual(D('00:05:01'), 301);
+  assert.strictEqual(D('1w2d03:04:05'), 604800 + 2 * 86400 + 3 * 3600 + 4 * 60 + 5, ':put [/system resource get uptime] 的寫法');
+  assert.strictEqual(D('1w03:04:05'), 604800 + 3 * 3600 + 4 * 60 + 5);
+  ['soon', '1w2d03:04', 'd03:04:05', ''].forEach((x) => assert.strictEqual(D(x), null, `${x} 不可解析`));
+  const s = build(box('R', '10.0.0.1', [['/system resource print', ['  uptime: 1w2d03:04:05', '  version: 7.25.1 (stable)']]]));
+  assert.strictEqual(dev(s, 'R').uptime.seconds, 604800 + 2 * 86400 + 3 * 3600 + 4 * 60 + 5);
+  assert.deepStrictEqual(i03(s), []);
+});
 test('L01：RouterBOOT 韌體 current 與 upgrade 不同時列出（每台一筆，證據是兩行）；相同或不是 RouterBOARD 時不列', () => {
   const s = build(box('R1', '10.0.0.1', [['/system routerboard print', RB('7.24.2', '7.25.1')]]) + box('R2', '10.0.0.2', [['/system routerboard print', RB('7.25.1', '7.25.1')]]));
   const f = s.findings.filter((x) => x.id === 'L01');

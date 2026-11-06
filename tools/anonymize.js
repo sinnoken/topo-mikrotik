@@ -8,8 +8,11 @@
 //   設備名   設備標頭、identity、/system identity、鄰居的 identity 換成 DEV-001…（--keep-names 時保留）
 //   其他識別 SSID、DHCP 主機名、radio-name、註解、LLDP 系統描述換成代號
 //   機密     eap-identity、eap-username、密碼（password、*-password）、金鑰（key、*-key、static-key-N）、
-//            secret／*-secret／secrets、passphrase、SNMP community（/snmp community 的 name、trap-community）、序號一律換成 REDACTED；
-//            RouterOS 7 的點號欄位（security.passphrase、configuration.ssid）依最後一段判斷
+//            secret／*-secret／secrets、passphrase、SNMP community（/snmp community 的 name、trap-community）、
+//            序號（serial-number）、授權識別碼（software-id、system-id）一律換成 REDACTED；
+//            RouterOS 7 的點號欄位（security.passphrase、configuration.ssid）依最後一段判斷；
+//            print 的「key: value」（/system routerboard print 的 serial-number:、/system license print 的 software-id: 等）與
+//            export 抬頭的「# serial number =」同樣遮蔽，鍵名的大小寫、空格或連字號與冒號前後的空白不影響
 // 對照表寫到 <輸出檔>.map.json，只供自己查對，不要提交。
 'use strict';
 const fs = require('fs');
@@ -18,7 +21,7 @@ const MASK_OCTET = new Set([0, 128, 192, 224, 240, 248, 252, 254, 255]);
 // 依 RouterOS export 會出現的欄位：/snmp community 的 authentication-password／encryption-password、/ppp secret 與各 VPN client 的 password、
 // /interface wireless security-profiles 的 wpa(2)-pre-shared-key／static-key-0..3、/interface wifi security 的 passphrase、/ip ipsec identity 與 /radius 的 secret、
 // /interface wireguard 的 private-key／preshared-key、OSPF／BGP 的 auth-key／tcp-md5-key、/system ntp key 的 key、/tool romon 的 secrets、/snmp 的 trap-community
-const SECRET_KEYS = /^(eap-identity|eap-username|password|.*-password|passphrase|.*-passphrase|secret|secrets|.*-secret|key|.*-key|static-key-\d+|trap-community|serial|serial-number|software-id)$/i;
+const SECRET_KEYS = /^(eap-identity|eap-username|password|.*-password|passphrase|.*-passphrase|secret|secrets|.*-secret|key|.*-key|static-key-\d+|trap-community|serial|serial-number|software-id|system-id)$/i;
 // SNMP v1/v2c 的 community 名稱本身就是密碼：/snmp community 底下的 name 也要遮蔽
 const SNMP_COMMUNITY = /^\/\s*snmp[\s/]+community\b/i;
 const MENU_MARKER = /^\s*(?:###\s*|\[[^\]]*\]\s*>?\s*)(\/\S.*)$/;
@@ -109,7 +112,11 @@ function anonymize(text, opt) {
     return all;
   });
   out = out.replace(/;;;\s*(.+)$/gm, (_, c) => `;;; ${code('comment', 'comment-', c.trim())}`);
-  out = out.replace(/^#\s*(serial number|software id)\s*=.*$/gim, (_, k) => `# ${k} = REDACTED`);
+  // print 的「key: value」逐行一個欄位（/system routerboard print、/system license print）；鍵可以是「serial number」這種兩個詞，
+  // 以連字號正規化後用同一份 SECRET_KEYS 判斷。= 前後有空白的寫法也算（沒有空白的 key=value 已在上面處理）
+  out = out.replace(/^([ \t]*)([A-Za-z][\w.-]*(?: [A-Za-z][\w.-]*)?)([ \t]*(?::|=(?=[ \t])|(?<=[ \t])=)[ \t]*)(\S[^\r\n]*?)([ \t]*\r?)$/gm,
+    (all, ind, key, sep, v, tail) => (SECRET_KEYS.test(key.replace(/\s+/g, '-').replace(/^.*\./, '')) ? `${ind}${key}${sep}REDACTED${tail}` : all));
+  out = out.replace(/^#\s*(serial[ -]number|software[ -]id)\s*=.*?(\r?)$/gim, (_, k, cr) => `# ${k} = REDACTED${cr}`);
   // 3. 設備名（長的先換，避免短名稱是長名稱的一部分）
   Array.from(names).sort((a, b) => b.length - a.length).forEach((n) => {
     const esc = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

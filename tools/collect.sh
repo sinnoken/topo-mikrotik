@@ -15,7 +15,7 @@ usage() {
   --commands ID,...       只執行指定命令 ID（指定時忽略設備清單的 extra 欄）
   --timeout SECONDS       單一 SSH 指令 timeout（預設 30）
   --connect-timeout SECONDS
-                          SSH 建立連線的逾時（ssh -o ConnectTimeout；預設 10 與 --timeout 取小者）
+                          SSH 建立連線的逾時（ssh -o ConnectTimeout；預設 10 與 --timeout 取小者，不可大於 --timeout）
   --retry COUNT           失敗後重試次數（預設 0）
   --ask-password          每台設備連線一次並手動輸入密碼／確認 host key
   --no-auto               不自動加上選用命令（依介面 type、型號與版本）
@@ -591,6 +591,8 @@ done
 [[ "$RETRY" =~ ^[0-9]+$ ]] || die "--retry 必須是非負整數"
 if [[ -n "$CONNECT_TIMEOUT" ]]; then
   [[ "$CONNECT_TIMEOUT" =~ ^[0-9]+$ && "$CONNECT_TIMEOUT" -ge 1 ]] || die "--connect-timeout 必須是正整數"
+  # 大於 --timeout 時 timeout 會先結束 ssh（記成 124 而不是連線失敗），連不上的設備每個指令都要各等滿 --timeout
+  (( CONNECT_TIMEOUT <= TIMEOUT )) || die "--connect-timeout（${CONNECT_TIMEOUT}）不可大於 --timeout（${TIMEOUT}）：連線逾時要在單一指令逾時之內"
 else
   # 預設 10 秒，但不超過單一指令的 --timeout（超過時 timeout 會先結束 ssh，記成 timeout 而不是連線失敗）
   CONNECT_TIMEOUT=10; (( TIMEOUT >= CONNECT_TIMEOUT )) || CONNECT_TIMEOUT=$TIMEOUT

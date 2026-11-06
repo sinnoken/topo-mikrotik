@@ -740,11 +740,11 @@
   });
 
   // ================================================================ Wi-Fi 關聯表（客戶端關聯在哪個無線介面）
-  /** RouterOS 時間長度（1w2d3h4m5s120ms，或舊格式 01:02:03）→ 秒；格式不符回傳 null。 */
+  /** RouterOS 時間長度（1w2d3h4m5s120ms，或 hh:mm:ss 前面可加 w、d：01:02:03、15d04:05:06、1w2d03:04:05）→ 秒；格式不符回傳 null。 */
   function duration(text) {
     const t = String(text || '').trim(); if (!t) return null;
-    const hms = t.match(/^(?:(\d+)d\s*)?(\d+):(\d+):(\d+(?:\.\d+)?)$/);
-    if (hms) return (+hms[1] || 0) * 86400 + hms[2] * 3600 + hms[3] * 60 + +hms[4];
+    const hms = t.match(/^(?:(\d+)w\s*)?(?:(\d+)d\s*)?(\d+):(\d+):(\d+(?:\.\d+)?)$/);
+    if (hms) return (+hms[1] || 0) * 604800 + (+hms[2] || 0) * 86400 + hms[3] * 3600 + hms[4] * 60 + +hms[5];
     const UNIT = { w: 604800, d: 86400, h: 3600, m: 60, s: 1, ms: 0.001, us: 1e-6 };
     let sec = 0; let rest = t; let m;
     const re = /^(\d+(?:\.\d+)?)(ms|us|w|d|h|m|s)/;

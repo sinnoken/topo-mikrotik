@@ -17,8 +17,10 @@ tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch
 | 變更 | 文件 |
 |---|---|
 | 快速開始、功能一覽 | `README.md` |
-| 畫面操作 | `docs/使用說明.md`（唯一的說明處；設計說明 §12 只留連結） |
-| 資料模型、推論規則、檢視層架構 | `docs/設計說明.md` |
+| 畫面操作 | `docs/使用說明.md`（唯一的說明處；設計說明 §11 只留連結） |
+| 資料模型、推論規則、下游模組、規模 | `docs/設計說明.md` |
+| 查詢函式（`SSOT.query`、`S.query.*` 的參數與回傳） | `docs/查詢介面.md` |
+| 檢視層架構（狀態、資料來源、theme、版面、匯出） | `docs/畫面架構.md` |
 | 版本紀錄 | `docs/版本紀錄.md` |
 | 開發指令、測試、擴充、CI | `docs/開發指南.md` |
 | 檢查（finding） | `docs/基準檢查.md`（和 `CATALOG` 的一致性由 `tests/docs.js` 檢查） |

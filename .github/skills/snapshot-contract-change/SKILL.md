@@ -28,8 +28,8 @@ Work through each layer in order and record which ones the change touches:
 6. **View** (`src/view/`): display it only if the user needs it. View state (selection,
    zoom, positions) never goes into the Snapshot.
 7. **Compare** (`src/compare/`): decide whether the field takes part in comparison.
-8. **Docs**: `README.md`, `docs/設計說明.md` (data model), `docs/基準檢查.md` (finding rules),
-   `docs/收集清單與輸入格式.md` if collection changes.
+8. **Docs**: `README.md`, `docs/設計說明.md` (data model), `docs/查詢介面.md` (query API),
+   `docs/基準檢查.md` (finding rules), `docs/收集清單與輸入格式.md` if collection changes.
 9. **Tests**: a reproducible case in the matching file under `tests/core/` (parse, model, check,
    query) or `tests/workflow/` (compare, remediate, ledger); `tests/run.js` is only the runner.
    UI behavior in `tests/ui-smoke.js`.

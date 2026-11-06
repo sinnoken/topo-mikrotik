@@ -26,7 +26,7 @@ tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch
 
 ## 與其他 agent 的介面（契約）
 
-- **對 data-model**：只透過 `SSOT.query(snapshot)`（`Q`）和 Snapshot 的公開欄位（`docs/設計說明.md` §5.2）讀資料。不讀內部模型 M，不修改 Snapshot。finding 的穩定鍵一律用 `Q.findingKey(f)`（ADR-003）。
+- **對 data-model**：只透過 `SSOT.query(snapshot)`（`Q`）和 Snapshot 的公開欄位（`docs/設計說明.md` §5.2；函式見 `docs/查詢介面.md`）讀資料。不讀內部模型 M，不修改 Snapshot。finding 的穩定鍵一律用 `Q.findingKey(f)`（ADR-003）。
 - **對 frontend**：畫面只透過 `S.remediate` 取得指令文字、只透過 `S.ledger` 存取處理紀錄、只透過 `S.compare` 比對、只透過 `S.workpack` 讀寫工作包。新增或修改這些函式時，在報告列出名稱、意義，以及相容或破壞性。
 - **下游模組之間的依賴方向**：ledger 不依賴 remediate。下游模組之間要新增依賴時，先在報告說明理由，由主對話決定。
 

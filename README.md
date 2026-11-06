@@ -72,7 +72,9 @@ node tools/baseline.js collection.txt --ledger out/ledger.json -o out/ # 之後�
 | [基準檢查](docs/基準檢查.md) | 每項檢查的判斷條件、常見原因與處理 |
 | [命名規則](docs/命名規則.md) | 命名 profile |
 | [使用說明](docs/使用說明.md) | 畫面操作，依流程步驟排列 |
-| [設計說明](docs/設計說明.md) | 模組、Snapshot 欄位、推論規則、比對、修正 patch、處理紀錄、工作包、檢視層架構 |
+| [設計說明](docs/設計說明.md) | 模組、Snapshot 欄位、推論規則、比對、修正 patch、處理紀錄、工作包、規模 |
+| [查詢介面](docs/查詢介面.md) | `SSOT.query` 各查詢函式的參數與回傳 |
+| [畫面架構](docs/畫面架構.md) | 檢視層的狀態、資料來源、樣式、版面與匯出 |
 | [版本紀錄](docs/版本紀錄.md) | 各版的變更 |
 | [路線圖](docs/路線圖.md) | 接下來要做的功能、順序與完成條件 |
 | [架構決策](docs/架構決策/README.md) | 重要決策的背景、選項與取捨（ADR） |

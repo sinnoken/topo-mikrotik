@@ -1233,22 +1233,36 @@
         const e = c.established; const d = c.defaultAction;
         const ev = [];
         const push = (r) => { if (r && !ev.some((x) => x.block === r.block && x.line === r.line)) ev.push(ruleEv(r)); };
-        let why;
+        // 從哪些介面進來的回程不保證：介面名稱；清單無法展開或只限出介面時寫比對條件
+        const fromText = (bs) => S.util.uniq(bs.map((x) => (x.interfaces ? x.interfaces.map((ep) => K.splitEp(ep)[1]).join('、')
+          : fw.canonMatch(x.rule.match).filter(([k]) => /^(in|out)-interface/.test(k)).map(([k, v]) => `${k}=${v}`).join(' ')))).join('；');
+        let head = '沒有放行已建立的連線（connection-state=established），回程封包可能被丟棄'; let why; let anchor;
         if (e.status === 'drop') {
           why = `${e.rule.chain} ${where(e.rule)}（${ruleText(e.rule)}）${via(e.path)}先丟棄了已建立連線的封包`
             + (e.shadowed.length ? `，放行 established 的${e.shadowed.map(where).join('、')}排在它之後，走不到` : '');
           e.path.forEach(push); push(e.rule); e.shadowed.forEach(push);
+          anchor = e.path[0] || e.rule;
+        } else if (e.status === 'accept') {
+          // established 有放行，但前面先依介面丟棄：只有從那些介面進來的回程不保證
+          const bs = e.blockedFrom; const first = bs[0];
+          head = `放行已建立連線的規則之前先依介面丟棄，從 ${fromText(bs)} 進來的回程不保證`;
+          why = `${bs.map((x) => `${x.rule.chain} ${where(x.rule)}（${ruleText(x.rule)}）${via(x.path)}`).join('、')}排在放行 established 的 ${e.rule.chain} ${where(e.rule)}之前`;
+          bs.forEach((x) => { x.path.forEach(push); push(x.rule); }); push(e.rule);
+          anchor = first.path[0] || first.rule;
         } else {
           // 一定命中的全部丟棄會讓 established 的結果是 drop（上面），這裡只剩只以介面為條件的丟棄
-          why = `${d.rule.chain} ${where(d.rule)}（${ruleText(d.rule)}）依介面丟棄封包，前面沒有一定會走到的 established 放行`;
-          push(d.rule);
+          // 預設動作是介面條件的丟棄時以它為準；不是時（例如丟棄另帶 connection-state）以第一條介面條件的丟棄為準
+          const bs = e.blockedFrom.length ? e.blockedFrom : [{ rule: d.rule, path: [], interfaces: null }];
+          const dr = d.rule && d.scope === 'interface' ? d.rule : bs[0].rule;
+          why = `${dr.chain} ${where(dr)}（${ruleText(dr)}）依介面丟棄封包，前面沒有一定會走到的 established 放行，從 ${fromText(bs)} 進來的回程不保證`;
+          bs.forEach((x) => { x.path.forEach(push); push(x.rule); }); push(dr);
+          anchor = dr;
         }
         const cond = e.conditional.filter((r) => fw.splitNeg(r.match['connection-state'] || '').body.split(',').includes('established'));
         const condText = cond.length ? `；${cond.map((r) => `${r.chain} ${where(r)}`).join('、')}只在部分條件下放行 established` : '';
         cond.forEach(push);
         // entities：設備＋這個 chain 中決定丟棄的那一條（經 jump 時是 chain 本身的 jump 規則）；兩個 chain 各一筆、鍵不同，不需要 facet
-        const anchor = e.status === 'drop' ? e.path[0] || e.rule : d.rule;
-        add('F15', `${name(dev)}：IPv4 filter ${c.chain} 沒有放行已建立的連線（connection-state=established），回程封包可能被丟棄：${why}${condText}`,
+        add('F15', `${name(dev)}：IPv4 filter ${c.chain} ${head}：${why}${condText}`,
           [{ type: 'device', key: dev }, { type: 'rule', key: anchor.key }], ev);
       });
     });

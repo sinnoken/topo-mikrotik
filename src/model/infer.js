@@ -977,9 +977,14 @@
     }
     return res;
   }
-  /** 依序走 chain：{ verdict: accept|drop|null（沒有規則決定）, rule, path（jump 規則）, conditional: [{ rule, path }]（只對部分封包放行的規則） }。 */
+  /** 只以介面為條件（可另有不排除這個狀態的 connection-state）的規則。 */
+  const ifcOnly = (r) => { const keys = Object.keys(r.match).filter((k) => !STATE_IGNORE.has(k) && k !== 'connection-state'); return keys.length > 0 && keys.every((k) => IFC_KEYS.has(k)); };
+  /**
+   * 依序走 chain：{ verdict: accept|drop|null（沒有規則決定）, rule, path（jump 規則）, conditional: [{ rule, path }]（只對部分封包放行的規則）,
+   *   ifcDrops: [{ rule, path }]（決定之前、一定會走到的位置上只以介面為條件的丟棄：從那些介面進來的這種封包在這裡就被丟掉） }。
+   */
   function walkState(ctx, family, chain, state) {
-    const conditional = [];
+    const conditional = []; const ifcDrops = [];
     const walk = (ch, via, sure) => {
       if (via.length > 16) return null;
       for (const r of ctx.chain(family, 'filter', ch)) {
@@ -994,7 +999,11 @@
           if (sub) return sub;
           continue;
         }
-        if (!definite) { if (r.action === 'accept' || r.action === 'fasttrack-connection') conditional.push({ rule: r, path: via }); continue; }
+        if (!definite) {
+          if (r.action === 'accept' || r.action === 'fasttrack-connection') conditional.push({ rule: r, path: via });
+          else if (sure && DROP_ACTIONS.has(r.action) && ifcOnly(r)) ifcDrops.push({ rule: r, path: via });
+          continue;
+        }
         if (r.action === 'return') return null;
         if (r.action === 'accept' || r.action === 'fasttrack-connection') return { verdict: 'accept', rule: r, path: via };
         if (DROP_ACTIONS.has(r.action)) return { verdict: 'drop', rule: r, path: via };
@@ -1002,7 +1011,7 @@
       return null;
     };
     const res = walk(chain, [], true) || { verdict: null, rule: null, path: [] };
-    return Object.assign(res, { conditional });
+    return Object.assign(res, { conditional, ifcDrops });
   }
   /** 放行這個狀態的規則（connection-state 正向含這個狀態，動作是 accept 或 fasttrack-connection）。 */
   const acceptsState = (r, state) => (r.action === 'accept' || r.action === 'fasttrack-connection') && r.match['connection-state'] !== undefined
@@ -1026,9 +1035,10 @@
   /**
    * 每個 chain 的狀態式骨架：[{ family, chain, rules（啟用中的規則數，不含 jump 進去的）, established, invalid, defaultAction, returnSafe }]。
    *   established：{ status: accept（規則放行）|policy（沒有規則決定，預設放行）|drop（先被一定命中的丟棄規則擋下）, rule, path, conditional, shadowed }；
-   *     shadowed 是 status 為 drop 時，chain 中排在它之後、放行 established 的規則（走不到）。
+   *     shadowed 是 status 為 drop 時，chain 中排在它之後、放行 established 的規則（走不到）；
+   *     blockedFrom：[{ rule, path, interfaces }] 排在決定之前、只以介面為條件的丟棄（status 不是 drop 時），從 interfaces 進來的回程不保證。
    *   invalid：{ status: drop|accept|policy, rule, path, explicit（決定的規則是否明確比對 connection-state=invalid） }。
-   *   returnSafe：false 表示已建立連線的回程封包可能被預設丟棄（沒有一定走得到的 established 放行，而且有丟棄）——F15 的條件。
+   *   returnSafe：false 表示已建立連線的回程封包可能被丟棄（沒有一定走得到的 established 放行而且有丟棄，或有 blockedFrom）——F15 的條件。
    * 物件內的 rule 是規則物件（呼叫端轉成鍵）。
    */
   function policyBaseline(ctx, family) {
@@ -1037,11 +1047,16 @@
       const list = ctx.chain(fam, 'filter', chain).filter((r) => !r.disabled);
       const e = walkState(ctx, fam, chain, 'established');
       const shadowed = e.verdict === 'drop' ? list.filter((r) => r.position > (e.path[0] || e.rule).position && acceptsState(r, 'established')) : [];
-      const established = { status: e.verdict || 'policy', rule: e.rule, path: e.path, conditional: e.conditional.map((x) => x.rule), shadowed };
+      // 介面條件的丟棄排在決定之前：從那些介面進來的回程不保證（in 方向的介面；只限 out 方向或清單無法展開時 interfaces 為 null）
+      const blockedFrom = e.verdict === 'drop' ? [] : e.ifcDrops.map(({ rule, path }) => {
+        const set = ifcSet(ctx, rule, 'in');
+        return { rule, path, interfaces: set && set !== UNKNOWN ? Array.from(set).sort(S.util.natural) : null };
+      });
+      const established = { status: e.verdict || 'policy', rule: e.rule, path: e.path, conditional: e.conditional.map((x) => x.rule), shadowed, blockedFrom };
       const v = walkState(ctx, fam, chain, 'invalid');
       const invalid = { status: v.verdict || 'policy', rule: v.rule, path: v.path, explicit: !!(v.rule && v.rule.match['connection-state'] !== undefined) };
       const dflt = defaultAction(ctx, fam, chain);
-      const returnSafe = established.status === 'accept' || (established.status === 'policy' && !DROP_ACTIONS.has(dflt.action));
+      const returnSafe = !blockedFrom.length && (established.status === 'accept' || (established.status === 'policy' && !DROP_ACTIONS.has(dflt.action)));
       return { family: fam, chain, rules: list.length, established, invalid, defaultAction: dflt, returnSafe };
     });
   }

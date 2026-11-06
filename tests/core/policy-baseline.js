@@ -58,6 +58,28 @@ test('F15：只以介面為條件的丟棄（drop all not coming from LAN）也�
   assert.strictEqual(fws(fwBox([FF('action=drop chain=input disabled=yes')]), 'F15').length, 0);
 });
 
+test('F15：帶介面條件的丟棄排在 established 放行之前，從那些介面進來的回程不保證（blockedFrom 標出介面與規則）', () => {
+  const s = fwBox([FF('action=drop chain=forward in-interface-list=WAN'), FF('action=accept chain=forward connection-state=established,related'),
+    FF('action=accept chain=forward in-interface-list=LAN')]);
+  const c = pb(s, 'forward'); const Q = S.query(s);
+  assert.deepStrictEqual([c.established.status, c.returnSafe], ['accept', false]);
+  assert.deepStrictEqual(c.established.blockedFrom.map((b) => [Q.getFirewallRule(b.rule).src[0][1], b.interfaces]), [[8, ['R|ether1']]]);
+  const f = fws(s, 'F15');
+  assert.deepStrictEqual(f.map((x) => [lines(x), x.entities.map((e) => e.key)]), [[[8, 9], ['R', c.established.blockedFrom[0].rule]]]);
+  assert.ok(/從 ether1 進來的回程/.test(f[0].message) && /第 1 條/.test(f[0].message), f[0].message);
+  // 排在放行之後、只限新連線的、或以位址／埠為條件的丟棄：不影響（後者是文件寫的限制）
+  [[FF('action=accept chain=forward connection-state=established'), FF('action=drop chain=forward in-interface-list=WAN')],
+    [FF('action=drop chain=forward connection-state=new in-interface-list=WAN'), FF('action=accept chain=forward connection-state=established')],
+    [FF('action=drop chain=forward dst-port=23 in-interface-list=WAN protocol=tcp'), FF('action=accept chain=forward connection-state=established')]].forEach((rules, n) => {
+    const x = fwBox(rules);
+    assert.deepStrictEqual([pb(x, 'forward').returnSafe, pb(x, 'forward').established.blockedFrom.length, fws(x, 'F15').length], [true, 0, 0], `對照 ${n}`);
+  });
+  // 介面清單無法展開時 interfaces 為 null，訊息改寫比對條件
+  const u = fwBox([FF('action=drop chain=forward in-interface-list=dynamic'), FF('action=accept chain=forward connection-state=established')]);
+  assert.deepStrictEqual(pb(u, 'forward').established.blockedFrom.map((b) => b.interfaces), [null]);
+  assert.ok(/in-interface-list=dynamic/.test(fws(u, 'F15')[0].message), fws(u, 'F15')[0].message);
+});
+
 test('狀態式骨架：established 的放行在 jump 進去的子 chain 裡也算；子 chain return 後才全部丟棄時仍報', () => {
   const ok = fwBox([FF('action=jump chain=forward jump-target=state'), FF('action=accept chain=state connection-state=established,related'),
     FF('action=drop chain=state connection-state=invalid'), FF('action=drop chain=forward')]);

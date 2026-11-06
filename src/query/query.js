@@ -272,8 +272,9 @@
       /**
        * 狀態式骨架（回程的前提，F15 的依據；判斷在 S.infer.fw.policyBaseline）：IPv4 filter 的 input、forward 各一列，
        * [{ chain, rules, established, invalidDrop, defaultAction, returnSafe, src }]；沒有設定資料（export）的設備為 null。
-       *   established：{ status: accept|policy|drop, rule, path, conditional, shadowed }——accept 是一定走得到的放行（accept 或 fasttrack-connection），
+       *   established：{ status: accept|policy|drop, rule, path, conditional, shadowed, blockedFrom }——accept 是一定走得到的放行（accept 或 fasttrack-connection），
        *     policy 是沒有規則決定（內建 chain 預設放行），drop 是先被一定命中的丟棄擋下；shadowed 是排在那條丟棄之後的 established 放行。
+       *     blockedFrom：[{ rule, path, interfaces（ep 陣列；只限出介面或清單無法展開時 null） }] 排在決定之前、只以介面為條件的丟棄，從這些介面進來的回程不保證。
        *   invalidDrop：{ status: drop|accept|policy, rule, path, explicit（決定的規則是否明確比對 connection-state=invalid） }。
        *   defaultAction：{ action: drop|reject|tarpit|accept, scope: all|interface|null, policy, rule }。
        *   returnSafe：false 表示回程不保證（F15）。rule 是規則鍵（Q.getFirewallRule 取得），path／conditional／shadowed 是規則鍵陣列；
@@ -286,10 +287,11 @@
           const key = (r) => (r ? r.key : null); const keys = (rs) => rs.map((r) => r.key);
           const src = []; const seen = new Set();
           const add = (r) => { if (r && !seen.has(r.key)) { seen.add(r.key); src.push(r.src[0].slice()); } };
-          [...c.established.path, c.established.rule, ...c.established.shadowed, ...c.established.conditional, ...c.invalid.path, c.invalid.rule, c.defaultAction.rule].forEach(add);
+          [...c.established.path, c.established.rule, ...c.established.shadowed, ...c.established.blockedFrom.flatMap((b) => [...b.path, b.rule]), ...c.established.conditional, ...c.invalid.path, c.invalid.rule, c.defaultAction.rule].forEach(add);
           src.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
           return { chain: c.chain, rules: c.rules,
-            established: { status: c.established.status, rule: key(c.established.rule), path: keys(c.established.path), conditional: keys(c.established.conditional), shadowed: keys(c.established.shadowed) },
+            established: { status: c.established.status, rule: key(c.established.rule), path: keys(c.established.path), conditional: keys(c.established.conditional), shadowed: keys(c.established.shadowed),
+              blockedFrom: c.established.blockedFrom.map((b) => ({ rule: b.rule.key, path: keys(b.path), interfaces: b.interfaces ? b.interfaces.slice() : null })) },
             invalidDrop: { status: c.invalid.status, rule: key(c.invalid.rule), path: keys(c.invalid.path), explicit: c.invalid.explicit },
             defaultAction: { action: c.defaultAction.action, scope: c.defaultAction.scope, policy: c.defaultAction.policy, rule: key(c.defaultAction.rule) },
             returnSafe: c.returnSafe, src };

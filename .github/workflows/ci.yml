@@ -143,11 +143,14 @@ jobs:
 
       - name: Collector shell tests with /bin/bash 3.2
         run: |
-          /bin/bash --version | head -n 1
+          /bin/bash -c '[ "${BASH_VERSINFO[0]}" = 3 ] || { echo "預期 bash 3.x，實際 $BASH_VERSION"; exit 1; }'
           /bin/bash tests/collect.sh
 
+      # 端到端測試以 PATH 上的 bash 執行收集器：把 /bin 放最前面，用的是內建的 bash 3.2 而不是 Homebrew 的 bash 5
       - name: Collector end-to-end contract
-        run: node tests/run.js --grep 收集器
+        run: |
+          PATH="/bin:$PATH" bash -c '[ "${BASH_VERSINFO[0]}" = 3 ] || { echo "預期 bash 3.x，實際 $BASH_VERSION"; exit 1; }'
+          PATH="/bin:$PATH" node tests/run.js --grep 收集器
 
   test-large:
     name: Large dataset test

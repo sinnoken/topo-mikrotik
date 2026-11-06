@@ -48,9 +48,9 @@ const bashPath = (p) => p.replace(/\\/g, '/'); // Git Bash 接受 C:/… 形式�
 /** 檢查 bash 與 GNU timeout；缺少時丟出說明原因的錯誤（測試失敗，不略過）。 */
 function requireBashTools() {
   const { spawnSync } = require('child_process');
-  const r = spawnSync('bash', ['-c', 'if command -v timeout >/dev/null && timeout --version 2>/dev/null | grep -q "GNU coreutils"; then timeout --version | head -n 1; elif command -v gtimeout >/dev/null; then gtimeout --version | head -n 1; else echo "找不到 timeout 或 gtimeout"; exit 3; fi'], { encoding: 'utf8' });
+  const r = spawnSync('bash', ['-c', 'ok() { "$1" --signal=TERM --kill-after=1 5 true >/dev/null 2>&1; }; if command -v timeout >/dev/null && ok timeout; then timeout --version | head -n 1; elif command -v gtimeout >/dev/null && ok gtimeout; then gtimeout --version | head -n 1; else echo "找不到可用的 timeout 或 gtimeout"; exit 3; fi'], { encoding: 'utf8' });
   if (r.error) assert.fail(`收集器端到端測試需要 bash（${r.error.code || r.error.message}）；Windows 請安裝 Git Bash 並放在 PATH 前面，WSL／Linux 請安裝 bash`);
-  if (r.status !== 0 || !/GNU coreutils/.test(r.stdout)) assert.fail(`收集器端到端測試需要 GNU timeout（coreutils）：${(r.stdout + r.stderr).trim() || `bash 結束碼 ${r.status}`}`);
+  if (r.status !== 0) assert.fail(`收集器端到端測試需要可用的 timeout（coreutils 或 macOS 的 gtimeout）：${(r.stdout + r.stderr).trim() || `bash 結束碼 ${r.status}`}`);
 }
 /** 在暫存目錄準備假的 ssh 並執行 tools/collect.sh；回傳 { status, text, log, stderr }，結束後刪除暫存目錄。 */
 function runCollector() {

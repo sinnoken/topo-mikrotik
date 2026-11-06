@@ -602,10 +602,12 @@ if [[ -n "$RETRY_FROM" ]] && (( ! DRY_RUN )); then
   [[ ! "$OUTPUT" -ef "$RETRY_FROM" ]] || die "-o 不可與 --retry-failed 的收集檔相同：$OUTPUT"
 fi
 command -v ssh >/dev/null 2>&1 || die "找不到 ssh"
-# GNU timeout：Linux／WSL 是 timeout；macOS 以 Homebrew 安裝 coreutils 後是 gtimeout
-if command -v timeout >/dev/null 2>&1 && timeout --version 2>/dev/null | grep -q 'GNU coreutils'; then TIMEOUT_BIN=timeout
-elif command -v gtimeout >/dev/null 2>&1; then TIMEOUT_BIN=gtimeout
-else die "找不到 GNU timeout（WSL／Linux 請安裝 coreutils；macOS 請 brew install coreutils，會提供 gtimeout）"; fi
+# timeout：Linux／WSL 是 timeout（GNU coreutils 或 uutils）；macOS 以 Homebrew 安裝 coreutils 後是 gtimeout。
+# 不看 --version 的字樣，直接試跑一次用到的選項（--signal、--kill-after），能用就用
+timeout_works() { "$1" --signal=TERM --kill-after=1 5 true >/dev/null 2>&1; }
+if command -v timeout >/dev/null 2>&1 && timeout_works timeout; then TIMEOUT_BIN=timeout
+elif command -v gtimeout >/dev/null 2>&1 && timeout_works gtimeout; then TIMEOUT_BIN=gtimeout
+else die "找不到可用的 timeout（需要支援 --signal 與 --kill-after；WSL／Linux 請安裝 coreutils；macOS 請 brew install coreutils，會提供 gtimeout）"; fi
 
 load_inventory "$INVENTORY"
 check_device_filter

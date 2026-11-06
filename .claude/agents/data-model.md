@@ -16,7 +16,7 @@ tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch
 
 ## 與其他 agent 的介面（契約）
 
-- **query 是對 workflow 和 frontend 的介面**：Snapshot（`docs/設計說明.md` §5.2）與 `SSOT.query(snapshot)` 的函式，是畫面與下游模組唯一的資料來源。`workflow` 或 `frontend` 需要新的查詢函式時，由你加入。
+- **query 是對 workflow 和 frontend 的介面**：Snapshot（`docs/設計說明.md` §5.2）與 `SSOT.query(snapshot)` 的函式（`docs/查詢介面.md`；新增或修改函式時一起更新，或寫進報告的「文件影響」），是畫面與下游模組唯一的資料來源。`workflow` 或 `frontend` 需要新的查詢函式時，由你加入。
   - `src/query` 是畫面與下游唯一的讀取介面（ADR-018）：畫面不讀 Snapshot 的欄位與 `S.check`、`S.adapters`，靜態資料（檢查目錄、顯示名稱）放在 `S.query.*`。
   - 新增查詢函式要考慮 1000 台的效能：索引在第一次呼叫時才建立，不在 `S.query(snap)` 時預先建好全部；回傳的衍生陣列（Q 自己的索引）要凍結，Snapshot 本身不凍結、不複製。
   - 新增欄位或查詢函式屬於相容修改，可以直接做，並在報告列出名稱與意義。

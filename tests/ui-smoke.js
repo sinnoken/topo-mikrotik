@@ -969,6 +969,27 @@ function viewBoundaryViolations(file, src) {
       App.select({ type: 'device', key: devs[devs.length - 1].id }, { focus: true });
       if (g.s <= sAll * 1.5) throw new Error(`鄰居最多的設備選取後應放大：${g.s}（全圖 ${sAll}）`);
     }
+    // 只聚焦設備本身時往鄰居方向偏移（FOCUS.lean），但寬的節點框（埠很多的 L2 交換器）整個框仍要在畫面內：
+    // 暫時把最左邊的節點換成寬框，其他節點當成鄰居（都在右邊），minScale 設為無限大一定走「只聚焦設備本身」
+    const vis = g.nodes.filter((n) => !n.virtual && g.isVisible(n)).sort((a, b) => g.at(a.id).x - g.at(b.id).x);
+    const wide = vis[0]; const others = vis.slice(1).map((n) => n.id); const hadBox = 'box' in wide; const oldBox = wide.box;
+    const restoreBox = () => { if (hadBox) wide.box = oldBox; else delete wide.box; };
+    try {
+      [{ w: 3000, h: 40 }, { w: 40, h: 3000 }, { w: 3000, h: 3000 }].forEach((box) => {
+        wide.box = box;
+        const boxIn = () => {
+          const p = g.toScreen(g.at(wide.id)); const v = g.viewport();
+          const x0 = p.x - (box.w * g.s) / 2; const x1 = p.x + (box.w * g.s) / 2; const y0 = p.y - (box.h * g.s) / 2; const y1 = p.y + (box.h * g.s) / 2;
+          return x0 >= v.x0 - 1e-6 && x1 <= v.x1 + 1e-6 && y0 >= v.y0 - 1e-6 && y1 <= v.y1 + 1e-6 ? null : `${Math.round(x0)}..${Math.round(x1)} × ${Math.round(y0)}..${Math.round(y1)}`;
+        };
+        g.fit([wide.id, ...others], L.FOCUS.pad, L.FOCUS.maxScale, { ids: [wide.id], minScale: Infinity });
+        const bad = boxIn(); if (bad) throw new Error(`寬框 ${box.w}×${box.h} 聚焦後應整個在畫面內（710×850）：${bad}`);
+      });
+      // 小節點仍會往鄰居方向偏（不是一律置中）
+      restoreBox();
+      g.fit([wide.id, ...others], L.FOCUS.pad, L.FOCUS.maxScale, { ids: [wide.id], minScale: Infinity });
+      if (others.length && !(g.toScreen(g.at(wide.id)).x < g.w / 2 - 1)) throw new Error('只聚焦設備本身時應往鄰居的方向偏（鄰居在右邊，設備偏左）');
+    } finally { restoreBox(); }
     } finally { cv.getBoundingClientRect = rect; g.resize(); }
     const pair = Array.from(App.pairs.values()).find((p) => !p.virtual && p.links.length);
     const link = Q.getLink(pair.links[0]);
@@ -3070,6 +3091,85 @@ function viewBoundaryViolations(file, src) {
     }
     App.showView('graph');
   });
+  await step('比對：預期現況的漂移提示（推論）——沒有漂移時不提示；只有一輪不符是偏離，連續兩輪是可能已過時；沒有來源的舊檔另外說明', async () => {
+    const VL = S.view.lists; const BD = S.view.baselineDiff;
+    const saved = App.round.expected;
+    goStep('verify'); BD.reset();
+    const loadExp = async (name, obj) => {
+      const inp = $('#compare-body').querySelector('input'); inp.files = [{ name, text: async () => JSON.stringify(obj) }];
+      inp.dispatch('change', { target: inp }); await new Promise((r) => setTimeout(r, 20));
+    };
+    const box = () => $('#compare-body').querySelector('.cmp-drift');
+    const has = (sel) => !!(box() && box().querySelector(sel));
+    // 1. 由目前基準產生的預期現況（有 source）：沒有漂移，不顯示過時或偏離；只有一輪，說明找不到上一輪基準
+    const gen = S.compare.expectedFrom(App.Q);
+    await loadExp('expected-now.json', gen);
+    const r0 = VL.compare.drift(App);
+    if (!r0 || r0.errors.length || r0.stale.length || r0.drifted.length) throw new Error('同一份基準產生的預期現況不應有漂移');
+    if (!box()) throw new Error('預期現況比對應有漂移判斷的區塊');
+    if (has('.drift-stale') || has('.drift-drifted') || has('.drift-unobserved')) throw new Error('沒有漂移時不應顯示過時或偏離的提示');
+    if (!box().textContent.includes('推論')) throw new Error('漂移判斷是推論，應有推論標示');
+    const few = r0.warnings.find((w) => w.kind === 'too-few-rounds');
+    if (!few || !box().textContent.includes(few.message) || !box().textContent.includes('上一輪的基準')) throw new Error('只有一輪時應顯示核心的提醒並說明沒有上一輪的基準：' + box().textContent);
+    // 2. 預期現況多一台不存在的設備：只有一輪 → 網路與預期不同（偏離），不是過時
+    const ghost = JSON.parse(JSON.stringify(gen)); ghost.devices.push('不存在的設備_X');
+    await loadExp('expected-ghost.json', ghost);
+    const r1 = VL.compare.drift(App);
+    const d1 = r1.drifted.find((i) => i.ref === S.keys.dev('不存在的設備_X'));
+    if (!d1 || r1.stale.length) throw new Error('只有一輪不符應是偏離（drifted），不是過時');
+    if (!has('.drift-drifted') || has('.drift-stale') || !box().textContent.includes('網路與預期不同') || !box().textContent.includes(d1.message)) throw new Error('應列出偏離的項目：' + box().textContent);
+    // 3. 有上一輪的基準（與工作包帶回時相同的路徑），預期現況由上一輪產生：兩輪都沒有這台 → 預期現況可能已過時
+    const src = App.sources.map((s, i) => (i === 0 ? { name: s.name, text: '# 上一輪\n' + s.text } : s));
+    const prevSnap = S.build(src, { profile: App.round.profile, expectedData: App.round.expectedData, now: '2000-01-01T00:00:00Z' });
+    BD.setOld(App, '上一輪.json', prevSnap);
+    if (!BD.loaded()) throw new Error('測試資料：上一輪的基準應能比對');
+    const before = JSON.stringify(prevSnap);
+    const old = JSON.parse(JSON.stringify(S.compare.expectedFrom(S.query(prevSnap)))); old.devices.push('不存在的設備_X');
+    await loadExp('expected-old.json', old);
+    const r2 = VL.compare.drift(App);
+    const s2 = r2.stale.find((i) => i.ref === S.keys.dev('不存在的設備_X'));
+    if (!s2 || s2.rounds < 2) throw new Error('上一輪與這一輪都不符應推論為過時：' + JSON.stringify(r2.summary));
+    const t2 = box().textContent;
+    if (!has('.drift-stale') || !t2.includes('預期現況可能已過時') || !t2.includes(`連續 ${s2.rounds} 輪不符`) || !t2.includes(s2.message)) throw new Error('應提示預期現況可能已過時並列出項目：' + t2);
+    if (r2.warnings.some((w) => w.kind === 'too-few-rounds')) throw new Error('有上一輪的基準時不應是輪數不足');
+    if (JSON.stringify(prevSnap) !== before) throw new Error('漂移判斷不可修改上一輪的基準');
+    const go = box().querySelector('.drift-regenerate');
+    if (!go || go.tagName !== 'BUTTON') throw new Error('過時時應有到資料中心重新產生的入口（按鈕，可用鍵盤操作）');
+    if (App.round.expected.name !== 'expected-old.json') throw new Error('提示不可自動覆蓋預期現況');
+    go.click();
+    if (!S.view.app.hubOpen() || document.activeElement !== $('#hub-sec-compare') || !$('#hub-sec-compare').contains(hubBtn('export-expected'))) throw new Error('應開啟資料中心並聚焦「由目前基準產生預期現況」');
+    const hubRow = $('#hub').testAll('.hub-row').find((r) => r.getAttribute('data-item') === 'expected');
+    if (!hubRow.textContent.includes('可能已過時')) throw new Error('資料中心的預期現況也應註明可能已過時：' + hubRow.textContent);
+    S.view.app.closeHub();
+    if (App.round.expected.name !== 'expected-old.json') throw new Error('開啟資料中心不可覆蓋預期現況');
+    // 3b. 上一輪的基準沒有列入時，說明實際用了幾輪、哪一份沒有列入與原因，不可再寫「目前的基準與上一輪的基準」
+    //   before-source：預期現況由目前基準產生，上一輪（較早）早於來源；duplicate：上一輪與目前是同一次收集（輸入相同）
+    await loadExp('expected-now.json', gen);
+    const rb = VL.compare.drift(App);
+    if (rb.basis.history.map((x) => x.reason).join() !== 'before-source,') throw new Error('測試資料：上一輪應早於來源基準：' + JSON.stringify(rb.basis.history));
+    const tb = box().textContent;
+    if (!tb.includes('依 1 輪基準判斷') || tb.includes('目前的基準與上一輪的基準') || !tb.includes('上一輪.json') || !tb.includes('早於預期現況的來源基準')) throw new Error('上一輪早於來源時應說明沒有列入與原因：' + tb);
+    const dupSnap = S.build(App.sources, { profile: App.round.profile, expectedData: { switch: ['lldp'] }, now: '2000-01-01T00:00:00Z' });
+    BD.setOld(App, '同一次收集.json', dupSnap);
+    const old2 = JSON.parse(JSON.stringify(old)); delete old2.source;
+    await loadExp('expected-legacy-ghost.json', old2);
+    const rd = VL.compare.drift(App);
+    if (rd.basis.history.map((x) => x.reason).join() !== ',duplicate') throw new Error('測試資料：同一次收集應以 duplicate 排除：' + JSON.stringify(rd.basis.history));
+    if (rd.stale.length) throw new Error('同一次收集只算一輪，不可推論為過時');
+    const td = box().textContent;
+    if (!td.includes('依 1 輪基準判斷') || td.includes('目前的基準與上一輪的基準') || !td.includes('同一次收集.json') || !td.includes('同一次收集（輸入相同）')) throw new Error('同一次收集時應說明只算一輪與原因：' + td);
+    BD.setOld(App, '上一輪.json', prevSnap);
+    // 4. 舊格式（沒有 source）：顯示 no-source 提醒，並說明重新產生後才能完整判斷
+    const noSrc = JSON.parse(JSON.stringify(gen)); delete noSrc.source;
+    await loadExp('expected-legacy.json', noSrc);
+    const r3 = VL.compare.drift(App);
+    const ns = r3.warnings.find((w) => w.kind === 'no-source');
+    if (!ns || !box().textContent.includes(ns.message) || !box().textContent.includes('這份預期現況沒有記錄來源基準，重新產生後才能完整判斷')) throw new Error('沒有來源的預期現況應說明：' + box().textContent);
+    // 還原：載入原本的預期現況，不留上一輪的基準
+    BD.reset();
+    if (saved) await loadExp(saved.name, saved.data); else { App.round.expected = null; S.view.app.renderAll(); }
+    App.showView('graph');
+  });
   await step('匯出：基準 JSON 與檢查結果 CSV／Markdown 在本機產生（入口在資料中心），下載後釋放 URL，不改寫基準', async () => {
     const before = JSON.stringify(App.snap);
     if ($('#btn-json')) throw new Error('基準 JSON 的匯出已移到資料中心，工具列不應再有「匯出 JSON」');
@@ -3249,6 +3349,11 @@ function viewBoundaryViolations(file, src) {
     const X = S.view.exporter; const opts2 = { ledgerOf: VA.ledgerExport };
     const rows = parseCsv(X.findingsCsv(App.Q, opts2).replace(/^﻿/, ''));
     const row = rows[all.indexOf(f) + 1]; const userAt = VA.ledgerUserAt(it2);
+    // 畫面的對應與核心（CLI 也用）是同一份：userAt 是同一個函式，ledgerExport 與 S.report.ledgerOfItems 逐筆相同
+    if (VA.ledgerUserAt !== S.report.userAt) throw new Error('A.ledgerUserAt 應直接引用 S.report.userAt');
+    const coreOf = S.report.ledgerOfItems(VA.ledger(), App.Q);
+    if (!all.every((x) => JSON.stringify(VA.ledgerExport(x)) === JSON.stringify(coreOf(x)))) throw new Error('A.ledgerExport 應與 S.report.ledgerOfItems 逐筆相同');
+    if (!all.some((x) => VA.ledgerExport(x))) throw new Error('改過處理狀態後應有處理紀錄可匯出');
     if (row[6] !== userAt || row[7] !== 'false-positive' || row[8] !== "'" + note2 || row[11] !== 'false-positive' || row[12] !== "'" + note2) throw new Error('CSV 的處理紀錄欄位不符：' + row);
     if (all.filter((x) => VA.isPending(x)).some((x) => rows[all.indexOf(x) + 1][6] !== '' || rows[all.indexOf(x) + 1][7] !== '')) throw new Error('待處理的列 acknowledged／ack_kind 應為空白');
     const md = X.findingsMarkdown(App.Q, opts2);

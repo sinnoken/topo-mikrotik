@@ -100,10 +100,13 @@
   A.ledgerStatus = (f) => (A.ledgerItem(f) || {}).status || null;
   /** 仍待處理（open、regressed，或不在處理紀錄中；規則在 S.ledger.isPending） */
   A.isPending = (f) => S.ledger.isPending(A.ledgerStatus(f));
-  /** 使用者最後一次變更的時間（歷程中最後一筆 by user）；沒有時為 null */
-  A.ledgerUserAt = (it) => { const h = (it && it.history || []).filter((x) => x.by === 'user'); return h.length ? h[h.length - 1].at : null; };
-  /** 匯出用（V.exporter 的 opts.ledgerOf）：{ status, at（使用者最後一次變更）, note, waiver }；不在處理紀錄中時為 null */
-  A.ledgerExport = (f) => { const it = A.ledgerItem(f); return it ? { status: it.status, at: A.ledgerUserAt(it), note: it.note, waiver: it.waiver } : null; };
+  /** 使用者最後一次變更的時間（歷程中最後一筆 by user）；沒有時為 null。實作在 S.report（匯出的報表用同一個） */
+  A.ledgerUserAt = S.report.userAt;
+  /**
+   * 匯出用（V.exporter 的 opts.ledgerOf）：{ status, at（使用者最後一次變更）, note, waiver }；不在處理紀錄中時為 null。
+   * 對應由 S.report.ledgerOfItems 產生（與 CLI 相同）；畫面另外處理的只有沒有基準與處理紀錄停用（都視為不在處理紀錄中）。
+   */
+  A.ledgerExport = (f) => (App.Q && !st.blocked ? S.report.ledgerOfItems(st.ledger, App.Q)(f) : null);
   /** 這份基準在處理紀錄中是第幾輪（0 起算）；沒有時 -1。以基準鍵比較（沒有 baselineKey 的舊紀錄、舊基準用 inputHash，與 S.ledger 相同） */
   const baseOf = (b) => (b && b.baselineKey != null ? b.baselineKey : b && b.inputHash);
   A.ledgerRoundIndex = () => (App.Q ? st.ledger.iterations.findIndex((r) => baseOf(r.baseline) === baseOf(App.Q.meta())) : -1);

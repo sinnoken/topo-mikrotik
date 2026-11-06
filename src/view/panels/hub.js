@@ -77,9 +77,12 @@
     // 預期資料（ssot-expected/1，和基準比對用）
     const exp = r.expected; const rep = V.lists.compare.report(App);
     const expFile = fileInput('hub-file-expected', '.json,application/json', (f) => V.lists.compare.loadFile(App, f));
+    // 漂移（推論）：連續幾輪不符時，預期現況可能已過時；詳細在「驗證」的預期現況比對
+    const drift = V.lists.compare.drift(App); const stale = drift && !drift.errors.length && drift.stale.length;
     rows.push(row('expected', ['預期現況', '格式 ssot-expected/1：確認過的應有現況，和基準比對用'], exp ? exp.name : '—',
       !exp ? st('muted', '未載入') : rep && rep.errors.length ? st('err', rep.errors[0])
-        : rep ? st(rep.items.some((i) => i.status !== 'ok') ? 'warn' : 'ok', `已比對：有差異 ${V.num(rep.items.filter((i) => i.status !== 'ok').length)} 項、一致 ${V.num(rep.summary.ok || 0)} 項`)
+        : rep ? h('span', null, [st(rep.items.some((i) => i.status !== 'ok') ? 'warn' : 'ok', `已比對：有差異 ${V.num(rep.items.filter((i) => i.status !== 'ok').length)} 項、一致 ${V.num(rep.summary.ok || 0)} 項`),
+          stale ? st('warn', `・預期現況可能已過時（推論，${V.num(stale)} 項連續不符）`) : null])
           : st('muted', '建立基準後比對'),
       [expFile, btn('載入預期現況（JSON）…', 'load-expected', () => expFile.click(), { disabled: !Q || busy || null })]));
     // 覆蓋率
@@ -213,7 +216,7 @@
       ]),
       card('compare', '給之後的比對', '預期現況：把確認過的現況當作標準，之後和新的基準比對', [
         btn('預期現況', 'export-expected', () => App.exportAs('expected'), { disabled: off, title: '由目前的基準產生（已收集的設備、雙向確認的鏈路、VLAN）' }),
-      ]),
+      ], 'hub-sec-compare'), // 「驗證」的漂移提示（預期現況可能已過時）連到這裡
     ]);
   }
 

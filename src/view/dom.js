@@ -80,12 +80,12 @@
   V.ONE_WAY_TEXT = V.ONE_WAY + '（對端沒回報）';
   /** 推論標示：和收集到的事實並列的推定結果一律加這個 chip；依據放 title。 */
   V.inferChip = (tip) => V.chip(V.TERMS.inferred, 'info', tip ? { title: tip } : null);
-  /** 多數決判定與多數不同的設備鍵（finding.deviation，推論）：不是多數決（或沒有 deviation）時 null，平手時空陣列。詳情、「研判」與圖上的虛線外圈共用 */
-  V.majorityDeviating = (dv) => (dv && dv.basis === 'majority' ? dv.deviating || [] : null);
-  /** 與多數不同的標籤與平手的說法：詳情、「研判」（V.deviationLine）與匯出的 CSV 欄名、Markdown 共用 */
-  V.DEVIATION = '與多數不同';
-  V.DEVIATION_LABEL = V.DEVIATION + '（推論）';
-  V.NO_MAJORITY = '沒有多數';
+  /** 多數決判定與多數不同的設備鍵（finding.deviation，推論）：不是多數決（或沒有 deviation）時 null，平手時空陣列。詳情、「研判」與圖上的虛線外圈共用；實作在 S.report */
+  V.majorityDeviating = S.report.majorityDeviating;
+  /** 與多數不同的標籤與平手的說法：詳情、「研判」（V.deviationLine）與匯出的 CSV 欄名、Markdown 共用；單一來源是 S.report */
+  V.DEVIATION = S.report.DEVIATION;
+  V.DEVIATION_LABEL = S.report.DEVIATION_LABEL;
+  V.NO_MAJORITY = S.report.NO_MAJORITY;
   /**
    * 跨設備一致性檢查的多數決結果（finding.deviation，推論）：一律經這裡產生，詳情的每筆檢查結果共用。
    * 列出與多數不同的設備，點設備名選取該設備（不觸發外層的點選）。
@@ -104,7 +104,8 @@
   };
   V.KIND = S.KIND_LABEL;
   V.KIND_BASIS = { board: '依設備型號', data: '依收集的資料', caps: '依鄰居回報的功能', vendor: '依廠牌推測', heuristic: '依對端埠名推測', profile: '依命名規則', none: '無法判斷' };
-  V.SEV = { error: '錯誤', warn: '警告', info: '提醒' };
+  /** 嚴重度的顯示名稱（單一來源是 S.report.SEV_TEXT，匯出的報表共用） */
+  V.SEV = S.report.SEV_TEXT;
   V.CLS = { lag: '聚合', '40g': '40G 以上', '10g': '10G', '1g': '1G', oob: '管理', other: '其他' };
   V.STATUS = { up: 'up', down: 'down', unknown: '不明' };
   /** 廠商的顯示名（devices[].manufacturer、清單的廠商欄）：Snapshot 存小寫鍵，畫面用正式寫法；沒有對照的原樣顯示，空值回傳空字串 */
@@ -270,17 +271,9 @@
 
   /**
    * 反引號標出的 RouterOS 指令與欄位（CATALOG 的 causes／action 的寫法）：切成 [{ text, code }]。
-   * 沒有成對的反引號保留為一般文字，不吞掉。
+   * 沒有成對的反引號保留為一般文字，不吞掉。實作在 S.report（匯出的 Markdown 用同一個切法）。
    */
-  V.codeParts = (s) => {
-    const str = String(s); const out = []; const re = /`([^`]+)`/g; let at = 0; let m;
-    while ((m = re.exec(str))) {
-      if (m.index > at) out.push({ text: str.slice(at, m.index), code: false });
-      out.push({ text: m[1], code: true }); at = re.lastIndex;
-    }
-    if (at < str.length) out.push({ text: str.slice(at), code: false });
-    return out;
-  };
+  V.codeParts = S.report.codeParts;
   /** 同上，組成 DOM 節點：一般文字是文字節點，反引號內是 <code>（等寬字型），都以 textContent 寫入 */
   V.codeText = (s) => V.codeParts(s).map((p) => (p.code ? V.h('code', { class: 'mono' }, p.text) : p.text));
 

@@ -46,7 +46,7 @@
   // 聚焦（選取、檢查結果、路由追蹤）：倍率上限 1.5。埠名在 s > 1.25 才畫，1.5 讀得到埠名，又不會把一跳鄰居推出畫面；
   // 留白 pad 容納節點下方的名稱標籤（常見名稱約 120px 寬）與埠名
   // minScale：納入一跳鄰居後倍率低於它時（例如核心設備的鄰居散在整張圖），改為只聚焦選取的設備，否則等於沒有放大
-  // lean：只聚焦設備本身時，畫面往鄰居方向移動的上限（可視範圍的比例；節點離畫面邊緣至少留 0.5 - lean）
+  // lean：只聚焦設備本身時，畫面往鄰居方向移動的上限（可視範圍的比例；節點離畫面邊緣至少留 0.5 - lean，節點框另外整個留在畫面內、離邊緣至少 pad）
   const FOCUS = { maxScale: 1.5, pad: 64, minScale: 0.9, lean: 0.3 };
   // 覆蓋層高度超過畫布的 max 倍時不讓出空間（setOccluders）。max：沒有指定時的預設，例如展開的圖例太高時不讓，否則圖會被壓扁，使用者可收合它；
   // pinned：一定要讓開的元素（工具列、通知、半高的詳情抽屜）用這個，只有幾乎蓋滿整張圖時（全高的抽屜）才不計
@@ -164,7 +164,7 @@
       this.s = Math.max(ZOOM.min, Math.min(max, s));
       if (fallback && this.s < fallback.minScale) {
         this.fit(fallback.ids, pad, maxScale);
-        const keep = new Set(fallback.ids); this._lean(ids.filter((id) => !keep.has(id)), v);
+        const keep = new Set(fallback.ids); this._lean(fallback.ids, ids.filter((id) => !keep.has(id)), v, p);
         return;
       }
       this.tx = (v.x0 + v.x1) / 2 - ((minX + maxX) / 2) * this.s; this.ty = (v.y0 + top + v.y1) / 2 - ((minY + maxY) / 2) * this.s;
@@ -172,15 +172,29 @@
     }
     /**
      * 聚焦只放得下選取的節點時（鄰居散在整張圖）：把畫面往鄰居的方向（重心）移，最多 FOCUS.lean 倍的可視範圍，
-     * 選取的節點偏到另一側，鄰居那一側露出比較多（例如最上層的核心設備放在偏上方，下面的鄰居看得到）
+     * 選取的節點偏到另一側，鄰居那一側露出比較多（例如最上層的核心設備放在偏上方，下面的鄰居看得到）。
+     * 位移再以選取節點的包圍框（容器框以整個框計算）限制：框離畫面邊緣至少留 p，寬框（埠很多的 L2 交換器）不會被推出畫面；
+     * 框本身已經超出可視範圍（倍率已到下限）時不偏移，維持 fit 的置中。
      */
-    _lean(others, v) {
-      const ps = others.map((id) => this.at(id)).filter(Boolean).map((p) => this.toScreen(p));
+    _lean(ids, others, v, p) {
+      const ps = others.map((id) => this.at(id)).filter(Boolean).map((q) => this.toScreen(q));
       if (!ps.length) return;
+      const box = ids.flatMap((id) => {
+        const q = this.at(id); const n = this.nodeById.get(id); if (!q) return [];
+        const c = this.toScreen(q); const hw = n && n.box ? (n.box.w * this.s) / 2 : 0; const hh = n && n.box ? (n.box.h * this.s) / 2 : 0;
+        return [{ x: c.x - hw, y: c.y - hh }, { x: c.x + hw, y: c.y + hh }];
+      });
+      if (!box.length) return;
+      const bx0 = Math.min(...box.map((q) => q.x)); const bx1 = Math.max(...box.map((q) => q.x));
+      const by0 = Math.min(...box.map((q) => q.y)); const by1 = Math.max(...box.map((q) => q.y));
       const cx = (v.x0 + v.x1) / 2; const cy = (v.y0 + v.y1) / 2;
-      const mx = ps.reduce((s, p) => s + p.x, 0) / ps.length; const my = ps.reduce((s, p) => s + p.y, 0) / ps.length;
+      const mx = ps.reduce((s, q) => s + q.x, 0) / ps.length; const my = ps.reduce((s, q) => s + q.y, 0) / ps.length;
       const kx = (v.x1 - v.x0) * FOCUS.lean; const ky = (v.y1 - v.y0) * FOCUS.lean;
-      this.tx -= Math.max(-kx, Math.min(kx, mx - cx)); this.ty -= Math.max(-ky, Math.min(ky, my - cy));
+      // 往鄰居方向的位移 d（畫面左移 d），夾在 [lo, hi]：lo 讓框的右／下緣不超出 v1 - p，hi 讓左／上緣不超出 v0 + p。
+      // lo、hi 再分別取 ≤ 0、≥ 0：框已經超出時（倍率到下限）不偏移，但也不額外移動
+      const shift = (d, k, lo, hi) => Math.max(lo, Math.min(hi, Math.max(-k, Math.min(k, d))));
+      this.tx -= shift(mx - cx, kx, Math.min(0, bx1 - (v.x1 - p)), Math.max(0, bx0 - (v.x0 + p)));
+      this.ty -= shift(my - cy, ky, Math.min(0, by1 - (v.y1 - p)), Math.max(0, by0 - (v.y0 + p)));
       this.dirty = true;
     }
     /**

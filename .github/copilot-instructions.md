@@ -30,7 +30,7 @@ CLI 輸入轉成可追溯的純 JSON Snapshot，畫面只是 Snapshot 的檢視�
 
 6. **不要混淆事實與推論**
    收集到的設備、介面、鏈路、VLAN、位址與路由是事實；設備類型、配對、
-   分群、未知對端等是推論。命名 profile 只能 canonicalize 或加註解，不能
+   分群、終端埠等是推論。命名 profile 只能 canonicalize 或加註解，不能
    偽造、刪除或改寫事實。
 
 7. **保持可重現性**
@@ -91,7 +91,8 @@ CLI 輸入轉成可追溯的純 JSON Snapshot，畫面只是 Snapshot 的檢視�
   穩定，並同步 `docs/基準檢查.md` 的檢查說明。MNDP 只證明 L2 可達，不可當作
   LLDP／CDP 鄰接證據。
 - **文件同步對照**：快速開始、功能一覽 → `README.md`；畫面操作 → `docs/使用說明.md`（唯一的說明處）；
-  資料模型、推論規則、檢視層架構 → `docs/設計說明.md`；版本紀錄 → `docs/版本紀錄.md`；開發指令、測試、CI → `docs/開發指南.md`；檢查 → `docs/基準檢查.md`；收集指令與格式 → `docs/收集清單與輸入格式.md`；命名 profile →
+  資料模型、推論規則、下游模組 → `docs/設計說明.md`；查詢函式（`SSOT.query`）→ `docs/查詢介面.md`；
+  檢視層架構 → `docs/畫面架構.md`；版本紀錄 → `docs/版本紀錄.md`；開發指令、測試、CI → `docs/開發指南.md`；檢查 → `docs/基準檢查.md`；收集指令與格式 → `docs/收集清單與輸入格式.md`；命名 profile →
   `docs/命名規則.md`；影響整體的決策（背景、選項與取捨）→ `docs/架構決策/`（ADR，
   格式與新增方式見該目錄的 `README.md`）。程式與文件一起改，不另寫一份與程式脫節的規格。
 - **專用 skill**：改 adapter／解析使用 `routeros-parser-fixtures`；改 Snapshot 欄位、

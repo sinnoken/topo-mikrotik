@@ -89,7 +89,7 @@ git diff --check         # 提交前檢查
   - 路由以路由表為單位：`routes[].routingTable` 是原值，`vrf` 是對應的 VRF（只用於策略路由的路由表為 null）；
     某個 VRF 的路由用 `Q.routesOf(dev, vrf)`，某張路由表用 `Q.routesInTable(dev, table)`。下一跳的擁有者一律經 `S.check.hopOwner`（`Q.hopOwner`）。
   - 內部模型 M 用 Map/Set，只在 `pipeline.js` 的 `serialize` 轉成陣列。
-- **拓樸版面**：
+- **拓樸版面**（完整說明見 [docs/畫面架構.md](docs/畫面架構.md) §7）：
   - [layout.js](src/view/graph/layout.js) 的 `prepare()` 負責分群、終端與分層，`shelf()` 負責書架排列，內建版面與分層版面共用。
   - 分層版面在 [elk-layout.js](src/view/graph/elk-layout.js)，使用 vendor 的 ELK.js（`vendor/elkjs-0.11.1/`，EPL-2.0）。ELK 約 1.6 MB，第一次需要時才以 `<script>` 載入（路徑定義在 `ENGINE_SRC`）；冒煙測試的模擬 DOM 會模擬這個動態載入。
   - 流程是先用內建版面同步出圖，沒有儲存位置時再於背景套用 ELK。超過 `App.ELK_MAX` 台或逾時就維持內建版面，並以 banner 說明原因。
@@ -129,7 +129,7 @@ git diff --check         # 提交前檢查
 - 在 agent 之間轉交彼此報告中的「需要其他 agent 處理」與「文件影響」。
 
 agent 之間的介面：
-- **data-model ↔ frontend**：Snapshot 欄位（設計說明 §5.2）與 `SSOT.query()`。
+- **data-model ↔ frontend**：Snapshot 欄位（設計說明 §5.2）與 `SSOT.query()`（函式見 [docs/查詢介面.md](docs/查詢介面.md)）。
 - **data-model ↔ workflow**：同樣是 Snapshot 欄位與 `SSOT.query()`；`src/query/` 歸 data-model。workflow 需要新的查詢函式時寫進報告，由 data-model 加入。
 - **workflow ↔ frontend**：`S.compare`、`S.remediate`、`S.ledger`、`S.workpack`（含 `S.zip`）。畫面的指令文字一律由 `S.remediate` 產生，處理紀錄只透過 `S.ledger` 存取，工作包只透過 `S.workpack` 讀寫。
 - **data-model → docs**：`CATALOG`（`src/check/catalog.js`）與 `docs/基準檢查.md` 必須一致，包括 `causes`／`action`。

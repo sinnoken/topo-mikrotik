@@ -11,18 +11,48 @@
   const U = S.util;
   const { deepFreeze, SERVICES, svcId, runAll, slicer } = S.reach._;
 
-  /** E：reach.js 的 base 建立的 engine 物件；加上 matrix、matrixSteps、cell、ruleImpact。 */
+  /** E：reach.js 的 base 建立的 engine 物件；加上 matrix、matrixSteps、cell、ruleImpact，與暴露清單共用的 svcClasses、devClasses、mgmtPorts、deviceServices。 */
   S.reach._.matrixPart = function matrixPart(E) {
-    const { Q, m, F, ownerDev, srcLocation, netDev, ref, findAtom, ownIps, ipv6Devices, normProto, normPort,
-      evaluate, skipOf, involves, deniedByOf, zones, zoneOf, repsOf, vipsOf, virtualOf } = E;
+    const { Q, m, F, ownerDev, srcLocation, netDev, devInfo, ref, findAtom, ownIps, ipv6Devices, normProto, normPort,
+      evaluate, skipOf, involves, reachesLocal, deniedByOf, zones, zoneOf, repsOf, vipsOf, virtualOf } = E;
 
-    function servicesOf(list) {
+    /**
+     * 設備本身的其他管理服務（Q.mgmtOf，F10、F13、F14 判斷過的埠）：開著的才列。name 是畫面顯示的服務名稱，finding 是對應的檢查（facet 為 null 時同 id 的都算）。
+     * 矩陣與暴露清單共用（E.mgmtPorts）。
+     */
+    const mgmtPorts = (dev) => {
+      const g = Q.mgmtOf(dev); if (!g) return [];
+      const out = [];
+      if (g.dns && g.dns.allowRemote) out.push({ proto: 'udp', port: 53, name: 'dns', finding: ['F10', null] }, { proto: 'tcp', port: 53, name: 'dns', finding: ['F10', null] });
+      if (g.snmp && g.snmp.enabled) out.push({ proto: 'udp', port: 161, name: 'snmp', finding: ['F13', null] });
+      if (g.proxy && g.proxy.enabled) (g.proxy.ports || []).forEach((p) => { if (Number.isInteger(p)) out.push({ proto: 'tcp', port: p, name: 'web-proxy', finding: ['F14', 'proxy'] }); });
+      if (g.socks && g.socks.enabled && Number.isInteger(g.socks.port)) out.push({ proto: 'tcp', port: g.socks.port, name: 'socks', finding: ['F14', 'socks'] });
+      if (g.bandwidthServer && g.bandwidthServer.enabled && Number.isInteger(g.bandwidthServer.port)) out.push({ proto: 'tcp', port: g.bandwidthServer.port, name: 'bandwidth-server', finding: ['F14', 'bandwidth-server'] });
+      return out;
+    };
+    /**
+     * 目的是網路設備本身時，那台設備自己開著的服務（矩陣「→ 網路設備（管理）」與暴露清單 self 段的候選服務，E.deviceServices）：
+     * 啟用中的 /ip service（tcp，埠是整數的）與 mgmtPorts；沒有 /export 的設備沒有這些資料，回傳 []。
+     * [{ proto, port, origin: 'ip-service'|'mgmt', name, finding（mgmt 才有） }]，依 /ip service、mgmtPorts 的順序。
+     */
+    const deviceServices = (dev) => {
+      if (!devInfo(dev).config) return [];
+      const out = Q.ipServicesOf(dev).filter((sv) => sv.enabled && Number.isInteger(sv.port)).map((sv) => ({ proto: 'tcp', port: sv.port, origin: 'ip-service', name: sv.name }));
+      mgmtPorts(dev).forEach((x) => out.push(Object.assign({ origin: 'mgmt' }, x)));
+      return out;
+    };
+    /**
+     * 矩陣的 service：list（opts.services）有給時就是它；否則是預設的 SERVICES ∪ dst-nat 規則的目的埠 ∪ 目的設備（selfDevs，虛擬 zone「網路設備（管理）」的設備）
+     * 自己開著的服務（deviceServices）。依協定（icmp、tcp、udp、其他）與埠排序、不重複。
+     */
+    function servicesOf(list, selfDevs) {
       if (list != null) {
         if (!Array.isArray(list) || !list.length) throw new TypeError('services 必須是非空陣列，例如 [{ proto: "tcp", port: 443 }]');
         return list.map((s) => { const proto = normProto(s && s.proto); return { proto, port: normPort(proto, s.port == null ? null : s.port) }; })
           .filter((s, i, a) => a.findIndex((x) => svcId(x) === svcId(s)) === i);
       }
       const extra = [];
+      selfDevs.forEach((d) => deviceServices(d).forEach((x) => extra.push({ proto: x.proto, port: x.port })));
       m.firewallRules.forEach((r) => {
         if (r.family !== 'ip' || r.table !== 'nat' || r.disabled || r.action !== 'dst-nat' || r.match['dst-port'] === undefined) return;
         const p = r.match.protocol && !F.splitNeg(r.match.protocol).neg ? F.protoName(F.splitNeg(r.match.protocol).body.split(',')[0]) : 'tcp';
@@ -31,7 +61,8 @@
       });
       const all = SERVICES.map((s) => ({ proto: s.proto, port: s.port })).concat(extra);
       const PO = ['icmp', 'tcp', 'udp'];
-      return all.filter((s, i, a) => a.findIndex((x) => svcId(x) === svcId(s)) === i)
+      const seen = new Set(); // 1000 台時 extra 有數千筆：用 Set 去重（同 id 的 service 內容相同，留哪一筆都一樣）
+      return all.filter((s) => { const id = svcId(s); if (seen.has(id)) return false; seen.add(id); return true; })
         .sort((a, b) => (PO.indexOf(a.proto) + 1 || 9) - (PO.indexOf(b.proto) + 1 || 9) || U.cmp(a.proto, b.proto) || (a.port || 0) - (b.port || 0));
     }
     /**
@@ -81,14 +112,16 @@
     function* matrixRawSteps(opts) {
       const o = opts || {};
       const zs = zones(o); zs.optsRaw = o;
-      const services = servicesOf(o.services);
-      const ck = JSON.stringify([zs.opts.profHash, zs.opts.sources, services.map(svcId)]);
+      // 預設的 service 要等虛擬 zone 的目的設備算出來才知道（servicesOf）：快取鍵用「預設」本身（由基準決定）；有給 services 時用它的內容
+      const given = o.services != null ? servicesOf(o.services) : null;
+      const ck = JSON.stringify([zs.opts.profHash, zs.opts.sources, given ? given.map(svcId) : 'default']);
       if (matrixCache.has(ck)) return matrixCache.get(ck);
       yield { stage: 'reps', done: 0, total: 2 };
       // 代表位址、dst-nat 入口與虛擬 zone 各算一段（1000 台時合起來接近 100 ms，分開讓出）
       const reps = repsOf(zs);
       yield { stage: 'reps', done: 1, total: 2 };
       const vips = vipsOf(zs); const vz = virtualOf(reps);
+      const services = given || servicesOf(null, U.uniq(vz.selfDst.map((t) => t.dev)).sort(U.natural));
       const realIds = zs.zones.map((z) => z.id);
       const srcReps = []; realIds.forEach((z) => (reps.get(z) || []).forEach((r) => srcReps.push(r)));
       const memberN = srcReps.length;
@@ -100,13 +133,18 @@
       const cells = new Map();
       const cellOf = (a, b) => U.getOr(cells, a + '\u0000' + b, () => ({ src: a, dst: b, recs: [] }));
       const classes = svcClasses(services);
-      // 目的是設備本身時，同一類再依那台設備的 /ip service 分開（devClasses）
-      const devClassMemo = new Map();
-      const classesFor = (t) => (t.via !== 'device' ? classes : U.getOr(devClassMemo, t.dev, () => devClasses(classes, services, t.dev)));
-      // 判斷次數的上限（來源代表 × 目的 × service 等價類，扣掉來源與目的相同的）只用來回報進度
-      const total = srcReps.length * targets.reduce((n, t) => n + classesFor(t).length, 0);
+      // 目的是設備本身時，同一類再依那台設備的 /ip service 分開（devClasses）：每個 svcClasses 的類一組 [子類]（只有一個子類時就是原來的類）
+      const devClassMemo = new Map(); const flatMemo = new Map();
+      const plain = classes.map((sis) => [sis]);
+      const classesFor = (t) => (t.via !== 'device' ? plain : U.getOr(devClassMemo, t.dev, () => classes.map((sis) => devClasses([sis], services, t.dev))));
+      // 進度：done 是實際的判斷次數（evaluate），total 是上限（來源代表 × 目的 × 子類；子類共用判斷、來源與目的相同而略過的都會少於它）
+      const total = srcReps.length * targets.reduce((n, t) => n + classesFor(t).reduce((k, subs) => k + subs.length, 0), 0);
       let done = 0;
-      /** 一個判斷（sum，service 類 group 的代表）記進它的格子。 */
+      const judge = (a, tip, si) => { done++; return evaluate(a.ip, tip, services[si], 'atom', null, a.entry || null, a.vrf).sum; };
+      /**
+       * 一個判斷（sum，service 類 group 的代表）記進它的格子：一筆記錄 { ai, ti, sis, sum, rp } 代表 group 裡每個 service 各一筆（依 sis 的順序展開，見 perSvc）。
+       * 不逐個 service 各存一筆：1000 台時記錄從約 80 萬筆降到約 24 萬筆（摘要逐筆累加與 GC 的負擔）。sis 是 classesFor（或合併子類）的陣列，之後不修改。
+       */
       const record = (a, ai, t, ti, tip, group, sum) => {
         const rp = services[group[0]].port;
         const fv0 = (sum.final && sum.final.vrf) || t.vrf;
@@ -116,7 +154,7 @@
         let dz = t.zone;
         if (sum.final && (sum.final.dst !== tip || (fv0 !== t.vrf && sum.verdict === 'allow'))) { const z = zoneOf(sum.final.dst, o, fv0); if (z) dz = z.zone; }
         const c = cellOf(a.zone, dz);
-        for (const si of group) c.recs.push({ ai, ti, si, sum, rp });
+        c.recs.push({ ai, ti, sis: group, sum, rp });
       };
       yield { stage: 'evaluate', done, total };
       const due = slicer();
@@ -124,27 +162,39 @@
         const a = srcReps[ai];
         for (let ti = 0; ti < targets.length; ti++) {
           const t = targets[ti];
-          for (const sis of classesFor(t)) {
-            done++;
-            // 來源與目的是同一個代表位址：zone 內同網段的組合改用同一個區段的第二個位址（沒有就略過）
-            const same = a.ip === t.ip && a.vrf === t.vrf;
-            if (same && !(t.via === 'member' && t.peer)) continue;
-            // 外部經非 main VRF 的入口：不連到設備本身的服務（服務在 main，見 l4Entries）；
-            // 外部到網段：只用入口 VRF 的代表位址（同暴露清單的 routed 段；其他 VRF 的重疊位址在入口的 VRF 是另一個目的）
-            if (a.via === 'external' && ((t.via === 'device' && a.vrf !== K.MAIN_VRF) || (t.via === 'member' && t.vrf !== a.vrf))) continue;
-            const tip = same ? t.peer : t.ip;
-            const sum0 = evaluate(a.ip, tip, services[sis[0]], 'atom', null, a.entry || null, a.vrf).sum;
+          // 來源與目的是同一個代表位址：zone 內同網段的組合改用同一個區段的第二個位址（沒有就略過）
+          const same = a.ip === t.ip && a.vrf === t.vrf;
+          if (same && !(t.via === 'member' && t.peer)) continue;
+          // 外部經非 main VRF 的入口：不連到設備本身的服務（服務在 main，見 l4Entries）；
+          // 外部到網段：只用入口 VRF 的代表位址（同暴露清單的 routed 段；其他 VRF 的重疊位址在入口的 VRF 是另一個目的）
+          if (a.via === 'external' && ((t.via === 'device' && a.vrf !== K.MAIN_VRF) || (t.via === 'member' && t.vrf !== a.vrf))) continue;
+          const tip = same ? t.peer : t.ip;
+          for (const subs of classesFor(t)) {
+            if (subs.length > 1) {
+              // 設備本身的目的、同一類有多個子類：子類只差在那台設備的 /ip service。先以第一個子類判斷；沒有走到「送給設備自己」
+              // （例如在路上或 input 就被擋下）、也沒有 NAT 時，其他子類的結果相同（reachesLocal），整類共用這個判斷（記錄依子類的順序展開，與逐一判斷相同）。
+              // 走到了就逐一判斷
+              const sum0 = judge(a, tip, subs[0][0]);
+              if (!sum0.nat && sum0.final && sum0.final.port === services[subs[0][0]].port && !reachesLocal(sum0)) record(a, ai, t, ti, tip, U.getOr(flatMemo, subs, () => [].concat(...subs)), sum0);
+              else subs.forEach((g, j) => record(a, ai, t, ti, tip, g, j === 0 ? sum0 : judge(a, tip, g[0])));
+              if (due() && done < total) yield { stage: 'evaluate', done, total };
+              continue;
+            }
+            const sis = subs[0];
+            const sum0 = judge(a, tip, sis[0]);
             // 不是設備本身的目的，卻送到某台網路設備自己的位址（重疊網段在另一個 VRF 的擁有者、dst-nat 到設備）：
             // 那台設備的 /ip service 依埠不同，同一類再依服務分開判斷（同 classesFor 對設備本身的目的）
             const od = t.via !== 'device' && sis.length > 1 && sum0.final && sum0.final.dst ? ownerDev(sum0.final.dst, sum0.final.vrf || t.vrf) : null;
             if (od && netDev(od)) {
               const by = new Map(); sis.forEach((si) => U.getOr(by, svcSig(od, services[si]), () => []).push(si));
-              Array.from(by.values()).forEach((g) => record(a, ai, t, ti, tip, g, g[0] === sis[0] ? sum0 : evaluate(a.ip, tip, services[g[0]], 'atom', null, a.entry || null, a.vrf).sum));
+              Array.from(by.values()).forEach((g) => record(a, ai, t, ti, tip, g, g[0] === sis[0] ? sum0 : judge(a, tip, g[0])));
             } else record(a, ai, t, ti, tip, sis, sum0);
             if (due() && done < total) yield { stage: 'evaluate', done, total };
           }
         }
       }
+      // 最後一段回報實際的判斷次數（tests/large.js 以它斷言計算量的上限）
+      yield { stage: 'evaluate', done, total };
       // 跑完才寫進快取：中途放棄的 generator 不會留下不完整的結果
       if (matrixCache.has(ck)) return matrixCache.get(ck);
       const byId = new Map(allZones.map((z) => [z.id, z]));
@@ -164,16 +214,24 @@
       // 同一個目的（或來源）與 service 出現過的結果：數字鍵（索引 × service 數＋service 索引）→ 位元（允許 1、拒絕 2；兩種都有是 3）。
       // 用數字不用 Set：1000 台時有數十萬個鍵，每個 Set 都是一個物件（GC 的負擔）
       const byDst = new Map(); const bySrc = new Map(); const ns = mx.services.length;
+      // 一筆記錄是 sis 裡的每個 service 各一筆（同一個 sum）：計數一次加 n，與逐筆累加的結果相同
       const add = (r) => {
-        const v = r.sum.verdict; counts[v]++; counts.total++; bySvc[r.si][v]++; bySvc[r.si].total++;
-        if (v === 'deny') { const k = deniedByOf(r.sum); deniedBy[k]++; deniedBySvc[r.si][k]++; }
+        const v = r.sum.verdict; const sis = r.sis; const n = sis.length;
+        counts[v] += n; counts.total += n;
+        const k = v === 'deny' ? deniedByOf(r.sum) : null;
+        if (k) deniedBy[k] += n;
+        const bit = v === 'allow' ? 1 : v === 'deny' ? 2 : 0;
+        for (let j = 0; j < n; j++) {
+          const si = sis[j]; const b = bySvc[si]; b[v]++; b.total++;
+          if (k) deniedBySvc[si][k]++;
+          if (bit) { const kd = r.ti * ns + si; const ks = r.ai * ns + si; byDst.set(kd, (byDst.get(kd) | 0) | bit); bySrc.set(ks, (bySrc.get(ks) | 0) | bit); }
+        }
         r.sum.decisive.forEach((x, id) => {
           let byV = rules.get(id); if (!byV) { byV = new Map(); rules.set(id, byV); }
           let e = byV.get(x.verdict); if (!e) { e = Object.assign({ id, count: 0 }, x); byV.set(x.verdict, e); }
-          e.count++;
+          e.count += n;
         });
-        if (v === 'unknown') r.sum.reasons.forEach((x) => reasons.set(x.code, (reasons.get(x.code) || 0) + 1));
-        if (v !== 'unknown') { const bit = v === 'allow' ? 1 : 2; const kd = r.ti * ns + r.si; const ks = r.ai * ns + r.si; byDst.set(kd, (byDst.get(kd) | 0) | bit); bySrc.set(ks, (bySrc.get(ks) | 0) | bit); }
+        if (v === 'unknown') r.sum.reasons.forEach((x) => reasons.set(x.code, (reasons.get(x.code) || 0) + n));
       };
       return { add, finish: () => cellFinish(mx, c, { counts, bySvc, deniedBy, deniedBySvc, rules: flatRules(rules), reasons, byDst, bySrc }) };
     }
@@ -183,6 +241,10 @@
      */
     const flatRules = (rules) => { const out = []; rules.forEach((byV) => byV.forEach((e) => out.push(e))); return out; };
     function cellSummary(mx, c) { const acc = cellAcc(mx, c); c.recs.forEach(acc.add); return acc.finish(); }
+    /** 格子的記錄展開成每個 service 一筆 { ai, ti, si, sum, rp }（依記錄、再依 sis 的順序）：下鑽與規則影響用。 */
+    const perSvc = (c) => { const out = []; c.recs.forEach((r) => r.sis.forEach((si) => out.push({ ai: r.ai, ti: r.ti, si, sum: r.sum, rp: r.rp }))); return out; };
+    /** 格子的判斷次數（每個 service 算一次，同 stats.evaluations）。 */
+    const recCount = (c) => c.recs.reduce((n, r) => n + r.sis.length, 0);
     function cellFinish(mx, c, { counts, bySvc, deniedBy, deniedBySvc, rules, reasons, byDst, bySrc }) {
       const het = Array.from(byDst.values()).some((b) => b === 3) || Array.from(bySrc.values()).some((b) => b === 3);
       const ruleList = Array.from(rules.values()).sort((a, b) => b.count - a.count || U.cmp(a.id, b.id)).map(({ id, ...x }) => Object.assign({ id }, x, x.key ? { rule: ref(Q.getFirewallRule(x.key)) } : {}));
@@ -203,7 +265,7 @@
       const ck = JSON.stringify([mx.zs.opts.profHash, mx.zs.opts.sources, mx.services.map(svcId)]);
       if (l0Cache.has(ck)) return l0Cache.get(ck);
       const cells = [];
-      // 進度以記錄數計（格子大小差很多）；空格子算一個單位
+      // 進度以記錄數計（格子大小差很多；一筆記錄含多個 service，成本與筆數相當）；空格子算一個單位
       const total = mx.rowIds.reduce((n, a) => n + mx.zoneIds.reduce((k, b) => { const c = mx.cells.get(a + '\u0000' + b); return k + (c ? Math.max(1, c.recs.length) : 1); }, 0), 0);
       let done = 0;
       yield { stage: 'summary', done, total };
@@ -228,7 +290,7 @@
         }
       }
       if (l0Cache.has(ck)) return l0Cache.get(ck); // 兩個分段計算交錯時，先完成的為準（結果相同）
-      const reps = mx.memberN; const evaluations = Array.from(mx.cells.values()).reduce((n, c) => n + c.recs.length, 0);
+      const reps = mx.memberN; const evaluations = Array.from(mx.cells.values()).reduce((n, c) => n + recCount(c), 0);
       const out = deepFreeze({
         vrf: null, vrfs: Q.vrfs().filter((v) => mx.zs.zones.some((z) => z.vrf === v)), zones: mx.allZones, services: mx.services.map((s) => ({ id: svcId(s), proto: s.proto, port: s.port })), cells,
         stats: { zones: mx.zoneIds.length, representatives: reps, natEntries: mx.natN, externalEntries: mx.vz.extSrc.length, deviceTargets: mx.vz.selfDst.length, evaluations },
@@ -249,9 +311,10 @@
       if (!mx.byId.has(srcZone) || !mx.byId.has(dstZone)) throw new TypeError(`沒有這個 zone：${!mx.byId.has(srcZone) ? srcZone : dstZone}`);
       const c = mx.cells.get(srcZone + '\u0000' + dstZone) || { src: srcZone, dst: dstZone, recs: [] };
       const sm = cellSummary(mx, c);
+      const recs = perSvc(c);
       // L1：每個（來源代表、目的）一列，依 service 列出結果；結果相同的來源併成一組（規格書 §5.7）
       const pairs = new Map();
-      c.recs.forEach((r) => {
+      recs.forEach((r) => {
         const p = U.getOr(pairs, r.ai + '|' + r.ti, () => ({ ai: r.ai, ti: r.ti, services: [] }));
         const x = recOut(mx, r); p.services.push({ service: x.service, verdict: x.verdict, final: x.final, rules: x.rules, reasons: x.reasons });
       });
@@ -260,10 +323,10 @@
       // 所以格子異質時至少有一組 divergent，不異質時沒有。
       const lineOf = new Map();
       const tally = (k, v) => { const e = U.getOr(lineOf, k, () => ({ allow: 0, deny: 0 })); e[v]++; };
-      c.recs.forEach((r) => { if (r.sum.verdict !== 'unknown') { tally('d' + r.ti + '|' + r.si, r.sum.verdict); tally('s' + r.ai + '|' + r.si, r.sum.verdict); } });
+      recs.forEach((r) => { if (r.sum.verdict !== 'unknown') { tally('d' + r.ti + '|' + r.si, r.sum.verdict); tally('s' + r.ai + '|' + r.si, r.sum.verdict); } });
       const minority = (k, v) => { const e = lineOf.get(k); return e.allow > 0 && e.deny > 0 && e[v] <= e[v === 'allow' ? 'deny' : 'allow']; };
       const divergentSvc = new Map(); // ai|ti → Set(service id)
-      c.recs.forEach((r) => {
+      recs.forEach((r) => {
         const v = r.sum.verdict; if (v === 'unknown') return;
         if (minority('d' + r.ti + '|' + r.si, v) || minority('s' + r.ai + '|' + r.si, v)) U.getOr(divergentSvc, r.ai + '|' + r.ti, () => new Set()).add(svcId(mx.services[r.si]));
       });
@@ -282,7 +345,7 @@
       });
       // L2：牽涉的規則
       const rules = new Map();
-      c.recs.forEach((r) => {
+      recs.forEach((r) => {
         r.sum.decisive.forEach((x, id) => {
           const e = U.getOr(rules, id, () => ({ id, key: x.key, dev: x.dev, table: x.table, chain: x.chain, policy: !!x.policy, route: x.route || null, rule: x.key ? ref(Q.getFirewallRule(x.key)) : null, verdict: x.verdict || null, verdicts: { allow: 0, deny: 0, unknown: 0 }, services: [] }));
           e.verdicts[r.sum.verdict]++; const sv = svcId(mx.services[r.si]); if (!e.services.includes(sv)) e.services.push(sv);
@@ -306,7 +369,7 @@
       const mx = matrixRaw(o);
       const limit = o.limit == null ? 50 : o.limit;
       const recs = [];
-      mx.cells.forEach((c) => c.recs.forEach((r) => { if (involves(r.sum, key)) recs.push({ plane: 'transit', src: mx.srcReps[r.ai], dst: mx.targets[r.ti], svc: mx.services[r.si], sum: r.sum, cell: [c.src, c.dst] }); }));
+      mx.cells.forEach((c) => c.recs.forEach((r) => { if (involves(r.sum, key)) r.sis.forEach((si) => recs.push({ plane: 'transit', src: mx.srcReps[r.ai], dst: mx.targets[r.ti], svc: mx.services[si], sum: r.sum, cell: [c.src, c.dst] })); }));
       // 設備本身（input／output）：所有代表位址 → 這台設備的位址、這台設備的位址 → 所有目的
       if (rule.table !== 'nat' || rule.chain !== 'srcnat') {
         // 這台設備的位址（每個 VRF 分開；位址鍵排序）
@@ -354,6 +417,6 @@
       })));
     }
 
-    Object.assign(E, { matrix, matrixSteps, cell, ruleImpact, svcClasses, devClasses });
+    Object.assign(E, { matrix, matrixSteps, cell, ruleImpact, svcClasses, devClasses, mgmtPorts, deviceServices });
   };
 })(globalThis.SSOT = globalThis.SSOT || {});

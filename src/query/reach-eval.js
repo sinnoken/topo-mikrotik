@@ -12,7 +12,7 @@
   const U = S.util;
   const { deepFreeze, MAX_PATHS, REASON_LAYER, checkCode, NAT_UNKNOWN } = S.reach._;
 
-  /** E：reach.js 的 base 建立的 engine 物件；加上 evaluate、skipOf、pathsOf、rowLayers、deniedByOf、involves、unsafeOfSum、unsafeReason、dedupeReasons。 */
+  /** E：reach.js 的 base 建立的 engine 物件；加上 evaluate、skipOf、pathsOf、rowLayers、deniedByOf、involves、reachesLocal、unsafeOfSum、unsafeReason、dedupeReasons。 */
   S.reach._.evalPart = function evalPart(E) {
     const { Q, I, name, devInfo, realEp, ref, where, reason, stage, hasRules, condReasons, srcKey, svcNum, level, single, ownIps } = E;
 
@@ -285,16 +285,38 @@
       return s;
     };
     const involves = (sum, key) => sum.nodes.some((n) => involvedOf(n).has(key));
+    /**
+     * 判斷有沒有走到「送給設備自己」的結束（local、service-refused、service-unknown）：只有這裡（localService 依埠找 /ip service）
+     * 會讓同一個 service 等價類（svcClasses：所有規則的條件結果相同）裡的埠結果不同。沒有走到時，同類的其他埠除了訊息中的埠以外結果相同（矩陣據此共用判斷）。
+     */
+    const LOCAL_ENDS = new Set(['local', 'service-refused', 'service-unknown']);
+    const localMemo = new WeakMap();
+    const touchesLocal = (node) => {
+      let x = localMemo.get(node);
+      if (x === undefined) { x = node.end ? LOCAL_ENDS.has(node.end.code) : (node.next || []).some(touchesLocal); localMemo.set(node, x); }
+      return x;
+    };
+    const reachesLocal = (sum) => (sum.nodes.length ? sum.nodes.some(touchesLocal) : true); // 沒有節點（起點就結束）時保守地當作走到
+    // 每個新節點都會呼叫（1000 台的矩陣約 57 萬次）：不建中間陣列
     const combine = (list) => {
-      const vs = U.uniq(list.map((s) => s.verdict));
-      return vs.length === 1 ? vs[0] : 'unknown';
+      if (!list.length) return 'unknown';
+      const v0 = list[0].verdict;
+      for (let i = 1; i < list.length; i++) if (list[i].verdict !== v0) return 'unknown';
+      return v0;
+    };
+    // 決定結果的規則（decisive 的值）依關卡（stage 的 pub，同一台設備同一個鍵只有一份）共用一個物件；這些物件只讀（摘要之間本來就共用）
+    const pickMemo = new WeakMap();
+    const pickOf = (sg, dev) => {
+      let p = pickMemo.get(sg);
+      if (!p) { p = { id: sg.rule ? sg.rule.key : `policy:${dev}|${sg.table}|${sg.chain}`, x: { key: sg.rule ? sg.rule.key : null, dev, table: sg.table, chain: sg.chain, policy: !sg.rule, verdict: sg.verdict } }; pickMemo.set(sg, p); }
+      return p;
     };
     const ruleId = (sg) => (sg.rule ? sg.rule.key : `policy:${sg.policyDev}|${sg.table}|${sg.chain}`);
     function summary(node) {
-      if (sumMemo.has(node)) return sumMemo.get(node);
+      const hit = sumMemo.get(node); if (hit !== undefined) return hit;
       const h = node.hop;
       const decisive = new Map(); const reasons = h.reasons.slice(); let nat = h.nat.some((x) => x.dir === 'dst');
-      const pick = (sg) => { const id = sg.rule ? sg.rule.key : `policy:${h.dev}|${sg.table}|${sg.chain}`; decisive.set(id, { key: sg.rule ? sg.rule.key : null, dev: h.dev, table: sg.table, chain: sg.chain, policy: !sg.rule, verdict: sg.verdict }); };
+      const pick = (sg) => { const p = pickOf(sg, h.dev); decisive.set(p.id, p.x); };
       let verdict; let final = { dst: h.dstOut, port: h.portOut, vrf: (node.end && node.end.vrf) || h.vrf };
       const denyStage = h.stages.find((sg) => sg.status === 'decided' && sg.verdict === 'drop');
       if (h.verdict === 'deny' && denyStage) { pick(denyStage); verdict = 'deny'; }
@@ -316,18 +338,19 @@
             reasons.push(reason('branches-differ', h.dev, `${name(h.dev)} 之後有多條路徑（ECMP），結果不同（${U.uniq(kids.map((k) => k.verdict)).join('、')}），實際走哪一條無法判斷`));
           }
           // 決定的規則只取與結果一致的子路徑
-          kids.filter((k) => k.verdict === v || v === 'unknown').forEach((k) => { k.decisive.forEach((x, id) => decisive.set(id, x)); k.reasons.forEach((x) => reasons.push(x)); });
+          for (const k of kids) if (k.verdict === v || v === 'unknown') { k.decisive.forEach((x, id) => decisive.set(id, x)); for (const x of k.reasons) reasons.push(x); }
           if (v === 'deny') { decisive.forEach((x, id) => { if (x.verdict !== 'drop') decisive.delete(id); }); }
         }
         // pinned：這一跳本身的結果不明（例如是否 notrack），之後確定的拒絕也不能決定結果
         verdict = h.verdict === 'unknown' ? (v === 'deny' && !h.pinned ? 'deny' : 'unknown') : v;
         if (verdict === 'deny') { decisive.forEach((x, id) => { if (x.verdict !== 'drop') decisive.delete(id); }); }
       }
-      const s = { verdict, reasons: dedupeReasons(reasons), decisive, nodes: [node], final, nat };
+      const s = { verdict, reasons: reasons.length < 2 ? reasons : dedupeReasons(reasons), decisive, nodes: [node], final, nat };
       sumMemo.set(node, s);
       return s;
     }
-    const dedupeReasons = (list) => { const seen = new Set(); return list.filter((r) => { const k = [r.code, r.dev, r.rule ? r.rule.key : '', r.ip || '', (r.keys || []).join(',')].join('|'); if (seen.has(k)) return false; seen.add(k); return true; }); };
+    // 0 或 1 筆時不會有重複（大多數節點）：直接複製，不組鍵（每次都回傳新的陣列）
+    const dedupeReasons = (list) => { if (list.length < 2) return list.slice(); const seen = new Set(); return list.filter((r) => { const k = [r.code, r.dev, r.rule ? r.rule.key : '', r.ip || '', (r.keys || []).join(',')].join('|'); if (seen.has(k)) return false; seen.add(k); return true; }); };
     function summarize(b, st) {
       if (!b.nodes.length) {
         const e = b.end;
@@ -451,13 +474,18 @@
     // ---- 一次判斷（Q.reach、矩陣、規則影響與暴露清單共用）
     const skipOf = (keys) => (keys && keys.length ? { id: keys.slice().sort().join(','), set: new Set(keys) } : null);
     /** vrf：來源所在的 VRF（封包從這個 VRF 開始查路由；有 entry 時由入介面決定）。 */
+    // 每個（mode, skip）一份 context 重複使用（同 S.trace.routeFrom）：一次展開結束時 stack 一定是空的；
+    // 展開中丟出例外時 stack 可能留著，下一次改建新的
+    const ctxMemo = new Map();
     function evaluate(src, dst, svc, mode, skip, entry, vrf) {
-      const ctx = W.context({ mode, skip, memo: level(nodeMemo, mode + '\u0000' + (skip ? skip.id : '')) });
+      const mk = mode + '\u0000' + (skip ? skip.id : '');
+      let ctx = ctxMemo.get(mk);
+      if (!ctx || ctx.stack.length) { ctx = W.context({ mode, skip, memo: level(nodeMemo, mk) }); ctxMemo.set(mk, ctx); }
       const st = { src, dst, proto: svc.proto, port: svc.port, vrf: K.vrf(vrf) };
       const b = W.begin(src, dst, st, ctx, entry);
       return { b, sum: summarize(b, st) };
     }
 
-    Object.assign(E, { evaluate, skipOf, pathsOf, rowLayers, deniedByOf, involves, unsafeOfSum, unsafeReason, dedupeReasons });
+    Object.assign(E, { evaluate, skipOf, pathsOf, rowLayers, deniedByOf, involves, reachesLocal, unsafeOfSum, unsafeReason, dedupeReasons });
   };
 })(globalThis.SSOT = globalThis.SSOT || {});

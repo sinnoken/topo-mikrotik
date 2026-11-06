@@ -201,7 +201,7 @@
      *     代表位址是 EXTERNAL_CANDIDATES 中第一個不在基準網段、也不屬於任何設備的位址，只代表與它同一個規則位址區段的公網位址（range）。
      *     沒有任何對外入口時沒有這個 zone。
      *   網路設備（管理）（self，只當目的）：已收集且有 /export 的設備自己的位址，走 input 與 /ip service；
-     *     取 main VRF 入口介面上的位址，與每個網段的閘道介面上的位址（1000 台時不把每台設備的每個位址都算進來）。
+     *     取 main VRF 入口介面上的位址，與每個網段的閘道介面上的位址（1000 台時不把每台設備的每個位址都算進來）；只取 IPv4。
      */
     function virtualOf(reps) {
       bounds();
@@ -215,7 +215,8 @@
       const selfMap = new Map();
       const addSelf = (dev, ep, inNet) => {
         if (!devInfo(dev).config || !realEp(ep)) return;
-        ownIps(ep).filter((a) => !inNet || inNet(a)).forEach((a) => { const v = K.vrf(a.vrf); const k = K.inVrf(a.ip, v); if (!selfMap.has(k)) selfMap.set(k, { ip: a.ip, vrf: v, zone: SELF_ZONE, subnet: null, range: null, basis: 'device', via: 'device', dev }); });
+        // 只取 IPv4（矩陣只判斷 IPv4；ownIps 也有 IPv6 位址，IPv6 見 Q.exposure 的 exposure6）
+        ownIps(ep).filter((a) => IP.isIp(a.ip) && (!inNet || inNet(a))).forEach((a) => { const v = K.vrf(a.vrf); const k = K.inVrf(a.ip, v); if (!selfMap.has(k)) selfMap.set(k, { ip: a.ip, vrf: v, zone: SELF_ZONE, subnet: null, range: null, basis: 'device', via: 'device', dev }); });
       };
       wanEps.forEach((w) => { if (w.vrf === K.MAIN_VRF) addSelf(w.dev, w.ep); });
       reps.forEach((list) => list.forEach((r) => {

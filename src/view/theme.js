@@ -171,7 +171,7 @@
   //  - 連線速率色階反轉：亮色是越快越深，暗色是越快越亮（線寬編碼不變）。
   //  - 亮色中以參照共用的值（vlan.*.c ＝ mark.good／bad、l3.overlap 與 l3.badge ＝ text.warn、firewall.action 與 diff.effect ＝ text.*、
   //    l3.subnet.stroke 等 ＝ keyInk）在這裡也用同一個常數，兩組都相等（有測試）。
-  //  - mark 的值互不相同（app-toolbar.js 依「舊值 → 新值」換算圖上存下的標示色）。
+  //  - mark 的值互不相同（app-scheme.js 依「舊值 → 新值」換算圖上存下的標示色）。
   const dSurface = '#151b23'; const dPanel = '#1c232c'; const dKeyInk = '#8d99a6';
   const dText = { body: '#e6edf3', muted: '#9aa7b4', err: '#ff8a80', warn: '#f0b354', ok: '#6fcf8a', info: '#8ab8e8' };
   const dMark = { select: '#539ce2', hover: '#e6edf3', find: '#f08cc4', trace: '#9472fd', bad: '#f56258', good: '#3cb672', unverified: '#8d9aab' };
@@ -219,7 +219,7 @@
   // 結構（外形、線寬、虛線、透明度、字型、尺寸）只寫在上面一次；顏色另成兩組形狀相同的配色（palettes.light／dark），
   // 葉節點路徑與 V.theme 相同。亮色就是上面寫的值；暗色是亮色複本套上 DARK 覆寫表。
   // apply(mode) 原地改寫 V.theme 的顏色葉節點、不換掉任何物件：canvas.js 等檔案在載入時把子物件存成常數，換物件會讓它們停在舊值。
-  // 用哪一組由畫面決定（app-toolbar.js：設定「一般」的配色偏好，跟隨系統時監聽 prefers-color-scheme）；PNG 匯出固定用亮色。
+  // 用哪一組由畫面決定（app-scheme.js：設定「一般」的配色偏好，跟隨系統時監聽 prefers-color-scheme）；PNG 匯出固定用亮色。
   const COLOR = /^(#[0-9a-f]{3,8}|rgba?\([^)]*\))$/i;
   /** 取出物件樹中所有顏色字串，保留相同的路徑（陣列保留索引）；沒有顏色的分支不列入 */
   function colorsOf(o) {

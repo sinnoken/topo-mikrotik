@@ -46,8 +46,12 @@ test('黃金基準：範例資料的 findingKey 集合與黃金檔相同，也�
   const keysOf = (snap) => { const Q = S.query(snap); return snap.findings.map((f) => Q.findingKey(f)).sort(); };
   const got = keysOf(G.goldenSnapshot(S));
   assert.deepStrictEqual(got, keysOf(JSON.parse(read('tests/golden/sample-snapshot.json'))));
-  const sha = require('crypto').createHash('sha256').update(got.join('\n')).digest('hex');
-  assert.deepStrictEqual([got.length, sha], [57, 'da132cf19feeb45e18f7de6dd0db3d8f30d44b25320fc00549365dcca69c3faa']);
+  // 3.4.0 新增的管理面檢查（F10–F14）不在改寫前的集合裡：去掉它們之後仍是原來那 57 筆
+  const NEW_SINCE = /^\["F1[0-4]"/;
+  const old = got.filter((k) => !NEW_SINCE.test(k));
+  const sha = require('crypto').createHash('sha256').update(old.join('\n')).digest('hex');
+  assert.deepStrictEqual([old.length, sha], [57, 'da132cf19feeb45e18f7de6dd0db3d8f30d44b25320fc00549365dcca69c3faa']);
+  assert.strictEqual(got.length - old.length, 5, '範例資料的 F10–F14 各一筆');
 });
 test('index.html 載入的核心檔案與測試相同、順序一致', () => {
   const html = read('index.html');

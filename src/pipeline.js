@@ -239,6 +239,8 @@
     const ipsecPolicies = M.fw.policies.map((p) => ({ dev: p.dev, srcAddress: p.srcAddress, dstAddress: p.dstAddress, peer: p.peer, template: p.template, disabled: p.disabled, src: p.src }))
       .sort((a, b) => nat(a.dev, b.dev) || a.src[0][1] - b.src[0][1]);
     const firewallZones = Array.from(M.fwZones.values()).map((z) => Object.assign({}, z)).sort((a, b) => nat(a.dev, b.dev));
+    // 管理面設定（F10–F14）：每台有 export 的已收集設備一筆；export 沒寫的欄位是預設值（defaulted、basis，見 model/build.js 的 resolveMgmt）
+    const mgmtSettings = Array.from(M.mgmtSettings.values()).sort((a, b) => nat(a.dev, b.dev));
     // 命中次數的表（事實＋對應結果）：每台設備、每個（位址族，表）一筆；collectedAt 取該區塊的收集時間
     const firewallStats = Array.from(M.fw.stats.values()).map((t) => ({
       dev: t.dev, family: t.family, table: t.table, status: t.status, rows: t.count, dynamic: t.dynamic, rules: t.rules, reason: t.reason,
@@ -275,7 +277,7 @@
         timing: { ms: Date.now() - c.t0 },
       },
       model: { devices, interfaces, links, inferredLinks, ospfAdjacencies, vlans, vrfs, ipAddresses, prefixes, macs, wifiAssociations, dhcpNetworks, arps, routes, routingTables, routingRules, routingMarkRules,
-        firewallRules, firewallZones, firewallStats, interfaceLists, ipServices, ipsecPeers, ipsecPolicies },
+        firewallRules, firewallZones, firewallStats, interfaceLists, ipServices, ipsecPeers, ipsecPolicies, mgmtSettings },
       findings: c.findings,
       coverage: c.coverage,
       blocks,

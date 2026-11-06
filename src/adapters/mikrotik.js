@@ -251,6 +251,22 @@
     return { t: 'fwRule', family, table, chain: chain || '(未指定)', action, match, params, disabled, comment, commentEncoding, line };
   }
 
+  /*
+   * 管理面設定（F10–F14）：設定類選單（Settings Directory）的 set 只記這個工具用到的參數，原值照錄；export 只寫非預設值，
+   * 預設值由 model 依 S.MGMT_DEFAULTS 補上。選單 → [model 的 area, 參數]，參數語意見 S.MGMT_DEFAULTS.manual 的手冊頁。
+   */
+  const MGMT_MENUS = {
+    '/ip dns': ['dns', ['allow-remote-requests']],
+    '/tool mac-server': ['macServer', ['allowed-interface-list']],
+    '/tool mac-server mac-winbox': ['macWinbox', ['allowed-interface-list']],
+    '/ip neighbor discovery-settings': ['discovery', ['discover-interface-list', 'protocol', 'mode']],
+    '/snmp': ['snmp', ['enabled']],
+    '/ip upnp': ['upnp', ['enabled']],
+    '/ip proxy': ['proxy', ['enabled', 'port']],
+    '/ip socks': ['socks', ['enabled', 'port']],
+    '/tool bandwidth-server': ['bandwidthServer', ['enabled', 'authenticate']],
+  };
+
   // ================================================================ 設定（/export）
   reg({
     id: 'mikrotik.config', vendor: VENDOR, dataType: 'config', label: 'RouterOS 設定',
@@ -274,7 +290,34 @@
         const sm = args.match(/^\[\s*find\s*([^\]]*)\]\s*(.*)$/);
         if (sm) { sel = kvOf(sm[1].replace(/^where\s+/, '')); args = sm[2]; }
         const kv = kvOf(args);
+        const mm = MGMT_MENUS[path];
+        if (mm && cmd === 'set') {
+          const values = {}; mm[1].forEach((k) => { if (k in kv) values[k] = kv[k]; });
+          if (Object.keys(values).length) emit({ t: 'mgmtSet', area: mm[0], values, line });
+        }
         switch (path) {
+          // SNMP community（https://manual.mikrotik.com/docs/cli-reference/snmp/community.md）：出廠有一個預設的 community（default 旗標），
+          // export 以「set [ find default=yes ] …」改它；add 是新增的。set 也可能用名稱選（[ find name=x ] 或第一個字是名稱）
+          case '/snmp community': {
+            if (cmd !== 'add' && cmd !== 'set') break;
+            const pos = args.match(/^([^\s=\[]+)(?=\s|$)/);
+            const f = { t: 'snmpCommunity', cmd, line };
+            if (cmd === 'set') {
+              if (sel && sel.default === 'yes') f.target = { default: true };
+              else if ((sel && sel.name) || pos) f.target = { name: (sel && sel.name) || pos[1] };
+              else break;
+            }
+            if (kv.name !== undefined) f.name = kv.name;
+            if (kv.addresses !== undefined) f.addresses = list(kv.addresses);
+            if (kv['write-access'] !== undefined) f.write = kv['write-access'] === 'yes';
+            if (kv.security !== undefined) f.security = kv.security;
+            if (kv.disabled !== undefined) f.disabled = kv.disabled === 'yes';
+            emit(f); break;
+          }
+          // UPnP 的介面角色（https://manual.mikrotik.com/docs/cli-reference/ip/upnp/interfaces.md）：internal 是 UPnP 用戶端所在、服務監聽的介面
+          case '/ip upnp interfaces':
+            if (cmd === 'add' && kv.interface && kv.type) emit({ t: 'upnpIfc', ifc: kv.interface, type: kv.type, disabled: kv.disabled === 'yes', line });
+            break;
           case '/system identity':
             if (kv.name) emit({ t: 'hostname', name: kv.name, line });
             break;

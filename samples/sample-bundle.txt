@@ -148,6 +148,24 @@ set api disabled=yes
 set api-ssl disabled=yes
 set ssh address=10.1.10.0/24
 set winbox address=10.1.10.0/24
+/ip neighbor discovery-settings
+set discover-interface-list=LAN
+/ip upnp
+set enabled=yes
+/ip upnp interfaces
+add interface=ether47 type=external
+add interface=bridge1 type=internal
+/snmp
+set contact=noc@example.com enabled=yes
+/snmp community
+set [ find default=yes ] addresses=10.1.10.0/24
+add addresses=10.1.10.0/24 name=nms-ro
+/tool bandwidth-server
+set enabled=no
+/tool mac-server
+set allowed-interface-list=LAN
+/tool mac-server mac-winbox
+set allowed-interface-list=all
 /system identity
 set name=TPE_CORE_RT_01
 
@@ -994,6 +1012,10 @@ TPE_CORE_RT_02 (10.1.10.3):
 /ip service set ssh address=10.1.10.0/24
 /ip service set winbox address=10.1.10.0/24
 /ip service set www-ssl disabled=no
+/ip proxy set enabled=yes port=8080
+/tool bandwidth-server set enabled=no
+/tool mac-server set allowed-interface-list=LAN
+/tool mac-server mac-winbox set allowed-interface-list=LAN
 /system identity set name=TPE_CORE_RT_02
 
 [admin@TPE_CORE_RT_02] > /ip firewall filter print stats detail without-paging

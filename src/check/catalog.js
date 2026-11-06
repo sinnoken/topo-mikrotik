@@ -407,6 +407,53 @@
       ],
       action: '重新收集這台設備，`/export` 與 `print stats` 一起收。仍對不上時，對照訊息中的列與規則找出差異。對上之前，這個表的規則沒有命中次數。',
     },
+    // 管理面加固（F10–F14）：設定來自 export，export 沒寫的以出廠預設值補上（S.MGMT_DEFAULTS，推論），finding 的 basis 標示依據
+    F10: {
+      severity: 'warn', cat: '防火牆', title: 'DNS 允許遠端查詢，且 WAN 可以查詢', data: [['config']],
+      causes: [
+        '開了 `allow-remote-requests` 讓內部用戶端用這台當 DNS，沒有限制來源。',
+        '輸入鏈（input chain）沒有擋下從 WAN 進來的 UDP／TCP 53。',
+      ],
+      action: '在輸入鏈擋下從 WAN 進來的 UDP 與 TCP 53。不需要替其他設備解析時，改成 `/ip dns set allow-remote-requests=no`。',
+    },
+    F11: {
+      severity: 'warn', cat: '防火牆', title: 'MAC server 或 MAC WinBox 允許 WAN 介面', data: [['config']],
+      facet: 'mac-telnet／mac-winbox',
+      causes: [
+        '沿用出廠設定 `all`，沒有改成 `LAN`（不是從預設組態 defconf 建立的組態）。',
+        '`allowed-interface-list` 指定的清單包含 WAN 介面，或包含 WAN 埠所在的橋接（bridge）。',
+        '以為 IP 防火牆擋得住；MAC 連線不經過 IP 防火牆。',
+      ],
+      action: '把 `allowed-interface-list` 改成只含內部介面的清單（例如 `LAN`）。指令是 `/tool mac-server set allowed-interface-list=LAN` 與 `/tool mac-server mac-winbox set allowed-interface-list=LAN`；IP 防火牆擋不住 MAC 連線。',
+    },
+    F12: {
+      severity: 'info', cat: '防火牆', title: 'WAN 介面上開著鄰居探索', data: [['config']],
+      causes: [
+        '沿用出廠設定 `static`（所有靜態介面），沒有改成 `LAN`。',
+        '`discover-interface-list` 指定的清單包含 WAN 介面。',
+      ],
+      action: '把 `discover-interface-list` 改成只含內部介面的清單（例如 `LAN`）。指令是 `/ip neighbor discovery-settings set discover-interface-list=LAN`；鄰居探索會對外送出型號、版本與設備名稱。',
+    },
+    F13: {
+      severity: 'warn', cat: '防火牆', title: 'SNMP community 使用 public 或不限來源位址', data: [['config']],
+      facet: '<community 名稱>',
+      causes: [
+        '沿用出廠的 `public` community，沒有改名，也沒有限制 `addresses`。',
+        '新增的 community 沒有設定 `addresses`（預設 `::/0`，任何位址都能用）。',
+        'SNMPv1／v2c 的 community 名稱以明文傳送，等於密碼。',
+      ],
+      action: '改掉 `public` 這個名稱，並用 `addresses` 限定網管主機。指令例如 `/snmp community set [ find default=yes ] name=<新名稱> addresses=<網管網段>`；不用 SNMP 時以 `/snmp set enabled=no` 關閉。',
+    },
+    F14: {
+      severity: 'warn', cat: '防火牆', title: 'WAN 上開著 UPnP、proxy、SOCKS 或 bandwidth-server', data: [['config']],
+      facet: 'upnp／proxy／socks／bandwidth-server',
+      causes: [
+        '測試或臨時開的服務沒有關掉；bandwidth-server 出廠就是開的。',
+        '輸入鏈（input chain）沒有擋下從 WAN 進來的連線。',
+        'UPnP 的 `internal` 介面設成了 WAN 介面。',
+      ],
+      action: '停用不需要的服務，或在輸入鏈擋下從 WAN 進來的連線。指令例如 `/ip proxy set enabled=no`、`/ip socks set enabled=no`、`/tool bandwidth-server set enabled=no`；UPnP 的 `internal` 只放內部介面。',
+    },
   };
 
   // 靜態目錄：載入後凍結（含 data、causes 等巢狀陣列），畫面經 S.query.rule() 取得的物件不會被改到

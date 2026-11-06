@@ -712,6 +712,18 @@
     return { dev, universe, resolve, chains, wanLists: wan.names, wan: status === 'ok' ? wan.eps : null, lanLists: lan.names, lan: lan.eps, status,
       chain: (family, table, chain) => chains.get(family + '|' + table + '|' + chain) || [] };
   }
+  /**
+   * 設定參數的介面清單值（例如 MAC server 的 allowed-interface-list、鄰居探索的 discover-interface-list）包含的介面（Set of ep），無法判斷時 null。
+   * 和規則比對共用 ctx.resolve；另外處理設定參數才有的內建清單：none 是空的；static 是所有靜態介面——設定與 interface list 裡的介面
+   * 都是靜態的，所以視為全部（推論）；dynamic 無從得知。開頭的 ! 是「除了這個清單以外」（discovery-settings 的型別允許 !）。
+   */
+  function listMembers(ctx, value) {
+    const { neg, body } = splitNeg(String(value == null ? '' : value).trim());
+    if (body === 'dynamic') return neg ? ctx.universe : null; // 「!dynamic」＝所有靜態介面
+    const set = body === 'static' ? ctx.universe : ctx.resolve(body);
+    if (set === null) return null;
+    return neg ? new Set(Array.from(ctx.universe).filter((x) => !set.has(x))) : set;
+  }
   const UNKNOWN = Symbol('unknown');
   /** 規則在 in／out 方向允許的介面集合；沒有限制為 null，含無法判斷的清單為 UNKNOWN。 */
   function ifcSet(ctx, rule, dir) {
@@ -980,6 +992,6 @@
   }
 
   S.infer = { infer, displayName, effVlans, effVlanModes, effPvid, bridgeOf, vlanSpan, VLAN_DATA, isVirtualIfc, hwMacsByDev, wifiLocations, behindLocations };
-  S.infer.fw = { canonMatch, covers, sameMatch, evalChain, evalFilter, decide, packetFor, fwContext, parseVal, splitNeg, protoName,
+  S.infer.fw = { canonMatch, covers, sameMatch, evalChain, evalFilter, decide, packetFor, fwContext, parseVal, splitNeg, protoName, listMembers,
     TERMINAL: FW_TERMINAL, BUILTIN: FW_BUILTIN, NONDET: FW_NONDET, PORT_PROTOCOLS };
 })(globalThis.SSOT = globalThis.SSOT || {});

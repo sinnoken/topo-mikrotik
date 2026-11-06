@@ -260,7 +260,7 @@ function snapAt280(snap) {
 test('基準比對 facet：跨版本（一邊沒有 facet）的規則改用 findingBaseKey 比對，不出現假的消失與新出現；版本提示保留', () => {
   const snap = build(read('samples/sample-bundle.txt'));
   const facetIds = new Set(snap.findings.filter((f) => f.facet != null).map((f) => f.id));
-  assert.strictEqual(facetIds.size, 12);
+  assert.strictEqual(facetIds.size, 15);
   const old = snapAt280(snap);
   [[old, snap], [snap, old]].forEach(([a, b]) => {
     const r = S.compare.snapshots(S.query(a), S.query(b));

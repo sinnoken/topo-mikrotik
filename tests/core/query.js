@@ -1,7 +1,7 @@
 // 查詢、VLAN 區塊、路由追蹤、finding 穩定鍵（含 facet）、Q.findingDevice
 'use strict';
 const assert = require('assert');
-const { S, read, build, ids, gen, test, NB, BH, sampleSnap } = require('../lib.js');
+const { S, read, build, ids, gen, test, NB, BH, sampleSnap, fwBox } = require('../lib.js');
 // ------------------------------------------------------------------ 查詢、追蹤、比對
 test('查詢：MAC、IP、VLAN、設備、介面描述', () => {
   const s = build(read('samples/sample-bundle.txt')); const Q = S.query(s);
@@ -182,6 +182,10 @@ const COLLISIONS = {
   R06: { input: (n) => pair([net('10.0.30.0/24', 'gateway=10.0.30.1 dns-server=1.1.1.1 ntp-server=10.0.0.1'), net('10.0.40.0/24', 'gateway=10.0.40.1')],
     [net('10.0.30.0/24', 'gateway=10.0.30.2 dns-server=8.8.8.8 ntp-server=10.0.0.2'), net('10.0.40.0/24', 'gateway=10.0.40.2')], true, n),
   facets: ['dns|10.0.30.0/24', 'gateway|10.0.30.0/24', 'gateway|10.0.40.0/24', 'ntp|10.0.30.0/24'] },
+  // 管理面（F11、F13、F14）：沒有寫出的 MAC server／MAC WinBox 都是預設 all；SNMP 的預設 public 與新增的 community；proxy 與預設開著的 bandwidth-server
+  F11: { input: () => fwBox([]), facets: ['mac-telnet', 'mac-winbox'] },
+  F13: { input: () => fwBox(['/snmp set enabled=yes', '/snmp community add name=nms']), facets: ['nms', 'public'] },
+  F14: { input: () => fwBox(['/ip proxy set enabled=yes']), facets: ['bandwidth-server', 'proxy'] },
 };
 const of = (s, id) => s.findings.filter((f) => f.id === id);
 const group = (fs, keyOf) => { const m = new Map(); fs.forEach((f) => { const k = keyOf(f); m.set(k, (m.get(k) || []).concat([f])); }); return m; };

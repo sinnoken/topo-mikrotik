@@ -536,8 +536,11 @@
   function openGroup(App, gi, svcId) {
     const c = st.cellData; const g = c && c.groups[gi]; if (!g) return;
     const s = svcOf(svcId || g.services[0].service);
-    // 代表位址的 VRF（zone 依 VRF 分開）：重疊的位址在多個 VRF，一定要帶上
-    query(App, { src: g.srcs[0].ip, dst: g.dst.ip, proto: s.proto, port: s.port, vrf: g.srcs[0].vrf || null, from: 'cell', group: gi, service: svcId || g.services[0].service });
+    // 查第一個來源代表（g.srcs 的結果相同），用矩陣算它時的同一組條件：
+    //   entry：外部來源不在任何網段，矩陣從 WAN 介面進入（srcs[].entry）；不帶時逐跳會變成「找不到包含來源的網段」。有 entry 時 VRF 由入介面決定
+    //   vrf：代表位址的 VRF（zone 依 VRF 分開）：重疊的位址在多個 VRF，一定要帶上
+    const rep = g.srcs[0];
+    query(App, { src: rep.ip, dst: g.dst.ip, proto: s.proto, port: s.port, vrf: rep.entry ? null : rep.vrf || null, entry: rep.entry || null, srcCount: g.srcs.length, from: 'cell', group: gi, service: svcId || g.services[0].service });
   }
   /**
    * 可達性查詢（表單）：結果用同一個 L3 畫面；表單的查詢不屬於任何格子，關掉 L1／L2。
@@ -554,7 +557,7 @@
   function query(App, req) {
     st.reachReq = req; st.reach = null; st.reachErr = null; st.reachVrfs = null;
     try {
-      const r = App.Q.reach(req.src, req.dst, Object.assign({ proto: req.proto, port: req.port }, req.vrf ? { vrf: req.vrf } : {}));
+      const r = App.Q.reach(req.src, req.dst, Object.assign({ proto: req.proto, port: req.port }, req.vrf ? { vrf: req.vrf } : {}, req.entry ? { entry: req.entry } : {}));
       if (r.ok) st.reach = r; else { st.reachErr = r.error; st.reachVrfs = r.vrfs || null; } // vrfs：來源在多個 VRF，請使用者選擇
     } catch (e) { st.reachErr = V.reason(e); } // 參數不合法（例如 tcp 沒有埠、不存在的 VRF）：核心丟中文的 TypeError，V.reason 原樣顯示
     renderDrill(App);
@@ -690,7 +693,8 @@
     const start = r.start || {};
     out.push(h('div', { class: 'row' }, [h('span', { class: 'l4-verdict', 'data-verdict': r.verdict }, statusTag(r.verdict)),
       r.natApplied && r.final ? V.chip(`NAT 之後 ${r.final.dst}${r.final.port != null ? ':' + r.final.port : ''}`, 'info', { class: 'chip info l4-final' }) : null,
-      q.from === 'cell' ? V.chip(`從 ${zoneName(Q, (st.cellData || {}).src)} → ${zoneName(Q, (st.cellData || {}).dst)} 的第 ${q.group + 1} 組`) : null]));
+      q.from === 'cell' ? V.chip(`從 ${zoneName(Q, (st.cellData || {}).src)} → ${zoneName(Q, (st.cellData || {}).dst)} 的第 ${q.group + 1} 組`) : null,
+      q.from === 'cell' && q.srcCount > 1 ? h('span', { class: 'muted l4-rep' }, `這一組有 ${V.num(q.srcCount)} 個來源代表（結果相同），這裡查第一個 ${q.src}${q.entry ? `，從 ${epText(Q, q.entry)} 進入` : ''}`) : null]));
     out.push(P().kv([
       ['起點', [V.REACH_START[start.how] || start.how, start.prefix ? `（${start.prefix}${start.basis ? '，' + (V.REACH_START_BASIS[start.basis] || start.basis) : ''}）` : '',
         start.dev ? '：' : '', start.dev ? devLink(App, start.dev) : null, start.ep ? h('span', { class: 'mono muted' }, ' ' + epText(Q, start.ep)) : null,

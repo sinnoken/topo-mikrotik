@@ -93,9 +93,9 @@
          「輸入」是資料中心（蓋住主畫面的另一層），其他步驟切換左側清單與中間的工作畫面 -->
     <nav id="steps" class="steps" aria-label="流程步驟">
       <ol>
-        <li><button type="button" id="step-input" data-step="input" aria-current="false" aria-disabled="false"><span class="step-name">輸入</span> <span class="step-st"></span></button></li>
+        <li><button type="button" id="step-input" data-step="input" aria-current="step" aria-disabled="false" class="on"><span class="step-name">輸入</span> <span class="step-st"></span></button></li>
         <li><button type="button" id="step-view" data-step="view" aria-current="false" aria-disabled="false"><span class="step-name">檢視</span> <span class="step-st"></span></button></li>
-        <li><button type="button" id="step-triage" data-step="triage" aria-current="step" aria-disabled="false" class="on"><span class="step-name">研判</span> <span class="step-st"></span></button></li>
+        <li><button type="button" id="step-triage" data-step="triage" aria-current="false" aria-disabled="false"><span class="step-name">研判</span> <span class="step-st"></span></button></li>
         <li><button type="button" id="step-fix" data-step="fix" aria-current="false" aria-disabled="true"><span class="step-name">修正</span> <span class="step-st"></span></button></li>
         <li><button type="button" id="step-verify" data-step="verify" aria-current="false" aria-disabled="true"><span class="step-name">驗證</span> <span class="step-st"></span></button></li>
       </ol>
@@ -108,7 +108,7 @@
       <div id="search-dd" class="dropdown hidden"></div>
     </div>
     <div class="header-actions">
-      <button id="btn-hub" class="hub-btn" aria-controls="hub" aria-expanded="false" title="本輪的輸入與輸出：收集檔、工作包、處理紀錄、命名規則、預期現況、報表與 patch">資料中心</button>
+      <button id="btn-hub" class="hub-btn" aria-controls="hub" aria-expanded="false" title="本輪的輸入與輸出：收集檔、工作包、處理紀錄、命名規則、預期現況、報表與修正指令">資料中心</button>
       <!-- 設定（src/view/app-settings.js）：和資料中心一樣蓋住主畫面的另一層，左側分類、右側內容；Esc 關閉後焦點回到這個按鈕 -->
       <button type="button" class="icon-btn" id="btn-settings" aria-label="設定" aria-controls="settings" aria-expanded="false" title="設定：配色、預設版面、命名規則、本機資料、收集說明與版本">⚙</button>
     </div>
@@ -147,8 +147,8 @@
         <div class="grp layer-only" data-layers="device l2 l3"><select id="vlan-filter" aria-label="VLAN 篩選" title="在設備圖與 L2 埠圖標出承載這個 VLAN 的鏈路（L3 標出這個 VLAN 的網段）；在選單選的會一直保留，選「不篩選」取消"><option value="">VLAN：不篩選</option></select></div><button type="button" id="vlan-chip" class="chip info hidden" aria-label="取消 VLAN 篩選"></button>
         <div class="grp layer-only hidden" data-layers="l2"><button type="button" id="btn-l2-lag" aria-pressed="false" title="聚合介面的成員各自畫成一個埠（預設收合：成員併進聚合介面）">展開聚合</button><button type="button" id="btn-l2-ports" aria-pressed="false" title="也畫沒有接線的實體、聚合與無線介面">全部的埠</button><select id="l2-scope" aria-label="L2 埠圖的範圍" title="整張圖，或只畫選取的設備與它的鄰居（設備太多時只能選後者）"><option value="all">整張圖</option><option value="focus">選取的設備與鄰居</option></select></div>
         <div class="grp layer-only hidden" data-layers="l3"><button type="button" id="btn-l3-routes" aria-pressed="false" title="以虛線箭頭畫出靜態路由與預設路由，指到目的網段">顯示路由</button></div>
-        <!-- 圖的操作：全圖、版面▾（重新排列、分層／快速、力導向）、顯示▾（主機、終端、分群）；選單在 .grp 外面才不會被裁切 -->
-        <div class="grp layer-only" data-layers="device l2 l3"><button type="button" id="btn-fit" title="整張圖放進畫面">全圖</button><button type="button" id="btn-layout-menu" title="重新排列與版面" aria-haspopup="menu" aria-expanded="false" aria-controls="layout-menu">版面 ▾</button><button type="button" id="btn-view-menu" title="圖上要顯示的內容" aria-haspopup="menu" aria-expanded="false" aria-controls="view-menu">顯示 ▾</button></div>
+        <!-- 圖的操作：全圖、版面▾（重新排列、分層／快速、力導向）、顯示▾（主機、終端、分群，與匯出 PNG）；選單在 .grp 外面才不會被裁切 -->
+        <div class="grp layer-only" data-layers="device l2 l3"><button type="button" id="btn-fit" title="整張圖放進畫面">全圖</button><button type="button" id="btn-layout-menu" title="重新排列與版面" aria-haspopup="menu" aria-expanded="false" aria-controls="layout-menu">版面 ▾</button><button type="button" id="btn-view-menu" title="圖上要顯示的內容，與匯出目前的畫面（PNG）" aria-haspopup="menu" aria-expanded="false" aria-controls="view-menu">顯示 ▾</button></div>
         <div id="layout-menu" class="menu hidden" role="menu" aria-label="版面">
           <button type="button" class="menu-item" role="menuitem" id="btn-relayout" title="依分群與層級重新排列（只排目前的層級）">重新排列</button>
           <div class="menu-sep" role="separator"></div>
@@ -164,10 +164,13 @@
           <button type="button" class="menu-item layer-only" data-layers="device l2 l3" role="menuitemcheckbox" id="btn-hosts" data-keep aria-checked="true" title="顯示主機：沒有收集、依鄰居（LLDP／CDP／MNDP）回報判斷為主機的設備，不在收集範圍">主機</button>
           <button type="button" class="menu-item layer-only on" data-layers="device" role="menuitemcheckbox" id="btn-unknown" data-keep aria-checked="true" title="顯示終端：沒有 LLDP／CDP 鄰接、只由 MAC 推論出來的對象">終端</button>
           <button type="button" class="menu-item layer-only on" data-layers="device" role="menuitemcheckbox" id="btn-groups" data-keep aria-checked="true" title="顯示分群底框">分群</button>
+          <!-- 匯出 PNG（只有拓樸圖的層級；其他匯出在資料中心）：收在這裡，工具列在 1440 寬時排得下一列 -->
+          <div class="menu-sep" role="separator"></div>
+          <button type="button" class="menu-item layer-only" data-layers="device l2 l3" role="menuitem" id="btn-png" title="把目前的拓樸圖畫面匯出 PNG（目前的層級；其他匯出在資料中心）">匯出 PNG</button>
         </div>
-        <!-- 圖上的工具：路由追蹤（每一層都可用，路徑畫在拓樸圖上）、匯出 PNG（只有拓樸圖的層級；其他匯出在資料中心）。
+        <!-- 圖上的工具：路由追蹤（每一層都可用，路徑畫在拓樸圖上）。
              路由追蹤的表單是按鈕下方的小對話框（A.bindTrace），Esc 或點外面關閉，焦點回到按鈕 -->
-        <div class="grp"><button type="button" id="btn-trace" aria-haspopup="dialog" aria-expanded="false" aria-controls="trace-pop" title="依各設備路由表逐跳追蹤兩個 IP 之間的路徑">路由追蹤…</button><button type="button" id="btn-png" class="layer-only" data-layers="device l2 l3" title="把目前的拓樸圖畫面匯出 PNG（目前的層級；其他匯出在資料中心）">匯出 PNG</button></div>
+        <div class="grp"><button type="button" id="btn-trace" aria-haspopup="dialog" aria-expanded="false" aria-controls="trace-pop" title="依各設備路由表逐跳追蹤兩個 IP 之間的路徑">路由追蹤…</button></div>
         <div id="trace-pop" class="popover hidden" role="dialog" aria-label="路由追蹤">
           <div class="form-row"><label for="trace-src">來源 IP</label><input id="trace-src" type="text" placeholder="10.1.30.15" list="trace-ips" autocomplete="off"></div>
           <div class="form-row"><label for="trace-dst">目的 IP</label><input id="trace-dst" type="text" placeholder="10.1.20.11" list="trace-ips" autocomplete="off"></div>

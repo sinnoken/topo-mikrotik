@@ -490,6 +490,7 @@
   // ================================================================ 工具列：層級切換、VLAN 篩選、L2／L3 的選項
   const layerBtns = () => Array.from(document.querySelectorAll('#layer-switch button'));
   A.bindLayers = function bindLayers() {
+    new ResizeObserver(() => A.syncL4Top()).observe($('#toolbar'));
     const btns = layerBtns();
     btns.forEach((b) => {
       b.addEventListener('click', () => { if (!b.disabled) App.showLayer(b.dataset.layer); });
@@ -514,6 +515,10 @@
       b.removeAttribute('aria-pressed'); b.setAttribute('data-layers', 'l2'); b.setAttribute('role', 'menuitemcheckbox'); b.setAttribute('data-keep', ''); b.setAttribute('aria-checked', 'false');
       viewMenu.appendChild(b);
     });
+    // 「匯出 PNG」與它上面的分隔線留在選單最後（勾選項目在前）
+    const sep = Array.from(viewMenu.children).find((x) => x.classList.contains('menu-sep'));
+    if (sep) viewMenu.appendChild(sep);
+    viewMenu.appendChild($('#btn-png'));
     const toggle = (sel, fn) => { $(sel).onclick = () => { fn(); A.showLayer(App.layer); }; };
     toggle('#btn-l2-lag', () => { App.l2.lag = App.l2.lag === 'collapse' ? 'expand' : 'collapse'; });
     toggle('#btn-l2-ports', () => { App.l2.ports = App.l2.ports === 'linked' ? 'all' : 'linked'; });
@@ -523,6 +528,16 @@
       if (App.l2.scope === 'focus') App.l2.focus = selectedDevice() || App.l2.focus;
       A.showLayer('l2');
     };
+  };
+  /**
+   * L4 的上緣：工具列浮在圖上、寬度不夠時換行（窄螢幕兩三列），L4 的捲動區從工具列下緣開始，標題與捲到的明細才不會被它蓋住。
+   * 工具列換行時（層級切換、視窗寬度改變）由 bindLayers 的 ResizeObserver 再算一次
+   */
+  const L4_GAP = 6;
+  A.syncL4Top = function syncL4Top() {
+    const v = $('#view-l4'); if (v.classList.contains('hidden')) return;
+    const tb = $('#toolbar').getBoundingClientRect(); const st = $('#stage').getBoundingClientRect();
+    v.style.top = Math.ceil(tb.top + tb.height - st.top + L4_GAP) + 'px';
   };
   let vlanOptionsOf = null;
   /** 工具列與說明跟著目前的層級：層級按鈕、各層的選項、VLAN 選單、畫布的 aria-label、說明文字 */
@@ -537,7 +552,8 @@
     // L4：矩陣疊在畫布上；畫布、圖例與操作說明不顯示也不能聚焦（鍵盤不會移到底下的畫布）
     const l4 = L === 'l4' && !!App.Q;
     $('#view-l4').classList.toggle('hidden', !l4);
-    $('#graph').inert = l4;
+    $('#graph').inert = l4; $('#stage').classList.toggle('l4-on', l4);
+    A.syncL4Top();
     $('#legend').classList.toggle('hidden', !App.snap || l4);
     A.syncHint(l4);
     // VLAN 選單：選項來自 Q.vlanIds()，換基準時重建

@@ -84,7 +84,9 @@
   /** 一格（或一組）的筆數「允許 N・拒絕 N・無法判斷 N」：用語取自 V.L4_STATUS */
   const countsText = (k, sep) => ['allow', 'deny', 'unknown'].map((s) => `${V.L4_STATUS[s]} ${V.num(k[s])}`).join(sep || '・');
   /** 異質的徽章（文字，不只靠顏色）；顏色取自 theme.l4.badge */
-  const hetBadge = (text, cls) => { const b = TH().badge; return h('span', { class: 'l4-het' + (cls ? ' ' + cls : ''), style: { background: b.bg, color: b.text, borderColor: b.border } }, text || '≠ 結果不一'); };
+  const hetBadge = (text, cls, title) => { const b = TH().badge; return h('span', { class: 'l4-het' + (cls ? ' ' + cls : ''), title: title || null, style: { background: b.bg, color: b.text, borderColor: b.border } }, text || '≠ 結果不一'); };
+  // 格子與圖例用的短標：格子很窄，「≠ 結果不一」會蓋住下面的數字；完整說法在 title 與圖例
+  const HET_SHORT = '≠'; const hetShort = () => hetBadge(HET_SHORT, null, '結果不一：同一個 zone 的成員結果不一致');
   /** 對角線（zone 內）的虛線外框：顏色取自 theme.l4.diagonal */
   const diagStyle = () => ({ borderColor: TH().diagonal.border, borderStyle: TH().diagonal.dash });
 
@@ -193,7 +195,8 @@
     L.appendChild(h('div', { class: 'l4-legend-row' }, Object.keys(V.L4_STATUS).map((k) => h('span', { class: 'l4-legend-item', 'data-status': k, title: V.L4_STATUS_TIP[k] }, [
       h('span', { class: 'l4-swatch', style: { background: cellBg(k) } }, statusMark(k)), V.L4_STATUS[k],
     ])).concat([
-      h('span', { class: 'l4-legend-item', 'data-legend': 'heterogeneous', title: '同一個 zone 的成員（代表位址）對同一個目的與服務的結果不一致：zone 切分可能不對，或規則只放行部分位址' }, [hetBadge(), '成員結果不一致']),
+      h('span', { class: 'l4-legend-item', 'data-legend': 'heterogeneous', title: '同一個 zone 的成員（代表位址）對同一個目的與服務的結果不一致：zone 切分可能不對，或規則只放行部分位址' }, [hetShort(), '結果不一（成員結果不一致）']),
+      h('span', { class: 'l4-legend-item', 'data-legend': 'incomplete', title: '這一格有一部分位址組合的條件無法判斷，結果只算得出來的部分；原因在明細' }, [h('span', { class: 'l4-inc' }, '＋?'), V.L4_INCOMPLETE]),
       h('span', { class: 'l4-legend-item', 'data-legend': 'diagonal', title: '來源與目的是同一個 zone（zone 內的流量，主要受主機防火牆影響，不在範圍內）' }, [h('span', { class: 'l4-swatch diag', style: diagStyle() }), 'zone 內']),
     ])));
     L.appendChild(h('div', { class: 'muted l4-note' }, '格子的數字是「允許／總數」：每個 zone 取代表位址（ARP 看到的位址優先，否則推算），代表位址 × 目的 × 服務各算一次。滑過或用鍵盤移到格子會顯示詳細的筆數與代表規則；方向鍵移動，Enter 往下看。'));
@@ -386,8 +389,8 @@
       statusMark(c.status),
       h('span', { class: 'l4-lab' }, V.L4_STATUS[c.status]),
       c.incomplete ? h('span', { class: 'l4-inc', title: V.L4_INCOMPLETE }, '＋?') : null,
-      c.counts.total ? h('span', { class: 'l4-cnt' }, `${V.num(c.counts.allow)}/${V.num(c.counts.total)}`) : null,
-      c.heterogeneous ? hetBadge() : null,
+      // 結果不一的短標排在數字後面（同一列），不疊在數字上
+      c.counts.total || c.heterogeneous ? h('span', { class: 'l4-cnt' }, [c.counts.total ? `${V.num(c.counts.allow)}/${V.num(c.counts.total)}` : '', c.heterogeneous ? hetShort() : null]) : null,
     ]);
     td.addEventListener('click', () => { setRoving(r, col); openCell(App, c.src, c.dst); });
     td.addEventListener('keydown', (e) => onCellKey(App, e, r, col));
@@ -460,7 +463,7 @@
       { t: '無法判斷的原因', f: (c) => c.reasons.map((x) => `${V.reachReason(x.code)}（${V.num(x.count)}）`).join('、'), s: (c) => (c.reasons[0] || {}).code },
       // zone 在多個 VRF 時：來源與目的的 VRF（放在最後，其他欄位的位置與只有 main 時相同）
       ...(mv ? [{ t: '來源 VRF', f: (c) => zoneVrf(Q, c.src), s: (c) => zoneVrf(Q, c.src) }, { t: '目的 VRF', f: (c) => zoneVrf(Q, c.dst), s: (c) => zoneVrf(Q, c.dst) }] : []),
-    ], shownCells(mx), { onRow: (c) => openCell(App, c.src, c.dst), rowClass: (c) => 'l4-row st-' + c.status, limit: TABLE_LIMIT }));
+    ], shownCells(mx), { stack: true, onRow: (c) => openCell(App, c.src, c.dst), rowClass: (c) => 'l4-row st-' + c.status, limit: TABLE_LIMIT }));
   }
   /** CSV：目前 service 的矩陣，每一格一列；有 VRF 篩選時只有篩選後的格子（檔名加上 VRF）；zone 在多個 VRF 時多「來源 VRF」「目的 VRF」兩欄 */
   function downloadCsv(App) {
@@ -487,12 +490,12 @@
       { t: 'zone', f: (x) => h('span', { class: 'l4-zone-row', 'data-zone': x.id }, zoneLabel(x)), s: (x) => x.name }, ...vrfCol,
       { t: '來源', f: (x) => V.ZONE_SOURCE[x.source] || x.source, s: (x) => x.source },
       { t: '依據', f: (x) => x.basis || '' },
-      { t: '網段', f: (x) => h('span', { class: 'mono' }, x.subnets.join('、')), s: (x) => x.subnets.length },
+      { t: '網段', f: (x) => h('span', { class: 'mono' }, x.subnets.map(V.inVrfText).join('、')), s: (x) => x.subnets.length },
       { t: '設備', f: (x) => V.num(x.devices.length), s: (x) => x.devices.length, cls: 'num' },
     ], z.zones));
     const zi = zoneIndex(Q);
     box.appendChild(h('details', { class: 'l4-fold' }, [h('summary', null, `每個網段的依據（${V.num(z.subnets.length)}）`), V.table([
-      { t: '網段', f: (s) => h('span', { class: 'mono' }, s.prefix), s: (s) => s.prefix }, ...vrfCol,
+      { t: '網段', f: (s) => h('span', { class: 'mono' }, V.inVrfText(s.prefix)), s: (s) => s.prefix }, ...vrfCol,
       { t: 'zone', f: (s) => (zi.get(s.zone) || { name: s.zone }).name, s: (s) => (zi.get(s.zone) || { name: s.zone }).name },
       { t: '來源', f: (s) => h('span', null, [V.ZONE_SOURCE[s.source] || s.source, s.inferred ? ' ' : '', s.inferred ? V.chip('推論', 'info') : null]) },
       { t: '依據', f: (s) => s.basis || '' },
@@ -632,7 +635,7 @@
         { t: '狀態', f: ({ g }) => statusTag(g.status, statusText(g)), s: ({ g }) => g.status },
       ].concat(het ? [{ t: '造成差異的服務', f: ({ g }) => (g.divergent ? h('span', { class: 'l4-div-svcs' }, ['≠ ', h('span', { class: 'mono' }, g.divergentServices.join('、'))]) : '—'), s: ({ g }) => g.divergentServices.length }] : [], [
         { t: '閘道／入口', f: ({ g }) => g.srcDevices.map((x) => (x.includes('|') ? Q.epName(x) : Q.devName(x))).join('、') || '—' },
-      ]), rows, { onRow: ({ i }) => openGroup(App, i), limit: ROW_LIMIT, rowClass: ({ g }) => 'l4-group st-' + g.status + (g.divergent ? ' div' : '') }) : h('p', { class: 'muted' }, '這一格沒有可算的位址組合。'),
+      ]), rows, { stack: true, onRow: ({ i }) => openGroup(App, i), limit: ROW_LIMIT, rowClass: ({ g }) => 'l4-group st-' + g.status + (g.divergent ? ' div' : '') }) : h('p', { class: 'muted' }, '這一格沒有可算的位址組合。'),
       hidden ? h('p', { class: 'muted' }, `另有 ${V.num(hidden)} 組全部拒絕，已收起。`) : null,
       het && rows.length < all.length ? h('p', { class: 'muted' }, `另有 ${V.num(all.length - rows.length)} 組沒有造成差異，已收起。`) : null,
     ]);

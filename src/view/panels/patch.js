@@ -299,7 +299,7 @@
         h('details', { class: 'patch-more' }, [h('summary', null, '其他格式 ▾'), h('div', { class: 'patch-more-list' }, [
           h('button', { class: 'ghost patch-download-summary', onclick: () => download(summaryName(App), V.exporter.patchSummaryMarkdown(plan, files, App.Q)),
             title: '總表列出每台設備的檔名、項目與風險' }, '只下載總表（Markdown）'),
-          h('p', { class: 'muted' }, '要一個檔案帶走：在資料中心匯出工作包（ZIP，含這裡選取的 patch 與總表）。')])])]) : null,
+          h('p', { class: 'muted' }, '要一個檔案帶走：在資料中心匯出工作包（ZIP，含這裡選取的修正指令與總表）。')])])]) : null,
       ...files.map((f) => deviceBlock(App, plan, f)),
       plan.skipped.length ? h('div', { class: 'patch-skipped' }, [
         h('h4', null, ['沒有產生指令的項目 ', V.chip(String(plan.skipped.length), 'warn')]),

@@ -102,6 +102,7 @@
 
   // ================================================================ 啟動
   async function init() {
+    A.bindWelcome(); // 歡迎畫面一開始就看得到：在讀 store（第一個 await）之前綁定，頁面一出現就能按
     App.graph = new V.GraphView($('#graph'));
     App.graph.on('click', A.onGraphClick);
     App.graph.on('dblclick', A.onGraphDblClick);

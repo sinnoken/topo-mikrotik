@@ -133,17 +133,21 @@
   const downloadTemplate = () => V.exporter.download('naming-template.json', JSON.stringify(TEMPLATE, null, 2) + '\n', 'application/json');
 
   // ================================================================ 畫面
-  /** 6 欄的表格：包在 .table-scroll，窄螢幕時表格自己橫向捲動，不撐寬整頁 */
+  /**
+   * 6 欄的表格：包在 .table-scroll；窄螢幕時（table.t.stack）每個規則排成一塊、每格前面寫欄名（data-label），說明、來源與「匯出」不被切掉
+   */
+  const COLS = ['ID', '名稱', '說明', '來源', '目前的基準', ''];
   function table(App, src, list) {
-    return h('div', { class: 'table-scroll' }, h('table', { class: 't settings-profiles', 'data-source': src }, [
-      h('thead', null, h('tr', null, ['ID', '名稱', '說明', '來源', '目前的基準', ''].map((t) => h('th', null, t)))),
+    const td = (n, attrs, body) => h('td', Object.assign({ 'data-label': COLS[n] }, attrs), body);
+    return h('div', { class: 'table-scroll' }, h('table', { class: 't stack settings-profiles', 'data-source': src }, [
+      h('thead', null, h('tr', null, COLS.map((t) => h('th', null, t)))),
       h('tbody', null, list.map((p) => h('tr', { 'data-profile': p.id }, [
-        h('td', { class: 'mono' }, p.id + (p.version != null ? ` v${p.version}` : '')),
-        h('td', null, nameOf(p) || '—'),
-        h('td', null, describe(p)),
-        h('td', null, isBuiltin(p) ? '內建' : BUILTIN.has(p.id) ? '已載入（蓋過內建的同名規則）' : '已載入'),
-        h('td', null, usedBy(App, p) ? '✓ 目前的基準使用' : ''),
-        h('td', null, h('div', { class: 'row' }, [
+        td(0, { class: 'mono' }, p.id + (p.version != null ? ` v${p.version}` : '')),
+        td(1, null, nameOf(p) || '—'),
+        td(2, null, describe(p)),
+        td(3, null, isBuiltin(p) ? '內建' : BUILTIN.has(p.id) ? '已載入（蓋過內建的同名規則）' : '已載入'),
+        td(4, null, usedBy(App, p) ? '✓ 目前的基準使用' : h('span', { class: 'muted' }, '未使用')),
+        td(5, null, h('div', { class: 'row' }, [
           h('button', { type: 'button', 'data-action': 'export', 'data-settings-focus': 'export:' + p.id, title: `下載「${p.id}」的 JSON`, onclick: () => exportOne(p) }, '匯出'),
           isBuiltin(p) ? null : h('button', { type: 'button', class: 'danger', 'data-action': 'remove', 'data-settings-focus': 'remove:' + p.id,
             title: `從這個瀏覽器移除「${p.id}」（會先確認）`, onclick: () => remove(App, p.id) }, '移除…'),

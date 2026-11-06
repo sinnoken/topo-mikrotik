@@ -132,13 +132,17 @@
   };
   function bindCollectGuide() {
     $('#input-format-copy').onclick = () => copyText($('#input-format-example').textContent, $('#input-format-copy-status'));
-    // 歡迎畫面只開啟設定的「收集與建立基準」：指令清單只在那裡出現一次；關閉設定後焦點回到這個按鈕
+  }
+  /**
+   * 歡迎畫面的三個按鈕（CSP 不放行內嵌事件屬性，在這裡綁定）。歡迎畫面一開始就看得到：init 在第一個 await（讀 store）之前呼叫，
+   * 頁面一出現就能按。說明只開啟設定的「收集與建立基準」（指令清單只在那裡出現一次）；關閉設定後焦點回到這個按鈕
+   */
+  A.bindWelcome = function bindWelcome() {
     const help = $('#welcome-help');
     help.onclick = () => App.openSettings('help', { opener: help });
-    // 歡迎畫面的兩個主要按鈕：CSP 不放行內嵌事件屬性，在這裡綁定
     $('#welcome-input').onclick = () => App.openInput();
     $('#welcome-sample').onclick = () => App.loadSample();
-  }
+  };
   async function fillProfiles(selected) {
     const saved = (await S.store.get('profiles').catch(() => null)) || {};
     Object.assign(S.profiles, saved);

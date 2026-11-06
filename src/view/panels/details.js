@@ -463,19 +463,10 @@
   /** 一列對到的檢查結果（同一台設備、同一個檢查與比對對象）：連結開啟那一筆（滑鼠與鍵盤） */
   const mgmtFindings = (fl, rule, facet) => fl.filter((f) => f.id === rule && (facet === undefined || f.facet === facet));
   /**
-   * 一個 community 對到的 F13：facet 的名稱（去掉同名時的「#雜湊」）相同；同名的有好幾筆時，以證據行對到自己的設定行
-   * （出廠 community 沒有設定行：對到證據裡沒有其他同名 community 設定行的那一筆）。內容完全相同的同名 community 核心併成一筆，兩列都對到它。
+   * 一個 community 對到的 F13：核心在每個 community 給的 facet（Q.mgmtOf 的 communities[].facet）就是 F13 的 facet，直接以它對應；
+   * 停用的與名稱沒有資料的不產生 F13。內容完全相同的同名 community 核心給同一個 facet、併成一筆，兩列都對到它。
    */
-  function communityFindings(fl, comms, c) {
-    if (c.disabled !== false || c.name === null) return [];
-    const RV = V.remediation;
-    const cands = fl.filter((f) => f.id === 'F13' && RV.communityFacet(f.facet)[0] === c.name);
-    if (cands.length <= 1) return cands;
-    const has = (f, src) => src.some(([b, line]) => f.evidence.some((e) => e.block === b && e.line === line));
-    if (c.src.length) return cands.filter((f) => has(f, c.src));
-    const others = comms.filter((x) => x !== c && x.name === c.name).flatMap((x) => x.src);
-    return cands.filter((f) => !has(f, others));
-  }
+  const communityFindings = (fl, c) => (c.disabled !== false || c.name === null ? [] : mgmtFindings(fl, 'F13', c.facet));
   /** 設備層：export 是整機或部分、設備版本與預設值表範圍 */
   function mgmtScope(ms) {
     const R = S.query.mgmtDefaults().versions.text;
@@ -509,10 +500,10 @@
       const comms = it.area === 'snmp' ? a.communities : null;
       const more = it.area === 'snmp' && comms === null ? h('div', { class: 'mgmt-line' }, [h('span', { class: 'muted' }, 'community：'), h('span', { class: 'muted mgmt-unknown' }, mgmtReasonText(a.communitiesReason))]) : null;
       rows.push(row({ 'data-mgmt': it.area }, it.label, it.menu, state == null ? null : state + extra, it.params, a, it.area, a.reason, it.rule ? mgmtFindings(fl, it.rule, it.facet) : [], more));
-      (comms || []).forEach((c) => rows.push(row({ 'data-mgmt': 'community', 'data-community': c.name == null ? '' : c.name },
+      (comms || []).forEach((c) => rows.push(row({ 'data-mgmt': 'community', 'data-community': c.name == null ? '' : c.name, 'data-facet': c.facet == null ? null : c.facet },
         [c.name == null ? 'SNMP community（名稱沒有資料）' : `SNMP community「${c.name}」`, ...(c.isDefault ? [' ', V.chip('出廠')] : [])], '/snmp community',
         c.disabled == null ? null : c.disabled ? '停用' : '啟用',
-        MGMT_COMMUNITY.filter(([f]) => f !== 'name' && f !== 'disabled'), c, 'community', a.communitiesReason, communityFindings(fl, comms, c))));
+        MGMT_COMMUNITY.filter(([f]) => f !== 'name' && f !== 'disabled'), c, 'community', a.communitiesReason, communityFindings(fl, c))));
     });
     const unmatched = ms.snmp.unmatched.length ? h('p', { class: 'warn-line' }, [`export 中有 ${ms.snmp.unmatched.length} 行 /snmp community set 找不到對象，沒有套用：`,
       ...ms.snmp.unmatched.flatMap((s, n) => [n ? '、' : '', srcLink(App, [s])])]) : null;

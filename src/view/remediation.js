@@ -128,7 +128,9 @@
     return at < 0 ? name : msg.slice(at + 1, at + 1 + String(name).length);
   };
   /**
-   * F13 的 facet：名稱不重複時是 community 名稱；同名時核心在後面加「#」與內容雜湊的前 8 碼（check/checks.js 的 communityFacets）。
+   * F13 的 facet：就是 community 的 facet（model/build.js 的 communityFacets，放在 mgmtSettings 的 communities[].facet，checks.js 直接沿用）。
+   * 名稱不重複時是 community 名稱；啟用中的有同名時在後面加「#」與內容雜湊的前 8 碼。
+   * 這裡只用於顯示比對對象（拆出名稱與雜湊）；管理面設定的列與 F13 的對應直接比 facet（panels/details.js），不從 facet 拆名稱。
    * 只拆掉結尾的 #8 碼十六進位，名稱本身含 # 時不截斷。回傳 [名稱, 雜湊或空字串]。
    */
   const communityFacet = (v) => { const m = /^(.*)#([0-9a-f]{8})$/.exec(String(v)); return m ? [m[1], m[2]] : [String(v), '']; };

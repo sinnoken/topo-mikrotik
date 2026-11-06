@@ -209,6 +209,10 @@ module.exports = async () => {
       return links;
     };
     checkDocLinks(helpP, ['README.md', 'docs/收集清單與輸入格式.md', 'docs/使用說明.md']);
+    // 「一輪的流程」的詳見連到使用說明的同名一節（不是畫面上方的「流程步驟」）
+    const flowSec = flow && flow.parentNode;
+    const flowLinks = flowSec ? flowSec.testAll('a').filter((a) => a.classList.contains('doc-link')).map((a) => decodeURI(a.getAttribute('href'))) : [];
+    if (!flowLinks.some((x) => x.endsWith('docs/使用說明.md#一輪的流程'))) throw new Error('「一輪的流程」應連到使用說明的「一輪的流程」：' + flowLinks.join(' | '));
     // 命名規則：連到設定的命名規則分類
     const toProfiles = helpP.testAll('button').find((b) => b.getAttribute('data-settings-focus') === 'to-profiles');
     if (!toProfiles) throw new Error('應有前往命名規則分類的按鈕');

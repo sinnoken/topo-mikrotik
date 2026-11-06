@@ -24,16 +24,22 @@ module.exports = async () => {
   });
   await step('離線契約：CSP 禁止網路連線，程式碼不使用網路 API', () => {
     const csp = (html.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)"/) || [])[1] || '';
+    // script-src 只放行 index.html 內嵌 script 的 sha256（不用 'unsafe-inline'）：改了 inline script 沒更新雜湊時，這裡比對實際內容會失敗
+    const hashes = inlineScripts.map((src) => `'sha256-${require('crypto').createHash('sha256').update(src, 'utf8').digest('base64')}'`);
+    if (!hashes.length) throw new Error('index.html 應有首次繪製前的 inline script');
+    // 內嵌事件屬性（onclick= 等）不受 sha256 放行、會被 CSP 擋下：一律在 src/view 以 JS 綁定（去掉註解後掃描標籤內的屬性）
+    const handlers = html.replace(/<!--[\s\S]*?-->/g, '').replace(/<script[\s\S]*?<\/script>/g, '').match(/<[a-zA-Z][^>]*?\son[a-z]+\s*=[^>]*>/g);
+    if (handlers) throw new Error('index.html 不可有內嵌事件屬性（改在 JS 綁定）：' + handlers.join(' | '));
     // 逐項比對每個指令的完整來源清單：放寬（多一個來源）或漏掉指令都會失敗；要調整時同步改 index.html 的說明註解與開發原則第 11 條
     const want = {
-      'default-src': "'none'", 'script-src': "'self' 'unsafe-inline'", 'style-src': "'self' 'unsafe-inline'", 'img-src': "'self' data: blob:",
+      'default-src': "'none'", 'script-src': ["'self'", ...hashes].join(' '), 'style-src': "'self' 'unsafe-inline'", 'img-src': "'self' data: blob:",
       'font-src': "'self'", 'connect-src': "'none'", 'media-src': "'none'", 'manifest-src': "'none'", 'form-action': "'none'",
       'object-src': "'none'", 'frame-src': "'none'", 'worker-src': "'none'", 'base-uri': "'none'",
     };
     const got = Object.fromEntries(csp.split(';').map((d) => d.trim().split(/\s+/)).filter((d) => d[0]).map(([k, ...v]) => [k, v.join(' ')]));
     Object.entries(want).forEach(([k, v]) => { if (got[k] !== v) throw new Error(`CSP 的 ${k} 應為「${v}」，目前是「${got[k]}」`); });
     Object.keys(got).forEach((k) => { if (!(k in want)) throw new Error('CSP 多了沒有檢查的指令 ' + k); });
-    if (/https?:|wss?:|\*|'unsafe-eval'/.test(csp)) throw new Error('CSP 不可允許網路來源、萬用字元或 unsafe-eval：' + csp);
+    if (/https?:|wss?:|\*|'unsafe-eval'/.test(csp) || /script-src[^;]*'unsafe-inline'/.test(csp)) throw new Error('CSP 不可允許網路來源、萬用字元或 unsafe-eval：' + csp);
     if (html.indexOf('Content-Security-Policy') > html.indexOf('<script')) throw new Error('CSP 必須在第一個 <script> 之前');
     jsFiles('src').forEach((f) => {
       const code = fs.readFileSync(path.join(ROOT, f), 'utf8');
@@ -172,6 +178,15 @@ module.exports = async () => {
         if (p !== path.join('src', 'view', 'dom.js') && /\b(e|err|error|ex)\.message\b|String\((e|err|error|ex)\)/.test(src)) throw new Error('例外訊息應經 V.reason(e) 轉成中文：' + p);
       });
     })(dir));
+    $('#dlg-input').close();
+  });
+  await step('歡迎畫面的「建立基準…」與「用範例資料試試看」在 JS 綁定（CSP 不放行內嵌事件屬性）', async () => {
+    const open = $('#welcome-input'); const sample = $('#welcome-sample');
+    [open, sample].forEach((b) => { if (!b || b.tagName !== 'BUTTON' || b.getAttribute('type') !== 'button' || b.getAttribute('onclick') !== null) throw new Error('歡迎畫面的按鈕應是 type=button、沒有 onclick 屬性'); });
+    $('#input-text').value = ''; open.click(); await new Promise((r) => setTimeout(r, 20));
+    if (!$('#dlg-input').open || $('#input-text').value.includes('TPE_CORE_RT_01')) throw new Error('「建立基準…」應開啟輸入對話框（不帶範例）');
+    $('#dlg-input').close(); sample.click(); await new Promise((r) => setTimeout(r, 20));
+    if (!$('#dlg-input').open || $('#input-text').value !== S.samples['sample-bundle.txt']) throw new Error('「用範例資料試試看」應開啟輸入對話框並填入範例');
     $('#dlg-input').close();
   });
   await step('載入範例並建立基準', async () => {

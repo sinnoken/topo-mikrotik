@@ -54,7 +54,7 @@ git diff --check         # 提交前檢查
 - **比對與檢視狀態**：`compare/` 有預期現況比對（`S.compare`）、由基準產生預期現況（`S.compare.expectedFrom`）與
   新舊基準比對（`S.compare.snapshots`，`ssot-snapdiff/1`）。finding 的穩定鍵是 `Q.findingKey(f)`；
   處理紀錄（`S.ledger`，`ssot-ledger/1`）以它為鍵存在 store 的 `'ledger'`，是使用者的資料，不進 Snapshot；
-  舊的 `'acks'` 第一次遇到基準時以 `S.ledger.fromAcks` 轉換。同一輪的判斷依 `meta.baselineKey`（輸入＋major.minor＋命名規則與預期現況）。
+  舊的 `'acks'` 第一次遇到基準時以 `S.ledger.fromAcks` 轉換。同一輪的判斷依 `meta.baselineKey`（輸入＋major.minor＋命名規則＋各類設備應收資料 expectedData；不含預期現況）。
   修正 patch（`S.remediate`，`ssot-patch/1`）只產生 .rsc 文字，不連線設備（[ADR-001](docs/架構決策/001-工具維持唯讀.md)）。
 - **事實 vs 推論**：收集到的設備、介面、鏈路、VLAN、位址、路由是事實；推論需標示。命名 profile（`src/profile/`）
   只能 canonicalize 或加註解，不能新增／刪除／改寫事實。

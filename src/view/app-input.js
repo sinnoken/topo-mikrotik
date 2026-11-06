@@ -135,6 +135,9 @@
     // 歡迎畫面只開啟設定的「收集與建立基準」：指令清單只在那裡出現一次；關閉設定後焦點回到這個按鈕
     const help = $('#welcome-help');
     help.onclick = () => App.openSettings('help', { opener: help });
+    // 歡迎畫面的兩個主要按鈕：CSP 不放行內嵌事件屬性，在這裡綁定
+    $('#welcome-input').onclick = () => App.openInput();
+    $('#welcome-sample').onclick = () => App.loadSample();
   }
   async function fillProfiles(selected) {
     const saved = (await S.store.get('profiles').catch(() => null)) || {};

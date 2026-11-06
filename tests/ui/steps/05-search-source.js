@@ -263,7 +263,15 @@ module.exports = async () => {
     $('#dlg-raw').close(); App.openRaw(S.readers.PASTE, 10);
     // 長行預設自動換行（窄螢幕不必橫捲），可切回不換行、橫向捲動（#raw-wrap → #dlg-raw.raw-nowrap，純 CSS）
     const wrap = $('#raw-wrap'); const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
-    if (!wrap || wrap.getAttribute('type') !== 'checkbox' || wrap.getAttribute('checked') === null || !/classList\.toggle\('raw-nowrap', !this\.checked\)/.test(wrap.getAttribute('onchange') || '')) throw new Error('原文應有預設勾選的「自動換行」切換');
+    if (!wrap || wrap.getAttribute('type') !== 'checkbox' || wrap.getAttribute('checked') === null || wrap.getAttribute('onchange') !== null) throw new Error('原文應有預設勾選的「自動換行」切換（在 JS 綁定，不用內嵌事件屬性）');
+    wrap.checked = false; wrap.dispatch('change');
+    if (!$('#dlg-raw').classList.contains('raw-nowrap')) throw new Error('取消「自動換行」應改為不換行');
+    wrap.checked = true; wrap.dispatch('change');
+    if ($('#dlg-raw').classList.contains('raw-nowrap')) throw new Error('勾回「自動換行」應恢復換行');
+    const x = $('#raw-close');
+    if (!x || x.getAttribute('onclick') !== null || x.getAttribute('aria-label') !== '關閉') throw new Error('原文的關閉鈕應有名稱、在 JS 綁定');
+    x.click(); if ($('#dlg-raw').open) throw new Error('按關閉應關閉原文對話框');
+    App.openRaw(S.readers.PASTE, 10);
     if (!/pre\.raw \{[^}]*white-space: pre-wrap;/.test(css) || !/#dlg-raw\.raw-nowrap pre\.raw \{ white-space: pre;/.test(css) || !/pre\.raw > span \{[^}]*text-indent: -56px/.test(css)) throw new Error('原文預設換行（懸掛縮排），不換行時橫向捲動');
     $('#dlg-raw').close();
   });

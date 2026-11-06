@@ -47,24 +47,41 @@ module.exports = function registerLarge(LARGE_MAX_MS) {
     const virt = new Set(mx.zones.filter((z) => z.virtual).map((z) => z.id));
     assert.ok(mx.cells.filter((c) => c.status !== 'empty' && !virt.has(c.src) && !virt.has(c.dst)).every((c) => c.status === 'allow'), '乾淨網路的內部 VLAN 之間全通');
     [zMs, rMs, mMs, cMs, iMs].forEach((x) => assert.ok(x < LARGE_MAX_MS / 4, `L4 查詢耗時 ${x} ms`));
+    // zoneMatrix 本身另有較緊的上限（預設 3333 ms，CI 的 SSOT_LARGE_MAX_MS 較大時跟著放寬）：本機約 1.2–1.6 s，改善前約 1.9–3.8 s，退化時會被抓到
+    assert.ok(mMs < LARGE_MAX_MS / 6, `zoneMatrix 耗時 ${mMs} ms，超過 ${Math.round(LARGE_MAX_MS / 6)} ms（SSOT_LARGE_MAX_MS / 6）`);
     assert.strictEqual(s.model.zoneMatrix, undefined, '矩陣不寫進 Snapshot');
     // 分段計算（畫面用，不卡住主執行緒）：新的查詢介面從頭算，量每一段（兩次 next() 之間）的時間；目標每段 ≤ 50 ms
-    const Q2 = S.query(s); const it = Q2.zoneMatrixSteps();
-    const segs = []; const byStage = {};
-    let prev = '(開始)'; let t1 = Date.now(); let r = it.next();
-    for (;;) {
-      const ms = Date.now() - t1; segs.push(ms);
-      const e = byStage[prev] = byStage[prev] || { n: 0, max: 0 }; e.n++; e.max = Math.max(e.max, ms);
-      if (r.done) break;
-      prev = r.value.stage; t1 = Date.now(); r = it.next();
-    }
-    const total = segs.reduce((n, x) => n + x, 0); const max = Math.max(...segs);
-    const p95 = segs.slice().sort((a, b) => a - b)[Math.floor(segs.length * 0.95)];
-    console.log(`      zoneMatrixSteps ${segs.length} 段、共 ${total} ms；每段 p95 ${p95} ms、最長 ${max} ms（${Object.keys(byStage).map((k) => `${k} ${byStage[k].n} 段、最長 ${byStage[k].max} ms`).join('；')}）`);
+    // 每段另以 v8.GCProfiler 量那一段裡 GC 停頓的時間（矩陣的快取有數百 MB，偶爾一段會碰上 200–300 ms 的 Mark-Compact，與分段的粒度無關）
+    const v8 = require('v8');
+    const measure = () => {
+      const Qn = S.query(s); const it = Qn.zoneMatrixSteps();
+      const segs = []; const nets = []; const byStage = {}; let gcAll = 0;
+      let prev = '(開始)'; let gp = new v8.GCProfiler(); gp.start(); let t1 = Date.now(); let r = it.next();
+      for (;;) {
+        const ms = Date.now() - t1; const gc = Math.round(gp.stop().statistics.reduce((n, x) => n + x.cost, 0) / 1000);
+        segs.push(ms); nets.push(Math.max(0, ms - gc)); gcAll += gc;
+        const e = byStage[prev] = byStage[prev] || { n: 0, max: 0 }; e.n++; e.max = Math.max(e.max, ms);
+        if (r.done) break;
+        prev = r.value.stage; gp = new v8.GCProfiler(); gp.start(); t1 = Date.now(); r = it.next();
+      }
+      return { Qn, r, segs, nets, byStage, gcAll, max: Math.max(...segs), netMax: Math.max(...nets) };
+    };
+    let run = measure();
+    const report = (x) => {
+      const total = x.segs.reduce((n, v) => n + v, 0); const p95 = x.segs.slice().sort((a, b) => a - b)[Math.floor(x.segs.length * 0.95)];
+      console.log(`      zoneMatrixSteps ${x.segs.length} 段、共 ${total} ms（其中 GC ${x.gcAll} ms）；每段 p95 ${p95} ms、最長 ${x.max} ms、扣掉 GC 最長 ${x.netMax} ms（${Object.keys(x.byStage).map((k) => `${k} ${x.byStage[k].n} 段、最長 ${x.byStage[k].max} ms`).join('；')}）`);
+      return p95;
+    };
+    let p95 = report(run);
+    // 單段上限（扣掉 GC）：預設 100 ms，隨 SSOT_LARGE_MAX_MS 放寬（CI 是 200 ms）。機器同時跑別的行程時，偶爾一段會被搶走 CPU
+    // （量過一次 430 ms，其他段都在 35 ms 內），所以超過時重量一次、取較好的一次；分段太粗的退化每次都會超過
+    const SEG_MAX = Math.max(100, LARGE_MAX_MS / 200);
+    if (run.netMax > SEG_MAX) { run = measure(); p95 = report(run); }
+    const { Qn: Q2, r, segs } = run;
     assert.strictEqual(Q2.zoneMatrix(), r.value, '跑完分段之後 zoneMatrix 命中快取');
     assert.strictEqual(JSON.stringify(r.value), JSON.stringify(mx), '分段與同步的結果相同');
-    // 目標是每段 ≤ 50 ms。斷言用 p95 而不是最長：機器同時跑別的行程時，偶爾一段會被搶走 CPU（量過一次 430 ms，其他段都在 35 ms 內）；
-    // 上限放寬並隨 SSOT_LARGE_MAX_MS 調整（預設 200 ms），避免慢的 CI 誤判，但能抓到沒有分段的退化
+    assert.ok(run.netMax <= SEG_MAX, `分段計算扣掉 GC 最長一段 ${run.netMax} ms，超過 ${SEG_MAX} ms`);
+    // p95 的上限放寬並隨 SSOT_LARGE_MAX_MS 調整（預設 200 ms），避免慢的 CI 誤判，但能抓到沒有分段的退化
     assert.ok(p95 <= Math.max(50, LARGE_MAX_MS / 100), `分段計算的 p95 是 ${p95} ms`);
     assert.ok(segs.length > 10, `只有 ${segs.length} 段`);
   });

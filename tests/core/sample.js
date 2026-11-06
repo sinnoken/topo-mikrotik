@@ -67,7 +67,7 @@ test('可重現：時區（TZ）與語系（LANG／LC_ALL）不同時，範例�
   });
   runs.slice(1).forEach((r, i) => assert.ok(JSON.stringify(r.snap) === JSON.stringify(runs[0].snap), `${JSON.stringify(envs[i + 1])} 與 ${JSON.stringify(envs[0])} 的基準不同`));
 });
-test('可重現：來源檔案的順序反過來時，模型（去掉來源位置）與 findingKey 依序相同；只有來源位置與少數 finding 的列舉順序隨輸入順序改變', () => {
+test('可重現：來源檔案的順序反過來時，模型（去掉來源位置）與 findings（訊息、entities、代表證據）完全相同', () => {
   // 範例資料依設備標頭拆成多個檔案（開頭的註解併入第一個檔案）
   const parts = [];
   read('samples/sample-bundle.txt').split('\n').forEach((l) => {
@@ -87,23 +87,12 @@ test('可重現：來源檔案的順序反過來時，模型（去掉來源位�
   assert.ok(JSON.stringify(strip(a.model)) === JSON.stringify(strip(b.model)), '去掉來源位置後模型應相同');
   assert.deepStrictEqual(b.coverage, a.coverage);
   assert.deepStrictEqual(b.meta.stats, a.meta.stats);
-  // 不可變：findings 的 findingKey、id、嚴重度依序相同，entities 的集合相同
-  assert.deepStrictEqual(b.findings.map((f) => [Qb.findingKey(f), f.id, f.severity]), a.findings.map((f) => [Qa.findingKey(f), f.id, f.severity]));
-  const ents = (f) => f.entities.map((e) => e.type + ':' + e.key).sort();
-  b.findings.forEach((f, i) => assert.deepStrictEqual(ents(f), ents(a.findings[i]), f.id));
-  // 可變（目前的行為，釘住範圍）：同一個問題涉及多台設備時，訊息與 entities 依觀察到的順序列舉（A01 的 MAC、K02 的鄰居）；
-  // 鏈路類 finding 的代表證據取先讀到的一側。訊息改變的 finding 只能是這些；列舉的內容（以「、」分隔的項目）相同
-  const ENUM_ORDER = ['A01', 'K02']; const EVIDENCE = ['A01', 'K02', 'K03', 'V01', 'V04', 'V08', 'V09'];
-  const items = (m) => m.split(/對應到 |[：、]/).sort();
-  b.findings.forEach((f, i) => {
-    const o = a.findings[i];
-    if (f.message !== o.message) {
-      assert.ok(ENUM_ORDER.includes(f.id), `${f.id} 的訊息隨來源順序改變：${o.message} → ${f.message}`);
-      assert.deepStrictEqual(items(f.message), items(o.message), f.id);
-    }
-    const ev = (x) => JSON.stringify(x.evidence.map((e) => [e.file, e.line]));
-    if (ev(f) !== ev(o)) assert.ok(EVIDENCE.includes(f.id), `${f.id} 的證據隨來源順序改變`);
-  });
+  // 不可變：findings 的 findingKey 依序相同；訊息、entities（連順序）、證據（檔案、行號與原文，連順序）也完全相同。
+  // 同一個問題涉及多台設備時（A01 的 MAC、K02 的鄰居）依設備名稱與介面排序列舉，鏈路類 finding 的代表證據固定取鏈路 a 端那一側
+  assert.deepStrictEqual(b.findings.map((f) => Qb.findingKey(f)), a.findings.map((f) => Qa.findingKey(f)));
+  const view = (f) => ({ id: f.id, severity: f.severity, message: f.message, entities: f.entities, facet: f.facet, deviation: f.deviation,
+    evidence: f.evidence.map((e) => [e.file, e.line, e.text]) });
+  b.findings.forEach((f, i) => assert.deepStrictEqual(view(f), view(a.findings[i]), `${f.id}：${a.findings[i].message}`));
 });
 test('鏈路配對：聚合成員雙向確認、沒有 LLDP 的鄰居為單側觀察', () => {
   const s = build(read('samples/sample-bundle.txt'));

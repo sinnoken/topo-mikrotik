@@ -72,7 +72,8 @@ EOF
 chmod +x "$TMP_DIR/ssh"
 
 run_collector() {
-  PATH="$TMP_DIR:$PATH" "$ROOT/tools/collect.sh" "$@"
+  # 用跑這個測試的同一個 bash 執行收集器（不靠 shebang 從 PATH 找）：CI 的 macOS job 以 /bin/bash 3.2 跑，PATH 前面可能是 Homebrew 的 bash 5
+  PATH="$TMP_DIR:$PATH" "${BASH}" "$ROOT/tools/collect.sh" "$@"
 }
 # 失敗訊息寫到原本的 stderr（fd 3）：expect_exit 等呼叫常把 2> 導向記錄檔，訊息不可跟著被藏起來
 exec 3>&2

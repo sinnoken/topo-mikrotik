@@ -49,6 +49,6 @@
 
 ## 待辦
 
-- 使用者：決定是否採用。
+- 使用者：決定是否採用。**等真實收集檔**：流程需要的工具已備（`tools/anonymize.js`、`tests/fixtures/real/README.md`、`routeros-parser-fixtures` skill，以及 `tests/core/i03.js`、`tests/core/fixtures.js` 的檢查），但 2026-11-06 時 `tests/fixtures/real/` 只有 README，還沒有任何收集檔（[路線圖「真實設備的收集檔」](../路線圖.md#等使用者提供資料)）。第一份真實收集檔進來時，用它實際走一次流程，再請使用者決定。
 - docs：`routeros-parser-fixtures` skill 補上 I03 → fixture 的步驟（本次已加入）。
 - ~~data-model：`tests/fixtures/real/README.md` 的「測試會檢查什麼」目前只寫「不可出現 I01」，實際上也不可有 I03，要補上。~~ **已完成**。

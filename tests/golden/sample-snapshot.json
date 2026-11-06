@@ -1,10 +1,10 @@
 {
  "meta": {
   "schema": "ssot-snapshot/3",
-  "version": "3.5.0",
+  "version": "3.6.0",
   "createdAt": "2026-01-01T00:00:00Z",
   "inputHash": "69dc30af455b8c5e",
-  "baselineKey": "7a1d1d7c0c7be83f",
+  "baselineKey": "69da0a5d4b110d10",
   "sources": [
    {
     "name": "sample-bundle.txt",
@@ -43557,7 +43557,8 @@
         "disabled"
        ],
        "src": [],
-       "unknown": []
+       "unknown": [],
+       "facet": "public"
       }
      ],
      "communitiesReason": null,
@@ -43699,7 +43700,8 @@
         "disabled"
        ],
        "src": [],
-       "unknown": []
+       "unknown": [],
+       "facet": "public"
       }
      ],
      "communitiesReason": null,
@@ -43841,7 +43843,8 @@
         "disabled"
        ],
        "src": [],
-       "unknown": []
+       "unknown": [],
+       "facet": "public"
       }
      ],
      "communitiesReason": null,
@@ -43983,7 +43986,8 @@
         "disabled"
        ],
        "src": [],
-       "unknown": []
+       "unknown": [],
+       "facet": "public"
       }
      ],
      "communitiesReason": null,
@@ -44125,7 +44129,8 @@
         "disabled"
        ],
        "src": [],
-       "unknown": []
+       "unknown": [],
+       "facet": "public"
       }
      ],
      "communitiesReason": null,
@@ -44267,7 +44272,8 @@
         "disabled"
        ],
        "src": [],
-       "unknown": []
+       "unknown": [],
+       "facet": "public"
       }
      ],
      "communitiesReason": null,
@@ -44409,7 +44415,8 @@
         "disabled"
        ],
        "src": [],
-       "unknown": []
+       "unknown": [],
+       "facet": "public"
       }
      ],
      "communitiesReason": null,
@@ -44551,7 +44558,8 @@
         "disabled"
        ],
        "src": [],
-       "unknown": []
+       "unknown": [],
+       "facet": "public"
       }
      ],
      "communitiesReason": null,
@@ -44693,7 +44701,8 @@
         "disabled"
        ],
        "src": [],
-       "unknown": []
+       "unknown": [],
+       "facet": "public"
       }
      ],
      "communitiesReason": null,
@@ -44835,7 +44844,8 @@
         "disabled"
        ],
        "src": [],
-       "unknown": []
+       "unknown": [],
+       "facet": "public"
       }
      ],
      "communitiesReason": null,
@@ -44977,7 +44987,8 @@
         "disabled"
        ],
        "src": [],
-       "unknown": []
+       "unknown": [],
+       "facet": "public"
       }
      ],
      "communitiesReason": null,
@@ -45119,7 +45130,8 @@
         "disabled"
        ],
        "src": [],
-       "unknown": []
+       "unknown": [],
+       "facet": "public"
       }
      ],
      "communitiesReason": null,
@@ -45261,7 +45273,8 @@
         "disabled"
        ],
        "src": [],
-       "unknown": []
+       "unknown": [],
+       "facet": "public"
       }
      ],
      "communitiesReason": null,
@@ -45403,7 +45416,8 @@
         "disabled"
        ],
        "src": [],
-       "unknown": []
+       "unknown": [],
+       "facet": "public"
       }
      ],
      "communitiesReason": null,
@@ -45545,7 +45559,8 @@
         "disabled"
        ],
        "src": [],
-       "unknown": []
+       "unknown": [],
+       "facet": "public"
       }
      ],
      "communitiesReason": null,
@@ -45708,7 +45723,8 @@
          161
         ]
        ],
-       "unknown": []
+       "unknown": [],
+       "facet": "public"
       },
       {
        "name": "nms-ro",
@@ -45731,7 +45747,8 @@
          162
         ]
        ],
-       "unknown": []
+       "unknown": [],
+       "facet": "nms-ro"
       }
      ],
      "communitiesReason": null,
@@ -45913,7 +45930,8 @@
         "disabled"
        ],
        "src": [],
-       "unknown": []
+       "unknown": [],
+       "facet": "public"
       }
      ],
      "communitiesReason": null,
@@ -46061,7 +46079,8 @@
         "disabled"
        ],
        "src": [],
-       "unknown": []
+       "unknown": [],
+       "facet": "public"
       }
      ],
      "communitiesReason": null,
@@ -46203,7 +46222,8 @@
         "disabled"
        ],
        "src": [],
-       "unknown": []
+       "unknown": [],
+       "facet": "public"
       }
      ],
      "communitiesReason": null,
@@ -47435,15 +47455,15 @@
    ],
    "evidence": [
     {
-     "block": 7,
-     "line": 253,
-     "text": "6   interface=sfp-sfpplus7 address=10.1.10.24 mac-address=48:A9:8A:00:00:28",
+     "block": 43,
+     "line": 2303,
+     "text": "0   interface=sfp-sfpplus1 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02",
      "file": "sample-bundle.txt"
     },
     {
-     "block": 7,
-     "line": 257,
-     "text": "7   interface=sfp-sfpplus8 address=10.1.10.24 mac-address=48:A9:8A:00:00:28",
+     "block": 43,
+     "line": 2313,
+     "text": "2   interface=sfp-sfpplus2 address=10.1.10.2 mac-address=E4:8D:8C:00:00:02",
      "file": "sample-bundle.txt"
     }
    ]
@@ -47653,9 +47673,9 @@
    ],
    "evidence": [
     {
-     "block": 21,
-     "line": 1080,
-     "text": "2   interface=ether3 address=10.1.10.23 mac-address=48:A9:8A:00:00:1C",
+     "block": 38,
+     "line": 2141,
+     "text": "4   interface=ether24 address=10.1.10.3 mac-address=E4:8D:8C:00:00:03",
      "file": "sample-bundle.txt"
     }
    ]
@@ -47674,9 +47694,9 @@
    ],
    "evidence": [
     {
-     "block": 21,
-     "line": 1100,
-     "text": "7   interface=ether8 address=10.1.10.28 mac-address=48:A9:8A:00:00:5D",
+     "block": 63,
+     "line": 3076,
+     "text": "4   interface=ether24 address=10.1.10.3 mac-address=E4:8D:8C:00:00:03",
      "file": "sample-bundle.txt"
     }
    ]
@@ -47777,9 +47797,9 @@
    ],
    "evidence": [
     {
-     "block": 21,
-     "line": 1112,
-     "text": "10  interface=ether11 address=10.1.10.31 mac-address=48:A9:8A:00:00:81",
+     "block": 78,
+     "line": 3544,
+     "text": "4   interface=ether24 address=10.1.10.3 mac-address=E4:8D:8C:00:00:03",
      "file": "sample-bundle.txt"
     }
    ]

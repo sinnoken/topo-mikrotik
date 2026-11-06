@@ -34,9 +34,30 @@ test('routerboard print：非 RouterBOARD（routerboard: no）與沒有這個選
   assert.deepStrictEqual([dev(x86, 'CHR').routerboard.isRouterboard, dev(x86, 'CHR').routerboard.basis, dev(x86, 'CHR').routerboard.src], [false, 'no-menu', [[0, 3]]]);
   [no, x86].forEach((s) => assert.deepStrictEqual([count(s, 'I01'), i03(s).length, count(s, 'L01')], [0, 0, 0]));
   // 其他錯誤（權限不足等）仍是 I01：只有「沒有 routerboard 這個選單」代表不是 RouterBOARD
-  const perm = build(box('R', '10.0.0.1', [['/system routerboard print', ['not enough permissions (9)']]]));
+  //（另收了 /system resource，這台設備才有資料；只有錯誤的設備不建立，見 tests/core/preflight.js）
+  const perm = build(box('R', '10.0.0.1', [['/system resource print', ['  version: 7.25.1 (stable)']], ['/system routerboard print', ['not enough permissions (9)']]]));
   assert.strictEqual(dev(perm, 'R').routerboard, null);
-  assert.ok(count(perm, 'I01') + i03(perm).length > 0, '權限不足不可當成不是 RouterBOARD');
+  assert.strictEqual(count(perm, 'I01'), 1, '權限不足不可當成不是 RouterBOARD');
+});
+test('RouterOS 錯誤訊息：整段都是錯誤（沒有任何事實）是 I01「指令執行錯誤」；區塊已有事實時，之後的錯誤行是 I03 並點出是錯誤訊息、資料可能不完整（routerboard 與其他指令同一規則）', () => {
+  // 錯誤行的寫法依 util.rosError（failure:、bad command name、syntax error、not enough permissions…）
+  const ERRS = ['failure: not permitted', 'syntax error (line 1 column 5)', 'bad command name foo (line 1 column 1)', 'not enough permissions (9)'];
+  const RES = ['/system resource print', ['  version: 7.25.1 (stable)']];
+  ERRS.forEach((err) => {
+    const whole = build(box('R', '10.0.0.1', [RES, ['/system routerboard print', [err]], ['/ip arp print detail without-paging', [err]]]));
+    const i01 = whole.findings.filter((f) => f.id === 'I01');
+    assert.strictEqual(i01.length, 2, `${err}：整段錯誤`);
+    assert.ok(i01.every((f) => /指令執行錯誤/.test(f.message)), i01.map((f) => f.message).join('\n'));
+    assert.deepStrictEqual(i03(whole), [], err);
+    // 已有事實的區塊（routerboard 的 bad command name routerboard 本身也是事實；ARP 有一列）之後出現錯誤行
+    const partial = build(box('R', '10.0.0.1', [RES, ['/system routerboard print', ['bad command name routerboard (line 1 column 9)', err]],
+      ['/ip arp print detail without-paging', [' 0 DC address=10.0.0.9 mac-address=AA:BB:CC:00:00:09 interface=ether1', err]]]));
+    assert.strictEqual(count(partial, 'I01'), 0, err);
+    const f = partial.findings.filter((x) => x.id === 'I03');
+    assert.strictEqual(f.length, 2, `${err}：${f.map((x) => x.message).join('\n')}`);
+    assert.ok(f.every((x) => /其中 1 行是 RouterOS 錯誤訊息/.test(x.message) && /資料可能不完整/.test(x.message)), f.map((x) => x.message).join('\n'));
+    assert.strictEqual(dev(partial, 'R').routerboard.isRouterboard, false);
+  });
 });
 test('routerboard：沒有收集時為 null；settings print 不是這個指令', () => {
   const s = build(box('R', '10.0.0.1', [['/system resource print', ['    version: 7.25.1 (stable)', ' board-name: RB5009UG+S+']]]));

@@ -36,6 +36,7 @@
     if (!p.facts.length && b.lines.some((l) => l.trim())) { b.empty = true; return { status: 'unrecognized', facts: [], usage: p.usage }; }
     // 已解析區塊中認不得的行（I03）；整段認不得的區塊已列為 I01，不在這裡重複
     b.unrecognizedLines = p.unrecognized;
+    b.parsed = true; // 解析成功（model/build.js 的 hasResult：設備至少有一個這種區塊或收集失敗紀錄才建立）
     return { status: 'parsed', facts: p.facts, usage: p.usage };
   }
 
@@ -313,7 +314,7 @@
 
   /**
    * 預檢（不建模）：只做 ①②③，讓輸入畫面在建立前就能顯示認到哪些設備、哪些段落無法辨識。
-   * sources、options.profile 同 build。devices 與完整 build 的已收集設備（key、data）相同，failures 是有收集失敗註解的區塊數；
+   * sources、options.profile 同 build。devices 是完整 build 的已收集設備（key、data 相同）再加上內容都認不得的設備（dataTypes 空、failures 0，建立時不建立），failures 是有收集失敗註解的區塊數；
    * 「認到」的設備用 S.query.preflightRecognized（與建立後的 Q.recognizedDevices 同一個判斷）；
    * unrecognized 與 I01 一一對應：kind 'block' 是整段無法辨識，'note' 是收集器註解的問題（startLine＝endLine＝該行）；
    * partial 與 I03 一一對應（已解析的區塊中有幾行認不得）。依輸入順序列出。
@@ -341,7 +342,8 @@
       (b.issues || []).forEach((x) => unrecognized.push(Object.assign({ kind: 'note' }, where(b), { startLine: x.line, endLine: x.line, reason: S.check.issueReason(x) })));
       if (b.unrecognizedLines && b.unrecognizedLines.length) partial.push(Object.assign(where(b), { lines: b.unrecognizedLines.length }));
     });
-    // 收集到的設備依鍵排序（同 Snapshot 的 devices）
+    // 收集到的設備依鍵排序（同 Snapshot 的 devices）。內容都認不得的設備（dataTypes 空、failures 0）仍列出，讓輸入畫面標「沒有可用的資料」；
+    // 建立時不建立這些設備（model/build.js 的 hasResult）
     const devices = Array.from(devs.values()).map((d) => {
       const dataTypes = Array.from(d.types).sort();
       return { key: d.key, name: d.name, blocks: d.blocks, failures: d.failures, dataTypes, dataLabels: dataTypes.map((t) => S.check.DATA_LABEL[t] || t) };

@@ -183,7 +183,7 @@
     const findingKeyIndex = () => byFindingKey || (byFindingKey = freezeAll(snap.findings.reduce((out, f, idx) => { U.getOr(out, findingKey(f), () => []).push(idx); return out; }, new Map())));
     const EMPTY = Object.freeze([]);
     let subnetsByDev = null;
-    // L4（M2）：可達性、zone、zone 矩陣與規則影響。第一次呼叫時才建立（src/query/trace.js 的 S.reach.engine），結果都是推論、只在記憶體快取，不寫進 Snapshot（ADR-014）
+    // L4（M2）：可達性、zone、zone 矩陣與規則影響。第一次呼叫時才建立（src/query/reach.js 的 S.reach.engine），結果都是推論、只在記憶體快取，不寫進 Snapshot（ADR-014）
     let l4 = null;
     const L4 = () => l4 || (l4 = S.reach.engine(Q, { ctxOf }));
     const vlanSrc = { vlans: m.vlans, interfaces: m.interfaces, links: m.links, inferred: m.inferredLinks || [], ifc: (ep) => ifc.get(ep), collected: (d) => !!(dev.get(d) || {}).collected };
@@ -300,7 +300,7 @@
       /**
        * 收集完整度的唯一數字來源（凍結）：{ devices, collected, missing, network, networkCollected, hosts }。
        * devices／collected 是全部設備與已收集台數；network／networkCollected 是應收集的網路設備（與 C01／C02 同用 S.check.expectsCollection），
-       * network − networkCollected 等於 C01 筆數；hosts 是不在收集範圍、只由鄰居或 ARP 得知的主機（network + hosts = devices）；
+       * network − networkCollected 等於 C01 筆數（例外：有收集檔但內容都認不得、又被鄰居看到的設備算未收集，卻不報 C01，見 I01）；hosts 是不在收集範圍、只由鄰居或 ARP 得知的主機（network + hosts = devices）；
        * missing 是已收集但缺必要資料或有收集失敗的台數（等於 C02 筆數）。
        */
       coverageSummary() {
@@ -529,7 +529,7 @@
       zoneMatrixSteps: (opts) => L4().matrixSteps(opts),
       /**
        * 矩陣下鑽 L1／L2：一格的摘要，加上 groups（目的 × 結果相同的來源代表）與 ruleDetails（牽涉的規則）。L3 是 Q.reach(來源代表, 目的, { proto, port })。
-       * groups[].divergent：這一組造成格子異質（heterogeneous）——有某個 service，這組的結果和同一個目的的其他來源組、或同一批來源往其他目的的結果不同（定義見 trace.js 的 cell）。
+       * groups[].divergent：這一組造成格子異質（heterogeneous）——有某個 service，這組的結果和同一個目的的其他來源組、或同一批來源往其他目的的結果不同（定義見 reach.js 的 cell）。
        */
       zoneCell: (srcZone, dstZone, opts) => L4().cell(srcZone, dstZone, opts),
       /** 規則的影響：牽涉到這條規則的 zone 對與路徑，以及停用它時結果改變的路徑（ifDisabled）。沒有這條規則時為 null。 */

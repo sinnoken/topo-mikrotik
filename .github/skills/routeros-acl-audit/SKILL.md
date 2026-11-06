@@ -16,7 +16,7 @@ user-invocable: true
 **目前狀態**：階段一已完成（adapter → model → infer → check → query → view → compare，即下方「分層與分工」的 1–6）。
 防火牆規則、WAN／LAN 分類與 F01–F09 已在核心，判斷條件見 `docs/基準檢查.md` 的「防火牆」，
 資料欄位與比對語意見 `docs/設計說明.md` §5.2、§5.3、§8。命中次數（`print stats`，F09）與端到端可達性、zone 矩陣的查詢
-（`Q.reach`、`Q.zoneMatrix` 等，`src/query/trace.js`）在 2.11.0 加入，判斷規則見設計說明 §5.3「L4 可達性與 zone」，函式見 `docs/查詢介面.md`。
+（`Q.reach`、`Q.zoneMatrix` 等，`src/query/reach.js`；L3 路由追蹤在 `src/query/trace.js`）在 2.11.0 加入，判斷規則見設計說明 §5.3「L4 可達性與 zone」，函式見 `docs/查詢介面.md`。
 之後的修改沿用既有的 `S.infer.fw`（`covers`、`evalChain`、`evalFilter`、`decide`），
 不要另寫一套規則比對；尚未做的部分（`/ipv6 firewall nat`、L4 的畫面）見 `docs/路線圖.md`。
 

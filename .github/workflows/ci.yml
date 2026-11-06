@@ -122,6 +122,36 @@ jobs:
       - name: Check whitespace and conflict markers
         run: git diff --check "$(git hash-object -t tree /dev/null)" HEAD
 
+  # macOS 內建的 bash 3.2 與 BSD 工具：收集器要在這裡也能跑（GNU timeout 由 Homebrew coreutils 提供，指令名是 gtimeout）
+  collector-macos:
+    name: Collector (macOS bash 3.2)
+    needs: changes
+    runs-on: macos-latest
+    timeout-minutes: 15
+    if: needs.changes.outputs.code == 'true'
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install GNU coreutils (gtimeout)
+        run: brew install coreutils
+
+      - name: Collector shell tests with /bin/bash 3.2
+        run: |
+          /bin/bash -c '[ "${BASH_VERSINFO[0]}" = 3 ] || { echo "預期 bash 3.x，實際 $BASH_VERSION"; exit 1; }'
+          /bin/bash tests/collect.sh
+
+      # 端到端測試以 PATH 上的 bash 執行收集器：把 /bin 放最前面，用的是內建的 bash 3.2 而不是 Homebrew 的 bash 5
+      - name: Collector end-to-end contract
+        run: |
+          PATH="/bin:$PATH" bash -c '[ "${BASH_VERSINFO[0]}" = 3 ] || { echo "預期 bash 3.x，實際 $BASH_VERSION"; exit 1; }'
+          PATH="/bin:$PATH" node tests/run.js --grep 收集器
+
   test-large:
     name: Large dataset test
     needs: changes

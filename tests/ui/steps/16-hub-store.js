@@ -89,7 +89,7 @@ module.exports = async () => {
     if (!builtin.length || rowsOf('builtin').map((r) => r.dataset.profile).join() !== builtin.join()) throw new Error('內建的命名規則應各一列：' + rowsOf('builtin').map((r) => r.dataset.profile));
     rowsOf('builtin').forEach((r) => {
       const p = S.profiles[r.dataset.profile];
-      if (!r.textContent.includes(p.label) || !r.textContent.includes(S.profile.describe(p)) || !r.textContent.includes('內建')) throw new Error('內建的列應有名稱、說明與來源：' + r.textContent);
+      if (!r.textContent.includes(S.profile.nameOf(p)) || !r.textContent.includes(S.profile.describe(p)) || !r.textContent.includes('內建')) throw new Error('內建的列應有名稱、說明與來源：' + r.textContent);
       if (btnOf(r, 'remove')) throw new Error('內建的命名規則不可移除');
       if (!btnOf(r, 'export')) throw new Error('每一份都可以匯出');
     });

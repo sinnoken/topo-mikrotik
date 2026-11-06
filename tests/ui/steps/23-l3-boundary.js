@@ -95,7 +95,9 @@ module.exports = async () => {
         // 說明收成一行：其餘按「更多說明」展開（鍵盤可操作、aria-expanded 跟著變），再按收起
         const more = $('#layer-note-more'); const tg = note.querySelector('.layer-note-toggle');
         if (!more || !tg || !more.classList.contains('hidden') || tg.getAttribute('aria-expanded') !== 'false' || tg.getAttribute('type') !== 'button') throw new Error('層級說明預設只顯示第一句，其餘收起');
-        tg.click();
+        // 展開後從開頭看起（窄螢幕的說明框有捲動時，焦點移到底部的按鈕不把開頭捲走）
+        note.scrollTop = 43; tg.click();
+        if (note.scrollTop !== 0) throw new Error('展開說明後應捲回開頭：' + note.scrollTop);
         if ($('#layer-note-more').classList.contains('hidden') || note.querySelector('.layer-note-toggle').getAttribute('aria-expanded') !== 'true' || document.activeElement !== note.querySelector('.layer-note-toggle')) throw new Error('按「更多說明」展開，焦點留在按鈕');
         note.querySelector('.layer-note-toggle').click();
         if (!$('#layer-note-more').classList.contains('hidden')) throw new Error('再按一次收起');
@@ -121,6 +123,23 @@ module.exports = async () => {
     // 有對外設備的路由網域是第 1 層
     g.edges.filter((e) => e.boundary).forEach((e) => { const n = g.nodeById.get(e.a); if (n.domain && n.tier !== 1) throw new Error('邊界路由器所在的路由網域應是第 1 層：' + n.id); });
     checkTiers(g);
+    // 全圖（縮得很小）時外部仍讀得到：文字是螢幕固定字級（同設備名稱），一律寫「外部（…推論）」；長條在螢幕上有最小寬度、放得下文字，比網段長條寬
+    g.fit(); g.draw();
+    if (!(g.s < 0.5)) throw new Error('測試前提：範例資料全圖時縮小（s < 0.5）：' + g.s);
+    const F = S.view.theme.font;
+    exts.forEach((x) => {
+      const lb = (g.boxLabels || []).find((l) => l.id === x.id);
+      if (!lb || lb.px !== F.labelPx || !lb.text.startsWith('外部（') || !lb.text.includes('推論')) throw new Error('外部節點全圖時應以螢幕固定字級寫「外部（推論）」：' + JSON.stringify(lb));
+      const b = g.boxOf(x); const sw = b.w * g.s;
+      if (sw < lb.x1 - lb.x0 || b.h * g.s < lb.y1 - lb.y0) throw new Error('外部長條應放得下文字');
+      g.nodes.filter((n) => n.kind === 'subnet').forEach((n) => { if (g.boxOf(n).w * g.s >= sw) throw new Error('全圖時外部長條應比網段長條寬：' + n.id); });
+    });
+    // 群名縮短：「尾段」只取英數開頭的那段（「區域 2」→「2」），不留下「的靜態路由」這類半句
+    const narrow = { measureText: (t) => ({ width: Array.from(t).length * 7 }) };
+    const fl = (name, w) => S.view.fitLabels(narrow, name, w);
+    if (fl('TPE_CE_RT_01 的靜態路由', 40).some((t) => t.startsWith('的'))) throw new Error('縮短的群名不應以「的」開頭');
+    if (!fl('區域 2', 10).includes('2')) throw new Error('「區域 2」放不下時仍可縮成「2」');
+    if (!fl('靜態路由（TPE_CE_RT_01）', 40).includes('靜態路由')) throw new Error('靜態路由的群名應可縮成「靜態路由」');
     // 兩層群框：VRF 外框包住其中的路由網域群框
     const e = App.layerEntry(); g.computeGroups();
     if (e.info.byVrf) {
@@ -135,7 +154,8 @@ module.exports = async () => {
     const names = new Set(g.nodes.filter((n) => n.domain).map((n) => n.group));
     Q.routingDomains().filter((d) => g.nodes.some((n) => n.domain === d.key)).forEach((d) => {
       const nm = g.nodes.find((n) => n.domain === d.key).group;
-      if (d.kind === 'ospf' ? !nm.startsWith('OSPF area ') : !nm.endsWith('的靜態路由') && !nm.includes('的靜態路由（')) throw new Error('路由網域的群名：' + nm);
+      // 靜態路由與 OSPF 同一個結構：類別在前、組名設備在括號（縮短時保留「靜態路由」）
+      if (d.kind === 'ospf' ? !nm.startsWith('OSPF area ') : !nm.startsWith(`靜態路由（${Q.devName(d.group)}`)) throw new Error('路由網域的群名：' + nm);
       if (d.kind === 'ospf' && d.areaId === '0.0.0.0' && !nm.includes('骨幹')) throw new Error('area 0 標骨幹：' + nm);
     });
     if (!names.size) throw new Error('應依路由網域分群');
@@ -161,6 +181,19 @@ module.exports = async () => {
     const srcLines = S.util.uniq(mine.flatMap((b) => Q.boundaryOf(b.ep).evidence.map((ev) => ev.src[0] && ev.src[0][1]).filter(Boolean)));
     srcLines.forEach((ln) => { if (!$('#detail').testAll('a').some((a) => a.textContent.endsWith(`第 ${ln} 行`))) throw new Error('詳情應連到證據的來源行：第 ' + ln + ' 行'); });
     if (!g.sel.nodes.has(x0.id) || !g.edges.filter((x) => x.boundary && x.b === x0.id).every((x) => g.sel.edges.has(x.id))) throw new Error('選取外部時標出外部與接到它的線');
+    // 選取外部後全圖：接到外部的線的介面名稱彼此、與設備名稱、群標籤、外部文字都不重疊；設備名稱彼此不重疊
+    g.fit(); g.computeGroups(); g.draw();
+    {
+      const hit = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+      const forcedPorts = g.portLabels.filter((l) => l.forced);
+      if (!forcedPorts.length) throw new Error('選取外部時應寫出接到外部的線的介面名稱');
+      const others = g.nodeLabels.concat(g.groupLabels.filter((l) => !l.forced), g.boxLabels);
+      forcedPorts.forEach((a, i) => {
+        forcedPorts.slice(i + 1).forEach((b) => { if (hit(a, b)) throw new Error(`介面名稱「${a.text}」「${b.text}」重疊`); });
+        others.forEach((o) => { if (hit(a, o)) throw new Error(`介面名稱「${a.text}」壓到「${o.text}」`); });
+      });
+      g.nodeLabels.forEach((a, i) => g.nodeLabels.slice(i + 1).forEach((b) => { if (hit(a, b)) throw new Error(`設備名稱「${a.text}」「${b.text}」重疊`); }));
+    }
     // 點接到外部的線：只列那台設備，可改看整個 VRF
     g.emit('click', { type: 'edge', id: xe.id });
     if (App.sel.type !== 'boundary' || App.sel.dev !== xe.boundary.dev || !g.sel.edges.has(xe.id)) throw new Error('點接到外部的線應選取那台設備的對外邊界');

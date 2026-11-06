@@ -160,17 +160,18 @@
   // ================================================================ L3 子網圖
   const NET = 'net|'; const EXT = 'ext|';
   /**
-   * 路由網域（Q.routingDomains，推論，ADR-023 決策 2）的分群名稱：OSPF 是「OSPF area 0（骨幹）」，靜態與直連是「<組名設備> 的靜態路由」。
+   * 路由網域（Q.routingDomains，推論，ADR-023 決策 2）的分群名稱：OSPF 是「OSPF area 0（骨幹）」，靜態與直連是「靜態路由（<組名設備>）」
+   * （同一個結構：類別在前、限定在括號，群框窄時縮成「靜態路由」；組名設備在群框內本來就有名稱）。
    * 同一個 VRF 中兩個不相連的 OSPF 網域 area 相同時加上組名設備；依 VRF 分框時 main 以外的 VRF 另寫 VRF（群名在整張圖唯一）。
    */
   function domainNames(Q, byVrf) {
     const doms = Q.routingDomains();
     const areaText = (d) => (d.areaId == null ? d.area : /^0\.0\.0\.\d+$/.test(d.areaId) ? d.areaId.split('.')[3] : d.areaId);
-    const base = (d) => (d.kind === 'ospf' ? `OSPF area ${areaText(d)}` : `${Q.devName(d.group)} 的靜態路由`);
+    const base = (d) => (d.kind === 'ospf' ? `OSPF area ${areaText(d)}` : '靜態路由');
     const seen = new Map(); doms.forEach((d) => { const k = d.vrf + '\u0000' + base(d); seen.set(k, (seen.get(k) || 0) + 1); });
     return new Map(doms.map((d) => {
       const ospf = d.kind === 'ospf';
-      const parts = [ospf && d.areaId === '0.0.0.0' ? '骨幹' : null,
+      const parts = [ospf ? null : Q.devName(d.group), ospf && d.areaId === '0.0.0.0' ? '骨幹' : null,
         ospf && d.area && d.areaId != null && d.area !== 'backbone' && d.area !== d.areaId ? d.area : null,
         ospf && seen.get(d.vrf + '\u0000' + base(d)) > 1 ? Q.devName(d.group) : null,
         byVrf && d.vrf !== K.MAIN_VRF ? V.vrfText(d.vrf) : null].filter(Boolean);
@@ -752,7 +753,8 @@
       const open = !!App.layerNoteOpen;
       note.appendChild(h('span', { id: 'layer-note-more', class: 'layer-note-more' + (open ? '' : ' hidden') }, rest));
       note.appendChild(h('button', { type: 'button', class: 'layer-note-toggle link', 'aria-expanded': String(open), 'aria-controls': 'layer-note-more',
-        onclick: () => { App.layerNoteOpen = !open; renderNote(); const b = $('#layer-note .layer-note-toggle'); if (b) b.focus(); } }, open ? '收起' : '更多說明'));
+        // 焦點留在按鈕，但不讓瀏覽器把底部的按鈕捲進來而切掉說明的開頭（窄螢幕的說明框有捲動）：從開頭看起
+        onclick: () => { App.layerNoteOpen = !open; renderNote(); const b = $('#layer-note .layer-note-toggle'); if (b) b.focus({ preventScroll: true }); note.scrollTop = 0; } }, open ? '收起' : '更多說明'));
     }
   }
   /** 匯出 PNG 的檔名：目前的層級（L4 沒有 PNG，見 A.exportPng） */

@@ -61,8 +61,8 @@
       'L2 埠圖：設備是外框為類型色的方框，埠是框邊上的小方塊；較寬的是聚合埠，虛線的是推論鏈路未收集端的未知埠');
     item([dot({ background: T.l3.subnet.fill, border: '1.6px solid ' + T.l3.subnet.stroke, width: '22px', height: '10px', borderRadius: '5px' }, { 'data-l3': 'subnet' })], '網段（L3）',
       'L3 網段圖：圓角長條是網段；虛線外框是只由路由得知的目的網段。接到兩個以上網段、有路由表或是路由器／防火牆的設備是路由設備（推論）');
-    item([dot({ background: T.l3.subnet.fill, border: '2px dashed ' + T.l3.subnet.stroke, width: '22px', height: '10px', borderRadius: '5px' }, { 'data-l3': 'external' })], '外部（L3，推論）',
-      'L3 網段圖：基準看不到的外部網路（每個 VRF 一個），寫「外部（推論）」；依路由、NAT 與位址推論哪些介面對外，點選看依據');
+    item([dot({ background: T.l3.subnet.fill, border: '2px dashed ' + T.l3.subnet.stroke, width: '22px', height: '10px', borderRadius: '2px' }, { 'data-l3': 'external' })], '外部（L3，推論）',
+      'L3 網段圖：基準看不到的外部網路（每個 VRF 一個），是虛線的方角框（網段是圓角長條），任何縮放都寫「外部（推論）」；依路由、NAT 與位址推論哪些介面對外，點選看依據');
     group('終端');
     // 前 8 個廠商各一色（依基準計算，載入基準後由 renderVendorLegend 填入），其餘與不明廠商用中性色
     vendorBox = h('div', { class: 'lg-vendors' }); grp.appendChild(vendorBox); A.renderVendorLegend();

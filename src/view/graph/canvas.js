@@ -42,8 +42,14 @@
   const EDGE_INSET = 4;
   // 設備名稱的縮放門檻：倍率低於 all 時只畫核心（LABEL_RANK ≤ coreRank：防火牆、路由器）的名稱，低於 core 時都不畫
   const LABEL_MIN = { all: 0.18, core: 0.06, coreRank: 1 };
+  // 一定要畫的設備名稱與已畫的名稱重疊時，最多往下錯開幾列
+  const LABEL_NUDGE = 3;
   // 埠名離節點邊緣的距離（螢幕 px）；滑過時與其他埠名重疊就沿線往外挪 PORT_SLIDE px，最多 PORT_TRIES 次
   const PORT_GAP = 26; const PORT_SLIDE = 14; const PORT_TRIES = 6;
+  // 沿線都放不下時往線的兩側錯開：PORT_SIDES 是依序嘗試的倍數（0 是線上），每一倍 PORT_SIDE_PX（螢幕 px，比埠名高一點）
+  const PORT_SIDES = [0, 1, -1, 2, -2]; const PORT_SIDE_PX = 16;
+  // L3 的「外部」（推論）在螢幕上的最小尺寸（px）：全圖縮得很小時仍比網段長條大，放得下螢幕固定字級（labelPx）的「外部（推論）」，pad 是文字左右留白
+  const EXT = { minW: 56, h: 22, pad: 10 }; const EXT_TEXT_W = new Map();
   // 縮放範圍（滾輪、雙指、鍵盤共用）
   const ZOOM = { min: 0.02, max: 6 };
   // 全圖：畫面邊緣留白（px，另扣工具列、圖例等覆蓋層實際佔用的高度）；節點很少時的倍率上限，避免一兩台設備被放得很大
@@ -376,8 +382,18 @@
       const w = w0 || this.toWorld(p.x, p.y); const s = Math.max(ZOOM.min, Math.min(ZOOM.max, ns));
       this.s = s; this.tx = p.x - w.x * s; this.ty = p.y - w.y * s; this.dirty = true;
     }
+    /**
+     * 節點目前縮放下的框（世界座標）：一般就是 n.box；L3 的「外部」（推論）在螢幕上至少 EXT 大、放得下螢幕固定字級的文字，
+     * 全圖縮得很小時仍讀得到、比網段長條大。畫、命中、標示環、讓位都用這個，看到的和點得到的一致
+     */
+    boxOf(n) {
+      if (!n.box || n.kind !== 'external') return n.box;
+      let tw = EXT_TEXT_W.get(n.label);
+      if (tw == null) { const c = this.ctx; const f = c.font; c.font = font(F.labelPx, W.strong); tw = c.measureText(n.label).width; c.font = f; EXT_TEXT_W.set(n.label, tw); }
+      return { w: Math.max(n.box.w, Math.max(EXT.minW, tw + 2 * EXT.pad) / this.s), h: Math.max(n.box.h, EXT.h / this.s) };
+    }
     radius(n) {
-      if (n.box) return Math.max(n.box.w, n.box.h) / 2;
+      if (n.box) { const b = this.boxOf(n); return Math.max(b.w, b.h) / 2; }
       if (n.kind === 'port') return T.l2.port.size / 2 + 1;
       if (n.kind === 'endpoint') return 7; if (n.kind === 'cluster') return 12; if (n.kind === 'downstream') return 9;
       return n.kind === 'host' ? 6 : n.collected ? 13 : 9;
@@ -392,7 +408,8 @@
       for (const n of this.nodes) {
         if (!this.isVisible(n)) continue; const q = this.at(n.id); if (!q) continue;
         if (n.box) {
-          if (Math.abs(q.x - w.x) <= n.box.w / 2 + slop && Math.abs(q.y - w.y) <= n.box.h / 2 + slop && n.box.w * n.box.h < area) { box = n; area = n.box.w * n.box.h; }
+          const b = this.boxOf(n);
+          if (Math.abs(q.x - w.x) <= b.w / 2 + slop && Math.abs(q.y - w.y) <= b.h / 2 + slop && b.w * b.h < area) { box = n; area = b.w * b.h; }
           continue;
         }
         const d = Math.hypot(q.x - w.x, q.y - w.y); const r = touch ? Math.max(this.radius(n) + TOUCH.slopPx / this.s, TOUCH.hitPx / this.s) : this.radius(n) + slop;
@@ -506,17 +523,18 @@
       // 標示環：一般節點是圓，容器框與子網長條是外擴的圓角矩形
       const ring = (n, p, r, extra) => {
         c.beginPath();
-        if (n.box) roundRect(c, p.x - n.box.w / 2 - extra, p.y - n.box.h / 2 - extra, n.box.w + extra * 2, n.box.h + extra * 2, 6 + extra);
+        const b = this.boxOf(n);
+        if (b) roundRect(c, p.x - b.w / 2 - extra, p.y - b.h / 2 - extra, b.w + extra * 2, b.h + extra * 2, 6 + extra);
         else c.arc(p.x, p.y, r + extra, 0, Math.PI * 2);
         c.stroke();
       };
-      const inViewNode = (n, p) => p && (inView(p) || (n.box && p.x + n.box.w / 2 > view.x0 && p.x - n.box.w / 2 < view.x1 && p.y + n.box.h / 2 > view.y0 && p.y - n.box.h / 2 < view.y1));
+      const inViewNode = (n, p) => { const b = p && this.boxOf(n); return p && (inView(p) || (b && p.x + b.w / 2 > view.x0 && p.x - b.w / 2 < view.x1 && p.y + b.h / 2 > view.y0 && p.y - b.h / 2 < view.y1)); };
       for (const n of this.nodes) {
         if (!this.isVisible(n)) continue; const p = this.at(n.id); if (!inViewNode(n, p)) continue;
         const r = n.box ? 0 : this.radius(n); const col = KIND_COLOR[n.kind] || KIND_COLOR.unknown;
         const hcol = hl && hl.nodes.get(n.id); const emph = em && em.has(n.id);
         c.globalAlpha = dim && !hcol && !emph && !this.sel.nodes.has(n.id) ? ALPHA.dimNode : 1;
-        drawShape(c, n, p, r, col, s);
+        drawShape(c, n, p, r, col, s, this.boxOf(n));
         if (hcol) { c.strokeStyle = hcol; c.lineWidth = 3.5; ring(n, p, r, n.kind === 'port' ? 3 : 5); }
         if (this.sel.nodes.has(n.id)) { c.strokeStyle = MARK.select; c.lineWidth = 3; ring(n, p, r, n.kind === 'port' ? 4 : 6); }
         if (emph) { // 與多數不同：比選取與高亮更外圈的虛線；縮小時線寬與虛線保持螢幕上可見
@@ -527,18 +545,23 @@
         if (n.id === hoverN) { c.strokeStyle = MARK.hover; c.lineWidth = 2; ring(n, p, r, this.sel.nodes.has(n.id) ? 9.5 : 3.5); }
         // 嚴重度：主機與終端（較小的節點）也顯示，外形區分錯誤與警告；容器框標在右上角
         if (n.sev) {
-          if (n.box) sevMark(c, n.sev, p.x + n.box.w / 2 - 2, p.y - n.box.h / 2 + 2, 5);
+          if (n.box) { const b = this.boxOf(n); sevMark(c, n.sev, p.x + b.w / 2 - 2, p.y - b.h / 2 + 2, 5); }
           else sevMark(c, n.sev, p.x + r * 0.85, p.y - r * 0.85, Math.max(4, Math.min(5, r * 0.5)));
         }
         c.globalAlpha = 1;
       }
-      // 容器框、子網長條與埠的文字（畫在節點內或框邊旁，不參與下面的標籤避讓）
+      // 容器框、子網長條與埠的文字（畫在節點內或框邊旁，不參與下面的標籤避讓）；
+      // 「外部」的文字任何縮放都畫（螢幕固定字級），記在 boxLabels（螢幕座標），設備名稱與埠名避開它
+      this.boxLabels = [];
       for (const n of this.nodes) {
         if (!(n.box || n.kind === 'port') || !this.isVisible(n)) continue; const p = this.at(n.id); if (!inViewNode(n, p)) continue;
         const forced = this.sel.nodes.has(n.id) || n.id === hoverN || (hl && hl.nodes.has(n.id));
         c.globalAlpha = dim && !forced ? ALPHA.dimLabel : 1;
         if (n.kind === 'port') { if (s > 0.9 || forced) portName(c, n, p, s, forced); }
-        else if (s > 0.18 || forced) boxText(c, n, p, s, forced);
+        else if (n.kind === 'external') {
+          const l = extText(c, n, p, s, this.boxOf(n));
+          this.boxLabels.push(Object.assign(l, { x0: l.x0 * s + this.tx, x1: l.x1 * s + this.tx, y0: l.y0 * s + this.ty, y1: l.y1 * s + this.ty }));
+        } else if (s > 0.18 || forced) boxText(c, n, p, s, forced);
         c.globalAlpha = 1;
       }
       // 標籤：依重要性排序，與已畫的標籤重疊就略過（避免縮小時糊成一片）
@@ -557,7 +580,7 @@
       // 設備名稱在螢幕上固定 labelPx，不隨縮小變成小字；太擠時由下方的重疊檢查與上方的縮放門檻略過
       // 已排好的群標籤（螢幕座標）換成世界座標放進 placed：設備名稱與埠名都避開它（同一套重疊就略過的讓位規則）
       const fs = F.labelPx / s; this.nodeLabels = [];
-      const placed = this.groupLabels.map((l) => ({ x0: (l.x0 - this.tx) / s, x1: (l.x1 - this.tx) / s, y0: (l.y0 - this.ty) / s, y1: (l.y1 - this.ty) / s }));
+      const placed = this.groupLabels.concat(this.boxLabels).map((l) => ({ x0: (l.x0 - this.tx) / s, x1: (l.x1 - this.tx) / s, y0: (l.y0 - this.ty) / s, y1: (l.y1 - this.ty) / s }));
       // 標籤不出畫布左右邊緣：靠邊的節點把名稱往內推
       const wx0 = (EDGE_INSET - this.tx) / s; const wx1 = (this.w - EDGE_INSET - this.tx) / s;
       c.textAlign = 'center';
@@ -566,8 +589,16 @@
         c.font = font(fs, n.collected ? W.strong : W.normal); const label = fitText(c, n.label, fs * CV.label.maxEm);
         const tw = c.measureText(label).width; const r = this.radius(n); const half = tw / 2 + fs * 0.3;
         const cx = wx1 - wx0 > half * 2 ? Math.min(Math.max(p.x, wx0 + half), wx1 - half) : p.x;
-        const box = { x0: cx - half, x1: cx + half, y0: p.y + r + fs * 0.2, y1: p.y + r + fs * 1.5 };
-        if (pri >= 0 && placed.some((b) => b.x0 < box.x1 && box.x0 < b.x1 && b.y0 < box.y1 && box.y0 < b.y1)) continue;
+        const hits = (bx) => placed.some((b) => b.x0 < bx.x1 && bx.x0 < b.x1 && b.y0 < bx.y1 && bx.y0 < b.y1);
+        let box = { x0: cx - half, x1: cx + half, y0: p.y + r + fs * 0.2, y1: p.y + r + fs * 1.5 };
+        if (pri >= 0 && hits(box)) continue;
+        // 一定要畫的（選取、滑過）與已畫的名稱重疊時往下錯開一列（例如兩台並排的邊界路由器同時被選取），都不行時畫在原位
+        if (pri < 0 && hits(box)) {
+          for (let i = 1; i <= LABEL_NUDGE; i++) {
+            const dy = fs * 1.4 * i; const b = { x0: box.x0, x1: box.x1, y0: box.y0 + dy, y1: box.y1 + dy };
+            if (!hits(b)) { box = b; break; }
+          }
+        }
         placed.push(box);
         this.nodeLabels.push({ id: n.id, text: label, x0: box.x0 * s + this.tx, x1: box.x1 * s + this.tx, y0: box.y0 * s + this.ty, y1: box.y1 * s + this.ty, px: F.labelPx });
         c.globalAlpha = dim && pri >= 10 ? ALPHA.dimLabel : 1;
@@ -654,7 +685,7 @@
       const out = [];
       for (const n of this.nodes) {
         if (n.anchor || !this.isVisible(n)) continue; const p = this.at(n.id); if (!p) continue;
-        const hw = (n.box ? n.box.w / 2 : this.radius(n)) * this.s; const hh = (n.box ? n.box.h / 2 : this.radius(n)) * this.s;
+        const b = this.boxOf(n); const hw = (b ? b.w / 2 : this.radius(n)) * this.s; const hh = (b ? b.h / 2 : this.radius(n)) * this.s;
         const r = { x0: p.x * this.s + this.tx - hw, x1: p.x * this.s + this.tx + hw, y0: p.y * this.s + this.ty - hh, y1: p.y * this.s + this.ty + hh };
         if (r.x1 >= x0 && r.x0 <= x1 && r.y1 >= y0 && r.y0 <= y1) out.push(r);
       }
@@ -695,7 +726,7 @@
   }
 
   /**
-   * 寬度 avail 內放得下的分群標籤文字，依優先順序：全名 → 簡稱（全形／半形括號前）→ 簡稱的尾段（空白分隔的最後一段，
+   * 寬度 avail 內放得下的分群標籤文字，依優先順序：全名 → 簡稱（全形／半形括號前）→ 簡稱的尾段（空白分隔的最後一段、英數開頭，
    * 例如「區域 2」→「2」：短名放不下時優先保留能區分的尾段）→ 字元截斷加「…」（以 Array.from 切字元，不切壞字；至少留兩個字）。
    * 回傳候選陣列（可能為空），呼叫端挑第一個畫面上沒用過的。
    */
@@ -707,16 +738,18 @@
     if (fits(name)) out.push(name);
     const short = shortName(name);
     if (short !== name && fits(short)) out.push(short);
+    // 尾段只取英數開頭的（編號、設備名）：中文的尾段多半是半句（「X 的靜態路由」→「的靜態路由」），看不出是哪一群
     const last = short.split(/\s+/).pop();
-    if (last !== short && fits(last)) out.push(last);
+    if (last !== short && /^[0-9A-Za-z]/.test(last) && fits(last)) out.push(last);
     const chars = Array.from(short); let lo = 0; let hi = chars.length - 1; // 二分搜尋可保留的最多字數
     while (lo < hi) { const mid = Math.ceil((lo + hi) / 2); if (fits(chars.slice(0, mid).join('') + '…')) lo = mid; else hi = mid - 1; }
     if (lo >= 2) out.push(chars.slice(0, lo).join('') + '…');
     return out;
   }
-  function drawShape(c, n, p, r, col, s) {
+  function drawShape(c, n, p, r, col, s, box) {
     if (n.virtual) return drawVirtual(c, n, p, r, s);
-    if (n.kind === 'subnet' || n.kind === 'external') return drawSubnet(c, n, p);
+    if (n.kind === 'external') return drawExternal(c, p, s, box);
+    if (n.kind === 'subnet') return drawSubnet(c, n, p);
     if (n.box) return drawBox(c, n, p, col);
     if (n.kind === 'port') return drawPortShape(c, n, p);
     c.lineWidth = 2;
@@ -748,14 +781,28 @@
     // 左側的類型色條：框很淡時也看得出設備類型（外形以外再加一個位置固定的色塊）
     c.fillStyle = col; c.fillRect(p.x - w / 2 + 1, p.y - h / 2 + 4, 4, h - 8);
   }
-  /** L3 的子網：圓角長條；只由路由得知的目的網段是虛線外框 */
-  /** L3 的網段長條；「外部」（推論的對外邊界另一側）同外形，外框是推論的長虛線、加粗 */
+  /** L3 的網段：膠囊形長條（兩端全圓）；只由路由得知的目的網段是虛線外框 */
   function drawSubnet(c, n, p) {
     const N = T.l3.subnet; const w = n.box.w; const h = n.box.h;
-    c.fillStyle = N.fill; c.strokeStyle = N.stroke; c.lineWidth = n.kind === 'external' ? 2.2 : 1.6;
-    if (n.kind === 'external') c.setLineDash(WEAK.inferred.dash);
-    else if (n.routeOnly) c.setLineDash(N.routeDash);
+    c.fillStyle = N.fill; c.strokeStyle = N.stroke; c.lineWidth = 1.6;
+    if (n.routeOnly) c.setLineDash(N.routeDash);
     roundRect(c, p.x - w / 2, p.y - h / 2, w, h, h / 2); c.fill(); c.stroke(); c.setLineDash([]);
+  }
+  /**
+   * L3 的「外部」（推論的對外邊界另一側）：方角的框（和膠囊形的網段長條不同外形），外框是推論的長虛線、加粗。
+   * box 是 boxOf（螢幕上有最小尺寸）；線寬、虛線與圓角在縮小時維持螢幕上的大小，全圖時仍看得出虛線。顏色沿用網段長條
+   */
+  function drawExternal(c, p, s, box) {
+    const N = T.l3.subnet; const k = Math.max(1, 1 / s); const w = box.w; const h = box.h;
+    c.fillStyle = N.fill; c.strokeStyle = N.stroke; c.lineWidth = 2.2 * k; c.setLineDash(WEAK.inferred.dash.map((d) => d * k));
+    roundRect(c, p.x - w / 2, p.y - h / 2, w, h, Math.min(h / 4, 3 * k)); c.fill(); c.stroke(); c.setLineDash([]);
+  }
+  /** 「外部」的文字：螢幕固定字級 labelPx（同設備名稱），任何縮放都畫；回傳文字範圍（世界座標） */
+  function extText(c, n, p, s, box) {
+    const fs = F.labelPx / s; c.font = font(fs, W.strong); c.fillStyle = T.l3.subnet.text; c.textAlign = 'center';
+    const text = fitText(c, n.label, box.w - (2 * EXT.pad) / s); const tw = c.measureText(text).width;
+    c.fillText(text, p.x, p.y + fs * 0.36); c.textAlign = 'left';
+    return { id: n.id, text, px: F.labelPx, x0: p.x - tw / 2, x1: p.x + tw / 2, y0: p.y - fs * 0.6, y1: p.y + fs * 0.6 };
   }
   /** L2 的埠：框邊上的小方塊；聚合埠較寬，推論鏈路未收集端的未知埠是虛線 */
   function drawPortShape(c, n, p) {
@@ -767,7 +814,7 @@
   /** 容器框的設備名稱（左上角、框內）與子網長條的網段文字（置中）；子網的重疊、重複 IP 另在下方以警告外形加文字標示 */
   function boxText(c, n, p, s, forced) {
     const w = n.box.w; const h = n.box.h;
-    if (n.kind === 'subnet' || n.kind === 'external') {
+    if (n.kind === 'subnet') {
       // 網段文字與標籤的字級是世界座標：螢幕上小於 minPx 時不畫字（只剩長條與警告外形；網段在滑過提示與詳情），滑過、選取時照畫
       const N = T.l3.subnet; const readable = (px) => forced || px * s >= F.minPx;
       if (readable(SUBNET_PX.label)) {
@@ -846,13 +893,23 @@
     if (force) dist = Math.min(dist, len * 0.3); else if (len < dist * 2.2) return null;
     text = fitText(c, text, F.portPx * k * CV.port.maxEm); const tw = c.measureText(text).width;
     const hit = (b) => placed.some((o) => o.x0 < b.x1 && b.x0 < o.x1 && o.y0 < b.y1 && b.y0 < o.y1);
-    let box = null; let x = 0; let y = 0;
-    for (let i = 0; i <= (force ? PORT_TRIES : 0); i++) {
-      const d = force ? Math.min(dist + i * PORT_SLIDE * k, len * 0.45) : dist;
-      x = from.x + ((to.x - from.x) / len) * d; y = from.y + ((to.y - from.y) / len) * d;
-      const b = { x0: x - tw / 2 - 3 * k, x1: x + tw / 2 + 3 * k, y0: y - 8 * k, y1: y + 7 * k };
-      if (!hit(b) || (must && i === PORT_TRIES)) { box = b; break; }
+    let box = null; let x = 0; let y = 0; let least = null;
+    const overlap = (b) => placed.reduce((a, o) => a + Math.max(0, Math.min(o.x1, b.x1) - Math.max(o.x0, b.x0)) * Math.max(0, Math.min(o.y1, b.y1) - Math.max(o.y0, b.y0)), 0);
+    // 強制顯示時先沿線往外挪；沿線都被占住（短線、多條線匯到同一個節點，例如 L3 的「外部」）時，再往線的兩側錯開
+    const ux = (to.x - from.x) / len; const uy = (to.y - from.y) / len;
+    const sides = force ? PORT_SIDES : [0];
+    for (const o of sides) {
+      for (let i = 0; i <= (force ? PORT_TRIES : 0); i++) {
+        const d = force ? Math.min(dist + i * PORT_SLIDE * k, len * 0.45) : dist;
+        const px = from.x + ux * d - uy * o * PORT_SIDE_PX * k; const py = from.y + uy * d + ux * o * PORT_SIDE_PX * k;
+        const b = { x0: px - tw / 2 - 3 * k, x1: px + tw / 2 + 3 * k, y0: py - 8 * k, y1: py + 7 * k };
+        if (!hit(b)) { box = b; x = px; y = py; break; }
+        if (must) { const a = overlap(b); if (!least || a < least.a) least = { a, b, px, py }; }
+      }
+      if (box) break;
     }
+    // 選取或滑過的那條都放不下時仍要畫（一定看得到）：畫在和已畫標籤重疊最少的位置
+    if (!box && least) { box = least.b; x = least.px; y = least.py; }
     if (!box) return null;
     placed.push(box);
     c.fillStyle = CV.port.bg; c.strokeStyle = CV.port.border; c.lineWidth = 0.6 * k;
@@ -905,5 +962,5 @@
   function segInView(a, b, v) { return !(Math.max(a.x, b.x) < v.x0 || Math.min(a.x, b.x) > v.x1 || Math.max(a.y, b.y) < v.y0 || Math.min(a.y, b.y) > v.y1); }
 
   GraphView.LIMITS = Object.freeze({ ZOOM, FIT, FOCUS, TOUCH, MOUSE, OCCLUDER }); // 唯讀：測試核對縮放、聚焦與觸控的界線；OCCLUDER.pinned 給 setOccluders 的呼叫端
-  V.GraphView = GraphView; V.sevMark = sevMark; V.fitText = fitText;
+  V.GraphView = GraphView; V.sevMark = sevMark; V.fitText = fitText; V.fitLabels = fitLabels;
 })(globalThis.SSOT = globalThis.SSOT || {});

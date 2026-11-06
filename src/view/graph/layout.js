@@ -1,8 +1,10 @@
 /*
  * 版面配置（不跑物理模擬，1000 台以上也能一次算完）：
- *  1. 依分群（命名規則的 group，或連通元件）切開
+ *  1. 依分群（命名規則的 group，或連通元件）切開；節點另有 outer（外框，例如 L3 的 VRF）時是兩層分群：外框裡再分內群
  *  2. 每群做分層：防火牆／路由器在最上層，往下依 BFS 距離排；同層依上層位置的重心排序，減少交叉
- *  3. 太寬的層依目標長寬比折成多列（wrapRows，內建與 ELK 共用）；各群以「書架」方式排成接近正方形
+ *  3. 太寬的層依目標長寬比折成多列（wrapRows，內建與 ELK 共用）；各群以「書架」方式排成接近正方形。
+ *     兩層分群或內群有 tier（由外而內的層次，例如 L3 的外部 → 邊界路由網域 → 內部）時改用 arrange：
+ *     同一個外框裡依 tier 由上往下一列一列排（同一列內仍是書架），外框再以書架排列
  * forceStep() 提供選用的力導向微調（逐步執行，可看到動畫）。
  */
 (function (S) {
@@ -10,7 +12,8 @@
   const V = (S.view = S.view || {});
   const DX = 185; const DY = 130; const ROW = 24; const WRAP_DY = 80; const GAP = 220;
   const LCOLS = 4; const LDX = 44; const LDY = 40; const LEAF_DY = 64; // 終端（主機）排列
-  const RANK = { firewall: 0, router: 1, switch: 2, unknown: 3, host: 4 };
+  // external：L3 的「外部」虛擬節點（推論的對外邊界），排在最上層
+  const RANK = { external: -1, firewall: 0, router: 1, switch: 2, unknown: 3, host: 4 };
   // 書架寬度係數（各群總面積開根號的倍數）。直式畫面（窄螢幕、高大於寬）時書架寬度係數改小，
   // 圖接近直長：全圖時以寬度為限，又扁又寬的圖在直式手機上會縮到看不清
   const SHELF_W = 1.4; const PORTRAIT = { shelfW: 0.8 };
@@ -23,14 +26,18 @@
   /**
    * 分群與終端：每群拆成「核心」與「終端」（只連到一台已收集設備、本身沒有收集資料，之後排在該設備下方），
    * 並依層級規則替核心節點分層。內建版面與 ELK 版面共用這一步，結果一致。
+   * 群以「外框＋內群」區分（節點的 outer、group）；回傳的每群另帶 outer、tier（成員 tier 的最小值，沒有時 null）
+   * 與 outerRank（成員 outerRank 的最小值，外框的先後），給 arrange 排列。
    */
   function prepare(nodes, edges) {
     const byId = new Map(nodes.map((n) => [n.id, n]));
     const adj = new Map(nodes.map((n) => [n.id, new Set()]));
     edges.forEach((e) => { if (adj.has(e.a) && adj.has(e.b) && e.a !== e.b) { adj.get(e.a).add(e.b); adj.get(e.b).add(e.a); } });
     const groups = new Map();
-    nodes.forEach((n) => S.util.getOr(groups, n.group || '', () => []).push(n));
-    return Array.from(groups, ([gname, members]) => {
+    nodes.forEach((n) => S.util.getOr(groups, (n.outer || '') + '\u0000' + (n.group || ''), () => []).push(n));
+    const minOf = (members, k) => members.reduce((m, n) => (n[k] == null ? m : m == null ? n[k] : Math.min(m, n[k])), null);
+    return Array.from(groups, ([gkey, members]) => {
+      const gname = gkey.slice(gkey.indexOf('\u0000') + 1); const outer = members[0].outer || '';
       const inG = new Set(members.map((n) => n.id));
       const leafOf = new Map();
       members.forEach((n) => {
@@ -67,9 +74,11 @@
         }
         comp.forEach((x) => { if (!level.has(x)) level.set(x, buckets.length); });
       }
-      return { name: gname, members, core, inCore, leaves, level, byId, adj };
+      return { name: gname, outer, tier: minOf(members, 'tier'), outerRank: minOf(members, 'outerRank'), members, core, inCore, leaves, level, byId, adj };
     });
   }
+  /** prepare 的一群排好之後的框：{ name, pos, w, h, n } 加上 arrange 用的 outer、tier、outerRank */
+  const groupBox = (g, pos, w, h) => ({ name: g.name, outer: g.outer, tier: g.tier, outerRank: g.outerRank, pos, w, h, n: g.members.length });
 
   // 每個節點佔的寬度＝自己或其終端群的寬度
   const leafCols = (g, id) => Math.min(LCOLS, (g.leaves.get(id) || []).length);
@@ -100,23 +109,46 @@
   }
 
   /** 各群以「書架」方式排成接近正方形（opt.portrait 時偏直長）；box：{ name, pos（群內座標，x 以 0 為中心）, w, h, n }。 */
-  function shelf(boxes, opt) {
-    boxes.sort((a, b) => b.n - a.n || S.util.natural(a.name, b.name));
+  function shelf(boxes, opt) { return shelfPlace(boxes, opt).pos; }
+  /** shelf 的本體：另回傳整個書架的寬高（左上是 0,0）。opt.ordered：依傳入的順序，不依大小重排 */
+  function shelfPlace(boxes, opt) {
+    if (!(opt && opt.ordered)) boxes.sort((a, b) => b.n - a.n || S.util.natural(a.name, b.name));
     const area = boxes.reduce((s, b) => s + (b.w + GAP) * (b.h + GAP), 0);
     const maxW = Math.max(Math.sqrt(area) * (opt && opt.portrait ? PORTRAIT.shelfW : SHELF_W), ...boxes.map((b) => b.w));
-    const out = new Map(); let cx = 0; let cy = 0; let shelfH = 0;
+    const out = new Map(); let cx = 0; let cy = 0; let shelfH = 0; let w = 0;
     boxes.forEach((b) => {
       if (cx > 0 && cx + b.w > maxW) { cx = 0; cy += shelfH + GAP; shelfH = 0; }
       b.pos.forEach((p, id) => out.set(id, { x: p.x + cx + b.w / 2, y: p.y + cy }));
-      cx += b.w + GAP; shelfH = Math.max(shelfH, b.h);
+      cx += b.w + GAP; w = Math.max(w, cx - GAP); shelfH = Math.max(shelfH, b.h);
     });
-    return out;
+    return { pos: out, w, h: cy + shelfH };
+  }
+  /**
+   * 兩層分群與由外而內的排列（內建版面與 ELK 共用）：boxes 是各內群排好的框（groupBox）。
+   * 沒有任何框帶 outer 或 tier 時就是 shelf（設備圖、L2 不受影響）。否則：
+   *  - 同一個外框（outer）的內群依 tier 由小到大一列一列往下排（沒有 tier 的排在最後），同一列以書架排列、置中；
+   *  - 外框依 outerRank（再依名稱）以書架排列，不依大小重排（例如 L3 的 VRF main 在最前）。
+   */
+  function arrange(boxes, opt) {
+    if (!boxes.some((b) => b.outer || b.tier != null)) return shelf(boxes, opt);
+    const outers = new Map();
+    boxes.forEach((b) => S.util.getOr(outers, b.outer || '', () => []).push(b));
+    const rank = (list) => list.reduce((m, b) => (b.outerRank == null ? m : Math.min(m, b.outerRank)), Infinity);
+    const framed = Array.from(outers, ([name, list]) => {
+      const tiers = new Map();
+      list.forEach((b) => S.util.getOr(tiers, b.tier == null ? Infinity : b.tier, () => []).push(b));
+      const rows = Array.from(tiers.keys()).sort((a, b) => a - b).map((k) => shelfPlace(tiers.get(k), opt));
+      const pos = new Map(); let y = 0;
+      rows.forEach((r) => { r.pos.forEach((p, id) => pos.set(id, { x: p.x - r.w / 2, y: p.y + y })); y += r.h + GAP; });
+      return { name, rank: rank(list), pos, w: Math.max(...rows.map((r) => r.w), 1), h: Math.max(y - GAP, 1), n: list.reduce((s, b) => s + b.n, 0) };
+    }).sort((a, b) => a.rank - b.rank || S.util.natural(a.name, b.name));
+    return shelf(framed, Object.assign({}, opt, { ordered: true }));
   }
 
   /** 內建版面：BFS 分層＋一輪重心排序＋太寬折行（同步，1000 台以上也能一次算完）。opt.portrait：直式畫面，改直長排列。 */
   function layout(nodes, edges, opt) {
     const portrait = !!(opt && opt.portrait);
-    return shelf(prepare(nodes, edges).map((g) => {
+    return arrange(prepare(nodes, edges).map((g) => {
       const { core, level, byId, adj } = g;
       const layers = [];
       core.forEach((n) => { const l = level.get(n.id) || 0; (layers[l] || (layers[l] = [])).push(n.id); });
@@ -145,7 +177,7 @@
         y += DY - WRAP_DY;
       });
       placeLeaves(g, pos);
-      return { name: g.name, pos, w: Math.max(width, DX), h: Math.max(y - (DY - WRAP_DY), DY / 2), n: g.members.length };
+      return groupBox(g, pos, Math.max(width, DX), Math.max(y - (DY - WRAP_DY), DY / 2));
     }), opt);
   }
 
@@ -307,7 +339,7 @@
     return Object.assign({ pos }, portAnchors(devs, ports, P.peers, pos));
   }
 
-  V.layout = { layout, forceStep, prepare, placeLeaves, shelf, wrapRows, slotW, leafRows, RANK, GAP, LDY, LEAF_DY, portPrepare, placePorts, portLayout, portPeers, portSides, portAnchors, SIDE_HYST };
+  V.layout = { layout, forceStep, prepare, groupBox, placeLeaves, shelf, arrange, wrapRows, slotW, leafRows, RANK, GAP, LDY, LEAF_DY, portPrepare, placePorts, portLayout, portPeers, portSides, portAnchors, SIDE_HYST };
 })(globalThis.SSOT = globalThis.SSOT || {});
 
 /*

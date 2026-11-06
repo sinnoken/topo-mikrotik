@@ -61,6 +61,8 @@
       'L2 埠圖：設備是外框為類型色的方框，埠是框邊上的小方塊；較寬的是聚合埠，虛線的是推論鏈路未收集端的未知埠');
     item([dot({ background: T.l3.subnet.fill, border: '1.6px solid ' + T.l3.subnet.stroke, width: '22px', height: '10px', borderRadius: '5px' }, { 'data-l3': 'subnet' })], '網段（L3）',
       'L3 網段圖：圓角長條是網段；虛線外框是只由路由得知的目的網段。接到兩個以上網段、有路由表或是路由器／防火牆的設備是路由設備（推論）');
+    item([dot({ background: T.l3.subnet.fill, border: '2px dashed ' + T.l3.subnet.stroke, width: '22px', height: '10px', borderRadius: '5px' }, { 'data-l3': 'external' })], '外部（L3，推論）',
+      'L3 網段圖：基準看不到的外部網路（每個 VRF 一個），寫「外部（推論）」；依路由、NAT 與位址推論哪些介面對外，點選看依據');
     group('終端');
     // 前 8 個廠商各一色（依基準計算，載入基準後由 renderVendorLegend 填入），其餘與不明廠商用中性色
     vendorBox = h('div', { class: 'lg-vendors' }); grp.appendChild(vendorBox); A.renderVendorLegend();
@@ -85,6 +87,10 @@
     Object.values(EP.byType).forEach((t) => item([line(CV.keyInk, noteW, t.dash, WEAK.hearsay.alpha)], t.label, '連到 ' + t.label + ' 介面終端的鏈路（專用線型）'));
     item([line(T.l3.route.c, T.l3.route.w, T.l3.route.dash, 1, { 'data-l3': 'route' }), h('span', { class: 'lg-arrow', style: { color: T.l3.route.c } }, '▶')], '路由（L3）',
       'L3 網段圖開啟「顯示路由」時：靜態路由與預設路由，從路由所在的設備以虛線箭頭指到目的網段');
+    item([line(T.l3.boundary.c, T.l3.boundary.w, null, 1, { 'data-l3': 'boundary' })], '對外（L3，推論）',
+      'L3 網段圖：設備到「外部」的實線，這台設備有判定對外的介面（預設路由、NAT 等強證據，或 WAN 清單）；預設路由經這裡出去時改為路由的虛線加箭頭。點選看依據');
+    item([line(T.l3.possible.c, T.l3.possible.w, T.l3.possible.dash, 1, { 'data-l3': 'possible' })], '可能對外（L3，推論）',
+      'L3 網段圖：設備到「外部」的長虛線，只有弱證據（公網或 CGNAT 位址等），線上標「可能對外」');
     item([line(T.l3.overlap.c, T.l3.overlap.w, T.l3.overlap.dash, 1, { 'data-l3': 'overlap' })], '網段重疊（L3）', 'L3 網段圖：互相包含的網段之間的虛線，中點有警告外形；網段下方另標「重疊網段」「重複 IP」');
     group('標示');
     // 嚴重度：外形與畫布的 sevMark 相同（theme.sevShape），不只靠顏色

@@ -63,10 +63,14 @@
     },
     // L3 子網圖：子網是圓角長條（中性外框、網段文字在內），只由路由得知的目的網段用虛線外框；
     // 位址邊用 edge.other，推論的位址邊（鄰居回報、管理 IP）用 weakEdge.hearsay；路由是虛線加箭頭；
-    // 網段重疊是警告文字色的虛線，中點加警告外形；重疊與重複 IP 在子網下方另有文字標籤
+    // 網段重疊是警告文字色的虛線，中點加警告外形；重疊與重複 IP 在子網下方另有文字標籤。
+    // 對外邊界（推論，Q.boundaries）：「外部」是子網同外形、推論長虛線外框的長條；路由器到外部的線是中性色，
+    // 判定對外（external）為實線、只是可能對外（possible）為推論的長虛線並標「可能對外」，有預設路由經這裡出去時改用 route 的虛線加箭頭
     l3: {
       subnet: { fill: '#ffffff', stroke: keyInk, text: text.body, h: 26, minW: 70, routeDash: [4, 3] },
       route: { c: keyInk, w: 1.4, dash: [7, 4] },
+      boundary: { c: keyInk, w: 1.6 },
+      possible: { c: keyInk, w: 1.4, dash: weakEdge.inferred.dash },
       overlap: { c: text.warn, w: 1.6, dash: [3, 3], sev: 'warn' },
       badge: { bg: '#ffffff', text: text.warn, border: text.warn },
     },
@@ -183,7 +187,7 @@
     vlan: { carry: { c: dMark.good }, inferred: { c: dMark.good }, partial: { c: dMark.bad }, oneSide: { c: dMark.good } },
     l2: { box: { fill: dPanel }, port: { fill: dPanel, stroke: dKeyInk } },
     l3: {
-      subnet: { fill: dPanel, stroke: dKeyInk, text: dText.body }, route: { c: dKeyInk },
+      subnet: { fill: dPanel, stroke: dKeyInk, text: dText.body }, route: { c: dKeyInk }, boundary: { c: dKeyInk }, possible: { c: dKeyInk },
       overlap: { c: dText.warn }, badge: { bg: dPanel, text: dText.warn, border: dText.warn },
     },
     text: dText,

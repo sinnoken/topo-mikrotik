@@ -460,6 +460,8 @@ table.t tr.click { cursor: pointer; }
 .ev .link + .link { margin-left: 10px; }
 .ev.stack .link { display: block; }
 .ev.stack .link + .link { margin-left: 0; }
+/* L3 的外部（對外邊界）：每個介面的依據一行一筆 */
+.boundary-ev + .boundary-ev { margin-top: 2px; }
 .hop .mono { font-size: var(--fs-sm); }
 .detail h3 .link { margin-left: 8px; font-weight: 400; }
 .files .chip { cursor: pointer; }

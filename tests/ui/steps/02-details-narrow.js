@@ -107,7 +107,7 @@ module.exports = async () => {
     if (!App.graph.sel.edges.has(p.id)) throw new Error('選取介面時應一併標示它的推論鏈路');
     if (!text('#detail').includes('推論鏈路')) throw new Error('介面詳情應列出推論鏈路');
     // 設備圖沒有 L3（OSPF）連線：圖例中標「L3」的只有 L3 子網圖自己的節點與線
-    const l3View = ['網段（L3）', '路由（L3）', '網段重疊（L3）'];
+    const l3View = ['網段（L3）', '外部（L3，推論）', '路由（L3）', '對外（L3，推論）', '可能對外（L3，推論）', '網段重疊（L3）'];
     if (Array.from(document.testAll('#legend .li')).some((li) => li.textContent.includes('L3') && !l3View.some((x) => li.textContent.endsWith(x)))) throw new Error('圖上沒有 L3 連線，圖例不應列出');
     App.select(null);
   });

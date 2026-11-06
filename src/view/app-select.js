@@ -125,6 +125,11 @@
         if (s) { setHl({ nodes: new Map(s.devices.filter((d) => g.nodeById.has(d)).map((d) => [d, MARK.find])), edges: new Map() }); focus = s.devices; }
         break;
       }
+      // 對外邊界（L3 的外部節點或詳情來）：標出有對外介面的設備
+      case 'boundary': {
+        const ds = S.util.uniq(A.boundariesOf(Q, sel).map((b) => b.dev)).filter((d) => g.nodeById.has(d));
+        setHl({ nodes: new Map(ds.map((d) => [d, MARK.find])), edges: new Map() }); focus = ds; break;
+      }
       case 'trace': {
         const t = sel.result; if (t.ok) {
           overlay = t.edges.map(([a, b]) => ({ a, b, color: MARK.trace }));

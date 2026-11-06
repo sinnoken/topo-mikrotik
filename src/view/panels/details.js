@@ -1,6 +1,6 @@
 /*
  * 右側：選中項目的詳細資料。所有內容都從查詢介面（Q）取得，並附上來源（可開啟原文）。
- * 支援：device、link、pair（同兩台設備間多條鏈路）、interface、mac、ip、vlan、subnet（L3 子網圖）、trace、route，
+ * 支援：device、link、pair（同兩台設備間多條鏈路）、interface、mac、ip、vlan、subnet（L3 子網圖）、boundary（L3 的外部：對外邊界的依據）、trace、route，
  * 以及防火牆（firewall／rule／service，畫面在 panels/firewall.js）
  */
 (function (S) {
@@ -12,7 +12,7 @@
     if (!App.Q) return root.appendChild(h('div', { class: 'empty-detail' }, [h('div', { class: 'big' }, '尚未建立基準'), '建立後，點選圖上的設備或鏈路，詳細資料會顯示在這裡。']));
     if (!sel) return root.appendChild(overview(App));
     const fw = (a, s) => V.firewall.render(a, s);
-    const fn = { device, link, pair, interface: iface, endpoints, mac, ip, vlan, subnet, trace, firewall: fw, rule: fw, service: fw }[sel.type];
+    const fn = { device, link, pair, interface: iface, endpoints, mac, ip, vlan, subnet, boundary, trace, firewall: fw, rule: fw, service: fw }[sel.type];
     root.appendChild(fn ? fn(App, sel) : h('div', { class: 'empty-detail' }, '無法顯示'));
     root.scrollTop = 0;
     // 定位到某一列時（例如防火牆規則），把它捲到畫面中間
@@ -1024,6 +1024,50 @@
         { t: '經由', f: (r) => h('span', null, r.via.flatMap((v, n) => [n ? '、' : '', subnetLink(App, v)])) },
       ], routes, { limit: 200 }) : null, { count: routes.length, fold: true }),
       sourcesBlock(App, src),
+    ]);
+  }
+
+  // ---------------------------------------------------------------- L3 的外部（對外邊界）
+  /**
+   * 外部（{ type: 'boundary', key: VRF, dev? }）：這個 VRF 中判定對外與可能對外的介面（Q.boundaries，推論，ADR-023），
+   * 每個介面列出依據（Q.boundaryOf 的 evidence：種類、強弱、不算的原因與來源行）。給了 dev（點設備到外部的線）時只列那台，
+   * 並可改看整個 VRF。判定的規則寫在「這是什麼？」。
+   */
+  function boundary(App, sel) {
+    const Q = App.Q; const multi = multiVrf(Q);
+    const list = V.app.boundariesOf(Q, sel).map((b) => Q.boundaryOf(b.ep) || b);
+    const title = '外部' + (multi ? `（${V.vrfText(sel.key)}）` : '');
+    if (!list.length) return h('div', { class: 'empty-detail' }, sel.dev ? `${Q.devName(sel.dev)} 在這個 VRF 沒有判定對外的介面` : '這個 VRF 沒有判定對外的介面');
+    const ext = list.filter((b) => b.status === 'external'); const pos = list.filter((b) => b.status === 'possible');
+    const fl = S.util.uniq(list.flatMap((b) => Q.findingsFor('interface', b.ep)));
+    const STRENGTH_CLS = { strong: 'info', weak: '', none: '' };
+    const evLine = (ev) => h('div', { class: 'boundary-ev' }, [
+      h('span', null, V.boundaryEvidenceText(ev.kind)), ' ', V.chip(V.BOUNDARY_STRENGTH[ev.strength] || ev.strength, STRENGTH_CLS[ev.strength] || '', { title: '證據的強弱：強證據單獨就判定對外' }),
+      ev.ref && ev.ref.reason ? h('span', { class: 'muted' }, `（${V.BOUNDARY_REASON[ev.ref.reason] || ev.ref.reason}）`) : null,
+      ' ', srcLink(App, ev.src),
+    ]);
+    const devs = S.util.uniq(list.map((b) => b.dev));
+    return h('div', { class: 'detail' }, [
+      h('h2', null, [title, ' ', V.inferChip('依路由、NAT 與位址推論的對外邊界，不是收集到的事實')]),
+      h('div', { class: 'row' }, [
+        V.chip(`${devs.length} 台設備`),
+        ext.length ? V.chip(`對外 ${ext.length} 個介面`, 'info') : null,
+        pos.length ? V.chip(`可能對外 ${pos.length} 個介面`, 'warn') : null,
+      ]),
+      findingsBlock(App, fl),
+      kv([['VRF', multi ? h('span', { class: 'mono' }, sel.key) : null],
+        ['設備', sel.dev ? h('span', null, [devLink(App, sel.dev), '　', L(App, '看這個 VRF 的全部', { type: 'boundary', key: sel.key })]) : null]]),
+      aboutSection([
+        '外部是虛擬節點：基準看不到線路的另一端，依各介面的證據推論哪些介面通往外部。',
+        '強證據單獨就判定對外：預設路由的出介面（下一跳不在基準內）、DHCP／PPPoE client 加入的預設路由、srcnat（masquerade／src-nat）的出介面、dst-nat 的入介面。',
+        '弱證據：介面上的公網位址、CGNAT 位址、dst-nat 的目的位址、WAN 清單的名稱。只有弱證據時，WAN 清單的成員仍判定對外，其他只標「可能對外」。',
+        '圖上設備到外部的線：實線是對外、長虛線是可能對外，預設路由經這裡出去時是路由的虛線加箭頭。',
+      ]),
+      section('對外介面與依據', table([
+        { t: '介面', f: (b) => (b.hasIfc ? epLink(App, b.ep) : h('span', null, [devLink(App, b.dev), ' ', h('span', { class: 'mono' }, K.splitEp(b.ep)[1])])), s: (b) => b.ep },
+        { t: '判定', f: (b) => V.chip(V.BOUNDARY_STATUS[b.status] || b.status, b.status === 'external' ? 'info' : 'warn'), s: (b) => b.status },
+        { t: '依據', f: (b) => h('div', null, b.evidence.map(evLine)) },
+      ], list.slice().sort((a, b) => (a.status === b.status ? 0 : a.status === 'external' ? -1 : 1) || S.util.natural(a.ep, b.ep)), { limit: 500 }), { count: list.length, long: true }),
     ]);
   }
 

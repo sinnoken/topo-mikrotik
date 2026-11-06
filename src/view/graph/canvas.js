@@ -5,7 +5,8 @@
  *  - 依縮放程度決定是否畫標籤與埠名，只畫畫面內的物件（1000 台以上仍流暢）
  * 資料：nodes [{id,label,kind,collected,group,sev}]、edges [{id,a,b,cls,layer,count,sev,hearsay,mismatch,labelA,labelB}]
  * L2 埠圖與 L3 子網圖（app-layers.js）另用：
- *  - node.box { w, h }：容器框（L2 的設備）或長條（L3 的子網，kind 'subnet'），命中範圍與標示環是矩形
+ *  - node.box { w, h }：容器框（L2 的設備）或長條（L3 的子網 kind 'subnet'、外部 kind 'external'），命中範圍與標示環是矩形
+ *  - node.outer：外框名稱（L3 的 VRF）。群框是兩層：外框包住其中所有內群（node.group）的框，名稱與內群一樣標在框上
  *  - node.anchor { parent, dx, dy, side? }：位置跟著 parent（L2 的埠）；pos 不存它，拖曳它等於拖曳 parent；
  *    side（north／south／east／west）是埠所在的框邊，埠名依它放在框外，沒有時依 dx／dy 判斷
  * 事件（on，每個事件一個處理函式）：click、dblclick、hover、moving（拖曳節點中，每個 animation frame 最多一次）、moved（拖曳節點放開）
@@ -33,6 +34,8 @@
   const GL_FONT = font(F.groupPx, W.strong);
   // 群框的最小寬度（世界座標）：只有一兩台的小群也有寬度放簡稱（「區域 2」）。取版面的群間距（layout.js 的 GAP），兩個只有一台的鄰群往兩側各加寬後仍不重疊
   const GROUP_MIN_W = V.layout.GAP;
+  // 外框（node.outer）比其中的內群框再往外留的距離（世界座標）；小於版面群間距的一半，相鄰兩個外框不重疊
+  const OUTER_PAD = 30;
   // 標籤的優先順序：設備依版面的層級（layout.js 的 RANK），終端類節點排在後面
   const LABEL_RANK = Object.assign({}, V.layout.RANK, { cluster: 5, downstream: 5, endpoint: 6 });
   // 設備名稱、分群標籤離畫布左右邊緣至少 EDGE_INSET（px）
@@ -652,15 +655,25 @@
       c.restore();
     }
     computeGroups() {
-      const boxes = new Map();
+      const boxes = new Map(); const outerOf = new Map();
       this.nodes.forEach((n) => {
         if (n.anchor || !this.isVisible(n)) return; const p = this.pos.get(n.id); if (!p) return;
         const g = S.util.getOr(boxes, n.group || '', () => ({ name: n.group || '', x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, n: 0 }));
         g.x0 = Math.min(g.x0, p.x - 50); g.y0 = Math.min(g.y0, p.y - 50); g.x1 = Math.max(g.x1, p.x + 50); g.y1 = Math.max(g.y1, p.y + 40); g.n++;
+        if (n.outer && !outerOf.has(n.group || '')) outerOf.set(n.group || '', n.outer);
       });
       // frame：只有一台的群不畫框，也不以框命中滑過（hitGroup 只看標籤）
       boxes.forEach((g) => { const d = GROUP_MIN_W - (g.x1 - g.x0); if (d > 0) { g.x0 -= d / 2; g.x1 += d / 2; } g.frame = g.n > 1; });
-      this.groupBoxes = boxes.size > 1 ? Array.from(boxes.values()).filter((g) => g.n > 0) : null;
+      // 外框：包住其中的內群框再留 OUTER_PAD；排在內群之前，先畫（在下層），標籤也先排（外框較大）
+      const outers = new Map();
+      boxes.forEach((g, name) => {
+        const o = outerOf.get(name); if (!o) return;
+        const x = S.util.getOr(outers, o, () => ({ name: o, x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, n: 0, outer: true }));
+        x.x0 = Math.min(x.x0, g.x0 - OUTER_PAD); x.y0 = Math.min(x.y0, g.y0 - OUTER_PAD); x.x1 = Math.max(x.x1, g.x1 + OUTER_PAD); x.y1 = Math.max(x.y1, g.y1 + OUTER_PAD); x.n += g.n;
+      });
+      outers.forEach((x) => { x.frame = x.n > 1; });
+      const list = Array.from(outers.values()).concat(Array.from(boxes.values())).filter((g) => g.n > 0);
+      this.groupBoxes = list.length > 1 ? list : null;
       this.dirty = true;
     }
   }
@@ -687,7 +700,7 @@
   }
   function drawShape(c, n, p, r, col, s) {
     if (n.virtual) return drawVirtual(c, n, p, r, s);
-    if (n.kind === 'subnet') return drawSubnet(c, n, p);
+    if (n.kind === 'subnet' || n.kind === 'external') return drawSubnet(c, n, p);
     if (n.box) return drawBox(c, n, p, col);
     if (n.kind === 'port') return drawPortShape(c, n, p);
     c.lineWidth = 2;
@@ -720,10 +733,12 @@
     c.fillStyle = col; c.fillRect(p.x - w / 2 + 1, p.y - h / 2 + 4, 4, h - 8);
   }
   /** L3 的子網：圓角長條；只由路由得知的目的網段是虛線外框 */
+  /** L3 的網段長條；「外部」（推論的對外邊界另一側）同外形，外框是推論的長虛線、加粗 */
   function drawSubnet(c, n, p) {
     const N = T.l3.subnet; const w = n.box.w; const h = n.box.h;
-    c.fillStyle = N.fill; c.strokeStyle = N.stroke; c.lineWidth = 1.6;
-    if (n.routeOnly) c.setLineDash(N.routeDash);
+    c.fillStyle = N.fill; c.strokeStyle = N.stroke; c.lineWidth = n.kind === 'external' ? 2.2 : 1.6;
+    if (n.kind === 'external') c.setLineDash(WEAK.inferred.dash);
+    else if (n.routeOnly) c.setLineDash(N.routeDash);
     roundRect(c, p.x - w / 2, p.y - h / 2, w, h, h / 2); c.fill(); c.stroke(); c.setLineDash([]);
   }
   /** L2 的埠：框邊上的小方塊；聚合埠較寬，推論鏈路未收集端的未知埠是虛線 */
@@ -736,7 +751,7 @@
   /** 容器框的設備名稱（左上角、框內）與子網長條的網段文字（置中）；子網的重疊、重複 IP 另在下方以警告外形加文字標示 */
   function boxText(c, n, p, s, forced) {
     const w = n.box.w; const h = n.box.h;
-    if (n.kind === 'subnet') {
+    if (n.kind === 'subnet' || n.kind === 'external') {
       // 網段文字與標籤的字級是世界座標：螢幕上小於 minPx 時不畫字（只剩長條與警告外形；網段在滑過提示與詳情），滑過、選取時照畫
       const N = T.l3.subnet; const readable = (px) => forced || px * s >= F.minPx;
       if (readable(SUBNET_PX.label)) {

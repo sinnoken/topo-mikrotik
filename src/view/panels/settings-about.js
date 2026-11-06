@@ -1,7 +1,7 @@
 /*
  * 設定「關於」（外殼在 app-settings.js）：程式版本、資料格式的版本、離線與唯讀、第三方元件的授權、文件與原始碼。
  * 程式版本是 S.VERSION（沒有基準時也看得到；基準狀態卡的版本是建立那份基準時的版本，兩者意義不同）。
- * 資料格式的版本取自核心的常數（S.SCHEMA、S.ledger.SCHEMA、S.remediate.SCHEMA、S.workpack.SCHEMA），不另寫字串。
+ * 資料格式的版本取自核心的常數（S.SCHEMA、S.ledger.SCHEMA、S.compare.SCHEMA_EXPECTED、S.remediate.SCHEMA、S.workpack.SCHEMA），不另寫字串。
  * 第三方元件只有分層版面用的 ELK.js：路徑取自 V.layout.ELK_SRC（elk-layout.js 的 ENGINE_SRC），不另寫一份。
  * 文件連結用 settings-help.js 的 V.settings.docLink（同一個 repo 位址）。
  */
@@ -13,6 +13,7 @@
   const formats = () => [
     ['基準（Snapshot）', S.SCHEMA],
     ['處理紀錄', S.ledger.SCHEMA],
+    ['預期現況', S.compare.SCHEMA_EXPECTED],
     ['修正 patch', S.remediate.SCHEMA],
     ['工作包', S.workpack.SCHEMA],
   ];
@@ -32,7 +33,7 @@
       h('dt', null, '文件與原始碼'), h('dd', null, [
         h('a', { class: 'link', href: V.settings.REPO, target: '_blank', rel: 'noopener noreferrer' }, 'GitHub：sinnoken/topo-mikrotik'), '（',
         doc('README.md', null, 'README'), '、', doc('docs/使用說明.md', null, '使用說明'), '、', doc('docs/收集清單與輸入格式.md', null, '收集清單與輸入格式'),
-        '、', doc('docs/版本紀錄.md', null, '版本紀錄'), '）。連結在新分頁開啟；離線時可以直接開啟 repo 裡的同名檔案。']),
+        '、', doc('docs/版本紀錄.md', null, '版本紀錄'), '）。連結在新分頁開啟：線上連到 GitHub 的 main，用 file:// 開啟時直接開啟 repo 裡的檔案。']),
     ]));
   }
 

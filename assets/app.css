@@ -629,6 +629,10 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
 .l4-svcs { display: flex; flex-wrap: wrap; gap: 4px; }
 .l4-svc { min-height: 26px; padding: 2px 8px; border: 1px solid var(--l4-line-strong); border-radius: var(--radius-pill); font-size: var(--fs-sm); white-space: nowrap; }
 .l4-reasons, .l4-notes { margin: 6px 0; font-size: var(--fs-md); }
+/* 部分無法判斷（「＋?」）：格子內的小標記，加框與文字色，不只靠位置；IPv6 提示與連線追蹤的說明是附註 */
+.l4-inc { display: inline-block; margin-left: 3px; padding: 0 3px; border: 1px dashed var(--line-strong); border-radius: var(--radius-xs); font-size: var(--fs-xs); font-weight: 600; color: var(--text); vertical-align: middle; }
+.l4-ipv6-note { margin: 4px 0 8px; padding-left: 8px; border-left: 3px solid var(--info-line); font-size: var(--fs-sm); }
+.l4-ct { margin-top: 2px; font-size: var(--fs-sm); }
 .l4-reasons ul, .l4-notes ul { margin: 2px 0 0; padding-left: 18px; }
 .l4-path { margin: 10px 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
 .l4-path-head { font-weight: 600; margin-bottom: 4px; }
@@ -942,6 +946,10 @@ header .icon-btn.on { background: var(--accent-soft); color: var(--accent); bord
 .settings-step > p, .settings-step > pre.cmd-list, .settings-step .settings-list { margin: 0; }
 .settings-exit dt { font-weight: 600; }
 /* 本機資料：大小靠右對齊，名稱與「無法重建」加粗；按鈕可換行 */
+/* 窄螢幕：表格保持可讀的最小寬度，在外層的 .table-scroll 內橫向捲動（不擠成一字一行、不撐寬整頁）；按鈕文字不折行 */
+.settings-data { min-width: 560px; }
+.settings-profiles { min-width: 680px; }
+.settings-data .settings-clear, .settings-profiles button { white-space: nowrap; }
 .settings-data td { vertical-align: top; }
 .settings-data td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .settings-data caption { text-align: left; }

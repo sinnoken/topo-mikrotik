@@ -58,6 +58,7 @@
       if (key === 'acks') VA.resetPendingAcks(); // 記憶體中等待轉換的一起清掉，下一份基準不再轉換回來
       if (key === 'profiles') await V.settings.profiles.syncSaved(); // 命名規則分類與建立基準對話框的清單即時跟上
       if (key === 'layoutMode') { App.layoutMode = App.LAYOUT_MODES[0]; VA.syncLayoutMode(); } // 沒有存值時的預設（app.js 啟動時同一個值）
+      if (key === 'layout') VA.resetColumns(); // 欄寬馬上回到預設
     } catch (e) { console.error(e); VA.banner(`無法清除「${d.label}」：` + V.reason(e), 10000); await after(); return false; }
     VA.banner(`已清除「${d.label}」`, 5000);
     await after();
@@ -71,9 +72,10 @@
     try {
       VA.setThemePref('system');
       App.layoutMode = App.LAYOUT_MODES[0]; VA.syncLayoutMode();
+      VA.resetColumns();
       await S.store.resetPrefs();
     } catch (e) { console.error(e); VA.banner('無法重設畫面偏好：' + V.reason(e), 10000); await after(); return false; }
-    VA.banner('已重設畫面偏好（欄寬在下次開啟頁面時回到預設）', 6000);
+    VA.banner('已重設畫面偏好（欄寬、預設版面與配色已回到預設）', 6000);
     await after();
     return true;
   }
@@ -161,11 +163,12 @@
     const items = inv ? inv.items : [];
     const descs = S.store.KEYS.concat(items.filter((i) => i.kind === 'other').map((i) => ({ key: i.key, label: i.label, purpose: i.purpose, loss: i.loss, kind: 'other', where: i.where })));
     const total = items.reduce((n, i) => n + (i.present ? i.bytes : 0), 0);
-    el.appendChild(h('table', { class: 't settings-data' }, [
+    // 包在 .table-scroll：窄螢幕時表格自己橫向捲動，不撐寬整頁
+    el.appendChild(h('div', { class: 'table-scroll' }, h('table', { class: 't settings-data' }, [
       h('caption', { class: 'muted' }, inv ? `共 ${fmtBytes(total)}（JSON 序列化後的大小）` : '讀取中…'),
       h('thead', null, h('tr', null, ['項目', '大小', '最後更新', ''].map((t, i) => h('th', i === 3 ? { 'aria-label': '操作' } : null, t)))),
       h('tbody', null, descs.map((d) => row(App, d, items.find((i) => i.key === d.key) || null))),
-    ]));
+    ])));
 
     // 備份、還原、重設偏好
     const file = h('input', { type: 'file', accept: '.json,application/json', class: 'hidden', 'aria-hidden': 'true', tabindex: '-1' });

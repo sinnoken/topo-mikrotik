@@ -3,8 +3,8 @@
  * 建立基準、排程（CLI）。畫面只放要點，詳細規格以「詳見」連到文件（ADR-016），不在這裡另寫一份。
  * 指令清單取自 A.collectGuide（S.collectCommands，由 tools/collector-commands.sh 產生），整個畫面只在這裡出現一次（歡迎畫面以按鈕開啟這個分類）。
  * devices.csv 範例的每一列都取自 tools/devices.csv（冒煙測試核對），格式以 tools/collect.sh 的 --help 為準。
- * 文件連結（V.settings.docLink）也給「關於」用：文件不隨網站發布（deploy-pages.yml 只發布畫面需要的檔案），所以連到 GitHub 上的 main，
- * 並寫出 repo 內的路徑，離線時可以直接開啟 repo 裡的檔案。連結是使用者點了才開新分頁，不是執行期的網路請求。
+ * 文件連結（V.settings.docLink）也給「關於」與「命名規則」用：文件不隨網站發布（deploy-pages.yml 只發布畫面需要的檔案），所以線上連到 GitHub 上的 main；
+ * 從 file:// 開啟時改連 repo 內的相對路徑（離線打得開）。連結是使用者點了才開新分頁，不是執行期的網路請求。
  */
 (function (S) {
   'use strict';
@@ -12,9 +12,14 @@
   const A = () => V.app;
 
   const REPO = 'https://github.com/sinnoken/topo-mikrotik';
-  /** 連到 repo 裡的文件（file 是 repo 內的路徑，anchor 是 GitHub 依標題產生的錨點），新分頁開啟 */
+  /** 頁面是不是從 file:// 開啟（離線，通常就是 repo 裡的 index.html）；每次產生連結時讀，不快取 */
+  const isFileProtocol = () => typeof location !== 'undefined' && !!location && location.protocol === 'file:';
+  /**
+   * 連到 repo 裡的文件（file 是 repo 內的路徑，anchor 是 GitHub 依標題產生的錨點），新分頁開啟。
+   * 線上連到 GitHub 的 main；從 file:// 開啟時連到相對路徑（index.html 在 repo 根目錄，所以 repo 內的路徑就是相對路徑），離線也打得開、內容和正在用的版本相同
+   */
   function docLink(file, anchor, label) {
-    const href = REPO + '/blob/main/' + encodeURI(file) + (anchor ? '#' + encodeURI(anchor) : '');
+    const href = (isFileProtocol() ? '' : REPO + '/blob/main/') + encodeURI(file) + (anchor ? '#' + encodeURI(anchor) : '');
     return h('a', { class: 'link doc-link', href, target: '_blank', rel: 'noopener noreferrer', title: file }, label);
   }
   /** 「詳見」一行：links 是 docLink 的結果 */

@@ -21,6 +21,7 @@
   /** 下載的範本：最小、可直接編譯，每一段都有範例；description 會顯示在設定的清單 */
   const TEMPLATE = {
     schema: 'ssot-profile/1', id: 'my-naming', version: '1',
+    name: '站點_類型_編號',
     description: '站點_類型_編號（例：TPE_SW_01）。請改成這份規則的用途；id 改成和檔名相同，修改內容時提高 version。欄位說明見 docs/命名規則.md。',
     stripDomain: true,
     alias: { 'OLD-NAME': 'TPE_SW_01' },
@@ -41,10 +42,10 @@
   /** 一句說明（S.profile.compile(…).describe()）；規則有誤時說明錯誤 */
   const describe = (p) => { try { return S.profile.compile(p).describe(); } catch (e) { return V.reason(e); } };
   /**
-   * 名稱：字串的 label。label 同時是「顯示名稱」規則的欄位，JSON 檔若兩者都寫，後面的會蓋過前面的（JSON.parse 取最後一個），
-   * 這時 label 是物件，沒有名稱可顯示（說明欄仍有 description 或推出的一句）
+   * 規則名稱（只用於顯示）：S.profile.compile(…).name（name，或舊寫法的字串 label）；沒有名稱或規則有誤時 null。
+   * 設定、建立基準對話框與資料中心共用這一個取法（V.settings.profiles.nameOf）
    */
-  const nameOf = (p) => (typeof p.label === 'string' && p.label.trim() ? p.label : '—');
+  const nameOf = (p) => { try { return S.profile.compile(p).name || null; } catch (e) { return null; } };
   const isBuiltin = (p) => BUILTIN.get(p.id) === p;
   const all = () => Object.values(S.profiles).filter((p) => p && p.id);
   const say = (msg, warn) => { st.status = msg; st.statusWarn = !!warn; };
@@ -92,10 +93,14 @@
    */
   async function loadFile(file) {
     const name = (file && file.name) || '（未命名）';
+    let text;
+    try { text = await file.text(); } catch (e) { return { ok: false, error: `無法讀取命名規則檔「${name}」：${V.reason(e)}` }; }
+    // 文字直接交給 S.profile.compile：它先解析（擋下重複的鍵），再驗證
     let j;
-    try { j = JSON.parse(await file.text()); } catch (e) { return { ok: false, error: `無法載入命名規則檔「${name}」：不是有效的 JSON（${V.reason(e)}）` }; }
+    try { const c = S.profile.compile(text); j = c && c.source; } catch (e) {
+      return { ok: false, error: `無法載入命名規則檔「${name}」：` + (e instanceof SyntaxError ? `不是有效的 JSON（${V.reason(e)}）` : V.reason(e)) };
+    }
     if (!j || typeof j !== 'object' || Array.isArray(j)) return { ok: false, error: `無法載入命名規則檔「${name}」：內容應是一個 JSON 物件` };
-    try { S.profile.compile(j); } catch (e) { return { ok: false, error: `無法載入命名規則檔「${name}」：${V.reason(e)}` }; }
     const prev = S.profiles[j.id];
     const replaced = prev ? (BUILTIN.get(j.id) === prev ? 'builtin' : 'saved') : null;
     try {
@@ -128,12 +133,13 @@
   const downloadTemplate = () => V.exporter.download('naming-template.json', JSON.stringify(TEMPLATE, null, 2) + '\n', 'application/json');
 
   // ================================================================ 畫面
+  /** 6 欄的表格：包在 .table-scroll，窄螢幕時表格自己橫向捲動，不撐寬整頁 */
   function table(App, src, list) {
-    return h('table', { class: 't settings-profiles', 'data-source': src }, [
+    return h('div', { class: 'table-scroll' }, h('table', { class: 't settings-profiles', 'data-source': src }, [
       h('thead', null, h('tr', null, ['ID', '名稱', '說明', '來源', '目前的基準', ''].map((t) => h('th', null, t)))),
       h('tbody', null, list.map((p) => h('tr', { 'data-profile': p.id }, [
         h('td', { class: 'mono' }, p.id + (p.version != null ? ` v${p.version}` : '')),
-        h('td', null, nameOf(p)),
+        h('td', null, nameOf(p) || '—'),
         h('td', null, describe(p)),
         h('td', null, isBuiltin(p) ? '內建' : BUILTIN.has(p.id) ? '已載入（蓋過內建的同名規則）' : '已載入'),
         h('td', null, usedBy(App, p) ? '✓ 目前的基準使用' : ''),
@@ -143,7 +149,7 @@
             title: `從這個瀏覽器移除「${p.id}」（會先確認）`, onclick: () => remove(App, p.id) }, '移除…'),
         ])),
       ]))),
-    ]);
+    ]));
   }
   const fieldLabel = { kind: '類型', role: '角色', site: '站點', group: '分群', label: '顯示名稱' };
   function coverageBox(App, list) {
@@ -219,5 +225,5 @@
   }
 
   V.settings = V.settings || {};
-  V.settings.profiles = { render, loadFile, syncSaved, removeMessage, builtinIds: () => Array.from(BUILTIN.keys()), UNMATCHED_MAX, TEMPLATE };
+  V.settings.profiles = { render, loadFile, nameOf, syncSaved, removeMessage, builtinIds: () => Array.from(BUILTIN.keys()), UNMATCHED_MAX, TEMPLATE };
 })(globalThis.SSOT = globalThis.SSOT || {});

@@ -132,8 +132,11 @@
     },
     // L4 zone 矩陣與可達性（panels/l4.js）：鍵與 Q.zoneMatrix 的格子 status、Q.reach 的 verdict 相同。
     // 狀態色只表示狀態，一律搭配外形符號（glyph）與文字標籤；格子的文字用 text.body（對每個格子底色 ≥ 4.5:1），
-    // 符號用 mark（對格子底色與畫布底色 ≥ 3:1）。allow／deny／partial 的 mark 以 dataviz validate_palette.js 驗證
-    // （亮色、底色 #f8fafc、全部配對：全部通過，最差 CVD ΔE 13.2（deutan）、一般視覺最差 28.5）；仍一律有符號（✓／✕／◐）與文字。
+    // 符號用 mark（對格子底色與畫布底色 ≥ 3:1）。allow／deny 的 mark 以 dataviz validate_palette.js 驗證
+    // （亮色、底色 #f8fafc：全部通過，最差 CVD ΔE 13.2（deutan）、一般視覺最差 28.5）。
+    // partial（部分允許）是琥珀色（L4 審查的建議：色盲安全的琥珀色），亮 #c26e00／暗 #ffc247；
+    // 和 allow／deny／unknown 的 mark 兩兩以 CIEDE2000 與 Machado 2009 的 CVD 模擬檢查（亮色最差 protan 11.0、deutan 11.1，
+    // 暗色最差 tritan 10.0；一般視覺都 ≥ 26），琥珀和綠在紅綠色盲下最接近，所以仍一律有符號（✓／✕／◐）與文字。
     // unknown、empty 是刻意的中性色（「無法判斷」「沒有可算的組合」不是一種結果），不受彩度下限約束；
     // empty 另用斜線底紋（hatch），和 unknown 的實心灰底分開。
     // 異質（heterogeneous）是文字徽章；對角線（zone 內）是虛線外框（keyInk）
@@ -141,7 +144,7 @@
       status: {
         allow: { mark: '#20a050', bg: '#ebf7ee', glyph: '✓' },
         deny: { mark: '#a9221b', bg: '#fcecea', glyph: '✕' },
-        partial: { mark: '#6f5bd6', bg: '#f0eefc', glyph: '◐' },
+        partial: { mark: '#c26e00', bg: '#fdf2df', glyph: '◐' },
         unknown: { mark: '#5f6d7e', bg: '#eef1f4', glyph: '?' },
         empty: { mark: '#7c8691', bg: '#ffffff', glyph: '–', hatch: '#e1e7ee' },
       },
@@ -204,7 +207,7 @@
     trend: { pending: '#4469e2', regressed: '#dc5a92', accepted: '#ae99f5', single: dMark.select, grid: '#2a333e', axis: '#3c4754', crosshair: dText.muted },
     l4: {
       status: {
-        allow: { mark: '#189e32', bg: '#16301f' }, deny: { mark: '#ff978f', bg: '#3a1d1c' }, partial: { mark: '#9d8cf0', bg: '#251f3d' },
+        allow: { mark: '#189e32', bg: '#16301f' }, deny: { mark: '#ff978f', bg: '#3a1d1c' }, partial: { mark: '#ffc247', bg: '#33270f' },
         unknown: { mark: dText.muted, bg: '#262e37' }, empty: { bg: dPanel, hatch: '#2a333e' },
       },
       text: dText.body, badge: { bg: dPanel, text: dText.body, border: dKeyInk }, diagonal: { border: dKeyInk }, focus: dMark.select,

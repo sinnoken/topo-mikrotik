@@ -140,7 +140,7 @@
       check: (v) => (isObj(v) && Object.values(v).every(isObj) ? null : '應是「ID → 命名規則」的物件') },
     { key: 'layout', label: '欄寬', kind: 'pref', where: 'indexedDB',
       purpose: '左右欄調整過的寬度。',
-      loss: '調整過的欄寬；目前的寬度用到關閉頁面，下次開啟使用預設寬度。',
+      loss: '調整過的欄寬；清除後馬上回到預設寬度。',
       check: (v) => (isObj(v) && ['left', 'right'].every((s) => v[s] === undefined || Number.isFinite(v[s])) ? null : '應是 { left, right } 的數字') },
     { key: 'layoutMode', label: '預設版面', kind: 'pref', where: 'indexedDB',
       purpose: '拓樸圖的預設版面（分層或快速）。',

@@ -4,6 +4,16 @@
 'use strict';
 const { S, fs, path, ROOT, step, buildInput, clearBaseline, $, text, L4, stepBtn, hubBtn } = require('../helpers.js');
 
+/** 顯示 L4、展開內部互通並等矩陣畫好（App.l4Job 只等暴露清單，矩陣在展開時才計算，放在 App.l4MatrixJob） */
+async function showMatrix() {
+  App.showStep('view'); App.showLayer('l4'); await App.l4Job;
+  const f = $('#l4-matrix-fold'); if (!(f.open || f.getAttribute('open') != null)) { f.setAttribute('open', ''); f.open = true; f.dispatch('toggle'); }
+  await App.l4MatrixJob;
+  // 檢視方式是記憶體中的檢視狀態（前面的步驟可能切到表格）：這裡要看矩陣
+  const mb = L4().testAll('.l4-modes button').find((b) => b.dataset.mode === 'matrix');
+  if (mb.getAttribute('aria-pressed') !== 'true') { mb.click(); await App.l4MatrixJob; }
+  if (!L4().testAll('.l4-grid').length) throw new Error('展開內部互通後應畫出矩陣：' + text('#l4-status'));
+}
 const css = () => fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
 /** 最後一個 @media (max-width: 900px) 區塊之外，所有窄螢幕區塊的內容（依序串起來） */
 function narrowCss() {
@@ -29,7 +39,7 @@ const rectBottom = (el) => { const r = el.getBoundingClientRect(); return r.top 
 module.exports = async () => {
   await step('UX6 H1：L4 的捲動區從工具列下緣開始（標題與明細不被浮動工具列蓋住），底下的畫布不露出', async () => {
     await buildInput(S.samples['sample-bundle.txt']);
-    App.showStep('view'); App.showLayer('l4'); await App.l4Job;
+    await showMatrix();
     const v = L4(); const top = parseFloat(v.style.top);
     const tb = $('#toolbar'); const stage = $('#stage');
     const need = rectBottom(tb) - stage.getBoundingClientRect().top;
@@ -63,31 +73,30 @@ module.exports = async () => {
     if (!used.length || used.some((x) => !x.textContent.trim())) throw new Error('「目前的基準」不應留白');
     S.view.app.closeSettings();
     // L4 的位址組（下鑽）是直排表格
-    App.showStep('view'); App.showLayer('l4'); await App.l4Job;
+    await showMatrix();
     const cell = L4().testAll('.l4-cell').find((x) => x.dataset.status === 'partial') || L4().testAll('.l4-cell').find((x) => x.dataset.status !== 'empty');
-    if (cell) {
-      cell.click(); await App.l4Job;
-      const gt = $('#l4-drill').testAll('table')[0];
-      if (gt && !gt.classList.contains('stack')) throw new Error('L4 的位址組表格應可直排（窄螢幕時結果與狀態不被切掉）');
-    }
+    if (!cell) throw new Error('範例資料的矩陣應有可下鑽的格子');
+    cell.click();
+    const gt = $('#l4-drill').testAll('table')[0];
+    if (!gt || !gt.classList.contains('stack')) throw new Error('L4 的位址組表格應可直排（窄螢幕時結果與狀態不被切掉）');
     App.showLayer('device');
   });
 
   await step('UX6 M4、M5、M6：L4 圖例有「＋? 部分無法判斷」；格子的「結果不一」只用短標不蓋住數字；zone 的網段寫成（VRF …）', async () => {
-    App.showStep('view'); App.showLayer('l4'); await App.l4Job;
+    await showMatrix();
     const leg = $('#l4-legend');
     const inc = leg.testAll('.l4-legend-item').find((x) => x.getAttribute('data-legend') === 'incomplete');
     if (!inc || !inc.textContent.includes('＋?') || !inc.textContent.includes(S.view.L4_INCOMPLETE)) throw new Error('L4 圖例應有「＋? ' + S.view.L4_INCOMPLETE + '」');
     const het = L4().testAll('.l4-cell').find((x) => x.classList.contains('het'));
-    if (het) {
-      const b = het.testAll('.l4-het')[0];
-      if (!b || b.textContent.trim() !== '≠' || !/結果不一/.test(b.getAttribute('title') || '')) throw new Error('格子的結果不一應是短標「≠」（完整說法在 title）：' + (b && b.textContent));
-    }
+    if (!het) throw new Error('範例資料的矩陣應有結果不一的格子（WAN → VLAN 20）');
+    { const b = het.testAll('.l4-het')[0];
+      if (!b || b.textContent.trim() !== '≠' || !/結果不一/.test(b.getAttribute('title') || '')) throw new Error('格子的結果不一應是短標「≠」（完整說法在 title）：' + (b && b.textContent)); }
     const lh = leg.testAll('.l4-legend-item').find((x) => x.getAttribute('data-legend') === 'heterogeneous');
     if (!lh || lh.testAll('.l4-het')[0].textContent.trim() !== '≠' || !lh.textContent.includes('結果不一')) throw new Error('圖例的結果不一應和格子同一個短標');
     if (decls(css(), '.l4-cell .l4-het').position === 'absolute') throw new Error('格子的結果不一不應絕對定位（會蓋住數字）');
     // zone 的依據：網段不外露內部鍵（10.1.20.0/24@cust-a），寫法和 zone 名稱相同
-    const zt = $('#view-l4').testAll('.l4-zone-row').length ? $('#view-l4').textContent : '';
+    if (!$('#view-l4').testAll('.l4-zone-row').length) throw new Error('L4 應列出 zone 的依據');
+    const zt = $('#view-l4').textContent;
     if (/\d\/\d+@[\w-]+/.test(zt)) throw new Error('zone 的依據不應外露「網段@VRF」：' + (zt.match(/\S*\d\/\d+@[\w-]+/) || [])[0]);
     const multi = App.Q.vrfs().length > 1;
     if (multi && !/\d\/\d+（VRF [\w-]+）/.test(zt)) throw new Error('main 以外的 VRF 的網段應寫成「網段（VRF 名稱）」');
@@ -229,13 +238,12 @@ module.exports = async () => {
   });
 
   await step('UX6 L5、L6：L4 只在頁首標一次推論（表頭不逐一掛徽章，輔助科技仍念得到）；種類寫「介面清單」；圖例說明虛擬 zone 與只當目的的 zone', async () => {
-    App.showStep('view'); App.showLayer('l4'); await App.l4Job;
+    await showMatrix();
     const grid = L4().testAll('.l4-grid')[0];
-    if (grid) {
-      if (grid.testAll('.l4-zone-inf').length) throw new Error('矩陣的表頭不應每個都掛「推論」徽章');
-      const inf = App.Q.zoneMatrix({}).zones.filter((z) => z.inferred);
-      if (inf.length && !grid.testAll('th').some((th) => th.testAll('.sr-only').some((x) => x.textContent.includes('推論')))) throw new Error('推論的 zone 仍應讓輔助科技念出「推論」');
-    }
+    if (!grid) throw new Error('範例資料的 zone 不超過上限，內部互通應是矩陣（grid）');
+    if (grid.testAll('.l4-zone-inf').length) throw new Error('矩陣的表頭不應每個都掛「推論」徽章');
+    { const inf = App.Q.zoneMatrix({}).zones.filter((z) => z.inferred);
+      if (inf.length && !grid.testAll('th').some((th) => th.testAll('.sr-only').some((x) => x.textContent.includes('推論')))) throw new Error('推論的 zone 仍應讓輔助科技念出「推論」'); }
     const head = L4().testAll('.work-head')[0];
     if (!head || !head.testAll('.chip').some((c) => c.textContent === '推論')) throw new Error('L4 的頁首應標一次「推論」');
     if (S.view.ZONE_SOURCE['interface-list'] !== '介面清單') throw new Error('zone 種類應寫「介面清單」，不寫 RouterOS 原值 interface list');

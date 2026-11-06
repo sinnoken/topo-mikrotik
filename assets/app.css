@@ -657,6 +657,9 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
 .l4-ex-sec tr.l4-ex-pathrow > td { padding: 4px 8px 10px; background: var(--surface); }
 .l4-ex-pathbox .l4-sub { margin-top: 4px; }
 .l4-ex-all { min-height: var(--control-h); margin-top: 6px; }
+/* IPv6 的列沒有逐跳路徑（說明取代按鈕）；「⚠ 回程不保證」短標後的規則連結 */
+.l4-ex-nopath { display: block; margin-top: 4px; font-size: var(--fs-sm); }
+.l4-return-rules { font-size: var(--fs-sm); }
 .l4-sub { margin-top: 12px; }
 .l4-sub h4 { margin: 0 0 6px; font-size: var(--fs-lg); display: flex; align-items: center; gap: 6px; }
 .l4-svcs { display: flex; flex-wrap: wrap; gap: 4px; }

@@ -128,4 +128,68 @@ module.exports = async () => {
     if (fl) { const idx = Q.findingIndexByKey(fl.dataset.finding); fl.click(); if (!text('#detail').includes(Q.finding(idx).id)) throw new Error('檢查連結應開那一筆檢查結果'); }
     App.select(null);
   });
+
+  await step('L4 暴露清單的 IPv6 與回程：IPv6 的說明取自 exposure.ipv6（狀態、原因、缺少的設備）；IPv6 列寫位址或「整個網段 x 的主機」、沒有逐跳路徑；回程不保證的列與逐跳的跳標「⚠ 回程不保證」，規則可點', async () => {
+    const VA = S.view.app; const V = S.view;
+    // 範例資料：沒有 IPv6 位址的事實（no-ipv6-address），說明照列查詢層的 message 與缺少的設備
+    { App.showLayer('l4'); await App.l4Job;
+      const v6 = App.Q.exposure().ipv6; const note = text('#l4-ex-ipv6');
+      if (!v6 || !note.includes(v6.message)) throw new Error('IPv6 的說明應照列 exposure.ipv6.message：' + note);
+      (v6.missing || []).forEach((m) => { if (!note.includes(App.Q.devName(m.dev)) || !note.includes(V.L4_IPV6_MISSING[m.reason])) throw new Error('缺少 IPv6 的設備應列出原因：' + m.dev); });
+      if ($('#l4-ex-ipv6').dataset.status !== v6.status) throw new Error('IPv6 說明應標狀態'); }
+    if (process.env.SMOKE_INPUT) { App.showLayer('device'); return; }
+    // 自建網路：R 的 ether1 是 WAN，ether2 是 LAN，ether3 是公網網段（沒有 NAT）；forward 放行到 203.0.113.2:443 後全部丟棄（回程不保證，F15）；
+    // IPv6：forward 只限埠（F05），位址直接加進 ipAddresses（基準還沒有 IPv6 位址的事實，見 tests/core/reach-ipv6.js）
+    const RT = 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC';
+    const text0 = ['R (192.168.1.1):', '### /export terse', '/interface list add name=WAN', '/interface list add name=LAN',
+      '/interface list member add interface=ether1 list=WAN', '/interface list member add interface=ether2 list=LAN',
+      '/ip address add address=198.51.100.2/30 interface=ether1 network=198.51.100.0', '/ip address add address=192.168.1.1/24 interface=ether2 network=192.168.1.0',
+      '/ip address add address=203.0.113.1/29 interface=ether3 network=203.0.113.0',
+      '/ip firewall filter add action=accept chain=forward dst-address=203.0.113.2 dst-port=443 in-interface-list=WAN protocol=tcp',
+      '/ip firewall filter add action=drop chain=forward',
+      '/ipv6 firewall filter add action=accept chain=forward connection-state=established,related', '/ipv6 firewall filter add action=accept chain=forward dst-port=443 protocol=tcp',
+      '/ipv6 firewall filter add action=drop chain=forward in-interface-list=WAN',
+      '/ipv6 firewall filter add action=accept chain=input connection-state=established,related', '/ipv6 firewall filter add action=drop chain=input in-interface-list=WAN',
+      '### /ip route print detail without-paging', RT,
+      ' DAc dst-address=198.51.100.0/30 routing-table=main gateway=ether1 distance=0', ' DAc dst-address=192.168.1.0/24 routing-table=main gateway=ether2 distance=0',
+      ' DAc dst-address=203.0.113.0/29 routing-table=main gateway=ether3 distance=0', ' As dst-address=0.0.0.0/0 routing-table=main gateway=198.51.100.1 distance=1', ''].join('\n');
+    const orig = { snap: App.snap, sources: App.round.sources, profile: App.round.profile };
+    const sources = [{ name: 'r.txt', text: text0 }];
+    try {
+      const snap = S.build(sources, { now: '2026-01-01T00:00:00Z' });
+      [['ether1', '3fff:0:1::2/64'], ['ether2', '3fff:0:2::1/64']].forEach(([ifc, address]) => { const [ip, len] = address.split('/');
+        snap.model.ipAddresses.push({ address, ip, len: +len, family: 6, vrf: 'main', role: null, dev: 'R', ep: 'R|' + ifc, hearsay: false, src: [[0, 0]] }); });
+      App.showLayer('device'); // 讀入新基準時不在 L4（否則讀入本身會重開 L4，這裡等到的是被取代的計算）
+      VA.load(snap, null, { sources }); await App.ledgerJob; await App.layoutJob;
+      App.showLayer('l4', { rebuild: true }); await App.l4Job;
+      const Q = App.Q; const ex = Q.exposure();
+      if (App.snap !== snap) throw new Error('測試前提：目前的基準應是這裡建立的（前面的步驟還有沒完成的建立）');
+      if (ex.ipv6.status !== 'edge-only' || $('#l4-ex-ipv6').dataset.status !== 'edge-only' || !text('#l4-ex-ipv6').includes(ex.ipv6.message)) throw new Error(`有 IPv6 位址時說明應是 edge-only 的 message（${ex.ipv6.status}／${$('#l4-ex-ipv6').dataset.status}）：${text('#l4-ex-ipv6')}`);
+      const secRows = (k) => $('#l4-exposure').testAll('.l4-ex-sec').find((x) => x.dataset.sec === k).testAll('tr').filter((tr) => /l4-ex-row/.test(tr.className));
+      // IPv6 列：位址或整個網段，沒有看路徑（不呼叫 Q.reach），寫明只看邊界路由器
+      const v6 = ex.routed.rows.find((r) => r.family === 'ipv6' && r.dstAny);
+      if (!v6) throw new Error('測試前提：應有 IPv6 的 dstAny 列');
+      const tr6 = secRows('routed').find((tr) => tr.dataset.family === 'ipv6');
+      if (!tr6 || !tr6.textContent.includes(`整個網段 ${v6.subnet} 的主機`)) throw new Error('IPv6 dstAny 的列應寫「整個網段 x 的主機」：' + (tr6 && tr6.textContent));
+      if (tr6.querySelector('.l4-ex-path') || !tr6.textContent.includes('沒有逐跳路徑')) throw new Error('IPv6 的列不提供看路徑，並說明只看邊界路由器');
+      // 回程不保證：列上有短標，title 寫 chain 與規則，規則可點
+      const ru = ex.routed.rows.find((r) => r.returnUnsafe.length);
+      if (!ru) throw new Error('測試前提：應有回程不保證的列');
+      const tr = secRows('routed').find((x) => x.dataset.family === 'ipv4' && x.textContent.includes(ru.ip));
+      const tag = tr && tr.querySelector('.l4-return');
+      if (!tag || !tag.textContent.includes('⚠ 回程不保證') || !/forward.*第 \d+ 條[\s\S]*F15/.test(tag.querySelector('.chip').getAttribute('title') || ''))throw new Error('回程不保證的列應有「⚠ 回程不保證」短標，title 寫 chain 與規則');
+      if (tr.textContent.includes(V.reachReason('return-not-guaranteed'))) throw new Error('回程不保證只用短標，不另寫長句');
+      const rl = tr.testAll('.l4-return-rule')[0];
+      if (!rl) throw new Error('回程不保證應附規則連結'); rl.click();
+      if (!App.sel || App.sel.type !== 'rule' || App.sel.key !== ru.returnUnsafe[0].rule) throw new Error('回程不保證的規則連結應開規則詳情');
+      // 看路徑：逐跳的那一跳也標
+      tr.querySelector('.l4-ex-path').click();
+      const hop = $('#l4-ex-path-box').testAll('.l4-hop').find((x) => x.dataset.dev === 'R');
+      if (!hop || !hop.querySelector('.l4-return')) throw new Error('逐跳路徑上回程不保證的跳應標「⚠ 回程不保證」');
+      App.select(null);
+    } finally {
+      App.showLayer('device');
+      VA.load(orig.snap, null, { sources: orig.sources, profile: orig.profile }); await App.ledgerJob; await App.layoutJob;
+    }
+  });
 };

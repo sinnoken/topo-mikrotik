@@ -49,7 +49,7 @@
   /**
    * 顯示某一層。opt.rebuild：重新建立這一層的圖（選項或基準改變）；opt.focus：焦點移到畫布。
    * 切換時保留選取（在新的一層重新標示），平移與縮放各層分開。
-   * L4：畫布不換資料（離開 L4 時也不記縮放），矩陣由 V.l4.show 畫；App.l4Job 是矩陣的計算（第一次在背景，測試可等待）。
+   * L4：畫布不換資料（離開 L4 時也不記縮放），矩陣由 V.l4.show 畫；App.l4Job 是暴露清單的計算，App.l4MatrixJob 是 zone 矩陣的計算（只在展開內部互通時才算；兩者都在背景，測試可等待）。
    * opt.focus 在 L4 時把焦點移到 L4 的標題。
    */
   App.showLayer = A.showLayer = function showLayer(layer, opt) {

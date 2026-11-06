@@ -411,27 +411,49 @@
   }
   const exPort = (x) => (x.portRange ? `${x.portRange[0]}–${x.portRange[1]}` : x.port != null ? String(x.port) : '');
   const exSvc = (x) => x.proto + (exPort(x) ? ' ' + exPort(x) : '');
-  const withPort = (ip, x) => ip + (exPort(x) ? ':' + exPort(x) : '');
-  /** 一列的目的：self 是設備的位址；dnat 是「公網:埠 → 內部:埠」（沒限制目的位址時寫入口介面上的任何位址）；routed 是內部位址與網段 */
+  // IPv6 位址加埠時寫成 [位址]:埠
+  const withPort = (ip, x) => (exPort(x) ? (ip.includes(':') ? `[${ip}]` : ip) + ':' + exPort(x) : ip);
+  /**
+   * 一列的目的：self 是設備的位址；dnat 是「公網:埠 → 內部:埠」（沒限制目的位址時寫入口介面上的任何位址）；routed 是內部位址與網段。
+   * IPv6 的列（family 'ipv6'，只看邊界路由器）：dstAny 時是「整個網段 x 的主機」
+   */
   function exDst(App, sec, x) {
     const Q = App.Q;
     if (sec === 'self') return h('span', null, [h('span', { class: 'mono' }, withPort(x.ip, x)), ' ', h('span', { class: 'muted' }, Q.devName(x.dev) + (x.serviceName ? '・' + x.serviceName : ''))]);
+    if (x.family === 'ipv6' && x.dstAny) return h('span', null, h('span', { class: 'mono' }, `整個網段 ${x.subnet} 的主機`));
     const to = x.nat && x.nat.to ? V.inVrfText(x.nat.to) : null;
     const from = sec === 'dnat' && x.dstAny ? withPort(`${x.inInterface} 上的任何位址`, x) : withPort(x.ip, x);
     const where = sec === 'routed' && x.subnet ? V.inVrfText(x.subnet) : '';
     return h('span', null, [h('span', { class: 'mono' }, from + (to ? ' → ' + to : '')), where ? h('span', { class: 'muted' }, ' ' + where) : null]);
   }
-  function exResult(x) {
+  function exResult(App, x) {
     const t = V.L4_STATUS[x.verdict] + (x.incomplete ? `（${V.L4_INCOMPLETE}）` : '');
+    // 回程不保證用短標（returnTag），不再寫原因的長句
+    const rs = x.reasons.filter((c) => c !== RETURN_CODE);
     return h('span', { class: 'l4-ex-verdict', 'data-verdict': x.verdict }, [statusTag(x.verdict, t), h('span', { class: 'sr-only' }, '（推論）'),
-      x.reasons.length ? h('span', { class: 'muted l4-ex-reasons' }, ' ' + x.reasons.map((c) => V.reachReason(c)).join('、')) : null]);
+      (x.returnUnsafe || []).length ? h('span', null, [' ', returnTag(App, x.returnUnsafe)]) : null,
+      rs.length ? h('span', { class: 'muted l4-ex-reasons' }, ' ' + rs.map((c) => V.reachReason(c)).join('、')) : null]);
+  }
+  const RETURN_CODE = 'return-not-guaranteed';
+  /**
+   * 「⚠ 回程不保證」短標（推論，F15）：list 是 [{ dev, chain, rule（規則鍵）, interfaces }]（Q.exposure 的 returnUnsafe、Q.reach 逐跳的 returnUnsafe 加上 dev）。
+   * 說明（設備、chain、規則、介面）在 title；後面接擋下回程的規則連結（點了在右側開規則詳情）
+   */
+  function returnTag(App, list) {
+    const Q = App.Q;
+    const one = (u) => { const r = u.rule ? Q.getFirewallRule(u.rule) : null;
+      return `${Q.devName(u.dev)} 的 ${u.chain} 沒有保證放行已建立連線的封包${r ? `（${decisiveText(Q, r)}）` : ''}${u.interfaces ? `，從 ${u.interfaces.map((ep) => Q.epName(ep)).join('、')} 進來的回程` : ''}`; };
+    const title = list.map(one).join('\n') + '\n新連線允許，回程可能被丟棄（推論，見 F15）';
+    const rules = S.util.uniq(list.map((u) => u.rule).filter((k) => k && Q.getFirewallRule(k)));
+    return h('span', { class: 'l4-return' }, [V.chip('⚠ 回程不保證', 'warn', { title }),
+      ...rules.map((k) => { const a = ruleLink(App, Q.getFirewallRule(k), true); a.classList.add('l4-return-rule'); return h('span', { class: 'l4-return-rules' }, [' ', a]); })]);
   }
   /**
    * 看路徑：用這一列的外部代表位址與入口介面查 Q.reach（和暴露清單算這一列時的條件相同），結果在這一列的下方就地展開；
    * 同一列再按一次收起。展開後焦點到路徑的標題，收起（再按一次或 Esc）回到這一列的按鈕
    */
   function openExposure(App, sec, i) {
-    const x = st.ex && st.ex[sec] && st.ex[sec].rows[i]; if (!x) return;
+    const x = st.ex && st.ex[sec] && st.ex[sec].rows[i]; if (!x || x.family === 'ipv6') return; // IPv6 沒有逐跳路徑
     const p = st.exPath;
     if (p && p.sec === sec && p.row === i) { closeExposure(App); return; }
     const req = { src: x.src, dst: x.ip, proto: x.proto, port: x.port, vrf: null, entry: x.entry, from: 'exposure', sec, row: i };
@@ -458,7 +480,7 @@
     let out = exGroupsCache.get(rows); if (out) return out;
     const m = new Map(); out = [];
     rows.forEach((x, i) => {
-      const k = [x.dev, x.src, x.entries.join(','), x.service, x.verdict, x.incomplete, x.allowedFrom.text, x.rule ? x.rule.key || `${x.rule.table}|${x.rule.chain}` : '', x.entry, x.target || '', x.subnet || '', x.nat ? x.nat.to : '', x.serviceName || '', x.reasons.join(','), x.findingKeys.join(',')].join('\u0000');
+      const k = [x.family || '', x.dev, x.src, x.entries.join(','), x.service, x.verdict, x.incomplete, x.allowedFrom.text, x.rule ? x.rule.key || `${x.rule.table}|${x.rule.chain}` : '', x.entry, x.target || '', x.subnet || '', x.nat ? x.nat.to : '', x.serviceName || '', x.reasons.join(','), x.findingKeys.join(','), (x.returnUnsafe || []).map((u) => u.dev + '|' + u.chain + '|' + u.rule).join(',')].join('\u0000');
       const g = m.get(k); if (g) { g.ips.push(x.ip); return; }
       const ng = { x, i, ips: [x.ip] }; m.set(k, ng); out.push(ng);
     });
@@ -478,7 +500,9 @@
       { t: '服務', f: ({ x }) => h('span', { class: 'mono' }, exSvc(x)) },
       { t: '允許來源', f: ({ x }) => (x.allowedFrom.kind === 'any' ? V.chip('⚠ ' + x.allowedFrom.text, 'warn') : h('span', { class: 'mono' }, x.allowedFrom.text)) },
       { t: '結果', f: ({ x, i }) => { const on = !!(st.exPath && st.exPath.sec === def.key && st.exPath.row === i);
-        return h('span', { class: 'l4-ex-res' }, [exResult(x),
+        // IPv6 只看邊界路由器（查詢層不做 IPv6 路由）：沒有逐跳路徑，不呼叫 Q.reach
+        if (x.family === 'ipv6') return h('span', { class: 'l4-ex-res' }, [exResult(App, x), h('span', { class: 'muted l4-ex-nopath' }, 'IPv6 只看邊界路由器，沒有逐跳路徑')]);
+        return h('span', { class: 'l4-ex-res' }, [exResult(App, x),
           h('button', { type: 'button', class: 'ghost l4-ex-path', 'data-sec': def.key, 'data-row': String(i), 'aria-expanded': String(on), 'aria-controls': on ? 'l4-ex-path-box' : null,
             onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); openExposure(App, def.key, i); } }, on ? '收起路徑' : '看路徑')]); } },
       { t: '依據', f: ({ x }) => { const ls = x.findingKeys.map((k) => findingLink(App, k, true)).filter(Boolean);
@@ -505,7 +529,7 @@
   function exTable(App, def, cols, groups) {
     const tb = h('tbody');
     groups.forEach((g) => {
-      tb.appendChild(h('tr', { class: 'l4-ex-row st-' + g.x.verdict }, cols.map((c) => h('td', { 'data-label': c.t }, c.f(g)))));
+      tb.appendChild(h('tr', { class: 'l4-ex-row st-' + g.x.verdict, 'data-family': g.x.family || null }, cols.map((c) => h('td', { 'data-label': c.t }, c.f(g)))));
       const p = st.exPath;
       if (p && p.sec === def.key && p.row === g.i) {
         const onVrf = (v) => { st.exPath = Object.assign({ sec: p.sec, row: p.row }, runQuery(App, Object.assign({}, p.req, { vrf: v }))); renderExposure(App); const t = $('#l4-ex-path-title'); if (t) t.focus(); };
@@ -515,6 +539,17 @@
       }
     });
     return h('div', { class: 'table-scroll' }, h('table', { class: 't stack' }, [h('thead', null, h('tr', null, cols.map((c) => h('th', null, c.t)))), tb]));
+  }
+  /**
+   * IPv6 的說明：照列 Q.exposure().ipv6 的 message（狀態 edge-only／no-ipv6-address／no-wan／not-evaluated 由查詢層決定），
+   * 沒有判斷的入口設備（missing）逐台寫出原因
+   */
+  function ipv6Note(App, xr) {
+    const Q = App.Q; const v = xr.ipv6;
+    if (!v) return h('p', { id: 'l4-ex-ipv6', class: 'muted l4-ex-notes' }, '依 IPv4 的防火牆與 NAT 推論；IPv6 未納入。');
+    const miss = (v.missing || []).map((m) => `${Q.devName(m.dev)}：${V.L4_IPV6_MISSING[m.reason] || m.reason}`);
+    return h('p', { id: 'l4-ex-ipv6', class: 'muted l4-ex-notes', 'data-status': v.status }, [v.message || '',
+      miss.length ? h('span', { class: 'l4-ex-ipv6-missing' }, `　沒有判斷 IPv6 的入口設備：${miss.join('；')}。`) : null]);
   }
   /** 頁尾的判斷的前提：有暴露清單時用它的 assumptions（含暴露清單另加的前提），否則用 S.query.reachAssumptions */
   function fillAssume(list) {
@@ -550,6 +585,7 @@
       const nw = (xr.noWan || []).map((x) => findingLink(App, x.findingKey)).filter(Boolean);
       head([xr.status === 'no-wan' ? '找不到 WAN 介面，無法判斷從外部進得來什麼。' : xr.message || '無法判斷從外部進得來什麼。']);
       box.appendChild(h('p', { class: 'muted l4-ex-nowan' }, [xr.status === 'no-wan' ? '用 interface list 把對外的介面放進名稱含 WAN 的清單（F08）。' : '', ...nw.flatMap((l) => [' ', l])]));
+      if (xr.ipv6) box.appendChild(ipv6Note(App, xr));
       // 這時內部互通是唯一有內容的段：預設展開（並開始計算矩陣）
       if (!isOpen(els.matrixFold)) openMatrix(App);
       return;
@@ -562,9 +598,8 @@
     head([total ? `從外部進來，連得到 ${V.num(total)} 個服務：網路設備本身 ${part(allow('self'))}、轉送到內部 ${part(allow('dnat'))}、直接路由 ${part(allow('routed'))}。` : '從外部進來，連不到任何服務。',
       unk ? `另有 ${V.num(unk)} 個無法判斷。` : '',
       noFw.length ? `另有 ${noFw.join('、')} 無法判斷（沒有防火牆資料，缺 /export）。` : '']);
-    const v6 = xr.ipv6 && (xr.ipv6.devices || []).length ? xr.ipv6.devices.map((x) => Q.devName(x.dev)) : [];
-    box.appendChild(h('p', { class: 'muted l4-ex-notes' }, (v6.length ? `只算 IPv4；${v6.join('、')} 有使用 IPv6，IPv6 的防火牆見基準檢查的 F05。` : '依 IPv4 的防火牆與 NAT 推論；IPv6 未納入。')
-      + (xr.limits && xr.limits.truncated ? `判斷次數超過上限（${V.num(xr.limits.maxEvaluations)} 次），只算到一部分。` : '')));
+    box.appendChild(ipv6Note(App, xr));
+    if (xr.limits && xr.limits.truncated) box.appendChild(h('p', { class: 'muted l4-ex-notes' }, `判斷次數超過上限（${V.num(xr.limits.maxEvaluations)} 次），只算到一部分。`));
     EX_SECS.forEach((d) => box.appendChild(exSection(App, d)));
   }
 
@@ -1042,7 +1077,8 @@
       h('div', { class: 'l4-path-head' }, [total > 1 ? `路徑 ${n + 1}：` : '路徑：', statusTag(p.verdict)]),
       h('ol', { class: 'l4-hops' }, p.hops.map((hp) => h('li', { class: 'l4-hop', 'data-dev': hp.dev }, [
         h('div', null, [h('b', null, devLink(App, hp.dev)), multi && hp.vrf ? h('span', { class: 'mono muted l4-hop-vrf' }, ` @${hp.vrf}`) : null, hp.chain ? h('span', { class: 'muted' }, ` ${hp.chain}`) : null,
-          hp.collected ? null : V.chip('未收集', 'warn'), hp.firewall === 'none' && hp.collected ? V.chip('沒有防火牆資料', 'warn') : null, ' ',
+          hp.collected ? null : V.chip('未收集', 'warn'), hp.firewall === 'none' && hp.collected ? V.chip('沒有防火牆資料', 'warn') : null,
+          hp.returnUnsafe ? h('span', null, [' ', returnTag(App, [Object.assign({ dev: hp.dev }, hp.returnUnsafe)])]) : null, ' ',
           hp.verdict === 'pass' ? statusTag('allow', '這一跳通過') : statusTag(hp.verdict)]),
         h('div', { class: 'mono l4-hop-addr' }, `${addr(hp.src, null)} → ${addr(hp.dst, hp.port)}${hp.dstOut !== hp.dst || hp.portOut !== hp.port ? `　改寫為 ${addr(hp.dstOut, hp.portOut)}` : ''}${hp.srcOut !== hp.src ? `　來源改寫為 ${addr(hp.srcOut, null)}` : ''}`),
         h('div', { class: 'muted' }, `入 ${hp.inKnown ? epText(Q, hp.in) : '不明'}・出 ${hp.outKnown ? epText(Q, hp.out) : '不明'}${routeText(hp.route, multi)}`),

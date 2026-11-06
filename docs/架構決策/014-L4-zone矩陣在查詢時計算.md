@@ -27,7 +27,7 @@
 - zone 矩陣在查詢層（`src/query/`，data-model）依 `Q.reach` 的判斷與 zone 定義計算，L0 也一樣，不存進 Snapshot：
   - `Q.zoneMatrix(opts)` 是 L0；`Q.zoneMatrixSteps(opts)` 是同一份計算的分段版（generator），大型資料可以分段計算、讓出主執行緒，跑完的結果與 `Q.zoneMatrix` 相同。
   - `Q.zoneCell(srcZone, dstZone, opts)` 是 L1／L2 的下鑽，L3 是對代表位址呼叫 `Q.reach`。
-  - 計算引擎在 `src/query/trace.js`（`S.reach.engine`），`src/query/query.js` 第一次呼叫 L4 函式時才建立。參數與回傳見[查詢介面「防火牆命中次數與 L4」](../查詢介面.md#5-防火牆命中次數與-l4)，演算法見[設計說明 §5.3「L4 可達性與 zone」](../設計說明.md#l4-可達性與-zone2110-新增)。
+  - 計算引擎在 `src/query/trace.js`（`S.reach.engine`），`src/query/query.js` 第一次呼叫 L4 函式時才建立。（附註，2026-11-07：位置寫錯了，`S.reach.engine` 一直在 `src/query/reach.js`；3.8.0 起分成 `reach.js`、`reach-eval.js`、`reach-zones.js`、`reach-matrix.js`、`reach-exposure.js` 五個檔，`trace.js` 是路由追蹤與 L3／L4 共用的走法。下方「元件」的 `src/view/panels/l4.js` 也已拆成四個檔，矩陣在 `l4-matrix.js`。決策本身不變。）參數與回傳見[查詢介面「防火牆命中次數與 L4」](../查詢介面.md#5-防火牆命中次數與-l4)，演算法見[設計說明 §5.3「L4 可達性與 zone」](../設計說明.md#l4-可達性與-zone2110-新增)。
 - 快取放在查詢層：以「同一個 `Q`（同一份基準）＋查詢參數（命名規則的內容雜湊、zone 來源、service）」為鍵，只放在記憶體，不寫進 store 或基準。分段計算中途放棄時不留快取。
 - 理由：
   - **矩陣是推論，不是事實**。它由防火牆規則、路由與 zone 定義推導出來；同一份事實換一種 zone 分法或 service 類別，就是另一張矩陣。Snapshot 中的推論（例如推論鏈路、WAN／LAN 分類）都是逐筆可追溯到來源行的實體或屬性；矩陣是 zone 對 zone 的彙總，數量隨 zone 數的平方增加。

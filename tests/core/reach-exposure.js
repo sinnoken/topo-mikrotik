@@ -55,7 +55,7 @@ test('Q.exposure：外部 → 路由器本身（input）：Winbox 只開給特�
   const s = edge(); const Q = S.query(s);
   const x = exposureOf(Q);
   assert.strictEqual(x.status, 'ok');
-  assert.deepStrictEqual(x.wan.entries, [{ dev: 'R1', ep: 'R1|ether1' }]);
+  assert.deepStrictEqual(x.wan.entries, [{ dev: 'R1', ep: 'R1|ether1', vrf: 'main' }]);
   const wb = find(x.self, '198.51.100.2', 'tcp/8291');
   assert.ok(wb, JSON.stringify(x.self.rows.map((r) => [r.ip, r.service])));
   assert.deepStrictEqual([wb.dev, wb.dst, wb.target, wb.zone, wb.verdict, wb.allowedFrom.kind, wb.allowedFrom.ranges], ['R1', '198.51.100.2', 'R1', 'self', 'allow', 'limited', [['192.0.2.0', '192.0.2.255']]]);
@@ -126,11 +126,19 @@ test('Q.exposure 的前提：在 Q.reach 的前提之後附加暴露清單另有
   ['src-address', 'available-from', '/routing rule', 'allowedFrom', '/ip address', '/interface list member'].forEach((w) => assert.ok(text.includes(w), '應保留原值 ' + w));
 });
 
-test('Q.exposure：沒有 WAN 時回傳說明（不靜默）', () => {
-  const text = R1.filter((l) => !l.includes('list=WAN') && !l.includes('name=WAN')).concat(SW1).join('\n');
+test('Q.exposure：沒有任何對外入口時回傳說明（不靜默）；沒有 WAN 清單、但有預設路由的出介面（對外邊界的強證據）時仍是入口', () => {
+  const noList = R1.filter((l) => !l.includes('list=WAN') && !l.includes('name=WAN'));
+  // 預設路由經 ether1：Q.boundaryOf 為 external，入口與矩陣的外部 zone 相同
+  const Qd = S.query(build(noList.concat(SW1).join('\n')));
+  const xd = exposureOf(Qd);
+  assert.deepStrictEqual([xd.status, xd.wan.entries], ['ok', [{ dev: 'R1', ep: 'R1|ether1', vrf: 'main' }]]);
+  assert.deepStrictEqual(Qd.wanEntries(), [], '檢查用的 WAN 清單入口沒有（Q.wanEntries 不含邊界推論）');
+  assert.deepStrictEqual(Qd.zoneMatrix().zones.find((z) => z.id === 'external').devices, ['R1']);
+  // 也沒有預設路由：沒有任何證據
+  const text = noList.filter((l) => !l.includes('dst-address=0.0.0.0/0')).concat(SW1).join('\n');
   const x = exposureOf(S.query(build(text)));
   assert.strictEqual(x.status, 'no-wan');
-  assert.ok(x.message && x.message.includes('WAN'));
+  assert.ok(x.message && x.message.includes('對外'));
   assert.deepStrictEqual([x.self.rows, x.dnat.rows, x.routed.rows, x.wan.entries], [[], [], [], []]);
 });
 
@@ -166,8 +174,9 @@ test('Q.exposure（範例資料）：與 zone 矩陣「外部」列一致（允�
     const c = mx.cells.find((y) => y.src === 'external' && y.dst === r.zone);
     assert.ok(c && c.services.find((v) => v.service === r.service).counts.allow > 0, `${r.dst} ${r.service} 允許，矩陣 external → ${r.zone} 也要允許`);
   });
-  const selfCell = Q.zoneCell('external', 'self');
-  selfCell.groups.forEach((g) => g.services.forEach((sv) => {
+  // 暴露清單的 self 段只列入口設備自己的位址；矩陣的「網路設備（管理）」另有各網段閘道（入口以外的設備），只比對入口設備的
+  const selfCell = Q.zoneCell('external', 'self'); const entryDevs = new Set(x.wan.devices);
+  selfCell.groups.filter((g) => entryDevs.has(g.dst.dev)).forEach((g) => g.services.forEach((sv) => {
     const row = find(x.self, g.dst.ip, sv.service);
     if (sv.verdict === 'allow') assert.ok(row && row.verdict === 'allow', `矩陣允許 ${g.dst.ip} ${sv.service}`);
   }));
@@ -187,6 +196,33 @@ test('Q.exposure 與 Q.reach 不矛盾：每一列以它的來源代表與入口
       assert.strictEqual(rc.verdict, r.verdict, `${k} ${r.dev} ${r.ip} ${r.service}（入口 ${r.entry}）`);
     }));
   });
+});
+
+test('Q.exposure 每一列的分層結果（route／filter）與 Q.reach(src, ip, { proto, port, entry }) 的 paths[] 一致；IPv6 的列 route 為 null', () => {
+  const DENY = new Set(S.trace.ROUTE_DENY);
+  [S.query(sampleSnap()), S.query(edge())].forEach((Q) => {
+    const x = exposureOf(Q); let n = 0;
+    ['self', 'dnat', 'routed'].forEach((k) => x[k].rows.forEach((r) => {
+      assert.ok(r.filter && Array.isArray(r.filter.reasons), JSON.stringify(r.filter));
+      if (r.family === 'ipv6') { assert.deepStrictEqual([r.route, r.filter.status], [null, r.verdict]); return; }
+      const rc = reachOf(Q, r.src, r.ip, r.service, r.entry); const at = `${k} ${r.dev} ${r.ip} ${r.service}（入口 ${r.entry}）`;
+      const ss = S.util.uniq(rc.paths.map((p) => p.route.status));
+      const rs = ss.length === 1 ? ss[0] : 'unknown';
+      assert.deepStrictEqual([r.route.status, r.route.code], [rs, ss.length === 1 ? rc.paths[0].route.code : 'branches-differ'], at);
+      assert.strictEqual(r.filter.status, DENY.has(rs) ? 'n/a' : rc.verdict, at);
+      const withRule = rc.paths.find((p) => p.filter.rule);
+      assert.deepStrictEqual(r.filter.rule, withRule ? withRule.filter.rule : null, at);
+      // 原因是各路徑的聯集
+      const codes = (list) => S.util.uniq(list.map((y) => y.code)).sort();
+      assert.deepStrictEqual(codes(r.route.reasons), codes(rc.paths.flatMap((p) => p.route.reasons)), at);
+      assert.deepStrictEqual(codes(r.filter.reasons), codes(rc.paths.flatMap((p) => p.filter.reasons)), at);
+      n++;
+    }));
+    assert.ok(n > 0);
+  });
+  // 範例資料：經 WAN 的允許列至少有一列路由抵達、防火牆允許
+  const x = exposureOf(S.query(sampleSnap()));
+  assert.ok(x.routed.rows.concat(x.dnat.rows).some((r) => r.route && r.route.status === 'reached' && r.filter.status === 'allow'));
 });
 
 test('zone 矩陣「外部 → 網路設備」與 Q.reach 一致：/ip service 的埠不和沒有規則提到的埠併成同一類（RT_02 的 www-ssl tcp/443）', () => {

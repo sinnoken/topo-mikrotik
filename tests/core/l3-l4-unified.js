@@ -2,12 +2,14 @@
 // L4 只多了防火牆。每個情境同時呼叫兩者，結果寫成一列表格，不一致的地方明確標出（PENDING：預期在走法統一時改變）。
 'use strict';
 const assert = require('assert');
-const { S, build, read, test } = require('../lib.js');
+const fs = require('fs');
+const path = require('path');
+const { S, ROOT, build, read, test, sampleSnap } = require('../lib.js');
 
 const RT = 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC';
 /**
  * 三台：A0（192.168.1.254，只有直連）、R1（LAN 192.168.1.1、對 R2 的 10.0.12.1/30、WAN 198.51.100.2/30）、R2（LAN 192.168.2.1）。
- * opt：dhcp（R1 的 DHCP 閘道）、wan（R1 的 WAN 清單與預設路由）、r1（R1 另加的路由列）、r2（R2 另加的路由列）。
+ * opt：dhcp（R1 的 DHCP 閘道）、wan（R1 的 WAN 清單與預設路由）、pub（R1 的 ether4 另有公網位址 81.0.0.2/30）、r1（R1 另加的路由列）、r2（R2 另加的路由列）。
  */
 function net(opt) {
   const o = opt || {};
@@ -22,6 +24,7 @@ function net(opt) {
     '/ip address add address=192.168.1.1/24 interface=ether1 network=192.168.1.0',
     '/ip address add address=10.0.12.1/30 interface=ether2 network=10.0.12.0',
     '/ip address add address=198.51.100.2/30 interface=ether3 network=198.51.100.0',
+    ...(o.pub ? ['/ip address add address=81.0.0.2/30 interface=ether4 network=81.0.0.0'] : []),
     ...(o.dhcp ? ['/ip dhcp-server network add address=192.168.1.0/24 gateway=192.168.1.1'] : []),
     ...(o.fw || []),
     '### /ip route print detail without-paging', RT,
@@ -95,9 +98,33 @@ test('L3／L4 對照：下一跳是未收集的設備時兩邊都是不明（L3 
   assert.deepStrictEqual([x.l4.verdict, x.l4.ends], ['unknown', ['device-uncollected:R2']]);
 });
 
-test('L3／L4 對照：下一跳不在基準、出介面不是 WAN 時，兩邊都不能判斷（L3 unknown-nh、L4 next-hop-outside）', () => {
-  const x = pair(net({ dhcp: true, r1: [' As dst-address=0.0.0.0/0 routing-table=main gateway=198.51.100.1 distance=1'] }), '192.168.1.50', '8.8.8.8');
+// 送往外部依出介面的對外邊界（Q.boundaryOf，ADR-023 決策 1、3），不再只看 WAN 清單
+const R1_DEFAULT = ' As dst-address=0.0.0.0/0 routing-table=main gateway=198.51.100.1 distance=1';
+const R1_NET8 = [' DAc dst-address=81.0.0.0/30 routing-table=main gateway=ether4 distance=0', ' As dst-address=8.0.0.0/8 routing-table=main gateway=81.0.0.1 distance=1'];
+const R1_LANHOP = ' As dst-address=172.16.0.0/12 routing-table=main gateway=192.168.1.200 distance=1';
+test('L3／L4 對照：沒有 WAN 清單、預設路由的出介面（強證據）——兩邊都是送往外部', () => {
+  const Q = net({ dhcp: true, r1: [R1_DEFAULT] });
+  assert.strictEqual(Q.boundaryOf('R1|ether3').status, 'external');
+  const x = pair(Q, '192.168.1.50', '8.8.8.8');
+  assert.deepStrictEqual(x.l3, { status: 'external', start: 'R1', ends: ['egress:R1'] });
+  assert.deepStrictEqual([x.l4.verdict, x.l4.ends], ['allow', ['egress-wan:R1']]);
+});
+test('L3／L4 對照：出介面只是可能對外（只有公網位址，possible）——兩邊都不判定（L3 unknown-nh 附 reason egress-possible、L4 egress-possible）', () => {
+  const Q = net({ dhcp: true, pub: true, r1: R1_NET8 });
+  assert.strictEqual(Q.boundaryOf('R1|ether4').status, 'possible');
+  const x = pair(Q, '192.168.1.50', '8.8.8.8');
   assert.deepStrictEqual(x.l3, { status: 'unreachable', start: 'R1', ends: ['unknown-nh:R1'] });
+  const t = S.trace(Q, '192.168.1.50', '8.8.8.8');
+  assert.strictEqual(t.ends[0].reason, 'egress-possible');
+  assert.ok(t.ends[0].note.includes('公網位址'), t.ends[0].note);
+  assert.deepStrictEqual([x.l4.verdict, x.l4.ends], ['unknown', ['egress-possible:R1']]);
+});
+test('L3／L4 對照：下一跳不在基準、出介面沒有對外證據——兩邊都不能判斷（L3 unknown-nh、L4 next-hop-outside）', () => {
+  const Q = net({ dhcp: true, r1: [R1_LANHOP] });
+  assert.strictEqual(Q.boundaryOf('R1|ether1'), null);
+  const x = pair(Q, '192.168.1.50', '172.20.0.1');
+  assert.deepStrictEqual(x.l3, { status: 'unreachable', start: 'R1', ends: ['unknown-nh:R1'] });
+  assert.strictEqual(S.trace(Q, '192.168.1.50', '172.20.0.1').ends[0].reason, undefined);
   assert.deepStrictEqual([x.l4.verdict, x.l4.ends], ['unknown', ['next-hop-outside:R1']]);
 });
 
@@ -148,10 +175,12 @@ test('分層結果：路由沒到時防火牆是 n/a——黑洞在擋下之前�
 test('分層結果：送往外部是路由抵達（推論的層級是 assumption）；下一跳不在基準是路由不明、防火牆也不明', () => {
   const ext = net({ dhcp: true, wan: true }).reach('192.168.1.50', '8.8.8.8', { proto: 'tcp', port: 443 });
   assert.deepStrictEqual(layers(ext), [['reached', 'egress-wan', 'allow']]);
-  const out = net({ dhcp: true, r1: [' As dst-address=0.0.0.0/0 routing-table=main gateway=198.51.100.1 distance=1'] }).reach('192.168.1.50', '8.8.8.8', { proto: 'tcp', port: 443 });
+  const out = net({ dhcp: true, r1: [R1_LANHOP] }).reach('192.168.1.50', '172.20.0.1', { proto: 'tcp', port: 443 });
   assert.deepStrictEqual(layers(out), [['unknown', 'next-hop-outside', 'unknown']]);
+  const maybe = net({ dhcp: true, pub: true, r1: R1_NET8 }).reach('192.168.1.50', '8.8.8.8', { proto: 'tcp', port: 443 });
+  assert.deepStrictEqual(layers(maybe), [['unknown', 'egress-possible', 'unknown']]);
   const byCode = new Map(S.query.reachReasonCodes().map((x) => [x.code, x.layer]));
-  assert.deepStrictEqual(['egress-wan', 'next-hop-outside', 'dropped', 'nat-target', 'return-not-guaranteed'].map((c) => byCode.get(c)), ['assumption', 'route', 'filter', 'nat', 'assumption']);
+  assert.deepStrictEqual(['egress-wan', 'egress-possible', 'next-hop-outside', 'dropped', 'nat-target', 'return-not-guaranteed'].map((c) => byCode.get(c)), ['assumption', 'assumption', 'route', 'filter', 'nat', 'assumption']);
 });
 
 test('原因代碼的層級：REASON_CODES 每筆都有 layer（route／filter／nat／assumption）', () => {
@@ -191,4 +220,64 @@ test('閘道推定的依據：S.query.reachStartBases() 就是共用展開的 sr
   assert.deepStrictEqual([...found].sort(), list.slice().sort());
   assert.ok(list.includes(net({}).reach('192.168.1.50', '192.168.2.10', { proto: 'tcp', port: 22 }).start.basis));
   assert.ok(list.includes(S.trace(net({ dhcp: true }), '192.168.1.50', '192.168.2.10').startBasis));
+});
+
+// ---- 單一的入口與邊界（ADR-023 決策 1、3）：檢查、矩陣、暴露清單與 L3 都讀同一份
+function listFixtures(dir) {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const p = path.join(dir, e.name);
+    return e.isDirectory() ? listFixtures(p) : e.name.endsWith('.txt') ? [p] : [];
+  }).sort();
+}
+test('對外入口：查詢層的 Q.wanEntries 與檢查用的 M.wanEntries（S.infer.fw.wanEntries）在範例資料與 tests/fixtures 的每台設備上相同', () => {
+  const inputs = [path.join(ROOT, 'samples', 'sample-bundle.txt'), ...listFixtures(path.join(ROOT, 'tests', 'fixtures'))];
+  let compared = 0; let withEntry = 0;
+  inputs.forEach((file) => {
+    let M = null; const run = S.check.run;
+    S.check.run = function (m) { M = m; return run.apply(this, arguments); };
+    let snap;
+    try { snap = S.build([{ name: path.basename(file), text: fs.readFileSync(file, 'utf8') }], { now: '2026-01-01T00:00:00Z' }); } finally { S.check.run = run; }
+    const Q = S.query(snap); const rel = path.relative(ROOT, file);
+    M.wanEntries.forEach((list, dev) => {
+      assert.deepStrictEqual(JSON.parse(JSON.stringify(Q.wanEntries(dev))), JSON.parse(JSON.stringify(list)), `${rel}：${dev}`);
+      compared++; if (list.length) withEntry++;
+    });
+    const all = Array.from(M.wanEntries.values()).flat();
+    assert.deepStrictEqual(Q.wanEntries().map((w) => w.ep).sort(), all.map((w) => w.ep).sort(), `${rel}：全部`);
+  });
+  assert.ok(compared > 0 && withEntry > 0, `比對 ${compared} 台，有入口 ${withEntry} 台`);
+});
+
+test('對外入口：zone 矩陣的外部 zone 與暴露清單用同一組入口（含沒有介面紀錄的成員）；包含 Q.wanEntries 與對外邊界判定為 external 的介面，不含 possible', () => {
+  const Q = S.query(sampleSnap());
+  const x = Q.exposure(); const mx = Q.zoneMatrix();
+  const ext = mx.zones.find((z) => z.id === 'external');
+  const zc = Q.zoneCell('external', 'self');
+  const mxEntries = S.util.uniq(zc.groups.flatMap((g) => g.srcs.map((s) => s.entry))).sort();
+  const exEntries = x.wan.entries.map((w) => w.ep).sort();
+  assert.deepStrictEqual(ext.devices, x.wan.devices);
+  // 矩陣「外部 → 網路設備」只用 main VRF 的入口；範例資料的入口都在 main，所以兩邊相同
+  assert.deepStrictEqual(mxEntries, exEntries);
+  Q.wanEntries().forEach((w) => assert.ok(exEntries.includes(w.ep), `WAN 清單的成員 ${w.ep} 是入口`));
+  Q.boundaries().forEach((b) => assert.strictEqual(exEntries.includes(b.ep), b.status === 'external', `${b.ep}（${b.status}）`));
+  // CE ether1：只有 masquerade（srcnat 的出介面，強證據）、沒有 WAN 清單 → 現在是入口，矩陣與暴露清單都看得到
+  const ce = 'TPE_CE_RT_01|ether1';
+  assert.strictEqual(Q.boundaryOf(ce).status, 'external');
+  assert.strictEqual(Q.wanEntries('TPE_CE_RT_01').length, 0, 'CE 沒有 WAN 清單');
+  assert.ok(exEntries.includes(ce) && mxEntries.includes(ce));
+  assert.ok(ext.devices.includes('TPE_CE_RT_01'));
+  // 沒有介面紀錄的對外介面（CORE_01 ether45：DHCP client 加預設路由）也是入口，Q.reach 接受它當 entry
+  const e45 = x.wan.entries.find((w) => w.ep === 'TPE_CORE_RT_01|ether45');
+  assert.ok(e45 && !Q.getInterface(e45.ep), '沒有介面紀錄');
+  assert.strictEqual(Q.reach('192.0.2.10', '10.1.10.1', { proto: 'icmp', entry: e45.ep }).ok, true);
+});
+
+test('L3 的送往外部改讀對外邊界：範例資料上 S.trace 與 Q.reach 的 egress 一致（10.1.30.15 → 8.8.8.8）', () => {
+  const Q = S.query(sampleSnap());
+  const t = S.trace(Q, '10.1.30.15', '8.8.8.8');
+  const r = Q.reach('10.1.30.15', '8.8.8.8', { proto: 'tcp', port: 443 });
+  const l3 = t.ends.filter((e) => e.status === 'egress').map((e) => e.dev).sort();
+  const l4 = S.util.uniq(r.paths.filter((p) => p.end.code === 'egress-wan').map((p) => p.end.dev)).sort();
+  assert.ok(l3.length > 0);
+  assert.deepStrictEqual(l3, l4);
 });

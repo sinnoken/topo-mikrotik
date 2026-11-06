@@ -216,9 +216,11 @@
   const ROUTE_OF_END = Object.freeze({
     loop: 'loop', 'no-route': 'no-route', blackhole: 'blackhole', 'policy-drop': 'policy-drop',
     local: 'reached', host: 'reached', segment: 'reached', 'same-subnet': 'reached', 'egress-wan': 'reached', 'dst-device-uncollected': 'reached',
-    ttl: 'unknown', 'no-route-data': 'unknown', 'policy-routing': 'unknown', 'next-hop-outside': 'unknown', 'src-location-unknown': 'unknown', 'no-gateway': 'unknown',
+    ttl: 'unknown', 'no-route-data': 'unknown', 'policy-routing': 'unknown', 'next-hop-outside': 'unknown', 'egress-possible': 'unknown', 'src-location-unknown': 'unknown', 'no-gateway': 'unknown',
     'device-uncollected': 'unknown', 'src-device-uncollected': 'unknown',
   });
+  /** 對外邊界的弱證據（只有弱證據時是 possible）在訊息中的說法。 */
+  const BOUNDARY_WEAK = Object.freeze({ 'public-address': '介面上有公網位址', 'cgnat-address': '介面上有 CGNAT 位址', 'dstnat-address': 'dst-nat 的目的是這個介面上的公網位址' });
   /** 路由沒有到（拒絕）的路由層結果：這些情況防火牆的結果是 n/a。 */
   const ROUTE_DENY = Object.freeze(['no-route', 'blackhole', 'policy-drop', 'loop']);
 
@@ -254,9 +256,11 @@
       for (const len of lens) { const x = byPrefix.get(K.inVrf(IP.fromInt((n & IP.maskOf(len)) >>> 0) + '/' + len, vrf)); if (x) return x; }
       return null;
     };
-    /** 介面是不是這台設備 WAN 清單的成員（事實：/interface list member；清單名稱含 WAN 是推論，見 firewallZones）。 */
-    const wanMemo = new Map();
-    const isWanEp = (dev, ep) => !!ep && U.getOr(wanMemo, dev, () => { const z = Q.firewallZone(dev); return new Set(z && z.status === 'ok' ? z.wanInterfaces : []); }).has(ep);
+    /**
+     * 出介面的對外邊界（推論，Q.boundaryOf，ADR-023 決策 1）：'external'（送往外部）｜'possible'（只有弱證據，不判定）｜'internal'（沒有證據）。
+     * WAN 清單的成員是證據之一（wan-list），所以原本的「WAN 清單的介面」都還是 external。
+     */
+    const boundaryStatus = (ep) => { if (!ep) return 'internal'; const b = Q.boundaryOf(ep); return b ? b.status : 'internal'; };
     const lookMemo = new Map();
     const look = (dev, dst, vrf) => U.getOr(level(level(lookMemo, dev), vrf), dst, () => lookup(RV, dev, dst, vrf));
     // 轉送決定（含策略路由，routeDecision）：沒有策略路由的設備只依目的與 VRF 快取；有的時候也依入介面與來源
@@ -310,7 +314,7 @@
         return { how: 'subnet', prefix, net, len, gateways: gws, basis, candidates: cands, vrf, mask, netN: (IP.toInt(net) & mask) >>> 0 };
       });
     }
-    X = { RV, devOfEp, intOf, ownerDev, devInfo, netDev, prefixes4, longestPrefix, isWanEp, look, decide, srcLocation };
+    X = { RV, devOfEp, intOf, ownerDev, devInfo, netDev, prefixes4, longestPrefix, boundaryStatus, look, decide, srcLocation };
     sharedMemo.set(Q, X);
     return X;
   }
@@ -437,14 +441,21 @@
         return next(dev, hop, o, st, depth, ctx, lk);
       });
     }
+    /** 「可能對外」的介面列出的弱證據（文字；種類見 S.infer 的 boundaries）。 */
+    const weakText = (ep) => U.uniq(Q.boundaryOf(ep).evidence.filter((e) => e.strength === 'weak').map((e) => BOUNDARY_WEAK[e.kind] || e.kind)).join('、');
     const outEpFor = (dev, ip, vrf) => { const s = longestSubnets(Q.subnetsOf(dev, vrf), ip)[0]; return s ? s.ep : undefined; };
-    /** 交給下一台：沒有閘道位址就送達直連網段；閘道不屬於任何設備時，經 WAN 介面送往基準以外是 egress-wan（推論），其他是 next-hop-outside。 */
+    /**
+     * 交給下一台：沒有閘道位址就送達直連網段；閘道不屬於任何設備、目的也在基準以外時，依出介面的對外邊界（Q.boundaryOf）：
+     * external 是 egress-wan（送往外部，推論），possible 是 egress-possible（只有弱證據，不明），其他是 next-hop-outside。
+     */
     function next(dev, hop, o, st, depth, ctx, lk) {
       const info = (no, targets) => (keep ? { lk, o, no, targets } : null);
       if (!o.nh || !o.nh.ip) return deliver(dev, hop, st, depth, ctx, info(null, null));
       const no = nextOwner(X.RV, dev, o.nh.ip, o.nh.vrf);
-      // 外部：從 WAN 清單的介面送出、目的不在基準的任何網段（推論：送往網際網路，之後由電信業者決定）
-      if (no.status === 'unknown' && X.isWanEp(dev, o.out) && !X.longestPrefix(st.dst, st.vrf)) return mk(hop, null, end('delivered', 'allow', 'egress-wan', dev, `從 ${Q.epName(o.out)}（WAN）送往下一跳 ${K.inVrf(o.nh.ip, o.nh.vrf)}，目的 ${st.dst} 在基準以外，之後由電信業者決定（推論）`, { ip: st.dst, vrf: st.vrf }), info(no, null));
+      const bs = no.status === 'unknown' && !X.longestPrefix(st.dst, st.vrf) ? X.boundaryStatus(o.out) : 'internal';
+      // 外部：從對外介面送出、目的不在基準的任何網段（推論：送往網際網路，之後由電信業者決定）
+      if (bs === 'external') return mk(hop, null, end('delivered', 'allow', 'egress-wan', dev, `從 ${Q.epName(o.out)}（對外介面，推論）送往下一跳 ${K.inVrf(o.nh.ip, o.nh.vrf)}，目的 ${st.dst} 在基準以外，之後由電信業者決定（推論）`, { ip: st.dst, vrf: st.vrf }), info(no, null));
+      if (bs === 'possible') return mk(hop, null, end('outside', 'unknown', 'egress-possible', dev, `從 ${Q.epName(o.out)} 送往下一跳 ${K.inVrf(o.nh.ip, o.nh.vrf)}，目的 ${st.dst} 在基準以外；這個介面可能對外（${weakText(o.out)}），證據不足，不判定為送往外部`, { ip: o.nh.ip, vrf: o.nh.vrf }), info(no, null));
       if (no.status === 'unknown') return mk(hop, null, end('outside', 'unknown', 'next-hop-outside', dev, `${name(dev)} 的下一跳 ${K.inVrf(o.nh.ip, o.nh.vrf)} 不在基準內，之後的路徑無法判斷`, { ip: o.nh.ip, vrf: o.nh.vrf }), info(no, null));
       if (!keep) { // L4：只要下一台的節點
         const kids = no.status === 'direct' ? arrive(no.dev, realEp(no.ep), Object.assign({}, st, { vrf: no.vrf }), depth + 1, ctx)
@@ -532,10 +543,11 @@
    *   - 起點：來源是網路設備的位址 → 那台設備；否則來源所在網段的閘道（srcLocation 的依據；同一個依據有多台時每一台都是起點，starts 列出全部，start 是第一台）
    *   - 走到未收集的設備（起點、中途或終點）時以 ends[].status 'unverified' 停下：沒有它的路由表，不能判斷是否抵達，不算斷掉
    *     （目的是它自己或在它已知的直連網段時算抵達）
-   *   - 經 WAN 清單的介面送往不在基準內的下一跳、目的也不在基準的網段：ends[].status 'egress'（送往外部，推論）
+   *   - 經對外介面（Q.boundaryOf 的 status external）送往不在基準內的下一跳、目的也不在基準的網段：ends[].status 'egress'（送往外部，推論）；
+   *     出介面只是可能對外（possible）時仍是 'unknown-nh'，另有 reason 'egress-possible'，note 寫出證據
    * status：'reached'（至少一個分支抵達）｜'external'（沒有抵達，但有分支送往外部）｜'unverified'（沒有抵達，且每個分支都停在未收集的設備）｜'unreachable'（其他）；
    * unverified 是停在未收集設備的設備鍵（去重、依出現順序）。
-   * 回傳 { ok, src, dst, vrf, start, starts, startBasis, reached, status, unverified, hops: [{ dev, vrf, via, route, proto, ecmp, next: [{ ip, ifc, dev, vrf, crossVrf, status, note }] }], ends: [{ dev, vrf, status, note, path }], edges }；
+   * 回傳 { ok, src, dst, vrf, start, starts, startBasis, reached, status, unverified, hops: [{ dev, vrf, via, route, proto, ecmp, next: [{ ip, ifc, dev, vrf, crossVrf, status, note }] }], ends: [{ dev, vrf, status, note, path（, reason） }], edges }；
    * 位址無效或來源在多個 VRF 時 { ok: false, error（, vrfs） }。vrf 不是基準中的 VRF 時 TypeError。
    * 每一跳在它的 VRF 查路由；下一跳寫了 @<VRF>（路由洩漏）時在那個 VRF 解析閘道，下一台從擁有閘道位址的 VRF 繼續。
    */
@@ -612,11 +624,13 @@
         const leak = n.vrf !== lv ? `（在 VRF ${n.vrf} 解析閘道）` : '';
         if (nd.info.no.status === 'unknown') {
           if (nd.end.code === 'egress-wan') {
-            hop.next.push({ ip: n.ip, ifc: n.ifc, vrf: n.vrf, status: 'egress', note: `下一跳不屬於任何已知設備，經 WAN 介面送往基準以外（推論）${leak}` });
+            hop.next.push({ ip: n.ip, ifc: n.ifc, vrf: n.vrf, status: 'egress', note: `下一跳不屬於任何已知設備，經對外介面送往基準以外（推論）${leak}` });
             ends.push({ dev, vrf: n.vrf, status: 'egress', note: nd.end.message, path });
           } else {
             hop.next.push({ ip: n.ip, ifc: n.ifc, vrf: n.vrf, status: 'unknown', note: `下一跳不屬於任何已知設備${leak}` });
-            ends.push({ dev, vrf: n.vrf, status: 'unknown-nh', note: `下一跳 ${K.inVrf(n.ip, n.vrf)} 不在基準內`, path });
+            // 出介面可能對外（只有弱證據）：仍是下一跳不在基準內，另以 reason 標示，訊息寫出證據
+            if (nd.end.code === 'egress-possible') ends.push({ dev, vrf: n.vrf, status: 'unknown-nh', reason: 'egress-possible', note: nd.end.message, path });
+            else ends.push({ dev, vrf: n.vrf, status: 'unknown-nh', note: `下一跳 ${K.inVrf(n.ip, n.vrf)} 不在基準內`, path });
           }
           return;
         }

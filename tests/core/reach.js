@@ -94,12 +94,17 @@ test('Q.reach：無法判斷時回傳 unknown 與原因（address-list、未收�
   // 經 WAN 送往基準以外：路徑以 egress-wan 結束（不再是 next-hop-outside）；仍是 unknown，因為 R1 的 drop src-address-list=BLOCKED 不明
   const out = Q.reach('192.168.2.10', '8.8.8.8', { proto: 'tcp', port: 443 });
   assert.deepStrictEqual([out.verdict, codes(out).includes('next-hop-outside'), out.paths[0].end.code, codes(out)], ['unknown', false, 'egress-wan', ['rule-condition']]);
-  // 下一跳在基準外、但出介面不在 WAN 清單：仍是 next-hop-outside
-  const noWan = S.query(build(['R9 (10.9.0.1):', '### /export terse', '/ip address add address=10.9.0.1/24 interface=ether2 network=10.9.0.0',
+  // 沒有 WAN 清單：送往外部依對外邊界（Q.boundaryOf）。預設路由的出介面是強證據 → egress-wan；
+  // 只有非預設路由、出介面沒有對外證據 → 仍是 next-hop-outside
+  const r9 = (route) => S.query(build(['R9 (10.9.0.1):', '### /export terse', '/ip address add address=10.9.0.1/24 interface=ether2 network=10.9.0.0',
     '/ip address add address=10.8.0.2/30 interface=ether1 network=10.8.0.0', '### /ip route print detail without-paging', RT,
-    ' DAc dst-address=10.9.0.0/24 routing-table=main gateway=ether2 distance=0', ' As dst-address=0.0.0.0/0 routing-table=main gateway=10.8.0.1 distance=1'].join('\n')));
-  const lan = noWan.reach('10.9.0.50', '8.8.8.8', { proto: 'tcp', port: 443 });
-  assert.deepStrictEqual([lan.verdict, lan.paths[0].end.code], ['unknown', 'next-hop-outside'], '沒有 WAN 清單時不當成外部');
+    ' DAc dst-address=10.9.0.0/24 routing-table=main gateway=ether2 distance=0', route].join('\n')));
+  const dflt = r9(' As dst-address=0.0.0.0/0 routing-table=main gateway=10.8.0.1 distance=1');
+  assert.strictEqual(dflt.boundaryOf('R9|ether1').status, 'external');
+  const viaDefault = dflt.reach('10.9.0.50', '8.8.8.8', { proto: 'tcp', port: 443 });
+  assert.deepStrictEqual([viaDefault.verdict, viaDefault.paths[0].end.code], ['allow', 'egress-wan'], '預設路由的出介面是對外邊界');
+  const lan = r9(' As dst-address=8.0.0.0/8 routing-table=main gateway=10.8.0.1 distance=1').reach('10.9.0.50', '8.8.8.8', { proto: 'tcp', port: 443 });
+  assert.deepStrictEqual([lan.verdict, lan.paths[0].end.code], ['unknown', 'next-hop-outside'], '出介面沒有對外證據時不當成外部');
   const hop = out.paths[0].hops.find((h) => h.dev === 'R1');
   assert.deepStrictEqual([hop.nat[0].type, hop.srcOut], ['masquerade', '198.51.100.2'], 'masquerade 改寫來源為出介面的位址');
   // dst-nat 的 to-addresses 是範圍

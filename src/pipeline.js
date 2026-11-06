@@ -218,7 +218,7 @@
     const arps = M.arps.map((a) => ({ ip: a.ip, mac: a.mac, dev: a.dev, ifc: a.ifc, vrf: a.vrf, src: [[a.block, a.line]] }))
       .sort((a, b) => nat(a.ip, b.ip) || byVrf(a.vrf, b.vrf) || nat(a.dev, b.dev) || U.cmp(a.mac, b.mac));
     // 路由：routingTable 是路由表原值（main 也寫出），vrf 是它對應的 VRF（只用於策略路由的路由表為 null）；nh[].vrf 是解析閘道的 VRF，依據在 vrfBasis（見 model/build.js 的 resolveVrfs）
-    const routes = M.routes.map((r) => ({ dev: r.dev, prefix: r.prefix, len: r.len, proto: r.proto, distance: r.distance, blackhole: r.blackhole, checkGateway: r.checkGateway,
+    const routes = M.routes.map((r) => ({ dev: r.dev, prefix: r.prefix, len: r.len, proto: r.proto, distance: r.distance, blackhole: r.blackhole, checkGateway: r.checkGateway, active: r.active,
       routingTable: r.routingTable, vrf: r.vrf, nh: r.nh, src: [[r.block, r.line]] }))
       .sort((a, b) => nat(a.dev, b.dev) || nat(a.prefix, b.prefix) || a.len - b.len || byVrf(K.vrf(a.routingTable), K.vrf(b.routingTable)));
     const ospfAdjacencies = M.ospfAdjacencies.map((a) => ({
@@ -249,6 +249,11 @@
     const cfgOut = (k) => M.routingCfgOut[k].slice().sort((a, b) => nat(a.dev, b.dev) || a.order - b.order);
     const dhcpClients = cfgOut('dhcpClients'); const pppoeClients = cfgOut('pppoeClients');
     const ospfAreas = cfgOut('ospfAreas'); const ospfInterfaceTemplates = cfgOut('ospfInterfaceTemplates');
+    // 對外邊界與路由網域（推論，ADR-023；model/infer.js 的 boundaries、routingDomains，已排序）
+    const boundaries = (M.boundaries || []).map((b) => ({ dev: b.dev, ep: b.ep, vrf: b.vrf, hasIfc: b.hasIfc, status: b.status,
+      evidence: b.evidence.map((e) => ({ kind: e.kind, strength: e.strength, src: e.src, ref: e.ref })) }));
+    const routingDomains = (M.routingDomains || []).map((d) => ({ key: d.key, kind: d.kind, vrf: d.vrf, group: d.group, area: d.area, areaId: d.areaId,
+      devices: d.devices, prefixes: d.prefixes, evidence: d.evidence, otherAreas: d.otherAreas }));
     // 命中次數的表（事實＋對應結果）：每台設備、每個（位址族，表）一筆；collectedAt 取該區塊的收集時間
     const firewallStats = Array.from(M.fw.stats.values()).map((t) => ({
       dev: t.dev, family: t.family, table: t.table, status: t.status, rows: t.count, dynamic: t.dynamic, rules: t.rules, reason: t.reason,
@@ -286,7 +291,7 @@
       },
       model: { devices, interfaces, links, inferredLinks, ospfAdjacencies, vlans, vrfs, ipAddresses, prefixes, macs, wifiAssociations, dhcpNetworks, arps, routes, routingTables, routingRules, routingMarkRules,
         firewallRules, firewallZones, firewallStats, interfaceLists, ipServices, ipsecPeers, ipsecPolicies, mgmtSettings,
-        dhcpClients, pppoeClients, ospfAreas, ospfInterfaceTemplates },
+        dhcpClients, pppoeClients, ospfAreas, ospfInterfaceTemplates, boundaries, routingDomains },
       findings: c.findings,
       coverage: c.coverage,
       blocks,

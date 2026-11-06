@@ -3,19 +3,19 @@
   "schema": "ssot-snapshot/3",
   "version": "3.8.0",
   "createdAt": "2026-01-01T00:00:00Z",
-  "inputHash": "f078ae811266be6f",
-  "baselineKey": "b043db061ab891da",
+  "inputHash": "59e097d42eb5547f",
+  "baselineKey": "42a33d7b78a6edac",
   "sources": [
    {
     "name": "sample-bundle.txt",
     "reader": "bundle-v1",
-    "bytes": 224382,
-    "hash": "82fe2862a31049f3"
+    "bytes": 224614,
+    "hash": "12132e4347e49db3"
    }
   ],
   "adapters": {
    "mikrotik.system": 21,
-   "mikrotik.config": 1107,
+   "mikrotik.config": 1108,
    "mikrotik.fwstats.ip-filter": 23,
    "mikrotik.fwstats.ip-nat": 6,
    "mikrotik.fwstats.ip-raw": 2,
@@ -26,7 +26,7 @@
    "mikrotik.bridgehost": 788,
    "mikrotik.arp": 267,
    "mikrotik.ipaddr": 13,
-   "mikrotik.route": 27,
+   "mikrotik.route": 28,
    "mikrotik.ospf": 1,
    "mikrotik.stp": 25,
    "mikrotik.stpbridge": 12,
@@ -34,7 +34,7 @@
    "mikrotik.routerboard": 6
   },
   "blockCount": 112,
-  "factCount": 2412,
+  "factCount": 2414,
   "profile": null,
   "stats": {
    "devices": 59,
@@ -46,11 +46,11 @@
    "prefixes": 11,
    "wifiAssociations": 0,
    "ospfAdjacencies": 1,
-   "firewallRules": 26,
+   "firewallRules": 27,
    "vlans": 65,
    "macs": 151,
    "arps": 267,
-   "routes": 27,
+   "routes": 28,
    "vrfs": 2,
    "routingTables": 2,
    "routingRules": 2,
@@ -1135,18 +1135,6 @@
      "src": [
       [
        111,
-       4204
-      ],
-      [
-       111,
-       4205
-      ],
-      [
-       111,
-       4207
-      ],
-      [
-       111,
        4208
       ],
       [
@@ -1155,7 +1143,19 @@
       ],
       [
        111,
-       4210
+       4211
+      ],
+      [
+       111,
+       4212
+      ],
+      [
+       111,
+       4213
+      ],
+      [
+       111,
+       4214
       ]
      ]
     },
@@ -16229,7 +16229,7 @@
      ],
      [
       109,
-      4186
+      4188
      ]
     ],
     "srcNone": null
@@ -23792,7 +23792,7 @@
      ],
      [
       109,
-      4186
+      4188
      ]
     ]
    },
@@ -39979,6 +39979,7 @@
     "distance": 0,
     "blackhole": false,
     "checkGateway": null,
+    "active": true,
     "routingTable": "main",
     "vrf": "main",
     "nh": [
@@ -40004,6 +40005,7 @@
     "distance": 0,
     "blackhole": false,
     "checkGateway": null,
+    "active": true,
     "routingTable": "main",
     "vrf": "main",
     "nh": [
@@ -40029,33 +40031,9 @@
     "distance": 1,
     "blackhole": false,
     "checkGateway": null,
+    "active": true,
     "routingTable": "main",
     "vrf": "main",
-    "nh": [
-     {
-      "ip": "192.168.50.1",
-      "ifc": "ether1",
-      "vrf": "main",
-      "vrfBasis": "default"
-     }
-    ],
-    "src": [
-     [
-      110,
-      4198
-     ]
-    ]
-   },
-   {
-    "dev": "TPE_CE_RT_01",
-    "prefix": "0.0.0.0",
-    "len": 0,
-    "proto": "Static",
-    "distance": 1,
-    "blackhole": false,
-    "checkGateway": null,
-    "routingTable": "to-isp2",
-    "vrf": null,
     "nh": [
      {
       "ip": "192.168.50.1",
@@ -40073,12 +40051,65 @@
    },
    {
     "dev": "TPE_CE_RT_01",
+    "prefix": "0.0.0.0",
+    "len": 0,
+    "proto": "Static",
+    "distance": 10,
+    "blackhole": false,
+    "checkGateway": null,
+    "active": false,
+    "routingTable": "main",
+    "vrf": "main",
+    "nh": [
+     {
+      "ip": "10.255.0.1",
+      "ifc": null,
+      "vrf": "main",
+      "vrfBasis": "default"
+     }
+    ],
+    "src": [
+     [
+      110,
+      4204
+     ]
+    ]
+   },
+   {
+    "dev": "TPE_CE_RT_01",
+    "prefix": "0.0.0.0",
+    "len": 0,
+    "proto": "Static",
+    "distance": 1,
+    "blackhole": false,
+    "checkGateway": null,
+    "active": true,
+    "routingTable": "to-isp2",
+    "vrf": null,
+    "nh": [
+     {
+      "ip": "192.168.50.1",
+      "ifc": "ether1",
+      "vrf": "main",
+      "vrfBasis": "default"
+     }
+    ],
+    "src": [
+     [
+      110,
+      4202
+     ]
+    ]
+   },
+   {
+    "dev": "TPE_CE_RT_01",
     "prefix": "172.16.10.0",
     "len": 24,
     "proto": "Direct",
     "distance": 0,
     "blackhole": false,
     "checkGateway": null,
+    "active": true,
     "routingTable": "main",
     "vrf": "main",
     "nh": [
@@ -40092,7 +40123,7 @@
     "src": [
      [
       110,
-      4194
+      4196
      ]
     ]
    },
@@ -40104,6 +40135,7 @@
     "distance": 0,
     "blackhole": false,
     "checkGateway": null,
+    "active": true,
     "routingTable": "main",
     "vrf": "main",
     "nh": [
@@ -40117,7 +40149,7 @@
     "src": [
      [
       110,
-      4196
+      4198
      ]
     ]
    },
@@ -40129,6 +40161,7 @@
     "distance": 1,
     "blackhole": false,
     "checkGateway": "ping",
+    "active": true,
     "routingTable": "main",
     "vrf": "main",
     "nh": [
@@ -40154,6 +40187,7 @@
     "distance": 0,
     "blackhole": false,
     "checkGateway": null,
+    "active": true,
     "routingTable": "main",
     "vrf": "main",
     "nh": [
@@ -40179,6 +40213,7 @@
     "distance": 0,
     "blackhole": false,
     "checkGateway": null,
+    "active": true,
     "routingTable": "main",
     "vrf": "main",
     "nh": [
@@ -40204,6 +40239,7 @@
     "distance": 0,
     "blackhole": false,
     "checkGateway": null,
+    "active": true,
     "routingTable": "main",
     "vrf": "main",
     "nh": [
@@ -40229,6 +40265,7 @@
     "distance": 1,
     "blackhole": false,
     "checkGateway": null,
+    "active": true,
     "routingTable": "main",
     "vrf": "main",
     "nh": [
@@ -40254,6 +40291,7 @@
     "distance": 1,
     "blackhole": false,
     "checkGateway": null,
+    "active": true,
     "routingTable": "main",
     "vrf": "main",
     "nh": [
@@ -40279,6 +40317,7 @@
     "distance": 0,
     "blackhole": false,
     "checkGateway": null,
+    "active": true,
     "routingTable": "main",
     "vrf": "main",
     "nh": [
@@ -40304,6 +40343,7 @@
     "distance": 0,
     "blackhole": false,
     "checkGateway": null,
+    "active": true,
     "routingTable": "main",
     "vrf": "main",
     "nh": [
@@ -40329,6 +40369,7 @@
     "distance": 1,
     "blackhole": false,
     "checkGateway": null,
+    "active": true,
     "routingTable": "main",
     "vrf": "main",
     "nh": [
@@ -40354,6 +40395,7 @@
     "distance": 0,
     "blackhole": false,
     "checkGateway": null,
+    "active": true,
     "routingTable": "main",
     "vrf": "main",
     "nh": [
@@ -40379,6 +40421,7 @@
     "distance": 0,
     "blackhole": false,
     "checkGateway": null,
+    "active": true,
     "routingTable": "main",
     "vrf": "main",
     "nh": [
@@ -40404,6 +40447,7 @@
     "distance": 0,
     "blackhole": false,
     "checkGateway": null,
+    "active": true,
     "routingTable": "main",
     "vrf": "main",
     "nh": [
@@ -40429,6 +40473,7 @@
     "distance": 1,
     "blackhole": true,
     "checkGateway": null,
+    "active": true,
     "routingTable": "main",
     "vrf": "main",
     "nh": [],
@@ -40447,6 +40492,7 @@
     "distance": 1,
     "blackhole": false,
     "checkGateway": null,
+    "active": true,
     "routingTable": "main",
     "vrf": "main",
     "nh": [
@@ -40472,6 +40518,7 @@
     "distance": 0,
     "blackhole": false,
     "checkGateway": null,
+    "active": true,
     "routingTable": "main",
     "vrf": "main",
     "nh": [
@@ -40497,6 +40544,7 @@
     "distance": 1,
     "blackhole": false,
     "checkGateway": null,
+    "active": true,
     "routingTable": "main",
     "vrf": "main",
     "nh": [
@@ -40522,6 +40570,7 @@
     "distance": 1,
     "blackhole": false,
     "checkGateway": null,
+    "active": true,
     "routingTable": "cust-a",
     "vrf": "cust-a",
     "nh": [
@@ -40547,6 +40596,7 @@
     "distance": 0,
     "blackhole": false,
     "checkGateway": null,
+    "active": true,
     "routingTable": "cust-a",
     "vrf": "cust-a",
     "nh": [
@@ -40572,6 +40622,7 @@
     "distance": 0,
     "blackhole": false,
     "checkGateway": null,
+    "active": true,
     "routingTable": "main",
     "vrf": "main",
     "nh": [
@@ -40597,6 +40648,7 @@
     "distance": 1,
     "blackhole": false,
     "checkGateway": null,
+    "active": true,
     "routingTable": "cust-a",
     "vrf": "cust-a",
     "nh": [
@@ -40622,6 +40674,7 @@
     "distance": 0,
     "blackhole": false,
     "checkGateway": null,
+    "active": true,
     "routingTable": "cust-a",
     "vrf": "cust-a",
     "nh": [
@@ -40651,7 +40704,7 @@
     "src": [
      [
       108,
-      4179
+      4180
      ]
     ]
    },
@@ -40684,7 +40737,7 @@
     "src": [
      [
       108,
-      4180
+      4181
      ]
     ]
    },
@@ -40702,7 +40755,7 @@
     "src": [
      [
       108,
-      4181
+      4182
      ]
     ]
    }
@@ -40780,6 +40833,31 @@
      [
       71,
       3345
+     ]
+    ],
+    "stats": null
+   },
+   {
+    "key": "TPE_CE_RT_01|ip|nat|srcnat|9e28ee285cf02e31",
+    "dev": "TPE_CE_RT_01",
+    "family": "ip",
+    "table": "nat",
+    "chain": "srcnat",
+    "position": 1,
+    "order": 1,
+    "action": "masquerade",
+    "match": {
+     "out-interface": "ether1"
+    },
+    "params": {},
+    "disabled": false,
+    "comment": null,
+    "commentEncoding": null,
+    "signature": "[\"TPE_CE_RT_01\",\"ip\",\"nat\",\"srcnat\",[[\"out-interface\",\"ether1\"]]]",
+    "src": [
+     [
+      108,
+      4183
      ]
     ],
     "stats": null
@@ -46575,6 +46653,429 @@
     ],
     "order": 4
    }
+  ],
+  "boundaries": [
+   {
+    "dev": "TPE_CE_RT_01",
+    "ep": "TPE_CE_RT_01|ether1",
+    "vrf": "main",
+    "hasIfc": true,
+    "status": "external",
+    "evidence": [
+     {
+      "kind": "srcnat-out",
+      "strength": "strong",
+      "src": [
+       [
+        108,
+        4183
+       ]
+      ],
+      "ref": {
+       "rule": "TPE_CE_RT_01|ip|nat|srcnat|9e28ee285cf02e31",
+       "action": "masquerade",
+       "reason": null
+      }
+     },
+     {
+      "kind": "default-route",
+      "strength": "none",
+      "src": [
+       [
+        110,
+        4200
+       ]
+      ],
+      "ref": {
+       "prefix": "0.0.0.0/0",
+       "routingTable": "main",
+       "gateway": "192.168.50.1",
+       "active": true,
+       "distance": 1,
+       "reason": "next-hop-in-baseline"
+      }
+     },
+     {
+      "kind": "default-route",
+      "strength": "none",
+      "src": [
+       [
+        110,
+        4202
+       ]
+      ],
+      "ref": {
+       "prefix": "0.0.0.0/0",
+       "routingTable": "to-isp2",
+       "gateway": "192.168.50.1",
+       "active": true,
+       "distance": 1,
+       "reason": "next-hop-in-baseline"
+      }
+     }
+    ]
+   },
+   {
+    "dev": "TPE_CORE_RT_01",
+    "ep": "TPE_CORE_RT_01|ether45",
+    "vrf": "main",
+    "hasIfc": false,
+    "status": "external",
+    "evidence": [
+     {
+      "kind": "dhcp-client",
+      "strength": "strong",
+      "src": [
+       [
+        1,
+        85
+       ]
+      ],
+      "ref": {
+       "name": null,
+       "addDefaultRoute": "yes",
+       "disabled": false,
+       "reason": null
+      }
+     }
+    ]
+   },
+   {
+    "dev": "TPE_CORE_RT_01",
+    "ep": "TPE_CORE_RT_01|ether47",
+    "vrf": "main",
+    "hasIfc": true,
+    "status": "external",
+    "evidence": [
+     {
+      "kind": "default-route",
+      "strength": "strong",
+      "src": [
+       [
+        12,
+        944
+       ]
+      ],
+      "ref": {
+       "prefix": "0.0.0.0/0",
+       "routingTable": "main",
+       "gateway": "203.0.113.1",
+       "active": true,
+       "distance": 1,
+       "reason": null
+      }
+     },
+     {
+      "kind": "dstnat-in",
+      "strength": "strong",
+      "src": [
+       [
+        1,
+        155
+       ]
+      ],
+      "ref": {
+       "rule": "TPE_CORE_RT_01|ip|nat|dstnat|7cbbdb06608954d2",
+       "action": "dst-nat"
+      }
+     },
+     {
+      "kind": "srcnat-out",
+      "strength": "strong",
+      "src": [
+       [
+        1,
+        153
+       ]
+      ],
+      "ref": {
+       "rule": "TPE_CORE_RT_01|ip|nat|srcnat|e207301c6a13f525",
+       "action": "masquerade",
+       "reason": null
+      }
+     },
+     {
+      "kind": "wan-list",
+      "strength": "weak",
+      "src": [
+       [
+        1,
+        122
+       ]
+      ],
+      "ref": {
+       "lists": [
+        "WAN"
+       ]
+      }
+     }
+    ]
+   },
+   {
+    "dev": "TPE_CORE_RT_01",
+    "ep": "TPE_CORE_RT_01|pppoe-isp3",
+    "vrf": "main",
+    "hasIfc": false,
+    "status": "internal",
+    "evidence": [
+     {
+      "kind": "pppoe-client",
+      "strength": "none",
+      "src": [
+       [
+        1,
+        88
+       ]
+      ],
+      "ref": {
+       "name": "pppoe-isp3",
+       "interface": "ether44",
+       "disabled": true,
+       "reason": "disabled"
+      }
+     }
+    ]
+   },
+   {
+    "dev": "TPE_CORE_RT_02",
+    "ep": "TPE_CORE_RT_02|ether47",
+    "vrf": "main",
+    "hasIfc": true,
+    "status": "external",
+    "evidence": [
+     {
+      "kind": "default-route",
+      "strength": "strong",
+      "src": [
+       [
+        26,
+        1733
+       ]
+      ],
+      "ref": {
+       "prefix": "0.0.0.0/0",
+       "routingTable": "main",
+       "gateway": "203.0.113.5",
+       "active": true,
+       "distance": 1,
+       "reason": null
+      }
+     },
+     {
+      "kind": "srcnat-out",
+      "strength": "strong",
+      "src": [
+       [
+        15,
+        1019
+       ]
+      ],
+      "ref": {
+       "rule": "TPE_CORE_RT_02|ip|nat|srcnat|3c674f7f4cab04ea",
+       "action": "masquerade",
+       "reason": null
+      }
+     },
+     {
+      "kind": "wan-list",
+      "strength": "weak",
+      "src": [
+       [
+        15,
+        1010
+       ]
+      ],
+      "ref": {
+       "lists": [
+        "WAN"
+       ]
+      }
+     }
+    ]
+   },
+   {
+    "dev": "TPE_PE_RT_01",
+    "ep": "TPE_PE_RT_01|ether1",
+    "vrf": "main",
+    "hasIfc": true,
+    "status": "internal",
+    "evidence": [
+     {
+      "kind": "default-route",
+      "strength": "none",
+      "src": [
+       [
+        106,
+        4156
+       ]
+      ],
+      "ref": {
+       "prefix": "0.0.0.0/0",
+       "routingTable": "cust-a",
+       "gateway": "10.1.30.2",
+       "active": true,
+       "distance": 1,
+       "reason": "next-hop-in-baseline"
+      }
+     },
+     {
+      "kind": "default-route",
+      "strength": "none",
+      "src": [
+       [
+        106,
+        4158
+       ]
+      ],
+      "ref": {
+       "prefix": "0.0.0.0/0",
+       "routingTable": "main",
+       "gateway": "10.1.30.2",
+       "active": true,
+       "distance": 1,
+       "reason": "next-hop-in-baseline"
+      }
+     }
+    ]
+   }
+  ],
+  "routingDomains": [
+   {
+    "key": "ospf:TPE_CORE_RT_01:0.0.0.0",
+    "kind": "ospf",
+    "vrf": "main",
+    "group": "TPE_CORE_RT_01",
+    "area": "backbone",
+    "areaId": "0.0.0.0",
+    "devices": [
+     "TPE_ACC_SW_01",
+     "TPE_ACC_SW_02",
+     "TPE_ACC_SW_03",
+     "TPE_ACC_SW_04",
+     "TPE_ACC_SW_05",
+     "TPE_ACC_SW_06",
+     "TPE_ACC_SW_07",
+     "TPE_ACC_SW_08",
+     "TPE_ACC_SW_09",
+     "TPE_ACC_SW_11",
+     "TPE_ACC_SW_12",
+     "TPE_BR_RT_01",
+     "TPE_BR_SW_01",
+     "TPE_CORE_RT_01",
+     "TPE_CORE_RT_02",
+     "TPE_LAB_SW_01",
+     "TPE_PE_RT_01"
+    ],
+    "prefixes": [
+     "10.1.10.0/24",
+     "10.1.30.0/24",
+     "172.31.1.0/30"
+    ],
+    "evidence": [
+     {
+      "dev": "TPE_CORE_RT_01",
+      "kind": "ospf-template",
+      "src": [
+       [
+        1,
+        100
+       ]
+      ]
+     },
+     {
+      "dev": "TPE_CORE_RT_01",
+      "kind": "ospf-template",
+      "src": [
+       [
+        1,
+        101
+       ]
+      ]
+     },
+     {
+      "dev": "TPE_CORE_RT_01",
+      "kind": "ospf-template",
+      "src": [
+       [
+        1,
+        99
+       ]
+      ]
+     }
+    ],
+    "otherAreas": []
+   },
+   {
+    "key": "static:TPE_ACC_SW_10",
+    "kind": "static",
+    "vrf": "main",
+    "group": "TPE_ACC_SW_10",
+    "area": null,
+    "areaId": null,
+    "devices": [
+     "TPE_ACC_SW_10"
+    ],
+    "prefixes": [
+     "10.1.10.0/25"
+    ],
+    "evidence": [],
+    "otherAreas": []
+   },
+   {
+    "key": "static:TPE_BR_RT_01",
+    "kind": "static",
+    "vrf": "main",
+    "group": "TPE_BR_RT_01",
+    "area": null,
+    "areaId": null,
+    "devices": [
+     "TPE_ACC_SW_11",
+     "TPE_BR_RT_01",
+     "TPE_CORE_RT_01",
+     "TPE_CORE_RT_02"
+    ],
+    "prefixes": [
+     "10.1.20.0/24",
+     "203.0.113.0/30",
+     "203.0.113.4/30"
+    ],
+    "evidence": [],
+    "otherAreas": []
+   },
+   {
+    "key": "static:TPE_CE_RT_01",
+    "kind": "static",
+    "vrf": "main",
+    "group": "TPE_CE_RT_01",
+    "area": null,
+    "areaId": null,
+    "devices": [
+     "TPE_CE_RT_01"
+    ],
+    "prefixes": [
+     "172.16.10.0/24",
+     "192.168.50.0/24"
+    ],
+    "evidence": [],
+    "otherAreas": []
+   },
+   {
+    "key": "static:TPE_PE_RT_01@cust-a",
+    "kind": "static",
+    "vrf": "cust-a",
+    "group": "TPE_PE_RT_01",
+    "area": null,
+    "areaId": null,
+    "devices": [
+     "TPE_PE_RT_01"
+    ],
+    "prefixes": [
+     "10.1.20.0/24@cust-a",
+     "192.168.50.0/24@cust-a"
+    ],
+    "evidence": [],
+    "otherAreas": []
+   }
   ]
  },
  "findings": [
@@ -47489,7 +47990,7 @@
    "severity": "warn",
    "cat": "防火牆",
    "title": "DNS 允許遠端查詢，且 WAN 可以查詢",
-   "message": "TPE_CORE_RT_02：DNS 允許遠端查詢（allow-remote-requests=yes），WAN 可以查詢：IPv4 udp/53 從 ether47，input 第 4 條放行；IPv6 udp/53 從 ether47，input 沒有任何規則擋下；IPv4 tcp/53 從 ether47，input 沒有任何規則擋下；IPv6 tcp/53 從 ether47，input 沒有任何規則擋下",
+   "message": "TPE_CORE_RT_02：DNS 允許遠端查詢（allow-remote-requests=yes），WAN 可以查詢：IPv4 udp/53 從 ether47，input 沒有任何規則擋下；IPv6 udp/53 從 ether47，input 沒有任何規則擋下；IPv4 tcp/53 從 ether47，input 沒有任何規則擋下；IPv6 tcp/53 從 ether47，input 沒有任何規則擋下",
    "entities": [
     {
      "type": "device",
@@ -47507,12 +48008,6 @@
      "block": 15,
      "line": 1010,
      "text": "/interface list member add comment=defconf interface=ether47 list=WAN",
-     "file": "sample-bundle.txt"
-    },
-    {
-     "block": 15,
-     "line": 1014,
-     "text": "/ip firewall filter add action=accept chain=input protocol=udp src-port=53",
      "file": "sample-bundle.txt"
     },
     {
@@ -49039,13 +49534,13 @@
    "evidence": [
     {
      "block": 111,
-     "line": 4209,
+     "line": 4213,
      "text": "current-firmware: 7.24.2",
      "file": "sample-bundle.txt"
     },
     {
      "block": 111,
-     "line": 4210,
+     "line": 4214,
      "text": "upgrade-firmware: 7.25.1",
      "file": "sample-bundle.txt"
     }
@@ -49587,7 +50082,7 @@
    "macs": 0,
    "failures": [],
    "firewall": {
-    "rules": 0,
+    "rules": 1,
     "wan": "no-wan-list",
     "stats": null
    }
@@ -52110,7 +52605,7 @@
    "how": "command",
    "file": "sample-bundle.txt",
    "start": 4170,
-   "end": 4183,
+   "end": 4185,
    "empty": false,
    "collectedAt": null,
    "failure": null,
@@ -52127,8 +52622,8 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 4185,
-   "end": 4191,
+   "start": 4187,
+   "end": 4193,
    "empty": false,
    "collectedAt": null,
    "failure": null,
@@ -52145,8 +52640,8 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 4193,
-   "end": 4202,
+   "start": 4195,
+   "end": 4206,
    "empty": false,
    "collectedAt": null,
    "failure": null,
@@ -52163,8 +52658,8 @@
    ],
    "how": "command",
    "file": "sample-bundle.txt",
-   "start": 4204,
-   "end": 4211,
+   "start": 4208,
+   "end": 4215,
    "empty": false,
    "collectedAt": null,
    "failure": null,

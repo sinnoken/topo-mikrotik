@@ -675,7 +675,7 @@
 
   // ================================================================ 路由
   /*
-   * 所有路由表的作用中路由都是事實（ADR-015，RouterOS 7）：routing-table=（main 也會寫出；沒寫時為 main）。
+   * 所有路由表的路由都是事實（ADR-015，RouterOS 7；非作用中的另標 active false）：routing-table=（main 也會寫出；沒寫時為 main）。
    * 路由表對應到哪個 VRF 由 model 依 /ip vrf 判斷；沒有對應 VRF 的路由表（策略路由）照樣保留。
    * gateway 的寫法（https://manual.mikrotik.com/docs/cli-reference/ip/route.md 只列出欄位；@ 的意義見 VRF 手冊的路由洩漏）：IP、IP%介面、介面，
    * 後面可以再接 @<VRF>，表示在那個 VRF 解析閘道。
@@ -691,9 +691,11 @@
       rows.forEach((r, ri) => {
         const kv = r.kv; const m = String(kv['dst-address'] || '').match(/^(\d+\.\d+\.\d+\.\d+)\/(\d+)$/);
         if (!m) return;
-        if (!r.flags.includes('A')) { settle(r, ignore, '非作用中的路由'); return; }  // 只要作用中的路由
+        // 旗標（https://manual.mikrotik.com/docs/cli-reference/ip/route.md）：X 停用、A 作用中；沒有 A 的是非作用中（例如備援的預設路由，閘道不通或 distance 較大），
+        // 照樣記下（active false），查詢層的 Q.routesOf 等只給作用中的路由；停用的路由不是設定中會生效的路由，略過
+        if (r.flags.includes('X')) { settle(r, ignore, '停用的路由'); return; }
         const distance = /^\d+$/.test(kv.distance || '') ? +kv.distance : null;
-        const table = { routingTable: kv['routing-table'] || 'main' };
+        const table = { routingTable: kv['routing-table'] || 'main', active: r.flags.includes('A') };
         // 黑洞／不可達／禁止：RouterOS 6 為 B／U／P 旗標或 type=；RouterOS 7 是列中單獨的 blackhole 字（不是 key=value）
         const raw = b.lines.slice(r.line - b.origin.startLine, ri + 1 < rows.length ? rows[ri + 1].line - b.origin.startLine : undefined).join(' ');
         if (/[BUP]/.test(r.flags) || /(^|\s)blackhole(\s|$)/.test(raw) || /^(blackhole|unreachable|prohibit)$/i.test(kv.type || kv.gateway || '')) {

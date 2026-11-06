@@ -423,13 +423,13 @@
       i.ips.forEach((_, c) => { const p = S.ip.parseCidr(c); if (!p) return; owner.set(K.inVrf(p.ip, i.vrf), i.dev); S.util.getOr(owners, p.ip, () => []).push({ ep: i.key, dev: i.dev, vrf: i.vrf, net: p.len < 32 ? p.net : null, len: p.len }); });
     });
     M.devices.forEach((d) => { if (d.mgmtIp && !owner.has(d.mgmtIp)) owner.set(d.mgmtIp, d.key); }); // 管理 IP 視為 main
-    const routesByTable = new Map(); M.routes.forEach((r) => { if (r.vrf !== null) S.util.getOr(routesByTable, r.dev + '|' + r.vrf, () => []).push(r); });
+    const routesByTable = new Map(); M.routes.forEach((r) => { if (r.active && r.vrf !== null) S.util.getOr(routesByTable, r.dev + '|' + r.vrf, () => []).push(r); });
     const hopI = { owner: (x, v) => { const d = owner.get(K.inVrf(x, v)); return d ? { key: d, dev: d } : null; }, owners: (x) => owners.get(x) || [], connected: (d, v) => (netsOf.get(d) || []).filter((p) => p.vrf === v) };
     const ownerIn = (dev, vrf) => (ip) => { const o = hopOwner(hopI, dev, ip, vrf); return o ? o.dev : null; };
     // 遞迴解析後仍到不了已知設備的下一跳才提醒；經由其他路由最終落在已知設備上的不算
     // 解析不到已知設備時依原因分開回報：迴圈（R03）、落入黑洞（R04）、其他（R01），同一個下一跳只報一種
     const badNh = { R01: new Map(), R03: new Map(), R04: new Map() };
-    M.routes.forEach((r) => r.nh.forEach((n) => {
+    M.routes.forEach((r) => r.active && r.nh.forEach((n) => {
       if (!n.ip) return;
       const res = resolveNextHop(routesByTable.get(r.dev + '|' + n.vrf) || [], n.ip, ownerIn(r.dev, n.vrf));
       if (res.some((x) => x.status === 'known')) return;
@@ -982,18 +982,21 @@
         const why = ctx.status === 'no-wan-list' ? '沒有名稱含 WAN 的 interface list' : `WAN 清單（${ctx.wanLists.join('、')}）沒有成員`;
         add('F08', `${name(dev)}：無法判斷哪些介面對外（有 ${active.length} 條防火牆規則，但${why}）；F03、F04、F07 未檢查，F05 只檢查沒有限制入介面的 forward 規則`, [{ type: 'device', key: dev }], [ruleEv(active[0])]);
       }
-      const wans = ctx.wan ? Array.from(ctx.wan).sort(S.util.natural) : [];
+      // 對外入口（S.infer.fw.wanEntries）：轉送與 dst-nat 用全部入口，F07（/ip service，視為 main）只用 main 的入口
+      const entries = M.wanEntries.get(dev) || [];
+      const wans = entries.map((w) => w.ep); const wansMain = fw.entriesIn(entries, K.MAIN_VRF);
       const ipsecUp = M.fw.peers.some((p) => p.dev === dev && !p.disabled) || M.fw.policies.some((p) => p.dev === dev && !p.disabled && !p.template);
       const ifcName = (ep) => K.splitEp(ep)[1];
       const viaText = (path) => (path.length ? `；經由 ${path.map((x) => `${x.chain} 第 ${x.position} 條 jump`).join('→')}` : '');
-      /** 從 WAN 的任一介面送出符合規則 r 的新連線：第一個由 r 決定的結果（raw prerouting 丟掉的不算），沒有就 null。 */
+      /**
+       * 從 WAN 的任一介面送出符合規則 r 的新連線：第一個確定由 r 決定的結果（raw prerouting 丟掉的不算），沒有就 null。
+       * 前面有條件無法判斷的規則、會改變結果時（evalFilter 為 unknown），這個介面不算：無法判斷，不報（和 Q.reach 的「無法判斷」一致）。
+       */
       const reachedBy = (r, builtins) => {
         for (const ep of wans) {
           for (const b of builtins) {
             const pkt = fw.packetFor(r, ep, b, ctx);
-            const raw = fw.evalChain(ctx, r.family, 'raw', 'prerouting', Object.assign({}, pkt, { out: undefined }));
-            if (raw.verdict === 'drop') continue;
-            const res = r.table === 'nat' ? fw.evalChain(ctx, r.family, 'nat', b, pkt) : fw.evalFilter(ctx, r.family, b, pkt);
+            const res = fw.evalFilter(ctx, r.family, b, pkt, r.table === 'nat' ? 'nat' : 'filter');
             if (res.rule === r) return { ep, res, pkt };
           }
         }
@@ -1034,7 +1037,7 @@
         const hit = reachedBy(r, ['dstnat']); if (!hit) return;
         const toAddr = r.params['to-addresses'] ? fw.parseVal('dst-address', r.params['to-addresses'].split('-')[0]) : null;
         const toPort = r.params['to-ports'] && /^\d+/.test(r.params['to-ports']) ? +r.params['to-ports'].match(/^\d+/)[0] : hit.pkt.dstPort;
-        const fpkt = Object.assign({}, hit.pkt, { out: undefined, natState: 'dstnat', dstPort: toPort, dst: toAddr && toAddr.kind === 'ranges' ? toAddr.items[0][0] : undefined });
+        const fpkt = Object.assign({}, hit.pkt, { out: undefined, dstLocal: false, natState: 'dstnat', dstPort: toPort, dst: toAddr && toAddr.kind === 'ranges' ? toAddr.items[0][0] : undefined });
         const fres = fw.evalFilter(ctx, r.family, 'forward', fpkt);
         if (fres.verdict !== 'accept') return;
         const by = fres.rule;
@@ -1064,8 +1067,8 @@
         FAMILIES.forEach(([fam, label, bits]) => {
           if (fam === 'ipv6' && zone.ipv6.status !== 'used') return;
           if (!openFrom(sv, fam, bits)) return;
-          for (const ep of wans) {
-            const res = fw.evalFilter(ctx, fam, 'input', { family: fam, in: ep, out: null, protocol: 'tcp', dstPort: sv.port, dst: undefined, state: 'new', natState: null });
+          for (const ep of wansMain) {
+            const res = fw.evalFilter(ctx, fam, 'input', fw.wanPacket(fam, ep, 'input', { dstPort: sv.port }));
             if (res.verdict === 'accept') { hits.push({ fam, label, ep, res }); break; }
           }
         });
@@ -1086,7 +1089,7 @@
   // ---------------------------------------------------------------- 管理面加固（F10–F14）
   /*
    * 設定是事實（mgmtSettings 的 basis export）；export 沒寫的欄位是出廠預設值（S.MGMT_DEFAULTS，推論），finding 的 basis 為 default，訊息註明。
-   * WAN 沿用 firewallZones 的推論（M.fwCtx）：沒有 WAN 時 F10、F11、F12、F14 不檢查（F08 說明），F13 不需要 WAN。
+   * WAN 沿用 firewallZones 的推論，入口是 M.wanEntries（S.infer.fw.wanEntries，含所在 VRF）：沒有 WAN 時 F10、F11、F12、F14 不檢查（F08 說明），F13 不需要 WAN。
    * 「WAN 可以連到」與 F07 相同：從某個 WAN 介面送一個新連線，經 raw 與 filter input（S.infer.fw.evalFilter）會被放行；IPv6 只在確定有用時判斷。
    */
   const MGMT_LABEL = { dns: 'DNS', macServer: 'MAC Telnet', macWinbox: 'MAC WinBox', discovery: '鄰居探索', snmp: 'SNMP', upnp: 'UPnP', proxy: 'Web Proxy', socks: 'SOCKS', bandwidthServer: 'Bandwidth Server' };
@@ -1131,7 +1134,7 @@
       const ctx = M.fwCtx.get(dev);
       if (!ctx || !ctx.wan) return;
       const zone = M.fwZones.get(dev);
-      const wans = Array.from(ctx.wan).sort(S.util.natural);
+      const entries = M.wanEntries.get(dev) || []; const wans = entries.map((w) => w.ep);
       // WAN 介面在 interface list member 的那一行（WAN 推論的依據）
       const wanEv = (ep) => { for (const n of ctx.wanLists) { const l = M.fw.lists.get(dev + '|' + n); const s = l && l.members.get(ep); if (s) return { block: s[0], line: s[1] }; } return null; };
       /**
@@ -1140,11 +1143,11 @@
        */
       const reach = (proto, port, vrf) => {
         const hits = [];
-        const inVrf = vrf === undefined ? wans : wans.filter((ep) => ((M.ifcs.get(ep) || {}).vrf || K.MAIN_VRF) === vrf);
+        const inVrf = vrf === undefined ? wans : fw.entriesIn(entries, vrf);
         MGMT_FAMILIES.forEach(([fam, label]) => {
           if (fam === 'ipv6' && zone.ipv6.status !== 'used') return;
           for (const ep of inVrf) {
-            const res = fw.evalFilter(ctx, fam, 'input', { family: fam, in: ep, out: null, protocol: proto, dstPort: port, dst: undefined, state: 'new', natState: null });
+            const res = fw.evalFilter(ctx, fam, 'input', fw.wanPacket(fam, ep, 'input', { protocol: proto, dstPort: port }));
             if (res.verdict === 'accept') { hits.push({ fam, label, ep, proto, port, res }); break; }
           }
         });

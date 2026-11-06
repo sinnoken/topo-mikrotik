@@ -374,6 +374,8 @@ for (let s = 1; s <= SITES; s++) {
 }
 if (SITES > 1) {
   wan.entries.push(['/ip route', 'add', 'dst-address=0.0.0.0/0 gateway=203.0.113.1']);
+  // ADR-023：WAN 路由器沒有 WAN 清單、也沒有 filter 規則，以預設路由與 masquerade 判定對外（大型資料的邊界推論）
+  wan.entries.push(['/ip firewall nat', 'add', 'action=masquerade chain=srcnat out-interface=ether47']);
   wan.routes.push({ flags: 'As', dst: '0.0.0.0/0', gw: '203.0.113.1', igw: '203.0.113.1%ether47', dist: 1, scope: 30 });
   for (let s = 1; s <= SITES; s++) wan.routes.push({ flags: 'DAo+', dst: `10.${s}.0.0/16`, gw: `10.254.${s}.2,10.254.${s}.6`, igw: `10.254.${s}.2%ether${(s - 1) * 2 + 1},10.254.${s}.6%ether${(s - 1) * 2 + 2}`, dist: 110, scope: 20 });
   wan.addrs.forEach((a) => wan.entries.push(['/ip address', 'add', `address=${a.cidr} interface=${a.ifc} network=${a.net}`]));
@@ -442,7 +444,9 @@ if (FAULTS) {
     // 策略路由：172.16.10.128/25 只查 to-isp2；往 203.0.113.0/24 的規則用了 min-prefix（無法判斷，trace／reach 為不明）
     ['/routing table', 'add', 'disabled=no fib name=to-isp2'], ['/ip route', 'add', 'gateway=192.168.50.1 routing-table=to-isp2'],
     ['/routing rule', 'add', 'action=lookup-only-in-table src-address=172.16.10.128/25 table=to-isp2'],
-    ['/routing rule', 'add', 'action=lookup dst-address=203.0.113.0/24 min-prefix=0 table=main']];
+    ['/routing rule', 'add', 'action=lookup dst-address=203.0.113.0/24 min-prefix=0 table=main'],
+    // ADR-023：CE 沒有 WAN 清單，以 masquerade 的出介面判定對外（預設路由的下一跳 PE 在基準內，不算）；另有一條閘道不通的備援預設路由（非作用中，R11 用）
+    ['/ip firewall nat', 'add', 'action=masquerade chain=srcnat out-interface=ether1'], ['/ip route', 'add', 'distance=10 gateway=10.255.0.1']];
   const vrfText = ['Flags: X - disabled; * - builtin', ' 0    name="cust-a" interfaces=ether2,ether3', ' 1  * name="main" interfaces=all'].join('\n');
   const peRoutes = [
     { flags: 'DAc', dst: '10.1.30.0/24', gw: 'ether1', dist: 0 },
@@ -454,7 +458,8 @@ if (FAULTS) {
   ];
   const ceRoutes = [{ flags: 'DAc', dst: '172.16.10.0/24', gw: 'ether2', dist: 0 }, { flags: 'DAc', dst: '192.168.50.0/24', gw: 'ether1', dist: 0 },
     { flags: 'As', dst: '0.0.0.0/0', gw: '192.168.50.1', igw: '192.168.50.1%ether1', dist: 1, scope: 30 },
-    { flags: 'As', table: 'to-isp2', dst: '0.0.0.0/0', gw: '192.168.50.1', igw: '192.168.50.1%ether1', dist: 1, scope: 30 }];
+    { flags: 'As', table: 'to-isp2', dst: '0.0.0.0/0', gw: '192.168.50.1', igw: '192.168.50.1%ether1', dist: 1, scope: 30 },
+    { flags: ' s', dst: '0.0.0.0/0', gw: '10.255.0.1', dist: 10, scope: 30 }];
   const custArps = [{ ip: '10.1.20.11', mac: mac(pick(OUI_SRV)), ifc: 'ether2', vrf: 'cust-a' }, { ip: '192.168.50.254', mac: ce.mac, ifc: 'ether3', vrf: 'cust-a' }];
   device(pe.name, pe.ip, [['/system resource print', sysText(pe.board, pe.name)], ['/export terse', exportText(pe.name, pe.board, sort(peEntries), false)],
     [`/ip vrf print ${D}`, vrfText], [`/ip neighbor print ${D}`, neighborText(nrow('ether3', nb(ce, 'ether1')))],

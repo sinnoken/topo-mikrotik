@@ -216,7 +216,7 @@
         }
         case 'ipsecPolicy': M.fw.policies.push({ dev: f.dev, srcAddress: f.srcAddress, dstAddress: f.dstAddress, peer: f.peer, template: f.template, disabled: f.disabled, src: [[f.block, f.line]] }); break;
         case 'route':
-          M.routes.push({ dev: f.dev, prefix: f.prefix, len: f.len, proto: f.proto, distance: f.distance ?? null, blackhole: !!f.blackhole, checkGateway: f.checkGateway || null,
+          M.routes.push({ dev: f.dev, prefix: f.prefix, len: f.len, proto: f.proto, distance: f.distance ?? null, blackhole: !!f.blackhole, checkGateway: f.checkGateway || null, active: f.active !== false,
             routingTable: f.routingTable || K.MAIN_VRF, vrf: null,
             nh: f.nh.map((n) => ({ ip: n.ip, ifc: n.ifc ? K.ifc(n.ifc) : null, written: n.vrf || null })), block: f.block, line: f.line });
           break;

@@ -4176,9 +4176,11 @@ TPE_CE_RT_01 (192.168.50.254):
 /ip address add address=172.16.10.1/24 interface=ether2 network=172.16.10.0
 /ip route add gateway=192.168.50.1
 /ip route add gateway=192.168.50.1 routing-table=to-isp2
+/ip route add distance=10 gateway=10.255.0.1
 /routing table add disabled=no fib name=to-isp2
 /routing rule add action=lookup-only-in-table src-address=172.16.10.128/25 table=to-isp2
 /routing rule add action=lookup dst-address=203.0.113.0/24 min-prefix=0 table=main
+/ip firewall nat add action=masquerade chain=srcnat out-interface=ether1
 /system identity set name=TPE_CE_RT_01
 
 [admin@TPE_CE_RT_01] > /ip neighbor print detail without-paging
@@ -4199,6 +4201,8 @@ Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC, o - OSPF, b - BGP
     immediate-gw=192.168.50.1%ether1 distance=1 scope=30
  As  dst-address=0.0.0.0/0 routing-table=to-isp2 gateway=192.168.50.1
     immediate-gw=192.168.50.1%ether1 distance=1 scope=30
+  s  dst-address=0.0.0.0/0 routing-table=main gateway=10.255.0.1
+    immediate-gw=10.255.0.1 distance=10 scope=30
 
 [admin@TPE_CE_RT_01] > /system routerboard print
        routerboard: yes

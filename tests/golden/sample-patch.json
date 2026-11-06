@@ -1,7 +1,7 @@
 {
  "schema": "ssot-patch/1",
  "baseline": {
-  "inputHash": "f078ae811266be6f",
+  "inputHash": "59e097d42eb5547f",
   "createdAt": "2026-01-01T00:00:00Z",
   "version": "3.8.0"
  },

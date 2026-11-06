@@ -1,8 +1,8 @@
 {
   "schema": "ssot-profile/1",
   "id": "floor-device-naming",
-  "version": "2",
-  "label": "樓層_設備型號_編號（例：3F_hAP_01、B1F-RB5009）",
+  "version": "3",
+  "name": "樓層_設備型號_編號（例：3F_hAP_01、B1F-RB5009）",
   "stripDomain": true,
   "alias": {},
   "classify": [

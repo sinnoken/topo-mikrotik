@@ -142,7 +142,7 @@
     const open = state.note === null ? !V.app.isNarrowScreen() : state.note;
     const box = h('details', { class: 'patch-readonly', open: open || null }, [
       h('summary', null, h('b', null, '本工具只產生文字，不會連線或改動任何設備。')),
-      h('div', { class: 'patch-readonly-more', style: { marginTop: '4px' } }, '指令依基準的事實產生；套用前請逐行審查，自行以 /import 執行（前置檢查不通過時不會改到任何設定），之後重新收集、建立基準確認結果。')]);
+      h('div', { class: 'patch-readonly-more' }, '指令依基準的事實產生；套用前請逐行審查，自行以 /import 執行（前置檢查不通過時不會改到任何設定），之後重新收集、建立基準確認結果。')]);
     let cur = open; // 同 picksBox：展開狀態真的變了才記成使用者的選擇
     box.addEventListener('toggle', () => { if (!!box.open !== cur) { cur = !!box.open; state.note = cur; } });
     return box;

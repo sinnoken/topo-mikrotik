@@ -334,6 +334,9 @@ button.chip { box-shadow: none; line-height: inherit; text-align: left; }
 /* 與多數不同（推論）：結果下方、可點的設備；在可點的結果列之外，避免連結包在按鈕裡 */
 .fitem-wrap > .deviation { padding: 0 10px 6px 29px; font-size: var(--fs-sm); }
 .fcat-rules .fitem-wrap > .deviation { padding-left: 41px; }
+/* 處理狀態按鈕在訊息下方：與該層的訊息左緣對齊（依檢查分組時多一層縮排） */
+.fitem-wrap > .ledger-actions { padding: 0 10px 6px 26px; }
+.fcat-rules .fitem-wrap > .ledger-actions { padding-left: 38px; }
 /* 規則的處理提示（V.remediation.hintLine）：展開規則後在結果列表上方，詳情卡片在訊息下方 */
 .rule-hint { font-size: var(--fs-sm); line-height: 1.6; }
 .fgroup .fhint { padding: 0 10px 4px 26px; }
@@ -779,6 +782,8 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
 
 /* ---------- 修正計畫（panels/patch.js，中間的工作畫面） ---------- */
 .patch-readonly { margin: 0 0 12px; padding: 8px 10px; border: 1px solid var(--info-line); border-radius: var(--radius); background: var(--info-soft); color: var(--info-text); }
+.patch-readonly > summary { cursor: pointer; }
+.patch-readonly-more { margin-top: 4px; }
 /* 窄的時候「要修正哪些」與計畫上下排；工作畫面夠寬時左右兩欄（依工作畫面本身的寬度，不是視窗） */
 .patch-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
 .patch-select, .patch-main { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 12px 14px; min-width: 0; box-shadow: var(--shadow-sm); }

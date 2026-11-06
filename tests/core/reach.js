@@ -365,6 +365,23 @@ test('S.query.reachAssumptions：前提以中文敘述，RouterOS 原值（參�
     .forEach((w) => assert.ok(all.includes(w), '應保留原值 ' + w));
 });
 
+test('判斷的前提依層級排列（ADR-023 決策 5）：路由層 → 防火牆層 → 推論假設；暴露清單另加的兩條是推論假設、接在最後；external 不再以名稱含 WAN 的清單判定', () => {
+  const ORDER = ['route', 'filter', 'assumption'];
+  const check = (list) => list.forEach((a, i) => {
+    assert.ok(ORDER.includes(a.layer), `${a.code} 的 layer`);
+    if (i) assert.ok(ORDER.indexOf(list[i - 1].layer) <= ORDER.indexOf(a.layer), `${list[i - 1].code} → ${a.code} 的層級順序`);
+  });
+  const base = S.query.reachAssumptions(); check(base);
+  check(S.query(sampleSnap()).exposure().assumptions);
+  assert.deepStrictEqual(base.map((a) => a.code), ['ipv4-vrf', 'policy-routing', 'mark-routing', 'bridge-ip-firewall', 'routeros-tables', 'new-connection', 'conditions', 'src-port', 'address-list',
+    'untracked', 'ip-service', 'static-only', 'external', 'return-path']);
+  const msg = (c) => base.find((a) => a.code === c).message;
+  assert.ok(/對外邊界/.test(msg('external')) && !/WAN|介面清單/.test(msg('external')), msg('external'));
+  assert.ok(/一律不展開/.test(msg('address-list')) && /靜態項目/.test(msg('address-list')));
+  assert.ok(/不看那條規則的比對條件/.test(msg('mark-routing')));
+  assert.ok(/F15/.test(msg('return-path')) && /SYN/.test(msg('new-connection')) && /output/.test(msg('untracked')) && /一定是拒絕/.test(msg('ip-service')));
+});
+
 test('L4 快取：協定種類多（第 16 種）時，不同目的與 service 的快取鍵不會相同（目的與 service 分層存）', () => {
   const Q = S.query(twoRouters({ r1: [
     '/ip firewall filter add action=accept chain=forward dst-address=192.168.2.10 dst-port=22 protocol=tcp',

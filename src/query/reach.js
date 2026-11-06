@@ -52,22 +52,34 @@
    * 可達性的前提（每次 Q.reach 都附上，畫面照列）。
    * 句子以中文敘述；RouterOS 的原值（參數、表、選單）放在括號內，可對回手冊與設定（tests/core/reach.js 檢查）。
    */
+  /*
+   * 依層級排列（ADR-023 決策 5）：layer 'route'（路由層：查哪張路由表、走到哪裡）→ 'filter'（防火牆層：規則怎麼比對）→ 'assumption'（推論的假設）。
+   * 文字依 2026-11-06 的唯讀稽核修正（與程式不符的 routeros-tables、policy-routing、untracked、ip-service、external、static-only），
+   * 並補上漏寫的 conditions、address-list、return-path。Q.exposure 的兩條（EXPOSURE_ASSUMPTIONS）是推論的假設，接在最後。
+   */
   const ASSUMPTIONS = deepFreeze([
-    { code: 'new-connection', message: '判斷的是新建立的連線（connection-state=new）；回程由連線追蹤放行，不另外判斷' },
-    { code: 'routeros-tables', message: '只套用 RouterOS 防火牆的原始表、位址轉換與過濾（raw、nat、filter）；封包標記與策略路由（mangle）、橋接過濾（bridge filter）、主機與服務本身的防火牆不在範圍內' },
-    { code: 'ipv4-vrf', message: '只算 IPv4（RouterOS 7）；封包依入介面所屬的 VRF 查那個 VRF 的路由表，閘道指定了其他 VRF（@<VRF>）時在那個 VRF 解析（路由洩漏）' },
-    { code: 'policy-routing', message: '策略路由：main 路由表的封包依路由規則（/routing rule）的順序決定查哪一張路由表，可判斷的條件是來源位址、目的位址與入介面（src-address、dst-address、interface）；有封包標記規則設定路由標記（mangle 的 mark-routing）、改過路由設定的策略規則（/routing settings 的 policy-rules），或條件無法判斷時，結果為不明，不假設查 main' },
-    { code: 'src-port', message: '來源埠由用戶端自選，比對來源埠（src-port）的條件無法判斷' },
-    { code: 'untracked', message: '原始表規則不追蹤連線（raw 的 notrack）時，這台設備之後的規則以連線狀態「不追蹤」（connection-state=untracked）比對，也不套用位址轉換（nat）；是否不追蹤無法判斷時，兩種情況都算，結果不同就是不明' },
-    { code: 'ip-service', message: '目的是網路設備本身時，除了輸入規則（input），也看設備的管理服務（/ip service）：服務停用或來源不在允許的位址內（available-from）就是拒絕；服務所在的 VRF（vrf 參數）不在模型中，封包不在 main 時結果不明' },
-    { code: 'external', message: '外部是基準以外的位址（推論）：代表位址取文件保留位址（TEST-NET），從對外介面（WAN 清單的成員）進入；送往外部的封包從對外介面送出、下一跳不在基準內時就算允許，之後由電信業者決定' },
-    { code: 'static-only', message: '只看匯出設定（/export）裡的靜態規則；即插即用（UPnP、NAT-PMP）、熱點（hotspot）等功能產生的動態規則與動態位址清單不在範圍內' },
-    { code: 'bridge-ip-firewall', message: '同一個網段的流量視為不經過路由器的防火牆；橋接設定讓橋接流量也走防火牆（/interface bridge settings 的 use-ip-firewall）時，橋接流量也會經過過濾規則，這種情況不在範圍內' },
+    // ---- 路由層
+    { code: 'ipv4-vrf', layer: 'route', message: '只算 IPv4（RouterOS 7）；封包依入介面所屬的 VRF 查那個 VRF 的路由表，閘道指定了其他 VRF（@<VRF>）時在那個 VRF 解析（路由洩漏）；不驗證設備的 RouterOS 版本' },
+    { code: 'policy-routing', layer: 'route', message: '策略路由：main 路由表的封包依路由規則（/routing rule）的順序決定查哪一張路由表，可判斷的條件是來源位址、目的位址與入介面（src-address、dst-address、interface）；改過路由設定的策略規則（/routing settings 的 policy-rules），或條件無法判斷時，結果為不明，不假設查 main' },
+    { code: 'mark-routing', layer: 'route', message: '設備只要有一條啟用中的封包標記規則設定路由標記（mangle 的 mark-routing），這台設備的轉送就是不明——不看那條規則的比對條件，不判斷哪些封包會被標記' },
+    { code: 'bridge-ip-firewall', layer: 'route', message: '同一個網段的流量視為不經過路由器的防火牆；橋接設定讓橋接流量也走防火牆（/interface bridge settings 的 use-ip-firewall）時，橋接流量也會經過過濾規則，這種情況不在範圍內' },
+    // ---- 防火牆層
+    { code: 'routeros-tables', layer: 'filter', message: '只套用 RouterOS 防火牆的原始表、位址轉換與過濾（raw、nat、filter）；封包標記（mangle）只讀設定路由標記的規則，用來判斷策略路由（見上）；其他封包標記的動作、依標記比對的條件（packet-mark、connection-mark、routing-mark）、橋接過濾（bridge filter）、主機與服務本身的防火牆不在範圍內，用到標記的規則結果為不明' },
+    { code: 'new-connection', layer: 'filter', message: '判斷的是新連線的第一個封包（connection-state=new；TCP 只有 SYN 旗標、ICMP 是回應請求 echo request，type 8 code 0）' },
+    { code: 'conditions', layer: 'filter', message: '可以判斷的比對條件：協定、目的埠、埠、來源與目的位址、位址類型（protocol、dst-port、port、src-address、dst-address、src-address-type、dst-address-type 的 local／unicast／broadcast／multicast）、連線狀態與位址轉換狀態（connection-state、connection-nat-state）、傳輸旗標與控制訊息類型（TCP、ICMP 的 tcp-flags、icmp-options，依第一個封包）、加密通道（IPsec 的 ipsec-policy；設備沒有啟用中的 IPsec policy 時，視為不是加密通道的封包）；其他條件（例如 time、layer7-protocol、content、src-mac-address、in-bridge-port、ttl、packet-size、dscp、tls-host、hotspot）與限速、隨機類比對（limit、dst-limit、connection-limit、random、nth、psd、per-connection-classifier）都是不明。規則依匯出設定中新增的順序（/export 的 add），跳到其他規則鏈最多 16 層（jump）' },
+    { code: 'src-port', layer: 'filter', message: '來源埠由用戶端自選，比對來源埠（src-port）的條件無法判斷' },
+    { code: 'address-list', layer: 'filter', message: '位址清單（address-list）的內容一律不展開，以它比對的規則（src-address-list、dst-address-list）結果為不明——包括匯出設定中的靜態項目' },
+    { code: 'untracked', layer: 'filter', message: '原始表規則不追蹤連線（raw 的 notrack）時，這台設備之後的規則以連線狀態「不追蹤」（connection-state=untracked）比對，也不套用位址轉換（nat）；原始表的轉送前（prerouting）是否不追蹤無法判斷時，兩種情況都算，結果不同就是不明；設備自己送出時（raw 的 output）無法判斷就是不明' },
+    { code: 'ip-service', layer: 'filter', message: '目的是網路設備本身時，除了輸入規則（input），也看設備的管理服務（/ip service）：服務停用或來源不在允許的位址內（available-from）一定是拒絕；其他情況下，服務所在的 VRF（vrf 參數）不在模型中，封包不在 main 時結果不明' },
+    { code: 'static-only', layer: 'filter', message: '只看匯出設定（/export）裡的規則；即插即用（UPnP、NAT-PMP）、熱點（hotspot）等功能產生的動態規則不在範圍內' },
+    // ---- 推論的假設
+    { code: 'external', layer: 'assumption', message: '外部是基準以外的位址（推論）：從依路由證據判定的對外介面（對外邊界，ADR-023）進入；送往外部的封包從判定對外的介面送出、下一跳與目的都不在基準內時就算允許，之後由電信業者決定。只有弱證據、可能對外的介面不是入口，送往它是不明。代表位址見暴露清單的前提；矩陣取文件保留位址（TEST-NET）' },
+    { code: 'return-path', layer: 'assumption', message: '回程路徑不檢查：回應封包走的路由（非對稱路由）與回程上其他設備的防火牆不判斷；路徑上的設備若沒有保證放行已建立連線的封包，結果仍是允許、另標回程不保證（與 F15 同一份判斷，Q.policyBaseline 的 returnSafe）' },
   ]);
   /** Q.exposure 另有的前提：附加在 ASSUMPTIONS 之後，只出現在暴露清單的結果（Q.reach 的前提不變）。 */
   const EXPOSURE_ASSUMPTIONS = deepFreeze(ASSUMPTIONS.concat([
-    { code: 'exposure-source-ranges', message: '外部來源只依入口設備自己的規則切成區段（src-address、/ip service 的 available-from、/routing rule 的 src-address）；之後經過的設備依來源位址比對的規則不再切分，所以允許的外部來源（allowedFrom）可能比實際寬' },
-    { code: 'wan-member-no-interface', message: '對外介面清單的成員沒有介面紀錄、只出現在位址與清單成員的設定時（/ip address、/interface list member），也當作入口，所在的 VRF 視為 main' },
+    { code: 'exposure-source-ranges', layer: 'assumption', message: '外部來源只依入口設備自己的規則切成區段（src-address、/ip service 的 available-from、/routing rule 的 src-address），最多 16 段；每段的代表位址先取文件保留位址（TEST-NET），區段內沒有時取區段內不屬於基準、也不是保留、本機迴路或群播的位址；之後經過的設備依來源位址比對的規則不再切分，所以允許的外部來源（allowedFrom）可能比實際寬' },
+    { code: 'wan-member-no-interface', layer: 'assumption', message: '名稱含對外字樣的介面清單成員沒有介面紀錄、只出現在位址與清單成員的設定時（/ip address、/interface list member），也當作入口（矩陣的外部與暴露清單相同），所在的 VRF 視為 main' },
   ]));
   /**
    * Q.reach 的原因代碼與結束代碼（靜態清單，S.query.reachReasonCodes() 回傳）：

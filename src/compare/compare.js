@@ -12,7 +12,7 @@
  * 端點寫成「設備名 介面名」，以最後一個空白分隔（介面鍵不含空白，設備名可以有）。
  *
  * 選用欄位 source（expectedFrom 寫入）：{ baselineKey, inputHash, schema, createdAt }，記下預期資料由哪一份基準產生。
- * 沒有 source（手寫或 3.3.0 以前產生的檔案）時，S.compare 的結果不變；S.compare.drift 不能依來源切掉較早的基準。
+ * 沒有 source（手寫或 3.3.0（含）以前產生的檔案）時，S.compare 的結果不變；S.compare.drift 不能依來源切掉較早的基準。
  *
  * 另外三個功能（同樣只透過查詢介面讀取，不修改基準）：
  *   S.compare.snapshots(qOld, qNew) → 兩份基準的差異（ssot-snapdiff/1）
@@ -46,9 +46,8 @@
       if (o.kind && got.kind !== o.kind) return push('different', 'device', k, `${o.name} 類型預期 ${kindText(o.kind)}，基準為 ${kindText(got.kind)}`);
       push('ok', 'device', k, o.name);
     });
-    if (expected.devices && expected.strictDevices) {
-      Q.devices().forEach((d) => { if (d.collected && !expDevs.has(d.key)) push('unexpected', 'device', d.key, `基準多出 ${d.name}`); });
-    }
+    const strictOf = strictExtrasOf(Q);
+    if (expected.devices && expected.strictDevices) strictOf.device.forEach((x) => { if (!expDevs.has(x.key)) push('unexpected', 'device', x.key, x.text); });
 
     const expLinks = new Set();
     (expected.links || []).forEach((l) => {
@@ -72,9 +71,7 @@
       }
       push('missing', 'link', key, `基準中沒有 ${l.a} ⇄ ${l.b}`);
     });
-    if (expected.links && expected.strictLinks) {
-      Q.links().forEach((l) => { if (l.layer === 'l2' && l.evidenceScope !== LINK_SCOPE.BROADCAST_DOMAIN && !expLinks.has(l.key)) push('unexpected', 'link', l.key, `基準多出 ${Q.epName(l.a)} ⇄ ${Q.epName(l.b)}`); });
-    }
+    if (expected.links && expected.strictLinks) strictOf.link.forEach((x) => { if (!expLinks.has(x.key)) push('unexpected', 'link', x.key, x.text); });
 
     (expected.vlans || []).forEach((v) => {
       const dk = K.dev(v.device);
@@ -289,16 +286,24 @@
   };
 
   /**
-   * 基準中「會寫進預期資料」的實體（expectedFrom 與 drift 共用同一個納入規則）：
-   * 已收集的設備、已雙向確認的 LLDP／CDP 介面鄰接鏈路、有 VLAN ID 的 VLAN。每筆帶比對用的鍵與所屬設備（devs）。
+   * 「多出的實體」有兩個納入規則，各有用途，刻意不同：
+   *   strictExtrasOf：strictDevices／strictLinks 時「基準不該有、預期資料卻沒列」的實體——已收集的設備、
+   *     LLDP／CDP 的 L2 鏈路（含未經雙向確認的；單向看到的鄰居也是網路上的連接，strict 要列出）。S.compare 與 drift 的 strict 共用。
+   *   currentOf：expectedFrom「會寫進預期資料」的實體——已收集的設備、已雙向確認的介面鄰接鏈路、有 VLAN ID 的 VLAN。
+   *     只寫雙向確認的鏈路，是為了讓產生的預期資料只含有把握的事實；drift 在預期資料有 source、沒有 strict 時也用它，
+   *     「多出」才和 expectedFrom 對得上（否則未經雙向確認的鏈路每一輪都會被當成多出）。
+   * 每筆帶比對用的鍵、所屬設備（devs）與「基準多出 …」的訊息。
    */
+  const extraLink = (q, l) => ({ key: l.key, devs: U.uniq([K.splitEp(l.a)[0], K.splitEp(l.b)[0]]), text: `基準多出 ${q.epName(l.a)} ⇄ ${q.epName(l.b)}` });
+  function strictExtrasOf(q) {
+    const device = q.devices().filter((d) => d.collected).map((d) => ({ key: d.key, devs: [d.key], text: `基準多出 ${d.name}` }));
+    const link = q.links().filter((l) => l.layer === 'l2' && l.evidenceScope !== LINK_SCOPE.BROADCAST_DOMAIN).map((l) => extraLink(q, l));
+    return { device, link };
+  }
   function currentOf(q) {
     const device = q.devices().filter((d) => d.collected)
       .map((d) => ({ key: d.key, devs: [d.key], name: devRef(d), kind: d.kind, text: `基準多出 ${q.devName(d.key)}` }));
-    const link = q.links().filter((l) => isAdjacency(l) && l.verified).map((l) => ({
-      key: l.key, devs: U.uniq([K.splitEp(l.a)[0], K.splitEp(l.b)[0]]), a: epRef(q, l.a), b: epRef(q, l.b),
-      text: `基準多出 ${q.epName(l.a)} ⇄ ${q.epName(l.b)}`,
-    }));
+    const link = q.links().filter((l) => isAdjacency(l) && l.verified).map((l) => Object.assign(extraLink(q, l), { a: epRef(q, l.a), b: epRef(q, l.b) }));
     const vlan = q.vlans().filter((v) => v.id != null).map((v) => {
       const d = q.getDevice(v.dev);
       return { key: v.dev + '|' + v.id, devs: [v.dev], device: d ? devRef(d) : v.dev, id: v.id, name: v.name || null,
@@ -333,8 +338,12 @@
   /** 預設：連續 2 輪（目前與上一輪）都不符才推論預期資料已過時。畫面通常只有這兩輪；CLI 可傳更多輪與更大的門檻。 */
   const DRIFT_ROUNDS = 2;
   const isStr = (v) => typeof v === 'string' && v !== '';
-  /** 同一份基準：兩邊都有 baselineKey 時比它，否則比 inputHash（與處理紀錄的冪等判斷相同，ADR-002）。 */
-  const sameBaseline = (x, y) => (x.baselineKey && y.baselineKey ? x.baselineKey === y.baselineKey : !!x.inputHash && x.inputHash === y.inputHash);
+  /**
+   * 同一次收集：兩邊都有 inputHash 時比它，否則退回比 baselineKey（baselineKey 含 inputHash，相同時必是同一次收集）。
+   * 和處理紀錄不同：處理紀錄用 baselineKey 判斷「這一輪推進過沒」，關心的是規則版本（major.minor、命名規則、expectedData）；
+   * 漂移數的是網路被觀察了幾次，同一份收集檔以不同版本或選項重建仍只是一次觀察，所以看 inputHash。
+   */
+  const sameCollection = (x, y) => (x.inputHash && y.inputHash ? x.inputHash === y.inputHash : !!x.baselineKey && x.baselineKey === y.baselineKey);
 
   /** expected.source 的正規化；沒有時為 null，格式不對時加 warning 並視為沒有。 */
   function sourceOf(e, warnings) {
@@ -358,14 +367,14 @@
    *   opts.rounds：連續幾輪不符才推論為過時，預設 DRIFT_ROUNDS（≥ 1 的整數）。
    * 只透過查詢介面讀取，不修改基準與預期資料；相同輸入得到相同結果。
    *
-   * 事實（每一輪）：S.compare 對預期資料中每一項的結果（ok／missing／different），以及基準中「會寫進預期資料」
-   *   （currentOf，與 expectedFrom 同一個納入規則）但預期資料沒有的實體（unexpected）。
+   * 事實（每一輪）：S.compare 對預期資料中每一項的結果（ok／missing／different），以及預期資料沒有的實體（unexpected）：
+   *   strict 的類別用 strictExtrasOf（與 S.compare 的 strict 同一個規則，結果一致）；只有 source 的類別用 currentOf（與 expectedFrom 同一個納入規則）。
    * 未觀察：該項目所屬的設備在這一輪有收集失敗（coverage[].failures）而且不是 ok 時，這一輪不算（不計入、也不中斷連續）。
    * 推論：從最新一輪往回數，連續不符的輪數 k（只數有觀察到的輪）：
    *   預期的項目：k ≥ rounds → stale（預期資料可能已過時）；1 ≤ k < rounds → drifted（網路偏離預期，可能是剛發生的改變或暫時狀態）。
    *   多出的實體：只在這一類「預期資料應該是完整的」時檢查——strictDevices／strictLinks 開啟（strict），或預期資料有 source（由基準整份產生）。
    *     k ≥ rounds → stale；k < rounds 時，strict 列為 drifted，只有 source 的不列（沒有 strict 時多出不算偏離）。VLAN 沒有 strict，只依 source。
-   * 基準的取捨：同一份基準（sameBaseline）只算第一次；有 source 時，排在來源基準之前、或 createdAt 早於來源的基準不算（before-source）。
+   * 基準的取捨：同一次收集（sameCollection，看 inputHash）只算第一次；有 source 時，排在來源基準之前、或 createdAt 早於來源的基準不算（before-source）。
    *
    * 回傳 { schema, errors, warnings, basis, summary: { stale, drifted, unobserved }, stale, drifted, unobserved }：
    *   stale／drifted[] = { type: device|link|vlan, ref, change: missing|different|unexpected, rounds: k, observed, since, message }
@@ -394,8 +403,8 @@
 
     const source = sourceOf(expected, warnings);
     const rows = all.map((x, i) => { const m = x.meta() || {}; return { q: x, i, baselineKey: nil(m.baselineKey), inputHash: nil(m.inputHash), createdAt: nil(m.createdAt), used: true, reason: null }; });
-    rows.forEach((r, i) => { if (rows.slice(0, i).some((x) => x.used && sameBaseline(x, r))) { r.used = false; r.reason = 'duplicate'; } });
-    const at = source ? rows.findIndex((r) => sameBaseline(r, source)) : -1;
+    rows.forEach((r, i) => { if (rows.slice(0, i).some((x) => x.used && sameCollection(x, r))) { r.used = false; r.reason = 'duplicate'; } });
+    const at = source ? rows.findIndex((r) => sameCollection(r, source)) : -1;
     if (source) {
       const t0 = Date.parse(source.createdAt);
       rows.forEach((r) => {
@@ -427,10 +436,10 @@
         if (t.states[n] !== undefined) return; // 預期資料重複列出同一項時以第一筆為準
         t.states[n] = it.status === 'ok' ? { off: false } : blind(expOwners.get(tk(it.type, it.ref)) || []) ? null : { off: true, change: it.status, message: it.message };
       });
-      const cur = currentOf(r.q);
+      const cur = currentOf(r.q); const str = strictExtrasOf(r.q);
       DRIFT_TYPES.forEach((type) => {
         if (!extras[type]) return;
-        cur[type].forEach((x) => {
+        (extras[type] === 'strict' ? str : cur)[type].forEach((x) => {
           if (expOwners.has(tk(type, x.key))) return;
           const t = stateOf(type, x.key, true);
           t.owners = x.devs; t.states[n] = { off: true, change: 'unexpected', message: x.text };

@@ -3142,6 +3142,23 @@ function viewBoundaryViolations(file, src) {
     if (!hubRow.textContent.includes('可能已過時')) throw new Error('資料中心的預期現況也應註明可能已過時：' + hubRow.textContent);
     S.view.app.closeHub();
     if (App.round.expected.name !== 'expected-old.json') throw new Error('開啟資料中心不可覆蓋預期現況');
+    // 3b. 上一輪的基準沒有列入時，說明實際用了幾輪、哪一份沒有列入與原因，不可再寫「目前的基準與上一輪的基準」
+    //   before-source：預期現況由目前基準產生，上一輪（較早）早於來源；duplicate：上一輪與目前是同一次收集（輸入相同）
+    await loadExp('expected-now.json', gen);
+    const rb = VL.compare.drift(App);
+    if (rb.basis.history.map((x) => x.reason).join() !== 'before-source,') throw new Error('測試資料：上一輪應早於來源基準：' + JSON.stringify(rb.basis.history));
+    const tb = box().textContent;
+    if (!tb.includes('依 1 輪基準判斷') || tb.includes('目前的基準與上一輪的基準') || !tb.includes('上一輪.json') || !tb.includes('早於預期現況的來源基準')) throw new Error('上一輪早於來源時應說明沒有列入與原因：' + tb);
+    const dupSnap = S.build(App.sources, { profile: App.round.profile, expectedData: { switch: ['lldp'] }, now: '2000-01-01T00:00:00Z' });
+    BD.setOld(App, '同一次收集.json', dupSnap);
+    const old2 = JSON.parse(JSON.stringify(old)); delete old2.source;
+    await loadExp('expected-legacy-ghost.json', old2);
+    const rd = VL.compare.drift(App);
+    if (rd.basis.history.map((x) => x.reason).join() !== ',duplicate') throw new Error('測試資料：同一次收集應以 duplicate 排除：' + JSON.stringify(rd.basis.history));
+    if (rd.stale.length) throw new Error('同一次收集只算一輪，不可推論為過時');
+    const td = box().textContent;
+    if (!td.includes('依 1 輪基準判斷') || td.includes('目前的基準與上一輪的基準') || !td.includes('同一次收集.json') || !td.includes('同一次收集（輸入相同）')) throw new Error('同一次收集時應說明只算一輪與原因：' + td);
+    BD.setOld(App, '上一輪.json', prevSnap);
     // 4. 舊格式（沒有 source）：顯示 no-source 提醒，並說明重新產生後才能完整判斷
     const noSrc = JSON.parse(JSON.stringify(gen)); delete noSrc.source;
     await loadExp('expected-legacy.json', noSrc);

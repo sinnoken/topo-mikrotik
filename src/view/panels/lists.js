@@ -362,19 +362,46 @@
     if (type === 'link') return ref.split('~').map((ep) => { const [d, i] = K.splitEp(ep); return `${dn(d)} ${i}`; }).join(' ⇄ ');
     const at = ref.lastIndexOf('|'); return `${dn(ref.slice(0, at))} VLAN ${ref.slice(at + 1)}`;
   }
+  /** basis.history[].reason → 沒有列入的原因（畫面用語）；other 是另一份的名稱（duplicate 用） */
+  const DRIFT_SKIP = {
+    'before-source': () => '早於預期現況的來源基準（預期現況由較新的基準產生，更早的基準不能用來判斷它是否過時）',
+    duplicate: (other) => `與${other}是同一次收集（輸入相同），只算一輪；以不同的程式版本或選項重新建立不算新的觀察`,
+  };
+  /**
+   * 實際用了哪幾輪：依 basis.history 的 used／reason（最後一筆是目前的基準，前一筆是上一輪），不只看有沒有載入上一輪。
+   * 有沒有列入的基準時寫出是哪一份與原因，避免句子說「目前與上一輪」而輪數只有 1。
+   */
+  function driftRoundsText(d, base) {
+    const hist = d.basis ? d.basis.history : [];
+    const used = hist.filter((x) => x.used).length;
+    const cur = hist[hist.length - 1]; const prev = base && hist.length > 1 ? hist[hist.length - 2] : null;
+    const name = (x) => (x === cur ? '目前的基準' : `上一輪的基準（${base.name}）`);
+    const usedNames = [cur, prev].filter((x) => x && x.used).reverse().map(name);
+    const skipped = [prev, cur].filter((x) => x && !x.used).map((x) => {
+      const why = DRIFT_SKIP[x.reason]; const other = name(x === cur ? prev : cur);
+      return `${name(x)}沒有列入：${why ? why(other) : x.reason}`;
+    });
+    const which = usedNames.length === 2 ? '目前的基準與上一輪的基準（' + base.name + '）'
+      : usedNames.length ? '只有' + usedNames[0] : '沒有可用的基準';
+    return `依 ${V.num(used)} 輪基準判斷：${which}${skipped.length ? '；' + skipped.join('；') : ''}。`;
+  }
   /** 預期現況比對的漂移提示：過時、偏離、無法判斷與核心的提醒；全部是推論（依連續幾輪的基準） */
   function driftBlock(App) {
     const d = driftReport(App);
     if (!d || d.errors.length) return null; // 預期資料本身的錯誤已在比對結果列出
     const base = V.baselineDiff.loaded();
-    const used = d.basis ? d.basis.history.filter((x) => x.used).length : 0;
+    // 載入了上一輪、但兩份只列入一份時的補充（原因已在上一句）：同一次收集要再收一次；早於來源要在來源之後再收一次
+    const skip = base && d.basis && d.basis.history.length > 1 ? d.basis.history.find((x) => !x.used) : null;
+    const skipMore = !skip ? null : skip.reason === 'duplicate' ? '載入的上一輪基準與目前的基準是同一次收集：重新收集一次後，才能判斷連續幾輪。'
+      : '載入的上一輪基準早於預期現況的來源基準：需要在來源基準之後再收集一次，才能判斷連續幾輪。';
     const items = (list) => h('ul', { class: 'drift-items' }, list.map((i) => h('li', null, i.rounds ? `${i.message}（${V.num(i.rounds)} 輪）` : i.message)));
     const kids = [h('p', null, [h('strong', null, '預期現況是否過時'), ' ', V.inferChip('依連續幾輪的基準和預期現況比對的結果推論，不是設備直接回報')]),
-      h('p', { class: 'muted' }, `依 ${V.num(used)} 輪基準判斷：${base ? `目前的基準與上一輪的基準（${base.name}）` : '只有目前的基準'}。`
+      h('p', { class: 'muted' }, driftRoundsText(d, base)
         + `連續 ${V.num(d.basis ? d.basis.rounds : 0)} 輪不符才推論為預期現況過時，較少輪是網路與預期不同。`)];
     (d.warnings || []).forEach((w) => {
       const more = w.kind === 'no-source' ? '這份預期現況沒有記錄來源基準，重新產生後才能完整判斷。'
-        : w.kind === 'too-few-rounds' && !base ? '找不到上一輪的基準：在資料中心載入上一輪的基準或工作包後，才能判斷連續幾輪。' : null;
+        : w.kind === 'too-few-rounds' && !base ? '找不到上一輪的基準：在資料中心載入上一輪的基準或工作包後，才能判斷連續幾輪。'
+          : w.kind === 'too-few-rounds' ? skipMore : null;
       kids.push(h('div', { class: 'drift-warning warn-line', 'data-kind': w.kind }, [w.message, more ? '。' + more : null]));
     });
     if (d.stale.length) {

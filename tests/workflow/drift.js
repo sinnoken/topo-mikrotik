@@ -9,7 +9,7 @@ const { S, read, build, test } = require('../lib.js');
  *   failB：B 有一個指令收集失敗；note：加一行註解（讓輸入不同、基準鍵不同，其他不變）。
  * 每一輪用不同的 now，createdAt 才有先後。
  */
-const net = ({ port = 'ether1', withC = true, vids = [10], failB = false, note = '', now = '2026-01-01T00:00:00Z' } = {}) => build([
+const netText = ({ port = 'ether1', withC = true, vids = [10], failB = false, note = '' } = {}) => [
   ...(note ? [`# ${note}`] : []),
   'A (10.0.0.1):', '### /ip neighbor print detail', ` 0 interface=ether1 mac-address=AA:00:00:00:00:02 identity=B interface-name=${port}`,
   '### /export terse', '/interface bridge add name=bridge1 vlan-filtering=yes', '/interface bridge port add bridge=bridge1 interface=ether1',
@@ -18,7 +18,8 @@ const net = ({ port = 'ether1', withC = true, vids = [10], failB = false, note =
   ...(withC ? [' 1 interface=ether3 mac-address=AA:00:00:00:00:03 identity=C interface-name=ether1'] : []),
   ...(failB ? ['### /interface bridge vlan print detail', '', '# collection failed: timeout'] : []),
   ...(withC ? ['C (10.0.0.3):', '### /ip neighbor print detail', ' 0 interface=ether1 mac-address=AA:00:00:00:00:02 identity=B interface-name=ether3'] : []),
-].join('\n') + '\n', { now });
+].join('\n') + '\n';
+const net = (o = {}) => build(netText(o), { now: o.now || '2026-01-01T00:00:00Z' });
 const T = (n) => `2026-01-0${n}T00:00:00Z`;
 const Q = (o) => S.query(net(o));
 const brief = (list) => list.map((i) => [i.type, i.change, i.ref, i.rounds]);
@@ -41,6 +42,47 @@ test('預期資料漂移：expectedFrom 寫入 source（產生它的基準）；
   const dup = S.compare.drift(Q({ now: T(3) }), e, { history: [q0, Q({ now: T(2) })] });
   assert.deepStrictEqual(dup.basis.history.map((h) => [h.used, h.reason]), [[true, null], [false, 'duplicate'], [false, 'duplicate']]);
   assert.deepStrictEqual(dup.warnings.map((w) => w.kind), ['too-few-rounds']);
+});
+
+test('預期資料漂移：同一次收集（inputHash 相同）以不同的建立選項重建，基準鍵不同仍只算一輪；since 仍記基準鍵', () => {
+  // 例如升級後以儲存的輸入重建，或改了命名規則／expectedData 再建立，再載入同一次收集舊版匯出的基準當「上一輪」
+  const first = Q({ now: T(1) });
+  const same = S.query(build(netText(), { now: T(2), expectedData: { switch: ['lldp'] } }));
+  assert.strictEqual(first.meta().inputHash, same.meta().inputHash, '測試資料：同一份輸入');
+  assert.notStrictEqual(first.meta().baselineKey, same.meta().baselineKey, '測試資料：建立選項不同，基準鍵不同');
+  const hand = { schema: 'ssot-expected/1', devices: ['A', 'B', 'Z'] };
+  const r = S.compare.drift(same, hand, { history: [first] });
+  assert.deepStrictEqual(r.basis.history.map((h) => [h.used, h.reason]), [[true, null], [false, 'duplicate']]);
+  assert.deepStrictEqual(r.stale, [], '只觀察一次，不可推論為過時');
+  assert.deepStrictEqual(brief(r.drifted), [['device', 'missing', 'Z', 1]]);
+  assert.deepStrictEqual(r.drifted[0].since, { baselineKey: first.meta().baselineKey, inputHash: first.meta().inputHash, createdAt: T(1) });
+  assert.deepStrictEqual(r.warnings.map((w) => w.kind), ['no-source', 'too-few-rounds']);
+  // 來源基準也依 inputHash 對應：由 first 產生的預期資料，same 是同一次收集，仍算「來源在 history 中」
+  const e = S.compare.expectedFrom(first);
+  const r2 = S.compare.drift(same, e);
+  assert.deepStrictEqual([r2.basis.sourceInHistory, r2.basis.history.map((h) => [h.used, h.reason])], [true, [[true, null]]]);
+});
+
+test('預期資料漂移：strict 時多出的鏈路與 S.compare 同一個規則（含未經雙向確認的鏈路）', () => {
+  // A⇄B 雙向；B ether3 看到 C，但 C 沒有回報（單向 LLDP，未經雙向確認），連續兩輪
+  const txt = ['A (10.0.0.1):', '### /ip neighbor print detail', ' 0 interface=ether1 mac-address=AA:00:00:00:00:02 identity=B interface-name=ether1',
+    'B (10.0.0.2):', '### /ip neighbor print detail', ' 0 interface=ether1 mac-address=AA:00:00:00:00:01 identity=A interface-name=ether1',
+    ' 1 interface=ether3 mac-address=AA:00:00:00:00:03 identity=C interface-name=ether1'].join('\n') + '\n';
+  const b = (n) => S.query(build(txt + `# round ${n}\n`, { now: T(n) }));
+  const q1 = b(1); const q2 = b(2);
+  assert.ok(q2.getLink(BC) && !q2.getLink(BC).verified, '測試資料：B—C 未經雙向確認');
+  const e = { schema: 'ssot-expected/1', devices: ['A', 'B'], links: [{ a: 'A ether1', b: 'B ether1' }], strictDevices: true, strictLinks: true };
+  const unexpected = S.compare(q2, e).items.filter((i) => i.status === 'unexpected');
+  assert.deepStrictEqual(unexpected.map((i) => [i.type, i.ref]), [['link', BC]]);
+  const d = S.compare.drift(q2, e, { history: [q1] });
+  assert.deepStrictEqual(brief(d.stale), [['link', 'unexpected', BC, 2]]);
+  assert.strictEqual(d.stale[0].message, unexpected[0].message, '訊息與 S.compare 相同');
+  assert.deepStrictEqual(d.drifted, []);
+  // 只有 source（不是 strict）時仍依 expectedFrom 的納入規則：未經雙向確認的鏈路不寫進預期資料，也不算多出
+  const gen = S.compare.expectedFrom(q1);
+  assert.ok(!gen.links.some((l) => /C/.test(l.a + l.b)));
+  const ds = S.compare.drift(q2, gen, { history: [q1] });
+  assert.deepStrictEqual([ds.stale, ds.drifted], [[], []]);
 });
 
 test('預期資料漂移：設備移除——只有一輪是 drifted（網路偏離預期），連續兩輪是 stale（預期資料可能已過時）；不修改基準與預期資料', () => {
@@ -166,14 +208,20 @@ test('預期資料漂移：來源基準之前的基準不算；參數或預期�
   assert.deepStrictEqual(brief(S.compare.drift(q2, e, { history: [q1], rounds: 1 }).stale).map((x) => x[2]), ['C', AB, 'A|ether1~B|ether2', BC]);
 });
 
-test('預期資料漂移：範例資料的 expectedFrom 再和重新建立的範例資料比對沒有漂移（含 strict）', () => {
+test('預期資料漂移：範例資料的 expectedFrom 再和重新建立的範例資料比對沒有漂移；strict 時多出的只有 S.compare 也列出的（未經雙向確認的鏈路）', () => {
   const text = read('samples/sample-bundle.txt');
   const q = S.query(build(text));
   [false, true].forEach((strict) => {
     const e = JSON.parse(JSON.stringify(S.compare.expectedFrom(q, { strict })));
-    const r = S.compare.drift(S.query(build('# 下一輪\n' + text, { now: '2026-02-01T00:00:00Z' })), e, { history: [q] });
+    const qn = S.query(build('# 下一輪\n' + text, { now: '2026-02-01T00:00:00Z' }));
+    const r = S.compare.drift(qn, e, { history: [q] });
     assert.deepStrictEqual([r.errors, r.warnings], [[], []], `strict=${strict}`);
-    assert.deepStrictEqual([r.stale, r.drifted, r.unobserved], [[], [], []], `strict=${strict}`);
     assert.deepStrictEqual(r.basis.history.map((h) => h.used), [true, true]);
+    // strict：expectedFrom 不寫未經雙向確認的鏈路，S.compare 的 strict 會把它們列為 unexpected；漂移必須列出同一組（兩輪都有 → stale）
+    const unexpected = S.compare(qn, e).items.filter((i) => i.status === 'unexpected');
+    assert.strictEqual(unexpected.length > 0, strict, `測試資料：範例資料要有未經雙向確認的鏈路（strict=${strict}）`);
+    assert.ok(unexpected.every((i) => i.type === 'link' && !qn.getLink(i.ref).verified));
+    assert.deepStrictEqual(r.stale.map((i) => [i.type, i.change, i.ref, i.message]), unexpected.map((i) => [i.type, 'unexpected', i.ref, i.message]), `strict=${strict}`);
+    assert.deepStrictEqual([r.drifted, r.unobserved], [[], []], `strict=${strict}`);
   });
 });

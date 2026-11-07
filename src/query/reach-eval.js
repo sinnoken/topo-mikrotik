@@ -10,7 +10,7 @@
   const IP = S.ip;
   const K = S.keys;
   const U = S.util;
-  const { deepFreeze, MAX_PATHS, REASON_LAYER, checkCode, NAT_UNKNOWN, afNets, inAvailableFrom } = S.reach._;
+  const { deepFreeze, MAX_PATHS, REASON_LAYER, checkCode, NAT_UNKNOWN } = S.reach._;
 
   /** E：reach.js 的 base 建立的 engine 物件；加上 evaluate、skipOf、pathsOf、rowLayers、deniedByOf、involves、reachesLocal、unsafeOfSum、unsafeReason、dedupeReasons。 */
   S.reach._.evalPart = function evalPart(E) {
@@ -259,7 +259,7 @@
       const sv = Q.ipServicesOf(dev).find((x) => x.port === st.port);
       if (!sv) return null;
       const accepts = !sv.enabled ? false : !sv.addresses.length ? true : st.src == null ? null
-        : inAvailableFrom(st.src, afNets(sv.addresses));
+        : I.addrSets().service(dev, sv.name, 'ip').set.has(st.src); // available-from：登錄表的 set（同節點鍵的 afSig）
       return { name: sv.name, enabled: sv.enabled, port: sv.port, addresses: sv.addresses.slice(), basis: sv.basis, accepts, src: sv.src.map((x) => x.slice()) };
     }
 

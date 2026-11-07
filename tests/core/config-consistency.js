@@ -87,8 +87,11 @@ test('A10 大型 address-list：deviation 每組超過 100 個值時只存摘要
   assert.deepStrictEqual([a.devs, a.truncated, a.count, a.value.length, a.key.length, a.value[0]], [['SW_A'], true, 152, 100, 100, '11.0.0.1']);
   assert.deepStrictEqual(a.only, { count: 2, value: ['12.0.0.1', '12.0.0.2'], key: ['12.0.0.1', '12.0.0.2'] });
   assert.deepStrictEqual([b.count, b.only.value, 'list' in b], [151, ['13.0.0.1'], false], 'SW_B 的值來自 block 與 BLOCK 兩份清單，沒有單一份可引用');
-  assert.deepStrictEqual(a.list, { dev: 'SW_A', family: 'ip', name: 'block' });
-  assert.ok(s.model.addressLists.some((l) => l.dev === a.list.dev && l.family === a.list.family && l.name === a.list.name), '引用的清單在 Snapshot 中');
+  assert.strictEqual(a.list, 'SW_A|ip|block', '只引用位址集合登錄表的 id（設備|位址族|名稱）');
+  const ref = S.query(s).addressSet(a.list);
+  assert.deepStrictEqual([ref.kind, ref.dev, ref.family, ref.static, ref.size], ['address-list', 'SW_A', 'ip', true, 151], 'Q.addressSet 查得到引用的清單（12.0.0.1 與 12.0.0.2 相鄰，合併成一段）');
+  assert.ok(Object.isFrozen(ref) && Object.isFrozen(ref.ranges));
+  assert.ok(s.model.addressLists.some((l) => l.dev + '|' + l.family + '|' + l.name === a.list), '引用的清單在 Snapshot 中');
   assert.ok(/^[0-9a-f]{16}$/.test(a.hash) && a.hash !== b.hash);
   const same = cfgPair(common.concat([al('block', '12.0.0.1')]), common.concat([al('block', '12.0.0.1'), al('block', '13.0.0.1')]));
   const g = same.findings.find((x) => x.id === 'A10').deviation.groups;

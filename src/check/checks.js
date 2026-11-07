@@ -872,7 +872,7 @@
      * 一組的值超過 DEVIATION_MAX 個（例如十萬筆的 address-list）時只存摘要，不把整份清單寫進 finding：
      *   value／key 只留前 DEVIATION_MAX 個（同順序），另有 truncated: true、count（值的總數）、hash（排序後比對值的指紋，判斷兩組或兩次基準是否相同）、
      *   only（這組有、但不是每一組都有的值：{ count, value, key }，前 DEVIATION_MAX 個，依這組的順序）；
-     *   refOf(g)（選用）回傳完整內容在 Snapshot 的位置（A10 的位址清單：{ dev, family, name }，對應 model.addressLists），寫在 list。
+     *   refOf(g)（選用）回傳完整內容的位址集合登錄表 id（A10 的位址清單：「設備|位址族|名稱」，S.infer.addrSets，對應 model.addressLists；Q.addressSet(id) 查得到），寫在 list。
      */
     const judge = (groups, refOf) => {
       const m = majorityOf(groups);
@@ -1063,7 +1063,6 @@
     const { M } = X;
     const { U, nat, byName, show, quote, collected, groupDevs, devList, judge, fmtGroups, evByGroups, put } = X.cc;
     const binds = M.ipBinds.filter((b) => collected(b.dev)).sort((a, b) => byName(a.dev, b.dev) || a.line - b.line);
-    const alKeys = new Set(M.addressLists.map((l) => l.dev + '|' + l.family + '|' + l.name));
     const byBindName = new Map(); binds.forEach((b) => U.getOr(byBindName, b.section + '\u0000' + b.nameKey, () => []).push(b));
     Array.from(byBindName.keys()).sort(nat).forEach((k) => {
       const sel = byBindName.get(k);
@@ -1080,12 +1079,13 @@
       });
       const diff = Array.from(where.values()).sort((a, b) => nat(U.uniq(a.vals).sort(nat)[0], U.uniq(b.vals).sort(nat)[0]))
         .map((w) => `${show(w.vals)} 只在 ${devList(w.has)}`);
-      // 位址清單的完整內容在 model.addressLists（每台設備一份）：摘要只引用該組第一台設備的清單，不重複內容
+      // 位址清單的完整內容在 model.addressLists（每台設備一份）：摘要只引用該組第一台設備的清單在位址集合登錄表的 id（「設備|位址族|名稱」），不重複內容
       const refOf = (g) => {
         const fam = ADDRESS_LIST_BIND[sel[0].section]; if (!fam) return null;
         // 名稱比對不分大小寫：這台設備的值來自兩份以上的清單（例如 block 與 BLOCK）時，沒有單一份可引用，不寫 list
         const names = U.uniq(sel.filter((x) => x.dev === g.devs[0]).map((x) => x.name));
-        return names.length === 1 && alKeys.has(g.devs[0] + '|' + fam + '|' + names[0]) ? { dev: g.devs[0], family: fam, name: names[0] } : null;
+        const e = names.length === 1 ? M.addrSets.list(g.devs[0], fam, names[0]) : null;
+        return e ? e.id : null;
       };
       const j = judge(groups, refOf);
       add('A10', `${sel[0].section}「${sel[0].name}」的 ${diff.join('，')}：${fmtGroups(groups, show)}`,

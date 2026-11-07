@@ -178,8 +178,11 @@
     // 位址清單（model.addressLists）：第一次需要時才依設備建立索引；舊的基準沒有這個欄位時每份清單都不明（同 fwContext 找不到清單）
     let alIx = null;
     const addressListIndex = () => alIx || (alIx = freezeAll(byDevOf(m.addressLists || [])));
+    // 位址集合的登錄表（S.infer.addrSets，與模型的 M.addrSets 同一個函式）：第一次需要時才建，依 Snapshot 快取（每個 Q 一份）
+    let addrReg = null; const addrSetView = new Map();
+    const addrSetsOf = () => addrReg || (addrReg = S.infer.addrSets({ rules: fwRules, addressLists: m.addressLists || [], services: m.ipServices || [], routingRules: m.routingRules || [] }));
     const ctxOf = (d) => U.getOr(fwCtx, d, () => S.infer.fw.fwContext(d, listsByDev.get(d) || [], (ifcsByDev.get(d) || []).map((i) => i.key), fwByDev.get(d) || [],
-      addressListIndex().get(d) || []));
+      addressListIndex().get(d) || [], addrSetsOf()));
     const findingsBy = new Map();
     snap.findings.forEach((f, idx) => f.entities.forEach((e) => U.getOr(findingsBy, e.type + ':' + e.key, () => []).push(idx)));
     // 第一次查詢時才建立的索引（1000 台規模下多數畫面用不到）；回傳的陣列是 Q 自己的索引，凍結以免呼叫端改壞
@@ -197,7 +200,7 @@
     let subnetsByDev = null;
     // L4（M2）：可達性、zone、zone 矩陣與規則影響。第一次呼叫時才建立（src/query/reach.js 的 S.reach.engine），結果都是推論、只在記憶體快取，不寫進 Snapshot（ADR-014）
     let l4 = null;
-    const L4 = () => l4 || (l4 = S.reach.engine(Q, { ctxOf }));
+    const L4 = () => l4 || (l4 = S.reach.engine(Q, { ctxOf, addrSets: addrSetsOf }));
     // Q.exposureSummary：依 Q.exposure 的結果物件（已依參數快取）快取
     const exSummaryMemo = new WeakMap();
     const vlanSrc = { vlans: m.vlans, interfaces: m.interfaces, links: m.links, inferred: m.inferredLinks || [], ifc: (ep) => ifc.get(ep), collected: (d) => !!(dev.get(d) || {}).collected };
@@ -362,6 +365,17 @@
       addressListsOf: (d) => addressListIndex().get(d) || EMPTY,
       /** 某設備、某位址族（'ip'｜'ipv6'）的一份位址清單；基準裡沒有（export 沒有項目，也沒有寫入它的設定）時為 null，判斷時不明。 */
       addressListOf: (d, family, name) => (addressListIndex().get(d) || EMPTY).find((l) => l.family === family && l.name === name) || null,
+      /**
+       * 位址集合登錄表（S.infer.addrSets，判斷用的同一份；推論用的索引，不在 Snapshot）的一筆：{ id, kind, dev, family, static, reasons, src, size, ranges }（凍結）。
+       * kind：address-list｜rule-address｜service｜routing-rule（id 的寫法見設計說明）；例如 A10 的 deviation.groups[].list 是 address-list 的 id。
+       * size 是合併後的區段數、ranges 是 [[起, 迄]] 的位址文字（依位址排序；完全靜態以外的清單或無法判斷的字面值為 null）。沒有這個 id 時 null。
+       */
+      addressSet: (id) => U.getOr(addrSetView, id, () => {
+        const e = addrSetsOf().get(id); if (!e) return null;
+        const fmt = (n) => (e.set.bits === 32 ? S.ip.fromInt(Number(n)) : S.ip.v6FromBig(n));
+        return deepFreeze({ id: e.id, kind: e.kind, dev: e.dev, family: e.family, static: e.static, reasons: e.reasons.slice(), src: e.src.map((x) => x.slice()),
+          size: e.set ? e.set.ranges.length : null, ranges: e.set ? e.set.ranges.map(([a, b]) => [fmt(a), fmt(b)]) : null });
+      }),
       ipsecOf: (d) => ({ peers: peersByDev.get(d) || [], policies: polByDev.get(d) || [] }),
       /** 規則 a 是否涵蓋 b（符合 b 的封包一定符合 a；以 a 所在設備的 interface list 判斷）。比對兩份基準的規則時使用。 */
       firewallCovers: (a, b) => S.infer.fw.covers(ctxOf(a.dev), a, b),

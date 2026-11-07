@@ -643,28 +643,11 @@
   }
   const protoName = (t) => { const x = String(t).toLowerCase(); return PROTO[x] || x; };
 
-  // 位址：IPv4／IPv6 以 BigInt 區間表示
-  function ip6Big(s) {
-    let [head, tail] = s.split('::');
-    const h = head ? head.split(':') : []; const t = tail !== undefined ? (tail ? tail.split(':') : []) : null;
-    if (t === null && h.length !== 8) return null;
-    const parts = t === null ? h : h.concat(Array(8 - h.length - t.length).fill('0'), t);
-    if (parts.length !== 8 || parts.some((p) => !/^[0-9a-f]{1,4}$/i.test(p))) return null;
-    return parts.reduce((acc, p) => (acc << 16n) + BigInt(parseInt(p, 16)), 0n);
-  }
-  function addrRange(text) {
-    const r = text.match(/^([^/\-]+)(?:\/(\d{1,3}))?(?:-([^/]+))?$/); if (!r) return null;
-    const v4 = S.ip.isIp(r[1]); const bits = v4 ? 32 : 128;
-    const toBig = (x) => (S.ip.isIp(x) ? BigInt(S.ip.toInt(x)) : v4 ? null : ip6Big(x));
-    const lo0 = toBig(r[1]); if (lo0 === null) return null;
-    if (r[3]) { const hi = toBig(r[3]); return hi === null ? null : [lo0, hi, bits]; }
-    const len = r[2] === undefined ? bits : +r[2]; if (len > bits) return null;
-    const span = (1n << BigInt(bits - len)) - 1n; const lo = lo0 & ~span & ((1n << BigInt(bits)) - 1n);
-    return [lo, lo + span, bits];
-  }
+  // 位址：IPv4／IPv6 以 BigInt 區間表示，文字一律經 S.ip.range 解析，「在不在裡面」一律經 S.ip.set（見 addrSets）
   // 「!src-address=私有」視為公網來源仍符合：私有＝S.ip 位址分類的 private（含 IPv6 ULA）、cgnat、loopback、link-local
   const PRIVATE_CLASSES = ['private', 'cgnat', 'loopback', 'link-local'];
-  const PRIVATE = S.ip.rangesOf(PRIVATE_CLASSES).map(addrRange);
+  const privateSet = (bits) => S.ip.set(S.ip.rangesOf(PRIVATE_CLASSES).filter((c) => S.ip.range(c)[2] === bits), bits);
+  const PRIVATE = new Map([[32, privateSet(32)], [128, privateSet(128)]]);
 
   /*
    * 位址清單（/ip firewall address-list、/ipv6 firewall address-list；檢查用模型、查詢層用 Snapshot 的 addressLists，同一份判斷）。
@@ -685,7 +668,7 @@
   const FW_ADDRESS_LIST_WRITE = Object.freeze(['add-src-to-address-list', 'add-dst-to-address-list']);
   /** 清單項目的位址：family 的位址、網段或範圍 → { kind: 'address', range: [lo, hi] }；其他文字（手冊：不是有效位址就當 DNS 名稱）→ { kind: 'dns', range: null }。IPv6 不接受範圍。 */
   function addressListItem(family, text) {
-    const s = String(text).trim(); const r = addrRange(s);
+    const s = String(text).trim(); const r = S.ip.range(s);
     if (!r || r[2] !== (family === 'ipv6' ? 128 : 32) || (family === 'ipv6' && s.includes('-'))) return { kind: 'dns', range: null };
     return { kind: 'address', range: [r[0], r[1]] };
   }
@@ -714,32 +697,123 @@
       const items = tokens(body).map((t) => { const m = t.match(/^(\d+)(?:-(\d+))?$/); return m ? [BigInt(m[1]), BigInt(m[2] || m[1])] : null; });
       if (items.length && items.every(Boolean)) return { neg, kind: 'ranges', items, raw };
     } else if (FW_ADDR_KEYS.has(key)) {
-      const items = tokens(body).map(addrRange);
+      const items = tokens(body).map(S.ip.range);
       if (items.length && items.every(Boolean)) return { neg, kind: 'ranges', items: items.map(([a, b]) => [a, b]), bits: items[0][2], raw };
     } else if (FW_SET_KEYS.has(key)) {
       return { neg, kind: 'set', items: new Set(tokens(body).map((t) => (key === 'protocol' ? protoName(t) : t.toLowerCase()))), raw };
     }
     return { neg, kind: 'raw', raw };
   }
-  const inRanges = (x, rs) => rs.some(([a, b]) => x >= a && x <= b);
-  /** 區間依起點排序、合併重疊與相鄰的（位址清單的索引；結果不重疊，可二分搜尋）。 */
-  function mergeRanges(rs) {
-    const s = rs.slice().sort((p, q) => (p[0] < q[0] ? -1 : p[0] > q[0] ? 1 : 0)); const out = [];
-    for (const [a, b] of s) {
-      const last = out[out.length - 1];
-      if (last && a <= last[1] + 1n) { if (b > last[1]) last[1] = b; } else out.push([a, b]);
-    }
-    return out.map((r) => Object.freeze(r));
+  /** 埠號是否在規則的埠範圍內（parseVal 的 ranges；埠不是位址，不經 S.ip.set）。 */
+  const inPortRanges = (x, rs) => rs.some(([a, b]) => x >= a && x <= b);
+
+  /*
+   * 位址集合的登錄表（單一來源）：防火牆規則的位址字面值、位址清單、/ip service 的 available-from、/routing rule 的位址都是設定寫死的值，
+   * 事實只存一份（規則、Snapshot 的 addressLists、ipServices、routingRules），這裡只建「在不在裡面」的索引（S.ip.set），不進 Snapshot。
+   * decide 的位址條件一律經這裡的 set.has，L4 的等價類邊界一律經 addrBounds（同一份 set 的 bounds()），新的位址來源只需在這裡登錄。
+   * 檢查以模型（M.addrSets，S.infer.firewall 建一次）、查詢層以 Snapshot（S.query 第一次用到時建一次，依 Snapshot 快取）呼叫同一個函式。
+   *
+   * addrSets({ rules, addressLists, services, routingRules })：各欄位都可省略；規則與服務可以是模型或 Snapshot 的形狀（只讀 dev、family、key、match、params、
+   *   name、addresses、entries 與來源行）。陣列在第一次查詢時才建索引，之後不可再改。
+   * 每筆（凍結）：{ id, kind, dev, family, set, static, reasons, src }
+   *   id（穩定，不含行號）：
+   *     address-list：「設備|位址族|名稱」（同 model.addressLists 的鍵）；
+   *     rule-address：「規則鍵|條件」（規則鍵見 firewallRules.key；條件是 src-address、dst-address 或 to-addresses；沒有規則鍵的規則（測試自建）為 null）；
+   *     service：「設備|位址族|service|服務名稱」（available-from，ip 與 ipv6 各一筆）；
+   *     routing-rule：「設備|routing-rule|順序|條件」（順序同 routingRules.order：每台設備依設定順序從 1 起算）。
+   *   set：S.ip.set，或 null——清單可能有動態來源（static 為 false，reasons 依 ADDRESS_LIST_DYNAMIC）；規則的位址字面值有任何一項不是位址、網段或範圍，
+   *     或位址族不一致（條件無法判斷）。available-from 只取這個位址族、而且合法的項目（其他項目不接受任何來源）。
+   *   src：來源行（[[block, line]]）：規則、服務與 /routing rule 是它自己的行；位址清單是啟用中項目的行。
+   */
+  const ADDR_RULE_KEYS = Object.freeze(['src-address', 'dst-address']);
+  const BITS = (family) => (family === 'ipv6' ? 128 : 32);
+  const srcOf = (x) => x.src || [[x.block, x.line]];
+  /** 規則或 /routing rule 的位址字面值 → S.ip.set；有一項不合法或位址族不一致時 null（同 parseVal 的 ranges 才判斷）。 */
+  function literalSet(text) {
+    if (text === undefined) return undefined;
+    const rs = tokens(splitNeg(text).body).map(S.ip.range);
+    if (!rs.length || rs.some((r) => !r || r[2] !== rs[0][2])) return null;
+    return S.ip.set(rs.map(([a, b]) => [a, b]), rs[0][2]);
   }
-  /** x 是否在已合併、排序的區間內（二分搜尋）。 */
-  function inSorted(x, rs) {
-    let lo = 0; let hi = rs.length - 1;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1; const r = rs[mid];
-      if (x < r[0]) hi = mid - 1; else if (x > r[1]) lo = mid + 1; else return true;
-    }
-    return false;
+  function addrSets(input) {
+    const x = input || {};
+    const rules = x.rules || []; const addressLists = x.addressLists || []; const services = x.services || []; const routingRules = x.routingRules || [];
+    const entry = (id, kind, dev, family, set, st, reasons, src) => Object.freeze({ id, kind, dev, family, set, static: st, reasons, src });
+    // 位址清單：第一次查詢時才依鍵建索引；每份清單的集合在第一次用到時才建（封鎖名單可能有十萬筆）
+    let alIdx = null; const alMemo = new Map();
+    const list = (dev, family, name) => {
+      if (!alIdx) alIdx = new Map(addressLists.map((l) => [l.dev + '|' + l.family + '|' + l.name, l]));
+      const id = dev + '|' + family + '|' + name;
+      if (alMemo.has(id)) return alMemo.get(id);
+      const l = alIdx.get(id); let out = null;
+      if (l) {
+        const items = l.entries.filter((e) => !e.disabled && e.kind === 'address');
+        out = entry(id, 'address-list', l.dev, l.family, l.static ? S.ip.set(items.map((e) => e.address), BITS(l.family)) : null, l.static, l.reasons,
+          Object.freeze(l.entries.filter((e) => !e.disabled).map((e) => e.src[0])));
+      }
+      alMemo.set(id, out);
+      return out;
+    };
+    // 規則的位址字面值：依規則物件快取（decide 每個封包都會查）
+    const ruleMemo = new WeakMap();
+    const literal = (rule, key) => {
+      let m = ruleMemo.get(rule); if (!m) { m = new Map(); ruleMemo.set(rule, m); }
+      if (m.has(key)) return m.get(key);
+      const text = key === 'to-addresses' ? rule.params && rule.params[key] : rule.match[key];
+      const set = literalSet(text);
+      const out = set === undefined ? null : entry(rule.key ? rule.key + '|' + key : null, 'rule-address', rule.dev, rule.family, set, true, Object.freeze([]), srcOf(rule));
+      m.set(key, out);
+      return out;
+    };
+    /** 規則的位址條件（src-address、dst-address、to-addresses、src-address-list、dst-address-list）→ 登錄的那一筆；規則沒有這個條件、或基準裡沒有這份清單時 null。 */
+    const ofRule = (rule, key) => (FW_ADDRESS_LIST.includes(key) ? (rule.match[key] === undefined ? null : list(rule.dev, rule.family, splitNeg(rule.match[key]).body)) : literal(rule, key));
+    // available-from：依（設備, 服務名稱）
+    let svIdx = null; const svMemo = new Map();
+    const service = (dev, name, family) => {
+      if (!svIdx) svIdx = new Map(services.map((sv) => [sv.dev + '|' + sv.name, sv]));
+      const id = dev + '|' + family + '|service|' + name;
+      if (svMemo.has(id)) return svMemo.get(id);
+      const sv = svIdx.get(dev + '|' + name); const bits = BITS(family);
+      const out = sv ? entry(id, 'service', dev, family, S.ip.set(sv.addresses.filter((a) => { const r = S.ip.range(a); return r && r[2] === bits; }), bits), true, Object.freeze([]), sv.src) : null;
+      svMemo.set(id, out);
+      return out;
+    };
+    // /routing rule：順序依設定順序（每台設備從 1 起算，同 Snapshot 的 routingRules.order）
+    let rrOrder = null; const rrMemo = new WeakMap();
+    const ofRoutingRule = (r, key) => {
+      if (!rrOrder) { rrOrder = new Map(); const n = new Map(); routingRules.forEach((y) => { const k = (n.get(y.dev) || 0) + 1; n.set(y.dev, k); rrOrder.set(y, k); }); }
+      let m = rrMemo.get(r); if (!m) { m = new Map(); rrMemo.set(r, m); }
+      if (m.has(key)) return m.get(key);
+      const set = literalSet(r.match[key]); const order = rrOrder.get(r);
+      const out = set === undefined ? null : entry(order ? r.dev + '|routing-rule|' + order + '|' + key : null, 'routing-rule', r.dev, null, set, true, Object.freeze([]), srcOf(r));
+      m.set(key, out);
+      return out;
+    };
+    // 依 id 查（第一次呼叫時登錄全部）
+    let byId = null;
+    const get = (id) => {
+      if (!byId) {
+        byId = new Map();
+        const put = (e) => { if (e && e.id) byId.set(e.id, e); };
+        addressLists.forEach((l) => put(list(l.dev, l.family, l.name)));
+        rules.forEach((r) => ADDR_RULE_KEYS.concat('to-addresses').forEach((k) => put(literal(r, k))));
+        services.forEach((sv) => ['ip', 'ipv6'].forEach((f) => put(service(sv.dev, sv.name, f))));
+        routingRules.forEach((r) => ADDR_RULE_KEYS.forEach((k) => put(ofRoutingRule(r, k))));
+      }
+      return byId.get(id) || null;
+    };
+    return Object.freeze({ list, ofRule, service, ofRoutingRule, get, rules, routingRules });
   }
+  /**
+   * L4 位址等價類的邊界（唯一的產生方式）：entries（登錄表的筆，可含 null）中位址族為 bits、有集合的那些 set.bounds() 的聯集，依大小排序（BigInt）。
+   * 可能有動態來源的清單（set 為 null）不切分。
+   */
+  function addrBounds(entries, bits) {
+    const out = new Set();
+    entries.forEach((e) => { if (e && e.set && e.set.bits === bits) e.set.bounds().forEach((b) => out.add(b)); });
+    return Array.from(out).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  }
+
   const rangesWithin = (inner, outer) => inner.every(([a, b]) => {
     // 以 outer 的聯集涵蓋 [a, b]
     let cur = a; const sorted = outer.slice().sort((p, q) => (p[0] < q[0] ? -1 : p[0] > q[0] ? 1 : 0));
@@ -760,33 +834,13 @@
 
   /**
    * 比對用的設備環境。lists：[{ name, defined, include, exclude, members: [ep] }]；ifcEps：設備的介面鍵；rules：該設備的規則；
-   * addressLists（選用）：該設備的位址清單（Snapshot 的 addressLists 形狀：{ family, name, static, reasons, entries: [{ address, kind, disabled }] }）。
+   * addressLists（選用）：該設備的位址清單（Snapshot 的 addressLists 形狀：{ dev, family, name, static, reasons, entries: [{ address, kind, disabled }] }）。
+   * sets（選用）：位址集合的登錄表（addrSets；模型與查詢層各建一份、所有設備共用）；省略時以 rules 與 addressLists 建這台設備自己的一份（同一個函式）。
    * wan／lan：名稱含 WAN／LAN 的清單成員（Set），沒有可辨識的 WAN 清單時 wan 為 null。
-   * addressList(family, name)：{ family, name, static, reasons, bits, items, full, privateOnly }；完全靜態時 items 是啟用中項目合併後的區間
-   *   （依起點排序、不重疊、不相鄰，[[lo, hi]]；查詢用二分搜尋，見 inRanges），full／privateOnly 是「涵蓋整個位址空間」「只有私有位址」（WAN 封包用），
-   *   否則 items 為 null。每份清單只在第一次用到時建一次索引（依 ctx 快取；封鎖名單可能有數萬到十萬筆，不在每個封包線性掃描）。
-   *   基準裡沒有這份清單（export 沒有項目，也沒有寫入它的設定）時為 null——內容無從得知，不當作空清單。
+   * 位址清單的查詢：sets.list(dev, family, name)——基準裡沒有這份清單（export 沒有項目，也沒有寫入它的設定）時為 null，內容無從得知，不當作空清單。
    */
-  function fwContext(dev, lists, ifcEps, rules, addressLists) {
-    const alByKey = new Map((addressLists || []).map((l) => [l.family + '|' + l.name, l]));
-    const alMemo = new Map();
-    const addressList = (family, name) => {
-      const k = family + '|' + name;
-      if (alMemo.has(k)) return alMemo.get(k);
-      const l = alByKey.get(k);
-      let out = null;
-      if (l) {
-        const bits = family === 'ipv6' ? 128 : 32;
-        const items = l.static ? mergeRanges(l.entries.filter((e) => !e.disabled && e.kind === 'address').map((e) => addressListItem(family, e.address).range)) : null;
-        const max = (1n << BigInt(bits)) - 1n;
-        const priv = PRIVATE.filter((x) => x && x[2] === bits).map(([a, b]) => [a, b]);
-        out = Object.freeze({ family, name, static: l.static, reasons: l.reasons, bits, items: items && Object.freeze(items),
-          full: !!items && items.length === 1 && items[0][0] === 0n && items[0][1] === max,
-          privateOnly: !!items && rangesWithin(items, priv) });
-      }
-      alMemo.set(k, out);
-      return out;
-    };
+  function fwContext(dev, lists, ifcEps, rules, addressLists, sets) {
+    const reg = sets || addrSets({ rules, addressLists });
     const byName = new Map(lists.map((l) => [l.name, l]));
     const universe = new Set(ifcEps);
     lists.forEach((l) => l.members.forEach((ep) => universe.add(ep)));
@@ -814,7 +868,7 @@
     };
     const wan = pick(WAN_LIST); const lan = pick(LAN_LIST);
     const status = !wan.names.length ? 'no-wan-list' : !wan.eps.size ? 'empty-wan-list' : 'ok';
-    return { dev, universe, resolve, addressList, chains, wanLists: wan.names, wan: status === 'ok' ? wan.eps : null, lanLists: lan.names, lan: lan.eps, status,
+    return { dev, universe, resolve, sets: reg, chains, wanLists: wan.names, wan: status === 'ok' ? wan.eps : null, lanLists: lan.names, lan: lan.eps, status,
       chain: (family, table, chain) => chains.get(family + '|' + table + '|' + chain) || [] };
   }
   /**
@@ -907,7 +961,7 @@
    *     「!src-address=私有」視為公網來源仍符合；其他排除寫法無法判斷。
    * 其餘條件兩種封包一樣：
    *   - src-port／port 的來源埠：srcPort 是數字時比對，null（用戶端自選）無法判斷；src-address-list／dst-address-list 是完全靜態的清單時依項目判斷（同 src-address／dst-address），
-   *     可能有動態來源或基準裡沒有的清單無法判斷（ctx.addressList）。
+   *     可能有動態來源或基準裡沒有的清單無法判斷（ctx.sets.list）。
    *   - dst-address-type／src-address-type：local 依 dstLocal／srcLocal（位址是不是這台設備的，呼叫端給定；沒給為不明），unicast 符合、broadcast／multicast 不符合。
    *   - ipsec-policy：ipsec 為 'none'（不是 IPsec 封包）才判斷；tcp-flags、icmp-options 依新連線的第一個封包（TCP SYN、ICMP echo request）判斷。
    * pkt：{ family, chain, in: ep, out: ep|null（沒有出介面，例如 input）|undefined（不明）, protocol, dstPort: 數字|null（不是規則提到的埠）, srcPort,
@@ -918,21 +972,20 @@
     const flip = (x) => (x === null ? null : neg ? !x : x);
     switch (key) {
       case 'protocol': return flip(protoName(body) === pkt.protocol);
-      case 'dst-port': { if (pkt.dstPort == null || !PORT_PROTOCOLS.has(pkt.protocol)) return neg; const p = parseVal(key, v); return p.kind === 'ranges' ? flip(inRanges(BigInt(pkt.dstPort), p.items)) : null; }
+      case 'dst-port': { if (pkt.dstPort == null || !PORT_PROTOCOLS.has(pkt.protocol)) return neg; const p = parseVal(key, v); return p.kind === 'ranges' ? flip(inPortRanges(BigInt(pkt.dstPort), p.items)) : null; }
       case 'src-port': case 'port': {
         if (!PORT_PROTOCOLS.has(pkt.protocol)) return neg;
         const p = parseVal(key, v); if (p.kind !== 'ranges') return null;
-        if (key === 'port' && pkt.dstPort != null && inRanges(BigInt(pkt.dstPort), p.items)) return flip(true);
-        return pkt.srcPort == null ? null : flip(inRanges(BigInt(pkt.srcPort), p.items));
+        if (key === 'port' && pkt.dstPort != null && inPortRanges(BigInt(pkt.dstPort), p.items)) return flip(true);
+        return pkt.srcPort == null ? null : flip(inPortRanges(BigInt(pkt.srcPort), p.items));
       }
-      case 'src-address': return srcAddrMatch(parseVal(key, v), pkt);
-      case 'dst-address': return dstAddrMatch(parseVal(key, v), pkt);
+      // 位址條件：規則的字面值與完全靜態的位址清單都是登錄表的 set（同一個判斷）；可能有動態來源或基準裡沒有的清單無法判斷
+      case 'src-address': return srcAddrMatch(neg, ctx.sets.ofRule(rule, key).set, pkt);
+      case 'dst-address': return dstAddrMatch(neg, ctx.sets.ofRule(rule, key).set, pkt);
       case 'src-address-list': case 'dst-address-list': {
-        // 完全靜態的清單依項目判斷（同 src-address／dst-address）；可能有動態來源或基準裡沒有的清單無法判斷
-        const al = ctx && ctx.addressList ? ctx.addressList(pkt.family, body) : null;
+        const al = ctx.sets.list(ctx.dev, pkt.family, body);
         if (!al || !al.static) return null;
-        const p = { neg, kind: 'ranges', items: al.items, bits: al.bits, sorted: true, full: al.full, privateOnly: al.privateOnly };
-        return key === 'src-address-list' ? srcAddrMatch(p, pkt) : dstAddrMatch(p, pkt);
+        return key === 'src-address-list' ? srcAddrMatch(neg, al.set, pkt) : dstAddrMatch(neg, al.set, pkt);
       }
       case 'dst-address-type': return flip(addrType(body, pkt.dstLocal));
       case 'src-address-type': return flip(addrType(body, pkt.srcLocal));
@@ -944,25 +997,25 @@
       default: return null;
     }
   }
-  /** 來源位址條件（src-address 與展開的 src-address-list 共用；p 是 parseVal 的結果，ranges 的 items 可以是空的）。見 condition。 */
-  function srcAddrMatch(p, pkt) {
-    const flip = (x) => (x === null ? null : p.neg ? !x : x);
+  /**
+   * 來源位址條件（src-address 與展開的 src-address-list 共用）：neg 是開頭的 !，set 是登錄表的 S.ip.set（可以是空的；null 是條件無法判斷）。見 condition。
+   * 涵蓋全部（set.isAll）與只有私有位址（set.within 私有位址的集合）只看集合本身，與項目寫法無關。
+   */
+  function srcAddrMatch(neg, set, pkt) {
+    const flip = (x) => (x === null ? null : neg ? !x : x);
+    if (set === null) return null;
     if (pkt.reach) {
-      if (pkt.src == null || p.kind !== 'ranges' || p.bits !== (pkt.family === 'ipv6' ? 128 : 32)) return null;
-      return flip(p.sorted ? inSorted(pkt.src, p.items) : inRanges(pkt.src, p.items));
+      if (pkt.src == null || set.bits !== BITS(pkt.family)) return null;
+      return flip(set.has(pkt.src));
     }
-    if (p.kind !== 'ranges') return null;
-    // 展開的位址清單（p.sorted）：涵蓋全部、只有私有位址已在建索引時算好
-    const bits = BigInt(p.bits); const full = p.sorted ? p.full : rangesWithin([[0n, (1n << bits) - 1n]], p.items);
-    if (!p.neg) return full;
-    const priv = PRIVATE.filter((x) => x && BigInt(x[2]) === bits).map(([a, b]) => [a, b]);
-    return (p.sorted ? p.privateOnly : rangesWithin(p.items, priv)) ? true : null; // 排除私有位址＝公網來源仍符合
+    if (!neg) return set.isAll;
+    return set.within(PRIVATE.get(set.bits)) ? true : null; // 排除私有位址＝公網來源仍符合
   }
   /** 目的位址條件（dst-address 與展開的 dst-address-list 共用）。 */
-  function dstAddrMatch(p, pkt) {
-    if (pkt.dst === undefined || p.kind !== 'ranges') return null;
-    const x = p.sorted ? inSorted(pkt.dst, p.items) : inRanges(pkt.dst, p.items);
-    return p.neg ? !x : x;
+  function dstAddrMatch(neg, set, pkt) {
+    if (pkt.dst === undefined || set === null) return null;
+    const x = set.has(pkt.dst);
+    return neg ? !x : x;
   }
   /**
    * Q.reach 判斷的是新連線的第一個封包（state new）：TCP 只有 SYN 旗標，ICMP 服務是 echo request（type 8、code 0）。
@@ -1236,9 +1289,12 @@
     const listsByDev = new Map(); M.fw.lists.forEach((l) => S.util.getOr(listsByDev, l.dev, () => []).push({ name: l.name, defined: l.defined, include: l.include, exclude: l.exclude, members: Array.from(l.members.keys()) }));
     const rulesByDev = new Map(); M.fw.rules.forEach((r) => S.util.getOr(rulesByDev, r.dev, () => []).push(r));
     const alByDev = new Map(); M.addressLists.forEach((l) => S.util.getOr(alByDev, l.dev, () => []).push(l));
+    // 位址集合的登錄表（所有設備共用一份；查詢層從 Snapshot 以同一個函式建）。服務在下面逐台補上，登錄表第一次查服務時才建索引
+    const svcAll = [];
+    M.addrSets = addrSets({ rules: M.fw.rules, addressLists: M.addressLists, services: svcAll, routingRules: M.policy.rules });
     M.devices.forEach((d) => {
       if (!d.collected || !d.data.has('config')) return;
-      const ctx = fwContext(d.key, listsByDev.get(d.key) || [], ifcsByDev.get(d.key) || [], rulesByDev.get(d.key) || [], alByDev.get(d.key) || []);
+      const ctx = fwContext(d.key, listsByDev.get(d.key) || [], ifcsByDev.get(d.key) || [], rulesByDev.get(d.key) || [], alByDev.get(d.key) || [], M.addrSets);
       M.fwCtx.set(d.key, ctx); // 對外入口 M.wanEntries 要等邊界推論完成（entriesOf）
       M.fwZones.set(d.key, { dev: d.key, basis: ctx.status === 'ok' ? 'interface-list' : null, status: ctx.status, wanLists: ctx.wanLists, wanInterfaces: ctx.wan ? Array.from(ctx.wan).sort(S.util.natural) : [],
         lanLists: ctx.lanLists, lanInterfaces: Array.from(ctx.lan).sort(S.util.natural), ipv6: ipv6Status(M, d.key, rulesByDev.get(d.key) || []) });
@@ -1250,6 +1306,7 @@
           addresses: sv.addresses ?? base.addresses, basis: 'export', src: sv.src.slice() });
       });
       M.fwServices.set(d.key, Array.from(svcs.values()).sort((a, b) => S.util.natural(a.name, b.name)));
+      svcAll.push(...M.fwServices.get(d.key));
     });
   }
 
@@ -1549,6 +1606,8 @@
   }
 
   S.infer = { infer, displayName, effVlans, effVlanModes, effPvid, bridgeOf, vlanSpan, VLAN_DATA, isVirtualIfc, hwMacsByDev, wifiLocations, behindLocations, boundaries, BOUNDARY_LABEL, routingDomains, routingView };
+  S.infer.addrSets = addrSets;
+  S.infer.addrBounds = addrBounds;
   S.infer.fw = { canonMatch, covers, sameMatch, evalChain, evalFilter, decide, packetFor, wanPacket, wanEntries, entriesIn, fwContext, parseVal, splitNeg, protoName, listMembers, policyBaseline, addressListItem, addressListState,
     ADDRESS_LIST_DYNAMIC: FW_ADDRESS_LIST_DYNAMIC, ADDRESS_LIST_WRITE: FW_ADDRESS_LIST_WRITE,
     TERMINAL: FW_TERMINAL, BUILTIN: FW_BUILTIN, NONDET: FW_NONDET, PORT_PROTOCOLS, POLICY_CHAINS,

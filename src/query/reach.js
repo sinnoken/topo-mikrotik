@@ -243,17 +243,11 @@
    */
   const SLICE_MS = 25;
   const SLICE_CHECK = 8;
-  /**
-   * /ip service 的 available-from 判斷（localService 的 serviceOf 與節點鍵的 afSig 共用）：nets 是 afNets 的結果，
-   * parseCidr 失敗的項目是 null、不接受任何來源。
-   */
-  const afNets = (addresses) => addresses.map((a) => IP.parseCidr(a));
-  const inAvailableFrom = (ip, nets) => nets.some((p) => (p ? IP.inNet(ip, p.net, p.len) : false));
   const slicer = () => { let t0 = Date.now(); let n = 0; return () => { if (++n < SLICE_CHECK) return false; n = 0; const t = Date.now(); if (t - t0 < SLICE_MS) return false; t0 = t; return true; }; };
 
   S.reach = {
     SERVICES, ZONE_SOURCES, ASSUMPTIONS, svcId,
-    /** 每份基準一個（由 S.query 第一次呼叫 L4 函式時建立）；I：{ ctxOf(dev) }（查詢層的防火牆比對環境）。 */
+    /** 每份基準一個（由 S.query 第一次呼叫 L4 函式時建立）；I：{ ctxOf(dev), addrSets() }（查詢層的防火牆比對環境與位址集合的登錄表 S.infer.addrSets）。 */
     engine: (Q, I) => makeEngine(Q, I),
     /**
      * 內部（只給 src/query/reach-*.js 用，不是對外介面）：常數，與各部分的建構函式（evalPart、zonesPart、matrixPart、exposurePart，
@@ -261,7 +255,7 @@
      */
     _: {
       deepFreeze, MAX_PATHS, SERVICES, EXTERNAL_ZONE, SELF_ZONE, EXTERNAL_CANDIDATES, EXTERNAL6_CANDIDATES, svcId, ZONE_SOURCES, ASSUMPTIONS, EXPOSURE_ASSUMPTIONS, EXPOSURE_MAX_SOURCES,
-      REASON_LAYER, checkCode, keyWhy, NAT_UNKNOWN, runAll, slicer, afNets, inAvailableFrom,
+      REASON_LAYER, checkCode, keyWhy, NAT_UNKNOWN, runAll, slicer,
     },
   };
 
@@ -304,8 +298,8 @@
       const ctx = I.ctxOf(r.dev); const out = [];
       Object.keys(r.match).forEach((k) => {
         const kind = F0.condKind(k);
-        // 位址清單：只有可能有動態來源（或基準裡沒有）的清單判斷不了，同 decide 用的 ctx.addressList
-        const listUnknown = () => { const al = ctx ? ctx.addressList(r.family, F0.splitNeg(r.match[k]).body) : null; return !al || !al.static; };
+        // 位址清單：只有可能有動態來源（或基準裡沒有）的清單判斷不了，同 decide 用的登錄表（S.infer.addrSets）
+        const listUnknown = () => { const al = I.addrSets().ofRule(r, k); return !al || !al.static; };
         const unknown = (kind === 'address-list' && listUnknown()) || kind === 'nondet' || kind === 'other' || SRC_PORT_KEYS.includes(k)
           || (k === 'ipsec-policy' && devInfo(r.dev).ipsec)
           || (kind === 'interface' && k.endsWith('-list') && !!ctx && ctx.resolve(F0.splitNeg(r.match[k]).body) === null);
@@ -390,36 +384,24 @@
     const where = (r) => `${name(r.dev)} ${r.table} ${r.chain} chain 內第 ${r.position} 條（${r.action}）`;
 
     // ---- 位址等價類：規則的位址邊界把位址空間切成區段，同一區段內的位址對所有規則的位址條件結果相同（規格書 §7）
+    // 邊界一律由位址集合的登錄表產生（S.infer.addrBounds：登錄的 set 的 bounds()）；新的位址來源在登錄表登錄後就會切開等價類
     let ruleB = null; let repB = null;
-    const toNum = (x) => Number(x);
-    const addRanges = (set, key, text) => {
-      if (text === undefined) return;
-      const p = F.parseVal(key, F.splitNeg(text).body);
-      if (p.kind === 'ranges' && p.bits === 32) p.items.forEach(([a, b]) => { set.add(toNum(a)); set.add(toNum(b) + 1); });
-    };
+    const RULE_ADDR = Object.freeze(['src-address', 'dst-address', 'to-addresses'].concat(F.ADDRESS_LIST));
+    const ROUTING_ADDR = Object.freeze(['src-address', 'dst-address']);
+    const addBounds = (set, entries) => S.infer.addrBounds(entries, 32).forEach((b) => set.add(Number(b)));
     const sortedArr = (set) => Float64Array.from(Array.from(set).sort((a, b) => a - b));
     const bounds = () => {
       if (ruleB) return;
-      const rb = new Set([0]);
-      m.firewallRules.forEach((r) => {
-        if (r.family !== 'ip') return;
-        addRanges(rb, 'src-address', r.match['src-address']); addRanges(rb, 'dst-address', r.match['dst-address']);
-        addRanges(rb, 'dst-address', r.params['to-addresses']);
-        // 展開的位址清單（完全靜態，同 decide 用的 ctx.addressList）：清單項目的邊界也切開等價類，否則清單內外的位址會共用節點
-        F.ADDRESS_LIST.forEach((k) => {
-          if (r.match[k] === undefined) return;
-          const ctx = I.ctxOf(r.dev); const al = ctx ? ctx.addressList(r.family, F.splitNeg(r.match[k]).body) : null;
-          if (al && al.static) al.items.forEach(([a, b]) => { rb.add(toNum(a)); rb.add(toNum(b) + 1); });
-        });
-      });
+      const R = I.addrSets(); const es = [];
+      // 規則的位址字面值、dst-nat 的 to-addresses 與展開的位址清單（完全靜態，同 decide）：清單項目的邊界也切開等價類，否則清單內外的位址會共用節點
+      m.firewallRules.forEach((r) => { if (r.family === 'ip') RULE_ADDR.forEach((k) => es.push(R.ofRule(r, k))); });
       // /routing rule 的位址條件也切開等價類：同一個區段的位址，查哪一張表的結果相同
-      (m.routingRules || []).forEach((r) => {
-        addRanges(rb, 'src-address', r.match['src-address']); addRanges(rb, 'dst-address', r.match['dst-address']);
-      });
+      (m.routingRules || []).forEach((r) => ROUTING_ADDR.forEach((k) => es.push(R.ofRoutingRule(r, k))));
+      const rb = new Set([0]); addBounds(rb, es);
       const pb = new Set(rb);
       prefixes4().forEach((p) => { pb.add(p.lo); pb.add(p.hi + 1); });
       // 代表位址另依 /ip service 的 available-from 切開（同一個網段內只有部分位址被接受時，兩邊各有代表）
-      afIndex().lists.forEach((x) => x.addresses.forEach((a) => addRanges(pb, 'src-address', a)));
+      addBounds(pb, afIndex().lists.map((x) => x.entry));
       ruleB = sortedArr(rb); repB = sortedArr(pb);
       E.ruleB = ruleB; E.repB = repB;
     };
@@ -444,7 +426,8 @@
         Q.ipServicesOf(d.key).forEach((sv) => {
           if (!sv.enabled || !sv.addresses.length) return;
           const id = sv.addresses.slice().sort().join(',');
-          if (!by.has(id)) by.set(id, { id, addresses: sv.addresses.slice(), nets: afNets(sv.addresses) });
+          // 內容相同的清單共用一筆；entry 是登錄表的 available-from（IPv4，同 reach-eval.js 的 serviceOf）
+          if (!by.has(id)) by.set(id, { id, entry: I.addrSets().service(d.key, sv.name, 'ip') });
           perDev.push([d.key, sv.port, id]);
         });
       });
@@ -477,7 +460,7 @@
       }
       return r;
     };
-    // 是否在清單內：inAvailableFrom（與 reach-eval.js 的 serviceOf 共用）
+    // 是否在清單內：登錄表的 set.has（與 reach-eval.js 的 serviceOf 同一份）
     const afSigMemo = new Map(); const afSigId = new Map();
     /** 來源 ip 在 rel 這些清單的內外組合的序號（0 是沒有清單；序號依遇到的順序，只當快取鍵用，不出現在結果裡）。 */
     const afSig = (ip, rel) => {
@@ -485,7 +468,7 @@
       const lv = level(afSigMemo, rel); let n = lv.get(ip);
       if (n === undefined) {
         const lists = afIndex().lists;
-        const sig = rel.map((i) => (inAvailableFrom(ip, lists[i].nets) ? '1' : '0')).join('');
+        const sig = rel.map((i) => (lists[i].entry.set.has(ip) ? '1' : '0')).join('');
         n = U.getOr(afSigId, sig, () => afSigId.size + 1);
         lv.set(ip, n);
       }

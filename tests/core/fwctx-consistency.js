@@ -14,13 +14,18 @@ function shape(ctx, listNames, addrLists) {
   Array.from(ctx.chains.keys()).sort().forEach((k) => { chains[k] = ctx.chains.get(k).map((r) => r.key); });
   const resolved = {};
   listNames.forEach((n) => { resolved[n] = sorted(ctx.resolve(n)); });
-  // 位址清單：完全靜態與否、展開的區間（BigInt 轉成字串比較）
+  // 位址清單（位址集合的登錄表）：id、完全靜態與否、合併後的區間（BigInt 轉成字串比較）
   const addressLists = {};
   (addrLists || []).forEach(([fam, n]) => {
-    const al = ctx.addressList(fam, n);
-    addressLists[fam + '|' + n] = al ? { static: al.static, reasons: al.reasons, items: al.items ? al.items.map(([a, b]) => a + '-' + b) : null } : null;
+    const al = ctx.sets.list(ctx.dev, fam, n);
+    addressLists[fam + '|' + n] = al ? { id: al.id, static: al.static, reasons: al.reasons, items: al.set ? al.set.ranges.map(([a, b]) => a + '-' + b) : null } : null;
   });
-  return { status: ctx.status, wanLists: ctx.wanLists, lanLists: ctx.lanLists, wan: sorted(ctx.wan), lan: sorted(ctx.lan), universe: sorted(ctx.universe), resolved, chains, addressLists };
+  // 規則的位址字面值（同一個規則鍵在兩邊得到相同的 id 與區間）
+  const literals = {};
+  ctx.chains.forEach((rs) => rs.forEach((r) => ['src-address', 'dst-address', 'to-addresses'].forEach((k) => {
+    const e = ctx.sets.ofRule(r, k); if (e) literals[e.id] = e.set ? e.set.ranges.map(([a, b]) => a + '-' + b) : null;
+  })));
+  return { status: ctx.status, wanLists: ctx.wanLists, lanLists: ctx.lanLists, wan: sorted(ctx.wan), lan: sorted(ctx.lan), universe: sorted(ctx.universe), resolved, chains, addressLists, literals };
 }
 
 /** 建立基準，同時取得 model 的 M.fwCtx 與查詢層的 ctxOf（暫時包住 S.check.run 與 S.reach.engine，結束後還原）。 */

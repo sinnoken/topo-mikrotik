@@ -563,9 +563,10 @@
    * 大量列的清單：列數少於 BIG_LIST.min 時直接列出（V.table，與原本相同）；否則
    *   ① 摘要：總數與各組的列數（每組一個展開列，點開才畫那一組的明細；組數多時分組也分頁）；
    *   ② 明細分頁，每頁 BIG_LIST.page 列；
-   *   ③ 搜尋框：依每列的文字（opt.text）找符合的列（只比對文字，不判斷網段），有搜尋字時改列出符合的列（分頁）。
+   *   ③ 搜尋框：先問 opt.match(搜尋字)（核心查詢，例如依位址或網段找路由；畫面不自己比對網段），回傳符合的列（依它的順序列出）；
+   *      沒有 match 或它回傳 null（搜尋字不是它接受的格式）時，改依每列的文字（opt.text）找；有搜尋字時改列出符合的列（分頁）。
    * 展開、頁碼與搜尋字是檢視狀態，只在這個元件裡（重繪詳情時回到預設），不寫回 Snapshot。
-   *   V.bigList(cols, rows, { groups: () => [{ key, title, rows, extra? }], text(row) → 文字, table: V.table 的選項, unit: '條', what: '路由', placeholder })
+   *   V.bigList(cols, rows, { groups: () => [{ key, title, rows, extra? }], text(row) → 文字, match?(搜尋字) → 列的陣列｜null, table: V.table 的選項, unit: '條', what: '路由', placeholder })
    *   groups 只在列數達到 min 時才呼叫；每組的 rows 是 rows 的子集合，各組合起來是全部的列。
    */
   V.bigList = function (cols, rows, opt) {
@@ -593,10 +594,15 @@
       const q = String(search.value || '').trim().toLowerCase();
       V.clear(result); status.textContent = '';
       if (!q) { result.setAttribute('hidden', ''); summary.removeAttribute('hidden'); return; }
-      if (!texts) texts = rows.map((r) => String(o.text(r)).toLowerCase());
-      const hit = rows.filter((r, i) => texts[i].includes(q));
+      const matched = o.match ? o.match(String(search.value).trim()) : null;
+      let hit = matched;
+      if (!hit) {
+        if (!texts) texts = rows.map((r) => String(o.text(r)).toLowerCase());
+        hit = rows.filter((r, i) => texts[i].includes(q));
+      }
       summary.setAttribute('hidden', ''); result.removeAttribute('hidden');
-      status.textContent = hit.length ? `找到 ${V.num(hit.length)} ${unit}` : `找不到符合「${search.value.trim()}」的${o.what || unit}`;
+      status.textContent = hit.length ? `找到 ${V.num(hit.length)} ${unit}`
+        : matched ? `找不到符合的${o.what || unit}` : `找不到符合「${search.value.trim()}」的${o.what || unit}`;
       if (hit.length) result.appendChild(pagedTable(cols, hit, o.table || {}, unit));
     });
     return V.h('div', { class: 'biglist' }, [V.h('div', { class: 'biglist-tools' }, [search, status]), summary, result]);

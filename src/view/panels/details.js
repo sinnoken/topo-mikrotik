@@ -443,7 +443,7 @@
           { t: '回報', f: (a) => a.reciprocal ? '雙向 OSPF 鄰接' : '單向 OSPF 觀察', s: (a) => (a.reciprocal ? '雙向' : '單向') },
           { t: '來源', f: (a) => srcLink(App, a.src) },
         ], ospfAdjacencies) : null, { count: ospfAdjacencies.length, fold: true }),
-      // 路由多時（V.BIG_LIST.min 以上）先看摘要：依路由表、協定與下一跳分組，點開一組才看明細（分頁）；另可依文字搜尋
+      // 路由多時（V.BIG_LIST.min 以上）先看摘要：依路由表、協定與下一跳分組，點開一組才看明細（分頁）；搜尋位址或網段經 Q.routesMatching（前綴由長到短），其他文字（協定、下一跳名稱）依文字比對
       section('路由表', routes.length ? V.bigList([
         // 非作用中（例如備援的預設路由）也列出，可與 R11 等檢查對照：chip 放在網段欄（最後一欄在窄的右欄看不到），整列 muted；
         // 路由追蹤與檢查的路由表只用作用中的
@@ -454,8 +454,8 @@
         { t: '協定', f: (r) => (r.blackhole ? h('span', { class: 'diffA' }, '黑洞路由') : r.proto), s: (r) => r.proto },
         { t: '距離', f: (r) => (r.distance == null ? '' : String(r.distance)), s: (r) => r.distance },
         { t: '下一跳', f: (r) => nhCell(r, multiVrf(Q)), s: (r) => (r.nh[0] ? r.nh[0].ip || r.nh[0].ifc : '') },
-      ], routes, { table: { rowClass: (r) => (r.active === false ? 'route-off' : '') }, unit: '條', what: '路由', placeholder: '搜尋網段、下一跳、協定（文字）',
-        groups: () => routeGroups(routes, showTable), text: routeText }) : null, { count: routes.length, fold: true, extra: [V.stateChip(inactive, '條非作用中')] }),
+      ], routes, { table: { rowClass: (r) => (r.active === false ? 'route-off' : '') }, unit: '條', what: '路由', placeholder: '搜尋位址、網段、下一跳、協定',
+        groups: () => routeGroups(routes, showTable), text: routeText, match: (q) => Q.routesMatching(d.key, q) }) : null, { count: routes.length, fold: true, extra: [V.stateChip(inactive, '條非作用中')] }),
       vrfSection(App, d.key),
       policySection(App, d.key),
       firewallSummary(App, d.key),

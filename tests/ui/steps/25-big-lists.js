@@ -1,4 +1,4 @@
-// 畫面冒煙測試的 step：大量列的清單（V.bigList）——設備詳情的路由表與防火牆的位址清單：摘要計數與 Q 相同、展開一組才畫明細、分頁、文字搜尋、少量時直接列出。
+// 畫面冒煙測試的 step：大量列的清單（V.bigList）——設備詳情的路由表與防火牆的位址清單：摘要計數與 Q 相同、展開一組才畫明細、分頁、搜尋（位址與網段經 Q.routesMatching／Q.addressSetFind，其他文字依文字比對）、少量時直接列出。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
 const { document, S, step, $, buildInput } = require('../helpers.js');
@@ -16,6 +16,9 @@ const INPUT = [
   '/ip firewall filter add action=drop chain=input src-address-list=BLOCK',
   '### /ip route print detail without-paging', RT,
   ' DAc dst-address=10.255.0.0/24 routing-table=main gateway=ether1 immediate-gw=ether1 distance=0',
+  // 包含 10.5.200.0/24 的較短網段：搜尋位址時依前綴由長到短列出（不加預設路由，讓 192.0.2.x 找不到）
+  ' As  dst-address=10.5.0.0/16 routing-table=main gateway=10.255.0.2 immediate-gw=10.255.0.2%ether1 distance=1',
+  ' As  dst-address=10.0.0.0/8 routing-table=main gateway=10.255.0.2 immediate-gw=10.255.0.2%ether1 distance=1',
   // 前 10 條不是作用中（只有 s 旗標）
   ...Array.from({ length: ROUTES }, (_, i) => ` ${i < 10 ? ' s' : 'As'}  dst-address=${dst(i)} routing-table=main gateway=${GWS[i % 3]} immediate-gw=${GWS[i % 3]}%ether1 distance=1`),
   'SMALL (10.255.0.9):', '### /export terse', '/ip address add address=10.255.0.9/24 interface=ether1 network=10.255.0.0',
@@ -42,7 +45,7 @@ const search = (big, q) => { const inp = big.querySelector('.biglist-search'); i
 const visible = (el) => el.getAttribute('hidden') == null;
 
 module.exports = async () => {
-  await step('大量路由：路由表先顯示摘要（計數同 Q.allRoutesOf）、展開一組才畫明細並分頁、文字搜尋找得到指定的路由；少量時直接列出', async () => {
+  await step('大量路由：路由表先顯示摘要（計數同 Q.allRoutesOf）、展開一組才畫明細並分頁、搜尋位址依前綴由長到短找到包含它的路由、其他文字依文字比對；少量時直接列出', async () => {
     await buildInput(INPUT);
     const Q = App.Q; const P = S.view.BIG_LIST;
     const big = Q.devices().find((d) => d.name === 'BIG'); const small = Q.devices().find((d) => d.name === 'SMALL');
@@ -84,18 +87,32 @@ module.exports = async () => {
     if (!page2.length || page2.length > P.page || page2[0].textContent === first) throw new Error('換頁後應是下一段的列');
     if (!document.activeElement || document.activeElement.getAttribute('data-page') !== 'next') throw new Error('換頁後焦點應留在「下一頁」');
     if (!g0.querySelector('.pager-where').textContent.includes(`${S.view.num(P.page + 1)}–`)) throw new Error('頁碼說明應寫出第二頁的範圍：' + g0.querySelector('.pager-where').textContent);
-    // 搜尋：找得到指定的路由，搜尋時摘要收起；清掉搜尋字回到摘要
+    // 搜尋位址（Q.routesMatching）：找到包含它的每一條路由，最長前綴在最前面、依前綴由長到短；搜尋時摘要收起
     const target = all.find((r) => `${r.prefix}/${r.len}` === dst(ROUTES - 20));
     if (!target) throw new Error('測試前提：Q 應有 ' + dst(ROUTES - 20));
-    search(box, dst(ROUTES - 20));
+    const ip = target.prefix.replace(/\.0$/, '.7');
+    const want = Q.routesMatching(big.key, ip);
+    if (!want || want.length < 2 || want[0] !== target) throw new Error('測試前提：包含 ' + ip + ' 的路由應不只一條、最長的是 ' + dst(ROUTES - 20));
+    const lenOf = (tr) => { const m = /\d+\.\d+\.\d+\.\d+\/(\d+)/.exec(tr.textContent); if (!m) throw new Error('列應有網段：' + tr.textContent); return Number(m[1]); };
+    search(box, ip);
     const hit = rowsOf(box.querySelector('.biglist-result'));
-    if (hit.length !== 1 || !hit[0].textContent.includes(dst(ROUTES - 20)) || !hit[0].textContent.includes(target.nh[0].ip)) throw new Error('搜尋網段應找到那一條路由：' + hit.map((r) => r.textContent).join(' | '));
-    if (visible(box.querySelector('.biglist-summary')) || !box.querySelector('.biglist-status').textContent.includes('找到 1 條')) throw new Error('搜尋時應收起摘要、寫出找到的條數');
-    search(box, GWS[1]);
-    const byGw = all.filter((r) => r.nh.some((n) => n.ip === GWS[1])).length;
-    if (!box.querySelector('.biglist-status').textContent.includes(`找到 ${S.view.num(byGw)} 條`) || rowsOf(box.querySelector('.biglist-result')).length !== Math.min(P.page, byGw)) throw new Error('搜尋下一跳應找到那些路由（分頁）');
+    if (hit.length !== want.length || !hit[0].textContent.includes(dst(ROUTES - 20)) || !hit[0].textContent.includes(target.nh[0].ip)) throw new Error('搜尋位址應找到包含它的路由、最長前綴在最前面：' + hit.map((r) => r.textContent).join(' | '));
+    if (hit.some((tr, k) => k && lenOf(tr) > lenOf(hit[k - 1]))) throw new Error('搜尋位址的結果應依前綴由長到短：' + hit.map(lenOf).join(','));
+    if (!want.every((r, k) => hit[k].textContent.includes(`${r.prefix}/${r.len}`))) throw new Error('搜尋位址的列應與 Q.routesMatching 相同而且同順序');
+    if (visible(box.querySelector('.biglist-summary')) || !box.querySelector('.biglist-status').textContent.includes(`找到 ${S.view.num(want.length)} 條`)) throw new Error('搜尋時應收起摘要、寫出找到的條數');
+    // 不是位址或網段（Q.routesMatching 為 null）：改用文字比對，可搜協定與網段的一部分
+    const proto = all.find((r) => r.nh.some((n) => n.ip === GWS[1])).proto; const partial = target.prefix.replace(/\.0$/, '');
+    if (Q.routesMatching(big.key, proto) !== null || Q.routesMatching(big.key, partial) !== null) throw new Error('測試前提：協定名稱與不完整的位址不是位址格式');
+    search(box, proto);
+    const byProto = all.filter((r) => r.proto === proto).length;
+    if (!box.querySelector('.biglist-status').textContent.includes(`找到 ${S.view.num(byProto)} 條`) || rowsOf(box.querySelector('.biglist-result')).length !== Math.min(P.page, byProto)) throw new Error('搜尋協定應依文字找到那些路由（分頁）');
+    search(box, partial);
+    const byText = rowsOf(box.querySelector('.biglist-result'));
+    if (!byText.length || !byText.every((tr) => tr.textContent.includes(partial)) || !byText.some((tr) => tr.textContent.includes(dst(ROUTES - 20)))) throw new Error('不完整的位址應依文字找到含它的路由：' + byText.map((r) => r.textContent).join(' | '));
+    // 位址格式正確但沒有路由包含它：寫「找不到符合的路由」
+    if (!Q.routesMatching(big.key, '192.0.2.99') || Q.routesMatching(big.key, '192.0.2.99').length) throw new Error('測試前提：沒有路由包含 192.0.2.99');
     search(box, '192.0.2.99');
-    if (!box.querySelector('.biglist-status').textContent.includes('找不到') || rowsOf(box.querySelector('.biglist-result')).length) throw new Error('沒有符合時應說明找不到');
+    if (!box.querySelector('.biglist-status').textContent.includes('找不到符合的路由') || rowsOf(box.querySelector('.biglist-result')).length) throw new Error('沒有符合時應說明找不到符合的路由：' + box.querySelector('.biglist-status').textContent);
     search(box, '');
     if (!visible(box.querySelector('.biglist-summary')) || visible(box.querySelector('.biglist-result'))) throw new Error('清掉搜尋字應回到摘要');
     // 少量時直接列出（與原本相同）
@@ -105,10 +122,10 @@ module.exports = async () => {
     App.select(null);
   });
 
-  await step('大量位址清單：防火牆的位址清單取自 Q.addressSet，摘要計數相同、展開一組才畫明細並分頁、文字搜尋找得到位址；少量時直接列出', () => {
+  await step('大量位址清單：防火牆的位址清單取自 Q.addressSet，摘要計數相同、展開一組才畫明細並分頁、搜尋位址找到包含它的區段、其他文字依文字比對；少量時直接列出', () => {
     const Q = App.Q; const P = S.view.BIG_LIST;
     const big = Q.devices().find((d) => d.name === 'BIG');
-    const lists = Q.addressListsOf(big.key).map((l) => Q.addressSet(Q.addrSets().list(l.dev, l.family, l.name).id));
+    const lists = Q.addressSetsOf(big.key, 'address-list').map(Q.addressSet);
     const block = lists.find((s) => s.id.endsWith('|BLOCK'));
     if (!block || block.size !== 600) throw new Error('測試前提：BLOCK 應有 600 段：' + (block && block.size));
     const total = lists.reduce((n, s) => n + Math.max(1, s.size || 0), 0);
@@ -128,9 +145,29 @@ module.exports = async () => {
     search(box, want);
     const hit = rowsOf(box.querySelector('.biglist-result'));
     if (!hit.some((r) => r.textContent.includes('BLOCK') && r.textContent.includes(want))) throw new Error('搜尋位址應找到那一段：' + want);
+    // 搜尋位址（Q.addressSetFind）：找到包含它的區段（MGMT 的 10.255.0.0/24 是一段），不是文字比對
+    const mgmt = lists.find((s) => s.id.endsWith('|MGMT'));
+    const inside = '10.255.0.77'; const found = Q.addressSetFind(mgmt.id, inside);
+    if (!found || found.length !== 1 || mgmt.ranges[found[0]].join('–') !== '10.255.0.0–10.255.0.255') throw new Error('測試前提：MGMT 有一段包含 ' + inside);
+    search(box, inside);
+    const inHit = rowsOf(box.querySelector('.biglist-result'));
+    if (inHit.length !== 1 || !inHit[0].textContent.includes('MGMT') || !inHit[0].textContent.includes('10.255.0.0–10.255.0.255')) throw new Error('搜尋位址應找到包含它的區段：' + inHit.map((r) => r.textContent).join(' | '));
+    // 網段：找到和它重疊的每一段（計數同 Q.addressSetFind）
+    const net = '172.16.2.0/24'; const byNet = lists.filter((s) => s.ranges).reduce((n, s) => n + Q.addressSetFind(s.id, net).length, 0);
+    if (!byNet) throw new Error('測試前提：BLOCK 應有和 ' + net + ' 重疊的區段');
+    search(box, net);
+    if (!box.querySelector('.biglist-status').textContent.includes(`找到 ${S.view.num(byNet)} 段`)) throw new Error('搜尋網段應找到重疊的區段：' + box.querySelector('.biglist-status').textContent);
+    // 不是位址（Q.addressSetFind 為 null）：改用文字比對，找得到清單名稱
+    if (Q.addressSetFind(mgmt.id, 'MGMT') !== null) throw new Error('測試前提：清單名稱不是位址格式');
+    search(box, 'MGMT');
+    const byName = rowsOf(box.querySelector('.biglist-result'));
+    if (byName.length !== mgmt.size || !byName.every((r) => r.textContent.includes('MGMT'))) throw new Error('搜尋清單名稱應依文字找到那份清單的區段：' + byName.map((r) => r.textContent).join(' | '));
+    // 位址格式正確但沒有區段重疊：寫「找不到符合的位址」
+    search(box, '192.0.2.1');
+    if (!box.querySelector('.biglist-status').textContent.includes('找不到符合的位址') || rowsOf(box.querySelector('.biglist-result')).length) throw new Error('沒有重疊的區段時應說明找不到：' + box.querySelector('.biglist-status').textContent);
     // 少量時直接列出：每段一列
     const small = Q.devices().find((d) => d.name === 'SMALL');
-    const few = Q.addressListsOf(small.key).map((l) => Q.addressSet(Q.addrSets().list(l.dev, l.family, l.name).id));
+    const few = Q.addressSetsOf(small.key, 'address-list').map(Q.addressSet);
     const n = few.reduce((k, s) => k + Math.max(1, s.size || 0), 0);
     App.select({ type: 'firewall', dev: small.key });
     const sm = foldOf('位址清單');

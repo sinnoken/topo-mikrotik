@@ -117,6 +117,22 @@ test('路由表收集不完整：收到的部分只符合較短的路由（預�
   assert.deepStrictEqual([S.trace.routeCertain(false, []), S.trace.routeCertain(true, []), S.trace.routeCertain(true, [{ len: 24 }]), S.trace.routeCertain(true, [{ len: 32 }])], [true, false, false, true]);
 });
 
+test('路由表收集不完整：命中 /32 但閘道要遞迴解析、只能靠較短的路由時，原因是 route-data-incomplete（不是 next-hop-outside）；收齊時照常', () => {
+  const extra = [' As dst-address=192.168.2.10/32 routing-table=main gateway=10.99.0.1 distance=1'];
+  const Q = S.query(partial(extra));
+  assert.strictEqual(S.trace.nextOwner(S.trace.routingOf(Q), 'R1', '10.99.0.1', 'main').status, 'incomplete');
+  const t = S.trace(Q, '192.168.1.10', '192.168.2.10');
+  assert.strictEqual(t.status, 'unverified');
+  assert.ok(t.ends.length && t.ends.every((e) => e.status === 'unverified' && e.reason === 'route-data-incomplete' && /10\.99\.0\.1/.test(e.note)), JSON.stringify(t.ends));
+  const r = Q.reach('192.168.1.10', '192.168.2.10', { proto: 'tcp', port: 443 });
+  assert.strictEqual(r.verdict, 'unknown');
+  assert.deepStrictEqual(S.util.uniq(r.paths.map((p) => p.end.code)), ['route-data-incomplete']);
+  // 收齊時：預設路由解析得到 198.51.100.1，但它不屬於任何設備，目的在基準內——下一跳不在基準內
+  const Q0 = S.query(partial(extra, false));
+  assert.strictEqual(S.trace.nextOwner(S.trace.routingOf(Q0), 'R1', '10.99.0.1', 'main').status, 'unknown');
+  assert.deepStrictEqual(S.util.uniq(Q0.reach('192.168.1.10', '192.168.2.10', { proto: 'tcp', port: 443 }).paths.map((p) => p.end.code)), ['next-hop-outside']);
+});
+
 test('路由表收集不完整：下一跳只能靠較短的路由解析時（黑洞、迴圈、找不到）R01／R03／R04 都不報；收齊時照常', () => {
   const extra = [' As dst-address=10.50.0.0/16 routing-table=main gateway=10.99.0.1 distance=1', ' As dst-address=10.99.0.0/16 routing-table=main blackhole distance=1'];
   const ids = (s) => s.findings.filter((f) => /^R0[134]$/.test(f.id) && f.entities.some((e) => e.key === 'R1')).map((f) => f.id);

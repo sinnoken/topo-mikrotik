@@ -178,7 +178,7 @@
     { code: 'dropped', kind: 'end', layer: 'filter', note: '被規則丟棄（拒絕）' },
     { code: 'local', kind: 'end', layer: 'route', note: '目的是設備自己的位址（送達）' },
     { code: 'no-route-data', kind: 'end', layer: 'route', note: '設備沒有路由表資料（不明）' },
-    { code: 'route-data-incomplete', kind: 'end', layer: 'route', note: '設備的路由表收集不完整（收集失敗，例如逾時），收到的部分沒有符合的路由，或只符合比 /32 短的路由（沒收到的部分可能有更長的前綴）（不明）' },
+    { code: 'route-data-incomplete', kind: 'end', layer: 'route', note: '設備的路由表收集不完整（收集失敗，例如逾時），收到的部分沒有符合的路由，或只符合比 /32 短的路由（沒收到的部分可能有更長的前綴）；遞迴解析下一跳時也一樣（不明）' },
     { code: 'no-route', kind: 'end', layer: 'route', note: '沒有符合的路由（拒絕）' },
     { code: 'blackhole', kind: 'end', layer: 'route', note: '黑洞路由（拒絕）' },
     { code: 'next-hop-outside', kind: 'end', layer: 'route', note: '下一跳不在基準內（不明）' },

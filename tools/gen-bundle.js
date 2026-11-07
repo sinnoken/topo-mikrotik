@@ -316,6 +316,11 @@ for (let s = 1; s <= SITES; s++) {
     FF('action=accept chain=forward comment="defconf: accept established,related,untracked" connection-state=established,related,untracked');
     FF('action=drop chain=forward comment="defconf: drop invalid" connection-state=invalid');
     FF('action=drop chain=forward comment="defconf: drop all from WAN not DSTNATed" connection-nat-state=!dstnat connection-state=new in-interface-list=WAN');
+    if (F && ci === 1) {                                                                                                // F16：整批放行 dst-nat 之後的連線，後面的逐埠限制被架空
+      FF('action=accept chain=forward comment="allow port forwards" connection-nat-state=dstnat');
+      FF(`action=accept chain=forward dst-address=10.${s}.20.12 dst-port=22 in-interface-list=WAN protocol=tcp`);
+      FF('action=drop chain=forward dst-port=445 in-interface-list=WAN protocol=tcp');
+    }
     e.push(['/ip firewall nat', 'add', 'action=masquerade chain=srcnat comment="defconf: masquerade" ipsec-policy=out,none out-interface-list=WAN']);
     if (F && ci === 0) e.push(['/ip firewall nat', 'add', `action=dst-nat chain=dstnat dst-port=8443 in-interface-list=WAN protocol=tcp to-addresses=10.${s}.20.11 to-ports=443`]); // F04：連接埠轉送到伺服器
     if (F && ci === 1) e.push(['/ipv6 firewall filter', 'add', 'action=accept chain=forward dst-port=443 protocol=tcp']);   // F05：IPv6 只限目的埠

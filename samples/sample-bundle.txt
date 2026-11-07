@@ -1024,6 +1024,9 @@ TPE_CORE_RT_02 (10.1.10.3):
 /ip firewall filter add action=accept chain=forward comment="defconf: accept established,related,untracked" connection-state=established,related,untracked
 /ip firewall filter add action=drop chain=forward comment="defconf: drop invalid" connection-state=invalid
 /ip firewall filter add action=drop chain=forward comment="defconf: drop all from WAN not DSTNATed" connection-nat-state=!dstnat connection-state=new in-interface-list=WAN
+/ip firewall filter add action=accept chain=forward comment="allow port forwards" connection-nat-state=dstnat
+/ip firewall filter add action=accept chain=forward dst-address=10.1.20.12 dst-port=22 in-interface-list=WAN protocol=tcp
+/ip firewall filter add action=drop chain=forward dst-port=445 in-interface-list=WAN protocol=tcp
 /ip firewall nat add action=masquerade chain=srcnat comment="defconf: masquerade" ipsec-policy=out,none out-interface-list=WAN
 /ipv6 firewall filter add action=accept chain=forward dst-port=443 protocol=tcp
 /ip service set telnet disabled=yes
@@ -1068,6 +1071,15 @@ Flags: X - disabled, I - invalid; D - dynamic
  8    ;;; defconf: drop all from WAN not DSTNATed
       chain=forward action=drop connection-nat-state=!dstnat
       connection-state=new in-interface-list=WAN bytes=25 734 000 packets=21 445
+ 9    ;;; allow port forwards
+      chain=forward action=accept connection-nat-state=dstnat bytes=25 735 200
+      packets=21 446
+ 10
+      chain=forward action=accept dst-address=10.1.20.12 dst-port=22
+      in-interface-list=WAN protocol=tcp bytes=0 packets=0
+ 11
+      chain=forward action=drop dst-port=445 in-interface-list=WAN protocol=tcp
+      bytes=17 165 851 packets=34 961
 
 [admin@TPE_CORE_RT_02] > /ip firewall nat print stats detail without-paging
 Flags: X - disabled, I - invalid; D - dynamic

@@ -544,6 +544,17 @@
       ],
       action: '在這個 chain 的最前面放行已建立的連線，接著丟棄 invalid。指令例如 `/ip firewall filter add chain=forward action=accept connection-state=established,related,untracked place-before=0`，再加一條 `connection-state=invalid action=drop`。有非對稱路由時先確認回程走同一台（手冊提醒這種封包可能被當成 invalid）。',
     },
+    // 整批放行 dst-nat 之後的連線：判斷沿用 S.infer.fw 的 evalFilter／decide
+    F16: {
+      severity: 'warn', cat: '防火牆', title: '放行所有 dst-nat 之後的連線，之後的逐埠限制對轉送進來的連線不起作用', data: [['config']],
+      causes: [
+        '為了讓連接埠轉送通，在 forward 加了一條只看 `connection-nat-state=dstnat` 的放行，又另外寫了逐埠的放行或丟棄。',
+        '把預設組態（defconf）丟棄沒經過 dst-nat 的連線那條（`connection-nat-state=!dstnat`）反過來寫成放行，排在逐埠規則之前。',
+        '逐埠規則是後來加的，加在整批放行之後。',
+        '刻意讓所有轉送都通過，逐埠規則是留下來沒刪的舊規則。',
+      ],
+      action: '拿掉整批放行，改成逐埠放行需要的轉送。也可以把整批放行移到逐埠規則之後；如果這是刻意的，刪掉不再起作用的逐埠規則。實際連得進來的埠以 `/ip firewall nat` 的 dst-nat 規則為準。',
+    },
     // ---- 生命週期
     L01: {
       severity: 'info', cat: '生命週期', title: 'RouterBOOT 韌體待升級（current 與 upgrade 不同）', data: [['routerboard']],

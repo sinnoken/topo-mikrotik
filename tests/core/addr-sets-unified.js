@@ -46,6 +46,27 @@ test('F07 與 L4：available-from 合併後涵蓋全部才是不限來源（兩�
   });
 });
 
+test('位址清單與規則字面值：檢查用的比對環境（M.fwCtx）與 Q.reach 對同一個來源的判斷相同；拆開與合併的寫法結果相同', () => {
+  const spellings = [
+    ['/ip firewall address-list add address=192.168.1.0/26 list=BAD', '/ip firewall address-list add address=192.168.1.64/26 list=BAD', '/ip firewall filter add action=drop chain=input dst-port=22 protocol=tcp src-address-list=BAD'],
+    ['/ip firewall address-list add address=192.168.1.0/25 list=BAD', '/ip firewall filter add action=drop chain=input dst-port=22 protocol=tcp src-address-list=BAD'],
+    ['/ip firewall filter add action=drop chain=input dst-port=22 protocol=tcp src-address=192.168.1.0/26,192.168.1.64/26'],
+    ['/ip firewall filter add action=drop chain=input dst-port=22 protocol=tcp src-address=192.168.1.0-192.168.1.127'],
+  ];
+  const srcs = ['192.168.1.10', '192.168.1.100', '192.168.1.130', '192.168.1.250'];
+  const results = spellings.map((lines) => {
+    const { snap, M } = R(lines); const Q = S.query(snap);
+    return srcs.map((src) => {
+      const pkt = S.infer.fw.wanPacket('ip', 'R|bridge1', 'input', { reach: true, dstPort: 22, src: BigInt(S.ip.toInt(src)), dst: BigInt(S.ip.toInt('192.168.1.1')) });
+      const chk = S.infer.fw.evalFilter(M.fwCtx.get('R'), 'ip', 'input', pkt).verdict;
+      const l4 = Q.reach(src, '192.168.1.1', { proto: 'tcp', port: 22 }).verdict;
+      assert.strictEqual(chk === 'drop' ? 'deny' : 'allow', l4, `${lines[lines.length - 1]} ${src}`);
+      return l4;
+    });
+  });
+  results.forEach((r) => assert.deepStrictEqual(r, ['deny', 'deny', 'allow', 'allow']));
+});
+
 test('F07（IPv6）：available-from 的 ::/1,8000::/1 是不限來源；只有一半時不報', () => {
   const v6 = ['/ipv6 address add address=2001:db8:1::1/64 interface=bridge1', '/ipv6 firewall filter add action=accept chain=input protocol=tcp'];
   const ssh6 = (af) => of(R(v6.concat(`/ip service set ssh address=192.168.1.0/24,${af}`)).snap, 'F07').filter((f) => /：ssh（/.test(f.message));
@@ -112,4 +133,37 @@ test('R12 的雙重 NAT（behindNat）：masquerade 的 src-address 合併後涵
   assert.strictEqual(r12('src-address=10.1.0.0/25').hit, true, '只涵蓋一半');
   assert.strictEqual(r12('src-address=!10.9.0.0/16').hit, false, '否定、沒有交集：在 NAT 後面');
   assert.strictEqual(r12('src-address=!10.1.0.128/25').hit, true, '否定、有交集：不算');
+});
+
+test('結構：src/check、src/query、src/model 不直接比對設定的位址集合——位址條件的解析與「在不在裡面」只經 S.infer.addrSets（S.ip.set），例外列在允許清單', () => {
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : e.name.endsWith('.js') ? [path.join(d, e.name)] : []));
+  const files = ['check', 'query', 'model'].flatMap((d) => walk(path.join(ROOT, 'src', d))).map((f) => [path.relative(ROOT, f).split(path.sep).join('/'), fs.readFileSync(f, 'utf8')]);
+  const count = (t, re) => (t.match(re) || []).length;
+  const tally = (re) => { const o = {}; files.forEach(([f, t]) => { const n = count(t, re); if (n) o[f] = n; }); return o; };
+  const counts = (allowed) => Object.fromEntries(Object.entries(allowed).map(([f, [n]]) => [f, n]));
+  // 1. 手寫的區間比對（parseVal 的 items 逐項看、拿「全 1」比較整個位址空間）：位址一律改用 set.has／isAll／covers／overlaps／within
+  const HAND = /\.items\.(some|every|find|filter)\(\(\[|===\s*\(1n\s*<<\s*BigInt/g;
+  const HAND_ALLOWED = { 'src/check/checks.js': [1, 'IPsec 的埠是不是只有 500／4500（埠不是位址）'] };
+  assert.deepStrictEqual(tally(HAND), counts(HAND_ALLOWED), '位址的區間比對要經登錄表的集合');
+  // 2. 以防火牆條件的解析器讀位址（parseVal 的 src-address／dst-address／to-addresses）：只允許不是判斷「在不在裡面」的地方
+  const PV = /parseVal\('(src-address|dst-address|to-addresses)'/g;
+  const PV_ALLOWED = {
+    'src/check/checks.js': [1, 'F04 取 to-addresses 的第一個位址當轉送後的目的（代表位址，不是成員判斷）'],
+    'src/query/reach-exposure.js': [2, 'GUA 與 range6 把一般的 IPv6 網段文字轉成區間（盤點 L3，延後改用 S.ip.range）'],
+  };
+  assert.deepStrictEqual(tally(PV), counts(PV_ALLOWED), '新的位址條件解析要經登錄表；確實是例外時加進允許清單並寫原因');
+  // 3. 網段包含（inNet、maskOf、parseCidr）：允許的只有介面位址、直連網段、路由與下一跳（事實，不是設定寫死的位址集合）；數量是棘輪，增加時要確認不是位址條件
+  const NET = /\b(?:IP|S\.ip)\.(?:inNet|maskOf|parseCidr)\(/g;
+  const NET_ALLOWED = {
+    'src/check/checks.js': [14, '介面位址與直連網段（A 系列、DHCP 閘道）、R12 的路由涵蓋、下一跳的擁有者（hopOwner）'],
+    'src/model/build.js': [5, '介面位址的解析與 OSPF 鄰居所在的直連網段'],
+    'src/model/infer.js': [9, '介面位址、模型版路由視圖的出介面（egress）、DHCP 網段'],
+    'src/query/query.js': [5, '網段的位址數、位址所在的網段（findIp）、子網路圖的網段'],
+    'src/query/reach-eval.js': [8, 'NAT 改寫後的來源位址、hairpin 判斷、出介面的直連網段'],
+    'src/query/reach-zones.js': [1, '區段的閘道位址'],
+    'src/query/trace.js': [6, '位址所在的直連網段、最長前綴、預設路由的下一跳'],
+  };
+  assert.deepStrictEqual(tally(NET), counts(NET_ALLOWED), '網段包含的用法改變：設定的位址條件改經登錄表；是介面或路由的事實時更新允許清單與原因');
+  // 4. 建立位址集合只在登錄表（S.infer.addrSets 所在的 infer.js）
+  assert.deepStrictEqual(files.filter(([, t]) => /\b(?:S\.ip|IP)\.set\(/.test(t)).map(([f]) => f), ['src/model/infer.js']);
 });

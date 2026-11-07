@@ -23,7 +23,7 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 - **處理紀錄**：只透過 `S.ledger` 存取（轉換、推進、變更、驗證）。畫面只負責保存到 store、傳入目前時間、顯示結果。
 - **檢視狀態**：選取、展開、縮放、位置都是檢視狀態，不寫回 Snapshot。持久化集中在 `src/view/store.js`。
 - **樣式**：顏色、線型、透明度的唯一來源是 `src/view/theme.js`；DOM 用的 CSS 變數要和它一致（有測試）。
-- **詳情面板的區塊**：一律用 `src/view/panels/details.js` 的 `section()` 產生，內容函式不自帶標題（有結構測試）。
+- **詳情面板的區塊**：一律用 `src/view/dom.js` 的 `V.section` 產生，內容函式不自帶標題（有結構測試）。
 
 ## 規則
 
@@ -41,20 +41,16 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 
 ## 執行指令
 
-曾經發生過：`find / -name … | head` 掃了整台電腦，在背景跑了 9 小時、佔滿一個 CPU 核心；沒有結尾的 heredoc 加 `cat > /tmp/x` 改檔，指令卡在 stdin 上。
-
-1. **搜尋要限定範圍**：只找專案目錄、`"$TEMP"/claude`（`$TEMP` 要加引號：Windows 的 Git Bash 中它含反斜線，不加引號時萬用字元比對不到）與 `~/.claude`。不要用 `find /`，也不要掃整顆磁碟。專案內優先用 Grep／Glob 工具。
-2. **可能跑很久的指令要加 `timeout`**，例如 `timeout 120 …`。`| head` 不會讓前面的指令提早結束（前面的指令要等 head 收滿 N 行才會停），所以改用 `-quit`、`-maxdepth` 或 `timeout`。
-3. **改檔一律用 Edit／Write 工具**，不要用 `cat >`、`tee`、heredoc、`sed -i` 的多行替換、`node -e`，或 python 的 heredoc／`-c`（`.claude/hooks/check-shell.js` 會擋）。多處相同的替換用 Edit 的 `replace_all`。
-4. **不要開會等 stdin 的指令**。測試在前景跑。
-5. **結束前停掉自己開的背景指令**；停不掉時，在報告中列出 PID 和指令。
-6. **macOS 的收集器端到端測試**（`test:core` 裡的收集器端到端契約、`test:collector`）需要 `timeout` 或 `gtimeout`（`brew install coreutils`，或把 lead 提供的墊片路徑放到 PATH 前面）。都沒有時那一項失敗屬環境問題，在報告寫明，不當成程式錯誤。
+1. **搜尋要限定範圍**：只找專案目錄、Claude 的暫存目錄與 `~/.claude`，不用 `find /`、不掃整顆磁碟；專案內用 Grep／Glob 工具。含變數的路徑加引號（Windows 的 `$TEMP` 含反斜線）。
+2. **可能跑很久的指令加 `timeout`**（macOS 為 `gtimeout`）。`| head` 不會讓前面的指令提早結束，改用 `-quit`、`-maxdepth` 或 `timeout`。
+3. **改檔一律用 Edit／Write 工具**（多處相同的替換用 `replace_all`），不用 `cat >`、`tee`、heredoc、`sed -i` 的多行替換、`node -e`，或 python 的 heredoc／`-c`（`.claude/hooks/check-shell.js` 會擋）。
+4. **不開會等 stdin 的指令**，測試在前景跑；結束前停掉自己開的背景指令，停不掉時在回報列出 PID 和指令。
+5. **macOS 先 `brew install coreutils`**；沒有時收集器端到端測試（`test:core` 的收集器端到端契約、`test:collector`）失敗屬環境問題，在回報註明。
 
 ## Git
 
-- 在獨立的 worktree 工作時，建立指定的分支並 commit，不要 push；在主工作區工作時，不要 commit。
-- 在主工作區不要用 `git add` 或 `git rm`：暫存區由主對話管理；曾經發生 agent 先暫存了刪除，結果被主對話的 commit 一起帶走的事故。
-- 在自己的 worktree 中，只能 stage 自己修改或新增的檔案（逐一指定路徑，不用 `git add -A`、`git add .`），再 commit。
+- 在自己的 worktree：commit 到指定的分支，不 push；只 stage 自己修改或新增的檔案（逐一指定路徑，不用 `git add -A`、`git add .`）。
+- 在主工作區：不 commit，也不用 `git add`、`git rm`（暫存區由主對話管理）。
 
 ## 自我檢查
 
@@ -62,7 +58,8 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 - Promise 一定結束（成功、失敗、取消都有出口）。
 - 焦點與 aria：操作後焦點有去處，狀態有 aria 標示。
 - 排序與收合不會把重要項目藏起來。
-- 只透過 Q／`S.query` 讀資料。
+- 和相鄰區塊用同一種模式（詳情區塊一律用 `section()`）。
+- 同一個數字在畫面各處來自同一個查詢；說明文字裡的數字、條件清單與前提由程式常數或查詢產生。
 - 測試找不到元素就失敗，不用 `if` 略過。
 
 ## 驗證
@@ -71,7 +68,7 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 
 ## 最後報告格式
 
-回報硬性 ≤15 行，直接寫出完整內容（不可以只寫「同上」或「見前一則」）；細節寫到 scratchpad 的檔案，回報附路徑。依序：
+回報 ≤15 行，每一項寫出完整內容（不寫「同上」）；細節寫到 scratchpad 的檔案並附路徑。依序：
 
 1. commit（sha 與一行說明；在主工作區時寫「未 commit」）
 2. 改動檔；畫面行為的變更（使用者會看到什麼不同）

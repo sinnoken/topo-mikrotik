@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# 把 agent worktree 的切片套用到目前分支（lead 合併切片用）。不 commit、不刪 worktree。
+# 把 agent worktree 的切片套用到目前分支，或在合併後刪掉 worktree（lead 合併切片用）。
 #
 # 用法（在要接收切片的工作目錄執行，通常是主工作目錄）：
-#   .claude/scripts/merge-slice.sh <worktree> <base-commit>    套用切片
+#   .claude/scripts/merge-slice.sh <worktree> <base-commit>    套用切片（不 commit、不刪 worktree）
 #   .claude/scripts/merge-slice.sh --cleanup <worktree> [<base-commit>]
-#       刪掉 worktree 與它的 worktree-agent-* 分支；只在 worktree 相對 base 沒有改動，
-#       或切片的每個改動都已在目前工作目錄（已套用）時才刪。base 省略時用兩邊 HEAD 的 merge-base。
+#   .claude/scripts/merge-slice.sh --cleanup-all               逐一處理 .claude/worktrees/ 下的 worktree
+#       切片已合併就刪 worktree 與 worktree-agent-* 分支，不必 --force。base 省略時用兩邊 HEAD 的 merge-base。
+#       已合併：切片的每個檔案，在目前工作目錄或 base 之後的某個 commit 曾是切片的內容（之後再改過也算）。
+#       被鎖住的（agent 執行中）略過並印出鎖的原因；鎖記的 pid 已結束時視為殘留的鎖，解鎖後照常處理。
+#       結束碼：全部刪除或略過 0、有未合併或失敗 1、參數錯誤 2；--cleanup 單一 worktree 被略過時 3。
 #
 # 套用的做法：
 #   1. git -C <worktree> add -A（含新檔與 worktree 裡的 commit；會改 worktree 的 index，不改檔案內容）
@@ -13,15 +16,14 @@
 #   3. .gitattributes 標 -text 的檔案（例如 CRLF 的報表 fixture）不進 patch，改為直接複製 worktree 的檔案：
 #      patch 套用時以接收端的 .gitattributes 轉換行尾，切片若同時新增 fixture 與 -text 規則，CRLF 會被轉成 LF。
 #      -text 依 worktree 的 .gitattributes 判斷。兩邊都改過且內容不同時不覆蓋，列為衝突。
-# 「已套用」的判斷：patch 能反向套用（git apply --check -R，逐檔），-text 檔案則內容相同。
-#   所以兩邊都改過、已 3-way 合併的檔案也算已套用。
-# 輸出：與目前分支（相對同一個 base）都改過的檔案、衝突檔案、成功或失敗。
-# 結束碼：成功 0、衝突或失敗 1、參數錯誤 2。
+# 「已合併」的判斷（逐檔）：patch 能在目前工作目錄或某個 commit 的樹上反向套用（git apply --check -R），
+#   -text 檔案則內容相同。比對內容而不比 commit，所以 lead 合併成一個 commit、兩邊都改過已 3-way 合併的檔案也算。
+# 套用的輸出：與目前分支（相對同一個 base）都改過的檔案、衝突檔案、成功或失敗。結束碼：成功 0、衝突或失敗 1、參數錯誤 2。
 # 可在 macOS（bash 3.2、BSD 工具）與 Linux 執行；不用 mapfile、關聯陣列與 GNU 專有參數。檔名不可含換行。
 set -u
 
 die() { echo "錯誤：$*" >&2; exit 2; }
-usage() { sed -n '4,8p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '4,11p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 EXCLUDE=':(exclude)samples/large-1000.txt'
 nul_to_lines() { tr '\0' '\n'; }
 exists() { [ -e "$1" ] || [ -L "$1" ]; }
@@ -56,31 +58,96 @@ prepare() { # <worktree> <base 或空字串>
   git -C "$W" diff --cached --binary --full-index --no-renames "$BASE" -- "$@" > "$TMP/slice.patch" || die "產生 patch 失敗"
 }
 
-if [ "${1:-}" = "--cleanup" ]; then
-  [ $# -ge 2 ] && [ $# -le 3 ] || usage
-  prepare "$2" "${3:-}"
-  PENDING=""
+lock_reason() { # <worktree 的實際路徑>：被鎖住時印出原因並回傳 0
+  local cur="" line r
+  while IFS= read -r line; do
+    case "$line" in
+      "worktree "*) cur=$(cd "${line#worktree }" 2>/dev/null && pwd -P) ;;
+      locked*) if [ "$cur" = "$1" ]; then r=${line#locked}; r=${r# }; echo "${r:-（未寫原因）}"; return 0; fi ;;
+    esac
+  done <<< "$(git worktree list --porcelain)"
+  return 1
+}
+
+# 切片的檔案在 <commit> 的樹上是否為切片的內容（-text 比對 blob，其餘以 patch 反向套用）
+applied_in_commit() { # <commit> <檔案>
+  if grep -qxF -- "$2" "$TMP/raw"; then
+    local blob; blob=$(git rev-parse -q --verify "$1:$2" 2>/dev/null)
+    if exists "$W/$2"; then [ "$(git hash-object --no-filters -- "$W/$2")" = "$blob" ]; else [ -z "$blob" ]; fi
+  else
+    GIT_INDEX_FILE="$TMP/index" git apply --cached --check -R --include="$2" "$TMP/slice.patch" 2>/dev/null
+  fi
+}
+
+cleanup_one() { # <worktree> <base 或空字串>；結束碼：刪除 0、未合併或失敗 1、略過 3
+  local real R PID C f BR
+  real=$(cd "$1" 2>/dev/null && pwd -P) || die "找不到 worktree：$1"
+  if R=$(lock_reason "$real"); then
+    PID=$(printf '%s\n' "$R" | sed -n 's/.*pid \([0-9][0-9]*\).*/\1/p')
+    if [ -n "$PID" ] && ! ps -p "$PID" >/dev/null 2>&1; then
+      echo "解鎖：${real}（鎖的程序 $PID 已結束：${R}）"
+      git worktree unlock "$real" || { echo "失敗：無法解鎖 $real"; return 1; }
+    else
+      echo "略過：${real} 被鎖住（${R}）。agent 可能還在執行；確定已結束時先 git worktree unlock 再執行"
+      return 3
+    fi
+  fi
+  prepare "$1" "$2"   # 在鎖的判斷之後：prepare 會 git add -A，不能動到執行中 agent 的 index
+  # 先比對目前工作目錄（剛套用、未 commit），再由新到舊比對 base 之後的 commit
+  : > "$TMP/pending"
   while IFS= read -r f; do
     [ -n "$f" ] || continue
-    if grep -qxF -- "$f" "$TMP/raw"; then
-      same_content "$W/$f" "$f" || PENDING="$PENDING  $f"$'\n'
-    else
-      git apply --check -R --include="$f" "$TMP/slice.patch" 2>/dev/null || PENDING="$PENDING  $f"$'\n'
-    fi
+    if grep -qxF -- "$f" "$TMP/raw"; then same_content "$W/$f" "$f" && continue
+    else git apply --check -R --include="$f" "$TMP/slice.patch" 2>/dev/null && continue; fi
+    echo "$f" >> "$TMP/pending"
   done < "$TMP/changed"
-  if [ -n "$PENDING" ]; then
-    echo "失敗：worktree 有尚未套用到目前工作目錄的改動，不刪除："
-    printf '%s' "$PENDING"
-    exit 1
+  for C in $(git rev-list HEAD "^$BASE"); do
+    [ -s "$TMP/pending" ] || break
+    GIT_INDEX_FILE="$TMP/index" git read-tree "$C" || { echo "失敗：無法讀取 $C 的樹"; return 1; }
+    : > "$TMP/next"
+    while IFS= read -r f; do applied_in_commit "$C" "$f" || echo "$f" >> "$TMP/next"; done < "$TMP/pending"
+    mv "$TMP/next" "$TMP/pending"
+  done
+  if [ -s "$TMP/pending" ]; then
+    echo "失敗：$W 有改動不在目前工作目錄，也不在 ${BASE} 之後的任何 commit，不刪除："
+    sed 's/^/  /' "$TMP/pending"
+    return 1
   fi
   BR=$(git -C "$W" symbolic-ref --short -q HEAD || true)
-  git worktree remove --force "$W" || { echo "失敗：git worktree remove 失敗"; exit 1; }
+  git worktree remove --force "$W" || { echo "失敗：git worktree remove 失敗：$W"; return 1; }
   echo "已刪除 worktree：$W"
   case "$BR" in
     worktree-agent-*) git branch -D "$BR" >/dev/null && echo "已刪除分支：$BR" ;;
     "") echo "worktree 是 detached HEAD，沒有分支要刪" ;;
     *) echo "分支 $BR 不是 worktree-agent-*，保留" ;;
   esac
+  return 0
+}
+
+if [ "${1:-}" = "--cleanup" ]; then
+  [ $# -ge 2 ] && [ $# -le 3 ] || usage
+  cleanup_one "$2" "${3:-}"
+  exit $?
+fi
+
+if [ "${1:-}" = "--cleanup-all" ]; then
+  [ $# -eq 1 ] || usage
+  TOP=$(git rev-parse --show-toplevel 2>/dev/null) || die "目前不在 git 工作目錄"
+  TOP=$(cd "$TOP" && pwd -P)
+  # 只處理主工作目錄的 .claude/worktrees/ 底下（git worktree list 的第一筆是主工作目錄）
+  MAIN=$(git worktree list --porcelain | sed -n '1s/^worktree //p')
+  MAIN=$(cd "$MAIN" && pwd -P)
+  DONE=0; SKIPPED=0; FAILED=0
+  LIST=$(git worktree list --porcelain | sed -n 's/^worktree //p')
+  while IFS= read -r p; do
+    p=$(cd "$p" 2>/dev/null && pwd -P) || continue
+    case "$p" in "$MAIN"/.claude/worktrees/*) ;; *) continue ;; esac
+    [ "$p" != "$TOP" ] || { echo "略過：$p 是目前工作目錄"; SKIPPED=$((SKIPPED + 1)); continue; }
+    ( cleanup_one "$p" "" ) </dev/null
+    case $? in 0) DONE=$((DONE + 1)) ;; 3) SKIPPED=$((SKIPPED + 1)) ;; *) FAILED=$((FAILED + 1)) ;; esac
+  done <<< "$LIST"
+  echo "結果：刪除 ${DONE}、略過 ${SKIPPED}、未合併或失敗 $FAILED"
+  [ "$FAILED" = 0 ] || exit 1
   exit 0
 fi
 

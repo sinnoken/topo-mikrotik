@@ -385,3 +385,41 @@ test('Q.exposure：IPv4 判斷次數用完時，沒有判斷到的組合另計 n
     assert.strictEqual(cut.routed.counts.candidates + cut.routed.counts.notEvaluated, full.routed.counts.candidates, `上限 ${max}：routed`);
   });
 });
+
+test('Q.exposureSummary：分組涵蓋每一列一次、計數由分組而來（服務）、組合另列；結論句由同一份計數組成；依結果快取並凍結', () => {
+  const Q = S.query(sampleSnap()); const ex = Q.exposure(); const s = Q.exposureSummary();
+  assert.strictEqual(s.status, 'ok'); assert.strictEqual(s.unit, '服務');
+  assert.strictEqual(Q.exposureSummary(), s, '同一份 Q.exposure 結果回傳同一個物件');
+  assert.strictEqual(Q.exposureSummary(undefined, ex), s, '傳入已算好的結果相同');
+  assert.ok(Object.isFrozen(s) && Object.isFrozen(s.sections.self.groups) && Object.isFrozen(s.sections.self.groups[0]));
+  // 同一組的列：除了位址以外，結果與依據都相同
+  const sig = (r) => JSON.stringify([r.family, r.dev, r.src, r.service, r.verdict, r.entry, r.target, r.subnet, r.allowedFrom.text, r.rule, r.reasons, r.findingKeys]);
+  let allow = 0; let unknown = 0;
+  ['self', 'dnat', 'routed'].forEach((k) => {
+    const sec = s.sections[k]; const rows = ex[k].rows;
+    const owner = new Map();
+    sec.groups.forEach((g, gi) => {
+      assert.strictEqual(g.row, rows[g.index]);
+      assert.strictEqual(g.entryDev === null, k !== 'self', `${k}：只有第 1 段有 entryDev`);
+      g.ips.forEach((ip) => {
+        const i = rows.findIndex((r, n) => !owner.has(n) && r.ip === ip && sig(r) === sig(g.row));
+        assert.ok(i >= 0, `${k}：${ip} 在分組裡的列結果相同`); owner.set(i, gi);
+      });
+    });
+    assert.strictEqual(owner.size, rows.length, `${k}：每一列恰好在一組`);
+    assert.strictEqual(sec.allow, sec.groups.filter((g) => g.row.verdict === 'allow').length);
+    assert.strictEqual(sec.allow + sec.unknown, sec.groups.length);
+    if (k !== 'self') { const v = sec.groups.map((g) => g.row.verdict); assert.ok(!v.includes('unknown') || v.lastIndexOf('allow') < v.indexOf('unknown'), `${k}：允許在前`); }
+    ['allow', 'unknown', 'deny'].forEach((c) => assert.strictEqual(sec.combos[c], ex[k].counts[c], `${k}：組合 ${c}`));
+    assert.strictEqual(sec.deniedBy, ex.deniedBy[k]);
+    allow += sec.allow; unknown += sec.unknown;
+  });
+  assert.deepStrictEqual(s.total, { allow, unknown });
+  assert.ok(s.total.allow < s.combos.allow, '範例資料上分組後比組合少（單位不同）');
+  assert.ok(s.sentence.startsWith(`從外部進來，連得到 ${allow} 個服務：網路設備本身 ${s.sections.self.allow} 個、`), s.sentence);
+  assert.ok(!unknown || s.sentence.includes(`另有 ${unknown} 個無法判斷。`));
+  // 沒有 WAN：結論句是固定的一句，計數都是 0
+  const t = S.query(build(['R (10.0.0.1):', '### /system identity print', 'name: R'].join('\n'))).exposureSummary();
+  assert.strictEqual(t.status, 'no-wan'); assert.strictEqual(t.sentence, '找不到 WAN 介面，無法判斷從外部進得來什麼。');
+  assert.deepStrictEqual(t.total, { allow: 0, unknown: 0 });
+});

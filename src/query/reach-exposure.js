@@ -665,4 +665,68 @@
 
     Object.assign(E, { exposure, exposureSteps });
   };
+
+  // ---- 暴露清單的結論（Q.exposureSummary）：畫面頁首與主管摘要共用的分組、計數與結論句（單一來源）
+  /** 三段的鍵（Q.exposure 的欄位，順序同畫面） */
+  const SUMMARY_SECS = Object.freeze(['self', 'dnat', 'routed']);
+  /** 數字的千分位（同畫面 V.num 的 zh-TW 寫法；核心不依執行環境的 locale） */
+  const num = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  /**
+   * 一段的分組（不改判斷）：同一台設備、同一個服務、結果、允許來源、依據與入口都相同的列併成一列（例如設備每個介面位址的 icmp）。
+   * 這就是結論的計數單位「服務」。順序：允許 → 無法判斷（同結果內保留 Q.exposure 的順序）；
+   * 第 1 段（列有 via）再依目的設備分組：有允許的設備在前、只有無法判斷的在後，同一類裡入口設備（有 via 為 null 的列）在前，再依第一次出現的位置。
+   * 回傳 [{ row（第一列）, index（它在 rows 的位置）, ips（併進來的位址，依 rows 的順序）, entryDev（第 1 段：目的設備是不是入口設備；其他段 null） }]
+   */
+  function exposureGroups(rows) {
+    const m = new Map(); let out = [];
+    rows.forEach((x, i) => {
+      const k = [x.family || '', x.dev, x.src, x.entries.join(','), x.service, x.verdict, x.incomplete, x.allowedFrom.text, x.rule ? x.rule.key || `${x.rule.table}|${x.rule.chain}` : '', x.entry, x.target || '', x.subnet || '', x.nat ? x.nat.to : '', x.serviceName || '', x.reasons.join(','), x.findingKeys.join(','), (x.returnUnsafe || []).map((u) => u.dev + '|' + u.chain + '|' + u.rule).join(',')].join('\u0000');
+      const g = m.get(k); if (g) { g.ips.push(x.ip); return; }
+      const ng = { row: x, index: i, ips: [x.ip], entryDev: null }; m.set(k, ng); out.push(ng);
+    });
+    const rank = (v) => (v === 'allow' ? 0 : v === 'unknown' ? 1 : 2);
+    out = out.map((g, n) => ({ g, n })).sort((a, b) => rank(a.g.row.verdict) - rank(b.g.row.verdict) || a.n - b.n).map((o) => o.g);
+    if (rows.some((x) => x.via !== undefined)) {
+      const at = new Map(); out.forEach((g, n) => { if (!at.has(g.row.dev)) at.set(g.row.dev, n); });
+      const entryDevs = new Set(rows.filter((x) => x.via === null).map((x) => x.dev));
+      const allowDevs = new Set(out.filter((g) => g.row.verdict === 'allow').map((g) => g.row.dev));
+      const devRank = (d) => (allowDevs.has(d) ? 0 : 2) + (entryDevs.has(d) ? 0 : 1);
+      out = out.map((g, n) => ({ g, n })).sort((a, b) => devRank(a.g.row.dev) - devRank(b.g.row.dev) || at.get(a.g.row.dev) - at.get(b.g.row.dev) || a.n - b.n).map((o) => o.g);
+      out.forEach((g) => { g.entryDev = entryDevs.has(g.row.dev); });
+    }
+    return Object.freeze(out.map((g) => { Object.freeze(g.ips); return Object.freeze(g); }));
+  }
+  /**
+   * Q.exposureSummary 的內容（ex 是 Q.exposure 的結果）。計數有兩種單位，欄位分開、不混用：
+   *   allow／unknown：分組後的列數（「服務」，exposureGroups）；結論句只用這一種。
+   *   combos：Q.exposure 的 counts（「組合」＝目的位址 × 服務，未分組）；拒絕與沒判斷沒有列，只有這種單位。
+   */
+  S.reach._.exposureSummary = function exposureSummary(Q, ex) {
+    const sections = {};
+    const total = { allow: 0, unknown: 0 };
+    const combos = { allow: 0, unknown: 0, deny: 0, notEvaluated: 0 };
+    SUMMARY_SECS.forEach((k) => {
+      const s = ex[k]; const c = s.counts;
+      const groups = exposureGroups(s.rows);
+      const allow = groups.filter((g) => g.row.verdict === 'allow').length;
+      const sec = { allow, unknown: groups.length - allow, groups,
+        combos: Object.freeze({ candidates: c.candidates, allow: c.allow, unknown: c.unknown, deny: c.deny, natted: c.natted, notEvaluated: c.notEvaluated || 0 }),
+        deniedBy: ex.deniedBy ? ex.deniedBy[k] : null };
+      total.allow += sec.allow; total.unknown += sec.unknown;
+      Object.keys(combos).forEach((x) => { combos[x] += sec.combos[x]; });
+      sections[k] = Object.freeze(sec);
+    });
+    const noFirewall = Object.freeze((ex.noFirewall || []).map((d) => (typeof d === 'string' ? d : d.dev)));
+    let sentence;
+    if (ex.status !== 'ok') sentence = ex.status === 'no-wan' ? '找不到 WAN 介面，無法判斷從外部進得來什麼。' : ex.message || '無法判斷從外部進得來什麼。';
+    else {
+      const part = (n) => (n ? `${num(n)} 個` : '沒有');
+      const a = (k) => sections[k].allow;
+      sentence = (total.allow ? `從外部進來，連得到 ${num(total.allow)} 個服務：網路設備本身 ${part(a('self'))}、轉送到內部 ${part(a('dnat'))}、直接路由 ${part(a('routed'))}。` : '從外部進來，連不到任何服務。')
+        + (total.unknown ? `另有 ${num(total.unknown)} 個無法判斷。` : '')
+        + (noFirewall.length ? `另有 ${noFirewall.map((d) => Q.devName(d)).join('、')} 無法判斷（沒有防火牆資料，缺 /export）。` : '');
+    }
+    return Object.freeze({ status: ex.status, message: ex.message, unit: '服務', total: Object.freeze(total), combos: Object.freeze(combos),
+      sections: Object.freeze(sections), noFirewall, truncated: !!(ex.limits && ex.limits.truncated), sentence });
+  };
 })(globalThis.SSOT = globalThis.SSOT || {});

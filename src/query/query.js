@@ -194,6 +194,8 @@
     // L4（M2）：可達性、zone、zone 矩陣與規則影響。第一次呼叫時才建立（src/query/reach.js 的 S.reach.engine），結果都是推論、只在記憶體快取，不寫進 Snapshot（ADR-014）
     let l4 = null;
     const L4 = () => l4 || (l4 = S.reach.engine(Q, { ctxOf }));
+    // Q.exposureSummary：依 Q.exposure 的結果物件（已依參數快取）快取
+    const exSummaryMemo = new WeakMap();
     const vlanSrc = { vlans: m.vlans, interfaces: m.interfaces, links: m.links, inferred: m.inferredLinks || [], ifc: (ep) => ifc.get(ep), collected: (d) => !!(dev.get(d) || {}).collected };
 
     // ---- L2／L3 視圖（M1）：第一次呼叫時才建立，依參數快取；回傳的物件都是這裡新建的，深層凍結
@@ -611,6 +613,18 @@
       zoneMatrixSteps: (opts) => L4().matrixSteps(opts),
       exposure: (opts) => L4().exposure(opts),
       exposureSteps: (opts) => L4().exposureSteps(opts),
+      /**
+       * 暴露清單的結論（推論；畫面 L4 頁首與主管摘要共用，src/query/reach-exposure.js 的 exposureSummary）：
+       * { status, message, unit: '服務', total: { allow, unknown }（分組後的列數）, combos: { allow, unknown, deny, notEvaluated }（組合＝目的位址 × 服務）,
+       *   sections: { self, dnat, routed: { allow, unknown, groups: [{ row, index, ips, entryDev }], combos, deniedBy } }, noFirewall, truncated, sentence }（深層凍結）。
+       * opts 同 Q.exposure；exposure：已算好的 Q.exposure(opts) 結果（例如 Q.exposureSteps 跑完的值），省略時呼叫 Q.exposure(opts)。依 exposure 的結果物件快取。
+       */
+      exposureSummary(opts, exposure) {
+        const ex = exposure || L4().exposure(opts);
+        let out = exSummaryMemo.get(ex);
+        if (!out) { out = S.reach._.exposureSummary(Q, ex); exSummaryMemo.set(ex, out); }
+        return out;
+      },
       /**
        * 這份基準用得到哪些判斷的前提（推論，查詢時計算並快取，不寫進 Snapshot）：路由層（S.query.traceAssumptions）、L4（reachAssumptions）與暴露清單的前提，依序每條一筆
        * [{ code, layer, status: 'affects'|'missing-data'|'not-used'|'always', devices（設備鍵）, ruleKeys（防火牆規則鍵）, count }]（深層凍結）。判斷依據見 reach.js 的 assumePart。

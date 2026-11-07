@@ -121,6 +121,10 @@ test('Q.addressSetsOf：依設備與類別列出登錄表的 id（依登錄順�
   const rule = Q.addressSetsOf('R', 'rule-address');
   assert.strictEqual(rule.length, 1); assert.ok(/\|src-address$/.test(rule[0]), rule[0]);
   Q.addressSetsOf('R', 'address-list').forEach((id) => assert.strictEqual(Q.addressSet(id).dev, 'R'));
+  // name：清單與服務有名稱（畫面不必拆 id），其他種類為 null
+  assert.deepStrictEqual(Q.addressSetsOf('R', 'address-list').map((id) => Q.addressSet(id).name), ['BAD', 'OK', 'BAD']);
+  assert.strictEqual(Q.addressSet('R|ip|service|ssh').name, 'ssh');
+  assert.strictEqual(Q.addressSet(rule[0]).name, null);
   assert.deepStrictEqual(Q.addressSetsOf('nope', 'address-list'), []);
   assert.deepStrictEqual(Q.addressSetsOf('R', 'routing-rule'), []);
   assert.ok(Object.isFrozen(Q.addressSetsOf('R', 'address-list')));

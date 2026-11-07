@@ -746,7 +746,7 @@
     const x = input || {};
     const rules = x.rules || []; const addressLists = x.addressLists || []; const services = x.services || []; const routingRules = x.routingRules || [];
     const mgmtSettings = x.mgmtSettings || [];
-    const entry = (id, kind, dev, family, set, st, reasons, src) => Object.freeze({ id, kind, dev, family, set, static: st, reasons, src });
+    const entry = (id, kind, dev, family, set, st, reasons, src, name) => Object.freeze({ id, kind, dev, family, name: name === undefined ? null : name, set, static: st, reasons, src });
     // 位址清單：第一次查詢時才依鍵建索引；每份清單的集合在第一次用到時才建（封鎖名單可能有十萬筆）
     let alIdx = null; const alMemo = new Map();
     const list = (dev, family, name) => {
@@ -757,7 +757,7 @@
       if (l) {
         const items = l.entries.filter((e) => !e.disabled && e.kind === 'address');
         out = entry(id, 'address-list', l.dev, l.family, l.static ? S.ip.set(items.map((e) => e.address), BITS(l.family)) : null, l.static, l.reasons,
-          Object.freeze(l.entries.filter((e) => !e.disabled).map((e) => e.src[0])));
+          Object.freeze(l.entries.filter((e) => !e.disabled).map((e) => e.src[0])), l.name);
       }
       alMemo.set(id, out);
       return out;
@@ -782,7 +782,7 @@
       const id = dev + '|' + family + '|service|' + name;
       if (svMemo.has(id)) return svMemo.get(id);
       const sv = svIdx.get(dev + '|' + name); const bits = BITS(family);
-      const out = sv ? entry(id, 'service', dev, family, legalSet(sv.addresses, bits), true, Object.freeze([]), sv.src) : null;
+      const out = sv ? entry(id, 'service', dev, family, legalSet(sv.addresses, bits), true, Object.freeze([]), sv.src, name) : null;
       svMemo.set(id, out);
       return out;
     };

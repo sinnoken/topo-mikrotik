@@ -366,14 +366,14 @@
       /** 某設備、某位址族（'ip'｜'ipv6'）的一份位址清單；基準裡沒有（export 沒有項目，也沒有寫入它的設定）時為 null，判斷時不明。 */
       addressListOf: (d, family, name) => (addressListIndex().get(d) || EMPTY).find((l) => l.family === family && l.name === name) || null,
       /**
-       * 位址集合登錄表（S.infer.addrSets，判斷用的同一份；推論用的索引，不在 Snapshot）的一筆：{ id, kind, dev, family, static, reasons, src, size, ranges }（凍結）。
-       * kind：address-list｜rule-address｜service｜snmp-community｜routing-rule（id 的寫法見設計說明）；例如 A10 的 deviation.groups[].list 是 address-list 的 id。
+       * 位址集合登錄表（S.infer.addrSets，判斷用的同一份；推論用的索引，不在 Snapshot）的一筆：{ id, kind, dev, family, name, static, reasons, src, size, ranges }（凍結）。
+       * kind：address-list｜rule-address｜service｜snmp-community｜routing-rule（id 的寫法見設計說明）；name 是 address-list 的清單名稱、service 的服務名稱，其他為 null（畫面不必拆 id）；例如 A10 的 deviation.groups[].list 是 address-list 的 id。
        * size 是合併後的區段數、ranges 是 [[起, 迄]] 的位址文字（依位址排序；完全靜態以外的清單或無法判斷的字面值為 null）。沒有這個 id 時 null。
        */
       addressSet: (id) => U.getOr(addrSetView, id, () => {
         const e = addrSetsOf().get(id); if (!e) return null;
         const fmt = (n) => (e.set.bits === 32 ? S.ip.fromInt(Number(n)) : S.ip.v6FromBig(n));
-        return deepFreeze({ id: e.id, kind: e.kind, dev: e.dev, family: e.family, static: e.static, reasons: e.reasons.slice(), src: e.src.map((x) => x.slice()),
+        return deepFreeze({ id: e.id, kind: e.kind, dev: e.dev, family: e.family, name: e.name, static: e.static, reasons: e.reasons.slice(), src: e.src.map((x) => x.slice()),
           size: e.set ? e.set.ranges.length : null, ranges: e.set ? e.set.ranges.map(([a, b]) => [fmt(a), fmt(b)]) : null });
       }),
       /**

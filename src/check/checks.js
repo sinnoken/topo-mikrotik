@@ -562,7 +562,7 @@
 
   /**
    * dst-nat／netmap 規則轉送的目標（to-addresses 的第一個位址）在這台設備查得到什麼路由（S.trace.lookup，入介面的 VRF，沒有時 main）：
-   * { ip, vrf, status: reached（直連或基準內的路由）｜no-route（沒有符合的路由）｜blackhole｜external（私有位址只符合經對外介面的路由，會送回外部）｜unknown（沒有路由表資料，或路由表收集不完整而查不到）, lk }。
+   * { ip, vrf, status: reached（直連或基準內的路由）｜no-route（沒有符合的路由）｜blackhole｜external（私有位址只符合經對外介面的路由，會送回外部）｜unknown（沒有路由表資料，或路由表收集不完整而查不到、只命中比 /32 短的路由）, lk }。
    * 沒有 to-addresses 或不是 IPv4 時 null。F04 與 R09 共用。
    */
   const DNAT_NO_ROUTE = new Set(['no-route', 'blackhole', 'external']);

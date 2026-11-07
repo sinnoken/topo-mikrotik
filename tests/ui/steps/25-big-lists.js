@@ -58,7 +58,9 @@ module.exports = async () => {
     const summ = foldOf('路由表');
     if (countOf(summ) !== all.length) throw new Error(`右欄路由表摘要的 count 應同 Q.allRoutesOf：${countOf(summ)}／${all.length}`);
     if (rowsOf(summ).length || summ.querySelector('.biglist')) throw new Error('右欄只有路由表的摘要，不列路由');
-    summ.querySelector('.routes-open').click();
+    // 開整個視窗的入口在設備詳情的工作入口（摘要的標題列不再重複）
+    if (summ.querySelector('.routes-open')) throw new Error('路由摘要的標題列不再重複「查看全部路由」（入口在工作入口）');
+    detailRoot().querySelector('.entry-routes').click();
     const sec = routesList();
     const box = sec.querySelector('.biglist'); if (!box) throw new Error('路由表視窗應是摘要＋分組');
     const total = box.querySelector('.biglist-total');

@@ -126,12 +126,12 @@
   const openSel = (dev, o) => Object.assign({ type: 'routes', dev }, o || {});
   /**
    * 設備詳情的「路由表」：總數（標題的 count）、非作用中的條數、路由最多的 TOP_GROUPS 組（點一下開視窗並展開那一組）、
-   * 搜尋框（Enter 開視窗並帶入搜尋字）與「查看全部路由」。與相鄰的防火牆摘要同一種模式（展開列，入口在標題列）。
+   * 搜尋框（Enter 開視窗並帶入搜尋字）。開整個視窗的入口在設備詳情的工作入口（details.js 的 workEntries），標題列不再重複一個「查看全部路由」。
    * VRF、策略路由與 OSPF 鄰接只寫一行（例如「VRF 2 個、策略路由 3 條規則」），每一項開視窗的那個分頁。
    * 查哪一張表不明（改過 policy-rules 或有 mark-routing）時預設展開，標題列標出。
    */
   function summary(App, dev) {
-    const Q = App.Q; const routes = Q.allRoutesOf(dev); const r0 = routing(Q, dev);
+    const Q = App.Q; const routes = Q.allRoutesOf(dev); const r0 = routing(Q, dev); const n = counts(App, dev);
     const more = EXTRA_TABS.filter((t) => r0[t.key].length);
     if (!routes.length && !more.length && !r0.policy) return null;
     // 分組與視窗相同（routeGroups＋grouped）：視窗不分組時摘要也不列組
@@ -152,9 +152,16 @@
         V.chip(V.num(g.rows.length), 'count')]))) : null,
       routes.length ? h('div', { class: 'row routes-search-row' }, input) : null,
       line,
-    ], { count: routes.length, fold: true, open: r0.unsure, cls: 'routes-summary',
-      extra: [V.stateChip(routes.filter((r) => r.active === false).length, '條非作用中'), r0.unsure ? V.chip('查哪一張表不明', 'warn') : null,
-        h('a', { class: 'link routes-open', onclick: () => App.select(openSel(dev)) }, routes.length ? '查看全部路由' : '查看路由設定')] });
+    ], { count: n.total, fold: true, open: r0.unsure, cls: 'routes-summary',
+      extra: [V.stateChip(n.inactive, '條非作用中'), r0.unsure ? V.chip('查哪一張表不明', 'warn') : null] });
+  }
+  /**
+   * 這台設備的路由數（Q.allRoutesOf，含非作用中的）：{ total, inactive }。右欄路由摘要的標題列、設備詳情的工作入口、
+   * 視窗頁首與總覽都用這一份，數字只有一種算法。
+   */
+  function counts(App, dev) {
+    const routes = App.Q.allRoutesOf(dev);
+    return { total: routes.length, inactive: routes.filter((r) => r.active === false).length };
   }
 
   // ---------------------------------------------------------------- 視窗的左欄與右欄
@@ -284,12 +291,12 @@
   }
   /** 沒有選路由時的右欄：怎麼用，與每個分頁的筆數（同分頁與右欄摘要，取自 routing()） */
   function overview(App, dev) {
-    const Q = App.Q; const routes = Q.allRoutesOf(dev); const r0 = routing(Q, dev);
+    const r0 = routing(App.Q, dev); const n = counts(App, dev);
     return h('div', { class: 'detail routes-overview' }, [
       h('h2', null, '這台設備的路由表'),
       missingNote(),
-      routes.length ? h('p', { class: 'muted routes-pick-hint' }, '點「路由」分頁的一條路由，這裡改為顯示它的屬性、每個下一跳解析的 VRF 與擁有者、原文，以及從這台追蹤到那個網段。') : null,
-      P().section('路由表', P().kv([['路由', V.num(routes.length)], ['非作用中', V.num(routes.filter((r) => r.active === false).length)],
+      n.total ? h('p', { class: 'muted routes-pick-hint' }, '點「路由」分頁的一條路由，這裡改為顯示它的屬性、每個下一跳解析的 VRF 與擁有者、原文，以及從這台追蹤到那個網段。') : null,
+      P().section('路由表', P().kv([['路由', V.num(n.total)], ['非作用中', V.num(n.inactive)],
         ...EXTRA_TABS.filter((t) => r0[t.key].length).map((t) => [t.summary, `${V.num(r0[t.key].length)} ${t.unit}`])])),
     ]);
   }
@@ -316,7 +323,7 @@
     V.tableDialog.open({
       id: DIALOG + dev, title: `${has ? Q.devLabel(dev) : dev} 的路由表`,
       head: () => {
-        const n = Q.allRoutesOf(dev).filter((r) => r.active === false).length;
+        const n = counts(App, dev).inactive;
         return h('div', { class: 'routes-head' }, [n ? h('div', { class: 'row routes-status-row' }, V.stateChip(n, '條非作用中')) : null, r0.policy ? policyHead(r0) : null]);
       },
       tabs: tabs.length ? tabs : [routeTab],
@@ -330,11 +337,12 @@
       },
       // 使用者關閉：選取回到那台設備（refresh：右欄已經是它的詳情，只重新標示圖，開啟視窗的入口留在原處）
       onClose: () => App.select(detailSel(App, sel), { refresh: true }),
-      fallbackFocus: () => V.$('#detail').querySelector('.routes-open') || V.$('#detail'),
+      // 開啟它的元素已不在頁面上時：設備詳情的路由表入口（details.js 的 workEntries）
+      fallbackFocus: () => V.$('#detail').querySelector('.entry-routes') || V.$('#detail'),
     });
   }
   const detailSel = (App, sel) => ({ type: 'device', key: sel.dev });
   V.tableDialog.owner({ idOf: (App, sel) => (isSel(sel) ? DIALOG + sel.dev : null), show, detailSel });
 
-  V.routes = { summary, nhCell, keyOf, isSel };
+  V.routes = { summary, counts, nhCell, keyOf, isSel };
 })(globalThis.SSOT = globalThis.SSOT || {});

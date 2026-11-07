@@ -107,7 +107,7 @@ module.exports = async () => {
   await step('表格視窗：窄螢幕單欄——點規則後只顯示詳情並有「返回」；返回保留選取、展開的組與頁碼，焦點回到那一列；寬螢幕的「回到總覽」取消選取；卡片不列空的欄', () => {
     const Q = App.Q; const dev = fwDevice(Q);
     const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
-    const media = css.slice(css.indexOf('#dlg-table { width: 90vw'));
+    const media = css.slice(css.indexOf('#dlg-table { width: 94vw'));
     if (!/@media \(max-width: 900px\) \{\s*#dlg-table \{ width: 100vw; height: 100dvh;/.test(media)) throw new Error('900px 以下視窗應是全螢幕');
     if (!/\.tdlg-cols\[data-view="detail"\] \.tdlg-list \{ display: none; \}/.test(media) || !/\.tdlg-cols \{ display: flex; flex-direction: column;/.test(media)) throw new Error('900px 以下應是單欄，看詳情時表格不顯示');
     if (!/\.tdlg-list, \.tdlg-side \{[^}]*overflow-x: hidden/.test(css)) throw new Error('視窗的兩欄不應整頁橫捲（表格在 .table-scroll 內橫捲）');

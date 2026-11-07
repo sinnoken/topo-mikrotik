@@ -28,11 +28,16 @@ module.exports = async () => {
     if (summ.querySelector('table') || summ.testAll('tr').length) throw new Error('右欄的路由表只有摘要，不列路由');
     const count = summ.querySelector('summary').querySelector('.count');
     if (!count || count.textContent !== S.view.num(Q.allRoutesOf(dev).length)) throw new Error('摘要的總數應同 Q.allRoutesOf');
-    if (!summ.querySelector('.routes-open') || !summ.querySelector('.routes-search')) throw new Error('摘要應有「查看全部路由」與搜尋框');
+    if (!summ.querySelector('.routes-search')) throw new Error('摘要應有搜尋框');
+    // 開整個視窗的入口只有一個：設備詳情的工作入口（路由摘要的標題列不再重複「查看全部路由」）；數字同 V.routes.counts 與 Q
+    const entry = detailRoot().querySelector('.entry-routes');
+    if (!entry || summ.querySelector('.routes-open')) throw new Error('開路由表視窗的入口在工作入口，摘要的標題列不重複');
+    const c = S.view.routes.counts(App, dev);
+    if (c.total !== Q.allRoutesOf(dev).length || c.inactive !== Q.allRoutesOf(dev).filter((x) => x.active === false).length) throw new Error('V.routes.counts 應同 Q.allRoutesOf');
     // 分組與視窗一致：路由一頁放得下時視窗直接依網段列出（列數同 Q），摘要不列組；否則視窗分組（組數不超過門檻），摘要列出其中最多的 1–3 組
     const P = S.view.BIG_LIST; const nr = Q.allRoutesOf(dev).length;
     const top = summ.testAll('.routes-group');
-    summ.querySelector('.routes-open').click();
+    entry.click();
     const gs = routesList().testAll('.biglist-group').filter((x) => x.getAttribute('data-group') != null);
     if (nr <= P.page) {
       if (top.length || gs.length) throw new Error('路由一頁放得下時不分組（摘要與視窗都不列組）：' + top.length + '／' + gs.length);
@@ -173,6 +178,9 @@ module.exports = async () => {
     if (!fs0) throw new Error('設備詳情的工作入口應有防火牆');
     if (!fs0.textContent.includes(`${S.view.num(Q.firewallRulesOf(fd).length)} 條規則`)) throw new Error('防火牆摘要應寫「N 條規則」');
     if (Q.ipServicesOf(fd).length && !fs0.textContent.includes(`${S.view.num(Q.ipServicesOf(fd).length)} 個服務`)) throw new Error('防火牆摘要應寫「N 個服務」');
+    // 工作入口：標籤欄不折行，和上方的屬性以分隔線隔開；舊的防火牆摘要樣式已移除
+    if (!/\.work-entries \.kv \{ grid-template-columns: max-content minmax\(0, 1fr\); \}/.test(css) || !/\.work-entries \{[^}]*border-top: 1px solid var\(--line\)/.test(css)) throw new Error('工作入口的標籤不折行、上方有分隔線');
+    if (/\.fw-summary\b/.test(css)) throw new Error('.fw-summary 已沒有元素使用，樣式應移除');
     App.select(null);
   });
 

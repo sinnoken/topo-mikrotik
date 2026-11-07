@@ -430,8 +430,9 @@ table.t tr.click { cursor: pointer; }
 .row.spaced { margin-top: 10px; }
 .kv { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 5px 10px; font-size: var(--fs-md); }
 .kv .k { color: var(--muted); }
-/* 防火牆摘要：標籤（例如「WAN／LAN 判斷」）不從詞中間折行 */
-.fw-summary .kv { grid-template-columns: max-content minmax(0, 1fr); }
+/* 設備詳情的工作入口（details.js 的 workEntries）：和上方的屬性以分隔線隔開（不像屬性表的延續）；標籤（路由表、防火牆、管理面設定）不從詞中間折行 */
+.work-entries { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.work-entries .kv { grid-template-columns: max-content minmax(0, 1fr); }
 .link { color: var(--accent); cursor: pointer; text-decoration: none; }
 .link:hover { text-decoration: underline; }
 .finding { display: flex; gap: 9px; align-items: flex-start; padding: 9px 10px; border: 1px solid var(--line-soft); border-radius: var(--radius); margin-bottom: 7px; font-size: var(--fs-md); background: var(--surface); }
@@ -593,7 +594,7 @@ dialog::backdrop { background: var(--backdrop); }
 .dlg .db { padding: 14px 18px; overflow: auto; }
 .dlg .df { padding: 12px 18px; border-top: 1px solid var(--line); display: flex; gap: 8px; align-items: center; }
 /* 表格視窗（V.tableDialog，#dlg-table）：置中的大視窗，左欄分頁＋表格、右欄選取那一列的詳情；兩欄各自捲動，整頁不橫捲 */
-#dlg-table { width: 90vw; height: 85vh; max-width: 90vw; max-height: 85vh; }
+#dlg-table { width: 94vw; height: 85vh; max-width: 94vw; max-height: 85vh; }
 #dlg-table .dlg { height: 100%; max-height: none; }
 #tdlg-title { min-width: 0; overflow-wrap: anywhere; }
 #tdlg-title:focus { outline: none; }
@@ -611,14 +612,18 @@ dialog::backdrop { background: var(--backdrop); }
 .tdlg-extra { margin-bottom: 8px; }
 /* 視窗左欄的表格不橫捲（.tdlg-list 是捲動容器，表頭才固定得住）：識別字與條件只在空白處（k=v 之間）折行，不從字詞中間切開
    （break-word 只在一個字詞整行都放不下時才斷，例如窄螢幕的卡片）；長欄位設上限；900px 以下改成每列一塊（V.tableDialog 的表格帶 stack）。
-   數字、行號、動作與檢查（td.num、td.nowrap）不折行，數字用等寬數字 */
+   數字、行號與動作（td.num、td.nowrap）不折行，數字用等寬數字；註解是自由文字，可以在任何地方斷 */
 .tdlg-list .table-scroll { overflow-x: visible; }
 .tdlg-list table.t td .mono, .tdlg-list table.t td .vlanlist { white-space: normal; overflow-wrap: break-word; }
 .tdlg-list table.t td { overflow-wrap: break-word; }
-.tdlg-list table.t td.wrap { max-width: 28em; }
+.tdlg-list table.t td.wrap { max-width: 28em; overflow-wrap: anywhere; }
 .tdlg-list table.t td.num, .tdlg-list table.t td.nowrap, .tdlg-list table.t td.num .mono, .tdlg-list table.t td.nowrap .mono { white-space: nowrap; overflow-wrap: normal; font-variant-numeric: tabular-nums; }
-/* 防火牆條件的一個 k=v（firewall.js 的 fw-tok）：段內不斷行 */
-.tdlg-list .fw-tok { white-space: nowrap; }
+/* 動作欄：動作本身不折行，「停用」chip 放不下時換到下一行（不把表格撐寬） */
+.tdlg-list table.t td.nowrap .fw-action { white-space: normal; }
+/* 防火牆條件的一個 k=v（firewall.js 的 fw-tok）：值以逗號分成幾片（fw-seg，片內不斷行、連字號也不斷），片與片之間是 <wbr>，
+   只有整段一行放不下（窄螢幕的卡片）時才在逗號後換行 */
+.tdlg-list .fw-tok { white-space: normal; overflow-wrap: normal; }
+.tdlg-list .fw-seg { white-space: nowrap; }
 /* 可選取的表格：滑過用中性的底色，和選取列（藍底＋左側粗線）分得出來 */
 table.t[role="grid"] tbody tr.click:hover td { background: var(--surface-hover); }
 table.t[role="grid"] tbody tr.focus.click:hover td { background: var(--row-focus-bg); }

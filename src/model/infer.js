@@ -726,8 +726,11 @@
    *   set：S.ip.set，或 null——清單可能有動態來源（static 為 false，reasons 依 ADDRESS_LIST_DYNAMIC）；規則的位址字面值有任何一項不是位址、網段或範圍，
    *     或位址族不一致（條件無法判斷）。available-from 與 SNMP community 只取這個位址族、而且合法的項目（其他項目不接受任何來源）。
    *   src：來源行（[[block, line]]）：規則、服務、community 與 /routing rule 是它自己的行；位址清單是啟用中項目的行。
+   * 回傳（凍結）：list、ofRule、service、community、ofRoutingRule、get(id)，以及 entries()（有 id 的每一筆，依登錄順序）。
    */
   const ADDR_RULE_KEYS = Object.freeze(['src-address', 'dst-address']);
+  /** 登錄表每筆的 kind（封閉列舉）。 */
+  const ADDR_SET_KINDS = Object.freeze(['address-list', 'rule-address', 'service', 'snmp-community', 'routing-rule']);
   const BITS = (family) => (family === 'ipv6' ? 128 : 32);
   const srcOf = (x) => x.src || [[x.block, x.line]];
   /** 規則或 /routing rule 的位址字面值 → S.ip.set；有一項不合法或位址族不一致時 null（同 parseVal 的 ranges 才判斷）。 */
@@ -813,8 +816,8 @@
       return out;
     };
     // 依 id 查（第一次呼叫時登錄全部）
-    let byId = null;
-    const get = (id) => {
+    let byId = null; let listed = null;
+    const all = () => {
       if (!byId) {
         byId = new Map();
         const put = (e) => { if (e && e.id) byId.set(e.id, e); };
@@ -824,9 +827,12 @@
         routingRules.forEach((r) => ADDR_RULE_KEYS.forEach((k) => put(ofRoutingRule(r, k))));
         mgmtSettings.forEach((ms) => (ms.snmp && ms.snmp.communities || []).forEach((c) => ['ip', 'ipv6'].forEach((f) => put(community(ms.dev, c.facet, f)))));
       }
-      return byId.get(id) || null;
+      return byId;
     };
-    return Object.freeze({ list, ofRule, service, community, ofRoutingRule, get });
+    const get = (id) => all().get(id) || null;
+    /** 登錄的每一筆（有 id 的），依登錄順序（位址清單、規則、服務、/routing rule、SNMP community，各依輸入順序；凍結）。 */
+    const entries = () => listed || (listed = Object.freeze(Array.from(all().values())));
+    return Object.freeze({ list, ofRule, service, community, ofRoutingRule, get, entries });
   }
   /**
    * L4 位址等價類的邊界（唯一的產生方式）：entries（登錄表的筆，可含 null）中位址族為 bits、有集合的那些 set.bounds() 的聯集，依大小排序（BigInt）。
@@ -1633,6 +1639,7 @@
 
   S.infer = { infer, displayName, effVlans, effVlanModes, effPvid, bridgeOf, vlanSpan, VLAN_DATA, isVirtualIfc, hwMacsByDev, wifiLocations, behindLocations, boundaries, BOUNDARY_LABEL, routingDomains, routingView };
   S.infer.addrSets = addrSets;
+  S.infer.ADDR_SET_KINDS = ADDR_SET_KINDS;
   S.infer.addrBounds = addrBounds;
   S.infer.fw = { canonMatch, covers, sameMatch, evalChain, evalFilter, decide, packetFor, wanPacket, wanEntries, entriesIn, fwContext, parseVal, splitNeg, protoName, listMembers, policyBaseline, addressListItem, addressListState,
     ADDRESS_LIST_DYNAMIC: FW_ADDRESS_LIST_DYNAMIC, ADDRESS_LIST_WRITE: FW_ADDRESS_LIST_WRITE,

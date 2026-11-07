@@ -123,6 +123,7 @@
    *   has(x)：x（BigInt、IPv4 的 ip.toInt 數字，或位址文字）在不在集合內，二分搜尋；文字不是這個位址族的位址時丟出 TypeError；
    *   isAll（涵蓋整個位址空間）、isEmpty、within(other)（每個位址都在 other 內；other 是同 bits 的 ip.set）、
    *   covers(x)／overlaps(x)：x（ip.range 接受的文字或 [lo, hi]）的每個位址都在集合內／至少一個位址在集合內（看合併後的區段：/25,/25 涵蓋 /24）；文字不是這個位址族時丟出 TypeError；
+   *   overlapping(x)：和 x 重疊的區段在 ranges 的索引（由小到大，凍結；與 overlaps 同一個判斷）；
    *   bounds()：等價類的邊界（每段的 lo 與 hi + 1，BigInt，由小到大，凍結）——同一段相鄰邊界之間的位址對 has 的結果相同。
    * 相同的 items 與 bits 得到相同的結果（與項目順序無關）。
    */
@@ -156,20 +157,26 @@
       }
       return false;
     };
-    // x 的區間，與第一個終點不小於 x 起點的區段（沒有時 undefined）
+    // x 的區間，與第一個終點不小於 x 起點的區段（沒有時 undefined）及它的索引（沒有時為 ranges.length）
     const span = (x) => {
       let lo; let hi;
       if (Array.isArray(x)) [lo, hi] = x;
       else { const r = ip.range(x); if (!r || r[2] !== bits) throw new TypeError(`S.ip.set：「${x}」不是 IPv${bits === 32 ? 4 : 6} 的位址、網段或範圍`); [lo, hi] = r; }
       let a = 0; let z = ranges.length;
       while (a < z) { const mid = (a + z) >> 1; if (ranges[mid][1] < lo) a = mid + 1; else z = mid; }
-      return [lo, hi, ranges[a]];
+      return [lo, hi, ranges[a], a];
     };
     let b = null;
     return Object.freeze({
       bits, ranges, has,
       covers: (x) => { const [lo, hi, r] = span(x); return !!r && r[0] <= lo && hi <= r[1]; },
       overlaps: (x) => { const [, hi, r] = span(x); return !!r && r[0] <= hi; },
+      // 和 x 至少有一個共同位址的區段在 ranges 的索引（由小到大，凍結）；overlaps(x) 為 true 時至少一個，同一套 span 判斷
+      overlapping(x) {
+        const [, hi, , a] = span(x); const out = [];
+        for (let k = a; k < ranges.length && ranges[k][0] <= hi; k++) out.push(k);
+        return Object.freeze(out);
+      },
       isAll: ranges.length === 1 && ranges[0][0] === 0n && ranges[0][1] === max,
       isEmpty: ranges.length === 0,
       within(other) {

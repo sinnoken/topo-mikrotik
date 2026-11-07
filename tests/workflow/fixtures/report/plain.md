@@ -16,7 +16,7 @@
 - 常見原因：
   - 收集檔缺少設備標頭或 `### 指令` 標記，不知道屬於哪台設備或哪個指令。
   - `print` 沒有加 `detail without-paging`，解析器認得指令但解析不出資料。
-  - 收集器註解（`# collected-at:`、`# collection failed:`）的格式或位置不對。
+  - 收集器註解（`# collected-at:`、`# terminal-width:`、`# collection failed:`）的格式或位置不對，或輸出的行長超過記錄的終端寬度。
   - 貼入了沒有解析器支援的指令輸出。
 
 - 無法辨識的內容：t.txt 第 1–2 行（指令：/foo）

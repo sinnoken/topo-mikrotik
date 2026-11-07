@@ -19,6 +19,28 @@ test('去識別化：關係與檢查結果不變，設備名與 IP 不殘留，�
   assert.ok(id.includes('name: bridge1') && !/name: SW\b/.test(id), '只有 /system identity print 的 name 是設備名，bridge 名稱不換');
   assert.ok(w.includes('AA:BB:CC:'), '保留 OUI，廠商判斷不受影響');
 });
+test('去識別化：收集器的 # terminal-width 換成一般註解（行數不變、警告行號仍對得上），輸出的基準沒有寬度相關的 I01', () => {
+  const { anonymize } = require('../../tools/anonymize.js');
+  // 鄰居列剛好 79 字（80 欄的上限）；公網位址 1.2.3.4 換成 11/8 的代號後變長，若保留寬度記錄就會超過寬度
+  const head = ' 0  interface=ether1 address=1.2.3.4 mac-address=AA:BB:CC:00:00:01';
+  const row = `${head} platform="${'x'.repeat(79 - head.length - ' platform=""'.length)}"`;
+  assert.strictEqual(row.length, 79);
+  const raw = ['SW_A (10.0.0.1):', '### /ip neighbor print detail without-paging', '# collected-at: 2026-11-07T09:41:40Z', '# terminal-width: 80', row,
+    '### /export terse', '# collected-at: 2026-11-07T09:41:41Z', '# terminal-width: 80', '/ip firewall address-list add address=10.1.0.0/12 list=big'].join('\n');
+  const before = build(raw);
+  assert.deepStrictEqual(before.findings.filter((f) => f.id === 'I01').map((f) => f.message), [], '原檔的寬度記錄成立');
+  const a = anonymize(raw);
+  assert.ok(!/terminal-width:/i.test(a.text), a.text);
+  assert.strictEqual(a.text.split('\n').length, raw.split('\n').length, '行數不變');
+  // 警告的行號指向輸出中那一行（address-list 在第 9 行）
+  const lineOf = a.text.split('\n').findIndex((l) => /address-list add/.test(l)) + 1;
+  assert.ok(a.warnings.length && a.warnings.every((w) => w.includes(`輸出第 ${lineOf} 行`)), JSON.stringify(a.warnings));
+  const s = build(a.text);
+  assert.deepStrictEqual([s.findings.filter((f) => f.id === 'I01' || f.id === 'I03').map((f) => f.message), s.blocks.map((b) => b.terminalWidth)], [[], [null, null]]);
+  // 對照：換過位址後仍保留記錄的話，第 5 行超過 79 字而列為 I01
+  const kept = a.text.replace(/^# 去識別化時移除了終端寬度的記錄.*$/gm, '# terminal-width: 80');
+  assert.ok(a.text.split('\n')[4].length > 79 && build(kept).findings.some((f) => f.id === 'I01' && /終端寬度 80/.test(f.message)));
+});
 test('去識別化：RouterOS export 的密碼、金鑰、SNMP community 都遮蔽（*-password、點號欄位、community 名稱），一般欄位保留', () => {
   const { anonymize } = require('../../tools/anonymize.js');
   const raw = ['SW (10.0.0.1):', '### /export terse',

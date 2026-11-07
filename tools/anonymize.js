@@ -36,6 +36,8 @@
 //            RouterOS 7 的點號欄位（security.passphrase、configuration.ssid）依最後一段判斷；
 //            print 的「key: value」（/system routerboard print 的 serial-number:、/system license print 的 software-id: 等）與
 //            export 抬頭的「# serial number =」同樣遮蔽，鍵名的大小寫、空格或連字號與冒號前後的空白不影響
+//   寬度     收集器的「# terminal-width: W」換成一般註解（行數不變）：替換後行長改變，記錄不再成立；
+//            輸出沒有寬度記錄，核心只看折行的形狀（推算寬度需要原樣的硬切註解，註解換成代號後也不會推算）
 // 對照表寫到 <輸出檔>.map.json，只供自己查對，不要提交。
 'use strict';
 const fs = require('fs');
@@ -109,6 +111,10 @@ function anonymize(text, opt) {
     return s === s.toLowerCase() ? out.toLowerCase() : out.toUpperCase();
   };
   const quote = (orig, value) => (orig.startsWith('"') || /\s/.test(value) ? `"${value}"` : value);
+
+  // 0. 收集器的終端寬度記錄：換掉名稱、註解與位址後行長會變，記錄不再成立（核心會依它判斷折行，並把超過寬度的行列為 I01）。
+  //    換成一般註解而不是刪掉：行數不變，警告的行號（sampleLines）與輸出檔的行號仍對得上原檔
+  text = text.replace(/^[ \t]*#[ \t]*terminal-width:[^\r\n]*/gim, '# 去識別化時移除了終端寬度的記錄（行長已改變）');
 
   // 1. 先收集設備名：設備標頭、identity=、/system identity；之後在全文以完整詞替換
   const names = new Set();

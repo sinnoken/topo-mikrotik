@@ -62,9 +62,13 @@
     const content = b.lines.filter((l) => l.trim());
     const rosErr = b.device !== null && content.length && content.every(S.adapters.util.rosError);
     const cmd = b.command ? `（指令：${b.command}）` : '';
+    // 只有 print 指令少了 detail 或 without-paging 時，補上才可能解決；指令已經有加（或不是 print）時，是輸出格式和解析器預期的不同
+    const c = String(b.command || '');
+    const lacksDetail = !c || (/\bprint\b/i.test(c) && !(/\bdetail\b/i.test(c) && /\bwithout-paging\b/i.test(c)));
+    const emptyHint = lacksDetail ? 'RouterOS 的 print 指令請加上 detail without-paging' : '輸出格式和解析器預期的不同，請回報這段輸出';
     return b.device === null ? { what: '沒有設備標頭', rest: '' }
       : rosErr ? { what: '指令執行錯誤', rest: `，設備回應「${clip(content[0])}」${cmd}；請確認 RouterOS 版本與已安裝的套件是否支援這個指令，或改用正確的指令重新收集` }
-      : b.empty ? { what: '解析不出任何內容', rest: `（已辨識為${(b.adapters || []).map((a) => `「${S.adapters[a].label}」`).join('、')}）；RouterOS 的 print 指令請加上 detail without-paging` }
+      : b.empty ? { what: '解析不出任何內容', rest: `（已辨識為${(b.adapters || []).map((a) => `「${S.adapters[a].label}」`).join('、')}）；${emptyHint}` }
         : { what: '無法辨識的內容', rest: cmd };
   }
   /** 整段無法辨識的原因（建立前的預檢 S.preflight 用；I01 的訊息是同一段文字加上位置） */
@@ -74,6 +78,10 @@
     'collected-at-invalid': (x) => `收集時間「${x.text}」不是 UTC ISO 8601 格式（應為 2026-10-24T03:00:00Z 這種秒精度的 UTC 時間）`,
     'collected-at-misplaced': (x) => `收集時間「${x.text}」不在指令標記的下一行，無法判斷屬於哪個指令`,
     'failure-duplicate': (x) => `同一段指令輸出有第二個收集失敗註解「${x.text}」，採用第一個`,
+    'terminal-width-invalid': (x) => `終端寬度「${x.text}」不是正整數`,
+    'terminal-width-misplaced': (x) => `終端寬度「${x.text}」不在指令標記或收集時間的下一行，無法判斷屬於哪個指令`,
+    // 依寬度判斷折行的前提是每行最多 W-1 字；不符時這段輸出改用不看寬度的規則（readers/common.js 的 wrapOf）
+    'terminal-width-exceeded': (x) => `終端寬度 ${x.text}（每行最多 ${x.text - 1} 字）與輸出不符：第 ${x.at} 行有 ${x.len} 字，這段輸出的折行不以寬度判斷`,
   };
   /** 收集器註解問題的結論與補充。x：區塊的 issues 之一 { kind, line, text }。 */
   const issueParts = (x) => ({ what: '收集器註解有誤', rest: '，' + ISSUE[x.kind](x) });
@@ -696,7 +704,8 @@
       });
     });
     const shared = new Map(); M.devices.forEach((_, d) => RV.subnetsOf(d).forEach((s) => S.util.getOr(shared, s.net + '/' + s.len, () => new Set()).add(d)));
-    const ospfEps = new Set(M.ospfAdjacencies.map((a) => a.localEp));
+    // IPv4 網段：只看 OSPFv2（IPv4 鄰居位址）的鄰接，OSPFv3 的鄰接不代表 IPv4 網段有在交換路由
+    const ospfEps = new Set(M.ospfAdjacencies.filter((a) => a.family === 'ipv4').map((a) => a.localEp));
     // 在 NAT 後面的網段：這台設備有啟用中的 masquerade／src-nat（不限目的位址，不是 hairpin），來源不限或涵蓋這個網段，而且出介面不是網段所在的介面——
     // 送出去的封包來源已改成設備自己的位址，上游不需要回到這個網段的路由（雙重 NAT 的下游路由器）。src-address-list 的內容不明，視為涵蓋（不報）
     const natRules = new Map(); M.fw.rules.forEach((r) => {
@@ -789,7 +798,7 @@
       if (!edgeMacs.has(a.mac)) return;
       RV.subnetsOf(a.dev, a.vrf).filter((s) => S.ip.inNet(a.ip, s.net, s.len)).forEach((s) => { S.util.getOr(why, s.prefix, () => ({ dhcp: [], host: false })).host = true; });
     });
-    const adjEps = new Set(M.ospfAdjacencies.map((a) => a.localEp));
+    const adjEps = new Set(M.ospfAdjacencies.filter((a) => a.family === 'ipv4').map((a) => a.localEp)); // IPv4 網段：同上，只看 OSPFv2 的鄰接
     const ospfData = (d) => { const x = M.devices.get(d); return !!(x && x.data.has('ospf')); };
     const byDev = new Map();
     Array.from(M.ospfHits.keys()).sort(S.util.natural).forEach((key) => {
@@ -814,8 +823,10 @@
     M.devices.forEach((d) => {
       const rb = d.routerboard;
       if (!d.collected || !rb || !rb.isRouterboard || !rb.currentFirmware || !rb.upgradeFirmware || rb.currentFirmware === rb.upgradeFirmware) return;
-      add('L01', `${name(d.key)}：RouterBOOT 韌體 ${rb.currentFirmware}，可套用 ${rb.upgradeFirmware}`, [{ type: 'device', key: d.key }],
-        ['currentFirmware', 'upgradeFirmware'].map((k) => d.routerboardLines[k]).map((x) => ({ block: x[0], line: x[1] })));
+      // 設備提示已執行 upgrade（手冊 routerboard.md 的訊息）：韌體已寫入，只差重新開機
+      const upgraded = /firmware upgraded successfully/i.test(rb.notice || '');
+      add('L01', `${name(d.key)}：RouterBOOT 韌體 ${rb.currentFirmware}，${upgraded ? `已升級為 ${rb.upgradeFirmware}，重新開機後生效（設備提示）` : `可套用 ${rb.upgradeFirmware}`}`, [{ type: 'device', key: d.key }],
+        ['currentFirmware', 'upgradeFirmware'].concat(upgraded ? ['notice'] : []).map((k) => d.routerboardLines[k]).map((x) => ({ block: x[0], line: x[1] })));
     });
   }
 

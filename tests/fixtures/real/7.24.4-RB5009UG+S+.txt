@@ -1,0 +1,62 @@
+# 真實設備的輸出節錄（2026-11-07 收集，RouterOS 7.24.4，RB5009UG+S+；tools/anonymize.js 去識別化後再手動處理）
+# 已由工具替換：IPv4、MAC 後 3 碼、identity、IPv6 link-local 的介面 ID（由換過的 MAC 推出）、註解原文
+# 手動處理：只留下有特殊形狀的列；OSPF 的 router-id／dr／bdr（169.254/16，工具不換）換成代號；鄰居的 address6 換成 2001:db8::/32、bridge-id 內的 MAC 換成代號；
+#   bridge 的註解是 bridge 優先值的清單（0, 1000, … F000），不含識別資訊，保留原文；換行位置與縮排保留原樣
+# 重點：沒有引號的 system-caps 在「,」之後折行、下一行縮排較深；bridge 的註解在 interface print 硬切成兩行、
+#   在 bridge monitor 折成兩行 ;;;；只有 OSPFv3 鄰居的列（link-local 位址）
+DEV-007 (192.168.0.253):
+### /ip neighbor print detail without-paging
+# collected-at: 2026-11-07T09:42:31Z
+ 0  interface=ether1,bridge address=192.168.1.254 address4=192.168.1.254
+    address6=2001:db8:0:1::6 mac-address=2C:C8:1B:00:00:06 identity="DEV-003"
+    platform="MikroTik" version="7.25.1 2026-11-02 12:39:53" unpack=none
+    age=14m9s uptime=8h31s software-id="REDACTED" board="RBwAPGR-5HacD2HnD"
+    interface-name="bridge/ether2"
+    system-caps=bridge,router system-caps-enabled=bridge,router
+    discovered-by=lldp,mndp
+
+ 7  interface=ether4,bridge mac-address=E0:D5:5E:00:00:38 identity=""
+    platform="" version="" unpack=none age=2m14s
+    system-caps=repeater,bridge,wlan-ap,router,telephone,docsis-cable-device,
+       station-only system-caps-enabled=bridge,router discovered-by=lldp
+
+### /interface print detail without-paging
+# collected-at: 2026-11-07T09:42:36Z
+Flags: X - DISABLED; R - RUNNING; S - SLAVE
+ 9  R  ;;;  0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, A000, B000
+           , C000, D000, E000, F000
+       name="bridge" type="bridge" mtu=auto actual-mtu=1500 l2mtu=1514 vrf=main
+       mac-address=2C:C8:1B:00:00:1A last-link-up-time=2026-10-30 14:02:23
+       link-downs=0
+
+10  R  name="lo" type="loopback" mtu=65536 actual-mtu=65536 vrf=main
+       mac-address=00:00:00:00:00:00 last-link-up-time=2026-10-30 14:02:20
+       link-downs=0
+
+### /routing ospf neighbor print detail without-paging
+# collected-at: 2026-11-07T09:42:36Z
+Flags: D - DYNAMIC
+0 D instance=v3inst area=backbone_v3 interface=bridge
+    address=fe80::2ec8:1bff:fe00:6 priority=1 router-id=169.254.0.6
+    dr=169.254.0.253 bdr=169.254.0.252 state="Full" state-changes=5
+    adjacency=8h14m1s timeout=33s
+
+1 D instance=v3inst area=backbone_v3 interface=bridge
+    address=fe80::6e3b:6bff:fe00:5 priority=64 router-id=169.254.0.252
+    dr=169.254.0.253 bdr=169.254.0.252 state="Full" state-changes=6
+    adjacency=8h20m54s timeout=33s
+
+### /interface bridge monitor [find] once
+# collected-at: 2026-11-07T09:42:36Z
+                     ;;; 0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000,
+                     ;;; 9000, A000, B000, C000, D000, E000, F000
+                  state: enabled
+    current-mac-address: 2C:C8:1B:00:00:1A
+              bridge-id: 0.2C:C8:1B:00:00:1A
+            root-bridge: yes
+         root-bridge-id: 0.2C:C8:1B:00:00:1A
+         root-path-cost: 0
+              root-port: none
+             port-count: 4
+  designated-port-count: 4
+           fast-forward: no

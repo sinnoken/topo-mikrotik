@@ -25,7 +25,7 @@
       causes: [
         '收集檔缺少設備標頭或 `### 指令` 標記，不知道屬於哪台設備或哪個指令。',
         '`print` 沒有加 `detail without-paging`，解析器認得指令但解析不出資料。',
-        '收集器註解（`# collected-at:`、`# collection failed:`）的格式或位置不對。',
+        '收集器註解（`# collected-at:`、`# terminal-width:`、`# collection failed:`）的格式或位置不對，或輸出的行長超過記錄的終端寬度。',
         '貼入了沒有解析器支援的指令輸出。',
       ],
       action: '依訊息補上設備標頭或指令標記，或改用 `detail without-paging` 重新收集。指令寫成 `print detail without-paging`，格式見收集清單 §2。修正前這段資料不會進入基準。',

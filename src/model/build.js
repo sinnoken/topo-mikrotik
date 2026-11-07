@@ -46,7 +46,7 @@
       // 設備自報（/system resource）的型號與版本的來源行 [區塊, 行號]（只在內部模型，L02 的證據）；鄰居回報的不算
       boardSrc: null, versionSrc: null,
       uptime: null, // /system resource 的 uptime：{ seconds, block, line }（事實）；collectedAt 在 serialize 取該區塊的 # collected-at:
-      routerboard: null, // /system routerboard print：{ isRouterboard, basis: 'print'|'no-menu', model, firmwareType, factoryFirmware, currentFirmware, upgradeFirmware, src }（事實）
+      routerboard: null, // /system routerboard print：{ isRouterboard, basis: 'print'|'no-menu', model, firmwareType, factoryFirmware, currentFirmware, upgradeFirmware, notice（;;; 提示訊息原文）, src }（事實）
       routerboardLines: {}, // 欄位 → 該行 [區塊, 行號]（只在內部模型，L01 的證據）
     }));
     if (name) d.names.add(name);
@@ -147,7 +147,7 @@
           if (f.uptime != null) d.uptime = { seconds: f.uptime, block: f.block, line: f.line };
           break;
         case 'rb': {
-          if (!d.routerboard) d.routerboard = { isRouterboard: null, basis: 'print', model: null, firmwareType: null, factoryFirmware: null, currentFirmware: null, upgradeFirmware: null, src: [] };
+          if (!d.routerboard) d.routerboard = { isRouterboard: null, basis: 'print', model: null, firmwareType: null, factoryFirmware: null, currentFirmware: null, upgradeFirmware: null, notice: null, src: [] };
           d.routerboard[f.field] = f.value;
           d.routerboardLines[f.field] = [f.block, f.line];
           if (f.noMenu) d.routerboard.basis = 'no-menu';
@@ -834,17 +834,20 @@
     M.devices.forEach((d) => { if (d.routerId) ridOwner.set(d.routerId, d.key); if (d.mgmtIp) mgmtOwner.set(d.mgmtIp, d.key); });
     const subnetsOf = new Map();
     M.ifcs.forEach((i) => i.ips.forEach((_, c) => { const p = S.ip.parseCidr(c); if (p && p.len < 32) getOr(subnetsOf, i.dev, () => []).push({ ep: i.key, net: p.net, len: p.len }); }));
+    // OSPFv3 的鄰居位址是 IPv6 link-local（family ipv6）：模型的介面位址只有 IPv4，不拿它找網段與擁有者，對端設備只靠 router-id、管理 IP
+    const v4 = (f) => f.family !== 'ipv6';
     M.ospf.forEach((f) => {
       if (f.ifc) f.localEp = K.ep(f.dev, f.ifc);
       else {
-        const hit = (subnetsOf.get(f.dev) || []).filter((x) => S.ip.inNet(f.nbrAddr, x.net, x.len)).sort((a, b) => b.len - a.len)[0];
+        const hit = v4(f) && (subnetsOf.get(f.dev) || []).filter((x) => S.ip.inNet(f.nbrAddr, x.net, x.len)).sort((a, b) => b.len - a.len)[0];
         f.localEp = hit ? hit.ep : iface(M, f.dev, `?(ospf ${f.nbrAddr})`).key;
       }
     });
+    const v6Pending = [];
     M.ospf.forEach((f) => {
       const local = f.localEp;
       const localVrf = (M.ifcs.get(local) || {}).vrf || K.MAIN_VRF;
-      let remote = ipOwner.get(f.nbrAddr, localVrf);
+      let remote = v4(f) ? ipOwner.get(f.nbrAddr, localVrf) : undefined;
       const [peerBasis, found] = remote ? ['address', K.splitEp(remote)[0]]
         : ridOwner.get(f.nbrId) ? ['router-id', ridOwner.get(f.nbrId)]
           : ipOwner.get(f.nbrId) ? ['router-id-address', K.splitEp(ipOwner.get(f.nbrId))[0]]
@@ -855,11 +858,19 @@
         device(M, peerDev, name).seenBy.add(f.dev);
       }
       // 只由鄰居得知的位址：與本機介面在同一個 VRF（OSPF 鄰居在同一個網段）
-      if (!remote) { const ri = iface(M, peerDev, f.nbrAddr); ri.hearsay = true; ri.vrf = localVrf; ri.ips.set(f.nbrAddr + '/32', [f.block, f.line]); remote = ri.key; }
-      M.ospfAdjacencies.push({
-        dev: f.dev, localEp: local, peerDev, peerEp: remote, peerBasis: peerBasis || null,
-        peerIp: f.nbrAddr, peerId: f.nbrId, block: f.block, line: f.line,
-      });
+      if (!remote && v4(f)) { const ri = iface(M, peerDev, f.nbrAddr); ri.hearsay = true; ri.vrf = localVrf; ri.ips.set(f.nbrAddr + '/32', [f.block, f.line]); remote = ri.key; }
+      const adj = {
+        dev: f.dev, localEp: local, peerDev, peerEp: remote || null, peerBasis: peerBasis || null,
+        peerIp: f.nbrAddr, family: v4(f) ? 'ipv4' : 'ipv6', peerId: f.nbrId, block: f.block, line: f.line,
+      };
+      if (!remote) v6Pending.push(adj);
+      M.ospfAdjacencies.push(adj);
+    });
+    // OSPFv3：對端介面取對端回報的那一筆 v3 鄰接（對端看到本機的唯一一筆）的本機介面；沒有或不只一筆時，建立以 link-local 位址命名、只由鄰居得知的介面（不加位址）
+    v6Pending.forEach((a) => {
+      const back = M.ospfAdjacencies.filter((b) => b.family === 'ipv6' && b.dev === a.peerDev && b.peerDev === a.dev);
+      if (back.length === 1) { a.peerEp = back[0].localEp; return; }
+      const ri = iface(M, a.peerDev, a.peerIp); ri.hearsay = true; ri.vrf = (M.ifcs.get(a.localEp) || {}).vrf || K.MAIN_VRF; a.peerEp = ri.key;
     });
     M.ospfAdjacencies.forEach((a) => {
       a.reciprocal = M.ospfAdjacencies.some((b) =>

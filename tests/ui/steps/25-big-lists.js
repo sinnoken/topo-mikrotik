@@ -1,7 +1,7 @@
-// 畫面冒煙測試的 step：大量列的清單（V.bigList）——設備詳情的路由表與防火牆的位址清單：摘要計數與 Q 相同、展開一組才畫明細、分頁、搜尋（位址與網段經 Q.routesMatching／Q.addressSetFind，其他文字依文字比對）、少量時直接列出。
+// 畫面冒煙測試的 step：大量列的清單（V.bigList）——路由表視窗與防火牆的位址清單：摘要計數與 Q 相同、展開一組才畫明細、分頁、搜尋（位址與網段經 Q.routesMatching／Q.addressSetFind，其他文字依文字比對）、少量時直接列出。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { document, S, step, $, buildInput, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows } = require('../helpers.js');
+const { document, S, step, $, buildInput, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows, routesList } = require('../helpers.js');
 
 const RT = 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC';
 const ROUTES = 1500; const LIST = 600; const GWS = ['10.255.0.2', '10.255.0.3', '10.255.0.4'];
@@ -47,7 +47,7 @@ const search = (big, q) => { const inp = big.querySelector('.biglist-search'); i
 const visible = (el) => el.getAttribute('hidden') == null;
 
 module.exports = async () => {
-  await step('大量路由：路由表先顯示摘要（計數同 Q.allRoutesOf）、展開一組才畫明細並分頁、搜尋位址依前綴由長到短找到包含它的路由、其他文字依文字比對；少量時直接列出', async () => {
+  await step('大量路由：右欄只有摘要，路由表視窗先顯示分組（計數同 Q.allRoutesOf）、展開一組才畫明細並分頁、搜尋位址依前綴由長到短找到包含它的路由、其他文字依文字比對；少量時也分組', async () => {
     await buildInput(INPUT);
     const Q = App.Q; const P = S.view.BIG_LIST;
     const big = Q.devices().find((d) => d.name === 'BIG'); const small = Q.devices().find((d) => d.name === 'SMALL');
@@ -55,9 +55,12 @@ module.exports = async () => {
     const all = Q.allRoutesOf(big.key);
     if (all.length < P.min * 2) throw new Error('測試前提：BIG 的路由應遠多於門檻：' + all.length);
     App.select({ type: 'device', key: big.key });
-    const sec = foldOf('路由表');
-    if (countOf(sec) !== all.length) throw new Error(`路由表的 count 應同 Q.allRoutesOf：${countOf(sec)}／${all.length}`);
-    const box = sec.querySelector('.biglist'); if (!box) throw new Error('路由多時應改為摘要＋分組');
+    const summ = foldOf('路由表');
+    if (countOf(summ) !== all.length) throw new Error(`右欄路由表摘要的 count 應同 Q.allRoutesOf：${countOf(summ)}／${all.length}`);
+    if (rowsOf(summ).length || summ.querySelector('.biglist')) throw new Error('右欄只有路由表的摘要，不列路由');
+    summ.querySelector('.routes-open').click();
+    const sec = routesList();
+    const box = sec.querySelector('.biglist'); if (!box) throw new Error('路由表視窗應是摘要＋分組');
     const total = box.querySelector('.biglist-total');
     if (Number(total.getAttribute('data-count')) !== all.length || !total.textContent.includes(S.view.num(all.length))) throw new Error('摘要的總數應同 Q.allRoutesOf：' + total.textContent);
     // 摘要時一列明細都不畫
@@ -117,10 +120,10 @@ module.exports = async () => {
     if (!box.querySelector('.biglist-status').textContent.includes('找不到符合的路由') || rowsOf(box.querySelector('.biglist-result')).length) throw new Error('沒有符合時應說明找不到符合的路由：' + box.querySelector('.biglist-status').textContent);
     search(box, '');
     if (!visible(box.querySelector('.biglist-summary')) || visible(box.querySelector('.biglist-result'))) throw new Error('清掉搜尋字應回到摘要');
-    // 少量時直接列出（與原本相同）
-    App.select({ type: 'device', key: small.key });
-    const sm = foldOf('路由表'); const n = Q.allRoutesOf(small.key).length;
-    if (n >= P.min || sm.querySelector('.biglist') || rowsOf(sm).length !== n) throw new Error(`路由少時應直接列出全部：${rowsOf(sm).length}／${n}`);
+    // 少量時也分組（同一種資料同一種呈現），各組合起來是全部的路由
+    App.select({ type: 'routes', dev: small.key });
+    const n = Q.allRoutesOf(small.key).length; const sgs = groupsOf(routesList());
+    if (n >= P.min || !sgs.length || sgs.reduce((k, g) => k + countOf(g), 0) !== n) throw new Error(`路由少時也依路由表、協定與下一跳分組：${n}`);
     App.select(null);
   });
 

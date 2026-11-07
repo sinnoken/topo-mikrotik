@@ -102,8 +102,8 @@
         { t: '位置', f: (x) => chainText(x.rule), inGroup: false },
         { t: '#', f: (x) => String(x.rule.position), s: (x) => x.rule.position },
         { t: '動作', f: (x) => actionCell(x.rule) },
-        { t: '條件', f: (x) => matchCell(x.rule) },
-        { t: '註解', f: (x) => commentCell(x.rule) },
+        { t: '條件', f: (x) => matchCell(x.rule), cls: 'wrap' },
+        { t: '註解', f: (x) => commentCell(x.rule), cls: 'wrap' },
         { t: '狀態', f: (x) => stateCell(x.rule) },
         // 命中次數（print stats，事實）：封包數；沒有資料時空白（原因在規則詳情）
         { t: '命中', f: (x) => (x.rule.stats ? h('span', { class: 'mono fw-hits', title: `${V.bigNum(x.rule.stats.packets)} 個封包、${V.bigNum(x.rule.stats.bytes)} 位元組（收集當下的累積值）` }, V.bigNum(x.rule.stats.packets)) : ''), cls: 'num' },
@@ -429,15 +429,18 @@
         fw.inner = true;
         try { App.select(rowKey == null ? { type: 'firewall', dev: t.dev } : { type: tabKey === 'rules' ? 'rule' : 'service', key: rowKey }); } finally { fw.inner = false; }
       },
-      // 使用者關閉：選取回到那台設備（右欄已經是它的詳情，圖上的標示不變），之後重畫右欄不會再開視窗
-      onClose: () => { App.sel = { type: 'device', key: t.dev, finding: App.sel && App.sel.finding }; },
+      // 使用者關閉：選取回到那台設備，之後重畫右欄不會再開視窗。右欄已經是它的詳情（refresh：只重新標示圖，不重畫右欄，開啟視窗的入口留在原處、焦點回得去）
+      onClose: () => App.select(detailSel(App, App.sel || { type: 'firewall', dev: t.dev }), { refresh: true }),
       fallbackFocus: () => V.$('#detail').querySelector('.fw-open') || V.$('#detail'),
     });
   }
   /** 重畫視窗的右欄（例如算完 L4 影響）；視窗沒開時不做事 */
   function refresh(App) { const d = dialog(); if (d && fw.Q === App.Q) d.refresh(); }
-  /** 選取換成防火牆以外的東西（或清除、換基準）時關閉視窗；焦點回到開啟它的元素（還在頁面上時） */
+  /** 關閉視窗（跳到修正計畫前）；選取換成防火牆以外的東西時由 V.tableDialog.follow 關閉 */
   function close(App, o) { const d = dialog(); if (d) d.close(o); }
+  /** 右欄顯示的：那台設備的詳情（從檢查結果來時帶著 finding，詳情標出那一筆） */
+  const detailSel = (App, sel) => ({ type: 'device', key: devOf(App, sel), finding: sel.finding });
+  V.tableDialog.owner({ idOf: (App, sel) => (isSel(sel) ? DIALOG + devOf(App, sel) : null), show, detailSel });
 
-  V.firewall = { show, refresh, close, isSel, devOf, statusChips, zoneStatus, ruleLabel };
+  V.firewall = { show, refresh, isSel, devOf, statusChips, zoneStatus, ruleLabel };
 })(globalThis.SSOT = globalThis.SSOT || {});

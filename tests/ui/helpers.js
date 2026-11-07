@@ -198,9 +198,23 @@ const fwTab = (key) => {
 };
 /** 視窗左欄 data-key 為 key 的列（可能有多列：組內與搜尋結果） */
 const fwRows = (key) => fwList().testAll('tr').filter((tr) => tr.getAttribute('data-key') === key);
+/** 路由表視窗（同一個 V.tableDialog）：開著而且是路由表時回傳視窗內容，否則失敗；左欄、右欄同 fwList／fwSide */
+const routesRoot = () => {
+  const root = fwRoot(); const d = globalThis.SSOT.view.tableDialog.current();
+  if (!d || !d.id.startsWith('routes|')) throw new Error('開著的表格視窗應是路由表：' + (d ? d.id : '沒有'));
+  return root;
+};
+const routesList = () => routesRoot().querySelector('#tdlg-list');
+const routesSide = () => routesRoot().querySelector('#tdlg-side');
+/** 右欄設備詳情的「路由表」摘要（展開列）；找不到就失敗 */
+const routesSummary = () => {
+  const el = detailRoot().testAll('.routes-summary')[0];
+  if (!el) throw new Error('設備詳情應有路由表的摘要');
+  return el;
+};
 
 module.exports = Object.assign({}, dom, harness, boundary, {
-  detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows,
+  detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows, routesRoot, routesList, routesSide, routesSummary,
   captureDownloads, parseCsv, rgbOf, luminance, contrastOf, cssVars, cssDarkRoot, cssVarsOf, SCHEMES, forSchemes, jsFiles, unticked,
   recordCanvas, withGraph, vertices, near, tickStrokes, checkTicks, buildInput, hubBtn, stepBtn, goStep, settingsTab, clearBaseline,
   searchFor, pickInv, until, $, text, stepSources, shared,

@@ -88,8 +88,8 @@
         }
         break;
       }
-      // 防火牆畫面：規則鍵與服務鍵（設備|服務名）都以設備鍵開頭；規則已不在基準時仍標出設備
-      case 'firewall': nodes = [sel.dev]; focus = [sel.dev]; break;
+      // 防火牆與路由表的視窗：標出那台設備；規則鍵與服務鍵（設備|服務名）都以設備鍵開頭，規則已不在基準時仍標出設備
+      case 'firewall': case 'routes': nodes = [sel.dev]; focus = [sel.dev]; break;
       case 'rule': case 'service': {
         const r = sel.type === 'rule' ? Q.getFirewallRule(sel.key) : null;
         const dk = r ? r.dev : K.splitEp(sel.key)[0];

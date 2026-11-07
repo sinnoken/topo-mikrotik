@@ -1,6 +1,6 @@
 /*
  * 表格視窗（V.tableDialog）：置中、強制回應的大視窗（原生 <dialog id="dlg-table">，做法同原文對話框 #dlg-raw）。
- * 給右欄放不下的表格用（防火牆規則；之後的路由表也接這個元件）。左欄是分頁＋表格（每個分頁經 V.bigList），右欄是選取那一列的詳情，
+ * 給右欄放不下的表格用（防火牆規則 panels/firewall.js、路由表 panels/routes.js）。左欄是分頁＋表格（每個分頁經 V.bigList），右欄是選取那一列的詳情，
  * 沒選列時是 empty() 的內容。寬度 900px 以下（V.app.isNarrowScreen，和其他窄螢幕版面同一個斷點）全螢幕、單欄：選了一列時只顯示詳情，
  * 「返回」回到表格，頁碼、展開的組與焦點都還在（左欄不重畫）。
  * 開關、焦點歸還、Esc、遮罩與狀態列只在這裡做一次；內容由呼叫端的函式產生，資料一律經呼叫端（App.Q）取得。
@@ -28,6 +28,7 @@
  *   dlg.close({ focus }) // focus 預設 true：焦點回到開啟它的元素
  *   dlg.selected()       // { tab, key }
  *   V.tableDialog.current() → 開著的 handle 或 null
+ *   V.tableDialog.owner({ idOf, show, detailSel })、V.tableDialog.follow(App, sel)：視窗跟著選取開關（見檔尾）
  */
 (function (S) {
   'use strict';
@@ -99,7 +100,7 @@
     const isSel = (r) => cur && cur.tab === t.key && cur.key != null && t.rowKey(r) === cur.key;
     const user = t.table || {};
     const table = Object.assign({}, user, {
-      label: t.label, selectable,
+      label: t.label, selectable, stack: true, // stack：900px 以下每列一塊（欄名寫在格前），不橫捲
       isSelected: isSel,
       rowAttrs: (r) => Object.assign({}, user.rowAttrs ? user.rowAttrs(r) : null,
         { 'data-key': t.rowKey(r), 'aria-selected': selectable ? String(isSel(r)) : null }),
@@ -242,5 +243,20 @@
     };
   }
 
-  V.tableDialog = { open, current: () => (cur && !cur.closed ? cur.handle : null) };
+  /*
+   * 視窗跟著選取（App.sel）：每種視窗的擁有者（防火牆、路由表）在載入時登錄 { idOf(App, sel) → 視窗 id｜null, show(App, sel), detailSel(App, sel) }。
+   * details.render 每次選取都呼叫 follow：開著的視窗不是這個選取的（沒有擁有者認領，或認領的 id 不同）時關閉，回傳認領的擁有者（由它開啟或更新視窗）。
+   * 哪個選取屬於哪個視窗只由擁有者的 idOf 決定，詳情不必知道有哪些視窗。
+   */
+  const owners = [];
+  function owner(o) { owners.push(o); }
+  function follow(App, sel) {
+    let own = null; let id = null;
+    if (App.Q && sel) for (const o of owners) { id = o.idOf(App, sel); if (id != null) { own = o; break; } }
+    const d = cur && !cur.closed ? cur.handle : null;
+    if (d && d.id !== id) d.close();
+    return own;
+  }
+
+  V.tableDialog = { open, owner, follow, current: () => (cur && !cur.closed ? cur.handle : null) };
 })(globalThis.SSOT = globalThis.SSOT || {});

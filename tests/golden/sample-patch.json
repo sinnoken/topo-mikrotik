@@ -1,9 +1,9 @@
 {
  "schema": "ssot-patch/1",
  "baseline": {
-  "inputHash": "5e5dd00116cc4a75",
+  "inputHash": "4252361534336fc1",
   "createdAt": "2026-01-01T00:00:00Z",
-  "version": "3.8.0"
+  "version": "3.9.0"
  },
  "devices": [
   {
@@ -53,7 +53,7 @@
    "evidence": [
     {
      "block": 83,
-     "line": 3818,
+     "line": 3834,
      "text": "/system ntp client servers add address=10.1.10.2",
      "file": "sample-bundle.txt"
     }

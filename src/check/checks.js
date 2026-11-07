@@ -1659,6 +1659,70 @@
     });
   }
 
+  // ---------------------------------------------------------------- 整批放行 dst-nat（F16）
+  /*
+   * forward 中只以 connection-nat-state=dstnat 為條件的 accept（可另帶不排除 new 的 connection-state，不限介面、埠、位址、協定）：
+   * 經 dst-nat 轉送進來的新連線在這裡就放行，之後以 dst-port／dst-address 限制的 accept 或丟棄不再比對這些連線（被架空）。
+   * 「走得到」沿用 S.infer.fw：從對外入口送一個符合後面那條規則、經 dst-nat 的新連線（natState dstnat），
+   *   evalFilter（含 raw）確定由這條放行決定；把這類放行都當成停用（decide 的 skip）時，可能的結果中有後面那條規則——那條就是被架空的。
+   * 後面那條的入介面要是對外入口（M.wanEntries）或不限介面；沒有入口時只看不限入介面的規則。
+   * defconf 的「drop connection-nat-state=!dstnat in-interface-list=WAN」是丟棄，不是觸發條件；它對 dstnat 的封包不成立，也不會被列為架空。
+   */
+  const NAT_BYPASS_KEYS = new Set(['connection-nat-state', 'connection-state']);
+  const DROP_ACTIONS = new Set(['drop', 'reject', 'tarpit']);
+  const DSTNAT_ACTIONS = new Set(['dst-nat', 'redirect', 'netmap']);
+  const tokensOf = (body) => body.split(',').map((t) => t.trim().toLowerCase());
+  /** 整批放行經 dst-nat 的連線的 forward 規則。 */
+  function natBypass(r) {
+    if (r.disabled || r.table !== 'filter' || r.chain !== 'forward' || r.action !== 'accept' || r.match['connection-nat-state'] === undefined) return false;
+    if (!Object.keys(r.match).every((k) => NAT_BYPASS_KEYS.has(k))) return false;
+    const nat = S.infer.fw.splitNeg(r.match['connection-nat-state']);
+    if (nat.neg || !tokensOf(nat.body).includes('dstnat')) return false;
+    if (r.match['connection-state'] === undefined) return true;
+    const st = S.infer.fw.splitNeg(r.match['connection-state']); const hasNew = tokensOf(st.body).includes('new');
+    return st.neg ? !hasNew : hasNew;
+  }
+  const NAT_BYPASS_SHOW = 3;
+  function dstnatBypass({ M, name }, add) {
+    const fw = S.infer.fw;
+    const byDev = new Map(); M.fw.rules.forEach((r) => S.util.getOr(byDev, r.dev, () => []).push(r));
+    M.fwCtx.forEach((ctx, dev) => {
+      const rules = (byDev.get(dev) || []).slice().sort((a, b) => S.util.cmp(a.family, b.family) || S.util.natural(a.chain, b.chain) || a.position - b.position);
+      const wans = (M.wanEntries.get(dev) || []).map((w) => w.ep);
+      ['ip', 'ipv6'].forEach((family) => {
+        const bypass = rules.filter((r) => r.family === family && natBypass(r));
+        if (!bypass.length) return;
+        // 這個位址族沒有啟用中的 dst-nat／redirect／netmap：connection-nat-state=dstnat 不會成立，沒有規則被架空
+        if (!rules.some((r) => r.family === family && !r.disabled && r.table === 'nat' && DSTNAT_ACTIONS.has(r.action))) return;
+        const skip = new Set(bypass.map((r) => r.key));
+        const hit = new Map(); // 放行規則 → 被架空的規則（依 chain、順序）
+        rules.forEach((j) => {
+          if (j.family !== family || j.disabled || j.table !== 'filter' || j.chain === 'input' || j.chain === 'output' || skip.has(j.key)) return;
+          if (j.action !== 'accept' && !DROP_ACTIONS.has(j.action)) return;
+          if (j.match['dst-port'] === undefined && j.match['dst-address'] === undefined) return;
+          const ifcLimited = j.match['in-interface'] !== undefined || j.match['in-interface-list'] !== undefined;
+          const eps = wans.length ? wans : ifcLimited ? [] : [undefined];
+          for (const ep of eps) {
+            const pkt = Object.assign(fw.packetFor(j, ep, 'forward', ctx), { natState: 'dstnat' });
+            const res = fw.evalFilter(ctx, family, 'forward', pkt);
+            if (!res.rule || !skip.has(res.rule.key)) continue;
+            if (!fw.decide(ctx, family, 'filter', 'forward', pkt, skip).outcomes.some((o) => o.rule === j)) continue;
+            S.util.getOr(hit, res.rule, () => []).push(j);
+            break;
+          }
+        });
+        hit.forEach((js, a) => {
+          const where = (r) => `${r.chain === 'forward' ? '' : r.chain + ' '}第 ${r.position} 條（${ruleText(r)}）`;
+          const list = js.slice(0, NAT_BYPASS_SHOW).map(where).join('、') + (js.length > NAT_BYPASS_SHOW ? ' 等' : '');
+          add('F16', `${name(dev)}：${FAMILY_LABEL[family]} filter forward 第 ${a.position} 條（${ruleText(a)}）放行所有經 dst-nat 的連線，`
+            + `之後 ${js.length} 條以目的埠或目的位址限制的規則對轉送進來的連線不起作用：${list}。轉送進來、經 dst-nat 的連線不會再比對這些規則；`
+            + '實際連得進來的埠以 dst-nat 規則為準，見 L4 的「從外部進來」第 2 段',
+          [{ type: 'device', key: dev }, { type: 'rule', key: a.key }], [ruleEv(a)].concat(js.map(ruleEv)));
+        });
+      });
+    });
+  }
+
   // ---------------------------------------------------------------- 規則表
   /** 依 CATALOG 順序（每筆以第一個 id 排）；每個 CATALOG id 恰好屬於一筆，載入時檢查，漏列或重複都直接丟錯。 */
   const RULES = [
@@ -1704,6 +1768,7 @@
     [['F09'], firewallStats],
     [['F10', 'F11', 'F12', 'F13', 'F14'], mgmtHardening],
     [['F15'], statefulBaseline],
+    [['F16'], dstnatBypass],
     [['L01'], firmwarePending],
     [['L02'], versionConsistency],
   ].map(([ids, fn]) => Object.freeze({ ids: Object.freeze(ids), name: fn.name, fn }));

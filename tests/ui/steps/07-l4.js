@@ -25,7 +25,7 @@ function checkLayers(r) {
 
 /** V.l4 的對外成員與函式的參數個數（拆成 l4.js／l4-exposure.js／l4-matrix.js／l4-trace.js 之前的清單；改成員時同步改這裡） */
 const L4_MEMBERS = { show: 2, MATRIX_MAX: null, zoneOpts: 1, state: 0, openCell: 3, openGroup: 3, runReach: 6, rerunWithVrf: 2, openExposure: 3,
-  deniedParts: 1, deniedSentence: 3, exposureRun: 1, exposure: 0, exGroups: 1, timings: 1, runs: 1 };
+  deniedParts: 1, deniedSentence: 3, exposureRun: 1, exposure: 0, timings: 1, runs: 1 };
 const L4_FILES = ['l4.js', 'l4-exposure.js', 'l4-matrix.js', 'l4-trace.js'];
 
 module.exports = async () => {
@@ -143,7 +143,13 @@ module.exports = async () => {
     const zt = text('#l4-zones');
     Q.zones().zones.forEach((z) => { if (!zt.includes(z.name) || (z.basis && !zt.includes(z.basis))) throw new Error('zone 的依據應列出：' + z.name); });
     // 判斷的前提
-    S.query.reachAssumptions().forEach((a) => { if (!text('#view-l4').includes(a.message)) throw new Error('畫面應寫出判斷的前提：' + a.message); });
+    // 判斷的前提：每條寫短句，完整說明只在收合的「詳細」裡（不再整段列出全文）
+    S.query.reachAssumptions().forEach((a) => {
+      const li = $('#l4-assume-' + a.code);
+      if (!li || li.querySelector('.assume-short').textContent !== a.short) throw new Error('畫面應寫出判斷的前提的短句：' + a.code);
+      const det = li.querySelector('.assume-detail');
+      if (!det || !det.textContent.includes(a.detail) || det.getAttribute('open') != null) throw new Error('前提的完整說明應收在「詳細」：' + a.code);
+    });
     // 前提預設收合（摘要一句），矩陣放在查詢之前，首屏先看到矩陣（UX #6）
     const fold = L4().querySelector('.l4-assume details');
     if (!fold || fold.open || !fold.querySelector('.l4-assume-list') || !fold.querySelector('summary')) throw new Error('判斷的前提應預設收合在 <details> 裡');

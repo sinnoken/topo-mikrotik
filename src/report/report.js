@@ -2,6 +2,8 @@
  * 檢查結果報表（S.report）：CSV 與 Markdown。畫面的匯出（src/view/export.js）與 CLI（tools/baseline.js）共用這裡的文字。
  * 下游模組：只透過查詢介面（Q＝S.query(snapshot)）與 S.query.rule／S.query.rules 讀基準與檢查目錄，不改寫；上游不呼叫這裡。
  * 處理紀錄是使用者的資料（不在 Snapshot 裡），由呼叫端以 opts.ledgerOf 傳入；狀態判斷用 S.ledger.isPending。
+ * 主管摘要（managerSummary）另在呼叫時用 Q.exposureSummary（外部的結論句）與 S.remediate.levelOf（處理方式的等級），
+ * 不另寫一份計數或等級規則（S.remediate 在報表之前載入）。
  * 不碰 DOM：組字邏輯都是純函式。
  */
 (function (S) {
@@ -230,7 +232,75 @@
     return it ? { status: it.status, at: userAt(it), note: it.note, waiver: it.waiver } : null;
   };
 
+  // ---------------------------------------------------------------- 主管摘要
+  /** 「問題集中在哪」最多列出的類別數（CATALOG 的 cat） */
+  const SUMMARY_CATEGORIES = 3;
+  /** 修正 patch 的等級（S.remediate.levelOf） */
+  const levelOf = (id) => S.remediate.levelOf(id);
+  /** 檢查的類別（CATALOG 的 cat） */
+  const catOf = (f) => (S.query.rule(f.id) || {}).cat || '其他';
+  /** 依 keyOf 計數，多的在前、同數時依第一次出現的順序：[[key, n]] */
+  const countBy = (xs, keyOf) => {
+    const m = new Map(); xs.forEach((x) => { const k = keyOf(x); m.set(k, (m.get(k) || 0) + 1); });
+    return [...m].map(([k, n], i) => ({ k, n, i })).sort((a, b) => b.n - a.n || a.i - b.i).map((x) => [x.k, x.n]);
+  };
+  const endStop = (s) => (/[。！？]$/.test(s) ? s : s + '。');
+
+  /**
+   * 主管摘要（Markdown）：只看方向，一個畫面讀完；細節見檢查結果報表。純對應：只重述檢查結果與暴露清單的結論（推論），不另做判斷、不評分、不估工時。
+   * 第一行是結論：錯誤與警告都是 0 時「沒有錯誤與警告」，否則「錯誤 M、警告 N（待處理 X）」；有上一輪時接錯誤＋警告筆數的增減（兩份基準的 meta.stats 相減）。
+   * 從外部進得來的：Q.exposureSummary 的結論句（與畫面 L4 頁首同一句，推論）。
+   * 錯誤或警告不為 0 時才接（每段一句）：問題集中在哪（待處理的錯誤＋警告依 CATALOG 的 cat 計數，每類寫該類最多的檢查的處理提示 hint）、
+   * 需要決定的事（S.remediate.levelOf 為 choice 的待處理檢查：數量與最多的題目）、處理順序（依嚴重度，各段筆數與可直接產生修正指令的筆數）。
+   * opts：
+   *   ledgerOf(f)：同 findingsMarkdown；決定哪些是待處理（沒傳時全部是待處理）
+   *   zones：Q.exposure 的參數（同 siteDocTables，例如 { profile }）；exposure：已算好的 Q.exposure 結果（畫面傳入，避免重算）
+   *   previous：上一輪基準的查詢介面（S.query(snapshot)）
+   */
+  function managerSummary(Q, opts) {
+    const o = opts || {}; const lgOf = ledgerOf(o);
+    const m = Q.meta(); const fc = m.stats.findings;
+    const pendingOf = (f) => { const lg = lgOf(f); return S.ledger.isPending(lg ? lg.status : null); };
+    const pending = Q.findings().filter(pendingOf);
+    const bad = fc.error + fc.warn;
+    const pendingBad = pending.filter((f) => f.severity === 'error' || f.severity === 'warn');
+    let head = bad ? `錯誤 ${fc.error}、警告 ${fc.warn}（待處理 ${pendingBad.length}）` : '沒有錯誤與警告';
+    if (o.previous) {
+      const pf = o.previous.meta().stats.findings; const d = bad - (pf.error + pf.warn);
+      head += d ? `，比上一輪${d < 0 ? '少' : '多'} ${Math.abs(d)} 筆` : '，與上一輪筆數相同';
+    }
+    const ex = Q.exposureSummary(o.zones, o.exposure);
+    const out = ['# 主管摘要', '', `**${head}。**`, '', `- 從外部進得來的（推論）：${mdText(endStop(ex.sentence))}`];
+    if (bad) {
+      // 問題集中在哪：待處理的錯誤＋警告依類別
+      if (!pendingBad.length) out.push('- 錯誤與警告都已處理（見處理紀錄）。');
+      else {
+        const cats = countBy(pendingBad, catOf); const top = cats.slice(0, SUMMARY_CATEGORIES); const rest = cats.slice(SUMMARY_CATEGORIES);
+        out.push(`- 待處理的錯誤與警告集中在：${top.map(([c, n]) => `${mdText(c)} ${n} 筆`).join('、')}` +
+          `${rest.length ? `，其他 ${rest.length} 類共 ${rest.reduce((s, [, n]) => s + n, 0)} 筆` : ''}。`);
+        top.forEach(([c]) => {
+          const [id] = countBy(pendingBad.filter((f) => catOf(f) === c), (f) => f.id)[0];
+          const a = advice(id);
+          out.push(`  - ${mdText(c)}（最多的是 ${id}）：${a.hint ? mdRich(a.hint) : mdText(S.query.rule(id).title)}`);
+        });
+      }
+      // 需要決定的事：要先選擇處理方式的待處理檢查
+      const choice = pending.filter((f) => levelOf(f.id) === 'choice');
+      out.push(choice.length ? `- 需要決定的事：${choice.length} 項要先選擇處理方式，例如${mdText(S.query.rule(countBy(choice, (f) => f.id)[0][0]).title)}。` : '- 需要決定的事：沒有。');
+      // 處理順序：依嚴重度
+      const steps = SEV_ORDER.map((s) => {
+        const fs = pending.filter((f) => f.severity === s); if (!fs.length) return null;
+        const auto = fs.filter((f) => levelOf(f.id) === 'auto').length;
+        return `${SEV_TEXT[s]} ${fs.length} 筆（${auto ? `${auto} 筆可直接產生修正指令` : '沒有可直接產生的修正指令'}）`;
+      }).filter(Boolean);
+      if (steps.length) out.push(`- 處理順序：先${steps.join('，再')}。`);
+    }
+    out.push('', `依據 ${m.createdAt} 建立的基準（設備 ${m.stats.devices} 台，已收集 ${m.stats.collected} 台）；標「推論」的部分由路由與防火牆規則推得，不是收集到的事實。細節見檢查結果報表。`);
+    return out.join('\n') + '\n';
+  }
+
   S.report = Object.freeze({
+    managerSummary, SUMMARY_CATEGORIES,
     findingsCsv, ledgerOfItems, userAt, findingsMarkdown, csvCell, mdText, mdCode,
     codeParts, advice, sortByDevice, majorityDeviating, statusText,
     SEV_TEXT, SEV_ORDER, STATUS_TEXT, DEVIATION, DEVIATION_LABEL, NO_MAJORITY,

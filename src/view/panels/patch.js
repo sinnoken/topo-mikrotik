@@ -182,7 +182,7 @@
     const kind = state.view.get(f.dev) || 'apply';
     const risk = R().maxRisk(items);
     return h('div', { class: 'patch-dev', 'data-dev': f.dev }, [
-      h('h4', null, [f.name, ' ', V.chip(`${items.length} 項`), ' ', V.chip('最高風險 ' + (R().RISK_TEXT[risk] || risk), R().RISK_CHIP[risk] || '')]),
+      h('h4', null, [f.name, ' ', V.chip(V.num(items.length), 'count'), ' ', V.chip('最高風險 ' + (R().RISK_TEXT[risk] || risk), R().RISK_CHIP[risk] || '')]),
       ...items.map((it) => itemBlock(App, plan, it)),
       h('div', { class: 'patch-files' }, [
         h('div', { class: 'row' }, [

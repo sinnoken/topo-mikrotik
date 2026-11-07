@@ -306,7 +306,7 @@ test('L4 引擎拆成多個檔案：Q 與 S.query 的 L4 成員與參數個數�
     assert.strictEqual(typeof Q[k], 'function', `Q.${k}`);
     assert.strictEqual(Q[k].length, n, `Q.${k} 的參數個數`);
   });
-  ['l4Services', 'zoneSources', 'reachAssumptions', 'reachReasonCodes', 'reachStartBases'].forEach((k) => {
+  ['l4Services', 'zoneSources', 'reachAssumptions', 'traceAssumptions', 'exposureAssumptions', 'reachDefinition', 'traceEndStatuses', 'reachReasonCodes', 'reachStartBases'].forEach((k) => {
     assert.strictEqual(typeof S.query[k], 'function', `S.query.${k}`);
     assert.strictEqual(S.query[k].length, 0, `S.query.${k} 不需要參數`);
     assert.strictEqual(S.query[k](), S.query[k](), `S.query.${k} 每次回傳同一個凍結的物件`);
@@ -320,7 +320,7 @@ test('L4 引擎拆成多個檔案：Q 與 S.query 的 L4 成員與參數個數�
   assert.deepStrictEqual(files.slice(at + 1, at + 1 + REACH_PARTS.length), REACH_PARTS);
   // 引擎回傳的成員（query.js 的 L4() 呼叫的）
   const eng = S.reach.engine(Q, { ctxOf: () => null });
-  assert.deepStrictEqual(Object.keys(eng), ['reach', 'zones', 'zoneOf', 'matrix', 'matrixSteps', 'cell', 'ruleImpact', 'exposure', 'exposureSteps']);
+  assert.deepStrictEqual(Object.keys(eng), ['reach', 'zones', 'zoneOf', 'matrix', 'matrixSteps', 'cell', 'ruleImpact', 'exposure', 'exposureSteps', 'assumptionUse']);
 });
 
 test('Q.ruleImpact：規則牽涉的 zone 對與路徑，停用後改變的結果；被遮蔽的規則沒有影響', () => {
@@ -350,8 +350,8 @@ test('S.infer.fw.decide：條件無法判斷的規則不略過，列出所有可
   const e = S.infer.fw.decide(ctx, 'ip', 'filter', 'forward', Object.assign({}, pkt, { dst: BigInt(S.ip.toInt('192.168.2.11')) }));
   assert.deepStrictEqual([e.decided, e.verdict, e.rule.position], [true, 'drop', 3]);
 });
-test('S.query.reachAssumptions：前提以中文敘述，RouterOS 原值（參數、表、選單）只放在括號內', () => {
-  const list = S.query.reachAssumptions();
+test('S.query.reachAssumptions／traceAssumptions：前提以中文敘述，RouterOS 原值（參數、表、選單）只放在括號內', () => {
+  const list = S.query.traceAssumptions().concat(S.query.reachAssumptions());
   // 括號外不應出現 RouterOS 的英文原值；縮寫與產品名（RouterOS、IPv4、VRF、路由表名 main）除外
   const ALLOWED = new Set(['RouterOS', 'IPv4', 'VRF', 'main']);
   list.forEach((a) => {
@@ -371,7 +371,8 @@ test('判斷的前提依層級排列（ADR-023 決策 5）：路由層 → 防�
     assert.ok(ORDER.includes(a.layer), `${a.code} 的 layer`);
     if (i) assert.ok(ORDER.indexOf(list[i - 1].layer) <= ORDER.indexOf(a.layer), `${list[i - 1].code} → ${a.code} 的層級順序`);
   });
-  const base = S.query.reachAssumptions(); check(base);
+  const base = S.query.traceAssumptions().concat(S.query.reachAssumptions()); check(base);
+  assert.ok(S.query.traceAssumptions().every((a) => a.layer === 'route') && S.query.reachAssumptions().every((a) => a.layer !== 'route'), '路由層在 L3，L4 只有防火牆層與推論假設');
   check(S.query(sampleSnap()).exposure().assumptions);
   assert.deepStrictEqual(base.map((a) => a.code), ['ipv4-vrf', 'policy-routing', 'mark-routing', 'bridge-ip-firewall', 'routeros-tables', 'new-connection', 'conditions', 'src-port', 'address-list',
     'untracked', 'ip-service', 'static-only', 'external', 'return-path']);

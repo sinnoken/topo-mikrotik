@@ -260,15 +260,17 @@ module.exports = async () => {
     App.showLayer('device');
   });
 
-  await step('UX6 L7：管理面設定的數量寫明是檢查結果、列出 F10–F14 的標題、項目名稱大小寫一致、「出廠」有說明', async () => {
+  await step('UX6 L7：管理面設定的數量是項目數（有問題另寫 N 項有問題）、列出 F10–F14 的標題、項目名稱大小寫一致、「出廠」有說明', async () => {
     const lines = ['PD (10.0.2.1):', '### /export terse', '/interface list add name=WAN', '/snmp set enabled=yes',
       '/snmp community set [ find default=yes ] disabled=yes', '/snmp community add name=public addresses=10.0.0.0/8', ''];
     await buildInput(lines.join('\n') + '\n');
     App.select({ type: 'device', key: 'PD' });
     const sec = $('#detail').testAll('.mgmt-section')[0];
-    const n = App.Q.findingsFor('device', 'PD').filter((f) => /^F1[0-4]$/.test(f.id)).length;
+    // 標題旁的數量是項目（列）數；有錯誤或警告的項目另寫「N 項有問題」（count 只表示列數）
+    const nBad = sec.testAll('.mgmt-row').filter((r) => r.testAll('.mgmt-finding').some((a) => App.Q.finding(Number(a.getAttribute('data-finding-idx'))).severity !== 'info')).length;
     const sum = sec.testAll('summary')[0];
-    if (!sum || !sum.textContent.includes(`${n} 筆檢查結果`)) throw new Error('管理面設定標題旁的數量應寫明是檢查結果：' + (sum && sum.textContent));
+    if (!sum || sum.querySelector('.count').textContent !== String(sec.testAll('.mgmt-row').length)) throw new Error('管理面設定標題旁的數量應是項目數：' + (sum && sum.textContent));
+    if (nBad ? !sum.textContent.includes(`${nBad} 項有問題`) : sum.textContent.includes('有問題')) throw new Error('有問題的項目寫「N 項有問題」，0 不顯示：' + sum.textContent);
     ['F10', 'F11', 'F12', 'F13', 'F14'].forEach((id) => { const r = S.query.rule(id); if (!sec.textContent.includes(`${id} ${r.title}`)) throw new Error('應列出檢查的標題：' + id); });
     const labels = sec.testAll('.mgmt-row').map((r) => r.testAll('b')[0].textContent);
     const lower = labels.filter((l) => /^[a-z]/.test(l));

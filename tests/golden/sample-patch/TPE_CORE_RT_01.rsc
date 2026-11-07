@@ -1,6 +1,6 @@
 # topo-mikrotik ssot-patch/1 apply
 # device: TPE_CORE_RT_01 (key TPE_CORE_RT_01)
-# baseline: inputHash=5e5dd00116cc4a75 createdAt=2026-01-01T00:00:00Z version=3.8.0
+# baseline: inputHash=4252361534336fc1 createdAt=2026-01-01T00:00:00Z version=3.9.0
 # Text only: topo-mikrotik never connects to or changes a device. Review every line before use.
 # items: 2
 # Run: /import file-name=<this file> (add verbose=yes dry-run first to catch syntax errors).

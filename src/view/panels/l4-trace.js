@@ -13,6 +13,8 @@
   const reasonItem = (App, r) => h('li', { class: 'l4-reason', 'data-code': r.code, title: reasonNote(r.code) }, [
     h('b', null, V.reachReason(r.code)), r.message ? '：' + r.message : '',
     r.rule ? h('span', null, ['（', ruleLink(App, r.rule), '）']) : null,
+    // 原因對到前提時接「為什麼」（展開頁尾那條前提）
+    ...((w) => (w ? [' ', w] : []))(I.whyLink(App, r.code, r)),
   ]);
 
   // ---------------------------------------------------------------- 下鑽
@@ -249,7 +251,10 @@
     if (r.reasons.length) out.push(h('div', { class: 'l4-reasons' }, [h('b', null, '無法判斷的原因：'), layerList(r.reasons, (x) => x.code, (x) => reasonItem(App, x))]));
     if (r.notes.length) out.push(h('div', { class: 'l4-notes' }, [h('b', null, '附註：'), layerList(r.notes, (x) => x.code, (x) => reasonItem(App, x))]));
     r.paths.forEach((p, n) => out.push(pathBlock(App, p, n, r.paths.length, r.reasons)));
-    out.push(h('details', { class: 'l4-fold' }, [h('summary', null, '這次查詢的前提'), h('ul', null, r.assumptions.map((a) => h('li', null, a.message)))]));
+    // 這次查詢的前提：只列這份基準有影響的（短句＋影響），其他收合；不設 id（頁尾的前提才是「為什麼」的去處）
+    const ab = V.assumeBlock(App, r.assumptions, {});
+    // 與 L3 路由追蹤的「這次追蹤的前提」同一寫法：展開列（V.section），有影響的條數是標題列的狀態 chip
+    out.push(V.section('這次查詢的前提', [ab.list, ab.other], { fold: true, cls: 'l4-fold l4-reach-assume', extra: [V.stateChip(ab.shown.length, '條有影響')] }));
     return h('div', { class: 'l4-sub l4-l3' }, out);
   }
   /** /routing rule（策略路由）的文字：決定查表的規則、或使路由不明／丟棄的規則 */

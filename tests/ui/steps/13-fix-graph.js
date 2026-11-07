@@ -212,7 +212,8 @@ module.exports = async () => {
     if (!text('#detail').includes('未確認直連')) throw new Error('MNDP 細節未明示非直連語意');
     const remoteEp = S.keys.splitEp(domainLink.a)[0] === 'A' ? domainLink.b : domainLink.a;
     App.select({ type: 'interface', key: remoteEp });
-    if (!text('#detail').includes('MNDP：L2 廣播網域可達，非直連')) throw new Error('MNDP 回報介面的細節不應呈現為直連線');
+    // 介面的鏈路表與設備的鄰居表同一種呈現：類別欄寫 V.DOMAIN_TEXT（未確認直連）
+    if (!text('#detail').includes(S.view.DOMAIN_TEXT)) throw new Error('MNDP 回報介面的細節不應呈現為直連線');
   });
   await step('鏈路埠名：縮小時隱藏，滑過鏈路或節點時強制顯示', () => {
     const graph = App.graph; const ctx = graph.ctx;

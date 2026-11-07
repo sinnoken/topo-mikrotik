@@ -20,7 +20,7 @@ module.exports = async () => {
       if (/hub-st-(ok|warn|err)/.test(stx.className) && !/^[✓!✗] /.test(stx.textContent)) throw new Error(`${k} 的狀態色應搭配符號`);
     });
     ['read-workpack', 'read-sources', 'load-previous', 'import-ledger', 'change-profile', 'load-expected', 'devices-csv',
-      'download-workpack', 'export-snapshot', 'export-ledger', 'open-patch', 'export-markdown', 'export-csv', 'export-site-markdown', 'export-site-csv', 'by-device', 'export-png', 'export-devices-csv', 'export-expected']
+      'download-workpack', 'export-snapshot', 'export-ledger', 'open-patch', 'export-markdown', 'export-csv', 'export-site-markdown', 'export-site-csv', 'export-manager-summary', 'by-device', 'export-png', 'export-devices-csv', 'export-expected']
       .forEach((a) => { if (!hubBtn(a)) throw new Error('資料中心缺少入口：' + a); });
     // 狀態和目前的資料一致（依關係，不寫死筆數）
     const m = App.Q.meta();

@@ -10,7 +10,7 @@
   const IP = S.ip;
   const K = S.keys;
   const U = S.util;
-  const { deepFreeze, MAX_PATHS, REASON_LAYER, checkCode, NAT_UNKNOWN } = S.reach._;
+  const { deepFreeze, MAX_PATHS, REASON_LAYER, checkCode, NAT_UNKNOWN, afNets, inAvailableFrom } = S.reach._;
 
   /** E：reach.js 的 base 建立的 engine 物件；加上 evaluate、skipOf、pathsOf、rowLayers、deniedByOf、involves、reachesLocal、unsafeOfSum、unsafeReason、dedupeReasons。 */
   S.reach._.evalPart = function evalPart(E) {
@@ -259,14 +259,14 @@
       const sv = Q.ipServicesOf(dev).find((x) => x.port === st.port);
       if (!sv) return null;
       const accepts = !sv.enabled ? false : !sv.addresses.length ? true : st.src == null ? null
-        : sv.addresses.some((a) => { const p = S.ip.parseCidr(a); return p ? IP.inNet(st.src, p.net, p.len) : false; });
+        : inAvailableFrom(st.src, afNets(sv.addresses));
       return { name: sv.name, enabled: sv.enabled, port: sv.port, addresses: sv.addresses.slice(), basis: sv.basis, accepts, src: sv.src.map((x) => x.slice()) };
     }
 
     // 節點的鍵：來源（Q.reach 用實際位址，矩陣用等價類，見 srcKey）與 service
     const W = S.trace.walker(Q, {
       newHop, cloneHop, checkCode, followOwner: true,
-      srcKey: (dev, st, ctx) => (ctx.mode === 'exact' ? (st.src == null ? 'n' : st.src) : srcKey(st.src, st.vrf)),
+      srcKey: (dev, st, ctx) => (ctx.mode === 'exact' ? (st.src == null ? 'n' : st.src) : srcKey(st.src, st.vrf, st)),
       pktKey: svcNum,
       enter: enterHook, local: localHook, out: outHook, beforeDeliver: hairpinHook,
       originate: (dev, base) => { if (!devInfo(dev).config) base.reasons.push(reason('no-firewall-data', dev, `${name(dev)} 沒有設定資料（/export），防火牆規則不明`)); },
@@ -326,7 +326,7 @@
         let v;
         if (node.end) {
           v = node.end.verdict;
-          if (node.end.code !== 'local' && node.end.code !== 'host' && node.end.code !== 'segment' && node.end.code !== 'dropped' && node.end.verdict !== 'allow' && !reasons.some((x) => x.code === node.end.code)) reasons.push(reason(node.end.code, node.end.dev, node.end.message, node.end.ip ? { ip: node.end.ip } : {}));
+          if (node.end.code !== 'local' && node.end.code !== 'host' && node.end.code !== 'segment' && node.end.code !== 'dropped' && node.end.verdict !== 'allow' && !reasons.some((x) => x.code === node.end.code)) reasons.push(reason(node.end.code, node.end.dev, node.end.message, Object.assign(node.end.ip ? { ip: node.end.ip } : {}, node.end.assumption ? { assumption: node.end.assumption } : {})));
           if (node.end.verdict === 'deny' && !denyStage) decisive.set('route:' + node.end.code + ':' + h.dev, { key: null, dev: h.dev, table: null, chain: null, policy: false, route: node.end.code, verdict: 'drop' });
         } else {
           const kids = node.next.map(summary);
@@ -477,10 +477,16 @@
     // 每個（mode, skip）一份 context 重複使用（同 S.trace.routeFrom）：一次展開結束時 stack 一定是空的；
     // 展開中丟出例外時 stack 可能留著，下一次改建新的
     const ctxMemo = new Map();
-    function evaluate(src, dst, svc, mode, skip, entry, vrf) {
+    /**
+     * once：一次性的節點快取（呼叫端給一個空物件，evaluate 在上面建自己的 memo 與 context；呼叫端丟掉它就釋放）。
+     * 暴露清單用：它的節點鍵（實際來源位址 × 目的 × service）幾乎不重複，留在 engine 的 nodeMemo 只佔記憶體。
+     * 沒給時用 engine 的 nodeMemo（Q.reach、矩陣、規則影響），行為不變。節點內容只由鍵決定，兩份快取的結果相同。
+     */
+    function evaluate(src, dst, svc, mode, skip, entry, vrf, once) {
       const mk = mode + '\u0000' + (skip ? skip.id : '');
-      let ctx = ctxMemo.get(mk);
-      if (!ctx || ctx.stack.length) { ctx = W.context({ mode, skip, memo: level(nodeMemo, mk) }); ctxMemo.set(mk, ctx); }
+      const cm = once ? (once.ctxs || (once.ctxs = new Map())) : ctxMemo;
+      let ctx = cm.get(mk);
+      if (!ctx || ctx.stack.length) { ctx = W.context({ mode, skip, memo: level(once ? (once.nodes || (once.nodes = new Map())) : nodeMemo, mk) }); cm.set(mk, ctx); }
       const st = { src, dst, proto: svc.proto, port: svc.port, vrf: K.vrf(vrf) };
       const b = W.begin(src, dst, st, ctx, entry);
       return { b, sum: summarize(b, st) };

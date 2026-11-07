@@ -76,7 +76,11 @@ test('報表：sortByDevice 依設備排序（穩定，不屬於設備的排最�
 });
 
 test('報表：單向依賴——只透過查詢介面與 S.query.rule／rules、S.ledger 讀取；上游與其他下游不呼叫 S.report；不碰 DOM', () => {
-  const src = read('src/report/report.js').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+  // 主管摘要只在呼叫時用 S.compare.snapshots 與 S.remediate.levelOf／plan（不另寫比對與等級規則）；其他成員仍不可用
+  const src = read('src/report/report.js').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')
+    .replace(/S\.compare\.snapshots\b|S\.remediate\.(levelOf|plan)\b/g, '');
+  const core0 = require('../../tools/core-files.js');
+  ['src/compare/compare.js', 'src/remediate/patch.js'].forEach((f) => assert.ok(core0.indexOf(f) < core0.indexOf('src/report/report.js'), `${f} 要在報表之前載入`));
   assert.ok(!/\b(document|window|indexedDB|localStorage)\b|S\.(view|store|build|check|model|infer|compare|remediate|workpack)\b/.test(src), '報表不可碰 DOM、畫面或上游');
   assert.ok(!/\bsnap(shot)?\s*\./.test(src), '報表不讀 Snapshot 欄位，只用 Q');
   const core = require('../../tools/core-files.js');

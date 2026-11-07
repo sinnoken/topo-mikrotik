@@ -2,7 +2,8 @@
  * L4 可達性（M2）：zone 矩陣（L0）→ 一格的位址組（L1）與牽涉的規則（L2）→ 逐跳的可達性（L3），以及直接輸入的可達性查詢。
  * 拓樸圖工具列選了「L4 可達性」時顯示在 #view-l4（疊在畫布上、工具列下面；app-layers.js 的 App.showLayer）。
  *
- * 資料全部來自查詢層：Q.zoneMatrix（L0）、Q.zoneCell（L1／L2）、Q.reach（L3）、Q.zones，以及 S.query.l4Services／reachAssumptions。
+ * 資料全部來自查詢層：Q.zoneMatrix（L0）、Q.zoneCell（L1／L2）、Q.reach（L3）、Q.zones、Q.assumptionUse（哪些前提影響這份基準），
+ * 以及 S.query.l4Services／reachDefinition／reachAssumptions／exposureAssumptions／traceAssumptions／reasonAssumptions。
  * 這些都是推論，由查詢層計算並快取，不寫進基準（ADR-014）；畫面不自己判斷規則或路由，只負責選取、顯示與鍵盤操作。
  * 目前的 service、檢視方式（矩陣／表格）與下鑽到哪裡是檢視狀態，只在記憶體，不存進 store，換基準時清掉。
  * 顏色與符號取自 theme.l4；格子狀態一律有符號與文字（V.L4_STATUS），不只靠顏色。
@@ -173,7 +174,6 @@
     });
     // 提示和矩陣放在同一個定位框裡（矩陣每次重畫，提示留著），位置相對於這個框
     els.box = h('div', { class: 'l4-matrix-box' }, [els.matrix, els.tip]);
-    const assumptions = S.query.reachAssumptions();
     els.exHead = h('p', { id: 'l4-ex-summary', class: 'l4-ex-summary', role: 'status', 'aria-live': 'polite' });
     els.ex = h('section', { id: 'l4-exposure', class: 'work-card l4-card l4-exposure', 'aria-labelledby': 'l4-ex-title' });
     els.matrixFold = h('details', { id: 'l4-matrix-fold', class: 'l4-card-fold' }, [
@@ -184,12 +184,12 @@
     ]);
     // 展開時才計算矩陣（App.l4MatrixJob）；收合時不中斷已經開始的計算
     els.matrixFold.addEventListener('toggle', () => { if (isOpen(els.matrixFold)) App.l4MatrixJob = I.ensureMatrix(App); });
+    // 判斷的前提：摘要是判斷方式的一句話；內容（依這份基準有影響的前提）在暴露清單算完或第一次展開時才填（Q.assumptionUse）
     els.assumeFold = h('details', { class: 'l4-fold', id: 'l4-assume-fold' }, [
-      els.assumeSum = h('summary'),
-      h('p', { class: 'muted l4-note' }, '只判斷 IPv4 的新連線，只套用 RouterOS 的防火牆與 NAT；條件無法判斷時結果為不明。'),
-      els.assumeList = h('ul', { class: 'l4-assume-list' }),
+      h('summary', null, [h('span', { class: 'l4-assume-k' }, '判斷的前提'), h('span', { class: 'l4-assume-def' }, S.query.reachDefinition())]),
+      els.assumeBody = h('div', { class: 'l4-assume-body' }),
     ]);
-    I.fillAssume(assumptions);
+    els.assumeFold.addEventListener('toggle', () => { if (isOpen(els.assumeFold)) I.fillAssume(App); });
     V.clear(root).appendChild(h('div', { class: 'work-inner l4-inner' }, [
       h('div', { class: 'work-head' }, [h('h2', { id: 'l4-title', class: 'work-title', tabindex: '-1' }, 'L4 可達性'), els.exHead]),
       // 由外而內：第一句結論與三段暴露清單（Q.exposure）在最上面；內部互通（zone 矩陣）與可達性查詢預設收合
@@ -205,7 +205,7 @@
           h('button', { type: 'button', class: 'primary', id: 'l4-run', onclick: run }, '查詢'),
         ]),
       ])),
-      // 判斷的前提：頁尾一行，展開看全部；虛擬 zone（外部、網路設備）的說明也放在這裡
+      // 判斷的前提：頁尾一行（判斷方式），展開看這份基準有影響的前提；路由層只寫「同 L3 路由追蹤」
       h('section', { class: 'work-card l4-card l4-assume', 'aria-labelledby': 'l4-assume-title' }, [
         h('h3', { id: 'l4-assume-title', class: 'sr-only' }, '判斷的前提'), els.assumeFold,
       ]),
@@ -225,6 +225,7 @@
     st.zo = zoneOpts(App);
     I.syncControls(App);
     if (st.zonesFor !== App.Q || st.zonesZo !== st.zo) renderZones(App);
+    if (isOpen(els.assumeFold)) I.fillAssume(App);
     const ex = I.exposure(App);
     // 展開時每次都重畫（換深淺配色時格子要換成新配色；同一份基準算過的直接用快取）
     if (isOpen(els.matrixFold)) App.l4MatrixJob = I.refresh(App);
@@ -235,7 +236,8 @@
     I.stopJob();
     I.stopEx(); st.ex = null; st.exErr = null; st.exPath = null; st.exAll = new Set();
     Object.assign(st, { Q, service: '', vrf: '', cell: null, cellData: null, reach: null, reachReq: null, reachErr: null, reachVrfs: null, showAllGroups: false, focus: [0, 0], mx: null, current: null, error: null, drawnFor: null, tableAll: false });
-    if (els.root) { els.drill.classList.add('hidden'); V.clear(els.drill); }
+    if (els.root) { els.drill.classList.add('hidden'); V.clear(els.drill); V.clear(els.assumeBody); }
+    st.assumeFor = null; st.assumeN = 0;
   }
   const isOpen = (d) => !!(d && (d.open || d.getAttribute('open') != null));
   function announce(text) { if (els.root) els.live.textContent = text; }
@@ -268,13 +270,13 @@
       { t: '設備', f: (x) => V.num(x.devices.length), s: (x) => x.devices.length, cls: 'num' },
     ], z.zones));
     const zi = zoneIndex(Q);
-    box.appendChild(h('details', { class: 'l4-fold' }, [h('summary', null, `每個網段的依據（${V.num(z.subnets.length)}）`), V.table([
+    box.appendChild(V.section('每個網段的依據', V.table([
       { t: '網段', f: (s) => h('span', { class: 'mono' }, V.inVrfText(s.prefix)), s: (s) => s.prefix }, ...vrfCol,
       { t: 'zone', f: (s) => (zi.get(s.zone) || { name: s.zone }).name, s: (s) => (zi.get(s.zone) || { name: s.zone }).name },
       { t: '來源', f: (s) => h('span', null, [V.ZONE_SOURCE[s.source] || s.source, s.inferred ? ' ' : '', s.inferred ? V.chip('推論', 'info') : null]) },
       { t: '依據', f: (s) => s.basis || '' },
       { t: '其他來源的結果', f: (s) => s.alternatives.map((a) => `${V.ZONE_SOURCE[a.source] || a.source}：${(zi.get(a.zone) || { name: a.zone.replace(/^[a-z-]+:/, '') }).name}`).join('、') },
-    ], z.subnets, { limit: 500 })]));
+    ], z.subnets, { limit: 500 }), { fold: true, count: z.subnets.length, cls: 'l4-fold' }));
   }
 
   /**
@@ -283,7 +285,7 @@
    */
   const I = {
     st, els, TH, MATRIX_MAX, ROW_LIMIT, TABLE_LIMIT, EX_LIMIT, BUSY_DELAY, PROTOS,
-    reasonNote, layerOf, layerText, layerList, layerLine, deniedParts, svcOf, zoneOpts, zo, optsOf, zoneIndex, zoneById, zoneName,
+    reasonNote, layerOf, byLayer, layerText, layerList, layerLine, deniedParts, svcOf, zoneOpts, zo, optsOf, zoneIndex, zoneById, zoneName,
     statusText, statusMark, statusTag, cellBg, countsText, hetBadge, decisiveText, ruleLink, isOpen, announce, zoneLabel, renderZones,
   };
 
@@ -308,8 +310,6 @@
     exposureRun: (Q) => I.exRuns.get(Q) || null,
     /** 目前畫的暴露清單（Q.exposure 的結果；還在算時為 null） */
     exposure: () => st.ex,
-    /** 暴露清單一段的顯示分組（[{ x, i, ips }]，允許在前、無法判斷在後）；測試用 */
-    exGroups: (rows) => I.exGroups(rows),
     /** 這個畫面在某份基準上算過的矩陣（service → 毫秒數）；大型冒煙測試讀計算時間 */
     timings: (Q) => new Map(I.computed.get(Q) || []),
     /** 分段計算的紀錄（service → { ms, wallMs, steps, maxStepMs：一段最久佔住主執行緒多久, maxGapMs：兩段之間最長的間隔 }） */

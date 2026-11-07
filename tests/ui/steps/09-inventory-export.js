@@ -140,8 +140,9 @@ module.exports = async () => {
     if (!!inferred !== place.textContent.includes(S.view.TERMS.inferred)) throw new Error('推定的位置應在區塊標題加推論標示');
     const learnt = head('學到它的介面'); if (!learnt) throw new Error('應有「學到它的介面」區塊');
     const rest = m.seen.filter((r) => !anchorOf(m)(r));
-    const fold = d.testAll('summary').find((x) => x.textContent.startsWith('另在 '));
-    if (rest.length ? !fold || fold.textContent !== `另在 ${rest.length} 個非終端埠學到` : fold) throw new Error('非終端埠應收合為「另在 N 個非終端埠學到」');
+    // 非終端埠：巢狀的展開列（V.section），標題旁是列數；不用括號或把數字寫進標題
+    const fold = d.testAll('summary').find((x) => x.firstChild.textContent === '其他非終端埠');
+    if (rest.length ? !fold || fold.parentNode.getAttribute('open') != null || fold.testAll('.count')[0].textContent !== String(rest.length) : fold) throw new Error('非終端埠應收合為「其他非終端埠」、標題旁是 N');
     const th = d.testAll('th').map((x) => x.textContent);
     const allSame = (f) => m.seen.every((r) => f(r) === f(m.seen[0]));
     if (allSame((r) => !!r.static) === th.includes('類型')) throw new Error('類型全相同時不顯示類型欄');
@@ -365,5 +366,27 @@ module.exports = async () => {
       if (r.made.length || r.files.length) throw new Error('命名規則的 zones 無法套用時不應匯出網路文件');
       if (!text('#banner').includes('網路文件') || !text('#banner').includes(err)) throw new Error('應以 banner 說明無法匯出網路文件的原因：' + text('#banner'));
     } finally { S.view.app.setRoundInputs({ profile: saved }); }
+  });
+  await step('匯出：主管摘要（資料中心「給報告或紀錄」）檔名 manager-summary.md，內容是 S.report.managerSummary；有上一輪的基準時帶入（寫出增減），不改寫基準', async () => {
+    const before = JSON.stringify(App.snap); const BD = S.view.baselineDiff; const X = S.view.exporter;
+    const zones = S.view.l4.zoneOpts(App).opts; const ledgerOf = S.view.app.ledgerExport;
+    const b = hubBtn('export-manager-summary');
+    if (!b || b.textContent !== '主管摘要（Markdown）') throw new Error('資料中心應有「主管摘要（Markdown）」的匯出按鈕');
+    BD.reset();
+    let r = await captureDownloads(() => b.click());
+    if (r.files.length !== 1 || r.files[0].name !== 'manager-summary.md' || X.KINDS.managerSummary.name(App.Q) !== 'manager-summary.md') throw new Error('主管摘要的檔名應是 manager-summary.md（與 CLI 相同）：' + r.files.map((f) => f.name));
+    if (r.files[0].text !== S.report.managerSummary(App.Q, { ledgerOf, zones })) throw new Error('主管摘要的內容應與 S.report.managerSummary 相同');
+    if (r.files[0].text.includes('上一輪')) throw new Error('沒有上一輪的基準時不寫增減');
+    // 上一輪的基準：已載入（V.baselineDiff）時帶入 previous
+    const src = App.sources.map((s, i) => (i === 0 ? { name: s.name, text: '# 上一輪\n' + s.text } : s));
+    const prevSnap = S.build(src, { profile: App.round.profile, expectedData: App.round.expectedData, now: '2000-01-01T00:00:00Z' });
+    BD.setOld(App, '上一輪.json', prevSnap);
+    try {
+      const prev = BD.loaded(); if (!prev) throw new Error('測試資料：上一輪的基準應能比對');
+      r = await captureDownloads(() => hubBtn('export-manager-summary').click());
+      if (r.files.length !== 1 || r.files[0].text !== S.report.managerSummary(App.Q, { ledgerOf, zones, previous: prev.qOld })) throw new Error('有上一輪的基準時應帶入 previous');
+      if (!r.files[0].text.includes('上一輪')) throw new Error('有上一輪的基準時寫出與上一輪的比較：' + r.files[0].text.split('\n')[2]);
+    } finally { BD.reset(); }
+    if (JSON.stringify(App.snap) !== before) throw new Error('匯出不可改寫基準');
   });
 };

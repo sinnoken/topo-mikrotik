@@ -403,11 +403,14 @@ table.t tr.click { cursor: pointer; }
 .detail h2 .mono { font-size: inherit; }
 .detail-section { margin-top: 20px; }
 /* 右欄表格（details.js 的 table()）：識別字不逐字斷行，放不下時整個表格橫向捲動；一般文字欄仍可換行 */
-.detail h3 { font-size: var(--fs-md); margin: 0 0 8px; padding-bottom: 5px; color: var(--heading-text); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 7px; }
+.detail h3 { font-size: var(--fs-md); margin: 0 0 8px; padding-bottom: 5px; color: var(--heading-text); border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
 .detail-fold { border-bottom: 1px solid var(--line); }
 .detail-section + .detail-fold, .detail .kv + .detail-fold { margin-top: 12px; }
-.detail-fold > summary { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 2px; cursor: pointer; list-style-position: inside; font-size: var(--fs-md); font-weight: 600; color: var(--heading-text); }
+.detail-fold > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 40px; padding: 6px 2px; cursor: pointer; list-style-position: inside; font-size: var(--fs-md); font-weight: 600; color: var(--heading-text); }
 .detail-fold > summary:hover { color: var(--accent); }
+/* 標題列的狀態 chip 與連結（V.section 的 extra）：字重回到一般，連結靠右前留一點距離 */
+.detail-fold > summary .section-extra { font-weight: 400; display: inline-flex; align-items: center; }
+.detail-fold > summary .section-extra .link, .detail-fold > summary .section-extra button { margin-left: 4px; }
 .detail-fold > div { padding: 0 2px 12px; }
 .row { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
 .row.spaced { margin-top: 10px; }
@@ -481,8 +484,8 @@ table.t td.nowrap { white-space: nowrap; }
 .hop.end-external::before { background: var(--info); }
 /* 逐跳的「送往基準以外」（推論，不是錯誤）用 info 文字色；多起點時每個起點一段的小標 */
 .trace-egress { color: var(--info-text); }
-.trace-sub { margin: 4px 0 2px; font-size: var(--fs-sm); font-weight: 600; color: var(--muted); }
-.trace-sub + .hop, .hop + .trace-sub { margin-top: 6px; }
+.detail-section.trace-sub { margin-top: 8px; }
+.detail-section.trace-sub > h3 { font-size: var(--fs-sm); color: var(--muted); border-bottom: 0; padding-bottom: 0; margin-bottom: 2px; }
 /* 路由表的非作用中路由：整列 muted（網段欄另有「非作用中」chip，不只靠顏色） */
 tr.route-off > td { color: var(--muted); }
 /* 從檢查結果選來的那一筆（.current）：外框與「目前選取」chip */
@@ -637,6 +640,32 @@ pre.raw .hl .ln { background: inherit; }
 .l4-card-fold > summary > .work-card-title { display: inline; margin: 0; }
 .l4-card-fold[open] > summary { margin-bottom: 8px; }
 .l4-assume .l4-fold > summary { margin: 0; }
+/* 頁尾的摘要：「判斷的前提」＋判斷方式的一句話（窄螢幕時一句話自己換行，不撐寬） */
+.l4-assume #l4-assume-fold > summary { width: auto; line-height: 1.6; }
+.l4-assume-k { margin-right: 8px; }
+.l4-assume-def { font-weight: 400; color: var(--text); font-size: var(--fs-md); }
+.l4-assume-route { margin: 8px 0; font-size: var(--fs-md); }
+.l4-assume-title { margin: 10px 0 4px; font-size: var(--fs-md); font-weight: 600; }
+/* 前提清單（L4 頁尾、這次查詢的前提、這次追蹤的前提共用，V.assumeBlock）：每條一行短句＋影響，「詳細」收合 */
+.assume-list { margin: 0; padding-left: 18px; font-size: var(--fs-md); }
+.assume-item { margin: 2px 0 6px; line-height: 1.6; }
+.assume-item:focus { outline: none; }
+.assume-item:focus-visible { box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
+.assume-impact { color: var(--muted); font-size: var(--fs-sm); }
+.assume-detail { display: inline; }
+.assume-detail > summary { display: inline; cursor: pointer; color: var(--accent); font-size: var(--fs-sm); }
+.assume-detail[open] { display: block; margin: 2px 0 4px; }
+.assume-detail-text, .assume-detail-devs { margin: 2px 0; font-size: var(--fs-sm); color: var(--muted); }
+.assume-detail-rules { margin: 2px 0; padding-left: 18px; font-size: var(--fs-sm); }
+.assume-other > summary, .l4-assume-route-list > summary { cursor: pointer; color: var(--accent); font-weight: 600; margin: 8px 0 4px; font-size: var(--fs-md); }
+.l4-assume-route-list { display: inline; }
+.l4-assume-route-list[open] { display: block; }
+.l4-assume-route-list > summary { display: inline; font-weight: 400; margin-left: 6px; }
+.l4-assume-route-list[open] > .assume-list { margin-top: 4px; }
+.assume-sub { margin: 6px 0 2px; font-size: var(--fs-sm); font-weight: 600; color: var(--muted); }
+.assume-none { margin: 2px 0; font-size: var(--fs-sm); }
+/* 原因旁的「為什麼」：小字連結，不在詞中間斷行 */
+.why-link { font-size: var(--fs-sm); white-space: nowrap; }
 .l4-form input[type=text] { width: 140px; }
 .l4-form .l4-port { width: 80px; }
 .l4-modes button { min-height: var(--control-h); }

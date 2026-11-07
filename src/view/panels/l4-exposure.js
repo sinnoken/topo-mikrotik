@@ -6,7 +6,7 @@
   'use strict';
   const V = S.view; const h = V.h; const $ = V.$;
   const I = V.l4._;
-  const { st, els, EX_LIMIT, ROW_LIMIT, BUSY_DELAY, layerOf, layerText, layerLine, deniedParts, zo, statusTag, decisiveText, ruleLink, isOpen, announce } = I;
+  const { st, els, EX_LIMIT, ROW_LIMIT, BUSY_DELAY, layerOf, byLayer, layerLine, deniedParts, zo, statusTag, decisiveText, ruleLink, isOpen, announce } = I;
 
   /**
    * 暴露清單一列的分層結果 [route, filter]：查詢層的列有 route／filter 時照用；還沒有時依結論與原因的層級推定——
@@ -126,7 +126,8 @@
     const [rt, fl] = rowLayers(x);
     return h('span', { class: 'l4-ex-verdict', 'data-verdict': x.verdict }, [statusTag(x.verdict, t), h('span', { class: 'sr-only' }, '（推論）'),
       (x.returnUnsafe || []).length ? h('span', null, [' ', returnTag(App, x.returnUnsafe)]) : null,
-      rs.length ? h('span', { class: 'muted l4-ex-reasons' }, ' ' + layerText(rs, (c) => c, (c) => V.reachReason(c))) : null,
+      rs.length ? h('span', { class: 'muted l4-ex-reasons' }, [' ', ...byLayer(rs, (c) => c).flatMap((g, gi) => [gi ? '；' : null, `${g.label}：`,
+        ...g.items.flatMap((c, k) => { const w = whyLink(App, c); return [k ? '、' : null, V.reachReason(c), w ? ' ' : null, w]; })])]) : null,
       h('span', { class: 'l4-ex-layers' }, layerLine(x.family === 'ipv6' ? null : rt, fl))]);
   }
   const RETURN_CODE = 'return-not-guaranteed';
@@ -154,7 +155,7 @@
     const req = { src: x.src, dst: x.ip, proto: x.proto, port: x.port, vrf: null, entry: x.entry, from: 'exposure', sec, row: i };
     st.exPath = Object.assign({ sec, row: i }, I.runQuery(App, req));
     // 那一列在收起的部分（超過 EX_LIMIT 列）時先展開那一段
-    if (!exShown(exGroups(st.ex[sec].rows), EX_LIMIT).some((g) => g.i === i)) st.exAll.add(sec);
+    if (!exShown(exGroupsOf(sec), EX_LIMIT).some((g) => g.index === i)) st.exAll.add(sec);
     renderExposure(App);
     const r = st.exPath.reach;
     announce(r ? `逐跳路徑：${req.src} → ${req.dst} ${I.svcLabel(req)} ${V.L4_STATUS[r.verdict]}` : `逐跳路徑：查詢失敗，${st.exPath.err}`);
@@ -167,41 +168,18 @@
     if (btn) btn.focus();
   }
   /**
-   * 顯示用的分組（不改判斷）：同一台設備、同一個服務、結果、允許來源、依據與入口都相同的列併成一列（例如設備每個介面位址的 icmp），
-   * 位址列在 title；回傳 [{ x（第一列）, i（它在 rows 的位置）, ips }]
+   * 暴露清單的結論（分組、計數與結論句）：查詢層的 Q.exposureSummary 是單一來源（主管摘要共用），畫面不自己分組。
+   * 傳入已算好的暴露清單（st.ex），不重算；sections[段].groups 是 [{ row（第一列）, index（它在 rows 的位置）, ips, entryDev（只有第 1 段有值）}]
    */
-  const exGroupsCache = new WeakMap();
-  function exGroups(rows) {
-    let out = exGroupsCache.get(rows); if (out) return out;
-    const m = new Map(); out = [];
-    rows.forEach((x, i) => {
-      const k = [x.family || '', x.dev, x.src, x.entries.join(','), x.service, x.verdict, x.incomplete, x.allowedFrom.text, x.rule ? x.rule.key || `${x.rule.table}|${x.rule.chain}` : '', x.entry, x.target || '', x.subnet || '', x.nat ? x.nat.to : '', x.serviceName || '', x.reasons.join(','), x.findingKeys.join(','), (x.returnUnsafe || []).map((u) => u.dev + '|' + u.chain + '|' + u.rule).join(',')].join('\u0000');
-      const g = m.get(k); if (g) { g.ips.push(x.ip); return; }
-      const ng = { x, i, ips: [x.ip] }; m.set(k, ng); out.push(ng);
-    });
-    // 查詢層只依設備 → 位址族 → 位址 → 服務排序：先列允許、再列無法判斷（同結果內保留查詢層的順序），前 EX_LIMIT 列才不會把允許的收起來
-    const rank = (v) => (v === 'allow' ? 0 : v === 'unknown' ? 1 : 2);
-    out = out.map((g, n) => ({ g, n })).sort((a, b) => rank(a.g.x.verdict) - rank(b.g.x.verdict) || a.n - b.n).map((o) => o.g);
-    // 第 1 段（列有 via）：依目的設備分組。有允許的設備在前、只有無法判斷的在後；同一類裡入口設備（有 via 為 null 的列）在前，
-    // 再依上面排序後第一次出現的位置；設備內保留允許 → 無法判斷的順序。收合時顯示哪幾列另由 exShown 決定（允許優先）
-    if (rows.some((x) => x.via !== undefined)) {
-      const at = new Map(); out.forEach((g, n) => { if (!at.has(g.x.dev)) at.set(g.x.dev, n); });
-      const entryDevs = new Set(rows.filter((x) => x.via === null).map((x) => x.dev));
-      const allowDevs = new Set(out.filter((g) => g.x.verdict === 'allow').map((g) => g.x.dev));
-      const devRank = (d) => (allowDevs.has(d) ? 0 : 2) + (entryDevs.has(d) ? 0 : 1);
-      out = out.map((g, n) => ({ g, n })).sort((a, b) => devRank(a.g.x.dev) - devRank(b.g.x.dev) || at.get(a.g.x.dev) - at.get(b.g.x.dev) || a.n - b.n).map((o) => o.g);
-      out.forEach((g) => { g.entryDev = entryDevs.has(g.x.dev); });
-    }
-    exGroupsCache.set(rows, out);
-    return out;
-  }
+  const exSummary = () => st.exQ.exposureSummary(st.exZo ? st.exZo.opts : undefined, st.ex);
+  const exGroupsOf = (sec) => exSummary().sections[sec].groups;
   /**
    * 收合（limit 列）時顯示的分組：先挑允許、再挑無法判斷（各自保留 gs 的順序）取前 limit 個，再依 gs 的順序排列。
    * 第 1 段依設備分組後允許可能排在別台設備的無法判斷之後，這樣挑才不會把允許的列收起來；其他段 gs 本來就允許在前，結果等於 gs.slice(0, limit)
    */
   function exShown(gs, limit) {
     if (gs.length <= limit) return gs;
-    const pick = new Set(gs.filter((g) => g.x.verdict === 'allow').concat(gs.filter((g) => g.x.verdict !== 'allow')).slice(0, limit));
+    const pick = new Set(gs.filter((g) => g.row.verdict === 'allow').concat(gs.filter((g) => g.row.verdict !== 'allow')).slice(0, limit));
     return gs.filter((g) => pick.has(g));
   }
   /**
@@ -214,8 +192,8 @@
   function exSection(App, def) {
     const xr = st.ex; const s = xr[def.key]; const denied = xr.denied ? xr.denied[def.key] : s.counts.deny;
     const deniedNote = deniedSentence(denied, xr.deniedBy ? xr.deniedBy[def.key] : null, s.counts.notEvaluated || 0);
-    const gs = exGroups(s.rows);
-    const nAllow = gs.filter((g) => g.x.verdict === 'allow').length; const nUnk = gs.length - nAllow;
+    const sum = exSummary().sections[def.key]; const gs = sum.groups;
+    const nAllow = sum.allow; const nUnk = sum.unknown;
     const sentence = s.rows.length ? `${V.num(nAllow)} 個服務允許${nUnk ? `、${V.num(nUnk)} 個無法判斷` : ''}。` : '沒有。' + (def.noCand && !s.counts.candidates ? def.noCand : def.none);
     const id = 'l4-ex-' + def.key + '-title';
     // 4 欄（1440 時右側詳情固定存在，中間欄約 690px，5 欄會超出卡片）：怎麼進來是目的的第二、三行；
@@ -223,12 +201,12 @@
     const basis = (x) => { const ls = x.findingKeys.map((k) => findingLink(App, k, true)).filter(Boolean);
       return h('span', { class: 'l4-ex-basis' }, [h('span', { class: 'muted l4-ex-basis-k' }, '依據 '), x.rule ? ruleLink(App, x.rule, true) : h('span', null, '—'), ...ls.flatMap((a) => [' ', a])]); };
     const cols = [
-      { t: '目的', f: ({ x, ips }) => { const [main, sub] = exDst(App, def.key, x);
+      { t: '目的', f: ({ row: x, ips }) => { const [main, sub] = exDst(App, def.key, x);
         return h('span', { class: 'l4-ex-dst', title: ips.length > 1 ? ips.join('\n') : null }, [main, ips.length > 1 ? h('span', { class: 'muted l4-ex-more' }, ` 等 ${V.num(ips.length)} 個位址`) : null,
           sub, h('span', { class: 'muted l4-ex-entry' }, entryText(App, x))]); } },
-      { t: '服務', f: ({ x }) => h('span', { class: 'mono' }, exSvc(x)) },
-      { t: '允許來源', f: ({ x }) => (x.allowedFrom.kind === 'any' ? V.chip('⚠ ' + x.allowedFrom.text, 'warn') : h('span', { class: 'mono' }, x.allowedFrom.text)) },
-      { t: '結果', f: ({ x, i }) => { const on = !!(st.exPath && st.exPath.sec === def.key && st.exPath.row === i);
+      { t: '服務', f: ({ row: x }) => h('span', { class: 'mono' }, exSvc(x)) },
+      { t: '允許來源', f: ({ row: x }) => (x.allowedFrom.kind === 'any' ? V.chip('⚠ ' + x.allowedFrom.text, 'warn') : h('span', { class: 'mono' }, x.allowedFrom.text)) },
+      { t: '結果', f: ({ row: x, index: i }) => { const on = !!(st.exPath && st.exPath.sec === def.key && st.exPath.row === i);
         // IPv6 只看邊界路由器（查詢層不做 IPv6 路由）：沒有逐跳路徑，不呼叫 Q.reach
         if (x.family === 'ipv6') return h('span', { class: 'l4-ex-res' }, [exResult(App, x), basis(x), h('span', { class: 'muted l4-ex-nopath' }, 'IPv6 只看邊界路由器，沒有逐跳路徑')]);
         // 看路徑：ghost 按鈕前加 ▸／▾（看得出可以展開），文字用連結色
@@ -239,7 +217,7 @@
     // 每段最多先列 EX_LIMIT 列，其餘「顯示全部（N）」（同一段只有一個按鈕在 Tab 順序裡）
     const all = st.exAll.has(def.key); let shown = exShown(gs, all ? ROW_LIMIT : EX_LIMIT);
     // 看路徑的那一列在顯示上限（ROW_LIMIT）之後時，另外接在最後（路徑與焦點才有地方放）
-    const op = st.exPath && st.exPath.sec === def.key ? gs.find((g) => g.i === st.exPath.row) : null;
+    const op = st.exPath && st.exPath.sec === def.key ? gs.find((g) => g.index === st.exPath.row) : null;
     const extra = op && !shown.includes(op) ? op : null;
     if (extra) shown = shown.concat([extra]);
     const more = gs.length > EX_LIMIT ? h('button', { type: 'button', class: 'ghost l4-ex-all', 'data-sec': def.key, 'aria-expanded': String(all),
@@ -247,7 +225,8 @@
     all ? `只顯示前 ${EX_LIMIT} 列` : `顯示全部（${V.num(gs.length)}）`) : null;
     return h('section', { class: 'l4-ex-sec', 'data-sec': def.key, 'aria-labelledby': id }, [
       // 數量分開寫允許與無法判斷（和下面一句的「N 個服務允許」同一個數字，不加總）
-      h('h4', { id, class: 'l4-ex-title' }, [def.title, nAllow ? ' ' : null, nAllow ? V.chip(`${V.num(nAllow)} 允許`) : null, nUnk ? ' ' : null, nUnk ? V.chip(`${V.num(nUnk)} 無法判斷`) : null]),
+      // 狀態 chip「N＋量詞＋狀態」（V.stateChip，0 不顯示）
+      h('h4', { id, class: 'l4-ex-title' }, [def.title, nAllow ? ' ' : null, V.stateChip(nAllow, '個服務允許'), nUnk ? ' ' : null, V.stateChip(nUnk, '個無法判斷')]),
       h('p', { class: 'l4-ex-sentence' }, sentence),
       s.rows.length ? exTable(App, def, cols, shown) : null,
       all && gs.length > ROW_LIMIT ? h('div', { class: 'muted table-more' }, `只顯示前 ${ROW_LIMIT} 列，共 ${V.num(gs.length)} 列${extra ? `；看路徑的第 ${V.num(gs.indexOf(extra) + 1)} 列另接在最後` : ''}`) : null,
@@ -256,21 +235,21 @@
     ]);
   }
   /**
-   * 暴露清單的表格（依 exGroups 的順序：允許 → 無法判斷，表頭不排序）；和 V.table 的 stack 一樣窄螢幕時每列排成一塊、每格前面寫欄名。
+   * 暴露清單的表格（依 Q.exposureSummary 分組的順序：允許 → 無法判斷，表頭不排序）；和 V.table 的 stack 一樣窄螢幕時每列排成一塊、每格前面寫欄名。
    * 看路徑的那一列下方多一列（colspan），放逐跳路徑
    */
   function exTable(App, def, cols, groups) {
     const tb = h('tbody'); let lastDev = null;
     groups.forEach((g) => {
-      // 第 1 段依設備分組（exGroups 已排好）：每台設備前一列標題，寫出它是入口設備或要經別台入口設備
-      if (g.entryDev !== undefined && g.x.dev !== lastDev) {
-        lastDev = g.x.dev;
-        tb.appendChild(h('tr', { class: 'l4-ex-devrow', 'data-dev': g.x.dev }, h('th', { colspan: String(cols.length), scope: 'colgroup' },
-          [App.Q.devName(g.x.dev), ' ', V.chip(g.entryDev ? '入口設備' : '經其他入口設備', g.entryDev ? 'info' : '')])));
+      // 第 1 段依設備分組（Q.exposureSummary 已排好；entryDev 只在第 1 段有值）：每台設備前一列標題，寫出它是入口設備或要經別台入口設備
+      if (g.entryDev !== null && g.row.dev !== lastDev) {
+        lastDev = g.row.dev;
+        tb.appendChild(h('tr', { class: 'l4-ex-devrow', 'data-dev': g.row.dev }, h('th', { colspan: String(cols.length), scope: 'colgroup' },
+          [App.Q.devName(g.row.dev), ' ', V.chip(g.entryDev ? '入口設備' : '經其他入口設備', g.entryDev ? 'info' : '')])));
       }
-      tb.appendChild(h('tr', { class: 'l4-ex-row st-' + g.x.verdict, 'data-family': g.x.family || null, 'data-row': String(g.i) }, cols.map((c) => h('td', { 'data-label': c.t }, c.f(g)))));
+      tb.appendChild(h('tr', { class: 'l4-ex-row st-' + g.row.verdict, 'data-family': g.row.family || null, 'data-row': String(g.index) }, cols.map((c) => h('td', { 'data-label': c.t }, c.f(g)))));
       const p = st.exPath;
-      if (p && p.sec === def.key && p.row === g.i) {
+      if (p && p.sec === def.key && p.row === g.index) {
         const onVrf = (v) => { st.exPath = Object.assign({ sec: p.sec, row: p.row }, I.runQuery(App, Object.assign({}, p.req, { vrf: v }))); renderExposure(App); const t = $('#l4-ex-path-title'); if (t) t.focus(); };
         const box = h('div', { id: 'l4-ex-path-box', class: 'l4-ex-pathbox', onkeydown: (e) => { if (e.key === 'Escape') { e.preventDefault(); closeExposure(App); } } },
           I.reachBlock(App, { q: p.req, r: p.reach, err: p.err, vrfs: p.vrfs, titleId: 'l4-ex-path-title', onVrf }));
@@ -292,23 +271,50 @@
     return h('p', { id: 'l4-ex-ipv6', class: 'muted l4-ex-notes', 'data-status': v.status }, [h('b', { class: 'l4-ex-ipv6-k' }, 'IPv6：'), msg,
       miss.length ? h('span', { class: 'l4-ex-ipv6-missing' }, `沒有判斷 IPv6 的入口設備：${miss.join('；')}。`) : null]);
   }
-  /** 頁尾的判斷的前提：有暴露清單時用它的 assumptions（含暴露清單另加的前提），否則用 S.query.reachAssumptions */
-  function fillAssume(list) {
-    els.assumeSum.textContent = `判斷的前提（${V.num(list.length)} 條）`;
-    V.clear(els.assumeList);
-    list.forEach((a) => els.assumeList.appendChild(h('li', { 'data-code': a.code }, a.message)));
+  /**
+   * 頁尾的判斷的前提（依 Q 填一次）：L4 自己的前提（reachAssumptions＋exposureAssumptions）只列這份基準有影響的（V.assumeBlock），
+   * 其他收合；路由層（traceAssumptions）不列，只寫一行「路由：同 L3 路由追蹤」，有影響的那幾條收在那一行的展開裡（「為什麼」的去處）
+   */
+  const L4_ASSUME = () => S.query.reachAssumptions().concat(S.query.exposureAssumptions());
+  function fillAssume(App) {
+    const Q = App.Q; if (!els.root || st.assumeFor === Q) return;
+    st.assumeFor = Q;
+    const use = V.assumeUse(Q);
+    const route = S.query.traceAssumptions().filter((a) => V.assumeAffects(use.get(a.code)));
+    const b = V.assumeBlock(App, L4_ASSUME(), { idPrefix: 'l4-assume-', listId: 'l4-assume-shown', listClass: 'l4-assume-list', otherId: 'l4-assume-other' });
+    st.assumeN = b.shown.length;
+    const traceLink = h('a', { class: 'link', onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); App.openTrace(); } }, '見路由追蹤');
+    const routeLine = h('div', { id: 'l4-assume-route', class: 'l4-assume-route', tabindex: '-1' }, [
+      h('span', null, `路由：同 L3 路由追蹤（${route.length ? `有 ${V.num(route.length)} 條前提影響這份基準，` : '沒有前提影響這份基準，'}`), traceLink, '）',
+      route.length ? h('details', { class: 'l4-assume-route-list' }, [h('summary', null, `是哪 ${V.num(route.length)} 條`),
+        h('ul', { class: 'assume-list' }, route.map((a) => V.assumeItem(App, a, use.get(a.code), 'l4-assume-')))]) : null]);
+    V.clear(els.assumeBody);
+    [routeLine, h('p', { class: 'l4-assume-title' }, `這份基準會影響結果的前提（${V.num(b.shown.length)} 條）`), b.list, b.other].forEach((x) => { if (x) els.assumeBody.appendChild(x); });
   }
-  function openAssume() {
+  /** 頁首的「前提」連結：展開頁尾，焦點到摘要 */
+  function openAssume(App) {
+    fillAssume(App);
     els.assumeFold.setAttribute('open', ''); els.assumeFold.open = true;
     const sm = els.assumeFold.querySelector('summary'); if (sm) { sm.focus(); if (sm.scrollIntoView) sm.scrollIntoView({ block: 'start' }); }
   }
+  /** 「為什麼」：展開頁尾那條前提（路由層的在路由那一行的展開裡），捲過去並聚焦 */
+  function openAssumeCode(App, code) {
+    fillAssume(App);
+    els.assumeFold.setAttribute('open', ''); els.assumeFold.open = true;
+    if (!V.revealAssume($('#l4-assume-' + code))) openAssume(App);
+  }
+  /** 一個原因旁的「為什麼」（對不到前提時 null）：reason 是 Q.reach 的原因物件（有 keys 時對得更準），暴露清單的列只有代碼 */
+  const whyLink = (App, code, reason) => { const c = V.reasonAssume(App.Q, code, reason); return c ? V.whyLink(c, 'l4-why', (x) => openAssumeCode(App, x)) : null; };
   /** 頁首的結論句與三段；沒有 WAN 時合併成一張說明並展開內部互通 */
   function renderExposure(App) {
     if (!els.root) return;
     const box = V.clear(els.ex); const Q = App.Q; const hd = V.clear(els.exHead);
     // 第一句結論在頁首（h2 下面），後面接頁面唯一的推論標示與「前提」連結（各段、各列只有給輔助科技念的「（推論）」）
+    // 暴露清單算完（或失敗）時填頁尾的前提，連結寫出有影響的條數
+    if (st.ex || st.exErr) fillAssume(App);
+    const nA = st.assumeFor === Q ? st.assumeN : 0;
     const tail = () => [' ', V.chip('推論', 'info', { title: '依基準的路由與防火牆規則推論，不寫進基準；前提見頁尾' }), ' ',
-      h('a', { class: 'link l4-ex-assume', href: '#l4-assume-fold', onclick: (e) => { if (e && e.preventDefault) e.preventDefault(); openAssume(); } }, '前提')];
+      h('a', { class: 'link l4-ex-assume', href: '#l4-assume-fold', onclick: (e) => { if (e && e.preventDefault) e.preventDefault(); openAssume(App); } }, nA ? `前提（${V.num(nA)} 條有影響）` : '前提')];
     const head = (children) => children.concat(tail()).forEach((c) => { if (c) hd.appendChild(typeof c === 'string' ? h('span', null, c) : c); });
     box.appendChild(h('h3', { id: 'l4-ex-title', class: 'work-card-title' }, '從外部進來'));
     if (st.exErr) { head(['無法計算從外部進得來什麼。']); box.appendChild(h('p', { class: 'diffA l4-ex-error', role: 'alert' }, '無法計算：' + st.exErr)); return; }
@@ -321,7 +327,6 @@
       return;
     }
     const xr = st.ex;
-    fillAssume(Array.isArray(xr.assumptions) && xr.assumptions.length ? xr.assumptions : S.query.reachAssumptions());
     if (xr.status !== 'ok') {
       const nw = (xr.noWan || []).map((x) => findingLink(App, x.findingKey)).filter(Boolean);
       head([xr.status === 'no-wan' ? '找不到 WAN 介面，無法判斷從外部進得來什麼。' : xr.message || '無法判斷從外部進得來什麼。']);
@@ -331,19 +336,13 @@
       if (!isOpen(els.matrixFold)) I.openMatrix(App);
       return;
     }
-    const allow = (k) => exGroups(xr[k].rows).filter((g) => g.x.verdict === 'allow').length;
-    const unk = EX_SECS.reduce((n, d) => n + exGroups(xr[d.key].rows).length - allow(d.key), 0);
-    const total = EX_SECS.reduce((n, d) => n + allow(d.key), 0);
-    const part = (n) => (n ? `${V.num(n)} 個` : '沒有');
-    const noFw = (xr.noFirewall || []).map((d) => Q.devName(typeof d === 'string' ? d : d.dev));
-    head([total ? `從外部進來，連得到 ${V.num(total)} 個服務：網路設備本身 ${part(allow('self'))}、轉送到內部 ${part(allow('dnat'))}、直接路由 ${part(allow('routed'))}。` : '從外部進來，連不到任何服務。',
-      unk ? `另有 ${V.num(unk)} 個無法判斷。` : '',
-      noFw.length ? `另有 ${noFw.join('、')} 無法判斷（沒有防火牆資料，缺 /export）。` : '']);
+    // 頁首的結論句：Q.exposureSummary 的 sentence（主管摘要同一句）
+    head([exSummary().sentence]);
     if (xr.limits && xr.limits.truncated) box.appendChild(h('p', { class: 'muted l4-ex-notes' }, `判斷次數超過上限（${V.num(xr.limits.maxEvaluations)} 次），只算到一部分。`));
     EX_SECS.forEach((d) => box.appendChild(exSection(App, d)));
     // IPv6 的說明在三段之後（窄螢幕不必先捲過它才看到 ①）
     box.appendChild(ipv6Note(App, xr));
   }
 
-  Object.assign(I, { deniedSentence, exRuns, stopEx, exposure, returnTag, openExposure, exGroups, fillAssume });
+  Object.assign(I, { deniedSentence, exRuns, stopEx, exposure, returnTag, openExposure, fillAssume, whyLink });
 })(globalThis.SSOT = globalThis.SSOT || {});

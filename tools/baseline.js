@@ -14,12 +14,12 @@ const path = require('path');
 const EXIT = Object.freeze({
   OK: 0, // 成功，沒有復發，也沒有新的待處理錯誤／警告
   NOTIFY: 1, // 成功，但有復發、新出現或豁免到期的待處理錯誤／警告
-  FAILED: 2, // 執行失敗：參數錯誤、輸入讀不到或沒有認到任何設備的資料、處理紀錄／命名規則／預期資料格式錯誤；不輸出任何檔案
+  FAILED: 2, // 執行失敗：參數錯誤、輸入讀不到或沒有認到任何設備的資料、處理紀錄／命名規則／預期資料／上一輪基準格式錯誤；不輸出任何檔案
 });
 /** out/ 中的檔名 */
 const FILES = Object.freeze({
   baseline: 'baseline.json', ledger: 'ledger.json', findings: 'findings.json', summary: 'summary.json', compare: 'compare.json',
-  findingsCsv: 'findings.csv', findingsMd: 'findings.md', siteMd: 'sitedoc.md', siteCsv: 'sitedoc.csv',
+  findingsCsv: 'findings.csv', findingsMd: 'findings.md', siteMd: 'sitedoc.md', siteCsv: 'sitedoc.csv', managerMd: 'manager-summary.md',
 });
 const SUMMARY_SCHEMA = 'ssot-cli-summary/1';
 const FINDINGS_SCHEMA = 'ssot-cli-findings/1';
@@ -39,6 +39,7 @@ const HELP = `用法：node tools/baseline.js <收集檔…> -o <輸出目錄> [
   --profile <檔案>          命名規則（ssot-profile JSON）
   --expected-data <檔案>    各類設備應收資料（S.build 的 expectedData，{ 設備類型: [資料類別…] }）
   --expected <檔案>         預期現況（ssot-expected/1），輸出比對結果 ${FILES.compare}
+  --previous <檔案>         上一輪的基準（${FILES.baseline}，本工具的 Snapshot schema）；${FILES.managerMd} 第一行寫出錯誤＋警告與上一輪的增減
   --now <ISO 8601>          基準的建立時間與推進時間（日期或時間，例如 2026-01-01T00:00:00Z）；省略時用目前時間（要可重現時指定）
   -h, --help                顯示這段說明
 
@@ -50,13 +51,14 @@ const HELP = `用法：node tools/baseline.js <收集檔…> -o <輸出目錄> [
   ${FILES.findingsMd}     檢查結果 Markdown 報表（與畫面「匯出 Markdown」的依檢查分組相同）
   ${FILES.siteMd}      網路文件（站點說明書）Markdown：設備、IP 規劃、VLAN、埠表、未結案事項（與畫面資料中心的「網路文件」相同）
   ${FILES.siteCsv}     網路文件 CSV（一個檔、多個區段）
+  ${FILES.managerMd} 主管摘要 Markdown：整體狀態（有 --previous 時含與上一輪的增減）、從外部進得來的（推論）、錯誤與警告的重點、需要決定的事、建議的處理順序
   ${FILES.summary}    摘要（${SUMMARY_SCHEMA}）：新出現、復發、豁免到期、待處理錯誤／警告數與結束碼
   ${FILES.compare}    預期現況比對（ssot-diff/1，只有 --expected 時）
 
 結束碼：
   ${EXIT.OK}  成功，沒有復發，也沒有新的待處理錯誤／警告
   ${EXIT.NOTIFY}  成功，但有復發、新出現或豁免到期的待處理錯誤／警告（排程據此通知）
-  ${EXIT.FAILED}  執行失敗（參數錯誤、輸入讀不到、收集檔沒有認到任何設備的資料、處理紀錄／命名規則／預期資料格式錯誤）；訊息寫到 stderr，不輸出任何檔案
+  ${EXIT.FAILED}  執行失敗（參數錯誤、輸入讀不到、收集檔沒有認到任何設備的資料、處理紀錄／命名規則／預期資料／上一輪基準格式錯誤）；訊息寫到 stderr，不輸出任何檔案
 `;
 
 class CliError extends Error {}
@@ -64,7 +66,7 @@ const fail = (msg) => { throw new CliError(msg); };
 
 /** 參數：位置參數是收集檔；選項可寫成 --x 值 或 --x=值，每個只能出現一次 */
 function parseArgs(argv) {
-  const OPTS = { '-o': 'out', '--out': 'out', '--ledger': 'ledger', '--profile': 'profile', '--expected': 'expected', '--expected-data': 'expectedData', '--now': 'now' };
+  const OPTS = { '-o': 'out', '--out': 'out', '--ledger': 'ledger', '--profile': 'profile', '--expected': 'expected', '--expected-data': 'expectedData', '--previous': 'previous', '--now': 'now' };
   const a = { inputs: [], help: false };
   for (let i = 0; i < argv.length; i++) {
     const s = argv[i];
@@ -135,6 +137,18 @@ function compute(S, a) {
   const expected = a.expected !== undefined ? readJson(a.expected, '預期現況') : null;
   if (a.expected !== undefined && (!expected || typeof expected !== 'object' || Array.isArray(expected))) fail(`預期現況「${a.expected}」必須是 JSON 物件`);
 
+  // 上一輪基準：只用來寫主管摘要的增減（兩份基準的 meta.stats 相減），所以要是本工具的 Snapshot schema 才比得起來
+  let previous = null;
+  if (a.previous !== undefined) {
+    const ps = readJson(a.previous, '上一輪基準');
+    const pm = ps && typeof ps === 'object' && !Array.isArray(ps) && ps.meta && typeof ps.meta === 'object' ? ps.meta : null;
+    if (!pm || typeof pm.schema !== 'string' || !pm.schema.startsWith('ssot-snapshot/')) fail(`上一輪基準「${a.previous}」不是基準（ssot-snapshot）：請傳入上一輪輸出的 ${FILES.baseline}`);
+    if (pm.schema !== S.SCHEMA) fail(`上一輪基準「${a.previous}」的 schema 是 ${pm.schema}，本工具是 ${S.SCHEMA}；請用上一輪的收集檔重新建立`);
+    const pf = pm.stats && pm.stats.findings;
+    if (!pf || !Number.isInteger(pf.error) || !Number.isInteger(pf.warn)) fail(`上一輪基準「${a.previous}」缺少 meta.stats.findings 的錯誤與警告筆數`);
+    previous = S.query(ps);
+  }
+
   const snap = S.build(sources, { profile, expectedData, now });
   delete snap.meta.timing; // 唯一與執行環境有關的欄位
   const Q = S.query(snap);
@@ -202,6 +216,7 @@ function compute(S, a) {
     { name: FILES.findingsMd, text: S.report.findingsMarkdown(Q, { ledgerOf: S.report.ledgerOfItems(next, Q) }) },
     { name: FILES.siteMd, text: S.report.siteDocMarkdown(Q, siteOpts) },
     { name: FILES.siteCsv, text: S.report.siteDocCsv(Q, siteOpts) },
+    { name: FILES.managerMd, text: S.report.managerSummary(Q, previous ? Object.assign({ previous }, siteOpts) : siteOpts) },
     ...(compare ? [{ name: FILES.compare, text: json(compare) }] : []),
     { name: FILES.summary, text: json(summary) },
   ];

@@ -265,6 +265,101 @@
   V.REACH_START_BASIS = { dhcp: '依 DHCP 網路的閘道', 'next-hop': '依網段上其他設備預設路由的下一跳', 'default-route': '依網段上有預設路由的設備', routes: '依網段上有路由表的設備', subnet: '依網段上已收集的設備' };
   /** 原因代碼的層級（S.query.reachReasonCodes() 的 layer）：顯示的順序就是鍵的順序 */
   V.REACH_LAYER = { route: '路由', filter: '防火牆', nat: 'NAT', assumption: '前提' };
+
+  /*
+   * 判斷的前提（S.query.traceAssumptions／reachAssumptions／exposureAssumptions，每條 { code, layer, short, detail }）與
+   * 這份基準的使用情形（Q.assumptionUse，status 由查詢層用判斷時的同一套分類算出）：只列有影響的（affects／missing-data），
+   * 每條一行短句＋影響（設備與規則可點），完整說明收在「詳細」；其他（not-used、always）收合在「其他前提（M 條）」。
+   * L4 頁尾、L4 的「這次查詢的前提」與 L3 路由追蹤的「這次追蹤的前提」共用。
+   */
+  V.ASSUME_SHOWN = Object.freeze(['affects', 'missing-data']);
+  /** 影響的設備在一行內最多列幾台（其餘寫「等」，全部列在「詳細」） */
+  const ASSUME_DEV_INLINE = 3;
+  /** 「詳細」裡最多列幾條受影響的規則 */
+  const ASSUME_RULE_LIST = 20;
+  const assumeUseCache = new WeakMap();
+  /** code → Q.assumptionUse() 的一筆（依 Q 快取） */
+  V.assumeUse = (Q) => { let m = assumeUseCache.get(Q); if (!m) { m = new Map(Q.assumptionUse().map((u) => [u.code, u])); assumeUseCache.set(Q, m); } return m; };
+  V.assumeAffects = (u) => !!u && V.ASSUME_SHOWN.includes(u.status);
+  let reasonCodeSet = null;
+  /**
+   * 原因（Q.reach 的 reasons／hops[].reasons，或暴露清單列上的代碼）對到的前提 code：S.query.reasonAssumptions 可能有多條時，
+   * 先取這份基準有影響的那一條；不是前提造成的（拒絕、資料不足）回傳 null
+   */
+  V.reasonAssume = (Q, code, reason) => {
+    if (!reasonCodeSet) reasonCodeSet = new Set(S.query.reachReasonCodes().map((x) => x.code));
+    if (!reasonCodeSet.has(code)) return null;
+    const cs = S.query.reasonAssumptions(code, reason); const use = V.assumeUse(Q);
+    return cs.find((c) => V.assumeAffects(use.get(c))) || cs[0] || null;
+  };
+  let assumeByCode = null;
+  /** code → 前提（三份清單合起來） */
+  V.assumptionOf = (code) => {
+    if (!assumeByCode) assumeByCode = new Map(S.query.traceAssumptions().concat(S.query.reachAssumptions(), S.query.exposureAssumptions()).map((a) => [a.code, a]));
+    return assumeByCode.get(code) || null;
+  };
+  /** 「為什麼」連結：點了展開那條前提並聚焦（onOpen 由呼叫端決定找哪一份清單） */
+  V.whyLink = (code, cls, onOpen) => {
+    const a = V.assumptionOf(code); if (!a) return null;
+    return V.h('a', { class: 'link why-link ' + cls, 'data-assume': code, title: a.short, 'aria-label': `為什麼：${a.short}`,
+      onclick: (e) => { if (e && e.preventDefault) e.preventDefault(); if (e && e.stopPropagation) e.stopPropagation(); onOpen(code); } }, '為什麼');
+  };
+  /**
+   * 一條前提（li.assume-item，可聚焦）：短句；有影響時接影響（幾台、幾條規則，設備與規則可點）；「詳細」收合完整說明與受影響的設備、規則。
+   * idPrefix：給「為什麼」找到它（同一頁不可重複；省略時不設 id）
+   */
+  V.assumeItem = (App, a, u, idPrefix) => {
+    const h = V.h; const Q = App.Q; const on = V.assumeAffects(u);
+    const pick = (sel) => (e) => { if (e && e.preventDefault) e.preventDefault(); if (e && e.stopPropagation) e.stopPropagation(); App.select(sel); };
+    const devA = (d) => h('a', { class: 'link assume-dev', 'data-dev': d, onclick: pick({ type: 'device', key: d }) }, Q.devName(d));
+    const ruleText = (r) => `${Q.devName(r.dev)} ${r.table} ${r.chain} chain 內第 ${r.position} 條 ${r.action}${r.comment ? `（${r.comment}）` : ''}`;
+    const ruleA = (k, text) => h('a', { class: 'link assume-rule', 'data-rule': k, onclick: pick({ type: 'rule', key: k }) }, text);
+    const devs = on ? u.devices : [];
+    const rules = on ? u.ruleKeys.filter((k) => Q.getFirewallRule(k)) : [];
+    // 規則數：查詢層的 unit 是 'rules' 時 count 是規則數（防火牆規則有鍵可點；/routing rule、mark-routing 只有數目）
+    const nRules = on && u.unit === 'rules' ? u.count : 0;
+    const miss = on && u.status === 'missing-data';
+    const impact = on ? h('span', { class: 'assume-impact' }, [
+      miss ? V.chip('缺資料', 'warn', { title: '判斷需要的資料沒有收集，可能影響結果' }) : null, miss ? ' 涉及 ' : '影響 ',
+      `${V.num(devs.length)} 台`, devs.length ? '（' : null, ...devs.slice(0, ASSUME_DEV_INLINE).flatMap((d, i) => [i ? '、' : null, devA(d)]),
+      devs.length > ASSUME_DEV_INLINE ? ' 等' : null, devs.length ? '）' : null,
+      nRules ? '、' : null, nRules ? (rules.length === 1 ? ruleA(rules[0], `${V.num(nRules)} 條規則`) : `${V.num(nRules)} 條規則`) : null]) : null;
+    const detail = h('details', { class: 'assume-detail' }, [h('summary', null, '詳細'), h('p', { class: 'assume-detail-text' }, a.detail),
+      devs.length > ASSUME_DEV_INLINE ? h('p', { class: 'assume-detail-devs' }, ['設備：', ...devs.flatMap((d, i) => [i ? '、' : null, devA(d)])]) : null,
+      rules.length > 1 ? h('ul', { class: 'assume-detail-rules' }, rules.slice(0, ASSUME_RULE_LIST).map((k) => h('li', null, ruleA(k, ruleText(Q.getFirewallRule(k)))))) : null,
+      rules.length > ASSUME_RULE_LIST ? h('p', { class: 'muted' }, `只列前 ${ASSUME_RULE_LIST} 條，共 ${V.num(rules.length)} 條`) : null]);
+    return h('li', { class: 'assume-item', 'data-code': a.code, 'data-layer': a.layer, 'data-status': u ? u.status : null, id: idPrefix ? idPrefix + a.code : null, tabindex: '-1' }, [
+      h('span', { class: 'assume-short' }, a.short), impact ? ' ' : null, impact, ' ', detail]);
+  };
+  /**
+   * 一份前提清單分成有影響的（list：ul，沒有時是一句說明）與其他（other：details，「判斷方式」與「沒有用到」兩組；沒有時 null）。
+   * o：{ idPrefix, listClass, listId, otherId, none（沒有影響時的說明） }
+   */
+  V.assumeBlock = (App, all, o) => {
+    const h = V.h; const opt = o || {}; const use = V.assumeUse(App.Q);
+    const item = (a) => V.assumeItem(App, a, use.get(a.code), opt.idPrefix);
+    const shown = all.filter((a) => V.assumeAffects(use.get(a.code)));
+    const rest = all.filter((a) => !shown.includes(a));
+    const always = rest.filter((a) => (use.get(a.code) || {}).status === 'always'); const unused = rest.filter((a) => !always.includes(a));
+    const cls = 'assume-list' + (opt.listClass ? ' ' + opt.listClass : '');
+    const group = (title, xs) => (xs.length ? [h('p', { class: 'assume-sub' }, [title, ' ', V.chip(V.num(xs.length), 'count')]), h('ul', { class: 'assume-list' }, xs.map(item))] : []);
+    return {
+      shown, rest,
+      list: shown.length ? h('ul', { class: cls, id: opt.listId || null }, shown.map(item)) : h('p', { class: 'muted assume-none ' + (opt.listClass || ''), id: opt.listId || null }, opt.none || '這份基準沒有會影響結果的前提。'),
+      // 其他前提：展開列（V.section），標題旁是條數
+      other: V.section('其他前提', [...group('判斷方式，每份基準都適用', always), ...group('這份基準沒有用到', unused)],
+        { fold: true, count: rest.length, cls: 'assume-other', id: opt.otherId || null }),
+    };
+  };
+  /** 「為什麼」的去處：展開那條前提所在的每一層收合與它的「詳細」，捲過去並把焦點移到它 */
+  V.revealAssume = (li) => {
+    if (!li) return false;
+    for (let x = li.parentNode; x; x = x.parentNode) if (x.tagName === 'DETAILS') { x.setAttribute('open', ''); x.open = true; }
+    const d = li.querySelector('.assume-detail'); if (d) { d.setAttribute('open', ''); d.open = true; }
+    if (li.scrollIntoView) li.scrollIntoView({ block: 'nearest' });
+    li.focus();
+    return true;
+  };
   /** L4 分層結果：路由層（Q.reach paths[].route.status）與防火牆層（paths[].filter.status；路由沒到時 n/a） */
   V.ROUTE_STATUS = { reached: '抵達', 'no-route': '沒有路由', blackhole: '黑洞路由', 'policy-drop': '策略路由丟棄', loop: '路由迴圈', unknown: '不明' };
   V.FILTER_STATUS = { allow: '允許', deny: '拒絕', unknown: '無法判斷', 'n/a': '沒有判斷（路由沒到）' };
@@ -315,6 +410,43 @@
   /** 可操作的 chip（篩選選項）：用 <button>，鍵盤可以聚焦與按 Enter／空白鍵操作 */
   V.chipButton = (text, cls, attrs) => V.h('button', Object.assign({ type: 'button', class: 'chip ' + (cls || '') }, attrs || {}), text);
   V.kindChip = (k) => V.chip(V.KIND[k] || k, 'kind-' + k);
+  /** 嚴重度 → chip 的語氣色（error→err、warn→warn，提醒與沒有時中性） */
+  const SEV_TONE = { error: 'err', warn: 'warn' };
+  /** 一組檢查結果中最嚴重的嚴重度（error > warn > info）；空的時 null */
+  V.worstSev = (fs) => (fs.some((f) => f.severity === 'error') ? 'error' : fs.some((f) => f.severity === 'warn') ? 'warn' : fs.length ? 'info' : null);
+  /** 有錯誤或警告（區塊預設展開的依據之一） */
+  V.hasProblem = (fs) => fs.some((f) => f.severity === 'error' || f.severity === 'warn');
+  /**
+   * 標題列的狀態 chip：「N＋量詞＋狀態」（例如「3 條有問題」「1 條非作用中」），0 不顯示（回傳 null）；
+   * sev 是其中最嚴重的嚴重度（V.worstSev），決定語氣色。不是列數的量一律用它，不放 count。
+   */
+  V.stateChip = (n, what, sev, attrs) => (n ? V.chip(`${V.num(n)} ${what}`, SEV_TONE[sev] || '', attrs) : null);
+  /**
+   * 區塊的唯一產生方式（右欄詳情、防火牆、處理紀錄、L4 共用）：標題與筆數只在這裡產生，內容函式只回傳內容、不自帶標題。
+   *   V.section(標題, 內容, { count, extra, fold, open, cls, id, state, key })
+   *   - 內容為 null、false、空陣列（或只有 null 的陣列）時整個不顯示：列表沒有資料就不出現
+   *   - count：區塊裡的列數，純數字、不加單位；其他的量（有問題的筆數、有影響的前提）用 extra 的 V.stateChip
+   *   - fold：展開列（details.detail-fold），open 決定預設展開（有錯誤／警告、收集失敗或目前定位的列時才展開）；
+   *     否則是一般區塊（h3）。第一層（檢查結果、屬性）與整頁就是這個主題的主體用一般區塊，其餘主題一律展開列，不依筆數切換
+   *   - extra：標題列的狀態 chip 與連結（跳到其他畫面、改變範圍的連結放這裡）；在展開列內點它們不切換展開
+   *   - state＋key：跨重繪保留使用者的展開狀態（Map：key → 是否展開），data-section 是 key
+   */
+  V.section = function (title, content, opt) {
+    const o = opt || {};
+    if (content == null || content === false || (Array.isArray(content) && !content.some((x) => x != null && x !== false))) return null;
+    if (o.count != null && typeof o.count !== 'number') throw new Error('V.section 的 count 是列數（數字）：' + o.count);
+    const fold = !!o.fold;
+    const extra = (o.extra || []).filter(Boolean).map((x) => (fold ? V.h('span', { class: 'section-extra', onclick: (e) => { if (e && e.preventDefault) e.preventDefault(); } }, x) : x));
+    // count 0（例如防火牆只有服務、沒有規則）不顯示，同狀態 chip
+    const head = [title, o.count ? V.chip(V.num(o.count), 'count') : null, ...extra];
+    const body = Array.isArray(content) ? V.h('div', null, content) : content;
+    if (!fold) return V.h('div', { class: 'detail-section' + (o.cls ? ' ' + o.cls : ''), id: o.id || null }, [V.h('h3', null, head), body]);
+    const open = o.state && o.state.has(o.key) ? o.state.get(o.key) : !!o.open;
+    const el = V.h('details', { class: 'detail-fold' + (o.cls ? ' ' + o.cls : ''), id: o.id || null, 'data-section': o.key || null, open }, [V.h('summary', null, head), body]);
+    // 瀏覽器對建立時就 open 的 details 也會發 toggle：還沒記錄、且與預設相同時不是使用者的選擇，不記
+    if (o.state) el.addEventListener('toggle', () => { if (o.state.has(o.key) || !!el.open !== !!o.open) o.state.set(o.key, !!el.open); });
+    return el;
+  };
   /** 嚴重度標記（外形＋顏色）：輔助科技念出嚴重度名稱，不只靠顏色 */
   V.sevDot = (s) => V.h('span', { class: 'sev ' + s, title: V.SEV[s], role: 'img', 'aria-label': V.SEV[s] });
   V.fmtTime = (iso) => { const d = new Date(iso); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };

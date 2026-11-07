@@ -99,12 +99,15 @@ test('Q.exposure：外部 → 內部（直接路由）：沒有 NAT 的公網網
   // 沒有 IPv6 位址的事實：回傳說明，不是空結果（IPv6 的列見 tests/core/reach-ipv6.js）
   assert.deepStrictEqual([x.ipv6.status, typeof x.ipv6.message, x.ipv6.evaluated], ['no-ipv6-address', 'string', []]);
   assert.ok(x.routed.rows.concat(x.self.rows, x.dnat.rows).every((r) => r.family === 'ipv4'));
-  assert.deepStrictEqual(x.assumptions.slice(0, S.query.reachAssumptions().length), JSON.parse(JSON.stringify(S.query.reachAssumptions())), '先列 Q.reach 的前提');
+  const reachAll = S.query.traceAssumptions().concat(S.query.reachAssumptions());
+  assert.deepStrictEqual(x.assumptions.slice(0, reachAll.length), JSON.parse(JSON.stringify(reachAll)), '先列 Q.reach 的前提（路由層＋L4）');
 });
 
 test('Q.exposure 的前提：在 Q.reach 的前提之後附加暴露清單另有的兩條（只出現在暴露清單，Q.reach 與 S.query.reachAssumptions 不變）', () => {
   const EXTRA = ['exposure-source-ranges', 'wan-member-no-interface'];
-  const base = S.query.reachAssumptions();
+  // Q.reach 的前提：路由層（L3 共用）＋ L4 自己的
+  const base = S.query.traceAssumptions().concat(S.query.reachAssumptions());
+  assert.deepStrictEqual(S.query.exposureAssumptions().map((a) => a.code), EXTRA);
   const Q = S.query(edge());
   const x = exposureOf(Q);
   assert.deepStrictEqual(x.assumptions.map((a) => a.code), base.map((a) => a.code).concat(EXTRA));
@@ -113,7 +116,7 @@ test('Q.exposure 的前提：在 Q.reach 的前提之後附加暴露清單另有
   // 沒有 WAN 的提早結束也帶同一份前提
   const none = exposureOf(S.query(build(R1.filter((l) => !l.includes('list=WAN') && !l.includes('name=WAN')).concat(SW1).join('\n'))));
   assert.deepStrictEqual(none.assumptions, JSON.parse(JSON.stringify(x.assumptions)));
-  assert.ok(base.every((a) => !EXTRA.includes(a.code)), 'S.query.reachAssumptions 不含暴露清單的前提');
+  assert.ok(base.every((a) => !EXTRA.includes(a.code)), 'S.query.reachAssumptions 與 traceAssumptions 不含暴露清單的前提');
   const rc = Q.reach('192.168.1.10', '203.0.113.2', { proto: 'tcp', port: 443 });
   assert.deepStrictEqual(rc.assumptions.map((a) => a.code), base.map((a) => a.code), 'Q.reach 的前提不變');
   // 寫法同 Q.reach 的前提：括號外不出現 RouterOS 的英文原值，原值保留在括號內
@@ -317,4 +320,106 @@ test('Q.exposure 的候選服務含目的設備自己開著的服務（啟用中
       assert.ok(x.services.find((v) => v.id === 'tcp/2222').origins.includes('ip-service'));
     }
   });
+});
+
+// R1 另加一條寫明 dst-address（不屬於任何設備）的 dst-nat：那個位址只有 tcp/8443 被改寫，其他服務算「沒有被改寫」（forced）
+const R1N = () => {
+  const lines = R1.slice();
+  lines.splice(lines.indexOf('/ip firewall nat add action=masquerade chain=srcnat out-interface-list=WAN'), 0,
+    '/ip firewall nat add action=dst-nat chain=dstnat dst-address=203.0.113.5 dst-port=8443 in-interface-list=WAN protocol=tcp to-addresses=192.168.1.20 to-ports=443');
+  return build(lines.concat(SW1).join('\n'));
+};
+
+test('Q.exposure 的等價類共用：dnat 段的 forced／natted 分類與逐一以 Q.reach 判斷相同；判斷次數少於逐一判斷', () => {
+  // 計算暴露清單時記下這四個目的實際判斷的次數（包住 engine 的 evaluate，算完還原）
+  const ips = ['192.168.1.1', '198.51.100.2', '203.0.113.1', '203.0.113.5']; let used = 0;
+  const part = S.reach._.exposurePart;
+  S.reach._.exposurePart = (E) => { const ev = E.evaluate; E.evaluate = function (src, dst) { if (ips.includes(dst)) used++; return ev.apply(this, arguments); }; return part(E); };
+  let Q; let x;
+  try { Q = S.query(R1N()); x = exposureOf(Q); } finally { S.reach._.exposurePart = part; }
+  const evX = used; // 之後的 Q.reach 也經同一個 evaluate，先記下暴露清單的次數
+  const NAT_UNKNOWN = S.reach._.NAT_UNKNOWN;
+  const srcs = x.external.byDevice.find((d) => d.dev === 'R1').sources;
+  // 入口設備自己的位址（main）與 dst-nat 寫明的位址；入口位址（front）是 WAN 介面的位址與 dst-nat 寫明的位址
+  const front = new Set(['198.51.100.2', '203.0.113.5']);
+  const combos = new Map(); let n = 0;
+  ips.forEach((ip) => x.services.forEach((v) => srcs.forEach((a) => {
+    const r = reachOf(Q, a.ip, ip, v.id, 'R1|ether1'); n++;
+    const nat = r.natApplied || (r.verdict === 'unknown' && r.reasons.some((c) => NAT_UNKNOWN.has(c.code)));
+    const sec = nat && front.has(ip) ? 'dnat' : nat ? 'self' : ip !== '203.0.113.5' ? 'self' : 'dnat';
+    const k = [sec, ip, v.id].join('|');
+    const c = combos.get(k) || { sec, evs: [] }; combos.set(k, c);
+    c.evs.push({ verdict: !nat && sec === 'dnat' ? 'deny' : r.verdict, forced: !nat && sec === 'dnat', natted: nat && sec === 'self' });
+  })));
+  const want = { candidates: 0, allow: 0, unknown: 0, deny: 0, natted: 0, notNatted: 0 }; const selfNatted = { n: 0 };
+  combos.forEach((c) => {
+    if (c.sec === 'self') { if (c.evs.every((e) => e.natted)) selfNatted.n++; return; }
+    want.candidates++;
+    const vs = c.evs.map((e) => e.verdict); const v = vs.includes('allow') ? 'allow' : vs.includes('unknown') ? 'unknown' : 'deny';
+    want[v]++; if (v === 'deny' && c.evs.every((e) => e.forced)) want.notNatted++;
+  });
+  assert.deepStrictEqual([x.dnat.counts.candidates, x.dnat.counts.allow, x.dnat.counts.unknown, x.dnat.counts.deny, x.dnat.counts.natted, x.deniedBy.dnat.notNatted],
+    [want.candidates, want.allow, want.unknown, want.deny, want.natted, want.notNatted]);
+  assert.strictEqual(x.self.counts.natted, selfNatted.n, '經 dst-nat 改寫的自己的位址（非入口位址）只計數');
+  assert.deepStrictEqual(x.dnat.rows.map((r) => [r.dst, r.service, r.verdict]), [['198.51.100.2', 'tcp/8080', 'allow'], ['203.0.113.5', 'tcp/8080', 'allow'], ['203.0.113.5', 'tcp/8443', 'allow']]);
+  assert.ok(want.notNatted > 1 && selfNatted.n > 0, '這份資料要有 forced 與 natted 的組合');
+  // 這四個目的逐一判斷要 n 次；同類的拒絕共用時少於它
+  assert.ok(evX > 0 && evX < n, `判斷 ${evX} 次，逐一判斷要 ${n} 次`);
+});
+
+test('Q.exposure：IPv4 判斷次數用完時，沒有判斷到的組合另計 notEvaluated（同 IPv6），不算候選；沒截斷時都是 0', () => {
+  const full = exposureOf(S.query(R1N()));
+  assert.strictEqual(full.limits.truncated, false);
+  ['self', 'dnat', 'routed'].forEach((k) => assert.strictEqual(full[k].counts.notEvaluated, 0));
+  [1, 5, Math.floor(full.limits.evaluations / 2)].forEach((max) => {
+    const cut = exposureOf(S.query(R1N()), { maxEvaluations: max });
+    assert.deepStrictEqual([cut.limits.truncated, cut.limits.evaluations], [true, max]);
+    const ne = ['self', 'dnat', 'routed'].reduce((t, k) => t + cut[k].counts.notEvaluated, 0);
+    assert.ok(ne > 0, `上限 ${max}：沒有判斷到的組合要另計`);
+    ['self', 'dnat', 'routed'].forEach((k) => {
+      const c = cut[k].counts;
+      assert.strictEqual(c.candidates, c.allow + c.unknown + c.deny + c.natted, `上限 ${max} ${k}：notEvaluated 不算候選`);
+      assert.ok(c.candidates <= full[k].counts.candidates, `上限 ${max} ${k}`);
+    });
+    // routed 的組合判斷到就會建立：判斷到的加上沒判斷到的就是全部
+    assert.strictEqual(cut.routed.counts.candidates + cut.routed.counts.notEvaluated, full.routed.counts.candidates, `上限 ${max}：routed`);
+  });
+});
+
+test('Q.exposureSummary：分組涵蓋每一列一次、計數由分組而來（服務）、組合另列；結論句由同一份計數組成；依結果快取並凍結', () => {
+  const Q = S.query(sampleSnap()); const ex = Q.exposure(); const s = Q.exposureSummary();
+  assert.strictEqual(s.status, 'ok'); assert.strictEqual(s.unit, '服務');
+  assert.strictEqual(Q.exposureSummary(), s, '同一份 Q.exposure 結果回傳同一個物件');
+  assert.strictEqual(Q.exposureSummary(undefined, ex), s, '傳入已算好的結果相同');
+  assert.ok(Object.isFrozen(s) && Object.isFrozen(s.sections.self.groups) && Object.isFrozen(s.sections.self.groups[0]));
+  // 同一組的列：除了位址以外，結果與依據都相同
+  const sig = (r) => JSON.stringify([r.family, r.dev, r.src, r.service, r.verdict, r.entry, r.target, r.subnet, r.allowedFrom.text, r.rule, r.reasons, r.findingKeys]);
+  let allow = 0; let unknown = 0;
+  ['self', 'dnat', 'routed'].forEach((k) => {
+    const sec = s.sections[k]; const rows = ex[k].rows;
+    const owner = new Map();
+    sec.groups.forEach((g, gi) => {
+      assert.strictEqual(g.row, rows[g.index]);
+      assert.strictEqual(g.entryDev === null, k !== 'self', `${k}：只有第 1 段有 entryDev`);
+      g.ips.forEach((ip) => {
+        const i = rows.findIndex((r, n) => !owner.has(n) && r.ip === ip && sig(r) === sig(g.row));
+        assert.ok(i >= 0, `${k}：${ip} 在分組裡的列結果相同`); owner.set(i, gi);
+      });
+    });
+    assert.strictEqual(owner.size, rows.length, `${k}：每一列恰好在一組`);
+    assert.strictEqual(sec.allow, sec.groups.filter((g) => g.row.verdict === 'allow').length);
+    assert.strictEqual(sec.allow + sec.unknown, sec.groups.length);
+    if (k !== 'self') { const v = sec.groups.map((g) => g.row.verdict); assert.ok(!v.includes('unknown') || v.lastIndexOf('allow') < v.indexOf('unknown'), `${k}：允許在前`); }
+    ['allow', 'unknown', 'deny'].forEach((c) => assert.strictEqual(sec.combos[c], ex[k].counts[c], `${k}：組合 ${c}`));
+    assert.strictEqual(sec.deniedBy, ex.deniedBy[k]);
+    allow += sec.allow; unknown += sec.unknown;
+  });
+  assert.deepStrictEqual(s.total, { allow, unknown });
+  assert.ok(s.total.allow < s.combos.allow, '範例資料上分組後比組合少（單位不同）');
+  assert.ok(s.sentence.startsWith(`從外部進來，連得到 ${allow} 個服務：網路設備本身 ${s.sections.self.allow} 個、`), s.sentence);
+  assert.ok(!unknown || s.sentence.includes(`另有 ${unknown} 個無法判斷。`));
+  // 沒有 WAN：結論句是固定的一句，計數都是 0
+  const t = S.query(build(['R (10.0.0.1):', '### /system identity print', 'name: R'].join('\n'))).exposureSummary();
+  assert.strictEqual(t.status, 'no-wan'); assert.strictEqual(t.sentence, '找不到 WAN 介面，無法判斷從外部進得來什麼。');
+  assert.deepStrictEqual(t.total, { allow: 0, unknown: 0 });
 });

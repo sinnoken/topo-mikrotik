@@ -4,6 +4,12 @@
 const { document, S, fs, path, ROOT, step, $, text, layerBtn, L4, l4State } = require('../helpers.js');
 
 const SECS = ['self', 'dnat', 'routed'];
+/**
+ * 一段的分組：查詢層 Q.exposureSummary 的 sections[段].groups（畫面不自己分組）；rows 換成測試造的列時，其他段沿用目前的暴露清單。
+ * 回傳 [{ row, index, ips, entryDev }]
+ */
+const groupsOf = (sec, rows) => { const Q = App.Q; const real = Q.exposure();
+  return Q.exposureSummary(undefined, Object.assign({}, real, { [sec]: Object.assign({}, real[sec], { rows }) })).sections[sec].groups; };
 
 module.exports = async () => {
   await step('L4 由外而內：頁首第一句是從外部進來的結論，接著三段暴露清單；內部互通、可達性查詢預設收合，判斷的前提在頁尾', async () => {
@@ -19,6 +25,10 @@ module.exports = async () => {
     if (!sum || !head.contains(sum)) throw new Error('結論句應在頁首');
     const st = text('#l4-ex-summary');
     if (!/從外部進來|WAN/.test(st)) throw new Error('結論句應回答從外部進得來什麼：' + st);
+    // 結論句與分組的單一來源是 Q.exposureSummary（主管摘要同一句）：頁首照用它的 sentence，畫面不自己分組
+    if (ex.status === 'ok' && !st.startsWith(Q.exposureSummary(undefined, ex).sentence)) throw new Error('頁首的結論句應是 Q.exposureSummary 的 sentence：' + st);
+    { const src = fs.readFileSync(path.join(ROOT, 'src/view/panels/l4-exposure.js'), 'utf8');
+      if (/function exGroups|ips\.push|個服務：網路設備本身/.test(src)) throw new Error('l4-exposure.js 不應自己分組或組結論句（改讀 Q.exposureSummary）'); }
     if (!sum.testAll('.chip').some((c) => c.textContent === '推論') || !sum.querySelector('.l4-ex-assume')) throw new Error('結論句後面接「推論」與「前提」連結');
     // 推論只在頁首標一次：三段裡不再掛推論徽章
     if ($('#l4-exposure').testAll('.chip').some((c) => c.textContent === '推論')) throw new Error('暴露清單的段落與列不應再掛「推論」徽章');
@@ -74,8 +84,10 @@ module.exports = async () => {
       }
       if (rows.some((tr) => /st-deny/.test(tr.className))) throw new Error('拒絕的組合不列出');
       // 段標題的數量分開寫允許與無法判斷（和結論句的「N 個服務允許」一致，不把兩者加總成一個數字）
-      { const gs = V.l4.exGroups(ex[k].rows); const na = gs.filter((g) => g.x.verdict === 'allow').length; const tt = sec.querySelector('.l4-ex-title').textContent;
-        if (gs.length && ((na && !tt.includes(`${V.num(na)} 允許`)) ||(gs.length - na && !tt.includes(`${V.num(gs.length - na)} 無法判斷`)))) throw new Error('段標題應分開寫允許與無法判斷的數量：' + tt); }
+      { const sm = Q.exposureSummary(undefined, ex).sections[k]; const gs = sm.groups; const na = gs.filter((g) => g.row.verdict === 'allow').length; const tt = sec.querySelector('.l4-ex-title').textContent;
+        if (na !== sm.allow || gs.length - na !== sm.unknown) throw new Error('Q.exposureSummary 的計數應等於分組的列數');
+        if (gs.length && ((na && !tt.includes(`${V.num(na)} 個服務允許`)) || (gs.length - na && !tt.includes(`${V.num(gs.length - na)} 個無法判斷`)))) throw new Error('段標題應分開寫允許與無法判斷的數量（N 個服務允許、N 個無法判斷）：' + tt);
+        if (/(^|\D)0 個/.test(tt)) throw new Error('段標題的數量是 0 時不顯示：' + tt); }
       const t = sec.textContent;
       if (!ex[k].rows.length && !t.includes('沒有')) throw new Error(k + ' 段沒有列時應寫「沒有」');
       if (ex.denied[k] && !t.includes(`其餘 ${V.num(ex.denied[k])} 個組合`)) throw new Error(k + ' 段應寫出其餘拒絕的組合數');
@@ -112,10 +124,10 @@ module.exports = async () => {
       const firstNon = order.findIndex((d) => !entryDevs.has(d));
       if (firstNon >= 0 && order.slice(firstNon).some((d) => entryDevs.has(d))) throw new Error('入口設備應排在前面：' + order.join('、'));
       if (!process.env.SMOKE_INPUT && !ex.self.rows.some((x) => x.via)) throw new Error('範例資料的第 1 段應有經別台入口設備的列');
-      // 分組的 helper（exGroups）不因 via 拿掉允許在前的規則：同一台設備內允許排在無法判斷之前
-      const gs = V.l4.exGroups(ex.self.rows);
+      // 分組（Q.exposureSummary）不因 via 拿掉允許在前的規則：同一台設備內允許排在無法判斷之前
+      const gs = groupsOf('self', ex.self.rows);
       order.forEach((d) => {
-        const vs = gs.filter((g) => g.x.dev === d).map((g) => g.x.verdict); const fn = vs.findIndex((v) => v !== 'allow');
+        const vs = gs.filter((g) => g.row.dev === d).map((g) => g.row.verdict); const fn = vs.findIndex((v) => v !== 'allow');
         if (fn >= 0 && vs.slice(fn).includes('allow')) throw new Error(d + ' 的允許應在無法判斷之前');
       });
     }
@@ -129,8 +141,8 @@ module.exports = async () => {
     if (!rules.some(([sel, body]) => /\.l4-ex-sec table\.t[^,]*\.mono/.test(sel) && /white-space:\s*normal/.test(body))) throw new Error('暴露清單的等寬字（位址 → 位址）應可在空白處換行');
     if (!rules.some(([sel, body]) => /\.l4-ex-sec table\.t td/.test(sel) && /min-width:\s*0/.test(body))) throw new Error('暴露清單的儲存格應可縮到卡片寬（min-width: 0）');
     const Q = App.Q; const ex = Q.exposure(); if (ex.status !== 'ok') return;
-    const g = S.view.l4.exGroups(ex.dnat.rows).find((y) => y.x.dstAny && y.x.family !== 'ipv6'); const any = g && g.x;
-    if (any) { const tr = $('#l4-exposure').testAll('.l4-ex-sec').find((x) => x.dataset.sec === 'dnat').testAll('tr').find((t) => t.dataset.row === String(g.i) && /l4-ex-row/.test(t.className));
+    const g = groupsOf('dnat', ex.dnat.rows).find((y) => y.row.dstAny && y.row.family !== 'ipv6'); const any = g && g.row;
+    if (any) { const tr = $('#l4-exposure').testAll('.l4-ex-sec').find((x) => x.dataset.sec === 'dnat').testAll('tr').find((t) => t.dataset.row === String(g.index) && /l4-ex-row/.test(t.className));
       if (!tr || !tr.textContent.includes(`${any.inInterface} 的任何位址`)) throw new Error('dst-nat 沒限制目的位址時寫「<介面> 的任何位址，埠 N」：' + tr.textContent.slice(0, 80)); }
   });
 
@@ -184,8 +196,8 @@ module.exports = async () => {
     // 一段 330 組：前 25 組無法判斷、第 26 組允許，其餘無法判斷（查詢層只依設備、位址、服務排序，不依結果）
     const rows = Array.from({ length: 330 }, (_, n) => Object.assign({}, base, { service: `tcp/${2000 + n}`, port: 2000 + n, verdict: n === 25 ? 'allow' : 'unknown', reasons: [], incomplete: false, returnUnsafe: [] }));
     const fake = Object.assign({}, real, { dnat: Object.assign({}, real.dnat, { rows }) });
-    const gs = V.l4.exGroups(rows);
-    if (gs[0].x.verdict !== 'allow' || gs.slice(1).some((g) => g.x.verdict !== 'unknown') || gs.slice(1).some((g, k) => k && g.i < gs[k].i)) throw new Error('分組應允許在前、同結果內保留原順序');
+    const gs = groupsOf('dnat', rows);
+    if (gs[0].row.verdict !== 'allow' || gs.slice(1).some((g) => g.row.verdict !== 'unknown') || gs.slice(1).some((g, k) => k && g.index < gs[k].index)) throw new Error('分組應允許在前、同結果內保留原順序');
     // App.Q 是唯讀（App.round.Q）：測試暫時換成只改 exposureSteps 的查詢介面，結束時換回
     const withQ = async (q, after) => { App.showLayer('device'); App.round.Q = q; App.showLayer('l4', { rebuild: true }); if (after) after();
       const r = await Promise.race([App.l4Job.then(() => 'ok'), new Promise((res) => setTimeout(() => res('timeout'), 5000))]);
@@ -207,17 +219,17 @@ module.exports = async () => {
       V.l4.openExposure(App, 'dnat', 329); // 收起路徑
       const selfRows = Array.from({ length: 25 }, (_, n) => Object.assign({}, sb, { service: `tcp/${3000 + n}`, port: 3000 + n, verdict: 'unknown', reasons: [], incomplete: false, returnUnsafe: [], findingKeys: [] }))
         .concat([Object.assign({}, sb, { dev: other, target: other, via: { dev: sb.dev, ep: sb.entry }, ip: '10.250.0.1', service: 'tcp/22', port: 22, verdict: 'allow', reasons: [], incomplete: false, returnUnsafe: [], findingKeys: [] })]);
-      const sg = V.l4.exGroups(selfRows);
-      if (sg[0].x.dev !== other || sg[0].x.verdict !== 'allow') throw new Error('有允許的設備應排在只有無法判斷的入口設備之前');
+      const sg = groupsOf('self', selfRows);
+      if (sg[0].row.dev !== other || sg[0].row.verdict !== 'allow') throw new Error('有允許的設備應排在只有無法判斷的入口設備之前');
       const renderSelf = async (rs) => {
         const fk = Object.assign({}, real, { self: Object.assign({}, real.self, { rows: rs }) });
         await withQ(Object.assign(Object.create(realQ), { exposureSteps: function* () { return fk; } }));
         const ssec = $('#l4-exposure').testAll('.l4-ex-sec').find((x) => x.dataset.sec === 'self');
         const strs = ssec.testAll('tr').filter((tr) => /l4-ex-row/.test(tr.className));
-        const g = V.l4.exGroups(rs); const shownIdx = strs.map((tr) => Number(tr.getAttribute('data-row')));
+        const g = groupsOf('self', rs); const shownIdx = strs.map((tr) => Number(tr.getAttribute('data-row')));
         // 收合 20 列：每一列允許都在顯示的列裡，顯示的列仍依設備分組的順序
         if (strs.length !== 20 || !rs.every((x, i) => x.verdict !== 'allow' || shownIdx.includes(i))) throw new Error('收合時每一列允許都應在前 20 列');
-        if (shownIdx.some((v, k) => k && g.findIndex((y) => y.i === v) < g.findIndex((y) => y.i === shownIdx[k - 1]))) throw new Error('收合時顯示的列應依設備分組的順序');
+        if (shownIdx.some((v, k) => k && g.findIndex((y) => y.index === v) < g.findIndex((y) => y.index === shownIdx[k - 1]))) throw new Error('收合時顯示的列應依設備分組的順序');
         return ssec.testAll('tr').filter((tr) => /l4-ex-devrow/.test(tr.className)).map((tr) => tr.getAttribute('data-dev'));
       };
       const heads = await renderSelf(selfRows);
@@ -373,9 +385,10 @@ module.exports = async () => {
     if (shownLis.some((li) => route.some((a) => a.code === li.dataset.code))) throw new Error('L4 的清單不列路由層的前提');
     const rl = $('#l4-assume-route');
     if (!rl || !rl.textContent.startsWith('路由：同 L3 路由追蹤') || (K && !rl.textContent.includes(`有 ${V.num(K)} 條前提影響這份基準`))) throw new Error('路由層只寫一行同 L3 路由追蹤：' + (rl && rl.textContent));
-    // 其他（not-used、always）收合在「其他前提（M 條）」
+    // 其他（not-used、always）收合在「其他前提」（V.section 的展開列，標題旁是條數 M）
     const other = $('#l4-assume-other'); const rest = l4.filter((a) => !on(a));
-    if (rest.length && (!other || other.open || other.getAttribute('open') != null || other.querySelector('summary').textContent !== `其他前提（${V.num(rest.length)} 條）`)) throw new Error('其他前提應收合在「其他前提（M 條）」');
+    if (rest.length && (!other || other.open || other.getAttribute('open') != null || other.querySelector('summary').textContent !== `其他前提${V.num(rest.length)}`
+      || other.querySelector('summary').querySelector('.count').textContent !== V.num(rest.length))) throw new Error('其他前提應收合在「其他前提」、標題旁是 M');
     if (rest.length && rest.some((a) => !other.testAll('li').some((li) => li.dataset.code === a.code))) throw new Error('其他前提應列出全部沒影響的');
     // 頁首的「前提」連結寫出有影響的條數
     const hl = $('#l4-ex-summary').querySelector('.l4-ex-assume');
@@ -414,7 +427,8 @@ module.exports = async () => {
       // 這次查詢的前提：只列有影響的短句，其他收合
       const qa = $('#l4-drill').testAll('details').find((d) => d.querySelector('summary') && d.querySelector('summary').textContent.startsWith('這次查詢的前提'));
       if (!qa) throw new Error('逐跳查詢應有「這次查詢的前提」');
-      const qShown = qa.testAll('li').filter((x) => /\bassume-item\b/.test(x.className) && !x.parentNode.parentNode.className.includes('assume-other'));
+      const qOther = qa.testAll('details').find((d) => /\bassume-other\b/.test(d.className));
+      const qShown = qa.testAll('li').filter((x) => /\bassume-item\b/.test(x.className) && !(qOther && qOther.contains(x)));
       const qWant = r.assumptions.filter(on);
       require('assert').deepStrictEqual(qShown.map((x) => x.dataset.code), qWant.map((a) => a.code), '這次查詢的前提只列有影響的');
       if (qa.testAll('li').some((x) => x.id)) throw new Error('這次查詢的前提不用頁尾的 id（id 不重複）');

@@ -342,12 +342,13 @@
     const rest = all.filter((a) => !shown.includes(a));
     const always = rest.filter((a) => (use.get(a.code) || {}).status === 'always'); const unused = rest.filter((a) => !always.includes(a));
     const cls = 'assume-list' + (opt.listClass ? ' ' + opt.listClass : '');
-    const group = (title, xs) => (xs.length ? [h('p', { class: 'assume-sub' }, `${title}（${V.num(xs.length)} 條）`), h('ul', { class: 'assume-list' }, xs.map(item))] : []);
+    const group = (title, xs) => (xs.length ? [h('p', { class: 'assume-sub' }, [title, ' ', V.chip(V.num(xs.length), 'count')]), h('ul', { class: 'assume-list' }, xs.map(item))] : []);
     return {
       shown, rest,
       list: shown.length ? h('ul', { class: cls, id: opt.listId || null }, shown.map(item)) : h('p', { class: 'muted assume-none ' + (opt.listClass || ''), id: opt.listId || null }, opt.none || '這份基準沒有會影響結果的前提。'),
-      other: rest.length ? h('details', { class: 'assume-other', id: opt.otherId || null }, [h('summary', null, `其他前提（${V.num(rest.length)} 條）`),
-        ...group('判斷方式，每份基準都適用', always), ...group('這份基準沒有用到', unused)]) : null,
+      // 其他前提：展開列（V.section），標題旁是條數
+      other: V.section('其他前提', [...group('判斷方式，每份基準都適用', always), ...group('這份基準沒有用到', unused)],
+        { fold: true, count: rest.length, cls: 'assume-other', id: opt.otherId || null }),
     };
   };
   /** 「為什麼」的去處：展開那條前提所在的每一層收合與它的「詳細」，捲過去並把焦點移到它 */
@@ -409,6 +410,42 @@
   /** 可操作的 chip（篩選選項）：用 <button>，鍵盤可以聚焦與按 Enter／空白鍵操作 */
   V.chipButton = (text, cls, attrs) => V.h('button', Object.assign({ type: 'button', class: 'chip ' + (cls || '') }, attrs || {}), text);
   V.kindChip = (k) => V.chip(V.KIND[k] || k, 'kind-' + k);
+  /** 嚴重度 → chip 的語氣色（error→err、warn→warn，提醒與沒有時中性） */
+  const SEV_TONE = { error: 'err', warn: 'warn' };
+  /** 一組檢查結果中最嚴重的嚴重度（error > warn > info）；空的時 null */
+  V.worstSev = (fs) => (fs.some((f) => f.severity === 'error') ? 'error' : fs.some((f) => f.severity === 'warn') ? 'warn' : fs.length ? 'info' : null);
+  /** 有錯誤或警告（區塊預設展開的依據之一） */
+  V.hasProblem = (fs) => fs.some((f) => f.severity === 'error' || f.severity === 'warn');
+  /**
+   * 標題列的狀態 chip：「N＋量詞＋狀態」（例如「3 條有問題」「1 條非作用中」），0 不顯示（回傳 null）；
+   * sev 是其中最嚴重的嚴重度（V.worstSev），決定語氣色。不是列數的量一律用它，不放 count。
+   */
+  V.stateChip = (n, what, sev, attrs) => (n ? V.chip(`${V.num(n)} ${what}`, SEV_TONE[sev] || '', attrs) : null);
+  /**
+   * 區塊的唯一產生方式（右欄詳情、防火牆、處理紀錄、L4 共用）：標題與筆數只在這裡產生，內容函式只回傳內容、不自帶標題。
+   *   V.section(標題, 內容, { count, extra, fold, open, cls, id, state, key })
+   *   - 內容為 null、false、空陣列（或只有 null 的陣列）時整個不顯示：列表沒有資料就不出現
+   *   - count：區塊裡的列數，純數字、不加單位；其他的量（有問題的筆數、有影響的前提）用 extra 的 V.stateChip
+   *   - fold：展開列（details.detail-fold），open 決定預設展開（有錯誤／警告、收集失敗或目前定位的列時才展開）；
+   *     否則是一般區塊（h3）。第一層（檢查結果、屬性）與整頁就是這個主題的主體用一般區塊，其餘主題一律展開列，不依筆數切換
+   *   - extra：標題列的狀態 chip 與連結（跳到其他畫面、改變範圍的連結放這裡）；在展開列內點它們不切換展開
+   *   - state＋key：跨重繪保留使用者的展開狀態（Map：key → 是否展開），data-section 是 key
+   */
+  V.section = function (title, content, opt) {
+    const o = opt || {};
+    if (content == null || content === false || (Array.isArray(content) && !content.some((x) => x != null && x !== false))) return null;
+    if (o.count != null && typeof o.count !== 'number') throw new Error('V.section 的 count 是列數（數字）：' + o.count);
+    const fold = !!o.fold;
+    const extra = (o.extra || []).filter(Boolean).map((x) => (fold ? V.h('span', { class: 'section-extra', onclick: (e) => { if (e && e.preventDefault) e.preventDefault(); } }, x) : x));
+    // count 0（例如防火牆只有服務、沒有規則）不顯示，同狀態 chip
+    const head = [title, o.count ? V.chip(V.num(o.count), 'count') : null, ...extra];
+    const body = Array.isArray(content) ? V.h('div', null, content) : content;
+    if (!fold) return V.h('div', { class: 'detail-section' + (o.cls ? ' ' + o.cls : ''), id: o.id || null }, [V.h('h3', null, head), body]);
+    const open = o.state && o.state.has(o.key) ? o.state.get(o.key) : !!o.open;
+    const el = V.h('details', { class: 'detail-fold' + (o.cls ? ' ' + o.cls : ''), id: o.id || null, 'data-section': o.key || null, open }, [V.h('summary', null, head), body]);
+    if (o.state) el.addEventListener('toggle', () => o.state.set(o.key, !!el.open));
+    return el;
+  };
   /** 嚴重度標記（外形＋顏色）：輔助科技念出嚴重度名稱，不只靠顏色 */
   V.sevDot = (s) => V.h('span', { class: 'sev ' + s, title: V.SEV[s], role: 'img', 'aria-label': V.SEV[s] });
   V.fmtTime = (iso) => { const d = new Date(iso); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };

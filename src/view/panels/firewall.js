@@ -22,8 +22,6 @@
   /** WAN 判斷狀態的文字與色調；未知的 status 原樣顯示，不假裝成已知狀態 */
   const zoneStatus = (status) => ZONE_STATUS[status] || { text: String(status), short: `${status}（推論）`, tone: '' };
   const ZONE_BASIS = { 'interface-list': '依名稱含 WAN／LAN 的 interface list' };
-  // 規則不多時，內建 chain 預設展開；多時全部收合，展開時才產生表格（大型網路單台設備可能有上百條）
-  const OPEN_ALL_MAX = 60;
   const P = () => V.details.parts;
 
   const kvText = (o) => Object.entries(o || {}).map(([k, v]) => `${k}=${v}`).join(' ');
@@ -70,12 +68,15 @@
     });
   }
 
-  /** 一個 chain：可展開區塊；收合時不產生表格，第一次展開才產生 */
-  function chainSection(App, dev, c, focusKey, openAll) {
+  /**
+   * 一個 chain：展開列；收合時不產生表格，第一次展開才產生（大型網路單台設備可能有上百條）。
+   * 定位的規則所在的 chain 展開；沒有定位時，有錯誤或警告的 chain 展開，其餘收合
+   */
+  function chainSection(App, dev, c, focusKey) {
     const rows = App.Q.firewallRuleRows(dev, { family: c.family, table: c.table, chain: c.chain });
     const hasFocus = rows.some((x) => x.rule.key === focusKey);
-    const bad = rows.filter((x) => x.findings.some((f) => f.severity !== 'info')).length;
-    const open = hasFocus || (!focusKey && openAll && c.builtin);
+    const badFl = rows.map((x) => x.findings.filter((f) => f.severity !== 'info')).filter((x) => x.length);
+    const open = hasFocus || (!focusKey && badFl.length > 0);
     const body = h('div', { class: 'fw-chain' });
     const fill = () => {
       if (body.firstChild) return;
@@ -86,10 +87,10 @@
       body.appendChild(ruleTable(App, rows, focusKey));
     };
     if (open) fill();
-    const el = P().section(c.chain, body, { count: rows.length, unit: '條規則', fold: true, open, extra: [
+    const el = P().section(c.chain, body, { count: rows.length, fold: true, open, extra: [
       c.builtin ? null : V.chip('自訂 chain', 'info'),
-      c.jumpedFrom.length ? V.chip(`jump 進入 ${c.jumpedFrom.length}`, 'info') : null,
-      bad ? V.chip(`有問題 ${bad}`, 'warn') : null,
+      V.stateChip(c.jumpedFrom.length, '條 jump 進入', null, { class: 'chip info' }),
+      V.stateChip(badFl.length, '條有問題', V.worstSev([].concat(...badFl))),
     ] });
     el.addEventListener('toggle', fill);
     return el;
@@ -113,9 +114,10 @@
     const ruleOf = (k) => { const f = byKey.get(k); const e = f && f.entities.find((x) => x.type === 'rule'); return e ? e.key : null; };
     const sevCls = (id) => { const s = (S.query.rule(id) || {}).severity; return s === 'error' ? 'err' : s; };
     const ruleLink = (key) => (key ? P().L(App, ruleLabel(App, key), { type: 'rule', key }) : null);
+    // 定位到一條規則時，這是那條規則的第一層資訊（一般區塊，接在命中次數之後）；設備全部的修正是附屬清單（展開列，預設收合）。
+    // 跳到修正計畫的按鈕在標題列
     return P().section('修正（停用規則）', [
       h('p', { class: 'muted' }, '只產生文字，不會連線或改動設備。指令以 comment 或比對條件 find（不用規則編號）；完整的 .rsc（含前置檢查、回復與驗證）在修正計畫。'),
-      h('div', { class: 'row' }, h('button', { class: 'open-patch', onclick: () => App.openPatch(keys) }, '在修正計畫中開啟（套用、回復、驗證）')),
       ...plan.items.map((it) => {
         const cmd = RM.itemApplyLines(plan, it);
         return h('div', { class: 'fw-fix', 'data-rule': it.target.key, 'data-finding': it.findingKey }, [
@@ -132,7 +134,8 @@
         h('p', { class: 'fix-skip-finding' }, RM.findingRef(App, hits[n], x.findingKey)),
         h('p', { class: 'warn-line fix-skip' }, x.detail),
       ])),
-    ], { count: plan.items.length + plan.skipped.length, fold: !focusRule, open: !!focusRule });
+    ], { count: plan.items.length + plan.skipped.length, fold: !focusRule, cls: 'fw-fix-section',
+      extra: [h('button', { type: 'button', class: 'open-patch', onclick: () => App.openPatch(keys) }, '在修正計畫中開啟')] });
   }
 
   // ---------------------------------------------------------------- 命中次數（print stats，事實）與 L4 的影響（Q.ruleImpact，推論）
@@ -191,8 +194,7 @@
       body.appendChild(h('div', { class: 'row' }, btn));
       return section('L4 影響（推論）', body);
     }
-    if (res.missing) return section('L4 影響（推論）', h('p', { class: 'muted' }, '基準中沒有這條規則。'));
-    const zn = new Map(Q.zones(V.l4.zoneOpts(App).opts).zones.map((z) => [z.id, z.name]));
+    if (res.missing) return section('L4 影響（推論）', h('p', { class: 'muted' }, '基準中沒有這條規則。'));    const zn = new Map(Q.zones(V.l4.zoneOpts(App).opts).zones.map((z) => [z.id, z.name]));
     const name = (id) => (id == null ? '（不在任何 zone）' : zn.get(id) || id);
     const c = res.ifDisabled.counts; const ad = c['allow→deny'] || 0;
     body.appendChild(h('div', { class: 'row' }, [
@@ -214,11 +216,12 @@
       ], res.cells, { limit: 200 }));
     } else body.appendChild(h('p', { class: 'muted' }, '矩陣的代表位址組合都沒有經過這條規則。'));
     if (res.ifDisabled.changed.length) {
-      body.appendChild(h('details', { class: 'fw-impact-changed' }, [h('summary', null, `停用後改變的路徑（${V.num(res.ifDisabled.total)}）`), V.table([
+      body.appendChild(section('停用後改變的路徑', V.table([
         { t: '來源', f: (x) => h('span', { class: 'mono' }, x.src) }, { t: '目的', f: (x) => h('span', { class: 'mono' }, x.dst) },
         { t: 'zone', f: (x) => `${name(x.srcZone)} → ${name(x.dstZone)}` }, { t: '服務', f: (x) => x.service },
         { t: '變化', f: (x) => `${V.L4_STATUS[x.from] || x.from} → ${V.L4_STATUS[x.to] || x.to}` },
-      ], res.ifDisabled.changed)]));
+      // count 是列出的列數（總數與是否截斷寫在上一段）
+      ], res.ifDisabled.changed), { fold: true, count: res.ifDisabled.changed.length, cls: 'fw-impact-changed' }));
     }
     return section('L4 影響（推論）', body);
   }
@@ -238,7 +241,8 @@
     const chains = Q.firewallChains(dev); const zone = Q.firewallZone(dev);
     const services = Q.ipServicesOf(dev); const lists = Q.interfaceListsOf(dev);
     const rules = Q.firewallRulesOf(dev);
-    const openAll = rules.length <= OPEN_ALL_MAX;
+    const badRules = rules.map((r) => Q.findingsFor('rule', r.key).filter((f) => f.severity !== 'info')).filter((x) => x.length);
+    const disabled = rules.filter((r) => r.disabled).length;
     // 這台設備的檢查結果中，列在防火牆畫面的：實體指向防火牆規則或服務的（不限類別，例如路由類的 R09 指向 dst-nat 規則），
     // 加上防火牆類別、只指向設備的（例如 F08 沒有 WAN 判斷）
     const fwFindings = Q.findingsFor('device', dev).filter((f) => f.entities.some((e) => e.type === 'rule' || e.type === 'service')
@@ -254,15 +258,19 @@
     const svcKey = (s) => s.dev + '|' + s.name;
     return h('div', { class: 'detail' }, [
       h('h2', null, [devLink(App, dev), ' 的防火牆']),
+      // 標題列只放狀態（WAN 判斷、有問題、停用）；規則與服務的數量在各區塊標題旁
       h('div', { class: 'row' }, [
-        V.chip(`${rules.length} 條規則`), rules.some((r) => r.disabled) ? V.chip(`停用 ${rules.filter((r) => r.disabled).length}`) : null,
-        V.chip(`${services.length} 個服務`),
+        zs ? V.chip(zs.short, zs.tone, { title: zs.text }) : null,
+        V.stateChip(badRules.length, '條有問題', V.worstSev([].concat(...badRules))),
+        V.stateChip(disabled, '條停用'),
       ]),
       notice ? h('p', { class: 'diffA' }, notice) : null,
       findingsBlock(App, fwFindings),
+      // 定位到一條規則時：命中次數、L4 影響與修正是這條規則的第一層資訊（一般區塊）
       focusRule ? statsSection(App, Q.getFirewallRule(focusRule)) : null,
       focusRule ? impactSection(App, focusRule) : null,
-      fixSection(App, dev, focusRule),
+      focusRule ? fixSection(App, dev, focusRule) : null,
+      // WAN 判斷與各表是這一頁的主體（一般區塊）；修正、服務與 interface list 是附屬清單（展開列）
       section('WAN／LAN 判斷（推論）', zone ? [
         kv([['狀態', V.chip(zs.text, zs.tone)], ['依據', ZONE_BASIS[zone.basis] || zone.basis || '—'],
           ['WAN list', zone.wanLists.join('、') || '—'],
@@ -271,10 +279,11 @@
           ['LAN 介面', zone.lanInterfaces.length ? h('span', null, zone.lanInterfaces.flatMap((ep, n) => [n ? '、' : '', epLink(App, ep)])) : '—']]),
         h('p', { class: 'muted' }, '名稱含獨立 WAN 字樣的 interface list（例如 WAN、ISP-WAN）的成員推定為朝外（WAN），含 LAN 字樣的推定為朝內（LAN）；'
           + '不看介面名稱。F03／F04／F07 等檢查依這個判斷。'),
-      ] : null, { fold: true, open: !zs || zs.tone !== 'ok' }),
-      // 每個區塊都是可展開區塊＋標題旁的數量與單位（與設備詳情相同的模式）；表預設展開，其下每個 chain 再依規則數決定
+      ] : null),
+      // 位址族 → 表：一般區塊，標題旁是規則數；其下每個 chain 是展開列（chainSection）
       ...tables.map((t) => section(`${FAMILY[t.family] || t.family} ${t.table}`,
-        t.chains.map((c) => chainSection(App, dev, c, focusRule, openAll)), { count: t.chains.reduce((n, c) => n + c.rules, 0), unit: '條規則', fold: true, open: true })),
+        t.chains.map((c) => chainSection(App, dev, c, focusRule)), { count: t.chains.reduce((n, c) => n + c.rules, 0) })),
+      focusRule ? null : fixSection(App, dev, null),
       section('服務（/ip service）', services.length ? V.table([
         { t: '服務', f: (s) => h('span', { class: 'mono' }, s.name), s: (s) => s.name },
         { t: '狀態', f: (s) => (s.enabled ? V.chip('啟用', 'ok') : V.chip('停用')), s: (s) => (s.enabled ? 0 : 1) },
@@ -287,13 +296,14 @@
         bad: (s) => Q.findingsFor('service', svcKey(s)).some((f) => f.severity !== 'info'),
         rowClass: (s) => (svcKey(s) === focusSvc ? 'focus' : ''),
         rowStyle: (s) => (svcKey(s) === focusSvc ? { background: T.focus.bg, boxShadow: `inset 0 2px 0 ${T.focus.border}, inset 0 -2px 0 ${T.focus.border}` } : null),
-      }) : null, { count: services.length, unit: '個服務', fold: true, open: !!focusSvc || services.some((s) => Q.findingsFor('service', svcKey(s)).some((f) => f.severity !== 'info')) }),
+      }) : null, { count: services.length, fold: true, open: !!focusSvc || services.some((s) => V.hasProblem(Q.findingsFor('service', svcKey(s)))),
+        extra: [V.stateChip(services.filter((s) => s.enabled).length, '個啟用')] }),
       section('Interface list', lists.length ? V.table([
         { t: '名稱', f: (l) => h('span', { class: 'mono' }, l.name) },
         { t: '成員', f: (l) => (l.members.length ? h('span', null, l.members.flatMap((ep, n) => [n ? '、' : '', epLink(App, ep)])) : '—') },
         { t: '包含／排除', f: (l) => [l.include.length ? '包含 ' + l.include.join('、') : '', l.exclude.length ? '排除 ' + l.exclude.join('、') : ''].filter(Boolean).join('；') },
         { t: '', f: (l) => (l.defined ? '' : V.chip('未定義', 'warn', { title: '規則或設定引用了這個 list，但 export 裡沒有定義' })) },
-      ], lists) : null, { count: lists.length, unit: '個清單', fold: true }),
+      ], lists) : null, { count: lists.length, fold: true, extra: [V.stateChip(lists.filter((l) => !l.defined).length, '個未定義', 'warn')] }),
     ]);
   }
 

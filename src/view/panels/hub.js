@@ -29,7 +29,17 @@
     if (zo.error) { A().banner(`無法匯出網路文件：命名規則的 zones 無法套用（${zo.error}）。請用建立基準時的命名規則，或重新建立基準。`, 10000); return; }
     App.exportAs(kind, { zones: zo.opts });
   };
-  const shQuote = (s) => (/^[\w./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, `'\\''`)}'`);
+  /**
+   * 匯出主管摘要：zone 同網路文件（命名規則的 zones 無法套用時說明原因、不匯出）；上一輪基準有載入（V.baselineDiff.loaded）時帶入，摘要寫出增減。
+   * 暴露清單交給查詢層（Q.exposure 依參數快取，L4 已算過時不重算）
+   */
+  const exportManager = (App) => {
+    const zo = V.l4.zoneOpts(App);
+    if (zo.error) { A().banner(`無法匯出主管摘要：命名規則的 zones 無法套用（${zo.error}）。請用建立基準時的命名規則，或重新建立基準。`, 10000); return; }
+    const prev = V.baselineDiff.loaded();
+    App.exportAs('managerSummary', { zones: zo.opts, previous: prev ? prev.qOld : null });
+  };
+  const shQuote =(s) => (/^[\w./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, `'\\''`)}'`);
 
   // ---------------------------------------------------------------- 這一輪的輸入
   /** 一列：項目、來源、狀態、操作。id 給「在資料中心開啟」的區塊定位 */
@@ -213,7 +223,7 @@
       card('device', '給設備', `修正指令：每台的套用、回復、驗證 .rsc 與總表。本工具只產生文字，不會連線設備。${nPatch ? `目前選取 ${V.num(nPatch)} 項，會放進工作包。` : ''}`, [
         btn('開啟修正計畫', 'open-patch', () => App.openPatch(), { class: 'open-patch', disabled: off }),
       ]),
-      card('report', '給報告或紀錄', `檢查結果 Markdown／CSV（含處理狀態，不受「${A().STEP_LABEL.triage}」檢查結果的篩選影響）・網路文件・拓樸 PNG`, [
+      card('report', '給報告或紀錄', `檢查結果 Markdown／CSV（含處理狀態，不受「${A().STEP_LABEL.triage}」檢查結果的篩選影響）・網路文件・主管摘要・拓樸 PNG`, [
         btn('Markdown', 'export-markdown', () => A().exportReport('markdown'), { disabled: off, title: '依嚴重度（或依設備）分組的報表，含證據行號，已處理的項目會標示狀態與備註' }),
         btn('CSV', 'export-csv', () => A().exportReport('csv'), { disabled: off, title: '每筆一列，含相關實體、證據行號、處理狀態、時間與備註（Excel 可直接開啟）' }),
         // 網路文件（站點說明書）：zone 用與 L4 畫面相同的選項（命名規則有 zones 時套用）
@@ -221,6 +231,8 @@
           title: '交接用的現況說明：設備清單、IP 規劃、VLAN 表、埠表、未結案事項與接受風險；推論的欄位或值標「（推論）」，命名規則給的值標「（命名規則）」' }),
         btn('網路文件（CSV）', 'export-site-csv', () => exportSite(App, 'siteCsv'), { disabled: off,
           title: '同網路文件，一個 CSV 檔分成多個區段（每段開頭是「[標題]」一列），Excel 可直接開啟' }),
+        btn('主管摘要（Markdown）', 'export-manager-summary', () => exportManager(App), { disabled: off,
+          title: '一個畫面讀完的方向：錯誤與警告是否為 0、從外部進得來的（推論）、問題集中在哪、需要決定的事與處理順序；有載入上一輪的基準時寫出增減。檔名 manager-summary.md（與 CLI 相同）' }),
         btn('拓樸 PNG', 'export-png', () => A().exportPng(), { disabled: off, title: '目前的拓樸圖畫面' }),
       ], 'hub-sec-reports', [
         btn([checkMark(hub.byDevice), ' 依設備排序'], 'by-device', () => A().toggleByDevice(), { class: 'ghost export-by-device' + (hub.byDevice ? ' on' : ''), 'aria-pressed': String(hub.byDevice),

@@ -72,7 +72,7 @@ module.exports = async () => {
     inp.dispatch('keydown', { key: 'Enter' });
     if (App.sel.type !== 'ip' || App.sel.vrf != null) throw new Error('搜尋的 IP 不分 VRF');
     const rows = () => $('#detail').testAll('.ip-vrf-row');
-    if (!text('#detail').includes(`在 ${all.vrfs.length} 個 VRF`) || rows().length !== all.vrfs.length) throw new Error('同一個 IP 在多個 VRF 時應每個 VRF 一列：' + text('#detail').slice(0, 200));
+    if (!text('#detail').includes(`${all.vrfs.length} 個 VRF 有這個位址`) || rows().length !== all.vrfs.length) throw new Error('同一個 IP 在多個 VRF 時應每個 VRF 一列：' + text('#detail').slice(0, 200));
     all.vrfs.forEach((v) => { if (!rows().some((tr) => tr.textContent.includes(v))) throw new Error('應列出 VRF ' + v); });
     const at = all.vrfs.findIndex((v) => v !== MAIN); const want = all.vrfs[at];
     if (rows()[at].getAttribute('tabindex') !== '0') throw new Error('VRF 的列應可用鍵盤聚焦');
@@ -159,7 +159,8 @@ module.exports = async () => {
       const ta = $('#detail').testAll('details').find((d) => d.querySelector('summary') && d.querySelector('summary').textContent.startsWith('這次追蹤的前提'));
       if (!ta || ta.getAttribute('open') != null) throw new Error('路由追蹤的結果下方應有預設收合的「這次追蹤的前提」');
       const items = ta.testAll('li').filter((x) => /\bassume-item\b/.test(x.className));
-      const top = items.filter((x) => !x.parentNode.parentNode.className.includes('assume-other'));
+      const other = ta.testAll('details').find((d) => /\bassume-other\b/.test(d.className));
+      const top = items.filter((x) => !(other && other.contains(x)));
       const tw = S.query.traceAssumptions().filter(on);
       require('assert').deepStrictEqual(top.map((x) => x.dataset.code), tw.map((a) => a.code), '這次追蹤的前提只列有影響的路由層前提');
       if (top.some((x) => x.querySelector('.assume-short').textContent !== S.query.traceAssumptions().find((a) => a.code === x.dataset.code).short || !x.querySelector('.assume-impact'))) throw new Error('每條寫短句與影響');

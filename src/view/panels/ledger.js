@@ -18,15 +18,12 @@
   const UNK = V.TERMS.endpoint + '埠';
   /** 處理紀錄每一輪的 open＋regressed（S.ledger.summary 的 pending）：不分嚴重度、含提醒，和「待處理」（錯誤＋警告）不同口徑 */
   const OPEN_ALL = '未結案（含提醒）';
-  const ui = { open: new Set() };
+  /** 使用者展開或收合過的區塊（key → 是否展開）：跨重繪保留 */
+  const ui = { open: new Map() };
 
   // ---------------------------------------------------------------- 共用
-  const fold = (key, title, count, body, opt) => {
-    const el = h('details', { class: 'detail-fold ledger-fold', 'data-section': key, open: ui.open.has(key) || (opt && opt.open) || null }, [
-      h('summary', null, [title, count == null ? null : V.chip(String(count), (opt && opt.cls) || '')]), body]);
-    el.addEventListener('toggle', () => (el.open ? ui.open.add(key) : ui.open.delete(key)));
-    return el;
-  };
+  /** 展開列：經 V.section（標題旁是筆數，純數字）；open 是預設展開（有錯誤或警告的清單），使用者改過就照使用者的 */
+  const fold = (key, title, count, body, opt) => V.section(title, body, { fold: true, count, open: !!(opt && opt.open), cls: 'ledger-fold', state: ui.open, key });
   /** 處理紀錄項目的一列：檢查、設備、目前基準中的訊息（沒有時列出 findingKey）；目前基準有這筆時點一下定位 */
   function itemRow(App, key, it, extra) {
     const idx = App.Q ? App.Q.findingIndexByKey(key) : -1;
@@ -232,7 +229,7 @@
         ]));
         if (ver) roundBox.appendChild(h('p', { class: 'warn-line round-version', title: ver.message }, '新出現的可能來自新版檢查，不代表網路改變：' + ver.message));
         const list = (key, title, cls, keys, note) => (keys.length ? fold(key, title, keys.length, h('div', { class: 'ledger-list', 'data-reason': key }, [
-          note ? h('p', { class: 'muted' }, note) : null, ...keys.slice(0, 300).map((k) => itemRow(App, k, lg.items[k]))]), { open: true, cls }) : null);
+          note ? h('p', { class: 'muted' }, note) : null, ...keys.slice(0, 300).map((k) => itemRow(App, k, lg.items[k]))]), { open: cls === 'err' || cls === 'warn' }) : null);
         [list('reappeared', '復發：修好後又出現', 'err', re.map((c) => c.key), '上一輪判定為已修好，本輪又出現。'),
           list('unobserved', '因收集失敗而無法判斷', 'warn', st.round.unobserved,
             '這些待處理項目本輪沒有出現，但所屬設備有收集失敗或沒有收集，無法判斷是否已修好，狀態不變。補收集後再建立基準。'),

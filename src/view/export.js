@@ -98,6 +98,13 @@
       // 網路文件（站點說明書）：設備清單、IP 規劃、VLAN 表、埠表、未結案事項；由核心的 S.report 產生（opts.ledgerOf 同檢查結果，opts.zones 是 Q.zones 的參數）
       siteMarkdown: { name: (Q) => `sitedoc-${baseName(Q)}.md`, text: (Q, opts) => S.report.siteDocMarkdown(Q, opts), type: 'text/markdown;charset=utf-8' },
       siteCsv: { name: (Q) => `sitedoc-${baseName(Q)}.csv`, text: (Q, opts) => S.report.siteDocCsv(Q, opts), type: 'text/csv;charset=utf-8' },
+      // 主管摘要：由核心的 S.report.managerSummary 產生（CLI 的 manager-summary.md 同一份）；opts.zones 是 Q.exposure 的參數，
+      // opts.previous 是已載入的上一輪基準（沒有時省略，摘要不寫增減）
+      managerSummary: {
+        name: () => 'manager-summary.md',
+        text: (Q, opts) => S.report.managerSummary(Q, { ledgerOf: opts.ledgerOf, zones: opts.zones, exposure: opts.exposure, previous: opts.previous || undefined }),
+        type: 'text/markdown;charset=utf-8',
+      },
       // 預期資料（ssot-expected/1）由核心的 S.compare.expectedFrom 產生
       expected: {
         name: (Q) => `expected-${baseName(Q)}.json`,

@@ -219,13 +219,16 @@ module.exports = async () => {
     App.select({ type: 'device', key: dev });
     const link = $('#detail').testAll('a').find((a) => a.textContent === '查看防火牆規則與服務');
     if (!link) throw new Error('設備詳情應有防火牆摘要與入口');
-    // 防火牆摘要與相鄰的路由表、管理面設定同一種模式：可展開區塊（detail-fold），標題旁「N 條規則」；有問題的規則時預設展開
+    // 防火牆摘要與相鄰的路由表、管理面設定同一種模式：可展開區塊（detail-fold），標題旁是規則數（純數字）、有問題時「N 條有問題」；
+    // 有問題的規則時預設展開；跳到防火牆畫面的入口在標題列
     {
       const fold = $('#detail').testAll('details').find((d) => d.querySelector('summary').firstChild.textContent === '防火牆');
-      const n = Q.firewallRulesOf(dev).length; const bad = Q.firewallRulesOf(dev).some((r) => Q.findingsFor('rule', r.key).some((f) => f.severity !== 'info'));
-      if (!fold || !/\bdetail-fold\b/.test(fold.className) || !fold.contains(link)) throw new Error('設備詳情的防火牆應是可展開區塊（section 的 fold），入口在裡面');
-      const chip = fold.querySelector('summary').testAll('.chip')[0];
-      if (!chip || chip.textContent !== `${S.view.num(n)} 條規則`) throw new Error('防火牆區塊的標題旁應寫「N 條規則」：' + (chip && chip.textContent));
+      const n = Q.firewallRulesOf(dev).length; const nBad = Q.firewallRulesOf(dev).filter((r) => Q.findingsFor('rule', r.key).some((f) => f.severity !== 'info')).length; const bad = nBad > 0;
+      if (!fold || !/\bdetail-fold\b/.test(fold.className) || !fold.querySelector('summary').contains(link)) throw new Error('設備詳情的防火牆應是可展開區塊（section 的 fold），入口在標題列');
+      const chip = fold.querySelector('summary').testAll('.count')[0];
+      if (!chip || chip.textContent !== S.view.num(n)) throw new Error('防火牆區塊的標題旁應是規則數：' + (chip && chip.textContent));
+      const badChip = fold.querySelector('summary').testAll('.chip').find((c) => c.textContent.endsWith('條有問題'));
+      if (bad ? !badChip || badChip.textContent !== `${S.view.num(nBad)} 條有問題` : badChip) throw new Error('有問題的規則時標題列寫「N 條有問題」，沒有時不顯示');
       if ((fold.getAttribute('open') != null) !== bad) throw new Error('有問題的規則時防火牆區塊預設展開，沒有時收合');
       if ($('#detail').testAll('.detail-section').some((s) => s.querySelector('h3').textContent.startsWith('防火牆'))) throw new Error('防火牆摘要不應是一般區塊');
     }
@@ -244,13 +247,18 @@ module.exports = async () => {
     // chain 的區塊在表的區塊裡（兩層都是可展開區塊）：最內層含規則表的是 chain
     const folds = $('#detail').testAll('details').filter((d) => d.querySelector('.fw-chain') && !d.testAll('details').length);
     if (folds.map((d) => d.querySelector('summary').firstChild.textContent).join('|') !== chains.map((c) => c.chain).join('|')) throw new Error('chain 的順序應與 Q.firewallChains 一致');
-    const heads = $('#detail').testAll('summary').map((x) => x.firstChild.textContent);
-    // 防火牆畫面與設備詳情同一種區塊模式：每個區塊都是可展開區塊（detail-fold），標題旁寫數量與單位
-    const blocks = $('#detail').testAll('details').filter((d) => /\bdetail-fold\b/.test(d.className));
-    const want = [...S.util.uniq(chains.map((c) => c.family + '|' + c.table)).map(() => '條規則'), ...(Q.ipServicesOf(dev).length ? ['個服務'] : [])];
-    const units = blocks.map((d) => { const c = d.querySelector('summary').testAll('.chip')[0]; return c ? c.textContent.replace(/^[\d,]+ /, '') : null; });
-    want.forEach((u) => { if (!units.includes(u)) throw new Error('防火牆畫面的區塊標題旁應有數量與單位「' + u + '」：' + units.join('|')); });
-    if ($('#detail').testAll('.detail-section').some((s) => /^(IPv4|IPv6|服務|WAN)/.test(s.querySelector('h3').textContent))) throw new Error('防火牆畫面的表、服務與 WAN 判斷應是可展開區塊，不是一般區塊');
+    // 標題（展開列與一般區塊）依畫面順序
+    const heads = $('#detail').all().filter((x) => x.tagName === 'SUMMARY' || x.tagName === 'H3').map((x) => x.firstChild.textContent);
+    // 防火牆畫面：WAN 判斷與各表是這一頁的主體（一般區塊，標題旁是規則數），服務與 interface list 是附屬清單（展開列，標題旁是列數）；
+    // 數量一律是純數字，標題列（頁首）只放狀態，不重複規則與服務的數量
+    const tableSecs = $('#detail').testAll('.detail-section').filter((s) => /^(IPv4|IPv6) /.test(s.querySelector('h3').firstChild.textContent));
+    if (tableSecs.length !== S.util.uniq(chains.map((c) => c.family + '|' + c.table)).length) throw new Error('每個位址族與表是一個一般區塊');
+    tableSecs.forEach((s) => { const c = s.querySelector('h3').querySelector('.count'); const fam = s.querySelector('h3').firstChild.textContent;
+      const n = chains.filter((x) => `${x.family === 'ip' ? 'IPv4' : 'IPv6'} ${x.table}` === fam).reduce((a, x) => a + x.rules, 0);
+      if (!c || c.textContent !== S.view.num(n)) throw new Error(fam + ' 的標題旁應是規則數'); });
+    const svcFold = $('#detail').testAll('details').find((d) => d.querySelector('summary').firstChild.textContent === '服務（/ip service）');
+    if (Q.ipServicesOf(dev).length && (!svcFold || svcFold.querySelector('summary').querySelector('.count').textContent !== S.view.num(Q.ipServicesOf(dev).length))) throw new Error('服務是展開列，標題旁是服務數');
+    if ($('#detail').querySelector('.row').testAll('.chip').some((c) => /條規則|個服務/.test(c.textContent))) throw new Error('防火牆畫面的頁首只放狀態，不重複規則與服務的數量');
     const fams = S.util.uniq(chains.map((c) => c.family + ' ' + c.table));
     const famIdx = fams.map((k) => heads.findIndex((x) => x === k.replace(/^ip /, 'IPv4 ').replace(/^ipv6 /, 'IPv6 ')));
     if (famIdx.some((i) => i < 0) || famIdx.some((x, i) => i && famIdx[i - 1] > x)) throw new Error('位址族與表的分組應依序列出：' + heads.join('|'));

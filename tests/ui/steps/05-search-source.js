@@ -115,17 +115,17 @@ module.exports = async () => {
     } else if (!process.env.SMOKE_INPUT) throw new Error('範例資料應有收集了 /system routerboard 與 uptime 的設備');
     const noRb = Q.devices().find((d) => d.collected && !d.routerboard && !d.uptime);
     if (noRb) { App.select({ type: 'device', key: noRb.key }); const kv = $('#detail').querySelector('.kv').textContent; if (kv.includes('RouterBOOT 韌體') || kv.includes('運作時間')) throw new Error('沒有收集時不列 RouterBOOT 韌體與運作時間'); }
-    // 與多數不同：設備在任何 finding.deviation.deviating 中時，標題下有「與多數不同 N 項」
+    // 與多數不同：設備在任何 finding.deviation.deviating 中時，標題下有「N 項與多數不同」（狀態 chip 的寫法：N＋量詞＋狀態）
     const devs = S.util.uniq(Q.findings().flatMap((f) => (f.deviation ? f.deviation.deviating : [])));
     devs.forEach((k) => {
       App.select({ type: 'device', key: k });
       const n = Q.deviationsOf(k).length;
-      if (!$('#detail').testAll('.chip').some((c) => c.textContent === `與多數不同 ${n} 項`)) throw new Error(`${k} 應有「與多數不同 ${n} 項」`);
+      if (!$('#detail').testAll('.chip').some((c) => c.textContent === `${S.view.num(n)} 項與多數不同`)) throw new Error(`${k} 應有「${n} 項與多數不同」`);
       if (!Q.deviationsOf(k).every((i) => text('#detail').includes(Q.finding(i).message))) throw new Error(`${k} 的檢查結果應包含與多數不同的那幾筆`);
     });
     if (!devs.length && !process.env.SMOKE_INPUT) throw new Error('範例資料應有與多數不同的設備');
     const clean = Q.devices().find((d) => !devs.includes(d.key)); App.select({ type: 'device', key: clean.key });
-    if ($('#detail').testAll('.chip').some((c) => c.textContent.startsWith('與多數不同'))) throw new Error('沒有與多數不同的設備不應有 chip');
+    if ($('#detail').testAll('.chip').some((c) => c.textContent.includes('與多數不同'))) throw new Error('沒有與多數不同的設備不應有 chip');
     // 平手：詳情和左欄一樣不顯示額外的「沒有多數」行（訊息本身仍在）
     const tie = Q.findings().findIndex((f) => f.deviation && f.deviation.basis === 'majority' && !f.deviation.deviating.length && f.entities.length);
     if (tie >= 0) {
@@ -135,13 +135,14 @@ module.exports = async () => {
     }
     if (!process.env.SMOKE_INPUT && tie < 0) throw new Error('範例資料應有多數決平手的檢查結果');
     if (Q.devices().some((d) => { App.select({ type: 'device', key: d.key }); return text('#detail').includes('沒有多數'); })) throw new Error('設備詳情不應出現「沒有多數」');
-    // 長表格：超過 8 列預設收合，只在展開列顯示筆數
-    const big = Q.devices().find((d) => d.collected && Q.interfacesOf(d.key).filter((i) => !i.hearsay).length > 8);
-    App.select({ type: 'device', key: big.key });
-    const ifSec = $('#detail').testAll('.detail-fold').find((x) => x.querySelector('summary').textContent.startsWith('介面'));
-    if (!ifSec || ifSec.getAttribute('open') !== null) throw new Error('超過 8 列的介面表應預設收合');
-    const small = Q.devices().find((d) => d.collected && Q.interfacesOf(d.key).filter((i) => !i.hearsay).length > 0 && Q.interfacesOf(d.key).filter((i) => !i.hearsay).length <= 8);
-    if (small) { App.select({ type: 'device', key: small.key }); if (!$('#detail').testAll('h3').some((x) => x.textContent.startsWith('介面'))) throw new Error('8 列以內的介面表不收合'); }
+    // 介面表不依筆數切換：一律是展開列，沒有問題的介面時預設收合，有錯誤或警告的介面時展開
+    const ifSecOf = () => $('#detail').testAll('.detail-fold').find((x) => x.querySelector('summary').firstChild.textContent === '介面');
+    Q.devices().filter((d) => d.collected && Q.interfacesOf(d.key).some((i) => !i.hearsay)).slice(0, 20).forEach((d) => {
+      App.select({ type: 'device', key: d.key }); const ifSec = ifSecOf();
+      const bad = Q.interfacesOf(d.key).some((i) => S.view.hasProblem(Q.findingsFor('interface', i.key)));
+      if (!ifSec || (ifSec.getAttribute('open') !== null) !== bad) throw new Error(`${d.key} 的介面表應是展開列，只在有問題的介面時預設展開`);
+      if ($('#detail').testAll('h3').some((x) => x.firstChild.textContent === '介面')) throw new Error('介面表不依筆數變成一般區塊');
+    });
     App.select(null);
   });
   await step('名詞與推論：V.TERMS 是畫面名詞的單一來源；推定欄位標「推論」；VLAN 鏈路數用中性色', () => {
@@ -149,8 +150,8 @@ module.exports = async () => {
     if (!Object.isFrozen(V.TERMS) || V.TERMS.network !== '網路設備' || V.TERMS.inferred !== '推論') throw new Error('V.TERMS 應凍結並定義網路設備、推論等名詞');
     const c = V.inferChip('依據'); if (c.textContent !== V.TERMS.inferred || c.getAttribute('title') !== '依據') throw new Error('V.inferChip 應寫「推論」並把依據放在 title');
     App.select({ type: 'vlan', key: '30' });
-    const v = Q.vlan(30); const chip = $('#detail').testAll('.chip').find((x) => x.textContent === `兩端都有此 VLAN 的鏈路 ${v.carry.length} 條`);
-    if (!chip || chip.classList.contains('ok')) throw new Error('VLAN 詳情應寫中性色的「兩端都有此 VLAN 的鏈路 N 條」');
+    const v = Q.vlan(30); const chip = $('#detail').testAll('.chip').find((x) => x.textContent === `${v.carry.length} 條鏈路兩端都有此 VLAN`);
+    if (!chip || chip.classList.contains('ok')) throw new Error('VLAN 詳情應寫中性色的「N 條鏈路兩端都有此 VLAN」（數字在前，同一列的「N 台設備」）');
     if ($('#detail').testAll('.chip').some((x) => x.textContent.startsWith('通過 '))) throw new Error('VLAN 詳情不應寫「通過 N 條鏈路」');
     const d = Q.devices().find((x) => x.kindBasis && x.kindBasis !== 'profile');
     App.select({ type: 'device', key: d.key });

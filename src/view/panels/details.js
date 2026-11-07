@@ -39,28 +39,15 @@
   /** /routing rule 的文字：第幾條、條件、action 與路由表 */
   const routingRuleText = (r) => `/routing rule 第 ${r.order} 條：${Object.entries(r.match).map(([k, v]) => `${k}=${v}`).join(' ') || '（沒有條件）'} action=${r.action}${r.table ? ' table=' + r.table : ''}${r.comment ? `（${r.comment}）` : ''}`;
   const kv = (pairs) => h('div', { class: 'kv' }, pairs.filter((p) => p && p[1] !== null && p[1] !== undefined && p[1] !== '').flatMap(([k, v]) => [h('div', { class: 'k' }, k), h('div', null, v)]));
-  /**
-   * 詳情區塊的唯一產生方式：標題與筆數只在這裡產生，內容函式只回傳內容、不自帶標題（避免標題重複）。
-   *   section(標題, 內容, { count, extra, fold, open })
-   *   - 內容為 null、false 或空陣列時，整個區塊不顯示
-   *   - count：標題旁的筆數；列表類區塊一律提供
-   *   - fold：可展開區塊（標題在展開列，open 決定預設展開）；否則為一般區塊（h3 標題）
-   *   - long：長列表；count 超過 LONG_ROWS 時改為預設收合的展開區塊，只在展開列顯示筆數
-   */
-  const LONG_ROWS = 8;
-  function section(title, content, opt) {
-    const o = opt || {};
-    if (content == null || content === false || (Array.isArray(content) && !content.length)) return null;
-    const fold = o.fold || (o.long && o.count > LONG_ROWS);
-    // 展開列內的連結（例如「在圖上看」）只執行自己的動作，不順便切換展開
-    const extra = (o.extra || []).map((x) => (fold && x ? h('span', { onclick: (e) => { if (e && e.preventDefault) e.preventDefault(); } }, x) : x));
-    // unit：數量是什麼的數量看不出來時寫出單位（例如「2 筆檢查結果」）
-    const head = [title, o.count == null ? null : V.chip(o.unit ? `${V.num(o.count)} ${o.unit}` : String(o.count)), ...extra];
-    const body = Array.isArray(content) ? h('div', null, content) : content;
-    return fold
-      ? h('details', { class: 'detail-fold', open: !!o.open }, [h('summary', null, head), body])
-      : h('div', { class: 'detail-section' }, [h('h3', null, head), body]);
-  }
+  // 詳情區塊的唯一產生方式是 V.section（dom.js；規則寫在那裡）：第一層（檢查結果、屬性）是一般區塊，其餘主題一律是展開列
+  const section = V.section;
+  /** 一組檢查結果有錯誤或警告：主題區塊預設展開的依據 */
+  const problem = V.hasProblem;
+  /** 「N 條有問題」：這些檢查結果中有錯誤或警告的實體數；語氣色依最嚴重的 */
+  const problemChip = (App, type, keys, unit) => {
+    const fl = keys.map((k) => App.Q.findingsFor(type, k).filter((f) => f.severity !== 'info'));
+    return V.stateChip(fl.filter((x) => x.length).length, unit + '有問題', V.worstSev([].concat(...fl)));
+  };
   /** 說明段落（圖例、名詞解釋）：每次選取都一樣，收進預設收合的「這是什麼？」，不佔詳細資料的首屏 */
   const aboutSection = (paras) => section('這是什麼？', paras.filter(Boolean).map((t) => h('p', { class: 'muted' }, t)), { fold: true });
   const vlanText = (ids) => (ids && ids.length ? S.util.fmtVlans(ids) : '—');
@@ -72,14 +59,35 @@
    *   標題 → 標籤 → 檢查結果 → 屬性 → 說明 → 主題區塊（同一主題先事實、後推論，例如鏈路 → 推論鏈路）→ 來源
    * 檢查結果放在屬性之前：選取物件多半是為了看它的問題。
    * 例外是設備：先列身分（管理 IP、型號、版本、收集的資料），再列檢查結果的前 3 筆，否則核心設備的身分會被推到首屏外。
-   * 推論的區塊一律用 inferredSection 等共用元件，標題與說明只寫一次；列表類區塊加 long，超過 LONG_ROWS 筆時預設收合。
+   * 推論的區塊一律用 inferredSection 等共用元件，標題與說明只寫一次。
+   * 主題區塊一律是展開列（不依筆數切換）：有錯誤／警告、收集失敗或目前定位的列時預設展開，其餘收合；列表沒有資料時整個不顯示。
+   * 同種資料同一種呈現：鏈路一律表格（linkTable），只有名稱的設備清單一律 chip-list（devChips）。
+   * 跳到其他畫面或改變範圍的連結放在標題列（section 的 extra）。
    */
+  /** 只有名稱的設備清單：chip-list，每台是設備連結 */
+  const devChips = (App, keys) => h('div', { class: 'chip-list dev-chips' }, keys.map((k) => h('span', { class: 'chip dev-chip' }, devLink(App, k))));
+  /**
+   * 鏈路表格（介面、VLAN 的鏈路共用；設備的鄰居、設備對的鏈路是同一種欄位）：兩端、類別、VLAN，點一列選取鏈路，有問題的列標 bad。
+   * from：從這一端看（介面）時，第一欄是本端；more：接在後面的欄（例如 VLAN 的原因）
+   */
+  function linkTable(App, links, from, more) {
+    const Q = App.Q; const dom = (l) => l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN;
+    const ends = (l) => (from && l.b === from ? [l.b, l.a] : [l.a, l.b]);
+    const end = (ep) => h('span', null, [Q.devLabel(K.splitEp(ep)[0]), h('span', { class: 'mono muted' }, ' ' + ifName(Q, ep))]);
+    return table([
+      { t: from ? '本端' : 'A 端', f: (l) => (dom(l) ? Q.devLabel(K.splitEp(ends(l)[0])[0]) : end(ends(l)[0])), s: (l) => Q.epName(ends(l)[0]) },
+      { t: '類別', f: (l) => V.linkClassText(l, { proto: true }), cls: 'nowrap' },
+      { t: from ? '對端' : 'B 端', f: (l) => (dom(l) ? Q.devLabel(K.splitEp(ends(l)[1])[0]) : end(ends(l)[1])), s: (l) => Q.epName(ends(l)[1]) },
+      { t: 'VLAN', f: (l) => (dom(l) ? '—' : l.vlanMismatch ? h('span', { class: 'diffA' }, '不一致') : h('span', { class: 'vlanlist' }, vlanText(l.vlansCommon))) },
+      ...(more || []),
+    ], links, { limit: 300, onRow: (l) => App.select({ type: 'link', key: l.key }, { focus: true }), bad: (l) => l.vlanMismatch || problem(Q.findingsFor('link', l.key)) });
+  }
   /** kv 中的推定值：值後面加「推論」chip，和同一張表裡收集到的事實區分 */
   const inferred = (value, tip) => h('span', null, [value, ' ', V.inferChip(tip)]);
   /** 推論鏈路區塊：說明推論的意義，列出兩端、依據與信心 */
-  function inferredSection(App, list, from, opt) {
+  function inferredSection(App, list, from) {
     return section('推論鏈路（沒有 LLDP）', list.length ? [h('p', { class: 'muted' }, '依 MAC 表、MNDP、RSTP 或點對點網段推定相鄰：是直接相連，或中間只有非網管型設備。不影響任何檢查。'),
-      inferredTable(App, list, from)] : null, Object.assign({ count: list.length }, opt || {}));
+      inferredTable(App, list, from)] : null, { count: list.length, fold: true });
   }
   function findingsBlock(App, list, opt) {
     if (!list.length) return null;
@@ -197,7 +205,7 @@
       const blk = App.Q.block(b);
       // 一般字型：指令與設備名是說明文字，等寬字會讓整行折成好幾段
       return h('div', null, h('a', { class: 'link', onclick: () => App.openRaw(blk.file, line, { list }) }, `${V.blockWhere(App.Q, blk)}・第 ${line} 行`));
-    }), { count: src.length, long: true });
+    }), { count: src.length, fold: true });
   }
 
   // ---------------------------------------------------------------- 基準狀態卡（未選取時）
@@ -308,8 +316,9 @@
         + '也不參與「同一 MAC 出現在多個終端埠」的檢查，因為 MAC 可能隨使用者漫遊而移動。MNDP 只代表同一 L2 廣播網域可達，不算直連鄰接。']),
       // 點選 A03（未識別的終端）會來到這裡：列出這台設備的 A03，處理建議才看得到
       findingsBlock(App, Q.findingsFor('device', sel.dev).filter((f) => f.id === 'A03')),
-      section('終端埠', rows.length ? unknownTable(App, rows) : null, { count: rows.length, long: true }),
-      section('Wi-Fi MAC 觀察（列入終端清單，不檢查重複 MAC）', wifi.length ? unknownTable(App, wifi, () => false) : null, { count: wifi.length, long: true }),
+      // 終端埠是這一頁的主體（一般區塊）；Wi-Fi 是附屬清單（展開列）
+      section('終端埠', rows.length ? unknownTable(App, rows) : null, { count: rows.length }),
+      section('Wi-Fi MAC 觀察（列入終端清單，不檢查重複 MAC）', wifi.length ? unknownTable(App, wifi, () => false) : null, { count: wifi.length, fold: true }),
     ]);
   }
 
@@ -329,14 +338,18 @@
     const inactive = routes.filter((r) => r.active === false).length;
     const showTable = multiVrf(Q) || routes.some((r) => (r.routingTable || K.MAIN_VRF) !== K.MAIN_VRF);
     const blocks = App.Q.blocksOf(d.key);
-    const neighborHasFinding = peerRows.some((r) => r.links.some((l) =>
-      l.vlanMismatch || Q.findingsFor('link', l.key).some((f) => f.severity !== 'info')));
+    const linkBad = (l) => l.vlanMismatch || problem(Q.findingsFor('link', l.key));
+    const neighborHasFinding = peerRows.some((r) => r.links.some(linkBad));
+    const ifcBad = (i) => problem(Q.findingsFor('interface', i.key));
+    const unkBad = (r) => r.macs.length > 1 || problem(Q.findingsFor('interface', r.ep));
+    const failed = blocks.filter((b) => b.failure).length;
     return h('div', { class: 'detail' }, [
       h('h2', null, Q.devLabel(d.key)),
       h('div', { class: 'row' }, [V.kindChip(d.kind), d.collected ? V.chip('已收集', 'ok') : V.chip('未收集（僅由鄰居發現）', 'warn'), d.group ? V.chip(d.group, '', { title: V.TERMS.group + '（版面用，不代表實體位置或 IP 網段）' }) : null, d.role ? V.chip('角色：' + d.role) : null,
         dev.length ? h('a', { class: 'link chip-link deviation-chip', title: '依跨設備多數決推定這台的設定與其他設備不同（推論）；點一下捲到檢查結果',
-          onclick: () => { const sec = V.$('#detail .findings-section'); if (sec) sec.scrollIntoView({ block: 'start', behavior: 'smooth' }); } }, V.chip(`${V.DEVIATION} ${dev.length} 項`, 'warn')) : null]),
-      kv([['管理 IP', d.mgmtIp], ['型號', d.deviceType], ['RouterOS', d.softwareVersion],
+          onclick: () => { const sec = V.$('#detail .findings-section'); if (sec) sec.scrollIntoView({ block: 'start', behavior: 'smooth' }); } }, V.stateChip(dev.length, '項' + V.DEVIATION, V.worstSev(dev))) : null]),
+      // 已收集的設備應有的身分欄位沒有值時寫「—」；未收集的設備改以說明句交代（下一段）
+      kv([['管理 IP', d.mgmtIp || (d.collected ? '—' : null)], ['型號', d.deviceType || (d.collected ? '—' : null)], ['RouterOS', d.softwareVersion || (d.collected && d.manufacturer === 'mikrotik' ? '—' : null)],
         // RouterBOOT 韌體與運作時間（/system routerboard、/system resource 的事實）；文字與網路文件共用 S.report
         ['RouterBOOT 韌體', S.report.firmwareText(d.routerboard) || null],
         // 運作時間是收集 /system resource 那一刻的值；那段輸出有收集器的收集時間時寫出，沒有時說明（和下方取自設定匯出的「收集時間」是不同的來源）
@@ -348,33 +361,38 @@
         ['類型依據', d.kindBasis === 'profile' ? V.KIND_BASIS[d.kindBasis] : inferred(V.KIND_BASIS[d.kindBasis] || d.kindBasis, '設備類型是依型號、收集的資料或鄰居回報推定的結果，不是設備直接回報')],
         ['收集時間', d.collectedAt ? `${d.collectedAt.replace('T', ' ')}（設備時間，取自設定匯出 /export 的開頭）` : null],
         ['其他名稱', d.names.length > 1 ? d.names.join('、') : null], ['路由器 ID', d.routerId],
-        ['看到它的設備', d.seenBy.length && d.seenBy.length <= SEEN_INLINE ? seenByLinks(App, d.seenBy) : null],
+        ['看到它的設備', d.seenBy.length && d.seenBy.length <= SEEN_INLINE ? devChips(App, d.seenBy) : null],
         ['收集的資料', d.collected ? h('div', { class: 'chip-list' }, [
           ...(cov ? cov.data : []).map((t) => V.chip(S.query.dataLabel(t), 'ok')),
           ...(cov ? cov.missing : []).map((t) => V.chip('缺 ' + S.query.dataLabel(t), 'err')),
           ...(cov && cov.failures ? cov.failures : []).map((x) => V.chip(`收集失敗：${x.command || '整台設備'}`, 'err', { title: V.failureText(x) })),
         ]) : null]]),
+      // 沒收集與「收集到但是空的」分開：未收集的設備說明下面只有鄰居回報的資料（空的區塊不顯示，不寫「鄰居 0」）
+      d.collected ? null : h('p', { class: 'muted uncollected-note' }, '沒有收集這台設備的輸出：下面只有鄰居回報的資料，介面、路由、防火牆等設定無法判斷。'),
       // 設備的身分（管理 IP、型號、版本、收集的資料）在首屏；核心設備常有十幾二十筆檢查結果，只先列 DEVICE_FINDINGS_SHOWN 筆
       findingsBlock(App, fl, { shown: DEVICE_FINDINGS_SHOWN }),
-      section('看到它的設備', d.seenBy.length > SEEN_INLINE ? seenByLinks(App, d.seenBy) : null, { count: d.seenBy.length, fold: true }),
+      section('看到它的設備', d.seenBy.length > SEEN_INLINE ? devChips(App, d.seenBy) : null, { count: d.seenBy.length, fold: true }),
       // 未收集的設備：介面只來自鄰居的回報（名稱可能是對端回報的埠名，或 OSPF 鄰居的位址），狀態一律不明
       d.collected ? null : section('鄰居看到的介面與位址', table([
         { t: '介面', f: (i) => (i.name === '?' || Q.addressesOf(i.key).some((x) => x.split('/')[0] === i.name) ? h('span', { class: 'muted', title: '鄰居沒有回報介面名稱（原值：' + i.name + '）' }, '—') : h('span', { class: 'mono' }, i.name)), s: (i) => i.name },
         { t: '位址', f: (i) => Q.addressesOf(i.key).join('  '), s: (i) => Q.addressesOf(i.key)[0] || null },
         { t: '描述', f: (i) => i.desc || '', s: (i) => i.desc || null },
-      ], ifs.slice().sort((a, b) => S.util.natural(a.name, b.name)), { onRow: (i) => App.select({ type: 'interface', key: i.key }), limit: 300 }), { count: ifs.length, long: true }),
+      ], ifs.slice().sort((a, b) => S.util.natural(a.name, b.name)), { onRow: (i) => App.select({ type: 'interface', key: i.key }), limit: 300, bad: ifcBad }), { count: ifs.length, fold: true, open: ifs.some(ifcBad) }),
       !d.collected ? null : section('介面', table([
         { t: '介面', f: (i) => h('span', { class: 'mono' }, i.name + (i.lag ? ` → ${Q.getInterface(i.lag).name}` : '')), s: (i) => i.name },
         { t: '狀態', f: V.ifcState, s: V.ifcState },
         { t: '描述／IP', f: (i) => [i.desc, ...Q.addressesOf(i.key)].filter(Boolean).join('  '), s: (i) => Q.addressesOf(i.key)[0] || i.desc },
         { t: 'VLAN', f: (i) => h('span', { class: 'vlanlist' }, vlanText(S.util.ifcVlans(i))), s: (i) => vlanText(S.util.ifcVlans(i)) },
         { t: 'MAC', f: (i) => (i.macs.length ? String(i.macs.length) : ''), s: (i) => i.macs.length || null },
-      ], ifs.sort((a, b) => S.util.natural(a.name, b.name)), { onRow: (i) => App.select({ type: 'interface', key: i.key }), limit: 300 }), { count: ifs.length, long: true }),
+      ], ifs.sort((a, b) => S.util.natural(a.name, b.name)), { onRow: (i) => App.select({ type: 'interface', key: i.key }), limit: 300, bad: ifcBad }),
+        { count: ifs.length, fold: true, open: ifs.some(ifcBad), extra: [problemChip(App, 'interface', ifs.map((i) => i.key), '個')] }),
       section('VLAN 定義', vlans.length ? table([
         { t: 'ID', f: (v) => (v.id == null ? '?' : String(v.id)) }, { t: '名稱', f: (v) => v.name || '' }, { t: '描述', f: (v) => v.desc || '' }, { t: '成員', f: (v) => String(v.members.length) },
       ], vlans, { onRow: (v) => v.id != null && App.select({ type: 'vlan', key: String(v.id) }) }) : null, { count: vlans.length, fold: true }),
-      section('沒有 LLDP／CDP 鄰接的埠', unk.length ? unknownTable(App, unk) : null,
-        { count: unk.length, long: true, extra: [h('a', { class: 'link', onclick: () => App.select({ type: 'endpoints', dev: d.key }, { focus: true }) }, '在圖上看')] }),
+      // 有問題的終端埠（例如學到多個 MAC）時預設展開
+      section('沒有 LLDP／CDP 鄰接的埠', unk.length ? unknownTable(App, unk, unkBad) : null,
+        { count: unk.length, fold: true, open: unk.some(unkBad),
+          extra: [h('a', { class: 'link', onclick: () => App.select({ type: 'endpoints', dev: d.key }, { focus: true }) }, '在圖上看')] }),
       section('鄰居', peerRows.length ? table([
         { t: '本機介面', f: (r) => r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN
           ? h('span', { class: 'mono' }, r.observations.length ? r.observations.map((o) => o.ifc).join('、') : '對端回報')
@@ -392,10 +410,9 @@
         s: (r) => (r.l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? null : r.l.vlanMismatch ? '不一致' : vlanText(r.l.vlansCommon)) },
       ], peerRows, {
         onRow: (r) => App.select({ type: 'link', key: r.l.key }, { focus: true }),
-        bad: (r) => r.links.some((x) => x.vlanMismatch || Q.findingsFor('link', x.key).some((f) => f.severity !== 'info')),
-      }) : h('div', { class: 'muted' }, '沒有鏈路'),
-        { count: peerRows.length, fold: true, open: neighborHasFinding }),
-      inferredSection(App, Q.inferredLinksOf(d.key), d.key, { fold: true }),
+        bad: (r) => r.links.some(linkBad),
+      }) : null, { count: peerRows.length, fold: true, open: neighborHasFinding, extra: [problemChip(App, 'link', links.map((l) => l.key), '條')] }),
+      inferredSection(App, Q.inferredLinksOf(d.key), d.key),
       section('OSPF L3 鄰接（非實體直連）', ospfAdjacencies.length ? table([
           { t: '本機介面', f: (a) => epLink(App, a.localEp), s: (a) => K.splitEp(a.localEp)[1] },
           { t: '鄰居', f: (a) => devLink(App, a.peerDev), s: (a) => Q.devName(a.peerDev) },
@@ -413,33 +430,28 @@
         { t: '協定', f: (r) => (r.blackhole ? h('span', { class: 'diffA' }, '黑洞路由') : r.proto), s: (r) => r.proto },
         { t: '距離', f: (r) => (r.distance == null ? '' : String(r.distance)), s: (r) => r.distance },
         { t: '下一跳', f: (r) => nhCell(r, multiVrf(Q)), s: (r) => (r.nh[0] ? r.nh[0].ip || r.nh[0].ifc : '') },
-      ], routes, { limit: 200, rowClass: (r) => (r.active === false ? 'route-off' : '') }) : null, { count: routes.length, fold: true, extra: inactive ? [V.chip(`非作用中 ${V.num(inactive)}`)] : [] }),
+      ], routes, { limit: 200, rowClass: (r) => (r.active === false ? 'route-off' : '') }) : null, { count: routes.length, fold: true, extra: [V.stateChip(inactive, '條非作用中')] }),
       vrfSection(App, d.key),
       policySection(App, d.key),
       firewallSummary(App, d.key),
       d.collected ? mgmtSection(App, d.key) : null,
       section('收集到的原始輸出', blocks.length ? blocksTable(App, blocks) : null,
-        { count: blocks.length, fold: true, open: blocks.some((b) => b.failure) }),
+        { count: blocks.length, fold: true, open: failed > 0, extra: [V.stateChip(failed, '個收集失敗', 'error')] }),
     ]);
   }
   /** 「看到它的設備」超過這個台數時移出屬性表，改為預設收合的區塊（核心設備常被十幾台看到） */
   const SEEN_INLINE = 5;
-  const seenByLinks = (App, keys) => h('span', { class: 'seen-by' }, keys.flatMap((k, i) => [i ? '、' : '', devLink(App, k)]));
   /** 設備詳情的防火牆摘要：規則、服務與 WAN／LAN 狀態；完整內容在防火牆畫面 */
   function firewallSummary(App, dev) {
     const Q = App.Q; const rules = Q.firewallRulesOf(dev); const services = Q.ipServicesOf(dev); const zone = Q.firewallZone(dev);
     if (!rules.length && !services.length && !zone) return null;
-    const bad = rules.filter((r) => Q.findingsFor('rule', r.key).some((f) => f.severity !== 'info')).length;
+    const bad = problemChip(App, 'rule', rules.map((r) => r.key), '條');
     // 用語與防火牆畫面共用 firewall.js 的 zoneStatus()（該檔在本檔之後載入，render 時才取用）
     const zs = zone && V.firewall.zoneStatus(zone.status);
-    // 與相鄰的路由表、VRF、管理面設定同一種模式：可展開區塊＋標題旁的數量（條規則）；有問題的規則時預設展開（同管理面設定）
-    return section('防火牆', [
-      h('div', { class: 'row' }, [
-        bad ? V.chip(`${bad} 條有問題`, 'warn') : null, V.chip(`${services.length} 個服務`),
-        zs ? V.chip(zs.short, zs.tone, { title: zs.text }) : null,
-      ]),
-      h('div', null, h('a', { class: 'link', onclick: () => App.select({ type: 'firewall', dev }) }, '查看防火牆規則與服務')),
-    ], { count: rules.length, unit: '條規則', fold: true, open: bad > 0 });
+    // 與相鄰的路由表、管理面設定同一種模式：展開列＋標題旁的規則數；有問題的規則時預設展開；跳到防火牆畫面的連結在標題列
+    return section('防火牆', kv([['規則', `${V.num(rules.length)} 條`], ['服務（/ip service）', `${V.num(services.length)} 個`],
+      ['WAN／LAN 判斷', zs ? V.chip(zs.short, zs.tone, { title: zs.text }) : '—']]),
+    { count: rules.length, fold: true, open: !!bad, extra: [bad, h('a', { class: 'link fw-open', onclick: () => App.select({ type: 'firewall', dev }) }, '查看防火牆規則與服務')] });
   }
   /*
    * 管理面設定（Q.mgmtOf，一台一筆；沒有 /export 的設備是 null）：每項列出狀態、值與依據。
@@ -534,6 +546,7 @@
     // 檢查結果 → 設定（mgmtGoto）：一般項目以 data-mgmt 找回這一列；community 以 data-facet 加上 data-linked（啟用中、有名稱，communityLinked）
     const row = (attrs, label, menu, state, params, x, manual, reason, found, more) => {
       const links = found.map((f) => findingLink(App, f));
+      if (problem(found)) bad++;
       return h('div', Object.assign({ class: 'mgmt-row' + (links.length ? ' bad' : '') }, attrs), [
         h('div', { class: 'mgmt-head' }, [].concat(h('b', null, label), ' ', V.chip(state == null ? MGMT_UNKNOWN_STATE : state), h('span', { class: 'muted mono mgmt-menu' }, menu))),
         h('div', { class: 'mono mgmt-val' }, params.map(([f, p]) => `${p}=${mgmtVal(x[f])}`).join(' ')),
@@ -542,7 +555,7 @@
         links.length ? h('div', { class: 'mgmt-line' }, [h('span', { class: 'muted' }, '檢查結果：'), ...links.flatMap((a, n) => (n ? ['、', a] : [a]))]) : null,
       ]);
     };
-    const rows = [];
+    const rows = []; let bad = 0; // bad：有錯誤或警告的項目數（標題列的狀態 chip）
     MGMT_ITEMS.forEach((it) => {
       const a = ms[it.area];
       const state = it.state ? it.state(a) : onOff(a);
@@ -565,7 +578,9 @@
       h('p', { class: 'muted mgmt-rules' }, `相關的檢查：${mgmtRuleText()}。`),
       unmatched,
       h('div', { class: 'mgmt-list' }, rows),
-    ], { count: fl.length, unit: '筆檢查結果', fold: true, open: fl.some((f) => f.severity !== 'info') }));
+    ], { count: rows.length, fold: true, open: problem(fl),
+      // 標題旁的數量是列數；有檢查結果的項目另以狀態 chip 寫出（0 不顯示）
+      extra: [V.stateChip(bad, '項有問題', V.worstSev(fl.filter((f) => f.severity !== 'info')))] }));
   }
   /**
    * F10–F14 的檢查結果 → 管理面設定的那一列：不在這台設備的詳情時先選取設備，再展開區塊、標出並捲到那一列。
@@ -608,7 +623,8 @@
         { t: '成員', f: (v) => (v.members.length ? h('span', null, v.members.flatMap((ep, n) => [n ? '、' : '', epLink(App, ep)])) : '—'), s: (v) => v.members.length },
         { t: '來源', f: (v) => srcLink(App, v.src) },
       ], list),
-    ], { count: list.length, fold: true, open: true });
+    // VRF 沒有對應的檢查結果：預設收合（同其他主題區塊）；停用的 VRF 在標題列寫出
+    ], { count: list.length, fold: true, extra: [V.stateChip(list.filter((v) => v.disabled).length, '個停用')] });
   }
   /**
    * 策略路由（事實）：/routing settings 的 policy-rules（查表順序）、/routing table、/routing rule 與 mangle 的 mark-routing。
@@ -619,6 +635,8 @@
     const Q = App.Q; const pol = Q.policyOf(dev);
     const tables = Q.routingTables().filter((t) => t.dev === dev); const rules = Q.routingRules().filter((r) => r.dev === dev);
     if (!pol.any && !rules.length && !tables.some((t) => t.vrf == null)) return null;
+    // 改過的查表順序與 mangle 的 mark-routing 會讓路由追蹤的結果不明（警告）：這時預設展開，否則收合
+    const unsure = pol.custom || pol.marks.length > 0;
     return section('策略路由', [
       kv([
         ['查表順序（policy-rules）', h('span', null, [h('span', { class: 'mono' }, pol.policyRules.join(' → ')), ' ',
@@ -641,7 +659,8 @@
         { t: '備註', f: (r) => r.comment || '' },
         { t: '來源', f: (r) => srcLink(App, r.src) },
       ], rules)]) : null,
-    ], { count: rules.length, fold: true, open: true });
+    // 內容是設定、路由表與規則三種，沒有單一的列數：標題列寫規則條數（0 不顯示）
+    ], { fold: true, open: unsure, extra: [V.stateChip(rules.length, '條 /routing rule'), unsure ? V.chip('查哪一張表不明', 'warn') : null] });
   }
   /** 收集到的原始輸出：每個區塊的指令、解析器、收集時間（UTC）與收集失敗；點一下開啟原文（失敗的區塊開在失敗那一行） */
   function blocksTable(App, bs) {
@@ -731,7 +750,8 @@
         { t: '協定', f: (l) => V.protoText(l) },
         { t: 'VLAN', f: (l) => l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? '—'
           : (l.vlanMismatch ? h('span', { class: 'diffA' }, '不一致') : h('span', { class: 'vlanlist' }, vlanText(l.vlansCommon))) },
-      ], links, { onRow: (l) => App.select({ type: 'link', key: l.key }) }) : null, { count: links.length, long: true }),
+      ], links, { onRow: (l) => App.select({ type: 'link', key: l.key }), bad: (l) => l.vlanMismatch || problem(Q.findingsFor('link', l.key)) }) : null,
+      { count: links.length, fold: true, open: links.some((l) => l.vlanMismatch || problem(Q.findingsFor('link', l.key))), extra: [problemChip(App, 'link', links.map((l) => l.key), '條')] }),
       inferredSection(App, inferredList, a),
       section('推定在這條推論鏈路後面的終端', behind.length ? table([
         { t: 'MAC', f: (x) => macLink(App, x.mac), s: (x) => x.mac }, { t: '廠商', f: (x) => x.vendor || '' }, { t: 'IP', f: (x) => x.ips.join(', ') },
@@ -788,15 +808,12 @@
         ['Untagged VLAN', i.untaggedVlans.length ? h('span', { class: 'vlanlist' }, vlanText(i.untaggedVlans)) : null],
         ['Tagged VLAN', i.taggedVlans.length ? h('span', { class: 'vlanlist' }, vlanText(i.taggedVlans)) : null], ['無法辨識的 VLAN', i.unresolvedVlans.join('、')],
         ['VLAN 子介面', i.parent ? h('span', null, [epLink(App, i.parent), ` 上的 VLAN ${i.encapVlan}`]) : null]]),
-      section('鏈路', links.map((l) => h('div', null, L(App,
-        l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN
-          ? `${Q.devName(K.splitEp(l.a)[0] === i.dev ? K.splitEp(l.b)[0] : K.splitEp(l.a)[0])}（MNDP：L2 廣播網域可達，非直連）`
-          : `${Q.epName(l.a)} ⇄ ${Q.epName(l.b)}`,
-        { type: 'link', key: l.key }))), { count: links.length, long: true }),
+      section('鏈路', links.length ? linkTable(App, links, i.key) : null,
+        { count: links.length, fold: true, open: links.some((l) => l.vlanMismatch || problem(Q.findingsFor('link', l.key))), extra: [problemChip(App, 'link', links.map((l) => l.key), '條')] }),
       inferredSection(App, inferred, i.dev),
       section('學到的 MAC', macs.length ? table([
         { t: 'MAC', f: (m) => macLink(App, m.mac) }, { t: '廠商', f: (m) => m.vendor || '' }, { t: 'IP', f: (m) => m.ips.join(', ') },
-      ], macs, { limit: 500 }) : null, { count: macs.length, long: true }),
+      ], macs, { limit: 500 }) : null, { count: macs.length, fold: true }),
       sourcesBlock(App, i.src),
     ]);
   }
@@ -826,10 +843,11 @@
       kv([['IP（ARP）', m.ips.length ? h('span', null, m.ips.flatMap((x, n) => [n ? '、' : '', ipLink(App, x)])) : '—'], ...wifiFactRows(m.wifi)]),
       m.found ? section('位置', kv(place.length ? place : [['位置', '無法推定（沒有學到它的終端埠）']]),
         { extra: [inferred ? V.inferChip('依 MAC 表與鄰居資料推定，不是設備直接回報') : null] }) : null,
+      // 位置在上方的屬性；學到它的介面是主題區塊（有問題時展開），轉送路徑上的非終端埠再收一層
       section('學到它的介面', m.seen.length ? [lead.length ? table(cols(true), lead) : null,
-        rest.length ? h('details', { class: 'detail-fold mac-rest' }, [h('summary', null, `另在 ${rest.length} 個非終端埠學到`),
-          h('p', { class: 'muted' }, '這些埠學到多個 MAC 或接到網路設備，是轉送路徑上的埠，不是它的位置；不代表方向。'), table(cols(false), rest)]) : null] : null,
-      { count: m.seen.length, extra: common }),
+        section('其他非終端埠', rest.length ? [h('p', { class: 'muted' }, '這些埠學到多個 MAC 或接到網路設備，是轉送路徑上的埠，不是它的位置；不代表方向。'), table(cols(false), rest)] : null,
+          { fold: true, count: rest.length, cls: 'mac-rest' })] : null,
+      { count: m.seen.length, fold: true, open: problem(Q.findingsFor('mac', m.mac)), extra: common }),
     ]);
   }
   /** MAC 學到的位置屬於哪種埠；沒有方向依據，不標上行／下行 */
@@ -882,7 +900,7 @@
     return h('div', { class: 'detail' }, [
       h('h2', null, want && want !== MAIN ? `${r.ip}@${want}` : r.ip),
       h('div', { class: 'row' }, [
-        pick ? V.chip(`在 ${r.vrfs.length} 個 VRF（位址重疊）`, 'warn') : null,
+        pick ? V.chip(`${V.num(r.vrfs.length)} 個 VRF 有這個位址（位址重疊）`, 'warn') : null,
         want && multi ? V.chip(V.vrfText(want)) : null,
         want && multi ? h('a', { class: 'link ip-all-vrfs', onclick: () => choose(null) }, '看所有 VRF') : null,
         asked && !want ? V.chip(`基準中沒有 VRF ${asked}，改列出所有 VRF`, 'warn') : null,
@@ -910,23 +928,24 @@
       section('ARP 紀錄', r.arps.length ? table([
         { t: '設備', f: (a) => devLink(App, a.dev) }, { t: '介面', f: (a) => a.ifc }, { t: 'MAC', f: (a) => macLink(App, a.mac) },
         ...(multi ? [{ t: 'VRF', f: (a) => K.vrf(a.vrf) }] : []),
-      ], r.arps) : null, { count: r.arps.length, long: true }),
+      ], r.arps) : null, { count: r.arps.length, fold: true }),
     ]);
   }
 
   // ---------------------------------------------------------------- VLAN
   function vlan(App, sel) {
     const Q = App.Q; const v = Q.vlan(sel.key, sel.domain);
-    const fl = Q.findingsFor('vlan', String(v.id)).concat(...v.partial.map((l) => Q.findingsFor('link', l.key)));
+    const partialFl = [].concat(...v.partial.map((l) => Q.findingsFor('link', l.key)));
+    const fl = Q.findingsFor('vlan', String(v.id)).concat(partialFl);
     const split = v.domains.length > 1; const at = v.domains.findIndex((d) => d.key === v.domain);
     const domainName = (d, idx) => `${V.TERMS.vlanDomain} ${idx + 1}：${d.devices.slice(0, 3).map((k) => Q.devName(k)).join('、')}`
       + (d.devices.length > 3 ? ` 等 ${d.devices.length} 台` : '');
     return h('div', { class: 'detail' }, [
       h('h2', null, 'VLAN ' + v.id + (at >= 0 ? `（${V.TERMS.vlanDomain} ${at + 1}／${v.domains.length}）` : '')),
       h('div', { class: 'row' }, [
-        V.chip(`${v.devices.length} 台設備`), V.chip(`兩端都有此 VLAN 的鏈路 ${v.carry.length} 條`, '', { title: '兩端介面都設定了這個 VLAN 的鏈路數；不是檢查結果' }),
+        V.chip(`${v.devices.length} 台設備`), V.chip(`${v.carry.length} 條鏈路兩端都有此 VLAN`, '', { title: '兩端介面都設定了這個 VLAN 的鏈路數；不是檢查結果' }),
         v.inferred.length ? V.chip(`${v.inferred.length} 條推論鏈路`, 'info') : null,
-        v.partial.length ? V.chip(`${v.partial.length} 條只有一端`, 'err') : null,
+        V.stateChip(v.partial.length, '條只有一端有', V.worstSev(partialFl)),
         split ? V.chip(`${v.domains.length} 個不相連的 ${V.TERMS.vlanDomain}（${V.TERMS.inferred}）`, 'warn') : null,
       ]),
       findingsBlock(App, fl),
@@ -937,32 +956,33 @@
         + '在工具列的 VLAN 選單選的篩選會保留，直到選「不篩選」；由檢查結果、搜尋或連結選的，選其他東西或換基準時取消，也可以按工具列旁的「VLAN n ✕」取消。',
       split ? '同一個 VLAN ID 的設備之間沒有承載此 VLAN 的鏈路相連，可能是各自獨立的廣播網域（例如不同站點重用 VLAN ID），'
         + '也可能只是中間有沒收集、沒有 LLDP 的設備。' + V.TERMS.vlanDomain + '是依鏈路證據的推論。' : null]),
-      section('只有一端有此 VLAN 的鏈路', v.partial.map((l) => h('div', null, L(App, `${Q.epName(l.a)} ⇄ ${Q.epName(l.b)}`, { type: 'link', key: l.key }))), { count: v.partial.length, long: true }),
+      // 只有一端有（事實，V01）：鏈路表格，加「有此 VLAN 的一端」；兩端都有 VLAN 資料，是不一致，預設展開
+      section('只有一端有此 VLAN 的鏈路', v.partial.length ? linkTable(App, v.partial, null, [{ t: '有此 VLAN 的一端', f: (l) => h('span', { class: 'mono' }, Q.epName(l.vlansA.includes(v.id) ? l.a : l.b)) }]) : null,
+        { count: v.partial.length, fold: true, open: v.partial.some((l) => l.vlanMismatch || problem(Q.findingsFor('link', l.key))) }),
       oneSideSection(App, Q.vlanCarriers(v.id, sel.domain)),
       section('設備', table([
         { t: '設備', f: (d) => devLink(App, d) },
         { t: '名稱', f: (d) => (v.entries.find((e) => e.dev === d) || {}).name || '' },
         { t: '成員介面', f: (d) => String((v.entries.find((e) => e.dev === d) || { members: [] }).members.length) },
       ], v.devices),
-        { count: v.devices.length, long: true }),
-      section(`不相連的 ${V.TERMS.vlanDomain}（${V.TERMS.inferred}）`, split ? [
-        ...v.domains.map((d, idx) => h('div', null, d.key === v.domain
-          ? h('b', null, domainName(d, idx))
-          : L(App, domainName(d, idx), { type: 'vlan', key: String(v.id), domain: d.key }))),
-        at >= 0 ? h('div', null, L(App, '顯示所有 ' + V.TERMS.vlanDomain, { type: 'vlan', key: String(v.id) })) : null,
-      ] : null, { count: v.domains.length }),
+        { count: v.devices.length, fold: true }),
+      // 目前在某個片段時預設展開（定位的列）；改看全部片段的連結在標題列
+      section(`不相連的 ${V.TERMS.vlanDomain}（${V.TERMS.inferred}）`, split ? v.domains.map((d, idx) => h('div', null, d.key === v.domain
+        ? h('b', { 'aria-current': 'true' }, domainName(d, idx))
+        : L(App, domainName(d, idx), { type: 'vlan', key: String(v.id), domain: d.key }))) : null,
+      { count: v.domains.length, fold: true, open: at >= 0, extra: [at >= 0 ? L(App, '顯示所有 ' + V.TERMS.vlanDomain, { type: 'vlan', key: String(v.id) }) : null] }),
     ]);
   }
 
   /** VLAN 承載中屬於推論的鏈路（Q.vlanCarriers 的 oneSide）：列出兩端與原因；Q.vlan 的「只有一端有」是兩端都有資料的事實，不在這裡 */
   function oneSideSection(App, c) {
     const Q = App.Q; const rows = c.links.filter((l) => l.status === 'oneSide');
+    // 鏈路一律用同一種表格（linkTable）：原因接在後面
+    const reason = new Map(rows.map((l) => [l.key, l.reason])); const links = rows.map((l) => Q.getLink(l.key)).filter(Boolean);
+    if (links.length !== rows.length) throw new Error('Q.vlanCarriers 的 oneSide 鏈路在基準中找不到：' + rows.filter((l) => !Q.getLink(l.key)).map((l) => l.key).join('、'));
     return section('只有一端可確認的鏈路（推論）', rows.length ? [
-      h('p', { class: 'muted' }, '至少一端無從得知是否帶這個 VLAN（原因見右欄；未開 vlan-filtering 的 bridge 串接時兩端都無從得知）：不算 VLAN 不一致（V01）。'),
-      table([
-        { t: '鏈路', f: (l) => L(App, `${Q.epName(l.a.ep)} ⇄ ${Q.epName(l.b.ep)}`, { type: 'link', key: l.key }) },
-        { t: '原因', f: (l) => V.VLAN_REASON[l.reason] || l.reason },
-      ], rows, { limit: 300 }),
+      h('p', { class: 'muted' }, '至少一端無從得知是否帶這個 VLAN（未開 vlan-filtering 的 bridge 串接時兩端都無從得知）：不算 VLAN 不一致（V01）。'),
+      linkTable(App, links, null, [{ t: '原因', f: (l) => V.VLAN_REASON[reason.get(l.key)] || reason.get(l.key) }]),
     ] : null, { count: rows.length, fold: true });
   }
 
@@ -992,7 +1012,9 @@
     // 檢查結果：重複 IP（A09，以 IP 為實體）與這個網段或重疊網段的 A07、A08（facet 是網段）
     const nets = new Set([s.id].concat(s.overlaps));
     // IP 實體與 A07／A08 的 facet 都是含 VRF 的鍵（K.inVrf；子網 id 就是網段鍵）
-    const fl = s.duplicateIps.flatMap((ip) => Q.findingsFor('ip', K.inVrf(ip, s.vrf))).concat(['A07', 'A08'].flatMap((id) => Q.findingsByRule(id)).filter((f) => nets.has(f.facet)));
+    const dupFl = s.duplicateIps.flatMap((ip) => Q.findingsFor('ip', K.inVrf(ip, s.vrf)));
+    const overlapFl = ['A07', 'A08'].flatMap((id) => Q.findingsByRule(id)).filter((f) => nets.has(f.facet));
+    const fl = dupFl.concat(overlapFl);
     const relation = (o) => { const x = X.byId.get(o); return x && x.len < s.len ? '包含這個網段' : '在這個網段內'; };
     const others = Array.from(X.byId.values()).filter((x) => x.prefix === s.prefix && x.id !== s.id); // 其他 VRF 的同一個網段
     const src = S.util.uniq(rows.flatMap((r) => r.a.src.map((x) => x.join(':')))).map((k) => k.split(':').map(Number));
@@ -1003,8 +1025,8 @@
         s.vlan != null ? V.chip('VLAN ' + s.vlan) : null,
         V.chip(`${s.devices.length} 台設備`),
         s.routers.length ? V.chip(`${s.routers.length} 台路由設備（推論）`, 'info') : null,
-        s.overlaps.length ? V.chip(`與 ${s.overlaps.length} 個網段重疊`, 'warn') : null,
-        s.duplicateIps.length ? V.chip(`重複 IP ${s.duplicateIps.length} 個`, 'warn') : null,
+        V.stateChip(s.overlaps.length, '個網段重疊', V.worstSev(overlapFl) || 'warn'),
+        V.stateChip(s.duplicateIps.length, '個重複 IP', V.worstSev(dupFl) || 'warn'),
       ]),
       findingsBlock(App, fl),
       kv([['網段', h('span', { class: 'mono' }, s.prefix)], ['VLAN', s.vlans.length ? h('span', { class: 'vlanlist' }, vlanText(s.vlans)) : null],
@@ -1018,11 +1040,13 @@
         { t: '依據', f: (r) => h('span', null, [V.L3_BASIS[r.e.basis], r.a.role ? `・${r.a.role.toUpperCase()}` : '', r.e.inferred ? ' ' : '', r.e.inferred ? V.chip('推論', 'info') : null,
           r.a.seenBy && r.a.seenBy.length ? h('span', { class: 'muted' }, `（由 ${r.a.seenBy.map((d) => Q.devName(d)).join('、')} 看到）`) : null]), s: (r) => r.e.basis },
         { t: '來源', f: (r) => srcLink(App, r.a.src) },
-      ], rows, { limit: 500, bad: (r) => dup.has(r.a.ip) }) : null, { count: rows.length, long: true }),
-      section('設備', s.devices.length ? h('div', { class: 'chip-list' }, s.devices.map((d) => devLink(App, d))) : null, { count: s.devices.length, fold: true }),
-      section('重疊網段', s.overlaps.length ? s.overlaps.map((o) => h('div', null, [subnetLink(App, o), h('span', { class: 'muted' }, '　' + relation(o))])) : null, { count: s.overlaps.length }),
-      section('重複 IP', s.duplicateIps.length ? s.duplicateIps.map((ip) => h('div', null, [ipLink(App, ip, s.vrf), '：',
-        ...rows.filter((r) => r.a.ip === ip && r.a.ep).flatMap((r, n) => [n ? '、' : '', epLink(App, r.a.ep)])])) : null, { count: s.duplicateIps.length }),
+      ], rows, { limit: 500, bad: (r) => dup.has(r.a.ip) }) : null, { count: rows.length, fold: true, open: dup.size > 0 }),
+      section('設備', s.devices.length ? devChips(App, s.devices) : null, { count: s.devices.length, fold: true }),
+      // 重疊與重複 IP 是問題（A07–A09）：有就預設展開，列標 bad
+      section('重疊網段', s.overlaps.length ? s.overlaps.map((o) => h('div', { class: 'bad-line' }, [subnetLink(App, o), h('span', { class: 'muted' }, '　' + relation(o))])) : null,
+        { count: s.overlaps.length, fold: true, open: true }),
+      section('重複 IP', s.duplicateIps.length ? s.duplicateIps.map((ip) => h('div', { class: 'bad-line' }, [ipLink(App, ip, s.vrf), '：',
+        ...rows.filter((r) => r.a.ip === ip && r.a.ep).flatMap((r, n) => [n ? '、' : '', epLink(App, r.a.ep)])])) : null, { count: s.duplicateIps.length, fold: true, open: true }),
       section('路由到這個網段', routes.length ? table([
         { t: '設備', f: (r) => devLink(App, r.dev) },
         { t: '協定', f: (r) => (r.blackhole ? h('span', { class: 'diffA' }, '黑洞路由') : r.proto + (r.default ? '（預設路由）' : '')) },
@@ -1058,19 +1082,20 @@
       h('h2', null, [title, ' ', V.inferChip('依路由、NAT 與位址推論的對外邊界，不是收集到的事實')]),
       h('div', { class: 'row' }, [
         V.chip(`${devs.length} 台設備`),
-        ext.length ? V.chip(`對外 ${ext.length} 個介面`, 'info') : null,
-        pos.length ? V.chip(`可能對外 ${pos.length} 個介面`, 'warn') : null,
+        ext.length ? V.chip(`${V.num(ext.length)} 個介面對外`, 'info') : null,
+        pos.length ? V.chip(`${V.num(pos.length)} 個介面可能對外`, 'warn') : null,
       ]),
       kv([['VRF', multi ? h('span', { class: 'mono' }, sel.key) : null],
-        ['設備', sel.dev ? h('span', null, [devLink(App, sel.dev), '　', L(App, '看這個 VRF 的全部', { type: 'boundary', key: sel.key })]) : null]]),
-      // 點外部最想看的是為什麼判定對外：依據在檢查結果之前
+        ['設備', sel.dev ? devLink(App, sel.dev) : null]]),
+      // 點外部最想看的是為什麼判定對外：依據在檢查結果之前；這是本頁的主體（一般區塊），改看整個 VRF 的連結在標題列
       section('對外介面與依據', table([
         // 基準沒有介面紀錄的（例如只出現在 /ip dhcp-client 的介面）註明，不做成點了沒反應的連結
         { t: '介面', f: (b) => (b.hasIfc ? epLink(App, b.ep) : h('span', null, [devLink(App, b.dev), ' ', h('span', { class: 'mono' }, K.splitEp(b.ep)[1]),
           h('span', { class: 'muted boundary-noifc', title: '介面清單（/interface）沒有這個介面；它只出現在依據列出的設定（例如 /ip dhcp-client）' }, '（基準中沒有介面資料）')])), s: (b) => b.ep },
         { t: '判定', f: (b) => V.chip(V.BOUNDARY_STATUS[b.status] || b.status, b.status === 'external' ? 'info' : 'warn'), s: (b) => b.status },
         { t: '依據', f: (b) => h('div', null, b.evidence.map(evLine)) },
-      ], list.slice().sort((a, b) => (a.status === b.status ? 0 : a.status === 'external' ? -1 : 1) || S.util.natural(a.ep, b.ep)), { limit: 500 }), { count: list.length, long: true }),
+      ], list.slice().sort((a, b) => (a.status === b.status ? 0 : a.status === 'external' ? -1 : 1) || S.util.natural(a.ep, b.ep)), { limit: 500 }),
+      { count: list.length, extra: [sel.dev ? L(App, '看這個 VRF 的全部', { type: 'boundary', key: sel.key }) : null] }),
       findingsBlock(App, fl),
       aboutSection([
         '外部是虛擬節點：基準看不到線路的另一端，依各介面的證據推論哪些介面通往外部。',
@@ -1122,10 +1147,11 @@
       const ends = t.ends.filter((e) => (e.path && e.path.length ? e.path[0] : e.dev) === s);
       const devs = new Set(ends.flatMap((e) => (e.path && e.path.length ? e.path : [e.dev])));
       const hops = t.hops.filter((hp) => devs.has(hp.dev));
+      // 同一份資料不換結構：每個起點一段，段內是和單起點相同的「逐跳」「結果」區塊（巢狀的 section）
       const el = section(`${p}從 ${Q.devName(s)}（${why}）`, [
-        hops.length ? h('div', { class: 'trace-sub' }, `逐跳 ${V.num(hops.length)}`) : null, ...hops.map(hopEl),
-        h('div', { class: 'trace-sub' }, `結果 ${V.num(ends.length)}`), ...ends.map(endEl)].filter(Boolean));
-      el.classList.add('trace-group'); el.setAttribute('data-start', s);
+        section('逐跳', hops.map(hopEl), { count: hops.length, cls: 'trace-sub' }),
+        section('結果', ends.map(endEl), { count: ends.length, cls: 'trace-sub' })], { cls: 'trace-group' });
+      el.setAttribute('data-start', s);
       return el;
     });
   }
@@ -1135,7 +1161,8 @@
    */
   const traceAssume = (App) => {
     const b = V.assumeBlock(App, S.query.traceAssumptions(), { idPrefix: 'trace-assume-', none: '這份基準沒有會影響路由追蹤的前提。' });
-    return section('這次追蹤的前提', h('div', { class: 'trace-assume' }, [b.list, b.other].filter(Boolean)), { fold: true, extra: [V.chip(`${V.num(b.shown.length)} 條有影響`)] });
+    // 有影響的條數不是列數：標題列的狀態 chip（0 不顯示）；L4 的「這次查詢的前提」同一寫法
+    return section('這次追蹤的前提', h('div', { class: 'trace-assume' }, [b.list, b.other].filter(Boolean)), { fold: true, extra: [V.stateChip(b.shown.length, '條有影響')] });
   };
   /**
    * 結果旁的「為什麼」：ends[].status 對到的前提（S.query.traceEndStatuses；策略路由依 ends[].assumption，送往外部以外的 reason 依 reasons），
@@ -1203,10 +1230,11 @@
       kv([['起點', traceStart(App, t)],
         ['VRF', multi ? `${t.vrf}（${sel.vrf ? '指定' : '依來源位址決定'}）` : null]]),
       ...tracePath(App, t),
-      traceAssume(App),
       back ? section(`回程（${t.dst} → ${t.src}）`, back.ok ? kv([['起點', traceStart(App, back)], ['VRF', multi ? back.vrf : null], ['說明', '無狀態的 ACL 需要確認回程也能通過']]) : traceError(App, back, '回程', t.dst)) : null,
       ...(back && back.ok ? tracePath(App, back, '回程') : []),
       outside ? section(`回程（${t.dst} → ${t.src}）`, h('p', { class: 'muted trace-return-ext' }, V.TRACE_RETURN_EXTERNAL + '。回程的起點不在基準內，沒有追蹤。')) : null,
+      // 去程與回程（主體，一般區塊）之後才是收合的前提，不把一般區塊夾在展開列之間
+      traceAssume(App),
     ]);
   }
 

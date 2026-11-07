@@ -204,7 +204,7 @@ module.exports = async () => {
     const sec = $('#detail').testAll('details').find((d) => d.querySelector('summary') && d.querySelector('summary').textContent.startsWith('路由表'));
     if (!sec) throw new Error('設備詳情應有路由表');
     const n = Q.allRoutesOf(dev).filter((r) => r.active === false).length;
-    if (sec.testAll('.route-inactive').length !== Math.min(n, 200) || !sec.querySelector('summary').textContent.includes('非作用中 ' + n)) throw new Error('非作用中的路由應逐列標「非作用中」，標題寫出筆數');
+    if (sec.testAll('.route-inactive').length !== Math.min(n, 200) || !sec.querySelector('summary').textContent.includes(`${S.view.num(n)} 條非作用中`)) throw new Error('非作用中的路由應逐列標「非作用中」，標題寫出筆數');
     // 「非作用中」在網段欄內（最後一欄在窄的右欄看不到），整列 muted；不另設狀態欄
     if (sec.testAll('th').some((th) => th.textContent.startsWith('狀態'))) throw new Error('路由表不應另設狀態欄');
     sec.testAll('.route-inactive').forEach((c) => { let td = c; while (td && td.tagName !== 'TD') td = td.parentNode; const tr = td.parentNode;

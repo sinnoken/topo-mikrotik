@@ -270,13 +270,13 @@
       { t: '設備', f: (x) => V.num(x.devices.length), s: (x) => x.devices.length, cls: 'num' },
     ], z.zones));
     const zi = zoneIndex(Q);
-    box.appendChild(h('details', { class: 'l4-fold' }, [h('summary', null, `每個網段的依據（${V.num(z.subnets.length)}）`), V.table([
+    box.appendChild(V.section('每個網段的依據', V.table([
       { t: '網段', f: (s) => h('span', { class: 'mono' }, V.inVrfText(s.prefix)), s: (s) => s.prefix }, ...vrfCol,
       { t: 'zone', f: (s) => (zi.get(s.zone) || { name: s.zone }).name, s: (s) => (zi.get(s.zone) || { name: s.zone }).name },
       { t: '來源', f: (s) => h('span', null, [V.ZONE_SOURCE[s.source] || s.source, s.inferred ? ' ' : '', s.inferred ? V.chip('推論', 'info') : null]) },
       { t: '依據', f: (s) => s.basis || '' },
       { t: '其他來源的結果', f: (s) => s.alternatives.map((a) => `${V.ZONE_SOURCE[a.source] || a.source}：${(zi.get(a.zone) || { name: a.zone.replace(/^[a-z-]+:/, '') }).name}`).join('、') },
-    ], z.subnets, { limit: 500 })]));
+    ], z.subnets, { limit: 500 }), { fold: true, count: z.subnets.length, cls: 'l4-fold' }));
   }
 
   /**
@@ -310,8 +310,6 @@
     exposureRun: (Q) => I.exRuns.get(Q) || null,
     /** 目前畫的暴露清單（Q.exposure 的結果；還在算時為 null） */
     exposure: () => st.ex,
-    /** 暴露清單一段的顯示分組（[{ x, i, ips }]，允許在前、無法判斷在後）；測試用 */
-    exGroups: (rows) => I.exGroups(rows),
     /** 這個畫面在某份基準上算過的矩陣（service → 毫秒數）；大型冒煙測試讀計算時間 */
     timings: (Q) => new Map(I.computed.get(Q) || []),
     /** 分段計算的紀錄（service → { ms, wallMs, steps, maxStepMs：一段最久佔住主執行緒多久, maxGapMs：兩段之間最長的間隔 }） */

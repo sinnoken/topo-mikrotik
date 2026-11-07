@@ -142,7 +142,7 @@
       h('p', null, [h('code', null, 'tools/baseline.js'), ' 用和網頁相同的核心建立基準並推進處理紀錄，只讀檔案、不連線設備（需要 Node.js）。適合在收集腳本之後放進 cron 或 Windows 的工作排程器定期執行。']),
       pre(['npm run baseline -- collection.txt -o out/                          # 第一次：從空的處理紀錄開始',
         'npm run baseline -- collection.txt --ledger out/ledger.json -o out/  # 之後每一輪：傳入上一輪的處理紀錄'].join('\n'), '排程的指令'),
-      h('p', null, ['輸出到 ', h('code', null, 'out/'), '：基準 baseline.json、處理紀錄 ledger.json（可在資料中心匯入）、檢查結果 findings.json／findings.csv／findings.md、網路文件 sitedoc.md／sitedoc.csv、摘要 summary.json；有 ',
+      h('p', null, ['輸出到 ', h('code', null, 'out/'), '：基準 baseline.json、處理紀錄 ledger.json（可在資料中心匯入）、檢查結果 findings.json／findings.csv／findings.md、網路文件 sitedoc.md／sitedoc.csv、主管摘要 manager-summary.md、摘要 summary.json；有 ',
         h('code', null, '--expected'), ' 時另有比對結果 compare.json。']),
       h('div', null, '結束碼：'),
       h('dl', { class: 'settings-about settings-exit' }, [

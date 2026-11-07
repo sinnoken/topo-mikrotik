@@ -25,7 +25,7 @@ function checkLayers(r) {
 
 /** V.l4 的對外成員與函式的參數個數（拆成 l4.js／l4-exposure.js／l4-matrix.js／l4-trace.js 之前的清單；改成員時同步改這裡） */
 const L4_MEMBERS = { show: 2, MATRIX_MAX: null, zoneOpts: 1, state: 0, openCell: 3, openGroup: 3, runReach: 6, rerunWithVrf: 2, openExposure: 3,
-  deniedParts: 1, deniedSentence: 3, exposureRun: 1, exposure: 0, exGroups: 1, timings: 1, runs: 1 };
+  deniedParts: 1, deniedSentence: 3, exposureRun: 1, exposure: 0, timings: 1, runs: 1 };
 const L4_FILES = ['l4.js', 'l4-exposure.js', 'l4-matrix.js', 'l4-trace.js'];
 
 module.exports = async () => {

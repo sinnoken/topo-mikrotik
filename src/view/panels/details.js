@@ -14,7 +14,7 @@
   let shownDevice = null;
   function render(App, sel) {
     // 選取屬於某個表格視窗時由它的擁有者開啟或更新視窗，右欄顯示 detailSel（那台設備）；不屬於開著的視窗時 follow 關閉它。
-    // 右欄已經是同一台時不重畫：開啟視窗的入口（例如摘要的「查看防火牆規則與服務」）留在原處，關閉後焦點回得去
+    // 右欄已經是同一台時不重畫：開啟視窗的入口（屬性之後的工作入口，例如「防火牆」）留在原處，關閉後焦點回得去
     // 焦點在視窗裡、選到的不屬於任何視窗（例如點了路由詳情裡的設備連結）：follow 關掉視窗，畫完後焦點移到右欄新內容的標題
     const fromDialog = V.tableDialog.hasFocus();
     const own = V.tableDialog.follow(App, sel);

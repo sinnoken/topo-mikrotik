@@ -620,10 +620,15 @@ dialog::backdrop { background: var(--backdrop); }
 .tdlg-list table.t td.num, .tdlg-list table.t td.nowrap, .tdlg-list table.t td.num .mono, .tdlg-list table.t td.nowrap .mono { white-space: nowrap; overflow-wrap: normal; font-variant-numeric: tabular-nums; }
 /* 動作欄：動作本身不折行，「停用」chip 放不下時換到下一行（不把表格撐寬） */
 .tdlg-list table.t td.nowrap .fw-action { white-space: normal; }
-/* 防火牆條件的一個 k=v（firewall.js 的 fw-tok）：值以逗號分成幾片（fw-seg，片內不斷行、連字號也不斷），片與片之間是 <wbr>，
-   只有整段一行放不下（窄螢幕的卡片）時才在逗號後換行 */
+/* 防火牆條件的一個 k=v（firewall.js 的 fw-tok）：值以逗號分成幾片（fw-seg），片與片之間是 <wbr>。斷行的優先順序：
+   k=v 之間 → 逗號後 → 片內。每一片是 inline-block（整片當一個單位換到下一行，不從連字號切開），寬度上限是一整行（max-width），
+   一片整行都放不下（例如很長的 address-list 名稱）時才在片內折行（連字號或任何位置），不把表格撐寬、右邊的欄不被裁掉。
+   min-width 是表格排欄寬時這一片至少要的寬度：片的字數（--len，firewall.js 的 segs 寫入；等寬字一個字 1ch），最多 30ch，
+   也不超過 18vw（兩欄版面最窄的 901px 時條件欄只剩約 170px）；沒有它時欄寬可能被分得比一般的 k=v 還窄，寬螢幕也從中間切開 */
 .tdlg-list .fw-tok { white-space: normal; overflow-wrap: normal; }
-.tdlg-list .fw-seg { white-space: nowrap; }
+.tdlg-list .fw-seg { display: inline-block; max-width: 100%; min-width: min(calc(var(--len, 0) * 1ch), 30ch, 18vw); white-space: normal; overflow-wrap: anywhere; }
+/* 詳情頂端的按鈕（table-dialog.js 的 renderSide）：兩段文字，寬螢幕顯示「回到總覽」，900px 以下（下方 @media）顯示「返回」 */
+.tdlg-back-narrow { display: none; }
 /* 可選取的表格：滑過用中性的底色，和選取列（藍底＋左側粗線）分得出來 */
 table.t[role="grid"] tbody tr.click:hover td { background: var(--surface-hover); }
 table.t[role="grid"] tbody tr.focus.click:hover td { background: var(--row-focus-bg); }
@@ -641,6 +646,8 @@ table.t tbody tr.focus td, table.t tbody tr.focus.click:hover td, table.t tbody 
   .tdlg-side { order: 1; border-left: 0; border-top: 1px solid var(--line); }
   .tdlg-cols[data-view="detail"] .tdlg-list { display: none; }
   .tdlg-cols[data-view="list"][data-selected] .tdlg-side { display: none; }
+  .tdlg-back-narrow { display: inline; }
+  .tdlg-back-wide { display: none; }
 }
 /* 高度扣掉對話框的其他列（選檔、拖放區、預檢、命名規則與按鈕列約 480px），命名規則那一列不被按鈕列切掉 */
 #input-text { width: 100%; height: min(46vh, calc(90vh - 480px)); min-height: 140px; font-family: var(--mono); font-size: var(--fs-sm); white-space: pre; resize: vertical; }

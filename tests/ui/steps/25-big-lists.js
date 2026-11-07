@@ -235,6 +235,17 @@ module.exports = async () => {
     if (!V.groupsUseful(n, 2) || groupsOf(two).length !== 2) throw new Error('組數少時分組');
     const capped = V.bigList(cols, rows, { groups: halves, unit: '列', flatMax: n });
     if (V.groupsUseful(n, 2, n) || groupsOf(capped).length) throw new Error('列數不超過 flatMax 時不分組');
+    // 只有 1 組（例如路由全在 main／static）：分組不減少要點的次數，直接列出
+    const single = V.bigList(cols, rows, { groups: () => [{ key: 'all', title: 'all', rows }], unit: '列' });
+    if (V.groupsUseful(n, 1) || groupsOf(single).length || rowsOf(single).length !== P.page) throw new Error('只有 1 組時不分組，直接分頁');
+    // alwaysGroup：分組本身有語意（例如防火牆的 chain），不看 V.groupsUseful，1 組、一列一組、列數少都分組
+    [[() => [{ key: 'all', title: 'all', rows }], 1], [perRow, n]].forEach(([g, k]) => {
+      const el = V.bigList(cols, rows, { groups: g, unit: '列', alwaysGroup: true });
+      if (groupsOf(el).length !== Math.min(k, P.page)) throw new Error(`alwaysGroup 時一律分組（${k} 組）：${groupsOf(el).length}`);
+    });
+    const few = rows.slice(0, 3);
+    const fewEl = V.bigList(cols, few, { groups: () => few.map((r) => ({ key: 'g' + r.i, title: r.name, rows: [r] })), unit: '列', grouped: true, alwaysGroup: true });
+    if (groupsOf(fewEl).length !== few.length) throw new Error('alwaysGroup 時列數少也分組');
     // V.table 一律列出全部的列（舊的 limit 選項已拿掉）；畫面沒有呼叫端再傳 limit，列多的表格都經 V.bigList 分頁
     const all = V.table(cols, rows);
     if (all.querySelector('.table-more') || all.querySelector('.pager') || rowsOf(all).length !== n) throw new Error('V.table 應列出全部的列，不截斷');

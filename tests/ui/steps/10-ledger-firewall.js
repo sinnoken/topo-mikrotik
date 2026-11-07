@@ -307,7 +307,8 @@ module.exports = async () => {
     });
     const fwCss = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
     if (!/\.tdlg-list table\.t td\.num, \.tdlg-list table\.t td\.nowrap[^{]*\{ white-space: nowrap; overflow-wrap: normal; font-variant-numeric: tabular-nums; \}/.test(fwCss)) throw new Error('視窗內的數字與 nowrap 欄應不折行、用等寬數字');
-    if (!/\.tdlg-list \.fw-seg \{ white-space: nowrap; \}/.test(fwCss)) throw new Error('條件的一片內不斷行（連字號也不斷）');
+    // 一片整片換到下一行（inline-block，不從連字號切開）；一整行都放不下時才在片內折行（26-table-dialog 的防火牆視窗 step 檢查細節）
+    if (!/\.tdlg-list \.fw-seg \{ display: inline-block;/.test(fwCss)) throw new Error('條件的一片應整片換行（inline-block）');
     if (/\.tdlg-list table\.t td \{ overflow-wrap: anywhere; \}/.test(fwCss)) throw new Error('視窗內的表格不應對所有欄套 overflow-wrap: anywhere（會從數字中間折行）');
     // 原文行號可開啟
     // 原文行號可開啟（原文對話框疊在防火牆視窗上，選取不變）

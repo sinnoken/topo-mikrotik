@@ -131,7 +131,10 @@ module.exports = async () => {
       if (body.getAttribute('data-view') !== 'detail') throw new Error('窄螢幕點規則後只顯示詳情（data-view=detail）');
       if (document.activeElement !== fwSide().querySelector('h2')) throw new Error('窄螢幕選取後焦點移到詳情的標題');
       const back = fwSide().querySelector('.tdlg-back');
-      if (!back || !back.textContent.includes('返回')) throw new Error('詳情應有「返回」');
+      // 按鈕的文字跟著寬度（CSS 依同一個 900px 斷點顯示其中一段），視窗縮放後不必重畫：兩段都在，窄的是「返回」、寬的是「回到總覽」
+      const part = (b, w) => b.querySelector('.tdlg-back-' + w);
+      if (!back || !part(back, 'narrow') || !part(back, 'narrow').textContent.includes('返回') || !part(back, 'wide') || !part(back, 'wide').textContent.includes('回到總覽') || part(back, 'wide').textContent.includes('返回')) throw new Error('詳情應有「返回」，寬螢幕的文字是「回到總覽」');
+      if (!/@media \(max-width: 900px\) \{[^@]*\.tdlg-back-wide \{ display: none; \}/.test(media) || !/\.tdlg-back-narrow \{ display: none; \}/.test(css)) throw new Error('「返回」與「回到總覽」應由 CSS 依寬度只顯示一段');
       back.click();
       if (body.getAttribute('data-view') !== 'list' || body.getAttribute('data-selected') == null) throw new Error('返回後回到表格，選取保留');
       if (App.sel.type !== 'rule' || App.sel.key !== key) throw new Error('窄螢幕的返回不取消選取');
@@ -142,7 +145,7 @@ module.exports = async () => {
       App.select({ type: 'rule', key });
       // 寬螢幕表格一直看得到，按鈕是取消選取：文字寫「回到總覽」，不寫「返回」
       const wideBack = fwSide().querySelector('.tdlg-back');
-      if (!wideBack.textContent.includes('回到總覽') || wideBack.textContent.includes('返回')) throw new Error('寬螢幕的按鈕文字應是「回到總覽」：' + wideBack.textContent);
+      if (!part(wideBack, 'wide').textContent.includes('回到總覽')) throw new Error('寬螢幕的按鈕文字應是「回到總覽」：' + wideBack.textContent);
       wideBack.click();
       if (App.sel.type !== 'firewall' || fwSide().querySelector('.tdlg-back') || !fwSide().textContent.includes('這台設備的防火牆')) throw new Error('寬螢幕的返回應取消選取、右欄回到總覽');
       if (document.activeElement.getAttribute('data-key') !== key) throw new Error('寬螢幕返回後焦點回到那一列');
@@ -214,5 +217,31 @@ module.exports = async () => {
     const hit = shownRow(panel, key);
     if (panel.querySelector('.biglist-search').value !== word || !hit || !inResult(hit) || !hit.classList.contains('focus')) throw new Error('搜尋結果有要定位的列時保留搜尋字，在結果中選取它');
     App.select(null);
+  });
+
+  await step('防火牆視窗：規則少時也依 chain 分組（chain 是語意上的分組），自訂 chain 與 jump 來源都看得到；很長、沒有逗號的條件值可以在片內折行', async () => {
+    await buildInput(['FW (10.9.0.1):', '### /export terse',
+      '/ip address add address=10.9.0.1/24 interface=ether1 network=10.9.0.0',
+      '/ip firewall filter add action=jump chain=input jump-target=custom',
+      '/ip firewall filter add action=drop chain=custom src-address-list=very-long-address-list-name-from-threat-intel-provider-blocklist',
+      '/ip firewall filter add action=accept chain=forward src-address=10.0.0.1,10.0.0.2 comment="a, b"', ''].join('\n'));
+    const Q = App.Q; const chains = Q.firewallChains('FW');
+    const custom = chains.find((c) => c.jumpedFrom.length);
+    if (!custom || chains.length < 2) throw new Error('測試前提：有自訂 chain 與 jump、多個 chain');
+    try {
+      openFrom('FW');
+      const groups = fwTab('rules').testAll('.biglist-group').filter((g) => g.getAttribute('data-group') != null);
+      if (fwList().querySelector('.biglist-flat') || groups.length !== chains.length) throw new Error(`規則少時也依 chain 分組：${groups.length} 組，chain ${chains.length} 個`);
+      const g = groups.find((x) => x.getAttribute('data-group') === custom.family + '|' + custom.table + '|' + custom.chain);
+      if (!g.querySelector('summary').textContent.includes('自訂 chain') || !g.querySelector('summary').textContent.includes(`${custom.jumpedFrom.length} 條 jump 進入`)) throw new Error('自訂 chain 的標題列應有「自訂 chain」與「N 條 jump 進入」：' + g.querySelector('summary').textContent);
+      g.open = true; g.dispatch('toggle');
+      if (!g.textContent.includes('由這些規則 jump 進來')) throw new Error('自訂 chain 組內應先列 jump 來源');
+      // 條件的一片：--len 是字數（CSS 的 min-width 用它），片內允許折行，一整行放不下時不撐寬表格
+      const seg = fwList().testAll('.fw-seg').find((s) => s.textContent.startsWith('src-address-list=very-long'));
+      if (!seg || seg.getAttribute('style') !== '--len:' + seg.textContent.length) throw new Error('條件的一片應寫出字數（--len）：' + (seg && seg.getAttribute('style')));
+      const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
+      const rule = (css.match(/\.tdlg-list \.fw-seg \{([^}]*)\}/) || [])[1] || '';
+      if (/nowrap/.test(rule) || !/display: inline-block/.test(rule) || !/max-width: 100%/.test(rule) || !/overflow-wrap: anywhere/.test(rule) || !/var\(--len/.test(rule)) throw new Error('.fw-seg 應整片換行（inline-block）、寬度不超過一整行、放不下時片內折行：' + rule);
+    } finally { if ($('#dlg-table').open) $('#tdlg-close').click(); App.select(null); }
   });
 };

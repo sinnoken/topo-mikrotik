@@ -59,9 +59,13 @@
   const actionStateCell = (r) => h('span', { class: 'fw-action' }, [actionCell(r), r.disabled ? ' ' : null, r.disabled ? stateCell(r) : null]);
   /**
    * 條件：每個 k=v 一段（span.fw-tok），段與段之間是空白，在 k=v 之間折行，不把 add-src-to-address-list 這類參數從中間切開。
-   * 值以逗號分成幾片（span.fw-seg，片內不斷行），片與片之間放 <wbr>：一段整行都放不下時（窄螢幕的卡片）才在逗號後換行
+   * 值以逗號分成幾片（span.fw-seg），片與片之間放 <wbr>：一段整行都放不下時（窄螢幕的卡片）才在逗號後換行；
+   * 一片整行都放不下（很長的 address-list 名稱）時才在片內折行。--len 是片的字數，CSS 用它定表格排欄寬時這一片至少要的寬度（app.css 的 .fw-seg）
    */
-  const segs = (text) => String(text).split(',').flatMap((s, n, all) => [h('span', { class: 'fw-seg' }, s + (n < all.length - 1 ? ',' : '')), n < all.length - 1 ? h('wbr') : null]);
+  const segs = (text) => String(text).split(',').flatMap((s, n, all) => {
+    const t = s + (n < all.length - 1 ? ',' : '');
+    return [h('span', { class: 'fw-seg', style: '--len:' + t.length }, t), n < all.length - 1 ? h('wbr') : null];
+  });
   const tokens = (o, cls) => Object.entries(o || {}).flatMap(([k, v], n) => [n ? ' ' : null, h('span', { class: 'fw-tok' + (cls ? ' ' + cls : '') }, segs(`${k}=${v}`))]);
   const matchCell = (r) => {
     const params = Object.assign({}, r.params); delete params['jump-target'];
@@ -94,7 +98,7 @@
 
   // ---------------------------------------------------------------- 規則表與其他分頁（左欄）
   /**
-   * 規則：每個 chain 一組（V.bigList 的 grouped）；組的標題是「位址族 表 chain」，旁邊是自訂 chain、jump 進入與有問題的數量，
+   * 規則：每個 chain 一組，規則少也分組（V.bigList 的 grouped＋alwaysGroup：chain 是語意上的分組，平面列出就看不到下面的 chain 資訊）；組的標題是「位址族 表 chain」，旁邊是自訂 chain、jump 進入與有問題的數量，
    * 有規則 jump 進來時組內先列來源。一開始展開的：有錯誤或警告的 chain（沒有定位時）與定位的規則所在的 chain（bigList 的 reveal）。
    * 搜尋依 chain、動作、條件與註解的文字。「位置」只在搜尋結果列（組內和組名重複）。
    */
@@ -104,7 +108,7 @@
     const parts = chains.map((c) => ({ c, rows: Q.firewallRuleRows(dev, { family: c.family, table: c.table, chain: c.chain }) }));
     const rows = [].concat(...parts.map((p) => p.rows));
     return {
-      key: 'rules', label: '規則', count: rows.length, rows, rowKey: (x) => x.rule.key, grouped: true,
+      key: 'rules', label: '規則', count: rows.length, rows, rowKey: (x) => x.rule.key, grouped: true, alwaysGroup: true,
       empty: '這台設備沒有防火牆規則（或沒有收集 /export）。', unit: '條', what: '規則', placeholder: '搜尋 chain、動作、條件或註解',
       text: (x) => `${chainText(x.rule)} #${x.rule.position} ${x.rule.action} ${kvText(x.rule.match)} ${kvText(x.rule.params)} ${x.rule.comment || ''}`,
       columns: [

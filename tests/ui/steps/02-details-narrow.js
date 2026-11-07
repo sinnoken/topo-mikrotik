@@ -22,7 +22,7 @@ module.exports = async () => {
       App.select(sel);
       const roots = S.view.firewall.isSel(sel) ? [detailRoot(), fwList(), fwSide()] : [detailRoot()];
       roots.forEach((root) => {
-        // 規則少、分組沒有用（V.groupsUseful）時左欄直接是表格，沒有區塊
+        // 防火牆的規則一律依 chain 分組（alwaysGroup）；左欄是表格（例如服務分頁）時也算有內容
         if (root !== detailRoot() && !root.testAll('h3').length && !root.testAll('details').length && !(root === fwList() && root.testAll('table').length)) throw new Error(`${sel.type} 的 ${root.id} 應有區塊或規則表（不在空的容器上通過）`);
         root.testAll('h3').forEach((x) => {
           if (!/\bdetail-section\b/.test(x.parentNode.className)) throw new Error(`${sel.type} 詳情的標題「${x.textContent}」不是由 section() 產生`);

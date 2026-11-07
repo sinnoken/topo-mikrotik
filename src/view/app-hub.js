@@ -16,8 +16,7 @@
 
   /**
    * 資料中心的檢視狀態（不進基準，也不存進 store）：
-   *   open        是否開啟（開著時流程步驟的目前一步是「輸入」）
-   *   opener      開啟它的按鈕（步驟列的「輸入」）；鍵盤關閉時焦點回到它，null 時回到「資料中心」按鈕
+   *   open        是否開啟（唯讀，來自 A.overlay；開著時流程步驟的目前一步是「輸入」）
    *   byDevice    匯出報表時依設備排序（Markdown 依設備分組）
    *   pack        工作包要放哪些可選的角色（收集檔與基準一定放；命名規則與 expectedData 用過就一定放）
    *   busy        進行中的長時間操作的說明（null 表示沒有）
@@ -26,25 +25,21 @@
    *               { name, pack, choose, loss, errors?, warnings? }（等使用者確認；errors 是重建核對失敗）、
    *               { name, done: true, warnings, brought }（已帶回）
    */
+  // 開關、主畫面 inert、按鈕的 aria-expanded、Esc（ESC_ORDER 的 'hub'）與焦點歸還都在 A.overlay（app.js），和設定共用；
+  // opener 是開啟它的按鈕（步驟列的「輸入」），null 時焦點回到「資料中心」按鈕
+  const layer = A.overlay('hub', { root: '#hub', button: '#btn-hub', onClose: () => A.renderSteps() });
   const hub = {
-    open: false, opener: null, byDevice: false, pack: { ledger: true, expected: true, report: true, patch: true },
+    get open() { return layer.isOpen(); },
+    byDevice: false, pack: { ledger: true, expected: true, report: true, patch: true },
     busy: null, progress: null, buildErrors: null, read: null,
   };
   A.hubState = () => hub;
-  A.hubOpen = () => hub.open;
+  A.hubOpen = () => layer.isOpen();
   const renderHub = () => V.hub.render(App);
 
   // ================================================================ 開關
   A.bindHub = function bindHub() {
-    $('#btn-hub').onclick = () => (hub.open ? A.closeHub({ focus: true }) : App.openHub());
-    // Esc 的先後由 A.onEscape（app.js）決定：資料中心在選單、路由追蹤之後，抽屜之前
-    A.onEscape('hub', (e) => {
-      if (!hub.open) return false;
-      // 只處理資料中心內（或沒有焦點時）的 Esc：頁首的搜尋、路由追蹤各自用 Esc 收起
-      const root = $('#hub'); const t = e.target;
-      if (t && t !== document.body && root.contains && !root.contains(t)) return false;
-      A.closeHub({ focus: true }); return true;
-    });
+    $('#btn-hub').onclick = () => (layer.isOpen() ? A.closeHub({ focus: true }) : App.openHub());
   };
   /**
    * 開啟資料中心（流程步驟的「輸入」）；section 是要捲到並聚焦的區塊（inputs、coverage、outputs、ledger、reports），省略時聚焦標題。
@@ -52,11 +47,8 @@
    */
   App.openHub = function (section, opt) {
     A.closeSettings(); // 設定與資料中心互斥（同一格的另一層）
-    hub.open = true; hub.opener = (opt && opt.opener) || null;
-    $('#hub').classList.remove('hidden'); $('#app').classList.add('hub-open');
     // 資料中心蓋在主畫面上（同一格，畫布大小不變）：主畫面不可聚焦，鍵盤只在資料中心內移動
-    $('#main').inert = true; $('#mobile-workspaces').inert = true;
-    $('#btn-hub').setAttribute('aria-expanded', 'true'); $('#btn-hub').classList.add('on');
+    layer.open((opt && opt.opener) || null);
     renderHub(); A.renderSteps();
     const target = (section && $('#hub-sec-' + section)) || $('#hub-title');
     if (target) { target.focus(); if (target.scrollIntoView) target.scrollIntoView({ block: 'start' }); }
@@ -67,14 +59,7 @@
    */
   A.closeHub = function closeHub(opt) {
     if (A.settingsOpen()) A.closeSettings(opt);
-    if (!hub.open) return;
-    hub.open = false;
-    const back = hub.opener || $('#btn-hub'); hub.opener = null;
-    $('#hub').classList.add('hidden'); $('#app').classList.remove('hub-open');
-    $('#main').inert = false; $('#mobile-workspaces').inert = false;
-    $('#btn-hub').setAttribute('aria-expanded', 'false'); $('#btn-hub').classList.remove('on');
-    A.renderSteps();
-    if (opt && opt.focus) back.focus();
+    layer.close(!!(opt && opt.focus)); // 關閉後重繪步驟列（onClose）
   };
 
   // ================================================================ 忙碌提示

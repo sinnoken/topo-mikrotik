@@ -97,8 +97,7 @@ module.exports = async () => {
     // 品牌只給螢幕閱讀器、資料中心按鈕由「輸入」取代；資料中心或設定開啟時搜尋與 ⚙ 隱藏（不疊在上面）
     const brandMsg = '窄螢幕的頁首應隱藏品牌與資料中心按鈕';
     has('header .brand', { position: 'absolute', width: '1px' }, brandMsg); has('header .hub-btn', { display: 'none' }, brandMsg);
-    has('#app.hub-open header .search, #app.hub-open header .header-actions', { display: 'none' }, brandMsg);
-    has('#app.settings-open header .search, #app.settings-open header .header-actions', { display: 'none' }, '窄螢幕的設定開著時，搜尋與 ⚙ 不疊在設定上');
+    has('#app.overlay-open header .search, #app.overlay-open header .header-actions', { display: 'none' }, brandMsg);
     // 頁首可見的控制項：每一步一個按鈕＋搜尋＋⚙；工作區列每個工作區一個按鈕（不重複）
     const steps = $('#steps').testAll('button').map((b) => b.dataset.step);
     const STEP_LABEL = S.view.app.STEP_LABEL;
@@ -114,7 +113,7 @@ module.exports = async () => {
     if (!$('#app').querySelector('.header-actions').contains(gear)) throw new Error('⚙ 應在頁首右側');
     // 開啟：蓋住主畫面（主畫面 inert）、焦點到「設定」標題
     gear.click();
-    if (box.classList.contains('hidden') || gear.getAttribute('aria-expanded') !== 'true' || !$('#main').inert || !$('#app').classList.contains('settings-open')) throw new Error('按 ⚙ 應開啟設定並蓋住主畫面');
+    if (box.classList.contains('hidden') || gear.getAttribute('aria-expanded') !== 'true' || !$('#main').inert || !$('#app').classList.contains('overlay-open')) throw new Error('按 ⚙ 應開啟設定並蓋住主畫面');
     if (document.activeElement !== $('#settings-title')) throw new Error('開啟後焦點應移到「設定」標題');
     // 五個分類：tablist，順序固定，一次只選一個；分類內容的標題與分頁同名
     const tabs = box.testAll('.settings-tab');
@@ -248,7 +247,7 @@ module.exports = async () => {
     // 搜尋框的 Esc 不關設定（只收起搜尋）；設定內的 Esc 關閉，焦點回到 ⚙
     esc($('#search')); if (box.classList.contains('hidden')) throw new Error('設定外的元素的 Esc 不應關閉設定');
     esc(settingsTab('about'));
-    if (!box.classList.contains('hidden') || document.activeElement !== gear || $('#main').inert || gear.getAttribute('aria-expanded') !== 'false' || $('#app').classList.contains('settings-open')) throw new Error('Esc 應關閉設定並把焦點還給 ⚙');
+    if (!box.classList.contains('hidden') || document.activeElement !== gear || $('#main').inert || gear.getAttribute('aria-expanded') !== 'false' || $('#app').classList.contains('overlay-open')) throw new Error('Esc 應關閉設定並把焦點還給 ⚙');
     // 再開啟回到上次的分類；⚙ 再按一次關閉
     gear.click(); check('about', '再開啟時應回到上次的分類'); gear.click();
     if (!box.classList.contains('hidden') || document.activeElement !== gear) throw new Error('再按一次 ⚙ 應關閉設定並還焦點');
@@ -267,11 +266,22 @@ module.exports = async () => {
     App.openSettings(); App.select({ type: 'device', key: App.Q.devices()[0].key });
     if (!box.classList.contains('hidden')) throw new Error('選取時應關閉設定');
     App.select(null); goStep('triage');
+    // 資料中心與設定同一套外殼：宣告為強制回應的對話框（標題存在），頁首的按鈕上按 Esc 也關閉並還焦點給按鈕
+    [['#hub', '#btn-hub', () => App.openHub()], ['#settings', '#btn-settings', () => App.openSettings()]].forEach(([sel, bsel, open]) => {
+      const root = $(sel); const btn = $(bsel);
+      open();
+      const title = $('#' + root.getAttribute('aria-labelledby'));
+      if (root.getAttribute('role') !== 'dialog' || root.getAttribute('aria-modal') !== 'true' || !title || !root.contains(title)) throw new Error(sel + ' 應宣告 role="dialog"、aria-modal，並以裡面的標題命名');
+      if (btn.getAttribute('aria-expanded') !== 'true' || !$('#main').inert) throw new Error(sel + ' 開著時按鈕應 aria-expanded、主畫面 inert');
+      btn.focus(); esc(btn);
+      if (!root.classList.contains('hidden')) throw new Error(sel + '：在頁首的按鈕上按 Esc 應關閉');
+      if (document.activeElement !== btn || $('#main').inert || btn.getAttribute('aria-expanded') !== 'false' || $('#app').classList.contains('overlay-open')) throw new Error(sel + '：Esc 關閉後焦點回到按鈕、主畫面可聚焦');
+    });
     // 窄螢幕：單欄、分類改成上方一列（覆蓋一般樣式，寫在它之後）；不水平捲動
     const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
     const base = css.indexOf('.settings-body { display: grid;'); const tail = css.slice(css.lastIndexOf('@media (max-width: 900px)'));
     if (base < 0 || css.lastIndexOf('@media (max-width: 900px)') < base || !/\.settings-body \{ grid-template-columns: minmax\(0, 1fr\);/.test(tail) || !/\.settings-tabs \{ flex-direction: row;/.test(tail)) throw new Error('窄螢幕時設定應改成單欄、分類在上方一列，且規則要在一般樣式之後');
-    if (!/\.settings \{[^}]*overflow-x: hidden/.test(css)) throw new Error('設定不應水平捲動');
+    if (!$('#settings').classList.contains('overlay') || !/\.overlay \{[^}]*overflow-x: hidden/.test(css)) throw new Error('設定不應水平捲動（和資料中心共用 .overlay）');
     if (!/\.settings-tab\.on \{[^}]*font-weight: 600/.test(css)) throw new Error('選取的分類除了顏色還要有粗體');
   });
   await step('流程步驟：五步都能切換（nav、aria-current="step"），左側清單與中間的工作畫面跟著換、焦點移到這一步的標題；切換不丟失畫布的位置、縮放與選取，也不重新排列；PNG 照常', async () => {

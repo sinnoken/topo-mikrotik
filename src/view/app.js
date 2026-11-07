@@ -107,6 +107,51 @@
     });
   }
 
+  // ================================================================ 蓋住主畫面的一層（資料中心、設定）
+  const overlays = new Map();
+  /**
+   * 資料中心與設定共用的外殼（只有一份）：和 #main 疊在同一格（畫布大小不變），開著時主畫面不可聚焦（inert），
+   * 頁首的按鈕 aria-expanded＋on，有一層開著時 #app 加上 overlay-open（頁首與提示列的樣式），
+   * Esc 在 ESC_ORDER 的 name 層：只處理層內、頁首的按鈕或沒有焦點時的 Esc（頁首的搜尋、路由追蹤各自收起），關閉後焦點回到開啟它的按鈕。
+   * 一次只開一層、開啟後的內容與焦點由呼叫端負責；cfg.onClose 在關閉後、焦點歸還前執行（重繪步驟列、清空內容）。
+   *   name   Esc 層的名稱（ESC_ORDER 之一）
+   *   root   這一層的元素（選擇器），button 頁首開關它的按鈕；opener 是 null 時焦點回到 button
+   * 回傳 { isOpen(), opener(), open(opener), close(focus) }。
+   */
+  A.overlay = function overlay(name, cfg) {
+    if (overlays.has(name)) throw new Error('重複的疊加層：' + name);
+    const st = { open: false, opener: null };
+    const show = (on) => {
+      $(cfg.root).classList.toggle('hidden', !on);
+      const any = Array.from(overlays.values()).some((o) => o.isOpen());
+      $('#app').classList.toggle('overlay-open', any);
+      $('#main').inert = any; $('#mobile-workspaces').inert = any;
+      const btn = $(cfg.button); btn.setAttribute('aria-expanded', String(on)); btn.classList.toggle('on', on);
+    };
+    const layer = {
+      isOpen: () => st.open,
+      opener: () => st.opener,
+      open(opener) { st.open = true; st.opener = opener || null; show(true); },
+      /** 關閉；focus 為 true 時（鍵盤關閉）焦點回到開啟它的按鈕或頁首的按鈕 */
+      close(focus) {
+        if (!st.open) return;
+        st.open = false;
+        const back = st.opener || $(cfg.button); st.opener = null;
+        show(false);
+        if (cfg.onClose) cfg.onClose();
+        if (focus) back.focus();
+      },
+    };
+    overlays.set(name, layer);
+    A.onEscape(name, (e) => {
+      if (!st.open) return false;
+      const root = $(cfg.root); const t = e.target;
+      if (t && t !== document.body && t !== $(cfg.button) && root.contains && !root.contains(t)) return false;
+      layer.close(true); return true;
+    });
+    return layer;
+  };
+
   // ================================================================ 啟動
   async function init() {
     A.bindWelcome(); // 歡迎畫面一開始就看得到：在讀 store（第一個 await）之前綁定，頁面一出現就能按

@@ -863,9 +863,8 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
   .search, .header-actions { position: absolute; top: calc(100% + 6px); z-index: var(--z-sticky); }
   .header-actions { right: 8px; }
   .search { right: calc(14px + var(--control-h)); }
-  #app.hub-open header .search, #app.hub-open header .header-actions { display: none; }
-  /* 設定開著時同樣不疊在上面：設定有自己的「關閉」 */
-  #app.settings-open header .search, #app.settings-open header .header-actions { display: none; }
+  /* 資料中心或設定開著時不疊在上面：兩者都有自己的「關閉」 */
+  #app.overlay-open header .search, #app.overlay-open header .header-actions { display: none; }
   /* 搜尋收成圖示：輸入框本身就是圖示（點了就聚焦，不需要 JS）；聚焦時展開蓋住整列，下拉清單跟著展開 */
   .search { flex: none; width: max(40px, var(--control-h)); min-width: 0; max-width: none; }
   .search input { width: 100%; min-height: max(40px, var(--control-h)); padding: 0 0 0 max(40px, var(--control-h)); cursor: pointer; }
@@ -1022,12 +1021,14 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
 .drift-items { margin: 6px 0; }
 .partial-unrecognized { margin-left: 6px; color: var(--warn-text); }
 
+/* ---------- 蓋住主畫面的一層（A.overlay：資料中心與設定共用）：和 #main 疊在同一格（也蓋住窄螢幕的工作區列），畫布大小不變 ---------- */
+.overlay { grid-row: 2 / 4; z-index: var(--z-work); min-height: 0; overflow: auto; overflow-x: hidden; background: var(--bg); }
+/* 提示列在 #center 裡，會被這一層蓋住：開啟時改成固定在視窗底部 */
+#app.overlay-open #banner { position: fixed; bottom: 16px; z-index: var(--z-banner-top); max-width: calc(100vw - 24px); }
+
 /* ---------- 資料中心（panels/hub.js、app-hub.js） ---------- */
-.hub { grid-row: 2 / 4; z-index: var(--z-work); min-height: 0; overflow: auto; overflow-x: hidden; background: var(--bg); }
 header .hub-btn { font-weight: 600; }
 header .hub-btn.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
-/* 提示列在 #center 裡，會被資料中心蓋住：開啟時改成固定在視窗右上角 */
-#app.hub-open #banner { position: fixed; bottom: 16px; z-index: var(--z-banner-top); max-width: calc(100vw - 24px); }
 .hub-inner { max-width: 1180px; margin: 0 auto; padding: 22px; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
 .hub-head, .hub-card-head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; min-width: 0; }
 .hub-head h1 { margin: 0; font-size: var(--fs-2xl); }
@@ -1083,9 +1084,7 @@ header .hub-btn.on { background: var(--accent-soft); color: var(--accent); borde
 @keyframes hub-indeterminate { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
 
 /* ---------- 設定（app-settings.js、panels/settings-*.js）：和資料中心疊在同一格（兩者互斥），左側分類、右側內容 ---------- */
-.settings { grid-row: 2 / 4; z-index: var(--z-work); min-height: 0; overflow: auto; overflow-x: hidden; background: var(--bg); }
 header .icon-btn.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
-#app.settings-open #banner { position: fixed; bottom: 16px; z-index: var(--z-banner-top); max-width: calc(100vw - 24px); }
 .settings-inner { max-width: 1180px; margin: 0 auto; padding: 22px; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
 .settings-head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; min-width: 0; }
 .settings-head h1 { margin: 0; font-size: var(--fs-2xl); }
@@ -1140,7 +1139,7 @@ header .icon-btn.on { background: var(--accent-soft); color: var(--accent); bord
   .hub-cap { display: inline; }
   .hub-act { justify-content: flex-start; }
   .hub-outs { grid-template-columns: minmax(0, 1fr); }
-  #app.hub-open #banner { left: 10px; right: 10px; transform: none; width: auto; bottom: 16px; }
+  #app.overlay-open #banner { left: 10px; right: 10px; transform: none; width: auto; bottom: 16px; }
   /* 設定：單欄，分類改成內容上方的一列（放不下時換行，每個分類都看得到），不出現整頁的水平捲動 */
   .settings-inner { padding: 12px; gap: 12px; }
   .settings-body { grid-template-columns: minmax(0, 1fr); gap: 12px; }
@@ -1150,7 +1149,6 @@ header .icon-btn.on { background: var(--accent-soft); color: var(--accent); bord
   .settings-panel { padding: 12px; }
   .settings-about { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .settings-about dd { margin-bottom: 8px; }
-  #app.settings-open #banner { left: 10px; right: 10px; transform: none; width: auto; bottom: 16px; }
   /* 中間的工作畫面：內距縮小；內容不出現整頁的水平捲動（寬的表格、指令與圖在自己的框內捲動） */
   .work-inner { padding: 12px 10px 24px; gap: 12px; }
   /* 清單（「檢視」）：關鍵欄排在前三欄；表格依內容寬度在 .table-scroll 內橫向捲動，廠商等欄不被擠窄截斷 */

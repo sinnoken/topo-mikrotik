@@ -259,9 +259,9 @@
     </aside>
   </div>
   <!-- 資料中心：和 #main 疊在同一格，開啟時蓋住主畫面（畫布大小不變），內容由 src/view/panels/hub.js 產生 -->
-  <section id="hub" class="hub hidden" aria-labelledby="hub-title"></section>
+  <section id="hub" class="overlay hub hidden" role="dialog" aria-modal="true" aria-labelledby="hub-title"></section>
   <!-- 設定：和資料中心疊在同一格（兩者互斥），左側分類、右側內容；外殼在 src/view/app-settings.js，各分類的內容在 src/view/panels/settings-*.js -->
-  <section id="settings" class="settings hidden" aria-labelledby="settings-title"></section>
+  <section id="settings" class="overlay settings hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title"></section>
 </div>
 
 <dialog id="dlg-input" aria-labelledby="input-title">

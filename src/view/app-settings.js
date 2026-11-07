@@ -23,26 +23,18 @@
   const sectionOf = (id) => SECTIONS.find((s) => s.id === id);
 
   /**
-   * 檢視狀態：
-   *   open     是否開啟
-   *   opener   開啟它的按鈕；鍵盤關閉時焦點回到它，null 時回到頁首的 ⚙
-   *   section  目前的分類（關閉後保留，下次開啟回到同一個分類）
+   * 檢視狀態：section 是目前的分類（關閉後保留，下次開啟回到同一個分類）。
+   * 開關、主畫面 inert、⚙ 的 aria-expanded、Esc（ESC_ORDER 的 'settings'）與焦點歸還都在 A.overlay（app.js），和資料中心共用；
+   * opener 是開啟它的按鈕，null 時焦點回到頁首的 ⚙。關閉時清空內容（onClose）。
    */
-  const st = { open: false, opener: null, section: 'general' };
-  A.settingsOpen = () => st.open;
+  const st = { section: 'general' };
+  const layer = A.overlay('settings', { root: '#settings', button: '#btn-settings', onClose: () => V.clear($('#settings')) });
+  A.settingsOpen = () => layer.isOpen();
   A.settingsSection = () => st.section;
 
   // ================================================================ 開關
   A.bindSettings = function bindSettings() {
-    $('#btn-settings').onclick = () => (st.open ? A.closeSettings({ focus: true }) : App.openSettings());
-    // Esc 的先後由 A.onEscape（app.js）決定：設定在選單、路由追蹤、資料中心之後，抽屜之前（設定與資料中心互斥）
-    A.onEscape('settings', (e) => {
-      if (!st.open) return false;
-      // 只處理設定內（或 ⚙、沒有焦點時）的 Esc：頁首的搜尋用 Esc 收起自己
-      const root = $('#settings'); const t = e.target;
-      if (t && t !== document.body && t !== $('#btn-settings') && root.contains && !root.contains(t)) return false;
-      A.closeSettings({ focus: true }); return true;
-    });
+    $('#btn-settings').onclick = () => (layer.isOpen() ? A.closeSettings({ focus: true }) : App.openSettings());
   };
   /**
    * 開啟設定。section 是要顯示的分類（A.SETTINGS_SECTIONS 之一），省略時回到上次的分類並聚焦「設定」標題；有給時聚焦該分類的標題。
@@ -50,13 +42,11 @@
    */
   App.openSettings = function (section, opt) {
     if (section && !sectionOf(section)) throw new RangeError('未知的設定分類：' + section);
-    const opener = (opt && opt.opener) || (st.open ? st.opener : null);
+    const opener = (opt && opt.opener) || layer.opener();
     A.closeHub(); A.closeMenus(); A.closeTrace(false); // closeHub 也會關掉已開的設定（重新開啟時沿用 opener）
-    st.open = true; st.opener = opener; if (section) st.section = section;
-    $('#settings').classList.remove('hidden'); $('#app').classList.add('settings-open');
+    if (section) st.section = section;
     // 和資料中心一樣：主畫面不可聚焦，鍵盤只在設定內移動
-    $('#main').inert = true; $('#mobile-workspaces').inert = true;
-    $('#btn-settings').setAttribute('aria-expanded', 'true'); $('#btn-settings').classList.add('on');
+    layer.open(opener);
     render();
     // 從頂端開始、聚焦時不捲動：捲到分類標題會把左側（窄螢幕是上方）的分類列推出頁首
     $('#settings').scrollTop = 0;
@@ -65,20 +55,13 @@
   };
   /** 關閉設定；opt.focus 為 true 時焦點回到開啟它的按鈕或頁首的 ⚙（鍵盤關閉時） */
   A.closeSettings = function closeSettings(opt) {
-    if (!st.open) return;
-    st.open = false;
-    const back = st.opener || $('#btn-settings'); st.opener = null;
-    $('#settings').classList.add('hidden'); $('#app').classList.remove('settings-open');
-    $('#main').inert = false; $('#mobile-workspaces').inert = false;
-    $('#btn-settings').setAttribute('aria-expanded', 'false'); $('#btn-settings').classList.remove('on');
-    V.clear($('#settings'));
-    if (opt && opt.focus) back.focus();
+    layer.close(!!(opt && opt.focus));
   };
   /** 換分類（左側的分頁）；focus 為 true 時焦點移到新的分頁（鍵盤切換時） */
   A.showSettingsSection = function showSettingsSection(id, focus) {
     if (!sectionOf(id)) throw new RangeError('未知的設定分類：' + id);
     st.section = id;
-    if (!st.open) return;
+    if (!layer.isOpen()) return;
     render();
     if (focus) { const tab = $('#settings-tab-' + id); if (tab) tab.focus(); }
   };
@@ -105,7 +88,7 @@
    * 鍵盤操作不會跳回開頭（同資料中心的 data-hub-focus）。關閉時不畫。
    */
   function render() {
-    const root = $('#settings'); if (!root || !st.open) return;
+    const root = $('#settings'); if (!root || !layer.isOpen()) return;
     const ae = document.activeElement;
     const focusKey = ae && ae.getAttribute && root.contains(ae) ? ae.getAttribute('data-settings-focus') : null;
     const cur = sectionOf(st.section);

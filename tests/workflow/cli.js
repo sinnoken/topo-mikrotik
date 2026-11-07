@@ -277,3 +277,43 @@ test('CLI：sitedoc.md／sitedoc.csv 與畫面的網路文件同一份核心文�
     assert.strictEqual(fs.readFileSync(path.join(d, 'manager-summary.md'), 'utf8'), S.report.managerSummary(Q, opts), '主管摘要也是同一份核心文字');
   } finally { rm(d); }
 });
+
+test('CLI：--previous 讓主管摘要第一行接與上一輪的增減；檔案不存在、不是基準或 schema 不合時結束碼 2，不輸出任何檔案', () => {
+  const d = tmp();
+  try {
+    assert.ok(run(['--help']).stdout.includes('--previous'), '--help 應說明 --previous');
+    const first = path.join(d, 'r1');
+    assert.notStrictEqual(run([SAMPLE, '--now', NOW, '-o', first]).code, CODES().FAILED);
+    const prevFile = path.join(first, 'baseline.json'); const prev = readJson(prevFile);
+    const headOf = (dir) => fs.readFileSync(path.join(dir, 'manager-summary.md'), 'utf8').split('\n')[2];
+    // 同一份收集檔：筆數相同
+    const same = path.join(d, 'r2');
+    assert.notStrictEqual(run([SAMPLE, '--previous', prevFile, '--now', NOW, '-o', same]).code, CODES().FAILED);
+    assert.ok(headOf(same).includes('，與上一輪筆數相同。'), headOf(same));
+    assert.ok(!headOf(first).includes('上一輪'), '沒有 --previous 時不寫增減');
+    // 上一輪少 3 筆錯誤＋警告：這一輪「多 3 筆」；整份與直接呼叫 S.report.managerSummary 相同
+    const fewer = JSON.parse(JSON.stringify(prev)); fewer.meta.stats.findings.warn -= 3;
+    writeJson(path.join(d, 'fewer.json'), fewer);
+    const more = path.join(d, 'r3');
+    assert.notStrictEqual(run([SAMPLE, '--previous', path.join(d, 'fewer.json'), '--now', NOW, '-o', more]).code, CODES().FAILED);
+    assert.ok(headOf(more).includes('，比上一輪多 3 筆。'), headOf(more));
+    const Q = S.query(readJson(path.join(more, 'baseline.json')));
+    assert.strictEqual(fs.readFileSync(path.join(more, 'manager-summary.md'), 'utf8'),
+      S.report.managerSummary(Q, { previous: S.query(fewer), ledgerOf: S.report.ledgerOfItems(readJson(path.join(more, 'ledger.json')), Q) }));
+    // 錯誤情況
+    const out = path.join(d, 'out');
+    const old = JSON.parse(JSON.stringify(prev)); old.meta.schema = 'ssot-snapshot/2';
+    const cases = [
+      ['檔案不存在', path.join(d, '不存在.json'), /無法讀取上一輪基準/],
+      ['不是 JSON', (fs.writeFileSync(path.join(d, 'bad.json'), '{ x'), path.join(d, 'bad.json')), /不是合法的 JSON/],
+      ['不是基準', (writeJson(path.join(d, 'lg.json'), S.ledger.empty()), path.join(d, 'lg.json')), /不是基準（ssot-snapshot）/],
+      ['schema 不合', (writeJson(path.join(d, 'old.json'), old), path.join(d, 'old.json')), /schema 是 ssot-snapshot\/2/],
+    ];
+    cases.forEach(([name, file, why]) => {
+      const r = run([SAMPLE, '--previous', file, '--now', NOW, '-o', out]);
+      assert.strictEqual(r.code, CODES().FAILED, `${name}：結束碼應為 2，得到 ${r.code}\n${r.stderr}`);
+      assert.ok(why.test(r.stderr), `${name}：stderr 應說明原因：${r.stderr}`);
+      assert.ok(!fs.existsSync(out), `${name}：不應建立輸出目錄`);
+    });
+  } finally { rm(d); }
+});

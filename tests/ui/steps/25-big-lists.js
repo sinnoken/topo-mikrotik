@@ -47,7 +47,7 @@ const search = (big, q) => { const inp = big.querySelector('.biglist-search'); i
 const visible = (el) => el.getAttribute('hidden') == null;
 
 module.exports = async () => {
-  await step('大量路由：右欄只有摘要，路由表視窗先顯示分組（計數同 Q.allRoutesOf）、展開一組才畫明細並分頁、搜尋位址依前綴由長到短找到包含它的路由、其他文字依文字比對；少量時也分組', async () => {
+  await step('大量路由：右欄只有摘要，路由表視窗先顯示分組（計數同 Q.allRoutesOf）、展開一組才畫明細並分頁、搜尋位址依前綴由長到短找到包含它的路由、其他文字依文字比對；分組只依路由表與協定、組數不超過門檻；少量時不分組、依網段直接列出', async () => {
     await buildInput(INPUT);
     const Q = App.Q; const P = S.view.BIG_LIST;
     const big = Q.devices().find((d) => d.name === 'BIG'); const small = Q.devices().find((d) => d.name === 'SMALL');
@@ -69,12 +69,16 @@ module.exports = async () => {
     if (!gs.length || gs.length > P.page) throw new Error('測試前提：分組應在一頁內：' + gs.length);
     const sum = gs.reduce((n, g) => n + countOf(g), 0);
     if (sum !== all.length) throw new Error(`各組的 count 合起來應是全部的路由：${sum}／${all.length}`);
-    // 每組的 count 同 Q：同一個下一跳的路由數
-    GWS.forEach((gw) => {
-      const g = gs.find((x) => x.querySelector('summary').textContent.includes(gw));
-      const want = all.filter((r) => r.nh.some((n) => n.ip === gw)).length;
-      if (!g || countOf(g) !== want) throw new Error(`下一跳 ${gw} 的組應有 ${want} 條：${g ? countOf(g) : '沒有這一組'}`);
+    // 分組要減少要看的列：組數不超過路由數 × groupRatio；依路由表與協定分組（下一跳不是分組鍵，是組內的一欄）
+    if (gs.length > all.length * P.groupRatio) throw new Error(`分組數應不超過門檻：${gs.length}／${all.length}`);
+    const protos = S.util.uniq(all.map((r) => r.proto));
+    if (gs.length !== protos.length) throw new Error('只有 main 時每個協定一組：' + gs.length + '／' + protos.join());
+    protos.forEach((p) => {
+      const g = gs.find((x) => x.querySelector('summary').textContent.includes(p));
+      const want = all.filter((r) => r.proto === p).length;
+      if (!g || countOf(g) !== want) throw new Error(`協定 ${p} 的組應有 ${want} 條：${g ? countOf(g) : '沒有這一組'}`);
     });
+    if (gs.some((g) => GWS.some((gw) => g.querySelector('summary').textContent.includes(gw)))) throw new Error('組的標題不再寫下一跳');
     // 非作用中的路由數寫在組的標題列
     const inactive = all.filter((r) => r.active === false).length;
     if (!inactive || !gs.some((g) => g.querySelector('summary').textContent.includes('條非作用中'))) throw new Error('有非作用中路由的組應在標題列寫出條數');
@@ -82,6 +86,8 @@ module.exports = async () => {
     const g0 = gs.find((g) => countOf(g) > P.page); open(g0);
     const page1 = rowsOf(g0);
     if (page1.length !== P.page) throw new Error(`一頁應是 ${P.page} 列：${page1.length}`);
+    if (!g0.testAll('th').some((th) => th.textContent === '下一跳')) throw new Error('組內應有「下一跳」欄');
+    if (!page1.every((tr) => GWS.some((gw) => tr.textContent.includes(gw)) || /ether1/.test(tr.textContent))) throw new Error('組內每列寫出下一跳');
     if (rowsOf(sec).length >= all.length) throw new Error('分頁時不應一次畫出全部的列');
     const where = g0.querySelector('.pager-where'); if (!where || where.getAttribute('role') !== 'status') throw new Error('分頁應有頁碼說明（role=status）');
     const first = page1[0].textContent;
@@ -120,10 +126,15 @@ module.exports = async () => {
     if (!box.querySelector('.biglist-status').textContent.includes('找不到符合的路由') || rowsOf(box.querySelector('.biglist-result')).length) throw new Error('沒有符合時應說明找不到符合的路由：' + box.querySelector('.biglist-status').textContent);
     search(box, '');
     if (!visible(box.querySelector('.biglist-summary')) || visible(box.querySelector('.biglist-result'))) throw new Error('清掉搜尋字應回到摘要');
-    // 少量時也分組（同一種資料同一種呈現），各組合起來是全部的路由
+    // 少量時（一頁放得下）不分組：直接依網段列出全部的路由（列數同 Q），協定是一欄，仍有搜尋框；右欄摘要也不列組
+    App.select({ type: 'device', key: small.key });
+    if (foldOf('路由表').querySelector('.routes-group')) throw new Error('視窗不分組時右欄摘要也不列組');
     App.select({ type: 'routes', dev: small.key });
-    const n = Q.allRoutesOf(small.key).length; const sgs = groupsOf(routesList());
-    if (n >= P.min || !sgs.length || sgs.reduce((k, g) => k + countOf(g), 0) !== n) throw new Error(`路由少時也依路由表、協定與下一跳分組：${n}`);
+    const n = Q.allRoutesOf(small.key).length; const sl = routesList();
+    if (n > P.page || groupsOf(sl).length || rowsOf(sl).length !== n) throw new Error(`路由少時不分組，直接列出全部：${rowsOf(sl).length}／${n}`);
+    if (!sl.testAll('th').some((th) => th.textContent === '協定') || !sl.querySelector('.biglist-search')) throw new Error('不分組時列出協定欄，仍可搜尋');
+    const nets = rowsOf(sl).map((tr) => /\d+\.\d+\.\d+\.\d+\/\d+/.exec(tr.textContent)[0]);
+    if (nets.some((x, k) => k && S.util.natural(nets[k - 1], x) > 0)) throw new Error('不分組時依網段排序：' + nets.join(','));
     App.select(null);
   });
 
@@ -213,6 +224,15 @@ module.exports = async () => {
     const rev = rows.slice().reverse();
     const ext = V.bigList(cols, rev, { table: { onSort: () => {}, sortBy: 0, sortDir: -1 } });
     if (firstCell(ext) !== String(n - 1) || rowsOf(ext).length !== P.page) throw new Error('呼叫端管排序時照給的順序分頁');
+    // 分組沒有減少要看的列（組數超過列數 × groupRatio，例如一列一組）時不分組，直接分頁；組數少時才分組；flatMax 以內也不分組
+    const perRow = () => rows.map((r) => ({ key: 'g' + r.i, title: r.name, rows: [r] }));
+    const halves = () => [0, 1].map((k) => ({ key: 'h' + k, title: 'h' + k, rows: rows.filter((r) => r.i % 2 === k) }));
+    const one = V.bigList(cols, rows, { groups: perRow, unit: '列' });
+    if (V.groupsUseful(n, n) || groupsOf(one).length || rowsOf(one).length !== P.page) throw new Error('一列一組時不分組，直接分頁');
+    const two = V.bigList(cols, rows, { groups: halves, unit: '列' });
+    if (!V.groupsUseful(n, 2) || groupsOf(two).length !== 2) throw new Error('組數少時分組');
+    const capped = V.bigList(cols, rows, { groups: halves, unit: '列', flatMax: n });
+    if (V.groupsUseful(n, 2, n) || groupsOf(capped).length) throw new Error('列數不超過 flatMax 時不分組');
     // V.table 一律列出全部的列（舊的 limit 選項已拿掉）；畫面沒有呼叫端再傳 limit，列多的表格都經 V.bigList 分頁
     const all = V.table(cols, rows);
     if (all.querySelector('.table-more') || all.querySelector('.pager') || rowsOf(all).length !== n) throw new Error('V.table 應列出全部的列，不截斷');

@@ -104,7 +104,7 @@ module.exports = async () => {
     } finally { window.innerWidth = prevW; App.select(null); }
   });
 
-  await step('表格視窗：窄螢幕單欄——點規則後只顯示詳情並有「返回」；返回保留選取、展開的組與頁碼，焦點回到那一列；寬螢幕的「返回」取消選取', () => {
+  await step('表格視窗：窄螢幕單欄——點規則後只顯示詳情並有「返回」；返回保留選取、展開的組與頁碼，焦點回到那一列；寬螢幕的「回到總覽」取消選取；卡片不列空的欄', () => {
     const Q = App.Q; const dev = fwDevice(Q);
     const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
     const media = css.slice(css.indexOf('#dlg-table { width: 90vw'));
@@ -120,6 +120,13 @@ module.exports = async () => {
       const grp = panel.testAll('.biglist-group').find((g) => g.getAttribute('data-group') != null);
       grp.open = true; grp.dispatch('toggle');
       const tr = grp.testAll('tbody tr')[0]; const key = tr.getAttribute('data-key');
+      // 卡片（stack）：值是空的格不寫欄名（class blank，CSS 不顯示），有值的格才有「欄名：」
+      const tds = grp.testAll('tbody td'); const empty = (td) => !td.textContent.trim() && Array.from(td.children).every((c) => !c.children.length);
+      if (!tds.some(empty)) throw new Error('測試前提：規則表應有空的格（例如沒有檢查結果）');
+      tds.forEach((td) => {
+        if (empty(td) !== /\bblank\b/.test(td.className) || (empty(td) && td.getAttribute('data-label') != null)) throw new Error('空的格標 blank、不寫欄名；有值的格不標：' + td.className);
+      });
+      if (!/table\.t\.stack td\.blank \{ display: none; \}/.test(css)) throw new Error('卡片不顯示空的格');
       tr.focus(); tr.click();
       if (body.getAttribute('data-view') !== 'detail') throw new Error('窄螢幕點規則後只顯示詳情（data-view=detail）');
       if (document.activeElement !== fwSide().querySelector('h2')) throw new Error('窄螢幕選取後焦點移到詳情的標題');
@@ -133,7 +140,10 @@ module.exports = async () => {
       // 寬螢幕的「返回」：取消選取，右欄回到總覽，焦點回到那一列
       window.innerWidth = 1200;
       App.select({ type: 'rule', key });
-      fwSide().querySelector('.tdlg-back').click();
+      // 寬螢幕表格一直看得到，按鈕是取消選取：文字寫「回到總覽」，不寫「返回」
+      const wideBack = fwSide().querySelector('.tdlg-back');
+      if (!wideBack.textContent.includes('回到總覽') || wideBack.textContent.includes('返回')) throw new Error('寬螢幕的按鈕文字應是「回到總覽」：' + wideBack.textContent);
+      wideBack.click();
       if (App.sel.type !== 'firewall' || fwSide().querySelector('.tdlg-back') || !fwSide().textContent.includes('這台設備的防火牆')) throw new Error('寬螢幕的返回應取消選取、右欄回到總覽');
       if (document.activeElement.getAttribute('data-key') !== key) throw new Error('寬螢幕返回後焦點回到那一列');
     } finally { window.innerWidth = prevW; App.select(null); }

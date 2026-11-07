@@ -55,9 +55,17 @@
   // ---------------------------------------------------------------- 規則的欄位：規則表的每一格與規則詳情共用同一組函式
   const actionCell = (r) => h('span', { class: 'mono', style: { color: T.action[r.action] || T.action.other } },
     r.action + (r.action === 'jump' && r.params['jump-target'] ? ' → ' + r.params['jump-target'] : ''));
+  /** 規則表的動作欄：動作，停用的規則在旁邊加「停用」chip（原本的「狀態」欄大多是空的，併進這一欄） */
+  const actionStateCell = (r) => h('span', { class: 'fw-action' }, [actionCell(r), r.disabled ? ' ' : null, r.disabled ? stateCell(r) : null]);
+  /**
+   * 條件：每個 k=v 一段（span.fw-tok，CSS 不在段內斷行），段與段之間是空白，只在 k=v 之間折行，
+   * 不把 connection-state=established,related 這類參數從中間切開
+   */
+  const tokens = (o, cls) => Object.entries(o || {}).flatMap(([k, v], n) => [n ? ' ' : null, h('span', { class: 'fw-tok' + (cls ? ' ' + cls : '') }, `${k}=${v}`)]);
   const matchCell = (r) => {
     const params = Object.assign({}, r.params); delete params['jump-target'];
-    return h('span', { class: 'mono' }, [kvText(r.match) || '（全部）', Object.keys(params).length ? h('span', { class: 'muted' }, ' ' + kvText(params)) : null]);
+    const m = tokens(r.match); const p = tokens(params, 'muted');
+    return h('span', { class: 'mono fw-match' }, [...(m.length ? m : [h('span', { class: 'fw-tok' }, '（全部）')]), p.length ? ' ' : null, ...p]);
   };
   const commentCell = (r) => h('span', null, [
     r.comment || '',
@@ -100,15 +108,15 @@
       text: (x) => `${chainText(x.rule)} #${x.rule.position} ${x.rule.action} ${kvText(x.rule.match)} ${kvText(x.rule.params)} ${x.rule.comment || ''}`,
       columns: [
         { t: '位置', f: (x) => chainText(x.rule), inGroup: false },
-        { t: '#', f: (x) => String(x.rule.position), s: (x) => x.rule.position },
-        { t: '動作', f: (x) => actionCell(x.rule) },
+        // 數字、行號、動作與檢查不折行（num／nowrap）；只有條件（在 k=v 之間）與註解會折行（wrap）
+        { t: '#', f: (x) => String(x.rule.position), s: (x) => x.rule.position, cls: 'num' },
+        { t: '動作', f: (x) => actionStateCell(x.rule), cls: 'nowrap' },
         { t: '條件', f: (x) => matchCell(x.rule), cls: 'wrap' },
         { t: '註解', f: (x) => commentCell(x.rule), cls: 'wrap' },
-        { t: '狀態', f: (x) => stateCell(x.rule) },
         // 命中次數（print stats，事實）：封包數；沒有資料時空白（原因在規則詳情）
         { t: '命中', f: (x) => (x.rule.stats ? h('span', { class: 'mono fw-hits', title: `${V.bigNum(x.rule.stats.packets)} 個封包、${V.bigNum(x.rule.stats.bytes)} 位元組（收集當下的累積值）` }, V.bigNum(x.rule.stats.packets)) : ''), cls: 'num' },
-        { t: '檢查', f: (x) => h('span', null, findingChips(App, 'rule', x.rule.key)) },
-        { t: '原文', f: (x) => srcLink(App, x.rule.src) },
+        { t: '檢查', f: (x) => h('span', null, findingChips(App, 'rule', x.rule.key)), cls: 'nowrap' },
+        { t: '原文', f: (x) => srcLink(App, x.rule.src), cls: 'nowrap' },
       ],
       table: {
         bad: (x) => problems(x.findings).length > 0,

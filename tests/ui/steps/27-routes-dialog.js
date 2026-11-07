@@ -28,13 +28,23 @@ module.exports = async () => {
     if (summ.querySelector('table') || summ.testAll('tr').length) throw new Error('右欄的路由表只有摘要，不列路由');
     const count = summ.querySelector('summary').querySelector('.count');
     if (!count || count.textContent !== S.view.num(Q.allRoutesOf(dev).length)) throw new Error('摘要的總數應同 Q.allRoutesOf');
-    const top = summ.testAll('.routes-group');
-    if (!top.length || top.length > 3) throw new Error('摘要應列出前 1–3 組：' + top.length);
     if (!summ.querySelector('.routes-open') || !summ.querySelector('.routes-search')) throw new Error('摘要應有「查看全部路由」與搜尋框');
-    // 點一組：開視窗並展開那一組
-    top[0].click();
-    const g = routesList().testAll('.biglist-group').find((x) => x.getAttribute('data-group') === top[0].getAttribute('data-group'));
-    if (!g || g.getAttribute('open') == null) throw new Error('點摘要的一組應開視窗並展開那一組');
+    // 分組與視窗一致：路由一頁放得下時視窗直接依網段列出（列數同 Q），摘要不列組；否則視窗分組（組數不超過門檻），摘要列出其中最多的 1–3 組
+    const P = S.view.BIG_LIST; const nr = Q.allRoutesOf(dev).length;
+    const top = summ.testAll('.routes-group');
+    summ.querySelector('.routes-open').click();
+    const gs = routesList().testAll('.biglist-group').filter((x) => x.getAttribute('data-group') != null);
+    if (nr <= P.page) {
+      if (top.length || gs.length) throw new Error('路由一頁放得下時不分組（摘要與視窗都不列組）：' + top.length + '／' + gs.length);
+      if (routesList().querySelector('#tdlg-panel-routes').testAll('tbody tr').length !== nr) throw new Error('不分組時直接列出全部的路由（列數同 Q.allRoutesOf）');
+    } else {
+      if (!gs.length || gs.length > nr * P.groupRatio) throw new Error('分組數應不超過門檻：' + gs.length + '／' + nr);
+      if (!top.length || top.length > 3 || !top.every((a) => gs.some((g) => g.getAttribute('data-group') === a.getAttribute('data-group')))) throw new Error('摘要應列出視窗裡的 1–3 組：' + top.length);
+    }
+    // ECMP：每個下一跳一行（不黏成一串）
+    const ecmp = S.view.routes.nhCell({ vrf: 'main', nh: [{ ip: '10.0.0.2', ifc: 'ether3', vrf: 'main' }, { ip: '10.0.0.6', ifc: 'ether4', vrf: 'main' }] }, false);
+    const hops = ecmp.testAll('.route-nh-one').map((x) => x.textContent);
+    if (hops.join('|') !== '10.0.0.2 ether3|10.0.0.6 ether4') throw new Error('多個下一跳應每個一行：' + hops.join('|'));
     $('#tdlg-close').click();
     if ($('#dlg-table').open) throw new Error('✕ 應關閉視窗');
     // 搜尋框 Enter：開視窗，搜尋字套用在視窗的搜尋框，結果是 Q.routesMatching 的路由
@@ -120,7 +130,10 @@ module.exports = async () => {
     } finally { window.innerWidth = prevW; App.select(null); }
     const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
     if (!/\.tdlg-list \.table-scroll \{ overflow-x: visible; \}/.test(css)) throw new Error('視窗左欄的表格不在 .table-scroll 內橫捲（表頭固定在左欄）');
-    if (!/\.tdlg-list table\.t td \.mono, \.tdlg-list table\.t td \.vlanlist \{ white-space: normal; overflow-wrap: anywhere; \}/.test(css)) throw new Error('視窗內的識別字與條件應可折行');
+    // 識別字與條件只在空白處折行（break-word：整個字詞一行放不下時才斷），不從字詞中間切開
+    if (!/\.tdlg-list table\.t td \.mono, \.tdlg-list table\.t td \.vlanlist \{ white-space: normal; overflow-wrap: break-word; \}/.test(css)) throw new Error('視窗內的識別字與條件應在空白處折行');
+    if (!/\.tdlg-list \{ padding: 0 /.test(css)) throw new Error('視窗左欄上方不留 padding（固定的表頭上面不透出被捲走的列）');
+    if (!/\.detail-fold > summary::before \{ content: "▸"; color: var\(--muted\);/.test(css) || !/\.detail-fold\[open\] > summary::before \{ content: "▾"; \}/.test(css)) throw new Error('展開列應有 ▸／▾ 記號（顏色用 token）');
     if (!/\.tdlg-list table\.t td\.wrap \{ max-width: /.test(css)) throw new Error('長欄位（條件、註解）應有最大寬度');
     if (!/table\.t\[role="grid"\] tbody tr\.click:hover td \{ background: var\(--surface-hover\); \}/.test(css)) throw new Error('可選取表格的滑過應用中性的底色，和選取列分得出來');
     if (!/\.tdlg-side \{ order: 1;/.test(css)) throw new Error('窄螢幕時表格在前、總覽在後');

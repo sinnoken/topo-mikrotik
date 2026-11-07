@@ -276,13 +276,34 @@ module.exports = async () => {
       if (pos.some((x, i) => i && pos[i - 1] > x)) throw new Error(`${c.chain} 應依 position 排列`);
       const rows = Q.firewallRuleRows(dev, { family: c.family, table: c.table, chain: c.chain });
       trs.forEach((tr, i) => {
-        const r = rows[i].rule; const act = tr.testAll('td')[1].firstChild;
+        // 動作欄：動作（等寬字、theme 的顏色），停用時旁邊加「停用」chip（原本的「狀態」欄併進來）
+        const r = rows[i].rule; const actTd = tr.testAll('td')[1]; const act = actTd.querySelector('.mono');
+        if (!act) throw new Error('動作欄應有動作的文字');
+        if (r.disabled !== actTd.testAll('.chip').some((c) => c.textContent === '停用')) throw new Error('停用的規則在動作旁加「停用」chip，啟用的不加');
         const want = S.view.theme.firewall.action[r.action] || S.view.theme.firewall.action.other;
         if (act.style.color !== want) throw new Error('規則動作的顏色應取自 theme');
         if (!tr.textContent.includes(`第 ${r.src[0][1]} 行`)) throw new Error('每列應有原文行號');
       });
       if (c.jumpedFrom.length && !d.textContent.includes('由這些規則 jump 進來')) throw new Error('有規則 jump 進來的 chain 應列出來源規則');
+      // 不從字詞中間折行：數字、行號、動作與檢查欄帶 num／nowrap（CSS 不折行、等寬數字）；條件每個 k=v 一段（fw-tok），段與段之間是空白（唯一的斷行點）
+      const ths = d.testAll('th').map((th) => th.textContent);
+      if (ths.includes('狀態')) throw new Error('「狀態」欄已併進「動作」');
+      const col = (t) => { const k = ths.indexOf(t); if (k < 0) throw new Error('規則表應有「' + t + '」欄：' + ths.join()); return k; };
+      trs.forEach((tr, i) => {
+        const tds = tr.testAll('td');
+        [['#', 'num'], ['命中', 'num'], ['原文', 'nowrap'], ['動作', 'nowrap'], ['檢查', 'nowrap']].forEach(([t, cls]) => {
+          if (!new RegExp('\\b' + cls + '\\b').test(tds[col(t)].className)) throw new Error(`「${t}」欄應帶 ${cls}（不折行）：${tds[col(t)].className}`);
+        });
+        const m = tds[col('條件')]; const toks = m.testAll('.fw-tok'); const r = rows[i].rule;
+        const want = Object.keys(r.match).length + Object.keys(r.params).filter((k) => k !== 'jump-target').length;
+        if (toks.length !== Math.max(1, want)) throw new Error('條件的每個 k=v 應是一段（fw-tok）：' + m.textContent);
+        if (toks.some((x, n) => n && x.parentNode.childNodes[x.parentNode.childNodes.indexOf(x) - 1].textContent !== ' ')) throw new Error('條件的段與段之間應是空白（斷行點）：' + m.textContent);
+      });
     });
+    const fwCss = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
+    if (!/\.tdlg-list table\.t td\.num, \.tdlg-list table\.t td\.nowrap[^{]*\{ white-space: nowrap; overflow-wrap: normal; font-variant-numeric: tabular-nums; \}/.test(fwCss)) throw new Error('視窗內的數字與 nowrap 欄應不折行、用等寬數字');
+    if (!/\.tdlg-list \.fw-tok \{ white-space: nowrap; \}/.test(fwCss)) throw new Error('條件的一段（k=v）內不斷行');
+    if (/\.tdlg-list table\.t td \{ overflow-wrap: anywhere; \}/.test(fwCss)) throw new Error('視窗內的表格不應對所有欄套 overflow-wrap: anywhere（會從數字中間折行）');
     // 原文行號可開啟
     // 原文行號可開啟（原文對話框疊在防火牆視窗上，選取不變）
     const a = panel.testAll('.biglist-body a').find((x) => /^第 \d+ 行$/.test(x.textContent));

@@ -12,8 +12,8 @@
  *     head?: () => Node,        // 分頁上方的一列（例如狀態 chip）
  *     tabs: [{ key, label, count?, extra?: [Node], rows, columns, rowKey(row),
  *              selectable?: true（false 時列不能點，例如 interface list），empty?: '沒有列時的說明',
- *              // 以下原樣交給 V.bigList（columns 的 inGroup: false、groups、grouped、text、match、unit、what、placeholder）
- *              groups?, grouped?, text?, match?, unit?, what?, placeholder?,
+ *              // 以下原樣交給 V.bigList（columns 的 inGroup: false、groups、grouped、flatMax、text、match、unit、what、placeholder）
+ *              groups?, grouped?, flatMax?, text?, match?, unit?, what?, placeholder?,
  *              table?: { bad, rowClass, rowStyle, rowAttrs } }],
  *     detail(row, tabKey) → Node,  // 右欄：選取的那一列（第一個 h2／h3 是選取後焦點的去處）
  *     empty() → Node,              // 右欄：沒有選取時
@@ -111,7 +111,7 @@
     const groups = t.groups && o && o.group != null ? () => t.groups().map((g) => (g.key === o.group ? Object.assign({}, g, { open: true }) : g)) : t.groups;
     const control = {};
     panel.appendChild(V.bigList(t.columns, t.rows, {
-      table, onRow: selectable ? (r) => pick(t.key, t.rowKey(r)) : null, groups, grouped: t.grouped, text: t.text, match: t.match,
+      table, onRow: selectable ? (r) => pick(t.key, t.rowKey(r)) : null, groups, grouped: t.grouped, flatMax: t.flatMax, text: t.text, match: t.match,
       unit: t.unit, what: t.what, placeholder: t.placeholder, reveal, search: o && o.search, control,
     }));
     cur.panels.set(t.key, panel); cur.controls.set(t.key, control);
@@ -172,12 +172,14 @@
     for (let x = tr.parentNode; x && x !== panel(); x = x.parentNode) if (x.tagName === 'DETAILS' && !x.open) { x.open = true; x.setAttribute('open', ''); }
     tr.scrollIntoView({ block: 'center' });
   }
+  /** 右欄頂端按鈕的文字與說明：窄螢幕是回到表格（「返回」），寬螢幕表格一直看得到，按鈕是取消選取、右欄回到總覽 */
+  const BACK = { narrow: { text: '‹ 返回', title: '回到表格（選取、頁碼與展開的組都保留）' }, wide: { text: '‹ 回到總覽', title: '取消選取，右欄回到總覽' } };
   function renderSide() {
     const side = V.clear(bodyEl().querySelector('#tdlg-side'));
     const t = tabOf(cur.tab); const row = rowOf(t, cur.key);
     if (row) {
-      side.appendChild(h('div', { class: 'tdlg-side-head' }, h('button', { type: 'button', class: 'ghost tdlg-back', onclick: back,
-        title: narrow() ? '回到表格（選取、頁碼與展開的組都保留）' : '取消選取，回到總覽' }, '‹ 返回')));
+      const b = BACK[narrow() ? 'narrow' : 'wide'];
+      side.appendChild(h('div', { class: 'tdlg-side-head' }, h('button', { type: 'button', class: 'ghost tdlg-back', onclick: back, title: b.title }, b.text)));
     }
     side.appendChild((row ? cur.cfg.detail(row, cur.tab) : cur.cfg.empty()) || h('p', { class: 'muted' }, '—'));
   }

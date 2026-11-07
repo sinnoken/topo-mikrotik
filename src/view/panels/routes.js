@@ -3,7 +3,8 @@
  * 右欄的設備詳情只留摘要（summary）：總數、路由最多的幾組、搜尋框（Enter 開視窗並帶入搜尋字）與「查看全部路由」，
  * 以及 VRF、策略路由與 OSPF 鄰接的一行摘要（每一項開視窗的那個分頁）。
  *   分頁：路由、VRF、/routing rule、策略路由的路由表、OSPF 鄰接（EXTRA_TABS）；設備沒有的資料不列那個分頁。只有路由的列可以選。
- *   左欄：V.bigList，一律依路由表、協定與下一跳分組（groups）；組內不列和組名重複的欄（inGroup: false），搜尋結果才列。
+ *   左欄：V.bigList，列依網段排序。路由一頁放得下、或分組沒有減少要看的列（V.groupsUseful）時直接列出；否則依路由表與協定分組（groups），
+ *         下一跳是一欄；組內不列和組名重複的欄（inGroup: false），直接列出與搜尋結果才列。
  *         搜尋位址或網段經 Q.routesMatching（前綴由長到短），其他文字（協定、下一跳名稱）依文字比對。
  *   右欄：點選的那一條路由——屬性、每個下一跳解析的 VRF 與擁有者（Q.hopOwner）、原文，以及「從這台追蹤到這個網段」（App.openTrace）。
  * 選取是 { type: 'routes', dev, route?: 列的鍵, group?: 組的鍵, search?: 搜尋字, tab?: 分頁 }，只是檢視狀態（App.sel），不進基準。
@@ -33,8 +34,12 @@
     const own = r.vrf || K.MAIN_VRF; const other = n.vrf && n.vrf !== own;
     return (n.ip ? n.ip + (other ? '@' + n.vrf : '') + ' ' : '') + (n.ifc || '') + (!n.ip && other ? `（VRF ${n.vrf}）` : '');
   };
-  /** 下一跳的儲存格；multi（基準有多個 VRF）時 title 寫出每個閘道在哪個 VRF 解析與依據（觸控看不到的部分在路由詳情） */
-  const nhCell = (r, multi) => h('span', { class: 'mono', title: multi ? r.nh.map((n) => `${n.ip || n.ifc || ''}：在 ${V.vrfText(n.vrf)} 解析（${V.NH_VRF_BASIS[n.vrfBasis] || n.vrfBasis || ''}）`).join('\n') : null }, r.nh.map((n) => nhText(r, n)).join('\n'));
+  /**
+   * 下一跳的儲存格：每個下一跳一行（ECMP 的多個下一跳不黏成一串）；multi（基準有多個 VRF）時 title 寫出每個閘道在哪個 VRF 解析與依據
+   * （觸控看不到的部分在路由詳情）
+   */
+  const nhCell = (r, multi) => h('div', { class: 'mono route-nh', title: multi ? r.nh.map((n) => `${n.ip || n.ifc || ''}：在 ${V.vrfText(n.vrf)} 解析（${V.NH_VRF_BASIS[n.vrfBasis] || n.vrfBasis || ''}）`).join('\n') : null },
+    r.nh.map((n) => h('div', { class: 'route-nh-one' }, nhText(r, n).trim())));
   /** 路由的協定（黑洞路由另成一類） */
   const routeProto = (r) => (r.blackhole ? '黑洞路由' : r.proto || '（協定不明）');
   const routeNh = (r) => r.nh.map((n) => nhText(r, n).trim()).filter(Boolean).join('、');
@@ -46,22 +51,37 @@
    */
   const keyOf = (r) => (r.src && r.src.length ? r.src[0].join(':') : null);
   /**
-   * 分組：依路由表（showTable 時寫出）、協定與下一跳，依路由表（main 在前）、協定、筆數多到少排列。
+   * 路由一頁放得下（V.BIG_LIST.page 條以內）時不分組：直接依網段列出（V.groupsUseful 的 flatMax）。
+   * 組數超過路由數的一半時也不分組（V.groupsUseful 的 groupRatio）。視窗與右欄摘要的「路由最多的幾組」用同一個判斷。
+   */
+  const FLAT_MAX = V.BIG_LIST.page;
+  const mainFirst = (t) => (t === K.MAIN_VRF ? 0 : 1);
+  const tableOf = (r) => r.routingTable || K.MAIN_VRF;
+  /** 沒有距離的排在同一個網段的最後 */
+  const distOf = (r) => (r.distance == null ? Number.MAX_SAFE_INTEGER : r.distance);
+  /** 列的順序：依網段（位址依數值，再依前綴長度），同一個網段 main 在前、再依路由表與距離 */
+  const byPrefix = (a, b) => S.util.natural(a.prefix, b.prefix) || a.len - b.len || mainFirst(tableOf(a)) - mainFirst(tableOf(b))
+    || S.util.natural(tableOf(a), tableOf(b)) || distOf(a) - distOf(b);
+  /** 這台設備的路由，依網段排序（視窗的列與分組都用這個順序） */
+  const sortedRoutes = (Q, dev) => Q.allRoutesOf(dev).slice().sort(byPrefix);
+  /**
+   * 分組：依路由表（showTable 時寫出）與協定，依路由表（main 在前）、協定排列；下一跳是組內的一欄。
    * 非作用中的路由數寫在組的標題列（V.stateChip）。
    */
   function routeGroups(routes, table) {
     const by = new Map();
     routes.forEach((r) => {
-      const t = r.routingTable || K.MAIN_VRF; const proto = routeProto(r); const nh = routeNh(r);
-      S.util.getOr(by, [t, proto, nh].join('\u0000'), () => ({ table: t, proto, nh, rows: [] })).rows.push(r);
+      const t = r.routingTable || K.MAIN_VRF; const proto = routeProto(r);
+      S.util.getOr(by, [t, proto].join('\u0000'), () => ({ table: t, proto, rows: [] })).rows.push(r);
     });
-    const main = (t) => (t === K.MAIN_VRF ? 0 : 1);
-    return Array.from(by.entries()).sort(([, a], [, b]) => main(a.table) - main(b.table) || S.util.natural(a.table, b.table)
-      || S.util.natural(a.proto, b.proto) || b.rows.length - a.rows.length || S.util.natural(a.nh, b.nh))
+    return Array.from(by.entries()).sort(([, a], [, b]) => mainFirst(a.table) - mainFirst(b.table) || S.util.natural(a.table, b.table)
+      || S.util.natural(a.proto, b.proto))
       .map(([key, g]) => ({ key, rows: g.rows,
-        title: h('span', null, [table ? h('span', { class: 'mono' }, g.table) : null, table ? '・' : null, g.proto, '・下一跳 ', h('span', { class: 'mono' }, g.nh || '—')]),
+        title: h('span', null, [table ? h('span', { class: 'mono' }, g.table) : null, table ? '・' : null, g.proto]),
         extra: [V.stateChip(g.rows.filter((r) => r.active === false).length, '條非作用中')] }));
   }
+  /** 這些路由要不要分組（視窗與右欄摘要共用） */
+  const grouped = (routes, groups) => V.groupsUseful(routes.length, groups.length, FLAT_MAX);
   const INACTIVE_TIP = '目前沒有被選用（例如備援路由）；路由追蹤只看作用中的路由';
   const POLICY_TIP = '這張路由表不是 VRF：只有 /routing rule 指定時才會查';
 
@@ -114,16 +134,20 @@
     const Q = App.Q; const routes = Q.allRoutesOf(dev); const r0 = routing(Q, dev);
     const more = EXTRA_TABS.filter((t) => r0[t.key].length);
     if (!routes.length && !more.length && !r0.policy) return null;
-    const groups = routes.length ? routeGroups(routes, showTable(Q, routes)) : [];
+    // 分組與視窗相同（routeGroups＋grouped）：視窗不分組時摘要也不列組
+    const all = routes.length ? routeGroups(routes, showTable(Q, routes)) : [];
+    const groups = grouped(routes, all) ? all : [];
     const top = groups.map((g, n) => ({ g, n })).sort((a, b) => b.g.rows.length - a.g.rows.length || a.n - b.n).slice(0, TOP_GROUPS).map((x) => x.g);
     const input = h('input', { type: 'search', class: 'routes-search', placeholder: '搜尋位址、網段、下一跳、協定', 'aria-label': '搜尋路由（Enter 在路由表視窗開啟結果）',
       onkeydown: (e) => { if (e.key !== 'Enter') return; e.preventDefault(); const q = String(input.value || '').trim(); App.select(openSel(dev, q ? { search: q } : null)); } });
     const line = more.length ? h('p', { class: 'routes-more' }, more.flatMap((t, n) => [n ? '、' : '',
       h('a', { class: 'link routes-tab', 'data-tab': t.key, onclick: () => App.select(openSel(dev, { tab: t.key })) }, `${t.summary} ${V.num(r0[t.key].length)} ${t.unit}`)])) : null;
     return P().section('路由表', [
-      routes.length ? h('p', { class: 'muted routes-total' }, `共 ${V.num(routes.length)} 條，依路由表、協定與下一跳分成 ${V.num(groups.length)} 組`
-        + (groups.length > top.length ? `；路由最多的 ${V.num(top.length)} 組：` : '：')) : h('p', { class: 'muted routes-total' }, '沒有路由（或沒有收集 /ip route）。'),
-      routes.length ? h('ul', { class: 'routes-top' }, top.map((g) => h('li', null, [
+      !routes.length ? h('p', { class: 'muted routes-total' }, '沒有路由（或沒有收集 /ip route）。')
+        : groups.length ? h('p', { class: 'muted routes-total' }, `共 ${V.num(routes.length)} 條，依路由表與協定分成 ${V.num(groups.length)} 組`
+          + (groups.length > top.length ? `；路由最多的 ${V.num(top.length)} 組：` : '：'))
+          : h('p', { class: 'muted routes-total' }, `共 ${V.num(routes.length)} 條，在路由表視窗依網段列出。`),
+      top.length ? h('ul', { class: 'routes-top' }, top.map((g) => h('li', null, [
         h('a', { class: 'link routes-group', 'data-group': g.key, onclick: () => App.select(openSel(dev, { group: g.key })) }, g.title), ' ',
         V.chip(V.num(g.rows.length), 'count')]))) : null,
       routes.length ? h('div', { class: 'row routes-search-row' }, input) : null,
@@ -135,22 +159,23 @@
 
   // ---------------------------------------------------------------- 視窗的左欄與右欄
   function routesTab(App, dev) {
-    const Q = App.Q; const rows = Q.allRoutesOf(dev); const table = showTable(Q, rows); const multi = multiVrf(Q);
+    const Q = App.Q; const rows = sortedRoutes(Q, dev); const table = showTable(Q, rows); const multi = multiVrf(Q);
     // 列的鍵：來源行；沒有來源行時以順序編號（同一份基準內固定）
     const keys = new Map(rows.map((r, n) => [r, keyOf(r) || '#' + n]));
     return {
-      key: 'routes', label: '路由', count: rows.length, rows, rowKey: (r) => keys.get(r), grouped: true,
+      // grouped：少於 BIG_LIST.min 條也交給 V.bigList（搜尋框）；分不分組由 flatMax 與 V.groupsUseful 決定（同右欄摘要）
+      key: 'routes', label: '路由', count: rows.length, rows, rowKey: (r) => keys.get(r), grouped: true, flatMax: FLAT_MAX,
       empty: '這台設備沒有路由（或沒有收集 /ip route）。', unit: '條', what: '路由', placeholder: '搜尋位址、網段、下一跳、協定',
       text: routeText, match: (q) => Q.routesMatching(dev, q),
       columns: [
         // 非作用中（例如備援的預設路由）也列出，可與 R11 等檢查對照：chip 在網段欄，整列 muted（route-off）
         { t: '網段', f: (r) => h('span', null, [h('span', { class: 'mono' }, `${r.prefix}/${r.len}`),
           r.active === false ? ' ' : null, r.active === false ? V.chip('非作用中', 'route-inactive', { title: INACTIVE_TIP }) : null]), s: (r) => `${r.prefix}/${r.len}` },
-        // 路由表、協定與下一跳是組名：組內不列（inGroup: false），搜尋結果才列
+        // 路由表與協定是組名：組內不列（inGroup: false），不分組與搜尋結果才列；下一跳每組都列
         ...(table ? [{ t: '路由表', f: (r) => h('span', null, [h('span', { class: 'mono' }, r.routingTable || K.MAIN_VRF), r.vrf == null ? V.chip('只用於策略路由', 'info', { title: POLICY_TIP }) : null]), s: (r) => r.routingTable, inGroup: false }] : []),
         { t: '協定', f: (r) => (r.blackhole ? h('span', { class: 'diffA' }, '黑洞路由') : r.proto), s: (r) => r.proto, inGroup: false },
         { t: '距離', f: (r) => (r.distance == null ? '' : String(r.distance)), s: (r) => r.distance },
-        { t: '下一跳', f: (r) => nhCell(r, multi), s: (r) => (r.nh[0] ? r.nh[0].ip || r.nh[0].ifc : ''), inGroup: false },
+        { t: '下一跳', f: (r) => nhCell(r, multi), s: (r) => (r.nh[0] ? r.nh[0].ip || r.nh[0].ifc : '') },
       ],
       table: { rowClass: (r) => (r.active === false ? 'route-off' : '') },
       groups: () => routeGroups(rows, table),

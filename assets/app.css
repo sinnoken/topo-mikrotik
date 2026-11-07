@@ -416,7 +416,11 @@ table.t tr.click { cursor: pointer; }
 .detail h3 { font-size: var(--fs-md); margin: 0 0 8px; padding-bottom: 5px; color: var(--heading-text); border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
 .detail-fold { border-bottom: 1px solid var(--line); }
 .detail-section + .detail-fold, .detail .kv + .detail-fold { margin-top: 12px; }
-.detail-fold > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 40px; padding: 6px 2px; cursor: pointer; list-style-position: inside; font-size: var(--fs-md); font-weight: 600; color: var(--heading-text); }
+/* summary 是 flex，瀏覽器不畫展開記號：▸／▾ 由 ::before 補上（同修正計畫的 .patch-cat） */
+.detail-fold > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 40px; padding: 6px 2px; cursor: pointer; list-style: none; font-size: var(--fs-md); font-weight: 600; color: var(--heading-text); }
+.detail-fold > summary::-webkit-details-marker { display: none; }
+.detail-fold > summary::before { content: "▸"; color: var(--muted); font-weight: 400; }
+.detail-fold[open] > summary::before { content: "▾"; }
 .detail-fold > summary:hover { color: var(--accent); }
 /* 標題列的狀態 chip 與連結（V.section 的 extra）：字重回到一般，連結靠右前留一點距離 */
 .detail-fold > summary .section-extra { font-weight: 400; display: inline-flex; align-items: center; }
@@ -505,6 +509,8 @@ tr.route-off > td { color: var(--muted); }
 .two-line .l2 { font-size: var(--fs-sm); white-space: normal; overflow-wrap: anywhere; }
 .two-line .l2 .ifc-vlans { overflow-wrap: anywhere; }
 /* 路由表摘要（右欄）：路由最多的幾組、搜尋框；路由詳情（視窗右欄）的每個下一跳一塊 */
+/* 路由表的下一跳：每個下一跳一行（ECMP 不黏成一串） */
+.route-nh-one { white-space: nowrap; }
 .routes-top { margin: 4px 0 8px; padding-left: 20px; }
 .routes-top li { margin: 2px 0; }
 .routes-search { width: 100%; max-width: 360px; }
@@ -592,21 +598,27 @@ dialog::backdrop { background: var(--backdrop); }
 #tdlg-title { min-width: 0; overflow-wrap: anywhere; }
 #tdlg-title:focus { outline: none; }
 #tdlg-status { margin-left: 10px; font-weight: 400; font-size: var(--fs-sm); }
-.tdlg-cols { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); }
+.tdlg-cols { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr); }
 .tdlg-list, .tdlg-side { min-width: 0; min-height: 0; overflow: auto; overflow-x: hidden; }
-.tdlg-list { padding: 12px 18px 24px; }
+/* 上方不留 padding：固定的表頭貼齊捲動區的上緣，上面不透出被捲走的列；間距改由第一個元素的 margin 提供 */
+.tdlg-list { padding: 0 18px 24px; }
+.tdlg-list > :first-child { margin-top: 12px; }
 .tdlg-side { border-left: 1px solid var(--line); background: var(--surface); }
 .tdlg-side-head { padding: 10px 16px 0; }
 .tdlg-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0 10px; border-bottom: 1px solid var(--line); }
 .tdlg-tab { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 6px 10px; font-weight: 600; color: var(--heading-text); }
 .tdlg-tab.on { border-bottom-color: var(--accent); color: var(--accent); }
 .tdlg-extra { margin-bottom: 8px; }
-/* 視窗左欄的表格不橫捲（.tdlg-list 是捲動容器，表頭才固定得住）：識別字與條件（k=v 之間）可以折行，長欄位設上限，
-   所有欄在可視寬度內都看得到；900px 以下改成每列一塊（V.tableDialog 的表格帶 stack） */
+/* 視窗左欄的表格不橫捲（.tdlg-list 是捲動容器，表頭才固定得住）：識別字與條件只在空白處（k=v 之間）折行，不從字詞中間切開
+   （break-word 只在一個字詞整行都放不下時才斷，例如窄螢幕的卡片）；長欄位設上限；900px 以下改成每列一塊（V.tableDialog 的表格帶 stack）。
+   數字、行號、動作與檢查（td.num、td.nowrap）不折行，數字用等寬數字 */
 .tdlg-list .table-scroll { overflow-x: visible; }
-.tdlg-list table.t td .mono, .tdlg-list table.t td .vlanlist { white-space: normal; overflow-wrap: anywhere; }
-.tdlg-list table.t td { overflow-wrap: anywhere; }
+.tdlg-list table.t td .mono, .tdlg-list table.t td .vlanlist { white-space: normal; overflow-wrap: break-word; }
+.tdlg-list table.t td { overflow-wrap: break-word; }
 .tdlg-list table.t td.wrap { max-width: 28em; }
+.tdlg-list table.t td.num, .tdlg-list table.t td.nowrap, .tdlg-list table.t td.num .mono, .tdlg-list table.t td.nowrap .mono { white-space: nowrap; overflow-wrap: normal; font-variant-numeric: tabular-nums; }
+/* 防火牆條件的一個 k=v（firewall.js 的 fw-tok）：段內不斷行 */
+.tdlg-list .fw-tok { white-space: nowrap; }
 /* 可選取的表格：滑過用中性的底色，和選取列（藍底＋左側粗線）分得出來 */
 table.t[role="grid"] tbody tr.click:hover td { background: var(--surface-hover); }
 table.t[role="grid"] tbody tr.focus.click:hover td { background: var(--row-focus-bg); }
@@ -619,7 +631,8 @@ table.t tbody tr.focus td, table.t tbody tr.focus.click:hover td, table.t tbody 
   #dlg-table { width: 100vw; height: 100dvh; max-width: 100vw; max-height: 100dvh; margin: 0; border: 0; border-radius: 0; }
   .tdlg-cols { display: flex; flex-direction: column; overflow: auto; overflow-x: hidden; }
   .tdlg-list, .tdlg-side { flex: none; overflow: visible; }
-  .tdlg-list { padding: 10px 12px 24px; }
+  .tdlg-list { padding: 0 12px 24px; }
+  .tdlg-list > :first-child { margin-top: 10px; }
   .tdlg-side { order: 1; border-left: 0; border-top: 1px solid var(--line); }
   .tdlg-cols[data-view="detail"] .tdlg-list { display: none; }
   .tdlg-cols[data-view="list"][data-selected] .tdlg-side { display: none; }
@@ -914,6 +927,8 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
   table.t.stack td[data-label]::before { content: attr(data-label) "："; color: var(--muted); margin-right: 4px; }
   table.t.stack td.num { text-align: left; }
   table.t.stack td[data-label=""]::before { content: none; }
+  /* 值是空的格（V.table 的 stack 標 blank）：卡片不顯示空的「狀態：」「檢查：」 */
+  table.t.stack td.blank { display: none; }
   /* 歡迎卡左右各留 16px，圓角不被畫面邊緣切掉 */
   .welcome .card { margin-inline: 16px; padding: 22px 20px; }
 }

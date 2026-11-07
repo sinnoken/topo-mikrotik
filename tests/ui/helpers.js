@@ -180,7 +180,27 @@ const shared = { ackedKey: null };
 const stepSources = () => fs.readdirSync(path.join(__dirname, 'steps')).filter((f) => f.endsWith('.js')).sort()
   .map((f) => fs.readFileSync(path.join(__dirname, 'steps', f), 'utf8')).join('\n');
 
+// ------------------------------------------------------------ 右欄詳情與表格視窗（防火牆）的容器
+// 斷言一律經這些 helper，不直接寫 '#detail'：防火牆搬進視窗後，否定斷言才不會在只剩摘要的右欄上空跑通過
+/** 右欄的詳細資料 */
+const detailRoot = () => $('#detail');
+/** 表格視窗（V.tableDialog）的內容；視窗沒開時直接失敗 */
+const fwRoot = () => { if (!$('#dlg-table').open) throw new Error('表格視窗（防火牆）應是開著的'); return $('#tdlg-body'); };
+/** 視窗的左欄（分頁與表格）與右欄（選取那一列的詳情或總覽） */
+const fwList = () => fwRoot().querySelector('#tdlg-list');
+const fwSide = () => fwRoot().querySelector('#tdlg-side');
+const fwText = () => fwRoot().textContent;
+/** 視窗的分頁：切到 key 那一頁並回傳它的內容（找不到就失敗） */
+const fwTab = (key) => {
+  const b = fwRoot().testAll('.tdlg-tab').find((x) => x.getAttribute('data-tab') === key);
+  if (!b) throw new Error('表格視窗應有分頁 ' + key);
+  b.click(); return fwRoot().querySelector('#tdlg-panel-' + key);
+};
+/** 視窗左欄 data-key 為 key 的列（可能有多列：組內與搜尋結果） */
+const fwRows = (key) => fwList().testAll('tr').filter((tr) => tr.getAttribute('data-key') === key);
+
 module.exports = Object.assign({}, dom, harness, boundary, {
+  detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows,
   captureDownloads, parseCsv, rgbOf, luminance, contrastOf, cssVars, cssDarkRoot, cssVarsOf, SCHEMES, forSchemes, jsFiles, unticked,
   recordCanvas, withGraph, vertices, near, tickStrokes, checkTicks, buildInput, hubBtn, stepBtn, goStep, settingsTab, clearBaseline,
   searchFor, pickInv, until, $, text, stepSources, shared,

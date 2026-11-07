@@ -1,7 +1,7 @@
 // 畫面冒煙測試的 step：樣式單一來源、收集時間與失敗、新舊基準比對。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { body, head, document, S, fs, path, ROOT, step, captureDownloads, cssVarsOf, SCHEMES, buildInput, hubBtn, goStep, $, text } = require('../helpers.js');
+const { body, head, document, S, fs, path, ROOT, step, captureDownloads, cssVarsOf, SCHEMES, buildInput, hubBtn, goStep, $, text, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows } = require('../helpers.js');
 
 module.exports = async () => {
   await step('樣式單一來源：CSS 設備類型變數與 theme 一致，圖例取自 theme', async () => {
@@ -125,28 +125,33 @@ module.exports = async () => {
     const disabled = Q.firewallRules().find((r) => r.disabled);
     if (!disabled) throw new Error('測試資料應有停用的規則');
     App.select({ type: 'rule', key: disabled.key });
-    const row = $('#detail').querySelector('.focus');
+    const row = fwRows(disabled.key).find((tr) => tr.classList.contains('focus'));
     if (!row || !row.className.includes('disabled') || !row.textContent.includes('停用')) throw new Error('停用的規則應標示');
     if (row.testAll('td')[0].style.opacity !== String(S.view.theme.firewall.disabledAlpha)) throw new Error('停用規則的透明度應取自 theme');
+    if (!fwSide().textContent.includes('停用')) throw new Error('停用規則的詳情應寫出停用');
     const jumped = Q.firewallChains(dev).find((c) => c.jumpedFrom.length);
     if (jumped) {
       App.select({ type: 'firewall', dev });
-      const d = $('#detail').testAll('details').find((x) => x.querySelector('summary').firstChild.textContent === jumped.chain);
-      d.dispatch('toggle');
+      const d = fwTab('rules').testAll('.biglist-group').find((x) => x.getAttribute('data-group') === `${jumped.family}|${jumped.table}|${jumped.chain}`);
+      d.open = true; d.dispatch('toggle');
       const a = d.testAll('a').find((x) => x.textContent.startsWith(Q.getFirewallRule(jumped.jumpedFrom[0]).chain + ' #'));
       if (!a) throw new Error('jump 來源應可點選');
+      // 視窗內的連結：視窗留著、換成那條規則（左欄不重畫，展開的組還在）
       a.click(); if (App.sel.type !== 'rule' || App.sel.key !== jumped.jumpedFrom[0]) throw new Error('點 jump 來源應定位到那條規則');
+      if (!$('#dlg-table').open || !fwRows(jumped.jumpedFrom[0]).some((tr) => tr.classList.contains('focus')) || !d.parentNode) throw new Error('點 jump 來源應在同一個視窗選取那一列');
     }
     App.select({ type: 'firewall', dev });
     const defaults = Q.ipServicesOf(dev).filter((s) => s.basis === 'default');
-    const svcRows = $('#detail').testAll('tbody tr').filter((tr) => Q.ipServicesOf(dev).some((s) => tr.testAll('td')[0].textContent === s.name));
-    if (svcRows.filter((tr) => tr.textContent.includes('預設值')).length !== defaults.length) throw new Error('只有 basis 為 default 的服務標示「預設值」');
+    const svcRows = fwTab('services').testAll('tbody tr');
+    if (svcRows.length !== Q.ipServicesOf(dev).length || svcRows.filter((tr) => tr.textContent.includes('預設值')).length !== defaults.length) throw new Error('只有 basis 為 default 的服務標示「預設值」');
     // 無法解碼的註解：以基準副本標記一條規則
     const clone = JSON.parse(JSON.stringify(App.snap));
     const r = clone.model.firewallRules.find((x) => x.comment); r.commentEncoding = 'undecodable';
     S.view.app.load(clone, null);
+    if ($('#dlg-table').open) throw new Error('換基準時應關閉防火牆視窗');
     App.select({ type: 'rule', key: r.key });
-    if (!$('#detail').querySelector('.focus').textContent.includes('註解無法解碼')) throw new Error('commentEncoding 為 undecodable 時應標示');
+    if (!fwRows(r.key).find((tr) => tr.classList.contains('focus')).textContent.includes('註解無法解碼') || !fwSide().textContent.includes('註解無法解碼')) throw new Error('commentEncoding 為 undecodable 時應標示');
+    App.select(null);
   });
   await step('新舊基準比對：依類別分組、摘要在上、新暴露醒目，schema 不同時顯示原因，可匯出預期現況', async () => {
     const full = fs.readFileSync(path.join(ROOT, 'tests/fixtures/firewall/edge-router.txt'), 'utf8');
@@ -184,7 +189,8 @@ module.exports = async () => {
     if (!exposureRows.every((tr) => tr.testAll('td')[0].style.background === S.view.theme.diff.exposureBg && tr.textContent.includes('新暴露'))) throw new Error('新暴露的顏色應取自 theme');
     exposureRows[0].click();
     if (App.sel.type !== 'rule' || !App.Q.getFirewallRule(App.sel.key)) throw new Error('點新暴露的規則應定位到防火牆規則');
-    if (App.centerView !== 'verify' || !$('#detail').querySelector('.focus')) throw new Error('點比對的一列時，比對留在中間、右側顯示那條規則');
+    if (App.centerView !== 'verify' || !fwRows(App.sel.key).some((tr) => tr.classList.contains('focus'))) throw new Error('點比對的一列時，比對留在中間、防火牆視窗選取那條規則');
+    $('#tdlg-close').click();
     const filterBtn = pane().testAll('button').find((b) => b.textContent.startsWith('新暴露'));
     filterBtn.click();
     if (pane().testAll('tbody tr').some((tr) => !tr.className.includes('exposure'))) throw new Error('新暴露篩選應只列新暴露');

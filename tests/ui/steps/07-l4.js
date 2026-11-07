@@ -1,7 +1,7 @@
 // 畫面冒煙測試的 step：L4 可達性：zone 矩陣、明細、可達性查詢、表格與分段計算、規則詳情。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { document, S, fs, path, ROOT, step, captureDownloads, parseCsv, contrastOf, forSchemes, until, $, text, layerBtn, L4, l4Cells, l4State, cellTd, svcParts, l4SvcBtn } = require('../helpers.js');
+const { document, S, fs, path, ROOT, step, captureDownloads, parseCsv, contrastOf, forSchemes, until, $, text, layerBtn, L4, l4Cells, l4State, cellTd, svcParts, l4SvcBtn, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows } = require('../helpers.js');
 
 /** 矩陣畫出來的格子：來源是虛擬 zone（外部）的列不畫（評審 D2：從外部進來的看上方三段），欄保留全部的 zone */
 const rowCells = (mx) => { const vz = new Set(mx.zones.filter((z) => z.virtual).map((z) => z.id)); return mx.cells.filter((c) => !vz.has(c.src)); };
@@ -265,9 +265,14 @@ module.exports = async () => {
     const l3 = text('#l4-drill');
     s1.reach.paths.forEach((pa) => pa.hops.forEach((hp) => { if (!l3.includes(Q.devName(hp.dev))) throw new Error('L3 應列出每一跳的設備：' + hp.dev); hp.stages.forEach((sg) => { if (!l3.includes(`${sg.table} ${sg.chain}`)) throw new Error('L3 應列出每一跳的 stage'); }); }));
     if (!process.env.SMOKE_INPUT && !l3.includes('10.1.20.11:443')) throw new Error('WAN → VLAN 20 的 tcp/8443 應顯示 NAT 之後的 10.1.20.11:443');
-    // 規則可以點：右側開啟規則詳情
+    // 規則可以點：開啟防火牆視窗、右欄是那條規則的詳情；關閉後焦點回到那個連結
     const rl = $('#l4-drill').testAll('.l4-rule')[0];
-    if (rl) { rl.click(); if (!App.sel || App.sel.type !== 'rule' || App.sel.key !== rl.dataset.rule || !text('#detail').includes('命中次數')) throw new Error('點規則應在右側開啟規則詳情（含命中次數）'); }
+    if (rl) {
+      rl.focus(); rl.click();
+      if (!App.sel || App.sel.type !== 'rule' || App.sel.key !== rl.dataset.rule || !fwSide().textContent.includes('命中次數')) throw new Error('點規則應在防火牆視窗開啟規則詳情（含命中次數）');
+      $('#tdlg-close').click();
+      if ($('#dlg-table').open || document.activeElement !== rl) throw new Error('關閉防火牆視窗後焦點應回到 L4 的規則連結');
+    }
     if (App.layer !== 'l4') throw new Error('開規則詳情時仍停在 L4');
     // 關閉下鑽：焦點回到格子
     $('#l4-drill').querySelector('.l4-close').click();
@@ -492,10 +497,10 @@ module.exports = async () => {
     if (!big && !process.env.SMOKE_INPUT) throw new Error('範例資料應有命中次數');
     if (big) {
       App.select({ type: 'rule', key: big.key });
-      const d = text('#detail');
+      const d = fwSide().textContent;
       if (!d.includes(V.bigNum(big.stats.packets)) || !d.includes(V.bigNum(big.stats.bytes)) || !d.includes('0 只代表')) throw new Error('規則詳情應以千分位顯示命中次數，並說明 0 的意思');
       if (big.stats.packets.length >= 4 && !V.bigNum(big.stats.packets).includes(',')) throw new Error('大數字應有千分位');
-      if (!$('#detail').testAll('.fw-hits').length) throw new Error('規則表應有命中次數欄');
+      if (!fwList().testAll('.fw-hits').length) throw new Error('規則表應有命中次數欄');
     }
     if (V.bigNum('18446744073709551615') !== '18,446,744,073,709,551,615') throw new Error('超過 2^53 的命中次數也應正確加上千分位');
     const mm = Q.firewallStats().find((t) => t.status === 'mismatch');
@@ -503,24 +508,24 @@ module.exports = async () => {
     if (mm) {
       const r = rules.find((x) => x.dev === mm.dev && x.family === mm.family && x.table === mm.table);
       App.select({ type: 'rule', key: r.key });
-      const d = text('#detail');
+      const d = fwSide().textContent;
       if (r.stats || !d.includes('對不上') || !d.includes('F09') || !d.includes('0 只代表')) throw new Error('F09 的表的規則應說明命中次數對不上、不採用');
     }
     const noTable = rules.find((x) => !x.stats && !Q.firewallStatsOf(x.dev).some((t) => t.family === x.family && t.table === x.table));
-    if (noTable) { App.select({ type: 'rule', key: noTable.key }); if (!text('#detail').includes('沒有命中次數資料')) throw new Error('沒有命中次數時應寫「沒有命中次數資料」'); }
+    if (noTable) { App.select({ type: 'rule', key: noTable.key }); if (!fwSide().textContent.includes('沒有命中次數資料')) throw new Error('沒有命中次數時應寫「沒有命中次數資料」'); }
     // L4 影響：按了才算
     const mx = Q.zoneMatrix();
     const pick = mx.cells.map((c) => c.rule && c.rule.key).find((k) => k && Q.getFirewallRule(k)) || (rules.find((r) => r.family === 'ip' && r.table === 'filter' && r.chain === 'forward') || {}).key;
     if (pick) {
       App.select({ type: 'rule', key: pick });
-      const t0 = Date.now(); $('#detail').querySelector('.fw-impact-run').click(); await App.l4ImpactJob;
+      const t0 = Date.now(); fwSide().querySelector('.fw-impact-run').click(); await App.l4ImpactJob;
       if (process.env.SMOKE_INPUT) console.log(`      規則的 L4 影響：${Date.now() - t0} ms`);
-      const imp = Q.ruleImpact(pick); const d = text('#detail');
+      const imp = Q.ruleImpact(pick); const d = fwSide().textContent;
       if (!d.includes(`牽涉 ${V.num(imp.cells.length)} 個 zone 對`) || !d.includes(`allow→deny ${V.num(imp.ifDisabled.counts['allow→deny'] || 0)} 筆`)) throw new Error('規則詳情應顯示影響的 zone 對與停用後的 allow→deny：' + d.slice(0, 200));
       const zn = new Map(Q.zones().zones.map((z) => [z.id, z.name]));
       imp.cells.slice(0, 20).forEach((c) => { if (c.src && !d.includes(zn.get(c.src) || c.src)) throw new Error('應列出影響的 zone 對'); });
       App.select({ type: 'device', key: Q.devices()[0].key }); App.select({ type: 'rule', key: pick });
-      if ($('#detail').querySelector('.fw-impact-run')) throw new Error('算過的影響應保留到換基準');
+      if (fwSide().querySelector('.fw-impact-run') || !fwSide().textContent.includes('牽涉 ')) throw new Error('算過的影響應保留到換基準');
     }
     App.select(null);
   });

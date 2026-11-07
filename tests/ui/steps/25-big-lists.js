@@ -1,7 +1,7 @@
 // 畫面冒煙測試的 step：大量列的清單（V.bigList）——設備詳情的路由表與防火牆的位址清單：摘要計數與 Q 相同、展開一組才畫明細、分頁、搜尋（位址與網段經 Q.routesMatching／Q.addressSetFind，其他文字依文字比對）、少量時直接列出。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { document, S, step, $, buildInput } = require('../helpers.js');
+const { document, S, step, $, buildInput, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows } = require('../helpers.js');
 
 const RT = 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC';
 const ROUTES = 1500; const LIST = 600; const GWS = ['10.255.0.2', '10.255.0.3', '10.255.0.4'];
@@ -38,6 +38,8 @@ const foldOf = (title) => {
 };
 /** 展開列標題列的 count（純數字的 chip） */
 const countOf = (fold) => { const c = kids(fold.querySelector('summary')).find((x) => /\bcount\b/.test(x.className)); if (!c) throw new Error('展開列應有 count'); return Number(c.textContent.replace(/,/g, '')); };
+/** 防火牆視窗分頁的 count（分頁按鈕上的純數字） */
+const tabCount = (key) => { const c = fwRoot().querySelector('#tdlg-tab-' + key).querySelector('.count'); if (!c) throw new Error('分頁應有 count'); return Number(c.textContent.replace(/,/g, '')); };
 const groupsOf = (el) => el.testAll('.biglist-group').filter((g) => g.getAttribute('data-group') != null);
 const open = (fold) => { fold.open = true; fold.dispatch('toggle'); };
 const rowsOf = (el) => el.testAll('tbody tr');
@@ -130,8 +132,8 @@ module.exports = async () => {
     if (!block || block.size !== 600) throw new Error('測試前提：BLOCK 應有 600 段：' + (block && block.size));
     const total = lists.reduce((n, s) => n + Math.max(1, s.size || 0), 0);
     App.select({ type: 'firewall', dev: big.key });
-    const sec = foldOf('位址清單');
-    if (countOf(sec) !== total) throw new Error(`位址清單的 count 應同 Q.addressSet 的段數：${countOf(sec)}／${total}`);
+    const sec = fwTab('addr');
+    if (tabCount('addr') !== total) throw new Error(`位址清單的 count 應同 Q.addressSet 的段數：${tabCount('addr')}／${total}`);
     const box = sec.querySelector('.biglist'); if (!box) throw new Error('位址多時應改為摘要＋分組');
     if (Number(box.querySelector('.biglist-total').getAttribute('data-count')) !== total) throw new Error('摘要的總數應同 Q.addressSet');
     const gs = groupsOf(box);
@@ -140,6 +142,8 @@ module.exports = async () => {
     if (!g || countOf(g) !== block.size) throw new Error('BLOCK 的組應有 ' + block.size + ' 段');
     if (rowsOf(sec).length) throw new Error('還沒展開時不應畫出明細');
     open(g);
+    // 組內不列和組名重複的「清單」欄（inGroup: false）；搜尋結果與直接列出時仍有
+    if (g.testAll('th').some((th) => th.textContent === '清單')) throw new Error('位址清單的組內不應再列「清單」欄');
     if (rowsOf(g).length !== P.page) throw new Error(`一頁應是 ${P.page} 列：${rowsOf(g).length}`);
     const want = block.ranges[300][0];
     search(box, want);
@@ -170,8 +174,8 @@ module.exports = async () => {
     const few = Q.addressSetsOf(small.key, 'address-list').map(Q.addressSet);
     const n = few.reduce((k, s) => k + Math.max(1, s.size || 0), 0);
     App.select({ type: 'firewall', dev: small.key });
-    const sm = foldOf('位址清單');
-    if (!n || n >= P.min || sm.querySelector('.biglist') || rowsOf(sm).length !== n || countOf(sm) !== n) throw new Error(`位址少時應直接列出全部：${rowsOf(sm).length}／${n}`);
+    const sm = fwTab('addr');
+    if (!n || n >= P.min || sm.querySelector('.biglist') || rowsOf(sm).length !== n || tabCount('addr') !== n) throw new Error(`位址少時應直接列出全部：${rowsOf(sm).length}／${n}`);
     if (!sm.textContent.includes('198.51.100.0–198.51.100.255')) throw new Error('合併後的一段寫成「起–迄」：' + sm.textContent);
     App.select(null);
   });

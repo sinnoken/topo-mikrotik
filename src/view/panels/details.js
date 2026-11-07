@@ -1,19 +1,31 @@
 /*
  * 右側：選中項目的詳細資料。所有內容都從查詢介面（Q）取得，並附上來源（可開啟原文）。
  * 支援：device、link、pair（同兩台設備間多條鏈路）、interface、mac、ip、vlan、subnet（L3 子網圖）、boundary（L3 的外部：對外邊界的依據）、trace、route，
- * 以及防火牆（firewall／rule／service，畫面在 panels/firewall.js）
+ * 防火牆（firewall／rule／service）開在置中的視窗（panels/firewall.js），右欄顯示那台設備
  */
 (function (S) {
   'use strict';
   const V = S.view; const h = V.h; const K = S.keys; const LINK_SCOPE = S.LINK_SCOPE;
 
+  /** 右欄目前畫的設備詳情（基準、設備鍵、從哪一筆檢查結果來）：防火牆視窗開著時，同一台設備不重畫 */
+  let shownDevice = null;
   function render(App, sel) {
-    const root = V.clear(V.$('#detail'));
+    const host = V.$('#detail');
+    // 防火牆（firewall／rule／service）開在置中的視窗（panels/firewall.js 的 V.firewall.show），右欄顯示那台設備的詳情。
+    // 右欄已經是同一台時不重畫：開啟視窗的入口（摘要的「查看防火牆規則與服務」）留在原處，關閉後焦點回得去
+    if (App.Q && V.firewall.isSel(sel)) {
+      V.firewall.show(App, sel);
+      const ds = { type: 'device', key: V.firewall.devOf(App, sel), finding: sel.finding };
+      const s = shownDevice;
+      if (s && s.Q === App.Q && s.key === ds.key && s.finding === ds.finding && host.firstChild) return;
+      sel = ds;
+    } else V.firewall.close(App);
+    const root = V.clear(host); shownDevice = null;
     if (!App.Q) return root.appendChild(h('div', { class: 'empty-detail' }, [h('div', { class: 'big' }, '尚未建立基準'), '建立後，點選圖上的設備或鏈路，詳細資料會顯示在這裡。']));
     if (!sel) return root.appendChild(overview(App));
-    const fw = (a, s) => V.firewall.render(a, s);
-    const fn = { device, link, pair, interface: iface, endpoints, mac, ip, vlan, subnet, boundary, trace, firewall: fw, rule: fw, service: fw }[sel.type];
+    const fn = { device, link, pair, interface: iface, endpoints, mac, ip, vlan, subnet, boundary, trace }[sel.type];
     root.appendChild(fn ? fn(App, sel) : h('div', { class: 'empty-detail' }, '無法顯示'));
+    if (sel.type === 'device') shownDevice = { Q: App.Q, key: sel.key, finding: sel.finding };
     root.scrollTop = 0;
     // 定位到某一列時（例如防火牆規則），把它捲到畫面中間；否則捲到從檢查結果選來的那一筆
     const focus = root.querySelector('.focus') || root.querySelector('.current'); if (focus) focus.scrollIntoView({ block: 'center' });
@@ -466,17 +478,18 @@
   }
   /** 「看到它的設備」超過這個台數時移出屬性表，改為預設收合的區塊（核心設備常被十幾台看到） */
   const SEEN_INLINE = 5;
-  /** 設備詳情的防火牆摘要：規則、服務與 WAN／LAN 狀態；完整內容在防火牆畫面 */
+  /**
+   * 設備詳情的防火牆摘要：只有 WAN 判斷、N 條有問題、N 條停用，與開啟防火牆視窗的連結；規則表與規則詳情只在視窗裡（panels/firewall.js）。
+   * 狀態與筆數取自 V.firewall.statusChips（視窗頁首用同一份；該檔在本檔之後載入，render 時才取用）。
+   */
   function firewallSummary(App, dev) {
-    const Q = App.Q; const rules = Q.firewallRulesOf(dev); const services = Q.ipServicesOf(dev); const zone = Q.firewallZone(dev);
-    if (!rules.length && !services.length && !zone) return null;
-    const bad = problemChip(App, 'rule', rules.map((r) => r.key), '條');
-    // 用語與防火牆畫面共用 firewall.js 的 zoneStatus()（該檔在本檔之後載入，render 時才取用）
-    const zs = zone && V.firewall.zoneStatus(zone.status);
-    // 與相鄰的路由表、管理面設定同一種模式：展開列＋標題旁的規則數；有問題的規則時預設展開；跳到防火牆畫面的連結在標題列
-    return section('防火牆', kv([['規則', `${V.num(rules.length)} 條`], ['服務（/ip service）', `${V.num(services.length)} 個`],
-      ['WAN／LAN 判斷', zs ? V.chip(zs.short, zs.tone, { title: zs.text }) : '—']]),
-    { count: rules.length, fold: true, open: !!bad, extra: [bad, h('a', { class: 'link fw-open', onclick: () => App.select({ type: 'firewall', dev }) }, '查看防火牆規則與服務')] });
+    const Q = App.Q; const rules = Q.firewallRulesOf(dev);
+    if (!rules.length && !Q.ipServicesOf(dev).length && !Q.firewallZone(dev)) return null;
+    const st = V.firewall.statusChips(App, dev);
+    // 與相鄰的路由表、管理面設定同一種模式：展開列＋標題旁的規則數；有問題的規則時預設展開；開啟視窗的連結在標題列
+    return section('防火牆', kv([['WAN／LAN 判斷', st.zone || '—'], ['停用', st.disabled]]),
+      { count: rules.length, fold: true, open: !!st.bad, cls: 'fw-summary',
+        extra: [st.bad, h('a', { class: 'link fw-open', onclick: () => App.select({ type: 'firewall', dev }) }, '查看防火牆規則與服務')] });
   }
   /*
    * 管理面設定（Q.mgmtOf，一台一筆；沒有 /export 的設備是 null）：每項列出狀態、值與依據。
@@ -621,10 +634,9 @@
       if (!App.sel || App.sel.type !== 'device' || App.sel.key !== e.key) App.select({ type: 'device', key: e.key }, { focus: true });
       const sec = V.$('#detail').querySelector('.mgmt-section'); if (!sec) return;
       sec.open = true;
-      const T = V.theme.firewall.focus;
+      // 定位列的樣式只在 CSS（.mgmt-row.focus，顏色是 --row-focus-*，同表格的選取列）
       Array.from(sec.querySelectorAll('.mgmt-row')).forEach((r) => {
         const on = match(r); r.classList.toggle('focus', on);
-        r.style.background = on ? T.bg : ''; r.style.boxShadow = on ? `inset 3px 0 0 ${T.border}` : '';
         if (on) r.scrollIntoView({ block: 'center' });
       });
     };

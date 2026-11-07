@@ -1,7 +1,7 @@
 // 畫面冒煙測試的 step：「研判」與檢查結果、詳情的處理提示、埠名、點選設備與鏈路。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { El, body, head, document, S, fs, path, ROOT, step, unticked, withGraph, goStep, $, text } = require('../helpers.js');
+const { El, body, head, document, S, fs, path, ROOT, step, unticked, withGraph, goStep, $, text, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows } = require('../helpers.js');
 
 module.exports = async () => {
   await step('檢查結果：沒有發現的檢查分成「通過」與「沒有資料可檢查」，預設收合', () => {
@@ -173,12 +173,12 @@ module.exports = async () => {
     if (ri === undefined && !process.env.SMOKE_INPUT) throw new Error('範例資料應有指向規則、不是防火牆類別的檢查結果（R09）');
     if (ri !== undefined) {
       App.selectFinding(ri);
-      if (App.sel.type !== 'rule' || !text('#detail').includes(all[ri].message)) throw new Error(`${all[ri].id} 應在防火牆畫面列出`);
-      // 相關的設備連結開啟設備詳情，那裡也列出這筆
-      const rel = $('#detail').testAll('.finding').find((x) => x.textContent.includes(all[ri].message)).querySelector('.finding-related');
+      if (App.sel.type !== 'rule' || !fwSide().textContent.includes(all[ri].message)) throw new Error(`${all[ri].id} 應在防火牆視窗的規則詳情列出`);
+      // 相關的設備連結關閉視窗、在右欄開啟設備詳情，那裡也列出這筆
+      const rel = fwSide().testAll('.finding').find((x) => x.textContent.includes(all[ri].message)).querySelector('.finding-related');
       const d = all[ri].entities.find((e) => e.type === 'device');
       rel.testAll('a').find((a) => a.textContent === Q.devLabel(d.key)).click();
-      if (App.sel.type !== 'device' || App.sel.key !== d.key || !text('#detail').includes(all[ri].message)) throw new Error('相關的設備連結應開啟設備詳情並列出這筆');
+      if (App.sel.type !== 'device' || App.sel.key !== d.key || $('#dlg-table').open || !detailRoot().textContent.includes(all[ri].message)) throw new Error('相關的設備連結應開啟設備詳情並列出這筆');
     }
     App.select(null);
   });

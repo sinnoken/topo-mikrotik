@@ -20,6 +20,8 @@
   --chip-text: #3c4650; --th-text: #566678; --heading-text: #405164;
   /* 表格的錯誤列（.bad）與原文的定位高亮 */
   --row-bad: #fff8f7; --row-bad-hover: #fff0ed; --hl-bg: #fff3c4;
+  /* 選取或定位的列（表格視窗的選取列、管理面設定的定位列）：同 theme.firewall.focus 的 bg／border（有測試） */
+  --row-focus-bg: #e6f0fb; --row-focus-line: #0b6bcb;
   /* 疊在畫布上的半透明底（圖例、層級說明、操作提示） */
   --overlay: rgba(255, 255, 255, .96); --overlay-soft: rgba(255, 255, 255, .9);
   /* 深底浮動提示（拓樸圖的 tooltip） */
@@ -96,6 +98,7 @@
     --danger-text: #f0a39d; --danger-line: #6b3330;
     --chip-text: #c5ced6; --th-text: #a9b5c2; --heading-text: #b8c4d0;
     --row-bad: #26191a; --row-bad-hover: #321d1d; --hl-bg: #4a3d10;
+    --row-focus-bg: #17304a; --row-focus-line: #539ce2;
     --overlay: rgba(28, 35, 44, .96); --overlay-soft: rgba(28, 35, 44, .9);
     --tooltip-bg: #e6edf3; --tooltip-fg: #11161c;
     --dialog-line: rgba(60, 71, 84, .9); --backdrop: rgba(0, 0, 0, .6);
@@ -567,6 +570,34 @@ dialog::backdrop { background: var(--backdrop); }
 #raw-copy-status { margin-left: 6px; font-weight: 400; font-size: var(--fs-sm); }
 .dlg .db { padding: 14px 18px; overflow: auto; }
 .dlg .df { padding: 12px 18px; border-top: 1px solid var(--line); display: flex; gap: 8px; align-items: center; }
+/* 表格視窗（V.tableDialog，#dlg-table）：置中的大視窗，左欄分頁＋表格、右欄選取那一列的詳情；兩欄各自捲動，整頁不橫捲 */
+#dlg-table { width: 90vw; height: 85vh; max-width: 90vw; max-height: 85vh; }
+#dlg-table .dlg { height: 100%; max-height: none; }
+#tdlg-title { min-width: 0; overflow-wrap: anywhere; }
+#tdlg-title:focus { outline: none; }
+#tdlg-status { margin-left: 10px; font-weight: 400; font-size: var(--fs-sm); }
+.tdlg-cols { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); }
+.tdlg-list, .tdlg-side { min-width: 0; min-height: 0; overflow: auto; overflow-x: hidden; }
+.tdlg-list { padding: 12px 18px 24px; }
+.tdlg-side { border-left: 1px solid var(--line); background: var(--surface); }
+.tdlg-side-head { padding: 10px 16px 0; }
+.tdlg-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0 10px; border-bottom: 1px solid var(--line); }
+.tdlg-tab { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 6px 10px; font-weight: 600; color: var(--heading-text); }
+.tdlg-tab.on { border-bottom-color: var(--accent); color: var(--accent); }
+.tdlg-extra { margin-bottom: 8px; }
+/* 選取或定位的列：一個 class，顏色取自 --row-focus-*（不在 JS 組 inline style） */
+table.t tbody tr.focus td, table.t tbody tr.focus.click:hover td, table.t tbody tr.bad.focus td { background: var(--row-focus-bg); box-shadow: inset 0 2px 0 var(--row-focus-line), inset 0 -2px 0 var(--row-focus-line); }
+.mgmt-row.focus { background: var(--row-focus-bg); box-shadow: inset 3px 0 0 var(--row-focus-line); }
+/* 窄螢幕（同 A.isNarrowScreen 的 900px）：全螢幕、單欄。選了一列時只顯示詳情（「返回」回到表格）；沒有選取時右欄的總覽排在表格上方 */
+@media (max-width: 900px) {
+  #dlg-table { width: 100vw; height: 100dvh; max-width: 100vw; max-height: 100dvh; margin: 0; border: 0; border-radius: 0; }
+  .tdlg-cols { display: flex; flex-direction: column; overflow: auto; overflow-x: hidden; }
+  .tdlg-list, .tdlg-side { flex: none; overflow: visible; }
+  .tdlg-list { padding: 10px 12px 24px; }
+  .tdlg-side { order: -1; border-left: 0; border-bottom: 1px solid var(--line); }
+  .tdlg-cols[data-view="detail"] .tdlg-list { display: none; }
+  .tdlg-cols[data-view="list"][data-selected] .tdlg-side { display: none; }
+}
 /* 高度扣掉對話框的其他列（選檔、拖放區、預檢、命名規則與按鈕列約 480px），命名規則那一列不被按鈕列切掉 */
 #input-text { width: 100%; height: min(46vh, calc(90vh - 480px)); min-height: 140px; font-family: var(--mono); font-size: var(--fs-sm); white-space: pre; resize: vertical; }
 .files { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }

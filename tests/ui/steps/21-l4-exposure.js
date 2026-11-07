@@ -1,7 +1,7 @@
 // 畫面冒煙測試的 step：L4 由外而內：頁首的結論句、三段暴露清單（Q.exposure）、看路徑、內部互通與可達性查詢預設收合。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { document, S, fs, path, ROOT, step, $, text, layerBtn, L4, l4State } = require('../helpers.js');
+const { document, S, fs, path, ROOT, step, $, text, layerBtn, L4, l4State, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows } = require('../helpers.js');
 
 const SECS = ['self', 'dnat', 'routed'];
 /**
@@ -183,9 +183,18 @@ module.exports = async () => {
         if (document.activeElement !== $('#l4-matrix-title')) throw new Error('矩陣收合時關閉明細，焦點應在矩陣的標題'); }
       if (wasOpen) { fold.setAttribute('open', ''); fold.open = true; } }
     const link = $('#l4-exposure').testAll('.l4-rule')[0];
-    if (link) { link.click(); if (!App.sel || App.sel.type !== 'rule' || App.sel.key !== link.dataset.rule) throw new Error('依據的規則連結應在右側開規則詳情'); }
+    if (link) {
+      link.click();
+      if (!App.sel || App.sel.type !== 'rule' || App.sel.key !== link.dataset.rule || !fwSide().querySelector('h2').textContent.includes(Q.getFirewallRule(link.dataset.rule).chain)) throw new Error('依據的規則連結應在防火牆視窗開規則詳情');
+      $('#tdlg-close').click();
+    }
     const fl = $('#l4-exposure').testAll('.l4-finding')[0];
-    if (fl) { const idx = Q.findingIndexByKey(fl.dataset.finding); fl.click(); if (!text('#detail').includes(Q.finding(idx).id)) throw new Error('檢查連結應開那一筆檢查結果'); }
+    if (fl) {
+      const idx = Q.findingIndexByKey(fl.dataset.finding); fl.click();
+      // 指向規則或服務的檢查結果開在防火牆視窗，其他的在右欄
+      const inFw = Q.finding(idx).entities.some((e) => e.type === 'rule' || e.type === 'service');
+      if (!(inFw ? fwSide() : detailRoot()).textContent.includes(Q.finding(idx).message)) throw new Error('檢查連結應開那一筆檢查結果');
+    }
     App.select(null);
   });
 

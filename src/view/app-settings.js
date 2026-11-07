@@ -41,7 +41,6 @@
       // 只處理設定內（或 ⚙、沒有焦點時）的 Esc：頁首的搜尋用 Esc 收起自己
       const root = $('#settings'); const t = e.target;
       if (t && t !== document.body && t !== $('#btn-settings') && root.contains && !root.contains(t)) return false;
-      if (['#dlg-input', '#dlg-raw'].some((s) => $(s) && $(s).open)) return false; // 對話框先關
       A.closeSettings({ focus: true }); return true;
     });
   };

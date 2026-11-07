@@ -1,7 +1,7 @@
 // 畫面冒煙測試的 step：資料中心、命名規則、工作包、深層凍結、本機資料與清除基準。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { body, docListeners, document, S, fs, path, vm, ROOT, step, captureDownloads, buildInput, hubBtn, stepBtn, goStep, clearBaseline, until, $, text, shared, L4 } = require('../helpers.js');
+const { body, docListeners, document, S, fs, path, vm, ROOT, step, captureDownloads, buildInput, hubBtn, stepBtn, goStep, clearBaseline, until, $, text, shared, L4, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows } = require('../helpers.js');
 
 module.exports = async () => {
   await step('資料中心：列出本輪所有的輸入與輸出與各自的狀態，鍵盤可開關（Esc 關閉後焦點回到按鈕），蓋住主畫面時主畫面不可聚焦', async () => {
@@ -326,7 +326,7 @@ module.exports = async () => {
         S.view.l4.openCell(App, cF.src, cF.dst);
         const b = $('#l4-drill').testAll('.l4-svc')[0]; if (b) b.click();
         const rl = $('#l4-drill').testAll('.l4-rule')[0];
-        if (rl) { rl.click(); const run = $('#detail').querySelector('.fw-impact-run'); if (run) { run.click(); await App.l4ImpactJob; } }
+        if (rl) { rl.click(); const run = fwSide().querySelector('.fw-impact-run'); if (run) { run.click(); await App.l4ImpactJob; } $('#tdlg-close').click(); }
       }
       L4().testAll('.l4-modes button').forEach((x) => { x.click(); }); // 表格、再回矩陣
       await App.l4Job;

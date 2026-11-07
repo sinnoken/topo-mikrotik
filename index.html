@@ -54,6 +54,7 @@
 <script src="samples/collect-commands.js"></script>
 <script src="samples/collector-files.js"></script>
 <script src="src/view/dom.js"></script>
+<script src="src/view/table-dialog.js"></script>
 <script src="src/view/theme.js"></script>
 <script src="src/view/store.js"></script>
 <script src="src/view/remediation.js"></script>
@@ -315,6 +316,12 @@ TPE_ACC_SW_01 (10.1.10.21):
   <div class="dlg" style="width:min(1100px,94vw)">
     <div class="dh"><span id="raw-title">原文</span><span id="raw-nav" class="raw-nav hidden"><button id="raw-prev" class="ghost" aria-keyshortcuts="ArrowLeft" title="上一處（←）">上一處</button><span id="raw-pos" class="mono muted" aria-live="polite"></span><button id="raw-next" class="ghost" aria-keyshortcuts="ArrowRight" title="下一處（→）">下一處</button></span><label class="raw-wrap-toggle" title="長行在視窗內換行；取消勾選改為不換行、橫向捲動"><input type="checkbox" id="raw-wrap" checked> 自動換行</label><button type="button" id="raw-copy">複製這段</button><span id="raw-copy-status" class="muted" role="status" aria-live="polite"></span><button type="button" id="raw-close" class="ghost x" aria-label="關閉">✕</button></div>
     <div class="db" id="raw-body" style="max-height:70vh"></div>
+  </div>
+</dialog>
+<dialog id="dlg-table" class="tdlg" aria-labelledby="tdlg-title">
+  <div class="dlg">
+    <div class="dh"><span id="tdlg-title" tabindex="-1">表格</span><span id="tdlg-status" class="muted" role="status" aria-live="polite"></span><button type="button" id="tdlg-close" class="ghost x" aria-label="關閉" title="關閉（Esc）">✕</button></div>
+    <div id="tdlg-body" class="tdlg-cols" data-view="list"></div>
   </div>
 </dialog>
 </body>

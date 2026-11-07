@@ -26,7 +26,10 @@ class El extends Node_ {
   dispatch(t, ev) { (this.listeners[t] || []).forEach((f) => f(Object.assign({ target: this, preventDefault() {}, stopPropagation() {} }, ev || {}))); }
   click() { this.dispatch('click'); }
   focus() { document.activeElement = this; this.dispatch('focus'); } blur() { this.dispatch('blur'); }
-  showModal() { this.open = true; } close() { this.open = false; }
+  // 原生 <dialog>：showModal 記下開啟前的焦點；close 送 close 事件並把焦點還給它（瀏覽器的行為；元素已不在頁面上時不還）。
+  // Esc 的預設動作（cancel → close）由 pressKey 模擬
+  showModal() { if (this.open) return; this.open = true; this._prevFocus = document.activeElement; }
+  close() { if (!this.open) return; this.open = false; const p = this._prevFocus; this._prevFocus = null; this.dispatch('close'); if (p && p !== body && body.contains(p)) p.focus(); }
   scrollIntoView() {} getBoundingClientRect() { return { left: 0, top: 0, width: 1200, height: 800 }; }
   all() { const out = []; const walk = (n) => n.childNodes.forEach((c) => { if (c instanceof El) { out.push(c); walk(c); } }); walk(this); return out; }
   matches(sel) { if (sel.startsWith('#')) return this.id === sel.slice(1); if (sel.startsWith('.')) return this.classList.contains(sel.slice(1)); return this.tagName === sel.toUpperCase(); }
@@ -90,6 +93,27 @@ const ctx = Object.assign(globalThis, {
   alert: (m) => { throw new Error('alert: ' + m); }, confirm: () => true, indexedDB: undefined, addEventListener: (t, f) => (winListeners[t] = winListeners[t] || []).push(f),
 });
 void ctx;
+/**
+ * 在 target（省略時是 document.activeElement）按一個鍵：keydown 由 target 往上冒泡到 document（stopPropagation 會停），
+ * 沒有被 preventDefault 時套用瀏覽器的預設動作：Esc 讓最近一層開著的 <dialog> 送出 cancel，cancel 也沒被取消就關閉。
+ * 回傳事件（defaultPrevented、stopped 可檢查）。
+ */
+function pressKey(key, target, mods) {
+  const t = target || document.activeElement;
+  const ev = Object.assign({ key, target: t, defaultPrevented: false, stopped: false,
+    preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.stopped = true; } }, mods || {});
+  for (let x = t; x && !ev.stopped; x = x.parentNode) (x.listeners && x.listeners.keydown || []).forEach((f) => f(ev));
+  if (!ev.stopped) (docListeners.keydown || []).forEach((f) => f(ev));
+  if (key === 'Escape' && !ev.defaultPrevented) {
+    let dlg = null; for (let x = t; x; x = x.parentNode) if (x.tagName === 'DIALOG' && x.open) { dlg = x; break; }
+    if (dlg) {
+      const cancel = { target: dlg, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, stopPropagation() {} };
+      (dlg.listeners.cancel || []).forEach((f) => f(cancel));
+      if (!cancel.defaultPrevented) dlg.close();
+    }
+  }
+  return ev;
+}
 const flushRaf = (n) => { for (let i = 0; i < (n || 3); i++) { const q = raf.q; raf.q = []; q.forEach((f) => f(0)); } };
 
-module.exports = { ClassList, Node_, Text_, El, HTMLCollection_, NodeList_, parseHtml, html, body, docListeners, winListeners, head, loadedScripts, documentElement, lsData, document, raf, flushRaf };
+module.exports = { ClassList, Node_, Text_, El, HTMLCollection_, NodeList_, parseHtml, html, body, docListeners, winListeners, head, loadedScripts, documentElement, lsData, document, raf, flushRaf, pressKey };

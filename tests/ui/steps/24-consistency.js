@@ -2,7 +2,7 @@
 // count 是純數字、狀態 chip「N＋量詞＋狀態」且 0 不顯示、預設展開只在有問題或定位時、空列表不顯示、連結在標題列、鏈路一律表格、設備名清單一律 chip-list。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { S, step, $, text } = require('../helpers.js');
+const { S, step, $, text, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows } = require('../helpers.js');
 
 /** 一個元素的直接子元素（模擬 DOM 的 children 是 HTMLCollection） */
 const kids = (el) => Array.from(el.children);
@@ -32,36 +32,50 @@ function selections(Q) {
     ...vids.map((v) => ({ type: 'vlan', key: String(v) })),
     { type: 'subnet', key: subnet },
     { type: 'firewall', dev: fw, key: fw },
+    // 防火牆視窗的規則詳情與服務詳情：有檢查結果的那一條（範例資料有）
+    { type: 'rule', key: (Q.firewallRules().find((r) => Q.findingsFor('rule', r.key).length) || Q.firewallRules()[0] || {}).key },
+    ...Q.ipServicesOf(fw).slice(0, 1).map((s) => ({ type: 'service', key: s.dev + '|' + s.name })),
     { type: 'boundary', key: Q.vrfs()[0] },
   ];
   if (sels.some((x) => x.key === undefined && x.type !== 'pair')) throw new Error('測試前提：範例資料應涵蓋每種詳情：' + JSON.stringify(sels.filter((x) => x.key === undefined)));
   return sels;
 }
 const label = (sel) => `${sel.type} ${sel.key || sel.id}`;
+/**
+ * 一個選取要檢查的詳情：右欄一定有；防火牆的選取另有視窗的右欄（總覽、規則或服務的詳情，main 用 'fw-side' 的清單）。
+ * 視窗沒開時 fwSide() 直接失敗，不會在只剩摘要的右欄上空跑通過。
+ */
+const views = (sel) => [{ name: '右欄', el: detailRoot().firstElementChild, main: sel.type },
+  ...(S.view.firewall.isSel(sel) ? [{ name: '防火牆視窗的右欄', el: fwSide().querySelector('.detail'), main: 'fw-side' }] : [])];
+/** 掃描標題與展開列的容器：右欄，防火牆的選取另加整個視窗（左欄的分組也是 V.section 的展開列） */
+const scanRoots = (sel) => [detailRoot(), ...(S.view.firewall.isSel(sel) ? [fwRoot()] : [])];
 
 module.exports = async () => {
   await step('區塊一致性：主題區塊都是展開列（第一層的檢查結果與屬性、頁面主體才是一般區塊），不在一般區塊與展開列之間切換', () => {
     const Q = App.Q;
     // 一般區塊只有：檢查結果，以及「整頁就是這個主題」的主體（各頁固定，不依筆數）
     const MAIN = { link: ['VLAN'], pair: ['鏈路（LLDP／CDP／MNDP）', '推論鏈路（沒有 LLDP）'], mac: ['位置'], ip: ['這個 IP 在多個 VRF：選擇其中一個'], boundary: ['對外介面與依據'],
-      firewall: ['WAN／LAN 判斷（推論）', 'IPv4 filter', 'IPv4 nat', 'IPv4 mangle', 'IPv4 raw', 'IPv6 filter', 'IPv6 nat', 'IPv6 mangle', 'IPv6 raw'] };
+      // 防火牆視窗的右欄：總覽的 WAN 判斷；規則詳情的屬性、命中次數、L4 影響與修正；服務詳情的屬性
+      'fw-side': ['WAN／LAN 判斷（推論）', '規則', '命中次數', 'L4 影響（推論）', '修正（停用規則）', '服務'] };
     selections(Q).forEach((sel) => {
       App.select(sel);
-      const top = kids($('#detail').firstElementChild);
-      const blocks = top.filter((x) => isFold(x) || isSection(x));
-      if (!blocks.length) throw new Error(label(sel) + ' 詳情應有區塊');
-      blocks.filter(isSection).forEach((x) => {
-        const t = titleOf(x);
-        if (t !== '檢查結果' && !(MAIN[sel.type] || []).includes(t)) throw new Error(`${label(sel)} 的「${t}」是主題區塊，應是展開列（不依筆數切換成一般區塊）`);
+      views(sel).forEach((vw) => {
+        const top = kids(vw.el);
+        const blocks = top.filter((x) => isFold(x) || isSection(x));
+        if (!blocks.length) throw new Error(`${label(sel)} 的${vw.name}應有區塊`);
+        blocks.filter(isSection).forEach((x) => {
+          const t = titleOf(x);
+          if (t !== '檢查結果' && !(MAIN[vw.main] || []).includes(t)) throw new Error(`${label(sel)} ${vw.name}的「${t}」是主題區塊，應是展開列（不依筆數切換成一般區塊）`);
+        });
+        // 一般區塊不夾在展開列之間（「這是什麼？」是說明，排在屬性之後，不算）
+        const seq = blocks.filter((x) => !(isFold(x) && titleOf(x) === '這是什麼？'));
+        const firstFold = seq.findIndex(isFold);
+        if (firstFold >= 0 && seq.slice(firstFold).some(isSection)) throw new Error(`${label(sel)} ${vw.name}的一般區塊夾在展開列之間：` + seq.map((x) => (isFold(x) ? '▸' : '■') + titleOf(x)).join(' '));
       });
-      // 一般區塊不夾在展開列之間（「這是什麼？」是說明，排在屬性之後，不算）
-      const seq = blocks.filter((x) => !(isFold(x) && titleOf(x) === '這是什麼？'));
-      const firstFold = seq.findIndex(isFold);
-      if (firstFold >= 0 && seq.slice(firstFold).some(isSection)) throw new Error(`${label(sel)} 的一般區塊夾在展開列之間：` + seq.map((x) => (isFold(x) ? '▸' : '■') + titleOf(x)).join(' '));
-      // #detail 內的 details 都經 V.section（detail-fold）；只有行內的「常見原因與處理」與前提的「詳細」例外
-      $('#detail').testAll('details').forEach((d) => {
+      // 詳情與視窗內的 details 都經 V.section（detail-fold）；只有行內的「常見原因與處理」與前提的「詳細」例外
+      scanRoots(sel).forEach((root) => root.testAll('details').forEach((d) => {
         if (!/\b(detail-fold|advice|assume-detail)\b/.test(d.className)) throw new Error(`${label(sel)} 有手組的展開列（不是 V.section）：` + d.querySelector('summary').textContent);
-      });
+      }));
     });
     App.select(null);
   });
@@ -70,7 +84,7 @@ module.exports = async () => {
     const Q = App.Q;
     selections(Q).forEach((sel) => {
       App.select(sel);
-      $('#detail').testAll('summary').concat($('#detail').testAll('h3')).forEach((hd) => {
+      scanRoots(sel).flatMap((r) => r.testAll('summary').concat(r.testAll('h3'))).forEach((hd) => {
         const t = hd.firstChild.textContent;
         hd.testAll('.chip').forEach((c) => {
           const s = c.textContent;
@@ -80,7 +94,7 @@ module.exports = async () => {
         });
       });
       // 預設展開的展開列：裡面有問題的列、錯誤／警告、檢查結果或定位的列（不再有「一律展開」）
-      $('#detail').testAll('details').filter(isFold).forEach((d) => {
+      scanRoots(sel).flatMap((r) => r.testAll('details')).filter(isFold).forEach((d) => {
         if (d.getAttribute('open') != null && !hasReason(d)) throw new Error(`${label(sel)}「${titleOf(d)}」沒有問題也沒有定位的列，應預設收合`);
       });
     });

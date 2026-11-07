@@ -95,9 +95,14 @@
     if (!ESC_ORDER.includes(layer)) throw new RangeError('未知的 Esc 層：' + layer);
     escHandlers.set(layer, fn);
   };
+  /**
+   * 有強制回應的原生 <dialog> 開著（建立基準、原文、表格視窗 V.tableDialog…）：Esc 歸那個對話框，頁面的各層一律不處理。
+   * 以頁面上全部的 dialog 判斷，新增對話框不必另外登記。
+   */
+  A.modalOpen = () => Array.from(document.querySelectorAll('dialog')).some((d) => d.open);
   function bindEscape() {
     document.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape') return;
+      if (e.key !== 'Escape' || A.modalOpen()) return;
       ESC_ORDER.some((l) => { const f = escHandlers.get(l); return !!f && f(e) === true; });
     });
   }

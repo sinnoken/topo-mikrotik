@@ -39,7 +39,7 @@
 
   function device(M, key, name) {
     const d = getOr(M.devices, key, () => ({
-      key, names: new Set(), mgmtIp: null, vendors: new Set(), collected: false, data: new Set(),
+      key, names: new Set(), mgmtIp: null, vendors: new Set(), collected: false, data: new Set(), incomplete: new Set(),
       hostname: null, routerId: null, collectedAt: null, ownMacs: new Set(), stp: null, seenBy: new Set(), src: [], deviceType: null, softwareVersion: null, platform: null, caps: null,
       dnsServers: null, ntpServers: null, // { values: [], menu, param, src: [[區塊, 行號]] }（事實）；多個來源時的規則見 SERVER_SOURCE_RANK
       policyRules: null, // /routing settings 的 policy-rules（查表的順序）：{ rules, src }；export 沒有寫出（預設值）時為 null
@@ -85,6 +85,9 @@
       const d = device(M, b.devKey, b.device);
       d.collected = true;
       if (b.mgmtIp && !d.mgmtIp) d.mgmtIp = b.mgmtIp;
+      // 收集失敗（# collection failed，例如逾時只收到前面一部分）的區塊：它的資料類別可能不完整（事實，coverage[].incomplete）。
+      // 路由表不完整時，查不到符合的路由不代表沒有路由（S.trace.lookup 的 route-data-incomplete、R01／R12 不報）
+      if (b.failure) S.adapters.dataTypesOf(b).forEach((t) => d.incomplete.add(t));
     });
 
     // 管理 IP → 已收集設備（鄰居的 identity 和收集檔的設備名不同時，用 IP 對回同一台）

@@ -1386,7 +1386,7 @@
   }
 
   /*
-   * 模型版的路由視圖（ADR-023「決定」第 7 項）：成員與 S.trace.ROUTING_VIEW 相同（vrfs、vrfsOf、subnetsOf、routesOf、routesInTable、hopOwner、policyOf），
+   * 模型版的路由視圖（ADR-023「決定」第 7 項）：成員與 S.trace.ROUTING_VIEW 相同（vrfs、vrfsOf、subnetsOf、routesOf、routesInTable、hopOwner、policyOf、routesIncomplete），
    * 語意與回傳形狀同 Q 的同名函式（docs/查詢介面.md），只是讀內部模型 M；檢查（⑥）把它交給 S.trace 的單跳轉送決定（lookup），
    * 和 L3 路由追蹤、L4 可達性用同一套判斷，不呼叫查詢層。回傳的陣列每次相同（S.trace 依陣列快取數字形式）。每個 M 建立一次。
    * 另有 egress(dev, nh)：下一跳（routes[].nh 的元素）的出介面鍵——寫了介面就是它，否則是同一個 VRF 中直連網段包含閘道的介面（依介面鍵取第一個）；
@@ -1437,6 +1437,8 @@
         : once('r\u0000' + d + '\u0000' + K.vrf(vrf), () => Object.freeze((routesByDev.get(d) || EMPTY).filter((r) => r.vrf === K.vrf(vrf))))),
       routesInTable: (d, table) => once('t\u0000' + d + '\u0000' + table, () => Object.freeze((routesByDev.get(d) || EMPTY).filter((r) => K.vrf(r.routingTable) === table))),
       hopOwner: (d, ip, vrf) => S.check.hopOwner(hopI, d, ip, K.vrf(vrf)),
+      // 同 Q.routesIncomplete：路由表的收集失敗（逾時等），查不到符合的路由不代表沒有路由
+      routesIncomplete: (d) => { const x = M.devices.get(d); return !!(x && x.incomplete.has('route')); },
       // 同 Q.policyOf：rules 的 order 與 Snapshot 的 routingRules 相同（每台設備依設定順序從 1 起算）
       policyOf: (d) => once('p\u0000' + d, () => {
         const order = new Map();

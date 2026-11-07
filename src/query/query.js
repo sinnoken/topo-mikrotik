@@ -380,6 +380,15 @@
         return covByDev.get(d) || null;
       },
       /**
+       * 這台設備的路由表收集不完整（coverage[].incomplete 含 route：路由表的指令收集失敗，例如逾時只收到前面一部分；事實）。
+       * 路由視圖的成員（S.trace.ROUTING_VIEW）：查不到符合的路由時，路徑追蹤與可達性回不明（route-data-incomplete），不當成沒有路由。
+       * 3.10.0 之前的基準沒有 incomplete，改看 failures 的 dataTypes（同一個來源）。
+       */
+      routesIncomplete(d) {
+        const c = Q.coverageOf(d); if (!c) return false;
+        return (c.incomplete || (c.failures || []).flatMap((f) => f.dataTypes || [])).includes('route');
+      },
+      /**
        * 認到的設備（devices() 的子集合，順序相同）：已收集，且有至少一類資料或有收集失敗的紀錄。
        * 排除只有檔名、內容都認不得的設備；與建立前的預檢（S.query.preflightRecognized）是同一個判斷。
        */

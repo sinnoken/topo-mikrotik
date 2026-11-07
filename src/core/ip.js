@@ -28,6 +28,51 @@
   };
   ip.inNet = (addr, net, len) => ((ip.toInt(addr) & ip.maskOf(len)) >>> 0) === ((ip.toInt(net) & ip.maskOf(len)) >>> 0);
 
+  /**
+   * 最長前綴查表的索引（路由表與直連網段共用；model 層的檢查（下一跳解析）與查詢層的路徑追蹤、可達性都經 ip.prefixIndex，不另寫一份）：
+   * 依前綴長度分桶，每桶以網路位址（數字）為鍵，查一次最多看 33 個桶，不必掃過整張表。
+   * 依（陣列, 欄位）快取：陣列建立索引後不可再改（查詢介面與路由視圖回傳的凍結陣列）。
+   */
+  const pxMemo = new WeakMap();
+  /**
+   * ip.prefixIndex(list, field) → { lookup(n, keep?) }（凍結；同一個 list、field 回傳同一份，第一次呼叫時建立）。
+   * list：元素有 len 與 field 欄位（網路位址字串），例如路由 { prefix, len }（field 'prefix'）、網段 { net, len }（field 'net'）。
+   * lookup(n, keep)：包含 n（ip.toInt 的結果）、前綴最長的元素；同長度多筆全取，順序同 list。keep(e)（選用）為 false 的元素不算
+   * （例如只看某個 VRF、跳過已用過的路由）。結果同「list.filter((e) => keep(e) && ip.inNet(位址, e[field], e.len))，再取 len 最大的」；
+   * 沒有時為空陣列（每次都是新陣列，呼叫端可修改）。
+   */
+  ip.prefixIndex = (list, field) => {
+    let byField = pxMemo.get(list);
+    if (!byField) { byField = new Map(); pxMemo.set(list, byField); }
+    let x = byField.get(field);
+    if (!x) {
+      const buckets = new Map();
+      list.forEach((e) => {
+        let b = buckets.get(e.len);
+        if (!b) { b = { len: e.len, mask: ip.maskOf(e.len), nets: new Map() }; buckets.set(e.len, b); }
+        const net = (ip.toInt(e[field]) & b.mask) >>> 0;
+        const xs = b.nets.get(net); if (xs) xs.push(e); else b.nets.set(net, [e]);
+      });
+      // 長度由長到短；不是數字的長度（不會出現）排除，與逐筆比較「len > 目前最長」時永遠不入選相同
+      const idx = Array.from(buckets.values()).filter((b) => typeof b.len === 'number' && b.len >= 0).sort((a, b) => b.len - a.len);
+      x = Object.freeze({
+        lookup(n, keep) {
+          for (let i = 0; i < idx.length; i++) {
+            const xs = idx[i].nets.get((n & idx[i].mask) >>> 0);
+            if (!xs) continue;
+            const out = keep ? xs.filter(keep) : xs.slice();
+            if (out.length) return out;
+          }
+          return [];
+        },
+      });
+      byField.set(field, x);
+    }
+    return x;
+  };
+  /** ip.prefixIndex(list, field).lookup(n, keep) 的簡寫。 */
+  ip.longestPrefix = (list, field, n, keep) => ip.prefixIndex(list, field).lookup(n, keep);
+
   /** IPv6 位址文字 → BigInt（支援 :: 縮寫與結尾的點分 IPv4，例如 ::ffff:192.0.2.1）；不合法時 null。 */
   ip.v6ToBig = (s) => {
     let t = String(s || '').trim().toLowerCase();

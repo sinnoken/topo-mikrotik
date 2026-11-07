@@ -264,4 +264,26 @@ module.exports = async () => {
     if (!rf.textContent.includes(Q.devLabel(sr.dev)) || (sr.via.length && !rf.textContent.includes('經由 '))) throw new Error('路由到這個網段：設備與經由的網段');
     App.select(null);
   });
+
+  await step('路由表視窗：在視窗內點連結選到別的東西時，視窗關閉、焦點落在右欄新內容的標題；要定位的路由不在基準中時寫出說明（不靜默顯示總覽）', () => {
+    const Q = App.Q; const { dev, r } = ownedRoute(Q);
+    App.select({ type: 'routes', dev, route: keyOf(r) });
+    const link = routesSide().testAll('.link').find((a) => a.tagName === 'A' && a.textContent === Q.devLabel(dev));
+    if (!link) throw new Error('路由詳情應有設備的連結');
+    link.focus(); link.click();
+    if ($('#dlg-table').open) throw new Error('點連結選到設備時視窗應關閉');
+    const hd = detailRoot().querySelector('h2');
+    if (!hd || document.activeElement !== hd) throw new Error('視窗關閉後焦點應在右欄新內容的標題，而不是掉到 body 或已移除的元素');
+    // 基準中沒有的路由：開啟時與視窗開著時改選都寫出說明
+    const MISSING = '基準中沒有這條路由';
+    App.select({ type: 'routes', dev, route: 'no-such-block:0' });
+    if (!routesSide().textContent.includes(MISSING)) throw new Error('開啟時要定位的路由不在基準中應寫出說明：' + routesSide().textContent);
+    App.select({ type: 'routes', dev, route: keyOf(r) });
+    if (routesSide().textContent.includes(MISSING)) throw new Error('找得到的路由不應有說明');
+    App.select({ type: 'routes', dev, route: 'no-such-block:1' });
+    if (!routesSide().textContent.includes(MISSING)) throw new Error('視窗開著時改選不在基準中的路由應寫出說明');
+    App.select({ type: 'routes', dev });
+    if (routesSide().textContent.includes(MISSING)) throw new Error('沒有要定位的路由時不寫說明');
+    App.select(null);
+  });
 };

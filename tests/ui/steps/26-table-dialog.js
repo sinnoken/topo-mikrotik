@@ -18,6 +18,18 @@ const openFrom = (dev) => {
   return link;
 };
 
+/** 收合的組（<details>）是否展開：畫面程式設 open 屬性或 property（模擬 DOM 兩者不連動） */
+const isOpen = (d) => d.open === true || (d.open === undefined && d.getAttribute('open') != null);
+/** root 裡 data-key 為 key、看得到的列（上層沒有 hidden，所在的組都展開）；沒有時 null */
+const shownRow = (root, key) => root.testAll('tr').find((tr) => {
+  if (tr.getAttribute('data-key') !== key) return false;
+  for (let x = tr.parentNode; x && x !== root; x = x.parentNode) {
+    if (x.getAttribute('hidden') != null) return false;
+    if (x.tagName === 'DETAILS' && !isOpen(x)) return false;
+  }
+  return true;
+}) || null;
+
 module.exports = async () => {
   await step('表格視窗：設備詳情只剩摘要，規則表在視窗內；點規則在右欄看命中次數與原文，單選（aria-selected）、↑↓ 移動、只有一個 Tab 停留點', async () => {
     await buildInput(S.samples['sample-bundle.txt']);
@@ -160,6 +172,37 @@ module.exports = async () => {
     App.select({ type: 'device', key: dev });
     const st = S.view.firewall.statusChips(App, dev);
     if (st.bad && !detailRoot().querySelector('.fw-summary').querySelector('summary').textContent.includes(st.bad.textContent)) throw new Error('右欄摘要的「N 條有問題」應同 statusChips');
+    App.select(null);
+  });
+
+  await step('表格視窗：從外部定位到收合的組裡的列時展開那一組；搜尋結果沒有它時清掉搜尋字回到摘要，搜尋結果有它時在結果中定位（保留搜尋字）', () => {
+    const Q = App.Q; const dev = fwDevice(Q);
+    openFrom(dev);
+    const panel = fwTab('rules');
+    const grp = panel.testAll('.biglist-group').find((g) => g.getAttribute('data-group') != null);
+    grp.open = true; grp.dispatch('toggle');
+    const key = grp.testAll('tbody tr')[0].getAttribute('data-key');
+    // 使用者收起那一組：列還在 DOM 裡，但看不到
+    grp.open = false; grp.removeAttribute('open');
+    App.select({ type: 'rule', key });
+    const at = shownRow(panel, key);
+    if (!at || !at.classList.contains('focus') || !isOpen(grp)) throw new Error('定位到收合的組裡的列時應展開那一組，那一列是選取的');
+    // 搜尋結果沒有它：清掉搜尋字，摘要回來，那一列看得到
+    App.select({ type: 'firewall', dev });
+    const q = panel.querySelector('.biglist-search');
+    q.value = 'zzzz-沒有這種規則'; q.dispatch('input');
+    if (shownRow(panel, key)) throw new Error('測試前提：搜尋結果沒有那條規則時，那一列看不到');
+    App.select({ type: 'rule', key });
+    if (panel.querySelector('.biglist-search').value !== '' || !shownRow(panel, key) || !shownRow(panel, key).classList.contains('focus')) throw new Error('搜尋結果沒有要定位的列時應清掉搜尋字，那一列看得到並是選取的');
+    // 搜尋結果有它：保留搜尋字，在結果中定位
+    App.select({ type: 'firewall', dev });
+    const r = Q.getFirewallRule(key); const word = `#${r.position} ${r.action}`;
+    q.value = word; q.dispatch('input');
+    const inResult = (tr) => { for (let x = tr; x; x = x.parentNode) if (x.classList && x.classList.contains('biglist-result')) return true; return false; };
+    if (!shownRow(panel, key) || !inResult(shownRow(panel, key))) throw new Error('測試前提：搜尋「' + word + '」的結果應有那條規則');
+    App.select({ type: 'rule', key });
+    const hit = shownRow(panel, key);
+    if (panel.querySelector('.biglist-search').value !== word || !hit || !inResult(hit) || !hit.classList.contains('focus')) throw new Error('搜尋結果有要定位的列時保留搜尋字，在結果中選取它');
     App.select(null);
   });
 };

@@ -213,8 +213,23 @@ const routesSummary = () => {
   return el;
 };
 
+/**
+ * 清單列出的總筆數：V.bigList／V.paged 分頁時一頁只畫 BIG_LIST.page 列，取那一列所在分頁的頁碼說明「共 N」；
+ * 沒有分頁時數畫出來的列。rowSel 是列的選擇器，root 裡第一個符合的列決定是哪一份清單（找不到列時 0）。
+ */
+const listedTotal = (root, rowSel) => {
+  const rows = root.testAll(rowSel); if (!rows.length) return 0;
+  let box = rows[0]; while (box && box !== root && !(box.classList && box.classList.contains('biglist-page'))) box = box.parentNode;
+  if (!box || box === root) return rows.length;
+  const where = box.querySelector('.pager-where');
+  if (!where) return box.testAll(rowSel).length;
+  const m = where.textContent.match(/共 ([\d,]+)/);
+  if (!m) throw new Error('分頁的頁碼說明應寫出總數：' + where.textContent);
+  return Number(m[1].replace(/,/g, ''));
+};
+
 module.exports = Object.assign({}, dom, harness, boundary, {
-  detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows, routesRoot, routesList, routesSide, routesSummary,
+  listedTotal, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows, routesRoot, routesList, routesSide, routesSummary,
   captureDownloads, parseCsv, rgbOf, luminance, contrastOf, cssVars, cssDarkRoot, cssVarsOf, SCHEMES, forSchemes, jsFiles, unticked,
   recordCanvas, withGraph, vertices, near, tickStrokes, checkTicks, buildInput, hubBtn, stepBtn, goStep, settingsTab, clearBaseline,
   searchFor, pickInv, until, $, text, stepSources, shared,

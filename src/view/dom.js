@@ -604,6 +604,8 @@
    *   組的 open：一開始就展開（例如有問題的 chain）；note：組內表格上方的說明（節點）
    *   reveal：要定位的那一列：展開它所在的組，組與明細都翻到它所在的那一頁
    *   search：一開始帶入的搜尋字
+   *   control：呼叫端給的物件，bigList 在上面放 clearSearch()（清掉搜尋字、摘要回來；原本沒有搜尋字時回傳 false）。
+   *            V.tableDialog 定位的列不在搜尋結果裡時用它（展開的組、頁碼與排序保留）
    */
   V.bigList = function (cols, rows, opt) {
     const o = opt || {}; const unit = o.unit || '筆';
@@ -633,6 +635,7 @@
     };
     search.addEventListener('input', run);
     if (o.search) { search.value = o.search; run(); }
+    if (o.control) o.control.clearSearch = () => { if (!search.value) return false; search.value = ''; run(); return true; };
     return V.h('div', { class: 'biglist' }, [V.h('div', { class: 'biglist-tools' }, [search, status]), summary, result]);
   };
   /** V.bigList 的 ①：總數與各組（每組一個展開列，第一次展開才畫明細；組數多時分組也分頁） */

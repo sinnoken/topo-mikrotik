@@ -1,7 +1,7 @@
 // 畫面冒煙測試的 step：清單、覆蓋率、MAC 詳情、比對與預期現況、匯出。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { body, head, document, S, fs, path, ROOT, step, captureDownloads, parseCsv, hubBtn, goStep, pickInv, $, text } = require('../helpers.js');
+const { body, head, document, S, fs, path, ROOT, step, captureDownloads, parseCsv, hubBtn, goStep, pickInv, listedTotal, $, text } = require('../helpers.js');
 
 module.exports = async () => {
   await step('清單分頁列出設備、介面、MAC、VLAN，並可篩缺 IP；總覽顯示去重複的 IP（ARP）', () => {
@@ -31,7 +31,7 @@ module.exports = async () => {
     if (!ifcSt.length || ifcSt.some((c) => /^(unknown|disabled)$/.test(c)) || !ifcSt.every((c) => Object.values(S.view.STATUS).includes(c) || c === '停用')) throw new Error('介面狀態應用 V.ifcState：' + S.util.uniq(ifcSt).join('、'));
     pickInv('inv-kind', 'prefix');
     const pre = App.Q.inventory().rows.prefixes;
-    if (!pre.length || document.testAll('#pane-inventory tbody tr').length !== pre.length) throw new Error('網段清單列數應等於推導出的網段數');
+    if (!pre.length || listedTotal($('#pane-inventory'), 'tbody tr') !== pre.length) throw new Error('網段清單列數應等於推導出的網段數');
     pre.forEach((p) => { if (p.ipCount !== ips.filter((r) => r.vrf === p.vrf && S.ip.inNet(r.ip, p.net, p.len)).length) throw new Error('網段的 IP 數應等於清單中同一個 VRF、落在網段內的 IP'); });
     document.querySelector('#pane-inventory tbody tr').dispatch('keydown', { key: 'Enter' });
     if (App.sel.type !== 'interface' || !pre[0].eps.includes(App.sel.key)) throw new Error('點網段應選取設定該網段的介面');
@@ -53,7 +53,7 @@ module.exports = async () => {
     if (!firstRow || firstRow.getAttribute('tabindex') !== '0') throw new Error('可點選清單列應可透過鍵盤聚焦');
     firstRow.dispatch('keydown', { key: 'Enter' });
     if (App.sel.type !== 'device') throw new Error('清單列按 Enter 應選取設備');
-    if (nEnd) { pickInv('inv-filter', 'end'); if (document.testAll('#pane-inventory tbody tr').length !== Math.min(nEnd, 500)) throw new Error('終端篩選列數不符'); }
+    if (nEnd) { pickInv('inv-filter', 'end'); if (listedTotal($('#pane-inventory'), 'tbody tr') !== nEnd) throw new Error('終端篩選列數不符'); }
     if (document.activeElement !== $('#pane-inventory .inv-filter')) throw new Error('換篩選後焦點應留在篩選下拉');
     // 窄欄：表格在自己的框內橫向捲動，不截斷主要欄
     if (!$('#pane-inventory table').parentNode.className.includes('table-scroll')) throw new Error('清單表格應在可橫向捲動的框內');

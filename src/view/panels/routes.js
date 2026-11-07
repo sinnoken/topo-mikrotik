@@ -17,8 +17,11 @@
   const DIALOG = 'routes|';
   /** 右欄摘要列出的組數（路由最多的幾組） */
   const TOP_GROUPS = 3;
-  /** 視窗的狀態：這一份基準（換基準時重開）、開啟它的選取（同一個選取重畫時不重開）、是否正在處理視窗自己發出的選取 */
-  const rt = { Q: null, sel: null, inner: false };
+  /** 視窗的狀態：這一份基準（換基準時重開）、開啟它的選取（同一個選取重畫時不重開）、是否正在處理視窗自己發出的選取、
+   *  要定位的路由（sel.route；右欄沒有選取的列而它不是 null，表示基準中沒有這條路由，總覽寫出說明） */
+  const rt = { Q: null, sel: null, inner: false, want: null };
+  const MISSING_ROUTE = '基準中沒有這條路由（可能是舊基準才有）。';
+  const missingNote = () => (rt.want != null ? h('p', { class: 'diffA routes-missing' }, MISSING_ROUTE) : null);
   const dialog = () => { const d = V.tableDialog.current(); return d && d.id.startsWith(DIALOG) ? d : null; };
   const multiVrf = (Q) => Q.vrfs().length > 1;
   /** 這台設備有 main 以外的路由表，或基準有多個 VRF：才列「路由表」 */
@@ -259,6 +262,7 @@
     const Q = App.Q; const routes = Q.allRoutesOf(dev); const r0 = routing(Q, dev);
     return h('div', { class: 'detail routes-overview' }, [
       h('h2', null, '這台設備的路由表'),
+      missingNote(),
       routes.length ? h('p', { class: 'muted routes-pick-hint' }, '點「路由」分頁的一條路由，這裡改為顯示它的屬性、每個下一跳解析的 VRF 與擁有者、原文，以及從這台追蹤到那個網段。') : null,
       P().section('路由表', P().kv([['路由', V.num(routes.length)], ['非作用中', V.num(routes.filter((r) => r.active === false).length)],
         ...EXTRA_TABS.filter((t) => r0[t.key].length).map((t) => [t.summary, `${V.num(r0[t.key].length)} ${t.unit}`])])),
@@ -272,7 +276,7 @@
    * 帶了搜尋字或組（右欄的入口）時重開，套用它們（同一個選取只是重畫時不重開）；從其他地方定位到某條路由（sel.route）時展開那一組並捲到那一列（initial）。
    */
   function show(App, sel) {
-    const dev = sel.dev; const key = sel.route == null ? null : sel.route;
+    const dev = sel.dev; const key = sel.route == null ? null : sel.route; rt.want = key;
     const d = dialog();
     if (d && d.id === DIALOG + dev && rt.Q === App.Q && (sel === rt.sel || (sel.search == null && sel.group == null && sel.tab == null))) {
       const now = d.selected();
@@ -292,7 +296,7 @@
       },
       tabs: tabs.length ? tabs : [routeTab],
       detail: (row) => routeDetail(App, row),
-      empty: () => (has ? overview(App, dev) : h('div', { class: 'detail routes-overview' }, h('h2', null, '基準中沒有這台設備'))),
+      empty: () => (has ? overview(App, dev) : h('div', { class: 'detail routes-overview' }, [h('h2', null, '基準中沒有這台設備'), missingNote()])),
       initial: { tab: sel.tab || 'routes', row: key, group: sel.group, search: sel.search },
       // 視窗裡選了一列：同步 App.sel（圖上的標示）；取消選取時回到這台設備的路由表
       onSelect: (rowKey) => {

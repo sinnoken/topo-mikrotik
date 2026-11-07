@@ -1,7 +1,7 @@
 // 畫面冒煙測試的 step：L4 可達性：zone 矩陣、明細、可達性查詢、表格與分段計算、規則詳情。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { document, S, fs, path, ROOT, step, captureDownloads, parseCsv, contrastOf, forSchemes, until, $, text, layerBtn, L4, l4Cells, l4State, cellTd, svcParts, l4SvcBtn, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows } = require('../helpers.js');
+const { document, S, fs, path, ROOT, step, captureDownloads, parseCsv, contrastOf, forSchemes, until, $, text, layerBtn, L4, l4Cells, l4State, cellTd, svcParts, l4SvcBtn, listedTotal, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows } = require('../helpers.js');
 
 /** 矩陣畫出來的格子：來源是虛擬 zone（外部）的列不畫（評審 D2：從外部進來的看上方三段），欄保留全部的 zone */
 const rowCells = (mx) => { const vz = new Set(mx.zones.filter((z) => z.virtual).map((z) => z.id)); return mx.cells.filter((c) => !vz.has(c.src)); };
@@ -207,7 +207,8 @@ module.exports = async () => {
     if (!L4().querySelector('.l4-matrix-card').contains($('#l4-drill'))) throw new Error('格子的明細應在矩陣下面');
     const cell = Q.zoneCell(target.src, target.dst); const d = text('#l4-drill');
     if (!d.includes('位址組') || !d.includes('牽涉的規則') || /\bL[0-3]：/.test(d)) throw new Error('明細應有「位址組」與「牽涉的規則」，標題不寫 L1／L2 編號');
-    const shown = () => $('#l4-drill').testAll('.l4-group').length; const denyAll = cell.groups.filter((g) => g.status === 'deny').length;
+    // 列出的組數：分頁時一頁只畫 BIG_LIST.page 列，取頁碼說明的總數（listedTotal）
+    const shown = () => listedTotal($('#l4-drill'), '.l4-group'); const denyAll = cell.groups.filter((g) => g.status === 'deny').length;
     const divCount = cell.groups.filter((g) => g.divergent).length;
     if (cell.heterogeneous !== (divCount > 0)) throw new Error('有 divergent 的組 ⇔ 格子異質');
     // 第一句是結論：允許的服務用 IP:埠，其餘拒絕的組合數；筆數（允許 N・拒絕 N）不在畫面上，只在 title 與「這一格怎麼算的」（評審 M5）
@@ -223,16 +224,17 @@ module.exports = async () => {
       if (/允許 [\d,]+・拒絕/.test($('#l4-drill').testAll('.row')[0].textContent)) throw new Error('明細的標頭不再寫「允許 N・拒絕 N」的次數'); }
     // 先列允許與無法判斷（評審 H5）：全部拒絕的組一律預設收起（不論是否結果不一），其他組裡拒絕的服務收成「其餘 N 個服務拒絕」
     const nonDeny = cell.groups.filter((g) => g.status !== 'deny').length;
-    if (shown() !== Math.min(300, nonDeny)) throw new Error(`預設只列不是全部拒絕的組（${shown()}／${nonDeny}，全部拒絕 ${denyAll}）`);
+    if (shown() !== nonDeny) throw new Error(`預設只列不是全部拒絕的組（${shown()}／${nonDeny}，全部拒絕 ${denyAll}）`);
     $('#l4-drill').testAll('.l4-group').forEach((tr) => { const bs = tr.testAll('.l4-svc'); if (bs.some((b) => /st-deny/.test(b.className))) throw new Error('預設不列拒絕的服務'); });
     { const denySvcs = cell.groups.filter((g) => g.status !== 'deny').reduce((n, g) => n + g.services.filter((s) => s.verdict === 'deny').length, 0);
       const said = $('#l4-drill').testAll('.l4-svc-denied').reduce((n, x) => n + Number((x.textContent.match(/其餘 ([\d,]+) 個服務拒絕/) || [0, '0'])[1].replace(/,/g, '')), 0);
-      if (said !== denySvcs && cell.groups.length <= 300) throw new Error(`拒絕的服務應收成「其餘 N 個服務拒絕」（${said}／${denySvcs}）`);
+      // 畫出來的列才數得到「其餘 N 個」：列數少於 BIG_LIST.min（不分頁）時才逐一比對
+      if (said !== denySvcs && nonDeny < V.BIG_LIST.min) throw new Error(`拒絕的服務應收成「其餘 N 個服務拒絕」（${said}／${denySvcs}）`);
       const hb = () => $('#l4-drill').querySelector('.l4-hide-deny');
       if ((denyAll || denySvcs) && (!hb() || hb().getAttribute('aria-pressed') !== 'true')) throw new Error('有拒絕的組合時應有「顯示拒絕的組合」');
       if (hb()) {
         hb().click();
-        if (shown() !== Math.min(300, cell.groups.length) || document.activeElement !== hb() || hb().getAttribute('aria-pressed') !== 'false' || $('#l4-drill').testAll('.l4-svc-denied').length) throw new Error('「顯示拒絕的組合」後應列出全部的組與服務，焦點留在按鈕');
+        if (shown() !== cell.groups.length || document.activeElement !== hb() || hb().getAttribute('aria-pressed') !== 'false' || $('#l4-drill').testAll('.l4-svc-denied').length) throw new Error('「顯示拒絕的組合」後應列出全部的組與服務，焦點留在按鈕');
         // 允許的組排在前面
         const st0 = $('#l4-drill').testAll('.l4-group').map((tr) => (tr.className.match(/st-(\w+)/) || [])[1]);
         if (st0.indexOf('deny') >= 0 && st0.slice(st0.indexOf('deny')).some((s) => s !== 'deny')) throw new Error('全部拒絕的組排在最後：' + st0.join());
@@ -249,10 +251,10 @@ module.exports = async () => {
       if (!cell.groups.some((g) => g.divergentServices.length)) throw new Error('divergent 的組應列出造成差異的服務');
       if (!process.env.SMOKE_INPUT && !cell.groups.some((g) => g.divergentServices.includes('tcp/8443'))) throw new Error('範例資料的 WAN → VLAN 20 應是 tcp/8443 造成差異');
     }
-    if ($('#l4-drill').testAll('.l4-ruledetail').length !== Math.min(300, cell.ruleDetails.length)) throw new Error('L2 應列出 Q.zoneCell 的每一條牽涉的規則');
+    if (listedTotal($('#l4-drill'), '.l4-ruledetail') !== cell.ruleDetails.length) throw new Error('L2 應列出 Q.zoneCell 的每一條牽涉的規則');
     // 牽涉的規則：允許的規則在前
     { const al = cell.ruleDetails.filter((x) => x.verdicts.allow).length; const rr = $('#l4-drill').testAll('.l4-ruledetail').slice(0, al);
-      if (al && cell.ruleDetails.length <= 300 && rr.some((tr) => tr.childNodes[1].textContent === '0')) throw new Error('牽涉的規則應先列允許的規則'); }
+      if (al && al <= V.BIG_LIST.page && rr.some((tr) => tr.childNodes[1].textContent === '0')) throw new Error('牽涉的規則應先列允許的規則'); }
     // L1 → L3：點一組的某個服務
     const gi = cell.groups.findIndex((g) => !process.env.SMOKE_INPUT ? g.services.some((s) => s.service === 'tcp/8443' && s.verdict === 'allow') : g.status !== 'deny');
     if (gi < 0) throw new Error('應有可以看 L3 的組');

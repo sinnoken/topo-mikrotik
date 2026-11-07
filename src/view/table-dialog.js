@@ -28,6 +28,7 @@
  *   dlg.close({ focus }) // focus 預設 true：焦點回到開啟它的元素
  *   dlg.selected()       // { tab, key }
  *   V.tableDialog.current() → 開著的 handle 或 null
+ *   V.tableDialog.hasFocus() → 焦點是否在開著的視窗裡（follow 關掉視窗後，呼叫端依它把焦點移到右欄新內容的標題）
  *   V.tableDialog.owner({ idOf, show, detailSel })、V.tableDialog.follow(App, sel)：視窗跟著選取開關（見檔尾）
  */
 (function (S) {
@@ -68,7 +69,7 @@
     if (cur) cur.closed = true; // 換成新的內容：舊的 handle 失效
     const first = (cfg.initial && cfg.initial.tab && cfg.tabs.some((t) => t.key === cfg.initial.tab)) ? cfg.initial.tab : (cfg.tabs[0] || {}).key;
     const ini = cfg.initial || {};
-    const st = { cfg, tab: first, key: null, panels: new Map(), opener: keep, closed: false };
+    const st = { cfg, tab: first, key: null, panels: new Map(), controls: new Map(), opener: keep, closed: false };
     if (ini.row != null && rowOf(cfg.tabs.find((t) => t.key === first), ini.row)) st.key = ini.row;
     st.handle = handleOf(st);
     cur = st;
@@ -108,11 +109,12 @@
     });
     const reveal = o && o.reveal != null ? rowOf(t, o.reveal) : null;
     const groups = t.groups && o && o.group != null ? () => t.groups().map((g) => (g.key === o.group ? Object.assign({}, g, { open: true }) : g)) : t.groups;
+    const control = {};
     panel.appendChild(V.bigList(t.columns, t.rows, {
       table, onRow: selectable ? (r) => pick(t.key, t.rowKey(r)) : null, groups, grouped: t.grouped, text: t.text, match: t.match,
-      unit: t.unit, what: t.what, placeholder: t.placeholder, reveal, search: o && o.search,
+      unit: t.unit, what: t.what, placeholder: t.placeholder, reveal, search: o && o.search, control,
     }));
-    cur.panels.set(t.key, panel);
+    cur.panels.set(t.key, panel); cur.controls.set(t.key, control);
     return panel;
   }
   function showTab(key, focus, o) {
@@ -150,13 +152,25 @@
       });
     });
   }
-  /** 選取的列在畫面上（沒有就重畫它的分頁、展開它所在的組並翻到那一頁），捲到中間 */
+  /** 畫出來的那一列不在被隱藏的區塊裡（例如有搜尋字時的摘要）；收合的組不算，定位時展開它 */
+  const unhidden = (panel, tr) => { for (let x = tr.parentNode; x && x !== panel; x = x.parentNode) if (x.getAttribute('hidden') != null) return false; return true; };
+  /**
+   * 選取的列看得到，捲到中間。依序：
+   *   ① 已畫出、不在被隱藏的區塊裡（包括搜尋結果中的那一列：保留搜尋字）→ 展開它所在的組；
+   *   ② 搜尋結果沒有它 → 清掉搜尋字，回到摘要（展開的組、頁碼與排序都保留），再找一次；
+   *   ③ 還是沒畫出（組沒展開過或在別頁）→ 重畫那個分頁並翻到它（展開它所在的組；這個分頁的排序與其他組的展開回到預設）。
+   */
   function revealRow() {
     if (cur.key == null) return;
     if (cur.view !== cur.tab) showTab(cur.tab, false);
-    let trs = rowsByKey(cur.panels.get(cur.tab), cur.key);
-    if (!trs.length) { showTab(cur.tab, false, { rebuild: true, reveal: cur.key }); trs = rowsByKey(cur.panels.get(cur.tab), cur.key); }
-    if (trs[0]) trs[0].scrollIntoView({ block: 'center' });
+    const panel = () => cur.panels.get(cur.tab);
+    const find = () => rowsByKey(panel(), cur.key).find((tr) => unhidden(panel(), tr)) || null;
+    let tr = find();
+    if (!tr) { const c = cur.controls.get(cur.tab); if (c && c.clearSearch && c.clearSearch()) { mark(); tr = find(); } }
+    if (!tr) { showTab(cur.tab, false, { rebuild: true, reveal: cur.key }); tr = find(); }
+    if (!tr) return;
+    for (let x = tr.parentNode; x && x !== panel(); x = x.parentNode) if (x.tagName === 'DETAILS' && !x.open) { x.open = true; x.setAttribute('open', ''); }
+    tr.scrollIntoView({ block: 'center' });
   }
   function renderSide() {
     const side = V.clear(bodyEl().querySelector('#tdlg-side'));
@@ -254,9 +268,13 @@
     let own = null; let id = null;
     if (App.Q && sel) for (const o of owners) { id = o.idOf(App, sel); if (id != null) { own = o; break; } }
     const d = cur && !cur.closed ? cur.handle : null;
-    if (d && d.id !== id) d.close();
+    // 焦點在視窗裡（例如點了詳情裡的連結）而且選到的不屬於任何視窗：不把焦點還給開啟它的入口（右欄接著重畫，入口會被移除），
+    // 由呼叫端畫完新內容後把焦點移到它的標題（hasFocus 在 follow 之前問）
+    if (d && d.id !== id) d.close({ focus: !(own == null && hasFocus()) });
     return own;
   }
+  /** 焦點在開著的視窗裡 */
+  const hasFocus = () => !!(cur && !cur.closed && dlgEl().contains(document.activeElement));
 
-  V.tableDialog = { open, owner, follow, current: () => (cur && !cur.closed ? cur.handle : null) };
+  V.tableDialog = { open, owner, follow, hasFocus, current: () => (cur && !cur.closed ? cur.handle : null) };
 })(globalThis.SSOT = globalThis.SSOT || {});

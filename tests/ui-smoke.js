@@ -14,7 +14,7 @@ const fs = require('fs'); const path = require('path');
 const FILES = [
   '01-boot-input', '02-details-narrow', '03-graph', '04-triage', '05-search-source', '06-layers-l2l3', '07-l4', '08-vrf',
   '09-inventory-export', '10-ledger-firewall', '11-collect-diff', '12-rounds-fix', '13-fix-graph', '14-style-a11y', '15-toolbar-settings', '16-hub-store',
-  '17-mgmt', '18-ux-review6', '19-toolbar-split', '20-l2-sides', '21-l4-exposure', '22-collector-download', '23-l3-boundary', '24-consistency',
+  '17-mgmt', '18-ux-review6', '19-toolbar-split', '20-l2-sides', '21-l4-exposure', '22-collector-download', '23-l3-boundary', '24-consistency', '25-big-lists',
 ];
 // 清單與目錄要一致：新增的 step 檔沒列進來就不會執行，不能靜默漏掉
 const dir = path.join(__dirname, 'ui', 'steps');

@@ -36,6 +36,28 @@
   };
   /** 下一跳的儲存格；multi（基準有多個 VRF）時 title 寫出每個閘道在哪個 VRF 解析與依據 */
   const nhCell = (r, multi) => h('span', { class: 'mono', title: multi ? r.nh.map((n) => `${n.ip || n.ifc || ''}：在 ${V.vrfText(n.vrf)} 解析（${V.NH_VRF_BASIS[n.vrfBasis] || n.vrfBasis || ''}）`).join('\n') : null }, r.nh.map((n) => nhText(r, n)).join('\n'));
+  /** 路由的協定（黑洞路由另成一類）與下一跳的文字：路由表摘要的分組與搜尋共用 */
+  const routeProto = (r) => (r.blackhole ? '黑洞路由' : r.proto || '（協定不明）');
+  const routeNh = (r) => r.nh.map((n) => nhText(r, n).trim()).filter(Boolean).join('、');
+  /** 路由表搜尋的文字：網段、路由表、協定、下一跳 */
+  const routeText = (r) => [`${r.prefix}/${r.len}`, r.routingTable || K.MAIN_VRF, routeProto(r), routeNh(r)].join(' ');
+  /**
+   * 路由表的摘要：依路由表（showTable 時）、協定與下一跳分組，依路由表（main 在前）、協定、筆數多到少排列。
+   * 非作用中的路由數寫在組的標題列（V.stateChip）。
+   */
+  function routeGroups(routes, showTable) {
+    const by = new Map();
+    routes.forEach((r) => {
+      const table = r.routingTable || K.MAIN_VRF; const proto = routeProto(r); const nh = routeNh(r);
+      S.util.getOr(by, [table, proto, nh].join('\u0000'), () => ({ table, proto, nh, rows: [] })).rows.push(r);
+    });
+    const main = (t) => (t === K.MAIN_VRF ? 0 : 1);
+    return Array.from(by.entries()).sort(([, a], [, b]) => main(a.table) - main(b.table) || S.util.natural(a.table, b.table)
+      || S.util.natural(a.proto, b.proto) || b.rows.length - a.rows.length || S.util.natural(a.nh, b.nh))
+      .map(([key, g]) => ({ key, rows: g.rows,
+        title: h('span', null, [showTable ? h('span', { class: 'mono' }, g.table) : null, showTable ? '・' : null, g.proto, '・下一跳 ', h('span', { class: 'mono' }, g.nh || '—')]),
+        extra: [V.stateChip(g.rows.filter((r) => r.active === false).length, '條非作用中')] }));
+  }
   /** /routing rule 的文字：第幾條、條件、action 與路由表 */
   const routingRuleText = (r) => `/routing rule 第 ${r.order} 條：${Object.entries(r.match).map(([k, v]) => `${k}=${v}`).join(' ') || '（沒有條件）'} action=${r.action}${r.table ? ' table=' + r.table : ''}${r.comment ? `（${r.comment}）` : ''}`;
   const kv = (pairs) => h('div', { class: 'kv' }, pairs.filter((p) => p && p[1] !== null && p[1] !== undefined && p[1] !== '').flatMap(([k, v]) => [h('div', { class: 'k' }, k), h('div', null, v)]));
@@ -421,7 +443,8 @@
           { t: '回報', f: (a) => a.reciprocal ? '雙向 OSPF 鄰接' : '單向 OSPF 觀察', s: (a) => (a.reciprocal ? '雙向' : '單向') },
           { t: '來源', f: (a) => srcLink(App, a.src) },
         ], ospfAdjacencies) : null, { count: ospfAdjacencies.length, fold: true }),
-      section('路由表', routes.length ? table([
+      // 路由多時（V.BIG_LIST.min 以上）先看摘要：依路由表、協定與下一跳分組，點開一組才看明細（分頁）；另可依文字搜尋
+      section('路由表', routes.length ? V.bigList([
         // 非作用中（例如備援的預設路由）也列出，可與 R11 等檢查對照：chip 放在網段欄（最後一欄在窄的右欄看不到），整列 muted；
         // 路由追蹤與檢查的路由表只用作用中的
         { t: '網段', f: (r) => h('span', null, [h('span', { class: 'mono' }, `${r.prefix}/${r.len}`),
@@ -431,7 +454,8 @@
         { t: '協定', f: (r) => (r.blackhole ? h('span', { class: 'diffA' }, '黑洞路由') : r.proto), s: (r) => r.proto },
         { t: '距離', f: (r) => (r.distance == null ? '' : String(r.distance)), s: (r) => r.distance },
         { t: '下一跳', f: (r) => nhCell(r, multiVrf(Q)), s: (r) => (r.nh[0] ? r.nh[0].ip || r.nh[0].ifc : '') },
-      ], routes, { limit: 200, rowClass: (r) => (r.active === false ? 'route-off' : '') }) : null, { count: routes.length, fold: true, extra: [V.stateChip(inactive, '條非作用中')] }),
+      ], routes, { table: { rowClass: (r) => (r.active === false ? 'route-off' : '') }, unit: '條', what: '路由', placeholder: '搜尋網段、下一跳、協定（文字）',
+        groups: () => routeGroups(routes, showTable), text: routeText }) : null, { count: routes.length, fold: true, extra: [V.stateChip(inactive, '條非作用中')] }),
       vrfSection(App, d.key),
       policySection(App, d.key),
       firewallSummary(App, d.key),

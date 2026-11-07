@@ -517,4 +517,88 @@
     if (o.limit && rows.length > o.limit) return V.h('div', null, [box, V.h('div', { class: 'muted table-more' }, `只顯示前 ${o.limit} 筆，共 ${V.num(rows.length)} 筆`)]);
     return box;
   }
+
+  /**
+   * 大量列的清單（設備詳情的路由表、防火牆的位址清單；路由可能超過十萬條）：
+   *   min：列數少於它時照原樣直接列出（V.table）；page：分頁時每頁的列數（明細與分組都是）。
+   */
+  V.BIG_LIST = Object.freeze({ min: 200, page: 50 });
+  /**
+   * 分頁的外框：n 筆、每頁 BIG_LIST.page 筆，drawPage(from, to) 回傳那一頁的內容。上一頁／下一頁等是按鈕（鍵盤可操作），
+   * 換頁後焦點留在同一個按鈕（到頭時改到另一邊），頁碼的說明是 role=status。回傳 { box, draw(reset) }：reset 回到第一頁（排序後用）。
+   */
+  function paged(n, unit, drawPage) {
+    const size = V.BIG_LIST.page; const pages = Math.max(1, Math.ceil(n / size));
+    const box = V.h('div', { class: 'biglist-page' }); let page = 0;
+    const draw = (reset, focus) => {
+      if (reset) page = 0;
+      V.clear(box);
+      const from = page * size; const to = Math.min(n, from + size);
+      box.appendChild(drawPage(from, to));
+      if (pages < 2) return;
+      const go = (p, key) => { page = Math.min(pages - 1, Math.max(0, p)); draw(false, key); };
+      const btn = (key, label, to2, off) => V.h('button', { type: 'button', class: 'pager-btn', 'data-page': key, disabled: off, onclick: () => go(to2, key) }, label);
+      const bs = [btn('first', '第一頁', 0, page === 0), btn('prev', '上一頁', page - 1, page === 0),
+        btn('next', '下一頁', page + 1, page === pages - 1), btn('last', '最後一頁', pages - 1, page === pages - 1)];
+      box.appendChild(V.h('div', { class: 'pager' }, [bs[0], bs[1],
+        V.h('span', { class: 'pager-where muted', role: 'status' }, `第 ${V.num(from + 1)}–${V.num(to)} ${unit}，共 ${V.num(n)} ${unit}（${V.num(page + 1)}／${V.num(pages)} 頁）`),
+        bs[2], bs[3]]));
+      if (focus) {
+        const want = bs.find((b) => b.getAttribute('data-page') === focus);
+        const alt = { first: 'next', prev: 'next', next: 'prev', last: 'prev' }[focus];
+        (want.getAttribute('disabled') == null ? want : bs.find((b) => b.getAttribute('data-page') === alt)).focus();
+      }
+    };
+    draw();
+    return { box, draw };
+  }
+  /** 分頁的表格：排序對全部的列（同 V.table 的排序欄位），排序後回到第一頁 */
+  function pagedTable(cols, rows, o, unit) {
+    const st = { by: -1, dir: 1, sorted: rows };
+    const p = paged(rows.length, unit, (from, to) => renderTable(cols, st.sorted.slice(from, to), Object.assign({}, o, { limit: 0, sortBy: st.by, sortDir: st.dir,
+      onSort: cols.some((c) => c.s) ? (k) => { st.dir = st.by === k ? -st.dir : 1; st.by = k; st.sorted = V.sortRows(rows, cols[k], st.dir); p.draw(true); } : null })));
+    return p.box;
+  }
+  /**
+   * 大量列的清單：列數少於 BIG_LIST.min 時直接列出（V.table，與原本相同）；否則
+   *   ① 摘要：總數與各組的列數（每組一個展開列，點開才畫那一組的明細；組數多時分組也分頁）；
+   *   ② 明細分頁，每頁 BIG_LIST.page 列；
+   *   ③ 搜尋框：依每列的文字（opt.text）找符合的列（只比對文字，不判斷網段），有搜尋字時改列出符合的列（分頁）。
+   * 展開、頁碼與搜尋字是檢視狀態，只在這個元件裡（重繪詳情時回到預設），不寫回 Snapshot。
+   *   V.bigList(cols, rows, { groups: () => [{ key, title, rows, extra? }], text(row) → 文字, table: V.table 的選項, unit: '條', what: '路由', placeholder })
+   *   groups 只在列數達到 min 時才呼叫；每組的 rows 是 rows 的子集合，各組合起來是全部的列。
+   */
+  V.bigList = function (cols, rows, opt) {
+    const o = opt || {}; const unit = o.unit || '筆';
+    if (rows.length < V.BIG_LIST.min) return V.table(cols, rows, o.table);
+    const groups = o.groups();
+    const groupFold = (g) => {
+      const body = V.h('div', { class: 'biglist-body' });
+      const el = V.section(g.title, body, { fold: true, count: g.rows.length, cls: 'biglist-group', extra: g.extra });
+      el.setAttribute('data-group', g.key);
+      // 第一次展開時才畫明細（十萬條路由不一次建好所有的列）
+      el.addEventListener('toggle', () => { if (el.open && !body.firstChild) body.appendChild(pagedTable(cols, g.rows, o.table || {}, unit)); });
+      return el;
+    };
+    const summary = V.h('div', { class: 'biglist-summary' }, [
+      V.h('p', { class: 'muted biglist-total', 'data-count': String(rows.length) },
+        `共 ${V.num(rows.length)} ${unit}，分成 ${V.num(groups.length)} 組；點開一組看明細，或用搜尋找${o.what || ''}。`),
+      paged(groups.length, '組', (from, to) => V.h('div', null, groups.slice(from, to).map(groupFold))).box,
+    ]);
+    const result = V.h('div', { class: 'biglist-result', hidden: true });
+    const status = V.h('span', { class: 'biglist-status muted', role: 'status' });
+    let texts = null;
+    const search = V.h('input', { type: 'search', class: 'biglist-search', placeholder: o.placeholder || '搜尋', 'aria-label': (o.what ? '搜尋' + o.what : '搜尋') });
+    search.addEventListener('input', () => {
+      const q = String(search.value || '').trim().toLowerCase();
+      V.clear(result); status.textContent = '';
+      if (!q) { result.setAttribute('hidden', ''); summary.removeAttribute('hidden'); return; }
+      if (!texts) texts = rows.map((r) => String(o.text(r)).toLowerCase());
+      const hit = rows.filter((r, i) => texts[i].includes(q));
+      summary.setAttribute('hidden', ''); result.removeAttribute('hidden');
+      status.textContent = hit.length ? `找到 ${V.num(hit.length)} ${unit}` : `找不到符合「${search.value.trim()}」的${o.what || unit}`;
+      if (hit.length) result.appendChild(pagedTable(cols, hit, o.table || {}, unit));
+    });
+    return V.h('div', { class: 'biglist' }, [V.h('div', { class: 'biglist-tools' }, [search, status]), summary, result]);
+  };
 })(globalThis.SSOT = globalThis.SSOT || {});

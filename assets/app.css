@@ -265,6 +265,13 @@ header .spacer { flex: 1; }
 .pane-note { padding: 4px 10px; }
 .note-box { white-space: pre-wrap; background: var(--surface); border: 1px solid var(--line); padding: 8px; border-radius: var(--radius-sm); }
 .table-more { padding: 6px 9px; }
+/* 大量列的清單（V.bigList：路由表、位址清單）：搜尋框、摘要的分組（展開列）與分頁按鈕 */
+.biglist-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 4px 0 8px; }
+.biglist-search { flex: 1 1 12em; min-width: 0; }
+.biglist-total { margin: 0 0 6px; }
+.biglist-group { margin-left: 4px; }
+.pager { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 0; }
+.pager-where { font-size: var(--fs-sm); }
 /* chip：短的單列（flex-shrink: 0，不會被擠成逐字直排）；長文字在容器寬度內換行，不撐破版面（圓角用半個列高，換行時仍是圓角矩形） */
 .chip { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; max-width: 100%; min-height: 22px; padding: 2px 8px; border: 1px solid transparent; border-radius: var(--radius-chip); font-size: var(--fs-sm); font-weight: 600; background: var(--neutral-soft); color: var(--chip-text); overflow-wrap: break-word; }
 /* 表格內的 chip（類型、狀態）不換行：表格自動排版以 min-content 決定欄寬，可斷行的 chip 會被壓成一字一行 */

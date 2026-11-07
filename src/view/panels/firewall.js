@@ -304,7 +304,36 @@
         { t: '包含／排除', f: (l) => [l.include.length ? '包含 ' + l.include.join('、') : '', l.exclude.length ? '排除 ' + l.exclude.join('、') : ''].filter(Boolean).join('；') },
         { t: '', f: (l) => (l.defined ? '' : V.chip('未定義', 'warn', { title: '規則或設定引用了這個 list，但 export 裡沒有定義' })) },
       ], lists) : null, { count: lists.length, fold: true, extra: [V.stateChip(lists.filter((l) => !l.defined).length, '個未定義', 'warn')] }),
+      addressListSection(App, dev),
     ]);
+  }
+  /**
+   * 位址清單（/ip firewall address-list）：內容一律取自位址集合登錄表（Q.addrSets().list 的 id → Q.addressSet，判斷用的同一份），
+   * 每列是合併後的一段位址（重疊與相鄰的項目已合併）；可能有動態來源的清單內容不明，只列一列說明原因。
+   * 清單很長時（封鎖名單可能有十萬筆）經 V.bigList：摘要（每份清單一組）、展開才看明細、分頁、文字搜尋。
+   */
+  function addressListSection(App, dev) {
+    const Q = App.Q; const reasonLabel = new Map(S.query.addressListReasons().map((x) => [x.code, x.label]));
+    const rows = [];
+    const groups = Q.addressListsOf(dev).map((l) => {
+      const e = Q.addrSets().list(l.dev, l.family, l.name); const s = e && Q.addressSet(e.id);
+      const g = { key: e ? e.id : l.name, name: l.name, family: l.family, rows: [] };
+      if (s && s.ranges && s.ranges.length) s.ranges.forEach(([a, b]) => g.rows.push({ g, a, b }));
+      else if (s && s.static === false) { g.unknown = true; g.rows.push({ g, note: '內容不明：可能有動態來源（' + s.reasons.map((c) => reasonLabel.get(c) || c).join('、') + '）' }); }
+      else g.rows.push({ g, note: '沒有啟用中的位址' });
+      rows.push(...g.rows);
+      return g;
+    });
+    if (!groups.length) return null;
+    const listName = (g) => h('span', null, [h('span', { class: 'mono' }, g.name), g.family === 'ipv6' ? ' ' : null, g.family === 'ipv6' ? V.chip(FAMILY.ipv6) : null]);
+    const addr = (r) => (r.note ? r.note : r.a === r.b ? r.a : `${r.a}–${r.b}`);
+    const unknown = groups.filter((g) => g.unknown).length;
+    return P().section('位址清單', V.bigList([
+      { t: '清單', f: (r) => listName(r.g), s: (r) => r.g.name },
+      { t: '位址', f: (r) => (r.note ? h('span', { class: 'muted' }, r.note) : h('span', { class: 'mono' }, addr(r))), s: (r) => (r.note ? null : r.a) },
+    ], rows, { unit: '段', what: '位址', placeholder: '搜尋清單名稱或位址（文字）', text: (r) => `${r.g.name} ${addr(r)}`,
+      groups: () => groups.map((g) => ({ key: g.key, title: listName(g), rows: g.rows, extra: [g.unknown ? V.chip('內容不明', 'info') : null] })) }),
+    { count: rows.length, fold: true, extra: [V.stateChip(unknown, '份內容不明')] });
   }
 
   V.firewall = { render, zoneStatus, ruleLabel };

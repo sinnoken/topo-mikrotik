@@ -47,7 +47,8 @@ const RULES = [
     id: 'python-inline-write',
     // python 以 heredoc（python3 - <<EOF）或 -c 執行、而且內容會寫檔（open(..., 'w'|'a') 或 write_text／write_bytes）
     // 背景：2026-11-06 多個 agent 用這個寫法一次替換改檔，繞過 Edit 工具的精確比對與檢查
-    test: (c) => /\bpython[0-9.]*\b[^|;&\n]*(\s-\s*<<|\s-c\b)/.test(c) &&
+    // python3 - <<EOF、python3 <<EOF（不寫 -）、python3 -c 都算
+    test: (c) => /\bpython[0-9.]*\b[^|;&\n]*(<<|\s-c\b)/.test(c) &&
       (/\bopen\s*\([^)]*,\s*['"][wax]b?\+?['"]/.test(c) || /\.write_(text|bytes)\s*\(/.test(c)),
     reason: '不要用 python 的 heredoc 或 -c 改檔。請用 Edit／Write 工具（多處相同替換用 Edit 的 replace_all）；需要腳本時寫成 scratchpad 裡的檔案再執行，且只讀不寫 repo。',
   },

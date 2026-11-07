@@ -63,10 +63,48 @@ test('收集器註解：時間格式或位置不對列為 I01（指回該行）�
   // 舊格式：沒有這兩行時區塊沒有額外內容，序列化為 null；有正確的註解時事實與檢查結果相同（只差行號）
   const old = t([]); const neu = t(['# collected-at: 2026-10-24T03:00:00Z']);
   const raw = S.readers.readAll([{ name: 'a.txt', text: 'SW_A (10.0.0.1):\n### /ip arp print detail\nX\n' }]).blocks[0];
-  assert.deepStrictEqual(Object.keys(raw).sort(), ['command', 'device', 'id', 'lines', 'mgmtIp', 'origin', 'reader']);
+  // wrap 是每個區塊都有的折行判斷寬度（推論，不寫進 Snapshot），不是收集器註解的欄位
+  assert.deepStrictEqual(Object.keys(raw).sort(), ['command', 'device', 'id', 'lines', 'mgmtIp', 'origin', 'reader', 'wrap']);
   assert.deepStrictEqual([old.blocks[0].collectedAt, old.blocks[0].failure], [null, null]);
   assert.deepStrictEqual(ids(neu), ids(old));
   assert.deepStrictEqual(neu.model.arps.map((a) => [a.ip, a.mac]), old.model.arps.map((a) => [a.ip, a.mac]));
+});
+test('收集器註解：terminal-width 緊接在 collected-at 或指令標記之後才讀進區塊（Snapshot 的 blocks[].terminalWidth）；位置不對、值不合法列為 I01', () => {
+  const ARP = ' 0 DC address=10.0.0.9 mac-address=AA:BB:CC:00:00:09 interface=ether1';
+  const t = (lines) => build(['SW_A (10.0.0.1):', '### /ip arp print detail', ...lines, ARP].join('\n'));
+  const i01 = (s) => s.findings.filter((x) => x.id === 'I01').map((x) => [x.message, x.evidence.map((e) => [e.line, e.text])]);
+  // 正常：collected-at 之後、或直接在指令標記之後
+  const a = t(['# collected-at: 2026-10-24T03:00:00Z', '# terminal-width: 511']);
+  const b = t(['# terminal-width: 80']);
+  assert.deepStrictEqual([a.blocks[0].terminalWidth, a.blocks[0].collectedAt, i01(a), b.blocks[0].terminalWidth, i01(b)], [511, '2026-10-24T03:00:00Z', [], 80, []]);
+  assert.deepStrictEqual(a.model.arps.map((x) => x.ip), ['10.0.0.9']);
+  // 位置不對：中間隔一行、第二個、在 collected-at 之前（collected-at 因此不在指令標記的下一行）
+  [[['', '# terminal-width: 80'], 4], [['# terminal-width: 80', '# terminal-width: 100'], 4]].forEach(([lines, line]) => {
+    const s = t(lines);
+    assert.deepStrictEqual(i01(s).map((x) => x[1]), [[[line, lines[line - 3]]]], JSON.stringify(lines));
+    assert.ok(/^收集器註解有誤：t\.txt 第 \d 行，終端寬度「\d+」不在指令標記或收集時間的下一行/.test(i01(s)[0][0]), i01(s)[0][0]);
+  });
+  assert.strictEqual(t(['# terminal-width: 80', '# terminal-width: 100']).blocks[0].terminalWidth, 80);
+  assert.strictEqual(t(['', '# terminal-width: 80']).blocks[0].terminalWidth, null);
+  const before = t(['# terminal-width: 80', '# collected-at: 2026-10-24T03:00:00Z']);
+  assert.deepStrictEqual([before.blocks[0].terminalWidth, before.blocks[0].collectedAt, i01(before).length], [80, null, 1]);
+  // 指令標記之前（files-v1 檔頭）：沒有指令可對應
+  const head = S.build([{ name: 'R_Z.txt', text: `# terminal-width: 80\n### /ip arp print detail\n${ARP}\n` }], { now: '2026-01-01T00:00:00Z' });
+  assert.deepStrictEqual(i01(head).map((x) => x[1]), [[[1, '# terminal-width: 80']]]);
+  // 值不合法：不是正整數；區塊的 terminalWidth 是 null，內容照常解析
+  ['0', '-1', '80.5', '80w', 'abc', ''].forEach((bad) => {
+    const s = t([`# terminal-width: ${bad}`]);
+    assert.deepStrictEqual(i01(s), [[`收集器註解有誤：t.txt 第 3 行，終端寬度「${bad}」不是正整數`, [[3, `# terminal-width: ${bad}`.trim()]]]], bad);
+    assert.deepStrictEqual([s.blocks[0].terminalWidth, s.model.arps.length], [null, 1], bad);
+  });
+  // 預檢與建立一致
+  const p = S.preflight([{ name: 't.txt', text: ['SW_A (10.0.0.1):', '### /ip arp print detail', '# terminal-width: x', ARP].join('\n') }]);
+  assert.deepStrictEqual(p.unrecognized.map((x) => [x.kind, x.startLine, x.reason]), [['note', 3, '收集器註解有誤，終端寬度「x」不是正整數']]);
+  // 舊格式：沒有這一行時 null
+  assert.strictEqual(t([]).blocks[0].terminalWidth, null);
+  // 收集器的連線失敗區塊：指令、collected-at、terminal-width、collection failed 依序，沒有 I01
+  const failed = build(['SW_A (10.0.0.1):', '### /ip arp print detail', '# collected-at: 2026-10-24T03:00:00Z', '# terminal-width: 511', '# collection failed: connection'].join('\n'));
+  assert.deepStrictEqual([failed.blocks[0].terminalWidth, failed.blocks[0].failure.reason, i01(failed)], [511, 'connection', []]);
 });
 test('files-v1：只有收集器註解（位置不對的 collected-at、一般註解）的檔案沒有設備資料，不以檔名建立假設備，註解問題仍列為 I01', () => {
   const t = (name, text) => S.build([{ name, text }], { now: '2026-01-01T00:00:00Z' });

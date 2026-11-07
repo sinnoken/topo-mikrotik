@@ -270,7 +270,7 @@
     const blocks = c.blocks.map((b) => ({
       id: b.id, device: b.device, devKey: b.devKey, command: b.command, reader: b.reader, adapters: b.adapters || [], how: b.how,
       file: b.origin.file, start: b.origin.startLine, end: b.origin.endLine, empty: !!b.empty,
-      collectedAt: b.collectedAt || null, failure: b.failure || null, unrecognizedLines: (b.unrecognizedLines || []).slice(),
+      collectedAt: b.collectedAt || null, terminalWidth: b.terminalWidth || null, failure: b.failure || null, unrecognizedLines: (b.unrecognizedLines || []).slice(),
     }));
 
     const sev = { error: 0, warn: 0, info: 0 };

@@ -82,12 +82,14 @@ test('收集器端到端：假 ssh 執行 tools/collect.sh 產生的 bundle-v1�
   const run = runCollector();
   assert.strictEqual(run.status, 1, `有一個指令失敗，收集器應以 1 結束；實際 ${run.status}\n${run.stdout}\n${run.stderr}`);
   assert.ok(/failure: not enough permissions/.test(run.stderr), '失敗指令的 stderr 要轉給使用者：' + run.stderr);
-  // 每台設備依序執行每個指令，連到正確的位址（假 ssh 記錄「user@位址|指令」）
-  const want = E2E.devices.flatMap(([, ip]) => E2E.commands.map((id) => `admin@${ip}|${E2E.cmdText[id]}`));
+  // 每台設備依序執行每個指令，連到正確的位址（假 ssh 記錄「user@位址|指令」）；預設以 +ct511w 登入（終端寬度 511）
+  const want = E2E.devices.flatMap(([, ip]) => E2E.commands.map((id) => `admin+ct511w@${ip}|${E2E.cmdText[id]}`));
   assert.deepStrictEqual(run.log.trim().split(/\r?\n/), want);
   const s = S.build([{ name: 'collection.txt', text: run.text }], { now: '2026-01-01T00:00:00Z' });
   assert.strictEqual(s.meta.sources[0].reader, 'bundle-v1');
-  assert.deepStrictEqual(s.findings.filter((f) => f.id === 'I01').map((f) => f.message), [], '收集器寫的 # collected-at／# collection failed 不可變成 I01');
+  assert.deepStrictEqual(s.findings.filter((f) => f.id === 'I01').map((f) => f.message), [], '收集器寫的 # collected-at／# terminal-width／# collection failed 不可變成 I01');
+  // 終端寬度：每個區塊都記登入時設定的 511
+  assert.deepStrictEqual(Array.from(new Set(s.blocks.map((b) => b.terminalWidth))), [511]);
   // 設備名稱與指令標記對回來：每個區塊一個指令，順序與收集順序相同
   assert.deepStrictEqual(s.blocks.map((b) => [b.device, b.command]), E2E.devices.flatMap(([n]) => E2E.commands.map((id) => [n, E2E.cmdText[id]])));
   assert.deepStrictEqual(s.model.devices.filter((d) => d.collected).map((d) => [d.key, d.mgmtIp]), E2E.devices.slice().sort((x, y) => S.util.natural(x[0], y[0])));

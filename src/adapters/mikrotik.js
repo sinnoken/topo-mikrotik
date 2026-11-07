@@ -69,28 +69,46 @@
    *  - 沒有引號的清單值（tests/fixtures/real/7.24.4-RB5009UG+S+.txt：system-caps 斷在「docsis-cable-device,」之後）：行尾是以逗號結尾的 key=值，
    *    下一行縮排比這一行第一個欄位深、第一個字不是 key=，直接接上（逗號後沒有空白）。縮排與欄位對齊的下一行是新欄位，不接。
    * 這是依實機輸出的推論，手冊沒有折行規則（無法以手冊確認；手冊只說明終端寬度可設定：https://manual.mikrotik.com/docs/management-tools/console.md）。
+   * 形狀之外，寬度是接回的必要條件（見 folded）。
    * 回傳 [{ text, i（第一行的索引）, more（接上的其他行的索引）}]。
    */
-  function joinQuoted(lines) {
+  function joinQuoted(lines, wrap) {
     const out = [];
     const indent = (s) => s.length - s.replace(/^\s+/, '').length;
     for (let i = 0; i < lines.length; i++) {
       const cur = { text: lines[i].replace(/\r$/, ''), i, more: [] };
       const km = FIRST_KEY.exec(cur.text);
       const keyCol = km ? km.index + km[1].length : -1;
+      let last = cur.text; // 上一個實體行（判斷寬度用）
       while (km && i + 1 < lines.length) {
         const next = lines[i + 1].replace(/\r$/, '');
         if (!next.trim() || ROW_HEAD.test(next)) break;
         const piece = next.replace(/^\s+/, '');
-        if (quoteOpen(cur.text)) cur.text = /[-/]$/.test(cur.text) ? cur.text + piece : cur.text.replace(/\s+$/, '') + ' ' + piece;
-        else if (LIST_CUT.test(cur.text) && indent(next) > keyCol && !/=/.test(piece.split(/\s/)[0])) cur.text += piece;
+        if (quoteOpen(cur.text)) {
+          // 屬於這個欄位的片段：到關上引號為止；這一行也沒關上時是整行
+          const close = /^(?:[^"\\]|\\.)*"/.exec(piece);
+          if (!folded(wrap, last, close ? close[0] : piece)) break;
+          cur.text = /[-/]$/.test(cur.text) ? cur.text + piece : cur.text.replace(/\s+$/, '') + ' ' + piece;
+        } else if (LIST_CUT.test(cur.text) && indent(next) > keyCol && !/=/.test(piece.split(/\s/)[0]) && folded(wrap, last, piece.split(/\s/)[0])) cur.text += piece;
         else break;
+        last = next;
         cur.more.push(++i);
       }
       out.push(cur);
     }
     return out;
   }
+  /*
+   * 寬度是接回的必要條件（wrap：readers/common.js 的 wrapOf，{ limit：一行最多幾字，W-1 }）：
+   *  - 折行：欄位（或欄位剩下的部分）在這一行放不下才換行，所以「這一行的長度 + 1 + 下一行屬於同一欄位的片段」> W-1。
+   *    斷在 , - / 之後時兩段之間沒有空白，真正的條件是「這一行 + 片段 > W-1」；加 1 的條件比它寬，同樣不會拒絕真正的折行。
+   *  - 硬切：註解切在剛好 W-1 字處，所以這一行的長度 = W-1。
+   * 以 W-1 的下界 B 代入也成立（真正的折行「> W-1」必然「> B」），但 wrapOf 只在確定是 W-1 時才給寬度，原因見那裡。
+   * 不檢查（回到只看形狀的規則）：wrap 是 null（寬度不明，或記錄與輸出不符）、行中有非 ASCII 字元（無法確定 RouterOS 怎麼算長度）。
+   */
+  const plain = (s) => S.readers._common.plain(s);
+  const folded = (wrap, line, piece) => !wrap || !plain(line + piece) || line.length + 1 + piece.length > wrap.limit;
+  const hardCut = (wrap, line) => !wrap || !plain(line) || line.length === wrap.limit;
   const indentOf = (s) => s.length - s.replace(/^\s+/, '').length;
   /** indent：列首那一行的縮排（判斷續行用，不輸出） */
   function newRow(toks, line, indent) {
@@ -109,6 +127,7 @@
    *  - `;;; 註解` 屬於它所在或下一個列；列首之後、欄位之前的獨立 `;;;` 行是同一列的另一行註解（CAPsMAN 管理的介面有三行說明）
    *  - 註解依終端寬度硬切時，下一行從註解文字的欄位（`;;; ` 之後）開始、沒有 `;;;`：原樣接上（不補空白），
    *    其後若有 `;;;` 是下一行註解。依實機輸出推論，手冊沒有折行規則（無法以手冊確認）
+   *  - 以單字開頭的續行、註解硬切的下一行，另以寬度為必要條件（folded、hardCut；b.wrap 為 null 時只看形狀）
    *  - 旗標說明可區分列首旗標與 CAPsMAN 等續行說明
    *  - `Flags:`、`Columns:` 說明行略過（傳入 ignore 時列為可忽略）
    * 每列帶 lines（這一列涵蓋的行號）；不屬於任何列的行（沒有 key=value 也不是註解）不在任何列中，由 adapter 層列為無法辨識。
@@ -122,7 +141,9 @@
     const isFlags = (token) => Array.from(token).every((ch) => flagChars.has(ch));
     // note：上一行是列首區（還沒有欄位）的註解，col 是註解文字開始的欄位，供判斷硬切的下一行
     const rows = []; let cur = null; let pending = null; let inLegend = false; let note = null;
-    joinQuoted(b.lines).forEach(({ text: line, i, more }) => {
+    const wrap = b.wrap || null;
+    const prevLine = (i) => (i > 0 ? b.lines[i - 1].replace(/\r$/, '') : ''); // 上一個實體行（判斷寬度用）
+    joinQuoted(b.lines, wrap).forEach(({ text: line, i, more }) => {
       const t = line.trim();
       if (!t) { note = null; return; }
       if (/^(Flags|Columns):/i.test(t)) { inLegend = /^Flags:/i.test(t); if (ignore) ignore(at(b, i), '說明行'); return; }
@@ -142,7 +163,7 @@
       const km = /(^|\s)([\w.\-]+)=/.exec(body);
       const headerOnly = cur && !Object.keys(cur.kv).length;
       // 註解硬切的下一行：從註解文字的欄位開始（之前全是空白），在任何欄位之前
-      if (note && headerOnly && !km && body.trim() && !body.slice(0, note.col).trim()) {
+      if (note && headerOnly && !km && body.trim() && !body.slice(0, note.col).trim() && hardCut(wrap, prevLine(i))) {
         const piece = body.slice(note.col);
         cur.comment += note.tail + piece.replace(/\s+$/, '');
         cur.lines.push(at(b, i));
@@ -178,7 +199,8 @@
       const joined = more.map((k) => at(b, k)); // 值斷開而接上的行：屬於同一列
       const toks = prefix.split(/\s+/).filter(Boolean);
       // 有旗標說明時，沒有序號、有不是旗標字的單字、縮排比列首深：是上一列的續行（RouterOS 7 路由的「blackhole immediate-gw=""」）
-      const continued = cur && (!toks.length || (flagChars.size && !/^\d+$/.test(toks[0]) && !toks.every(isFlags) && indentOf(line) > cur.indent));
+      // 以單字開頭的續行是上一行放不下這個字才換行：寬度是必要條件（folded）
+      const continued = cur && (!toks.length || (flagChars.size && !/^\d+$/.test(toks[0]) && !toks.every(isFlags) && indentOf(line) > cur.indent && folded(wrap, prevLine(i), toks[0])));
       if (continued) { Object.assign(cur.kv, kvOf(rest)); cur.words.push(...toks, ...bareWords(rest)); cur.lines.push(at(b, i), ...joined); return; }
       cur = newRow(toks, at(b, i), indentOf(line));
       cur.words.push(...bareWords(rest));
@@ -902,7 +924,8 @@
       if (open && !/^\s*\d+\s/.test(line) && cells(t).length === names.length) { Object.assign(open.kv, kvFrom(cells(t))); open.lines.push(n); open = null; return; }
       // 切不出欄位的資料列：連同它的註解留給 I03，註解不併進註解、也不轉給下一列
       if (looksRow(line)) { note = null; open = null; return; }
-      // 註解的續行：依終端寬度硬切，原樣接上
+      // 註解的續行：依終端寬度硬切，原樣接上；上一行必須剛好寫滿（hardCut），否則留給 I03
+      if (!hardCut(b.wrap || null, i > 0 ? b.lines[i - 1].replace(/\r$/, '') : '')) return;
       if (note) { note.text += line; note.lines.push(n); return; }
       if (open) { open.comment += line; open.lines.push(n); }
     });

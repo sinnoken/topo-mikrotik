@@ -1,7 +1,7 @@
 // 折行寬度的變形測試：同一段 RouterOS 輸出依不同終端寬度重新折行，解析出的事實與 findings 必須相同
 'use strict';
 const assert = require('assert');
-const { read, build, test } = require('../lib.js');
+const { S, read, build, test } = require('../lib.js');
 
 /*
  * rewrap(text, W)：把「不折行」的收集檔依終端寬度 W 重新折行，模擬 RouterOS 的輸出。
@@ -184,17 +184,28 @@ const facts = (s) => ({ model: strip(s.model), findings: s.findings.map((f) => [
 const WIDTHS = [60, 79, 100, 132, 511];
 
 const unparsed = (s) => s.findings.filter((f) => f.id === 'I01' || f.id === 'I03').map((f) => noLine(f.message));
+/** 模擬收集器：每個指令標記的下一行（緊接著 collected-at 時是它的下一行）加上 # terminal-width: W */
+function withWidth(text, W) {
+  const ls = text.split('\n'); const at = (l) => /^#\s*collected-at:/.test(l || '');
+  return ls.flatMap((l, k) => ((COMMAND.test(l) && !at(ls[k + 1])) || (at(l) && COMMAND.test(ls[k - 1] || '')) ? [l, `# terminal-width: ${W}`] : [l])).join('\n');
+}
 /**
- * 每個寬度：I01／I03 與 base 相同（expectI01 列出 base 本來就有的，例如範例資料刻意放的 /system clock print；其他一律不可有），
+ * 每個寬度、有記錄寬度（# terminal-width:）與沒有記錄（由輸出推算）兩種：I01／I03 與 base 相同
+ * （expectI01 列出 base 本來就有的，例如範例資料刻意放的 /system clock print；其他一律不可有），
  * 去掉位置後的事實（model）與 findings 的 id、訊息都與 base 相同
  */
 function sameAtAllWidths(name, unwrapped, base, expectI01 = []) {
   assert.deepStrictEqual(unparsed(base), expectI01, `${name}：基準的 I01／I03`);
   const want = facts(base);
   WIDTHS.forEach((W) => {
-    const s = build(rewrap(unwrapped, W));
-    assert.deepStrictEqual(unparsed(s), expectI01, `${name} W=${W}：I01／I03`);
-    assert.deepStrictEqual(facts(s), want, `${name} W=${W}：事實或 findings 與原本不同`);
+    const wrapped = rewrap(unwrapped, W);
+    [['沒有記錄寬度', wrapped], ['有記錄寬度', withWidth(wrapped, W)]].forEach(([how, text]) => {
+      const s = build(text);
+      assert.deepStrictEqual(unparsed(s), expectI01, `${name} W=${W}（${how}）：I01／I03`);
+      assert.deepStrictEqual(facts(s), want, `${name} W=${W}（${how}）：事實或 findings 與原本不同`);
+      const recorded = s.blocks.filter((b) => b.command).map((b) => b.terminalWidth);
+      assert.ok(recorded.length && recorded.every((w) => w === (how === '有記錄寬度' ? W : null)), `${name} W=${W}（${how}）：區塊的 terminalWidth`);
+    });
   });
 }
 
@@ -328,8 +339,8 @@ test('折行：實機片段依 60／79／100／132／511 欄重新折行，事�
 });
 
 test('detail：註解硬切剛好切在空白之後（行尾是空白）時，接上下一行補回那個空白', () => {
-  const s = build(['SW_A (10.0.0.1):', '### /interface print detail without-paging', 'Flags: X - DISABLED; R - RUNNING; S - SLAVE',
-    ' 9  R  ;;; uplink to ', '           core', '       name="ether1" type="ether" mtu=1500'].join('\n'));
+  // 硬切的行剛好是最長的一行（21 字）：寬度是接回的必要條件
+  const s = build(['SW_A (10.0.0.1):', '### /interface print detail without-paging', 'Flags: R - RUNNING', ' 9  R  ;;; uplink to ', '           core', '       name="ether1"', '       type="ether"', '       mtu=1500'].join('\n'));
   assert.deepStrictEqual([s.model.interfaces.find((i) => i.key === 'SW_A|ether1').desc, s.findings.filter((f) => f.id === 'I03').length], ['uplink to core', 0]);
 });
 
@@ -338,4 +349,84 @@ test('折行：範例資料的 detail、print stats、routerboard 區塊依各�
   // 範例資料刻意放的兩個問題：無法辨識的 /system clock print、bridge host 中混入的一行「```」
   sameAtAllWidths('sample-bundle', sample, build(sample), ['無法辨識的內容：t.txt 第 # 行（指令：/system clock print）',
     '1 行無法辨識，沒有進入基準：t.txt 第 # 行（/interface bridge host print detail without-paging）中的第 # 行「```」']);
+});
+
+// ---- 終端寬度：接回的必要條件
+const wrapsOf = (text) => S.readers.readAll([{ name: 't.txt', text }]).blocks.filter((b) => b.command).map((b) => [b.command.split(' ').slice(0, 3).join(' '), b.wrap]);
+// 硬切的註解列：剛好寫滿 len 字，下一行是註解的續行
+const cutRow = (len) => { const head = ' 0  R  ;;; '; return [head + 'x'.repeat(len - head.length), '           tail', '       name="ether1"']; };
+test('寬度推算：沒有記錄時，同一段中最長一行是被硬切的註解才採用（W-1）；只有下界不採用；monitor、export、一列的第二個註解不算', () => {
+  // RB3011：硬切的 CAPsMAN 說明 79 字是最長的行；bridge port monitor 的 88 字、第 12 列第二個註解所在的 86 字不算
+  const rb = wrapsOf(fixtureFrom('7.25.1-RB3011UiAS.txt').join('\n'));
+  assert.ok(rb.length > 3 && rb.every(([, w]) => JSON.stringify(w) === JSON.stringify({ limit: 79, basis: 'inferred' })), JSON.stringify(rb));
+  // neighbor-wrap：只有折行、沒有硬切的註解 → 只知道下界（最長 76 字），不採用
+  assert.deepStrictEqual(wrapsOf(read('tests/fixtures/real/7.25.1-neighbor-wrap.txt')), [['/ip neighbor print', null]]);
+  // 只有 monitor、export：沒有依寬度折行的行 → 寬度不明
+  const mon = ['SW_A (10.0.0.1):', '### /interface bridge port monitor [find] once', `  interface: ether1 ${'x'.repeat(200)}`, '### /export terse', `/interface bridge add name=${'b'.repeat(150)}`].join('\n');
+  assert.deepStrictEqual(wrapsOf(mon).map(([, w]) => w), [null, null]);
+  // 同一段裡 monitor 的長行不影響 detail 的寬度，整段（同一次連線）都用；不同的設備標頭各自推算
+  const two = [mon, '### /interface print detail without-paging', 'Flags: R - RUNNING', ...cutRow(59),
+    'SW_B (10.0.0.2):', '### /interface print detail without-paging', 'Flags: R - RUNNING', ...cutRow(45)].join('\n');
+  assert.deepStrictEqual(wrapsOf(two).map(([, w]) => w && w.limit), [59, 59, 59, 45]);
+  // 硬切的註解不是最長的行：行長與硬切對不上（例如去識別化換了長度），不採用
+  assert.deepStrictEqual(wrapsOf(['SW_A (10.0.0.1):', '### /interface print detail without-paging', 'Flags: R - RUNNING', ...cutRow(30),
+    '       mac-address=AA:BB:CC:00:00:01 last-link-up-time=2026-10-30 14:02:23'].join('\n')).map(([, w]) => w), [null]);
+  // 表格（print stats）只算 ;;; 註解行：資料列不算
+  const stats = rewrap(['RT_A (10.0.0.1):', '### /ip firewall filter print stats detail without-paging', 'Columns: CHAIN, ACTION, BYTES, PACKETS',
+    ' #   CHAIN    ACTION                         BYTES  PACKETS', `;;; ${'long comment '.repeat(8)}`, ' 0   input    accept                           312        3'].join('\n'), 40);
+  assert.deepStrictEqual(wrapsOf(stats), [['/ip firewall filter', { limit: 39, basis: 'inferred' }]]);
+  // 有記錄時用記錄的值（W-1）；同一段沒有記錄、也沒有硬切證據的區塊不採用
+  const rec = wrapsOf(['SW_A (10.0.0.1):', '### /ip arp print detail', '# terminal-width: 511', ' 0 DC address=10.0.0.9 interface=ether1', '### /ip arp print detail', ' 1 DC address=10.0.0.8'].join('\n'));
+  assert.deepStrictEqual(rec.map(([, w]) => w), [{ limit: 510, basis: 'recorded' }, null]);
+});
+
+test('寬度擋下誤接：前一行明顯沒寫滿時，縮排較深的下一行不當成續行（以單字開頭的續行、註解硬切），留給 I03 而不是悄悄併進上一列', () => {
+  const routes = (width) => build(['R_A (10.0.0.1):', '### /ip route print detail without-paging', ...width,
+    'Flags: D - DYNAMIC; X - DISABLED, A - ACTIVE; s - STATIC',
+    ' 0  As  dst-address=10.0.0.0/8 routing-table=main gateway=10.0.0.254 distance=1',
+    ' 1  As  dst-address=10.9.0.0/16 gateway=10.0.0.1', '         blackhole distance=1', '',
+    // 硬切的註解剛好 79 字：沒有記錄時由它推得 W-1 = 79
+    ` 2  As  ;;; ${'c'.repeat(67)}`, '            uplink', '         dst-address=10.8.0.0/16 gateway=10.0.0.1'].join('\n'));
+  const bh = (s) => s.model.routes.find((r) => r.prefix === '10.9.0.0').blackhole || false;
+  const i03Lines = (s) => s.findings.filter((f) => f.id === 'I03').map((f) => f.evidence.map((e) => e.text));
+  // 有記錄（80 欄）、沒有記錄（由硬切的註解推得 79）：「第 1 列 48 字 + 1 + blackhole」沒有超過 79，不是折行
+  [routes(['# terminal-width: 80']), routes([])].forEach((s) => assert.deepStrictEqual([bh(s), i03Lines(s)], [false, [['blackhole distance=1']]]));
+  // 寫滿 79 字的註解：下一行照樣接回（不在 I03 中），這一列照常解析
+  assert.ok(routes([]).model.routes.some((r) => r.prefix === '10.8.0.0'));
+  // 記錄與輸出不符（有一行超過 W-1）：I01 指出，這一段回到只看形狀的規則（併進上一列）
+  const bad = routes(['# terminal-width: 40']);
+  assert.deepStrictEqual([bh(bad), i03Lines(bad), bad.blocks[0].terminalWidth], [true, [], 40]);
+  assert.deepStrictEqual(bad.findings.filter((f) => f.id === 'I01').map((f) => [f.message, f.evidence.map((e) => e.text)]),
+    [['收集器註解有誤：t.txt 第 3 行，終端寬度 40（每行最多 39 字）與輸出不符：第 4 行有 56 字，這段輸出的折行不以寬度判斷', ['# terminal-width: 40']]]);
+  // 註解：「uplink」沒有寫滿，下一行在註解的欄位開始也不是硬切的續行
+  const note = build(['SW_A (10.0.0.1):', '### /interface print detail without-paging', '# terminal-width: 80', 'Flags: R - RUNNING',
+    ' 0  R  ;;; uplink', '           core', '       name="ether1" type="ether" mtu=1500'].join('\n'));
+  assert.deepStrictEqual([note.model.interfaces.find((i) => i.key === 'SW_A|ether1').desc, i03Lines(note)], ['uplink', [['core']]]);
+});
+
+test('寬度 511（收集器的 +ct511w）：只有超過 510 字的列折行，折行處「這一行 + 1 + 下一個欄位」超過 510；有沒有記錄寬度，事實都和不折行相同', () => {
+  const words = Array.from({ length: 60 }, (_, k) => `seg-${String(k).padStart(2, '0')}`).join(' ');
+  const unwrapped = ['DEV-001 (10.101.88.1):', '### /ip neighbor print detail without-paging', '# collected-at: 2026-11-07T09:41:40Z',
+    ' 0  interface=ether2,bridge address=10.101.59.254 mac-address=2C:C8:1B:00:00:01 identity="DEV-002" platform="MikroTik" discovered-by=lldp',
+    '',
+    ` 1  interface=ether3,bridge mac-address=2C:C8:1B:00:00:02 identity="DEV-003" system-description="${words}" system-caps=bridge,router discovered-by=lldp,mndp`,
+    '',
+    ' 2  interface=ether4 mac-address=2C:C8:1B:00:00:03 identity="DEV-004" discovered-by=mndp'].join('\n');
+  const wrapped = rewrap(unwrapped, 511).split('\n');
+  const before = unwrapped.split('\n');
+  // 第 0、2 列原樣；第 1 列（超過 510 字）折成兩行以上
+  assert.ok(before[5].length > 510);
+  assert.deepStrictEqual([wrapped.slice(0, 5), wrapped.slice(-2)], [before.slice(0, 5), before.slice(-2)]);
+  const row1 = wrapped.slice(5, -2);
+  assert.ok(row1.length >= 2 && row1.every((l) => l.length <= 510), JSON.stringify(row1.map((l) => l.length)));
+  // 第一行在欄位之間換行：下一個欄位是整個 system-description；之後在值裡斷開：下一段放不下
+  const desc = tokens(before[5]).find((x) => x.startsWith('system-description='));
+  assert.ok(row1[0].length + 1 + desc.length > 510 && row1[1].trim().startsWith('system-description='), JSON.stringify(row1.slice(0, 2)));
+  row1.slice(1, -1).forEach((l, k) => assert.ok(l.length + 1 + row1[k + 2].trim().split(/\s/)[0].length > 510, `第 ${k + 1} 行沒有寫滿：${l.length}`));
+  const base = build(unwrapped);
+  [wrapped.join('\n'), withWidth(wrapped.join('\n'), 511)].forEach((text, k) => {
+    const s = build(text);
+    assert.deepStrictEqual([unparsed(s), facts(s)], [[], facts(base)], k ? '有記錄寬度' : '沒有記錄寬度');
+  });
+  assert.strictEqual(build(withWidth(wrapped.join('\n'), 511)).blocks[0].terminalWidth, 511);
 });

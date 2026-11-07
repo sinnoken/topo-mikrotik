@@ -41,13 +41,16 @@ test('detail：引號值在行尾斷開時接上下一行（斷在 - 或 / 之�
     ['RBwAPGR-5HacD2HnD', 'MikroTik RouterOS 7.25.1 2026-11-02 12:39:53 RBwAPGR-5HacD2HnD', 'bridge,router', 'bridge,router', 'lldp,mndp', 'bridge/ether1']);
   const s = S.build([{ name: 'n.txt', text }], { now: '2026-01-01T00:00:00Z' });
   assert.deepStrictEqual([i03(s), ids(s).filter((x) => x === 'I01')], [[], []], JSON.stringify(i03(s).map((f) => f.message)));
-  // 手寫：在空白處斷開（RouterOS 吃掉那個空白，接上時補回）、斷在 / 之後、引號內有跳脫的引號；下一列不會被併進來
+  // 手寫：在空白處斷開（RouterOS 吃掉那個空白，接上時補回）、斷在 / 之後、引號內有跳脫的引號；下一列不會被併進來。
+  // 各行的長度符合同一個寬度（最長 65 字；斷開的行加上下一段都超過 65），否則寬度會擋下接回
   const hand = rowsOf(['SW_A (10.0.0.1):', '### /ip neighbor print detail without-paging',
-    ' 0 interface=ether1 identity="core \\"A\\" room" mac-address=AA:BB:CC:00:00:01',
+    ' 0 interface=ether1 identity="core \\"A\\" room"',
+    '   mac-address=AA:BB:CC:00:00:01',
     '   system-description="MikroTik RouterOS 7.25.1 (stable)',
-    '      CRS326-24G-2S+" interface-name="bridge/',
+    '      CRS326-24G-2S+" platform="MikroTik" interface-name="bridge/',
     '      ether3" discovered-by=lldp',
-    ' 1 interface=ether2 identity="B" mac-address=AA:BB:CC:00:00:02 discovered-by=mndp'].join('\n'));
+    ' 1 interface=ether2 identity="B" mac-address=AA:BB:CC:00:00:02',
+    '   discovered-by=mndp'].join('\n'));
   assert.deepStrictEqual(hand.map((x) => [x.identity, x['system-description'], x['interface-name'], x['discovered-by']]),
     [['core "A" room', 'MikroTik RouterOS 7.25.1 (stable) CRS326-24G-2S+', 'bridge/ether3', 'lldp'], ['B', undefined, undefined, 'mndp']]);
   // 引號一直沒有關上：下一個列首不會被吞進去

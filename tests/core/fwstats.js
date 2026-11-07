@@ -160,7 +160,9 @@ test('命中次數（表格）：與 key=value 格式的事實相同（行號除
 test('命中次數（表格）：長註解依終端寬度折行（沒有 ;;; 的續行，原樣接上）、含中文與 regex 的註解、對上 export 不報 F09', () => {
   const long = '(quake3)udplite, dccp, and sctp are built-in services of conntracking. Since these are not separately loaded modules, they cannot be disabled separately';
   const re = '#(last|frst|[0-9]+)\\.(acpt|dlst|rtrn|reject|drop)\\.(flt|nat)(4|6)';
-  const lines = ['### /ip firewall filter print stats detail without-paging', LEGEND, 'Columns: CHAIN, ACTION, BYTES, PACKETS',
+  // 硬切的寬度要一致（每行最多 68 字）：寬度是接回註解續行的必要條件
+  const reNote = `;;; ${re}`;
+  const lines =['### /ip firewall filter print stats detail without-paging', LEGEND, 'Columns: CHAIN, ACTION, BYTES, PACKETS',
     ' #   CHAIN    ACTION                         BYTES  PACKETS',
     ';;; special dummy rule to show fasttrack counters',
     ' 0 D forward  passthrough               50 507 925   50 048',
@@ -170,8 +172,8 @@ test('命中次數（表格）：長註解依終端寬度折行（沒有 ;;; 的
     ' 1   input    accept                           312        3',
     ';;; redirect NTP 錯誤比較少',
     ' 2 X forward  add-src-to-address-list            0        0',
-    ';;; #(last|frst|[0-9]+)\\.(acpt|dlst|rtrn|',
-    'reject|drop)\\.(flt|nat)(4|6)',
+    reNote.slice(0, 68),
+    reNote.slice(68),
     ' 3   forward  drop                       1 806 976   23 776'];
   const { facts } = statFacts('mikrotik.fwstats.ip-filter', lines.slice(1));
   assert.deepStrictEqual(facts.filter((f) => f.t === 'fwStat').map((f) => [f.flags, f.chain, f.action, f.comment, f.bytes, f.packets]), [

@@ -78,6 +78,10 @@
     'collected-at-invalid': (x) => `收集時間「${x.text}」不是 UTC ISO 8601 格式（應為 2026-10-24T03:00:00Z 這種秒精度的 UTC 時間）`,
     'collected-at-misplaced': (x) => `收集時間「${x.text}」不在指令標記的下一行，無法判斷屬於哪個指令`,
     'failure-duplicate': (x) => `同一段指令輸出有第二個收集失敗註解「${x.text}」，採用第一個`,
+    'terminal-width-invalid': (x) => `終端寬度「${x.text}」不是正整數`,
+    'terminal-width-misplaced': (x) => `終端寬度「${x.text}」不在指令標記或收集時間的下一行，無法判斷屬於哪個指令`,
+    // 依寬度判斷折行的前提是每行最多 W-1 字；不符時這段輸出改用不看寬度的規則（readers/common.js 的 wrapOf）
+    'terminal-width-exceeded': (x) => `終端寬度 ${x.text}（每行最多 ${x.text - 1} 字）與輸出不符：第 ${x.at} 行有 ${x.len} 字，這段輸出的折行不以寬度判斷`,
   };
   /** 收集器註解問題的結論與補充。x：區塊的 issues 之一 { kind, line, text }。 */
   const issueParts = (x) => ({ what: '收集器註解有誤', rest: '，' + ISSUE[x.kind](x) });

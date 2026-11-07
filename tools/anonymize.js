@@ -15,6 +15,19 @@
 //            其他比保留單位短的網段（例如 address-list 的 /22）與跨越單位的位址範圍，對應後的範圍和原本不同、包含關係不保留，
 //            會列在警告裡（含輸出的行號）。只要一小段當 fixture 時，先切出片段再去識別化：網段少，比較能保留到 /16。
 //            遮罩、0.0.0.0/8、loopback、link-local、多播、文件用與保留位址不換（不會識別出使用者）
+//   IPv6     同樣依 S.ip.classify 分類、換到同類範圍；輸入的任何寫法（::、前導 0、大小寫）都認成同一個值，換過的位址以 RFC 5952 寫出。
+//            前 64 位元（網段）：
+//              公網 2000::/3  → 3ffe::/16（6bone 的舊測試區塊，已收回、不再分配，classify 仍是 public；2001:db8::/32 是文件用，類別不同不能用）。
+//                               不同的 /32 不超過 65535 個時以 /32 為單位（3ffe:1::/32 起），否則以 /48 為單位；單位以下到 /64 保留。
+//                               任何公網輸入都會換掉，所以輸出中 3ffe::/16 以外的公網 IPv6（2000::/3 本身除外）就是遺漏
+//              ULA fc00::/7   → 第一個位元組（fc／fd）保留，global ID（/48）依序編號；/48 到 /64 保留
+//              link-local     → fe80::/64 原樣
+//            後 64 位元（介面 ID）：前 48 位元是 0 的（::1 這類手動編號）不換；EUI-64（中間是 ff:fe）由換過的 MAC 推出，
+//              link-local／SLAAC 位址與 MAC 的對應不變；其他以前 48 位元為鍵依序編號、後 16 位元保留（/112 以上的關係不變）。
+//            整類的網段（2000::/3、fc00::/7、fd00::/8、fe80::/10）不換；比單位短的網段、/65–/111 的網段裡換了代號的介面 ID、
+//            跨代號的範圍列在警告裡。::、::1、多播、文件用與其他保留位址原樣保留；但 solicited-node 多播（ff02::1:ffXX:XXXX）
+//            的後 3 個位元組是已知 MAC 的後 3 個位元組時換成同一個代號，否則等於留下 MAC；
+//            內嵌 IPv4 的位址（::ffff:a.b.c.d）屬保留類別，IPv6 本身不換，其中的 IPv4 已依 IPv4 的規則換掉
 //   設備名   設備標頭、identity、/system identity、鄰居的 identity 換成 DEV-001…（--keep-names 時保留）
 //   其他識別 SSID、DHCP 主機名、radio-name、註解、LLDP 系統描述換成代號
 //   機密     eap-identity、eap-username、密碼（password、*-password）、金鑰（key、*-key、static-key-N）、
@@ -153,14 +166,20 @@ function anonymize(text, opt) {
     const esc = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     out = out.replace(new RegExp(`(?<![\\w.-])${esc}(?![\\w-])`, 'g'), dev(n));
   });
-  // 4. MAC 與 IPv4
-  out = out.replace(/\b[0-9A-Fa-f]{2}([:-])[0-9A-Fa-f]{2}(?:\1[0-9A-Fa-f]{2}){4}\b/g, mac);
+  // 4. MAC、IPv4、IPv6。MAC 前面不可接英數字或冒號、後面不可接英數字、冒號或連字號，才不會比對到 IPv6 位址裡剛好是兩位數的六組
+  //    （2001:db8:aa:bb:cc:dd:ee:ff）。前面可以是點或連字號：bridge ID 寫成「優先權.MAC」（designated-bridge-id: 0xf000.<MAC>、
+  //    root-bridge-id: 0.<MAC>），DNS 名稱常寫成 dev-aa-bb-cc-dd-ee-ff
+  out = out.replace(/(?<![\w:])[0-9A-Fa-f]{2}([:-])[0-9A-Fa-f]{2}(?:\1[0-9A-Fa-f]{2}){4}(?![\w:-])/g, mac);
+  // IPv4 先換：內嵌 IPv4 的 IPv6（::ffff:a.b.c.d）裡的 IPv4 依 IPv4 的規則換
   const ips = mapIps(out);
+  // EUI-64 介面 ID 內含 MAC：後 3 個位元組用和 MAC 相同的代號（OUI 保留），link-local 與 MAC 的對應才不變
+  const macTail = (hex6) => (+code('mac', '', hex6.toUpperCase(), 6)).toString(16).padStart(6, '0');
+  const ip6 = mapIp6(ips.text, macTail, (hex6) => maps.mac.has(hex6.toUpperCase()));
 
   const table = Object.fromEntries(Object.entries(maps).map(([k, m]) => [k, Object.fromEntries(m)]));
   if (o.keepNames) delete table.dev;
-  Object.assign(table, ips.map);
-  return { text: ips.text, map: table, nets: ips.nets, warnings: ips.warnings };
+  Object.assign(table, ips.map, { ipv6: ip6.map });
+  return { text: ip6.text, map: table, nets: ips.nets.concat(ip6.nets), warnings: ips.warnings.concat(ip6.warnings) };
 }
 
 /** 位址所屬的 BUCKETS 類別；不換的位址（遮罩、loopback、多播…）回傳 null。 */
@@ -218,22 +237,18 @@ function mapIps(text) {
     return conv(s, b);
   });
 
-  const starts = [0];
-  if (issues.length) for (let i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) starts.push(i + 1);
-  const lineOf = (off) => { let lo = 0; let hi = starts.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (starts[mid] <= off) lo = mid; else hi = mid - 1; } return lo + 1; };
-  const SAMPLE = 5;
+  const lines = sampleLines(text);
   const warnings = [];
   Object.entries(BUCKETS).forEach(([b, B]) => ['short', 'range'].forEach((kind) => {
     const xs = issues.filter((x) => x.b === b && x.kind === kind);
     if (!xs.length) return;
-    const lines = xs.slice(0, SAMPLE).map((x) => lineOf(x.off)).join('、') + (xs.length > SAMPLE ? '…' : '');
     const lv = levels[b];
     if (kind === 'short') {
       const lens = xs.map((x) => x.len);
       warnings.push(`${B.label}：${xs.length} 處網段短於 /${lv}（/${Math.min(...lens)}–/${Math.max(...lens)}），代號以 /${lv} 為單位編號，`
-        + `這些網段在輸出中的範圍和原本不同，與其他位址的包含關係不保留（輸出第 ${lines} 行）`);
+        + `這些網段在輸出中的範圍和原本不同，與其他位址的包含關係不保留（輸出第 ${lines(xs)} 行）`);
     } else {
-      warnings.push(`${B.label}：${xs.length} 處位址範圍跨越不同的 /${lv} 網段，輸出的範圍和原本不同（輸出第 ${lines} 行）`);
+      warnings.push(`${B.label}：${xs.length} 處位址範圍跨越不同的 /${lv} 網段，輸出的範圍和原本不同（輸出第 ${lines(xs)} 行）`);
     }
   }));
 
@@ -245,6 +260,138 @@ function mapIps(text) {
     codes[b].forEach((i, k) => { into[k + rest] = unit(codeOf(b, lv, i, ['x', 'x', 'x', 'x']), lv) + rest; });
     return { bucket: b, label: B.label, level: lv, count: codes[b].size };
   });
+  return { text: out, map, nets, warnings };
+}
+
+/** 警告用：位置（offset）→ 前 5 個行號的文字；輸出與輸入的行數相同（位址替換不增減換行）。 */
+function sampleLines(text) {
+  let starts = null;
+  const lineOf = (off) => {
+    if (!starts) { starts = [0]; for (let i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) starts.push(i + 1); }
+    let lo = 0; let hi = starts.length - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (starts[mid] <= off) lo = mid; else hi = mid - 1; }
+    return lo + 1;
+  };
+  const SAMPLE = 5;
+  return (xs) => xs.slice(0, SAMPLE).map((x) => lineOf(x.off)).join('、') + (xs.length > SAMPLE ? '…' : '');
+}
+
+// IPv6：冒號分隔的 3–8 組（可含 :: 與結尾的點分 IPv4），前後不接英數字或冒號；再由 S.ip.v6ToBig 確認合法，
+// 所以 MAC（6 組）、時間（08:00:00）、uptime（1d02:03:04）都不是位址。8 組都是兩位數的寫法（DUID 之類）第一組 < 0x100，分類是保留位址，不換
+const IPV6 = /(?<![\w:.])(?:[0-9A-Fa-f]{0,4}:){2,7}(?:[0-9A-Fa-f]{1,4}|\d{1,3}(?:\.\d{1,3}){3})?(?![\w:])/g;
+const M16 = 0xffffn; const M64 = (1n << 64n) - 1n;
+/** 介面 ID（64 位元）的第 k 個位元組；EUI-64 是 MAC 前 3 個位元組（第一個翻轉 U/L 位元）＋ff:fe＋MAC 後 3 個位元組 */
+const byteOf = (x, k) => Number((x >> BigInt(56 - 8 * k)) & 0xffn);
+const isEui = (x) => byteOf(x, 3) === 0xff && byteOf(x, 4) === 0xfe;
+const SOLICITED = 0xff0200000000000000000001ffn; // ff02::1:ff00:0/104
+// 要換的 IPv6 類別（S.ip.classify）。whole：整類本身的網段，原樣保留；
+// 公網換到 3ffe::/16（6bone 的舊測試區塊，2006 年已收回、不再分配；classify 仍是 public，不是文件用的 2001:db8::/32）
+const V6_BUCKETS = {
+  public6: { cls: 'public', label: '公網 IPv6', range: '3ffe::/16', whole: ['2000::/3'] },
+  ula: { cls: 'private', label: 'IPv6 ULA', range: 'fc00::/7', whole: ['fc00::/7', 'fc00::/8', 'fd00::/8'] },
+  ll: { cls: 'link-local', label: 'IPv6 link-local', range: 'fe80::/10', whole: ['fe80::/10'] },
+};
+const V6_BY_CLASS = Object.fromEntries(Object.entries(V6_BUCKETS).map(([b, B]) => [B.cls, b]));
+
+/**
+ * IPv6 換成代號（規則見檔頭）：前 64 位元依類別換網段代號，後 64 位元（介面 ID）另外換。
+ * macTail(6 位 hex) 回傳 MAC 後 3 個位元組的新值（和 MAC 的代號共用）；macKnown(6 位 hex) 表示這組後 3 個位元組是否已有代號。
+ * 回傳 { text, map: { public, ula, iid }, nets: [{ bucket, label, level, count }], warnings }。
+ */
+function mapIp6(text, macTail, macKnown) {
+  const parsed = new Map();
+  const parse = (s) => {
+    if (!parsed.has(s)) { const n = IP.v6ToBig(s); parsed.set(s, n === null ? null : { n, b: V6_BY_CLASS[IP.classify(s)] || null }); }
+    return parsed.get(s);
+  };
+  const lenAfter = (str, end) => { const m = /^\/(\d{1,3})(?!\d)/.exec(str.slice(end, end + 4)); return m && +m[1] <= 128 ? +m[1] : null; };
+  const whole = (b, n, len) => len !== null && V6_BUCKETS[b].whole.includes(`${IP.v6FromBig(n)}/${len}`);
+
+  // 公網：不同的 /32 不超過 65535 個就以 /32 為單位（3ffe:1::/32 起），否則以 /48 為單位；ULA 固定以 /48（global ID）為單位
+  // 同一遍先登記 EUI-64 裡的 MAC，solicited-node 多播（ff02::1:ffXX:XXXX，後 3 個位元組就是 MAC 的後 3 個位元組）不論出現在前或後都換得一致
+  const seen32 = new Set(); const seen48 = new Set();
+  const tailHex = (n) => (n & 0xffffffn).toString(16).padStart(6, '0');
+  for (const m of text.matchAll(IPV6)) {
+    const p = parse(m[0]);
+    if (p && p.b && isEui(p.n & M64)) macTail(tailHex(p.n));
+    if (p && p.b === 'public6' && !whole(p.b, p.n, lenAfter(text, m.index + m[0].length))) { seen32.add(p.n >> 96n); seen48.add(p.n >> 80n); }
+  }
+  // 代號從 3ffe:1 起：不產生 3ffe::，bogon 清單常見的 3ffe::/16 原值才不會剛好出現在輸出
+  const CAP32 = 65535; const CAP48 = 2 ** 32 - 1;
+  const pubCode = (i, shift) => (0x3ffen << 112n) | (BigInt(i + 1) << shift);
+  if (seen32.size > CAP32 && seen48.size > CAP48) {
+    throw new Error(`公網 IPv6：有 ${seen32.size} 個不同的 /32、${seen48.size} 個不同的 /48 網段，超過 3ffe::/16 可容納的 ${CAP32} 個 /32 或 ${CAP48} 個 /48，`
+      + '無法維持網段關係；請先切出需要的片段再去識別化');
+  }
+  const unitLen = { public6: seen32.size <= CAP32 ? 32 : 48, ula: 48, ll: 0 };
+
+  const units = { public6: new Map(), ula: new Map() };
+  const unitIndex = (b, u) => { const m = units[b]; if (!m.has(u)) m.set(u, m.size); return m.get(u); };
+  const ULA_CAP = 2 ** 40 - 1;
+  /** 前 64 位元：公網、ULA 換掉保留單位以上的位元，單位以下（子網路編號）保留；link-local 原樣 */
+  const high = (b, n) => {
+    const L = unitLen[b]; const hi = n & ~M64;
+    if (b === 'll') return hi;
+    const shift = BigInt(128 - L); const keep = hi & ((1n << shift) - 1n); const i = unitIndex(b, n >> shift);
+    if (b === 'public6') return pubCode(i, shift) | keep;
+    if (i >= ULA_CAP) throw new Error(`IPv6 ULA：不同的 /48 超過 ${ULA_CAP} 個，無法維持網段關係；請先切出需要的片段再去識別化`);
+    return ((n >> 120n) << 120n) | (BigInt(i + 1) << shift) | keep; // fc／fd 保留，global ID 從 1 起編
+  };
+  // 介面 ID：前 48 位元是 0（::1、::fe 這類手動編號）不換；EUI-64 由換過的 MAC 推出；其他以前 48 位元為鍵依序編號成 0:1:N:N:xxxx，
+  // 後 16 位元保留（/112 以上的關係不變）。三種輸出的形狀互不重疊，代號才不會重複：編號跳過剛好像 EUI-64（第 4、5 位元組是 ff、fe）的值
+  const iidCodes = new Map(); let iidNext = 0;
+  const iid = (x) => {
+    if (x >> 16n === 0n) return { x, kind: 'small' };
+    if (isEui(x)) return { x: ((x >> 24n) << 24n) | BigInt(parseInt(macTail([5, 6, 7].map((k) => byteOf(x, k).toString(16).padStart(2, '0')).join('')), 16)), kind: 'eui' };
+    const k = x >> 16n;
+    if (!iidCodes.has(k)) { let c; do { c = ++iidNext; } while (((c >> 16) & 0xff) === 0xff && ((c >> 8) & 0xff) === 0xfe); iidCodes.set(k, c); }
+    return { x: (1n << 48n) | (BigInt(iidCodes.get(k)) << 16n) | (x & M16), kind: 'code' };
+  };
+  const conv = (p) => { const r = iid(p.n & M64); return { text: IP.v6FromBig(high(p.b, p.n) | r.x), kind: r.kind }; };
+
+  const issues = [];
+  const out = text.replace(IPV6, (s, off, str) => {
+    const p = parse(s);
+    if (!p) return s;
+    const end = off + s.length; const len = lenAfter(str, end);
+    if (!p.b && len === null && p.n >> 24n === SOLICITED && macKnown(tailHex(p.n))) return IP.v6FromBig(((p.n >> 24n) << 24n) | BigInt(parseInt(macTail(tailHex(p.n)), 16)));
+    if (!p.b) return s;
+    if (whole(p.b, p.n, len)) return s;
+    const r = conv(p);
+    if (len !== null && len < unitLen[p.b]) issues.push({ b: p.b, kind: 'short', off, len });
+    if (len !== null && ((r.kind === 'code' && len > 64 && len < 112) || (r.kind === 'eui' && len > 104 && len < 128))) issues.push({ b: p.b, kind: 'iid', off, len });
+    const to = /^-([0-9A-Fa-f:.]+)/.exec(str.slice(end, end + 47)); const q = to && parse(to[1]);
+    const unitOf = (n) => (p.b === 'll' ? 0n : n >> BigInt(128 - unitLen[p.b])); const iidHi = (n) => (n & M64) >> 16n;
+    if (q && (q.b !== p.b || unitOf(q.n) !== unitOf(p.n) || iidHi(q.n) !== iidHi(p.n))) issues.push({ b: p.b, kind: 'range', off });
+    return r.text;
+  });
+
+  const lines = sampleLines(text);
+  const warnings = [];
+  Object.entries(V6_BUCKETS).forEach(([b, B]) => ['short', 'iid', 'range'].forEach((kind) => {
+    const xs = issues.filter((x) => x.b === b && x.kind === kind);
+    if (!xs.length) return;
+    const lens = xs.map((x) => x.len); const span = `/${Math.min(...lens)}–/${Math.max(...lens)}`;
+    if (kind === 'short') {
+      warnings.push(`${B.label}：${xs.length} 處網段短於 /${unitLen[b]}（${span}），代號以 /${unitLen[b]} 為單位編號，`
+        + `這些網段在輸出中的範圍和原本不同，與其他位址的包含關係不保留（輸出第 ${lines(xs)} 行）`);
+    } else if (kind === 'iid') {
+      warnings.push(`${B.label}：${xs.length} 處網段長於 /64（${span}），網段內的介面 ID 換成代號，與其他位址的包含關係不保留（輸出第 ${lines(xs)} 行）`);
+    } else {
+      warnings.push(`${B.label}：${xs.length} 處位址範圍跨越不同的網段代號或介面 ID 代號，輸出的範圍和原本不同（輸出第 ${lines(xs)} 行）`);
+    }
+  }));
+
+  const prefixText = (b, u) => { const L = unitLen[b]; const sh = BigInt(128 - L); return `${IP.v6FromBig(u << sh)}/${L}`; };
+  const map = { public: {}, ula: {}, iid: {} };
+  ['public6', 'ula'].forEach((b) => units[b].forEach((i, u) => {
+    const L = unitLen[b]; const sh = BigInt(128 - L);
+    map[b === 'ula' ? 'ula' : 'public'][prefixText(b, u)] = `${IP.v6FromBig(b === 'public6' ? pubCode(i, sh) :((u >> BigInt(L - 8)) << 120n) | (BigInt(i + 1) << sh))}/${L}`;
+  }));
+  const hex48 = (k) => [32n, 16n, 0n].map((s) => ((k >> s) & M16).toString(16)).join(':');
+  iidCodes.forEach((c, k) => { map.iid[`${hex48(k)}:x`] = `${hex48((1n << 32n) | BigInt(c))}:x`; });
+  const nets = [{ bucket: 'public6', label: V6_BUCKETS.public6.label, level: unitLen.public6, count: units.public6.size },
+    { bucket: 'ula', label: V6_BUCKETS.ula.label, level: 48, count: units.ula.size }];
   return { text: out, map, nets, warnings };
 }
 
@@ -261,7 +408,7 @@ if (require.main === module) {
   fs.writeFileSync(dst + '.map.json', JSON.stringify(r.map, null, 1) + '\n');
   const count = (k) => Object.keys(r.map[k] || {}).length;
   const nets = r.nets.filter((n) => n.count).map((n) => `${n.label} ${n.count} 個 /${n.level}`).join('、') || '無';
-  console.log(`已輸出 ${dst}：設備名 ${count('dev')}、網段（${nets}）、MAC ${count('mac')}、SSID ${count('ssid')}、主機名 ${count('host')}、註解 ${count('comment')}`);
+  console.log(`已輸出 ${dst}：設備名 ${count('dev')}、網段（${nets}）、IPv6 介面 ID 代號 ${Object.keys(r.map.ipv6.iid).length}、MAC ${count('mac')}、SSID ${count('ssid')}、主機名 ${count('host')}、註解 ${count('comment')}`);
   r.warnings.forEach((w) => console.error(`警告：${w}`));
   console.log(`對照表：${dst}.map.json（只供自己查對，請勿提交）`);
 }

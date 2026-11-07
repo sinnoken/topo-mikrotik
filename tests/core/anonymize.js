@@ -163,3 +163,92 @@ test('去識別化：位址太多、/24 也放不下時明確失敗，訊息的�
   publicNets(257).forEach(([a, b]) => { for (let c = 0; c < 256; c++) pub.push(`${a}.${b}.${c}.1`); });
   assert.throws(() => anonymize(pub.join('\n')), /^Error: 公網位址：有 257 個不同的 \/16、65792 個不同的 \/24 網段，超過 11\.0\.0\.0\/8 可容納的 256 個 \/16 或 65536 個 \/24/);
 });
+
+// 和工具相同的 IPv6 候選寫法；測試再用核心的 S.ip.v6ToBig 篩出合法位址
+const IP6_TOKEN = /(?<![\w:.])(?:[0-9A-Fa-f]{0,4}:){2,7}(?:[0-9A-Fa-f]{1,4}|\d{1,3}(?:\.\d{1,3}){3})?(?![\w:])/g;
+const ip6s = (t) => (t.match(IP6_TOKEN) || []).filter((x) => lib.S.ip.v6ToBig(x) !== null);
+test('去識別化 IPv6：依類別換到同類範圍（公網 3ffe::/16、ULA、link-local），EUI-64 跟著 MAC 的代號，不換的位址與非位址原樣保留', () => {
+  const { anonymize } = require('../../tools/anonymize.js'); const S = lib.S;
+  assert.strictEqual(S.ip.classify('3ffe::1'), 'public', '公網代號區塊必須仍判成公網');
+  const keep = ['::', '::1', '::/0', 'ff02::1', 'ff02::1:ff00:0/104', '2001:db8::1', '2000::/3', 'fc00::/7', 'fd00::/8', 'fe80::/10', '64:ff9b::/96'];
+  const notAddr = ['time=08:00:00', 'uptime=1d02:03:04', 'version=7.25.1', 'duid=00:01:00:01:2a:3b:4c:5d', 'x=2a:3b:4c'];
+  const raw = ['R1 (10.0.0.1):', '/interface ethernet set ether1 mac-address=AA:BB:CC:11:22:33',
+    '/ipv6 address add address=FE80::A8BB:CCFF:FE11:2233/64 interface=ether1', '/ipv6 neighbor x address=fe80:0:0:0:a8bb:ccff:fe11:2233',
+    '/ipv6 address add address=fe80::1234:5678:9abc:def0/64 interface=ether2',
+    '/ipv6 address add address=2400:0001:2:3::1/64', '/ipv6 address add address=2400:1:2:3:A8BB:CCFF:FE11:2233/64', '/ipv6 route add dst-address=2400:1::/32 gateway=fe80::1%ether1',
+    '/ipv6 address add address=2400:aa:bb:cc:dd:ee:ff:1/128', '/ipv6 address add address=fd12:3456:789a:1::1/64', '/ipv6 route add dst-address=fd12:3456:789a::/48',
+    '/ipv6 firewall address-list add address=::ffff:192.168.1.1 list=x', '/ipv6 nd x address=ff02::1:ff11:2233',
+    ...keep.map((x) => `/ipv6 firewall address-list add address=${x} list=k`), notAddr.join(' ')].join('\n');
+  const r = anonymize(raw); const t = r.text;
+  keep.forEach((x) => assert.ok(t.includes(`address=${x} list=k`), `${x} 不換`));
+  assert.ok(t.includes(notAddr.join(' ')), `時間、版本、DUID 這類冒號格式不是位址：${t}`);
+  assert.deepStrictEqual(r.warnings, []);
+  const mac = /mac-address=AA:BB:CC:(\w\w):(\w\w):(\w\w)/.exec(t);
+  const eui = `a8bb:ccff:fe${mac[1]}:${mac[2]}${mac[3]}`.toLowerCase().replace(/:0+(?=\w)/g, ':');
+  assert.ok(t.includes(`address=fe80::${eui}/64 `) && t.includes(`address=fe80::${eui}\n`), `link-local 的 EUI-64 由換過的 MAC 推出，兩種寫法換成同一個值：${t}`);
+  assert.ok(t.includes(`address=3ffe:1:2:3:${eui}/64`), 'SLAAC 位址的介面 ID 也跟著 MAC');
+  assert.ok(t.includes(`address=ff02::1:ff${mac[1].toLowerCase()}:${(mac[2] + mac[3]).toLowerCase().replace(/^0+(?=\w)/, '')}\n`), `solicited-node 的後 3 個位元組跟著 MAC：${t}`);
+  assert.ok(t.includes('address=3ffe:1:2:3::1/64') && t.includes('dst-address=3ffe:1::/32 gateway=fe80::1%ether1'), '/32 以上的網段關係與 ::1 這類手動編號保留');
+  assert.ok(!/(?<![\w:])3ffe::(?![\w:])/.test(t), '代號從 3ffe:1 起，不產生 3ffe::');
+  assert.ok(t.includes('address=fd00:0:1:1::1/64') && t.includes('dst-address=fd00:0:1::/48'), 'ULA 的 global ID 換成代號，/48 與 /64 的關係保留');
+  assert.ok(/address=fe80::1:0:1:def0\/64 /.test(t), `其他介面 ID 換成代號、後 16 位元保留：${t}`);
+  assert.ok(t.includes('address=::ffff:192.168.0.1 '), '內嵌的 IPv4 依 IPv4 規則換');
+  assert.ok(!r.map.mac.DDEEFF, 'IPv6 裡剛好是兩位數的六組不當成 MAC');
+  const ins = ip6s(raw); const outs = ip6s(t);
+  assert.strictEqual(outs.length, ins.length, 'IPv6 位址個數不變');
+  ins.forEach((x, i) => assert.strictEqual(S.ip.classify(outs[i]), S.ip.classify(x), `${x} → ${outs[i]} 的類別不變`));
+  outs.forEach((x, i) => { if (x !== ins[i]) assert.strictEqual(x, S.ip.v6FromBig(S.ip.v6ToBig(x)), `換過的位址以 RFC 5952 寫出：${x}`); });
+  outs.filter((x) => S.ip.classify(x) === 'public' && x !== '2000::').forEach((x) => assert.ok(x.startsWith('3ffe:'), `公網代號在 3ffe::/16：${x}`));
+  ['2400:', 'fd12:', 'fe11', '1234:5678'].forEach((x) => assert.ok(!t.includes(x), `${x} 應換掉`));
+});
+test('去識別化：bridge ID（優先權.MAC）裡的 MAC 也換掉，和同一個 MAC 的其他位置同一個代號；IPv6 裡的兩位數六組仍不當成 MAC', () => {
+  const { anonymize } = require('../../tools/anonymize.js');
+  const raw = ['SW (10.0.0.1):', '### /interface bridge print detail', ' 0 name=bridge1 mac-address=AA:BB:CC:11:22:33',
+    '### /interface bridge monitor [find] once', '         root-bridge-id: 0.AA:BB:CC:11:22:33', '### /interface bridge port monitor [find] once',
+    '    designated-bridge-id: 0xf000.AA:BB:CC:11:22:33 0x2000.AA:BB:CC:44:55:66', 'neighbor mac-address=AA:BB:CC:44:55:66',
+    '/ip dns static add name=dev-aa-bb-cc-44-55-66 type=A',
+    '/ipv6 address add address=2400:aa:bb:cc:dd:ee:ff:1/128'].join('\n');
+  const r = anonymize(raw); const t = r.text;
+  ['11:22:33', '44:55:66', '44-55-66'].forEach((x) => assert.ok(!t.includes(x), `${x} 應換掉：${t}`));
+  const code = (m) => /mac-address=(AA:BB:CC:\w\w:\w\w:\w\w)/.exec(t.split('\n')[m])[1];
+  const a = code(2); const b = code(7);
+  assert.ok(t.includes(`name=dev-${b.replace(/:/g, '-').toLowerCase()} `), `連字號分隔的 MAC 接在名稱後面也換成同一個代號：${t}`);
+  assert.ok(t.includes(`root-bridge-id: 0.${a}\n`) && t.includes(`designated-bridge-id: 0xf000.${a} 0x2000.${b}\n`), `bridge ID 用同一個 MAC 代號：${t}`);
+  assert.ok(!r.map.mac.DDEEFF && /address=3ffe:[\w:]+\/128/.test(t), `IPv6 裡的兩位數六組不當成 MAC：${t}`);
+});
+test('去識別化 IPv6：同一個值不論寫法都換成同一個代號，不同的值換成不同的代號；公網 /32 太多時改以 /48 為單位', () => {
+  const { anonymize } = require('../../tools/anonymize.js'); const S = lib.S;
+  const vals = [];
+  for (let i = 0; i < 400; i++) {
+    const g = [0x2400 + (i % 7), i % 5, i % 3, i % 11];
+    vals.push(g.concat([0, 0, 0, 1 + (i % 4)]), g.concat([0xa8bb, 0xccff, 0xfe00 + (i % 13), i]), g.concat([i, 0x5678, i % 9, 0xdef0]));
+    vals.push([0xfd00 + (i % 3), i % 17, 0x1111, i % 19, i % 2, 0xfe, i, 1]);
+    vals.push([0xfe80, 0, 0, 0, 0x1200 + (i % 23), 0x34ff, 0xfe56 + (i % 2), i]);
+  }
+  const big = vals.map((g) => g.reduce((a, x) => (a << 16n) + BigInt(x), 0n));
+  const longForm = (g) => g.map((x) => x.toString(16).toUpperCase().padStart(4, '0')).join(':');
+  const raw = ['R1 (10.0.0.1):'].concat(big.map((n) => `a=${S.ip.v6FromBig(n)}`), vals.map((g) => `b=${longForm(g)}`)).join('\n');
+  const outs = ip6s(anonymize(raw).text);
+  const half = big.length;
+  for (let i = 0; i < half; i++) assert.strictEqual(outs[i], outs[half + i], `${longForm(vals[i])} 不論寫法都換成同一個代號`);
+  const pairs = new Map(); big.forEach((n, i) => pairs.set(n, outs[i]));
+  assert.strictEqual(new Set(pairs.values()).size, pairs.size, '不同的值換成不同的代號');
+  const many = ['R1 (10.0.0.1):'];
+  for (let i = 0; i < 65537; i++) many.push(`${(0x2400 + (i >> 16)).toString(16)}:${(i & 0xffff).toString(16)}:${i & 7}:${i & 3}::1/64`);
+  const m = anonymize(many.join('\n'));
+  assert.strictEqual(m.nets.find((n) => n.bucket === 'public6').level, 48, '不同的 /32 超過 65536 個時改以 /48 為單位，不失敗');
+  const o = ip6s(m.text);
+  assert.strictEqual(new Set(o).size, 65537, '代號不重複');
+  assert.ok(o.every((x) => x.startsWith('3ffe:') && /::1$/.test(x)), '/48 以下的子網路編號與介面 ID 保留');
+});
+test('去識別化 IPv6：比單位短的網段、/65–/111 裡換了代號的介面 ID、跨代號的範圍列出警告（含輸出行號）', () => {
+  const { anonymize } = require('../../tools/anonymize.js');
+  const raw = ['R1 (10.0.0.1):', '/ipv6 firewall address-list add address=2400:1::/28 list=geo', '/ipv6 firewall address-list add address=2000::/3 list=all',
+    '/ipv6 route add dst-address=2400:1:2:3:1234:5678::/96', '/ipv6 route add dst-address=2400:1:2:3::10/124',
+    '/ipv6 firewall address-list add address=2400:1:2:3::1-2400:9:2:3::1 list=r', '/ipv6 address add address=fe80::a8bb:ccff:fe11:2233/128 interface=lo'].join('\n');
+  const w = anonymize(raw).warnings;
+  assert.strictEqual(w.length, 3, w.join('\n'));
+  assert.ok(w[0].startsWith('公網 IPv6：1 處網段短於 /32（/28–/28）') && w[0].includes('輸出第 2 行'), w[0]);
+  assert.ok(w[1].startsWith('公網 IPv6：1 處網段長於 /64（/96–/96）') && w[1].includes('輸出第 4 行'), w[1]);
+  assert.ok(w[2].startsWith('公網 IPv6：1 處位址範圍跨越') && w[2].includes('輸出第 6 行'), w[2]);
+});

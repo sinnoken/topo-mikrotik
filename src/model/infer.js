@@ -1635,11 +1635,11 @@
         S.util.getOr(nets, key, () => ({ key, vrf, net: p.net, len: p.len, eps: [] })).eps.push({ dev: i.dev, ep: i.key, name: i.name, ip: p.ip });
       });
     });
-    // OSPF 鄰接相連的設備
+    // OSPF 鄰接相連的設備（網段都是 IPv4：只用 OSPFv2 的鄰接，OSPFv3 交換的是 IPv6 路由）
     const parent = new Map();
     const find = (x) => { let r = x; while (parent.has(r) && parent.get(r) !== r) r = parent.get(r); return r; };
     const union = (a, b) => { const ra = find(a); const rb = find(b); if (ra === rb) return; if (S.util.natural(ra, rb) < 0) parent.set(rb, ra); else parent.set(ra, rb); };
-    M.ospfAdjacencies.forEach((a) => { if (a.peerDev) { parent.set(a.dev, find(a.dev)); parent.set(a.peerDev, find(a.peerDev)); union(a.dev, a.peerDev); } });
+    M.ospfAdjacencies.forEach((a) => { if (a.peerDev && a.family === 'ipv4') { parent.set(a.dev, find(a.dev)); parent.set(a.peerDev, find(a.peerDev)); union(a.dev, a.peerDev); } });
     const members = new Map(); parent.forEach((_, x) => S.util.getOr(members, find(x), () => []).push(x));
     const groupOf = new Map(); members.forEach((list) => { const g = groupName(M, list); list.forEach((x) => groupOf.set(x, g)); });
     const ospfGroup = (dev) => groupOf.get(dev) || dev;

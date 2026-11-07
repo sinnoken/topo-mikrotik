@@ -1132,6 +1132,7 @@
      "factoryFirmware": "6.45.9",
      "currentFirmware": "7.24.2",
      "upgradeFirmware": "7.25.1",
+     "notice": null,
      "src": [
       [
        111,

@@ -1,0 +1,97 @@
+# 真實設備的輸出節錄（2026-11-07 收集，RouterOS 7.25.1，RB3011UiAS；tools/anonymize.js 去識別化後再手動處理）
+# 已由工具替換：IPv4、MAC 後 3 碼、IPv6 link-local 的介面 ID（由換過的 MAC 推出）、註解原文
+# 手動處理：只留下有特殊形狀的列；CAP 的介面名稱、OSPF 的 router-id／dr／bdr（169.254/16，工具不換）換成代號；
+#   系統產生的提示（routerboard 的升級訊息、CAPsMAN 的介面說明；工具會整行換成代號）還原成原句，其中的 MAC 換成代號；
+#   bridge port monitor 的註解還原成出廠的 defconf；bridge-id 內的 MAC 換成代號；換行位置與縮排保留原樣
+# 重點：路由的 blackhole 折到續行行首；CAPsMAN 介面說明在「CA」與「P」之間硬切；OSPFv3 鄰居（link-local 位址）；
+#   routerboard 的 ;;; 提示訊息折成兩行；bridge port monitor 第一行是各欄的註解
+DEV-006 (192.168.0.252):
+### /system routerboard print
+# collected-at: 2026-11-07T09:42:18Z
+                ;;; Firmware upgraded successfully, please reboot for changes
+                ;;; to take effect!
+       routerboard: yes
+             model: RB3011UiAS
+     serial-number: REDACTED
+     firmware-type: ipq8060
+  minimum-firmware: 3.27
+  current-firmware: 7.25
+  upgrade-firmware: 7.25.1
+
+### /ip route print detail without-paging
+# collected-at: 2026-11-07T09:42:16Z
+Flags: D - DYNAMIC; X - DISABLED, I - INACTIVE, A - ACTIVE; c - CONNECT
+       s - STATIC, r - RIP, b - BGP, o - OSPF, i - IS-IS, d - DHCP, v - VPN
+       m - MODEM, y - BGP-MPLS-VPN; H - HW-OFFLOADED; + - ECMP
+ 0   Xs  ;;; comment-459
+         dst-address=11.4.74.1/32 routing-table=main gateway="" blackhole
+         distance=1 scope=30
+
+ 5   As  ;;; comment-453
+         dst-address=10.0.0.0/8 routing-table=main gateway=192.168.0.250
+         blackhole immediate-gw="" distance=1 scope=30
+
+    DAo  ;;; comment-1407
+         dst-address=10.101.92.242/32 routing-table=main
+         gateway=192.168.0.6%bridge immediate-gw=192.168.0.6%bridge
+         distance=130 scope=20 target-scope=10
+
+    DAb  ;;; comment-1406
+         dst-address=11.4.98.107/32 routing-table=main blackhole
+         immediate-gw="" distance=20
+
+    DAc+ dst-address=172.17.168.0/24 routing-table=main gateway=zerotier1
+         immediate-gw=zerotier1 distance=0 scope=10 target-scope=5
+         local-address=172.17.168.254%zerotier1
+
+### /interface print detail without-paging
+# collected-at: 2026-11-07T09:42:18Z
+Flags: D - DYNAMIC; X - DISABLED; R - RUNNING; S - SLAVE
+ 0    RS ;;; comment-011
+         name="ether1-Wan" default-name="ether1" type="ether" mtu=1500
+         actual-mtu=1500 l2mtu=1514 max-l2mtu=8156 vrf=main
+         mac-address=6C:3B:6B:00:00:05 last-link-up-time=2026-11-07 09:21:34
+         link-downs=0
+
+11  D    ;;; operated by CAP CC:2D:E0:00:00:99%bridge, traffic processing on CA
+             P
+         name="cap1-2g" type="wifi" max-l2mtu=1560 vrf=main
+         mac-address=CC:2D:E0:00:00:32 link-downs=0
+
+12  D    ;;; operated by CAP CC:2D:E0:00:00:99%bridge, traffic processing on CA
+             P         ;;; reselect-time/reselect-interval ignored for slave interface
+         name="cap1-2g-v-cc2de0000032" type="wifi" max-l2mtu=1560 vrf=main
+         mac-address=CE:2D:E0:00:00:32 link-downs=0
+
+### /routing ospf neighbor print detail without-paging
+# collected-at: 2026-11-07T09:42:18Z
+Flags: D - DYNAMIC
+0 D instance=v2inst area=backbone_v2 interface=bridge address=192.168.0.6
+    priority=1 router-id=169.254.0.6 dr=192.168.0.251 bdr=192.168.0.250
+    state="Full" state-changes=5 adjacency=8h13m42s timeout=32s
+
+2 D instance=v3inst area=backbone_v3 interface=bridge
+    address=fe80::2ec8:1bff:fe00:6 priority=1 router-id=169.254.0.6
+    dr=169.254.0.253 bdr=169.254.0.252 state="Full" state-changes=6
+    adjacency=8h13m41s timeout=32s
+
+### /interface bridge port monitor [find] once
+# collected-at: 2026-11-07T09:42:18Z
+                      ;;; defconf             defconf  defconf  defconf
+               interface: ether2              ether3   ether4   ether1-Wan
+                  status: in-bridge           disabled disabled in-bridge
+                 port-id: 0x80.2                                0x90.1
+                    role: root-port                             designated-port
+               edge-port: no                                    yes
+    designated-bridge-id: 0.2C:C8:1B:00:00:1A                   0x1000.6C:3B:6B:00:00:05
+      designated-port-id: 0x80.2                                0x90.1
+            sending-rstp: yes                                   yes
+
+### /interface bridge monitor [find] once
+# collected-at: 2026-11-07T09:42:18Z
+                  state: enabled
+    current-mac-address: 6C:3B:6B:00:00:05
+              bridge-id: 0x1000.6C:3B:6B:00:00:05
+            root-bridge: no
+         root-bridge-id: 0.2C:C8:1B:00:00:1A
+              root-port: ether2

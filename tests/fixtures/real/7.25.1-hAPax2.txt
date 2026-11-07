@@ -1,0 +1,21 @@
+# 真實設備的輸出節錄（2026-11-07 收集，RouterOS 7.25.1，hAP ax^2；tools/anonymize.js 去識別化後再手動處理）
+# 已由工具替換：MAC 後 3 碼、使用者的註解（comment-054）
+# 手動處理：只留下 CAPsMAN 管理的 Wi-Fi 介面；CAPsMAN 產生的說明（工具會整行換成代號）還原成原句，其中的 MAC 與 SSID 換成代號；換行位置與縮排保留原樣
+# 重點：CAPsMAN 的說明在「on」與「CAP」之間硬切，續行帶旗標字樣的「CAP」與下一行說明；第三行是獨立的 ;;; 註解，之後才是欄位
+DEV-004 (192.168.0.7):
+### /interface print detail without-paging
+# collected-at: 2026-11-07T09:41:55Z
+Flags: D - DYNAMIC; X - DISABLED; R - RUNNING; S - SLAVE
+ 7    RS ;;; managed by CAPsMAN 6C:3B:6B:00:00:05%bridge, traffic processing on
+              CAP         ;;; mode: AP, SSID: SSID-001, channel: 2462/ax
+         name="wifi1" default-name="wifi1" type="wifi" actual-mtu=1500
+         l2mtu=1560 max-l2mtu=1560 vrf=main mac-address=48:A9:8A:00:00:47
+         last-link-up-time=2026-11-07 09:26:33 link-downs=0
+
+ 8    RS ;;; managed by CAPsMAN 6C:3B:6B:00:00:05%bridge, traffic processing on
+              CAP         ;;; mode: AP, SSID: SSID-001, channel: 2462/ax
+         ;;; comment-054
+         name="wifi2" default-name="wifi2" type="wifi" actual-mtu=1500
+         l2mtu=1560 max-l2mtu=1560 vrf=main mac-address=48:A9:8A:00:00:48
+         last-link-up-time=2026-11-07 09:26:33 link-downs=0
+

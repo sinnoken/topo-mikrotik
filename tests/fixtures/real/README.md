@@ -14,7 +14,7 @@
    ```
 
    - MAC：保留前 3 碼（廠商），後 3 碼重新編號。
-   - IP：前兩段換成 `10.101` 起的位址，後兩段保留。
+   - IP（IPv4、IPv6）：依位址類別換到同類的範圍，網段關係盡量保留；細節見 [tools/anonymize.js](../../../tools/anonymize.js) 檔頭的說明。
    - 設備名、SSID、主機名、註解：換成代號。
    - 帳號、密碼、金鑰、序號與授權識別碼（software-id、system-id）：換成 `REDACTED`，`key=value`、`key: value`（例如 `/system routerboard print` 的 `serial-number:`）與 export 抬頭的寫法都涵蓋。
    - 同一個值一定換成同一個代號，所以鄰居配對、網段等關係不變。

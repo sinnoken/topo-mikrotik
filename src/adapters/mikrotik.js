@@ -58,36 +58,57 @@
     return open;
   }
   // 列首（序號、旗標後接 key= 或 ;;;）：沒關上的引號不會把下一列吞進來
-  const ROW_HEAD = /^\s*\d+(?:\s+[A-Za-z*]+)*\s+(?:[\w.\-]+=|;;;)/;
+  const ROW_HEAD = /^\s*\d+(?:\s+[A-Za-z*+]+)*\s+(?:[\w.\-]+=|;;;)/;
+  const FIRST_KEY = /(^|\s)[\w.\-]+=/;
+  // 行尾是沒有引號、以逗號結尾的 key=值（清單值在逗號後斷開）
+  const LIST_CUT = /(^|\s)[\w.\-]+=[^\s"=]*,$/;
   /**
-   * 依終端寬度折行時，引號值可能在中間斷開（tests/fixtures/real/7.25.1-neighbor-wrap.txt：「RBwAPGR-」的下一行是「5HacD2HnD"」）。
-   * 有 key=value、行尾還在引號裡的行，接上下一行（去掉縮排），直到引號關上：斷在 - 或 / 之後直接接上，
-   * 其他補一個空白（在空白處斷行時那個空白不會留在行尾）。這是依實機輸出的推論，手冊沒有折行規則（無法以手冊確認）。
+   * 依終端寬度折行時，一個值可能在中間斷開，下一行的縮排比欄位深（不是新欄位）：
+   *  - 引號值（tests/fixtures/real/7.25.1-neighbor-wrap.txt：「RBwAPGR-」的下一行是「5HacD2HnD"」）：有 key=value、行尾還在引號裡的行，
+   *    接上下一行（去掉縮排），直到引號關上：斷在 - 或 / 之後直接接上，其他補一個空白（在空白處斷行時那個空白不會留在行尾）。
+   *  - 沒有引號的清單值（tests/fixtures/real/7.24.4-RB5009UG+S+.txt：system-caps 斷在「docsis-cable-device,」之後）：行尾是以逗號結尾的 key=值，
+   *    下一行縮排比這一行第一個欄位深、第一個字不是 key=，直接接上（逗號後沒有空白）。縮排與欄位對齊的下一行是新欄位，不接。
+   * 這是依實機輸出的推論，手冊沒有折行規則（無法以手冊確認；手冊只說明終端寬度可設定：https://manual.mikrotik.com/docs/management-tools/console.md）。
    * 回傳 [{ text, i（第一行的索引）, more（接上的其他行的索引）}]。
    */
   function joinQuoted(lines) {
     const out = [];
+    const indent = (s) => s.length - s.replace(/^\s+/, '').length;
     for (let i = 0; i < lines.length; i++) {
       const cur = { text: lines[i].replace(/\r$/, ''), i, more: [] };
-      while (/(^|\s)[\w.\-]+=/.test(cur.text) && quoteOpen(cur.text) && i + 1 < lines.length) {
+      const km = FIRST_KEY.exec(cur.text);
+      const keyCol = km ? km.index + km[1].length : -1;
+      while (km && i + 1 < lines.length) {
         const next = lines[i + 1].replace(/\r$/, '');
         if (!next.trim() || ROW_HEAD.test(next)) break;
         const piece = next.replace(/^\s+/, '');
-        cur.text = /[-/]$/.test(cur.text) ? cur.text + piece : cur.text.replace(/\s+$/, '') + ' ' + piece;
+        if (quoteOpen(cur.text)) cur.text = /[-/]$/.test(cur.text) ? cur.text + piece : cur.text.replace(/\s+$/, '') + ' ' + piece;
+        else if (LIST_CUT.test(cur.text) && indent(next) > keyCol && !/=/.test(piece.split(/\s/)[0])) cur.text += piece;
+        else break;
         cur.more.push(++i);
       }
       out.push(cur);
     }
     return out;
   }
-  function newRow(toks, line) {
-    return { flags: toks.filter((t) => !/^\d+$/.test(t)).join(''), idx: toks.find((t) => /^\d+$/.test(t)) ?? null, kv: {}, comment: null, line, lines: [line] };
+  const indentOf = (s) => s.length - s.replace(/^\s+/, '').length;
+  /** indent：列首那一行的縮排（判斷續行用，不輸出） */
+  function newRow(toks, line, indent) {
+    return { flags: toks.filter((t) => !/^\d+$/.test(t)).join(''), idx: toks.find((t) => /^\d+$/.test(t)) ?? null, kv: {}, words: [], comment: null, line, lines: [line], indent };
   }
+  // 說明行中的旗標字元（「X - disabled」「+ - ECMP」）
+  const flagsIn = (text, set) => { const re = /(?:^|[;,\s])([A-Za-z*+])\s*-/g; let m; while ((m = re.exec(text))) set.add(m[1]); };
+  // 一行中 key=value 以外的單字（例如路由的 blackhole：手冊 /ip/route 的 blackhole 是 switch，print 時是單獨一個字）
+  const bareWords = (text) => text.replace(KVRE, ' ').split(/\s+/).filter(Boolean);
+  const joinComment = (a, b) => [a, b].filter(Boolean).join('; ');
   /**
    * 把 detail 輸出切成「列」：
-   *  - 列首：`序號 旗標 key=value …`（序號、旗標都可能省略）
-   *  - 續行：沒有序號與旗標、直接以 key=value 開頭（終端機換行）→ 併入上一列
-   *  - `;;; 註解` 屬於它所在或下一個列
+   *  - 列首：`序號 旗標 key=value …`（序號、旗標都可能省略）。有旗標說明時，沒有序號的列首只能是說明列出的旗標字。
+   *  - 續行：沒有序號與旗標、直接以 key=value 開頭（終端機換行）→ 併入上一列；
+   *    以不是旗標的單字開頭（例如路由的「blackhole immediate-gw=""」）也是續行，那些字記在 words
+   *  - `;;; 註解` 屬於它所在或下一個列；列首之後、欄位之前的獨立 `;;;` 行是同一列的另一行註解（CAPsMAN 管理的介面有三行說明）
+   *  - 註解依終端寬度硬切時，下一行從註解文字的欄位（`;;; ` 之後）開始、沒有 `;;;`：原樣接上（不補空白），
+   *    其後若有 `;;;` 是下一行註解。依實機輸出推論，手冊沒有折行規則（無法以手冊確認）
    *  - 旗標說明可區分列首旗標與 CAPsMAN 等續行說明
    *  - `Flags:`、`Columns:` 說明行略過（傳入 ignore 時列為可忽略）
    * 每列帶 lines（這一列涵蓋的行號）；不屬於任何列的行（沒有 key=value 也不是註解）不在任何列中，由 adapter 層列為無法辨識。
@@ -96,19 +117,18 @@
     const flagChars = new Set();
     b.lines.forEach((raw) => {
       const legend = raw.match(/^\s*Flags:\s*(.*)$/i);
-      if (!legend) return;
-      const re = /(?:^|[;,\s])([A-Za-z*])\s*-/g; let m;
-      while ((m = re.exec(legend[1]))) flagChars.add(m[1]);
+      if (legend) flagsIn(legend[1], flagChars);
     });
-    const rows = []; let cur = null; let pending = null; let inLegend = false;
+    const isFlags = (token) => Array.from(token).every((ch) => flagChars.has(ch));
+    // note：上一行是列首區（還沒有欄位）的註解，col 是註解文字開始的欄位，供判斷硬切的下一行
+    const rows = []; let cur = null; let pending = null; let inLegend = false; let note = null;
     joinQuoted(b.lines).forEach(({ text: line, i, more }) => {
       const t = line.trim();
-      if (!t) return;
+      if (!t) { note = null; return; }
       if (/^(Flags|Columns):/i.test(t)) { inLegend = /^Flags:/i.test(t); if (ignore) ignore(at(b, i), '說明行'); return; }
       // 旗標說明換到下一行（手冊 VRF 的 /ip/route print detail：「c - connect, s - static, … + - ecmp」）：緊接在 Flags: 之後、整行都是「字元 - 名稱」
       if (inLegend && LEGEND_MORE.test(t)) {
-        const re = /(?:^|[;,\s])([A-Za-z*])\s*-/g; let m;
-        while ((m = re.exec(t))) flagChars.add(m[1]);
+        flagsIn(t, flagChars);
         if (ignore) ignore(at(b, i), '說明行');
         return;
       }
@@ -117,15 +137,24 @@
       const ci = line.indexOf(';;;');
       if (ci >= 0) { comment = line.slice(ci + 3).trim(); body = line.slice(0, ci); }
       const km = /(^|\s)([\w.\-]+)=/.exec(body);
+      const headerOnly = cur && !Object.keys(cur.kv).length;
+      // 註解硬切的下一行：從註解文字的欄位開始（之前全是空白），在任何欄位之前
+      if (note && headerOnly && !km && body.trim() && !body.slice(0, note.col).trim()) {
+        cur.comment += body.slice(note.col).replace(/\s+$/, '');
+        cur.lines.push(at(b, i));
+        if (ci >= 0) { cur.comment = joinComment(cur.comment, comment); note = { col: ci + 4 }; }
+        return;
+      }
+      note = null;
       if (!km) {
         if (ci >= 0) {
           const toks = body.trim().split(/\s+/).filter(Boolean);
           const indexed = /^\d+$/.test(toks[0] || '');
           const flagTokens = indexed ? toks.slice(1) : toks;
-          const rowPrefix = indexed || !flagChars.size || (flagTokens.length && flagTokens.every((token) =>
-            Array.from(token).every((ch) => flagChars.has(ch))));
-          if (toks.length && rowPrefix) { cur = newRow(toks, at(b, i)); cur.comment = comment; rows.push(cur); }
-          else if (toks.length && cur) { cur.comment = [cur.comment, comment].filter(Boolean).join('; '); cur.lines.push(at(b, i)); }
+          const rowPrefix = indexed || !flagChars.size || (flagTokens.length && flagTokens.every(isFlags));
+          if (toks.length && rowPrefix) { cur = newRow(toks, at(b, i), indentOf(line)); cur.comment = comment; rows.push(cur); note = { col: ci + 4 }; }
+          else if (toks.length && cur) { cur.comment = joinComment(cur.comment, comment); cur.lines.push(at(b, i)); }
+          else if (headerOnly) { cur.comment = joinComment(cur.comment, comment); cur.lines.push(at(b, i)); note = { col: ci + 4 }; }
           else pending = { text: comment, line: at(b, i) };
         } else {
           // 只有序號與旗標、欄位在下一行（與上面 `;;;` 列首同樣的形狀，只是沒有註解）：開新列，否則下一行會被併進上一列。
@@ -133,7 +162,7 @@
           const toks = t.split(/\s+/);
           const flagOk = (ch) => (flagChars.size ? flagChars.has(ch) : /[A-Za-z]/.test(ch));
           if (/^\d+$/.test(toks[0]) && toks.slice(1).every((token) => Array.from(token).every(flagOk))) {
-            cur = newRow(toks, at(b, i)); rows.push(cur);
+            cur = newRow(toks, at(b, i), indentOf(line)); rows.push(cur);
             if (pending) { cur.comment = pending.text; cur.lines.unshift(pending.line); pending = null; }
           }
         }
@@ -141,9 +170,13 @@
       }
       const prefix = body.slice(0, km.index + km[1].length).trim();
       const rest = body.slice(km.index + km[1].length);
-      const joined = more.map((k) => at(b, k)); // 引號值斷開而接上的行：屬於同一列
-      if (!prefix && cur) { Object.assign(cur.kv, kvOf(rest)); cur.lines.push(at(b, i), ...joined); return; }
-      cur = newRow(prefix.split(/\s+/).filter(Boolean), at(b, i));
+      const joined = more.map((k) => at(b, k)); // 值斷開而接上的行：屬於同一列
+      const toks = prefix.split(/\s+/).filter(Boolean);
+      // 有旗標說明時，沒有序號、有不是旗標字的單字、縮排比列首深：是上一列的續行（RouterOS 7 路由的「blackhole immediate-gw=""」）
+      const continued = cur && (!toks.length || (flagChars.size && !/^\d+$/.test(toks[0]) && !toks.every(isFlags) && indentOf(line) > cur.indent));
+      if (continued) { Object.assign(cur.kv, kvOf(rest)); cur.words.push(...toks, ...bareWords(rest)); cur.lines.push(at(b, i), ...joined); return; }
+      cur = newRow(toks, at(b, i), indentOf(line));
+      cur.words.push(...bareWords(rest));
       cur.lines.push(...joined);
       cur.comment = comment !== null ? comment : pending && pending.text;
       if (pending) cur.lines.unshift(pending.line);
@@ -745,8 +778,7 @@
     command: /^\/?ip\s+route\b/i,
     detect: (lines) => has(lines, 'dst-address') && (has(lines, 'gateway') || has(lines, 'immediate-gw')),
     parse(b, emit, ignore = noop) {
-      const rows = parseRows(b, ignore);
-      rows.forEach((r, ri) => {
+      parseRows(b, ignore).forEach((r) => {
         const kv = r.kv; const m = String(kv['dst-address'] || '').match(/^(\d+\.\d+\.\d+\.\d+)\/(\d+)$/);
         if (!m) return;
         // 旗標（https://manual.mikrotik.com/docs/cli-reference/ip/route.md）：X 停用、A 作用中；沒有 A 的是非作用中（例如備援的預設路由，閘道不通或 distance 較大），
@@ -754,9 +786,9 @@
         if (r.flags.includes('X')) { settle(r, ignore, '停用的路由'); return; }
         const distance = /^\d+$/.test(kv.distance || '') ? +kv.distance : null;
         const table = { routingTable: kv['routing-table'] || 'main', active: r.flags.includes('A') };
-        // 黑洞／不可達／禁止：RouterOS 6 為 B／U／P 旗標或 type=；RouterOS 7 是列中單獨的 blackhole 字（不是 key=value）
-        const raw = b.lines.slice(r.line - b.origin.startLine, ri + 1 < rows.length ? rows[ri + 1].line - b.origin.startLine : undefined).join(' ');
-        if (/[BUP]/.test(r.flags) || /(^|\s)blackhole(\s|$)/.test(raw) || /^(blackhole|unreachable|prohibit)$/i.test(kv.type || kv.gateway || '')) {
+        // 黑洞／不可達／禁止：RouterOS 6 為 B／U／P 旗標或 type=；RouterOS 7 是列中單獨的 blackhole 字（手冊的 switch 參數，不是 key=value），
+        // 可能折到續行的行首；設了 blackhole 時 gateway 照樣列出，但 immediate-gw 是空的，不轉送
+        if (/[BUP]/.test(r.flags) || r.words.includes('blackhole') || /^(blackhole|unreachable|prohibit)$/i.test(kv.type || kv.gateway || '')) {
           emit(Object.assign({ t: 'route', prefix: m[1], len: +m[2], proto: 'Blackhole', nh: [], blackhole: true, distance, line: r.line }, table));
           settle(r, ignore);
           return;
@@ -899,16 +931,21 @@
   S.adapters.mikrotikStatLine = statLine; // 測試用
 
   // ================================================================ OSPF 鄰居
+  /*
+   * https://manual.mikrotik.com/docs/cli-reference/routing/ospf/neighbor.md：address 是鄰居的 IPv4 或 IPv6 位址（OSPFv3 是鄰居介面的 link-local 位址），
+   * router-id 不論 OSPF 版本都是 IPv4 格式的 ID（不是位址）。family 記鄰居位址的位址族，model 只用 IPv4 位址找介面與網段。
+   */
   reg({
     id: 'mikrotik.ospf', vendor: VENDOR, dataType: 'ospf', label: 'RouterOS OSPF 鄰居',
     command: /^\/?routing\s+ospf\s+neighbou?r\b/i,
-    detect: (lines) => has(lines, 'router-id') && has(lines, 'state') && lines.some((l) => /(^|\s)address=\d/.test(l)),
+    detect: (lines) => has(lines, 'router-id') && has(lines, 'state') && lines.some((l) => /(^|\s)address=[\da-f]/i.test(l)),
     parse(b, emit, ignore = noop) {
       parseRows(b, ignore).forEach((r) => {
-        const kv = r.kv;
-        if (!IPRE.test(kv.address || '') || !IPRE.test(kv['router-id'] || '')) return;
+        const kv = r.kv; const addr = kv.address || '';
+        const family = IPRE.test(addr) ? 'ipv4' : S.ip.v6ToBig(addr) !== null ? 'ipv6' : null;
+        if (!family || !IPRE.test(kv['router-id'] || '')) return;
         settle(r, ignore);
-        emit({ t: 'ospf', nbrAddr: kv.address, nbrId: kv['router-id'], state: kv.state || '', ifc: kv.interface || null, line: r.line });
+        emit({ t: 'ospf', nbrAddr: addr, family, nbrId: kv['router-id'], state: kv.state || '', ifc: kv.interface || null, line: r.line });
       });
     },
   });
@@ -990,6 +1027,12 @@
     return out;
   }
   S.adapters.mikrotikMonitorColumns = monitorColumns; // 測試用
+  /*
+   * monitor 輸出最前面的 ;;; 行是各項目的 comment（bridge port、bridge 的註解，多欄時對齊各欄；太長時折成幾行、每行都有 ;;;），
+   * 不是 monitor 的欄位（https://manual.mikrotik.com/docs/cli-reference/interface/bridge/port/monitor.md 沒有 comment），註解另由 export、/interface print 取得。
+   * 有讀到 RSTP 欄位時才列為可忽略；整段認不得時連同註解留給 I03。
+   */
+  const monitorComments = (b, ignore) => b.lines.forEach((l, i) => { if (/^\s*;;;/.test(l)) ignore(at(b, i), '項目的註解（不是 monitor 的欄位）'); });
   const bridgeIdMac = (v) => { const m = String(v || '').match(/([0-9a-f]{2}(?::[0-9a-f]{2}){5})/i); return m ? m[1] : null; };
   const yes = (v) => (v == null ? null : v === 'yes' || v === 'true');
   // 埠與 bridge 的 monitor 分成兩個解析器：同一設備同一解析器出現兩次時只採用最後一次（I02）
@@ -1001,7 +1044,7 @@
       const fields = []; let marked = false;
       monitorColumns(b, (n) => fields.push(n)).forEach((c) => {
         if (c.role === undefined && c['designated-bridge-id'] === undefined && c['designated-bridge'] === undefined) return;
-        if (!marked) { fields.forEach((n) => ignore(n, '同一筆的其他欄位')); marked = true; }
+        if (!marked) { fields.forEach((n) => ignore(n, '同一筆的其他欄位')); monitorComments(b, ignore); marked = true; }
         const portNo = c['port-number'] || (String(c['port-id'] || '').match(/(\d+)$/) || [])[1];
         const dPort = c['designated-port-number'] || (String(c['designated-port-id'] || '').match(/(\d+)$/) || [])[1];
         emit({ t: 'stpPort', ifc: c.interface, role: c.role || null, portNumber: portNo ? +portNo : null,
@@ -1018,7 +1061,7 @@
       const fields = []; let marked = false;
       monitorColumns(b, (n) => fields.push(n)).forEach((c) => {
         if (!(c['current-mac-address'] || c['root-bridge-id'])) return;
-        if (!marked) { fields.forEach((n) => ignore(n, '同一筆的其他欄位')); marked = true; }
+        if (!marked) { fields.forEach((n) => ignore(n, '同一筆的其他欄位')); monitorComments(b, ignore); marked = true; }
         emit({ t: 'stpBridge', ifc: c.name || c.interface, mac: c['current-mac-address'] || null, rootBridge: bridgeIdMac(c['root-bridge-id']), isRoot: yes(c['root-bridge']), line: c._line });
       });
     },
@@ -1057,8 +1100,17 @@
     command: /^\/?system\s+routerboard\s+print\b/i,
     detect: (lines) => lines.some((l) => /^\s*routerboard:\s*(yes|no)\s*$/.test(l)) && lines.some((l) => /^\s*(current-firmware|model):/.test(l)),
     parse(b, emit, ignore = noop) {
+      // 設備的提示訊息：欄位前的 ;;; 行，太長時折成幾行、每行都有 ;;;，以空白接回一句。手冊 routerboard.md：upgrade 之後的訊息是
+      // 「Firmware upgraded successfully, please reboot for changes to take effect!」（韌體已寫入，重新開機才生效）；同頁 settings print 的範例也以 ;;; 顯示提示
+      const notes = [];
+      b.lines.forEach((l, i) => { const m = l.match(/^\s*;;;\s?(.*?)\s*$/); if (m) notes.push({ text: m[1], line: at(b, i) }); });
+      if (notes.length) {
+        emit({ t: 'rb', field: 'notice', value: notes.map((x) => x.text).join(' ').replace(/\s+/g, ' ').trim(), line: notes[0].line });
+        notes.slice(1).forEach((x) => ignore(x.line, '續行'));
+      }
       b.lines.forEach((l, i) => {
         let m;
+        if (/^\s*;;;/.test(l)) return;
         if (/^\s*bad command name routerboard\b/i.test(l)) emit({ t: 'rb', field: 'isRouterboard', value: false, noMenu: true, line: at(b, i) });
         else if ((m = l.match(/^\s*([\w-]+):\s*(.*?)\s*$/)) && RB_FIELDS[m[1]] && m[2]) {
           const field = RB_FIELDS[m[1]];

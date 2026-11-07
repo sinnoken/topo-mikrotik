@@ -226,6 +226,90 @@ test('OSPF：鄰居列沒有 interface 時，用鄰居位址落在哪個本機�
   assert.strictEqual(S.query(s).ospfAdjacenciesOf('R_A').length, 1);
   assert.strictEqual(count(s, 'R02'), 0);
 });
+// ------------------------------------------------------------------ 實機輸出的折行（tests/fixtures/real/7.25.1-RB3011UiAS.txt、7.24.4-RB5009UG+S+.txt、7.25.1-hAPax2.txt）
+const realSnap = (f) => S.build([{ name: f, text: read(`tests/fixtures/real/${f}`) }], { now: '2026-01-01T00:00:00Z' });
+const rowsIn = (text, cmd) => S.adapters.mikrotikRows(S.readers.readAll([{ name: 'n.txt', text }]).blocks.find((x) => x.command && cmd.test(x.command)), () => {});
+test('detail：沒有引號的清單值在逗號後折行、下一行縮排較深時接上；縮排與欄位對齊的下一行是新欄位，下一列不併入', () => {
+  const real = rowsIn(read('tests/fixtures/real/7.24.4-RB5009UG+S+.txt'), /neighbor/).find((r) => r.kv['mac-address'] === 'E0:D5:5E:00:00:38').kv;
+  assert.deepStrictEqual([real['system-caps'], real['system-caps-enabled'], real['discovered-by']],
+    ['repeater,bridge,wlan-ap,router,telephone,docsis-cable-device,station-only', 'bridge,router', 'lldp']);
+  assert.deepStrictEqual(i03(realSnap('7.24.4-RB5009UG+S+.txt')).map((f) => f.message), []);
+  const hand = rowsIn(['SW_A (10.0.0.1):', '### /ip neighbor print detail without-paging',
+    ' 0 interface=ether1 identity="A" mac-address=AA:BB:CC:00:00:01 system-caps=bridge,router,',
+    '      wlan-ap discovered-by=lldp',
+    ' 1 interface=ether2 identity="B" mac-address=AA:BB:CC:00:00:02 system-caps=bridge,',
+    ' 2 interface=ether3 identity="C" mac-address=AA:BB:CC:00:00:03',
+    '   system-caps=bridge,',
+    '   system-caps-enabled=bridge'].join('\n'), /neighbor/).map((r) => [r.kv.identity, r.kv['system-caps'], r.kv['system-caps-enabled'], r.kv['discovered-by']]);
+  assert.deepStrictEqual(hand, [['A', 'bridge,router,wlan-ap', undefined, 'lldp'], ['B', 'bridge,', undefined, undefined], ['C', 'bridge,', 'bridge', undefined]]);
+});
+test('detail：註解依終端寬度硬切的下一行接回註解（不補空白）；CAPsMAN 的多行說明與欄位前獨立的 ;;; 屬於同一列', () => {
+  const desc = (s, k) => iface(s, k).desc;
+  const cap = realSnap('7.25.1-hAPax2.txt');
+  const capsman = 'managed by CAPsMAN 6C:3B:6B:00:00:05%bridge, traffic processing on CAP; mode: AP, SSID: SSID-001, channel: 2462/ax';
+  assert.deepStrictEqual([desc(cap, 'DEV-004|wifi1'), desc(cap, 'DEV-004|wifi2')], [capsman, capsman + '; comment-054']);
+  assert.deepStrictEqual(['wifi1', 'wifi2'].map((n) => iface(cap, `DEV-004|${n}`).status), ['up', 'up']);
+  const rb = realSnap('7.25.1-RB3011UiAS.txt');
+  const op = 'operated by CAP CC:2D:E0:00:00:99%bridge, traffic processing on CAP';
+  assert.deepStrictEqual([desc(rb, 'DEV-006|cap1-2g'), desc(rb, 'DEV-006|cap1-2g-v-cc2de0000032')], [op, op + '; reselect-time/reselect-interval ignored for slave interface']);
+  const br = realSnap('7.24.4-RB5009UG+S+.txt');
+  assert.strictEqual(desc(br, 'DEV-007|bridge'), '0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, A000, B000, C000, D000, E000, F000');
+  [cap, rb, br].forEach((s) => assert.deepStrictEqual(i03(s).map((f) => f.message), []));
+  // 縮排沒到註解文字的欄位：不是註解的續行，留給 I03；欄位之後的獨立 ;;; 屬於下一列
+  const s = build(['SW_A (10.0.0.1):', '### /interface print detail', 'Flags: X - DISABLED; R - RUNNING',
+    ' 0  R  ;;; uplink', '    junk', '       name="ether1" type="ether" mtu=1500', '       ;;; next one', ' 1  R  name="ether2" type="ether" mtu=1500'].join('\n'));
+  assert.deepStrictEqual([desc(s, 'SW_A|ether1'), desc(s, 'SW_A|ether2')], ['uplink', 'next one']);
+  assert.deepStrictEqual(i03(s).map((f) => f.evidence.map((e) => e.text)), [['junk']]);
+});
+test('路由：RouterOS 7 的 blackhole 折到續行行首仍是黑洞路由（不是經 gateway 轉送）；+（ECMP）算旗標；註解裡的 blackhole 字樣不算', () => {
+  const s = realSnap('7.25.1-RB3011UiAS.txt');
+  const r = (p) => s.model.routes.find((x) => x.prefix + '/' + x.len === p);
+  assert.deepStrictEqual([r('10.0.0.0/8').blackhole, r('10.0.0.0/8').nh, r('10.0.0.0/8').proto, r('10.0.0.0/8').active], [true, [], 'Blackhole', true]);
+  assert.deepStrictEqual([r('11.4.98.107/32').blackhole, r('10.101.92.242/32').proto, r('172.17.168.0/24').proto], [true, 'OSPF', 'Direct']);
+  assert.strictEqual(r('11.4.74.1/32'), undefined, '停用的路由略過');
+  assert.deepStrictEqual(i03(s).map((f) => f.message), []);
+  const c = build(['R_A (10.0.0.1):', '### /ip route print detail', 'Flags: D - DYNAMIC; X - DISABLED, A - ACTIVE; s - STATIC',
+    ' 0  As  ;;; not a blackhole', '         dst-address=0.0.0.0/0 routing-table=main gateway=10.0.0.254 immediate-gw=10.0.0.254%ether1 distance=1'].join('\n'));
+  assert.deepStrictEqual(c.model.routes.map((x) => [x.blackhole || false, x.nh.map((n) => n.ip)]), [[false, ['10.0.0.254']]]);
+});
+test('OSPFv3：鄰居位址是 IPv6 link-local，對端設備依 router-id 找；對端介面取對端回報的那一筆；不把 link-local 當成 IPv4 位址或網段', () => {
+  const nbr = (rows) => ['### /routing ospf neighbor print detail without-paging', 'Flags: D - DYNAMIC', ...rows];
+  const a = ['R_A (10.0.0.1):', '### /export terse', '/ip address add address=10.0.0.1/24 interface=bridge', '/routing ospf instance add name=v2inst router-id=1.1.1.1',
+    ...nbr(['0 D instance=v2inst area=backbone_v2 interface=bridge address=10.0.0.2', '    router-id=2.2.2.2 state="Full"', '',
+      '1 D instance=v3inst area=backbone_v3 interface=bridge', '    address=fe80::200:ff:fe00:2 priority=1 router-id=2.2.2.2', '    dr=2.2.2.2 bdr=1.1.1.1 state="Full"', '',
+      '2 D instance=v3inst area=backbone_v3', '    address=fe80::9 router-id=9.9.9.9 state="Full"'])];
+  const b = ['R_B (10.0.0.2):', '### /export terse', '/ip address add address=10.0.0.2/24 interface=ether1', '/routing ospf instance add name=v2inst router-id=2.2.2.2',
+    ...nbr(['0 D instance=v2inst interface=ether1 address=10.0.0.1 router-id=1.1.1.1 state="Full"',
+      '1 D instance=v3inst interface=ether1', '    address=fe80::200:ff:fe00:1 router-id=1.1.1.1 state="Full"'])];
+  const s = build(a.concat(b).join('\n'));
+  assert.deepStrictEqual(i03(s).map((f) => f.message), []);
+  const adj = s.model.ospfAdjacencies.map((x) => [x.dev, x.localEp, x.peerDev, x.peerEp, x.peerIp, x.peerId, x.reciprocal]);
+  assert.deepStrictEqual(adj, [
+    ['R_A', 'R_A|?(ospffe80::9)', '9.9.9.9', '9.9.9.9|fe80::9', 'fe80::9', '9.9.9.9', false],
+    ['R_A', 'R_A|bridge', 'R_B', 'R_B|ether1', '10.0.0.2', '2.2.2.2', true],
+    ['R_A', 'R_A|bridge', 'R_B', 'R_B|ether1', 'fe80::200:ff:fe00:2', '2.2.2.2', true],
+    ['R_B', 'R_B|ether1', 'R_A', 'R_A|bridge', '10.0.0.1', '1.1.1.1', true],
+    ['R_B', 'R_B|ether1', 'R_A', 'R_A|bridge', 'fe80::200:ff:fe00:1', '1.1.1.1', true]]);
+  assert.ok(!s.model.ipAddresses.some((x) => /:/.test(x.address)), '鄰居的 link-local 不可成為 IPv4 位址：' + s.model.ipAddresses.map((x) => x.address).join(','));
+  assert.ok(!s.model.interfaces.some((i) => i.dev === 'R_B' && /fe80/.test(i.name)), '對端已回報時不建立 link-local 命名的介面');
+  assert.deepStrictEqual(s.findings.filter((f) => f.id === 'R02').map((f) => f.message.includes('9.9.9.9（fe80::9）')), [true]);
+  // 實機輸出：OSPFv2 與 v3 的列都成為鄰接
+  const real = realSnap('7.25.1-RB3011UiAS.txt');
+  assert.deepStrictEqual(real.model.ospfAdjacencies.map((x) => x.peerIp).sort(), ['192.168.0.6', 'fe80::2ec8:1bff:fe00:6']);
+});
+test('monitor：最前面的 ;;; 是各項目的註解（不是 monitor 欄位），讀到 RSTP 欄位時列為可忽略；欄式輸出被折斷時不產生錯誤的埠狀態，折出去的行留給 I03', () => {
+  const rb = realSnap('7.25.1-RB3011UiAS.txt');
+  assert.deepStrictEqual(['ether2', 'ether1-wan', 'ether3'].map((n) => { const i = iface(rb, `DEV-006|${n}`); return i && i.stp ? i.stp.role : null; }), ['root-port', 'designated-port', null]);
+  const br = realSnap('7.24.4-RB5009UG+S+.txt');
+  assert.strictEqual(br.model.devices.find((d) => d.key === 'DEV-007').stp.isRoot, true);
+  [rb, br].forEach((s) => assert.deepStrictEqual(i03(s).map((f) => f.message), []));
+  // 折行的形狀是推測的（這份收集檔的 monitor 沒有折行）：折出去的值沒有「key:」，不併入任何一欄
+  const wrapped = build(['SW_A (10.0.0.1):', '### /interface bridge port monitor [find] once',
+    '               interface: ether1                   ether2', '                          ether3',
+    '                    role: root-port                designated-port', '                          designated-port'].join('\n'));
+  assert.deepStrictEqual(['ether1', 'ether2', 'ether3'].map((n) => { const i = iface(wrapped, `SW_A|${n}`); return i && i.stp ? i.stp.role : null; }), ['root-port', 'designated-port', null]);
+  assert.deepStrictEqual(i03(wrapped).map((f) => f.evidence.map((e) => e.text)), [['ether3', 'designated-port']]);
+});
 test('system resource：型號決定交換器／路由器', () => {
   const s = build('X (10.0.0.1):\n### /system resource print\n  uptime: 1d\n  version: 7.12.1 (stable)\n  board-name: CRS326-24G-2S+\n');
   assert.deepStrictEqual([s.model.devices[0].kind, s.model.devices[0].deviceType, s.model.devices[0].softwareVersion], ['switch', 'CRS326-24G-2S+', '7.12.1 (stable)']);

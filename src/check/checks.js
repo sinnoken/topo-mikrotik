@@ -700,7 +700,8 @@
       });
     });
     const shared = new Map(); M.devices.forEach((_, d) => RV.subnetsOf(d).forEach((s) => S.util.getOr(shared, s.net + '/' + s.len, () => new Set()).add(d)));
-    const ospfEps = new Set(M.ospfAdjacencies.map((a) => a.localEp));
+    // IPv4 網段：只看 OSPFv2（IPv4 鄰居位址）的鄰接，OSPFv3 的鄰接不代表 IPv4 網段有在交換路由
+    const ospfEps = new Set(M.ospfAdjacencies.filter((a) => a.family === 'ipv4').map((a) => a.localEp));
     // 在 NAT 後面的網段：這台設備有啟用中的 masquerade／src-nat（不限目的位址，不是 hairpin），來源不限或涵蓋這個網段，而且出介面不是網段所在的介面——
     // 送出去的封包來源已改成設備自己的位址，上游不需要回到這個網段的路由（雙重 NAT 的下游路由器）。src-address-list 的內容不明，視為涵蓋（不報）
     const natRules = new Map(); M.fw.rules.forEach((r) => {
@@ -793,7 +794,7 @@
       if (!edgeMacs.has(a.mac)) return;
       RV.subnetsOf(a.dev, a.vrf).filter((s) => S.ip.inNet(a.ip, s.net, s.len)).forEach((s) => { S.util.getOr(why, s.prefix, () => ({ dhcp: [], host: false })).host = true; });
     });
-    const adjEps = new Set(M.ospfAdjacencies.map((a) => a.localEp));
+    const adjEps = new Set(M.ospfAdjacencies.filter((a) => a.family === 'ipv4').map((a) => a.localEp)); // IPv4 網段：同上，只看 OSPFv2 的鄰接
     const ospfData = (d) => { const x = M.devices.get(d); return !!(x && x.data.has('ospf')); };
     const byDev = new Map();
     Array.from(M.ospfHits.keys()).sort(S.util.natural).forEach((key) => {
@@ -818,8 +819,10 @@
     M.devices.forEach((d) => {
       const rb = d.routerboard;
       if (!d.collected || !rb || !rb.isRouterboard || !rb.currentFirmware || !rb.upgradeFirmware || rb.currentFirmware === rb.upgradeFirmware) return;
-      add('L01', `${name(d.key)}：RouterBOOT 韌體 ${rb.currentFirmware}，可套用 ${rb.upgradeFirmware}`, [{ type: 'device', key: d.key }],
-        ['currentFirmware', 'upgradeFirmware'].map((k) => d.routerboardLines[k]).map((x) => ({ block: x[0], line: x[1] })));
+      // 設備提示已執行 upgrade（手冊 routerboard.md 的訊息）：韌體已寫入，只差重新開機
+      const upgraded = /firmware upgraded successfully/i.test(rb.notice || '');
+      add('L01', `${name(d.key)}：RouterBOOT 韌體 ${rb.currentFirmware}，${upgraded ? `已升級為 ${rb.upgradeFirmware}，重新開機後生效（設備提示）` : `可套用 ${rb.upgradeFirmware}`}`, [{ type: 'device', key: d.key }],
+        ['currentFirmware', 'upgradeFirmware'].concat(upgraded ? ['notice'] : []).map((k) => d.routerboardLines[k]).map((x) => ({ block: x[0], line: x[1] })));
     });
   }
 

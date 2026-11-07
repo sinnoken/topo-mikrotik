@@ -1,7 +1,7 @@
 // 設備生命週期：/system routerboard（韌體）、/system resource 的 uptime、L01 韌體待升級、L02 同型號 RouterOS 版本不同
 'use strict';
 const assert = require('assert');
-const { S, build, count, test, i03 } = require('../lib.js');
+const { S, read, build, count, test, i03 } = require('../lib.js');
 // 測試資料依官方手冊的 print 範例撰寫，不是實機擷取：
 //   https://manual.mikrotik.com/docs/hardware/routerboard.md（/system/routerboard/print 的 key: value 排版）
 //   https://manual.mikrotik.com/docs/cli-reference/system/routerboard.md（Conditions: !i386 —— x86／CHR 沒有這個選單）
@@ -15,11 +15,25 @@ test('routerboard print：型號與韌體寫進設備（事實、帶來源行）
   const s = build(box('R', '10.0.0.1', [['/system routerboard print', RB('7.22.2', '7.22.2')]]));
   const d = dev(s, 'R');
   assert.deepStrictEqual(d.routerboard, { isRouterboard: true, basis: 'print', model: 'CCR2116-12G-4S+', firmwareType: 'al64v3', factoryFirmware: '7.8',
-    currentFirmware: '7.22.2', upgradeFirmware: '7.22.2', src: [[0, 3], [0, 4], [0, 6], [0, 7], [0, 8], [0, 9]] });
+    currentFirmware: '7.22.2', upgradeFirmware: '7.22.2', notice: null, src: [[0, 3], [0, 4], [0, 6], [0, 7], [0, 8], [0, 9]] });
   assert.ok(!JSON.stringify(s).includes('MT123456789'), '序號不可出現在 Snapshot');
   assert.deepStrictEqual(i03(s), []);
   assert.ok(d.data.includes('routerboard'));
   assert.strictEqual(count(s, 'I01'), 0);
+});
+test('routerboard print：欄位前的 ;;; 提示訊息（折成兩行）接成一句記在 notice；是升級完成的訊息時 L01 改說「已升級，重新開機後生效」', () => {
+  // 實機輸出（tests/fixtures/real/7.25.1-RB3011UiAS.txt）；訊息原句見手冊 routerboard.md 的 upgrade 範例
+  const real = S.build([{ name: 'r.txt', text: read('tests/fixtures/real/7.25.1-RB3011UiAS.txt') }], { now: '2026-01-01T00:00:00Z' });
+  const rb = dev(real, 'DEV-006').routerboard;
+  assert.deepStrictEqual([rb.notice, rb.currentFirmware, rb.upgradeFirmware], ['Firmware upgraded successfully, please reboot for changes to take effect!', '7.25', '7.25.1']);
+  assert.deepStrictEqual(i03(real).filter((f) => /routerboard/.test(f.message)), []);
+  const l01 = real.findings.filter((f) => f.id === 'L01');
+  assert.deepStrictEqual(l01.map((f) => f.message), ['DEV-006：RouterBOOT 韌體 7.25，已升級為 7.25.1，重新開機後生效（設備提示）']);
+  assert.strictEqual(l01[0].evidence.length, 3, '證據含提示訊息那一行');
+  // 其他提示（不是升級完成）照樣記下，L01 維持「可套用」
+  const other = build(box('R', '10.0.0.1', [['/system routerboard print', ['  ;;; something else', ...RB('7.22.1', '7.22.2')]]]));
+  assert.deepStrictEqual([dev(other, 'R').routerboard.notice, other.findings.filter((f) => f.id === 'L01').map((f) => f.message)],
+    ['something else', ['R：RouterBOOT 韌體 7.22.1，可套用 7.22.2']]);
 });
 test('routerboard print：RouterOS 6 的 factory-firmware 與 minimum-firmware 同義；欄位不分前後空白', () => {
   const s = build(box('R', '10.0.0.1', [['/system routerboard print', ['  routerboard: yes', '        model: 951Ui-2HnD', '  factory-firmware: 3.0', '  current-firmware: 6.49.10', '  upgrade-firmware: 6.49.10']]]));
@@ -29,7 +43,7 @@ test('routerboard print：RouterOS 6 的 factory-firmware 與 minimum-firmware �
 test('routerboard print：非 RouterBOARD（routerboard: no）與沒有這個選單（CHR／x86 的 bad command name）都辨識為「不是 RouterBOARD」，不是 I01／I03', () => {
   const no = build(box('CHR', '10.0.0.2', [['/system routerboard print', ['  routerboard: no']]]));
   assert.deepStrictEqual(dev(no, 'CHR').routerboard, { isRouterboard: false, basis: 'print', model: null, firmwareType: null, factoryFirmware: null,
-    currentFirmware: null, upgradeFirmware: null, src: [[0, 3]] });
+    currentFirmware: null, upgradeFirmware: null, notice: null, src: [[0, 3]] });
   const x86 = build(box('CHR', '10.0.0.2', [['/system routerboard print', ['bad command name routerboard (line 1 column 9)']]]));
   assert.deepStrictEqual([dev(x86, 'CHR').routerboard.isRouterboard, dev(x86, 'CHR').routerboard.basis, dev(x86, 'CHR').routerboard.src], [false, 'no-menu', [[0, 3]]]);
   [no, x86].forEach((s) => assert.deepStrictEqual([count(s, 'I01'), i03(s).length, count(s, 'L01')], [0, 0, 0]));

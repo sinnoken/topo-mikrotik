@@ -136,13 +136,18 @@
       let comment = null; let body = line;
       const ci = line.indexOf(';;;');
       if (ci >= 0) { comment = line.slice(ci + 3).trim(); body = line.slice(0, ci); }
+      // 註解行尾的空白：硬切剛好切在空白之後時，那個空白屬於註解，要等下一行接上時補回（行尾的空白本身不算進註解）
+      const tail = (s) => (s.trim() ? /\s*$/.exec(s)[0] : '');
+      const noteTail = ci >= 0 ? tail(line.slice(ci + 3)) : '';
       const km = /(^|\s)([\w.\-]+)=/.exec(body);
       const headerOnly = cur && !Object.keys(cur.kv).length;
       // 註解硬切的下一行：從註解文字的欄位開始（之前全是空白），在任何欄位之前
       if (note && headerOnly && !km && body.trim() && !body.slice(0, note.col).trim()) {
-        cur.comment += body.slice(note.col).replace(/\s+$/, '');
+        const piece = body.slice(note.col);
+        cur.comment += note.tail + piece.replace(/\s+$/, '');
         cur.lines.push(at(b, i));
-        if (ci >= 0) { cur.comment = joinComment(cur.comment, comment); note = { col: ci + 4 }; }
+        note = { col: note.col, tail: tail(piece) };
+        if (ci >= 0) { cur.comment = joinComment(cur.comment, comment); note = { col: ci + 4, tail: noteTail }; }
         return;
       }
       note = null;
@@ -152,9 +157,9 @@
           const indexed = /^\d+$/.test(toks[0] || '');
           const flagTokens = indexed ? toks.slice(1) : toks;
           const rowPrefix = indexed || !flagChars.size || (flagTokens.length && flagTokens.every(isFlags));
-          if (toks.length && rowPrefix) { cur = newRow(toks, at(b, i), indentOf(line)); cur.comment = comment; rows.push(cur); note = { col: ci + 4 }; }
+          if (toks.length && rowPrefix) { cur = newRow(toks, at(b, i), indentOf(line)); cur.comment = comment; rows.push(cur); note = { col: ci + 4, tail: noteTail }; }
           else if (toks.length && cur) { cur.comment = joinComment(cur.comment, comment); cur.lines.push(at(b, i)); }
-          else if (headerOnly) { cur.comment = joinComment(cur.comment, comment); cur.lines.push(at(b, i)); note = { col: ci + 4 }; }
+          else if (headerOnly) { cur.comment = joinComment(cur.comment, comment); cur.lines.push(at(b, i)); note = { col: ci + 4, tail: noteTail }; }
           else pending = { text: comment, line: at(b, i) };
         } else {
           // 只有序號與旗標、欄位在下一行（與上面 `;;;` 列首同樣的形狀，只是沒有註解）：開新列，否則下一行會被併進上一列。

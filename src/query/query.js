@@ -180,7 +180,7 @@
     const addressListIndex = () => alIx || (alIx = freezeAll(byDevOf(m.addressLists || [])));
     // 位址集合的登錄表（S.infer.addrSets，與模型的 M.addrSets 同一個函式）：第一次需要時才建，依 Snapshot 快取（每個 Q 一份）
     let addrReg = null; const addrSetView = new Map();
-    const addrSetsOf = () => addrReg || (addrReg = S.infer.addrSets({ rules: fwRules, addressLists: m.addressLists || [], services: m.ipServices || [], routingRules: m.routingRules || [] }));
+    const addrSetsOf = () => addrReg || (addrReg = S.infer.addrSets({ rules: fwRules, addressLists: m.addressLists || [], services: m.ipServices || [], routingRules: m.routingRules || [], mgmtSettings: m.mgmtSettings || [] }));
     const ctxOf = (d) => U.getOr(fwCtx, d, () => S.infer.fw.fwContext(d, listsByDev.get(d) || [], (ifcsByDev.get(d) || []).map((i) => i.key), fwByDev.get(d) || [],
       addressListIndex().get(d) || [], addrSetsOf()));
     const findingsBy = new Map();
@@ -367,7 +367,7 @@
       addressListOf: (d, family, name) => (addressListIndex().get(d) || EMPTY).find((l) => l.family === family && l.name === name) || null,
       /**
        * 位址集合登錄表（S.infer.addrSets，判斷用的同一份；推論用的索引，不在 Snapshot）的一筆：{ id, kind, dev, family, static, reasons, src, size, ranges }（凍結）。
-       * kind：address-list｜rule-address｜service｜routing-rule（id 的寫法見設計說明）；例如 A10 的 deviation.groups[].list 是 address-list 的 id。
+       * kind：address-list｜rule-address｜service｜snmp-community｜routing-rule（id 的寫法見設計說明）；例如 A10 的 deviation.groups[].list 是 address-list 的 id。
        * size 是合併後的區段數、ranges 是 [[起, 迄]] 的位址文字（依位址排序；完全靜態以外的清單或無法判斷的字面值為 null）。沒有這個 id 時 null。
        */
       addressSet: (id) => U.getOr(addrSetView, id, () => {
@@ -402,6 +402,11 @@
         const c = Q.coverageOf(d); if (!c) return false;
         return (c.incomplete || (c.failures || []).flatMap((f) => f.dataTypes || [])).includes('route');
       },
+      /**
+       * 位址集合的登錄表本身（S.infer.addrSets，檢查與 L4 判斷用的同一份；推論用的索引，不在 Snapshot）。
+       * 路由視圖的成員（S.trace.ROUTING_VIEW）：/routing rule 的位址比對經它的 ofRoutingRule。畫面要看某一筆的內容用 Q.addressSet(id)。
+       */
+      addrSets: () => addrSetsOf(),
       /**
        * 認到的設備（devices() 的子集合，順序相同）：已收集，且有至少一類資料或有收集失敗的紀錄。
        * 排除只有檔名、內容都認不得的設備；與建立前的預檢（S.query.preflightRecognized）是同一個判斷。

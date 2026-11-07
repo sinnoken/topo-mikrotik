@@ -708,22 +708,24 @@
   const inPortRanges = (x, rs) => rs.some(([a, b]) => x >= a && x <= b);
 
   /*
-   * 位址集合的登錄表（單一來源）：防火牆規則的位址字面值、位址清單、/ip service 的 available-from、/routing rule 的位址都是設定寫死的值，
-   * 事實只存一份（規則、Snapshot 的 addressLists、ipServices、routingRules），這裡只建「在不在裡面」的索引（S.ip.set），不進 Snapshot。
-   * decide 的位址條件一律經這裡的 set.has，L4 的等價類邊界一律經 addrBounds（同一份 set 的 bounds()），新的位址來源只需在這裡登錄。
+   * 位址集合的登錄表（單一來源）：防火牆規則的位址字面值、位址清單、/ip service 的 available-from、SNMP community 的 addresses、/routing rule 的位址都是設定寫死的值，
+   * 事實只存一份（規則、Snapshot 的 addressLists、ipServices、mgmtSettings、routingRules），這裡只建「在不在裡面」的索引（S.ip.set），不進 Snapshot。
+   * decide 的位址條件、/routing rule 的比對（S.trace.ruleMatches，經路由視圖的 addrSets）、F07／F13 的「不限來源」（set.isAll）一律經這裡的集合，
+   * L4 的等價類邊界一律經 addrBounds（同一份 set 的 bounds()），新的位址來源只需在這裡登錄。
    * 檢查以模型（M.addrSets，S.infer.firewall 建一次）、查詢層以 Snapshot（S.query 第一次用到時建一次，依 Snapshot 快取）呼叫同一個函式。
    *
-   * addrSets({ rules, addressLists, services, routingRules })：各欄位都可省略；規則與服務可以是模型或 Snapshot 的形狀（只讀 dev、family、key、match、params、
-   *   name、addresses、entries 與來源行）。陣列在第一次查詢時才建索引，之後不可再改。
+   * addrSets({ rules, addressLists, services, routingRules, mgmtSettings })：各欄位都可省略；規則與服務可以是模型或 Snapshot 的形狀（只讀 dev、family、key、match、params、
+   *   name、addresses、entries、snmp.communities 與來源行）。陣列在第一次查詢時才建索引，之後不可再改。
    * 每筆（凍結）：{ id, kind, dev, family, set, static, reasons, src }
    *   id（穩定，不含行號）：
    *     address-list：「設備|位址族|名稱」（同 model.addressLists 的鍵）；
    *     rule-address：「規則鍵|條件」（規則鍵見 firewallRules.key；條件是 src-address、dst-address 或 to-addresses；沒有規則鍵的規則（測試自建）為 null）；
    *     service：「設備|位址族|service|服務名稱」（available-from，ip 與 ipv6 各一筆）；
-   *     routing-rule：「設備|routing-rule|順序|條件」（順序同 routingRules.order：每台設備依設定順序從 1 起算）。
+   *     snmp-community：「設備|位址族|snmp-community|facet」（facet 見 mgmtSettings 的 snmp.communities；addresses 不明（null）的 community 沒有這一筆）；
+   *     routing-rule：「設備|routing-rule|順序|條件」（順序同 routingRules.order：每台設備依設定順序從 1 起算；不是登錄時那批物件（模型版路由視圖的複本）時 id 為 null）。
    *   set：S.ip.set，或 null——清單可能有動態來源（static 為 false，reasons 依 ADDRESS_LIST_DYNAMIC）；規則的位址字面值有任何一項不是位址、網段或範圍，
-   *     或位址族不一致（條件無法判斷）。available-from 只取這個位址族、而且合法的項目（其他項目不接受任何來源）。
-   *   src：來源行（[[block, line]]）：規則、服務與 /routing rule 是它自己的行；位址清單是啟用中項目的行。
+   *     或位址族不一致（條件無法判斷）。available-from 與 SNMP community 只取這個位址族、而且合法的項目（其他項目不接受任何來源）。
+   *   src：來源行（[[block, line]]）：規則、服務、community 與 /routing rule 是它自己的行；位址清單是啟用中項目的行。
    */
   const ADDR_RULE_KEYS = Object.freeze(['src-address', 'dst-address']);
   const BITS = (family) => (family === 'ipv6' ? 128 : 32);
@@ -735,9 +737,12 @@
     if (!rs.length || rs.some((r) => !r || r[2] !== rs[0][2])) return null;
     return S.ip.set(rs.map(([a, b]) => [a, b]), rs[0][2]);
   }
+  /** 允許來源的位址清單（available-from、SNMP community 的 addresses）→ 只取這個位址族、而且合法的項目的 S.ip.set（其他項目不接受任何來源）。 */
+  const legalSet = (addresses, bits) => S.ip.set(addresses.filter((a) => { const r = S.ip.range(a); return r && r[2] === bits; }), bits);
   function addrSets(input) {
     const x = input || {};
     const rules = x.rules || []; const addressLists = x.addressLists || []; const services = x.services || []; const routingRules = x.routingRules || [];
+    const mgmtSettings = x.mgmtSettings || [];
     const entry = (id, kind, dev, family, set, st, reasons, src) => Object.freeze({ id, kind, dev, family, set, static: st, reasons, src });
     // 位址清單：第一次查詢時才依鍵建索引；每份清單的集合在第一次用到時才建（封鎖名單可能有十萬筆）
     let alIdx = null; const alMemo = new Map();
@@ -774,8 +779,26 @@
       const id = dev + '|' + family + '|service|' + name;
       if (svMemo.has(id)) return svMemo.get(id);
       const sv = svIdx.get(dev + '|' + name); const bits = BITS(family);
-      const out = sv ? entry(id, 'service', dev, family, S.ip.set(sv.addresses.filter((a) => { const r = S.ip.range(a); return r && r[2] === bits; }), bits), true, Object.freeze([]), sv.src) : null;
+      const out = sv ? entry(id, 'service', dev, family, legalSet(sv.addresses, bits), true, Object.freeze([]), sv.src) : null;
       svMemo.set(id, out);
+      return out;
+    };
+    // SNMP community 的 addresses：依（設備, facet）；啟用中的 community 的 facet 只在同名而且內容相同時重複，這時集合也相同。
+    // 停用的 community 可能和啟用中的同名（facet 相同、內容不同）：同一個 facet 以啟用中的為準
+    let cmIdx = null; const cmMemo = new Map();
+    const community = (dev, facet, family) => {
+      if (!cmIdx) {
+        cmIdx = new Map();
+        mgmtSettings.forEach((ms) => (ms.snmp && ms.snmp.communities || []).forEach((c) => {
+          const k = ms.dev + '|' + c.facet; const had = cmIdx.get(k);
+          if (!had || had.disabled !== false && c.disabled === false) cmIdx.set(k, c);
+        }));
+      }
+      const id = dev + '|' + family + '|snmp-community|' + facet;
+      if (cmMemo.has(id)) return cmMemo.get(id);
+      const c = cmIdx.get(dev + '|' + facet);
+      const out = c && c.addresses ? entry(id, 'snmp-community', dev, family, legalSet(c.addresses, BITS(family)), true, Object.freeze([]), c.src) : null;
+      cmMemo.set(id, out);
       return out;
     };
     // /routing rule：順序依設定順序（每台設備從 1 起算，同 Snapshot 的 routingRules.order）
@@ -799,10 +822,11 @@
         rules.forEach((r) => ADDR_RULE_KEYS.concat('to-addresses').forEach((k) => put(literal(r, k))));
         services.forEach((sv) => ['ip', 'ipv6'].forEach((f) => put(service(sv.dev, sv.name, f))));
         routingRules.forEach((r) => ADDR_RULE_KEYS.forEach((k) => put(ofRoutingRule(r, k))));
+        mgmtSettings.forEach((ms) => (ms.snmp && ms.snmp.communities || []).forEach((c) => ['ip', 'ipv6'].forEach((f) => put(community(ms.dev, c.facet, f)))));
       }
       return byId.get(id) || null;
     };
-    return Object.freeze({ list, ofRule, service, ofRoutingRule, get, rules, routingRules });
+    return Object.freeze({ list, ofRule, service, community, ofRoutingRule, get });
   }
   /**
    * L4 位址等價類的邊界（唯一的產生方式）：entries（登錄表的筆，可含 null）中位址族為 bits、有集合的那些 set.bounds() 的聯集，依大小排序（BigInt）。
@@ -1291,7 +1315,7 @@
     const alByDev = new Map(); M.addressLists.forEach((l) => S.util.getOr(alByDev, l.dev, () => []).push(l));
     // 位址集合的登錄表（所有設備共用一份；查詢層從 Snapshot 以同一個函式建）。服務在下面逐台補上，登錄表第一次查服務時才建索引
     const svcAll = [];
-    M.addrSets = addrSets({ rules: M.fw.rules, addressLists: M.addressLists, services: svcAll, routingRules: M.policy.rules });
+    M.addrSets = addrSets({ rules: M.fw.rules, addressLists: M.addressLists, services: svcAll, routingRules: M.policy.rules, mgmtSettings: Array.from(M.mgmtSettings.values()) });
     M.devices.forEach((d) => {
       if (!d.collected || !d.data.has('config')) return;
       const ctx = fwContext(d.key, listsByDev.get(d.key) || [], ifcsByDev.get(d.key) || [], rulesByDev.get(d.key) || [], alByDev.get(d.key) || [], M.addrSets);

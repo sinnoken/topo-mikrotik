@@ -1465,22 +1465,16 @@
       //   available-from 空白＝不限；有列位址時只接受清單內的，某一位址族沒有列任何前綴＝那個位址族拒絕（手冊：只有 IPv4 前綴時拒絕所有 IPv6 用戶端）
       //   IPv6 只在確定有用時才判斷（firewallZones.ipv6.status 為 used），經 /ipv6 firewall 的 raw 與 input
       const zone = M.fwZones.get(dev);
-      const FAMILIES = [['ip', 'IPv4', 32n], ['ipv6', 'IPv6', 128n]];
-      const openFrom = (sv, fam, bits) => {
-        if (!sv.addresses.length) return true;
-        return sv.addresses.some((a) => {
-          if (a.includes(':') !== (fam === 'ipv6')) return false;
-          const p = fw.parseVal('src-address', a);
-          return p.kind === 'ranges' && p.items.some(([x, y]) => x === 0n && y === (1n << bits) - 1n);
-        });
-      };
+      const FAMILIES = [['ip', 'IPv4'], ['ipv6', 'IPv6']];
+      // 不限來源：登錄表的 available-from 集合（L4 的 serviceOf 用同一份）涵蓋整個位址空間——合併後再看，0.0.0.0/1,128.0.0.0/1 也算
+      const openFrom = (sv, fam) => !sv.addresses.length || M.addrSets.service(dev, sv.name, fam).set.isAll;
       // 同一個服務的 IPv4、IPv6 併成一筆（鍵不重複）；訊息依位址族列出從哪個 WAN 介面、被哪條規則放行
       (M.fwServices.get(dev) || []).forEach((sv) => {
         if (!sv.enabled || !sv.port) return;
         const hits = [];
-        FAMILIES.forEach(([fam, label, bits]) => {
+        FAMILIES.forEach(([fam, label]) => {
           if (fam === 'ipv6' && zone.ipv6.status !== 'used') return;
-          if (!openFrom(sv, fam, bits)) return;
+          if (!openFrom(sv, fam)) return;
           for (const ep of wansMain) {
             const res = fw.evalFilter(ctx, fam, 'input', fw.wanPacket(fam, ep, 'input', { dstPort: sv.port }));
             if (res.verdict === 'accept') { hits.push({ fam, label, ep, res }); break; }
@@ -1513,7 +1507,8 @@
   function mgmtHardening({ M, name, entryName, boundaryOf }, add) {
     const fw = S.infer.fw;
     const lineEv = (src) => src.map(([block, line]) => ({ block, line }));
-    const anyAddr = (a) => { const p = fw.parseVal('src-address', a); return p.kind === 'ranges' && p.items.some(([x, y]) => x === 0n && y === (1n << BigInt(p.bits)) - 1n); };
+    // 不限來源：登錄表的 community 集合（IPv4 或 IPv6）涵蓋整個位址空間——合併後再看，0.0.0.0/1,128.0.0.0/1 也算
+    const anyFrom = (dev, c) => ['ip', 'ipv6'].some((f) => M.addrSets.community(dev, c.facet, f).set.isAll);
     const dflt = (area, fields) => fields.some((k) => area.defaulted.includes(k));
     // 預設值的依據：表的版本範圍；設備版本不明時註明（版本在範圍外時 model 不補預設值，不會走到這裡）
     const R = S.MGMT_DEFAULTS.versions.text;
@@ -1529,7 +1524,7 @@
         const byFacet = new Map(); // facet → [訊息, 證據, basis]；同名且內容相同的 community 無法區分，併成一筆（證據列出全部的設定行）
         ms.snmp.communities.forEach((c) => {
           if (c.disabled !== false || c.name === null) return;
-          const pub = c.name === 'public'; const open = c.addresses !== null && (!c.addresses.length || c.addresses.some(anyAddr));
+          const pub = c.name === 'public'; const open = c.addresses !== null && (!c.addresses.length || anyFrom(dev, c));
           if (!pub && !open) return;
           const pubDefault = pub && c.defaulted.includes('name'); const openDefault = open && c.defaulted.includes('addresses');
           const isDefault = dflt(ms.snmp, ['enabled']) || pubDefault || openDefault;

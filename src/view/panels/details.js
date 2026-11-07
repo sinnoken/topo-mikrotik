@@ -491,7 +491,7 @@
   const SEEN_INLINE = 5;
   /**
    * 設備詳情的工作入口（屬性之後、檢查結果之前，第一個畫面內）：路由表、防火牆、管理面設定各一列，連結寫出筆數、旁邊是狀態 chip。
-   *   路由表：Q.allRoutesOf 的條數與非作用中的條數（同 V.routes.summary 標題列）；點了開路由表視窗。設備沒有路由摘要（routesShown 為 false）時不列。
+   *   路由表：V.routes.counts 的條數與非作用中的條數（同路由表視窗）；點了開路由表視窗。設備沒有路由摘要（routesShown 為 false）時不列。
    *   防火牆：規則數、服務數；狀態（N 條有問題、N 條停用、WAN 判斷）取自 V.firewall.statusChips（視窗頁首用同一份；該檔在本檔之後載入，
    *     render 時才取用）；點了開防火牆視窗。原本的「防火牆」摘要區塊只有這些內容，由這一列取代。
    *   管理面設定：項目數與「N 項有問題」取自 mgmtSection 的回傳值（同區塊標題列）；點了展開下方的區塊、捲過去並把焦點移到它的標題列。
@@ -499,7 +499,7 @@
    */
   function workEntries(App, dev, routesShown, mg) {
     const Q = App.Q; const sp = (xs) => xs.filter(Boolean).flatMap((x, n) => (n ? [' ', x] : [x]));
-    const routes = routesShown ? Q.allRoutesOf(dev) : null;
+    const routes = routesShown ? V.routes.counts(App, dev) : null;
     const rules = Q.firewallRulesOf(dev); const svcs = Q.ipServicesOf(dev).length;
     const fw = rules.length || svcs || Q.firewallZone(dev) ? V.firewall.statusChips(App, dev) : null;
     const openMgmt = () => {
@@ -509,8 +509,8 @@
     };
     const pairs = [
       routes ? ['路由表', h('span', null, sp([
-        h('a', { class: 'link entry-routes', onclick: () => App.select({ type: 'routes', dev }) }, routes.length ? `${V.num(routes.length)} 條路由` : '查看路由設定'),
-        V.stateChip(routes.filter((r) => r.active === false).length, '條非作用中')]))] : null,
+        h('a', { class: 'link entry-routes', onclick: () => App.select({ type: 'routes', dev }) }, routes.total ? `${V.num(routes.total)} 條路由` : '查看路由設定'),
+        V.stateChip(routes.inactive, '條非作用中')]))] : null,
       fw ? ['防火牆', h('span', null, sp([
         h('a', { class: 'link fw-open', onclick: () => App.select({ type: 'firewall', dev }) },
           [`${V.num(rules.length)} 條規則`, svcs ? `、${V.num(svcs)} 個服務` : ''].join('')),

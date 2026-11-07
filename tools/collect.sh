@@ -663,7 +663,7 @@ COMMAND_FILTER=
 RETRY_FROM=
 DRY_RUN=0
 ASK_PASSWORD=0
-# 預設 511：實測 +ct511w 時 /ip neighbor print detail 不再折行（只有超過 511 字元的那一列換行）
+# 預設 511：實測 +ct511w 時 /ip neighbor print detail 不再折行（每行最多 510 字元，只有超過的那一列換行）
 TERMINAL_WIDTH=511
 AUTO=1
 SSH_CONTROL_OPTS=()

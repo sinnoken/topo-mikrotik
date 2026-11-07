@@ -669,6 +669,11 @@
   /** 寫入位址清單的規則動作。 */
   const FW_ADDRESS_LIST_WRITE = Object.freeze(['add-src-to-address-list', 'add-dst-to-address-list']);
   /**
+   * 設定裡看不出來的寫入方式：外部系統經這些管道連進設備寫入清單（例如自動封鎖名單），export 只有收集當時的項目，
+   * 寫入者不在設定裡，所以不算 ADDRESS_LIST_DYNAMIC 的原因（清單仍視為靜態，內容以收集當時為準）；查詢層的前提文字讀這一份。
+   */
+  const FW_ADDRESS_LIST_UNSEEN = Object.freeze(['API', 'SSH']);
+  /**
    * 清單項目的位址：family 的位址、網段或範圍 → { kind: 'address', range: [lo, hi] }；
    * 兩端都是位址、但起點大於終點或位址族混用的範圍（S.ip.badRange）→ { kind: 'invalid-range', range: null }（判斷不了，不是網域名稱）；
    * 其他文字（手冊：不是有效位址就當 DNS 名稱）→ { kind: 'dns', range: null }。IPv6 不接受範圍。
@@ -1695,7 +1700,7 @@
   S.infer.ADDR_SET_KINDS = ADDR_SET_KINDS;
   S.infer.addrBounds = addrBounds;
   S.infer.fw = { canonMatch, covers, sameMatch, evalChain, evalFilter, decide, packetFor, wanPacket, wanEntries, entriesIn, fwContext, parseVal, splitNeg, protoName, listMembers, policyBaseline, addressListItem, addressListState,
-    ADDRESS_LIST_DYNAMIC: FW_ADDRESS_LIST_DYNAMIC, ADDRESS_LIST_WRITE: FW_ADDRESS_LIST_WRITE,
+    ADDRESS_LIST_DYNAMIC: FW_ADDRESS_LIST_DYNAMIC, ADDRESS_LIST_WRITE: FW_ADDRESS_LIST_WRITE, ADDRESS_LIST_UNSEEN: FW_ADDRESS_LIST_UNSEEN,
     TERMINAL: FW_TERMINAL, BUILTIN: FW_BUILTIN, NONDET: FW_NONDET, PORT_PROTOCOLS, POLICY_CHAINS,
     condKind, CONDITIONS: FW_CONDITIONS, IFC_CONDITIONS: FW_IFC_CONDITIONS, ADDRESS_LIST: FW_ADDRESS_LIST, MAX_JUMP: FW_MAX_JUMP, FIRST_PACKET: FW_FIRST_PACKET };
 })(globalThis.SSOT = globalThis.SSOT || {});

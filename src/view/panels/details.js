@@ -85,9 +85,10 @@
   /** kv 中的推定值：值後面加「推論」chip，和同一張表裡收集到的事實區分 */
   const inferred = (value, tip) => h('span', null, [value, ' ', V.inferChip(tip)]);
   /** 推論鏈路區塊：說明推論的意義，列出兩端、依據與信心 */
-  function inferredSection(App, list, from) {
+  /** main：整頁就是這個主題（設備對頁）時用一般區塊；其他頁是附屬清單（展開列） */
+  function inferredSection(App, list, from, main) {
     return section('推論鏈路（沒有 LLDP）', list.length ? [h('p', { class: 'muted' }, '依 MAC 表、MNDP、RSTP 或點對點網段推定相鄰：是直接相連，或中間只有非網管型設備。不影響任何檢查。'),
-      inferredTable(App, list, from)] : null, { count: list.length, fold: true });
+      inferredTable(App, list, from)] : null, { count: list.length, fold: !main });
   }
   function findingsBlock(App, list, opt) {
     if (!list.length) return null;
@@ -751,8 +752,9 @@
         { t: 'VLAN', f: (l) => l.evidenceScope === LINK_SCOPE.BROADCAST_DOMAIN ? '—'
           : (l.vlanMismatch ? h('span', { class: 'diffA' }, '不一致') : h('span', { class: 'vlanlist' }, vlanText(l.vlansCommon))) },
       ], links, { onRow: (l) => App.select({ type: 'link', key: l.key }), bad: (l) => l.vlanMismatch || problem(Q.findingsFor('link', l.key)) }) : null,
-      { count: links.length, fold: true, open: links.some((l) => l.vlanMismatch || problem(Q.findingsFor('link', l.key))), extra: [problemChip(App, 'link', links.map((l) => l.key), '條')] }),
-      inferredSection(App, inferredList, a),
+      // 設備對頁的主體是這兩台之間的鏈路（一般區塊，同終端埠頁、外部頁）：沒有問題或只有推論鏈路時也直接看得到
+      { count: links.length, extra: [problemChip(App, 'link', links.map((l) => l.key), '條')] }),
+      inferredSection(App, inferredList, a, true),
       section('推定在這條推論鏈路後面的終端', behind.length ? table([
         { t: 'MAC', f: (x) => macLink(App, x.mac), s: (x) => x.mac }, { t: '廠商', f: (x) => x.vendor || '' }, { t: 'IP', f: (x) => x.ips.join(', ') },
         { t: '推定位置', f: (x) => (x.behind.dev ? `在 ${Q.devName(x.behind.dev)} 底下` : `在 ${x.behind.via.map((v) => Q.devName(v)).join('、')} 或其下游`) },
@@ -1148,9 +1150,11 @@
       const devs = new Set(ends.flatMap((e) => (e.path && e.path.length ? e.path : [e.dev])));
       const hops = t.hops.filter((hp) => devs.has(hp.dev));
       // 同一份資料不換結構：每個起點一段，段內是和單起點相同的「逐跳」「結果」區塊（巢狀的 section）
-      const el = section(`${p}從 ${Q.devName(s)}（${why}）`, [
-        section('逐跳', hops.map(hopEl), { count: hops.length, cls: 'trace-sub' }),
-        section('結果', ends.map(endEl), { count: ends.length, cls: 'trace-sub' })], { cls: 'trace-group' });
+      // 這個起點沒有逐跳也沒有結果時（兩個子區塊都不產生）仍留一段寫明，不讓起點消失
+      const subs = [section('逐跳', hops.map(hopEl), { count: hops.length, cls: 'trace-sub' }),
+        section('結果', ends.map(endEl), { count: ends.length, cls: 'trace-sub' })];
+      const el = section(`${p}從 ${Q.devName(s)}（${why}）`,
+        subs.some(Boolean) ? subs : h('p', { class: 'muted trace-empty' }, '這個起點沒有可列出的逐跳與結果。'), { cls: 'trace-group' });
       el.setAttribute('data-start', s);
       return el;
     });

@@ -443,7 +443,8 @@
     if (!fold) return V.h('div', { class: 'detail-section' + (o.cls ? ' ' + o.cls : ''), id: o.id || null }, [V.h('h3', null, head), body]);
     const open = o.state && o.state.has(o.key) ? o.state.get(o.key) : !!o.open;
     const el = V.h('details', { class: 'detail-fold' + (o.cls ? ' ' + o.cls : ''), id: o.id || null, 'data-section': o.key || null, open }, [V.h('summary', null, head), body]);
-    if (o.state) el.addEventListener('toggle', () => o.state.set(o.key, !!el.open));
+    // 瀏覽器對建立時就 open 的 details 也會發 toggle：還沒記錄、且與預設相同時不是使用者的選擇，不記
+    if (o.state) el.addEventListener('toggle', () => { if (o.state.has(o.key) || !!el.open !== !!o.open) o.state.set(o.key, !!el.open); });
     return el;
   };
   /** 嚴重度標記（外形＋顏色）：輔助科技念出嚴重度名稱，不只靠顏色 */

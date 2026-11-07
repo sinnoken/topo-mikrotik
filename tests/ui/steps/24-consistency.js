@@ -43,7 +43,7 @@ module.exports = async () => {
   await step('區塊一致性：主題區塊都是展開列（第一層的檢查結果與屬性、頁面主體才是一般區塊），不在一般區塊與展開列之間切換', () => {
     const Q = App.Q;
     // 一般區塊只有：檢查結果，以及「整頁就是這個主題」的主體（各頁固定，不依筆數）
-    const MAIN = { link: ['VLAN'], mac: ['位置'], ip: ['這個 IP 在多個 VRF：選擇其中一個'], boundary: ['對外介面與依據'],
+    const MAIN = { link: ['VLAN'], pair: ['鏈路（LLDP／CDP／MNDP）', '推論鏈路（沒有 LLDP）'], mac: ['位置'], ip: ['這個 IP 在多個 VRF：選擇其中一個'], boundary: ['對外介面與依據'],
       firewall: ['WAN／LAN 判斷（推論）', 'IPv4 filter', 'IPv4 nat', 'IPv4 mangle', 'IPv4 raw', 'IPv6 filter', 'IPv6 nat', 'IPv6 mangle', 'IPv6 raw'] };
     selections(Q).forEach((sel) => {
       App.select(sel);
@@ -170,5 +170,58 @@ module.exports = async () => {
       if (other && (!isFold(other) || !headOf(other).testAll('.count').length)) throw new Error('其他前提應經 V.section、標題旁是條數');
     } else if (!process.env.SMOKE_INPUT) throw new Error('測試前提：範例資料可追蹤 10.1.30.15 → 8.8.8.8');
     App.select(null);
+  });
+
+  await step('區塊一致性：設備對頁的鏈路與推論鏈路是主體（一般區塊），沒有問題或只有推論鏈路時也直接看得到', () => {
+    const Q = App.Q;
+    const pairs = Array.from(App.pairs.values()).filter((p) => !p.virtual);
+    const okLinks = pairs.find((p) => p.links.length && p.links.every((k) => !Q.getLink(k).vlanMismatch && !S.view.hasProblem(Q.findingsFor('link', k))));
+    // 只有推論鏈路：沒有介面鄰接的鏈路（MNDP 只證明同一廣播網域，可以有）
+    const onlyInferred = pairs.find((p) => p.links.every((k) => Q.getLink(k).evidenceScope === S.LINK_SCOPE.BROADCAST_DOMAIN) && Q.inferredLinksBetween(p.a, p.b).length);
+    if (!process.env.SMOKE_INPUT && (!okLinks || !onlyInferred)) throw new Error(`測試前提：範例資料應有沒有問題的設備對（${!!okLinks}）與只有推論鏈路的設備對（${!!onlyInferred}）`);
+    [[okLinks, '鏈路（LLDP／CDP／MNDP）', (p) => p.links.length], [onlyInferred, '推論鏈路（沒有 LLDP）', (p) => Q.inferredLinksBetween(p.a, p.b).length]].forEach(([p, title, n]) => {
+      if (!p) return;
+      App.select({ type: 'pair', id: p.id, links: p.links, devs: [p.a, p.b] });
+      const sec = kids($('#detail').firstElementChild).find((x) => (isFold(x) || isSection(x)) && titleOf(x) === title);
+      if (!sec || !isSection(sec)) throw new Error(`設備對 ${p.id} 的「${title}」應是一般區塊（主體），不收合`);
+      if (sec.testAll('tbody tr').length !== n(p)) throw new Error(`設備對 ${p.id} 的「${title}」應直接列出每一條`);
+    });
+    App.select(null);
+  });
+
+  await step('區塊一致性：多起點追蹤中某個起點沒有逐跳與結果時，仍有一段並寫明（不丟例外）', () => {
+    const Q = App.Q;
+    App.openTrace('10.1.30.15', '8.8.8.8', ''); $('#trace-run').click();
+    if (!App.sel || App.sel.type !== 'trace') { if (process.env.SMOKE_INPUT) return; throw new Error('測試前提：範例資料可追蹤 10.1.30.15 → 8.8.8.8'); }
+    const r = App.sel.result;
+    // 加一個沒有任何逐跳與結果的起點（基準內、不在原本 starts 的設備）
+    const extra = Q.devices().find((d) => !r.starts.includes(d.key) && !r.hops.some((hp) => hp.dev === d.key) && !r.ends.some((e) => (e.path || [e.dev]).includes(d.key)));
+    const t = Object.assign({}, r, { starts: (r.starts && r.starts.length ? r.starts : [r.start]).concat(extra.key) });
+    App.select({ type: 'trace', result: t, reverse: null, reverseSkip: null, vrf: null });
+    const groups = $('#detail').testAll('.trace-group');
+    if (groups.length !== t.starts.length) throw new Error(`每個起點都應有一段（${groups.length}／${t.starts.length}）`);
+    const g = groups.find((x) => x.dataset.start === extra.key);
+    if (!g || !g.testAll('.trace-empty').length || g.testAll('.trace-sub').length) throw new Error('沒有逐跳與結果的起點應寫一句說明，不產生空的子區塊');
+    App.select(null);
+  });
+
+  await step('區塊一致性：展開列只記錄使用者的操作，建立時就展開所發的 toggle 不記成使用者的選擇', () => {
+    const V = S.view;
+    const state = new Map();
+    // 預設展開：瀏覽器建立時就 open 也會發 toggle（open 仍是預設值）
+    const a = V.section('甲', V.h('p', null, '內容'), { fold: true, open: true, state, key: 'a' });
+    a.open = true; a.dispatch('toggle');
+    if (state.has('a')) throw new Error('建立時就展開的 toggle 不應記成使用者的選擇');
+    a.open = false; a.dispatch('toggle');
+    if (state.get('a') !== false) throw new Error('使用者收合應記錄');
+    a.open = true; a.dispatch('toggle');
+    if (state.get('a') !== true) throw new Error('記錄後使用者再展開（回到預設）也應記錄');
+    // 預設收合：使用者展開要記錄
+    const b = V.section('乙', V.h('p', null, '內容'), { fold: true, state, key: 'b' });
+    b.open = true; b.dispatch('toggle');
+    if (state.get('b') !== true) throw new Error('使用者展開預設收合的區塊應記錄');
+    // 記錄的值在重繪時優先於預設
+    const a2 = V.section('甲', V.h('p', null, '內容'), { fold: true, open: false, state, key: 'a' });
+    if (a2.getAttribute('open') == null) throw new Error('重繪時應依使用者的記錄展開');
   });
 };

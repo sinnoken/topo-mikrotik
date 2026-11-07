@@ -300,14 +300,15 @@
     const gapN = (r) => (gap(r) ? r.missing.length + (r.failures || []).length : 0);
     const list = F[cov.filter][1].slice().sort((a, b) => gap(b) - gap(a));
     const has = (r) => (r.data.length ? '已收集：' + r.data.map(S.query.dataLabel).join('、') : '沒有收集資料');
-    root.appendChild(V.table([
+    // 設備多時分頁（V.bigList），可依設備名搜尋；不截斷
+    root.appendChild(V.bigList([
       { t: '設備', f: (r) => Q.devLabel(r.dev), s: (r) => Q.devLabel(r.dev) },
       { t: '類型', f: (r) => V.kindChip(r.kind), s: (r) => V.KIND[r.kind] || r.kind },
       { t: '缺少的資料', s: (r) => -gapN(r), f: (r) => (gap(r)
         ? h('div', { class: 'chip-list cov-gaps', title: has(r) }, [...r.missing.map((t) => V.chip('缺 ' + S.query.dataLabel(t), 'err')), ...failureChips(App, r.failures || [])])
         : h('span', { class: 'muted', title: has(r) }, r.collected ? '—' : '未收集')) },
       { t: '鏈路', f: (r) => String(r.links), s: (r) => r.links },
-    ], list, { onRow: (r) => App.select({ type: 'device', key: r.dev }, { focus: true }), limit: 600, bad: gap }));
+    ], list, { onRow: (r) => App.select({ type: 'device', key: r.dev }, { focus: true }), table: { bad: gap }, text: (r) => Q.devLabel(r.dev), unit: '台', what: '設備', placeholder: '搜尋設備名' }));
   }
   coverage.showMissing = (App) => { cov.filter = 'missing'; coverage(App); };
   /** 收集失敗：每筆一個 chip（指令與原因；標頭層級的失敗沒有指令），提示寫出影響的資料類別；點一下開啟原文的失敗行 */
@@ -567,8 +568,9 @@
       V.clear(body); if (note) body.appendChild(h('div', { class: 'muted pane-note' }, note));
       // 每種清單的關鍵欄排在前三欄；窄螢幕（CSS）時表格依內容寬度橫向捲動，欄位不被擠窄截斷，並顯示滑動提示
       body.appendChild(h('div', { class: 'muted pane-note inv-scroll-hint' }, '左右滑動表格看其他欄位；點一列看完整的詳細資料'));
-      body.appendChild(V.table(cols, view, { onRow: (r) => App.select(sel(r), { focus: true }), limit: 500, sortBy: sc ? inv.sortBy : -1, sortDir: inv.sortDir,
-        onSort: (n) => { inv.sortDir = inv.sortBy === n ? -inv.sortDir : 1; inv.sortBy = n; draw(); } }));
+      // 列多時分頁（V.bigList；篩選用上面的篩選框，排序跨重繪保留在 inv），不截斷
+      body.appendChild(V.bigList(cols, view, { onRow: (r) => App.select(sel(r), { focus: true }), table: { sortBy: sc ? inv.sortBy : -1, sortDir: inv.sortDir,
+        onSort: (n) => { inv.sortDir = inv.sortBy === n ? -inv.sortDir : 1; inv.sortBy = n; draw(); } } }));
     };
     box.addEventListener('input', () => { inv.q = box.value; draw(); });
     root.appendChild(body); draw();

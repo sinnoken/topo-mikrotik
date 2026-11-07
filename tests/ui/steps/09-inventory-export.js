@@ -97,9 +97,10 @@ module.exports = async () => {
     const pc = () => $('#pane-coverage');
     pc().testAll('.chip').find((c) => c.textContent.startsWith('全部已收集')).click();
     const list = App.Q.coverage().filter((r) => r.collected);
-    const gap = App.Q.coverageGap; const LIMIT = 600;
-    // 有缺漏的排前（穩定排序，其餘維持原順序）
-    const want = list.filter(gap).concat(list.filter((r) => !gap(r))).slice(0, LIMIT);
+    const gap = App.Q.coverageGap; const P = S.view.BIG_LIST;
+    // 有缺漏的排前（穩定排序，其餘維持原順序）；設備多（達到 BIG_LIST.min）時分頁，第一頁是前 BIG_LIST.page 台
+    const all = list.filter(gap).concat(list.filter((r) => !gap(r)));
+    const want = all.length < P.min ? all : all.slice(0, P.page);
     const trs = pc().testAll('tbody tr');
     if (trs.length !== want.length) throw new Error(`覆蓋率列數應為 ${want.length}：${trs.length}`);
     trs.forEach((tr, n) => {
@@ -109,7 +110,9 @@ module.exports = async () => {
       if (chips.length !== r.missing.length + r.failures.length) throw new Error('缺少的資料與收集失敗應各一個 chip，列在同一列：' + td[0].textContent);
       if (!gap(r) && td[2].textContent !== '—') throw new Error('沒有缺漏的設備寫「—」');
     });
-    if (list.length > LIMIT && !text('#pane-coverage').includes(`只顯示前 ${LIMIT} 筆，共 ${S.view.num(list.length)} 筆`)) throw new Error('超過上限應註明只顯示前 N 筆');
+    // 不截斷：分頁時頁碼寫出總台數；不分頁時列出全部
+    if (all.length >= P.min ? !text('#pane-coverage').includes(`共 ${S.view.num(all.length)} 台`) : pc().querySelector('.pager')) throw new Error('設備多時應分頁並寫出總台數，少時直接列出全部');
+    if (text('#pane-coverage').includes('只顯示前')) throw new Error('覆蓋率不截斷');
     const ths = pc().testAll('th');
     if (ths.map((th) => th.textContent).join('|') !== '設備|類型|缺少的資料|鏈路' || ths.some((th) => !th.querySelector('.th-sort'))) throw new Error('覆蓋率四欄都可排序：' + ths.map((th) => th.textContent).join('|'));
     ths[3].querySelector('.th-sort').click();

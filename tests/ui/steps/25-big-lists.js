@@ -182,4 +182,43 @@ module.exports = async () => {
     if (!sm.textContent.includes('198.51.100.0–198.51.100.255')) throw new Error('合併後的一段寫成「起–迄」：' + sm.textContent);
     App.select(null);
   });
+
+  await step('不分組的 V.bigList 與 V.table 的 limit：列多時分頁（不截斷、寫出總數），排序對全部的列；沒有 text 時沒有搜尋框；reveal 翻到那一列的頁；V.paged 給非表格的清單', () => {
+    const V = S.view; const P = V.BIG_LIST;
+    const n = P.min + P.page * 2 + 7; const rows = Array.from({ length: n }, (_, i) => ({ i, name: 'r' + i }));
+    const cols = [{ t: '編號', f: (r) => String(r.i), s: (r) => r.i }, { t: '名稱', f: (r) => r.name }];
+    const pagerBtn = (el, key) => { const b = el.testAll('.pager-btn').find((x) => x.getAttribute('data-page') === key); if (!b) throw new Error('應有分頁按鈕：' + key); return b; };
+    const firstCell = (el) => rowsOf(el)[0].testAll('td')[0].textContent;
+    const pages = Math.ceil(n / P.page);
+    // 不分組、沒有 text：只有分頁，沒有搜尋框與分組
+    const box = V.bigList(cols, rows, { unit: '列' });
+    if (box.querySelector('.biglist-search') || groupsOf(box).length) throw new Error('沒有 text 時不放搜尋框，不分組');
+    if (rowsOf(box).length !== P.page || !box.querySelector('.pager-where').textContent.includes(`共 ${V.num(n)} 列（1／${V.num(pages)} 頁）`)) throw new Error('列多時分頁並寫出總數：' + box.querySelector('.pager-where').textContent);
+    pagerBtn(box, 'last').click();
+    if (rowsOf(box).length !== n - P.page * (pages - 1) || firstCell(box) !== String(P.page * (pages - 1))) throw new Error('最後一頁列出其餘的列（不截斷）');
+    // 排序對全部的列：降冪後第一列是最大的編號，回到第一頁
+    const sortBtn = () => box.testAll('.th-sort')[0];
+    sortBtn().click(); sortBtn().click();
+    if (firstCell(box) !== String(n - 1) || !box.querySelector('.pager-where').textContent.includes(`（1／${V.num(pages)} 頁）`)) throw new Error('排序對全部的列，排序後回到第一頁：' + firstCell(box));
+    // 有 text：搜尋框依文字找
+    const withText = V.bigList(cols, rows, { text: (r) => r.name, unit: '列', what: '列' });
+    search(withText, 'r1');
+    const hit = rows.filter((r) => r.name.includes('r1')).length;
+    if (!withText.querySelector('.biglist-status').textContent.includes(`找到 ${V.num(hit)} 列`)) throw new Error('搜尋應寫出找到的列數');
+    // reveal：一開始翻到那一列所在的頁
+    const target = rows[n - 3];
+    const rv = V.bigList(cols, rows, { reveal: target });
+    if (!rowsOf(rv).some((tr) => tr.testAll('td')[0].textContent === String(target.i))) throw new Error('reveal 應翻到那一列所在的頁');
+    // 呼叫端管排序（table.onSort）：照呼叫端給的順序分頁，不自己排
+    const rev = rows.slice().reverse();
+    const ext = V.bigList(cols, rev, { table: { onSort: () => {}, sortBy: 0, sortDir: -1 } });
+    if (firstCell(ext) !== String(n - 1) || rowsOf(ext).length !== P.page) throw new Error('呼叫端管排序時照給的順序分頁');
+    // V.table 的 limit（舊選項）：改走分頁，不截斷、不寫「只顯示前 N 筆」；列少時照樣全部列出
+    const lim = V.table(cols, rows, { limit: 10 });
+    if (lim.querySelector('.table-more') || rowsOf(lim).length !== P.page || !lim.querySelector('.pager')) throw new Error('V.table 的 limit 應改走分頁');
+    if (rowsOf(V.table(cols, rows.slice(0, 30), { limit: 10 })).length !== 30) throw new Error('列少時 limit 不截斷');
+    // V.paged：非表格的清單也分頁
+    const ul = V.paged(n, '段', (from, to) => V.h('ul', null, rows.slice(from, to).map((r) => V.h('li', null, r.name))));
+    if (ul.testAll('li').length !== P.page || !ul.querySelector('.pager-where').textContent.includes(`共 ${V.num(n)} 段`)) throw new Error('V.paged 應分頁並寫出總數');
+  });
 };

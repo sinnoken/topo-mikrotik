@@ -6,7 +6,7 @@
   'use strict';
   const V = S.view; const h = V.h; const $ = V.$;
   const I = V.l4._;
-  const { st, els, TH, ROW_LIMIT, PROTOS, reasonNote, layerList, layerLine, deniedParts, svcOf, optsOf, zoneName, statusText, statusMark, statusTag, cellBg, countsText, hetBadge, ruleLink, isOpen, announce } = I;
+  const { st, els, TH, PROTOS, reasonNote, layerList, layerLine, deniedParts, svcOf, optsOf, zoneName, statusText, statusMark, statusTag, cellBg, countsText, hetBadge, ruleLink, isOpen, announce } = I;
   const P = () => V.details.parts;
   const devLink = (App, d) => h('a', { class: 'link', onclick: () => App.select({ type: 'device', key: d }) }, App.Q.devLabel(d));
   const epText = (Q, ep) => (ep ? Q.epName(ep) : '不明');
@@ -170,7 +170,8 @@
       h('h4', null, ['位址組 ', V.chip(String(c.groups.length))]),
       how, toggle,
       c.groups.length && !rows.length ? h('p', { class: 'muted l4-all-deny' }, `${V.num(all.length)} 組全部拒絕，已收起。`) : null,
-      c.groups.length && rows.length ? V.table([
+      // 組多時分頁（V.bigList），不截斷；重畫（看了某一組的路徑）時翻到那一組所在的頁
+      c.groups.length && rows.length ? V.bigList([
         { t: '目的', f: ({ g }) => h('span', null, [h('span', { class: 'mono' }, g.dst.ip), ' ',
           g.dst.via === 'nat' ? V.chip(`dst-nat 入口 → ${g.dst.natTo}`, 'info', { title: `${Q.devName(g.dst.dev)} 的 dst-nat 規則把這個位址改寫到 ${g.dst.natTo}` }) : null,
           h('span', { class: 'muted' }, ` ${zoneName(Q, g.dst.zone)}`)]) },
@@ -188,7 +189,8 @@
         { t: '狀態', f: ({ g }) => statusTag(g.status, statusText(g)), s: ({ g }) => g.status },
       ].concat(het ? [{ t: '造成差異的服務', f: ({ g }) => (g.divergent ? h('span', { class: 'l4-div-svcs' }, ['≠ ', h('span', { class: 'mono' }, g.divergentServices.join('、'))]) : '—'), s: ({ g }) => g.divergentServices.length }] : [], [
         { t: '閘道／入口', f: ({ g }) => g.srcDevices.map((x) => (x.includes('|') ? Q.epName(x) : Q.devName(x))).join('、') || '—' },
-      ]), sorted, { stack: true, onRow: ({ i }) => openGroup(App, i), limit: ROW_LIMIT, rowClass: ({ g }) => 'l4-group st-' + g.status + (g.divergent ? ' div' : '') }) : null,
+      ]), sorted, { onRow: ({ i }) => openGroup(App, i), unit: '組', reveal: sorted.find((x) => st.reachReq && st.reachReq.from === 'cell' && x.i === st.reachReq.group),
+        table: { stack: true, rowClass: ({ g }) => 'l4-group st-' + g.status + (g.divergent ? ' div' : '') } }) : null,
       !c.groups.length ? h('p', { class: 'muted' }, '這一格沒有可算的位址組合。') : null,
       hide && denyGroups && rows.length ? h('p', { class: 'muted' }, `另有 ${V.num(denyGroups)} 組全部拒絕，已收起。`) : null,
     ]);
@@ -200,14 +202,15 @@
     const rows = c.ruleDetails.map((x, i) => ({ x, i })).sort((a, b) => rank(a.x) - rank(b.x) || a.i - b.i).map((o) => o.x);
     return h('div', { class: 'l4-sub' }, [
       h('h4', null, ['牽涉的規則 ', V.chip(String(rows.length))]),
-      rows.length ? V.table([
+      // 規則多時分頁（V.bigList），不截斷
+      rows.length ? V.bigList([
         { t: '規則', f: (x) => ruleLink(App, x) },
         { t: V.L4_STATUS.allow, f: (x) => V.num(x.verdicts.allow), s: (x) => x.verdicts.allow, cls: 'num' },
         { t: V.L4_STATUS.deny, f: (x) => V.num(x.verdicts.deny), s: (x) => x.verdicts.deny, cls: 'num' },
         { t: V.L4_STATUS.unknown, f: (x) => V.num(x.verdicts.unknown), s: (x) => x.verdicts.unknown, cls: 'num' },
         { t: '條件無法判斷', f: (x) => (x.uncertain ? V.num(x.uncertain) : ''), s: (x) => x.uncertain, cls: 'num' },
         { t: '服務', f: (x) => h('span', { class: 'mono' }, x.services.join(' ')) },
-      ], rows, { limit: ROW_LIMIT, rowClass: () => 'l4-ruledetail' }) : h('p', { class: 'muted' }, '沒有牽涉的規則。'),
+      ], rows, { unit: '條', table: { rowClass: () => 'l4-ruledetail' } }) : h('p', { class: 'muted' }, '沒有牽涉的規則。'),
     ]);
   }
 

@@ -60,15 +60,26 @@ module.exports = async () => {
         if (allBtn().getAttribute('aria-expanded') !== 'true' || document.activeElement !== allBtn()) throw new Error('按「顯示全部」後應展開，焦點留在按鈕');
       }
       const sec = secEl(k);
-      const rows = sec.testAll('tr').filter((tr) => /l4-ex-row/.test(tr.className || ''));
-      if (allBtn() && rows.length <= 20) throw new Error(`${k} 段按「顯示全部」後應列出超過 20 列`);
-      // 同一台設備、同一個服務與結果的列併成一列（位址在 title）：列數不多於 Q.exposure，每個位址都看得到
+      const rowsIn = (el) => el.testAll('tr').filter((tr) => /l4-ex-row/.test(tr.className || ''));
+      const rows = rowsIn(sec);
+      const gsN = Q.exposureSummary(undefined, ex).sections[k].groups.length;
+      if (allBtn() && rows.length !== Math.min(gsN, V.BIG_LIST.page)) throw new Error(`${k} 段按「顯示全部」後應分頁，第一頁列 ${Math.min(gsN, V.BIG_LIST.page)} 列（${rows.length}）`);
+      // 同一台設備、同一個服務與結果的列併成一列（位址在 title）：列數不多於 Q.exposure；逐頁翻完，每一組都列出、每個位址都看得到（不截斷）
       if (!!rows.length !== !!ex[k].rows.length || rows.length > ex[k].rows.length) throw new Error(`${k} 段的列應來自 Q.exposure（${rows.length}／${ex[k].rows.length}）`);
-      if (rows.length < 300) {
-        const seen = sec.textContent + '\n' + sec.testAll('span').map((x) => x.getAttribute('title') || '').join('\n');
-        const miss = ex[k].rows.filter((x) => !seen.includes(x.ip) && !x.dstAny);
-        if (miss.length) throw new Error(`${k} 段應列出每個位址（缺 ${miss.map((x) => x.ip).join('、')}）`);
+      const pagerBtn = (key) => sec.testAll('.pager-btn').find((b) => b.getAttribute('data-page') === key);
+      let seen = ''; let total = 0;
+      for (let n = 0; ; n++) {
+        total += rowsIn(sec).length;
+        seen += sec.textContent + '\n' + sec.testAll('span').map((x) => x.getAttribute('title') || '').join('\n');
+        const next = pagerBtn('next');
+        if (!next || next.getAttribute('disabled') != null) break;
+        if (n > gsN) throw new Error('分頁翻不完');
+        next.click();
       }
+      if (total !== gsN) throw new Error(`${k} 段逐頁的列數合計應等於分組數（${total}／${gsN}）`);
+      if (pagerBtn('first')) { pagerBtn('first').click(); if (rowsIn(sec)[0].dataset.row !== rows[0].dataset.row) throw new Error('「第一頁」應回到第一頁'); }
+      const miss = ex[k].rows.filter((x) => !seen.includes(x.ip) && !x.dstAny);
+      if (miss.length) throw new Error(`${k} 段應列出每個位址（缺 ${miss.map((x) => x.ip).join('、')}）`);
       const byBtn = rows.map((tr) => ex[k].rows[Number(tr.querySelector('.l4-ex-path').dataset.row)]);
       // 1440 不水平捲動（模擬 DOM 量不到寬度，改斷言欄數）：5 欄，入口在目的的第二行，相關檢查是依據下面的代碼 chip（標題在 title）
       if (rows.length) {
@@ -198,7 +209,7 @@ module.exports = async () => {
     App.select(null);
   });
 
-  await step('L4 暴露清單的排序與邊界：允許排在無法判斷之前（前 20 列都是無法判斷時也看得到允許）；看路徑的列超過 300 列上限時另接在最後；畫面丟錯時 App.l4Job 仍會結束並寫出原因', async () => {
+  await step('L4 暴露清單的排序與邊界：允許排在無法判斷之前（前 20 列都是無法判斷時也看得到允許）；看收起部分的列時展開那一段、分頁翻到它所在的頁；畫面丟錯時 App.l4Job 仍會結束並寫出原因', async () => {
     if (process.env.SMOKE_INPUT) return; // 用範例資料的 dst-nat 列造資料
     const V = S.view; const realQ = App.Q; const real = realQ.exposure(); const base = real.dnat.rows[0];
     if (!base) throw new Error('測試前提：範例資料有 dst-nat 的列');
@@ -216,16 +227,22 @@ module.exports = async () => {
       const sec = $('#l4-exposure').testAll('.l4-ex-sec').find((x) => x.dataset.sec === 'dnat');
       const trs = () => sec.testAll('tr').filter((tr) => /l4-ex-row/.test(tr.className));
       if (trs().length !== 20 || !/st-allow/.test(trs()[0].className)) throw new Error('前 20 列應先列允許的那一組');
-      // 看路徑的列在 300 列之後：另接在最後、展開路徑、焦點到路徑的標題
+      // 看收起部分的列（最後一組）：展開這一段並分頁（不截斷），翻到它所在的那一頁、展開路徑、焦點到路徑的標題
       V.l4.openExposure(App, 'dnat', 329);
       const sec2 = $('#l4-exposure').testAll('.l4-ex-sec').find((x) => x.dataset.sec === 'dnat');
       const btn = sec2.testAll('.l4-ex-path').find((b) => b.dataset.row === '329');
-      if (!btn || btn.getAttribute('aria-expanded') !== 'true' || document.activeElement !== $('#l4-ex-path-title') || !sec2.textContent.includes('另接在最後')) throw new Error('超過上限的列看路徑時應另接在最後並展開，焦點在路徑的標題');
+      const P = V.BIG_LIST.page; const lastPage = Math.ceil(gs.length / P);
+      const where = sec2.querySelector('.pager-where');
+      if (!btn || btn.getAttribute('aria-expanded') !== 'true' || document.activeElement !== $('#l4-ex-path-title')) throw new Error('收起部分的列看路徑時應展開那一段並展開路徑，焦點在路徑的標題');
+      if (!where || where.getAttribute('role') !== 'status' || !where.textContent.includes(`共 ${V.num(gs.length)} 列（${V.num(lastPage)}／${V.num(lastPage)} 頁）`)) throw new Error('展開後應分頁並翻到那一列所在的頁，寫出總列數：' + (where && where.textContent));
+      if (sec2.querySelector('.table-more')) throw new Error('展開後分頁，不截斷');
       // 第 1 段：入口設備 25 組全是無法判斷、非入口設備（經入口設備進來）1 組允許——允許的設備排在前面，收合時允許的列在前 20 列
       const sb = real.self.rows.find((x) => x.via === null);
       const other = App.Q.devices().map((d) => d.key).find((d) => sb && d !== sb.dev);
       if (!sb || !other) throw new Error('測試前提：範例資料第 1 段有入口設備的列，且有別台設備');
-      V.l4.openExposure(App, 'dnat', 329); // 收起路徑
+      V.l4.openExposure(App, 'dnat', 329); // 收起路徑：留在同一頁，焦點回到那一列的「看路徑」
+      { const b = $('#l4-exposure').testAll('.l4-ex-path').find((x) => x.dataset.sec === 'dnat' && x.dataset.row === '329');
+        if (!b || document.activeElement !== b || b.getAttribute('aria-expanded') !== 'false') throw new Error('收起路徑後應留在那一頁，焦點回到那一列的「看路徑」'); }
       const selfRows = Array.from({ length: 25 }, (_, n) => Object.assign({}, sb, { service: `tcp/${3000 + n}`, port: 3000 + n, verdict: 'unknown', reasons: [], incomplete: false, returnUnsafe: [], findingKeys: [] }))
         .concat([Object.assign({}, sb, { dev: other, target: other, via: { dev: sb.dev, ep: sb.entry }, ip: '10.250.0.1', service: 'tcp/22', port: 22, verdict: 'allow', reasons: [], incomplete: false, returnUnsafe: [], findingKeys: [] })]);
       const sg = groupsOf('self', selfRows);

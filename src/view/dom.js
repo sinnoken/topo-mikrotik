@@ -473,9 +473,12 @@
    * stack：窄螢幕時每一列排成一塊、每格前面寫欄名（assets/app.css 的 table.t.stack；表頭不顯示，欄位多、右邊的欄會被切掉的表格用）。
    * rowAttrs(row)：列的屬性（例如 data-key、aria-selected）；selectable＋isSelected(row)：單選的表格（role=grid，只有選取的列是 Tab 停留點，
    * ↑↓／Home／End 移動焦點；選取狀態由呼叫端的 rowAttrs 與 rowClass 標出，V.tableDialog 用）；label：表格的 aria-label。
+   * V.table 一律列出全部的列，不截斷；列數可能很多的表格用 V.bigList（列數達到 BIG_LIST.min 時分頁）。
    */
   V.table = function (cols, rows, opt) {
     const o = opt || {};
+    // limit：舊的「只顯示前 N 筆」，改走 V.bigList 的分頁（數值不再使用，不截斷）。panels/details.js、firewall.js 改用 V.bigList 後拿掉這個選項
+    if (o.limit) return V.bigList(cols, rows, { table: Object.assign({}, o, { limit: 0 }) });
     if (o.onSort || !cols.some((c) => c.s)) return renderTable(cols, rows, o);
     const box = V.h('div');
     const st = { by: -1, dir: 1 };
@@ -493,17 +496,16 @@
   let sortFocus = null; // 剛按下排序的欄位標題（重繪後把焦點還給它）
   function renderTable(cols, rows, o) {
     const tb = V.h('tbody');
-    const shown = rows.slice(0, o.limit || rows.length);
     // selectable（單選的表格，V.tableDialog 用）：只有選取的列（沒有時第一列）是 Tab 停留點，↑↓／Home／End 在列之間移動焦點，
     // Enter／空白鍵選取；選取狀態由呼叫端以 rowAttrs 的 aria-selected 標出
-    const stop = o.selectable ? Math.max(0, shown.findIndex((r) => o.isSelected && o.isSelected(r))) : -1;
+    const stop = o.selectable ? Math.max(0, rows.findIndex((r) => o.isSelected && o.isSelected(r))) : -1;
     const moveKey = (e, tr) => {
       const list = Array.from(tb.children); const n = list.indexOf(tr);
       const to = { ArrowDown: n + 1, ArrowUp: n - 1, Home: 0, End: list.length - 1 }[e.key];
       if (to === undefined || !list[to]) return false;
       e.preventDefault(); list[to].focus(); return true;
     };
-    shown.forEach((r, i) => {
+    rows.forEach((r, i) => {
       const activate = o.onRow ? () => o.onRow(r) : null;
       // rowClass／rowStyle：呼叫端加的列樣式；顏色由呼叫端從 theme 取，套在每個儲存格（表格的底色畫在 td 上）
       const style = o.rowStyle ? o.rowStyle(r) : null;
@@ -535,9 +537,7 @@
     };
     const t = V.h('table', { class: o.stack ? 't stack' : 't', role: o.selectable ? 'grid' : null, 'aria-label': o.label || null }, [V.h('thead', null, V.h('tr', null, cols.map(head))), tb]);
     // 識別字（IP、MAC、VLAN 清單）在表格內不斷行，寬於畫面時表格在自己的框內橫向捲動
-    const box = V.h('div', { class: 'table-scroll' }, t);
-    if (o.limit && rows.length > o.limit) return V.h('div', null, [box, V.h('div', { class: 'muted table-more' }, `只顯示前 ${o.limit} 筆，共 ${V.num(rows.length)} 筆`)]);
-    return box;
+    return V.h('div', { class: 'table-scroll' }, t);
   }
 
   /**
@@ -575,10 +575,16 @@
     draw();
     return { box, draw };
   }
-  /** 分頁的表格：排序對全部的列（同 V.table 的排序欄位），排序後回到第一頁 */
+  /** 分頁的外框給不是 V.table 的清單用（例如預檢的段落清單、L4 暴露清單的自訂表格）：同 paged，回傳外框元素 */
+  V.paged = (n, unit, drawPage, start) => paged(n, unit, drawPage, start).box;
+  /**
+   * 分頁的表格：排序對全部的列（同 V.table 的排序欄位），排序後回到第一頁。
+   * 呼叫端自己管排序（o.onSort，例如清單分頁跨重繪保留排序）時 rows 已排好，這裡只分頁
+   */
   function pagedTable(cols, rows, o, unit, start) {
+    if (o.onSort) return paged(rows.length, unit, (from, to) => renderTable(cols, rows.slice(from, to), o), start).box;
     const st = { by: -1, dir: 1, sorted: rows };
-    const p = paged(rows.length, unit, (from, to) => renderTable(cols, st.sorted.slice(from, to), Object.assign({}, o, { limit: 0, sortBy: st.by, sortDir: st.dir,
+    const p = paged(rows.length, unit, (from, to) => renderTable(cols, st.sorted.slice(from, to), Object.assign({}, o, { sortBy: st.by, sortDir: st.dir,
       onSort: cols.some((c) => c.s) ? (k) => { st.dir = st.by === k ? -st.dir : 1; st.by = k; st.sorted = V.sortRows(rows, cols[k], st.dir); p.draw(true); } : null })), start);
     return p.box;
   }
@@ -591,6 +597,8 @@
    * 展開、頁碼與搜尋字是檢視狀態，只在這個元件裡（重繪詳情時回到預設），不寫回 Snapshot。
    *   V.bigList(cols, rows, { groups: () => [{ key, title, rows, extra? }], text(row) → 文字, match?(搜尋字) → 列的陣列｜null, table: V.table 的選項, unit: '條', what: '路由', placeholder })
    *   groups 只在列數達到 min 時才呼叫；每組的 rows 是 rows 的子集合，各組合起來是全部的列。
+   *   不傳 groups：不分組，① 改成全部的列直接分頁（排序對全部的列）；沒有 text 也沒有 match 時不放搜尋框（例如呼叫端已有自己的篩選框）。
+   *   table.onSort：排序由呼叫端管（rows 已排好、跨重繪保留），只用在不分組時
    * 其他選項：
    *   onRow(row)：列可以點（同 V.table 的 onRow；表格視窗 V.tableDialog 用它選取一列）
    *   grouped：不論列數一律分組（例如防火牆規則一律依 chain 分組）
@@ -603,26 +611,9 @@
     const o = opt || {}; const unit = o.unit || '筆';
     const tableOpt = Object.assign({}, o.table, o.onRow ? { onRow: o.onRow } : null);
     if (rows.length < V.BIG_LIST.min && !o.grouped) return V.table(cols, rows, tableOpt);
-    const groups = o.groups();
-    const groupCols = cols.filter((c) => c.inGroup !== false);
-    const at = o.reveal ? groups.findIndex((g) => g.rows.includes(o.reveal)) : -1;
-    const groupFold = (g) => {
-      const body = V.h('div', { class: 'biglist-body' });
-      const revealHere = at >= 0 && groups[at] === g;
-      const open = !!g.open || revealHere;
-      const el = V.section(g.title, body, { fold: true, open, count: g.rows.length, cls: 'biglist-group', extra: g.extra });
-      el.setAttribute('data-group', g.key);
-      // 第一次展開時才畫明細（十萬條路由不一次建好所有的列）
-      const fill = (start) => { if (!body.firstChild) body.appendChild(V.h('div', null, [g.note || null, pagedTable(groupCols, g.rows, tableOpt, unit, start)])); };
-      if (open) fill(revealHere ? g.rows.indexOf(o.reveal) : 0);
-      el.addEventListener('toggle', () => { if (el.open) fill(0); });
-      return el;
-    };
-    const summary = V.h('div', { class: 'biglist-summary' }, [
-      V.h('p', { class: 'muted biglist-total', 'data-count': String(rows.length) },
-        `共 ${V.num(rows.length)} ${unit}，分成 ${V.num(groups.length)} 組；點開一組看明細，或用搜尋找${o.what || ''}。`),
-      paged(groups.length, '組', (from, to) => V.h('div', null, groups.slice(from, to).map(groupFold)), Math.max(0, at)).box,
-    ]);
+    const summary = o.groups ? groupSummary(cols, rows, o, tableOpt, unit)
+      : V.h('div', { class: 'biglist-summary' }, pagedTable(cols, rows, tableOpt, unit, o.reveal ? Math.max(0, rows.indexOf(o.reveal)) : 0));
+    if (!o.text && !o.match) return V.h('div', { class: 'biglist' }, summary);
     const result = V.h('div', { class: 'biglist-result', hidden: true });
     const status = V.h('span', { class: 'biglist-status muted', role: 'status' });
     let texts = null;
@@ -646,4 +637,27 @@
     if (o.search) { search.value = o.search; run(); }
     return V.h('div', { class: 'biglist' }, [V.h('div', { class: 'biglist-tools' }, [search, status]), summary, result]);
   };
+  /** V.bigList 的 ①：總數與各組（每組一個展開列，第一次展開才畫明細；組數多時分組也分頁） */
+  function groupSummary(cols, rows, o, tableOpt, unit) {
+    const groups = o.groups();
+    const groupCols = cols.filter((c) => c.inGroup !== false);
+    const at = o.reveal ? groups.findIndex((g) => g.rows.includes(o.reveal)) : -1;
+    const groupFold = (g) => {
+      const body = V.h('div', { class: 'biglist-body' });
+      const revealHere = at >= 0 && groups[at] === g;
+      const open = !!g.open || revealHere;
+      const el = V.section(g.title, body, { fold: true, open, count: g.rows.length, cls: 'biglist-group', extra: g.extra });
+      el.setAttribute('data-group', g.key);
+      // 第一次展開時才畫明細（十萬條路由不一次建好所有的列）
+      const fill = (start) => { if (!body.firstChild) body.appendChild(V.h('div', null, [g.note || null, pagedTable(groupCols, g.rows, tableOpt, unit, start)])); };
+      if (open) fill(revealHere ? g.rows.indexOf(o.reveal) : 0);
+      el.addEventListener('toggle', () => { if (el.open) fill(0); });
+      return el;
+    };
+    return V.h('div', { class: 'biglist-summary' }, [
+      V.h('p', { class: 'muted biglist-total', 'data-count': String(rows.length) },
+        `共 ${V.num(rows.length)} ${unit}，分成 ${V.num(groups.length)} 組；點開一組看明細${o.text || o.match ? `，或用搜尋找${o.what || ''}` : ''}。`),
+      paged(groups.length, '組', (from, to) => V.h('div', null, groups.slice(from, to).map(groupFold)), Math.max(0, at)).box,
+    ]);
+  }
 })(globalThis.SSOT = globalThis.SSOT || {});

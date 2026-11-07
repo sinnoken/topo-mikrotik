@@ -140,14 +140,17 @@
       box.appendChild(h('div', { class: 'diff-cat', 'data-category': cat }, [
         h('div', { class: 'diff-head' }, [h('b', null, CATEGORY[cat]), ' ',
           ...Object.entries(CHANGE).filter(([k]) => c[k]).map(([k, [label, cls]]) => V.chip(`${label} ${V.num(c[k])}`, cls))]),
-        V.table([
+        // 項目多時分頁（V.bigList），可依項目文字搜尋；不截斷
+        V.bigList([
           { t: '', f: (i) => V.chip(CHANGE[i.change][0], CHANGE[i.change][1]) },
           { t: '項目', f: (i) => i.message },
           { t: '影響', f: (i) => effectChip(i.effect) },
         ], list, {
-          limit: 300, onRow: (i) => open(App, i),
-          rowClass: (i) => (i.effect === 'new-exposure' ? 'exposure' : ''),
-          rowStyle: (i) => (i.effect === 'new-exposure' ? { background: T.exposureBg } : null),
+          onRow: (i) => open(App, i), text: (i) => i.message, unit: '項', what: '項目',
+          table: {
+            rowClass: (i) => (i.effect === 'new-exposure' ? 'exposure' : ''),
+            rowStyle: (i) => (i.effect === 'new-exposure' ? { background: T.exposureBg } : null),
+          },
         }),
       ]));
     });

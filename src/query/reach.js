@@ -343,7 +343,8 @@
 
   /**
    * engine 物件 E 的共用部分：基準、設備資訊、規則參照、位址等價類、每一關（表＋chain）的判斷、NAT 用的位址、對外入口。
-   * 位址等價類的邊界（bounds）算出後放在 E.ruleB（規則的位址邊界）與 E.repB（另加基準網段的邊界）。
+   * 位址等價類的邊界（bounds）算出後放在 E.ruleB（規則的位址邊界）與 E.repB（另加基準網段與 /ip service available-from 的邊界）；
+   * available-from 不進 ruleB，節點鍵另以 afSig 區分（見 afIndex）。
    */
   function base(Q, I) {
     const E = { Q, I };
@@ -397,12 +398,81 @@
       });
       const pb = new Set(rb);
       prefixes4().forEach((p) => { pb.add(p.lo); pb.add(p.hi + 1); });
+      // 代表位址另依 /ip service 的 available-from 切開（同一個網段內只有部分位址被接受時，兩邊各有代表）
+      afIndex().lists.forEach((x) => x.addresses.forEach((a) => addRanges(pb, 'src-address', a)));
       ruleB = sortedArr(rb); repB = sortedArr(pb);
       E.ruleB = ruleB; E.repB = repB;
     };
     const findAtom = (arr, x) => { let lo = 0; let hi = arr.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (arr[mid] <= x) lo = mid; else hi = mid - 1; } return lo; };
     const atomMemo = new Map();
     const ruleAtom = (ip) => U.getOr(atomMemo, ip, () => { bounds(); return findAtom(ruleB, IP.toInt(ip)); });
+    /**
+     * /ip service 的 available-from（啟用中、有 /export 的設備；停用的服務不看來源）：目的是設備本身時 localService（reach-eval.js）依實際來源判斷是否接受，
+     * 等價類（ruleAtom）沒有這些邊界，同一個等價類的兩個來源會共用節點、得到錯的結果。
+     * 不把它們加進 ruleB：每個站點各自的管理網段會把位址空間切碎，跨站點的來源就不能共用節點（1000 台時記憶體用盡）。
+     * 改成節點鍵多一段（afSig）：來源在「這個封包可能用到的」available-from 清單內或外。可能用到的清單（afRelevant）：
+     *   目的位址的擁有者（任何 VRF）在這個 tcp 埠的服務；基準裡有 dst-nat／redirect／netmap 時目的與埠可能改寫，改用全部的清單。
+     * 節點的鍵已含目的與 service（trace.js 的 nk），所以同一個節點的可能清單固定，內外組合不會與別的目的混淆。
+     */
+    let afIdx = null;
+    const DSTNAT_ACTIONS = new Set(['dst-nat', 'redirect', 'netmap']);
+    const afIndex = () => {
+      if (afIdx) return afIdx;
+      const by = new Map(); const perDev = [];
+      m.devices.forEach((d) => {
+        if (!devInfo(d.key).config) return;
+        Q.ipServicesOf(d.key).forEach((sv) => {
+          if (!sv.enabled || !sv.addresses.length) return;
+          const id = sv.addresses.slice().sort().join(',');
+          if (!by.has(id)) by.set(id, { id, addresses: sv.addresses.slice(), nets: sv.addresses.map((a) => S.ip.parseCidr(a)) });
+          perDev.push([d.key, sv.port, id]);
+        });
+      });
+      const lists = Array.from(by.values()).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      const idxOf = new Map(lists.map((x, i) => [x.id, i]));
+      const byDev = new Map();
+      perDev.forEach(([dev, port, id]) => { const ps = level(byDev, dev); const l = U.getOr(ps, port, () => []); const i = idxOf.get(id); if (!l.includes(i)) l.push(i); });
+      const owners = new Map();
+      if (lists.length) m.ipAddresses.forEach((a) => { if (a.ip && IP.isIp(a.ip) && byDev.has(a.dev)) { const l = U.getOr(owners, a.ip, () => []); if (!l.includes(a.dev)) l.push(a.dev); } });
+      const dstnat = m.firewallRules.some((r) => r.family === 'ip' && r.table === 'nat' && !r.disabled && DSTNAT_ACTIONS.has(r.action));
+      afIdx = { lists, byDev, owners, all: Object.freeze(lists.map((x, i) => i)), dstnat };
+      return afIdx;
+    };
+    const NO_LISTS = Object.freeze([]);
+    const relMemo = new Map();
+    /** 封包 st 可能用到的 available-from 清單（afIndex 的序號，由小到大）；沒有 st 時（呼叫端沒給）保守地用全部的清單。 */
+    const afRelevant = (st) => {
+      const x = afIndex();
+      if (!x.lists.length) return NO_LISTS;
+      if (!st) return x.all;
+      if (st.proto !== 'tcp' || st.port == null) return NO_LISTS;
+      if (x.dstnat) return x.all;
+      const pm = level(relMemo, st.dst);
+      let r = pm.get(st.port);
+      if (!r) {
+        const s = new Set();
+        (x.owners.get(st.dst) || []).forEach((d) => (x.byDev.get(d).get(st.port) || []).forEach((i) => s.add(i)));
+        r = s.size ? Object.freeze(Array.from(s).sort((a, b) => a - b)) : NO_LISTS;
+        pm.set(st.port, r);
+      }
+      return r;
+    };
+    // 是否在清單內：判斷與 reach-eval.js 的 serviceOf 相同（parseCidr 失敗的項目不接受）
+    const afSigMemo = new Map(); const afSigId = new Map();
+    /** 來源 ip 在 rel 這些清單的內外組合的序號（0 是沒有清單；序號依遇到的順序，只當快取鍵用，不出現在結果裡）。 */
+    const afSig = (ip, rel) => {
+      if (!rel.length) return 0;
+      const lv = level(afSigMemo, rel); let n = lv.get(ip);
+      if (n === undefined) {
+        const lists = afIndex().lists;
+        const sig = rel.map((i) => (lists[i].nets.some((p) => (p ? IP.inNet(ip, p.net, p.len) : false)) ? '1' : '0')).join('');
+        n = U.getOr(afSigId, sig, () => afSigId.size + 1);
+        lv.set(ip, n);
+      }
+      return n;
+    };
+    /** 非網路設備來源的節點鍵（數字）：等價類 × available-from 的內外組合；乘數是等價類的個數（bounds 之後固定），不會碰撞。 */
+    const atomKey = (ip, st) => { const a = ruleAtom(ip); return a + afSig(ip, afRelevant(st)) * (ruleB.length + 1); };
 
     /** 外部的代表位址（矩陣的外部 zone 與暴露清單共用）：EXTERNAL_CANDIDATES 中第一個不在 main 的基準網段、也不屬於任何設備的；都不行時 null。 */
     const externalRep = () => EXTERNAL_CANDIDATES.find((ip) => !longest(ip, K.MAIN_VRF) && !ownerOf(ip, K.MAIN_VRF)) || null;
@@ -413,8 +483,9 @@
     // ---- 每一關（表＋chain）的判斷：S.infer.fw.decide，依等價類快取
     const stageMemo = new Map();
     const hasRules = (ctx, table, chain) => ctx.chain('ip', table, chain).length > 0;
-    // 節點的鍵：來源是網路設備的位址時用實際位址（之後的設備判斷 src-address-type=local 要用），否則用等價類
-    const srcKey = (ip, vrf) => { if (ip == null) return 'n'; const d = ownerDev(ip, vrf); return d && netDev(d) ? 'o' + ip : 'a' + ruleAtom(ip); };
+    // 節點的鍵：來源是網路設備的位址時用實際位址（之後的設備判斷 src-address-type=local 要用），否則用等價類＋available-from 的內外（afSig）。
+    // st：這個節點的封包（決定可能用到的 available-from 清單；省略時用全部）
+    const srcKey = (ip, vrf, st) => { if (ip == null) return 'n'; const d = ownerDev(ip, vrf); return d && netDev(d) ? 'o' + ip : 'a' + atomKey(ip, st); };
     const protoIdx = new Map();
     const svcNum = (st) => U.getOr(protoIdx, st.proto, () => protoIdx.size) * 65536 + (st.port || 0);
     const level = (map, k) => { let x = map.get(k); if (!x) { x = new Map(); map.set(k, x); } return x; };

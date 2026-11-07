@@ -266,7 +266,7 @@
     // 節點的鍵：來源（Q.reach 用實際位址，矩陣用等價類，見 srcKey）與 service
     const W = S.trace.walker(Q, {
       newHop, cloneHop, checkCode, followOwner: true,
-      srcKey: (dev, st, ctx) => (ctx.mode === 'exact' ? (st.src == null ? 'n' : st.src) : srcKey(st.src, st.vrf)),
+      srcKey: (dev, st, ctx) => (ctx.mode === 'exact' ? (st.src == null ? 'n' : st.src) : srcKey(st.src, st.vrf, st)),
       pktKey: svcNum,
       enter: enterHook, local: localHook, out: outHook, beforeDeliver: hairpinHook,
       originate: (dev, base) => { if (!devInfo(dev).config) base.reasons.push(reason('no-firewall-data', dev, `${name(dev)} 沒有設定資料（/export），防火牆規則不明`)); },

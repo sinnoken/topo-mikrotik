@@ -41,16 +41,20 @@
    * （例如只看某個 VRF、跳過已用過的路由）。結果同「list.filter((e) => keep(e) && ip.inNet(位址, e[field], e.len))，再取 len 最大的」；
    * 沒有時為空陣列（每次都是新陣列，呼叫端可修改）。
    */
-  ip.prefixIndex = (list, field) => {
+  const V4 = { tag: '', num: (s) => ip.toInt(s), mask: (len) => ip.maskOf(len), net: (n, mask) => (n & mask) >>> 0 };
+  const ALL6 = (1n << 128n) - 1n;
+  const V6 = { tag: '|v6', num: (s) => ip.v6ToBig(s), mask: (len) => (len <= 0 ? 0n : ALL6 ^ ((1n << BigInt(128 - Math.min(len, 128))) - 1n)), net: (n, mask) => n & mask };
+  function prefixIndexOf(list, field, F) {
     let byField = pxMemo.get(list);
     if (!byField) { byField = new Map(); pxMemo.set(list, byField); }
-    let x = byField.get(field);
+    let x = byField.get(field + F.tag);
     if (!x) {
       const buckets = new Map();
       list.forEach((e) => {
         let b = buckets.get(e.len);
-        if (!b) { b = { len: e.len, mask: ip.maskOf(e.len), nets: new Map() }; buckets.set(e.len, b); }
-        const net = (ip.toInt(e[field]) & b.mask) >>> 0;
+        if (!b) { b = { len: e.len, mask: F.mask(e.len), nets: new Map() }; buckets.set(e.len, b); }
+        const n = F.num(e[field]); if (n === null) return; // IPv6 的文字不合法：不會符合任何位址
+        const net = F.net(n, b.mask);
         const xs = b.nets.get(net); if (xs) xs.push(e); else b.nets.set(net, [e]);
       });
       // 長度由長到短；不是數字的長度（不會出現）排除，與逐筆比較「len > 目前最長」時永遠不入選相同
@@ -58,7 +62,7 @@
       x = Object.freeze({
         lookup(n, keep) {
           for (let i = 0; i < idx.length; i++) {
-            const xs = idx[i].nets.get((n & idx[i].mask) >>> 0);
+            const xs = idx[i].nets.get(F.net(n, idx[i].mask));
             if (!xs) continue;
             const out = keep ? xs.filter(keep) : xs.slice();
             if (out.length) return out;
@@ -66,10 +70,13 @@
           return [];
         },
       });
-      byField.set(field, x);
+      byField.set(field + F.tag, x);
     }
     return x;
-  };
+  }
+  ip.prefixIndex = (list, field) => prefixIndexOf(list, field, V4);
+  /** IPv6 版的 ip.prefixIndex：field 是 IPv6 位址文字（不合法的元素不入索引），lookup(n, keep) 的 n 是 BigInt（ip.v6ToBig 的結果）；其他同 ip.prefixIndex。 */
+  ip.prefixIndex6 = (list, field) => prefixIndexOf(list, field, V6);
   /** ip.prefixIndex(list, field).lookup(n, keep) 的簡寫。 */
   ip.longestPrefix = (list, field, n, keep) => ip.prefixIndex(list, field).lookup(n, keep);
 

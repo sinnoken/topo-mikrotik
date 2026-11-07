@@ -154,7 +154,7 @@
           const lo = Math.max(a, lo0); const hi = Math.min(b, hi0); if (lo > hi) continue;
           const free = (n) => { const o = ownerOf(IP.fromInt(n), x.vrf); return !o || !netDev(devOfEp(o)); };
           let rep = null; let basis = 'arp';
-          let k = findAtom(Float64Array.from(arpIps.length ? arpIps : [0]), lo);
+          let k = findAtom(arpIps, lo); // 已排序的陣列直接二分搜尋（空陣列時為 0，迴圈不執行），不必每個區段複製一份
           for (; k < arpIps.length && arpIps[k] <= hi; k++) if (arpIps[k] >= lo && free(arpIps[k])) { rep = arpIps[k]; break; }
           if (rep === null) { basis = 'synthetic'; for (let n = lo, c = 0; n <= hi && c < 4096; n++, c++) if (free(n)) { rep = n; break; } }
           if (rep === null) continue;

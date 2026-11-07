@@ -2,6 +2,8 @@
  * 檢查結果報表（S.report）：CSV 與 Markdown。畫面的匯出（src/view/export.js）與 CLI（tools/baseline.js）共用這裡的文字。
  * 下游模組：只透過查詢介面（Q＝S.query(snapshot)）與 S.query.rule／S.query.rules 讀基準與檢查目錄，不改寫；上游不呼叫這裡。
  * 處理紀錄是使用者的資料（不在 Snapshot 裡），由呼叫端以 opts.ledgerOf 傳入；狀態判斷用 S.ledger.isPending。
+ * 主管摘要（managerSummary）另在呼叫時用 S.compare.snapshots（與上一輪相比）與 S.remediate.levelOf／plan（處理方式的等級與選項），
+ * 不另寫一份比對或等級規則；兩者都在報表之前載入。
  * 不碰 DOM：組字邏輯都是純函式。
  */
 (function (S) {
@@ -230,7 +232,146 @@
     return it ? { status: it.status, at: userAt(it), note: it.note, waiver: it.waiver } : null;
   };
 
+  // ---------------------------------------------------------------- 主管摘要
+  /** 重點與暴露清單預設列出的筆數 */
+  const SUMMARY_LIMIT = 10;
+  const EXPOSURE_LIMIT = 5;
+  /** 暴露清單的三段（Q.exposure 的欄位）與摘要中的名稱 */
+  const EXPOSURE_SECTIONS = Object.freeze([['self', '網路設備本身'], ['dnat', '經 dst-nat 轉送到內部'], ['routed', '直接路由到內部']]);
+  /** 修正 patch 的等級（S.remediate.levelOf）的說法與處理順序：可直接產生指令的先做 */
+  const LEVEL_TEXT = Object.freeze({ auto: '可直接產生修正指令', choice: '要先選擇處理方式', manual: '需要人工判斷' });
+  const LEVEL_ORDER = Object.freeze(['auto', 'choice', 'manual']);
+  const levelOf = (id) => S.remediate.levelOf(id);
+  const plural = (n) => `${n} 筆`;
+  /** 檢查代碼與筆數：F01（2）、R03（1），依第一次出現的順序 */
+  const idCounts = (fs) => {
+    const m = new Map(); fs.forEach((f) => m.set(f.id, (m.get(f.id) || 0) + 1));
+    return [...m].map(([id, n]) => `${id}（${n}）`).join('、');
+  };
+
+  /** 與上一輪基準相比的錯誤與警告（S.compare.snapshots 的 finding 類別）；無法比對時寫出原因 */
+  function changeLines(prev, Q) {
+    const d = S.compare.snapshots(prev, Q);
+    const pm = prev.meta();
+    if (d.errors.length) return [`- 無法與上一輪基準（${pm.createdAt}）比對：${mdText(d.errors.join('；'))}`];
+    const of = (change) => d.items.filter((x) => x.category === 'finding' && x.change === change && SEV_ORDER.indexOf(
+      (x.after || x.before).severity) < 2);
+    const added = of('added'); const removed = of('removed'); const net = added.length - removed.length;
+    const verdict = net < 0 ? '變好' : net > 0 ? '變差' : added.length ? '筆數持平，但內容有變' : '沒有變化';
+    const out = [`- 與上一輪基準（${pm.createdAt}）相比，錯誤與警告新出現 ${added.length} 筆、已消失 ${removed.length} 筆：${verdict}。`];
+    d.warnings.forEach((w) => out.push(`  - ${mdText(w.message)}`));
+    return out;
+  }
+
+  /** 暴露清單的一列：目的、服務、允許的來源 */
+  function exposureRow(Q, sec, r) {
+    const dst = sec === 'self' ? `${Q.devName(r.dev)} ${r.ip}` : sec === 'dnat' && r.nat ? `${r.nat.from} → ${r.nat.to}` : r.ip;
+    const svc = r.serviceName ? `${r.service}（${r.serviceName}）` : r.service;
+    const note = r.incomplete ? '（部分來源或入口無法判斷）' : '';
+    return `  - ${mdText(dst)}，${mdText(svc)}：允許 ${mdText(r.allowedFrom.text)}${note}`;
+  }
+
+  /**
+   * 主管摘要（Markdown）：給不看技術細節的人一分鐘讀完。只用基準的事實與推論（推論標示），不評分、不估工時。
+   * 分級沿用檢查的嚴重度（錯誤／警告／提醒）；「從外部進得來的」是暴露清單（Q.exposure，推論），與嚴重度分開呈現，不改變分級。
+   * opts：
+   *   ledgerOf(f)：同 findingsMarkdown；已處理的不列入重點、需要決定的事與處理順序（沒傳時全部是待處理）
+   *   zones：Q.exposure 的參數（同 siteDocTables，例如 { profile }）；exposure：已算好的 Q.exposure 結果（畫面傳入，避免重算）
+   *   previous：上一輪基準的查詢介面（S.query(snapshot)）；有時以 S.compare.snapshots 寫出錯誤與警告變好或變差
+   *   limit：重點最多列幾筆（預設 SUMMARY_LIMIT）；exposureLimit：暴露清單每段最多列幾列（預設 EXPOSURE_LIMIT）
+   */
+  function managerSummary(Q, opts) {
+    const o = opts || {}; const lgOf = ledgerOf(o);
+    const limit = o.limit === undefined ? SUMMARY_LIMIT : o.limit;
+    const exLimit = o.exposureLimit === undefined ? EXPOSURE_LIMIT : o.exposureLimit;
+    [['limit', limit], ['exposureLimit', exLimit]].forEach(([k, v]) => {
+      if (!Number.isInteger(v) || v < 0) throw new TypeError(`S.report.managerSummary：${k} 必須是非負整數`);
+    });
+    const m = Q.meta(); const st = m.stats; const all = Q.findings();
+    const pendingOf = (f) => { const lg = lgOf(f); return S.ledger.isPending(lg ? lg.status : null); };
+    const ps = Q.pendingSummary(pendingOf);
+    const out = ['# 主管摘要', '', `依據 ${m.createdAt} 建立的基準（設備 ${st.devices} 台，已收集 ${st.collected} 台）。` +
+      '分級沿用檢查的嚴重度；標「推論」的部分由路由與防火牆規則推得，不是收集到的事實。', ''];
+
+    // 整體狀態
+    out.push('## 整體狀態', '');
+    out.push(`- 檢查結果：${SEV_ORDER.map((s) => `${SEV_TEXT[s]} ${st.findings[s]}`).join('、')}；` +
+      `待處理：${SEV_ORDER.map((s) => `${SEV_TEXT[s]} ${ps[s]}`).join('、')}${ps.handled ? `（另有已處理的錯誤與警告 ${ps.handled} 筆）` : ''}。`);
+    if (o.previous) out.push(...changeLines(o.previous, Q));
+    out.push('');
+
+    // 從外部進得來的（推論）
+    out.push('## 從外部進得來的（推論）', '');
+    const ex = o.exposure || Q.exposure(o.zones);
+    const reachable = new Set();
+    if (ex.status !== 'ok') {
+      out.push(`- ${mdText(ex.message || '無法判斷從外部進得來什麼。')}`);
+    } else {
+      const c = (k) => ex[k].counts;
+      const allow = EXPOSURE_SECTIONS.reduce((n, [k]) => n + c(k).allow, 0);
+      const unknown = EXPOSURE_SECTIONS.reduce((n, [k]) => n + c(k).unknown, 0);
+      out.push(`- ${allow ? `從外部連得到 ${allow} 個組合（目的位址 × 服務）` : '從外部連不到任何服務'}` +
+        `${unknown ? `，另有 ${unknown} 個無法判斷` : ''}。`);
+      EXPOSURE_SECTIONS.forEach(([k, name]) => {
+        const rows = ex[k].rows.filter((r) => r.verdict === 'allow');
+        rows.forEach((r) => r.findingKeys.forEach((fk) => reachable.add(fk)));
+        out.push(`- ${name}：允許 ${c(k).allow}、無法判斷 ${c(k).unknown}、拒絕 ${c(k).deny}。`);
+        rows.slice(0, exLimit).forEach((r) => out.push(exposureRow(Q, k, r)));
+        if (rows.length > exLimit && exLimit) out.push(`  - 另有 ${rows.length - exLimit} 個允許的組合`);
+      });
+      if (ex.noFirewall && ex.noFirewall.length) {
+        out.push(`- 無法判斷：${ex.noFirewall.map((d) => mdText(Q.devName(typeof d === 'string' ? d : d.dev))).join('、')}（沒有防火牆資料，缺 /export）。`);
+      }
+      if (ex.limits && ex.limits.truncated) out.push(`- 判斷次數超過上限（${ex.limits.maxEvaluations} 次），只算到一部分。`);
+      out.push(`- 這是推論，前提有 ${ex.assumptions.length} 條（畫面 L4 頁尾的「前提」）。`);
+    }
+    out.push('');
+
+    // 重點：待處理的錯誤與警告，依嚴重度、再依設備
+    const pending = all.filter(pendingOf);
+    const sevRows = (sevs) => sevs.flatMap((s) => sortByDevice(Q, pending.filter((f) => f.severity === s)));
+    const key = sevRows(['error', 'warn']);
+    out.push(`## 錯誤與警告的重點（待處理 ${plural(key.length)}）`, '');
+    if (!key.length) out.push('- 沒有待處理的錯誤與警告。');
+    key.slice(0, limit).forEach(({ f, dev }) => {
+      const a = advice(f.id);
+      const where = dev === null ? '' : `${mdText(Q.devName(dev))}：`;
+      const ext = reachable.has(Q.findingKey(f)) ? '（從外部連得到，推論）' : '';
+      out.push(`- **${SEV_TEXT[f.severity]}** ${f.id} ${where}${mdText(f.message)}${ext}${a.hint ? `；處理：${mdRich(a.hint)}` : ''}`);
+    });
+    if (key.length > limit) out.push(`- 另有 ${plural(key.length - limit)}（見檢查結果報表）。`);
+    out.push('');
+
+    // 需要決定的事：修正 patch 中要先選擇處理方式的檢查
+    const choice = sevRows(SEV_ORDER).map((r) => r.f).filter((f) => levelOf(f.id) === 'choice');
+    out.push('## 需要決定的事', '');
+    if (!choice.length) out.push('- 沒有。');
+    const plan = choice.length ? S.remediate.plan(Q, choice.map((f) => Q.findingKey(f))) : null;
+    const optsByKey = new Map(plan ? plan.choices.map((c) => [c.findingKey, c]) : []);
+    const byId = new Map(); choice.forEach((f) => U.getOr(byId, f.id, () => []).push(f));
+    byId.forEach((fs, id) => {
+      const a = advice(id);
+      out.push(`- ${id} ${mdText(fs[0].title)}（${plural(fs.length)}）${a.hint ? `：${mdRich(a.hint)}` : ''}`);
+      fs.forEach((f) => {
+        const c = optsByKey.get(Q.findingKey(f));
+        if (c) out.push(`  - ${mdText(f.message)}`, ...c.options.map((x) => `    - 選項：${mdText(x.label)}${x.inferred ? '（推論）' : ''}`));
+      });
+    });
+    out.push('');
+
+    // 建議的處理順序：依嚴重度，同一級裡可直接產生修正指令的先做
+    out.push('## 建議的處理順序', '');
+    let n = 0;
+    SEV_ORDER.forEach((s) => LEVEL_ORDER.forEach((lv) => {
+      const fs = pending.filter((f) => f.severity === s && levelOf(f.id) === lv);
+      if (fs.length) out.push(`${++n}. ${SEV_TEXT[s]}・${LEVEL_TEXT[lv]}（${plural(fs.length)}）：${idCounts(fs)}`);
+    }));
+    if (!n) out.push('沒有待處理的檢查結果。');
+    return out.join('\n').replace(/\n+$/, '') + '\n';
+  }
+
   S.report = Object.freeze({
+    managerSummary, SUMMARY_LIMIT, EXPOSURE_LIMIT,
     findingsCsv, ledgerOfItems, userAt, findingsMarkdown, csvCell, mdText, mdCode,
     codeParts, advice, sortByDevice, majorityDeviating, statusText,
     SEV_TEXT, SEV_ORDER, STATUS_TEXT, DEVIATION, DEVIATION_LABEL, NO_MAJORITY,

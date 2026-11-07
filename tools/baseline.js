@@ -19,7 +19,7 @@ const EXIT = Object.freeze({
 /** out/ 中的檔名 */
 const FILES = Object.freeze({
   baseline: 'baseline.json', ledger: 'ledger.json', findings: 'findings.json', summary: 'summary.json', compare: 'compare.json',
-  findingsCsv: 'findings.csv', findingsMd: 'findings.md', siteMd: 'sitedoc.md', siteCsv: 'sitedoc.csv',
+  findingsCsv: 'findings.csv', findingsMd: 'findings.md', siteMd: 'sitedoc.md', siteCsv: 'sitedoc.csv', managerMd: 'manager-summary.md',
 });
 const SUMMARY_SCHEMA = 'ssot-cli-summary/1';
 const FINDINGS_SCHEMA = 'ssot-cli-findings/1';
@@ -50,6 +50,7 @@ const HELP = `用法：node tools/baseline.js <收集檔…> -o <輸出目錄> [
   ${FILES.findingsMd}     檢查結果 Markdown 報表（與畫面「匯出 Markdown」的依檢查分組相同）
   ${FILES.siteMd}      網路文件（站點說明書）Markdown：設備、IP 規劃、VLAN、埠表、未結案事項（與畫面資料中心的「網路文件」相同）
   ${FILES.siteCsv}     網路文件 CSV（一個檔、多個區段）
+  ${FILES.managerMd} 主管摘要 Markdown：整體狀態、從外部進得來的（推論）、錯誤與警告的重點、需要決定的事、建議的處理順序
   ${FILES.summary}    摘要（${SUMMARY_SCHEMA}）：新出現、復發、豁免到期、待處理錯誤／警告數與結束碼
   ${FILES.compare}    預期現況比對（ssot-diff/1，只有 --expected 時）
 
@@ -202,6 +203,7 @@ function compute(S, a) {
     { name: FILES.findingsMd, text: S.report.findingsMarkdown(Q, { ledgerOf: S.report.ledgerOfItems(next, Q) }) },
     { name: FILES.siteMd, text: S.report.siteDocMarkdown(Q, siteOpts) },
     { name: FILES.siteCsv, text: S.report.siteDocCsv(Q, siteOpts) },
+    { name: FILES.managerMd, text: S.report.managerSummary(Q, siteOpts) },
     ...(compare ? [{ name: FILES.compare, text: json(compare) }] : []),
     { name: FILES.summary, text: json(summary) },
   ];

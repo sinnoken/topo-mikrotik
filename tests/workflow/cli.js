@@ -41,7 +41,7 @@ test('CLI：第一輪（沒有處理紀錄）有新的待處理錯誤／警告�
   try {
     const r = run([SAMPLE, '--now', NOW, '-o', out]);
     assert.strictEqual(r.code, CODES().NOTIFY, r.stderr);
-    ['baseline.json', 'ledger.json', 'findings.json', 'findings.csv', 'findings.md', 'sitedoc.md', 'sitedoc.csv', 'summary.json'].forEach((f) => assert.ok(fs.existsSync(path.join(out, f)), `應輸出 ${f}`));
+    ['baseline.json', 'ledger.json', 'findings.json', 'findings.csv', 'findings.md', 'manager-summary.md', 'sitedoc.md', 'sitedoc.csv', 'summary.json'].forEach((f) => assert.ok(fs.existsSync(path.join(out, f)), `應輸出 ${f}`));
     assert.ok(!fs.existsSync(path.join(out, 'compare.json')), '沒有 --expected 時不輸出 compare.json');
     const snap = readJson(path.join(out, 'baseline.json'));
     assert.strictEqual(snap.meta.createdAt, NOW);
@@ -135,7 +135,7 @@ test('CLI：相同輸入與選項的輸出完全相同', () => {
   try {
     run([SAMPLE, '--now', NOW, '-o', a]); run([SAMPLE, '--now', NOW, '-o', b]);
     const files = fs.readdirSync(a).sort();
-    assert.deepStrictEqual(files, ['baseline.json', 'findings.csv', 'findings.json', 'findings.md', 'ledger.json', 'sitedoc.csv', 'sitedoc.md', 'summary.json']);
+    assert.deepStrictEqual(files, ['baseline.json', 'findings.csv', 'findings.json', 'findings.md', 'ledger.json', 'manager-summary.md', 'sitedoc.csv', 'sitedoc.md', 'summary.json']);
     assert.deepStrictEqual(fs.readdirSync(b).sort(), files);
     files.forEach((f) => assert.ok(fs.readFileSync(path.join(a, f)).equals(fs.readFileSync(path.join(b, f))), `${f} 兩次輸出不同`));
   } finally { rm(a); rm(b); }
@@ -274,5 +274,6 @@ test('CLI：sitedoc.md／sitedoc.csv 與畫面的網路文件同一份核心文�
     const opts = { ledgerOf: S.report.ledgerOfItems(ledger, Q) };
     assert.strictEqual(fs.readFileSync(path.join(d, 'sitedoc.md'), 'utf8'), S.report.siteDocMarkdown(Q, opts));
     assert.strictEqual(fs.readFileSync(path.join(d, 'sitedoc.csv'), 'utf8'), S.report.siteDocCsv(Q, opts));
+    assert.strictEqual(fs.readFileSync(path.join(d, 'manager-summary.md'), 'utf8'), S.report.managerSummary(Q, opts), '主管摘要也是同一份核心文字');
   } finally { rm(d); }
 });

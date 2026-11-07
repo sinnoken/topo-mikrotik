@@ -660,15 +660,23 @@
     Object.freeze({ code: 'dns', source: 'entry', label: '網域名稱（DNS）' }),
     Object.freeze({ code: 'timeout', source: 'entry', label: '逾時' }),
     Object.freeze({ code: 'dynamic', source: 'entry', label: '動態項目' }),
+    // 不是動態來源，但項目本身判斷不了：不能當成不含任何位址，整份清單同樣不明
+    Object.freeze({ code: 'invalid-range', source: 'entry', label: '無法判斷的範圍（起點大於終點、位址族混用）' }),
     Object.freeze({ code: 'rule', source: 'writer', label: '由規則寫入' }), // add-src-to-address-list／add-dst-to-address-list，停用的規則也算（之前寫入的項目可能還在）
     Object.freeze({ code: 'config', source: 'writer', label: '由其他設定寫入' }), // 其他選單的 address-list／address-lists 參數（例如 PPP profile、DHCP 伺服器、mangle）
     Object.freeze({ code: 'script', source: 'writer', label: '可能由腳本寫入' }), // 文字提到 address-list、寫入哪些清單無從得知：這台設備的所有清單
   ]);
   /** 寫入位址清單的規則動作。 */
   const FW_ADDRESS_LIST_WRITE = Object.freeze(['add-src-to-address-list', 'add-dst-to-address-list']);
-  /** 清單項目的位址：family 的位址、網段或範圍 → { kind: 'address', range: [lo, hi] }；其他文字（手冊：不是有效位址就當 DNS 名稱）→ { kind: 'dns', range: null }。IPv6 不接受範圍。 */
+  /**
+   * 清單項目的位址：family 的位址、網段或範圍 → { kind: 'address', range: [lo, hi] }；
+   * 兩端都是位址、但起點大於終點或位址族混用的範圍（S.ip.badRange）→ { kind: 'invalid-range', range: null }（判斷不了，不是網域名稱）；
+   * 其他文字（手冊：不是有效位址就當 DNS 名稱）→ { kind: 'dns', range: null }。IPv6 不接受範圍。
+   */
   function addressListItem(family, text) {
-    const s = String(text).trim(); const r = S.ip.range(s);
+    const s = String(text).trim();
+    if (S.ip.badRange(s)) return { kind: 'invalid-range', range: null };
+    const r = S.ip.range(s);
     if (!r || r[2] !== (family === 'ipv6' ? 128 : 32) || (family === 'ipv6' && s.includes('-'))) return { kind: 'dns', range: null };
     return { kind: 'address', range: [r[0], r[1]] };
   }
@@ -680,7 +688,7 @@
     const has = new Set();
     entries.forEach((e) => {
       if (e.disabled) return;
-      if (e.kind === 'dns') has.add('dns');
+      if (e.kind === 'dns' || e.kind === 'invalid-range') has.add(e.kind);
       if (e.timeout) has.add('timeout');
       if (e.dynamic) has.add('dynamic');
     });
@@ -723,8 +731,9 @@
    *     service：「設備|位址族|service|服務名稱」（available-from，ip 與 ipv6 各一筆）；
    *     snmp-community：「設備|位址族|snmp-community|facet」（facet 見 mgmtSettings 的 snmp.communities；addresses 不明（null）的 community 沒有這一筆）；
    *     routing-rule：「設備|routing-rule|順序|條件」（順序同 routingRules.order：每台設備依設定順序從 1 起算；不是登錄時那批物件（模型版路由視圖的複本）時 id 為 null）。
-   *   set：S.ip.set，或 null——清單可能有動態來源（static 為 false，reasons 依 ADDRESS_LIST_DYNAMIC）；規則的位址字面值有任何一項不是位址、網段或範圍，
-   *     或位址族不一致（條件無法判斷）。available-from 與 SNMP community 只取這個位址族、而且合法的項目（其他項目不接受任何來源）。
+   *   set：S.ip.set，或 null——清單可能有動態來源或有判斷不了的範圍（static 為 false，reasons 依 ADDRESS_LIST_DYNAMIC）；規則的位址字面值有任何一項不是位址、網段或範圍
+   *     （含起點大於終點、位址族混用的範圍），或位址族不一致（條件無法判斷）。available-from 與 SNMP community 只取這個位址族、而且合法的項目（其他項目不接受任何來源），
+   *     空白時是這個位址族的全部位址（不限來源）。
    *   src：來源行（[[block, line]]）：規則、服務、community 與 /routing rule 是它自己的行；位址清單是啟用中項目的行。
    * 回傳（凍結）：list、ofRule、service、community、ofRoutingRule、get(id)，以及 entries()（有 id 的每一筆，依登錄順序）。
    */
@@ -740,8 +749,14 @@
     if (!rs.length || rs.some((r) => !r || r[2] !== rs[0][2])) return null;
     return S.ip.set(rs.map(([a, b]) => [a, b]), rs[0][2]);
   }
-  /** 允許來源的位址清單（available-from、SNMP community 的 addresses）→ 只取這個位址族、而且合法的項目的 S.ip.set（其他項目不接受任何來源）。 */
-  const legalSet = (addresses, bits) => S.ip.set(addresses.filter((a) => { const r = S.ip.range(a); return r && r[2] === bits; }), bits);
+  /**
+   * 允許來源的位址清單（available-from、SNMP community 的 addresses）→ 只取這個位址族、而且合法的項目的 S.ip.set（其他項目不接受任何來源）。
+   * 空白是不限來源（手冊：available-from 空白是任何位址，https://manual.mikrotik.com/docs/cli-reference/ip/service.md；
+   * SNMP community 的 addresses 空白無法以手冊確認，同 F13 的判斷視為不限來源），集合涵蓋這個位址族的全部位址。
+   */
+  const legalSet = (addresses, bits) => (addresses.length
+    ? S.ip.set(addresses.filter((a) => { const r = S.ip.range(a); return r && r[2] === bits; }), bits)
+    : S.ip.set([[0n, (1n << BigInt(bits)) - 1n]], bits));
   function addrSets(input) {
     const x = input || {};
     const rules = x.rules || []; const addressLists = x.addressLists || []; const services = x.services || []; const routingRules = x.routingRules || [];

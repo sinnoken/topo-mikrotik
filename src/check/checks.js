@@ -445,10 +445,9 @@
     M.routes.forEach((r) => r.active && r.nh.forEach((n) => {
       if (!n.ip) return;
       const res = resolveNextHopIn(RV, r.dev, n.ip, n.vrf);
-      if (res.some((x) => x.status === 'known')) return;
+      // 路由表收集不完整（逾時等，C02 另外提醒）：有一步判斷不了（找不到或只命中較短的前綴，可能只是沒收到更長的）時 R01／R03／R04 都不報
+      if (res.some((x) => x.status === 'known' || x.status === 'incomplete')) return;
       const id = res.some((x) => x.status === 'loop') ? 'R03' : res.some((x) => x.status === 'blackhole') ? 'R04' : 'R01';
-      // 路由表收集不完整（逾時等，C02 另外提醒）：找不到路由可能只是沒收到，不報 R01
-      if (id === 'R01' && RV.routesIncomplete(r.dev) && res.some((x) => x.status === 'unresolved')) return;
       const out = RV.egress(r.dev, n);
       if (id === 'R01' && isExternal(out)) { S.util.getOr(isp, r.dev, () => new Map()).set(K.inVrf(n.ip, n.vrf), out); return; }
       S.util.getOr(badNh[id], r.dev, () => new Map()).set(K.inVrf(n.ip, n.vrf), r);
@@ -1262,9 +1261,11 @@
   /**
    * 遞迴下一跳解析（RouterOS 的 gateway 可以是要再查路由才能到的位址，例如對端的 loopback）。
    * 先看 ip 是否為已知設備位址；否則在同一台設備的路由表以最長前綴找出它的下一跳，再往下解析。
-   * routes：該設備的路由（{ prefix, len, nh }）；ownerOf(ip)：回傳擁有該 IP 的設備 key 或 null。
+   * routes：該設備的路由（{ prefix, len, nh }）；ownerOf(ip)：回傳擁有該 IP 的設備 key 或 null；
+   * incomplete（選用）：這台設備的路由表收集不完整（R.routesIncomplete），最長前綴不是 /32 時不明（S.trace.routeCertain）。
    * 回傳（ECMP 可有多筆）：{ status: 'known', owner, ip, chain } | { status: 'connected', ip, ifc, chain }
-   *   | { status: 'unresolved', ip, chain }（沒有路由可到）| { status: 'loop', ip, chain } | { status: 'blackhole', ip, chain, route }；chain 是經過的位址。
+   *   | { status: 'unresolved', ip, chain }（沒有路由可到）| { status: 'loop', ip, chain } | { status: 'blackhole', ip, chain, route }
+   *   | { status: 'incomplete', ip, chain }（路由表收集不完整，這一步判斷不了）；chain 是經過的位址。
    */
   /**
    * 下一跳（或直連網段上的目的）位址在 vrf 中屬於誰（ADR-015；檢查 R01／R03／R04 與路徑追蹤、可達性共用這一份）：
@@ -1285,14 +1286,17 @@
     return { key: cands[0].ep, dev: cands[0].dev, vrf: cands[0].vrf, crossVrf: true };
   }
 
-  function resolveNextHop(routes, ip, ownerOf) {
+  function resolveNextHop(routes, ip, ownerOf, incomplete) {
     const MAX_DEPTH = 8; // RouterOS 遞迴路由的實務深度遠小於此；超過視為迴圈
+    if (!S.trace || !S.trace.routeCertain) throw new Error('src/query/trace.js 要在建立基準之前載入（下一跳解析用它的 routeCertain）');
     const walk = (cur, chain, used) => {
       const owner = ownerOf(cur);
       if (owner) return [{ status: 'known', owner, ip: cur, chain }];
       if (chain.length > MAX_DEPTH) return [{ status: 'loop', ip: cur, chain }];
       // 最長前綴（同遮罩多條全取）；這一條鏈已經用過的路由不算（S.ip.longestPrefix 的索引依路由陣列快取，與路徑追蹤共用）
       const cands = S.ip.longestPrefix(routes, 'prefix', S.ip.toInt(cur), used.size ? (r) => !used.has(r) : undefined);
+      // 路由表收集不完整：沒命中 /32 時可能有沒收到的更長前綴（與路徑追蹤的 lookup 同一個判斷）
+      if (!S.trace.routeCertain(!!incomplete, cands)) return [{ status: 'incomplete', ip: cur, chain }];
       if (!cands.length) return [{ status: 'unresolved', ip: cur, chain }];
       if (cands.every((r) => r.blackhole)) return [{ status: 'blackhole', ip: cur, chain, route: `${cands[0].prefix}/${cands[0].len}` }];
       const out = [];
@@ -1326,7 +1330,7 @@
     let res = memo.get(k);
     if (!res) {
       const routes = R.vrfs().includes(v) ? R.routesOf(dev, v) : [];
-      res = deepFreeze(resolveNextHop(routes, ip, (x) => { const o = R.hopOwner(dev, x, v); return o ? o.dev : null; }));
+      res = deepFreeze(resolveNextHop(routes, ip, (x) => { const o = R.hopOwner(dev, x, v); return o ? o.dev : null; }, R.routesIncomplete(dev)));
       memo.set(k, res);
     }
     return res;

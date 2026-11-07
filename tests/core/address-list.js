@@ -87,6 +87,8 @@ test('位址清單：DNS 名稱、逾時、dynamic、由規則或其他設定寫
     dns: [AL('BAD', '192.168.1.10'), AL('BAD', 'bad.example.com')],
     timeout: [AL('BAD', '192.168.1.10'), AL('BAD', '192.168.1.11', 'timeout=1h')],
     dynamic: [AL('BAD', '192.168.1.10'), AL('BAD', '192.168.1.11', 'dynamic=yes')],
+    // 起點大於終點、位址族混用的範圍：不能當成不含任何位址（也不是網域名稱），整份清單不明
+    'invalid-range': [AL('BAD', '192.168.1.10'), AL('BAD', '192.168.1.30-192.168.1.1')],
     rule: [AL('BAD', '192.168.1.10'), '/ip firewall filter add action=add-src-to-address-list address-list=BAD address-list-timeout=1d chain=forward dst-port=23 protocol=tcp'],
     config: [AL('BAD', '192.168.1.10'), '/ip dhcp-server add address-lists=BAD interface=bridge1 name=d1'],
     script: [AL('BAD', '192.168.1.10'), '/system scheduler add name=x on-event="/ip firewall address-list add list=BAD address=1.2.3.4"'],
@@ -105,6 +107,15 @@ test('位址清單：DNS 名稱、逾時、dynamic、由規則或其他設定寫
     const u = use(Q, 'address-list'); const rule = Q.firewallRulesOf('R').find((x) => x.match['src-address-list']);
     assert.deepStrictEqual([u.status, u.ruleKeys], ['affects', [rule.key]], why);
   });
+  // 位址族混用（IPv4 清單、IPv6 清單都一樣）與 IPv6 起點大於終點：項目是 invalid-range，原因有說明文字與來源行
+  const mixed = S.query(R([AL('BAD', '::1-192.168.1.1'), '/ipv6 firewall address-list add address=2001:db8::9-2001:db8::1 list=B6',
+    '/ipv6 firewall address-list add address=192.168.1.1-::1 list=M6', FWD('src-address-list=BAD')]));
+  [['ip', 'BAD'], ['ipv6', 'B6'], ['ipv6', 'M6']].forEach(([fam, name]) => {
+    const l = mixed.addressListOf('R', fam, name);
+    assert.deepStrictEqual([l.static, l.reasons, l.entries.map((e) => e.kind), l.reasonSrc.map((x) => x.reason)], [false, ['invalid-range'], ['invalid-range'], ['invalid-range']], name);
+    assert.strictEqual(mixed.addressSet(`R|${fam}|${name}`).ranges, null, name);
+  });
+  assert.ok(S.query.addressListReasons().some((x) => x.code === 'invalid-range' && x.source === 'entry' && /起點大於終點/.test(x.label)));
   // IPv4 與 IPv6 的清單分開：同名的 IPv6 清單是靜態的，不影響 IPv4 規則
   const v = S.query(R(['/ipv6 firewall address-list add address=2001:db8::/48 list=BAD', FWD('src-address-list=BAD')]));
   assert.strictEqual(v.addressListOf('R', 'ip', 'BAD'), null);

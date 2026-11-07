@@ -355,7 +355,7 @@
 
   /**
    * 位址清單（M.addressLists → Snapshot model.addressLists）：每台設備、每個位址族、每個清單名稱一筆，依設備、位址族（ip、ipv6）、名稱排序。
-   *   entries：export 的項目（依輸入順序，停用的也列）{ address, kind: 'address'|'dns', disabled, timeout, dynamic, src }；
+   *   entries：export 的項目（依輸入順序，停用的也列）{ address, kind: 'address'|'dns'|'invalid-range', disabled, timeout, dynamic, src }（kind 見 S.infer.fw.addressListItem）；
    *     Snapshot 只留 address、kind、disabled、src（封鎖名單可能有十萬筆），逾時與 dynamic 的來源行在 reasonSrc；
    *   writers：寫入這份清單的來源（依來源行）——rule（add-src-to-address-list／add-dst-to-address-list 的規則，含停用的；rule 是規則鍵）、
    *     config（其他設定的 address-list／address-lists 參數，section 是選單）、script（文字提到 address-list、寫入哪份不明，套用到這台設備的每份清單）；
@@ -385,7 +385,7 @@
     const FAM = ['ip', 'ipv6'];
     // 每個原因的第一個來源行（項目或寫入來源）：Snapshot 的項目只留位址、種類、停用與來源行，逾時與 dynamic 只在這裡指出是哪一行
     const firstSrc = (l, code) => {
-      const e = l.entries.find((x) => !x.disabled && (code === 'dns' ? x.kind === 'dns' : code === 'timeout' ? !!x.timeout : code === 'dynamic' ? x.dynamic : false));
+      const e = l.entries.find((x) => !x.disabled && (code === 'dns' || code === 'invalid-range' ? x.kind === code : code === 'timeout' ? !!x.timeout : code === 'dynamic' ? x.dynamic : false));
       const w = e ? null : l.writers.find((x) => x.kind === code);
       return (e || w).src[0];
     };

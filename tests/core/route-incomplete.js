@@ -69,6 +69,63 @@ test('路由表收集不完整：查不到符合的路由時 S.trace 停在 unve
   assert.strictEqual(Q0.reach('192.168.1.10', '8.8.8.8', { proto: 'tcp', port: 443 }).verdict, 'deny');
 });
 
+/**
+ * 收到的部分有較短的路由（預設路由、/16 的黑洞）：沒收到的部分可能有更長的前綴，最長前綴查找只有命中 /32 才確定。
+ * R1 的路由表逾時；R2 收齊。extra 是 R1 另外收到的路由。
+ */
+function partial(extra, failed) {
+  const r1 = ['R1 (192.168.1.1):', '### /export terse', '/interface bridge add name=bridge1',
+    '/interface list add name=WAN', '/interface list add name=LAN',
+    '/interface list member add interface=ether1 list=WAN', '/interface list member add interface=bridge1 list=LAN',
+    '/ip address add address=192.168.1.1/24 interface=bridge1 network=192.168.1.0', '/ip address add address=10.0.12.1/30 interface=ether3 network=10.0.12.0',
+    '/ip address add address=198.51.100.2/30 interface=ether1 network=198.51.100.0',
+    '### /ip route print detail without-paging', RT,
+    ' As dst-address=0.0.0.0/0 routing-table=main gateway=198.51.100.1 distance=1',
+    ' DAc dst-address=192.168.1.0/24 routing-table=main gateway=bridge1 distance=0'].concat(extra || []);
+  if (failed !== false) r1.push('# collection failed: timeout');
+  const r2 = ['R2 (192.168.2.1):', '### /export terse', '/interface bridge add name=bridge1',
+    '/ip address add address=192.168.2.1/24 interface=bridge1 network=192.168.2.0', '/ip address add address=10.0.12.2/30 interface=ether1 network=10.0.12.0',
+    '### /ip route print detail without-paging', RT,
+    ' DAc dst-address=192.168.2.0/24 routing-table=main gateway=bridge1 distance=0',
+    ' As dst-address=0.0.0.0/0 routing-table=main gateway=10.0.12.1 distance=1'];
+  return build(r1.concat(r2, ['']).join('\n'));
+}
+
+test('路由表收集不完整：收到的部分只符合較短的路由（預設路由）時也是不明——沒收到的部分可能有更長的前綴；命中 /32 才確定', () => {
+  const Q = S.query(partial());
+  const R = S.trace.routingOf(Q);
+  const lk = S.trace.lookup(R, 'R1', '192.168.2.10', 'main');
+  assert.deepStrictEqual([lk.kind, lk.partial], ['route-data-incomplete', '0.0.0.0/0']);
+  assert.strictEqual(S.trace.lookup(R, 'R1', '8.8.8.8', 'main').kind, 'route-data-incomplete');
+  assert.strictEqual(S.trace.lookup(R, 'R1', '192.168.1.9', 'main').kind, 'connected', '直連網段照常');
+  const t = S.trace(Q, '192.168.1.10', '192.168.2.10');
+  assert.strictEqual(t.status, 'unverified');
+  assert.ok(t.ends.every((e) => e.status === 'unverified' && e.reason === 'route-data-incomplete' && /0\.0\.0\.0\/0/.test(e.note)), JSON.stringify(t.ends));
+  const r = Q.reach('192.168.1.10', '192.168.2.10', { proto: 'tcp', port: 443 });
+  assert.strictEqual(r.verdict, 'unknown');
+  assert.ok(r.paths.length && r.paths.every((p) => p.end.code === 'route-data-incomplete'), JSON.stringify(r.paths.map((p) => p.end.code)));
+  // 命中 /32：沒有更長的前綴，結果確定
+  const Q32 = S.query(partial([' As dst-address=192.168.2.10/32 routing-table=main gateway=10.0.12.2 distance=1']));
+  const lk32 = S.trace.lookup(S.trace.routingOf(Q32), 'R1', '192.168.2.10', 'main');
+  assert.deepStrictEqual([lk32.kind, lk32.route], ['route', '192.168.2.10/32']);
+  assert.strictEqual(S.trace(Q32, '192.168.1.10', '192.168.2.10').status, 'reached');
+  // 對照：收齊時預設路由就是答案
+  const Q0 = S.query(partial(null, false));
+  assert.strictEqual(S.trace.lookup(S.trace.routingOf(Q0), 'R1', '192.168.2.10', 'main').kind, 'route');
+  assert.notStrictEqual(S.trace(Q0, '192.168.1.10', '192.168.2.10').status, 'unverified');
+  // 判斷函式只有一份：S.trace.routeCertain
+  assert.deepStrictEqual([S.trace.routeCertain(false, []), S.trace.routeCertain(true, []), S.trace.routeCertain(true, [{ len: 24 }]), S.trace.routeCertain(true, [{ len: 32 }])], [true, false, false, true]);
+});
+
+test('路由表收集不完整：下一跳只能靠較短的路由解析時（黑洞、迴圈、找不到）R01／R03／R04 都不報；收齊時照常', () => {
+  const extra = [' As dst-address=10.50.0.0/16 routing-table=main gateway=10.99.0.1 distance=1', ' As dst-address=10.99.0.0/16 routing-table=main blackhole distance=1'];
+  const ids = (s) => s.findings.filter((f) => /^R0[134]$/.test(f.id) && f.entities.some((e) => e.key === 'R1')).map((f) => f.id);
+  assert.deepStrictEqual(ids(partial(extra, false)), ['R04'], '收齊時：10.99.0.1 落入黑洞');
+  assert.deepStrictEqual(ids(partial(extra)), [], '不完整時：10.99.0.1 可能有沒收到的更長路由');
+  const res = S.check.resolveNextHop([{ prefix: '10.99.0.0', len: 16, blackhole: true, nh: [] }], '10.99.0.1', () => null, true);
+  assert.deepStrictEqual(res.map((x) => x.status), ['incomplete']);
+});
+
 test('路由表收集不完整：R01（下一跳解析不到）與 R12（網段沒有路由可以到達）對這台不報；收齊時照常', () => {
   const full = net(false); const part = net(true);
   assert.ok(full.findings.some((f) => f.id === 'R01' && /10\.99\.0\.1/.test(f.message)), '收齊時：10.99.0.1 沒有路由可解析');

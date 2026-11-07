@@ -422,7 +422,8 @@
       },
       /**
        * 這台設備的路由表收集不完整（coverage[].incomplete 含 route：路由表的指令收集失敗，例如逾時只收到前面一部分；事實）。
-       * 路由視圖的成員（S.trace.ROUTING_VIEW）：查不到符合的路由時，路徑追蹤與可達性回不明（route-data-incomplete），不當成沒有路由。
+       * 路由視圖的成員（S.trace.ROUTING_VIEW）：查不到符合的路由、或最長前綴不是 /32 時（S.trace.routeCertain），路徑追蹤與可達性回不明（route-data-incomplete），
+       * 不當成沒有路由，也不當成確定的下一跳。
        * 3.10.0 之前的基準沒有 incomplete，改看 failures 的 dataTypes（同一個來源）。
        */
       routesIncomplete(d) {

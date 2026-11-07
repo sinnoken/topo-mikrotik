@@ -82,11 +82,21 @@
   /** 最長前綴的路由（同遮罩多條全取，順序不變）；n 是 IP.toInt 的結果。 */
   const longestRoutes = (routes, n) => IP.longestPrefix(routes, 'prefix', n);
   /**
+   * 最長前綴查找的結果確不確定（單一來源：路徑追蹤的 lookup／lookupTable 與檢查的下一跳解析 S.check.resolveNextHop 都用它）：
+   * incomplete 是這台設備的路由表收集不完整（R.routesIncomplete）；cands 是最長前綴的路由（同遮罩）。
+   * 收齊時一定確定；不完整時沒收到的部分可能有更長的前綴，只有命中 /32（沒有更長的）才確定，查不到或命中較短的前綴都不明。
+   */
+  const routeCertain = (incomplete, cands) => !incomplete || (cands.length > 0 && cands[0].len >= 32);
+  /** route-data-incomplete 的說明（L3 追蹤與 L4 共用）：收到的部分有沒有符合的路由。 */
+  const incompleteNote = (lk, dst) => (lk.partial ? `收到的部分最長只符合 ${lk.partial}，沒收到的部分可能有到 ${dst} 更長的路由` : `收到的部分沒有符合 ${dst} 的路由`);
+  /**
    * 一台設備在某個 VRF 對目的位址的轉送決定（ADR-015：只看那個 VRF 的直連網段與路由表）：
    *   { kind: 'connected', conn }：目的在直連網段（conn 是 Q.subnets() 的元素，最長遮罩）
    *   { kind: 'no-route-data' }：沒有路由表資料（這台設備一筆路由都沒有）
    *   { kind: 'no-match', routes }：沒有符合的路由
-   *   { kind: 'route-data-incomplete', routes }：沒有符合的路由，但這台設備的路由表收集不完整（R.routesIncomplete，例如逾時），不能當成沒有路由（不明）
+   *   { kind: 'route-data-incomplete', routes, partial }：這台設備的路由表收集不完整（R.routesIncomplete，例如逾時），沒有符合的路由，
+   *     或最長前綴不是 /32（沒收到的部分可能有更長的前綴，routeCertain）：不能當成沒有路由，也不能當成確定的下一跳（不明）。
+   *     partial 是收到的部分中最長前綴的路由（「網段/遮罩」），沒有符合的路由時 null
    *   { kind: 'blackhole', route, routes }：最長前綴的路由都是黑洞
    *   { kind: 'route', route, proto, nhs: [{ r, n }], routes }：下一跳（同遮罩多條即 ECMP）；n.vrf 是解析這個閘道的 VRF
    * 每種結果都有 vrf（做出決定的 VRF）與 via（經過的 VRF，依序）：路由的閘道是 VRF 介面（下一跳 vrfBasis 為 vrf-interface，
@@ -101,8 +111,9 @@
     if (!R.routesOf(dev).length) return done({ kind: 'no-route-data', routes: [] });
     const routes = routesIn(R, dev, v);
     const cands = longestRoutes(routes, n);
-    if (!cands.length) return done({ kind: R.routesIncomplete(dev) ? 'route-data-incomplete' : 'no-match', routes });
-    const route = `${cands[0].prefix}/${cands[0].len}`;
+    const route = cands.length ? `${cands[0].prefix}/${cands[0].len}` : null;
+    if (!routeCertain(R.routesIncomplete(dev), cands)) return done({ kind: 'route-data-incomplete', routes, partial: route });
+    if (!cands.length) return done({ kind: 'no-match', routes });
     if (cands.every((r) => r.blackhole)) return done({ kind: 'blackhole', route, routes });
     const nhs = [];
     cands.forEach((r) => r.nh.forEach((n) => nhs.push({ r, n })));
@@ -119,9 +130,10 @@
     const routes = R.routesInTable(dev, table);
     const cands = longestRoutes(routes, IP.toInt(dst));
     const base = { vrf: K.MAIN_VRF, via: [K.MAIN_VRF], table };
-    // 路由表收集不完整時，查不到不代表這張表沒有（同 lookup）；策略路由不會因此改查下一條規則（routeDecision 視為已決定、結果不明）
-    if (!cands.length) return Object.assign({ kind: R.routesIncomplete(dev) ? 'route-data-incomplete' : 'no-match', routes }, base);
-    const route = `${cands[0].prefix}/${cands[0].len}`;
+    // 路由表收集不完整時，查不到或只命中較短的前綴不代表這張表沒有更長的（同 lookup）；策略路由不會因此改查下一條規則（routeDecision 視為已決定、結果不明）
+    const route = cands.length ? `${cands[0].prefix}/${cands[0].len}` : null;
+    if (!routeCertain(R.routesIncomplete(dev), cands)) return Object.assign({ kind: 'route-data-incomplete', routes, partial: route }, base);
+    if (!cands.length) return Object.assign({ kind: 'no-match', routes }, base);
     if (cands.every((r) => r.blackhole)) return Object.assign({ kind: 'blackhole', route, routes }, base);
     const nhs = []; cands.forEach((r) => r.nh.forEach((n) => nhs.push({ r, n })));
     return Object.assign({ kind: 'route', route, proto: cands[0].proto, nhs, routes }, base);
@@ -456,7 +468,7 @@
       if (lk.kind === 'no-route-data') { base.verdict = 'unknown'; return one(end('unknown', 'unknown', 'no-route-data', dev, `${name(dev)} 沒有路由表資料`)); }
       if (lk.kind === 'route-data-incomplete') {
         base.verdict = 'unknown'; base.route = Object.assign({ prefix: null, proto: null, gateway: null, gatewayVrf: null }, rv);
-        return one(end('unknown', 'unknown', 'route-data-incomplete', dev, `${name(dev)}${vrfMsg} 的路由表收集不完整，收到的部分沒有符合 ${cur.dst} 的路由，無法判斷`));
+        return one(end('unknown', 'unknown', 'route-data-incomplete', dev, `${name(dev)}${vrfMsg} 的路由表收集不完整，${incompleteNote(lk, cur.dst)}，無法判斷`));
       }
       if (lk.kind === 'no-match') { base.verdict = 'deny'; base.route = Object.assign({ prefix: null, proto: null, gateway: null, gatewayVrf: null }, rv); return one(end('no-route', 'deny', 'no-route', dev, `${name(dev)}${vrfMsg} 沒有符合 ${cur.dst} 的路由，封包被丟棄`)); }
       if (lk.kind === 'blackhole') { base.verdict = 'deny'; base.route = Object.assign({ prefix: lk.route, proto: '黑洞路由', gateway: null, gatewayVrf: null }, rv); return one(end('blackhole', 'deny', 'blackhole', dev, `${lk.route}${vrfMsg} 是黑洞路由，封包被丟棄`)); }
@@ -571,7 +583,7 @@
    * 與 L4 共用同一份路徑展開（walker）：起點、逐跳、目的是設備本身、未收集的設備、送往外部、ECMP、迴圈與 TTL 的判斷相同，只是不看防火牆。
    *   - 起點：來源是網路設備的位址 → 那台設備；否則來源所在網段的閘道（srcLocation 的依據；同一個依據有多台時每一台都是起點，starts 列出全部，start 是第一台）
    *   - 走到未收集的設備（起點、中途或終點）時以 ends[].status 'unverified' 停下：沒有它的路由表，不能判斷是否抵達，不算斷掉
-   *     （目的是它自己或在它已知的直連網段時算抵達）；路由表收集不完整（Q.routesIncomplete）的設備查不到符合的路由時也以 'unverified' 停下，
+   *     （目的是它自己或在它已知的直連網段時算抵達）；路由表收集不完整（Q.routesIncomplete）的設備查不到符合的路由、或最長前綴不是 /32 時（S.trace.routeCertain）也以 'unverified' 停下，
    *     另有 reason 'route-data-incomplete'
    *   - 經對外介面（Q.boundaryOf 的 status external）送往不在基準內的下一跳、目的也不在基準的網段：ends[].status 'egress'（送往外部，推論）；
    *     出介面只是可能對外（possible）時仍是 'unknown-nh'，另有 reason 'egress-possible'，note 寫出證據
@@ -642,7 +654,7 @@
       if (lk.kind === 'connected') { ends.push({ dev, vrf: lv, status: 'reached', note: connectedNote(lk), path }); continue; }
       if (lk.kind === 'no-route-data') { ends.push({ dev, vrf, status: 'noroute', note: '這台設備沒有路由表資料', path }); continue; }
       // 路由表收集不完整：查不到不代表沒有路由，同未收集的設備以 unverified 停下（不算斷掉）
-      if (lk.kind === 'route-data-incomplete') { ends.push({ dev, vrf: lv, status: 'unverified', reason: 'route-data-incomplete', note: `路由表收集不完整，收到的部分沒有符合 ${dst} 的路由，無法判斷`, path }); continue; }
+      if (lk.kind === 'route-data-incomplete') { ends.push({ dev, vrf: lv, status: 'unverified', reason: 'route-data-incomplete', note: `路由表收集不完整，${incompleteNote(lk, dst)}，無法判斷`, path }); continue; }
       if (lk.kind === 'no-match') { ends.push({ dev, vrf: lv, status: 'noroute', note: `${lk.table && lk.table !== lv ? `路由表 ${lk.table} ` : notMain(lv) ? `VRF ${lv} ` : ''}沒有符合 ${dst} 的路由${tableNote}${leakNote}`, path }); continue; }
       if (lk.kind === 'blackhole') {
         hops.push({ dev, vrf: lv, via: lk.via, route: lk.route, proto: '黑洞路由', ecmp: false, next: [] });
@@ -691,6 +703,7 @@
   S.trace.ROUTING_VIEW = ROUTING_VIEW;
   S.trace.routingOf = routingOf;
   S.trace.lookup = lookup;
+  S.trace.routeCertain = routeCertain;
   S.trace.nextOwner = nextOwner;
   S.trace.pickVrf = pickVrf;
   S.trace.routeDecision = routeDecision;

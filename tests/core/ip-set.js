@@ -34,7 +34,17 @@ test('S.ip.set：排序、合併重疊與相鄰的區間，has 二分搜尋；is
   assert.deepStrictEqual([S.ip.set(['0.0.0.0/1', '128.0.0.0/1'], 32).isAll, S.ip.set([], 32).isEmpty, S.ip.set([], 32).has('1.2.3.4')], [true, true, false]);
   const priv = S.ip.set(['10.0.0.0/8', '192.168.0.0/16'], 32);
   assert.deepStrictEqual([a.within(priv), priv.within(a), S.ip.set([], 32).within(priv), S.ip.set(['10.0.0.0/8', '11.0.0.1'], 32).within(priv)], [true, false, true, false]);
-  assert.deepStrictEqual(rs(S.ip.set(['10.0.0.9-10.0.0.5'], 32)), [], '起點大於終點的範圍不含任何位址');
+  assert.throws(() => S.ip.set(['10.0.0.9-10.0.0.5'], 32), TypeError, '起點大於終點的範圍不合法，不靜默略過');
+  assert.throws(() => S.ip.set([[n4('10.0.0.9'), n4('10.0.0.5')]], 32), TypeError, '起點大於終點的區間也一樣');
+});
+
+test('S.ip.range：起點大於終點、兩端位址族不同的範圍是 null（IPv4 與 IPv6）；S.ip.badRange 分辨「兩端都是位址但範圍不合法」與其他文字', () => {
+  const bad = ['10.0.0.9-10.0.0.1', '::1-10.0.0.1', '10.0.0.1-::1', '2001:db8::9-2001:db8::1', 'fd00::1-192.168.0.1'];
+  bad.forEach((t) => assert.strictEqual(S.ip.range(t), null, t));
+  bad.forEach((t) => assert.strictEqual(S.ip.badRange(t), true, t));
+  ['10.0.0.1-10.0.0.9', '10.0.0.5-10.0.0.5', '2001:db8::1-2001:db8::9', '10.0.0.1', '10.0.0.0/24', 'example.com', 'my-host.example.com', '10.0.0.1-example', '']
+    .forEach((t) => assert.strictEqual(S.ip.badRange(t), false, t));
+  assert.deepStrictEqual(S.ip.range('10.0.0.5-10.0.0.5'), [n4('10.0.0.5'), n4('10.0.0.5'), 32], '起點等於終點是一個位址');
 });
 
 test('S.ip.set：covers（整段都在）與 overlaps（有交集）看合併後的區段；位址族不同時丟出錯誤', () => {

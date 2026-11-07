@@ -74,6 +74,35 @@ test('位址集合登錄表：可能有動態來源的清單沒有集合（判�
   assert.deepStrictEqual(q.ranges, [['10.1.30.66', '10.1.30.66'], ['10.1.30.70', '10.1.30.79']]);
 });
 
+test('位址集合登錄表：起點大於終點、位址族混用的範圍（IPv4 與 IPv6）判斷不了，規則與 /routing rule 的字面值沒有集合，不當成空集合', () => {
+  const s = R([
+    '/ip firewall filter add action=drop chain=forward src-address=192.168.1.9-192.168.1.1',
+    '/ip firewall filter add action=drop chain=forward dst-address=::1-10.0.0.1',
+    '/ipv6 firewall filter add action=drop chain=forward src-address=2001:db8::9-2001:db8::1',
+    '/routing rule add action=lookup src-address=192.168.1.9-192.168.1.1 table=main',
+  ]);
+  const x = reg(s);
+  s.model.firewallRules.forEach((r) => { const k = r.match['src-address'] ? 'src-address' : 'dst-address'; assert.strictEqual(x.ofRule(r, k).set, null, r.key); });
+  assert.strictEqual(x.ofRoutingRule(s.model.routingRules[0], 'src-address').set, null);
+  // 判斷不了的條件：L4 回不明，不是「不符合、往下一條」
+  assert.strictEqual(S.query(s).reach('192.168.1.5', '8.8.8.8', { proto: 'tcp', port: 443 }).verdict, 'unknown');
+});
+
+test('位址集合登錄表：available-from 與 SNMP community 的 addresses 空白是不限來源（涵蓋該位址族的全部位址），不是空集合', () => {
+  // 手冊：available-from 空白是任何位址（https://manual.mikrotik.com/docs/cli-reference/ip/service.md）
+  const s = R(['/ip service set ssh address=""', '/ip service set winbox address=192.168.1.0/24',
+    '/snmp set enabled=yes', '/snmp community set [ find default=yes ] addresses="" name=nms']);
+  const Q = S.query(s);
+  ['ip', 'ipv6'].forEach((f) => {
+    const all = f === 'ip' ? [['0.0.0.0', '255.255.255.255']] : [['::', 'ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff']];
+    assert.deepStrictEqual(Q.addressSet(`R|${f}|service|ssh`).ranges, all, 'ssh ' + f);
+    assert.deepStrictEqual(Q.addressSet(`R|${f}|service|telnet`).ranges, all, '沒有設定的服務是出廠值（空白）' + f);
+    assert.deepStrictEqual(Q.addressSet(`R|${f}|snmp-community|nms`).ranges, all, 'snmp ' + f);
+  });
+  // 有寫來源時只取這個位址族的項目：只寫 IPv4 的 winbox 不接受 IPv6 來源
+  assert.deepStrictEqual([Q.addressSet('R|ip|service|winbox').ranges, Q.addressSet('R|ipv6|service|winbox').ranges], [[['192.168.1.0', '192.168.1.255']], []]);
+});
+
 test('判斷只有一個入口：位址的「在不在裡面」只經 S.ip.set（登錄表），舊的各自實作已不存在', () => {
   const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : e.name.endsWith('.js') ? [path.join(d, e.name)] : []));
   const files = walk(path.join(ROOT, 'src')).map((f) => [path.relative(ROOT, f), fs.readFileSync(f, 'utf8')]);

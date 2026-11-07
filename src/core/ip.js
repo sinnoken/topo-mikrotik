@@ -100,24 +100,36 @@
    * 位址、網段或範圍的文字 → [lo, hi, bits]（BigInt 的閉區間；bits 是 32 或 128）；不合法時 null。
    * 接受 10.0.0.1、10.0.0.0/24（主機位元清掉）、10.0.0.1-10.0.0.9，IPv6 同樣寫法（2001:db8::/32、2001:db8::1-2001:db8::9）。
    * 開頭的 !（否定）不是位址的一部分，由呼叫端先拿掉；有 ! 時 null。
+   * 範圍的兩端要是同一個位址族、起點不大於終點；否則 null（不當成不含任何位址的範圍，呼叫端以 ip.badRange 分辨，判為不明）。
    * 防火牆條件（S.infer.fw.parseVal）、位址清單的項目與 /ip service 的 available-from 都經這裡解析，不另寫一份。
    */
+  const RANGE_RE = /^([^/\-!]+)(?:\/(\d{1,3}))?(?:-([^/]+))?$/;
+  /** 一個位址的文字 → [BigInt, bits]（IPv4 是 32、IPv6 是 128）；不是位址時 null。 */
+  const addrOf = (x) => { if (ip.isIp(x)) return [BigInt(ip.toInt(x)), 32]; const n = ip.v6ToBig(x); return n === null ? null : [n, 128]; };
   ip.range = (text) => {
-    const r = String(text).trim().match(/^([^/\-!]+)(?:\/(\d{1,3}))?(?:-([^/]+))?$/); if (!r) return null;
-    const v4 = ip.isIp(r[1]); const bits = v4 ? 32 : 128;
-    const toBig = (x) => (ip.isIp(x) ? BigInt(ip.toInt(x)) : v4 ? null : ip.v6ToBig(x));
-    const lo0 = toBig(r[1]); if (lo0 === null) return null;
-    if (r[3]) { const hi = toBig(r[3]); return hi === null ? null : [lo0, hi, bits]; }
+    const r = String(text).trim().match(RANGE_RE); if (!r) return null;
+    const a = addrOf(r[1]); if (!a) return null;
+    const [lo0, bits] = a;
+    if (r[3]) { const b = addrOf(r[3]); return b && b[1] === bits && lo0 <= b[0] ? [lo0, b[0], bits] : null; }
     const len = r[2] === undefined ? bits : +r[2]; if (len > bits) return null;
     const span = (1n << BigInt(bits - len)) - 1n; const lo = lo0 & ~span & ((1n << BigInt(bits)) - 1n);
     return [lo, lo + span, bits];
+  };
+  /**
+   * 文字是不是「兩端都是位址、但不是合法範圍」的 a-b：起點大於終點（10.0.0.9-10.0.0.1），或兩端的位址族不同（::1-10.0.0.1）。
+   * 這種項目 ip.range 回傳 null，但不是網域名稱或其他文字；位址清單把它判為不明（S.infer.fw.addressListItem 的 invalid-range）。
+   */
+  ip.badRange = (text) => {
+    const r = String(text).trim().match(RANGE_RE); if (!r || !r[3]) return false;
+    const a = addrOf(r[1]); const b = addrOf(r[3]);
+    return !!a && !!b && (a[1] !== b[1] || a[0] > b[0]);
   };
   const cmpBig = (p, q) => (p[0] < q[0] ? -1 : p[0] > q[0] ? 1 : 0);
   /**
    * 位址集合（單一來源：防火牆的位址條件、位址清單、/ip service 的 available-from 都用它判斷「位址在不在裡面」，L4 的等價類邊界也由它產生）。
    * ip.set(items, bits)：items 是 ip.range 接受的文字，或 [lo, hi]（BigInt）；bits 是 32（IPv4）或 128（IPv6）。
-   * 項目依起點排序，重疊與相鄰的合併成一段（結果不重疊、不相鄰）；起點大於終點的範圍不含任何位址，略過。
-   * 文字不合法或位址族與 bits 不同時丟出 TypeError（呼叫端先決定不合法的項目怎麼處理，見 S.infer.addrSets），不靜默略過。
+   * 項目依起點排序，重疊與相鄰的合併成一段（結果不重疊、不相鄰）。
+   * 文字不合法（含起點大於終點、位址族混用的範圍）、[lo, hi] 的起點大於終點，或位址族與 bits 不同時丟出 TypeError（呼叫端先決定不合法的項目怎麼處理，見 S.infer.addrSets），不靜默略過。
    * 回傳（凍結）：
    *   bits、ranges（合併後的 [lo, hi]，凍結）、
    *   has(x)：x（BigInt、IPv4 的 ip.toInt 數字，或位址文字）在不在集合內，二分搜尋；文字不是這個位址族的位址時丟出 TypeError；
@@ -131,11 +143,14 @@
     if (bits !== 32 && bits !== 128) throw new TypeError(`S.ip.set：bits 要是 32 或 128（${bits}）`);
     const max = (1n << BigInt(bits)) - 1n;
     const rs = (items || []).map((x) => {
-      if (Array.isArray(x)) return [x[0], x[1]];
+      if (Array.isArray(x)) {
+        if (!(x[0] <= x[1])) throw new TypeError(`S.ip.set：區間的起點大於終點（${x[0]}-${x[1]}）`);
+        return [x[0], x[1]];
+      }
       const r = ip.range(x);
       if (!r || r[2] !== bits) throw new TypeError(`S.ip.set：「${x}」不是 IPv${bits === 32 ? 4 : 6} 的位址、網段或範圍`);
       return [r[0], r[1]];
-    }).filter(([a, b]) => a <= b).sort(cmpBig);
+    }).sort(cmpBig);
     const out = [];
     for (const [a, b] of rs) {
       const last = out[out.length - 1];

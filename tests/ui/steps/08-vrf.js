@@ -100,8 +100,14 @@ module.exports = async () => {
     if (V.IFC_VRF_INFERRED.has(i.vrfBasis) !== $('#detail').querySelector('.ifc-vrf').textContent.includes('推論')) throw new Error('VRF 依據是推論時才標推論');
     // 設備詳情（PE）：VRF 設定、路由表欄、洩漏的下一跳標 @VRF
     const PE = K.splitEp(own.ep)[0]; App.select({ type: 'device', key: PE });
-    const pd = text('#detail'); const defs = Q.vrfsOf(PE);
-    if (!defs.length || !defs.every((v) => pd.includes(v.name))) throw new Error('設備詳情應列出 VRF 設定');
+    // VRF 設定：設備詳情的路由表摘要寫出 VRF 數，點了開路由表視窗的 VRF 分頁，列出每個 VRF
+    const defs = Q.vrfsOf(PE);
+    const vl = $('#detail').testAll('.routes-tab').find((a) => a.getAttribute('data-tab') === 'vrfs');
+    if (!defs.length || !vl || !vl.textContent.includes(V.num(defs.length))) throw new Error('設備詳情應寫出 VRF 設定的數量');
+    vl.click();
+    const vp = routesRoot().querySelector('#tdlg-panel-vrfs').textContent;
+    if (!defs.every((v) => vp.includes(v.name))) throw new Error('VRF 分頁應列出每個 VRF：' + vp.slice(0, 200));
+    App.select({ type: 'device', key: PE });
     // 路由表視窗：搜尋結果列出「路由表」欄（組內是組名，不列），洩漏的下一跳在組名標 @VRF
     const pr0 = Q.allRoutesOf(PE)[0];
     App.select({ type: 'routes', dev: PE, search: `${pr0.prefix}/${pr0.len}` });

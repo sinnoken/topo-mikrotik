@@ -2,7 +2,7 @@
 // 從檢查結果定位、窄螢幕的單欄與「返回」、狀態列、選取列的樣式只在 CSS、A.modalOpen。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { S, fs, path, ROOT, step, $, text, document, cssVarsOf, SCHEMES, pressKey, buildInput, detailRoot, fwRoot, fwList, fwSide, fwTab, fwRows } = require('../helpers.js');
+const { S, fs, path, ROOT, step, $, text, document, cssVarsOf, SCHEMES, pressKey, buildInput, detailRoot, fwRoot, fwList, fwSide, fwTab, fwRows, workEntry } = require('../helpers.js');
 
 /** 範例基準中規則最多、而且有命中次數的設備 */
 const fwDevice = (Q) => {
@@ -12,7 +12,7 @@ const fwDevice = (Q) => {
 /** 打開設備詳情，從摘要的入口開防火牆視窗；回傳入口 */
 const openFrom = (dev) => {
   App.select({ type: 'device', key: dev });
-  const link = detailRoot().querySelector('.fw-open'); if (!link) throw new Error('設備詳情應有「查看防火牆規則與服務」');
+  const link = detailRoot().querySelector('.fw-open'); if (!link) throw new Error('設備詳情的工作入口應有防火牆');
   link.focus(); link.click();
   if (!$('#dlg-table').open) throw new Error('入口應開啟防火牆視窗');
   return link;
@@ -104,10 +104,10 @@ module.exports = async () => {
     } finally { window.innerWidth = prevW; App.select(null); }
   });
 
-  await step('表格視窗：窄螢幕單欄——點規則後只顯示詳情並有「返回」；返回保留選取、展開的組與頁碼，焦點回到那一列；寬螢幕的「返回」取消選取', () => {
+  await step('表格視窗：窄螢幕單欄——點規則後只顯示詳情並有「返回」；返回保留選取、展開的組與頁碼，焦點回到那一列；寬螢幕的「回到總覽」取消選取；卡片不列空的欄', () => {
     const Q = App.Q; const dev = fwDevice(Q);
     const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
-    const media = css.slice(css.indexOf('#dlg-table { width: 90vw'));
+    const media = css.slice(css.indexOf('#dlg-table { width: 94vw'));
     if (!/@media \(max-width: 900px\) \{\s*#dlg-table \{ width: 100vw; height: 100dvh;/.test(media)) throw new Error('900px 以下視窗應是全螢幕');
     if (!/\.tdlg-cols\[data-view="detail"\] \.tdlg-list \{ display: none; \}/.test(media) || !/\.tdlg-cols \{ display: flex; flex-direction: column;/.test(media)) throw new Error('900px 以下應是單欄，看詳情時表格不顯示');
     if (!/\.tdlg-list, \.tdlg-side \{[^}]*overflow-x: hidden/.test(css)) throw new Error('視窗的兩欄不應整頁橫捲（表格在 .table-scroll 內橫捲）');
@@ -120,11 +120,21 @@ module.exports = async () => {
       const grp = panel.testAll('.biglist-group').find((g) => g.getAttribute('data-group') != null);
       grp.open = true; grp.dispatch('toggle');
       const tr = grp.testAll('tbody tr')[0]; const key = tr.getAttribute('data-key');
+      // 卡片（stack）：值是空的格不寫欄名（class blank，CSS 不顯示），有值的格才有「欄名：」
+      const tds = grp.testAll('tbody td'); const empty = (td) => !td.textContent.trim() && Array.from(td.children).every((c) => !c.children.length);
+      if (!tds.some(empty)) throw new Error('測試前提：規則表應有空的格（例如沒有檢查結果）');
+      tds.forEach((td) => {
+        if (empty(td) !== /\bblank\b/.test(td.className) || (empty(td) && td.getAttribute('data-label') != null)) throw new Error('空的格標 blank、不寫欄名；有值的格不標：' + td.className);
+      });
+      if (!/table\.t\.stack td\.blank \{ display: none; \}/.test(css)) throw new Error('卡片不顯示空的格');
       tr.focus(); tr.click();
       if (body.getAttribute('data-view') !== 'detail') throw new Error('窄螢幕點規則後只顯示詳情（data-view=detail）');
       if (document.activeElement !== fwSide().querySelector('h2')) throw new Error('窄螢幕選取後焦點移到詳情的標題');
       const back = fwSide().querySelector('.tdlg-back');
-      if (!back || !back.textContent.includes('返回')) throw new Error('詳情應有「返回」');
+      // 按鈕的文字跟著寬度（CSS 依同一個 900px 斷點顯示其中一段），視窗縮放後不必重畫：兩段都在，窄的是「返回」、寬的是「回到總覽」
+      const part = (b, w) => b.querySelector('.tdlg-back-' + w);
+      if (!back || !part(back, 'narrow') || !part(back, 'narrow').textContent.includes('返回') || !part(back, 'wide') || !part(back, 'wide').textContent.includes('回到總覽') || part(back, 'wide').textContent.includes('返回')) throw new Error('詳情應有「返回」，寬螢幕的文字是「回到總覽」');
+      if (!/@media \(max-width: 900px\) \{[^@]*\.tdlg-back-wide \{ display: none; \}/.test(media) || !/\.tdlg-back-narrow \{ display: none; \}/.test(css)) throw new Error('「返回」與「回到總覽」應由 CSS 依寬度只顯示一段');
       back.click();
       if (body.getAttribute('data-view') !== 'list' || body.getAttribute('data-selected') == null) throw new Error('返回後回到表格，選取保留');
       if (App.sel.type !== 'rule' || App.sel.key !== key) throw new Error('窄螢幕的返回不取消選取');
@@ -133,7 +143,10 @@ module.exports = async () => {
       // 寬螢幕的「返回」：取消選取，右欄回到總覽，焦點回到那一列
       window.innerWidth = 1200;
       App.select({ type: 'rule', key });
-      fwSide().querySelector('.tdlg-back').click();
+      // 寬螢幕表格一直看得到，按鈕是取消選取：文字寫「回到總覽」，不寫「返回」
+      const wideBack = fwSide().querySelector('.tdlg-back');
+      if (!part(wideBack, 'wide').textContent.includes('回到總覽')) throw new Error('寬螢幕的按鈕文字應是「回到總覽」：' + wideBack.textContent);
+      wideBack.click();
       if (App.sel.type !== 'firewall' || fwSide().querySelector('.tdlg-back') || !fwSide().textContent.includes('這台設備的防火牆')) throw new Error('寬螢幕的返回應取消選取、右欄回到總覽');
       if (document.activeElement.getAttribute('data-key') !== key) throw new Error('寬螢幕返回後焦點回到那一列');
     } finally { window.innerWidth = prevW; App.select(null); }
@@ -171,7 +184,7 @@ module.exports = async () => {
     // 「N 條有問題」只有一種算法：右欄摘要與視窗頁首相同
     App.select({ type: 'device', key: dev });
     const st = S.view.firewall.statusChips(App, dev);
-    if (st.bad && !detailRoot().querySelector('.fw-summary').querySelector('summary').textContent.includes(st.bad.textContent)) throw new Error('右欄摘要的「N 條有問題」應同 statusChips');
+    if (st.bad && !workEntry('防火牆').textContent.includes(st.bad.textContent)) throw new Error('右欄工作入口的「N 條有問題」應同 statusChips');
     App.select(null);
   });
 
@@ -204,5 +217,31 @@ module.exports = async () => {
     const hit = shownRow(panel, key);
     if (panel.querySelector('.biglist-search').value !== word || !hit || !inResult(hit) || !hit.classList.contains('focus')) throw new Error('搜尋結果有要定位的列時保留搜尋字，在結果中選取它');
     App.select(null);
+  });
+
+  await step('防火牆視窗：規則少時也依 chain 分組（chain 是語意上的分組），自訂 chain 與 jump 來源都看得到；很長、沒有逗號的條件值可以在片內折行', async () => {
+    await buildInput(['FW (10.9.0.1):', '### /export terse',
+      '/ip address add address=10.9.0.1/24 interface=ether1 network=10.9.0.0',
+      '/ip firewall filter add action=jump chain=input jump-target=custom',
+      '/ip firewall filter add action=drop chain=custom src-address-list=very-long-address-list-name-from-threat-intel-provider-blocklist',
+      '/ip firewall filter add action=accept chain=forward src-address=10.0.0.1,10.0.0.2 comment="a, b"', ''].join('\n'));
+    const Q = App.Q; const chains = Q.firewallChains('FW');
+    const custom = chains.find((c) => c.jumpedFrom.length);
+    if (!custom || chains.length < 2) throw new Error('測試前提：有自訂 chain 與 jump、多個 chain');
+    try {
+      openFrom('FW');
+      const groups = fwTab('rules').testAll('.biglist-group').filter((g) => g.getAttribute('data-group') != null);
+      if (fwList().querySelector('.biglist-flat') || groups.length !== chains.length) throw new Error(`規則少時也依 chain 分組：${groups.length} 組，chain ${chains.length} 個`);
+      const g = groups.find((x) => x.getAttribute('data-group') === custom.family + '|' + custom.table + '|' + custom.chain);
+      if (!g.querySelector('summary').textContent.includes('自訂 chain') || !g.querySelector('summary').textContent.includes(`${custom.jumpedFrom.length} 條 jump 進入`)) throw new Error('自訂 chain 的標題列應有「自訂 chain」與「N 條 jump 進入」：' + g.querySelector('summary').textContent);
+      g.open = true; g.dispatch('toggle');
+      if (!g.textContent.includes('由這些規則 jump 進來')) throw new Error('自訂 chain 組內應先列 jump 來源');
+      // 條件的一片：--len 是字數（CSS 的 min-width 用它），片內允許折行，一整行放不下時不撐寬表格
+      const seg = fwList().testAll('.fw-seg').find((s) => s.textContent.startsWith('src-address-list=very-long'));
+      if (!seg || seg.getAttribute('style') !== '--len:' + seg.textContent.length) throw new Error('條件的一片應寫出字數（--len）：' + (seg && seg.getAttribute('style')));
+      const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
+      const rule = (css.match(/\.tdlg-list \.fw-seg \{([^}]*)\}/) || [])[1] || '';
+      if (/nowrap/.test(rule) || !/display: inline-block/.test(rule) || !/max-width: 100%/.test(rule) || !/overflow-wrap: anywhere/.test(rule) || !/var\(--len/.test(rule)) throw new Error('.fw-seg 應整片換行（inline-block）、寬度不超過一整行、放不下時片內折行：' + rule);
+    } finally { if ($('#dlg-table').open) $('#tdlg-close').click(); App.select(null); }
   });
 };

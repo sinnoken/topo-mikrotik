@@ -492,6 +492,8 @@
   };
 
   let sortFocus = null; // 剛按下排序的欄位標題（重繪後把焦點還給它）
+  /** 格的內容是空的：沒有值、空字串，或沒有文字也沒有子元素（例如沒有檢查結果時的 chip 容器） */
+  const isBlank = (v) => v == null || v === false || v === '' || (typeof v === 'object' && !String(v.textContent || '').trim() && !(v.children && v.children.length));
   function renderTable(cols, rows, o) {
     const tb = V.h('tbody');
     // selectable（單選的表格，V.tableDialog 用）：只有選取的列（沒有時第一列）是 Tab 停留點，↑↓／Home／End 在列之間移動焦點，
@@ -520,7 +522,11 @@
         } : null,
       }));
       tb.appendChild(tr);
-      cols.map((c) => V.h('td', { class: c.cls || null, style, 'data-label': o.stack && typeof c.t === 'string' ? c.t : null }, c.f(r))).forEach((td) => tr.appendChild(td));
+      // stack（窄螢幕每列一塊）：值是空的格不寫欄名（class blank，CSS 不顯示），卡片不出現空的「狀態：」
+      cols.map((c) => {
+        const v = c.f(r); const blank = o.stack && isBlank(v);
+        return V.h('td', { class: [c.cls || '', blank ? 'blank' : ''].join(' ').trim() || null, style, 'data-label': o.stack && !blank && typeof c.t === 'string' ? c.t : null }, v);
+      }).forEach((td) => tr.appendChild(td));
     });
     // 可排序的標頭：標頭內放 <button>（鍵盤可聚焦、Enter／空白鍵排序），th 標 aria-sort；▲▼ 只是視覺提示，不念出
     const head = (c, n) => {
@@ -542,7 +548,13 @@
    * 大量列的清單（設備詳情的路由表、防火牆的位址清單；路由可能超過十萬條）：
    *   min：列數少於它時照原樣直接列出（V.table）；page：分頁時每頁的列數（明細與分組都是）。
    */
-  V.BIG_LIST = Object.freeze({ min: 200, page: 50 });
+  V.BIG_LIST = Object.freeze({ min: 200, page: 50, groupRatio: 0.5 });
+  /**
+   * 分組有沒有減少要看的列：至少 2 組（只有 1 組時要多點一下才看得到內容），組數不超過列數 × BIG_LIST.groupRatio（例如 121 條路由分成 121 組就沒有用），
+   * 而且列數超過 flatMax（呼叫端給，例如一頁放得下就不分組；省略時不限）。V.bigList 與右欄的摘要（例如路由的「前幾組」）共用這個判斷。
+   * 分組本身有語意時（例如防火牆的 chain）不用這個判斷，改傳 V.bigList 的 alwaysGroup。
+   */
+  V.groupsUseful = (rows, groups, flatMax) => rows > (flatMax || 0) && groups >= 2 && groups <= rows * V.BIG_LIST.groupRatio;
   /**
    * 分頁的外框：n 筆、每頁 BIG_LIST.page 筆，drawPage(from, to) 回傳那一頁的內容。上一頁／下一頁等是按鈕（鍵盤可操作），
    * 換頁後焦點留在同一個按鈕（到頭時改到另一邊），頁碼的說明是 role=status。回傳 { box, draw(reset) }：reset 回到第一頁（排序後用）。
@@ -594,12 +606,16 @@
    *      沒有 match 或它回傳 null（搜尋字不是它接受的格式）時，改依每列的文字（opt.text）找；有搜尋字時改列出符合的列（分頁）。
    * 展開、頁碼與搜尋字是檢視狀態，只在這個元件裡（重繪詳情時回到預設），不寫回 Snapshot。
    *   V.bigList(cols, rows, { groups: () => [{ key, title, rows, extra? }], text(row) → 文字, match?(搜尋字) → 列的陣列｜null, table: V.table 的選項, unit: '條', what: '路由', placeholder })
-   *   groups 只在列數達到 min 時才呼叫；每組的 rows 是 rows 的子集合，各組合起來是全部的列。
+   *   groups 只在列數達到 min（或 grouped）時才呼叫；每組的 rows 是 rows 的子集合，各組合起來是全部的列。
+   *   分組沒有減少要看的列（V.groupsUseful 為 false，flatMax 是它的第三個參數）時不分組，① 改成全部的列直接分頁（同不傳 groups）；alwaysGroup 時不看這個判斷。
    *   不傳 groups：不分組，① 改成全部的列直接分頁（排序對全部的列）；沒有 text 也沒有 match 時不放搜尋框（例如呼叫端已有自己的篩選框）。
    *   table.onSort：排序由呼叫端管（rows 已排好、跨重繪保留），只用在不分組時
    * 其他選項：
    *   onRow(row)：列可以點（同 V.table 的 onRow；表格視窗 V.tableDialog 用它選取一列）
-   *   grouped：不論列數一律分組（例如防火牆規則一律依 chain 分組）
+   *   grouped：少於 min 列時也交給分組的判斷（不直接用 V.table；例如路由要有搜尋框），分不分組仍依 V.groupsUseful
+   *   alwaysGroup：一律分組，不看 V.groupsUseful——組是語意上的分組、不是為了減少列數（例如防火牆的 chain：組的標題列與 note 是 chain 的資訊，
+   *                平面列出就看不到）；有 groups 時才有作用，通常和 grouped 一起給
+   *   flatMax：列數不超過它時不分組（V.groupsUseful 的第三個參數，例如路由一頁放得下就直接列出）
    *   欄位的 inGroup: false：組內的表格不列這一欄（例如位址清單的「清單」和組名重複）；直接列出與搜尋結果仍列出
    *   組的 open：一開始就展開（例如有問題的 chain）；note：組內表格上方的說明（節點）
    *   reveal：要定位的那一列：展開它所在的組，組與明細都翻到它所在的那一頁
@@ -611,8 +627,9 @@
     const o = opt || {}; const unit = o.unit || '筆';
     const tableOpt = Object.assign({}, o.table, o.onRow ? { onRow: o.onRow } : null);
     if (rows.length < V.BIG_LIST.min && !o.grouped) return V.table(cols, rows, tableOpt);
-    const summary = o.groups ? groupSummary(cols, rows, o, tableOpt, unit)
-      : V.h('div', { class: 'biglist-summary' }, pagedTable(cols, rows, tableOpt, unit, o.reveal ? Math.max(0, rows.indexOf(o.reveal)) : 0));
+    const groups = o.groups ? o.groups() : null;
+    const summary = groups && (o.alwaysGroup || V.groupsUseful(rows.length, groups.length, o.flatMax)) ? groupSummary(cols, rows, groups, o, tableOpt, unit)
+      : V.h('div', { class: 'biglist-summary biglist-flat' }, pagedTable(cols, rows, tableOpt, unit, o.reveal ? Math.max(0, rows.indexOf(o.reveal)) : 0));
     if (!o.text && !o.match) return V.h('div', { class: 'biglist' }, summary);
     const result = V.h('div', { class: 'biglist-result', hidden: true });
     const status = V.h('span', { class: 'biglist-status muted', role: 'status' });
@@ -639,8 +656,7 @@
     return V.h('div', { class: 'biglist' }, [V.h('div', { class: 'biglist-tools' }, [search, status]), summary, result]);
   };
   /** V.bigList 的 ①：總數與各組（每組一個展開列，第一次展開才畫明細；組數多時分組也分頁） */
-  function groupSummary(cols, rows, o, tableOpt, unit) {
-    const groups = o.groups();
+  function groupSummary(cols, rows, groups, o, tableOpt, unit) {
     const groupCols = cols.filter((c) => c.inGroup !== false);
     const at = o.reveal ? groups.findIndex((g) => g.rows.includes(o.reveal)) : -1;
     const groupFold = (g) => {

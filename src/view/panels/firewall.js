@@ -1,6 +1,6 @@
 /*
  * 防火牆視窗：某台設備的防火牆（選取 type 為 firewall／rule／service），開在共用的表格視窗 V.tableDialog（table-dialog.js）。
- * 規則表放不進右欄（8 欄）；右欄的設備詳情只留摘要（details.js 的 firewallSummary，狀態與筆數取自這裡的 statusChips）。
+ * 規則表放不進右欄（8 欄）；右欄的設備詳情只留工作入口（details.js 的工作入口（workEntries），狀態與筆數取自這裡的 statusChips）。
  * 三個產生函式，各只有一份：
  *   規則表（rulesTab）：依位址族 × 表 × chain 分組（Q.firewallRuleRows、Q.firewallChains），經 V.bigList；另有服務、interface list、位址清單三個分頁。
  *   規則詳情（ruleDetail）：檢查結果、屬性、命中次數（rule.stats，事實；沒有資料或對不上（F09）時說明原因）、
@@ -55,9 +55,22 @@
   // ---------------------------------------------------------------- 規則的欄位：規則表的每一格與規則詳情共用同一組函式
   const actionCell = (r) => h('span', { class: 'mono', style: { color: T.action[r.action] || T.action.other } },
     r.action + (r.action === 'jump' && r.params['jump-target'] ? ' → ' + r.params['jump-target'] : ''));
+  /** 規則表的動作欄：動作，停用的規則在旁邊加「停用」chip（原本的「狀態」欄大多是空的，併進這一欄） */
+  const actionStateCell = (r) => h('span', { class: 'fw-action' }, [actionCell(r), r.disabled ? ' ' : null, r.disabled ? stateCell(r) : null]);
+  /**
+   * 條件：每個 k=v 一段（span.fw-tok），段與段之間是空白，在 k=v 之間折行，不把 add-src-to-address-list 這類參數從中間切開。
+   * 值以逗號分成幾片（span.fw-seg），片與片之間放 <wbr>：一段整行都放不下時（窄螢幕的卡片）才在逗號後換行；
+   * 一片整行都放不下（很長的 address-list 名稱）時才在片內折行。--len 是片的字數，CSS 用它定表格排欄寬時這一片至少要的寬度（app.css 的 .fw-seg）
+   */
+  const segs = (text) => String(text).split(',').flatMap((s, n, all) => {
+    const t = s + (n < all.length - 1 ? ',' : '');
+    return [h('span', { class: 'fw-seg', style: '--len:' + t.length }, t), n < all.length - 1 ? h('wbr') : null];
+  });
+  const tokens = (o, cls) => Object.entries(o || {}).flatMap(([k, v], n) => [n ? ' ' : null, h('span', { class: 'fw-tok' + (cls ? ' ' + cls : '') }, segs(`${k}=${v}`))]);
   const matchCell = (r) => {
     const params = Object.assign({}, r.params); delete params['jump-target'];
-    return h('span', { class: 'mono' }, [kvText(r.match) || '（全部）', Object.keys(params).length ? h('span', { class: 'muted' }, ' ' + kvText(params)) : null]);
+    const m = tokens(r.match); const p = tokens(params, 'muted');
+    return h('span', { class: 'mono fw-match' }, [...(m.length ? m : [h('span', { class: 'fw-tok' }, segs('（全部）'))]), p.length ? ' ' : null, ...p]);
   };
   const commentCell = (r) => h('span', null, [
     r.comment || '',
@@ -85,7 +98,7 @@
 
   // ---------------------------------------------------------------- 規則表與其他分頁（左欄）
   /**
-   * 規則：每個 chain 一組（V.bigList 的 grouped）；組的標題是「位址族 表 chain」，旁邊是自訂 chain、jump 進入與有問題的數量，
+   * 規則：每個 chain 一組，規則少也分組（V.bigList 的 grouped＋alwaysGroup：chain 是語意上的分組，平面列出就看不到下面的 chain 資訊）；組的標題是「位址族 表 chain」，旁邊是自訂 chain、jump 進入與有問題的數量，
    * 有規則 jump 進來時組內先列來源。一開始展開的：有錯誤或警告的 chain（沒有定位時）與定位的規則所在的 chain（bigList 的 reveal）。
    * 搜尋依 chain、動作、條件與註解的文字。「位置」只在搜尋結果列（組內和組名重複）。
    */
@@ -95,20 +108,21 @@
     const parts = chains.map((c) => ({ c, rows: Q.firewallRuleRows(dev, { family: c.family, table: c.table, chain: c.chain }) }));
     const rows = [].concat(...parts.map((p) => p.rows));
     return {
-      key: 'rules', label: '規則', count: rows.length, rows, rowKey: (x) => x.rule.key, grouped: true,
+      key: 'rules', label: '規則', count: rows.length, rows, rowKey: (x) => x.rule.key, grouped: true, alwaysGroup: true,
       empty: '這台設備沒有防火牆規則（或沒有收集 /export）。', unit: '條', what: '規則', placeholder: '搜尋 chain、動作、條件或註解',
       text: (x) => `${chainText(x.rule)} #${x.rule.position} ${x.rule.action} ${kvText(x.rule.match)} ${kvText(x.rule.params)} ${x.rule.comment || ''}`,
       columns: [
         { t: '位置', f: (x) => chainText(x.rule), inGroup: false },
-        { t: '#', f: (x) => String(x.rule.position), s: (x) => x.rule.position },
-        { t: '動作', f: (x) => actionCell(x.rule) },
+        // 數字、行號與動作不折行（num／nowrap）；條件只在 k=v 之間折行，註解是自由文字（wrap）
+        { t: '#', f: (x) => String(x.rule.position), s: (x) => x.rule.position, cls: 'num' },
+        { t: '動作', f: (x) => actionStateCell(x.rule), cls: 'nowrap' },
         { t: '條件', f: (x) => matchCell(x.rule), cls: 'wrap' },
         { t: '註解', f: (x) => commentCell(x.rule), cls: 'wrap' },
-        { t: '狀態', f: (x) => stateCell(x.rule) },
         // 命中次數（print stats，事實）：封包數；沒有資料時空白（原因在規則詳情）
         { t: '命中', f: (x) => (x.rule.stats ? h('span', { class: 'mono fw-hits', title: `${V.bigNum(x.rule.stats.packets)} 個封包、${V.bigNum(x.rule.stats.bytes)} 位元組（收集當下的累積值）` }, V.bigNum(x.rule.stats.packets)) : ''), cls: 'num' },
+        // 檢查：每個 chip 本身不折行（table.t .chip），chip 之間可以換行（多筆檢查結果時不把表格撐寬）
         { t: '檢查', f: (x) => h('span', null, findingChips(App, 'rule', x.rule.key)) },
-        { t: '原文', f: (x) => srcLink(App, x.rule.src) },
+        { t: '原文', f: (x) => srcLink(App, x.rule.src), cls: 'nowrap' },
       ],
       table: {
         bad: (x) => problems(x.findings).length > 0,

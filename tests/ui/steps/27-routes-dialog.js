@@ -3,7 +3,7 @@
 // 以及右欄的介面表（兩行式）與鄰居表、linkTable（三欄），和視窗內表格不橫捲的樣式規則。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { S, fs, path, ROOT, step, $, document, pressKey, buildInput, detailRoot, routesRoot, routesList, routesSide, routesSummary } = require('../helpers.js');
+const { S, fs, path, ROOT, step, $, document, pressKey, buildInput, detailRoot, routesRoot, routesList, routesSide, routesSummary, workEntry } = require('../helpers.js');
 
 /** 有下一跳擁有者（Q.hopOwner）的路由：回傳 { dev, r, n, own }（範例資料一定有） */
 const ownedRoute = (Q) => {
@@ -28,13 +28,28 @@ module.exports = async () => {
     if (summ.querySelector('table') || summ.testAll('tr').length) throw new Error('右欄的路由表只有摘要，不列路由');
     const count = summ.querySelector('summary').querySelector('.count');
     if (!count || count.textContent !== S.view.num(Q.allRoutesOf(dev).length)) throw new Error('摘要的總數應同 Q.allRoutesOf');
+    if (!summ.querySelector('.routes-search')) throw new Error('摘要應有搜尋框');
+    // 開整個視窗的入口只有一個：設備詳情的工作入口（路由摘要的標題列不再重複「查看全部路由」）；數字同 V.routes.counts 與 Q
+    const entry = detailRoot().querySelector('.entry-routes');
+    if (!entry || summ.querySelector('.routes-open')) throw new Error('開路由表視窗的入口在工作入口，摘要的標題列不重複');
+    const c = S.view.routes.counts(App, dev);
+    if (c.total !== Q.allRoutesOf(dev).length || c.inactive !== Q.allRoutesOf(dev).filter((x) => x.active === false).length) throw new Error('V.routes.counts 應同 Q.allRoutesOf');
+    // 分組與視窗一致：路由一頁放得下時視窗直接依網段列出（列數同 Q），摘要不列組；否則視窗分組（組數不超過門檻），摘要列出其中最多的 1–3 組
+    const P = S.view.BIG_LIST; const nr = Q.allRoutesOf(dev).length;
     const top = summ.testAll('.routes-group');
-    if (!top.length || top.length > 3) throw new Error('摘要應列出前 1–3 組：' + top.length);
-    if (!summ.querySelector('.routes-open') || !summ.querySelector('.routes-search')) throw new Error('摘要應有「查看全部路由」與搜尋框');
-    // 點一組：開視窗並展開那一組
-    top[0].click();
-    const g = routesList().testAll('.biglist-group').find((x) => x.getAttribute('data-group') === top[0].getAttribute('data-group'));
-    if (!g || g.getAttribute('open') == null) throw new Error('點摘要的一組應開視窗並展開那一組');
+    entry.click();
+    const gs = routesList().testAll('.biglist-group').filter((x) => x.getAttribute('data-group') != null);
+    if (nr <= P.page) {
+      if (top.length || gs.length) throw new Error('路由一頁放得下時不分組（摘要與視窗都不列組）：' + top.length + '／' + gs.length);
+      if (routesList().querySelector('#tdlg-panel-routes').testAll('tbody tr').length !== nr) throw new Error('不分組時直接列出全部的路由（列數同 Q.allRoutesOf）');
+    } else {
+      if (!gs.length || gs.length > nr * P.groupRatio) throw new Error('分組數應不超過門檻：' + gs.length + '／' + nr);
+      if (!top.length || top.length > 3 || !top.every((a) => gs.some((g) => g.getAttribute('data-group') === a.getAttribute('data-group')))) throw new Error('摘要應列出視窗裡的 1–3 組：' + top.length);
+    }
+    // ECMP：每個下一跳一行（不黏成一串）
+    const ecmp = S.view.routes.nhCell({ vrf: 'main', nh: [{ ip: '10.0.0.2', ifc: 'ether3', vrf: 'main' }, { ip: '10.0.0.6', ifc: 'ether4', vrf: 'main' }] }, false);
+    const hops = ecmp.testAll('.route-nh-one').map((x) => x.textContent);
+    if (hops.join('|') !== '10.0.0.2 ether3|10.0.0.6 ether4') throw new Error('多個下一跳應每個一行：' + hops.join('|'));
     $('#tdlg-close').click();
     if ($('#dlg-table').open) throw new Error('✕ 應關閉視窗');
     // 搜尋框 Enter：開視窗，搜尋字套用在視窗的搜尋框，結果是 Q.routesMatching 的路由
@@ -120,7 +135,10 @@ module.exports = async () => {
     } finally { window.innerWidth = prevW; App.select(null); }
     const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
     if (!/\.tdlg-list \.table-scroll \{ overflow-x: visible; \}/.test(css)) throw new Error('視窗左欄的表格不在 .table-scroll 內橫捲（表頭固定在左欄）');
-    if (!/\.tdlg-list table\.t td \.mono, \.tdlg-list table\.t td \.vlanlist \{ white-space: normal; overflow-wrap: anywhere; \}/.test(css)) throw new Error('視窗內的識別字與條件應可折行');
+    // 識別字與條件只在空白處折行（break-word：整個字詞一行放不下時才斷），不從字詞中間切開
+    if (!/\.tdlg-list table\.t td \.mono, \.tdlg-list table\.t td \.vlanlist \{ white-space: normal; overflow-wrap: break-word; \}/.test(css)) throw new Error('視窗內的識別字與條件應在空白處折行');
+    if (!/\.tdlg-list \{ padding: 0 /.test(css)) throw new Error('視窗左欄上方不留 padding（固定的表頭上面不透出被捲走的列）');
+    if (!/\.detail-fold > summary::before \{ content: "▸"; color: var\(--muted\);/.test(css) || !/\.detail-fold\[open\] > summary::before \{ content: "▾"; \}/.test(css)) throw new Error('展開列應有 ▸／▾ 記號（顏色用 token）');
     if (!/\.tdlg-list table\.t td\.wrap \{ max-width: /.test(css)) throw new Error('長欄位（條件、註解）應有最大寬度');
     if (!/table\.t\[role="grid"\] tbody tr\.click:hover td \{ background: var\(--surface-hover\); \}/.test(css)) throw new Error('可選取表格的滑過應用中性的底色，和選取列分得出來');
     if (!/\.tdlg-side \{ order: 1;/.test(css)) throw new Error('窄螢幕時表格在前、總覽在後');
@@ -153,13 +171,16 @@ module.exports = async () => {
     if (!lk || lk.querySelector('table').testAll('th').length !== 3) throw new Error('linkTable 應是三欄');
     const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
     if (!/\.two-line \.l2 \{[^}]*white-space: normal; overflow-wrap: anywhere;/.test(css)) throw new Error('兩行式的第二行應可折行（360px 不橫捲）');
-    // 防火牆摘要：規則與服務的數量寫出單位，標籤不從詞中間折行
+    // 防火牆摘要（工作入口的一項）：規則與服務的數量寫出單位
     const fd = Q.firewallRules()[0].dev;
     App.select({ type: 'device', key: fd });
-    const fs0 = detailRoot().querySelector('.fw-summary');
-    if (!fs0.textContent.includes(`${S.view.num(Q.firewallRulesOf(fd).length)} 條`)) throw new Error('防火牆摘要應寫「N 條」規則');
-    if (Q.ipServicesOf(fd).length && !fs0.textContent.includes(`${S.view.num(Q.ipServicesOf(fd).length)} 個`)) throw new Error('防火牆摘要應寫服務數');
-    if (!/\.fw-summary \.kv \{ grid-template-columns: max-content/.test(css)) throw new Error('防火牆摘要的標籤欄不應折行');
+    const fs0 = workEntry('防火牆');
+    if (!fs0) throw new Error('設備詳情的工作入口應有防火牆');
+    if (!fs0.textContent.includes(`${S.view.num(Q.firewallRulesOf(fd).length)} 條規則`)) throw new Error('防火牆摘要應寫「N 條規則」');
+    if (Q.ipServicesOf(fd).length && !fs0.textContent.includes(`${S.view.num(Q.ipServicesOf(fd).length)} 個服務`)) throw new Error('防火牆摘要應寫「N 個服務」');
+    // 工作入口：標籤欄不折行，和上方的屬性以分隔線隔開；舊的防火牆摘要樣式已移除
+    if (!/\.work-entries \.kv \{ grid-template-columns: max-content minmax\(0, 1fr\); \}/.test(css) || !/\.work-entries \{[^}]*border-top: 1px solid var\(--line\)/.test(css)) throw new Error('工作入口的標籤不折行、上方有分隔線');
+    if (/\.fw-summary\b/.test(css)) throw new Error('.fw-summary 已沒有元素使用，樣式應移除');
     App.select(null);
   });
 

@@ -81,10 +81,13 @@
       const keyCol = km ? km.index + km[1].length : -1;
       let last = cur.text; // 上一個實體行（判斷寬度用）
       while (km && i + 1 < lines.length) {
+        // 先看這一行需不需要接：大多數行沒有沒關上的引號、也不是逗號結尾的清單，不必處理下一行（大型路由表的建立時間）
+        const open = cur.text.includes('"') && quoteOpen(cur.text);
+        if (!open && !(cur.text.endsWith(',') && LIST_CUT.test(cur.text))) break;
         const next = lines[i + 1].replace(/\r$/, '');
         if (!next.trim() || ROW_HEAD.test(next)) break;
         const piece = next.replace(/^\s+/, '');
-        if (quoteOpen(cur.text)) {
+        if (open) {
           // 屬於這個欄位的片段：到關上引號為止；這一行也沒關上時是整行
           const close = /^(?:[^"\\]|\\.)*"/.exec(piece);
           if (!folded(wrap, last, close ? close[0] : piece)) break;

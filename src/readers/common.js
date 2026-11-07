@@ -89,8 +89,9 @@
   /** 同一段的區塊（同一次連線）：設定每個區塊的 wrap；記錄與輸出不符時加 issue */
   function wrapOf(entries) {
     const lines = entries.map((e) => widthLines(e.b));
-    const all = [].concat(...lines);
-    const longest = all.length ? Math.max(...all.map((x) => x.len)) : null;
+    // 不用 Math.max(...陣列)／concat(...陣列)：大型路由表有數萬行，展開成參數會超過呼叫堆疊的上限
+    const all = lines.flat();
+    const longest = all.length ? all.reduce((m, x) => (x.len > m ? x.len : m), 0) : null;
     const inferred = all.some((x) => x.cut && x.len === longest) ? { limit: longest, basis: 'inferred' } : null;
     entries.forEach(({ b, widthLine }, k) => {
       if (typeof b.terminalWidth !== 'number') { b.wrap = inferred; return; }

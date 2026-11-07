@@ -477,8 +477,6 @@
    */
   V.table = function (cols, rows, opt) {
     const o = opt || {};
-    // limit：舊的「只顯示前 N 筆」，改走 V.bigList 的分頁（數值不再使用，不截斷）。panels/details.js、firewall.js 改用 V.bigList 後拿掉這個選項
-    if (o.limit) return V.bigList(cols, rows, { table: Object.assign({}, o, { limit: 0 }) });
     if (o.onSort || !cols.some((c) => c.s)) return renderTable(cols, rows, o);
     const box = V.h('div');
     const st = { by: -1, dir: 1 };

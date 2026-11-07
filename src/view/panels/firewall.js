@@ -311,7 +311,7 @@
       `allow→deny ${V.num(ad)} 筆`, ...Object.entries(c).filter(([k]) => k !== 'allow→deny').map(([k, n]) => `、${k} ${V.num(n)} 筆`),
       `（共 ${V.num(res.ifDisabled.total)} 筆結果改變${res.ifDisabled.truncated ? '，下表只列前幾筆' : ''}）`]));
     if (res.cells.length) {
-      body.appendChild(V.table([
+      body.appendChild(V.bigList([
         { t: '來源 zone', f: (x) => name(x.src), s: (x) => name(x.src) },
         { t: '目的 zone', f: (x) => name(x.dst), s: (x) => name(x.dst) },
         { t: '位置', f: (x) => (x.plane === 'device' ? '設備本身（input／output）' : '轉送') },
@@ -319,7 +319,7 @@
         { t: '無法判斷', f: (x) => V.num(x.uncertain), s: (x) => x.uncertain },
         { t: '經過', f: (x) => V.num(x.passes), s: (x) => x.passes },
         { t: '服務', f: (x) => h('span', { class: 'mono' }, x.services.join(' ')) },
-      ], res.cells, { limit: 200 }));
+      ], res.cells, { unit: '對' }));
     } else body.appendChild(h('p', { class: 'muted' }, '矩陣的代表位址組合都沒有經過這條規則。'));
     if (res.ifDisabled.changed.length) {
       body.appendChild(section('停用後改變的路徑', V.table([

@@ -1,10 +1,12 @@
 /*
  * 路由表視窗：某台設備的所有路由（Q.allRoutesOf，含非作用中的），開在共用的表格視窗 V.tableDialog（table-dialog.js），是它的第二個使用者。
- * 右欄的設備詳情只留摘要（summary）：總數、路由最多的幾組、搜尋框（Enter 開視窗並帶入搜尋字）與「查看全部路由」。
+ * 右欄的設備詳情只留摘要（summary）：總數、路由最多的幾組、搜尋框（Enter 開視窗並帶入搜尋字）與「查看全部路由」，
+ * 以及 VRF、策略路由與 OSPF 鄰接的一行摘要（每一項開視窗的那個分頁）。
+ *   分頁：路由、VRF、/routing rule、策略路由的路由表、OSPF 鄰接（EXTRA_TABS）；設備沒有的資料不列那個分頁。只有路由的列可以選。
  *   左欄：V.bigList，一律依路由表、協定與下一跳分組（groups）；組內不列和組名重複的欄（inGroup: false），搜尋結果才列。
  *         搜尋位址或網段經 Q.routesMatching（前綴由長到短），其他文字（協定、下一跳名稱）依文字比對。
  *   右欄：點選的那一條路由——屬性、每個下一跳解析的 VRF 與擁有者（Q.hopOwner）、原文，以及「從這台追蹤到這個網段」（App.openTrace）。
- * 選取是 { type: 'routes', dev, route?: 列的鍵, group?: 組的鍵, search?: 搜尋字 }，只是檢視狀態（App.sel），不進基準。
+ * 選取是 { type: 'routes', dev, route?: 列的鍵, group?: 組的鍵, search?: 搜尋字, tab?: 分頁 }，只是檢視狀態（App.sel），不進基準。
  * 區塊一律用 V.section（details.js 的 parts.section）產生。
  */
 (function (S) {
@@ -60,30 +62,72 @@
   const INACTIVE_TIP = '目前沒有被選用（例如備援路由）；路由追蹤只看作用中的路由';
   const POLICY_TIP = '這張路由表不是 VRF：只有 /routing rule 指定時才會查';
 
+  // ---------------------------------------------------------------- 這台設備的路由設定（視窗的分頁與右欄摘要共用同一份）
+  /**
+   * 視窗的分頁（路由以外）：key、分頁的標籤、右欄摘要的寫法（label＋筆數＋unit）。右欄的一行摘要與分頁的數字都取自 routing()，同一個來源。
+   */
+  const EXTRA_TABS = Object.freeze([
+    { key: 'vrfs', label: 'VRF', summary: 'VRF', unit: '個' },
+    { key: 'rules', label: '/routing rule', summary: '策略路由', unit: '條規則' },
+    { key: 'tables', label: '路由表（/routing table）', summary: '策略路由的路由表', unit: '張' },
+    { key: 'ospf', label: 'OSPF 鄰接', summary: 'OSPF 鄰接', unit: '個' },
+  ]);
+  /**
+   * 這台設備的路由設定（事實）：沒有的資料是空陣列，視窗不列那個分頁、右欄不寫那一項。
+   *   vrfs：Q.vrfsOf（只有內建的 main 時不列，與加入 VRF 之前相同）
+   *   tables、rules：Q.routingTables()／Q.routingRules() 中這台設備的（含停用的規則）；路由表只在有策略路由（Q.policyOf().any、/routing rule
+   *     或只用於策略路由的路由表）時列出
+   *   ospf：Q.ospfAdjacenciesOf（L3 鄰接，非實體直連）
+   *   pol：Q.policyOf；unsure：改過查表順序或有 mangle 的 mark-routing（查哪一張表不明，警告）
+   */
+  function routing(Q, dev) {
+    const pol = Q.policyOf(dev);
+    const tables = Q.routingTables().filter((t) => t.dev === dev); const rules = Q.routingRules().filter((r) => r.dev === dev);
+    const policy = pol.any || rules.length > 0 || tables.some((t) => t.vrf == null);
+    const vrfs = Q.vrfsOf(dev);
+    return { pol, policy, unsure: pol.custom || pol.marks.length > 0,
+      vrfs: vrfs.some((v) => !v.builtin) ? vrfs : [], rules, tables: policy ? tables : [], ospf: Q.ospfAdjacenciesOf(dev) };
+  }
+  /** 查表的設定（policy-rules 與 mangle 的 mark-routing）：視窗頁首，有策略路由時才列 */
+  function policyHead(rt0) {
+    const pol = rt0.pol;
+    return P().kv([
+      ['查表順序（policy-rules）', h('span', null, [h('span', { class: 'mono' }, pol.policyRules.join(' → ')), ' ',
+        pol.custom ? V.chip('改過預設的順序：查哪一張表無法判斷', 'warn') : V.chip('預設')])],
+      ['mangle mark-routing', pol.marks.length ? h('span', null, [`${V.num(pol.marks.length)} 條 `, V.chip('mangle 不在模型中：封包可能改查其他路由表，結果不明', 'warn')]) : null],
+    ]);
+  }
+
   // ---------------------------------------------------------------- 右欄的摘要（設備詳情）
-  /** 開啟視窗：search 帶入搜尋字、group 展開那一組 */
+  /** 開啟視窗：search 帶入搜尋字、group 展開那一組、tab 切到那個分頁 */
   const openSel = (dev, o) => Object.assign({ type: 'routes', dev }, o || {});
   /**
    * 設備詳情的「路由表」：總數（標題的 count）、非作用中的條數、路由最多的 TOP_GROUPS 組（點一下開視窗並展開那一組）、
    * 搜尋框（Enter 開視窗並帶入搜尋字）與「查看全部路由」。與相鄰的防火牆摘要同一種模式（展開列，入口在標題列）。
+   * VRF、策略路由與 OSPF 鄰接只寫一行（例如「VRF 2 個、策略路由 3 條規則」），每一項開視窗的那個分頁。
+   * 查哪一張表不明（改過 policy-rules 或有 mark-routing）時預設展開，標題列標出。
    */
   function summary(App, dev) {
-    const Q = App.Q; const routes = Q.allRoutesOf(dev);
-    if (!routes.length) return null;
-    const groups = routeGroups(routes, showTable(Q, routes));
+    const Q = App.Q; const routes = Q.allRoutesOf(dev); const r0 = routing(Q, dev);
+    const more = EXTRA_TABS.filter((t) => r0[t.key].length);
+    if (!routes.length && !more.length && !r0.policy) return null;
+    const groups = routes.length ? routeGroups(routes, showTable(Q, routes)) : [];
     const top = groups.map((g, n) => ({ g, n })).sort((a, b) => b.g.rows.length - a.g.rows.length || a.n - b.n).slice(0, TOP_GROUPS).map((x) => x.g);
     const input = h('input', { type: 'search', class: 'routes-search', placeholder: '搜尋位址、網段、下一跳、協定', 'aria-label': '搜尋路由（Enter 在路由表視窗開啟結果）',
       onkeydown: (e) => { if (e.key !== 'Enter') return; e.preventDefault(); const q = String(input.value || '').trim(); App.select(openSel(dev, q ? { search: q } : null)); } });
+    const line = more.length ? h('p', { class: 'routes-more' }, more.flatMap((t, n) => [n ? '、' : '',
+      h('a', { class: 'link routes-tab', 'data-tab': t.key, onclick: () => App.select(openSel(dev, { tab: t.key })) }, `${t.summary} ${V.num(r0[t.key].length)} ${t.unit}`)])) : null;
     return P().section('路由表', [
-      h('p', { class: 'muted routes-total' }, `共 ${V.num(routes.length)} 條，依路由表、協定與下一跳分成 ${V.num(groups.length)} 組`
-        + (groups.length > top.length ? `；路由最多的 ${V.num(top.length)} 組：` : '：')),
-      h('ul', { class: 'routes-top' }, top.map((g) => h('li', null, [
+      routes.length ? h('p', { class: 'muted routes-total' }, `共 ${V.num(routes.length)} 條，依路由表、協定與下一跳分成 ${V.num(groups.length)} 組`
+        + (groups.length > top.length ? `；路由最多的 ${V.num(top.length)} 組：` : '：')) : h('p', { class: 'muted routes-total' }, '沒有路由（或沒有收集 /ip route）。'),
+      routes.length ? h('ul', { class: 'routes-top' }, top.map((g) => h('li', null, [
         h('a', { class: 'link routes-group', 'data-group': g.key, onclick: () => App.select(openSel(dev, { group: g.key })) }, g.title), ' ',
-        V.chip(V.num(g.rows.length), 'count')]))),
-      h('div', { class: 'row routes-search-row' }, input),
-    ], { count: routes.length, fold: true, cls: 'routes-summary',
-      extra: [V.stateChip(routes.filter((r) => r.active === false).length, '條非作用中'),
-        h('a', { class: 'link routes-open', onclick: () => App.select(openSel(dev)) }, '查看全部路由')] });
+        V.chip(V.num(g.rows.length), 'count')]))) : null,
+      routes.length ? h('div', { class: 'row routes-search-row' }, input) : null,
+      line,
+    ], { count: routes.length, fold: true, open: r0.unsure, cls: 'routes-summary',
+      extra: [V.stateChip(routes.filter((r) => r.active === false).length, '條非作用中'), r0.unsure ? V.chip('查哪一張表不明', 'warn') : null,
+        h('a', { class: 'link routes-open', onclick: () => App.select(openSel(dev)) }, routes.length ? '查看全部路由' : '查看路由設定')] });
   }
 
   // ---------------------------------------------------------------- 視窗的左欄與右欄
@@ -108,6 +152,57 @@
       table: { rowClass: (r) => (r.active === false ? 'route-off' : '') },
       groups: () => routeGroups(rows, table),
     };
+  }
+  /**
+   * 路由以外的分頁（VRF、/routing rule、路由表、OSPF 鄰接）：列不能選（selectable: false），連結在格內（原文、介面、設備）。
+   * 列數一般只有幾筆；欄位與原本設備詳情的表相同，視窗夠寬，900px 以下每列一塊（stack）。
+   */
+  function extraTabs(App, dev, r0) {
+    const Q = App.Q; const { epLink, devLink } = P(); const src = (x) => V.srcLink(App, x.src);
+    const tab = (key, o) => { const t = EXTRA_TABS.find((x) => x.key === key); return Object.assign({ key, label: t.label, count: r0[key].length, rows: r0[key], selectable: false, unit: t.unit }, o); };
+    const byIndex = (rows) => { const m = new Map(rows.map((r, n) => [r, '#' + n])); return (r) => m.get(r); };
+    const fromExport = r0.vrfs.some((v) => v.source === 'export');
+    return [
+      tab('vrfs', { rowKey: (v) => v.name,
+        extra: [fromExport ? h('p', { class: 'muted' }, ['依 export 的 /ip vrf：export 不寫內建的 main，假設 main 在最後（比對介面時最後才輪到 main） ', V.chip('推論', 'info')]) : null,
+          V.stateChip(r0.vrfs.filter((v) => v.disabled).length, '個停用')],
+        columns: [
+          { t: '順序', f: (v) => String(v.order), s: (v) => v.order },
+          { t: 'VRF', f: (v) => h('span', null, [h('span', { class: 'mono' }, v.name), v.builtin ? V.chip('內建') : null, v.disabled ? V.chip('停用', 'warn') : null]), s: (v) => v.name },
+          { t: '設定的介面', f: (v) => h('span', { class: 'mono' }, v.interfaces.join(' ') || '—') },
+          { t: '成員', f: (v) => (v.members.length ? h('span', null, v.members.flatMap((ep, n) => [n ? '、' : '', epLink(App, ep)])) : '—'), s: (v) => v.members.length },
+          { t: '來源', f: src },
+        ] }),
+      tab('rules', { rowKey: (r) => String(r.order),
+        extra: [h('p', { class: 'muted' }, '依設定順序；只有 main 的封包會依序比對。判斷封包查哪一張表的是路由追蹤與可達性查詢，這裡只列設定。')],
+        columns: [
+          { t: '順序', f: (r) => String(r.order), s: (r) => r.order },
+          { t: '條件', f: (r) => h('span', { class: 'mono' }, Object.entries(r.match).map(([k, v]) => `${k}=${v}`).join(' ') || '（沒有條件）'), cls: 'wrap' },
+          { t: '動作', f: (r) => h('span', { class: 'mono' }, r.action + (r.table ? ' ' + r.table : '')) },
+          { t: '狀態', f: (r) => (r.disabled ? V.chip('停用', 'warn') : '啟用') },
+          { t: '備註', f: (r) => r.comment || '', cls: 'wrap' },
+          { t: '來源', f: src },
+        ] }),
+      tab('tables', { rowKey: (t) => t.name,
+        extra: [h('p', { class: 'muted' }, '/routing table 與 VRF 自動產生的表。')],
+        columns: [
+          { t: '路由表', f: (t) => h('span', { class: 'mono' }, t.name), s: (t) => t.name },
+          { t: '用途', f: (t) => (t.vrf ? V.vrfText(t.vrf) : h('span', null, ['只用於策略路由 ', V.chip('不是 VRF', 'info', { title: POLICY_TIP })])), s: (t) => t.vrf || '' },
+          { t: 'fib', f: (t) => (t.fib ? '是' : '否') },
+          { t: '狀態', f: (t) => (t.disabled ? V.chip('停用', 'warn') : '啟用') },
+          { t: '路由', f: (t) => V.num(Q.routesInTable(dev, t.name).length), s: (t) => Q.routesInTable(dev, t.name).length, cls: 'num' },
+          { t: '來源', f: src },
+        ] }),
+      tab('ospf', { rowKey: byIndex(r0.ospf),
+        extra: [h('p', { class: 'muted' }, 'OSPF 鄰接是 L3 的路由鄰接，不代表實體直連，也不畫成拓樸的鏈路。')],
+        columns: [
+          { t: '本機介面', f: (a) => epLink(App, a.localEp), s: (a) => K.splitEp(a.localEp)[1] },
+          { t: '鄰居', f: (a) => devLink(App, a.peerDev), s: (a) => Q.devName(a.peerDev) },
+          { t: '鄰居位址／路由器 ID', f: (a) => [a.peerIp, a.peerId].filter(Boolean).join('／'), s: (a) => a.peerIp || a.peerId },
+          { t: '回報', f: (a) => (a.reciprocal ? '雙向 OSPF 鄰接' : '單向 OSPF 觀察'), s: (a) => (a.reciprocal ? '雙向' : '單向') },
+          { t: '來源', f: src },
+        ] }),
+    ].filter((t) => t.rows.length);
   }
   /** 下一跳的擁有者（Q.hopOwner，規則同 R01 與路由追蹤）：介面或設備的管理 IP；跨 VRF 的推論標「推論」 */
   function ownerCell(App, r, n) {
@@ -159,13 +254,14 @@
         title: r.len > 0 ? `從 ${Q.devName(dev)} 追蹤到 ${r.prefix}（網段的位址）` : '預設路由：目的在路由追蹤的表單裡填' }, '從這台追蹤到這個網段')),
     ]);
   }
-  /** 沒有選路由時的右欄：怎麼用 */
+  /** 沒有選路由時的右欄：怎麼用，與每個分頁的筆數（同分頁與右欄摘要，取自 routing()） */
   function overview(App, dev) {
-    const Q = App.Q; const routes = Q.allRoutesOf(dev);
+    const Q = App.Q; const routes = Q.allRoutesOf(dev); const r0 = routing(Q, dev);
     return h('div', { class: 'detail routes-overview' }, [
       h('h2', null, '這台設備的路由表'),
-      h('p', { class: 'muted routes-pick-hint' }, '點左邊的一條路由，這裡改為顯示它的屬性、每個下一跳解析的 VRF 與擁有者、原文，以及從這台追蹤到那個網段。'),
-      P().section('路由表', P().kv([['路由', V.num(routes.length)], ['非作用中', V.num(routes.filter((r) => r.active === false).length)]])),
+      routes.length ? h('p', { class: 'muted routes-pick-hint' }, '點「路由」分頁的一條路由，這裡改為顯示它的屬性、每個下一跳解析的 VRF 與擁有者、原文，以及從這台追蹤到那個網段。') : null,
+      P().section('路由表', P().kv([['路由', V.num(routes.length)], ['非作用中', V.num(routes.filter((r) => r.active === false).length)],
+        ...EXTRA_TABS.filter((t) => r0[t.key].length).map((t) => [t.summary, `${V.num(r0[t.key].length)} ${t.unit}`])])),
     ]);
   }
 
@@ -178,20 +274,26 @@
   function show(App, sel) {
     const dev = sel.dev; const key = sel.route == null ? null : sel.route;
     const d = dialog();
-    if (d && d.id === DIALOG + dev && rt.Q === App.Q && (sel === rt.sel || (sel.search == null && sel.group == null))) {
+    if (d && d.id === DIALOG + dev && rt.Q === App.Q && (sel === rt.sel || (sel.search == null && sel.group == null && sel.tab == null))) {
       const now = d.selected();
       if (!rt.inner && now.key !== key) d.select('routes', key, { reveal: true, focus: true }); else d.refresh();
       return;
     }
     rt.Q = App.Q; rt.sel = sel;
-    const Q = App.Q; const has = !!Q.getDevice(dev);
+    const Q = App.Q; const has = !!Q.getDevice(dev); const r0 = routing(Q, dev);
+    // 分頁：路由、VRF、/routing rule、路由表、OSPF 鄰接，沒有資料的不列；全部都沒有時仍列「路由」（說明沒有路由）
+    const routeTab = routesTab(App, dev);
+    const tabs = (routeTab.rows.length ? [routeTab] : []).concat(extraTabs(App, dev, r0));
     V.tableDialog.open({
       id: DIALOG + dev, title: `${has ? Q.devLabel(dev) : dev} 的路由表`,
-      head: () => { const n = Q.allRoutesOf(dev).filter((r) => r.active === false).length; return n ? h('div', { class: 'row routes-status-row' }, V.stateChip(n, '條非作用中')) : null; },
-      tabs: [routesTab(App, dev)],
+      head: () => {
+        const n = Q.allRoutesOf(dev).filter((r) => r.active === false).length;
+        return h('div', { class: 'routes-head' }, [n ? h('div', { class: 'row routes-status-row' }, V.stateChip(n, '條非作用中')) : null, r0.policy ? policyHead(r0) : null]);
+      },
+      tabs: tabs.length ? tabs : [routeTab],
       detail: (row) => routeDetail(App, row),
       empty: () => (has ? overview(App, dev) : h('div', { class: 'detail routes-overview' }, h('h2', null, '基準中沒有這台設備'))),
-      initial: { tab: 'routes', row: key, group: sel.group, search: sel.search },
+      initial: { tab: sel.tab || 'routes', row: key, group: sel.group, search: sel.search },
       // 視窗裡選了一列：同步 App.sel（圖上的標示）；取消選取時回到這台設備的路由表
       onSelect: (rowKey) => {
         rt.inner = true;

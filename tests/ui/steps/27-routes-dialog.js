@@ -162,4 +162,106 @@ module.exports = async () => {
     if (!/\.fw-summary \.kv \{ grid-template-columns: max-content/.test(css)) throw new Error('防火牆摘要的標籤欄不應折行');
     App.select(null);
   });
+
+  await step('路由表視窗的分頁：VRF、/routing rule、路由表、OSPF 鄰接——右欄只有一行摘要，點一項開那個分頁；分頁的列數同 Q；設備沒有的資料不列分頁', () => {
+    const Q = App.Q; const V = S.view;
+    // 期望（只由 Q 算）：VRF 只有內建 main 時不列；路由表只在有策略路由時列
+    const want = (dev) => {
+      const tables = Q.routingTables().filter((t) => t.dev === dev); const rules = Q.routingRules().filter((r) => r.dev === dev);
+      const policy = Q.policyOf(dev).any || rules.length > 0 || tables.some((t) => t.vrf == null);
+      return { vrfs: Q.vrfsOf(dev).some((v) => !v.builtin) ? Q.vrfsOf(dev).length : 0, rules: rules.length, tables: policy ? tables.length : 0, ospf: Q.ospfAdjacenciesOf(dev).length };
+    };
+    const shownRows = (n) => (n < V.BIG_LIST.min ? n : V.BIG_LIST.page);
+    const seen = new Set();
+    Q.devices().forEach((d) => {
+      const w = want(d.key); const keys = Object.keys(w).filter((k) => w[k] > 0);
+      if (!keys.length) return;
+      App.select({ type: 'device', key: d.key });
+      const sum = routesSummary();
+      ['VRF', '策略路由', 'OSPF L3 鄰接（非實體直連）'].forEach((t) => {
+        if (detailRoot().testAll('summary').some((s) => s.firstChild.textContent === t)) throw new Error(d.key + ' 的右欄不應再有「' + t + '」區塊');
+      });
+      const links = sum.testAll('.routes-tab');
+      if (links.map((a) => a.getAttribute('data-tab')).sort().join() !== keys.slice().sort().join()) throw new Error(d.key + ' 的一行摘要應只列有資料的項目：' + links.map((a) => a.textContent).join('、'));
+      keys.forEach((k) => {
+        const a = sum.testAll('.routes-tab').find((x) => x.getAttribute('data-tab') === k);
+        if (!a.textContent.includes(V.num(w[k]))) throw new Error(d.key + ' 的摘要「' + a.textContent + '」應寫出 ' + w[k]);
+        a.click();
+        const root = routesRoot();
+        const tabs = root.testAll('.tdlg-tab').map((b) => b.getAttribute('data-tab'));
+        const expTabs = (Q.allRoutesOf(d.key).length ? ['routes'] : []).concat(['vrfs', 'rules', 'tables', 'ospf'].filter((x) => w[x] > 0));
+        if (tabs.join() !== expTabs.join()) throw new Error(d.key + ' 的分頁應是 ' + expTabs.join() + '：' + tabs.join());
+        const panel = root.querySelector('#tdlg-panel-' + k);
+        if (!panel || panel.getAttribute('hidden') != null) throw new Error(d.key + ' 點「' + a.textContent + '」應開 ' + k + ' 分頁');
+        if (panel.testAll('tbody tr').length !== shownRows(w[k])) throw new Error(d.key + ' 的 ' + k + ' 分頁列數應同 Q：' + panel.testAll('tbody tr').length + ' / ' + w[k]);
+        const chip = root.querySelector('#tdlg-tab-' + k).querySelector('.count');
+        if (!chip || chip.textContent !== V.num(w[k])) throw new Error(d.key + ' 的 ' + k + ' 分頁標籤的數字應同 Q');
+        seen.add(k);
+        $('#tdlg-close').click();
+        if (App.sel.type !== 'device' || App.sel.key !== d.key) throw new Error('關閉後回到設備');
+      });
+    });
+    if (!process.env.SMOKE_INPUT) ['vrfs', 'rules', 'tables', 'ospf'].forEach((k) => { if (!seen.has(k)) throw new Error('測試前提：範例資料應有 ' + k + ' 的資料'); });
+    App.select(null);
+  });
+
+  await step('右欄的兩行式與卡片：終端埠（介面、MAC／IP・廠商・VLAN・描述）、原始輸出（一區塊一張卡片，空的收集時間與失敗不寫）、設備對（協定併進類別）、推論鏈路後的終端、網段的位址與路由（不再寫「只顯示前」）', () => {
+    const Q = App.Q; const V = S.view;
+    const foldOf = (t) => detailRoot().testAll('details').find((x) => x.querySelector('summary').firstChild.textContent === t);
+    // 沒有 LLDP／CDP 鄰接的埠：一欄，第一行介面與 MAC，第二行（muted）IP・廠商・VLAN・描述
+    const ud = Q.devices().find((d) => Q.unknownPeers(d.key).some((r) => r.macs.length === 1 && (r.macs[0].ips.length || r.macs[0].vendor)));
+    if (!ud) throw new Error('範例資料應有學到一個 MAC、有 IP 或廠商的終端埠');
+    App.select({ type: 'device', key: ud.key });
+    const us = foldOf('沒有 LLDP／CDP 鄰接的埠');
+    if (!us || us.querySelector('table').testAll('th').length !== 1) throw new Error('終端埠是一欄的兩行式');
+    Q.unknownPeers(ud.key).forEach((r) => {
+      const c = us.testAll('.two-line').find((x) => x.querySelector('.l1').firstChild.textContent === r.name);
+      if (!c) throw new Error('終端埠應有 ' + r.name);
+      if (!c.querySelector('.l1').textContent.includes(r.macs.length === 1 ? S.keys.macPretty(r.macs[0].mac) : `${r.macs.length} 個 MAC`)) throw new Error('第一行應寫出 MAC：' + c.textContent);
+      const l2 = c.querySelector('.l2'); const t2 = l2 ? l2.textContent : '';
+      const parts = [...S.util.uniq([].concat(...r.macs.map((m) => m.ips))).slice(0, 3), ...S.util.uniq(r.macs.map((m) => m.vendor).filter(Boolean)).slice(0, 2),
+        r.vlans && r.vlans.length ? 'VLAN ' + S.util.fmtVlans(r.vlans) : null, r.desc || null].filter(Boolean);
+      if (parts.some((p) => !t2.includes(p)) || (l2 && !/\bmuted\b/.test(l2.className))) throw new Error('第二行（muted）應寫出 IP、廠商、VLAN、描述：' + t2);
+    });
+    // 原始輸出：一欄的卡片；指令、行號、解析器；收集時間與失敗只在有值時出現
+    const bs = Q.blocksOf(ud.key);
+    const bf = foldOf('收集到的原始輸出');
+    if (!bf || bf.querySelector('table').testAll('th').length !== 1) throw new Error('原始輸出是一欄的卡片');
+    const cards = bf.testAll('.block-card');
+    if (cards.length !== Math.min(bs.length, bs.length < V.BIG_LIST.min ? bs.length : V.BIG_LIST.page)) throw new Error('一個區塊一張卡片：' + cards.length + ' / ' + bs.length);
+    cards.forEach((c, n) => {
+      const b = bs[n]; const t = c.textContent;
+      if (!t.includes(b.command || '（未標記）') || !t.includes(`第 ${b.start}–${b.end} 行`)) throw new Error('卡片應寫出指令與行號：' + t);
+      if (!!b.collectedAt !== t.includes('收集於') || (b.collectedAt && !t.includes(V.fmtUtc(b.collectedAt)))) throw new Error('收集時間只在有值時寫出：' + t);
+      if (!!b.failure !== !!c.querySelector('.chip.err')) throw new Error('收集失敗的 chip 只在失敗時出現：' + t);
+    });
+    // 設備對：沒有「協定」欄，類別帶協定（V.linkClassText 的 proto）
+    const p = Array.from(App.pairs.values()).find((x) => x.links.length && Q.inferredLinksBetween(x.a, x.b).some((l) => Q.behindUnder(l.key).length)) || Array.from(App.pairs.values()).find((x) => x.links.length);
+    App.select({ type: 'pair', id: p.id, links: p.links, devs: [p.a, p.b] });
+    const ls = detailRoot().testAll('.detail-section').find((x) => x.querySelector('h3').firstChild.textContent === '鏈路（LLDP／CDP／MNDP）');
+    if (!ls || ls.testAll('th').some((th) => th.textContent === '協定')) throw new Error('設備對的鏈路沒有「協定」欄');
+    const l0 = Q.getLink(p.links[0]);
+    if (!ls.textContent.includes(V.linkClassText(l0, { proto: true }))) throw new Error('類別應帶協定：' + V.linkClassText(l0, { proto: true }));
+    // 推論鏈路後的終端：兩欄，廠商與 IP 在 MAC 的第二行
+    const ip = Array.from(App.pairs.values()).find((x) => Q.inferredLinksBetween(x.a, x.b).some((l) => Q.behindUnder(l.key).length));
+    if (ip) {
+      App.select({ type: 'pair', id: ip.id, links: ip.links, devs: [ip.a, ip.b] });
+      const bh = foldOf('推定在這條推論鏈路後面的終端');
+      if (!bh || bh.querySelector('table').testAll('th').length !== 2) throw new Error('推論鏈路後的終端是兩欄');
+      const x = S.util.uniq(Q.inferredLinksBetween(ip.a, ip.b).flatMap((l) => Q.behindUnder(l.key))).find((m) => m.vendor || m.ips.length);
+      if (x && ![x.vendor, ...x.ips].filter(Boolean).every((s) => bh.textContent.includes(s))) throw new Error('廠商與 IP 應在第二行');
+    }
+    // 網段：位址與路由兩欄，不寫「只顯示前」；路由點一列定位到路由表視窗（前一個 step 已驗）
+    const sg = Q.subnetGraph({ routes: true });
+    const sr = sg.routes.find((r) => r.via && r.via.length) || sg.routes[0];
+    App.select({ type: 'subnet', key: sr.subnet });
+    ['位址', '路由到這個網段'].forEach((t) => {
+      const f = foldOf(t); if (!f) throw new Error('網段詳情應有「' + t + '」');
+      if (f.querySelector('table').testAll('th').length !== 2) throw new Error('網段的「' + t + '」是兩欄');
+      if (f.textContent.includes('只顯示前')) throw new Error('網段的「' + t + '」不再寫「只顯示前」');
+    });
+    const rf = foldOf('路由到這個網段');
+    if (!rf.textContent.includes(Q.devLabel(sr.dev)) || (sr.via.length && !rf.textContent.includes('經由 '))) throw new Error('路由到這個網段：設備與經由的網段');
+    App.select(null);
+  });
 };

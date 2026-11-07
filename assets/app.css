@@ -508,6 +508,11 @@ tr.route-off > td { color: var(--muted); }
 .routes-top { margin: 4px 0 8px; padding-left: 20px; }
 .routes-top li { margin: 2px 0; }
 .routes-search { width: 100%; max-width: 360px; }
+/* VRF、策略路由與 OSPF 鄰接的一行摘要（每一項開視窗的分頁）：在「、」處換行；視窗頁首的查表設定 */
+.routes-more { margin: 6px 0 0; white-space: normal; overflow-wrap: anywhere; }
+.routes-head .kv { margin: 4px 0 8px; }
+/* 收集到的原始輸出：一個區塊一張卡片，指令可換行（不擠成窄欄） */
+.two-line.block-card .block-cmd { white-space: normal; overflow-wrap: anywhere; }
 .route-hop + .route-hop { border-top: 1px solid var(--line-soft); margin-top: 6px; padding-top: 6px; }
 /* 從檢查結果選來的那一筆（.current）：外框與「目前選取」chip */
 .finding.current { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }

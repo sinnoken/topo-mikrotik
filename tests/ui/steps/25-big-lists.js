@@ -1,7 +1,7 @@
 // 畫面冒煙測試的 step：大量列的清單（V.bigList）——路由表視窗與防火牆的位址清單：摘要計數與 Q 相同、展開一組才畫明細、分頁、搜尋（位址與網段經 Q.routesMatching／Q.addressSetFind，其他文字依文字比對）、少量時直接列出。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { document, S, step, $, buildInput, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows, routesList } = require('../helpers.js');
+const { document, S, step, $, buildInput, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows, routesList, fs, path, ROOT, jsFiles } = require('../helpers.js');
 
 const RT = 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC';
 const ROUTES = 1500; const LIST = 600; const GWS = ['10.255.0.2', '10.255.0.3', '10.255.0.4'];
@@ -183,7 +183,7 @@ module.exports = async () => {
     App.select(null);
   });
 
-  await step('不分組的 V.bigList 與 V.table 的 limit：列多時分頁（不截斷、寫出總數），排序對全部的列；沒有 text 時沒有搜尋框；reveal 翻到那一列的頁；V.paged 給非表格的清單', () => {
+  await step('不分組的 V.bigList：列多時分頁（不截斷、寫出總數），排序對全部的列；沒有 text 時沒有搜尋框；reveal 翻到那一列的頁；V.paged 給非表格的清單', () => {
     const V = S.view; const P = V.BIG_LIST;
     const n = P.min + P.page * 2 + 7; const rows = Array.from({ length: n }, (_, i) => ({ i, name: 'r' + i }));
     const cols = [{ t: '編號', f: (r) => String(r.i), s: (r) => r.i }, { t: '名稱', f: (r) => r.name }];
@@ -213,10 +213,13 @@ module.exports = async () => {
     const rev = rows.slice().reverse();
     const ext = V.bigList(cols, rev, { table: { onSort: () => {}, sortBy: 0, sortDir: -1 } });
     if (firstCell(ext) !== String(n - 1) || rowsOf(ext).length !== P.page) throw new Error('呼叫端管排序時照給的順序分頁');
-    // V.table 的 limit（舊選項）：改走分頁，不截斷、不寫「只顯示前 N 筆」；列少時照樣全部列出
-    const lim = V.table(cols, rows, { limit: 10 });
-    if (lim.querySelector('.table-more') || rowsOf(lim).length !== P.page || !lim.querySelector('.pager')) throw new Error('V.table 的 limit 應改走分頁');
-    if (rowsOf(V.table(cols, rows.slice(0, 30), { limit: 10 })).length !== 30) throw new Error('列少時 limit 不截斷');
+    // V.table 一律列出全部的列（舊的 limit 選項已拿掉）；畫面沒有呼叫端再傳 limit，列多的表格都經 V.bigList 分頁
+    const all = V.table(cols, rows);
+    if (all.querySelector('.table-more') || all.querySelector('.pager') || rowsOf(all).length !== n) throw new Error('V.table 應列出全部的列，不截斷');
+    const viewSrc = jsFiles('src/view');
+    if (!viewSrc.length) throw new Error('找不到 src/view 的檔案');
+    const withLimit = viewSrc.filter((f) => /\blimit:\s*\d/.test(fs.readFileSync(path.join(ROOT, f), 'utf8')));
+    if (withLimit.length) throw new Error('畫面不再傳 V.table 的 limit（改用 V.bigList）：' + withLimit.join('、'));
     // V.paged：非表格的清單也分頁
     const ul = V.paged(n, '段', (from, to) => V.h('ul', null, rows.slice(from, to).map((r) => V.h('li', null, r.name))));
     if (ul.testAll('li').length !== P.page || !ul.querySelector('.pager-where').textContent.includes(`共 ${V.num(n)} 段`)) throw new Error('V.paged 應分頁並寫出總數');

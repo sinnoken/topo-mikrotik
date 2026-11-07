@@ -184,8 +184,15 @@ module.exports = async () => {
     if (App.snap.model.links.length || App.graph.edges.length) throw new Error('OSPF-only adjacency 不應形成拓樸 edge');
     if (!App.snap.model.ospfAdjacencies.length) throw new Error('OSPF L3 鄰接資訊遺失');
     App.select({ type: 'device', key: 'R_A' });
-    if (!text('#detail').includes('OSPF L3 鄰接（非實體直連）')) throw new Error('設備細節沒有顯示獨立 OSPF 鄰接');
-    if (!text('#detail').includes('第 5 行')) throw new Error('OSPF 細節沒有來源行連結');
+    // 右欄只有一行摘要（OSPF 鄰接 N 個），點了開路由表視窗的 OSPF 分頁：列出鄰接與來源行
+    const n = App.Q.ospfAdjacenciesOf('R_A').length;
+    const link = $('#detail').testAll('.routes-tab').find((a) => a.getAttribute('data-tab') === 'ospf');
+    if (!link || !link.textContent.includes(`OSPF 鄰接 ${S.view.num(n)} 個`)) throw new Error('設備細節沒有顯示獨立 OSPF 鄰接的摘要');
+    link.click();
+    const panel = $('#tdlg-panel-ospf');
+    if (!$('#dlg-table').open || !panel || panel.getAttribute('hidden') != null || panel.testAll('tbody tr').length !== n) throw new Error('點摘要應開路由表視窗的 OSPF 分頁，列數同 Q.ospfAdjacenciesOf');
+    if (!panel.textContent.includes('第 5 行')) throw new Error('OSPF 細節沒有來源行連結');
+    $('#tdlg-close').click();
   });
   await step('表格可點標頭排序（路由表視窗的搜尋結果），IP 欄依數值順序', async () => {
     const input = 'R_A (10.0.0.1):\n### /ip route print detail without-paging\n'

@@ -108,11 +108,14 @@ module.exports = async () => {
     Q.devices().forEach((d) => {
       if (!Q.vrfsOf(d.key).some((v) => !v.builtin)) return;
       App.select({ type: 'device', key: d.key });
-      const f = foldOf('VRF'); if (!f) throw new Error(d.key + ' 有 VRF 設定時應有 VRF 區塊');
+      // VRF 與策略路由在路由表視窗的分頁：右欄的路由表摘要只有一行（VRF N 個），沒有獨立的區塊
+      if (foldOf('VRF') || foldOf('策略路由') || foldOf('OSPF L3 鄰接（非實體直連）')) throw new Error(d.key + ' 的 VRF、策略路由與 OSPF 不在右欄另成區塊（在路由表視窗的分頁）');
+      const f = $('#detail').querySelector('.routes-summary');
+      const a = f && f.testAll('.routes-tab').find((x) => x.getAttribute('data-tab') === 'vrfs');
+      if (!a || !a.textContent.includes(`VRF ${V.num(Q.vrfsOf(d.key).length)} 個`)) throw new Error(d.key + ' 有 VRF 設定時，路由表摘要應寫出 VRF 個數（同 Q.vrfsOf）');
       vrfSeen++;
-      if (f.getAttribute('open') != null) throw new Error(d.key + ' 的 VRF 沒有問題時應預設收合');
-      const pol = Q.policyOf(d.key); const p = foldOf('策略路由');
-      if (p && (p.getAttribute('open') != null) !== !!(pol.custom || pol.marks.length)) throw new Error(d.key + ' 的策略路由只在查表不明時預設展開');
+      const pol = Q.policyOf(d.key);
+      if ((f.getAttribute('open') != null) !== !!(pol.custom || pol.marks.length)) throw new Error(d.key + ' 的路由表摘要只在查表不明時預設展開');
     });
     if (!vrfSeen && !process.env.SMOKE_INPUT) throw new Error('測試前提：範例資料應有 VRF 設定的設備');
     // 沒有鄰居的設備不出現「鄰居」區塊

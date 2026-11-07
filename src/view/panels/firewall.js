@@ -311,7 +311,7 @@
   }
   /**
    * 位址清單（/ip firewall address-list）：內容一律取自位址集合登錄表（Q.addressSetsOf 的 id → Q.addressSet，判斷用的同一份），
-   * 每列是合併後的一段位址（重疊與相鄰的項目已合併）；可能有動態來源的清單內容不明，只列一列說明原因。
+   * 每列是合併後的一段位址（重疊與相鄰的項目已合併）；判斷不了的清單（可能有動態來源、無法判斷的範圍）內容不明，只列一列說明原因。
    * 清單很長時（封鎖名單可能有十萬筆）經 V.bigList：摘要（每份清單一組）、展開才看明細、分頁、搜尋（位址經 Q.addressSetFind，其他文字比對）。
    */
   function addressListSection(App, dev) {
@@ -321,7 +321,7 @@
       const s = Q.addressSet(id);
       const g = { key: id, name: s.name, family: s.family, ranges: s.ranges, rows: [] };
       if (s.ranges && s.ranges.length) s.ranges.forEach(([a, b]) => g.rows.push({ g, a, b }));
-      else if (s.static === false) { g.unknown = true; g.rows.push({ g, note: '內容不明：可能有動態來源（' + s.reasons.map((c) => reasonLabel.get(c) || c).join('、') + '）' }); }
+      else if (s.static === false) { g.unknown = true; g.rows.push({ g, note: '內容不明（' + s.reasons.map((c) => reasonLabel.get(c) || c).join('、') + '）' }); }
       else g.rows.push({ g, note: '沒有啟用中的位址' });
       rows.push(...g.rows);
       return g;

@@ -203,8 +203,8 @@
   const checkCode = (code) => { if (!REASON_CODE_SET.has(code)) throw new Error(`原因代碼 ${code} 不在 REASON_CODES（src/query/reach.js）`); return code; };
   /** 無法判斷的條件鍵 → 原因。 */
   const KEY_WHY = {
-    'src-address-list': 'address-list 可能有動態來源（DNS 名稱、逾時、動態項目或由規則等寫入），或 export 中沒有這份清單；export 沒有動態項目，不展開',
-    'dst-address-list': 'address-list 可能有動態來源（DNS 名稱、逾時、動態項目或由規則等寫入），或 export 中沒有這份清單；export 沒有動態項目，不展開',
+    'src-address-list': 'address-list 可能有動態來源（DNS 名稱、逾時、動態項目或由規則等寫入）、有無法判斷的範圍，或 export 中沒有這份清單；export 沒有動態項目，不展開',
+    'dst-address-list': 'address-list 可能有動態來源（DNS 名稱、逾時、動態項目或由規則等寫入）、有無法判斷的範圍，或 export 中沒有這份清單；export 沒有動態項目，不展開',
     'in-interface': '入介面不明（下一跳經遞迴路由解析）', 'out-interface': '出介面不明（路由沒有寫出介面）',
     'in-interface-list': 'interface list 無法展開（動態、內建或未定義的清單）', 'out-interface-list': 'interface list 無法展開（動態、內建或未定義的清單）',
     'src-port': '來源埠由用戶端自選', port: '來源埠由用戶端自選',

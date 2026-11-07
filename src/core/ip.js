@@ -136,7 +136,8 @@
    *   isAll（涵蓋整個位址空間）、isEmpty、within(other)（每個位址都在 other 內；other 是同 bits 的 ip.set）、
    *   covers(x)／overlaps(x)：x（ip.range 接受的文字或 [lo, hi]）的每個位址都在集合內／至少一個位址在集合內（看合併後的區段：/25,/25 涵蓋 /24）；文字不是這個位址族時丟出 TypeError；
    *   overlapping(x)：和 x 重疊的區段在 ranges 的索引（由小到大，凍結；與 overlaps 同一個判斷）；
-   *   bounds()：等價類的邊界（每段的 lo 與 hi + 1，BigInt，由小到大，凍結）——同一段相鄰邊界之間的位址對 has 的結果相同。
+   *   bounds()：等價類的邊界（每段的 lo 與 hi + 1，BigInt，由小到大，凍結）——同一段相鄰邊界之間的位址對 has 的結果相同；
+   *   not()：補集（同 bits 的 ip.set，第一次呼叫時建立）；and(other)：交集（other 是同 bits 的 ip.set，位址族不同時丟出 TypeError）。
    * 相同的 items 與 bits 得到相同的結果（與項目順序無關）。
    */
   ip.set = (items, bits) => {
@@ -181,8 +182,8 @@
       while (a < z) { const mid = (a + z) >> 1; if (ranges[mid][1] < lo) a = mid + 1; else z = mid; }
       return [lo, hi, ranges[a], a];
     };
-    let b = null;
-    return Object.freeze({
+    let b = null; let nt = null;
+    const self = Object.freeze({
       bits, ranges, has,
       covers: (x) => { const [lo, hi, r] = span(x); return !!r && r[0] <= lo && hi <= r[1]; },
       overlaps: (x) => { const [, hi, r] = span(x); return !!r && r[0] <= hi; },
@@ -203,7 +204,19 @@
         });
       },
       bounds: () => b || (b = Object.freeze(ranges.flatMap(([a, z]) => [a, z + 1n]))),
+      not: () => nt || (nt = complement()),
+      and(other) {
+        if (other.bits !== bits) throw new TypeError(`S.ip.set：位址族不同，不能取交集（${bits}／${other.bits}）`);
+        return ip.set(self.not().ranges.concat(other.not().ranges), bits).not();
+      },
     });
+    return self;
+    function complement() {
+      const out = []; let cur = 0n;
+      ranges.forEach(([a, z]) => { if (a > cur) out.push([cur, a - 1n]); cur = z + 1n; });
+      if (cur <= max) out.push([cur, max]);
+      return ip.set(out, bits);
+    }
   };
 
   /*

@@ -57,6 +57,30 @@ test('F01／F02：被前面規則完全遮蔽、重複規則；限速等不確�
   assert.strictEqual(fws(lim, 'F01')[0].severity, 'warn');
   assert.strictEqual(S.check.CATALOG.F02.severity, 'info');
 });
+test('F01：位址條件的涵蓋經登錄表的集合——靜態位址清單與字面值互相涵蓋、否定取補集、字面值與清單同時出現取交集；動態清單只接受相同寫法', () => {
+  // 依據：https://manual.mikrotik.com/docs/cli-reference/ip/firewall/address-list.md（清單的項目）、
+  //       https://manual.mikrotik.com/docs/cli-reference/ip/firewall/filter.md（src-address／src-address-list 都要符合、! 是否定）。測試資料依手冊語法手寫。
+  const AL = (addr, list) => `/ip firewall address-list add address=${addr} list=${list}`;
+  const F = (m, action = 'accept') => `/ip firewall filter add action=${action} chain=input ${m}`;
+  const lists = [AL('10.0.0.0/8', 'TRUST'), AL('192.168.0.0/16', 'TRUST'), AL('10.0.0.0/8', 'TEN'), AL('8.8.8.0/24', 'PUB'),
+    '/ip firewall filter add action=add-src-to-address-list address-list=DYN chain=forward protocol=tcp'];
+  const f01 = (a, b) => fws(fwBox(lists.concat(F(a), F(b, 'drop'))), 'F01').length === 1;
+  const cases = [
+    ['src-address-list=TRUST', 'src-address=10.1.0.0/16', true, '清單涵蓋字面值'],
+    ['src-address-list=TRUST', 'src-address=172.16.0.0/12', false, '不在清單內'],
+    ['src-address=10.0.0.0/7', 'src-address-list=TEN', true, '字面值涵蓋清單'],
+    ['src-address=10.0.0.0/7', 'src-address-list=TRUST', false, '清單有一部分不在字面值內'],
+    ['src-address=!10.0.0.0/8', 'src-address-list=PUB', true, '否定：清單與排除的網段不相交'],
+    ['src-address=!10.0.0.0/8', 'src-address-list=TEN', false, '否定：清單在排除的網段內'],
+    ['src-address=10.0.0.0/8', 'src-address-list=TRUST src-address=10.0.0.0/9', true, '同時有字面值與清單：取交集'],
+    ['src-address-list=TRUST src-address=10.0.0.0/9', 'src-address=10.0.0.0/8', false, '交集比 j 小'],
+    ['src-address-list=TEN dst-address=10.0.0.1', 'src-address=10.2.0.0/16 dst-address=10.0.0.1', true, '兩個方向各自判斷'],
+    ['src-address-list=DYN', 'src-address-list=DYN', true, '動態清單：寫法相同'],
+    ['src-address-list=DYN', 'src-address=10.1.0.0/16', false, '動態清單：內容不明，不判涵蓋'],
+    ['src-address=0.0.0.0/0', 'src-address-list=DYN', true, '涵蓋全部位址時不看 j 的清單'],
+  ];
+  cases.forEach(([a, b, want, why]) => assert.strictEqual(f01(a, b), want, `${why}：${a} ／ ${b}`));
+});
 test('F03：WAN 可主動建立新連線的 input／forward 放行；被 jump 的子 chain 也算；排除 established、ICMP、LAN、私有來源、IPsec（有 peer 時）', () => {
   const s = edgeFw();
   const f03 = fws(s, 'F03');

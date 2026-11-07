@@ -69,3 +69,11 @@ test('zone 矩陣：有 dst-nat 時（目的可能改寫成設備自己），ava
 test('zone 矩陣：範例資料「→ 網路設備（管理）」的每個來源代表與 Q.reach 相同（含 /ip service 的 available-from）', () => {
   assert.ok(selfMatchesReach(sampleSnap()).length > 0);
 });
+
+test('available-from 的判斷只有一份（S.reach._.inAvailableFrom，localService 與節點鍵共用）：網段內接受、網段外不接受、無法解析的項目不接受', () => {
+  const { afNets, inAvailableFrom } = S.reach._;
+  const nets = afNets(['192.168.1.0/24', 'not-an-ip', '10.0.0.5']);
+  assert.strictEqual(nets[1], null);
+  assert.deepStrictEqual(['192.168.1.7', '192.168.2.7', '10.0.0.5', '10.0.0.6'].map((ip) => inAvailableFrom(ip, nets)), [true, false, true, false]);
+  assert.strictEqual(inAvailableFrom('192.168.1.7', afNets(['bogus'])), false);
+});

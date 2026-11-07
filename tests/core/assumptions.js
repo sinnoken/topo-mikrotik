@@ -166,7 +166,7 @@ test('前提 mark-routing：有 mark-routing 的設備轉送是不明（L3 與 L
 test('前提 policy-routing：/routing rule 依順序決定路由表；條件判斷不了（S.trace.RULE_CONDITIONS 以外）時不明，對到 policy-routing', () => {
   const ok = net(['/routing rule add action=lookup-only-in-table src-address=192.168.1.128/25 table=isp2']);
   assert.deepStrictEqual(S.trace(ok, '192.168.1.200', OUT).hops.map((h) => h.table), ['isp2']);
-  assert.deepStrictEqual([use(ok, 'policy-routing').status, use(ok, 'policy-routing').count], ['affects', 1]);
+  assert.deepStrictEqual([use(ok, 'policy-routing').status, use(ok, 'policy-routing').count, use(ok, 'policy-routing').unit], ['affects', 1, 'rules'], '只有 1 條 /routing rule 時也標出數的是規則');
   const odd = net(['/routing rule add action=lookup dst-address=8.8.8.0/24 min-prefix=0 table=main']);
   assert.deepStrictEqual(S.trace(odd, LAN, OUT).ends.map((e) => [e.status, e.assumption]), [['policy', 'policy-routing']]);
   assert.deepStrictEqual(linked(odd.reach(LAN, OUT, { proto: 'tcp', port: 443 })), [['policy-routing', ['policy-routing']]]);
@@ -184,9 +184,9 @@ test('前提 bridge-ip-firewall：有 bridge 與過濾規則的設備，use-ip-f
 });
 
 test('前提 static-only：UPnP 啟用（Q.mgmtOf）時動態規則會影響結果；沒有時是判斷方式（always）', () => {
-  assert.strictEqual(use(net(), 'static-only').status, 'always');
+  assert.deepStrictEqual([use(net(), 'static-only').status, use(net(), 'static-only').count, use(net(), 'static-only').unit], ['always', 0, null]);
   const Q = net(['/ip upnp set enabled=yes', '/ip upnp interfaces add interface=ether1 type=external']);
-  assert.deepStrictEqual([use(Q, 'static-only').status, use(Q, 'static-only').devices], ['affects', ['R']]);
+  assert.deepStrictEqual([use(Q, 'static-only').status, use(Q, 'static-only').devices, use(Q, 'static-only').count, use(Q, 'static-only').unit], ['affects', ['R'], 1, 'devices']);
 });
 
 test('前提 return-path 與 new-connection：沒有放行已建立連線的設備，回程不保證（原因 return-not-guaranteed 對到 return-path）', () => {
@@ -224,6 +224,8 @@ test('Q.assumptionUse：範例資料上用得到的前提（每條一筆、依�
     assert.ok(['affects', 'missing-data', 'not-used', 'always'].includes(a.status), a.code);
     assert.ok(a.devices.every((d) => Q.getDevice(d)) && a.ruleKeys.every((k) => Q.getFirewallRule(k)), `${a.code} 的設備與規則都在基準內`);
     assert.strictEqual(a.status === 'affects' || a.status === 'missing-data', a.devices.length > 0, `${a.code}：有影響的才列設備`);
+    assert.strictEqual(a.unit, a.count === 0 ? null : a.ruleKeys.length ? 'rules' : a.unit, `${a.code}：count 為 0 時 unit 是 null；有規則鍵時數的是規則`);
+    if (a.unit === 'devices') assert.strictEqual(a.count, a.devices.length, `${a.code}：數設備時 count 是設備數`);
   });
   const st = Object.fromEntries(u.map((a) => [a.code, a.status]));
   // 範例資料：有策略路由、在用 IPv6、非 main 的 VRF、UPnP、沒有介面紀錄的 WAN 成員、比對來源埠的規則；沒有 mark-routing、notrack、位址清單

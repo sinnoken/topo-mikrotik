@@ -238,6 +238,12 @@
    */
   const SLICE_MS = 25;
   const SLICE_CHECK = 8;
+  /**
+   * /ip service 的 available-from 判斷（localService 的 serviceOf 與節點鍵的 afSig 共用）：nets 是 afNets 的結果，
+   * parseCidr 失敗的項目是 null、不接受任何來源。
+   */
+  const afNets = (addresses) => addresses.map((a) => IP.parseCidr(a));
+  const inAvailableFrom = (ip, nets) => nets.some((p) => (p ? IP.inNet(ip, p.net, p.len) : false));
   const slicer = () => { let t0 = Date.now(); let n = 0; return () => { if (++n < SLICE_CHECK) return false; n = 0; const t = Date.now(); if (t - t0 < SLICE_MS) return false; t0 = t; return true; }; };
 
   S.reach = {
@@ -250,7 +256,7 @@
      */
     _: {
       deepFreeze, MAX_PATHS, SERVICES, EXTERNAL_ZONE, SELF_ZONE, EXTERNAL_CANDIDATES, EXTERNAL6_CANDIDATES, svcId, ZONE_SOURCES, ASSUMPTIONS, EXPOSURE_ASSUMPTIONS, EXPOSURE_MAX_SOURCES,
-      REASON_LAYER, checkCode, keyWhy, NAT_UNKNOWN, runAll, slicer,
+      REASON_LAYER, checkCode, keyWhy, NAT_UNKNOWN, runAll, slicer, afNets, inAvailableFrom,
     },
   };
 
@@ -278,7 +284,7 @@
    *   - 其他：非 main 的 VRF 是 ip-service；UPnP 啟用（Q.mgmtOf）是 static-only（熱點沒有解析，不列）；可能對外的邊界（Q.boundaries 的 possible）是 external；
    *     Q.policyBaseline 的 returnSafe 為 false 是 return-path；沒有介面紀錄的對外入口是 wan-member-no-interface。
    * status：'affects'（這份基準有用到）｜'missing-data'（判斷需要的資料沒有收集）｜'not-used'｜'always'（判斷方式本身，每份基準都適用）。
-   * count：受影響的規則（防火牆規則、/routing rule、mark-routing）數；只依設備判斷的是設備數。
+   * count：受影響的規則（防火牆規則、/routing rule、mark-routing）數；只依設備判斷的是設備數；unit 標出 count 數的是哪一種：'rules'｜'devices'｜null（count 為 0）。
    */
   const ALWAYS = new Set(['ipv4-vrf', 'routeros-tables', 'new-connection', 'ip-service', 'static-only', 'return-path']);
   const NEEDS_ENTRY = new Set(['external', 'exposure-source-ranges']);
@@ -334,7 +340,8 @@
         const a = acc.get(code); const devices = Array.from(a.devs).sort(U.natural);
         const status = a.missing ? 'missing-data' : devices.length ? 'affects'
           : NEEDS_ENTRY.has(code) ? (entries.length ? 'always' : 'not-used') : ALWAYS.has(code) ? 'always' : 'not-used';
-        return { code, layer: LAYER_OF.get(code), status, devices, ruleKeys: a.rules.slice(), count: a.rules.length + a.items || devices.length };
+        const nRules = a.rules.length + a.items;
+        return { code, layer: LAYER_OF.get(code), status, devices, ruleKeys: a.rules.slice(), count: nRules || devices.length, unit: nRules ? 'rules' : devices.length ? 'devices' : null };
       }));
       return memo;
     }
@@ -424,7 +431,7 @@
         Q.ipServicesOf(d.key).forEach((sv) => {
           if (!sv.enabled || !sv.addresses.length) return;
           const id = sv.addresses.slice().sort().join(',');
-          if (!by.has(id)) by.set(id, { id, addresses: sv.addresses.slice(), nets: sv.addresses.map((a) => S.ip.parseCidr(a)) });
+          if (!by.has(id)) by.set(id, { id, addresses: sv.addresses.slice(), nets: afNets(sv.addresses) });
           perDev.push([d.key, sv.port, id]);
         });
       });
@@ -457,7 +464,7 @@
       }
       return r;
     };
-    // 是否在清單內：判斷與 reach-eval.js 的 serviceOf 相同（parseCidr 失敗的項目不接受）
+    // 是否在清單內：inAvailableFrom（與 reach-eval.js 的 serviceOf 共用）
     const afSigMemo = new Map(); const afSigId = new Map();
     /** 來源 ip 在 rel 這些清單的內外組合的序號（0 是沒有清單；序號依遇到的順序，只當快取鍵用，不出現在結果裡）。 */
     const afSig = (ip, rel) => {
@@ -465,7 +472,7 @@
       const lv = level(afSigMemo, rel); let n = lv.get(ip);
       if (n === undefined) {
         const lists = afIndex().lists;
-        const sig = rel.map((i) => (lists[i].nets.some((p) => (p ? IP.inNet(ip, p.net, p.len) : false)) ? '1' : '0')).join('');
+        const sig = rel.map((i) => (inAvailableFrom(ip, lists[i].nets) ? '1' : '0')).join('');
         n = U.getOr(afSigId, sig, () => afSigId.size + 1);
         lv.set(ip, n);
       }

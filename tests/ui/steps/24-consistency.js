@@ -2,7 +2,7 @@
 // count 是純數字、狀態 chip「N＋量詞＋狀態」且 0 不顯示、預設展開只在有問題或定位時、空列表不顯示、連結在標題列、鏈路一律表格、設備名清單一律 chip-list。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { S, step, $, text, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows } = require('../helpers.js');
+const { S, document, step, $, text, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows, workEntries, workEntry } = require('../helpers.js');
 
 /** 一個元素的直接子元素（模擬 DOM 的 children 是 HTMLCollection） */
 const kids = (el) => Array.from(el.children);
@@ -135,12 +135,75 @@ module.exports = async () => {
     App.select(null);
   });
 
+  await step('設備詳情的工作入口：路由表、防火牆、管理面設定在屬性之後、檢查結果與任何長清單之前，數字同 Q；長清單預設收合，標題列寫「N 個有問題」', () => {
+    const Q = App.Q; const V = S.view; const LONG = V.details.LONG_LIST_ROWS;
+    const order = (a, b) => { const all = $('#detail').all(); return all.indexOf(a) - all.indexOf(b); };
+    const num = (s) => Number(String(s).replace(/,/g, ''));
+    let checked = 0; let longBad = 0;
+    Q.devices().filter((d) => d.collected).slice(0, 60).forEach((d) => {
+      App.select({ type: 'device', key: d.key });
+      const root = $('#detail').querySelector('.detail');
+      const nav = workEntries(); const attrs = root.querySelector('.kv');
+      if (nav.tagName !== 'NAV' || !nav.getAttribute('aria-label')) throw new Error(d.key + ' 的工作入口應是有 aria-label 的 nav');
+      if (order(attrs, nav) >= 0) throw new Error(d.key + ' 的工作入口應在屬性之後');
+      const findings = root.querySelector('.findings-section');
+      if (findings && order(nav, findings) >= 0) throw new Error(d.key + ' 的工作入口應在檢查結果之前（第一個畫面內）');
+      const firstFold = kids(root).find(isFold);
+      if (firstFold && order(nav, firstFold) >= 0) throw new Error(d.key + ' 的工作入口應在任何清單之前');
+      // 路由表：條數與非作用中同 Q.allRoutesOf（路由表摘要在下方時才列）
+      const rt = workEntry('路由表'); const routes = Q.allRoutesOf(d.key);
+      if (!!rt !== !!root.querySelector('.routes-summary')) throw new Error(d.key + ' 有路由表摘要時工作入口才列路由表');
+      if (rt) {
+        const a = rt.querySelector('.entry-routes');
+        if (!a || a.textContent !== (routes.length ? `${V.num(routes.length)} 條路由` : '查看路由設定')) throw new Error(d.key + ' 路由表入口的條數應同 Q.allRoutesOf：' + (a && a.textContent));
+        const off = routes.filter((r) => r.active === false).length;
+        const c = rt.testAll('.chip').find((x) => x.textContent.endsWith('條非作用中'));
+        if (off ? !c || c.textContent !== `${V.num(off)} 條非作用中` : c) throw new Error(d.key + ' 路由表入口的非作用中條數應同 Q');
+      }
+      // 防火牆：規則數同 Q.firewallRulesOf，狀態同 V.firewall.statusChips
+      const fw = workEntry('防火牆');
+      if (fw) {
+        const a = fw.querySelector('.fw-open'); const st = V.firewall.statusChips(App, d.key);
+        if (!a || !a.textContent.startsWith(`${V.num(Q.firewallRulesOf(d.key).length)} 條規則`)) throw new Error(d.key + ' 防火牆入口的規則數應同 Q');
+        if (st.bad && !fw.textContent.includes(st.bad.textContent)) throw new Error(d.key + ' 防火牆入口的「N 條有問題」應同 statusChips');
+      } else if (Q.firewallRulesOf(d.key).length) throw new Error(d.key + ' 有防火牆規則時工作入口應有防火牆');
+      // 管理面設定：項目數與「N 項有問題」同下方區塊的標題列；點了展開區塊、焦點移到它的標題列
+      const mg = workEntry('管理面設定'); const sec = root.querySelector('.mgmt-section');
+      if (!mg || !sec) throw new Error(d.key + ' 已收集的設備應有管理面設定的入口與區塊');
+      const ma = mg.querySelector('.entry-mgmt');
+      if (Q.mgmtOf(d.key)) {
+        if (num(ma.textContent.replace(' 項設定', '')) !== sec.testAll('.mgmt-row').length) throw new Error(d.key + ' 管理面入口的項目數應同區塊：' + ma.textContent);
+        const hc = headOf(sec).testAll('.chip').find((x) => x.textContent.endsWith('項有問題')); const ec = mg.testAll('.chip').find((x) => x.textContent.endsWith('項有問題'));
+        if ((hc && hc.textContent) !== (ec && ec.textContent)) throw new Error(d.key + ' 管理面入口的「N 項有問題」應同區塊的標題列');
+      }
+      ma.click();
+      if (sec.getAttribute('open') === null || document.activeElement !== headOf(sec)) throw new Error(d.key + ' 點管理面入口應展開區塊、焦點移到它的標題列');
+      // 長清單（介面、鄰居、終端埠、原始輸出）：達到 LONG_LIST_ROWS 時一律收合；有問題的介面與鏈路寫在標題列
+      kids(root).filter(isFold).forEach((f) => {
+        const c = headOf(f).testAll('.count')[0]; if (!c || num(c.textContent) < LONG) return;
+        if (f.getAttribute('open') !== null && !f.classList.contains('mgmt-section') && !f.classList.contains('routes-summary')) throw new Error(`${d.key} 的「${titleOf(f)}」有 ${c.textContent} 列，應預設收合`);
+      });
+      const ifSec = kids(root).find((f) => isFold(f) && titleOf(f) === '介面');
+      const badIfs = Q.interfacesOf(d.key).filter((i) => V.hasProblem(Q.findingsFor('interface', i.key))).length;
+      if (ifSec && badIfs && num(headOf(ifSec).testAll('.count')[0].textContent) >= LONG) {
+        longBad++;
+        if (!headOf(ifSec).testAll('.chip').some((x) => x.textContent === `${V.num(badIfs)} 個有問題`)) throw new Error(d.key + ' 收合的介面表標題列應寫「N 個有問題」');
+      }
+      checked++;
+    });
+    if (!checked) throw new Error('測試前提：應有已收集的設備');
+    if (!longBad && !process.env.SMOKE_INPUT) throw new Error('測試前提：範例資料應有介面達到長清單門檻且有問題的設備');
+    App.select(null);
+  });
+
   await step('區塊一致性：跳到其他畫面與改變範圍的連結在標題列；鏈路一律表格；只有名稱的設備清單一律 chip-list', () => {
     const Q = App.Q;
     const inHead = (txt) => { const a = $('#detail').testAll('a').find((x) => x.textContent === txt); if (!a) return null; for (let x = a; x; x = x.parentNode) if (x.tagName === 'SUMMARY' || x.tagName === 'H3') return true; return false; };
-    // 防火牆摘要的入口
+    // 例外：設備詳情的工作入口（路由表、防火牆、管理面設定）集中在屬性之後的一列，不在區塊的標題列（另一步檢查）
     const fwDev = Q.firewallRules()[0].dev; App.select({ type: 'device', key: fwDev });
-    if (inHead('查看防火牆規則與服務') !== true) throw new Error('「查看防火牆規則與服務」應在防火牆區塊的標題列');
+    const fwOpen = workEntries().querySelector('.fw-open');
+    if (!fwOpen) throw new Error('防火牆的入口應在工作入口');
+    for (let x = fwOpen; x; x = x.parentNode) if (x.tagName === 'SUMMARY' || x.tagName === 'H3') throw new Error('工作入口不在區塊的標題列');
     // VLAN 片段：改看全部的連結
     const split = Q.vlans().find((v) => v.id != null && Q.vlan(String(v.id)).domains.length > 1);
     if (split) {

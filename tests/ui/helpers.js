@@ -213,6 +213,19 @@ const routesSummary = () => {
   return el;
 };
 
+/** 右欄設備詳情的工作入口（nav.work-entries）；找不到就失敗 */
+const workEntries = () => {
+  const el = detailRoot().querySelector('.work-entries');
+  if (!el) throw new Error('設備詳情應有工作入口（路由表、防火牆、管理面設定）');
+  return el;
+};
+/** 工作入口中標籤為 label（「路由表」「防火牆」「管理面設定」）的那一項的值；沒有這一項時 null */
+const workEntry = (label) => {
+  const ks = workEntries().querySelector('.kv').childNodes;
+  const at = ks.findIndex((x) => x.textContent === label);
+  return at < 0 ? null : ks[at + 1];
+};
+
 /**
  * 清單列出的總筆數：V.bigList／V.paged 分頁時一頁只畫 BIG_LIST.page 列，取那一列所在分頁的頁碼說明「共 N」；
  * 沒有分頁時數畫出來的列。rowSel 是列的選擇器，root 裡第一個符合的列決定是哪一份清單（找不到列時 0）。
@@ -229,7 +242,7 @@ const listedTotal = (root, rowSel) => {
 };
 
 module.exports = Object.assign({}, dom, harness, boundary, {
-  listedTotal, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows, routesRoot, routesList, routesSide, routesSummary,
+  listedTotal, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows, routesRoot, routesList, routesSide, routesSummary, workEntries, workEntry,
   captureDownloads, parseCsv, rgbOf, luminance, contrastOf, cssVars, cssDarkRoot, cssVarsOf, SCHEMES, forSchemes, jsFiles, unticked,
   recordCanvas, withGraph, vertices, near, tickStrokes, checkTicks, buildInput, hubBtn, stepBtn, goStep, settingsTab, clearBaseline,
   searchFor, pickInv, until, $, text, stepSources, shared,

@@ -135,14 +135,25 @@ module.exports = async () => {
     }
     if (!process.env.SMOKE_INPUT && tie < 0) throw new Error('範例資料應有多數決平手的檢查結果');
     if (Q.devices().some((d) => { App.select({ type: 'device', key: d.key }); return text('#detail').includes('沒有多數'); })) throw new Error('設備詳情不應出現「沒有多數」');
-    // 介面表不依筆數切換：一律是展開列，沒有問題的介面時預設收合，有錯誤或警告的介面時展開
+    // 介面表不依筆數變成一般區塊：一律是展開列；短清單只在有錯誤或警告的介面時展開，達到 LONG_LIST_ROWS 列時一律收合，
+    // 有問題時標題列寫「N 個有問題」（個數同 Q）
     const ifSecOf = () => $('#detail').testAll('.detail-fold').find((x) => x.querySelector('summary').firstChild.textContent === '介面');
-    Q.devices().filter((d) => d.collected && Q.interfacesOf(d.key).some((i) => !i.hearsay)).slice(0, 20).forEach((d) => {
+    const LONG = S.view.details.LONG_LIST_ROWS;
+    if (!(LONG > 1)) throw new Error('V.details.LONG_LIST_ROWS 應是長清單的列數門檻');
+    let longBad = false; // 有介面達到長清單門檻且有問題的設備
+    Q.devices().filter((d) => d.collected && Q.interfacesOf(d.key).some((i) => !i.hearsay)).forEach((d) => {
       App.select({ type: 'device', key: d.key }); const ifSec = ifSecOf();
-      const bad = Q.interfacesOf(d.key).some((i) => S.view.hasProblem(Q.findingsFor('interface', i.key)));
-      if (!ifSec || (ifSec.getAttribute('open') !== null) !== bad) throw new Error(`${d.key} 的介面表應是展開列，只在有問題的介面時預設展開`);
+      if (!ifSec) throw new Error(`${d.key} 應有介面表`);
+      const rows = Number(ifSec.querySelector('summary').testAll('.count')[0].textContent.replace(/,/g, ''));
+      const badN = Q.interfacesOf(d.key).filter((i) => S.view.hasProblem(Q.findingsFor('interface', i.key))).length;
+      const long = rows >= LONG; longBad = longBad || (long && badN > 0);
+      if ((ifSec.getAttribute('open') !== null) !== (badN > 0 && !long)) throw new Error(`${d.key} 的介面表：短清單只在有問題的介面時預設展開，長清單（${rows} 列）一律收合`);
+      const chip = ifSec.querySelector('summary').testAll('.chip').find((c) => c.textContent.endsWith('個有問題'));
+      if (badN && (!chip || chip.textContent !== `${S.view.num(badN)} 個有問題`)) throw new Error(`${d.key} 的介面表標題列應寫「${badN} 個有問題」`);
+      if (!badN && chip) throw new Error(`${d.key} 沒有問題的介面時不寫「N 個有問題」`);
       if ($('#detail').testAll('h3').some((x) => x.firstChild.textContent === '介面')) throw new Error('介面表不依筆數變成一般區塊');
     });
+    if (!process.env.SMOKE_INPUT && !longBad) throw new Error('範例資料應有介面達到長清單門檻、且有問題的設備');
     App.select(null);
   });
   await step('名詞與推論：V.TERMS 是畫面名詞的單一來源；推定欄位標「推論」；VLAN 鏈路數用中性色', () => {

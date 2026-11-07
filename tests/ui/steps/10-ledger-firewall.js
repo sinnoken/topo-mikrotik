@@ -1,7 +1,7 @@
 // 畫面冒煙測試的 step：處理紀錄、依設備分組、防火牆畫面與修正、devices.csv 草稿。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { document, S, fs, path, ROOT, step, captureDownloads, parseCsv, hubBtn, goStep, until, $, text, shared, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows, pressKey } = require('../helpers.js');
+const { document, S, fs, path, ROOT, step, captureDownloads, parseCsv, hubBtn, goStep, until, $, text, shared, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows, pressKey, workEntry } = require('../helpers.js');
 
 module.exports = async () => {
   shared.ackedKey = null; // 處理紀錄中已處理的 finding 鍵：清除基準後要仍然存在
@@ -222,20 +222,17 @@ module.exports = async () => {
     if (!rules.length) throw new Error('應有防火牆規則');
     const dev = rules.reduce((best, r) => (Q.firewallRulesOf(r.dev).length > Q.firewallRulesOf(best).length ? r.dev : best), rules[0].dev);
     App.select({ type: 'device', key: dev });
-    const link = detailRoot().testAll('a').find((a) => a.textContent === '查看防火牆規則與服務');
-    if (!link) throw new Error('設備詳情應有防火牆摘要與入口');
-    // 防火牆摘要與相鄰的路由表、管理面設定同一種模式：可展開區塊（detail-fold），標題旁是規則數（純數字）、有問題時「N 條有問題」；
-    // 有問題的規則時預設展開；跳到防火牆畫面的入口在標題列
+    // 防火牆的摘要是工作入口的一項（屬性之後）：連結寫出規則數與服務數，旁邊是「N 條有問題」、停用與 WAN 判斷（同 statusChips）；原本的「防火牆」區塊由它取代
+    const entry = workEntry('防火牆');
+    const link = entry && entry.querySelector('.fw-open');
+    if (!link) throw new Error('設備詳情的工作入口應有防火牆');
     {
-      const fold = detailRoot().testAll('details').find((d) => d.querySelector('summary').firstChild.textContent === '防火牆');
-      const n = Q.firewallRulesOf(dev).length; const nBad = Q.firewallRulesOf(dev).filter((r) => Q.findingsFor('rule', r.key).some((f) => f.severity !== 'info')).length; const bad = nBad > 0;
-      if (!fold || !/\bdetail-fold\b/.test(fold.className) || !fold.querySelector('summary').contains(link)) throw new Error('設備詳情的防火牆應是可展開區塊（section 的 fold），入口在標題列');
-      const chip = fold.querySelector('summary').testAll('.count')[0];
-      if (!chip || chip.textContent !== S.view.num(n)) throw new Error('防火牆區塊的標題旁應是規則數：' + (chip && chip.textContent));
-      const badChip = fold.querySelector('summary').testAll('.chip').find((c) => c.textContent.endsWith('條有問題'));
-      if (bad ? !badChip || badChip.textContent !== `${S.view.num(nBad)} 條有問題` : badChip) throw new Error('有問題的規則時標題列寫「N 條有問題」，沒有時不顯示');
-      if ((fold.getAttribute('open') != null) !== bad) throw new Error('有問題的規則時防火牆區塊預設展開，沒有時收合');
-      if (detailRoot().testAll('.detail-section').some((s) => s.querySelector('h3').textContent.startsWith('防火牆'))) throw new Error('防火牆摘要不應是一般區塊');
+      const n = Q.firewallRulesOf(dev).length; const svcN = Q.ipServicesOf(dev).length;
+      const nBad = Q.firewallRulesOf(dev).filter((r) => Q.findingsFor('rule', r.key).some((f) => f.severity !== 'info')).length;
+      if (link.textContent !== `${S.view.num(n)} 條規則` + (svcN ? `、${S.view.num(svcN)} 個服務` : '')) throw new Error('防火牆入口應寫出規則數與服務數（同 Q）：' + link.textContent);
+      const badChip = entry.testAll('.chip').find((c) => c.textContent.endsWith('條有問題'));
+      if (nBad ? !badChip || badChip.textContent !== `${S.view.num(nBad)} 條有問題` : badChip) throw new Error('有問題的規則時入口寫「N 條有問題」，沒有時不顯示');
+      if (detailRoot().testAll('details').some((d) => d.querySelector('summary').firstChild.textContent === '防火牆')) throw new Error('防火牆區塊由工作入口取代，不再另列');
     }
     // WAN 狀態用語：摘要與防火牆畫面共用 V.firewall.zoneStatus()；三種狀態都可區分且標示推論
     const ZS = S.view.firewall.zoneStatus; const zoneNow = Q.firewallZone(dev);
@@ -246,14 +243,14 @@ module.exports = async () => {
     if (zoneNow && !detailRoot().textContent.includes(ZS(zoneNow.status).short)) throw new Error('設備詳情的防火牆摘要應顯示 WAN 狀態（與防火牆畫面同一來源）');
     // 右欄只剩摘要：沒有規則表、命中次數與規則的詳情（那些只在視窗裡）
     {
-      const fold = detailRoot().testAll('details').find((d) => d.querySelector('summary').firstChild.textContent === '防火牆');
-      if (fold.querySelector('table') || fold.querySelector('.fw-hits') || fold.querySelector('.fw-impact') || detailRoot().querySelector('.fw-chain')) throw new Error('右欄的設備詳情只留防火牆摘要，不放規則表');
+      if (detailRoot().querySelector('.fw-hits') || detailRoot().querySelector('.fw-impact') || detailRoot().querySelector('.fw-chain')) throw new Error('右欄的設備詳情只留防火牆摘要，不放規則表');
       const st = S.view.firewall.statusChips(App, dev);
-      if (st.disabled && !fold.textContent.includes(st.disabled.textContent)) throw new Error('摘要應寫出停用的規則數（同視窗頁首的 statusChips）');
+      if (st.disabled && !entry.textContent.includes(st.disabled.textContent)) throw new Error('入口應寫出停用的規則數（同視窗頁首的 statusChips）');
+      if (zoneNow && !entry.textContent.includes(ZS(zoneNow.status).short)) throw new Error('入口應寫出 WAN 判斷（同 statusChips）');
     }
     link.focus(); link.click();
     if (App.sel.type !== 'firewall' || App.sel.dev !== dev) throw new Error('入口應開啟該設備的防火牆視窗');
-    if (!$('#dlg-table').open || !text('#tdlg-title').includes(Q.devLabel(dev))) throw new Error('「查看防火牆規則與服務」應開啟這台設備的防火牆視窗');
+    if (!$('#dlg-table').open || !text('#tdlg-title').includes(Q.devLabel(dev))) throw new Error('工作入口的防火牆應開啟這台設備的防火牆視窗');
     if (detailRoot().querySelector('.fw-open') !== link) throw new Error('開啟視窗時右欄不重畫：入口留在原處');
     if (zoneNow && !fwSide().textContent.includes(ZS(zoneNow.status).text)) throw new Error('沒選規則時右欄應顯示 WAN 判斷的完整說明');
     // 頁首只放狀態，和右欄摘要同一份（statusChips），不重複規則與服務的數量
@@ -306,7 +303,7 @@ module.exports = async () => {
     // Esc 關閉視窗，焦點回到開啟它的入口；選取回到那台設備，重畫右欄不會再開視窗
     pressKey('Escape', fwRoot().querySelector('#tdlg-tab-rules'));
     if ($('#dlg-table').open) throw new Error('Esc 應關閉防火牆視窗');
-    if (document.activeElement !== link) throw new Error('關閉防火牆視窗後焦點應回到「查看防火牆規則與服務」');
+    if (document.activeElement !== link) throw new Error('關閉防火牆視窗後焦點應回到工作入口的防火牆連結');
     if (App.sel.type !== 'device' || App.sel.key !== dev) throw new Error('關閉視窗後選取回到那台設備');
     S.view.details.render(App, App.sel);
     if ($('#dlg-table').open) throw new Error('關閉後重畫右欄不應再開視窗');

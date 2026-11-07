@@ -3,7 +3,7 @@
 // 以及右欄的介面表（兩行式）與鄰居表、linkTable（三欄），和視窗內表格不橫捲的樣式規則。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { S, fs, path, ROOT, step, $, document, pressKey, buildInput, detailRoot, routesRoot, routesList, routesSide, routesSummary } = require('../helpers.js');
+const { S, fs, path, ROOT, step, $, document, pressKey, buildInput, detailRoot, routesRoot, routesList, routesSide, routesSummary, workEntry } = require('../helpers.js');
 
 /** 有下一跳擁有者（Q.hopOwner）的路由：回傳 { dev, r, n, own }（範例資料一定有） */
 const ownedRoute = (Q) => {
@@ -153,13 +153,13 @@ module.exports = async () => {
     if (!lk || lk.querySelector('table').testAll('th').length !== 3) throw new Error('linkTable 應是三欄');
     const css = fs.readFileSync(path.join(ROOT, 'assets/app.css'), 'utf8');
     if (!/\.two-line \.l2 \{[^}]*white-space: normal; overflow-wrap: anywhere;/.test(css)) throw new Error('兩行式的第二行應可折行（360px 不橫捲）');
-    // 防火牆摘要：規則與服務的數量寫出單位，標籤不從詞中間折行
+    // 防火牆摘要（工作入口的一項）：規則與服務的數量寫出單位
     const fd = Q.firewallRules()[0].dev;
     App.select({ type: 'device', key: fd });
-    const fs0 = detailRoot().querySelector('.fw-summary');
-    if (!fs0.textContent.includes(`${S.view.num(Q.firewallRulesOf(fd).length)} 條`)) throw new Error('防火牆摘要應寫「N 條」規則');
-    if (Q.ipServicesOf(fd).length && !fs0.textContent.includes(`${S.view.num(Q.ipServicesOf(fd).length)} 個`)) throw new Error('防火牆摘要應寫服務數');
-    if (!/\.fw-summary \.kv \{ grid-template-columns: max-content/.test(css)) throw new Error('防火牆摘要的標籤欄不應折行');
+    const fs0 = workEntry('防火牆');
+    if (!fs0) throw new Error('設備詳情的工作入口應有防火牆');
+    if (!fs0.textContent.includes(`${S.view.num(Q.firewallRulesOf(fd).length)} 條規則`)) throw new Error('防火牆摘要應寫「N 條規則」');
+    if (Q.ipServicesOf(fd).length && !fs0.textContent.includes(`${S.view.num(Q.ipServicesOf(fd).length)} 個服務`)) throw new Error('防火牆摘要應寫「N 個服務」');
     App.select(null);
   });
 

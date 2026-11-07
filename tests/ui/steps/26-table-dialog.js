@@ -2,7 +2,7 @@
 // 從檢查結果定位、窄螢幕的單欄與「返回」、狀態列、選取列的樣式只在 CSS、A.modalOpen。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { S, fs, path, ROOT, step, $, text, document, cssVarsOf, SCHEMES, pressKey, buildInput, detailRoot, fwRoot, fwList, fwSide, fwTab, fwRows } = require('../helpers.js');
+const { S, fs, path, ROOT, step, $, text, document, cssVarsOf, SCHEMES, pressKey, buildInput, detailRoot, fwRoot, fwList, fwSide, fwTab, fwRows, workEntry } = require('../helpers.js');
 
 /** 範例基準中規則最多、而且有命中次數的設備 */
 const fwDevice = (Q) => {
@@ -12,7 +12,7 @@ const fwDevice = (Q) => {
 /** 打開設備詳情，從摘要的入口開防火牆視窗；回傳入口 */
 const openFrom = (dev) => {
   App.select({ type: 'device', key: dev });
-  const link = detailRoot().querySelector('.fw-open'); if (!link) throw new Error('設備詳情應有「查看防火牆規則與服務」');
+  const link = detailRoot().querySelector('.fw-open'); if (!link) throw new Error('設備詳情的工作入口應有防火牆');
   link.focus(); link.click();
   if (!$('#dlg-table').open) throw new Error('入口應開啟防火牆視窗');
   return link;
@@ -171,7 +171,7 @@ module.exports = async () => {
     // 「N 條有問題」只有一種算法：右欄摘要與視窗頁首相同
     App.select({ type: 'device', key: dev });
     const st = S.view.firewall.statusChips(App, dev);
-    if (st.bad && !detailRoot().querySelector('.fw-summary').querySelector('summary').textContent.includes(st.bad.textContent)) throw new Error('右欄摘要的「N 條有問題」應同 statusChips');
+    if (st.bad && !workEntry('防火牆').textContent.includes(st.bad.textContent)) throw new Error('右欄工作入口的「N 條有問題」應同 statusChips');
     App.select(null);
   });
 

@@ -81,6 +81,23 @@ test('F01：位址條件的涵蓋經登錄表的集合——靜態位址清單�
   ];
   cases.forEach(([a, b, want, why]) => assert.strictEqual(f01(a, b), want, `${why}：${a} ／ ${b}`));
 });
+test('F01：j 的位址集合是空的（清單只有停用項目、字面值與清單沒有交集）時不判涵蓋；Q.firewallCovers 一致，S.remediate 不產生停用 patch', () => {
+  // 空集合 ⊆ 任何集合，但 j 和 i 並不相干；不能因此說 j 被 i 完全涵蓋，更不能自動停用 j。
+  const cases = [
+    ['/ip firewall address-list add address=10.0.0.0/8 list=OFF disabled=yes', 'src-address-list=OFF', '清單只有停用的項目'],
+    ['/ip firewall address-list add address=8.8.8.0/24 list=PUB', 'src-address=10.0.0.0/8 src-address-list=PUB', '字面值與清單沒有交集'],
+  ];
+  cases.forEach(([al, j, why]) => {
+    const s = fwBox([al, '/ip firewall filter add action=accept chain=input src-address=192.0.2.1', `/ip firewall filter add action=drop chain=input ${j}`]);
+    assert.deepStrictEqual(fws(s, 'F01'), [], why);
+    const Q = S.query(s);
+    const [i, jr] = Q.firewallRuleRows('R', { family: 'ip', table: 'filter', chain: 'input' }).map((r) => r.rule);
+    assert.strictEqual(Q.firewallCovers(i, jr), false, `${why}：Q.firewallCovers`);
+    const keys = Q.findings().filter((f) => S.remediate.levelOf(f.id) === 'auto').map((f) => Q.findingKey(f));
+    const plan = S.remediate.plan(Q, keys);
+    assert.deepStrictEqual(plan.items.filter((it) => it.target.type === 'rule' || it.id === 'F01').map((it) => it.key), [], `${why}：不產生停用規則的 patch`);
+  });
+});
 test('F03：WAN 可主動建立新連線的 input／forward 放行；被 jump 的子 chain 也算；排除 established、ICMP、LAN、私有來源、IPsec（有 peer 時）', () => {
   const s = edgeFw();
   const f03 = fws(s, 'F03');

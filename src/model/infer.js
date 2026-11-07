@@ -908,13 +908,17 @@
   function addrCovers(ctx, i, j, keys) {
     if (!keys.some((k) => i.match[k] !== undefined)) return true;
     const si = addrCond(ctx, i, keys); const sj = addrCond(ctx, j, keys);
+    // j 符合的位址是空集合（清單只有停用項目、字面值與清單沒有交集）：空集合雖然在任何集合內，但 j 和 i 並不相干，不判涵蓋（否則 F01 誤報、S.remediate 自動停用 j）
+    if (sj && sj.isEmpty) return false;
     if (si && sj !== null) return sj === undefined ? si.isAll : sj.within(si);
     if (si && si.isAll) return true;
     return keys.every((k) => {
       if (i.match[k] === undefined) return true;
       if (j.match[k] === undefined) return false;
+      const b = addrKeySet(ctx, j, k);
+      if (b && b.isEmpty) return false;
       if (parseVal(k, i.match[k]).raw === parseVal(k, j.match[k]).raw) return true;
-      const a = addrKeySet(ctx, i, k); const b = addrKeySet(ctx, j, k);
+      const a = addrKeySet(ctx, i, k);
       return !!a && !!b && b.within(a);
     });
   }

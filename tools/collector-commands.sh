@@ -47,6 +47,22 @@ command_for_id() {
   esac
 }
 
+# 每個指令預設的逾時（秒）：沒有指定 --timeout 時使用；--timeout 指定時覆蓋全部，--command-timeout ID=秒 再覆蓋個別指令。
+# route 與 config 的輸出量會隨網路規模成長，預設較長：
+# - route：完整 BGP 表約 10 萬筆以上，print detail 每筆一個帶多個 key=value 的項目，估計 30–60 MB；
+#   RouterOS 在 CLI 逐筆格式化輸出的速度依 CPU 而定，30 秒在低階設備上很可能不夠。
+# - config：/export terse 含位址清單（address-list 可能數萬筆）與其他大量設定，同樣隨規模成長。
+# 300 秒是估計值：手冊沒有 print／export 的輸出速度資料（無法以手冊確認），尚未以真實設備量測；
+# 不夠時用 --command-timeout route=秒 調整。其他指令的輸出與規模關係小，維持 30 秒。
+DEFAULT_COMMAND_TIMEOUT=30
+LARGE_OUTPUT_COMMAND_TIMEOUT=300
+default_timeout_for_id() {
+  case "$1" in
+    route|config) printf '%s\n' "$LARGE_OUTPUT_COMMAND_TIMEOUT" ;;
+    *) command_for_id "$1" >/dev/null || return 1; printf '%s\n' "$DEFAULT_COMMAND_TIMEOUT" ;;
+  esac
+}
+
 # 由指令文字找回 ID（--retry-failed 讀上次收集檔的 ### 標記用）；不是收集器的指令時回傳非零
 id_for_command() {
   local id

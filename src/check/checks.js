@@ -62,9 +62,13 @@
     const content = b.lines.filter((l) => l.trim());
     const rosErr = b.device !== null && content.length && content.every(S.adapters.util.rosError);
     const cmd = b.command ? `（指令：${b.command}）` : '';
+    // 只有 print 指令少了 detail 或 without-paging 時，補上才可能解決；指令已經有加（或不是 print）時，是輸出格式和解析器預期的不同
+    const c = String(b.command || '');
+    const lacksDetail = !c || (/\bprint\b/i.test(c) && !(/\bdetail\b/i.test(c) && /\bwithout-paging\b/i.test(c)));
+    const emptyHint = lacksDetail ? 'RouterOS 的 print 指令請加上 detail without-paging' : '輸出格式和解析器預期的不同，請回報這段輸出';
     return b.device === null ? { what: '沒有設備標頭', rest: '' }
       : rosErr ? { what: '指令執行錯誤', rest: `，設備回應「${clip(content[0])}」${cmd}；請確認 RouterOS 版本與已安裝的套件是否支援這個指令，或改用正確的指令重新收集` }
-      : b.empty ? { what: '解析不出任何內容', rest: `（已辨識為${(b.adapters || []).map((a) => `「${S.adapters[a].label}」`).join('、')}）；RouterOS 的 print 指令請加上 detail without-paging` }
+      : b.empty ? { what: '解析不出任何內容', rest: `（已辨識為${(b.adapters || []).map((a) => `「${S.adapters[a].label}」`).join('、')}）；${emptyHint}` }
         : { what: '無法辨識的內容', rest: cmd };
   }
   /** 整段無法辨識的原因（建立前的預檢 S.preflight 用；I01 的訊息是同一段文字加上位置） */

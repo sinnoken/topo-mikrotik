@@ -1,7 +1,7 @@
 // 其他 print（bridge host、bridge vlan、interface、ARP、路由、OSPF、system resource）
 'use strict';
 const assert = require('assert');
-const { S, build, ids, count, iface, addrs, test, i03 } = require('../lib.js');
+const { S, read, build, ids, count, iface, addrs, test, i03 } = require('../lib.js');
 // ------------------------------------------------------------------ 其他 print
 test('bridge host：略過 bridge 自己的 MAC（L），VLAN 取自 vid', () => {
   const s = build('SW_A (10.0.0.1):\n### /interface bridge host print detail\nFlags: D - dynamic, L - local\n 0 DL mac-address=E4:8D:8C:00:00:02 on-interface=bridge1 bridge=bridge1 vid=0 age=3s\n 1 D  mac-address=24:6E:96:00:00:05 on-interface=ether1 bridge=bridge1 vid=20 age=3s\n');
@@ -28,6 +28,32 @@ test('detail：列首只有序號與旗標、欄位在下一行時開新列，�
   assert.deepStrictEqual(i03(s), []);
   const g = build('SW_A (10.0.0.1):\n### /interface print detail\nFlags: D - DYNAMIC; R - RUNNING; S - SLAVE\n 0  R  name="ether1" type="ether" mtu=1500\nR Q\n 1 RQ\n');
   assert.deepStrictEqual(i03(g).map((f) => f.evidence.map((e) => e.text)), [['R Q', '1 RQ']], '沒有序號、或旗標不在說明行中的都不是列首');
+});
+test('detail：引號值在行尾斷開時接上下一行（斷在 - 或 / 之後直接接，其他補一個空白），之後的欄位照樣讀到', () => {
+  const rowsOf = (text) => {
+    const b = S.readers.readAll([{ name: 'n.txt', text }]).blocks.find((x) => x.command);
+    return S.adapters.mikrotikRows(b, () => {}).map((r) => r.kv);
+  };
+  // 實機輸出（tests/fixtures/real/7.25.1-neighbor-wrap.txt）：system-description 斷在「RBwAPGR-」之後
+  const text = read('tests/fixtures/real/7.25.1-neighbor-wrap.txt');
+  const [kv] = rowsOf(text);
+  assert.deepStrictEqual([kv.board, kv['system-description'], kv['system-caps'], kv['system-caps-enabled'], kv['discovered-by'], kv['interface-name']],
+    ['RBwAPGR-5HacD2HnD', 'MikroTik RouterOS 7.25.1 2026-11-02 12:39:53 RBwAPGR-5HacD2HnD', 'bridge,router', 'bridge,router', 'lldp,mndp', 'bridge/ether1']);
+  const s = S.build([{ name: 'n.txt', text }], { now: '2026-01-01T00:00:00Z' });
+  assert.deepStrictEqual([i03(s), ids(s).filter((x) => x === 'I01')], [[], []], JSON.stringify(i03(s).map((f) => f.message)));
+  // 手寫：在空白處斷開（RouterOS 吃掉那個空白，接上時補回）、斷在 / 之後、引號內有跳脫的引號；下一列不會被併進來
+  const hand = rowsOf(['SW_A (10.0.0.1):', '### /ip neighbor print detail without-paging',
+    ' 0 interface=ether1 identity="core \\"A\\" room" mac-address=AA:BB:CC:00:00:01',
+    '   system-description="MikroTik RouterOS 7.25.1 (stable)',
+    '      CRS326-24G-2S+" interface-name="bridge/',
+    '      ether3" discovered-by=lldp',
+    ' 1 interface=ether2 identity="B" mac-address=AA:BB:CC:00:00:02 discovered-by=mndp'].join('\n'));
+  assert.deepStrictEqual(hand.map((x) => [x.identity, x['system-description'], x['interface-name'], x['discovered-by']]),
+    [['core "A" room', 'MikroTik RouterOS 7.25.1 (stable) CRS326-24G-2S+', 'bridge/ether3', 'lldp'], ['B', undefined, undefined, 'mndp']]);
+  // 引號一直沒有關上：下一個列首不會被吞進去
+  const broken = rowsOf(['SW_A (10.0.0.1):', '### /ip neighbor print detail without-paging',
+    ' 0 interface=ether1 identity="A mac-address=AA:BB:CC:00:00:01', ' 1 interface=ether2 identity="B" mac-address=AA:BB:CC:00:00:02'].join('\n'));
+  assert.deepStrictEqual(broken.map((x) => x.interface), ['ether1', 'ether2']);
 });
 test('interface print：CAPsMAN 說明續行保留 Wi-Fi running 旗標；Wi-Fi 介面本身不列為終端', () => {
   const s = build('SW_A (10.0.0.1):\n### /interface print detail\n'

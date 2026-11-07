@@ -1,0 +1,50 @@
+# 真實設備的 print stats 輸出（2026-11-07 收集；RouterOS 7，版本與型號未提供，內容只有 defconf 註解）
+# 原本：/ip firewall nat、/ipv6 firewall filter 兩段（ipv6 filter 在第 11 列截斷，最後一列「11 forward drop」是補的）
+# 補的：設備標頭、/ip firewall filter、/ip firewall raw、/ipv6 firewall raw 的空表格（只有說明行與表頭，格式依前兩段推定）
+RT_REAL (10.101.88.1):
+### /ip firewall filter print stats detail without-paging
+# collected-at: 2026-11-07T09:41:43Z
+Columns: CHAIN, ACTION, BYTES, PACKETS
+# CHAIN  ACTION  BYTES  PACKETS
+### /ip firewall nat print stats detail without-paging
+# collected-at: 2026-11-07T09:41:43Z
+Columns: CHAIN, ACTION, BYTES, PACKETS
+# CHAIN   ACTION      BYTES  PACKETS
+;;; defconf: masquerade
+0 srcnat  masquerade      0        0
+### /ip firewall raw print stats detail without-paging
+# collected-at: 2026-11-07T09:41:43Z
+Columns: CHAIN, ACTION, BYTES, PACKETS
+# CHAIN  ACTION  BYTES  PACKETS
+### /ipv6 firewall filter print stats detail without-paging
+# collected-at: 2026-11-07T09:41:43Z
+Columns: CHAIN, ACTION, BYTES, PACKETS
+ # CHAIN    ACTION      BYTES  PACKETS
+;;; defconf: accept established,related,untracked
+ 0 input    accept  1 112 383   15 656
+;;; defconf: drop invalid
+ 1 input    drop            0        0
+;;; defconf: accept ICMPv6
+ 2 input    accept        312        3
+;;; defconf: accept UDP traceroute
+ 3 input    accept          0        0
+;;; defconf: accept DHCPv6-Client prefix delegation.
+ 4 input    accept          0        0
+;;; defconf: accept IKE
+ 5 input    accept          0        0
+;;; defconf: accept ipsec AH
+ 6 input    accept          0        0
+;;; defconf: accept ipsec ESP
+ 7 input    accept          0        0
+;;; defconf: accept all that matches ipsec policy
+ 8 input    accept          0        0
+;;; defconf: drop everything else not coming from LAN
+ 9 input    drop            0        0
+;;; defconf: accept established,related,untracked
+10 forward  accept          0        0
+;;; defconf: drop invalid
+11 forward  drop            0        0
+### /ipv6 firewall raw print stats detail without-paging
+# collected-at: 2026-11-07T09:41:43Z
+Columns: CHAIN, ACTION, BYTES, PACKETS
+# CHAIN  ACTION  BYTES  PACKETS

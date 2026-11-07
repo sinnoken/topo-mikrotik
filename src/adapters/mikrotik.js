@@ -46,6 +46,40 @@
     return kv;
   }
   const LEGEND_MORE = /^(?:[A-Za-z+*]\s+-\s+[\w-]+(?:[,;]\s*|\s*$))+$/;
+  /** 行尾時是否還在引號裡（\ 跳脫的引號不算；引號外遇到 ;;; 之後是註解，不算） */
+  function quoteOpen(text) {
+    let open = false;
+    for (let k = 0; k < text.length; k++) {
+      const ch = text[k];
+      if (open && ch === '\\') { k++; continue; }
+      if (ch === '"') open = !open;
+      else if (!open && text.startsWith(';;;', k)) break;
+    }
+    return open;
+  }
+  // 列首（序號、旗標後接 key= 或 ;;;）：沒關上的引號不會把下一列吞進來
+  const ROW_HEAD = /^\s*\d+(?:\s+[A-Za-z*]+)*\s+(?:[\w.\-]+=|;;;)/;
+  /**
+   * 依終端寬度折行時，引號值可能在中間斷開（tests/fixtures/real/7.25.1-neighbor-wrap.txt：「RBwAPGR-」的下一行是「5HacD2HnD"」）。
+   * 有 key=value、行尾還在引號裡的行，接上下一行（去掉縮排），直到引號關上：斷在 - 或 / 之後直接接上，
+   * 其他補一個空白（在空白處斷行時那個空白不會留在行尾）。這是依實機輸出的推論，手冊沒有折行規則（無法以手冊確認）。
+   * 回傳 [{ text, i（第一行的索引）, more（接上的其他行的索引）}]。
+   */
+  function joinQuoted(lines) {
+    const out = [];
+    for (let i = 0; i < lines.length; i++) {
+      const cur = { text: lines[i].replace(/\r$/, ''), i, more: [] };
+      while (/(^|\s)[\w.\-]+=/.test(cur.text) && quoteOpen(cur.text) && i + 1 < lines.length) {
+        const next = lines[i + 1].replace(/\r$/, '');
+        if (!next.trim() || ROW_HEAD.test(next)) break;
+        const piece = next.replace(/^\s+/, '');
+        cur.text = /[-/]$/.test(cur.text) ? cur.text + piece : cur.text.replace(/\s+$/, '') + ' ' + piece;
+        cur.more.push(++i);
+      }
+      out.push(cur);
+    }
+    return out;
+  }
   function newRow(toks, line) {
     return { flags: toks.filter((t) => !/^\d+$/.test(t)).join(''), idx: toks.find((t) => /^\d+$/.test(t)) ?? null, kv: {}, comment: null, line, lines: [line] };
   }
@@ -67,8 +101,8 @@
       while ((m = re.exec(legend[1]))) flagChars.add(m[1]);
     });
     const rows = []; let cur = null; let pending = null; let inLegend = false;
-    b.lines.forEach((raw, i) => {
-      const line = raw.replace(/\r$/, ''); const t = line.trim();
+    joinQuoted(b.lines).forEach(({ text: line, i, more }) => {
+      const t = line.trim();
       if (!t) return;
       if (/^(Flags|Columns):/i.test(t)) { inLegend = /^Flags:/i.test(t); if (ignore) ignore(at(b, i), '說明行'); return; }
       // 旗標說明換到下一行（手冊 VRF 的 /ip/route print detail：「c - connect, s - static, … + - ecmp」）：緊接在 Flags: 之後、整行都是「字元 - 名稱」
@@ -107,8 +141,10 @@
       }
       const prefix = body.slice(0, km.index + km[1].length).trim();
       const rest = body.slice(km.index + km[1].length);
-      if (!prefix && cur) { Object.assign(cur.kv, kvOf(rest)); cur.lines.push(at(b, i)); return; }
+      const joined = more.map((k) => at(b, k)); // 引號值斷開而接上的行：屬於同一列
+      if (!prefix && cur) { Object.assign(cur.kv, kvOf(rest)); cur.lines.push(at(b, i), ...joined); return; }
       cur = newRow(prefix.split(/\s+/).filter(Boolean), at(b, i));
+      cur.lines.push(...joined);
       cur.comment = comment !== null ? comment : pending && pending.text;
       if (pending) cur.lines.unshift(pending.line);
       pending = null;
@@ -760,16 +796,94 @@
   // 千位的空白：等號後的數字串（\d{1,3}( \d{3})+），去掉空白再交給 kvOf
   const STAT_NUM = /\b(bytes|packets)=(\d{1,3}(?: \d{3})+|\d+)(?=\s|$)/g;
   const statLine = (l) => l.replace(STAT_NUM, (_, k, v) => `${k}=${v.replace(/ /g, '')}`);
+
+  /*
+   * 表格格式：RouterOS 7 的 print stats 即使加了 detail，實機輸出仍是表格（tests/fixtures/real/7.x-defconf-fwstats.txt）：
+   *  - `Flags:`、`Columns: CHAIN, ACTION, BYTES, PACKETS` 說明行，`#` 開頭的表頭（欄名全大寫）；
+   *  - 資料列「序號 旗標 欄…」：表頭中 `#` 到第一個欄名之間是序號與旗標（有旗標時這段會留出寬度，
+   *    手冊 bridge VLAN 表的 print 範例同樣如此）；欄與欄之間至少兩個空白，數字靠右、以單一空白分千位；
+   *  - `;;; 註解` 在列的前一行；太長時依終端寬度硬切成數行，續行沒有 `;;;`，接起來不加空白；
+   *  - 手冊 Stats 範例的舊排法：註解接在「序號 旗標」之後，欄位在下一行。
+   * 欄名以表頭為準（實際的順序），沒有表頭才用 Columns。序號與旗標以表頭的位置切出（這一段只有數字與旗標字元，
+   * 不受註解或欄值中全形字的寬度影響）；其餘以兩個以上空白切欄。切不出與欄名相同數目的列不產生事實，留給 I03。
+   */
+  const TABLE_HEAD = /^\s*#\s+[A-Z][A-Z0-9-]*(?:\s+[A-Z][A-Z0-9-]*)*\s*$/;
+  const STAT_COUNT = /^\d{1,3}(?: \d{3})*$/;
+  // 看起來是資料列（序號後有以兩個以上空白分開的欄）：不能當註解的續行吞掉
+  const looksRow = (line) => /^\s*\d+\s/.test(line) && /\S\s{2,}\S/.test(line);
+  function statTableRows(b, ignore) {
+    const flagChars = new Set(); let columns = null; let head = null; let start = null;
+    b.lines.forEach((raw) => {
+      const line = raw.replace(/\r$/, '');
+      const fl = line.match(/^\s*Flags:\s*(.*)$/i);
+      if (fl) { const re = /(?:^|[;,\s])([A-Za-z*])\s*-/g; let m; while ((m = re.exec(fl[1]))) flagChars.add(m[1]); return; }
+      const co = line.match(/^\s*Columns:\s*(.*)$/i);
+      if (co) { if (!columns) columns = co[1].split(',').map((s) => s.trim()).filter(Boolean); return; }
+      if (!head && TABLE_HEAD.test(line)) { head = line.trim().slice(1).trim().split(/\s+/); start = line.search(/[A-Z]/); }
+    });
+    const names = (head || columns || []).map((x) => x.toLowerCase());
+    const allFlags = (s) => Array.from(s).every((ch) => (flagChars.size ? flagChars.has(ch) : /[A-Z*]/.test(ch)));
+    const kvFrom = (fields) => {
+      const kv = {};
+      names.forEach((nm, k) => { const v = fields[k]; kv[nm] = (nm === 'bytes' || nm === 'packets') && STAT_COUNT.test(v) ? v.replace(/ /g, '') : v; });
+      return kv;
+    };
+    const cells = (text) => text.trim().split(/\s{2,}/);
+    /** 一行 → { idx, flags, fields（欄值；註解接在序號之後時是 null）, comment }；不是資料列時 null */
+    const split = (line) => {
+      let idx; let flags = ''; let rest;
+      const pre = start !== null ? /^\s*(\d+)((?:\s+\S+)*)\s*$/.exec(line.slice(0, start)) : null;
+      if (pre && allFlags(pre[2].replace(/\s+/g, ''))) { idx = pre[1]; flags = pre[2].replace(/\s+/g, ''); rest = line.slice(start); }
+      else { const m = /^\s*(\d+)\s+(\S.*)$/.exec(line); if (!m) return null; idx = m[1]; rest = m[2]; }
+      const t = rest.trim();
+      if (t.startsWith(';;;')) return { idx, flags, fields: null, comment: t.slice(3).trim() };
+      const fields = cells(t);
+      // 旗標的另一種位置（表頭沒有為旗標留寬度）：旗標成為第一格，或與第一欄只隔一個空白
+      if (fields.length === names.length + 1 && allFlags(fields[0])) flags += fields.shift();
+      else if (fields.length === names.length && !flags && flagChars.size) {
+        const m = /^(\S+) (\S.*)$/.exec(fields[0]);
+        if (m && allFlags(m[1])) { flags = m[1]; fields[0] = m[2]; }
+      }
+      return fields.length === names.length ? { idx, flags, fields, comment: null } : null;
+    };
+    const rows = []; let note = null; let open = null; let inLegend = false;
+    b.lines.forEach((raw, i) => {
+      const line = raw.replace(/\r$/, ''); const t = line.trim(); const n = at(b, i);
+      if (!t) return;
+      if (/^(Flags|Columns):/i.test(t)) { inLegend = /^Flags:/i.test(t); ignore(n, '說明行'); return; }
+      if (inLegend && LEGEND_MORE.test(t)) { ignore(n, '說明行'); return; }
+      inLegend = false;
+      if (TABLE_HEAD.test(line)) { ignore(n, '表頭'); return; }
+      if (t.startsWith(';;;')) { note = { text: line.slice(line.indexOf(';;;') + 3).replace(/^\s+/, ''), lines: [n] }; open = null; return; }
+      const s = names.length ? split(line) : null;
+      if (s && s.fields) {
+        rows.push({ idx: s.idx, flags: s.flags, kv: kvFrom(s.fields), comment: note ? note.text.trim() : null, line: n, lines: note ? note.lines.concat(n) : [n] });
+        note = null; open = null; return;
+      }
+      if (s) { open = { idx: s.idx, flags: s.flags, kv: {}, comment: s.comment, line: n, lines: [n] }; rows.push(open); note = null; return; }
+      // 舊排法的欄位行（沒有序號）
+      if (open && !/^\s*\d+\s/.test(line) && cells(t).length === names.length) { Object.assign(open.kv, kvFrom(cells(t))); open.lines.push(n); open = null; return; }
+      // 切不出欄位的資料列：連同它的註解留給 I03，註解不併進註解、也不轉給下一列
+      if (looksRow(line)) { note = null; open = null; return; }
+      // 註解的續行：依終端寬度硬切，原樣接上
+      if (note) { note.text += line; note.lines.push(n); return; }
+      if (open) { open.comment += line; open.lines.push(n); }
+    });
+    return rows;
+  }
   FW_STAT_TABLES.forEach(([family, table]) => reg({
     id: `mikrotik.fwstats.${family}-${table}`, vendor: VENDOR, dataType: 'fwstats', label: `RouterOS 防火牆命中次數（${family === 'ip' ? 'IPv4' : 'IPv6'} ${table}）`,
     command: new RegExp(`^\\/?${family}\\s+firewall\\s+${table}\\s+print\\b.*\\bstats\\b`, 'i'),
     detect: () => false, // 內容看不出是哪個表（filter 與 raw 都有 output chain），只依區塊標記的指令辨識
     family, table,
     parse(b, emit, ignore = noop) {
-      const nb = { lines: b.lines.map(statLine), origin: b.origin };
-      let legend = null;
-      b.lines.forEach((l, i) => { if (legend === null && /^\s*Flags:/i.test(l)) legend = at(b, i); });
-      const rows = parseRows(nb, ignore);
+      let legend = null; let tabular = false;
+      b.lines.forEach((l, i) => {
+        const head = /^\s*(Flags|Columns):/i.test(l) || TABLE_HEAD.test(l);
+        if (head && legend === null) legend = at(b, i);
+        if (head && !/^\s*Flags:/i.test(l)) tabular = true;
+      });
+      const rows = tabular ? statTableRows(b, ignore) : parseRows({ lines: b.lines.map(statLine), origin: b.origin }, ignore);
       let first = null;
       rows.forEach((r) => {
         const kv = r.kv;

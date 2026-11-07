@@ -80,7 +80,7 @@ const routeText = (rows) => table(rows.map((r) => ({ flags: r.flags, kvs: r.blac
 const ospfText = (rows) => table(rows.map((r) => ({ flags: '', kvs: [['instance', 'default'], ['area', 'backbone'], ['address', r.addr], r.ifc ? ['interface', r.ifc] : null, ['priority', 1], ['router-id', r.id], ['state', 'Full'], ['state-changes', 5], ['adjacency', '1d2h']].filter(Boolean) })), 'Flags: ');
 const ifaceText = (rows) => ['Flags: D - DYNAMIC; R - RUNNING; S - SLAVE', ...rows.map((r, i) => [` ${i}  ${r.flags}  ;;; ${r.comment || ''}`.replace(/ ;;; $/, ''), detailRow('       ', [['name', `"${r.name}"`.replace(/^"|"$/g, '')], ['type', r.type], ['mtu', 1500]])].join('\n').replace(/name=(\S+)/, 'name="$1"').replace(/type=(\S+)/, 'type="$1"'))].join('\n');
 // 防火牆命中次數（print stats detail）：依 export 的規則順序一列一條，RouterOS 7 的數字以空白分千位。
-// 計數器由規則內容算出（不用 rnd，避免改變其他資料的亂數序列）。手冊沒有 stats＋detail 的範例，格式是推定的。
+// 計數器由規則內容算出（不用 rnd，避免改變其他資料的亂數序列）。排版依實機輸出（statsText）。
 const FW_STAT_PATH = { filter: '/ip firewall filter', nat: '/ip firewall nat', raw: '/ip firewall raw', v6filter: '/ipv6 firewall filter', v6raw: '/ipv6 firewall raw' };
 const KVARG = /([\w.\-]+)=("(?:[^"\\]|\\.)*"|\S*)/g;
 const argPairs = (a) => { const out = []; let m; KVARG.lastIndex = 0; while ((m = KVARG.exec(a))) out.push([m[1], m[2]]); return out; };
@@ -95,16 +95,26 @@ const rosText = (v) => {
 };
 const thousands = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 const strHash = (s) => { let h = 7; for (const ch of s) h = (Math.imul(h, 31) + ch.codePointAt(0)) >>> 0; return h; };
-/** rows：[{ flags, comment, kvs: [[k, v]], seed }]，v 是 print 顯示的值。 */
+/**
+ * rows：[{ flags, comment, kvs: [[k, v]], seed }]，v 是 print 顯示的值；只用 chain、action。
+ * 實機的 RouterOS 7 即使加了 detail 也輸出表格（tests/fixtures/real/7.x-defconf-fwstats.txt）：Columns 說明行、`#` 表頭、
+ * 註解在列的前一行、欄與欄隔兩個空白、數字靠右；有旗標時才有 Flags 說明行，表頭在序號與第一欄之間為旗標留寬度。
+ */
 function statsText(rows) {
-  const out = ['Flags: X - disabled, I - invalid; D - dynamic'];
-  rows.forEach((r, i) => {
+  const data = rows.map((r) => {
     const h = strHash(r.seed); const packets = h % 9 === 0 ? 0 : h % 60000; const bytes = packets * (64 + (h >>> 8) % 1400);
-    out.push(` ${String(i).padEnd(2)} ${(r.flags || '').padEnd(2)}${r.comment ? `;;; ${r.comment}` : ''}`.replace(/\s+$/, ''));
-    const toks = r.kvs.map(([k, v]) => `${k}=${/[\s]/.test(v) ? `"${v}"` : v}`).concat([`bytes=${thousands(bytes)}`, `packets=${thousands(packets)}`]);
-    let line = '     ';
-    toks.forEach((t) => { if (line.trim() && line.length + 1 + t.length > 80) { out.push(line); line = '     '; } line += ' ' + t; });
-    out.push(line);
+    const get = (k) => (r.kvs.find((x) => x[0] === k) || [])[1];
+    return { flags: r.flags || '', comment: r.comment, cells: [get('chain'), get('action'), thousands(bytes), thousands(packets)] };
+  });
+  const NAMES = ['CHAIN', 'ACTION', 'BYTES', 'PACKETS']; const RIGHT = [false, false, true, true];
+  const width = NAMES.map((n, k) => Math.max(n.length, ...data.map((d) => d.cells[k].length)));
+  const idxW = String(Math.max(0, data.length - 1)).length; const flagW = Math.max(0, ...data.map((d) => d.flags.length));
+  const row = (lead, cells) => lead + cells.map((c, k) => (RIGHT[k] ? c.padStart(width[k]) : c.padEnd(width[k]))).join('  ').replace(/\s+$/, '');
+  const out = flagW ? ['Flags: X - disabled, I - invalid; D - dynamic'] : [];
+  out.push(`Columns: ${NAMES.join(', ')}`, row('#'.padStart(idxW) + ' ' + (flagW ? ' '.repeat(flagW + 1) : ''), NAMES));
+  data.forEach((d, i) => {
+    if (d.comment) out.push(`;;; ${d.comment}`);
+    out.push(row(String(i).padStart(idxW) + ' ' + (flagW ? d.flags.padEnd(flagW) + ' ' : ''), d.cells));
   });
   return out.join('\n');
 }

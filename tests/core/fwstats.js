@@ -1,8 +1,8 @@
 // 防火牆命中次數（/ip|ipv6 firewall filter|nat|raw print stats detail）：解析、對應到 export 的規則、F09
-// 輸出格式依手冊（firewall/common-firewall-matchers-and-actions 的 Stats）推定，stats＋detail 並用的寫法尚未以真實設備確認
+// 實機的 RouterOS 7 即使加了 detail 也輸出表格（tests/fixtures/real/7.x-defconf-fwstats.txt）；key=value 格式仍支援
 'use strict';
 const assert = require('assert');
-const { S, build, ids, count, test, i03, sampleSnap } = require('../lib.js');
+const { S, read, build, ids, count, test, i03, sampleSnap } = require('../lib.js');
 
 const LEGEND = 'Flags: X - disabled, I - invalid; D - dynamic';
 const EXPORT = [
@@ -98,6 +98,121 @@ test('命中次數對不上（F09）：列數、chain、action、停用、註解
   assert.strictEqual(f.length, 1);
   assert.ok(/^R：IPv4 filter 的命中次數全部不採用（.*）；IPv4 nat 的命中次數全部不採用（/.test(f[0].message), f[0].message);
   assert.deepStrictEqual(two.coverage[0].firewall.stats, { matched: 0, mismatch: 2 });
+});
+
+// ---- 表格格式：RouterOS 7 的 print stats 即使加了 detail 也輸出表格（實機輸出 tests/fixtures/real/7.x-defconf-fwstats.txt）
+const statFacts = (id, lines) => {
+  const facts = []; const ignored = [];
+  S.adapters[id].parse({ lines, origin: { startLine: 1 } }, (f) => facts.push(f), (n) => ignored.push(n));
+  return { facts, ignored };
+};
+const noLine = (fs) => fs.map((f) => Object.assign({}, f, { line: undefined }));
+// export 的字串：非 ASCII 寫成 \XX（UTF-8 位元組）
+const rosEsc = (s) => Array.from(Buffer.from(s, 'utf8')).map((b) => (b < 128 ? String.fromCharCode(b) : '\\' + b.toString(16).toUpperCase())).join('');
+const V7_FILTER_TABLE = ['### /ip firewall filter print stats detail without-paging', LEGEND, 'Columns: CHAIN, ACTION, BYTES, PACKETS',
+  ' #   CHAIN    ACTION                                  BYTES     PACKETS',
+  ';;; special dummy rule to show fasttrack counters',
+  ' 0 D forward  passthrough                    50 507 925 242  50 048 246',
+  ';;; defconf: accept established,related,untracked',
+  ' 1   input    accept                  9 007 199 254 740 993   1 234 567',
+  ';;; 防火牆: drop all',
+  ' 2   input    drop                                  432 270       9 719',
+  ' 3 X forward  accept                                      0           0',
+  ' 4   forward  fasttrack-connection                      120           2'];
+// defconf 的 IPv6 filter 前 12 條（與實機輸出的 12 列一一對應）與 IPv4 nat 的 masquerade
+const DEFCONF_EXPORT = ['### /export terse',
+  '/ip firewall nat add action=masquerade chain=srcnat comment="defconf: masquerade" ipsec-policy=out,none out-interface-list=WAN',
+  ...[['accept', 'input', 'accept established,related,untracked', 'connection-state=established,related,untracked'], ['drop', 'input', 'drop invalid', 'connection-state=invalid'],
+    ['accept', 'input', 'accept ICMPv6', 'protocol=icmpv6'], ['accept', 'input', 'accept UDP traceroute', 'dst-port=33434-33534 protocol=udp'],
+    ['accept', 'input', 'accept DHCPv6-Client prefix delegation.', 'dst-port=546 protocol=udp src-address=fe80::/10'], ['accept', 'input', 'accept IKE', 'dst-port=500,4500 protocol=udp'],
+    ['accept', 'input', 'accept ipsec AH', 'protocol=ipsec-ah'], ['accept', 'input', 'accept ipsec ESP', 'protocol=ipsec-esp'],
+    ['accept', 'input', 'accept all that matches ipsec policy', 'ipsec-policy=in,ipsec'], ['drop', 'input', 'drop everything else not coming from LAN', 'in-interface-list=!LAN'],
+    ['accept', 'forward', 'accept established,related,untracked', 'connection-state=established,related,untracked'], ['drop', 'forward', 'drop invalid', 'connection-state=invalid']]
+    .map(([a, c, cm, rest]) => `/ipv6 firewall filter add action=${a} chain=${c} comment="defconf: ${cm}" ${rest}`)];
+
+test('命中次數（實機的表格輸出）：千位空白、註解對到下一列、兩位數序號、空表格算已收集 0 列；對上 export 後不報 F09', () => {
+  const text = read('tests/fixtures/real/7.x-defconf-fwstats.txt');
+  const s = build(text);
+  assert.deepStrictEqual([ids(s).filter((x) => /^I0|F09/.test(x)), i03(s).length], [[], 0], JSON.stringify(s.findings.filter((f) => /^I0/.test(f.id)).map((f) => f.message)));
+  assert.deepStrictEqual(stats(s).map((t) => [t.family, t.table, t.status, t.rows]),
+    [['ip', 'filter', 'no-export', 0], ['ip', 'nat', 'no-export', 1], ['ip', 'raw', 'no-export', 0], ['ipv6', 'filter', 'no-export', 12], ['ipv6', 'raw', 'no-export', 0]]);
+  const withExport = build(text + '\n' + DEFCONF_EXPORT.join('\n'));
+  assert.deepStrictEqual([count(withExport, 'F09'), i03(withExport).length], [0, 0], JSON.stringify(withExport.findings.filter((f) => f.id === 'F09').map((f) => f.message)));
+  assert.ok(stats(withExport).every((t) => t.status === 'matched'), JSON.stringify(stats(withExport).map((t) => [t.table, t.status, t.reason])));
+  const v6 = withExport.model.firewallRules.filter((r) => r.family === 'ipv6').map((r) => [r.stats.bytes, r.stats.packets]);
+  assert.deepStrictEqual([v6.length, v6[0], v6[2], v6[11]], [12, ['1112383', '15656'], ['312', '3'], ['0', '0']]);
+  const { facts } = statFacts('mikrotik.fwstats.ipv6-filter', text.split(/\r?\n/).slice(20, 46));
+  const rows = facts.filter((f) => f.t === 'fwStat');
+  assert.deepStrictEqual([rows[10].chain, rows[10].comment, rows[11].chain, rows[11].action, rows[11].comment],
+    ['forward', 'defconf: accept established,related,untracked', 'forward', 'drop', 'defconf: drop invalid'], '序號兩位數的列與它前一行的註解');
+});
+
+test('命中次數（表格）：與 key=value 格式的事實相同（行號除外）；旗標 D、X 在序號後面；對上 export 不報 F09', () => {
+  const kv = statFacts('mikrotik.fwstats.ip-filter', V7_FILTER.slice(1));
+  const tb = statFacts('mikrotik.fwstats.ip-filter', V7_FILTER_TABLE.slice(1));
+  assert.deepStrictEqual(noLine(tb.facts), noLine(kv.facts));
+  assert.deepStrictEqual(tb.facts.filter((f) => f.t === 'fwStat').map((f) => f.flags), ['D', '', '', 'X', '']);
+  const s = box(EXPORT, V7_FILTER_TABLE);
+  assert.deepStrictEqual([ids(s).filter((x) => /^I0|F09/.test(x)), i03(s).length], [[], 0]);
+  assert.deepStrictEqual(ruleStats(s).map((x) => x.slice(0, 2)), [['9007199254740993', '1234567'], ['432270', '9719'], ['0', '0'], ['120', '2']]);
+});
+
+test('命中次數（表格）：長註解依終端寬度折行（沒有 ;;; 的續行，原樣接上）、含中文與 regex 的註解、對上 export 不報 F09', () => {
+  const long = '(quake3)udplite, dccp, and sctp are built-in services of conntracking. Since these are not separately loaded modules, they cannot be disabled separately';
+  const re = '#(last|frst|[0-9]+)\\.(acpt|dlst|rtrn|reject|drop)\\.(flt|nat)(4|6)';
+  const lines = ['### /ip firewall filter print stats detail without-paging', LEGEND, 'Columns: CHAIN, ACTION, BYTES, PACKETS',
+    ' #   CHAIN    ACTION                         BYTES  PACKETS',
+    ';;; special dummy rule to show fasttrack counters',
+    ' 0 D forward  passthrough               50 507 925   50 048',
+    ';;; (quake3)udplite, dccp, and sctp are built-in services of conntra',
+    'cking. Since these are not separately loaded modules, they cannot be',
+    ' disabled separately',
+    ' 1   input    accept                           312        3',
+    ';;; redirect NTP 錯誤比較少',
+    ' 2 X forward  add-src-to-address-list            0        0',
+    ';;; #(last|frst|[0-9]+)\\.(acpt|dlst|rtrn|',
+    'reject|drop)\\.(flt|nat)(4|6)',
+    ' 3   forward  drop                       1 806 976   23 776'];
+  const { facts } = statFacts('mikrotik.fwstats.ip-filter', lines.slice(1));
+  assert.deepStrictEqual(facts.filter((f) => f.t === 'fwStat').map((f) => [f.flags, f.chain, f.action, f.comment, f.bytes, f.packets]), [
+    ['D', 'forward', 'passthrough', 'special dummy rule to show fasttrack counters', '50507925', '50048'],
+    ['', 'input', 'accept', long, '312', '3'],
+    ['X', 'forward', 'add-src-to-address-list', 'redirect NTP 錯誤比較少', '0', '0'],
+    ['', 'forward', 'drop', re, '1806976', '23776']]);
+  const exp = ['### /export terse',
+    `/ip firewall filter add action=accept chain=input comment="${long}" protocol=udplite`,
+    `/ip firewall filter add action=add-src-to-address-list address-list=ntp chain=forward comment="${rosEsc('redirect NTP 錯誤比較少')}" disabled=yes`,
+    `/ip firewall filter add action=drop chain=forward comment="${re.replace(/\\/g, '\\\\')}"`];
+  const s = box(exp, lines);
+  assert.deepStrictEqual([ids(s).filter((x) => /^I0|F09/.test(x)), i03(s).length], [[], 0], JSON.stringify(s.findings.filter((f) => /^I0|F09/.test(f.id)).map((f) => f.message)));
+  assert.strictEqual(stats(s)[0].status, 'matched');
+});
+
+test('命中次數（表格）：旗標在第一欄的位置、只有表頭沒有 Columns、欄的順序不同、只有 Columns 沒有表頭、手冊的舊排法', () => {
+  const rowsOf = (id, lines) => statFacts(id, lines).facts.filter((f) => f.t === 'fwStat').map((f) => [f.flags, f.chain, f.action, f.bytes, f.packets, f.comment]);
+  // 表頭沒有為旗標留寬度：旗標與第一欄只隔一個空白，或自成一格
+  assert.deepStrictEqual(rowsOf('mikrotik.fwstats.ip-nat', ['Flags: X - disabled', 'Columns: CHAIN, ACTION, BYTES, PACKETS', '# CHAIN   ACTION     BYTES  PACKETS',
+    '0 X dstnat  dst-nat        0        0', '1 dstnat    dst-nat  1 806 976   23 776', '2  X  dstnat  dst-nat     0        0']),
+  [['X', 'dstnat', 'dst-nat', '0', '0', null], ['', 'dstnat', 'dst-nat', '1806976', '23776', null], ['X', 'dstnat', 'dst-nat', '0', '0', null]]);
+  assert.deepStrictEqual(rowsOf('mikrotik.fwstats.ip-filter', [' # ACTION  CHAIN   PACKETS  BYTES', ' 0 drop    input         3    312']), [['', 'input', 'drop', '312', '3', null]]);
+  assert.deepStrictEqual(rowsOf('mikrotik.fwstats.ip-filter', ['Columns: CHAIN, ACTION, BYTES, PACKETS', ';;; defconf', '0 input  accept  1 112 383  15 656']), [['', 'input', 'accept', '1112383', '15656', 'defconf']]);
+  // 手冊 Stats 範例的排法：註解接在序號與旗標之後，欄位在下一行（數值是手寫的）
+  assert.deepStrictEqual(rowsOf('mikrotik.fwstats.ip-filter', ['Flags: X - disabled, I - invalid, D - dynamic', ' #    CHAIN     ACTION         BYTES   PACKETS',
+    ' 0  D ;;; special dummy rule to show fasttrack counters', '      forward   passthrough    1 500        12', ' 1    input     accept           640         8']),
+  [['D', 'forward', 'passthrough', '1500', '12', 'special dummy rule to show fasttrack counters'], ['', 'input', 'accept', '640', '8', null]]);
+  // 只有說明行與表頭的空表：已收集、0 列，行號是第一個說明行
+  const empty = statFacts('mikrotik.fwstats.ipv6-raw', ['Columns: CHAIN, ACTION, BYTES, PACKETS', '# CHAIN  ACTION  BYTES  PACKETS']);
+  assert.deepStrictEqual([empty.facts, empty.ignored], [[{ t: 'fwStatTable', family: 'ipv6', table: 'raw', line: 1 }], [1, 2]]);
+});
+
+test('命中次數（表格）：切不出欄位的列與它的註解留給 I03，註解不轉給下一列', () => {
+  const s = box(['### /ip firewall filter print stats detail without-paging', 'Columns: CHAIN, ACTION, BYTES, PACKETS', ' # CHAIN    ACTION  BYTES  PACKETS',
+    ';;; broken', ' 0 input    accept  12', ' 1 forward  drop     0        0']);
+  const bad = i03(s);
+  assert.strictEqual(bad.length, 1);
+  assert.ok(/^2 行無法辨識.*第 5 行「;;; broken」、第 6 行「0 input    accept  12」$/.test(bad[0].message), bad[0].message);
+  const { facts } = statFacts('mikrotik.fwstats.ip-filter', ['Columns: CHAIN, ACTION, BYTES, PACKETS', ' # CHAIN    ACTION  BYTES  PACKETS', ';;; broken', ' 0 input    accept  12', ' 1 forward  drop     0        0']);
+  assert.deepStrictEqual(facts.filter((f) => f.t === 'fwStat').map((f) => [f.chain, f.comment]), [['forward', null]]);
 });
 
 test('命中次數（範例資料）：核心 01 全部配上、核心 02 的 nat 多一條（F09），其他表照樣配上', () => {

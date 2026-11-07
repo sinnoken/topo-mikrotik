@@ -101,6 +101,10 @@ test('I01／I03 的訊息結論在前、位置在後；貼上的內容寫成全�
   assert.deepStrictEqual(msgs('SW_A (10.0.0.1):\n### /foo bar print\nx=1\n', 'I01'), ['無法辨識的內容：（貼上的內容）第 3–4 行（指令：/foo bar print）']);
   const empty = msgs('SW_A (10.0.0.1):\n### /ip arp print\nFlags: X - disabled\n', 'I01');
   assert.ok(/^解析不出任何內容：（貼上的內容）第 3–4 行（已辨識為「RouterOS ARP 表」）；RouterOS 的 print 指令請加上 detail without-paging$/.test(empty[0]), empty[0]);
+  // 指令已經有 detail without-paging：補上也沒用，改說格式和預期的不同
+  assert.deepStrictEqual(msgs('SW_A (10.0.0.1):\n### /ip arp print detail without-paging\nFlags: X - disabled\n', 'I01'),
+    ['解析不出任何內容：（貼上的內容）第 3–4 行（已辨識為「RouterOS ARP 表」）；輸出格式和解析器預期的不同，請回報這段輸出']);
+  assert.ok(/請加上 detail without-paging$/.test(msgs('SW_A (10.0.0.1):\n### /ip arp print detail\nFlags: X - disabled\n', 'I01')[0]), '只缺 without-paging 時仍提示');
   const i03 = msgs('SW_A (10.0.0.1):\n### /ip arp print detail without-paging\n 0 DC address=10.0.0.9 mac-address=AA:BB:CC:00:00:09 interface=ether1\n垃圾\n', 'I03');
   assert.deepStrictEqual(i03, ['1 行無法辨識，沒有進入基準：（貼上的內容）第 3–5 行（/ip arp print detail without-paging）中的第 4 行「垃圾」']);
   assert.ok(![...empty, ...i03].some((m) => m.includes('解析器')));

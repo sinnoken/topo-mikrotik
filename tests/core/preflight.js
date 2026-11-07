@@ -48,7 +48,8 @@ test('預檢：壞掉的輸入（標頭前的內容、不認得的指令、非 d
   assert.deepStrictEqual(u.map((x) => [x.kind, x.file, x.startLine, x.device]), [
     ['block', 'a.txt', 1, null], ['block', 'a.txt', 7, 'SW_A'], ['block', 'a.txt', 9, 'SW_A'], ['block', 'a.txt', 11, 'SW_A'],
     ['note', 'a.txt', 13, 'SW_A'], ['block', S.readers.PASTE, 1, null]]);
-  assert.ok(/\/foo bar print/.test(u[1].reason) && /detail/.test(u[2].reason) && /指令執行錯誤/.test(u[3].reason) && /收集時間/.test(u[4].reason), JSON.stringify(u));
+  // 指令已經有 detail without-paging：不提示加 detail，說明格式和預期的不同
+  assert.ok(/\/foo bar print/.test(u[1].reason) && /格式和解析器預期的不同/.test(u[2].reason) && !/請加上/.test(u[2].reason) && /指令執行錯誤/.test(u[3].reason) && /收集時間/.test(u[4].reason), JSON.stringify(u));
   assert.strictEqual(u[0].reason, '沒有設備標頭');
   const none = S.preflight([{ name: S.readers.PASTE, text: '' }]);
   assert.deepStrictEqual([none.devices.length, none.unrecognized.length], [0, 1], '空白輸入也要明確回報，不靜默成功');

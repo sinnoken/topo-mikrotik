@@ -323,6 +323,7 @@ for (let s = 1; s <= SITES; s++) {
     }
     e.push(['/ip firewall nat', 'add', 'action=masquerade chain=srcnat comment="defconf: masquerade" ipsec-policy=out,none out-interface-list=WAN']);
     if (F && ci === 0) e.push(['/ip firewall nat', 'add', `action=dst-nat chain=dstnat dst-port=8443 in-interface-list=WAN protocol=tcp to-addresses=10.${s}.20.11 to-ports=443`]); // F04：連接埠轉送到伺服器
+    if (F && ci === 1) e.push(['/ip firewall nat', 'add', 'action=redirect chain=dstnat comment="force LAN DNS" dst-port=53 in-interface-list=LAN protocol=udp to-ports=53']); // F16：有 redirect，dstnat 狀態才會成立（只從 LAN，不是 F04）
     if (F && ci === 1) e.push(['/ipv6 firewall filter', 'add', 'action=accept chain=forward dst-port=443 protocol=tcp']);   // F05：IPv6 只限目的埠
     ['telnet', 'ftp', 'www', 'api', 'api-ssl'].forEach((n) => e.push(['/ip service', 'set', `${n} disabled=yes`]));
     ['ssh', 'winbox'].forEach((n) => e.push(['/ip service', 'set', `${n} address=10.${s}.10.0/24`]));

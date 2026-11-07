@@ -1670,6 +1670,7 @@
    */
   const NAT_BYPASS_KEYS = new Set(['connection-nat-state', 'connection-state']);
   const DROP_ACTIONS = new Set(['drop', 'reject', 'tarpit']);
+  const DSTNAT_ACTIONS = new Set(['dst-nat', 'redirect', 'netmap']);
   const tokensOf = (body) => body.split(',').map((t) => t.trim().toLowerCase());
   /** 整批放行經 dst-nat 的連線的 forward 規則。 */
   function natBypass(r) {
@@ -1691,6 +1692,8 @@
       ['ip', 'ipv6'].forEach((family) => {
         const bypass = rules.filter((r) => r.family === family && natBypass(r));
         if (!bypass.length) return;
+        // 這個位址族沒有啟用中的 dst-nat／redirect／netmap：connection-nat-state=dstnat 不會成立，沒有規則被架空
+        if (!rules.some((r) => r.family === family && !r.disabled && r.table === 'nat' && DSTNAT_ACTIONS.has(r.action))) return;
         const skip = new Set(bypass.map((r) => r.key));
         const hit = new Map(); // 放行規則 → 被架空的規則（依 chain、順序）
         rules.forEach((j) => {

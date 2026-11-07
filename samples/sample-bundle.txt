@@ -1028,6 +1028,7 @@ TPE_CORE_RT_02 (10.1.10.3):
 /ip firewall filter add action=accept chain=forward dst-address=10.1.20.12 dst-port=22 in-interface-list=WAN protocol=tcp
 /ip firewall filter add action=drop chain=forward dst-port=445 in-interface-list=WAN protocol=tcp
 /ip firewall nat add action=masquerade chain=srcnat comment="defconf: masquerade" ipsec-policy=out,none out-interface-list=WAN
+/ip firewall nat add action=redirect chain=dstnat comment="force LAN DNS" dst-port=53 in-interface-list=LAN protocol=udp to-ports=53
 /ipv6 firewall filter add action=accept chain=forward dst-port=443 protocol=tcp
 /ip service set telnet disabled=yes
 /ip service set ftp disabled=yes
@@ -1086,7 +1087,10 @@ Flags: X - disabled, I - invalid; D - dynamic
  0    ;;; defconf: masquerade
       chain=srcnat action=masquerade ipsec-policy=out,none
       out-interface-list=WAN bytes=46 966 343 packets=38 153
- 1    ;;; added after export
+ 1    ;;; force LAN DNS
+      chain=dstnat action=redirect dst-port=53 in-interface-list=LAN
+      protocol=udp to-ports=53 bytes=46 967 574 packets=38 154
+ 2    ;;; added after export
       chain=dstnat action=dst-nat dst-port=2222 protocol=tcp
       to-addresses=10.1.20.12 bytes=10 326 120 packets=9 705
 

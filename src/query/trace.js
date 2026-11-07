@@ -58,11 +58,12 @@
 
   /**
    * 單跳轉送決定（lookup、lookupTable、routeDecision、nextOwner）只透過這個最小介面（路由視圖 R）讀資料，不直接讀 Q 的其他成員：
-   *   vrfs()、vrfsOf(dev)、subnetsOf(dev, vrf)、routesOf(dev, vrf?)、routesInTable(dev, table)、hopOwner(dev, ip, vrf)、policyOf(dev)、routesIncomplete(dev)
+   *   vrfs()、vrfsOf(dev)、subnetsOf(dev, vrf)、routesOf(dev, vrf?)、routesInTable(dev, table)、hopOwner(dev, ip, vrf)、policyOf(dev)、routesIncomplete(dev)、
+   *   addrSets()（位址集合的登錄表 S.infer.addrSets：/routing rule 的位址比對）
    * 每個成員的語意與回傳形狀同 Q 的同名函式（docs/查詢介面.md）；回傳的陣列要是同一份（數字形式依陣列快取）。
    * 查詢層用 routingOf(Q)；之後模型（⑥ 檢查）可以用 M 提供另一份實作，與查詢層共用同一套單跳決定。
    */
-  const ROUTING_VIEW = Object.freeze(['vrfs', 'vrfsOf', 'subnetsOf', 'routesOf', 'routesInTable', 'hopOwner', 'policyOf', 'routesIncomplete']);
+  const ROUTING_VIEW = Object.freeze(['vrfs', 'vrfsOf', 'subnetsOf', 'routesOf', 'routesInTable', 'hopOwner', 'policyOf', 'routesIncomplete', 'addrSets']);
   const viewMemo = new WeakMap();
   /** Q 的路由視圖（每個 Q 一份；成員直接轉給 Q 的同名函式）。 */
   const routingOf = (Q) => {
@@ -129,18 +130,25 @@
   const ruleRef = (r) => ({ dev: r.dev, order: r.order, action: r.action, table: r.table, match: Object.assign({}, r.match), comment: r.comment || null, src: r.src.map((x) => x.slice()) });
   /**
    * routing rule 的條件是否符合封包：true／false，或 null（無法判斷，keys 列出條件）。
-   * 可以判斷的條件：src-address、dst-address（單一網段）、interface（入介面已知時）、routing-mark（沒有 mangle 的 mark-routing 時封包沒有標記，一定不符）。
+   * 可以判斷的條件：src-address、dst-address、interface（入介面已知時）、routing-mark（沒有 mangle 的 mark-routing 時封包沒有標記，一定不符）。
+   * 位址一律經路由視圖的位址集合登錄表（R.addrSets().ofRoutingRule，S.infer.addrSets；L4 的等價類邊界用同一份）：
+   *   集合判斷不了（有一項不是位址、網段或範圍，或位址族不一致）、或寫了否定（!，手冊的型別沒有寫可以否定）時無法判斷；
+   *   規則的位址族與封包（IPv4）不同時不符合（IPv6 的位址不會包含 IPv4 位址；手冊沒有明寫，https://manual.mikrotik.com/docs/cli-reference/routing/rule.md）。
    */
-  function ruleMatches(r, pkt) {
+  function ruleMatches(R, r, pkt) {
     const unknown = []; let ok = true;
-    const inNet = (ip, v) => { const p = /^[\d.]+(\/\d{1,2})?$/.test(String(v)) ? S.ip.parseCidr(v) : null; return p ? IP.inNet(ip, p.net, p.len) : null; };
+    const hitOf = (k, ip) => {
+      const e = R.addrSets().ofRoutingRule(r, k);
+      if (!e || !e.set || S.infer.fw.splitNeg(r.match[k]).neg) return null;
+      return e.set.bits === 32 && (typeof ip === 'number' || IP.isIp(ip)) ? e.set.has(ip) : false;
+    };
     Object.keys(r.match).forEach((k) => {
       const v = r.match[k];
       if (!RULE_CONDITION_KEYS.has(k)) {
         if (k === 'routing-mark') ok = false;
         else if (!(k === 'chain' && v === 'user')) unknown.push(k); // 預設的 user chain 不是條件
       } else if (k === 'src-address' || k === 'dst-address') {
-        const ip = k === 'src-address' ? pkt.src : pkt.dst; const hit = ip == null ? null : inNet(ip, v);
+        const ip = k === 'src-address' ? pkt.src : pkt.dst; const hit = ip == null ? null : hitOf(k, ip);
         if (hit === null) unknown.push(k); else if (!hit) ok = false;
       } else if (!pkt.inEp) unknown.push(k); // interface
       else if (K.ifc(v) !== K.splitEp(pkt.inEp)[1]) ok = false;
@@ -166,7 +174,7 @@
     if (pol.marks.length) return { kind: 'policy-unknown', why: 'mark-routing', vrf: v, via: [v], rules: [], marks: pol.marks.map((x) => ({ chain: x.chain, mark: x.mark, src: x.src.map((s) => s.slice()) })), note: `有 ${pol.marks.length} 條 mangle mark-routing（mangle 不在模型中），封包可能改查其他路由表` };
     if (v !== K.MAIN_VRF) return lookup(R, dev, pkt.dst, v);
     for (const r of pol.rules) {
-      const m = ruleMatches(r, pkt);
+      const m = ruleMatches(R, r, pkt);
       if (m.match === null) return { kind: 'policy-unknown', why: 'condition', vrf: v, via: [v], rules: [ruleRef(r)], keys: m.keys, note: `/routing rule 第 ${r.order} 條的條件 ${m.keys.join('、')} 無法判斷` };
       if (!m.match) continue;
       if (r.action === 'drop' || r.action === 'unreachable') return { kind: 'policy-drop', vrf: v, via: [v], rule: ruleRef(r), note: `/routing rule 第 ${r.order} 條 ${r.action}` };

@@ -68,3 +68,27 @@ test('F13：SNMP community 的 addresses 合併後涵蓋全部才是不限來源
     });
   });
 });
+
+test('/routing rule：多個網段、範圍與單一網段，集合相同時 Q.reach 相同（經路由視圖的登錄表）；IPv6 的位址不符合 IPv4 封包；否定與不合法的值無法判斷', () => {
+  const reach = (rule, src) => { const { snap } = R([`/routing rule add action=drop ${rule}`]); return S.query(snap).reach(src, '8.8.8.8', { proto: 'tcp', port: 443 }); };
+  ['src-address=192.168.1.0/25', 'src-address=192.168.1.0/26,192.168.1.64/26', 'src-address=192.168.1.0-192.168.1.127'].forEach((rule) => {
+    assert.strictEqual(reach(rule, '192.168.1.10').verdict, 'deny', rule);
+    assert.strictEqual(reach(rule, '192.168.1.200').verdict, 'allow', rule);
+  });
+  assert.strictEqual(reach('src-address=2001:db8::/32', '192.168.1.10').verdict, 'allow', 'IPv6 的規則不符合 IPv4 封包');
+  ['src-address=!192.168.1.0/25', 'src-address=192.168.1.0/25,bogus'].forEach((rule) => {
+    const r = reach(rule, '192.168.1.200');
+    assert.strictEqual(r.verdict, 'unknown', rule);
+  });
+  // 路由視圖：查詢層與模型版都有 addrSets，同一條規則的集合相同；trace 直接用它判斷
+  const { snap, M } = R(['/routing rule add action=drop src-address=192.168.1.0/26,192.168.1.64/26']);
+  const Q = S.query(snap); const QV = S.trace.routingOf(Q); const RV = S.infer.routingView(M);
+  const qr = QV.policyOf('R').rules[0]; const mr = RV.policyOf('R').rules[0];
+  const qs = QV.addrSets().ofRoutingRule(qr, 'src-address'); const ms = RV.addrSets().ofRoutingRule(mr, 'src-address');
+  assert.deepStrictEqual([qs.id, qs.set.ranges], ['R|routing-rule|1|src-address', ms.set.ranges]);
+  const pkt = { src: '192.168.1.100', dst: '8.8.8.8', vrf: 'main', inEp: 'R|bridge1' };
+  assert.deepStrictEqual([S.trace.routeDecision(QV, 'R', pkt).kind, S.trace.routeDecision(RV, 'R', pkt).kind], ['policy-drop', 'policy-drop']);
+  // 等價類的邊界也由同一份集合產生：/25 的兩側在矩陣中是不同的代表位址，判斷與 Q.reach 一致
+  const set = qs.set;
+  ['192.168.1.5', '192.168.1.127', '192.168.1.128'].forEach((ip) => assert.strictEqual(Q.reach(ip, '8.8.8.8', { proto: 'tcp', port: 443 }).verdict, set.has(ip) ? 'deny' : 'allow', ip));
+});

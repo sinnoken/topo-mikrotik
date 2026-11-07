@@ -172,8 +172,9 @@ test('前提 policy-routing：/routing rule 依順序決定路由表；條件判
   assert.deepStrictEqual(linked(odd.reach(LAN, OUT, { proto: 'tcp', port: 443 })), [['policy-routing', ['policy-routing']]]);
   // 可判斷的條件就是 ruleMatches 判斷的那幾個
   const pkt = { src: LAN, dst: OUT, inEp: 'R|bridge1' };
-  S.trace.RULE_CONDITIONS.forEach((c) => assert.notStrictEqual(S.trace.ruleMatches({ match: { [c.key]: c.key === 'interface' ? 'bridge1' : '0.0.0.0/0' } }, pkt).match, null, c.key));
-  assert.strictEqual(S.trace.ruleMatches({ match: { 'min-prefix': '0' } }, pkt).match, null);
+  const R = { addrSets: () => S.infer.addrSets({}) };
+  S.trace.RULE_CONDITIONS.forEach((c) => assert.notStrictEqual(S.trace.ruleMatches(R, { match: { [c.key]: c.key === 'interface' ? 'bridge1' : '0.0.0.0/0' } }, pkt).match, null, c.key));
+  assert.strictEqual(S.trace.ruleMatches(R, { match: { 'min-prefix': '0' } }, pkt).match, null);
 });
 
 test('前提 bridge-ip-firewall：有 bridge 與過濾規則的設備，use-ip-firewall 沒有收集，是 missing-data；同網段送達對到它', () => {

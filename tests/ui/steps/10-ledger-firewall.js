@@ -219,6 +219,16 @@ module.exports = async () => {
     App.select({ type: 'device', key: dev });
     const link = $('#detail').testAll('a').find((a) => a.textContent === '查看防火牆規則與服務');
     if (!link) throw new Error('設備詳情應有防火牆摘要與入口');
+    // 防火牆摘要與相鄰的路由表、管理面設定同一種模式：可展開區塊（detail-fold），標題旁「N 條規則」；有問題的規則時預設展開
+    {
+      const fold = $('#detail').testAll('details').find((d) => d.querySelector('summary').firstChild.textContent === '防火牆');
+      const n = Q.firewallRulesOf(dev).length; const bad = Q.firewallRulesOf(dev).some((r) => Q.findingsFor('rule', r.key).some((f) => f.severity !== 'info'));
+      if (!fold || !/\bdetail-fold\b/.test(fold.className) || !fold.contains(link)) throw new Error('設備詳情的防火牆應是可展開區塊（section 的 fold），入口在裡面');
+      const chip = fold.querySelector('summary').testAll('.chip')[0];
+      if (!chip || chip.textContent !== `${S.view.num(n)} 條規則`) throw new Error('防火牆區塊的標題旁應寫「N 條規則」：' + (chip && chip.textContent));
+      if ((fold.getAttribute('open') != null) !== bad) throw new Error('有問題的規則時防火牆區塊預設展開，沒有時收合');
+      if ($('#detail').testAll('.detail-section').some((s) => s.querySelector('h3').textContent.startsWith('防火牆'))) throw new Error('防火牆摘要不應是一般區塊');
+    }
     // WAN 狀態用語：摘要與防火牆畫面共用 V.firewall.zoneStatus()；三種狀態都可區分且標示推論
     const ZS = S.view.firewall.zoneStatus; const zoneNow = Q.firewallZone(dev);
     const known = ['ok', 'no-wan-list', 'empty-wan-list'].map(ZS);
@@ -231,9 +241,16 @@ module.exports = async () => {
     if (App.sel.type !== 'firewall' || App.sel.dev !== dev) throw new Error('入口應開啟該設備的防火牆畫面');
     // chain 依 Q.firewallChains 的順序，每個 chain 一個可展開區塊；展開後列數等於規則數，position 由小到大
     const chains = Q.firewallChains(dev);
-    const folds = $('#detail').testAll('details').filter((d) => d.querySelector('.fw-chain'));
+    // chain 的區塊在表的區塊裡（兩層都是可展開區塊）：最內層含規則表的是 chain
+    const folds = $('#detail').testAll('details').filter((d) => d.querySelector('.fw-chain') && !d.testAll('details').length);
     if (folds.map((d) => d.querySelector('summary').firstChild.textContent).join('|') !== chains.map((c) => c.chain).join('|')) throw new Error('chain 的順序應與 Q.firewallChains 一致');
-    const heads = $('#detail').testAll('h3').map((x) => x.firstChild.textContent);
+    const heads = $('#detail').testAll('summary').map((x) => x.firstChild.textContent);
+    // 防火牆畫面與設備詳情同一種區塊模式：每個區塊都是可展開區塊（detail-fold），標題旁寫數量與單位
+    const blocks = $('#detail').testAll('details').filter((d) => /\bdetail-fold\b/.test(d.className));
+    const want = [...S.util.uniq(chains.map((c) => c.family + '|' + c.table)).map(() => '條規則'), ...(Q.ipServicesOf(dev).length ? ['個服務'] : [])];
+    const units = blocks.map((d) => { const c = d.querySelector('summary').testAll('.chip')[0]; return c ? c.textContent.replace(/^[\d,]+ /, '') : null; });
+    want.forEach((u) => { if (!units.includes(u)) throw new Error('防火牆畫面的區塊標題旁應有數量與單位「' + u + '」：' + units.join('|')); });
+    if ($('#detail').testAll('.detail-section').some((s) => /^(IPv4|IPv6|服務|WAN)/.test(s.querySelector('h3').textContent))) throw new Error('防火牆畫面的表、服務與 WAN 判斷應是可展開區塊，不是一般區塊');
     const fams = S.util.uniq(chains.map((c) => c.family + ' ' + c.table));
     const famIdx = fams.map((k) => heads.findIndex((x) => x === k.replace(/^ip /, 'IPv4 ').replace(/^ipv6 /, 'IPv6 ')));
     if (famIdx.some((i) => i < 0) || famIdx.some((x, i) => i && famIdx[i - 1] > x)) throw new Error('位址族與表的分組應依序列出：' + heads.join('|'));

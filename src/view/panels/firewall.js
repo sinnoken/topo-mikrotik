@@ -86,7 +86,7 @@
       body.appendChild(ruleTable(App, rows, focusKey));
     };
     if (open) fill();
-    const el = P().section(c.chain, body, { count: rows.length, fold: true, open, extra: [
+    const el = P().section(c.chain, body, { count: rows.length, unit: '條規則', fold: true, open, extra: [
       c.builtin ? null : V.chip('自訂 chain', 'info'),
       c.jumpedFrom.length ? V.chip(`jump 進入 ${c.jumpedFrom.length}`, 'info') : null,
       bad ? V.chip(`有問題 ${bad}`, 'warn') : null,
@@ -271,9 +271,10 @@
           ['LAN 介面', zone.lanInterfaces.length ? h('span', null, zone.lanInterfaces.flatMap((ep, n) => [n ? '、' : '', epLink(App, ep)])) : '—']]),
         h('p', { class: 'muted' }, '名稱含獨立 WAN 字樣的 interface list（例如 WAN、ISP-WAN）的成員推定為朝外（WAN），含 LAN 字樣的推定為朝內（LAN）；'
           + '不看介面名稱。F03／F04／F07 等檢查依這個判斷。'),
-      ] : null),
+      ] : null, { fold: true, open: !zs || zs.tone !== 'ok' }),
+      // 每個區塊都是可展開區塊＋標題旁的數量與單位（與設備詳情相同的模式）；表預設展開，其下每個 chain 再依規則數決定
       ...tables.map((t) => section(`${FAMILY[t.family] || t.family} ${t.table}`,
-        t.chains.map((c) => chainSection(App, dev, c, focusRule, openAll)), { count: t.chains.reduce((n, c) => n + c.rules, 0) })),
+        t.chains.map((c) => chainSection(App, dev, c, focusRule, openAll)), { count: t.chains.reduce((n, c) => n + c.rules, 0), unit: '條規則', fold: true, open: true })),
       section('服務（/ip service）', services.length ? V.table([
         { t: '服務', f: (s) => h('span', { class: 'mono' }, s.name), s: (s) => s.name },
         { t: '狀態', f: (s) => (s.enabled ? V.chip('啟用', 'ok') : V.chip('停用')), s: (s) => (s.enabled ? 0 : 1) },
@@ -286,13 +287,13 @@
         bad: (s) => Q.findingsFor('service', svcKey(s)).some((f) => f.severity !== 'info'),
         rowClass: (s) => (svcKey(s) === focusSvc ? 'focus' : ''),
         rowStyle: (s) => (svcKey(s) === focusSvc ? { background: T.focus.bg, boxShadow: `inset 0 2px 0 ${T.focus.border}, inset 0 -2px 0 ${T.focus.border}` } : null),
-      }) : null, { count: services.length }),
+      }) : null, { count: services.length, unit: '個服務', fold: true, open: !!focusSvc || services.some((s) => Q.findingsFor('service', svcKey(s)).some((f) => f.severity !== 'info')) }),
       section('Interface list', lists.length ? V.table([
         { t: '名稱', f: (l) => h('span', { class: 'mono' }, l.name) },
         { t: '成員', f: (l) => (l.members.length ? h('span', null, l.members.flatMap((ep, n) => [n ? '、' : '', epLink(App, ep)])) : '—') },
         { t: '包含／排除', f: (l) => [l.include.length ? '包含 ' + l.include.join('、') : '', l.exclude.length ? '排除 ' + l.exclude.join('、') : ''].filter(Boolean).join('；') },
         { t: '', f: (l) => (l.defined ? '' : V.chip('未定義', 'warn', { title: '規則或設定引用了這個 list，但 export 裡沒有定義' })) },
-      ], lists) : null, { count: lists.length, fold: true }),
+      ], lists) : null, { count: lists.length, unit: '個清單', fold: true }),
     ]);
   }
 

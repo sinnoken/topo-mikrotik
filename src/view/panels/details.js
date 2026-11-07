@@ -432,13 +432,14 @@
     const bad = rules.filter((r) => Q.findingsFor('rule', r.key).some((f) => f.severity !== 'info')).length;
     // 用語與防火牆畫面共用 firewall.js 的 zoneStatus()（該檔在本檔之後載入，render 時才取用）
     const zs = zone && V.firewall.zoneStatus(zone.status);
+    // 與相鄰的路由表、VRF、管理面設定同一種模式：可展開區塊＋標題旁的數量（條規則）；有問題的規則時預設展開（同管理面設定）
     return section('防火牆', [
       h('div', { class: 'row' }, [
-        V.chip(`${rules.length} 條規則`), bad ? V.chip(`${bad} 條有問題`, 'warn') : null, V.chip(`${services.length} 個服務`),
+        bad ? V.chip(`${bad} 條有問題`, 'warn') : null, V.chip(`${services.length} 個服務`),
         zs ? V.chip(zs.short, zs.tone, { title: zs.text }) : null,
       ]),
       h('div', null, h('a', { class: 'link', onclick: () => App.select({ type: 'firewall', dev }) }, '查看防火牆規則與服務')),
-    ]);
+    ], { count: rules.length, unit: '條規則', fold: true, open: bad > 0 });
   }
   /*
    * 管理面設定（Q.mgmtOf，一台一筆；沒有 /export 的設備是 null）：每項列出狀態、值與依據。

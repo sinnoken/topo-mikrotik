@@ -316,8 +316,8 @@
     const ruleA = (k, text) => h('a', { class: 'link assume-rule', 'data-rule': k, onclick: pick({ type: 'rule', key: k }) }, text);
     const devs = on ? u.devices : [];
     const rules = on ? u.ruleKeys.filter((k) => Q.getFirewallRule(k)) : [];
-    // 規則數：防火牆規則有鍵（可點）；/routing rule、mark-routing 只有數目（count 多於設備數時）
-    const nRules = on ? u.ruleKeys.length || (u.count > u.devices.length ? u.count : 0) : 0;
+    // 規則數：查詢層的 unit 是 'rules' 時 count 是規則數（防火牆規則有鍵可點；/routing rule、mark-routing 只有數目）
+    const nRules = on && u.unit === 'rules' ? u.count : 0;
     const miss = on && u.status === 'missing-data';
     const impact = on ? h('span', { class: 'assume-impact' }, [
       miss ? V.chip('缺資料', 'warn', { title: '判斷需要的資料沒有收集，可能影響結果' }) : null, miss ? ' 涉及 ' : '影響 ',

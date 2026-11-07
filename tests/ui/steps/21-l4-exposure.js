@@ -420,6 +420,12 @@ module.exports = async () => {
       if (qa.testAll('li').some((x) => x.id)) throw new Error('這次查詢的前提不用頁尾的 id（id 不重複）');
       if (r.assumptions.some((a) => !qa.textContent.includes(a.short))) throw new Error('這次查詢的前提寫短句');
     }
+    // 影響的單位依查詢層的 unit：只有 1 條 /routing rule（count 等於設備數、沒有防火牆規則鍵）時仍寫「1 條規則」；unit 是 devices 時不寫規則
+    const pr = S.query.traceAssumptions().find((a) => a.code === 'policy-routing'); const dev = Q.devices()[0].key;
+    const one = V.assumeItem(App, pr, { code: pr.code, status: 'affects', devices: [dev], ruleKeys: [], count: 1, unit: 'rules' });
+    if (!one.querySelector('.assume-impact').textContent.includes('1 台') || !one.querySelector('.assume-impact').textContent.includes('1 條規則')) throw new Error('unit 為 rules、只有 1 條 /routing rule 時應寫「1 條規則」：' + one.textContent);
+    const byDev = V.assumeItem(App, pr, { code: pr.code, status: 'affects', devices: [dev, Q.devices()[1].key], ruleKeys: [], count: 2, unit: 'devices' });
+    if (byDev.querySelector('.assume-impact').textContent.includes('條規則')) throw new Error('unit 為 devices 時不寫規則數：' + byDev.textContent);
     App.showLayer('device');
   });
 };

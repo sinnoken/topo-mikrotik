@@ -438,15 +438,15 @@
   // 路由表與下一跳的擁有者都經模型版的路由視圖（S.infer.routingView），和路徑追蹤、可達性的 Q.routesOf／Q.hopOwner 同一份語意
   function unreachableNextHops(X, add) {
     const { M, name, RV, isExternal, entryName } = X;
-    const ownerIn = (dev, vrf) => (ip) => { const o = RV.hopOwner(dev, ip, vrf); return o ? o.dev : null; };
     // 遞迴解析後仍到不了已知設備的下一跳才提醒；經由其他路由最終落在已知設備上的不算
     // 解析不到已知設備時依原因分開回報：迴圈（R03）、落入黑洞（R04）、其他（R01），同一個下一跳只報一種
     // R01 另排除出介面判定為對外的下一跳（ADR-023 決策 7：電信業者的閘道本來就不在基準內），訊息另外列出
     const badNh = { R01: new Map(), R03: new Map(), R04: new Map() }; const isp = new Map();
     M.routes.forEach((r) => r.active && r.nh.forEach((n) => {
       if (!n.ip) return;
-      const res = resolveNextHop(RV.routesOf(r.dev, n.vrf), n.ip, ownerIn(r.dev, n.vrf));
-      if (res.some((x) => x.status === 'known')) return;
+      const res = resolveNextHopIn(RV, r.dev, n.ip, n.vrf);
+      // 路由表收集不完整（逾時等，C02 另外提醒）：有一步判斷不了（找不到或只命中較短的前綴，可能只是沒收到更長的）時 R01／R03／R04 都不報
+      if (res.some((x) => x.status === 'known' || x.status === 'incomplete')) return;
       const id = res.some((x) => x.status === 'loop') ? 'R03' : res.some((x) => x.status === 'blackhole') ? 'R04' : 'R01';
       const out = RV.egress(r.dev, n);
       if (id === 'R01' && isExternal(out)) { S.util.getOr(isp, r.dev, () => new Map()).set(K.inVrf(n.ip, n.vrf), out); return; }
@@ -562,7 +562,7 @@
 
   /**
    * dst-nat／netmap 規則轉送的目標（to-addresses 的第一個位址）在這台設備查得到什麼路由（S.trace.lookup，入介面的 VRF，沒有時 main）：
-   * { ip, vrf, status: reached（直連或基準內的路由）｜no-route（沒有符合的路由）｜blackhole｜external（私有位址只符合經對外介面的路由，會送回外部）｜unknown（沒有路由表資料）, lk }。
+   * { ip, vrf, status: reached（直連或基準內的路由）｜no-route（沒有符合的路由）｜blackhole｜external（私有位址只符合經對外介面的路由，會送回外部）｜unknown（沒有路由表資料，或路由表收集不完整而查不到、只命中比 /32 短的路由）, lk }。
    * 沒有 to-addresses 或不是 IPv4 時 null。F04 與 R09 共用。
    */
   const DNAT_NO_ROUTE = new Set(['no-route', 'blackhole', 'external']);
@@ -575,7 +575,7 @@
     const inIfc = one !== undefined && !S.infer.fw.splitNeg(one).neg ? M.ifcs.get(K.ep(r.dev, one)) : null;
     const vrf = K.vrf(inIfc ? inIfc.vrf : K.MAIN_VRF);
     const lk = lookupIn(RV, r.dev, ip, vrf);
-    const status = lk.kind === 'connected' ? 'reached' : lk.kind === 'no-route-data' ? 'unknown' : lk.kind === 'no-match' ? 'no-route' : lk.kind === 'blackhole' ? 'blackhole'
+    const status = lk.kind === 'connected' ? 'reached' : lk.kind === 'no-route-data' || lk.kind === 'route-data-incomplete' ? 'unknown' : lk.kind === 'no-match' ? 'no-route' : lk.kind === 'blackhole' ? 'blackhole'
       : lk.kind === 'route' && onlyExternal(X, r.dev, lk) && S.ip.classify(ip) !== 'public' ? 'external' : 'reached';
     return { ip, vrf, status, lk };
   }
@@ -680,7 +680,7 @@
    * R12：網段沒有任何路由可以到達（推論）。一台設備的直連網段，基準中其他有路由表資料的設備（同一個 VRF）都沒有直連、也沒有非預設的路由涵蓋它
    * （預設路由不算：只是「其他地方」，不代表知道這個網段；路由的閘道跨 VRF 對應到這台設備時算在它的 VRF）。
    * 不檢查：其他設備也直連的網段（鏈路）、/31 與 /32、對外或可能對外的介面、有 OSPF 鄰接的介面、在這台設備 NAT 後面的網段（behindNat，雙重 NAT），
-   * 以及同一個 VRF 沒有其他設備有路由表資料時。
+   * 以及同一個 VRF 沒有其他設備有路由表資料，或其他設備中有路由表收集不完整（coverage[].incomplete 含 route，例如逾時）時。
    */
   function unreachableSubnets(X, add) {
     const { M, name, RV, boundaryOf } = X;
@@ -707,16 +707,16 @@
       const out = r.match['out-interface'];
       if (out !== undefined && !S.infer.fw.splitNeg(out).neg && K.ep(dev, out) === s.ep) return false;
       const sa = r.match['src-address']; if (sa === undefined) return true;
-      const p = S.infer.fw.parseVal('src-address', sa); if (p.kind !== 'ranges' || p.bits !== 32) return false;
-      const lo = BigInt(S.ip.toInt(s.net)); const hi = lo + (1n << BigInt(32 - s.len)) - 1n;
-      const inside = p.items.some(([a, b]) => a <= lo && hi <= b);
-      return p.neg ? !p.items.some(([a, b]) => !(b < lo || a > hi)) : inside;
+      // 登錄表的集合（判斷與 L4 同一份，看合併後的區段：/25,/25 涵蓋 /24）；判斷不了或不是 IPv4 時不算
+      const e = M.addrSets.ofRule(r, 'src-address'); if (!e || !e.set || e.set.bits !== 32) return false;
+      const net = s.net + '/' + s.len;
+      return S.infer.fw.splitNeg(sa).neg ? !e.set.overlaps(net) : e.set.covers(net);
     });
     Array.from(M.devices.values()).filter((d) => d.collected).map((d) => d.key).sort(S.util.natural).forEach((z) => {
       const hits = RV.subnetsOf(z).filter((s) => {
         if (s.len > 30 || shared.get(s.net + '/' + s.len).size > 1 || boundaryOf.has(s.ep) && boundaryOf.get(s.ep).status !== 'internal' || ospfEps.has(s.ep) || behindNat(z, s)) return false;
         const others = Array.from(routers.get(s.vrf) || []).filter((d) => d !== z);
-        if (!others.length) return false;
+        if (!others.length || others.some((d) => RV.routesIncomplete(d))) return false; // 有其他設備的路由表收集不完整：沒看到路由不代表沒有，不報
         for (let len = s.len; len >= 1; len--) {
           const m = known.get(len); const set = m && m.get(s.vrf + '|' + ((S.ip.toInt(s.net) & S.ip.maskOf(len)) >>> 0));
           if (set && Array.from(set).some((d) => d !== z)) return false;
@@ -829,6 +829,7 @@
    * consistencyKit 是這些檢查共用的分組、多數決、訊息格式與介面清單（prep 建立一次，放在 X.cc）；各檢查的函式在後面。
    */
   const MAX_SHOWN = 8; // 訊息中每台設備最多列出的值，避免大型 address-list 讓訊息過長
+  const DEVIATION_MAX = 100; // finding.deviation 的每組最多存幾個值（超過時只存摘要，見 judge）
   function consistencyKit(M, name) {
     const U = S.util; const nat = U.natural;
     const byName = (a, b) => nat(name(a), name(b)) || nat(a, b);
@@ -867,12 +868,25 @@
      * finding 的 deviation 欄位（平手時 deviating 為空陣列、main 為 null）。
      * groups：多數決實際用的分組（groupDevs 的結果，順序相同）；value 是該組第一台設備的顯示值（依它的設定順序），
      * key 是同位置的正規化比對值，devs 依名稱自然排序。main 是多數組在 groups 的索引。
+     * 一組的值超過 DEVIATION_MAX 個（例如十萬筆的 address-list）時只存摘要，不把整份清單寫進 finding：
+     *   value／key 只留前 DEVIATION_MAX 個（同順序），另有 truncated: true、count（值的總數）、hash（排序後比對值的指紋，判斷兩組或兩次基準是否相同）、
+     *   only（這組有、但不是每一組都有的值：{ count, value, key }，前 DEVIATION_MAX 個，依這組的順序）；
+     *   refOf(g)（選用）回傳完整內容的位址集合登錄表 id（A10 的位址清單：「設備|位址族|名稱」，S.infer.addrSets，對應 model.addressLists；Q.addressSet(id) 查得到），寫在 list。
      */
-    const judge = (groups) => {
+    const judge = (groups, refOf) => {
       const m = majorityOf(groups);
+      const big = groups.some((g) => g.keys.length > DEVIATION_MAX);
+      const sets = big ? groups.map((g) => new Set(g.keys)) : null;
+      const summary = (g, i) => {
+        const only = []; g.keys.forEach((k, x) => { if (!sets.every((s, j) => j === i || s.has(k))) only.push(x); });
+        const pick = (xs) => only.slice(0, DEVIATION_MAX).map((x) => xs[x]);
+        const ref = refOf ? refOf(g) : null;
+        return Object.assign({ value: g.vals.slice(0, DEVIATION_MAX), key: g.keys.slice(0, DEVIATION_MAX), devs: g.devs.slice(), truncated: true, count: g.keys.length,
+          hash: U.hash(g.keys.slice().sort().join('\n')), only: { count: only.length, value: pick(g.vals), key: pick(g.keys) } }, ref ? { list: ref } : {});
+      };
       return {
         extra: { deviation: { basis: 'majority', deviating: m ? m.deviating : [],
-          groups: groups.map((g) => ({ value: g.vals.slice(), key: g.keys.slice(), devs: g.devs.slice() })), main: m ? groups.indexOf(m.main) : null } },
+          groups: groups.map((g, i) => (g.keys.length > DEVIATION_MAX ? summary(g, i) : { value: g.vals.slice(), key: g.keys.slice(), devs: g.devs.slice() })), main: m ? groups.indexOf(m.main) : null } },
       };
     };
     const fmtGroups = (groups, fmt) => groups.map((x) => { const v = fmt(x.vals); return devList(x.devs) + (v[0] === '「' ? '' : ' ') + v; }).join('；');
@@ -1043,6 +1057,7 @@
   }
 
   // ---- A10／A11：名稱 ↔ IP 設定（同一選單內比較；兩條檢查共用同一份設定清單）
+  const ADDRESS_LIST_BIND = { '/ip firewall address-list': 'ip' }; // ipBind 的選單 → model.addressLists 的位址族
   function ipBindConsistency(X, add) {
     const { M } = X;
     const { U, nat, byName, show, quote, collected, groupDevs, devList, judge, fmtGroups, evByGroups, put } = X.cc;
@@ -1063,7 +1078,15 @@
       });
       const diff = Array.from(where.values()).sort((a, b) => nat(U.uniq(a.vals).sort(nat)[0], U.uniq(b.vals).sort(nat)[0]))
         .map((w) => `${show(w.vals)} 只在 ${devList(w.has)}`);
-      const j = judge(groups);
+      // 位址清單的完整內容在 model.addressLists（每台設備一份）：摘要只引用該組第一台設備的清單在位址集合登錄表的 id（「設備|位址族|名稱」），不重複內容
+      const refOf = (g) => {
+        const fam = ADDRESS_LIST_BIND[sel[0].section]; if (!fam) return null;
+        // 名稱比對不分大小寫：這台設備的值來自兩份以上的清單（例如 block 與 BLOCK）時，沒有單一份可引用，不寫 list
+        const names = U.uniq(sel.filter((x) => x.dev === g.devs[0]).map((x) => x.name));
+        const e = names.length === 1 ? M.addrSets.list(g.devs[0], fam, names[0]) : null;
+        return e ? e.id : null;
+      };
+      const j = judge(groups, refOf);
       add('A10', `${sel[0].section}「${sel[0].name}」的 ${diff.join('，')}：${fmtGroups(groups, show)}`,
         devs.sort(byName).map((key) => ({ type: 'device', key })), evByGroups(groups, sel, (b) => b.dev, (b) => [{ block: b.block, line: b.line }]), Object.assign({ facet: sel[0].section + '|' + sel[0].nameKey }, j.extra));
     });
@@ -1155,7 +1178,7 @@
     const out = new Map();
     (blocks || []).forEach((b) => {
       if (!b.failure || !b.devKey) return;
-      const dataTypes = S.util.uniq((b.adapters || []).map((a) => S.adapters[a].dataType)).sort();
+      const dataTypes = S.adapters.dataTypesOf(b);
       S.util.getOr(out, b.devKey, () => []).push({ block: b.id, line: b.failure.line, command: b.command, reason: b.failure.reason, exitCode: b.failure.exitCode, text: b.failure.text, dataTypes });
     });
     return out;
@@ -1209,6 +1232,8 @@
       dev: d.key, collected: d.collected, kind: d.kind, data: Array.from(d.data).sort(), missing: d.collected ? missingData(d, expected) : [],
       interfaces: ifCount.get(d.key) || 0, links: linkCount.get(d.key) || 0, macs: macCount.get(d.key) || 0,
       failures: failed.get(d.key) || [],
+      // 收集失敗的區塊的資料類別（輸出可能只有一部分，例如路由表逾時），依名稱排序；model/build.js 的 device.incomplete
+      incomplete: Array.from(d.incomplete).sort(),
       // 防火牆：有設定資料的設備才有；wan 是 WAN 分類的狀態（ok／no-wan-list／empty-wan-list）；
       // stats 是命中次數（print stats）各表的對應結果（matched／mismatch 的表數，沒有收集時為 null）
       firewall: M.fwZones.has(d.key) ? { rules: fwCount.get(d.key) || 0, wan: M.fwZones.get(d.key).status, stats: statsOf(M, d.key) } : null,
@@ -1236,9 +1261,11 @@
   /**
    * 遞迴下一跳解析（RouterOS 的 gateway 可以是要再查路由才能到的位址，例如對端的 loopback）。
    * 先看 ip 是否為已知設備位址；否則在同一台設備的路由表以最長前綴找出它的下一跳，再往下解析。
-   * routes：該設備的路由（{ prefix, len, nh }）；ownerOf(ip)：回傳擁有該 IP 的設備 key 或 null。
+   * routes：該設備的路由（{ prefix, len, nh }）；ownerOf(ip)：回傳擁有該 IP 的設備 key 或 null；
+   * incomplete（選用）：這台設備的路由表收集不完整（R.routesIncomplete），最長前綴不是 /32 時不明（S.trace.routeCertain）。
    * 回傳（ECMP 可有多筆）：{ status: 'known', owner, ip, chain } | { status: 'connected', ip, ifc, chain }
-   *   | { status: 'unresolved', ip, chain }（沒有路由可到）| { status: 'loop', ip, chain } | { status: 'blackhole', ip, chain, route }；chain 是經過的位址。
+   *   | { status: 'unresolved', ip, chain }（沒有路由可到）| { status: 'loop', ip, chain } | { status: 'blackhole', ip, chain, route }
+   *   | { status: 'incomplete', ip, chain }（路由表收集不完整，這一步判斷不了）；chain 是經過的位址。
    */
   /**
    * 下一跳（或直連網段上的目的）位址在 vrf 中屬於誰（ADR-015；檢查 R01／R03／R04 與路徑追蹤、可達性共用這一份）：
@@ -1259,17 +1286,17 @@
     return { key: cands[0].ep, dev: cands[0].dev, vrf: cands[0].vrf, crossVrf: true };
   }
 
-  function resolveNextHop(routes, ip, ownerOf) {
+  function resolveNextHop(routes, ip, ownerOf, incomplete) {
     const MAX_DEPTH = 8; // RouterOS 遞迴路由的實務深度遠小於此；超過視為迴圈
+    if (!S.trace || !S.trace.routeCertain) throw new Error('src/query/trace.js 要在建立基準之前載入（下一跳解析用它的 routeCertain）');
     const walk = (cur, chain, used) => {
       const owner = ownerOf(cur);
       if (owner) return [{ status: 'known', owner, ip: cur, chain }];
       if (chain.length > MAX_DEPTH) return [{ status: 'loop', ip: cur, chain }];
-      let best = -1; let cands = [];
-      routes.forEach((r) => {
-        if (used.has(r) || !S.ip.inNet(cur, r.prefix, r.len)) return;
-        if (r.len > best) { best = r.len; cands = [r]; } else if (r.len === best) cands.push(r);
-      });
+      // 最長前綴（同遮罩多條全取）；這一條鏈已經用過的路由不算（S.ip.longestPrefix 的索引依路由陣列快取，與路徑追蹤共用）
+      const cands = S.ip.longestPrefix(routes, 'prefix', S.ip.toInt(cur), used.size ? (r) => !used.has(r) : undefined);
+      // 路由表收集不完整：沒命中 /32 時可能有沒收到的更長前綴（與路徑追蹤的 lookup 同一個判斷）
+      if (!S.trace.routeCertain(!!incomplete, cands)) return [{ status: 'incomplete', ip: cur, chain }];
       if (!cands.length) return [{ status: 'unresolved', ip: cur, chain }];
       if (cands.every((r) => r.blackhole)) return [{ status: 'blackhole', ip: cur, chain, route: `${cands[0].prefix}/${cands[0].len}` }];
       const out = [];
@@ -1284,6 +1311,29 @@
       return out;
     };
     return walk(ip, [ip], new Set());
+  }
+  const deepFreeze = (o) => {
+    if (o && typeof o === 'object' && !Object.isFrozen(o)) { Object.freeze(o); Object.values(o).forEach(deepFreeze); }
+    return o;
+  };
+  /**
+   * 在路由視圖 R（模型版 S.infer.routingView(M) 或查詢層 S.trace.routingOf(Q)，成員見 S.trace.ROUTING_VIEW）中解析 dev 在 vrf 的下一跳 ip：
+   * 路由表是那個 VRF 的路由（VRF 不在基準中時為空），擁有者依 R.hopOwner。檢查 R01／R03／R04 與路徑追蹤、可達性（S.trace.nextOwner）共用。
+   * 結果只由 (R, dev, vrf, ip) 決定（R 的資料不變），依此快取：大型 BGP 表的下一跳幾乎都是同一個閘道，不必每條路由都重新掃一次路由表。
+   * 回傳同 resolveNextHop（凍結，呼叫端不可修改）。
+   */
+  const nhMemo = new WeakMap();
+  function resolveNextHopIn(R, dev, ip, vrf) {
+    const v = K.vrf(vrf);
+    let memo = nhMemo.get(R); if (!memo) { memo = new Map(); nhMemo.set(R, memo); }
+    const k = dev + '\u0000' + v + '\u0000' + ip;
+    let res = memo.get(k);
+    if (!res) {
+      const routes = R.vrfs().includes(v) ? R.routesOf(dev, v) : [];
+      res = deepFreeze(resolveNextHop(routes, ip, (x) => { const o = R.hopOwner(dev, x, v); return o ? o.dev : null; }, R.routesIncomplete(dev)));
+      memo.set(k, res);
+    }
+    return res;
   }
 
   // ---------------------------------------------------------------- 防火牆（F01–F08）
@@ -1419,22 +1469,16 @@
       //   available-from 空白＝不限；有列位址時只接受清單內的，某一位址族沒有列任何前綴＝那個位址族拒絕（手冊：只有 IPv4 前綴時拒絕所有 IPv6 用戶端）
       //   IPv6 只在確定有用時才判斷（firewallZones.ipv6.status 為 used），經 /ipv6 firewall 的 raw 與 input
       const zone = M.fwZones.get(dev);
-      const FAMILIES = [['ip', 'IPv4', 32n], ['ipv6', 'IPv6', 128n]];
-      const openFrom = (sv, fam, bits) => {
-        if (!sv.addresses.length) return true;
-        return sv.addresses.some((a) => {
-          if (a.includes(':') !== (fam === 'ipv6')) return false;
-          const p = fw.parseVal('src-address', a);
-          return p.kind === 'ranges' && p.items.some(([x, y]) => x === 0n && y === (1n << bits) - 1n);
-        });
-      };
+      const FAMILIES = [['ip', 'IPv4'], ['ipv6', 'IPv6']];
+      // 不限來源：登錄表的 available-from 集合（L4 的 serviceOf 用同一份）涵蓋整個位址空間——合併後再看，0.0.0.0/1,128.0.0.0/1 也算
+      const openFrom = (sv, fam) => !sv.addresses.length || M.addrSets.service(dev, sv.name, fam).set.isAll;
       // 同一個服務的 IPv4、IPv6 併成一筆（鍵不重複）；訊息依位址族列出從哪個 WAN 介面、被哪條規則放行
       (M.fwServices.get(dev) || []).forEach((sv) => {
         if (!sv.enabled || !sv.port) return;
         const hits = [];
-        FAMILIES.forEach(([fam, label, bits]) => {
+        FAMILIES.forEach(([fam, label]) => {
           if (fam === 'ipv6' && zone.ipv6.status !== 'used') return;
-          if (!openFrom(sv, fam, bits)) return;
+          if (!openFrom(sv, fam)) return;
           for (const ep of wansMain) {
             const res = fw.evalFilter(ctx, fam, 'input', fw.wanPacket(fam, ep, 'input', { dstPort: sv.port }));
             if (res.verdict === 'accept') { hits.push({ fam, label, ep, res }); break; }
@@ -1467,7 +1511,8 @@
   function mgmtHardening({ M, name, entryName, boundaryOf }, add) {
     const fw = S.infer.fw;
     const lineEv = (src) => src.map(([block, line]) => ({ block, line }));
-    const anyAddr = (a) => { const p = fw.parseVal('src-address', a); return p.kind === 'ranges' && p.items.some(([x, y]) => x === 0n && y === (1n << BigInt(p.bits)) - 1n); };
+    // 不限來源：登錄表的 community 集合（IPv4 或 IPv6）涵蓋整個位址空間——合併後再看，0.0.0.0/1,128.0.0.0/1 也算
+    const anyFrom = (dev, c) => ['ip', 'ipv6'].some((f) => M.addrSets.community(dev, c.facet, f).set.isAll);
     const dflt = (area, fields) => fields.some((k) => area.defaulted.includes(k));
     // 預設值的依據：表的版本範圍；設備版本不明時註明（版本在範圍外時 model 不補預設值，不會走到這裡）
     const R = S.MGMT_DEFAULTS.versions.text;
@@ -1483,7 +1528,7 @@
         const byFacet = new Map(); // facet → [訊息, 證據, basis]；同名且內容相同的 community 無法區分，併成一筆（證據列出全部的設定行）
         ms.snmp.communities.forEach((c) => {
           if (c.disabled !== false || c.name === null) return;
-          const pub = c.name === 'public'; const open = c.addresses !== null && (!c.addresses.length || c.addresses.some(anyAddr));
+          const pub = c.name === 'public'; const open = c.addresses !== null && (!c.addresses.length || anyFrom(dev, c));
           if (!pub && !open) return;
           const pubDefault = pub && c.defaulted.includes('name'); const openDefault = open && c.defaulted.includes('addresses');
           const isDefault = dflt(ms.snmp, ['enabled']) || pubDefault || openDefault;
@@ -1813,5 +1858,5 @@
     return out;
   }
 
-  S.check = { run, coverage, RULES, CATALOG, EXPECTED, DATA_LABEL, fmtVlans, resolveNextHop, hopOwner, discoveryLabel, unrecognizedReason, issueReason, sourceName, placeText, expectsCollection };
+  S.check = { run, coverage, RULES, CATALOG, EXPECTED, DATA_LABEL, fmtVlans, resolveNextHop, resolveNextHopIn, hopOwner, discoveryLabel, unrecognizedReason, issueReason, sourceName, placeText, expectsCollection };
 })(globalThis.SSOT = globalThis.SSOT || {});

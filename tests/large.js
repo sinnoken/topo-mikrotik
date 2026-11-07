@@ -125,4 +125,119 @@ module.exports = function registerLarge(LARGE_MAX_MS) {
     assert.strictEqual(p.unrecognized.length, count(s, 'I01'));
     assert.ok(pm < bm, `預檢 ${pm} ms 應比完整建立 ${bm} ms 快`);
   });
+  /*
+   * 大量路由（BGP full table 的邊界路由器）：R 有 n 筆經 ISP 閘道的 BGP 路由（/24 為主，穿插重疊的 /16，5% ECMP、0.5% blackhole、
+   * 每 3 筆一筆第二個上游的非作用中列），內部的 R2 經 R 出去。下一跳遞迴解析依 (路由視圖, 設備, VRF, 下一跳) 快取、最長前綴查表依前綴長度分桶
+   * （S.check.resolveNextHopIn、S.ip.longestPrefix）；以前每條路由的下一跳都掃一次整張表，5 萬筆要 14 分鐘。
+   */
+  const bgpRouter = (n) => {
+    const RT = 'Flags: D - DYNAMIC; X - DISABLED, I - INACTIVE; A - ACTIVE; c - CONNECT, s - STATIC, b - BGP; H - HW-OFFLOADED; + - ECMP';
+    const rows = [];
+    for (let i = 0; i < n; i++) { // n 個 /24，另加 /16 與非作用中的列
+      const a = 1 + (Math.floor(i / 65536) % 9); const b = Math.floor(i / 256) % 256; const c = i % 256; // 1–9.x.x.0/24
+      const attrs = `belongs-to="bgp-IP-198.51.100.1" bgp.as-path="65001,${1000 + (i * 7919) % 60000}" bgp.origin=igp bgp.local-pref=100`;
+      if (c === 0 && b % 4 === 0) rows.push(` DAb dst-address=${a}.${b}.0.0/16 routing-table=main gateway=198.51.100.1 immediate-gw=198.51.100.1%ether1 distance=20 scope=40 target-scope=10`, `    ${attrs}`);
+      if (i % 200 === 199) rows.push(` DAb dst-address=${a}.${b}.${c}.0/24 routing-table=main blackhole distance=20 scope=40 target-scope=10 ${attrs}`);
+      else if (i % 20 === 19) rows.push(` DAb+ dst-address=${a}.${b}.${c}.0/24 routing-table=main gateway=198.51.100.1,198.51.100.5 immediate-gw=198.51.100.1%ether1,198.51.100.5%ether2 distance=20 scope=40 target-scope=10`, `    ${attrs}`);
+      else rows.push(` DAb dst-address=${a}.${b}.${c}.0/24 routing-table=main gateway=198.51.100.1 immediate-gw=198.51.100.1%ether1 distance=20 scope=40 target-scope=10`, `    ${attrs}`);
+      if (i % 3 === 0) rows.push(` Db  dst-address=${a}.${b}.${c}.0/24 routing-table=main gateway=198.51.100.5 immediate-gw=198.51.100.5%ether2 distance=20 scope=40 target-scope=10`, '    belongs-to="bgp-IP-198.51.100.5" bgp.origin=igp');
+    }
+    return ['R (192.168.1.1):', '### /export terse', '/interface bridge add name=bridge1',
+      '/interface list add name=WAN', '/interface list add name=LAN',
+      '/interface list member add interface=ether1 list=WAN', '/interface list member add interface=ether2 list=WAN', '/interface list member add interface=bridge1 list=LAN',
+      '/ip address add address=192.168.1.1/24 interface=bridge1 network=192.168.1.0', '/ip address add address=10.0.12.1/30 interface=ether3 network=10.0.12.0',
+      '/ip address add address=198.51.100.2/30 interface=ether1 network=198.51.100.0', '/ip address add address=198.51.100.6/30 interface=ether2 network=198.51.100.4',
+      '/ip firewall filter add action=accept chain=input connection-state=established,related', '/ip firewall filter add action=drop chain=input in-interface-list=WAN',
+      '/ip firewall filter add action=drop chain=forward in-interface-list=WAN connection-nat-state=!dstnat',
+      '/ip firewall nat add action=masquerade chain=srcnat out-interface-list=WAN',
+      '### /ip route print detail without-paging', RT,
+      ' DAc dst-address=192.168.1.0/24 routing-table=main gateway=bridge1 distance=0', ' DAc dst-address=10.0.12.0/30 routing-table=main gateway=ether3 distance=0',
+      ' DAc dst-address=198.51.100.0/30 routing-table=main gateway=ether1 distance=0', ' DAc dst-address=198.51.100.4/30 routing-table=main gateway=ether2 distance=0',
+      ' As dst-address=192.168.2.0/24 routing-table=main gateway=10.0.12.2 distance=1', ...rows, '',
+      'R2 (192.168.2.1):', '### /export terse', '/interface bridge add name=bridge1',
+      '/ip address add address=192.168.2.1/24 interface=bridge1 network=192.168.2.0', '/ip address add address=10.0.12.2/30 interface=ether1 network=10.0.12.0',
+      '### /ip route print detail without-paging', RT,
+      ' DAc dst-address=192.168.2.0/24 routing-table=main gateway=bridge1 distance=0', ' DAc dst-address=10.0.12.0/30 routing-table=main gateway=ether1 distance=0',
+      ' As dst-address=0.0.0.0/0 routing-table=main gateway=10.0.12.1 distance=1', ''].join('\n');
+  };
+  test('壓力：5 萬筆 BGP 路由的邊界路由器——下一跳解析與最長前綴查表不隨路由數平方成長，建立、路徑追蹤、矩陣與暴露清單在時間內完成', () => {
+    const n = 50000; const text = bgpRouter(n);
+    const time = (fn) => { const t0 = Date.now(); const r = fn(); return [r, Date.now() - t0]; };
+    const [s, bMs] = time(() => build(text));
+    const routes = s.model.routes.filter((r) => r.dev === 'R');
+    assert.ok(routes.length >= n, `R 有 ${routes.length} 筆路由`);
+    assert.deepStrictEqual([count(s, 'I03'), count(s, 'R03'), count(s, 'R04')], [0, 0, 0], '每一行都認得；ISP 閘道不是迴圈或黑洞');
+    assert.ok(!s.findings.some((f) => f.id === 'R01' && /198\.51\.100\.[15]、|198\.51\.100\.[15]$/.test(f.message.split('（')[0])), 'ISP 閘道經對外介面，不列為 R01');
+    const Q = S.query(s);
+    const [tr, tMs] = time(() => { const o = []; for (let i = 0; i < 100; i++) o.push(S.trace(Q, '192.168.2.10', `${1 + (i % 9)}.${i}.3.4`)); return o; });
+    assert.ok(tr.every((t) => t.ok), '路徑追蹤都有結果');
+    const t1 = S.trace(Q, '192.168.2.10', '1.0.5.9'); const t2 = S.trace(Q, '192.168.2.10', '1.0.199.9');
+    assert.ok(t1.hops.some((h) => h.route === '1.0.5.0/24'), '最長前綴：/24 優先於涵蓋它的 /16');
+    assert.ok(t2.ends.some((e) => e.status === 'blackhole'), JSON.stringify(t2.ends.map((e) => e.status)));
+    const [mx, mMs] = time(() => Q.zoneMatrix());
+    const [ex, eMs] = time(() => Q.exposure());
+    assert.ok(mx.cells.length > 0 && ex.status === 'ok', ex.status);
+    const bytes = Buffer.byteLength(JSON.stringify(s));
+    console.log(`      ${routes.length} 筆路由：S.build ${bMs} ms；S.trace ×100 ${tMs} ms；zoneMatrix ${mMs} ms（${mx.stats.evaluations} 次判斷）；exposure ${eMs} ms；Snapshot ${(bytes / 1048576).toFixed(1)} MB`);
+    // 時間上限寬鬆（修正前 5 萬筆的建立要 14 分鐘、zoneMatrix 十幾秒）；每筆路由的 Snapshot 大小也設上限，避免序列化帶進多餘的資料
+    assert.ok(bMs < LARGE_MAX_MS / 2, `S.build 耗時 ${bMs} ms，超過 ${LARGE_MAX_MS / 2} ms`);
+    [tMs, mMs, eMs].forEach((x) => assert.ok(x < LARGE_MAX_MS / 4, `查詢耗時 ${x} ms，超過 ${LARGE_MAX_MS / 4} ms`));
+    assert.ok(bytes / routes.length < 600, `每筆路由 ${Math.round(bytes / routes.length)} B`);
+  });
+  /*
+   * 大型位址清單（封鎖名單動輒數萬到十萬筆）：一台邊界路由器，一份 n 筆的靜態清單被 raw prerouting 的 drop（來源）與 forward 的 drop（目的）引用。
+   * 量 S.build、Q.reach、Q.zoneMatrix、Q.exposure 的時間與 heap，以及 Snapshot 的 JSON 大小；判斷時查清單是二分搜尋（S.infer.fw 的位址清單索引），不線性掃描。
+   */
+  const blockList = (n) => {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      // 公網位址，分散在 1.0.0.0 起的空間：每 4 筆一筆 /24、其餘是單一位址，第 7 筆起每 50 筆一筆範圍
+      const a = 1 + (i % 200); const b = Math.floor(i / 200) % 256; const c = Math.floor(i / 51200) * 16 + (i % 16);
+      const base = `${a}.${b}.${c}`;
+      out.push(i % 4 === 0 ? `${base}.0/24` : i % 50 === 7 ? `${base}.10-${base}.20` : `${base}.${1 + (i % 250)}`);
+    }
+    return out;
+  };
+  [50000, 100000].forEach((n) => test(`壓力：${n} 筆的靜態位址清單——查詢以索引二分搜尋，建立、可達性、矩陣與暴露清單在時間內完成`, () => {
+    const RT = 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC';
+    const list = blockList(n);
+    const text = ['R (192.168.1.1):', '### /export terse', '/interface bridge add name=bridge1',
+      '/interface list add name=WAN', '/interface list add name=LAN',
+      '/interface list member add interface=ether1 list=WAN', '/interface list member add interface=bridge1 list=LAN',
+      '/ip address add address=192.168.1.1/24 interface=bridge1 network=192.168.1.0',
+      '/ip address add address=198.51.100.2/30 interface=ether1 network=198.51.100.0',
+      '/ip firewall address-list', ...list.map((x) => `add address=${x} list=BLOCK`),
+      '/ip firewall raw add action=drop chain=prerouting in-interface-list=WAN src-address-list=BLOCK',
+      '/ip firewall filter add action=drop chain=forward dst-address-list=BLOCK',
+      '/ip firewall filter add action=accept chain=input dst-port=80 protocol=tcp',
+      '/ip firewall nat add action=masquerade chain=srcnat out-interface-list=WAN',
+      '### /ip route print detail without-paging', RT,
+      ' DAc dst-address=192.168.1.0/24 routing-table=main gateway=bridge1 distance=0',
+      ' DAc dst-address=198.51.100.0/30 routing-table=main gateway=ether1 distance=0',
+      ' As dst-address=0.0.0.0/0 routing-table=main gateway=198.51.100.1 distance=1', ''].join('\n');
+    const heap = () => process.memoryUsage().heapUsed / 1048576;
+    const time = (fn) => { const t0 = Date.now(); const r = fn(); return [r, Date.now() - t0]; };
+    const h0 = heap();
+    const [s, bMs] = time(() => build(text)); const h1 = heap();
+    const bytes = Buffer.byteLength(JSON.stringify(s.model.addressLists));
+    const al = s.model.addressLists.find((l) => l.name === 'BLOCK');
+    assert.deepStrictEqual([al.static, al.entries.length], [true, n]);
+    const Q = S.query(s);
+    // 第一次判斷時建索引（合併、排序），之後每次二分搜尋
+    const [r1, r1Ms] = time(() => Q.reach('192.168.1.10', '1.0.0.5', { proto: 'tcp', port: 443 }));
+    const [r2, r2Ms] = time(() => Q.reach('192.168.1.10', '9.9.9.9', { proto: 'tcp', port: 443 }));
+    const [r3] = time(() => Q.reach('1.0.0.5', '198.51.100.2', { proto: 'tcp', port: 80, entry: 'R|ether1' }));
+    const [r4] = time(() => Q.reach('9.9.9.9', '198.51.100.2', { proto: 'tcp', port: 80, entry: 'R|ether1' }));
+    assert.deepStrictEqual([r1.verdict, r2.verdict, r3.verdict, r4.verdict], ['deny', 'allow', 'deny', 'allow']);
+    const [mx, mMs] = time(() => Q.zoneMatrix()); const h2 = heap();
+    const [ex, eMs] = time(() => Q.exposure()); const h3 = heap();
+    assert.ok(mx.cells.length > 0 && ex.status === 'ok', ex.status);
+    const row = ex.self.rows.find((x) => x.ip === '198.51.100.2' && x.service === 'tcp/80');
+    assert.ok(row && row.verdict === 'allow', JSON.stringify(row && row.verdict));
+    console.log(`      ${n} 筆：S.build ${bMs} ms（heap +${Math.round(h1 - h0)} MB；addressLists 的 JSON ${(bytes / 1048576).toFixed(1)} MB）；`
+      + `reach 第一次 ${r1Ms} ms（含建索引）、第二次 ${r2Ms} ms；zoneMatrix ${mMs} ms（heap +${Math.round(h2 - h1)} MB）；`
+      + `exposure ${eMs} ms（heap +${Math.round(h3 - h2)} MB，外部區段 ${ex.external.byDevice.map((d) => d.sourceCount + (d.truncated ? '（截斷）' : '')).join('、')}）`);
+    [bMs, mMs, eMs].forEach((x) => assert.ok(x < LARGE_MAX_MS / 2, `耗時 ${x} ms，超過 ${LARGE_MAX_MS / 2} ms`));
+    assert.ok(r2Ms < 200, `建好索引之後的判斷 ${r2Ms} ms`);
+  }));
 };

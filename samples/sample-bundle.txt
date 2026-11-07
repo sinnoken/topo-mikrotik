@@ -113,6 +113,9 @@ add address=10.1.10.2 name=ntp.tpe.lan
 add address=10.1.20.50 name=nas.tpe.lan
 /ip firewall address-list
 add address=10.1.10.0/24 list=MGMT
+add address=10.1.30.66 list=QUARANTINE
+add address=10.1.30.70-10.1.30.79 list=QUARANTINE
+add address=10.1.30.0/24 disabled=yes list=QUARANTINE
 /system ntp client
 set enabled=yes servers=time.cloudflare.com
 /interface list
@@ -135,6 +138,14 @@ add action=accept chain=input comment="winbox for vendor" dst-port=8291 \
     protocol=tcp
 add action=accept chain=input dst-port=8291 in-interface=ether47 \
     protocol=tcp
+add action=add-src-to-address-list address-list=knock1 \
+    address-list-timeout=10s chain=input dst-port=7000 \
+    in-interface-list=WAN protocol=tcp
+add action=add-src-to-address-list address-list=knock-ok \
+    address-list-timeout=1h chain=input dst-port=8000 \
+    in-interface-list=WAN protocol=tcp src-address-list=knock1
+add action=accept chain=input comment="ssh after knocking" dst-port=22 \
+    in-interface-list=WAN protocol=tcp src-address-list=knock-ok
 add action=drop chain=input \
     comment="\E9\98\B2\E7\81\AB\E7\89\86: drop all not coming from LAN" \
     in-interface-list=!LAN
@@ -150,6 +161,8 @@ add action=drop chain=forward \
     comment="defconf: drop all from WAN not DSTNATed" \
     connection-nat-state=!dstnat connection-state=new \
     in-interface-list=WAN
+add action=drop chain=forward comment="quarantined hosts" \
+    src-address-list=QUARANTINE
 /ip firewall nat
 add action=masquerade chain=srcnat comment="defconf: masquerade" \
     ipsec-policy=out,none out-interface-list=WAN
@@ -204,21 +217,35 @@ Flags: X - disabled, I - invalid; D - dynamic
  6
       chain=input action=accept dst-port=8291 in-interface=ether47 protocol=tcp
       bytes=10 661 830 packets=50 530
- 7    ;;; 防火牆: drop all not coming from LAN
-      chain=input action=drop in-interface-list=!LAN bytes=10 662 041
-      packets=50 531
- 8    ;;; defconf: fasttrack
-      chain=forward action=fasttrack-connection
-      connection-state=established,related hw-offload=yes bytes=0 packets=0
- 9    ;;; defconf: accept established,related,untracked
-      chain=forward action=accept connection-state=established,related,untracked
-      bytes=10 662 463 packets=50 533
- 10   ;;; defconf: drop invalid
-      chain=forward action=drop connection-state=invalid bytes=10 662 674
+ 7
+      chain=input action=add-src-to-address-list address-list=knock1
+      address-list-timeout=10s dst-port=7000 in-interface-list=WAN protocol=tcp
+      bytes=10 662 041 packets=50 531
+ 8
+      chain=input action=add-src-to-address-list address-list=knock-ok
+      address-list-timeout=1h dst-port=8000 in-interface-list=WAN protocol=tcp
+      src-address-list=knock1 bytes=0 packets=0
+ 9    ;;; ssh after knocking
+      chain=input action=accept dst-port=22 in-interface-list=WAN protocol=tcp
+      src-address-list=knock-ok bytes=10 662 463 packets=50 533
+ 10   ;;; 防火牆: drop all not coming from LAN
+      chain=input action=drop in-interface-list=!LAN bytes=10 662 674
       packets=50 534
- 11   ;;; defconf: drop all from WAN not DSTNATed
+ 11   ;;; defconf: fasttrack
+      chain=forward action=fasttrack-connection
+      connection-state=established,related hw-offload=yes bytes=5 557 328
+      packets=23 954
+ 12   ;;; defconf: accept established,related,untracked
+      chain=forward action=accept connection-state=established,related,untracked
+      bytes=5 557 560 packets=23 955
+ 13   ;;; defconf: drop invalid
+      chain=forward action=drop connection-state=invalid bytes=5 557 792
+      packets=23 956
+ 14   ;;; defconf: drop all from WAN not DSTNATed
       chain=forward action=drop connection-nat-state=!dstnat
-      connection-state=new in-interface-list=WAN bytes=5 557 328 packets=23 954
+      connection-state=new in-interface-list=WAN bytes=5 558 024 packets=23 957
+ 15   ;;; quarantined hosts
+      chain=forward action=drop src-address-list=QUARANTINE bytes=0 packets=0
 
 [admin@TPE_CORE_RT_01] > /ip firewall nat print stats detail without-paging
 Flags: X - disabled, I - invalid; D - dynamic
@@ -1011,6 +1038,9 @@ TPE_CORE_RT_02 (10.1.10.3):
 /ip dns static add address=10.1.20.50 name=storage.tpe.lan
 /ip firewall address-list add address=10.1.10.0/24 list=MGMT
 /ip firewall address-list add address=10.1.99.0/24 list=MGMT
+/ip firewall address-list add address=10.1.30.66 list=QUARANTINE
+/ip firewall address-list add address=10.1.30.70-10.1.30.79 list=QUARANTINE
+/ip firewall address-list add address=10.1.30.0/24 disabled=yes list=QUARANTINE
 /system ntp client set enabled=yes servers=time.cloudflare.com
 /interface list add comment=defconf name=WAN
 /interface list add comment=defconf name=LAN
@@ -1027,6 +1057,7 @@ TPE_CORE_RT_02 (10.1.10.3):
 /ip firewall filter add action=accept chain=forward comment="allow port forwards" connection-nat-state=dstnat
 /ip firewall filter add action=accept chain=forward dst-address=10.1.20.12 dst-port=22 in-interface-list=WAN protocol=tcp
 /ip firewall filter add action=drop chain=forward dst-port=445 in-interface-list=WAN protocol=tcp
+/ip firewall filter add action=drop chain=forward comment="quarantined hosts" src-address-list=QUARANTINE
 /ip firewall nat add action=masquerade chain=srcnat comment="defconf: masquerade" ipsec-policy=out,none out-interface-list=WAN
 /ip firewall nat add action=redirect chain=dstnat comment="force LAN DNS" dst-port=53 in-interface-list=LAN protocol=udp to-ports=53
 /ipv6 firewall filter add action=accept chain=forward dst-port=443 protocol=tcp
@@ -1081,6 +1112,9 @@ Flags: X - disabled, I - invalid; D - dynamic
  11
       chain=forward action=drop dst-port=445 in-interface-list=WAN protocol=tcp
       bytes=17 165 851 packets=34 961
+ 12   ;;; quarantined hosts
+      chain=forward action=drop src-address-list=QUARANTINE bytes=17 166 342
+      packets=34 962
 
 [admin@TPE_CORE_RT_02] > /ip firewall nat print stats detail without-paging
 Flags: X - disabled, I - invalid; D - dynamic

@@ -107,7 +107,7 @@
       if (!vrfList().includes(v)) throw new TypeError(`基準中沒有 VRF ${JSON.stringify(String(vrf))}（有：${vrfList().join('、')}）`);
       return v;
     };
-    const routesMemo = new Map(); const subnetsMemo = new Map();
+    const routesMemo = new Map(); const subnetsMemo = new Map(); const routeMatchIx = new Map();
     // 策略路由（https://manual.mikrotik.com/docs/user-guides/routing-and-networking-protocols/routing-decision.md）：每台設備第一次查詢時才整理
     const POLICY_DEFAULT = ['mangle', 'vrf-lookup', 'vrf-unreach', 'local', 'user', 'main'];
     const policyMemo = new Map();
@@ -175,7 +175,14 @@
     const listsByDev = byDevOf(m.interfaceLists); const svcByDev = byDevOf(m.ipServices); const peersByDev = byDevOf(m.ipsecPeers); const polByDev = byDevOf(m.ipsecPolicies);
     const zoneByDev = new Map((m.firewallZones || []).map((z) => [z.dev, z]));
     const fwCtx = new Map();
-    const ctxOf = (d) => U.getOr(fwCtx, d, () => S.infer.fw.fwContext(d, listsByDev.get(d) || [], (ifcsByDev.get(d) || []).map((i) => i.key), fwByDev.get(d) || []));
+    // 位址清單（model.addressLists）：第一次需要時才依設備建立索引；舊的基準沒有這個欄位時每份清單都不明（同 fwContext 找不到清單）
+    let alIx = null;
+    const addressListIndex = () => alIx || (alIx = freezeAll(byDevOf(m.addressLists || [])));
+    // 位址集合的登錄表（S.infer.addrSets，與模型的 M.addrSets 同一個函式）：第一次需要時才建，依 Snapshot 快取（每個 Q 一份）
+    let addrReg = null; const addrSetView = new Map(); let addrSetIds = null;
+    const addrSetsOf = () => addrReg || (addrReg = S.infer.addrSets({ rules: fwRules, addressLists: m.addressLists || [], services: m.ipServices || [], routingRules: m.routingRules || [], mgmtSettings: m.mgmtSettings || [] }));
+    const ctxOf = (d) => U.getOr(fwCtx, d, () => S.infer.fw.fwContext(d, listsByDev.get(d) || [], (ifcsByDev.get(d) || []).map((i) => i.key), fwByDev.get(d) || [],
+      addressListIndex().get(d) || [], addrSetsOf()));
     const findingsBy = new Map();
     snap.findings.forEach((f, idx) => f.entities.forEach((e) => U.getOr(findingsBy, e.type + ':' + e.key, () => []).push(idx)));
     // 第一次查詢時才建立的索引（1000 台規模下多數畫面用不到）；回傳的陣列是 Q 自己的索引，凍結以免呼叫端改壞
@@ -193,7 +200,7 @@
     let subnetsByDev = null;
     // L4（M2）：可達性、zone、zone 矩陣與規則影響。第一次呼叫時才建立（src/query/reach.js 的 S.reach.engine），結果都是推論、只在記憶體快取，不寫進 Snapshot（ADR-014）
     let l4 = null;
-    const L4 = () => l4 || (l4 = S.reach.engine(Q, { ctxOf }));
+    const L4 = () => l4 || (l4 = S.reach.engine(Q, { ctxOf, addrSets: addrSetsOf }));
     // Q.exposureSummary：依 Q.exposure 的結果物件（已依參數快取）快取
     const exSummaryMemo = new WeakMap();
     const vlanSrc = { vlans: m.vlans, interfaces: m.interfaces, links: m.links, inferred: m.inferredLinks || [], ifc: (ep) => ifc.get(ep), collected: (d) => !!(dev.get(d) || {}).collected };
@@ -351,6 +358,51 @@
         })));
       },
       interfaceListsOf: (d) => listsByDev.get(d) || [],
+      /**
+       * 某設備的防火牆位址清單（model.addressLists，依位址族 ip→ipv6、名稱）：[{ dev, family, name, static, reasons, entries, writers }]。
+       * static 為 true 時判斷（Q.reach、F 系列檢查）會依項目展開；false 時 reasons 列出可能有動態來源的原因（S.query.addressListReasons() 的 code）。
+       */
+      addressListsOf: (d) => addressListIndex().get(d) || EMPTY,
+      /** 某設備、某位址族（'ip'｜'ipv6'）的一份位址清單；基準裡沒有（export 沒有項目，也沒有寫入它的設定）時為 null，判斷時不明。 */
+      addressListOf: (d, family, name) => (addressListIndex().get(d) || EMPTY).find((l) => l.family === family && l.name === name) || null,
+      /**
+       * 位址集合登錄表（S.infer.addrSets，判斷用的同一份；推論用的索引，不在 Snapshot）的一筆：{ id, kind, dev, family, name, static, reasons, src, size, ranges }（凍結）。
+       * kind：address-list｜rule-address｜service｜snmp-community｜routing-rule（id 的寫法見設計說明）；name 是 address-list 的清單名稱、service 的服務名稱，其他為 null（畫面不必拆 id）；例如 A10 的 deviation.groups[].list 是 address-list 的 id。
+       * size 是合併後的區段數、ranges 是 [[起, 迄]] 的位址文字（依位址排序；完全靜態以外的清單或無法判斷的字面值為 null）。沒有這個 id 時 null。
+       */
+      addressSet: (id) => U.getOr(addrSetView, id, () => {
+        const e = addrSetsOf().get(id); if (!e) return null;
+        const fmt = (n) => (e.set.bits === 32 ? S.ip.fromInt(Number(n)) : S.ip.v6FromBig(n));
+        return deepFreeze({ id: e.id, kind: e.kind, dev: e.dev, family: e.family, name: e.name, static: e.static, reasons: e.reasons.slice(), src: e.src.map((x) => x.slice()),
+          size: e.set ? e.set.ranges.length : null, ranges: e.set ? e.set.ranges.map(([a, b]) => [fmt(a), fmt(b)]) : null });
+      }),
+      /**
+       * 在一筆位址集合裡找 text：和 text 至少有一個共同位址的合併區段，在 Q.addressSet(id).ranges 的索引（由小到大，凍結）。
+       * text 是位址、網段或範圍（S.ip.range 接受的寫法，例如 10.0.0.5、10.0.0.0/24、10.0.0.1-10.0.0.9）；空白或不合法（含開頭的 !）時 null，
+       * 讓畫面分辨「格式不對」與「找不到」（空陣列）。text 是另一個位址族時是空陣列（集合裡不會有）。
+       * 沒有這個 id，或這筆沒有集合（ranges 為 null：可能有動態來源、無法判斷的字面值）時 TypeError。判斷經登錄表集合的 overlapping（與 overlaps 同一個判斷）。
+       */
+      addressSetFind(id, text) {
+        const e = addrSetsOf().get(id);
+        if (!e) throw new TypeError(`位址集合登錄表沒有 ${JSON.stringify(String(id))}`);
+        if (!e.set) throw new TypeError(`位址集合 ${id} 沒有可搜尋的區段（ranges 為 null）`);
+        const r = text == null ? null : S.ip.range(text);
+        if (!r) return null;
+        return r[2] === e.set.bits ? e.set.overlapping([r[0], r[1]]) : EMPTY;
+      },
+      /**
+       * 登錄表裡這台設備、這一類（S.infer.ADDR_SET_KINDS 其中之一）的 id，依登錄順序（同一份 Snapshot 結果相同；凍結）。
+       * kind 不是其中之一時 TypeError。第一次呼叫時依（設備, 類別）建索引。
+       */
+      addressSetsOf(d, kind) {
+        if (!S.infer.ADDR_SET_KINDS.includes(kind)) throw new TypeError(`位址集合的類別要是 ${S.infer.ADDR_SET_KINDS.join('、')} 其中之一（${JSON.stringify(kind)}）`);
+        if (!addrSetIds) {
+          addrSetIds = new Map();
+          addrSetsOf().entries().forEach((e) => U.getOr(addrSetIds, e.dev + '\u0000' + e.kind, () => []).push(e.id));
+          freezeAll(addrSetIds);
+        }
+        return addrSetIds.get(d + '\u0000' + kind) || EMPTY;
+      },
       ipsecOf: (d) => ({ peers: peersByDev.get(d) || [], policies: polByDev.get(d) || [] }),
       /** 規則 a 是否涵蓋 b（符合 b 的封包一定符合 a；以 a 所在設備的 interface list 判斷）。比對兩份基準的規則時使用。 */
       firewallCovers: (a, b) => S.infer.fw.covers(ctxOf(a.dev), a, b),
@@ -368,6 +420,21 @@
         if (!covByDev) covByDev = new Map((snap.coverage || []).map((c) => [c.dev, c]));
         return covByDev.get(d) || null;
       },
+      /**
+       * 這台設備的路由表收集不完整（coverage[].incomplete 含 route：路由表的指令收集失敗，例如逾時只收到前面一部分；事實）。
+       * 路由視圖的成員（S.trace.ROUTING_VIEW）：查不到符合的路由、或最長前綴不是 /32 時（S.trace.routeCertain），路徑追蹤與可達性回不明（route-data-incomplete），
+       * 不當成沒有路由，也不當成確定的下一跳。
+       * 3.10.0 之前的基準沒有 incomplete，改看 failures 的 dataTypes（同一個來源）。
+       */
+      routesIncomplete(d) {
+        const c = Q.coverageOf(d); if (!c) return false;
+        return (c.incomplete || (c.failures || []).flatMap((f) => f.dataTypes || [])).includes('route');
+      },
+      /**
+       * 位址集合的登錄表本身（S.infer.addrSets，檢查與 L4 判斷用的同一份；推論用的索引，不在 Snapshot）。
+       * 路由視圖的成員（S.trace.ROUTING_VIEW）：/routing rule 的位址比對經它的 ofRoutingRule。畫面要看某一筆的內容用 Q.addressSet(id)。
+       */
+      addrSets: () => addrSetsOf(),
       /**
        * 認到的設備（devices() 的子集合，順序相同）：已收集，且有至少一類資料或有收集失敗的紀錄。
        * 排除只有檔名、內容都認不得的設備；與建立前的預檢（S.query.preflightRecognized）是同一個判斷。
@@ -476,6 +543,48 @@
         const k = d + '\u0001' + table;
         if (!routesMemo.has(k)) routesMemo.set(k, Object.freeze((routesByDev.get(d) || []).filter((r) => K.vrf(r.routingTable) === table)));
         return routesMemo.get(k);
+      },
+      /**
+       * 這台設備和 ipOrPrefix 相關的路由（範圍同 allRoutesOf：所有路由表，含非作用中的），凍結的陣列；元素是 Snapshot 的路由。
+       *   位址（10.1.2.3）：包含它的路由（每一種長度都列，不只最長的那一筆；/32 的同一位址也算）。
+       *   網段（10.1.0.0/16，主機位元會清掉）：包含它的路由（長度不大於 16、網段涵蓋它，含相同的網段），以及被它包含的路由（長度大於 16、網段在它裡面）。
+       * opts.table（選用）：只看這張路由表（同 routesInTable：K.vrf(routingTable) 等於它）；省略時所有路由表。
+       * 排序：前綴長度由長到短，同長度依 allRoutesOf 的順序。
+       * 回傳 null：ipOrPrefix 不是 IPv4 位址或網段（不合法、範圍 a-b、開頭的 !）；是 IPv6 時為空陣列（基準的路由只有 IPv4）；設備沒有路由時為空陣列。
+       * 每台設備第一次呼叫時建一次索引（包含：S.ip.prefixIndex；被包含：依網段起點排序），之後每次查詢只看索引。
+       */
+      routesMatching(d, ipOrPrefix, opts) {
+        const table = opts && opts.table;
+        if (table !== undefined && typeof table !== 'string') throw new TypeError('routesMatching 的 table 要是字串或省略');
+        const s = ipOrPrefix == null ? '' : String(ipOrPrefix).trim();
+        if (s.includes('-')) return null;
+        const r = S.ip.range(s); if (!r) return null;
+        if (r[2] !== 32 || !allRoutesByDev.has(d)) return EMPTY;
+        const lenM = /\/(\d+)$/.exec(s); const plen = lenM ? +lenM[1] : 32;
+        const ix = U.getOr(routeMatchIx, d, () => {
+          const list = Object.freeze(allRoutesByDev.get(d).slice());
+          const order = new Map(list.map((x, k) => [x, k]));
+          const byLo = list.map((x) => { const q = S.ip.range(x.prefix + '/' + x.len); return { lo: Number(q[0]), hi: Number(q[1]), r: x }; })
+            .sort((a, b) => a.lo - b.lo || order.get(a.r) - order.get(b.r));
+          return { px: S.ip.prefixIndex(list, 'prefix'), order, byLo };
+        });
+        const inTable = table === undefined ? () => true : (x) => K.vrf(x.routingTable) === table;
+        const lo = Number(r[0]); const hi = Number(r[1]); const out = [];
+        // 包含它的：每次取「比上一批短」的最長前綴，直到沒有
+        for (let last = 33; ;) {
+          const cap = last;
+          const xs = ix.px.lookup(lo, (x) => x.len <= plen && x.len < cap && inTable(x));
+          if (!xs.length) break;
+          out.push(...xs); last = xs[0].len;
+        }
+        // 被它包含的：網段起點落在 [lo, hi] 而且比它長
+        let a = 0; let z = ix.byLo.length;
+        while (a < z) { const mid = (a + z) >> 1; if (ix.byLo[mid].lo < lo) a = mid + 1; else z = mid; }
+        for (; a < ix.byLo.length && ix.byLo[a].lo <= hi; a++) {
+          const e = ix.byLo[a];
+          if (e.r.len > plen && e.hi <= hi && inTable(e.r)) out.push(e.r);
+        }
+        return Object.freeze(out.sort((x, y) => y.len - x.len || ix.order.get(x) - ix.order.get(y)));
       },
       /** 所有設備的路由表（main 以外）：{ dev, name, fib, disabled, source: export|vrf, vrf, src }。 */
       routingTables: () => m.routingTables || EMPTY_LIST,
@@ -1245,6 +1354,8 @@
   S.query.adapterLabel = (id) => (Object.prototype.hasOwnProperty.call(S.adapters, id) && S.adapters[id] && S.adapters[id].label) || id;
   /** 管理面設定的出廠預設值表（凍結，S.MGMT_DEFAULTS）：export 沒寫的欄位依它補上；含適用的 RouterOS 版本（routerOS）與手冊網址（manual）。 */
   S.query.mgmtDefaults = () => S.MGMT_DEFAULTS;
+  /** 位址清單「可能有動態來源」的原因（凍結，S.infer.fw.ADDRESS_LIST_DYNAMIC）：[{ code, label }]，Q.addressListsOf 的 reasons 是其中的 code。 */
+  S.query.addressListReasons = () => S.infer.fw.ADDRESS_LIST_DYNAMIC;
   /**
    * 還沒建立查詢介面的 Snapshot JSON（瀏覽器儲存或使用者匯入的檔案）的 meta；不像 Snapshot（不是物件或沒有 meta 物件）時為 null。
    * 用來先判斷 schema／version 是否相容，再決定要 S.query 還是重建。

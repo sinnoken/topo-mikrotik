@@ -13,9 +13,14 @@ usage() {
   -o, --output FILE       輸出 bundle-v1 檔（預設 collection.txt）
   --device NAME           只收集指定設備
   --commands ID,...       只執行指定命令 ID（指定時忽略設備清單的 extra 欄）
-  --timeout SECONDS       單一 SSH 指令 timeout（預設 30）
+  --timeout SECONDS       單一 SSH 指令的逾時，指定時套用到所有指令（不指定時用各指令的預設：
+                          route、config 300，其他 30）
+  --command-timeout ID=SECONDS[,ID=SECONDS...]
+                          個別指令的逾時，優先於 --timeout 與預設；可重複指定，同一個 ID 只能指定一次
+                          （例：--command-timeout route=900）
   --connect-timeout SECONDS
-                          SSH 建立連線的逾時（ssh -o ConnectTimeout；預設 10 與 --timeout 取小者，不可大於 --timeout）
+                          SSH 建立連線的逾時（ssh -o ConnectTimeout；預設 10 與最短的指令逾時取小者，
+                          不可大於任何一個指令的逾時）
   --retry COUNT           失敗後重試次數（預設 0）
   --ask-password          每台設備連線一次並手動輸入密碼／確認 host key
   --no-auto               不自動加上選用命令（依介面 type、型號與版本）
@@ -36,6 +41,9 @@ usage() {
   interface 收集失敗時，改依 /system resource print 的 board-name 判斷（只有
   802.11ax／be 型號、7.13 以上加 wifi）。RouterOS 7 以上（版本取自 /system resource print）
   一律加 vrf。終端機會標示 AUTO 與依據。
+
+逾時：指令超過它的逾時就結束 ssh，已收到的部分輸出照樣保留，區塊記 # collection failed: timeout
+  （網站把這個區塊列為收集失敗，資料可能不完整）。--dry-run 在 stderr 列出各指令的逾時。
 
 連不上的設備：第一個指令的 ssh 以 255 結束且沒有任何輸出時判定連線失敗，在設備標頭之後
   記一次 # collection failed: connection，不再執行這台其餘的指令。
@@ -61,7 +69,7 @@ usage() {
   --commands ID,...       只重收這些 ID 的失敗；連線失敗的設備只收這些 ID；
                           指定的 ID 在上次收集檔（選定的設備）沒有失敗紀錄時報錯
   --dry-run               列出會重收的指令與上次失敗原因，不連線，不需要 -o
-  --timeout、--connect-timeout、--retry、--ask-password、--no-auto 照常適用（--no-auto 只影響連線失敗的設備）
+  --timeout、--command-timeout、--connect-timeout、--retry、--ask-password、--no-auto 照常適用（--no-auto 只影響連線失敗的設備）
   已有其他區塊的設備連不上時，連線失敗記在重收的第一個指令區塊內，這台其餘要重收的指令也記 connection
   中斷時同一般收集（130／143，<輸出檔>.partial）；尚未重收的部分照上次收集檔原樣保留
   結束碼：
@@ -149,6 +157,64 @@ select_commands() {
   ((${#COMMAND_IDS[@]} > 0)) || die "至少要選擇一個收集指令"
 }
 
+# --command-timeout 的值（可重複、逗號分隔）累加到 COMMAND_TIMEOUTS（「 ID=秒 」，bash 3.2 沒有關聯陣列）
+parse_command_timeouts() {
+  local items item id seconds
+  IFS=, read -ra items <<< "$1"
+  for item in ${items[@]+"${items[@]}"}; do
+    item=$(trim "$item"); [[ -n "$item" ]] || continue
+    [[ "$item" =~ ^([A-Za-z0-9]+)=([0-9]+)$ ]] || die "--command-timeout 的格式是 ID=SECONDS：$item"
+    id=${BASH_REMATCH[1]}; seconds=${BASH_REMATCH[2]}
+    command_for_id "$id" >/dev/null || die "--command-timeout 有未知的收集指令 ID：$id"
+    (( 10#$seconds >= 1 )) || die "--command-timeout ${id} 的秒數必須是正整數"
+    [[ "$COMMAND_TIMEOUTS" != *" $id="* ]] || die "--command-timeout ${id} 重複指定"
+    COMMAND_TIMEOUTS+="$id=$((10#$seconds)) "
+  done
+}
+
+# 指令 $1 的逾時（秒）：--command-timeout ＞ --timeout ＞ 各指令的預設（tools/collector-commands.sh）
+timeout_for_id() {
+  local rest
+  if [[ "$COMMAND_TIMEOUTS" == *" $1="* ]]; then
+    rest=${COMMAND_TIMEOUTS#*" $1="}; printf '%s\n' "${rest%% *}"; return
+  fi
+  if [[ -n "$TIMEOUT" ]]; then printf '%s\n' "$TIMEOUT"; return; fi
+  default_timeout_for_id "$1"
+}
+
+# 逾時的來源（錯誤訊息用）
+timeout_source() {
+  if [[ "$COMMAND_TIMEOUTS" == *" $1="* ]]; then printf -- '--command-timeout %s' "$1"
+  elif [[ -n "$TIMEOUT" ]]; then printf -- '--timeout'
+  else printf '%s 的預設逾時' "$1"; fi
+}
+
+# 所有收集指令中最短的逾時：MIN_TIMEOUT 與它的 ID（MIN_TIMEOUT_ID）。
+# 連線逾時要在每個指令的逾時之內（否則 timeout 先結束 ssh，連不上記成 timeout 而不是 connection）
+min_command_timeout() {
+  local id t
+  MIN_TIMEOUT=; MIN_TIMEOUT_ID=
+  for id in "${COLLECT_COMMAND_IDS[@]}" "${OPTIONAL_COMMAND_IDS[@]}"; do
+    t=$(timeout_for_id "$id")
+    if [[ -z "$MIN_TIMEOUT" ]] || (( t < MIN_TIMEOUT )); then MIN_TIMEOUT=$t; MIN_TIMEOUT_ID=$id; fi
+  done
+}
+
+# --dry-run 的逾時說明（寫到 stderr，stdout 的「設備: 指令」清單格式不變）：與多數不同的指令逐一列出
+print_timeout_summary() {
+  local id base others=
+  base=${TIMEOUT:-$DEFAULT_COMMAND_TIMEOUT}
+  for id in "$@"; do
+    [[ " $others " == *" $id="* ]] && continue
+    [[ "$(timeout_for_id "$id")" == "$base" ]] || others+="${others:+ }$id=$(timeout_for_id "$id")"
+  done
+  if [[ -n "$others" ]]; then
+    printf '逾時（秒）：%s，其他 %s\n' "$others" "$base" >&2
+  else
+    printf '逾時（秒）：全部 %s\n' "$base" >&2
+  fi
+}
+
 # 這台設備要執行的命令 ID：選定的命令＋設備清單 extra 欄（有 --commands 時只用 --commands）
 device_commands() {
   local i=$1 id seen=" " extras=()
@@ -224,13 +290,13 @@ check_device_filter() {
 }
 
 run_command() {
-  local address=$1 user=$2 port=$3 command=$4 stdout_file=$5 stderr_file=$6
+  local address=$1 user=$2 port=$3 command=$4 stdout_file=$5 stderr_file=$6 seconds=$7
   local attempt=0 code
   while :; do
     : > "$stdout_file"; : > "$stderr_file"
     # 在背景執行再 wait：前景子程序執行時 bash 要等它結束才處理 trap，背景加 wait 才能立即回應 Ctrl-C／SIGTERM。
     # 背景程序的 stdin 是 /dev/null（沒有 job control 時），ssh 不會讀走終端機的輸入
-    "${TIMEOUT_BIN}" --signal=TERM --kill-after=5 "$TIMEOUT" \
+    "${TIMEOUT_BIN}" --signal=TERM --kill-after=5 "$seconds" \
       ssh -o BatchMode=yes -o ConnectTimeout="$CONNECT_TIMEOUT" ${SSH_CONTROL_OPTS[@]+"${SSH_CONTROL_OPTS[@]}"} -p "$port" "$user@$address" "$command" \
       >"$stdout_file" 2>"$stderr_file" &
     RUN_PID=$!
@@ -296,11 +362,11 @@ append_output_for_failure() {
 # 2 這台還沒有成功連上過（DEVICE_REACHED=0）且 ssh 以 255 結束、沒有任何輸出：判定連線失敗，
 #   區塊記 connection 但不附加，由呼叫端決定寫成設備層級（設備標頭之後）或指令區塊內的紀錄
 collect_block() {
-  local id=$1 command code
-  command=$(command_for_id "$id")
+  local id=$1 command code seconds
+  command=$(command_for_id "$id"); seconds=$(timeout_for_id "$id")
   ATTEMPTED=$((ATTEMPTED + 1))
   printf '### %s\n# collected-at: %s\n' "$command" "$(now_utc)" > "$TMP_DIR/block"
-  run_command "$address" "$user" "$port" "$command" "$TMP_DIR/stdout" "$TMP_DIR/stderr"
+  run_command "$address" "$user" "$port" "$command" "$TMP_DIR/stdout" "$TMP_DIR/stderr" "$seconds"
   code=$?
   if (( code == 0 )); then
     cat "$TMP_DIR/stdout" >> "$TMP_DIR/block"
@@ -328,7 +394,7 @@ collect_block() {
   append_output_for_failure
   if (( code == 124 )); then
     printf '# collection failed: timeout\n' >> "$TMP_DIR/block"
-    printf '  FAIL %s timeout\n' "$id" >&2
+    printf '  FAIL %s timeout（%s 秒，已收到的部分輸出保留；可用 --command-timeout %s=秒 加長）\n' "$id" "$seconds" "$id" >&2
   else
     printf '# collection failed: exit code %s\n' "$code" >> "$TMP_DIR/block"
     printf '  FAIL %s (exit %s)\n' "$id" "$code" >&2
@@ -504,9 +570,11 @@ retry_dry_run() {
       device_commands "$i"
       for id in "${DEVICE_COMMAND_IDS[@]}"; do
         printf '%s: %s（上次失敗：%s）\n' "${DEVICE_NAMES[i]}" "$(command_for_id "$id")" "${ITEM_REASON[k]}"
+        DRY_RUN_IDS+=("$id")
       done
     else
       printf '%s: %s（上次失敗：%s）\n' "${DEVICE_NAMES[i]}" "$(command_for_id "${ITEM_ID[k]}")" "${ITEM_REASON[k]}"
+      DRY_RUN_IDS+=("${ITEM_ID[k]}")
     fi
   done
 }
@@ -552,7 +620,10 @@ retry_failed() {
 
 OUTPUT=collection.txt
 OUTPUT_SET=0
-TIMEOUT=30
+# 空白＝各指令用自己的預設（default_timeout_for_id）
+TIMEOUT=
+COMMAND_TIMEOUT_ARGS=()
+COMMAND_TIMEOUTS=" "
 CONNECT_TIMEOUT=
 RETRY=0
 DEVICE_FILTER=
@@ -566,6 +637,7 @@ DEVICE_NAMES=(); DEVICE_ADDRESSES=(); DEVICE_USERS=(); DEVICE_PORTS=(); DEVICE_E
 ITEM_KIND=(); ITEM_START=(); ITEM_END=(); ITEM_ID=(); ITEM_REASON=(); ITEM_INDEX=()
 TOTAL_FAILED=0
 ATTEMPTED=0
+DRY_RUN_IDS=()
 INVENTORY=
 
 while (($#)); do
@@ -575,6 +647,7 @@ while (($#)); do
     --commands) (($# >= 2)) || die "$1 需要值"; COMMAND_FILTER=$2; shift 2 ;;
     --retry-failed) (($# >= 2)) || die "$1 需要值"; RETRY_FROM=$2; shift 2 ;;
     --timeout) (($# >= 2)) || die "$1 需要值"; TIMEOUT=$2; shift 2 ;;
+    --command-timeout) (($# >= 2)) || die "$1 需要值"; COMMAND_TIMEOUT_ARGS+=("$2"); shift 2 ;;
     --connect-timeout) (($# >= 2)) || die "$1 需要值"; CONNECT_TIMEOUT=$2; shift 2 ;;
     --retry) (($# >= 2)) || die "$1 需要值"; RETRY=$2; shift 2 ;;
     --ask-password) ASK_PASSWORD=1; shift ;;
@@ -587,15 +660,21 @@ while (($#)); do
 done
 
 [[ -n "$INVENTORY" ]] || { usage >&2; exit 2; }
-[[ "$TIMEOUT" =~ ^[0-9]+$ && "$TIMEOUT" -ge 1 ]] || die "--timeout 必須是正整數"
+if [[ -n "$TIMEOUT" ]]; then
+  [[ "$TIMEOUT" =~ ^[0-9]+$ ]] && (( 10#$TIMEOUT >= 1 )) || die "--timeout 必須是正整數"
+  TIMEOUT=$((10#$TIMEOUT))
+fi
+for arg in ${COMMAND_TIMEOUT_ARGS[@]+"${COMMAND_TIMEOUT_ARGS[@]}"}; do parse_command_timeouts "$arg"; done
 [[ "$RETRY" =~ ^[0-9]+$ ]] || die "--retry 必須是非負整數"
+min_command_timeout
 if [[ -n "$CONNECT_TIMEOUT" ]]; then
   [[ "$CONNECT_TIMEOUT" =~ ^[0-9]+$ && "$CONNECT_TIMEOUT" -ge 1 ]] || die "--connect-timeout 必須是正整數"
-  # 大於 --timeout 時 timeout 會先結束 ssh（記成 124 而不是連線失敗），連不上的設備每個指令都要各等滿 --timeout
-  (( CONNECT_TIMEOUT <= TIMEOUT )) || die "--connect-timeout（${CONNECT_TIMEOUT}）不可大於 --timeout（${TIMEOUT}）：連線逾時要在單一指令逾時之內"
+  # 大於指令逾時時 timeout 會先結束 ssh（記成 124 而不是連線失敗），連不上的設備每個指令都要各等滿指令逾時
+  (( CONNECT_TIMEOUT <= MIN_TIMEOUT )) ||
+    die "--connect-timeout（${CONNECT_TIMEOUT}）不可大於 $(timeout_source "$MIN_TIMEOUT_ID")（${MIN_TIMEOUT}）：連線逾時要在單一指令逾時之內"
 else
-  # 預設 10 秒，但不超過單一指令的 --timeout（超過時 timeout 會先結束 ssh，記成 timeout 而不是連線失敗）
-  CONNECT_TIMEOUT=10; (( TIMEOUT >= CONNECT_TIMEOUT )) || CONNECT_TIMEOUT=$TIMEOUT
+  # 預設 10 秒，但不超過最短的指令逾時（超過時 timeout 會先結束 ssh，記成 timeout 而不是連線失敗）
+  CONNECT_TIMEOUT=10; (( MIN_TIMEOUT >= CONNECT_TIMEOUT )) || CONNECT_TIMEOUT=$MIN_TIMEOUT
 fi
 if [[ -n "$RETRY_FROM" ]] && (( ! DRY_RUN )); then
   (( OUTPUT_SET )) || die "--retry-failed 必須用 -o 指定新的輸出檔（不覆寫上次的收集檔）"
@@ -615,14 +694,16 @@ select_commands
 [[ -z "$RETRY_FROM" ]] || load_retry_plan
 
 if (( DRY_RUN )); then
-  if [[ -n "$RETRY_FROM" ]]; then retry_dry_run; exit 0; fi
+  if [[ -n "$RETRY_FROM" ]]; then retry_dry_run; print_timeout_summary ${DRY_RUN_IDS[@]+"${DRY_RUN_IDS[@]}"}; exit 0; fi
   for ((i = 0; i < ${#DEVICE_NAMES[@]}; i++)); do
     selected_device "${DEVICE_NAMES[i]}" || continue
     device_commands "$i"
     for id in "${DEVICE_COMMAND_IDS[@]}"; do
       printf '%s: %s\n' "${DEVICE_NAMES[i]}" "$(command_for_id "$id")"
+      DRY_RUN_IDS+=("$id")
     done
   done
+  print_timeout_summary ${DRY_RUN_IDS[@]+"${DRY_RUN_IDS[@]}"}
   exit 0
 fi
 

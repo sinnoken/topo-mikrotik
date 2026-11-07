@@ -92,6 +92,20 @@ test('IPv6 暴露清單：input 放行到設備本身（self），/ip service �
   assert.ok(wb.allowedFrom.ranges.every(([a, b]) => a.startsWith('2001:db8:') && b.startsWith('2001:db8:')), JSON.stringify(wb.allowedFrom));
 });
 
+test('IPv6 暴露清單：available-from 經位址集合的登錄表（與 IPv4、F07 同一份）——兩個相鄰的 /49 等於一個 /48；不合法的項目不接受任何來源', () => {
+  const rules = [EST, F6('action=drop chain=forward in-interface-list=WAN'), EST_IN, F6('action=accept chain=input dst-port=22,8291 protocol=tcp'), F6('action=drop chain=input in-interface-list=WAN')];
+  const row = (af) => {
+    const Q = S.query(router(rules.concat([`/ip service set winbox available-from=${af}`])));
+    const r = find(Q.exposure().self, '3fff:0:1::2', 'tcp/8291');
+    return { r, set: Q.addrSets().service('R', 'winbox', 'ipv6').set };
+  };
+  const whole = row('192.168.1.0/24,2001:db8::/48'); const split = row('192.168.1.0/24,2001:db8::/49,2001:db8:0:8000::/49');
+  assert.deepStrictEqual([split.r.verdict, split.r.allowedFrom], [whole.r.verdict, whole.r.allowedFrom]);
+  assert.deepStrictEqual(split.set.ranges, whole.set.ranges);
+  const bad = row('192.168.1.0/24,not-an-address');
+  assert.deepStrictEqual([bad.r, bad.set.isEmpty], [undefined, true], '沒有合法的 IPv6 項目：IPv6 來源一律拒絕（不是無法判斷）');
+});
+
 test('IPv6 暴露清單：沒有 IPv6 過濾規則的設備預設放行，本身與 LAN 的列都是 allow，reasons 標 no-ipv6-firewall', () => {
   const x = S.query(router(['/ipv6 address add address=3fff:0:2::1/64 interface=ether2'])).exposure();
   assert.strictEqual(x.ipv6.status, 'edge-only');

@@ -9,12 +9,23 @@ const { S, ROOT, test } = require('../lib.js');
 
 const sorted = (set) => (set ? Array.from(set).sort(S.util.natural) : null);
 /** 一個比對環境的可比較內容：清單名稱取自設備上定義的 interface list，另加 all、none 與規則引用到的清單名稱。 */
-function shape(ctx, listNames) {
+function shape(ctx, listNames, addrLists) {
   const chains = {};
   Array.from(ctx.chains.keys()).sort().forEach((k) => { chains[k] = ctx.chains.get(k).map((r) => r.key); });
   const resolved = {};
   listNames.forEach((n) => { resolved[n] = sorted(ctx.resolve(n)); });
-  return { status: ctx.status, wanLists: ctx.wanLists, lanLists: ctx.lanLists, wan: sorted(ctx.wan), lan: sorted(ctx.lan), universe: sorted(ctx.universe), resolved, chains };
+  // 位址清單（位址集合的登錄表）：id、完全靜態與否、合併後的區間（BigInt 轉成字串比較）
+  const addressLists = {};
+  (addrLists || []).forEach(([fam, n]) => {
+    const al = ctx.sets.list(ctx.dev, fam, n);
+    addressLists[fam + '|' + n] = al ? { id: al.id, static: al.static, reasons: al.reasons, items: al.set ? al.set.ranges.map(([a, b]) => a + '-' + b) : null } : null;
+  });
+  // 規則的位址字面值（同一個規則鍵在兩邊得到相同的 id 與區間）
+  const literals = {};
+  ctx.chains.forEach((rs) => rs.forEach((r) => ['src-address', 'dst-address', 'to-addresses'].forEach((k) => {
+    const e = ctx.sets.ofRule(r, k); if (e) literals[e.id] = e.set ? e.set.ranges.map(([a, b]) => a + '-' + b) : null;
+  })));
+  return { status: ctx.status, wanLists: ctx.wanLists, lanLists: ctx.lanLists, wan: sorted(ctx.wan), lan: sorted(ctx.lan), universe: sorted(ctx.universe), resolved, chains, addressLists, literals };
 }
 
 /** 建立基準，同時取得 model 的 M.fwCtx 與查詢層的 ctxOf（暫時包住 S.check.run 與 S.reach.engine，結束後還原）。 */
@@ -51,7 +62,12 @@ test('防火牆比對環境：M.fwCtx 與查詢層的 ctxOf 在範例資料與 t
         if (r.match[k]) names.add(S.infer.fw.splitNeg(r.match[k]).body);
       }));
       const list = Array.from(names).sort();
-      assert.deepStrictEqual(shape(ctxOf(dev), list), shape(ctx, list), `${rel}：${dev}`);
+      const al = new Set(snap.model.addressLists.filter((l) => l.dev === dev).map((l) => l.family + '|' + l.name));
+      snap.model.firewallRules.filter((r) => r.dev === dev).forEach((r) => S.infer.fw.ADDRESS_LIST.forEach((k) => {
+        if (r.match[k]) al.add(r.family + '|' + S.infer.fw.splitNeg(r.match[k]).body);
+      }));
+      const alList = Array.from(al).sort().map((x) => x.split('|'));
+      assert.deepStrictEqual(shape(ctxOf(dev), list, alList), shape(ctx, list, alList), `${rel}：${dev}`);
       compared++; if (ctx.wan) withWan++;
     });
   });

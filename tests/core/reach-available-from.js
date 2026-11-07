@@ -70,10 +70,14 @@ test('zone 矩陣：範例資料「→ 網路設備（管理）」的每個來�
   assert.ok(selfMatchesReach(sampleSnap()).length > 0);
 });
 
-test('available-from 的判斷只有一份（S.reach._.inAvailableFrom，localService 與節點鍵共用）：網段內接受、網段外不接受、無法解析的項目不接受', () => {
-  const { afNets, inAvailableFrom } = S.reach._;
-  const nets = afNets(['192.168.1.0/24', 'not-an-ip', '10.0.0.5']);
-  assert.strictEqual(nets[1], null);
-  assert.deepStrictEqual(['192.168.1.7', '192.168.2.7', '10.0.0.5', '10.0.0.6'].map((ip) => inAvailableFrom(ip, nets)), [true, false, true, false]);
-  assert.strictEqual(inAvailableFrom('192.168.1.7', afNets(['bogus'])), false);
+test('available-from 的判斷只有一份（位址集合的登錄表 S.infer.addrSets 的 service，localService 與節點鍵共用）：網段內接受、網段外不接受、無法解析或另一個位址族的項目不接受', () => {
+  const sv = (addresses) => ({ dev: 'R', name: 'ssh', enabled: true, port: 22, addresses, src: [[1, 2]] });
+  const reg = S.infer.addrSets({ services: [sv(['192.168.1.0/24', 'not-an-ip', '10.0.0.5', '2001:db8::/32'])] });
+  const e = reg.service('R', 'ssh', 'ip');
+  assert.deepStrictEqual([e.id, e.kind, e.static, e.src], ['R|ip|service|ssh', 'service', true, [[1, 2]]]);
+  assert.deepStrictEqual(['192.168.1.7', '192.168.2.7', '10.0.0.5', '10.0.0.6'].map((ip) => e.set.has(ip)), [true, false, true, false]);
+  assert.ok(reg.service('R', 'ssh', 'ipv6').set.has('2001:db8::1') && !reg.service('R', 'ssh', 'ipv6').set.has('2001:db9::1'), 'IPv6 的項目在 ipv6 那一筆');
+  assert.strictEqual(S.infer.addrSets({ services: [sv(['bogus'])] }).service('R', 'ssh', 'ip').set.has('192.168.1.7'), false);
+  assert.strictEqual(reg.service('R', 'telnet', 'ip'), null, '沒有這個服務');
+  assert.strictEqual(reg.get('R|ip|service|ssh'), e, '依 id 查到同一筆');
 });

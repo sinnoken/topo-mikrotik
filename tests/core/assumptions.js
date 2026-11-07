@@ -172,8 +172,9 @@ test('前提 policy-routing：/routing rule 依順序決定路由表；條件判
   assert.deepStrictEqual(linked(odd.reach(LAN, OUT, { proto: 'tcp', port: 443 })), [['policy-routing', ['policy-routing']]]);
   // 可判斷的條件就是 ruleMatches 判斷的那幾個
   const pkt = { src: LAN, dst: OUT, inEp: 'R|bridge1' };
-  S.trace.RULE_CONDITIONS.forEach((c) => assert.notStrictEqual(S.trace.ruleMatches({ match: { [c.key]: c.key === 'interface' ? 'bridge1' : '0.0.0.0/0' } }, pkt).match, null, c.key));
-  assert.strictEqual(S.trace.ruleMatches({ match: { 'min-prefix': '0' } }, pkt).match, null);
+  const R = { addrSets: () => S.infer.addrSets({}) };
+  S.trace.RULE_CONDITIONS.forEach((c) => assert.notStrictEqual(S.trace.ruleMatches(R, { match: { [c.key]: c.key === 'interface' ? 'bridge1' : '0.0.0.0/0' } }, pkt).match, null, c.key));
+  assert.strictEqual(S.trace.ruleMatches(R, { match: { 'min-prefix': '0' } }, pkt).match, null);
 });
 
 test('前提 bridge-ip-firewall：有 bridge 與過濾規則的設備，use-ip-firewall 沒有收集，是 missing-data；同網段送達對到它', () => {
@@ -228,9 +229,9 @@ test('Q.assumptionUse：範例資料上用得到的前提（每條一筆、依�
     if (a.unit === 'devices') assert.strictEqual(a.count, a.devices.length, `${a.code}：數設備時 count 是設備數`);
   });
   const st = Object.fromEntries(u.map((a) => [a.code, a.status]));
-  // 範例資料：有策略路由、在用 IPv6、非 main 的 VRF、UPnP、沒有介面紀錄的 WAN 成員、比對來源埠的規則；沒有 mark-routing、notrack、位址清單
-  assert.deepStrictEqual(['policy-routing', 'ipv4-vrf', 'ip-service', 'static-only', 'wan-member-no-interface', 'src-port', 'return-path'].map((c) => st[c]), Array(7).fill('affects'));
-  assert.deepStrictEqual(['mark-routing', 'untracked', 'address-list'].map((c) => st[c]), Array(3).fill('not-used'));
+  // 範例資料：有策略路由、在用 IPv6、非 main 的 VRF、UPnP、沒有介面紀錄的 WAN 成員、比對來源埠的規則、由規則寫入的位址清單（port knocking）；沒有 mark-routing、notrack
+  assert.deepStrictEqual(['policy-routing', 'ipv4-vrf', 'ip-service', 'static-only', 'wan-member-no-interface', 'src-port', 'return-path', 'address-list'].map((c) => st[c]), Array(8).fill('affects'));
+  assert.deepStrictEqual(['mark-routing', 'untracked'].map((c) => st[c]), Array(2).fill('not-used'));
   assert.strictEqual(st['bridge-ip-firewall'], 'missing-data');
   assert.strictEqual(JSON.stringify(s), before, 'Snapshot 不變');
 });

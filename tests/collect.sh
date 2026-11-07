@@ -33,6 +33,13 @@ if [[ -n "${FAKE_SSH_FAIL_ON:-}" && "$target $command_name" == $FAKE_SSH_FAIL_ON
   printf 'permission denied\n' >&2; exit 7
 fi
 if [[ "${FAKE_SSH_MODE:-ok}" == "timeout" ]]; then sleep 2; fi
+# timeout-partial：路由表先輸出前兩筆再卡住（模擬大型路由表在逾時前只送出一部分）
+if [[ "${FAKE_SSH_MODE:-ok}" == "timeout-partial" && "$command_name" == "/ip route "* ]]; then
+  printf 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC\r\n'
+  printf ' DAc dst-address=192.0.2.0/24 routing-table=main gateway=ether1 immediate-gw=ether1 distance=0\r\n'
+  printf ' As  dst-address=10.1.0.0/16 routing-table=main gateway=192.0.2.254 immediate-gw=192.0.2.254%%ether1 distance=1\r\n'
+  exec sleep 30
+fi
 # 依位址模擬不同設備（RouterOS 的 SSH 輸出帶 CR）
 board='CRS326-24G-2S+'; version='7.16.1 (stable)'; wireless_types=
 case "$target" in
@@ -217,6 +224,64 @@ if FAKE_SSH_MODE=timeout run_collector "$TMP_DIR/devices.csv" --commands config 
   exit 1
 fi
 grep -q '^# collection failed: timeout$' "$TMP_DIR/timeout.txt"
+
+# 各指令的預設逾時：route、config 300 秒（輸出隨網路規模成長），其他 30 秒；未知 ID 回傳非零
+(
+  # shellcheck source=tools/collector-commands.sh
+  source "$ROOT/tools/collector-commands.sh"
+  for id in "${COLLECT_COMMAND_IDS[@]}" "${OPTIONAL_COMMAND_IDS[@]}"; do
+    case "$id" in route|config) want=300 ;; *) want=30 ;; esac
+    [[ "$(default_timeout_for_id "$id")" == "$want" ]] || { printf '%s: default timeout must be %s\n' "$id" "$want" >&2; exit 1; }
+  done
+  if default_timeout_for_id nope >/dev/null; then printf 'unknown id must have no default timeout\n' >&2; exit 1; fi
+)
+# --dry-run 在 stderr 列出逾時，stdout 的指令清單不變；--timeout 覆蓋全部預設，--command-timeout 再覆蓋個別指令
+run_collector "$TMP_DIR/devices.csv" --dry-run --commands config,route,neighbor >"$TMP_DIR/to.out" 2>"$TMP_DIR/to.err"
+[[ $(cat "$TMP_DIR/to.err") == '逾時（秒）：config=300 route=300，其他 30' ]] || { cat "$TMP_DIR/to.err" >&2; exit 1; }
+[[ $(grep -c '^TEST_ROUTER: ' "$TMP_DIR/to.out") == 3 && $(wc -l < "$TMP_DIR/to.out") -eq 3 ]] || { printf 'dry-run stdout must only list commands\n' >&2; exit 1; }
+run_collector "$TMP_DIR/devices.csv" --dry-run --commands config,route --timeout 60 >/dev/null 2>"$TMP_DIR/to.err"
+[[ $(cat "$TMP_DIR/to.err") == '逾時（秒）：全部 60' ]] || { cat "$TMP_DIR/to.err" >&2; printf '%s\n' '--timeout must override every default' >&2; exit 1; }
+run_collector "$TMP_DIR/devices.csv" --dry-run --commands config,route --timeout 60 --command-timeout route=900 >/dev/null 2>"$TMP_DIR/to.err"
+[[ $(cat "$TMP_DIR/to.err") == '逾時（秒）：route=900，其他 60' ]] || { cat "$TMP_DIR/to.err" >&2; printf '%s\n' '--command-timeout must override --timeout' >&2; exit 1; }
+run_collector "$TMP_DIR/devices.csv" --dry-run --commands config,route,neighbor --command-timeout route=900,neighbor=45 --command-timeout config=600 >/dev/null 2>"$TMP_DIR/to.err"
+[[ $(cat "$TMP_DIR/to.err") == '逾時（秒）：config=600 route=900 neighbor=45，其他 30' ]] || { cat "$TMP_DIR/to.err" >&2; printf '%s\n' '--command-timeout must accept lists and repeats' >&2; exit 1; }
+for bad in 'route' 'route=' 'route=0' 'route=x' 'nope=10' 'route=10,route=20'; do
+  if run_collector "$TMP_DIR/devices.csv" --dry-run --command-timeout "$bad" >/dev/null 2>"$TMP_DIR/to.err"; then
+    printf '%s\n' "--command-timeout $bad must be rejected" >&2; exit 1
+  fi
+  grep -qF -- '--command-timeout' "$TMP_DIR/to.err" || { cat "$TMP_DIR/to.err" >&2; exit 1; }
+done
+# 實際套用：config 2 秒內完成（--timeout 5），neighbor 用 --command-timeout neighbor=1 逾時
+if FAKE_SSH_MODE=timeout run_collector "$TMP_DIR/devices.csv" --commands config,neighbor --timeout 5 --command-timeout neighbor=1 \
+  --output "$TMP_DIR/to.txt" >"$TMP_DIR/to.log" 2>"$TMP_DIR/to.err"; then
+  printf 'per-command timeout must fail the collection\n' >&2; exit 1
+fi
+[[ $(grep -c '^# collection failed: timeout$' "$TMP_DIR/to.txt") == 1 ]] || { cat "$TMP_DIR/to.txt" >&2; exit 1; }
+grep -A3 -xF '### /ip neighbor print detail without-paging' "$TMP_DIR/to.txt" | grep -qxF '# collection failed: timeout' ||
+  { printf 'only neighbor must time out\n' >&2; exit 1; }
+grep -qF '  FAIL neighbor timeout（1 秒' "$TMP_DIR/to.err" || { cat "$TMP_DIR/to.err" >&2; exit 1; }
+grep -qxF '  OK config' "$TMP_DIR/to.log" || { printf 'config must finish within --timeout\n' >&2; exit 1; }
+
+# 大型路由表逾時：已收到的部分輸出保留在區塊內、標 timeout；網站把它讀成收集失敗的區塊（C02），不是成功的路由表
+if FAKE_SSH_MODE=timeout-partial run_collector "$TMP_DIR/devices.csv" --commands config,route --command-timeout route=1 \
+  --output "$TMP_DIR/route-to.txt" >/dev/null 2>"$TMP_DIR/route-to.err"; then
+  printf 'route timeout must fail the collection\n' >&2; exit 1
+fi
+grep -A6 -xF '### /ip route print detail without-paging' "$TMP_DIR/route-to.txt" | tr -d '\r' | grep -qF 'dst-address=10.1.0.0/16' ||
+  { cat "$TMP_DIR/route-to.txt" >&2; printf 'partial route output must be kept\n' >&2; exit 1; }
+[[ $(tail -n 2 "$TMP_DIR/route-to.txt") == $'# collection failed: timeout\n_____' ]] || { cat "$TMP_DIR/route-to.txt" >&2; printf 'timeout must be marked after the partial output\n' >&2; exit 1; }
+node -e '
+  const S = require(process.argv[1])();
+  const text = require("fs").readFileSync(process.argv[2], "utf8");
+  const s = S.build([{ name: "route-to.txt", text }], { now: "2026-01-01T00:00:00Z" });
+  const failed = s.blocks.filter((b) => b.failure).map((b) => [b.device, b.command, b.failure.reason]);
+  const want = [["TEST_ROUTER", "/ip route print detail without-paging", "timeout"]];
+  if (JSON.stringify(failed) !== JSON.stringify(want) || s.blocks.some((b) => b.issues)) { console.error("failed blocks", failed); process.exit(1); }
+  const cov = s.coverage.find((c) => c.dev === "TEST_ROUTER");
+  if (!cov || JSON.stringify(cov.failures.map((x) => [x.command, x.reason, x.dataTypes])) !== JSON.stringify([["/ip route print detail without-paging", "timeout", ["route"]]])) { console.error("coverage", cov && cov.failures); process.exit(1); }
+  const c02 = s.findings.filter((f) => f.id === "C02");
+  if (c02.length !== 1 || !/收集失敗：\/ip route print detail without-paging（timeout）/.test(c02[0].message)) { console.error("C02", c02); process.exit(1); }
+' "$ROOT/tests/load.js" "$TMP_DIR/route-to.txt" || fail 'timed-out route table must be read as a failed block and reported by C02'
 
 # 設備清單的 extra 欄：只對指定設備追加選用命令（Wi-Fi 關聯表）；--commands 指定時忽略 extra
 cat > "$TMP_DIR/devices-extra.csv" <<'EOF'
@@ -521,6 +586,14 @@ grep -qF -- '--connect-timeout（60）不可大於 --timeout（30）' "$TMP_DIR/
 : > "$TMP_DIR/ssh-args.log"
 FAKE_SSH_LOG="$TMP_DIR/ssh-args.log" run_collector "$TMP_DIR/devices.csv" --commands config --connect-timeout 5 --timeout 5 --output "$TMP_DIR/ct.txt" >/dev/null
 grep -qF -- '-o ConnectTimeout=5 ' "$TMP_DIR/ssh-args.log" || fail '--connect-timeout equal to --timeout must be accepted'
+# 連線逾時要在每個指令的逾時之內：不指定 --timeout 時看各指令的預設（最短 30），--command-timeout 較短時也要檢查
+expect_exit 2 run_collector "$TMP_DIR/devices.csv" --connect-timeout 60 --dry-run >/dev/null 2>"$TMP_DIR/err.log"
+grep -qF -- '--connect-timeout（60）不可大於 fwfilter 的預設逾時（30）' "$TMP_DIR/err.log" || { cat "$TMP_DIR/err.log" >&2; fail '--connect-timeout must not exceed the shortest default'; }
+expect_exit 2 run_collector "$TMP_DIR/devices.csv" --connect-timeout 20 --command-timeout neighbor=15 --dry-run >/dev/null 2>"$TMP_DIR/err.log"
+grep -qF -- '--connect-timeout（20）不可大於 --command-timeout neighbor（15）' "$TMP_DIR/err.log" || { cat "$TMP_DIR/err.log" >&2; fail '--connect-timeout must not exceed --command-timeout'; }
+: > "$TMP_DIR/ssh-args.log"
+FAKE_SSH_LOG="$TMP_DIR/ssh-args.log" run_collector "$TMP_DIR/devices.csv" --commands config --command-timeout neighbor=4 --output "$TMP_DIR/ct.txt" >/dev/null
+grep -qF -- '-o ConnectTimeout=4 ' "$TMP_DIR/ssh-args.log" || fail 'default ConnectTimeout must not exceed the shortest --command-timeout'
 
 # 沒有 --ask-password 時連不上（第一個指令 255 且沒有輸出）：這台記一次 connection，不再逐一嘗試其餘指令
 : > "$TMP_DIR/ssh-args.log"

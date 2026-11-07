@@ -28,6 +28,7 @@
       vrfs: new Map(), // dev → [{ dev, name, interfaces（設定的名稱）, disabled, builtin, source: print|export, members（Set of ep）, order, src }]，依設定順序（resolveVrfs 前是 { print, export }）
       // 防火牆（事實）：規則依輸入順序；interface list 以「設備|名稱」為鍵；/ip service 只有 export 有寫的（預設值由 infer 補上）
       fw: { rules: [], lists: new Map(), services: new Map(), peers: [], policies: [], ipv6: new Map(), // ipv6：dev → { use: [[區塊, 行號]], disabled: [區塊, 行號]|null }
+        addrEntries: [], addrWriters: [], // 位址清單的項目與寫入清單的其他設定（事實，依輸入順序）；resolveAddressLists 整理成 M.addressLists
         stats: new Map() }, // 命中次數（print stats）：「設備|位址族|表」→ { dev, family, table, block, line, rows: [...] }，對應結果見 matchFirewallStats
       // 管理面設定（事實，export 有寫的）：dev → { areas: { area: { values, src } }, communities: [依序的 add／set], upnpIfcs: [] }；預設值由 resolveMgmt 補上
       mgmt: new Map(), mgmtSettings: new Map(),
@@ -38,7 +39,7 @@
 
   function device(M, key, name) {
     const d = getOr(M.devices, key, () => ({
-      key, names: new Set(), mgmtIp: null, vendors: new Set(), collected: false, data: new Set(),
+      key, names: new Set(), mgmtIp: null, vendors: new Set(), collected: false, data: new Set(), incomplete: new Set(),
       hostname: null, routerId: null, collectedAt: null, ownMacs: new Set(), stp: null, seenBy: new Set(), src: [], deviceType: null, softwareVersion: null, platform: null, caps: null,
       dnsServers: null, ntpServers: null, // { values: [], menu, param, src: [[區塊, 行號]] }（事實）；多個來源時的規則見 SERVER_SOURCE_RANK
       policyRules: null, // /routing settings 的 policy-rules（查表的順序）：{ rules, src }；export 沒有寫出（預設值）時為 null
@@ -84,6 +85,9 @@
       const d = device(M, b.devKey, b.device);
       d.collected = true;
       if (b.mgmtIp && !d.mgmtIp) d.mgmtIp = b.mgmtIp;
+      // 收集失敗（# collection failed，例如逾時只收到前面一部分）的區塊：它的資料類別可能不完整（事實，coverage[].incomplete）。
+      // 路由表不完整時，查不到符合的路由不代表沒有路由（S.trace.lookup 的 route-data-incomplete、R01／R12 不報）
+      if (b.failure) S.adapters.dataTypesOf(b).forEach((t) => d.incomplete.add(t));
     });
 
     // 管理 IP → 已收集設備（鄰居的 identity 和收集檔的設備名不同時，用 IP 對回同一台）
@@ -181,6 +185,8 @@
           break;
         }
         case 'fwRule': M.fw.rules.push(Object.assign({}, f)); break;
+        case 'addrListEntry': M.fw.addrEntries.push(Object.assign({}, f)); break;
+        case 'addrListWriter': M.fw.addrWriters.push({ dev: f.dev, section: f.section, lists: f.lists ? f.lists.slice() : null, block: f.block, line: f.line }); break;
         case 'fwStatTable': statTable(M, f.dev, f.family, f.table, f.block, f.line); break;
         case 'fwStat': statTable(M, f.dev, f.family, f.table, f.block, null).rows.push({ flags: f.flags, chain: f.chain, action: f.action, comment: f.comment, bytes: f.bytes, packets: f.packets, block: f.block, line: f.line }); break;
         case 'ifList': {
@@ -239,6 +245,7 @@
 
     resolveVrfs(M);
     numberFirewallRules(M);
+    resolveAddressLists(M);
     emptyStatTables(M, input.blocks);
     matchFirewallStats(M);
     resolveMgmt(M);
@@ -344,6 +351,49 @@
       const n = (sigCount.get(r.signature) || 0) + 1; sigCount.set(r.signature, n);
       r.key = `${ck}|${S.util.hash(r.signature)}${n > 1 ? '#' + n : ''}`;
     });
+  }
+
+  /**
+   * 位址清單（M.addressLists → Snapshot model.addressLists）：每台設備、每個位址族、每個清單名稱一筆，依設備、位址族（ip、ipv6）、名稱排序。
+   *   entries：export 的項目（依輸入順序，停用的也列）{ address, kind: 'address'|'dns'|'invalid-range', disabled, timeout, dynamic, src }（kind 見 S.infer.fw.addressListItem）；
+   *     Snapshot 只留 address、kind、disabled、src（封鎖名單可能有十萬筆），逾時與 dynamic 的來源行在 reasonSrc；
+   *   writers：寫入這份清單的來源（依來源行）——rule（add-src-to-address-list／add-dst-to-address-list 的規則，含停用的；rule 是規則鍵）、
+   *     config（其他設定的 address-list／address-lists 參數，section 是選單）、script（文字提到 address-list、寫入哪份不明，套用到這台設備的每份清單）；
+   *   static／reasons：S.infer.fw.addressListState 的結果（完全靜態時才在判斷時展開）；reasonSrc：[{ reason, src }]，每個原因的第一個來源行。
+   * 只有被規則比對、但 export 沒有項目也沒有寫入來源的清單不列（內容無從得知，判斷時不明）。
+   */
+  function resolveAddressLists(M) {
+    const F = S.infer.fw; const lists = new Map();
+    const listOf = (dev, family, name) => getOr(lists, dev + '|' + family + '|' + name, () => ({ dev, family, name, entries: [], writers: [] }));
+    M.fw.addrEntries.forEach((e) => {
+      listOf(e.dev, e.family, e.list).entries.push({ address: e.address, kind: F.addressListItem(e.family, e.address).kind, disabled: e.disabled,
+        timeout: e.timeout, dynamic: e.dynamic, src: [[e.block, e.line]] });
+    });
+    M.fw.rules.forEach((r) => {
+      const name = r.params['address-list'];
+      if (F.ADDRESS_LIST_WRITE.includes(r.action) && name) listOf(r.dev, r.family, name).writers.push({ kind: 'rule', rule: r.key, section: null, src: [[r.block, r.line]] });
+    });
+    const famOf = (section) => (/^\/ipv6\b/.test(section) ? ['ipv6'] : /^\/ip\b/.test(section) ? ['ip'] : ['ip', 'ipv6']);
+    M.fw.addrWriters.forEach((w) => {
+      if (w.lists) w.lists.forEach((name) => famOf(w.section).forEach((fam) => listOf(w.dev, fam, name).writers.push({ kind: 'config', rule: null, section: w.section, src: [[w.block, w.line]] })));
+    });
+    M.fw.addrWriters.forEach((w) => {
+      if (w.lists) return;
+      lists.forEach((l) => { if (l.dev === w.dev) l.writers.push({ kind: 'script', rule: null, section: w.section, src: [[w.block, w.line]] }); });
+    });
+    const bySrc = (a, b) => a.src[0][0] - b.src[0][0] || a.src[0][1] - b.src[0][1];
+    const FAM = ['ip', 'ipv6'];
+    // 每個原因的第一個來源行（項目或寫入來源）：Snapshot 的項目只留位址、種類、停用與來源行，逾時與 dynamic 只在這裡指出是哪一行
+    const firstSrc = (l, code) => {
+      const e = l.entries.find((x) => !x.disabled && (code === 'dns' || code === 'invalid-range' ? x.kind === code : code === 'timeout' ? !!x.timeout : code === 'dynamic' ? x.dynamic : false));
+      const w = e ? null : l.writers.find((x) => x.kind === code);
+      return (e || w).src[0];
+    };
+    M.addressLists = Array.from(lists.values()).map((l) => {
+      l.writers.sort(bySrc);
+      const st = F.addressListState(l.entries, l.writers);
+      return Object.assign(l, st, { reasonSrc: st.reasons.map((code) => ({ reason: code, src: [firstSrc(l, code)] })) });
+    }).sort((a, b) => S.util.natural(a.dev, b.dev) || FAM.indexOf(a.family) - FAM.indexOf(b.family) || S.util.natural(a.name, b.name));
   }
 
   function statTable(M, dev, family, table, block, line) {

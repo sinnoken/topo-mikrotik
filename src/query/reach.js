@@ -90,6 +90,9 @@
     const bad = OTHER_EXAMPLES.concat(MARK_KEYS).filter((k) => F0.condKind(k) !== 'other');
     if (bad.length) throw new Error(`判斷的前提舉例的條件 ${bad.join(',')} 不是無法判斷的條件（src/query/reach.js）`);
   })();
+  /** 位址清單「可能有動態來源」的原因（S.infer.fw.ADDRESS_LIST_DYNAMIC，decide 用的同一份）在文字中的寫法；由規則寫入另附規則動作的原值。 */
+  const AL_DYNAMIC = (source) => F0.ADDRESS_LIST_DYNAMIC.filter((x) => x.source === source)
+    .map((x) => (x.code === 'rule' ? `${x.label}（${F0.ADDRESS_LIST_WRITE.join('、')}）` : x.label));
   /** Q.exposure 的外部區段數上限（maxSources 的預設；前提的文字也讀它）。 */
   const EXPOSURE_MAX_SOURCES = 16;
   const FP = F0.FIRST_PACKET;
@@ -105,8 +108,9 @@
       + `規則依匯出設定中新增的順序（/export 的 add），跳到其他規則鏈最多 ${F0.MAX_JUMP} 層（jump）`),
     assume('src-port', 'filter', '來源埠由用戶端自選，比對它的規則算不明',
       `來源埠由用戶端自選，比對來源埠的條件（${SRC_PORT_KEYS.join('、')}；port 符合目的埠時除外）無法判斷`),
-    assume('address-list', 'filter', '位址清單的內容不展開，用到它的規則算不明',
-      `位址清單（address-list）的內容一律不展開，以它比對的規則（${F0.ADDRESS_LIST.join('、')}）結果為不明——包括匯出設定中的靜態項目`),
+    assume('address-list', 'filter', '只展開寫死的位址清單，可能有動態來源的算不明',
+      `只展開匯出設定中寫死的位址清單（/ip firewall address-list、/ipv6 firewall address-list 的靜態項目，停用的項目不算），以它比對的規則（${F0.ADDRESS_LIST.join('、')}）依項目判斷；`
+      + `含${AL_DYNAMIC('entry').join('、')}，或${AL_DYNAMIC('writer').join('、')}的清單算不明，匯出設定中沒有項目的清單也是不明`),
     assume('untracked', 'filter', '不追蹤連線的封包另外比對，也不做位址轉換',
       '原始表規則不追蹤連線（raw 的 notrack）時，這台設備之後的規則以連線狀態「不追蹤」（connection-state=untracked）比對，也不套用位址轉換（nat）；原始表的轉送前（prerouting）是否不追蹤無法判斷時，兩種情況都算，結果不同就是不明；設備自己送出時（raw 的 output）無法判斷就是不明'),
     assume('ip-service', 'filter', '目的是設備本身時，也看它的管理服務',
@@ -122,7 +126,7 @@
   /** 暴露清單另有的前提（只出現在 Q.exposure 的結果）。 */
   const EXPOSURE_ONLY = deepFreeze([
     assume('exposure-source-ranges', 'assumption', `外部來源依入口設備的規則切段，最多 ${EXPOSURE_MAX_SOURCES} 段`,
-      `外部來源依入口設備的規則切成區段（src-address、/ip service 的 available-from、/routing rule 的 src-address）；經某個入口連到另一台網路設備本身時，另依那台目的設備的同樣規則切分；最多 ${EXPOSURE_MAX_SOURCES} 段；每段的代表位址先取文件保留位址（TEST-NET），區段內沒有時取區段內不屬於基準、也不是保留、本機迴路或群播的位址；路徑上其他經過的設備依來源位址比對的規則不再切分，所以允許的外部來源（allowedFrom）可能比實際寬`),
+      `外部來源依入口設備的規則切成區段（src-address、展開的 src-address-list、/ip service 的 available-from、/routing rule 的 src-address）；經某個入口連到另一台網路設備本身時，另依那台目的設備的同樣規則切分；最多 ${EXPOSURE_MAX_SOURCES} 段；每段的代表位址先取文件保留位址（TEST-NET），區段內沒有時取區段內不屬於基準、也不是保留、本機迴路或群播的位址；路徑上其他經過的設備依來源位址比對的規則不再切分，所以允許的外部來源（allowedFrom）可能比實際寬`),
     assume('wan-member-no-interface', 'assumption', '沒有介面紀錄的對外清單成員也當入口',
       '名稱含對外字樣的介面清單成員沒有介面紀錄、只出現在位址與清單成員的設定時（/ip address、/interface list member），也當作入口（矩陣的外部與暴露清單相同），所在的 VRF 視為 main'),
   ]);
@@ -147,7 +151,7 @@
     'rule-condition': ['conditions', 'src-port', 'address-list', 'routeros-tables'], 'raw-notrack': 'untracked', 'no-firewall-data': null,
     'srcnat-ambiguous': 'conditions', 'srcnat-address-unknown': null, 'branches-differ': null, 'branch-limit': null,
     'nat-ambiguous': 'conditions', 'nat-target': null, loop: null, ttl: 'ipv4-vrf', 'device-uncollected': null, dropped: null, local: null,
-    'no-route-data': null, 'no-route': null, blackhole: null, 'next-hop-outside': null, 'dst-device-uncollected': null, host: 'routeros-tables', segment: null,
+    'no-route-data': null, 'route-data-incomplete': null, 'no-route': null, blackhole: null, 'next-hop-outside': null, 'dst-device-uncollected': null, host: 'routeros-tables', segment: null,
     'src-device-uncollected': null, 'src-location-unknown': null, 'same-subnet': 'bridge-ip-firewall', 'no-gateway': null,
     'policy-routing': ['policy-routing', 'mark-routing'], 'policy-drop': null, 'service-refused': null, 'service-unknown': 'ip-service',
     'egress-wan': 'external', 'egress-possible': 'external', 'hairpin-no-srcnat': null, 'return-not-guaranteed': 'return-path', 'no-ipv6-firewall': null,
@@ -173,6 +177,7 @@
     { code: 'dropped', kind: 'end', layer: 'filter', note: '被規則丟棄（拒絕）' },
     { code: 'local', kind: 'end', layer: 'route', note: '目的是設備自己的位址（送達）' },
     { code: 'no-route-data', kind: 'end', layer: 'route', note: '設備沒有路由表資料（不明）' },
+    { code: 'route-data-incomplete', kind: 'end', layer: 'route', note: '設備的路由表收集不完整（收集失敗，例如逾時），收到的部分沒有符合的路由，或只符合比 /32 短的路由（沒收到的部分可能有更長的前綴）（不明）' },
     { code: 'no-route', kind: 'end', layer: 'route', note: '沒有符合的路由（拒絕）' },
     { code: 'blackhole', kind: 'end', layer: 'route', note: '黑洞路由（拒絕）' },
     { code: 'next-hop-outside', kind: 'end', layer: 'route', note: '下一跳不在基準內（不明）' },
@@ -198,8 +203,8 @@
   const checkCode = (code) => { if (!REASON_CODE_SET.has(code)) throw new Error(`原因代碼 ${code} 不在 REASON_CODES（src/query/reach.js）`); return code; };
   /** 無法判斷的條件鍵 → 原因。 */
   const KEY_WHY = {
-    'src-address-list': 'address-list 的內容不在基準中（export 只有名稱與靜態項目，不展開，也沒有動態項目）',
-    'dst-address-list': 'address-list 的內容不在基準中（export 只有名稱與靜態項目，不展開，也沒有動態項目）',
+    'src-address-list': 'address-list 可能有動態來源（DNS 名稱、逾時、動態項目或由規則等寫入）、有無法判斷的範圍，或 export 中沒有這份清單；export 沒有動態項目，不展開',
+    'dst-address-list': 'address-list 可能有動態來源（DNS 名稱、逾時、動態項目或由規則等寫入）、有無法判斷的範圍，或 export 中沒有這份清單；export 沒有動態項目，不展開',
     'in-interface': '入介面不明（下一跳經遞迴路由解析）', 'out-interface': '出介面不明（路由沒有寫出介面）',
     'in-interface-list': 'interface list 無法展開（動態、內建或未定義的清單）', 'out-interface-list': 'interface list 無法展開（動態、內建或未定義的清單）',
     'src-port': '來源埠由用戶端自選', port: '來源埠由用戶端自選',
@@ -238,17 +243,11 @@
    */
   const SLICE_MS = 25;
   const SLICE_CHECK = 8;
-  /**
-   * /ip service 的 available-from 判斷（localService 的 serviceOf 與節點鍵的 afSig 共用）：nets 是 afNets 的結果，
-   * parseCidr 失敗的項目是 null、不接受任何來源。
-   */
-  const afNets = (addresses) => addresses.map((a) => IP.parseCidr(a));
-  const inAvailableFrom = (ip, nets) => nets.some((p) => (p ? IP.inNet(ip, p.net, p.len) : false));
   const slicer = () => { let t0 = Date.now(); let n = 0; return () => { if (++n < SLICE_CHECK) return false; n = 0; const t = Date.now(); if (t - t0 < SLICE_MS) return false; t0 = t; return true; }; };
 
   S.reach = {
     SERVICES, ZONE_SOURCES, ASSUMPTIONS, svcId,
-    /** 每份基準一個（由 S.query 第一次呼叫 L4 函式時建立）；I：{ ctxOf(dev) }（查詢層的防火牆比對環境）。 */
+    /** 每份基準一個（由 S.query 第一次呼叫 L4 函式時建立）；I：{ ctxOf(dev), addrSets() }（查詢層的防火牆比對環境與位址集合的登錄表 S.infer.addrSets）。 */
     engine: (Q, I) => makeEngine(Q, I),
     /**
      * 內部（只給 src/query/reach-*.js 用，不是對外介面）：常數，與各部分的建構函式（evalPart、zonesPart、matrixPart、exposurePart，
@@ -256,7 +255,7 @@
      */
     _: {
       deepFreeze, MAX_PATHS, SERVICES, EXTERNAL_ZONE, SELF_ZONE, EXTERNAL_CANDIDATES, EXTERNAL6_CANDIDATES, svcId, ZONE_SOURCES, ASSUMPTIONS, EXPOSURE_ASSUMPTIONS, EXPOSURE_MAX_SOURCES,
-      REASON_LAYER, checkCode, keyWhy, NAT_UNKNOWN, runAll, slicer, afNets, inAvailableFrom,
+      REASON_LAYER, checkCode, keyWhy, NAT_UNKNOWN, runAll, slicer,
     },
   };
 
@@ -276,7 +275,7 @@
 
   /**
    * Q.assumptionUse：這份基準用得到哪些前提（推論，查詢時計算、依 Q 快取，Snapshot 不變）。判斷都用程式實際判斷時的同一份分類，不另寫規則語意：
-   *   - 防火牆規則（啟用中、會導向結果的動作，同 S.infer.fw.decide）：條件鍵依 S.infer.fw.condKind 分類——位址清單 address-list、來源埠 src-port、
+   *   - 防火牆規則（啟用中、會導向結果的動作，同 S.infer.fw.decide）：條件鍵依 S.infer.fw.condKind 分類——位址清單 address-list（只算可能有動態來源或基準裡沒有的清單，ctx.addressList）、來源埠 src-port、
    *     封包標記 routeros-tables、無法判斷的條件 conditions（另含設備有啟用中 IPsec policy 時的 ipsec-policy、無法展開的介面清單，同 ctx.resolve）；
    *     raw 的 notrack 是 untracked。
    *   - 路由層：Q.policyOf（routeDecision 用的同一份）的 marks 是 mark-routing，rules 與改過的 policy-rules 是 policy-routing；
@@ -299,7 +298,9 @@
       const ctx = I.ctxOf(r.dev); const out = [];
       Object.keys(r.match).forEach((k) => {
         const kind = F0.condKind(k);
-        const unknown = kind === 'address-list' || kind === 'nondet' || kind === 'other' || SRC_PORT_KEYS.includes(k)
+        // 位址清單：只有可能有動態來源（或基準裡沒有）的清單判斷不了，同 decide 用的登錄表（S.infer.addrSets）
+        const listUnknown = () => { const al = I.addrSets().ofRule(r, k); return !al || !al.static; };
+        const unknown = (kind === 'address-list' && listUnknown()) || kind === 'nondet' || kind === 'other' || SRC_PORT_KEYS.includes(k)
           || (k === 'ipsec-policy' && devInfo(r.dev).ipsec)
           || (kind === 'interface' && k.endsWith('-list') && !!ctx && ctx.resolve(F0.splitNeg(r.match[k]).body) === null);
         if (unknown) out.push(keyAssumption(k));
@@ -383,30 +384,24 @@
     const where = (r) => `${name(r.dev)} ${r.table} ${r.chain} chain 內第 ${r.position} 條（${r.action}）`;
 
     // ---- 位址等價類：規則的位址邊界把位址空間切成區段，同一區段內的位址對所有規則的位址條件結果相同（規格書 §7）
+    // 邊界一律由位址集合的登錄表產生（S.infer.addrBounds：登錄的 set 的 bounds()）；新的位址來源在登錄表登錄後就會切開等價類
     let ruleB = null; let repB = null;
-    const toNum = (x) => Number(x);
-    const addRanges = (set, key, text) => {
-      if (text === undefined) return;
-      const p = F.parseVal(key, F.splitNeg(text).body);
-      if (p.kind === 'ranges' && p.bits === 32) p.items.forEach(([a, b]) => { set.add(toNum(a)); set.add(toNum(b) + 1); });
-    };
+    const RULE_ADDR = Object.freeze(['src-address', 'dst-address', 'to-addresses'].concat(F.ADDRESS_LIST));
+    const ROUTING_ADDR = Object.freeze(['src-address', 'dst-address']);
+    const addBounds = (set, entries) => S.infer.addrBounds(entries, 32).forEach((b) => set.add(Number(b)));
     const sortedArr = (set) => Float64Array.from(Array.from(set).sort((a, b) => a - b));
     const bounds = () => {
       if (ruleB) return;
-      const rb = new Set([0]);
-      m.firewallRules.forEach((r) => {
-        if (r.family !== 'ip') return;
-        addRanges(rb, 'src-address', r.match['src-address']); addRanges(rb, 'dst-address', r.match['dst-address']);
-        addRanges(rb, 'dst-address', r.params['to-addresses']);
-      });
+      const R = I.addrSets(); const es = [];
+      // 規則的位址字面值、dst-nat 的 to-addresses 與展開的位址清單（完全靜態，同 decide）：清單項目的邊界也切開等價類，否則清單內外的位址會共用節點
+      m.firewallRules.forEach((r) => { if (r.family === 'ip') RULE_ADDR.forEach((k) => es.push(R.ofRule(r, k))); });
       // /routing rule 的位址條件也切開等價類：同一個區段的位址，查哪一張表的結果相同
-      (m.routingRules || []).forEach((r) => {
-        addRanges(rb, 'src-address', r.match['src-address']); addRanges(rb, 'dst-address', r.match['dst-address']);
-      });
+      (m.routingRules || []).forEach((r) => ROUTING_ADDR.forEach((k) => es.push(R.ofRoutingRule(r, k))));
+      const rb = new Set([0]); addBounds(rb, es);
       const pb = new Set(rb);
       prefixes4().forEach((p) => { pb.add(p.lo); pb.add(p.hi + 1); });
       // 代表位址另依 /ip service 的 available-from 切開（同一個網段內只有部分位址被接受時，兩邊各有代表）
-      afIndex().lists.forEach((x) => x.addresses.forEach((a) => addRanges(pb, 'src-address', a)));
+      addBounds(pb, afIndex().lists.map((x) => x.entry));
       ruleB = sortedArr(rb); repB = sortedArr(pb);
       E.ruleB = ruleB; E.repB = repB;
     };
@@ -431,7 +426,8 @@
         Q.ipServicesOf(d.key).forEach((sv) => {
           if (!sv.enabled || !sv.addresses.length) return;
           const id = sv.addresses.slice().sort().join(',');
-          if (!by.has(id)) by.set(id, { id, addresses: sv.addresses.slice(), nets: afNets(sv.addresses) });
+          // 內容相同的清單共用一筆；entry 是登錄表的 available-from（IPv4，同 reach-eval.js 的 serviceOf）
+          if (!by.has(id)) by.set(id, { id, entry: I.addrSets().service(d.key, sv.name, 'ip') });
           perDev.push([d.key, sv.port, id]);
         });
       });
@@ -464,7 +460,7 @@
       }
       return r;
     };
-    // 是否在清單內：inAvailableFrom（與 reach-eval.js 的 serviceOf 共用）
+    // 是否在清單內：登錄表的 set.has（與 reach-eval.js 的 serviceOf 同一份）
     const afSigMemo = new Map(); const afSigId = new Map();
     /** 來源 ip 在 rel 這些清單的內外組合的序號（0 是沒有清單；序號依遇到的順序，只當快取鍵用，不出現在結果裡）。 */
     const afSig = (ip, rel) => {
@@ -472,7 +468,7 @@
       const lv = level(afSigMemo, rel); let n = lv.get(ip);
       if (n === undefined) {
         const lists = afIndex().lists;
-        const sig = rel.map((i) => (inAvailableFrom(ip, lists[i].nets) ? '1' : '0')).join('');
+        const sig = rel.map((i) => (lists[i].entry.set.has(ip) ? '1' : '0')).join('');
         n = U.getOr(afSigId, sig, () => afSigId.size + 1);
         lv.set(ip, n);
       }

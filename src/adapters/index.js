@@ -29,6 +29,8 @@
     const byContent = list.filter((a) => a.detect(block.lines));
     return { adapters: byContent, how: byContent.length ? 'content' : 'none' };
   };
+  /** 區塊辨識出的 adapter 對應的資料類別（去重、排序）；收集失敗的區塊以此判斷哪些資料可能不完整（coverage 的 failures／incomplete 與模型共用）。 */
+  S.adapters.dataTypesOf = (block) => Array.from(new Set((block.adapters || []).map((id) => S.adapters[id].dataType))).sort();
 
   // RouterOS 對不存在的選單、語法錯誤或執行失敗的回應（bad command name、syntax error、expected end of command、
   // no such item、failure: …）。出現在輸出中代表指令可能沒有完整執行。只比對行首，值或註解裡的同樣字眼不算。

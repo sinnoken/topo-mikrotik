@@ -1,9 +1,9 @@
 {
  "schema": "ssot-patch/1",
  "baseline": {
-  "inputHash": "4252361534336fc1",
+  "inputHash": "ce1fd3f4e5e91bbe",
   "createdAt": "2026-01-01T00:00:00Z",
-  "version": "3.9.0"
+  "version": "3.11.0"
  },
  "devices": [
   {
@@ -53,7 +53,7 @@
    "evidence": [
     {
      "block": 83,
-     "line": 3834,
+     "line": 3868,
      "text": "/system ntp client servers add address=10.1.10.2",
      "file": "sample-bundle.txt"
     }
@@ -148,13 +148,13 @@
    "evidence": [
     {
      "block": 1,
-     "line": 136,
+     "line": 139,
      "text": "add action=accept chain=input dst-port=8291 in-interface=ether47 \\",
      "file": "sample-bundle.txt"
     },
     {
      "block": 1,
-     "line": 134,
+     "line": 137,
      "text": "add action=accept chain=input comment=\"winbox for vendor\" dst-port=8291 \\",
      "file": "sample-bundle.txt"
     }
@@ -203,7 +203,7 @@
    "evidence": [
     {
      "block": 15,
-     "line": 1022,
+     "line": 1052,
      "text": "/ip firewall filter add action=accept chain=input protocol=udp src-port=53",
      "file": "sample-bundle.txt"
     }

@@ -77,6 +77,33 @@ test('A10：同一選單內同一名稱在不同設備對應到不同 IP（名�
   assert.deepStrictEqual(msgs(cfgPair([al('MGMT', '10.0.10.0/24')], [al('MGMT', '10.0.10.0/24')]), 'A10'), []);
   assert.deepStrictEqual(msgs(cfgPair([al('MGMT', '10.0.10.0/24')], [al('OTHER', '10.0.20.0/24')]), 'A10'), []);
 });
+test('A10 大型 address-list：deviation 每組超過 100 個值時只存摘要（前 100 個、總數、指紋、只在部分組的值），引用 model.addressLists；訊息與 findingKey 不受影響', () => {
+  const al = (list, addr) => `/ip firewall address-list add address=${addr} list=${list}`;
+  const common = Array.from({ length: 150 }, (_, i) => al('block', `11.0.${i}.1`));
+  const s = cfgPair(common.concat([al('block', '12.0.0.1'), al('block', '12.0.0.2')]), common.concat([al('BLOCK', '13.0.0.1')]));
+  const f = s.findings.find((x) => x.id === 'A10');
+  assert.ok(/12\.0\.0\.1、12\.0\.0\.2 只在 SW_A/.test(f.message) && /13\.0\.0\.1 只在 SW_B/.test(f.message), f.message);
+  const [a, b] = f.deviation.groups;
+  assert.deepStrictEqual([a.devs, a.truncated, a.count, a.value.length, a.key.length, a.value[0]], [['SW_A'], true, 152, 100, 100, '11.0.0.1']);
+  assert.deepStrictEqual(a.only, { count: 2, value: ['12.0.0.1', '12.0.0.2'], key: ['12.0.0.1', '12.0.0.2'] });
+  assert.deepStrictEqual([b.count, b.only.value, 'list' in b], [151, ['13.0.0.1'], false], 'SW_B 的值來自 block 與 BLOCK 兩份清單，沒有單一份可引用');
+  assert.strictEqual(a.list, 'SW_A|ip|block', '只引用位址集合登錄表的 id（設備|位址族|名稱）');
+  const ref = S.query(s).addressSet(a.list);
+  assert.deepStrictEqual([ref.kind, ref.dev, ref.family, ref.static, ref.size], ['address-list', 'SW_A', 'ip', true, 151], 'Q.addressSet 查得到引用的清單（12.0.0.1 與 12.0.0.2 相鄰，合併成一段）');
+  assert.ok(Object.isFrozen(ref) && Object.isFrozen(ref.ranges));
+  assert.ok(s.model.addressLists.some((l) => l.dev + '|' + l.family + '|' + l.name === a.list), '引用的清單在 Snapshot 中');
+  assert.ok(/^[0-9a-f]{16}$/.test(a.hash) && a.hash !== b.hash);
+  const same = cfgPair(common.concat([al('block', '12.0.0.1')]), common.concat([al('block', '12.0.0.1'), al('block', '13.0.0.1')]));
+  const g = same.findings.find((x) => x.id === 'A10').deviation.groups;
+  const sortedKeys = same.model.addressLists.find((l) => l.dev === 'SW_A').entries.map((e) => e.address).sort().join('\n');
+  assert.strictEqual(g[0].hash, S.util.hash(sortedKeys), '指紋是排序後比對值的雜湊');
+  assert.deepStrictEqual([g[0].only.count, g[1].only.value], [0, ['13.0.0.1']], 'SW_A 的值 SW_B 都有');
+  // 小清單維持完整內容、沒有摘要欄位
+  const small = cfgPair([al('MGMT', '10.0.10.0/24')], [al('MGMT', '10.0.10.0/24'), al('MGMT', '10.0.99.0/24')]);
+  assert.deepStrictEqual(small.findings.find((x) => x.id === 'A10').deviation.groups.map((x) => Object.keys(x)), [['value', 'key', 'devs'], ['value', 'key', 'devs']]);
+  // findingKey 只看 id、實體與 facet
+  const Q = S.query(s); assert.strictEqual(Q.findingKey(f), Q.findingKey(Object.assign({}, f, { deviation: undefined })));
+});
 test('A11：同一選單內同一 IP 在不同設備的名稱完全不同；名稱有交集不列', () => {
   const s = cfgPair(['/ip dns static add address=10.0.0.5 name=nas.lan'], ['/ip dns static add address=10.0.0.5 name=storage.lan']);
   assert.deepStrictEqual(msgs(s, 'A11'), ['/ip dns static 10.0.0.5：SW_A「nas.lan」；SW_B「storage.lan」']);

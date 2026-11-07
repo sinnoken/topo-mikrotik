@@ -103,6 +103,46 @@ test('遞迴路由：gateway 是對端 loopback 時沿路由表解析；R01 只�
   assert.strictEqual(rs('10.96.0.1', pair)[0].status, 'loop', '兩條路由互相指向才是迴圈');
   const Q = S.query(s); const t = S.trace(Q, '10.254.0.1', '172.16.1.1');
   assert.ok(t.hops.some((h) => h.next.some((n) => n.dev === 'R_B' && /遞迴解析/.test(n.note || ''))), JSON.stringify(t.hops));
+  // 依路由視圖快取的版本（檢查與 S.trace.nextOwner 共用）：結果同直接解析、凍結，同一個 (R, dev, vrf, ip) 只解析一次
+  const R = S.trace.routingOf(Q);
+  const own = (x) => { const o = R.hopOwner('R_A', x, 'main'); return o ? o.dev : null; };
+  ['10.99.0.2', '10.77.0.2', '10.88.0.2', '10.254.0.2'].forEach((ip) => {
+    const c = S.check.resolveNextHopIn(R, 'R_A', ip, 'main');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(c)), S.check.resolveNextHop(R.routesOf('R_A', 'main'), ip, own), ip);
+    assert.ok(Object.isFrozen(c) && c.every((x) => Object.isFrozen(x) && Object.isFrozen(x.chain)), '快取的結果凍結');
+    assert.strictEqual(S.check.resolveNextHopIn(R, 'R_A', ip, null), c, 'vrf 省略（main）與 main 同一份');
+  });
+  assert.deepStrictEqual(S.check.resolveNextHopIn(R, 'R_A', '10.99.0.2', 'no-such-vrf').map((x) => x.status), ['unresolved'], '不在基準的 VRF 沒有路由表');
+  const no = S.trace.nextOwner(S.trace.routingOf(Q), 'R_A', '10.99.0.2', 'main');
+  assert.ok(no.status === 'recursive' && !Object.isFrozen(no.hits[0].chain), 'nextOwner 的 chain 是複本');
+});
+
+test('最長前綴查表 S.ip.longestPrefix：結果同逐筆 inNet 再取最長（同遮罩全取、順序不變、keep 排除），索引依陣列快取', () => {
+  // 重疊的 /0、/8、/16、/24、/32，主機位元沒清掉的前綴，同一網段多筆（ECMP）
+  const list = [];
+  for (let i = 0; i < 400; i++) {
+    const len = [0, 8, 16, 20, 24, 24, 32][i % 7];
+    list.push({ id: i, prefix: `10.${(i * 7) % 4}.${(i * 13) % 8}.${(i * 31) % 256}`, len, vrf: i % 3 ? 'main' : 'blue' });
+  }
+  const brute = (n, keep) => {
+    let best = -1; let out = [];
+    list.forEach((e) => {
+      if ((keep && !keep(e)) || !S.ip.inNet(S.ip.fromInt(n), e.prefix, e.len)) return;
+      if (e.len > best) { best = e.len; out = [e]; } else if (e.len === best) out.push(e);
+    });
+    return out.map((e) => e.id);
+  };
+  const keeps = [undefined, (e) => e.vrf === 'blue', (e) => e.id % 5 !== 0];
+  for (let k = 0; k < 600; k++) {
+    const n = S.ip.toInt(`10.${k % 5}.${(k * 3) % 9}.${(k * 37) % 256}`);
+    keeps.forEach((keep, j) => assert.deepStrictEqual(S.ip.longestPrefix(list, 'prefix', n, keep).map((e) => e.id), brute(n, keep), `${S.ip.fromInt(n)} keep#${j}`));
+  }
+  assert.deepStrictEqual(S.ip.longestPrefix([], 'prefix', 0), []);
+  const ix = S.ip.prefixIndex(list, 'prefix');
+  assert.ok(ix === S.ip.prefixIndex(list, 'prefix') && Object.isFrozen(ix) && ix !== S.ip.prefixIndex(list.slice(), 'prefix'), '同一個陣列與欄位只建一次索引');
+  const a = S.ip.longestPrefix(list, 'prefix', S.ip.toInt('10.0.0.0')); a.push('x');
+  assert.notStrictEqual(S.ip.longestPrefix(list, 'prefix', S.ip.toInt('10.0.0.0')).slice(-1)[0], 'x', '回傳新陣列，改它不影響索引');
+  assert.deepStrictEqual(S.ip.longestPrefix([{ net: '192.168.1.0', len: 24 }], 'net', S.ip.toInt('192.168.1.9')).length, 1, '直連網段用 net 欄位');
 });
 
 test('finding 穩定鍵：由 id 與排序後的 entities 組成，不受訊息、證據與 entities 順序影響；範例資料內不碰撞', () => {

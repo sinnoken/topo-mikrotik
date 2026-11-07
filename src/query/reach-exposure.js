@@ -25,24 +25,25 @@
     const NOT_EXTERNAL_SRC = new Set(['reserved', 'loopback', 'multicast']);
     const SPECIAL_SRC = (n) => NOT_EXTERNAL_SRC.has(IP.classify(IP.fromInt(n)));
     /** 一台設備的規則（src-address）、/ip service 的 available-from 與 /routing rule 的 src-address 的區段邊界（只依事實，每份基準算一次）。 */
-    let ruleBounds = null; const srcBounds = new Map();
-    const addBound = (list, text) => {
-      if (text === undefined) return;
-      const p = F.parseVal('src-address', F.splitNeg(text).body);
-      if (p.kind === 'ranges' && p.bits === 32) p.items.forEach(([x, y]) => { list.push(Number(x), Number(y) + 1); });
-    };
-    function srcBoundsOf(dev) {
-      if (srcBounds.has(dev)) return srcBounds.get(dev);
-      if (!ruleBounds) {
-        ruleBounds = new Map();
-        m.firewallRules.forEach((r) => { if (r.family === 'ip') addBound(U.getOr(ruleBounds, r.dev, () => []), r.match['src-address']); });
-        (m.routingRules || []).forEach((r) => addBound(U.getOr(ruleBounds, r.dev, () => []), r.match['src-address']));
-      }
-      const list = (ruleBounds.get(dev) || []).slice();
-      Q.ipServicesOf(dev).forEach((sv) => sv.addresses.forEach((a) => addBound(list, a)));
-      srcBounds.set(dev, list);
-      return list;
-    }
+    /*
+     * 外部來源的區段邊界的來源（位址集合的登錄表 S.infer.addrSets 的筆；邊界一律由 S.infer.addrBounds 產生，同 reach.js 的等價類）：
+     * 這台設備 family 的規則的 src-address 與 src-address-list（完全靜態的清單；可能有動態來源的不切分）、這個位址族的 /ip service available-from，
+     * IPv4 另加 /routing rule 的 src-address。只依事實，每台設備、每個位址族算一次。
+     */
+    let byDevIx = null; const srcEntryMemo = new Map();
+    const byDev = () => byDevIx || (byDevIx = {
+      rules: m.firewallRules.reduce((o, r) => { U.getOr(o, r.dev, () => []).push(r); return o; }, new Map()),
+      routing: (m.routingRules || []).reduce((o, r) => { U.getOr(o, r.dev, () => []).push(r); return o; }, new Map()),
+    });
+    const srcEntries = (dev, family) => U.getOr(srcEntryMemo, dev + '|' + family, () => {
+      const R = I.addrSets(); const es = [];
+      (byDev().rules.get(dev) || []).forEach((r) => { if (r.family === family) es.push(R.ofRule(r, 'src-address'), R.ofRule(r, 'src-address-list')); });
+      if (family === 'ip') (byDev().routing.get(dev) || []).forEach((r) => es.push(R.ofRoutingRule(r, 'src-address')));
+      Q.ipServicesOf(dev).forEach((sv) => es.push(R.service(dev, sv.name, family)));
+      return es;
+    });
+    const srcBounds = new Map();
+    const srcBoundsOf = (dev) => U.getOr(srcBounds, dev, () => S.infer.addrBounds(srcEntries(dev, 'ip'), 32).map(Number));
     /**
      * 外部來源的代表位址：devs（入口設備；經其他入口連到設備本身時再加上目的設備）的規則（src-address）、/ip service 的 available-from 與 /routing rule 的 src-address 切出的區段，
      * 每個區段取一個不在基準網段、也不屬於任何設備的位址。第一個是矩陣外部 zone 的代表位址所在的區段（用同一個位址）。超過 max 時截斷。
@@ -121,14 +122,7 @@
     const GUA_LO = GUA[0]; const GUA_HI = GUA[1];
     const EXT6_CLASSES = new Set(['public', 'documentation']);
     const range6 = (text) => { const p = F.parseVal('dst-address', String(text)); return p.kind === 'ranges' && p.bits === 128 && !p.neg ? p.items : null; };
-    /** BigInt → IPv6 文字（RFC 5952：小寫、省略前導 0、最長的連續 0（至少兩組）寫成 ::）。 */
-    const fmt6 = (n) => {
-      const g = []; for (let i = 7; i >= 0; i--) g.push(Number((n >> BigInt(i * 16)) & 0xffffn));
-      let bs = -1; let bl = 0;
-      for (let i = 0; i < 8;) { if (g[i] !== 0) { i++; continue; } let j = i; while (j < 8 && g[j] === 0) j++; if (j - i >= 2 && j - i > bl) { bs = i; bl = j - i; } i = j; }
-      const hex = g.map((x) => x.toString(16));
-      return bs < 0 ? hex.join(':') : hex.slice(0, bs).join(':') + '::' + hex.slice(bs + bl).join(':');
-    };
+    const fmt6 = IP.v6FromBig;
     const cmpBig = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
     const linkLocal6 = (n) => IP.classify(fmt6(n)) === 'link-local'; // 只在同一個鏈路有效，不是從 WAN 進得來的目的
     /** 基準中的 IPv6 位址（ipAddresses 的 family 6，main VRF、不含鄰居宣告的）：[{ dev, ep, n, ip, len, lo, hi, prefix, src }]。 */
@@ -152,13 +146,7 @@
     /** IPv6 的外部來源：這台設備 IPv6 規則的 src-address 與 /ip service 的 available-from 切出的區段（同 extSources），每段取一個全球單播、不在基準網段的位址。 */
     function extSources6(dev, max) {
       const b = new Set([0n, 1n << 128n]);
-      const add = (text) => {
-        if (text === undefined) return;
-        const p = F.parseVal('src-address', F.splitNeg(text).body);
-        if (p.kind === 'ranges' && p.bits === 128) p.items.forEach(([x, y]) => { b.add(x); b.add(y + 1n); });
-      };
-      m.firewallRules.forEach((r) => { if (r.family === 'ipv6' && r.dev === dev) add(r.match['src-address']); });
-      Q.ipServicesOf(dev).forEach((sv) => sv.addresses.forEach(add));
+      S.infer.addrBounds(srcEntries(dev, 'ipv6'), 128).forEach((x) => b.add(x));
       const arr = Array.from(b).sort(cmpBig);
       const nets = v6Facts().nets;
       const outside = (n) => EXT6_CLASSES.has(IP.classify(fmt6(n))) && !inNets6(n, nets);
@@ -178,11 +166,10 @@
     /** LAN 側網段內的目的：這台設備 IPv6 規則的 dst-address 在網段內切出的區段，每段取一個不屬於設備的位址（略過網段的第一個位址：subnet-router anycast）。 */
     function targets6(dev, net) {
       const b = new Set([net.lo, net.hi + 1n]);
-      m.firewallRules.forEach((r) => {
-        if (r.family !== 'ipv6' || r.dev !== dev || r.table !== 'filter' || r.match['dst-address'] === undefined) return;
-        const p = F.parseVal('dst-address', F.splitNeg(r.match['dst-address']).body);
-        if (p.kind === 'ranges' && p.bits === 128) p.items.forEach(([x, y]) => { if (x > net.lo && x <= net.hi) b.add(x); if (y >= net.lo && y < net.hi) b.add(y + 1n); });
-      });
+      // 邊界同 extSources6：登錄表的 dst-address 字面值（S.infer.addrBounds），只取網段內的
+      const R = I.addrSets();
+      const es = (byDev().rules.get(dev) || []).filter((r) => r.family === 'ipv6' && r.table === 'filter').map((r) => R.ofRule(r, 'dst-address'));
+      S.infer.addrBounds(es, 128).forEach((x) => { if (x > net.lo && x <= net.hi) b.add(x); });
       const arr = Array.from(b).sort(cmpBig); const owned = v6Facts().owned; const out = [];
       for (let i = 0; i + 1 < arr.length; i++) {
         const lo = arr[i]; const hi = arr[i + 1] - 1n;
@@ -218,12 +205,8 @@
       if (chain === 'input' && svc.proto === 'tcp' && svc.port != null) {
         const sv = Q.ipServicesOf(dev).find((x) => x.port === svc.port);
         if (sv && !sv.enabled) return out('deny', [], d.rule);
-        if (sv && sv.addresses.length) {
-          const rs = sv.addresses.map((a) => F.parseVal('src-address', a));
-          if (rs.some((p) => p.kind === 'ranges' && p.bits === 128 && p.items.some(([a, b]) => src >= a && src <= b))) return out('allow', reasons, d.rule);
-          if (rs.every((p) => p.kind === 'ranges')) return out('deny', [], d.rule);
-          return out('unknown', [reason('service-unknown', dev, `${name(dev)} 的 ${sv.name} 服務的 available-from（${sv.addresses.join('、')}）無法解析，是否接受 IPv6 來源無法判斷`)], d.rule);
-        }
+        // available-from：登錄表的 set（IPv4 的 serviceOf 與 F07 用同一份；不合法的項目不接受任何來源）
+        if (sv && sv.addresses.length) return I.addrSets().service(dev, sv.name, 'ipv6').set.has(src) ? out('allow', reasons, d.rule) : out('deny', [], d.rule);
       }
       return out('allow', reasons, d.rule);
     }

@@ -355,12 +355,12 @@
         ['允許來源', h('span', { class: 'mono' }, s.addresses.length ? s.addresses.join(' ') : '不限')], ['來源', svcSource(App, s)]])),
     ]);
   }
-  /** 設備摘要（沒有選列時）：這台設備列在防火牆畫面的檢查結果、WAN／LAN 判斷（推論）與全部的修正 */
+  /** 設備摘要（沒有選列時）：這台設備列在防火牆視窗的檢查結果、WAN／LAN 判斷（推論）與全部的修正 */
   function overview(App, t) {
     const Q = App.Q; const { section, kv, epLink, findingsBlock } = P(); const dev = t.dev;
     if (!Q.getDevice(dev)) return h('div', { class: 'detail fw-overview' }, [h('h2', null, '基準中沒有這台設備'), t.notice ? h('p', { class: 'diffA' }, t.notice) : null]);
     const zone = Q.firewallZone(dev); const zs = zone && zoneStatus(zone.status);
-    // 這台設備的檢查結果中，列在防火牆畫面的：實體指向防火牆規則或服務的（不限類別，例如路由類的 R09 指向 dst-nat 規則），
+    // 這台設備的檢查結果中，列在防火牆視窗的：實體指向防火牆規則或服務的（不限類別，例如路由類的 R09 指向 dst-nat 規則），
     // 加上防火牆類別、只指向設備的（例如 F08 沒有 WAN 判斷）
     const fwFindings = Q.findingsFor('device', dev).filter((f) => f.entities.some((e) => e.type === 'rule' || e.type === 'service')
       || (S.query.rule(f.id) || {}).cat === '防火牆');

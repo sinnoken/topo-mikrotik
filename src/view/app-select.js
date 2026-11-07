@@ -166,7 +166,7 @@
   };
   App.selectFinding = function (idx) {
     const f = App.Q.finding(idx);
-    // 指向防火牆規則或服務的檢查結果，定位到該設備防火牆畫面的那一列（第一個實體通常是設備）
+    // 指向防火牆規則或服務的檢查結果，定位到該設備防火牆視窗的那一列（第一個實體通常是設備）
     const e = f.entities.find((x) => x.type === 'rule' || x.type === 'service') || f.entities[0];
     const sel0 = !e ? null : f.id === 'A03' ? { type: 'endpoints', dev: e.key } : e.type === 'ip' ? V.ipSel(e.key) : { type: e.type, key: e.key };
     // finding：詳情在檢查結果中標出這一筆、排第一並捲過去（設備常有二三十筆，R13 這類多實體的檢查會埋在中間）

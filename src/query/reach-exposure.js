@@ -14,7 +14,7 @@
   /** E：reach.js 的 base 建立的 engine 物件；加上 exposure、exposureSteps。 */
   S.reach._.exposurePart = function exposurePart(E) {
     const { Q, I, m, F, name, ownerOf, intOf, ownerDev, longest, devInfo, netDev, ref, where, reason, bounds, externalRep, repInRange, single, ownIps, l4Entries, ipv6Devices,
-      evaluate, pathsOf, rowLayers, deniedByOf, unsafeOfSum, unsafeReason, dedupeReasons, zones, zoneOf, repsOf, virtualOf, svcClasses, devClasses, mgmtPorts, deviceServices } = E;
+      evaluate, pathsOf, rowLayers, deniedByOf, reachesLocal, unsafeOfSum, unsafeReason, dedupeReasons, zones, zoneOf, repsOf, virtualOf, svcClasses, devClasses, mgmtPorts, deviceServices } = E;
 
     // ---- 暴露清單（由外而內）：從 WAN 進來，連得到哪些位址、哪些服務（推論，查詢時計算，ADR-014）
     const exposureCache = new Map();
@@ -310,8 +310,11 @@
         : { status: 'no-ipv6-address', message: `IPv6 未判斷：WAN 入口設備${noAddr.length ? ` ${name6(noAddr)} ` : ''}沒有 IPv6 位址的資料（/ipv6 address）。`, devices: used, evaluated, missing };
       return res;
     }
-    /** 預設的判斷次數上限（入口 × 外部區段 × 目的 × 服務）；超過時其餘組合不算，結果標 truncated。 */
-    const EXPOSURE_MAX_EVALS = 400000;
+    /**
+     * 預設的判斷次數上限（入口 × 外部區段 × 目的 × 服務等價類）；超過時其餘組合不算，結果標 truncated。
+     * 約 1000 台（tests/large.js）實測約 8 萬次（同類的拒絕共用之後；之前逐一判斷約 32 萬次），上限約為它的 2.5 倍。
+     */
+    const EXPOSURE_MAX_EVALS = 200000;
     /**
      * 暴露清單的分段計算（generator，yield { stage: 'prepare'|'evaluate'|'summary', done, total }）；回傳值與 exposure(opts) 相同，並寫進快取。
      * opts：Q.zones 的參數，另加 maxEvaluations（判斷次數上限）、maxSources（外部區段數上限）。
@@ -396,76 +399,160 @@
         jobs.push({ kind: 'via', w, ip: t.ip, t });
       }));
       const classes = svcClasses(services);
-      const classMemo = new Map();
+      const classMemo = new Map(); const subsMemo = new Map();
       const classesOf = (dev) => U.getOr(classMemo, dev, () => devClasses(classes, services, dev));
-      // 進度的總數：via 以每個等價類判斷一次估計（經別台入口設備時只算代表位址；不是拒絕時另外判斷的，總數隨之增加）
-      let total = jobs.reduce((n, j) => n + (j.kind === 'via' ? (j.w.dev === j.t.dev ? srcsFor(j.w.dev, j.t.dev).list.length : 1) * classesOf(j.t.dev).length : srcsOf.get(j.w.dev).list.length * services.length), 0);
+      // via：每個 svcClasses 的類一組 [子類]（子類依目的設備的 /ip service 分開，同矩陣的 classesFor）
+      const subsOf = (dev) => U.getOr(subsMemo, dev, () => classes.map((sis) => devClasses([sis], services, dev)));
+      // 進度的總數：每個等價類判斷一次估計（via 經別台入口設備時只算代表位址；不能共用而另外判斷的，總數隨之增加）
+      let total = jobs.reduce((n, j) => n + (j.kind === 'via' ? (j.w.dev === j.t.dev ? srcsFor(j.w.dev, j.t.dev).list.length : 1) * subsOf(j.t.dev).length
+        : srcsOf.get(j.w.dev).list.length * (j.kind === 'edge' ? classesOf(j.w.dev).length : classes.length)), 0);
       yield { stage: 'prepare', done: 1, total: 1 };
       // 每個（區段, 目的設備, 目的, 服務）一個組合，跨入口與外部區段合併
       const combos = new Map();
-      const comboOf = (sec, dev, vrf, ip, svc, extra) => U.getOr(combos, [sec, dev, vrf, ip, svc.id].join('\u0000'), () => Object.assign({ sec, dev, vrf, ip, svc, evals: [] }, extra));
+      const comboKey = (sec, dev, vrf, ip, svc) => [sec, dev, vrf, ip, svc.id].join('\u0000');
+      const comboOf = (sec, dev, vrf, ip, svc, extra) => U.getOr(combos, comboKey(sec, dev, vrf, ip, svc), () => Object.assign({ sec, dev, vrf, ip, svc, evals: [] }, extra));
       let done = 0; let truncated = false;
       yield { stage: 'evaluate', done, total };
       const due = slicer();
+      // 一次性的節點快取（evaluate 的 once）：暴露清單的節點鍵（實際來源位址）幾乎不重複，算完就丟，不留在 engine
+      const once = {};
       /** 經入口 w 的一次判斷（每一列的那一個判斷都是它，與 Q.reach(src, ip, { proto, port, entry }) 相同）。 */
       const evalOne = (a, ip, svc, w, srcs) => {
-        const { b, sum } = evaluate(a.ip, ip, svc, 'exact', null, w.ep, w.vrf);
+        const { b, sum } = evaluate(a.ip, ip, svc, 'exact', null, w.ep, w.vrf, once);
         const reasons = sum.verdict === 'unknown' ? U.uniq(sum.reasons.map((x) => x.code)) : [];
         return { src: a, ep: w.ep, edev: w.dev, srcs, verdict: sum.verdict, sum, b, reasons };
       };
+      const share = (ev) => Object.assign({}, ev, { shared: true });
       // 設備本身的目的只算真的送到那台設備那個位址的（同矩陣的 record：dst-nat 改寫、或重疊位址在入口的 VRF 送達別處時不算）
       const reachesT = (sum, t, wv) => !sum.final || (sum.final.dst === t.ip && (sum.final.vrf || wv) === t.vrf);
-      outer: for (const j of jobs) {
+      /**
+       * edge／routed：類 g 的第一個 service 被拒絕時，哪些 service 可以共用這個判斷（回傳 [[service 索引]]，第一組含 g[0]，每組共用組內第一個的拒絕）。
+       * 同類對所有規則（含 dst-nat 的埠）的條件結果相同，只差設備自己的 /ip service（reachesLocal，同矩陣）：
+       *   沒有走到「送給設備自己」→ 整類共用；走到了且沒有 NAT → 依那台設備（目的位址的擁有者）的 /ip service 再分（devClasses，同矩陣對落到網路設備的目的）；
+       *   走到了又有 NAT（改寫後的埠可能依服務不同）→ 逐一判斷。
+       */
+      const denyGroups = (g, sum, wv) => {
+        if (g.length < 2 || !reachesLocal(sum)) return [g];
+        const fin = sum.final;
+        const od = !sum.nat && fin && fin.dst ? ownerDev(fin.dst, fin.vrf || wv) : null;
+        return od && netDev(od) ? devClasses([g], services, od) : g.map((si) => [si]);
+      };
+      // 判斷次數用完時，還沒判斷到的（目的, 服務）：jb 之後的目的全部、jb 這個目的裡 touched 以外的服務（notEvaluated 用）
+      let jb = jobs.length; let touched = null;
+      const edgeSec = (j, ev) => {
+        const wv = j.w.vrf;
+        const natUnknown = ev.reasons.some((c) => NAT_UNKNOWN.has(c));
+        const isOwn = ownerDev(j.ip, wv) === j.w.dev;
+        const isFront = front.has(devVrf(j.w.dev, wv) + '|' + j.ip);
+        const selfOk = wv === K.MAIN_VRF;
+        if ((ev.sum.nat || natUnknown) && isFront) return ['dnat', null];
+        if (ev.sum.nat || natUnknown) return selfOk ? ['self', { natted: true }] : null;
+        if (isOwn) return selfOk ? ['self', null] : null;
+        return ['dnat', { verdict: 'deny', forced: true }]; // dst-nat 寫明的位址、這個服務沒有被改寫：不算進得來
+      };
+      /** edge／routed 的一個判斷記進它的組合（ev 不修改，另建一份）。 */
+      const emit = (j, si, ev) => {
+        touched.add(si);
+        const svc = services[si];
+        if (j.kind === 'edge') {
+          const x = edgeSec(j, ev);
+          if (x) comboOf(x[0], j.w.dev, j.w.vrf, j.ip, svc, {}).evals.push(x[1] ? Object.assign({}, ev, x[1]) : ev);
+        } else comboOf('routed', j.w.dev, j.w.vrf, j.ip, svc, { rep: j.rep }).evals.push(ev.sum.nat || ev.reasons.some((c) => NAT_UNKNOWN.has(c)) ? Object.assign({}, ev, { natted: true }) : ev);
+      };
+      outer: for (let ji = 0; ji < jobs.length; ji++) {
+        const j = jobs[ji];
+        jb = ji; touched = new Set();
         if (j.kind === 'via') {
           const srcs = srcsFor(j.w.dev, j.t.dev);
           // 外部區段：目的就是入口設備時逐一判斷；經別台入口設備時先以矩陣的代表位址（primary）判斷（同矩陣只用代表位址），不是拒絕才判斷其他區段（允許的列與 Q.reach 相同、allowedFrom 完整）
           const cross = j.w.dev !== j.t.dev;
           const prim = srcs.list.find((a) => a.primary) || srcs.list[0];
           const order = cross ? [prim].concat(srcs.list.filter((a) => a !== prim)) : srcs.list;
-          for (const g of classesOf(j.t.dev)) {
-            let open = !cross;
-            for (const a of order) {
-              if (!open && a !== prim) break;
-              if (done >= maxEvals) { truncated = true; break outer; }
-              done++; if (a !== prim && cross) total++;
-              const ev0 = evalOne(a, j.ip, services[g[0]], j.w, srcs);
-              if (!reachesT(ev0.sum, j.t, j.w.vrf)) continue;
-              if (a === prim && ev0.verdict !== 'deny') open = true;
-              for (const si of g) {
-                let ev = ev0;
-                if (si !== g[0]) {
-                  if (ev0.verdict === 'deny') ev = Object.assign({}, ev0, { shared: true }); // 同類的 service 結果相同（矩陣的等價類）：拒絕不再逐一判斷，也不列出
-                  else { if (done >= maxEvals) { truncated = true; break outer; } done++; total++; ev = evalOne(a, j.ip, services[si], j.w, srcs); if (!reachesT(ev.sum, j.t, j.w.vrf)) continue; }
+          for (const subs of subsOf(j.t.dev)) {
+            // 同一類有多個子類（只差目的設備的 /ip service）：第一個子類的判斷沒有走到「送給設備自己」、也沒有 NAT，而且是拒絕或沒有送到這個位址時，
+            // 其他子類的結果相同（同矩陣的 reachesLocal 共用），整類共用；否則子類各自判斷（列與 Q.reach 相同）
+            const shareAt = new Map();
+            for (let k = 0; k < subs.length; k++) {
+              const g = subs[k];
+              let open = !cross;
+              for (const a of order) {
+                if (!open && a !== prim) break;
+                let ev0 = k > 0 ? shareAt.get(a) : undefined;
+                if (ev0) ev0 = share(ev0);
+                else {
+                  if (done >= maxEvals) { truncated = true; break outer; }
+                  done++; if (k > 0 || (a !== prim && cross)) total++;
+                  ev0 = evalOne(a, j.ip, services[g[0]], j.w, srcs);
+                  const s0 = ev0.sum;
+                  if (k === 0 && subs.length > 1 && !s0.nat && s0.final && s0.final.port === services[g[0]].port && !reachesLocal(s0) && (ev0.verdict === 'deny' || !reachesT(s0, j.t, j.w.vrf))) shareAt.set(a, ev0);
                 }
-                comboOf('self', j.t.dev, j.t.vrf, j.ip, services[si], {}).evals.push(ev);
+                g.forEach((si) => touched.add(si));
+                if (!reachesT(ev0.sum, j.t, j.w.vrf)) continue;
+                if (a === prim && ev0.verdict !== 'deny') open = true;
+                for (const si of g) {
+                  let ev = ev0;
+                  if (si !== g[0]) {
+                    if (ev0.verdict === 'deny') ev = share(ev0); // 同類的 service 結果相同（矩陣的等價類）：拒絕不再逐一判斷，也不列出
+                    else { if (done >= maxEvals) { truncated = true; break outer; } done++; total++; ev = evalOne(a, j.ip, services[si], j.w, srcs); if (!reachesT(ev.sum, j.t, j.w.vrf)) continue; }
+                  }
+                  comboOf('self', j.t.dev, j.t.vrf, j.ip, services[si], {}).evals.push(ev);
+                }
+                if (due() && done < total) yield { stage: 'evaluate', done, total };
               }
-              if (due() && done < total) yield { stage: 'evaluate', done, total };
             }
           }
           continue;
         }
-        for (const svc of services) {
-          for (const a of srcsOf.get(j.w.dev).list) {
+        // edge（目的是入口設備自己的位址或 dst-nat 寫明的位址）用入口設備的 devClasses，routed 用 svcClasses：
+        // 類的第一個 service 被拒絕時依 denyGroups 共用（拒絕只計數、不列出）；不是拒絕時同類逐一判斷（列與 Q.reach 相同）
+        const srcs = srcsOf.get(j.w.dev);
+        for (const g of (j.kind === 'edge' ? classesOf(j.w.dev) : classes)) {
+          for (const a of srcs.list) {
             if (done >= maxEvals) { truncated = true; break outer; }
             done++;
-            const wv = j.w.vrf;
-            const ev = evalOne(a, j.ip, svc, j.w, srcsOf.get(j.w.dev));
-            const { sum, reasons } = ev;
-            if (j.kind === 'edge') {
-              const natUnknown = reasons.some((c) => NAT_UNKNOWN.has(c));
-              const isOwn = ownerDev(j.ip, wv) === j.w.dev;
-              const isFront = front.has(devVrf(j.w.dev, wv) + '|' + j.ip);
-              const selfOk = wv === K.MAIN_VRF;
-              if ((sum.nat || natUnknown) && isFront) comboOf('dnat', j.w.dev, wv, j.ip, svc, {}).evals.push(ev);
-              else if (sum.nat || natUnknown) { if (selfOk) comboOf('self', j.w.dev, wv, j.ip, svc, {}).evals.push(Object.assign(ev, { natted: true })); }
-              else if (isOwn) { if (selfOk) comboOf('self', j.w.dev, wv, j.ip, svc, {}).evals.push(ev); }
-              else comboOf('dnat', j.w.dev, wv, j.ip, svc, {}).evals.push(Object.assign(ev, { verdict: 'deny', forced: true })); // dst-nat 寫明的位址、這個服務沒有被改寫：不算進得來
-            } else comboOf('routed', j.w.dev, j.w.vrf, j.ip, svc, { rep: j.rep }).evals.push(sum.nat || ev.reasons.some((c) => NAT_UNKNOWN.has(c)) ? Object.assign(ev, { natted: true }) : ev);
+            const ev0 = evalOne(a, j.ip, services[g[0]], j.w, srcs);
+            emit(j, g[0], ev0);
+            if (g.length > 1) {
+              const groups = ev0.verdict === 'deny' ? denyGroups(g, ev0.sum, j.w.vrf) : g.map((si) => [si]);
+              for (const h of groups) {
+                let hev = h[0] === g[0] ? ev0 : null;
+                for (const si of h) {
+                  if (si === g[0]) continue;
+                  if (hev && hev.verdict === 'deny') { emit(j, si, share(hev)); continue; }
+                  if (done >= maxEvals) { truncated = true; break outer; }
+                  done++; total++;
+                  const ev = evalOne(a, j.ip, services[si], j.w, srcs);
+                  emit(j, si, ev);
+                  if (!hev) hev = ev;
+                }
+              }
+            }
             if (due() && done < total) yield { stage: 'evaluate', done, total };
           }
         }
       }
-      yield { stage: 'summary', done, total };
+      // 判斷次數用完：沒有判斷到的（目的, 服務）組合另計 notEvaluated（同 IPv6），不算候選，也不算拒絕。
+      // 這些組合沒有判斷結果，區段依目的推估：via 與入口設備自己在 main 的位址算 self、routed 算 routed，其餘（dst-nat 寫明的位址、非 main 的入口位址）算 dnat
+      const notEval = new Map();
+      if (truncated) {
+        for (let ji = jb; ji < jobs.length; ji++) {
+          const j = jobs[ji];
+          services.forEach((svc, si) => {
+            if (ji === jb && touched.has(si)) return;
+            let k;
+            if (j.kind === 'via') k = comboKey('self', j.t.dev, j.t.vrf, j.ip, svc);
+            else if (j.kind === 'routed') k = comboKey('routed', j.w.dev, j.w.vrf, j.ip, svc);
+            else {
+              const isOwn = ownerDev(j.ip, j.w.vrf) === j.w.dev;
+              const sec = isOwn && j.w.vrf === K.MAIN_VRF ? 'self' : !isOwn || front.has(devVrf(j.w.dev, j.w.vrf) + '|' + j.ip) ? 'dnat' : null;
+              if (!sec) return;
+              k = comboKey(sec, j.w.dev, j.w.vrf, j.ip, svc);
+            }
+            if (!combos.has(k)) notEval.set(k, k.slice(0, k.indexOf('\u0000')));
+          });
+        }
+      }
+      yield { stage: 'summary', done: 0, total: combos.size };
       const secs = { self: emptySec(), dnat: emptySec(), routed: emptySec() };
       const deniedBy = { self: emptyDenied(), dnat: emptyDenied(), routed: emptyDenied() };
       const fmt = (ip, pt) => ip + (pt != null ? ':' + pt : '');
@@ -481,11 +568,16 @@
         const ps = pathsOf(e.b).paths;
         return ps.length > 0 && ps.every((p) => p.route.code === 'egress-wan');
       };
-      combos.forEach((c) => {
+      notEval.forEach((sec) => { secs[sec].counts.notEvaluated++; });
+      // 整理結果：1000 台時組合有數萬個，分段讓出（同判斷）
+      let sDone = 0;
+      for (const c of combos.values()) {
+        sDone++;
+        if (due() && sDone < combos.size) yield { stage: 'summary', done: sDone, total: combos.size };
         const sec = secs[c.sec]; sec.counts.candidates++;
         // 經 dst-nat 改寫的組合（不是這一段的路徑）：只計數，結果在 dnat 段以入口位址列出
         const evs = c.evals.filter((e) => !e.natted);
-        if (!evs.length) { sec.counts.natted++; return; }
+        if (!evs.length) { sec.counts.natted++; continue; }
         // dst-nat 改寫後的目的是私有位址、每條路徑都經對外介面送回外部（route.code egress-wan）：連不到基準內，不是暴露，算路由沒到（同檢查的 R09，checks.js 的 dnatTarget 的 external）
         if (c.sec === 'dnat') c.evals = evs.map((e) => (e.verdict !== 'deny' && !e.forced && egressBack(e) ? Object.assign({}, e, { verdict: 'deny', egressBack: true }) : e));
         else c.evals = evs;
@@ -495,7 +587,7 @@
         if (verdict === 'deny') {
           const real = c.evals.filter((e) => !e.forced);
           deniedBy[c.sec][!real.length ? 'notNatted' : real.every((e) => e.egressBack || deniedByOf(e.sum) === 'noRoute') ? 'noRoute' : 'filter']++;
-          return;
+          continue;
         }
         const hit = c.evals.filter((e) => e.verdict === verdict);
         // 列的那一個判斷：目的設備自己的入口優先（via 為 null），其次矩陣的代表位址所在的外部區段，再依判斷的順序（入口、外部區段）
@@ -541,7 +633,7 @@
           if (c.sec === 'routed') row.subnet = c.rep.subnet;
         }
         sec.rows.push(row);
-      });
+      }
       // IPv6（只看邊界路由器）：列併進 self／routed（family 'ipv6'），判斷次數與 IPv4 共用上限
       // IPv6 不分 VRF（只看 main 的入口）
       const v6 = exposure6(entries.filter((w) => w.vrf === K.MAIN_VRF), services, maxSrc, Math.max(0, maxEvals - done));

@@ -8,6 +8,11 @@ const { S, build, count, gen, test } = require('./lib.js');
  * 判斷 201,522 次（120 個代表位址＋81 個外部入口 × 362 個目的 × service 子類；設備本身的子類在走不到 /ip service 時共用判斷）。上限約加 15%。
  */
 const MATRIX_MAX = { records: 1000000, evaluate: 232000 };
+/**
+ * 同一份資料的暴露清單（Q.exposure）判斷次數上限（與機器無關）。r29 實測 80,080 次（81 個 WAN 入口；edge 2,880、routed 25,760、
+ * 經別台入口連到設備本身 51,440；service 依等價類，類的第一個被拒絕時同類共用）。r28 逐一判斷時 317,600 次。上限約加 15%。
+ */
+const EXPOSURE_MAX = { evaluate: 92000 };
 
 module.exports = function registerLarge(LARGE_MAX_MS) {
   test('壓力：約 1000 台設備在時間內完成，且乾淨網路沒有誤報', () => {
@@ -96,16 +101,18 @@ module.exports = function registerLarge(LARGE_MAX_MS) {
     assert.ok(segs.length > 10, `只有 ${segs.length} 段`);
   });
   test('壓力：約 1000 台的暴露清單（Q.exposure）在時間內完成，且乾淨網路從 WAN 直接路由進不了內部', () => {
-    // 另起一個測試、從頭算（新的 Q，沒有矩陣的快取）：放在上一個測試裡時，矩陣與分段量測的快取加上暴露清單會超過 Node 預設的 heap 上限
-    // 上限預設 3600 ms（SSOT_LARGE_MAX_MS × 0.18，CI 較大時跟著放寬）：本機 80 個 WAN 入口、約 22 萬次判斷，
-    // 從頭算約 0.7–1.3 s、碰上 GC 時最慢 1.8 s；上限約為一般情況的 3 倍、最慢一次的 2 倍
+    // 另起一個測試、從頭算（新的 Q，沒有矩陣的快取）：矩陣與分段量測的快取已經很大，暴露清單另算一份比較能看出它自己的時間
+    // （暴露清單的節點快取算完就丟，r29 起算完後保留的 heap 從約 625 MB 降到約 280 MB）。
+    // 上限預設 3600 ms（SSOT_LARGE_MAX_MS × 0.18，CI 較大時跟著放寬）：本機 81 個 WAN 入口、判斷次數見 EXPOSURE_MAX，
+    // 從頭算約 0.8 s（r28 逐一判斷約 32 萬次時 1.2–1.6 s）
     const s = build(gen(['--sites', '40', '--access', '24']));
     const Q = S.query(s);
     const time = (fn) => { const t0 = Date.now(); const r = fn(); return [r, Date.now() - t0]; };
     const [ex, eMs] = time(() => Q.exposure());
     console.log(`      exposure ${eMs} ms（${ex.wan.entries.length} 個 WAN 入口、${ex.limits.evaluations} 次判斷；允許 本身 ${ex.self.counts.allow}、dst-nat ${ex.dnat.counts.allow}、路由 ${ex.routed.counts.allow}）`);
     assert.deepStrictEqual([ex.status, ex.limits.truncated], ['ok', false]);
-    assert.ok(ex.wan.entries.length >= 80 && ex.limits.evaluations > 100000, `判斷次數 ${ex.limits.evaluations}`);
+    assert.ok(ex.wan.entries.length >= 80, `WAN 入口 ${ex.wan.entries.length} 個`);
+    assert.ok(ex.limits.evaluations > 0 && ex.limits.evaluations <= EXPOSURE_MAX.evaluate, `暴露清單判斷 ${ex.limits.evaluations} 次，超過 ${EXPOSURE_MAX.evaluate}`);
     assert.strictEqual(ex.routed.counts.allow + ex.routed.counts.unknown, 0, '乾淨網路從 WAN 直接路由進不了內部');
     assert.ok(eMs < LARGE_MAX_MS * 0.18, `exposure 耗時 ${eMs} ms，超過 ${Math.round(LARGE_MAX_MS * 0.18)} ms（SSOT_LARGE_MAX_MS × 0.18）`);
   });

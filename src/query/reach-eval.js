@@ -477,10 +477,16 @@
     // 每個（mode, skip）一份 context 重複使用（同 S.trace.routeFrom）：一次展開結束時 stack 一定是空的；
     // 展開中丟出例外時 stack 可能留著，下一次改建新的
     const ctxMemo = new Map();
-    function evaluate(src, dst, svc, mode, skip, entry, vrf) {
+    /**
+     * once：一次性的節點快取（呼叫端給一個空物件，evaluate 在上面建自己的 memo 與 context；呼叫端丟掉它就釋放）。
+     * 暴露清單用：它的節點鍵（實際來源位址 × 目的 × service）幾乎不重複，留在 engine 的 nodeMemo 只佔記憶體。
+     * 沒給時用 engine 的 nodeMemo（Q.reach、矩陣、規則影響），行為不變。節點內容只由鍵決定，兩份快取的結果相同。
+     */
+    function evaluate(src, dst, svc, mode, skip, entry, vrf, once) {
       const mk = mode + '\u0000' + (skip ? skip.id : '');
-      let ctx = ctxMemo.get(mk);
-      if (!ctx || ctx.stack.length) { ctx = W.context({ mode, skip, memo: level(nodeMemo, mk) }); ctxMemo.set(mk, ctx); }
+      const cm = once ? (once.ctxs || (once.ctxs = new Map())) : ctxMemo;
+      let ctx = cm.get(mk);
+      if (!ctx || ctx.stack.length) { ctx = W.context({ mode, skip, memo: level(once ? (once.nodes || (once.nodes = new Map())) : nodeMemo, mk) }); cm.set(mk, ctx); }
       const st = { src, dst, proto: svc.proto, port: svc.port, vrf: K.vrf(vrf) };
       const b = W.begin(src, dst, st, ctx, entry);
       return { b, sum: summarize(b, st) };

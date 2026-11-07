@@ -173,6 +173,7 @@
     'service-unknown': '設備的管理服務（/ip service）是否接受這個來源無法判斷',
     'egress-wan': '從對外介面（依路由證據判定，推論）送往基準以外的位址，之後由電信業者決定',
     'egress-possible': '出介面只有弱證據顯示可能對外（例如公網位址），無法確定是否送往外部',
+    'route-data-incomplete': '這台設備的路由表收集不完整（收集逾時或失敗），查不到符合的路由，之後的路徑無法判斷',
     'hairpin-no-srcnat': '目的 NAT 後與來源同網段，但沒有來源 NAT（hairpin NAT），回應不經過路由器，連線通常建立不起來',
     'return-not-guaranteed': '回程不保證：路徑經過的設備沒有放行已建立的連線（established），回應封包可能被丟棄（F15）',
     'no-ipv6-firewall': '這台設備沒有 IPv6 防火牆規則，IPv6 預設放行',

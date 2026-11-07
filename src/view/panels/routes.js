@@ -111,13 +111,12 @@
   }
   /** 下一跳的擁有者（Q.hopOwner，規則同 R01 與路由追蹤）：介面或設備的管理 IP；跨 VRF 的推論標「推論」 */
   function ownerCell(App, r, n) {
-    const query = App.Q; const { epLink, devLink } = P();
+    const Q = App.Q; const { epLink, devLink } = P();
     if (!n.ip) return null;
-    // 變數不叫 Q：用字檢查（tests/lib.js 的 RETIRED_UI_TERMS）把「Q.hopOwner」當成畫面上的內部 API 名稱
-    const o = query.hopOwner(r.dev, n.ip, n.vrf);
+    const o = Q.hopOwner(r.dev, n.ip, n.vrf);
     if (!o) return h('span', { class: 'muted route-owner' }, '基準中沒有設備擁有這個位址');
     return h('span', { class: 'route-owner' }, [o.key.endsWith('|') ? h('span', null, [devLink(App, o.dev), '（管理 IP）']) : epLink(App, o.key),
-      multiVrf(query) || o.crossVrf ? ` 在 ${V.vrfText(o.vrf)}` : null,
+      multiVrf(Q) || o.crossVrf ? ` 在 ${V.vrfText(o.vrf)}` : null,
       o.crossVrf ? ' ' : null, o.crossVrf ? V.chip('推論', 'info', { title: '同名的 VRF 沒有這個位址：取這個直連網段上位址相同的唯一介面（例如 CE 在 main、PE 在另一個 VRF）' }) : null]);
   }
   /** 出介面（只寫介面、沒有閘道時）：基準有這個介面時是連結 */

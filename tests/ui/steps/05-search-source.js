@@ -176,7 +176,10 @@ module.exports = async () => {
     // 清單裡的現行說法是字面文字，要和畫面的單一來源相同
     if (RETIRED.單側觀察 !== S.view.TERMS.hearsay || RETIRED.自動群組 !== S.view.TERMS.group || RETIRED.推定偏離 !== S.view.DEVIATION_LABEL) throw new Error('tests/lib.js 的 RETIRED_TERMS 現行說法應與 V.TERMS／V.DEVIATION_LABEL 相同');
     const noComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\'"`])\/\/.*$/gm, '$1');
-    const sources = jsFiles('src/view').map((f) => [f.split(path.sep).join('/'), noComments(fs.readFileSync(path.join(ROOT, f), 'utf8'))])
+    // 只掃字串字面值（畫面上可能出現的文字）：程式本身的呼叫（例如 Q.hopOwner(…)）不算；模板字面值的 ${…} 去掉
+    const literals = (src) => (src.match(/'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`/g) || [])
+      .map((s) => s.replace(/\$\{[^}]*\}/g, ' ')).join('\n');
+    const sources = jsFiles('src/view').map((f) => [f.split(path.sep).join('/'), literals(noComments(fs.readFileSync(path.join(ROOT, f), 'utf8')))])
       .concat([['index.html', html.replace(/<!--[\s\S]*?-->/g, '')]]);
     const hits = sources.flatMap(([f, src]) => Object.keys(RETIRED).filter((w) => src.includes(w)).map((w) => `${f}：「${w}」→ 改用「${RETIRED[w]}」`));
     // 本檔的 step 名稱也是給人看的（發布前檢查表逐字引用）：只掃名稱，不掃斷言字串（斷言可能要寫出舊詞來確認它不存在）。

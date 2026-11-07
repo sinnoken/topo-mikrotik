@@ -319,7 +319,6 @@
     const rows = [];
     const groups = Q.addressSetsOf(dev, ADDRESS_LIST).map((id) => {
       const s = Q.addressSet(id);
-      // address-list 的 id 是「設備|位址族|名稱」（見 S.infer.addrSets）；Q.addressSet 沒有名稱欄位，依已知的設備與位址族取出名稱
       const g = { key: id, name: s.name, family: s.family, ranges: s.ranges, rows: [] };
       if (s.ranges && s.ranges.length) s.ranges.forEach(([a, b]) => g.rows.push({ g, a, b }));
       else if (s.static === false) { g.unknown = true; g.rows.push({ g, note: '內容不明：可能有動態來源（' + s.reasons.map((c) => reasonLabel.get(c) || c).join('、') + '）' }); }

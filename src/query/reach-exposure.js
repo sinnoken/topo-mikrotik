@@ -205,12 +205,8 @@
       if (chain === 'input' && svc.proto === 'tcp' && svc.port != null) {
         const sv = Q.ipServicesOf(dev).find((x) => x.port === svc.port);
         if (sv && !sv.enabled) return out('deny', [], d.rule);
-        if (sv && sv.addresses.length) {
-          const rs = sv.addresses.map((a) => F.parseVal('src-address', a));
-          if (rs.some((p) => p.kind === 'ranges' && p.bits === 128 && p.items.some(([a, b]) => src >= a && src <= b))) return out('allow', reasons, d.rule);
-          if (rs.every((p) => p.kind === 'ranges')) return out('deny', [], d.rule);
-          return out('unknown', [reason('service-unknown', dev, `${name(dev)} 的 ${sv.name} 服務的 available-from（${sv.addresses.join('、')}）無法解析，是否接受 IPv6 來源無法判斷`)], d.rule);
-        }
+        // available-from：登錄表的 set（IPv4 的 serviceOf 與 F07 用同一份；不合法的項目不接受任何來源）
+        if (sv && sv.addresses.length) return I.addrSets().service(dev, sv.name, 'ipv6').set.has(src) ? out('allow', reasons, d.rule) : out('deny', [], d.rule);
       }
       return out('allow', reasons, d.rule);
     }

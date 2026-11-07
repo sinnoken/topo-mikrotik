@@ -708,10 +708,10 @@
       const out = r.match['out-interface'];
       if (out !== undefined && !S.infer.fw.splitNeg(out).neg && K.ep(dev, out) === s.ep) return false;
       const sa = r.match['src-address']; if (sa === undefined) return true;
-      const p = S.infer.fw.parseVal('src-address', sa); if (p.kind !== 'ranges' || p.bits !== 32) return false;
-      const lo = BigInt(S.ip.toInt(s.net)); const hi = lo + (1n << BigInt(32 - s.len)) - 1n;
-      const inside = p.items.some(([a, b]) => a <= lo && hi <= b);
-      return p.neg ? !p.items.some(([a, b]) => !(b < lo || a > hi)) : inside;
+      // 登錄表的集合（判斷與 L4 同一份，看合併後的區段：/25,/25 涵蓋 /24）；判斷不了或不是 IPv4 時不算
+      const e = M.addrSets.ofRule(r, 'src-address'); if (!e || !e.set || e.set.bits !== 32) return false;
+      const net = s.net + '/' + s.len;
+      return S.infer.fw.splitNeg(sa).neg ? !e.set.overlaps(net) : e.set.covers(net);
     });
     Array.from(M.devices.values()).filter((d) => d.collected).map((d) => d.key).sort(S.util.natural).forEach((z) => {
       const hits = RV.subnetsOf(z).filter((s) => {

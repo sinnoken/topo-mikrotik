@@ -37,6 +37,16 @@ test('S.ip.set：排序、合併重疊與相鄰的區間，has 二分搜尋；is
   assert.deepStrictEqual(rs(S.ip.set(['10.0.0.9-10.0.0.5'], 32)), [], '起點大於終點的範圍不含任何位址');
 });
 
+test('S.ip.set：covers（整段都在）與 overlaps（有交集）看合併後的區段；位址族不同時丟出錯誤', () => {
+  const s = S.ip.set(['10.1.0.0/25', '10.1.0.128/25', '10.3.0.0/24'], 32);
+  assert.deepStrictEqual(['10.1.0.0/24', '10.1.0.64/26', '10.0.0.0/16', '10.3.0.0/23', '10.3.0.5'].map(s.covers), [true, true, false, false, true]);
+  assert.deepStrictEqual(['10.0.0.0/8', '10.2.0.0/24', '10.3.0.255-10.4.0.0', '10.4.0.0/16', '9.0.0.0/8'].map(s.overlaps), [true, false, true, false, false]);
+  assert.deepStrictEqual([S.ip.set([], 32).covers('1.2.3.4'), S.ip.set([], 32).overlaps('0.0.0.0/0')], [false, false]);
+  const six = S.ip.set(['2001:db8::/49', '2001:db8:0:8000::/49'], 128);
+  assert.deepStrictEqual([six.covers('2001:db8::/48'), six.overlaps('2001:db9::/32')], [true, false]);
+  assert.throws(() => s.covers('2001:db8::/32'), TypeError);
+});
+
 test('S.ip.set：IPv6（網段、範圍、合併）；否定（!）、不合法或位址族不同的項目丟出錯誤，不靜默略過', () => {
   const v6 = S.ip.set(['2001:db8:1::/48', '2001:db8::/48', 'fd00::5-fd00::9', 'fd00::a'], 128);
   assert.strictEqual(v6.ranges.length, 2, '2001:db8::/48 與 2001:db8:1::/48 相鄰；fd00::5–9 與 fd00::a 相鄰');

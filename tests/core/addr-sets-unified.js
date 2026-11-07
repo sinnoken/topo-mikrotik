@@ -92,3 +92,24 @@ test('/routing rule：多個網段、範圍與單一網段，集合相同時 Q.r
   const set = qs.set;
   ['192.168.1.5', '192.168.1.127', '192.168.1.128'].forEach((ip) => assert.strictEqual(Q.reach(ip, '8.8.8.8', { proto: 'tcp', port: 443 }).verdict, set.has(ip) ? 'deny' : 'allow', ip));
 });
+
+test('R12 的雙重 NAT（behindNat）：masquerade 的 src-address 合併後涵蓋網段才算在 NAT 後面（/25,/25 涵蓋 /24）；否定看有沒有交集', () => {
+  const C = (net, ifc) => ` DAc dst-address=${net} routing-table=main gateway=${ifc} immediate-gw=${ifc} distance=0`;
+  const D = (dst, gw, ifc) => ` As  dst-address=${dst} routing-table=main gateway=${gw} immediate-gw=${gw}%${ifc} distance=1`;
+  const two = (nat) => [
+    'A (10.0.0.1):', '### /export terse', '/ip address add address=10.0.0.1/30 interface=ether1', '/ip address add address=10.1.0.1/24 interface=ether2',
+    ...(nat ? [`/ip firewall nat add action=masquerade chain=srcnat out-interface=ether1 ${nat}`] : []),
+    '### /ip route print detail without-paging', RT, C('10.0.0.0/30', 'ether1'), C('10.1.0.0/24', 'ether2'), D('10.2.0.0/24', '10.0.0.2', 'ether1'),
+    'B (10.0.0.2):', '### /export terse', '/ip address add address=10.0.0.2/30 interface=ether1', '/ip address add address=10.2.0.1/24 interface=ether2',
+    '### /ip route print detail without-paging', RT, C('10.0.0.0/30', 'ether1'), C('10.2.0.0/24', 'ether2'), D('0.0.0.0/0', '10.0.0.1', 'ether1'), ''].join('\n');
+  const r12 = (nat) => { const { snap, M } = capture(two(nat)); return { hit: of(snap, 'R12').some((f) => /10\.1\.0\.0\/24/.test(f.message)), M }; };
+  assert.strictEqual(r12(null).hit, true, '沒有 NAT：報');
+  assert.strictEqual(r12('src-address=10.1.0.0/24').hit, false);
+  const split = r12('src-address=10.1.0.0/25,10.1.0.128/25');
+  assert.strictEqual(split.hit, false, '兩個相鄰的 /25 合併後涵蓋 /24');
+  const rule = split.M.fw.rules.find((r) => r.table === 'nat');
+  assert.ok(split.M.addrSets.ofRule(rule, 'src-address').set.covers('10.1.0.0/24'), '判斷用登錄表的集合');
+  assert.strictEqual(r12('src-address=10.1.0.0/25').hit, true, '只涵蓋一半');
+  assert.strictEqual(r12('src-address=!10.9.0.0/16').hit, false, '否定、沒有交集：在 NAT 後面');
+  assert.strictEqual(r12('src-address=!10.1.0.128/25').hit, true, '否定、有交集：不算');
+});

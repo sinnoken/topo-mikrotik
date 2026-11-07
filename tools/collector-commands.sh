@@ -15,7 +15,7 @@ OPTIONAL_COMMAND_IDS=(wifi wireless capsman vrf)
 #   （print stats 的 bytes、packets；print 預設等於 print static，只列靜態規則）
 # 加 detail without-paging 的理由同其他指令：key=value 不受欄寬影響
 # （https://manual.mikrotik.com/docs/developer-guides/scripting.md 的 print parameters）。
-# stats 與 detail 並用的輸出格式手冊沒有範例，尚未以真實設備確認。
+# 實機 RouterOS 7 的 print stats 加了 detail 仍輸出表格（不是 key=value），解析器兩種格式都接受。
 # routerboard：RouterBOOT 韌體（current-firmware／upgrade-firmware）與型號，key: value 格式同 /system resource，不加 detail。
 # 放在預設清單：x86／CHR 沒有這個選單（回 bad command name routerboard），解析器把這個回應當成「不是 RouterBOARD」，不是錯誤。
 # 依據：https://manual.mikrotik.com/docs/hardware/routerboard.md、https://manual.mikrotik.com/docs/cli-reference/system/routerboard.md（Conditions: !i386）

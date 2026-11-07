@@ -166,6 +166,8 @@ run_collector "$TMP_DIR/devices.csv" --commands "config,$FW_IDS" --output "$TMP_
 # （BINMODE=3：Windows 的 gawk 預設會拿掉 CR；其他 awk 把它當成一般變數）
 block_body() { awk -v BINMODE=3 -v marker="### $1" '
   on && (/^### / || /^_____$/) { exit }
+  on && width { print; next }
+  on && stamped && /^# terminal-width: / { width = 1; next }
   on && stamped { print; next }
   on && /^# collected-at: / { stamped = 1; next }
   $0 == marker { on = 1 }
@@ -495,7 +497,9 @@ device_section RETRY_C "$TMP_DIR/merged-fail.txt" | grep -q '^### ' && fail 'unr
 # 已有其他區塊的設備連不上時，連線失敗記在重收的指令區塊內
 FAKE_SSH_UNREACHABLE=192.0.2.1 expect_exit 1 run_collector "$TMP_DIR/devices-retry.csv" --ask-password \
   --retry-failed "$TMP_DIR/prev.txt" --device RETRY_A --output "$TMP_DIR/merged-conn.txt" >/dev/null 2>&1
-device_section RETRY_A "$TMP_DIR/merged-conn.txt" | grep -A2 -xF "$ROUTE_COMMAND" | grep -qxF '# collection failed: connection'
+[[ $(device_section RETRY_A "$TMP_DIR/merged-conn.txt" | grep -A3 -xF "$ROUTE_COMMAND" | tail -n 3) == \
+  $'# collected-at: '*$'\n# terminal-width: 511\n# collection failed: connection' ]] ||
+  fail 'connection failure in a retried block must follow collected-at and terminal-width'
 
 # --device 只重收指定設備；其他失敗原樣保留並以 1 結束
 expect_exit 1 run_collector "$TMP_DIR/devices-retry.csv" --retry-failed "$TMP_DIR/prev.txt" --device RETRY_A \
@@ -615,8 +619,62 @@ grep -qxF '### /ip route print detail without-paging' "$TMP_DIR/first-fail.txt" 
 # --retry-failed 沒有 --ask-password 時連不上：連線失敗記在重收的指令區塊內
 FAKE_SSH_UNREACHABLE=192.0.2.1 expect_exit 1 run_collector "$TMP_DIR/devices-retry.csv" \
   --retry-failed "$TMP_DIR/prev.txt" --device RETRY_A --output "$TMP_DIR/merged-conn2.txt" >/dev/null 2>&1
-device_section RETRY_A "$TMP_DIR/merged-conn2.txt" | grep -A2 -xF "$ROUTE_COMMAND" | grep -qxF '# collection failed: connection' ||
+device_section RETRY_A "$TMP_DIR/merged-conn2.txt" | grep -A3 -xF "$ROUTE_COMMAND" | grep -qxF '# collection failed: connection' ||
   fail 'retry without --ask-password must record connection in the retried block'
+
+# 終端寬度：登入名稱預設加 +ct511w（RouterOS 的登入參數），每個區塊在 # collected-at 之後記 # terminal-width:
+expect_width_lines() { # 輸出檔 預期寬度（空白＝不該有 terminal-width 行）
+  awk -v want="$2" '
+    /^### / { n++; at = NR; next }
+    at && NR == at + 1 { if ($0 !~ /^# collected-at: /) bad = "collected-at"; next }
+    at && NR == at + 2 { if (want != "" && $0 != "# terminal-width: " want) bad = "terminal-width"; at = 0 }
+    /^# terminal-width: / && want == "" { bad = "unexpected terminal-width" }
+    END { if (bad || !n) { print bad > "/dev/stderr"; exit 1 } }
+  ' "$1"
+}
+: > "$TMP_DIR/ssh-args.log"
+FAKE_SSH_LOG="$TMP_DIR/ssh-args.log" run_collector "$TMP_DIR/devices.csv" --commands config,neighbor --output "$TMP_DIR/tw.txt" >/dev/null
+[[ $(grep -c ' -p 2222 admin+ct511w@192.0.2.1 ' "$TMP_DIR/ssh-args.log") == 2 ]] || { cat "$TMP_DIR/ssh-args.log" >&2; fail 'login name must default to user+ct511w'; }
+expect_width_lines "$TMP_DIR/tw.txt" 511 || fail 'each block must record # terminal-width: 511 right after collected-at'
+# 網站讀入：terminal-width 行不造成註解問題（reader 讀不讀這行由 data-model 決定）
+node -e '
+  const S = require(process.argv[1])();
+  const text = require("fs").readFileSync(process.argv[2], "utf8");
+  const s = S.build([{ name: "tw.txt", text }], { now: "2026-01-01T00:00:00Z" });
+  if (s.blocks.length !== 2 || s.blocks.some((b) => b.failure || b.issues || !b.collectedAt)) { console.error(s.blocks); process.exit(1); }
+' "$ROOT/tests/load.js" "$TMP_DIR/tw.txt" || fail 'terminal-width line must read without annotation issues'
+# --terminal-width 0：不加登入參數，不寫 terminal-width
+: > "$TMP_DIR/ssh-args.log"
+FAKE_SSH_LOG="$TMP_DIR/ssh-args.log" run_collector "$TMP_DIR/devices.csv" --commands config --terminal-width 0 --output "$TMP_DIR/tw0.txt" >/dev/null
+grep -qF ' -p 2222 admin@192.0.2.1 ' "$TMP_DIR/ssh-args.log" && ! grep -qF '+' "$TMP_DIR/ssh-args.log" ||
+  { cat "$TMP_DIR/ssh-args.log" >&2; fail '--terminal-width 0 must not add login parameters'; }
+expect_width_lines "$TMP_DIR/tw0.txt" '' || fail '--terminal-width 0 must not write terminal-width'
+# --terminal-width N 改寬度；不是非負整數時以 2 報錯
+: > "$TMP_DIR/ssh-args.log"
+FAKE_SSH_LOG="$TMP_DIR/ssh-args.log" run_collector "$TMP_DIR/devices.csv" --commands config --terminal-width 300 --output "$TMP_DIR/tw300.txt" >/dev/null
+grep -qF ' admin+ct300w@192.0.2.1 ' "$TMP_DIR/ssh-args.log" || fail '--terminal-width must set the width parameter'
+expect_width_lines "$TMP_DIR/tw300.txt" 300 || fail '--terminal-width 300 must be recorded'
+for bad in x -1 1.5; do
+  expect_exit 2 run_collector "$TMP_DIR/devices.csv" --terminal-width "$bad" --dry-run >/dev/null 2>"$TMP_DIR/err.log"
+  grep -qF -- '--terminal-width 必須是非負整數' "$TMP_DIR/err.log" || fail "--terminal-width $bad must be rejected"
+done
+# 設備清單的 user 已含 +：原樣使用、不重複加；只有恰好一個帶數字的 w 時記寬度
+printf 'name,address,user,port\nOWN_W,192.0.2.1,admin+ct200w,22\nOWN_NOW,192.0.2.3,admin+c,22\n' > "$TMP_DIR/devices-plus.csv"
+: > "$TMP_DIR/ssh-args.log"
+FAKE_SSH_LOG="$TMP_DIR/ssh-args.log" run_collector "$TMP_DIR/devices-plus.csv" --commands config --output "$TMP_DIR/twplus.txt" >/dev/null
+grep -qF ' admin+ct200w@192.0.2.1 ' "$TMP_DIR/ssh-args.log" && grep -qF ' admin+c@192.0.2.3 ' "$TMP_DIR/ssh-args.log" &&
+  ! grep -qF 'ct511w' "$TMP_DIR/ssh-args.log" || { cat "$TMP_DIR/ssh-args.log" >&2; fail 'user with + must be used as is'; }
+device_section OWN_W "$TMP_DIR/twplus.txt" > "$TMP_DIR/twplus-w.txt"; expect_width_lines "$TMP_DIR/twplus-w.txt" 200 || fail 'width from the user parameters must be recorded'
+device_section OWN_NOW "$TMP_DIR/twplus.txt" > "$TMP_DIR/twplus-n.txt"; expect_width_lines "$TMP_DIR/twplus-n.txt" '' || fail 'user parameters without a width must not record terminal-width'
+# --ask-password：master（-fN）、經 ControlPath 的命令與 -O exit 用同一個登入名稱與同一個 ControlPath
+: > "$TMP_DIR/ssh-args.log"
+FAKE_SSH_LOG="$TMP_DIR/ssh-args.log" run_collector "$TMP_DIR/devices.csv" --ask-password --commands config,neighbor --output "$TMP_DIR/twcm.txt" >/dev/null
+[[ $(wc -l < "$TMP_DIR/ssh-args.log") -eq 4 && $(grep -c ' -p 2222 admin+ct511w@192.0.2.1\( \|$\)' "$TMP_DIR/ssh-args.log") == 4 ]] ||
+  { cat "$TMP_DIR/ssh-args.log" >&2; fail 'master, commands and -O exit must use the same login name'; }
+grep -q '^-fN .*-o ControlMaster=yes ' "$TMP_DIR/ssh-args.log" && grep -qF ' -O exit ' "$TMP_DIR/ssh-args.log" || fail 'master and exit must be logged'
+[[ $(grep -o 'ControlPath=[^ ]*' "$TMP_DIR/ssh-args.log" | sort -u | wc -l) -eq 1 ]] || fail 'all ssh calls must share one ControlPath'
+grep -o 'ControlPath=[^ ]*' "$TMP_DIR/ssh-args.log" | grep -qF '+' && fail 'ControlPath must not contain the login parameters'
+expect_width_lines "$TMP_DIR/twcm.txt" 511 || fail '--ask-password blocks must record terminal-width'
 
 # 輸出檔只有擁有者可讀寫（含完整設定）；不受呼叫者的 umask 影響
 (umask 022; run_collector "$TMP_DIR/devices.csv" --commands config --output "$TMP_DIR/perm.txt" >/dev/null)
@@ -649,9 +707,9 @@ ls "$TMP_DIR"/int.txt.tmp.* >/dev/null 2>&1 && fail 'temporary output must not b
 grep -qF "$TMP_DIR/int.txt.partial" "$TMP_DIR/int.err" || { cat "$TMP_DIR/int.err" >&2; fail 'interrupt must print the partial file path'; }
 grep -qF '不完整' "$TMP_DIR/int.err" || fail 'interrupt must say the file is incomplete'
 grep -qF 'RETRY_B, RETRY_C' "$TMP_DIR/int.err" || fail 'interrupt must list devices not collected'
-device_section RETRY_A "$TMP_DIR/int.txt.partial" | grep -A3 -xF "$ROUTE_COMMAND" | tr -d '\r' |
+device_section RETRY_A "$TMP_DIR/int.txt.partial" | grep -A4 -xF "$ROUTE_COMMAND" | tr -d '\r' |
   grep -qxF 'partial line before interrupt' || fail 'output collected before the interrupt must be kept'
-device_section RETRY_A "$TMP_DIR/int.txt.partial" | grep -A3 -xF "$ROUTE_COMMAND" | grep -qxF '# collection failed: interrupted' ||
+device_section RETRY_A "$TMP_DIR/int.txt.partial" | grep -A4 -xF "$ROUTE_COMMAND" | grep -qxF '# collection failed: interrupted' ||
   { cat "$TMP_DIR/int.txt.partial" >&2; fail 'interrupted block must be marked'; }
 device_section RETRY_A "$TMP_DIR/int.txt.partial" | grep -q '^### /ip neighbor ' && fail 'commands after the interrupt must not run'
 grep -q '^RETRY_B ' "$TMP_DIR/int.txt.partial" && fail 'devices after the interrupt must not be collected'

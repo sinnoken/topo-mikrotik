@@ -23,6 +23,8 @@ usage() {
                           不可大於任何一個指令的逾時）
   --retry COUNT           失敗後重試次數（預設 0）
   --ask-password          每台設備連線一次並手動輸入密碼／確認 host key
+  --terminal-width N      RouterOS 的終端寬度：登入名稱加 +ct<N>w（關顏色、關終端偵測、寬度 N），
+                          避免 detail 輸出折行；預設 511，0 表示不加。收集檔每個區塊記 # terminal-width: N
   --no-auto               不自動加上選用命令（依介面 type、型號與版本）
   --retry-failed FILE     只重收上次收集檔 FILE 中失敗的指令，必須用 -o 指定新檔（見下方）
   --dry-run               只驗證清單並列出命令，不連線（不含自動加上的命令）
@@ -31,6 +33,8 @@ usage() {
 設備清單：name,address,user,port[,extra]
   address 必須是 IPv4（收集檔的設備標頭只接受 IPv4，網站要用它對回鄰居的 address）；
   主機名或 IPv6 以結束碼 2 報錯並指出行號
+  user 已含 +（自訂 RouterOS 登入參數，例如 admin+ct200w）時原樣使用，不再加 --terminal-width 的參數；
+  參數中恰有一個帶數字的 w 時，收集檔記這個寬度，否則不記 # terminal-width:
   extra 為選填，列出該設備額外執行的選用命令 ID，以空白或分號分隔，例如：
     TPE_AP_01,192.0.2.31,admin,22,wifi
   選用命令 ID：wifi（RouterOS 7 Wi-Fi 關聯表）、wireless（舊版 wireless）、capsman（舊版 CAPsMAN 控制器）、
@@ -69,7 +73,7 @@ usage() {
   --commands ID,...       只重收這些 ID 的失敗；連線失敗的設備只收這些 ID；
                           指定的 ID 在上次收集檔（選定的設備）沒有失敗紀錄時報錯
   --dry-run               列出會重收的指令與上次失敗原因，不連線，不需要 -o
-  --timeout、--command-timeout、--connect-timeout、--retry、--ask-password、--no-auto 照常適用（--no-auto 只影響連線失敗的設備）
+  --timeout、--command-timeout、--connect-timeout、--retry、--ask-password、--terminal-width、--no-auto 照常適用（--no-auto 只影響連線失敗的設備）
   已有其他區塊的設備連不上時，連線失敗記在重收的第一個指令區塊內，這台其餘要重收的指令也記 connection
   中斷時同一般收集（130／143，<輸出檔>.partial）；尚未重收的部分照上次收集檔原樣保留
   結束碼：
@@ -324,7 +328,9 @@ open_connection() {
   control_path="$TMP_DIR/cm-$i"
   # 互動式建立共用連線；ControlPersist 讓 ssh 認證後轉入背景，後續命令不再詢問
   # -fN 認證後轉入背景且不執行遠端命令（RouterOS 沒有 true 等 shell 指令）
-  if ssh -fN -o ConnectTimeout="$CONNECT_TIMEOUT" -o ControlMaster=yes -o ControlPath="$control_path" -o ControlPersist=120 -p "$port" "$user@$address"; then
+  # 終端參數（login 的 +ct<W>w）在登入時決定：master 必須用與後續命令相同的 login 登入。
+  # ControlPath 是固定的 cm-<索引>，不含 %r，使用者名稱裡的 + 不會進入路徑
+  if ssh -fN -o ConnectTimeout="$CONNECT_TIMEOUT" -o ControlMaster=yes -o ControlPath="$control_path" -o ControlPersist=120 -p "$port" "$login@$address"; then
     SSH_CONTROL_OPTS=(-o ControlPath="$control_path")
     return 0
   fi
@@ -333,7 +339,7 @@ open_connection() {
 }
 
 close_connection() {
-  if ((${#SSH_CONTROL_OPTS[@]})); then ssh "${SSH_CONTROL_OPTS[@]}" -O exit -p "$port" "$user@$address" 2>/dev/null; fi
+  if ((${#SSH_CONTROL_OPTS[@]})); then ssh "${SSH_CONTROL_OPTS[@]}" -O exit -p "$port" "$login@$address" 2>/dev/null; fi
   SSH_CONTROL_OPTS=()
 }
 
@@ -365,8 +371,8 @@ collect_block() {
   local id=$1 command code seconds
   command=$(command_for_id "$id"); seconds=$(timeout_for_id "$id")
   ATTEMPTED=$((ATTEMPTED + 1))
-  printf '### %s\n# collected-at: %s\n' "$command" "$(now_utc)" > "$TMP_DIR/block"
-  run_command "$address" "$user" "$port" "$command" "$TMP_DIR/stdout" "$TMP_DIR/stderr" "$seconds"
+  block_header "$command" > "$TMP_DIR/block"
+  run_command "$address" "$login" "$port" "$command" "$TMP_DIR/stdout" "$TMP_DIR/stderr" "$seconds"
   code=$?
   if (( code == 0 )); then
     cat "$TMP_DIR/stdout" >> "$TMP_DIR/block"
@@ -433,6 +439,32 @@ collect_device() {
 
 set_device() {
   name=${DEVICE_NAMES[$1]}; address=${DEVICE_ADDRESSES[$1]}; user=${DEVICE_USERS[$1]}; port=${DEVICE_PORTS[$1]}
+  login_name "$user"
+}
+
+# RouterOS 的登入參數（https://manual.mikrotik.com/docs/management-tools/console.md 的 Login Options）：
+# 登入名稱「使用者+參數」，參數是「[數字]字母」的序列；c 關顏色、t 關終端偵測、<N>w 設寬度。
+# 沒有 pty 時 RouterOS 用預設寬度，detail 輸出會折行，所以預設加 +ct<W>w。
+# 設定 login（ssh 用的使用者字串）與 width（收集檔記的 # terminal-width:，空白＝不寫）：
+# 設備清單的 user 已含 + 時視為使用者自訂的參數，原樣使用、不併入（同一參數出現兩次的效果手冊沒有寫），
+# 寬度只在參數合乎語法且恰有一個帶數字的 w 時取出
+login_name() {
+  local params ws
+  login=$1; width=
+  if [[ "$1" == *+* ]]; then
+    params=${1#*+}; ws=${params//[!w]/}
+    if [[ "$params" =~ ^([0-9]*[a-z])*$ && ${#ws} == 1 && "$params" =~ (^|[a-z])([0-9]+)w ]] && (( 10#${BASH_REMATCH[2]} > 0 )); then
+      width=$((10#${BASH_REMATCH[2]}))
+    fi
+    return
+  fi
+  if (( TERMINAL_WIDTH > 0 )); then login="$1+ct${TERMINAL_WIDTH}w"; width=$TERMINAL_WIDTH; fi
+}
+
+# 區塊開頭：指令標記、收集時間，有設定終端寬度時再記寬度（緊接在 collected-at 之後）
+block_header() {
+  printf '### %s\n# collected-at: %s\n' "$1" "$(now_utc)"
+  if [[ -n "$width" ]]; then printf '# terminal-width: %s\n' "$width"; fi
 }
 
 device_index() {
@@ -610,7 +642,7 @@ retry_failed() {
     else
       # 設備已有其他區塊，連線失敗記在這個指令區塊內
       ATTEMPTED=$((ATTEMPTED + 1)); failures=$((failures + 1))
-      printf '### %s\n# collected-at: %s\n# collection failed: connection\n' "$(command_for_id "${ITEM_ID[k]}")" "$(now_utc)" >> "$OUTPUT_TMP"
+      { block_header "$(command_for_id "${ITEM_ID[k]}")"; printf '# collection failed: connection\n'; } >> "$OUTPUT_TMP"
     fi
   done
   (( current < 0 )) || close_connection
@@ -631,6 +663,8 @@ COMMAND_FILTER=
 RETRY_FROM=
 DRY_RUN=0
 ASK_PASSWORD=0
+# 預設 511：實測 +ct511w 時 /ip neighbor print detail 不再折行（只有超過 511 字元的那一列換行）
+TERMINAL_WIDTH=511
 AUTO=1
 SSH_CONTROL_OPTS=()
 DEVICE_NAMES=(); DEVICE_ADDRESSES=(); DEVICE_USERS=(); DEVICE_PORTS=(); DEVICE_EXTRAS=(); COMMAND_IDS=(); DEVICE_COMMAND_IDS=()
@@ -651,6 +685,7 @@ while (($#)); do
     --connect-timeout) (($# >= 2)) || die "$1 需要值"; CONNECT_TIMEOUT=$2; shift 2 ;;
     --retry) (($# >= 2)) || die "$1 需要值"; RETRY=$2; shift 2 ;;
     --ask-password) ASK_PASSWORD=1; shift ;;
+    --terminal-width) (($# >= 2)) || die "$1 需要值"; TERMINAL_WIDTH=$2; shift 2 ;;
     --no-auto) AUTO=0; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -666,6 +701,8 @@ if [[ -n "$TIMEOUT" ]]; then
 fi
 for arg in ${COMMAND_TIMEOUT_ARGS[@]+"${COMMAND_TIMEOUT_ARGS[@]}"}; do parse_command_timeouts "$arg"; done
 [[ "$RETRY" =~ ^[0-9]+$ ]] || die "--retry 必須是非負整數"
+[[ "$TERMINAL_WIDTH" =~ ^[0-9]+$ ]] || die "--terminal-width 必須是非負整數（0 表示不加終端參數）"
+TERMINAL_WIDTH=$((10#$TERMINAL_WIDTH))
 min_command_timeout
 if [[ -n "$CONNECT_TIMEOUT" ]]; then
   [[ "$CONNECT_TIMEOUT" =~ ^[0-9]+$ && "$CONNECT_TIMEOUT" -ge 1 ]] || die "--connect-timeout 必須是正整數"

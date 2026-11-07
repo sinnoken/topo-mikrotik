@@ -143,7 +143,13 @@ module.exports = async () => {
     const zt = text('#l4-zones');
     Q.zones().zones.forEach((z) => { if (!zt.includes(z.name) || (z.basis && !zt.includes(z.basis))) throw new Error('zone 的依據應列出：' + z.name); });
     // 判斷的前提
-    S.query.reachAssumptions().forEach((a) => { if (!text('#view-l4').includes(a.message)) throw new Error('畫面應寫出判斷的前提：' + a.message); });
+    // 判斷的前提：每條寫短句，完整說明只在收合的「詳細」裡（不再整段列出全文）
+    S.query.reachAssumptions().forEach((a) => {
+      const li = $('#l4-assume-' + a.code);
+      if (!li || li.querySelector('.assume-short').textContent !== a.short) throw new Error('畫面應寫出判斷的前提的短句：' + a.code);
+      const det = li.querySelector('.assume-detail');
+      if (!det || !det.textContent.includes(a.detail) || det.getAttribute('open') != null) throw new Error('前提的完整說明應收在「詳細」：' + a.code);
+    });
     // 前提預設收合（摘要一句），矩陣放在查詢之前，首屏先看到矩陣（UX #6）
     const fold = L4().querySelector('.l4-assume details');
     if (!fold || fold.open || !fold.querySelector('.l4-assume-list') || !fold.querySelector('summary')) throw new Error('判斷的前提應預設收合在 <details> 裡');

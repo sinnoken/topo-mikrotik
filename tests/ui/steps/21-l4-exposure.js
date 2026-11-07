@@ -343,4 +343,83 @@ module.exports = async () => {
       VA.load(orig.snap, null, { sources: orig.sources, profile: orig.profile }); await App.ledgerJob; await App.layoutJob;
     }
   });
+  await step('L4 判斷的前提：頁尾摘要是判斷方式一句話，只列這份基準有影響的前提（短句＋影響，可點到設備與規則，詳細收合），其他收合；路由層只寫一行「同 L3 路由追蹤」；原因旁的「為什麼」展開並聚焦對應的前提', async () => {
+    const Q = App.Q; const V = S.view;
+    App.select(null); App.showLayer('l4'); await App.l4Job;
+    const use = new Map(Q.assumptionUse().map((u) => [u.code, u]));
+    const on = (a) => ['affects', 'missing-data'].includes(use.get(a.code).status);
+    const l4 = S.query.reachAssumptions().concat(S.query.exposureAssumptions());
+    const route = S.query.traceAssumptions();
+    const fold = $('#l4-assume-fold');
+    if (!fold || !fold.querySelector('summary').textContent.includes(S.query.reachDefinition())) throw new Error('頁尾的摘要應是判斷方式的一句話（S.query.reachDefinition）');
+    // 只列有影響的（affects／missing-data），順序同查詢層；不再整段列出全部前提的完整說明
+    const shown = $('#l4-assume-shown'); const shownLis = shown ? shown.testAll('li').filter((x) => /\bassume-item\b/.test(x.className)) : [];
+    const want = l4.filter(on);
+    if (!want.length && !process.env.SMOKE_INPUT) throw new Error('測試前提：範例資料有影響結果的 L4 前提');
+    if (want.length) require('assert').deepStrictEqual(shownLis.map((x) => x.dataset.code), want.map((a) => a.code), '頁尾只列有影響的前提');
+    if (!text('#l4-assume-fold').includes(`這份基準會影響結果的前提（${V.num(want.length)} 條）`)) throw new Error('應寫出「這份基準會影響結果的前提（N 條）」');
+    shownLis.forEach((li) => {
+      const a = l4.find((x) => x.code === li.dataset.code); const u = use.get(a.code);
+      if (!li.querySelector('.assume-short') || li.querySelector('.assume-short').textContent !== a.short) throw new Error('每條寫短句：' + a.code);
+      const det = li.querySelector('.assume-detail');
+      if (!det || det.open || det.getAttribute('open') != null || !det.textContent.includes(a.detail)) throw new Error('完整說明收在預設收合的「詳細」：' + a.code);
+      const imp = li.querySelector('.assume-impact');
+      if (!imp || !imp.textContent.includes(`${V.num(u.devices.length)} 台`)) throw new Error('每條寫影響幾台：' + a.code + ' ' + (imp && imp.textContent));
+      if (u.ruleKeys.length && !imp.textContent.includes(`${V.num(u.ruleKeys.length)} 條規則`)) throw new Error('有規則時寫影響幾條規則：' + a.code);
+      if (u.status === 'missing-data' && !imp.textContent.includes('缺資料')) throw new Error('缺資料的前提應標出：' + a.code);
+    });
+    // 路由層不在 L4 的清單：只有一行「路由：同 L3 路由追蹤（有 K 條前提影響這份基準…）」
+    const K = route.filter(on).length;
+    if (shownLis.some((li) => route.some((a) => a.code === li.dataset.code))) throw new Error('L4 的清單不列路由層的前提');
+    const rl = $('#l4-assume-route');
+    if (!rl || !rl.textContent.startsWith('路由：同 L3 路由追蹤') || (K && !rl.textContent.includes(`有 ${V.num(K)} 條前提影響這份基準`))) throw new Error('路由層只寫一行同 L3 路由追蹤：' + (rl && rl.textContent));
+    // 其他（not-used、always）收合在「其他前提（M 條）」
+    const other = $('#l4-assume-other'); const rest = l4.filter((a) => !on(a));
+    if (rest.length && (!other || other.open || other.getAttribute('open') != null || other.querySelector('summary').textContent !== `其他前提（${V.num(rest.length)} 條）`)) throw new Error('其他前提應收合在「其他前提（M 條）」');
+    if (rest.length && rest.some((a) => !other.testAll('li').some((li) => li.dataset.code === a.code))) throw new Error('其他前提應列出全部沒影響的');
+    // 頁首的「前提」連結寫出有影響的條數
+    const hl = $('#l4-ex-summary').querySelector('.l4-ex-assume');
+    if (!hl || hl.textContent !== (want.length ? `前提（${V.num(want.length)} 條有影響）` : '前提')) throw new Error('頁首「前提」連結應寫「前提（N 條有影響）」：' + (hl && hl.textContent));
+    // 影響可點：設備與規則開右側詳情
+    const devA = shown && shown.testAll('a').find((a) => a.dataset.dev);
+    if (!devA && want.some((a) => use.get(a.code).devices.length)) throw new Error('影響的設備應可點');
+    if (devA) { devA.click(); if (!App.sel || App.sel.type !== 'device' || App.sel.key !== devA.dataset.dev) throw new Error('點影響的設備應開設備詳情'); }
+    const ruleA = shown && shown.testAll('a').find((a) => a.dataset.rule);
+    if (!ruleA && !process.env.SMOKE_INPUT) throw new Error('測試前提：範例資料有影響到規則的前提（src-port）');
+    if (ruleA) { ruleA.click(); if (!App.sel || App.sel.type !== 'rule' || App.sel.key !== ruleA.dataset.rule) throw new Error('點影響的規則應開規則詳情'); }
+    App.select(null);
+    // 「為什麼」：暴露清單列上的原因（範例資料是策略路由，屬路由層 → 頁尾的路由那一行）；先列出每段的全部列（允許排在前面）
+    for (let b; (b = $('#l4-exposure').testAll('.l4-ex-all').find((x) => x.getAttribute('aria-expanded') === 'false'));) b.click();
+    const why = $('#l4-exposure').testAll('a').find((a) => /\bl4-why\b/.test(a.className));
+    if (!why && !process.env.SMOKE_INPUT) throw new Error('測試前提：範例資料暴露清單有對到前提的原因');
+    const check = (link, where) => {
+      fold.removeAttribute('open'); fold.open = false;
+      link.click();
+      const code = link.dataset.assume; const li = $('#l4-assume-' + code);
+      if (!li || !(fold.getAttribute('open') != null)) throw new Error(where + '：「為什麼」應展開頁尾那條前提');
+      if (document.activeElement !== li) throw new Error(where + '：「為什麼」之後焦點應到那條前提');
+      for (let x = li.parentNode; x && x !== fold; x = x.parentNode) if (x.tagName === 'DETAILS' && x.getAttribute('open') == null) throw new Error(where + '：那條前提所在的收合區塊應展開');
+      const det = li.querySelector('.assume-detail'); if (!det || det.getAttribute('open') == null) throw new Error(where + '：那條前提的詳細應展開');
+      if (!link.getAttribute('aria-label') || !link.getAttribute('aria-label').startsWith('為什麼')) throw new Error(where + '：「為什麼」要有 aria-label');
+    };
+    if (why) check(why, '暴露清單');
+    // 逐跳查詢的原因：範例資料 cust-a 的 10.1.20.1 → 192.168.50.1 tcp 22 是 /ip service 不明（ip-service，防火牆層）
+    if (!process.env.SMOKE_INPUT) {
+      $('#l4-reach-fold').setAttribute('open', '');
+      $('#l4-src').value = '10.1.20.1'; $('#l4-dst').value = '192.168.50.1'; $('#l4-proto').value = 'tcp'; $('#l4-proto').dispatch('change'); $('#l4-port').value = '22'; $('#l4-vrf').value = 'cust-a'; $('#l4-run').click();
+      const r = l4State().reach; if (!r || !r.reasons.some((x) => x.code === 'service-unknown')) throw new Error('測試前提：這個查詢是 /ip service 不明');
+      const w = $('#l4-drill').testAll('a').find((a) => /\bl4-why\b/.test(a.className) && a.dataset.assume === 'ip-service');
+      if (!w) throw new Error('逐跳查詢的原因旁應有「為什麼」連到 ip-service');
+      check(w, '逐跳查詢');
+      // 這次查詢的前提：只列有影響的短句，其他收合
+      const qa = $('#l4-drill').testAll('details').find((d) => d.querySelector('summary') && d.querySelector('summary').textContent.startsWith('這次查詢的前提'));
+      if (!qa) throw new Error('逐跳查詢應有「這次查詢的前提」');
+      const qShown = qa.testAll('li').filter((x) => /\bassume-item\b/.test(x.className) && !x.parentNode.parentNode.className.includes('assume-other'));
+      const qWant = r.assumptions.filter(on);
+      require('assert').deepStrictEqual(qShown.map((x) => x.dataset.code), qWant.map((a) => a.code), '這次查詢的前提只列有影響的');
+      if (qa.testAll('li').some((x) => x.id)) throw new Error('這次查詢的前提不用頁尾的 id（id 不重複）');
+      if (r.assumptions.some((a) => !qa.textContent.includes(a.short))) throw new Error('這次查詢的前提寫短句');
+    }
+    App.showLayer('device');
+  });
 };

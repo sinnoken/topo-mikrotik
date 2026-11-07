@@ -6,7 +6,7 @@
   'use strict';
   const V = S.view; const h = V.h; const $ = V.$;
   const I = V.l4._;
-  const { st, els, EX_LIMIT, ROW_LIMIT, BUSY_DELAY, layerOf, layerText, layerLine, deniedParts, zo, statusTag, decisiveText, ruleLink, isOpen, announce } = I;
+  const { st, els, EX_LIMIT, ROW_LIMIT, BUSY_DELAY, layerOf, byLayer, layerLine, deniedParts, zo, statusTag, decisiveText, ruleLink, isOpen, announce } = I;
 
   /**
    * 暴露清單一列的分層結果 [route, filter]：查詢層的列有 route／filter 時照用；還沒有時依結論與原因的層級推定——
@@ -126,7 +126,8 @@
     const [rt, fl] = rowLayers(x);
     return h('span', { class: 'l4-ex-verdict', 'data-verdict': x.verdict }, [statusTag(x.verdict, t), h('span', { class: 'sr-only' }, '（推論）'),
       (x.returnUnsafe || []).length ? h('span', null, [' ', returnTag(App, x.returnUnsafe)]) : null,
-      rs.length ? h('span', { class: 'muted l4-ex-reasons' }, ' ' + layerText(rs, (c) => c, (c) => V.reachReason(c))) : null,
+      rs.length ? h('span', { class: 'muted l4-ex-reasons' }, [' ', ...byLayer(rs, (c) => c).flatMap((g, gi) => [gi ? '；' : null, `${g.label}：`,
+        ...g.items.flatMap((c, k) => { const w = whyLink(App, c); return [k ? '、' : null, V.reachReason(c), w ? ' ' : null, w]; })])]) : null,
       h('span', { class: 'l4-ex-layers' }, layerLine(x.family === 'ipv6' ? null : rt, fl))]);
   }
   const RETURN_CODE = 'return-not-guaranteed';
@@ -292,23 +293,50 @@
     return h('p', { id: 'l4-ex-ipv6', class: 'muted l4-ex-notes', 'data-status': v.status }, [h('b', { class: 'l4-ex-ipv6-k' }, 'IPv6：'), msg,
       miss.length ? h('span', { class: 'l4-ex-ipv6-missing' }, `沒有判斷 IPv6 的入口設備：${miss.join('；')}。`) : null]);
   }
-  /** 頁尾的判斷的前提：有暴露清單時用它的 assumptions（含暴露清單另加的前提），否則用 S.query.reachAssumptions */
-  function fillAssume(list) {
-    els.assumeSum.textContent = `判斷的前提（${V.num(list.length)} 條）`;
-    V.clear(els.assumeList);
-    list.forEach((a) => els.assumeList.appendChild(h('li', { 'data-code': a.code }, a.message)));
+  /**
+   * 頁尾的判斷的前提（依 Q 填一次）：L4 自己的前提（reachAssumptions＋exposureAssumptions）只列這份基準有影響的（V.assumeBlock），
+   * 其他收合；路由層（traceAssumptions）不列，只寫一行「路由：同 L3 路由追蹤」，有影響的那幾條收在那一行的展開裡（「為什麼」的去處）
+   */
+  const L4_ASSUME = () => S.query.reachAssumptions().concat(S.query.exposureAssumptions());
+  function fillAssume(App) {
+    const Q = App.Q; if (!els.root || st.assumeFor === Q) return;
+    st.assumeFor = Q;
+    const use = V.assumeUse(Q);
+    const route = S.query.traceAssumptions().filter((a) => V.assumeAffects(use.get(a.code)));
+    const b = V.assumeBlock(App, L4_ASSUME(), { idPrefix: 'l4-assume-', listId: 'l4-assume-shown', listClass: 'l4-assume-list', otherId: 'l4-assume-other' });
+    st.assumeN = b.shown.length;
+    const traceLink = h('a', { class: 'link', onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); App.openTrace(); } }, '見路由追蹤');
+    const routeLine = h('div', { id: 'l4-assume-route', class: 'l4-assume-route', tabindex: '-1' }, [
+      h('span', null, `路由：同 L3 路由追蹤（${route.length ? `有 ${V.num(route.length)} 條前提影響這份基準，` : '沒有前提影響這份基準，'}`), traceLink, '）',
+      route.length ? h('details', { class: 'l4-assume-route-list' }, [h('summary', null, `是哪 ${V.num(route.length)} 條`),
+        h('ul', { class: 'assume-list' }, route.map((a) => V.assumeItem(App, a, use.get(a.code), 'l4-assume-')))]) : null]);
+    V.clear(els.assumeBody);
+    [routeLine, h('p', { class: 'l4-assume-title' }, `這份基準會影響結果的前提（${V.num(b.shown.length)} 條）`), b.list, b.other].forEach((x) => { if (x) els.assumeBody.appendChild(x); });
   }
-  function openAssume() {
+  /** 頁首的「前提」連結：展開頁尾，焦點到摘要 */
+  function openAssume(App) {
+    fillAssume(App);
     els.assumeFold.setAttribute('open', ''); els.assumeFold.open = true;
     const sm = els.assumeFold.querySelector('summary'); if (sm) { sm.focus(); if (sm.scrollIntoView) sm.scrollIntoView({ block: 'start' }); }
   }
+  /** 「為什麼」：展開頁尾那條前提（路由層的在路由那一行的展開裡），捲過去並聚焦 */
+  function openAssumeCode(App, code) {
+    fillAssume(App);
+    els.assumeFold.setAttribute('open', ''); els.assumeFold.open = true;
+    if (!V.revealAssume($('#l4-assume-' + code))) openAssume(App);
+  }
+  /** 一個原因旁的「為什麼」（對不到前提時 null）：reason 是 Q.reach 的原因物件（有 keys 時對得更準），暴露清單的列只有代碼 */
+  const whyLink = (App, code, reason) => { const c = V.reasonAssume(App.Q, code, reason); return c ? V.whyLink(c, 'l4-why', (x) => openAssumeCode(App, x)) : null; };
   /** 頁首的結論句與三段；沒有 WAN 時合併成一張說明並展開內部互通 */
   function renderExposure(App) {
     if (!els.root) return;
     const box = V.clear(els.ex); const Q = App.Q; const hd = V.clear(els.exHead);
     // 第一句結論在頁首（h2 下面），後面接頁面唯一的推論標示與「前提」連結（各段、各列只有給輔助科技念的「（推論）」）
+    // 暴露清單算完（或失敗）時填頁尾的前提，連結寫出有影響的條數
+    if (st.ex || st.exErr) fillAssume(App);
+    const nA = st.assumeFor === Q ? st.assumeN : 0;
     const tail = () => [' ', V.chip('推論', 'info', { title: '依基準的路由與防火牆規則推論，不寫進基準；前提見頁尾' }), ' ',
-      h('a', { class: 'link l4-ex-assume', href: '#l4-assume-fold', onclick: (e) => { if (e && e.preventDefault) e.preventDefault(); openAssume(); } }, '前提')];
+      h('a', { class: 'link l4-ex-assume', href: '#l4-assume-fold', onclick: (e) => { if (e && e.preventDefault) e.preventDefault(); openAssume(App); } }, nA ? `前提（${V.num(nA)} 條有影響）` : '前提')];
     const head = (children) => children.concat(tail()).forEach((c) => { if (c) hd.appendChild(typeof c === 'string' ? h('span', null, c) : c); });
     box.appendChild(h('h3', { id: 'l4-ex-title', class: 'work-card-title' }, '從外部進來'));
     if (st.exErr) { head(['無法計算從外部進得來什麼。']); box.appendChild(h('p', { class: 'diffA l4-ex-error', role: 'alert' }, '無法計算：' + st.exErr)); return; }
@@ -321,7 +349,6 @@
       return;
     }
     const xr = st.ex;
-    fillAssume(Array.isArray(xr.assumptions) && xr.assumptions.length ? xr.assumptions : S.query.reachAssumptions());
     if (xr.status !== 'ok') {
       const nw = (xr.noWan || []).map((x) => findingLink(App, x.findingKey)).filter(Boolean);
       head([xr.status === 'no-wan' ? '找不到 WAN 介面，無法判斷從外部進得來什麼。' : xr.message || '無法判斷從外部進得來什麼。']);
@@ -345,5 +372,5 @@
     box.appendChild(ipv6Note(App, xr));
   }
 
-  Object.assign(I, { deniedSentence, exRuns, stopEx, exposure, returnTag, openExposure, exGroups, fillAssume });
+  Object.assign(I, { deniedSentence, exRuns, stopEx, exposure, returnTag, openExposure, exGroups, fillAssume, whyLink });
 })(globalThis.SSOT = globalThis.SSOT || {});

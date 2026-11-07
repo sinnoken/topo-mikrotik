@@ -1107,7 +1107,7 @@
       ])),
     ]);
     const endEl = (e) => h('div', { class: 'hop ' + V.TRACE_END_STYLE[V.traceEndKind(e)].cls, 'data-status': e.status }, [
-      h('b', null, devLink(App, e.dev)), multi && e.vrf ? `（${V.vrfText(e.vrf)}）` : '', `：${V.TRACE_END[e.status] || e.status}`, h('div', { class: 'muted' }, e.note),
+      h('b', null, devLink(App, e.dev)), multi && e.vrf ? `（${V.vrfText(e.vrf)}）` : '', `：${V.TRACE_END[e.status] || e.status}`, traceWhy(App, e), h('div', { class: 'muted' }, e.note),
       ...(e.rules || []).map((r) => ruleLine(App, r)), e.rule ? ruleLine(App, e.rule) : null,
     ]);
     const starts = t.starts && t.starts.length ? t.starts : [t.start];
@@ -1127,6 +1127,29 @@
       el.classList.add('trace-group'); el.setAttribute('data-start', s);
       return el;
     });
+  }
+  /**
+   * 這次追蹤的前提（路由層，S.query.traceAssumptions）：只列這份基準有影響的（Q.assumptionUse；短句＋影響），其他收合。
+   * 每條有 id（trace-assume-<code>），結果旁的「為什麼」展開這段並聚焦那一條
+   */
+  const traceAssume = (App) => {
+    const b = V.assumeBlock(App, S.query.traceAssumptions(), { idPrefix: 'trace-assume-', none: '這份基準沒有會影響路由追蹤的前提。' });
+    return section('這次追蹤的前提', h('div', { class: 'trace-assume' }, [b.list, b.other].filter(Boolean)), { fold: true, extra: [V.chip(`${V.num(b.shown.length)} 條有影響`)] });
+  };
+  /**
+   * 結果旁的「為什麼」：ends[].status 對到的前提（S.query.traceEndStatuses；策略路由依 ends[].assumption，送往外部以外的 reason 依 reasons），
+   * 只連路由層的前提（這次追蹤的前提列的那幾條）
+   */
+  let endAssume = null;
+  function traceWhy(App, e) {
+    if (!endAssume) endAssume = new Map(S.query.traceEndStatuses().map((x) => [x.status, x]));
+    const d = endAssume.get(e.status); if (!d) return null;
+    const raw = typeof e.assumption === 'string' ? e.assumption : (d.reasons && e.reason && d.reasons[e.reason]) || d.assumption;
+    const cs = (Array.isArray(raw) ? raw : raw ? [raw] : []).filter((c) => S.query.traceAssumptions().some((a) => a.code === c));
+    const use = V.assumeUse(App.Q); const c = cs.find((x) => V.assumeAffects(use.get(x))) || cs[0];
+    if (!c) return null;
+    const w = V.whyLink(c, 'trace-why', (x) => V.revealAssume(V.$('#trace-assume-' + x)));
+    return w ? h('span', null, [' ', w]) : null;
   }
   /**
    * 整體結果的標籤：分類同 V.traceEndKind（S.trace 的 status），停在未收集的設備是「無法驗證」（灰色），
@@ -1179,6 +1202,7 @@
       kv([['起點', traceStart(App, t)],
         ['VRF', multi ? `${t.vrf}（${sel.vrf ? '指定' : '依來源位址決定'}）` : null]]),
       ...tracePath(App, t),
+      traceAssume(App),
       back ? section(`回程（${t.dst} → ${t.src}）`, back.ok ? kv([['起點', traceStart(App, back)], ['VRF', multi ? back.vrf : null], ['說明', '無狀態的 ACL 需要確認回程也能通過']]) : traceError(App, back, '回程', t.dst)) : null,
       ...(back && back.ok ? tracePath(App, back, '回程') : []),
       outside ? section(`回程（${t.dst} → ${t.src}）`, h('p', { class: 'muted trace-return-ext' }, V.TRACE_RETURN_EXTERNAL + '。回程的起點不在基準內，沒有追蹤。')) : null,

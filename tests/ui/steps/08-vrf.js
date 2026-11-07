@@ -153,6 +153,24 @@ module.exports = async () => {
     if (!end) throw new Error('條件無法判斷的 /routing rule 應使結果不明：' + JSON.stringify(tu.ends || tu));
     const ud = text('#detail');
     if (!ud.includes(V.TRACE_END.policy) || !ud.includes(`/routing rule 第 ${odd.order} 條`) || !ud.includes('策略路由不明')) throw new Error('策略路由不明應以中文說明並列出規則：' + ud.slice(0, 300));
+    // L3 路由追蹤的前提：結果下方收合「這次追蹤的前提」，只列路由層有影響的（短句＋影響），其他收合
+    {
+      const use = new Map(Q.assumptionUse().map((u) => [u.code, u])); const on = (a) => ['affects', 'missing-data'].includes(use.get(a.code).status);
+      const ta = $('#detail').testAll('details').find((d) => d.querySelector('summary') && d.querySelector('summary').textContent.startsWith('這次追蹤的前提'));
+      if (!ta || ta.getAttribute('open') != null) throw new Error('路由追蹤的結果下方應有預設收合的「這次追蹤的前提」');
+      const items = ta.testAll('li').filter((x) => /\bassume-item\b/.test(x.className));
+      const top = items.filter((x) => !x.parentNode.parentNode.className.includes('assume-other'));
+      const tw = S.query.traceAssumptions().filter(on);
+      require('assert').deepStrictEqual(top.map((x) => x.dataset.code), tw.map((a) => a.code), '這次追蹤的前提只列有影響的路由層前提');
+      if (top.some((x) => x.querySelector('.assume-short').textContent !== S.query.traceAssumptions().find((a) => a.code === x.dataset.code).short || !x.querySelector('.assume-impact'))) throw new Error('每條寫短句與影響');
+      if (items.length !== S.query.traceAssumptions().length) throw new Error('其他路由層前提收在「其他前提」');
+      // 策略路由不明的結束旁有「為什麼」：展開這次追蹤的前提並聚焦 policy-routing
+      const w = $('#detail').testAll('a').find((a) => /\btrace-why\b/.test(a.className) && a.dataset.assume === 'policy-routing');
+      if (!w) throw new Error('策略路由不明的結束旁應有「為什麼」');
+      w.click();
+      const li = items.find((x) => x.dataset.code === 'policy-routing');
+      if (ta.getAttribute('open') == null || document.activeElement !== li || li.querySelector('.assume-detail').getAttribute('open') == null) throw new Error('「為什麼」應展開這次追蹤的前提並聚焦那一條');
+    }
     // 範例資料沒有 drop 的 /routing rule：用同一份結果換上 policy-drop 的結束，確認畫面的說明與規則（畫面只顯示查詢層的結果）
     const drop = Object.assign({}, tu, { reached: false, ends: [{ dev: ce, vrf: MAIN, status: 'policy-drop', note: `策略路由：/routing rule 第 ${odd.order} 條 drop，封包被丟棄`, rule: odd, path: [ce] }] });
     App.select({ type: 'trace', result: drop, reverse: null });
@@ -164,11 +182,14 @@ module.exports = async () => {
     if (process.env.SMOKE_INPUT) return;
     const Q = App.Q; const V = S.view; const K = S.keys; const MAIN = K.MAIN_VRF;
     App.showLayer('l4'); await App.l4Job; await openMatrix();
-    // 前提：照列查詢層的前提
-    // 有暴露清單時是它的 assumptions（S.query.reachAssumptions 加上暴露清單的前提）
-    const exA = App.Q.exposure().assumptions; const as = exA && exA.length ? exA : S.query.reachAssumptions(); const lis = L4().testAll('.l4-assume-list li');
-    require('assert').deepStrictEqual(lis.map((x) => x.dataset.code), as.map((a) => a.code));
-    if (!['ipv4-vrf', 'policy-routing'].every((c) => lis.some((x) => x.dataset.code === c && x.textContent === as.find((a) => a.code === c).message))) throw new Error('前提應有 ipv4-vrf 與 policy-routing，文字取自查詢層');
+    // 前提：ipv4-vrf、policy-routing 是路由層（S.query.traceAssumptions），L4 頁尾只寫「同 L3 路由追蹤」；範例資料兩條都有影響，列在路由那一行的展開裡，短句取自查詢層
+    const use = new Map(Q.assumptionUse().map((u) => [u.code, u]));
+    ['ipv4-vrf', 'policy-routing'].forEach((c) => {
+      const a = S.query.traceAssumptions().find((x) => x.code === c); const li = $('#l4-assume-' + c);
+      if (!a || use.get(c).status !== 'affects') throw new Error('測試前提：範例資料的 ' + c + ' 有影響');
+      if (!li || !$('#l4-assume-route').contains(li) || li.querySelector('.assume-short').textContent !== a.short) throw new Error('路由層的前提 ' + c + ' 應在頁尾路由那一行的展開裡，寫查詢層的短句');
+    });
+    if (L4().testAll('.l4-assume-list li').some((x) => x.dataset.layer === 'route' || S.query.traceAssumptions().some((a) => a.code === x.dataset.code))) throw new Error('L4 的前提清單不列路由層');
     if (L4().querySelector('.l4-vrf-box').classList.contains('hidden')) throw new Error('基準有多個 VRF 時應顯示 VRF 選單');
     const ip = overlapIp(Q); const want = Q.findIp(ip).vrfs.find((v) => v !== MAIN);
     const dst = '10.1.30.2';

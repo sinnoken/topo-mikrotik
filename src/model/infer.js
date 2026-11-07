@@ -669,6 +669,11 @@
   /** 寫入位址清單的規則動作。 */
   const FW_ADDRESS_LIST_WRITE = Object.freeze(['add-src-to-address-list', 'add-dst-to-address-list']);
   /**
+   * 設定裡看不出來的寫入方式：外部系統經這些管道連進設備寫入清單（例如自動封鎖名單），export 只有收集當時的項目，
+   * 寫入者不在設定裡，所以不算 ADDRESS_LIST_DYNAMIC 的原因（清單仍視為靜態，內容以收集當時為準）；查詢層的前提文字讀這一份。
+   */
+  const FW_ADDRESS_LIST_UNSEEN = Object.freeze(['API', 'SSH']);
+  /**
    * 清單項目的位址：family 的位址、網段或範圍 → { kind: 'address', range: [lo, hi] }；
    * 兩端都是位址、但起點大於終點或位址族混用的範圍（S.ip.badRange）→ { kind: 'invalid-range', range: null }（判斷不了，不是網域名稱）；
    * 其他文字（手冊：不是有效位址就當 DNS 名稱）→ { kind: 'dns', range: null }。IPv6 不接受範圍。
@@ -859,22 +864,63 @@
     return Array.from(out).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   }
 
-  const rangesWithin = (inner, outer) => inner.every(([a, b]) => {
-    // 以 outer 的聯集涵蓋 [a, b]
+  // 埠的範圍（parseVal 的 ranges；埠不是位址，不經 S.ip.set）：inner 的每個值都在 outer 的聯集內／兩者沒有共同的值
+  const portsWithin = (inner, outer) => inner.every(([a, b]) => {
     let cur = a; const sorted = outer.slice().sort((p, q) => (p[0] < q[0] ? -1 : p[0] > q[0] ? 1 : 0));
     for (const [c, d] of sorted) { if (c > cur) break; if (d >= cur) cur = d + 1n; if (cur > b) return true; }
     return cur > b;
   });
-  const rangesDisjoint = (x, y) => x.every(([a, b]) => y.every(([c, d]) => b < c || d < a));
-  /** j ⊆ i（符合 j 的值一定符合 i）。 */
+  const portsDisjoint = (x, y) => x.every(([a, b]) => y.every(([c, d]) => b < c || d < a));
+  /** j ⊆ i（符合 j 的值一定符合 i）；埠、集合與其他條件。位址條件不經這裡（見 addrCovers）。 */
   function valSubset(j, i) {
     if (i.kind !== j.kind || i.kind === 'raw') return i.raw === j.raw;
-    const sub = i.kind === 'ranges' ? rangesWithin : (x, y) => Array.from(x).every((t) => y.has(t));
-    const dis = i.kind === 'ranges' ? rangesDisjoint : (x, y) => Array.from(x).every((t) => !y.has(t));
+    const sub = i.kind === 'ranges' ? portsWithin : (x, y) => Array.from(x).every((t) => y.has(t));
+    const dis = i.kind === 'ranges' ? portsDisjoint : (x, y) => Array.from(x).every((t) => !y.has(t));
     if (!i.neg && !j.neg) return sub(j.items, i.items);
     if (i.neg && !j.neg) return dis(j.items, i.items);
     if (i.neg && j.neg) return sub(i.items, j.items);
     return false;
+  }
+  /** 同一方向的位址條件：字面值與位址清單（兩者同時出現時都要符合）。 */
+  const ADDR_COVER_DIRS = Object.freeze([['src-address', 'src-address-list'], ['dst-address', 'dst-address-list']]);
+  const ADDR_COVER_KEYS = new Set(ADDR_COVER_DIRS.flat());
+  /** 規則一個位址條件符合的位址（登錄表的集合，開頭的 ! 取補集）；字面值不合法、位址族與規則不同、清單可能有動態來源或基準裡沒有時 null。 */
+  function addrKeySet(ctx, r, k) {
+    const e = ctx.sets.ofRule(r, k); const set = e && e.set;
+    if (!set || set.bits !== BITS(r.family)) return null;
+    return splitNeg(r.match[k]).neg ? set.not() : set;
+  }
+  /** 規則在一個方向符合的位址（各條件的交集）；沒有條件時 undefined，有任何一項無法判斷時 null。 */
+  function addrCond(ctx, r, keys) {
+    let out;
+    for (const k of keys) {
+      if (r.match[k] === undefined) continue;
+      const one = addrKeySet(ctx, r, k); if (one === null) return null;
+      out = out ? out.and(one) : one;
+    }
+    return out;
+  }
+  /**
+   * i 的位址條件（keys 是同一方向的字面值與清單）涵蓋 j：符合 j 的位址一定符合 i。集合一律經登錄表（ctx.sets），
+   * 所以靜態清單與字面值之間也能判斷（例如 src-address-list=內容是 10.0.0.0/8 的清單涵蓋 src-address=10.1.0.0/16）。
+   * 有一邊無法判斷時退回逐項比對：j 有同一個條件，而且寫法相同或兩邊都能判斷、j 的集合在 i 的集合內（保守：只會少判涵蓋）。
+   */
+  function addrCovers(ctx, i, j, keys) {
+    if (!keys.some((k) => i.match[k] !== undefined)) return true;
+    const si = addrCond(ctx, i, keys); const sj = addrCond(ctx, j, keys);
+    // j 符合的位址是空集合（清單只有停用項目、字面值與清單沒有交集）：空集合雖然在任何集合內，但 j 和 i 並不相干，不判涵蓋（否則 F01 誤報、S.remediate 自動停用 j）
+    if (sj && sj.isEmpty) return false;
+    if (si && sj !== null) return sj === undefined ? si.isAll : sj.within(si);
+    if (si && si.isAll) return true;
+    return keys.every((k) => {
+      if (i.match[k] === undefined) return true;
+      if (j.match[k] === undefined) return false;
+      const b = addrKeySet(ctx, j, k);
+      if (b && b.isEmpty) return false;
+      if (parseVal(k, i.match[k]).raw === parseVal(k, j.match[k]).raw) return true;
+      const a = addrKeySet(ctx, i, k);
+      return !!a && !!b && b.within(a);
+    });
   }
 
   /**
@@ -986,8 +1032,9 @@
       if (ei === UNKNOWN || ej === UNKNOWN) { if (keys.some((k) => i.match[k] !== j.match[k])) return false; continue; }
       if (!Array.from(ej || ctx.universe).every((x) => ei.has(x))) return false;
     }
+    if (!ADDR_COVER_DIRS.every((keys) => addrCovers(ctx, i, j, keys))) return false;
     return ki.every((k) => {
-      if (/^(in|out)-interface(-list)?$/.test(k)) return true;
+      if (/^(in|out)-interface(-list)?$/.test(k) || ADDR_COVER_KEYS.has(k)) return true;
       if (j.match[k] === undefined) return false;
       return valSubset(parseVal(k, j.match[k]), parseVal(k, i.match[k]));
     });
@@ -1657,7 +1704,7 @@
   S.infer.ADDR_SET_KINDS = ADDR_SET_KINDS;
   S.infer.addrBounds = addrBounds;
   S.infer.fw = { canonMatch, covers, sameMatch, evalChain, evalFilter, decide, packetFor, wanPacket, wanEntries, entriesIn, fwContext, parseVal, splitNeg, protoName, listMembers, policyBaseline, addressListItem, addressListState,
-    ADDRESS_LIST_DYNAMIC: FW_ADDRESS_LIST_DYNAMIC, ADDRESS_LIST_WRITE: FW_ADDRESS_LIST_WRITE,
+    ADDRESS_LIST_DYNAMIC: FW_ADDRESS_LIST_DYNAMIC, ADDRESS_LIST_WRITE: FW_ADDRESS_LIST_WRITE, ADDRESS_LIST_UNSEEN: FW_ADDRESS_LIST_UNSEEN,
     TERMINAL: FW_TERMINAL, BUILTIN: FW_BUILTIN, NONDET: FW_NONDET, PORT_PROTOCOLS, POLICY_CHAINS,
     condKind, CONDITIONS: FW_CONDITIONS, IFC_CONDITIONS: FW_IFC_CONDITIONS, ADDRESS_LIST: FW_ADDRESS_LIST, MAX_JUMP: FW_MAX_JUMP, FIRST_PACKET: FW_FIRST_PACKET };
 })(globalThis.SSOT = globalThis.SSOT || {});

@@ -67,7 +67,6 @@
 
   // ---- 建立前的預檢（S.preflight：只切塊、辨識與解析，不建模）：打字時延遲重算，選檔、載入範例、換命名規則時立即重算
   const PREFLIGHT_MS = 400; // 打字停下多久才重算：約 1000 台的收集檔預檢約需數百毫秒，不在每個按鍵都跑
-  const LIST_MAX = 200; // 清單最多列出的筆數，其餘只寫總數
   // 輸入的簡短指紋：建立時若輸入在預檢後被改過（例如程式直接寫入文字框、沒有 input 事件），就重新預檢
   const inputSig = (sources, profile) => sources.map((x) => `${x.name}:${x.text.length}:${x.text.slice(0, 64)}:${x.text.slice(-64)}`).join('|') + '|' + (profile ? profile.id : '');
   function schedulePreflight() { clearTimeout(input.pfTimer); input.pfTimer = setTimeout(runPreflight, PREFLIGHT_MS); }
@@ -94,19 +93,20 @@
       V.chip(m ? `${V.num(m)} 段無法辨識` : '沒有無法辨識的段落', m ? 'err' : 'ok'),
       k ? V.chip(`${V.num(k)} 段有認不得的行`, 'warn') : null]));
     if (!n) box.appendChild(h('p', { class: 'pf-why' }, '沒有認到任何設備，無法建立基準：收集檔的每台設備要以「設備名 (管理 IP):」這一行開頭（見上方「格式說明」），或選擇以設備名命名的檔案。'));
-    const more = (len) => (len > LIST_MAX ? h('div', { class: 'muted table-more' }, `只顯示前 ${LIST_MAX} 筆，共 ${V.num(len)} 筆`) : null);
     // 位置的寫法與 I01、I03 的訊息相同：段落寫起訖行，收集器註解（kind: 'note'）只有一行
     const at = (u) => `${V.fileName(u.file)} 第 ${u.kind === 'note' ? u.startLine : `${u.startLine}–${u.endLine}`} 行`;
+    // 段落清單多時分頁（V.paged，每頁 V.BIG_LIST.page 筆，與表格的分頁相同），不截斷
+    const badList = (list, text) => V.paged(list.length, '段', (from, to) => h('ul', { class: 'pf-bad' }, list.slice(from, to).map((u) => h('li', null, text(u)))));
     box.appendChild(h('details', { id: 'input-preflight-list', class: 'collect', open: input.pfOpen || null, ontoggle: (e) => { input.pfOpen = e.target.open; } }, [
       h('summary', null, '查看清單'),
-      p.devices.length ? V.table([{ t: '設備', f: (d) => d.name }, { t: '區塊', f: (d) => V.num(d.blocks) },
-        { t: '資料種類', f: (d) => h('div', { class: 'chip-list' }, d.dataLabels.length ? d.dataLabels.map((l) => V.chip(l)) : [V.chip('沒有可用的資料', 'err')]) }], p.devices, { limit: LIST_MAX }) : null,
+      // 設備多時分頁，可依設備名搜尋（V.bigList）
+      p.devices.length ? V.bigList([{ t: '設備', f: (d) => d.name }, { t: '區塊', f: (d) => V.num(d.blocks) },
+        { t: '資料種類', f: (d) => h('div', { class: 'chip-list' }, d.dataLabels.length ? d.dataLabels.map((l) => V.chip(l)) : [V.chip('沒有可用的資料', 'err')]) }], p.devices,
+      { text: (d) => d.name, unit: '台', what: '設備', placeholder: '搜尋設備名' }) : null,
       m ? h('div', null, '無法辨識的段落（建立後列為 I01）') : null,
-      m ? h('ul', { class: 'pf-bad' }, p.unrecognized.slice(0, LIST_MAX).map((u) => h('li', null, `${at(u)}：${u.reason}`))) : null,
-      m ? more(m) : null,
+      m ? badList(p.unrecognized, (u) => `${at(u)}：${u.reason}`) : null,
       k ? h('div', null, '有認不得的行的段落（其餘內容照常建立；建立後列為 I03）') : null,
-      k ? h('ul', { class: 'pf-bad' }, p.partial.slice(0, LIST_MAX).map((u) => h('li', null, `${at(u)}（${u.command || '沒有指令標記'}）：${V.num(u.lines)} 行`))) : null,
-      k ? more(k) : null]));
+      k ? badList(p.partial, (u) => `${at(u)}（${u.command || '沒有指令標記'}）：${V.num(u.lines)} 行`) : null]));
     block(n ? '' : '沒有認到任何設備');
   }
 

@@ -1,7 +1,7 @@
 // 畫面冒煙測試的 step：處理紀錄、依設備分組、防火牆畫面與修正、devices.csv 草稿。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { document, S, fs, path, ROOT, step, captureDownloads, parseCsv, hubBtn, goStep, until, $, text, shared } = require('../helpers.js');
+const { document, S, fs, path, ROOT, step, captureDownloads, parseCsv, hubBtn, goStep, until, $, text, shared, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows, pressKey } = require('../helpers.js');
 
 module.exports = async () => {
   shared.ackedKey = null; // 處理紀錄中已處理的 finding 鍵：清除基準後要仍然存在
@@ -196,33 +196,38 @@ module.exports = async () => {
       if (!App.sel || App.sel.type !== e.type || App.sel.key !== e.key) throw new Error(`${f.id} 應選取它指向的${e.type === 'rule' ? '規則' : '服務'}`);
       const dev = e.type === 'rule' ? Q.getFirewallRule(e.key).dev : S.keys.splitEp(e.key)[0];
       if (!App.graph.sel.nodes.has(dev)) throw new Error(`${f.id} 應在圖上選取規則所在的設備`);
-      const row = $('#detail').querySelector('.focus');
-      if (!row) throw new Error(`${f.id} 應在詳情標出定位的列`);
+      // 防火牆視窗：那一列在左欄選取（class focus、aria-selected，顏色在 CSS），右欄是它的詳情並列出這筆檢查結果
+      const rows = fwRows(e.key); const row = rows.find((tr) => tr.classList.contains('focus'));
+      if (!row) throw new Error(`${f.id} 應在防火牆視窗標出定位的列`);
+      if (row.getAttribute('aria-selected') !== 'true' || fwList().testAll('tr').filter((tr) => tr.getAttribute('aria-selected') === 'true').some((tr) => tr.getAttribute('data-key') !== e.key)) throw new Error(`${f.id} 只有定位的列 aria-selected`);
       if (!row.textContent.includes(f.id)) throw new Error(`${f.id} 定位的列應標出這筆檢查結果`);
       if (e.type === 'rule' && !row.textContent.includes(Q.getFirewallRule(e.key).action)) throw new Error('定位的列應是那條規則');
       if (e.type === 'service' && !row.textContent.includes(S.keys.splitEp(e.key)[1])) throw new Error('定位的列應是那個服務');
-      if (row.testAll('td')[0].style.background !== S.view.theme.firewall.focus.bg) throw new Error('定位列的顏色應取自 theme');
+      if (row.testAll('td')[0].style.background) throw new Error('定位列的顏色在 CSS（--row-focus-*），不寫 inline style');
+      if (!fwSide().textContent.includes(f.message)) throw new Error(`${f.id} 的右欄應是那一列的詳情並列出這筆檢查結果`);
+      if (e.type === 'rule' && !fwSide().querySelector('h2').textContent.endsWith('#' + Q.getFirewallRule(e.key).position)) throw new Error('右欄的標題應是那條規則的位置');
     });
     if (!process.env.SMOKE_INPUT && !(types.has('rule') && types.has('service'))) throw new Error('範例資料應同時有指向規則與服務的檢查結果');
-    // 找不到的規則或服務：不報錯，說明原因並標出設備
+    // 找不到的規則或服務：不報錯，視窗的總覽說明原因，圖上標出設備
     const dev = Q.firewallRules()[0].dev;
     App.select({ type: 'rule', key: dev + '|ip|filter|input|nope' });
-    if (!text('#detail').includes('基準中沒有這條規則') || !App.graph.sel.nodes.has(dev)) throw new Error('找不到的規則應說明，並標出設備');
+    if (!fwSide().textContent.includes('基準中沒有這條規則') || !App.graph.sel.nodes.has(dev)) throw new Error('找不到的規則應說明，並標出設備');
     App.select({ type: 'service', key: dev + '|nope' });
-    if (!text('#detail').includes('基準中沒有這個服務')) throw new Error('找不到的服務應說明');
+    if (!fwSide().textContent.includes('基準中沒有這個服務')) throw new Error('找不到的服務應說明');
     App.select(null);
+    if ($('#dlg-table').open) throw new Error('取消選取時應關閉防火牆視窗');
   });
   await step('防火牆畫面：依位址族 → 表 → chain → position 列出，標出 WAN／LAN 判斷、服務與原文行號', () => {
     const Q = App.Q; const rules = Q.firewallRules();
     if (!rules.length) throw new Error('應有防火牆規則');
     const dev = rules.reduce((best, r) => (Q.firewallRulesOf(r.dev).length > Q.firewallRulesOf(best).length ? r.dev : best), rules[0].dev);
     App.select({ type: 'device', key: dev });
-    const link = $('#detail').testAll('a').find((a) => a.textContent === '查看防火牆規則與服務');
+    const link = detailRoot().testAll('a').find((a) => a.textContent === '查看防火牆規則與服務');
     if (!link) throw new Error('設備詳情應有防火牆摘要與入口');
     // 防火牆摘要與相鄰的路由表、管理面設定同一種模式：可展開區塊（detail-fold），標題旁是規則數（純數字）、有問題時「N 條有問題」；
     // 有問題的規則時預設展開；跳到防火牆畫面的入口在標題列
     {
-      const fold = $('#detail').testAll('details').find((d) => d.querySelector('summary').firstChild.textContent === '防火牆');
+      const fold = detailRoot().testAll('details').find((d) => d.querySelector('summary').firstChild.textContent === '防火牆');
       const n = Q.firewallRulesOf(dev).length; const nBad = Q.firewallRulesOf(dev).filter((r) => Q.findingsFor('rule', r.key).some((f) => f.severity !== 'info')).length; const bad = nBad > 0;
       if (!fold || !/\bdetail-fold\b/.test(fold.className) || !fold.querySelector('summary').contains(link)) throw new Error('設備詳情的防火牆應是可展開區塊（section 的 fold），入口在標題列');
       const chip = fold.querySelector('summary').testAll('.count')[0];
@@ -230,7 +235,7 @@ module.exports = async () => {
       const badChip = fold.querySelector('summary').testAll('.chip').find((c) => c.textContent.endsWith('條有問題'));
       if (bad ? !badChip || badChip.textContent !== `${S.view.num(nBad)} 條有問題` : badChip) throw new Error('有問題的規則時標題列寫「N 條有問題」，沒有時不顯示');
       if ((fold.getAttribute('open') != null) !== bad) throw new Error('有問題的規則時防火牆區塊預設展開，沒有時收合');
-      if ($('#detail').testAll('.detail-section').some((s) => s.querySelector('h3').textContent.startsWith('防火牆'))) throw new Error('防火牆摘要不應是一般區塊');
+      if (detailRoot().testAll('.detail-section').some((s) => s.querySelector('h3').textContent.startsWith('防火牆'))) throw new Error('防火牆摘要不應是一般區塊');
     }
     // WAN 狀態用語：摘要與防火牆畫面共用 V.firewall.zoneStatus()；三種狀態都可區分且標示推論
     const ZS = S.view.firewall.zoneStatus; const zoneNow = Q.firewallZone(dev);
@@ -238,34 +243,38 @@ module.exports = async () => {
     if (new Set(known.map((z) => z.short)).size !== known.length || new Set(known.map((z) => z.text)).size !== known.length) throw new Error('三種 WAN 狀態的文字應可區分');
     if (known.some((z) => !z.short.includes('（推論）') || !z.tone)) throw new Error('WAN 狀態摘要應標示（推論）並有色調');
     if (Q.devices().some((d) => { const z = Q.firewallZone(d.key); return z && !known.includes(ZS(z.status)); })) throw new Error('基準中的 WAN 狀態都應有對應用語');
-    if (zoneNow && !text('#detail').includes(ZS(zoneNow.status).short)) throw new Error('設備詳情的防火牆摘要應顯示 WAN 狀態（與防火牆畫面同一來源）');
-    link.click();
-    if (zoneNow && !text('#detail').includes(ZS(zoneNow.status).text)) throw new Error('防火牆畫面應顯示 WAN 狀態的完整說明');
-    if (App.sel.type !== 'firewall' || App.sel.dev !== dev) throw new Error('入口應開啟該設備的防火牆畫面');
-    // chain 依 Q.firewallChains 的順序，每個 chain 一個可展開區塊；展開後列數等於規則數，position 由小到大
+    if (zoneNow && !detailRoot().textContent.includes(ZS(zoneNow.status).short)) throw new Error('設備詳情的防火牆摘要應顯示 WAN 狀態（與防火牆畫面同一來源）');
+    // 右欄只剩摘要：沒有規則表、命中次數與規則的詳情（那些只在視窗裡）
+    {
+      const fold = detailRoot().testAll('details').find((d) => d.querySelector('summary').firstChild.textContent === '防火牆');
+      if (fold.querySelector('table') || fold.querySelector('.fw-hits') || fold.querySelector('.fw-impact') || detailRoot().querySelector('.fw-chain')) throw new Error('右欄的設備詳情只留防火牆摘要，不放規則表');
+      const st = S.view.firewall.statusChips(App, dev);
+      if (st.disabled && !fold.textContent.includes(st.disabled.textContent)) throw new Error('摘要應寫出停用的規則數（同視窗頁首的 statusChips）');
+    }
+    link.focus(); link.click();
+    if (App.sel.type !== 'firewall' || App.sel.dev !== dev) throw new Error('入口應開啟該設備的防火牆視窗');
+    if (!$('#dlg-table').open || !text('#tdlg-title').includes(Q.devLabel(dev))) throw new Error('「查看防火牆規則與服務」應開啟這台設備的防火牆視窗');
+    if (detailRoot().querySelector('.fw-open') !== link) throw new Error('開啟視窗時右欄不重畫：入口留在原處');
+    if (zoneNow && !fwSide().textContent.includes(ZS(zoneNow.status).text)) throw new Error('沒選規則時右欄應顯示 WAN 判斷的完整說明');
+    // 頁首只放狀態，和右欄摘要同一份（statusChips），不重複規則與服務的數量
+    const head = fwList().querySelector('.fw-status-row');
+    if (!head || head.testAll('.chip').some((c) => /條規則|個服務/.test(c.textContent))) throw new Error('防火牆視窗的頁首只放狀態');
+    // 分頁：規則一定有；服務、interface list、位址清單有資料時才有；分頁的 count 是列數
+    const tabs = fwRoot().testAll('.tdlg-tab').map((b) => b.getAttribute('data-tab'));
+    const want = ['rules', ...(Q.ipServicesOf(dev).length ? ['services'] : []), ...(Q.interfaceListsOf(dev).length ? ['iflist'] : []), ...(Q.addressSetsOf(dev, 'address-list').length ? ['addr'] : [])];
+    if (tabs.join() !== want.join()) throw new Error('防火牆視窗的分頁：' + tabs.join());
+    if (fwRoot().querySelector('#tdlg-tab-rules').querySelector('.count').textContent !== S.view.num(Q.firewallRulesOf(dev).length)) throw new Error('規則分頁的 count 應是規則數');
+    // 規則表在視窗內：每個 chain 一組（依 Q.firewallChains 的順序），組的 count 是規則數，展開後列數等於規則數，position 由小到大
     const chains = Q.firewallChains(dev);
-    // chain 的區塊在表的區塊裡（兩層都是可展開區塊）：最內層含規則表的是 chain
-    const folds = $('#detail').testAll('details').filter((d) => d.querySelector('.fw-chain') && !d.testAll('details').length);
-    if (folds.map((d) => d.querySelector('summary').firstChild.textContent).join('|') !== chains.map((c) => c.chain).join('|')) throw new Error('chain 的順序應與 Q.firewallChains 一致');
-    // 標題（展開列與一般區塊）依畫面順序
-    const heads = $('#detail').all().filter((x) => x.tagName === 'SUMMARY' || x.tagName === 'H3').map((x) => x.firstChild.textContent);
-    // 防火牆畫面：WAN 判斷與各表是這一頁的主體（一般區塊，標題旁是規則數），服務與 interface list 是附屬清單（展開列，標題旁是列數）；
-    // 數量一律是純數字，標題列（頁首）只放狀態，不重複規則與服務的數量
-    const tableSecs = $('#detail').testAll('.detail-section').filter((s) => /^(IPv4|IPv6) /.test(s.querySelector('h3').firstChild.textContent));
-    if (tableSecs.length !== S.util.uniq(chains.map((c) => c.family + '|' + c.table)).length) throw new Error('每個位址族與表是一個一般區塊');
-    tableSecs.forEach((s) => { const c = s.querySelector('h3').querySelector('.count'); const fam = s.querySelector('h3').firstChild.textContent;
-      const n = chains.filter((x) => `${x.family === 'ip' ? 'IPv4' : 'IPv6'} ${x.table}` === fam).reduce((a, x) => a + x.rules, 0);
-      if (!c || c.textContent !== S.view.num(n)) throw new Error(fam + ' 的標題旁應是規則數'); });
-    const svcFold = $('#detail').testAll('details').find((d) => d.querySelector('summary').firstChild.textContent === '服務（/ip service）');
-    if (Q.ipServicesOf(dev).length && (!svcFold || svcFold.querySelector('summary').querySelector('.count').textContent !== S.view.num(Q.ipServicesOf(dev).length))) throw new Error('服務是展開列，標題旁是服務數');
-    if ($('#detail').querySelector('.row').testAll('.chip').some((c) => /條規則|個服務/.test(c.textContent))) throw new Error('防火牆畫面的頁首只放狀態，不重複規則與服務的數量');
-    const fams = S.util.uniq(chains.map((c) => c.family + ' ' + c.table));
-    const famIdx = fams.map((k) => heads.findIndex((x) => x === k.replace(/^ip /, 'IPv4 ').replace(/^ipv6 /, 'IPv6 ')));
-    if (famIdx.some((i) => i < 0) || famIdx.some((x, i) => i && famIdx[i - 1] > x)) throw new Error('位址族與表的分組應依序列出：' + heads.join('|'));
+    const panel = fwTab('rules');
+    const folds = panel.testAll('.biglist-group').filter((g) => g.getAttribute('data-group') != null);
+    if (folds.map((d) => d.getAttribute('data-group')).join(',') !== chains.map((c) => `${c.family}|${c.table}|${c.chain}`).join(',')) throw new Error('chain 的順序應與 Q.firewallChains 一致');
     folds.forEach((d, n) => {
-      d.dispatch('toggle');
+      if (d.querySelector('summary').querySelector('.count').textContent !== S.view.num(chains[n].rules)) throw new Error(chains[n].chain + ' 的組旁應是規則數');
+      d.open = true; d.dispatch('toggle');
       const trs = d.testAll('tbody tr'); const c = chains[n];
-      if (trs.length !== c.rules) throw new Error(`${c.chain} 的列數應等於規則數`);
+      if (trs.length !== Math.min(c.rules, S.view.BIG_LIST.page)) throw new Error(`${c.chain} 的列數應等於規則數（每頁 ${S.view.BIG_LIST.page} 列）`);
+      if (d.testAll('th').some((th) => th.textContent === '位置')) throw new Error('組內不列和組名重複的「位置」欄');
       const pos = trs.map((tr) => Number(tr.testAll('td')[0].textContent));
       if (pos.some((x, i) => i && pos[i - 1] > x)) throw new Error(`${c.chain} 應依 position 排列`);
       const rows = Q.firewallRuleRows(dev, { family: c.family, table: c.table, chain: c.chain });
@@ -278,16 +287,29 @@ module.exports = async () => {
       if (c.jumpedFrom.length && !d.textContent.includes('由這些規則 jump 進來')) throw new Error('有規則 jump 進來的 chain 應列出來源規則');
     });
     // 原文行號可開啟
-    const a = $('#detail').testAll('.fw-chain a').find((x) => /^第 \d+ 行$/.test(x.textContent));
+    // 原文行號可開啟（原文對話框疊在防火牆視窗上，選取不變）
+    const a = panel.testAll('.biglist-body a').find((x) => /^第 \d+ 行$/.test(x.textContent));
     $('#dlg-raw').close(); a.click();
     if (!$('#dlg-raw').open || !text('#raw-title').includes(a.textContent.replace(/\D/g, ''))) throw new Error('點原文行號應開啟原文');
+    if (App.sel.type !== 'firewall' || !$('#dlg-table').open) throw new Error('點列內的原文連結不應選取那一列，也不關防火牆視窗');
     $('#dlg-raw').close();
-    // WAN／LAN 判斷與服務
-    const zone = Q.firewallZone(dev); const t = text('#detail');
-    if (zone && (!t.includes('WAN／LAN 判斷（推論）') || !zone.wanLists.every((x) => t.includes(x)))) throw new Error('應顯示 WAN／LAN 判斷與依據');
+    // WAN／LAN 判斷（右欄的總覽）與服務（分頁）
+    const zone = Q.firewallZone(dev); const side = fwSide().textContent;
+    if (zone && (!side.includes('WAN／LAN 判斷（推論）') || !zone.wanLists.every((x) => side.includes(x)))) throw new Error('應顯示 WAN／LAN 判斷與依據');
     const svc = Q.ipServicesOf(dev);
-    if (svc.length && !svc.every((x) => t.includes(x.name))) throw new Error('應列出 /ip service');
-    if (svc.some((x) => x.basis === 'default') && !t.includes('預設值')) throw new Error('basis 為 default 的服務應標示「預設值」');
+    if (svc.length) {
+      const t = fwTab('services').textContent;
+      if (!svc.every((x) => t.includes(x.name))) throw new Error('應列出 /ip service');
+      if (svc.some((x) => x.basis === 'default') && !t.includes('預設值')) throw new Error('basis 為 default 的服務應標示「預設值」');
+      fwTab('rules');
+    }
+    // Esc 關閉視窗，焦點回到開啟它的入口；選取回到那台設備，重畫右欄不會再開視窗
+    pressKey('Escape', fwRoot().querySelector('#tdlg-tab-rules'));
+    if ($('#dlg-table').open) throw new Error('Esc 應關閉防火牆視窗');
+    if (document.activeElement !== link) throw new Error('關閉防火牆視窗後焦點應回到「查看防火牆規則與服務」');
+    if (App.sel.type !== 'device' || App.sel.key !== dev) throw new Error('關閉視窗後選取回到那台設備');
+    S.view.details.render(App, App.sel);
+    if ($('#dlg-table').open) throw new Error('關閉後重畫右欄不應再開視窗');
   });
   await step('防火牆修正：指令由 S.remediate 產生（畫面不自己組），F03 等不能產生指令的列出核心的原因', async () => {
     const Q = App.Q; const all = App.snap.findings; const RV = S.view.remediation; const RM = S.remediate;
@@ -301,8 +323,8 @@ module.exports = async () => {
     idxs.forEach((i) => {
       const f = all[i]; const key = Q.findingKey(f);
       App.selectFinding(i);
-      if (!text('#detail').includes('修正（停用規則）')) throw new Error(`${f.id} 的防火牆畫面應有修正區塊`);
-      const box = $('#detail').testAll('.fw-fix').find((b) => b.getAttribute('data-finding') === key);
+      if (!fwSide().textContent.includes('修正（停用規則）')) throw new Error(`${f.id} 的防火牆畫面應有修正區塊`);
+      const box = fwSide().testAll('.fw-fix').find((b) => b.getAttribute('data-finding') === key);
       if (!box) throw new Error(`${f.id} 的修正應對應它的 findingKey`);
       const plan = RM.plan(Q, [key]);
       const it = plan.items.find((x) => x.findingKey === key);
@@ -326,18 +348,19 @@ module.exports = async () => {
     });
     if (!process.env.SMOKE_INPUT && (!seen.item || !seen.skipped)) throw new Error('範例資料應同時有產生指令與未產生指令的修正');
     if (idxs.length) {
-      const withCmd = $('#detail').querySelector('.copy-fix');
-      if (withCmd) { withCmd.click(); await new Promise((r) => setTimeout(r, 5)); if (!text('#banner').includes('複製')) throw new Error('複製後應有提示：' + text('#banner')); }
+      const withCmd = fwSide().querySelector('.copy-fix');
+      if (withCmd) { withCmd.click(); await new Promise((r) => setTimeout(r, 5)); if (!text('#tdlg-status').includes('複製')) throw new Error('複製後應有提示：' + text('#tdlg-status')); }
       // 設備的防火牆畫面：收合列出這台設備全部的修正與筆數（items＋skipped）
       const dev = Q.getFirewallRule(all[idxs[0]].entities.find((e) => e.type === 'rule').key).dev;
       App.select({ type: 'firewall', dev, key: dev });
       const keys = S.util.uniq(Q.findingsFor('device', dev).filter((f) => f.entities.some((e) => e.type === 'rule') && RM.levelOf(f.id) !== 'manual').map((f) => Q.findingKey(f)));
       const plan = RM.plan(Q, keys);
-      const fold = $('#detail').testAll('details').find((d) => d.querySelector('summary').textContent.startsWith('修正'));
+      const fold = fwSide().testAll('details').find((d) => d.querySelector('summary').textContent.startsWith('修正'));
       if (!fold || fold.querySelector('summary .chip').textContent !== String(plan.items.length + plan.skipped.length)) throw new Error('設備的防火牆畫面應收合列出全部修正與筆數');
       // 在修正計畫中開啟：選取就是這些 findingKey
       fold.querySelector('.open-patch').click();
       if (!S.view.patchView.isOpen(App) || Array.from(S.view.patchView.state.keys).sort().join() !== keys.slice().sort().join()) throw new Error('「在修正計畫中開啟」應以這些檢查結果在中間開啟修正計畫');
+      if ($('#dlg-table').open) throw new Error('在修正計畫中開啟時應先關閉防火牆視窗（修正計畫在主畫面）');
       if (document.activeElement !== $('#patch-title')) throw new Error('從防火牆畫面開啟修正計畫時，焦點應移到修正計畫的標題');
       App.showView('graph');
     }

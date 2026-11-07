@@ -6,7 +6,7 @@
   'use strict';
   const V = S.view; const h = V.h;
   const I = V.l4._;
-  const { st, els, TH, MATRIX_MAX, TABLE_LIMIT, BUSY_DELAY, layerText, deniedParts, optsOf, zoneById, zoneName, statusText, statusMark, statusTag, cellBg, countsText, hetBadge, decisiveText, zoneLabel, renderZones } = I;
+  const { st, els, TH, MATRIX_MAX, BUSY_DELAY, layerText, deniedParts, optsOf, zoneById, zoneName, statusText, statusMark, statusTag, cellBg, countsText, hetBadge, decisiveText, zoneLabel, renderZones } = I;
   /** Q.zoneMatrixSteps 的階段（依序） */
   const STAGES = ['reps', 'evaluate', 'summary'];
   const STAGE_LABEL = { reps: '找代表位址', evaluate: '逐一判斷', summary: '整理格子' };
@@ -318,7 +318,8 @@
     const more = rest ? h('button', { type: 'button', class: 'ghost l4-table-all', 'aria-expanded': String(!!st.tableAll),
       onclick: () => { st.tableAll = !st.tableAll; renderMatrix(App, mx); const b = els.matrix.querySelector('.l4-table-all'); if (b) b.focus(); } },
     st.tableAll ? `只列有允許或無法判斷的格子（${V.num(open.length)}）` :`顯示其餘 ${V.num(rest)} 格（全部拒絕或沒有組合）`) : null;
-    return h('div', { class: 'l4-table' }, [V.table([
+    // 格子多時分頁（V.bigList，排序對全部的格子），不截斷
+    return h('div', { class: 'l4-table' }, [V.bigList([
       { t: '來源 zone', f: (c) => zoneName(Q, c.src), s: (c) => zoneName(Q, c.src) },
       { t: '目的 zone', f: (c) => h('span', null, [zoneName(Q, c.dst), c.diagonal ? h('span', { class: 'muted' }, '（zone 內）') : null]), s: (c) => zoneName(Q, c.dst) },
       { t: '狀態', f: (c) => h('span', { class: 'l4-row-status', 'data-status': c.status }, [statusTag(c.status, statusText(c)), c.heterogeneous ? hetBadge() : null]), s: (c) => c.status },
@@ -330,7 +331,7 @@
       { t: '無法判斷的原因', f: (c) => countedReasons(c.reasons), s: (c) => (c.reasons[0] || {}).code },
       // zone 在多個 VRF 時：來源與目的的 VRF（放在最後，其他欄位的位置與只有 main 時相同）
       ...(mv ? [{ t: '來源 VRF', f: (c) => zoneVrf(Q, c.src), s: (c) => zoneVrf(Q, c.src) }, { t: '目的 VRF', f: (c) => zoneVrf(Q, c.dst), s: (c) => zoneVrf(Q, c.dst) }] : []),
-    ], st.tableAll ? cells : open, { stack: true, onRow: (c) => I.openCell(App, c.src, c.dst), rowClass: (c) => 'l4-row st-' + c.status, limit: TABLE_LIMIT }),
+    ], st.tableAll ? cells : open, { onRow: (c) => I.openCell(App, c.src, c.dst), unit: '格', table: { stack: true, rowClass: (c) => 'l4-row st-' + c.status } }),
     !open.length && !st.tableAll ? h('p', { class: 'muted' }, '沒有允許或無法判斷的格子。') : null, more]);
   }
   /** CSV：目前 service 的矩陣，每一格一列；有 VRF 篩選時只有篩選後的格子（檔名加上 VRF）；zone 在多個 VRF 時多「來源 VRF」「目的 VRF」兩欄 */

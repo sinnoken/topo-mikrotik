@@ -6,7 +6,7 @@
   'use strict';
   const V = S.view; const h = V.h; const $ = V.$;
   const I = V.l4._;
-  const { st, els, EX_LIMIT, ROW_LIMIT, BUSY_DELAY, layerOf, byLayer, layerLine, deniedParts, zo, statusTag, decisiveText, ruleLink, isOpen, announce } = I;
+  const { st, els, EX_LIMIT, BUSY_DELAY, layerOf, byLayer, layerLine, deniedParts, zo, statusTag, decisiveText, ruleLink, isOpen, announce } = I;
 
   /**
    * 暴露清單一列的分層結果 [route, filter]：查詢層的列有 route／filter 時照用；還沒有時依結論與原因的層級推定——
@@ -48,7 +48,7 @@
     if (exJob && exJob.Q === Q && exJob.zo === st.zo) return exJob.promise;
     stopEx();
     if (st.ex && st.exQ === Q && st.exZo === st.zo) { renderExposure(App); return Promise.resolve(); }
-    st.ex = null; st.exErr = null; st.exPath = null;
+    st.ex = null; st.exErr = null; st.exPath = null; st.exAt = null;
     const j = { Q, zo: st.zo, it: null, steps: 0, ms: 0, maxStepMs: 0, maxGapMs: 0, t0: Date.now(), last: 0, progress: null };
     exJob = j; renderExposure(App);
     j.promise = new Promise((resolve) => {
@@ -153,8 +153,8 @@
     const p = st.exPath;
     if (p && p.sec === sec && p.row === i) { closeExposure(App); return; }
     const req = { src: x.src, dst: x.ip, proto: x.proto, port: x.port, vrf: null, entry: x.entry, from: 'exposure', sec, row: i };
-    st.exPath = Object.assign({ sec, row: i }, I.runQuery(App, req));
-    // 那一列在收起的部分（超過 EX_LIMIT 列）時先展開那一段
+    st.exPath = Object.assign({ sec, row: i }, I.runQuery(App, req)); st.exAt = { sec, row: i };
+    // 那一列在收起的部分（超過 EX_LIMIT 列）時先展開那一段（分頁翻到那一列所在的頁）
     if (!exShown(exGroupsOf(sec), EX_LIMIT).some((g) => g.index === i)) st.exAll.add(sec);
     renderExposure(App);
     const r = st.exPath.reach;
@@ -163,7 +163,7 @@
   }
   function closeExposure(App) {
     const p = st.exPath; if (!p) return;
-    st.exPath = null; renderExposure(App);
+    st.exPath = null; st.exAt = { sec: p.sec, row: p.row }; renderExposure(App);
     const btn = Array.from(els.ex.querySelectorAll('.l4-ex-path')).find((b) => b.dataset.sec === p.sec && b.dataset.row === String(p.row));
     if (btn) btn.focus();
   }
@@ -214,12 +214,12 @@
           h('button', { type: 'button', class: 'ghost l4-ex-path', 'data-sec': def.key, 'data-row': String(i), 'aria-expanded': String(on), 'aria-controls': on ? 'l4-ex-path-box' : null,
             onclick: (e) => { if (e && e.stopPropagation) e.stopPropagation(); openExposure(App, def.key, i); } }, [h('span', { 'aria-hidden': 'true' }, on ? '▾ ' : '▸ '), on ? '收起路徑' : '看路徑'])]); } },
     ];
-    // 每段最多先列 EX_LIMIT 列，其餘「顯示全部（N）」（同一段只有一個按鈕在 Tab 順序裡）
-    const all = st.exAll.has(def.key); let shown = exShown(gs, all ? ROW_LIMIT : EX_LIMIT);
-    // 看路徑的那一列在顯示上限（ROW_LIMIT）之後時，另外接在最後（路徑與焦點才有地方放）
-    const op = st.exPath && st.exPath.sec === def.key ? gs.find((g) => g.index === st.exPath.row) : null;
-    const extra = op && !shown.includes(op) ? op : null;
-    if (extra) shown = shown.concat([extra]);
+    // 每段最多先列 EX_LIMIT 列，其餘「顯示全部（N）」（同一段只有一個按鈕在 Tab 順序裡）；
+    // 顯示全部時分頁（V.paged，每頁 V.BIG_LIST.page 列，不截斷），一開始翻到最後看路徑或收起路徑的那一列所在的頁（路徑與焦點才有地方放）
+    const all = st.exAll.has(def.key);
+    const at = st.exAt && st.exAt.sec === def.key ? gs.findIndex((g) => g.index === st.exAt.row) : -1;
+    const table = !s.rows.length ? null : all ? V.paged(gs.length, '列', (from, to) => exTable(App, def, cols, gs.slice(from, to)), Math.max(0, at))
+      : exTable(App, def, cols, exShown(gs, EX_LIMIT));
     const more = gs.length > EX_LIMIT ? h('button', { type: 'button', class: 'ghost l4-ex-all', 'data-sec': def.key, 'aria-expanded': String(all),
       onclick: () => { if (all) st.exAll.delete(def.key); else st.exAll.add(def.key); renderExposure(App); const b = Array.from(els.ex.querySelectorAll('.l4-ex-all')).find((x) => x.dataset.sec === def.key); if (b) b.focus(); } },
     all ? `只顯示前 ${EX_LIMIT} 列` : `顯示全部（${V.num(gs.length)}）`) : null;
@@ -228,8 +228,7 @@
       // 狀態 chip「N＋量詞＋狀態」（V.stateChip，0 不顯示）
       h('h4', { id, class: 'l4-ex-title' }, [def.title, nAllow ? ' ' : null, V.stateChip(nAllow, '個服務允許'), nUnk ? ' ' : null, V.stateChip(nUnk, '個無法判斷')]),
       h('p', { class: 'l4-ex-sentence' }, sentence),
-      s.rows.length ? exTable(App, def, cols, shown) : null,
-      all && gs.length > ROW_LIMIT ? h('div', { class: 'muted table-more' }, `只顯示前 ${ROW_LIMIT} 列，共 ${V.num(gs.length)} 列${extra ? `；看路徑的第 ${V.num(gs.indexOf(extra) + 1)} 列另接在最後` : ''}`) : null,
+      table,
       more,
       deniedNote ? h('p', { class: 'muted l4-ex-denied', title: s.counts.notEvaluated ? '沒判斷（上限）：判斷次數的上限用完，這些組合沒有判斷，不算拒絕' : null }, deniedNote) : null,
     ]);

@@ -241,12 +241,11 @@
     };
     window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end);
     // Esc 收起：最後才輪到抽屜（A.onEscape 的 ESC_ORDER）；選單、路由追蹤、資料中心處理過的 Esc 不會再傳到這裡。
-    // 資料中心開著（焦點不在裡面）、輸入框、對話框與搜尋選單的 Esc 也不收抽屜
+    // 資料中心開著（焦點不在裡面）、輸入框與搜尋選單的 Esc 也不收抽屜（對話框開著時 bindEscape 整個不處理，A.modalOpen）
     A.onEscape('sheet', (e) => {
       if (!A.sheetState() || A.hubOpen()) return false;
       const t = e.target && e.target.tagName;
       if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') return false;
-      if (['#dlg-input', '#dlg-raw'].some((x) => $(x) && $(x).open)) return false;
       if (!$('#search-dd').classList.contains('hidden')) return false;
       A.closeSheet(); return true;
     });

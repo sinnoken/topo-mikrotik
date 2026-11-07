@@ -41,16 +41,20 @@
    * （例如只看某個 VRF、跳過已用過的路由）。結果同「list.filter((e) => keep(e) && ip.inNet(位址, e[field], e.len))，再取 len 最大的」；
    * 沒有時為空陣列（每次都是新陣列，呼叫端可修改）。
    */
-  ip.prefixIndex = (list, field) => {
+  const V4 = { tag: '', num: (s) => ip.toInt(s), mask: (len) => ip.maskOf(len), net: (n, mask) => (n & mask) >>> 0 };
+  const ALL6 = (1n << 128n) - 1n;
+  const V6 = { tag: '|v6', num: (s) => ip.v6ToBig(s), mask: (len) => (len <= 0 ? 0n : ALL6 ^ ((1n << BigInt(128 - Math.min(len, 128))) - 1n)), net: (n, mask) => n & mask };
+  function prefixIndexOf(list, field, F) {
     let byField = pxMemo.get(list);
     if (!byField) { byField = new Map(); pxMemo.set(list, byField); }
-    let x = byField.get(field);
+    let x = byField.get(field + F.tag);
     if (!x) {
       const buckets = new Map();
       list.forEach((e) => {
         let b = buckets.get(e.len);
-        if (!b) { b = { len: e.len, mask: ip.maskOf(e.len), nets: new Map() }; buckets.set(e.len, b); }
-        const net = (ip.toInt(e[field]) & b.mask) >>> 0;
+        if (!b) { b = { len: e.len, mask: F.mask(e.len), nets: new Map() }; buckets.set(e.len, b); }
+        const n = F.num(e[field]); if (n === null) return; // IPv6 的文字不合法：不會符合任何位址
+        const net = F.net(n, b.mask);
         const xs = b.nets.get(net); if (xs) xs.push(e); else b.nets.set(net, [e]);
       });
       // 長度由長到短；不是數字的長度（不會出現）排除，與逐筆比較「len > 目前最長」時永遠不入選相同
@@ -58,7 +62,7 @@
       x = Object.freeze({
         lookup(n, keep) {
           for (let i = 0; i < idx.length; i++) {
-            const xs = idx[i].nets.get((n & idx[i].mask) >>> 0);
+            const xs = idx[i].nets.get(F.net(n, idx[i].mask));
             if (!xs) continue;
             const out = keep ? xs.filter(keep) : xs.slice();
             if (out.length) return out;
@@ -66,10 +70,13 @@
           return [];
         },
       });
-      byField.set(field, x);
+      byField.set(field + F.tag, x);
     }
     return x;
-  };
+  }
+  ip.prefixIndex = (list, field) => prefixIndexOf(list, field, V4);
+  /** IPv6 版的 ip.prefixIndex：field 是 IPv6 位址文字（不合法的元素不入索引），lookup(n, keep) 的 n 是 BigInt（ip.v6ToBig 的結果）；其他同 ip.prefixIndex。 */
+  ip.prefixIndex6 = (list, field) => prefixIndexOf(list, field, V6);
   /** ip.prefixIndex(list, field).lookup(n, keep) 的簡寫。 */
   ip.longestPrefix = (list, field, n, keep) => ip.prefixIndex(list, field).lookup(n, keep);
 
@@ -136,7 +143,8 @@
    *   isAll（涵蓋整個位址空間）、isEmpty、within(other)（每個位址都在 other 內；other 是同 bits 的 ip.set）、
    *   covers(x)／overlaps(x)：x（ip.range 接受的文字或 [lo, hi]）的每個位址都在集合內／至少一個位址在集合內（看合併後的區段：/25,/25 涵蓋 /24）；文字不是這個位址族時丟出 TypeError；
    *   overlapping(x)：和 x 重疊的區段在 ranges 的索引（由小到大，凍結；與 overlaps 同一個判斷）；
-   *   bounds()：等價類的邊界（每段的 lo 與 hi + 1，BigInt，由小到大，凍結）——同一段相鄰邊界之間的位址對 has 的結果相同。
+   *   bounds()：等價類的邊界（每段的 lo 與 hi + 1，BigInt，由小到大，凍結）——同一段相鄰邊界之間的位址對 has 的結果相同；
+   *   not()：補集（同 bits 的 ip.set，第一次呼叫時建立）；and(other)：交集（other 是同 bits 的 ip.set，位址族不同時丟出 TypeError）。
    * 相同的 items 與 bits 得到相同的結果（與項目順序無關）。
    */
   ip.set = (items, bits) => {
@@ -181,8 +189,8 @@
       while (a < z) { const mid = (a + z) >> 1; if (ranges[mid][1] < lo) a = mid + 1; else z = mid; }
       return [lo, hi, ranges[a], a];
     };
-    let b = null;
-    return Object.freeze({
+    let b = null; let nt = null;
+    const self = Object.freeze({
       bits, ranges, has,
       covers: (x) => { const [lo, hi, r] = span(x); return !!r && r[0] <= lo && hi <= r[1]; },
       overlaps: (x) => { const [, hi, r] = span(x); return !!r && r[0] <= hi; },
@@ -203,7 +211,19 @@
         });
       },
       bounds: () => b || (b = Object.freeze(ranges.flatMap(([a, z]) => [a, z + 1n]))),
+      not: () => nt || (nt = complement()),
+      and(other) {
+        if (other.bits !== bits) throw new TypeError(`S.ip.set：位址族不同，不能取交集（${bits}／${other.bits}）`);
+        return ip.set(self.not().ranges.concat(other.not().ranges), bits).not();
+      },
     });
+    return self;
+    function complement() {
+      const out = []; let cur = 0n;
+      ranges.forEach(([a, z]) => { if (a > cur) out.push([cur, a - 1n]); cur = z + 1n; });
+      if (cur <= max) out.push([cur, max]);
+      return ip.set(out, bits);
+    }
   };
 
   /*

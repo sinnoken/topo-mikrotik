@@ -1,7 +1,7 @@
 // 畫面冒煙測試的 step：詳情區塊、推論鏈路與推定位置、基準狀態、窄螢幕。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { docListeners, winListeners, document, S, fs, path, ROOT, step, stepBtn, $, text } = require('../helpers.js');
+const { docListeners, winListeners, document, S, fs, path, ROOT, step, stepBtn, $, text, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows } = require('../helpers.js');
 
 module.exports = async () => {
   await step('詳情區塊結構一致：標題只由 section() 產生，展開區塊內沒有額外標題', () => {
@@ -15,13 +15,20 @@ module.exports = async () => {
       { type: 'firewall', dev: (m.firewallRules[0] || {}).dev, key: (m.firewallRules[0] || {}).dev },
     ];
     if (sels.some((x) => !x.key || x.key === 'undefined')) throw new Error('範例資料應涵蓋每種詳情');
+    // 防火牆開在視窗裡：右欄（設備詳情）與視窗的兩欄都要檢查；再選一條規則，規則詳情也檢查
+    const fwRule = (m.firewallRules[0] || {}).key;
+    sels.push({ type: 'rule', key: fwRule });
     sels.forEach((sel) => {
       App.select(sel);
-      $('#detail').testAll('h3').forEach((x) => {
-        if (!/\bdetail-section\b/.test(x.parentNode.className)) throw new Error(`${sel.type} 詳情的標題「${x.textContent}」不是由 section() 產生`);
-      });
-      $('#detail').testAll('details').forEach((d) => {
-        if (d.testAll('h3').length) throw new Error(`${sel.type} 詳情的展開區塊「${d.querySelector('summary').textContent}」內不應有標題`);
+      const roots = S.view.firewall.isSel(sel) ? [detailRoot(), fwList(), fwSide()] : [detailRoot()];
+      roots.forEach((root) => {
+        if (root !== detailRoot() && !root.testAll('h3').length && !root.testAll('details').length) throw new Error(`${sel.type} 的 ${root.id} 應有區塊（不在空的容器上通過）`);
+        root.testAll('h3').forEach((x) => {
+          if (!/\bdetail-section\b/.test(x.parentNode.className)) throw new Error(`${sel.type} 詳情的標題「${x.textContent}」不是由 section() 產生`);
+        });
+        root.testAll('details').forEach((d) => {
+          if (d.testAll('h3').length) throw new Error(`${sel.type} 詳情的展開區塊「${d.querySelector('summary').textContent}」內不應有標題`);
+        });
       });
     });
     App.select(null);

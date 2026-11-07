@@ -1,7 +1,7 @@
 // 畫面冒煙測試的 step：資料中心、命名規則、工作包、深層凍結、本機資料與清除基準。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { body, docListeners, document, S, fs, path, vm, ROOT, step, captureDownloads, buildInput, hubBtn, stepBtn, goStep, clearBaseline, until, $, text, shared, L4 } = require('../helpers.js');
+const { body, docListeners, document, S, fs, path, vm, ROOT, step, captureDownloads, buildInput, hubBtn, stepBtn, goStep, clearBaseline, until, $, text, shared, L4, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows } = require('../helpers.js');
 
 module.exports = async () => {
   await step('資料中心：列出本輪所有的輸入與輸出與各自的狀態，鍵盤可開關（Esc 關閉後焦點回到按鈕），蓋住主畫面時主畫面不可聚焦', async () => {
@@ -10,7 +10,7 @@ module.exports = async () => {
     btnHub.click();
     if ($('#hub').classList.contains('hidden') || btnHub.getAttribute('aria-expanded') !== 'true') throw new Error('按「資料中心」應開啟資料中心');
     if (document.activeElement !== $('#hub-title')) throw new Error('開啟後焦點應移到資料中心的標題');
-    if (!$('#main').inert || !$('#app').classList.contains('hub-open')) throw new Error('資料中心開啟時主畫面應是 inert（鍵盤不會跑到被蓋住的圖上）');
+    if (!$('#main').inert || !$('#app').classList.contains('overlay-open')) throw new Error('資料中心開啟時主畫面應是 inert（鍵盤不會跑到被蓋住的圖上）');
     const row = (k) => $('#hub').testAll('.hub-row').find((r) => r.getAttribute('data-item') === k);
     ['sources', 'previous', 'ledger', 'profile', 'expected-data', 'expected', 'coverage'].forEach((k) => {
       const r = row(k);
@@ -72,7 +72,7 @@ module.exports = async () => {
     const base = css.indexOf('.hub-row { display: grid;'); const narrow = css.lastIndexOf('@media (max-width: 900px)');
     const tail = css.slice(narrow);
     if (base < 0 || narrow < base || !/\.hub-row \{ grid-template-columns: minmax\(0, 1fr\); \}/.test(tail) || !/\.hub-outs \{ grid-template-columns: minmax\(0, 1fr\); \}/.test(tail)) throw new Error('窄螢幕時資料中心應改成單欄，且規則要在一般樣式之後');
-    if (!/\.hub \{[^}]*overflow-x: hidden/.test(css)) throw new Error('資料中心不應水平捲動');
+    if (!$('#hub').classList.contains('overlay') || !/\.overlay \{[^}]*overflow-x: hidden/.test(css)) throw new Error('資料中心不應水平捲動（和設定共用 .overlay）');
   });
   await step('設定「命名規則」：說明與文件連結、內建與已載入分開列、套用結果與沒對上的名稱、載入錯誤、下載範本、匯出、移除先確認且內建不可移除', async () => {
     const VP = S.view.settings.profiles; const panel = () => $('#settings-panel'); const wait = () => new Promise((r) => setTimeout(r, 20));
@@ -326,7 +326,7 @@ module.exports = async () => {
         S.view.l4.openCell(App, cF.src, cF.dst);
         const b = $('#l4-drill').testAll('.l4-svc')[0]; if (b) b.click();
         const rl = $('#l4-drill').testAll('.l4-rule')[0];
-        if (rl) { rl.click(); const run = $('#detail').querySelector('.fw-impact-run'); if (run) { run.click(); await App.l4ImpactJob; } }
+        if (rl) { rl.click(); const run = fwSide().querySelector('.fw-impact-run'); if (run) { run.click(); await App.l4ImpactJob; } $('#tdlg-close').click(); }
       }
       L4().testAll('.l4-modes button').forEach((x) => { x.click(); }); // 表格、再回矩陣
       await App.l4Job;

@@ -149,7 +149,6 @@ test('結構：src/check、src/query、src/model 不直接比對設定的位址�
   const PV = /parseVal\('(src-address|dst-address|to-addresses)'/g;
   const PV_ALLOWED = {
     'src/check/checks.js': [1, 'F04 取 to-addresses 的第一個位址當轉送後的目的（代表位址，不是成員判斷）'],
-    'src/query/reach-exposure.js': [2, 'GUA 與 range6 把一般的 IPv6 網段文字轉成區間（盤點 L3，延後改用 S.ip.range）'],
   };
   assert.deepStrictEqual(tally(PV), counts(PV_ALLOWED), '新的位址條件解析要經登錄表；確實是例外時加進允許清單並寫原因');
   // 3. 網段包含（inNet、maskOf、parseCidr）：允許的只有介面位址、直連網段、路由與下一跳（事實，不是設定寫死的位址集合）；數量是棘輪，增加時要確認不是位址條件
@@ -158,7 +157,7 @@ test('結構：src/check、src/query、src/model 不直接比對設定的位址�
     'src/check/checks.js': [14, '介面位址與直連網段（A 系列、DHCP 閘道）、R12 的路由涵蓋、下一跳的擁有者（hopOwner）'],
     'src/model/build.js': [5, '介面位址的解析與 OSPF 鄰居所在的直連網段'],
     'src/model/infer.js': [9, '介面位址、模型版路由視圖的出介面（egress）、DHCP 網段'],
-    'src/query/query.js': [5, '網段的位址數、位址所在的網段（findIp）、子網路圖的網段'],
+    'src/query/query.js': [4, '位址所在的網段（findIp）、子網路圖的網段'],
     'src/query/reach-eval.js': [8, 'NAT 改寫後的來源位址、hairpin 判斷、出介面的直連網段'],
     'src/query/reach-zones.js': [1, '區段的閘道位址'],
     'src/query/trace.js': [6, '位址所在的直連網段、最長前綴、預設路由的下一跳'],

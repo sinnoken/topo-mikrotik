@@ -1,7 +1,7 @@
 // 畫面冒煙測試的 step：VRF：L3 分框、IP 搜尋、路由追蹤與 L4 查詢；只有 main 的網路。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { document, S, path, step, captureDownloads, parseCsv, goStep, searchFor, pickInv, $, text, L4, l4Cells, l4State, overlapIp } = require('../helpers.js');
+const { document, S, path, step, captureDownloads, parseCsv, goStep, searchFor, pickInv, $, text, L4, l4Cells, l4State, overlapIp, routesList, routesRoot } = require('../helpers.js');
 
 /** 展開 L4 的內部互通（矩陣只在展開時計算），等矩陣畫好 */
 const openMatrix = async () => { const f = $('#l4-matrix-fold'); if (!(f.open || f.getAttribute('open') != null)) { f.setAttribute('open', ''); f.open = true; f.dispatch('toggle'); } await App.l4MatrixJob; };
@@ -101,16 +101,31 @@ module.exports = async () => {
     // 設備詳情（PE）：VRF 設定、路由表欄、洩漏的下一跳標 @VRF
     const PE = K.splitEp(own.ep)[0]; App.select({ type: 'device', key: PE });
     const pd = text('#detail'); const defs = Q.vrfsOf(PE);
-    if (!defs.length || !defs.every((v) => pd.includes(v.name)) || !$('#detail').testAll('th').some((x) => x.textContent === '路由表')) throw new Error('設備詳情應列出 VRF 設定與路由表欄');
+    if (!defs.length || !defs.every((v) => pd.includes(v.name))) throw new Error('設備詳情應列出 VRF 設定');
+    // 路由表視窗：搜尋結果列出「路由表」欄（組內是組名，不列），洩漏的下一跳在組名標 @VRF
+    const pr0 = Q.allRoutesOf(PE)[0];
+    App.select({ type: 'routes', dev: PE, search: `${pr0.prefix}/${pr0.len}` });
+    if (!routesList().querySelector('.biglist-result').testAll('th').some((x) => x.textContent === '路由表')) throw new Error('有多個 VRF 時路由表視窗的搜尋結果應有路由表欄');
     const leak = Q.routesOf(PE).find((r) => r.nh.some((n) => n.ip && n.vrf !== r.vrf));
-    if (leak) { const n = leak.nh.find((x) => x.ip && x.vrf !== leak.vrf); if (!pd.includes(`${n.ip}@${n.vrf}`)) throw new Error('洩漏的下一跳應標 位址@VRF'); }
-    // 設備詳情（有策略路由的 CE）：policy-rules、路由表、/routing rule 與來源
+    if (leak) { const n = leak.nh.find((x) => x.ip && x.vrf !== leak.vrf); if (!routesRoot().textContent.includes(`${n.ip}@${n.vrf}`)) throw new Error('洩漏的下一跳應標 位址@VRF'); }
+    App.select({ type: 'device', key: PE });
+    // 設備詳情（有策略路由的 CE）：右欄只有一行摘要；點「策略路由 N 條規則」開路由表視窗的 /routing rule 分頁，頁首是 policy-rules，路由表分頁列出每張表
     const ce = Q.devices().find((d) => Q.policyOf(d.key).rules.length);
     if (!ce) throw new Error('測試前提：範例資料有 /routing rule');
     App.select({ type: 'device', key: ce.key });
-    const cd = text('#detail'); const pol = Q.policyOf(ce.key);
-    if (!cd.includes('策略路由') || !cd.includes(pol.policyRules.join(' → ')) || !pol.tables.every((t) => cd.includes(t.name)) || !Q.routingRules().filter((r) => r.dev === ce.key).every((r) => cd.includes(r.action))) throw new Error('設備詳情應列出策略路由的設定：' + cd.slice(0, 300));
-    if (pol.tables.some((t) => t.vrf == null) && !cd.includes('只用於策略路由')) throw new Error('不是 VRF 的路由表應標「只用於策略路由」');
+    const pol = Q.policyOf(ce.key); const ceRules = Q.routingRules().filter((r) => r.dev === ce.key);
+    if ($('#detail').testAll('table').some((t) => ceRules.some((r) => t.textContent.includes(r.action + (r.table ? ' ' + r.table : ''))))) throw new Error('右欄不再列 /routing rule 的表');
+    const ruleLink = $('#detail').testAll('.routes-tab').find((a) => a.getAttribute('data-tab') === 'rules');
+    if (!ruleLink || !ruleLink.textContent.includes(`策略路由 ${V.num(ceRules.length)} 條規則`)) throw new Error('右欄應有「策略路由 N 條規則」（同 Q.routingRules）');
+    ruleLink.click();
+    const cd = routesRoot().textContent;
+    if (!cd.includes(pol.policyRules.join(' → ')) || !ceRules.every((r) => cd.includes(r.action))) throw new Error('路由表視窗應列出策略路由的設定：' + cd.slice(0, 300));
+    if ($('#tdlg-panel-rules').getAttribute('hidden') != null || $('#tdlg-panel-rules').testAll('tbody tr').length !== ceRules.length) throw new Error('應開在 /routing rule 分頁，列數同 Q.routingRules');
+    routesRoot().testAll('.tdlg-tab').find((b) => b.getAttribute('data-tab') === 'tables').click();
+    const tp = $('#tdlg-panel-tables').textContent;
+    if (!pol.tables.every((t) => tp.includes(t.name))) throw new Error('路由表分頁應列出每張路由表');
+    if (pol.tables.some((t) => t.vrf == null) && !tp.includes('只用於策略路由')) throw new Error('不是 VRF 的路由表應標「只用於策略路由」');
+    $('#tdlg-close').click();
     App.select(null);
   });
   await step('VRF：路由追蹤可選 VRF，來源在多個 VRF 時提示選擇（不猜）；逐跳顯示 VRF、路由表與 /routing rule，策略路由不明與丟棄的結果有中文說明', async () => {
@@ -270,7 +285,13 @@ module.exports = async () => {
       // 詳情：介面、有路由的設備、IP 沒有 VRF 欄位
       const dev = Q.devices().find((d) => Q.routesOf(d.key).some((r) => r.nh.some((n) => n.ip)));
       App.select({ type: 'device', key: dev.key });
-      if ($('#detail').testAll('th').some((th) => th.textContent === '路由表' || th.textContent === 'VRF') || text('#detail').includes('@main')) throw new Error('只有 main 時設備詳情沒有路由表與 VRF 欄');
+      if ($('#detail').testAll('th').some((th) => th.textContent === 'VRF') || text('#detail').includes('@main')) throw new Error('只有 main 時設備詳情沒有 VRF 欄');
+      // 路由表視窗的搜尋結果（列出所有欄）：只有 main 時沒有路由表欄，下一跳不標 @main
+      const rr = Q.allRoutesOf(dev.key)[0];
+      App.select({ type: 'routes', dev: dev.key, search: `${rr.prefix}/${rr.len}` });
+      const res = routesList().querySelector('.biglist-result');
+      if (!res.testAll('tr').length || res.testAll('th').some((th) => th.textContent === '路由表') || routesRoot().textContent.includes('@main')) throw new Error('只有 main 時路由表視窗沒有路由表欄、不標 @main');
+      App.select({ type: 'device', key: dev.key });
       App.select({ type: 'interface', key: Q.interfacesOf(dev.key).find((i) => Q.addressesOf(i.key).length).key });
       if ($('#detail').querySelector('.ifc-vrf')) throw new Error('只有 main 時介面詳情沒有 VRF');
       const ipr = Q.ipEntries().find((r) => r.owner);

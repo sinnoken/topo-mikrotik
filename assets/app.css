@@ -20,6 +20,8 @@
   --chip-text: #3c4650; --th-text: #566678; --heading-text: #405164;
   /* 表格的錯誤列（.bad）與原文的定位高亮 */
   --row-bad: #fff8f7; --row-bad-hover: #fff0ed; --hl-bg: #fff3c4;
+  /* 選取或定位的列（表格視窗的選取列、管理面設定的定位列）：同 theme.firewall.focus 的 bg／border（有測試） */
+  --row-focus-bg: #e6f0fb; --row-focus-line: #0b6bcb;
   /* 疊在畫布上的半透明底（圖例、層級說明、操作提示） */
   --overlay: rgba(255, 255, 255, .96); --overlay-soft: rgba(255, 255, 255, .9);
   /* 深底浮動提示（拓樸圖的 tooltip） */
@@ -96,6 +98,7 @@
     --danger-text: #f0a39d; --danger-line: #6b3330;
     --chip-text: #c5ced6; --th-text: #a9b5c2; --heading-text: #b8c4d0;
     --row-bad: #26191a; --row-bad-hover: #321d1d; --hl-bg: #4a3d10;
+    --row-focus-bg: #17304a; --row-focus-line: #539ce2;
     --overlay: rgba(28, 35, 44, .96); --overlay-soft: rgba(28, 35, 44, .9);
     --tooltip-bg: #e6edf3; --tooltip-fg: #11161c;
     --dialog-line: rgba(60, 71, 84, .9); --backdrop: rgba(0, 0, 0, .6);
@@ -423,6 +426,8 @@ table.t tr.click { cursor: pointer; }
 .row.spaced { margin-top: 10px; }
 .kv { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 5px 10px; font-size: var(--fs-md); }
 .kv .k { color: var(--muted); }
+/* 防火牆摘要：標籤（例如「WAN／LAN 判斷」）不從詞中間折行 */
+.fw-summary .kv { grid-template-columns: max-content minmax(0, 1fr); }
 .link { color: var(--accent); cursor: pointer; text-decoration: none; }
 .link:hover { text-decoration: underline; }
 .finding { display: flex; gap: 9px; align-items: flex-start; padding: 9px 10px; border: 1px solid var(--line-soft); border-radius: var(--radius); margin-bottom: 7px; font-size: var(--fs-md); background: var(--surface); }
@@ -495,6 +500,20 @@ table.t td.nowrap { white-space: nowrap; }
 .detail-section.trace-sub > h3 { font-size: var(--fs-sm); color: var(--muted); border-bottom: 0; padding-bottom: 0; margin-bottom: 2px; }
 /* 路由表的非作用中路由：整列 muted（網段欄另有「非作用中」chip，不只靠顏色） */
 tr.route-off > td { color: var(--muted); }
+/* 兩行式的格（介面表、鄰居表與 linkTable）：第二行是次要資料，可在「・」與空白處換行，右欄與 360px 的手機都不必橫捲；
+   識別字（.mono）不從中間斷開，VLAN 清單與描述太長時才斷開 */
+.two-line .l2 { font-size: var(--fs-sm); white-space: normal; overflow-wrap: anywhere; }
+.two-line .l2 .ifc-vlans { overflow-wrap: anywhere; }
+/* 路由表摘要（右欄）：路由最多的幾組、搜尋框；路由詳情（視窗右欄）的每個下一跳一塊 */
+.routes-top { margin: 4px 0 8px; padding-left: 20px; }
+.routes-top li { margin: 2px 0; }
+.routes-search { width: 100%; max-width: 360px; }
+/* VRF、策略路由與 OSPF 鄰接的一行摘要（每一項開視窗的分頁）：在「、」處換行；視窗頁首的查表設定 */
+.routes-more { margin: 6px 0 0; white-space: normal; overflow-wrap: anywhere; }
+.routes-head .kv { margin: 4px 0 8px; }
+/* 收集到的原始輸出：一個區塊一張卡片，指令可換行（不擠成窄欄） */
+.two-line.block-card .block-cmd { white-space: normal; overflow-wrap: anywhere; }
+.route-hop + .route-hop { border-top: 1px solid var(--line-soft); margin-top: 6px; padding-top: 6px; }
 /* 從檢查結果選來的那一筆（.current）：外框與「目前選取」chip */
 .finding.current { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
 
@@ -567,6 +586,44 @@ dialog::backdrop { background: var(--backdrop); }
 #raw-copy-status { margin-left: 6px; font-weight: 400; font-size: var(--fs-sm); }
 .dlg .db { padding: 14px 18px; overflow: auto; }
 .dlg .df { padding: 12px 18px; border-top: 1px solid var(--line); display: flex; gap: 8px; align-items: center; }
+/* 表格視窗（V.tableDialog，#dlg-table）：置中的大視窗，左欄分頁＋表格、右欄選取那一列的詳情；兩欄各自捲動，整頁不橫捲 */
+#dlg-table { width: 90vw; height: 85vh; max-width: 90vw; max-height: 85vh; }
+#dlg-table .dlg { height: 100%; max-height: none; }
+#tdlg-title { min-width: 0; overflow-wrap: anywhere; }
+#tdlg-title:focus { outline: none; }
+#tdlg-status { margin-left: 10px; font-weight: 400; font-size: var(--fs-sm); }
+.tdlg-cols { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); }
+.tdlg-list, .tdlg-side { min-width: 0; min-height: 0; overflow: auto; overflow-x: hidden; }
+.tdlg-list { padding: 12px 18px 24px; }
+.tdlg-side { border-left: 1px solid var(--line); background: var(--surface); }
+.tdlg-side-head { padding: 10px 16px 0; }
+.tdlg-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0 10px; border-bottom: 1px solid var(--line); }
+.tdlg-tab { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 6px 10px; font-weight: 600; color: var(--heading-text); }
+.tdlg-tab.on { border-bottom-color: var(--accent); color: var(--accent); }
+.tdlg-extra { margin-bottom: 8px; }
+/* 視窗左欄的表格不橫捲（.tdlg-list 是捲動容器，表頭才固定得住）：識別字與條件（k=v 之間）可以折行，長欄位設上限，
+   所有欄在可視寬度內都看得到；900px 以下改成每列一塊（V.tableDialog 的表格帶 stack） */
+.tdlg-list .table-scroll { overflow-x: visible; }
+.tdlg-list table.t td .mono, .tdlg-list table.t td .vlanlist { white-space: normal; overflow-wrap: anywhere; }
+.tdlg-list table.t td { overflow-wrap: anywhere; }
+.tdlg-list table.t td.wrap { max-width: 28em; }
+/* 可選取的表格：滑過用中性的底色，和選取列（藍底＋左側粗線）分得出來 */
+table.t[role="grid"] tbody tr.click:hover td { background: var(--surface-hover); }
+table.t[role="grid"] tbody tr.focus.click:hover td { background: var(--row-focus-bg); }
+table.t[role="grid"] tbody tr.focus td:first-child { box-shadow: inset 4px 0 0 var(--row-focus-line), inset 0 2px 0 var(--row-focus-line), inset 0 -2px 0 var(--row-focus-line); }
+/* 選取或定位的列：一個 class，顏色取自 --row-focus-*（不在 JS 組 inline style） */
+table.t tbody tr.focus td, table.t tbody tr.focus.click:hover td, table.t tbody tr.bad.focus td { background: var(--row-focus-bg); box-shadow: inset 0 2px 0 var(--row-focus-line), inset 0 -2px 0 var(--row-focus-line); }
+.mgmt-row.focus { background: var(--row-focus-bg); box-shadow: inset 3px 0 0 var(--row-focus-line); }
+/* 窄螢幕（同 A.isNarrowScreen 的 900px）：全螢幕、單欄。選了一列時只顯示詳情（「返回」回到表格）；沒有選取時表格在前、總覽排在表格之後 */
+@media (max-width: 900px) {
+  #dlg-table { width: 100vw; height: 100dvh; max-width: 100vw; max-height: 100dvh; margin: 0; border: 0; border-radius: 0; }
+  .tdlg-cols { display: flex; flex-direction: column; overflow: auto; overflow-x: hidden; }
+  .tdlg-list, .tdlg-side { flex: none; overflow: visible; }
+  .tdlg-list { padding: 10px 12px 24px; }
+  .tdlg-side { order: 1; border-left: 0; border-top: 1px solid var(--line); }
+  .tdlg-cols[data-view="detail"] .tdlg-list { display: none; }
+  .tdlg-cols[data-view="list"][data-selected] .tdlg-side { display: none; }
+}
 /* 高度扣掉對話框的其他列（選檔、拖放區、預檢、命名規則與按鈕列約 480px），命名規則那一列不被按鈕列切掉 */
 #input-text { width: 100%; height: min(46vh, calc(90vh - 480px)); min-height: 140px; font-family: var(--mono); font-size: var(--fs-sm); white-space: pre; resize: vertical; }
 .files { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
@@ -811,9 +868,8 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
   .search, .header-actions { position: absolute; top: calc(100% + 6px); z-index: var(--z-sticky); }
   .header-actions { right: 8px; }
   .search { right: calc(14px + var(--control-h)); }
-  #app.hub-open header .search, #app.hub-open header .header-actions { display: none; }
-  /* 設定開著時同樣不疊在上面：設定有自己的「關閉」 */
-  #app.settings-open header .search, #app.settings-open header .header-actions { display: none; }
+  /* 資料中心或設定開著時不疊在上面：兩者都有自己的「關閉」 */
+  #app.overlay-open header .search, #app.overlay-open header .header-actions { display: none; }
   /* 搜尋收成圖示：輸入框本身就是圖示（點了就聚焦，不需要 JS）；聚焦時展開蓋住整列，下拉清單跟著展開 */
   .search { flex: none; width: max(40px, var(--control-h)); min-width: 0; max-width: none; }
   .search input { width: 100%; min-height: max(40px, var(--control-h)); padding: 0 0 0 max(40px, var(--control-h)); cursor: pointer; }
@@ -970,12 +1026,14 @@ table.l4-grid { border-collapse: separate; border-spacing: 2px; font-size: var(-
 .drift-items { margin: 6px 0; }
 .partial-unrecognized { margin-left: 6px; color: var(--warn-text); }
 
+/* ---------- 蓋住主畫面的一層（A.overlay：資料中心與設定共用）：和 #main 疊在同一格（也蓋住窄螢幕的工作區列），畫布大小不變 ---------- */
+.overlay { grid-row: 2 / 4; z-index: var(--z-work); min-height: 0; overflow: auto; overflow-x: hidden; background: var(--bg); }
+/* 提示列在 #center 裡，會被這一層蓋住：開啟時改成固定在視窗底部 */
+#app.overlay-open #banner { position: fixed; bottom: 16px; z-index: var(--z-banner-top); max-width: calc(100vw - 24px); }
+
 /* ---------- 資料中心（panels/hub.js、app-hub.js） ---------- */
-.hub { grid-row: 2 / 4; z-index: var(--z-work); min-height: 0; overflow: auto; overflow-x: hidden; background: var(--bg); }
 header .hub-btn { font-weight: 600; }
 header .hub-btn.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
-/* 提示列在 #center 裡，會被資料中心蓋住：開啟時改成固定在視窗右上角 */
-#app.hub-open #banner { position: fixed; bottom: 16px; z-index: var(--z-banner-top); max-width: calc(100vw - 24px); }
 .hub-inner { max-width: 1180px; margin: 0 auto; padding: 22px; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
 .hub-head, .hub-card-head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; min-width: 0; }
 .hub-head h1 { margin: 0; font-size: var(--fs-2xl); }
@@ -1031,9 +1089,7 @@ header .hub-btn.on { background: var(--accent-soft); color: var(--accent); borde
 @keyframes hub-indeterminate { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
 
 /* ---------- 設定（app-settings.js、panels/settings-*.js）：和資料中心疊在同一格（兩者互斥），左側分類、右側內容 ---------- */
-.settings { grid-row: 2 / 4; z-index: var(--z-work); min-height: 0; overflow: auto; overflow-x: hidden; background: var(--bg); }
 header .icon-btn.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
-#app.settings-open #banner { position: fixed; bottom: 16px; z-index: var(--z-banner-top); max-width: calc(100vw - 24px); }
 .settings-inner { max-width: 1180px; margin: 0 auto; padding: 22px; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
 .settings-head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; min-width: 0; }
 .settings-head h1 { margin: 0; font-size: var(--fs-2xl); }
@@ -1088,7 +1144,7 @@ header .icon-btn.on { background: var(--accent-soft); color: var(--accent); bord
   .hub-cap { display: inline; }
   .hub-act { justify-content: flex-start; }
   .hub-outs { grid-template-columns: minmax(0, 1fr); }
-  #app.hub-open #banner { left: 10px; right: 10px; transform: none; width: auto; bottom: 16px; }
+  #app.overlay-open #banner { left: 10px; right: 10px; transform: none; width: auto; bottom: 16px; }
   /* 設定：單欄，分類改成內容上方的一列（放不下時換行，每個分類都看得到），不出現整頁的水平捲動 */
   .settings-inner { padding: 12px; gap: 12px; }
   .settings-body { grid-template-columns: minmax(0, 1fr); gap: 12px; }
@@ -1098,7 +1154,6 @@ header .icon-btn.on { background: var(--accent-soft); color: var(--accent); bord
   .settings-panel { padding: 12px; }
   .settings-about { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .settings-about dd { margin-bottom: 8px; }
-  #app.settings-open #banner { left: 10px; right: 10px; transform: none; width: auto; bottom: 16px; }
   /* 中間的工作畫面：內距縮小；內容不出現整頁的水平捲動（寬的表格、指令與圖在自己的框內捲動） */
   .work-inner { padding: 12px 10px 24px; gap: 12px; }
   /* 清單（「檢視」）：關鍵欄排在前三欄；表格依內容寬度在 .table-scroll 內橫向捲動，廠商等欄不被擠窄截斷 */

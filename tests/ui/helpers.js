@@ -180,7 +180,56 @@ const shared = { ackedKey: null };
 const stepSources = () => fs.readdirSync(path.join(__dirname, 'steps')).filter((f) => f.endsWith('.js')).sort()
   .map((f) => fs.readFileSync(path.join(__dirname, 'steps', f), 'utf8')).join('\n');
 
+// ------------------------------------------------------------ 右欄詳情與表格視窗（防火牆）的容器
+// 斷言一律經這些 helper，不直接寫 '#detail'：防火牆搬進視窗後，否定斷言才不會在只剩摘要的右欄上空跑通過
+/** 右欄的詳細資料 */
+const detailRoot = () => $('#detail');
+/** 表格視窗（V.tableDialog）的內容；視窗沒開時直接失敗 */
+const fwRoot = () => { if (!$('#dlg-table').open) throw new Error('表格視窗（防火牆）應是開著的'); return $('#tdlg-body'); };
+/** 視窗的左欄（分頁與表格）與右欄（選取那一列的詳情或總覽） */
+const fwList = () => fwRoot().querySelector('#tdlg-list');
+const fwSide = () => fwRoot().querySelector('#tdlg-side');
+const fwText = () => fwRoot().textContent;
+/** 視窗的分頁：切到 key 那一頁並回傳它的內容（找不到就失敗） */
+const fwTab = (key) => {
+  const b = fwRoot().testAll('.tdlg-tab').find((x) => x.getAttribute('data-tab') === key);
+  if (!b) throw new Error('表格視窗應有分頁 ' + key);
+  b.click(); return fwRoot().querySelector('#tdlg-panel-' + key);
+};
+/** 視窗左欄 data-key 為 key 的列（可能有多列：組內與搜尋結果） */
+const fwRows = (key) => fwList().testAll('tr').filter((tr) => tr.getAttribute('data-key') === key);
+/** 路由表視窗（同一個 V.tableDialog）：開著而且是路由表時回傳視窗內容，否則失敗；左欄、右欄同 fwList／fwSide */
+const routesRoot = () => {
+  const root = fwRoot(); const d = globalThis.SSOT.view.tableDialog.current();
+  if (!d || !d.id.startsWith('routes|')) throw new Error('開著的表格視窗應是路由表：' + (d ? d.id : '沒有'));
+  return root;
+};
+const routesList = () => routesRoot().querySelector('#tdlg-list');
+const routesSide = () => routesRoot().querySelector('#tdlg-side');
+/** 右欄設備詳情的「路由表」摘要（展開列）；找不到就失敗 */
+const routesSummary = () => {
+  const el = detailRoot().testAll('.routes-summary')[0];
+  if (!el) throw new Error('設備詳情應有路由表的摘要');
+  return el;
+};
+
+/**
+ * 清單列出的總筆數：V.bigList／V.paged 分頁時一頁只畫 BIG_LIST.page 列，取那一列所在分頁的頁碼說明「共 N」；
+ * 沒有分頁時數畫出來的列。rowSel 是列的選擇器，root 裡第一個符合的列決定是哪一份清單（找不到列時 0）。
+ */
+const listedTotal = (root, rowSel) => {
+  const rows = root.testAll(rowSel); if (!rows.length) return 0;
+  let box = rows[0]; while (box && box !== root && !(box.classList && box.classList.contains('biglist-page'))) box = box.parentNode;
+  if (!box || box === root) return rows.length;
+  const where = box.querySelector('.pager-where');
+  if (!where) return box.testAll(rowSel).length;
+  const m = where.textContent.match(/共 ([\d,]+)/);
+  if (!m) throw new Error('分頁的頁碼說明應寫出總數：' + where.textContent);
+  return Number(m[1].replace(/,/g, ''));
+};
+
 module.exports = Object.assign({}, dom, harness, boundary, {
+  listedTotal, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows, routesRoot, routesList, routesSide, routesSummary,
   captureDownloads, parseCsv, rgbOf, luminance, contrastOf, cssVars, cssDarkRoot, cssVarsOf, SCHEMES, forSchemes, jsFiles, unticked,
   recordCanvas, withGraph, vertices, near, tickStrokes, checkTicks, buildInput, hubBtn, stepBtn, goStep, settingsTab, clearBaseline,
   searchFor, pickInv, until, $, text, stepSources, shared,

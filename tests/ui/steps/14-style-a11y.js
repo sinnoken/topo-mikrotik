@@ -1,7 +1,7 @@
 // 畫面冒煙測試的 step：樣式 token、文字對比、嚴重度外形、鍵盤與 Pointer、焦點與字級、配色跟隨系統。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { html, body, docListeners, winListeners, head, document, raf, flushRaf, S, fs, path, vm, ROOT, inlineScripts, step, captureDownloads, rgbOf, luminance, contrastOf, cssVars, cssDarkRoot, cssVarsOf, SCHEMES, forSchemes, jsFiles, recordCanvas, withGraph, vertices, near, buildInput, goStep, $, text, L4 } = require('../helpers.js');
+const { html, body, docListeners, winListeners, head, document, raf, flushRaf, S, fs, path, vm, ROOT, inlineScripts, step, captureDownloads, rgbOf, luminance, contrastOf, cssVars, cssDarkRoot, cssVarsOf, SCHEMES, forSchemes, jsFiles, recordCanvas, withGraph, vertices, near, buildInput, goStep, $, text, L4, routesList } = require('../helpers.js');
 
 module.exports = async () => {
   await step('樣式 token：顏色、z-index、動效時長、圓角只用 :root 的變數；每個變數都有用到；對話框有名稱', () => {
@@ -184,10 +184,17 @@ module.exports = async () => {
     if (App.snap.model.links.length || App.graph.edges.length) throw new Error('OSPF-only adjacency 不應形成拓樸 edge');
     if (!App.snap.model.ospfAdjacencies.length) throw new Error('OSPF L3 鄰接資訊遺失');
     App.select({ type: 'device', key: 'R_A' });
-    if (!text('#detail').includes('OSPF L3 鄰接（非實體直連）')) throw new Error('設備細節沒有顯示獨立 OSPF 鄰接');
-    if (!text('#detail').includes('第 5 行')) throw new Error('OSPF 細節沒有來源行連結');
+    // 右欄只有一行摘要（OSPF 鄰接 N 個），點了開路由表視窗的 OSPF 分頁：列出鄰接與來源行
+    const n = App.Q.ospfAdjacenciesOf('R_A').length;
+    const link = $('#detail').testAll('.routes-tab').find((a) => a.getAttribute('data-tab') === 'ospf');
+    if (!link || !link.textContent.includes(`OSPF 鄰接 ${S.view.num(n)} 個`)) throw new Error('設備細節沒有顯示獨立 OSPF 鄰接的摘要');
+    link.click();
+    const panel = $('#tdlg-panel-ospf');
+    if (!$('#dlg-table').open || !panel || panel.getAttribute('hidden') != null || panel.testAll('tbody tr').length !== n) throw new Error('點摘要應開路由表視窗的 OSPF 分頁，列數同 Q.ospfAdjacenciesOf');
+    if (!panel.textContent.includes('第 5 行')) throw new Error('OSPF 細節沒有來源行連結');
+    $('#tdlg-close').click();
   });
-  await step('設備詳情表可點標頭排序，IP 欄依數值順序', async () => {
+  await step('表格可點標頭排序（路由表視窗的搜尋結果），IP 欄依數值順序', async () => {
     const input = 'R_A (10.0.0.1):\n### /ip route print detail without-paging\n'
       + 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC\n'
       + ' 0 As  dst-address=10.10.0.0/16 gateway=10.0.0.9 distance=1\n'
@@ -196,14 +203,17 @@ module.exports = async () => {
     $('#input-text').value = input; $('#input-build').click();
     const hash = S.util.hash(S.readers.PASTE + '\n' + input);
     for (let i = 0; i < 4000 && (!App.snap || App.snap.meta.inputHash !== hash); i++) await new Promise((r) => setTimeout(r, 5));
-    App.select({ type: 'device', key: 'R_A' });
-    const th = $('#detail').testAll('th').find((el) => el.textContent.startsWith('網段'));
+    // 三條路由的下一跳都不同（各自一組）：搜尋 10.0.0.0/8 讓三條列在同一張表
+    App.select({ type: 'routes', dev: 'R_A', search: '10.0.0.0/8' });
+    const res = () => routesList().querySelector('.biglist-result');
+    const th = res().testAll('th').find((el) => el.textContent.startsWith('網段'));
     if (!th) throw new Error('路由表應有可排序的網段標頭');
     th.querySelector('.th-sort').click();
-    const order = () => $('#detail').testAll('tbody tr').map((tr) => tr.textContent).filter((s) => /^10\.\d+\.0\.0\/16/.test(s)).map((s) => s.split('/')[0]);
+    const order = () => res().testAll('tbody tr').map((tr) => tr.textContent).filter((s) => /^10\.\d+\.0\.0\/16/.test(s)).map((s) => s.split('/')[0]);
     if (order().join() !== '10.9.0.0,10.10.0.0,10.100.0.0') throw new Error('網段應依 IP 數值升冪：' + order());
-    $('#detail').testAll('th').find((el) => el.textContent.startsWith('網段')).querySelector('.th-sort').click();
+    res().testAll('th').find((el) => el.textContent.startsWith('網段')).querySelector('.th-sort').click();
     if (order().join() !== '10.100.0.0,10.10.0.0,10.9.0.0') throw new Error('再點一次應降冪：' + order());
+    App.select(null);
   });
   await step('CAPsMAN Wi-Fi 多 MAC 保留菱形提示，MAC 位置列入終端清單', async () => {
     const input = 'SW_A (10.0.0.1):\n### /interface print detail\n'

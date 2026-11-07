@@ -75,6 +75,7 @@ test('文字中的常數由程式常數產生：可判斷的條件、限速類�
   Array.from(F.NONDET).forEach((k) => assert.ok(cond.includes(k), `conditions 列出 ${k}`));
   assert.ok(cond.includes(`最多 ${F.MAX_JUMP} 層`));
   F.ADDRESS_LIST.forEach((k) => assert.ok(msg('address-list').includes(k)));
+  assert.ok(msg('address-list').includes(`由外部經管理介面（${F.ADDRESS_LIST_UNSEEN.join('、')}）寫入`), 'address-list 寫出設定裡看不出來的外部寫入');
   const fp = F.FIRST_PACKET;
   assert.ok(msg('new-connection').includes(`connection-state=${fp.state}`) && msg('new-connection').includes(fp.tcpFlag.toUpperCase()) && msg('new-connection').includes(`type ${fp.icmpType} code ${fp.icmpCode}`));
   assert.ok(msg('ipv4-vrf').includes(`${S.trace.TTL} 跳`));

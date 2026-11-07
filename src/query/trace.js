@@ -205,6 +205,7 @@
    * 下一跳 IP（在 dev 的 vrf 解析）屬於哪台設備：
    *   { status: 'direct', ep, dev, vrf, crossVrf }（某台設備的位址；vrf 是對方所在的 VRF，規則見 R.hopOwner）
    *   { status: 'recursive', hits: [{ dev, vrf, chain }] }（不是已知位址，沿這個 VRF 的路由表遞迴解析到已知設備，例如 gateway 是對端 loopback）
+   *   { status: 'incomplete' }（遞迴解析不到已知設備，而且途中遇到路由表收集不完整：沒收到的部分可能有解析得到的路由，不明，不是不在基準內）
    *   { status: 'unknown' }（不在基準內）。
    */
   function nextOwner(R, dev, ip, vrf) {
@@ -212,8 +213,10 @@
     const own = R.hopOwner(dev, ip, v);
     if (own) return { status: 'direct', ep: own.key, dev: own.dev, vrf: own.vrf, crossVrf: own.crossVrf };
     // 遞迴解析與檢查 R01／R03／R04 共用，依 (R, dev, vrf, ip) 快取（S.check.resolveNextHopIn）；快取的結果凍結，chain 另外複製
-    const hit = S.check.resolveNextHopIn(R, dev, ip, v).filter((x) => x.status === 'known');
-    return hit.length ? { status: 'recursive', hits: hit.map((x) => ({ dev: x.owner, vrf: R.hopOwner(dev, x.ip, v).vrf, chain: x.chain.slice() })) } : { status: 'unknown' };
+    const res = S.check.resolveNextHopIn(R, dev, ip, v);
+    const hit = res.filter((x) => x.status === 'known');
+    if (hit.length) return { status: 'recursive', hits: hit.map((x) => ({ dev: x.owner, vrf: R.hopOwner(dev, x.ip, v).vrf, chain: x.chain.slice() })) };
+    return { status: res.some((x) => x.status === 'incomplete') ? 'incomplete' : 'unknown' };
   }
   /** 來源位址可能在哪些 VRF：擁有它，或它落在某個直連網段（Q.vrfs() 的順序）。 */
   function vrfsOfIp(Q, ip) {
@@ -493,10 +496,12 @@
       const info = (no, targets) => (keep ? { lk, o, no, targets } : null);
       if (!o.nh || !o.nh.ip) return deliver(dev, hop, st, depth, ctx, info(null, null));
       const no = nextOwner(X.RV, dev, o.nh.ip, o.nh.vrf);
-      const bs = no.status === 'unknown' && !X.longestPrefix(st.dst, st.vrf) ? X.boundaryStatus(o.out) : 'internal';
+      const bs = (no.status === 'unknown' || no.status === 'incomplete') && !X.longestPrefix(st.dst, st.vrf) ? X.boundaryStatus(o.out) : 'internal';
       // 外部：從對外介面送出、目的不在基準的任何網段（推論：送往網際網路，之後由電信業者決定）
       if (bs === 'external') return mk(hop, null, end('delivered', 'allow', 'egress-wan', dev, `從 ${Q.epName(o.out)}（對外介面，推論）送往下一跳 ${K.inVrf(o.nh.ip, o.nh.vrf)}，目的 ${st.dst} 在基準以外，之後由電信業者決定（推論）`, { ip: st.dst, vrf: st.vrf }), info(no, null));
       if (bs === 'possible') return mk(hop, null, end('outside', 'unknown', 'egress-possible', dev, `從 ${Q.epName(o.out)} 送往下一跳 ${K.inVrf(o.nh.ip, o.nh.vrf)}，目的 ${st.dst} 在基準以外；這個介面可能對外（${weakText(o.out)}），證據不足，不判定為送往外部`, { ip: o.nh.ip, vrf: o.nh.vrf }), info(no, null));
+      // 遞迴解析途中路由表不完整：同查路由時的 route-data-incomplete（不明），不是下一跳不在基準內
+      if (no.status === 'incomplete') return mk(hop, null, end('unknown', 'unknown', 'route-data-incomplete', dev, `${name(dev)} 的路由表收集不完整，下一跳 ${K.inVrf(o.nh.ip, o.nh.vrf)} 只能靠收到的部分解析（沒收到的部分可能有解析它的路由），無法判斷`, { ip: o.nh.ip, vrf: o.nh.vrf }), info(no, null));
       if (no.status === 'unknown') return mk(hop, null, end('outside', 'unknown', 'next-hop-outside', dev, `${name(dev)} 的下一跳 ${K.inVrf(o.nh.ip, o.nh.vrf)} 不在基準內，之後的路徑無法判斷`, { ip: o.nh.ip, vrf: o.nh.vrf }), info(no, null));
       if (!keep) { // L4：只要下一台的節點
         const kids = no.status === 'direct' ? arrive(no.dev, realEp(no.ep), Object.assign({}, st, { vrf: no.vrf }), depth + 1, ctx)
@@ -666,7 +671,13 @@
         const n = nd.info.o.nh;
         if (!n.ip) { hop.next.push({ ip: null, ifc: n.ifc, vrf: n.vrf, status: 'connected', note: `經 ${n.ifc} 直接送出（${nd.info.o.route.proto}${n.vrf !== lv ? `，VRF ${n.vrf}` : ''}）` }); ends.push({ dev, vrf: n.vrf, status: 'reached', note: `目的在 ${n.ifc} 直連`, path }); return; }
         const leak = n.vrf !== lv ? `（在 VRF ${n.vrf} 解析閘道）` : '';
-        if (nd.info.no.status === 'unknown') {
+        // 遞迴解析途中路由表不完整：同查不到路由時以 unverified 停下（不算斷掉）；經對外介面送往外部的判斷照常
+        if (nd.info.no.status === 'incomplete' && nd.end.code === 'route-data-incomplete') {
+          hop.next.push({ ip: n.ip, ifc: n.ifc, vrf: n.vrf, status: 'unknown', note: `路由表收集不完整，下一跳無法解析${leak}` });
+          ends.push({ dev, vrf: n.vrf, status: 'unverified', reason: 'route-data-incomplete', note: `路由表收集不完整，下一跳 ${K.inVrf(n.ip, n.vrf)} 只能靠收到的部分解析，無法判斷`, path });
+          return;
+        }
+        if (nd.info.no.status === 'unknown' || nd.info.no.status === 'incomplete') {
           if (nd.end.code === 'egress-wan') {
             hop.next.push({ ip: n.ip, ifc: n.ifc, vrf: n.vrf, status: 'egress', note: `下一跳不屬於任何已知設備，經對外介面送往基準以外（推論）${leak}` });
             ends.push({ dev, vrf: n.vrf, status: 'egress', note: nd.end.message, path });

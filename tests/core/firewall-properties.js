@@ -28,7 +28,13 @@ const K_EP = (d, i) => S.keys.ep(d, i);
 const fwPropCtx = (rules) => S.infer.fw.fwContext('R', FW_LISTS.map(([name, m]) => ({ name, defined: true, include: [], exclude: [], members: m.map((x) => K_EP('R', x)) })),
   ['ether1', 'ether2', 'ether3', 'bridge1'].map((x) => K_EP('R', x)), rules);
 const fwProp = (match, action = 'accept', chain = 'input') => ({ dev: 'R', family: 'ip', table: 'filter', chain, action, match, params: {}, disabled: false });
-const hasUnknownList = (r) => ['in-interface-list', 'out-interface-list'].some((k) => r.match[k] !== undefined && S.infer.fw.splitNeg(r.match[k]).body === 'dynamic');
+/** src-address（產生器唯一的位址條件）符合的位址是空集合 */
+const emptyAddr = (r) => {
+  const v = r.match['src-address']; if (v === undefined) return false;
+  const neg = S.infer.fw.splitNeg(v); const set = S.ip.set([neg.body], 32);
+  return (neg.neg ? set.not() : set).isEmpty;
+};
+const hasUnknownList =(r) => ['in-interface-list', 'out-interface-list'].some((k) => r.match[k] !== undefined && S.infer.fw.splitNeg(r.match[k]).body === 'dynamic');
 test('防火牆性質：covers 自反、遞移；前一條帶 limit／random／nth 時一律不涵蓋（固定種子，數百組規則）', () => {
   const fw = S.infer.fw;
   let rules = 0; let chains = 0; let skipped = 0;
@@ -40,7 +46,8 @@ test('防火牆性質：covers 自反、遞移；前一條帶 limit／random／n
     const show = (...xs) => `種子 ${seed}：` + xs.map((r) => JSON.stringify(r.match)).join(' ／ ');
     rs.forEach((a, i) => {
       rules++;
-      assert.ok(cov[i][i], `covers(a, a) 不成立；${show(a)}`);
+      // 例外（依設計）：位址條件符合的位址是空集合（例如 !0.0.0.0/0）的規則永遠不會命中，不判定被任何規則涵蓋，包括自己
+      assert.strictEqual(cov[i][i], !emptyAddr(a), `covers(a, a) ${emptyAddr(a) ? '位址是空集合時不可成立' : '不成立'}；${show(a)}`);
       rs.forEach((b, j) => {
         if (!cov[i][j]) return;
         rs.forEach((c, k) => {

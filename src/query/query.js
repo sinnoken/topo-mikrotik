@@ -802,10 +802,19 @@
       },
       /** 每個 VRF 的每個直連網段一列（key 是網段鍵）：設定在哪些介面／設備，以及清單中同一個 VRF、落在網段內的 IP 數（介面位址、管理 IP、ARP 合計）。 */
       prefixEntries(ips) {
+        // 每個 IP 查一次最長前綴的索引（S.ip.prefixIndex），再排除已算過的網段往短的找：包含它的網段都算一次（網段互相包含時兩個都算），不必每個網段掃過全部 IP
+        const count = new Map();
+        (ips || Q.ipEntries()).forEach((r) => {
+          if (!S.ip.isIp(r.ip)) return;
+          const n = S.ip.toInt(r.ip); const seen = new Set(); const keep = (p) => K.vrf(p.vrf) === r.vrf && !seen.has(p);
+          for (let hit = S.ip.longestPrefix(m.prefixes, 'net', n, keep); hit.length; hit = S.ip.longestPrefix(m.prefixes, 'net', n, keep)) {
+            hit.forEach((p) => { seen.add(p); count.set(p, (count.get(p) || 0) + 1); });
+          }
+        });
         return m.prefixes.map((p) => ({
           key: p.key || K.inVrf(p.prefix, p.vrf), prefix: p.prefix, net: p.net, len: p.len, vrf: K.vrf(p.vrf), basis: p.basis, eps: p.eps,
           devs: U.uniq(p.eps.map((ep) => K.splitEp(ep)[0])).sort(U.natural),
-          ipCount: (ips || Q.ipEntries()).filter((r) => r.vrf === K.vrf(p.vrf) && S.ip.inNet(r.ip, p.net, p.len)).length,
+          ipCount: count.get(p) || 0,
         }));
       },
       epName(ep) { const [d, i] = K.splitEp(ep); const x = ifc.get(ep); return Q.devName(d) + ' ' + (x ? x.name : i); },
@@ -1139,14 +1148,15 @@
         if (subnetCache.has(ck)) return subnetCache.get(ck);
         const ipNet = (ip, len) => S.ip.fromInt((S.ip.toInt(ip) & S.ip.maskOf(len)) >>> 0);
         const keyOf = (net, len, vrf) => K.inVrf(net + '/' + len, vrf);
-        const subnets = new Map(); const lens = new Set();
+        const subnets = new Map();
         const subnetNode = (p, basis) => ({
           id: keyOf(p.net, p.len, p.vrf), prefix: p.prefix, net: p.net, len: p.len, family: p.family || 4, vrf: K.vrf(p.vrf), basis,
           vlan: p.vlan == null ? null : p.vlan, vlans: (p.vlans || []).slice(), eps: (p.eps || []).slice(), devices: [], routers: [], gateways: [], overlaps: [], duplicateIps: [],
         });
-        m.prefixes.forEach((p) => { const n = subnetNode(p, 'connected'); subnets.set(n.id, n); lens.add(p.len); });
-        const lensDesc = Array.from(lens).sort((a, b) => b - a);
-        const longest = (ip, vrf) => { for (const len of lensDesc) { const s = subnets.get(keyOf(ipNet(ip, len), len, vrf)); if (s) return s; } return null; };
+        m.prefixes.forEach((p) => { const n = subnetNode(p, 'connected'); subnets.set(n.id, n); });
+        // 最長相符只看直連網段（路由新增的子網不算）：在加入路由之前固定這一份清單，經 S.ip.longestPrefix 的索引
+        const connected = Array.from(subnets.values());
+        const longest = (ip, vrf) => { if (!S.ip.isIp(ip)) return null; const v = K.vrf(vrf); return S.ip.longestPrefix(connected, 'net', S.ip.toInt(ip), (s) => s.vrf === v)[0] || null; };
         // 邊：自有位址一定接到自己的網段；推論的邊只接到已知網段（同一個 VRF）
         const edges = new Map();
         const nodeIdOf = (d, ep, vrf) => (nodeMode === 'device' ? K.inVrf(d, vrf) : ep || d + '|');

@@ -1,7 +1,7 @@
 // 畫面冒煙測試的 step：清單、覆蓋率、MAC 詳情、比對與預期現況、匯出。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { body, head, document, S, fs, path, ROOT, step, captureDownloads, parseCsv, hubBtn, goStep, pickInv, $, text } = require('../helpers.js');
+const { body, head, document, S, fs, path, ROOT, step, captureDownloads, parseCsv, hubBtn, goStep, pickInv, listedTotal, $, text } = require('../helpers.js');
 
 module.exports = async () => {
   await step('清單分頁列出設備、介面、MAC、VLAN，並可篩缺 IP；總覽顯示去重複的 IP（ARP）', () => {
@@ -31,7 +31,7 @@ module.exports = async () => {
     if (!ifcSt.length || ifcSt.some((c) => /^(unknown|disabled)$/.test(c)) || !ifcSt.every((c) => Object.values(S.view.STATUS).includes(c) || c === '停用')) throw new Error('介面狀態應用 V.ifcState：' + S.util.uniq(ifcSt).join('、'));
     pickInv('inv-kind', 'prefix');
     const pre = App.Q.inventory().rows.prefixes;
-    if (!pre.length || document.testAll('#pane-inventory tbody tr').length !== pre.length) throw new Error('網段清單列數應等於推導出的網段數');
+    if (!pre.length || listedTotal($('#pane-inventory'), 'tbody tr') !== pre.length) throw new Error('網段清單列數應等於推導出的網段數');
     pre.forEach((p) => { if (p.ipCount !== ips.filter((r) => r.vrf === p.vrf && S.ip.inNet(r.ip, p.net, p.len)).length) throw new Error('網段的 IP 數應等於清單中同一個 VRF、落在網段內的 IP'); });
     document.querySelector('#pane-inventory tbody tr').dispatch('keydown', { key: 'Enter' });
     if (App.sel.type !== 'interface' || !pre[0].eps.includes(App.sel.key)) throw new Error('點網段應選取設定該網段的介面');
@@ -53,7 +53,7 @@ module.exports = async () => {
     if (!firstRow || firstRow.getAttribute('tabindex') !== '0') throw new Error('可點選清單列應可透過鍵盤聚焦');
     firstRow.dispatch('keydown', { key: 'Enter' });
     if (App.sel.type !== 'device') throw new Error('清單列按 Enter 應選取設備');
-    if (nEnd) { pickInv('inv-filter', 'end'); if (document.testAll('#pane-inventory tbody tr').length !== Math.min(nEnd, 500)) throw new Error('終端篩選列數不符'); }
+    if (nEnd) { pickInv('inv-filter', 'end'); if (listedTotal($('#pane-inventory'), 'tbody tr') !== nEnd) throw new Error('終端篩選列數不符'); }
     if (document.activeElement !== $('#pane-inventory .inv-filter')) throw new Error('換篩選後焦點應留在篩選下拉');
     // 窄欄：表格在自己的框內橫向捲動，不截斷主要欄
     if (!$('#pane-inventory table').parentNode.className.includes('table-scroll')) throw new Error('清單表格應在可橫向捲動的框內');
@@ -97,9 +97,10 @@ module.exports = async () => {
     const pc = () => $('#pane-coverage');
     pc().testAll('.chip').find((c) => c.textContent.startsWith('全部已收集')).click();
     const list = App.Q.coverage().filter((r) => r.collected);
-    const gap = App.Q.coverageGap; const LIMIT = 600;
-    // 有缺漏的排前（穩定排序，其餘維持原順序）
-    const want = list.filter(gap).concat(list.filter((r) => !gap(r))).slice(0, LIMIT);
+    const gap = App.Q.coverageGap; const P = S.view.BIG_LIST;
+    // 有缺漏的排前（穩定排序，其餘維持原順序）；設備多（達到 BIG_LIST.min）時分頁，第一頁是前 BIG_LIST.page 台
+    const all = list.filter(gap).concat(list.filter((r) => !gap(r)));
+    const want = all.length < P.min ? all : all.slice(0, P.page);
     const trs = pc().testAll('tbody tr');
     if (trs.length !== want.length) throw new Error(`覆蓋率列數應為 ${want.length}：${trs.length}`);
     trs.forEach((tr, n) => {
@@ -109,7 +110,9 @@ module.exports = async () => {
       if (chips.length !== r.missing.length + r.failures.length) throw new Error('缺少的資料與收集失敗應各一個 chip，列在同一列：' + td[0].textContent);
       if (!gap(r) && td[2].textContent !== '—') throw new Error('沒有缺漏的設備寫「—」');
     });
-    if (list.length > LIMIT && !text('#pane-coverage').includes(`只顯示前 ${LIMIT} 筆，共 ${S.view.num(list.length)} 筆`)) throw new Error('超過上限應註明只顯示前 N 筆');
+    // 不截斷：分頁時頁碼寫出總台數；不分頁時列出全部
+    if (all.length >= P.min ? !text('#pane-coverage').includes(`共 ${S.view.num(all.length)} 台`) : pc().querySelector('.pager')) throw new Error('設備多時應分頁並寫出總台數，少時直接列出全部');
+    if (text('#pane-coverage').includes('只顯示前')) throw new Error('覆蓋率不截斷');
     const ths = pc().testAll('th');
     if (ths.map((th) => th.textContent).join('|') !== '設備|類型|缺少的資料|鏈路' || ths.some((th) => !th.querySelector('.th-sort'))) throw new Error('覆蓋率四欄都可排序：' + ths.map((th) => th.textContent).join('|'));
     ths[3].querySelector('.th-sort').click();

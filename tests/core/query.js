@@ -117,6 +117,16 @@ test('遞迴路由：gateway 是對端 loopback 時沿路由表解析；R01 只�
   assert.ok(no.status === 'recursive' && !Object.isFrozen(no.hits[0].chain), 'nextOwner 的 chain 是複本');
 });
 
+test('Q.prefixEntries 的 ipCount：同「同一個 VRF、落在網段內的 IP」逐筆計數（經最長前綴的索引）；互相包含的網段兩個都算', () => {
+  const brute = (Q) => { const ips = Q.ipEntries(); return Q.prefixEntries(ips).map((p) => [p.key, ips.filter((r) => r.vrf === p.vrf && S.ip.inNet(r.ip, p.net, p.len)).length]); };
+  const Q = S.query(sampleSnap());
+  assert.deepStrictEqual(Q.prefixEntries().map((p) => [p.key, p.ipCount]), brute(Q));
+  const nest = S.query(build(['A (10.0.0.1):', '### /export terse', '/ip address add address=10.0.0.1/24 interface=ether1',
+    'B (10.0.0.2):', '### /export terse', '/ip address add address=10.0.0.2/30 interface=ether1', '/ip address add address=10.0.0.9/24 interface=ether2', ''].join('\n')));
+  assert.deepStrictEqual(nest.prefixEntries().map((p) => [p.key, p.ipCount]), [['10.0.0.0/24', 3], ['10.0.0.0/30', 2]]);
+  assert.deepStrictEqual(nest.prefixEntries().map((p) => [p.key, p.ipCount]), brute(nest));
+});
+
 test('最長前綴查表 S.ip.longestPrefix：結果同逐筆 inNet 再取最長（同遮罩全取、順序不變、keep 排除），索引依陣列快取', () => {
   // 重疊的 /0、/8、/16、/24、/32，主機位元沒清掉的前綴，同一網段多筆（ECMP）
   const list = [];
@@ -143,6 +153,12 @@ test('最長前綴查表 S.ip.longestPrefix：結果同逐筆 inNet 再取最長
   const a = S.ip.longestPrefix(list, 'prefix', S.ip.toInt('10.0.0.0')); a.push('x');
   assert.notStrictEqual(S.ip.longestPrefix(list, 'prefix', S.ip.toInt('10.0.0.0')).slice(-1)[0], 'x', '回傳新陣列，改它不影響索引');
   assert.deepStrictEqual(S.ip.longestPrefix([{ net: '192.168.1.0', len: 24 }], 'net', S.ip.toInt('192.168.1.9')).length, 1, '直連網段用 net 欄位');
+  // IPv6 版（S.ip.prefixIndex6）：同一個判斷，位址是 BigInt；不合法的元素不入索引；同一個陣列與欄位的 IPv4 與 IPv6 索引分開快取
+  const l6 = [{ id: 'a', net: '2001:db8::', len: 32 }, { id: 'b', net: '2001:db8:1::', len: 48 }, { id: 'c', net: '2001:db8:1::1', len: 128 }, { id: 'd', net: '::', len: 0 }, { id: 'x', net: 'bogus', len: 64 }];
+  const v6 = (s) => S.ip.v6ToBig(s); const ix6 = S.ip.prefixIndex6(l6, 'net');
+  assert.deepStrictEqual(['2001:db8:1::1', '2001:db8:1::2', '2001:db8:2::1', 'fd00::1'].map((a) => ix6.lookup(v6(a)).map((e) => e.id)), [['c'], ['b'], ['a'], ['d']]);
+  assert.deepStrictEqual(ix6.lookup(v6('2001:db8:1::1'), (e) => e.id !== 'c').map((e) => e.id), ['b'], 'keep 排除後取次長的');
+  assert.ok(ix6 === S.ip.prefixIndex6(l6, 'net') && Object.isFrozen(ix6) && ix6 !== S.ip.prefixIndex(l6, 'net'), 'IPv6 索引依陣列快取，與 IPv4 的分開');
 });
 
 test('finding 穩定鍵：由 id 與排序後的 entities 組成，不受訊息、證據與 entities 順序影響；範例資料內不碰撞', () => {

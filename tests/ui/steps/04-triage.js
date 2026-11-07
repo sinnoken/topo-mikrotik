@@ -1,7 +1,7 @@
 // 畫面冒煙測試的 step：「研判」與檢查結果、詳情的處理提示、埠名、點選設備與鏈路。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { El, body, head, document, S, fs, path, ROOT, step, unticked, withGraph, goStep, $, text } = require('../helpers.js');
+const { El, body, head, document, S, fs, path, ROOT, step, unticked, withGraph, goStep, $, text, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows, routesList, routesSummary } = require('../helpers.js');
 
 module.exports = async () => {
   await step('檢查結果：沒有發現的檢查分成「通過」與「沒有資料可檢查」，預設收合', () => {
@@ -173,12 +173,12 @@ module.exports = async () => {
     if (ri === undefined && !process.env.SMOKE_INPUT) throw new Error('範例資料應有指向規則、不是防火牆類別的檢查結果（R09）');
     if (ri !== undefined) {
       App.selectFinding(ri);
-      if (App.sel.type !== 'rule' || !text('#detail').includes(all[ri].message)) throw new Error(`${all[ri].id} 應在防火牆畫面列出`);
-      // 相關的設備連結開啟設備詳情，那裡也列出這筆
-      const rel = $('#detail').testAll('.finding').find((x) => x.textContent.includes(all[ri].message)).querySelector('.finding-related');
+      if (App.sel.type !== 'rule' || !fwSide().textContent.includes(all[ri].message)) throw new Error(`${all[ri].id} 應在防火牆視窗的規則詳情列出`);
+      // 相關的設備連結關閉視窗、在右欄開啟設備詳情，那裡也列出這筆
+      const rel = fwSide().testAll('.finding').find((x) => x.textContent.includes(all[ri].message)).querySelector('.finding-related');
       const d = all[ri].entities.find((e) => e.type === 'device');
       rel.testAll('a').find((a) => a.textContent === Q.devLabel(d.key)).click();
-      if (App.sel.type !== 'device' || App.sel.key !== d.key || !text('#detail').includes(all[ri].message)) throw new Error('相關的設備連結應開啟設備詳情並列出這筆');
+      if (App.sel.type !== 'device' || App.sel.key !== d.key || $('#dlg-table').open || !detailRoot().textContent.includes(all[ri].message)) throw new Error('相關的設備連結應開啟設備詳情並列出這筆');
     }
     App.select(null);
   });
@@ -196,19 +196,25 @@ module.exports = async () => {
     if (iFind >= 0 && iFind < iBasis) throw new Error('依據應排在檢查結果之前');
     App.select(null);
   });
-  await step('設備詳情的路由表列出非作用中的路由（標「非作用中」），與 R11 對照', () => {
+  await step('路由表視窗列出非作用中的路由（標「非作用中」），右欄摘要的標題寫出條數，與 R11 對照', () => {
     const Q = App.Q;
     const dev = Q.devices().map((d) => d.key).find((k) => Q.allRoutesOf(k).some((r) => r.active === false));
     if (!dev) { if (process.env.SMOKE_INPUT) return; throw new Error('範例資料應有非作用中的路由（備援的預設路由）'); }
     App.select({ type: 'device', key: dev });
-    const sec = $('#detail').testAll('details').find((d) => d.querySelector('summary') && d.querySelector('summary').textContent.startsWith('路由表'));
-    if (!sec) throw new Error('設備詳情應有路由表');
     const n = Q.allRoutesOf(dev).filter((r) => r.active === false).length;
-    if (sec.testAll('.route-inactive').length !== Math.min(n, 200) || !sec.querySelector('summary').textContent.includes(`${S.view.num(n)} 條非作用中`)) throw new Error('非作用中的路由應逐列標「非作用中」，標題寫出筆數');
-    // 「非作用中」在網段欄內（最後一欄在窄的右欄看不到），整列 muted；不另設狀態欄
-    if (sec.testAll('th').some((th) => th.textContent.startsWith('狀態'))) throw new Error('路由表不應另設狀態欄');
-    sec.testAll('.route-inactive').forEach((c) => { let td = c; while (td && td.tagName !== 'TD') td = td.parentNode; const tr = td.parentNode;
-      if (tr.childNodes.indexOf(td) !== 0 || !/\broute-off\b/.test(tr.className)) throw new Error('「非作用中」應在網段欄，整列標 route-off'); });
+    if (!routesSummary().querySelector('summary').textContent.includes(`${S.view.num(n)} 條非作用中`)) throw new Error('右欄的路由表摘要應在標題寫出非作用中的條數');
+    App.select({ type: 'routes', dev });
+    routesList().testAll('.biglist-group').forEach((g) => { g.open = true; g.dispatch('toggle'); });
+    const byKey = new Map(Q.allRoutesOf(dev).map((r) => [S.view.routes.keyOf(r), r]));
+    const trs = routesList().testAll('tbody tr').filter((tr) => byKey.has(tr.getAttribute('data-key')));
+    if (!trs.some((tr) => byKey.get(tr.getAttribute('data-key')).active === false)) throw new Error('展開各組後應看得到非作用中的路由');
+    // 「非作用中」在網段欄內（chip），整列 muted（route-off）；不另設狀態欄
+    if (routesList().testAll('th').some((th) => th.textContent.startsWith('狀態'))) throw new Error('路由表不應另設狀態欄');
+    trs.forEach((tr) => {
+      const off = byKey.get(tr.getAttribute('data-key')).active === false; const chip = tr.querySelector('.route-inactive');
+      if (off !== !!chip || off !== /\broute-off\b/.test(tr.className)) throw new Error('非作用中的路由（只有它們）應標「非作用中」、整列 route-off');
+      if (chip) { let td = chip; while (td && td.tagName !== 'TD') td = td.parentNode; if (tr.childNodes.indexOf(td) !== 0) throw new Error('「非作用中」應在網段欄'); }
+    });
     if (Q.allRoutesOf(dev).length <= Q.routesOf(dev).length) throw new Error('路由表應包含作用中以外的路由');
     App.select(null);
   });

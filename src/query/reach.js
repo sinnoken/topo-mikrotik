@@ -110,7 +110,8 @@
       `來源埠由用戶端自選，比對來源埠的條件（${SRC_PORT_KEYS.join('、')}；port 符合目的埠時除外）無法判斷`),
     assume('address-list', 'filter', '只展開寫死的位址清單，可能有動態來源的算不明',
       `只展開匯出設定中寫死的位址清單（/ip firewall address-list、/ipv6 firewall address-list 的靜態項目，停用的項目不算），以它比對的規則（${F0.ADDRESS_LIST.join('、')}）依項目判斷；`
-      + `含${AL_DYNAMIC('entry').join('、')}，或${AL_DYNAMIC('writer').join('、')}的清單算不明，匯出設定中沒有項目的清單也是不明`),
+      + `含${AL_DYNAMIC('entry').join('、')}，或${AL_DYNAMIC('writer').join('、')}的清單算不明，匯出設定中沒有項目的清單也是不明；`
+      + `由外部經管理介面（${F0.ADDRESS_LIST_UNSEEN.join('、')}）寫入的項目在設定裡看不出來，清單仍依收集當時的項目判斷`),
     assume('untracked', 'filter', '不追蹤連線的封包另外比對，也不做位址轉換',
       '原始表規則不追蹤連線（raw 的 notrack）時，這台設備之後的規則以連線狀態「不追蹤」（connection-state=untracked）比對，也不套用位址轉換（nat）；原始表的轉送前（prerouting）是否不追蹤無法判斷時，兩種情況都算，結果不同就是不明；設備自己送出時（raw 的 output）無法判斷就是不明'),
     assume('ip-service', 'filter', '目的是設備本身時，也看它的管理服務',
@@ -177,7 +178,7 @@
     { code: 'dropped', kind: 'end', layer: 'filter', note: '被規則丟棄（拒絕）' },
     { code: 'local', kind: 'end', layer: 'route', note: '目的是設備自己的位址（送達）' },
     { code: 'no-route-data', kind: 'end', layer: 'route', note: '設備沒有路由表資料（不明）' },
-    { code: 'route-data-incomplete', kind: 'end', layer: 'route', note: '設備的路由表收集不完整（收集失敗，例如逾時），收到的部分沒有符合的路由，或只符合比 /32 短的路由（沒收到的部分可能有更長的前綴）（不明）' },
+    { code: 'route-data-incomplete', kind: 'end', layer: 'route', note: '設備的路由表收集不完整（收集失敗，例如逾時），收到的部分沒有符合的路由，或只符合比 /32 短的路由（沒收到的部分可能有更長的前綴）；遞迴解析下一跳時也一樣（不明）' },
     { code: 'no-route', kind: 'end', layer: 'route', note: '沒有符合的路由（拒絕）' },
     { code: 'blackhole', kind: 'end', layer: 'route', note: '黑洞路由（拒絕）' },
     { code: 'next-hop-outside', kind: 'end', layer: 'route', note: '下一跳不在基準內（不明）' },
@@ -254,7 +255,7 @@
      * 由各檔案加上；每個都是 (E) => void，從 E 取用前面的部分建好的函式，再把自己的函式加在 E 上）。
      */
     _: {
-      deepFreeze, MAX_PATHS, SERVICES, EXTERNAL_ZONE, SELF_ZONE, EXTERNAL_CANDIDATES, EXTERNAL6_CANDIDATES, svcId, ZONE_SOURCES, ASSUMPTIONS, EXPOSURE_ASSUMPTIONS, EXPOSURE_MAX_SOURCES,
+      deepFreeze, MAX_PATHS, SERVICES, EXTERNAL_ZONE, SELF_ZONE, EXTERNAL_CANDIDATES, EXTERNAL6_CANDIDATES, svcId, ZONE_SOURCES, EXPOSURE_ASSUMPTIONS, EXPOSURE_MAX_SOURCES,
       REASON_LAYER, checkCode, keyWhy, NAT_UNKNOWN, runAll, slicer,
     },
   };
@@ -275,7 +276,7 @@
 
   /**
    * Q.assumptionUse：這份基準用得到哪些前提（推論，查詢時計算、依 Q 快取，Snapshot 不變）。判斷都用程式實際判斷時的同一份分類，不另寫規則語意：
-   *   - 防火牆規則（啟用中、會導向結果的動作，同 S.infer.fw.decide）：條件鍵依 S.infer.fw.condKind 分類——位址清單 address-list（只算可能有動態來源或基準裡沒有的清單，ctx.addressList）、來源埠 src-port、
+   *   - 防火牆規則（啟用中、會導向結果的動作，同 S.infer.fw.decide）：條件鍵依 S.infer.fw.condKind 分類——位址清單 address-list（只算可能有動態來源或基準裡沒有的清單，依登錄表 S.infer.addrSets 的 ofRule）、來源埠 src-port、
    *     封包標記 routeros-tables、無法判斷的條件 conditions（另含設備有啟用中 IPsec policy 時的 ipsec-policy、無法展開的介面清單，同 ctx.resolve）；
    *     raw 的 notrack 是 untracked。
    *   - 路由層：Q.policyOf（routeDecision 用的同一份）的 marks 是 mark-routing，rules 與改過的 policy-rules 是 policy-routing；

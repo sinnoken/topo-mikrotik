@@ -1,7 +1,7 @@
-// 畫面冒煙測試的 step：大量列的清單（V.bigList）——設備詳情的路由表與防火牆的位址清單：摘要計數與 Q 相同、展開一組才畫明細、分頁、搜尋（位址與網段經 Q.routesMatching／Q.addressSetFind，其他文字依文字比對）、少量時直接列出。
+// 畫面冒煙測試的 step：大量列的清單（V.bigList）——路由表視窗與防火牆的位址清單：摘要計數與 Q 相同、展開一組才畫明細、分頁、搜尋（位址與網段經 Q.routesMatching／Q.addressSetFind，其他文字依文字比對）、少量時直接列出。
 // 由 tests/ui-smoke.js 依檔名順序載入；step 之間共用畫面狀態（App、store、選取），順序不可調換。
 'use strict';
-const { document, S, step, $, buildInput } = require('../helpers.js');
+const { document, S, step, $, buildInput, detailRoot, fwRoot, fwList, fwSide, fwText, fwTab, fwRows, routesList, fs, path, ROOT, jsFiles } = require('../helpers.js');
 
 const RT = 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC';
 const ROUTES = 1500; const LIST = 600; const GWS = ['10.255.0.2', '10.255.0.3', '10.255.0.4'];
@@ -38,6 +38,8 @@ const foldOf = (title) => {
 };
 /** 展開列標題列的 count（純數字的 chip） */
 const countOf = (fold) => { const c = kids(fold.querySelector('summary')).find((x) => /\bcount\b/.test(x.className)); if (!c) throw new Error('展開列應有 count'); return Number(c.textContent.replace(/,/g, '')); };
+/** 防火牆視窗分頁的 count（分頁按鈕上的純數字） */
+const tabCount = (key) => { const c = fwRoot().querySelector('#tdlg-tab-' + key).querySelector('.count'); if (!c) throw new Error('分頁應有 count'); return Number(c.textContent.replace(/,/g, '')); };
 const groupsOf = (el) => el.testAll('.biglist-group').filter((g) => g.getAttribute('data-group') != null);
 const open = (fold) => { fold.open = true; fold.dispatch('toggle'); };
 const rowsOf = (el) => el.testAll('tbody tr');
@@ -45,7 +47,7 @@ const search = (big, q) => { const inp = big.querySelector('.biglist-search'); i
 const visible = (el) => el.getAttribute('hidden') == null;
 
 module.exports = async () => {
-  await step('大量路由：路由表先顯示摘要（計數同 Q.allRoutesOf）、展開一組才畫明細並分頁、搜尋位址依前綴由長到短找到包含它的路由、其他文字依文字比對；少量時直接列出', async () => {
+  await step('大量路由：右欄只有摘要，路由表視窗先顯示分組（計數同 Q.allRoutesOf）、展開一組才畫明細並分頁、搜尋位址依前綴由長到短找到包含它的路由、其他文字依文字比對；少量時也分組', async () => {
     await buildInput(INPUT);
     const Q = App.Q; const P = S.view.BIG_LIST;
     const big = Q.devices().find((d) => d.name === 'BIG'); const small = Q.devices().find((d) => d.name === 'SMALL');
@@ -53,9 +55,12 @@ module.exports = async () => {
     const all = Q.allRoutesOf(big.key);
     if (all.length < P.min * 2) throw new Error('測試前提：BIG 的路由應遠多於門檻：' + all.length);
     App.select({ type: 'device', key: big.key });
-    const sec = foldOf('路由表');
-    if (countOf(sec) !== all.length) throw new Error(`路由表的 count 應同 Q.allRoutesOf：${countOf(sec)}／${all.length}`);
-    const box = sec.querySelector('.biglist'); if (!box) throw new Error('路由多時應改為摘要＋分組');
+    const summ = foldOf('路由表');
+    if (countOf(summ) !== all.length) throw new Error(`右欄路由表摘要的 count 應同 Q.allRoutesOf：${countOf(summ)}／${all.length}`);
+    if (rowsOf(summ).length || summ.querySelector('.biglist')) throw new Error('右欄只有路由表的摘要，不列路由');
+    summ.querySelector('.routes-open').click();
+    const sec = routesList();
+    const box = sec.querySelector('.biglist'); if (!box) throw new Error('路由表視窗應是摘要＋分組');
     const total = box.querySelector('.biglist-total');
     if (Number(total.getAttribute('data-count')) !== all.length || !total.textContent.includes(S.view.num(all.length))) throw new Error('摘要的總數應同 Q.allRoutesOf：' + total.textContent);
     // 摘要時一列明細都不畫
@@ -115,10 +120,10 @@ module.exports = async () => {
     if (!box.querySelector('.biglist-status').textContent.includes('找不到符合的路由') || rowsOf(box.querySelector('.biglist-result')).length) throw new Error('沒有符合時應說明找不到符合的路由：' + box.querySelector('.biglist-status').textContent);
     search(box, '');
     if (!visible(box.querySelector('.biglist-summary')) || visible(box.querySelector('.biglist-result'))) throw new Error('清掉搜尋字應回到摘要');
-    // 少量時直接列出（與原本相同）
-    App.select({ type: 'device', key: small.key });
-    const sm = foldOf('路由表'); const n = Q.allRoutesOf(small.key).length;
-    if (n >= P.min || sm.querySelector('.biglist') || rowsOf(sm).length !== n) throw new Error(`路由少時應直接列出全部：${rowsOf(sm).length}／${n}`);
+    // 少量時也分組（同一種資料同一種呈現），各組合起來是全部的路由
+    App.select({ type: 'routes', dev: small.key });
+    const n = Q.allRoutesOf(small.key).length; const sgs = groupsOf(routesList());
+    if (n >= P.min || !sgs.length || sgs.reduce((k, g) => k + countOf(g), 0) !== n) throw new Error(`路由少時也依路由表、協定與下一跳分組：${n}`);
     App.select(null);
   });
 
@@ -130,8 +135,8 @@ module.exports = async () => {
     if (!block || block.size !== 600) throw new Error('測試前提：BLOCK 應有 600 段：' + (block && block.size));
     const total = lists.reduce((n, s) => n + Math.max(1, s.size || 0), 0);
     App.select({ type: 'firewall', dev: big.key });
-    const sec = foldOf('位址清單');
-    if (countOf(sec) !== total) throw new Error(`位址清單的 count 應同 Q.addressSet 的段數：${countOf(sec)}／${total}`);
+    const sec = fwTab('addr');
+    if (tabCount('addr') !== total) throw new Error(`位址清單的 count 應同 Q.addressSet 的段數：${tabCount('addr')}／${total}`);
     const box = sec.querySelector('.biglist'); if (!box) throw new Error('位址多時應改為摘要＋分組');
     if (Number(box.querySelector('.biglist-total').getAttribute('data-count')) !== total) throw new Error('摘要的總數應同 Q.addressSet');
     const gs = groupsOf(box);
@@ -140,6 +145,8 @@ module.exports = async () => {
     if (!g || countOf(g) !== block.size) throw new Error('BLOCK 的組應有 ' + block.size + ' 段');
     if (rowsOf(sec).length) throw new Error('還沒展開時不應畫出明細');
     open(g);
+    // 組內不列和組名重複的「清單」欄（inGroup: false）；搜尋結果與直接列出時仍有
+    if (g.testAll('th').some((th) => th.textContent === '清單')) throw new Error('位址清單的組內不應再列「清單」欄');
     if (rowsOf(g).length !== P.page) throw new Error(`一頁應是 ${P.page} 列：${rowsOf(g).length}`);
     const want = block.ranges[300][0];
     search(box, want);
@@ -170,9 +177,51 @@ module.exports = async () => {
     const few = Q.addressSetsOf(small.key, 'address-list').map(Q.addressSet);
     const n = few.reduce((k, s) => k + Math.max(1, s.size || 0), 0);
     App.select({ type: 'firewall', dev: small.key });
-    const sm = foldOf('位址清單');
-    if (!n || n >= P.min || sm.querySelector('.biglist') || rowsOf(sm).length !== n || countOf(sm) !== n) throw new Error(`位址少時應直接列出全部：${rowsOf(sm).length}／${n}`);
+    const sm = fwTab('addr');
+    if (!n || n >= P.min || sm.querySelector('.biglist') || rowsOf(sm).length !== n || tabCount('addr') !== n) throw new Error(`位址少時應直接列出全部：${rowsOf(sm).length}／${n}`);
     if (!sm.textContent.includes('198.51.100.0–198.51.100.255')) throw new Error('合併後的一段寫成「起–迄」：' + sm.textContent);
     App.select(null);
+  });
+
+  await step('不分組的 V.bigList：列多時分頁（不截斷、寫出總數），排序對全部的列；沒有 text 時沒有搜尋框；reveal 翻到那一列的頁；V.paged 給非表格的清單', () => {
+    const V = S.view; const P = V.BIG_LIST;
+    const n = P.min + P.page * 2 + 7; const rows = Array.from({ length: n }, (_, i) => ({ i, name: 'r' + i }));
+    const cols = [{ t: '編號', f: (r) => String(r.i), s: (r) => r.i }, { t: '名稱', f: (r) => r.name }];
+    const pagerBtn = (el, key) => { const b = el.testAll('.pager-btn').find((x) => x.getAttribute('data-page') === key); if (!b) throw new Error('應有分頁按鈕：' + key); return b; };
+    const firstCell = (el) => rowsOf(el)[0].testAll('td')[0].textContent;
+    const pages = Math.ceil(n / P.page);
+    // 不分組、沒有 text：只有分頁，沒有搜尋框與分組
+    const box = V.bigList(cols, rows, { unit: '列' });
+    if (box.querySelector('.biglist-search') || groupsOf(box).length) throw new Error('沒有 text 時不放搜尋框，不分組');
+    if (rowsOf(box).length !== P.page || !box.querySelector('.pager-where').textContent.includes(`共 ${V.num(n)} 列（1／${V.num(pages)} 頁）`)) throw new Error('列多時分頁並寫出總數：' + box.querySelector('.pager-where').textContent);
+    pagerBtn(box, 'last').click();
+    if (rowsOf(box).length !== n - P.page * (pages - 1) || firstCell(box) !== String(P.page * (pages - 1))) throw new Error('最後一頁列出其餘的列（不截斷）');
+    // 排序對全部的列：降冪後第一列是最大的編號，回到第一頁
+    const sortBtn = () => box.testAll('.th-sort')[0];
+    sortBtn().click(); sortBtn().click();
+    if (firstCell(box) !== String(n - 1) || !box.querySelector('.pager-where').textContent.includes(`（1／${V.num(pages)} 頁）`)) throw new Error('排序對全部的列，排序後回到第一頁：' + firstCell(box));
+    // 有 text：搜尋框依文字找
+    const withText = V.bigList(cols, rows, { text: (r) => r.name, unit: '列', what: '列' });
+    search(withText, 'r1');
+    const hit = rows.filter((r) => r.name.includes('r1')).length;
+    if (!withText.querySelector('.biglist-status').textContent.includes(`找到 ${V.num(hit)} 列`)) throw new Error('搜尋應寫出找到的列數');
+    // reveal：一開始翻到那一列所在的頁
+    const target = rows[n - 3];
+    const rv = V.bigList(cols, rows, { reveal: target });
+    if (!rowsOf(rv).some((tr) => tr.testAll('td')[0].textContent === String(target.i))) throw new Error('reveal 應翻到那一列所在的頁');
+    // 呼叫端管排序（table.onSort）：照呼叫端給的順序分頁，不自己排
+    const rev = rows.slice().reverse();
+    const ext = V.bigList(cols, rev, { table: { onSort: () => {}, sortBy: 0, sortDir: -1 } });
+    if (firstCell(ext) !== String(n - 1) || rowsOf(ext).length !== P.page) throw new Error('呼叫端管排序時照給的順序分頁');
+    // V.table 一律列出全部的列（舊的 limit 選項已拿掉）；畫面沒有呼叫端再傳 limit，列多的表格都經 V.bigList 分頁
+    const all = V.table(cols, rows);
+    if (all.querySelector('.table-more') || all.querySelector('.pager') || rowsOf(all).length !== n) throw new Error('V.table 應列出全部的列，不截斷');
+    const viewSrc = jsFiles('src/view');
+    if (!viewSrc.length) throw new Error('找不到 src/view 的檔案');
+    const withLimit = viewSrc.filter((f) => /\blimit:\s*\d/.test(fs.readFileSync(path.join(ROOT, f), 'utf8')));
+    if (withLimit.length) throw new Error('畫面不再傳 V.table 的 limit（改用 V.bigList）：' + withLimit.join('、'));
+    // V.paged：非表格的清單也分頁
+    const ul = V.paged(n, '段', (from, to) => V.h('ul', null, rows.slice(from, to).map((r) => V.h('li', null, r.name))));
+    if (ul.testAll('li').length !== P.page || !ul.querySelector('.pager-where').textContent.includes(`共 ${V.num(n)} 段`)) throw new Error('V.paged 應分頁並寫出總數');
   });
 };

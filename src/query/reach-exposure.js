@@ -118,10 +118,11 @@
     //   規則語意全部用 S.infer.fw.decide（family ipv6），/ip service 的 available-from 也接受 IPv6 前綴
     //   （https://manual.mikrotik.com/docs/cli-reference/ip/service.md）。位址以 BigInt 表示，只在這一段使用。
     // 從 WAN 進來的 IPv6 新連線來源取全球單播（S.ip 的 public 類，2000::/3）的範圍；其中的 2001:db8::/32 是 documentation（代表位址本身），也算
-    const GUA = IP.rangesOf(['public']).filter((c) => !IP.isIp(c.split('/')[0])).map((c) => F.parseVal('dst-address', c).items[0])[0];
+    const GUA = IP.rangesOf(['public']).map(IP.range).find((r) => r && r[2] === 128);
     const GUA_LO = GUA[0]; const GUA_HI = GUA[1];
     const EXT6_CLASSES = new Set(['public', 'documentation']);
-    const range6 = (text) => { const p = F.parseVal('dst-address', String(text)); return p.kind === 'ranges' && p.bits === 128 && !p.neg ? p.items : null; };
+    /** IPv6 的位址、網段或範圍文字 → [lo, hi]（BigInt，S.ip.range）；不是 IPv6 或不合法時 null。 */
+    const range6 = (text) => { const r = IP.range(String(text)); return r && r[2] === 128 ? [r[0], r[1]] : null; };
     const fmt6 = IP.v6FromBig;
     const cmpBig = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
     const linkLocal6 = (n) => IP.classify(fmt6(n)) === 'link-local'; // 只在同一個鏈路有效，不是從 WAN 進得來的目的
@@ -136,13 +137,14 @@
         const len = cut < 0 ? 128 : Number(t.slice(cut + 1));
         const one = range6(cut < 0 ? t : t.slice(0, cut)); const net = range6(t);
         if (!one || !net || !Number.isInteger(len) || len < 0 || len > 128) return;
-        addrs.push({ dev: a.dev, ep: a.ep, n: one[0][0], ip: fmt6(one[0][0]), len, lo: net[0][0], hi: net[0][1], prefix: fmt6(net[0][0]) + '/' + len, src: (a.src || []).map((x) => x.slice()) });
+        addrs.push({ dev: a.dev, ep: a.ep, n: one[0], ip: fmt6(one[0]), len, lo: net[0], hi: net[1], net: fmt6(net[0]), prefix: fmt6(net[0]) + '/' + len, src: (a.src || []).map((x) => x.slice()) });
       });
       addrs.sort((x, y) => U.natural(x.dev, y.dev) || U.natural(x.ep, y.ep) || cmpBig(x.n, y.n));
-      v6facts = { addrs, owned: new Set(addrs.map((a) => a.n)), nets: addrs.map((a) => [a.lo, a.hi]) };
+      // nets：基準網段的索引（S.ip.prefixIndex6，依前綴長度分桶），判斷「在不在基準網段」不必逐一掃過
+      v6facts = { addrs, owned: new Set(addrs.map((a) => a.n)), nets: IP.prefixIndex6(addrs, 'net') };
       return v6facts;
     }
-    const inNets6 = (n, nets) => nets.some(([lo, hi]) => n >= lo && n <= hi);
+    const inNets6 = (n, nets) => nets.lookup(n).length > 0;
     /** IPv6 的外部來源：這台設備 IPv6 規則的 src-address 與 /ip service 的 available-from 切出的區段（同 extSources），每段取一個全球單播、不在基準網段的位址。 */
     function extSources6(dev, max) {
       const b = new Set([0n, 1n << 128n]);
@@ -150,7 +152,7 @@
       const arr = Array.from(b).sort(cmpBig);
       const nets = v6Facts().nets;
       const outside = (n) => EXT6_CLASSES.has(IP.classify(fmt6(n))) && !inNets6(n, nets);
-      const cands = EXTERNAL6_CANDIDATES.map((c) => range6(c)[0][0]);
+      const cands = EXTERNAL6_CANDIDATES.map((c) => range6(c)[0]);
       const primary = cands.find(outside);
       const atoms = [];
       for (let i = 0; i + 1 < arr.length; i++) {

@@ -57,6 +57,20 @@ test('S.ip.set：covers（整段都在）與 overlaps（有交集）看合併後
   assert.throws(() => s.covers('2001:db8::/32'), TypeError);
 });
 
+test('S.ip.set：not（補集）與 and（交集）；兩次補集等於原集合；位址族不同不能取交集', () => {
+  const s = S.ip.set(['10.0.0.0/8', '192.168.0.0/16'], 32);
+  const n = s.not();
+  assert.deepStrictEqual([n.has('10.1.2.3'), n.has('8.8.8.8'), n.has('0.0.0.0'), n.has('255.255.255.255'), n.ranges.length], [false, true, true, true, 3]);
+  assert.deepStrictEqual(rs(n.not()), rs(s));
+  assert.strictEqual(s.not(), n, '補集只建一次');
+  assert.deepStrictEqual([S.ip.set([], 32).not().isAll, S.ip.set(['0.0.0.0/0'], 32).not().isEmpty], [true, true]);
+  assert.deepStrictEqual(rs(s.and(S.ip.set(['10.1.0.0/16', '172.16.0.0/12', '192.168.1.0-192.168.2.255'], 32))), rs(S.ip.set(['10.1.0.0/16', '192.168.1.0/24', '192.168.2.0/24'], 32)));
+  assert.ok(s.and(S.ip.set(['8.8.8.8'], 32)).isEmpty);
+  const six = S.ip.set(['2001:db8::/32'], 128);
+  assert.deepStrictEqual([six.not().has('2001:db8::1'), six.not().has('::1')], [false, true]);
+  assert.throws(() => s.and(six), TypeError);
+});
+
 test('S.ip.set：IPv6（網段、範圍、合併）；否定（!）、不合法或位址族不同的項目丟出錯誤，不靜默略過', () => {
   const v6 = S.ip.set(['2001:db8:1::/48', '2001:db8::/48', 'fd00::5-fd00::9', 'fd00::a'], 128);
   assert.strictEqual(v6.ranges.length, 2, '2001:db8::/48 與 2001:db8:1::/48 相鄰；fd00::5–9 與 fd00::a 相鄰');

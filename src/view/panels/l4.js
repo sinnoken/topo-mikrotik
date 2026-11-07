@@ -25,11 +25,8 @@
   const TH = () => V.theme.l4;
   /** 矩陣最多畫幾個 zone（N² 個格子）；超過時只有表格檢視 */
   const MATRIX_MAX = 60;
-  /** 下鑽的表格最多列幾筆 */
-  const ROW_LIMIT = 300;
-  /** 矩陣的表格檢視最多列幾格（全部的格子在 CSV） */
-  const TABLE_LIMIT = 3000;
-  /** 暴露清單每一段先列幾列（其餘「顯示全部（N）」） */
+  // 下鑽與矩陣的表格檢視不設上限：列多時用 V.bigList 分頁（每頁 V.BIG_LIST.page 列）
+  /** 暴露清單每一段先列幾列（其餘「顯示全部（N）」，展開後分頁） */
   const EX_LIMIT = 20;
   /** 顯示忙碌提示後，等多久才開始計算（讓瀏覽器先畫出提示） */
   const BUSY_DELAY = 40;
@@ -39,8 +36,9 @@
   //   mx：「全部服務」的矩陣（服務選單的選項）；current：目前畫的矩陣（CSV 用）；showAllGroups：異質格子的 L1 是否列出全部的組
   //   vrf：矩陣依來源 zone 的 VRF 篩選（'' 是全部）；reachVrfs：可達性查詢的來源在多個 VRF 時，可以選的 VRF
   const st = { Q: null, service: '', mode: 'matrix', vrf: '', cell: null, cellData: null, reach: null, reachReq: null, reachErr: null, reachVrfs: null, hideDeny: true, showAllGroups: false, focus: [0, 0], mx: null, current: null, error: null,
-    // exPath：暴露清單就地展開的逐跳路徑 { sec, row, req, reach, err, vrfs }；exAll：列出全部的段（超過 EX_LIMIT 列時）
-    exPath: null, exAll: new Set() };
+    // exPath：暴露清單就地展開的逐跳路徑 { sec, row, req, reach, err, vrfs }；exAll：列出全部的段（超過 EX_LIMIT 列時，分頁）
+    // exAt：最後看路徑或收起路徑的那一列 { sec, row }（重畫後分頁翻到它所在的那一頁，焦點才回得去）
+    exPath: null, exAll: new Set(), exAt: null };
   /** 畫面的元素：第一次顯示時 mount 填入（els.root 有值表示已經建立）；各檔共用同一個物件 */
   const els = {};
   /** 原因代碼的說明（S.query.reachReasonCodes 的 note），放在原因的提示裡 */
@@ -234,7 +232,7 @@
   }
   function resetState(Q) {
     I.stopJob();
-    I.stopEx(); st.ex = null; st.exErr = null; st.exPath = null; st.exAll = new Set();
+    I.stopEx(); st.ex = null; st.exErr = null; st.exPath = null; st.exAll = new Set(); st.exAt = null;
     Object.assign(st, { Q, service: '', vrf: '', cell: null, cellData: null, reach: null, reachReq: null, reachErr: null, reachVrfs: null, showAllGroups: false, focus: [0, 0], mx: null, current: null, error: null, drawnFor: null, tableAll: false });
     if (els.root) { els.drill.classList.add('hidden'); V.clear(els.drill); V.clear(els.assumeBody); }
     st.assumeFor = null; st.assumeN = 0;
@@ -270,13 +268,14 @@
       { t: '設備', f: (x) => V.num(x.devices.length), s: (x) => x.devices.length, cls: 'num' },
     ], z.zones));
     const zi = zoneIndex(Q);
-    box.appendChild(V.section('每個網段的依據', V.table([
+    // 網段多時分頁（V.bigList），可依網段或 zone 名搜尋；不截斷
+    box.appendChild(V.section('每個網段的依據', V.bigList([
       { t: '網段', f: (s) => h('span', { class: 'mono' }, V.inVrfText(s.prefix)), s: (s) => s.prefix }, ...vrfCol,
       { t: 'zone', f: (s) => (zi.get(s.zone) || { name: s.zone }).name, s: (s) => (zi.get(s.zone) || { name: s.zone }).name },
       { t: '來源', f: (s) => h('span', null, [V.ZONE_SOURCE[s.source] || s.source, s.inferred ? ' ' : '', s.inferred ? V.chip('推論', 'info') : null]) },
       { t: '依據', f: (s) => s.basis || '' },
       { t: '其他來源的結果', f: (s) => s.alternatives.map((a) => `${V.ZONE_SOURCE[a.source] || a.source}：${(zi.get(a.zone) || { name: a.zone.replace(/^[a-z-]+:/, '') }).name}`).join('、') },
-    ], z.subnets, { limit: 500 }), { fold: true, count: z.subnets.length, cls: 'l4-fold' }));
+    ], z.subnets, { text: (s) => s.prefix + ' ' + ((zi.get(s.zone) || { name: s.zone }).name), unit: '個網段', what: '網段', placeholder: '搜尋網段或 zone' }), { fold: true, count: z.subnets.length, cls: 'l4-fold' }));
   }
 
   /**
@@ -284,7 +283,7 @@
    * 呼叫另一個檔的函式一律經由它（I.名稱），不複製函式
    */
   const I = {
-    st, els, TH, MATRIX_MAX, ROW_LIMIT, TABLE_LIMIT, EX_LIMIT, BUSY_DELAY, PROTOS,
+    st, els, TH, MATRIX_MAX, EX_LIMIT, BUSY_DELAY, PROTOS,
     reasonNote, layerOf, byLayer, layerText, layerList, layerLine, deniedParts, svcOf, zoneOpts, zo, optsOf, zoneIndex, zoneById, zoneName,
     statusText, statusMark, statusTag, cellBg, countsText, hetBadge, decisiveText, ruleLink, isOpen, announce, zoneLabel, renderZones,
   };

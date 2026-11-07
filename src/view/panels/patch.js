@@ -340,7 +340,7 @@
   function refreshOpen(App) { compute(App); render(App); V.app.renderSteps(); }
 
   /**
-   * 在「修正」開啟修正計畫；keys 給定時以它取代目前的選取（例如防火牆畫面的「在修正計畫中開啟」）。
+   * 在「修正」開啟修正計畫；keys 給定時以它取代目前的選取（例如防火牆視窗的「在修正計畫中開啟」）。
    * 焦點移到修正計畫的標題（opt.focus 為 false 時不移動）。
    */
   function open(App, keys, opt) {

@@ -123,7 +123,7 @@
     const s = App.sel; if (!s) return null;
     if (s.type === 'device') return s.key;
     if (s.type === 'interface') return K.splitEp(s.key)[0];
-    if (s.type === 'firewall' || s.type === 'endpoints') return s.dev;
+    if (s.type === 'firewall' || s.type === 'routes' || s.type === 'endpoints') return s.dev;
     return null;
   }
   const labelW = (text) => String(text || '').length * 7.4 + 30;
@@ -408,7 +408,7 @@
     // IP 所在的子網（網段鍵）；給了 vrf 時只取那個 VRF 的
     const subnetsOfIp = (ip, vrf) => { const r = Q.findIp(ip); return r ? r.subnets.filter((s) => vrf == null || s.vrf === vrf).map((s) => NET + s.prefix).filter(has) : []; };
     switch (sel.type) {
-      case 'device': case 'firewall': case 'endpoints': case 'rule': case 'service': {
+      case 'device': case 'firewall': case 'routes': case 'endpoints': case 'rule': case 'service': {
         const r = sel.type === 'rule' ? Q.getFirewallRule(sel.key) : null;
         const d = sel.type === 'device' ? sel.key : sel.dev || (r ? r.dev : devOf(sel.key));
         const ids = nodesOf(d);

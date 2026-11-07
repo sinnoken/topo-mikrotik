@@ -204,7 +204,9 @@ test('zone 矩陣：L0 的格子狀態與代表規則；L1／L2 下鑽；相同�
   assert.deepStrictEqual(wanSrv.services.filter((x) => x.counts.allow).map((x) => x.service), ['tcp/8443']);
   assert.ok(wanSrv.heterogeneous, '兩個 WAN 網段的結果不同（只有核心 01 有 dst-nat）');
   assert.strictEqual(cell('list:WAN', 'vlan:30').status, 'deny');
-  assert.strictEqual(cell('vlan:30', 'vlan:20').status, 'allow');
+  // VLAN 30 → VLAN 20：一般主機允許；隔離的主機（寫死的位址清單 QUARANTINE，判斷時展開）被兩台核心的 forward 丟棄，所以是部分允許、沒有不明
+  const v30 = cell('vlan:30', 'vlan:20');
+  assert.deepStrictEqual([v30.status, v30.counts.unknown, v30.deniedBy.filter > 0, v30.deniedBy.noRoute], ['partial', 0, true, 0], JSON.stringify(v30.counts));
   assert.strictEqual(cell('vlan:30', 'list:WAN').status, 'unknown');
   assert.ok(cell('vlan:30', 'list:WAN').reasons.some((r) => r.code === 'next-hop-outside'));
   assert.ok(mx.services.some((x) => x.id === 'tcp/8443'), '預設 service 加上 dst-nat 的目的埠');
@@ -378,7 +380,7 @@ test('判斷的前提依層級排列（ADR-023 決策 5）：路由層 → 防�
     'untracked', 'ip-service', 'static-only', 'external', 'return-path']);
   const msg = (c) => base.find((a) => a.code === c).message;
   assert.ok(/對外邊界/.test(msg('external')) && !/WAN|介面清單/.test(msg('external')), msg('external'));
-  assert.ok(/一律不展開/.test(msg('address-list')) && /靜態項目/.test(msg('address-list')));
+  assert.ok(/只展開匯出設定中寫死的位址清單/.test(msg('address-list')) && /靜態項目/.test(msg('address-list')) && /算不明/.test(msg('address-list')));
   assert.ok(/不看那條規則的比對條件/.test(msg('mark-routing')));
   assert.ok(/F15/.test(msg('return-path')) && /SYN/.test(msg('new-connection')) && /output/.test(msg('untracked')) && /一定是拒絕/.test(msg('ip-service')));
 });

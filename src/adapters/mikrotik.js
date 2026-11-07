@@ -7,7 +7,7 @@
  *   mikrotik.neighbor   /ip neighbor print detail          鄰居（LLDP／MNDP／CDP）
  *   mikrotik.config     /export terse（或 compact）          介面、bridge、bridge VLAN、bonding、IP、router-id、
  *                       DHCP 網路、DNS／NTP 伺服器、名稱 ↔ IP 設定（IP_BINDS）、
- *                       防火牆（/ip|ipv6 firewall filter|nat|raw）、interface list、/ip service、/ip ipsec peer|policy、
+ *                       防火牆（/ip|ipv6 firewall filter|nat|raw）、位址清單（/ip|ipv6 firewall address-list 與寫入它的設定）、interface list、/ip service、/ip ipsec peer|policy、
  *                       管理面設定（MGMT_MENUS）、export 的範圍與抬頭版本（exportScope）
  *   mikrotik.bridgehost /interface bridge host print detail  MAC 表
  *   mikrotik.vlans      /interface bridge vlan print detail  bridge VLAN 實際成員（含動態）
@@ -196,6 +196,19 @@
     '/ip pool': { name: 'name', value: 'ranges', multi: true },
     '/ip dhcp-server lease': { name: 'mac-address', value: 'address' },
   };
+  /*
+   * 防火牆位址清單（https://manual.mikrotik.com/docs/cli-reference/ip/firewall/address-list.md、…/ipv6/firewall/address-list.md）：
+   * 每個項目一筆 { t:'addrListEntry', family, list, address, disabled, timeout, dynamic }，停用的也記（model 決定算不算）。
+   * export 只有靜態項目；有逾時或 dynamic=yes 的項目、DNS 名稱解析出的位址都是動態的，不會出現在 export。
+   */
+  const ADDR_LIST_MENUS = { '/ip firewall address-list': 'ip', '/ipv6 firewall address-list': 'ipv6' };
+  /*
+   * 會寫入位址清單的其他設定（不是 filter／nat／raw 規則；規則的 add-src-to-address-list 由 model 依規則判斷）：
+   * 參數 address-list／address-lists（例如 /ppp profile、/ip dhcp-server、mangle 規則）寫入指名的清單；
+   * 其他文字（例如腳本內容）提到 address-list 時，寫入哪些清單無從得知，lists 為 null。
+   */
+  const ADDR_LIST_PARAMS = ['address-list', 'address-lists'];
+  const ADDR_LIST_WORD = /(^|[^\w-])address-list(?=[^\w=-]|$)/;
   // 設備層級的 DNS／NTP 伺服器：0.0.0.0（RouterOS 6 的 primary-ntp／secondary-ntp 預設值）代表未設定
   // 手冊寫 servers 以空白分隔，export 常見逗號；伺服器名稱不含兩者，所以都當分隔
   const serverList = (...vals) => vals.flatMap((v) => String(v || '').split(/[\s,]+/)).filter((v) => v && v !== '0.0.0.0' && v !== '::');
@@ -318,6 +331,11 @@
         const sm = args.match(/^\[\s*find\s*([^\]]*)\]\s*(.*)$/);
         if (sm) { sel = kvOf(sm[1].replace(/^where\s+/, '')); args = sm[2]; }
         const kv = kvOf(args);
+        if (!FW_TABLES[path] && !ADDR_LIST_MENUS[path]) {
+          const named = ADDR_LIST_PARAMS.filter((k) => kv[k]).flatMap((k) => list(kv[k]));
+          if (named.length) emit({ t: 'addrListWriter', section: path, lists: S.util.uniq(named), line });
+          else if (ADDR_LIST_WORD.test(argText)) emit({ t: 'addrListWriter', section: path, lists: null, line });
+        }
         const mm = MGMT_MENUS[path];
         if (mm && cmd === 'set') {
           const values = {}; mm[1].forEach((k) => { if (k in kv) values[k] = kv[k]; });
@@ -508,6 +526,10 @@
             break;
           default: {
             if (FW_TABLES[path]) { if (cmd === 'add') emit(fwRule(FW_TABLES[path][0], FW_TABLES[path][1], args, line)); break; }
+            if (ADDR_LIST_MENUS[path] && cmd === 'add' && kv.list && kv.address) {
+              emit({ t: 'addrListEntry', family: ADDR_LIST_MENUS[path], list: kv.list, address: kv.address.trim(), disabled: kv.disabled === 'yes',
+                timeout: kv.timeout || null, dynamic: kv.dynamic === 'yes', line });
+            }
             const bind = IP_BINDS[path];
             if (!bind || cmd !== 'add' || kv.disabled === 'yes' || kv.dynamic === 'yes') break;
             if (bind.only && !bind.only.values.includes(String(kv[bind.only.key] || '').toLowerCase())) break;

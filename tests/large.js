@@ -125,4 +125,60 @@ module.exports = function registerLarge(LARGE_MAX_MS) {
     assert.strictEqual(p.unrecognized.length, count(s, 'I01'));
     assert.ok(pm < bm, `預檢 ${pm} ms 應比完整建立 ${bm} ms 快`);
   });
+  /*
+   * 大型位址清單（封鎖名單動輒數萬到十萬筆）：一台邊界路由器，一份 n 筆的靜態清單被 raw prerouting 的 drop（來源）與 forward 的 drop（目的）引用。
+   * 量 S.build、Q.reach、Q.zoneMatrix、Q.exposure 的時間與 heap，以及 Snapshot 的 JSON 大小；判斷時查清單是二分搜尋（S.infer.fw 的位址清單索引），不線性掃描。
+   */
+  const blockList = (n) => {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      // 公網位址，分散在 1.0.0.0 起的空間：每 4 筆一筆 /24、其餘是單一位址，第 7 筆起每 50 筆一筆範圍
+      const a = 1 + (i % 200); const b = Math.floor(i / 200) % 256; const c = Math.floor(i / 51200) * 16 + (i % 16);
+      const base = `${a}.${b}.${c}`;
+      out.push(i % 4 === 0 ? `${base}.0/24` : i % 50 === 7 ? `${base}.10-${base}.20` : `${base}.${1 + (i % 250)}`);
+    }
+    return out;
+  };
+  [50000, 100000].forEach((n) => test(`壓力：${n} 筆的靜態位址清單——查詢以索引二分搜尋，建立、可達性、矩陣與暴露清單在時間內完成`, () => {
+    const RT = 'Flags: D - DYNAMIC; A - ACTIVE; c - CONNECT, s - STATIC';
+    const list = blockList(n);
+    const text = ['R (192.168.1.1):', '### /export terse', '/interface bridge add name=bridge1',
+      '/interface list add name=WAN', '/interface list add name=LAN',
+      '/interface list member add interface=ether1 list=WAN', '/interface list member add interface=bridge1 list=LAN',
+      '/ip address add address=192.168.1.1/24 interface=bridge1 network=192.168.1.0',
+      '/ip address add address=198.51.100.2/30 interface=ether1 network=198.51.100.0',
+      '/ip firewall address-list', ...list.map((x) => `add address=${x} list=BLOCK`),
+      '/ip firewall raw add action=drop chain=prerouting in-interface-list=WAN src-address-list=BLOCK',
+      '/ip firewall filter add action=drop chain=forward dst-address-list=BLOCK',
+      '/ip firewall filter add action=accept chain=input dst-port=80 protocol=tcp',
+      '/ip firewall nat add action=masquerade chain=srcnat out-interface-list=WAN',
+      '### /ip route print detail without-paging', RT,
+      ' DAc dst-address=192.168.1.0/24 routing-table=main gateway=bridge1 distance=0',
+      ' DAc dst-address=198.51.100.0/30 routing-table=main gateway=ether1 distance=0',
+      ' As dst-address=0.0.0.0/0 routing-table=main gateway=198.51.100.1 distance=1', ''].join('\n');
+    const heap = () => process.memoryUsage().heapUsed / 1048576;
+    const time = (fn) => { const t0 = Date.now(); const r = fn(); return [r, Date.now() - t0]; };
+    const h0 = heap();
+    const [s, bMs] = time(() => build(text)); const h1 = heap();
+    const bytes = Buffer.byteLength(JSON.stringify(s.model.addressLists));
+    const al = s.model.addressLists.find((l) => l.name === 'BLOCK');
+    assert.deepStrictEqual([al.static, al.entries.length], [true, n]);
+    const Q = S.query(s);
+    // 第一次判斷時建索引（合併、排序），之後每次二分搜尋
+    const [r1, r1Ms] = time(() => Q.reach('192.168.1.10', '1.0.0.5', { proto: 'tcp', port: 443 }));
+    const [r2, r2Ms] = time(() => Q.reach('192.168.1.10', '9.9.9.9', { proto: 'tcp', port: 443 }));
+    const [r3] = time(() => Q.reach('1.0.0.5', '198.51.100.2', { proto: 'tcp', port: 80, entry: 'R|ether1' }));
+    const [r4] = time(() => Q.reach('9.9.9.9', '198.51.100.2', { proto: 'tcp', port: 80, entry: 'R|ether1' }));
+    assert.deepStrictEqual([r1.verdict, r2.verdict, r3.verdict, r4.verdict], ['deny', 'allow', 'deny', 'allow']);
+    const [mx, mMs] = time(() => Q.zoneMatrix()); const h2 = heap();
+    const [ex, eMs] = time(() => Q.exposure()); const h3 = heap();
+    assert.ok(mx.cells.length > 0 && ex.status === 'ok', ex.status);
+    const row = ex.self.rows.find((x) => x.ip === '198.51.100.2' && x.service === 'tcp/80');
+    assert.ok(row && row.verdict === 'allow', JSON.stringify(row && row.verdict));
+    console.log(`      ${n} 筆：S.build ${bMs} ms（heap +${Math.round(h1 - h0)} MB；addressLists 的 JSON ${(bytes / 1048576).toFixed(1)} MB）；`
+      + `reach 第一次 ${r1Ms} ms（含建索引）、第二次 ${r2Ms} ms；zoneMatrix ${mMs} ms（heap +${Math.round(h2 - h1)} MB）；`
+      + `exposure ${eMs} ms（heap +${Math.round(h3 - h2)} MB，外部區段 ${ex.external.byDevice.map((d) => d.sourceCount + (d.truncated ? '（截斷）' : '')).join('、')}）`);
+    [bMs, mMs, eMs].forEach((x) => assert.ok(x < LARGE_MAX_MS / 2, `耗時 ${x} ms，超過 ${LARGE_MAX_MS / 2} ms`));
+    assert.ok(r2Ms < 200, `建好索引之後的判斷 ${r2Ms} ms`);
+  }));
 };

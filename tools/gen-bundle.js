@@ -308,6 +308,10 @@ for (let s = 1; s <= SITES; s++) {
       FF('action=accept chain=input comment="defconf: accept ICMP" protocol=icmp');                                          // F02：defconf 匯入兩次
       FF('action=accept chain=input comment="winbox for vendor" dst-port=8291 protocol=tcp');                                 // F03：WAN 可以連 winbox 埠
       FF('action=accept chain=input dst-port=8291 in-interface=ether47 protocol=tcp');                                        // F01：被上一條完全涵蓋
+      // port knocking：依序敲 7000、8000 之後才放行 ssh。knock1／knock-ok 由規則寫入（可能有動態來源），放行 ssh 的那條維持不明
+      FF('action=add-src-to-address-list address-list=knock1 address-list-timeout=10s chain=input dst-port=7000 in-interface-list=WAN protocol=tcp');
+      FF('action=add-src-to-address-list address-list=knock-ok address-list-timeout=1h chain=input dst-port=8000 in-interface-list=WAN protocol=tcp src-address-list=knock1');
+      FF('action=accept chain=input comment="ssh after knocking" dst-port=22 in-interface-list=WAN protocol=tcp src-address-list=knock-ok');
     }
     if (F && ci === 1) FF('action=accept chain=input protocol=udp src-port=53');                                              // F06：以來源埠 53 放行
     // F07：核心 02 少了最後的 drop，www-ssl 又啟用且沒有 available-from
@@ -320,6 +324,12 @@ for (let s = 1; s <= SITES; s++) {
       FF('action=accept chain=forward comment="allow port forwards" connection-nat-state=dstnat');
       FF(`action=accept chain=forward dst-address=10.${s}.20.12 dst-port=22 in-interface-list=WAN protocol=tcp`);
       FF('action=drop chain=forward dst-port=445 in-interface-list=WAN protocol=tcp');
+    }
+    if (F) {                                                                                                           // 寫死的位址清單（完全靜態，兩台核心相同）：隔離的使用者主機，判斷時展開，結果確定
+      e.push(['/ip firewall address-list', 'add', `address=10.${s}.30.66 list=QUARANTINE`]);
+      e.push(['/ip firewall address-list', 'add', `address=10.${s}.30.70-10.${s}.30.79 list=QUARANTINE`]);
+      e.push(['/ip firewall address-list', 'add', `address=10.${s}.30.0/24 disabled=yes list=QUARANTINE`]);                        // 停用的項目不算
+      FF('action=drop chain=forward comment="quarantined hosts" src-address-list=QUARANTINE');
     }
     e.push(['/ip firewall nat', 'add', 'action=masquerade chain=srcnat comment="defconf: masquerade" ipsec-policy=out,none out-interface-list=WAN']);
     if (F && ci === 0) e.push(['/ip firewall nat', 'add', `action=dst-nat chain=dstnat dst-port=8443 in-interface-list=WAN protocol=tcp to-addresses=10.${s}.20.11 to-ports=443`]); // F04：連接埠轉送到伺服器

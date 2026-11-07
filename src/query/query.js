@@ -175,7 +175,11 @@
     const listsByDev = byDevOf(m.interfaceLists); const svcByDev = byDevOf(m.ipServices); const peersByDev = byDevOf(m.ipsecPeers); const polByDev = byDevOf(m.ipsecPolicies);
     const zoneByDev = new Map((m.firewallZones || []).map((z) => [z.dev, z]));
     const fwCtx = new Map();
-    const ctxOf = (d) => U.getOr(fwCtx, d, () => S.infer.fw.fwContext(d, listsByDev.get(d) || [], (ifcsByDev.get(d) || []).map((i) => i.key), fwByDev.get(d) || []));
+    // 位址清單（model.addressLists）：第一次需要時才依設備建立索引；舊的基準沒有這個欄位時每份清單都不明（同 fwContext 找不到清單）
+    let alIx = null;
+    const addressListIndex = () => alIx || (alIx = freezeAll(byDevOf(m.addressLists || [])));
+    const ctxOf = (d) => U.getOr(fwCtx, d, () => S.infer.fw.fwContext(d, listsByDev.get(d) || [], (ifcsByDev.get(d) || []).map((i) => i.key), fwByDev.get(d) || [],
+      addressListIndex().get(d) || []));
     const findingsBy = new Map();
     snap.findings.forEach((f, idx) => f.entities.forEach((e) => U.getOr(findingsBy, e.type + ':' + e.key, () => []).push(idx)));
     // 第一次查詢時才建立的索引（1000 台規模下多數畫面用不到）；回傳的陣列是 Q 自己的索引，凍結以免呼叫端改壞
@@ -351,6 +355,13 @@
         })));
       },
       interfaceListsOf: (d) => listsByDev.get(d) || [],
+      /**
+       * 某設備的防火牆位址清單（model.addressLists，依位址族 ip→ipv6、名稱）：[{ dev, family, name, static, reasons, entries, writers }]。
+       * static 為 true 時判斷（Q.reach、F 系列檢查）會依項目展開；false 時 reasons 列出可能有動態來源的原因（S.query.addressListReasons() 的 code）。
+       */
+      addressListsOf: (d) => addressListIndex().get(d) || EMPTY,
+      /** 某設備、某位址族（'ip'｜'ipv6'）的一份位址清單；基準裡沒有（export 沒有項目，也沒有寫入它的設定）時為 null，判斷時不明。 */
+      addressListOf: (d, family, name) => (addressListIndex().get(d) || EMPTY).find((l) => l.family === family && l.name === name) || null,
       ipsecOf: (d) => ({ peers: peersByDev.get(d) || [], policies: polByDev.get(d) || [] }),
       /** 規則 a 是否涵蓋 b（符合 b 的封包一定符合 a；以 a 所在設備的 interface list 判斷）。比對兩份基準的規則時使用。 */
       firewallCovers: (a, b) => S.infer.fw.covers(ctxOf(a.dev), a, b),
@@ -1245,6 +1256,8 @@
   S.query.adapterLabel = (id) => (Object.prototype.hasOwnProperty.call(S.adapters, id) && S.adapters[id] && S.adapters[id].label) || id;
   /** 管理面設定的出廠預設值表（凍結，S.MGMT_DEFAULTS）：export 沒寫的欄位依它補上；含適用的 RouterOS 版本（routerOS）與手冊網址（manual）。 */
   S.query.mgmtDefaults = () => S.MGMT_DEFAULTS;
+  /** 位址清單「可能有動態來源」的原因（凍結，S.infer.fw.ADDRESS_LIST_DYNAMIC）：[{ code, label }]，Q.addressListsOf 的 reasons 是其中的 code。 */
+  S.query.addressListReasons = () => S.infer.fw.ADDRESS_LIST_DYNAMIC;
   /**
    * 還沒建立查詢介面的 Snapshot JSON（瀏覽器儲存或使用者匯入的檔案）的 meta；不像 Snapshot（不是物件或沒有 meta 物件）時為 null。
    * 用來先判斷 schema／version 是否相容，再決定要 S.query 還是重建。

@@ -26,6 +26,12 @@
     const SPECIAL_SRC = (n) => NOT_EXTERNAL_SRC.has(IP.classify(IP.fromInt(n)));
     /** 一台設備的規則（src-address）、/ip service 的 available-from 與 /routing rule 的 src-address 的區段邊界（只依事實，每份基準算一次）。 */
     let ruleBounds = null; const srcBounds = new Map();
+    /** 規則的 src-address-list 是完全靜態的清單時，它的項目區間（同 decide 用的 ctx.addressList；可能有動態來源的清單不切分）。 */
+    const staticListItems = (r) => {
+      if (r.match['src-address-list'] === undefined) return [];
+      const ctx = I.ctxOf(r.dev); const al = ctx ? ctx.addressList(r.family, F.splitNeg(r.match['src-address-list']).body) : null;
+      return al && al.static ? al.items : [];
+    };
     const addBound = (list, text) => {
       if (text === undefined) return;
       const p = F.parseVal('src-address', F.splitNeg(text).body);
@@ -35,7 +41,12 @@
       if (srcBounds.has(dev)) return srcBounds.get(dev);
       if (!ruleBounds) {
         ruleBounds = new Map();
-        m.firewallRules.forEach((r) => { if (r.family === 'ip') addBound(U.getOr(ruleBounds, r.dev, () => []), r.match['src-address']); });
+        m.firewallRules.forEach((r) => {
+          if (r.family !== 'ip') return;
+          const list = U.getOr(ruleBounds, r.dev, () => []);
+          addBound(list, r.match['src-address']);
+          staticListItems(r).forEach(([x, y]) => { list.push(Number(x), Number(y) + 1); });
+        });
         (m.routingRules || []).forEach((r) => addBound(U.getOr(ruleBounds, r.dev, () => []), r.match['src-address']));
       }
       const list = (ruleBounds.get(dev) || []).slice();
@@ -157,7 +168,11 @@
         const p = F.parseVal('src-address', F.splitNeg(text).body);
         if (p.kind === 'ranges' && p.bits === 128) p.items.forEach(([x, y]) => { b.add(x); b.add(y + 1n); });
       };
-      m.firewallRules.forEach((r) => { if (r.family === 'ipv6' && r.dev === dev) add(r.match['src-address']); });
+      m.firewallRules.forEach((r) => {
+        if (r.family !== 'ipv6' || r.dev !== dev) return;
+        add(r.match['src-address']);
+        staticListItems(r).forEach(([x, y]) => { b.add(x); b.add(y + 1n); });
+      });
       Q.ipServicesOf(dev).forEach((sv) => sv.addresses.forEach(add));
       const arr = Array.from(b).sort(cmpBig);
       const nets = v6Facts().nets;

@@ -237,6 +237,11 @@
     const interfaceLists = Array.from(M.fw.lists.values()).map((l) => ({
       dev: l.dev, name: l.name, defined: l.defined, include: l.include.slice(), exclude: l.exclude.slice(), members: Array.from(l.members.keys()).sort(nat), src: l.src,
     })).sort((a, b) => nat(a.dev, b.dev) || nat(a.name, b.name));
+    // 位址清單（事實＋是否完全靜態；model/build.js 的 resolveAddressLists，已排序）。項目只留必要欄位（封鎖名單可能有十萬筆）
+    const addressLists = M.addressLists.map((l) => ({ dev: l.dev, family: l.family, name: l.name, static: l.static, reasons: l.reasons.slice(),
+      reasonSrc: l.reasonSrc.map((x) => ({ reason: x.reason, src: x.src })),
+      entries: l.entries.map((e) => ({ address: e.address, kind: e.kind, disabled: e.disabled, src: e.src })),
+      writers: l.writers.map((w) => ({ kind: w.kind, rule: w.rule, section: w.section, src: w.src })) }));
     const ipServices = Array.from(M.fwServices.values()).flat().map((x) => ({ dev: x.dev, name: x.name, enabled: x.enabled, port: x.port, addresses: x.addresses.slice(), basis: x.basis, src: x.src }))
       .sort((a, b) => nat(a.dev, b.dev) || nat(a.name, b.name));
     const ipsecPeers = M.fw.peers.map((p) => ({ dev: p.dev, name: p.name, address: p.address, disabled: p.disabled, src: p.src })).sort((a, b) => nat(a.dev, b.dev) || a.src[0][1] - b.src[0][1]);
@@ -290,7 +295,7 @@
         timing: { ms: Date.now() - c.t0 },
       },
       model: { devices, interfaces, links, inferredLinks, ospfAdjacencies, vlans, vrfs, ipAddresses, prefixes, macs, wifiAssociations, dhcpNetworks, arps, routes, routingTables, routingRules, routingMarkRules,
-        firewallRules, firewallZones, firewallStats, interfaceLists, ipServices, ipsecPeers, ipsecPolicies, mgmtSettings,
+        firewallRules, firewallZones, firewallStats, interfaceLists, addressLists, ipServices, ipsecPeers, ipsecPolicies, mgmtSettings,
         dhcpClients, pppoeClients, ospfAreas, ospfInterfaceTemplates, boundaries, routingDomains },
       findings: c.findings,
       coverage: c.coverage,

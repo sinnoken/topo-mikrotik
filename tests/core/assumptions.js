@@ -228,9 +228,9 @@ test('Q.assumptionUse：範例資料上用得到的前提（每條一筆、依�
     if (a.unit === 'devices') assert.strictEqual(a.count, a.devices.length, `${a.code}：數設備時 count 是設備數`);
   });
   const st = Object.fromEntries(u.map((a) => [a.code, a.status]));
-  // 範例資料：有策略路由、在用 IPv6、非 main 的 VRF、UPnP、沒有介面紀錄的 WAN 成員、比對來源埠的規則；沒有 mark-routing、notrack、位址清單
-  assert.deepStrictEqual(['policy-routing', 'ipv4-vrf', 'ip-service', 'static-only', 'wan-member-no-interface', 'src-port', 'return-path'].map((c) => st[c]), Array(7).fill('affects'));
-  assert.deepStrictEqual(['mark-routing', 'untracked', 'address-list'].map((c) => st[c]), Array(3).fill('not-used'));
+  // 範例資料：有策略路由、在用 IPv6、非 main 的 VRF、UPnP、沒有介面紀錄的 WAN 成員、比對來源埠的規則、由規則寫入的位址清單（port knocking）；沒有 mark-routing、notrack
+  assert.deepStrictEqual(['policy-routing', 'ipv4-vrf', 'ip-service', 'static-only', 'wan-member-no-interface', 'src-port', 'return-path', 'address-list'].map((c) => st[c]), Array(8).fill('affects'));
+  assert.deepStrictEqual(['mark-routing', 'untracked'].map((c) => st[c]), Array(2).fill('not-used'));
   assert.strictEqual(st['bridge-ip-firewall'], 'missing-data');
   assert.strictEqual(JSON.stringify(s), before, 'Snapshot 不變');
 });
